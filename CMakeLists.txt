@@ -29,6 +29,13 @@ if(ARMIX_SONKU_EXPERIMENTAL_P80_TIMBRE AND
     NOT ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT))
   message(FATAL_ERROR "P8.0 measured timbre needs BOTH P7.5 music-safe and P7.2 XYZ research ON")
 endif()
+option(ARMIX_SONKU_EXPERIMENTAL_P82_ROOM
+       "Research-only P8.2 room geometry late-field predelay on native XYZ"
+       OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P82_ROOM AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P80_TIMBRE)
+  message(FATAL_ERROR "P8.2 room requires explicit measured P8.0 opt-in")
+endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -228,7 +235,8 @@ target_compile_definitions(ARMixConsole PRIVATE
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:SONKU_P71_DIRECT_XYZ_RESEARCH=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:SONKU_P72_NATIVE_XYZ_RT=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE}>:SONKU_P75_MUSIC_SAFE_RESEARCH=1>
-    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P80_TIMBRE}>:SONKU_P80_MEASURED_TIMBRE_RESEARCH=1>)
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P80_TIMBRE}>:SONKU_P80_MEASURED_TIMBRE_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P82_ROOM}>:SONKU_P82_GEOMETRIC_LATE_RESEARCH=1>)
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
   # Never link Windows loader or sound APIs into macOS/Linux builds.
@@ -375,6 +383,19 @@ if(BUILD_TESTING)
             SONKU_P80_MEASURED_TIMBRE_RESEARCH=1)
         add_test(NAME NativeSonKuP80MeasuredHrtfTimbreAndChunkParity
             COMMAND ARMixSonKuP80MeasuredTimbreTests)
+        if(ARMIX_SONKU_EXPERIMENTAL_P82_ROOM)
+          target_compile_definitions(ARMixSonKuP72NativeTests PRIVATE
+              SONKU_P82_GEOMETRIC_LATE_RESEARCH=1)
+          target_compile_definitions(ARMixSonKuP80MeasuredTimbreTests PRIVATE
+              SONKU_P82_GEOMETRIC_LATE_RESEARCH=1)
+          add_executable(ARMixSonKuP82RoomTests
+              tests/sonku_p82_geometry_predelay_test.cpp)
+          target_compile_features(ARMixSonKuP82RoomTests PRIVATE cxx_std_20)
+          target_compile_definitions(ARMixSonKuP82RoomTests PRIVATE
+              SONKU_P82_GEOMETRIC_LATE_RESEARCH=1)
+          add_test(NAME NativeSonKuP82GeometryLateArrivalAndFreshTail
+              COMMAND ARMixSonKuP82RoomTests)
+        endif()
       endif()
     endif()
   endif()
