@@ -36,6 +36,15 @@ int main() {
     assert(!P::armBeforeEnd(10.,std::numeric_limits<double>::infinity(),500,.085));
     assert(!P::armBeforeEnd(10.,120.,3001,.085));
     assert(!P::armBeforeEnd(10.,120.,500,0.));
+    // A source timeline is NOT the same as output time when tempo differs.
+    // At 120% the 500ms fade needs 600ms of source media; at 80% it
+    // needs only 400ms. Both retain an 85ms timer cushion.
+    assert(P::armBeforeEnd(119.45,120.,500,.085,120));
+    assert(!P::armBeforeEnd(119.45,120.,500,.085,80));
+    assert(P::armBeforeEnd(119.55,120.,500,.085,80));
+    assert(!P::armBeforeEnd(119.3,120.,500,.085,120));
+    assert(!P::armBeforeEnd(119.,120.,500,.085,75));
+    assert(!P::armBeforeEnd(119.,120.,500,.085,125));
     // All public transition settings, 44.1/48/96k, simulated 12 Hz
     // display cadence: never request a switch midway through a long song.
     for(int fade: {0,180,500,1500})for(int hz: {44100,48000,96000}) {
