@@ -51,6 +51,12 @@ public:
         ready_=core_.prepare(rate,profile);
         observedAzimuthDegrees_.store(accepted_.startAzimuthDegrees,std::memory_order_relaxed);
         if(ready_)ready_=core_.setSettings(accepted_);
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+        audioSettings_=accepted_;
+        modeFade_=1.f;
+        modePhase_=ModePhase::Stable;
+        modeStep_=static_cast<float>(1./(rate*.012));
+#endif
     }
     void releaseResources() override {ready_=false;}
     void processBlock(juce::AudioBuffer<float>& pcm,juce::MidiBuffer&) override {
@@ -58,14 +64,57 @@ public:
         if(!ready_||pcm.getNumChannels()<2||pcm.getNumSamples()<=0)return;
         consumeRealtimeEdits();
         core_.process(pcm.getWritePointer(0),pcm.getWritePointer(1),pcm.getNumSamples());
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+        // No extra PCM graph: click-safe fade OUT before changing the
+        // authoritative FIR speaker transfer, then IN on subsequent blocks.
+        // An APPLIED completion is published only AFTER core.setSettings().
+        if(modePhase_!=ModePhase::Stable){
+            auto* l=pcm.getWritePointer(0);
+            auto* r=pcm.getWritePointer(1);
+            for(int i=0;i<pcm.getNumSamples();++i){
+                modeFade_=std::clamp(modeFade_+
+                    (modePhase_==ModePhase::FadingOut?-modeStep_:modeStep_),
+                    0.f,1.f);
+                l[i]*=modeFade_;
+                r[i]*=modeFade_;
+            }
+            if(modePhase_==ModePhase::FadingOut && modeFade_==0.f){
+                const bool ok=core_.setSettings(stagedModeEdit_.settings);
+                if(ok)audioSettings_=stagedModeEdit_.settings;
+                // Completion slot was reserved at queue consumption; no
+                // other edit is consumed during this fixed fade transaction.
+                complete_.push({stagedModeEdit_.requestId,
+                                stagedModeEdit_.settings,ok});
+                modePhase_=ModePhase::FadingIn;
+            }else if(modePhase_==ModePhase::FadingIn && modeFade_==1.f)
+                modePhase_=ModePhase::Stable;
+        }
+#endif
         observedAzimuthDegrees_.store(static_cast<float>(core_.azimuthDegrees()),
             std::memory_order_relaxed);
     }
     void processBlock(juce::AudioBuffer<double>&,juce::MidiBuffer&) override {}
     void consumeRealtimeEdits() noexcept override {
         Edit next;
-        if(!ready_||!complete_.canPush()||!queue_.pop(next))return;
+        if(!ready_||!complete_.canPush())return;
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+        if(modePhase_!=ModePhase::Stable)return;
+#endif
+        if(!queue_.pop(next))return;
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+        if(next.settings.renderMode!=audioSettings_.renderMode ||
+           next.settings.musicCompatibleLowFrequency!=
+                audioSettings_.musicCompatibleLowFrequency ||
+           next.settings.headYawDegrees!=audioSettings_.headYawDegrees){
+            stagedModeEdit_=next;
+            modePhase_=ModePhase::FadingOut;
+            return; // ACK only after the actual audio-side mode switch
+        }
+#endif
         const bool ok=core_.setSettings(next.settings);
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+        if(ok)audioSettings_=next.settings;
+#endif
         complete_.push({next.requestId,next.settings,ok});
     }
     // Control thread: returns QUEUED, not accepted/applied. Host native ACK
@@ -96,7 +145,11 @@ public:
         juce::MemoryOutputStream out(dest,false);
         out.writeInt(0x534F4E4B); // SONK
 #if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+        out.writeInt(4);
+#else
         out.writeInt(3);
+#endif
 #else
         out.writeInt(2);
 #endif
@@ -114,11 +167,20 @@ public:
 #if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
         out.writeFloat(accepted_.directElevationDegrees);
 #endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+        out.writeInt(accepted_.renderMode);
+        out.writeByte(accepted_.musicCompatibleLowFrequency?1:0);
+        out.writeFloat(accepted_.headYawDegrees);
+#endif
     }
     bool restoreUnpublishedState(const void* data,int size) {
         if(published_||!data||
 #if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+           (size!=30&&size!=46&&size!=50&&size!=59)||
+#else
            (size!=30&&size!=46&&size!=50)||
+#endif
 #else
            (size!=30&&size!=46)||
 #endif
@@ -129,10 +191,16 @@ public:
         if((version!=1&&version!=2
 #if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
              &&version!=3
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+             &&version!=4
+#endif
 #endif
             ) || (version==1&&size!=30)||(version==2&&size!=46)
 #if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
             ||(version==3&&size!=50)
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+            ||(version==4&&size!=59)
+#endif
 #endif
             )return false;
         armix::sonku::Settings next{};
@@ -152,7 +220,16 @@ public:
             next.ambience=in.readFloat();
         }
 #if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
-        if(version==3)next.directElevationDegrees=in.readFloat();
+        if(version>=3)next.directElevationDegrees=in.readFloat();
+#endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+        if(version==4){
+            next.renderMode=in.readInt();
+            const int music=in.readByte();
+            if(music>1)return false;
+            next.musicCompatibleLowFrequency=music!=0;
+            next.headYawDegrees=in.readFloat();
+        }
 #endif
         // v1 OFF, v2 original scene; experimental v3 includes direct
         // elevation, and is rejected by ordinary public v2 builds.
@@ -173,6 +250,13 @@ private:
     FxSpsc<Completion,32> complete_{};
     armix::sonku::Settings accepted_{};
     std::atomic<float> observedAzimuthDegrees_{0.f};
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+    enum class ModePhase : std::uint8_t { Stable, FadingOut, FadingIn };
+    Edit stagedModeEdit_{};
+    armix::sonku::Settings audioSettings_{};
+    ModePhase modePhase_=ModePhase::Stable;
+    float modeFade_=1.f,modeStep_=0.f;
+#endif
     bool ready_=false;
     bool published_=false;
 };
