@@ -4,7 +4,7 @@
 // https://github.com/jhonmark/mit-hrtf-lib/tree/master/source/normal
 // Source blobs: 44100 5e5bcac17b0d59f1b8e7fee04b380170f7d521d2
 //               48000 39931add922dad4687e572059bc157b124926944
-// Eleven independently measured elevation bands plus negatives from -40 to +90.
+// Four negative and ten zero/positive measured elevations, -40 to +90.
 // All 14 measured elevation bands; 0 elevation shares the existing 8D-SonKu bank.
 // AZIMUTH POSITIONS ARE NOT UNIFORM across elevations. Do not assume 5° spacing.
 // 44.1k compact FIR 128 taps, zero padded to 140; 48k 140 taps.

@@ -41,23 +41,23 @@ def generate(banks,template):
     for e in ELEV:
         a=[row[0] for row in banks[44100][e]]
         if a!=[row[0] for row in banks[48000][e]]:raise ValueError("Mismatched azimuth positions")
-        out.append(f"inline constexpr std::uint8_t az_{elname(e)}[{len(a)}]={{"+",".join(map(str,a))+"};\\n")
+        out.append(f"inline constexpr std::uint8_t az_{elname(e)}[{len(a)}]={{"+",".join(map(str,a))+"};\n")
     for rate in (44100,48000):
         for e in ELEV:
             if e==0:continue
             v=banks[rate][e]
-            out.append(f"inline constexpr std::int16_t pcm{rate}_{elname(e)}[{len(v)}][2][hrir::taps]={{\\n")
+            out.append(f"inline constexpr std::int16_t pcm{rate}_{elname(e)}[{len(v)}][2][hrir::taps]={{\n")
             for az,ch in v:
                 channels=[c+[0]*(140-len(c)) for c in ch]
                 out.append("  {{"+",".join(map(str,channels[0]))+"},{"+
-                           ",".join(map(str,channels[1]))+f"}}}}, // azimuth {az} degrees\\n")
-            out.append("};\\n")
-        out.append(f"inline constexpr Row rows{rate}[elevationCount]={{\\n")
+                           ",".join(map(str,channels[1]))+f"}}}}, // azimuth {az} degrees\n")
+            out.append("};\n")
+        out.append(f"inline constexpr Row rows{rate}[elevationCount]={{\n")
         for e in ELEV:
             target=f"hrir::normal{rate}" if e==0 else f"pcm{rate}_{elname(e)}"
-            out.append(f"  {{{e},{len(banks[rate][e])},az_{elname(e)},{target}}},\\n")
-        out.append("};\\n")
-    return before+"\\n"+"".join(out)+after
+            out.append(f"  {{{e},{len(banks[rate][e])},az_{elname(e)},{target}}},\n")
+        out.append("};\n")
+    return before+"\n"+"".join(out)+after
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("source44100",type=pathlib.Path)
