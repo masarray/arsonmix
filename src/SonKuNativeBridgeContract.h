@@ -82,8 +82,8 @@ inline bool decodeSettings(const juce::var& values,armix::sonku::Settings& out) 
     // Rejected P8.3 physical/mono path is not an exposed option in
     // the P8.4 research binary. A/B is only P8.2 golden vs fused.
     if(proposed.renderMode!=0 && proposed.renderMode!=3)return false;
-    if(proposed.renderMode==3 && proposed.musicCompatibleLowFrequency)
-        return false;
+    if(proposed.musicCompatibleLowFrequency)
+        return false; // P8.3 LF480 is forbidden throughout native v5.
 #endif
     if(!armix::sonku::valid(proposed))return false;
     out=proposed;
