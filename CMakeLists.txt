@@ -46,6 +46,14 @@ if(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT AND
    NOT ARMIX_SONKU_EXPERIMENTAL_P82_ROOM)
   message(FATAL_ERROR "P8.3 native speaker research requires P8.2 room ON")
 endif()
+# P8.4 v5, ONLY in private/research FAT binaries. Not a public default.
+option(ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT
+       "Enable P8.4 single-core music-fused native v5 research (headphone FAT only)"
+       OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT)
+  message(FATAL_ERROR "P8.4 research requires P8.3 typed native host as transport; old P8.3 modes remain hidden/rejected")
+endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -248,7 +256,9 @@ target_compile_definitions(ARMixConsole PRIVATE
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P8_TRANSPARENT_BASS}>:SONKU_P80_TRANSPARENT_BASS_RESEARCH=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P82_ROOM}>:SONKU_P82_MULTIBAND_ROOM_RESEARCH=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT}>:ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT=1>
-    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT}>:SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1>)
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT}>:SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT}>:ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT}>:SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1>)
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
   # Never link Windows loader or sound APIs into macOS/Linux builds.
@@ -447,6 +457,43 @@ if(BUILD_TESTING)
                 SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1)
             add_test(NAME NativeSonKuP83JuceV4AudioAckLegacyRestoreAndHeadYaw
                 COMMAND ARMixSonKuP83NativeTests)
+            if(ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT)
+              add_executable(ARMixSonKuP84LiveSourceTests
+                  tests/sonku_p84_fused_single_core_test.cpp)
+              target_compile_features(ARMixSonKuP84LiveSourceTests PRIVATE cxx_std_20)
+              target_compile_definitions(ARMixSonKuP84LiveSourceTests PRIVATE
+                  SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                  SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                  SONKU_P72_NATIVE_XYZ_RT=1
+                  SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                  SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                  SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                  SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                  SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1)
+              add_test(NAME NativeSonKuP84SingleCoreMusicFidelityAndWorldYaw
+                  COMMAND ARMixSonKuP84LiveSourceTests)
+              juce_add_console_app(ARMixSonKuP84NativeTests
+                  PRODUCT_NAME "ArSonMix SonKu P84 Native JUCE v5 Tests")
+              target_sources(ARMixSonKuP84NativeTests PRIVATE
+                  tests/sonku_p84_native_juce_v5_test.cpp)
+              target_compile_features(ARMixSonKuP84NativeTests PRIVATE cxx_std_20)
+              target_link_libraries(ARMixSonKuP84NativeTests PRIVATE
+                  juce::juce_audio_processors juce::juce_recommended_config_flags)
+              target_compile_definitions(ARMixSonKuP84NativeTests PRIVATE
+                  ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=1
+                  ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT=1
+                  ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT=1
+                  SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                  SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                  SONKU_P72_NATIVE_XYZ_RT=1
+                  SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                  SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                  SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                  SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                  SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1)
+              add_test(NAME NativeSonKuP84JuceV5AudioAckLegacySafeRestore
+                  COMMAND ARMixSonKuP84NativeTests)
+            endif()
           endif()
         endif()
       endif()
