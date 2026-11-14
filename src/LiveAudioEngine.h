@@ -1927,8 +1927,17 @@ public:
         playerPendingFile_=file;
         return true;
     }
+    bool playerTransitionFailed() const noexcept {
+        return playerDeck_.transitionFailed();
+    }
     bool servicePlayerTransition() {
-        if(!playerDeck_.service())return false;
+        if(!playerDeck_.service()) {
+            if(playerDeck_.transitionFailed() ||
+               (!playerDeck_.transitionPending() &&
+                !playerDeck_.transitionActive()))
+                playerPendingFile_={};
+            return false;
+        }
         if(playerPendingFile_!=juce::File{}) {
             playerFile_=playerPendingFile_;
             playerCueIn_=playerPendingCueIn_;
