@@ -7596,7 +7596,9 @@ private:
         }
         if (catalog_.busy() && timerTicks_ % 3 == 0)
             emitScanProgress();
-        if(timerTicks_%3==0) {
+        // Run transport deadlines at 12 Hz only while necessary. The
+        // browser still receives lightweight state at its old 4 Hz pace.
+        if(timerTicks_%3==0 || playerAutoNext_ || playerPendingIndex_>=0) {
             // Start only a genuinely prepared NEXT and ACK the row identity
             // in the same UI-owner thread. No session/graph mutation here.
             if(engine_.servicePlayerTransition()) {
@@ -7623,45 +7625,66 @@ private:
                 emitPlayerState(true);
             }
             const auto transport=engine_.playerStatus();
-            // Keep automatic NEXT warm while current audio is running.
-            // A manually selected/queued NEXT takes precedence.
-            if(playerAutoNext_ &&
-               transport.getProperty("state","").toString()=="PLAYING" &&
-               !static_cast<bool>(transport.getProperty("crossfading",false)) &&
-               !static_cast<bool>(transport.getProperty("transitionPending",false)) &&
-               playerCurrent_>=0) {
-                int upcoming=-1;
-                if(!playerQueue_.empty()) {
-                    const auto found=std::find(playerLibrary_.begin(),
-                        playerLibrary_.end(),playerQueue_.front());
-                    if(found!=playerLibrary_.end())
-                        upcoming=static_cast<int>(found-playerLibrary_.begin());
-                } else if(playerSelected_!=playerCurrent_)
-                    upcoming=playerSelected_;
-                else if(playerCurrent_+1<static_cast<int>(playerLibrary_.size()))
-                    upcoming=playerCurrent_+1;
-                if(upcoming>=0 && upcoming!=playerCurrent_) {
-                    const auto preset=playerTrackSettings_[
-                        static_cast<std::size_t>(upcoming)];
-                    (void)engine_.preloadPlayerMusic(
-                        playerLibrary_[static_cast<std::size_t>(upcoming)],
-                        preset.key,preset.tempo,
-                        preset.cueIn,preset.cueOut);
-                }
+            const auto phase=transport.getProperty(
+                "state","").toString();
+            const bool fading=static_cast<bool>(
+                transport.getProperty("crossfading",false));
+            const bool preparing=static_cast<bool>(
+                transport.getProperty("transitionPending",false));
+            const bool activeCurrent=playerCurrent_>=0 &&
+                playerCurrent_<static_cast<int>(playerLibrary_.size());
+            int queued=-1;
+            if(!playerQueue_.empty()) {
+                const auto found=std::find(playerLibrary_.begin(),
+                    playerLibrary_.end(),playerQueue_.front());
+                if(found!=playerLibrary_.end())
+                    queued=static_cast<int>(found-playerLibrary_.begin());
             }
-            if(playerAutoNext_ &&
-               transport.getProperty("state","").toString()=="ENDED") {
+            const int upcoming=activeCurrent?
+                armix::player::PlayerShowTransitionPolicy::nextIndex(
+                    playerCurrent_,playerSelected_,
+                    static_cast<int>(playerLibrary_.size()),
+                    queued):-1;
+            // Queue is explicit operator intent: warm NEXT even while Auto
+            // Next is OFF. Auto alone may prepare the following setlist row.
+            if((playerAutoNext_ || queued>=0) &&
+               phase=="PLAYING" && !fading && !preparing &&
+               playerPendingIndex_<0 && upcoming>=0 &&
+               (upcoming!=playerCurrent_ || queued>=0)) {
+                const auto preset=playerTrackSettings_[
+                    static_cast<std::size_t>(upcoming)];
+                (void)engine_.preloadPlayerMusic(
+                    playerLibrary_[static_cast<std::size_t>(upcoming)],
+                    preset.key,preset.tempo,
+                    preset.cueIn,preset.cueOut);
+            }
+            if(playerAutoNext_ && activeCurrent &&
+               !fading && !preparing && playerPendingIndex_<0 &&
+               upcoming>=0 &&
+               (upcoming!=playerCurrent_ || queued>=0) &&
+               (phase=="PLAYING" || phase=="ENDED")) {
                 const auto generation=static_cast<std::uint64_t>(
                     transport.getProperty("generation","0").toString().getLargeIntValue());
                 const auto identity=generation ^
                     (static_cast<std::uint64_t>(playerCurrent_+1)<<32) ^
                     (static_cast<std::uint64_t>(playerActiveSet_+1)<<56);
-                if(identity!=lastAutoAdvanceGeneration_) {
+                // CUT is an end-only switch. Positive fade begins before
+                // EOF, bounded by media remaining + one 12 Hz timer tick.
+                // Never retrigger the same song generation on decoder error.
+                const double position=static_cast<double>(
+                    transport.getProperty("currentSeconds",0.0));
+                const double duration=static_cast<double>(
+                    transport.getProperty("durationSeconds",0.0));
+                const bool preEnd=playerFadeMilliseconds_>0 &&
+                    armix::player::PlayerShowTransitionPolicy::armBeforeEnd(
+                        position,duration,playerFadeMilliseconds_,0.085);
+                if(identity!=lastAutoAdvanceGeneration_ &&
+                   (preEnd || phase=="ENDED")) {
                     lastAutoAdvanceGeneration_=identity;
                     playNextMusic();
                 }
             }
-            emitPlayerState();
+            if(timerTicks_%3==0)emitPlayerState();
         }
         const double statusStart = timing ? juce::Time::getMillisecondCounterHiRes() : 0.0;
         auto state = engine_.status();
