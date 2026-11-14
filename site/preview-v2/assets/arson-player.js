@@ -141,8 +141,18 @@
      row.className="ap-queue-row";row.setAttribute("role","listitem");
      const title=document.createElement("span");
      title.textContent=String(item.title||"Untitled");
-     row.append(title,actionButton("×","Remove "+item.title+" from queue",
+     const controls=document.createElement("span");
+     controls.className="ap-row-actions";
+     const up=actionButton("↑","Move "+item.title+" earlier",
+       ()=>send("playerQueueMove",{from:item.id,to:item.id-1}));
+     const down=actionButton("↓","Move "+item.title+" later",
+       ()=>send("playerQueueMove",{from:item.id,to:item.id+1}));
+     up.disabled=item.id===0;
+     down.disabled=item.id===upcoming.length-1;
+     controls.append(up,down,actionButton("×",
+       "Remove "+item.title+" from queue",
        ()=>send("playerQueueRemove",item.id)));
+     row.append(title,controls);
      queue.append(row);
    }
    if(upcoming.length>12){
