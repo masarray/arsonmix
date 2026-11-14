@@ -1,0 +1,157 @@
+name: SonKu P7.4 physical Windows XYZ field candidate
+# Isolated opt-in full JUCE app build; no public installer, tag or release.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - '.github/workflows/sonku-p74-windows-field.yml'
+      - 'src/Main.cpp'
+      - 'src/SonKuNativeBridgeContract.h'
+      - 'src/LiveAudioEngine.h'
+      - 'engine/builtin_fx/SonKuSpatialProcessor.h'
+      - 'engine/builtin_fx/sonku/**'
+      - 'site/preview-v2/assets/mixer-native-sonku.js'
+      - 'CMakeLists.txt'
+      - 'tests/sonku_p72_*'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sonku-p74-physical-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  preflight:
+    name: Isolated fast PCM and GUI preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Native JS and source GUI capability checks
+        run: |
+          set -euo pipefail
+          node --check site/preview-v2/assets/mixer-native-sonku.js
+          node tests/sonku_p73_gui_contract_test.js
+          python -m unittest discover -s tests -p native_peq_assembly_test.py
+      - name: 44.1 and 48 kHz prepared PCM source regression
+        run: |
+          set -euo pipefail
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 \
+            -DSONKU_P72_NATIVE_XYZ_RT=1 \
+            tests/sonku_p72_realtime_xyz_test.cpp -o /tmp/sonku-p74-pcm
+          /tmp/sonku-p74-pcm
+  windows-field:
+    name: Actual full Windows JUCE executable and verified portable field ZIP
+    needs: preflight
+    runs-on: windows-2022
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify immutable PR head and physical candidate identity
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $env:EXPECTED_SHA -or $actual -notmatch '^[0-9a-f]{40}$') {
+            throw "SONKU_P74_SOURCE_MISMATCH:$actual"
+          }
+          Write-Host "SONKU_P74_EXACT_SOURCE=$actual"
+      - uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.15
+          path: third_party/JUCE
+          persist-credentials: false
+      - name: Obtain pinned WebView2 compilation SDK
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Configure full native app with research XYZ explicit ON
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DJUCE_ROOT="$env:GITHUB_WORKSPACE/third_party/JUCE" `
+            -DJUCE_WEBVIEW2_PACKAGE_LOCATION="$env:GITHUB_WORKSPACE/.deps" `
+            -DARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=ON `
+            -DBUILD_TESTING=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $cache = Get-Content -LiteralPath build/CMakeCache.txt -Raw
+          if ($cache -notmatch 'ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT:BOOL=ON') {
+            throw "SONKU_P74_RESEARCH_NOT_ENABLED"
+          }
+          $tests = (& ctest --test-dir build -C Release --show-only=json-v1 | Out-String | ConvertFrom-Json)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $required = @('NativeSonKuP72AtomicXyzLiveEditSource',
+                        'NativeSonKuP72JuceV3XyzLiveAckV1V2Restore',
+                        'NativeSonKuSessionV1V2AndAudioAppliedAck')
+          $available = @($tests.tests | ForEach-Object { $_.name })
+          foreach ($test in $required) {
+            if ($test -notin $available) { throw "SONKU_P74_MISSING_CTEST:$test" }
+          }
+      - name: Compile actual ARMixConsole Windows GUI and focused real JUCE tests
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel 2 --target `
+            ARMixConsole ARMixSonKuP72SourceTests ARMixSonKuP72NativeTests ARMixSonKuNativeStateTests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe = 'build/ARMixConsole_artefacts/Release/AR MIX Studio.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "SONKU_P74_NO_GUI_EXE" }
+          if ((Get-Item -LiteralPath $exe).Length -lt 4MB) { throw "SONKU_P74_WRONG_GUI_TARGET" }
+      - name: Scoped native XYZ state, callback ACK and legacy restoration
+        shell: pwsh
+        run: |
+          ctest --test-dir build -C Release --output-on-failure `
+            -R '^NativeSonKu(P72AtomicXyzLiveEditSource|P72JuceV3XyzLiveAckV1V2Restore|SessionV1V2AndAudioAppliedAck)$'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Package real native portable mixer, never an installer
+        shell: pwsh
+        run: |
+          & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist --best-effort
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Record exact experiment and physical qualification pending
+        shell: pwsh
+        run: |
+          $path = 'dist/BUILD_PROVENANCE.json'
+          $p = Get-Content -LiteralPath $path -Raw -Encoding utf8 | ConvertFrom-Json
+          $sha = (& git rev-parse HEAD).Trim()
+          if ($p.sourceCommit -ne $sha) { throw "SONKU_P74_ARTIFACT_SHA_MISMATCH" }
+          $p.fatStatus = 'SONKU_P74_XYZ_FULL_WINDOWS_BUILD_PHYSICAL_ASIO_AND_LISTENING_PENDING'
+          $p | Add-Member -NotePropertyName sonkuExperiment -NotePropertyValue @{
+            enabled = $true
+            nativeXYZ = $true
+            stateSchema = 3
+            fullWindowsExecutable = $true
+            publicRelease = $false
+            physicalAsioQualified = $false
+            dearVrPerceptualParityProven = $false
+            licenseRedistributionApproval = $false
+          } -Force
+          $p | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $path -Encoding utf8
+      - name: Independent GUI PE, approved resources, provenance and ZIP verification
+        shell: pwsh
+        run: |
+          & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $p = Get-Content -LiteralPath dist/BUILD_PROVENANCE.json -Raw | ConvertFrom-Json
+          if (-not $p.sonkuExperiment.enabled -or $p.sonkuExperiment.stateSchema -ne 3 -or $p.sonkuExperiment.publicRelease) {
+            throw 'SONKU_P74_WRONG_FIELD_ARTIFACT'
+          }
+      - uses: actions/upload-artifact@v4
+        name: Upload isolated SonKu Windows x64 field candidate
+        with:
+          name: ArSonMix-SonKu-P74-XYZ-Windows-x64-${{ github.run_id }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 21
+          compression-level: 0
