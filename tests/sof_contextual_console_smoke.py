@@ -78,6 +78,12 @@ def run() -> None:
                     assert "mixer-gain-knob-brushed-steel.png" in cap_css["image"]
                     assert cap_css["transform"] == "none", cap_css
                     assert cap_css["shadow"] != "none", cap_css
+                    layers = knob_visual.evaluate("""el => ({
+                        ring: getComputedStyle(el.querySelector('.gain-dial-arc')).zIndex,
+                        cap: getComputedStyle(el.querySelector('.gain-dial-face')).zIndex,
+                        needle: getComputedStyle(el.querySelector('.gain-dial-pointer')).zIndex
+                    })""")
+                    assert layers == {"ring": "0", "cap": "2", "needle": "3"}, layers
                     cap_box = cap.bounding_box()
                     assert cap_box and cap_box["width"] < body_size["width"] - 12, (
                         width, cap_box, body_size)
@@ -96,6 +102,7 @@ def run() -> None:
                     assert "radial-gradient" in leds["cap"], leds
                     assert "conic-gradient" in leds["inactiveMask"], leds
                     assert "conic-gradient" in leds["activeMask"], leds
+                    assert "rgb(32, 55, 47)" in leds["inactive"], leds
                     pointer = first.locator(".gain-dial-pointer")
                     before_turn = pointer.evaluate("el => getComputedStyle(el).transform")
                     before_led_mask = arc.evaluate("el => getComputedStyle(el, '::after').maskImage")
@@ -105,11 +112,21 @@ def run() -> None:
                     lcd_skin = lcd.evaluate("""el => ({
                         background: getComputedStyle(el).backgroundColor,
                         text: getComputedStyle(el).color,
-                        backgroundImage: getComputedStyle(el).backgroundImage
+                        backgroundImage: getComputedStyle(el).backgroundImage,
+                        border: getComputedStyle(el).borderTopWidth,
+                        radius: getComputedStyle(el).borderRadius,
+                        shadow: getComputedStyle(el).boxShadow
                     })""")
                     assert lcd_skin["background"] == "rgb(2, 5, 3)", (width, lcd_skin)
                     assert lcd_skin["backgroundImage"] == "none", (width, lcd_skin)
                     assert lcd_skin["text"] == "rgb(116, 253, 160)", (width, lcd_skin)
+                    assert lcd_skin["border"] == "0px", (width, lcd_skin)
+                    assert lcd_skin["radius"] == "6px", (width, lcd_skin)
+                    assert "inset" in lcd_skin["shadow"], (width, lcd_skin)
+                    digits = lcd.locator(".gain-lcd-digits")
+                    assert digits.count() == 1
+                    assert digits.evaluate("el => getComputedStyle(el).transform") == (
+                        "matrix(1, 0, 0, 1, 0, 2)")
                     knob = first.locator('[data-field="trim"]')
                     assert knob.count() == 1
                     knob.evaluate("""el => {
@@ -122,6 +139,39 @@ def run() -> None:
                     assert arc.evaluate(
                         "el => getComputedStyle(el, '::after').maskImage"
                     ) != before_led_mask, "LED progress did not follow accepted gain gesture"
+                    assert cap.evaluate("el => getComputedStyle(el).transform") == "none"
+                    # Hardware unity detent: capture ±0.6, hold until ±1.1,
+                    # release above that without jitter or modifying whole strip.
+                    def set_gain(value, field_type="input"):
+                        knob.evaluate("""([el, val, kind]) => {
+                          el.value=String(val);
+                          el.dispatchEvent(new Event(kind,{bubbles:true}));
+                        }""", [str(value), field_type])
+                    set_gain("0.4")
+                    assert knob.input_value() == "0"
+                    assert lcd.inner_text().strip() == "0.0 dB"
+                    set_gain("0.9")
+                    assert knob.input_value() == "0", "Unity detent must hold"
+                    set_gain("1.2", "change")
+                    assert knob.input_value() == "1.2", "Escape from detent must work"
+                    assert lcd.inner_text().strip() == "+1.2 dB"
+                    # Keyboard precision must not be trapped at zero.
+                    knob.evaluate("""el => {
+                      el.dataset.gainKeyboard='true';
+                      el.value='0.2';
+                      el.dispatchEvent(new Event('input',{bubbles:true}));
+                    }""")
+                    assert knob.input_value() == "0.2"
+                    knob.evaluate("el => delete el.dataset.gainKeyboard")
+                    set_gain("0.3")
+                    assert knob.input_value() == "0"
+                    # Real wheel over the visible dial: increment out of unity
+                    # even though pointer detent holds small drag values.
+                    knob_visual.hover()
+                    page.mouse.wheel(0, -120)
+                    assert knob.input_value() == "0.5", "GAIN wheel cannot leave zero"
+                    set_gain("6.5")
+                    assert lcd.inner_text().strip() == "+6.5 dB"
                     assert cap.evaluate("el => getComputedStyle(el).transform") == "none"
                     # Double-click must use the same gain parameter path and restore unity.
                     first.locator(".gain-dial").dblclick()
