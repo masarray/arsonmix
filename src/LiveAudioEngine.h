@@ -974,6 +974,10 @@ public:
     std::unique_ptr<Graph> preparedFxEdit() const
     {
         auto next=std::make_unique<Graph>();
+        next->globalRackOverride=dryRoutingLab_.globalFxBypassFlag();
+        next->rackBypassed.store(
+            graphOwned_->rackBypassed.load(std::memory_order_acquire),
+            std::memory_order_relaxed);
         next->count=graphOwned_->count;
         // A previous lock-free MOVE may have changed logical order, not
         // physical plugin addresses. Normalize only in the NEW graph.
@@ -1200,6 +1204,7 @@ public:
         // Ownership stays with the control thread. The audio thread switches
         // only an immutable pointer at a callback boundary (never detach).
         auto staged = std::make_unique<Graph>();
+        staged->globalRackOverride=dryRoutingLab_.globalFxBypassFlag();
         staged->slots = std::move (stagedSlots);
         staged->count = static_cast<int> (snapshot.effects.size());
         staged->hasRecallState = true;
