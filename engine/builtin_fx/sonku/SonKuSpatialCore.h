@@ -12,6 +12,14 @@
 #include "SonKuP83SpeakerScene.h"
 #include "SonKuP83LowFrequencyTransfer.h"
 #endif
+#if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
+#if !defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) || !SONKU_P83_PHYSICAL_SPEAKER_RESEARCH || \
+    !defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) || !SONKU_P80_TRANSPARENT_BASS_RESEARCH || \
+    !defined(SONKU_P75_MUSIC_SAFE_RESEARCH) || !SONKU_P75_MUSIC_SAFE_RESEARCH
+#error P8.4 single-graph music fusion requires the explicitly measured P8.2/P8.3 engine
+#endif
+#include "SonKuP84FusedMusicHrir.h"
+#endif
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
 #include "SonKuHrtfTonalCalibration.h"
 #endif
@@ -138,6 +146,9 @@ public:
         limiterRelease_=static_cast<float>(1./(rate*0.080));
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
         if(!p83LowFrequency_.prepare(rate))return false;
+#endif
+#if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
+        if(!p84MusicKernel_.prepare(rate))return false;
 #endif
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
         // The special elevation control is not serialized or published to
@@ -287,6 +298,21 @@ public:
     bool researchSpeakerMusicLowFrequency() const noexcept {
         return p83MusicCompatibleLf_;
     }
+#if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
+    // OFFLINE SOURCE RESEARCH ONLY. A portable/native JUCE v4 host does
+    // NOT expose this and cannot silently activate it via .smix.
+    // P8.2 stereo bass/SIDE and room mixing remain authoritative.
+    bool setResearchFusedMusicClarity(bool enabled) noexcept {
+        if(!ready_ || researchPcmStarted_ ||
+           p83Mode_!=p83::Mode::MusicBedP82 ||
+           room_.preparedProfile()!=SonKuReflectionProfile::SixSurfaceKemarResearch)
+            return false;
+        p84FusedMusic_=enabled;
+        reset(); // pre-PCM only: no heavy audio callback mutation
+        return true;
+    }
+    bool researchFusedMusicClarity() const noexcept{return p84FusedMusic_;}
+#endif
     bool setResearchHeadYaw(float yaw) noexcept {
         if(!ready_ || researchPcmStarted_ || !p83::validYaw(yaw) ||
            room_.preparedProfile()!=SonKuReflectionProfile::SixSurfaceKemarResearch)
@@ -413,6 +439,11 @@ public:
 #else
         constexpr bool musicSafe=false;
 #endif
+#if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
+        const bool musicFused=musicSafe&&p84FusedMusic_;
+#else
+        constexpr bool musicFused=false;
+#endif
         // Deliberate music-monitor compensation: real distance perception
         // still comes from direct/reflected ratio and high-frequency cues,
         // while the direct field is not attenuated by the full physical 1/r.
@@ -486,7 +517,7 @@ public:
                 auto& r1=kernels_[1][1][tap];
                 l0+=filterSlew_*(targets_[0][0][tap]-l0);
                 r0+=filterSlew_*(targets_[0][1][tap]-r0);
-                if(musicSafe) {
+                if(musicSafe && !musicFused) {
                     // Both musical input channels share exactly one centered
                     // measured HRIR. No dual-HRTF center interference; the
                     // unprocessed SIDE is returned in its own stereo axis.
@@ -719,6 +750,24 @@ private:
             return;
         }
 #endif
+#if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
+        if(p84FusedMusic_ && p83Mode_==p83::Mode::MusicBedP82 &&
+           room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch){
+            // One 2x2 FIR graph. Preserve the EXACT P8.2 mixed-channel
+            // foundation while injecting only a bounded high-frequency
+            // measured directional difference into each source HRIR.
+            // Avoid LF480: no invented bass matrix or additional DSP core.
+            interpolate(centerTarget_,degrees_);
+            const auto positions=p83::stereo(static_cast<float>(degrees_),
+                settings_.stereoSpreadDegrees,p83HeadYaw_);
+            interpolate(targets_[0],positions.leftHead);
+            interpolate(targets_[1],positions.rightHead);
+            p84MusicKernel_.merge(centerTarget_,targets_[0],targets_[1]);
+            if(!haveKernel_)kernels_=targets_;
+            haveKernel_=true;
+            return;
+        }
+#endif
 #if defined(SONKU_P75_MUSIC_SAFE_RESEARCH) && SONKU_P75_MUSIC_SAFE_RESEARCH
         if(room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch) {
             // Control evidence no longer gates musical MID coefficients:
@@ -801,6 +850,10 @@ private:
     p83::LowFrequencySpeakerTransfer p83LowFrequency_{};
     bool p83MusicCompatibleLf_=false;
     float p83HeadYaw_=0.f;
+#endif
+#if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
+    p84::FusedMusicHrir p84MusicKernel_{};
+    bool p84FusedMusic_=false; // research opt-in only; P8.2 default untouched
 #endif
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
     float researchElevationDegrees_=0.f;
