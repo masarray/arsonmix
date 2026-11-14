@@ -13,6 +13,7 @@ const packaging=read('scripts/package_native_windows.ps1');
 const pythonProvenance=read('scripts/resolve_approved_gui_python.ps1');
 const iconVerifier=read('scripts/verify_windows_pe_brand_icon.py');
 const verify=read('scripts/verify_native_windows_artifact.ps1');
+const embeddedVerifier=read('scripts/verify_embedded_gui_resources.py');
 const nativeMain=read('src/Main.cpp');
 const cmake=read('CMakeLists.txt');
 const generator=read('scripts/build_approved_native_gui.py');
@@ -104,7 +105,11 @@ test('independent release gate rejects old self-consistent web hash artifact',()
   }
   assert.match(verify,/scripts\/build_approved_native_gui\.py --out \$approvedGuiDir --verify/);
   assert.match(verify,/APPROVED GUI BYTE RESOURCE NOT IN WINDOWS EXE/);
-  assert.match(verify,/Test-EmbeddedBytes/);
+  assert.match(verify,/scripts\\/verify_embedded_gui_resources\\.py --exe \\$exePath --bundle \\$approvedGuiDir --manifest \\$approvedPath/);
+  assert.doesNotMatch(verify,/Test-EmbeddedBytes/);
+  assert.match(embeddedVerifier,/mmap\\.mmap/);
+  assert.match(embeddedVerifier,/image\\.find\\(raw\\)/);
+  assert.match(embeddedVerifier,/hashlib\\.sha256\\(raw\\)/);
   assert.match(verify,/guiCalibration/);
   assert.match(verify,/STABLE|NOT_PRODUCT_READY|NOT_LIVE_PCM/);
   assert.match(verify,/BinaryData::consolenative_html/);
