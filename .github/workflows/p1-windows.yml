@@ -189,6 +189,7 @@ jobs:
           # inspector Python child must explicitly select UTF-8.
           PYTHONIOENCODING=cp1252 node --test --test-name-pattern="WIRE inspector controls PRIMARY BUS" tests/approved_native_m2_contract.test.cjs
           python -m unittest discover -s tests -p approved_native_gui_bundle_test.py -v
+          python -m unittest discover -s tests -p test_embedded_gui_resources.py -v
           python -m unittest discover -s scripts/tests -p test_factoryfx_release_bundle.py -v
       # Portable ChannelId PCM routing MUST be checked in under a minute,
       # before allocating a Windows JUCE/MSVC runner (93-CTest suite).
