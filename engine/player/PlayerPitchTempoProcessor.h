@@ -2,8 +2,10 @@
 #pragma once
 #include "../../third_party/signalsmith/signalsmith-stretch.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <vector>
 
 namespace armix::player {
 // WORKER THREAD ONLY. Signalsmith DSP state, FFT storage and scratch buffers
@@ -12,6 +14,10 @@ namespace armix::player {
 // Tempo is rate (80% slower / 120% faster) and does not set musical pitch.
 // Key transpose is independent of tempo. Both stereo channels share one
 // phase-coherent processing instance rather than divergent mono stretchers.
+// Normal playback stays bit-exact and free of FFT load. Re-entering DSP after
+// bypass primes the spectral window from a bounded recent-input history;
+// otherwise the first KEY gesture after a long neutral passage can start
+// with a fresh, empty analysis window and produce an audible dropout.
 class PlayerPitchTempoProcessor final {
 public:
     struct Controls {
@@ -37,30 +43,77 @@ public:
             return false;
         sampleRate_=sampleRate;
         controls_=c;
-        // Cheaper is the documented 100 ms / 40 ms quality/perf preset;
-        // split computation spreads FFT bursts on the decoder worker.
-        stretch_.presetCheaper(2,static_cast<float>(sampleRate_),true);
+        // Prefer the 120 ms / 30 ms default (higher-overlap) preset for
+        // polyphonic backing music; split FFT work across worker blocks.
+        // This is NOT called on the ASIO/audio callback.
+        stretch_.presetDefault(2,static_cast<float>(sampleRate_),true);
+        const auto maxHistory=static_cast<int>(std::ceil(
+            stretch_.outputSeekLength(1.2f)))+8;
+        historyCapacity_=std::max(1,maxHistory);
+        for(int lane=0;lane<2;++lane) {
+            history_[lane].assign(static_cast<std::size_t>(historyCapacity_),0.f);
+            prime_[lane].assign(static_cast<std::size_t>(historyCapacity_),0.f);
+        }
+        historyWrite_=historyCount_=0;
+        primeOnNextProcess_=false;
+        haveLastOutput_=seamPending_=false;
+        seamLength_=seamPosition_=0;
+        seamCorrection_={0.f,0.f};
+        currentSemitones_=mappedSemitones_=static_cast<float>(c.keySemitones);
         stretch_.setTransposeSemitones(
             static_cast<float>(controls_.keySemitones),
             8000.f/static_cast<float>(sampleRate_));
         fractionalInput_=0;
+        smoothedTempoPercent_=static_cast<double>(c.tempoPercent);
         prepared_=true;
         return true;
     }
     void setControls(Controls c) {
         if(!prepared_ || !valid(c) || controls_==c)return;
-        if(controls_.keySemitones!=c.keySemitones)
-            stretch_.setTransposeSemitones(
-                static_cast<float>(c.keySemitones),
-                8000.f/static_cast<float>(sampleRate_));
+        const bool wasActive=active();
+        const bool willBeActive=c.keySemitones!=0 || c.tempoPercent!=100;
+        // Both transitions occur exclusively on the decoding worker.
+        if(!wasActive && willBeActive) {
+            currentSemitones_=0.f;
+            primeOnNextProcess_=true;
+        } else if(wasActive && !willBeActive) {
+            currentSemitones_=0.f;
+            primeOnNextProcess_=false;
+            smoothedTempoPercent_=100.;
+        }
+        if(!wasActive && willBeActive)
+            smoothedTempoPercent_=100.; // ramp into tempo from neutral
         controls_=c;
+        // Mark precisely one boundary. No continuously running smoother:
+        // the expensive FFT always remains in the decoder worker.
+        seamPending_=true;
     }
     Controls applied() const noexcept {return controls_;}
     bool active() const noexcept {
         return controls_.keySemitones!=0 || controls_.tempoPercent!=100;
     }
+    double smoothedTempoPercent() const noexcept {
+        return smoothedTempoPercent_;
+    }
     int nextInputFrames(int outputFrames) noexcept {
-        return inputFramesForOutput(outputFrames,controls_,fractionalInput_);
+        if(!prepared_ || outputFrames<=0)return 0;
+        if(active()) {
+            // Tempo rate follows an 80 ms block-independent one-pole
+            // envelope, so changing speed does not instantaneously jump
+            // the time map. The fractional accumulator still ensures
+            // long-run sample-accurate average consumption of decoder PCM.
+            const double alpha=1.-std::exp(
+                -static_cast<double>(outputFrames)/(sampleRate_*0.080));
+            smoothedTempoPercent_+=
+                (controls_.tempoPercent-smoothedTempoPercent_)*alpha;
+            if(std::abs(controls_.tempoPercent-smoothedTempoPercent_)<1e-7)
+                smoothedTempoPercent_=controls_.tempoPercent;
+        } else smoothedTempoPercent_=100.;
+        const double requested=outputFrames*smoothedTempoPercent_/100.
+                               +fractionalInput_;
+        const int frames=static_cast<int>(std::floor(requested));
+        fractionalInput_=requested-frames;
+        return frames;
     }
     // in and out contain TWO separate PCM lanes, each sized for the supplied
     // count. No file IO here. Process is allowed to use heap on this WORKER.
@@ -72,26 +125,127 @@ public:
             std::copy_n(in[0],nOut,out[0]);
             std::copy_n(in[1],nOut,out[1]);
         } else {
+            // Smooth transposition in the worker at block cadence. At 48k
+            // with 1024-frame blocks the 60 ms time constant spans several
+            // FFT updates, avoiding a single hard frequency-map jump.
+            const float target=static_cast<float>(controls_.keySemitones);
+            if(std::abs(currentSemitones_-target)>0.0001f) {
+                const float alpha=1.f-std::exp(
+                    -static_cast<float>(nOut)/(0.060f*sampleRate_));
+                currentSemitones_+=(target-currentSemitones_)*alpha;
+                if(std::abs(currentSemitones_-target)<0.0001f)
+                    currentSemitones_=target;
+            }
+            // Avoid repeated pow/sqrt frequency-map rebuilds at steady KEY.
+            if(mappedSemitones_!=currentSemitones_) {
+                stretch_.setTransposeSemitones(
+                    currentSemitones_,8000.f/static_cast<float>(sampleRate_));
+                mappedSemitones_=currentSemitones_;
+            }
+            if(primeOnNextProcess_)primeFromRecentInput();
             stretch_.process(in,nInput,out,nOut);
+        }
+        // A spectral state switch or bypass can move the PCM waveform by
+        // several tenths of full scale at ONE sample, creating a broadband
+        // click even when pitch, tempo and stereo phase tests all pass.
+        // Correct only the *discontinuity offset* with a 5 ms C1-continuous
+        // smoothstep envelope. This is worker-only, zero heap, and costs
+        // NOTHING between control gestures. No destructive limiter/clamp.
+        if(seamPending_) {
+            seamPending_=false;
+            if(haveLastOutput_) {
+                seamLength_=std::max(8,sampleRate_/200);
+                seamPosition_=0;
+                seamCorrection_[0]=lastOutput_[0]-out[0][0];
+                seamCorrection_[1]=lastOutput_[1]-out[1][0];
+            }
+        }
+        if(seamPosition_<seamLength_) {
+            const int n=std::min(nOut,seamLength_-seamPosition_);
+            for(int i=0;i<n;++i) {
+                const float t=static_cast<float>(seamPosition_+i)/
+                              static_cast<float>(seamLength_-1);
+                const float smooth=1.f-t*t*(3.f-2.f*t);
+                out[0][i]+=seamCorrection_[0]*smooth;
+                out[1][i]+=seamCorrection_[1]*smooth;
+            }
+            seamPosition_+=n;
         }
         for(int c=0;c<2;++c)
             for(int i=0;i<nOut;++i)
                 if(!std::isfinite(out[c][i]))
                     return false; // source/FFT corruption fails closed
+        lastOutput_[0]=out[0][nOut-1];
+        lastOutput_[1]=out[1][nOut-1];
+        haveLastOutput_=true;
+        rememberInput(in,nInput);
         return true;
+    }
+    // Signalsmith requires BOTH an analysis-input drain and a synthesis
+    // output flush at EOF. Omitting the input side loses the last FFT window
+    // of a song despite reporting the complete decoded source length.
+    int inputLatency() const noexcept {
+        return prepared_&&active()?stretch_.inputLatency():0;
     }
     int outputLatency() const noexcept {
         return prepared_&&active()?stretch_.outputLatency():0;
     }
     void flush(float* const* output,int frames) {
         if(prepared_&&active() && frames>0)
-            stretch_.flush(output,frames,controls_.tempoPercent/100.f);
+            stretch_.flush(output,frames,
+                           static_cast<float>(smoothedTempoPercent_/100.));
     }
 private:
+    void primeFromRecentInput() {
+        // Signalsmith outputSeek() aligns the next processed PCM with the
+        // current source position. Unlike a plain reset/seek, it synthesises
+        // the required pre-roll output. All buffers are allocated in prepare().
+        const int count=std::clamp(
+            static_cast<int>(std::ceil(stretch_.outputSeekLength(
+                static_cast<float>(smoothedTempoPercent_/100.)))),
+            1,historyCapacity_);
+        const int available=std::min(historyCount_,count);
+        const int missing=count-available;
+        const int historyStart=(historyWrite_+historyCapacity_-available)
+                               %historyCapacity_;
+        const int first=std::min(available,historyCapacity_-historyStart);
+        for(int lane=0;lane<2;++lane) {
+            auto* dest=prime_[lane].data();
+            std::fill_n(dest,missing,0.f);
+            // Contiguous circular-buffer slices: no per-sample modulo or
+            // branch in the expensive re-entry setup.
+            std::copy_n(history_[lane].data()+historyStart,first,dest+missing);
+            std::copy_n(history_[lane].data(),available-first,
+                        dest+missing+first);
+        }
+        const float* const previous[]={prime_[0].data(),prime_[1].data()};
+        stretch_.outputSeek(previous,count);
+        primeOnNextProcess_=false;
+    }
+    void rememberInput(const float* const* in,int frames) noexcept {
+        // Two bounded stereo memcpy-style copies rather than a modulo and
+        // branch for every decoded sample; never allocates in process().
+        if(frames<=0 || historyCapacity_<=0)return;
+        const int keep=std::min(frames,historyCapacity_);
+        const int start=frames-keep;
+        const int first=std::min(keep,historyCapacity_-historyWrite_);
+        for(int lane=0;lane<2;++lane) {
+            auto* dest=history_[lane].data();
+            std::copy_n(in[lane]+start,first,dest+historyWrite_);
+            std::copy_n(in[lane]+start+first,keep-first,dest);
+        }
+        historyWrite_=(historyWrite_+keep)%historyCapacity_;
+        historyCount_=std::min(historyCapacity_,historyCount_+keep);
+    }
     signalsmith::stretch::SignalsmithStretch<float> stretch_{23};
-    int sampleRate_=0;
+    std::array<std::vector<float>,2> history_,prime_;
+    int sampleRate_=0,historyCapacity_=0,historyWrite_=0,historyCount_=0;
     Controls controls_{};
-    double fractionalInput_=0;
-    bool prepared_=false;
+    double fractionalInput_=0,smoothedTempoPercent_=100.;
+    float currentSemitones_=0.f,mappedSemitones_=0.f;
+    std::array<float,2> lastOutput_{},seamCorrection_{};
+    int seamLength_=0,seamPosition_=0;
+    bool prepared_=false,primeOnNextProcess_=false;
+    bool haveLastOutput_=false,seamPending_=false;
 };
 } // namespace armix::player

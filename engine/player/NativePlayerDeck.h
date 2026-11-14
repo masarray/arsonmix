@@ -384,9 +384,15 @@ private:
                     std::ceil(out*deviceHz)));
             };
             const auto estimateTotal=[&]() -> std::uint64_t {
+                // Keep M4's cue-OUT media boundary, but also account for
+                // the analysis pre-roll and synthesis tail when KEY/TEMPO
+                // requires spectral processing. Never extend mediaPlayed
+                // or decode the source past the non-destructive OUT marker.
                 return written+static_cast<std::uint64_t>(std::ceil(
                     (readEnd()>consumed?readEnd()-consumed:0)*
                     100.0/controls.tempoPercent))
+                    +static_cast<std::uint64_t>(std::ceil(
+                        pitch.inputLatency()*100.0/controls.tempoPercent))
                     +static_cast<std::uint64_t>(pitch.outputLatency());
             };
             length_.store(estimateTotal(),std::memory_order_release);
@@ -462,12 +468,49 @@ private:
                         state_.store(State::ready,std::memory_order_release);
                 }
             }
-            // Drain the final spectral overlap OFF realtime. Without this,
-            // transposed music loses its last FFT window at EOF.
+            // M5: finish the analysis window with silence, THEN flush the
+            // synthesis window. Both are worker-only; preserves M4 cue OUT,
+            // waveform, dual-deck transitions, and the one PLAYER A PCM path.
             if(!failed && !obsolete(version) && consumed>=readEnd() &&
                pitch.active()) {
+                int analysisToDrain=pitch.inputLatency();
+                if(analysisToDrain<0 || analysisToDrain>deviceHz)
+                    failed=true;
+                while(!failed && !obsolete(version) && analysisToDrain>0) {
+                    if(ring_.bufferedFrames()>highWater) {
+                        // Standby NEXT is never allowed to spin at 333 Hz.
+                        std::this_thread::sleep_for(std::chrono::milliseconds(
+                            wantedPlay_.load(std::memory_order_acquire)?3:20));
+                        continue;
+                    }
+                    // Use the actual smoothed rate, not the abrupt requested
+                    // TEMPO, to bound the source/drain ratio after a gesture.
+                    const auto rate=std::clamp(
+                        pitch.smoothedTempoPercent(),80.0,120.0);
+                    const int nOutput=std::min(1024,std::max(1,
+                        static_cast<int>(std::ceil(
+                            analysisToDrain*100.0/rate))));
+                    const int nInput=std::clamp(
+                        pitch.nextInputFrames(nOutput),1,analysisToDrain);
+                    input.clear();output.clear();
+                    const float* const silencePcm[]={
+                        input.getReadPointer(0),input.getReadPointer(1)};
+                    float* const tailPcm[]={
+                        output.getWritePointer(0),output.getWritePointer(1)};
+                    if(!pitch.process(silencePcm,nInput,tailPcm,nOutput)) {
+                        failed=true;break;
+                    }
+                    const auto moved=ring_.write(
+                        tailPcm[0],tailPcm[1],
+                        static_cast<std::size_t>(nOutput));
+                    if(moved!=static_cast<std::size_t>(nOutput)) {
+                        failed=true;break;
+                    }
+                    analysisToDrain-=nInput;
+                    written+=moved;
+                }
                 const int tail=pitch.outputLatency();
-                if(tail>0 && tail<deviceHz*2) {
+                if(!failed && tail>0 && tail<deviceHz*2) {
                     juce::AudioBuffer<float> ending(2,tail);
                     float* const ends[]={ending.getWritePointer(0),
                                          ending.getWritePointer(1)};
