@@ -180,10 +180,12 @@
 .console-body .strip .gain-view-body:has(.gain-dial input:disabled) .gain-readout{
  font-size:10px;letter-spacing:0;
 }
-/* The section rail names the visible pane, without changing its collapse action. */
+/* The section rail uses real caption text: legacy chrome owns ::after
+   with !important (its collapse glyph), so never fight that pseudo-element. */
+.console-body .section-rail .rail-cell.fx .rail-gain-caption{display:none}
 .console-body.gain-view-active .section-rail .rail-cell.fx .rail-svg-icon{display:none}
-.console-body.gain-view-active .section-rail .rail-cell.fx::after{
- content:"GAIN";display:block;writing-mode:vertical-rl;transform:rotate(180deg);
+.console-body.gain-view-active .section-rail .rail-cell.fx .rail-gain-caption{
+ display:block;writing-mode:vertical-rl;transform:rotate(180deg);
  font:600 11px/1 'Segoe UI',Arial,sans-serif;letter-spacing:.16em;
  color:#b7f2d1;text-shadow:0 0 4px #38ca8a33;
 }
