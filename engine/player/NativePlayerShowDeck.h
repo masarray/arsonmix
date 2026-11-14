@@ -1,0 +1,242 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+#pragma once
+#include "NativePlayerDeck.h"
+#include "PlayerCrossfadeCurve.h"
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <cmath>
+#include <cstdint>
+
+// Two independent decoder workers, ONE native PLAYER A PCM mixer source.
+// Only this wrapper blends the two preprepared streams; neither worker owns
+// audio hardware, channels, FX or the JUCE callback.  Neither seek/reload nor
+// disk reads happen inside pull().  The retired deck is stopped by service()
+// on CONTROL, never by the realtime thread.
+namespace armix::player {
+class NativePlayerShowDeck final {
+public:
+    using Status=NativePlayerDeck::Status;
+    using Controls=PlayerPitchTempoProcessor::Controls;
+    static constexpr int maxRenderFrames=8192;
+    NativePlayerShowDeck()=default;
+    NativePlayerShowDeck(const NativePlayerShowDeck&)=delete;
+    NativePlayerShowDeck& operator=(const NativePlayerShowDeck&)=delete;
+
+    void deviceRate(double hz) noexcept {
+        // Device generations invalidate BOTH cached PCM rings. This is
+        // not permission to switch outputs or restart playback.
+        fading_.store(false,std::memory_order_release);
+        retired_.store(-1,std::memory_order_release);
+        rateHz_.store(static_cast<int>(std::lround(hz)),
+                      std::memory_order_release);
+        deviceEpoch_.fetch_add(1,std::memory_order_acq_rel);
+        pending_.store(false,std::memory_order_release);
+        failed_.store(false,std::memory_order_release);
+        for(auto& deck:decks_)deck.deviceRate(hz);
+    }
+    void load(const juce::File& file,bool autoPlay=true) {
+        // Explicit new-song load for idle transport, not live NEXT:
+        // live transitions always go through queueTransition().
+        fading_.store(false,std::memory_order_release);
+        pending_.store(false,std::memory_order_release);
+        failed_.store(false,std::memory_order_release);
+        preloadedFile_={};
+        const int index=active_.load(std::memory_order_acquire);
+        decks_[static_cast<std::size_t>(1-index)].stop();
+        decks_[static_cast<std::size_t>(index)].load(file,autoPlay);
+        retired_.store(-1,std::memory_order_release);
+    }
+    bool setCueRange(double in,double out) noexcept {
+        return decks_[static_cast<std::size_t>(
+            active_.load(std::memory_order_acquire))]
+            .setCueRange(in,out);
+    }
+    bool setPitchTempo(int key,int tempo) noexcept {
+        return decks_[static_cast<std::size_t>(
+            active_.load(std::memory_order_acquire))]
+            .setPitchTempo(key,tempo);
+    }
+    bool seekSeconds(double seconds) noexcept {
+        if(fading_.load(std::memory_order_acquire) ||
+           pending_.load(std::memory_order_acquire))return false;
+        return decks_[static_cast<std::size_t>(
+            active_.load(std::memory_order_acquire))].seekSeconds(seconds);
+    }
+    bool isPlayingRequested() const noexcept {
+        if(fading_.load(std::memory_order_acquire))return true;
+        return decks_[static_cast<std::size_t>(
+            active_.load(std::memory_order_acquire))].isPlayingRequested();
+    }
+    void play() noexcept {
+        decks_[static_cast<std::size_t>(
+            active_.load(std::memory_order_acquire))].play();
+    }
+    void pause() noexcept {
+        pending_.store(false,std::memory_order_release);
+        failed_.store(false,std::memory_order_release);
+        for(auto& deck:decks_)deck.pause();
+    }
+    void stop() noexcept {
+        // STOP supersedes all queued transitions and no stale PCM may play
+        // after an output/device restart.
+        pending_.store(false,std::memory_order_release);
+        preloadedFile_={};
+        failed_.store(false,std::memory_order_release);
+        fading_.store(false,std::memory_order_release);
+        for(auto& deck:decks_)deck.stop();
+    }
+    Status snapshot() const {
+        return decks_[static_cast<std::size_t>(
+            active_.load(std::memory_order_acquire))].snapshot();
+    }
+    bool transitionPending() const noexcept {
+        return pending_.load(std::memory_order_acquire);
+    }
+    bool transitionFailed() const noexcept {
+        return failed_.load(std::memory_order_acquire);
+    }
+    bool transitionActive() const noexcept {
+        return fading_.load(std::memory_order_acquire);
+    }
+    bool preload(const juce::File& file,int key,int tempo,
+                 double cueIn=0.,double cueOut=0.) {
+        if(file==juce::File{} || !file.existsAsFile() ||
+           !PlayerPitchTempoProcessor::valid({key,tempo}) ||
+           !std::isfinite(cueIn) || !std::isfinite(cueOut) ||
+           cueIn<0. || cueOut<0. || cueIn>86400. || cueOut>86400. ||
+           (cueOut>0. && cueOut<=cueIn+0.05) ||
+           rateHz_.load(std::memory_order_acquire)<=0 ||
+           fading_.load(std::memory_order_acquire))return false;
+        // A previous fade may have ended BETWEEN control ticks. Reclaim
+        // the old decoder before reusing it for NEXT: otherwise service()
+        // can later STOP a freshly preloaded standby and strand the queue.
+        retireCompleted();
+        const int inactive=1-active_.load(std::memory_order_acquire);
+        const auto epoch=deviceEpoch_.load(std::memory_order_acquire);
+        if(preloadedFile_==file && preloadedEpoch_==epoch &&
+           preloadedControls_==Controls{key,tempo} &&
+           preloadedIn_==cueIn && preloadedOut_==cueOut &&
+           decks_[static_cast<std::size_t>(inactive)].snapshot().state
+               !=NativePlayerDeck::State::error)return true;
+        // Reuse a bounded standby decoder and SPSC FIFO. Repeated NEXT
+        // changes supersede old read work through NativePlayerDeck generation.
+        auto& standby=decks_[static_cast<std::size_t>(inactive)];
+        if(!standby.setPitchTempo(key,tempo) ||
+           !standby.setCueRange(cueIn,cueOut))return false;
+        preloadedFile_=file;preloadedControls_={key,tempo};
+        preloadedIn_=cueIn;preloadedOut_=cueOut;
+        preloadedEpoch_=epoch;
+        standby.load(file,false);
+        return true;
+    }
+    bool queueTransition(const juce::File& file,int key,int tempo,
+                         int fadeMilliseconds=180,
+                         double cueIn=0.,double cueOut=0.) {
+        if(fading_.load(std::memory_order_acquire))return false;
+        if(!preload(file,key,tempo,cueIn,cueOut))return false;
+        fadeMilliseconds_=std::clamp(fadeMilliseconds,0,3000);
+        failed_.store(false,std::memory_order_release);
+        // The caller's CONTROL timer owns the one authoritative ACK for
+        // beginning the fade. Never start it here before Main.cpp records
+        // which logical setlist row is becoming CURRENT.
+        pending_.store(true,std::memory_order_release);
+        return true;
+    }
+    // CONTROL/TIMER only. Returns true only when a NEW crossfade is
+    // atomically armed after genuine standby PCM is buffered.
+    bool service() {
+        retireCompleted();
+        if(!pending_.load(std::memory_order_acquire) ||
+           fading_.load(std::memory_order_acquire))return false;
+        const int from=active_.load(std::memory_order_acquire);
+        const int to=1-from;
+        const auto epoch=deviceEpoch_.load(std::memory_order_acquire);
+        const auto standby=decks_[static_cast<std::size_t>(to)].snapshot();
+        if(epoch!=preloadedEpoch_ ||
+           !pending_.load(std::memory_order_acquire) ||
+           rateHz_.load(std::memory_order_acquire)<=0)return false;
+        if(standby.state==NativePlayerDeck::State::error) {
+            pending_.store(false,std::memory_order_release);
+            failed_.store(true,std::memory_order_release);
+            preloadedFile_={};
+            return false;
+        }
+        if(!standby.outputReady)return false;
+        // All transport control remains outside the realtime callback.
+        decks_[static_cast<std::size_t>(to)].play();
+        fadeFrom_.store(from,std::memory_order_relaxed);
+        fadeTo_.store(to,std::memory_order_relaxed);
+        fadePosition_.store(0,std::memory_order_relaxed);
+        fadeFrames_.store(std::max(1,static_cast<int>(
+            std::lround(rateHz_.load(std::memory_order_acquire)*
+                        fadeMilliseconds_/1000.))),
+            std::memory_order_relaxed);
+        fading_.store(true,std::memory_order_release);
+        active_.store(to,std::memory_order_release);
+        pending_.store(false,std::memory_order_release);
+        preloadedFile_={};
+        return true;
+    }
+    void pull(float* left,float* right,int frames) noexcept {
+        if(!left||!right||left==right||frames<=0)return;
+        if(frames>maxRenderFrames) {
+            std::fill_n(left,frames,0.f);std::fill_n(right,frames,0.f);
+            return;
+        }
+        if(!fading_.load(std::memory_order_acquire)) {
+            decks_[static_cast<std::size_t>(
+                active_.load(std::memory_order_acquire))]
+                .pull(left,right,frames);
+            return;
+        }
+        const int from=fadeFrom_.load(std::memory_order_relaxed);
+        const int to=fadeTo_.load(std::memory_order_relaxed);
+        decks_[static_cast<std::size_t>(to)].pull(left,right,frames);
+        decks_[static_cast<std::size_t>(from)].pull(
+            scratch_[0].data(),scratch_[1].data(),frames);
+        const int total=fadeFrames_.load(std::memory_order_relaxed);
+        const int start=fadePosition_.load(std::memory_order_relaxed);
+        for(int i=0;i<frames;++i) {
+            const auto gains=fadeCurve_.gains(start+i,total);
+            left[i]=scratch_[0][static_cast<std::size_t>(i)]*gains.oldGain
+                    +left[i]*gains.newGain;
+            right[i]=scratch_[1][static_cast<std::size_t>(i)]*gains.oldGain
+                     +right[i]*gains.newGain;
+        }
+        const int advanced=start+frames;
+        if(advanced>=total) {
+            fadePosition_.store(total,std::memory_order_relaxed);
+            // Publish retirement BEFORE releasing the active fade flag;
+            // control cannot begin another transition while an old deck
+            // is still being used in a previous hardware callback.
+            retired_.store(from,std::memory_order_release);
+            fading_.store(false,std::memory_order_release);
+        } else fadePosition_.store(advanced,std::memory_order_relaxed);
+    }
+private:
+    // CONTROL ONLY. The callback finishes all old-deck reads BEFORE it
+    // publishes retired_; it never blocks on this reset. Calling this at
+    // both the start of service() and preload() prevents stale retirement
+    // from invalidating newly prepared PCM during rapid song changes.
+    void retireCompleted() {
+        const int old=retired_.exchange(-1,std::memory_order_acq_rel);
+        if(old>=0)decks_[static_cast<std::size_t>(old)].stop();
+    }
+    std::array<NativePlayerDeck,2> decks_;
+    std::array<std::array<float,maxRenderFrames>,2> scratch_{};
+    const PlayerCrossfadeCurve fadeCurve_{};
+    std::atomic<int> active_{0},fadeFrom_{0},fadeTo_{1};
+    std::atomic<int> fadePosition_{0},fadeFrames_{1},retired_{-1};
+    std::atomic<bool> fading_{false};
+    // CONTROL-only, not borrowed by the realtime callback.
+    juce::File preloadedFile_;
+    Controls preloadedControls_{};
+    double preloadedIn_=0.,preloadedOut_=0.;
+    std::atomic<int> rateHz_{0};
+    std::atomic<std::uint64_t> deviceEpoch_{0};
+    std::uint64_t preloadedEpoch_=0; // CONTROL only
+    int fadeMilliseconds_=180;
+    std::atomic<bool> pending_{false},failed_{false};
+};
+} // namespace armix::player

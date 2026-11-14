@@ -51,8 +51,13 @@
   panel.setAttribute('aria-label','ArSon music player and live setlist');
   panel.innerHTML=`
     <div class="ap-top"><span class="ap-brand">ArSon Player</span><span class="ap-sub">Music · Setlist</span><button id="playerClose" type="button" class="ap-close" aria-label="Close player">×</button></div>
-    <div class="ap-current"><div class="ap-overline">PLAYER A · CURRENT</div><div id="playerNow" class="ap-title">No music loaded</div><div class="ap-time"><span id="playerElapsed">00:00</span><progress id="playerProgress" max="1" value="0" aria-label="Song progress"></progress><span id="playerDuration">00:00</span></div></div>
+    <div class="ap-current"><div class="ap-overline">PLAYER A · CURRENT</div><div id="playerNow" class="ap-title">No music loaded</div>
+      <canvas id="playerWaveform" class="ap-waveform" width="256" height="42" aria-label="Progressive music waveform" role="img"></canvas>
+      <div class="ap-time"><span id="playerElapsed">00:00</span><input id="playerSeek" type="range" min="0" max="1000" step="1" value="0" aria-label="Seek through current song"><span id="playerDuration">00:00</span></div>
+      <div class="ap-cues" aria-label="Song IN and OUT markers"><span id="playerCueSummary">IN 00:00 · OUT end</span><button id="playerCueIn" type="button" title="Set song IN at current media position">Set IN</button><button id="playerCueOut" type="button" title="Set song OUT at current media position">Set OUT</button><button id="playerCueGoIn" type="button" title="Seek to song IN">Go IN</button><button id="playerCueClear" type="button" title="Clear non-destructive song markers">Clear</button><button id="playerLoopAB" type="button" aria-pressed="false" title="Rehearsal only: repeat between saved IN and OUT via a short native crossfade">Loop A–B</button></div>
+    </div>
     <div class="ap-transport"><button id="playerPlay" type="button">▶ Play</button><button id="playerStop" type="button">■ Stop</button><button id="playerNext" type="button">Next ›</button><button id="playerAutoNext" type="button" aria-pressed="false">Auto Next · Off</button></div>
+    <div class="ap-showtools"><label for="playerFadeMs">NEXT transition</label><select id="playerFadeMs" aria-label="Player next song transition"><option value="0">Cut</option><option value="180" selected>Smooth 180 ms</option><option value="500">Crossfade 0.5 s</option><option value="1500">Crossfade 1.5 s</option></select><span id="playerTransitionStatus" role="status" aria-live="polite"></span></div>
     <div class="ap-pitchtempo" aria-label="Music pitch and playback speed">
       <div class="ap-pitchctrl"><span>KEY</span><button id="playerKeyMinus" type="button" aria-label="Lower music key one semitone">−</button><output id="playerKeyValue" aria-live="polite">0 st</output><button id="playerKeyPlus" type="button" aria-label="Raise music key one semitone">+</button></div>
       <div class="ap-pitchctrl"><span>TEMPO</span><button id="playerTempoMinus" type="button" aria-label="Slow music by five percent">−</button><output id="playerTempoValue" aria-live="polite">100%</output><button id="playerTempoPlus" type="button" aria-label="Speed music by five percent">+</button></div>
@@ -60,9 +65,16 @@
     </div>
     <div class="ap-statusbar"><div id="playerFeedback" class="ap-feedback" role="status" aria-live="polite">Add music to begin</div><button id="playerChooseOutput" type="button" hidden>Choose output</button><button id="playerRelink" type="button" hidden>Locate file</button></div>
     <div class="ap-listhead"><strong>Setlist</strong><span id="playerCount" class="ap-sub">0 songs</span><button id="playerAddFolder" class="ap-folder" type="button" aria-label="Add all music from a folder" title="Add music folder"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg></button><button id="playerAdd" type="button">+ Add Music</button></div>
+    <div class="ap-settools" aria-label="Setlist management">
+      <select id="playerSetlistSelect" aria-label="Active setlist"></select>
+      <button id="playerNewSetlist" type="button" title="Create an empty setlist">+ Set</button>
+      <button id="playerDeleteSetlist" type="button" title="Remove this setlist, not its music files">Remove set</button>
+    </div>
+    <div class="ap-setname"><input id="playerSetlistName" type="text" maxlength="64" aria-label="Rename active setlist" placeholder="Setlist name"><button id="playerUndoRemove" type="button" hidden>Undo remove</button></div>
     <input id="playerSearch" type="search" placeholder="Search songs" aria-label="Search music in setlist" autocomplete="off">
-    <div id="playerList" role="listbox" aria-label="Setlist songs"></div>
-    <div class="ap-foot">Click to prepare · Double-click to play · Native audio through your mixer</div>`;
+    <div id="playerList" role="list" aria-label="Setlist songs"></div>
+    <div id="playerQueuePanel" class="ap-queue" hidden><div class="ap-queue-title">Up Next · <span id="playerQueueCount">0</span></div><div id="playerQueueList" role="list" aria-label="Queued songs"></div></div>
+    <div class="ap-foot">Select NEXT · Double-click to play · Drag or ↑/↓ to reorder · Native mixer audio</div>`;
   toolbar.insertAdjacentElement('afterend',panel);
   const base=document.currentScript?.src||document.baseURI;
   // Player CSS is folded into the EXISTING approved runtime stylesheet.

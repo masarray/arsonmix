@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/player/NativePlayerDeck.h"
+#include "../engine/player/NativePlayerShowDeck.h"
 #include "../engine/player/PlayerSetlistPolicy.h"
 #include "../engine/player/PlayerLibraryPolicy.h"
 #ifdef NDEBUG
@@ -306,6 +307,195 @@ int main() {
         changeDuringPlayback(0,100); // normal 0/100 passthrough restored
         assert(player.snapshot().played>original.played);
         } // ensure native decoder closes the file before Windows deletion
+        // Relinking an edited/shorter file must reject a stale IN marker,
+        // not play a misleading 1-sample tail as if music were valid.
+        {
+            armix::player::NativePlayerDeck badCue;
+            badCue.deviceRate(48000.0);
+            assert(badCue.setCueRange(9.0,0.0)); // valid metadata, not this WAV
+            badCue.load(longFile,true);         // genuine file is 8 seconds
+            bool rejected=false;
+            for(int i=0;i<600;++i) {
+                const auto state=badCue.snapshot();
+                if(state.state==armix::player::NativePlayerDeck::State::error) {
+                    assert(state.error.containsIgnoreCase("IN marker"));
+                    rejected=true;break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            assert(rejected && !badCue.snapshot().outputReady);
+            assert(badCue.setCueRange(1.0,4.0));
+            badCue.load(longFile,true);
+            bool recovered=false;
+            for(int i=0;i<600;++i) {
+                if(badCue.isPlayingRequested()){recovered=true;break;}
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            assert(recovered);
+            badCue.stop();
+        }
+        // M2: genuine JUCE WAV -> resampler -> generation-fenced seek,
+        // with progressive waveform indexed ONLY during decoding.
+        {
+            armix::player::NativePlayerDeck seekDeck;
+            seekDeck.deviceRate(48000.0);
+            seekDeck.load(longFile,true);
+            for(int attempt=0;attempt<600 && !seekDeck.isPlayingRequested();++attempt)
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            assert(seekDeck.isPlayingRequested());
+            std::array<float,512> l{},r{};
+            for(int i=0;i<12;++i)seekDeck.pull(l.data(),r.data(),512);
+            const auto beforeSeek=seekDeck.snapshot();
+            assert(beforeSeek.played>0);
+            assert(seekDeck.seekSeconds(3.25));
+            bool seekReady=false;
+            for(int i=0;i<600;++i) {
+                const auto state=seekDeck.snapshot();
+                if(state.outputReady &&
+                   state.played>static_cast<std::uint64_t>(3*48000)) {
+                    seekReady=true;break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            assert(seekReady);
+            seekDeck.pull(l.data(),r.data(),512);
+            const auto afterSeek=seekDeck.snapshot();
+            assert(afterSeek.played>static_cast<std::uint64_t>(3*48000));
+            int waveformEvidence=0;
+            for(const auto value:afterSeek.waveform)
+                if(value>1000)++waveformEvidence;
+            assert(waveformEvidence>0);
+            for(int i=0;i<512;++i)
+                assert(std::isfinite(l[i]) && std::isfinite(r[i]));
+            seekDeck.stop();
+        }
+        // M3: preloaded B comes from a SECOND DECODER WORKER, yet A and B
+        // merge as ONE existing PLAYER A stereo PCM signal. No second
+        // hardware callback, device, browser track or routing authority.
+        {
+            armix::player::NativePlayerShowDeck show;
+            show.deviceRate(48000.0);
+            show.load(longFile,true);
+            for(int attempt=0;attempt<600 && !show.isPlayingRequested();++attempt)
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            assert(show.isPlayingRequested());
+            assert(show.preload(file,0,100));
+            std::array<float,256> left{},right{};
+            bool queued=false;
+            for(int i=0;i<600;++i) {
+                if(i==0) {
+                    assert(show.queueTransition(file,0,100,180));
+                }
+                if(show.service()){queued=true;break;}
+                show.pull(left.data(),right.data(),256);
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            assert(queued && show.transitionActive());
+            bool heardSound=false;
+            for(int i=0;i<70;++i) {
+                show.pull(left.data(),right.data(),256);
+                for(int n=0;n<256;++n) {
+                    assert(std::isfinite(left[n]) && std::isfinite(right[n]));
+                    if(std::abs(left[n])>0.01f)heardSound=true;
+                }
+            }
+            assert(heardSound && !show.transitionActive());
+            show.service(); // retire old decoder off realtime
+            assert(show.snapshot().title==file.getFileNameWithoutExtension());
+            show.deviceRate(0.0);
+            assert(!show.isPlayingRequested());
+        }
+        // M2 + M3 real PCM: A-B rehearsal uses TWO decoder instances
+        // of the SAME file, fades between them without a callback seek,
+        // preserves original media clock, and cancels NEXT on STOP.
+        {
+            armix::player::NativePlayerShowDeck loop;
+            loop.deviceRate(48000.0);
+            assert(loop.setCueRange(1.0,4.0));
+            loop.load(longFile,true);
+            bool ready=false;
+            for(int i=0;i<600;++i) {
+                if(loop.isPlayingRequested()){ready=true;break;}
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            assert(ready);
+            const auto first=loop.snapshot();
+            assert(first.mediaPlayed>=48000); // cue IN, not zero
+            std::array<float,256> left{},right{};
+            // Deliberately do NOT call service() between fades: a live
+            // operator may queue NEXT immediately on callback completion.
+            // preload() must retire the old decoder before reusing it.
+            for(int pass=0;pass<4;++pass) {
+                assert(loop.preload(longFile,0,100,1.,4.));
+                assert(loop.queueTransition(longFile,0,100,180,1.,4.));
+                bool started=false;
+                for(int tries=0;tries<600;++tries) {
+                    if(loop.service()){started=true;break;}
+                    loop.pull(left.data(),right.data(),256);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                }
+                assert(started && loop.transitionActive());
+                double energy=0.;
+                for(int b=0;b<50;++b) {
+                    loop.pull(left.data(),right.data(),256);
+                    for(int i=0;i<256;++i) {
+                        assert(std::isfinite(left[i]) &&
+                               std::isfinite(right[i]));
+                        energy+=left[i]*left[i];
+                    }
+                }
+                assert(energy>0.01);
+                assert(!loop.transitionActive());
+                const auto now=loop.snapshot();
+                assert(now.mediaPlayed>=48000);
+                assert(now.mediaDuration<=4*48000+1);
+                assert(now.title==longFile.getFileNameWithoutExtension());
+            }
+            // A user STOP during standby must prevent any stale queue from
+            // becoming a different current after the decoder completes.
+            assert(loop.queueTransition(longFile,0,100,180,1.,4.));
+            assert(loop.transitionPending());
+            loop.stop();
+            assert(!loop.transitionPending());
+            assert(!loop.isPlayingRequested());
+            loop.pull(left.data(),right.data(),256);
+            for(int i=0;i<256;++i)
+                assert(left[i]==0.f && right[i]==0.f);
+            // Restart across 96 -> disconnected -> 44.1 kHz. Pending
+            // standby PCM must not leak into the next hardware epoch,
+            // and device reopen itself must NEVER auto-play into MAIN.
+            loop.deviceRate(96000.0);
+            loop.load(longFile,true);
+            bool warm96=false;
+            for(int i=0;i<600;++i) {
+                if(loop.isPlayingRequested()){warm96=true;break;}
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            assert(warm96);
+            assert(loop.queueTransition(longFile,0,100,500,1.,4.));
+            assert(loop.transitionPending());
+            loop.deviceRate(0.0);
+            assert(!loop.transitionPending());
+            assert(!loop.transitionActive());
+            assert(!loop.isPlayingRequested());
+            loop.deviceRate(44100.0);
+            bool ready44=false;
+            for(int i=0;i<600;++i) {
+                if(loop.snapshot().outputReady){ready44=true;break;}
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            assert(ready44);
+            assert(!loop.isPlayingRequested()); // explicit Play required
+            loop.pull(left.data(),right.data(),256);
+            for(int i=0;i<256;++i)
+                assert(left[i]==0.f && right[i]==0.f);
+            loop.play();
+            assert(loop.isPlayingRequested());
+            loop.pull(left.data(),right.data(),256);
+            for(int i=0;i<256;++i)
+                assert(std::isfinite(left[i]) && std::isfinite(right[i]));
+            loop.stop();
+        }
         assert(longFile.deleteFile());
     }
     assert(file.deleteFile());

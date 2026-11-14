@@ -356,6 +356,85 @@ body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power):f
 #arsonPlayer #playerAddFolder:disabled{opacity:.5;cursor:wait}
 
 
+/* IN/OUT cues live inside the player timeline; no additional drawer. */
+#arsonPlayer .ap-cues{display:flex;align-items:center;gap:4px;
+ margin-top:6px;flex-wrap:wrap}
+#arsonPlayer #playerCueSummary{flex:1;min-width:96px;
+ color:#92c6bb;font-size:10px;font-variant-numeric:tabular-nums}
+#arsonPlayer .ap-cues button{padding:3px 5px;border:1px solid #35505a;
+ border-radius:4px;background:#1d3940;color:#bbd8d2;font-size:10px}
+#arsonPlayer .ap-cues button:disabled{opacity:.38;cursor:default}
+#arsonPlayer #playerLoopAB[aria-pressed="true"]{
+ border-color:#5bbba4;background:#25534a;color:#d0f9ed}
+
+/* M3 transition remains one inline control, not a new player mode. */
+#arsonPlayer .ap-showtools{display:flex;align-items:center;gap:8px;
+ min-height:30px;padding:4px 12px;background:#172830;
+ border-bottom:1px solid #2a4148;font-size:10px;color:#92b5b5}
+#arsonPlayer .ap-showtools select{max-width:138px;padding:4px 6px;
+ background:#1c353e;border:1px solid #3d5c64;border-radius:5px;
+ font-size:10px;color:#cbebdf}
+#arsonPlayer #playerTransitionStatus{margin-left:auto;min-width:0;
+ color:#83d7c4;text-align:right;font-size:10px}
+
+/* Decoder-only peak summary + explicit seek: never streams browser PCM. */
+#arsonPlayer .ap-waveform{display:block;width:100%;height:42px;
+ border:1px solid #2c454b;border-radius:5px;background:#1e363e}
+#arsonPlayer #playerSeek{appearance:none;-webkit-appearance:none;
+ height:5px;width:100%;min-width:24px;flex:1;cursor:pointer;
+ background:#39545b;border-radius:4px;accent-color:#72d7bb}
+#arsonPlayer #playerSeek::-webkit-slider-thumb{-webkit-appearance:none;
+ width:12px;height:12px;border:1px solid #8af1d2;border-radius:50%;
+ background:#408978;box-shadow:0 1px 4px #0008}
+#arsonPlayer #playerSeek:disabled{opacity:.4;cursor:default}
+
+/* ArSon Player Show v3: dense, keyboard/touch-accessible setlist editing.
+   Reuse the approved panel chrome; no extra floating card, stylesheet or
+   production mixer control style mutation. */
+#arsonPlayer .ap-settools{display:flex;align-items:center;gap:5px;
+ padding:7px 11px 4px}
+#arsonPlayer .ap-settools select{flex:1;min-width:0;max-width:200px;
+ padding:5px 7px;border:1px solid #35535c;border-radius:5px;
+ background:#162b33;color:#c5e3e1;font-size:11px}
+#arsonPlayer .ap-settools button,#arsonPlayer .ap-setname button{
+ white-space:nowrap;padding:5px 7px;border:1px solid #36535c;
+ border-radius:5px;background:#1d363d;color:#b4d6d3;font-size:10px}
+#arsonPlayer .ap-setname{display:flex;align-items:center;gap:6px;
+ padding:3px 11px}
+#arsonPlayer .ap-setname input{flex:1;min-width:0;max-width:230px;
+ padding:5px 7px;background:#10232b;color:#d8e9e8;
+ border:1px solid #31505a;border-radius:5px;font-size:11px}
+#arsonPlayer .ap-setname button[hidden]{display:none!important}
+#arsonPlayer .ap-settools :disabled{opacity:.4;cursor:default}
+#arsonPlayer .ap-songrow{display:flex;align-items:center;gap:2px;
+ min-width:0;min-height:37px}
+#arsonPlayer .ap-songrow .ap-song{flex:1;min-width:0;
+ width:auto;min-height:36px;padding:6px}
+#arsonPlayer .ap-songrow .ap-index{flex-basis:21px}
+#arsonPlayer .ap-row-actions{display:flex;align-items:center;gap:1px;
+ flex:0 0 auto}
+#arsonPlayer .ap-row-action{width:22px;height:27px;min-width:22px;
+ padding:0!important;display:inline-flex;align-items:center;justify-content:center;
+ border:1px solid transparent;background:transparent;border-radius:4px;
+ color:#8aadb0;font-size:12px;line-height:1}
+#arsonPlayer .ap-row-action:hover{background:#29464d;border-color:#49636b;
+ color:#def4ed}
+#arsonPlayer .ap-songrow[draggable="true"]{cursor:grab}
+#arsonPlayer .ap-queue{flex:0 0 auto;max-height:110px;overflow:auto;
+ padding:6px 11px;border-top:1px solid #2b4449;background:#162830}
+#arsonPlayer .ap-queue[hidden]{display:none!important}
+#arsonPlayer .ap-queue-title{font-size:10px;color:#94c2b9;
+ letter-spacing:.03em;padding-bottom:3px}
+#arsonPlayer .ap-queue-row{display:flex;align-items:center;justify-content:space-between;
+ gap:8px;padding:2px 3px;font-size:11px;color:#c6dfdc}
+#arsonPlayer .ap-queue-row span{min-width:0;overflow:hidden;
+ text-overflow:ellipsis;white-space:nowrap}
+#arsonPlayer .ap-queue-row .ap-row-action{height:22px}
+@media(max-width:410px){
+ #arsonPlayer .ap-row-action{width:20px;min-width:20px}
+ #arsonPlayer .ap-settools button{padding:5px}
+}
+
 /* Shared modeless window workspace.
    Header-only drag: underlying FX knobs, faders, routing wires, search,
    buttons and scroll panes are never gesture targets. Viewport coordinates

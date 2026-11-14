@@ -57,6 +57,8 @@
 #include <functional>
 #include <vector>
 #include "../engine/player/PlayerSetlistPolicy.h"
+#include "../engine/player/PlayerShowEditPolicy.h"
+#include "../engine/player/PlayerShowTransitionPolicy.h"
 #include "../engine/player/PlayerLibraryPolicy.h"
 #include <juce_core/juce_core.h>
 #include <thread>
@@ -495,14 +497,38 @@ private:
     bool studioBackupBusy_ = false;
     std::unique_ptr<juce::FileChooser> chooser_;
     std::unique_ptr<juce::FileChooser> playerFileChooser_;
-    std::vector<juce::File> playerLibrary_; // one compact default setlist
-    struct PlayerTrackSettings {int key=0,tempo=100;};
-    std::vector<PlayerTrackSettings> playerTrackSettings_; // parallel stable entry IDs
+    // PlayerShow v3: one active setlist projects into the existing native
+    // library/controls so decoder bindings and FX routing do not change.
+    // Save/restore swaps complete sets, not two independently mutated arrays.
+    std::vector<juce::File> playerLibrary_;
+    struct PlayerTrackSettings {
+        int key=0,tempo=100;
+        double cueIn=0.,cueOut=0.; // seconds, 0 OUT means media end
+    };
+    std::vector<PlayerTrackSettings> playerTrackSettings_;
+    struct PlayerSavedSet {
+        juce::String name;
+        std::vector<juce::File> files;
+        std::vector<PlayerTrackSettings> controls;
+    };
+    std::vector<PlayerSavedSet> playerSets_;
+    int playerActiveSet_=0;
+    std::vector<juce::File> playerQueue_; // transient ordered PLAY NEXT queue
+    struct PlayerUndoRemove {
+        int set=-1,index=-1;
+        juce::File file;
+        PlayerTrackSettings controls{};
+    };
+    PlayerUndoRemove playerUndoRemove_{};
     int playerSelected_=-1,playerCurrent_=-1;
+    int playerPendingIndex_=-1; // becomes CURRENT only after native fade ACK
+    juce::File playerPendingQueueFile_; // commit queue ONLY after real PCM ACK
+    int playerFadeMilliseconds_=180; // compact optional transition setting
     int playerOutputPendingIndex_=-1; // only after explicit Choose output gesture
     bool playerAutoNext_=false;
+    bool playerLoopCurrent_=false; // explicit rehearsal toggle, never persisted
     bool playerFolderBusy_=false; // GUI only; background scanner never touches this
-    std::uint64_t lastAutoAdvanceGeneration_=0;
+    armix::player::PlayerAutoAdvanceGate playerAutoAdvanceGate_;
     juce::String playerError_;
     juce::File lastPluginFolder_ = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
     // Destruction order: editorWindow_ releases its JUCE GUI BEFORE the
@@ -3704,67 +3730,338 @@ private:
             });
     }
 
-    // One native player, one local setlist, one worker decoder, same JUCE
-    // callback. The WebView may only select songs or send transport intents.
+    // Versioned setlist v3. Song paths remain external and are NEVER moved,
+    // deleted or copied by editing a show. v1/v2 migrate non-destructively.
+    void saveActivePlayerSet() {
+        if(playerSets_.empty())playerSets_.push_back({"My Setlist",{},{}});
+        if(playerActiveSet_<0 ||
+           playerActiveSet_>=static_cast<int>(playerSets_.size()))
+            playerActiveSet_=0;
+        auto& active=playerSets_[static_cast<std::size_t>(playerActiveSet_)];
+        active.files=playerLibrary_;
+        active.controls=playerTrackSettings_;
+    }
+    void activatePlayerSet(int index) {
+        if(index<0 || index>=static_cast<int>(playerSets_.size()))return;
+        playerActiveSet_=index;
+        const auto& chosen=playerSets_[static_cast<std::size_t>(index)];
+        playerLibrary_=chosen.files;
+        playerTrackSettings_=chosen.controls;
+        playerCurrent_=-1;
+        playerAutoAdvanceGate_.rearm();
+        playerLoopCurrent_=false;
+        playerPendingIndex_=-1;
+        playerPendingQueueFile_={};
+        playerSelected_=playerLibrary_.empty()?-1:0;
+        playerQueue_.clear();
+        playerOutputPendingIndex_=-1;
+        playerUndoRemove_={};
+    }
     void restorePlayerLibrary() {
+        playerSets_.clear();
         const auto file=settingsDirectory().getChildFile("player-library.json");
-        if(!file.existsAsFile())return;
-        auto json=juce::JSON::parse(file.loadFileAsString());
-        const int version=static_cast<int>(json.getProperty("version",0));
-        if(!json.isObject() || (version!=1 && version!=2)) {
-            playerError_="Saved setlist could not be read; music files were not changed";
+        if(!file.existsAsFile()) {
+            playerSets_.push_back({"My Setlist",{},{}});
             return;
         }
-        const auto tracks=json.getProperty("files",{});
-        if(const auto* list=tracks.getArray()) {
-            for(const auto& item:*list) {
-                if(playerLibrary_.size()>=2000)break;
-                if((version==1 && !item.isString()) ||
-                   (version==2 && !item.isObject()))continue;
-                const auto text=version==1?item.toString():
-                    item.getProperty("path","").toString();
-                if(text.isEmpty() || text.length()>4096)continue;
-                const juce::File entry(text);
-                if(!juce::File::isAbsolutePath(text) ||
-                   !entry.hasFileExtension("wav;mp3;flac;aif;aiff;ogg") ||
-                   std::find(playerLibrary_.begin(),playerLibrary_.end(),entry)
-                       !=playerLibrary_.end())
-                    continue;
-                PlayerTrackSettings controls;
-                if(version==2) {
-                    controls.key=static_cast<int>(item.getProperty("key",0));
-                    controls.tempo=static_cast<int>(item.getProperty("tempo",100));
-                    if(controls.key< -6 || controls.key>6 ||
-                       controls.tempo<80 || controls.tempo>120)
-                        controls={}; // corrupt automation cannot alter audio
+        const auto json=juce::JSON::parse(file.loadFileAsString());
+        const int version=static_cast<int>(json.getProperty("version",0));
+        if(!json.isObject() || (version!=1 && version!=2 && version!=3)) {
+            playerSets_.push_back({"My Setlist",{},{}});
+            playerError_="Setlists could not be read; no music files were changed";
+            return;
+        }
+        const auto parseSongs=[&](const juce::var& items,int itemVersion,
+                                  PlayerSavedSet& destination) {
+            if(const auto* list=items.getArray()) {
+                for(const auto& item:*list) {
+                    if(destination.files.size()>=2000)break;
+                    if((itemVersion==1 && !item.isString()) ||
+                       (itemVersion>=2 && !item.isObject()))continue;
+                    const auto path=itemVersion==1?item.toString():
+                        item.getProperty("path","").toString();
+                    if(path.isEmpty() || path.length()>4096 ||
+                       !juce::File::isAbsolutePath(path))continue;
+                    const juce::File source(path);
+                    if(!source.hasFileExtension("wav;mp3;flac;aif;aiff;ogg") ||
+                       std::find(destination.files.begin(),
+                                 destination.files.end(),source)
+                           !=destination.files.end())continue;
+                    PlayerTrackSettings preset;
+                    if(itemVersion>=2) {
+                        preset.key=static_cast<int>(item.getProperty("key",0));
+                        preset.tempo=static_cast<int>(item.getProperty("tempo",100));
+                        if(preset.key< -6 || preset.key>6 ||
+                           preset.tempo<80 || preset.tempo>120)preset={};
+                    }
+                    if(itemVersion>=3) {
+                        const double in=static_cast<double>(
+                            item.getProperty("cueIn",0.0));
+                        const double out=static_cast<double>(
+                            item.getProperty("cueOut",0.0));
+                        // Invalid saved markers never alter native playback.
+                        if(std::isfinite(in) && std::isfinite(out) &&
+                           in>=0. && out>=0. && in<86400. &&
+                           out<86400. && (out==0. || out>in+0.05)) {
+                            preset.cueIn=in;preset.cueOut=out;
+                        }
+                    }
+                    destination.files.push_back(source);
+                    destination.controls.push_back(preset);
                 }
-                playerLibrary_.push_back(entry);
-                playerTrackSettings_.push_back(controls);
+            }
+        };
+        // Keep the variant alive throughout the array walk. A pointer
+        // returned from a temporary juce::var would dangle in the body.
+        const auto savedSets=json.getProperty("setlists",{});
+        if(version<=2) {
+            PlayerSavedSet migrated{"My Setlist",{},{}};
+            parseSongs(json.getProperty("files",{}),version,migrated);
+            playerSets_.push_back(std::move(migrated));
+        } else if(const auto* sets=savedSets.getArray()) {
+            for(const auto& source:*sets) {
+                if(playerSets_.size()>=32)break;
+                if(!source.isObject())continue;
+                auto name=source.getProperty("name","").toString().trim();
+                if(name.isEmpty() || name.length()>64)continue;
+                const bool duplicate=std::any_of(
+                    playerSets_.begin(),playerSets_.end(),
+                    [&](const PlayerSavedSet& set) {
+                        return set.name.equalsIgnoreCase(name);
+                    });
+                if(duplicate)continue;
+                PlayerSavedSet next{name,{},{}};
+                parseSongs(source.getProperty("files",{}),3,next);
+                playerSets_.push_back(std::move(next));
             }
         }
+        if(playerSets_.empty())playerSets_.push_back({"My Setlist",{},{}});
+        const int active=version==3?
+            static_cast<int>(json.getProperty("activeSetlist",0)):0;
+        activatePlayerSet(std::clamp(active,0,
+            static_cast<int>(playerSets_.size())-1));
         playerAutoNext_=json.getProperty("autoNext",false).isBool() &&
             static_cast<bool>(json.getProperty("autoNext",false));
-        if(!playerLibrary_.empty())playerSelected_=0;
+        const int fade=static_cast<int>(json.getProperty("crossfadeMs",180));
+        playerFadeMilliseconds_=(fade>=0 && fade<=3000)?fade:180;
     }
     void persistPlayerLibrary() {
+        saveActivePlayerSet();
         auto document=std::make_unique<juce::DynamicObject>();
-        document->setProperty("version",2);
+        document->setProperty("version",3);
+        document->setProperty("activeSetlist",playerActiveSet_);
         document->setProperty("autoNext",playerAutoNext_);
-        juce::Array<juce::var> files;
-        for(std::size_t i=0;i<playerLibrary_.size();++i) {
-            auto entry=std::make_unique<juce::DynamicObject>();
-            entry->setProperty("path",playerLibrary_[i].getFullPathName());
-            entry->setProperty("key",playerTrackSettings_[i].key);
-            entry->setProperty("tempo",playerTrackSettings_[i].tempo);
-            files.add(juce::var(entry.release()));
+        document->setProperty("crossfadeMs",playerFadeMilliseconds_);
+        juce::Array<juce::var> sets;
+        for(const auto& set:playerSets_) {
+            auto object=std::make_unique<juce::DynamicObject>();
+            object->setProperty("name",set.name);
+            juce::Array<juce::var> files;
+            for(std::size_t i=0;i<set.files.size();++i) {
+                auto entry=std::make_unique<juce::DynamicObject>();
+                entry->setProperty("path",set.files[i].getFullPathName());
+                entry->setProperty("key",set.controls[i].key);
+                entry->setProperty("tempo",set.controls[i].tempo);
+                entry->setProperty("cueIn",set.controls[i].cueIn);
+                entry->setProperty("cueOut",set.controls[i].cueOut);
+                files.add(juce::var(entry.release()));
+            }
+            object->setProperty("files",juce::var(files));
+            sets.add(juce::var(object.release()));
         }
-        document->setProperty("files",juce::var(files));
+        document->setProperty("setlists",juce::var(sets));
         const auto target=settingsDirectory().getChildFile("player-library.json");
         juce::TemporaryFile staging(target);
         if(!staging.getFile().replaceWithText(
                 juce::JSON::toString(juce::var(document.release()),false)) ||
            !staging.overwriteTargetFileWithTemporary())
-            playerError_="Unable to save setlist; check folder permissions";
+            playerError_="Unable to save setlists; check folder permissions";
+    }
+    bool playerShowMaySwitchSet() {
+        const auto state=engine_.playerStatus().getProperty("state","").toString();
+        if(state=="PLAYING" || state=="PREPARING" || state=="PAUSED") {
+            playerError_="Stop the current song before switching setlists";
+            emitPlayerState();return false;
+        }
+        return !playerFolderBusy_;
+    }
+    void playerEditSetlist(const juce::String& action,const juce::var& value) {
+        if(action=="playerNewSetlist" || action=="playerSelectSetlist" ||
+           action=="playerDeleteSetlist") {
+            if(!playerShowMaySwitchSet())return;
+            if(action=="playerNewSetlist") {
+                if(playerSets_.size()>=32) {
+                    playerError_="Maximum 32 setlists";emitPlayerState();return;
+                }
+                saveActivePlayerSet();
+                const int next=static_cast<int>(playerSets_.size())+1;
+                playerSets_.push_back({"Setlist "+juce::String(next),{},{}});
+                engine_.playerStop();
+                activatePlayerSet(static_cast<int>(playerSets_.size())-1);
+            } else {
+                const int index=static_cast<int>(value);
+                if(index<0 || index>=static_cast<int>(playerSets_.size()))return;
+                saveActivePlayerSet();
+                if(action=="playerSelectSetlist") {
+                    engine_.playerStop();activatePlayerSet(index);
+                } else if(playerSets_.size()>1) {
+                    engine_.playerStop();
+                    int destination=playerActiveSet_;
+                    if(index<destination)--destination;
+                    if(index==destination)
+                        destination=std::min(index,
+                            static_cast<int>(playerSets_.size())-2);
+                    playerSets_.erase(playerSets_.begin()+index);
+                    activatePlayerSet(destination);
+                } else {
+                    playerError_="Keep at least one setlist";
+                    emitPlayerState();return;
+                }
+            }
+            playerError_.clear();persistPlayerLibrary();emitPlayerState(true);
+            return;
+        }
+        if(action=="playerRenameSetlist") {
+            auto name=value.toString().trim();
+            if(name.isEmpty() || name.length()>64)return;
+            const bool exists=std::any_of(
+                playerSets_.begin(),playerSets_.end(),
+                [&](const PlayerSavedSet& set) {
+                    return set.name.equalsIgnoreCase(name) &&
+                           &set!=&playerSets_[static_cast<std::size_t>(playerActiveSet_)];
+                });
+            if(exists) {
+                playerError_="Setlist name already exists";
+                emitPlayerState();return;
+            }
+            playerSets_[static_cast<std::size_t>(playerActiveSet_)].name=name;
+            playerError_.clear();persistPlayerLibrary();emitPlayerState(true);
+            return;
+        }
+        if(action=="playerMoveSong") {
+            const int from=static_cast<int>(value.getProperty("from",-1));
+            const int to=static_cast<int>(value.getProperty("to",-1));
+            const int count=static_cast<int>(playerLibrary_.size());
+            if(from<0 || to<0 || from>=count || to>=count || from==to)return;
+            auto move=[&](auto& items) {
+                auto item=std::move(items[static_cast<std::size_t>(from)]);
+                items.erase(items.begin()+from);
+                items.insert(items.begin()+to,std::move(item));
+            };
+            move(playerLibrary_);move(playerTrackSettings_);
+            const auto remap=[&](int index) {
+                return armix::player::PlayerShowEditPolicy::afterMove(
+                    index,from,to,count);
+            };
+            playerSelected_=remap(playerSelected_);
+            playerCurrent_=remap(playerCurrent_);
+            playerPendingIndex_=remap(playerPendingIndex_);
+            persistPlayerLibrary();emitPlayerState(true);
+            return;
+        }
+        if(action=="playerRemoveSong") {
+            const int index=static_cast<int>(value);
+            if(index<0 || index>=static_cast<int>(playerLibrary_.size()))return;
+            if(index==playerPendingIndex_) {
+                playerError_="NEXT is preparing; wait before removing this song";
+                emitPlayerState();return;
+            }
+            if(index==playerCurrent_ &&
+               engine_.playerStatus().getProperty("state","").toString()!="ENDED" &&
+               engine_.playerStatus().getProperty("state","").toString()!="STOPPED") {
+                playerError_="Stop the playing song before removing it";
+                emitPlayerState();return;
+            }
+            playerUndoRemove_={playerActiveSet_,index,
+                playerLibrary_[static_cast<std::size_t>(index)],
+                playerTrackSettings_[static_cast<std::size_t>(index)]};
+            playerQueue_.erase(
+                std::remove(playerQueue_.begin(),playerQueue_.end(),
+                            playerUndoRemove_.file),playerQueue_.end());
+            playerLibrary_.erase(playerLibrary_.begin()+index);
+            playerTrackSettings_.erase(playerTrackSettings_.begin()+index);
+            const auto remap=[&](int old) {
+                return armix::player::PlayerShowEditPolicy::afterRemove(
+                    old,index);
+            };
+            playerCurrent_=remap(playerCurrent_);
+            playerSelected_=remap(playerSelected_);
+            playerPendingIndex_=remap(playerPendingIndex_);
+            if(playerSelected_<0 && !playerLibrary_.empty())
+                playerSelected_=std::min(index,
+                    static_cast<int>(playerLibrary_.size())-1);
+            playerError_.clear();persistPlayerLibrary();emitPlayerState(true);
+            return;
+        }
+        if(action=="playerUndoRemove") {
+            const auto removed=playerUndoRemove_;
+            if(removed.set!=playerActiveSet_ || removed.index<0)return;
+            if(std::find(playerLibrary_.begin(),playerLibrary_.end(),
+                         removed.file)!=playerLibrary_.end())return;
+            const int index=std::clamp(removed.index,0,
+                static_cast<int>(playerLibrary_.size()));
+            playerLibrary_.insert(playerLibrary_.begin()+index,removed.file);
+            playerTrackSettings_.insert(
+                playerTrackSettings_.begin()+index,removed.controls);
+            playerCurrent_=armix::player::PlayerShowEditPolicy::afterInsert(
+                playerCurrent_,index);
+            playerSelected_=armix::player::PlayerShowEditPolicy::afterInsert(
+                playerSelected_,index);
+            playerPendingIndex_=armix::player::PlayerShowEditPolicy::afterInsert(
+                playerPendingIndex_,index);
+            playerUndoRemove_={};
+            playerError_.clear();persistPlayerLibrary();emitPlayerState(true);
+            return;
+        }
+        if(action=="playerQueueNext" || action=="playerQueueAppend") {
+            const int index=static_cast<int>(value);
+            if(index<0 || index>=static_cast<int>(playerLibrary_.size()) ||
+               playerQueue_.size()>=128)return;
+            const auto file=playerLibrary_[static_cast<std::size_t>(index)];
+            if(action=="playerQueueNext" && playerPendingIndex_>=0) {
+                playerError_="NEXT is transitioning; queue changes after ACK";
+                emitPlayerState();return;
+            }
+            if(action=="playerQueueNext")
+                playerQueue_.insert(playerQueue_.begin(),file);
+            else playerQueue_.push_back(file);
+            // Queue edits are explicit operator decisions. If a previous
+            // automatic attempt failed, allow the revised queue to retry.
+            if(playerPendingIndex_<0)playerAutoAdvanceGate_.rearm();
+            // A manually queued NEXT deserves a warm decoder even with
+            // Auto Next OFF. Only CONTROL does file/preload work.
+            if(playerPendingIndex_<0 && !playerQueue_.empty() &&
+               playerCurrent_>=0) {
+                const auto found=std::find(playerLibrary_.begin(),
+                    playerLibrary_.end(),playerQueue_.front());
+                if(found!=playerLibrary_.end()) {
+                    const auto n=static_cast<std::size_t>(
+                        found-playerLibrary_.begin());
+                    const auto preset=playerTrackSettings_[n];
+                    (void)engine_.preloadPlayerMusic(playerQueue_.front(),
+                        preset.key,preset.tempo,preset.cueIn,preset.cueOut);
+                }
+            }
+            playerError_.clear();emitPlayerState(true);return;
+        }
+        if(action=="playerQueueMove" || action=="playerQueueRemove") {
+            const int index=action=="playerQueueMove"?
+                static_cast<int>(value.getProperty("from",-1)):
+                static_cast<int>(value);
+            if(index<0 || index>=static_cast<int>(playerQueue_.size()))return;
+            if(playerPendingIndex_>=0) {
+                playerError_="NEXT is transitioning; queue changes after ACK";
+                emitPlayerState();return;
+            }
+            if(action=="playerQueueMove") {
+                const int to=static_cast<int>(value.getProperty("to",-1));
+                if(!armix::player::PlayerShowTransitionPolicy::moveQueued(
+                    playerQueue_,index,to))return;
+            } else playerQueue_.erase(playerQueue_.begin()+index);
+            playerAutoAdvanceGate_.rearm();
+            playerError_.clear();
+            emitPlayerState(true);return;
+        }
     }
     void emitPlayerState(bool includeLibrary=false) {
         if(!browser_.loaded)return;
@@ -3774,12 +4071,39 @@ private:
         obj->setProperty("selected",playerSelected_);
         obj->setProperty("current",playerCurrent_);
         obj->setProperty("autoNext",playerAutoNext_);
+        obj->setProperty("loopAB",playerLoopCurrent_);
+        obj->setProperty("activeSetlist",playerActiveSet_);
+        obj->setProperty("pending",playerPendingIndex_);
+        obj->setProperty("crossfadeMs",playerFadeMilliseconds_);
+        obj->setProperty("canUndoRemove",
+            playerUndoRemove_.set==playerActiveSet_ &&
+            playerUndoRemove_.index>=0);
         obj->setProperty("libraryBusy",playerFolderBusy_);
         obj->setProperty("error",playerError_);
         obj->setProperty("chooseOutput",
             playerError_.containsIgnoreCase("Choose a verified MAIN output") ||
             playerError_.containsIgnoreCase("native mixer is preparing"));
         if(includeLibrary) {
+            juce::Array<juce::var> sets;
+            for(std::size_t i=0;i<playerSets_.size();++i) {
+                auto row=std::make_unique<juce::DynamicObject>();
+                row->setProperty("id",static_cast<int>(i));
+                row->setProperty("name",playerSets_[i].name);
+                row->setProperty("count",static_cast<int>(
+                    static_cast<int>(i)==playerActiveSet_?
+                        playerLibrary_.size():playerSets_[i].files.size()));
+                sets.add(juce::var(row.release()));
+            }
+            obj->setProperty("setlists",juce::var(sets));
+            juce::Array<juce::var> queue;
+            for(std::size_t i=0;i<playerQueue_.size();++i) {
+                auto item=std::make_unique<juce::DynamicObject>();
+                item->setProperty("id",static_cast<int>(i));
+                item->setProperty("title",
+                    playerQueue_[i].getFileNameWithoutExtension());
+                queue.add(juce::var(item.release()));
+            }
+            obj->setProperty("queue",juce::var(queue));
             juce::Array<juce::var> rows;
             for(std::size_t i=0;i<playerLibrary_.size();++i) {
                 auto song=std::make_unique<juce::DynamicObject>();
@@ -3789,6 +4113,8 @@ private:
                 song->setProperty("missing",!playerLibrary_[i].existsAsFile());
                 song->setProperty("keySemitones",playerTrackSettings_[i].key);
                 song->setProperty("tempoPercent",playerTrackSettings_[i].tempo);
+                song->setProperty("cueIn",playerTrackSettings_[i].cueIn);
+                song->setProperty("cueOut",playerTrackSettings_[i].cueOut);
                 rows.add(juce::var(song.release()));
             }
             obj->setProperty("tracks",juce::var(rows));
@@ -4000,14 +4326,36 @@ private:
             // starts. Never transpose microphone input or alter ASIO clock.
             const auto controls=playerTrackSettings_[
                 static_cast<std::size_t>(playerSelected_)];
+            // An active show never reloads its current decoder mid-song.
+            // Warm the inactive deck and wait for genuine PCM readiness;
+            // the timer publishes the new CURRENT only after fade begins.
+            const bool hasCurrent=playerCurrent_>=0 &&
+                (phase=="PLAYING" || phase=="PAUSED" ||
+                 phase=="READY" || phase=="ENDED");
+            if(hasCurrent && playerCurrent_!=playerSelected_) {
+                playerLoopCurrent_=false; // operator explicitly changes song
+                if(engine_.queuePlayerTransition(
+                    playerLibrary_[static_cast<std::size_t>(playerSelected_)],
+                    controls.key,controls.tempo,playerFadeMilliseconds_,
+                    controls.cueIn,controls.cueOut)) {
+                    playerPendingIndex_=playerSelected_;
+                    playerError_.clear();
+                } else playerError_=
+                    "Unable to prepare NEXT on the verified mixer output";
+                emitPlayerState(true);
+                return;
+            }
             if(!engine_.setPlayerPitchTempo(controls.key,controls.tempo)) {
                 playerError_="Invalid KEY or TEMPO settings";
                 emitPlayerState();return;
             }
             const auto error=engine_.loadPlayerMusic(
-                playerLibrary_[static_cast<std::size_t>(playerSelected_)]);
+                playerLibrary_[static_cast<std::size_t>(playerSelected_)],
+                controls.cueIn,controls.cueOut);
             playerError_=error;
             if(error.isEmpty()) {
+                playerLoopCurrent_=false;
+                playerPendingIndex_=-1;
                 playerCurrent_=playerSelected_;
                 // A newly native-owned MUSIC ChannelId is visible in the
                 // authoritative mixer immediately after publisher ACK.
@@ -4018,13 +4366,49 @@ private:
         emitPlayerState(true);
     }
     void playNextMusic() {
-        const int next=armix::player::SetlistPolicy::nextTrack(
+        if(playerPendingIndex_>=0)return;
+        // Next is a deliberate escape from rehearsal looping.
+        playerLoopCurrent_=false;
+        int queued=-1;
+        while(!playerQueue_.empty() && queued<0) {
+            const auto found=std::find(playerLibrary_.begin(),
+                playerLibrary_.end(),playerQueue_.front());
+            if(found!=playerLibrary_.end()) {
+                queued=static_cast<int>(found-playerLibrary_.begin());
+            } else playerQueue_.erase(playerQueue_.begin()); // stale only
+        }
+        const int next=armix::player::PlayerShowTransitionPolicy::nextIndex(
             playerCurrent_,playerSelected_,
-            static_cast<int>(playerLibrary_.size()));
+            static_cast<int>(playerLibrary_.size()),queued);
         if(next<0) {
+            playerPendingQueueFile_={};
             engine_.playerStop();emitPlayerState();return;
         }
-        playerSelected_=next;playSelectedMusic();
+        const auto file=playerLibrary_[static_cast<std::size_t>(next)];
+        playerSelected_=next;
+        // Explicitly queued CURRENT is a repeat request, not a resume.
+        // The standby worker can decode another instance of the same file.
+        if(queued==playerCurrent_ && queued>=0) {
+            const auto control=playerTrackSettings_[static_cast<std::size_t>(next)];
+            if(engine_.queuePlayerTransition(file,control.key,control.tempo,
+                   playerFadeMilliseconds_,control.cueIn,control.cueOut)) {
+                playerPendingIndex_=next;
+                playerPendingQueueFile_=file;
+                playerError_.clear();
+            } else playerError_="Could not prepare queued song repeat";
+            emitPlayerState(true);return;
+        }
+        playSelectedMusic();
+        if(queued>=0 && playerError_.isEmpty()) {
+            if(playerPendingIndex_==next) {
+                playerPendingQueueFile_=file;
+            } else if(playerCurrent_==next) {
+                (void)armix::player::PlayerShowTransitionPolicy::
+                    commitQueuedFront(playerQueue_,file);
+                playerPendingQueueFile_={};
+                emitPlayerState(true);
+            }
+        }
     }
 
     void onAction (const juce::var& args)
@@ -4046,6 +4430,13 @@ private:
             action="audioSetup";
         }
         if(action=="playerSubscribe")return emitPlayerState(true);
+        if(action=="playerNewSetlist" || action=="playerSelectSetlist" ||
+           action=="playerDeleteSetlist" || action=="playerRenameSetlist" ||
+           action=="playerMoveSong" || action=="playerRemoveSong" ||
+           action=="playerUndoRemove" || action=="playerQueueNext" ||
+           action=="playerQueueAppend" || action=="playerQueueRemove" ||
+           action=="playerQueueMove")
+            return playerEditSetlist(action,value);
         if(action=="playerAdd")return choosePlayerFiles();
         if(action=="playerAddFolder")return choosePlayerFolder();
         if(action=="playerRelink")return choosePlayerRelink();
@@ -4061,7 +4452,12 @@ private:
             }
             const int direction=static_cast<int>(value);
             auto next=playerTrackSettings_[static_cast<std::size_t>(i)];
-            if(action=="playerPitchTempoReset")next={};
+            if(action=="playerPitchTempoReset") {
+                // Reset KEY/TEMPO only. Song cue IN/OUT and duration trims
+                // are independent setlist metadata, never collateral edits.
+                next.key=0;
+                next.tempo=100;
+            }
             else if((direction==1 || direction==-1) &&
                     action=="playerKeyStep")
                 next.key=std::clamp(next.key+direction,-6,6);
@@ -4080,26 +4476,153 @@ private:
             }
             return;
         }
+        if(action=="playerLoopToggle") {
+            const bool enable=value.isBool() && static_cast<bool>(value);
+            if(!enable) {
+                playerLoopCurrent_=false;
+                playerError_.clear();
+                emitPlayerState();return;
+            }
+            if(playerPendingIndex_>=0 || playerCurrent_<0 ||
+               playerCurrent_>=static_cast<int>(playerTrackSettings_.size()) ||
+               playerSelected_!=playerCurrent_) {
+                playerError_="Select CURRENT and finish NEXT before enabling loop";
+                emitPlayerState();return;
+            }
+            const auto cue=playerTrackSettings_[
+                static_cast<std::size_t>(playerCurrent_)];
+            if(!armix::player::PlayerShowTransitionPolicy::validLoop(
+                cue.cueIn,cue.cueOut,playerFadeMilliseconds_)) {
+                playerError_="Set IN/OUT at least 1.5 seconds apart for Loop A-B";
+                emitPlayerState();return;
+            }
+            playerLoopCurrent_=true;
+            playerError_.clear();
+            emitPlayerState();return;
+        }
+        if(action=="playerCueIn" || action=="playerCueOut" ||
+           action=="playerCueClear" || action=="playerCueGoIn") {
+            if(playerCurrent_<0 || playerCurrent_>=
+                   static_cast<int>(playerTrackSettings_.size()) ||
+               playerSelected_!=playerCurrent_) {
+                playerError_="Select the playing song to edit its cue";
+                emitPlayerState();return;
+            }
+            auto& cues=playerTrackSettings_[static_cast<std::size_t>(
+                playerCurrent_)];
+            const auto transport=engine_.playerStatus();
+            const double now=static_cast<double>(
+                transport.getProperty("currentSeconds",0.0));
+            const double total=static_cast<double>(
+                transport.getProperty("durationSeconds",0.0));
+            if(action=="playerCueGoIn") {
+                if(!engine_.playerSeekSeconds(cues.cueIn))
+                    playerError_="Unable to jump to song IN marker";
+                else playerError_.clear();
+                emitPlayerState();return;
+            }
+            if(action=="playerCueClear") {
+                cues.cueIn=0.;cues.cueOut=0.;
+            } else if(!std::isfinite(now) || !std::isfinite(total) ||
+                      total<=0. || now<0. || now>=total) {
+                playerError_="Cue position is unavailable";
+                emitPlayerState();return;
+            } else if(action=="playerCueIn") {
+                cues.cueIn=std::floor(now*100.)/100.;
+                if(cues.cueOut>0. && cues.cueOut<=cues.cueIn+0.05)
+                    cues.cueOut=0.;
+            } else {
+                if(now<=cues.cueIn+0.05) {
+                    playerError_="OUT must be after IN";
+                    emitPlayerState();return;
+                }
+                cues.cueOut=std::floor(now*100.)/100.;
+            }
+            if(!engine_.setPlayerCueRange(cues.cueIn,cues.cueOut)) {
+                playerError_="Could not update native song markers";
+                emitPlayerState();return;
+            }
+            if(playerLoopCurrent_ &&
+               !armix::player::PlayerShowTransitionPolicy::validLoop(
+                   cues.cueIn,cues.cueOut,playerFadeMilliseconds_))
+                playerLoopCurrent_=false;
+            playerError_.clear();persistPlayerLibrary();
+            emitPlayerState(true);return;
+        }
         if(action=="playerPlay")return playTransportMusic();
+        if(action=="playerSeek") {
+            const double seconds=static_cast<double>(value);
+            const double total=static_cast<double>(
+                engine_.playerStatus().getProperty("durationSeconds",0.0));
+            if(std::isfinite(seconds) && seconds>=0. &&
+               std::isfinite(total) && total>0. && seconds<=total &&
+               engine_.playerSeekSeconds(seconds)) {
+                playerError_.clear();
+            } else playerError_="Seek unavailable for this song";
+            emitPlayerState();return;
+        }
         if(action=="playerPause") {
+            playerAutoAdvanceGate_.rearm();
+            playerPendingQueueFile_={};
+            playerPendingIndex_=-1;
             engine_.playerPause();emitPlayerState();return;
         }
         if(action=="playerStop") {
+            playerAutoAdvanceGate_.rearm();
+            playerLoopCurrent_=false;
             playerOutputPendingIndex_=-1;
+            playerPendingQueueFile_={};
+            playerPendingIndex_=-1;
             engine_.playerStop();emitPlayerState();return;
         }
-        if(action=="playerNext")return playNextMusic();
+        if(action=="playerNext") {
+            playerAutoAdvanceGate_.rearm(); // explicit user retry
+            return playNextMusic();
+        }
         if(action=="playerAutoNext") {
+            playerAutoAdvanceGate_.rearm();
             playerAutoNext_=value.isBool() && static_cast<bool>(value);
             persistPlayerLibrary();emitPlayerState(true);return;
+        }
+        if(action=="playerFadeMs") {
+            const int ms=static_cast<int>(value);
+            if(ms!=0 && ms!=180 && ms!=500 && ms!=1500)return;
+            playerFadeMilliseconds_=ms;
+            if(playerLoopCurrent_ && playerCurrent_>=0 &&
+               playerCurrent_<static_cast<int>(playerTrackSettings_.size())) {
+                const auto cue=playerTrackSettings_[
+                    static_cast<std::size_t>(playerCurrent_)];
+                if(!armix::player::PlayerShowTransitionPolicy::validLoop(
+                    cue.cueIn,cue.cueOut,ms))
+                    playerLoopCurrent_=false;
+            }
+            persistPlayerLibrary();emitPlayerState();return;
         }
         if(action=="playerSelect" || action=="playerPlayNow") {
             const int i=static_cast<int>(value);
             if(i>=0 && i<static_cast<int>(playerLibrary_.size())) {
                 if(i!=playerSelected_)playerOutputPendingIndex_=-1;
+                if(i!=playerSelected_ || action=="playerPlayNow")
+                    playerAutoAdvanceGate_.rearm();
                 playerSelected_=i;
                 if(action=="playerPlayNow")playSelectedMusic();
-                else emitPlayerState(true);
+                else {
+                    // Selecting NEXT never alters CURRENT. Idle standby
+                    // decode starts now so the performer can advance later
+                    // with an already-buffered next song.
+                    const auto state=engine_.playerStatus().getProperty(
+                        "state","").toString();
+                    if(i!=playerCurrent_ && playerPendingIndex_<0 &&
+                       playerCurrent_>=0 && state=="PLAYING") {
+                        const auto settings=playerTrackSettings_[
+                            static_cast<std::size_t>(i)];
+                        (void)engine_.preloadPlayerMusic(
+                            playerLibrary_[static_cast<std::size_t>(i)],
+                            settings.key,settings.tempo,
+                            settings.cueIn,settings.cueOut);
+                    }
+                    emitPlayerState(true);
+                }
             }
             return;
         }
@@ -7118,8 +7641,10 @@ private:
                 }
             }
         }
-        if (!browser_.loaded) return;
-        if (!initialStateSent_)
+        // A hidden/reloading WebView MUST NOT suspend the native player's
+        // control-thread ACK, Auto Next, or A-B loop. Browser events are
+        // optional observers; JUCE transport is the authority.
+        if (browser_.loaded && !initialStateSent_)
         {
             initialStateSent_ = true;
             emitCatalog();
@@ -7128,21 +7653,140 @@ private:
             emitPresets();
             emitPlayerState(true);
         }
-        if (catalog_.busy() && timerTicks_ % 3 == 0)
+        if (browser_.loaded && catalog_.busy() && timerTicks_ % 3 == 0)
             emitScanProgress();
-        if(timerTicks_%3==0) {
+        // Run transport deadlines at 12 Hz only while necessary. The
+        // browser still receives lightweight state at its old 4 Hz pace.
+        if(timerTicks_%3==0 || playerAutoNext_ ||
+           playerLoopCurrent_ || playerPendingIndex_>=0) {
+            // Start only a genuinely prepared NEXT and ACK the row identity
+            // in the same UI-owner thread. No session/graph mutation here.
+            if(engine_.servicePlayerTransition()) {
+                // A native ACK is a NEW logical song/loop epoch even if
+                // standby A/B happen to publish the same generation.
+                playerAutoAdvanceGate_.rearm();
+                if(playerPendingIndex_>=0 &&
+                   playerPendingIndex_<static_cast<int>(playerLibrary_.size())) {
+                    playerCurrent_=playerPendingIndex_;
+                    playerSelected_=playerCurrent_;
+                    if(playerPendingQueueFile_!=juce::File{})
+                        (void)armix::player::PlayerShowTransitionPolicy::
+                            commitQueuedFront(playerQueue_,
+                                              playerPendingQueueFile_);
+                }
+                playerPendingQueueFile_={};
+                playerPendingIndex_=-1;
+                playerError_.clear();
+                emitPlayerState(true);
+            } else if(playerPendingIndex_>=0 &&
+                      engine_.playerTransitionFailed()) {
+                // Preserve queued entry on decode error: the performer can
+                // retry. A failed NEXT must not consume the user's setlist.
+                playerPendingQueueFile_={};
+                playerPendingIndex_=-1;
+                playerError_="NEXT could not decode; current song is unchanged";
+                emitPlayerState(true);
+            }
             const auto transport=engine_.playerStatus();
-            if(playerAutoNext_ &&
-               transport.getProperty("state","").toString()=="ENDED") {
-                const auto generation=static_cast<std::uint64_t>(
-                    transport.getProperty("generation","0").toString().getLargeIntValue());
-                if(generation!=lastAutoAdvanceGeneration_) {
-                    lastAutoAdvanceGeneration_=generation;
+            const auto phase=transport.getProperty(
+                "state","").toString();
+            const bool fading=static_cast<bool>(
+                transport.getProperty("crossfading",false));
+            const bool preparing=static_cast<bool>(
+                transport.getProperty("transitionPending",false));
+            const bool activeCurrent=playerCurrent_>=0 &&
+                playerCurrent_<static_cast<int>(playerLibrary_.size());
+            int queued=-1;
+            if(!playerQueue_.empty()) {
+                const auto found=std::find(playerLibrary_.begin(),
+                    playerLibrary_.end(),playerQueue_.front());
+                if(found!=playerLibrary_.end())
+                    queued=static_cast<int>(found-playerLibrary_.begin());
+            }
+            const int upcoming=activeCurrent?
+                armix::player::PlayerShowTransitionPolicy::nextIndex(
+                    playerCurrent_,playerSelected_,
+                    static_cast<int>(playerLibrary_.size()),
+                    queued):-1;
+            // Rehearsal loop has priority over Auto Next and queued
+            // songs, which remain untouched until the operator presses Next.
+            // Reuse the exact M3 standby worker for a click-safe A-B return;
+            // never seek inside the hardware callback.
+            if(playerLoopCurrent_ && activeCurrent &&
+               phase=="PLAYING" && !fading && !preparing &&
+               playerPendingIndex_<0) {
+                const auto loop=playerTrackSettings_[
+                    static_cast<std::size_t>(playerCurrent_)];
+                if(armix::player::PlayerShowTransitionPolicy::validLoop(
+                    loop.cueIn,loop.cueOut,playerFadeMilliseconds_)) {
+                    const auto currentFile=playerLibrary_[
+                        static_cast<std::size_t>(playerCurrent_)];
+                    (void)engine_.preloadPlayerMusic(currentFile,
+                        loop.key,loop.tempo,loop.cueIn,loop.cueOut);
+                    const auto position=static_cast<double>(
+                        transport.getProperty("currentSeconds",0.0));
+                    const auto duration=static_cast<double>(
+                        transport.getProperty("durationSeconds",0.0));
+                    const int fade=std::max(40,playerFadeMilliseconds_);
+                    // The in-flight transition is the only loop latch:
+                    // alternating A/B decoders can share generation IDs.
+                    // On failure, turn looping off below (no retry storm).
+                    if(armix::player::PlayerShowTransitionPolicy::
+                           armBeforeEnd(position,duration,fade,0.085,loop.tempo)) {
+                        if(engine_.queuePlayerTransition(currentFile,
+                           loop.key,loop.tempo,fade,loop.cueIn,loop.cueOut)) {
+                            playerPendingIndex_=playerCurrent_;
+                            playerPendingQueueFile_={};
+                            playerError_.clear();
+                        } else {
+                            playerError_="Loop standby failed; original music remains";
+                            playerLoopCurrent_=false;
+                        }
+                    }
+                } else playerLoopCurrent_=false;
+            }
+            // Queue is explicit operator intent: warm NEXT even while Auto
+            // Next is OFF. Auto alone may prepare the following setlist row.
+            if(!playerLoopCurrent_ && (playerAutoNext_ || queued>=0) &&
+               phase=="PLAYING" && !fading && !preparing &&
+               playerPendingIndex_<0 && upcoming>=0 &&
+               (upcoming!=playerCurrent_ || queued>=0)) {
+                const auto preset=playerTrackSettings_[
+                    static_cast<std::size_t>(upcoming)];
+                (void)engine_.preloadPlayerMusic(
+                    playerLibrary_[static_cast<std::size_t>(upcoming)],
+                    preset.key,preset.tempo,
+                    preset.cueIn,preset.cueOut);
+            }
+            if(playerAutoNext_ && !playerLoopCurrent_ && activeCurrent &&
+               !fading && !preparing && playerPendingIndex_<0 &&
+               upcoming>=0 &&
+               (upcoming!=playerCurrent_ || queued>=0) &&
+               (phase=="PLAYING" || phase=="ENDED")) {
+                // CUT is an end-only switch. Positive fade begins before
+                // EOF, bounded by media remaining + one 12 Hz timer tick.
+                // Failure latches until a user gesture; successful native
+                // ACK rearms the gate for the NEXT logical song, including
+                // consecutive repeats of exactly the same media file.
+                const double position=static_cast<double>(
+                    transport.getProperty("currentSeconds",0.0));
+                const double duration=static_cast<double>(
+                    transport.getProperty("durationSeconds",0.0));
+                const bool preEnd=playerFadeMilliseconds_>0 &&
+                    armix::player::PlayerShowTransitionPolicy::armBeforeEnd(
+                        position,duration,playerFadeMilliseconds_,0.085,
+                        static_cast<int>(transport.getProperty(
+                            "tempoPercent",100)));
+                if((preEnd || phase=="ENDED") &&
+                   playerAutoAdvanceGate_.claim()) {
                     playNextMusic();
                 }
             }
-            emitPlayerState();
+            if(browser_.loaded && timerTicks_%3==0)emitPlayerState();
         }
+        // Only UI/status publication depends on WebView availability.
+        // No native playback continuity, cleanup or next-song ACK does.
+        if(!browser_.loaded)return;
         const double statusStart = timing ? juce::Time::getMillisecondCounterHiRes() : 0.0;
         auto state = engine_.status();
         if (timing)

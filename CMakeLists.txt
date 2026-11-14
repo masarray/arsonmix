@@ -344,6 +344,29 @@ if(BUILD_TESTING)
   target_link_libraries(ARMixPlayerPcmRingTests PRIVATE Threads::Threads)
   add_test(NAME ArSonPlayerWorkerToRealtimeStereoRing COMMAND ARMixPlayerPcmRingTests)
   add_dependencies(ARMixMixerRoutingTests ARMixPlayerPcmRingTests)
+  # M1/M2 portable show editor + progressive wave index: actual native
+  # executables, no mock browser or hardware runner needed.
+  add_executable(ARMixPlayerShowEditTests tests/player_show_edit_policy_test.cpp)
+  target_compile_features(ARMixPlayerShowEditTests PRIVATE cxx_std_20)
+  add_test(NAME ArSonPlayerM1StableSetlistCurrentAndQueueIndexes
+      COMMAND ARMixPlayerShowEditTests)
+  add_executable(ARMixPlayerWaveformTests tests/player_waveform_index_test.cpp)
+  target_compile_features(ARMixPlayerWaveformTests PRIVATE cxx_std_20)
+  target_link_libraries(ARMixPlayerWaveformTests PRIVATE Threads::Threads)
+  add_test(NAME ArSonPlayerM2ProgressiveRealtimeSafeWaveform
+      COMMAND ARMixPlayerWaveformTests)
+  add_executable(ARMixPlayerCrossfadeTests tests/player_crossfade_curve_test.cpp)
+  target_compile_features(ARMixPlayerCrossfadeTests PRIVATE cxx_std_20)
+  add_test(NAME ArSonPlayerM3FiniteEqualPowerCrossfade
+      COMMAND ARMixPlayerCrossfadeTests)
+  add_executable(ARMixPlayerShowTransitionTests
+      tests/player_show_transition_policy_test.cpp)
+  target_compile_features(ARMixPlayerShowTransitionTests PRIVATE cxx_std_20)
+  add_test(NAME ArSonPlayerM3TransactionalQueueAndAutoNextDeadline
+      COMMAND ARMixPlayerShowTransitionTests)
+  add_dependencies(ARMixMixerRoutingTests
+      ARMixPlayerShowEditTests ARMixPlayerWaveformTests
+      ARMixPlayerCrossfadeTests ARMixPlayerShowTransitionTests)
   juce_add_console_app(ARMixPlayerDecodeTests PRODUCT_NAME "ArSon Player Native Decoder Integration")
   target_sources(ARMixPlayerDecodeTests PRIVATE tests/player_native_decode_test.cpp)
   target_link_libraries(ARMixPlayerDecodeTests PRIVATE

@@ -1,0 +1,52 @@
+name: ArSon Player Show M1-M3 (fast source contracts)
+on:
+  pull_request:
+    paths:
+      - 'engine/player/**'
+      - 'src/Main.cpp'
+      - 'src/LiveAudioEngine.h'
+      - 'site/preview-v2/assets/arson-player.js'
+      - 'site/preview-v2/assets/mixer-contextual-buttons.js'
+      - 'site/preview-v2/assets/mixer-contextual-buttons.css'
+      - 'tests/player_show_edit_policy_test.cpp'
+      - 'tests/player_waveform_index_test.cpp'
+      - 'tests/player_crossfade_curve_test.cpp'
+      - 'tests/player_show_transition_policy_test.cpp'
+      - 'tests/player_transport_lifecycle_contract.test.mjs'
+      - '.github/workflows/player-show-fast.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: player-show-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  portable:
+    name: M1-M2 edit+waveform native C++ and player JS parse
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run pure C++20 show policy and progressive waveform tests
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pthread \
+            tests/player_show_edit_policy_test.cpp \
+            -o "$RUNNER_TEMP/player-show-edit-test"
+          "$RUNNER_TEMP/player-show-edit-test"
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pthread \
+            tests/player_waveform_index_test.cpp \
+            -o "$RUNNER_TEMP/player-waveform-test"
+          "$RUNNER_TEMP/player-waveform-test"
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror \
+            tests/player_crossfade_curve_test.cpp \
+            -o "$RUNNER_TEMP/player-crossfade-test"
+          "$RUNNER_TEMP/player-crossfade-test"
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror \
+            tests/player_show_transition_policy_test.cpp \
+            -o "$RUNNER_TEMP/player-transition-test"
+          "$RUNNER_TEMP/player-transition-test"
+      - name: Parse the actual approved player UI and dynamic assembly
+        run: |
+          node --check site/preview-v2/assets/arson-player.js
+          node --check site/preview-v2/assets/mixer-contextual-buttons.js
+          node tests/player_transport_lifecycle_contract.test.mjs

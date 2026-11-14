@@ -2,6 +2,7 @@
 #pragma once
 #include "PreparedStereoPcmRing.h"
 #include "PlayerPitchTempoProcessor.h"
+#include "PlayerWaveformIndex.h"
 #include "../core/RealtimeSlew64.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <atomic>
@@ -26,12 +27,14 @@ public:
     struct Status {
         State state=State::empty;
         std::uint64_t played=0,duration=0,underruns=0,generation=0;
+        std::uint64_t mediaPlayed=0,mediaDuration=0;
         bool outputReady=false;
         juce::String title,error;
         double deviceRate=0;
         int keySemitones=0,tempoPercent=100;
         int requestedKey=0,requestedTempo=100;
         bool processingChangePending=false;
+        std::array<std::uint16_t,PlayerWaveformIndex::bins> waveform{};
     };
     NativePlayerDeck() {
         // 2.7 seconds at 48k, bounded independent of song length.
@@ -58,12 +61,24 @@ public:
         rate_.store(rounded>0?rounded:0,std::memory_order_release);
         const bool selected=hasFile_.load(std::memory_order_acquire);
         played_.store(0,std::memory_order_release);
+        mediaPlayed_.store(0,std::memory_order_release);
+        mediaDuration_.store(0,std::memory_order_release);
+        requestedSeekSeconds_.store(cueInSeconds_.load(
+            std::memory_order_acquire),std::memory_order_release);
         error_.store(0,std::memory_order_release);
         generation_.fetch_add(1,std::memory_order_acq_rel);
         state_.store(rounded<=0?State::stopped:
                          selected?State::loading:State::empty,
                      std::memory_order_release);
         wake_.notify_one();
+    }
+    bool setCueRange(double in,double out) noexcept {
+        if(!std::isfinite(in) || !std::isfinite(out) ||
+           in<0. || out<0. || in>86400. || out>86400. ||
+           (out>0. && out<=in+0.05))return false;
+        cueInSeconds_.store(in,std::memory_order_release);
+        cueOutSeconds_.store(out,std::memory_order_release);
+        return true;
     }
     bool setPitchTempo(int keySemitones,int tempoPercent) noexcept {
         const PlayerPitchTempoProcessor::Controls c{keySemitones,tempoPercent};
@@ -80,10 +95,28 @@ public:
         }
         hasFile_.store(file!=juce::File{},std::memory_order_release);
         played_.store(0,std::memory_order_release);
+        mediaPlayed_.store(0,std::memory_order_release);
+        mediaDuration_.store(0,std::memory_order_release);
+        requestedSeekSeconds_.store(cueInSeconds_.load(
+            std::memory_order_acquire),std::memory_order_release);
         error_.store(0,std::memory_order_release);
         state_.store(State::loading,std::memory_order_release);
         generation_.fetch_add(1,std::memory_order_acq_rel);
         wake_.notify_one();
+    }
+    // GUI/CONTROL only. The decoder worker owns opening/repositioning the
+    // reader and resampler. Every seek supersedes prior queued PCM via the
+    // existing generation + quiescence fence; ASIO never calls seek/file IO.
+    bool seekSeconds(double seconds) noexcept {
+        if(!std::isfinite(seconds) || seconds<0. ||
+           !hasFile_.load(std::memory_order_acquire) ||
+           rate_.load(std::memory_order_acquire)<=0)return false;
+        requestedSeekSeconds_.store(seconds,std::memory_order_release);
+        ready_.store(false,std::memory_order_release);
+        state_.store(State::loading,std::memory_order_release);
+        generation_.fetch_add(1,std::memory_order_acq_rel);
+        wake_.notify_one();
+        return true;
     }
     bool isPlayingRequested() const noexcept {
         return ready_.load(std::memory_order_acquire) &&
@@ -106,9 +139,12 @@ public:
         // the next seek-to-start; never reset/reallocate a ring from RT.
         ready_.store(false,std::memory_order_release);
         wantedPlay_.store(false,std::memory_order_release);
+        requestedSeekSeconds_.store(cueInSeconds_.load(
+            std::memory_order_acquire),std::memory_order_release);
         state_.store(State::stopped,std::memory_order_release);
         generation_.fetch_add(1,std::memory_order_acq_rel);
         played_.store(0,std::memory_order_relaxed);
+        mediaPlayed_.store(0,std::memory_order_relaxed);
         wake_.notify_one();
     }
     Status snapshot() const {
@@ -116,6 +152,8 @@ public:
         s.state=state_.load(std::memory_order_acquire);
         s.played=played_.load(std::memory_order_relaxed);
         s.duration=length_.load(std::memory_order_relaxed);
+        s.mediaPlayed=mediaPlayed_.load(std::memory_order_relaxed);
+        s.mediaDuration=mediaDuration_.load(std::memory_order_relaxed);
         s.underruns=ring_.underrunFrames();
         s.generation=generation_.load(std::memory_order_acquire);
         s.deviceRate=rate_.load(std::memory_order_acquire);
@@ -130,11 +168,13 @@ public:
         s.requestedTempo=requested.tempoPercent;
         s.processingChangePending=(s.keySemitones!=s.requestedKey ||
                                    s.tempoPercent!=s.requestedTempo);
+        s.waveform=waveform_.snapshot();
         switch(error_.load(std::memory_order_relaxed)) {
             case 1:s.error="File missing or unreadable";break;
             case 2:s.error="Unsupported or corrupt music format";break;
             case 3:s.error="Audio output not configured";break;
             case 4:s.error="Music pitch/tempo processing failed";break;
+            case 5:s.error="Song IN marker exceeds file duration";break;
             default:break;
         }
         {std::lock_guard<std::mutex> lock(commandMutex_);
@@ -166,11 +206,26 @@ public:
         const auto generation=generation_.load(std::memory_order_acquire);
         if(generation!=audioGeneration_) {
             audioGeneration_=generation;
+            mediaFraction_=0.;
             gain_.reset(0.f);
         }
         const auto n=ring_.read(left,right,static_cast<std::size_t>(frames));
         if(n>0) {
             played_.fetch_add(n,std::memory_order_relaxed);
+            // Original media clock is independent of DSP-stretched PCM.
+            // The bounded producer lookahead can make this a small estimate,
+            // but never treats 80% tempo as a 25%-longer source song.
+            const auto control=unpackControls(appliedControls_.load(
+                std::memory_order_relaxed));
+            const double advance=static_cast<double>(n)*
+                control.tempoPercent/100.0+mediaFraction_;
+            const auto mediaFrames=static_cast<std::uint64_t>(
+                std::floor(advance));
+            mediaFraction_=advance-mediaFrames;
+            const auto length=mediaDuration_.load(std::memory_order_relaxed);
+            const auto present=mediaPlayed_.load(std::memory_order_relaxed);
+            mediaPlayed_.store(std::min(length,present+mediaFrames),
+                               std::memory_order_relaxed);
             state_.store(State::playing,std::memory_order_relaxed);
         }
         // A short ramp makes decoder/prebuffer start click-free. RT-owned
@@ -201,6 +256,8 @@ private:
                 static_cast<int>((bits>>8)&255u)};
     }
     void restart() noexcept {
+        requestedSeekSeconds_.store(cueInSeconds_.load(
+            std::memory_order_acquire),std::memory_order_release);
         ready_.store(false,std::memory_order_release);
         played_.store(0,std::memory_order_relaxed);
         state_.store(State::loading,std::memory_order_release);
@@ -260,14 +317,36 @@ private:
                 state_.store(State::error,std::memory_order_release);
                 continue;
             }
+            // A saved cue may belong to an older version of a relinked
+            // file. Never silently clamp IN to the last audio sample and
+            // report a successful (almost silent) playback.
+            const double cueIn=cueInSeconds_.load(std::memory_order_acquire);
+            const double mediaSeconds=static_cast<double>(
+                reader->lengthInSamples)/reader->sampleRate;
+            if(!std::isfinite(cueIn) || cueIn>=mediaSeconds) {
+                error_.store(5,std::memory_order_release);
+                state_.store(State::error,std::memory_order_release);
+                continue;
+            }
             const bool mono=reader->numChannels==1;
-            const double ratio=reader->sampleRate/static_cast<double>(deviceHz);
+            const double sourceRate=reader->sampleRate;
+            const auto sourceLength=reader->lengthInSamples;
+            const double ratio=sourceRate/static_cast<double>(deviceHz);
             const auto sourceTotal=static_cast<std::uint64_t>(std::ceil(
                 static_cast<double>(reader->lengthInSamples)/ratio));
             if(!sourceTotal) {
                 state_.store(State::error,std::memory_order_release);
                 continue;
             }
+            if(file!=waveformFile_) {
+                waveformFile_=file; // worker owns identity
+                waveform_.reset(sourceTotal);
+            }
+            const double positionSeconds=requestedSeekSeconds_.load(
+                std::memory_order_acquire);
+            const juce::int64 readerPosition=static_cast<juce::int64>(
+                std::clamp(std::floor(positionSeconds*sourceRate),0.0,
+                           static_cast<double>(sourceLength-1)));
             using Controls=PlayerPitchTempoProcessor::Controls;
             Controls controls=unpackControls(
                 requestedControls_.load(std::memory_order_acquire));
@@ -280,16 +359,34 @@ private:
             appliedControls_.store(packControls(controls),
                                    std::memory_order_release);
             juce::AudioFormatReaderSource source(reader.release(),true);
+            source.setNextReadPosition(readerPosition); // worker-only seek
             juce::ResamplingAudioSource resampled(&source,false,2);
             resampled.setResamplingRatio(ratio);
             resampled.prepareToPlay(1536,static_cast<double>(deviceHz));
             // Source is device-rate stereo, but independent KEY/TEMPO DSP is
             // computed ONLY here on the decoder worker; not in JUCE/ASIO RT.
             juce::AudioBuffer<float> input(2,1536),output(2,1024);
-            std::uint64_t consumed=0,written=0;
+            std::uint64_t consumed=static_cast<std::uint64_t>(
+                std::floor(static_cast<double>(readerPosition)/ratio));
+            const auto startPlayed=static_cast<std::uint64_t>(
+                std::floor(consumed*100.0/controls.tempoPercent));
+            std::uint64_t written=startPlayed;
+            played_.store(startPlayed,std::memory_order_release);
+            mediaPlayed_.store(consumed,std::memory_order_release);
+            mediaDuration_.store(sourceTotal,std::memory_order_release);
+            // OUT=0 means physical media end. Reader/decoder owns this
+            // bound; the audio callback never edits an I/O source.
+            const auto readEnd=[&]() -> std::uint64_t {
+                const double out=cueOutSeconds_.load(
+                    std::memory_order_acquire);
+                if(out<=0.)return sourceTotal;
+                return std::min(sourceTotal,static_cast<std::uint64_t>(
+                    std::ceil(out*deviceHz)));
+            };
             const auto estimateTotal=[&]() -> std::uint64_t {
                 return written+static_cast<std::uint64_t>(std::ceil(
-                    (sourceTotal-consumed)*100.0/controls.tempoPercent))
+                    (readEnd()>consumed?readEnd()-consumed:0)*
+                    100.0/controls.tempoPercent))
                     +static_cast<std::uint64_t>(pitch.outputLatency());
             };
             length_.store(estimateTotal(),std::memory_order_release);
@@ -303,9 +400,14 @@ private:
             const auto highWater=std::min<std::size_t>(
                 ring_.capacityFrames()-2048,
                 std::max<std::size_t>(8192,static_cast<std::size_t>(deviceHz/4)));
-            while(!obsolete(version) && consumed<sourceTotal) {
+            while(!obsolete(version) && consumed<readEnd()) {
                 if(ring_.bufferedFrames()>highWater) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(3));
+                    // A parked/preloaded NEXT has no callback consumer yet.
+                    // Yield longer while standby so a singer browsing the
+                    // setlist does not spin a 333Hz decoder polling loop;
+                    // the 250ms PCM cushion still covers normal Play start.
+                    std::this_thread::sleep_for(std::chrono::milliseconds(
+                        wantedPlay_.load(std::memory_order_acquire)?3:20));
                     continue;
                 }
                 Controls requested=unpackControls(
@@ -318,7 +420,7 @@ private:
                 }
                 int nOutput=1024;
                 int nInput=pitch.nextInputFrames(nOutput);
-                const auto remaining=sourceTotal-consumed;
+                const auto remaining=readEnd()-consumed;
                 if(remaining<static_cast<std::uint64_t>(nInput)) {
                     nOutput=std::max(1,static_cast<int>(std::ceil(
                         remaining*100.0/controls.tempoPercent)));
@@ -332,6 +434,10 @@ private:
                 resampled.getNextAudioBlock({&input,0,nInput});
                 if(mono)input.copyFrom(1,0,input,0,0,nInput);
                 if(obsolete(version))break;
+                // Construct waveform on the SAME decode pass. No second
+                // filesystem scan, peak generation in RT, or UI-heap work.
+                waveform_.observe(input.getReadPointer(0),
+                                  input.getReadPointer(1),nInput,consumed);
                 const float* const sourcePcm[]={input.getReadPointer(0),
                                                 input.getReadPointer(1)};
                 float* const outputPcm[]={output.getWritePointer(0),
@@ -346,6 +452,7 @@ private:
                 }
                 consumed+=static_cast<std::uint64_t>(nInput);
                 written+=transferred;
+                mediaDuration_.store(readEnd(),std::memory_order_release);
                 length_.store(estimateTotal(),std::memory_order_release);
                 if(!ready_.load(std::memory_order_relaxed) &&
                    (ring_.bufferedFrames()>=4096 || consumed==sourceTotal)) {
@@ -357,7 +464,7 @@ private:
             }
             // Drain the final spectral overlap OFF realtime. Without this,
             // transposed music loses its last FFT window at EOF.
-            if(!failed && !obsolete(version) && consumed==sourceTotal &&
+            if(!failed && !obsolete(version) && consumed>=readEnd() &&
                pitch.active()) {
                 const int tail=pitch.outputLatency();
                 if(tail>0 && tail<deviceHz*2) {
@@ -386,7 +493,7 @@ private:
                     wantedPlay_.store(false,std::memory_order_release);
                     error_.store(4,std::memory_order_release);
                     state_.store(State::error,std::memory_order_release);
-                } else if(consumed==sourceTotal) {
+                } else if(consumed>=readEnd()) {
                     length_.store(written,std::memory_order_release);
                     eof_.store(true,std::memory_order_release);
                     ready_.store(true,std::memory_order_release);
@@ -396,11 +503,16 @@ private:
         }
     }
     PreparedStereoPcmRing ring_;
+    PlayerWaveformIndex waveform_;
+    juce::File waveformFile_; // worker thread only, across seek epochs
+    std::atomic<double> requestedSeekSeconds_{0.0};
+    std::atomic<double> cueInSeconds_{0.0},cueOutSeconds_{0.0};
     mutable std::mutex commandMutex_; // CONTROL/worker only, NEVER RT
     juce::File selectedFile_;
     std::atomic<bool> exit_{false},ready_{false},wantedPlay_{false},eof_{false};
     std::atomic<bool> hasFile_{false}; // lifecycle read: no control mutex
     std::atomic<std::uint64_t> generation_{0},played_{0},length_{0};
+    std::atomic<std::uint64_t> mediaPlayed_{0},mediaDuration_{0};
     std::atomic<std::uint32_t> readers_{0};
     std::atomic<int> rate_{0},error_{0};
     // Packed atomic makes KEY+TEMPO a single coherent command, avoiding
@@ -410,6 +522,7 @@ private:
     std::atomic<State> state_{State::empty};
     armix::dsp::RealtimeSlew64 gain_; // AUDIO only
     std::uint64_t audioGeneration_=0; // AUDIO only, no race with file thread
+    double mediaFraction_=0.; // AUDIO only, fractional original-media frame
     std::mutex wakeMutex_; // only decoding worker
     std::condition_variable wake_; // never accessed by audio callback
     // Construct LAST: workerLoop must never observe unconstructed atomics/

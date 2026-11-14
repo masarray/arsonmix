@@ -10,7 +10,7 @@
 #include "NativeMixerSessionFxRestore.h"
 #include "NativeTopologyEditSafety.h"
 #include "../engine/dsp/NativeMasterLoudness.h"
-#include "../engine/player/NativePlayerDeck.h"
+#include "../engine/player/NativePlayerShowDeck.h"
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
 #include "../engine/builtin_fx/ChannelCompressorProcessor.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
@@ -1818,7 +1818,8 @@ public:
     // A single explicit user Play gesture prepares the previously verified
     // MAIN and creates its owned virtual MUSIC channel if absent. No manual
     // PATCH, MONITOR or ARM control is part of the ordinary user workflow.
-    juce::String loadPlayerMusic(const juce::File& file) {
+    juce::String loadPlayerMusic(const juce::File& file,
+                                 double cueIn=0.,double cueOut=0.) {
         if(!file.existsAsFile())return "Music file is missing";
         if(!file.hasFileExtension("wav;aiff;aif;mp3;flac;ogg"))
             return "Choose a supported music file (WAV, MP3, FLAC, AIFF, OGG)";
@@ -1864,7 +1865,11 @@ public:
         }
         playerChannelId_=result.created;
         playerFile_=file;
+        playerPendingFile_={};
         playerBoundEpoch_=dryRoutingLab_.epoch();
+        if(!playerDeck_.setCueRange(cueIn,cueOut))
+            return "Invalid song IN/OUT markers";
+        playerCueIn_=cueIn;playerCueOut_=cueOut;
         playerDeck_.load(file,true); // async worker; real PLAYING only after PCM
         // The fresh PLAY gesture itself authorizes same verified output.
         // Never override an intentional MAIN MUTE or different physical port.
@@ -1880,7 +1885,7 @@ public:
         if((playerBoundEpoch_!=dryRoutingLab_.epoch() ||
             dryRoutingLab_.nativePlayerSource()!=playerChannelId_) &&
            playerFile_!=juce::File{})
-            return loadPlayerMusic(playerFile_);
+            return loadPlayerMusic(playerFile_,playerCueIn_,playerCueOut_);
         if(!playerChannelId_.value || !directFence_.permitted() ||
            !dryRoutingLab_.channelIdPhysicalPcmActive() ||
            masterMute_.load(std::memory_order_acquire) ||
@@ -1895,8 +1900,68 @@ public:
         // the decoder worker consumes more/fewer backing-track PCM frames.
         return playerDeck_.setPitchTempo(semitones,percent);
     }
+    // Preloading never touches the native graph or opens another physical
+    // output. Both decoded sources ultimately share PLAYER A ChannelId.
+    bool preloadPlayerMusic(const juce::File& file,int key,int tempo,
+                            double cueIn=0.,double cueOut=0.) {
+        // A queued repeat of CURRENT is legitimate: the inactive decoder
+        // must preload a second instance without stopping current PCM.
+        if(playerFile_==juce::File{} ||
+           playerBoundEpoch_!=dryRoutingLab_.epoch() ||
+           !directFence_.permitted() ||
+           !dryRoutingLab_.channelIdPhysicalPcmActive())
+            return false;
+        return playerDeck_.preload(file,key,tempo,cueIn,cueOut);
+    }
+    bool queuePlayerTransition(const juce::File& file,int key,int tempo,
+                               int fadeMilliseconds=180,
+                               double cueIn=0.,double cueOut=0.) {
+        if(playerFile_==juce::File{} || !file.existsAsFile() ||
+           !file.hasFileExtension("wav;mp3;flac;aif;aiff;ogg") ||
+           playerBoundEpoch_!=dryRoutingLab_.epoch() ||
+           !directFence_.permitted() ||
+           !dryRoutingLab_.channelIdPhysicalPcmActive())
+            return false;
+        if(!playerDeck_.queueTransition(file,key,tempo,fadeMilliseconds,
+                                        cueIn,cueOut))
+            return false;
+        playerPendingCueIn_=cueIn;playerPendingCueOut_=cueOut;
+        playerPendingFile_=file;
+        return true;
+    }
+    bool playerTransitionFailed() const noexcept {
+        return playerDeck_.transitionFailed();
+    }
+    bool servicePlayerTransition() {
+        if(!playerDeck_.service()) {
+            if(playerDeck_.transitionFailed() ||
+               (!playerDeck_.transitionPending() &&
+                !playerDeck_.transitionActive()))
+                playerPendingFile_={};
+            return false;
+        }
+        if(playerPendingFile_!=juce::File{}) {
+            playerFile_=playerPendingFile_;
+            playerCueIn_=playerPendingCueIn_;
+            playerCueOut_=playerPendingCueOut_;
+        }
+        playerPendingFile_={};
+        return true;
+    }
+    bool setPlayerCueRange(double in,double out) noexcept {
+        if(!playerDeck_.setCueRange(in,out))return false;
+        playerCueIn_=in;playerCueOut_=out;
+        return true;
+    }
     void playerPause() noexcept {playerDeck_.pause();}
-    void playerStop() noexcept {playerDeck_.stop();}
+    void playerStop() noexcept {
+        playerPendingFile_={};
+        playerDeck_.stop();
+    }
+    bool playerSeekSeconds(double seconds) noexcept {
+        return playerFile_!=juce::File{} &&
+               playerDeck_.seekSeconds(seconds);
+    }
     juce::var playerStatus() const {
         const auto status=playerDeck_.snapshot();
         const auto* state="EMPTY";
@@ -1913,12 +1978,17 @@ public:
         }
         auto data=std::make_unique<juce::DynamicObject>();
         data->setProperty("state",state);
+        data->setProperty("transitionPending",playerDeck_.transitionPending());
+        data->setProperty("crossfading",playerDeck_.transitionActive());
         data->setProperty("title",status.title);
         data->setProperty("error",status.error);
+        // Operator seek/IN/OUT always use the ORIGINAL media clock.
+        // Output-frame counters (separately retained on the deck) control
+        // physical end-of-stream and stretch/tempo latency accounting.
         data->setProperty("currentSeconds",status.deviceRate>0?
-            static_cast<double>(status.played)/status.deviceRate:0.0);
+            static_cast<double>(status.mediaPlayed)/status.deviceRate:0.0);
         data->setProperty("durationSeconds",status.deviceRate>0?
-            static_cast<double>(status.duration)/status.deviceRate:0.0);
+            static_cast<double>(status.mediaDuration)/status.deviceRate:0.0);
         data->setProperty("underrunFrames",juce::String(
             static_cast<juce::int64>(status.underruns)));
         data->setProperty("keySemitones",status.keySemitones);
@@ -1927,6 +1997,13 @@ public:
         data->setProperty("requestedTempo",status.requestedTempo);
         data->setProperty("processingChangePending",
                           status.processingChangePending);
+        // A bounded 256-bin atomic snapshot, not a second audio decode.
+        juce::Array<juce::var> waveform;
+        waveform.ensureStorageAllocated(
+            static_cast<int>(armix::player::PlayerWaveformIndex::bins));
+        for(const auto sample:status.waveform)
+            waveform.add(static_cast<int>(sample));
+        data->setProperty("waveform",juce::var(waveform));
         data->setProperty("generation",juce::String(
             static_cast<juce::int64>(status.generation)));
         data->setProperty("channelId",juce::String(
@@ -2790,9 +2867,12 @@ private:
     std::atomic<std::uint64_t> fxMovePendingOrder_ {Graph::canonicalOrder};
     bool attached_ = false;
     juce::AudioBuffer<float> scratch_;
-    armix::player::NativePlayerDeck playerDeck_; // one asynchronous decoder, no device owner
+    armix::player::NativePlayerShowDeck playerDeck_; // A/B workers, ONE mixer PCM source
     armix::mixer::ChannelId playerChannelId_{}; // CONTROL only, native identity
-    juce::File playerFile_; // CONTROL only, last explicitly selected song
+    juce::File playerFile_; // CONTROL only, last active song
+    juce::File playerPendingFile_; // CONTROL only, next decoded song
+    double playerCueIn_=0.,playerCueOut_=0.;
+    double playerPendingCueIn_=0.,playerPendingCueOut_=0.;
     std::uint64_t playerBoundEpoch_=0; // never borrow old device approval
     std::array<std::array<float,maxFrames>,2> playerScratch_{}; // preallocated RT block
     armix::dsp::NativeMasterLoudness masterLoudness_;
