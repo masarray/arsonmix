@@ -7628,8 +7628,10 @@ private:
                 }
             }
         }
-        if (!browser_.loaded) return;
-        if (!initialStateSent_)
+        // A hidden/reloading WebView MUST NOT suspend the native player's
+        // control-thread ACK, Auto Next, or A-B loop. Browser events are
+        // optional observers; JUCE transport is the authority.
+        if (browser_.loaded && !initialStateSent_)
         {
             initialStateSent_ = true;
             emitCatalog();
@@ -7638,7 +7640,7 @@ private:
             emitPresets();
             emitPlayerState(true);
         }
-        if (catalog_.busy() && timerTicks_ % 3 == 0)
+        if (browser_.loaded && catalog_.busy() && timerTicks_ % 3 == 0)
             emitScanProgress();
         // Run transport deadlines at 12 Hz only while necessary. The
         // browser still receives lightweight state at its old 4 Hz pace.
@@ -7767,8 +7769,11 @@ private:
                     playNextMusic();
                 }
             }
-            if(timerTicks_%3==0)emitPlayerState();
+            if(browser_.loaded && timerTicks_%3==0)emitPlayerState();
         }
+        // Only UI/status publication depends on WebView availability.
+        // No native playback continuity, cleanup or next-song ACK does.
+        if(!browser_.loaded)return;
         const double statusStart = timing ? juce::Time::getMillisecondCounterHiRes() : 0.0;
         auto state = engine_.status();
         if (timing)
