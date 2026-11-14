@@ -42,7 +42,9 @@ def audit_geometry(page, title):
                 if(a!==b)problems.push('top/bottom channel color mismatch '+tag);
             }
             const controls=[...t.querySelectorAll('.switch-section.mx-hw-row > button.mx-hw-key')];
-            if(controls.length!==3)problems.push('MUTE/SOLO/PFL count !=3 '+tag);
+            // MASTER is the approved two-key MUTE/SOLO strip, never PFL.
+            const expectedKeys=t.classList.contains('master')?2:3;
+            if(controls.length!==expectedKeys)problems.push('MUTE/SOLO/PFL count !='+expectedKeys+' '+tag);
             else {
                 if(Math.max(...controls.map(c=>r(c).width))-Math.min(...controls.map(c=>r(c).width))>1.8)
                     problems.push('inconsistent V6 button widths '+tag);
