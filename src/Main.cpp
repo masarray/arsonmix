@@ -4383,7 +4383,12 @@ private:
             }
             const int direction=static_cast<int>(value);
             auto next=playerTrackSettings_[static_cast<std::size_t>(i)];
-            if(action=="playerPitchTempoReset")next={};
+            if(action=="playerPitchTempoReset") {
+                // Reset KEY/TEMPO only. Song cue IN/OUT and duration trims
+                // are independent setlist metadata, never collateral edits.
+                next.key=0;
+                next.tempo=100;
+            }
             else if((direction==1 || direction==-1) &&
                     action=="playerKeyStep")
                 next.key=std::clamp(next.key+direction,-6,6);
