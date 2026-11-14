@@ -119,8 +119,10 @@ public:
         if(fading_.load(std::memory_order_acquire))return false;
         if(!preload(file,key,tempo))return false;
         fadeMilliseconds_=std::clamp(fadeMilliseconds,0,3000);
+        // The caller's CONTROL timer owns the one authoritative ACK for
+        // beginning the fade. Never start it here before Main.cpp records
+        // which logical setlist row is becoming CURRENT.
         pending_.store(true,std::memory_order_release);
-        (void)service();
         return true;
     }
     // CONTROL/TIMER only. Returns true only when a NEW crossfade is
