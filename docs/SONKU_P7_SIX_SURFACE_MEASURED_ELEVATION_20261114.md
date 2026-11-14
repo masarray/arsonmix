@@ -93,3 +93,14 @@ spectral audit now also run in P7's *dedicated* Linux gate, with P7
 macro deliberately disabled. That is the negative-control guarantee:
 shipping SonKu HRTF/ROOM/phase invariants cannot be silently changed
 by the experimental elevation implementation.
+
+## Spectral / interaural quality evidence
+
+The P7 same-source WAV analyzer now performs native offline Goertzel
+measurements over one steady 1-second interval for the original 220,
+660, 940, 3200 and 4700 Hz instruments. Each FRONT/REAR and 0/60°
+pair reports P7-versus-P6 **per-ear magnitude changes**, interaural
+level difference and interaural phase difference. Changes of ≥1.5 dB
+are recorded as *engineering listening-review flags*, not CI failures
+or universal audibility thresholds. These are necessary sanity checks
+against tonal damage; **not a human naturalness/externalization rating**.
