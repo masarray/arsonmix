@@ -51,7 +51,10 @@
   panel.setAttribute('aria-label','ArSon music player and live setlist');
   panel.innerHTML=`
     <div class="ap-top"><span class="ap-brand">ArSon Player</span><span class="ap-sub">Music · Setlist</span><button id="playerClose" type="button" class="ap-close" aria-label="Close player">×</button></div>
-    <div class="ap-current"><div class="ap-overline">PLAYER A · CURRENT</div><div id="playerNow" class="ap-title">No music loaded</div><div class="ap-time"><span id="playerElapsed">00:00</span><progress id="playerProgress" max="1" value="0" aria-label="Song progress"></progress><span id="playerDuration">00:00</span></div></div>
+    <div class="ap-current"><div class="ap-overline">PLAYER A · CURRENT</div><div id="playerNow" class="ap-title">No music loaded</div>
+      <canvas id="playerWaveform" class="ap-waveform" width="256" height="42" aria-label="Progressive music waveform" role="img"></canvas>
+      <div class="ap-time"><span id="playerElapsed">00:00</span><input id="playerSeek" type="range" min="0" max="1000" step="1" value="0" aria-label="Seek through current song"><span id="playerDuration">00:00</span></div>
+    </div>
     <div class="ap-transport"><button id="playerPlay" type="button">▶ Play</button><button id="playerStop" type="button">■ Stop</button><button id="playerNext" type="button">Next ›</button><button id="playerAutoNext" type="button" aria-pressed="false">Auto Next · Off</button></div>
     <div class="ap-pitchtempo" aria-label="Music pitch and playback speed">
       <div class="ap-pitchctrl"><span>KEY</span><button id="playerKeyMinus" type="button" aria-label="Lower music key one semitone">−</button><output id="playerKeyValue" aria-live="polite">0 st</output><button id="playerKeyPlus" type="button" aria-label="Raise music key one semitone">+</button></div>
