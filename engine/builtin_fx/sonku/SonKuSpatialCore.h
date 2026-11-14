@@ -304,9 +304,10 @@ public:
     // P8.2 stereo bass/SIDE and room mixing remain authoritative.
     bool setResearchFusedMusicClarity(bool enabled) noexcept {
         if(!ready_ || researchPcmStarted_ ||
-           p83Mode_!=p83::Mode::MusicBedP82 ||
+           (enabled && p83Mode_!=p83::Mode::MusicBedP82) ||
            room_.preparedProfile()!=SonKuReflectionProfile::SixSurfaceKemarResearch)
             return false;
+        if(p84FusedMusic_==enabled)return true;
         p84FusedMusic_=enabled;
         reset(); // pre-PCM only: no heavy audio callback mutation
         return true;
