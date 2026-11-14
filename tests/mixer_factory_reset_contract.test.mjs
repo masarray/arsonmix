@@ -10,6 +10,7 @@ const store=read("src/NativeMixerSessionStore.h");
 const ui=read("site/preview-v2/index.html");
 const bridge=read("web/approved-native-bridge.js");
 const logical=read("src/NativeLogicalMixerControl.h");
+const hotkeys=read("src/NativeHotkeyRegistry.h");
 
 test("factory reset is an explicit confirmed native action, never demo-only",()=>{
   assert.match(ui, /id="reset"[^>]*>Reset Mixer/);
@@ -55,6 +56,15 @@ test("preview reset is explicitly FX-free and WIRE-free, not demo-init",()=>{
   assert.match(ui,/t\.fx=Array\(8\)\.fill\('None'\)/);
   assert.match(ui,/wireEdges=\[\];nextWireId=1/);
   assert.match(ui,/setDensity\('comfort'\);init\(true\)/);
+});
+
+test("emergency CLI reset runs before WebView and only clears mixer data",()=>{
+  assert.match(host,/commandLine\.trim\(\)=="--reset-mixer"/);
+  assert.match(host,/appearance\.resetForFactory\(\)/);
+  assert.match(host,/hotkeys\.resetMixerMappings\(\)/);
+  assert.match(hotkeys,/juce::String resetMixerMappings\(\)/);
+  assert.match(hotkeys,/m\.scope=="SESSION"/);
+  assert.match(host,/!isAutoUpdateHealthProbe\(\)/);
 });
 
 test("native bridge clears stale channel appearance on reset readback",()=>{
