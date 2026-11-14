@@ -83,7 +83,9 @@ def main(directory):
         if any(abs(value) > 0.04 for value in anti):
             raise AssertionError(f"anti-phase SIDE changed by correction: {azimuth}: {anti}")
 
-    for name, scene in room_p80.items():
+    for key, scene in room_p80.items():
+        # rows() intentionally keys even one-column lookups by a tuple.
+        name = key[0]
         report["room"][name] = {
             key: float(scene[key]) for key in
             ("first20_energy", "early20_100_energy", "late100_1000_energy")
