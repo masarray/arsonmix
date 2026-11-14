@@ -288,8 +288,14 @@ private:
             juce::AudioBuffer<float> input(2,1536),output(2,1024);
             std::uint64_t consumed=0,written=0;
             const auto estimateTotal=[&]() -> std::uint64_t {
+                // Signalsmith's delay spans BOTH its input-side analysis
+                // window and output-side synthesis window. Count the final
+                // zero-input drain or the displayed duration hides music
+                // still pending in the spectral overlap at EOF.
                 return written+static_cast<std::uint64_t>(std::ceil(
                     (sourceTotal-consumed)*100.0/controls.tempoPercent))
+                    +static_cast<std::uint64_t>(std::ceil(
+                        pitch.inputLatency()*100.0/controls.tempoPercent))
                     +static_cast<std::uint64_t>(pitch.outputLatency());
             };
             length_.store(estimateTotal(),std::memory_order_release);
@@ -355,12 +361,48 @@ private:
                         state_.store(State::ready,std::memory_order_release);
                 }
             }
-            // Drain the final spectral overlap OFF realtime. Without this,
-            // transposed music loses its last FFT window at EOF.
+            // Complete the spectral analysis window before reading the
+            // synthesis tail. Signalsmith explicitly requires feeding
+            // inputLatency() frames of zero PCM at EOF; flush() alone only
+            // drains the synthesis side and can truncate the song's outro.
+            // The same bounded 1024-frame buffers and worker->ring transfer
+            // are reused. No disk/FFT/allocations run on ASIO callback.
             if(!failed && !obsolete(version) && consumed==sourceTotal &&
                pitch.active()) {
+                int analysisToDrain=pitch.inputLatency();
+                if(analysisToDrain<0 || analysisToDrain>deviceHz)
+                    failed=true;
+                while(!failed && !obsolete(version) && analysisToDrain>0) {
+                    if(ring_.bufferedFrames()>highWater) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(3));
+                        continue;
+                    }
+                    const int nOutput=std::min(1024,std::max(1,
+                        static_cast<int>(std::ceil(
+                            analysisToDrain*100.0/controls.tempoPercent))));
+                    int nInput=pitch.nextInputFrames(nOutput);
+                    nInput=std::clamp(nInput,1,analysisToDrain);
+                    input.clear();output.clear();
+                    const float* const silencePcm[]={
+                        input.getReadPointer(0),input.getReadPointer(1)};
+                    float* const tailPcm[]={
+                        output.getWritePointer(0),output.getWritePointer(1)};
+                    if(!pitch.process(silencePcm,nInput,tailPcm,nOutput)) {
+                        failed=true;break;
+                    }
+                    const auto transferred=ring_.write(
+                        tailPcm[0],tailPcm[1],
+                        static_cast<std::size_t>(nOutput));
+                    if(transferred!=static_cast<std::size_t>(nOutput)) {
+                        failed=true;break;
+                    }
+                    analysisToDrain-=nInput;
+                    written+=transferred;
+                }
+                // The output buffer already contains extra analysis-side
+                // audio. The final flush below handles ONLY synthesis delay.
                 const int tail=pitch.outputLatency();
-                if(tail>0 && tail<deviceHz*2) {
+                if(!failed && tail>0 && tail<deviceHz*2) {
                     juce::AudioBuffer<float> ending(2,tail);
                     float* const ends[]={ending.getWritePointer(0),
                                          ending.getWritePointer(1)};
