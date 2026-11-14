@@ -76,8 +76,15 @@ public:
     // Record per-sample ORIGINAL stereo balance before P8.2 mutates PCM.
     // Caller keeps the returned gate in a fixed prepared scratch array.
     float captureGate(float originalL,float originalR) noexcept {
-        const float m=.5f*(originalL+originalR);
-        const float s=.5f*(originalL-originalR);
+        // The SonKu core already rejects non-finite input samples. This
+        // original-source detector runs BEFORE that sanitization: never
+        // allow NaN, Inf or giant gain spikes into squared envelope state.
+        const float safeL=std::isfinite(originalL)?
+            std::clamp(originalL,-4.f,4.f):0.f;
+        const float safeR=std::isfinite(originalR)?
+            std::clamp(originalR,-4.f,4.f):0.f;
+        const float m=.5f*(safeL+safeR);
+        const float s=.5f*(safeL-safeR);
         midEnergy_+=energySlew_*(m*m-midEnergy_);
         sideEnergy_+=energySlew_*(s*s-sideEnergy_);
         const float stereoRatio=sideEnergy_/
