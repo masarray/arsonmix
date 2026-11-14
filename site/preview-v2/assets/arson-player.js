@@ -39,6 +39,49 @@
    send(model.transport?.state==="PLAYING"?"playerPause":"playerPlay");
  });
  $("playerStop").addEventListener("click",()=>send("playerStop"));
+ const seek=$("playerSeek"),waveCanvas=$("playerWaveform");
+ let draggingSeek=false;
+ seek.addEventListener("pointerdown",()=>{draggingSeek=true;});
+ seek.addEventListener("pointerup",()=>{draggingSeek=false;});
+ seek.addEventListener("pointercancel",()=>{draggingSeek=false;});
+ // 'change' emits one intentional seek on release or keyboard commit.
+ // Never send a native seek for each pointermove while the show is live.
+ seek.addEventListener("change",()=>{
+   draggingSeek=false;
+   const length=Number(model.transport?.durationSeconds)||0;
+   const fraction=Number(seek.value)/1000;
+   if(length>0 && Number.isFinite(fraction))
+     send("playerSeek",Math.max(0,Math.min(length,
+       Math.round(fraction*length*100)/100)));
+ });
+ let lastWaveSignature="";
+ const renderWaveform=transport=>{
+   const peaks=transport.waveform;
+   if(!Array.isArray(peaks)||peaks.length!==256)return;
+   const fraction=Number(transport.durationSeconds)>0?
+     Math.max(0,Math.min(1,
+       Number(transport.currentSeconds)/Number(transport.durationSeconds))):0;
+   // Incremental worker histogram. Redraw only when bins or playhead change.
+   const signature=peaks.join(",")+"|"+Math.round(fraction*256);
+   if(signature===lastWaveSignature)return;
+   lastWaveSignature=signature;
+   const ctx=waveCanvas.getContext("2d");
+   if(!ctx)return;
+   const w=waveCanvas.width,h=waveCanvas.height,half=h/2;
+   ctx.clearRect(0,0,w,h);
+   ctx.fillStyle="#1e363e";ctx.fillRect(0,0,w,h);
+   for(let i=0;i<256;++i){
+     // Display only already decoded regions, no fake waveform data.
+     const normalized=Math.max(0,Math.min(1,(Number(peaks[i])||0)/65535));
+     const size=Math.max(0,Math.sqrt(normalized)*(half-2));
+     if(size<0.5)continue;
+     ctx.fillStyle=i<=fraction*256?"#62d1b4":"#567e87";
+     ctx.fillRect(i,half-size,1,size*2);
+   }
+   ctx.fillStyle="#def1e9";
+   ctx.fillRect(Math.round(fraction*255),0,1,h);
+ };
+
  $("playerKeyMinus").addEventListener("click",()=>send("playerKeyStep",-1));
  $("playerKeyPlus").addEventListener("click",()=>send("playerKeyStep",1));
  $("playerTempoMinus").addEventListener("click",()=>send("playerTempoStep",-1));
@@ -192,8 +235,13 @@
    $("playerNow").textContent=t.title||"No music loaded";
    $("playerElapsed").textContent=duration(t.currentSeconds);
    $("playerDuration").textContent=duration(t.durationSeconds);
-   $("playerProgress").value=+t.durationSeconds>0?
-     Math.min(1,Math.max(0,+t.currentSeconds/(+t.durationSeconds))):0;
+   if(!draggingSeek && document.activeElement!==seek){
+     seek.value=String(+t.durationSeconds>0?
+       Math.round(1000*Math.min(1,Math.max(0,
+         +t.currentSeconds/(+t.durationSeconds)))):0);
+   }
+   seek.disabled=!(+t.durationSeconds>0) || !native;
+   renderWaveform(t);
    $("playerPlay").textContent=state==="PLAYING"?"Ⅱ Pause":"▶ Play";
    const editingIndex=model.selected>=0?model.selected:model.current;
    const chosen=model.tracks[editingIndex];
