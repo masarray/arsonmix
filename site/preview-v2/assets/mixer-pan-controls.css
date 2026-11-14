@@ -4,7 +4,7 @@
 .pan-section{height:var(--pan-h);display:flex;align-items:center;gap:4px;padding:0 6px}
 .pan-section input{min-width:0;max-width:100%;accent-color:#9ba7aa}
 .pan-section .pan-icon{font-size:15px;color:#9a9fa1}
-.pan-section output{font-size:9px;min-width:0;text-align:right;color:#6bafc2;white-space:nowrap;overflow:hidden}
+.pan-section output{font-size:9px;min-width:0;text-align:right;color:#6bafc2;white-space:nowrap;overflow:visible;font-variant-numeric:tabular-nums}
 .pan-control{height:17px;flex:1;min-width:0;position:relative;display:flex;align-items:center;isolation:isolate}
 .pan-control:after{content:"";pointer-events:none;position:absolute;top:1px;bottom:0;left:50%;border-left:1px solid #91c1cb;opacity:.95}
 .center-pan{width:100%!important;flex:1;min-width:0;height:18px!important;appearance:none;-webkit-appearance:none;background:transparent;cursor:ew-resize;margin:0;position:relative;z-index:2}
@@ -21,7 +21,7 @@
 .console-body .center-pan::-webkit-slider-thumb{width:15px;height:19px;margin-top:-7px;border:1px solid #344b55;border-radius:3px;background:linear-gradient(#f0f5f7,#9bafba 47%,#556e7e 49%,#dce6e9 65%,#728f9f);box-shadow:0 1px 2px #111}
 .console-body .center-pan::-moz-range-thumb{width:15px;height:19px;border-radius:3px;border:1px solid #344b55;background:linear-gradient(#f0f5f7,#9bafba 47%,#556e7e)}
 .console-body[data-density="compact"] .pan-section{grid-template-columns:12px minmax(0,1fr) 18px;gap:1px;padding:0 3px}
-.console-body .pan-section{grid-template-columns:23px minmax(0,1fr) 23px!important;gap:3px!important;padding:0 4px!important;}
+.console-body .pan-section{grid-template-columns:23px minmax(0,1fr) 39px!important;gap:3px!important;padding:0 4px!important;}
 .console-body .pan-icon{font-size:9px!important}
 .console-body .center-pan{height:40px!important;min-height:40px!important;max-height:40px!important;width:100%!important;appearance:none!important;-webkit-appearance:none!important;background:transparent!important;padding:0!important}
 .console-body .center-pan::-webkit-slider-runnable-track{height:5px!important;border:1px solid #0a1218!important;background:linear-gradient(to right,#0b151a 0%,#0b151a var(--pan-start),#42b5ca var(--pan-start),#42b5ca var(--pan-end),#0b151a var(--pan-end),#0b151a 100%)!important}
@@ -45,21 +45,3 @@
    Rail, detent, input hitbox, SEND slider and drag mapping are unchanged. */
 .console-body .center-pan::-webkit-slider-thumb{margin-top:-15px!important}
 .console-body .ari-horizontal::-webkit-slider-thumb{margin-top:-10px!important}
-
-/* PAN legibility contract — full L100 / R100, including MASTER and compact.
-   The slider absorbs the width change; keep the physical thumb and detent.
-   Do not hide overflow or shrink numerals to force a cramped 23px field. */
-.console-body .pan-section{
- grid-template-columns:23px minmax(0,1fr) 39px!important;
- gap:3px!important;
-}
-.console-body .pan-section output{
- min-width:0!important;width:100%!important;overflow:visible!important;
- font-variant-numeric:tabular-nums;letter-spacing:-.15px;
- text-align:right;white-space:nowrap;
-}
-.console-body[data-density="compact"] .pan-section,
-.console-body.narrow .pan-section{
- grid-template-columns:15px minmax(0,1fr) 36px!important;
- gap:2px!important;
-}
