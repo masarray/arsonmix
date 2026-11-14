@@ -37,6 +37,15 @@ if(ARMIX_SONKU_EXPERIMENTAL_P82_ROOM AND
    NOT ARMIX_SONKU_EXPERIMENTAL_P8_TRANSPARENT_BASS)
   message(FATAL_ERROR "P8.2 room requires P8.1 transparent-bass experiment")
 endif()
+# Isolated P8.3 physical speakers + music-LF A/B, public binaries OFF.
+# Requires the already opt-in P8.2 native measured room/XYZ stack.
+option(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+       "Enable P8.3 v4 native render mode and real-time speaker audition (unreleased)"
+       OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P82_ROOM)
+  message(FATAL_ERROR "P8.3 native speaker research requires P8.2 room ON")
+endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -237,7 +246,9 @@ target_compile_definitions(ARMixConsole PRIVATE
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:SONKU_P72_NATIVE_XYZ_RT=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE}>:SONKU_P75_MUSIC_SAFE_RESEARCH=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P8_TRANSPARENT_BASS}>:SONKU_P80_TRANSPARENT_BASS_RESEARCH=1>
-    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P82_ROOM}>:SONKU_P82_MULTIBAND_ROOM_RESEARCH=1>)
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P82_ROOM}>:SONKU_P82_MULTIBAND_ROOM_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT}>:ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT}>:SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1>)
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
   # Never link Windows loader or sound APIs into macOS/Linux builds.

@@ -3046,6 +3046,11 @@ private:
                 armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch)
             reply->setProperty("p8TransparentBass",true);
 #endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+        if(processor && processor->preparedReflectionProfile()==
+               armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch)
+            reply->setProperty("p83SpeakerModes",true);
+#endif
 #if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
         // Read-only P8.2 room capability; only a real admitted measured
         // SonKu FX instance can claim it in the identity-bound snapshot.

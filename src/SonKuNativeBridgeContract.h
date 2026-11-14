@@ -8,7 +8,9 @@
 #include <memory>
 namespace armix::builtin_fx::sonku_bridge {
 inline constexpr int schemaVersion() noexcept {
-#if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+    return 4;
+#elif defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
     return 3;
 #else
     return 2;
@@ -55,6 +57,25 @@ inline bool decodeSettings(const juce::var& values,armix::sonku::Settings& out) 
     // Never falsely acknowledge 3D JSON in a public v2-only binary.
     if(!values.getProperty("directElevationDegrees",{}).isVoid())return false;
 #endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+    const auto mode=values.getProperty("renderMode",{});
+    if(!mode.isVoid()){
+        if(!mode.isInt())return false;
+        proposed.renderMode=static_cast<int>(mode);
+    }
+    const auto music=values.getProperty("musicCompatibleLowFrequency",{});
+    if(!music.isVoid()){
+        if(!music.isBool())return false;
+        proposed.musicCompatibleLowFrequency=static_cast<bool>(music);
+    }
+    if(!number(values,"headYawDegrees",proposed.headYawDegrees,false))
+        return false;
+#else
+    // Do not accept or silently ignore research controls in a v2/v3 binary.
+    if(!values.getProperty("renderMode",{}).isVoid() ||
+       !values.getProperty("musicCompatibleLowFrequency",{}).isVoid() ||
+       !values.getProperty("headYawDegrees",{}).isVoid())return false;
+#endif
     if(!armix::sonku::valid(proposed))return false;
     out=proposed;
     return true;
@@ -74,6 +95,12 @@ inline juce::var acceptedSettings(const armix::sonku::Settings& s) {
     values->setProperty("ambience",s.ambience);
 #if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
     values->setProperty("directElevationDegrees",s.directElevationDegrees);
+#endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+    values->setProperty("renderMode",s.renderMode);
+    values->setProperty("musicCompatibleLowFrequency",
+                        s.musicCompatibleLowFrequency);
+    values->setProperty("headYawDegrees",s.headYawDegrees);
 #endif
     return juce::var(values.release());
 }
