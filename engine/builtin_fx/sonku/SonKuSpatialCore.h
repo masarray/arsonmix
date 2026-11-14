@@ -547,7 +547,11 @@ public:
                     degrees_,transparentBass?settings_.stereoSpreadDegrees:
                         ((musicSafe||monoObject)?0.f:settings_.stereoSpreadDegrees)
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+#if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
+                    ,(positionedMode||musicFused)?p83HeadYaw_:0.f
+#else
                     ,positionedMode?p83HeadYaw_:0.f
+#endif
 #endif
                     )
                 :SonKuEarlyReflections::Ears{};
