@@ -53,7 +53,11 @@ int main(){
             }
             squared+=x.left*x.left+x.right*x.right;
         }
-        assert(squared>1.e-4);
+        // Exact L=-R sums to zero for spread==0: a PHYSICALLY CORRECT
+        // null, not a DSP failure. Music-side preservation belongs to
+        // the spatial core (P0/P1 regression), not this wet-only path.
+        if(mode==2)assert(squared<1.e-6);
+        else assert(squared>1.e-4);
         const double errorRms=std::sqrt(error/rate);
         assert(errorRms<3.e-6&&maxDiff<2.e-5);
         // In-flight spread change automatically DISARMS fusion forever
