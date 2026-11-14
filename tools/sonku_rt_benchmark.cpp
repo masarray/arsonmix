@@ -21,7 +21,7 @@ template<std::size_t block>
 Result measure(double rate,float amount,float late=0.f,
                const armix::sonku::SonKuRoomGeometry* geometry=nullptr,
                bool directional=false,float spread=60.f,
-               bool fused=false){
+               bool fused=false,bool contiguous=false){
     using namespace armix::sonku;
     SonKuSpatialCore dsp;
     if(!dsp.prepare(rate))throw std::runtime_error("unsupported sample rate");
@@ -29,6 +29,8 @@ Result measure(double rate,float amount,float late=0.f,
         throw std::runtime_error("directional room not prepared");
     if(fused && !dsp.setDirectionalZeroSpreadFusion(true))
         throw std::runtime_error("P3 zero-spread fusion not prepared");
+    if(contiguous && !dsp.setDirectionalContiguousHrir(true))
+        throw std::runtime_error("P4 contiguous HRIR not prepared");
     Settings s{};s.moving=true;s.revolutionSeconds=10.f;
     s.spatialMix=1.f;s.stereoSpreadDegrees=spread;
     if(!dsp.setSettings(s)||
@@ -139,6 +141,25 @@ int main(){
           <<" p3_p99us="<<p3.p99us
           <<" spread60_no_fusion_ms="<<p3Stereo.milliseconds
           <<" NOTE=runner_local_not_ASIO\n";
+        // Compare the exact same moving 60-degree stereo source and
+        // reflected full-length HRIR; disabled vs opt-in contiguous FIR.
+        // Informational timing: no hard CI threshold on noisy hosted CPUs.
+        for(double rate:{44100.,48000.}){
+            for(float spread:{0.f,60.f,120.f}){
+                const auto p2=measure<128>(rate,.55f,0.f,nullptr,
+                                            true,spread,false,false);
+                const auto p4=measure<128>(rate,.55f,0.f,nullptr,
+                                            true,spread,false,true);
+                std::cout<<std::fixed<<std::setprecision(3)
+                  <<"SONKU_P4_CPU rate="<<rate<<" block=128 spread="<<spread
+                  <<" p2_ms="<<p2.milliseconds
+                  <<" p4_ms="<<p4.milliseconds
+                  <<" p2_over_p4="<<p2.milliseconds/p4.milliseconds
+                  <<" p2_p99us="<<p2.p99us
+                  <<" p4_p99us="<<p4.p99us
+                  <<" note=runner_local_not_ASIO\n";
+            }
+        }
     }catch(const std::exception& e){
         std::cerr<<"SONKU CPU BENCH FAIL: "<<e.what()<<"\n";
         return 1;

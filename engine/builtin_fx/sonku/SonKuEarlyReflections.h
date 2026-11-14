@@ -54,7 +54,7 @@ public:
     bool setDirectionalHrir(bool enabled) noexcept {
         if(active())return false;
         directionalHrir_=enabled;
-        if(!enabled)fastZeroSpread_=false;
+        if(!enabled){fastZeroSpread_=false;fastContiguousHrir_=false;}
         fuseEligible_=true;
         untilGeometry_=0;primed_=false;
         return true;
@@ -70,6 +70,15 @@ public:
         return true;
     }
     bool zeroSpreadFusionEnabled() const noexcept{return fastZeroSpread_;}
+    // P4 experimental, inactive-only: eliminate per-tap circular masking
+    // when the delayed 140-tap HRIR FIR window is wholly in one ring span.
+    // No duplicated ring storage and no HRIR coefficient truncation.
+    bool setDirectionalContiguousHrir(bool enabled) noexcept {
+        if(active() || (enabled && !directionalHrir_))return false;
+        fastContiguousHrir_=enabled;
+        return true;
+    }
+    bool contiguousHrirEnabled() const noexcept{return fastContiguousHrir_;}
     // Deliberately experimental and OFF by default. Legacy 8/8 direction
     // baseline stays bit-identical. A/B is set on an unpublished/offline core
     // until headphone, CPU and device gates approve native publication.
@@ -184,27 +193,44 @@ public:
                     const int idx=(write_-d)&(ringFrames-1);
                     const auto& signal=history_[s];
                     float l=0.f,r=0.f;
-                    for(int k=0;k<hrir::taps;++k){
-                        const int at=(idx-k)&(ringFrames-1);
-                        const int prev=(at-1)&(ringFrames-1);
-                        // Fast path replaces TWO identical HRIR convolutions
-                        // by ONE on the sum of the stereo source histories.
-                        // No FIR tap truncation, downsampling or ITD trick.
-                        const float v=fused
-                            ?((1.f-frac)*(signal[at]+history_[1][at])+
-                                frac*(signal[prev]+history_[1][prev]))
-                            :((1.f-frac)*signal[at]+frac*signal[prev]);
-                        auto& hL=p.kernel[0][k];
-                        auto& hR=p.kernel[1][k];
-                        hL+=kernelSlew_*(p.targetKernel[0][k]-hL);
-                        hR+=kernelSlew_*(p.targetKernel[1][k]-hR);
-                        // Advance the skipped source's HRIR coefficients
-                        // identically for a smooth switch if spread changes.
-                        if(fused){
-                            tap_[1][wall].kernel[0][k]=hL;
-                            tap_[1][wall].kernel[1][k]=hR;
+                    // One source of truth for the coefficient slew and ear
+                    // FIR arithmetic; only history address selection varies.
+                    const auto render=[&](auto&& sample) noexcept {
+                        for(int k=0;k<hrir::taps;++k){
+                            const float v=sample(k);
+                            auto& hL=p.kernel[0][k];
+                            auto& hR=p.kernel[1][k];
+                            hL+=kernelSlew_*(p.targetKernel[0][k]-hL);
+                            hR+=kernelSlew_*(p.targetKernel[1][k]-hR);
+                            if(fused){
+                                tap_[1][wall].kernel[0][k]=hL;
+                                tap_[1][wall].kernel[1][k]=hR;
+                            }
+                            l+=v*hL;r+=v*hR;
                         }
-                        l+=v*hL;r+=v*hR;
+                    };
+                    if(fastContiguousHrir_ && idx>=hrir::taps){
+                        // For 8052/8192 ring positions the entire 140-tap
+                        // window is continuous; no wrap mask inside FIR.
+                        const float* first=signal.data()+idx;
+                        const float* second=history_[1].data()+idx;
+                        render([&](int k) noexcept {
+                            return fused
+                                ?((1.f-frac)*(first[-k]+second[-k])+
+                                    frac*(first[-k-1]+second[-k-1]))
+                                :((1.f-frac)*first[-k]+frac*first[-k-1]);
+                        });
+                    }else{
+                        // Exact, original masked circular reference path,
+                        // used for all non-opt-in and near-wrap samples.
+                        render([&](int k) noexcept {
+                            const int at=(idx-k)&(ringFrames-1);
+                            const int prev=(at-1)&(ringFrames-1);
+                            return fused
+                                ?((1.f-frac)*(signal[at]+history_[1][at])+
+                                    frac*(signal[prev]+history_[1][prev]))
+                                :((1.f-frac)*signal[at]+frac*signal[prev]);
+                        });
                     }
                     if(fused){
                         auto& second=tap_[1][wall];
@@ -338,5 +364,6 @@ private:
     bool custom_=false,ready_=false,primed_=false;
     bool directionalHrir_=false;
     bool fastZeroSpread_=false,fuseEligible_=true;
+    bool fastContiguousHrir_=false;
 };
 } // namespace armix::sonku

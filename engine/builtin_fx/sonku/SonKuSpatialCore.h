@@ -142,6 +142,10 @@ public:
     bool setDirectionalZeroSpreadFusion(bool on) noexcept {
         return room_.setDirectionalZeroSpreadFusion(on);
     }
+    // P4 research opt-in, no on-disk state nor native GUI control.
+    bool setDirectionalContiguousHrir(bool on) noexcept {
+        return room_.setDirectionalContiguousHrir(on);
+    }
     // Offline M3 distance/large-room acoustic trial. Not a GUI/native ABI.
     bool setAcousticRoomGeometry(const SonKuRoomGeometry& geometry) noexcept {
         return room_.setGeometry(geometry);
