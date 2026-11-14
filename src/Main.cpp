@@ -4025,6 +4025,9 @@ private:
             if(action=="playerQueueNext")
                 playerQueue_.insert(playerQueue_.begin(),file);
             else playerQueue_.push_back(file);
+            // Queue edits are explicit operator decisions. If a previous
+            // automatic attempt failed, allow the revised queue to retry.
+            if(playerPendingIndex_<0)playerAutoAdvanceGate_.rearm();
             // A manually queued NEXT deserves a warm decoder even with
             // Auto Next OFF. Only CONTROL does file/preload work.
             if(playerPendingIndex_<0 && !playerQueue_.empty() &&
@@ -4055,6 +4058,7 @@ private:
                 if(!armix::player::PlayerShowTransitionPolicy::moveQueued(
                     playerQueue_,index,to))return;
             } else playerQueue_.erase(playerQueue_.begin()+index);
+            playerAutoAdvanceGate_.rearm();
             playerError_.clear();
             emitPlayerState(true);return;
         }
