@@ -2558,6 +2558,40 @@ int main(int argc,char** argv) {
         assert(moved->setRackBypass(0,false));
         assert(!moved->insertBypassed(0,0));           // saved ON restored
     }
+    // One global physical A/B atomic bypasses INPUT and BUS processors
+    // together, without editing rack/slot state, adding an audio callback
+    // allocation, or changing fader/WIRE/PAN. Each plugin uses its existing
+    // latency-safe smooth wet/dry bypass envelope on the same PCM graph.
+    {
+        auto graph=makeGraph(2.f,3.f);
+        std::atomic<bool> globalOff{false};
+        graph->bindGlobalRackOverride(&globalOff);
+        std::array<float,8> source{},silent{},left{},right{};
+        source.fill(.4f);
+        const float* pins[]{source.data(),silent.data(),silent.data()};
+        const auto render80=[&]() {
+            const auto allocated=heapCalls.load(std::memory_order_relaxed);
+            for(int i=0;i<80;++i)
+                assert(graph->process(pins,3,left.data(),right.data(),8));
+            assert(heapCalls.load(std::memory_order_relaxed)==allocated);
+            return left[7];
+        };
+        const float wet=render80();
+        const bool rackBefore=graph->rackBypassed(0);
+        const bool slotBefore=graph->insertBypassed(0,0);
+        globalOff.store(true,std::memory_order_release);
+        const float dry=render80(); // 640 samples, beyond 8 ms fade
+        constexpr float center=.7071067811865475f;
+        assert(std::abs(dry-.4f*.5f*center)<.001f);
+        assert(wet>dry*3.f);
+        assert(graph->rackBypassed(0)==rackBefore);
+        assert(graph->insertBypassed(0,0)==slotBefore);
+        globalOff.store(false,std::memory_order_release);
+        const float wetRestored=render80();
+        assert(std::abs(wetRestored-wet)<.001f);
+        assert(graph->rackBypassed(0)==rackBefore);
+        assert(graph->insertBypassed(0,0)==slotBefore);
+    }
     // Run M5 AFTER the legacy suite: older M4 tests use absolute global
     // GainFx::living/released counters as their own lifetime oracle. Running
     // M5 before them changes those historical baseline counts, not DSP.
