@@ -24,6 +24,9 @@ concurrency:
   cancel-in-progress: true
 jobs:
   preflight:
+    # Stacked P8 releases must NOT rebuild three old full JUCE Windows hosts.
+    # The corresponding workflow remains manually dispatchable at any SHA.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/sonku-p80-measured-acoustics-timbre-20261114' }}
     name: Isolated fast PCM and GUI preflight
     runs-on: ubuntu-latest
     timeout-minutes: 8
