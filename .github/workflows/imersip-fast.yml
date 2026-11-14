@@ -5,6 +5,7 @@ on:
       - 'engine/builtin_fx/ImerSip*.h'
       - 'tests/imersip_music_phase_guard_test.cpp'
       - 'tests/imersip_fx_picker_contract_test.py'
+      - 'tests/imersip_native_picker_chromium_smoke.py'
       - 'src/NativeBuiltInFx.h'
       - 'scripts/compose_native_peq.py'
       - 'scripts/build_approved_native_gui.py'
@@ -37,3 +38,28 @@ jobs:
         run: ./imersip_music_test
       - name: Build-to-FX-Picker registration and JUCE host contract
         run: python -m unittest discover -s tests -p imersip_fx_picker_contract_test.py -v
+
+  picker-visual:
+    name: ImerSip in actual compiled native FX Picker (Chromium)
+    needs: source-pcm
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install isolated browser driver
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Visual native GUI catalog, search, JUCE intent and no fake PCM
+        run: python tests/imersip_native_picker_chromium_smoke.py
+      - name: Upload actual ImerSip picker screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImerSip-Native-FX-Picker-Evidence-${{ github.run_id }}
+          path: imersip-visible-native-picker.png
+          if-no-files-found: ignore
+          retention-days: 14
