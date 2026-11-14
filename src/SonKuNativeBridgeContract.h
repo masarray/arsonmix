@@ -8,7 +8,9 @@
 #include <memory>
 namespace armix::builtin_fx::sonku_bridge {
 inline constexpr int schemaVersion() noexcept {
-#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT
+    return 5;
+#elif defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
     return 4;
 #elif defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
     return 3;
@@ -75,6 +77,13 @@ inline bool decodeSettings(const juce::var& values,armix::sonku::Settings& out) 
     if(!values.getProperty("renderMode",{}).isVoid() ||
        !values.getProperty("musicCompatibleLowFrequency",{}).isVoid() ||
        !values.getProperty("headYawDegrees",{}).isVoid())return false;
+#endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT
+    // Rejected P8.3 physical/mono path is not an exposed option in
+    // the P8.4 research binary. A/B is only P8.2 golden vs fused.
+    if(proposed.renderMode!=0 && proposed.renderMode!=3)return false;
+    if(proposed.renderMode==3 && proposed.musicCompatibleLowFrequency)
+        return false;
 #endif
     if(!armix::sonku::valid(proposed))return false;
     out=proposed;
