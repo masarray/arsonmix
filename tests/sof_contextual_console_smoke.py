@@ -60,15 +60,11 @@ def run() -> None:
                     assert first.locator(".is-gain-view").count() == 1
                     assert page.locator(".console-body").evaluate(
                         "el => el.classList.contains('gain-view-active')")
-                    rail_state = page.locator(".section-rail .rail-cell.fx").evaluate("""el => ({
-                        text: getComputedStyle(el, '::after').content,
-                        display: getComputedStyle(el, '::after').display,
-                        className: el.className,
-                        railParent: el.parentElement.className,
-                        styles: [...document.styleSheets].map(s=>s.href || 'inline').slice(0,25)
-                    })""")
-                    page.screenshot(path=str(ROOT / f"arsonmix-gain-knob-debug-{width}x{height}.png"))
-                    assert "GAIN" in rail_state["text"], (width,rail_state)
+                    gain_rail = page.locator(".section-rail .rail-cell.fx .rail-gain-caption")
+                    assert gain_rail.count() == 1 and gain_rail.is_visible()
+                    assert gain_rail.inner_text() == "GAIN"
+                    assert gain_rail.evaluate(
+                        "el => getComputedStyle(el).writingMode") == "vertical-rl"
                     knob_visual = first.locator(".gain-dial")
                     assert knob_visual.count() == 1
                     body_size = knob_visual.bounding_box()
@@ -114,6 +110,7 @@ def run() -> None:
                     fx.click()
                     assert not page.locator(".console-body").evaluate(
                         "el => el.classList.contains('gain-view-active')")
+                    assert not gain_rail.is_visible(), "Rail GAIN caption leaked into FX RACK"
                     assert first.locator(".is-gain-view").count() == 0
                     assert first.locator(".fxslot-list").count() == 1
 
