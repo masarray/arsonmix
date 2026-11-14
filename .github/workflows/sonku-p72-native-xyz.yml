@@ -8,6 +8,10 @@ on:
       - 'engine/builtin_fx/SonKuSpatialProcessor.h'
       - 'engine/builtin_fx/sonku/**'
       - 'tests/sonku_p72_*'
+      - 'src/SonKuNativeBridgeContract.h'
+      - 'site/preview-v2/assets/mixer-native-sonku.js'
+      - 'tests/sonku_p73_*'
+      - 'tests/native_peq_assembly_test.py'
       - 'CMakeLists.txt'
       - '.github/workflows/sonku-p72-native-xyz.yml'
 permissions:
@@ -31,6 +35,12 @@ jobs:
         run: |
           test "$(git rev-parse HEAD)" = "$EXPECTED"
           echo "SONKU_P72_EXACT_SHA=$EXPECTED"
+      - name: P7.3 JS grammar, actual geometry/capability and bridge regression
+        run: |
+          set -euo pipefail
+          node --check site/preview-v2/assets/mixer-native-sonku.js
+          node tests/sonku_p73_gui_contract_test.js
+          python -m unittest discover -s tests -p native_peq_assembly_test.py
       - name: Compile and execute original default native PCM contracts
         run: |
           set -euo pipefail

@@ -5,6 +5,7 @@
 #undef NDEBUG
 #endif
 #include "../engine/builtin_fx/SonKuSpatialProcessor.h"
+#include "../src/SonKuNativeBridgeContract.h"
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -25,6 +26,17 @@ int main(){
     scene.spacePreset=2;scene.sourceDistanceMeters=5.f;
     scene.roomAmount=.55f;scene.ambience=.30f;
     assert(armix::sonku::valid(scene));
+    // Shipping editor/bridge must NEVER pretend P7.3 elevation is active.
+    using namespace armix::builtin_fx::sonku_bridge;
+    static_assert(schemaVersion()==2);
+    armix::sonku::Settings decoded{};
+    auto json=acceptedSettings(scene);
+    assert(decodeSettings(json,decoded));
+    assert(decoded.spacePreset==2&&decoded.sourceDistanceMeters==5.f);
+    auto incompatible=acceptedSettings(scene);
+    incompatible.getDynamicObject()->setProperty("directElevationDegrees",0.f);
+    assert(!decodeSettings(incompatible,decoded));
+    assert(decoded.spacePreset==2);
     assert(live.queueSettings(scene,42));
     // Queued does NOT mean accepted; only the actual PCM callback may apply.
     assert(live.acceptedSettings().spacePreset==0);

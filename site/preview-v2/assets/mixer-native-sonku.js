@@ -7,6 +7,24 @@ const defaults=()=>({startAzimuthDegrees:0,revolutionSeconds:12,
  stereoSpreadDegrees:60,spatialMix:1,outputTrim:.75,moving:true,clockwise:true,
  spacePreset:0,sourceDistanceMeters:1.6,roomAmount:.55,ambience:.30});
 const normalizeSettings=s=>({...defaults(),...s});
+// Native schema v3 is the ONLY authority that enables elevation controls.
+// Public v2 never receives, edits or serializes a speculative XYZ field.
+const roomHeights=[3.2,3.2,4.8,7.2];
+const elevationLimits=s=>{
+ const distance=s.sourceDistanceMeters;
+ const height=roomHeights[s.spacePreset];
+ if(!Number.isFinite(distance)||!height)return {min:0,max:0};
+ const bottom=Math.max(-40,Math.asin(Math.max(-1,Math.min(1,(.5-1.45)/distance)))*180/Math.PI);
+ const top=Math.min(60,Math.asin(Math.max(-1,Math.min(1,(height-.5-1.45)/distance)))*180/Math.PI);
+ // Keep a 0.1 degree safety margin for C++ float boundary rounding.
+ return {min:Math.ceil((bottom+0.001)*10)/10,
+         max:Math.floor((top-0.001)*10)/10};
+};
+const fitElevation=s=>{
+ if(!Object.prototype.hasOwnProperty.call(s,"directElevationDegrees"))return s;
+ const {min,max}=elevationLimits(s);
+ return {...s,directElevationDegrees:Math.min(max,Math.max(min,s.directElevationDegrees))};
+};
 // Legacy v1/v2 states already persist a LINEAR outputTrim number (0..1).
 // Keep the native JSON key and its meaning intact; the visible GAIN dial
 // now expresses the SAME linear multiplier in dB and can exceed unity.
@@ -26,7 +44,14 @@ const valid=s=>s && Number.isFinite(s.startAzimuthDegrees) &&
  Number.isFinite(s.sourceDistanceMeters) && s.sourceDistanceMeters>=1.6 &&
  s.sourceDistanceMeters<=roomMaxDistance[s.spacePreset]+.0001 &&
  Number.isFinite(s.roomAmount) && s.roomAmount>=0 && s.roomAmount<=1 &&
- Number.isFinite(s.ambience) && s.ambience>=0 && s.ambience<=1;
+ Number.isFinite(s.ambience) && s.ambience>=0 && s.ambience<=1 &&
+ (s.directElevationDegrees===undefined || (
+   Number.isFinite(s.directElevationDegrees) &&
+   s.directElevationDegrees>= -40 && s.directElevationDegrees<=60 &&
+   s.sourceDistanceMeters*Math.cos(s.directElevationDegrees*Math.PI/180)>=.7 &&
+   1.45+s.sourceDistanceMeters*Math.sin(s.directElevationDegrees*Math.PI/180)>=.5 &&
+   1.45+s.sourceDistanceMeters*Math.sin(s.directElevationDegrees*Math.PI/180)<=
+       roomHeights[s.spacePreset]-.5));
 const backend=()=>window.__JUCE__?.backend;
 const native=()=>typeof backend()?.emitEvent==="function";
 const snapshot=()=>window.__ARMIX_NATIVE_M2__?.fxEditorState?.()||
@@ -129,6 +154,8 @@ root.innerHTML=[
  '<button type="button" data-sk-room="3">LARGE</button></div>',
  '<label class="sk-space-slider" for="skDistance">SOURCE DISTANCE <output id="skDistanceValue">1.6 m</output>',
  '<input id="skDistance" type="range" min="1.6" max="10" step="0.1" value="1.6"/></label>',
+ '<label class="sk-space-slider" id="skElevationRow" for="skElevation" hidden>SOURCE ELEVATION <output id="skElevationValue">0.0°</output>',
+ '<input id="skElevation" type="range" min="-30" max="45" step="0.1" value="0" aria-label="Direct source elevation in degrees" title="Measured binaural source height · native experimental schema v3 only"/></label>',
  '<label class="sk-space-slider" for="skReflections">REFLECTIONS <output id="skReflectionsValue">55%</output>',
  '<input id="skReflections" type="range" min="0" max="100" step="1" value="55" title="First-wall reflections level, 0 is dry"/></label>',
  '<label class="sk-space-slider" for="skAmbience">REVERB <output id="skAmbienceValue">30%</output>',
@@ -146,6 +173,7 @@ const depthLayers={far:$("skFarSources"),near:$("skNearSources")};
 const mount=()=>{if(!root.isConnected)document.body.append(root)};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
+ xyzCapable=false,
  readId="",readSentAt=0,seq=1,clock=null,frame=null,observed=0,observedAt=0,
  drag=null,dialDrag=null,rangeEdits=new Set(),gestureStart=new Map(),
  visualPhase=0,visualAt=0,liveTimer=null,lastLiveAt=0;
@@ -193,6 +221,19 @@ function render(){
  if(!rangeEdits.has("skDistance"))
   distance.value=String(Math.min(max,s.sourceDistanceMeters));
  $("skDistanceValue").textContent=s.sourceDistanceMeters.toFixed(1)+" m";
+ // Never expose a nonfunctional XYZ control in the publicly compiled
+ // v2-only application; the actual native snapshot controls capability.
+ const elevationRow=$("skElevationRow"),elevation=$("skElevation");
+ elevationRow.hidden=!xyzCapable;
+ if(xyzCapable){
+  const limits=elevationLimits(s);
+  elevation.min=String(limits.min);elevation.max=String(limits.max);
+  if(!rangeEdits.has("skElevation"))elevation.value=String(s.directElevationDegrees);
+  $("skElevationValue").textContent=s.directElevationDegrees.toFixed(1)+"°";
+ }
+ root.querySelector(".sk-stage-caption").textContent=xyzCapable
+  ?"HEADPHONES · MEASURED 3D HRIR · 44.1 / 48 kHz"
+  :"HEADPHONES · HRIR 0° ELEVATION · 44.1 / 48 kHz";
  if(!rangeEdits.has("skAmbience"))
   $("skAmbience").value=String(Math.round(s.ambience*100));
  const reflections=$("skReflections");
@@ -277,7 +318,8 @@ function requestSnapshot(force=false){
 // latest-wins coalescing; ACK + accepted snapshot remain mandatory before
 // issuing the next. Never fill the DSP SPSC queue with raw pointer events.
 const LIVE_INTERVAL_MS=40;
-const sameSettings=(a,b)=>a&&b&&Object.keys(defaults()).every(k=>a[k]===b[k]);
+const sameSettings=(a,b)=>a&&b&&Object.keys(defaults()).every(k=>a[k]===b[k]) &&
+ (!xyzCapable || a.directElevationDegrees===b.directElevationDegrees);
 function send(next,continuous=false){
  if(!valid(next))return false;
  draft={...next};render();
@@ -338,9 +380,17 @@ backend()?.addEventListener?.("arMixBuiltinSonKuAck",r=>{
 backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  if(r?.requestId!==readId||!current)return;
  const c=context();if(!c||r.status!=="ACCEPTED"||
-   r.channelId!==c.channelId||r.instanceId!==c.instanceId)return;
+   r.channelId!==c.channelId||r.instanceId!==c.instanceId||
+   String(r.deviceEpoch)!==String(c.deviceEpoch)||
+   String(r.graphRevision)!==String(c.graphRevision))return;
+ const measured=r.schemaVersion===3 &&
+   Number.isFinite(r.settings?.directElevationDegrees);
+ if(r.schemaVersion!==2&&!measured)return;
  const incoming=normalizeSettings(r.settings);
+ if(!measured)delete incoming.directElevationDegrees;
  if(!valid(incoming))return;
+ // Activation happens only after a fully identity-bound native readback.
+ xyzCapable=measured;
  readId="";readSentAt=0;
  if(pending) {
   if(!pending.ack || r.appliedRequestId!==pending.requestId){
@@ -363,7 +413,7 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  }
  render();
 });
-$("skClose").addEventListener("click",()=>{root.hidden=true;current=null;
+$("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapable=false;
  cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
  drag=null;rangeEdits.clear();gestureStart.clear();lastLiveAt=0;
  if(clock!==null){clearInterval(clock);clock=null;}
@@ -372,12 +422,17 @@ $("skMotion").addEventListener("click",()=>send({...draft,moving:!draft.moving})
 $("skDirection").addEventListener("click",()=>send({...draft,clockwise:!draft.clockwise}));
 root.querySelectorAll("[data-sk-room]").forEach(btn=>btn.addEventListener("click",()=>{
  const preset=Number(btn.dataset.skRoom),max=roomMaxDistance[preset];
- send({...draft,spacePreset:preset,
+ const proposed={...draft,spacePreset:preset,
   sourceDistanceMeters:preset===0?draft.sourceDistanceMeters:
-   Math.min(draft.sourceDistanceMeters,max)});
+   Math.min(draft.sourceDistanceMeters,max)};
+ const fitted=xyzCapable?fitElevation(proposed):proposed;
+ if(send(fitted)&&xyzCapable &&
+    fitted.directElevationDegrees!==proposed.directElevationDegrees)
+  hint("ELEVATION FITTED TO ROOM · AWAITING DSP ACK");
 }));
 for(const [id,key,convert] of [
  ["skDistance","sourceDistanceMeters",v=>v],
+ ["skElevation","directElevationDegrees",v=>v],
  ["skReflections","roomAmount",v=>v/100],
  ["skAmbience","ambience",v=>v/100]]) {
  const slider=$(id);
@@ -391,7 +446,10 @@ for(const [id,key,convert] of [
   const value=Number(slider.value);
   if(!Number.isFinite(value))return;
   rangeEdits.add(id);
-  liveInput({...draft,[key]:convert(value)});
+  const proposed={...draft,[key]:convert(value)};
+  const fitted=key==="sourceDistanceMeters"&&xyzCapable
+   ?fitElevation(proposed):proposed;
+  liveInput(fitted);
  });
  slider.addEventListener("change",()=>{
   gestureStart.delete(id);rangeEdits.delete(id);
@@ -508,7 +566,7 @@ const api={
   cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
   observedAt=0;visualAt=0;visualPhase=0;lastLiveAt=0;
   drag=null;rangeEdits.clear();gestureStart.clear();
-  accepted=defaults();draft=defaults();
+  accepted=defaults();draft=defaults();xyzCapable=false;
   current={track,slot,instanceId:null};
   const s=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const fx=s?.graph?.channels?.find(x=>x.id===id)?.inserts?.[slot];
