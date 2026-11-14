@@ -2,6 +2,7 @@
 #pragma once
 #include "PreparedStereoPcmRing.h"
 #include "PlayerPitchTempoProcessor.h"
+#include "PlayerWaveformIndex.h"
 #include "../core/RealtimeSlew64.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <atomic>
@@ -32,6 +33,7 @@ public:
         int keySemitones=0,tempoPercent=100;
         int requestedKey=0,requestedTempo=100;
         bool processingChangePending=false;
+        std::array<std::uint16_t,PlayerWaveformIndex::bins> waveform{};
     };
     NativePlayerDeck() {
         // 2.7 seconds at 48k, bounded independent of song length.
@@ -80,10 +82,25 @@ public:
         }
         hasFile_.store(file!=juce::File{},std::memory_order_release);
         played_.store(0,std::memory_order_release);
+        requestedSeekSeconds_.store(0.0,std::memory_order_release);
         error_.store(0,std::memory_order_release);
         state_.store(State::loading,std::memory_order_release);
         generation_.fetch_add(1,std::memory_order_acq_rel);
         wake_.notify_one();
+    }
+    // GUI/CONTROL only. The decoder worker owns opening/repositioning the
+    // reader and resampler. Every seek supersedes prior queued PCM via the
+    // existing generation + quiescence fence; ASIO never calls seek/file IO.
+    bool seekSeconds(double seconds) noexcept {
+        if(!std::isfinite(seconds) || seconds<0. ||
+           !hasFile_.load(std::memory_order_acquire) ||
+           rate_.load(std::memory_order_acquire)<=0)return false;
+        requestedSeekSeconds_.store(seconds,std::memory_order_release);
+        ready_.store(false,std::memory_order_release);
+        state_.store(State::loading,std::memory_order_release);
+        generation_.fetch_add(1,std::memory_order_acq_rel);
+        wake_.notify_one();
+        return true;
     }
     bool isPlayingRequested() const noexcept {
         return ready_.load(std::memory_order_acquire) &&
@@ -106,6 +123,7 @@ public:
         // the next seek-to-start; never reset/reallocate a ring from RT.
         ready_.store(false,std::memory_order_release);
         wantedPlay_.store(false,std::memory_order_release);
+        requestedSeekSeconds_.store(0.0,std::memory_order_release);
         state_.store(State::stopped,std::memory_order_release);
         generation_.fetch_add(1,std::memory_order_acq_rel);
         played_.store(0,std::memory_order_relaxed);
@@ -130,6 +148,7 @@ public:
         s.requestedTempo=requested.tempoPercent;
         s.processingChangePending=(s.keySemitones!=s.requestedKey ||
                                    s.tempoPercent!=s.requestedTempo);
+        s.waveform=waveform_.snapshot();
         switch(error_.load(std::memory_order_relaxed)) {
             case 1:s.error="File missing or unreadable";break;
             case 2:s.error="Unsupported or corrupt music format";break;
@@ -261,13 +280,24 @@ private:
                 continue;
             }
             const bool mono=reader->numChannels==1;
-            const double ratio=reader->sampleRate/static_cast<double>(deviceHz);
+            const double sourceRate=reader->sampleRate;
+            const auto sourceLength=reader->lengthInSamples;
+            const double ratio=sourceRate/static_cast<double>(deviceHz);
             const auto sourceTotal=static_cast<std::uint64_t>(std::ceil(
                 static_cast<double>(reader->lengthInSamples)/ratio));
             if(!sourceTotal) {
                 state_.store(State::error,std::memory_order_release);
                 continue;
             }
+            if(file!=waveformFile_) {
+                waveformFile_=file; // worker owns identity
+                waveform_.reset(sourceTotal);
+            }
+            const double positionSeconds=requestedSeekSeconds_.load(
+                std::memory_order_acquire);
+            const juce::int64 readerPosition=static_cast<juce::int64>(
+                std::clamp(std::floor(positionSeconds*sourceRate),0.0,
+                           static_cast<double>(sourceLength-1)));
             using Controls=PlayerPitchTempoProcessor::Controls;
             Controls controls=unpackControls(
                 requestedControls_.load(std::memory_order_acquire));
@@ -280,13 +310,19 @@ private:
             appliedControls_.store(packControls(controls),
                                    std::memory_order_release);
             juce::AudioFormatReaderSource source(reader.release(),true);
+            source.setNextReadPosition(readerPosition); // worker-only seek
             juce::ResamplingAudioSource resampled(&source,false,2);
             resampled.setResamplingRatio(ratio);
             resampled.prepareToPlay(1536,static_cast<double>(deviceHz));
             // Source is device-rate stereo, but independent KEY/TEMPO DSP is
             // computed ONLY here on the decoder worker; not in JUCE/ASIO RT.
             juce::AudioBuffer<float> input(2,1536),output(2,1024);
-            std::uint64_t consumed=0,written=0;
+            std::uint64_t consumed=static_cast<std::uint64_t>(
+                std::floor(static_cast<double>(readerPosition)/ratio));
+            const auto startPlayed=static_cast<std::uint64_t>(
+                std::floor(consumed*100.0/controls.tempoPercent));
+            std::uint64_t written=startPlayed;
+            played_.store(startPlayed,std::memory_order_release);
             const auto estimateTotal=[&]() -> std::uint64_t {
                 return written+static_cast<std::uint64_t>(std::ceil(
                     (sourceTotal-consumed)*100.0/controls.tempoPercent))
@@ -332,6 +368,10 @@ private:
                 resampled.getNextAudioBlock({&input,0,nInput});
                 if(mono)input.copyFrom(1,0,input,0,0,nInput);
                 if(obsolete(version))break;
+                // Construct waveform on the SAME decode pass. No second
+                // filesystem scan, peak generation in RT, or UI-heap work.
+                waveform_.observe(input.getReadPointer(0),
+                                  input.getReadPointer(1),nInput,consumed);
                 const float* const sourcePcm[]={input.getReadPointer(0),
                                                 input.getReadPointer(1)};
                 float* const outputPcm[]={output.getWritePointer(0),
@@ -396,6 +436,9 @@ private:
         }
     }
     PreparedStereoPcmRing ring_;
+    PlayerWaveformIndex waveform_;
+    juce::File waveformFile_; // worker thread only, across seek epochs
+    std::atomic<double> requestedSeekSeconds_{0.0};
     mutable std::mutex commandMutex_; // CONTROL/worker only, NEVER RT
     juce::File selectedFile_;
     std::atomic<bool> exit_{false},ready_{false},wantedPlay_{false},eof_{false};
