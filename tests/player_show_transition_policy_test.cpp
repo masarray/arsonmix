@@ -42,7 +42,8 @@ int main() {
     assert(P::armBeforeEnd(119.45,120.,500,.085,120));
     assert(!P::armBeforeEnd(119.45,120.,500,.085,80));
     assert(P::armBeforeEnd(119.55,120.,500,.085,80));
-    assert(!P::armBeforeEnd(119.3,120.,500,.085,120));
+    // 120% threshold is (0.500+0.085)*1.2=0.702 media seconds.
+    assert(!P::armBeforeEnd(119.2,120.,500,.085,120));
     assert(!P::armBeforeEnd(119.,120.,500,.085,75));
     assert(!P::armBeforeEnd(119.,120.,500,.085,125));
     // All public transition settings, 44.1/48/96k, simulated 12 Hz
