@@ -59,7 +59,8 @@ class SonKuSpatialCore final {
 public:
     static constexpr int taps=hrir::taps;
     static constexpr int updateInterval=16;
-    bool prepare(double rate) noexcept {
+    bool prepare(double rate, SonKuReflectionProfile profile=
+                 SonKuReflectionProfile::Lightweight) noexcept {
         ready_=false;
         if(!std::isfinite(rate) || (std::abs(rate-44100.)>.1 &&
                                     std::abs(rate-48000.)>.1))return false;
@@ -74,7 +75,7 @@ public:
         distanceSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.030)));
         bassSlew_=static_cast<float>(1.-std::exp(-2.*3.14159265358979323846*180./rate));
         limiterRelease_=static_cast<float>(1./(rate*0.080));
-        if(!room_.prepare(rate)||!reverb_.prepare(rate)||
+        if(!room_.prepare(rate,profile)||!reverb_.prepare(rate)||
            !integrity_.prepare(rate))return false;
         reset();
         ready_=true;
@@ -159,6 +160,9 @@ public:
         return reverb_.setPreset(preset);
     }
     bool ready() const noexcept {return ready_;}
+    SonKuReflectionProfile preparedReflectionProfile() const noexcept {
+        return room_.preparedProfile();
+    }
     double azimuthDegrees() const noexcept {return degrees_;}
     // In-place stereo; caller owns valid, non-overlapping L/R PCM pointers.
     // No vector, heap, blocking calls, I/O or filter bank allocation.

@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
 project(ARMixConsole VERSION 0.5.0 LANGUAGES C CXX)
+# Experimental P6 native profile: OFF by default in production/installer.
+option(ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT
+       "Enable unqualified SonKu full KEMAR directional reflections on the native JUCE callback"
+       OFF)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -192,7 +196,8 @@ target_compile_definitions(ARMixConsole PRIVATE
     JUCE_APPLICATION_NAME_STRING="AR MIX Studio"
     JUCE_APPLICATION_VERSION_STRING="${ARMIX_APP_VERSION}"
     ARMIX_BUILD_SOURCE_SHA="${ARMIX_BUILD_SOURCE_SHA}"
-    ARMIX_GFX_EMBED_PNG_SKINS=1)
+    ARMIX_GFX_EMBED_PNG_SKINS=1
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT}>:ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT=1>)
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
   # Never link Windows loader or sound APIs into macOS/Linux builds.

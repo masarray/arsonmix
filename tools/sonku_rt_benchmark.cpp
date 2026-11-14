@@ -21,10 +21,16 @@ template<std::size_t block>
 Result measure(double rate,float amount,float late=0.f,
                const armix::sonku::SonKuRoomGeometry* geometry=nullptr,
                bool directional=false,float spread=60.f,
-               bool fused=false,bool contiguous=false){
+               bool fused=false,bool contiguous=false,
+               bool realtimeNative=false,bool nativeDirectional=false){
     using namespace armix::sonku;
     SonKuSpatialCore dsp;
-    if(!dsp.prepare(rate))throw std::runtime_error("unsupported sample rate");
+    if(nativeDirectional && !realtimeNative)
+        throw std::runtime_error("directional realtime profile requires native scene");
+    if(!dsp.prepare(rate,nativeDirectional
+        ?SonKuReflectionProfile::DirectionalKemar
+        :SonKuReflectionProfile::Lightweight))
+        throw std::runtime_error("unsupported sample rate/profile");
     if(directional && !dsp.setDirectionalEarlyReflectionsHrir(true))
         throw std::runtime_error("directional room not prepared");
     if(fused && !dsp.setDirectionalZeroSpreadFusion(true))
@@ -33,7 +39,10 @@ Result measure(double rate,float amount,float late=0.f,
         throw std::runtime_error("P4 contiguous HRIR not prepared");
     Settings s{};s.moving=true;s.revolutionSeconds=10.f;
     s.spatialMix=1.f;s.stereoSpreadDegrees=spread;
-    if(!dsp.setSettings(s)||
+    if(realtimeNative){
+        s.spacePreset=1;s.roomAmount=amount;s.ambience=late;
+        if(!dsp.setSettings(s))throw std::runtime_error("invalid realtime scene");
+    }else if(!dsp.setSettings(s)||
        (geometry && !dsp.setAcousticRoomGeometry(*geometry))||
        !dsp.setEarlyReflectionsAmount(amount)||
        !dsp.setMusicalReverbAmount(late))
@@ -159,6 +168,24 @@ int main(){
                   <<" p4_p99us="<<p4.p99us
                   <<" note=runner_local_not_ASIO\n";
             }
+        }
+        // P6 measures the TRUE native ROOM scene, not the offline setAmount
+        // shortcut. Same graph, input, gain, 3-second frame clock, 128 block.
+        // The numbers are indicative; CI never uses them as ASIO certification.
+        for(float spread:{0.f,60.f}){
+            const auto light=measure<128>(48000.,.55f,0.f,nullptr,
+                false,spread,false,false,true,false);
+            const auto full=measure<128>(48000.,.55f,0.f,nullptr,
+                false,spread,false,false,true,true);
+            std::cout<<std::fixed<<std::setprecision(3)
+              <<"SONKU_P6_RT rate=48000 block=128 spread="<<spread
+              <<" light_ms="<<light.milliseconds
+              <<" directional_ms="<<full.milliseconds
+              <<" directional_over_light="<<full.milliseconds/light.milliseconds
+              <<" light_p99us="<<light.p99us
+              <<" directional_p99us="<<full.p99us
+              <<" buffer_budget_ratio="<<(full.p99us/(1000000.*128./48000.))
+              <<" NOTE=hosted_runner_not_ASIO_FAT\n";
         }
     }catch(const std::exception& e){
         std::cerr<<"SONKU CPU BENCH FAIL: "<<e.what()<<"\n";
