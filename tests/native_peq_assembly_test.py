@@ -130,8 +130,10 @@ class NativeParametricEqIntegration(unittest.TestCase):
             "void servicePendingNativeSonKu()",1)[0]
         for field in ("spacePreset","sourceDistanceMeters","roomAmount","ambience"):
             self.assertIn('values->setProperty("'+field+'"',bridge)
-            self.assertIn('number(values,"'+field+'"',bridge) if field!="spacePreset"
-                          else self.assertIn('values.getProperty("spacePreset"',bridge)
+            if field=="spacePreset":
+                self.assertIn('values.getProperty("spacePreset"',bridge)
+            else:
+                self.assertIn('number(values,"'+field+'"',bridge)
             self.assertIn(field,js)
             self.assertIn(field,core)
         self.assertIn("sonku_bridge::schemaVersion()",snapshot)
