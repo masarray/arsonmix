@@ -149,7 +149,7 @@ jobs:
             publicRelease = $false
             physicalAsioQualified = $false
             dearVrPerceptualParityProven = $false
-            qualification = 'SONKU_P75_FULL_JUCE_APP_3_SCOPED_CTEST_PASS_REAL_ASIO_LISTENING_PENDING'
+            qualification = 'SONKU_P75_FULL_JUCE_APP_4_SCOPED_CTEST_PASS_REAL_ASIO_LISTENING_PENDING'
             licenseRedistributionApproval = $false
             mitKemarNoticeSha256 = (Get-FileHash -LiteralPath docs/THIRD_PARTY_8D_SONKU_HRTF.md -Algorithm SHA256).Hash.ToLowerInvariant()
             fieldFatGuideSha256 = (Get-FileHash -LiteralPath docs/SONKU_P75_PHYSICAL_AUDIO_FAILURE_FIX_20261114.md -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -171,7 +171,7 @@ jobs:
         run: |
           # Standard distribution allowlist was verified above. Field-only notice.
           Copy-Item -LiteralPath docs/THIRD_PARTY_8D_SONKU_HRTF.md -Destination dist/THIRD_PARTY_8D_SONKU_HRTF.md
-          Copy-Item -LiteralPath docs/SONKU_P75_PHYSICAL_FIELD_FAT_20261114.md -Destination dist/SONKU_P75_FIELD_FAT.md
+          Copy-Item -LiteralPath docs/SONKU_P75_PHYSICAL_AUDIO_FAILURE_FIX_20261114.md -Destination dist/SONKU_P75_FIELD_FAT.md
           $p = Get-Content -LiteralPath dist/BUILD_PROVENANCE.json -Raw | ConvertFrom-Json
           $checks = @{
             'THIRD_PARTY_8D_SONKU_HRTF.md' = [string]$p.sonkuExperiment.mitKemarNoticeSha256
