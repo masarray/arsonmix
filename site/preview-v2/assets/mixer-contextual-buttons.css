@@ -356,6 +356,17 @@ body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power):f
 #arsonPlayer #playerAddFolder:disabled{opacity:.5;cursor:wait}
 
 
+/* Decoder-only peak summary + explicit seek: never streams browser PCM. */
+#arsonPlayer .ap-waveform{display:block;width:100%;height:42px;
+ border:1px solid #2c454b;border-radius:5px;background:#1e363e}
+#arsonPlayer #playerSeek{appearance:none;-webkit-appearance:none;
+ height:5px;width:100%;min-width:24px;flex:1;cursor:pointer;
+ background:#39545b;border-radius:4px;accent-color:#72d7bb}
+#arsonPlayer #playerSeek::-webkit-slider-thumb{-webkit-appearance:none;
+ width:12px;height:12px;border:1px solid #8af1d2;border-radius:50%;
+ background:#408978;box-shadow:0 1px 4px #0008}
+#arsonPlayer #playerSeek:disabled{opacity:.4;cursor:default}
+
 /* ArSon Player Show v3: dense, keyboard/touch-accessible setlist editing.
    Reuse the approved panel chrome; no extra floating card, stylesheet or
    production mixer control style mutation. */
