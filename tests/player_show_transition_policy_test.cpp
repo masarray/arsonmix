@@ -90,6 +90,15 @@ int main() {
     assert(!P::validLoop(0.,4.,3001));
     assert(!P::validLoop(-1.,4.,500));
     assert(!P::validLoop(0.,std::numeric_limits<double>::quiet_NaN(),180));
+    armix::player::PlayerQueueEditEpoch epoch;
+    assert(epoch.revision()==1);
+    assert(epoch.accepts(1,false));
+    assert(!epoch.accepts(1,true));
+    epoch.changed();
+    assert(epoch.revision()==2 && !epoch.accepts(1,false));
+    for(int i=0;i<512;++i)epoch.changed();
+    assert(epoch.revision()==514 && epoch.accepts(514,false));
+    assert(!epoch.accepts(-1,false));
     // Reordering preserves duplicates and avoids accidental queue loss.
     std::vector<std::string> queue={"song-A","song-B","song-A","song-C"};
     assert(!P::moveQueued(queue,-1,2));

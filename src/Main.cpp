@@ -514,6 +514,7 @@ private:
     std::vector<PlayerSavedSet> playerSets_;
     int playerActiveSet_=0;
     std::vector<juce::File> playerQueue_; // transient ordered PLAY NEXT queue
+    armix::player::PlayerQueueEditEpoch playerQueueEpoch_;
     struct PlayerUndoRemove {
         int set=-1,index=-1;
         juce::File file;
@@ -3754,6 +3755,7 @@ private:
         playerPendingQueueFile_={};
         playerSelected_=playerLibrary_.empty()?-1:0;
         playerQueue_.clear();
+        playerQueueEpoch_.changed(); // setlist switch invalidates drag token
         playerOutputPendingIndex_=-1;
         playerUndoRemove_={};
     }
@@ -3975,9 +3977,12 @@ private:
             playerUndoRemove_={playerActiveSet_,index,
                 playerLibrary_[static_cast<std::size_t>(index)],
                 playerTrackSettings_[static_cast<std::size_t>(index)]};
+            const auto queueCountBefore=playerQueue_.size();
             playerQueue_.erase(
                 std::remove(playerQueue_.begin(),playerQueue_.end(),
                             playerUndoRemove_.file),playerQueue_.end());
+            if(queueCountBefore!=playerQueue_.size())
+                playerQueueEpoch_.changed();
             playerLibrary_.erase(playerLibrary_.begin()+index);
             playerTrackSettings_.erase(playerTrackSettings_.begin()+index);
             const auto remap=[&](int old) {
@@ -4025,6 +4030,7 @@ private:
             if(action=="playerQueueNext")
                 playerQueue_.insert(playerQueue_.begin(),file);
             else playerQueue_.push_back(file);
+            playerQueueEpoch_.changed();
             // Queue edits are explicit operator decisions. If a previous
             // automatic attempt failed, allow the revised queue to retry.
             if(playerPendingIndex_<0)playerAutoAdvanceGate_.rearm();
@@ -4042,28 +4048,35 @@ private:
                         preset.key,preset.tempo,preset.cueIn,preset.cueOut);
                 }
             }
-            playerError_.clear();emitPlayerState(true);return;
+            playerError_.clear();emitPlayerState(true,false);return;
         }
         if(action=="playerQueueMove" || action=="playerQueueRemove") {
-            const int index=action=="playerQueueMove"?
-                static_cast<int>(value.getProperty("from",-1)):
-                static_cast<int>(value);
-            if(index<0 || index>=static_cast<int>(playerQueue_.size()))return;
-            if(playerPendingIndex_>=0) {
-                playerError_="NEXT is transitioning; queue changes after ACK";
-                emitPlayerState();return;
+            const int from=static_cast<int>(value.getProperty("from",-1));
+            const int requestedRevision=static_cast<int>(
+                value.getProperty("revision",-1));
+            // The native queue is authoritative. Do not trust a row index
+            // from stale WebView state following a successful native ACK.
+            if(!playerQueueEpoch_.accepts(
+                    requestedRevision,playerPendingIndex_>=0)) {
+                playerError_=playerPendingIndex_>=0?
+                    "NEXT is transitioning; queue changes after ACK":
+                    "Queue changed; retry on the refreshed queue";
+                emitPlayerState(true,false);return;
             }
+            if(from<0 || from>=static_cast<int>(playerQueue_.size()))return;
             if(action=="playerQueueMove") {
                 const int to=static_cast<int>(value.getProperty("to",-1));
                 if(!armix::player::PlayerShowTransitionPolicy::moveQueued(
-                    playerQueue_,index,to))return;
-            } else playerQueue_.erase(playerQueue_.begin()+index);
+                    playerQueue_,from,to))return;
+            } else playerQueue_.erase(playerQueue_.begin()+from);
+            playerQueueEpoch_.changed();
             playerAutoAdvanceGate_.rearm();
             playerError_.clear();
-            emitPlayerState(true);return;
+            emitPlayerState(true,false);return;
         }
     }
-    void emitPlayerState(bool includeLibrary=false) {
+    void emitPlayerState(bool includeLibrary=false,
+                         bool includeTracks=true) {
         if(!browser_.loaded)return;
         auto obj=std::make_unique<juce::DynamicObject>();
         obj->setProperty("schema","arsonmix.player.v1");
@@ -4074,6 +4087,7 @@ private:
         obj->setProperty("loopAB",playerLoopCurrent_);
         obj->setProperty("activeSetlist",playerActiveSet_);
         obj->setProperty("pending",playerPendingIndex_);
+        obj->setProperty("queueRevision",playerQueueEpoch_.revision());
         obj->setProperty("crossfadeMs",playerFadeMilliseconds_);
         obj->setProperty("canUndoRemove",
             playerUndoRemove_.set==playerActiveSet_ &&
@@ -4104,6 +4118,7 @@ private:
                 queue.add(juce::var(item.release()));
             }
             obj->setProperty("queue",juce::var(queue));
+            if(includeTracks) {
             juce::Array<juce::var> rows;
             for(std::size_t i=0;i<playerLibrary_.size();++i) {
                 auto song=std::make_unique<juce::DynamicObject>();
@@ -4118,6 +4133,7 @@ private:
                 rows.add(juce::var(song.release()));
             }
             obj->setProperty("tracks",juce::var(rows));
+            }
         }
         browser_.emitEventIfBrowserIsVisible("arMixPlayerState",
                                                juce::var(obj.release()));
@@ -4375,7 +4391,10 @@ private:
                 playerLibrary_.end(),playerQueue_.front());
             if(found!=playerLibrary_.end()) {
                 queued=static_cast<int>(found-playerLibrary_.begin());
-            } else playerQueue_.erase(playerQueue_.begin()); // stale only
+            } else {
+                playerQueue_.erase(playerQueue_.begin()); // stale queued file
+                playerQueueEpoch_.changed();
+            }
         }
         const int next=armix::player::PlayerShowTransitionPolicy::nextIndex(
             playerCurrent_,playerSelected_,
@@ -4403,8 +4422,9 @@ private:
             if(playerPendingIndex_==next) {
                 playerPendingQueueFile_=file;
             } else if(playerCurrent_==next) {
-                (void)armix::player::PlayerShowTransitionPolicy::
-                    commitQueuedFront(playerQueue_,file);
+                if(armix::player::PlayerShowTransitionPolicy::
+                       commitQueuedFront(playerQueue_,file))
+                    playerQueueEpoch_.changed();
                 playerPendingQueueFile_={};
                 emitPlayerState(true);
             }
@@ -7669,15 +7689,16 @@ private:
                    playerPendingIndex_<static_cast<int>(playerLibrary_.size())) {
                     playerCurrent_=playerPendingIndex_;
                     playerSelected_=playerCurrent_;
-                    if(playerPendingQueueFile_!=juce::File{})
-                        (void)armix::player::PlayerShowTransitionPolicy::
-                            commitQueuedFront(playerQueue_,
-                                              playerPendingQueueFile_);
+                    if(playerPendingQueueFile_!=juce::File{} &&
+                       armix::player::PlayerShowTransitionPolicy::
+                           commitQueuedFront(playerQueue_,
+                                             playerPendingQueueFile_))
+                        playerQueueEpoch_.changed();
                 }
                 playerPendingQueueFile_={};
                 playerPendingIndex_=-1;
                 playerError_.clear();
-                emitPlayerState(true);
+                emitPlayerState(true,false);
             } else if(playerPendingIndex_>=0 &&
                       engine_.playerTransitionFailed()) {
                 // Preserve queued entry on decode error: the performer can
