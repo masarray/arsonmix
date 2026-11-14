@@ -72,6 +72,7 @@ void testLiveControlTransitions(int sampleRate) {
     std::int64_t sourceFrame=0;
     int longestSilentRun=0,silentRun=0;
     double recentEnergy=0;
+    double processTimeMs=0;
     for(int block=0;block<192;++block) {
         if(block==32)processor.setControls({4,100}); // bypass -> transposed
         if(block==64)processor.setControls({4,88});  // independent tempo
@@ -92,7 +93,10 @@ void testLiveControlTransitions(int sampleRate) {
         sourceFrame+=nInput;
         const float* const inputs[]={sourceL.data(),sourceR.data()};
         float* const outputs[]={resultL.data(),resultR.data()};
+        const auto started=std::chrono::steady_clock::now();
         assert(processor.process(inputs,nInput,outputs,quantum));
+        processTimeMs+=std::chrono::duration<double,std::milli>(
+            std::chrono::steady_clock::now()-started).count();
         for(int i=0;i<quantum;++i) {
             const float x=resultL[i],y=resultR[i];
             assert(std::isfinite(x)&&std::isfinite(y));
@@ -112,8 +116,9 @@ void testLiveControlTransitions(int sampleRate) {
     assert(longestSilentRun<sampleRate/12);
     assert(recentEnergy>5.0);
     assert(!processor.process(nullptr,0,nullptr,512));
-    std::printf("M2 hot-gesture: %d Hz, maximum near-silence %d frames\\n",
-                sampleRate,longestSilentRun);
+    const double audioTimeMs=192.0*quantum*1000.0/sampleRate;
+    std::printf("M2 hot-gesture: %d Hz, silence %d frames, DSP %.1fms / %.1fms audio (CI reference)\n",
+                sampleRate,longestSilentRun,processTimeMs,audioTimeMs);
 }
 }
 int main() {
