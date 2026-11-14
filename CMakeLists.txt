@@ -19,6 +19,15 @@ if(ARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE AND
    NOT ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT)
   message(FATAL_ERROR "P7.5 music-safe requires explicit native XYZ research ON")
 endif()
+# Research-only P8 acoustic diagnostic. Does NOT change public LIGHT,
+# shipping presets, or P7.5 without explicit operator build flags.
+option(ARMIX_SONKU_EXPERIMENTAL_P8_TRANSPARENT_BASS
+       "Enable P8 original stereo low-frequency pressure with measured high-band HRTF"
+       OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P8_TRANSPARENT_BASS AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE)
+  message(FATAL_ERROR "P8 requires the isolated P7.5 music-safe research profile")
+endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -217,7 +226,8 @@ target_compile_definitions(ARMixConsole PRIVATE
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:SONKU_P7_MEASURED_ELEVATION_RESEARCH=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:SONKU_P71_DIRECT_XYZ_RESEARCH=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:SONKU_P72_NATIVE_XYZ_RT=1>
-    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE}>:SONKU_P75_MUSIC_SAFE_RESEARCH=1>)
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE}>:SONKU_P75_MUSIC_SAFE_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P8_TRANSPARENT_BASS}>:SONKU_P80_TRANSPARENT_BASS_RESEARCH=1>)
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
   # Never link Windows loader or sound APIs into macOS/Linux builds.
@@ -348,6 +358,23 @@ if(BUILD_TESTING)
           SONKU_P75_MUSIC_SAFE_RESEARCH=1)
       add_test(NAME NativeSonKuP75MusicStereoPhaseNoNullAndChunkParity
           COMMAND ARMixSonKuP75MusicIntegrityTests)
+      if(ARMIX_SONKU_EXPERIMENTAL_P8_TRANSPARENT_BASS)
+        # The native JUCE adapter and the PCM fixture must compile identical
+        # P8 DSP flags. The default P7.5/ship branch retains its original DSP.
+        target_compile_definitions(ARMixSonKuP72NativeTests PRIVATE
+            SONKU_P80_TRANSPARENT_BASS_RESEARCH=1)
+        add_executable(ARMixSonKuP80TonalEvidenceTests
+            tests/sonku_p80_tonal_room_evidence_test.cpp)
+        target_compile_features(ARMixSonKuP80TonalEvidenceTests PRIVATE cxx_std_20)
+        target_compile_definitions(ARMixSonKuP80TonalEvidenceTests PRIVATE
+            SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+            SONKU_P71_DIRECT_XYZ_RESEARCH=1
+            SONKU_P72_NATIVE_XYZ_RT=1
+            SONKU_P75_MUSIC_SAFE_RESEARCH=1
+            SONKU_P80_TRANSPARENT_BASS_RESEARCH=1)
+        add_test(NAME NativeSonKuP80TransparentBassStereoPhaseAndRoomDiagnostic
+            COMMAND ARMixSonKuP80TonalEvidenceTests)
+      endif()
     endif()
   endif()
   # Pure control-plane first-run routing selection: no JUCE, drivers,

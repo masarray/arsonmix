@@ -3041,6 +3041,11 @@ private:
                 armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch)
             reply->setProperty("musicSafeStereo",true);
 #endif
+#if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
+        if(processor && processor->preparedReflectionProfile()==
+                armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch)
+            reply->setProperty("p8TransparentBass",true);
+#endif
         if(processor) {
             reply->setProperty("settings",
                 armix::builtin_fx::sonku_bridge::acceptedSettings(
