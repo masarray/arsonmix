@@ -3041,6 +3041,14 @@ private:
                 armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch)
             reply->setProperty("musicSafeStereo",true);
 #endif
+#if defined(SONKU_P80_MEASURED_TIMBRE_RESEARCH) && SONKU_P80_MEASURED_TIMBRE_RESEARCH
+        if(processor && processor->preparedReflectionProfile()==
+                armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch) {
+            reply->setProperty("measuredTimbre",true);
+            reply->setProperty("measuredTimbreShelfDb",
+                processor->preparedTimbreShelfDb());
+        }
+#endif
         if(processor) {
             reply->setProperty("settings",
                 armix::builtin_fx::sonku_bridge::acceptedSettings(
