@@ -4345,6 +4345,17 @@ private:
             return;
         }
         if(action=="playerPlay")return playTransportMusic();
+        if(action=="playerSeek") {
+            const double seconds=static_cast<double>(value);
+            const double total=static_cast<double>(
+                engine_.playerStatus().getProperty("durationSeconds",0.0));
+            if(std::isfinite(seconds) && seconds>=0. &&
+               std::isfinite(total) && total>0. && seconds<=total &&
+               engine_.playerSeekSeconds(seconds)) {
+                playerError_.clear();
+            } else playerError_="Seek unavailable for this song";
+            emitPlayerState();return;
+        }
         if(action=="playerPause") {
             engine_.playerPause();emitPlayerState();return;
         }
