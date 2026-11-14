@@ -78,10 +78,20 @@
         <button class="tool wire-overflow" type="button" data-wire-open="config" title="Open WIRE Configuration window">Wire Setup</button>
         <span class="more-tools-caption">REFERENCE TOOLS</span>
         <button class="tool" id="preview" aria-pressed="false" title="Show fake metering movement; no hardware audio"><svg class="mi-svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg> Demo Meters</button>
-        <button class="tool" id="reset" title="Reset UI reference mixer controls">Reset Demo</button>
+        <span class="more-tools-caption">MIXER RECOVERY</span>
+        <button class="tool" id="reset" type="button" title="Clear FX, WIRE and saved mixer state; keeps plugin library and audio drivers">Reset Mixer…</button>
       </div>
     </details>
   </div>
+  <dialog id="mixerResetDialog" class="mixer-reset-dialog" aria-labelledby="mixerResetTitle" aria-describedby="mixerResetDescription">
+    <div class="mixer-reset-heading" id="mixerResetTitle">Reset Mixer?</div>
+    <p id="mixerResetDescription">Discard the current mixer setup and its automatic recovery session: all FX, WIRE routes, channel controls and custom channel identity.</p>
+    <p class="mixer-reset-detail">Audio output will be muted. Saved .smix exports, plugin presets, music and audio drivers stay intact. This cannot be undone unless you have an exported .smix.</p>
+    <div class="mixer-reset-actions">
+      <button type="button" class="tool" id="mixerResetCancel">Cancel</button>
+      <button type="button" class="tool mixer-reset-confirm" id="mixerResetConfirm">Reset Mixer</button>
+    </div>
+  </dialog>
   <main class="console-pane">
     <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub" aria-hidden="true"><svg class="mi-svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M3 5v14h18V5H3zm8 12H5V7h6v10zm8 0h-6v-4h6v4zm0-6h-6V7h6v4z"/></svg></span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
     <section class="console-body collapsed-send wire-routing-v13 wire-routing-v15" data-density="comfort" aria-label="Live mixing console">
@@ -3052,7 +3062,25 @@ document.getElementById('addBus').addEventListener('click',()=>{
  const n=tracks.filter(t=>t.kind==='bus').length+1,t=make('Bus '+String.fromCharCode(65+((n-1)%26)),'bus','#846e9e');tracks.push(t);if(!wireGraphCommit([{type:'CONNECT',sourceId:t.id,destId:master.id}],{record:false})){tracks.pop();return;}revealTrack(t);say('Added '+t.name+' · visual only');
 });
 document.getElementById('clearCue').addEventListener('click',()=>{tracks.forEach(t=>t.cue=false);master.cue=false;render();say('All Cue / PFL requests cleared · no hardware monitor connected');});
-document.getElementById('reset').addEventListener('click',()=>{if(preview)togglePreview();document.getElementById('viewFilter').value='all';document.getElementById('bankSelect').value='all';sofEnabled=false;document.getElementById('sofToggle').classList.remove('active');document.getElementById('sofToggle').setAttribute('aria-pressed','false');document.querySelector('.console-body').classList.remove('sends-mode');setDensity('comfort');init();say('Reference mixer reset; saved scenes remain available.');});
+const mixerResetDialog=document.getElementById('mixerResetDialog');
+document.getElementById('reset').addEventListener('click',()=>{
+ moreTools.open=false;mixerResetDialog.showModal();
+});
+document.getElementById('mixerResetCancel').addEventListener('click',()=>mixerResetDialog.close());
+document.getElementById('mixerResetConfirm').addEventListener('click',()=>{
+ // Reference-only fallback. The installed JUCE bridge intercepts this click
+ // before it reaches the demo reducer and performs an actual native reset.
+ mixerResetDialog.close();
+ if(preview)togglePreview();
+ document.getElementById('viewFilter').value='all';
+ document.getElementById('bankSelect').value='all';
+ sofEnabled=false;sofTargetId=null;scenes=[];clipboard=null;
+ document.getElementById('sofToggle').classList.remove('active');
+ document.getElementById('sofToggle').setAttribute('aria-pressed','false');
+ document.querySelector('.console-body').classList.remove('sends-mode');
+ setDensity('comfort');init();
+ say('REFERENCE ONLY · mixer FX, WIRE and scenes cleared. Native reset also clears the automatic .smix session.');
+});
 
 // Browser-only catalog contract. Only the native host can actually scan or instantiate VST3.
 const plugEl=id=>document.getElementById(id);
