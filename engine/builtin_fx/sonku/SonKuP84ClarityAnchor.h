@@ -11,7 +11,7 @@
 namespace armix::sonku::p84 {
 class ClarityAnchor final {
 public:
-    bool prepare(double rate,float influence=.18f,float crossover=750.f) noexcept {
+    bool prepare(double rate,float influence=.12f,float crossover=750.f) noexcept {
         if(!std::isfinite(rate)||rate<44000.||rate>48100.||
            !std::isfinite(influence)||influence<0.f||influence>.30f||
            !std::isfinite(crossover)||crossover<400.f||crossover>2400.f)return false;

@@ -131,8 +131,8 @@ int main(){
   const auto physical=native(rate,room,input,128,Mode::SpeakerMonitor);
   const auto disabled=blend(rate,anchor,physical,0.f,128);
   require(difference(anchor,disabled)==0,"zero influence MUST preserve P82 PCM exactly");
-  const auto candidate=blend(rate,anchor,physical,.18f,128);
-  const auto smaller=blend(rate,anchor,physical,.18f,64);
+  const auto candidate=blend(rate,anchor,physical,.12f,128);
+  const auto smaller=blend(rate,anchor,physical,.12f,64);
   require(difference(candidate,smaller)==0,"buffer64/128 parity");
   const double gain=relativeDb(energy(candidate),energy(anchor));
   broadMax=std::max(broadMax,std::abs(gain));

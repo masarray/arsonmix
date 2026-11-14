@@ -20,12 +20,12 @@ The rejected 'positionedMode' explicitly bypassed P8.2's transparent stereo bass
 
 New isolated experimental class: engine/builtin_fx/sonku/SonKuP84ClarityAnchor.h
 
-Formula: output = P8.2 + 0.18 * highpass_750Hz(P8.3Physical - P8.2)
+Formula: output = P8.2 + 0.12 * highpass_750Hz(P8.3Physical - P8.2)
 
 - P8.2 is the primary music signal; influence zero is **bit exact**.
 - Direct P8.3 world-fixed HRTF directional contrast is a small HF research term, with no fabricated LF matrix, makeup gain, correlation detector or extra room tail.
 - A 1-pole differentiator crossover is bounded, allocation-free, lock-free, and has no lookahead.
-- 0.18 is a **research candidate**, not perceptually optimized.
+- 0.12 is a **research candidate**, not perceptually optimized.
 - Important physical limitation: the P8.2 anchor remains head-locked while the difference follows head-relative orientation. This is NOT a fully consistent measured BRIR or a demonstrated externalized room. Its purpose is rejecting or supporting the feasibility of a music-preserving localizer.
 - Two native SonKuSpatialCore instances are used ONLY in an OFFLINE analytical test. The full dual-core processing overhead is forbidden in production. If validated, fuse to a single native DSP graph before JUCE integration.
 
@@ -41,3 +41,15 @@ This is only a necessary *source qualification*. Passing tone and RMS checks doe
 4. **Before** Windows portable/merge/public release, physical level-matched headphone tests against P8.2 and dearVR with multiple songs, blind directions including front/back, externalization and overhead false-positive ratings, ASIO XRUN evidence.
 
 Do not merge/release PR #701 or this experimental stack without owner-approved headphone FAT. The approved P8.2 listening baseline is preserved.
+
+## First native response sweep (same-source 44.1/48 kHz)
+
+The initial 18% directional-contrast strength passed all six broadband
+RMS program checks (typical ~-0.45dB relative to P8.2), but failed
+timbre spectral limits, with a worst probe at 5387Hz around **-3.21dB**
+under ROOM ON at both rates, plus 2891Hz coloration and antiphase
+9301Hz dips. The numerical limit is unchanged: +/-2.5dB per measured
+frequency and +/-1.5dB broadband per program. The next 12% candidate
+is derived from the measured failure, not gain makeup. Whether such a
+limited difference produces persuasive headphone localization is
+**UNKNOWN**; a spectral PASS must never be called externalization.
