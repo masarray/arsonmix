@@ -71,3 +71,19 @@ loudness-matched headphone listening with multiple people.
 Further qualification needed: true XYZ direct interpolation,
 headphone individualization, actual Windows ASIO multi-instance p99,
 externalization/tonal listening and owner approval.
+
+## P7 fast-lane observed CPU (Linux only)
+
+Exact first P7 [Action #43555803671](https://github.com/masarray/arsonmix/actions/runs/43555803671) SUCCESS and WAV [artifact #14098845051](https://github.com/masarray/arsonmix/actions/runs/43555803671/artifacts/14098845051).
+For 48k/128, 1 second synthetic PCM, Linux hosted runner: six-surface
+4-insert/60° callback **p99 2581.884µs**, or **96.8% of the 2666.7µs
+buffer period**, compared with roughly 1.4× P6 directional CPU in
+same-runner paired modes. These are explicitly **NOT Windows ASIO
+measurements** and are far too close to the deadline to justify enabling
+P7 across several inserts. Do not add a naive per-buffer auto quality switch
+or arbitrary CI wallclock threshold. The native host needs an explicit
+preflight measured/admitted budget before P7 could be shipped.
+
+This experiment now additionally tests P5 stale vertical FIR history on
+ROOM ON → OFF while old PCM is present → ON in silence, then a new
+causal impulse, at 44.1 and 48k. Whole engine must remain allocation-free.

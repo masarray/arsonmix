@@ -61,6 +61,41 @@ int main(){
         assert(invalid->active());
         assert(!invalid->setDirectionalHrir(false));
         assert(!invalid->setDirectionalContiguousHrir(false));
+        // P5 still applies to BOTH new vertical reflection FIR histories.
+        // Never repeat old sound when ROOM is re-activated on digital silence.
+        {
+            auto room=std::make_unique<SonKuEarlyReflections>();
+            assert(room->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch));
+            const SonKuRoomGeometry g{7.2f,7.2f,1.6f,3.2f,1.45f,1.45f};
+            assert(room->setRealtimeRoom(g,.65f,true));
+            for(int i=0;i<3800;++i){
+                const float l=.1f*std::sin(static_cast<float>(2*pi*330*i/rate));
+                const float r=.07f*std::cos(static_cast<float>(2*pi*725*i/rate));
+                room->process(l,r,37.,60.f);
+            }
+            assert(room->setRealtimeRoom(g,0.f,false));
+            int fade=0;
+            while(room->active() && fade<12000){
+                const float x=.1f*std::sin(static_cast<float>(2*pi*480*fade/rate));
+                room->process(x,-x,65.,60.f);
+                ++fade;
+            }
+            assert(!room->active()&&fade>100);
+            assert(room->setRealtimeRoom(g,.65f,true));
+            for(int i=0;i<2000;++i){
+                const auto v=room->process(0.f,0.f,170.,60.f);
+                assert(v.left==0.f&&v.right==0.f);
+            }
+            int first=-1;double energy=0.;
+            for(int i=0;i<6800;++i){
+                const float impulse=i==0?.35f:0.f;
+                const auto v=room->process(impulse,impulse,170.,60.f);
+                assert(std::isfinite(v.left)&&std::isfinite(v.right));
+                if(first<0&&(v.left!=0.f||v.right!=0.f))first=i;
+                energy+=v.left*v.left+v.right*v.right;
+            }
+            assert(first>100&&first<6000&&energy>1.e-8);
+        }
         // P6 and P7 process the exact SAME active ROOM scene, even
         // with a stereo side conflicting in phase in the high band.
         for(float spread:{0.f,60.f}){

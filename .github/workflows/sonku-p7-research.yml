@@ -30,6 +30,8 @@ jobs:
           /tmp/p6
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_p5_room_reactivation_test.cpp -o /tmp/p5
           /tmp/p5
+      - name: Confirm deterministic MIT bank extractor syntax without network
+        run: python -m py_compile scripts/generate_sonku_measured_hrir3d.py
       - name: P7 measured 14-elevation KEMAR + native source six-plane PCM
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 tests/sonku_p7_six_surface_test.cpp -o /tmp/p7

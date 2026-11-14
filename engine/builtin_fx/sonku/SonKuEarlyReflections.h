@@ -13,10 +13,10 @@
 #include "SonKuVerticalImageSource.h"
 #endif
 
-// Bounded, first-order image-source room for headphone externalization trials.
-// Reflection image geometry follows Allen & Berkley (JASA, 1979), not
-// randomized stereo delays. The ears use lightweight ITD/ILD approximation;
-// this is NOT an HRTF-convolved reflection / arbitrary geometry simulation.
+// Bounded first-order image-source room (Allen & Berkley JASA, 1979).
+// LIGHT uses the original small ITD/ILD approximation; P6 uses measured
+// horizontal KEMAR; P7 research adds physically delayed floor and ceiling
+// with the measured elevation KEMAR HRIR. This is NOT proprietary dearVR BRIR.
 // No allocation, locks, worker, I/O, FFT or second device callback.
 namespace armix::sonku {
 enum class SonKuRoomShape : std::uint8_t { Rectangular=0, Square=1 };
