@@ -1904,7 +1904,9 @@ public:
     // output. Both decoded sources ultimately share PLAYER A ChannelId.
     bool preloadPlayerMusic(const juce::File& file,int key,int tempo,
                             double cueIn=0.,double cueOut=0.) {
-        if(playerFile_==juce::File{} || file==playerFile_ ||
+        // A queued repeat of CURRENT is legitimate: the inactive decoder
+        // must preload a second instance without stopping current PCM.
+        if(playerFile_==juce::File{} ||
            playerBoundEpoch_!=dryRoutingLab_.epoch() ||
            !directFence_.permitted() ||
            !dryRoutingLab_.channelIdPhysicalPcmActive())
