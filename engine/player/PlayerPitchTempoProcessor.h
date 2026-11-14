@@ -122,6 +122,12 @@ public:
         rememberInput(in,nInput);
         return true;
     }
+    // Signalsmith requires BOTH an analysis-input drain and a synthesis
+    // output flush at EOF. Omitting the input side loses the last FFT window
+    // of a song despite reporting the complete decoded source length.
+    int inputLatency() const noexcept {
+        return prepared_&&active()?stretch_.inputLatency():0;
+    }
     int outputLatency() const noexcept {
         return prepared_&&active()?stretch_.outputLatency():0;
     }
@@ -140,14 +146,17 @@ private:
             1,historyCapacity_);
         const int available=std::min(historyCount_,count);
         const int missing=count-available;
+        const int historyStart=(historyWrite_+historyCapacity_-available)
+                               %historyCapacity_;
+        const int first=std::min(available,historyCapacity_-historyStart);
         for(int lane=0;lane<2;++lane) {
-            std::fill_n(prime_[lane].data(),missing,0.f);
-            for(int i=0;i<available;++i) {
-                const int pos=(historyWrite_+historyCapacity_-available+i)
-                              %historyCapacity_;
-                prime_[lane][static_cast<std::size_t>(missing+i)]=
-                    history_[lane][static_cast<std::size_t>(pos)];
-            }
+            auto* dest=prime_[lane].data();
+            std::fill_n(dest,missing,0.f);
+            // Contiguous circular-buffer slices: no per-sample modulo or
+            // branch in the expensive re-entry setup.
+            std::copy_n(history_[lane].data()+historyStart,first,dest+missing);
+            std::copy_n(history_[lane].data(),available-first,
+                        dest+missing+first);
         }
         const float* const previous[]={prime_[0].data(),prime_[1].data()};
         stretch_.outputSeek(previous,count);
