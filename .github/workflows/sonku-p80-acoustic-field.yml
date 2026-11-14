@@ -1,0 +1,257 @@
+name: SonKu P8.0 measured-timbre Windows acoustic field candidate
+# Isolated opt-in full JUCE app build; no public installer, tag or release.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - '.github/workflows/sonku-p75-windows-field.yml'
+      - 'src/Main.cpp'
+      - 'src/SonKuNativeBridgeContract.h'
+      - 'src/LiveAudioEngine.h'
+      - 'engine/builtin_fx/SonKuSpatialProcessor.h'
+      - 'engine/builtin_fx/sonku/**'
+      - 'site/preview-v2/assets/mixer-native-sonku.js'
+      - 'CMakeLists.txt'
+      - 'tests/sonku_p72_*'
+      - 'tests/sonku_p75_*'
+      - 'tests/sonku_p80_*'
+      - 'scripts/sonku_p80_evidence.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sonku-p80-acoustics-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  preflight:
+    name: Isolated fast PCM and GUI preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Native JS and source GUI capability checks
+        run: |
+          set -euo pipefail
+          node --check site/preview-v2/assets/mixer-native-sonku.js
+          node tests/sonku_p73_gui_contract_test.js
+          grep -q "'FIELD_PREVIEW_FULL_CTEST_NOT_RUN'" scripts/m3e_fat_evidence_gate.mjs
+          python -m unittest discover -s tests -p native_peq_assembly_test.py
+      - name: 44.1 and 48 kHz prepared PCM source regression
+        run: |
+          set -euo pipefail
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 \
+            -DSONKU_P72_NATIVE_XYZ_RT=1 \
+            tests/sonku_p72_realtime_xyz_test.cpp -o /tmp/sonku-p80-legacy-pcm
+          /tmp/sonku-p80-legacy-pcm
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 \
+            -DSONKU_P72_NATIVE_XYZ_RT=1 \
+            -DSONKU_P75_MUSIC_SAFE_RESEARCH=1 \
+            tests/sonku_p75_stereo_integrity_test.cpp -o /tmp/sonku-p75-music
+          /tmp/sonku-p75-music
+          # Baseline and measured P8.0 compile the SAME source tree with
+          # exactly one flag changed. Compare every source and ROOM scene.
+          mkdir -p evidence
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 \
+            -DSONKU_P72_NATIVE_XYZ_RT=1 \
+            -DSONKU_P75_MUSIC_SAFE_RESEARCH=1 \
+            tests/sonku_p80_acoustic_probe.cpp -o /tmp/sonku-p80-baseline
+          /tmp/sonku-p80-baseline evidence
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 \
+            -DSONKU_P72_NATIVE_XYZ_RT=1 \
+            -DSONKU_P75_MUSIC_SAFE_RESEARCH=1 \
+            -DSONKU_P80_MEASURED_TIMBRE_RESEARCH=1 \
+            tests/sonku_p80_acoustic_probe.cpp -o /tmp/sonku-p80-measured
+          /tmp/sonku-p80-measured evidence
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 \
+            -DSONKU_P72_NATIVE_XYZ_RT=1 \
+            -DSONKU_P75_MUSIC_SAFE_RESEARCH=1 \
+            -DSONKU_P80_MEASURED_TIMBRE_RESEARCH=1 \
+            tests/sonku_p80_timbre_calibration_test.cpp -o /tmp/sonku-p80-qa
+          /tmp/sonku-p80-qa
+          python scripts/sonku_p80_evidence.py evidence
+          git rev-parse HEAD > evidence/SOURCE_SHA.txt
+      - name: Upload inspectable source-side acoustic evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: SonKu-P80-Objective-Evidence-${{ github.run_id }}
+          path: evidence/
+          retention-days: 21
+          if-no-files-found: error
+  windows-field:
+    name: Actual full Windows JUCE executable and verified portable field ZIP
+    needs: preflight
+    runs-on: windows-2022
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify immutable PR head and physical candidate identity
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $env:EXPECTED_SHA -or $actual -notmatch '^[0-9a-f]{40}$') {
+            throw "SONKU_P80_SOURCE_MISMATCH:$actual"
+          }
+          Write-Host "SONKU_P80_EXACT_SOURCE=$actual"
+      - uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.15
+          path: third_party/JUCE
+          persist-credentials: false
+      - name: Obtain pinned WebView2 compilation SDK
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Configure full native app with research XYZ explicit ON
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DJUCE_ROOT="$env:GITHUB_WORKSPACE/third_party/JUCE" `
+            -DJUCE_WEBVIEW2_PACKAGE_LOCATION="$env:GITHUB_WORKSPACE/.deps" `
+            -DARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=ON `
+            -DARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE=ON `
+            -DARMIX_SONKU_EXPERIMENTAL_P80_TIMBRE=ON `
+            -DBUILD_TESTING=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $cache = Get-Content -LiteralPath build/CMakeCache.txt -Raw
+          if ($cache -notmatch 'ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT:BOOL=ON' -or
+              $cache -notmatch 'ARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE:BOOL=ON' -or
+              $cache -notmatch 'ARMIX_SONKU_EXPERIMENTAL_P80_TIMBRE:BOOL=ON') {
+            throw "SONKU_P80_RESEARCH_NOT_ENABLED"
+          }
+          $tests = (& ctest --test-dir build -C Release --show-only=json-v1 | Out-String | ConvertFrom-Json)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $required = @('NativeSonKuP72AtomicXyzLiveEditSource',
+                        'NativeSonKuP72JuceV3XyzLiveAckV1V2Restore',
+                        'NativeSonKuSessionV1V2AndAudioAppliedAck',
+                        'NativeSonKuP75MusicStereoPhaseNoNullAndChunkParity',
+                        'NativeSonKuP80MeasuredHrtfTimbreAndChunkParity')
+          $available = @($tests.tests | ForEach-Object { $_.name })
+          foreach ($test in $required) {
+            if ($test -notin $available) { throw "SONKU_P80_MISSING_CTEST:$test" }
+          }
+      - name: Compile actual ARMixConsole Windows GUI and focused real JUCE tests
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel 2 --target `
+            ARMixConsole ARMixSonKuP72SourceTests ARMixSonKuP72NativeTests ARMixSonKuNativeStateTests ARMixSonKuP75MusicIntegrityTests ARMixSonKuP80MeasuredTimbreTests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe = 'build/ARMixConsole_artefacts/Release/AR MIX Studio.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "SONKU_P80_NO_GUI_EXE" }
+          if ((Get-Item -LiteralPath $exe).Length -lt 4MB) { throw "SONKU_P80_WRONG_GUI_TARGET" }
+      - name: Scoped native XYZ state, callback ACK and legacy restoration
+        shell: pwsh
+        run: |
+          ctest --test-dir build -C Release --output-on-failure `
+            -R '^NativeSonKu(P72AtomicXyzLiveEditSource|P72JuceV3XyzLiveAckV1V2Restore|SessionV1V2AndAudioAppliedAck|P75MusicStereoPhaseNoNullAndChunkParity|P80MeasuredHrtfTimbreAndChunkParity)$'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Package real native portable mixer, never an installer
+        shell: pwsh
+        run: |
+          & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist --best-effort
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Record exact experiment and physical qualification pending
+        shell: pwsh
+        run: |
+          $path = 'dist/BUILD_PROVENANCE.json'
+          $p = Get-Content -LiteralPath $path -Raw -Encoding utf8 | ConvertFrom-Json
+          $sha = (& git rev-parse HEAD).Trim()
+          if ($p.sourceCommit -ne $sha) { throw "SONKU_P80_ARTIFACT_SHA_MISMATCH" }
+          $p.fatStatus = 'FIELD_PREVIEW_FULL_CTEST_NOT_RUN'
+          $p | Add-Member -NotePropertyName sonkuExperiment -NotePropertyValue @{
+            enabled = $true
+            nativeXYZ = $true
+            musicSafeStereo = $true
+            measuredTimbre = $true
+            measuredTimbreMaxLowShelfDb = 4.5
+            measuredHrtfReference = 'KEMAR_0_90_180_BOTH_EARS_125HZ_VS_1000HZ'
+            musicSafeAlgorithm = 'MEASURED_CENTER_MID_PLUS_UNCONDITIONAL_STEREO_SIDE_RESEARCH'
+            stateSchema = 3
+            fullWindowsExecutable = $true
+            publicRelease = $false
+            physicalAsioQualified = $false
+            dearVrPerceptualParityProven = $false
+            qualification = 'SONKU_P80_5_FOCUSED_CTESTS_ONLY_REAL_ASIO_MUSIC_DEARVR_PENDING'
+            licenseRedistributionApproval = $false
+            mitKemarNoticeSha256 = (Get-FileHash -LiteralPath docs/THIRD_PARTY_8D_SONKU_HRTF.md -Algorithm SHA256).Hash.ToLowerInvariant()
+            fieldFatGuideSha256 = (Get-FileHash -LiteralPath docs/SONKU_P80_MEASURED_TIMBRE_FIELD_GUIDE_20261114.md -Algorithm SHA256).Hash.ToLowerInvariant()
+          } -Force
+          $p | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $path -Encoding utf8
+      - name: Independent GUI PE, approved resources, provenance and ZIP verification
+        shell: pwsh
+        run: |
+          & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $p = Get-Content -LiteralPath dist/BUILD_PROVENANCE.json -Raw | ConvertFrom-Json
+          if (-not $p.sonkuExperiment.enabled -or
+              -not $p.sonkuExperiment.musicSafeStereo -or
+              -not $p.sonkuExperiment.measuredTimbre -or
+              $p.sonkuExperiment.stateSchema -ne 3 -or $p.sonkuExperiment.publicRelease) {
+            throw 'SONKU_P80_WRONG_FIELD_ARTIFACT'
+          }
+      - name: Include mandatory MIT KEMAR notice and physical FAT guide
+        shell: pwsh
+        run: |
+          # Standard distribution allowlist was verified above. Field-only notice.
+          Copy-Item -LiteralPath docs/THIRD_PARTY_8D_SONKU_HRTF.md -Destination dist/THIRD_PARTY_8D_SONKU_HRTF.md
+          Copy-Item -LiteralPath docs/SONKU_P80_MEASURED_TIMBRE_FIELD_GUIDE_20261114.md -Destination dist/SONKU_P80_FIELD_FAT.md
+          $p = Get-Content -LiteralPath dist/BUILD_PROVENANCE.json -Raw | ConvertFrom-Json
+          $checks = @{
+            'THIRD_PARTY_8D_SONKU_HRTF.md' = [string]$p.sonkuExperiment.mitKemarNoticeSha256
+            'SONKU_P80_FIELD_FAT.md' = [string]$p.sonkuExperiment.fieldFatGuideSha256
+          }
+          foreach ($item in $checks.GetEnumerator()) {
+            $file = Join-Path dist $item.Key
+            if ($item.Value -notmatch '^[0-9a-f]{64}$' -or
+                -not (Test-Path -LiteralPath $file -PathType Leaf)) {
+              throw "SONKU_P80_FIELD_NOTICE_MISSING:$($item.Key)"
+            }
+            $actual = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $item.Value) { throw "SONKU_P80_FIELD_NOTICE_HASH_MISMATCH:$($item.Key)" }
+          }
+          if (Test-Path -LiteralPath dist/Studio) { throw 'SONKU_FIELD_USER_DATA_MUST_NOT_SHIP' }
+          Write-Host 'SONKU_P80_FIELD_READY: GUI EXE + verified MIT notice + FAT guide'
+      - name: Include same-head objective A/B evidence in the portable tester
+        uses: actions/download-artifact@v4
+        with:
+          name: SonKu-P80-Objective-Evidence-${{ github.run_id }}
+          path: dist/P80_objective_evidence
+      - name: Verify objective artifact belongs to this exact native EXE
+        shell: pwsh
+        run: |
+          $expected = (& git rev-parse HEAD).Trim()
+          $source = (Get-Content -LiteralPath dist/P80_objective_evidence/SOURCE_SHA.txt -Raw).Trim()
+          $report = Get-Content -LiteralPath dist/P80_objective_evidence/sonku_p80_evidence.json -Raw | ConvertFrom-Json
+          if ($source -ne $expected -or
+              $report.status -ne 'PASS_OBJECTIVE_SPECTRAL_STEREO_ROOM_PRESENCE_ONLY') {
+            throw 'SONKU_P80_OBJECTIVE_EVIDENCE_SHA_OR_STATUS_MISMATCH'
+          }
+      - uses: actions/upload-artifact@v4
+        name: Upload isolated SonKu Windows x64 field candidate
+        with:
+          name: ArSonMix-SonKu-P80-Measured-Timbre-Windows-x64-${{ github.run_id }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 21
+          compression-level: 0

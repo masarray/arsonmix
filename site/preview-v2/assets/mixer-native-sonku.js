@@ -173,7 +173,7 @@ const depthLayers={far:$("skFarSources"),near:$("skNearSources")};
 const mount=()=>{if(!root.isConnected)document.body.append(root)};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
- xyzCapable=false,musicSafeStereo=false,
+ xyzCapable=false,musicSafeStereo=false,p80MeasuredTimbre=false,
  readId="",readSentAt=0,seq=1,clock=null,frame=null,observed=0,observedAt=0,
  drag=null,dialDrag=null,rangeEdits=new Set(),gestureStart=new Map(),
  visualPhase=0,visualAt=0,liveTimer=null,lastLiveAt=0;
@@ -231,7 +231,9 @@ function render(){
   if(!rangeEdits.has("skElevation"))elevation.value=String(s.directElevationDegrees);
   $("skElevationValue").textContent=s.directElevationDegrees.toFixed(1)+"°";
  }
- root.querySelector(".sk-stage-caption").textContent=musicSafeStereo
+ root.querySelector(".sk-stage-caption").textContent=p80MeasuredTimbre
+  ?"HEADPHONES · MEASURED TIMBRE · 3D KEMAR · RESEARCH"
+  :musicSafeStereo
   ?"HEADPHONES · MEASURED CENTER 3D HRTF + MUSIC SIDE · EXPERIMENT"
   :xyzCapable?"HEADPHONES · MEASURED 3D HRIR · 44.1 / 48 kHz"
   :"HEADPHONES · HRIR 0° ELEVATION · 44.1 / 48 kHz";
@@ -253,7 +255,8 @@ function render(){
  // redrawn at 60 Hz. The native audio callback remains the time authority.
  drawSpeakers();
  $("skMode").textContent=native()?(context()?
-  (musicSafeStereo?"NATIVE MUSIC SAFE · RESEARCH":"NATIVE HRTF"):
+  (p80MeasuredTimbre?"NATIVE TIMBRE P8.0 · RESEARCH":
+   musicSafeStereo?"NATIVE MUSIC SAFE · RESEARCH":"NATIVE HRTF"):
   "NATIVE UNAVAILABLE"):"VISUAL ONLY · NO AUDIO";
 }
 function drawSpeakers(){
@@ -400,6 +403,9 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  // Activation happens only after a fully identity-bound native readback.
  xyzCapable=measured;
  musicSafeStereo=measured && r.musicSafeStereo===true;
+ p80MeasuredTimbre=musicSafeStereo && r.measuredTimbre===true &&
+  Number.isFinite(r.measuredTimbreShelfDb) &&
+  r.measuredTimbreShelfDb>=0 && r.measuredTimbreShelfDb<=4.5001;
  readId="";readSentAt=0;
  if(pending) {
   if(!pending.ack || r.appliedRequestId!==pending.requestId){
@@ -422,7 +428,7 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  }
  render();
 });
-$("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapable=false;musicSafeStereo=false;
+$("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapable=false;musicSafeStereo=false;p80MeasuredTimbre=false;
  cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
  drag=null;rangeEdits.clear();gestureStart.clear();lastLiveAt=0;
  if(clock!==null){clearInterval(clock);clock=null;}
@@ -575,7 +581,7 @@ const api={
   cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
   observedAt=0;visualAt=0;visualPhase=0;lastLiveAt=0;
   drag=null;rangeEdits.clear();gestureStart.clear();
-  accepted=defaults();draft=defaults();xyzCapable=false;musicSafeStereo=false;
+  accepted=defaults();draft=defaults();xyzCapable=false;musicSafeStereo=false;p80MeasuredTimbre=false;
   current={track,slot,instanceId:null};
   const s=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const fx=s?.graph?.channels?.find(x=>x.id===id)?.inserts?.[slot];
