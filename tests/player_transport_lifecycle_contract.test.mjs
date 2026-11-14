@@ -14,6 +14,8 @@ const service=timer.indexOf('engine_.servicePlayerTransition()');
 const next=timer.indexOf('const bool preEnd=playerFadeMilliseconds_>0');
 const loop=timer.indexOf('if(playerLoopCurrent_ && activeCurrent');
 const uiGate=timer.indexOf('if(!browser_.loaded)return;');
+assert.match(timer,/playerLoopCurrent_ \|\| playerPendingIndex_>=0/,
+  'A-B must be serviced at 12 Hz when Auto Next is off');
 assert.ok(service>=0 && next>service && loop>service,
           'native transport must be maintained on JUCE control timer');
 assert.ok(uiGate>next && uiGate>loop,
