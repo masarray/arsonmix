@@ -2622,7 +2622,10 @@ document.querySelector('.console-body').addEventListener('wheel',e=>{
  input.value=String(next);
  if(input.dataset.field==='pan')input.dataset.panKeyboard='true';
  if(input.dataset.field==='trim')input.dataset.gainWheel='true';
- handleField({target:input,type:'input',altKey:e.altKey,shiftKey:e.shiftKey});
+ // A wheel notch has no mouseup/change; GAIN must commit its final
+ // admitted value, not become a visual-only native preview.
+ handleField({target:input,type:input.dataset.field==='trim'?'change':'input',
+  altKey:e.altKey,shiftKey:e.shiftKey});
  if(input.dataset.field==='trim')delete input.dataset.gainWheel;
 },{passive:false});
 // Ordinary strip gestures may focus their channel, but touching the pinned
