@@ -407,9 +407,10 @@ body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power):f
 #arsonPlayer .ap-setname button[hidden]{display:none!important}
 #arsonPlayer .ap-settools :disabled{opacity:.4;cursor:default}
 #arsonPlayer .ap-songrow{display:flex;align-items:center;gap:2px;
- min-width:0;min-height:37px}
+ min-width:0;height:38px;min-height:38px;box-sizing:border-box}
+#arsonPlayer .ap-list-spacer{height:0;min-height:0;pointer-events:none}
 #arsonPlayer .ap-songrow .ap-song{flex:1;min-width:0;
- width:auto;min-height:36px;padding:6px}
+ width:auto;height:36px;min-height:36px;padding:6px}
 #arsonPlayer .ap-songrow .ap-index{flex-basis:21px}
 #arsonPlayer .ap-row-actions{display:flex;align-items:center;gap:1px;
  flex:0 0 auto}
@@ -430,6 +431,10 @@ body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power):f
 #arsonPlayer .ap-queue-row span{min-width:0;overflow:hidden;
  text-overflow:ellipsis;white-space:nowrap}
 #arsonPlayer .ap-queue-row .ap-row-action{height:22px}
+#arsonPlayer .ap-queue-row[draggable="true"]{cursor:grab}
+#arsonPlayer .ap-queue-row[draggable="true"]:active{cursor:grabbing}
+#arsonPlayer .ap-queue-row:focus-within{background:#234047}
+#arsonPlayer .ap-queue-row .ap-row-action:disabled{opacity:.3;cursor:default}
 @media(max-width:410px){
  #arsonPlayer .ap-row-action{width:20px;min-width:20px}
  #arsonPlayer .ap-settools button{padding:5px}

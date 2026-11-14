@@ -45,8 +45,9 @@ jobs:
             tests/player_show_transition_policy_test.cpp \
             -o "$RUNNER_TEMP/player-transition-test"
           "$RUNNER_TEMP/player-transition-test"
-      - name: Parse the actual approved player UI and dynamic assembly
+      - name: Parse the approved player UI and execute live-show gestures
         run: |
           node --check site/preview-v2/assets/arson-player.js
           node --check site/preview-v2/assets/mixer-contextual-buttons.js
           node tests/player_transport_lifecycle_contract.test.mjs
+          node tests/player_live_show_ui_workflow.test.mjs

@@ -25,6 +25,21 @@ public:
 private:
     bool claimed_=false; // CONTROL thread only; never touched by RT
 };
+// CONTROL-thread queue revision fence. Duplicates share a path but not a
+// position. A stale WebView drag must never reorder a DIFFERENT entry after
+// Auto Next ACK, setlist switch or another operator's queue mutation.
+class PlayerQueueEditEpoch final {
+public:
+    int revision() const noexcept {return revision_;}
+    void changed() noexcept {
+        revision_=revision_==2147483647?1:revision_+1;
+    }
+    bool accepts(int expected,bool transitionPending) const noexcept {
+        return expected==revision_ && !transitionPending;
+    }
+private:
+    int revision_=1; // CONTROL only; never used on realtime callback
+};
 struct PlayerShowTransitionPolicy final {
     // Manual selection/explicit queue always wins over sequential Auto Next.
     // queuedIndex=-1 when there is no valid queued song.
