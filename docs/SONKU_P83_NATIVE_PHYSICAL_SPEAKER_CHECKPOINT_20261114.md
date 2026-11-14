@@ -206,3 +206,16 @@ WAVs from DAWs. WAV PCM32 signed integer is supported; unsupported
 sample rates, compressed WAV and mismatched valid-bits fields fail
 closed. Output is standard IEEE 32-bit float WAV with a `fact` chunk.
 A separate CI smoke exercises extensible float32 input with ROOM OFF.
+
+## Smart CI cost regression corrected
+
+In the active P8.3 PR, three historical P7.4/P7.5/P8.0 Windows FAT
+workflows still had `pull_request` path filters on all `sonku/**`.
+They each launched a full JUCE Windows portable build on ordinary
+P8.3 source/diagnostic pushes, despite the repository's selective FAT
+policy. This workstream disables their automatic PR trigger, retaining
+explicit `workflow_dispatch` on each historical workflow. The
+path-scoped C++ P8.3 Linux source, audio, A/B and CPU gates continue
+automatically. New P8.3 JUCE/ASIO FAT must use a deliberate exact-SHA
+qualification after native host render-mode/ACK integration and musical
+source gates, NOT the old P7 Windows binaries.
