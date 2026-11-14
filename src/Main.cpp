@@ -3049,6 +3049,14 @@ private:
                 processor->preparedTimbreShelfDb());
         }
 #endif
+#if defined(SONKU_P82_GEOMETRIC_LATE_RESEARCH) && SONKU_P82_GEOMETRIC_LATE_RESEARCH
+        if(processor && processor->preparedReflectionProfile()==
+                armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch) {
+            reply->setProperty("roomGeometryLate",true);
+            reply->setProperty("roomLatePreDelaySamples",
+                processor->preparedRoomLatePreDelaySamples());
+        }
+#endif
         if(processor) {
             reply->setProperty("settings",
                 armix::builtin_fx::sonku_bridge::acceptedSettings(
