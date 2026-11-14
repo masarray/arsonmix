@@ -101,7 +101,8 @@ def exercise(page,width,height):
     travel=strip.locator(".fader-travel").bounding_box()
     fader=strip.locator('input[data-field="level"]')
     x=box["x"]+box["width"]/2
-    zero=travel["y"]+travel["height"]*(10/70)
+    # Shared Pages/native physical taper positions unity at 77% of travel.
+    zero=travel["y"]+travel["height"]*(1-77/100)
     page.mouse.move(x,zero+5)
     page.mouse.down()
     assert abs(float(fader.input_value()))<.001,(width,"unity detent failed")
