@@ -27,7 +27,7 @@ class NativeGuiEmbeddedBytesTests(unittest.TestCase):
         self.exe = self.root / "ARMixConsole.exe"
         self.manifest = self.bundle / "approved-gui-manifest.json"
         self.assets = {
-            "index.html": b"<!doctype html><title>ArSonMix â /preview/</title>",
+            "index.html": "<!doctype html><title>ArSonMix — /preview/</title>".encode("utf-8"),
             "assets/mixer.css": b".gain{color:#81b8c6}",
             "assets/button.png": b"\x89PNG\r\n\x1a\n\0\xff\x90\x12APPROVED\0",
         }
