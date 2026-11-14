@@ -163,3 +163,40 @@ both rates for BOTH correlated and anti-phase tests, while the
 unaltered physical mode remains separately measurable. Any unsampled
 spectral cancellations, room coloration or headphone externalization
 failures still veto product approval.
+
+## Offline headphone A/B with your OWN music, exact native DSP
+
+`tools/sonku_p83_offline_ab.cpp` reads a user-owned uncompressed
+stereo WAV (PCM16/24 or IEEE float32, 44.1/48k) and writes
+`P82_MusicBed.wav`, `P83_SpeakerPhysical.wav` and
+`P83_SpeakerMusicLF480.wav`, with matching input, trim (.75),
+speaker angle (-30/+30), head yaw (0), distance (1.6m), timebase and
+optional `--room=on` (seven-band? NO: actual P8.2 three-band FDN
+and six-wall early room). It uses the EXACT native SonKuSpatialCore,
+not simulated Javascript/WebAudio. Default `--room=off` isolates
+direct sound first. No tracker, live host routing or VST3 integration.
+
+Windows MSVC build command (developer toolchain; not a packaged app):
+`cl /std:c++20 /O2 /EHsc /DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+ /DSONKU_P71_DIRECT_XYZ_RESEARCH=1 /DSONKU_P72_NATIVE_XYZ_RT=1
+ /DSONKU_P75_MUSIC_SAFE_RESEARCH=1
+ /DSONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+ /DSONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+ /DSONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+ tools\\sonku_p83_offline_ab.cpp /Fe:sonku-p83-ab.exe`
+
+Run `sonku-p83-ab.exe "D:\\Music\\my-song.wav" "D:\\SonKuAB" --room=off`.
+For room comparison repeat with separate output folder and `--room=on`.
+
+The utility records **raw**, NOT matched-loudness output PCM and
+`sonku_p83_ab_metrics.csv` (whole-file RMS/peak). Listening FAT
+must loudness-match on the same headphones/audio interface and use
+one song excerpt; normalize with an external trusted tool, not by
+arbitrary output makeup in this renderer. No stream/ASIO/GUI changes,
+no public release. Do not use this CLI to claim latency or real
+speaker externalization. Only user listening can approve that.
+
+The fast Linux CI compiles and smoke-renders an original test WAV,
+uploads three original-source A/B listening files and metrics.
+The sample is deliberately original synthesized material, not
+proprietary music.

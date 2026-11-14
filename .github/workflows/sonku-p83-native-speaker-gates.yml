@@ -7,6 +7,7 @@ on:
       - 'engine/builtin_fx/sonku/SonKuP83SpeakerScene.h'
       - 'engine/builtin_fx/sonku/SonKuP83LowFrequencyTransfer.h'
       - 'tests/sonku_p83_*'
+      - 'tools/sonku_p83_offline_ab.cpp'
       - '.github/workflows/sonku-p83-native-speaker-gates.yml'
   workflow_dispatch:
 permissions:
@@ -90,10 +91,53 @@ jobs:
             }
           ' /tmp/p83-native.log
           grep -q '^PASS P8.3 MULTIBAND FIDELITY:' /tmp/p83-native.log
+      - name: Build exact SonKu P8.3 offline music A/B utility and smoke real WAV
+        shell: bash
+        run: |
+          set -euo pipefail
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 \
+            -DSONKU_P72_NATIVE_XYZ_RT=1 \
+            -DSONKU_P75_MUSIC_SAFE_RESEARCH=1 \
+            -DSONKU_P80_TRANSPARENT_BASS_RESEARCH=1 \
+            -DSONKU_P82_MULTIBAND_ROOM_RESEARCH=1 \
+            -DSONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1 \
+            tools/sonku_p83_offline_ab.cpp -o /tmp/sonku-p83-ab
+          python3 - <<'PY'
+          import math,struct,wave
+          with wave.open('/tmp/sonku-p83-input.wav','wb') as f:
+              f.setnchannels(2); f.setsampwidth(2); f.setframerate(48000)
+              data=bytearray()
+              for i in range(96000):
+                  t=i/48000
+                  x=.13*math.sin(2*math.pi*83*t)+.08*math.sin(2*math.pi*461*t)
+                  y=.07*math.sin(2*math.pi*1703*t)+.05*math.sin(2*math.pi*5387*t)
+                  data+=struct.pack('<hh',round(32767*(x+y)),round(32767*(x-y)))
+              f.writeframes(data)
+          PY
+          /tmp/sonku-p83-ab /tmp/sonku-p83-input.wav sonku-p83-offline-ab --room=on |
+            tee /tmp/p83-ab.log
+          grep -q '^PASS SonKu P8.3 offline A/B:' /tmp/p83-ab.log
+          test -s sonku-p83-offline-ab/P82_MusicBed.wav
+          test -s sonku-p83-offline-ab/P83_SpeakerPhysical.wav
+          test -s sonku-p83-offline-ab/P83_SpeakerMusicLF480.wav
+          python3 - <<'PY'
+          import struct,pathlib
+          for p in pathlib.Path('sonku-p83-offline-ab').glob('*.wav'):
+              b=p.read_bytes()
+              assert b[:4]==b'RIFF' and b[8:12]==b'WAVE' and len(b)>96000*8
+              assert struct.unpack_from('<H',b,20)[0]==3
+              assert struct.unpack_from('<I',b,24)[0]==48000
+              print('PASS OFFLINE_AUDITION_WAV',p,len(b))
+          PY
       - name: Upload exact-source offline research PCM (not human FAT)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sonku-p83-source-pcm-${{ github.sha }}
-          path: sonku-p83-native-pcm/*.wav
+          path: |
+            sonku-p83-native-pcm/*.wav
+            sonku-p83-offline-ab/*.wav
+            sonku-p83-offline-ab/*.csv
           retention-days: 14
