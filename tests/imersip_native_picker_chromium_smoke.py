@@ -56,6 +56,8 @@ window.__JUCE__={backend:{
         page.locator("#fastSearch").fill("imersip")
         assert page.locator(selector).count()==1, "native catalog search lost ImerSip"
         assert page.locator("#fastResults [data-fast-native-sonku]").count()==0
+        # Screenshot must show the actual native GUI picker item, BEFORE click.
+        page.screenshot(path="imersip-visible-native-picker.png")
         page.locator(selector).click()
         page.wait_for_function("()=>window.__nativeIntents.length===1")
         intent=page.evaluate("()=>window.__nativeIntents[0]")
@@ -65,7 +67,6 @@ window.__JUCE__={backend:{
         # No premature GUI ACTIVE state without native callback/readback.
         row=page.locator('#tracks .strip[data-id="1"] .fxslot-row[data-slot="0"]')
         assert "ImerSip" not in row.inner_text(), "UI claimed unaccepted audio insert"
-        page.screenshot(path=str(Path(directory)/"imersip-visible-in-native-picker.png"))
         assert not errors,errors
         browser.close()
     print("PASS: compiled native Pages mixer picker filters ImerSip, submits LOAD_INSERT, never fakes an accepted audio instance")
