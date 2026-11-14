@@ -11,6 +11,23 @@
 #include <vector>
 using P=armix::player::PlayerShowTransitionPolicy;
 int main() {
+    // Distinct A/B decoder instances can both report generation 2.
+    // The logical Auto Next gate must rearm on actual transition ACK,
+    // not an XOR of generation/current/selected indices.
+    armix::player::PlayerAutoAdvanceGate autoNext;
+    assert(!autoNext.claimed());
+    for(int pass=0;pass<7;++pass) {
+        assert(autoNext.claim());  // enqueue next repeat
+        assert(autoNext.claimed());
+        assert(!autoNext.claim()); // pending/failure does not spin
+        // Real native ACK: NEXT is now CURRENT and may use the very
+        // same file, index and per-decoder generation as the last pass.
+        autoNext.rearm();
+    }
+    assert(autoNext.claim());
+    assert(!autoNext.claim()); // error remains latched
+    autoNext.rearm();          // explicit operator retry
+    assert(autoNext.claim());
     // Explicit queue wins; manual-selected NEXT wins over default row;
     // sequential only after the operator does not designate another song.
     assert(P::nextIndex(3,8,10,2)==2);
