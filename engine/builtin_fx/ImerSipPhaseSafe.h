@@ -8,7 +8,7 @@
 // crossfeed. Both L/R bass filters share IDENTICAL coefficients.
 // The SIDE delta is added to L and SUBTRACTED from R: mono fold-down equals
 // the same coherent bass shelf applied to P8.2 MID, sample for sample.
-// Native PCM only; all exponentials and logarithms run on CONTROL/prepare.
+// Native PCM only; all exponentials run in prepare(); PCM settings are affine only.
 namespace armix::imersip {
 
 struct Settings {
@@ -52,9 +52,15 @@ public:
         settings_=s;
         // Positive response only; no negative LF pressure/cancellation.
         // +0.7/+0.85/+0.4 dB maximum at ~0Hz before scene scaling.
-        const float maxDb=s.venue==1?.85f:s.venue==2?.40f:.70f;
-        const float db=maxDb*s.bassImpact*s.immersion;
-        bassTarget_=std::pow(10.f,db/20.f)-1.f;
+        // Exact linear gain deltas for +0.85 / +0.40 / +0.70 dB at
+        // maximum, precomputed OFFLINE; live audio-applied SPSC must NEVER
+        // call pow(), exp() or design filter coefficients on callback.
+        constexpr float cinemaMax=.10280823385f;
+        constexpr float liveMax=.04712854805f;
+        constexpr float concertMax=.08392691402f;
+        const float maxDelta=s.venue==1?cinemaMax:
+            s.venue==2?liveMax:concertMax;
+        bassTarget_=maxDelta*s.bassImpact*s.immersion;
         // High SIDE boost limited to +1.58dB at maximum. P8.2 MID is intact.
         sideTarget_=.20f*s.width*s.immersion;
         return true;
