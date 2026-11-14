@@ -59,8 +59,16 @@ def audit_geometry(page, title):
             if(!cap||Math.abs(r(cap).width-cw)>.75||Math.abs(r(cap).height-ch)>.75)
                 problems.push('M2 '+cw+'x'+ch+' physical fader cap missing '+tag);
             const route=t.querySelector('.route-section');
-            if(route&&route.scrollHeight>route.clientHeight+3)
-                problems.push('IN/OUT clipped '+tag);
+            if(route&&route.scrollHeight>route.clientHeight+3){
+                const cs=getComputedStyle(route);
+                const children=[...route.children].map(e=>{
+                    const b=r(e);
+                    return e.className+':'+Math.round(b.height)+'@'+Math.round(b.top-r(route).top);
+                }).join(',');
+                problems.push('IN/OUT/EXT clipped '+tag+' scroll='+route.scrollHeight+
+                  ' client='+route.clientHeight+' padding='+cs.padding+
+                  ' gap='+cs.gap+' children=['+children+']');
+            }
             if(!t.querySelector('.meter-box .vu-bars'))problems.push('missing meter '+tag);
             if(t.querySelector('.eq-section,.trim-section,[data-field="sendPan"]'))
                 problems.push('legacy DAW or TRIM UI leaked '+tag);
@@ -316,8 +324,10 @@ def audit_p0_pan_center(page, name):
           return read();
         };
         const initial=read();
+        // Current approved V61 PAN: capture ±14, hold ±22, release ±18.
+        // The V7 expectation at 18 sat inside the newer hold zone.
         const farLeft=send(-35),capture=send(-6),held=send(10),
-          released=send(18),nearRelease=send(11,'change');
+          released=send(24),nearRelease=send(17,'change');
         input.dataset.panAltPointer='true';
         const bypass=send(5);
         delete input.dataset.panAltPointer;
@@ -331,7 +341,7 @@ def audit_p0_pan_center(page, name):
         p=result[key]
         assert p['value']==0 and p['centered'] and p['label']=='C' and p['text']=='Center',(
             name,key,'PAN center detent failed',result)
-    assert result['released']['value']==18 and not result['released']['centered'],(
+    assert result['released']['value']==24 and not result['released']['centered'],(
         name,'PAN release threshold failed',result)
     assert result['bypass']['value']==5,(name,'Alt-pointer center bypass failed',result)
     assert result['unchanged'],(name,'PAN remounted during gesture')
