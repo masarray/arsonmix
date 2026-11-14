@@ -176,7 +176,7 @@ int main(){
            "finite, unclipped native audio");
   if(input==Program::Left&&!room){
    const auto rotated=native(rate,false,input,128,Mode::SpeakerMonitor,60.f);
-   const auto changed=blend(rate,anchor,rotated,.18f,128);
+   const auto changed=blend(rate,anchor,rotated,.12f,128);
    const double cue=std::sqrt(difference(changed,candidate)/(energy(anchor)+1.e-20));
    std::printf("P84_YAW,%.0f,head_turned=60,relative_pcm_difference=%.6f\n",rate,cue);
    require(cue>.005&&cue<.5,"world yaw positional variation bounded and nonzero");
