@@ -4,6 +4,12 @@ on:
     paths:
       - 'engine/builtin_fx/ImerSip*.h'
       - 'tests/imersip_music_phase_guard_test.cpp'
+      - 'tests/imersip_fx_picker_contract_test.py'
+      - 'src/NativeBuiltInFx.h'
+      - 'scripts/compose_native_peq.py'
+      - 'scripts/build_approved_native_gui.py'
+      - 'web/approved-native-bridge.js'
+      - 'CMakeLists.txt'
       - '.github/workflows/imersip-fast.yml'
   workflow_dispatch:
 
@@ -29,3 +35,5 @@ jobs:
             tests/imersip_music_phase_guard_test.cpp -o imersip_music_test
       - name: PCM original P8.2 parity, mono-fold, bass, anti-phase, chunk checks
         run: ./imersip_music_test
+      - name: Build-to-FX-Picker registration and JUCE host contract
+        run: python -m unittest discover -s tests -p imersip_fx_picker_contract_test.py -v
