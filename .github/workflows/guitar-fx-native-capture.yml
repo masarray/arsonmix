@@ -1,0 +1,98 @@
+name: Guitar FX native JUCE screenshot — minimal one-target compile
+# No mixer/installer/WebView2/CMake full project. An actual JUCE peer is required.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - 'engine/builtin_fx/GuitarRigEditor.h'
+      - 'engine/builtin_fx/GuitarRigProcessor.h'
+      - 'engine/builtin_fx/guitar/**'
+      - 'design-references/guitar-fx/hardware-layout.json'
+      - 'design-references/guitar-fx/assets/gfx-*.png'
+      - 'scripts/build_guitar_fx_layered_assets.mjs'
+      - 'tests/guitar_fx_native_capture.cpp'
+      - 'tests/guitar-fx-native/**'
+      - '.github/workflows/guitar-fx-native-capture.yml'
+permissions:
+  contents: read
+concurrency:
+  group: guitar-native-capture-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  native-editor:
+    name: Native hardware screenshot / exact JUCE source
+    runs-on: windows-2022
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Assert exact PR source
+        shell: pwsh
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $head = (& git rev-parse HEAD).Trim()
+          if ($head -ne $env:EXPECTED) { throw "CAPTURE_SHA_MISMATCH:$head" }
+          Write-Host "GUITAR_NATIVE_SOURCE=$head"
+      - name: Checkout pinned JUCE 8
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.15
+          path: third_party/JUCE
+      - name: Configure minimal JUCE capture target (no WebView2)
+        shell: pwsh
+        run: |
+          cmake -S tests/guitar-fx-native -B build-gfx -G "Visual Studio 17 2022" -A x64 `
+            -DJUCE_ROOT="${{ github.workspace }}/third_party/JUCE"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build ONLY the native editor screenshot executable
+        shell: pwsh
+        run: |
+          cmake --build build-gfx --config Release --parallel 2 --target ARMixGuitarEditorCapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Capture real mounted JUCE window (4 modules, ON/OFF, A/B, scaling)
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem build-gfx -Filter 'ARMixGuitarEditorCapture.exe' -Recurse -File |
+            Select-Object -First 1
+          if (-not $exe) { throw 'NATIVE_CAPTURE_EXE_MISSING' }
+          $dest = Join-Path $PWD 'guitar-native-screenshots'
+          & $exe.FullName $dest
+          if ($LASTEXITCODE -ne 0) { throw "NATIVE_JUCE_WINDOW_CAPTURE_FAILED:$LASTEXITCODE" }
+          $images = @(Get-ChildItem $dest -Filter '*.png' -File)
+          if ($images.Count -ne 10) { throw "NATIVE_CAPTURE_COUNT:$($images.Count)" }
+          $digests = @{}
+          foreach ($f in $images) {
+            if ($f.Length -lt 10000) { throw "EMPTY_NATIVE_RENDER:$($f.Name)" }
+            $hash = (Get-FileHash $f.FullName -Algorithm SHA256).Hash
+            $digests[$f.Name] = $hash
+            Write-Host "JUCE_EDITOR_PNG=$($f.Name) bytes=$($f.Length) sha256=$hash"
+          }
+          # Mandatory pixel-difference proof. Async Button::triggerClick
+          # previously captured identical images of different modules.
+          # Identical frames must fail, never masquerade as GUI acceptance.
+          $pairs = @(
+            @('01-gate.png', '02-overdrive.png'),
+            @('02-overdrive.png', '03-amplifier.png'),
+            @('03-amplifier.png', '04-cabinet.png'),
+            @('05-gate-before-toggle.png', '06-gate-after-toggle.png')
+          )
+          foreach ($pair in $pairs) {
+            $a = $pair[0]; $b = $pair[1]
+            if (-not $digests.ContainsKey($a) -or -not $digests.ContainsKey($b)) {
+              throw "MISSING_NATIVE_IMAGE_PAIR:$a $b"
+            }
+            if ($digests[$a] -eq $digests[$b]) {
+              throw "NATIVE_GUI_STATE_DID_NOT_CHANGE:$a / $b"
+            }
+            Write-Host "NATIVE_GUI_DISTINCT_STATES_PASS:$a vs $b"
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: guitar-fx-native-juce-peer-${{ github.event.pull_request.number }}
+          path: guitar-native-screenshots/*.png
+          retention-days: 7
+          if-no-files-found: warn

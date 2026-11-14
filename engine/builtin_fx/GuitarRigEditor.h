@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "GuitarRigProcessor.h"
+#include "guitar/GuitarHardwareGeometry.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <array>
 #include <cmath>
@@ -30,8 +31,10 @@ class GuitarRigEditor final : public juce::AudioProcessorEditor,
             }
             juce::Graphics::ScopedSaveState saved(g);
             const float cx=static_cast<float>(x+w/2),cy=static_cast<float>(y+h/2);
-            const float radians=start+pos*(end-start);
+            // PNG pointer is drawn at 12 o\'clock; JUCE angle zero is 3 o\'clock.
+            const float radians=start+pos*(end-start)+juce::MathConstants<float>::halfPi;
             g.addTransform(juce::AffineTransform::rotation(radians,cx,cy));
+            g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
             g.drawImageWithin(image,x+3,y+3,w-6,h-6,
                               juce::RectanglePlacement::centred);
         }
@@ -55,10 +58,25 @@ class GuitarRigEditor final : public juce::AudioProcessorEditor,
                     static_cast<float>(button.getHeight()-10));
                 if(face.getWidth()>4.f&&face.getHeight()>4.f) {
                     g.setColour(down?juce::Colours::black.withAlpha(0.20f):
-                        juce::Colour::fromRGB(255,197,116).withAlpha(0.12f));
+                        juce::Colour::fromRGB(179,203,207).withAlpha(0.10f));
                     g.fillRoundedRectangle(face,
                         std::min(face.getHeight()*0.45f,11.f));
                 }
+            }
+        }
+    };
+    struct NavigationButtons final : juce::LookAndFeel_V4 {
+        void drawButtonBackground(juce::Graphics& g,juce::Button& b,
+            const juce::Colour&,bool hover,bool pressed) override {
+            const auto r=b.getLocalBounds().toFloat().reduced(1.f);
+            if(b.getToggleState()) {
+                g.setColour(juce::Colour::fromRGB(77,112,116).withAlpha(0.18f));
+                g.fillRoundedRectangle(r,5.f);
+                g.setColour(juce::Colour::fromRGB(128,199,199));
+                g.fillRect(juce::Rectangle<float>{r.getX()+8.f,r.getBottom()-2.f,r.getWidth()-16.f,2.f});
+            } else if(hover||pressed) {
+                g.setColour(juce::Colours::white.withAlpha(pressed?.10f:.055f));
+                g.fillRoundedRectangle(r,5.f);
             }
         }
     };
@@ -82,6 +100,8 @@ public:
         switchLook_.off=switchOff_;switchLook_.on=switchOn_;
         stompLook_.off=stompOff_;stompLook_.on=stompOn_;
         setSize(1060,640);
+        setResizable(true,false);
+        setResizeLimits(900,545,1484,896);
         for(std::size_t i=0;i<armix::guitarfx::factoryToneNames.size();++i)
             preset_.addItem(armix::guitarfx::factoryToneNames[i],
                             static_cast<int>(i)+1);
@@ -102,7 +122,7 @@ public:
         }
         for(std::size_t i=0;i<4;++i){
             library_[i].setButtonText(armix::guitarfx::factoryToneNames[i]);
-            library_[i].setLookAndFeel(&buttonLook_);
+            library_[i].setLookAndFeel(&navLook_);
             library_[i].setClickingTogglesState(false);
             library_[i].onClick=[this,i]{
                 const int id=static_cast<int>(i)+1;
@@ -114,7 +134,7 @@ public:
         for(std::size_t i=0;i<4;++i){
             const auto* name=names_[i];
             focusButtons_[i].setButtonText(name);
-            focusButtons_[i].setLookAndFeel(&buttonLook_);
+            focusButtons_[i].setLookAndFeel(&navLook_);
             focusButtons_[i].setClickingTogglesState(false);
             focusButtons_[i].onClick=[this,i]{
                 focus_=i;refreshWidgets();repaint();
@@ -154,7 +174,7 @@ public:
         addAndMakeVisible(stomp_);
         status_.setJustificationType(juce::Justification::centredRight);
         status_.setColour(juce::Label::textColourId,
-                          juce::Colour::fromRGB(213,170,112));
+                          juce::Colour::fromRGB(154,172,173));
         addAndMakeVisible(status_);
         refreshWidgets();
         startTimerHz(15); // UI only, never a second audio timer/callback.
@@ -185,131 +205,161 @@ public:
         stomp_.setLookAndFeel(nullptr);
     }
     void paint(juce::Graphics& g) override {
-        g.fillAll(juce::Colour::fromRGB(18,21,26));
-        const auto gold=juce::Colour::fromRGB(211,159,94);
-        const auto muted=juce::Colour::fromRGB(155,166,179);
-        g.setColour(juce::Colour::fromRGB(33,39,46));
-        g.fillRect(0,0,getWidth(),64);
-        g.fillRect(0,64,getWidth(),92);
-        g.fillRect(0,156,204,getHeight()-156);
-        g.setColour(juce::Colour::fromRGB(58,64,71));
-        g.drawLine(0.f,64.f,static_cast<float>(getWidth()),64.f,1.f);
-        g.drawLine(0.f,156.f,static_cast<float>(getWidth()),156.f,1.f);
-        g.drawLine(204.f,156.f,204.f,static_cast<float>(getHeight()),1.f);
-        g.setColour(gold);
-        g.setFont(juce::Font(juce::FontOptions(20.f,juce::Font::bold)));
-        g.drawText("ArSonMix  /  GUITAR FX RIG",18,17,390,31,
+        // The ONLY chrome surrounding hardware is a quiet shared work surface.
+        // Render controls at the same logical coordinates as their JUCE hitboxes.
+        g.fillAll(juce::Colour::fromRGB(22,24,26));
+        const auto viewport=armix::guitarfx::art::Viewport::from(getWidth(),getHeight());
+        juce::Graphics::ScopedSaveState scope(g);
+        g.addTransform(juce::AffineTransform::scale(viewport.scale)
+            .translated(viewport.dx,viewport.dy));
+        const auto label=juce::Colour::fromRGB(210,215,215);
+        const auto dim=juce::Colour::fromRGB(138,150,155);
+        const auto accent=juce::Colour::fromRGB(139,199,198);
+        g.setColour(juce::Colour::fromRGB(30,33,36));
+        g.fillRect(0,0,1060,60);
+        g.setColour(juce::Colour::fromRGB(47,52,54));
+        g.drawLine(0.f,60.f,1060.f,60.f,1.f);
+        g.setColour(label);
+        g.setFont(juce::Font(juce::FontOptions(18.f)));
+        g.drawText("ArSonMix   /   GUITAR FX",22,13,335,28,
                    juce::Justification::centredLeft);
-        g.setColour(muted);
-        g.setFont(juce::Font(juce::FontOptions(11.f)));
-        g.drawText("TONE",18,77,162,25,juce::Justification::centredLeft);
-        g.drawText("SIGNAL CHAIN  •  click hardware to focus",224,70,540,20,
-                   juce::Justification::centredLeft);
-        g.drawText("FACTORY TONES",18,177,171,24,
-                   juce::Justification::centredLeft);
-        // Reusable PNG frame; the hardware BODY has empty mounting wells.
-        // Every knob/stomp is its own JUCE interactive child on top, never
-        // baked into a pedal JPG/PNG and never a decorative fake parameter.
-        const auto stage=juce::Rectangle<int>(226,177,getWidth()-250,365);
-        if(panel_.isValid())g.drawImageWithin(panel_,stage.getX(),stage.getY(),
-            stage.getWidth(),stage.getHeight(),
-            juce::RectanglePlacement::stretchToFit);
-        else {
-            g.setColour(juce::Colour::fromRGB(30,33,37));
-            g.fillRoundedRectangle(stage.toFloat(),12.f);
-        }
+        g.setColour(dim);
+        g.setFont(juce::Font(juce::FontOptions(10.5f)));
+        g.drawText("INPUT",24,89,68,20,juce::Justification::centredLeft);
+        g.drawText("OUTPUT",1004,130,52,16,juce::Justification::centredLeft);
+        // Flat theatre: no bezel, no large framed backdrop, no decorative well.
+        g.setGradientFill(juce::ColourGradient(
+            juce::Colour::fromRGB(36,39,42),0.f,158.f,
+            juce::Colour::fromRGB(19,21,23),0.f,529.f,false));
+        g.fillRect(juce::Rectangle<float>{0.f,150.f,1060.f,380.f});
+        g.setColour(juce::Colour::fromRGB(56,62,64).withAlpha(.40f));
+        g.drawLine(17.f,528.f,1043.f,528.f,1.f);
+        // Artwork must preserve native aspect ratio and use metadata anchors.
+        const auto picture=artBounds();
+        const auto& hw=armix::guitarfx::art::modules[focus_];
         const auto& hero=focus_==2?amp_:focus_==3?cab_:focus_==0?gate_:pedal_;
-        const auto art=artBounds();
-        if(hero.isValid())
-            g.drawImageWithin(hero,juce::roundToInt(art.getX()),
-                juce::roundToInt(art.getY()),juce::roundToInt(art.getWidth()),
-                juce::roundToInt(art.getHeight()),
+        if(hero.isValid()) {
+            g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
+            g.drawImageWithin(hero,juce::roundToInt(picture.getX()),
+                juce::roundToInt(picture.getY()),
+                juce::roundToInt(picture.getWidth()),
+                juce::roundToInt(picture.getHeight()),
                 juce::RectanglePlacement::centred);
-        else {
-            g.setColour(juce::Colour::fromRGB(59,48,40));
-            g.fillRoundedRectangle(art,12.f);
+        } else {
+            g.setColour(juce::Colour::fromRGB(51,55,57));
+            g.fillRoundedRectangle(picture,12.f);
         }
-        g.setColour(gold);
-        g.setFont(juce::Font(juce::FontOptions(13.f)));
-        g.drawText(names_[focus_],246,184,242,26,
-                   juce::Justification::centredLeft);
-        // Labels and live DSP values are always vector text drawn by JUCE;
-        // no PNG text or hidden controls underneath the art.
-        g.setFont(juce::Font(juce::FontOptions(11.f)));
-        for(std::size_t i=0;i<activeControlCount();++i){
-            const bool amp=focus_==2;
-            const int x=amp?juce::roundToInt(knobBounds(i).getCentreX())-65:840;
-            const int y=amp?519:244+static_cast<int>(i)*64;
-            const int ox=amp?x:840;
-            g.setColour(muted);
-            g.drawText(controlNames_[focus_][i],ox,y,130,18,
-                       amp?juce::Justification::centred:
-                           juce::Justification::centredLeft);
-            g.setColour(gold);
+        // Fine physical inscriptions live in JUCE, never baked into a body
+        // PNG. Keep typographic baseline locked to the native hardware pixels.
+        // These are identity marks, not fake controls or status indicators.
+        const auto etch=[&](const juce::String& text,float x,float y,float w,
+                       float h,float size,juce::Colour ink) {
+            const float s=picture.getWidth()/static_cast<float>(hw.width);
+            g.setColour(ink);
+            g.setFont(juce::Font(juce::FontOptions(size*s)));
+            g.drawText(text,juce::roundToInt(picture.getX()+x*s),
+                juce::roundToInt(picture.getY()+y*s),
+                juce::roundToInt(w*s),juce::roundToInt(h*s),
+                juce::Justification::centred);
+        };
+        if(focus_==0)
+            etch("SILENT GATE",72,57,156,30,13,
+                 juce::Colour::fromRGB(154,185,185));
+        else if(focus_==1)
+            etch("OVERDRIVE",78,68,144,26,14,
+                 juce::Colour::fromRGB(213,155,115));
+        else if(focus_==2)
+            etch("ARSON  /  AMP",304,79,112,29,12,
+                 juce::Colour::fromRGB(180,186,184));
+        else
+            etch("ARSON",594,243,69,18,10,
+                 juce::Colour::fromRGB(163,171,170));
+        // Paint small readouts close to the hardware control they describe.
+        // Neither values nor labels are burned into the device-body PNG.
+        for(std::size_t i=0;i<activeControlCount();++i) {
+            const auto k=knobBounds(i);
+            // Pedal readouts live outside the physical chassis to avoid covering
+            // the LED recess/footwell; amplifier legends sit below knobs.
+            const int centre=focus_<2?866:k.getCentreX();
+            const int ty=focus_<2?217+static_cast<int>(i)*74:k.getBottom()+3;
+            g.setColour(dim);
+            g.setFont(juce::Font(juce::FontOptions(10.f)));
+            g.drawText(controlNames_[focus_][i],centre-61,ty,122,14,
+                       juce::Justification::centred);
             const float normalized=draft_.blocks[focus_].values[i];
             juce::String reading;
-            if(focus_==0 && i==0)
+            if(focus_==0&&i==0)
                 reading=juce::String(-80.f+50.f*normalized,0)+" dB";
-            else if(focus_==0 && i==1)
+            else if(focus_==0&&i==1)
                 reading=juce::String(120.f*normalized,0)+" ms";
-            else if(focus_==0 && i==2)
+            else if(focus_==0&&i==2)
                 reading=juce::String(12.f+228.f*normalized,0)+" ms";
             else reading=juce::String(normalized*100.f,0)+"%";
-            g.drawText(reading,ox,y+18,130,18,
-                       amp?juce::Justification::centred:
-                           juce::Justification::centredLeft);
+            g.setColour(label);
+            g.setFont(juce::Font(juce::FontOptions(11.5f)));
+            g.drawText(reading,centre-61,ty+14,122,18,
+                       juce::Justification::centred);
         }
-        if(focus_==3){
-            g.setColour(muted);
-            g.drawText("65-TAP CABINET FIR · FIXED 48-SAMPLE FX PDC",
-                       316,532,600,24,juce::Justification::centred);
+        if(focus_==3) {
+            g.setColour(dim);
+            g.setFont(juce::Font(juce::FontOptions(11.f)));
+            g.drawText("DUAL SPEAKER CABINET  /  65-TAP FIR",
+                       310,501,630,20,juce::Justification::centred);
         }
-        g.setColour(juce::Colour::fromRGB(51,57,65));
-        g.fillRect(205,getHeight()-37,getWidth()-205,37);
-        g.setColour(muted);
+        // A physical signal LED is vector-rendered in the artist-defined well;
+        // it reflects the real mutable enable bit, not animation or fake audio.
+        if(hw.led.diameter>0.f && draft_.count>focus_) {
+            const auto nativePic=armix::guitarfx::art::fit(
+                armix::guitarfx::art::logicalStage,hw);
+            const auto led=armix::guitarfx::art::centeredControl(nativePic,hw,hw.led);
+            const auto enabled=draft_.blocks[focus_].enabled;
+            g.setColour(enabled?juce::Colour::fromRGB(89,196,161):
+                                juce::Colour::fromRGB(65,70,70));
+            g.fillEllipse(led.x,led.y,led.w,led.h);
+        }
+        g.setColour(dim);
+        g.setFont(juce::Font(juce::FontOptions(10.5f)));
+        g.drawText("FACTORY TONES",25,551,163,22,
+                   juce::Justification::centredLeft);
+        g.setColour(juce::Colour::fromRGB(32,35,37));
+        g.fillRect(0,593,1060,47);
         const auto serial=processor_.observedBlockSerial();
         const bool live=serial>0 && nowMs_-lastBlockMs_<900;
-        g.drawText(live?"PCM CALLBACK OBSERVED":"PCM OFFLINE  ·  NO FAKE METER",
-                   225,getHeight()-34,240,30,juce::Justification::centredLeft);
-        const int peakX=getWidth()-363,peakW=125;
-        const auto paintPeak=[&](int x,float peak,const juce::String& title){
-            g.setColour(muted);
-            g.drawText(title,x-32,getHeight()-32,28,26,
-                       juce::Justification::centredRight);
-            g.setColour(juce::Colour::fromRGB(24,29,34));
-            g.fillRoundedRectangle(static_cast<float>(x),
-                static_cast<float>(getHeight()-25),static_cast<float>(peakW),10.f,3.f);
-            if(live){
-                const auto magnitude=std::clamp(std::isfinite(peak)?peak:0.f,0.f,1.f);
-                g.setColour(juce::Colour::fromRGB(107,193,143));
-                g.fillRoundedRectangle(static_cast<float>(x),
-                    static_cast<float>(getHeight()-25),
-                    std::max(1.f,magnitude*peakW),10.f,3.f);
+        g.setColour(dim);
+        g.drawText(live?"PCM ACTIVE":"PCM OFFLINE  /  NO FAKE METER",
+                   421,603,253,25,juce::Justification::centredLeft);
+        const auto paintPeak=[&](int x,float peak,const char* caption) {
+            g.setColour(dim);
+            g.drawText(caption,x-32,601,27,25,juce::Justification::centredRight);
+            g.setColour(juce::Colour::fromRGB(48,53,55));
+            g.fillRoundedRectangle(float(x),611.f,117.f,6.f,3.f);
+            if(live) {
+                const float value=std::clamp(std::isfinite(peak)?peak:0.f,0.f,1.f);
+                g.setColour(accent);
+                if(value>0.f)g.fillRoundedRectangle(float(x),611.f,
+                                              value*117.f,6.f,3.f);
             }
         };
-        paintPeak(peakX,processor_.observedInputPeak(),"IN");
-        paintPeak(peakX+178,processor_.observedOutputPeak(),"OUT");
-        g.setColour(live?juce::Colour::fromRGB(98,197,141):
-                         juce::Colour::fromRGB(108,113,119));
-        g.fillEllipse(static_cast<float>(getWidth()-17),
-                      static_cast<float>(getHeight()-23),9.f,9.f);
+        paintPeak(744,processor_.observedInputPeak(),"IN");
+        paintPeak(912,processor_.observedOutputPeak(),"OUT");
     }
     void resized() override {
-        preset_.setBounds(getWidth()-280,16,258,33);
-        bankButtons_[0].setBounds(getWidth()-445,22,77,22);
-        bankButtons_[1].setBounds(getWidth()-360,22,77,22);
-        status_.setBounds(16,getHeight()-105,175,46);
-        for(std::size_t i=0;i<4;++i){
-            library_[i].setBounds(18,216+static_cast<int>(i)*54,168,43);
+        const auto put=[this](juce::Component& c,float x,float y,float w,float h) {
+            c.setBounds(mapBounds({x,y,w,h}));
+        };
+        put(preset_,783,14,255,31);
+        put(bankButtons_[0],618,18,77,22);
+        put(bankButtons_[1],700,18,77,22);
+        put(status_,20,596,381,38);
+        for(std::size_t i=0;i<4;++i) {
+            put(library_[i],204.f+207.f*static_cast<float>(i),542,194,33);
+            const float x=216.f+207.f*static_cast<float>(i);
+            put(focusButtons_[i],x,79,145,44);
+            put(power_[i],x+148.f,91,54,20);
         }
-        for(std::size_t i=0;i<4;++i){
-            const int x=228+static_cast<int>(i)*199;
-            focusButtons_[i].setBounds(x,104,137,39);
-            power_[i].setBounds(x+141,113,52,20);
-        }
-        stomp_.setBounds(stompBounds());
+        stomp_.setBounds(mapBounds(toArtRect(stompBounds())));
         for(std::size_t i=0;i<3;++i)
-            sliders_[i].setBounds(knobBounds(i));
+            sliders_[i].setBounds(mapBounds(toArtRect(knobBounds(i))));
     }
 private:
     void timerCallback() override {
@@ -356,8 +406,8 @@ private:
         // on every floating editor reopen is avoidable startup work; the
         // first UI creation populates this thread-safe function-local cache
         // and later editors only share image handles. No audio-thread IO.
-        static const std::array<juce::Image,12> skins=[] {
-            return std::array<juce::Image,12>{
+        static const std::array<juce::Image,11> skins=[] {
+            return std::array<juce::Image,11>{
                 juce::ImageFileFormat::loadFrom(BinaryData::gfxamphead_png,
                     static_cast<std::size_t>(BinaryData::gfxamphead_pngSize)),
                 juce::ImageFileFormat::loadFrom(BinaryData::gfxcabinet_png,
@@ -376,8 +426,6 @@ private:
                     static_cast<std::size_t>(BinaryData::gfxbuttonoff_pngSize)),
                 juce::ImageFileFormat::loadFrom(BinaryData::gfxbuttonon_png,
                     static_cast<std::size_t>(BinaryData::gfxbuttonon_pngSize)),
-                juce::ImageFileFormat::loadFrom(BinaryData::gfxpanel_png,
-                    static_cast<std::size_t>(BinaryData::gfxpanel_pngSize)),
                 juce::ImageFileFormat::loadFrom(BinaryData::gfxstompoff_png,
                     static_cast<std::size_t>(BinaryData::gfxstompoff_pngSize)),
                 juce::ImageFileFormat::loadFrom(BinaryData::gfxstompon_png,
@@ -386,34 +434,38 @@ private:
         }();
         amp_=skins[0];cab_=skins[1];gate_=skins[2];pedal_=skins[3];
         knob_=skins[4];switchOff_=skins[5];switchOn_=skins[6];
-        buttonOff_=skins[7];buttonOn_=skins[8];panel_=skins[9];
-        stompOff_=skins[10];stompOn_=skins[11];
+        buttonOff_=skins[7];buttonOn_=skins[8];
+        stompOff_=skins[9];stompOn_=skins[10];
 #endif
     }
+    static armix::guitarfx::art::Rect toArtRect(juce::Rectangle<int> r) {
+        return {float(r.getX()),float(r.getY()),float(r.getWidth()),float(r.getHeight())};
+    }
+    static juce::Rectangle<int> asJuceRect(armix::guitarfx::art::Rect r) {
+        return {juce::roundToInt(r.x),juce::roundToInt(r.y),
+                juce::roundToInt(r.w),juce::roundToInt(r.h)};
+    }
+    juce::Rectangle<int> mapBounds(armix::guitarfx::art::Rect r) const {
+        return asJuceRect(armix::guitarfx::art::Viewport::from(
+            getWidth(),getHeight()).map(r));
+    }
     juce::Rectangle<float> artBounds() const {
-        // Stable exact positioning shared by bitmap and hit-testing.
-        const bool pedal=focus_<2;
-        const float width=pedal?237.f:720.f;
-        const float height=pedal?332.f:300.f;
-        return {631.f-width*.5f,190.f+(332.f-height)*.5f,width,height};
+        const auto box=armix::guitarfx::art::fit(
+            armix::guitarfx::art::logicalStage,
+            armix::guitarfx::art::modules[focus_]);
+        return {box.x,box.y,box.w,box.h};
     }
     juce::Rectangle<int> knobBounds(std::size_t i) const {
-        const auto a=artBounds();
-        float nx=.5f,ny=.74f;
-        if(focus_==0){
-            nx=i==0?.31f:i==1?.69f:.50f;
-            ny=i==2?.38f:.28f;
-        }else if(focus_==1){nx=.50f;ny=.38f;}
-        else {nx=i==0?.30f:i==1?.50f:.70f;ny=.73f;}
-        const int cx=juce::roundToInt(a.getX()+a.getWidth()*nx);
-        const int cy=juce::roundToInt(a.getY()+a.getHeight()*ny);
-        return {cx-34,cy-34,68,68};
+        const auto& h=armix::guitarfx::art::modules[focus_];
+        return asJuceRect(armix::guitarfx::art::centeredControl(
+            armix::guitarfx::art::fit(armix::guitarfx::art::logicalStage,h),
+            h,h.knobs[i]));
     }
     juce::Rectangle<int> stompBounds() const {
-        const auto a=artBounds();
-        const int x=juce::roundToInt(a.getX()+a.getWidth()*.5f);
-        const int y=juce::roundToInt(a.getY()+a.getHeight()*.82f);
-        return {x-29,y-29,58,58};
+        const auto& h=armix::guitarfx::art::modules[focus_];
+        return asJuceRect(armix::guitarfx::art::centeredControl(
+            armix::guitarfx::art::fit(armix::guitarfx::art::logicalStage,h),
+            h,h.footswitch));
     }
     std::size_t activeControlCount() const noexcept {
         return focus_==3?0u:(focus_==0||focus_==2)?3u:1u;
@@ -434,10 +486,10 @@ private:
         stomp_.setVisible(focus_<2);
         stomp_.setToggleState(draft_.blocks[focus_].enabled,
                               juce::dontSendNotification);
-        stomp_.setBounds(stompBounds());
+        stomp_.setBounds(mapBounds(toArtRect(stompBounds())));
         for(std::size_t i=0;i<3;++i){
             sliders_[i].setVisible(i<activeControlCount());
-            sliders_[i].setBounds(knobBounds(i));
+            sliders_[i].setBounds(mapBounds(toArtRect(knobBounds(i))));
             sliders_[i].setValue(draft_.blocks[focus_].values[i],
                                   juce::dontSendNotification);
         }
@@ -481,8 +533,9 @@ private:
     }
     GuitarRigProcessor& processor_;
     HardwareKnobs knobsLook_{};
+    NavigationButtons navLook_{};
     SkinButtons buttonLook_{},switchLook_{},stompLook_{};
-    juce::Image amp_,cab_,gate_,pedal_,knob_,panel_;
+    juce::Image amp_,cab_,gate_,pedal_,knob_;
     juce::Image switchOff_,switchOn_,buttonOff_,buttonOn_,stompOff_,stompOn_;
     juce::TextButton stomp_;
     juce::ComboBox preset_;
