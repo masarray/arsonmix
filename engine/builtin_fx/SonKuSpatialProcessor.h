@@ -90,6 +90,11 @@ public:
         return core_.p80PreparedShelfDb();
     }
 #endif
+#if defined(SONKU_P82_GEOMETRIC_LATE_RESEARCH) && SONKU_P82_GEOMETRIC_LATE_RESEARCH
+    int preparedRoomLatePreDelaySamples() const noexcept {
+        return core_.p82PreparedRoomLatePreDelaySamples();
+    }
+#endif
     float observedAzimuthDegrees() const noexcept {
         return observedAzimuthDegrees_.load(std::memory_order_relaxed);
     }
