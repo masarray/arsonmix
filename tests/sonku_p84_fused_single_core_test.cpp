@@ -162,8 +162,11 @@ int main(){
    require(std::isfinite(candidate.l[i])&&std::isfinite(candidate.r[i])&&
            std::abs(candidate.l[i])<1.f&&std::abs(candidate.r[i])<1.f,
            "finite, unclipped native audio");
-  if(input==Program::Left&&!room){
-   const auto changed=native(rate,false,input,128,Mode::MusicBedP82,60.f,true);
+  if(input==Program::Left){
+   // World yaw now reaches BOTH the fused source HRIR and the
+   // original six-wall scene's source-to-listener geometric delay.
+   // Room OFF and ON are both required to have bounded variation.
+   const auto changed=native(rate,room,input,128,Mode::MusicBedP82,60.f,true);
    const double cue=std::sqrt(difference(changed,candidate)/(energy(anchor)+1.e-20));
    std::printf("P84_SINGLE_YAW,%.0f,head_turned=60,relative_pcm_difference=%.6f\n",rate,cue);
    require(cue>.005&&cue<.5,"world yaw positional variation bounded and nonzero");
