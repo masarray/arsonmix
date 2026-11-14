@@ -4460,6 +4460,7 @@ private:
             emitPlayerState();return;
         }
         if(action=="playerPause") {
+            playerPendingIndex_=-1;
             engine_.playerPause();emitPlayerState();return;
         }
         if(action=="playerStop") {
@@ -7541,6 +7542,13 @@ private:
                     playerSelected_=playerCurrent_;
                 }
                 playerPendingIndex_=-1;
+                emitPlayerState(true);
+            } else if(playerPendingIndex_>=0 &&
+                      engine_.playerTransitionFailed()) {
+                // Standby decoder failure does not interrupt old CURRENT
+                // or claim that a new source has reached the MAIN.
+                playerPendingIndex_=-1;
+                playerError_="NEXT could not decode; current song is unchanged";
                 emitPlayerState(true);
             }
             const auto transport=engine_.playerStatus();
