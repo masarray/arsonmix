@@ -61,3 +61,17 @@ CMake switch, PR, public binary, or claim dearVR parity before:
 Do not use an unstable per-callback CPU clock to dynamically switch HRTF modes;
 a global mixer graph budget belongs to the host admission policy, not a guessed
 one-size threshold in the audio thread.
+
+## P6 native ROOM headphone artifact
+
+The scoped SonKu fast CI also renders **eight lossless original 48k/16-bit
+stereo WAVs**: LIGHT versus DIRECTIONAL prepared mode on FRONT/REAR and
+stereo spreads 0°/60°. Both use the exact same real native SQUARE
+ROOM controls, output trim, direct HRIR, synthesized phase-conflicted
+L/R instruments and 3-second frame clock (no external licensed music).
+`tests/sonku_p6_realtime_audio_audit.py` enforces consistent metadata,
+the exact no-reflection early prefix, finite / unclipped and non-silent
+PCM, and a genuine measured wet-output difference after reflections.
+Metrics are uploaded with the WAVs and listening guide. A difference
+from lightweight reflections is expected; it is **not** evidence the
+candidate sounds better, externalizes more or matches dearVR.

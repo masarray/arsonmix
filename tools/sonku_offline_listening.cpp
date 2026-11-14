@@ -402,6 +402,72 @@ std::vector<std::uint8_t> directionalRoomAudio(int azimuth,bool measured,
     }
     return pcm;
 }
+// P6: the ACTUAL native ROOM scene, prepared before the PCM callback.
+// Same source and saved user scene, light vs opt-in P2/P3/P4 full KEMAR.
+// Unlike P2 offline setAmount fixtures this exercises native setRealtimeRoom.
+std::vector<std::uint8_t> realtimeRoomAudio(int azimuth,float spread,
+                                             bool directional){
+    SonKuSpatialCore dsp;
+    const auto profile=directional
+        ?armix::sonku::SonKuReflectionProfile::DirectionalKemar
+        :armix::sonku::SonKuReflectionProfile::Lightweight;
+    if(!dsp.prepare(rate,profile))
+        throw std::runtime_error("P6 native profile prepare failed");
+    Settings scene=fixed(static_cast<float>(azimuth));
+    scene.spacePreset=1;scene.sourceDistanceMeters=1.6f;
+    scene.roomAmount=.65f;scene.ambience=.20f;
+    scene.stereoSpreadDegrees=spread;scene.outputTrim=.60f;
+    if(!dsp.setSettings(scene))
+        throw std::runtime_error("P6 native ROOM scene rejected");
+    constexpr int total=rate*3;
+    constexpr float pi=3.14159265358979323846f;
+    std::vector<std::uint8_t> pcm;
+    pcm.reserve(static_cast<std::size_t>(total)*4);
+    for(int at=0;at<total;at+=framesPerBlock){
+        const int n=std::min(framesPerBlock,total-at);
+        std::array<float,framesPerBlock> l{},r{};
+        for(int i=0;i<n;++i){
+            const int f=at+i;
+            const float t=static_cast<float>(f)/rate;
+            const float env=std::clamp(std::min(f,total-1-f)/
+                                      static_cast<float>(rate/50),0.f,1.f);
+            const float bass=.095f*std::sin(2.f*pi*220.f*t);
+            const float leftTreble=.032f*std::sin(2.f*pi*3200.f*t);
+            const float rightTreble=-.032f*std::sin(2.f*pi*3200.f*t);
+            const float harmonic=.04f*std::sin(2.f*pi*660.f*t);
+            l[i]=env*(bass+harmonic+leftTreble+
+                      .018f*std::sin(2.f*pi*4700.f*t));
+            r[i]=env*(bass+harmonic+rightTreble+
+                      .021f*std::sin(2.f*pi*940.f*t));
+        }
+        dsp.process(l.data(),r.data(),n);
+        for(int i=0;i<n;++i)appendStereo(pcm,l[i],r[i]);
+    }
+    return pcm;
+}
+void writeP6RealtimeAudio(const std::filesystem::path& dir){
+    for(const int azimuth:{0,180}){
+        const std::string side=azimuth==0?"front":"rear";
+        for(const int spread:{0,60}){
+            const std::string label=side+"-spread"+std::to_string(spread);
+            writeWav(dir/("sonku-p6-light-"+label+".wav"),
+                realtimeRoomAudio(azimuth,static_cast<float>(spread),false));
+            writeWav(dir/("sonku-p6-directional-"+label+".wav"),
+                realtimeRoomAudio(azimuth,static_cast<float>(spread),true));
+        }
+    }
+    std::ofstream guide(dir/"P6-REALTIME-ROOM-HEADPHONE-AB.txt");
+    if(!guide)throw std::runtime_error("P6 guide output failed");
+    guide<<"Eight original 3s stereo 48k/16bit WAVs; FOUR matched A/B pairs.\n"
+         <<"Compare sonku-p6-light-* versus sonku-p6-directional-*.\n"
+         <<"FRONT/REAR each with stereo spread 0 and 60 degrees.\n"
+         <<"Actual native ROOM SQUARE, 1.6m, reflections 0.65, ambience 0.20.\n"
+         <<"Exact same synthetic phase-conflicted bass/treble stereo source.\n"
+         <<"No mastering or per-file normalization, listen with headphones.\n"
+         <<"Disable headphone spatial enhancements; keep a SAFE level.\n"
+         <<"These are numerical/native scene demonstrations, NOT measured\n"
+         <<"dearVR externalization or human listener preference scores.\n";
+}
 void writeP4ContiguousAudio(const std::filesystem::path& dir){
     for(int azimuth:{0,180}){
         const std::string side=azimuth==0?"front":"rear";
@@ -490,7 +556,8 @@ int main(int argc,char** argv){
             (std::string(argv[2])=="--music-integrity-only" ||
              std::string(argv[2])=="--directional-er-only" ||
              std::string(argv[2])=="--p3-fusion-only" ||
-             std::string(argv[2])=="--p4-contiguous-only")))
+             std::string(argv[2])=="--p4-contiguous-only" ||
+             std::string(argv[2])=="--p6-realtime-only")))
             throw std::runtime_error("Usage: sonku-offline-demo OUTPUT_DIRECTORY [--music-integrity-only]");
         const std::filesystem::path dir(argv[1]);
         std::filesystem::create_directories(dir);
@@ -501,6 +568,13 @@ int main(int argc,char** argv){
                 std::cout<<"P2 directional room 4 WAV rendered\n";
 #else
                 throw std::runtime_error("P2 directional room only exists in candidate");
+#endif
+            } else if(std::string(argv[2])=="--p6-realtime-only"){
+#if !defined(SONKU_AB_BASELINE)
+                writeP6RealtimeAudio(dir);
+                std::cout<<"P6 native ROOM eight A/B WAV rendered\n";
+#else
+                throw std::runtime_error("P6 native scene unavailable in alpha.23");
 #endif
             } else if(std::string(argv[2])=="--p4-contiguous-only"){
 #if !defined(SONKU_AB_BASELINE)
