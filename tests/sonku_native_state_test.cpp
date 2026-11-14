@@ -13,6 +13,13 @@ int main(){
     SonKuSpatialProcessor live;
     live.prepareToPlay(48000.,128);
     assert(live.isReady());
+#if defined(ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT) && ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT
+    assert(live.preparedReflectionProfile()==
+        armix::sonku::SonKuReflectionProfile::DirectionalKemar);
+#else
+    assert(live.preparedReflectionProfile()==
+        armix::sonku::SonKuReflectionProfile::Lightweight);
+#endif
     auto scene=live.acceptedSettings();
     assert(scene.spacePreset==0); // legacy samples always load with ROOM OFF
     scene.spacePreset=2;scene.sourceDistanceMeters=5.f;
@@ -38,6 +45,7 @@ int main(){
     assert(bytes.getSize()==46);
     SonKuSpatialProcessor restored;
     restored.prepareToPlay(48000.,128);
+    assert(restored.preparedReflectionProfile()==live.preparedReflectionProfile());
     assert(restored.restoreUnpublishedState(bytes.getData(),
                                            static_cast<int>(bytes.getSize())));
     const auto got=restored.acceptedSettings();

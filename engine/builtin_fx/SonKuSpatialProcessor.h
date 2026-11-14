@@ -38,7 +38,14 @@ public:
             && layout.getMainOutputChannelSet()==juce::AudioChannelSet::stereo();
     }
     void prepareToPlay(double rate,int) override {
-        ready_=core_.prepare(rate);
+        // P6 is opt-in at build time on an unreleased test binary only.
+        // The render profile is immutable across native audio callbacks.
+#if defined(ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT) && ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT
+        constexpr auto profile=armix::sonku::SonKuReflectionProfile::DirectionalKemar;
+#else
+        constexpr auto profile=armix::sonku::SonKuReflectionProfile::Lightweight;
+#endif
+        ready_=core_.prepare(rate,profile);
         observedAzimuthDegrees_.store(accepted_.startAzimuthDegrees,std::memory_order_relaxed);
         if(ready_)ready_=core_.setSettings(accepted_);
     }
@@ -71,6 +78,9 @@ public:
     }
     armix::sonku::Settings acceptedSettings() const noexcept {return accepted_;}
     bool isReady() const noexcept {return ready_;}
+    armix::sonku::SonKuReflectionProfile preparedReflectionProfile() const noexcept {
+        return core_.preparedReflectionProfile();
+    }
     float observedAzimuthDegrees() const noexcept {
         return observedAzimuthDegrees_.load(std::memory_order_relaxed);
     }

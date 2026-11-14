@@ -20,6 +20,11 @@ enum class SonKuRoomShape : std::uint8_t { Rectangular=0, Square=1 };
 struct SonKuRoomGeometry {
     float widthMeters=7.2f,depthMeters=7.2f,distanceMeters=1.6f;
 };
+// One render profile is admitted at prepare time, never switched inside PCM.
+// The measured horizontal KEMAR path remains experimental until ASIO/AB FAT.
+enum class SonKuReflectionProfile : std::uint8_t {
+    Lightweight=0, DirectionalKemar=1
+};
 class SonKuEarlyReflections final {
 public:
     struct Ears {float left=0.f,right=0.f;};
@@ -27,8 +32,11 @@ public:
     static constexpr int sourceCount=2;
     static constexpr int ringFrames=8192;
     static constexpr int geometryInterval=64;
-    bool prepare(double rate) noexcept {
+    bool prepare(double rate, SonKuReflectionProfile profile=
+                 SonKuReflectionProfile::Lightweight) noexcept {
         ready_=false;
+        if(profile!=SonKuReflectionProfile::Lightweight &&
+           profile!=SonKuReflectionProfile::DirectionalKemar)return false;
         if(!std::isfinite(rate) || (std::abs(rate-44100.)>.1 &&
                                     std::abs(rate-48000.)>.1))return false;
         rate_=static_cast<float>(rate);
@@ -36,7 +44,16 @@ public:
         gainSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.012)));
         amountSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.010)));
         kernelSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.008)));
-        hrirBank_=(rate==44100.)?hrir::normal44100:hrir::normal48000;
+        // Match the sample-rate tolerance admitted by both native cores; an
+        // ASIO rate close to 44100 must never index the 48k measured HRIR.
+        hrirBank_=(std::abs(rate-44100.)<=.1)?hrir::normal44100:hrir::normal48000;
+        profile_=profile;
+        // P6: select the exact P2+P3+P4 kernels before publishing this
+        // instance. No runtime transition, heap, mode queue or graph fork.
+        directionalHrir_=profile==SonKuReflectionProfile::DirectionalKemar;
+        fastZeroSpread_=directionalHrir_;
+        fastContiguousHrir_=directionalHrir_;
+        realtimeMode_=false;
         reset();
         ready_=true;
         return true;
@@ -49,10 +66,11 @@ public:
         amount_=0.f;
         fuseEligible_=true;
     }
+    SonKuReflectionProfile preparedProfile() const noexcept{return profile_;}
     // OFFLINE A/B ONLY: existing approved room mode remains bit-exact by
     // default. Reject mode changes while active; no public state/GUI switch.
     bool setDirectionalHrir(bool enabled) noexcept {
-        if(active())return false;
+        if(profile_!=SonKuReflectionProfile::Lightweight || active())return false;
         directionalHrir_=enabled;
         if(!enabled){fastZeroSpread_=false;fastContiguousHrir_=false;}
         fuseEligible_=true;
@@ -64,7 +82,8 @@ public:
     // while both emitters share the same direction (spread == 0).
     // This changes no public settings or live graph authority.
     bool setDirectionalZeroSpreadFusion(bool enabled) noexcept {
-        if(active() || (enabled && !directionalHrir_))return false;
+        if(profile_!=SonKuReflectionProfile::Lightweight ||
+           active() || (enabled && !directionalHrir_))return false;
         fastZeroSpread_=enabled;
         fuseEligible_=true;
         return true;
@@ -74,7 +93,8 @@ public:
     // when the delayed 140-tap HRIR FIR window is wholly in one ring span.
     // No duplicated ring storage and no HRIR coefficient truncation.
     bool setDirectionalContiguousHrir(bool enabled) noexcept {
-        if(active() || (enabled && !directionalHrir_))return false;
+        if(profile_!=SonKuReflectionProfile::Lightweight ||
+           active() || (enabled && !directionalHrir_))return false;
         fastContiguousHrir_=enabled;
         return true;
     }
@@ -376,5 +396,6 @@ private:
     bool directionalHrir_=false;
     bool fastZeroSpread_=false,fuseEligible_=true;
     bool fastContiguousHrir_=false;
+    SonKuReflectionProfile profile_=SonKuReflectionProfile::Lightweight;
 };
 } // namespace armix::sonku

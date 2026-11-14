@@ -320,6 +320,14 @@ jobs:
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_p5_room_reactivation_test.cpp -o /tmp/sonku-p5-room
           /tmp/sonku-p5-room
+      - name: P6 native JUCE-path quality prepare, active room PCM and chunk parity
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_p6_realtime_quality_test.cpp -o /tmp/sonku-p6-native
+          /tmp/sonku-p6-native
+      - name: P6 actual realtime ROOM FRONT/REAR listening WAV and objective audit
+        run: |
+          /tmp/sonku-integrity-audio sonku-integrity-evidence --p6-realtime-only
+          python tests/sonku_p6_realtime_audio_audit.py sonku-integrity-evidence
       - name: P2 original voice-like headphone A/B and numeric PCM comparison
         run: |
           /tmp/sonku-integrity-audio sonku-integrity-evidence --directional-er-only
