@@ -39,6 +39,8 @@
    send(model.transport?.state==="PLAYING"?"playerPause":"playerPlay");
  });
  $("playerStop").addEventListener("click",()=>send("playerStop"));
+ for(const id of ["playerCueIn","playerCueOut","playerCueGoIn","playerCueClear"])
+   $(id).addEventListener("click",()=>send(id));
  const seek=$("playerSeek"),waveCanvas=$("playerWaveform");
  let draggingSeek=false;
  seek.addEventListener("pointerdown",()=>{draggingSeek=true;});
@@ -244,6 +246,17 @@
    }
    seek.disabled=!(+t.durationSeconds>0) || !native;
    renderWaveform(t);
+   const currentSong=model.tracks?.[model.current];
+   const inPoint=Number(currentSong?.cueIn)||0;
+   const outPoint=Number(currentSong?.cueOut)||0;
+   $("playerCueSummary").textContent="IN "+duration(inPoint)+
+     " · OUT "+(outPoint>0?duration(outPoint):"end");
+   const editable=native && model.current>=0 &&
+     model.selected===model.current && +t.durationSeconds>0;
+   $("playerCueIn").disabled=!editable;
+   $("playerCueOut").disabled=!editable;
+   $("playerCueGoIn").disabled=!editable;
+   $("playerCueClear").disabled=!editable;
    $("playerPlay").textContent=state==="PLAYING"?"Ⅱ Pause":"▶ Play";
    const editingIndex=model.selected>=0?model.selected:model.current;
    const chosen=model.tracks[editingIndex];
