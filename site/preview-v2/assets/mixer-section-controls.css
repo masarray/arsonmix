@@ -109,34 +109,121 @@
  display:flex;flex-direction:column;min-height:0;overflow:hidden;
  background:linear-gradient(180deg,#21343d,#172832);
 }
+/* GAIN is one compact hardware control cluster, not a full-width FX surface.
+   Only these visual tokens vary with viewport height; neither the dial's
+   drag/zero-detent logic nor native PCM/ACK authority depends on its pixels. */
 .console-body .strip .gain-view-body{
+ --gain-dial-size:58px;
+ --gain-lcd-width:84px;
+ --gain-lcd-height:25px;
  min-height:0;flex:1;display:flex;flex-direction:column;
- justify-content:center;align-items:center;gap:2px;padding:2px 2px 4px;
+ justify-content:center;align-items:center;gap:8px;padding:7px 3px 10px;
 }
 .console-body .strip .gain-dial{
- position:relative;display:block;flex:0 0 39px;width:39px;height:39px;
- border-radius:50%;cursor:ns-resize;
+ position:relative;display:block;box-sizing:border-box;
+ flex:0 0 auto;width:min(var(--gain-dial-size),calc(100% - 20px));
+ aspect-ratio:1/1;height:auto;min-height:0;border-radius:50%;
+ cursor:ns-resize;touch-action:none;isolation:isolate;
+ /* Fixed deep ambient lift; never animated during gain gestures. */
+ box-shadow:0 10px 15px #000b,0 10px 15px #0008;
 }
 .console-body .strip .gain-dial-face{
- display:block;position:absolute;inset:2px;border:2px solid #5c747f;
- border-radius:50%;background:radial-gradient(circle at 38% 31%,#617480,#273842 65%,#15242b);
- box-shadow:inset 0 1px #9aafb844,0 2px 3px #0007;
+ position:absolute;z-index:2;display:block;inset:7px;border-radius:50%;
+ /* Crop a small part of the PNG's baked-in grey rim, not the cap silhouette. */
+ background:#45484b url("mixer-gain-knob-brushed-steel.png") center/110% 110% no-repeat;
+ /* Steel cap + stationary shadow OVER the level LEDs: real raised hardware,
+    no added bezel stroke, no filter or blurred element animated per gesture. */
+ box-shadow:0 2px 3px #000b,0 5px 9px #0008;
+ pointer-events:none;
 }
-.console-body .strip .gain-dial-face::after{
- content:"";position:absolute;left:50%;top:4px;width:2px;height:10px;
- border-radius:2px;background:#d2ecf3;box-shadow:0 0 1px #fff8;
- transform-origin:1px 12px;transform:translateX(-50%) rotate(var(--gain-rotation,0deg));
+.console-body .strip .gain-dial-arc{
+ position:absolute;z-index:0;inset:1px;display:block;border-radius:50%;pointer-events:none;
+ /* 30 discreet real-device LEDs BEHIND the lifted cap's contact shadow.
+    The unlit carrier is almost invisible; the level/pointer stay in focus. */
+ /* 4px ring scales harmoniously with the reduced cap, still 30 LED bars. */
+ -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 4.5px),#000 calc(100% - 4px));
+ mask:radial-gradient(farthest-side,transparent calc(100% - 4.5px),#000 calc(100% - 4px));
+}
+.console-body .strip .gain-dial-arc::before,
+.console-body .strip .gain-dial-arc::after{
+ content:"";position:absolute;inset:0;border-radius:50%;
+}
+.console-body .strip .gain-dial-arc::before{
+ background:repeating-conic-gradient(from 225deg,#20372f 0deg 6deg,transparent 6deg 9deg);
+ -webkit-mask:conic-gradient(from 225deg,#000 0deg 270deg,transparent 270deg 360deg);
+ mask:conic-gradient(from 225deg,#000 0deg 270deg,transparent 270deg 360deg);
+}
+.console-body .strip .gain-dial-arc::after{
+ background:repeating-conic-gradient(from 225deg,#51f4a0 0deg 6deg,transparent 6deg 9deg);
+ -webkit-mask:conic-gradient(from 225deg,#000 0deg calc(135deg + var(--gain-rotation,0deg)),transparent 0deg 360deg);
+ mask:conic-gradient(from 225deg,#000 0deg calc(135deg + var(--gain-rotation,0deg)),transparent 0deg 360deg);
+}
+.console-body .strip .gain-dial-pointer{
+ display:block;position:absolute;z-index:3;inset:7px;border-radius:50%;
+ transform:rotate(var(--gain-rotation,0deg));pointer-events:none;
+}
+.console-body .strip .gain-dial-pointer::before{
+ content:"";position:absolute;top:8%;left:50%;width:3px;height:23%;
+ transform:translateX(-50%);border-radius:3px;
+ background:linear-gradient(90deg,#137a47,#deffe5 47%,#4dffa0);
+ box-shadow:0 0 2px #9cffc8,0 0 6px #15ef85,0 0 9px #20d77c8c;
+}
+.console-body .strip .gain-dial-pointer::after{
+ content:"";position:absolute;top:7%;left:50%;
+ width:4px;height:4px;transform:translateX(-50%);border-radius:50%;
+ background:#eaffed;box-shadow:0 0 4px 1px #42f9a8;
 }
 .console-body .strip .gain-dial input{
  position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;
- cursor:ns-resize;writing-mode:vertical-lr;direction:rtl;
+ /* Keyboard-accessible range, but never browser click-to-seek. */
+ cursor:ns-resize;writing-mode:vertical-lr;direction:rtl;pointer-events:none;
 }
-.console-body .strip .gain-dial:focus-within{outline:2px solid #7ebccf;outline-offset:1px}
+.console-body .strip .gain-dial:focus-within{
+ outline:8px solid #7ce7ba14;outline-offset:-2px;
+}
+.console-body .strip .gain-dial:has(input:disabled){opacity:.55;cursor:not-allowed}
+.console-body .strip .gain-dial input:disabled{cursor:not-allowed}
 .console-body .strip .gain-readout{
- display:block;text-align:center;font-size:10px;line-height:15px;
- min-width:65px;max-width:100%;padding:0 4px;border-radius:2px;
- background:#102530;border:1px solid #3c606e;color:#b9e8f3;
- font-variant-numeric:tabular-nums;font-weight:500;white-space:nowrap;
+ position:relative;box-sizing:border-box;display:flex;align-items:center;justify-content:center;
+ width:min(var(--gain-lcd-width),calc(100% - 10px));max-width:100%;
+ min-height:var(--gain-lcd-height);
+ padding:2px 4px;overflow:hidden;border:0;border-radius:5px;
+ /* An actual recessed black display: no outlined textbox or luminous rim. */
+ background:#020503;
+ box-shadow:inset 0 3px 5px #000f,inset 2px 0 3px #000b,
+  inset -2px 0 3px #000b,0 1px 0 #93bba51a;
+ color:#74fda0;text-shadow:0 0 5px #43f78b88;
+ font:600 12px/17px Consolas,'Lucida Console',monospace;
+ font-variant-numeric:tabular-nums;letter-spacing:.01em;white-space:nowrap;
+}
+.console-body .strip .gain-lcd-digits{
+ position:relative;display:block;transform:translateY(2px);
+}
+.console-body .strip .gain-view-body:has(.gain-dial input:disabled) .gain-readout{
+ font-size:9px;letter-spacing:0;
+}
+/* The section rail uses real caption text: legacy chrome owns ::after
+   with !important (its collapse glyph), so never fight that pseudo-element. */
+.console-body .section-rail .rail-cell.fx .rail-gain-caption{display:none}
+.console-body.gain-view-active .section-rail .rail-cell.fx .rail-svg-icon{display:none}
+.console-body.gain-view-active .section-rail .rail-cell.fx .rail-gain-caption{
+ display:block;writing-mode:vertical-rl;transform:rotate(180deg);
+ font:600 11px/1 'Segoe UI',Arial,sans-serif;letter-spacing:.16em;
+ color:#b7f2d1;text-shadow:0 0 4px #38ca8a33;
+}
+@media(max-height:680px){
+ .console-body .strip .gain-view-body{
+  --gain-dial-size:52px;--gain-lcd-width:80px;--gain-lcd-height:23px;
+  gap:7px;padding:5px 2px 7px;
+ }
+ .console-body .strip .gain-readout{font-size:11.5px;line-height:16px}
+}
+@media(max-height:610px){
+ .console-body .strip .gain-view-body{
+  --gain-dial-size:44px;--gain-lcd-width:76px;--gain-lcd-height:21px;
+  gap:4px;padding:2px 2px 4px;
+ }
+ .console-body .strip .gain-readout{font-size:10.5px;line-height:15px}
 }
 .console-body .strip .sof-view-body{
  flex:1;display:flex;align-items:center;justify-content:space-between;
@@ -172,7 +259,5 @@
  .command-bar .mix-context{padding:2px 4px}
 }
 @media(max-height:610px){
- .console-body .strip .gain-dial{flex-basis:28px;width:28px;height:28px}
- .console-body .strip .gain-dial-face::after{height:7px;transform-origin:1px 9px}
  .console-body .strip .sof-info small{display:none}
 }

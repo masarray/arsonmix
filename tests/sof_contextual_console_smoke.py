@@ -38,6 +38,12 @@ def run() -> None:
             "Fader reset must inspect active SEND context instead of overwriting MAIN")
         assert "nativeGainAvailable===true" in source, (
             "Native input gain should be available only with installed capability")
+        assert "window.__ARMIX_GAIN_UNITY_DETENT__=gainUnityDetent;" in source
+        native_bridge = (ROOT / "web/approved-native-bridge.js").read_text(encoding="utf-8")
+        assert "window.__ARMIX_GAIN_UNITY_DETENT__?.(el,event)" in native_bridge
+        assert 'querySelector(".gain-lcd-digits")||lcd' in native_bridge
+        assert 'function paintAcceptedInputGain(t,valueDb)' in native_bridge
+        assert 'root.querySelector(".gain-lcd-digits")' in native_bridge
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             try:
@@ -58,6 +64,84 @@ def run() -> None:
                     gain.click()
                     assert gain.get_attribute("aria-pressed") == "true"
                     assert first.locator(".is-gain-view").count() == 1
+                    assert page.locator(".console-body").evaluate(
+                        "el => el.classList.contains('gain-view-active')")
+                    gain_rail = page.locator(".section-rail .rail-cell.fx .rail-gain-caption")
+                    assert gain_rail.count() == 1 and gain_rail.is_visible()
+                    assert gain_rail.inner_text() == "GAIN"
+                    assert gain_rail.evaluate(
+                        "el => getComputedStyle(el).writingMode") == "vertical-rl"
+                    knob_visual = first.locator(".gain-dial")
+                    assert knob_visual.count() == 1
+                    body_size = knob_visual.bounding_box()
+                    assert body_size and abs(body_size["width"] - 58) <= 0.6, (
+                        width, body_size, "compact dial must measure 58px, not former 68px")
+                    cap = first.locator(".gain-dial-face")
+                    cap_css = cap.evaluate("""el => ({
+                        image: getComputedStyle(el).backgroundImage,
+                        transform: getComputedStyle(el).transform,
+                        shadow: getComputedStyle(el).boxShadow
+                    })""")
+                    assert "mixer-gain-knob-brushed-steel.png" in cap_css["image"]
+                    assert cap_css["transform"] == "none", cap_css
+                    assert cap_css["shadow"] != "none", cap_css
+                    layers = knob_visual.evaluate("""el => ({
+                        ring: getComputedStyle(el.querySelector('.gain-dial-arc')).zIndex,
+                        cap: getComputedStyle(el.querySelector('.gain-dial-face')).zIndex,
+                        needle: getComputedStyle(el.querySelector('.gain-dial-pointer')).zIndex
+                    })""")
+                    assert layers == {"ring": "0", "cap": "2", "needle": "3"}, layers
+                    cap_box = cap.bounding_box()
+                    assert cap_box and cap_box["width"] < body_size["width"] - 12, (
+                        width, cap_box, body_size)
+                    assert cap_box["width"] <= 55, "Steel face must be smaller than previous bezel"
+                    arc = first.locator(".gain-dial-arc")
+                    assert arc.count() == 1
+                    leds = arc.evaluate("""el => ({
+                        inactive: getComputedStyle(el, '::before').backgroundImage,
+                        active: getComputedStyle(el, '::after').backgroundImage,
+                        cap: getComputedStyle(el).maskImage,
+                        inactiveMask: getComputedStyle(el, '::before').maskImage,
+                        activeMask: getComputedStyle(el, '::after').maskImage
+                    })""")
+                    assert "repeating-conic-gradient" in leds["inactive"], leds
+                    assert "repeating-conic-gradient" in leds["active"], leds
+                    assert "radial-gradient" in leds["cap"], leds
+                    assert "conic-gradient" in leds["inactiveMask"], leds
+                    assert "conic-gradient" in leds["activeMask"], leds
+                    assert "rgb(32, 55, 47)" in leds["inactive"], leds
+                    pointer = first.locator(".gain-dial-pointer")
+                    before_turn = pointer.evaluate("el => getComputedStyle(el).transform")
+                    before_led_mask = arc.evaluate("el => getComputedStyle(el, '::after').maskImage")
+                    lcd = first.locator(".gain-readout")
+                    lcd_size = lcd.bounding_box()
+                    assert lcd_size and abs(lcd_size["width"] - 84) <= 0.6, (
+                        width, lcd_size, "LCD width must match 84px design token")
+                    assert abs(lcd_size["height"] - 25) <= 0.6, (
+                        width, lcd_size, "LCD must remain compact yet legible")
+                    assert abs((body_size["x"] + body_size["width"]/2) -
+                               (lcd_size["x"] + lcd_size["width"]/2)) <= 0.6, (
+                        width, body_size, lcd_size, "knob and LCD must share one centerline")
+                    assert lcd_size["y"] >= body_size["y"] + body_size["height"] + 7, (
+                        width, body_size, lcd_size, "no LCD / outer LED collision")
+                    lcd_skin = lcd.evaluate("""el => ({
+                        background: getComputedStyle(el).backgroundColor,
+                        text: getComputedStyle(el).color,
+                        backgroundImage: getComputedStyle(el).backgroundImage,
+                        border: getComputedStyle(el).borderTopWidth,
+                        radius: getComputedStyle(el).borderRadius,
+                        shadow: getComputedStyle(el).boxShadow
+                    })""")
+                    assert lcd_skin["background"] == "rgb(2, 5, 3)", (width, lcd_skin)
+                    assert lcd_skin["backgroundImage"] == "none", (width, lcd_skin)
+                    assert lcd_skin["text"] == "rgb(116, 253, 160)", (width, lcd_skin)
+                    assert lcd_skin["border"] == "0px", (width, lcd_skin)
+                    assert lcd_skin["radius"] == "5px", (width, lcd_skin)
+                    assert "inset" in lcd_skin["shadow"], (width, lcd_skin)
+                    digits = lcd.locator(".gain-lcd-digits")
+                    assert digits.count() == 1
+                    assert digits.evaluate("el => getComputedStyle(el).transform") == (
+                        "matrix(1, 0, 0, 1, 0, 2)")
                     knob = first.locator('[data-field="trim"]')
                     assert knob.count() == 1
                     knob.evaluate("""el => {
@@ -66,6 +150,150 @@ def run() -> None:
                     }""")
                     assert "+6.5 dB" in first.locator(".gain-readout").inner_text()
                     assert "6.5" in knob.get_attribute("value") or knob.input_value() == "6.5"
+                    assert pointer.evaluate("el => getComputedStyle(el).transform") != before_turn
+                    assert arc.evaluate(
+                        "el => getComputedStyle(el, '::after').maskImage"
+                    ) != before_led_mask, "LED progress did not follow accepted gain gesture"
+                    assert cap.evaluate("el => getComputedStyle(el).transform") == "none"
+                    assert knob_visual.evaluate("el => el.tagName") == "DIV", (
+                        "Clickable LABEL forwards native range seek on first click")
+                    assert knob.evaluate("el => getComputedStyle(el).pointerEvents") == "none"
+                    dial_css = knob_visual.evaluate("""el => ({
+                        shadow: getComputedStyle(el).boxShadow,
+                        outline: getComputedStyle(el).outlineWidth
+                    })""")
+                    assert "10px 15px" in dial_css["shadow"], dial_css
+                    # Clicking any part of the metal/LED must preserve the
+                    # current value even if it is far from the range thumb.
+                    box = knob_visual.bounding_box()
+                    assert box
+                    cx = box["x"] + box["width"] / 2
+                    cy = box["y"] + box["height"] / 2
+                    page.mouse.click(box["x"] + box["width"] * .82, cy)
+                    assert knob.input_value() == "6.5", "Click jumped input gain before drag"
+                    assert lcd.inner_text().strip() == "+6.5 dB"
+                    assert knob.evaluate("el => document.activeElement === el")
+                    focused_css = knob_visual.evaluate("""el => ({
+                        width: getComputedStyle(el).outlineWidth,
+                        offset: getComputedStyle(el).outlineOffset,
+                        color: getComputedStyle(el).outlineColor
+                    })""")
+                    assert focused_css["width"] == "8px", focused_css
+                    assert focused_css["offset"] == "-2px", focused_css
+                    assert "0.078" in focused_css["color"] or (
+                        "0.08" in focused_css["color"]), focused_css
+                    # Strong hysteresis: capture ±1.6, hold until ±3.2.
+                    # Keyboard/Shift can deliberately escape the notch.
+                    def set_gain(value, field_type="input"):
+                        knob.evaluate("""(el, args) => {
+                          const [val, kind]=args;
+                          el.value=String(val);
+                          el.dispatchEvent(new Event(kind,{bubbles:true}));
+                        }""", [str(value), field_type])
+                    set_gain("0.4")
+                    assert knob.input_value() == "0"
+                    assert lcd.inner_text().strip() == "0.0 dB"
+                    set_gain("2.7")
+                    assert knob.input_value() == "0", "Strong unity detent must hold"
+                    set_gain("3.3", "change")
+                    assert knob.input_value() == "3.3", "Escaping detent must work"
+                    assert lcd.inner_text().strip() == "+3.3 dB"
+                    # Keyboard precision must not be trapped at zero.
+                    knob.evaluate("""el => {
+                      el.dataset.gainKeyboard='true';
+                      el.value='0.2';
+                      el.dispatchEvent(new Event('input',{bubbles:true}));
+                    }""")
+                    assert knob.input_value() == "0.2"
+                    knob.evaluate("el => delete el.dataset.gainKeyboard")
+                    set_gain("0.3")
+                    assert knob.input_value() == "0"
+                    # Real wheel over the visible dial: increment out of unity
+                    # even though pointer detent holds small drag values.
+                    knob_visual.hover()
+                    page.mouse.wheel(0, -120)
+                    assert knob.input_value() == "0.5", "GAIN wheel cannot leave zero"
+                    set_gain("6.5")
+                    assert lcd.inner_text().strip() == "+6.5 dB"
+                    # A 4px motion is still a click, NOT a range seek or drag.
+                    page.mouse.move(cx, cy)
+                    page.mouse.down()
+                    page.mouse.move(cx, cy - 4)
+                    assert knob.input_value() == "6.5", "Unarmed drag modified gain"
+                    page.mouse.up()
+                    assert knob.input_value() == "6.5"
+                    # Relative pointer motion (not absolute click coordinate)
+                    # must physically capture and hold at 0 dB.
+                    set_gain("0")
+                    page.mouse.move(cx, cy)
+                    page.mouse.down()
+                    page.mouse.move(cx, cy - 12)
+                    assert knob.input_value() == "0", "Too easy to leave zero"
+                    page.mouse.move(cx, cy - 15)
+                    assert knob.input_value() == "0", "0 dB hold broke at 3.0 dB"
+                    page.mouse.move(cx, cy - 20)
+                    assert float(knob.input_value()) > 3.2, (
+                        "Deliberate drag must escape the 0 dB detent")
+                    page.mouse.move(cx, cy - 10)
+                    assert float(knob.input_value()) > 1.6, (
+                        "Hysteresis must not re-capture before the 1.6 dB threshold")
+                    page.mouse.move(cx, cy - 7)
+                    assert knob.input_value() == "0", "Detent did not re-capture within ±1.6 dB"
+                    page.mouse.up()
+                    assert knob.input_value() == "0"
+                    # Coming from below unity must snap to 0 and then hold
+                    # until deliberate 3.2 dB departure.
+                    set_gain("-6")
+                    page.mouse.move(cx, cy)
+                    page.mouse.down()
+                    page.mouse.move(cx, cy - 23)
+                    assert knob.input_value() == "0", "Crossing -1.4 dB did not snap to 0"
+                    page.mouse.move(cx, cy - 40)
+                    assert knob.input_value() == "0", "Unity hold failed on other side"
+                    page.mouse.move(cx, cy - 50)
+                    assert float(knob.input_value()) > 3.2
+                    page.mouse.up()
+                    assert cap.evaluate("el => getComputedStyle(el).transform") == "none"
+                    # Native overlays and OS focus changes may steal capture.
+                    # These must restore the pre-gesture value WITHOUT a change
+                    # event or leaving a gainDragging readback suppressor stuck.
+                    set_gain("6.5")
+                    page.mouse.move(cx, cy)
+                    page.mouse.down()
+                    page.mouse.move(cx, cy - 20)
+                    assert knob.input_value() != "6.5"
+                    page.evaluate("window.dispatchEvent(new Event('blur'))")
+                    assert knob.input_value() == "6.5", "Blur must cancel speculative GAIN"
+                    assert knob.evaluate(
+                        "el => el.dataset.gainDragging === undefined")
+                    page.mouse.up()
+                    # A synthetic lostcapture here is deliberate: Chromium
+                    # independently verifies the app's recovery handler, without
+                    # depending on the desktop pointer ID's platform-specific value.
+                    page.mouse.move(cx, cy)
+                    page.mouse.down()
+                    page.mouse.move(cx, cy - 20)
+                    assert knob.input_value() != "6.5"
+                    knob_visual.evaluate("""el => el.dispatchEvent(
+                        new PointerEvent('lostpointercapture', {
+                          bubbles:true, pointerId:1
+                        }))""")
+                    assert knob.input_value() == "6.5", "Lost capture must cancel GAIN"
+                    assert knob.evaluate(
+                        "el => el.dataset.gainDragging === undefined")
+                    page.mouse.up()
+                    # A mode switch must retire capture BEFORE replacing the
+                    # strip. Reopening GAIN cannot resurrect preview gain.
+                    page.mouse.move(cx, cy)
+                    page.mouse.down()
+                    page.mouse.move(cx, cy - 20)
+                    assert knob.input_value() != "6.5"
+                    fx.evaluate("el => el.click()")
+                    assert first.locator(".is-gain-view").count() == 0
+                    page.mouse.up()
+                    gain.click()
+                    assert knob.input_value() == "6.5", "Mode switch committed canceled GAIN"
+                    assert first.locator(".gain-readout").inner_text().strip() == "+6.5 dB"
                     # Double-click must use the same gain parameter path and restore unity.
                     first.locator(".gain-dial").dblclick()
                     # The public formatter reserves '+' for strictly
@@ -78,6 +306,9 @@ def run() -> None:
                     }""")
 
                     fx.click()
+                    assert not page.locator(".console-body").evaluate(
+                        "el => el.classList.contains('gain-view-active')")
+                    assert not gain_rail.is_visible(), "Rail GAIN caption leaked into FX RACK"
                     assert first.locator(".is-gain-view").count() == 0
                     assert first.locator(".fxslot-list").count() == 1
 
@@ -159,10 +390,52 @@ def run() -> None:
                     assert geometry["right"] <= geometry["sectionRight"] + 2
                     assert geometry["bottom"] <= geometry["sectionBottom"] + 2
                     assert not errors, (width, errors)
+                    # Actual assembled /preview/ screenshot: one GAIN bank per viewport,
+                    # with static steel caps, green needles/arcs and the left GAIN rail.
+                    page.screenshot(
+                        path=str(ROOT / f"arsonmix-gain-knob-{width}x{height}.png"),
+                        full_page=False,
+                    )
+                    page.close()
+                # Short-window fallback: compact proportions retain LCD legibility
+                # without clipping the LED ring or changing any gain behavior.
+                for width, height, dial_w, lcd_w, lcd_h in (
+                    (1366, 640, 52, 80, 23),
+                    (1366, 600, 44, 76, 21),
+                ):
+                    page = browser.new_page(viewport={"width": width, "height": height})
+                    errors = []
+                    page.on("pageerror", lambda err: errors.append(str(err)))
+                    page.goto(html.as_uri())
+                    first = page.locator('#tracks .strip[data-id="1"]')
+                    first.wait_for(timeout=15000)
+                    page.locator("#gainView").click()
+                    dial = first.locator(".gain-dial").bounding_box()
+                    lcd = first.locator(".gain-readout").bounding_box()
+                    assert dial and lcd, (width, height)
+                    assert abs(dial["width"]-dial_w) <= .6, (width, height, dial)
+                    assert abs(lcd["width"]-lcd_w) <= .6, (width, height, lcd)
+                    assert abs(lcd["height"]-lcd_h) <= .6, (width, height, lcd)
+                    assert abs(dial["x"]+dial["width"]/2 -
+                               lcd["x"]-lcd["width"]/2) <= .6, (width, height)
+                    assert lcd["y"] >= dial["y"]+dial["height"]+3, (width, height)
+                    # The display must not clip a max-range gain label.
+                    sample = first.locator(".gain-lcd-digits").evaluate("""el => {
+                        el.textContent = '+24.0 dB';
+                        const d=el.getBoundingClientRect(), box=el.parentElement.getBoundingClientRect();
+                        return {left:d.left,right:d.right,min:box.left,max:box.right};
+                    }""")
+                    assert sample["left"] >= sample["min"] and sample["right"] <= sample["max"], (
+                        width, height, sample)
+                    assert not errors, (width, height, errors)
+                    page.screenshot(
+                        path=str(ROOT / f"arsonmix-gain-knob-{width}x{height}.png"),
+                        full_page=False,
+                    )
                     page.close()
             finally:
                 browser.close()
-    print("PASS SOF contextual strip view, PNG, WIRE guard, Gain/FX interlock at 3 resolutions")
+    print("PASS compact GAIN/LCD, WIRE guard, FX/SOF and native contract across 5 viewports")
 
 
 if __name__ == "__main__":
