@@ -527,7 +527,6 @@ private:
     int playerOutputPendingIndex_=-1; // only after explicit Choose output gesture
     bool playerAutoNext_=false;
     bool playerLoopCurrent_=false; // explicit rehearsal toggle, never persisted
-    std::uint64_t lastLoopAttemptGeneration_=0;
     bool playerFolderBusy_=false; // GUI only; background scanner never touches this
     std::uint64_t lastAutoAdvanceGeneration_=0;
     juce::String playerError_;
@@ -3750,7 +3749,6 @@ private:
         playerTrackSettings_=chosen.controls;
         playerCurrent_=-1;
         playerLoopCurrent_=false;
-        lastLoopAttemptGeneration_=0;
         playerPendingIndex_=-1;
         playerPendingQueueFile_={};
         playerSelected_=playerLibrary_.empty()?-1:0;
@@ -4331,7 +4329,6 @@ private:
                  phase=="READY" || phase=="ENDED");
             if(hasCurrent && playerCurrent_!=playerSelected_) {
                 playerLoopCurrent_=false; // operator explicitly changes song
-                lastLoopAttemptGeneration_=0;
                 if(engine_.queuePlayerTransition(
                     playerLibrary_[static_cast<std::size_t>(playerSelected_)],
                     controls.key,controls.tempo,playerFadeMilliseconds_,
@@ -4353,7 +4350,6 @@ private:
             playerError_=error;
             if(error.isEmpty()) {
                 playerLoopCurrent_=false;
-                lastLoopAttemptGeneration_=0;
                 playerPendingIndex_=-1;
                 playerCurrent_=playerSelected_;
                 // A newly native-owned MUSIC ChannelId is visible in the
@@ -4368,7 +4364,6 @@ private:
         if(playerPendingIndex_>=0)return;
         // Next is a deliberate escape from rehearsal looping.
         playerLoopCurrent_=false;
-        lastLoopAttemptGeneration_=0; // one in-flight transition
         int queued=-1;
         while(!playerQueue_.empty() && queued<0) {
             const auto found=std::find(playerLibrary_.begin(),
@@ -4497,7 +4492,6 @@ private:
                 emitPlayerState();return;
             }
             playerLoopCurrent_=true;
-            lastLoopAttemptGeneration_=0;
             playerError_.clear();
             emitPlayerState();return;
         }
@@ -4569,7 +4563,6 @@ private:
         }
         if(action=="playerStop") {
             playerLoopCurrent_=false;
-            lastLoopAttemptGeneration_=0;
             playerOutputPendingIndex_=-1;
             playerPendingQueueFile_={};
             playerPendingIndex_=-1;
@@ -7711,18 +7704,16 @@ private:
                         static_cast<std::size_t>(playerCurrent_)];
                     (void)engine_.preloadPlayerMusic(currentFile,
                         loop.key,loop.tempo,loop.cueIn,loop.cueOut);
-                    const auto generation=static_cast<std::uint64_t>(
-                        transport.getProperty("generation","0").toString()
-                                 .getLargeIntValue());
                     const auto position=static_cast<double>(
                         transport.getProperty("currentSeconds",0.0));
                     const auto duration=static_cast<double>(
                         transport.getProperty("durationSeconds",0.0));
                     const int fade=std::max(40,playerFadeMilliseconds_);
-                    if(generation!=lastLoopAttemptGeneration_ &&
-                       armix::player::PlayerShowTransitionPolicy::
+                    // The in-flight transition is the only loop latch:
+                    // alternating A/B decoders can share generation IDs.
+                    // On failure, turn looping off below (no retry storm).
+                    if(armix::player::PlayerShowTransitionPolicy::
                            armBeforeEnd(position,duration,fade,0.085)) {
-                        lastLoopAttemptGeneration_=generation;
                         if(engine_.queuePlayerTransition(currentFile,
                            loop.key,loop.tempo,fade,loop.cueIn,loop.cueOut)) {
                             playerPendingIndex_=playerCurrent_;
