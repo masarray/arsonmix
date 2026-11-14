@@ -18,6 +18,7 @@ using armix::builtin_fx::ImerSipProcessor;
 using armix::imersip::Settings;
 
 int main() {
+    juce::ScopedJuceInitialiser_GUI gui;
     // CRITICAL: the P8.2 PCM research flag must register ImerSip in the
     // exact native catalog emitted by ConsoleWindow::emitCatalog().
     // Without this gate Windows tests once passed but the FX Picker omitted
@@ -37,6 +38,13 @@ int main() {
 
     ImerSipProcessor fx;
     assert(fx.getName()=="ImerSip");
+    // A verified native insert without a real editor is not a usable product.
+    assert(fx.hasEditor());
+    {
+        std::unique_ptr<juce::AudioProcessorEditor> ui(fx.createEditor());
+        assert(ui && ui->getWidth()==840 && ui->getHeight()==474);
+        // No fake browser PCM or secondary processing engine.
+    }
     assert(fx.isBusesLayoutSupported(fx.getBusesLayout()));
     fx.prepareToPlay(48000.,128);
     assert(fx.isReady());
