@@ -21,9 +21,15 @@ inline bool validYaw(float yaw) noexcept {
 }
 // Positive azimuth RIGHT; head turn +90 places world FRONT at head LEFT -90.
 inline float toHead(float worldAzimuth,float headYaw) noexcept {
-    float a=std::fmod(worldAzimuth-headYaw+180.f,360.f);
-    if(a<0.f)a+=360.f;
-    return a-180.f;
+    // Bounded angle arithmetic avoids libm fmod in native PCM geometry.
+    float a=worldAzimuth-headYaw;
+    if(a>=540.f)a-=720.f;
+    else if(a< -540.f)a+=720.f;
+    if(a>=180.f)a-=360.f;
+    else if(a< -180.f)a+=360.f;
+    if(a>=180.f)a-=360.f;
+    else if(a< -180.f)a+=360.f;
+    return a;
 }
 struct Stereo {
     float leftWorld=0.f,rightWorld=0.f;

@@ -39,6 +39,25 @@ jobs:
             -o /tmp/p82-gap
           /tmp/p82-gap | tee /tmp/p82-gap.log
           grep -q '^PASS P8.3 DIAGNOSTIC:' /tmp/p82-gap.log
+
+      - name: Cross-build exact Music Bed P8.2 raw PCM unchanged by opt-in P8.3 compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          FLAGS=(-std=c++20 -O2 -Wall -Wextra -Werror -pedantic
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1
+            -DSONKU_P72_NATIVE_XYZ_RT=1
+            -DSONKU_P75_MUSIC_SAFE_RESEARCH=1
+            -DSONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+            -DSONKU_P82_MULTIBAND_ROOM_RESEARCH=1)
+          g++ "\${FLAGS[@]}" tests/sonku_p83_music_bed_byte_parity.cpp -o /tmp/p82-golden
+          g++ "\${FLAGS[@]}" -DSONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1 \
+            tests/sonku_p83_music_bed_byte_parity.cpp -o /tmp/p83-default
+          /tmp/p82-golden /tmp/p82-golden.raw
+          /tmp/p83-default /tmp/p83-default.raw
+          cmp /tmp/p82-golden.raw /tmp/p83-default.raw
+          sha256sum /tmp/p82-golden.raw /tmp/p83-default.raw
       - name: Upload exact-source offline research PCM (not human FAT)
         if: success()
         uses: actions/upload-artifact@v4

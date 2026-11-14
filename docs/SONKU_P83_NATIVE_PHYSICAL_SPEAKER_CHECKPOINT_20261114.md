@@ -80,3 +80,14 @@ g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
 6. Acoustic source and head yaw are world-separated; actual BRIR/headphone
    calibration and floor/ceiling contribution require human comparison.
 7. Never claim dearVR PRO 2 parity without matched hardware and listener A/B.
+
+## Further source evidence
+
+The P8.2 default is now compared bytewise across two independent native
+compilations, with P8.3 macro disabled and enabled but unselected; both
+ROOM ON/OFF and correlated/antiphase inputs at 44.1/48 kHz. Research
+impulse measurements include full-window IACC/ITD, +/-20 degrees direct
+elevation, spectral level and ear phase at 83, 461, 1703 and 5387 Hz,
+and reconstruction of isolated native wall/late stems. **IACC is not
+perceptual externalization**. CPU p50/p95/p99 and ASIO measurements
+remain a distinct performance milestone, not proven by this source test.

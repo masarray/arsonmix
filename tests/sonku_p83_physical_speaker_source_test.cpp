@@ -7,6 +7,7 @@
 #include <array>
 #include <cassert>
 #include <cmath>
+#include <complex>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -30,7 +31,7 @@ static void check(bool ok,const char* reason) {
 }
 static Render render(double rate,p83::Mode mode,float az,float yaw,
                      bool room,p83::Stem stem,std::uint8_t mask,Input input,
-                     int chunk=128) {
+                     int chunk=128,float elevation=0.f) {
     auto core=std::make_unique<SonKuSpatialCore>();
     check(core->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch),
           "native six-surface prepare");
@@ -39,7 +40,7 @@ static Render render(double rate,p83::Mode mode,float az,float yaw,
     s.spatialMix=1.f;s.outputTrim=.25f;
     s.spacePreset=room?1:0;s.sourceDistanceMeters=1.6f;
     s.roomAmount=room?.65f:0.f;s.ambience=room?.3f:0.f;
-    s.directElevationDegrees=0.f;
+    s.directElevationDegrees=elevation;
     check(core->setSettings(s),"native settings admission");
     check(core->setResearchRenderMode(mode),"quiescent render mode admission");
     check(core->setResearchHeadYaw(yaw),"quiescent world/head transform admission");
@@ -102,21 +103,52 @@ static int onset(const Render& a,float threshold=1.e-6f) {
             return static_cast<int>(i);
     return -1;
 }
-static double iacc(const Render& a){
-    const double el=energy(a.l),er=energy(a.r);
-    if(el<1e-20||er<1e-20)return 0;
-    double best=-1;
+struct EarCorrelation {double magnitude=0.;int lag=0;};
+static EarCorrelation interaural(const Render& a) {
+    const double norm=std::sqrt(energy(a.l)*energy(a.r));
+    if(norm<1.e-20)return {};
+    EarCorrelation best{};
+    const int n=static_cast<int>(a.l.size());
     for(int lag=-40;lag<=40;++lag){
-        double v=0.;
-        for(int i=40;i<static_cast<int>(a.l.size())-40;++i)
-            v+=static_cast<double>(a.l[i])*a.r[i+lag];
-        best=std::max(best,std::abs(v)/std::sqrt(el*er));
+        double sum=0.;
+        // Include the HRIR onset: previous i=40 start falsely lowered IACC!
+        for(int i=std::max(0,-lag);i<std::min(n,n-lag);++i)
+            sum+=static_cast<double>(a.l[i])*a.r[i+lag];
+        const double c=std::min(1.,std::abs(sum)/norm);
+        if(c>best.magnitude)best={c,lag};
     }
-    return std::min(1.,best);
+    return best;
+}
+static std::complex<double> spectrum(const std::vector<float>& a,
+                                    double rate,double hz) {
+    std::complex<double> sum{};
+    for(std::size_t i=1024;i<a.size();++i){
+        const double phase=-2.*pi*hz*static_cast<double>(i)/rate;
+        sum+=static_cast<double>(a[i])*
+            std::complex<double>(std::cos(phase),std::sin(phase));
+    }
+    return sum;
+}
+static void compareSpectrum(const char* label,double rate,
+                            const Render& baseline,const Render& candidate){
+    for(double hz:{83.,461.,1703.,5387.}){
+        const auto bl=spectrum(baseline.l,rate,hz);
+        const auto br=spectrum(baseline.r,rate,hz);
+        const auto cl=spectrum(candidate.l,rate,hz);
+        const auto cr=spectrum(candidate.r,rate,hz);
+        const double before=std::norm(bl)+std::norm(br);
+        const double after=std::norm(cl)+std::norm(cr);
+        const double db=10.*std::log10((after+1e-20)/(before+1e-20));
+        const double phase=std::arg(cr*std::conj(cl))*180./pi;
+        check(std::isfinite(db)&&std::isfinite(phase),"finite spectral phase");
+        std::printf("P83_SPECTRAL,%s,%.0f,frequency=%.0fHz,vs_P82_dB=%.3f,phase_deg=%.2f\n",
+                    label,rate,hz,db,phase);
+    }
 }
 static void record(const char* label,double rate,const Render& a) {
-    std::printf("P83_PCM,%s,%.0f,frames=%zu,energy=%.9f,ILD_right_dB=%.3f,IACCabs=%.4f,onset=%d\n",
-                label,rate,a.l.size(),total(a),ild(a),iacc(a),onset(a));
+    const auto c=interaural(a);
+    std::printf("P83_PCM,%s,%.0f,frames=%zu,energy=%.9f,ILD_right_dB=%.3f,IACCabs=%.4f,ITD_lag_samples=%d,onset=%d\n",
+                label,rate,a.l.size(),total(a),ild(a),c.magnitude,c.lag,onset(a));
 }
 static void writeWav(const std::filesystem::path& path,const Render& a,int rate){
     // IEEE 32-bit little-endian stereo WAV. Disk I/O in OFFLINE test only.
@@ -185,6 +217,13 @@ int main(int argc,char** argv){
         const auto ignored=renderAt(p83::Mode::MonoObject,0,0,false,
                     p83::Stem::Combined,0x3f,Input::ImpulseRight);
         check(total(ignored)<1e-20,"MonoObject explicitly takes LEFT only");
+        const auto higher=render(rate,p83::Mode::MonoObject,0,0,false,
+                    p83::Stem::Combined,0x3f,Input::ImpulseLeft,128,20.f);
+        const auto lower=render(rate,p83::Mode::MonoObject,0,0,false,
+                    p83::Stem::Combined,0x3f,Input::ImpulseLeft,128,-20.f);
+        check(difference(higher,lower)>1e-4,"measured elevation +/-20 spectra");
+        record("MONO_ELEV_PLUS20",rate,higher);
+        record("MONO_ELEV_MINUS20",rate,lower);
         const auto speakerL=renderAt(p83::Mode::SpeakerMonitor,0,0,false,
                     p83::Stem::Combined,0x3f,Input::HardLeft);
         const auto speakerR=renderAt(p83::Mode::SpeakerMonitor,0,0,false,
@@ -206,6 +245,10 @@ int main(int argc,char** argv){
         record("SPEAKER_ANTIPHASE",rate,speakerAnti);
         record("SPEAKER_MONO",rate,speakerMono);
         record("SPEAKER_PARTIAL",rate,speakerPartial);
+        const auto musicMono=renderAt(p83::Mode::MusicBedP82,0,0,false,
+                    p83::Stem::Combined,0x3f,Input::MonoMusic);
+        compareSpectrum("MONO_MUSIC",rate,musicMono,speakerMono);
+        compareSpectrum("ANTIPHASE",rate,before,speakerAnti);
         const auto small=render(rate,p83::Mode::SpeakerMonitor,0,0,false,
                     p83::Stem::Combined,0x3f,Input::AntiPhase,64);
         check(exact(speakerAnti,small),"stereo speakers block-size parity 64/128");
@@ -234,6 +277,28 @@ int main(int argc,char** argv){
               onset(ceiling)>onset(direct) && onset(late)>onset(direct),
               "causal source/reflection/reverb arrival order");
         check(difference(floor,ceiling)>1e-5,"vertical reflection cues distinct");
+        const auto earlyAll=renderAt(p83::Mode::MonoObject,0,0,true,
+                    p83::Stem::Early,0x3f,Input::ImpulseLeft);
+        double maximumError=0.;
+        for(std::size_t i=0;i<combined.l.size();++i){
+            const double eL=horizontal.l[i]+floor.l[i]+ceiling.l[i];
+            const double eR=horizontal.r[i]+floor.r[i]+ceiling.r[i];
+            maximumError=std::max(maximumError,std::abs(earlyAll.l[i]-eL));
+            maximumError=std::max(maximumError,std::abs(earlyAll.r[i]-eR));
+            maximumError=std::max(maximumError,std::abs(
+                combined.l[i]-(direct.l[i]+eL+late.l[i])));
+            maximumError=std::max(maximumError,std::abs(
+                combined.r[i]-(direct.r[i]+eR+late.r[i])));
+        }
+        check(maximumError<1e-5,"stem decomposition must reconstruct combined");
+        std::printf("P83_STEM_RECONCILIATION,%.0f,max_sample_delta=%.9g\n",
+                    rate,maximumError);
+        const auto yaw45=renderAt(p83::Mode::MonoObject,0,45,true,
+                    p83::Stem::Early,0x3f,Input::ImpulseLeft);
+        const auto rotatedSource=renderAt(p83::Mode::MonoObject,-45,0,true,
+                    p83::Stem::Early,0x3f,Input::ImpulseLeft);
+        check(difference(yaw45,rotatedSource)>1e-7,
+              "world-fixed room must not rotate with listener");
         record("DIRECT_ONLY",rate,direct);
         record("HORIZONTAL_ER_ONLY",rate,horizontal);
         record("FLOOR_ONLY",rate,floor);
