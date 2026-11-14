@@ -55,6 +55,11 @@ public:
         decks_[static_cast<std::size_t>(index)].load(file,autoPlay);
         retired_.store(-1,std::memory_order_release);
     }
+    bool setCueRange(double in,double out) noexcept {
+        return decks_[static_cast<std::size_t>(
+            active_.load(std::memory_order_acquire))]
+            .setCueRange(in,out);
+    }
     bool setPitchTempo(int key,int tempo) noexcept {
         return decks_[static_cast<std::size_t>(
             active_.load(std::memory_order_acquire))]
@@ -97,27 +102,38 @@ public:
     bool transitionActive() const noexcept {
         return fading_.load(std::memory_order_acquire);
     }
-    bool preload(const juce::File& file,int key,int tempo) {
+    bool preload(const juce::File& file,int key,int tempo,
+                 double cueIn=0.,double cueOut=0.) {
         if(file==juce::File{} || !file.existsAsFile() ||
            !PlayerPitchTempoProcessor::valid({key,tempo}) ||
+           !std::isfinite(cueIn) || !std::isfinite(cueOut) ||
+           cueIn<0. || cueOut<0. || cueIn>86400. || cueOut>86400. ||
+           (cueOut>0. && cueOut<=cueIn+0.05) ||
+           rateHz_.load(std::memory_order_acquire)<=0 ||
            fading_.load(std::memory_order_acquire))return false;
         const int inactive=1-active_.load(std::memory_order_acquire);
         const auto epoch=deviceEpoch_.load(std::memory_order_acquire);
         if(preloadedFile_==file && preloadedEpoch_==epoch &&
-           preloadedControls_==Controls{key,tempo})return true;
+           preloadedControls_==Controls{key,tempo} &&
+           preloadedIn_==cueIn && preloadedOut_==cueOut &&
+           decks_[static_cast<std::size_t>(inactive)].snapshot().state
+               !=NativePlayerDeck::State::error)return true;
         // Reuse a bounded standby decoder and SPSC FIFO. Repeated NEXT
         // changes supersede old read work through NativePlayerDeck generation.
         auto& standby=decks_[static_cast<std::size_t>(inactive)];
-        if(!standby.setPitchTempo(key,tempo))return false;
+        if(!standby.setPitchTempo(key,tempo) ||
+           !standby.setCueRange(cueIn,cueOut))return false;
         preloadedFile_=file;preloadedControls_={key,tempo};
+        preloadedIn_=cueIn;preloadedOut_=cueOut;
         preloadedEpoch_=epoch;
         standby.load(file,false);
         return true;
     }
     bool queueTransition(const juce::File& file,int key,int tempo,
-                         int fadeMilliseconds=180) {
+                         int fadeMilliseconds=180,
+                         double cueIn=0.,double cueOut=0.) {
         if(fading_.load(std::memory_order_acquire))return false;
-        if(!preload(file,key,tempo))return false;
+        if(!preload(file,key,tempo,cueIn,cueOut))return false;
         fadeMilliseconds_=std::clamp(fadeMilliseconds,0,3000);
         // The caller's CONTROL timer owns the one authoritative ACK for
         // beginning the fade. Never start it here before Main.cpp records
@@ -134,7 +150,11 @@ public:
            fading_.load(std::memory_order_acquire))return false;
         const int from=active_.load(std::memory_order_acquire);
         const int to=1-from;
+        const auto epoch=deviceEpoch_.load(std::memory_order_acquire);
         const auto standby=decks_[static_cast<std::size_t>(to)].snapshot();
+        if(epoch!=preloadedEpoch_ ||
+           !pending_.load(std::memory_order_acquire) ||
+           rateHz_.load(std::memory_order_acquire)<=0)return false;
         if(standby.state==NativePlayerDeck::State::error) {
             pending_.store(false,std::memory_order_release);
             preloadedFile_={};
@@ -189,8 +209,11 @@ public:
         const int advanced=start+frames;
         if(advanced>=total) {
             fadePosition_.store(total,std::memory_order_relaxed);
-            fading_.store(false,std::memory_order_release);
+            // Publish retirement BEFORE releasing the active fade flag;
+            // control cannot begin another transition while an old deck
+            // is still being used in a previous hardware callback.
             retired_.store(from,std::memory_order_release);
+            fading_.store(false,std::memory_order_release);
         } else fadePosition_.store(advanced,std::memory_order_relaxed);
     }
 private:
@@ -203,6 +226,7 @@ private:
     // CONTROL-only, not borrowed by the realtime callback.
     juce::File preloadedFile_;
     Controls preloadedControls_{};
+    double preloadedIn_=0.,preloadedOut_=0.;
     std::atomic<int> rateHz_{0};
     std::atomic<std::uint64_t> deviceEpoch_{0};
     std::uint64_t preloadedEpoch_=0; // CONTROL only
