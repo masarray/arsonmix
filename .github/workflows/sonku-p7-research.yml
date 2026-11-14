@@ -7,6 +7,7 @@ on:
     paths:
       - 'engine/builtin_fx/sonku/**'
       - 'tests/sonku_p7_*'
+      - 'tests/sonku_p71_*'
       - 'tools/sonku_offline_listening.cpp'
       - 'tools/sonku_p7_cpu.cpp'
       - '.github/workflows/sonku-p7-research.yml'
@@ -47,16 +48,41 @@ jobs:
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 tests/sonku_p7_six_surface_test.cpp -o /tmp/p7
           /tmp/p7
+      - name: P7.1 true XYZ source direct HRTF 44.1/48k and phase-safe spatial PCM
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 tests/sonku_p71_xyz_direct_test.cpp -o /tmp/p71
+          /tmp/p71
       - name: Four matched P6 four-wall versus P7 six-plane realtime ROOM WAV pairs
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 tools/sonku_offline_listening.cpp -o /tmp/p7-render
           mkdir -p sonku-p7-evidence
           /tmp/p7-render sonku-p7-evidence --p7-six-surface-only
           python tests/sonku_p7_six_surface_audio_audit.py sonku-p7-evidence
+      - name: P7.1 measured direct elevation original same-source 12 WAVs
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 tools/sonku_offline_listening.cpp -o /tmp/p71-render
+          /tmp/p71-render sonku-p7-evidence --p71-xyz-direct-only
+      - name: P7.1 fused FIR fast path against exact P7 original WAV reference
+        run: |
+          mkdir -p /tmp/sonku-p71-fir-fast
+          /tmp/p71-render /tmp/sonku-p71-fir-fast --p7-six-surface-only
+          python tests/sonku_p71_fir_parity_audit.py sonku-p7-evidence /tmp/sonku-p71-fir-fast
+      - name: P7.1 measure same-source XYZ direct stereo musical integrity / per-ear acoustics
+        run: |
+          python tests/sonku_p71_xyz_audio_audit.py sonku-p7-evidence
       - name: Informational CPU 1/2/4 inserts P6 versus P7 48k/128
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 tools/sonku_p7_cpu.cpp -o /tmp/p7-bench
           /tmp/p7-bench | tee sonku-p7-evidence/SONKU-P7-CPU-REPORT.txt
+      - name: Informational P7.1 direct XYZ CPU 1/2/4 inserts, 0/+25/-25 degrees
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 tools/sonku_p7_cpu.cpp -o /tmp/p71-bench
+          /tmp/p71-bench | grep SONKU_P71_CPU | tee sonku-p7-evidence/SONKU-P71-CPU-REPORT.txt
+      - name: P7.1 controlled interleaved old-vs-fast FIR benchmark (informational)
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 tools/sonku_p71_hotpath_benchmark.cpp -o /tmp/p71-original
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 tools/sonku_p71_hotpath_benchmark.cpp -o /tmp/p71-fast
+          python tests/sonku_p71_interleaved_cpu_audit.py /tmp/p71-original /tmp/p71-fast sonku-p7-evidence
       - name: Upload 8 matched lossless WAV and JSON/CPU evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4

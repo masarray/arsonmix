@@ -4,6 +4,9 @@
 #include "SonKuEarlyReflections.h"
 #include "SonKuMusicalReverb.h"
 #include "SonKuStereoIntegrity.h"
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
+#include "SonKuSourcePlacement3D.h"
+#endif
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -75,6 +78,15 @@ public:
         distanceSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.030)));
         bassSlew_=static_cast<float>(1.-std::exp(-2.*3.14159265358979323846*180./rate));
         limiterRelease_=static_cast<float>(1./(rate*0.080));
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
+        // The special elevation control is not serialized or published to
+        // a public host. Downgrading the prepared profile clears it.
+        if(profile!=SonKuReflectionProfile::SixSurfaceKemarResearch)
+            researchElevationDegrees_=0.f;
+        // Only a *new* DSP prepare re-opens the quiescent research gate.
+        // reset() while an existing audio graph is running must NOT do so.
+        researchPcmStarted_=false;
+#endif
         if(!room_.prepare(rate,profile)||!reverb_.prepare(rate)||
            !integrity_.prepare(rate))return false;
         reset();
@@ -126,6 +138,31 @@ public:
         return true;
     }
     Settings settings() const noexcept {return settings_;}
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
+    // Only quiescent, unpublished *research* cores may change source XYZ.
+    // This is intentionally NOT a new FX/state/UI/ACK field. No race with
+    // a live PCM callback and no possibility of hidden session mutations.
+    bool setResearchDirectElevation(float degrees) noexcept {
+        if(!ready_||researchPcmStarted_||
+           room_.preparedProfile()!=SonKuReflectionProfile::SixSurfaceKemarResearch)
+            return false;
+        xyz::Placement projected{};
+        const float h=settings_.spacePreset<=1?3.2f:
+                      settings_.spacePreset==2?4.8f:7.2f;
+        if(!xyz::project(settings_.sourceDistanceMeters,degrees,1.45f,h,projected))
+            return false;
+        const float old=researchElevationDegrees_;
+        researchElevationDegrees_=degrees;
+        if(!applyAcousticSettings(settings_)) {
+            researchElevationDegrees_=old;
+            return false;
+        }
+        remaining_=0;
+        haveKernel_=false;
+        return true;
+    }
+    float researchDirectElevation() const noexcept {return researchElevationDegrees_;}
+#endif
     // A/B-only control pending room's headphone/device qualification.
     // Legacy live insert remains room-free until product evidence is accepted.
     bool setEarlyReflectionsAmount(float amount) noexcept {
@@ -168,6 +205,9 @@ public:
     // No vector, heap, blocking calls, I/O or filter bank allocation.
     void process(float* left,float* right,int samples) noexcept {
         if(!ready_ || !left || !right || samples<=0)return;
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
+        researchPcmStarted_=true;
+#endif
         const double step=(settings_.moving ?
             (settings_.clockwise?1.:-1.)*360./(sampleRate_*settings_.revolutionSeconds) : 0.);
         const float distanceGain=room_.relativeDistanceGain();
@@ -315,12 +355,22 @@ private:
     bool applyAcousticSettings(const Settings& s) noexcept {
         const float width=s.spacePreset==1?7.2f:
             s.spacePreset==2?14.4f:28.8f;
+        const float roomHeight=s.spacePreset<=1?3.2f:
+                               s.spacePreset==2?4.8f:7.2f;
+        float sourceHeight=1.45f;
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
+        if(room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch){
+            xyz::Placement xyzSource{};
+            if(!xyz::project(s.sourceDistanceMeters,researchElevationDegrees_,
+                             1.45f,roomHeight,xyzSource))return false;
+            sourceHeight=xyzSource.sourceHeightMeters;
+        }
+#endif
         const SonKuRoomGeometry geometry{
             width,width,s.spacePreset? s.sourceDistanceMeters:1.6f,
-            // The P7 research room is 3D; public P6/legacy do not
-            // read the additional height fields.
-            s.spacePreset==1?3.2f:s.spacePreset==2?4.8f:7.2f,
-            1.45f,1.45f};
+            // P7.1 keeps the user's radial source distance authoritative.
+            // Source XYZ only affects the explicit offline research profile.
+            roomHeight,1.45f,sourceHeight};
         const auto preset=s.spacePreset==3?SonKuReverbPreset::LargeRoom:
             s.spacePreset==2?SonKuReverbPreset::AiryChamber:
                              SonKuReverbPreset::StudioGlue;
@@ -332,6 +382,17 @@ private:
     // symmetric opposite-ear swapping for left hemisphere, not yaw-panning.
     using EarKernel=std::array<std::array<float,taps>,2>;
     void interpolate(EarKernel& destination,double azimuth) noexcept {
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
+        if(room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch &&
+           researchElevationDegrees_!=0.f){
+            // Both stereo emitters AND the coherent MID correction use the
+            // very same truly measured direct elevation, no third FIR.
+            hrir3d::interpolate(static_cast<float>(azimuth),
+                                 researchElevationDegrees_,
+                                 std::abs(sampleRate_-44100.)<=.1,destination);
+            return;
+        }
+#endif
         const double norm=wrapDegrees(azimuth);
         const bool swapped=norm>180.;
         const double positive=swapped?360.-norm:norm;
@@ -407,5 +468,9 @@ private:
     bool ready_=false;
     bool haveKernel_=false;
     bool nativeSpaceEverUsed_=false;
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
+    float researchElevationDegrees_=0.f;
+    bool researchPcmStarted_=false;
+#endif
 };
 } // namespace armix::sonku

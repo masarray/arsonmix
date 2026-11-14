@@ -1,0 +1,54 @@
+name: SonKu P7.1 native Windows core — focused and no JUCE SDK
+# P7.1 research only, independent of installer, ASIO, and Vocal Harmony.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - 'engine/builtin_fx/sonku/SonKuSpatialCore.h'
+      - 'engine/builtin_fx/sonku/SonKuEarlyReflections.h'
+      - 'engine/builtin_fx/sonku/SonKuVerticalImageSource.h'
+      - 'engine/builtin_fx/sonku/SonKuSourcePlacement3D.h'
+      - 'engine/builtin_fx/sonku/SonKuMeasuredHrir3D.h'
+      - 'tests/sonku_p71_xyz_direct_test.cpp'
+      - 'tests/sonku_p71_windows/CMakeLists.txt'
+      - '.github/workflows/sonku-p71-windows-core.yml'
+permissions:
+  contents: read
+concurrency:
+  group: sonku-p71-win-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  native:
+    name: Windows MSVC 20 — P7.1 XYZ and P6 default PCM (two tiny targets)
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Refuse stale/incorrect source SHA
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $actual=(& git rev-parse HEAD).Trim()
+          if($LASTEXITCODE -ne 0 -or $actual -ne $env:EXPECTED_SHA) {
+            throw "SONKU_P71_SHA_MISMATCH expected=$env:EXPECTED_SHA actual=$actual"
+          }
+          Write-Host "SONKU_P71_WINDOWS_CORE_SHA=$actual"
+      - name: Configure isolated MSVC source tests (no JUCE or WebView2)
+        shell: pwsh
+        run: |
+          cmake -S tests/sonku_p71_windows -B build-p71-win -G "Visual Studio 17 2022" -A x64
+          if($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Compile two exact native C++20 source regression targets
+        shell: pwsh
+        run: |
+          cmake --build build-p71-win --config Release --parallel 2 --target SonKuP71XYZSource SonKuP6DefaultRegression
+          if($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: 44.1k/48k measured HRTF XYZ PCM and P6 default assertions
+        shell: pwsh
+        run: |
+          ctest --test-dir build-p71-win -C Release --output-on-failure
+          if($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host 'SONKU_P71_MSVC_SOURCE_PCM=PASS no_ASIO_hardware_claim'

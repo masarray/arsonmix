@@ -13,7 +13,7 @@
 #include <vector>
 namespace {
 struct Result {double ms,p50,p95,p99,ratio;};
-Result bench(int count,float spread,bool six){
+Result bench(int count,float spread,bool six,float elevation=0.f){
     using namespace armix::sonku;
     constexpr int n=128,frames=48000;
     std::vector<std::unique_ptr<SonKuSpatialCore>> processors;
@@ -22,6 +22,12 @@ Result bench(int count,float spread,bool six){
         if(!dsp->prepare(48000.,six?SonKuReflectionProfile::SixSurfaceKemarResearch:
                                       SonKuReflectionProfile::DirectionalKemar))
             throw "invalid P7 core";
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
+        if(elevation!=0.f && !dsp->setResearchDirectElevation(elevation))
+            throw "invalid P7.1 quiescent XYZ placement";
+#else
+        if(elevation!=0.f)throw "P7.1 bench not compiled";
+#endif
         Settings s{};s.spacePreset=1;s.roomAmount=.65f;s.ambience=.2f;
         s.stereoSpreadDegrees=spread;s.moving=true;s.revolutionSeconds=4.f;
         if(!dsp->setSettings(s))throw "invalid P7 scene";
@@ -65,5 +71,24 @@ int main(){
                             spread,n,base.ms,six.ms,six.ms/base.ms,
                             six.p50,six.p95,six.p99,six.ratio);
             }
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
+        // Exact same six-boundary FIR count, source, ROOM and 1s clock.
+        // A measured-elevation SOURCE does not admit a new convolution.
+        for(float spread:{0.f,60.f}){
+            for(int n:{1,2,4}){
+                const auto horizontal=bench(n,spread,true,0.f);
+                const auto elevated=bench(n,spread,true,25.f);
+                const auto below=bench(n,spread,true,-25.f);
+                std::printf("SONKU_P71_CPU rate=48000 block=128 spread=%.0f inserts=%d "
+                    "zero_p99us=%.3f up25_p99us=%.3f down25_p99us=%.3f "
+                    "up_over_zero=%.3f down_over_zero=%.3f "
+                    "up_buffer_ratio=%.3f down_buffer_ratio=%.3f "
+                    "NOTE=hosted_linux_not_ASIO\n",
+                    spread,n,horizontal.p99,elevated.p99,below.p99,
+                    elevated.ms/horizontal.ms,below.ms/horizontal.ms,
+                    elevated.ratio,below.ratio);
+            }
+        }
+#endif
     }catch(...){std::puts("FAIL SonKu P7 CPU research");return 1;}
 }
