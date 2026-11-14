@@ -8038,8 +8038,9 @@ public:
             window_->grabKeyboardFocus();
         }
     }
-    void initialise (const juce::String& commandLine) override
+    void initialise (const juce::String&) override
     {
+        const auto commandLine=juce::JUCEApplication::getCommandLineParameters();
         // Emergency recovery works even when a VST3 crashes before the UI
         // becomes usable. Only an explicit exact flag may discard sessions;
         // installer/update health probes never mutate user state.
