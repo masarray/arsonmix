@@ -476,6 +476,7 @@
     }
     if(!admitted&&scope?.sofEnabled)scope.toggleSof(false);
   }
+  let factoryResetProjectionPending=false;
   function projection(native) {
     if ((!native?.admitted && !native?.retained && !native?.logical) ||
         !Array.isArray(native.graph.edges) ||
@@ -504,8 +505,15 @@
       nextNativeByUi.set(t.id,ch.id);
       t.name=displayNameFor(ch);t.kind=kind;
       const appearance=channelPresentation.get(ch.id);
-      if(appearance?.color)t.color=appearance.color;
-      if(appearance?.icon)t.icon=appearance.icon;
+      // Native projection cannot reuse stale colors/icons after reset or
+      // an appearance file intentionally clears a customization.
+      t.color=appearance?.color||scope.colors[index%scope.colors.length]||"#568ead";
+      t.icon=appearance?.icon||
+        (kind==="master"?"◎":kind==="bus"?"⊞":kind==="fx"?"◉":"♩");
+      if(factoryResetProjectionPending){
+        t.group=null;t.safe=false;t.cue=false;t.mon=false;t.pre=false;
+        t.clip=false;t.selected=false;
+      }
       t.format=ch.processingFormat.toLowerCase();
       t.level=ch.controls.faderDb;
       t.trim=Number.isFinite(ch.controls.inputGainDb)?ch.controls.inputGainDb:0;
@@ -590,6 +598,7 @@
     uiByWireId.clear();for(const [id,ui] of newUiByWire)uiByWireId.set(id,ui);
     meterElements.clear(); // installGraph() replaces strip HTML and meter nodes
     scope.installGraph(nextTracks,nextMaster,edges);
+    factoryResetProjectionPending=false;
     syncNativeSofAvailability(native);
     return true;
   }
@@ -2644,6 +2653,7 @@
           status(error);nativeToast(error);return;
         }
         document.getElementById("mixerResetDialog")?.close?.();
+        factoryResetProjectionPending=true;
         const state=String(ack.state||"");
         const message=state==="FACTORY_RESET_NEEDS_AUDIO_SETUP"?
           "Mixer reset · open Audio I/O to reconnect playback; output muted":
