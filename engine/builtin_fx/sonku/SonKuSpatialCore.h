@@ -99,6 +99,14 @@ public:
         // realtime callback. Headphone low shelf ~180 Hz; no added latency.
         distanceSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.030)));
         bassSlew_=static_cast<float>(1.-std::exp(-2.*3.14159265358979323846*180./rate));
+#if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
+        // P8 research: coherent LF pressure stays on its original stereo
+        // channel. Complementary first-order HP spatial field is derived
+        // from exactly the same sample-synchronous one-pole LP topology.
+        // No lookahead, latency, FFT or callback coefficient computation.
+        bassCrossoverAlpha_=static_cast<float>(
+            1.-std::exp(-2.*3.14159265358979323846*220./rate));
+#endif
         limiterRelease_=static_cast<float>(1./(rate*0.080));
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
         // The special elevation control is not serialized or published to
@@ -138,6 +146,11 @@ public:
         smoothedErPresence_=1.f;
         smoothedTailPresence_=1.f;
         earBass_.fill(0.f);
+#if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
+        originalBass_.fill(0.f);
+        binauralBass_.fill(0.f);
+        sideBass_=0.f;
+#endif
         limiterGain_=1.f;
         write_=0;
         remaining_=0;
@@ -269,6 +282,12 @@ public:
         const float distanceGain=room_.relativeDistanceGain();
         const bool nativeSpace=nativeSpaceEverUsed_;
         const bool roomEnabled=settings_.spacePreset!=0;
+#if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
+        const bool transparentBass=
+            room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch;
+#else
+        constexpr bool transparentBass=false;
+#endif
 #if defined(SONKU_P75_MUSIC_SAFE_RESEARCH) && SONKU_P75_MUSIC_SAFE_RESEARCH
         // Field-failure quarantine, opt-in ONLY: spatialize the MUSIC MID
         // through one real measured center HRTF, keep stereo SIDE separated.
@@ -318,9 +337,24 @@ public:
             // 0° => 0.5x; 60° => 1x; >=90° => 1.25x (bounded).
             const float musicSideWidth=musicSafe?
                 std::min(1.25f,.5f+settings_.stereoSpreadDegrees/120.f):1.f;
-            const float sideRescue=musicSafe?
+            float sideRescue=musicSafe?
                 smoothedMix_*smoothedTrim_*musicSideWidth*preservedSide:
                 .65f*smoothedMix_*smoothedTrim_*preservedSide;
+#if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
+            float originalLowL=0.f,originalLowR=0.f;
+            if(transparentBass){
+                originalBass_[0]+=bassCrossoverAlpha_*(x0-originalBass_[0]);
+                originalBass_[1]+=bassCrossoverAlpha_*(x1-originalBass_[1]);
+                originalLowL=originalBass_[0];
+                originalLowR=originalBass_[1];
+                // P7.5's full-band SIDE return caused LF to be counted
+                // twice once the original bass is restored. Only the
+                // spatialized ABOVE-crossover SIDE may use the width bed.
+                sideBass_+=bassCrossoverAlpha_*(preservedSide-sideBass_);
+                sideRescue=smoothedMix_*smoothedTrim_*musicSideWidth*
+                           (preservedSide-sideBass_);
+            }
+#endif
             history_[0][write_]=x0;
             history_[1][write_]=x1;
             float ears[2]{0.f,0.f};
@@ -352,11 +386,14 @@ public:
                 }
             }
             const auto reflection=room_.active()
-                ?room_.process(musicSafe?inputMid:x0,musicSafe?inputMid:x1,
-                    degrees_,musicSafe?0.f:settings_.stereoSpreadDegrees)
+                ?room_.process(transparentBass?x0:(musicSafe?inputMid:x0),
+                    transparentBass?x1:(musicSafe?inputMid:x1),
+                    degrees_,transparentBass?settings_.stereoSpreadDegrees:
+                        (musicSafe?0.f:settings_.stereoSpreadDegrees))
                 :SonKuEarlyReflections::Ears{};
             const auto late=reverb_.active()
-                ?reverb_.process(musicSafe?inputMid:x0,musicSafe?inputMid:x1)
+                ?reverb_.process(transparentBass?x0:(musicSafe?inputMid:x0),
+                    transparentBass?x1:(musicSafe?inputMid:x1))
                 :SonKuMusicalReverb::Ears{};
             if(!nativeSpace && settings_.outputTrim<=1.f &&
                smoothedTrim_<=1.f) {
@@ -403,20 +440,46 @@ public:
                 float spatialR=smoothedDistanceGain_*ears[1]+
                     smoothedErPresence_*reflection.right+
                     smoothedTailPresence_*late.right;
-                // Low-frequency KEMAR response is ~-7..-11 dB below 200Hz.
-                // A gentle bounded *binaural* shelf restores warmth without
-                // mixing dry mono under the HRIR or altering left/right ITD.
-                earBass_[0]+=bassSlew_*(spatialL-earBass_[0]);
-                earBass_[1]+=bassSlew_*(spatialR-earBass_[1]);
-                spatialL+=smoothedBassShelf_*earBass_[0];
-                spatialR+=smoothedBassShelf_*earBass_[1];
+#if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
+                if(transparentBass){
+                    // Decompose DIRECT HRTF only. Room returns remain true
+                    // reflections, not low-pass input and not an EQ lift.
+                    // LF stereo foundation is unaltered; at 0% MIX, bypass
+                    // below is guaranteed to remain input-bit-exact.
+                    binauralBass_[0]+=bassCrossoverAlpha_*
+                        (ears[0]-binauralBass_[0]);
+                    binauralBass_[1]+=bassCrossoverAlpha_*
+                        (ears[1]-binauralBass_[1]);
+                    spatialL=smoothedDistanceGain_*
+                        (ears[0]-binauralBass_[0])+
+                        smoothedErPresence_*reflection.left+
+                        smoothedTailPresence_*late.left;
+                    spatialR=smoothedDistanceGain_*
+                        (ears[1]-binauralBass_[1])+
+                        smoothedErPresence_*reflection.right+
+                        smoothedTailPresence_*late.right;
+                }else
+#endif
+                {
+                    // Original shelf for legacy research and public parity.
+                    earBass_[0]+=bassSlew_*(spatialL-earBass_[0]);
+                    earBass_[1]+=bassSlew_*(spatialR-earBass_[1]);
+                    spatialL+=smoothedBassShelf_*earBass_[0];
+                    spatialR+=smoothedBassShelf_*earBass_[1];
+                }
                 // GAIN is final full-output gain, not the old wet-only trim.
                 // When ROOM OFF is reselected after a native scene, the
                 // additional wet presence smoothly decays with its own engine.
+                const float musicLowL=transparentBass?
+                    smoothedMix_*originalLowL:0.f;
+                const float musicLowR=transparentBass?
+                    smoothedMix_*originalLowR:0.f;
                 float outL=smoothedTrim_*
-                    (dryLevel*x0+sceneBinauralLevel*smoothedRoomLevel_*spatialL)+sideRescue;
+                    (dryLevel*x0+musicLowL+
+                     sceneBinauralLevel*(transparentBass?1.f:smoothedRoomLevel_)*spatialL)+sideRescue;
                 float outR=smoothedTrim_*
-                    (dryLevel*x1+sceneBinauralLevel*smoothedRoomLevel_*spatialR)-sideRescue;
+                    (dryLevel*x1+musicLowR+
+                     sceneBinauralLevel*(transparentBass?1.f:smoothedRoomLevel_)*spatialR)-sideRescue;
                 // Zero-lookahead *linked* sample-peak safety guard. Quiet
                 // signals are linear; peaks are gently returned below unity
                 // without routing through a second engine or allocating.
@@ -557,6 +620,10 @@ private:
     float smoothedBassShelf_=0.f,limiterGain_=1.f;
     float smoothedErPresence_=1.f,smoothedTailPresence_=1.f;
     std::array<float,2> earBass_{};
+#if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
+    std::array<float,2> originalBass_{},binauralBass_{};
+    float sideBass_=0.f,bassCrossoverAlpha_=0.f;
+#endif
     float filterSlew_=0.f,levelSlew_=0.f;
     float distanceSlew_=0.f,bassSlew_=0.f,limiterRelease_=0.f;
     double sampleRate_=0.;
