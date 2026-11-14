@@ -44,18 +44,26 @@ export function hadEarlierIdenticalRequest(comments,event,repo) {
 // Failure to fetch a complete changed-file list must fail closed.
 export function focusedHarmonyFileScope(files) {
   if(!Array.isArray(files)||files.length===0)return false;
-  const permitted=[
+  const pluginOwned=[
     /^engine\/builtin_fx\/Harmony[^/]*\.h$/,
+    /^engine\/builtin_fx\/ChannelHarmonyProcessor\.h$/,
     /^tests\/harmony[^/]*\.(cpp|py)$/,
     /^tests\/native_harmony_assembly_test\.py$/,
     /^tests\/approved_native_harmony_smoke\.py$/,
     /^tools\/harmony_offline_ab\.cpp$/,
-    /^site\/preview-v2\/assets\/mixer-native-harmony\.js$/,
+    /^site\/preview-v2\/assets\/mixer-native-harmony\.js$/
+  ];
+  // CSS and the workflow can accompany isolated plugin edits, but neither
+  // alone is proof that a PR warrants the focused Vocal Harmony FAT.
+  const permitted=[
+    ...pluginOwned,
     /^site\/preview-v2\/assets\/mixer-fx-rack\.css$/,
     /^\.github\/workflows\/harmony-fast-dsp\.yml$/
   ];
-  return files.every(file=>typeof file==='string'&&
-    permitted.some(pattern=>pattern.test(file)));
+  return files.some(file=>typeof file==='string' &&
+        pluginOwned.some(pattern=>pattern.test(file))) &&
+    files.every(file=>typeof file==='string' &&
+        permitted.some(pattern=>pattern.test(file)));
 }
 async function readChangedFiles(api,number) {
   const result=[];
