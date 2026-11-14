@@ -27,7 +27,7 @@ def assert_ownership():
     assert css.count(".mx-hw-row>button.mx-hw-key")>=5
     assert "Owner-approved V5" not in css and ".codepen-buttons-wrapper" not in css
     assert "filter:blur" not in css.replace(" ","").lower()
-    # SOLO/PFL retain SVG masks; MUTE is rendered by CSS only.
+    # V6 SOLO retains its SVG mask; the approved PFL is a semantic key.
     assert "<mask id=" in js and js.count("<text ")==1
     assert "fill=\\"#edf6fa\\"" in js  # bright OFF ambient through one cutout
     # V25 migrated the exact V30 physical-material suffix ahead of the intact
@@ -51,7 +51,7 @@ def assert_ownership():
 async def assert_mixer(page, width):
     await page.wait_for_function("""()=>!!window.ArSonMixHardwareKeys &&
       !!document.querySelector('#tracks .strip[data-id="1"] .mx-mute-face') &&
-      document.querySelectorAll('#tracks .strip[data-id="1"] svg.mx-hw-face').length===2""")
+      document.querySelectorAll('#tracks .strip[data-id="1"] svg.mx-hw-face').length===1""")
     rows=await page.locator(".mx-hw-row").count()
     assert rows>=6,(width,rows)
     assert await page.locator(".codepen-buttons-wrapper,.hw-switch-socket").count()==0
@@ -64,7 +64,7 @@ async def assert_mixer(page, width):
       const cssFace=e.querySelector('.mx-mute-face');
       return {
         kind:e.dataset.hwKind,action:e.dataset.action,
-        label:svg?.querySelector('mask text')?.textContent||e.querySelector('.mx-mute-legend')?.textContent,
+        label:svg?.querySelector('mask text')?.textContent||e.querySelector('.mx-mute-legend')?.textContent||e.querySelector('.mx-hw-fallback')?.textContent,
         masks:svg?.querySelectorAll('mask').length||0,
         texts:svg?.querySelectorAll('mask text').length||0,
         ambient:!!svg?.querySelector('rect[fill="#edf6fa"]'),
@@ -79,21 +79,26 @@ async def assert_mixer(page, width):
         background:s.backgroundImage,focus:e.getAttribute('aria-label')
       };
     })""")
-    assert [d["kind"] for d in details]==["mute","solo","cue"],details
+    assert [d["kind"] for d in details]==["mute","solo","pfl"],details
     assert [d["action"] for d in details]==["mute","solo","cue"],details
     assert [d["label"] for d in details]==["MUTE","SOLO","PFL"],details
-    assert [d["led"] for d in details]==["255,78,90","255,207,68","101,210,236"],details
+    assert [d["led"] for d in details]==["255,78,90","255,207,68","209,224,231"],details
     assert details[0]["cssFace"] and details[0]["masks"]==0,details
     assert "linear-gradient" in details[0]["faceGradient"],details
     assert details[0]["background"]=="none",details
-    assert all(d["masks"]==1 and d["texts"]==1 and d["ambient"] and d["cap"] and d["shine"]
-               for d in details[1:]),details
+    # V6 source paints SOLO as SVG; approved PFL is an independent semantic
+    # key whose PNG material belongs to the assembled public /preview/.
+    assert details[1]["masks"]==1 and details[1]["texts"]==1,details
+    assert all(details[1][k] for k in ("ambient","cap","shine")),details
+    assert details[2]["masks"]==0 and details[2]["texts"]==0,details
+    assert details[2]["action"]=="cue" and details[2]["label"]=="PFL",details
     assert all(abs(d["h"]-29)<.7 and d["w"]>=26 for d in details),details
     assert max(d["y"] for d in details)-min(d["y"] for d in details)<.6,details
     assert max(d["w"] for d in details)-min(d["w"] for d in details)<1.7,details
     assert all(details[i]["x"]+details[i]["w"]<=details[i+1]["x"]+.3 for i in range(2)),details
     assert all(d["filter"]=="none" for d in details),details
-    assert all(d["glow"]=="0" and d["lamp"]=="0" for d in details[1:]),details
+    assert details[1]["glow"]=="0" and details[1]["lamp"]=="0",details
+    assert details[2]["glow"]=="0" and details[2]["lamp"] is None,details
     assert all(d["focus"] for d in details),details
     before=await keys.nth(0).evaluate("(e)=>getComputedStyle(e.querySelector('.mx-mute-face'),'::before').backgroundImage")
     await keys.nth(0).hover()
@@ -115,8 +120,9 @@ async def assert_mixer(page, width):
       };
     })""")
     assert on[0]["face"] and on[0]["legend"]=="rgb(242, 231, 231)",on
-    assert all(x["glow"]=="1" and x["lamp"]=="1" for x in on[1:]),on
-    assert [x["rgb"] for x in on[1:]]==["rgb(255, 207, 68)","rgb(101, 210, 236)"],on
+    assert on[1]["glow"]=="1" and on[1]["lamp"]=="1",on
+    assert on[2]["glow"]=="1" and on[2]["lamp"] is None,on
+    assert [x["rgb"] for x in on[1:]]==["rgb(255, 207, 68)",None],on
     if width==1680:
         await page.screenshot(path="pages-mixer-v6-ON-1680.png")
     await keys.nth(0).click()
@@ -126,7 +132,7 @@ async def assert_mixer(page, width):
     await page.locator('#tracks .strip[data-id="1"] button[data-action="solo"]').click()
     await page.wait_for_function("""()=>{
       const row=document.querySelector('#tracks .strip[data-id="1"] .mx-hw-row');
-      return !!row?.querySelector('.mx-mute-face') && row.querySelectorAll('svg.mx-hw-face').length===2;
+      return !!row?.querySelector('.mx-mute-face') && row.querySelectorAll('svg.mx-hw-face').length===1;
     }""")
     assert await page.locator('#tracks .strip[data-id="1"] .mx-hw-row>button').count()==3
 
@@ -143,7 +149,7 @@ async def main():
             assert not errors,(width,errors)
             await page.close()
         await browser.close()
-    print("PASS: CSS-built MUTE, V6 SOLO/PFL masked icons, stable 29px keys, OFF/ON toggle, WIRE intact")
+    print("PASS: MUTE CSS, SOLO SVG, PFL semantics, stable 29px hardware keys, OFF/ON and WIRE")
 
 if __name__=="__main__":
     asyncio.run(main())
