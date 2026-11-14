@@ -42,6 +42,7 @@ public:
                       std::memory_order_release);
         deviceEpoch_.fetch_add(1,std::memory_order_acq_rel);
         pending_.store(false,std::memory_order_release);
+        failed_.store(false,std::memory_order_release);
         for(auto& deck:decks_)deck.deviceRate(hz);
     }
     void load(const juce::File& file,bool autoPlay=true) {
@@ -49,6 +50,7 @@ public:
         // live transitions always go through queueTransition().
         fading_.store(false,std::memory_order_release);
         pending_.store(false,std::memory_order_release);
+        failed_.store(false,std::memory_order_release);
         preloadedFile_={};
         const int index=active_.load(std::memory_order_acquire);
         decks_[static_cast<std::size_t>(1-index)].stop();
@@ -82,6 +84,7 @@ public:
     }
     void pause() noexcept {
         pending_.store(false,std::memory_order_release);
+        failed_.store(false,std::memory_order_release);
         for(auto& deck:decks_)deck.pause();
     }
     void stop() noexcept {
@@ -89,6 +92,7 @@ public:
         // after an output/device restart.
         pending_.store(false,std::memory_order_release);
         preloadedFile_={};
+        failed_.store(false,std::memory_order_release);
         fading_.store(false,std::memory_order_release);
         for(auto& deck:decks_)deck.stop();
     }
@@ -98,6 +102,9 @@ public:
     }
     bool transitionPending() const noexcept {
         return pending_.load(std::memory_order_acquire);
+    }
+    bool transitionFailed() const noexcept {
+        return failed_.load(std::memory_order_acquire);
     }
     bool transitionActive() const noexcept {
         return fading_.load(std::memory_order_acquire);
@@ -135,6 +142,7 @@ public:
         if(fading_.load(std::memory_order_acquire))return false;
         if(!preload(file,key,tempo,cueIn,cueOut))return false;
         fadeMilliseconds_=std::clamp(fadeMilliseconds,0,3000);
+        failed_.store(false,std::memory_order_release);
         // The caller's CONTROL timer owns the one authoritative ACK for
         // beginning the fade. Never start it here before Main.cpp records
         // which logical setlist row is becoming CURRENT.
@@ -157,6 +165,7 @@ public:
            rateHz_.load(std::memory_order_acquire)<=0)return false;
         if(standby.state==NativePlayerDeck::State::error) {
             pending_.store(false,std::memory_order_release);
+            failed_.store(true,std::memory_order_release);
             preloadedFile_={};
             return false;
         }
@@ -231,6 +240,6 @@ private:
     std::atomic<std::uint64_t> deviceEpoch_{0};
     std::uint64_t preloadedEpoch_=0; // CONTROL only
     int fadeMilliseconds_=180;
-    std::atomic<bool> pending_{false};
+    std::atomic<bool> pending_{false},failed_{false};
 };
 } // namespace armix::player
