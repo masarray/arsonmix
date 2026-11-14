@@ -730,7 +730,8 @@
           slider.closest(".gain-dial")?.style.setProperty("--gain-rotation",
             (t.trim*5.625).toFixed(2)+"deg");
           const readout=root.querySelector(".gain-readout");
-          if(readout)readout.textContent=(t.trim>=0?"+":"")+t.trim.toFixed(1)+" dB";
+          const digits=readout?.querySelector(".gain-lcd-digits")||readout;
+          if(digits)digits.textContent=(t.trim>=0?"+":"")+t.trim.toFixed(1)+" dB";
         }
       }
       const db=c.faderDb,pan=c.pan*100;
@@ -3319,19 +3320,22 @@
       if(field==="trim"){
         const accepted=t.kind==="audio"&&t.nativeGainAvailable===true&&
           (logicalView||controller?.state()?.current?.admitted===true);
-        const n=Number(el.value);
-        if(!accepted||!Number.isFinite(n)||n< -24||n>24){
+        const raw=Number(el.value);
+        if(!accepted||!Number.isFinite(raw)||raw< -24||raw>24){
           el.value=String(Number.isFinite(t.trim)?t.trim:0);
           status("INPUT GAIN unavailable · native PCM admission required");
           return true;
         }
+        // Shared reference/native UI detent. Only accepted readback owns PCM.
+        const n=window.__ARMIX_GAIN_UNITY_DETENT__?.(el,event)??raw;
         // Gesture preview stays inside the knob; no browser-local t.trim
         // audio authority and no phantom native ACK. Commit once on release.
         if(event.type!=="change"){
           el.closest(".gain-dial")?.style.setProperty("--gain-rotation",
             (n*5.625).toFixed(2)+"deg");
           const lcd=el.closest(".gain-view-body")?.querySelector(".gain-readout");
-          if(lcd)lcd.textContent=(n>=0?"+":"")+n.toFixed(1)+" dB";
+          const digits=lcd?.querySelector(".gain-lcd-digits")||lcd;
+          if(digits)digits.textContent=(n>=0?"+":"")+n.toFixed(1)+" dB";
           return true;
         }
         if(!intent("SET_INPUT_GAIN",t,{valueDb:n})){
