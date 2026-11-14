@@ -45,3 +45,21 @@
    Rail, detent, input hitbox, SEND slider and drag mapping are unchanged. */
 .console-body .center-pan::-webkit-slider-thumb{margin-top:-15px!important}
 .console-body .ari-horizontal::-webkit-slider-thumb{margin-top:-10px!important}
+
+/* PAN legibility contract — full L100 / R100, including MASTER and compact.
+   The slider absorbs the width change; keep the physical thumb and detent.
+   Do not hide overflow or shrink numerals to force a cramped 23px field. */
+.console-body .pan-section{
+ grid-template-columns:23px minmax(0,1fr) 39px!important;
+ gap:3px!important;
+}
+.console-body .pan-section output{
+ min-width:0!important;width:100%!important;overflow:visible!important;
+ font-variant-numeric:tabular-nums;letter-spacing:-.15px;
+ text-align:right;white-space:nowrap;
+}
+.console-body[data-density="compact"] .pan-section,
+.console-body.narrow .pan-section{
+ grid-template-columns:15px minmax(0,1fr) 36px!important;
+ gap:2px!important;
+}
