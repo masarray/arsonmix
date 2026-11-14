@@ -107,8 +107,9 @@ jobs:
           node --check site/preview-v2/assets/gui-perf-probe.js
           node --check site/preview-v2/assets/mixer-native-peq.js
           node --check site/preview-v2/assets/mixer-native-compressor.js
-          node --check site/preview-v2/assets/mixer-native-harmony.js
-          python tests/native_harmony_assembly_test.py
+          # Vocal Harmony editor checks are owned ONLY by
+          # harmony-fast-dsp.yml when the Vocal Harmony plugin changes.
+          # Generic player/mixer GUI edits must never be blocked by its fixture.
           node --check site/preview-v2/assets/mixer-native-vocal-throw.js
           node --check site/preview-v2/assets/mixer-native-sonku.js
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_spatial_core_test.cpp -o /tmp/armix-sonku-core-smoke
