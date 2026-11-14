@@ -60,12 +60,22 @@ public:
         rate_.store(rounded>0?rounded:0,std::memory_order_release);
         const bool selected=hasFile_.load(std::memory_order_acquire);
         played_.store(0,std::memory_order_release);
+        requestedSeekSeconds_.store(cueInSeconds_.load(
+            std::memory_order_acquire),std::memory_order_release);
         error_.store(0,std::memory_order_release);
         generation_.fetch_add(1,std::memory_order_acq_rel);
         state_.store(rounded<=0?State::stopped:
                          selected?State::loading:State::empty,
                      std::memory_order_release);
         wake_.notify_one();
+    }
+    bool setCueRange(double in,double out) noexcept {
+        if(!std::isfinite(in) || !std::isfinite(out) ||
+           in<0. || out<0. || in>86400. || out>86400. ||
+           (out>0. && out<=in+0.05))return false;
+        cueInSeconds_.store(in,std::memory_order_release);
+        cueOutSeconds_.store(out,std::memory_order_release);
+        return true;
     }
     bool setPitchTempo(int keySemitones,int tempoPercent) noexcept {
         const PlayerPitchTempoProcessor::Controls c{keySemitones,tempoPercent};
@@ -82,7 +92,8 @@ public:
         }
         hasFile_.store(file!=juce::File{},std::memory_order_release);
         played_.store(0,std::memory_order_release);
-        requestedSeekSeconds_.store(0.0,std::memory_order_release);
+        requestedSeekSeconds_.store(cueInSeconds_.load(
+            std::memory_order_acquire),std::memory_order_release);
         error_.store(0,std::memory_order_release);
         state_.store(State::loading,std::memory_order_release);
         generation_.fetch_add(1,std::memory_order_acq_rel);
@@ -123,7 +134,8 @@ public:
         // the next seek-to-start; never reset/reallocate a ring from RT.
         ready_.store(false,std::memory_order_release);
         wantedPlay_.store(false,std::memory_order_release);
-        requestedSeekSeconds_.store(0.0,std::memory_order_release);
+        requestedSeekSeconds_.store(cueInSeconds_.load(
+            std::memory_order_acquire),std::memory_order_release);
         state_.store(State::stopped,std::memory_order_release);
         generation_.fetch_add(1,std::memory_order_acq_rel);
         played_.store(0,std::memory_order_relaxed);
@@ -220,6 +232,8 @@ private:
                 static_cast<int>((bits>>8)&255u)};
     }
     void restart() noexcept {
+        requestedSeekSeconds_.store(cueInSeconds_.load(
+            std::memory_order_acquire),std::memory_order_release);
         ready_.store(false,std::memory_order_release);
         played_.store(0,std::memory_order_relaxed);
         state_.store(State::loading,std::memory_order_release);
@@ -323,9 +337,19 @@ private:
                 std::floor(consumed*100.0/controls.tempoPercent));
             std::uint64_t written=startPlayed;
             played_.store(startPlayed,std::memory_order_release);
+            // OUT=0 means physical media end. Reader/decoder owns this
+            // bound; the audio callback never edits an I/O source.
+            const auto readEnd=[&]() -> std::uint64_t {
+                const double out=cueOutSeconds_.load(
+                    std::memory_order_acquire);
+                if(out<=0.)return sourceTotal;
+                return std::min(sourceTotal,static_cast<std::uint64_t>(
+                    std::ceil(out*deviceHz)));
+            };
             const auto estimateTotal=[&]() -> std::uint64_t {
                 return written+static_cast<std::uint64_t>(std::ceil(
-                    (sourceTotal-consumed)*100.0/controls.tempoPercent))
+                    (readEnd()>consumed?readEnd()-consumed:0)*
+                    100.0/controls.tempoPercent))
                     +static_cast<std::uint64_t>(pitch.outputLatency());
             };
             length_.store(estimateTotal(),std::memory_order_release);
@@ -339,7 +363,7 @@ private:
             const auto highWater=std::min<std::size_t>(
                 ring_.capacityFrames()-2048,
                 std::max<std::size_t>(8192,static_cast<std::size_t>(deviceHz/4)));
-            while(!obsolete(version) && consumed<sourceTotal) {
+            while(!obsolete(version) && consumed<readEnd()) {
                 if(ring_.bufferedFrames()>highWater) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(3));
                     continue;
@@ -354,7 +378,7 @@ private:
                 }
                 int nOutput=1024;
                 int nInput=pitch.nextInputFrames(nOutput);
-                const auto remaining=sourceTotal-consumed;
+                const auto remaining=readEnd()-consumed;
                 if(remaining<static_cast<std::uint64_t>(nInput)) {
                     nOutput=std::max(1,static_cast<int>(std::ceil(
                         remaining*100.0/controls.tempoPercent)));
@@ -397,7 +421,7 @@ private:
             }
             // Drain the final spectral overlap OFF realtime. Without this,
             // transposed music loses its last FFT window at EOF.
-            if(!failed && !obsolete(version) && consumed==sourceTotal &&
+            if(!failed && !obsolete(version) && consumed>=readEnd() &&
                pitch.active()) {
                 const int tail=pitch.outputLatency();
                 if(tail>0 && tail<deviceHz*2) {
@@ -426,7 +450,7 @@ private:
                     wantedPlay_.store(false,std::memory_order_release);
                     error_.store(4,std::memory_order_release);
                     state_.store(State::error,std::memory_order_release);
-                } else if(consumed==sourceTotal) {
+                } else if(consumed>=readEnd()) {
                     length_.store(written,std::memory_order_release);
                     eof_.store(true,std::memory_order_release);
                     ready_.store(true,std::memory_order_release);
@@ -439,6 +463,7 @@ private:
     PlayerWaveformIndex waveform_;
     juce::File waveformFile_; // worker thread only, across seek epochs
     std::atomic<double> requestedSeekSeconds_{0.0};
+    std::atomic<double> cueInSeconds_{0.0},cueOutSeconds_{0.0};
     mutable std::mutex commandMutex_; // CONTROL/worker only, NEVER RT
     juce::File selectedFile_;
     std::atomic<bool> exit_{false},ready_{false},wantedPlay_{false},eof_{false};
