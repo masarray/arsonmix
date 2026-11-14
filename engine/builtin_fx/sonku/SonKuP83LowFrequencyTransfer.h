@@ -8,7 +8,7 @@
 // True KEMAR stereo speaker transfer remains the P8.3 physical default.
 // Symmetric real loudspeakers cancel opposite-polarity low-frequency pressure
 // at a centered listener; output gain cannot repair this acoustic null.
-// Below 150 Hz a complementary crossover conditions the DIRECT two-source
+// A 480-Hz complementary crossover conditions the DIRECT two-source
 // to two-ear matrix. Both speakers feed BOTH ears, with gains that follow
 // source directions relative to head orientation. It is NOT a direct
 // headphone-only SIDE return; but the low-frequency ILD is not measured BRIR.
@@ -65,7 +65,7 @@ private:
         weights_[index][0]=.5f*(1.f-lean);
         weights_[index][1]=.5f*(1.f+lean);
     }
-    float alpha_=0.f,cutoff_=150.f;
+    float alpha_=0.f,cutoff_=480.f;
     double rate_=0.;
     std::array<float,2> lowSource_{},lowHrtf_{};
     std::array<std::array<float,2>,2> weights_{{{{.92f,.08f}},

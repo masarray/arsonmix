@@ -74,7 +74,7 @@ jobs:
             tests/sonku_p83_hosted_cpu_benchmark.cpp -o /tmp/p83-bench
           /tmp/p83-bench | tee /tmp/p83-bench.log
           grep -q '^P83_HOSTED_CPU,mode=P83' /tmp/p83-bench.log
-      - name: Strict acoustic music gate - reject LF cancellation despite directional PASS
+      - name: Strict multi-band music + LF gate - reject cancellation or overboost
         shell: bash
         run: |
           set -euo pipefail
@@ -89,6 +89,7 @@ jobs:
               print "PASS P83 MUSIC: opt-in LF guard source fidelity; listening still pending"
             }
           ' /tmp/p83-native.log
+          grep -q '^PASS P8.3 MULTIBAND FIDELITY:' /tmp/p83-native.log
       - name: Upload exact-source offline research PCM (not human FAT)
         if: always()
         uses: actions/upload-artifact@v4

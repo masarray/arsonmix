@@ -32,7 +32,7 @@ static void check(bool ok,const char* reason) {
 static Render render(double rate,p83::Mode mode,float az,float yaw,
                      bool room,p83::Stem stem,std::uint8_t mask,Input input,
                      int chunk=128,float elevation=0.f,
-                     bool musicLf=false,float lfCutoffHz=150.f) {
+                     bool musicLf=false,float lfCutoffHz=480.f) {
     auto core=std::make_unique<SonKuSpatialCore>();
     check(core->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch),
           "native six-surface prepare");
@@ -270,6 +270,24 @@ int main(int argc,char** argv){
         compareSpectrum("ANTIPHASE",rate,before,speakerAnti);
         compareSpectrum("MUSIC_LF_ANTIPHASE",rate,before,lfAnti);
         compareSpectrum("MUSIC_LF_MONO",rate,musicMono,lfMono);
+        // Four independent bins on BOTH 44.1/48k, mono and antiphase.
+        // Reject tonal holes and overcompensation, not just the 83-Hz null.
+        const auto qualify=[&](const Render& reference,const Render& trial,
+                               const char* label){
+            for(double hz:{83.,461.,1703.,5387.}){
+                const double orig=std::norm(spectrum(reference.l,rate,hz))+
+                                  std::norm(spectrum(reference.r,rate,hz));
+                const double next=std::norm(spectrum(trial.l,rate,hz))+
+                                  std::norm(spectrum(trial.r,rate,hz));
+                const double delta=10.*std::log10((next+1e-20)/(orig+1e-20));
+                std::printf("P83_MULTIBAND_GATE,%s,%.0f,%.0fHz,delta_dB=%.3f\\n",
+                            label,rate,hz,delta);
+                check(std::isfinite(delta)&&delta>=-6.&&delta<=6.,
+                      "music LF multiband level must remain within +/-6dB of P8.2");
+            }
+        };
+        qualify(before,lfAnti,"ANTI");
+        qualify(musicMono,lfMono,"MONO");
         // In one native executable, sweep the LF conditioning crossover:
         // find the lowest cutoff that protects antiphase bass AND lower mids.
         // No winner selected from a naive single-frequency benchmark.
@@ -373,5 +391,6 @@ int main(int argc,char** argv){
             writeWav(folder/"P83_combined_48k.wav",combined,48000);
         }
     }
+    std::puts("PASS P8.3 MULTIBAND FIDELITY: 44.1/48k 83/461/1703/5387Hz anti-phase and mono within +/-6dB of P8.2; headphone approval NOT proven");
     std::puts("PASS P8.3 SOURCE GATES: physical mono/stereo 2x2, yaw, six stems, P8.2 preservation, direction and phase; perceptual externalization NOT proven");
 }

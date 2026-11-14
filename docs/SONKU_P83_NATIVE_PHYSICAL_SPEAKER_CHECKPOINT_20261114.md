@@ -141,3 +141,25 @@ on *the same* original input, printing 83/461/1703/5387-Hz
 anti-phase and correlated-mono spectral differences for engineering
 selection. A larger LF substitution harms physical low-mid ITD/ILD;
 select only after reviewing these cross-band measurements.
+
+## Chosen P8.3 opt-in crossover, based on same-source 44.1/48k sweep
+
+The smallest measured crossover in the sweep that avoided a >6dB
+reduction across *both* 83 Hz and 461 Hz was **480 Hz**:
+- 48k anti-phase: 83 -1.693dB, 461 -5.801dB, 1703 -0.173dB
+  and 5387 +0.917dB relative to P8.2.
+- 48k correlated mono: 83 +1.053dB, 461 +1.096dB, 1703
+  -3.887dB and 5387 -2.781dB.
+- 44.1k anti-phase: 83 -1.713dB, 461 -5.665dB,
+  1703 -0.792dB, 5387 +0.120dB.
+- 44.1k correlated mono: 83 +1.016dB, 461 +1.295dB,
+  1703 -3.395dB and 5387 -2.795dB.
+
+650Hz would improve the 461Hz differential further but destroys
+more measured low-mid physical cues. 480Hz is only a tradeoff candidate,
+NOT a psychoacoustically verified optimum. Source gates now reject
+relative dips *or boosts* outside +/-6dB at all four frequencies and
+both rates for BOTH correlated and anti-phase tests, while the
+unaltered physical mode remains separately measurable. Any unsampled
+spectral cancellations, room coloration or headphone externalization
+failures still veto product approval.
