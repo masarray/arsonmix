@@ -324,6 +324,8 @@ public:
         next->graphRevision=revision;
         next->prepared=std::make_unique<FxGraph>(plan,Block::hardFrameLimit,
              juce::jlimit(32,Block::hardFrameLimit,deviceFrames));
+        // Immutable pointer to one global RT atomic; prepared before publish.
+        next->prepared->bindGlobalRackOverride(&globalFxBypassed_);
         if(!next->prepared || next->prepared->capacity()==0)
             return "Cannot allocate routing workspace";
         if(!next->prepared->setMainOutputPair(
@@ -1322,6 +1324,7 @@ public:
             }
             auto owner=std::make_shared<DynamicChannelFxLeaseBank>(
                 std::move(prepared));
+            owner->bindGlobalRackOverride(&globalFxBypassed_);
             DynamicNativeSessionPublisher::FxPlan fx;
             fx.owner=std::static_pointer_cast<void>(owner);
             fx.context=owner.get();
@@ -1370,6 +1373,7 @@ public:
                 reply.error="NATIVE_FX_RACK_IDENTITY_OR_POSITION_REJECTED";return reply;
             }
             auto owner=std::make_shared<DynamicChannelFxLeaseBank>(std::move(prepared));
+            owner->bindGlobalRackOverride(&globalFxBypassed_);
             DynamicNativeSessionPublisher::FxPlan fx;
             fx.owner=owner;fx.context=owner.get();fx.deviceEpoch=ep;fx.graphRevision=revision+1;
             fx.render=+[](void* p,ChannelId id,float* l,float* r,int n) noexcept {
@@ -1435,6 +1439,26 @@ public:
         return nativeAccepted_.fxOwners &&
                nativeAccepted_.fxOwners->externalChannel()==target &&
                target==nativeAccepted_.graph.ids.inputs[0];
+    }
+    // Single global A/B override for M4 and the authoritative ChannelId PCM
+    // graph. Never rewrite saved rack/slot bypass flags or rebuild processors.
+    // A physical ACK requires an accepted CURRENT epoch/revision.
+    bool setGlobalFxBypassed(std::uint64_t expectedEpoch,
+                             std::uint64_t expectedRevision,bool bypass) noexcept {
+        if(!ready() || expectedEpoch!=epoch() || !expectedRevision)return false;
+        if(channelIdPhysicalPcmActive()) {
+            if(!nativeAccepted_.fxOwners ||
+               nativeAccepted_.deviceEpoch!=expectedEpoch ||
+               nativeAccepted_.pcmRevision!=expectedRevision)return false;
+        } else {
+            if(!hasExplicitRoute() || expectedRevision!=revision() ||
+               !publisher_.controlPrepared(expectedEpoch,expectedRevision))return false;
+        }
+        globalFxBypassed_.store(bypass,std::memory_order_release);
+        return true;
+    }
+    bool globalFxBypassed() const noexcept {
+        return globalFxBypassed_.load(std::memory_order_acquire);
     }
     bool bypassNativeRack(std::uint64_t epochAtEdit,std::uint64_t pcmRevision,
                           armix::mixer::ChannelId target,bool bypass) noexcept {
@@ -1515,6 +1539,7 @@ public:
             }
             auto owner=std::make_shared<DynamicChannelFxLeaseBank>(
                 std::move(bank));
+            owner->bindGlobalRackOverride(&globalFxBypassed_);
             DynamicNativeSessionPublisher::FxPlan fx;
             fx.owner=std::static_pointer_cast<void>(owner);
             fx.context=owner.get();
@@ -1612,6 +1637,7 @@ public:
             }
             auto owner=std::make_shared<DynamicChannelFxLeaseBank>(
                 std::move(bank));
+            owner->bindGlobalRackOverride(&globalFxBypassed_);
             DynamicNativeSessionPublisher::FxPlan fx;
             fx.owner=std::static_pointer_cast<void>(owner);
             fx.context=owner.get();
@@ -1774,6 +1800,7 @@ public:
                 reply.error="NATIVE_FX_LEASE_REJECTED";return reply;
             }
             auto owner=std::make_shared<DynamicChannelFxLeaseBank>(std::move(bank));
+            owner->bindGlobalRackOverride(&globalFxBypassed_);
             DynamicNativeSessionPublisher::FxPlan fx;
             fx.owner=std::static_pointer_cast<void>(owner);
             fx.context=owner.get();
@@ -1851,6 +1878,7 @@ public:
                 reply.error="NATIVE_TRACK_FX_RELEASE_REJECTED";return reply;
             }
             auto owner=std::make_shared<DynamicChannelFxLeaseBank>(std::move(bank));
+            owner->bindGlobalRackOverride(&globalFxBypassed_);
             DynamicNativeSessionPublisher::FxPlan fx;
             fx.owner=std::static_pointer_cast<void>(owner);
             fx.context=owner.get();
@@ -1941,6 +1969,7 @@ public:
                 reply.error="NATIVE_FX_LEASE_REJECTED";return reply;
             }
             auto owner=std::make_shared<DynamicChannelFxLeaseBank>(std::move(bank));
+            owner->bindGlobalRackOverride(&globalFxBypassed_);
             DynamicNativeSessionPublisher::FxPlan fx;
             fx.owner=std::static_pointer_cast<void>(owner);
             fx.context=owner.get();
@@ -2016,6 +2045,7 @@ public:
                 r.error="NATIVE_WIRE_FX_LEASE_REJECTED";return r;
             }
             auto owner=std::make_shared<DynamicChannelFxLeaseBank>(std::move(nextBank));
+            owner->bindGlobalRackOverride(&globalFxBypassed_);
             DynamicNativeSessionPublisher::FxPlan fx;
             fx.owner=std::static_pointer_cast<void>(owner);
             fx.context=owner.get();
@@ -2088,6 +2118,7 @@ public:
                 r.error="NATIVE_WIRE_FX_LEASE_REJECTED";return r;
             }
             auto owner=std::make_shared<DynamicChannelFxLeaseBank>(std::move(bank));
+            owner->bindGlobalRackOverride(&globalFxBypassed_);
             DynamicNativeSessionPublisher::FxPlan fx;
             fx.owner=std::static_pointer_cast<void>(owner);
             fx.context=owner.get();
@@ -2519,6 +2550,7 @@ public:
         try {
             document.request.maxScratchBytes=32U*1024U*1024U;
             const auto previous=nativePublisher_.acceptedRevision();
+            bank->bindGlobalRackOverride(&globalFxBypassed_);
             DynamicNativeSessionPublisher::FxPlan fx;
             fx.owner=std::static_pointer_cast<void>(bank);
             fx.context=bank.get();
@@ -2877,6 +2909,7 @@ public:
             if(DynamicChannelFxLeaseBank::rebindSameFormat(
                    newEpoch,revision+1,*nativeAccepted_.fxOwners,*owner)!=
                DynamicChannelFxLeaseBank::Fault::none)return false;
+            owner->bindGlobalRackOverride(&globalFxBypassed_);
             DynamicNativeSessionPublisher::FxPlan fx;
             fx.owner=owner;fx.context=owner.get();
             fx.deviceEpoch=newEpoch;fx.graphRevision=revision+1;
@@ -3457,6 +3490,9 @@ public:
         return juce::var(out.release());
     }
 private:
+    // Never heap/lock in RT; every prepared graph references this same stable
+    // scalar. OFF means bypass all FX, while per-rack/slot states are untouched.
+    std::atomic<bool> globalFxBypassed_{false};
     std::vector<armix::session::WaitingAsioInput> waitingAsioInputs_;
     std::vector<armix::session::StoredExternalOutput> externalOutputAssignments_;
     std::vector<std::uint64_t> externalOutputVerified_; // per amplifier, CONTROL only
