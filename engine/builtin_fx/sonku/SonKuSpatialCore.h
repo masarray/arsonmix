@@ -55,6 +55,13 @@ struct Settings {
     // existing native SPSC edit, never a second FX graph or audio worker.
     float directElevationDegrees = 0.f;
 #endif
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+    // Experimental FX-state v4 only; no public v2/v3 ABI changes.
+    // 0=P8.2 Music Bed, 1=MonoObject LEFT input, 2=two world speakers.
+    int renderMode = 0;
+    bool musicCompatibleLowFrequency = false;
+    float headYawDegrees = 0.f; // deterministic world/head separation
+#endif
 };
 inline bool valid(const Settings& s) noexcept {
     return std::isfinite(s.startAzimuthDegrees) &&
@@ -70,6 +77,12 @@ inline bool valid(const Settings& s) noexcept {
         s.sourceDistanceMeters<=10.f &&
         std::isfinite(s.roomAmount) && s.roomAmount>=0.f && s.roomAmount<=1.f &&
         std::isfinite(s.ambience) && s.ambience>=0.f && s.ambience<=1.f &&
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+        s.renderMode>=0 && s.renderMode<=2 &&
+        p83::validYaw(s.headYawDegrees) &&
+        (s.renderMode!=2 || (s.stereoSpreadDegrees>=20.f &&
+                             s.stereoSpreadDegrees<=120.f)) &&
+#endif
 #if defined(SONKU_P72_NATIVE_XYZ_RT) && SONKU_P72_NATIVE_XYZ_RT
         // Pure control-thread admission; validate even when ROOM is OFF so
         // a later enable cannot silently admit an impossible placement.
@@ -187,9 +200,9 @@ public:
     bool setSettings(const Settings& s) noexcept {
         if(!valid(s))return false;
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
-        if(p83Mode_==p83::Mode::SpeakerMonitor &&
-           (s.stereoSpreadDegrees<20.f || s.stereoSpreadDegrees>120.f))
-            return false; // distinct left and right speaker directions
+        if(s.renderMode!=0 &&
+           room_.preparedProfile()!=SonKuReflectionProfile::SixSurfaceKemarResearch)
+            return false; // Only real measured prepared native research instance
 #endif
 #if defined(SONKU_P72_NATIVE_XYZ_RT) && SONKU_P72_NATIVE_XYZ_RT
         const auto activeProfile=room_.preparedProfile();
@@ -220,6 +233,19 @@ public:
            s.startAzimuthDegrees!=settings_.startAzimuthDegrees)
             degrees_=wrapDegrees(s.startAzimuthDegrees);
         settings_=s;
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+        // Apply typed real-time SPSC state, not quiescent-only test setters.
+        // The JUCE adapter fades out to zero BEFORE applying a mode edit.
+        // No heavy DSP reset or heap work on the audio thread.
+        if(p83Mode_!=static_cast<p83::Mode>(s.renderMode) ||
+           p83MusicCompatibleLf_!=s.musicCompatibleLowFrequency ||
+           p83HeadYaw_!=s.headYawDegrees) {
+            p83LowFrequency_.reset(); // four small scalar filter memories
+        }
+        p83Mode_=static_cast<p83::Mode>(s.renderMode);
+        p83MusicCompatibleLf_=s.musicCompatibleLowFrequency;
+        p83HeadYaw_=s.headYawDegrees;
+#endif
         // Once native ROOM has been enabled, retain the smoothed transition
         // when it is turned OFF. Standalone experimental V2/V3 OFF fixtures
         // continue to use their exact original 1/r distance law.
@@ -237,6 +263,7 @@ public:
              (settings_.stereoSpreadDegrees<20.f ||
               settings_.stereoSpreadDegrees>120.f)))return false;
         p83Mode_=mode;
+        settings_.renderMode=static_cast<int>(mode);
         reset();
         return true;
     }
@@ -247,6 +274,7 @@ public:
            room_.preparedProfile()!=SonKuReflectionProfile::SixSurfaceKemarResearch)
             return false;
         p83MusicCompatibleLf_=enabled;
+        settings_.musicCompatibleLowFrequency=enabled;
         reset();
         return true;
     }
@@ -264,6 +292,7 @@ public:
            room_.preparedProfile()!=SonKuReflectionProfile::SixSurfaceKemarResearch)
             return false;
         p83HeadYaw_=yaw;
+        settings_.headYawDegrees=yaw;
         reset();
         return true;
     }
