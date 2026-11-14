@@ -124,7 +124,8 @@
 }
 .console-body .strip .gain-dial-face{
  position:absolute;z-index:2;display:block;inset:7px;border-radius:50%;
- background:#45484b url("mixer-gain-knob-brushed-steel.png") center/cover no-repeat;
+ /* Crop a small part of the PNG's baked-in grey rim, not the cap silhouette. */
+ background:#45484b url("mixer-gain-knob-brushed-steel.png") center/110% 110% no-repeat;
  /* Steel cap + stationary shadow OVER the level LEDs: real raised hardware,
     no added bezel stroke, no filter or blurred element animated per gesture. */
  box-shadow:0 2px 3px #000b,0 5px 9px #0008;
