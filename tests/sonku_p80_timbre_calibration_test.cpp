@@ -30,6 +30,7 @@ static void measuredBinaural(double rate){
     Settings s{};s.moving=false;s.startAzimuthDegrees=0.f;
     s.spatialMix=0.f;s.outputTrim=.65f;
     assert(core->setSettings(s));
+    core->reset(); // control-side prepared state, not a mid-callback edit
     constexpr int n=2048;std::vector<float> l(n),r(n);
     for(int i=0;i<n;++i){l[i]=.15f*std::sin(i*.2f);r[i]=.09f*std::cos(i*.17f);}
     const auto beforeL=l,beforeR=r;
