@@ -10,6 +10,15 @@ option(ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT
 option(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
        "Enable P7.2 unqualified native real-time XYZ/v3 research adapter"
        OFF)
+# P7.5 field-failure research: spatial MUSIC MID and strictly retain stereo SIDE.
+# No effect on public builds or original P7.4 research unless explicit ON.
+option(ARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE
+       "Enable quarantined phase-preserving music-stereo P7.5 PCM only in XYZ research"
+       OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT)
+  message(FATAL_ERROR "P7.5 music-safe requires explicit native XYZ research ON")
+endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -207,7 +216,8 @@ target_compile_definitions(ARMixConsole PRIVATE
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:SONKU_P7_MEASURED_ELEVATION_RESEARCH=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:SONKU_P71_DIRECT_XYZ_RESEARCH=1>
-    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:SONKU_P72_NATIVE_XYZ_RT=1>)
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:SONKU_P72_NATIVE_XYZ_RT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE}>:SONKU_P75_MUSIC_SAFE_RESEARCH=1>)
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
   # Never link Windows loader or sound APIs into macOS/Linux builds.
@@ -324,6 +334,21 @@ if(BUILD_TESTING)
         SONKU_P72_NATIVE_XYZ_RT=1)
     add_test(NAME NativeSonKuP72JuceV3XyzLiveAckV1V2Restore
         COMMAND ARMixSonKuP72NativeTests)
+    if(ARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE)
+      # The executable and THIS actual JUCE adapter run the identical P7.5 DSP.
+      target_compile_definitions(ARMixSonKuP72NativeTests PRIVATE
+          SONKU_P75_MUSIC_SAFE_RESEARCH=1)
+      add_executable(ARMixSonKuP75MusicIntegrityTests
+          tests/sonku_p75_stereo_integrity_test.cpp)
+      target_compile_features(ARMixSonKuP75MusicIntegrityTests PRIVATE cxx_std_20)
+      target_compile_definitions(ARMixSonKuP75MusicIntegrityTests PRIVATE
+          SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+          SONKU_P71_DIRECT_XYZ_RESEARCH=1
+          SONKU_P72_NATIVE_XYZ_RT=1
+          SONKU_P75_MUSIC_SAFE_RESEARCH=1)
+      add_test(NAME NativeSonKuP75MusicStereoPhaseNoNullAndChunkParity
+          COMMAND ARMixSonKuP75MusicIntegrityTests)
+    endif()
   endif()
   # Pure control-plane first-run routing selection: no JUCE, drivers,
   # WASAPI activation or callback dependencies. Full Windows CTest gate.
