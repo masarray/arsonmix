@@ -109,6 +109,10 @@ public:
                 // finish the audible crossfade before starting the next.
                 predelayPending_=desiredDelay;
             }
+        }else if(predelayRemaining_>0) {
+            // A newer edit can cancel a queued retarget: never re-apply an
+            // obsolete pending room after returning to the active goal.
+            predelayPending_=-1;
         }
 #endif
         const auto& coefficients=prepared_[static_cast<int>(preset)];
