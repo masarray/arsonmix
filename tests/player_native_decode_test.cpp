@@ -378,6 +378,61 @@ int main() {
             show.deviceRate(0.0);
             assert(!show.isPlayingRequested());
         }
+        // M2 + M3 real PCM: A-B rehearsal uses TWO decoder instances
+        // of the SAME file, fades between them without a callback seek,
+        // preserves original media clock, and cancels NEXT on STOP.
+        {
+            armix::player::NativePlayerShowDeck loop;
+            loop.deviceRate(48000.0);
+            assert(loop.setCueRange(1.0,4.0));
+            loop.load(longFile,true);
+            bool ready=false;
+            for(int i=0;i<600;++i) {
+                if(loop.isPlayingRequested()){ready=true;break;}
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            assert(ready);
+            const auto first=loop.snapshot();
+            assert(first.mediaPlayed>=48000); // cue IN, not zero
+            std::array<float,256> left{},right{};
+            for(int pass=0;pass<2;++pass) {
+                assert(loop.preload(longFile,0,100,1.,4.));
+                assert(loop.queueTransition(longFile,0,100,180,1.,4.));
+                bool started=false;
+                for(int tries=0;tries<600;++tries) {
+                    if(loop.service()){started=true;break;}
+                    loop.pull(left.data(),right.data(),256);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                }
+                assert(started && loop.transitionActive());
+                double energy=0.;
+                for(int b=0;b<50;++b) {
+                    loop.pull(left.data(),right.data(),256);
+                    for(int i=0;i<256;++i) {
+                        assert(std::isfinite(left[i]) &&
+                               std::isfinite(right[i]));
+                        energy+=left[i]*left[i];
+                    }
+                }
+                assert(energy>0.01);
+                assert(!loop.transitionActive());
+                loop.service(); // old deck stops outside realtime
+                const auto now=loop.snapshot();
+                assert(now.mediaPlayed>=48000);
+                assert(now.mediaDuration<=4*48000+1);
+                assert(now.title==longFile.getFileNameWithoutExtension());
+            }
+            // A user STOP during standby must prevent any stale queue from
+            // becoming a different current after the decoder completes.
+            assert(loop.queueTransition(longFile,0,100,180,1.,4.));
+            assert(loop.transitionPending());
+            loop.stop();
+            assert(!loop.transitionPending());
+            assert(!loop.isPlayingRequested());
+            loop.pull(left.data(),right.data(),256);
+            for(int i=0;i<256;++i)
+                assert(left[i]==0.f && right[i]==0.f);
+        }
         assert(longFile.deleteFile());
     }
     assert(file.deleteFile());
