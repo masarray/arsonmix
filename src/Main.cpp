@@ -3786,11 +3786,14 @@ private:
                 }
             }
         };
+        // Keep the variant alive throughout the array walk. A pointer
+        // returned from a temporary juce::var would dangle in the body.
+        const auto savedSets=json.getProperty("setlists",{});
         if(version<=2) {
             PlayerSavedSet migrated{"My Setlist",{},{}};
             parseSongs(json.getProperty("files",{}),version,migrated);
             playerSets_.push_back(std::move(migrated));
-        } else if(const auto* sets=json.getProperty("setlists",{}).getArray()) {
+        } else if(const auto* sets=savedSets.getArray()) {
             for(const auto& source:*sets) {
                 if(playerSets_.size()>=32)break;
                 if(!source.isObject())continue;
@@ -3873,9 +3876,13 @@ private:
                     engine_.playerStop();activatePlayerSet(index);
                 } else if(playerSets_.size()>1) {
                     engine_.playerStop();
+                    int destination=playerActiveSet_;
+                    if(index<destination)--destination;
+                    if(index==destination)
+                        destination=std::min(index,
+                            static_cast<int>(playerSets_.size())-2);
                     playerSets_.erase(playerSets_.begin()+index);
-                    activatePlayerSet(std::min(playerActiveSet_,
-                        static_cast<int>(playerSets_.size())-1));
+                    activatePlayerSet(destination);
                 } else {
                     playerError_="Keep at least one setlist";
                     emitPlayerState();return;
