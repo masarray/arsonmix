@@ -3,6 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {classifyVocalHarmonyChanges} from '../scripts/vocal_harmony_ci_scope.mjs';
 // Native Actions path filters (not a legacy PR owner classifier) select lanes.
 
 const read = path => readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
@@ -351,4 +352,83 @@ test('portable Windows preview metadata is written before release ZIP verificati
   assert.doesNotMatch(native,/FIELD-PREVIEW\.txt/,
     'Unverified sentinel must not be injected into a strict allowlisted distribution');
   assert.match(native,/if: \${{ env.FIELD_PREVIEW == 'true' }}/);
+});
+
+
+test('Vocal Harmony DSP workflow is STRICTLY plugin-only, never player/mixer/CMake/CI-maintenance', () => {
+  const harmony = read('.github/workflows/harmony-fast-dsp.yml');
+  const start = harmony.indexOf('    paths:\n');
+  const end = harmony.indexOf('\npermissions:', start);
+  assert.ok(start >= 0 && end > start, 'Vocal Harmony must have a PR paths filter');
+  const paths = [...harmony.slice(start, end).matchAll(/^      - '([^']+)'$/gm)]
+    .map(match => match[1]);
+  assert.deepEqual(paths, [
+    'engine/builtin_fx/Harmony*.h',
+    'engine/builtin_fx/ChannelHarmonyProcessor.h',
+    'tests/harmony*.cpp',
+    'tools/harmony_offline_ab.cpp',
+    'site/preview-v2/assets/mixer-native-harmony.js',
+    'tests/native_harmony_assembly_test.py',
+    'tests/approved_native_harmony_smoke.py'
+  ], 'Only owned plugin files may start the dedicated Vocal Harmony workflow');
+
+  const selected = file => paths.some(path => globMatches(path, file));
+  for (const unrelated of [
+    'CMakeLists.txt',
+    'engine/player/NativePlayerDeck.h',
+    'engine/player/PlayerPitchTempoProcessor.h',
+    'src/LiveAudioEngine.h',
+    'src/Main.cpp',
+    'tests/player_native_decode_test.cpp',
+    'tests/player_pitch_tempo_test.cpp',
+    'tests/ci_workflow_efficiency_test.mjs',
+    'site/preview-v2/assets/arson-player.js',
+    'site/preview-v2/assets/mixer-fx-rack.css',
+    'site/preview-v2/assets/mixer-contextual-buttons.js',
+    'engine/builtin_fx/ChannelCompressorProcessor.h',
+    'engine/builtin_fx/ChannelEqProcessor.h',
+    'engine/builtin_fx/VocalThrowProcessor.h',
+    '.github/workflows/harmony-fast-dsp.yml',
+    '.github/workflows/p1-windows.yml',
+    '.github/workflows/ui-smoke.yml',
+    'docs/ARSON_HARMONY_ENGINE_AUDIT_20261108.md'
+  ]) {
+    assert.equal(selected(unrelated), false, unrelated + ' must NEVER trigger Harmony CI');
+    assert.deepEqual(classifyVocalHarmonyChanges([unrelated]),
+      {dsp: false, ui: false}, unrelated + ' should consume zero Harmony work');
+  }
+
+  for (const file of [
+    'engine/builtin_fx/HarmonyDsp.h',
+    'engine/builtin_fx/ChannelHarmonyProcessor.h',
+    'tests/harmony_dsp_test.cpp',
+    'tools/harmony_offline_ab.cpp'
+  ]) {
+    assert.ok(selected(file), file + ' must trigger the Vocal Harmony lane');
+    assert.deepEqual(classifyVocalHarmonyChanges([file]),
+      {dsp: true, ui: true}, file + ' requires DSP + plugin contract');
+  }
+  for (const file of [
+    'site/preview-v2/assets/mixer-native-harmony.js',
+    'tests/native_harmony_assembly_test.py',
+    'tests/approved_native_harmony_smoke.py'
+  ]) {
+    assert.ok(selected(file), file + ' must trigger Vocal Harmony editor checks');
+    assert.deepEqual(classifyVocalHarmonyChanges([file]),
+      {dsp: false, ui: true}, file + ' must NOT waste DSP CPU');
+  }
+  assert.deepEqual(classifyVocalHarmonyChanges([
+    'engine/player/NativePlayerDeck.h', 'site/preview-v2/assets/arson-player.js'
+  ]), {dsp: false, ui: false});
+  assert.match(harmony, /needs: scope\n    if: \$\{\{ needs\.scope\.outputs\.dsp == 'true' \}\}/);
+  assert.match(harmony, /needs: scope\n    if: \$\{\{ needs\.scope\.outputs\.ui == 'true' \}\}/);
+  assert.match(harmony, /git diff --name-only --no-renames/);
+  assert.match(harmony, /PR_BEFORE: \$\{\{ github\.event\.before \}\}/);
+  assert.match(harmony, /node scripts\/vocal_harmony_ci_scope\.mjs/);
+  assert.match(harmony, /python tests\/native_harmony_assembly_test\.py/);
+  // The universal GUI PR quick lane must not run Vocal Harmony plugin
+  // contract tests and punish unrelated player work.
+  const quickUi = ui.slice(0, ui.indexOf('  floating-window-preview:'));
+  assert.doesNotMatch(quickUi, /python tests\/native_harmony_assembly_test\.py/);
+  assert.doesNotMatch(quickUi, /node --check site\/preview-v2\/assets\/mixer-native-harmony\.js/);
 });
