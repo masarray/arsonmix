@@ -279,3 +279,11 @@
 .console-body .external-out-state[data-status="PENDING"]{color:#e7c081}
 .console-body .external-out-state[data-status="MUTED"]{color:#abbcc2}
 .console-body .external-out-state[data-status="NEEDS_REMAP"]{color:#e0a18b}
+
+/* Shared physical-taper micro-ruler legibility. Owner-frozen fader/PNG asset
+   remains byte-identical; this narrowly scoped type correction prevents
+   -24/-36/-48 dB ink collisions on 1366x768 without moving hardware ticks. */
+.console-body .strip .fader-section .gain-tick span{
+ top:-4.5px!important;
+ font:500 9px/9px Inter,"Segoe UI",sans-serif!important;
+}
