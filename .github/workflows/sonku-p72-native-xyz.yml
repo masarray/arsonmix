@@ -1,0 +1,104 @@
+name: SonKu P7.2 native XYZ ACK and v3 state — isolated
+# No installer / full mixer compile. JUCE source adapter and pure C++ PCM.
+# Production remains LIGHT and SONK v2; P7.2 opt-in flag OFF by default.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - 'engine/builtin_fx/SonKuSpatialProcessor.h'
+      - 'engine/builtin_fx/sonku/**'
+      - 'tests/sonku_p72_*'
+      - 'CMakeLists.txt'
+      - '.github/workflows/sonku-p72-native-xyz.yml'
+permissions:
+  contents: read
+concurrency:
+  group: sonku-p72-native-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  source:
+    name: Pure native 44.1/48k PCM, SPSC-safe XYZ edit and P6/P7.1 parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Exact PR commit fingerprint
+        shell: bash
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          echo "SONKU_P72_EXACT_SHA=$EXPECTED"
+      - name: Compile and execute original default native PCM contracts
+        run: |
+          set -euo pipefail
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic tests/sonku_p6_realtime_quality_test.cpp -o /tmp/sonku-p6
+          /tmp/sonku-p6
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 tests/sonku_p71_xyz_direct_test.cpp -o /tmp/sonku-p71
+          /tmp/sonku-p71
+      - name: P7.2 live native ROOM edit + complete measured direct PCM
+        run: |
+          set -euo pipefail
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 \
+            -DSONKU_P72_NATIVE_XYZ_RT=1 \
+            tests/sonku_p72_realtime_xyz_test.cpp -o /tmp/sonku-p72
+          /tmp/sonku-p72
+  windows-juce:
+    name: Windows MSVC JUCE real native PCM→ACK→v3/legacy state
+    runs-on: windows-2022
+    timeout-minutes: 21
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Exact immutable source SHA before compilation
+        shell: pwsh
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $sha = (& git rev-parse HEAD).Trim()
+          if($LASTEXITCODE -ne 0 -or $sha -ne $env:EXPECTED) { throw "SONKU_P72_SHA_MISMATCH:$sha" }
+          Write-Host "SONKU_P72_WINDOWS_SOURCE_SHA=$sha"
+      - uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.15
+          path: third_party/JUCE
+          persist-credentials: false
+      - name: Pinned WebView2 CMake configure SDK (no installer)
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
+          if($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Configure research option explicitly ON; verify only required targets
+        shell: pwsh
+        run: |
+          cmake -S . -B build-sonku-p72 -G "Visual Studio 17 2022" -A x64 `
+            -DJUCE_ROOT="${{ github.workspace }}/third_party/JUCE" `
+            -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/.deps" `
+            -DARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=ON -DBUILD_TESTING=ON
+          if($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $tests = (& ctest --test-dir build-sonku-p72 -C Release --show-only=json-v1 | Out-String | ConvertFrom-Json)
+          if($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $found = @($tests.tests | ForEach-Object { $_.name })
+          foreach($name in @('NativeSonKuP72AtomicXyzLiveEditSource',
+                             'NativeSonKuP72JuceV3XyzLiveAckV1V2Restore',
+                             'NativeSonKuSessionV1V2AndAudioAppliedAck')) {
+            if($name -notin $found) { throw "SONKU_P72_MISSING_CTEST:$name" }
+          }
+      - name: Build only two P72 source/JUCE targets + original light regression
+        shell: pwsh
+        run: |
+          cmake --build build-sonku-p72 --config Release --parallel 2 --target ARMixSonKuP72SourceTests ARMixSonKuP72NativeTests ARMixSonKuNativeStateTests
+          if($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run native v3 ACK and v1/v2 corruption/restore CTests
+        shell: pwsh
+        run: |
+          ctest --test-dir build-sonku-p72 -C Release --output-on-failure `
+            -R '^NativeSonKu(P72AtomicXyzLiveEditSource|P72JuceV3XyzLiveAckV1V2Restore|SessionV1V2AndAudioAppliedAck)$'
+          if($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host 'SONKU_P72_JUCE_WINDOWS_3_CTESTS_PASS_NO_PHYSICAL_ASIO'
