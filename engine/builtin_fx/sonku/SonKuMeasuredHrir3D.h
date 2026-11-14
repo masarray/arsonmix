@@ -22,6 +22,7 @@ struct Row {int elevation; int count; const std::uint8_t* angles; const std::int
 inline constexpr int elevationCount=14;
 inline constexpr int elevationMin=-40;
 inline constexpr int elevationMax=90;
+// BEGIN GENERATED MEASUREMENT ARRAYS
 inline constexpr std::uint8_t az_m40[29]={0,6,13,19,26,32,39,45,51,58,64,71,77,84,90,96,103,109,116,122,129,135,141,148,154,161,167,174,180};
 inline constexpr std::uint8_t az_m30[31]={0,6,12,18,24,30,36,42,48,54,60,66,72,78,84,90,96,102,108,114,120,126,132,138,144,150,156,162,168,174,180};
 inline constexpr std::uint8_t az_m20[37]={0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140,145,150,155,160,165,170,175,180};
@@ -782,6 +783,7 @@ inline constexpr Row rows48000[elevationCount]={
   {80,7,az_p80,pcm48000_p80},
   {90,1,az_p90,pcm48000_p90},
 };
+// END GENERATED MEASUREMENT ARRAYS
 // Geometry update only (once per 64 PCM frames), never per audio sample.
 inline void interpolate(float azimuth,float elevation,bool use44100,
                         EarBank& destination) noexcept {

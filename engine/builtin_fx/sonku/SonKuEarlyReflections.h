@@ -6,6 +6,12 @@
 #include <cstddef>
 #include <cstdint>
 #include "SonKuMeasuredHrir.h"
+// The full licensed multi-elevation dataset and geometry are excluded from
+// default/public builds at preprocess time: no extra DSP or data cost.
+#if defined(SONKU_P7_MEASURED_ELEVATION_RESEARCH) && SONKU_P7_MEASURED_ELEVATION_RESEARCH
+#include "SonKuMeasuredHrir3D.h"
+#include "SonKuVerticalImageSource.h"
+#endif
 
 // Bounded, first-order image-source room for headphone externalization trials.
 // Reflection image geometry follows Allen & Berkley (JASA, 1979), not
@@ -19,16 +25,23 @@ enum class SonKuRoomShape : std::uint8_t { Rectangular=0, Square=1 };
 // No realtime mutation or native state schema is published by this experiment.
 struct SonKuRoomGeometry {
     float widthMeters=7.2f,depthMeters=7.2f,distanceMeters=1.6f;
+    // Research-only dimensions, no public .smix schema change.
+    float heightMeters=3.2f,listenerHeightMeters=1.6f,sourceHeightMeters=1.6f;
 };
 // One render profile is admitted at prepare time, never switched inside PCM.
 // The measured horizontal KEMAR path remains experimental until ASIO/AB FAT.
 enum class SonKuReflectionProfile : std::uint8_t {
-    Lightweight=0, DirectionalKemar=1
+    Lightweight=0, DirectionalKemar=1, SixSurfaceKemarResearch=2
 };
 class SonKuEarlyReflections final {
 public:
     struct Ears {float left=0.f,right=0.f;};
-    static constexpr int wallCount=4;
+    static constexpr int wallCount=4; // original wall paths remain exact
+#if defined(SONKU_P7_MEASURED_ELEVATION_RESEARCH) && SONKU_P7_MEASURED_ELEVATION_RESEARCH
+    static constexpr int maxWallCount=6; // add floor/ceiling only to P7
+#else
+    static constexpr int maxWallCount=wallCount;
+#endif
     static constexpr int sourceCount=2;
     static constexpr int ringFrames=8192;
     static constexpr int geometryInterval=64;
@@ -36,7 +49,11 @@ public:
                  SonKuReflectionProfile::Lightweight) noexcept {
         ready_=false;
         if(profile!=SonKuReflectionProfile::Lightweight &&
-           profile!=SonKuReflectionProfile::DirectionalKemar)return false;
+           profile!=SonKuReflectionProfile::DirectionalKemar
+#if defined(SONKU_P7_MEASURED_ELEVATION_RESEARCH) && SONKU_P7_MEASURED_ELEVATION_RESEARCH
+           && profile!=SonKuReflectionProfile::SixSurfaceKemarResearch
+#endif
+           )return false;
         if(!std::isfinite(rate) || (std::abs(rate-44100.)>.1 &&
                                     std::abs(rate-48000.)>.1))return false;
         rate_=static_cast<float>(rate);
@@ -50,7 +67,7 @@ public:
         profile_=profile;
         // P6: select the exact P2+P3+P4 kernels before publishing this
         // instance. No runtime transition, heap, mode queue or graph fork.
-        directionalHrir_=profile==SonKuReflectionProfile::DirectionalKemar;
+        directionalHrir_=profile!=SonKuReflectionProfile::Lightweight;
         fastZeroSpread_=directionalHrir_;
         fastContiguousHrir_=directionalHrir_;
         realtimeMode_=false;
@@ -151,6 +168,12 @@ public:
                          bool enabled) noexcept {
         if(!std::isfinite(amount)||amount<0.f||amount>1.f)return false;
         if(enabled && !validGeometry(g))return false;
+#if defined(SONKU_P7_MEASURED_ELEVATION_RESEARCH) && SONKU_P7_MEASURED_ELEVATION_RESEARCH
+        if(enabled && profile_==SonKuReflectionProfile::SixSurfaceKemarResearch &&
+           !sixsurface::fitsDelayRing(
+               {g.heightMeters,g.listenerHeightMeters,g.sourceHeightMeters},
+               g.distanceMeters,rate_,ringFrames,hrir::taps))return false;
+#endif
         if(!active() && enabled && amount>0.f){
             validFrames_=0; lowpass_.fill(0.f);
         }
@@ -170,6 +193,14 @@ public:
     SonKuRoomShape shape() const noexcept {return shape_;}
     bool active() const noexcept {return ready_&&(amount_>0.f||amountTarget_>0.f);}
     float targetAmount() const noexcept {return amountTarget_;}
+    int activeWallCount() const noexcept {
+#if defined(SONKU_P7_MEASURED_ELEVATION_RESEARCH) && SONKU_P7_MEASURED_ELEVATION_RESEARCH
+        return profile_==SonKuReflectionProfile::SixSurfaceKemarResearch
+            ?maxWallCount:wallCount;
+#else
+        return wallCount; // original shipping source optimizes to 4
+#endif
+    }
     Ears process(float left,float right,double azimuth,float spread) noexcept {
         if(!active())return {};
         if(untilGeometry_==0){
@@ -197,7 +228,7 @@ public:
                          fuseEligible_ && spread==0.f;
         Ears output{};
         for(int s=0;s<(fused?1:sourceCount);++s){
-            for(int wall=0;wall<wallCount;++wall){
+            for(int wall=0;wall<activeWallCount();++wall){
                 auto& p=tap_[s][wall];
                 p.delayL+=delaySlew_*(p.targetDelayL-p.delayL);
                 p.delayR+=delaySlew_*(p.targetDelayR-p.delayR);
@@ -378,11 +409,43 @@ private:
                 }
             }
         }
+#if defined(SONKU_P7_MEASURED_ELEVATION_RESEARCH) && SONKU_P7_MEASURED_ELEVATION_RESEARCH
+        if(profile_==SonKuReflectionProfile::SixSurfaceKemarResearch){
+            const sixsurface::RoomHeight heights{
+                geometry_.heightMeters,geometry_.listenerHeightMeters,
+                geometry_.sourceHeightMeters};
+            for(int source=0;source<sourceCount;++source){
+                const float sourceAz=static_cast<float>(azimuth)+
+                    (source==0?-.5f:.5f)*spread;
+                for(int i=0;i<2;++i){
+                    const auto boundary=i==0?sixsurface::Boundary::Floor:
+                                               sixsurface::Boundary::Ceiling;
+                    const auto arrival=sixsurface::image(
+                        heights,sourceDistance,sourceAz,boundary,rate_);
+                    auto& p=tap_[source][wallCount+i];
+                    // Measured HRIR already contains directional ITD/ILD.
+                    // No invented extra ear delay, EQ or pseudo elevation.
+                    const float delay=std::clamp(arrival.delaySamples,1.f,
+                        static_cast<float>(ringFrames-hrir::taps-3));
+                    p.targetDelayL=p.targetDelayR=delay;
+                    p.targetGainL=p.targetGainR=arrival.gain;
+                    hrir3d::interpolate(arrival.azimuth,arrival.elevation,
+                                        std::abs(rate_-44100.f)<.1f,
+                                        p.targetKernel);
+                    if(!primed_){
+                        p.kernel=p.targetKernel;
+                        p.delayL=p.delayR=delay;
+                        p.gainL=p.gainR=arrival.gain;
+                    }
+                }
+            }
+        }
+#endif
         primed_=true;
     }
     static_assert((ringFrames&(ringFrames-1))==0);
     std::array<std::array<float,ringFrames>,sourceCount> history_{};
-    std::array<std::array<Tap,wallCount>,sourceCount> tap_{};
+    std::array<std::array<Tap,maxWallCount>,sourceCount> tap_{};
     std::array<float,sourceCount> lowpass_{};
     using Bank=const std::int16_t (*)[2][hrir::taps];
     Bank hrirBank_=nullptr;
