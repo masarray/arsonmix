@@ -7,6 +7,9 @@
 #include "../engine/builtin_fx/VocalThrowProcessor.h"
 #include "../engine/builtin_fx/GuitarRigEditor.h"
 #include "../engine/builtin_fx/SonKuSpatialProcessor.h"
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P82_ROOM) && ARMIX_SONKU_EXPERIMENTAL_P82_ROOM
+#include "../engine/builtin_fx/GrandStageProcessor.h"
+#endif
 #include "../engine/core/PreparedMixerBlock.h"
 #include <array>
 #include <cmath>
@@ -83,6 +86,16 @@ inline constexpr std::array nativeBuiltInFx{
         "NATIVE_SONKU_UNSUPPORTED_AUDIO_FORMAT","NATIVE_SONKU_PREPARE_REJECTED",
         "NATIVE_SONKU_PREPARE_EXCEPTION","Saved 8D-SonKu state rejected; graph unchanged",
         prepareNativeBuiltInFx<SonKuSpatialProcessor>},
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P82_ROOM) && ARMIX_SONKU_EXPERIMENTAL_P82_ROOM
+    // Audio path is SonKu P8.2 ONLY. Never advertise on a public/legacy build.
+    NativeBuiltInFx{GrandStageProcessor::catalogIdentity,
+        "Harmonice GrandStage","Spatial",true,44100.,48000.,
+        "NATIVE_GRANDSTAGE_HOST_UNAVAILABLE","NATIVE_GRANDSTAGE_DEVICE_CHANGED",
+        "NATIVE_GRANDSTAGE_UNSUPPORTED_AUDIO_FORMAT","NATIVE_GRANDSTAGE_PREPARE_REJECTED",
+        "NATIVE_GRANDSTAGE_PREPARE_EXCEPTION",
+        "Saved GrandStage state rejected; graph unchanged",
+        prepareNativeBuiltInFx<GrandStageProcessor>},
+#endif
     NativeBuiltInFx{GuitarRigProcessor::catalogIdentity,"Guitar FX Rig","Guitar",true,32000.,192000.,
         "NATIVE_GFX_HOST_UNAVAILABLE","NATIVE_GFX_DEVICE_CHANGED",
         "NATIVE_GFX_UNSUPPORTED_AUDIO_FORMAT","NATIVE_GFX_PREPARE_REJECTED",
