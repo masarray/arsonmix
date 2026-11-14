@@ -173,7 +173,7 @@ const depthLayers={far:$("skFarSources"),near:$("skNearSources")};
 const mount=()=>{if(!root.isConnected)document.body.append(root)};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
- xyzCapable=false,musicSafeStereo=false,p80MeasuredTimbre=false,
+ xyzCapable=false,musicSafeStereo=false,p80MeasuredTimbre=false,p82RoomGeometry=false,
  readId="",readSentAt=0,seq=1,clock=null,frame=null,observed=0,observedAt=0,
  drag=null,dialDrag=null,rangeEdits=new Set(),gestureStart=new Map(),
  visualPhase=0,visualAt=0,liveTimer=null,lastLiveAt=0;
@@ -231,7 +231,9 @@ function render(){
   if(!rangeEdits.has("skElevation"))elevation.value=String(s.directElevationDegrees);
   $("skElevationValue").textContent=s.directElevationDegrees.toFixed(1)+"°";
  }
- root.querySelector(".sk-stage-caption").textContent=p80MeasuredTimbre
+ root.querySelector(".sk-stage-caption").textContent=p82RoomGeometry
+  ?"HEADPHONES · KEMAR + GEOMETRIC LATE ROOM · RESEARCH"
+  :p80MeasuredTimbre
   ?"HEADPHONES · MEASURED TIMBRE · 3D KEMAR · RESEARCH"
   :musicSafeStereo
   ?"HEADPHONES · MEASURED CENTER 3D HRTF + MUSIC SIDE · EXPERIMENT"
@@ -255,7 +257,8 @@ function render(){
  // redrawn at 60 Hz. The native audio callback remains the time authority.
  drawSpeakers();
  $("skMode").textContent=native()?(context()?
-  (p80MeasuredTimbre?"NATIVE TIMBRE P8.0 · RESEARCH":
+  (p82RoomGeometry?"NATIVE ROOM P8.2 · RESEARCH":
+   p80MeasuredTimbre?"NATIVE TIMBRE P8.0 · RESEARCH":
    musicSafeStereo?"NATIVE MUSIC SAFE · RESEARCH":"NATIVE HRTF"):
   "NATIVE UNAVAILABLE"):"VISUAL ONLY · NO AUDIO";
 }
@@ -406,6 +409,9 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  p80MeasuredTimbre=musicSafeStereo && r.measuredTimbre===true &&
   Number.isFinite(r.measuredTimbreShelfDb) &&
   r.measuredTimbreShelfDb>=0 && r.measuredTimbreShelfDb<=4.5001;
+ p82RoomGeometry=p80MeasuredTimbre && r.roomGeometryLate===true &&
+  Number.isInteger(r.roomLatePreDelaySamples) &&
+  r.roomLatePreDelaySamples>0 && r.roomLatePreDelaySamples<=4096;
  readId="";readSentAt=0;
  if(pending) {
   if(!pending.ack || r.appliedRequestId!==pending.requestId){
@@ -428,7 +434,7 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  }
  render();
 });
-$("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapable=false;musicSafeStereo=false;p80MeasuredTimbre=false;
+$("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapable=false;musicSafeStereo=false;p80MeasuredTimbre=false;p82RoomGeometry=false;
  cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
  drag=null;rangeEdits.clear();gestureStart.clear();lastLiveAt=0;
  if(clock!==null){clearInterval(clock);clock=null;}
@@ -581,7 +587,7 @@ const api={
   cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
   observedAt=0;visualAt=0;visualPhase=0;lastLiveAt=0;
   drag=null;rangeEdits.clear();gestureStart.clear();
-  accepted=defaults();draft=defaults();xyzCapable=false;musicSafeStereo=false;p80MeasuredTimbre=false;
+  accepted=defaults();draft=defaults();xyzCapable=false;musicSafeStereo=false;p80MeasuredTimbre=false;p82RoomGeometry=false;
   current={track,slot,instanceId:null};
   const s=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const fx=s?.graph?.channels?.find(x=>x.id===id)?.inserts?.[slot];
