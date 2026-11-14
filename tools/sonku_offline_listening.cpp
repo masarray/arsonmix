@@ -3,7 +3,11 @@
 // 8D-SonKu measured HRTF core. No external music, WebAudio or second engine.
 // Generates lossless stereo WAVs for listening and blind front/rear evaluation.
 // Audio is NONPERSONALIZED MIT KEMAR, so perceptual externalization is UNPROVEN.
+#if defined(SONKU_AB_BASELINE)
+#include "../.baseline-sonku/engine/builtin_fx/sonku/SonKuSpatialCore.h"
+#else
 #include "../engine/builtin_fx/sonku/SonKuSpatialCore.h"
+#endif
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -141,6 +145,43 @@ std::vector<std::uint8_t> orbit(float roomAmount=0.f,
         throw std::runtime_error("Two turns do not close acoustic orbit");
     return result;
 }
+// Native anti-phase stereo proof using three original harmonics, not
+// copyrighted music or an imitation of a proprietary dearVR recording.
+// Equal LEVEL, timing, HRTF and 0-degree stereo spread across all variants;
+// only one input channel's polarity differs.
+std::vector<std::uint8_t> musicIntegrityProof(float azimuth,bool inverted,
+                                                  float stereoSpread=0.f) {
+    SonKuSpatialCore dsp;
+    Settings settings=fixed(azimuth);
+    settings.stereoSpreadDegrees=stereoSpread;
+    if(!dsp.prepare(rate)||
+       !dsp.setSettings(settings))
+        throw std::runtime_error("Music integrity fixture not prepared");
+    constexpr int total=rate*4;
+    constexpr float pi=3.14159265358979323846f;
+    std::vector<std::uint8_t> audio;
+    audio.reserve(static_cast<std::size_t>(total)*4);
+    for(int at=0;at<total;at+=framesPerBlock){
+        const int count=std::min(framesPerBlock,total-at);
+        std::array<float,framesPerBlock> l{},r{};
+        for(int i=0;i<count;++i){
+            const int n=at+i;
+            const float t=static_cast<float>(n)/rate;
+            const float env=std::clamp(
+                std::min(n,total-1-n)/static_cast<float>(rate/30),0.f,1.f);
+            const float x=env*(.12f*std::sin(2.f*pi*220.f*t)+
+                               .07f*std::sin(2.f*pi*330.f*t)+
+                               .04f*std::sin(2.f*pi*660.f*t)+
+                               .035f*std::sin(2.f*pi*2000.f*t));
+            l[static_cast<std::size_t>(i)]=x;
+            r[static_cast<std::size_t>(i)]=inverted?-x:x;
+        }
+        dsp.process(l.data(),r.data(),count);
+        for(int i=0;i<count;++i)appendStereo(audio,l[i],r[i]);
+    }
+    return audio;
+}
+
 // Original 20-second plucked-tone motif (20 half-second events, repeated on
 // both revolutions). Synthesized here rather than using protected recordings.
 // This deliberately exposes metallic late-tail coloration hidden by noise tests.
@@ -268,7 +309,13 @@ void notes(const std::filesystem::path& directory,
       <<"decay programs = 0.78 / 1.28 / 2.05 s. NOT volume-normalized.\n"
       <<"Not simulated: air absorption, floor/ceiling, personalized HRTF,\n"
       <<"direct path time-of-flight, or higher-order wall reflections.\n"
-      <<"Offline candidates only, NO native GUI/session/product release.\n";
+      <<"P0 MUSIC INTEGRITY measured native stereo comparison:\n"
+       <<"sonku-music-positive-front.wav = reference coherent stereo.\n"
+       <<"sonku-music-anti-phase-front.wav = L=-R at FRONT 0 deg.\n"
+       <<"sonku-music-anti-phase-rear.wav = L=-R at REAR 180 deg.\n"
+       <<"Same original 3-tone source, level, 4s clock, 0 spread and HRIR.\n"
+       <<"Headphone listening only; preservation is NOT externalization proof.\n"
+       <<"Offline candidates only, NO native GUI/session/product release.\n";
     std::ofstream key(directory/"BLIND-ANSWER-KEY.txt");
     if(!key)throw std::runtime_error("Cannot write blind answer key");
     key<<"OPEN ONLY AFTER LISTENING. Exact 2.5-second trial windows:\n";
@@ -276,11 +323,205 @@ void notes(const std::filesystem::path& directory,
         key<<"Trial "<<i+1<<": "<<direction(blind[i])<<"\n";
 }
 }
+// P1.1 original two-instrument stress fixture: 220Hz coherent bass masks
+// frequency-local inverted 3200Hz treble in a positive full-band correlation.
+std::vector<std::uint8_t> musicSplitBandProof() {
+    SonKuSpatialCore dsp;
+    Settings scene=fixed(0.f);
+    scene.stereoSpreadDegrees=0.f;
+    if(!dsp.prepare(rate)||!dsp.setSettings(scene))
+        throw std::runtime_error("Split-band SonKu fixture not prepared");
+    constexpr int total=rate*4;
+    constexpr float pi=3.14159265358979323846f;
+    std::vector<std::uint8_t> output;
+    output.reserve(static_cast<std::size_t>(total)*4);
+    for(int at=0;at<total;at+=framesPerBlock) {
+        const int count=std::min(framesPerBlock,total-at);
+        std::array<float,framesPerBlock> l{},r{};
+        for(int i=0;i<count;++i) {
+            const int n=at+i;
+            const float env=std::clamp(
+                std::min(n,total-1-n)/static_cast<float>(rate/30),0.f,1.f);
+            const float t=static_cast<float>(n)/rate;
+            const float bass=env*.13f*std::sin(2.f*pi*220.f*t);
+            const float treble=env*.06f*std::sin(2.f*pi*3200.f*t);
+            l[i]=bass+treble;
+            r[i]=bass-treble;
+        }
+        dsp.process(l.data(),r.data(),count);
+        for(int i=0;i<count;++i)appendStereo(output,l[i],r[i]);
+    }
+    return output;
+}
+#if !defined(SONKU_AB_BASELINE)
+// P2: exact same original synthetic harmonics and direct KEMAR PCM;
+// ONLY the wall reflections switch from simple ITD/ILD to image-HRIR.
+std::vector<std::uint8_t> directionalRoomAudio(int azimuth,bool measured,
+                                               bool fused=false,
+                                               bool contiguous=false,
+                                               float spread=0.f,
+                                               bool independentStereo=false) {
+    SonKuSpatialCore dsp;
+    if(!dsp.prepare(rate) ||
+       (measured && !dsp.setDirectionalEarlyReflectionsHrir(true)) ||
+       (fused && !dsp.setDirectionalZeroSpreadFusion(true)) ||
+       (contiguous && !dsp.setDirectionalContiguousHrir(true)) ||
+       !dsp.setEarlyReflectionsShape(armix::sonku::SonKuRoomShape::Square) ||
+       !dsp.setEarlyReflectionsAmount(.55f))
+        throw std::runtime_error("SonKu P2 preparation failed");
+    Settings s=fixed(static_cast<float>(azimuth));
+    s.outputTrim=.65f;s.stereoSpreadDegrees=spread;
+    if(!dsp.setSettings(s))throw std::runtime_error("P2 source invalid");
+    constexpr int total=rate*2;
+    constexpr float pi=3.14159265358979323846f;
+    std::vector<std::uint8_t> pcm;
+    pcm.reserve(static_cast<std::size_t>(total)*4);
+    for(int at=0;at<total;at+=framesPerBlock) {
+        const int n=std::min(framesPerBlock,total-at);
+        std::array<float,framesPerBlock> l{},r{};
+        for(int i=0;i<n;++i) {
+            const int f=at+i;
+            const float t=static_cast<float>(f)/rate;
+            const float env=std::clamp(
+                std::min(f,total-1-f)/static_cast<float>(rate/30),0.f,1.f);
+            const float x=env*(.065f*std::sin(2.f*pi*165.f*t)+
+                .045f*std::sin(2.f*pi*660.f*t)+
+                .028f*std::sin(2.f*pi*2200.f*t)+
+                .018f*std::sin(2.f*pi*4700.f*t));
+            l[i]=x;
+            // P4 also probes distinct, non-collapsible stereo emitters.
+            // P2/P3 established reference fixture stays unchanged.
+            r[i]=independentStereo?env*(
+                .055f*std::sin(2.f*pi*165.f*t)+
+                .038f*std::sin(2.f*pi*940.f*t)-
+                .025f*std::sin(2.f*pi*2200.f*t)+
+                .016f*std::sin(2.f*pi*5100.f*t)):x;
+        }
+        dsp.process(l.data(),r.data(),n);
+        for(int i=0;i<n;++i)appendStereo(pcm,l[i],r[i]);
+    }
+    return pcm;
+}
+void writeP4ContiguousAudio(const std::filesystem::path& dir){
+    for(int azimuth:{0,180}){
+        const std::string side=azimuth==0?"front":"rear";
+        for(int spread:{60,120}){
+            const std::string suffix=side+"-spread"+std::to_string(spread);
+            writeWav(dir/("sonku-p4-full-"+suffix+".wav"),
+                directionalRoomAudio(azimuth,true,false,false,
+                                     static_cast<float>(spread),true));
+            writeWav(dir/("sonku-p4-contiguous-"+suffix+".wav"),
+                directionalRoomAudio(azimuth,true,false,true,
+                                     static_cast<float>(spread),true));
+        }
+    }
+    std::ofstream guide(dir/"P4-ORIGINAL-STEREO-REFERENCE.txt");
+    if(!guide)throw std::runtime_error("Missing P4 guide output");
+    guide<<"8 native headphone WAVs: 4 original P2 vs P4 pairs.\n"
+         <<"FRONT and REAR at 60/120 degrees spread; 48kHz 16bit.\n"
+         <<"Original synthesized independent L/R stems with four harmonics.\n"
+         <<"Both renderers use full 140-tap measured KEMAR reflections.\n"
+         <<"Expect byte-identical PCM, not an externalization difference.\n";
+}
+void writeP3FusionAudio(const std::filesystem::path& dir){
+    for(int azimuth:{0,180}){
+        const std::string name=azimuth==0?"front":"rear";
+        writeWav(dir/("sonku-p3-reference-"+name+".wav"),
+                 directionalRoomAudio(azimuth,true,false));
+        writeWav(dir/("sonku-p3-fused-"+name+".wav"),
+                 directionalRoomAudio(azimuth,true,true));
+    }
+    std::ofstream guide(dir/"P3-MUSIC-QUALITY-GUIDE.txt");
+    if(!guide)throw std::runtime_error("P3 guide output invalid");
+    guide<<"P3 native identical-source P2/P3 A/B FRONT and REAR.\n"
+         <<"2 seconds 48kHz 16-bit. Headphones only at safe volume.\n"
+         <<"All 140 KEMAR reflection taps retained and identical direct.\n"
+         <<"No claim about externalization, real music or ASIO.\n";
+}
+void writeDirectionalRoomAudio(const std::filesystem::path& dir) {
+    for(int azimuth:{0,180}) {
+        const std::string direction=azimuth==0?"front":"rear";
+        writeWav(dir/("sonku-p2-light-"+direction+".wav"),
+            directionalRoomAudio(azimuth,false));
+        writeWav(dir/("sonku-p2-directional-"+direction+".wav"),
+            directionalRoomAudio(azimuth,true));
+    }
+    std::ofstream guide(dir/"P2-HEADPHONE-LISTENING.txt");
+    if(!guide)throw std::runtime_error("Missing P2 guide output");
+    guide<<"Four 2s SonKu A/B WAVs: identical original synth source.\n"
+         <<"FRONT / REAR; compare light ER vs measured directional ER.\n"
+         <<"Unmodified direct KEMAR, same output trim and room amount.\n"
+         <<"Headphones only, safe playback gain, no OS spatial enhancer.\n"
+         <<"These audio files are NOT subjective externalization proof.\n";
+}
+#endif // candidate-only experimental P2 renderer
+// Shared by the whole listening package and the fast PR-scoped integrity
+// experiment. No expensive 20-second room renders in the new fast lane.
+void writeMusicIntegrityEvidence(const std::filesystem::path& dir) {
+    writeWav(dir/"sonku-music-positive-front.wav",
+             musicIntegrityProof(0.f,false));
+    writeWav(dir/"sonku-music-anti-phase-front.wav",
+             musicIntegrityProof(0.f,true));
+    writeWav(dir/"sonku-music-anti-phase-rear.wav",
+             musicIntegrityProof(180.f,true));
+    writeWav(dir/"sonku-music-coherent-front-spread60.wav",
+             musicIntegrityProof(0.f,false,60.f));
+    writeWav(dir/"sonku-music-coherent-rear-spread60.wav",
+             musicIntegrityProof(180.f,false,60.f));
+    writeWav(dir/"sonku-music-splitband-bass-coherent-treble-inverted.wav",
+             musicSplitBandProof());
+    std::ofstream guide(dir/"MUSIC-INTEGRITY-LISTENING.txt");
+    if(!guide)throw std::runtime_error("Cannot write integrity guide");
+    guide<<"Six original synthetic 4s fixtures, 48kHz/16-bit stereo.\n"
+         <<"Baseline and candidate use the same generated sources and\n"
+         <<"identical native KEMAR playback settings. HEADPHONES ONLY.\n"
+         <<"1: positive coherent L=R FRONT, spread 0.\n"
+         <<"2: inverted L=-R FRONT, spread 0.\n"
+         <<"3: inverted L=-R REAR, spread 0.\n"
+         <<"4: positive coherent FRONT, spread 60 degrees.\n"
+         <<"5: positive coherent REAR, spread 60 degrees.\n"
+         <<"6: coherent 220Hz bass plus inverted 3200Hz treble FRONT, spread 0.\n"
+         <<"Do NOT infer dearVR-level spatialization or externalization\n"
+         <<"from a numerical restoration of the stereo side information.\n";
+}
 int main(int argc,char** argv){
     try{
-        if(argc!=2)throw std::runtime_error("Usage: sonku-offline-demo OUTPUT_DIRECTORY");
+        if(argc!=2 && !(argc==3 &&
+            (std::string(argv[2])=="--music-integrity-only" ||
+             std::string(argv[2])=="--directional-er-only" ||
+             std::string(argv[2])=="--p3-fusion-only" ||
+             std::string(argv[2])=="--p4-contiguous-only")))
+            throw std::runtime_error("Usage: sonku-offline-demo OUTPUT_DIRECTORY [--music-integrity-only]");
         const std::filesystem::path dir(argv[1]);
         std::filesystem::create_directories(dir);
+        if(argc==3){
+            if(std::string(argv[2])=="--directional-er-only") {
+#if !defined(SONKU_AB_BASELINE)
+                writeDirectionalRoomAudio(dir);
+                std::cout<<"P2 directional room 4 WAV rendered\n";
+#else
+                throw std::runtime_error("P2 directional room only exists in candidate");
+#endif
+            } else if(std::string(argv[2])=="--p4-contiguous-only"){
+#if !defined(SONKU_AB_BASELINE)
+                writeP4ContiguousAudio(dir);
+                std::cout<<"P4 original independent-stereo eight WAV rendered\n";
+#else
+                throw std::runtime_error("P4 research unavailable in alpha.23");
+#endif
+            } else if(std::string(argv[2])=="--p3-fusion-only"){
+#if !defined(SONKU_AB_BASELINE)
+                writeP3FusionAudio(dir);
+                std::cout<<"P3 same-source four A/B WAV rendered\n";
+#else
+                throw std::runtime_error("P3 reference unavailable in alpha.23");
+#endif
+            } else {
+                writeMusicIntegrityEvidence(dir);
+                std::cout<<"Music-integrity 6x headphone A/B WAV PASS\n";
+            }
+            return 0;
+        }
         constexpr std::array<int,4> reference{0,90,180,-90};
         const std::vector<int> blind{180,0,-90,90,90,180,0,-90};
         writeWav(dir/"sonku-reference-four.wav",
@@ -349,6 +590,7 @@ int main(int argc,char** argv){
         emitScene("sonku-m4-musical-chamber-far-2x.wav",2,5.f);
         emitScene("sonku-m4-musical-large-near-2x.wav",3,1.6f);
         emitScene("sonku-m4-musical-large-far-2x.wav",3,8.f);
+        writeMusicIntegrityEvidence(dir);
         notes(dir,blind);
         std::cout<<"SonKu listening package PASS: measured native HRTF, "
                  <<"4 labeled + 8 blind directions + two uninterrupted 360 turns\n";

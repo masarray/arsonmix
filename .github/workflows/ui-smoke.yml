@@ -113,6 +113,8 @@ jobs:
           node --check site/preview-v2/assets/mixer-native-sonku.js
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_spatial_core_test.cpp -o /tmp/armix-sonku-core-smoke
           /tmp/armix-sonku-core-smoke
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_multiband_phase_test.cpp -o /tmp/armix-sonku-band-smoke
+          /tmp/armix-sonku-band-smoke
           python tests/native_peq_assembly_test.py
           python tests/native_v60_fader_assembly_contract.py
           python tests/approved_operator_ux_smoke.py
@@ -198,7 +200,7 @@ jobs:
     needs: quick
     # Both 8D-SonKu and SOF native-owner PRs share ONE actual Chromium runner.
     # Preserve fast-only checks for unrelated GUI and engine branches.
-    if: ${{ (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feat/8d-sonku-') || startsWith(github.head_ref, 'feat/sonku-') || startsWith(github.head_ref, 'test/sof-native-') || startsWith(github.head_ref, 'integration/sof-sonku-main-') || startsWith(github.head_ref, 'fix/native-wire-inspector-') || (startsWith(github.head_ref, 'integration/sonku-m4-wire-') || startsWith(github.head_ref, 'integration/sonku-m4-guitar-picker-') || startsWith(github.head_ref, 'fix/sonku-')))) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/feat/8d-sonku-') && inputs.expected_sha != '') }}
+    if: ${{ (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feat/8d-sonku-') || (startsWith(github.head_ref, 'feat/sonku-') && !startsWith(github.head_ref, 'feat/sonku-music-integrity-')) || startsWith(github.head_ref, 'test/sof-native-') || startsWith(github.head_ref, 'integration/sof-sonku-main-') || startsWith(github.head_ref, 'fix/native-wire-inspector-') || (startsWith(github.head_ref, 'integration/sonku-m4-wire-') || startsWith(github.head_ref, 'integration/sonku-m4-guitar-picker-') || startsWith(github.head_ref, 'fix/sonku-')))) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/feat/8d-sonku-') && inputs.expected_sha != '') }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -275,6 +277,80 @@ jobs:
             native-wire-gain-*.png
           if-no-files-found: ignore
           retention-days: 7
+
+  sonku-music-integrity-audio:
+    name: SonKu music integrity native WAV/CPU (no Chromium, no Windows packaging)
+    needs: quick
+    if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/sonku-music-integrity-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      # Public alpha.23 is immutable baseline; fetch ONLY SonKu engine
+      # headers for matched native C++ reference rendering (no JUCE/SDK).
+      - name: Checkout immutable public alpha.23 SonKu baseline headers
+        uses: actions/checkout@v4
+        with:
+          ref: 4a6e47e2905a4aa995f879045a907abee8b1aae5
+          path: .baseline-sonku
+          persist-credentials: false
+          sparse-checkout: |
+            engine/builtin_fx/sonku
+          sparse-checkout-cone-mode: true
+      - name: Render and numerically compare six native PCM music A/B tracks
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tools/sonku_offline_listening.cpp -o /tmp/sonku-integrity-audio
+          /tmp/sonku-integrity-audio sonku-integrity-evidence --music-integrity-only
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic -DSONKU_AB_BASELINE tools/sonku_offline_listening.cpp -o /tmp/sonku-integrity-baseline
+          /tmp/sonku-integrity-baseline sonku-integrity-baseline --music-integrity-only
+          python tests/sonku_music_integrity_comparison.py sonku-integrity-baseline sonku-integrity-evidence
+      - name: P2 measured-KEMAR early reflection source regression
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_directional_reflections_test.cpp -o /tmp/sonku-p2-er
+          /tmp/sonku-p2-er
+      - name: P3 directional zero-spread fusion PCM and spread-transition regression
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_p3_spread_zero_fusion_test.cpp -o /tmp/sonku-p3-fusion-test
+          /tmp/sonku-p3-fusion-test
+      - name: P4 ring-wrap/source-motion full-HRIR equivalence regression
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_p4_contiguous_reflections_test.cpp -o /tmp/sonku-p4-regression
+          /tmp/sonku-p4-regression
+      - name: P5 ROOM OFF ON fresh-history directional FIR protection
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_p5_room_reactivation_test.cpp -o /tmp/sonku-p5-room
+          /tmp/sonku-p5-room
+      - name: P2 original voice-like headphone A/B and numeric PCM comparison
+        run: |
+          /tmp/sonku-integrity-audio sonku-integrity-evidence --directional-er-only
+          python tests/sonku_directional_reflections_audio_audit.py sonku-integrity-evidence
+      - name: P3 exact-source FRONT/REAR native P2/P3 PCM A/B
+        run: |
+          /tmp/sonku-integrity-audio sonku-integrity-evidence --p3-fusion-only
+          python tests/sonku_p3_fusion_audio_audit.py sonku-integrity-evidence
+      - name: P4 original independent stereo 60/120 FRONT/REAR PCM identity
+        run: |
+          /tmp/sonku-integrity-audio sonku-integrity-evidence --p4-contiguous-only
+          python tests/sonku_p4_contiguous_audio_audit.py sonku-integrity-evidence
+      - name: Broad KEMAR frequency-response integrity audit (44.1k/48k)
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_hrir_spectral_audit.cpp -o /tmp/sonku-hrir-audit
+          /tmp/sonku-hrir-audit > sonku-integrity-evidence/KEMAR-SPECTRAL-AUDIT.csv
+          test "$(($(wc -l < sonku-integrity-evidence/KEMAR-SPECTRAL-AUDIT.csv)-1))" -eq 380
+      - name: Same-runner informational SonKu native realtime CPU check
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tools/sonku_rt_benchmark.cpp -o /tmp/sonku-integrity-cpu
+          /tmp/sonku-integrity-cpu
+      - name: Upload original lossless music-integrity proof
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-SonKu-Phase-Integrity-${{ github.run_id }}
+          path: |
+            sonku-integrity-evidence/*
+            sonku-integrity-baseline/*
+          if-no-files-found: ignore
+          retention-days: 14
 
   vocal-throw-preview:
     name: Vocal Delay native editor desktop/mobile Chromium FAT

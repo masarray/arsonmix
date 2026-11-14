@@ -3,6 +3,7 @@
 #include "SonKuMeasuredHrir.h"
 #include "SonKuEarlyReflections.h"
 #include "SonKuMusicalReverb.h"
+#include "SonKuStereoIntegrity.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -73,7 +74,8 @@ public:
         distanceSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.030)));
         bassSlew_=static_cast<float>(1.-std::exp(-2.*3.14159265358979323846*180./rate));
         limiterRelease_=static_cast<float>(1./(rate*0.080));
-        if(!room_.prepare(rate)||!reverb_.prepare(rate))return false;
+        if(!room_.prepare(rate)||!reverb_.prepare(rate)||
+           !integrity_.prepare(rate))return false;
         reset();
         ready_=true;
         // Re-publish a saved active scene after device restart, but do NOT
@@ -100,6 +102,7 @@ public:
         haveKernel_=false;
         room_.reset();
         reverb_.reset();
+        integrity_.reset();
     }
     bool setSettings(const Settings& s) noexcept {
         if(!valid(s))return false;
@@ -130,6 +133,18 @@ public:
     // Explicit A/B-only shape selection; never persisted or host-exposed.
     bool setEarlyReflectionsShape(SonKuRoomShape shape) noexcept {
         return room_.setShape(shape);
+    }
+    // Experimental offline only. No persisted or native/UI renderer switch.
+    bool setDirectionalEarlyReflectionsHrir(bool on) noexcept {
+        return room_.setDirectionalHrir(on);
+    }
+    // P3 offline-only matched-source-direction optimization; no .smix ABI.
+    bool setDirectionalZeroSpreadFusion(bool on) noexcept {
+        return room_.setDirectionalZeroSpreadFusion(on);
+    }
+    // P4 research opt-in, no on-disk state nor native GUI control.
+    bool setDirectionalContiguousHrir(bool on) noexcept {
+        return room_.setDirectionalContiguousHrir(on);
     }
     // Offline M3 distance/large-room acoustic trial. Not a GUI/native ABI.
     bool setAcousticRoomGeometry(const SonKuRoomGeometry& geometry) noexcept {
@@ -181,6 +196,13 @@ public:
             }
             const float x0=std::isfinite(left[i])?left[i]:0.f;
             const float x1=std::isfinite(right[i])?right[i]:0.f;
+            // Preserve strong anti-correlated music side energy without
+            // collapsing it into the two virtual mono HRTF sources. The
+            // independent guard has no hidden UI state or new audio bus.
+            const float preservedSide=integrity_.preservedSide(x0,x1);
+            // At native spatialMix=0 the dry input stays bit-exact.
+            // At ordinary positively-correlated stereo the guard is zero.
+            const float sideRescue=.65f*smoothedMix_*smoothedTrim_*preservedSide;
             history_[0][write_]=x0;
             history_[1][write_]=x1;
             float ears[2]{0.f,0.f};
@@ -213,13 +235,13 @@ public:
                 // ROOM OFF and gain <= unity. Newly boosted GAIN > unity
                 // uses the protected branch below even with ROOM OFF.
                 if(distanceGain==1.f) {
-                    left[i]=dryLevel*x0+legacyBinauralLevel*(ears[0]+reflection.left+late.left);
-                    right[i]=dryLevel*x1+legacyBinauralLevel*(ears[1]+reflection.right+late.right);
+                    left[i]=dryLevel*x0+legacyBinauralLevel*(ears[0]+reflection.left+late.left)+sideRescue;
+                    right[i]=dryLevel*x1+legacyBinauralLevel*(ears[1]+reflection.right+late.right)-sideRescue;
                 } else {
                     left[i]=dryLevel*x0+legacyBinauralLevel*
-                        (distanceGain*ears[0]+reflection.left+late.left);
+                        (distanceGain*ears[0]+reflection.left+late.left)+sideRescue;
                     right[i]=dryLevel*x1+legacyBinauralLevel*
-                        (distanceGain*ears[1]+reflection.right+late.right);
+                        (distanceGain*ears[1]+reflection.right+late.right)-sideRescue;
                 }
             } else {
                 // Slew gain changes per sample; a typed 1.6→8 m edit must
@@ -263,9 +285,9 @@ public:
                 // When ROOM OFF is reselected after a native scene, the
                 // additional wet presence smoothly decays with its own engine.
                 float outL=smoothedTrim_*
-                    (dryLevel*x0+sceneBinauralLevel*smoothedRoomLevel_*spatialL);
+                    (dryLevel*x0+sceneBinauralLevel*smoothedRoomLevel_*spatialL)+sideRescue;
                 float outR=smoothedTrim_*
-                    (dryLevel*x1+sceneBinauralLevel*smoothedRoomLevel_*spatialR);
+                    (dryLevel*x1+sceneBinauralLevel*smoothedRoomLevel_*spatialR)-sideRescue;
                 // Zero-lookahead *linked* sample-peak safety guard. Quiet
                 // signals are linear; peaks are gently returned below unity
                 // without routing through a second engine or allocating.
@@ -300,7 +322,8 @@ private:
     }
     // Positive azimuth is right. MIT KEMAR supplied azimuth 0..180 with
     // symmetric opposite-ear swapping for left hemisphere, not yaw-panning.
-    void interpolate(std::size_t source,double azimuth) noexcept {
+    using EarKernel=std::array<std::array<float,taps>,2>;
+    void interpolate(EarKernel& destination,double azimuth) noexcept {
         const double norm=wrapDegrees(azimuth);
         const bool swapped=norm>180.;
         const double positive=swapped?360.-norm:norm;
@@ -315,15 +338,40 @@ private:
                 const float next=scale*(static_cast<float>(bank_[lo][measuredEar][k])*(1.f-u)
                     + static_cast<float>(bank_[hi][measuredEar][k])*u);
                 // Recompute target every 16 samples, interpolate per sample.
-                targets_[source][ear][k]=next;
+                destination[ear][k]=next;
             }
         }
     }
     void updateKernels() noexcept {
-        interpolate(0,degrees_-static_cast<double>(settings_.stereoSpreadDegrees)*0.5);
-        interpolate(1,degrees_+static_cast<double>(settings_.stereoSpreadDegrees)*0.5);
-        // First prepared sample is a valid full-level measured HRIR; only
-        // subsequent direction edits slew, avoiding initial audio dropout.
+        interpolate(targets_[0],
+            degrees_-static_cast<double>(settings_.stereoSpreadDegrees)*0.5);
+        interpolate(targets_[1],
+            degrees_+static_cast<double>(settings_.stereoSpreadDegrees)*0.5);
+        // A stereo L=R object should become ONE virtual source at the central
+        // azimuth. Averaging two displaced HRIRs generates comb filtering
+        // (for example ~11dB attenuation near 2 kHz at rear/60° in KEMAR).
+        // Algebraic M/S projection, without a third convolution:
+        //  H_L' = H_L + mu*(H_center - (H_L+H_R)/2)
+        //  H_R' = H_R + mu*(H_center - (H_L+H_R)/2)
+        // The mid gets the true center HRIR as mu→1, while the SIDE
+        // transfer H_L'-H_R' is unchanged for ANY mu. Mono channel
+        // inputs/correlated scene intensity remain native PCM-only.
+        const float coherent=integrity_.coherentAmount();
+        if(coherent>1.e-5f && settings_.stereoSpreadDegrees>0.f) {
+            interpolate(centerTarget_,degrees_);
+            for(int ear=0;ear<2;++ear) {
+                for(int k=0;k<taps;++k) {
+                    const float half=.5f*
+                        (targets_[0][ear][k]+targets_[1][ear][k]);
+                    const float correction=coherent*
+                        (centerTarget_[ear][k]-half);
+                    targets_[0][ear][k]+=correction;
+                    targets_[1][ear][k]+=correction;
+                }
+            }
+        }
+        // The first prepared sample uses the original full-level measured
+        // HRIR; the correction and later direction edits slew per sample.
         if(!haveKernel_)kernels_=targets_;
         haveKernel_=true;
     }
@@ -332,9 +380,11 @@ private:
     std::array<std::array<float,taps>,2> history_{};
     std::array<std::array<std::array<float,taps>,2>,2> kernels_{};
     std::array<std::array<std::array<float,taps>,2>,2> targets_{};
+    EarKernel centerTarget_{};  // fixed target coefficients, no extra PCM FIR
     Settings settings_{};
     SonKuEarlyReflections room_{};
     SonKuMusicalReverb reverb_{};
+    SonKuStereoIntegrity integrity_{};
     float smoothedMix_=1.f,smoothedTrim_=0.75f;
     float smoothedDistanceGain_=1.f,smoothedRoomLevel_=1.f;
     float smoothedBassShelf_=0.f,limiterGain_=1.f;

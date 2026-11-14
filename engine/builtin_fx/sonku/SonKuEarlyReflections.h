@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include "SonKuMeasuredHrir.h"
 
 // Bounded, first-order image-source room for headphone externalization trials.
 // Reflection image geometry follows Allen & Berkley (JASA, 1979), not
@@ -34,6 +35,8 @@ public:
         delaySlew_=static_cast<float>(1.-std::exp(-1./(rate*0.024)));
         gainSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.012)));
         amountSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.010)));
+        kernelSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.008)));
+        hrirBank_=(rate==44100.)?hrir::normal44100:hrir::normal48000;
         reset();
         ready_=true;
         return true;
@@ -44,7 +47,38 @@ public:
         for(auto& paths:tap_)for(auto& p:paths)p=Tap{};
         write_=0;untilGeometry_=0;primed_=false;validFrames_=0;
         amount_=0.f;
+        fuseEligible_=true;
     }
+    // OFFLINE A/B ONLY: existing approved room mode remains bit-exact by
+    // default. Reject mode changes while active; no public state/GUI switch.
+    bool setDirectionalHrir(bool enabled) noexcept {
+        if(active())return false;
+        directionalHrir_=enabled;
+        if(!enabled){fastZeroSpread_=false;fastContiguousHrir_=false;}
+        fuseEligible_=true;
+        untilGeometry_=0;primed_=false;
+        return true;
+    }
+    bool directionalHrirEnabled() const noexcept{return directionalHrir_;}
+    // Offline-only P3 exact-linear four-wall source fusion. Valid ONLY
+    // while both emitters share the same direction (spread == 0).
+    // This changes no public settings or live graph authority.
+    bool setDirectionalZeroSpreadFusion(bool enabled) noexcept {
+        if(active() || (enabled && !directionalHrir_))return false;
+        fastZeroSpread_=enabled;
+        fuseEligible_=true;
+        return true;
+    }
+    bool zeroSpreadFusionEnabled() const noexcept{return fastZeroSpread_;}
+    // P4 experimental, inactive-only: eliminate per-tap circular masking
+    // when the delayed 140-tap HRIR FIR window is wholly in one ring span.
+    // No duplicated ring storage and no HRIR coefficient truncation.
+    bool setDirectionalContiguousHrir(bool enabled) noexcept {
+        if(active() || (enabled && !directionalHrir_))return false;
+        fastContiguousHrir_=enabled;
+        return true;
+    }
+    bool contiguousHrirEnabled() const noexcept{return fastContiguousHrir_;}
     // Deliberately experimental and OFF by default. Legacy 8/8 direction
     // baseline stays bit-identical. A/B is set on an unpublished/offline core
     // until headphone, CPU and device gates approve native publication.
@@ -134,16 +168,92 @@ public:
         // Bound shutdown to a finite 10-12 time-constant fade, then
         // restore strict bit-exact OFF/zero CPU on the next callback.
         if(std::abs(amount_-amountTarget_)<1.e-5f)amount_=amountTarget_;
+        // Linearity: for identical source/image direction, FIR(H, xL) +
+        // FIR(H, xR) = FIR(H, xL+xR). Stereo content need not be mono.
+        // Any nonzero spread permanently disarms fusion until reset, so
+        // live spread edits cannot reuse stale second-path filter state.
+        if(fastZeroSpread_ && spread!=0.f)fuseEligible_=false;
+        const bool fused=directionalHrir_ && fastZeroSpread_ &&
+                         fuseEligible_ && spread==0.f;
         Ears output{};
-        for(int s=0;s<sourceCount;++s){
+        for(int s=0;s<(fused?1:sourceCount);++s){
             for(int wall=0;wall<wallCount;++wall){
                 auto& p=tap_[s][wall];
                 p.delayL+=delaySlew_*(p.targetDelayL-p.delayL);
                 p.delayR+=delaySlew_*(p.targetDelayR-p.delayR);
                 p.gainL+=gainSlew_*(p.targetGainL-p.gainL);
                 p.gainR+=gainSlew_*(p.targetGainR-p.gainR);
-                output.left+=p.gainL*delayed(s,p.delayL);
-                output.right+=p.gainR*delayed(s,p.delayR);
+                if(directionalHrir_) {
+                    // Image path is common to both ears; KEMAR supplies
+                    // measured ITD/ILD and directional spectral pinna cues.
+                    const float delay=std::clamp(p.delayL,1.f,
+                        static_cast<float>(ringFrames-hrir::taps-3));
+                    const int d=static_cast<int>(delay);
+                    const float frac=delay-d;
+                    const int idx=(write_-d)&(ringFrames-1);
+                    const auto& signal=history_[s];
+                    float l=0.f,r=0.f;
+                    // ROOM may have been OFF for a long time without writing
+                    // new audio into history_. After reactivation never read
+                    // old, pre-OFF samples as new directional reflections.
+                    // The fractional-delay source requires both adjacent
+                    // samples to be from the current activation epoch.
+                    // Zero-filling a 64KiB ring inside the callback is banned.
+                    const int freshTaps=realtimeMode_?
+                        std::clamp(validFrames_-d,0,hrir::taps):hrir::taps;
+                    const bool warming=freshTaps<hrir::taps;
+                    // One source of truth for the coefficient slew and ear
+                    // FIR arithmetic; only history address selection varies.
+                    // Advance kernels even while history is warming.
+                    const auto render=[&](auto&& sample) noexcept {
+                        for(int k=0;k<hrir::taps;++k){
+                            const float v=(warming && k>=freshTaps)
+                                ?0.f:sample(k);
+                            auto& hL=p.kernel[0][k];
+                            auto& hR=p.kernel[1][k];
+                            hL+=kernelSlew_*(p.targetKernel[0][k]-hL);
+                            hR+=kernelSlew_*(p.targetKernel[1][k]-hR);
+                            if(fused){
+                                tap_[1][wall].kernel[0][k]=hL;
+                                tap_[1][wall].kernel[1][k]=hR;
+                            }
+                            l+=v*hL;r+=v*hR;
+                        }
+                    };
+                    if(fastContiguousHrir_ && idx>=hrir::taps){
+                        // For 8052/8192 ring positions the entire 140-tap
+                        // window is continuous; no wrap mask inside FIR.
+                        const float* first=signal.data()+idx;
+                        const float* second=history_[1].data()+idx;
+                        render([&](int k) noexcept {
+                            return fused
+                                ?((1.f-frac)*(first[-k]+second[-k])+
+                                    frac*(first[-k-1]+second[-k-1]))
+                                :((1.f-frac)*first[-k]+frac*first[-k-1]);
+                        });
+                    }else{
+                        // Exact, original masked circular reference path,
+                        // used for all non-opt-in and near-wrap samples.
+                        render([&](int k) noexcept {
+                            const int at=(idx-k)&(ringFrames-1);
+                            const int prev=(at-1)&(ringFrames-1);
+                            return fused
+                                ?((1.f-frac)*(signal[at]+history_[1][at])+
+                                    frac*(signal[prev]+history_[1][prev]))
+                                :((1.f-frac)*signal[at]+frac*signal[prev]);
+                        });
+                    }
+                    if(fused){
+                        auto& second=tap_[1][wall];
+                        second.delayL=p.delayL;second.delayR=p.delayR;
+                        second.gainL=p.gainL;second.gainR=p.gainR;
+                    }
+                    output.left+=p.gainL*l;
+                    output.right+=p.gainR*r;
+                }else{
+                    output.left+=p.gainL*delayed(s,p.delayL);
+                    output.right+=p.gainR*delayed(s,p.delayR);
+                }
             }
         }
         write_=(write_+1)&(ringFrames-1);
@@ -160,6 +270,8 @@ private:
         float delayL=1.f,delayR=1.f,gainL=0.f,gainR=0.f;
         float targetDelayL=1.f,targetDelayR=1.f;
         float targetGainL=0.f,targetGainR=0.f;
+        using EarBank=std::array<std::array<float,hrir::taps>,2>;
+        EarBank kernel{},targetKernel{};
     };
     float delayed(int source,float delay) const noexcept {
         // Fractional delay interpolated in a fixed-size power-of-two ring.
@@ -204,7 +316,7 @@ private:
                 const float extra=(path-sourceDistance)*rate_/speedOfSound;
                 // Constant 0.31ms ear baseline makes differential ITD
                 // symmetric while keeping every reflection causal.
-                const float common=extra+earHalfTime*rate_;
+                const float common=extra+(directionalHrir_?0.f:earHalfTime*rate_);
                 const float earDelta=directionX*earHalfTime*rate_;
                 // New distance studies use fixed 1.6m acoustic reference:
                 // pressure at a reflected path falls with 1/path. Legacy
@@ -212,12 +324,32 @@ private:
                 const float level=.28f*walls[wall]*
                                   ((custom_?1.6f:sourceDistance)/path);
                 auto& tap=tap_[source][wall];
-                tap.targetDelayL=std::clamp(common+earDelta,1.f,
+                tap.targetDelayL=std::clamp(common+(directionalHrir_?0.f:earDelta),1.f,
                                            static_cast<float>(ringFrames-3));
-                tap.targetDelayR=std::clamp(common-earDelta,1.f,
+                tap.targetDelayR=std::clamp(common-(directionalHrir_?0.f:earDelta),1.f,
                                            static_cast<float>(ringFrames-3));
-                tap.targetGainL=level*(1.f-.13f*directionX);
-                tap.targetGainR=level*(1.f+.13f*directionX);
+                tap.targetGainL=level*(directionalHrir_?1.f:(1.f-.13f*directionX));
+                tap.targetGainR=level*(directionalHrir_?1.f:(1.f+.13f*directionX));
+                if(directionalHrir_){
+                    // The IMAGE-source arrival angle, NOT source azimuth.
+                    const float dir=std::atan2(x,y)*180.f/pi;
+                    const float pos=std::abs(dir)/hrir::spacingDegrees;
+                    const int lo=std::clamp(static_cast<int>(pos),0,
+                        hrir::directions-1);
+                    const int hi=std::min(lo+1,hrir::directions-1);
+                    const float t=pos-lo;
+                    constexpr float scale=1.f/32768.f;
+                    for(int ear=0;ear<2;++ear){
+                        const int measured=dir<0.f?1-ear:ear;
+                        for(int k=0;k<hrir::taps;++k){
+                            const float value=scale*
+                                ((1.f-t)*hrirBank_[lo][measured][k]+
+                                  t*hrirBank_[hi][measured][k]);
+                            tap.targetKernel[ear][k]=value;
+                            if(!primed_)tap.kernel[ear][k]=value;
+                        }
+                    }
+                }
                 if(!primed_){
                     tap.delayL=tap.targetDelayL;
                     tap.delayR=tap.targetDelayR;
@@ -232,12 +364,17 @@ private:
     std::array<std::array<float,ringFrames>,sourceCount> history_{};
     std::array<std::array<Tap,wallCount>,sourceCount> tap_{};
     std::array<float,sourceCount> lowpass_{};
-    float rate_=0.f,delaySlew_=0.f,gainSlew_=0.f,amountSlew_=0.f;
+    using Bank=const std::int16_t (*)[2][hrir::taps];
+    Bank hrirBank_=nullptr;
+    float rate_=0.f,delaySlew_=0.f,gainSlew_=0.f,amountSlew_=0.f,kernelSlew_=0.f;
     float amount_=0.f,amountTarget_=0.f;
     int write_=0,untilGeometry_=0,validFrames_=0;
     bool realtimeMode_=false;
     SonKuRoomShape shape_=SonKuRoomShape::Rectangular;
     SonKuRoomGeometry geometry_{};
     bool custom_=false,ready_=false,primed_=false;
+    bool directionalHrir_=false;
+    bool fastZeroSpread_=false,fuseEligible_=true;
+    bool fastContiguousHrir_=false;
 };
 } // namespace armix::sonku
