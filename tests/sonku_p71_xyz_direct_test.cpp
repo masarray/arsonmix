@@ -102,11 +102,11 @@ int main(){
          if(i>=48 && i<400)early+=std::abs(lb[i]-la[i])+std::abs(rb[i]-ra[i]);
        }
        assert(energy>.01&&difference>.1&&early>1e-5);
+       assert(std::abs(exact->azimuthDegrees()-chunks->azimuthDegrees())<1e-7);
        assert(!exact->setResearchDirectElevation(0.f)); // never mutate running PCM
-       exact->reset();
+       exact->reset(); // legitimately repositions the orbit to the scene start
        assert(!exact->setResearchDirectElevation(0.f)); // reset is NOT unpublish
        assert(exact->researchDirectElevation()==elev);
-       assert(std::abs(exact->azimuthDegrees()-chunks->azimuthDegrees())<1e-7);
        // Device re-prepare uses the same explicit research placement,
        // but a switch to P6 clears research-only elevation.
        assert(exact->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch));
