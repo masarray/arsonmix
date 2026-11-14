@@ -3,6 +3,7 @@
 #undef NDEBUG
 #endif
 #include "../engine/builtin_fx/ImerSipProcessor.h"
+#include "../src/NativeBuiltInFx.h"
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -17,6 +18,23 @@ using armix::builtin_fx::ImerSipProcessor;
 using armix::imersip::Settings;
 
 int main() {
+    // CRITICAL: the P8.2 PCM research flag must register ImerSip in the
+    // exact native catalog emitted by ConsoleWindow::emitCatalog().
+    // Without this gate Windows tests once passed but the FX Picker omitted
+    // the effect because CMake did not define the *old* macro.
+    const auto* descriptor=armix::builtin_fx::findNativeBuiltInFx(
+        ImerSipProcessor::catalogIdentity);
+    assert(descriptor!=nullptr);
+    assert(descriptor->showInPicker);
+    assert(std::strcmp(descriptor->name,"ImerSip")==0);
+    assert(std::strcmp(descriptor->category,"Spatial")==0);
+    assert(descriptor->minimumLiveRate==44100.);
+    assert(descriptor->maximumLiveRate==48000.);
+    auto catalogInstance=descriptor->prepare(48000.,128,nullptr,0);
+    assert(catalogInstance);
+    assert(dynamic_cast<ImerSipProcessor*>(catalogInstance.get())!=nullptr);
+    catalogInstance.reset();
+
     ImerSipProcessor fx;
     assert(fx.getName()=="ImerSip");
     assert(fx.isBusesLayoutSupported(fx.getBusesLayout()));
