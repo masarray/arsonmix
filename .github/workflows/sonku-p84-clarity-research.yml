@@ -10,6 +10,7 @@ on:
       - 'tests/sonku_p84_fused_single_core_test.cpp'
       - 'tests/sonku_p84_fused_hosted_cpu_benchmark.cpp'
       - 'tests/sonku_p84_spatial_impulse_evidence_test.cpp'
+      - 'tools/sonku_p84_offline_audition.cpp'
       - 'docs/SONKU_P84_CLARITY_FIRST_ARCHITECTURE_20261115.md'
       - '.github/workflows/sonku-p84-clarity-research.yml'
   workflow_dispatch:
@@ -81,6 +82,58 @@ jobs:
             tests/sonku_p84_spatial_impulse_evidence_test.cpp -o /tmp/p84-spatial
           /tmp/p84-spatial | tee /tmp/p84-spatial.log
           grep -q '^PASS P84 SPATIAL SOURCE:' /tmp/p84-spatial.log
+      - name: Actual one-core WAV audition CLI, ROOM ON/OFF and four calibrated-input files
+        shell: bash
+        run: |
+          set -euo pipefail
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 \
+            -DSONKU_P72_NATIVE_XYZ_RT=1 \
+            -DSONKU_P75_MUSIC_SAFE_RESEARCH=1 \
+            -DSONKU_P80_TRANSPARENT_BASS_RESEARCH=1 \
+            -DSONKU_P82_MULTIBAND_ROOM_RESEARCH=1 \
+            -DSONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1 \
+            -DSONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1 \
+            tools/sonku_p84_offline_audition.cpp -o /tmp/p84-wav-audition
+          python3 - <<'PY'
+          import wave, struct, math
+          with wave.open('/tmp/p84-original.wav','wb') as o:
+              o.setnchannels(2);o.setsampwidth(2);o.setframerate(48000)
+              pcm=bytearray()
+              for i in range(8192):
+                  t=i/48000
+                  bass=.16*math.sin(2*math.pi*83*t)
+                  vocal=.10*math.sin(2*math.pi*461*t)
+                  side=.11*math.sin(2*math.pi*1703*t)
+                  l=bass+vocal+side
+                  r=bass+vocal-side
+                  pcm+=struct.pack('<hh',int(l*32767),int(r*32767))
+              o.writeframes(pcm)
+          PY
+          /tmp/p84-wav-audition /tmp/p84-original.wav /tmp/p84-room-off --room=off
+          /tmp/p84-wav-audition /tmp/p84-original.wav /tmp/p84-room-on --room=on
+          python3 - <<'PY'
+          from pathlib import Path
+          import csv,struct,math
+          names=('P82_Golden','P84_FusedYaw0','P84_FusedYawPlus60','P84_FusedYawMinus60')
+          for room in ('off','on'):
+              directory=Path('/tmp/p84-room-'+room)
+              with (directory/'sonku_p84_music_audition_metrics.csv').open() as f:
+                  rows=list(csv.DictReader(f))
+              assert len(rows)==4
+              assert {x['variant'] for x in rows}==set(names)
+              for row in rows:
+                  assert math.isfinite(float(row['output_rms']))
+                  assert float(row['output_peak'])<1.0
+                  path=directory/(row['variant']+'.wav')
+                  data=path.read_bytes()
+                  assert data[:4]==b'RIFF' and data[8:12]==b'WAVE'
+                  assert data[36:40]==b'fact'
+                  assert len(data)==8192*8+56
+              assert abs(float(rows[0]['relative_rms_db_vs_p82']))<1e-12
+          print('PASS P84 REAL WAV CLI: PCM16 source, float32 fact, four same-input native variants, ROOM ON/OFF')
+          PY
       - name: Hosted CPU 1-4 inserts 64-256 buffer research (not ASIO XRUN)
         shell: bash
         run: |
