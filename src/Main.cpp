@@ -3430,11 +3430,11 @@ private:
             mixerSessionError_=appearanceError;
         }
         diagnostics_.record("MIXER_FACTORY_RESET",
-            mixerSessionStatus_+" | SOURCE NONE / NO FX / NO WIRE / MAIN MUTED");
+            mixerSessionStatus_+" | SOURCE NONE / NO FX / NO CUSTOM WIRE / MAIN MUTED");
         emitApprovedNativeSnapshot();
         emitMixerSessionAck("RESET");
         emitNotice(startupError_.isEmpty()
-            ? "Mixer reset to factory defaults. No FX or WIRE; output muted. Select INPUT and verify MAIN before unmuting."
+            ? "Mixer reset to factory defaults. No FX or custom WIRE; output muted. Select INPUT and verify MAIN before unmuting."
             : "Saved mixer cleared; audio device needs reconfiguration in Audio I/O: "+startupError_,
             startupError_.isNotEmpty() || appearanceError.isNotEmpty());
     }
