@@ -60,9 +60,16 @@
     </div>
     <div class="ap-statusbar"><div id="playerFeedback" class="ap-feedback" role="status" aria-live="polite">Add music to begin</div><button id="playerChooseOutput" type="button" hidden>Choose output</button><button id="playerRelink" type="button" hidden>Locate file</button></div>
     <div class="ap-listhead"><strong>Setlist</strong><span id="playerCount" class="ap-sub">0 songs</span><button id="playerAddFolder" class="ap-folder" type="button" aria-label="Add all music from a folder" title="Add music folder"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg></button><button id="playerAdd" type="button">+ Add Music</button></div>
+    <div class="ap-settools" aria-label="Setlist management">
+      <select id="playerSetlistSelect" aria-label="Active setlist"></select>
+      <button id="playerNewSetlist" type="button" title="Create an empty setlist">+ Set</button>
+      <button id="playerDeleteSetlist" type="button" title="Remove this setlist, not its music files">Remove set</button>
+    </div>
+    <div class="ap-setname"><input id="playerSetlistName" type="text" maxlength="64" aria-label="Rename active setlist" placeholder="Setlist name"><button id="playerUndoRemove" type="button" hidden>Undo remove</button></div>
     <input id="playerSearch" type="search" placeholder="Search songs" aria-label="Search music in setlist" autocomplete="off">
-    <div id="playerList" role="listbox" aria-label="Setlist songs"></div>
-    <div class="ap-foot">Click to prepare · Double-click to play · Native audio through your mixer</div>`;
+    <div id="playerList" role="list" aria-label="Setlist songs"></div>
+    <div id="playerQueuePanel" class="ap-queue" hidden><div class="ap-queue-title">Up Next · <span id="playerQueueCount">0</span></div><div id="playerQueueList" role="list" aria-label="Queued songs"></div></div>
+    <div class="ap-foot">Select NEXT · Double-click to play · Drag or ↑/↓ to reorder · Native mixer audio</div>`;
   toolbar.insertAdjacentElement('afterend',panel);
   const base=document.currentScript?.src||document.baseURI;
   // Player CSS is folded into the EXISTING approved runtime stylesheet.
