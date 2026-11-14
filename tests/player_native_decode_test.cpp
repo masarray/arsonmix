@@ -307,6 +307,33 @@ int main() {
         changeDuringPlayback(0,100); // normal 0/100 passthrough restored
         assert(player.snapshot().played>original.played);
         } // ensure native decoder closes the file before Windows deletion
+        // Relinking an edited/shorter file must reject a stale IN marker,
+        // not play a misleading 1-sample tail as if music were valid.
+        {
+            armix::player::NativePlayerDeck badCue;
+            badCue.deviceRate(48000.0);
+            assert(badCue.setCueRange(9.0,0.0)); // valid metadata, not this WAV
+            badCue.load(longFile,true);         // genuine file is 8 seconds
+            bool rejected=false;
+            for(int i=0;i<600;++i) {
+                const auto state=badCue.snapshot();
+                if(state.state==armix::player::NativePlayerDeck::State::error) {
+                    assert(state.error.containsIgnoreCase("IN marker"));
+                    rejected=true;break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            assert(rejected && !badCue.snapshot().outputReady);
+            assert(badCue.setCueRange(1.0,4.0));
+            badCue.load(longFile,true);
+            bool recovered=false;
+            for(int i=0;i<600;++i) {
+                if(badCue.isPlayingRequested()){recovered=true;break;}
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            assert(recovered);
+            badCue.stop();
+        }
         // M2: genuine JUCE WAV -> resampler -> generation-fenced seek,
         // with progressive waveform indexed ONLY during decoding.
         {
