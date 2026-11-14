@@ -26,7 +26,7 @@ assert.match(activation,/for \(auto\* control : \{ getMinimiseButton\(\), getMax
 assert.match(activation,/control->setEnabled \(true\)/);
 assert.doesNotMatch(activation,/startTimer|setAlwaysOnTop|toFront|SetForegroundWindow|engine_/);
 assert.match(chrome,/void paintButton \(juce::Graphics& g, bool over, bool down\) override/);
-assert.match(chrome,/if \(over \|\| down\)/);
+assert.match(chrome,/if \(over \|\| pressed\)/);
 
 assert.match(main, /setUsingNativeTitleBar \(false\)/);
 assert.match(main, /setTitleBarHeight \(31\)/);
@@ -41,8 +41,8 @@ const palette = chrome.slice(chrome.indexOf('static CaptionPalette paletteFor'),
                              chrome.indexOf('static std::unique_ptr<juce::Drawable> load'));
 assert.ok(palette.length > 300, 'native caption must own one state palette');
 assert.match(chrome, /const auto palette = paletteFor \(kind_\)/);
-assert.match(chrome, /down \? palette\.pressedFace : palette\.hoverFace/);
-assert.match(chrome, /down \? palette\.pressedEdge : palette\.hoverEdge/);
+assert.match(chrome, /pressed \? palette\.pressedFace : palette\.hoverFace/);
+assert.match(chrome, /pressed \? palette\.pressedEdge : palette\.hoverEdge/);
 assert.match(palette, /closeButton[\s\S]*?0xff5c3039[\s\S]*?0xffab5864[\s\S]*?0xffef3e50[\s\S]*?0xffff8993/);
 assert.match(palette, /minimiseButton[\s\S]*?0xff244e3a[\s\S]*?0xff4ead7a[\s\S]*?0xff1fb76b[\s\S]*?0xff8be2b4/);
 assert.match(palette, /0xff584929[\s\S]*?0xffbc9544[\s\S]*?0xffe5ae2b[\s\S]*?0xffffdf81/);
@@ -50,14 +50,37 @@ assert.doesNotMatch(palette, /0xff50d4e7|0xff67b9ff|0xff168fa7|0xff287abd/);
 assert.match(chrome, /drawRoundedRectangle/);
 assert.match(chrome, /parent->isFullScreen\(\)/);
 
+/* JUCE 8 Button::mouseUp runs its listener before the message-loop's paint:
+ * Close/minimize vanish and maximize changes geometry before the bright click
+ * face is drawn. Test a real bounded, one-shot paint->dispatch handoff, not
+ * just the existence of red/green/amber palette hex values. */
+assert.match(chrome,/class MixerCaptionButton final : public juce::Button, private juce::Timer/);
+assert.match(chrome,/const bool pressed = down \|\| pendingClick_/);
+assert.match(chrome,/g\.setColour \(pressed \? palette\.pressedFace : palette\.hoverFace\)/);
+assert.match(chrome,/g\.setColour \(pressed \? palette\.pressedEdge : palette\.hoverEdge\)/);
+assert.match(chrome,/pressed && pressedRestoreIcon_ != nullptr/);
+assert.match(chrome,/pressed && pressedIcon_ != nullptr/);
+const defer=chrome.slice(chrome.indexOf('void internalClickCallback ('),
+                         chrome.indexOf('private:\n    struct CaptionPalette'));
+assert.match(defer,/if \(!isEnabled\(\) \|\| pendingClick_\)\s*return/);
+assert.match(defer,/pendingModifiers_ = modifiers/);
+assert.match(defer,/pendingClick_ = true;\s*repaint\(\);\s*startTimer \(160\)/);
+assert.match(defer,/void timerCallback\(\) override/);
+assert.match(defer,/stopTimer\(\);\s*pendingClick_ = false;\s*repaint\(\);/);
+assert.match(defer,/juce::Button::internalClickCallback \(pendingModifiers_\)/);
+assert.equal((defer.match(/juce::Button::internalClickCallback/g)||[]).length,1,
+ 'a caption click must dispatch once, through the original JUCE listener');
+assert.doesNotMatch(defer,/engine_|WebView|setAlwaysOnTop|toFront|sleep|Thread::sleep|std::thread/);
+
+
 /* Dark-ink pressed glyphs are prebuilt once, not reparsed/recoloured when
    paintButton receives a hover or pointer-down transition. Maintain WCAG
    non-text graphic contrast against the luminous green/amber pressed faces. */
 assert.match(chrome, /pressedIcon_ = load \(iconPath, kind == juce::DocumentWindow::minimiseButton/);
 assert.match(chrome, /pressedRestoreIcon_ = load \(restorePath/);
 assert.match(chrome, /const bool restoring = kind_ == juce::DocumentWindow::maximiseButton/);
-assert.match(chrome, /down && pressedRestoreIcon_ != nullptr/);
-assert.match(chrome, /down && pressedIcon_ != nullptr/);
+assert.match(chrome, /pressed && pressedRestoreIcon_ != nullptr/);
+assert.match(chrome, /pressed && pressedIcon_ != nullptr/);
 assert.match(chrome, /static std::unique_ptr<juce::Drawable> load \(const char\* path, const char\* ink/);
 const paint = chrome.slice(chrome.indexOf('void paintButton '), chrome.indexOf('private:\n    struct CaptionPalette'));
 assert.doesNotMatch(paint, /Drawable::createFromSVG|XmlDocument::parse|std::make_unique|new juce::/);
