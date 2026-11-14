@@ -1,0 +1,73 @@
+name: ArSon Player native dual-deck (focused Windows JUCE)
+# Windows source verification only when native player decoder/deck changes.
+# Never runs installer, full CTest, Harmony DSP, or hardware-dependent FAT.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - 'engine/player/NativePlayerDeck.h'
+      - 'engine/player/NativePlayerShowDeck.h'
+      - 'tests/player_native_decode_test.cpp'
+      - '.github/workflows/player-native-deck-windows.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: player-deck-windows-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-deck:
+    name: Real WAV/JUCE seek, loop, STOP and single-PCM dual deck (MSVC)
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact source SHA
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $env:EXPECTED_SHA) {
+            throw "PLAYER_DECK_SOURCE_SHA_MISMATCH expected=$env:EXPECTED_SHA actual=$actual"
+          }
+          Write-Host "PLAYER_DECK_SOURCE_SHA=$actual"
+      - name: Checkout pinned JUCE 8
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.15
+          path: third_party/JUCE
+      - name: Install WebView2 SDK required by common CMake configure
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Configure CMake, assertions enabled by source test
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DJUCE_ROOT="${{ github.workspace }}/third_party/JUCE" `
+            -DBUILD_TESTING=ON `
+            -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/.deps"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $catalogText = & ctest --test-dir build -C Release --show-only=json-v1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $catalog = ($catalogText | Out-String | ConvertFrom-Json)
+          if ('ArSonPlayerRealWavDecodeResampleAndTransport' -notin @($catalog.tests | ForEach-Object { $_.name })) {
+            throw 'PLAYER_DECK_CTEST_MISSING'
+          }
+      - name: Compile ONLY real native player decoder test target
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel 2 --target ARMixPlayerDecodeTests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run ONLY real WAV player/loop/seek/crossfade regression
+        shell: pwsh
+        run: |
+          ctest --test-dir build -C Release --output-on-failure `
+            -R '^ArSonPlayerRealWavDecodeResampleAndTransport$'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host 'PLAYER_DECK_REAL_JUCE_WAV_CTEST=PASS (physical ASIO NOT qualified)'
