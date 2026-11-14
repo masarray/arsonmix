@@ -3034,6 +3034,13 @@ private:
         reply->setProperty("schemaVersion",
             armix::builtin_fx::sonku_bridge::schemaVersion());
         reply->setProperty("status",processor?"ACCEPTED":"REJECTED");
+#if defined(SONKU_P75_MUSIC_SAFE_RESEARCH) && SONKU_P75_MUSIC_SAFE_RESEARCH
+        // Read-only experiment capability is authoritative only for a real
+        // leased native SonKu instance. No public UI or saved state change.
+        if(processor && processor->preparedReflectionProfile()==
+                armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch)
+            reply->setProperty("musicSafeStereo",true);
+#endif
         if(processor) {
             reply->setProperty("settings",
                 armix::builtin_fx::sonku_bridge::acceptedSettings(
