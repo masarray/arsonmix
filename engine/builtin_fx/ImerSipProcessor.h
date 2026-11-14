@@ -34,8 +34,8 @@ public:
     void setCurrentProgram(int) override {}
     const juce::String getProgramName(int) override {return "Concert Hall";}
     void changeProgramName(int,const juce::String&) override {}
-    bool hasEditor() const override {return false;}
-    juce::AudioProcessorEditor* createEditor() override {return nullptr;}
+    bool hasEditor() const override {return true;}
+    juce::AudioProcessorEditor* createEditor() override;
     bool isBusesLayoutSupported(const BusesLayout& layout) const override {
         return layout.getMainInputChannelSet()==juce::AudioChannelSet::stereo()
             && layout.getMainOutputChannelSet()==juce::AudioChannelSet::stereo();
@@ -80,6 +80,11 @@ public:
     }
 
     void getStateInformation(juce::MemoryBlock& dest) override {
+        // Native mixer save runs on CONTROL. A popup closed immediately
+        // after audio ACK must not serialize the previous settings simply
+        // because its editor timer no longer polls the completion FIFO.
+        Completion drained{};
+        while(pollCompletion(drained)){}
         juce::MemoryOutputStream out(dest,false);
         out.writeInt(0x494D5253); // IMRS; isolated from SonKu/old research state
         out.writeInt(1);
@@ -124,3 +129,6 @@ private:
     bool published_=false;
 };
 } // namespace armix::builtin_fx
+
+// JUCE editor implementation shares this exact processor, never a second DSP.
+#include "ImerSipEditor.h"
