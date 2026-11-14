@@ -725,7 +725,10 @@
         t.trim=c.inputGainDb;
         const root=document.querySelector('.strip[data-id="'+t.id+'"]');
         const slider=root?.querySelector('input[data-field="trim"]');
-        if(slider&&document.activeElement!==slider){
+        // Focus remains on a knob after a harmless click. Defer readback
+        // only for an intentional, currently active drag; otherwise the
+        // installed native snapshot stays authoritative even while focused.
+        if(slider&&slider.dataset.gainDragging!=='true'){
           slider.value=String(t.trim);
           slider.closest(".gain-dial")?.style.setProperty("--gain-rotation",
             (t.trim*5.625).toFixed(2)+"deg");

@@ -330,17 +330,18 @@ function undoReferenceFx(t){
 }
 
 /* UI context only; FX/DSP slots remain in the session when the rack is hidden. */
-/* One UI detent shared by the reference mixer and the JUCE native bridge.
-   Snap only operator gestures: native readbacks remain exact authority.
-   Pointer capture ±0.6 dB, hold until ±1.1 dB; keyboard/Shift/Alt and
-   wheel fine increments must be able to leave 0 without getting stuck. */
+/* One hardware-feeling unity detent shared by the approved browser GUI and
+   native bridge. Normal drag captures within ±1.6 dB, then HOLDS through
+   ±3.2 dB; Shift/Alt, keyboard and wheel precision remain escapable.
+   Only an explicit gesture can update gain, never the initial mouse click. */
+const GAIN_UNITY_CAPTURE_DB=1.6,GAIN_UNITY_RELEASE_DB=3.2;
 function gainUnityDetent(el,event){
  const raw=Number(el.value);
  if(!Number.isFinite(raw))return NaN;
  const valueDb=Math.max(-24,Math.min(24,Math.round(raw*10)/10));
  const bypass=!!event.shiftKey||!!event.altKey||
   el.dataset.gainKeyboard==='true'||el.dataset.gainWheel==='true';
- const tolerance=el.dataset.gainDetent==='true'?1.1:0.6;
+ const tolerance=el.dataset.gainDetent==='true'?GAIN_UNITY_RELEASE_DB:GAIN_UNITY_CAPTURE_DB;
  const value=!bypass&&Math.abs(valueDb)<=tolerance?0:valueDb;
  el.value=String(value);
  el.dataset.gainDetent=String(value===0&&!bypass);
@@ -353,11 +354,11 @@ function sectionGain(t){
  const nativeUnavailable=!!window.__JUCE__?.backend&&!t.nativeGainAvailable;
  return '<div class="section fx-section is-gain-view"><div class="subhead">'+
   '<span class="sym">G</span><span class="hint">INPUT GAIN</span></div>'+
-  '<div class="gain-view-body"><label class="gain-dial" style="--gain-rotation:'+(value*5.625).toFixed(2)+'deg" title="Digital input gain before FX · native changes require acknowledged PCM">'+
+  '<div class="gain-view-body"><div class="gain-dial" style="--gain-rotation:'+(value*5.625).toFixed(2)+'deg" title="Drag vertically to adjust input gain · 0 dB detent · double-click resets">'+
   '<span class="gain-dial-arc" aria-hidden="true"></span>'+
   '<span class="gain-dial-face" aria-hidden="true"></span>'+
   '<span class="gain-dial-pointer" aria-hidden="true"></span>'+
-  '<input type="range" data-field="trim" min="-24" max="24" step="0.1" value="'+value+'" aria-label="'+escapeHtml(t.name)+' digital input gain"'+(nativeUnavailable?' disabled':'')+'></label>'+
+  '<input type="range" data-field="trim" min="-24" max="24" step="0.1" value="'+value+'" aria-label="'+escapeHtml(t.name)+' digital input gain"'+(nativeUnavailable?' disabled':'')+'></div>'+
   '<output class="gain-readout" aria-label="Gain in decibels"><span class="gain-lcd-digits">'+(nativeUnavailable?'NATIVE PENDING':formatDb(value)+' dB')+'</span></output></div></div>';
 }
 /* SOF is a contextual UI view of an explicit existing EdgeId, not a new graph. */
@@ -2301,13 +2302,73 @@ consoleBody.addEventListener('keydown',event=>{
  if(gain&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','PageUp','PageDown','Home','End'].includes(event.key))
   gain.dataset.gainKeyboard='true';
 });
+/* Physical knob gesture: the native invisible range MUST NEVER accept
+   click-to-seek. Preserve the current gain until at least 6px of intentional
+   vertical travel. Track from the initial numeric value, not click position.
+   Each move reuses the current input/ACK presentation handler; native writes
+   occur ONCE at release, and only when the final value actually changed. */
+const GAIN_DRAG_ARM_PX=6,GAIN_DRAG_DB_PER_PX=.2,GAIN_FINE_DB_PER_PX=.05;
+let gainDialGesture=null;
 consoleBody.addEventListener('pointerdown',event=>{
- const gain=event.target.closest?.('.gain-dial input[data-field="trim"],.gain-dial');
- if(gain){
-  const input=gain.matches('input')?gain:gain.querySelector('input[data-field="trim"]');
-  if(input)delete input.dataset.gainKeyboard;
- }
+ if(event.button!==0||gainDialGesture||wireGesture||faderGesture)return;
+ const dial=event.target.closest?.('.gain-dial');
+ const input=dial?.querySelector('input[data-field="trim"]:not(:disabled)');
+ if(!input||!Number.isFinite(event.clientY))return;
+ const start=Number(input.value);
+ if(!Number.isFinite(start))return;
+ // Prevent mouse default including range value jumps; div (not label) avoids
+ // synthetic label activation on click and retains accessible keyboard range.
+ event.preventDefault();
+ input.focus({preventScroll:true});
+ delete input.dataset.gainKeyboard;
+ input.dataset.gainDetent=String(start===0);
+ input.dataset.gainDragging='true';
+ gainDialGesture={id:event.pointerId,dial,input,start,raw:start,
+  originY:event.clientY,lastY:event.clientY,active:false};
+ dial.setPointerCapture?.(event.pointerId);
 },true);
+window.addEventListener('pointermove',event=>{
+ const g=gainDialGesture;
+ if(!g||event.pointerId!==g.id||!Number.isFinite(event.clientY))return;
+ if(!g.active){
+  if(Math.abs(event.clientY-g.originY)<GAIN_DRAG_ARM_PX)return;
+  g.active=true;
+ }
+ const dy=event.clientY-g.lastY;
+ g.lastY=event.clientY;
+ if(!dy)return;
+ const precise=!!event.shiftKey||!!event.altKey;
+ g.raw=Math.max(-24,Math.min(24,g.raw-dy*
+  (precise?GAIN_FINE_DB_PER_PX:GAIN_DRAG_DB_PER_PX)));
+ let next=Math.round(g.raw*10)/10;
+ const detent=g.input.dataset.gainDetent==='true'?
+  GAIN_UNITY_RELEASE_DB:GAIN_UNITY_CAPTURE_DB;
+ if(!precise&&Math.abs(next)<=detent)next=0;
+ if(next===Number(g.input.value))return;
+ g.input.value=String(next);
+ handleField({target:g.input,type:'input',
+  shiftKey:!!event.shiftKey,altKey:!!event.altKey});
+});
+function finishGainDialGesture(event,cancel=false){
+ const g=gainDialGesture;
+ if(!g||event.pointerId!==g.id)return;
+ gainDialGesture=null;
+ delete g.input.dataset.gainDragging;
+ if(cancel){
+  if(Number(g.input.value)!==g.start){
+   g.input.value=String(g.start);
+   // Exact restore, bypass detent; native audio remains unchanged.
+   handleField({target:g.input,type:'input',shiftKey:true});
+  }
+ }else if(g.active&&Number(g.input.value)!==g.start){
+  // One physical release -> one accepted native intent, no click-only write.
+  handleField({target:g.input,type:'change',
+   shiftKey:!!event.shiftKey,altKey:!!event.altKey});
+ }
+ if(g.dial.hasPointerCapture?.(g.id))g.dial.releasePointerCapture(g.id);
+}
+window.addEventListener('pointerup',event=>finishGainDialGesture(event));
+window.addEventListener('pointercancel',event=>finishGainDialGesture(event,true));
 document.querySelector('.console-body').addEventListener('input',handleField);
 document.querySelector('.console-body').addEventListener('change',handleField);
 document.querySelector('.console-body').addEventListener('click',e=>{
@@ -2597,7 +2658,7 @@ sendControlSurface.addEventListener('pointercancel',e=>finishSendKnob(e,true));
    Handle the physical fader face, not its intentionally pointer-inert input. */
 const wheelResidue=new WeakMap();
 document.querySelector('.console-body').addEventListener('wheel',e=>{
- if(e.ctrlKey||wireGesture||faderGesture||!Number.isFinite(e.deltaY)||e.deltaY===0)return;
+ if(e.ctrlKey||wireGesture||faderGesture||gainDialGesture||!Number.isFinite(e.deltaY)||e.deltaY===0)return;
  const target=e.target.closest?.('.wire-pot,.fader-box,.gain-dial,input[type="range"]');
  if(!target)return;
  const input=target.matches?.('input[type="range"]')?target:
