@@ -1458,6 +1458,11 @@ public:
         globalFxBypassed_.store(bypass,std::memory_order_release);
         return true;
     }
+    // Pointer is assigned to the original CH1 Graph on CONTROL before
+    // publication. Lab lifetime exceeds every accepted audio callback lease.
+    const std::atomic<bool>* globalFxBypassFlag() const noexcept {
+        return &globalFxBypassed_;
+    }
     bool globalFxBypassed() const noexcept {
         return globalFxBypassed_.load(std::memory_order_acquire);
     }
