@@ -1897,6 +1897,10 @@ public:
     }
     void playerPause() noexcept {playerDeck_.pause();}
     void playerStop() noexcept {playerDeck_.stop();}
+    bool playerSeekSeconds(double seconds) noexcept {
+        return playerFile_!=juce::File{} &&
+               playerDeck_.seekSeconds(seconds);
+    }
     juce::var playerStatus() const {
         const auto status=playerDeck_.snapshot();
         const auto* state="EMPTY";
@@ -1927,6 +1931,13 @@ public:
         data->setProperty("requestedTempo",status.requestedTempo);
         data->setProperty("processingChangePending",
                           status.processingChangePending);
+        // A bounded 256-bin atomic snapshot, not a second audio decode.
+        juce::Array<juce::var> waveform;
+        waveform.ensureStorageAllocated(
+            static_cast<int>(armix::player::PlayerWaveformIndex::bins));
+        for(const auto sample:status.waveform)
+            waveform.add(static_cast<int>(sample));
+        data->setProperty("waveform",juce::var(waveform));
         data->setProperty("generation",juce::String(
             static_cast<juce::int64>(status.generation)));
         data->setProperty("channelId",juce::String(
