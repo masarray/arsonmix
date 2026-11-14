@@ -60,6 +60,61 @@ Evidence test(Processor::Controls c) {
     assert(correlation<-.9); // phase coherence of linked stereo shift
     return {hz,static_cast<double>(outL.size())/frames,correlation};
 }
+// Simulate a real performer changing the key after a long dry passage, then
+// changing tempo, bypassing the DSP and re-entering at a different pitch.
+// Previous unit coverage only checked constant controls on synthetic sine.
+void testLiveControlTransitions(int sampleRate) {
+    Processor processor;
+    constexpr int quantum=512;
+    assert(processor.prepare(sampleRate,{0,100}));
+    std::array<float,768> sourceL{},sourceR{};
+    std::array<float,quantum> resultL{},resultR{};
+    std::int64_t sourceFrame=0;
+    int longestSilentRun=0,silentRun=0;
+    double recentEnergy=0;
+    for(int block=0;block<192;++block) {
+        if(block==32)processor.setControls({4,100}); // bypass -> transposed
+        if(block==64)processor.setControls({4,88});  // independent tempo
+        if(block==96)processor.setControls({0,100}); // DSP -> bit-exact dry
+        if(block==128)processor.setControls({-3,112}); // bypass -> DSP again
+        if(block==160)processor.setControls({-3,100}); // active tempo change
+        const int nInput=processor.nextInputFrames(quantum);
+        assert(nInput>0 && nInput<=static_cast<int>(sourceL.size()));
+        for(int i=0;i<nInput;++i) {
+            const double time=static_cast<double>(sourceFrame+i)/sampleRate;
+            const float sample=static_cast<float>(
+                0.36*std::sin(2*pi*220*time)+
+                0.14*std::sin(2*pi*660*time)+
+                0.07*std::sin(2*pi*1760*time));
+            sourceL[i]=sample;
+            sourceR[i]=-sample;
+        }
+        sourceFrame+=nInput;
+        const float* const inputs[]={sourceL.data(),sourceR.data()};
+        float* const outputs[]={resultL.data(),resultR.data()};
+        assert(processor.process(inputs,nInput,outputs,quantum));
+        for(int i=0;i<quantum;++i) {
+            const float x=resultL[i],y=resultR[i];
+            assert(std::isfinite(x)&&std::isfinite(y));
+            assert(std::abs(x+y)<0.02f); // linked stereo phase coherence
+            if(block>12) {
+                if(std::abs(x)<0.00001f) {
+                    ++silentRun;
+                    longestSilentRun=std::max(longestSilentRun,silentRun);
+                } else silentRun=0;
+            }
+            if(block==47 || block==79 || block==111 ||
+               block==143 || block==175)recentEnergy+=x*x;
+        }
+    }
+    // A cold 120ms FFT analysis window on every dry->DSP transition would
+    // fail this, even though a constant-pitch frequency test still passes.
+    assert(longestSilentRun<sampleRate/12);
+    assert(recentEnergy>5.0);
+    assert(!processor.process(nullptr,0,nullptr,512));
+    std::printf("M2 hot-gesture: %d Hz, maximum near-silence %d frames\\n",
+                sampleRate,longestSilentRun);
+}
 }
 int main() {
     using P=Processor;
@@ -77,6 +132,9 @@ int main() {
     assert(std::abs(neutral.hz-440)<8);
     assert(up.hz>neutral.hz && down.hz<neutral.hz);
     assert(up.ratio>1.24 && down.ratio<.85);
+    testLiveControlTransitions(44100);
+    testLiveControlTransitions(48000);
+    testLiveControlTransitions(96000);
     std::printf("M2: pass neutral %.1fHz, +3st/80%% %.1fHz, -2st/120%% %.1fHz; stereo=%.3f\n",
                 neutral.hz,up.hz,down.hz,up.correlation);
 }
