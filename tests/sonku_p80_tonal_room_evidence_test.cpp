@@ -37,6 +37,10 @@ static Settings scene(){
 static void exactDryBypass(double rate){
     auto s=scene();s.spatialMix=0.f;s.outputTrim=.28f;
     auto core=make(rate,s);
+    // The accepted MIX control slews over ~8 ms. Establish the exact
+    // accepted dry state first, without assuming an instantaneous edit.
+    std::vector<float> warmL(8192),warmR(8192);
+    core->process(warmL.data(),warmR.data(),static_cast<int>(warmL.size()));
     constexpr int n=1024;
     std::vector<float> l(n),r(n);
     for(int i=0;i<n;++i){
