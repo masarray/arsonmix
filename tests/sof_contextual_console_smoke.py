@@ -58,6 +58,58 @@ def run() -> None:
                     gain.click()
                     assert gain.get_attribute("aria-pressed") == "true"
                     assert first.locator(".is-gain-view").count() == 1
+                    assert page.locator(".console-body").evaluate(
+                        "el => el.classList.contains('gain-view-active')")
+                    gain_rail = page.locator(".section-rail .rail-cell.fx .rail-gain-caption")
+                    assert gain_rail.count() == 1 and gain_rail.is_visible()
+                    assert gain_rail.inner_text() == "GAIN"
+                    assert gain_rail.evaluate(
+                        "el => getComputedStyle(el).writingMode") == "vertical-rl"
+                    knob_visual = first.locator(".gain-dial")
+                    assert knob_visual.count() == 1
+                    body_size = knob_visual.bounding_box()
+                    assert body_size and 48 <= body_size["width"] <= 69, (width, body_size)
+                    cap = first.locator(".gain-dial-face")
+                    cap_css = cap.evaluate("""el => ({
+                        image: getComputedStyle(el).backgroundImage,
+                        transform: getComputedStyle(el).transform,
+                        shadow: getComputedStyle(el).boxShadow
+                    })""")
+                    assert "mixer-gain-knob-brushed-steel.png" in cap_css["image"]
+                    assert cap_css["transform"] == "none", cap_css
+                    assert cap_css["shadow"] != "none", cap_css
+                    cap_box = cap.bounding_box()
+                    assert cap_box and cap_box["width"] < body_size["width"] - 12, (
+                        width, cap_box, body_size)
+                    assert cap_box["width"] <= 55, "Steel face must be smaller than previous bezel"
+                    arc = first.locator(".gain-dial-arc")
+                    assert arc.count() == 1
+                    leds = arc.evaluate("""el => ({
+                        inactive: getComputedStyle(el, '::before').backgroundImage,
+                        active: getComputedStyle(el, '::after').backgroundImage,
+                        cap: getComputedStyle(el).maskImage,
+                        inactiveMask: getComputedStyle(el, '::before').maskImage,
+                        activeMask: getComputedStyle(el, '::after').maskImage
+                    })""")
+                    assert "repeating-conic-gradient" in leds["inactive"], leds
+                    assert "repeating-conic-gradient" in leds["active"], leds
+                    assert "radial-gradient" in leds["cap"], leds
+                    assert "conic-gradient" in leds["inactiveMask"], leds
+                    assert "conic-gradient" in leds["activeMask"], leds
+                    pointer = first.locator(".gain-dial-pointer")
+                    before_turn = pointer.evaluate("el => getComputedStyle(el).transform")
+                    before_led_mask = arc.evaluate("el => getComputedStyle(el, '::after').maskImage")
+                    lcd = first.locator(".gain-readout")
+                    lcd_size = lcd.bounding_box()
+                    assert lcd_size and lcd_size["height"] >= 24, (width, lcd_size)
+                    lcd_skin = lcd.evaluate("""el => ({
+                        background: getComputedStyle(el).backgroundColor,
+                        text: getComputedStyle(el).color,
+                        backgroundImage: getComputedStyle(el).backgroundImage
+                    })""")
+                    assert lcd_skin["background"] == "rgb(2, 5, 3)", (width, lcd_skin)
+                    assert lcd_skin["backgroundImage"] == "none", (width, lcd_skin)
+                    assert lcd_skin["text"] == "rgb(116, 253, 160)", (width, lcd_skin)
                     knob = first.locator('[data-field="trim"]')
                     assert knob.count() == 1
                     knob.evaluate("""el => {
@@ -66,6 +118,11 @@ def run() -> None:
                     }""")
                     assert "+6.5 dB" in first.locator(".gain-readout").inner_text()
                     assert "6.5" in knob.get_attribute("value") or knob.input_value() == "6.5"
+                    assert pointer.evaluate("el => getComputedStyle(el).transform") != before_turn
+                    assert arc.evaluate(
+                        "el => getComputedStyle(el, '::after').maskImage"
+                    ) != before_led_mask, "LED progress did not follow accepted gain gesture"
+                    assert cap.evaluate("el => getComputedStyle(el).transform") == "none"
                     # Double-click must use the same gain parameter path and restore unity.
                     first.locator(".gain-dial").dblclick()
                     # The public formatter reserves '+' for strictly
@@ -78,6 +135,9 @@ def run() -> None:
                     }""")
 
                     fx.click()
+                    assert not page.locator(".console-body").evaluate(
+                        "el => el.classList.contains('gain-view-active')")
+                    assert not gain_rail.is_visible(), "Rail GAIN caption leaked into FX RACK"
                     assert first.locator(".is-gain-view").count() == 0
                     assert first.locator(".fxslot-list").count() == 1
 
@@ -159,6 +219,12 @@ def run() -> None:
                     assert geometry["right"] <= geometry["sectionRight"] + 2
                     assert geometry["bottom"] <= geometry["sectionBottom"] + 2
                     assert not errors, (width, errors)
+                    # Actual assembled /preview/ screenshot: one GAIN bank per viewport,
+                    # with static steel caps, green needles/arcs and the left GAIN rail.
+                    page.screenshot(
+                        path=str(ROOT / f"arsonmix-gain-knob-{width}x{height}.png"),
+                        full_page=False,
+                    )
                     page.close()
             finally:
                 browser.close()
