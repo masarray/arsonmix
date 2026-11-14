@@ -266,12 +266,23 @@ if(BUILD_TESTING)
   add_executable(ARMixSonKuCoreTests tests/sonku_spatial_core_test.cpp)
   target_compile_features(ARMixSonKuCoreTests PRIVATE cxx_std_20)
   add_test(NAME NativeSonKuMeasuredBinauralDirectionalAndChunkParity COMMAND ARMixSonKuCoreTests)
+  # P6 same core/PCM profile: no JUCE or SDK required for source regression.
+  add_executable(ARMixSonKuP6PreparedTests tests/sonku_p6_realtime_quality_test.cpp)
+  target_compile_features(ARMixSonKuP6PreparedTests PRIVATE cxx_std_20)
+  add_test(NAME NativeSonKuP6PreparedRoomDirectionalAndChunkParity
+      COMMAND ARMixSonKuP6PreparedTests)
   # Real JUCE processor: audio-applied ACK, v1/v2 state, corruption fences.
   juce_add_console_app(ARMixSonKuNativeStateTests PRODUCT_NAME "ArSonMix SonKu Native State Tests")
   target_sources(ARMixSonKuNativeStateTests PRIVATE tests/sonku_native_state_test.cpp)
   target_link_libraries(ARMixSonKuNativeStateTests PRIVATE
       juce::juce_audio_processors juce::juce_recommended_config_flags)
   target_compile_features(ARMixSonKuNativeStateTests PRIVATE cxx_std_20)
+  # Compile and test the same opt-in native profile in the actual JUCE
+  # adapter when a deliberately qualified experimental build requests it.
+  if(ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT)
+    target_compile_definitions(ARMixSonKuNativeStateTests PRIVATE
+        ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT=1)
+  endif()
   add_test(NAME NativeSonKuSessionV1V2AndAudioAppliedAck
       COMMAND ARMixSonKuNativeStateTests)
   # Pure control-plane first-run routing selection: no JUCE, drivers,

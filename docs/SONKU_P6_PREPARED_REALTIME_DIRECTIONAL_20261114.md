@@ -75,3 +75,12 @@ PCM, and a genuine measured wet-output difference after reflections.
 Metrics are uploaded with the WAVs and listening guide. A difference
 from lightweight reflections is expected; it is **not** evidence the
 candidate sounds better, externalizes more or matches dearVR.
+
+## Native build reproducibility
+
+`ARMixSonKuP6PreparedTests` is now a focused portable CTest target.
+The existing real JUCE `ARMixSonKuNativeStateTests` asserts the prepared
+profile in **both** option-OFF (Lightweight) and explicit option-ON
+(DirectionalKemar) Windows builds, alongside native ACK/state restoration.
+Use the exact PR SHA to compile the test once on Windows; Linux native
+GitHub Actions proves portable-core behavior but not a Windows JUCE binary.
