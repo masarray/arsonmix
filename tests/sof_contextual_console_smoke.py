@@ -68,7 +68,7 @@ def run() -> None:
                     knob_visual = first.locator(".gain-dial")
                     assert knob_visual.count() == 1
                     body_size = knob_visual.bounding_box()
-                    assert body_size and 54 <= body_size["width"] <= 78, (width, body_size)
+                    assert body_size and 48 <= body_size["width"] <= 69, (width, body_size)
                     cap = first.locator(".gain-dial-face")
                     cap_css = cap.evaluate("""el => ({
                         image: getComputedStyle(el).backgroundImage,
@@ -78,14 +78,37 @@ def run() -> None:
                     assert "mixer-gain-knob-brushed-steel.png" in cap_css["image"]
                     assert cap_css["transform"] == "none", cap_css
                     assert cap_css["shadow"] != "none", cap_css
+                    cap_box = cap.bounding_box()
+                    assert cap_box and cap_box["width"] < body_size["width"] - 12, (
+                        width, cap_box, body_size)
+                    assert cap_box["width"] <= 55, "Steel face must be smaller than previous bezel"
                     arc = first.locator(".gain-dial-arc")
                     assert arc.count() == 1
-                    assert "conic-gradient" in arc.evaluate(
-                        "el => getComputedStyle(el, '::after').backgroundImage")
+                    leds = arc.evaluate("""el => ({
+                        inactive: getComputedStyle(el, '::before').backgroundImage,
+                        active: getComputedStyle(el, '::after').backgroundImage,
+                        cap: getComputedStyle(el).maskImage,
+                        inactiveMask: getComputedStyle(el, '::before').maskImage,
+                        activeMask: getComputedStyle(el, '::after').maskImage
+                    })""")
+                    assert "repeating-conic-gradient" in leds["inactive"], leds
+                    assert "repeating-conic-gradient" in leds["active"], leds
+                    assert "radial-gradient" in leds["cap"], leds
+                    assert "conic-gradient" in leds["inactiveMask"], leds
+                    assert "conic-gradient" in leds["activeMask"], leds
                     pointer = first.locator(".gain-dial-pointer")
                     before_turn = pointer.evaluate("el => getComputedStyle(el).transform")
-                    lcd_size = first.locator(".gain-readout").bounding_box()
+                    lcd = first.locator(".gain-readout")
+                    lcd_size = lcd.bounding_box()
                     assert lcd_size and lcd_size["height"] >= 24, (width, lcd_size)
+                    lcd_skin = lcd.evaluate("""el => ({
+                        background: getComputedStyle(el).backgroundColor,
+                        text: getComputedStyle(el).color,
+                        backgroundImage: getComputedStyle(el).backgroundImage
+                    })""")
+                    assert lcd_skin["background"] == "rgb(2, 5, 3)", (width, lcd_skin)
+                    assert lcd_skin["backgroundImage"] == "none", (width, lcd_skin)
+                    assert lcd_skin["text"] == "rgb(116, 253, 160)", (width, lcd_skin)
                     knob = first.locator('[data-field="trim"]')
                     assert knob.count() == 1
                     knob.evaluate("""el => {
