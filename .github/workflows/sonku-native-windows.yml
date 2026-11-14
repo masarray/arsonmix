@@ -1,0 +1,74 @@
+name: SonKu native JUCE Windows (focused experimental quality)
+# Verify the REAL JUCE adapter in a single targeted opt-in build.
+# No full mixer executable, installer, Chromium, hardware ASIO or Vocal Harmony.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - 'engine/builtin_fx/sonku/**'
+      - 'engine/builtin_fx/SonKuSpatialProcessor.h'
+      - 'tests/sonku_native_state_test.cpp'
+      - 'tests/sonku_p6_realtime_quality_test.cpp'
+      - '.github/workflows/sonku-native-windows.yml'
+permissions:
+  contents: read
+concurrency:
+  group: sonku-native-windows-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  native-juce:
+    name: Windows MSVC SonKu native adapter + core (opt-in ON)
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify immutable PR head
+        shell: pwsh
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $sha = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $sha -ne $env:EXPECTED) {
+            throw "SONKU_SHA_MISMATCH expected=$env:EXPECTED actual=$sha"
+          }
+          Write-Host "SONKU_QUALIFICATION_SOURCE_SHA=$sha"
+      - uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.15
+          path: third_party/JUCE
+          persist-credentials: false
+      - name: Provide pinned WebView2 CMake SDK (no installer)
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Configure only CTest catalog with experimental P6 ON
+        shell: pwsh
+        run: |
+          cmake -S . -B build-sonku-p6 -G "Visual Studio 17 2022" -A x64 `
+            -DJUCE_ROOT="${{ github.workspace }}/third_party/JUCE" `
+            -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/.deps" `
+            -DARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT=ON -DBUILD_TESTING=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $result = (& ctest --test-dir build-sonku-p6 -C Release --show-only=json-v1 | Out-String | ConvertFrom-Json)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $found = @($result.tests | ForEach-Object { $_.name })
+          foreach($name in @('NativeSonKuSessionV1V2AndAudioAppliedAck',
+                             'NativeSonKuP6PreparedRoomDirectionalAndChunkParity')) {
+            if($name -notin $found) { throw "SONKU_CTEST_TARGET_NOT_REGISTERED:$name" }
+          }
+      - name: Build ONLY two SonKu source targets (no installer/full app)
+        shell: pwsh
+        run: |
+          cmake --build build-sonku-p6 --config Release --parallel 2 --target ARMixSonKuNativeStateTests ARMixSonKuP6PreparedTests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Execute native JUCE acceptance, PCM and state CTests
+        shell: pwsh
+        run: |
+          ctest --test-dir build-sonku-p6 -C Release --output-on-failure `
+            -R '^NativeSonKu(SessionV1V2AndAudioAppliedAck|P6PreparedRoomDirectionalAndChunkParity)$'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host 'SONKU_P6_WINDOWS_JUCE_NATIVE_ON=PASS (no physical ASIO)'
