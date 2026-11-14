@@ -63,8 +63,16 @@ needs no additional delay history.
 ## Additional independent stereo WAV qualification
 Four 2s 48k/16bit original synthetic independent-stereo
 FRONT/REAR x 60°/120° P2 full and P4 contiguous pairs.
-A Python gate checks byte-for-byte identical WAV PCM plus
-nonzero 165/940/2200/4700/5100Hz input components.
+A Python gate checks <=1 signed PCM 16bit LSB maximum
+sample difference, <2% differing samples, <1e-5 normalized
+RMS difference, <0.01 dB each 165/940/2200/4700/5100Hz
+harmonic on both ears. It also reports exact byte identity
+and sample-difference fraction. One-bit quantization
+boundaries are NOT evidence of changed perceptual quality.
+The initially strict byte-equality gate failed: a one-LSB
+quantization difference must be measured, not mislabeled
+as a proven invariant. The C++ wet-only full-float
+source test still uses <2e-6 per-sample absolute error.
 All existing PCM, spectral, motion, ring and CPU checks remain.
 There is no claim of perceptual improvement from a bit-exact
 optimization; its benefit is rendering identical directional

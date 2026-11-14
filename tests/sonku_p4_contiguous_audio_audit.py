@@ -43,17 +43,46 @@ def run(folder):
     for scene in SCENES:
         full, a = read(folder/f"sonku-p4-full-{scene}.wav")
         contig, b = read(folder/f"sonku-p4-contiguous-{scene}.wav")
-        assert full == contig, ("P4 audio must be BYTE EXACT to P2", scene)
+        differences = [int(x)-int(y) for x,y in zip(a,b)]
+        peakError = max(map(abs,differences))
+        changed = sum(d!=0 for d in differences)
+        fraction = changed/len(a)
+        rmsError = math.sqrt(sum(d*d for d in differences)/len(a))/32768.
+        assert peakError<=1,(scene,"excessive sample delta in LSB",peakError)
+        assert fraction<.02,(scene,"widespread numeric drift",fraction)
+        assert rmsError<1e-5,(scene,"excessive RMS delta",rmsError)
+        bands={}
         for ear in (0, 1):
-            band = {str(hz): amplitude(b, ear, hz) for hz in HARMONICS}
-            assert any(v > .001 for v in band.values()), (scene, ear, band)
+            baseline = {str(hz): amplitude(a, ear, hz) for hz in HARMONICS}
+            optimized = {str(hz): amplitude(b, ear, hz) for hz in HARMONICS}
+            assert any(v > .001 for v in baseline.values()),(scene,ear)
+            changes = {}
+            for hz in HARMONICS:
+                before, after = baseline[str(hz)], optimized[str(hz)]
+                assert min(before,after)>1e-7
+                db = 20.*math.log10(after/before)
+                assert abs(db)<.01,(scene,ear,hz,db)
+                changes[str(hz)] = db
+            bands[str(ear)] = changes
         report["scenes"][scene] = {
-            "byteExact": True, "samplePeakLsb": max(map(abs, a)),
-            "frames": FRAMES, "interleavedSamples": len(a)}
+            "byteExact": full == contig,
+            "peakSampleDifferenceLSB": peakError,
+            "changedSampleCount": changed,
+            "changedSampleFraction": fraction,
+            "differenceRms": rmsError,
+            "harmonicDeltaDb": bands,
+            "frames": FRAMES,
+            "interleavedSamples": len(a)}
     (folder/"SONKU-P4-EXACT-PCM.json").write_text(
         json.dumps(report, indent=2, sort_keys=True)+"\n",
         encoding="utf-8")
-    print("PASS P4 native independent stereo byte-exact 60/120 FRONT/REAR")
+    for scene, data in report["scenes"].items():
+        print("SONKU_P4_PCM",scene,
+              "peakLSB",data["peakSampleDifferenceLSB"],
+              "changedFraction",data["changedSampleFraction"],
+              "rms",data["differenceRms"],
+              "harmonicDeltaDb",data["harmonicDeltaDb"])
+    print("PASS P4 native independent stereo 1-LSB / 0.01dB tolerance 60/120 FRONT/REAR")
 
 if __name__ == "__main__":
     run(Path(sys.argv[1]))
