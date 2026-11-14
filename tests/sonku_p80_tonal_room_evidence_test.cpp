@@ -8,6 +8,7 @@
 #error Must compile the P8 acoustic research renderer
 #endif
 #include "../engine/builtin_fx/sonku/SonKuSpatialCore.h"
+#include "../engine/builtin_fx/sonku/SonKuHrtfTonalCalibration.h"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -165,11 +166,23 @@ static void roomChunkParity(double rate) {
 int main(){
     std::puts("P8_SCHEMA,rate_hz,tone_hz,source_type,scene,l_gain_rms,r_gain_rms,peak");
     for(double rate:{44100.,48000.}){
+        armix::sonku::SonKuHrtfTonalCalibration calibration;
+        const auto bank=rate<45000.?armix::sonku::hrir::normal44100:
+                                     armix::sonku::hrir::normal48000;
+        assert(calibration.prepare(rate,bank));
+        assert(calibration.presenceCutDb()<=-3.f &&
+               calibration.presenceCutDb()>=-5.5f);
+        assert(calibration.highAirDb()>=2.f &&
+               calibration.highAirDb()<=4.f);
+        std::printf("P8_CALIBRATION,%.0f,presence_cut_db=%.3f,high_air_db=%.3f\n",
+                    rate,calibration.presenceCutDb(),calibration.highAirDb());
         exactDryBypass(rate);
         antiPhaseExactNoNull(rate);
         for(float hz:{63.f,125.f,250.f,500.f,1000.f,2000.f,4000.f,8000.f}){
             const double mono=toneGain(rate,hz,false,false);
             const double left=toneGain(rate,hz,true,false);
+            if(hz==2000.f)assert(mono<1.30); // rejects P8.0 nasal 2k gain of ~1.52
+            if(hz==8000.f)assert(mono>.15); // bounded air return, not a pinna-notch inversion
             assert(mono>.02&&left>.02);
             if(hz<=125.f){
                 // Musical bass must not vanish when no ROOM is active.
