@@ -1818,7 +1818,8 @@ public:
     // A single explicit user Play gesture prepares the previously verified
     // MAIN and creates its owned virtual MUSIC channel if absent. No manual
     // PATCH, MONITOR or ARM control is part of the ordinary user workflow.
-    juce::String loadPlayerMusic(const juce::File& file) {
+    juce::String loadPlayerMusic(const juce::File& file,
+                                 double cueIn=0.,double cueOut=0.) {
         if(!file.existsAsFile())return "Music file is missing";
         if(!file.hasFileExtension("wav;aiff;aif;mp3;flac;ogg"))
             return "Choose a supported music file (WAV, MP3, FLAC, AIFF, OGG)";
@@ -1866,6 +1867,9 @@ public:
         playerFile_=file;
         playerPendingFile_={};
         playerBoundEpoch_=dryRoutingLab_.epoch();
+        if(!playerDeck_.setCueRange(cueIn,cueOut))
+            return "Invalid song IN/OUT markers";
+        playerCueIn_=cueIn;playerCueOut_=cueOut;
         playerDeck_.load(file,true); // async worker; real PLAYING only after PCM
         // The fresh PLAY gesture itself authorizes same verified output.
         // Never override an intentional MAIN MUTE or different physical port.
@@ -1881,7 +1885,7 @@ public:
         if((playerBoundEpoch_!=dryRoutingLab_.epoch() ||
             dryRoutingLab_.nativePlayerSource()!=playerChannelId_) &&
            playerFile_!=juce::File{})
-            return loadPlayerMusic(playerFile_);
+            return loadPlayerMusic(playerFile_,playerCueIn_,playerCueOut_);
         if(!playerChannelId_.value || !directFence_.permitted() ||
            !dryRoutingLab_.channelIdPhysicalPcmActive() ||
            masterMute_.load(std::memory_order_acquire) ||
@@ -1898,32 +1902,44 @@ public:
     }
     // Preloading never touches the native graph or opens another physical
     // output. Both decoded sources ultimately share PLAYER A ChannelId.
-    bool preloadPlayerMusic(const juce::File& file,int key,int tempo) {
+    bool preloadPlayerMusic(const juce::File& file,int key,int tempo,
+                            double cueIn=0.,double cueOut=0.) {
         if(playerFile_==juce::File{} || file==playerFile_ ||
            playerBoundEpoch_!=dryRoutingLab_.epoch() ||
            !directFence_.permitted() ||
            !dryRoutingLab_.channelIdPhysicalPcmActive())
             return false;
-        return playerDeck_.preload(file,key,tempo);
+        return playerDeck_.preload(file,key,tempo,cueIn,cueOut);
     }
     bool queuePlayerTransition(const juce::File& file,int key,int tempo,
-                               int fadeMilliseconds=180) {
+                               int fadeMilliseconds=180,
+                               double cueIn=0.,double cueOut=0.) {
         if(playerFile_==juce::File{} || !file.existsAsFile() ||
            !file.hasFileExtension("wav;mp3;flac;aif;aiff;ogg") ||
            playerBoundEpoch_!=dryRoutingLab_.epoch() ||
            !directFence_.permitted() ||
            !dryRoutingLab_.channelIdPhysicalPcmActive())
             return false;
-        if(!playerDeck_.queueTransition(file,key,tempo,fadeMilliseconds))
+        if(!playerDeck_.queueTransition(file,key,tempo,fadeMilliseconds,
+                                        cueIn,cueOut))
             return false;
+        playerPendingCueIn_=cueIn;playerPendingCueOut_=cueOut;
         playerPendingFile_=file;
         return true;
     }
     bool servicePlayerTransition() {
         if(!playerDeck_.service())return false;
-        if(playerPendingFile_!=juce::File{})
+        if(playerPendingFile_!=juce::File{}) {
             playerFile_=playerPendingFile_;
+            playerCueIn_=playerPendingCueIn_;
+            playerCueOut_=playerPendingCueOut_;
+        }
         playerPendingFile_={};
+        return true;
+    }
+    bool setPlayerCueRange(double in,double out) noexcept {
+        if(!playerDeck_.setCueRange(in,out))return false;
+        playerCueIn_=in;playerCueOut_=out;
         return true;
     }
     void playerPause() noexcept {playerDeck_.pause();}
@@ -2841,6 +2857,8 @@ private:
     armix::mixer::ChannelId playerChannelId_{}; // CONTROL only, native identity
     juce::File playerFile_; // CONTROL only, last active song
     juce::File playerPendingFile_; // CONTROL only, next decoded song
+    double playerCueIn_=0.,playerCueOut_=0.;
+    double playerPendingCueIn_=0.,playerPendingCueOut_=0.;
     std::uint64_t playerBoundEpoch_=0; // never borrow old device approval
     std::array<std::array<float,maxFrames>,2> playerScratch_{}; // preallocated RT block
     armix::dsp::NativeMasterLoudness masterLoudness_;
