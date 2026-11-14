@@ -96,6 +96,7 @@ selectedRow.children[0].fire('click');
 selectedRow.children[0].fire('dblclick');
 assert.equal(actions[0].detail.action,'playerSelect');
 assert.equal(actions[1].detail.action,'playerPlayNow');
+actions.length=0; // isolate the next gesture, not previous click evidence
 
 const data={types:['application/x-arsonmix-queue'],setData(){},getData(){}};
 const prevent=()=>{};
