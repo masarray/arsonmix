@@ -56,6 +56,9 @@ public:
         }
         historyWrite_=historyCount_=0;
         primeOnNextProcess_=false;
+        haveLastOutput_=seamPending_=false;
+        seamLength_=seamPosition_=0;
+        seamCorrection_={0.f,0.f};
         currentSemitones_=mappedSemitones_=static_cast<float>(c.keySemitones);
         stretch_.setTransposeSemitones(
             static_cast<float>(controls_.keySemitones),
@@ -77,6 +80,9 @@ public:
             primeOnNextProcess_=false;
         }
         controls_=c;
+        // Mark precisely one boundary. No continuously running smoother:
+        // the expensive FFT always remains in the decoder worker.
+        seamPending_=true;
     }
     Controls applied() const noexcept {return controls_;}
     bool active() const noexcept {
@@ -115,10 +121,39 @@ public:
             if(primeOnNextProcess_)primeFromRecentInput();
             stretch_.process(in,nInput,out,nOut);
         }
+        // A spectral state switch or bypass can move the PCM waveform by
+        // several tenths of full scale at ONE sample, creating a broadband
+        // click even when pitch, tempo and stereo phase tests all pass.
+        // Correct only the *discontinuity offset* with a 5 ms C1-continuous
+        // smoothstep envelope. This is worker-only, zero heap, and costs
+        // NOTHING between control gestures. No destructive limiter/clamp.
+        if(seamPending_) {
+            seamPending_=false;
+            if(haveLastOutput_) {
+                seamLength_=std::max(8,sampleRate_/200);
+                seamPosition_=0;
+                seamCorrection_[0]=lastOutput_[0]-out[0][0];
+                seamCorrection_[1]=lastOutput_[1]-out[1][0];
+            }
+        }
+        if(seamPosition_<seamLength_) {
+            const int n=std::min(nOut,seamLength_-seamPosition_);
+            for(int i=0;i<n;++i) {
+                const float t=static_cast<float>(seamPosition_+i)/
+                              static_cast<float>(seamLength_-1);
+                const float smooth=1.f-t*t*(3.f-2.f*t);
+                out[0][i]+=seamCorrection_[0]*smooth;
+                out[1][i]+=seamCorrection_[1]*smooth;
+            }
+            seamPosition_+=n;
+        }
         for(int c=0;c<2;++c)
             for(int i=0;i<nOut;++i)
                 if(!std::isfinite(out[c][i]))
                     return false; // source/FFT corruption fails closed
+        lastOutput_[0]=out[0][nOut-1];
+        lastOutput_[1]=out[1][nOut-1];
+        haveLastOutput_=true;
         rememberInput(in,nInput);
         return true;
     }
@@ -183,6 +218,9 @@ private:
     Controls controls_{};
     double fractionalInput_=0;
     float currentSemitones_=0.f,mappedSemitones_=0.f;
+    std::array<float,2> lastOutput_{},seamCorrection_{};
+    int seamLength_=0,seamPosition_=0;
     bool prepared_=false,primeOnNextProcess_=false;
+    bool haveLastOutput_=false,seamPending_=false;
 };
 } // namespace armix::player
