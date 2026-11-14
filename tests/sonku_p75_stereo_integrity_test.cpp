@@ -57,7 +57,9 @@ static void antiPhaseCanNeverNull(double rate) {
             pIn+=original[i]*original[i];
             pOut+=l[i]*l[i];
         }
-        assert(pOut>.15*pIn);
+        const double exactRatio=std::pow(.75*scaledWidth,2.);
+        assert(std::abs(pOut/pIn-exactRatio)<1.e-4);
+        assert(pOut>.12*pIn); // width=0 intentionally retains half SIDE
     }
 }
 static void monoMidCannotCombFromSpread(double rate) {
