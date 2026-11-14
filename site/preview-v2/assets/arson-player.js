@@ -7,7 +7,8 @@
  if(!root||!toggle)return;
  const backend=window.__JUCE__?.backend;
  const native=Boolean(backend?.emitEvent&&backend?.addEventListener);
- let model={tracks:[],selected:-1,current:-1,autoNext:false,
+ let model={tracks:[],setlists:[],queue:[],activeSetlist:0,
+   selected:-1,current:-1,autoNext:false,
    transport:{state:"EMPTY",title:"",currentSeconds:0,durationSeconds:0},
    error:""};
  const send=(action,value)=>{
@@ -47,7 +48,62 @@
  $("playerNext").addEventListener("click",()=>send("playerNext"));
  $("playerAutoNext").addEventListener("click",()=>
    send("playerAutoNext",!model.autoNext));
+ $("playerNewSetlist").addEventListener("click",()=>send("playerNewSetlist"));
+ $("playerDeleteSetlist").addEventListener("click",()=>send("playerDeleteSetlist",model.activeSetlist));
+ $("playerSetlistSelect").addEventListener("change",event=>
+   send("playerSelectSetlist",Number(event.target.value)));
+ $("playerSetlistName").addEventListener("change",event=>
+   send("playerRenameSetlist",event.target.value.trim()));
+ $("playerSetlistName").addEventListener("keydown",event=>{
+   if(event.key==="Enter"){event.preventDefault();event.target.blur();}
+ });
+ $("playerUndoRemove").addEventListener("click",()=>send("playerUndoRemove"));
  const list=$("playerList"),search=$("playerSearch");
+ const actionButton=(label,title,onClick)=>{
+   const button=document.createElement("button");
+   button.type="button";button.className="ap-row-action";
+   button.textContent=label;button.title=title;
+   button.setAttribute("aria-label",title);
+   button.addEventListener("click",onClick);
+   return button;
+ };
+ let renderedSets=-1;
+ function renderSetlists(){
+   if(renderedSets===libraryRevision)return;
+   renderedSets=libraryRevision;
+   const selector=$("playerSetlistSelect"),name=$("playerSetlistName");
+   const oldFocus=document.activeElement===name;
+   selector.replaceChildren();
+   for(const set of model.setlists||[]){
+     const option=document.createElement("option");
+     option.value=String(set.id);
+     option.textContent=String(set.name||"Setlist")+" · "+set.count;
+     selector.append(option);
+   }
+   selector.value=String(model.activeSetlist||0);
+   if(!oldFocus)name.value=model.setlists?.[model.activeSetlist]?.name||"";
+   $("playerDeleteSetlist").disabled=(model.setlists?.length||0)<=1;
+   $("playerUndoRemove").hidden=!model.canUndoRemove;
+   const panel=$("playerQueuePanel"),queue=$("playerQueueList");
+   const upcoming=model.queue||[];
+   panel.hidden=!upcoming.length;
+   $("playerQueueCount").textContent=String(upcoming.length);
+   queue.replaceChildren();
+   for(const item of upcoming.slice(0,12)){
+     const row=document.createElement("div");
+     row.className="ap-queue-row";row.setAttribute("role","listitem");
+     const title=document.createElement("span");
+     title.textContent=String(item.title||"Untitled");
+     row.append(title,actionButton("×","Remove "+item.title+" from queue",
+       ()=>send("playerQueueRemove",item.id)));
+     queue.append(row);
+   }
+   if(upcoming.length>12){
+     const more=document.createElement("small");
+     more.textContent="+"+(upcoming.length-12)+" more queued";queue.append(more);
+   }
+ }
+
  let libraryRevision=0,rendered="";
  function renderTracks(){
    // Avoid serializing and rebuilding a 2,000-song list on every realtime
@@ -68,13 +124,15 @@
      list.append(message);return;
    }
    for(const song of songs){
-     const row=document.createElement("button");
-     row.type="button";row.className="ap-song";
-     row.dataset.selected=String(song.id===model.selected);
-     row.dataset.current=String(song.id===model.current);
-     row.setAttribute("role","option");
-     row.setAttribute("aria-selected",String(song.id===model.selected));
-     row.title="Select next · double-click to play now";
+     const row=document.createElement("div");
+     row.className="ap-songrow";row.setAttribute("role","listitem");
+     row.draggable=native;
+     const choose=document.createElement("button");
+     choose.type="button";choose.className="ap-song";
+     choose.dataset.selected=String(song.id===model.selected);
+     choose.dataset.current=String(song.id===model.current);
+     choose.setAttribute("aria-selected",String(song.id===model.selected));
+     choose.title="Click to prepare NEXT · Double-click to play now";
      const index=document.createElement("span");
      index.className="ap-index";
      index.textContent=String(song.id+1).padStart(2,"0");
@@ -85,16 +143,40 @@
      state.textContent=song.missing?"Missing":
        song.id===model.current?"NOW":
        song.id===model.selected?"NEXT":"";
-     row.append(index,title,state);
-     row.addEventListener("click",()=>send("playerSelect",song.id));
-     row.addEventListener("dblclick",()=>send("playerPlayNow",song.id));
-     row.addEventListener("keydown",event=>{
+     choose.append(index,title,state);
+     choose.addEventListener("click",()=>send("playerSelect",song.id));
+     choose.addEventListener("dblclick",()=>send("playerPlayNow",song.id));
+     choose.addEventListener("keydown",event=>{
        if(event.key==="Enter"){
          event.preventDefault();
          send("playerPlayNow",song.id);
        }
      });
-     list.append(row);
+     const actions=document.createElement("span");
+     actions.className="ap-row-actions";
+     const move=delta=>send("playerMoveSong",
+       {from:song.id,to:song.id+delta});
+     actions.append(
+       actionButton("↑","Move "+song.title+" up",()=>move(-1)),
+       actionButton("↓","Move "+song.title+" down",()=>move(1)),
+       actionButton("↥","Play "+song.title+" next",
+         ()=>send("playerQueueNext",song.id)),
+       actionButton("+","Add "+song.title+" to queue",
+         ()=>send("playerQueueAppend",song.id)),
+       actionButton("×","Remove "+song.title+" from this setlist",
+         ()=>send("playerRemoveSong",song.id)));
+     row.addEventListener("dragstart",event=>{
+       event.dataTransfer?.setData("text/plain",String(song.id));
+       if(event.dataTransfer)event.dataTransfer.effectAllowed="move";
+     });
+     row.addEventListener("dragover",event=>event.preventDefault());
+     row.addEventListener("drop",event=>{
+       event.preventDefault();
+       const source=Number(event.dataTransfer?.getData("text/plain"));
+       if(Number.isInteger(source)&&source>=0 && source!==song.id)
+         send("playerMoveSong",{from:source,to:song.id});
+     });
+     row.append(choose,actions);list.append(row);
    }
    if(all.length>songs.length){
      const hint=document.createElement("div");
@@ -158,6 +240,7 @@
    $("playerAddFolder").disabled=Boolean(model.libraryBusy);
    $("playerAdd").disabled=Boolean(model.libraryBusy);
    $("playerCount").textContent=model.tracks.length+" songs";
+   renderSetlists();
    renderTracks();
  }
  search.addEventListener("input",renderTracks);
