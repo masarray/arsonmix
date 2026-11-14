@@ -101,6 +101,8 @@ public:
         std::array<Slot, maxFx> slots {};
         std::array<std::atomic<bool>, maxFx> bypassFlags {};
         std::atomic<bool> rackBypassed{false}; // does not overwrite per-slot flags
+        // Stable, CONTROL-bound pointer to lab's single global bypass atomic.
+        const std::atomic<bool>* globalRackOverride=nullptr;
         // Owned and advanced exclusively by the realtime render callback.
         // Physical-slot identity survives an atomic logical reorder (PR #102).
         std::array<armix::dsp::FxBypassEnvelope, maxFx> bypassEnvelope {};
@@ -118,6 +120,7 @@ public:
         scratch_.setSize (2, maxFrames, false, true, false);
         // CH1 bypass scratch now belongs to its shared Graph lifetime so
         // a ChannelId PCM snapshot can retain the SAME original FX state.
+        graphOwned_->globalRackOverride=dryRoutingLab_.globalFxBypassFlag();
         handoff_.initialize (graphOwned_.get());
     }
 
@@ -3082,8 +3085,9 @@ private:
             auto& slot=graph.slots[physical];
             if(!slot.processor)continue;
             auto& bypass=graph.bypassEnvelope[physical];
-            bypass.request(dryRoutingLab_.globalFxBypassed() ||
-                           graph.rackBypassed.load(std::memory_order_acquire) ||
+            bypass.request(graph.rackBypassed.load(std::memory_order_acquire) ||
+                           (graph.globalRackOverride &&
+                            graph.globalRackOverride->load(std::memory_order_acquire)) ||
                            graph.bypassFlags[physical].load(std::memory_order_acquire));
             const bool blend=bypass.transitioning();
             if(blend)
