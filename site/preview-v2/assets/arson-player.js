@@ -28,7 +28,13 @@
  const open=visible=>{
    root.hidden=!visible;
    toggle.setAttribute("aria-expanded",String(visible));
-   if(visible) $("playerSearch").focus({preventScroll:true});
+   if(visible){
+     // An initially hidden WebView has no reliable clientHeight. Recompute
+     // the visible window after the approved Player panel is shown.
+     rendered="";
+     renderTracks();
+     $("playerSearch").focus({preventScroll:true});
+   }
  };
  toggle.addEventListener("click",()=>open(root.hidden));
  $("playerClose").addEventListener("click",()=>open(false));
@@ -283,6 +289,7 @@
        actionButton("×","Remove "+song.title+" from this setlist",
          ()=>send("playerRemoveSong",song.id)));
      row.addEventListener("dragstart",event=>{
+       queueDrag=null; // catalogue and queue are distinct drag domains
        event.dataTransfer?.setData("text/plain",String(song.id));
        if(event.dataTransfer)event.dataTransfer.effectAllowed="move";
      });
@@ -386,6 +393,7 @@
  }
  search.addEventListener("input",renderTracks);
  list.addEventListener("scroll",renderTracks,{passive:true});
+ window.addEventListener?.("resize",()=>{rendered="";renderTracks();});
  root.addEventListener("keydown",event=>{
    if(event.key==="Escape"){event.stopPropagation();open(false);toggle.focus();}
    if(event.key===" " && event.target!==search &&

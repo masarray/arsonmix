@@ -37,9 +37,10 @@ const backend={
   addEventListener(name,fn){listeners.set(name,fn);},
   emitEvent(name,detail){actions.push({name,detail});}
 };
+const window={__JUCE__:{backend},addEventListener(){}};
 const $=id=>document.getElementById(id);
 const player=readFileSync('site/preview-v2/assets/arson-player.js','utf8');
-runInNewContext(player,{document,window:{__JUCE__:{backend}},console});
+runInNewContext(player,{document,window,console});
 const publish=state=>listeners.get('arMixPlayerState')({
   schema:'arsonmix.player.v1',
   ...state,
@@ -69,9 +70,8 @@ assert.equal($('playerQueueCount').textContent,'128');
 assert.equal(queueRows()[0].children[0].textContent,'Duplicate Song');
 assert.equal(queueRows()[3].children[0].textContent,'Duplicate Song');
 assert.ok(queueRows()[5].draggable);
-assert.ok(!queueRows()[0].children[1].children[0].disabled===false ||
-          queueRows()[0].children[1].children[0].disabled,
-          'first queue entry cannot move above zero');
+assert.equal(queueRows()[0].children[1].children[0].disabled,true,
+  'first queue entry cannot move above zero');
 
 const list=$('playerList');
 list.scrollTop=38*1400;
@@ -125,6 +125,10 @@ search.value='song 1999';search.fire('input');
 assert.equal(songRows().length,1,'search must reach song 2000');
 assert.equal(songRows()[0].children[0].children[1].textContent,'Song 1999');
 assert.equal(list.scrollTop,0,'changing search returns to first match');
+search.value='';search.fire('input');
+assert.ok(songRows().length<=80);
+$('playerToggle').fire('click'); // opening hidden panel remeasures viewport
+assert.ok(songRows().length<=80);
 assert.doesNotMatch(player,/new Audio\s*\(|AudioContext\s*\(/,
   'WebView may never become a competing audio player');
 console.log('M6 PASS: 2000-song virtualization, 128 queue, duplicates, revision-locked drag, search and native-only playback');
