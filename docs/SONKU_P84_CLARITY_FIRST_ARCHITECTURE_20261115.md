@@ -53,3 +53,28 @@ frequency and +/-1.5dB broadband per program. The next 12% candidate
 is derived from the measured failure, not gain makeup. Whether such a
 limited difference produces persuasive headphone localization is
 **UNKNOWN**; a spectral PASS must never be called externalization.
+
+## Second evidence milestone: independent broadband room impulse qualification
+
+P8.4 research source gate at exact commit
+`f531324cb3f9a93f2f8ed066f0f9cd1914af9883`:
+https://github.com/masarray/arsonmix/actions/runs/43640451156
+
+The source now includes an impulse-program FIR/room test and an
+integrated one-third-octave spectral-response scan from 90Hz to
+approximately 12kHz (11 bands per rate/room, each integrating five
+frequency probes). This is independent from the 10 musical tone
+frequencies and checks ROOM OFF and ROOM ON separately.
+
+Native Linux source results: **28 total rate/room/program fixtures**
+(44.1/48k, room OFF/ON, seven programs including impulse), **88
+third-octave impulse measurements** and **280 fixed-tone measurements**;
+worst impulse-band relative deviation **2.182dB at 3.63kHz**
+(48k ROOM OFF), absolute worst program broadband level deviation
+**1.267dB** versus P8.2 (impulse fixture), and yaw remains measurable.
+Both source quality gates passed without gain normalization or relaxed
+thresholds. These tests are not calibrated to a listener's headphones
+and still do not establish front/rear realism, distance or commercial
+dearVR parity. Next stage must replace dual-core evaluation with a
+single physical graph, perform listening and measured BRIR/ear
+calibration; do not offer a Windows test until then.
