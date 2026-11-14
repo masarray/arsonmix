@@ -98,6 +98,7 @@ def run() -> None:
                     assert "conic-gradient" in leds["activeMask"], leds
                     pointer = first.locator(".gain-dial-pointer")
                     before_turn = pointer.evaluate("el => getComputedStyle(el).transform")
+                    before_led_mask = arc.evaluate("el => getComputedStyle(el, '::after').maskImage")
                     lcd = first.locator(".gain-readout")
                     lcd_size = lcd.bounding_box()
                     assert lcd_size and lcd_size["height"] >= 24, (width, lcd_size)
@@ -118,6 +119,9 @@ def run() -> None:
                     assert "+6.5 dB" in first.locator(".gain-readout").inner_text()
                     assert "6.5" in knob.get_attribute("value") or knob.input_value() == "6.5"
                     assert pointer.evaluate("el => getComputedStyle(el).transform") != before_turn
+                    assert arc.evaluate(
+                        "el => getComputedStyle(el, '::after').maskImage"
+                    ) != before_led_mask, "LED progress did not follow accepted gain gesture"
                     assert cap.evaluate("el => getComputedStyle(el).transform") == "none"
                     # Double-click must use the same gain parameter path and restore unity.
                     first.locator(".gain-dial").dblclick()
