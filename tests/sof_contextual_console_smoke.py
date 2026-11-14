@@ -42,7 +42,8 @@ def run() -> None:
         native_bridge = (ROOT / "web/approved-native-bridge.js").read_text(encoding="utf-8")
         assert "window.__ARMIX_GAIN_UNITY_DETENT__?.(el,event)" in native_bridge
         assert 'querySelector(".gain-lcd-digits")||lcd' in native_bridge
-        assert 'querySelector(".gain-lcd-digits")||readout' in native_bridge
+        assert 'function paintAcceptedInputGain(t,valueDb)' in native_bridge
+        assert 'root.querySelector(".gain-lcd-digits")' in native_bridge
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             try:
