@@ -7644,7 +7644,8 @@ private:
             emitScanProgress();
         // Run transport deadlines at 12 Hz only while necessary. The
         // browser still receives lightweight state at its old 4 Hz pace.
-        if(timerTicks_%3==0 || playerAutoNext_ || playerPendingIndex_>=0) {
+        if(timerTicks_%3==0 || playerAutoNext_ ||
+           playerLoopCurrent_ || playerPendingIndex_>=0) {
             // Start only a genuinely prepared NEXT and ACK the row identity
             // in the same UI-owner thread. No session/graph mutation here.
             if(engine_.servicePlayerTransition()) {
