@@ -461,6 +461,40 @@ int main() {
             loop.pull(left.data(),right.data(),256);
             for(int i=0;i<256;++i)
                 assert(left[i]==0.f && right[i]==0.f);
+            // Restart across 96 -> disconnected -> 44.1 kHz. Pending
+            // standby PCM must not leak into the next hardware epoch,
+            // and device reopen itself must NEVER auto-play into MAIN.
+            loop.deviceRate(96000.0);
+            loop.load(longFile,true);
+            bool warm96=false;
+            for(int i=0;i<600;++i) {
+                if(loop.isPlayingRequested()){warm96=true;break;}
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            assert(warm96);
+            assert(loop.queueTransition(longFile,0,100,500,1.,4.));
+            assert(loop.transitionPending());
+            loop.deviceRate(0.0);
+            assert(!loop.transitionPending());
+            assert(!loop.transitionActive());
+            assert(!loop.isPlayingRequested());
+            loop.deviceRate(44100.0);
+            bool ready44=false;
+            for(int i=0;i<600;++i) {
+                if(loop.snapshot().outputReady){ready44=true;break;}
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            assert(ready44);
+            assert(!loop.isPlayingRequested()); // explicit Play required
+            loop.pull(left.data(),right.data(),256);
+            for(int i=0;i<256;++i)
+                assert(left[i]==0.f && right[i]==0.f);
+            loop.play();
+            assert(loop.isPlayingRequested());
+            loop.pull(left.data(),right.data(),256);
+            for(int i=0;i<256;++i)
+                assert(std::isfinite(left[i]) && std::isfinite(right[i]));
+            loop.stop();
         }
         assert(longFile.deleteFile());
     }
