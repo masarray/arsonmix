@@ -4,6 +4,12 @@ project(ARMixConsole VERSION 0.5.0 LANGUAGES C CXX)
 option(ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT
        "Enable unqualified SonKu full KEMAR directional reflections on the native JUCE callback"
        OFF)
+# Native XYZ/ACK v3: isolated research switch, OFF in every public installer.
+# This implies the measured KEMAR full-elevation research tables explicitly
+# and never changes the ordinary 46-byte SonKu v2 native FX ABI.
+option(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
+       "Enable P7.2 unqualified native real-time XYZ/v3 research adapter"
+       OFF)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -197,7 +203,11 @@ target_compile_definitions(ARMixConsole PRIVATE
     JUCE_APPLICATION_VERSION_STRING="${ARMIX_APP_VERSION}"
     ARMIX_BUILD_SOURCE_SHA="${ARMIX_BUILD_SOURCE_SHA}"
     ARMIX_GFX_EMBED_PNG_SKINS=1
-    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT}>:ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT=1>)
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT}>:ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:SONKU_P7_MEASURED_ELEVATION_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:SONKU_P71_DIRECT_XYZ_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:SONKU_P72_NATIVE_XYZ_RT=1>)
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
   # Never link Windows loader or sound APIs into macOS/Linux builds.
@@ -285,6 +295,36 @@ if(BUILD_TESTING)
   endif()
   add_test(NAME NativeSonKuSessionV1V2AndAudioAppliedAck
       COMMAND ARMixSonKuNativeStateTests)
+
+  # P7.2 native real-time 3D is never required in production: its test
+  # binaries, large measured elevation bank and v3 schema are built ONLY
+  # when explicitly opted in. Reuse the exact existing JUCE processor.
+  if(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT)
+    add_executable(ARMixSonKuP72SourceTests
+        tests/sonku_p72_realtime_xyz_test.cpp)
+    target_compile_features(ARMixSonKuP72SourceTests PRIVATE cxx_std_20)
+    target_compile_definitions(ARMixSonKuP72SourceTests PRIVATE
+        SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+        SONKU_P71_DIRECT_XYZ_RESEARCH=1
+        SONKU_P72_NATIVE_XYZ_RT=1)
+    add_test(NAME NativeSonKuP72AtomicXyzLiveEditSource
+        COMMAND ARMixSonKuP72SourceTests)
+
+    juce_add_console_app(ARMixSonKuP72NativeTests
+        PRODUCT_NAME "ArSonMix SonKu P72 Native XYZ Tests")
+    target_sources(ARMixSonKuP72NativeTests PRIVATE
+        tests/sonku_p72_native_juce_xyz_test.cpp)
+    target_link_libraries(ARMixSonKuP72NativeTests PRIVATE
+        juce::juce_audio_processors juce::juce_recommended_config_flags)
+    target_compile_features(ARMixSonKuP72NativeTests PRIVATE cxx_std_20)
+    target_compile_definitions(ARMixSonKuP72NativeTests PRIVATE
+        ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=1
+        SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+        SONKU_P71_DIRECT_XYZ_RESEARCH=1
+        SONKU_P72_NATIVE_XYZ_RT=1)
+    add_test(NAME NativeSonKuP72JuceV3XyzLiveAckV1V2Restore
+        COMMAND ARMixSonKuP72NativeTests)
+  endif()
   # Pure control-plane first-run routing selection: no JUCE, drivers,
   # WASAPI activation or callback dependencies. Full Windows CTest gate.
   add_executable(ARMixFirstRunEndpointPolicyTests
