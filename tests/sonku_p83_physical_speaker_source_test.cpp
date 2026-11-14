@@ -269,7 +269,38 @@ int main(int argc,char** argv){
         compareSpectrum("MONO_MUSIC",rate,musicMono,speakerMono);
         compareSpectrum("ANTIPHASE",rate,before,speakerAnti);
         compareSpectrum("MUSIC_LF_ANTIPHASE",rate,before,lfAnti);
+
         compareSpectrum("MUSIC_LF_MONO",rate,musicMono,lfMono);
+        // Rejected by human headphone FAT 2026-11-15. Prior tests falsely
+        // called any finite/no-null PCM and +/-6dB at four hand-picked tones
+        // "music quality". Real monitoring fidelity is a HARD gate, not
+        // a gain makeup, CPU benchmark or spatial direction statistic.
+        const auto p82Left=renderAt(p83::Mode::MusicBedP82,0,0,false,
+                    p83::Stem::Combined,0x3f,Input::HardLeft);
+        const auto p82Right=renderAt(p83::Mode::MusicBedP82,0,0,false,
+                    p83::Stem::Combined,0x3f,Input::HardRight);
+        const auto p82Partial=renderAt(p83::Mode::MusicBedP82,0,0,false,
+                    p83::Stem::Combined,0x3f,Input::Partial);
+        const auto lfPartial=render(rate,p83::Mode::SpeakerMonitor,0,0,false,
+                    p83::Stem::Combined,0x3f,Input::Partial,128,0.f,true);
+        bool fieldMusicFidelity=true;
+        const auto broadband=[&](const char* name,const Render& baseline,
+                                 const Render& candidate,bool requiresFidelity){
+            const double relativeDb=10.*std::log10(
+                (total(candidate)+1e-20)/(total(baseline)+1e-20));
+            const bool within=std::isfinite(relativeDb) &&
+                              relativeDb>=-3. && relativeDb<=3.;
+            std::printf("P83_HEADPHONE_FAT_RMS,%s,%.0f,vs_P82_dB=%.3f,%s\n",
+                        name,rate,relativeDb,within?"WITHIN_3DB":"LOSS_OR_BOOST");
+            if(requiresFidelity)fieldMusicFidelity &= within;
+        };
+        broadband("PHYSICAL_ANTIPHASE",before,speakerAnti,false);
+        broadband("PHYSICAL_MONO",musicMono,speakerMono,false);
+        broadband("MUSIC_LF_ANTIPHASE",before,lfAnti,true);
+        broadband("MUSIC_LF_MONO",musicMono,lfMono,true);
+        broadband("MUSIC_LF_LEFT",p82Left,lfLeft,true);
+        broadband("MUSIC_LF_RIGHT",p82Right,lfRight,true);
+        broadband("MUSIC_LF_PARTIAL",p82Partial,lfPartial,true);
         // Four independent bins on BOTH 44.1/48k, mono and antiphase.
         // Reject tonal holes and overcompensation, not just the 83-Hz null.
         const auto qualify=[&](const Render& reference,const Render& trial,
@@ -282,12 +313,15 @@ int main(int argc,char** argv){
                 const double delta=10.*std::log10((next+1e-20)/(orig+1e-20));
                 std::printf("P83_MULTIBAND_GATE,%s,%.0f,%.0fHz,delta_dB=%.3f\n",
                             label,rate,hz,delta);
-                check(std::isfinite(delta)&&delta>=-6.&&delta<=6.,
-                      "music LF multiband level must remain within +/-6dB of P8.2");
+                fieldMusicFidelity &=
+                    std::isfinite(delta)&&delta>=-2.5&&delta<=2.5;
             }
         };
         qualify(before,lfAnti,"ANTI");
         qualify(musicMono,lfMono,"MONO");
+        // Audit all other room/direction invariants first; fail the candidate
+        // at the end so CI retains complete evidence instead of hiding errors.
+        const bool musicFidelityAccepted=fieldMusicFidelity;
         // In one native executable, sweep the LF conditioning crossover:
         // find the lowest cutoff that protects antiphase bass AND lower mids.
         // No winner selected from a naive single-frequency benchmark.
@@ -373,6 +407,11 @@ int main(int argc,char** argv){
               rate,10*std::log10(total(direct)/(total(horizontal)+total(floor)+total(ceiling))),
               10*std::log10(total(direct)/total(late)),
               10*std::log10(total(ceiling)/total(floor)));
+        std::printf("P83_HEADPHONE_FAT_CANDIDATE,%0.f,status=%s,baseline=P82\n",
+                    rate,musicFidelityAccepted?"SOURCE_FIDELITY_GATE_PASS":
+                        "REJECTED_LOW_ENERGY_OR_SPECTRAL_HOLE");
+        check(musicFidelityAccepted,
+              "P8.3 MUSIC MONITORING REJECTED: P8.2 full-band loss exceeds FAT tolerance");
         if(!folder.empty()&&rate==48000.){
             writeWav(folder/"P82_music_antiphase_48k.wav",before,48000);
             writeWav(folder/"P83_mono_front_direct_48k.wav",objects[0],48000);
@@ -391,6 +430,6 @@ int main(int argc,char** argv){
             writeWav(folder/"P83_combined_48k.wav",combined,48000);
         }
     }
-    std::puts("PASS P8.3 MULTIBAND FIDELITY: 44.1/48k 83/461/1703/5387Hz anti-phase and mono within +/-6dB of P8.2; headphone approval NOT proven");
+    std::puts("PASS P8.3 SOURCE FIDELITY: 44.1/48k four spectral probes +/-2.5dB and five broadband program fixtures +/-3dB vs P8.2; headphone approval NOT proven");
     std::puts("PASS P8.3 SOURCE GATES: physical mono/stereo 2x2, yaw, six stems, P8.2 preservation, direction and phase; perceptual externalization NOT proven");
 }

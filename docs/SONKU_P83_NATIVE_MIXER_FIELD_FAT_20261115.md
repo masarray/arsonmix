@@ -86,3 +86,45 @@ callback, while published realtime edits require the full 12 ms
 fade-and-audio ACK transaction. State snapshots are now blocked by an
 atomic pending-mode fence during the transition. This corrected
 candidate must pass all 8 Windows CTests before packaging.
+
+## CRITICAL: USER HEADPHONE FAT REJECTED, 2026-11-15 WIB
+
+The owner tested the full native mixer P8.3 portable candidate from run
+43635510105 and found the sound **compressed/boxed-in, quiet and lacking
+body**, far worse than the approved P8.2. Treat the physical headphone
+result as a HARD FAILURE, not a request for additive gain or more reverb.
+The P8.3 portable artifact is preserved for forensic reproduction
+ONLY. **Do not recommend it as an accepted listening candidate**.
+
+Source-level root causes supported by current code:
+1. `transparentBass` is disabled whenever `positionedMode` is true.
+   That removes P8.2's original L/R LF pressure restoration.
+2. `musicSafe` and `sideRescue` are disabled for positioned mode.
+   That removes P8.2 stereo SIDE musical preservation and centered
+   anti-comb filtering.
+3. `roomEnabled&&!positionedMode` excludes P8.3 from P8.2 scene
+   presence calibration, despite still using the scene's FIR, ER/FDN,
+   and output gain/smoothing paths.
+4. Two measured HRIRs at +/-30 degrees are valid directional research
+   sources but do NOT alone guarantee consistent full-spectrum music;
+   their MID/SIDE transfer can have low-energy and cancellation valleys.
+5. The "LF480" substitute only conditions the direct 480-Hz low band,
+   uses an intentionally non-measured 2x2 matrix, and does not guarantee
+   stereo music above its crossover. Prior 4-bin +/-6dB acceptance is
+   inadequate for real music.
+
+Existing exact native 48k PCM evidence: anti-phase P8.2 energy
+8.967784318, physical speaker 1.520875549 (-7.71dB), opt-in LF480
+5.489325122 (-2.13dB). LF480 at 461Hz is -5.801dB and correlated
+mono at 1703Hz -3.887dB relative to P8.2. These do not by themselves
+prove the exact frequency profile of the user's song/headphones, but
+they INVALIDATE the previous "music fidelity PASS" conclusion.
+
+FAT gate is now deliberately strict: LF480 must preserve five
+program-material fixtures within +/-3dB full-band level and both mono
+and anti-phase spectral probes at 83/461/1703/5387Hz within +/-2.5dB
+at both 44.1/48k. Any violation MUST FAIL the CI, preventing another
+"green" portable candidate that is materially quieter or hollow.
+Additional continuous-spectrum FFT, transient, binaural IACC,
+loudness-matched headphone and human sound-location tests remain
+mandatory. Do not game these gates with auto-gain.

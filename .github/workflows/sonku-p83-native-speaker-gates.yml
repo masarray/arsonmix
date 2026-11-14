@@ -95,7 +95,7 @@ jobs:
             tests/sonku_p83_hosted_cpu_benchmark.cpp -o /tmp/p83-bench
           /tmp/p83-bench | tee /tmp/p83-bench.log
           grep -q '^P83_HOSTED_CPU,mode=P83' /tmp/p83-bench.log
-      - name: Strict multi-band music + LF gate - reject cancellation or overboost
+      - name: Strict music fidelity FAT veto - P8.2 reference is mandatory
         shell: bash
         run: |
           set -euo pipefail
@@ -107,10 +107,10 @@ jobs:
               diff=bass-mid
               printf "P83_MUSIC_GATE,48000,83Hz_minus_1703Hz_relative_to_P82=%.3f dB,minimum=-6 dB\n",diff
               if(diff < -6) {print "FAIL P83 MUSIC: opt-in LF safeguard still loses bass"; exit 1}
-              print "PASS P83 MUSIC: opt-in LF guard source fidelity; listening still pending"
+              print "PASS P83 MUSIC: all-source spectral and broadband gate; headphone listening still pending"
             }
           ' /tmp/p83-native.log
-          grep -q '^PASS P8.3 MULTIBAND FIDELITY:' /tmp/p83-native.log
+          grep -q '^PASS P8.3 SOURCE FIDELITY:' /tmp/p83-native.log
       - name: Build exact SonKu P8.3 offline music A/B utility and smoke real WAV
         shell: bash
         run: |
