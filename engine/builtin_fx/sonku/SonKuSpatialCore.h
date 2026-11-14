@@ -4,6 +4,9 @@
 #include "SonKuEarlyReflections.h"
 #include "SonKuMusicalReverb.h"
 #include "SonKuStereoIntegrity.h"
+#if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
+#include "SonKuHrtfTonalCalibration.h"
+#endif
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
 #include "SonKuSourcePlacement3D.h"
 #endif
@@ -91,6 +94,10 @@ public:
                                     std::abs(rate-48000.)>.1))return false;
         sampleRate_=rate;
         bank_=(std::abs(rate-44100.)<=.1)?hrir::normal44100:hrir::normal48000;
+#if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
+        if(profile==SonKuReflectionProfile::SixSurfaceKemarResearch &&
+           !tonalCalibration_.prepare(rate,bank_))return false;
+#endif
         // Prepared control-side: continuous coefficient and gain smoothing
         // without trigonometric/exponential work in the audio callback.
         filterSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.006)));
@@ -146,6 +153,9 @@ public:
         smoothedErPresence_=1.f;
         smoothedTailPresence_=1.f;
         earBass_.fill(0.f);
+#if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
+        tonalCalibration_.reset();
+#endif
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
         originalBass_.fill(0.f);
         binauralBass_.fill(0.f);
@@ -385,6 +395,10 @@ public:
                     ears[1]+=v0*r0+v1*r1;
                 }
             }
+#if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
+            if(transparentBass)
+                tonalCalibration_.process(ears[0],ears[1]);
+#endif
             const auto reflection=room_.active()
                 ?room_.process(transparentBass?x0:(musicSafe?inputMid:x0),
                     transparentBass?x1:(musicSafe?inputMid:x1),
@@ -622,6 +636,9 @@ private:
     float smoothedBassShelf_=0.f,limiterGain_=1.f;
     float smoothedErPresence_=1.f,smoothedTailPresence_=1.f;
     std::array<float,2> earBass_{};
+#if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
+    SonKuHrtfTonalCalibration tonalCalibration_{};
+#endif
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
     std::array<float,2> originalBass_{},binauralBass_{};
     float sideBass_=0.f,bassCrossoverAlpha_=0.f;
