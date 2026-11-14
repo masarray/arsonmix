@@ -269,6 +269,15 @@ public:
         const float distanceGain=room_.relativeDistanceGain();
         const bool nativeSpace=nativeSpaceEverUsed_;
         const bool roomEnabled=settings_.spacePreset!=0;
+#if defined(SONKU_P75_MUSIC_SAFE_RESEARCH) && SONKU_P75_MUSIC_SAFE_RESEARCH
+        // Field-failure quarantine, opt-in ONLY: spatialize the MUSIC MID
+        // through one real measured center HRTF, keep stereo SIDE separated.
+        // The original two-emitter renderer is never modified in public builds.
+        const bool musicSafe=
+            room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch;
+#else
+        constexpr bool musicSafe=false;
+#endif
         // Deliberate music-monitor compensation: real distance perception
         // still comes from direct/reflected ratio and high-frequency cues,
         // while the direct field is not attenuated by the full physical 1/r.
@@ -299,10 +308,19 @@ public:
             // Preserve strong anti-correlated music side energy without
             // collapsing it into the two virtual mono HRTF sources. The
             // independent guard has no hidden UI state or new audio bus.
-            const float preservedSide=integrity_.preservedSide(x0,x1);
-            // At native spatialMix=0 the dry input stays bit-exact.
-            // At ordinary positively-correlated stereo the guard is zero.
-            const float sideRescue=.65f*smoothedMix_*smoothedTrim_*preservedSide;
+            const float inputMid=.5f*(x0+x1);
+            const float preservedSide=musicSafe?.5f*(x0-x1):
+                integrity_.preservedSide(x0,x1);
+            // P7.5 research: an unconditional, orthogonal L/R side return
+            // rather than correlation-gated, time-varying rescue. A centered
+            // HRTF cannot annihilate anti-phase stereo. WIDTH changes level
+            // of the stereo SIDE but never sets it to zero by accident.
+            // 0° => 0.5x; 60° => 1x; >=90° => 1.25x (bounded).
+            const float musicSideWidth=musicSafe?
+                std::min(1.25f,.5f+settings_.stereoSpreadDegrees/120.f):1.f;
+            const float sideRescue=musicSafe?
+                smoothedMix_*smoothedTrim_*musicSideWidth*preservedSide:
+                .65f*smoothedMix_*smoothedTrim_*preservedSide;
             history_[0][write_]=x0;
             history_[1][write_]=x1;
             float ears[2]{0.f,0.f};
@@ -318,16 +336,27 @@ public:
                 auto& r1=kernels_[1][1][tap];
                 l0+=filterSlew_*(targets_[0][0][tap]-l0);
                 r0+=filterSlew_*(targets_[0][1][tap]-r0);
-                l1+=filterSlew_*(targets_[1][0][tap]-l1);
-                r1+=filterSlew_*(targets_[1][1][tap]-r1);
-                ears[0]+=v0*l0+v1*l1;
-                ears[1]+=v0*r0+v1*r1;
+                if(musicSafe) {
+                    // Both musical input channels share exactly one centered
+                    // measured HRIR. No dual-HRTF center interference; the
+                    // unprocessed SIDE is returned in its own stereo axis.
+                    // Only two FIR multiply-accumulates per tap, not four.
+                    const float sum=v0+v1;
+                    ears[0]+=sum*l0;
+                    ears[1]+=sum*r0;
+                }else{
+                    l1+=filterSlew_*(targets_[1][0][tap]-l1);
+                    r1+=filterSlew_*(targets_[1][1][tap]-r1);
+                    ears[0]+=v0*l0+v1*l1;
+                    ears[1]+=v0*r0+v1*r1;
+                }
             }
             const auto reflection=room_.active()
-                ?room_.process(x0,x1,degrees_,settings_.stereoSpreadDegrees)
+                ?room_.process(musicSafe?inputMid:x0,musicSafe?inputMid:x1,
+                    degrees_,musicSafe?0.f:settings_.stereoSpreadDegrees)
                 :SonKuEarlyReflections::Ears{};
             const auto late=reverb_.active()
-                ?reverb_.process(x0,x1)
+                ?reverb_.process(musicSafe?inputMid:x0,musicSafe?inputMid:x1)
                 :SonKuMusicalReverb::Ears{};
             if(!nativeSpace && settings_.outputTrim<=1.f &&
                smoothedTrim_<=1.f) {
@@ -468,6 +497,19 @@ private:
         }
     }
     void updateKernels() noexcept {
+#if defined(SONKU_P75_MUSIC_SAFE_RESEARCH) && SONKU_P75_MUSIC_SAFE_RESEARCH
+        if(room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch) {
+            // Control evidence no longer gates musical MID coefficients:
+            // the first sample already has a single centered KEMAR HRIR.
+            // Never add two offset HRTFs for correlated source material.
+            interpolate(centerTarget_,degrees_);
+            targets_[0]=centerTarget_;
+            targets_[1]=centerTarget_;
+            if(!haveKernel_)kernels_=targets_;
+            haveKernel_=true;
+            return;
+        }
+#endif
         interpolate(targets_[0],
             degrees_-static_cast<double>(settings_.stereoSpreadDegrees)*0.5);
         interpolate(targets_[1],
