@@ -121,6 +121,9 @@ void testLiveControlTransitions(int sampleRate) {
     // A cold 120ms FFT analysis window on every dry->DSP transition would
     // fail this, even though a constant-pitch frequency test still passes.
     assert(longestSilentRun<sampleRate/12);
+    // A ~0.47 FS one-sample jump was measured before seam correction.
+    // The boundary must now be continuous to within float rounding.
+    assert(worstControlSeam<0.02f);
     assert(recentEnergy>5.0);
     assert(!processor.process(nullptr,0,nullptr,512));
     const double audioTimeMs=192.0*quantum*1000.0/sampleRate;
@@ -130,6 +133,23 @@ void testLiveControlTransitions(int sampleRate) {
 // Offline fixed-file QA: a spectral stretcher must receive inputLatency()
 // zero-input frames and then flush outputLatency() frames. Verifies song
 // ending isn't lost after pitch-shifting or time-stretching a full mix.
+void testNeutralBitExact() {
+    Processor processor;
+    assert(processor.prepare(48000,{0,100}));
+    constexpr int n=257;
+    std::array<float,n> inL{},inR{},outL{},outR{};
+    for(int i=0;i<n;++i) {
+        inL[i]=static_cast<float>(.71*std::sin(i*.19));
+        inR[i]=static_cast<float>(.31*std::cos(i*.23));
+    }
+    const float* const in[]={inL.data(),inR.data()};
+    float* const out[]={outL.data(),outR.data()};
+    assert(processor.process(in,n,out,n));
+    for(int i=0;i<n;++i) {
+        assert(outL[i]==inL[i] && outR[i]==inR[i]);
+    }
+    assert(processor.inputLatency()==0 && processor.outputLatency()==0);
+}
 void testEndOfSongTail(int sampleRate,Processor::Controls controls) {
     Processor processor;
     assert(processor.prepare(sampleRate,controls));
@@ -220,6 +240,7 @@ int main() {
     assert(std::abs(neutral.hz-440)<8);
     assert(up.hz>neutral.hz && down.hz<neutral.hz);
     assert(up.ratio>1.24 && down.ratio<.85);
+    testNeutralBitExact();
     testLiveControlTransitions(44100);
     testLiveControlTransitions(48000);
     testLiveControlTransitions(96000);
