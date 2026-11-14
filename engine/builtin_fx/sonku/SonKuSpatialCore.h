@@ -10,6 +10,7 @@
 #error P8.3 speaker research requires the P8.2 baseline and P7.1 XYZ engine
 #endif
 #include "SonKuP83SpeakerScene.h"
+#include "SonKuP83LowFrequencyTransfer.h"
 #endif
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
 #include "SonKuHrtfTonalCalibration.h"
@@ -122,6 +123,9 @@ public:
             1.-std::exp(-2.*3.14159265358979323846*220./rate));
 #endif
         limiterRelease_=static_cast<float>(1./(rate*0.080));
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+        if(!p83LowFrequency_.prepare(rate))return false;
+#endif
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
         // The special elevation control is not serialized or published to
         // a public host. Downgrading the prepared profile clears it.
@@ -176,6 +180,9 @@ public:
         room_.reset();
         reverb_.reset();
         integrity_.reset();
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+        p83LowFrequency_.reset();
+#endif
     }
     bool setSettings(const Settings& s) noexcept {
         if(!valid(s))return false;
@@ -232,6 +239,19 @@ public:
         p83Mode_=mode;
         reset();
         return true;
+    }
+    // Pre-PCM-only A/B: physical KEMAR transfer remains the default.
+    // This changes ONLY SpeakerMonitor LF, not MonoObject or P8.2.
+    bool setResearchSpeakerMusicLowFrequency(bool enabled) noexcept {
+        if(!ready_ || researchPcmStarted_ ||
+           room_.preparedProfile()!=SonKuReflectionProfile::SixSurfaceKemarResearch)
+            return false;
+        p83MusicCompatibleLf_=enabled;
+        reset();
+        return true;
+    }
+    bool researchSpeakerMusicLowFrequency() const noexcept {
+        return p83MusicCompatibleLf_;
     }
     bool setResearchHeadYaw(float yaw) noexcept {
         if(!ready_ || researchPcmStarted_ || !p83::validYaw(yaw) ||
@@ -450,6 +470,10 @@ public:
             if(transparentBass || positionedMode)
                 tonalCalibration_.process(ears[0],ears[1]);
 #endif
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+            if(positionedMode && !monoObject && p83MusicCompatibleLf_)
+                p83LowFrequency_.process(x0,x1,ears[0],ears[1]);
+#endif
             auto reflection=room_.active()
                 ?room_.process(transparentBass?x0:(musicSafe?inputMid:x0),
                     transparentBass?x1:(musicSafe?inputMid:x1),
@@ -652,6 +676,9 @@ private:
                 interpolate(targets_[1],positions.rightHead);
             else
                 for(auto& ear:targets_[1])ear.fill(0.f);
+            if(p83MusicCompatibleLf_ && p83Mode_==p83::Mode::SpeakerMonitor)
+                p83LowFrequency_.updateDirections(positions.leftHead,
+                                                   positions.rightHead);
             if(!haveKernel_)kernels_=targets_;
             haveKernel_=true;
             return;
@@ -736,6 +763,8 @@ private:
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
     p83::Mode p83Mode_=p83::Mode::MusicBedP82;
     p83::Stem p83Stem_=p83::Stem::Combined;
+    p83::LowFrequencySpeakerTransfer p83LowFrequency_{};
+    bool p83MusicCompatibleLf_=false;
     float p83HeadYaw_=0.f;
 #endif
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH

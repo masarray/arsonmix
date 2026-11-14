@@ -31,7 +31,8 @@ static void check(bool ok,const char* reason) {
 }
 static Render render(double rate,p83::Mode mode,float az,float yaw,
                      bool room,p83::Stem stem,std::uint8_t mask,Input input,
-                     int chunk=128,float elevation=0.f) {
+                     int chunk=128,float elevation=0.f,
+                     bool musicLf=false) {
     auto core=std::make_unique<SonKuSpatialCore>();
     check(core->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch),
           "native six-surface prepare");
@@ -44,6 +45,7 @@ static Render render(double rate,p83::Mode mode,float az,float yaw,
     check(core->setSettings(s),"native settings admission");
     check(core->setResearchRenderMode(mode),"quiescent render mode admission");
     check(core->setResearchHeadYaw(yaw),"quiescent world/head transform admission");
+    check(core->setResearchSpeakerMusicLowFrequency(musicLf),"quiescent music LF policy");
     check(core->setResearchEvidence(stem,mask),"quiescent stem admission");
     const int n=room?24576:8192;
     Render out{std::vector<float>(n),std::vector<float>(n)};
@@ -245,10 +247,34 @@ int main(int argc,char** argv){
         record("SPEAKER_ANTIPHASE",rate,speakerAnti);
         record("SPEAKER_MONO",rate,speakerMono);
         record("SPEAKER_PARTIAL",rate,speakerPartial);
+        // Physical reference versus explicitly non-physical LF music guard.
+        const auto lfAnti=render(rate,p83::Mode::SpeakerMonitor,0,0,false,
+                    p83::Stem::Combined,0x3f,Input::AntiPhase,128,0.f,true);
+        const auto lfMono=render(rate,p83::Mode::SpeakerMonitor,0,0,false,
+                    p83::Stem::Combined,0x3f,Input::MonoMusic,128,0.f,true);
+        const auto lfLeft=render(rate,p83::Mode::SpeakerMonitor,0,0,false,
+                    p83::Stem::Combined,0x3f,Input::HardLeft,128,0.f,true);
+        const auto lfRight=render(rate,p83::Mode::SpeakerMonitor,0,0,false,
+                    p83::Stem::Combined,0x3f,Input::HardRight,128,0.f,true);
+        check(total(lfAnti)>total(speakerAnti)*.75,
+              "music LF cannot lose additional anti-phase energy");
+        check(ild(lfLeft)<-1. && ild(lfRight)>1.,
+              "music LF does not reverse hard-left/right direction");
+        record("SPEAKER_LF_ANTIPHASE",rate,lfAnti);
+        record("SPEAKER_LF_MONO",rate,lfMono);
         const auto musicMono=renderAt(p83::Mode::MusicBedP82,0,0,false,
                     p83::Stem::Combined,0x3f,Input::MonoMusic);
         compareSpectrum("MONO_MUSIC",rate,musicMono,speakerMono);
         compareSpectrum("ANTIPHASE",rate,before,speakerAnti);
+        compareSpectrum("MUSIC_LF_ANTIPHASE",rate,before,lfAnti);
+        compareSpectrum("MUSIC_LF_MONO",rate,musicMono,lfMono);
+        const auto lfSmall=render(rate,p83::Mode::SpeakerMonitor,0,0,false,
+                    p83::Stem::Combined,0x3f,Input::AntiPhase,64,0.f,true);
+        check(exact(lfAnti,lfSmall),"LF 64/128 chunk parity");
+        const auto lfYaw=render(rate,p83::Mode::SpeakerMonitor,0,90,false,
+                    p83::Stem::Combined,0x3f,Input::HardLeft,128,0.f,true);
+        check(difference(lfLeft,lfYaw)>0.1,
+              "music LF source follows world-fixed speaker under head yaw");
         const auto small=render(rate,p83::Mode::SpeakerMonitor,0,0,false,
                     p83::Stem::Combined,0x3f,Input::AntiPhase,64);
         check(exact(speakerAnti,small),"stereo speakers block-size parity 64/128");
@@ -318,6 +344,8 @@ int main(int argc,char** argv){
             writeWav(folder/"P83_mono_left_direct_48k.wav",objects[6],48000);
             writeWav(folder/"P83_speaker_monophonic_stereo_48k.wav",speakerMono,48000);
             writeWav(folder/"P83_speaker_antiphase_48k.wav",speakerAnti,48000);
+            writeWav(folder/"P83_speaker_music_lf_antiphase_48k.wav",lfAnti,48000);
+            writeWav(folder/"P83_speaker_music_lf_mono_48k.wav",lfMono,48000);
             writeWav(folder/"P83_direct_only_48k.wav",direct,48000);
             writeWav(folder/"P83_horizontal_only_48k.wav",horizontal,48000);
             writeWav(folder/"P83_floor_only_48k.wav",floor,48000);

@@ -21,7 +21,8 @@ static void run(double rate,int buffer,int instances,p83::Mode mode) {
         cores[j]=std::make_unique<armix::sonku::SonKuSpatialCore>();
         if(!cores[j]->prepare(rate,armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch) ||
            !cores[j]->setSettings(settings) ||
-           !cores[j]->setResearchRenderMode(mode))std::abort();
+           !cores[j]->setResearchRenderMode(mode) ||
+           !cores[j]->setResearchSpeakerMusicLowFrequency(mode==p83::Mode::SpeakerMonitor))std::abort();
     }
     std::array<std::array<float,256>,4> left{},right{};
     std::vector<double> elapsed;

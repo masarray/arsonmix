@@ -107,3 +107,25 @@ bed as a disguised physical speaker. The CI includes an intentional
 passes. This gate is independent of the native directional source PASS.
 A 44.1/48k, 64/128/256, 1/2/4-insert Linux hosted CPU benchmark is
 also added; neither this benchmark nor a source PASS proves ASIO XRUNs.
+
+## Opt-in music-compatible LF research mode, not a physical BRIR
+
+The measured physical stereo 2x2 KEMAR transfer remains default and
+separately reported. Real symmetric loudspeakers can cancel anti-phase
+LF at a central listener. A 150-Hz complementary crossover can
+instead substitute ONLY the direct low-frequency transfer with a
+source-position/head-yaw-aware 2x2 ear matrix. Both sources feed both
+ears, but this low-band compensation intentionally introduces
+non-physical ILD and is NOT the measured response of two speakers.
+It is research-only and explicit through quiescent
+`setResearchSpeakerMusicLowFrequency(true)`; the full measured
+upper-frequency HRTF, six directional walls, room materials and FDN
+remain intact. MonoObject and P8.2 Music Bed are unchanged.
+This is not a hidden headphone SIDE return, but it is a monitored
+physical-fidelity tradeoff; user listening must assess whether that
+tradeoff is acceptable.
+
+The source gate compares physical versus music LF anti-phase, correlated,
+hard-L/R, head-yaw and block parity, and records reproducible WAVs.
+The relative -6 dB threshold now checks the opt-in monitoring variant.
+A PASS is only a *tonal source gate*, not proof of externalization.

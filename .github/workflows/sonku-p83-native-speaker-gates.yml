@@ -5,6 +5,7 @@ on:
       - 'engine/builtin_fx/sonku/SonKuSpatialCore.h'
       - 'engine/builtin_fx/sonku/SonKuEarlyReflections.h'
       - 'engine/builtin_fx/sonku/SonKuP83SpeakerScene.h'
+      - 'engine/builtin_fx/sonku/SonKuP83LowFrequencyTransfer.h'
       - 'tests/sonku_p83_*'
       - '.github/workflows/sonku-p83-native-speaker-gates.yml'
   workflow_dispatch:
@@ -78,14 +79,14 @@ jobs:
         run: |
           set -euo pipefail
           awk -F, '
-            /^P83_SPECTRAL,ANTIPHASE,48000,frequency=83Hz/ {split($5,a,"="); bass=a[2]}
-            /^P83_SPECTRAL,ANTIPHASE,48000,frequency=1703Hz/ {split($5,a,"="); mid=a[2]}
+            /^P83_SPECTRAL,MUSIC_LF_ANTIPHASE,48000,frequency=83Hz/ {split($5,a,"="); bass=a[2]}
+            /^P83_SPECTRAL,MUSIC_LF_ANTIPHASE,48000,frequency=1703Hz/ {split($5,a,"="); mid=a[2]}
             END {
               if (bass=="" || mid=="") {print "FAIL P83 MUSIC: missing source spectra"; exit 2}
               diff=bass-mid
               printf "P83_MUSIC_GATE,48000,83Hz_minus_1703Hz_relative_to_P82=%.3f dB,minimum=-6 dB\n",diff
-              if(diff < -6) {print "FAIL P83 MUSIC: anti-phase LF loss, candidate veto"; exit 1}
-              print "PASS P83 MUSIC: no significant relative LF null"
+              if(diff < -6) {print "FAIL P83 MUSIC: opt-in LF safeguard still loses bass"; exit 1}
+              print "PASS P83 MUSIC: opt-in LF guard source fidelity; listening still pending"
             }
           ' /tmp/p83-native.log
       - name: Upload exact-source offline research PCM (not human FAT)
