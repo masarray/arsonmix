@@ -28,3 +28,23 @@ jobs:
             -o "$RUNNER_TEMP/arson-player-key-test"
       - name: Run deterministic stereo, tempo, bypass and 44.1/48/96k gestures
         run: "$RUNNER_TEMP/arson-player-key-test"
+
+      # Reference comparison isolates only the FFT preset on the SAME
+      # ephemeral runner. It cannot qualify perceptual sound or Windows ASIO.
+      # Never block the real DSP test on a deliberately cheaper alternative.
+      - name: Compare cheaper preset CPU on identical synthetic audio (non-gating)
+        continue-on-error: true
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('engine/player/PlayerPitchTempoProcessor.h')
+          src=p.read_text(encoding='utf-8')
+          needle='stretch_.presetDefault(2,'
+          assert src.count(needle)==1, 'expected exact source preset'
+          p.write_text(src.replace(needle,'stretch_.presetCheaper(2,'),encoding='utf-8')
+          PY
+          g++ -std=c++20 -O2 -DNDEBUG -pthread \
+            tests/player_pitch_tempo_test.cpp \
+            -o "$RUNNER_TEMP/arson-player-cheaper-reference"
+          echo "REFERENCE_CHEAPER_PRESET (same runner, not deployed):"
+          "$RUNNER_TEMP/arson-player-cheaper-reference"
