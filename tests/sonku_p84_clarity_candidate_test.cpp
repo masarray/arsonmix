@@ -16,7 +16,7 @@ using armix::sonku::Settings;
 using armix::sonku::p83::Mode;
 using armix::sonku::p84::ClarityAnchor;
 struct Sound {std::vector<float> l,r;};
-enum class Program {Mono,AntiPhase,Left,Right,Partial,Transient};
+enum class Program {Mono,AntiPhase,Left,Right,Partial,Transient,Impulse};
 static constexpr double pi=3.14159265358979323846;
 static void require(bool yes,const char* msg){
  if(!yes){std::fprintf(stderr,"FAIL P84: %s\n",msg);std::abort();}
@@ -27,7 +27,8 @@ static const char* label(Program p) {
  case Program::Left:return "left";
  case Program::Right:return "right";
  case Program::Partial:return "partial";
- case Program::Transient:return "transient";}
+ case Program::Transient:return "transient";
+ case Program::Impulse:return "impulse";}
  return "unknown";
 }
 static Sound music(double rate,Program kind,int frames){
@@ -54,6 +55,7 @@ static Sound music(double rate,Program kind,int frames){
   case Program::Right:a.r[i]=x;break;
   case Program::Partial:a.l[i]=x;a.r[i]=.7f*x+.3f*y;break;
   case Program::Transient:a.l[i]=x;a.r[i]=y;break;
+  case Program::Impulse:a.l[i]=a.r[i]=i==2048?.18f:0.f;break;
   }
  }
  return a;
@@ -126,7 +128,8 @@ int main(){
  for(double rate:{44100.,48000.})
  for(bool room:{false,true})
  for(Program input:{Program::Mono,Program::AntiPhase,Program::Left,
-                    Program::Right,Program::Partial,Program::Transient}){
+                    Program::Right,Program::Partial,Program::Transient,
+                    Program::Impulse}){
   const auto anchor=native(rate,room,input,128,Mode::MusicBedP82);
   const auto physical=native(rate,room,input,128,Mode::SpeakerMonitor);
   const auto disabled=blend(rate,anchor,physical,0.f,128);
@@ -148,6 +151,25 @@ int main(){
       rate,room,label(input),hz,db);
    musicGate &= std::isfinite(db)&&std::abs(db)<=2.5;
   }
+  // Room impulse spectral-response guard. Probes average over each
+  // 1/3-octave band so narrow reference notches cannot be selectively
+  // hidden or magnified. This checks *all* audible octave regions, not
+  // the ten tone frequencies used for the music fixtures.
+  if(input==Program::Impulse){
+   for(double center=90.;center<=12000.;center*=std::pow(2.,1./3.)){
+    double referencePower=0.,candidatePower=0.;
+    for(int step=-2;step<=2;++step){
+     const double hz=center*std::pow(2.,step/12.);
+     referencePower+=probe(anchor,rate,hz);
+     candidatePower+=probe(candidate,rate,hz);
+    }
+    const double color=relativeDb(candidatePower,referencePower);
+    bandMax=std::max(bandMax,std::abs(color));
+    std::printf("P84_BROADBAND_IR,%.0f,room=%d,center=%.1fHz,"
+                "delta_dB=%.3f\n",rate,room,center,color);
+    musicGate &= std::isfinite(color)&&std::abs(color)<=2.5;
+   }
+  }
   for(std::size_t i=0;i<candidate.l.size();++i)
    require(std::isfinite(candidate.l[i])&&std::isfinite(candidate.r[i])&&
            std::abs(candidate.l[i])<1.f&&std::abs(candidate.r[i])<1.f,
@@ -161,7 +183,7 @@ int main(){
   }
  }
  require(musicGate,"music fidelity FAILED: per-band or RMS deviation exceeds P8.2 quality guard");
- std::printf("PASS P84 RESEARCH: 44.1/48 kHz P82 byte bypass, six stereo programs, "
+ std::printf("PASS P84 RESEARCH: 44.1/48 kHz P82 byte bypass, seven programs including impulse, "
              "room ON/OFF, 10 frequencies, chunk and yaw; worst_broad=%.3fdB "
              "worst_frequency=%.3fdB; listening and ASIO NOT PROVEN\n",
               broadMax,bandMax);
