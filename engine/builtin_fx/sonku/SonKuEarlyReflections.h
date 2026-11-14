@@ -26,7 +26,7 @@ enum class SonKuRoomShape : std::uint8_t { Rectangular=0, Square=1 };
 struct SonKuRoomGeometry {
     float widthMeters=7.2f,depthMeters=7.2f,distanceMeters=1.6f;
     // Research-only dimensions, no public .smix schema change.
-    float heightMeters=3.2f,listenerHeightMeters=1.6f,sourceHeightMeters=1.6f;
+    float heightMeters=3.2f,listenerHeightMeters=1.45f,sourceHeightMeters=1.45f;
 };
 // One render profile is admitted at prepare time, never switched inside PCM.
 // The measured horizontal KEMAR path remains experimental until ASIO/AB FAT.
