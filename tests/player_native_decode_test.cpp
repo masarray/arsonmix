@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/player/NativePlayerDeck.h"
+#include "../engine/player/NativePlayerShowDeck.h"
 #include "../engine/player/PlayerSetlistPolicy.h"
 #include "../engine/player/PlayerLibraryPolicy.h"
 #ifdef NDEBUG
@@ -306,6 +307,77 @@ int main() {
         changeDuringPlayback(0,100); // normal 0/100 passthrough restored
         assert(player.snapshot().played>original.played);
         } // ensure native decoder closes the file before Windows deletion
+        // M2: genuine JUCE WAV -> resampler -> generation-fenced seek,
+        // with progressive waveform indexed ONLY during decoding.
+        {
+            armix::player::NativePlayerDeck seekDeck;
+            seekDeck.deviceRate(48000.0);
+            seekDeck.load(longFile,true);
+            for(int attempt=0;attempt<600 && !seekDeck.isPlayingRequested();++attempt)
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            assert(seekDeck.isPlayingRequested());
+            std::array<float,512> l{},r{};
+            for(int i=0;i<12;++i)seekDeck.pull(l.data(),r.data(),512);
+            const auto beforeSeek=seekDeck.snapshot();
+            assert(beforeSeek.played>0);
+            assert(seekDeck.seekSeconds(3.25));
+            bool seekReady=false;
+            for(int i=0;i<600;++i) {
+                const auto state=seekDeck.snapshot();
+                if(state.outputReady &&
+                   state.played>static_cast<std::uint64_t>(3*48000)) {
+                    seekReady=true;break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            assert(seekReady);
+            seekDeck.pull(l.data(),r.data(),512);
+            const auto afterSeek=seekDeck.snapshot();
+            assert(afterSeek.played>static_cast<std::uint64_t>(3*48000));
+            int waveformEvidence=0;
+            for(const auto value:afterSeek.waveform)
+                if(value>1000)++waveformEvidence;
+            assert(waveformEvidence>0);
+            for(int i=0;i<512;++i)
+                assert(std::isfinite(l[i]) && std::isfinite(r[i]));
+            seekDeck.stop();
+        }
+        // M3: preloaded B comes from a SECOND DECODER WORKER, yet A and B
+        // merge as ONE existing PLAYER A stereo PCM signal. No second
+        // hardware callback, device, browser track or routing authority.
+        {
+            armix::player::NativePlayerShowDeck show;
+            show.deviceRate(48000.0);
+            show.load(longFile,true);
+            for(int attempt=0;attempt<600 && !show.isPlayingRequested();++attempt)
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            assert(show.isPlayingRequested());
+            assert(show.preload(file,0,100));
+            std::array<float,256> left{},right{};
+            bool queued=false;
+            for(int i=0;i<600;++i) {
+                if(i==0) {
+                    assert(show.queueTransition(file,0,100,180));
+                }
+                if(show.service()){queued=true;break;}
+                show.pull(left.data(),right.data(),256);
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            assert(queued && show.transitionActive());
+            bool heardSound=false;
+            for(int i=0;i<70;++i) {
+                show.pull(left.data(),right.data(),256);
+                for(int n=0;n<256;++n) {
+                    assert(std::isfinite(left[n]) && std::isfinite(right[n]));
+                    if(std::abs(left[n])>0.01f)heardSound=true;
+                }
+            }
+            assert(heardSound && !show.transitionActive());
+            show.service(); // retire old decoder off realtime
+            assert(show.snapshot().title==file.getFileNameWithoutExtension());
+            show.deviceRate(0.0);
+            assert(!show.isPlayingRequested());
+        }
         assert(longFile.deleteFile());
     }
     assert(file.deleteFile());
