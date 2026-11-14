@@ -73,6 +73,8 @@ void testLiveControlTransitions(int sampleRate) {
     int longestSilentRun=0,silentRun=0;
     double recentEnergy=0;
     double processTimeMs=0;
+    float previousOutput=0.f;
+    float worstControlSeam=0.f;
     for(int block=0;block<192;++block) {
         if(block==32)processor.setControls({4,100}); // bypass -> transposed
         if(block==64)processor.setControls({4,88});  // independent tempo
@@ -97,6 +99,11 @@ void testLiveControlTransitions(int sampleRate) {
         assert(processor.process(inputs,nInput,outputs,quantum));
         processTimeMs+=std::chrono::duration<double,std::milli>(
             std::chrono::steady_clock::now()-started).count();
+        if(block==32 || block==64 || block==96 ||
+           block==128 || block==160)
+            worstControlSeam=std::max(worstControlSeam,
+                                     std::abs(resultL[0]-previousOutput));
+        previousOutput=resultL[quantum-1];
         for(int i=0;i<quantum;++i) {
             const float x=resultL[i],y=resultR[i];
             assert(std::isfinite(x)&&std::isfinite(y));
@@ -117,8 +124,84 @@ void testLiveControlTransitions(int sampleRate) {
     assert(recentEnergy>5.0);
     assert(!processor.process(nullptr,0,nullptr,512));
     const double audioTimeMs=192.0*quantum*1000.0/sampleRate;
-    std::printf("M2 hot-gesture: %d Hz, silence %d frames, DSP %.1fms / %.1fms audio (CI reference)\n",
-                sampleRate,longestSilentRun,processTimeMs,audioTimeMs);
+    std::printf("M2 hot-gesture: %d Hz, silence %d frames, seam %.3f, DSP %.1fms / %.1fms audio (CI reference)\n",
+                sampleRate,longestSilentRun,worstControlSeam,processTimeMs,audioTimeMs);
+}
+// Offline fixed-file QA: a spectral stretcher must receive inputLatency()
+// zero-input frames and then flush outputLatency() frames. Verifies song
+// ending isn't lost after pitch-shifting or time-stretching a full mix.
+void testEndOfSongTail(int sampleRate,Processor::Controls controls) {
+    Processor processor;
+    assert(processor.prepare(sampleRate,controls));
+    const int totalInput=sampleRate/3;
+    constexpr int quantum=512;
+    std::array<float,768> sourceL{},sourceR{};
+    std::array<float,quantum> outputL{},outputR{};
+    int fed=0;
+    std::int64_t produced=0;
+    auto energy=[](const float* left,const float* right,int count) {
+        double sum=0;
+        for(int i=0;i<count;++i) {
+            assert(std::isfinite(left[i]) && std::isfinite(right[i]));
+            assert(std::abs(left[i]+right[i])<0.05f);
+            sum+=left[i]*left[i];
+        }
+        return sum;
+    };
+    while(fed<totalInput) {
+        int nOutput=quantum;
+        int nInput=processor.nextInputFrames(nOutput);
+        assert(nInput>0 && nInput<=static_cast<int>(sourceL.size()));
+        if(nInput>totalInput-fed) {
+            nOutput=std::min(quantum,static_cast<int>(std::ceil(
+                (totalInput-fed)*100.0/controls.tempoPercent)));
+            nInput=totalInput-fed;
+        }
+        for(int i=0;i<nInput;++i) {
+            const double t=(fed+i)*2*pi/sampleRate;
+            const float v=static_cast<float>(0.35*std::sin(330*t)
+                       +0.11*std::sin(790*t)
+                       +((fed+i)>totalInput-sampleRate/16
+                         ?0.2*std::sin(1930*t):0.0));
+            sourceL[i]=v;sourceR[i]=-v;
+        }
+        const float* const input[]={sourceL.data(),sourceR.data()};
+        float* const output[]={outputL.data(),outputR.data()};
+        assert(processor.process(input,nInput,output,nOutput));
+        energy(outputL.data(),outputR.data(),nOutput);
+        fed+=nInput;produced+=nOutput;
+    }
+    const int analysisDelay=processor.inputLatency();
+    const int synthesisDelay=processor.outputLatency();
+    assert(analysisDelay>0 && synthesisDelay>0);
+    assert(analysisDelay<sampleRate && synthesisDelay<sampleRate);
+    int remaining=analysisDelay;
+    double recoveredTailEnergy=0;
+    while(remaining>0) {
+        const int nOutput=std::min(quantum,std::max(1,
+            static_cast<int>(std::ceil(
+                remaining*100.0/controls.tempoPercent))));
+        int nInput=processor.nextInputFrames(nOutput);
+        nInput=std::clamp(nInput,1,remaining);
+        sourceL.fill(0.f);sourceR.fill(0.f);
+        const float* const input[]={sourceL.data(),sourceR.data()};
+        float* const output[]={outputL.data(),outputR.data()};
+        assert(processor.process(input,nInput,output,nOutput));
+        recoveredTailEnergy+=energy(outputL.data(),outputR.data(),nOutput);
+        remaining-=nInput;produced+=nOutput;
+    }
+    std::vector<float> lastL(synthesisDelay),lastR(synthesisDelay);
+    float* const ends[]={lastL.data(),lastR.data()};
+    processor.flush(ends,synthesisDelay);
+    recoveredTailEnergy+=energy(ends[0],ends[1],synthesisDelay);
+    produced+=synthesisDelay;
+    const double expected=totalInput*100.0/controls.tempoPercent+
+        analysisDelay*100.0/controls.tempoPercent+synthesisDelay;
+    assert(std::abs(produced-expected)<quantum*2);
+    assert(recoveredTailEnergy>0.01); // last tones survive the ending
+    std::printf("M2 EOF: %d Hz, KEY %+d, tempo %d%%, recovered %.2f energy, delay %d+%d frames\n",
+                sampleRate,controls.keySemitones,controls.tempoPercent,
+                recoveredTailEnergy,analysisDelay,synthesisDelay);
 }
 }
 int main() {
@@ -140,6 +223,9 @@ int main() {
     testLiveControlTransitions(44100);
     testLiveControlTransitions(48000);
     testLiveControlTransitions(96000);
+    testEndOfSongTail(44100,{3,80});
+    testEndOfSongTail(48000,{-4,120});
+    testEndOfSongTail(96000,{4,100});
     std::printf("M2: pass neutral %.1fHz, +3st/80%% %.1fHz, -2st/120%% %.1fHz; stereo=%.3f\n",
                 neutral.hz,up.hz,down.hz,up.correlation);
 }
