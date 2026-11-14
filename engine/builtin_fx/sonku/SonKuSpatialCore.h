@@ -340,8 +340,8 @@ public:
             float sideRescue=musicSafe?
                 smoothedMix_*smoothedTrim_*musicSideWidth*preservedSide:
                 .65f*smoothedMix_*smoothedTrim_*preservedSide;
-#if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
             float originalLowL=0.f,originalLowR=0.f;
+#if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
             if(transparentBass){
                 originalBass_[0]+=bassCrossoverAlpha_*(x0-originalBass_[0]);
                 originalBass_[1]+=bassCrossoverAlpha_*(x1-originalBass_[1]);
