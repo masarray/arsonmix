@@ -22,7 +22,7 @@
 #endif
 namespace {
 constexpr double pi=3.1415926535897932384626433832795;
-constexpr int n=32768;
+constexpr int n=16384;
 using armix::imersip::ImerSipDsp;
 using armix::imersip::Settings;
 using armix::sonku::SonKuSpatialCore;
