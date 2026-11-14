@@ -225,7 +225,10 @@ def run() -> None:
                     assert float(knob.input_value()) > 3.2, (
                         "Deliberate drag must escape the 0 dB detent")
                     page.mouse.move(cx, cy - 10)
-                    assert knob.input_value() == "0", "Detent did not re-capture on return"
+                    assert float(knob.input_value()) > 1.6, (
+                        "Hysteresis must not re-capture before the 1.6 dB threshold")
+                    page.mouse.move(cx, cy - 7)
+                    assert knob.input_value() == "0", "Detent did not re-capture within ±1.6 dB"
                     page.mouse.up()
                     assert knob.input_value() == "0"
                     # Coming from below unity must snap to 0 and then hold
