@@ -7713,7 +7713,7 @@ private:
                     // alternating A/B decoders can share generation IDs.
                     // On failure, turn looping off below (no retry storm).
                     if(armix::player::PlayerShowTransitionPolicy::
-                           armBeforeEnd(position,duration,fade,0.085)) {
+                           armBeforeEnd(position,duration,fade,0.085,loop.tempo)) {
                         if(engine_.queuePlayerTransition(currentFile,
                            loop.key,loop.tempo,fade,loop.cueIn,loop.cueOut)) {
                             playerPendingIndex_=playerCurrent_;
@@ -7758,7 +7758,9 @@ private:
                     transport.getProperty("durationSeconds",0.0));
                 const bool preEnd=playerFadeMilliseconds_>0 &&
                     armix::player::PlayerShowTransitionPolicy::armBeforeEnd(
-                        position,duration,playerFadeMilliseconds_,0.085);
+                        position,duration,playerFadeMilliseconds_,0.085,
+                        static_cast<int>(transport.getProperty(
+                            "tempoPercent",100)));
                 if(identity!=lastAutoAdvanceGeneration_ &&
                    (preEnd || phase=="ENDED")) {
                     lastAutoAdvanceGeneration_=identity;
