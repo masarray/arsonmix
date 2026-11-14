@@ -3420,6 +3420,13 @@ private:
         engine_.stop();
         startupError_=engine_.start(saved.get());
         engine_.devices().addChangeListener(this);
+        // MAIN is owned outside the channel graph. A silent/zero master
+        // from the old Show must not survive this factory reset.
+        engine_.setMasterGainLinear(1.f);
+        engine_.setMasterMuted(false);
+        engine_.setMasterMono(false);
+        engine_.setDryTestEnabled(false);
+        engine_.setOutputMuted(true);
         mixerSessionStatus_=startupError_.isEmpty()?
             "FACTORY_RESET_MUTED":"FACTORY_RESET_NEEDS_AUDIO_SETUP";
         if(startupError_.isNotEmpty())mixerSessionError_=startupError_;
