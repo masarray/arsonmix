@@ -59,8 +59,16 @@ def audit_geometry(page, title):
             if(!cap||Math.abs(r(cap).width-cw)>.75||Math.abs(r(cap).height-ch)>.75)
                 problems.push('M2 '+cw+'x'+ch+' physical fader cap missing '+tag);
             const route=t.querySelector('.route-section');
-            if(route&&route.scrollHeight>route.clientHeight+3)
-                problems.push('IN/OUT clipped '+tag);
+            if(route&&route.scrollHeight>route.clientHeight+3){
+                const cs=getComputedStyle(route);
+                const children=[...route.children].map(e=>{
+                    const b=r(e);
+                    return e.className+':'+Math.round(b.height)+'@'+Math.round(b.top-r(route).top);
+                }).join(',');
+                problems.push('IN/OUT/EXT clipped '+tag+' scroll='+route.scrollHeight+
+                  ' client='+route.clientHeight+' padding='+cs.padding+
+                  ' gap='+cs.gap+' children=['+children+']');
+            }
             if(!t.querySelector('.meter-box .vu-bars'))problems.push('missing meter '+tag);
             if(t.querySelector('.eq-section,.trim-section,[data-field="sendPan"]'))
                 problems.push('legacy DAW or TRIM UI leaked '+tag);

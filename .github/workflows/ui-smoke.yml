@@ -453,6 +453,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install playwright
           python -m playwright install --with-deps chromium
+      - name: Verify Preview V2 V7 physical visual geometry and modeless mixer workflow
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        run: python tests/preview_v2_v7_visual_smoke.py
       - name: Verify opt-in actual /preview/ GUI profiling, default OFF
         run: python tests/approved_gui_perf_stage_a_smoke.py
       - name: Validate Stage B native meter dirty-write / authoritative Pages parity
@@ -733,9 +736,6 @@ jobs:
         run: python tests/pages_m3_operator_visual_interaction_smoke.py
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
-      - name: Verify Preview V2 V7 physical visual geometry and modeless mixer workflow
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
-        run: python tests/preview_v2_v7_visual_smoke.py
       - name: Verify V40 WIRE proximity, focus release and full-tray channel selection
         if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_wire_focus_v40_smoke.py
