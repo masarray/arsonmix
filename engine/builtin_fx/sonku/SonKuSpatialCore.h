@@ -7,6 +7,11 @@
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
 #include "SonKuSourcePlacement3D.h"
 #endif
+#if defined(SONKU_P72_NATIVE_XYZ_RT) && SONKU_P72_NATIVE_XYZ_RT
+#if !defined(SONKU_P71_DIRECT_XYZ_RESEARCH) || !SONKU_P71_DIRECT_XYZ_RESEARCH || !defined(SONKU_P7_MEASURED_ELEVATION_RESEARCH) || !SONKU_P7_MEASURED_ELEVATION_RESEARCH
+#error SonKu P7.2 native XYZ requires explicitly compiled measured P7 and P7.1 research banks
+#endif
+#endif
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -34,6 +39,11 @@ struct Settings {
     // spacePreset=0 still guarantees identical legacy HRTF-only PCM.
     float roomAmount = .55f;
     float ambience = .30f;
+#if defined(SONKU_P72_NATIVE_XYZ_RT) && SONKU_P72_NATIVE_XYZ_RT
+    // Experimental v3 only. Bundled atomically with ROOM/distance in
+    // existing native SPSC edit, never a second FX graph or audio worker.
+    float directElevationDegrees = 0.f;
+#endif
 };
 inline bool valid(const Settings& s) noexcept {
     return std::isfinite(s.startAzimuthDegrees) &&
@@ -49,6 +59,18 @@ inline bool valid(const Settings& s) noexcept {
         s.sourceDistanceMeters<=10.f &&
         std::isfinite(s.roomAmount) && s.roomAmount>=0.f && s.roomAmount<=1.f &&
         std::isfinite(s.ambience) && s.ambience>=0.f && s.ambience<=1.f &&
+#if defined(SONKU_P72_NATIVE_XYZ_RT) && SONKU_P72_NATIVE_XYZ_RT
+        // Pure control-thread admission; validate even when ROOM is OFF so
+        // a later enable cannot silently admit an impossible placement.
+        [&]() noexcept {
+            xyz::Placement projected{};
+            const float height=s.spacePreset<=1?3.2f:
+                s.spacePreset==2?4.8f:7.2f;
+            return xyz::project(s.sourceDistanceMeters,
+                                s.directElevationDegrees,1.45f,
+                                height,projected);
+        }() &&
+#endif
         (s.spacePreset==0 || SonKuEarlyReflections::validGeometry({
             s.spacePreset==1?7.2f:s.spacePreset==2?14.4f:28.8f,
             s.spacePreset==1?7.2f:s.spacePreset==2?14.4f:28.8f,
@@ -83,6 +105,14 @@ public:
         // a public host. Downgrading the prepared profile clears it.
         if(profile!=SonKuReflectionProfile::SixSurfaceKemarResearch)
             researchElevationDegrees_=0.f;
+#if defined(SONKU_P72_NATIVE_XYZ_RT) && SONKU_P72_NATIVE_XYZ_RT
+        // Preserve the accepted elevation on an ASIO/device re-prepare.
+        // Non-3D prepared engines cannot unknowingly carry 3D state.
+        if(profile==SonKuReflectionProfile::SixSurfaceKemarResearch)
+            researchElevationDegrees_=settings_.directElevationDegrees;
+        else
+            settings_.directElevationDegrees=0.f;
+#endif
         // Only a *new* DSP prepare re-opens the quiescent research gate.
         // reset() while an existing audio graph is running must NOT do so.
         researchPcmStarted_=false;
@@ -119,16 +149,34 @@ public:
     }
     bool setSettings(const Settings& s) noexcept {
         if(!valid(s))return false;
-        // Keep phase continuous for live speed/spread adjustments; changing start
-        // position while static is an intentional absolute reposition.
-        if(!s.moving || !settings_.moving ||
-           s.startAzimuthDegrees!=settings_.startAzimuthDegrees)
-            degrees_=wrapDegrees(s.startAzimuthDegrees);
+#if defined(SONKU_P72_NATIVE_XYZ_RT) && SONKU_P72_NATIVE_XYZ_RT
+        const auto activeProfile=room_.preparedProfile();
+        if(activeProfile!=SonKuReflectionProfile::SixSurfaceKemarResearch &&
+           s.directElevationDegrees!=0.f)return false;
+        // Transactional XYZ admission. The old core set degrees_ BEFORE room
+        // validation, so an invalid edit could rotate a still-running orbit.
+        // Stage all 3D changes and publish the phase only on success.
+        const float formerElevation=researchElevationDegrees_;
+        researchElevationDegrees_=s.directElevationDegrees;
+#endif
         const bool changed=s.spacePreset!=settings_.spacePreset ||
             s.sourceDistanceMeters!=settings_.sourceDistanceMeters ||
             s.roomAmount!=settings_.roomAmount ||
-            s.ambience!=settings_.ambience;
-        if(changed && !applyAcousticSettings(s))return false;
+            s.ambience!=settings_.ambience
+#if defined(SONKU_P72_NATIVE_XYZ_RT) && SONKU_P72_NATIVE_XYZ_RT
+            || s.directElevationDegrees!=formerElevation
+#endif
+            ;
+        if(changed && !applyAcousticSettings(s)) {
+#if defined(SONKU_P72_NATIVE_XYZ_RT) && SONKU_P72_NATIVE_XYZ_RT
+            researchElevationDegrees_=formerElevation;
+#endif
+            return false;
+        }
+        // Preserve continuous motion during accepted elevation edits.
+        if(!s.moving || !settings_.moving ||
+           s.startAzimuthDegrees!=settings_.startAzimuthDegrees)
+            degrees_=wrapDegrees(s.startAzimuthDegrees);
         settings_=s;
         // Once native ROOM has been enabled, retain the smoothed transition
         // when it is turned OFF. Standalone experimental V2/V3 OFF fixtures
@@ -151,6 +199,13 @@ public:
                       settings_.spacePreset==2?4.8f:7.2f;
         if(!xyz::project(settings_.sourceDistanceMeters,degrees,1.45f,h,projected))
             return false;
+#if defined(SONKU_P72_NATIVE_XYZ_RT) && SONKU_P72_NATIVE_XYZ_RT
+        // Research setup must use the same single edit transaction as the
+        // later JUCE audio-applied ACK and persisted v3. No shadow state.
+        auto next=settings_;
+        next.directElevationDegrees=degrees;
+        return setSettings(next);
+#else
         const float old=researchElevationDegrees_;
         researchElevationDegrees_=degrees;
         if(!applyAcousticSettings(settings_)) {
@@ -160,6 +215,7 @@ public:
         remaining_=0;
         haveKernel_=false;
         return true;
+#endif
     }
     float researchDirectElevation() const noexcept {return researchElevationDegrees_;}
 #endif
