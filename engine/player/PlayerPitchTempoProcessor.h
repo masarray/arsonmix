@@ -56,7 +56,7 @@ public:
         }
         historyWrite_=historyCount_=0;
         primeOnNextProcess_=false;
-        currentSemitones_=static_cast<float>(c.keySemitones);
+        currentSemitones_=mappedSemitones_=static_cast<float>(c.keySemitones);
         stretch_.setTransposeSemitones(
             static_cast<float>(controls_.keySemitones),
             8000.f/static_cast<float>(sampleRate_));
@@ -106,8 +106,12 @@ public:
                 if(std::abs(currentSemitones_-target)<0.0001f)
                     currentSemitones_=target;
             }
-            stretch_.setTransposeSemitones(currentSemitones_,
-                                           8000.f/static_cast<float>(sampleRate_));
+            // Avoid repeated pow/sqrt frequency-map rebuilds at steady KEY.
+            if(mappedSemitones_!=currentSemitones_) {
+                stretch_.setTransposeSemitones(
+                    currentSemitones_,8000.f/static_cast<float>(sampleRate_));
+                mappedSemitones_=currentSemitones_;
+            }
             if(primeOnNextProcess_)primeFromRecentInput();
             stretch_.process(in,nInput,out,nOut);
         }
@@ -150,21 +154,26 @@ private:
         primeOnNextProcess_=false;
     }
     void rememberInput(const float* const* in,int frames) noexcept {
-        // No separate DSP warm-up during a neutral song: bounded two-lane
-        // history lets the next active block start without a cold FFT window.
-        for(int i=0;i<frames;++i) {
-            history_[0][static_cast<std::size_t>(historyWrite_)]=in[0][i];
-            history_[1][static_cast<std::size_t>(historyWrite_)]=in[1][i];
-            if(++historyWrite_==historyCapacity_)historyWrite_=0;
-            if(historyCount_<historyCapacity_)++historyCount_;
+        // Two bounded stereo memcpy-style copies rather than a modulo and
+        // branch for every decoded sample; never allocates in process().
+        if(frames<=0 || historyCapacity_<=0)return;
+        const int keep=std::min(frames,historyCapacity_);
+        const int start=frames-keep;
+        const int first=std::min(keep,historyCapacity_-historyWrite_);
+        for(int lane=0;lane<2;++lane) {
+            auto* dest=history_[lane].data();
+            std::copy_n(in[lane]+start,first,dest+historyWrite_);
+            std::copy_n(in[lane]+start+first,keep-first,dest);
         }
+        historyWrite_=(historyWrite_+keep)%historyCapacity_;
+        historyCount_=std::min(historyCapacity_,historyCount_+keep);
     }
     signalsmith::stretch::SignalsmithStretch<float> stretch_{23};
     std::array<std::vector<float>,2> history_,prime_;
     int sampleRate_=0,historyCapacity_=0,historyWrite_=0,historyCount_=0;
     Controls controls_{};
     double fractionalInput_=0;
-    float currentSemitones_=0.f;
+    float currentSemitones_=0.f,mappedSemitones_=0.f;
     bool prepared_=false,primeOnNextProcess_=false;
 };
 } // namespace armix::player
