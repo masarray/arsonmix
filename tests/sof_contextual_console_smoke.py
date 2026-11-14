@@ -60,8 +60,15 @@ def run() -> None:
                     assert first.locator(".is-gain-view").count() == 1
                     assert page.locator(".console-body").evaluate(
                         "el => el.classList.contains('gain-view-active')")
-                    assert page.locator(".section-rail .rail-cell.fx").evaluate(
-                        """el => getComputedStyle(el, '::after').content.includes('GAIN')""")
+                    rail_state = page.locator(".section-rail .rail-cell.fx").evaluate("""el => ({
+                        text: getComputedStyle(el, '::after').content,
+                        display: getComputedStyle(el, '::after').display,
+                        className: el.className,
+                        railParent: el.parentElement.className,
+                        styles: [...document.styleSheets].map(s=>s.href || 'inline').slice(0,25)
+                    })""")
+                    page.screenshot(path=str(ROOT / f"arsonmix-gain-knob-debug-{width}x{height}.png"))
+                    assert "GAIN" in rail_state["text"], (width,rail_state)
                     knob_visual = first.locator(".gain-dial")
                     assert knob_visual.count() == 1
                     body_size = knob_visual.bounding_box()
