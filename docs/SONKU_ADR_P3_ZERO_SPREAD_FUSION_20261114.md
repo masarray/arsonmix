@@ -56,3 +56,18 @@ Optimization works only for EXACT zero source spread; it
 does NOT reduce CPU on moving 60°/180° source-separated stereo.
 No six-surface geometry, multi-elevation measured HRTF, headphone
 individualization, head-tracking or true BRIR is claimed.
+
+## Native same-runner performance observation
+GitHub Actions #43533510068, 48kHz/128 samples/3s:
+P2 spread 0 CPU **263.289ms**; P3 spread 0 **178.636ms**
+(1.474x faster), p99 **250.590us -> 176.808us**.
+P3 with spread 60 explicitly does not fuse (248.051ms).
+These numbers are NOT full Windows ASIO/graph deadlines.
+
+## Additional audio gate
+Render four original-source 2s PCM WAVs: P2 reference and P3
+fused, FRONT and REAR. Same exact 140-tap horizontal KEMAR,
+room geometry, direct HRTF, 48kHz and 16-bit conversion.
+Require <=2 peak PCM LSB, <2e-5 RMS, <0.05dB on
+165/660/2200/4700Hz in both ears. This evaluates
+sound quality invariance, not externalization superiority.

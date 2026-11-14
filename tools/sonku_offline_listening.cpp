@@ -356,10 +356,12 @@ std::vector<std::uint8_t> musicSplitBandProof() {
 #if !defined(SONKU_AB_BASELINE)
 // P2: exact same original synthetic harmonics and direct KEMAR PCM;
 // ONLY the wall reflections switch from simple ITD/ILD to image-HRIR.
-std::vector<std::uint8_t> directionalRoomAudio(int azimuth,bool measured) {
+std::vector<std::uint8_t> directionalRoomAudio(int azimuth,bool measured,
+                                               bool fused=false) {
     SonKuSpatialCore dsp;
     if(!dsp.prepare(rate) ||
        (measured && !dsp.setDirectionalEarlyReflectionsHrir(true)) ||
+       (fused && !dsp.setDirectionalZeroSpreadFusion(true)) ||
        !dsp.setEarlyReflectionsShape(armix::sonku::SonKuRoomShape::Square) ||
        !dsp.setEarlyReflectionsAmount(.55f))
         throw std::runtime_error("SonKu P2 preparation failed");
@@ -388,6 +390,21 @@ std::vector<std::uint8_t> directionalRoomAudio(int azimuth,bool measured) {
         for(int i=0;i<n;++i)appendStereo(pcm,l[i],r[i]);
     }
     return pcm;
+}
+void writeP3FusionAudio(const std::filesystem::path& dir){
+    for(int azimuth:{0,180}){
+        const std::string name=azimuth==0?"front":"rear";
+        writeWav(dir/("sonku-p3-reference-"+name+".wav"),
+                 directionalRoomAudio(azimuth,true,false));
+        writeWav(dir/("sonku-p3-fused-"+name+".wav"),
+                 directionalRoomAudio(azimuth,true,true));
+    }
+    std::ofstream guide(dir/"P3-MUSIC-QUALITY-GUIDE.txt");
+    if(!guide)throw std::runtime_error("P3 guide output invalid");
+    guide<<"P3 native identical-source P2/P3 A/B FRONT and REAR.\n"
+         <<"2 seconds 48kHz 16-bit. Headphones only at safe volume.\n"
+         <<"All 140 KEMAR reflection taps retained and identical direct.\n"
+         <<"No claim about externalization, real music or ASIO.\n";
 }
 void writeDirectionalRoomAudio(const std::filesystem::path& dir) {
     for(int azimuth:{0,180}) {
@@ -439,7 +456,8 @@ int main(int argc,char** argv){
     try{
         if(argc!=2 && !(argc==3 &&
             (std::string(argv[2])=="--music-integrity-only" ||
-             std::string(argv[2])=="--directional-er-only")))
+             std::string(argv[2])=="--directional-er-only" ||
+             std::string(argv[2])=="--p3-fusion-only")))
             throw std::runtime_error("Usage: sonku-offline-demo OUTPUT_DIRECTORY [--music-integrity-only]");
         const std::filesystem::path dir(argv[1]);
         std::filesystem::create_directories(dir);
@@ -450,6 +468,13 @@ int main(int argc,char** argv){
                 std::cout<<"P2 directional room 4 WAV rendered\n";
 #else
                 throw std::runtime_error("P2 directional room only exists in candidate");
+#endif
+            } else if(std::string(argv[2])=="--p3-fusion-only"){
+#if !defined(SONKU_AB_BASELINE)
+                writeP3FusionAudio(dir);
+                std::cout<<"P3 same-source four A/B WAV rendered\n";
+#else
+                throw std::runtime_error("P3 reference unavailable in alpha.23");
 #endif
             } else {
                 writeMusicIntegrityEvidence(dir);
