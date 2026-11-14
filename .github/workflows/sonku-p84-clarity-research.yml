@@ -10,6 +10,7 @@ on:
       - 'tests/sonku_p84_fused_single_core_test.cpp'
       - 'tests/sonku_p84_fused_hosted_cpu_benchmark.cpp'
       - 'tests/sonku_p84_spatial_impulse_evidence_test.cpp'
+      - 'tests/sonku_p84_live_v5_modes_source_test.cpp'
       - 'tools/sonku_p84_offline_audition.cpp'
       - 'docs/SONKU_P84_CLARITY_FIRST_ARCHITECTURE_20261115.md'
       - '.github/workflows/sonku-p84-clarity-research.yml'
@@ -134,6 +135,21 @@ jobs:
               assert abs(float(rows[0]['relative_rms_db_vs_p82']))<1e-12
           print('PASS P84 REAL WAV CLI: PCM16 source, float32 fact, four same-input native variants, ROOM ON/OFF')
           PY
+      - name: Explicit P8.4 v5 live mode 3 stereo PCM source equivalence
+        run: |
+          set -euo pipefail
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 \
+            -DSONKU_P72_NATIVE_XYZ_RT=1 \
+            -DSONKU_P75_MUSIC_SAFE_RESEARCH=1 \
+            -DSONKU_P80_TRANSPARENT_BASS_RESEARCH=1 \
+            -DSONKU_P82_MULTIBAND_ROOM_RESEARCH=1 \
+            -DSONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1 \
+            -DSONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1 \
+            tests/sonku_p84_live_v5_modes_source_test.cpp -o /tmp/p84-v5-mode
+          /tmp/p84-v5-mode | tee /tmp/p84-v5-mode.log
+          grep -q '^PASS P84 V5 NATIVE SOURCE:' /tmp/p84-v5-mode.log
       - name: Hosted CPU 1-4 inserts 64-256 buffer research (not ASIO XRUN)
         shell: bash
         run: |
