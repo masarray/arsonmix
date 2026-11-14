@@ -91,6 +91,8 @@
  $("playerNext").addEventListener("click",()=>send("playerNext"));
  $("playerAutoNext").addEventListener("click",()=>
    send("playerAutoNext",!model.autoNext));
+ $("playerFadeMs").addEventListener("change",event=>
+   send("playerFadeMs",Number(event.target.value)));
  $("playerNewSetlist").addEventListener("click",()=>send("playerNewSetlist"));
  $("playerDeleteSetlist").addEventListener("click",()=>send("playerDeleteSetlist",model.activeSetlist));
  $("playerSetlistSelect").addEventListener("change",event=>
@@ -264,6 +266,9 @@
    $("playerTempoPlus").disabled=tempo>=120;
    $("playerAutoNext").textContent=model.autoNext?"Auto Next · On":"Auto Next · Off";
    $("playerAutoNext").setAttribute("aria-pressed",String(model.autoNext));
+   $("playerFadeMs").value=String(model.crossfadeMs??180);
+   $("playerTransitionStatus").textContent=t.crossfading?"Crossfading…":
+     t.transitionPending?"Preparing NEXT…":"";
    const detail=model.error||t.error||({
       EMPTY:"Add music to begin",
       PREPARING:"Preparing audio…",
