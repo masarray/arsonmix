@@ -116,10 +116,19 @@
    button.addEventListener("click",onClick);
    return button;
  };
- let renderedSets=-1;
+ let renderedSets=-1,showRevision=0;
+ let queueDrag=null;
+ const queueGesture=(action,from,to=-1)=>{
+   if(!native || model.pending>=0 ||
+      !Number.isSafeInteger(model.queueRevision) ||
+      model.queueRevision<1)return;
+   const payload={from,revision:model.queueRevision};
+   if(action==="playerQueueMove")payload.to=to;
+   send(action,payload);
+ };
  function renderSetlists(){
-   if(renderedSets===libraryRevision)return;
-   renderedSets=libraryRevision;
+   if(renderedSets===showRevision)return;
+   renderedSets=showRevision;
    const selector=$("playerSetlistSelect"),name=$("playerSetlistName");
    const oldFocus=document.activeElement===name;
    selector.replaceChildren();
@@ -138,50 +147,99 @@
    panel.hidden=!upcoming.length;
    $("playerQueueCount").textContent=String(upcoming.length);
    queue.replaceChildren();
-   for(const item of upcoming.slice(0,12)){
+   // One scrollable compact queue, bounded at native 128 entries.
+   // Repeat song titles are intentionally distinct position IDs.
+   for(const item of upcoming.slice(0,128)){
      const row=document.createElement("div");
      row.className="ap-queue-row";row.setAttribute("role","listitem");
+     row.draggable=Boolean(native && model.pending<0);
+     row.dataset.queueIndex=String(item.id);
      const title=document.createElement("span");
      title.textContent=String(item.title||"Untitled");
      const controls=document.createElement("span");
      controls.className="ap-row-actions";
      const up=actionButton("↑","Move "+item.title+" earlier",
-       ()=>send("playerQueueMove",{from:item.id,to:item.id-1}));
+       ()=>queueGesture("playerQueueMove",item.id,item.id-1));
      const down=actionButton("↓","Move "+item.title+" later",
-       ()=>send("playerQueueMove",{from:item.id,to:item.id+1}));
-     up.disabled=item.id===0;
-     down.disabled=item.id===upcoming.length-1;
-     controls.append(up,down,actionButton("×",
+       ()=>queueGesture("playerQueueMove",item.id,item.id+1));
+     up.disabled=item.id===0 || model.pending>=0;
+     down.disabled=item.id===upcoming.length-1 || model.pending>=0;
+     const remove=actionButton("×",
        "Remove "+item.title+" from queue",
-       ()=>send("playerQueueRemove",item.id)));
+       ()=>queueGesture("playerQueueRemove",item.id));
+     remove.disabled=model.pending>=0;
+     controls.append(up,down,remove);
+     row.addEventListener("dragstart",event=>{
+       if(!row.draggable || model.pending>=0){
+         event.preventDefault();return;
+       }
+       queueDrag={from:item.id,revision:model.queueRevision,
+                  setlist:model.activeSetlist};
+       event.dataTransfer?.setData(
+         "application/x-arsonmix-queue","reorder");
+       if(event.dataTransfer)event.dataTransfer.effectAllowed="move";
+     });
+     row.addEventListener("dragover",event=>{
+       if(!queueDrag || model.pending>=0 ||
+          queueDrag.revision!==model.queueRevision ||
+          queueDrag.setlist!==model.activeSetlist)return;
+       event.preventDefault();
+       if(event.dataTransfer)event.dataTransfer.dropEffect="move";
+     });
+     row.addEventListener("drop",event=>{
+       if(!queueDrag || queueDrag.revision!==model.queueRevision ||
+          queueDrag.setlist!==model.activeSetlist ||
+          model.pending>=0)return;
+       event.preventDefault();
+       const from=queueDrag.from;
+       queueDrag=null;
+       if(from!==item.id)queueGesture("playerQueueMove",from,item.id);
+     });
+     row.addEventListener("dragend",()=>{queueDrag=null;});
      row.append(title,controls);
      queue.append(row);
-   }
-   if(upcoming.length>12){
-     const more=document.createElement("small");
-     more.textContent="+"+(upcoming.length-12)+" more queued";queue.append(more);
    }
  }
 
  let libraryRevision=0,rendered="";
+ // Keep the approved scroll list lightweight at all 2,000-song capacities.
+ const ROW_HEIGHT=38,OVERSCAN=8;
+ let filteredKey="",previousQuery="",previousSetlist=-1,filtered=[];
  function renderTracks(){
-   // Avoid serializing and rebuilding a 2,000-song list on every realtime
-   // status tick. The song catalogue changes only on a native full snapshot.
-   const signature=[libraryRevision,model.selected,model.current,
-     search.value].join("|");
+   const query=search.value.trim().toLocaleLowerCase();
+   const key=[libraryRevision,model.activeSetlist,query].join("|");
+   if(key!==filteredKey){
+     if(query!==previousQuery || model.activeSetlist!==previousSetlist)
+       list.scrollTop=0;
+     previousQuery=query;previousSetlist=model.activeSetlist;
+     filteredKey=key;
+     filtered=model.tracks.filter(song=>
+       String(song.title||"").toLocaleLowerCase().includes(query));
+     rendered="";
+   }
+   const visible=Math.max(24,Math.min(80,
+     Math.ceil((list.clientHeight||380)/ROW_HEIGHT)+2*OVERSCAN));
+   const start=Math.max(0,Math.min(filtered.length,
+     Math.floor(list.scrollTop/ROW_HEIGHT)-OVERSCAN));
+   const end=Math.min(filtered.length,start+visible);
+   const signature=[key,model.selected,model.current,start,end].join("|");
    if(rendered===signature)return;
    rendered=signature;
-   const q=search.value.trim().toLocaleLowerCase();
-   const all=model.tracks.filter(x=>String(x.title||"").toLocaleLowerCase().includes(q));
-   const songs=all.slice(0,128);
+   const songs=filtered.slice(start,end);
    list.replaceChildren();
-   if(!songs.length){
+   if(!filtered.length){
      const message=document.createElement("div");
      message.className="ap-empty";
      message.textContent=model.tracks.length?
        "No songs match your search":"Add music files to create your setlist";
      list.append(message);return;
    }
+   // Scroll spacers preserve the native scrollbar's real 2k-song range.
+   const top=document.createElement("div");
+   top.className="ap-list-spacer";
+   top.style.height=(start*ROW_HEIGHT)+"px";
+   top.setAttribute("aria-hidden","true");
+   list.append(top);
    for(const song of songs){
      const row=document.createElement("div");
      row.className="ap-songrow";row.setAttribute("role","listitem");
@@ -237,13 +295,11 @@
      });
      row.append(choose,actions);list.append(row);
    }
-   if(all.length>songs.length){
-     const hint=document.createElement("div");
-     hint.className="ap-empty";
-     hint.textContent="Showing first "+songs.length+" of "+
-       all.length+" songs · Search to find another";
-     list.append(hint);
-   }
+   const bottom=document.createElement("div");
+   bottom.className="ap-list-spacer";
+   bottom.style.height=((filtered.length-end)*ROW_HEIGHT)+"px";
+   bottom.setAttribute("aria-hidden","true");
+   list.append(bottom);
  }
  function render(){
    const t=model.transport||{};
@@ -329,6 +385,7 @@
    renderTracks();
  }
  search.addEventListener("input",renderTracks);
+ list.addEventListener("scroll",renderTracks,{passive:true});
  root.addEventListener("keydown",event=>{
    if(event.key==="Escape"){event.stopPropagation();open(false);toggle.focus();}
    if(event.key===" " && event.target!==search &&
@@ -343,6 +400,8 @@
        model.tracks=payload.tracks;
        ++libraryRevision;
      }
+     if(Array.isArray(payload.queue)||Array.isArray(payload.setlists))
+       ++showRevision;
      model={...model,...payload,tracks:model.tracks};
      render();
    });
