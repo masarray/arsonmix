@@ -258,16 +258,19 @@ public:
             // physical/mono session must NOT silently restore the
             // owner-rejected renderer in the new research candidate.
             // Explicitly migrate old v4 non-P8.2 to golden Music Bed.
-            if(version==4 && next.renderMode!=0){
-                next.renderMode=0;
+            if(version==4) {
+                // All legacy v4 Speaker LF flags are discarded, even for
+                // a v4 P8.2 MusicBed session. P8.4 v5 exposes NO LF480 path.
                 next.musicCompatibleLowFrequency=false;
-                next.headYawDegrees=0.f;
+                if(next.renderMode!=0) {
+                    next.renderMode=0;
+                    next.headYawDegrees=0.f;
+                }
             }
             if(version==5 &&
                (next.renderMode!=0 && next.renderMode!=3))
                 return false;
-            if(version==5 && next.renderMode==3 &&
-               next.musicCompatibleLowFrequency)
+            if(version==5 && next.musicCompatibleLowFrequency)
                 return false;
 #endif
         }
