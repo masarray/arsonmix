@@ -395,7 +395,7 @@ public:
                 ?reverb_.process(transparentBass?x0:(musicSafe?inputMid:x0),
                     transparentBass?x1:(musicSafe?inputMid:x1))
                 :SonKuMusicalReverb::Ears{};
-            if(!nativeSpace && settings_.outputTrim<=1.f &&
+            if(!transparentBass && !nativeSpace && settings_.outputTrim<=1.f &&
                smoothedTrim_<=1.f) {
                 // Preserve byte-for-byte original HRTF/old .smix output for
                 // ROOM OFF and gain <= unity. Newly boosted GAIN > unity
@@ -474,11 +474,13 @@ public:
                     smoothedMix_*originalLowL:0.f;
                 const float musicLowR=transparentBass?
                     smoothedMix_*originalLowR:0.f;
-                float outL=smoothedTrim_*
-                    (dryLevel*x0+musicLowL+
+                const float baseDryL=transparentBass?dryLevel*x0:0.f;
+                const float baseDryR=transparentBass?dryLevel*x1:0.f;
+                float outL=baseDryL+smoothedTrim_*
+                    ((transparentBass?musicLowL:dryLevel*x0)+
                      sceneBinauralLevel*(transparentBass?1.f:smoothedRoomLevel_)*spatialL)+sideRescue;
-                float outR=smoothedTrim_*
-                    (dryLevel*x1+musicLowR+
+                float outR=baseDryR+smoothedTrim_*
+                    ((transparentBass?musicLowR:dryLevel*x1)+
                      sceneBinauralLevel*(transparentBass?1.f:smoothedRoomLevel_)*spatialR)-sideRescue;
                 // Zero-lookahead *linked* sample-peak safety guard. Quiet
                 // signals are linear; peaks are gently returned below unity
