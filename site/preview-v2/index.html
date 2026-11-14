@@ -330,6 +330,24 @@ function undoReferenceFx(t){
 }
 
 /* UI context only; FX/DSP slots remain in the session when the rack is hidden. */
+/* One UI detent shared by the reference mixer and the JUCE native bridge.
+   Snap only operator gestures: native readbacks remain exact authority.
+   Pointer capture ±0.6 dB, hold until ±1.1 dB; keyboard/Shift/Alt and
+   wheel fine increments must be able to leave 0 without getting stuck. */
+function gainUnityDetent(el,event){
+ const raw=Number(el.value);
+ if(!Number.isFinite(raw))return NaN;
+ const valueDb=Math.max(-24,Math.min(24,Math.round(raw*10)/10));
+ const bypass=!!event.shiftKey||!!event.altKey||
+  el.dataset.gainKeyboard==='true'||el.dataset.gainWheel==='true';
+ const tolerance=el.dataset.gainDetent==='true'?1.1:0.6;
+ const value=!bypass&&Math.abs(valueDb)<=tolerance?0:valueDb;
+ el.value=String(value);
+ el.dataset.gainDetent=String(value===0&&!bypass);
+ if(event.type==='change')delete el.dataset.gainKeyboard;
+ return value;
+}
+window.__ARMIX_GAIN_UNITY_DETENT__=gainUnityDetent;
 function sectionGain(t){
  const value=Math.max(-24,Math.min(24,Number(t.trim)||0));
  const nativeUnavailable=!!window.__JUCE__?.backend&&!t.nativeGainAvailable;
@@ -340,7 +358,7 @@ function sectionGain(t){
   '<span class="gain-dial-face" aria-hidden="true"></span>'+
   '<span class="gain-dial-pointer" aria-hidden="true"></span>'+
   '<input type="range" data-field="trim" min="-24" max="24" step="0.1" value="'+value+'" aria-label="'+escapeHtml(t.name)+' digital input gain"'+(nativeUnavailable?' disabled':'')+'></label>'+
-  '<output class="gain-readout" aria-label="Gain in decibels">'+(nativeUnavailable?'NATIVE PENDING':formatDb(value)+' dB')+'</output></div></div>';
+  '<output class="gain-readout" aria-label="Gain in decibels"><span class="gain-lcd-digits">'+(nativeUnavailable?'NATIVE PENDING':formatDb(value)+' dB')+'</span></output></div></div>';
 }
 /* SOF is a contextual UI view of an explicit existing EdgeId, not a new graph. */
 function sectionSof(t){
@@ -2049,10 +2067,12 @@ function handleField(event){
 }
  else if(field==='trim'){
   if(window.__JUCE__?.backend){say('Native digital gain not admitted');return;}
-  t.trim=Math.max(-24,Math.min(24,Math.round(Number(el.value)*10)/10));
+  const value=gainUnityDetent(el,event);
+  if(!Number.isFinite(value))return;
+  t.trim=value;
   if(el.style?.setProperty)el.style.setProperty('--range-pct',rangePct(t.trim,-24,24)+'%');
   const section=el.closest('.gain-view-body,.trim-section');
-  const readout=section?.querySelector('.gain-readout,.trim-value');
+  const readout=section?.querySelector('.gain-lcd-digits,.trim-value,.gain-readout');
   if(readout)readout.textContent=formatDb(t.trim)+' dB';
   section?.querySelector('.gain-dial')?.style.setProperty('--gain-rotation',(t.trim*5.625).toFixed(2)+'deg');
   if(event.type==='change')say(t.name+' digital trim '+formatDb(t.trim)+' dB · reference only');
@@ -2277,7 +2297,17 @@ consoleBody.addEventListener('keydown',event=>{
  const el=event.target.closest?.('.center-pan');
  if(el&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','PageUp','PageDown','Home','End'].includes(event.key))
   el.dataset.panKeyboard='true';
+ const gain=event.target.closest?.('.gain-dial input[data-field="trim"]');
+ if(gain&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','PageUp','PageDown','Home','End'].includes(event.key))
+  gain.dataset.gainKeyboard='true';
 });
+consoleBody.addEventListener('pointerdown',event=>{
+ const gain=event.target.closest?.('.gain-dial input[data-field="trim"],.gain-dial');
+ if(gain){
+  const input=gain.matches('input')?gain:gain.querySelector('input[data-field="trim"]');
+  if(input)delete input.dataset.gainKeyboard;
+ }
+},true);
 document.querySelector('.console-body').addEventListener('input',handleField);
 document.querySelector('.console-body').addEventListener('change',handleField);
 document.querySelector('.console-body').addEventListener('click',e=>{
@@ -2568,7 +2598,7 @@ sendControlSurface.addEventListener('pointercancel',e=>finishSendKnob(e,true));
 const wheelResidue=new WeakMap();
 document.querySelector('.console-body').addEventListener('wheel',e=>{
  if(e.ctrlKey||wireGesture||faderGesture||!Number.isFinite(e.deltaY)||e.deltaY===0)return;
- const target=e.target.closest?.('.wire-pot,.fader-box,input[type="range"]');
+ const target=e.target.closest?.('.wire-pot,.fader-box,.gain-dial,input[type="range"]');
  if(!target)return;
  const input=target.matches?.('input[type="range"]')?target:
   target.querySelector?.('input[type="range"]');
@@ -2585,11 +2615,18 @@ document.querySelector('.console-body').addEventListener('wheel',e=>{
  const step=e.shiftKey?(input.dataset.field==='pan'||input.dataset.field==='sendPan'?1:.1):
   (input.dataset.field==='pan'||input.dataset.field==='sendPan'?2:.5);
  const resolution=Number(input.step)||.1;
- const next=Math.round(Math.max(min,Math.min(max,prev-detents*step))/resolution)*resolution;
+ let next=Math.round(Math.max(min,Math.min(max,prev-detents*step))/resolution)*resolution;
+ if(input.dataset.field==='trim'&&!e.shiftKey&&prev*next<0&&Math.abs(prev)<=.6&&Math.abs(next)<=.6)
+  next=0; // Wheel crosses unity once, then the next wheel notch can leave it.
  if(next===prev)return;
  input.value=String(next);
  if(input.dataset.field==='pan')input.dataset.panKeyboard='true';
- handleField({target:input,type:'input',altKey:e.altKey});
+ if(input.dataset.field==='trim')input.dataset.gainWheel='true';
+ // A wheel notch has no mouseup/change; GAIN must commit its final
+ // admitted value, not become a visual-only native preview.
+ handleField({target:input,type:input.dataset.field==='trim'?'change':'input',
+  altKey:e.altKey,shiftKey:e.shiftKey});
+ if(input.dataset.field==='trim')delete input.dataset.gainWheel;
 },{passive:false});
 // Ordinary strip gestures may focus their channel, but touching the pinned
 // MAIN receive jack must never change the *source* under inspection. Capture
