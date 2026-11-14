@@ -122,6 +122,7 @@ static double probe(const Sound& a,double rate,double hz){
 int main(){
  std::setvbuf(stdout,nullptr,_IONBF,0); // retain diagnostic evidence on gate abort
  double broadMax=0,bandMax=0;
+ bool musicGate=true;
  for(double rate:{44100.,48000.})
  for(bool room:{false,true})
  for(Program input:{Program::Mono,Program::AntiPhase,Program::Left,
@@ -137,8 +138,7 @@ int main(){
   broadMax=std::max(broadMax,std::abs(gain));
   std::printf("P84_PROGRAM,%.0f,room=%d,%s,physical_dB=%.3f,clarity_dB=%.3f\n",
      rate,room,label(input),relativeDb(energy(physical),energy(anchor)),gain);
-  require(std::isfinite(gain)&&std::abs(gain)<=1.5,
-          "whole-program level loss or boost beyond 1.5 dB");
+  musicGate &= std::isfinite(gain)&&std::abs(gain)<=1.5;
   for(double hz:{83.,157.,311.,461.,719.,1139.,1703.,2891.,5387.,9301.}){
    const double before=probe(anchor,rate,hz);
    if(before<1.e-9)continue;
@@ -146,8 +146,7 @@ int main(){
    bandMax=std::max(bandMax,std::abs(db));
    std::printf("P84_PROBE,%.0f,room=%d,%s,%.0fHz,delta_dB=%.3f\n",
       rate,room,label(input),hz,db);
-   require(std::isfinite(db)&&std::abs(db)<=2.5,
-           "specific music frequency deviation >2.5 dB");
+   musicGate &= std::isfinite(db)&&std::abs(db)<=2.5;
   }
   for(std::size_t i=0;i<candidate.l.size();++i)
    require(std::isfinite(candidate.l[i])&&std::isfinite(candidate.r[i])&&
@@ -161,6 +160,7 @@ int main(){
    require(cue>.005&&cue<.5,"world yaw positional variation bounded and nonzero");
   }
  }
+ require(musicGate,"music fidelity FAILED: per-band or RMS deviation exceeds P8.2 quality guard");
  std::printf("PASS P84 RESEARCH: 44.1/48 kHz P82 byte bypass, six stereo programs, "
              "room ON/OFF, 10 frequencies, chunk and yaw; worst_broad=%.3fdB "
              "worst_frequency=%.3fdB; listening and ASIO NOT PROVEN\n",
