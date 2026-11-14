@@ -73,7 +73,8 @@ def run() -> None:
                     knob_visual = first.locator(".gain-dial")
                     assert knob_visual.count() == 1
                     body_size = knob_visual.bounding_box()
-                    assert body_size and 48 <= body_size["width"] <= 69, (width, body_size)
+                    assert body_size and abs(body_size["width"] - 58) <= 0.6, (
+                        width, body_size, "compact dial must measure 58px, not former 68px")
                     cap = first.locator(".gain-dial-face")
                     cap_css = cap.evaluate("""el => ({
                         image: getComputedStyle(el).backgroundImage,
@@ -113,7 +114,15 @@ def run() -> None:
                     before_led_mask = arc.evaluate("el => getComputedStyle(el, '::after').maskImage")
                     lcd = first.locator(".gain-readout")
                     lcd_size = lcd.bounding_box()
-                    assert lcd_size and lcd_size["height"] >= 24, (width, lcd_size)
+                    assert lcd_size and abs(lcd_size["width"] - 84) <= 0.6, (
+                        width, lcd_size, "LCD width must match 84px design token")
+                    assert abs(lcd_size["height"] - 25) <= 0.6, (
+                        width, lcd_size, "LCD must remain compact yet legible")
+                    assert abs((body_size["x"] + body_size["width"]/2) -
+                               (lcd_size["x"] + lcd_size["width"]/2)) <= 0.6, (
+                        width, body_size, lcd_size, "knob and LCD must share one centerline")
+                    assert lcd_size["y"] >= body_size["y"] + body_size["height"] + 7, (
+                        width, body_size, lcd_size, "no LCD / outer LED collision")
                     lcd_skin = lcd.evaluate("""el => ({
                         background: getComputedStyle(el).backgroundColor,
                         text: getComputedStyle(el).color,
@@ -126,7 +135,7 @@ def run() -> None:
                     assert lcd_skin["backgroundImage"] == "none", (width, lcd_skin)
                     assert lcd_skin["text"] == "rgb(116, 253, 160)", (width, lcd_skin)
                     assert lcd_skin["border"] == "0px", (width, lcd_skin)
-                    assert lcd_skin["radius"] == "6px", (width, lcd_skin)
+                    assert lcd_skin["radius"] == "5px", (width, lcd_skin)
                     assert "inset" in lcd_skin["shadow"], (width, lcd_skin)
                     digits = lcd.locator(".gain-lcd-digits")
                     assert digits.count() == 1
@@ -347,9 +356,45 @@ def run() -> None:
                         full_page=False,
                     )
                     page.close()
+                # Short-window fallback: compact proportions retain LCD legibility
+                # without clipping the LED ring or changing any gain behavior.
+                for width, height, dial_w, lcd_w, lcd_h in (
+                    (1366, 640, 52, 80, 23),
+                    (1366, 600, 44, 76, 21),
+                ):
+                    page = browser.new_page(viewport={"width": width, "height": height})
+                    errors = []
+                    page.on("pageerror", lambda err: errors.append(str(err)))
+                    page.goto(html.as_uri())
+                    first = page.locator('#tracks .strip[data-id="1"]')
+                    first.wait_for(timeout=15000)
+                    page.locator("#gainView").click()
+                    dial = first.locator(".gain-dial").bounding_box()
+                    lcd = first.locator(".gain-readout").bounding_box()
+                    assert dial and lcd, (width, height)
+                    assert abs(dial["width"]-dial_w) <= .6, (width, height, dial)
+                    assert abs(lcd["width"]-lcd_w) <= .6, (width, height, lcd)
+                    assert abs(lcd["height"]-lcd_h) <= .6, (width, height, lcd)
+                    assert abs(dial["x"]+dial["width"]/2 -
+                               lcd["x"]-lcd["width"]/2) <= .6, (width, height)
+                    assert lcd["y"] >= dial["y"]+dial["height"]+3, (width, height)
+                    # The display must not clip a max-range gain label.
+                    sample = first.locator(".gain-lcd-digits").evaluate("""el => {
+                        el.textContent = '+24.0 dB';
+                        const d=el.getBoundingClientRect(), box=el.parentElement.getBoundingClientRect();
+                        return {left:d.left,right:d.right,min:box.left,max:box.right};
+                    }""")
+                    assert sample["left"] >= sample["min"] and sample["right"] <= sample["max"], (
+                        width, height, sample)
+                    assert not errors, (width, height, errors)
+                    page.screenshot(
+                        path=str(ROOT / f"arsonmix-gain-knob-{width}x{height}.png"),
+                        full_page=False,
+                    )
+                    page.close()
             finally:
                 browser.close()
-    print("PASS SOF contextual strip view, PNG, WIRE guard, Gain/FX interlock at 3 resolutions")
+    print("PASS compact GAIN/LCD, WIRE guard, FX/SOF and native contract across 5 viewports")
 
 
 if __name__ == "__main__":
