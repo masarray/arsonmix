@@ -1,0 +1,48 @@
+name: SonKu P8.3 native physical speaker research PCM
+on:
+  pull_request:
+    paths:
+      - 'engine/builtin_fx/sonku/SonKuSpatialCore.h'
+      - 'engine/builtin_fx/sonku/SonKuEarlyReflections.h'
+      - 'engine/builtin_fx/sonku/SonKuP83SpeakerScene.h'
+      - 'tests/sonku_p83_*'
+      - '.github/workflows/sonku-p83-native-speaker-gates.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sonku-p83-physical-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-source:
+    name: Native C++ P8.3 source, PCM/stems/no-null and Music Bed invariants
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run original SonKu native source
+        shell: bash
+        run: |
+          set -euo pipefail
+          FLAGS=(-std=c++20 -O2 -Wall -Wextra -Werror -pedantic
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1
+            -DSONKU_P72_NATIVE_XYZ_RT=1
+            -DSONKU_P75_MUSIC_SAFE_RESEARCH=1
+            -DSONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+            -DSONKU_P82_MULTIBAND_ROOM_RESEARCH=1)
+          g++ "${FLAGS[@]}" -DSONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1 \
+            tests/sonku_p83_physical_speaker_source_test.cpp -o /tmp/p83-native
+          /tmp/p83-native --wavdir sonku-p83-native-pcm | tee /tmp/p83-native.log
+          grep -q '^PASS P8.3 SOURCE GATES:' /tmp/p83-native.log
+          g++ "${FLAGS[@]}" tests/sonku_p83_externalization_gap_diagnostic.cpp \
+            -o /tmp/p82-gap
+          /tmp/p82-gap | tee /tmp/p82-gap.log
+          grep -q '^PASS P8.3 DIAGNOSTIC:' /tmp/p82-gap.log
+      - name: Upload exact-source offline research PCM (not human FAT)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonku-p83-source-pcm-${{ github.sha }}
+          path: sonku-p83-native-pcm/*.wav
+          retention-days: 14

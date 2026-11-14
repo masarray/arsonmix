@@ -5,8 +5,9 @@
 #include "SonKuMusicalReverb.h"
 #include "SonKuStereoIntegrity.h"
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
-#if !defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) || !SONKU_P82_MULTIBAND_ROOM_RESEARCH
-#error P8.3 speaker research requires the P8.2 material and FDN baseline
+#if !defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) || !SONKU_P82_MULTIBAND_ROOM_RESEARCH || \
+    !defined(SONKU_P71_DIRECT_XYZ_RESEARCH) || !SONKU_P71_DIRECT_XYZ_RESEARCH
+#error P8.3 speaker research requires the P8.2 baseline and P7.1 XYZ engine
 #endif
 #include "SonKuP83SpeakerScene.h"
 #endif
@@ -452,7 +453,8 @@ public:
             auto reflection=room_.active()
                 ?room_.process(transparentBass?x0:(musicSafe?inputMid:x0),
                     transparentBass?x1:(musicSafe?inputMid:x1),
-                    degrees_,(musicSafe||monoObject)?0.f:settings_.stereoSpreadDegrees
+                    degrees_,transparentBass?settings_.stereoSpreadDegrees:
+                        ((musicSafe||monoObject)?0.f:settings_.stereoSpreadDegrees)
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
                     ,positionedMode?p83HeadYaw_:0.f
 #endif
