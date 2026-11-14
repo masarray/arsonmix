@@ -67,17 +67,9 @@ public:
     bool ready() const noexcept {return ready_;}
     Settings settings() const noexcept {return settings_;}
 
-    void process(float& l,float& r,float originalL,float originalR) noexcept {
-        if(!ready_)return;
-        // Same IIR shelf coefficients per ear preserves stereo LF coherence.
-        bassL_+=bassAlpha_*(l-bassL_);
-        bassR_+=bassAlpha_*(r-bassR_);
-        bassGain_+=gainSlew_*(bassTarget_-bassGain_);
-        sideGain_+=gainSlew_*(sideTarget_-sideGain_);
-
-        // Width is applied only when there is real stereo content at INPUT.
-        // A centered mono voice remains centered even if KEMAR ears differ.
-        // Negative-correlation/anti-phase music has *more* SIDE, not less.
+    // Record per-sample ORIGINAL stereo balance before P8.2 mutates PCM.
+    // Caller keeps the returned gate in a fixed prepared scratch array.
+    float captureGate(float originalL,float originalR) noexcept {
         const float m=.5f*(originalL+originalR);
         const float s=.5f*(originalL-originalR);
         midEnergy_+=energySlew_*(m*m-midEnergy_);
@@ -86,7 +78,14 @@ public:
             (sideEnergy_+midEnergy_+1.e-12f);
         const float gateTarget=std::clamp((stereoRatio-.015f)*3.f,0.f,1.f);
         gate_+=gateSlew_*(gateTarget-gate_);
-
+        return gate_;
+    }
+    void process(float& l,float& r,float inputStereoGate) noexcept {
+        if(!ready_)return;
+        bassL_+=bassAlpha_*(l-bassL_);
+        bassR_+=bassAlpha_*(r-bassR_);
+        bassGain_+=gainSlew_*(bassTarget_-bassGain_);
+        sideGain_+=gainSlew_*(sideTarget_-sideGain_);
         const float bassDeltaL=bassGain_*bassL_;
         const float bassDeltaR=bassGain_*bassR_;
         // One-pole complementary HP has Re(H)>=0. Summing a POSITIVE
@@ -94,7 +93,7 @@ public:
         // It also leaves mono MID exactly unchanged.
         const float side=.5f*(l-r);
         sideLow_+=sideAlpha_*(side-sideLow_);
-        const float delta=sideGain_*gate_*(side-sideLow_);
+        const float delta=sideGain_*inputStereoGate*(side-sideLow_);
         float addL=bassDeltaL+delta;
         float addR=bassDeltaR-delta;
 
