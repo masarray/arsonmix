@@ -145,8 +145,35 @@ def run() -> None:
                         "el => getComputedStyle(el, '::after').maskImage"
                     ) != before_led_mask, "LED progress did not follow accepted gain gesture"
                     assert cap.evaluate("el => getComputedStyle(el).transform") == "none"
-                    # Hardware unity detent: capture ±0.6, hold until ±1.1,
-                    # release above that without jitter or modifying whole strip.
+                    assert knob_visual.evaluate("el => el.tagName") == "DIV", (
+                        "Clickable LABEL forwards native range seek on first click")
+                    assert knob.evaluate("el => getComputedStyle(el).pointerEvents") == "none"
+                    dial_css = knob_visual.evaluate("""el => ({
+                        shadow: getComputedStyle(el).boxShadow,
+                        outline: getComputedStyle(el).outlineWidth
+                    })""")
+                    assert "10px 15px" in dial_css["shadow"], dial_css
+                    # Clicking any part of the metal/LED must preserve the
+                    # current value even if it is far from the range thumb.
+                    box = knob_visual.bounding_box()
+                    assert box
+                    cx = box["x"] + box["width"] / 2
+                    cy = box["y"] + box["height"] / 2
+                    page.mouse.click(box["x"] + box["width"] * .82, cy)
+                    assert knob.input_value() == "6.5", "Click jumped input gain before drag"
+                    assert lcd.inner_text().strip() == "+6.5 dB"
+                    assert knob.evaluate("el => document.activeElement === el")
+                    focused_css = knob_visual.evaluate("""el => ({
+                        width: getComputedStyle(el).outlineWidth,
+                        offset: getComputedStyle(el).outlineOffset,
+                        color: getComputedStyle(el).outlineColor
+                    })""")
+                    assert focused_css["width"] == "8px", focused_css
+                    assert focused_css["offset"] == "-2px", focused_css
+                    assert "0.078" in focused_css["color"] or (
+                        "0.08" in focused_css["color"]), focused_css
+                    # Strong hysteresis: capture ±1.6, hold until ±3.2.
+                    # Keyboard/Shift can deliberately escape the notch.
                     def set_gain(value, field_type="input"):
                         knob.evaluate("""(el, args) => {
                           const [val, kind]=args;
@@ -156,11 +183,11 @@ def run() -> None:
                     set_gain("0.4")
                     assert knob.input_value() == "0"
                     assert lcd.inner_text().strip() == "0.0 dB"
-                    set_gain("0.9")
-                    assert knob.input_value() == "0", "Unity detent must hold"
-                    set_gain("1.2", "change")
-                    assert knob.input_value() == "1.2", "Escape from detent must work"
-                    assert lcd.inner_text().strip() == "+1.2 dB"
+                    set_gain("2.7")
+                    assert knob.input_value() == "0", "Strong unity detent must hold"
+                    set_gain("3.3", "change")
+                    assert knob.input_value() == "3.3", "Escaping detent must work"
+                    assert lcd.inner_text().strip() == "+3.3 dB"
                     # Keyboard precision must not be trapped at zero.
                     knob.evaluate("""el => {
                       el.dataset.gainKeyboard='true';
@@ -178,6 +205,41 @@ def run() -> None:
                     assert knob.input_value() == "0.5", "GAIN wheel cannot leave zero"
                     set_gain("6.5")
                     assert lcd.inner_text().strip() == "+6.5 dB"
+                    # A 4px motion is still a click, NOT a range seek or drag.
+                    page.mouse.move(cx, cy)
+                    page.mouse.down()
+                    page.mouse.move(cx, cy - 4)
+                    assert knob.input_value() == "6.5", "Unarmed drag modified gain"
+                    page.mouse.up()
+                    assert knob.input_value() == "6.5"
+                    # Relative pointer motion (not absolute click coordinate)
+                    # must physically capture and hold at 0 dB.
+                    set_gain("0")
+                    page.mouse.move(cx, cy)
+                    page.mouse.down()
+                    page.mouse.move(cx, cy - 12)
+                    assert knob.input_value() == "0", "Too easy to leave zero"
+                    page.mouse.move(cx, cy - 15)
+                    assert knob.input_value() == "0", "0 dB hold broke at 3.0 dB"
+                    page.mouse.move(cx, cy - 20)
+                    assert float(knob.input_value()) > 3.2, (
+                        "Deliberate drag must escape the 0 dB detent")
+                    page.mouse.move(cx, cy - 10)
+                    assert knob.input_value() == "0", "Detent did not re-capture on return"
+                    page.mouse.up()
+                    assert knob.input_value() == "0"
+                    # Coming from below unity must snap to 0 and then hold
+                    # until deliberate 3.2 dB departure.
+                    set_gain("-6")
+                    page.mouse.move(cx, cy)
+                    page.mouse.down()
+                    page.mouse.move(cx, cy - 23)
+                    assert knob.input_value() == "0", "Crossing -1.4 dB did not snap to 0"
+                    page.mouse.move(cx, cy - 40)
+                    assert knob.input_value() == "0", "Unity hold failed on other side"
+                    page.mouse.move(cx, cy - 50)
+                    assert float(knob.input_value()) > 3.2
+                    page.mouse.up()
                     assert cap.evaluate("el => getComputedStyle(el).transform") == "none"
                     # Double-click must use the same gain parameter path and restore unity.
                     first.locator(".gain-dial").dblclick()
