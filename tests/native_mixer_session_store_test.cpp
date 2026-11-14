@@ -1684,6 +1684,24 @@ int main(){
     assert(loaded.masterGain==.7f);
     assert(readback[0].bytes==binary.bytes);
     assert(!store.recoverPrevious().isEmpty());
+    // Factory reset must retire HEAD and PREVIOUS together, including
+    // previously valid generations and vendor FX blobs. External exports,
+    // plugins and unrelated workspace files must be left untouched.
+    const auto sentinel=studio.getChildFile("Plugins").getChildFile("keep.txt");
+    assert(sentinel.getParentDirectory().createDirectory().wasOk());
+    assert(sentinel.replaceWithText("keep installed plugin data"));
+    assert(store.discardForFactoryReset().isEmpty());
+    assert(!store.exists());
+    assert(store.load(loaded,readback).isNotEmpty());
+    assert(!studio.getChildFile("MixerSession").exists());
+    assert(sentinel.loadFileAsString()=="keep installed plugin data");
+    assert(portable.existsAsFile());
+    assert(store.discardForFactoryReset().isEmpty()); // repeatable
+    // Reset does not poison future new-session commits.
+    assert(store.commit(d,{binary}).isEmpty());
+    assert(store.load(loaded,readback).isEmpty());
+    assert(store.discardForFactoryReset().isEmpty());
+    assert(!store.exists());
     assert(base.deleteRecursively());
     std::cout<<"PASS: dynamic ChannelId/EdgeId graph, persistent vendor blobs and"
                 " explicit verified HEAD recovery\n";
