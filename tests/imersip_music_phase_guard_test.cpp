@@ -214,7 +214,38 @@ void verifyRealP86DirectSpeakerReachesOutput(double rate) {
     }
     const double relative=std::sqrt(directDifference/(dryEnergy+1.e-14));
     std::fprintf(stderr,"IMERSIP_P86_DIRECT rate=%.0f transfer=%.5f\n",rate,relative);
-    assert(relative>.15); // rejects the old effectively dry stereo base
+    // This fixture is dominated by 370-1270 Hz vocal/body: forcing a
+    // >15% difference here rewarded the very mid-coloration the owner
+    // rejected. It must remain measurably binaural, NOT become dry.
+    assert(relative>.05);
+    // Require a STRONG direct measured speaker effect in the upper pinna
+    // band independently of room, bass and optional AIR boosts. The new
+    // MID-fidelity guard below covers the vocal band separately.
+    Stereo treble(32768);
+    for(int i=0;i<32768;++i) {
+        const double time=static_cast<double>(i)/rate;
+        treble.l[i]=static_cast<float>(
+            .10*std::sin(2.*pi*8200.*time)+
+            .04*std::sin(2.*pi*11800.*time));
+        treble.r[i]=static_cast<float>(
+            .07*std::sin(2.*pi*8200.*time+.9)+
+            .035*std::sin(2.*pi*11800.*time+.3));
+    }
+    const auto renderedTreble=render(rate,s,treble,128);
+    double highbandDelta=0.,highbandInput=0.;
+    for(int i=8192;i<32768;++i) {
+        const double dl=renderedTreble.l[i]-treble.l[i];
+        const double dr=renderedTreble.r[i]-treble.r[i];
+        highbandDelta+=dl*dl+dr*dr;
+        highbandInput+=static_cast<double>(treble.l[i])*treble.l[i]+
+                       static_cast<double>(treble.r[i])*treble.r[i];
+    }
+    const double highbandRelative=std::sqrt(
+        highbandDelta/(highbandInput+1.e-14));
+    std::fprintf(stderr,
+        "IMERSIP_HRTF_PINNA_DIRECT rate=%.0f delta=%.5f\n",
+        rate,highbandRelative);
+    assert(highbandRelative>.14);
 }
 
 void verifyP87MusicalAirBodyRealIntegration(double rate) {
