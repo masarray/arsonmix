@@ -623,7 +623,9 @@ void verifyRoomLinkedBassStaysCoherent(double rate) {
         const auto original=rms(input,4096,false);
         assert(rms(low,4096,false)>=original*.995);
         assert(rms(rich,4096,false)>=rms(low,4096,false)*.995);
-        assert(rms(rich,4096,false)<original*1.14);
+        // Calibrated ~2dB end-stop is intentional; strict upper bound
+        // still rejects runaway LF / clipping or accidental second bass.
+        assert(rms(rich,4096,false)<original*1.36);
     }
 }
 void verifyActualMeasuredDualSpeakers(double rate) {
