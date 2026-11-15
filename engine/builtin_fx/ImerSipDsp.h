@@ -292,7 +292,7 @@ private:
         // opposed dry music SIDE on independent-stereo test material.
         // Calibrate a per-venue ER envelope (still 0..100% user-tweakable),
         // never turn off actual direct speaker HRIR or alter ordinary SonKu.
-        const float lateralRoomScale=s.venue==2?.45f:
+        const float lateralRoomScale=s.venue==2?.25f:
                                      s.venue==1?.82f:1.f;
         earlyTarget_=s.immersion*(2.60f*s.space)*
                      (1.f+.55f*s.depth)*lateralRoomScale;
