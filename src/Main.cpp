@@ -183,7 +183,14 @@ public:
         setUsingNativeTitleBar (true);
         setIcon (approvedAppIcon());
         setContentOwned (editor, true);
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+        // ImerSip uses a precisely aligned compact fixed-size control
+        // canvas. Vendor editors keep their prior resize/maximize policy.
+        setResizable (dynamic_cast<armix::builtin_fx::ImerSipEditor*>(
+                          editor)==nullptr, true);
+#else
         setResizable (true, true);
+#endif
         centreWithSize (juce::jmax (380, editor->getWidth()), juce::jmax (300, editor->getHeight()));
         setVisible (true);
     }
