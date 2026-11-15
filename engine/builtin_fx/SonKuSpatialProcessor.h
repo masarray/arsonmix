@@ -164,7 +164,11 @@ public:
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P92_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P92_NATIVE_RT
+        out.writeInt(12); // unchanged 63-byte state; isolated P9.2 mode 10
+#else
         out.writeInt(11); // unchanged 63-byte state; P9 mode 9
+#endif
 #else
         out.writeInt(10); // 63 bytes v9 layout, opt-in mode 8
 #endif
@@ -253,6 +257,9 @@ public:
              &&version!=10
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT
              &&version!=11
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P92_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P92_NATIVE_RT
+             &&version!=12
+#endif
 #endif
 #endif
 #endif
@@ -281,6 +288,9 @@ public:
             ||(version==10&&size!=63)
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT
             ||(version==11&&size!=63)
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P92_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P92_NATIVE_RT
+            ||(version==12&&size!=63)
+#endif
 #endif
 #endif
 #endif
@@ -368,6 +378,13 @@ public:
                next.renderMode!=7 && next.renderMode!=8 && next.renderMode!=9)
                 return false;
             if(version==11 && next.musicCompatibleLowFrequency)return false;
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P92_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P92_NATIVE_RT
+            if(version==12 && next.renderMode!=0 && next.renderMode!=3 &&
+               next.renderMode!=4 && next.renderMode!=5 && next.renderMode!=6 &&
+               next.renderMode!=7 && next.renderMode!=8 && next.renderMode!=9 &&
+               next.renderMode!=10)return false;
+            if(version==12 && next.musicCompatibleLowFrequency)return false;
+#endif
 #endif
 #endif
 #endif
