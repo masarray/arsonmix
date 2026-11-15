@@ -14,3 +14,6 @@ ImerSip previously fused physical L/R kernels toward a centered KEMAR HRIR at on
 - Do not promote as equivalent to dearVR or subjectively immersive before real same-headphone owner audition and exact commit Windows JUCE ZIP provenance. Keep PR draft, do not change main.
 
 Reference PR: https://github.com/masarray/arsonmix/pull/706
+
+## Measured 180° HRTF and control strength calibration
+The exact MIT-KEMAR measured +/-90-degree SIDE impulse energy was only 1.1548x the +/-15-degree impulse energy at 44.1 kHz. This is a physical HRIR measurement, not permission to invent different acoustic filters or assert an impossible >1.25x raw energy. Direct source still reaches true 180° angular directions. ImerSip's measured direct-side admission therefore now uses a bounded width-linked .20..60 coefficient, NOT the former flat 45% at every angle, so the full Stage Width endpoint produces a more meaningful actual PCM effect. Existing >=86% original music SIDE integrity regression is UNCHANGED. No source SIDE M/S widener is added.

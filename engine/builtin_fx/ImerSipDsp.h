@@ -187,9 +187,16 @@ public:
                     measuredSide-=low;
                 }
                 const float keep=std::clamp(stereoKeep_,0.f,1.f);
+                // Make STAGE WIDTH a true directional source control:
+                // the measured +/-90 degree interaural SIDE has a larger
+                // admitted contribution than the narrower +/-15 degree
+                // pair, without artificially widening original music SIDE.
+                // Mono remains center-projected and strictly mono. Keep
+                // original stereo bed full-level at every knob position.
+                const float measuredSpeakerGain=.20f+.40f*settings_.width;
                 const float directionalSide=directGain_*(
                     (1.f-keep)*deltaSide+
-                    keep*.45f*measuredSide);
+                    keep*measuredSpeakerGain*measuredSide);
                 const float baseL=dryL+directGain_*deltaMid+
                                   directionalSide;
                 const float baseR=dryR+directGain_*deltaMid-
