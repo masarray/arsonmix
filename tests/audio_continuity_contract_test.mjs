@@ -74,7 +74,7 @@ test('session capture and shutdown keep requested MAIN through a device STOP',()
   assert.match(capture,/engine_\.setOutputMuted\(false\)/);
   assert.doesNotMatch(capture,/engine_\.setMonitorEnabled\(/);
   const shutdown=main.split('~ConsoleWindow() override')[1]
-      .split('engine_\.disconnectSecondaryOutput\(\)')[0];
+      .split('engine_.stop();')[0];
   assert.match(shutdown,/engine_\.wantsMainContinuation\(\) && !operatorOutputMuted_/);
   assert.match(shutdown,/saveMixerSession\(resumeMain,\{\},true\)/);
 });
