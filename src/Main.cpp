@@ -2230,7 +2230,27 @@ private:
     bool autoMainRequiresInput_=true;
     std::optional<std::uint64_t> autoMainCheckedRevision_;
     void serviceAutomaticMain() {
-        if(autoMainEpoch_==0)return;
+        // A rejected graph/hardware transition can leave MAIN disarmed
+        // AFTER its one-shot auto request has been consumed. There is no
+        // longer a user OUTPUT-UNMUTE button, so recover once per second
+        // on CONTROL after the verified device and graph become stable.
+        // This never runs in the audio callback and never guesses a port.
+        if(autoMainEpoch_==0) {
+            if(!audioEngineStarted_ || updaterProbeMode_ ||
+               timerTicks_%12!=0 || engine_.isMonitorEnabled() ||
+               startupError_.isNotEmpty() || mixerSessionRecoveryPending_ ||
+               nativeShowBusy_ || studioBackupBusy_ || deviceApply_.busy() ||
+               audioSetupLease_.has_value() || setupLaunching_ ||
+               engine_.isGraphSwitchPending() || engine_.secondaryArmed() ||
+               engine_.independentClockActive() ||
+               engine_.hasTemporaryDiagnosticDevice() ||
+               engine_.diagnosticRoute()!=armix::diagnostics::Route::normal ||
+               !engine_.hasBoundMixerRoute())
+                return;
+            autoMainEpoch_=engine_.dryRoutingLabEpoch();
+            autoMainRequiresInput_=false;
+            autoMainCheckedRevision_.reset();
+        }
         if(autoMainEpoch_!=engine_.dryRoutingLabEpoch() ||
            engine_.isMonitorEnabled()) {
             autoMainEpoch_=0;
