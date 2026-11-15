@@ -55,6 +55,7 @@ Stereo render(double rate,const Settings& s,const Stereo& input,int chunk=128) {
     Stereo result=input;
     auto dsp=std::make_unique<ImerSipDsp>();
     assert(dsp->setSettings(s) && dsp->prepare(rate));
+    assert(dsp->measuredStereoStageEnabled());
     for(int at=0;at<static_cast<int>(result.l.size());at+=chunk)
         dsp->process(result.l.data()+at,result.r.data()+at,
                      std::min(chunk,static_cast<int>(result.l.size())-at));
@@ -156,6 +157,37 @@ void verifyBassFoundation(double rate) {
         assert(after<before*1.14);
     }
 }
+void verifyActualMeasuredDualSpeakers(double rate) {
+    // P8.2 standard music-safe renderer = centered KEMAR FIR.
+    // The ImerSip experimental mode must employ TWO independent measured
+    // KEMAR directions, not merely relabel the WIDTH control as 175 degrees.
+    Stereo input;makeSignal(input,rate,2);
+    auto dryP82=std::make_unique<armix::sonku::SonKuSpatialCore>();
+    auto dual=std::make_unique<armix::sonku::SonKuSpatialCore>();
+    using Profile=armix::sonku::SonKuReflectionProfile;
+    assert(dryP82->prepare(rate,Profile::SixSurfaceKemarResearch));
+    assert(dual->prepare(rate,Profile::SixSurfaceKemarResearch));
+    armix::sonku::Settings s{};
+    s.moving=false;s.startAzimuthDegrees=0.f;
+    s.stereoSpreadDegrees=175.f;s.spatialMix=.65f;s.outputTrim=1.f;
+    assert(dryP82->setSettings(s) && dual->setSettings(s));
+    assert(!dryP82->imersipMeasuredStereoSideEnabled());
+    assert(dual->enableImerSipMeasuredStereoSide(true));
+    assert(dual->imersipMeasuredStereoSideEnabled());
+    dryP82->reset();dual->reset();
+    Stereo oldRender=input,newRender=input;
+    for(int at=0;at<n;at+=128) {
+        dryP82->process(oldRender.l.data()+at,oldRender.r.data()+at,128);
+        dual->process(newRender.l.data()+at,newRender.r.data()+at,128);
+    }
+    double sideDifference=0.;
+    for(int i=4096;i<n;++i)
+        sideDifference+=std::abs(
+            (newRender.l[i]-newRender.r[i])-
+            (oldRender.l[i]-oldRender.r[i]));
+    // Real measured source directions give a nontrivial interaural field.
+    assert(sideDifference>1.);
+}
 void verifyActualP82RoomChangesSideOnly(double rate) {
     // Independent side material + different six-wall programs must produce
     // audible stereo room differences; not a fake width-only bypass.
@@ -215,6 +247,7 @@ int main() {
         verifyDryAndBounds(rate);
         verifyOriginalVocalMidIsUntouched(rate);
         verifyOriginalStereoSurvives(rate);
+        verifyActualMeasuredDualSpeakers(rate);
         verifyBassFoundation(rate);
         verifyDetailIsNotMidBoost(rate);
         verifyActualP82RoomChangesSideOnly(rate);
