@@ -68,6 +68,16 @@ jobs:
           print("P89_NATIVE_HEADER_PREPROCESSOR_BALANCED")
           PY
           grep -q 'r.schemaVersion===10' site/preview-v2/assets/mixer-native-sonku.js
+          # A mode8 enum without fused FIR dispatch silently changes P8.8 timbre.
+          # This source contract prevents another fallback-to-wrong-kernel regression.
+          python - <<'PY'
+          from pathlib import Path
+          core=Path("engine/builtin_fx/sonku/SonKuSpatialCore.h").read_text()
+          section=core.split("if((p83Mode_==p83::Mode::MusicSpatialP84 ||",1)[1].split("p84MusicKernel_.merge(",1)[0]
+          assert "p83Mode_==p83::Mode::MusicSpatialP89 ||" in section
+          assert "p83Mode_==p83::Mode::MusicSpatialP88 ||" in section
+          print("SONKU_P89_NATIVE_FUSED_FIR_DISPATCH_VERIFIED")
+          PY
           grep -q 'skHrtfAlign' site/preview-v2/assets/mixer-native-sonku.js
           node tests/sonku_p73_gui_contract_test.js
           grep -q "'FIELD_PREVIEW_FULL_CTEST_NOT_RUN'" scripts/m3e_fat_evidence_gate.mjs
