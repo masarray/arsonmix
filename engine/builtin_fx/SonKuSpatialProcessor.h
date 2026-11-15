@@ -165,6 +165,7 @@ public:
         out.writeInt(9); // v8 59-byte state + 4-byte HRTF trim
 #else
         out.writeInt(8); // same 59-byte layout; modes 0/3/4/5/6
+#endif
 #else
         out.writeInt(7); // 59-byte layout; mode 5, old sessions intact
 #endif
