@@ -6501,6 +6501,9 @@ private:
             if (nativeShowBusy_ || studioBackupBusy_ || catalog_.busy() ||
                 engine_.isGraphSwitchPending() || engine_.hasTemporaryDiagnosticDevice())
                 return reject("Finish the current Studio task before capturing a native Show.");
+            ScopedMainTransaction mainGate(*this);
+            // Only this synchronous vendor-state capture is quiescent.
+            // Resume original verified MAIN BEFORE the disk IO worker runs.
             // Never save the unacknowledged JS draft. Message-thread capture
             // reads the accepted LIVE graph, updated faders and exact device epoch.
             // VST3 is fail-closed until a quiescent vendor state capture gate exists.
@@ -6569,6 +6572,7 @@ private:
                 diagnostics_.record("NATIVE_SHOW_REJECTED",error);
                 return reject(error);
             }
+            mainGate.resume();
             auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
             const bool started=nativeShowWorker_.launch(settingsDirectory(),
                 std::move(captured),std::move(blobs),[safe](armix::shows::NativeShowSaveWorker::Result result) {
@@ -6581,7 +6585,7 @@ private:
                         safe->diagnostics_.record("NATIVE_FX_SHOW_SAVED",
                             result.showId+" | "+result.snapshotId);
                         safe->emitNotice("Verified Show saved with routed VST3 state: "+
-                            result.name+". Use BROWSE SHOWS and RECALL while OUTPUT is muted.");
+                            result.name+". RECALL verifies hardware and reconnects MAIN automatically.");
                     }
                     if(safe->browser_.loaded) {
                         auto ack=std::make_unique<juce::DynamicObject>();
@@ -6657,8 +6661,8 @@ private:
             if(!armix::shows::detail::uuid(id))
                 return reject("Select a valid saved Show identity.");
             if(nativeShowBusy_||studioBackupBusy_||catalog_.busy()||
-               engine_.isGraphSwitchPending()||!engine_.allOutputsDisarmed())
-                return reject("MUTE both outputs and finish all Studio tasks before recovery.");
+               engine_.isGraphSwitchPending())
+                return reject("Finish the active Studio task before disk recovery.");
             auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
             const bool started=nativeShowWorker_.recover(settingsDirectory(),id,
                 [safe](armix::shows::NativeShowSaveWorker::Result result) {
@@ -6676,7 +6680,7 @@ private:
                             "arMixNativeShowRecoverAck",juce::var(ack.release()));
                     }
                     if(result.ok())
-                        safe->emitNotice("Last verified Show restored on disk. OUTPUT stays MUTED; review and RECALL explicitly.");
+                        safe->emitNotice("Last verified Show restored on disk. Current audio continues; RECALL applies it explicitly.");
                     else
                         safe->emitNotice("Last-good Show recovery rejected: "+result.error,true);
                 });
@@ -6700,8 +6704,8 @@ private:
             if(!armix::shows::detail::uuid(id))
                 return reject("Select a native Show UUID from the saved list.");
             if(nativeShowBusy_ || studioBackupBusy_ || catalog_.busy() ||
-               engine_.isGraphSwitchPending() || !engine_.allOutputsDisarmed())
-                return reject("Mute native output and finish ongoing Studio work.");
+               engine_.isGraphSwitchPending() || engine_.secondaryArmed())
+                return reject("Finish Show/FX or stop secondary STREAM before recall.");
             const auto d=engine_.status().getProperty("dryRoutingLab",{});
             const auto ep=d.getProperty("epoch",{}),rev=d.getProperty("revision",{});
             if(!static_cast<bool>(d.getProperty("ready",false)) ||
@@ -6717,6 +6721,11 @@ private:
                     if(safe==nullptr)return;
                     juce::String error=result.error;
                     juce::var command;
+                    // Read the saved Show without interrupting old PCM.
+                    // Quiesce MAIN only for verified prepare/graph publication,
+                    // then restore automatically even on vendor rejection.
+                    std::optional<ScopedMainTransaction> recallGate;
+                    if(error.isEmpty())recallGate.emplace(*safe);
                     if(error.isEmpty()) {
                         const auto state=safe->engine_.status();
                         const auto lab=state.getProperty("dryRoutingLab",{});
@@ -6788,8 +6797,8 @@ private:
                             }
                         }
                         if(error.isEmpty()) {
-                            // Only AFTER native graph publication, and while
-                            // physical output remains muted. Never auto-unmute.
+                            // Only AFTER the verified native graph publishes.
+                            // The scoped gate restores MAIN after the commit.
                             safe->engine_.setMasterGainLinear(
                                 static_cast<float>(result.loaded.masterGain));
                             safe->engine_.setMasterMuted(result.loaded.masterMute);
@@ -6799,6 +6808,11 @@ private:
                         }
                     }
                     safe->nativeShowBusy_=false;
+                    // Recover the previous audible graph on any rejected
+                    // candidate; on success reconnect the newly accepted
+                    // graph without requiring operator MUTE/UNMUTE.
+                    recallGate.reset();
+                    if(error.isEmpty())safe->requestAutomaticMain(false);
                     auto ack=std::make_unique<juce::DynamicObject>();
                     ack->setProperty("ok",error.isEmpty());
                     ack->setProperty("error",error);
@@ -6811,7 +6825,7 @@ private:
                     if(error.isNotEmpty())
                         safe->emitNotice("Native Show recall rejected: "+error,true);
                     else safe->emitNotice(
-                        "Verified native Show routing and VST3 state restored in a newly prepared graph. OUTPUT remains MUTED; verify physical routing and plugin sound before unmuting.");
+                        "Verified native Show and VST3 restored. MAIN reconnects automatically on verified hardware routing.");
                 });
             if(!started)return reject("Cannot launch native Show readback worker.");
             autoMainEpoch_=0;
