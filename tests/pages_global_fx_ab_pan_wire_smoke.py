@@ -89,13 +89,30 @@ def run(page, width, height):
     assert power.evaluate("el=>el.tagName.toLowerCase()")=="svg"
     assert toggle.locator("button").count()==0
     assert power.evaluate("el=>getComputedStyle(el).backgroundImage")=="none"
-    assert power.evaluate("el=>getComputedStyle(el).color")=="rgb(105, 220, 164)"
+    # The full physical button face, not only its glyph, becomes green.
+    # The label and icon must share exactly the parent's ON/OFF text ink.
+    on_face=toggle.evaluate("""el=>({
+      bg:getComputedStyle(el).backgroundImage,
+      ink:getComputedStyle(el).color,
+      label:getComputedStyle(el.querySelector('.global-fx-label')).color,
+      glyph:getComputedStyle(el.querySelector('svg.global-fx-power-icon')).color
+    })""")
+    assert "rgb(59, 140, 110)" in on_face["bg"],on_face
+    assert on_face["ink"]==on_face["label"]==on_face["glyph"]=="rgb(240, 255, 247)",on_face
     slot_power=page.locator('#tracks .strip[data-id="1"] [data-util-kind="fx-slot"]').first
     assert slot_power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="100%"
     toggle.click()
     assert toggle.get_attribute("aria-pressed")=="false"
     assert toggle.get_attribute("data-fx-power-state")=="bypassed"
-    assert power.evaluate("el=>getComputedStyle(el).color")=="rgb(135, 150, 158)"
+    off_face=toggle.evaluate("""el=>({
+      bg:getComputedStyle(el).backgroundImage,
+      ink:getComputedStyle(el).color,
+      label:getComputedStyle(el.querySelector('.global-fx-label')).color,
+      glyph:getComputedStyle(el.querySelector('svg.global-fx-power-icon')).color
+    })""")
+    normal_face=page.locator('#gainView').evaluate("el=>getComputedStyle(el).backgroundImage")
+    assert off_face["bg"]==normal_face and off_face["bg"]!=on_face["bg"],off_face
+    assert off_face["ink"]==off_face["label"]==off_face["glyph"],off_face
     assert slot_power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="0%"
     assert page.locator(".console-body").evaluate("el=>el.classList.contains('global-fx-bypassed')")
     during=rack(page,1)
@@ -111,7 +128,8 @@ def run(page, width, height):
     toggle.click()
     after=rack(page,1)
     assert after==ch_before | {"global":"true"},(ch_before,after)
-    assert power.evaluate("el=>getComputedStyle(el).color")=="rgb(105, 220, 164)"
+    assert toggle.evaluate("el=>getComputedStyle(el).backgroundImage")==on_face["bg"]
+    assert power.evaluate("el=>getComputedStyle(el).color")==on_face["glyph"]
     assert slot_power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="100%"
     page.screenshot(path=f"arsonmix-global-fx-{width}-enabled.png")
     # Individual OFF remains OFF across the master A/B roundtrip.
