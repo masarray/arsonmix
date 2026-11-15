@@ -17,6 +17,7 @@ struct Settings {
     float space=.45f;        // P8.2 original six-wall / LF-MID-HF tail
     float width=.95f;        // 175-degree default stage + positive SIDE shelf, no Haas delay
     float bassImpact=.75f;   // 0 exact P8.2 bass, 1 bounded coherent uplift
+    float detail=.40f;       // 0 original source treble, 1 gentle <=1.3dB air
     float outputTrim=1.f;    // P8.2 full-output linear trim
 };
 inline bool valid(const Settings& s) noexcept {
@@ -25,6 +26,7 @@ inline bool valid(const Settings& s) noexcept {
         std::isfinite(s.space)&&s.space>=0.f&&s.space<=1.f &&
         std::isfinite(s.width)&&s.width>=0.f&&s.width<=1.f &&
         std::isfinite(s.bassImpact)&&s.bassImpact>=0.f&&s.bassImpact<=1.f &&
+        std::isfinite(s.detail)&&s.detail>=0.f&&s.detail<=1.f &&
         std::isfinite(s.outputTrim)&&s.outputTrim>=.25f&&s.outputTrim<=1.5f;
 }
 
@@ -40,6 +42,7 @@ public:
         constexpr double pi=3.1415926535897932384626433832795;
         bassAlpha_=static_cast<float>(1.-std::exp(-2.*pi*120./rate));
         sideAlpha_=static_cast<float>(1.-std::exp(-2.*pi*680./rate));
+        detailAlpha_=static_cast<float>(1.-std::exp(-2.*pi*5600./rate));
         gainSlew_=static_cast<float>(1.-std::exp(-1./(rate*.025)));
         gateSlew_=static_cast<float>(1.-std::exp(-1./(rate*.035)));
         energySlew_=static_cast<float>(1.-std::exp(-1./(rate*.075)));
@@ -63,12 +66,17 @@ public:
         bassTarget_=maxDelta*s.bassImpact*s.immersion;
         // High SIDE boost limited to +1.58dB at maximum. P8.2 MID is intact.
         sideTarget_=.20f*s.width*s.immersion;
+        // Soft, identical per-channel minimum-phase high shelf >5kHz.
+        // Deliberately NO 1-4kHz vocal boost or delayed copy/crossfeed.
+        detailTarget_=.15f*s.detail*s.immersion;
         return true;
     }
     void reset() noexcept {
         bassL_=bassR_=sideLow_=midEnergy_=sideEnergy_=gate_=0.f;
+        detailL_=detailR_=0.f;
         bassGain_=bassTarget_;
         sideGain_=sideTarget_;
+        detailGain_=detailTarget_;
     }
     bool ready() const noexcept {return ready_;}
     Settings settings() const noexcept {return settings_;}
@@ -99,6 +107,9 @@ public:
         bassR_+=bassAlpha_*(r-bassR_);
         bassGain_+=gainSlew_*(bassTarget_-bassGain_);
         sideGain_+=gainSlew_*(sideTarget_-sideGain_);
+        detailGain_+=gainSlew_*(detailTarget_-detailGain_);
+        detailL_+=detailAlpha_*(l-detailL_);
+        detailR_+=detailAlpha_*(r-detailR_);
         const float bassDeltaL=bassGain_*bassL_;
         const float bassDeltaR=bassGain_*bassR_;
         // One-pole complementary HP has Re(H)>=0. Summing a POSITIVE
@@ -107,8 +118,10 @@ public:
         const float side=.5f*(l-r);
         sideLow_+=sideAlpha_*(side-sideLow_);
         const float delta=sideGain_*inputStereoGate*(side-sideLow_);
-        float addL=bassDeltaL+delta;
-        float addR=bassDeltaR-delta;
+        // Phase-safe tonal-detail air: 1 + non-negative k*(1 - LP5600).
+        // Equal IIR coefficients per original ear, no delayed dry-wet.
+        float addL=bassDeltaL+delta+detailGain_*(l-detailL_);
+        float addR=bassDeltaR-delta+detailGain_*(r-detailR_);
 
         // Peak safety does not pull down the trusted P8.2 signal.
         // Unlike global AGC/limiter, it only scales optional additions.
@@ -126,11 +139,11 @@ public:
     }
 private:
     Settings settings_{};
-    float bassAlpha_=0.f,sideAlpha_=0.f;
+    float bassAlpha_=0.f,sideAlpha_=0.f,detailAlpha_=0.f;
     float gainSlew_=0.f,gateSlew_=0.f,energySlew_=0.f;
-    float bassTarget_=0.f,sideTarget_=0.f;
-    float bassGain_=0.f,sideGain_=0.f;
-    float bassL_=0.f,bassR_=0.f,sideLow_=0.f;
+    float bassTarget_=0.f,sideTarget_=0.f,detailTarget_=0.f;
+    float bassGain_=0.f,sideGain_=0.f,detailGain_=0.f;
+    float bassL_=0.f,bassR_=0.f,sideLow_=0.f,detailL_=0.f,detailR_=0.f;
     float midEnergy_=0.f,sideEnergy_=0.f,gate_=0.f;
     bool ready_=false;
 };
