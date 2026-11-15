@@ -86,7 +86,10 @@ void verifySceneGeometry() {
         assert(scene.spatialMix>0.f && scene.outputTrim==1.f);
         assert(scene.sourceDistanceMeters==1.6f);
         assert(scene.roomAmount>scene.ambience);
-        assert(scene.roomAmount<.30f && scene.ambience<.15f);
+        // P0 had a near-bypassed real room (~0.05 * core return).
+        // Increased actual room-gain is intentional; its *processed PCM*
+        // must now pass the robust dry/wet null-test below.
+        assert(scene.roomAmount<=.65f && scene.ambience<=.30f);
     }
 }
 void verifyNearOrchestraRoomContract() {
