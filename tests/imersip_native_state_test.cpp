@@ -248,7 +248,23 @@ int main() {
             live->findChildWithID("imersip.stereo"));
         auto* align=dynamic_cast<juce::Slider*>(
             live->findChildWithID("imersip.ear-align"));
-        assert(depth&&stereo&&align);
+        auto* power=dynamic_cast<juce::TextButton*>(
+            live->findChildWithID("imersip.power"));
+        auto* imer=dynamic_cast<armix::builtin_fx::ImerSipEditor*>(live.get());
+        assert(depth&&stereo&&align&&power&&imer);
+        assert(!power->isEnabled()); // host-controlled, no local fake power
+        assert(live->getWidth()==armix::builtin_fx::ImerSipEditor::editorWidth);
+        assert(live->getHeight()==armix::builtin_fx::ImerSipEditor::editorHeight);
+        assert(!depth->getBounds().intersects(align->getBounds()));
+        assert(!power->getBounds().intersects(stereo->getBounds()));
+        bool bypassed=false;
+        imer->bindHostPower([&](bool next){bypassed=next;return true;},
+                            [&]{return bypassed;});
+        assert(power->isEnabled()&&power->getButtonText()=="FX ON");
+        power->onClick();
+        assert(bypassed&&power->getButtonText()=="FX BYPASSED");
+        power->onClick();
+        assert(!bypassed&&power->getButtonText()=="FX ON");
         assert(std::abs(depth->getValue()-100.*Settings{}.depth)<.01);
         depth->setValue(87.,juce::sendNotificationSync);
         juce::AudioBuffer<float> pulse(2,128);pulse.clear();
@@ -263,6 +279,14 @@ int main() {
         ImerSipProcessor::Completion aligned{};
         assert(audible->pollCompletion(aligned)&&aligned.applied);
         assert(aligned.settings.earAlignDegrees==-19.5f);
+    }
+    // Reopening must not reset this insert's accepted native settings.
+    {
+        std::unique_ptr<juce::AudioProcessorEditor> again(audible->createEditor());
+        assert(again && again->findChildWithID("imersip.power"));
+        auto* restoredDepth=dynamic_cast<juce::Slider*>(
+            again->findChildWithID("imersip.depth"));
+        assert(restoredDepth&&std::abs(restoredDepth->getValue()-87.)<.01);
     }
     auto full=audible->acceptedSettings();
     full.venue=0;full.immersion=1.f;full.space=1.f;

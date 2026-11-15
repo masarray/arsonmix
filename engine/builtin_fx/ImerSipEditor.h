@@ -7,6 +7,8 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <functional>
+#include <utility>
 
 namespace armix::builtin_fx {
 class ImerSipLook final : public juce::LookAndFeel_V4 {
@@ -55,6 +57,19 @@ public:
 class ImerSipEditor final : public juce::AudioProcessorEditor,
                            private juce::Timer {
 public:
+    static constexpr int editorWidth=980,editorHeight=560;
+    void bindHostPower(std::function<bool(bool)> request,
+                       std::function<bool()> readback) {
+        hostBypassRequest_=std::move(request);
+        hostBypassReadback_=std::move(readback);
+        power_.setEnabled(static_cast<bool>(hostBypassRequest_) &&
+                          static_cast<bool>(hostBypassReadback_));
+        refreshHostPower();
+    }
+    void resetTransientComparison() noexcept {
+        originalAb_.setToggleState(false,juce::dontSendNotification);
+        fx_.setCompareDry(false);
+    }
     explicit ImerSipEditor(ImerSipProcessor& processor)
         :juce::AudioProcessorEditor(processor),fx_(processor) {
         setLookAndFeel(&look_);
@@ -163,76 +178,97 @@ public:
             submit();
         };
         addAndMakeVisible(musicalReset_);
+        power_.setComponentID("imersip.power");
+        power_.setButtonText("FX POWER");
+        power_.setEnabled(false); // fail closed when not native-bound
+        power_.onClick=[this] {
+            if(!hostBypassRequest_||!hostBypassReadback_)return;
+            const bool wantBypassed=!hostBypassReadback_();
+            if(hostBypassRequest_(wantBypassed)) {
+                status_=wantBypassed?"FX BYPASSED · NATIVE":"FX ENABLED · NATIVE";
+                refreshHostPower();
+            } else status_="POWER REJECTED · REFRESH FX RACK";
+            repaint();
+        };
+        addAndMakeVisible(power_);
         sync(fx_.acceptedSettings());
-        status_="READY · AUDIO-APPLIED CONTROLS";
-        setSize(840,474);
+        status_="READY · NATIVE AUDIO CONTROLS";
+        setSize(editorWidth,editorHeight);
         startTimerHz(25);
     }
 
     ~ImerSipEditor() override {
         stopTimer();
         // Closing the popup must NEVER leave the signal monitor bypassed.
-        fx_.setCompareDry(false);
+        resetTransientComparison();
         setLookAndFeel(nullptr);
     }
     void paint(juce::Graphics& g) override {
         g.fillAll(juce::Colour(0xff0e1c26));
         g.setColour(juce::Colour(0xff1a3443));
-        g.fillRect(0,0,getWidth(),67);
+        g.fillRect(0,0,getWidth(),72);
         g.setColour(juce::Colour(0xff68cfe2));
-        g.fillRect(0,66,getWidth(),1);
+        g.fillRect(0,71,getWidth(),1);
         g.setColour(juce::Colour(0xffebf7fb));
-        g.setFont(juce::FontOptions(26.f,juce::Font::plain));
-        g.drawText("ImerSip",22,14,190,31,juce::Justification::centredLeft);
+        g.setFont(juce::FontOptions(23.f,juce::Font::plain));
+        g.drawText("ImerSip",24,17,165,30,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff91adbb));
         g.setFont(juce::FontOptions(11.f,juce::Font::plain));
-        g.drawText("MUSIC STAGE  /  FRONTAL DEPTH  /  STEREO SAFE",
-                   170,20,455,24,juce::Justification::centredLeft);
+        g.drawText("BINAURAL MUSIC STAGE · 180° KEMAR",
+                   176,23,480,24,juce::Justification::centredLeft);
         const auto stageBox=stage_.toFloat();
-        const auto controlBox=juce::Rectangle<float>(368.f,81.f,452.f,341.f);
+        const auto controls=juce::Rectangle<float>(377.f,82.f,585.f,438.f);
         g.setColour(juce::Colour(0xff122632));
-        g.fillRoundedRectangle(stageBox,9.f);
-        g.fillRoundedRectangle(controlBox,9.f);
+        g.fillRoundedRectangle(stageBox,8.f);
+        g.fillRoundedRectangle(controls,8.f);
         g.setColour(juce::Colour(0xff2c4c5b));
-        g.drawRoundedRectangle(stageBox,9.f,1.f);
-        g.drawRoundedRectangle(controlBox,9.f,1.f);
+        g.drawRoundedRectangle(stageBox,8.f,1.f);
+        g.drawRoundedRectangle(controls,8.f,1.f);
         paintStage(g);
         g.setColour(juce::Colour(0xff8faebb));
-        g.setFont(juce::FontOptions(11.f,juce::Font::plain));
-        g.drawText("VENUE",385,94,110,20,juce::Justification::centredLeft);
-        g.setColour(juce::Colour(0xffa1c0cd));
-        // No overlapping footer: the 8 readouts now occupy the lower row.
-        g.setColour(juce::Colour(0xff244452));g.fillRect(0,440,840,1);
+        g.setFont(juce::FontOptions(10.5f,juce::Font::plain));
+        g.drawText("VENUE",395,97,110,17,juce::Justification::centredLeft);
+        g.drawText("SPACE / DIRECTION",395,207,210,16,
+                   juce::Justification::centredLeft);
+        g.drawText("FIDELITY / TONE",395,353,210,16,
+                   juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xff254655));
+        g.drawLine(395.f,344.f,944.f,344.f,1.f);
+        g.setColour(juce::Colour(0xff84a9b9));
+        g.setFont(juce::FontOptions(10.f,juce::Font::plain));
+        g.drawText("Power follows FX Rack bypass · A/B is temporary",
+                   395,499,542,15,juce::Justification::centred);
+        g.setColour(juce::Colour(0xff244452));
+        g.fillRect(0,527,editorWidth,1);
         g.setColour(juce::Colour(0xff84bbc7));
-        g.setFont(juce::FontOptions(11.f,juce::Font::plain));
-        g.drawText(status_,20,449,400,19,juce::Justification::centredLeft);
+        g.drawText(status_,22,534,444,18,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff90d6e5));
-        g.drawText(liveReadout_,422,449,233,19,
-                   juce::Justification::centredRight);
+        g.drawText(liveReadout_,470,534,290,18,juce::Justification::centredRight);
         g.setColour(juce::Colour(0xff6d8f9b));
-        g.drawText("44.1 / 48 kHz  ·  HEADPHONES",650,449,170,19,
+        g.drawText("44.1 / 48 kHz · HEADPHONES",777,534,185,18,
                    juce::Justification::centredRight);
     }
     void resized() override {
-        stage_={19,81,335,341};
+        stage_={18,82,346,438};
         for(int i=0;i<3;++i)
-            venues_[static_cast<std::size_t>(i)].setBounds(385+i*141,121,134,35);
-        originalAb_.setBounds(385,160,171,23);
-        musicalReset_.setBounds(569,160,170,23);
-        depth_.setBounds(63,337,248,22);
-        earAlign_.setBounds(63,385,248,22);
-        const int xs[]{382,488,594,700,382,488,594,700};
-        const int ys[]{191,191,191,191,311,311,311,311};
+            venues_[static_cast<std::size_t>(i)].setBounds(394+i*185,120,172,36);
+        originalAb_.setBounds(395,169,168,29);
+        musicalReset_.setBounds(580,169,168,29);
+        power_.setBounds(editorWidth-164,18,144,34);
+        depth_.setBounds(60,408,258,24);
+        earAlign_.setBounds(60,466,258,24);
+        const int xs[]{404,543,682,821,404,543,682,821};
+        const int ys[]{224,224,224,224,370,370,370,370};
         for(int i=0;i<8;++i) {
             const int x=xs[i],y=ys[i];
-            knobs_[static_cast<std::size_t>(i)].setBounds(x+16,y,72,69);
-            captions_[static_cast<std::size_t>(i)].setBounds(x,y+72,104,16);
-            values_[static_cast<std::size_t>(i)].setBounds(x,y+91,104,17);
+            knobs_[static_cast<std::size_t>(i)].setBounds(x+17,y,91,81);
+            captions_[static_cast<std::size_t>(i)].setBounds(x,y+84,127,17);
+            values_[static_cast<std::size_t>(i)].setBounds(x,y+103,127,18);
         }
     }
 private:
     void paintStage(juce::Graphics& g) {
-        const float cx=186.f,cy=226.f,r=89.f;
+        const float cx=191.f,cy=271.f,r=104.f;
         g.setColour(juce::Colour(0xff80aebf));
         g.setFont(juce::FontOptions(11.f,juce::Font::plain));
         const float width=static_cast<float>(knobs_[1].getValue())*.01f;
@@ -240,15 +276,15 @@ private:
         const juce::String geometry=totalAngle>=150?
             "LATERAL STAGE  /  ":"FRONT STAGE  /  ";
         g.drawText(geometry+juce::String(totalAngle)+"°",
-                   74,99,225,18,juce::Justification::centred);
+                   71,113,238,19,juce::Justification::centred);
         g.setColour(juce::Colour(0xff79bdc9));
         const float depth=static_cast<float>(depth_.getValue())*.01f;
         const float metres=1.6f+5.8f*depth;
         g.drawText("SPEAKER DISTANCE   "+juce::String(metres,1)+" m",
-                   56,314,260,18,juce::Justification::centred);
+                   54,381,274,18,juce::Justification::centred);
         g.drawText("EAR ALIGN  ·  KEMAR HRTF   "+
                    juce::String(earAlign_.getValue(),1)+"°",
-                   56,362,260,18,juce::Justification::centred);
+                   54,439,274,18,juce::Justification::centred);
         g.setColour(juce::Colour(0xff234452));
         g.drawEllipse(cx-r,cy-r,r*2,r*2,1.f);
         g.drawLine(cx-r,cy,cx+r,cy,1.f);
@@ -287,6 +323,17 @@ private:
         }
         // This is a TOP VIEW. HRTF ear-height adjustment changes spectral
         // pinna cues but must not move drawn source XYZ or reflections.
+    }
+    void refreshHostPower() {
+        if(!hostBypassReadback_)return;
+        const bool bypassed=hostBypassReadback_();
+        const int state=bypassed?1:0;
+        if(state==lastHostPowerState_)return;
+        lastHostPowerState_=state;
+        power_.setButtonText(bypassed?"FX BYPASSED":"FX ON");
+        power_.setToggleState(!bypassed,juce::dontSendNotification);
+        power_.setTooltip(bypassed?"Enable ImerSip in native FX Rack":
+                                 "Bypass ImerSip with native rack fade");
     }
     void refreshVenues() {
         for(int i=0;i<3;++i)venues_[static_cast<std::size_t>(i)]
@@ -384,7 +431,8 @@ private:
                 juce::String(db,1)+"dB";
         }
         lastObservedFrames_=frames;
-        repaint(juce::Rectangle<int>(422,448,235,22));
+        refreshHostPower();
+        repaint(juce::Rectangle<int>(470,532,294,23));
         // The host may save/serialize this FX while its editor is open.
         // Save also drains audio completions to capture accepted state.
         // Read the latched CONTROL-side record, not only a FIFO pop.
@@ -405,7 +453,10 @@ private:
     ImerSipProcessor& fx_;
     ImerSipLook look_{};
     std::array<juce::TextButton,3> venues_{};
-    juce::TextButton originalAb_{},musicalReset_{};
+    juce::TextButton originalAb_{},musicalReset_{},power_{};
+    std::function<bool(bool)> hostBypassRequest_;
+    std::function<bool()> hostBypassReadback_;
+    int lastHostPowerState_=-1;
     juce::Slider depth_{},earAlign_{};
     std::array<juce::Slider,8> knobs_{};
     std::array<juce::Label,8> captions_{},values_{};

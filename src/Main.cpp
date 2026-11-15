@@ -187,7 +187,15 @@ public:
         centreWithSize (juce::jmax (380, editor->getWidth()), juce::jmax (300, editor->getHeight()));
         setVisible (true);
     }
-    void closeButtonPressed() override { setVisible (false); }
+    void closeButtonPressed() override {
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+        // Do not leave temporary ORIGINAL A/B active after hiding editor.
+        if(auto* editor=dynamic_cast<armix::builtin_fx::ImerSipEditor*>(
+               getContentComponent()))
+            editor->resetTransientComparison();
+#endif
+        setVisible(false); // retained editor + DSP; same-instance click re-shows
+    }
 };
 
 class AudioSetupWindow final : public juce::DocumentWindow
@@ -536,7 +544,9 @@ private:
     // Destruction order: editorWindow_ releases its JUCE GUI BEFORE the
     // retained vendor processor lease. No vendor destructor runs on RT.
     armix::mixer::LiveChannelFxGraph::InstanceLease routedEditorOwner_;
-    std::uint64_t routedEditorEpoch_=0;
+    std::uint64_t routedEditorEpoch_=0,routedEditorRevision_=0;
+    juce::String routedEditorChannelKey_,routedEditorInstanceId_;
+    int routedEditorLane_=-1,routedEditorSlot_=-1;
     struct PendingNativeEq {
         armix::mixer::LiveChannelFxGraph::InstanceLease owner;
         juce::String request,channelId,deviceEpoch,revision,instanceId;
@@ -981,6 +991,11 @@ private:
         editorWindow_.reset();
         routedEditorOwner_.reset();
         routedEditorEpoch_=0;
+        routedEditorRevision_=0;
+        routedEditorChannelKey_.clear();
+        routedEditorInstanceId_.clear();
+        routedEditorLane_=-1;
+        routedEditorSlot_=-1;
     }
 
     void emitChain()
@@ -6270,40 +6285,97 @@ private:
                 static_cast<juce::int64>(args.getProperty("deviceEpoch",juce::var(0))));
             const auto revision=static_cast<std::uint64_t>(
                 static_cast<juce::int64>(args.getProperty("revision",juce::var(0))));
+            const auto nativeId=args.getProperty("channelId",{});
+            const auto channelKey=nativeId.isVoid()?
+                juce::String("m4:")+juce::String(lane):
+                juce::String("id:")+nativeId.toString();
             bool opened=false;
             juce::String error="FX editor unavailable: device, revision or instance changed";
             if(!nativeShowBusy_&&!studioBackupBusy_&&!engine_.isGraphSwitchPending()) {
-                armix::mixer::LiveChannelFxGraph::InstanceLease owner;
-                std::uint64_t retainedEpoch=epoch;
-                const auto nativeId=args.getProperty("channelId",{});
-                if(!nativeId.isVoid()) {
-                    std::uint64_t id=0,ep=0,rev=0;
-                    if(armix::console::approvedNativeId(nativeId,id)&&
-                       armix::console::approvedNativeId(args.getProperty("deviceEpoch",{}),ep)&&
-                       armix::console::approvedNativeId(args.getProperty("revision",{}),rev)&&
-                       slot>=0&&slot<LiveDryRoutingLab::maxFxPerLane) {
-                        owner=engine_.leaseNativeVst3Editor(ep,rev,
-                            armix::mixer::ChannelId{id},static_cast<std::size_t>(slot),token);
-                        retainedEpoch=ep;
-                    }
-                } else owner=engine_.leaseRoutedFxForEditor(lane,slot,epoch,revision,token);
-                if(owner && owner->processor) {
-                    try {
-                        closePluginEditor();
-                        if(auto* editor=owner->processor->createEditorIfNeeded()) {
-                            routedEditorOwner_=owner;
-                            routedEditorEpoch_=retainedEpoch;
-                            editorWindow_=std::make_unique<PluginEditorWindow>(
-                                owner->processor->getName(),editor);
-                            opened=true;
-                            error.clear();
-                        } else error="This VST3 has no native editor";
-                    } catch(const std::exception& ex) {
-                        closePluginEditor();
-                        error="Vendor editor failed: "+juce::String(ex.what());
-                    } catch(...) {
-                        closePluginEditor();
-                        error="Vendor editor failed (plugin exception)";
+                // Titlebar X only hides; same native identity must REOPEN
+                // without attempting a second editor or FX lease.
+                const bool sameEditor=editorWindow_ && routedEditorOwner_ &&
+                    routedEditorEpoch_==epoch && routedEditorRevision_==revision &&
+                    routedEditorChannelKey_==channelKey &&
+                    routedEditorInstanceId_==token &&
+                    routedEditorLane_==lane && routedEditorSlot_==slot &&
+                    engine_.retainsRoutedFxEditor(epoch,routedEditorOwner_);
+                if(sameEditor) {
+                    editorWindow_->setVisible(true);
+                    editorWindow_->toFront(true);
+                    opened=true;error.clear();
+                } else {
+                    armix::mixer::LiveChannelFxGraph::InstanceLease owner;
+                    std::uint64_t retainedEpoch=epoch;
+                    if(!nativeId.isVoid()) {
+                        std::uint64_t id=0,ep=0,rev=0;
+                        if(armix::console::approvedNativeId(nativeId,id)&&
+                           armix::console::approvedNativeId(
+                               args.getProperty("deviceEpoch",{}),ep)&&
+                           armix::console::approvedNativeId(
+                               args.getProperty("revision",{}),rev)&&
+                           slot>=0&&slot<LiveDryRoutingLab::maxFxPerLane) {
+                            owner=engine_.leaseNativeVst3Editor(ep,rev,
+                                armix::mixer::ChannelId{id},
+                                static_cast<std::size_t>(slot),token);
+                            retainedEpoch=ep;
+                        }
+                    } else
+                        owner=engine_.leaseRoutedFxForEditor(
+                            lane,slot,epoch,revision,token);
+                    if(owner && owner->processor) {
+                        try {
+                            closePluginEditor(); // editor destroyed before old lease
+                            if(auto* editor=owner->processor->createEditorIfNeeded()) {
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+                                if(auto* imer=dynamic_cast<
+                                    armix::builtin_fx::ImerSipEditor*>(editor)) {
+                                    // Same native rack slot-bypass authority;
+                                    // no independent DSP power flag.
+                                    auto held=owner;
+                                    imer->bindHostPower(
+                                        [this,held,nativeId,retainedEpoch,revision,
+                                         lane,slot,token](bool bypass) {
+                                            if(!engine_.retainsRoutedFxEditor(
+                                                  retainedEpoch,held))return false;
+                                            if(!nativeId.isVoid()) {
+                                                std::uint64_t channel=0;
+                                                return armix::console::approvedNativeId(
+                                                  nativeId,channel) &&
+                                                  engine_.bypassNativeVst3(
+                                                    retainedEpoch,revision,
+                                                    armix::mixer::ChannelId{channel},
+                                                    static_cast<std::size_t>(slot),
+                                                    token,bypass);
+                                            }
+                                            return engine_.setDryRoutingLabFxBypass(
+                                                lane,slot,retainedEpoch,revision,
+                                                token,bypass);
+                                        },
+                                        [held] {
+                                            return held->bypassRequested.load(
+                                                std::memory_order_acquire);
+                                        });
+                                }
+#endif
+                                routedEditorOwner_=owner;
+                                routedEditorEpoch_=retainedEpoch;
+                                routedEditorRevision_=revision;
+                                routedEditorChannelKey_=channelKey;
+                                routedEditorInstanceId_=token;
+                                routedEditorLane_=lane;
+                                routedEditorSlot_=slot;
+                                editorWindow_=std::make_unique<PluginEditorWindow>(
+                                    owner->processor->getName(),editor);
+                                opened=true;error.clear();
+                            } else error="This FX has no native editor";
+                        } catch(const std::exception& ex) {
+                            closePluginEditor();
+                            error="Vendor editor failed: "+juce::String(ex.what());
+                        } catch(...) {
+                            closePluginEditor();
+                            error="Vendor editor failed (plugin exception)";
+                        }
                     }
                 }
             }
