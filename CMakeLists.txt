@@ -96,6 +96,13 @@ if(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT AND
    NOT ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT)
   message(FATAL_ERROR "P9.0 requires P8.9 research branch baseline")
 endif()
+# P9.1+P9.2 music fidelity and physical bass share the P9 measured binaural graph.
+option(ARMIX_SONKU_EXPERIMENTAL_P92_NATIVE_RT
+       "Private P9.1+P9.2 calibrated music and source-coupled axial LF room modes" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P92_NATIVE_RT AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT)
+  message(FATAL_ERROR "P9.2 music/bass requires P9.0 measured stereo engine")
+endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -312,7 +319,9 @@ target_compile_definitions(ARMixConsole PRIVATE
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT}>:ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT}>:SONKU_P89_DEPTH_COHERENCE_RESEARCH=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT}>:ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT=1>
-    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT}>:SONKU_P90_TRUE_EXTERNAL_RESEARCH=1>)
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT}>:SONKU_P90_TRUE_EXTERNAL_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P92_NATIVE_RT}>:ARMIX_SONKU_EXPERIMENTAL_P92_NATIVE_RT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P92_NATIVE_RT}>:SONKU_P92_MUSIC_BASS_FOUNDATION=1>)
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
   # Never link Windows loader or sound APIs into macOS/Linux builds.
@@ -826,6 +835,64 @@ if(BUILD_TESTING)
                               SONKU_P90_TRUE_EXTERNAL_RESEARCH=1)
                           add_test(NAME NativeSonKuP90JuceV11AppliedAckAndLegacyRestore
                               COMMAND ARMixSonKuP90NativeTests)
+                          if(ARMIX_SONKU_EXPERIMENTAL_P92_NATIVE_RT)
+                            add_executable(ARMixSonKuP92SourceTests
+                                tests/sonku_p92_music_bass_source_test.cpp)
+                            target_compile_features(ARMixSonKuP92SourceTests PRIVATE cxx_std_20)
+                            target_compile_definitions(ARMixSonKuP92SourceTests PRIVATE
+                                SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                                SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                                SONKU_P72_NATIVE_XYZ_RT=1
+                                SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                                SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                                SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                                SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                                SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+                                SONKU_P85_WORLD_COHERENCE_RESEARCH=1
+                                SONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1
+                                SONKU_P87_MUSIC_BODY_RESEARCH=1
+                                SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1
+                                SONKU_P89_DEPTH_COHERENCE_RESEARCH=1
+                                SONKU_P90_TRUE_EXTERNAL_RESEARCH=1
+                                SONKU_P92_MUSIC_BASS_FOUNDATION=1)
+                            add_test(NAME NativeSonKuP92MusicFidelityPhysicalBassSource
+                                COMMAND ARMixSonKuP92SourceTests)
+                            juce_add_console_app(ARMixSonKuP92NativeTests
+                                PRODUCT_NAME "ArSonMix SonKu P92 JUCE v12 State Tests")
+                            target_sources(ARMixSonKuP92NativeTests PRIVATE
+                                tests/sonku_p92_native_juce_v12_test.cpp)
+                            target_compile_features(ARMixSonKuP92NativeTests PRIVATE cxx_std_20)
+                            target_link_libraries(ARMixSonKuP92NativeTests PRIVATE
+                                juce::juce_audio_processors juce::juce_recommended_config_flags)
+                            target_compile_definitions(ARMixSonKuP92NativeTests PRIVATE
+                                ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=1
+                                ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT=1
+                                ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT=1
+                                ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT=1
+                                ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT=1
+                                ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT=1
+                                ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT=1
+                                ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT=1
+                                ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT=1
+                                ARMIX_SONKU_EXPERIMENTAL_P92_NATIVE_RT=1
+                                SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                                SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                                SONKU_P72_NATIVE_XYZ_RT=1
+                                SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                                SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                                SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                                SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                                SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+                                SONKU_P85_WORLD_COHERENCE_RESEARCH=1
+                                SONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1
+                                SONKU_P87_MUSIC_BODY_RESEARCH=1
+                                SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1
+                                SONKU_P89_DEPTH_COHERENCE_RESEARCH=1
+                                SONKU_P90_TRUE_EXTERNAL_RESEARCH=1
+                                SONKU_P92_MUSIC_BASS_FOUNDATION=1)
+                            add_test(NAME NativeSonKuP92JuceV12AppliedAckAndV11Restore
+                                COMMAND ARMixSonKuP92NativeTests)
+                          endif()
                         endif()
                       endif()
                     endif()
