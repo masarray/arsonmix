@@ -1806,13 +1806,15 @@ public:
         const auto mute=document.masterMute;
         const auto mono=document.masterMono;
         const bool monitoring=isMonitorEnabled();
-        if(monitoring)setMonitorEnabled(false);
+        // Graph publication is a temporary PHYSICAL silence, not a user MUTE.
+        // Retain MAIN intent across the accepted ChannelId/FX rebind.
+        if(monitoring)setOutputMuted(true);
         const auto applied=dryRoutingLab_.restoreNativeMixerSession(
             std::move(document),std::move(bank),inspected.pins,
             allOutputsDisarmed(),replaceActive);
         if(applied.isNotEmpty()) {
             if(monitoring&&ep==dryRoutingLab_.epoch()&&liveOutputArmFault(false).isEmpty())
-                setMonitorEnabled(true);
+                setOutputMuted(false); // same user intent; safe original graph
             return applied;
         }
         acceptedWasapiBinding_=std::move(profile);
