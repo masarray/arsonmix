@@ -933,9 +933,11 @@ public:
                     spatialL+=smoothedBassShelf_*earBass_[0];
                     spatialR+=smoothedBassShelf_*earBass_[1];
                 }
-                // P9.2 restores the COMPLETE directional LF HRTF, plus a
-                // fixed measured music calibration. Previously the original
-                // unpositioned headphone bass bypassed speaker yaw entirely.
+                // P9.2 reconstructs the LF contribution through a world-
+                // anchored two-speaker pressure matrix (psychoacoustic, not
+                // measured BRIR) and retains measured HRIR above crossover.
+                // This prevents the severe measured low-frequency anti-phase
+                // null without returning the old headphone-locked LF.
 #if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
                 if(p92Stage) {
                     const float er=roomEnabled?
