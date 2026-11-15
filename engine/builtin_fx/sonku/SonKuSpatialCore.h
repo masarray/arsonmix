@@ -727,8 +727,14 @@ public:
             float originalLowL=0.f,originalLowR=0.f;
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
             if(transparentBass){
-                originalBass_[0]+=bassCrossoverAlpha_*(x0-originalBass_[0]);
-                originalBass_[1]+=bassCrossoverAlpha_*(x1-originalBass_[1]);
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+                const float sourceBassL=x0+(p92Stage?bassRoom.left:0.f);
+                const float sourceBassR=x1+(p92Stage?bassRoom.right:0.f);
+#else
+                const float sourceBassL=x0,sourceBassR=x1;
+#endif
+                originalBass_[0]+=bassCrossoverAlpha_*(sourceBassL-originalBass_[0]);
+                originalBass_[1]+=bassCrossoverAlpha_*(sourceBassR-originalBass_[1]);
                 originalLowL=originalBass_[0];
                 originalLowR=originalBass_[1];
                 // P7.5's full-band SIDE return caused LF to be counted
@@ -791,9 +797,6 @@ public:
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
             if(transparentBass || positionedMode)
                 tonalCalibration_.process(ears[0],ears[1]);
-#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
-            if(p92Stage)p92Foundation_.enhanceLowBody(ears[0],ears[1]);
-#endif
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
             if(musicalBody && roomEnabled)
                 p87Body_.enhanceDirect(ears[0],ears[1]);
@@ -937,10 +940,21 @@ public:
                         (1.05f+1.15f*settings_.roomAmount):0.f;
                     const float tail=roomEnabled?
                         (.55f+1.05f*settings_.ambience):0.f;
-                    spatialL=smoothedDistanceGain_*p92Foundation_.directMakeup()*
-                        ears[0]+er*reflection.left+tail*late.left;
-                    spatialR=smoothedDistanceGain_*p92Foundation_.directMakeup()*
-                        ears[1]+er*reflection.right+tail*late.right;
+                    // Reconstruct from complementary HF measured HRIR and
+                    // rotated two-speaker LF pressure; never add dry L/R
+                    // headphone bass. Room modal source excitation is already
+                    // in originalBass_ and the same world/source FIR history.
+                    auto low=p92Foundation_.transferLow(
+                        originalBass_[0],originalBass_[1]);
+                    p92Foundation_.enhanceLowBody(low.left,low.right);
+                    const float highL=ears[0]-binauralBass_[0];
+                    const float highR=ears[1]-binauralBass_[1];
+                    spatialL=smoothedDistanceGain_*(
+                        p92Foundation_.directMakeup()*highL+low.left)+
+                        er*reflection.left+tail*late.left;
+                    spatialR=smoothedDistanceGain_*(
+                        p92Foundation_.directMakeup()*highR+low.right)+
+                        er*reflection.right+tail*late.right;
                 }
 #endif
                 // GAIN is final full-output gain, not the old wet-only trim.
@@ -1201,7 +1215,8 @@ private:
                 if(p83Mode_==p83::Mode::MusicSpatialP92)
                     p92Foundation_.updateScene(settings_.spacePreset,
                         settings_.roomAmount,settings_.sourceDistanceMeters,
-                        static_cast<float>(degrees_),settings_.stereoSpreadDegrees);
+                        static_cast<float>(degrees_),settings_.stereoSpreadDegrees,
+                        p83HeadYaw_);
 #endif
                 p90Decoder_.compose(centerTarget_,targets_[0],targets_[1]);
             }
