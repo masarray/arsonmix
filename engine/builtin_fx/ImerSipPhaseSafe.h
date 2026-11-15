@@ -80,7 +80,7 @@ public:
             (1.f+.45f*s.space);
         // Music SIDE retains original stereo, with bounded positive tilt.
         sideTarget_=.25f*s.width*s.immersion;
-        // Source-derived open air >6.1kHz, not processed room brightness.
+        // Output-phase-aligned open air >6.1kHz with 15% dry HF anchor.
         // At max the linear HF shelf coefficient is +0.59; the actual
         // gain at 10k remains smaller due to one-pole transition.
         // No 1-4k vocal lift, inverted KEMAR notch or artificial echo.
@@ -90,6 +90,7 @@ public:
     void reset() noexcept {
         bassL_=bassR_=sideLow_=midEnergy_=sideEnergy_=gate_=0.f;
         detailL_=detailR_=0.f;
+        processedDetailL_=processedDetailR_=0.f;
         bassGain_=bassTarget_;
         sideGain_=sideTarget_;
         detailGain_=detailTarget_;
@@ -131,6 +132,12 @@ public:
         detailGain_+=gainSlew_*(detailTarget_-detailGain_);
         detailL_+=detailAlpha_*(originalL-detailL_);
         detailR_+=detailAlpha_*(originalR-detailR_);
+        // Phase-aligned output shelf restores measured HRTF air first;
+        // only a small original-source HF anchor remains. A 100% dry HF
+        // addition was measurably out of phase with the binaural MID at
+        // 11 kHz and *reduced* the apparent centre sparkle.
+        processedDetailL_+=detailAlpha_*(l-processedDetailL_);
+        processedDetailR_+=detailAlpha_*(r-processedDetailR_);
         const float bassDeltaL=bassGain_*bassL_;
         const float bassDeltaR=bassGain_*bassR_;
         // One-pole complementary HP has Re(H)>=0. Summing a POSITIVE
@@ -140,8 +147,10 @@ public:
         sideLow_+=sideAlpha_*(side-sideLow_);
         const float delta=sideGain_*inputStereoGate*(side-sideLow_);
         // Equal-coefficient source-detail high shelf, not an extra HRTF.
-        float addL=bassDeltaL+delta+detailGain_*(originalL-detailL_);
-        float addR=bassDeltaR-delta+detailGain_*(originalR-detailR_);
+        float addL=bassDeltaL+delta+detailGain_*(
+            .85f*(l-processedDetailL_)+.15f*(originalL-detailL_));
+        float addR=bassDeltaR-delta+detailGain_*(
+            .85f*(r-processedDetailR_)+.15f*(originalR-detailR_));
 
         // Peak safety does not pull down the trusted P8.2 signal.
         // Unlike global AGC/limiter, it only scales optional additions.
@@ -164,6 +173,7 @@ private:
     float bassTarget_=0.f,sideTarget_=0.f,detailTarget_=0.f;
     float bassGain_=0.f,sideGain_=0.f,detailGain_=0.f;
     float bassL_=0.f,bassR_=0.f,sideLow_=0.f,detailL_=0.f,detailR_=0.f;
+    float processedDetailL_=0.f,processedDetailR_=0.f;
     float midEnergy_=0.f,sideEnergy_=0.f,gate_=0.f;
     bool ready_=false;
 };
