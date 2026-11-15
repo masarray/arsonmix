@@ -1650,7 +1650,12 @@ private:
 
     void fireNativeHotkey(const armix::hotkey::Mapping& mapping) {
         if(mapping.operation=="PANIC_MUTE") {
-            engine_.setOutputMuted(true);
+            // Emergency silence is the VISIBLE MASTER MUTE, not the
+            // retired global hardware-output latch. The same master
+            // button/readback can release it; no hidden MONITOR OFF state.
+            engine_.setMasterMuted(true);
+            diagnostics_.record("MASTER_PANIC_MUTE",
+                "MASTER mute engaged; output hardware remains auto-ready");
             emitApprovedNativeSnapshot();
             return;
         }
