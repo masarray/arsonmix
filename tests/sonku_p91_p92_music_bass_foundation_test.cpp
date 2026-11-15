@@ -59,8 +59,39 @@ static double difference(const Stereo& a,const Stereo& b){
         }
     return e;
 }
+static void worldBassDirectionalOnly(int rate){
+    auto bass=std::make_unique<p92::WorldBassFoundation>();
+    assert(bass->prepare(rate));
+    constexpr float pi=3.14159265358979323846f;
+    const auto measure=[&](float leftAzimuth,float rightAzimuth,int source){
+        bass->reset();
+        bass->updateDirections(leftAzimuth,rightAzimuth);
+        double left=0.,right=0.;
+        const int duration=rate/2;
+        for(int i=0;i<duration;++i){
+            const float wave=.2f*std::sin(2.f*pi*70.f*float(i)/rate);
+            float hL=0.f,hR=0.f;
+            const auto modal=bass->process(source==0?wave:0.f,
+                source==1?wave:0.f,hL,hR,0,0.f);
+            assert(modal.left==0.f && modal.right==0.f);
+            if(i>rate/10){left+=double(hL)*hL;right+=double(hR)*hR;}
+        }
+        return std::array<double,2>{left,right};
+    };
+    const auto leftSpeaker=measure(-41.f,41.f,0);
+    const auto rightSpeaker=measure(-41.f,41.f,1);
+    const auto rotated=measure(-221.f,-139.f,0);
+    // This isolates 70Hz; treble cannot masquerade as directional LF.
+    assert(leftSpeaker[0]>1.3*leftSpeaker[1]);
+    assert(rightSpeaker[1]>1.3*rightSpeaker[0]);
+    assert(rotated[1]>1.3*rotated[0]);
+    std::printf("P91P92_WORLD_BASS_ONLY,%d,L/R=%.4f,R/L=%.4f,rotated_R/L=%.4f\\n",
+        rate,leftSpeaker[0]/leftSpeaker[1],
+        rightSpeaker[1]/rightSpeaker[0],rotated[1]/rotated[0]);
+}
 int main(){
     for(int rate:{44100,48000}){
+        worldBassDirectionalOnly(rate);
         const auto p9=simulate(rate,9,3,.80f,0.f,2,rate);
         const auto p9Block=simulate(rate,9,3,.80f,0.f,2,rate,256);
         assert(difference(p9,p9Block)==0. && "ASIO block size changed PCM");
