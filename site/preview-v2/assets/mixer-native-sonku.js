@@ -346,7 +346,7 @@ function render(){
   $("skHrtfAlignValue").textContent=(s.hrtfElevationTrimDegrees>=0?"+":"")+s.hrtfElevationTrimDegrees.toFixed(1)+"°";
  }
  root.querySelector(".sk-stage-caption").textContent=p90Capable&&s.renderMode===9?
-    "P9.0 MEASURED TWIN-SPEAKER HRIR · WORLD-LOCKED STEREO · FAT REQUIRED":
+    "P9.1 + P9.2 · MUSIC FIDELITY · WORLD BASS · ROOM MODES · FAT REQUIRED":
     p89Capable&&s.renderMode===8?
     "P8.9 ROOM-ANCHORED STEREO · DIRECT MUSICAL BODY PRESERVED · FAT REQUIRED":
     p88Capable&&s.renderMode===7?
@@ -623,6 +623,23 @@ $("skRenderMode").addEventListener("change",()=>{
     p84Capable?(v==="clarity"?3:0):
     v==="mono"?1:v==="physical"||v==="musiclf"?2:0;
  const scene={...draft,renderMode:mode,musicCompatibleLowFrequency:v==="musiclf"};
+ // P9.1/P9.2: a factory-new P8.2 state is NOT a musical P9 default.
+ // Only on first user selection of P9, and only when every relevant
+ // parameter still matches the legacy factory values, initialize a
+ // real close-room music stage. Saved .smix/manual settings are untouched.
+ // The entire scene goes through the existing native ACK, never optimistic DSP.
+ const legacy=draft.renderMode===0 && draft.spacePreset===0 &&
+   draft.startAzimuthDegrees===0 && draft.moving===true &&
+   Math.abs(draft.stereoSpreadDegrees-60)<.001 &&
+   Math.abs(draft.outputTrim-.75)<.001 &&
+   Math.abs(draft.roomAmount-.55)<.001 &&
+   Math.abs(draft.ambience-.30)<.001 &&
+   Math.abs(draft.sourceDistanceMeters-1.6)<.001;
+ if(mode===9 && p90Capable && legacy){
+  Object.assign(scene,{moving:false,stereoSpreadDegrees:82,
+    outputTrim:1,spacePreset:3,sourceDistanceMeters:1.6,
+    roomAmount:.78,ambience:.33});
+ }
  // Mode changes in v6 must not reset the owner scene, yaw or motion.
  if(mode!==0 && !p85Capable){
   scene.moving=false;
