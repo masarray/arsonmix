@@ -161,6 +161,9 @@ public:
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
+        out.writeInt(9); // v8 59-byte state + 4-byte HRTF trim
+#else
         out.writeInt(8); // same 59-byte layout; modes 0/3/4/5/6
 #else
         out.writeInt(7); // 59-byte layout; mode 5, old sessions intact
@@ -199,12 +202,19 @@ public:
         out.writeByte(accepted_.musicCompatibleLowFrequency?1:0);
         out.writeFloat(accepted_.headYawDegrees);
 #endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
+        out.writeFloat(accepted_.hrtfElevationTrimDegrees);
+#endif
     }
     bool restoreUnpublishedState(const void* data,int size) {
         if(published_||!data||
 #if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
+           (size!=30&&size!=46&&size!=50&&size!=59&&size!=63)||
+#else
            (size!=30&&size!=46&&size!=50&&size!=59)||
+#endif
 #else
            (size!=30&&size!=46&&size!=50)||
 #endif
@@ -228,6 +238,9 @@ public:
              &&version!=7
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT
              &&version!=8
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
+             &&version!=9
+#endif
 #endif
 #endif
 #endif
@@ -247,6 +260,9 @@ public:
             ||(version==7&&size!=59)
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT
             ||(version==8&&size!=59)
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
+            ||(version==9&&size!=63)
+#endif
 #endif
 #endif
 #endif
@@ -317,11 +333,18 @@ public:
             if(version==8 && next.renderMode!=0 && next.renderMode!=3 &&
                next.renderMode!=4 && next.renderMode!=5 && next.renderMode!=6)return false;
             if(version==8 && next.musicCompatibleLowFrequency)return false;
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
+            if(version==9 && next.renderMode!=0 && next.renderMode!=3 && next.renderMode!=4 && next.renderMode!=5 && next.renderMode!=6 && next.renderMode!=7)return false;
+            if(version==9 && next.musicCompatibleLowFrequency)return false;
+#endif
 #endif
 #endif
 #endif
 #endif
         }
+#endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
+        if(version>=9)next.hrtfElevationTrimDegrees=in.readFloat();
 #endif
         // v1 OFF, v2 original scene; experimental v3 includes direct
         // elevation, and is rejected by ordinary public v2 builds.

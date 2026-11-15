@@ -8,7 +8,9 @@
 #include <memory>
 namespace armix::builtin_fx::sonku_bridge {
 inline constexpr int schemaVersion() noexcept {
-#if defined(ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
+    return 9;
+#elif defined(ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT
     return 8;
 #elif defined(ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT
     return 7;
@@ -78,6 +80,11 @@ inline bool decodeSettings(const juce::var& values,armix::sonku::Settings& out) 
     }
     if(!number(values,"headYawDegrees",proposed.headYawDegrees,false))
         return false;
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
+    if(!number(values,"hrtfElevationTrimDegrees",proposed.hrtfElevationTrimDegrees,false))return false;
+#else
+    if(!values.getProperty("hrtfElevationTrimDegrees",{}).isVoid())return false;
+#endif
 #else
     // Do not accept or silently ignore research controls in a v2/v3 binary.
     if(!values.getProperty("renderMode",{}).isVoid() ||
@@ -90,7 +97,11 @@ inline bool decodeSettings(const juce::var& values,armix::sonku::Settings& out) 
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
+    if(proposed.renderMode!=0 && proposed.renderMode!=3 && proposed.renderMode!=4 && proposed.renderMode!=5 && proposed.renderMode!=6 && proposed.renderMode!=7)return false;
+#else
     if(proposed.renderMode!=0 && proposed.renderMode!=3 && proposed.renderMode!=4 && proposed.renderMode!=5 && proposed.renderMode!=6)return false;
+#endif
 #else
     if(proposed.renderMode!=0 && proposed.renderMode!=3 && proposed.renderMode!=4 && proposed.renderMode!=5)return false;
 #endif
@@ -128,6 +139,9 @@ inline juce::var acceptedSettings(const armix::sonku::Settings& s) {
     values->setProperty("musicCompatibleLowFrequency",
                         s.musicCompatibleLowFrequency);
     values->setProperty("headYawDegrees",s.headYawDegrees);
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
+    values->setProperty("hrtfElevationTrimDegrees",s.hrtfElevationTrimDegrees);
+#endif
 #endif
     return juce::var(values.release());
 }
