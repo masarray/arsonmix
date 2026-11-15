@@ -45,13 +45,13 @@ inline bool valid(const Settings& s) noexcept {
 // Near 0 dBFS only the ADDITIONAL enhancement is suppressed: P8.2 remains.
 class PhaseSafeEnhancer final {
     // Stable RBJ second-order high shelf, designed once per device rate.
-    // +3.2dB above ~7kHz, near-unity below 3kHz: no broad 1-4k shout.
+    // +3.0dB above ~7kHz, near-unity below 3kHz: no broad 1-4k shout.
     // Identical coefficients for both ears preserve binaural differences.
     // No coefficients calculated on PCM edit/callback.
     struct AirShelf {
         bool prepare(double rate) noexcept {
             constexpr double pi=3.14159265358979323846;
-            constexpr double db=3.2,frequency=7200.,slope=1.0;
+            constexpr double db=3.0,frequency=7200.,slope=1.0;
             const double A=std::pow(10.,db/40.);
             const double w=2.*pi*frequency/rate;
             const double cw=std::cos(w);
@@ -120,7 +120,7 @@ public:
             (1.f+.45f*s.space);
         // Music SIDE retains original stereo, with bounded positive tilt.
         sideTarget_=.25f*s.width*s.immersion;
-        // Output-phase-aligned +3.2dB RBJ air shelf at 100% setting.
+        // Output-phase-aligned +3.0dB RBJ air shelf at 100% setting.
         // Near-flat <3k, musical clarity at >7k, and a genuine audible
         // difference at both default and end stop. One native DSP.
         detailTarget_=s.detail*s.immersion;
