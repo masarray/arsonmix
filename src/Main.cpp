@@ -904,8 +904,12 @@ private:
             diagnostics_.record ("SMART_CLOCK_RECOVERY",
                 juce::String ("DIRECT_RESTORED after ") + juce::String (snapshot.attempts + 1) +
                 " attempt(s) | " + watchdogSummary + " | " + faultStatus);
-            if (engine_.isOutputMuted())
-                emitNotice ("DIRECT device reopened. MAIN resumes automatically after route verification.", true);
+            if (engine_.isOutputMuted()) {
+                // A verified, same-device failback must not inherit a stale
+                // permanent output MUTE from the interrupted bridge.
+                requestAutomaticMain(false);
+                emitNotice ("DIRECT device reopened. MAIN is reconnecting automatically after route verification.");
+            }
             else
                 emitNotice (wasIndependent
                     ? "Independent device fault: safe DIRECT audio restored."
@@ -3373,8 +3377,8 @@ private:
         if(!audioEngineStarted_)
             return emitMixerSessionAck("RESET","Mixer startup is still initializing");
 
-        // Never reset a live PA. Hardware monitoring and secondary STREAM
-        // are disarmed before closing FX/editor owners or touching the graph.
+        // A short output transition isolates the old graph before driver
+        // teardown; it is not a user-facing or persistent MUTE state.
         // Retire the journal BEFORE disrupting audible output. If storage
         // fails, the running graph and operator's sound remain unchanged.
         const auto detachError=armix::session::NativeMixerSessionStore(
@@ -3573,10 +3577,12 @@ private:
         if(bindingMode==MixerBindingMode::exact && startupOnSavedDevice &&
            armix::session::MixerDeviceBindingPolicy::isAsio4All(doc.binding))
             bindingMode=MixerBindingMode::verifiedAsioRestart;
+        // Old session files may contain resumeMain=false from the retired
+        // global OUTPUT-MUTE button. Never restore it as an invisible latch.
+        // Corrupt PREVIOUS recovery remains unarmed until user verification.
         const bool resume=!firstBinding && startupOnSavedDevice &&
             (bindingMode==MixerBindingMode::exact || bindingMode==MixerBindingMode::verifiedAsioRestart) &&
-            !usedPrevious && !retained &&
-            doc.resumeMain.value_or(true);
+            !usedPrevious && !retained;
         const auto live=engine_.status().getProperty("dryRoutingLab",{});
         const bool nativeAlreadyActive=static_cast<bool>(
             live.getProperty("nativeChannelIdPcmActive",false));
@@ -3788,6 +3794,7 @@ private:
                     safe->startupFxGuardTick_=juce::Time::getMillisecondCounter();
                     safe->diagnostics_.record("STARTUP_FX_EXPLICIT_RECOVERY_ACCEPTED",
                         "Manual FX graph restored; pending 15s stability verification");
+                    safe->requestAutomaticMain(false);
                     safe->emitApprovedNativeSnapshot();
                 }
             }
@@ -7652,7 +7659,7 @@ private:
                         deviceSettingsDirty_=true;
                     }
                 }
-            }else if(startupError_.isEmpty())requestAutomaticMain();
+            }else if(startupError_.isEmpty())requestAutomaticMain(false);
         }
         // Do not clear the marker as soon as constructors return: Waves and
         // other VST3 vendors may crash in their first audio callbacks.
@@ -8077,7 +8084,7 @@ public:
                         "This discards the automatic FX/WIRE session, channel "
                         "settings and custom mixer shortcuts. Installed plugins, "
                         "user presets, music and audio device choices are kept. "
-                        "Output will remain muted.")
+                        "MAIN becomes active automatically on verified routes.")
                     .withButton("Cancel")
                     .withButton("Reset Mixer"),
                 [this](int choice) {
