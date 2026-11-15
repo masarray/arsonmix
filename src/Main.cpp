@@ -1696,7 +1696,11 @@ private:
 
     void fireNativeHotkey(const armix::hotkey::Mapping& mapping) {
         if(mapping.operation=="PANIC_MUTE") {
-            engine_.setOutputMuted(true);
+            // PANIC is explicit user intent, unlike device stop/restart.
+            operatorOutputMuted_=true;
+            engine_.setMonitorEnabled(false);
+            engine_.cancelAsioResetMonitorIntent();
+            autoMainEpoch_=0;
             emitApprovedNativeSnapshot();
             return;
         }
@@ -2562,10 +2566,9 @@ private:
             deviceSettingsDirty_=true;
             directRestore_.cancel();
             asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
-            if(typeName!="Windows Audio") {
-                verifiedWasapiSetup_.reset();
-                wasapiRecovery_.cancel();
-            }
+            // New explicit selection supersedes any old automatic reopen.
+            verifiedWasapiSetup_.reset();
+            wasapiRecovery_.cancel();
             diagnostics_.record("CUSTOM_AUDIO_APPLY_OK",
                 typeName+" | "+juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
             requestAutomaticMain();
@@ -7387,7 +7390,7 @@ private:
             asioRecoveryGate_.driverTransaction(now);
             if(!device)diagnostics_.record("ASIO_DEVICE_MISSING",
                 "Reopening previously approved registered ASIO driver; no fallback");
-            const auto error=openSelectedAudioDevice("ASIO",setup,!directCallbackStalled_);
+            const auto error=openSelectedAudioDevice("ASIO",setup,true); // force fresh driver stream, not a no-op same setup
             asioRecoveryGate_.carryInternalEpoch(engine_.dryRoutingLabEpoch());
             device=engine_.devices().getCurrentAudioDevice();
             if(error.isNotEmpty() || !device || !device->isOpen()) {
@@ -7553,7 +7556,8 @@ private:
         if(!applying)return;
         const auto wanted=*verifiedWasapiSetup_;
         engine_.beginManualAudioSetup(true);
-        auto error=openSelectedAudioDevice("Windows Audio",wanted);
+        auto error=openSelectedAudioDevice("Windows Audio",wanted,
+            !device || !device->isOpen() || directCallbackStalled_);
         if(error.isEmpty()) {
             auto* opened=manager.getCurrentAudioDevice();
             const auto actual=manager.getAudioDeviceSetup();
