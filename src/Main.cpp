@@ -2227,6 +2227,10 @@ private:
     // An unpatched SOURCE NONE graph waits silently (not operator-muted)
     // until a verified audio source/route becomes available.
     std::uint64_t autoMainEpoch_=0;
+    // MAIN maintenance is message-thread only, including nested JUCE plugin
+    // windows. An automatic retry cannot re-arm a device mid-transaction.
+    int mainMaintenanceDepth_=0;
+    bool mainMaintenanceResume_=false;
     bool autoMainRequiresInput_=true;
     std::optional<std::uint64_t> autoMainCheckedRevision_;
     void serviceAutomaticMain() {
@@ -2240,6 +2244,7 @@ private:
                timerTicks_%12!=0 || engine_.isMonitorEnabled() ||
                startupError_.isNotEmpty() || mixerSessionRecoveryPending_ ||
                nativeShowBusy_ || studioBackupBusy_ || deviceApply_.busy() ||
+               mainMaintenanceDepth_!=0 ||
                audioSetupLease_.has_value() || setupLaunching_ ||
                engine_.isGraphSwitchPending() || engine_.secondaryArmed() ||
                engine_.independentClockActive() ||
@@ -2256,7 +2261,8 @@ private:
             autoMainEpoch_=0;
             return;
         }
-        if(nativeShowBusy_||studioBackupBusy_||engine_.secondaryArmed()||
+        if(nativeShowBusy_||studioBackupBusy_||mainMaintenanceDepth_!=0||
+           engine_.secondaryArmed()||
            engine_.diagnosticRoute()!=armix::diagnostics::Route::normal)return;
         const auto revision=engine_.outputArmRevision();
         if(autoMainCheckedRevision_==revision)return;
@@ -2289,18 +2295,26 @@ private:
     // readiness after the current audio transaction releases the gate.
     struct ScopedMainTransaction final {
         ConsoleWindow& owner;
-        bool restore=false;
-        explicit ScopedMainTransaction(ConsoleWindow& host)
-            :owner(host),restore(host.engine_.isMonitorEnabled()) {
-            if(restore)owner.engine_.setOutputMuted(true);
+        bool active=true;
+        explicit ScopedMainTransaction(ConsoleWindow& host) :owner(host) {
+            ++owner.mainMaintenanceDepth_;
+            if(owner.engine_.isMonitorEnabled()) {
+                owner.mainMaintenanceResume_=true;
+                owner.engine_.setOutputMuted(true);
+            }
         }
         ScopedMainTransaction(const ScopedMainTransaction&)=delete;
         ScopedMainTransaction& operator=(const ScopedMainTransaction&)=delete;
         ~ScopedMainTransaction(){resume();}
         void resume(){
-            if(!restore)return;
-            restore=false;
-            owner.requestAutomaticMain(false);
+            if(!active)return;
+            active=false;
+            jassert(owner.mainMaintenanceDepth_>0);
+            --owner.mainMaintenanceDepth_;
+            if(owner.mainMaintenanceDepth_==0 && owner.mainMaintenanceResume_) {
+                owner.mainMaintenanceResume_=false;
+                owner.requestAutomaticMain(false);
+            }
         }
     };
 
