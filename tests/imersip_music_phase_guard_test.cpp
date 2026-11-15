@@ -344,7 +344,7 @@ void verifyAudibleWetIsNotNearBypassed(double rate) {
         // Energy-based minimum -24dB PCM delta. This is NOT listener
         // acceptability, but rejects the previously practically-bypassed
         // room even when a trivial >1e-5 float test passed.
-        std::fprintf(stdout,"IMERSIP_FULL_ROOM_DELTA rate=%.0f fixture=%d ratio=%.6f dB=%.2f\\n",
+        std::fprintf(stderr,"IMERSIP_FULL_ROOM_DELTA rate=%.0f fixture=%d ratio=%.6f dB=%.2f\n",
             rate,fixture,ratio,20.*std::log10(ratio+1.e-12));
         if(!(ratio>.063)) {
             std::fprintf(stderr,
@@ -364,7 +364,9 @@ void verifyDefaultRoomActuallyChangesPCM(double rate) {
         Settings settings{};settings.immersion=0.f;
         settings.detail=0.f;settings.bassImpact=0.f;
         const auto dry=render(rate,settings,input);
-        settings.immersion=.58f;settings.space=.45f;
+        const Settings preset{};
+        settings.immersion=preset.immersion;
+        settings.space=preset.space;
         const auto wet=render(rate,settings,input);
         double signal=0.,changed=0.;
         for(int i=4096;i<32768;++i) {
@@ -376,7 +378,7 @@ void verifyDefaultRoomActuallyChangesPCM(double rate) {
                      (wet.r[i]-dry.r[i]);
         }
         const double ratio=std::sqrt(changed/(signal+1.e-14));
-        std::fprintf(stdout,"IMERSIP_DEFAULT_ROOM_DELTA rate=%.0f fixture=%d ratio=%.6f\\n",
+        std::fprintf(stderr,"IMERSIP_DEFAULT_ROOM_DELTA rate=%.0f fixture=%d ratio=%.6f\n",
                      rate,fixture,ratio);
         // This tests REAL ROOM/HRIR: both tonal knobs are OFF. Old
         // visually-changing near-bypass code is rejected by this gate.

@@ -13,8 +13,8 @@ namespace armix::imersip {
 
 struct Settings {
     int venue=0;             // 0 Concert Hall, 1 Cinema, 2 Live Room
-    float immersion=.58f;    // 0 exact dry; 1 maximum P8.2 scene
-    float space=.45f;        // P8.2 original six-wall / LF-MID-HF tail
+    float immersion=.82f;    // audible concert default, 0 exact dry
+    float space=.65f;        // real early room/3-band late, no extra engine
     float width=.95f;        // 175-degree default stage + positive SIDE shelf, no Haas delay
     float bassImpact=.75f;   // 0 exact P8.2 bass, 1 bounded coherent uplift
     float detail=.40f;       // 0 original source treble, 1 gentle <=1.3dB air

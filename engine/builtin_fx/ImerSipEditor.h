@@ -78,7 +78,7 @@ public:
             slider.setRotaryParameters(juce::degreesToRadians(225.f),
                                        juce::degreesToRadians(495.f),true);
             slider.setDoubleClickReturnValue(true,
-                i==0?58.:i==1?95.:i==2?45.:i==3?75.:i==4?40.:0.);
+                i==0?82.:i==1?95.:i==2?65.:i==3?75.:i==4?40.:0.);
             slider.onValueChange=[this,i]{
                 refreshReadout(i);
                 if(!knobs_[static_cast<std::size_t>(i)].isMouseButtonDown())

@@ -32,3 +32,6 @@ RMS (source independent, tonal boosts OFF). This does not prove perceived
 against verified SonKu P8.4 baseline and true peak/CPU FAT before release.
 
 Do not merge into main or claim sound success while owner reports it is bad.
+
+## Default preset audibility fix
+Prior default Immersion 58% / Venue Space 45% left an already-weak room below the dedicated -32dB musical delta gate even though MAX settings passed. The new default is 82% / 65%, with unchanged 1.6m source and original direct stereo MID. The default null test uses the actual C++ Settings initializer, *not* duplicated numbers, so old near-bypass defaults cannot return unnoticed. Existing saved .smix is intentionally not silently overwritten; controls still need actual PCM delta readback. No claim of superior acoustic quality until owner FAT.
