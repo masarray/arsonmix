@@ -8,7 +8,9 @@
 #include <memory>
 namespace armix::builtin_fx::sonku_bridge {
 inline constexpr int schemaVersion() noexcept {
-#if defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT
+    return 10;
+#elif defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
     return 9;
 #elif defined(ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT
     return 8;
@@ -98,7 +100,11 @@ inline bool decodeSettings(const juce::var& values,armix::sonku::Settings& out) 
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT
+    if(proposed.renderMode!=0 && proposed.renderMode!=3 && proposed.renderMode!=4 && proposed.renderMode!=5 && proposed.renderMode!=6 && proposed.renderMode!=7 && proposed.renderMode!=8)return false;
+#else
     if(proposed.renderMode!=0 && proposed.renderMode!=3 && proposed.renderMode!=4 && proposed.renderMode!=5 && proposed.renderMode!=6 && proposed.renderMode!=7)return false;
+#endif
 #else
     if(proposed.renderMode!=0 && proposed.renderMode!=3 && proposed.renderMode!=4 && proposed.renderMode!=5 && proposed.renderMode!=6)return false;
 #endif
