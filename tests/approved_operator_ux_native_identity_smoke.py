@@ -50,7 +50,7 @@ def main():
         # Reset is now a REAL host action, not the retired demo reducer.
         # It must be discoverable, confirmable and cancel-safe. Do not mock
         # an accepted PCM graph or rewrite user settings to test this menu.
-        page.locator("#moreTools summary").click()
+        page.locator("#moreTools > summary").click()
         reset=page.locator("#reset")
         assert reset.is_visible() and reset.is_enabled()
         reset.click()
@@ -200,7 +200,7 @@ def main():
         assert page.evaluate("()=>window.__nativeIntents.length")==0
         # Explicit second confirmation reaches only the native host. It
         # does NOT call the Pages demo reset or optimistically mutate PCM.
-        page.locator("#moreTools summary").click()
+        page.locator("#moreTools > summary").click()
         page.locator("#reset").click()
         assert page.locator("#mixerResetDialog").is_visible()
         page.locator("#mixerResetConfirm").click()
