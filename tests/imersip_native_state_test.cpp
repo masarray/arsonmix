@@ -78,6 +78,19 @@ int main() {
     assert(ack.settings.venue==1);
     assert(fx.stateSnapshotQuiescent());
     assert(fx.acceptedSettings().width==.9f);
+    // Reproduce Save immediately after an audio block: Save may consume
+    // ACK before the editor's timer polls it. A latched record must retain
+    // the applied identity and monotonic sequence across editor reopen.
+    settings.detail=.72f;
+    assert(fx.queueSettings(settings,53));
+    fx.processBlock(pcm,midi);
+    juce::MemoryBlock savedDuringEdit;
+    fx.getStateInformation(savedDuringEdit);
+    assert(savedDuringEdit.getSize()==36);
+    assert(fx.lastCompletedRequestId()==53);
+    assert(fx.lastCompletionApplied());
+    assert(fx.acceptedSettings().detail==.72f);
+    assert(fx.nextEditorRequestId()>53);
     for(int i=0;i<128;++i) {
         assert(std::isfinite(pcm.getSample(0,i)));
         assert(std::isfinite(pcm.getSample(1,i)));
@@ -93,7 +106,7 @@ int main() {
     auto selected=restored.acceptedSettings();
     assert(selected.venue==1&&selected.width==.9f);
     assert(selected.bassImpact==.95f&&selected.immersion==.81f);
-    assert(selected.detail==.65f);
+    assert(selected.detail==.72f);
     restored.sealForRealtime();
     assert(!restored.restoreUnpublishedState(snapshot.getData(),36));
     // Old 32-byte IMRS v1 sessions must load WITHOUT unexpected Detail boost.
