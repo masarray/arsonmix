@@ -220,7 +220,9 @@ void verifyBassFoundation(double rate) {
         auto processed=render(rate,s,source);
         const auto before=rms(source,4096,false);
         const auto after=rms(processed,4096,false);
-        // Coherent LF boost must not attenuate the P8.2 original music bass.
+        // Coherent LF boost must not attenuate the original music bass.
+        std::fprintf(stderr,"IMERSIP_BASS_GUARD rate=%.0f venue=%d hz=%.0f ratio=%.5f\n",
+                     rate,venue,hz,after/before);
         assert(after>before*.995);
         assert(after<before*1.14);
     }

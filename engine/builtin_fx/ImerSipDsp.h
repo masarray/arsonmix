@@ -63,11 +63,12 @@ public:
             constexpr double pi=3.14159265358979323846;
             earlyHp_=static_cast<float>(1.-std::exp(-2.*pi*220./rate));
             lateHp_=static_cast<float>(1.-std::exp(-2.*pi*160./rate));
-            // Complementary dry LF / binaural HF: at full immersion there is
-            // NO parallel full-band headphone-dry signal to defeat HRTF cues.
-            directHp_=static_cast<float>(1.-std::exp(-2.*pi*260./rate));
+            // Four-pole directional-difference high-pass, no FIR added.
+            // This retains ORIGINAL 40-220Hz stereo/bass even at 100%
+            // IMMERSION while applying true direct KEMAR transfer above it.
+            directHp_=static_cast<float>(1.-std::exp(-2.*pi*700./rate));
             limiterRelease_=static_cast<float>(1./(rate*.080));
-            directDryLow_.fill(0.f);directHrtfLow_.fill(0.f);
+            for(auto& ear:directDifferenceLow_)ear.fill(0.f);
             earlyLow_.fill(0.f);lateLow_.fill(0.f);
             finalLimiter_=1.f;
             updateTargets(settings_);
@@ -122,16 +123,22 @@ public:
                 // put original unprocessed L/R back at 100% IMMERSION.
                 // This made it behave like a stereo widener plus reverb.
                 const auto& wet=roomReturns_[i];
-                directDryLow_[0]+=directHp_*(dryL-directDryLow_[0]);
-                directDryLow_[1]+=directHp_*(dryR-directDryLow_[1]);
-                directHrtfLow_[0]+=directHp_*(wet.directL-directHrtfLow_[0]);
-                directHrtfLow_[1]+=directHp_*(wet.directR-directHrtfLow_[1]);
-                // P8.6 frontal dual-speaker DIRECT kernel, with original
-                // coherent LF below crossover and exclusive HRTF above it.
-                const float binauralL=directDryLow_[0]+wet.directL-directHrtfLow_[0];
-                const float binauralR=directDryLow_[1]+wet.directR-directHrtfLow_[1];
-                const float baseL=dryL+directGain_*(binauralL-dryL);
-                const float baseR=dryR+directGain_*(binauralR-dryR);
+                // Cross over the *difference* between measured direct
+                // HRTF and headphone dry. Cascaded first-order HP stages
+                // form a four-pole high-pass; unlike one-pole split, bass
+                // at 40-220 Hz receives negligible conflicting pressure.
+                float deltaL=wet.directL-dryL;
+                float deltaR=wet.directR-dryR;
+                for(int pole=0;pole<4;++pole) {
+                    auto& lowL=directDifferenceLow_[0][pole];
+                    auto& lowR=directDifferenceLow_[1][pole];
+                    lowL+=directHp_*(deltaL-lowL);
+                    lowR+=directHp_*(deltaR-lowR);
+                    deltaL-=lowL;
+                    deltaR-=lowR;
+                }
+                const float baseL=dryL+directGain_*deltaL;
+                const float baseR=dryR+directGain_*deltaR;
                 earlyLow_[0]+=earlyHp_*(wet.earlyL-earlyLow_[0]);
                 earlyLow_[1]+=earlyHp_*(wet.earlyR-earlyLow_[1]);
                 lateLow_[0]+=lateHp_*(wet.lateL-lateLow_[0]);
@@ -200,7 +207,7 @@ private:
         roomReturns_{};
     std::array<float,scratchFrames> sourceStereoGate_{},mid_{},side_{};
     std::array<float,2> earlyLow_{},lateLow_{};
-    std::array<float,2> directDryLow_{},directHrtfLow_{};
+    std::array<std::array<float,4>,2> directDifferenceLow_{};
     Settings settings_{};
     float stageSlew_=0.f,trimSlew_=0.f;
     float earlyHp_=0.f,lateHp_=0.f,directHp_=0.f;
