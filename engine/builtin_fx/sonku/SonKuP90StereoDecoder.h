@@ -21,10 +21,8 @@ class StereoDecoder final {
 public:
     bool prepare(double rate) noexcept {
         if (!std::isfinite(rate) || rate < 44000. || rate > 48100.) return false;
-        const double pi=3.1415926535897932384626433832795;
-        (void)pi;
         evidenceAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.080)));
-        smoothAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.120)));
+        smoothAlpha_=static_cast<float>(1.-std::exp(-16./(rate*.120)));
         reset();
         return true;
     }
@@ -38,22 +36,22 @@ public:
         energyLeft_+=evidenceAlpha_*(l*l-energyLeft_);
         energyRight_+=evidenceAlpha_*(r*r-energyRight_);
         cross_+=evidenceAlpha_*(l*r-cross_);
-        // Silence does not chase arbitrary coherence or inject PCM.
+    }
+    float centerBlend() noexcept {
+        // 1 sqrt per 16-sample FIR retarget, not each PCM sample.
         if(energyLeft_>1.e-8f || energyRight_>1.e-8f) {
             const float den=std::sqrt(std::max(energyLeft_*energyRight_,1.e-14f));
             const float rho=std::clamp(cross_/den,-1.f,1.f);
             const float target=std::clamp((rho-.25f)/.70f,0.f,1.f);
             centerBlend_+=smoothAlpha_*(target-centerBlend_);
         }
-    }
-    float centerBlend() const noexcept {
         return std::clamp(centerBlend_,0.f,1.f);
     }
     template<std::size_t N>
     void compose(const std::array<std::array<float,N>,2>& center,
                  std::array<std::array<float,N>,2>& left,
                  std::array<std::array<float,N>,2>& right) const noexcept {
-        const float c=centerBlend();
+        const float c=std::clamp(centerBlend_,0.f,1.f);
         for(std::size_t ear=0;ear<2;++ear)
             for(std::size_t k=0;k<N;++k) {
                 const float mid=.5f*(left[ear][k]+right[ear][k]);
