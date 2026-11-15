@@ -110,6 +110,11 @@ test("Show/secondary/refresh maintenance never require permanent output MUTE",()
   assert.match(host,/ScopedMainTransaction mainGate\(\*this\)/);
   assert.match(host,/mainGate\.resume\(\)/);
   assert.match(host,/std::optional<ScopedMainTransaction> recallGate/);
+  assert.match(host,/mainMaintenanceDepth_!=0/);
+  assert.match(host,/\+\+owner\.mainMaintenanceDepth_/);
+  assert.match(host,/--owner\.mainMaintenanceDepth_/);
+  assert.match(host,/owner\.mainMaintenanceDepth_==0 && owner\.mainMaintenanceResume_/);
+  assert.match(host,/owner\.requestAutomaticMain\(false\)/);
   assert.match(host,/recallGate\.reset\(\)/);
   assert.match(bridge,/showRecall\.disabled=showBusy\|\|!entry\|\|entry\.needsRecovery/);
   assert.match(bridge,/showRecover\.disabled=showBusy\|\|!entry\|\|!entry\.hasPrevious/);
