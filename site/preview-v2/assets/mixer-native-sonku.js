@@ -14,7 +14,7 @@ const elevationLimits=s=>{
  const distance=s.sourceDistanceMeters;
  const height=roomHeights[s.spacePreset];
  if(!Number.isFinite(distance)||!height)return {min:0,max:0};
- const spectralOffset=s.renderMode===7?(s.hrtfElevationTrimDegrees??0):0;
+ const spectralOffset=(s.renderMode===7||s.renderMode===8)?(s.hrtfElevationTrimDegrees??0):0;
   const bottom=Math.max(-40-spectralOffset,Math.asin(Math.max(-1,Math.min(1,(.5-1.45)/distance)))*180/Math.PI);
  const top=Math.min(60-spectralOffset,Math.asin(Math.max(-1,Math.min(1,(height-.5-1.45)/distance)))*180/Math.PI);
  // Keep a 0.1 degree safety margin for C++ float boundary rounding.
@@ -54,12 +54,12 @@ const valid=s=>s && Number.isFinite(s.startAzimuthDegrees) &&
    1.45+s.sourceDistanceMeters*Math.sin(s.directElevationDegrees*Math.PI/180)<=
        roomHeights[s.spacePreset]-.5)) &&
  (s.renderMode===undefined || (
-    Number.isInteger(s.renderMode)&&s.renderMode>=0&&s.renderMode<=7 &&
+    Number.isInteger(s.renderMode)&&s.renderMode>=0&&s.renderMode<=8 &&
     typeof s.musicCompatibleLowFrequency==="boolean" &&
     (s.hrtfElevationTrimDegrees===undefined || (
       Number.isFinite(s.hrtfElevationTrimDegrees) &&
       s.hrtfElevationTrimDegrees>=-30 && s.hrtfElevationTrimDegrees<=20 &&
-      (s.renderMode!==7 || (s.directElevationDegrees+s.hrtfElevationTrimDegrees>=-40 &&
+      ((s.renderMode!==7&&s.renderMode!==8) || (s.directElevationDegrees+s.hrtfElevationTrimDegrees>=-40 &&
                             s.directElevationDegrees+s.hrtfElevationTrimDegrees<=60)))) &&
     Number.isFinite(s.headYawDegrees)&&Math.abs(s.headYawDegrees)<=360 &&
     (s.renderMode!==2 || (s.stereoSpreadDegrees>=20&&s.stereoSpreadDegrees<=120))));
@@ -195,7 +195,7 @@ const depthLayers={far:$("skFarSources"),near:$("skNearSources")};
 const mount=()=>{if(!root.isConnected)document.body.append(root)};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
- xyzCapable=false,p83Capable=false,p84Capable=false,p85Capable=false,p86Capable=false,p87Capable=false,p88Capable=false,musicSafeStereo=false,p8TransparentBass=false,p82MultibandRoom=false,
+ xyzCapable=false,p83Capable=false,p84Capable=false,p85Capable=false,p86Capable=false,p87Capable=false,p88Capable=false,p89Capable=false,musicSafeStereo=false,p8TransparentBass=false,p82MultibandRoom=false,
  readId="",readSentAt=0,seq=1,clock=null,frame=null,observed=0,observedAt=0,
  drag=null,dialDrag=null,rangeEdits=new Set(),gestureStart=new Map(),
  visualPhase=0,visualAt=0,liveTimer=null,lastLiveAt=0;
@@ -215,7 +215,17 @@ function render(){
  const row=$("skRenderRow");row.hidden=!(p83Capable||p84Capable);
  if(p83Capable||p84Capable){
   const picker=$("skRenderMode");
-  if(p88Capable && picker.dataset.nativeModeSet!=="p88"){
+  if(p89Capable && picker.dataset.nativeModeSet!=="p89"){
+    picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
+     '<option value="clarity">SPATIAL · P8.4 REFERENCE</option>'+
+     '<option value="coherence">SPATIAL · P8.5 REFERENCE</option>'+
+     '<option value="focus">SPATIAL · P8.6 REFERENCE</option>'+
+     '<option value="body">SPATIAL · P8.7 REFERENCE</option>'+
+     '<option value="align">SPATIAL · P8.8 EAR ALIGN + DISTANCE</option>'+
+     '<option value="depth">SPATIAL · P8.9 ROOM-ANCHORED STEREO</option>';
+    picker.dataset.nativeModeSet="p89";
+    root.querySelector(".sk-render-label").textContent="RENDER MODE · P8.9 HEADPHONE FAT";
+   }else if(!p89Capable && p88Capable && picker.dataset.nativeModeSet!=="p88"){
    picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
     '<option value="clarity">SPATIAL · P8.4 REFERENCE</option>'+
     '<option value="coherence">SPATIAL · P8.5 REFERENCE</option>'+
@@ -258,7 +268,8 @@ function render(){
    picker.dataset.nativeModeSet="p83";
    root.querySelector(".sk-render-label").textContent="RENDER MODE · P8.3 TEST";
   }
-  const v=p88Capable?(s.renderMode===7?"align":s.renderMode===6?"body":s.renderMode===5?"focus":s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
+  const v=p89Capable?(s.renderMode===8?"depth":s.renderMode===7?"align":s.renderMode===6?"body":s.renderMode===5?"focus":s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
+     p88Capable?(s.renderMode===7?"align":s.renderMode===6?"body":s.renderMode===5?"focus":s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
     p87Capable?(s.renderMode===6?"body":s.renderMode===5?"focus":s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
     p86Capable?(s.renderMode===5?"focus":s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
     p85Capable?(s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
@@ -312,7 +323,7 @@ function render(){
   $("skElevationValue").textContent=s.directElevationDegrees.toFixed(1)+"°";
  }
  const alignRow=$("skHrtfAlignRow"),align=$("skHrtfAlign");
- alignRow.hidden=!(p88Capable&&s.renderMode===7);
+ alignRow.hidden=!(p88Capable&&(s.renderMode===7||s.renderMode===8));
  if(!alignRow.hidden){
   const min=Math.max(-30,-40-s.directElevationDegrees);
   const max=Math.min(20,60-s.directElevationDegrees);
@@ -320,7 +331,9 @@ function render(){
   if(!rangeEdits.has("skHrtfAlign"))align.value=String(s.hrtfElevationTrimDegrees);
   $("skHrtfAlignValue").textContent=(s.hrtfElevationTrimDegrees>=0?"+":"")+s.hrtfElevationTrimDegrees.toFixed(1)+"°";
  }
- root.querySelector(".sk-stage-caption").textContent=p88Capable&&s.renderMode===7?
+ root.querySelector(".sk-stage-caption").textContent=p89Capable&&s.renderMode===8?
+    "P8.9 ROOM-ANCHORED STEREO · DIRECT MUSICAL BODY PRESERVED · FAT REQUIRED":
+    p88Capable&&s.renderMode===7?
    "P8.8 EAR-LEVEL HRTF ALIGNMENT · PHYSICAL XYZ INDEPENDENT · FAT REQUIRED":
    p87Capable&&s.renderMode===6?
    "P8.7 FOCUSED MUSIC · DIRECT AIR + DIFFUSE LF BODY · FAT REQUIRED":
@@ -359,7 +372,8 @@ function render(){
  // redrawn at 60 Hz. The native audio callback remains the time authority.
  drawSpeakers();
  $("skMode").textContent=native()?(context()?
-  (p88Capable&&s.renderMode===7?"NATIVE P8.8 EAR ALIGN + DISTANCE · TEST":
+  (p89Capable&&s.renderMode===8?"NATIVE P8.9 STEREO + ROOM · TEST":
+    p88Capable&&s.renderMode===7?"NATIVE P8.8 EAR ALIGN + DISTANCE · TEST":
     p87Capable&&s.renderMode===6?"NATIVE P8.7 MUSICAL AIR + BODY · TEST":
    p86Capable&&s.renderMode===5?"NATIVE P8.6 HORIZONTAL FOCUS · TEST":
    p85Capable&&s.renderMode===4?"NATIVE P8.5 WORLD COHERENCE · TEST":
@@ -509,7 +523,7 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
    String(r.deviceEpoch)!==String(c.deviceEpoch)||
    String(r.graphRevision)!==String(c.graphRevision))return;
  const measured=(r.schemaVersion===3 || r.schemaVersion===4 ||
-   r.schemaVersion===5 || r.schemaVersion===6 || r.schemaVersion===7 || r.schemaVersion===8 || r.schemaVersion===9) &&
+   r.schemaVersion===5 || r.schemaVersion===6 || r.schemaVersion===7 || r.schemaVersion===8 || r.schemaVersion===9 || r.schemaVersion===10) &&
    Number.isFinite(r.settings?.directElevationDegrees);
  if(r.schemaVersion!==2&&!measured)return;
  const incoming=normalizeSettings(r.settings);
@@ -521,7 +535,9 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
    Number.isInteger(incoming.renderMode) &&
    typeof incoming.musicCompatibleLowFrequency==="boolean" &&
    Number.isFinite(incoming.headYawDegrees);
- p88Capable=r.schemaVersion===9 && r.p88PerceptualAlignment===true &&
+ p89Capable=r.schemaVersion===10 && r.p89StereoRoomDepth===true &&
+    Number.isFinite(incoming.hrtfElevationTrimDegrees);
+  p88Capable=(r.schemaVersion===9||p89Capable) && r.p88PerceptualAlignment===true &&
    Number.isFinite(incoming.hrtfElevationTrimDegrees);
  p87Capable=(r.schemaVersion===8||p88Capable) && r.p87MusicalAirBody===true;
  p86Capable=(r.schemaVersion===7 || p87Capable) && r.p86HorizontalFocus===true;
@@ -532,7 +548,8 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
     (p85Capable&&incoming.renderMode===4)||
     (p86Capable&&incoming.renderMode===5)||
     (p87Capable&&incoming.renderMode===6)||
-    (p88Capable&&incoming.renderMode===7)) &&
+    (p88Capable&&incoming.renderMode===7)||
+     (p89Capable&&incoming.renderMode===8)) &&
    typeof incoming.musicCompatibleLowFrequency==="boolean" &&
    incoming.musicCompatibleLowFrequency===false &&
    Number.isFinite(incoming.headYawDegrees);
@@ -567,7 +584,7 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  }
  render();
 });
-$("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapable=false;p85Capable=false;p86Capable=false;p87Capable=false;musicSafeStereo=false;p8TransparentBass=false;p82MultibandRoom=false;
+$("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapable=false;p85Capable=false;p86Capable=false;p87Capable=false;p88Capable=false;p89Capable=false;musicSafeStereo=false;p8TransparentBass=false;p82MultibandRoom=false;
  cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
  drag=null;rangeEdits.clear();gestureStart.clear();lastLiveAt=0;
  if(clock!==null){clearInterval(clock);clock=null;}
@@ -575,7 +592,8 @@ $("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapa
 $("skRenderMode").addEventListener("change",()=>{
  if(!(p83Capable||p84Capable))return;
  const v=$("skRenderMode").value;
- const mode=p88Capable?(v==="align"?7:v==="body"?6:v==="focus"?5:v==="coherence"?4:v==="clarity"?3:0):
+ const mode=p89Capable?(v==="depth"?8:v==="align"?7:v==="body"?6:v==="focus"?5:v==="coherence"?4:v==="clarity"?3:0):
+     p88Capable?(v==="align"?7:v==="body"?6:v==="focus"?5:v==="coherence"?4:v==="clarity"?3:0):
     p87Capable?(v==="body"?6:v==="focus"?5:v==="coherence"?4:v==="clarity"?3:0):
     p86Capable?(v==="focus"?5:v==="coherence"?4:v==="clarity"?3:0):
     p85Capable?(v==="coherence"?4:v==="clarity"?3:0):
