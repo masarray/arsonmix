@@ -724,6 +724,10 @@ public:
             float sideRescue=positionedMode?0.f:(musicSafe?
                 smoothedMix_*smoothedTrim_*musicSideWidth*preservedSide:
                 .65f*smoothedMix_*smoothedTrim_*preservedSide);
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+            const auto bassRoom=p92Stage?p92Foundation_.process(x0,x1):
+                p92::MusicBassFoundation::Sources{};
+#endif
             float originalLowL=0.f,originalLowR=0.f;
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
             if(transparentBass){
@@ -758,8 +762,6 @@ public:
 #endif
 #endif
 #if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
-            const auto bassRoom=p92Stage?p92Foundation_.process(x0,x1):
-                p92::MusicBassFoundation::Sources{};
             history_[0][write_]=x0+bassRoom.left;
             history_[1][write_]=x1+bassRoom.right;
 #else
