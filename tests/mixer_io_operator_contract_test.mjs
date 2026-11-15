@@ -670,7 +670,10 @@ test('ASIO restart cannot strand MAIN off after temporary graph readiness faults
   assert.ok(arm.indexOf('liveOutputArmFault(autoMainRequiresInput_)')<
             arm.indexOf('autoMainCheckedRevision_=revision;'),'only a verified ARM consumes the revision');
   const begin=engine.slice(engine.indexOf('void audioDeviceAboutToStart ('),engine.indexOf('void audioDeviceStopped()'));
-  assert.match(begin,/if\(monitor_\.load\(std::memory_order_acquire\)\)/);
+  // Operator-approved MAIN intent survives callback STOP, even though the
+  // hardware monitor bit is forcibly gated during a device restart.
+  assert.match(begin,/if\\(mainOutputIntent_\\.desired\\(\\)\\)/);
+  assert.match(begin,/mainOutputIntent_\\.deviceInterrupted\\(\\)/);
   assert.match(begin,/resumeMainAfterAsioReset_\.store\(true/);
   assert.ok(begin.indexOf('resumeMainAfterAsioReset_.store(true')<begin.indexOf('setOutputMuted(true)'));
 });
