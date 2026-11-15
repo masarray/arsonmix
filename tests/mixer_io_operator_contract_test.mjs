@@ -672,8 +672,8 @@ test('ASIO restart cannot strand MAIN off after temporary graph readiness faults
   const begin=engine.slice(engine.indexOf('void audioDeviceAboutToStart ('),engine.indexOf('void audioDeviceStopped()'));
   // Operator-approved MAIN intent survives callback STOP, even though the
   // hardware monitor bit is forcibly gated during a device restart.
-  assert.match(begin,/if\\(mainOutputIntent_\\.desired\\(\\)\\)/);
-  assert.match(begin,/mainOutputIntent_\\.deviceInterrupted\\(\\)/);
+  assert.ok(begin.includes('if(mainOutputIntent_.desired())'));
+  assert.ok(begin.includes('mainOutputIntent_.deviceInterrupted()'));
   assert.match(begin,/resumeMainAfterAsioReset_\.store\(true/);
   assert.ok(begin.indexOf('resumeMainAfterAsioReset_.store(true')<begin.indexOf('setOutputMuted(true)'));
 });
