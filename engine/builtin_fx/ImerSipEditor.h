@@ -251,7 +251,7 @@ private:
             deferred_=wanted;hasDeferred_=true;
             status_="APPLYING · LATEST EDIT QUEUED";repaint();return;
         }
-        const auto number=++sequence_;
+        const auto number=fx_.nextEditorRequestId();
         if(!fx_.queueSettings(wanted,number)) {
             deferred_=wanted;hasDeferred_=true;
             status_="BUSY · AUDIO NOT YET APPLIED";repaint();return;
@@ -260,24 +260,22 @@ private:
         status_="APPLYING ON NATIVE AUDIO CALLBACK…";repaint();
     }
     void timerCallback() override {
+        // The host may save/serialize this FX while its editor is open.
+        // Save also drains audio completions to capture accepted state.
+        // Read the latched CONTROL-side record, not only a FIFO pop.
         ImerSipProcessor::Completion completion{};
-        bool changed=false;
-        while(fx_.pollCompletion(completion)) {
-            if(completion.requestId==pending_) {
-                pending_=0;
-                status_=completion.applied?"AUDIO APPLIED · VERIFIED":"DSP REJECTED · SETTINGS UNCHANGED";
-                changed=true;
-                if(hasDeferred_) {
-                    hasDeferred_=false;
-                    submit();
-                }
-            }
+        while(fx_.pollCompletion(completion)){}
+        if(pending_!=0 && fx_.lastCompletedRequestId()==pending_) {
+            const bool applied=fx_.lastCompletionApplied();
+            pending_=0;
+            status_=applied?"AUDIO APPLIED · VERIFIED":
+                            "DSP REJECTED · SETTINGS UNCHANGED";
+            repaint();
         }
         if(pending_==0&&hasDeferred_) {
             hasDeferred_=false;
-            submit();
+            submit();  // most recent dial gesture, not every mouse move
         }
-        if(changed)repaint();
     }
     ImerSipProcessor& fx_;
     ImerSipLook look_{};
@@ -287,7 +285,7 @@ private:
     juce::Rectangle<int> stage_{};
     armix::imersip::Settings deferred_{};
     juce::String status_;
-    std::uint64_t sequence_=0,pending_=0;
+    std::uint64_t pending_=0;
     int venue_=0;
     bool hasDeferred_=false;
 };
