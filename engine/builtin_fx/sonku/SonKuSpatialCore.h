@@ -825,9 +825,9 @@ public:
                 smoothedDistanceGain_+=distanceSlew_*
                     (targetDistance-smoothedDistanceGain_);
                 smoothedRoomLevel_+=distanceSlew_*
-                    (((roomEnabled&&!positionedMode)?1.12f:1.f)-smoothedRoomLevel_);
+                    (((roomEnabled&&!positionedMode&&!p90World)?1.12f:1.f)-smoothedRoomLevel_);
                 smoothedBassShelf_+=distanceSlew_*
-                    (((roomEnabled&&!positionedMode)?0.82f:0.f)-smoothedBassShelf_);
+                    (((roomEnabled&&!positionedMode&&!p90World)?0.82f:0.f)-smoothedBassShelf_);
                 // The original experimental return levels were intentionally
                 // near-silent: ER base 0.28 * wall 0.70 * 1/r and diffuse FDN
                 // output 0.23 * amount, followed by another 0.5 * trim.
