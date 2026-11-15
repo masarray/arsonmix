@@ -175,3 +175,12 @@
   outline:2px solid #9bd9e8;outline-offset:1px;
 }
 /* No new button element, JS state, opacity animation or tool-tip overlay. */
+
+/* Global FX bypass is an effective state. Keep individual saved bypass
+   switches intact, but display their existing grey OFF tile as long as the
+   master gate is off. The moment it returns ON, per-slot states reappear. */
+.app .console-body.global-fx-bypassed .strip button.mx-util-key[data-util-kind="fx-main"],
+.app .console-body.global-fx-bypassed .strip button.mx-util-key[data-util-kind="fx-slot"]{
+ --mx-micro-x:0%;
+ color:#788891;
+}

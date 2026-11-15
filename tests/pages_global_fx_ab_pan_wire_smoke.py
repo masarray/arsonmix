@@ -17,9 +17,12 @@ def pan(page, value):
           slider.dispatchEvent(new Event('input',{bubbles:true}));
           slider.dispatchEvent(new Event('change',{bubbles:true}));
           const text=row.querySelector('output'), r=text.getBoundingClientRect(),
+                track=row.querySelector('.pan-control').getBoundingClientRect(),
                 strip=row.closest('.strip').getBoundingClientRect();
           return {text:text.textContent, clipped:text.scrollWidth>text.clientWidth+1,
-            overflow:r.right>strip.right+0.8, right:r.right, strip:strip.right};
+            overflow:r.right>strip.right+0.8, right:r.right, strip:strip.right,
+            font:parseFloat(getComputedStyle(text).fontSize),
+            gap:r.left-track.right,sliderWidth:track.width,readoutWidth:r.width};
         }""", value)
 
 
@@ -37,11 +40,18 @@ def run(page, width, height):
     page.on("pageerror",lambda error:errors.append(str(error)))
     page.goto(PAGE.as_uri())
     page.locator('#tracks .strip[data-id="1"]').wait_for()
-    page.evaluate("document.getElementById('densitySelect').value='comfort'")
-    for value,label in [(-100,"L100"),(0,"C"),(100,"R100")]:
-        seen=pan(page,value)
-        assert seen["text"]==label,(width,label,seen)
-        assert not seen["clipped"] and not seen["overflow"],(width,label,seen)
+    # A real density-change event is essential: setting select.value alone
+    # never rebuilt channel geometry and gave false confidence in older QA.
+    for density in ("comfort","standard","compact"):
+        page.locator("#densitySelect").select_option(density)
+        for value,label in [(-100,"L100"),(0,"C"),(100,"R100")]:
+            seen=pan(page,value)
+            assert seen["text"]==label,(width,density,label,seen)
+            assert not seen["clipped"] and not seen["overflow"],(width,density,label,seen)
+            assert 9.5<=seen["font"]<=10.5,(width,density,"font",seen)
+            assert seen["gap"]>=0 and seen["sliderWidth"]>=30,(width,density,"PAN collision",seen)
+            assert 27<=seen["readoutWidth"]<=31,(width,density,"PAN proportions",seen)
+    page.locator("#densitySelect").select_option("comfort")
     # The operator's folded WIRE intent must be restored on FX mode.
     body=page.locator('.console-body')
     assert "collapsed-send" in (body.get_attribute("class") or "")
@@ -64,8 +74,19 @@ def run(page, width, height):
         "el=>el.dataset.fxChainEnabled")
     assert ch_before["slots"] and ch_before["slots"][0]["effective"]=="true"
     assert main_before=="true"
-    page.locator('#globalFxToggle').click()
-    assert page.locator('#globalFxToggle').get_attribute("aria-pressed")=="false"
+    toggle=page.locator('#globalFxToggle')
+    power=toggle.locator('.global-fx-power-icon')
+    assert toggle.inner_text().strip()=="FX"
+    assert "micro-hardware-17x17" in power.evaluate("el=>getComputedStyle(el).backgroundImage")
+    assert power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="100%"
+    slot_power=page.locator('#tracks .strip[data-id="1"] [data-util-kind="fx-slot"]').first
+    assert slot_power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="100%"
+    toggle.click()
+    assert toggle.get_attribute("aria-pressed")=="false"
+    assert toggle.get_attribute("data-fx-power-state")=="bypassed"
+    assert power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="0%"
+    assert slot_power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="0%"
+    assert page.locator(".console-body").evaluate("el=>el.classList.contains('global-fx-bypassed')")
     during=rack(page,1)
     assert during["global"]=="false"
     assert [v["id"] for v in during["slots"]]==[v["id"] for v in ch_before["slots"]]
@@ -75,9 +96,18 @@ def run(page, width, height):
     master=page.locator('.strip.master .fx-section')
     assert master.get_attribute("data-global-fx-enabled")=="false"
     assert master.get_attribute("data-fx-chain-enabled")=="true"
-    page.locator('#globalFxToggle').click()
+    toggle.click()
     after=rack(page,1)
     assert after==ch_before | {"global":"true"},(ch_before,after)
+    assert power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="100%"
+    assert slot_power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="100%"
+    # Individual OFF remains OFF across the master A/B roundtrip.
+    slot_power.click()
+    assert slot_power.get_attribute("aria-pressed")=="false"
+    toggle.click()
+    toggle.click()
+    assert slot_power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="0%"
+    assert rack(page,1)["slots"][0]["individual"]=="false"
     assert not errors,errors
     page.close()
 

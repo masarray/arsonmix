@@ -602,6 +602,7 @@
     if(typeof ch.fxRackBypassed!=="boolean"||!Array.isArray(ch.inserts))
       return true; // never synthesize missing DSP readback
     const enabled=!ch.fxRackBypassed;
+    const globalEnabled=document.querySelector('.console-body')?.classList.contains('global-fx-bypassed')!==true;
     const strip=document.querySelector('.strip[data-id="'+t.id+'"]');
     // GAIN/SOF are alternate views of the FX area; power readback still
     // updates the model but must not rebuild the rack or steal knob focus.
@@ -629,9 +630,10 @@
       t.slotBypass[slot]=ch.inserts[slot].bypassed;
     if(!rack)return true;
     rack.dataset.fxChainEnabled=String(enabled);
-    rack.classList.toggle("is-chain-bypassed",!enabled);
+    rack.dataset.globalFxEnabled=String(globalEnabled);
+    rack.classList.toggle("is-chain-bypassed",!enabled||!globalEnabled);
     const header=rack.querySelector('[data-action="fxOn"]');
-    header.setAttribute("aria-pressed",String(enabled));
+    header.setAttribute("aria-pressed",String(enabled&&globalEnabled));
     header.title=(enabled?"Bypass":"Enable")+" all channel FX";
     header.setAttribute("aria-label",
       (enabled?"Bypass":"Enable")+" entire FX chain in "+t.name);
@@ -639,7 +641,7 @@
       const insert=ch.inserts[slot];
       const row=[...rack.querySelectorAll('.fxslot-row:not(.is-empty)')]
         .find(r=>r.dataset.slot===String(slot));
-      const effective=enabled&&!insert.bypassed;
+      const effective=enabled&&globalEnabled&&!insert.bypassed;
       if(insert.latencyChanged===true)
         row.title="Plugin delay changed · aligned dry signal retained; reload the plugin before using its new delay";
       else if(Number.isInteger(insert.latencySamples))
