@@ -141,7 +141,7 @@ public:
         while(pollCompletion(drained)){}
         juce::MemoryOutputStream out(dest,false);
         out.writeInt(0x494D5253); // IMRS; isolated from SonKu/old research state
-        out.writeInt(4); // IMRS v4: real source-to-ear DEPTH, v1-v3 compatible
+        out.writeInt(5); // IMRS v5: measured HRTF ear-alignment and depth
         out.writeInt(accepted_.venue);
         out.writeFloat(accepted_.immersion);
         out.writeFloat(accepted_.space);
@@ -152,15 +152,16 @@ public:
         out.writeFloat(accepted_.stereoLock);
         out.writeFloat(accepted_.lateRoom);
         out.writeFloat(accepted_.depth);
+        out.writeFloat(accepted_.earAlignDegrees);
     }
     bool restoreUnpublishedState(const void* data,int size) {
         if(published_ || !data ||
-           (size!=32 && size!=36 && size!=44 && size!=48) ||
+           (size!=32 && size!=36 && size!=44 && size!=48 && size!=52) ||
            !queue_.empty() || !complete_.empty())return false;
         juce::MemoryInputStream in(data,static_cast<std::size_t>(size),false);
         if(in.readInt()!=0x494D5253)return false;
         const int version=in.readInt();
-        if(version!=(size==32?1:size==36?2:size==44?3:4))
+        if(version!=(size==32?1:size==36?2:size==44?3:size==48?4:5))
             return false;
         armix::imersip::Settings next{};
         next.venue=in.readInt();
@@ -175,6 +176,7 @@ public:
         next.stereoLock=version>=3?in.readFloat():1.f;
         next.lateRoom=version>=3?in.readFloat():.45f;
         next.depth=version>=4?in.readFloat():.60f;
+        next.earAlignDegrees=version>=5?in.readFloat():0.f;
         if(!in.isExhausted() || !armix::imersip::valid(next))return false;
         if(ready_ && !dsp_.setSettings(next))return false;
         accepted_=next;

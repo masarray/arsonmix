@@ -126,6 +126,21 @@ public:
         };
         depth_.onDragEnd=[this]{submit();};
         addAndMakeVisible(depth_);
+        // Separate measured KEMAR DIRECT elevation; physical sources and
+        // six room-wall directions remain at ear height (no fake floor XYZ).
+        earAlign_.setComponentID("imersip.ear-align");
+        earAlign_.setSliderStyle(juce::Slider::LinearHorizontal);
+        earAlign_.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
+        earAlign_.setRange(-30.,20.,.5);
+        earAlign_.setDoubleClickReturnValue(true,0.);
+        earAlign_.onValueChange=[this]{
+            if(earAlign_.isMouseButtonDown()){
+                deferred_=readControls();hasDeferred_=true;
+            }else submit();
+            repaint(stage_);
+        };
+        earAlign_.onDragEnd=[this]{submit();};
+        addAndMakeVisible(earAlign_);
         originalAb_.setButtonText("ORIGINAL / A-B");
         originalAb_.setClickingTogglesState(true);
         originalAb_.setColour(juce::TextButton::textColourOffId,
@@ -204,7 +219,8 @@ public:
             venues_[static_cast<std::size_t>(i)].setBounds(385+i*141,121,134,35);
         originalAb_.setBounds(385,160,171,23);
         musicalReset_.setBounds(569,160,170,23);
-        depth_.setBounds(62,360,250,24);
+        depth_.setBounds(63,337,248,22);
+        earAlign_.setBounds(63,385,248,22);
         const int xs[]{382,488,594,700,382,488,594,700};
         const int ys[]{191,191,191,191,311,311,311,311};
         for(int i=0;i<8;++i) {
@@ -216,17 +232,21 @@ public:
     }
 private:
     void paintStage(juce::Graphics& g) {
-        const float cx=186.f,cy=236.f,r=109.f;
+        const float cx=186.f,cy=226.f,r=89.f;
         g.setColour(juce::Colour(0xff80aebf));
         g.setFont(juce::FontOptions(11.f,juce::Font::plain));
-        g.drawText("FRONT STAGE",115,106,145,20,juce::Justification::centred);
+        const float width=static_cast<float>(knobs_[1].getValue())*.01f;
+        const int totalAngle=32+static_cast<int>(std::round(width*94));
+        g.drawText("FRONT STAGE  /  "+juce::String(totalAngle)+"°",
+                   74,99,225,18,juce::Justification::centred);
         g.setColour(juce::Colour(0xff79bdc9));
         const float depth=static_cast<float>(depth_.getValue())*.01f;
         const float metres=1.6f+5.8f*depth;
-        g.drawText("DIRECT SPEAKERS   /   EAR HEIGHT",
-                   56,322,260,18,juce::Justification::centred);
-        g.drawText("SOURCE DISTANCE   "+juce::String(metres,1)+" m",
-                   56,343,260,18,juce::Justification::centred);
+        g.drawText("SPEAKER DISTANCE   "+juce::String(metres,1)+" m",
+                   56,314,260,18,juce::Justification::centred);
+        g.drawText("EAR ALIGN  ·  KEMAR HRTF   "+
+                   juce::String(earAlign_.getValue(),1)+"°",
+                   56,362,260,18,juce::Justification::centred);
         g.setColour(juce::Colour(0xff234452));
         g.drawEllipse(cx-r,cy-r,r*2,r*2,1.f);
         g.drawLine(cx-r,cy,cx+r,cy,1.f);
@@ -238,7 +258,6 @@ private:
         g.setColour(juce::Colour(0xffcceaf0));
         g.setFont(juce::FontOptions(12.f,juce::Font::plain));
         g.drawText("YOU",cx-22,cy+22,44,17,juce::Justification::centred);
-        const float width=static_cast<float>(knobs_[1].getValue())*.01f;
         const float angle=juce::degreesToRadians(16.f+47.f*width);
         // Simple top-view cue: drawn radial distance tracks real DSP
         // source position rather than remaining decorative on all edits.
@@ -261,14 +280,11 @@ private:
             g.setFont(juce::FontOptions(12.f,juce::Font::plain));
             g.drawText(i==0?"L":"R",
                        static_cast<int>(source.x-12),
-                       static_cast<int>(source.y-47),24,17,
+                       static_cast<int>(source.y+29),24,17,
                        juce::Justification::centred);
         }
-        g.setColour(juce::Colour(0xff8facbb));
-        g.setFont(juce::FontOptions(12.f,juce::Font::plain));
-        g.drawText(juce::String(32+static_cast<int>(std::round(width*94)))+
-                   "° STAGE  /  NO ORBIT",56,391,260,20,
-                   juce::Justification::centred);
+        // This is a TOP VIEW. HRTF ear-height adjustment changes spectral
+        // pinna cues but must not move drawn source XYZ or reflections.
     }
     void refreshVenues() {
         for(int i=0;i<3;++i)venues_[static_cast<std::size_t>(i)]
@@ -297,12 +313,14 @@ private:
         next.outputTrim=static_cast<float>(
             std::pow(10.,knobs_[7].getValue()/20.));
         next.depth=static_cast<float>(depth_.getValue()*.01);
+        next.earAlignDegrees=static_cast<float>(earAlign_.getValue());
         return next;
     }
     void sync(const armix::imersip::Settings& s) {
         venue_=s.venue;
         refreshVenues();
         depth_.setValue(s.depth*100.f,juce::dontSendNotification);
+        earAlign_.setValue(s.earAlignDegrees,juce::dontSendNotification);
         const float vals[]{s.immersion*100.f,s.width*100.f,
                            s.space*100.f,s.lateRoom*100.f,
                            s.stereoLock*100.f,s.bassImpact*100.f,
@@ -373,7 +391,7 @@ private:
     ImerSipLook look_{};
     std::array<juce::TextButton,3> venues_{};
     juce::TextButton originalAb_{},musicalReset_{};
-    juce::Slider depth_{};
+    juce::Slider depth_{},earAlign_{};
     std::array<juce::Slider,8> knobs_{};
     std::array<juce::Label,8> captions_{},values_{};
     juce::Rectangle<int> stage_{};

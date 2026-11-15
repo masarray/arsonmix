@@ -57,17 +57,17 @@ int main() {
     assert(settings.bassImpact==.75f);
     juce::MemoryBlock before;
     fx->getStateInformation(before);
-    assert(before.getSize()==48);
-    assert(!fx->restoreUnpublishedState(before.getData(),47));
-    std::array<std::uint8_t,48> corrupted{};
-    std::memcpy(corrupted.data(),before.getData(),48);
+    assert(before.getSize()==52);
+    assert(!fx->restoreUnpublishedState(before.getData(),51));
+    std::array<std::uint8_t,52> corrupted{};
+    std::memcpy(corrupted.data(),before.getData(),52);
     corrupted[0]=0;
-    assert(!fx->restoreUnpublishedState(corrupted.data(),48));
+    assert(!fx->restoreUnpublishedState(corrupted.data(),52));
     assert(!fx->queueSettings(settings,0));
     settings.venue=1;settings.immersion=.81f;
     settings.width=.9f;settings.bassImpact=.95f;settings.detail=.65f;
     settings.stereoLock=.92f;settings.lateRoom=.31f;
-    settings.depth=.77f;
+    settings.depth=.77f;settings.earAlignDegrees=-19.5f;
     assert(fx->queueSettings(settings,52));
     assert(!fx->stateSnapshotQuiescent());
     juce::AudioBuffer<float> pcm(2,128);
@@ -93,7 +93,7 @@ int main() {
     fx->processBlock(pcm,midi);
     juce::MemoryBlock savedDuringEdit;
     fx->getStateInformation(savedDuringEdit);
-    assert(savedDuringEdit.getSize()==48);
+    assert(savedDuringEdit.getSize()==52);
     assert(fx->lastCompletedRequestId()==53);
     assert(fx->lastCompletionApplied());
     assert(fx->acceptedSettings().detail==.72f);
@@ -104,7 +104,7 @@ int main() {
     }
     juce::MemoryBlock snapshot;
     fx->getStateInformation(snapshot);
-    assert(snapshot.getSize()==48);
+    assert(snapshot.getSize()==52);
     // This processor owns large, fixed DSP ring buffers. Keeping several
     // instances on the Windows test thread's ~1MB stack caused SegFault.
     auto restored=std::make_unique<ImerSipProcessor>();
@@ -118,8 +118,9 @@ int main() {
     assert(selected.detail==.72f);
     assert(selected.stereoLock==.92f&&selected.lateRoom==.31f);
     assert(selected.depth==.77f);
+    assert(selected.earAlignDegrees==-19.5f);
     restored->sealForRealtime();
-    assert(!restored->restoreUnpublishedState(snapshot.getData(),48));
+    assert(!restored->restoreUnpublishedState(snapshot.getData(),52));
     // Old 32-byte IMRS v1 sessions must load WITHOUT unexpected Detail boost.
     juce::MemoryBlock legacy;
     {
@@ -147,6 +148,7 @@ int main() {
     assert(oldSession->acceptedSettings().stereoLock==1.f);
     assert(oldSession->acceptedSettings().lateRoom==.45f);
     assert(oldSession->acceptedSettings().depth==.60f);
+    assert(oldSession->acceptedSettings().earAlignDegrees==0.f);
     // Legacy v2 (36-byte) must preserve DETAIL while migrating new
     // controls to music-safe defaults, not silently adopt full wet.
     juce::MemoryBlock v2;
@@ -169,6 +171,7 @@ int main() {
     assert(v2Session->acceptedSettings().stereoLock==1.f);
     assert(v2Session->acceptedSettings().lateRoom==.45f);
     assert(v2Session->acceptedSettings().depth==.60f);
+    assert(v2Session->acceptedSettings().earAlignDegrees==0.f);
     // A/B is a transient monitor control, not an accepted session edit.
     juce::MemoryBlock initialCompareState;
     v2Session->getStateInformation(initialCompareState);
@@ -198,6 +201,25 @@ int main() {
     assert(v3Session->acceptedSettings().stereoLock==selected.stereoLock);
     assert(v3Session->acceptedSettings().lateRoom==selected.lateRoom);
     assert(v3Session->acceptedSettings().depth==.60f);
+    assert(v3Session->acceptedSettings().earAlignDegrees==0.f);
+    // IMRS v4 from earlier headset sessions keeps its physical depth,
+    // but cannot have a hidden HRTF alignment never stored by that ABI.
+    juce::MemoryBlock v4;
+    {
+        juce::MemoryOutputStream w(v4,false);
+        w.writeInt(0x494D5253);w.writeInt(4);
+        w.writeInt(selected.venue);w.writeFloat(selected.immersion);
+        w.writeFloat(selected.space);w.writeFloat(selected.width);
+        w.writeFloat(selected.bassImpact);w.writeFloat(selected.outputTrim);
+        w.writeFloat(selected.detail);w.writeFloat(selected.stereoLock);
+        w.writeFloat(selected.lateRoom);w.writeFloat(selected.depth);
+    }
+    assert(v4.getSize()==48);
+    auto v4Session=std::make_unique<ImerSipProcessor>();
+    v4Session->prepareToPlay(48000.,128);
+    assert(v4Session->restoreUnpublishedState(v4.getData(),48));
+    assert(v4Session->acceptedSettings().depth==selected.depth);
+    assert(v4Session->acceptedSettings().earAlignDegrees==0.f);
     // REAL JUCE processor PCM callback, not merely the standalone DSP
     // helper: prove the native FX insert produces a measurable wet room
     // output even for a CENTERED MONO orchestra instrument.
@@ -215,7 +237,9 @@ int main() {
             live->findChildWithID("imersip.depth"));
         auto* stereo=dynamic_cast<juce::Slider*>(
             live->findChildWithID("imersip.stereo"));
-        assert(depth&&stereo);
+        auto* align=dynamic_cast<juce::Slider*>(
+            live->findChildWithID("imersip.ear-align"));
+        assert(depth&&stereo&&align);
         assert(std::abs(depth->getValue()-60.)<.01);
         depth->setValue(87.,juce::sendNotificationSync);
         juce::AudioBuffer<float> pulse(2,128);pulse.clear();
@@ -224,6 +248,12 @@ int main() {
         assert(audible->pollCompletion(moved));
         assert(moved.applied);
         assert(std::abs(moved.settings.depth-.87f)<1.e-5f);
+        align->setValue(-19.5,juce::sendNotificationSync);
+        pulse.clear();
+        audible->processBlock(pulse,midi);
+        ImerSipProcessor::Completion aligned{};
+        assert(audible->pollCompletion(aligned)&&aligned.applied);
+        assert(aligned.settings.earAlignDegrees==-19.5f);
     }
     auto full=audible->acceptedSettings();
     full.venue=0;full.immersion=1.f;full.space=1.f;
