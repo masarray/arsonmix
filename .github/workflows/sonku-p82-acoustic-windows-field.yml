@@ -209,6 +209,9 @@ jobs:
             directMidSourcePreserved = $true
             defaultVirtualSpeakerSpreadDegrees = 175
             sideOnlySpatialRoomReturn = $true
+            actualDualMeasuredKemarSpeakers = $true
+            p82StandardCenterMusicDefaultUnchanged = $true
+            physicalHeadphoneQualified = $false
             publicRelease = $false
           } -Force
           $p | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $path -Encoding utf8
@@ -224,7 +227,9 @@ jobs:
               $p.imersipResearch.imrsStateBytes -ne 36 -or
               -not $p.imersipResearch.directMidSourcePreserved -or
               $p.imersipResearch.defaultVirtualSpeakerSpreadDegrees -ne 175 -or
-              -not $p.imersipResearch.sideOnlySpatialRoomReturn) {
+              -not $p.imersipResearch.sideOnlySpatialRoomReturn -or
+              -not $p.imersipResearch.actualDualMeasuredKemarSpeakers -or
+              -not $p.imersipResearch.p82StandardCenterMusicDefaultUnchanged) {
             throw 'IMERSIP_V2_GUI_OR_DIRECT_STEREO_CONTRACT_MISSING'
           }
           if (-not $p.sonkuExperiment.enabled -or
