@@ -985,7 +985,8 @@ test("P0 same-VB-Cable feedback is blocked before native MAIN arm",()=>{
  assert.match(bridge,/const virtualCableFeedbackPair=/);
  const native=read("src/Main.cpp");
  assert.match(native,/const bool requireInput=autoMainRequiresInput_ &&\s*!engine_\.hasVerifiedExternalOutputIntent\(\)/);
- assert.match(native,/if\(engine_\.liveOutputArmFault\(requireInput\)\.isNotEmpty\(\)\)return;/);
+  assert.ok(native.includes("const auto fault=engine_.liveOutputArmFault(requireInput);"));
+  assert.ok(native.includes("protectKnownFeedbackLoop(fault);"));
  assert.match(native,/autoMainEpoch_!=engine_\.dryRoutingLabEpoch\(\)/);
 });
 test("single /preview/ GUI: channel IN, actual OUT and correlated device safety ACK",()=>{

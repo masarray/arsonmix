@@ -81,7 +81,7 @@
 }
 /* Keep hardware action color local to its semantic role, not a generic glow. */
 .app :is(
-  #wireMaster,#routeOnly,#routeParallel,#identitySave
+  #wireMaster,#routeOnly,#routeParallel,#identitySave,#globalFxToggle
 ){--ari-on-top:#3b8c6e;--ari-on-hi:#50a783;--ari-on-mid:#3d956f;--ari-on-bottom:#308665;--ari-on-edge:#266347;--ari-on-ink:#f0fff7}
 .app :is(#mode,#wireNavigatorToggle,#wireMatrixToggle,#pluginsButton)
 {--ari-on-top:#388ea9;--ari-on-hi:#54aec6;--ari-on-mid:#3e94ae;--ari-on-bottom:#2d839c;--ari-on-edge:#246577;--ari-on-ink:#152b36}

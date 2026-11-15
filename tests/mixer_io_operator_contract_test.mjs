@@ -209,7 +209,8 @@ test('DEVICE1 existing matrix drives real JUCE manager with gated native readbac
  assert.match(native,/openSelectedAudioDevice\(typeName,candidate\)/);
  assert.match(native,/openSelectedAudioDevice\(previousType,before\)/);
  assert.match(coordinator,/setAudioDeviceSetup\(setup,true\)/);
- assert.match(coordinator,/manager\.initialise\(2,2,xml\.get\(\),false\)/);
+  // OUTPUT ONLY has no physical microphone; do not invent input pins.
+  assert.ok(coordinator.includes('manager.initialise(setup.inputDeviceName.isEmpty()?0:2,'));
  assert.match(coordinator,/manager\.closeAudioDevice\(\);[\s\S]*manager\.initialise/);
  assert.doesNotMatch(coordinator,/manager\.setCurrentAudioDeviceType\(/);
  assert.match(native,/beginManualAudioSetup\(\)/);
@@ -670,7 +671,10 @@ test('ASIO restart cannot strand MAIN off after temporary graph readiness faults
   assert.ok(arm.indexOf('liveOutputArmFault(autoMainRequiresInput_)')<
             arm.indexOf('autoMainCheckedRevision_=revision;'),'only a verified ARM consumes the revision');
   const begin=engine.slice(engine.indexOf('void audioDeviceAboutToStart ('),engine.indexOf('void audioDeviceStopped()'));
-  assert.match(begin,/if\(monitor_\.load\(std::memory_order_acquire\)\)/);
+  // Operator-approved MAIN intent survives callback STOP, even though the
+  // hardware monitor bit is forcibly gated during a device restart.
+  assert.ok(begin.includes('if(mainOutputIntent_.desired())'));
+  assert.ok(begin.includes('mainOutputIntent_.deviceInterrupted()'));
   assert.match(begin,/resumeMainAfterAsioReset_\.store\(true/);
   assert.ok(begin.indexOf('resumeMainAfterAsioReset_.store(true')<begin.indexOf('setOutputMuted(true)'));
 });

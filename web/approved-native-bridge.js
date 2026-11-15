@@ -255,6 +255,7 @@
   // them atomically. Never retain detached WebView2 strips or stale channel IDs.
   const meterElements = new Map();
   let nativeFxPowerSerial=0,pendingNativeFxPower=null;
+  let globalFxSerial=0,pendingGlobalFx=null;
   const pendingM4RackPowers=new Map();
   let controller = null;
   let logicalView=null,pendingLogical=null,logicalSerial=0,logicalRenameId=null;
@@ -601,6 +602,7 @@
     if(typeof ch.fxRackBypassed!=="boolean"||!Array.isArray(ch.inserts))
       return true; // never synthesize missing DSP readback
     const enabled=!ch.fxRackBypassed;
+    const globalEnabled=document.querySelector('.console-body')?.classList.contains('global-fx-bypassed')!==true;
     const strip=document.querySelector('.strip[data-id="'+t.id+'"]');
     // GAIN/SOF are alternate views of the FX area; power readback still
     // updates the model but must not rebuild the rack or steal knob focus.
@@ -628,9 +630,10 @@
       t.slotBypass[slot]=ch.inserts[slot].bypassed;
     if(!rack)return true;
     rack.dataset.fxChainEnabled=String(enabled);
-    rack.classList.toggle("is-chain-bypassed",!enabled);
+    rack.dataset.globalFxEnabled=String(globalEnabled);
+    rack.classList.toggle("is-chain-bypassed",!enabled||!globalEnabled);
     const header=rack.querySelector('[data-action="fxOn"]');
-    header.setAttribute("aria-pressed",String(enabled));
+    header.setAttribute("aria-pressed",String(enabled&&globalEnabled));
     header.title=(enabled?"Bypass":"Enable")+" all channel FX";
     header.setAttribute("aria-label",
       (enabled?"Bypass":"Enable")+" entire FX chain in "+t.name);
@@ -638,7 +641,7 @@
       const insert=ch.inserts[slot];
       const row=[...rack.querySelectorAll('.fxslot-row:not(.is-empty)')]
         .find(r=>r.dataset.slot===String(slot));
-      const effective=enabled&&!insert.bypassed;
+      const effective=enabled&&globalEnabled&&!insert.bypassed;
       if(insert.latencyChanged===true)
         row.title="Plugin delay changed · aligned dry signal retained; reload the plugin before using its new delay";
       else if(Number.isInteger(insert.latencySamples))
@@ -1495,6 +1498,57 @@
       if(p.acked && actual===p.bypassed)pendingM4RackPowers.delete(lane);
     }
   }
+  // Global A/B is a SINGLE native atomic override. Individual racks and
+  // inserts remain untouched. Never simulate success in WebView while device
+  // admission or a matching native ACK + subsequent readback is missing.
+  function globalFxContext(){
+    if(logicalView)return null; // an offline .smix has no audible PCM
+    const current=controller?.state()?.current;
+    const session=current?.raw?.mixerSession;
+    if(current?.admitted && session?.authority==="CHANNEL_ID")
+      return {epoch:String(current.device.epoch),
+              revision:String(current.graph.revision)};
+    if(session?.authority==="M4" && m4Verified())
+      return {epoch:String(session.deviceEpoch),
+              revision:String(session.routeRevision)};
+    return null;
+  }
+  function syncGlobalFxReadback(snapshot){
+    const button=document.getElementById?.("globalFxToggle");
+    const actual=snapshot?.globalFxBypassed;
+    const context=globalFxContext();
+    if(pendingGlobalFx?.acked && typeof actual==="boolean" &&
+       actual===pendingGlobalFx.bypassed)pendingGlobalFx=null;
+    if(typeof actual==="boolean" && !pendingGlobalFx)
+      window.__ARMIX_SET_GLOBAL_FX_VIEW__?.(!actual);
+    if(button) {
+      button.disabled=!context||!!pendingGlobalFx;
+      button.setAttribute("aria-busy",String(!!pendingGlobalFx));
+      if(!context)button.title="Global FX requires admitted physical audio";
+    }
+  }
+  function toggleGlobalFx(){
+    if(pendingGlobalFx)return false;
+    const ctx=globalFxContext(),current=controller?.state()?.current;
+    const actual=current?.raw?.globalFxBypassed;
+    if(!ctx || typeof actual!=="boolean")return false;
+    const requestId="global-fx-"+(++globalFxSerial);
+    pendingGlobalFx={requestId,bypassed:!actual,acked:false};
+    const button=document.getElementById?.("globalFxToggle");
+    if(button){button.disabled=true;button.setAttribute("aria-busy","true");}
+    backend.emitEvent("arMixAction",{
+      action:"routingGlobalFxBypass",requestId,
+      deviceEpoch:ctx.epoch,revision:ctx.revision,value:!actual
+    });
+    window.setTimeout(()=>{
+      if(pendingGlobalFx?.requestId!==requestId)return;
+      pendingGlobalFx=null;
+      status("Global FX A/B not confirmed · keeping previous audible state");
+      controller?.subscribe(); // Readback is authoritative, never optimistic.
+    },8000);
+    return true;
+  }
+  window.__ARMIX_NATIVE_GLOBAL_FX__={toggle:toggleGlobalFx};
   function requestAdmittedFxPower(t,action,button){
     const session=mixerSession(),current=controller?.state()?.current;
     const channelId=nativeIdFor(t);
@@ -3045,11 +3099,13 @@
       }
     });
     backend.addEventListener("arMixConsoleSnapshot", snapshot=>{
-      // Stage A: do not add time-sampling overhead unless explicitly armed.
+      // First reconcile the canonical engine snapshot, then the global FX
+      // view gate. Never infer FX admission from a local button press.
+      const apply=()=>{controller.onSnapshot(snapshot);syncGlobalFxReadback(snapshot);};
       const profiler=window.ArSonMixPerf;
-      if(!profiler?.active){controller.onSnapshot(snapshot);return;}
+      if(!profiler?.active){apply();return;}
       const started=performance.now();
-      try{controller.onSnapshot(snapshot);}
+      try{apply();}
       finally{profiler.sample("nativeSnapshotJsMs",performance.now()-started);}
     });
     backend.addEventListener("arMixConsoleAck", ack=>controller.onAck(ack));
@@ -3118,6 +3174,15 @@
         finishNativeTrackDelete(controller?.state()?.current);
       }
       controller?.subscribe();
+    });
+    backend.addEventListener("arMixGlobalFxAck",ack=>{
+      const pending=pendingGlobalFx;
+      if(!pending || ack?.requestId!==pending.requestId)return;
+      if(ack?.ok!==true || ack?.bypassed!==pending.bypassed){
+        pendingGlobalFx=null;
+        status("Global FX rejected · "+String(ack?.error||"stale device revision"));
+      }else pending.acked=true;
+      controller?.subscribe(); // ACK alone never establishes physical bypass.
     });
     backend.addEventListener("arMixNativeFxPowerAck",ack=>{
       const p=pendingNativeFxPower;

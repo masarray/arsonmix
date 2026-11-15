@@ -212,6 +212,11 @@ public:
         row->rackBypassed->store(bypass,std::memory_order_release);
         return true;
     }
+    // CONTROL once before publishing the bank. Shared control owner's
+    // lifetime must cover every retired audio snapshot; no RT refcounting.
+    void bindGlobalRackOverride(const std::atomic<bool>* flag) noexcept {
+        globalRackOverride_=flag;
+    }
     bool rackBypassed(ChannelId id) const noexcept {
         const auto* row=find(id);
         return row&&row->rackBypassed &&
@@ -416,8 +421,10 @@ public:
         if(external_.id.value && external_.id==id && external_.render) {
             external_.render(external_.context,left,right,frames);
         }else if(row){
-            const bool rackOff=row->rackBypassed &&
-                row->rackBypassed->load(std::memory_order_acquire);
+            const bool rackOff=(globalRackOverride_ &&
+                globalRackOverride_->load(std::memory_order_acquire)) ||
+                (row->rackBypassed &&
+                 row->rackBypassed->load(std::memory_order_acquire));
             for(std::size_t i=0;i<row->count;++i)
                 row->raw[i]->render(left,right,frames,rackOff);
         }
@@ -431,6 +438,9 @@ public:
     }
 
 private:
+    // Immutable graph pointer; published FX uses only one atomic read to
+    // bypass every lane, preserving per-channel and per-insert saved state.
+    const std::atomic<bool>* globalRackOverride_=nullptr;
     struct MusicGuideTarget final {
         ChannelId target{};
         armix::builtin_fx::ChannelHarmonyProcessor* processor=nullptr;

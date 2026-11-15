@@ -1372,6 +1372,12 @@
 .mx-sonku #skFarSources .sk-src{filter:drop-shadow(0 1px 2px rgba(0,0,0,.3))}
 .mx-sonku #skNearSources .sk-src{filter:drop-shadow(0 3px 6px rgba(0,0,0,.72))}
 
+/* A native rack readback may repaint its local status while global bypass
+   remains engaged. No FX label appears enabled until the global gate is ON. */
+.console-body.global-fx-bypassed .strip .fx-section .fxslot-row:not(.is-empty) .fx-pick{
+ color:#849ca7!important;
+}
+
 /* SonKu v4 research controls share the existing lightweight FX skin.
    Hidden unless the real native processor reports P8.3 capability. */
 .mx-sonku .sk-render-row[hidden]{display:none!important}

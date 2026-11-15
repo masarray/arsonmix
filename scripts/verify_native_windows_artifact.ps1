@@ -131,42 +131,17 @@ if (-not $cmakeSource.Contains('juce_add_binary_data(ARMixAssets SOURCES') -or
 }
 # PNG artwork is binary; CSS/JS/SVG/HTML are compared as exact UTF8 text,
 # rather than mere marker matches. Each staged resource is also SHA-attested.
-function Test-EmbeddedBytes([byte[]]$haystack, [byte[]]$needle) {
-    if ($needle.Length -eq 0 -or $needle.Length -gt $haystack.Length) { return $false }
-    $last = $haystack.Length - $needle.Length
-    for ($i = 0; $i -le $last; $i++) {
-        if ($haystack[$i] -ne $needle[0]) { continue }
-        $found = $true
-        for ($j = 1; $j -lt $needle.Length; $j++) {
-            if ($haystack[$i + $j] -ne $needle[$j]) { $found = $false; break }
-        }
-        if ($found) { return $true }
-    }
-    return $false
+# Byte-identical GUI parity is verified against the DISTRIBUTED executable,
+# not just source manifests. Python mmap.find is compiled/native and avoids
+# the former PowerShell O(EXE_size * resource_count * resource_size) loop.
+# Keep the PowerShell PE/header, icon and release provenance checks above.
+& $approvedGuiPython scripts/verify_embedded_gui_resources.py --exe $exePath --bundle $approvedGuiDir --manifest $approvedPath
+if ($LASTEXITCODE -ne 0) {
+    throw "REJECT: APPROVED GUI BYTE RESOURCE NOT IN WINDOWS EXE"
 }
+# Human-readable startup markers are additional checks, never a substitute
+# for the raw byte fingerprint of every HTML/CSS/JS/SVG/PNG resource.
 $embeddedText = [Text.Encoding]::UTF8.GetString($bytes)
-foreach ($item in $approved.files) {
-    $rel = [string]$item.path
-    $resourcePath = Join-Path $approvedGuiDir $rel
-    if (-not (Test-Path -LiteralPath $resourcePath -PathType Leaf)) {
-        throw "REJECT: compiled GUI missing staged asset $rel"
-    }
-    $real = (Get-FileHash -LiteralPath $resourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($real -ne $item.sha256) {
-        throw "REJECT: approved GUI staged resource digest differs: $rel"
-    }
-    $resourceBytes = [IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $resourcePath).Path)
-    $present = if ($rel.EndsWith(".png", [StringComparison]::OrdinalIgnoreCase)) {
-        Test-EmbeddedBytes $bytes $resourceBytes
-    } else {
-        $sourceText = [Text.Encoding]::UTF8.GetString($resourceBytes)
-        $sourceText.Length -gt 0 -and
-            $embeddedText.IndexOf($sourceText, [StringComparison]::Ordinal) -ge 0
-    }
-    if (-not $present) {
-        throw "REJECT: APPROVED GUI BYTE RESOURCE NOT IN WINDOWS EXE: $rel"
-    }
-}
 if ($embeddedText.IndexOf('APPROVED_PAGES_PREVIEW_BUTTONS', [StringComparison]::Ordinal) -lt 0 -or
     $embeddedText.IndexOf('M1_VISUAL_BUNDLE_ONLY__NOT_AUDIO_READY', [StringComparison]::Ordinal) -lt 0 -or
     $embeddedText.IndexOf('WEBVIEW2_GUI_READY_TIMEOUT', [StringComparison]::Ordinal) -lt 0 -or
