@@ -236,7 +236,9 @@ public:
         g.drawLine(395.f,344.f,944.f,344.f,1.f);
         g.setColour(juce::Colour(0xff84a9b9));
         g.setFont(juce::FontOptions(10.f,juce::Font::plain));
-        g.drawText("Power follows FX Rack bypass · A/B is temporary",
+        // This toggles the individual native insert's bypassRequested;
+        // channel FX rack master power remains a separate host authority.
+        g.drawText("INSERT POWER · SLOT BYPASS  /  ORIGINAL A/B · TEMPORARY",
                    395,499,542,15,juce::Justification::centred);
         g.setColour(juce::Colour(0xff244452));
         g.fillRect(0,527,editorWidth,1);
@@ -330,10 +332,11 @@ private:
         const int state=bypassed?1:0;
         if(state==lastHostPowerState_)return;
         lastHostPowerState_=state;
-        power_.setButtonText(bypassed?"FX BYPASSED":"FX ON");
+        power_.setButtonText(bypassed?"INSERT OFF":"INSERT ON");
         power_.setToggleState(!bypassed,juce::dontSendNotification);
-        power_.setTooltip(bypassed?"Enable ImerSip in native FX Rack":
-                                 "Bypass ImerSip with native rack fade");
+        power_.setTooltip(bypassed?
+            "Enable this ImerSip insert without changing FX rack master power":
+            "Bypass only this ImerSip insert with native rack fade");
     }
     void refreshVenues() {
         for(int i=0;i<3;++i)venues_[static_cast<std::size_t>(i)]

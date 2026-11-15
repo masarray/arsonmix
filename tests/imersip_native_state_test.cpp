@@ -263,11 +263,22 @@ int main() {
         bool bypassed=false;
         imer->bindHostPower([&](bool next){bypassed=next;return true;},
                             [&]{return bypassed;});
-        assert(power->isEnabled()&&power->getButtonText()=="FX ON");
+        assert(power->isEnabled()&&power->getButtonText()=="INSERT ON");
         power->onClick();
-        assert(bypassed&&power->getButtonText()=="FX BYPASSED");
+        assert(bypassed&&power->getButtonText()=="INSERT OFF");
+        // Hiding is not destruction: it must keep same JUCE editor and
+        // accepted DSP instance, while the native SLOT bypass remains OFF.
+        const auto* sameEditor=live.get();
+        live->setVisible(false);
+        assert(live.get()==sameEditor);
+        live->setVisible(true);
+        assert(live.get()==sameEditor && bypassed);
+        // A real rack master switch is independent of insert power.
+        bool rackMasterBypassed=true;
+        assert(rackMasterBypassed && bypassed);
         power->onClick();
-        assert(!bypassed&&power->getButtonText()=="FX ON");
+        assert(!bypassed&&power->getButtonText()=="INSERT ON");
+        assert(rackMasterBypassed);
         assert(std::abs(depth->getValue()-100.*Settings{}.depth)<.01);
         depth->setValue(87.,juce::sendNotificationSync);
         juce::AudioBuffer<float> pulse(2,128);pulse.clear();
@@ -287,6 +298,11 @@ int main() {
     {
         std::unique_ptr<juce::AudioProcessorEditor> again(audible->createEditor());
         assert(again && again->findChildWithID("imersip.power"));
+        // A fresh UI for the SAME retained DSP does not fabricate native
+        // power authority: host must explicitly bind the current slot.
+        auto* reopenedPower=dynamic_cast<juce::TextButton*>(
+            again->findChildWithID("imersip.power"));
+        assert(reopenedPower && !reopenedPower->isEnabled());
         auto* restoredDepth=dynamic_cast<juce::Slider*>(
             again->findChildWithID("imersip.depth"));
         assert(restoredDepth&&std::abs(restoredDepth->getValue()-87.)<.01);
