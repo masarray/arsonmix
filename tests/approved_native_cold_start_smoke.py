@@ -322,7 +322,7 @@ def main():
             emit(page,'arMixConsoleSnapshot',retained)
             page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__.state().current?.retained')
             assert page.locator('.status-bar .warning').inner_text().startswith('PLAYBACK UNAVAILABLE')
-            assert page.locator('[data-native-monitor]').is_disabled()
+            assert page.locator('[data-native-monitor]').count()==0, 'Output mute switch must not exist'
             assert add_track.is_disabled()
             assert page.locator('#tracks .strip').count()==4
             assert 'Output disconnected' in page.locator('#transport').inner_text()
@@ -377,8 +377,8 @@ def main():
             monitor_events=page.evaluate('()=>window.__events.filter(e=>e.payload?.action==="monitor").length')
             emit(page,'arMixConsoleSnapshot',rebound)
             page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__.state().current?.admitted')
-            assert page.locator('[data-native-monitor]').is_enabled()
-            assert page.locator('[data-native-monitor]').get_attribute('data-armed')=='true'
+            assert page.locator('[data-native-monitor]').count()==0, 'No manual output ARM required'
+            assert page.evaluate('()=>window.__ARMIX_NATIVE_M2__.state().current.device.outputArmed===true')
             assert page.locator('#tracks .strip').count()==4
             assert strip.locator('.fx-section [data-action="openPlugin"]').first.inner_text()=='Latency VST'
             assert strip.locator('select[data-field="input"]').is_enabled()
@@ -434,7 +434,7 @@ def main():
             selected=page.locator('#tracks .strip.selected')
             assert 'Track 11' in selected.inner_text()
             assert selected.locator('select[data-field="input"]').is_enabled()
-            assert page.locator('[data-native-monitor]').get_attribute('data-armed')=='true'
+            assert page.evaluate('()=>window.__ARMIX_NATIVE_M2__.state().current.device.outputArmed===true')
             assert not errors, errors
             page.screenshot(path=f'native-cold-start-{width}.png')
             page.close()
