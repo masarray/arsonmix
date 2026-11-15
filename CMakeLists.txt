@@ -797,6 +797,26 @@ if(BUILD_TESTING)
                               SONKU_P90_TRUE_EXTERNAL_RESEARCH=1)
                           add_test(NAME NativeSonKuP90StereoExternalizationSource
                               COMMAND ARMixSonKuP90SourceTests)
+                          add_executable(ARMixSonKuP91P92MusicBassTests
+                              tests/sonku_p91_p92_music_bass_foundation_test.cpp)
+                          target_compile_features(ARMixSonKuP91P92MusicBassTests PRIVATE cxx_std_20)
+                          target_compile_definitions(ARMixSonKuP91P92MusicBassTests PRIVATE
+                              SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                              SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                              SONKU_P72_NATIVE_XYZ_RT=1
+                              SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                              SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                              SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                              SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                              SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+                              SONKU_P85_WORLD_COHERENCE_RESEARCH=1
+                              SONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1
+                              SONKU_P87_MUSIC_BODY_RESEARCH=1
+                              SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1
+                              SONKU_P89_DEPTH_COHERENCE_RESEARCH=1
+                              SONKU_P90_TRUE_EXTERNAL_RESEARCH=1)
+                          add_test(NAME NativeSonKuP91P92MusicFidelityWorldBassAndRoom
+                              COMMAND ARMixSonKuP91P92MusicBassTests)
                           juce_add_console_app(ARMixSonKuP90NativeTests
                               PRODUCT_NAME "ArSonMix SonKu P90 JUCE v11 State Tests")
                           target_sources(ARMixSonKuP90NativeTests PRIVATE
