@@ -3366,6 +3366,9 @@ private:
     void resetMixerToFactory() {
         if(updaterProbeMode_ || mixerSessionWorker_.busy() || nativeShowBusy_ ||
            studioBackupBusy_ || deviceApply_.busy() || mixerFileDialogOpen_ ||
+           audioSetupLease_.has_value() || setupLaunching_ ||
+           engine_.isGraphSwitchPending() ||
+           engine_.diagnosticRoute()!=armix::diagnostics::Route::normal ||
            engine_.hasTemporaryDiagnosticDevice())
             return emitMixerSessionAck("RESET",
                 "Finish mixer IO, device changes and diagnostic playback before reset");
@@ -3379,6 +3382,11 @@ private:
         engine_.cancelAsioResetMonitorIntent();
         engine_.setOutputMuted(true);
         engine_.disconnectSecondaryOutput();
+        engine_.discardPlayerSourceForFactory();
+        playerCurrent_=-1;playerPendingIndex_=-1;
+        playerPendingQueueFile_={};
+        playerLoopCurrent_=false;
+        playerAutoAdvanceGate_.rearm();
         stopOrbit();
         closePluginEditor();
         logicalVendorEditor_.reset(); // discard uncommitted vendor editor edits
@@ -3406,6 +3414,13 @@ private:
         mixerSessionRecoveryPending_=false;
         mixerSessionStartupInspected_=true;
         acceptedControlRequests_.clear();
+        acceptedAppearanceRequests_.clear();
+        directRestore_.cancel();
+        lastDirectRestoreError_.clear();
+        if(startupFxGuard_) {
+            (void)startupFxGuard_->complete();
+            startupFxGuard_.reset();
+        }
         // The selected MACHINE audio interface survives. No VST3 catalog,
         // user FX preset, exported .smix, music, driver or WebView cache is
         // removed. First-run SOURCE NONE graph is recreated from native code.
@@ -3413,6 +3428,7 @@ private:
             machineSettingsDirectory().getChildFile("audio-devices.xml"));
         engine_.devices().removeChangeListener(this);
         engine_.stop();
+        engine_.resetLegacyMixerControlsForFactory();
         startupError_=engine_.start(saved.get());
         engine_.devices().addChangeListener(this);
         // MAIN is owned outside the channel graph. A silent/zero master
@@ -3425,18 +3441,20 @@ private:
         mixerSessionStatus_=startupError_.isEmpty()?
             "FACTORY_RESET_MUTED":"FACTORY_RESET_NEEDS_AUDIO_SETUP";
         if(startupError_.isNotEmpty())mixerSessionError_=startupError_;
-        if(appearanceError.isNotEmpty()) {
-            mixerSessionStatus_="FACTORY_RESET_APPEARANCE_WARNING";
-            mixerSessionError_=appearanceError;
+        if(appearanceError.isNotEmpty() || keysError.isNotEmpty()) {
+            mixerSessionStatus_="FACTORY_RESET_SETTINGS_WARNING";
+            mixerSessionError_=appearanceError.isNotEmpty()
+                ?appearanceError:keysError;
         }
         diagnostics_.record("MIXER_FACTORY_RESET",
             mixerSessionStatus_+" | SOURCE NONE / NO FX / NO CUSTOM WIRE / MAIN MUTED");
         emitApprovedNativeSnapshot();
+        emitPlayerState(true);
         emitMixerSessionAck("RESET");
         emitNotice(startupError_.isEmpty()
             ? "Mixer reset to factory defaults. No FX or custom WIRE; output muted. Select INPUT and verify MAIN before unmuting."
             : "Saved mixer cleared; audio device needs reconfiguration in Audio I/O: "+startupError_,
-            startupError_.isNotEmpty() || appearanceError.isNotEmpty());
+            startupError_.isNotEmpty() || appearanceError.isNotEmpty() || keysError.isNotEmpty());
     }
 
     juce::String resolveMixerSessionCatalog(armix::session::MixerSessionDocument& doc,
