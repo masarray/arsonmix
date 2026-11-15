@@ -84,7 +84,20 @@ int main(){
      armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch);
  fx->sealForRealtime();
  Settings s=fx->acceptedSettings();
- assert(s.renderMode==0);
+ // Newly inserted private P9.2 must sound musical without selecting a menu.
+ // Save/Open of older state still restores the old mode instead.
+ assert(s.renderMode==10 && !s.moving && s.spacePreset==3);
+ assert(s.stereoSpreadDegrees==82.f && s.outputTrim==1.f);
+ assert(s.roomAmount==.72f && s.ambience==.38f);
+ assert(render(*fx,0)>0.);
+ // Move explicitly to the old P8.2 reference so the following mode-10
+ // transaction tests the real fade/ACK and no speculative UI success.
+ Settings baseline=s;
+ baseline.renderMode=0;baseline.spacePreset=0;
+ baseline.roomAmount=0.f;baseline.ambience=0.f;
+ assert(fx->queueSettings(baseline,799));
+ complete(*fx,799,60);
+ assert(fx->acceptedSettings().renderMode==0);
  s.moving=false;s.startAzimuthDegrees=0.f;
  s.stereoSpreadDegrees=60.f;s.spatialMix=1.f;s.outputTrim=1.f;
  s.spacePreset=3;s.sourceDistanceMeters=1.6f;s.roomAmount=.72f;s.ambience=.38f;
