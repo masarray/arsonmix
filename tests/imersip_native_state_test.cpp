@@ -288,7 +288,9 @@ int main() {
     ImerSipProcessor::Completion audibleAck{};
     assert(audible->pollCompletion(audibleAck));
     assert(audibleAck.requestId==6001&&audibleAck.applied);
-    assert(audible->processedFrames()==32768u);
+    // The native editor acceptance test now processes two genuine 128f
+    // PCM ACK blocks BEFORE the 256x128 full musical signal below.
+    assert(audible->processedFrames()==32768u+256u);
     assert(audible->liveInputEnergy()>1.e-5f);
     assert(audible->liveDifferenceEnergy()>1.e-4f);
     const double actualDelta=std::sqrt(
