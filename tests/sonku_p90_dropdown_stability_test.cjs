@@ -7,13 +7,13 @@ const assert=require("node:assert/strict");
 const fs=require("node:fs");
 const vm=require("node:vm");
 const source=fs.readFileSync("site/preview-v2/assets/mixer-native-sonku.js","utf8");
-const start=source.indexOf('  if(p90Capable && picker.dataset.nativeModeSet!=="p90"){');
+const start=source.indexOf('  if(p90Capable && picker.dataset.nativeModeSet!==(p91p92Capable?"p91p92":"p90")){');
 const end=source.indexOf("  const v=p90Capable?",start);
 assert(start!==-1&&end>start,"Locate actual native SonKu mode menu reconciliation");
 const actualReconcile=source.slice(start,end);
 const renderMenu=vm.runInNewContext(
   '(function(picker,root,cap){ const {'+
-  'p90Capable,p89Capable,p88Capable,p87Capable,p86Capable,'+
+  'p90Capable,p91p92Capable,p89Capable,p88Capable,p87Capable,p86Capable,'+
   'p85Capable,p84Capable,p83Capable}=cap;\n'+
   actualReconcile+'\n})',{}
 );
@@ -45,13 +45,14 @@ const label={textContent:""};
 const root={querySelector(selector){
   assert.equal(selector,".sk-render-label");return label;
 }};
-const full={p90Capable:true,p89Capable:true,p88Capable:true,
+const full={p90Capable:true,p91p92Capable:true,p89Capable:true,p88Capable:true,
   p87Capable:true,p86Capable:true,p85Capable:true,p84Capable:true,
   p83Capable:false};
 renderMenu(picker,root,full);
-assert.equal(picker.dataset.nativeModeSet,"p90");
+assert.equal(picker.dataset.nativeModeSet,"p91p92");
 assert.match(picker.innerHTML,/value="external"/);
-assert.match(label.textContent,/P9\.0 HEADPHONE FAT/);
+assert.match(picker.innerHTML,/P9\.1 \+ P9\.2 · MUSIC \+ PHYSICAL BASS/);
+assert.match(label.textContent,/P9\.1 \+ P9\.2 FAT/);
 syncSelection(picker,"external");
 assert.equal(picker.value,"external");
 const writesAfterChoice=picker.valueWrites;
@@ -68,19 +69,37 @@ assert.equal(picker.valueWrites,writesAfterChoice,
   "Native ACK polling must not programmatically re-select the same option");
 assert.equal(picker.value,"external");
 assert.match(picker.innerHTML,/value="external"/);
-// Actual capability downgrade or upgrade is an allowed, one-time menu switch.
-const p89={...full,p90Capable:false};
+// Capability loss: an older native v11 P9.0 build must NOT claim P9.1/9.2.
+// Exactly one rebuild on a REAL capability change is allowed with popup closed.
+const p90Only={...full,p91p92Capable:false};
+renderMenu(picker,root,p90Only);
+assert.equal(picker.dataset.nativeModeSet,"p90");
+assert.equal(optionWrites.length,2);
+assert.match(picker.innerHTML,/P9\.0 · TRUE EXTERNAL/);
+assert.doesNotMatch(picker.innerHTML,/P9\.1 \+ P9\.2/);
+assert.match(label.textContent,/P9\.0 HEADPHONE FAT/);
+picker.isOpen=true;
+for(let i=0;i<12;++i)renderMenu(picker,root,p90Only);
+picker.isOpen=false;
+assert.equal(optionWrites.length,2);
+const p89={...p90Only,p90Capable:false};
 renderMenu(picker,root,p89);
 assert.equal(picker.dataset.nativeModeSet,"p89");
-assert.equal(optionWrites.length,2);
+assert.equal(optionWrites.length,3);
 assert.doesNotMatch(picker.innerHTML,/value="external"/);
 for(let i=0;i<12;++i)renderMenu(picker,root,p89);
-assert.equal(optionWrites.length,2);
+assert.equal(optionWrites.length,3);
 const p88={...p89,p89Capable:false};
 renderMenu(picker,root,p88);
 assert.equal(picker.dataset.nativeModeSet,"p88");
-assert.equal(optionWrites.length,3);
-renderMenu(picker,root,full);
-assert.equal(picker.dataset.nativeModeSet,"p90");
 assert.equal(optionWrites.length,4);
-console.log("PASS P90 dropdown remains mounted during 40 native readbacks; no P8.9 oscillation, no selection writes, transitions exactly once");
+renderMenu(picker,root,full);
+assert.equal(picker.dataset.nativeModeSet,"p91p92");
+assert.equal(optionWrites.length,5);
+// Native capability is authoritative; a UI-only version string is insufficient.
+const nativeSource=fs.readFileSync("src/Main.cpp","utf8");
+assert.match(nativeSource,/reply->setProperty\("p91p92MusicBassFoundation",true\)/);
+assert.match(source,/p91p92Capable=p90Capable && r\.p91p92MusicBassFoundation===true;/);
+assert.match(source,/p91p92Capable&&s\.renderMode===9/);
+assert.match(source,/NATIVE P9\.1\+P9\.2 WORLD BASS/);
+console.log("PASS P91P92 dropdown: native capability-gated milestone, stable 40 readbacks, P9.0 fallback, correct one-time transitions");
