@@ -1,8 +1,10 @@
-name: ImerSip P8.2 phase + bass fast native
+name: ImerSip music-first P8.2 + isolated P8.4 directional fusion
 on:
   pull_request:
     paths:
       - 'engine/builtin_fx/ImerSip*.h'
+      - 'engine/builtin_fx/sonku/SonKuP84FusedMusicHrir.h'
+      - 'engine/builtin_fx/sonku/SonKuSpatialCore.h'
       - 'tests/imersip_music_phase_guard_test.cpp'
       - 'tests/imersip_fx_picker_contract_test.py'
       - 'tests/imersip_native_picker_chromium_smoke.py'
@@ -34,7 +36,7 @@ jobs:
             -DSONKU_P80_TRANSPARENT_BASS_RESEARCH=1 \
             -DSONKU_P82_MULTIBAND_ROOM_RESEARCH=1 \
             tests/imersip_music_phase_guard_test.cpp -o imersip_music_test
-      - name: PCM original P8.2 parity, mono-fold, bass, anti-phase, chunk checks
+      - name: P8.2 unmodified path plus P8.4 fused HRIR DC/bass, vocal MID, stereo phase and chunks
         run: ./imersip_music_test
       - name: Build-to-FX-Picker registration and JUCE host contract
         run: python -m unittest discover -s tests -p imersip_fx_picker_contract_test.py -v
