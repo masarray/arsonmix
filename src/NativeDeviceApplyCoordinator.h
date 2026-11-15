@@ -314,7 +314,9 @@ public:
         if(record)record("CLOSE_PREVIOUS | "+manager.getCurrentAudioDeviceType());
         manager.closeAudioDevice();
         if(record)record("OPEN_SELECTED | "+backend);
-        return manager.initialise(2,2,xml.get(),false);
+        // OUTPUT ONLY must not invent a microphone or require absent IN pins.
+        return manager.initialise(setup.inputDeviceName.isEmpty()?0:2,
+                                  2,xml.get(),false);
     }
 
 private:
