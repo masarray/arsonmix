@@ -15,10 +15,12 @@ struct Settings {
     int venue=0;             // 0 Concert Hall, 1 Cinema, 2 Live Room
     float immersion=.82f;    // audible concert default, 0 exact dry
     float space=.65f;        // real early room/3-band late, no extra engine
-    float width=.95f;        // 175-degree default stage + positive SIDE shelf, no Haas delay
+    float width=.95f;        // +/-48.5 degree front speakers, no orbit
     float bassImpact=.75f;   // 0 exact P8.2 bass, 1 bounded coherent uplift
     float detail=.40f;       // 0 original source treble, 1 gentle <=1.3dB air
     float outputTrim=1.f;    // P8.2 full-output linear trim
+    float stereoLock=1.f;    // 100% retains >=90% original direct SIDE
+    float lateRoom=.45f;     // independent real FDN tail contribution
 };
 inline bool valid(const Settings& s) noexcept {
     return s.venue>=0 && s.venue<=2 &&
@@ -27,7 +29,9 @@ inline bool valid(const Settings& s) noexcept {
         std::isfinite(s.width)&&s.width>=0.f&&s.width<=1.f &&
         std::isfinite(s.bassImpact)&&s.bassImpact>=0.f&&s.bassImpact<=1.f &&
         std::isfinite(s.detail)&&s.detail>=0.f&&s.detail<=1.f &&
-        std::isfinite(s.outputTrim)&&s.outputTrim>=.25f&&s.outputTrim<=1.5f;
+        std::isfinite(s.outputTrim)&&s.outputTrim>=.25f&&s.outputTrim<=1.5f &&
+        std::isfinite(s.stereoLock)&&s.stereoLock>=0.f&&s.stereoLock<=1.f &&
+        std::isfinite(s.lateRoom)&&s.lateRoom>=0.f&&s.lateRoom<=1.f;
 }
 
 // This filter is NOT a second reverb, compressor, M/S limiter or tone

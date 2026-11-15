@@ -19,7 +19,7 @@ inline armix::sonku::Settings sceneFor(const Settings& in) noexcept {
     s.startAzimuthDegrees=0.f;          // Front stationary anchor
     // Physical speakers remain in FRONT, not at +/-90 degrees beside ears.
     s.stereoSpreadDegrees=40.f+60.f*in.width; // +/-20..50 degrees
-    s.spatialMix=.75f*in.immersion;     // Only SIDE residual reaches output
+    s.spatialMix=.75f*in.immersion;     // SonKu internal HRIR, direct explicitly exported
     s.outputTrim=1.f;                  // Final trim belongs to ImerSip
     s.spacePreset=in.immersion==0.f?0:(in.venue==2?2:3);
     // Close front-row source in every venue; the hall itself stays large.
@@ -31,9 +31,10 @@ inline armix::sonku::Settings sceneFor(const Settings& in) noexcept {
     s.roomAmount=in.immersion==0.f?0.f:
         (in.venue==1?.17f:in.venue==2?.18f:.20f)+
         (in.venue==1?.40f:in.venue==2?.36f:.42f)*in.space;
+    // Independent physical late FDN level: old SPACE knob silently boosted
+    // early + late together and made fully-maxed sessions sound washed out.
     s.ambience=in.immersion==0.f?0.f:
-        (in.venue==1?.07f:in.venue==2?.06f:.08f)+
-        (in.venue==1?.18f:in.venue==2?.16f:.20f)*in.space;
+        (in.venue==1?.25f:in.venue==2?.22f:.28f)*in.lateRoom;
     return s;
 }
 
@@ -70,11 +71,14 @@ public:
             // relative to 700Hz while retaining the old strict LF tests.
             directHp_=static_cast<float>(1.-std::exp(-2.*pi*480./rate));
             limiterRelease_=static_cast<float>(1./(rate*.080));
+            compareSlew_=static_cast<float>(1.-std::exp(-1./(rate*.020)));
             for(auto& ear:directDifferenceLow_)ear.fill(0.f);
             earlyLow_.fill(0.f);lateLow_.fill(0.f);
             finalLimiter_=1.f;
             updateTargets(settings_);
             directGain_=directTarget_;
+            stereoTransfer_=stereoTransferTarget_;
+            compareDryGain_=compareDryTarget_;
             earlyGain_=earlyTarget_;
             lateGain_=lateTarget_;
             outputGain_=settings_.outputTrim;
@@ -95,6 +99,9 @@ public:
         return true;
     }
     Settings settings() const noexcept {return settings_;}
+    // Transient monitor audition only: does not alter accepted settings,
+    // .smix or the source/DSP graph. Called once before each audio block.
+    void setCompareDry(bool dry) noexcept {compareDryTarget_=dry?1.f:0.f;}
     bool ready() const noexcept {return ready_;}
     bool measuredStereoStageEnabled() const noexcept {
         return ready_ && core_.imersipMeasuredStereoSideEnabled();
@@ -104,6 +111,7 @@ public:
         if(!ready_||!left||!right||frames<=0)return;
         int at=0;
         double sourceEnergy=0.,deltaEnergy=0.;
+        double originalSideEnergy=0.,processedSideEnergy=0.;
         while(at<frames) {
             const int count=std::min(frames-at,scratchFrames);
             for(int i=0;i<count;++i) {
@@ -118,6 +126,8 @@ public:
             core_.process(left+at,right+at,count,roomReturns_.data());
             for(int i=0;i<count;++i) {
                 directGain_+=stageSlew_*(directTarget_-directGain_);
+                stereoTransfer_+=stageSlew_*(stereoTransferTarget_-stereoTransfer_);
+                compareDryGain_+=compareSlew_*(compareDryTarget_-compareDryGain_);
                 earlyGain_+=stageSlew_*(earlyTarget_-earlyGain_);
                 lateGain_+=stageSlew_*(lateTarget_-lateGain_);
                 outputGain_+=trimSlew_*(settings_.outputTrim-outputGain_);
@@ -146,8 +156,19 @@ public:
                     deltaL-=lowL;
                     deltaR-=lowR;
                 }
-                const float baseL=dryL+directGain_*deltaL;
-                const float baseR=dryR+directGain_*deltaR;
+                // The rejected rendering directly replaced almost ALL
+                // original stereo SIDE with dual-speaker HRTF SIDE, causing
+                // the owner's music to approach MONO. Keep original stereo
+                // SIDE as the authoritative direct bed. Preserve full
+                // measured KEMAR center/front MID transfer and an adjustable
+                // 10..100% fraction of binaural SIDE *difference*. Never
+                // collapse independent stereo to a mono HRTF anchor.
+                const float deltaMid=.5f*(deltaL+deltaR);
+                const float deltaSide=.5f*(deltaL-deltaR);
+                const float baseL=dryL+directGain_*
+                    (deltaMid+stereoTransfer_*deltaSide);
+                const float baseR=dryR+directGain_*
+                    (deltaMid-stereoTransfer_*deltaSide);
                 earlyLow_[0]+=earlyHp_*(wet.earlyL-earlyLow_[0]);
                 earlyLow_[1]+=earlyHp_*(wet.earlyR-earlyLow_[1]);
                 lateLow_[0]+=lateHp_*(wet.lateL-lateLow_[0]);
@@ -188,7 +209,15 @@ public:
                 }
                 float l=baseL+addL,r=baseR+addR;
                 enhancer_.process(l,r,sourceStereoGate_[i]);
-                l*=outputGain_;r*=outputGain_;
+                // A/B compares actual untouched ORIGINAL L/R vs DSP using
+                // the SAME output trim (not an automatic loudness match).
+                // Compare gain slews 20ms and never changes .smix.
+                const float dryWithTrimL=dryL*outputGain_;
+                const float dryWithTrimR=dryR*outputGain_;
+                l=l*outputGain_*(1.f-compareDryGain_)+
+                  dryWithTrimL*compareDryGain_;
+                r=r*outputGain_*(1.f-compareDryGain_)+
+                  dryWithTrimR*compareDryGain_;
                 // Linked zero-lookahead sample-peak protection. A 100%
                 // binaural direct stage must not silently revert to dry when
                 // the music approaches 0dBFS. No gain changes under unity.
@@ -204,22 +233,35 @@ public:
                 const double dl=l-inL,dr=r-inR;
                 sourceEnergy+=inL*inL+inR*inR;
                 deltaEnergy+=dl*dl+dr*dr;
+                // Per-block stereo preservation, normalized for final gain.
+                // Never call a large PCM delta an improvement in fidelity.
+                originalSideEnergy+=static_cast<double>(side_[i])*side_[i];
+                const float norm=std::max(1.e-6f,outputGain_*finalLimiter_);
+                const double normalizedSide=.5*(l-r)/norm;
+                processedSideEnergy+=normalizedSide*normalizedSide;
             }
             at+=count;
         }
         lastInputEnergy_=static_cast<float>(sourceEnergy/(2.*frames));
         lastDifferenceEnergy_=static_cast<float>(deltaEnergy/(sourceEnergy+1.e-14));
+        lastStereoRetention_=originalSideEnergy>1.e-10?
+            static_cast<float>(std::sqrt(processedSideEnergy/originalSideEnergy)):
+            -1.f; // centered MONO input has no original stereo to retain
     }
     float lastInputEnergy() const noexcept {return lastInputEnergy_;}
     float lastDifferenceEnergy() const noexcept {return lastDifferenceEnergy_;}
+    float lastStereoRetention() const noexcept {return lastStereoRetention_;}
 private:
     void updateTargets(const Settings& s) noexcept {
         // Immersion is now chiefly DIRECT virtual speaker transfer, not
         // a reverb-gain shortcut. Nonlinear fade reaches 100% true binaural
         // at the end stop while retaining smooth 0% exact-dry admission.
         directTarget_=s.immersion*(2.f-s.immersion);
-        earlyTarget_=s.immersion*(.38f+.80f*s.space);
-        lateTarget_=s.immersion*(.10f+.32f*s.space);
+        earlyTarget_=s.immersion*(1.18f*s.space);
+        lateTarget_=s.immersion*(.42f*s.lateRoom);
+        // At 100% lock 90% of original source SIDE is kept even when HRTF
+        // is strongest; 0% allows the former full measured binaural SIDE.
+        stereoTransferTarget_=1.f-.90f*s.stereoLock;
         concertStage_.setScene(s.immersion,s.space,s.width);
     }
     static constexpr int scratchFrames=8192;
@@ -237,11 +279,14 @@ private:
     float stageSlew_=0.f,trimSlew_=0.f;
     float earlyHp_=0.f,lateHp_=0.f,directHp_=0.f;
     float directGain_=0.f,directTarget_=0.f;
+    float stereoTransfer_=1.f,stereoTransferTarget_=1.f;
+    float compareDryGain_=0.f,compareDryTarget_=0.f,compareSlew_=0.f;
     float finalLimiter_=1.f,limiterRelease_=0.f;
     float earlyGain_=0.f,earlyTarget_=0.f;
     float lateGain_=0.f,lateTarget_=0.f;
     float outputGain_=1.f;
     float lastInputEnergy_=0.f,lastDifferenceEnergy_=0.f;
+    float lastStereoRetention_=-1.f;
     bool ready_=false;
 };
 } // namespace armix::imersip

@@ -162,7 +162,7 @@ void verifyOriginalStereoSurvives(double rate) {
             const double ref=rms(source,4096,true);
             const double now=rms(wide,4096,true);
             // Preserve all source L/R differentiation with room active.
-            assert(now>ref*.45); // real two-speaker HRTF may redistribute ear-side power
+            assert(now>ref*.86); // owner rejects near-mono/washed stereo
             assert(now<ref*1.52+.00001);
             if(fixture==1)assert(now>.035);
         }
@@ -358,6 +358,75 @@ void verifyConcertStageLateralReflection(double rate) {
     s.space=1.f;s.width=0.f;
     const auto narrow=render(rate,s,music,128,true,true);
     assertChunkParity(narrow,render(rate,s,music,128,true,false));
+}
+
+void verifyStereoIntegrityOwnerRejection(double rate) {
+    // The old test only required 45% original SIDE and thus CERTIFIED
+    // near-mono. Test BOTH full immersive and defaults against actual source.
+    for(int venue=0;venue<3;++venue)
+    for(int fixture:{1,2,3,4,5}) {
+        Stereo source(32768);makeSignal(source,rate,fixture,441.f);
+        Settings s{};s.venue=venue;s.width=1.f;s.immersion=1.f;
+        s.space=1.f;s.lateRoom=1.f;s.stereoLock=1.f;
+        s.bassImpact=0.f;s.detail=0.f;s.outputTrim=1.f;
+        const auto out=render(rate,s,source,128);
+        const double before=rms(source,4096,true);
+        const double after=rms(out,4096,true);
+        const double retained=after/(before+1.e-12);
+        std::fprintf(stderr,
+            "IMERSIP_STEREO_LOCK rate=%.0f venue=%d fixture=%d ratio=%.5f\n",
+            rate,venue,fixture,retained);
+        assert(retained>.86 && retained<1.75);
+        // Dedicated control must have real audio influence. At minimum
+        // lock the original SIDE; without lock, deliberately more HRTF SIDE.
+        s.stereoLock=0.f;
+        const auto free=render(rate,s,source,128);
+        double difference=0.,original=0.;
+        for(int i=4096;i<32768;++i) {
+            const double dl=free.l[i]-out.l[i];
+            const double dr=free.r[i]-out.r[i];
+            difference+=dl*dl+dr*dr;
+            original+=source.l[i]*source.l[i]+source.r[i]*source.r[i];
+        }
+        assert(std::sqrt(difference/(original+1.e-14))>.01);
+    }
+    // Separate LATE TAIL must affect the actual PCM without mutating
+    // early lateral band or source SIDE. Same full source and other knobs.
+    Settings s{};s.immersion=1.f;s.space=.8f;s.lateRoom=0.f;
+    Stereo music(32768);makeSignal(music,rate,4);
+    const auto noLate=render(rate,s,music);
+    s.lateRoom=1.f;
+    const auto yesLate=render(rate,s,music);
+    double diff=0.;
+    for(int i=4096;i<32768;++i)
+        diff+=std::abs(yesLate.l[i]-noLate.l[i])+
+              std::abs(yesLate.r[i]-noLate.r[i]);
+    assert(diff>.001);
+}
+void verifyCompareNeverChangesSettings(double rate) {
+    Settings s{};s.immersion=1.f;s.stereoLock=1.f;
+    auto fx=std::make_unique<ImerSipDsp>();
+    assert(fx->setSettings(s)&&fx->prepare(rate));
+    assert(fx->settings().stereoLock==1.f);
+    constexpr int frames=32768;
+    Stereo music(frames);makeSignal(music,rate,4,300.f);
+    Stereo wet=music,dry=music;
+    // First fresh DSP starts processed; second instance in compare mode
+    // must converge toward ORIGINAL with fixed trim at least after 200ms.
+    auto compare=std::make_unique<ImerSipDsp>();
+    assert(compare->setSettings(s)&&compare->prepare(rate));
+    compare->setCompareDry(true);
+    for(int at=0;at<frames;at+=128) {
+        fx->process(wet.l.data()+at,wet.r.data()+at,128);
+        compare->process(dry.l.data()+at,dry.r.data()+at,128);
+    }
+    for(int i=24000;i<frames;++i) {
+        assert(std::abs(dry.l[i]-music.l[i])<1.e-5f);
+        assert(std::abs(dry.r[i]-music.r[i])<1.e-5f);
+    }
+    assert(compare->settings().immersion==1.f);
+    assert(compare->settings().stereoLock==1.f);
+    assert(fx->lastStereoRetention()>0.f);
 }
 void verifyBassFoundation(double rate) {
     for(int venue=0;venue<3;++venue)for(float hz:{40.f,70.f,110.f,160.f,220.f}) {
@@ -654,6 +723,8 @@ int main() {
         verifyDryAndBounds(rate);
         verifyFrontSpeakerVocalDoesNotNull(rate);
         verifyOriginalStereoSurvives(rate);
+        verifyStereoIntegrityOwnerRejection(rate);
+        verifyCompareNeverChangesSettings(rate);
         verifyP84FusedKernelProvenanceAndLowFrequency(rate);
         verifyP86HorizontalRoomIsolation(rate);
         verifyP82NormalPathRemainsUnchanged(rate);
