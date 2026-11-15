@@ -87,19 +87,22 @@ public:
         while(pollCompletion(drained)){}
         juce::MemoryOutputStream out(dest,false);
         out.writeInt(0x494D5253); // IMRS; isolated from SonKu/old research state
-        out.writeInt(1);
+        out.writeInt(2); // IMRS v2: append DETAIL to avoid v1 ABI drift
         out.writeInt(accepted_.venue);
         out.writeFloat(accepted_.immersion);
         out.writeFloat(accepted_.space);
         out.writeFloat(accepted_.width);
         out.writeFloat(accepted_.bassImpact);
         out.writeFloat(accepted_.outputTrim);
+        out.writeFloat(accepted_.detail);
     }
     bool restoreUnpublishedState(const void* data,int size) {
-        if(published_ || !data || size!=32 ||
+        if(published_ || !data || (size!=32 && size!=36) ||
            !queue_.empty() || !complete_.empty())return false;
         juce::MemoryInputStream in(data,static_cast<std::size_t>(size),false);
-        if(in.readInt()!=0x494D5253 || in.readInt()!=1)return false;
+        if(in.readInt()!=0x494D5253)return false;
+        const int version=in.readInt();
+        if(version!=(size==32?1:2))return false;
         armix::imersip::Settings next{};
         next.venue=in.readInt();
         next.immersion=in.readFloat();
@@ -107,6 +110,9 @@ public:
         next.width=in.readFloat();
         next.bassImpact=in.readFloat();
         next.outputTrim=in.readFloat();
+        // Exactly preserved v1 record; Detail defaults OFF on migration
+        // rather than silently altering old tonal preferences.
+        next.detail=version==2?in.readFloat():0.f;
         if(!in.isExhausted() || !armix::imersip::valid(next))return false;
         if(ready_ && !dsp_.setSettings(next))return false;
         accepted_=next;
