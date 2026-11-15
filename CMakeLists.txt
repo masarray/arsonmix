@@ -501,6 +501,46 @@ if(BUILD_TESTING)
                   SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1)
               add_test(NAME NativeSonKuP84JuceV5AudioAckLegacySafeRestore
                   COMMAND ARMixSonKuP84NativeTests)
+              if(ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT)
+                add_executable(ARMixSonKuP85WorldSourceTests
+                    tests/sonku_p85_world_locked_source_test.cpp)
+                target_compile_features(ARMixSonKuP85WorldSourceTests PRIVATE cxx_std_20)
+                target_compile_definitions(ARMixSonKuP85WorldSourceTests PRIVATE
+                    SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                    SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                    SONKU_P72_NATIVE_XYZ_RT=1
+                    SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                    SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                    SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                    SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                    SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+                    SONKU_P85_WORLD_COHERENCE_RESEARCH=1)
+                add_test(NAME NativeSonKuP85WorldCoherentMidYawSourceAndFidelity
+                    COMMAND ARMixSonKuP85WorldSourceTests)
+                juce_add_console_app(ARMixSonKuP85NativeTests
+                    PRODUCT_NAME "ArSonMix SonKu P85 Native JUCE v6 Tests")
+                target_sources(ARMixSonKuP85NativeTests PRIVATE
+                    tests/sonku_p85_native_juce_v6_test.cpp)
+                target_compile_features(ARMixSonKuP85NativeTests PRIVATE cxx_std_20)
+                target_link_libraries(ARMixSonKuP85NativeTests PRIVATE
+                    juce::juce_audio_processors juce::juce_recommended_config_flags)
+                target_compile_definitions(ARMixSonKuP85NativeTests PRIVATE
+                    ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=1
+                    ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT=1
+                    ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT=1
+                    ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT=1
+                    SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                    SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                    SONKU_P72_NATIVE_XYZ_RT=1
+                    SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                    SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                    SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                    SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                    SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+                    SONKU_P85_WORLD_COHERENCE_RESEARCH=1)
+                add_test(NAME NativeSonKuP85JuceV6AudioAckLegacySafeRestore
+                    COMMAND ARMixSonKuP85NativeTests)
+              endif()
             endif()
           endif()
         endif()
