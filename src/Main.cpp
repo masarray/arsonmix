@@ -6289,37 +6289,46 @@ private:
             const auto channelKey=nativeId.isVoid()?
                 juce::String("m4:")+juce::String(lane):
                 juce::String("id:")+nativeId.toString();
+            // ChannelId tokens are decimal STRINGS. juce::var's int64
+            // conversion is not a trusted decode for that transport.
+            // Use the exact validated native numbers for editor and power.
+            std::uint64_t nativeChannel=0,nativeEpoch=0,nativeRevision=0;
+            const bool nativeValid=!nativeId.isVoid() &&
+                armix::console::approvedNativeId(nativeId,nativeChannel)&&
+                armix::console::approvedNativeId(
+                    args.getProperty("deviceEpoch",{}),nativeEpoch)&&
+                armix::console::approvedNativeId(
+                    args.getProperty("revision",{}),nativeRevision);
+            const auto leaseEpoch=nativeId.isVoid()?epoch:nativeEpoch;
+            const auto leaseRevision=nativeId.isVoid()?revision:nativeRevision;
             bool opened=false;
             juce::String error="FX editor unavailable: device, revision or instance changed";
             if(!nativeShowBusy_&&!studioBackupBusy_&&!engine_.isGraphSwitchPending()) {
                 // Titlebar X only hides; same native identity must REOPEN
                 // without attempting a second editor or FX lease.
-                const bool sameEditor=editorWindow_ && routedEditorOwner_ &&
-                    routedEditorEpoch_==epoch && routedEditorRevision_==revision &&
+                const bool sameEditor=(nativeId.isVoid()||nativeValid) &&
+                    editorWindow_ && routedEditorOwner_ &&
+                    routedEditorEpoch_==leaseEpoch &&
+                    routedEditorRevision_==leaseRevision &&
                     routedEditorChannelKey_==channelKey &&
                     routedEditorInstanceId_==token &&
                     routedEditorLane_==lane && routedEditorSlot_==slot &&
-                    engine_.retainsRoutedFxEditor(epoch,routedEditorOwner_);
+                    engine_.retainsRoutedFxEditor(leaseEpoch,routedEditorOwner_);
                 if(sameEditor) {
                     editorWindow_->setVisible(true);
                     editorWindow_->toFront(true);
                     opened=true;error.clear();
                 } else {
                     armix::mixer::LiveChannelFxGraph::InstanceLease owner;
-                    std::uint64_t retainedEpoch=epoch;
+                    const auto retainedEpoch=leaseEpoch;
+                    const auto retainedRevision=leaseRevision;
                     if(!nativeId.isVoid()) {
-                        std::uint64_t id=0,ep=0,rev=0;
-                        if(armix::console::approvedNativeId(nativeId,id)&&
-                           armix::console::approvedNativeId(
-                               args.getProperty("deviceEpoch",{}),ep)&&
-                           armix::console::approvedNativeId(
-                               args.getProperty("revision",{}),rev)&&
-                           slot>=0&&slot<LiveDryRoutingLab::maxFxPerLane) {
-                            owner=engine_.leaseNativeVst3Editor(ep,rev,
-                                armix::mixer::ChannelId{id},
+                        if(nativeValid && slot>=0 &&
+                           slot<LiveDryRoutingLab::maxFxPerLane)
+                            owner=engine_.leaseNativeVst3Editor(
+                                nativeEpoch,nativeRevision,
+                                armix::mixer::ChannelId{nativeChannel},
                                 static_cast<std::size_t>(slot),token);
-                            retainedEpoch=ep;
-                        }
                     } else
                         owner=engine_.leaseRoutedFxForEditor(
                             lane,slot,epoch,revision,token);
@@ -6334,23 +6343,22 @@ private:
                                     // no independent DSP power flag.
                                     auto held=owner;
                                     imer->bindHostPower(
-                                        [this,held,nativeId,retainedEpoch,revision,
+                                        [this,held,nativeId,nativeChannel,
+                                         retainedEpoch,retainedRevision,
                                          lane,slot,token](bool bypass) {
                                             if(!engine_.retainsRoutedFxEditor(
                                                   retainedEpoch,held))return false;
-                                            if(!nativeId.isVoid()) {
-                                                std::uint64_t channel=0;
-                                                return armix::console::approvedNativeId(
-                                                  nativeId,channel) &&
-                                                  engine_.bypassNativeVst3(
-                                                    retainedEpoch,revision,
-                                                    armix::mixer::ChannelId{channel},
+                                            const bool applied=!nativeId.isVoid()?
+                                                engine_.bypassNativeVst3(
+                                                    retainedEpoch,retainedRevision,
+                                                    armix::mixer::ChannelId{nativeChannel},
                                                     static_cast<std::size_t>(slot),
-                                                    token,bypass);
-                                            }
-                                            return engine_.setDryRoutingLabFxBypass(
-                                                lane,slot,retainedEpoch,revision,
-                                                token,bypass);
+                                                    token,bypass):
+                                                engine_.setDryRoutingLabFxBypass(
+                                                    lane,slot,retainedEpoch,
+                                                    retainedRevision,token,bypass);
+                                            if(applied)emitApprovedNativeSnapshot();
+                                            return applied;
                                         },
                                         [held] {
                                             return held->bypassRequested.load(
@@ -6360,7 +6368,7 @@ private:
 #endif
                                 routedEditorOwner_=owner;
                                 routedEditorEpoch_=retainedEpoch;
-                                routedEditorRevision_=revision;
+                                routedEditorRevision_=retainedRevision;
                                 routedEditorChannelKey_=channelKey;
                                 routedEditorInstanceId_=token;
                                 routedEditorLane_=lane;
