@@ -11,6 +11,7 @@
 #include <cstring>
 #include <cstdio>
 #include <limits>
+#include <memory>
 
 #if !defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) || !SONKU_P82_MULTIBAND_ROOM_RESEARCH
 #error ImerSip native JUCE tests must use actual P8.2 six-wall room
@@ -37,34 +38,36 @@ int main() {
     assert(dynamic_cast<ImerSipProcessor*>(catalogInstance.get())!=nullptr);
     catalogInstance.reset();
 
-    ImerSipProcessor fx;
-    assert(fx.getName()=="ImerSip");
+    // This processor owns large, fixed DSP ring buffers. Keeping several
+    // instances on the Windows test thread's ~1MB stack caused SegFault.
+    auto fx=std::make_unique<ImerSipProcessor>();
+    assert(fx->getName()=="ImerSip");
     // A verified native insert without a real editor is not a usable product.
-    assert(fx.hasEditor());
+    assert(fx->hasEditor());
     {
-        std::unique_ptr<juce::AudioProcessorEditor> ui(fx.createEditor());
+        std::unique_ptr<juce::AudioProcessorEditor> ui(fx->createEditor());
         assert(ui && ui->getWidth()==840 && ui->getHeight()==474);
         // No fake browser PCM or secondary processing engine.
     }
-    assert(fx.isBusesLayoutSupported(fx.getBusesLayout()));
-    fx.prepareToPlay(48000.,128);
-    assert(fx.isReady());
-    assert(fx.measuredStereoStageEnabled()); // real two KEMAR sources
-    auto settings=fx.acceptedSettings();
+    assert(fx->isBusesLayoutSupported(fx->getBusesLayout()));
+    fx->prepareToPlay(48000.,128);
+    assert(fx->isReady());
+    assert(fx->measuredStereoStageEnabled()); // real two KEMAR sources
+    auto settings=fx->acceptedSettings();
     assert(settings.bassImpact==.75f);
     juce::MemoryBlock before;
-    fx.getStateInformation(before);
+    fx->getStateInformation(before);
     assert(before.getSize()==36);
-    assert(!fx.restoreUnpublishedState(before.getData(),35));
+    assert(!fx->restoreUnpublishedState(before.getData(),35));
     std::array<std::uint8_t,36> corrupted{};
     std::memcpy(corrupted.data(),before.getData(),36);
     corrupted[0]=0;
-    assert(!fx.restoreUnpublishedState(corrupted.data(),36));
-    assert(!fx.queueSettings(settings,0));
+    assert(!fx->restoreUnpublishedState(corrupted.data(),36));
+    assert(!fx->queueSettings(settings,0));
     settings.venue=1;settings.immersion=.81f;
     settings.width=.9f;settings.bassImpact=.95f;settings.detail=.65f;
-    assert(fx.queueSettings(settings,52));
-    assert(!fx.stateSnapshotQuiescent());
+    assert(fx->queueSettings(settings,52));
+    assert(!fx->stateSnapshotQuiescent());
     juce::AudioBuffer<float> pcm(2,128);
     juce::MidiBuffer midi;
     for(int i=0;i<128;++i) {
@@ -73,44 +76,46 @@ int main() {
         pcm.setSample(0,i,s);
         pcm.setSample(1,i,-s);
     }
-    fx.processBlock(pcm,midi);
+    fx->processBlock(pcm,midi);
     ImerSipProcessor::Completion ack{};
-    assert(fx.pollCompletion(ack));
+    assert(fx->pollCompletion(ack));
     assert(ack.requestId==52&&ack.applied);
     assert(ack.settings.venue==1);
-    assert(fx.stateSnapshotQuiescent());
-    assert(fx.acceptedSettings().width==.9f);
+    assert(fx->stateSnapshotQuiescent());
+    assert(fx->acceptedSettings().width==.9f);
     // Reproduce Save immediately after an audio block: Save may consume
     // ACK before the editor's timer polls it. A latched record must retain
     // the applied identity and monotonic sequence across editor reopen.
     settings.detail=.72f;
-    assert(fx.queueSettings(settings,53));
-    fx.processBlock(pcm,midi);
+    assert(fx->queueSettings(settings,53));
+    fx->processBlock(pcm,midi);
     juce::MemoryBlock savedDuringEdit;
-    fx.getStateInformation(savedDuringEdit);
+    fx->getStateInformation(savedDuringEdit);
     assert(savedDuringEdit.getSize()==36);
-    assert(fx.lastCompletedRequestId()==53);
-    assert(fx.lastCompletionApplied());
-    assert(fx.acceptedSettings().detail==.72f);
-    assert(fx.nextEditorRequestId()>53);
+    assert(fx->lastCompletedRequestId()==53);
+    assert(fx->lastCompletionApplied());
+    assert(fx->acceptedSettings().detail==.72f);
+    assert(fx->nextEditorRequestId()>53);
     for(int i=0;i<128;++i) {
         assert(std::isfinite(pcm.getSample(0,i)));
         assert(std::isfinite(pcm.getSample(1,i)));
     }
     juce::MemoryBlock snapshot;
-    fx.getStateInformation(snapshot);
+    fx->getStateInformation(snapshot);
     assert(snapshot.getSize()==36);
-    ImerSipProcessor restored;
-    restored.prepareToPlay(48000.,128);
-    assert(restored.isReady());
-    assert(restored.restoreUnpublishedState(snapshot.getData(),
+    // This processor owns large, fixed DSP ring buffers. Keeping several
+    // instances on the Windows test thread's ~1MB stack caused SegFault.
+    auto restored=std::make_unique<ImerSipProcessor>();
+    restored->prepareToPlay(48000.,128);
+    assert(restored->isReady());
+    assert(restored->restoreUnpublishedState(snapshot.getData(),
                                            static_cast<int>(snapshot.getSize())));
-    auto selected=restored.acceptedSettings();
+    auto selected=restored->acceptedSettings();
     assert(selected.venue==1&&selected.width==.9f);
     assert(selected.bassImpact==.95f&&selected.immersion==.81f);
     assert(selected.detail==.72f);
-    restored.sealForRealtime();
-    assert(!restored.restoreUnpublishedState(snapshot.getData(),36));
+    restored->sealForRealtime();
+    assert(!restored->restoreUnpublishedState(snapshot.getData(),36));
     // Old 32-byte IMRS v1 sessions must load WITHOUT unexpected Detail boost.
     juce::MemoryBlock legacy;
     {
@@ -128,22 +133,26 @@ int main() {
         v1.writeFloat(selected.outputTrim);
     }
     assert(legacy.getSize()==32);
-    ImerSipProcessor oldSession;
-    oldSession.prepareToPlay(48000.,128);
-    assert(oldSession.isReady());
-    assert(oldSession.restoreUnpublishedState(legacy.getData(),32));
-    assert(oldSession.acceptedSettings().detail==0.f);
+    // This processor owns large, fixed DSP ring buffers. Keeping several
+    // instances on the Windows test thread's ~1MB stack caused SegFault.
+    auto oldSession=std::make_unique<ImerSipProcessor>();
+    oldSession->prepareToPlay(48000.,128);
+    assert(oldSession->isReady());
+    assert(oldSession->restoreUnpublishedState(legacy.getData(),32));
+    assert(oldSession->acceptedSettings().detail==0.f);
     // REAL JUCE processor PCM callback, not merely the standalone DSP
     // helper: prove the native FX insert produces a measurable wet room
     // output even for a CENTERED MONO orchestra instrument.
-    ImerSipProcessor audible;
-    audible.prepareToPlay(48000.,128);
-    assert(audible.isReady());
-    auto full=audible.acceptedSettings();
+    // This processor owns large, fixed DSP ring buffers. Keeping several
+    // instances on the Windows test thread's ~1MB stack caused SegFault.
+    auto audible=std::make_unique<ImerSipProcessor>();
+    audible->prepareToPlay(48000.,128);
+    assert(audible->isReady());
+    auto full=audible->acceptedSettings();
     full.venue=0;full.immersion=1.f;full.space=1.f;
     full.width=1.f;full.bassImpact=0.f;full.detail=0.f;
     full.outputTrim=1.f;
-    assert(audible.queueSettings(full,6001));
+    assert(audible->queueSettings(full,6001));
     juce::AudioBuffer<float> inOut(2,128);
     double originalEnergy=0.,processedDeltaEnergy=0.;
     constexpr double pi=3.14159265358979323846;
@@ -157,7 +166,7 @@ int main() {
             inOut.setSample(0,i,v);
             inOut.setSample(1,i,v);
         }
-        audible.processBlock(inOut,midi);
+        audible->processBlock(inOut,midi);
         if(block>=32)for(int i=0;i<128;++i) {
             const int frame=block*128+i;
             const double time=frame/48000.;
@@ -170,21 +179,21 @@ int main() {
         }
     }
     ImerSipProcessor::Completion audibleAck{};
-    assert(audible.pollCompletion(audibleAck));
+    assert(audible->pollCompletion(audibleAck));
     assert(audibleAck.requestId==6001&&audibleAck.applied);
-    assert(audible.processedFrames()==32768u);
-    assert(audible.liveInputEnergy()>1.e-5f);
-    assert(audible.liveDifferenceEnergy()>1.e-4f);
+    assert(audible->processedFrames()==32768u);
+    assert(audible->liveInputEnergy()>1.e-5f);
+    assert(audible->liveDifferenceEnergy()>1.e-4f);
     const double actualDelta=std::sqrt(
         processedDeltaEnergy/(originalEnergy+1.e-16));
     std::fprintf(stderr,
-        "IMERSIP_REAL_JUCE_WET_DELTA_48K=%.6f dB=%.2f\\n",
+        "IMERSIP_REAL_JUCE_WET_DELTA_48K=%.6f dB=%.2f\n",
         actualDelta,20.*std::log10(actualDelta+1.e-12));
     assert(actualDelta>.050);
     assert(actualDelta<.75);
-    audible.releaseResources();
+    audible->releaseResources();
 
-    fx.releaseResources();
-    assert(!fx.isReady());
+    fx->releaseResources();
+    assert(!fx->isReady());
     return 0;
 }
