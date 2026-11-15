@@ -365,7 +365,7 @@ test("First Sound evidence maps sparse physical pins to actual callback ordinals
   // A mistaken output claim never becomes a loudspeaker certification.
   g0.device.outputArmed=false;
   const muted=protocol.diagnoseFirstSound(protocol.normalizeSnapshot(g0),2);
-  assert.match(muted.nextAction,/ARM output/);
+  assert.match(muted.nextAction,/MAIN is auto-connecting/);
   g0.device.outputArmed=true;
   g0.legacyM4.routeAccepted=false;
   const unpatched=protocol.diagnoseFirstSound(protocol.normalizeSnapshot(g0),2);
@@ -407,7 +407,7 @@ test("P0 DAW approved Windows GUI directly binds every IN to current JUCE ports,
   assert.match(bridge,/action:"routingSourceSwitch"/);
   assert.match(bridge,/row\?\.left===p\.choice\.left/);
   assert.match(nativeMain,/autoMainEpoch_!=engine_\.dryRoutingLabEpoch\(\)/);
-  assert.match(bridge,/inputSelect\.hidden=true;routeBtn\.hidden=true;armBtn\.hidden=true/);
+  assert.match(bridge,/inputSelect\.hidden=true;routeBtn\.hidden=true/);
   assert.match(bridge,/openNativeAudioIO\(\)/);
   assert.match(bridge,/\.armix-audio-shade\[hidden\]\{display:none\}/);
   assert.match(producer,/firstSound->setProperty\("channels",juce::var\(verifiedChannels\)\)/);
@@ -435,7 +435,7 @@ test("DAW G0 native M4 controls, source clear, OUT & monitoring are real",()=>{
  assert.match(bridge,/action:"routingM4Control"/);
  assert.match(bridge,/action:"routingChannelPatch"/);
  assert.match(bridge,/const channel=m4Index\(t\)/);
- assert.match(bridge,/data-native-monitor/);
+ assert.doesNotMatch(bridge,/data-native-monitor|Unmute Output|Mute Output/);
  assert.match(native,/void serviceAutomaticMain\(\)/);
  assert.match(native,/if\(action=="routingM4Control"\)/);
  assert.match(native,/engine_\.setDryRoutingLabParameter\(channel,/);
@@ -1556,7 +1556,7 @@ test("P0 automatic cold-start Show replaces only pristine SOURCE NONE ChannelId"
 
 test("P0 startup banner never demands legacy Patch CH1 / Arm wizard",()=>{
  const bridge=read("web/approved-native-bridge.js");
- assert.match(bridge,/SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK/);
+ assert.match(bridge,/SELECT CHANNEL IN · MAIN AUTO-CONNECTS/);
  assert.match(bridge,/next.admitted\?"CHOOSE AN INPUT"/);
  assert.doesNotMatch(bridge,/FAT PENDING/);
  assert.doesNotMatch(bridge,/hardware\.device\.enabledInputs\.length>0/);
@@ -1601,7 +1601,7 @@ test("P0 output-only Audio I/O is a real native configuration, never blocked by 
  assert.match(bridge,/No hardware input \(Player \/ FX\)/);
  assert.match(bridge,/t\?\.separate\?\["",\.\.\.\(t\.inputs\|\|\[\]\)\]/);
  assert.doesNotMatch(bridge,/ack\.active\.enabledInputs\.length>0/);
- assert.match(bridge,/FX\/WIRE available/);
+ assert.match(bridge,/MAIN connects automatically after patch/);
 });
 test("P0 FIRST SOUND G0 offers verified input and leaves automatic MAIN to native",()=>{
  const vm=require("node:vm"),sent=[],listeners=new Map(),renderedChoices=[];
@@ -1784,7 +1784,7 @@ test("M3/V60 Windows bundle dispatches exactly one fader release through native 
  assert.ok(!bridge.includes('window.addEventListener("pointerup"'));
 });
 
-test("native Windows operator can explicitly patch first physical input, arm and mute",()=>{
+test("native Windows operator patches input and MAIN auto-admits without global output mute",()=>{
  const js=read("web/approved-native-bridge.js");
  const main=read("src/Main.cpp");
  const engine=read("src/LiveAudioEngine.h");
@@ -1796,9 +1796,10 @@ test("native Windows operator can explicitly patch first physical input, arm and
  assert.match(js,/d\.enabledInputs\.includes\(p\.port\)/);
  assert.match(js,/action:"routingSourceSwitch",requestId:pendingSourceId/);
  assert.match(js,/channel:0,mode:"MONO",left:pin,right:-1/);
- assert.match(js,/action:"monitor",value:true/);
- assert.match(js,/action:"monitor",value:false/);
- assert.match(js,/expectedEpoch:epoch,expectedRevision:revision/);
+ assert.doesNotMatch(js,/action:"monitor",value:true|action:"monitor",value:false/);
+ assert.doesNotMatch(js,/data-native-monitor|muteBtn|armBtn/);
+ assert.match(main,/void serviceAutomaticMain\(\)/);
+ assert.match(main,/requestAutomaticMain\(false\)/);
  assert.match(js,/arMixSourceSwitchAck/);
  assert.match(js,/arMixAudioArmAck/);
  assert.match(js,/if\(ack\.ok===true\)/);
@@ -2075,10 +2076,10 @@ test("O2 SOURCE ONLY confirmed ASIO EXTERNAL OUT auto-arms without a second Moni
  assert.ok(start>=0&&end>start,"real native external-output action is present");
  const control=native.slice(start,end);
  assert.match(control,/error=engine_\.setPhysicalExternalOutput/);
- assert.match(control,/if\(left>=0 && !operatorOutputMuted_ && !engine_\.isMonitorEnabled\(\)\)\s*requestAutomaticMain\(false\)/);
+ assert.match(control,/if\(left>=0 && !engine_\.isMonitorEnabled\(\)\)\s*requestAutomaticMain\(false\)/);
  assert.match(control,/emitApprovedNativeSnapshot\(\); \/\/ callback readback proves LIVE/);
- assert.match(native,/operatorOutputMuted_=!arm; \/\/ an explicit user control/);
- assert.match(native,/if\(operatorOutputMuted_\)\{autoMainEpoch_=0;return;\}/);
+ assert.doesNotMatch(native,/operatorOutputMuted_/);
+ assert.match(native,/void serviceAutomaticMain\(\)/);
  assert.match(native,/autoMainRequiresInput_ &&\s*!engine_\.hasVerifiedExternalOutputIntent\(\)/);
  assert.match(engine,/bool hasVerifiedExternalOutputIntent\(\) const noexcept/);
  assert.match(routing,/externalOutputEpoch_!=epoch\(\)/);
