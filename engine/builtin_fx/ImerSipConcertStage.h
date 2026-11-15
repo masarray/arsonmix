@@ -8,8 +8,9 @@
 // extra HRTF, new audio bus, FFT, phase inversion, or worker. The existing
 // stereo direct front speakers and original bass are the authorities.
 //
-// 250-3800 Hz lateral early energy contributes auditory source width.
-// Sub-bass and the P8.7 direct air band are excluded deliberately.
+// Two-pole 250 Hz highpass + two-pole 3800 Hz lowpass isolate the
+// true early-lateral musical presence band. Sub-bass and the P8.7
+// measured-direct air band are strongly suppressed.
 // The enhancement is MID-orthogonal: additional left == -additional right.
 // Therefore mono fold-down, center vocal pressure and original dry remain
 // exactly unchanged by THIS stage. This is a private audition candidate.
@@ -31,24 +32,34 @@ public:
     void setScene(float immersion,float room,float width) noexcept {
         // Called only with validated ImerSip settings on the native
         // control path or SPSC audio edit. Affine, bounded, no exp/pow.
-        target_=0.70f*immersion*room*width;
+        // Real P8.6 ER energy was only ~0.004 RMS of source even with the
+        // first 70% lift. A calibrated 4x lateral *reflected* component,
+        // NOT 4x master/dry gain, gives a measurable musical room presence
+        // without reviving the ceiling/floor or late FDN wash.
+        target_=4.0f*immersion*room*width;
     }
     void reset() noexcept {
-        low250_=low3800_=0.f;
+        low250First_=low250Second_=0.f;
+        low3800First_=low3800Second_=0.f;
         gain_=target_;
     }
     Ears process(float measuredEarlyL,float measuredEarlyR) noexcept {
         const float side=.5f*(measuredEarlyL-measuredEarlyR);
-        low250_+=lowerAlpha_*(side-low250_);
-        low3800_+=upperAlpha_*(side-low3800_);
+        low250First_+=lowerAlpha_*(side-low250First_);
+        const float hp1=side-low250First_;
+        low250Second_+=lowerAlpha_*(hp1-low250Second_);
+        const float hp2=hp1-low250Second_;
+        low3800First_+=upperAlpha_*(hp2-low3800First_);
+        low3800Second_+=upperAlpha_*(low3800First_-low3800Second_);
         gain_+=slew_*(target_-gain_);
-        const float lateral=gain_*(low3800_-low250_);
+        const float lateral=gain_*low3800Second_;
         return {lateral,-lateral};
     }
     float targetGain() const noexcept{return target_;}
 private:
     float lowerAlpha_=0.f,upperAlpha_=0.f,slew_=0.f;
-    float low250_=0.f,low3800_=0.f;
+    float low250First_=0.f,low250Second_=0.f;
+    float low3800First_=0.f,low3800Second_=0.f;
     float gain_=0.f,target_=0.f;
 };
 } // namespace armix::imersip

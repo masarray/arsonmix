@@ -275,7 +275,7 @@ void verifyConcertStageLateralReflection(double rate) {
     auto band=std::make_unique<ConcertStage>();
     assert(band->prepare(rate));
     band->setScene(1.f,1.f,1.f);
-    assert(std::abs(band->targetGain()-.70f)<1.e-5f);
+    assert(std::abs(band->targetGain()-4.f)<1.e-5f);
     // Mono early room adds NO synthetic SIDE; source MID is untouched.
     for(int i=0;i<512;++i) {
         const auto s=band->process(.1f,.1f);
@@ -306,8 +306,10 @@ void verifyConcertStageLateralReflection(double rate) {
     std::fprintf(stderr,
         "IMERSIP_CONCERT_BAND rate=%.0f sub=%.5f width1k=%.5f air=%.5f\n",
         rate,sub,presence,air);
-    assert(presence>.30 && presence<.70);
-    assert(sub<presence*.65 && air<presence*.70);
+    assert(presence>3.0 && presence<3.9);
+    // Two poles attenuate both bass and upper reverb much more than the
+    // previous broad one-pole passband: NO fake LF or doubled 10kHz wash.
+    assert(sub<presence*.20 && air<presence*.30);
 
     Stereo music(32768);makeSignal(music,rate,4,450.f);
     Settings s{};s.venue=0;s.immersion=1.f;s.space=1.f;
@@ -326,7 +328,25 @@ void verifyConcertStageLateralReflection(double rate) {
     const double change=std::sqrt(effect/(source+1.e-14));
     std::fprintf(stderr,
         "IMERSIP_CONCERT_REAL_P86_ER rate=%.0f delta=%.7f\n",rate,change);
-    assert(change>.001 && change<.22);
+    // Reject the prior technically-PASS but practically near-bypassed
+    // 0.004 RMS lateral enhancement. Preserve upper bound/headroom.
+    assert(change>.012 && change<.12);
+    // At familiar default 82% IMMERSION and 65% VENUE SPACE the actual
+    // audio must still have a non-negligible lateral contribution.
+    const Settings defaults{};
+    const auto defaultDry=render(rate,defaults,music,128,true,false);
+    const auto defaultStage=render(rate,defaults,music,128,true,true);
+    double d=0.,q=0.;
+    for(int i=4096;i<32768;++i) {
+        const double dl=defaultStage.l[i]-defaultDry.l[i];
+        const double dr=defaultStage.r[i]-defaultDry.r[i];
+        d+=dl*dl+dr*dr;
+        q+=music.l[i]*music.l[i]+music.r[i]*music.r[i];
+    }
+    const double defaultDelta=std::sqrt(d/(q+1.e-14));
+    std::fprintf(stderr,
+        "IMERSIP_CONCERT_DEFAULT rate=%.0f delta=%.7f\n",rate,defaultDelta);
+    assert(defaultDelta>.004 && defaultDelta<.09);
 
     // Turning off the VENUE SPACE knob must remove this stage, while
     // leaving the P8.7 direct binaural effect and native stage intact.

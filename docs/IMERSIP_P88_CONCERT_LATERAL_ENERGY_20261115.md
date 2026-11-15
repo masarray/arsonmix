@@ -8,7 +8,8 @@ User says current SonKu P8.7-adapted ImerSip is not yet luxurious, celebratory a
 
 ## Scoped implementation
 - One JUCE/native P8.2/P8.4 core, existing P8.6 six-wall horizontal focus and P8.7 air/body. NO stereo Haas, fake reverb, additional BRIR, worker, 2nd source, FFT, allocations or new public render-mode.
-- ImerSipConcertStage.h makes only a 250–3800Hz 1-pole bounded lateral band from already spatialized directional early reflections. Maximum additional 70% of this MEASURED early-side band scales with current validated IMMERSION * VENUE SPACE * STAGE WIDTH. No extra signal at 0% mix, 0% venue space or 0% stage width. Gains slew 25ms.
+- ImerSipConcertStage.h makes only a 250–3800Hz TWO-pole-HP + TWO-pole-LP bounded lateral band from already spatialized directional early reflections. Maximum additional 4x of this *small MEASURED reflected early-side band* scales with current validated IMMERSION * VENUE SPACE * STAGE WIDTH. No extra signal at 0% mix, 0% venue space or 0% stage width. Gains slew 25ms.
+- The initial 70% one-pole version passed but contributed just 0.0041 / 0.0044 source-relative RMS at full venue in 44.1 / 48k tests: plausibly inaudible. This revision calibrates the tiny ACTUAL directional ER band to a maximum 4x and uses two-pole HP/LP to reject excessive subbass/upper-diffuse gain; full/max and default PCM delta now have explicit minimum acceptance gates. This is not multiplying the whole mix by four.
 - The additional signal is exactly L=-R, preserving existing dry MID, vocal mono fold-down and the original concert bass. It does not enhance late HF/diffuse FDN reverb, and the existing optional-enhancement headroom gate and global linked limiter remain authoritative.
 - Explicit test-only A/B constructor lets tests measure the new stage versus same P8.7 core with no new lateral contribution, with exact 64/128/8192 audio chunk parity. No .smix v2 state layout change. UI knobs remain familiar and source-authoritative.
 
