@@ -68,9 +68,18 @@ public:
     }
     bool pollCompletion(Completion& result) noexcept {
         if(!complete_.pop(result))return false;
+        lastCompletedRequest_=result.requestId;
+        lastCompletedApplied_=result.applied;
         if(result.applied)accepted_=result.settings;
         return true;
     }
+    // Both session Save and the floating editor run on CONTROL. Save may
+    // consume the very ACK that the editor is awaiting; expose a latched
+    // completion record so it never gets stuck on "APPLYING" after Save.
+    std::uint64_t lastCompletedRequestId() const noexcept {
+        return lastCompletedRequest_;
+    }
+    bool lastCompletionApplied() const noexcept {return lastCompletedApplied_;}
     armix::imersip::Settings acceptedSettings() const noexcept {
         return accepted_;
     }
@@ -133,6 +142,8 @@ private:
     armix::imersip::Settings accepted_{};
     bool ready_=false;
     bool published_=false;
+    std::uint64_t lastCompletedRequest_=0;
+    bool lastCompletedApplied_=false;
 };
 } // namespace armix::builtin_fx
 
