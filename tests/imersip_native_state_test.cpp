@@ -54,7 +54,16 @@ int main() {
     assert(fx->isReady());
     assert(fx->measuredStereoStageEnabled()); // real two KEMAR sources
     auto settings=fx->acceptedSettings();
-    assert(settings.bassImpact==.75f);
+    // Read the real initializer, never pin an obsolete preset value.
+    // That mistake previously turned a good Windows build RED solely
+    // because the MUSIC default Bass Impact changed from 75% to 55%.
+    const Settings initialPreset{};
+    assert(settings.bassImpact==initialPreset.bassImpact);
+    assert(settings.immersion==initialPreset.immersion);
+    assert(settings.space==initialPreset.space);
+    assert(settings.width==initialPreset.width);
+    assert(settings.depth==initialPreset.depth);
+    assert(settings.stereoLock==initialPreset.stereoLock);
     juce::MemoryBlock before;
     fx->getStateInformation(before);
     assert(before.getSize()==52);
