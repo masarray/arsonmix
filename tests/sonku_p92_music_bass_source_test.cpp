@@ -97,6 +97,7 @@ int main(){
         for(int material=0;material<=4;++material){
             const auto next=render(rate,10,3,1.6f,82.f,0.f,.72f,.38f,material);
             const auto old=render(rate,9,3,1.6f,82.f,0.f,.72f,.38f,material);
+            std::fprintf(stderr,"P92_FIDELITY_DIAG rate=%d material=%d old=%.8f new=%.8f ratio=%.5f peak=%.6f\n",rate,material,old.energy,next.energy,next.energy/old.energy,next.peak);
             assert(diff(next,old)>1.e-8);
             assert(next.energy>old.energy*.20 && "new music stage became inaudible");
             assert(next.peak<.981);
