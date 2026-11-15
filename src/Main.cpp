@@ -428,7 +428,9 @@ public:
         engine_.devices().removeChangeListener (this);
         // Drain any earlier file work before the final muted checkpoint.
         // Remember MAIN before the shutdown mute changes the hardware state.
-        const bool resumeMain=engine_.isMonitorEnabled();
+        // A driver STOP may have gated hardware already. Preserve the
+        // operator's intended MAIN state in the crash-safe .smix checkpoint.
+        const bool resumeMain=engine_.wantsMainContinuation() && !operatorOutputMuted_;
         engine_.setOutputMuted(true);
         engine_.disconnectSecondaryOutput();
         mixerSessionWorker_.finishForShutdown(logicalVendorEditor_.has_value());
@@ -3611,13 +3613,15 @@ private:
         const bool monitoring=engine_.isMonitorEnabled();
         if(engine_.secondaryArmed())return "Stop STREAM before saving the mixer";
         const auto epoch=engine_.dryRoutingLabEpoch();
-        if(monitoring)engine_.setMonitorEnabled(false);
+        // Temporary capture fence is NOT an operator MUTE. Keep the
+        // persisted MAIN desire intact across device loss during Save.
+        if(monitoring)engine_.setOutputMuted(true);
         armix::session::MixerSessionDocument doc;
         std::vector<armix::shows::BinaryState> states;
         auto error=engine_.captureNativeMixerSession(doc,states);
         if(monitoring && epoch==engine_.dryRoutingLabEpoch() &&
            engine_.liveOutputArmFault(false).isEmpty())
-            engine_.setMonitorEnabled(true);
+            engine_.setOutputMuted(false); // restore the existing operator intent
         if(error.isNotEmpty())return error;
         if(automatic)doc.resumeMain=resumeMain;
         doc.id=mixerSessionId_.isNotEmpty()?mixerSessionId_:
@@ -7507,6 +7511,26 @@ private:
         verifiedWasapiSetup_=std::move(setup);
     }
 
+    // Read back both physical device names AND actual pin masks. Backend
+    // name alone does not prove a Windows default-endpoint switch retained
+    // the selected speakers. A default pin mask becomes fixed only after the
+    // user's device actually opens and is verified, not at a missing-device
+    // startup. Never route audio to another Windows Audio endpoint.
+    static bool matchesPinnedWasapiReadback(
+        const juce::AudioDeviceManager::AudioDeviceSetup& wanted,
+        const juce::AudioDeviceManager::AudioDeviceSetup& actual,
+        const juce::AudioIODevice* device) noexcept {
+        return device && device->isOpen() &&
+            wanted.outputDeviceName.isNotEmpty() &&
+            actual.inputDeviceName==wanted.inputDeviceName &&
+            actual.outputDeviceName==wanted.outputDeviceName &&
+            device->getActiveOutputChannels().countNumberOfSetBits()>=2 &&
+            (wanted.useDefaultInputChannels ||
+             device->getActiveInputChannels()==wanted.inputChannels) &&
+            (wanted.useDefaultOutputChannels ||
+             device->getActiveOutputChannels()==wanted.outputChannels);
+    }
+
     // Recovery only for a verified saved Windows Audio endpoint; no
     // fallback, no graph CLEAR, no attempt while an explicit device dialog
     // owns the lifecycle. The current native graph remains the PCM authority.
@@ -7526,13 +7550,27 @@ private:
             wasapiRecovery_.cancel();
             return;
         }
-        if(!verifiedWasapiSetup_) {
-            auto actual=manager.getAudioDeviceSetup();
-            if(actual.outputDeviceName.isNotEmpty() &&
-               device->getActiveOutputChannels().countNumberOfSetBits()>=2)
-                verifiedWasapiSetup_=std::move(actual);
+        juce::AudioDeviceManager::AudioDeviceSetup actual;
+        manager.getAudioDeviceSetup(actual);
+        if(!verifiedWasapiSetup_ && actual.outputDeviceName.isNotEmpty() &&
+           device->getActiveOutputChannels().countNumberOfSetBits()>=2)
+            verifiedWasapiSetup_=actual;
+        if(verifiedWasapiSetup_ &&
+           matchesPinnedWasapiReadback(*verifiedWasapiSetup_,actual,device)) {
+            // JUCE "default channel" requests are resolved now. Remember
+            // exact physical masks so later driver re-enumeration cannot
+            // silently substitute another stereo output or microphone.
+            auto& pinned=*verifiedWasapiSetup_;
+            if(pinned.useDefaultInputChannels) {
+                pinned.inputChannels=device->getActiveInputChannels();
+                pinned.useDefaultInputChannels=false;
+            }
+            if(pinned.useDefaultOutputChannels) {
+                pinned.outputChannels=device->getActiveOutputChannels();
+                pinned.useDefaultOutputChannels=false;
+            }
+            if(!directCallbackStalled_)wasapiRecovery_.recovered();
         }
-        if(!directCallbackStalled_)wasapiRecovery_.recovered();
     }
 
     void observeNativeCallbackHeartbeat() {
@@ -7564,10 +7602,13 @@ private:
            engine_.diagnosticRoute()!=armix::diagnostics::Route::normal)return;
         auto& manager=engine_.devices();
         auto* device=manager.getCurrentAudioDevice();
+        juce::AudioDeviceManager::AudioDeviceSetup live;
+        manager.getAudioDeviceSetup(live);
         const bool expected=device && device->isOpen() &&
             manager.getCurrentAudioDeviceType()=="Windows Audio" &&
             device->getTypeName()=="Windows Audio" && engine_.directRouteAuthorized() &&
-            !engine_.hasRetainedUnboundMixer();
+            !engine_.hasRetainedUnboundMixer() &&
+            matchesPinnedWasapiReadback(*verifiedWasapiSetup_,live,device);
         if(expected && !directCallbackStalled_) {
             wasapiRecovery_.recovered();
             // A short JUCE STOP/START must not leave MAIN latched off.
@@ -7592,12 +7633,13 @@ private:
             !device || !device->isOpen() || directCallbackStalled_);
         if(error.isEmpty()) {
             auto* opened=manager.getCurrentAudioDevice();
-            const auto actual=manager.getAudioDeviceSetup();
+            juce::AudioDeviceManager::AudioDeviceSetup actual;
+            manager.getAudioDeviceSetup(actual);
             if(!opened || !opened->isOpen() ||
                manager.getCurrentAudioDeviceType()!="Windows Audio" ||
                actual.inputDeviceName!=wanted.inputDeviceName ||
                actual.outputDeviceName!=wanted.outputDeviceName ||
-               opened->getActiveOutputChannels().countNumberOfSetBits()<2)
+               !matchesPinnedWasapiReadback(wanted,actual,opened))
                 error="Previously verified WASAPI endpoints are not available";
             else if(!finishAudioSetupAndRecoverMixer())
                 error="WASAPI reopened, but retained native mixer binding is not ready";
