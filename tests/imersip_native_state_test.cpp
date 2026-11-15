@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <cstdio>
 #include <limits>
 
 #if !defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) || !SONKU_P82_MULTIBAND_ROOM_RESEARCH
@@ -132,6 +133,57 @@ int main() {
     assert(oldSession.isReady());
     assert(oldSession.restoreUnpublishedState(legacy.getData(),32));
     assert(oldSession.acceptedSettings().detail==0.f);
+    // REAL JUCE processor PCM callback, not merely the standalone DSP
+    // helper: prove the native FX insert produces a measurable wet room
+    // output even for a CENTERED MONO orchestra instrument.
+    ImerSipProcessor audible;
+    audible.prepareToPlay(48000.,128);
+    assert(audible.isReady());
+    auto full=audible.acceptedSettings();
+    full.venue=0;full.immersion=1.f;full.space=1.f;
+    full.width=1.f;full.bassImpact=0.f;full.detail=0.f;
+    full.outputTrim=1.f;
+    assert(audible.queueSettings(full,6001));
+    juce::AudioBuffer<float> inOut(2,128);
+    double originalEnergy=0.,processedDeltaEnergy=0.;
+    constexpr double pi=3.14159265358979323846;
+    for(int block=0;block<256;++block) {
+        for(int i=0;i<128;++i) {
+            const int frame=block*128+i;
+            const double time=frame/48000.;
+            const float v=static_cast<float>(
+                .16*std::sin(2.*pi*311.*time)+
+                .045*std::sin(2.*pi*1270.*time));
+            inOut.setSample(0,i,v);
+            inOut.setSample(1,i,v);
+        }
+        audible.processBlock(inOut,midi);
+        if(block>=32)for(int i=0;i<128;++i) {
+            const int frame=block*128+i;
+            const double time=frame/48000.;
+            const double direct=.16*std::sin(2.*pi*311.*time)+
+                                .045*std::sin(2.*pi*1270.*time);
+            const double dl=inOut.getSample(0,i)-direct;
+            const double dr=inOut.getSample(1,i)-direct;
+            originalEnergy+=2.*direct*direct;
+            processedDeltaEnergy+=dl*dl+dr*dr;
+        }
+    }
+    ImerSipProcessor::Completion audibleAck{};
+    assert(audible.pollCompletion(audibleAck));
+    assert(audibleAck.requestId==6001&&audibleAck.applied);
+    assert(audible.processedFrames()==32768u);
+    assert(audible.liveInputEnergy()>1.e-5f);
+    assert(audible.liveDifferenceEnergy()>1.e-4f);
+    const double actualDelta=std::sqrt(
+        processedDeltaEnergy/(originalEnergy+1.e-16));
+    std::fprintf(stderr,
+        "IMERSIP_REAL_JUCE_WET_DELTA_48K=%.6f dB=%.2f\\n",
+        actualDelta,20.*std::log10(actualDelta+1.e-12));
+    assert(actualDelta>.050);
+    assert(actualDelta<.75);
+    audible.releaseResources();
+
     fx.releaseResources();
     assert(!fx.isReady());
     return 0;
