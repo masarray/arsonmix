@@ -76,9 +76,10 @@ public:
         for(int ear=0;ear<2;++ear){
             earLow_[ear][0]+=lowAlpha_*(*ears[ear]-earLow_[ear][0]);
             earLow_[ear][1]+=lowAlpha_*(earLow_[ear][0]-earLow_[ear][1]);
-            // 2x compensates the canonical SonKu .5 stereo FIR output:
-            // coherent L=R yields approximately unity pressure per ear.
-            world[ear]=2.f*(weights_[0][ear]*lowSrc[0]+
+            // P9 scene gain is calibrated at 0.72. 1.4x world-pressure
+            // scaling yields near-unity coherent bass (0.72*1.4 ~= 1.0)
+            // without relying on a global +7dB makeup gain.
+            world[ear]=1.4f*(weights_[0][ear]*lowSrc[0]+
                            weights_[1][ear]*lowSrc[1]);
             *ears[ear]=*ears[ear]-earLow_[ear][1]+world[ear];
         }
