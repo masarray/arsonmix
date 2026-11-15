@@ -21,7 +21,7 @@ using namespace armix::sonku;
 constexpr double pi=3.1415926535897932384626433832795;
 struct Result {
     std::vector<float> l,r;
-    double energy=0.,peak=0.;
+    double energy=0.,peak=0.,inputEnergy=0.;
 };
 static Result render(int rate,int mode,int room,float distance,float width,
                      float yaw,float reflection,float reverb,int material,
@@ -60,6 +60,8 @@ static Result render(int rate,int mode,int room,float distance,float width,
         default:v.l[i]=bass+mid+side+impulse;v.r[i]=bass+mid-side;
         }
     }
+    for(int i=0;i<frames;++i)
+        v.inputEnergy+=double(v.l[i])*v.l[i]+double(v.r[i])*v.r[i];
     for(int i=0;i<frames;i+=block)
         core->process(v.l.data()+i,v.r.data()+i,std::min(block,frames-i));
     for(int i=0;i<frames;++i) {
@@ -101,6 +103,12 @@ int main(){
             assert(diff(next,old)>1.e-8);
             assert(next.energy>old.energy*.20 && "new music stage became inaudible");
             assert(next.peak<.981);
+            // Normal coherent/stereo programme must begin close to
+            // source reference without the user's old manual +7dB gain.
+            if(material==0||material==4) {
+                const double matchDb=10.*std::log10(next.energy/next.inputEnergy);
+                assert(std::abs(matchDb)<3.0 && "P9.2 default lost natural music loudness");
+            }
         }
         const auto roomOn=render(rate,10,3,1.6f,82.f,0.f,.72f,.38f,4);
         const auto roomOff=render(rate,10,0,1.6f,82.f,0.f,0.f,0.f,4);
@@ -120,12 +128,26 @@ int main(){
         }
         const auto dry=render(rate,10,0,1.6f,82.f,0.f,0.f,0.f,4,12288,128,0.f);
         assert(dry.energy>1.e-7);
+        // New renderer is still strictly dry after its bounded 8ms gain
+        // smoothing has settled at MIX=0: no resonant/room ghost tail.
+        for(int i=8000;i<12288;++i) {
+            const double t=double(i)/rate;
+            const float bass=.08f*std::sin(2*pi*49.*t)+
+                             .07f*std::sin(2*pi*73.*t)+
+                             .05f*std::sin(2*pi*109.*t);
+            const float mid=.06f*std::sin(2*pi*880.*t)+
+                            .04f*std::sin(2*pi*3200.*t);
+            const float side=.03f*std::sin(2*pi*1700.*t);
+            assert(dry.l[i]==bass+mid+side);
+            assert(dry.r[i]==bass+mid-side);
+        }
         // In a measured HRTF we do not guarantee output = input gain at
         // every frequency, but at 100% MIX high-level energy must be finite
         // without a +7dB manual user gain just to make the plug audible.
-        std::printf("P92_PCM,%d,makeup=%.4f,old=%.7f,next=%.7f,room_diff=%.7f,peak=%.5f\n",
+        std::printf("P92_PCM,%d,makeup=%.4f,old=%.7f,next=%.7f,room_diff=%.7f,peak=%.5f,dryRatioDb=%.2f\n",
             rate,bass.directMakeup(),render(rate,9,0,1.6f,82.f,0.f,0.f,0.f,4).energy,
-            roomOn.energy,diff(roomOn,roomOff),roomOn.peak);
+            roomOn.energy,diff(roomOn,roomOff),roomOn.peak,
+            10.*std::log10(roomOn.energy/roomOn.inputEnergy));
     }
     std::puts("PASS P92 NATIVE PCM: 44.1/48k, P90 golden isolation, measured music makeup, axial LF modes, bass yaw, anti-phase, room OFF, 64/128/256 parity");
 }
