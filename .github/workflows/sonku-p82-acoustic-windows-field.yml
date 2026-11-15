@@ -45,6 +45,8 @@ jobs:
           node tests/sonku_p73_gui_contract_test.js
           grep -q "'FIELD_PREVIEW_FULL_CTEST_NOT_RUN'" scripts/m3e_fat_evidence_gate.mjs
           python -m unittest discover -s tests -p native_peq_assembly_test.py
+          # Fail fast on the exact v5 ImerSip GUI, picker and provenance.
+          python -m unittest discover -s tests -p imersip_fx_picker_contract_test.py -v
           # Fail BEFORE expensive Windows compile if a copied PowerShell
           # artifact metadata block has duplicate keys (PSParserError).
           python -c 'import re; from pathlib import Path; s=Path(".github/workflows/sonku-p82-acoustic-windows-field.yml").read_text(); b=s.split("NotePropertyName imersipResearch -NotePropertyValue @{",1)[1].split("} -Force",1)[0]; keys=re.findall(r"(?m)^\s+([A-Za-z_]\w*)\s*=",b); assert len(keys)==len(set(keys)), "IMERSIP_DUPLICATE_POWERSHELL_PROVENANCE_KEY"; print("IMERSIP_METADATA_UNIQUE_KEYS_OK",len(keys))'
