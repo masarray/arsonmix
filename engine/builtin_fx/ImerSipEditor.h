@@ -225,9 +225,9 @@ public:
         originalAb_.setButtonText("ORIGINAL / A-B");
         originalAb_.setClickingTogglesState(true);
         originalAb_.setColour(juce::TextButton::textColourOffId,
-                             juce::Colour(0xffaac9d6));
+                             juce::Colour(0xff244c57));
         originalAb_.setColour(juce::TextButton::textColourOnId,
-                             juce::Colour(0xffe8faff));
+                             juce::Colours::white);
         originalAb_.onClick=[this] {
             fx_.setCompareDry(originalAb_.getToggleState());
             status_=originalAb_.getToggleState()
@@ -237,6 +237,8 @@ public:
         };
         addAndMakeVisible(originalAb_);
         musicalReset_.setButtonText("MUSIC DEFAULT");
+        musicalReset_.setColour(juce::TextButton::textColourOffId,
+                                juce::Colour(0xff244c57));
         musicalReset_.onClick=[this] {
             resetTransientComparison();
             sync(factoryPreset(2));
@@ -246,6 +248,10 @@ public:
         power_.setComponentID("imersip.power");
         power_.setButtonText("INSERT POWER");
         power_.setEnabled(false); // fail closed when not native-bound
+        power_.setColour(juce::TextButton::textColourOffId,
+                         juce::Colours::white);
+        power_.setColour(juce::TextButton::textColourOnId,
+                         juce::Colours::white);
         power_.onClick=[this] {
             if(!hostBypassRequest_||!hostBypassReadback_)return;
             const bool wantBypassed=!hostBypassReadback_();
