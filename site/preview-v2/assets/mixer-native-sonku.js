@@ -14,8 +14,9 @@ const elevationLimits=s=>{
  const distance=s.sourceDistanceMeters;
  const height=roomHeights[s.spacePreset];
  if(!Number.isFinite(distance)||!height)return {min:0,max:0};
- const bottom=Math.max(-40,Math.asin(Math.max(-1,Math.min(1,(.5-1.45)/distance)))*180/Math.PI);
- const top=Math.min(60,Math.asin(Math.max(-1,Math.min(1,(height-.5-1.45)/distance)))*180/Math.PI);
+ const spectralOffset=p88Capable&&s.renderMode===7?(s.hrtfElevationTrimDegrees??0):0;
+  const bottom=Math.max(-40-spectralOffset,Math.asin(Math.max(-1,Math.min(1,(.5-1.45)/distance)))*180/Math.PI);
+ const top=Math.min(60-spectralOffset,Math.asin(Math.max(-1,Math.min(1,(height-.5-1.45)/distance)))*180/Math.PI);
  // Keep a 0.1 degree safety margin for C++ float boundary rounding.
  return {min:Math.ceil((bottom+0.001)*10)/10,
          max:Math.floor((top-0.001)*10)/10};
@@ -53,8 +54,13 @@ const valid=s=>s && Number.isFinite(s.startAzimuthDegrees) &&
    1.45+s.sourceDistanceMeters*Math.sin(s.directElevationDegrees*Math.PI/180)<=
        roomHeights[s.spacePreset]-.5)) &&
  (s.renderMode===undefined || (
-    Number.isInteger(s.renderMode)&&s.renderMode>=0&&s.renderMode<=6 &&
+    Number.isInteger(s.renderMode)&&s.renderMode>=0&&s.renderMode<=7 &&
     typeof s.musicCompatibleLowFrequency==="boolean" &&
+    (s.hrtfElevationTrimDegrees===undefined || (
+      Number.isFinite(s.hrtfElevationTrimDegrees) &&
+      s.hrtfElevationTrimDegrees>=-30 && s.hrtfElevationTrimDegrees<=20 &&
+      (s.renderMode!==7 || (s.directElevationDegrees+s.hrtfElevationTrimDegrees>=-40 &&
+                            s.directElevationDegrees+s.hrtfElevationTrimDegrees<=60)))) &&
     Number.isFinite(s.headYawDegrees)&&Math.abs(s.headYawDegrees)<=360 &&
     (s.renderMode!==2 || (s.stereoSpreadDegrees>=20&&s.stereoSpreadDegrees<=120))));
 const backend=()=>window.__JUCE__?.backend;
@@ -170,6 +176,8 @@ root.innerHTML=[
  '<input id="skDistance" type="range" min="1.6" max="10" step="0.1" value="1.6"/></label>',
  '<label class="sk-space-slider" id="skElevationRow" for="skElevation" hidden>SOURCE ELEVATION <output id="skElevationValue">0.0°</output>',
  '<input id="skElevation" type="range" min="-30" max="45" step="0.1" value="0" aria-label="Direct source elevation in degrees" title="Measured binaural source height · native experimental schema v3 only"/></label>',
+ '<label class="sk-space-slider" id="skHrtfAlignRow" for="skHrtfAlign" hidden>EAR HEIGHT ALIGN · HRTF <output id="skHrtfAlignValue">0.0°</output>',
+ '<input id="skHrtfAlign" type="range" min="-30" max="20" step="0.1" value="0" aria-label="Calibrate headphone HRTF perceived elevation, not physical XYZ source height" title="Ear-level alignment: changes measured KEMAR spectral angle, not room speaker height"/></label>',
  '<label class="sk-space-slider" for="skReflections">REFLECTIONS <output id="skReflectionsValue">55%</output>',
  '<input id="skReflections" type="range" min="0" max="100" step="1" value="55" title="First-wall reflections level, 0 is dry"/></label>',
  '<label class="sk-space-slider" for="skAmbience">REVERB <output id="skAmbienceValue">30%</output>',
@@ -302,6 +310,15 @@ function render(){
   elevation.min=String(limits.min);elevation.max=String(limits.max);
   if(!rangeEdits.has("skElevation"))elevation.value=String(s.directElevationDegrees);
   $("skElevationValue").textContent=s.directElevationDegrees.toFixed(1)+"°";
+ }
+ const alignRow=$("skHrtfAlignRow"),align=$("skHrtfAlign");
+ alignRow.hidden=!(p88Capable&&s.renderMode===7);
+ if(!alignRow.hidden){
+  const min=Math.max(-30,-40-s.directElevationDegrees);
+  const max=Math.min(20,60-s.directElevationDegrees);
+  align.min=String(min);align.max=String(max);
+  if(!rangeEdits.has("skHrtfAlign"))align.value=String(s.hrtfElevationTrimDegrees);
+  $("skHrtfAlignValue").textContent=(s.hrtfElevationTrimDegrees>=0?"+":"")+s.hrtfElevationTrimDegrees.toFixed(1)+"°";
  }
  root.querySelector(".sk-stage-caption").textContent=p88Capable&&s.renderMode===7?
    "P8.8 EAR-LEVEL HRTF ALIGNMENT · PHYSICAL XYZ INDEPENDENT · FAT REQUIRED":
@@ -594,6 +611,7 @@ root.querySelectorAll("[data-sk-room]").forEach(btn=>btn.addEventListener("click
 for(const [id,key,convert] of [
  ["skDistance","sourceDistanceMeters",v=>v],
  ["skElevation","directElevationDegrees",v=>v],
+ ["skHrtfAlign","hrtfElevationTrimDegrees",v=>v],
  ["skReflections","roomAmount",v=>v/100],
  ["skAmbience","ambience",v=>v/100]]) {
  const slider=$(id);
