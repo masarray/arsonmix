@@ -209,7 +209,8 @@ test('DEVICE1 existing matrix drives real JUCE manager with gated native readbac
  assert.match(native,/openSelectedAudioDevice\(typeName,candidate\)/);
  assert.match(native,/openSelectedAudioDevice\(previousType,before\)/);
  assert.match(coordinator,/setAudioDeviceSetup\(setup,true\)/);
- assert.match(coordinator,/manager\.initialise\(2,2,xml\.get\(\),false\)/);
+  // OUTPUT ONLY has no physical microphone; do not invent input pins.
+  assert.ok(coordinator.includes('manager.initialise(setup.inputDeviceName.isEmpty()?0:2,'));
  assert.match(coordinator,/manager\.closeAudioDevice\(\);[\s\S]*manager\.initialise/);
  assert.doesNotMatch(coordinator,/manager\.setCurrentAudioDeviceType\(/);
  assert.match(native,/beginManualAudioSetup\(\)/);
