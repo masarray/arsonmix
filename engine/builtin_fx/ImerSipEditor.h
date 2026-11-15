@@ -72,21 +72,29 @@ public:
         // The previous 6-knob editor hid stereo fidelity and linked early
         // and late energy; maxing all knobs could make music nearly mono.
         const char* names[]{"IMMERSION","STAGE WIDTH","EARLY SPACE","LATE TAIL",
-                            "STEREO LOCK","BASS IMPACT","AIR DETAIL","OUTPUT"};
+                            "STEREO KEEP","BASS IMPACT","AIR DETAIL","OUTPUT"};
+        const char* ids[]{"imersip.immersion","imersip.width","imersip.early",
+                          "imersip.late","imersip.stereo","imersip.bass",
+                          "imersip.air","imersip.output"};
         for(int i=0;i<8;++i) {
             auto& slider=knobs_[static_cast<std::size_t>(i)];
+            slider.setComponentID(ids[i]);
             slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
             slider.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
             slider.setRange(i==7?-12.:0.,i==7?3.5:100.,i==7?.1:1.);
             slider.setRotaryParameters(juce::degreesToRadians(225.f),
                                        juce::degreesToRadians(495.f),true);
             slider.setDoubleClickReturnValue(true,
-                i==0?82.:i==1?95.:i==2?65.:i==3?45.:
-                i==4?100.:i==5?75.:i==6?40.:0.);
+                i==0?76.:i==1?68.:i==2?70.:i==3?34.:
+                i==4?100.:i==5?55.:i==6?35.:0.);
             slider.onValueChange=[this,i]{
                 refreshReadout(i);
-                if(!knobs_[static_cast<std::size_t>(i)].isMouseButtonDown())
-                    submit();
+                // Previously ALL DSP changes were postponed to mouse-up.
+                // During continuous rotary drag, feed the latest value to
+                // the 25Hz control→PCM SPSC queue, without flooding it.
+                if(knobs_[static_cast<std::size_t>(i)].isMouseButtonDown()) {
+                    deferred_=readControls();hasDeferred_=true;
+                } else submit();
                 repaint(stage_);
             };
             slider.onDragEnd=[this]{submit();};
@@ -103,6 +111,21 @@ public:
             value.setColour(juce::Label::textColourId,juce::Colour(0xffdcf4fa));
             addAndMakeVisible(value);
         }
+        // Depth is a REAL source-to-ear/wall distance: the old ImerSip
+        // renderer was hard-coded at 1.6m with no externalization dial.
+        depth_.setComponentID("imersip.depth");
+        depth_.setSliderStyle(juce::Slider::LinearHorizontal);
+        depth_.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
+        depth_.setRange(0.,100.,1.);
+        depth_.setDoubleClickReturnValue(true,60.);
+        depth_.onValueChange=[this]{
+            if(depth_.isMouseButtonDown()) {
+                deferred_=readControls();hasDeferred_=true;
+            } else submit();
+            repaint(stage_);
+        };
+        depth_.onDragEnd=[this]{submit();};
+        addAndMakeVisible(depth_);
         originalAb_.setButtonText("ORIGINAL / A-B");
         originalAb_.setClickingTogglesState(true);
         originalAb_.setColour(juce::TextButton::textColourOffId,
@@ -148,7 +171,7 @@ public:
         g.drawText("ImerSip",22,14,190,31,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff91adbb));
         g.setFont(juce::FontOptions(11.f,juce::Font::plain));
-        g.drawText("P8.7 MUSIC  /  STEREO-FIRST FRONT SPEAKERS",
+        g.drawText("MUSIC STAGE  /  FRONTAL DEPTH  /  STEREO SAFE",
                    170,20,455,24,juce::Justification::centredLeft);
         const auto stageBox=stage_.toFloat();
         const auto controlBox=juce::Rectangle<float>(368.f,81.f,452.f,341.f);
@@ -181,6 +204,7 @@ public:
             venues_[static_cast<std::size_t>(i)].setBounds(385+i*141,121,134,35);
         originalAb_.setBounds(385,160,171,23);
         musicalReset_.setBounds(569,160,170,23);
+        depth_.setBounds(62,360,250,24);
         const int xs[]{382,488,594,700,382,488,594,700};
         const int ys[]{191,191,191,191,311,311,311,311};
         for(int i=0;i<8;++i) {
@@ -192,18 +216,17 @@ public:
     }
 private:
     void paintStage(juce::Graphics& g) {
-        const float cx=186.f,cy=252.f,r=124.f;
+        const float cx=186.f,cy=236.f,r=109.f;
         g.setColour(juce::Colour(0xff80aebf));
         g.setFont(juce::FontOptions(11.f,juce::Font::plain));
         g.drawText("FRONT STAGE",115,106,145,20,juce::Justification::centred);
         g.setColour(juce::Colour(0xff79bdc9));
-        g.drawText("SOURCE 1.6 m  /  FRONTAL SPEAKERS",
-                   56,355,260,19,juce::Justification::centred);
-        g.drawText("STEREO LOCK "+
-                   juce::String(static_cast<int>(std::round(knobs_[4].getValue())))+
-                   "%   /   LATE "+
-                   juce::String(static_cast<int>(std::round(knobs_[3].getValue())))+"%",
-                   56,328,260,18,juce::Justification::centred);
+        const float depth=static_cast<float>(depth_.getValue())*.01f;
+        const float metres=1.6f+5.8f*depth;
+        g.drawText("DIRECT SPEAKERS   /   EAR HEIGHT",
+                   56,322,260,18,juce::Justification::centred);
+        g.drawText("SOURCE DISTANCE   "+juce::String(metres,1)+" m",
+                   56,343,260,18,juce::Justification::centred);
         g.setColour(juce::Colour(0xff234452));
         g.drawEllipse(cx-r,cy-r,r*2,r*2,1.f);
         g.drawLine(cx-r,cy,cx+r,cy,1.f);
@@ -216,8 +239,12 @@ private:
         g.setFont(juce::FontOptions(12.f,juce::Font::plain));
         g.drawText("YOU",cx-22,cy+22,44,17,juce::Justification::centred);
         const float width=static_cast<float>(knobs_[1].getValue())*.01f;
-        const float angle=juce::degreesToRadians(20.f+30.f*width);
-        const float sx=std::sin(angle)*r,sy=std::cos(angle)*r;
+        const float angle=juce::degreesToRadians(16.f+47.f*width);
+        // Simple top-view cue: drawn radial distance tracks real DSP
+        // source position rather than remaining decorative on all edits.
+        const float positionRadius=(.60f+.38f*depth)*r;
+        const float sx=std::sin(angle)*positionRadius;
+        const float sy=std::cos(angle)*positionRadius;
         const auto left=juce::Point<float>(cx-sx,cy-sy);
         const auto right=juce::Point<float>(cx+sx,cy-sy);
         g.setColour(juce::Colour(0xff4d91a9));
@@ -239,8 +266,8 @@ private:
         }
         g.setColour(juce::Colour(0xff8facbb));
         g.setFont(juce::FontOptions(12.f,juce::Font::plain));
-        g.drawText(juce::String(40+static_cast<int>(std::round(width*60)))+
-                   "° STAGE  /  NO ORBIT",56,383,260,20,
+        g.drawText(juce::String(32+static_cast<int>(std::round(width*94)))+
+                   "° STAGE  /  NO ORBIT",56,391,260,20,
                    juce::Justification::centred);
     }
     void refreshVenues() {
@@ -251,7 +278,7 @@ private:
         const float v=static_cast<float>(
             knobs_[static_cast<std::size_t>(i)].getValue());
         juce::String out;
-        if(i==1)out=juce::String(40+static_cast<int>(std::round(.60*v)))+"°";
+        if(i==1)out=juce::String(32+static_cast<int>(std::round(.94*v)))+"°";
         else if(i==7)out=(v>0.f?"+":"")+juce::String(v,1)+" dB";
         else out=juce::String(static_cast<int>(std::round(v)))+"%";
         values_[static_cast<std::size_t>(i)].setText(out,
@@ -269,11 +296,13 @@ private:
         next.detail=static_cast<float>(knobs_[6].getValue()*.01);
         next.outputTrim=static_cast<float>(
             std::pow(10.,knobs_[7].getValue()/20.));
+        next.depth=static_cast<float>(depth_.getValue()*.01);
         return next;
     }
     void sync(const armix::imersip::Settings& s) {
         venue_=s.venue;
         refreshVenues();
+        depth_.setValue(s.depth*100.f,juce::dontSendNotification);
         const float vals[]{s.immersion*100.f,s.width*100.f,
                            s.space*100.f,s.lateRoom*100.f,
                            s.stereoLock*100.f,s.bassImpact*100.f,
@@ -344,6 +373,7 @@ private:
     ImerSipLook look_{};
     std::array<juce::TextButton,3> venues_{};
     juce::TextButton originalAb_{},musicalReset_{};
+    juce::Slider depth_{};
     std::array<juce::Slider,8> knobs_{};
     std::array<juce::Label,8> captions_{},values_{};
     juce::Rectangle<int> stage_{};
