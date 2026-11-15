@@ -309,6 +309,25 @@ public:
         dryRoutingLab_.poll();
     }
 
+    // CONTROL ONLY, after stop() has detached all audio callbacks. This
+    // resets the legacy CH1 controls and original-rack gate that live outside
+    // the dynamic ChannelId graph. Device choice and plugin catalog survive.
+    void resetLegacyMixerControlsForFactory() noexcept {
+        setChannelGainDb(0.f);setChannelPan(0.f);
+        setChannelMuted(false);
+        setMasterGainLinear(1.f);setMasterMuted(false);setMasterMono(false);
+        setDryTestEnabled(false);
+        graphOwned_->orderPacked.store(Graph::canonicalOrder,std::memory_order_release);
+        graphOwned_->rackBypassed.store(false,std::memory_order_release);
+        for(auto& bypass:graphOwned_->bypassFlags)
+            bypass.store(false,std::memory_order_release);
+        graphOwned_->hasRecallState=false;
+        graphOwned_->channelDb=graphOwned_->masterDb=graphOwned_->pan=0.f;
+        graphOwned_->channelLinear=graphOwned_->masterLinear=1.f;
+        graphOwned_->channelMute=graphOwned_->masterMute=false;
+        totalLatency_.store(0,std::memory_order_release);
+    }
+
     // Route MAIN to a user-selected secondary playback device
     // (hardware or software). No second MIX/FX engine.
     juce::String connectSecondaryOutput(const juce::String& selected) {
@@ -1952,6 +1971,17 @@ public:
         if(!playerDeck_.setCueRange(in,out))return false;
         playerCueIn_=in;playerCueOut_=out;
         return true;
+    }
+    // Mixer factory reset must also revoke the virtual source's old
+    // ChannelId/device epoch. Stopping audio hardware alone does not clear
+    // this PLAYER A transport authority; retained setlists stay in the host.
+    void discardPlayerSourceForFactory() noexcept {
+        playerDeck_.stop();
+        playerChannelId_={};
+        playerFile_={};playerPendingFile_={};
+        playerBoundEpoch_=0;
+        playerCueIn_=0.;playerCueOut_=0.;
+        playerPendingCueIn_=0.;playerPendingCueOut_=0.;
     }
     void playerPause() noexcept {playerDeck_.pause();}
     void playerStop() noexcept {
