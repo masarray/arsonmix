@@ -3436,21 +3436,20 @@ private:
         if(!audioEngineStarted_)
             return emitMixerSessionAck("RESET","Mixer startup is still initializing");
 
-        // A short output transition isolates the old graph before driver
-        // teardown; it is not a user-facing or persistent MUTE state.
-        // Retire the journal BEFORE disrupting audible output. If storage
-        // fails, the running graph and operator's sound remain unchanged.
+        // Retire the journal BEFORE touching the native graph. On storage
+        // failure, live audio is unchanged. Teardown detaches the realtime
+        // callback; SOURCE NONE supplies silence without muting output.
         const auto detachError=armix::session::NativeMixerSessionStore(
             settingsDirectory()).discardForFactoryReset();
         if(detachError.isNotEmpty()) {
             diagnostics_.record("MIXER_FACTORY_RESET_REJECTED",detachError);
             return emitMixerSessionAck("RESET",detachError);
         }
-        // Only the teardown transaction is silent. The new verified graph
-        // will automatically admit MAIN when an actual source is connected.
+        // The callback is detached by engine_.stop() below; never use a
+        // latched output mute as a reset control or require manual unmute.
+        // Verified MAIN is admitted automatically for the fresh graph.
         autoMainEpoch_=0;
         engine_.cancelAsioResetMonitorIntent();
-        engine_.setOutputMuted(true);
         engine_.disconnectSecondaryOutput();
         engine_.discardPlayerSourceForFactory();
         playerCurrent_=-1;playerPendingIndex_=-1;
