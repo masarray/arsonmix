@@ -33,10 +33,10 @@ public:
         // Called only with validated ImerSip settings on the native
         // control path or SPSC audio edit. Affine, bounded, no exp/pow.
         // Real P8.6 ER energy was only ~0.004 RMS of source even with the
-        // first 70% lift. A calibrated 4x lateral *reflected* component,
+        // first 70% lift. A calibrated 6x lateral *reflected* component,
         // NOT 4x master/dry gain, gives a measurable musical room presence
         // without reviving the ceiling/floor or late FDN wash.
-        target_=4.0f*immersion*room*width;
+        target_=6.0f*immersion*room*width;
     }
     void reset() noexcept {
         low250First_=low250Second_=0.f;

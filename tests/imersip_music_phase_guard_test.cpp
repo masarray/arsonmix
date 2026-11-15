@@ -278,7 +278,7 @@ void verifyConcertStageLateralReflection(double rate) {
     auto band=std::make_unique<ConcertStage>();
     assert(band->prepare(rate));
     band->setScene(1.f,1.f,1.f);
-    assert(std::abs(band->targetGain()-4.f)<1.e-5f);
+    assert(std::abs(band->targetGain()-6.f)<1.e-5f);
     // Mono early room adds NO synthetic SIDE; source MID is untouched.
     for(int i=0;i<512;++i) {
         const auto s=band->process(.1f,.1f);
@@ -309,7 +309,7 @@ void verifyConcertStageLateralReflection(double rate) {
     std::fprintf(stderr,
         "IMERSIP_CONCERT_BAND rate=%.0f sub=%.5f width1k=%.5f air=%.5f\n",
         rate,sub,presence,air);
-    assert(presence>3.0 && presence<3.9);
+    assert(presence>4.6 && presence<5.8);
     // Two poles attenuate both bass and upper reverb much more than the
     // previous broad one-pole passband: NO fake LF or doubled 10kHz wash.
     assert(sub<presence*.20 && air<presence*.30);
