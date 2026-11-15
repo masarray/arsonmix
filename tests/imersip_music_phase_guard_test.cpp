@@ -164,6 +164,9 @@ void verifyOriginalStereoSurvives(double rate) {
             assertChunkParity(wide,tiny);
             const double ref=rms(source,4096,true);
             const double now=rms(wide,4096,true);
+            std::fprintf(stderr,
+                "IMERSIP_180_STEREO_GUARD rate=%.0f venue=%d fixture=%d ratio=%.6f\n",
+                rate,venue,fixture,now/(ref+1.e-14));
             // Preserve all source L/R differentiation with room active.
             assert(now>ref*.86); // owner rejects near-mono/washed stereo
             assert(now<ref*1.52+.00001);
