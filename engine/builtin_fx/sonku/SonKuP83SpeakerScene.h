@@ -18,6 +18,9 @@ enum class Mode : std::uint8_t {
     ,MusicSpatialP87=6
 #if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
     ,MusicSpatialP88=7
+#if defined(SONKU_P89_DEPTH_COHERENCE_RESEARCH) && SONKU_P89_DEPTH_COHERENCE_RESEARCH
+    ,MusicSpatialP89=8
+#endif
 #endif
 #endif
 #endif
@@ -38,6 +41,9 @@ inline bool valid(Mode m) noexcept {
            || m==Mode::MusicSpatialP87
 #if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
            || m==Mode::MusicSpatialP88
+#if defined(SONKU_P89_DEPTH_COHERENCE_RESEARCH) && SONKU_P89_DEPTH_COHERENCE_RESEARCH
+           || m==Mode::MusicSpatialP89
+#endif
 #endif
 #endif
 #endif
