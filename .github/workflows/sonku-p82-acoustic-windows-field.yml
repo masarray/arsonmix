@@ -23,7 +23,11 @@ permissions:
   contents: read
 concurrency:
   group: sonku-p82-physical-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # An immutable Windows candidate must finish once started; rapid source
+  # or documentation updates used to cancel a ten-minute successful build
+  # before artifact upload. Pending newer commits are serialized, not allowed
+  # to abort the running exact-SHA qualification.
+  cancel-in-progress: false
 jobs:
   preflight:
     name: Isolated fast PCM and GUI preflight
