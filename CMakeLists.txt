@@ -654,6 +654,55 @@ if(BUILD_TESTING)
                         SONKU_P87_MUSIC_BODY_RESEARCH=1)
                     add_test(NAME NativeSonKuP87JuceV8AudioAppliedAckV7Restore
                         COMMAND ARMixSonKuP87NativeTests)
+                    if(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT)
+                      add_executable(ARMixSonKuP88SourceTests
+                          tests/sonku_p88_height_distance_source_test.cpp)
+                      target_compile_features(ARMixSonKuP88SourceTests PRIVATE cxx_std_20)
+                      target_compile_definitions(ARMixSonKuP88SourceTests PRIVATE
+                          SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                          SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                          SONKU_P72_NATIVE_XYZ_RT=1
+                          SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                          SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                          SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                          SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                          SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+                          SONKU_P85_WORLD_COHERENCE_RESEARCH=1
+                          SONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1
+                          SONKU_P87_MUSIC_BODY_RESEARCH=1
+                          SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1)
+                      add_test(NAME NativeSonKuP88MeasuredEarHeightAndDistanceDrr
+                          COMMAND ARMixSonKuP88SourceTests)
+                      juce_add_console_app(ARMixSonKuP88NativeTests
+                          PRODUCT_NAME "ArSonMix SonKu P88 JUCE v9 State Tests")
+                      target_sources(ARMixSonKuP88NativeTests PRIVATE
+                          tests/sonku_p88_native_juce_v9_test.cpp)
+                      target_compile_features(ARMixSonKuP88NativeTests PRIVATE cxx_std_20)
+                      target_link_libraries(ARMixSonKuP88NativeTests PRIVATE
+                          juce::juce_audio_processors juce::juce_recommended_config_flags)
+                      target_compile_definitions(ARMixSonKuP88NativeTests PRIVATE
+                          ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=1
+                          ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT=1
+                          ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT=1
+                          ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT=1
+                          ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT=1
+                          ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT=1
+                          ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT=1
+                          SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                          SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                          SONKU_P72_NATIVE_XYZ_RT=1
+                          SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                          SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                          SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                          SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                          SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+                          SONKU_P85_WORLD_COHERENCE_RESEARCH=1
+                          SONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1
+                          SONKU_P87_MUSIC_BODY_RESEARCH=1
+                          SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1)
+                      add_test(NAME NativeSonKuP88JuceV9AppliedAckAndV8Restore
+                          COMMAND ARMixSonKuP88NativeTests)
+                    endif()
                   endif()
                 endif()
               endif()
