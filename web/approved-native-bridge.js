@@ -2506,13 +2506,12 @@
     };
     function showControls(){
       const entry=showEntries.get(showSelect.value);
-      const muted=hardware?.device?.outputArmed===false &&
-        hardware?.raw?.monitor!==true;
+      // Automatic native main isolation, no operator MUTE prerequisite.
       showSave.disabled=showBusy;
       showBrowse.disabled=showBusy;
-      showUpdate.disabled=showBusy||!muted||!entry||entry.needsRecovery;
-      showRecall.disabled=showBusy||!muted||!entry||entry.needsRecovery;
-      showRecover.disabled=showBusy||!muted||!entry||!entry.hasPrevious;
+      showUpdate.disabled=showBusy||!entry||entry.needsRecovery;
+      showRecall.disabled=showBusy||!entry||entry.needsRecovery;
+      showRecover.disabled=showBusy||!entry||!entry.hasPrevious;
     }
     function showRefresh(){
       showBusy=true;showControls();
@@ -2521,17 +2520,13 @@
     }
     showSave.addEventListener("click",()=>{
       if(showBusy)return;
-      if(hardware?.device?.outputArmed!==false||hardware?.raw?.monitor===true){
-        status("SHOW SAVE requires MUTED output");return;
-      }
       showBusy=true;showControls();
       showNote.textContent="Capturing accepted routing and VST3 state…";
       backend.emitEvent("arMixAction",{action:"routingDryShowSave"});
     });
     showUpdate.addEventListener("click",()=>{
       const id=showSelect.value,entry=showEntries.get(id);
-      if(showBusy||!entry||entry.needsRecovery||!showUuid.test(id)||
-         hardware?.device?.outputArmed!==false)return;
+      if(showBusy||!entry||entry.needsRecovery||!showUuid.test(id))return;
       showBusy=true;showControls();
       showNote.textContent="Saving verified next generation · previous Show retained…";
       backend.emitEvent("arMixAction",{action:"routingDryShowSave",value:id});
@@ -2540,16 +2535,14 @@
     showSelect.addEventListener("change",showControls);
     showRecall.addEventListener("click",()=>{
       const id=showSelect.value,entry=showEntries.get(id);
-      if(showBusy||!entry||entry.needsRecovery||!showUuid.test(id)||
-         hardware?.device?.outputArmed!==false)return;
+      if(showBusy||!entry||entry.needsRecovery||!showUuid.test(id))return;
       showBusy=true;showControls();
-      showNote.textContent="Verifying Show / preparing native FX · output stays MUTED…";
+      showNote.textContent="Verifying Show / preparing native FX · MAIN reconnects automatically…";
       backend.emitEvent("arMixAction",{action:"routingDryShowRecall",value:id});
     });
     showRecover.addEventListener("click",()=>{
       const id=showSelect.value,entry=showEntries.get(id);
-      if(showBusy||!entry?.hasPrevious||!showUuid.test(id)||
-         hardware?.device?.outputArmed!==false)return;
+      if(showBusy||!entry?.hasPrevious||!showUuid.test(id))return;
       showBusy=true;showControls();
       showNote.textContent="Verifying previous generation · valid latest will NOT be overwritten…";
       backend.emitEvent("arMixAction",{action:"routingDryShowRecover",value:id});
@@ -2557,7 +2550,7 @@
     backend.addEventListener("arMixNativeShowSaveAck",ack=>{
       showBusy=false;showControls();
       if(ack?.ok===true){
-        status("SHOW SAVED · native verified state · OUTPUT MUTED");
+        status("SHOW SAVED · native verified state · MAIN auto-ready");
         showRefresh();
       }else{
         showNote.textContent="Save rejected: "+String(ack?.error||"Native capture rejected");
@@ -2582,14 +2575,14 @@
       showSelect.hidden=false;showUpdate.hidden=false;
       showRecall.hidden=false;showRecover.hidden=false;
       showNote.textContent=ack?.ok===true
-        ?showEntries.size+" saved Shows · mute output before recall/recovery"
+        ?showEntries.size+" saved Shows · native engine handles safe recall"
         :"Browse rejected: "+String(ack?.error||"Native storage unavailable");
       showControls();
     });
     backend.addEventListener("arMixNativeShowRecallAck",ack=>{
       showBusy=false;showControls();
       showNote.textContent=ack?.ok===true
-        ?"SHOW RESTORED · OUTPUT MUTED; verify physical pins before MONITOR ON"
+        ?"SHOW RESTORED · MAIN reconnects automatically on verified route"
         :"Recall rejected: "+String(ack?.error||"Native route unchanged");
       if(ack?.ok===true)controller?.subscribe();
       status(showNote.textContent);
@@ -2597,7 +2590,7 @@
     backend.addEventListener("arMixNativeShowRecoverAck",ack=>{
       showBusy=false;showControls();
       if(ack?.ok===true){
-        status("Last verified Show restored on disk · muted; recall explicitly");
+        status("Last verified Show restored on disk · current audio unchanged");
         showRefresh();
       }else{
         showNote.textContent="Recovery rejected: "+String(ack?.error||"Previous generation invalid");
