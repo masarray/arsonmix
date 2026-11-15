@@ -181,6 +181,55 @@ void verifyBassFoundation(double rate) {
         assert(after<before*1.14);
     }
 }
+void verifyP86HorizontalRoomIsolation(double rate) {
+    // Source of coefficients: SonKu P8.6 #711 (P8.5 stack).
+    // Extract ONLY wall pressure weights; neither its native v7 ABI,
+    // head-yaw automation nor rejected P8.3 architecture belongs here.
+    using Room=armix::sonku::SonKuEarlyReflections;
+    using Profile=armix::sonku::SonKuReflectionProfile;
+    for(int wall=0;wall<6;++wall) {
+        const float expected=wall<4?1.f:wall==4?.24f:.15f;
+        assert(Room::horizontalFocusWeight(wall,false)==1.f);
+        assert(Room::horizontalFocusWeight(wall,true)==expected);
+    }
+    auto normal=std::make_unique<Room>();
+    auto focused=std::make_unique<Room>();
+    assert(normal->prepare(rate,Profile::SixSurfaceKemarResearch));
+    assert(focused->prepare(rate,Profile::SixSurfaceKemarResearch));
+    armix::sonku::SonKuRoomGeometry g{};
+    g.widthMeters=14.4f;g.depthMeters=14.4f;g.distanceMeters=1.6f;
+    g.heightMeters=4.8f;g.sourceHeightMeters=1.45f;
+    g.listenerHeightMeters=1.45f;
+    assert(normal->setRealtimeRoom(g,.75f,true));
+    assert(focused->setRealtimeRoom(g,.75f,true));
+    double delta=0.,normalEnergy=0.,focusEnergy=0.;
+    for(int i=0;i<16384;++i) {
+        const double time=static_cast<double>(i)/rate;
+        const float direct=.13f*static_cast<float>(
+            std::sin(2.*pi*317.*time));
+        const float side=.04f*static_cast<float>(
+            std::sin(2.*pi*1237.*time));
+        const float l=direct+side,r=direct-side;
+        const auto a=normal->process(l,r,0.,175.f,false);
+        const auto b=focused->process(l,r,0.,175.f,true);
+        assert(std::isfinite(a.left)&&std::isfinite(a.right));
+        assert(std::isfinite(b.left)&&std::isfinite(b.right));
+        delta+=std::abs(static_cast<double>(a.left)-b.left)+
+               std::abs(static_cast<double>(a.right)-b.right);
+        normalEnergy+=static_cast<double>(a.left)*a.left+
+                      static_cast<double>(a.right)*a.right;
+        focusEnergy+=static_cast<double>(b.left)*b.left+
+                     static_cast<double>(b.right)*b.right;
+    }
+    // Four lateral measured paths remain active; floor and ceiling
+    // physically differ. Phase-interference means the TOTAL wet energy
+    // need not be monotonic, so do not make a false total-level claim.
+    assert(delta>1.e-4);
+    assert(normalEnergy>1.e-8 && focusEnergy>1.e-8);
+    std::fprintf(stderr,
+        "IMERSIP_P86_HORIZONTAL rate=%.0f wetDifference=%.6f focusRatio=%.5f\n",
+        rate,delta,focusEnergy/normalEnergy);
+}
 void verifyP84FusedKernelProvenanceAndLowFrequency(double rate) {
     // The standalone kernel source is transferred from P8.4; no P8.3
     // physical-renderer LF480, extra worker, 2nd runtime core or macro.
@@ -410,6 +459,7 @@ int main() {
         verifyOriginalVocalMidIsUntouched(rate);
         verifyOriginalStereoSurvives(rate);
         verifyP84FusedKernelProvenanceAndLowFrequency(rate);
+        verifyP86HorizontalRoomIsolation(rate);
         verifyP82NormalPathRemainsUnchanged(rate);
         verifyActualMeasuredDualSpeakers(rate);
         verifyBassFoundation(rate);

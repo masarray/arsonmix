@@ -229,7 +229,15 @@ public:
         return wallCount; // original shipping source optimizes to 4
 #endif
     }
-    Ears process(float left,float right,double azimuth,float spread) noexcept {
+    // Exact bounded vertical-image weighting isolated from SonKu P8.6.
+    // This is a research-only ImerSip opt-in; NO P8.5/P8.3 render mode
+    // or state dependency is carried into the P8.2 music-safe core.
+    static constexpr float horizontalFocusWeight(int wall,bool focused) noexcept {
+        return !focused || wall<wallCount?1.f:
+               wall==wallCount?.24f:.15f;
+    }
+    Ears process(float left,float right,double azimuth,float spread,
+                 bool imersipHorizontalFocus=false) noexcept {
         if(!active())return {};
         if(untilGeometry_==0){
             updateGeometry(azimuth,spread);
@@ -384,11 +392,26 @@ public:
                         r=bandpass(r,p.bandLowR,p.bandWideR);
                     }
 #endif
-                    output.left+=p.gainL*l;
-                    output.right+=p.gainR*r;
+                    if(imersipHorizontalFocus && wall>=wallCount) {
+                        // Preserve original delays, KEMAR ITD/ILD and
+                        // material filters, reducing ONLY vertical energy.
+                        const float w=horizontalFocusWeight(wall,true);
+                        output.left+=w*(p.gainL*l);
+                        output.right+=w*(p.gainR*r);
+                    }else{
+                        // Exact original SonKu P8.2 4/6-wall arithmetic.
+                        output.left+=p.gainL*l;
+                        output.right+=p.gainR*r;
+                    }
                 }else{
-                    output.left+=p.gainL*delayed(s,p.delayL);
-                    output.right+=p.gainR*delayed(s,p.delayR);
+                    if(imersipHorizontalFocus && wall>=wallCount) {
+                        const float w=horizontalFocusWeight(wall,true);
+                        output.left+=w*(p.gainL*delayed(s,p.delayL));
+                        output.right+=w*(p.gainR*delayed(s,p.delayR));
+                    }else{
+                        output.left+=p.gainL*delayed(s,p.delayL);
+                        output.right+=p.gainR*delayed(s,p.delayR);
+                    }
                 }
             }
         }

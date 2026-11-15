@@ -438,7 +438,11 @@ public:
                 ?room_.process(transparentBass?x0:(musicSafe?inputMid:x0),
                     transparentBass?x1:(musicSafe?inputMid:x1),
                     degrees_,transparentBass?settings_.stereoSpreadDegrees:
-                        (musicSafe?0.f:settings_.stereoSpreadDegrees))
+                        (musicSafe?0.f:settings_.stereoSpreadDegrees),
+                    // P8.6 horizontal-only reflection weights, applied
+                    // solely to an EXPLICIT ImerSip two-speaker candidate.
+                    // Normal SonKu P8.2 and all public modes pass FALSE.
+                    imersipStereoSideResearch_)
                 :SonKuEarlyReflections::Ears{};
             const auto late=reverb_.active()
                 ?reverb_.process(transparentBass?x0:(musicSafe?inputMid:x0),
