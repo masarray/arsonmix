@@ -54,9 +54,9 @@ void makeSignal(Stereo& a,double rate,int fixture,float hz=120.f) {
     }
 }
 Stereo render(double rate,const Settings& s,const Stereo& input,int chunk=128,
-              bool p87=true) {
+              bool p87=true,bool concertStage=true) {
     Stereo result=input;
-    auto dsp=std::make_unique<ImerSipDsp>(p87);
+    auto dsp=std::make_unique<ImerSipDsp>(p87,concertStage);
     assert(dsp->setSettings(s) && dsp->prepare(rate));
     assert(dsp->measuredStereoStageEnabled());
     for(int at=0;at<static_cast<int>(result.l.size());at+=chunk)
@@ -268,6 +268,76 @@ void verifyP87MusicalAirBodyRealIntegration(double rate) {
         assert(std::abs(dry.l[i]-music.l[i])<1.e-5f);
         assert(std::abs(dry.r[i]-music.r[i])<1.e-5f);
     }
+}
+
+void verifyConcertStageLateralReflection(double rate) {
+    using armix::imersip::ConcertStage;
+    auto band=std::make_unique<ConcertStage>();
+    assert(band->prepare(rate));
+    band->setScene(1.f,1.f,1.f);
+    assert(std::abs(band->targetGain()-.70f)<1.e-5f);
+    // Mono early room adds NO synthetic SIDE; source MID is untouched.
+    for(int i=0;i<512;++i) {
+        const auto s=band->process(.1f,.1f);
+        assert(s.left==0.f&&s.right==0.f);
+    }
+    // Stronger 250-3800 Hz true lateral early band than subbass/air:
+    // 1 kHz contributes lively concert-stage width but not low punch or
+    // additional 8-12 kHz diffuse brightness on top of P8.7 direct air.
+    auto amplitude=[rate](float hz) {
+        armix::imersip::ConcertStage filter;
+        assert(filter.prepare(rate));
+        filter.setScene(1.f,1.f,1.f);
+        filter.reset();
+        constexpr int frames=16384;
+        double input=0.,extra=0.;
+        for(int i=0;i<frames;++i) {
+            const float x=.1f*std::sin(2.*pi*hz*i/rate);
+            const auto ears=filter.process(x,-x);
+            assert(std::isfinite(ears.left)&&std::isfinite(ears.right));
+            assert(std::abs(ears.left+ears.right)<1.e-7f);
+            if(i>4096){input+=x*x;extra+=ears.left*ears.left;}
+        }
+        return std::sqrt(extra/(input+1.e-14));
+    };
+    const double sub=amplitude(75.f);
+    const double presence=amplitude(1000.f);
+    const double air=amplitude(10000.f);
+    std::fprintf(stderr,
+        "IMERSIP_CONCERT_BAND rate=%.0f sub=%.5f width1k=%.5f air=%.5f\n",
+        rate,sub,presence,air);
+    assert(presence>.30 && presence<.70);
+    assert(sub<presence*.65 && air<presence*.70);
+
+    Stereo music(32768);makeSignal(music,rate,4,450.f);
+    Settings s{};s.venue=0;s.immersion=1.f;s.space=1.f;
+    s.width=1.f;s.bassImpact=0.f;s.detail=0.f;
+    const auto baseline=render(rate,s,music,128,true,false);
+    const auto stage=render(rate,s,music,128,true,true);
+    assertChunkParity(stage,render(rate,s,music,64,true,true));
+    assertChunkParity(stage,render(rate,s,music,8192,true,true));
+    double effect=0.,source=0.;
+    for(int i=4096;i<32768;++i) {
+        const double dl=stage.l[i]-baseline.l[i];
+        const double dr=stage.r[i]-baseline.r[i];
+        effect+=dl*dl+dr*dr;
+        source+=music.l[i]*music.l[i]+music.r[i]*music.r[i];
+    }
+    const double change=std::sqrt(effect/(source+1.e-14));
+    std::fprintf(stderr,
+        "IMERSIP_CONCERT_REAL_P86_ER rate=%.0f delta=%.7f\n",rate,change);
+    assert(change>.001 && change<.22);
+
+    // Turning off the VENUE SPACE knob must remove this stage, while
+    // leaving the P8.7 direct binaural effect and native stage intact.
+    s.space=0.f;
+    const auto roomZero=render(rate,s,music,128,true,true);
+    assertChunkParity(roomZero,render(rate,s,music,128,true,false));
+    // Width=0 also gates only this early-lateral enhancement, not the
+    // original measured front-speaker engine.
+    s.space=1.f;s.width=0.f;
+    const auto narrow=render(rate,s,music,128,true,true);
+    assertChunkParity(narrow,render(rate,s,music,128,true,false));
 }
 void verifyBassFoundation(double rate) {
     for(int venue=0;venue<3;++venue)for(float hz:{40.f,70.f,110.f,160.f,220.f}) {
@@ -570,6 +640,7 @@ int main() {
         verifyActualMeasuredDualSpeakers(rate);
         verifyRealP86DirectSpeakerReachesOutput(rate);
         verifyP87MusicalAirBodyRealIntegration(rate);
+        verifyConcertStageLateralReflection(rate);
         verifyBassFoundation(rate);
         verifyRoomLinkedBassStaysCoherent(rate);
         verifyDetailIsNotMidBoost(rate);

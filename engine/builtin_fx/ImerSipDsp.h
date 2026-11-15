@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "ImerSipPhaseSafe.h"
+#include "ImerSipConcertStage.h"
 #include "sonku/SonKuSpatialCore.h"
 #include "sonku/SonKuP87MusicalAirBody.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
 
-// One measured P8.2/P8.4 core, focused P8.6 walls and isolated P8.7 air/body.
-// Actual direct binaural speakers reach PCM, original bass remains coherent.
-// No P8.3 ancestry, second callback, synthetic reverb, FIR, or runtime alloc.
+// Single measured P8.2/P8.4 core + P8.6 front-focused walls, genuine P8.7
+// direct air/FDN body + bandlimited concert-stage lateral early reflection.
+// No dry SIDE widening, fake echoes, second callback, runtime heap or FFT.
 namespace armix::imersip {
 
 inline armix::sonku::Settings sceneFor(const Settings& in) noexcept {
@@ -39,8 +40,9 @@ inline armix::sonku::Settings sceneFor(const Settings& in) noexcept {
 class ImerSipDsp final {
 public:
     // Source-test A/B disables P8.7 while preserving exact shared geometry.
-    explicit ImerSipDsp(bool musicalAirBody=true) noexcept
-      : p87Enabled_(musicalAirBody) {}
+    explicit ImerSipDsp(bool musicalAirBody=true,
+                        bool concertStage=true) noexcept
+      : p87Enabled_(musicalAirBody),concertStageEnabled_(concertStage) {}
     bool prepare(double rate) noexcept {
         ready_=false;
 #if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH \
@@ -57,6 +59,7 @@ public:
         if(ready_)ready_=enhancer_.prepare(rate);
         if(ready_)ready_=enhancer_.setSettings(settings_);
         if(ready_)ready_=p87Body_.prepare(rate);
+        if(ready_)ready_=concertStage_.prepare(rate);
         if(ready_) {
             stageSlew_=static_cast<float>(1.-std::exp(-1./(rate*.018)));
             trimSlew_=static_cast<float>(1.-std::exp(-1./(rate*.024)));
@@ -78,6 +81,7 @@ public:
             core_.reset();
             enhancer_.reset();
             p87Body_.reset();
+            concertStage_.reset();
         }
 #endif
         return ready_;
@@ -158,14 +162,21 @@ public:
                     ?p87Body_.diffuseLowBody(wet.lateL,wet.lateR)
                     :armix::sonku::p87::MusicalAirBody::Ears{};
                 const float erMid=.5f*(erL+erR),erSide=.5f*(erL-erR);
+                // Source-accurate four horizontal walls are already in ER.
+                // Selectively increase 250-3800 Hz LATERAL *early* energy
+                // for musical source width; do not widen original dry or
+                // boost the late diffuse soundfield (envelopment != width).
+                const auto lateral=concertStage_.process(wet.earlyL,wet.earlyR);
                 const float revMid=.5f*(revL+revR);
                 const float revSide=.5f*(revL-revR);
                 // P8.6 horizontal early reflections support the DIRECT
                 // speakers; diffuse late tail is deliberately restrained.
                 float addL=earlyGain_*(erSide+.40f*erMid)+
-                           lateGain_*(revSide+.10f*revMid+body.left);
+                           lateGain_*(revSide+.10f*revMid+body.left)+
+                           (concertStageEnabled_?lateral.left:0.f);
                 float addR=earlyGain_*(-erSide+.40f*erMid)+
-                           lateGain_*(-revSide+.10f*revMid+body.right);
+                           lateGain_*(-revSide+.10f*revMid+body.right)+
+                           (concertStageEnabled_?lateral.right:0.f);
                 // Preserve the *direct binaural substitution* at high input
                 // level: only the ADDITIONAL room returns are headroom-gated.
                 const float headroom=std::max(0.f,.98f-
@@ -209,12 +220,14 @@ private:
         directTarget_=s.immersion*(2.f-s.immersion);
         earlyTarget_=s.immersion*(.38f+.80f*s.space);
         lateTarget_=s.immersion*(.10f+.32f*s.space);
+        concertStage_.setScene(s.immersion,s.space,s.width);
     }
     static constexpr int scratchFrames=8192;
     armix::sonku::SonKuSpatialCore core_{};
     PhaseSafeEnhancer enhancer_{};
     armix::sonku::p87::MusicalAirBody p87Body_{};
-    const bool p87Enabled_=true;
+    ConcertStage concertStage_{};
+    const bool p87Enabled_=true,concertStageEnabled_=true;
     std::array<armix::sonku::SonKuSpatialCore::RoomReturns,scratchFrames>
         roomReturns_{};
     std::array<float,scratchFrames> sourceStereoGate_{},mid_{},side_{};
