@@ -240,7 +240,7 @@ public:
 #endif
     }
     Ears process(float left,float right,double azimuth,float spread,
-                 float headYawDegrees=0.f) noexcept {
+                 float headYawDegrees=0.f,bool horizontalFocus=false) noexcept {
         if(!active())return {};
         if(untilGeometry_==0){
             updateGeometry(azimuth,spread,headYawDegrees);
@@ -398,14 +398,29 @@ public:
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
                     if((p83WallMask_ & (1u<<wall))!=0u) {
 #endif
-                        output.left+=p.gainL*l;
-                        output.right+=p.gainR*r;
+                        // Keep all 4 horizontal images and nonzero vertical
+                        // room cues, preventing ceiling/floor phantom dominance.
+                        // Filter kernels and ITD/ILD stay physically modelled.
+                        if(horizontalFocus && wall>=wallCount){
+                            const float verticalWeight=wall==wallCount?.24f:.15f;
+                            output.left+=verticalWeight*(p.gainL*l);
+                            output.right+=verticalWeight*(p.gainR*r);
+                        }else{
+                            output.left+=p.gainL*l;
+                            output.right+=p.gainR*r;
+                        }
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
                     }
 #endif
                 }else{
-                    output.left+=p.gainL*delayed(s,p.delayL);
-                    output.right+=p.gainR*delayed(s,p.delayR);
+                    if(horizontalFocus && wall>=wallCount){
+                        const float verticalWeight=wall==wallCount?.24f:.15f;
+                        output.left+=verticalWeight*(p.gainL*delayed(s,p.delayL));
+                        output.right+=verticalWeight*(p.gainR*delayed(s,p.delayR));
+                    }else{
+                        output.left+=p.gainL*delayed(s,p.delayL);
+                        output.right+=p.gainR*delayed(s,p.delayR);
+                    }
                 }
             }
         }

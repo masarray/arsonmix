@@ -89,7 +89,11 @@ inline bool valid(const Settings& s) noexcept {
         s.renderMode>=0 &&
 #if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
 #if defined(SONKU_P85_WORLD_COHERENCE_RESEARCH) && SONKU_P85_WORLD_COHERENCE_RESEARCH
+#if defined(SONKU_P86_HORIZONTAL_FOCUS_RESEARCH) && SONKU_P86_HORIZONTAL_FOCUS_RESEARCH
+        s.renderMode<=5 && ((s.renderMode!=3 && s.renderMode!=4 && s.renderMode!=5) || !s.musicCompatibleLowFrequency) &&
+#else
         s.renderMode<=4 && ((s.renderMode!=3 && s.renderMode!=4) || !s.musicCompatibleLowFrequency) &&
+#endif
 #else
         s.renderMode<=3 && (s.renderMode!=3 || !s.musicCompatibleLowFrequency) &&
 #endif
@@ -431,6 +435,9 @@ public:
             && p83Mode_!=p83::Mode::MusicSpatialP84
 #if defined(SONKU_P85_WORLD_COHERENCE_RESEARCH) && SONKU_P85_WORLD_COHERENCE_RESEARCH
             && p83Mode_!=p83::Mode::MusicSpatialP85
+#if defined(SONKU_P86_HORIZONTAL_FOCUS_RESEARCH) && SONKU_P86_HORIZONTAL_FOCUS_RESEARCH
+            && p83Mode_!=p83::Mode::MusicSpatialP86
+#endif
 #endif
 #endif
             ;
@@ -461,10 +468,17 @@ public:
             (p84FusedMusic_ || p83Mode_==p83::Mode::MusicSpatialP84
 #if defined(SONKU_P85_WORLD_COHERENCE_RESEARCH) && SONKU_P85_WORLD_COHERENCE_RESEARCH
              || p83Mode_==p83::Mode::MusicSpatialP85
+#if defined(SONKU_P86_HORIZONTAL_FOCUS_RESEARCH) && SONKU_P86_HORIZONTAL_FOCUS_RESEARCH
+             || p83Mode_==p83::Mode::MusicSpatialP86
+#endif
 #endif
              );
 #else
         constexpr bool musicFused=false;
+#endif
+#if defined(SONKU_P86_HORIZONTAL_FOCUS_RESEARCH) && SONKU_P86_HORIZONTAL_FOCUS_RESEARCH
+        // Mode 5 changes wet only; P8.5 direct HRIR/LF/stereo/tonal remain.
+        const bool horizontalFocus=p83Mode_==p83::Mode::MusicSpatialP86;
 #endif
         // Deliberate music-monitor compensation: real distance perception
         // still comes from direct/reflected ratio and high-frequency cues,
@@ -574,6 +588,9 @@ public:
                     ,positionedMode?p83HeadYaw_:0.f
 #endif
 #endif
+#if defined(SONKU_P86_HORIZONTAL_FOCUS_RESEARCH) && SONKU_P86_HORIZONTAL_FOCUS_RESEARCH
+                    ,horizontalFocus
+#endif
                     )
                 :SonKuEarlyReflections::Ears{};
             auto late=reverb_.active()
@@ -619,9 +636,15 @@ public:
                 // Gain laws are bounded affine maps, zero wet stays EXACT
                 // zero, no exp/pow/alloc on the audio callback.
                 const float targetErPresence=roomEnabled&&!positionedMode?
-                    1.45f+2.0f*settings_.roomAmount:1.f;
+#if defined(SONKU_P86_HORIZONTAL_FOCUS_RESEARCH) && SONKU_P86_HORIZONTAL_FOCUS_RESEARCH
+                    (horizontalFocus?0.76f:1.f)*
+#endif
+                    (1.45f+2.0f*settings_.roomAmount):1.f;
                 const float targetTailPresence=roomEnabled&&!positionedMode?
-                    2.2f+4.0f*settings_.ambience:1.f;
+#if defined(SONKU_P86_HORIZONTAL_FOCUS_RESEARCH) && SONKU_P86_HORIZONTAL_FOCUS_RESEARCH
+                    (horizontalFocus?0.38f:1.f)*
+#endif
+                    (2.2f+4.0f*settings_.ambience):1.f;
                 smoothedErPresence_+=distanceSlew_*
                     (targetErPresence-smoothedErPresence_);
                 smoothedTailPresence_+=distanceSlew_*
@@ -760,6 +783,9 @@ private:
            && p83Mode_!=p83::Mode::MusicSpatialP84
 #if defined(SONKU_P85_WORLD_COHERENCE_RESEARCH) && SONKU_P85_WORLD_COHERENCE_RESEARCH
            && p83Mode_!=p83::Mode::MusicSpatialP85
+#if defined(SONKU_P86_HORIZONTAL_FOCUS_RESEARCH) && SONKU_P86_HORIZONTAL_FOCUS_RESEARCH
+           && p83Mode_!=p83::Mode::MusicSpatialP86
+#endif
 #endif
 #endif
            && room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch) {
@@ -786,6 +812,9 @@ private:
         if((p83Mode_==p83::Mode::MusicSpatialP84 ||
 #if defined(SONKU_P85_WORLD_COHERENCE_RESEARCH) && SONKU_P85_WORLD_COHERENCE_RESEARCH
             p83Mode_==p83::Mode::MusicSpatialP85 ||
+#if defined(SONKU_P86_HORIZONTAL_FOCUS_RESEARCH) && SONKU_P86_HORIZONTAL_FOCUS_RESEARCH
+            p83Mode_==p83::Mode::MusicSpatialP86 ||
+#endif
 #endif
             (p84FusedMusic_ && p83Mode_==p83::Mode::MusicBedP82)) &&
            room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch){
@@ -797,8 +826,12 @@ private:
             // P8.5: common music MID and both virtual speakers are in
             // the same head-relative frame. Earlier musical modes remain
             // byte-identical; only mode 4 uses this yaw-coherent anchor.
-            interpolate(centerTarget_,p83Mode_==p83::Mode::MusicSpatialP85
-                ?static_cast<double>(p83::toHead(static_cast<float>(degrees_),p83HeadYaw_))
+            // P8.6 retains P8.5's approved world/head direct music anchor.
+            interpolate(centerTarget_,(p83Mode_==p83::Mode::MusicSpatialP85
+#if defined(SONKU_P86_HORIZONTAL_FOCUS_RESEARCH) && SONKU_P86_HORIZONTAL_FOCUS_RESEARCH
+                || p83Mode_==p83::Mode::MusicSpatialP86
+#endif
+                )?static_cast<double>(p83::toHead(static_cast<float>(degrees_),p83HeadYaw_))
                 :degrees_);
 #else
             interpolate(centerTarget_,degrees_);
