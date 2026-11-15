@@ -53,7 +53,7 @@ const valid=s=>s && Number.isFinite(s.startAzimuthDegrees) &&
    1.45+s.sourceDistanceMeters*Math.sin(s.directElevationDegrees*Math.PI/180)<=
        roomHeights[s.spacePreset]-.5)) &&
  (s.renderMode===undefined || (
-    Number.isInteger(s.renderMode)&&s.renderMode>=0&&s.renderMode<=3 &&
+    Number.isInteger(s.renderMode)&&s.renderMode>=0&&s.renderMode<=4 &&
     typeof s.musicCompatibleLowFrequency==="boolean" &&
     Number.isFinite(s.headYawDegrees)&&Math.abs(s.headYawDegrees)<=360 &&
     (s.renderMode!==2 || (s.stereoSpreadDegrees>=20&&s.stereoSpreadDegrees<=120))));
@@ -187,7 +187,7 @@ const depthLayers={far:$("skFarSources"),near:$("skNearSources")};
 const mount=()=>{if(!root.isConnected)document.body.append(root)};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
- xyzCapable=false,p83Capable=false,p84Capable=false,musicSafeStereo=false,p8TransparentBass=false,p82MultibandRoom=false,
+ xyzCapable=false,p83Capable=false,p84Capable=false,p85Capable=false,musicSafeStereo=false,p8TransparentBass=false,p82MultibandRoom=false,
  readId="",readSentAt=0,seq=1,clock=null,frame=null,observed=0,observedAt=0,
  drag=null,dialDrag=null,rangeEdits=new Set(),gestureStart=new Map(),
  visualPhase=0,visualAt=0,liveTimer=null,lastLiveAt=0;
@@ -207,7 +207,13 @@ function render(){
  const row=$("skRenderRow");row.hidden=!(p83Capable||p84Capable);
  if(p83Capable||p84Capable){
   const picker=$("skRenderMode");
-  if(p84Capable && picker.dataset.nativeModeSet!=="p84"){
+  if(p85Capable && picker.dataset.nativeModeSet!=="p85"){
+   picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
+    '<option value="clarity">SPATIAL · P8.4 FAT REFERENCE</option>'+
+    '<option value="coherence">SPATIAL · P8.5 COHERENT WORLD</option>';
+   picker.dataset.nativeModeSet="p85";
+   root.querySelector(".sk-render-label").textContent="RENDER MODE · P8.5 HEADPHONE FAT";
+  }else if(!p85Capable && p84Capable && picker.dataset.nativeModeSet!=="p84"){
    picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
     '<option value="clarity">SPATIAL · P8.4 MUSIC FIRST</option>';
    picker.dataset.nativeModeSet="p84";
@@ -220,7 +226,8 @@ function render(){
    picker.dataset.nativeModeSet="p83";
    root.querySelector(".sk-render-label").textContent="RENDER MODE · P8.3 TEST";
   }
-  const v=p84Capable?(s.renderMode===3?"clarity":"music"):
+  const v=p85Capable?(s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
+    p84Capable?(s.renderMode===3?"clarity":"music"):
     s.renderMode===1?"mono":s.renderMode===2?
     (s.musicCompatibleLowFrequency?"musiclf":"physical"):"music";
   $("skRenderMode").value=v;
@@ -269,7 +276,9 @@ function render(){
   if(!rangeEdits.has("skElevation"))elevation.value=String(s.directElevationDegrees);
   $("skElevationValue").textContent=s.directElevationDegrees.toFixed(1)+"°";
  }
- root.querySelector(".sk-stage-caption").textContent=p84Capable&&s.renderMode===3?
+ root.querySelector(".sk-stage-caption").textContent=p85Capable&&s.renderMode===4?
+   "P8.5 WORLD-LOCKED MUSIC MID · EXPERIMENT · HEADPHONE FAT REQUIRED":
+   p84Capable&&s.renderMode===3?
    "P8.4 FUSED HRIR · MUSIC-FIRST RESEARCH · NOT DEARVR QUALIFIED":
    p83Capable&&s.renderMode===2?
   (s.musicCompatibleLowFrequency?"P8.3 MUSIC LF480 · SOURCE-POSITIONED COMPROMISE":
@@ -300,7 +309,8 @@ function render(){
  // redrawn at 60 Hz. The native audio callback remains the time authority.
  drawSpeakers();
  $("skMode").textContent=native()?(context()?
-  (p84Capable&&s.renderMode===3?"NATIVE P8.4 MUSIC FUSION · TEST":
+  (p85Capable&&s.renderMode===4?"NATIVE P8.5 WORLD COHERENCE · TEST":
+   p84Capable&&s.renderMode===3?"NATIVE P8.4 MUSIC FUSION · TEST":
     p83Capable&&s.renderMode!==0?"NATIVE P8.3 SPEAKERS · RESEARCH":
    p82MultibandRoom?"NATIVE P8.2 ROOM · RESEARCH":
    p8TransparentBass?"NATIVE P8 ACOUSTICS · RESEARCH":
@@ -446,7 +456,7 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
    String(r.deviceEpoch)!==String(c.deviceEpoch)||
    String(r.graphRevision)!==String(c.graphRevision))return;
  const measured=(r.schemaVersion===3 || r.schemaVersion===4 ||
-   r.schemaVersion===5) &&
+   r.schemaVersion===5 || r.schemaVersion===6) &&
    Number.isFinite(r.settings?.directElevationDegrees);
  if(r.schemaVersion!==2&&!measured)return;
  const incoming=normalizeSettings(r.settings);
@@ -458,9 +468,11 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
    Number.isInteger(incoming.renderMode) &&
    typeof incoming.musicCompatibleLowFrequency==="boolean" &&
    Number.isFinite(incoming.headYawDegrees);
- p84Capable=r.schemaVersion===5 && r.p84MusicFusion===true &&
+ p85Capable=r.schemaVersion===6 && r.p85AcousticCoherence===true;
+ p84Capable=(r.schemaVersion===5 || p85Capable) && r.p84MusicFusion===true &&
    Number.isInteger(incoming.renderMode) &&
-   (incoming.renderMode===0||incoming.renderMode===3) &&
+   (incoming.renderMode===0||incoming.renderMode===3||
+    (p85Capable&&incoming.renderMode===4)) &&
    typeof incoming.musicCompatibleLowFrequency==="boolean" &&
    incoming.musicCompatibleLowFrequency===false &&
    Number.isFinite(incoming.headYawDegrees);
@@ -494,7 +506,7 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  }
  render();
 });
-$("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapable=false;musicSafeStereo=false;p8TransparentBass=false;p82MultibandRoom=false;
+$("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapable=false;p85Capable=false;musicSafeStereo=false;p8TransparentBass=false;p82MultibandRoom=false;
  cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
  drag=null;rangeEdits.clear();gestureStart.clear();lastLiveAt=0;
  if(clock!==null){clearInterval(clock);clock=null;}
@@ -502,10 +514,12 @@ $("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapa
 $("skRenderMode").addEventListener("change",()=>{
  if(!(p83Capable||p84Capable))return;
  const v=$("skRenderMode").value;
- const mode=p84Capable?(v==="clarity"?3:0):
+ const mode=p85Capable?(v==="coherence"?4:v==="clarity"?3:0):
+    p84Capable?(v==="clarity"?3:0):
     v==="mono"?1:v==="physical"||v==="musiclf"?2:0;
  const scene={...draft,renderMode:mode,musicCompatibleLowFrequency:v==="musiclf"};
- if(mode!==0){
+ // Mode changes in v6 must not reset the owner scene, yaw or motion.
+ if(mode!==0 && !p85Capable){
   scene.moving=false;
   scene.startAzimuthDegrees=0;
   if(mode===2 && (scene.stereoSpreadDegrees<20 ||
@@ -666,7 +680,7 @@ const api={
   cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
   observedAt=0;visualAt=0;visualPhase=0;lastLiveAt=0;
   drag=null;rangeEdits.clear();gestureStart.clear();
-  accepted=defaults();draft=defaults();xyzCapable=false;p83Capable=false;p84Capable=false;musicSafeStereo=false;p8TransparentBass=false;
+  accepted=defaults();draft=defaults();xyzCapable=false;p83Capable=false;p84Capable=false,p85Capable=false;musicSafeStereo=false;p8TransparentBass=false;
   current={track,slot,instanceId:null};
   const s=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const fx=s?.graph?.channels?.find(x=>x.id===id)?.inserts?.[slot];

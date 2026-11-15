@@ -158,7 +158,11 @@ public:
 #if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT
+        out.writeInt(6); // unchanged 59-byte state; P8.5 is opt-in mode 4
+#else
         out.writeInt(5); // same 59-byte layout as v4, new P8.4 mode
+#endif
 #else
         out.writeInt(4);
 #endif
@@ -210,6 +214,9 @@ public:
              &&version!=4
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT
              &&version!=5
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT
+             &&version!=6
+#endif
 #endif
 #endif
 #endif
@@ -220,6 +227,9 @@ public:
             ||(version==4&&size!=59)
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT
             ||(version==5&&size!=59)
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT
+            ||(version==6&&size!=59)
+#endif
 #endif
 #endif
 #endif
@@ -272,6 +282,13 @@ public:
                 return false;
             if(version==5 && next.musicCompatibleLowFrequency)
                 return false;
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT
+            // Preserve legacy P8.4 mode=3 on v5 restore. Never revive v4
+            // rejected physical modes; v6 permits only music modes 0/3/4.
+            if(version==6 && next.renderMode!=0 && next.renderMode!=3 && next.renderMode!=4)
+                return false;
+            if(version==6 && next.musicCompatibleLowFrequency)return false;
+#endif
 #endif
         }
 #endif

@@ -10,6 +10,9 @@ enum class Mode : std::uint8_t {
     MusicBedP82=0, MonoObject=1, SpeakerMonitor=2,
 #if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
     MusicSpatialP84=3
+#if defined(SONKU_P85_WORLD_COHERENCE_RESEARCH) && SONKU_P85_WORLD_COHERENCE_RESEARCH
+    ,MusicSpatialP85=4
+#endif
 #endif
 };
 enum class Stem : std::uint8_t { Combined=0, Direct=1, Early=2, Late=3 };
@@ -18,6 +21,9 @@ inline bool valid(Mode m) noexcept {
            m==Mode::SpeakerMonitor
 #if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
            || m==Mode::MusicSpatialP84
+#if defined(SONKU_P85_WORLD_COHERENCE_RESEARCH) && SONKU_P85_WORLD_COHERENCE_RESEARCH
+           || m==Mode::MusicSpatialP85
+#endif
 #endif
            ;
 }

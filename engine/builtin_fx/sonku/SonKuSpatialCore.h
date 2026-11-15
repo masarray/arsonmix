@@ -88,7 +88,11 @@ inline bool valid(const Settings& s) noexcept {
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
         s.renderMode>=0 &&
 #if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
+#if defined(SONKU_P85_WORLD_COHERENCE_RESEARCH) && SONKU_P85_WORLD_COHERENCE_RESEARCH
+        s.renderMode<=4 && ((s.renderMode!=3 && s.renderMode!=4) || !s.musicCompatibleLowFrequency) &&
+#else
         s.renderMode<=3 && (s.renderMode!=3 || !s.musicCompatibleLowFrequency) &&
+#endif
 #else
         s.renderMode<=2 &&
 #endif
@@ -425,6 +429,9 @@ public:
             p83Mode_!=p83::Mode::MusicBedP82
 #if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
             && p83Mode_!=p83::Mode::MusicSpatialP84
+#if defined(SONKU_P85_WORLD_COHERENCE_RESEARCH) && SONKU_P85_WORLD_COHERENCE_RESEARCH
+            && p83Mode_!=p83::Mode::MusicSpatialP85
+#endif
 #endif
             ;
         const bool monoObject=positionedMode && p83Mode_==p83::Mode::MonoObject;
@@ -451,7 +458,11 @@ public:
 #endif
 #if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
         const bool musicFused=musicSafe &&
-            (p84FusedMusic_ || p83Mode_==p83::Mode::MusicSpatialP84);
+            (p84FusedMusic_ || p83Mode_==p83::Mode::MusicSpatialP84
+#if defined(SONKU_P85_WORLD_COHERENCE_RESEARCH) && SONKU_P85_WORLD_COHERENCE_RESEARCH
+             || p83Mode_==p83::Mode::MusicSpatialP85
+#endif
+             );
 #else
         constexpr bool musicFused=false;
 #endif
@@ -747,6 +758,9 @@ private:
         if(p83Mode_!=p83::Mode::MusicBedP82
 #if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
            && p83Mode_!=p83::Mode::MusicSpatialP84
+#if defined(SONKU_P85_WORLD_COHERENCE_RESEARCH) && SONKU_P85_WORLD_COHERENCE_RESEARCH
+           && p83Mode_!=p83::Mode::MusicSpatialP85
+#endif
 #endif
            && room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch) {
             // 2x2 measured source-to-ear transfer. No MID center
@@ -770,13 +784,25 @@ private:
 #endif
 #if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
         if((p83Mode_==p83::Mode::MusicSpatialP84 ||
+#if defined(SONKU_P85_WORLD_COHERENCE_RESEARCH) && SONKU_P85_WORLD_COHERENCE_RESEARCH
+            p83Mode_==p83::Mode::MusicSpatialP85 ||
+#endif
             (p84FusedMusic_ && p83Mode_==p83::Mode::MusicBedP82)) &&
            room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch){
             // One 2x2 FIR graph. Preserve the EXACT P8.2 mixed-channel
             // foundation while injecting only a bounded high-frequency
             // measured directional difference into each source HRIR.
             // Avoid LF480: no invented bass matrix or additional DSP core.
+#if defined(SONKU_P85_WORLD_COHERENCE_RESEARCH) && SONKU_P85_WORLD_COHERENCE_RESEARCH
+            // P8.5: common music MID and both virtual speakers are in
+            // the same head-relative frame. Earlier musical modes remain
+            // byte-identical; only mode 4 uses this yaw-coherent anchor.
+            interpolate(centerTarget_,p83Mode_==p83::Mode::MusicSpatialP85
+                ?static_cast<double>(p83::toHead(static_cast<float>(degrees_),p83HeadYaw_))
+                :degrees_);
+#else
             interpolate(centerTarget_,degrees_);
+#endif
             const auto positions=p83::stereo(static_cast<float>(degrees_),
                 settings_.stereoSpreadDegrees,p83HeadYaw_);
             interpolate(targets_[0],positions.leftHead);
