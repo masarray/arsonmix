@@ -51,7 +51,7 @@ const full={p90Capable:true,p91p92Capable:true,p89Capable:true,p88Capable:true,
 renderMenu(picker,root,full);
 assert.equal(picker.dataset.nativeModeSet,"p91p92");
 assert.match(picker.innerHTML,/value="external"/);
-assert.match(picker.innerHTML,/P9\.1 \+ P9\.2 · MUSIC \+ PHYSICAL BASS/);
+assert.match(picker.innerHTML,/P9\.1 \+ P9\.2 · MUSIC \/ BASS/);
 assert.match(label.textContent,/P9\.1 \+ P9\.2 FAT/);
 syncSelection(picker,"external");
 assert.equal(picker.value,"external");
