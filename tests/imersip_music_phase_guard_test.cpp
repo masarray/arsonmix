@@ -83,6 +83,22 @@ void verifySceneGeometry() {
         assert(!scene.moving && scene.startAzimuthDegrees==0.f);
         assert(scene.spacePreset>=2);
         assert(scene.spatialMix>0.f && scene.outputTrim==1.f);
+        assert(scene.sourceDistanceMeters==1.6f);
+        assert(scene.roomAmount>scene.ambience);
+        assert(scene.roomAmount<.30f && scene.ambience<.15f);
+    }
+}
+void verifyNearOrchestraRoomContract() {
+    for(int venue=0;venue<3;++venue)for(float amount:{0.f,.45f,1.f}) {
+        Settings s{};s.venue=venue;s.space=amount;s.immersion=1.f;
+        const auto room=armix::imersip::sceneFor(s);
+        assert(room.sourceDistanceMeters==1.6f);
+        assert(room.roomAmount>room.ambience);
+        assert(room.spacePreset>=2);
+        s.immersion=0.f;
+        const auto dry=armix::imersip::sceneFor(s);
+        assert(dry.sourceDistanceMeters==1.6f);
+        assert(dry.spacePreset==0&&dry.roomAmount==0.f&&dry.ambience==0.f);
     }
 }
 void verifyDryAndBounds(double rate) {
@@ -216,6 +232,26 @@ void verifyP82NormalPathRemainsUnchanged(double rate) {
         assert(a.r[i]==b.r[i]);
     }
 }
+void verifyRoomLinkedBassStaysCoherent(double rate) {
+    // Full venue space should slightly enrich the coherent low shelf;
+    // real six-wall changes must not null the direct music bass.
+    for(int venue=0;venue<3;++venue)for(float hz:{45.f,80.f,120.f}) {
+        Stereo input;
+        for(int i=0;i<n;++i) {
+            const float v=.13f*static_cast<float>(
+                std::sin(2.*pi*hz*i/rate));
+            input.l[i]=v;input.r[i]=v;
+        }
+        Settings s{};s.venue=venue;s.immersion=1.f;
+        s.bassImpact=1.f;s.detail=0.f;s.width=.95f;
+        s.space=0.f;const auto low=render(rate,s,input);
+        s.space=1.f;const auto rich=render(rate,s,input);
+        const auto original=rms(input,4096,false);
+        assert(rms(low,4096,false)>=original*.995);
+        assert(rms(rich,4096,false)>=rms(low,4096,false)*.995);
+        assert(rms(rich,4096,false)<original*1.14);
+    }
+}
 void verifyActualMeasuredDualSpeakers(double rate) {
     // P8.2 standard music-safe renderer = centered KEMAR FIR.
     // The ImerSip experimental mode must employ TWO independent measured
@@ -302,6 +338,7 @@ void verifyPeakSafety(double rate) {
 } // namespace
 int main() {
     verifySceneGeometry();
+    verifyNearOrchestraRoomContract();
     for(double rate:{44100.,48000.}) {
         verifyDryAndBounds(rate);
         verifyOriginalVocalMidIsUntouched(rate);
@@ -310,6 +347,7 @@ int main() {
         verifyP82NormalPathRemainsUnchanged(rate);
         verifyActualMeasuredDualSpeakers(rate);
         verifyBassFoundation(rate);
+        verifyRoomLinkedBassStaysCoherent(rate);
         verifyDetailIsNotMidBoost(rate);
         verifyActualP82RoomChangesSideOnly(rate);
         verifyPeakSafety(rate);

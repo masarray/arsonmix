@@ -211,6 +211,10 @@ jobs:
             imrsStateBytes = 36
             directMidSourcePreserved = $true
             defaultVirtualSpeakerSpreadDegrees = 175
+            sourceDistanceMeters = 1.6
+            earlyRoomPreferredOverLate = $true
+            coherentSpaceLinkedBass = $true
+            p84FusedMeasuredDirection = $true
             sideOnlySpatialRoomReturn = $true
             actualDualMeasuredKemarSpeakers = $true
             p82StandardCenterMusicDefaultUnchanged = $true
@@ -230,6 +234,10 @@ jobs:
               $p.imersipResearch.imrsStateBytes -ne 36 -or
               -not $p.imersipResearch.directMidSourcePreserved -or
               $p.imersipResearch.defaultVirtualSpeakerSpreadDegrees -ne 175 -or
+              $p.imersipResearch.sourceDistanceMeters -ne 1.6 -or
+              -not $p.imersipResearch.earlyRoomPreferredOverLate -or
+              -not $p.imersipResearch.coherentSpaceLinkedBass -or
+              -not $p.imersipResearch.p84FusedMeasuredDirection -or
               -not $p.imersipResearch.sideOnlySpatialRoomReturn -or
               -not $p.imersipResearch.actualDualMeasuredKemarSpeakers -or
               -not $p.imersipResearch.p82StandardCenterMusicDefaultUnchanged) {

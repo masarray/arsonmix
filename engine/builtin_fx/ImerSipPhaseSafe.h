@@ -63,7 +63,12 @@ public:
         constexpr float concertMax=.08392691402f;
         const float maxDelta=s.venue==1?cinemaMax:
             s.venue==2?liveMax:concertMax;
-        bassTarget_=maxDelta*s.bassImpact*s.immersion;
+        // VENUE SPACE links a restrained (+0..45% of the ORIGINAL
+        // positive delta) coherent 120Hz shelf to perceived room weight.
+        // This is NOT a measured room mode or a delayed bass reflection.
+        // Same filter coefficients per ear preserve the original LF phase.
+        bassTarget_=maxDelta*s.bassImpact*s.immersion*
+            (1.f+.45f*s.space);
         // High SIDE boost limited to +1.58dB at maximum. P8.2 MID is intact.
         sideTarget_=.20f*s.width*s.immersion;
         // Soft, identical per-channel minimum-phase high shelf >5kHz.

@@ -135,7 +135,7 @@ public:
         g.setFont(juce::FontOptions(11.f,juce::Font::plain));
         g.drawText("VENUE",385,94,110,20,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xffa1c0cd));
-        g.drawText("DIRECT VOCAL · WIDE STEREO · BASS & AIR DETAIL",
+        g.drawText("CLOSE STAGE · EARLY ROOM · COHERENT BASS",
                    384,406,425,14,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff244452));g.fillRect(0,440,840,1);
         g.setColour(juce::Colour(0xff84bbc7));
@@ -164,6 +164,9 @@ private:
         g.setColour(juce::Colour(0xff80aebf));
         g.setFont(juce::FontOptions(11.f,juce::Font::plain));
         g.drawText("FRONT STAGE",115,106,145,20,juce::Justification::centred);
+        g.setColour(juce::Colour(0xff79bdc9));
+        g.drawText("SOURCE 1.6 m  ·  CLOSE / DIRECT",
+                   56,355,260,19,juce::Justification::centred);
         g.setColour(juce::Colour(0xff234452));
         g.drawEllipse(cx-r,cy-r,r*2,r*2,1.f);
         g.drawLine(cx-r,cy,cx+r,cy,1.f);

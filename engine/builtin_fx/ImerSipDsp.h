@@ -24,16 +24,18 @@ inline armix::sonku::Settings sceneFor(const Settings& in) noexcept {
     s.spatialMix=.75f*in.immersion;     // Only SIDE residual reaches output
     s.outputTrim=1.f;                  // Final trim belongs to ImerSip
     s.spacePreset=in.immersion==0.f?0:(in.venue==2?2:3);
-    s.sourceDistanceMeters=in.venue==1?3.f:
-                           in.venue==2?2.f:2.6f;
-    // Smaller, bounded reflections than v1. The room cannot replace the
-    // unfiltered musical MID; only interaural differences are retained.
+    // Close front-row source in every venue; the hall itself stays large.
+    // Geometry admission uses the valid P8.2 1.6m minimum.
+    s.sourceDistanceMeters=1.6f;
+    // Detail-first front-row hall: prioritize six-wall EARLY reflections
+    // (external cues) above diffuse LATE decay (mid masking).
+    // The original P8.2 room model remains the only acoustic engine.
     s.roomAmount=in.immersion==0.f?0.f:
-        (in.venue==1?.035f:in.venue==2?.055f:.05f)+
-        (in.venue==1?.12f:in.venue==2?.13f:.16f)*in.space;
+        (in.venue==1?.070f:in.venue==2?.080f:.075f)+
+        (in.venue==1?.170f:in.venue==2?.160f:.180f)*in.space;
     s.ambience=in.immersion==0.f?0.f:
-        (in.venue==1?.035f:in.venue==2?.03f:.045f)+
-        (in.venue==1?.11f:in.venue==2?.10f:.14f)*in.space;
+        (in.venue==1?.035f:in.venue==2?.025f:.025f)+
+        (in.venue==1?.100f:in.venue==2?.090f:.100f)*in.space;
     return s;
 }
 
