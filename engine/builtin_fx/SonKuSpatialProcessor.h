@@ -18,7 +18,24 @@ public:
     SonKuSpatialProcessor()
         : juce::AudioProcessor(BusesProperties()
             .withInput("Input",juce::AudioChannelSet::stereo(),true)
-            .withOutput("Output",juce::AudioChannelSet::stereo(),true)) {}
+            .withOutput("Output",juce::AudioChannelSet::stereo(),true)) {
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P92_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P92_NATIVE_RT
+        // First inserted FX only: a musician-friendly reference from first
+        // PCM sample, not an opt-in-only GUI cosmetic preset. State restore
+        // always replaces this with the exact existing v1-v12 .smix values.
+        // All public/non-P92 binaries retain their historical defaults.
+        accepted_.renderMode=10;
+        accepted_.moving=false;
+        accepted_.startAzimuthDegrees=0.f;
+        accepted_.stereoSpreadDegrees=82.f;
+        accepted_.spatialMix=1.f;
+        accepted_.outputTrim=1.f;
+        accepted_.spacePreset=3;
+        accepted_.sourceDistanceMeters=1.6f;
+        accepted_.roomAmount=.72f;
+        accepted_.ambience=.38f;
+#endif
+    }
     const juce::String getName() const override {return "8D-SonKu";}
     bool acceptsMidi() const override {return false;}
     bool producesMidi() const override {return false;}
