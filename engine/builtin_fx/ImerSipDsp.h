@@ -48,6 +48,10 @@ public:
         ready_=core_.prepare(rate,
             armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch);
         if(ready_)ready_=core_.setSettings(sceneFor(settings_));
+        // An actual pair of measured virtual loudspeakers at +/- width/2.
+        // P8.2's default center-MID path is untouched for ordinary SonKu.
+        // We take only L-R binaural difference; direct music MID remains dry.
+        if(ready_)ready_=core_.enableImerSipMeasuredStereoSide(true);
         if(ready_)ready_=enhancer_.prepare(rate);
         if(ready_)ready_=enhancer_.setSettings(settings_);
         if(ready_) {
@@ -73,6 +77,9 @@ public:
     }
     Settings settings() const noexcept {return settings_;}
     bool ready() const noexcept {return ready_;}
+    bool measuredStereoStageEnabled() const noexcept {
+        return ready_ && core_.imersipMeasuredStereoSideEnabled();
+    }
 
     void process(float* left,float* right,int frames) noexcept {
         if(!ready_||!left||!right||frames<=0)return;
