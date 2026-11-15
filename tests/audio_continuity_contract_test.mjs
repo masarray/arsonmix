@@ -49,6 +49,35 @@ test('master mute is only automatic for a positively identified feedback self lo
   assert.match(engine,/mainOutputIntent_\.deviceInterrupted\(\)/);
 });
 
+
+test('WASAPI recovery fails closed against substituted endpoint names or pin masks',()=>{
+  const comparison=main.split('static bool matchesPinnedWasapiReadback(')[1]
+      .split('void rememberVerifiedWasapiSetup()')[0];
+  assert.match(comparison,/actual\.inputDeviceName==wanted\.inputDeviceName/);
+  assert.match(comparison,/actual\.outputDeviceName==wanted\.outputDeviceName/);
+  assert.match(comparison,/getActiveInputChannels\(\)==wanted\.inputChannels/);
+  assert.match(comparison,/getActiveOutputChannels\(\)==wanted\.outputChannels/);
+  const reconnect=main.split('void serviceWasapiDeviceContinuity()')[1]
+      .split('void protectKnownFeedbackLoop(')[0];
+  assert.match(reconnect,/matchesPinnedWasapiReadback\(\*verifiedWasapiSetup_,live,device\)/);
+  assert.match(reconnect,/matchesPinnedWasapiReadback\(wanted,actual,opened\)/);
+  const remember=main.split('void rememberVerifiedWasapiSetup()')[1]
+      .split('void observeNativeCallbackHeartbeat()')[0];
+  assert.match(remember,/pinned\.useDefaultOutputChannels=false/);
+  assert.match(remember,/pinned\.useDefaultInputChannels=false/);
+});
+
+test('session capture and shutdown keep requested MAIN through a device STOP',()=>{
+  const capture=main.split('juce::String saveMixerSession(bool resumeMain')[1]
+      .split('const auto canonical=')[0];
+  assert.match(capture,/if\(monitoring\)engine_\.setOutputMuted\(true\)/);
+  assert.match(capture,/engine_\.setOutputMuted\(false\)/);
+  assert.doesNotMatch(capture,/engine_\.setMonitorEnabled\(/);
+  const shutdown=main.split('~ConsoleWindow() override')[1]
+      .split('engine_\.disconnectSecondaryOutput\(\)')[0];
+  assert.match(shutdown,/engine_\.wantsMainContinuation\(\) && !operatorOutputMuted_/);
+});
+
 test('bounded retry + callback watchdog cannot spin in realtime PCM',()=>{
   assert.match(policy,/30000ull/);
   assert.match(main,/callbackWatchTickMs_/);
