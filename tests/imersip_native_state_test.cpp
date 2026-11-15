@@ -268,6 +268,23 @@ int main() {
             live->findChildWithID("imersip.close"));
         assert(preset&&close);
         assert(preset->getSelectedId()==2);
+        assert(!preset->getBounds().intersects(power->getBounds()));
+        assert(!preset->getBounds().intersects(close->getBounds()));
+        assert(!power->getBounds().intersects(close->getBounds()));
+        // Factory preset is an actual AUDIO edit, not cosmetic JSON state.
+        preset->setSelectedId(3,juce::sendNotificationSync); // Warm Hi-Fi
+        juce::AudioBuffer<float> presetPulse(2,128);presetPulse.clear();
+        audible->processBlock(presetPulse,midi);
+        ImerSipProcessor::Completion recalled{};
+        assert(audible->pollCompletion(recalled)&&recalled.applied);
+        assert(std::abs(recalled.settings.bassImpact-.90f)<1.e-5f);
+        assert(std::abs(recalled.settings.lateRoom-.15f)<1.e-5f);
+        preset->setSelectedId(2,juce::sendNotificationSync); // Music Default
+        presetPulse.clear();
+        audible->processBlock(presetPulse,midi);
+        assert(audible->pollCompletion(recalled)&&recalled.applied);
+        assert(std::abs(recalled.settings.bassImpact-Settings{}.bassImpact)<1.e-5f);
+        assert(std::abs(recalled.settings.detail-Settings{}.detail)<1.e-5f);
         bool bypassed=false;
         imer->bindHostPower([&](bool next){bypassed=next;return true;},
                             [&]{return bypassed;});
@@ -287,6 +304,11 @@ int main() {
         power->onClick();
         assert(!bypassed&&power->getButtonText()=="INSERT ON");
         assert(rackMasterBypassed);
+        // Match built-in FX CLOSE behaviour: hide editor but not DSP/lease.
+        close->onClick();
+        assert(!live->isVisible()&&!bypassed);
+        live->setVisible(true);
+        assert(live.get()==sameEditor);
         assert(std::abs(depth->getValue()-100.*Settings{}.depth)<.01);
         depth->setValue(87.,juce::sendNotificationSync);
         juce::AudioBuffer<float> pulse(2,128);pulse.clear();
