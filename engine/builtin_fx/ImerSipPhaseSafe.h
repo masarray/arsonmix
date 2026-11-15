@@ -16,8 +16,8 @@ struct Settings {
     float immersion=.88f;    // clearly spatial music default; 100% still stronger
     float space=.78f;        // prominent directional ER without full reverb
     float width=.67f;        // ~130.5 degree stage, 180 available at max
-    float bassImpact=.50f;   // retain clean original music low end
-    float detail=.40f;       // moderate presence without excessive HF
+    float bassImpact=.70f;   // source-anchored original music warmth
+    float detail=.60f;       // source-anchored treble sparkle
     float outputTrim=1.f;    // P8.2 full-output linear trim
     float stereoLock=1.f;    // 100% retains >=90% original direct SIDE
     float lateRoom=.25f;     // lighter tail preserves front speaker focus

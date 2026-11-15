@@ -50,6 +50,8 @@ int main() {
             ui->getWidth()==armix::builtin_fx::ImerSipEditor::editorWidth &&
             ui->getHeight()==armix::builtin_fx::ImerSipEditor::editorHeight);
         assert(ui->findChildWithID("imersip.power"));
+        assert(ui->findChildWithID("imersip.preset"));
+        assert(ui->findChildWithID("imersip.close"));
         // No fake browser PCM or secondary processing engine.
     }
     assert(fx->isBusesLayoutSupported(fx->getBusesLayout()));
@@ -260,6 +262,12 @@ int main() {
         assert(live->getHeight()==armix::builtin_fx::ImerSipEditor::editorHeight);
         assert(!depth->getBounds().intersects(align->getBounds()));
         assert(!power->getBounds().intersects(stereo->getBounds()));
+        auto* preset=dynamic_cast<juce::ComboBox*>(
+            live->findChildWithID("imersip.preset"));
+        auto* close=dynamic_cast<juce::TextButton*>(
+            live->findChildWithID("imersip.close"));
+        assert(preset&&close);
+        assert(preset->getSelectedId()==2);
         bool bypassed=false;
         imer->bindHostPower([&](bool next){bypassed=next;return true;},
                             [&]{return bypassed;});

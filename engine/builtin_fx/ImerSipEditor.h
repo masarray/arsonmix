@@ -58,6 +58,29 @@ class ImerSipEditor final : public juce::AudioProcessorEditor,
                            private juce::Timer {
 public:
     static constexpr int editorWidth=980,editorHeight=560;
+    static armix::imersip::Settings factoryPreset(int id) noexcept {
+        armix::imersip::Settings s{};
+        switch(id) {
+        case 3: // Warm Hi-Fi: dry bass, controlled wet room
+            s.immersion=.88f;s.width=.74f;s.space=.62f;
+            s.lateRoom=.15f;s.bassImpact=.90f;s.detail=.42f;
+            s.depth=.70f;break;
+        case 4: // Grand Concert: real wide speakers, controlled hall
+            s.immersion=.96f;s.width=.92f;s.space=.90f;
+            s.lateRoom=.31f;s.bassImpact=.73f;s.detail=.65f;
+            s.depth=.88f;break;
+        case 5: // Open & Sparkling
+            s.immersion=.96f;s.width=1.f;s.space=.76f;
+            s.lateRoom=.18f;s.bassImpact=.72f;s.detail=.91f;
+            s.depth=.80f;break;
+        case 6: // Studio Reference, low room for clean A/B
+            s.immersion=.68f;s.width=.70f;s.space=.28f;
+            s.lateRoom=.05f;s.bassImpact=.40f;s.detail=.38f;
+            s.depth=.55f;break;
+        default:break;
+        }
+        return s;
+    }
     void bindHostPower(std::function<bool(bool)> request,
                        std::function<bool()> readback) {
         hostBypassRequest_=std::move(request);
@@ -73,6 +96,39 @@ public:
     explicit ImerSipEditor(ImerSipProcessor& processor)
         :juce::AudioProcessorEditor(processor),fx_(processor) {
         setLookAndFeel(&look_);
+        preset_.setComponentID("imersip.preset");
+        preset_.addItem("Custom",1);
+        preset_.addItem("Music Default",2);
+        preset_.addItem("Warm Hi-Fi",3);
+        preset_.addItem("Grand Concert",4);
+        preset_.addItem("Open & Sparkling",5);
+        preset_.addItem("Studio Reference",6);
+        preset_.setColour(juce::ComboBox::backgroundColourId,
+                          juce::Colour(0xff31535f));
+        preset_.setColour(juce::ComboBox::textColourId,
+                          juce::Colour(0xfff0f9f7));
+        preset_.setColour(juce::ComboBox::outlineColourId,
+                          juce::Colour(0xff649e9a));
+        preset_.setColour(juce::ComboBox::arrowColourId,
+                          juce::Colour(0xffa7f1d7));
+        preset_.onChange=[this] {
+            const auto id=preset_.getSelectedId();
+            if(id<2||id>6)return;
+            resetTransientComparison();
+            sync(factoryPreset(id));
+            submit(); // one existing native ACK, not a second renderer
+        };
+        addAndMakeVisible(preset_);
+        close_.setComponentID("imersip.close");
+        close_.setButtonText("X");
+        close_.setColour(juce::TextButton::textColourOffId,juce::Colours::white);
+        close_.onClick=[this] {
+            resetTransientComparison();
+            if(auto* w=findParentComponentOfClass<juce::DocumentWindow>())
+                w->closeButtonPressed();
+            else setVisible(false);
+        };
+        addAndMakeVisible(close_);
         for(int i=0;i<3;++i) {
             auto& button=venues_[static_cast<std::size_t>(i)];
             button.setButtonText(i==0?"CONCERT HALL":i==1?"CINEMA":"LIVE ROOM");
@@ -101,9 +157,10 @@ public:
                                        juce::degreesToRadians(495.f),true);
             slider.setDoubleClickReturnValue(true,
                 i==0?88.:i==1?67.:i==2?78.:i==3?25.:
-                i==4?100.:i==5?50.:i==6?40.:0.);
+                i==4?100.:i==5?70.:i==6?60.:0.);
             slider.onValueChange=[this,i]{
                 refreshReadout(i);
+                preset_.setSelectedId(1,juce::dontSendNotification);
                 // Previously ALL DSP changes were postponed to mouse-up.
                 // During continuous rotary drag, feed the latest value to
                 // the 25Hz control→PCM SPSC queue, without flooding it.
@@ -134,6 +191,7 @@ public:
         depth_.setRange(0.,100.,1.);
         depth_.setDoubleClickReturnValue(true,78.);
         depth_.onValueChange=[this]{
+            preset_.setSelectedId(1,juce::dontSendNotification);
             if(depth_.isMouseButtonDown()) {
                 deferred_=readControls();hasDeferred_=true;
             } else submit();
@@ -149,6 +207,7 @@ public:
         earAlign_.setRange(-30.,20.,.5);
         earAlign_.setDoubleClickReturnValue(true,0.);
         earAlign_.onValueChange=[this]{
+            preset_.setSelectedId(1,juce::dontSendNotification);
             if(earAlign_.isMouseButtonDown()){
                 deferred_=readControls();hasDeferred_=true;
             }else submit();
@@ -172,14 +231,13 @@ public:
         addAndMakeVisible(originalAb_);
         musicalReset_.setButtonText("MUSIC DEFAULT");
         musicalReset_.onClick=[this] {
-            originalAb_.setToggleState(false,juce::dontSendNotification);
-            fx_.setCompareDry(false);
-            sync(armix::imersip::Settings{});
+            resetTransientComparison();
+            sync(factoryPreset(2));
             submit();
         };
         addAndMakeVisible(musicalReset_);
         power_.setComponentID("imersip.power");
-        power_.setButtonText("FX POWER");
+        power_.setButtonText("INSERT POWER");
         power_.setEnabled(false); // fail closed when not native-bound
         power_.onClick=[this] {
             if(!hostBypassRequest_||!hostBypassReadback_)return;
@@ -210,12 +268,12 @@ public:
         g.setColour(juce::Colour(0xff68cfe2));
         g.fillRect(0,71,getWidth(),1);
         g.setColour(juce::Colour(0xffebf7fb));
-        g.setFont(juce::FontOptions(23.f,juce::Font::plain));
-        g.drawText("ImerSip",24,17,165,30,juce::Justification::centredLeft);
+        g.setFont(juce::FontOptions(17.f,juce::Font::plain));
+        g.drawText("◇ ImerSip",22,17,158,30,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff91adbb));
         g.setFont(juce::FontOptions(11.f,juce::Font::plain));
-        g.drawText("BINAURAL MUSIC STAGE · 180° KEMAR",
-                   176,23,480,24,juce::Justification::centredLeft);
+        g.drawText("BINAURAL SPATIAL ENGINE · NATIVE FX",
+                   180,23,283,24,juce::Justification::centredLeft);
         const auto stageBox=stage_.toFloat();
         const auto controls=juce::Rectangle<float>(377.f,82.f,585.f,438.f);
         g.setColour(juce::Colour(0xff122632));
@@ -256,7 +314,9 @@ public:
             venues_[static_cast<std::size_t>(i)].setBounds(394+i*185,120,172,36);
         originalAb_.setBounds(395,169,168,29);
         musicalReset_.setBounds(580,169,168,29);
-        power_.setBounds(editorWidth-164,18,144,34);
+        preset_.setBounds(470,18,226,34);
+        power_.setBounds(717,18,170,34);
+        close_.setBounds(906,18,49,34);
         depth_.setBounds(60,408,258,24);
         earAlign_.setBounds(60,466,258,24);
         const int xs[]{404,543,682,821,404,543,682,821};
@@ -368,6 +428,16 @@ private:
         next.earAlignDegrees=static_cast<float>(earAlign_.getValue());
         return next;
     }
+    static bool matchesFactory(const armix::imersip::Settings& a,
+                               const armix::imersip::Settings& b) noexcept {
+        const auto near=[](float x,float y){return std::abs(x-y)<.001f;};
+        return a.venue==b.venue&&near(a.immersion,b.immersion)&&
+            near(a.space,b.space)&&near(a.width,b.width)&&
+            near(a.bassImpact,b.bassImpact)&&near(a.detail,b.detail)&&
+            near(a.outputTrim,b.outputTrim)&&near(a.stereoLock,b.stereoLock)&&
+            near(a.lateRoom,b.lateRoom)&&near(a.depth,b.depth)&&
+            near(a.earAlignDegrees,b.earAlignDegrees);
+    }
     void sync(const armix::imersip::Settings& s) {
         venue_=s.venue;
         refreshVenues();
@@ -383,6 +453,10 @@ private:
                 juce::dontSendNotification);
             refreshReadout(i);
         }
+        int id=1;
+        for(int i=2;i<=6;++i)
+            if(matchesFactory(s,factoryPreset(i))) {id=i;break;}
+        preset_.setSelectedId(id,juce::dontSendNotification);
         repaint(stage_);
     }
     void submit() {
@@ -446,6 +520,7 @@ private:
             pending_=0;
             status_=applied?"AUDIO APPLIED · VERIFIED":
                             "DSP REJECTED · SETTINGS UNCHANGED";
+            if(!applied)sync(fx_.acceptedSettings());
             repaint();
         }
         if(pending_==0&&hasDeferred_) {
@@ -456,7 +531,8 @@ private:
     ImerSipProcessor& fx_;
     ImerSipLook look_{};
     std::array<juce::TextButton,3> venues_{};
-    juce::TextButton originalAb_{},musicalReset_{},power_{};
+    juce::TextButton originalAb_{},musicalReset_{},power_{},close_{};
+    juce::ComboBox preset_{};
     std::function<bool(bool)> hostBypassRequest_;
     std::function<bool()> hostBypassReadback_;
     int lastHostPowerState_=-1;
