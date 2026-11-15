@@ -21,10 +21,10 @@
 .console-body .center-pan::-webkit-slider-thumb{width:15px;height:19px;margin-top:-7px;border:1px solid #344b55;border-radius:3px;background:linear-gradient(#f0f5f7,#9bafba 47%,#556e7e 49%,#dce6e9 65%,#728f9f);box-shadow:0 1px 2px #111}
 .console-body .center-pan::-moz-range-thumb{width:15px;height:19px;border-radius:3px;border:1px solid #344b55;background:linear-gradient(#f0f5f7,#9bafba 47%,#556e7e)}
 .console-body[data-density="compact"] .pan-section{grid-template-columns:12px minmax(0,1fr) 18px;gap:1px;padding:0 3px}
-/* Symmetric 23px PAN/caption gutters are a geometry invariant. The slider's
-   track/detent center is always at strip center, irrespective of L100/R100.
-   Readout gives way instead of shifting the slider or moving the PAN thumb. */
-.console-body .pan-section{grid-template-columns:23px minmax(0,1fr) 23px!important;gap:3px!important;padding:0 4px!important;}
+/* Equal 25px gutters keep PAN and its 9px L100/R100 caption in their
+   respective cells without collision. Grid symmetry keeps the slider center
+   at strip center, even at extremes and across strip density changes. */
+.console-body .pan-section{grid-template-columns:25px minmax(0,1fr) 25px!important;gap:3px!important;padding:0 4px!important;}
 .console-body.narrow .pan-section .pan-control{justify-self:center;width:min(100%,43px)}
 
 .console-body .pan-icon{font-size:9px!important}
