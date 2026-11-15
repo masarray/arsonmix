@@ -445,13 +445,22 @@ private:
     }
     static bool matchesFactory(const armix::imersip::Settings& a,
                                const armix::imersip::Settings& b) noexcept {
-        const auto near=[](float x,float y){return std::abs(x-y)<.001f;};
-        return a.venue==b.venue&&near(a.immersion,b.immersion)&&
-            near(a.space,b.space)&&near(a.width,b.width)&&
-            near(a.bassImpact,b.bassImpact)&&near(a.detail,b.detail)&&
-            near(a.outputTrim,b.outputTrim)&&near(a.stereoLock,b.stereoLock)&&
-            near(a.lateRoom,b.lateRoom)&&near(a.depth,b.depth)&&
-            near(a.earAlignDegrees,b.earAlignDegrees);
+        // 'near' is a legacy Win32 SDK macro. Using it as a lambda name
+        // preprocesses into an invalid declaration under MSVC (C2513).
+        const auto equalControlValue=[](float x,float y) noexcept {
+            return std::abs(x-y)<.001f;
+        };
+        return a.venue==b.venue&&
+            equalControlValue(a.immersion,b.immersion)&&
+            equalControlValue(a.space,b.space)&&
+            equalControlValue(a.width,b.width)&&
+            equalControlValue(a.bassImpact,b.bassImpact)&&
+            equalControlValue(a.detail,b.detail)&&
+            equalControlValue(a.outputTrim,b.outputTrim)&&
+            equalControlValue(a.stereoLock,b.stereoLock)&&
+            equalControlValue(a.lateRoom,b.lateRoom)&&
+            equalControlValue(a.depth,b.depth)&&
+            equalControlValue(a.earAlignDegrees,b.earAlignDegrees);
     }
     void sync(const armix::imersip::Settings& s) {
         venue_=s.venue;

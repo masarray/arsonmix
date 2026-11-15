@@ -60,6 +60,17 @@ class ImerSipPickerContract(unittest.TestCase):
         self.assertIn("armix::builtin_fx::findNativeBuiltInFx(catalogId)",main)
         self.assertIn("const plugin=nativeCatalog.get(id) || nativeBuiltins.find",bridge)
 
+    def test_native_editor_avoids_win32_preprocessor_macro_collisions(self):
+        # MSVC's Windows SDK defines 'near' (and historically 'far')
+        # as preprocessor macros. A named lambda 'near' compiled in
+        # Linux tests but made the real full Windows GUI fail with C2513.
+        # Catch this in the fast preflight before obtaining JUCE/WebView2.
+        editor=read("engine/builtin_fx/ImerSipEditor.h")
+        self.assertRegex(editor,r"\\bequalControlValue\\s*=")
+        self.assertNotRegex(editor,re.compile(
+            r"\\b(?:const\\s+)?(?:auto|bool|float|double|int)\\s+"
+            r"(?:near|far|small|interface)\\s*(?:[=;(,])"))
+
     def test_native_windows_artifact_requires_compiled_picker_registry(self):
         cmake=read("CMakeLists.txt")
         cpp=read("tests/imersip_native_state_test.cpp")
