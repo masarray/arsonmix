@@ -295,7 +295,9 @@ test('CI workflow preserves FAT while deduplicating cheaper native builds and up
 test('FAT upload is independently retryable without a second Windows compiler and rechecks all file digests',()=>{
   const wf=readFileSync('.github/workflows/p1-windows.yml','utf8');
   const build=wf.split(/\n  fat-upload:\n/)[0];
-  const upload=wf.split(/\n  fat-upload:\n/)[1];
+  // The isolated P9 research FAT has its own upload job after fat-upload.
+  // Verify exactly the two production FAT uploads inside the production lane.
+  const upload=wf.split(/\n  fat-upload:\n/)[1].split(/\n  sonku-p90-source:\n/)[0];
   assert.ok(upload,'dedicated artifact delivery job must exist');
   assert.match(build,/Seal exact-SHA FAT delivery payload after all installer tests/);
   assert.match(build,/Save completed FAT packages for retryable upload job/);
