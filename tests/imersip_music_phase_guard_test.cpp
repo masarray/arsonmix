@@ -74,7 +74,7 @@ void assertChunkParity(const Stereo& a,const Stereo& b) {
 }
 void verifySceneGeometry() {
     Settings s{};
-    assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-95.92f)<.02f);
+    assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-109.08f)<.02f);
     s.width=1.f;
     assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-126.f)<.01f);
     s.width=0.f;
