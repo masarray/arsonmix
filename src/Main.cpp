@@ -905,7 +905,7 @@ private:
                 juce::String ("DIRECT_RESTORED after ") + juce::String (snapshot.attempts + 1) +
                 " attempt(s) | " + watchdogSummary + " | " + faultStatus);
             if (engine_.isOutputMuted())
-                emitNotice ("DIRECT device reopened. Output remains muted for safety; unmute only when ready.", true);
+                emitNotice ("DIRECT device reopened. MAIN resumes automatically after route verification.", true);
             else
                 emitNotice (wasIndependent
                     ? "Independent device fault: safe DIRECT audio restored."
