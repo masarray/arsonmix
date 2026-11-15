@@ -53,9 +53,10 @@ void makeSignal(Stereo& a,double rate,int fixture,float hz=120.f) {
         if(fixture==5){a.l[i]=v;a.r[i]=-.48f*v+d;}  // weak negative correlation
     }
 }
-Stereo render(double rate,const Settings& s,const Stereo& input,int chunk=128) {
+Stereo render(double rate,const Settings& s,const Stereo& input,int chunk=128,
+              bool p87=true) {
     Stereo result=input;
-    auto dsp=std::make_unique<ImerSipDsp>();
+    auto dsp=std::make_unique<ImerSipDsp>(p87);
     assert(dsp->setSettings(s) && dsp->prepare(rate));
     assert(dsp->measuredStereoStageEnabled());
     for(int at=0;at<static_cast<int>(result.l.size());at+=chunk)
@@ -208,6 +209,59 @@ void verifyRealP86DirectSpeakerReachesOutput(double rate) {
     const double relative=std::sqrt(directDifference/(dryEnergy+1.e-14));
     std::fprintf(stderr,"IMERSIP_P86_DIRECT rate=%.0f transfer=%.5f\n",rate,relative);
     assert(relative>.15); // rejects the old effectively dry stereo base
+}
+
+void verifyP87MusicalAirBodyRealIntegration(double rate) {
+    using armix::sonku::p87::MusicalAirBody;
+    MusicalAirBody helper;
+    constexpr int n=16384;
+    for(float hz:{85.f,1000.f,8000.f,12000.f}) {
+        assert(helper.prepare(rate));
+        double src=0.,air=0.,body=0.;
+        for(int i=0;i<n;++i) {
+            const float x=.10f*std::sin(2.*pi*hz*i/rate);
+            float l=x,r=x;
+            helper.enhanceDirect(l,r);
+            const auto b=helper.diffuseLowBody(x,x);
+            if(i>8192) {src+=x*x;air+=l*l;body+=(x+b.left)*(x+b.left);}
+        }
+        const double ar=std::sqrt(air/src),br=std::sqrt(body/src);
+        if(hz==85.f)assert(br>1.30&&br<1.46);
+        if(hz==8000.f)assert(ar>1.13&&ar<1.28);
+        if(hz==12000.f)assert(ar>1.18&&ar<1.30);
+        if(hz==8000.f)assert(br<1.05);
+    }
+    // The real callback must differ from the matched P8.7-disabled A/B.
+    Settings s{};s.immersion=1.f;s.space=1.f;
+    s.width=1.f;s.detail=0.f;s.bassImpact=0.f;
+    Stereo music(32768);
+    for(int i=0;i<32768;++i){
+        const float t=static_cast<float>(i/rate);
+        const float x=.080f*std::sin(2.*pi*8100.*t)+
+                      .035f*std::sin(2.*pi*83.*t);
+        const float y=.020f*std::sin(2.*pi*4700.*t);
+        music.l[i]=x+y;music.r[i]=x-y;
+    }
+    const auto old=render(rate,s,music,128,false);
+    const auto improved=render(rate,s,music,128,true);
+    const auto chunks=render(rate,s,music,64,true);
+    assertChunkParity(improved,chunks);
+    double delta=0.,e=0.;
+    for(int i=4096;i<32768;++i) {
+        const double dl=improved.l[i]-old.l[i];
+        const double dr=improved.r[i]-old.r[i];
+        delta+=dl*dl+dr*dr;
+        e+=music.l[i]*music.l[i]+music.r[i]*music.r[i];
+    }
+    const double rel=std::sqrt(delta/(e+1.e-14));
+    std::fprintf(stderr,"IMERSIP_P87_LIVE_PCM rate=%.0f relDelta=%.5f\n",rate,rel);
+    assert(rel>.006 && rel<.30);
+    s.immersion=0.f;
+    const auto dry=render(rate,s,music,128,true);
+    for(int i=0;i<32768;++i) {
+        assert(std::abs(dry.l[i]-music.l[i])<1.e-5f);
+        assert(std::abs(dry.r[i]-music.r[i])<1.e-5f);
+    }
 }
 void verifyBassFoundation(double rate) {
     for(int venue=0;venue<3;++venue)for(float hz:{40.f,70.f,110.f,160.f,220.f}) {
@@ -509,6 +563,7 @@ int main() {
         verifyP82NormalPathRemainsUnchanged(rate);
         verifyActualMeasuredDualSpeakers(rate);
         verifyRealP86DirectSpeakerReachesOutput(rate);
+        verifyP87MusicalAirBodyRealIntegration(rate);
         verifyBassFoundation(rate);
         verifyRoomLinkedBassStaysCoherent(rate);
         verifyDetailIsNotMidBoost(rate);

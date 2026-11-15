@@ -1,9 +1,10 @@
-name: ImerSip music-first P8.2 + isolated P8.4 directional fusion
+name: ImerSip P8.7 musical front-speaker plus P8.6 focused room
 on:
   pull_request:
     paths:
       - 'engine/builtin_fx/ImerSip*.h'
       - 'engine/builtin_fx/sonku/SonKuP84FusedMusicHrir.h'
+      - 'engine/builtin_fx/sonku/SonKuP87MusicalAirBody.h'
       - 'engine/builtin_fx/sonku/SonKuSpatialCore.h'
       - 'tests/imersip_music_phase_guard_test.cpp'
       - 'tests/imersip_fx_picker_contract_test.py'

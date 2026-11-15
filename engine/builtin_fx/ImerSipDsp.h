@@ -2,18 +2,14 @@
 #pragma once
 #include "ImerSipPhaseSafe.h"
 #include "sonku/SonKuSpatialCore.h"
+#include "sonku/SonKuP87MusicalAirBody.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
 
-// P8.2 is the acoustic SIDE-field generator, never the owner of music MID.
-// The failed first version sent the ENTIRE mix (including center vocals)
-// through one centered KEMAR HRTF plus substantial six-wall room tails.
-// This colored/muffled vocals and made the image sound almost mono.
-// ImerSip v2 keeps each original channel's DIRECT sound and uses only
-// bounded, spatially differentiated P8.2 SIDE residual for exterior ambience.
-// Stereo SIDE is never downmixed to mono and no Haas/cross-channel inversion
-// or per-block allocation is introduced.
+// One measured P8.2/P8.4 core, focused P8.6 walls and isolated P8.7 air/body.
+// Actual direct binaural speakers reach PCM, original bass remains coherent.
+// No P8.3 ancestry, second callback, synthetic reverb, FIR, or runtime alloc.
 namespace armix::imersip {
 
 inline armix::sonku::Settings sceneFor(const Settings& in) noexcept {
@@ -42,6 +38,9 @@ inline armix::sonku::Settings sceneFor(const Settings& in) noexcept {
 
 class ImerSipDsp final {
 public:
+    // Source-test A/B disables P8.7 while preserving exact shared geometry.
+    explicit ImerSipDsp(bool musicalAirBody=true) noexcept
+      : p87Enabled_(musicalAirBody) {}
     bool prepare(double rate) noexcept {
         ready_=false;
 #if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH \
@@ -57,16 +56,16 @@ public:
         if(ready_)ready_=core_.enableImerSipMeasuredStereoSide(true);
         if(ready_)ready_=enhancer_.prepare(rate);
         if(ready_)ready_=enhancer_.setSettings(settings_);
+        if(ready_)ready_=p87Body_.prepare(rate);
         if(ready_) {
             stageSlew_=static_cast<float>(1.-std::exp(-1./(rate*.018)));
             trimSlew_=static_cast<float>(1.-std::exp(-1./(rate*.024)));
             constexpr double pi=3.14159265358979323846;
             earlyHp_=static_cast<float>(1.-std::exp(-2.*pi*220./rate));
             lateHp_=static_cast<float>(1.-std::exp(-2.*pi*160./rate));
-            // Four-pole directional-difference high-pass, no FIR added.
-            // This retains ORIGINAL 40-220Hz stereo/bass even at 100%
-            // IMMERSION while applying true direct KEMAR transfer above it.
-            directHp_=static_cast<float>(1.-std::exp(-2.*pi*700./rate));
+            // Four-pole 480Hz difference HP expands speaker midrange
+            // relative to 700Hz while retaining the old strict LF tests.
+            directHp_=static_cast<float>(1.-std::exp(-2.*pi*480./rate));
             limiterRelease_=static_cast<float>(1./(rate*.080));
             for(auto& ear:directDifferenceLow_)ear.fill(0.f);
             earlyLow_.fill(0.f);lateLow_.fill(0.f);
@@ -78,6 +77,7 @@ public:
             outputGain_=settings_.outputTrim;
             core_.reset();
             enhancer_.reset();
+            p87Body_.reset();
         }
 #endif
         return ready_;
@@ -127,8 +127,13 @@ public:
                 // HRTF and headphone dry. Cascaded first-order HP stages
                 // form a four-pole high-pass; unlike one-pole split, bass
                 // at 40-220 Hz receives negligible conflicting pressure.
-                float deltaL=wet.directL-dryL;
-                float deltaR=wet.directR-dryR;
+                // P8.7 measured direct KEMAR air shelf (shared L/R pole).
+                // Do NOT boost diffuse late HF or invert pinna notches.
+                float hrL=wet.directL,hrR=wet.directR;
+                if(p87Enabled_ && settings_.immersion>0.f)
+                    p87Body_.enhanceDirect(hrL,hrR);
+                float deltaL=hrL-dryL;
+                float deltaR=hrR-dryR;
                 for(int pole=0;pole<4;++pole) {
                     auto& lowL=directDifferenceLow_[0][pole];
                     auto& lowR=directDifferenceLow_[1][pole];
@@ -147,15 +152,20 @@ public:
                 const float erR=wet.earlyR-earlyLow_[1];
                 const float revL=wet.lateL-lateLow_[0];
                 const float revR=wet.lateR-lateLow_[1];
+                // Real eight-line FDN LP175 body. Existing bassImpact shelf
+                // already supplies original music LF: do NOT add P8.7 +9%.
+                const auto body=(p87Enabled_ && settings_.immersion>0.f)
+                    ?p87Body_.diffuseLowBody(wet.lateL,wet.lateR)
+                    :armix::sonku::p87::MusicalAirBody::Ears{};
                 const float erMid=.5f*(erL+erR),erSide=.5f*(erL-erR);
                 const float revMid=.5f*(revL+revR);
                 const float revSide=.5f*(revL-revR);
                 // P8.6 horizontal early reflections support the DIRECT
                 // speakers; diffuse late tail is deliberately restrained.
                 float addL=earlyGain_*(erSide+.40f*erMid)+
-                           lateGain_*(revSide+.10f*revMid);
+                           lateGain_*(revSide+.10f*revMid+body.left);
                 float addR=earlyGain_*(-erSide+.40f*erMid)+
-                           lateGain_*(-revSide+.10f*revMid);
+                           lateGain_*(-revSide+.10f*revMid+body.right);
                 // Preserve the *direct binaural substitution* at high input
                 // level: only the ADDITIONAL room returns are headroom-gated.
                 const float headroom=std::max(0.f,.98f-
@@ -203,6 +213,8 @@ private:
     static constexpr int scratchFrames=8192;
     armix::sonku::SonKuSpatialCore core_{};
     PhaseSafeEnhancer enhancer_{};
+    armix::sonku::p87::MusicalAirBody p87Body_{};
+    const bool p87Enabled_=true;
     std::array<armix::sonku::SonKuSpatialCore::RoomReturns,scratchFrames>
         roomReturns_{};
     std::array<float,scratchFrames> sourceStereoGate_{},mid_{},side_{};
