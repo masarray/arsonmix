@@ -2509,7 +2509,7 @@ private:
             asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
             diagnostics_.record("CUSTOM_AUDIO_APPLY_OK",
                 typeName+" | "+juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
-            requestAutomaticMain();
+            requestAutomaticMain(false);
             send(true,engine_.isMonitorEnabled()?"ACCEPTED_LIVE":"ACCEPTED_MUTED",{});
             emitApprovedNativeSnapshot();
             return;
@@ -6839,9 +6839,12 @@ private:
             // Never enable the legacy CH1 signal path on STOP or hotplug.
             closePluginEditor();
             const auto error=engine_.clearProductionRouting();
+            // SOURCE NONE is real silent PCM, not a user MUTE. The next
+            // accepted source reaches MAIN with no additional ARM gesture.
+            if(error.isEmpty())requestAutomaticMain(false);
             diagnostics_.record(error.isEmpty()?"NATIVE_INPUT_PATCH_CLEARED":
                                  "NATIVE_INPUT_PATCH_CLEAR_FAILED",
-                                error.isEmpty()?"No input assigned; output stays MUTED":error);
+                                error.isEmpty()?"No input assigned; MAIN automatically ready":error);
             if(browser_.loaded) {
                 auto ack=std::make_unique<juce::DynamicObject>();
                 ack->setProperty("ok",error.isEmpty());
@@ -6851,7 +6854,7 @@ private:
                     "arMixRoutingLabAck",juce::var(ack.release()));
             }
             return emitNotice(error.isEmpty()
-                ?"All INPUT PATCH assignments cleared. Native mixer stays ready, OUTPUT MUTED."
+                ?"All INPUT PATCH assignments cleared. Mixer remains ready; MAIN connects automatically when routed."
                 :"Input patch cleared; native session is SILENT: "+error,
                 error.isNotEmpty());
         }
