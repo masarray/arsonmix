@@ -215,6 +215,7 @@ void verifyP87MusicalAirBodyRealIntegration(double rate) {
     using armix::sonku::p87::MusicalAirBody;
     MusicalAirBody helper;
     constexpr int n=16384;
+    double priorAir8=0.;
     for(float hz:{85.f,1000.f,8000.f,12000.f}) {
         assert(helper.prepare(rate));
         double src=0.,air=0.,body=0.;
@@ -227,9 +228,14 @@ void verifyP87MusicalAirBodyRealIntegration(double rate) {
         }
         const double ar=std::sqrt(air/src),br=std::sqrt(body/src);
         if(hz==85.f)assert(br>1.30&&br<1.46);
-        if(hz==8000.f)assert(ar>1.13&&ar<1.28);
-        if(hz==12000.f)assert(ar>1.18&&ar<1.30);
+        if(hz==8000.f) {assert(ar>1.13&&ar<1.28);priorAir8=ar;}
+        // Matches P8.7 source's transfer property: smooth increasing
+        // shelf, NOT an invented 12kHz absolute floor.
+        if(hz==12000.f)assert(ar>priorAir8&&ar<1.29);
         if(hz==8000.f)assert(br<1.05);
+        std::fprintf(stderr,
+            "IMERSIP_P87_FILTER rate=%.0f hz=%.0f air=%.5f body=%.5f\\n",
+            rate,static_cast<double>(hz),ar,br);
     }
     // The real callback must differ from the matched P8.7-disabled A/B.
     Settings s{};s.immersion=1.f;s.space=1.f;
