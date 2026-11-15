@@ -6726,7 +6726,7 @@ private:
                     // Quiesce MAIN only for verified prepare/graph publication,
                     // then restore automatically even on vendor rejection.
                     std::optional<ScopedMainTransaction> recallGate;
-                    if(error.isEmpty())recallGate.emplace(*safe);
+                    if(error.isEmpty())recallGate.emplace(*safe.getComponent());
                     if(error.isEmpty()) {
                         const auto state=safe->engine_.status();
                         const auto lab=state.getProperty("dryRoutingLab",{});
