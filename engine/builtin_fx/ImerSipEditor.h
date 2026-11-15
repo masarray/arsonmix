@@ -17,19 +17,21 @@ public:
         float pos,float start,float end,juce::Slider&) override {
         const float cx=x+w*.5f,cy=y+h*.5f;
         const float radius=std::min(w,h)*.37f;
-        const auto ink=juce::Colour(0xff86dcea);
+        const auto ink=juce::Colour(0xff58cfaa);
         juce::Path track,active;
         track.addCentredArc(cx,cy,radius,radius,0.f,start,end,true);
         active.addCentredArc(cx,cy,radius,radius,0.f,start,
                              start+pos*(end-start),true);
-        g.setColour(juce::Colour(0xff294757));
+        g.setColour(juce::Colour(0xffa2b9bd));
         g.strokePath(track,juce::PathStrokeType(3.f));
         g.setColour(ink);
         g.strokePath(active,juce::PathStrokeType(3.f));
-        g.setColour(juce::Colour(0xff07151f));
+        juce::ColourGradient silver(juce::Colour(0xfffaffff),cx,cy-radius,
+                                    juce::Colour(0xffb4c7cc),cx,cy+radius,false);
+        g.setGradientFill(silver);
         g.fillEllipse(cx-radius*.74f,cy-radius*.74f,
                       radius*1.48f,radius*1.48f);
-        g.setColour(juce::Colour(0xff3f5866));
+        g.setColour(juce::Colour(0xff789aa2));
         g.drawEllipse(cx-radius*.74f,cy-radius*.74f,
                       radius*1.48f,radius*1.48f,1.f);
         const float a=start+pos*(end-start);
@@ -38,18 +40,23 @@ public:
                                                 -std::cos(a)*radius*.58f);
         const auto base=center+juce::Point<float>(std::sin(a)*radius*.18f,
                                                  -std::cos(a)*radius*.18f);
-        g.setColour(ink);
+        g.setColour(juce::Colour(0xff244e59));
         g.drawLine(base.x,base.y,tip.x,tip.y,2.6f);
     }
     void drawButtonBackground(juce::Graphics& g,juce::Button& b,
         const juce::Colour&,bool hover,bool pressed) override {
         const auto bounds=b.getLocalBounds().toFloat().reduced(.5f);
         const bool on=b.getToggleState();
-        g.setColour(on?juce::Colour(0xff204c5d):
-                    hover?juce::Colour(0xff1e3441):juce::Colour(0xff142832));
+        const bool head=b.getComponentID()=="imersip.power"||
+                        b.getComponentID()=="imersip.close";
+        g.setColour(head?(on?juce::Colour(0xff2f7469):
+                           hover?juce::Colour(0xff365f69):juce::Colour(0xff294b55)):
+                         on?juce::Colour(0xff529d8c):
+                         hover?juce::Colour(0xffe4f1f0):juce::Colour(0xffedf4f4));
         g.fillRoundedRectangle(bounds,5.f);
-        g.setColour(on?juce::Colour(0xff6dd2e5):
-                    pressed?juce::Colour(0xff597a8b):juce::Colour(0xff385768));
+        g.setColour(head?juce::Colour(0xff80cabb):
+                         on?juce::Colour(0xff2d8776):
+                         pressed?juce::Colour(0xff7ca3a8):juce::Colour(0xffadc3c7));
         g.drawRoundedRectangle(bounds,5.f,1.f);
     }
 };
@@ -134,9 +141,9 @@ public:
             button.setButtonText(i==0?"CONCERT HALL":i==1?"CINEMA":"LIVE ROOM");
             button.setClickingTogglesState(false);
             button.setColour(juce::TextButton::textColourOffId,
-                             juce::Colour(0xffa9c7d4));
+                             juce::Colour(0xff244b58));
             button.setColour(juce::TextButton::textColourOnId,
-                             juce::Colour(0xffe6faff));
+                             juce::Colours::white);
             button.onClick=[this,i]{venue_=i;refreshVenues();submit();};
             addAndMakeVisible(button);
         }
@@ -175,12 +182,12 @@ public:
             cap.setText(names[i],juce::dontSendNotification);
             cap.setJustificationType(juce::Justification::centred);
             cap.setFont(juce::FontOptions(9.f,juce::Font::plain));
-            cap.setColour(juce::Label::textColourId,juce::Colour(0xff819ba8));
+            cap.setColour(juce::Label::textColourId,juce::Colour(0xff54747d));
             addAndMakeVisible(cap);
             auto& value=values_[static_cast<std::size_t>(i)];
             value.setJustificationType(juce::Justification::centred);
             value.setFont(juce::FontOptions(12.f,juce::Font::plain));
-            value.setColour(juce::Label::textColourId,juce::Colour(0xffdcf4fa));
+            value.setColour(juce::Label::textColourId,juce::Colour(0xff183947));
             addAndMakeVisible(value);
         }
         // Depth is a REAL source-to-ear/wall distance: the old ImerSip
@@ -263,9 +270,9 @@ public:
     }
     void paint(juce::Graphics& g) override {
         g.fillAll(juce::Colour(0xff0e1c26));
-        g.setColour(juce::Colour(0xff1a3443));
+        g.setColour(juce::Colour(0xff1e3c48));
         g.fillRect(0,0,getWidth(),72);
-        g.setColour(juce::Colour(0xff68cfe2));
+        g.setColour(juce::Colour(0xff69d4ad));
         g.fillRect(0,71,getWidth(),1);
         g.setColour(juce::Colour(0xffebf7fb));
         g.setFont(juce::FontOptions(17.f,juce::Font::plain));
@@ -277,26 +284,28 @@ public:
         const auto stageBox=stage_.toFloat();
         const auto controls=juce::Rectangle<float>(377.f,82.f,585.f,438.f);
         g.setColour(juce::Colour(0xff122632));
-        g.fillRoundedRectangle(stageBox,8.f);
-        g.fillRoundedRectangle(controls,8.f);
+        g.fillRoundedRectangle(stageBox,7.f);
+        g.setColour(juce::Colour(0xffd9e6e8));
+        g.fillRoundedRectangle(controls,7.f);
         g.setColour(juce::Colour(0xff2c4c5b));
-        g.drawRoundedRectangle(stageBox,8.f,1.f);
-        g.drawRoundedRectangle(controls,8.f,1.f);
+        g.drawRoundedRectangle(stageBox,7.f,1.f);
+        g.setColour(juce::Colour(0xffafc4c7));
+        g.drawRoundedRectangle(controls,7.f,1.f);
         paintStage(g);
-        g.setColour(juce::Colour(0xff8faebb));
+        g.setColour(juce::Colour(0xff35616c));
         g.setFont(juce::FontOptions(10.5f,juce::Font::plain));
         g.drawText("VENUE",395,97,110,17,juce::Justification::centredLeft);
         g.drawText("SPACE / DIRECTION",395,207,210,16,
                    juce::Justification::centredLeft);
         g.drawText("FIDELITY / TONE",395,353,210,16,
                    juce::Justification::centredLeft);
-        g.setColour(juce::Colour(0xff254655));
+        g.setColour(juce::Colour(0xffafc5c8));
         g.drawLine(395.f,344.f,944.f,344.f,1.f);
-        g.setColour(juce::Colour(0xff84a9b9));
+        g.setColour(juce::Colour(0xff5b7a83));
         g.setFont(juce::FontOptions(10.f,juce::Font::plain));
         // This toggles the individual native insert's bypassRequested;
         // channel FX rack master power remains a separate host authority.
-        g.drawText("INSERT POWER · SLOT BYPASS  /  ORIGINAL A/B · TEMPORARY",
+        g.drawText("SLOT BYPASS · NATIVE FX    /    ORIGINAL A-B · TEMPORARY",
                    395,499,542,15,juce::Justification::centred);
         g.setColour(juce::Colour(0xff244452));
         g.fillRect(0,527,editorWidth,1);
@@ -304,7 +313,7 @@ public:
         g.drawText(status_,22,534,444,18,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff90d6e5));
         g.drawText(liveReadout_,470,534,290,18,juce::Justification::centredRight);
-        g.setColour(juce::Colour(0xff6d8f9b));
+        g.setColour(juce::Colour(0xff7da6b2));
         g.drawText("44.1 / 48 kHz · HEADPHONES",777,534,185,18,
                    juce::Justification::centredRight);
     }
