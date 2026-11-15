@@ -6843,7 +6843,13 @@ private:
             else if(action=="secondaryOutputConnect") {
                 if(!value.isString() || value.toString().length()>240)
                     error="Select a real named Windows playback endpoint";
-                else error=engine_.connectSecondaryOutput(value.toString());
+                else {
+                    // Secondary endpoint creation needs exclusive CONTROL
+                    // preparation. Never require the operator to leave MAIN
+                    // manually muted to configure additional playback.
+                    ScopedMainTransaction mainGate(*this);
+                    error=engine_.connectSecondaryOutput(value.toString());
+                }
             } else if(action=="secondaryOutputArm") {
                 if(!value.isBool()) error="Expected explicit Secondary output ARM true/false";
                 else error=engine_.armSecondaryOutput(bool(value));
@@ -6932,7 +6938,9 @@ private:
         }
         else if (action == "audioDeviceRefresh")
         {
-            // Slow vendor rescan: deliberate operator request, MUTE required.
+            // Deliberate vendor rescan, isolated only while enumerating.
+            // No manual OUTPUT MUTE switch and no permanent pause.
+            ScopedMainTransaction mainGate(*this);
             emitDeviceInventory(true);
         }
         else if (action == "audioDeviceApply")
