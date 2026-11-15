@@ -1891,7 +1891,17 @@ test("native vendor editor retention follows current PCM ownership, not inactive
  const main=read('src/Main.cpp'),lab=read('src/LiveDryRoutingLab.h');
  assert.match(main,/engine_\.retainsRoutedFxEditor\(routedEditorEpoch_,routedEditorOwner_\)/);
  assert.match(main,/routedEditorEpoch_=retainedEpoch/);
- assert.match(main,/retainedEpoch=ep/);
+ // Current host validates decimal-string native ChannelId epoch + revision,
+ // then uses those exact validated counters for both reopen and bypass.
+ assert.match(main,/const auto leaseEpoch=nativeId\.isVoid\(\)\?epoch:nativeEpoch/);
+ assert.match(main,/const auto leaseRevision=nativeId\.isVoid\(\)\?revision:nativeRevision/);
+ assert.match(main,/const auto retainedEpoch=leaseEpoch/);
+ assert.match(main,/routedEditorRevision_=retainedRevision/);
+ assert.match(main,/const bool sameEditor=/);
+ assert.match(main,/editorWindow_->setVisible\(true\)/);
+ assert.match(main,/engine_\.bypassNativeVst3\(/);
+ assert.match(main,/imer->bindHostPower\(/);
+ assert.match(main,/emitApprovedNativeSnapshot\(\)/);
  assert.match(lab,/nativeAccepted_\.fxOwners->retainsEditor\(owner\)/);
  const editor=main.slice(main.indexOf('if(owner && owner->processor)'),main.indexOf('if(owner && owner->processor)')+700);
  assert.ok(editor.indexOf('closePluginEditor();')<editor.indexOf('createEditorIfNeeded()'),'old window must be destroyed before asking for its editor pointer');
