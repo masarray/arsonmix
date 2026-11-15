@@ -339,6 +339,19 @@ private:
             status_="INVALID CONTROL VALUE · NO CHANGE";repaint();return;
         }
         if(pending_!=0) {
+            // If audio has ALREADY applied the previous gesture, consume
+            // its latched ACK now. Waiting for the 25 Hz paint timer made
+            // a rapid second drag appear inert, even though the DSP had
+            // finished the first edit. This runs on JUCE CONTROL only.
+            ImerSipProcessor::Completion ack{};
+            while(fx_.pollCompletion(ack)) {}
+            if(fx_.lastCompletedRequestId()==pending_) {
+                const bool ok=fx_.lastCompletionApplied();
+                pending_=0;
+                if(!ok)status_="DSP REJECTED · PREVIOUS EDIT";
+            }
+        }
+        if(pending_!=0) {
             deferred_=wanted;hasDeferred_=true;
             status_="APPLYING · LATEST EDIT QUEUED";repaint();return;
         }
