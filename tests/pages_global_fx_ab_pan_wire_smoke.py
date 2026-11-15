@@ -92,21 +92,36 @@ def run(page, width, height):
     assert toggle.locator("button").count()==0
     assert power.evaluate("el=>getComputedStyle(el).backgroundImage")=="none"
     def check_fx_vertical_center(state):
+        # Compare rendered text glyph positions with the real neighbouring
+        # toolbar captions. Checking only the FX button's own center failed:
+        # a special 14px linebox/1px offset had moved its baseline.
         positions=toggle.evaluate("""button=>{
-          const text=button.querySelector('.global-fx-label'),icon=button.querySelector('.global-fx-power-icon');
-          const b=button.getBoundingClientRect(), t=text.getBoundingClientRect(), i=icon.getBoundingClientRect();
-          const center=rect=>(rect.top+rect.bottom)/2;
-          return {button:center(b),label:center(t),icon:center(i),
-                  textLineHeight:getComputedStyle(text).lineHeight,
-                  align:getComputedStyle(button).alignItems,
-                  labelHeight:t.height,iconHeight:i.height};
+          const selectors=['#gainView','#fxView','#sofToggle','#saveScene'];
+          const center=r=>(r.top+r.bottom)/2;
+          const measure=(element,caption)=>{
+            const buttonRect=element.getBoundingClientRect(),range=document.createRange();
+            range.selectNodeContents(caption);
+            const ink=range.getBoundingClientRect(),style=getComputedStyle(caption);
+            return {local:center(ink)-center(buttonRect),absolute:center(ink),
+              size:style.fontSize,weight:style.fontWeight,line:style.lineHeight,
+              font:style.fontFamily};
+          };
+          const caption=button.querySelector('.global-fx-label');
+          const icon=button.querySelector('.global-fx-power-icon').getBoundingClientRect();
+          return {fx:measure(button,caption),
+            controls:selectors.map(s=>{let el=document.querySelector(s);return {id:s,...measure(el,el)}}),
+            iconOffset:center(icon)-center(button.getBoundingClientRect()),
+            labelTransform:getComputedStyle(caption).transform};
         }""")
-        assert positions["align"]=="center",(width,state,positions)
-        assert positions["textLineHeight"]=="14px",(width,state,positions)
-        assert positions["labelHeight"]==positions["iconHeight"]==14,(width,state,positions)
-        assert abs(positions["icon"]-positions["button"])<=.75,(width,state,positions)
-        assert abs(positions["label"]-positions["button"])<=1.25,(width,state,positions)
-        assert abs(positions["label"]-positions["icon"])<=1.25,(width,state,positions)
+        assert positions["labelTransform"]=="none",(width,state,positions)
+        assert abs(positions["iconOffset"])<=.75,(width,state,positions)
+        for ref in positions["controls"]:
+            assert positions["fx"]["size"]==ref["size"],(width,state,"font size",positions)
+            assert positions["fx"]["weight"]==ref["weight"],(width,state,"font weight",positions)
+            assert positions["fx"]["line"]==ref["line"],(width,state,"line-height",positions)
+            assert positions["fx"]["font"]==ref["font"],(width,state,"font family",positions)
+            assert abs(positions["fx"]["local"]-ref["local"])<=.6,(
+                width,state,"FX caption must share toolbar caption baseline",positions)
     check_fx_vertical_center("ON")
     # The full physical button face, not only its glyph, becomes green.
     # The label and icon must share exactly the parent's ON/OFF text ink.
