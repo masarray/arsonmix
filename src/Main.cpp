@@ -3615,7 +3615,7 @@ private:
         // transient STOP/default/empty device state. Keep the last verified
         // file on disk until the original physical route has returned.
         if(automatic && !shutdownCheckpoint) {
-            const auto* audio=engine_.devices().getCurrentAudioDevice();
+            auto* audio=engine_.devices().getCurrentAudioDevice();
             if(!audio || !audio->isOpen() || !engine_.directRouteAuthorized() ||
                engine_.mainInterruptedByDevice())
                 return "Automatic checkpoint paused until audio device recovery";
@@ -7533,7 +7533,7 @@ private:
     static bool matchesPinnedWasapiReadback(
         const juce::AudioDeviceManager::AudioDeviceSetup& wanted,
         const juce::AudioDeviceManager::AudioDeviceSetup& actual,
-        const juce::AudioIODevice* device) noexcept {
+        juce::AudioIODevice* device) noexcept {
         return device && device->isOpen() &&
             wanted.outputDeviceName.isNotEmpty() &&
             actual.inputDeviceName==wanted.inputDeviceName &&
