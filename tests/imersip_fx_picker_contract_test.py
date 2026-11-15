@@ -72,7 +72,12 @@ class ImerSipPickerContract(unittest.TestCase):
         self.assertIn("ARMixConsole ARMixSonKuP72SourceTests",windows)
         self.assertIn("ARMixImerSipNativeTests",windows)
         self.assertIn("ImerSipNativeJuceP82AcceptedStateAckAndRestore",windows)
-        self.assertIn("ArSonMix-ImerSip-P82-Research-Windows-x64-",windows)
+        self.assertIn("ArSonMix-ImerSip-P87-StereoFirst-v5-Windows-x64-",windows)
+        self.assertIn("imrsSchemaVersion = 5",windows)
+        self.assertIn("imrsStateBytes = 52",windows)
+        self.assertIn("sourceDistanceRangeMeters = @(1.6,7.4)",windows)
+        self.assertIn("earHrtfAlignRangeDegrees = @(-30,20)",windows)
+        self.assertIn("binauralEarlyMidAndSide = $true",windows)
 
 if __name__=="__main__":
     unittest.main()

@@ -211,15 +211,25 @@ jobs:
             fullAudioEditorType = 'JUCE_NATIVE_FX_EDITOR_SPSC_AUDIO_APPLIED'
             detailControl = $true
             detailHighShelfHz = 5600
-            imrsSchemaVersion = 2
-            imrsStateBytes = 36
-            directMidSourcePreserved = $true
-            defaultVirtualSpeakerSpreadDegrees = 175
-            sourceDistanceMeters = 1.6
-            earlyRoomPreferredOverLate = $true
+            imrsSchemaVersion = 5
+            imrsStateBytes = 52
+            # This is a CURRENT v5 physical headset research candidate.
+            # Old v2/36-byte/175°/1.6m metadata falsely described the
+            # latest executable and forced the wrong provenance gate.
+            backwardCompatibleImrsVersions = @(1,2,3,4)
+            directMidMeasuredHrtf = $true
+            originalStereoSideProtected = $true
+            defaultVirtualSpeakerSpreadDegrees = 96
+            speakerSpreadRangeDegrees = @(32,126)
+            sourceDistanceMeters = 5.08
+            sourceDistanceRangeMeters = @(1.6,7.4)
+            sourceHeightPhysicalMeters = 1.45
+            earHrtfAlignRangeDegrees = @(-30,20)
+            independentEarlyAndLate = $true
+            realtimeKnobsDuringDrag = $true
             coherentSpaceLinkedBass = $true
             p84FusedMeasuredDirection = $true
-            sideOnlySpatialRoomReturn = $true
+            binauralEarlyMidAndSide = $true
             actualDualMeasuredKemarSpeakers = $true
             p82StandardCenterMusicDefaultUnchanged = $true
 
@@ -234,18 +244,22 @@ jobs:
           $p = Get-Content -LiteralPath dist/BUILD_PROVENANCE.json -Raw | ConvertFrom-Json
           if (-not $p.imersipResearch.fullAudioEditorAvailable -or
               -not $p.imersipResearch.detailControl -or
-              $p.imersipResearch.imrsSchemaVersion -ne 2 -or
-              $p.imersipResearch.imrsStateBytes -ne 36 -or
-              -not $p.imersipResearch.directMidSourcePreserved -or
-              $p.imersipResearch.defaultVirtualSpeakerSpreadDegrees -ne 175 -or
-              $p.imersipResearch.sourceDistanceMeters -ne 1.6 -or
-              -not $p.imersipResearch.earlyRoomPreferredOverLate -or
+              $p.imersipResearch.imrsSchemaVersion -ne 5 -or
+              $p.imersipResearch.imrsStateBytes -ne 52 -or
+              -not $p.imersipResearch.directMidMeasuredHrtf -or
+              -not $p.imersipResearch.originalStereoSideProtected -or
+              $p.imersipResearch.defaultVirtualSpeakerSpreadDegrees -ne 96 -or
+              [math]::Abs([double]$p.imersipResearch.sourceDistanceMeters - 5.08) -gt 0.01 -or
+              $p.imersipResearch.sourceDistanceRangeMeters.Count -ne 2 -or
+              $p.imersipResearch.earHrtfAlignRangeDegrees.Count -ne 2 -or
+              -not $p.imersipResearch.independentEarlyAndLate -or
+              -not $p.imersipResearch.realtimeKnobsDuringDrag -or
               -not $p.imersipResearch.coherentSpaceLinkedBass -or
               -not $p.imersipResearch.p84FusedMeasuredDirection -or
-              -not $p.imersipResearch.sideOnlySpatialRoomReturn -or
+              -not $p.imersipResearch.binauralEarlyMidAndSide -or
               -not $p.imersipResearch.actualDualMeasuredKemarSpeakers -or
               -not $p.imersipResearch.p82StandardCenterMusicDefaultUnchanged) {
-            throw 'IMERSIP_V2_GUI_OR_DIRECT_STEREO_CONTRACT_MISSING'
+            throw 'IMERSIP_V5_CURRENT_GUI_DEPTH_HEIGHT_AND_PCM_CONTRACT_MISSING'
           }
           if (-not $p.sonkuExperiment.enabled -or
               -not $p.sonkuExperiment.musicSafeStereo -or
@@ -279,7 +293,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         name: Upload isolated SonKu Windows x64 field candidate
         with:
-          name: ArSonMix-ImerSip-P82-Research-Windows-x64-${{ github.run_id }}
+          name: ArSonMix-ImerSip-P87-StereoFirst-v5-Windows-x64-${{ github.run_id }}
           path: dist/
           if-no-files-found: error
           retention-days: 21
