@@ -65,6 +65,15 @@ test("emergency CLI reset runs before WebView and only clears mixer data",()=>{
   assert.match(hotkeys,/juce::String resetMixerMappings\(\)/);
   assert.match(hotkeys,/m\.scope=="SESSION"/);
   assert.match(host,/!isAutoUpdateHealthProbe\(\)/);
+  assert.match(host,/\.withButton\("Cancel"\)/);
+  assert.match(host,/\.withButton\("Reset Mixer"\)/);
+  assert.match(host,/if\(choice!=1\)/);
+  assert.match(host,/void startNormalMixerStartup\(\)/);
+  assert.match(host,/discardPlayerSourceForFactory\(\)/);
+  assert.match(host,/resetLegacyMixerControlsForFactory\(\)/);
+  const installer=read("installer/ArSonMix.iss");
+  assert.match(installer,/Reset ArSonMix Mixer/);
+  assert.match(installer,/Parameters: "--reset-mixer"/);
 });
 
 test("native bridge clears stale channel appearance on reset readback",()=>{
