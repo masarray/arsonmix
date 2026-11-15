@@ -46,6 +46,10 @@ public:
     }
     void releaseResources() override {ready_=false;}
     bool isReady() const noexcept {return ready_;}
+    // Authoritative native DSP capability, never inferred from a browser dial.
+    bool measuredStereoStageEnabled() const noexcept {
+        return ready_ && dsp_.measuredStereoStageEnabled();
+    }
     void processBlock(juce::AudioBuffer<float>& pcm,juce::MidiBuffer&) override {
         juce::ScopedNoDenormals guard;
         if(!ready_ || pcm.getNumChannels()<2 || pcm.getNumSamples()<=0)return;
