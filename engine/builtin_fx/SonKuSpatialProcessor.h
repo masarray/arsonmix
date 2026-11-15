@@ -163,7 +163,11 @@ public:
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT
+        out.writeInt(11); // unchanged 63-byte state; P9 mode 9
+#else
         out.writeInt(10); // 63 bytes v9 layout, opt-in mode 8
+#endif
 #else
         out.writeInt(9); // v8 59-byte state + 4-byte HRTF trim
 #endif
@@ -247,6 +251,9 @@ public:
              &&version!=9
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT
              &&version!=10
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT
+             &&version!=11
+#endif
 #endif
 #endif
 #endif
@@ -272,6 +279,9 @@ public:
             ||(version==9&&size!=63)
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT
             ||(version==10&&size!=63)
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT
+            ||(version==11&&size!=63)
+#endif
 #endif
 #endif
 #endif
@@ -352,6 +362,13 @@ public:
                next.renderMode!=4 && next.renderMode!=5 && next.renderMode!=6 &&
                next.renderMode!=7 && next.renderMode!=8)return false;
             if(version==10 && next.musicCompatibleLowFrequency)return false;
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT
+            if(version==11 && next.renderMode!=0 && next.renderMode!=3 &&
+               next.renderMode!=4 && next.renderMode!=5 && next.renderMode!=6 &&
+               next.renderMode!=7 && next.renderMode!=8 && next.renderMode!=9)
+                return false;
+            if(version==11 && next.musicCompatibleLowFrequency)return false;
+#endif
 #endif
 #endif
 #endif
