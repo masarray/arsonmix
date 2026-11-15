@@ -50,7 +50,12 @@ def main():
         # Reset is now a REAL host action, not the retired demo reducer.
         # It must be discoverable, confirmable and cancel-safe. Do not mock
         # an accepted PCM graph or rewrite user settings to test this menu.
+        # No separate output MUTE/UNMUTE anywhere in the native toolbar
+        # or More menu. Verified routing owns readiness, not an extra latch.
+        assert page.locator("[data-native-monitor]").count()==0
         page.locator("#moreTools > summary").click()
+        assert page.get_by_role("button",name="Mute Output",exact=True).count()==0
+        assert page.get_by_role("button",name="Unmute Output",exact=True).count()==0
         reset=page.locator("#reset")
         assert reset.is_visible() and reset.is_enabled()
         reset.click()
