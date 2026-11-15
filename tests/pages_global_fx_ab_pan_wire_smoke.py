@@ -22,7 +22,10 @@ def pan(page, value):
           return {text:text.textContent, clipped:text.scrollWidth>text.clientWidth+1,
             overflow:r.right>strip.right+0.8, right:r.right, strip:strip.right,
             font:parseFloat(getComputedStyle(text).fontSize),
-            gap:r.left-track.right,sliderWidth:track.width,readoutWidth:r.width};
+            panFont:parseFloat(getComputedStyle(row.querySelector('.pan-icon')).fontSize),
+            gap:r.left-track.right,sliderWidth:track.width,readoutWidth:r.width,
+            centerError:Math.abs((track.left+track.right)/2-(strip.left+strip.right)/2),
+            sliderCenter:(track.left+track.right)/2,stripCenter:(strip.left+strip.right)/2};
         }""", value)
 
 
@@ -50,9 +53,11 @@ def run(page, width, height):
             seen=pan(page,value)
             assert seen["text"]==label,(width,density,label,seen)
             assert not seen["clipped"] and not seen["overflow"],(width,density,label,seen)
-            assert 9.5<=seen["font"]<=10.5,(width,density,"font",seen)
+            assert 8.9<=seen["font"]<=9.1,(width,density,"caption font",seen)
+            assert abs(seen["font"]-seen["panFont"])<.2,(width,density,"PAN typography match",seen)
             assert seen["gap"]>=0 and seen["sliderWidth"]>=30,(width,density,"PAN collision",seen)
-            assert 27<=seen["readoutWidth"]<=31,(width,density,"PAN proportions",seen)
+            assert 22<=seen["readoutWidth"]<=24,(width,density,"caption yields to slider",seen)
+            assert seen["centerError"]<=1,(width,density,"slider must be centered",seen)
     page.locator("#densitySelect").evaluate(
         "(select)=>{select.value='comfort';select.dispatchEvent(new Event('change',{bubbles:true}));}")
     # The operator's folded WIRE intent must be restored on FX mode.
@@ -80,14 +85,16 @@ def run(page, width, height):
     toggle=page.locator('#globalFxToggle')
     power=toggle.locator('.global-fx-power-icon')
     assert toggle.inner_text().strip()=="FX"
-    assert "micro-hardware-17x17" in power.evaluate("el=>getComputedStyle(el).backgroundImage")
-    assert power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="100%"
+    assert power.evaluate("el=>el.tagName.toLowerCase()")=="svg"
+    assert toggle.locator("button").count()==0
+    assert power.evaluate("el=>getComputedStyle(el).backgroundImage")=="none"
+    assert power.evaluate("el=>getComputedStyle(el).color")=="rgb(105, 220, 164)"
     slot_power=page.locator('#tracks .strip[data-id="1"] [data-util-kind="fx-slot"]').first
     assert slot_power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="100%"
     toggle.click()
     assert toggle.get_attribute("aria-pressed")=="false"
     assert toggle.get_attribute("data-fx-power-state")=="bypassed"
-    assert power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="0%"
+    assert power.evaluate("el=>getComputedStyle(el).color")=="rgb(135, 150, 158)"
     assert slot_power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="0%"
     assert page.locator(".console-body").evaluate("el=>el.classList.contains('global-fx-bypassed')")
     during=rack(page,1)
@@ -103,7 +110,7 @@ def run(page, width, height):
     toggle.click()
     after=rack(page,1)
     assert after==ch_before | {"global":"true"},(ch_before,after)
-    assert power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="100%"
+    assert power.evaluate("el=>getComputedStyle(el).color")=="rgb(105, 220, 164)"
     assert slot_power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="100%"
     page.screenshot(path=f"arsonmix-global-fx-{width}-enabled.png")
     # Individual OFF remains OFF across the master A/B roundtrip.

@@ -59,28 +59,23 @@ button:disabled{opacity:.45;cursor:not-allowed}
   .app .tracks-viewport{min-width:0}
 }
 
-/* FX master uses the exact same 17px green/grey power sprite as the
-   per-rack/per-insert controls. Contextual hardware buttons own its metal
-   face; these selectors own only dimensions, icon and green ON tokens. */
+/* One physical FX toolbar button, with an unframed power glyph in the
+   SAME surface. No second inset cap/sprite/button behind the SVG. The
+   power glyph alone reports effective ON (green) / BYPASS (grey). */
 .app .command-bar #globalFxToggle{
- --ari-on-top:#326d52;--ari-on-hi:#438c68;--ari-on-mid:#317654;
- --ari-on-bottom:#245c43;--ari-on-edge:#20533b;--ari-on-ink:#f0fff7;
- display:inline-flex;align-items:center;justify-content:center;gap:5px;
- width:57px;min-width:57px;max-width:57px;height:23px;min-height:23px;
- padding:2px 6px;flex:0 0 57px;
- font-size:10px;font-weight:600;letter-spacing:.15px;
+ display:inline-flex;align-items:center;justify-content:center;gap:4px;
+ width:52px;min-width:52px;max-width:52px;flex:0 0 52px;
+ height:23px;min-height:23px;padding:2px 6px;
+ font-size:10px;font-weight:600;letter-spacing:.12px;
 }
-.app .command-bar #globalFxToggle .global-fx-power-icon{
- box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;
- flex:0 0 17px;width:17px;height:17px;
- background:url("micro-hardware-17x17-2x4.png?v=fx-green-v21") 100% 0% / 200% 400% no-repeat;
- color:#163e2b;
+.app .command-bar #globalFxToggle svg.global-fx-power-icon{
+ display:block;flex:0 0 14px;width:14px;height:14px;
+ padding:0;margin:0;border:0;box-shadow:none;
+ background:none!important;filter:none;pointer-events:none;
+ fill:currentColor;color:#69dca4!important;
 }
-.app .command-bar #globalFxToggle.is-bypassed .global-fx-power-icon{
- background-position:0% 0%;color:#788891;
-}
-.app .command-bar #globalFxToggle .global-fx-power-icon svg{
- display:block;width:13px;height:13px;pointer-events:none;
+.app .command-bar #globalFxToggle.is-bypassed svg.global-fx-power-icon{
+ color:#87969e!important;
 }
 .app .command-bar #globalFxToggle:focus-visible{
  outline:2px solid #94d9e8;outline-offset:2px;

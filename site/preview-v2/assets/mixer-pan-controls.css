@@ -13,7 +13,7 @@
 .center-pan::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:9px;height:14px;margin-top:-5px;border-radius:2px;background:linear-gradient(#d4dadd,#879fa9);border:1px solid #151b1d}
 .center-pan::-moz-range-thumb{width:9px;height:14px;border-radius:2px;background:#acc2cb;border:1px solid #151b1d}
 .console-body .pan-section{height:var(--pan-h);flex:0 0 var(--pan-h);display:grid;grid-template-columns:17px minmax(0,1fr) 29px;gap:5px;padding:0 7px;}
-.console-body .pan-section output{font-size:10px;font-weight:550;text-align:right;color:#a0dff0}
+.console-body .pan-section output{font-size:9px;font-weight:500;letter-spacing:-.15px;text-align:right;color:#a0dff0;justify-self:end}
 .console-body .pan-icon{color:#c0d0d5}
 .console-body .pan-control{height:23px;max-width:none}
 .console-body .center-pan{min-width:0}
@@ -21,7 +21,12 @@
 .console-body .center-pan::-webkit-slider-thumb{width:15px;height:19px;margin-top:-7px;border:1px solid #344b55;border-radius:3px;background:linear-gradient(#f0f5f7,#9bafba 47%,#556e7e 49%,#dce6e9 65%,#728f9f);box-shadow:0 1px 2px #111}
 .console-body .center-pan::-moz-range-thumb{width:15px;height:19px;border-radius:3px;border:1px solid #344b55;background:linear-gradient(#f0f5f7,#9bafba 47%,#556e7e)}
 .console-body[data-density="compact"] .pan-section{grid-template-columns:12px minmax(0,1fr) 18px;gap:1px;padding:0 3px}
-.console-body .pan-section{grid-template-columns:23px minmax(0,1fr) 30px!important;gap:3px!important;padding:0 4px!important;}
+/* Symmetric 23px PAN/caption gutters are a geometry invariant. The slider's
+   track/detent center is always at strip center, irrespective of L100/R100.
+   Readout gives way instead of shifting the slider or moving the PAN thumb. */
+.console-body .pan-section{grid-template-columns:23px minmax(0,1fr) 23px!important;gap:3px!important;padding:0 4px!important;}
+.console-body.narrow .pan-section .pan-control{justify-self:center;width:min(100%,43px)}
+
 .console-body .pan-icon{font-size:9px!important}
 .console-body .center-pan{height:40px!important;min-height:40px!important;max-height:40px!important;width:100%!important;appearance:none!important;-webkit-appearance:none!important;background:transparent!important;padding:0!important}
 .console-body .center-pan::-webkit-slider-runnable-track{height:5px!important;border:1px solid #0a1218!important;background:linear-gradient(to right,#0b151a 0%,#0b151a var(--pan-start),#42b5ca var(--pan-start),#42b5ca var(--pan-end),#0b151a var(--pan-end),#0b151a 100%)!important}
