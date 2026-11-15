@@ -112,15 +112,20 @@ int main() {
     assert(!restored.restoreUnpublishedState(snapshot.getData(),36));
     // Old 32-byte IMRS v1 sessions must load WITHOUT unexpected Detail boost.
     juce::MemoryBlock legacy;
-    juce::MemoryOutputStream v1(legacy,false);
-    v1.writeInt(0x494D5253);
-    v1.writeInt(1);
-    v1.writeInt(selected.venue);
-    v1.writeFloat(selected.immersion);
-    v1.writeFloat(selected.space);
-    v1.writeFloat(selected.width);
-    v1.writeFloat(selected.bassImpact);
-    v1.writeFloat(selected.outputTrim);
+    {
+        // JUCE MemoryOutputStream commits its destination MemoryBlock when
+        // destroyed. Inspecting it while the stream is still alive used to
+        // falsely reject a valid 32-byte legacy session fixture.
+        juce::MemoryOutputStream v1(legacy,false);
+        v1.writeInt(0x494D5253);
+        v1.writeInt(1);
+        v1.writeInt(selected.venue);
+        v1.writeFloat(selected.immersion);
+        v1.writeFloat(selected.space);
+        v1.writeFloat(selected.width);
+        v1.writeFloat(selected.bassImpact);
+        v1.writeFloat(selected.outputTrim);
+    }
     assert(legacy.getSize()==32);
     ImerSipProcessor oldSession;
     oldSession.prepareToPlay(48000.,128);
