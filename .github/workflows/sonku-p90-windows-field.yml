@@ -1,6 +1,7 @@
 name: SonKu P9.0 true external speaker native mixer portable FAT x64
 # Private JUCE app, no release. Native v11 A/B P8.2 through P9.
 on:
+  workflow_call:
   pull_request:
     paths:
       - '.github/workflows/sonku-p90-windows-field.yml'
