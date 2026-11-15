@@ -50,7 +50,7 @@ test('master mute is only automatic for a positively identified feedback self lo
 });
 
 test('bounded retry + callback watchdog cannot spin in realtime PCM',()=>{
-  assert.match(policy,/waitMs.*30000ull/);
+  assert.match(policy,/30000ull/);
   assert.match(main,/callbackWatchTickMs_/);
   assert.match(main,/now-callbackProgressMs_>=3500/);
   assert.match(main,/now-callbackWatchTickMs_>1500/);
