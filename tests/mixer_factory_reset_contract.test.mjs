@@ -75,6 +75,22 @@ test("preview reset is explicitly FX-free and WIRE-free, not demo-init",()=>{
   assert.match(ui,/setDensity\('comfort'\);init\(true\)/);
 });
 
+test("Show/secondary/refresh maintenance never require permanent output MUTE",()=>{
+  assert.match(host,/struct ScopedMainTransaction final/);
+  assert.match(host,/~ScopedMainTransaction\(\)\{resume\(\);\}/);
+  assert.match(host,/owner\.requestAutomaticMain\(false\)/);
+  assert.match(host,/ScopedMainTransaction mainGate\(\*this\)/);
+  assert.match(host,/mainGate\.resume\(\)/);
+  assert.match(host,/std::optional<ScopedMainTransaction> recallGate/);
+  assert.match(host,/recallGate\.reset\(\)/);
+  assert.match(bridge,/showRecall\.disabled=showBusy\|\|!entry\|\|entry\.needsRecovery/);
+  assert.match(bridge,/showRecover\.disabled=showBusy\|\|!entry\|\|!entry\.hasPrevious/);
+  assert.doesNotMatch(bridge,/SHOW SAVE requires MUTED output/);
+  assert.doesNotMatch(bridge,/mute output before recall\/recovery/);
+  assert.match(host,/Stop the current STREAM before changing its output endpoint/);
+  assert.match(host,/if\(error\.isEmpty\(\)\)requestAutomaticMain\(false\)/);
+});
+
 test("emergency CLI reset runs before WebView and only clears mixer data",()=>{
   assert.match(host,/commandLine\.trim\(\)=="--reset-mixer"/);
   assert.match(host,/appearance\.resetForFactory\(\)/);
