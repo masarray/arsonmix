@@ -49,9 +49,9 @@ public:
         if(!std::isfinite(rate) ||
            (std::abs(rate-44100.)>.1 && std::abs(rate-48000.)>.1))return false;
         constexpr double pi=3.1415926535897932384626433832795;
-        bassAlpha_=static_cast<float>(1.-std::exp(-2.*pi*120./rate));
+        bassAlpha_=static_cast<float>(1.-std::exp(-2.*pi*155./rate));
         sideAlpha_=static_cast<float>(1.-std::exp(-2.*pi*680./rate));
-        detailAlpha_=static_cast<float>(1.-std::exp(-2.*pi*5600./rate));
+        detailAlpha_=static_cast<float>(1.-std::exp(-2.*pi*6100./rate));
         gainSlew_=static_cast<float>(1.-std::exp(-1./(rate*.025)));
         gateSlew_=static_cast<float>(1.-std::exp(-1./(rate*.035)));
         energySlew_=static_cast<float>(1.-std::exp(-1./(rate*.075)));
@@ -62,18 +62,14 @@ public:
     bool setSettings(const Settings& s) noexcept {
         if(!valid(s))return false;
         settings_=s;
-        // Positive response only; no negative LF pressure/cancellation.
-        // +0.7/+0.85/+0.4 dB maximum at ~0Hz before scene scaling.
-        // Exact linear gain deltas for +0.85 / +0.40 / +0.70 dB at
-        // maximum, precomputed OFFLINE; live audio-applied SPSC must NEVER
-        // call pow(), exp() or design filter coefficients on callback.
-        // 100% is now a USEFUL ±2 dB coherent LF step, not an inaudible
-        // 0.7dB end stop. Original LEFT/RIGHT stay independent and phase
-        // safe. Musical default stays restrained; peak enhancer limits
-        // optional addition against available headroom.
-        constexpr float cinemaMax=.205f;
-        constexpr float liveMax=.140f;
-        constexpr float concertMax=.185f;
+        // Restore ORIGINAL source warmth and sparkle, not more KEMAR
+        // coloured wet MID. Maximum coherent dry LF shelf is intentionally
+        // below +2.8 dB at DC (1 + 0.255 * 1.45), with a broad 155 Hz
+        // transition; this is NOT added to any room feedback path.
+        // Coefficients are identical for L/R and designed in prepare().
+        constexpr float cinemaMax=.255f;
+        constexpr float liveMax=.235f;
+        constexpr float concertMax=.255f;
         const float maxDelta=s.venue==1?cinemaMax:
             s.venue==2?liveMax:concertMax;
         // VENUE SPACE links a restrained (+0..45% of the ORIGINAL
@@ -84,9 +80,11 @@ public:
             (1.f+.45f*s.space);
         // Music SIDE retains original stereo, with bounded positive tilt.
         sideTarget_=.25f*s.width*s.immersion;
-        // Soft, identical per-channel minimum-phase high shelf >5kHz.
-        // Deliberately NO 1-4kHz vocal boost or delayed copy/crossfeed.
-        detailTarget_=.31f*s.detail*s.immersion;
+        // Source-derived open air >6.1kHz, not processed room brightness.
+        // At max the linear HF shelf coefficient is +0.59; the actual
+        // gain at 10k remains smaller due to one-pole transition.
+        // No 1-4k vocal lift, inverted KEMAR notch or artificial echo.
+        detailTarget_=.59f*s.detail*s.immersion;
         return true;
     }
     void reset() noexcept {
@@ -119,15 +117,20 @@ public:
         gate_+=gateSlew_*(gateTarget-gate_);
         return gate_;
     }
-    void process(float& l,float& r,float inputStereoGate) noexcept {
+    void process(float& l,float& r,float inputStereoGate,
+                 float originalL,float originalR) noexcept {
         if(!ready_)return;
-        bassL_+=bassAlpha_*(l-bassL_);
-        bassR_+=bassAlpha_*(r-bassR_);
+        // Apply tonal shelves to the ORIGINAL independent music L/R,
+        // not the already-filtered measured HRTF/FDN output. This restores
+        // familiar LF pressure and HF extension without multiplying the
+        // mid-coloured reflected field or changing stereo arrival cues.
+        bassL_+=bassAlpha_*(originalL-bassL_);
+        bassR_+=bassAlpha_*(originalR-bassR_);
         bassGain_+=gainSlew_*(bassTarget_-bassGain_);
         sideGain_+=gainSlew_*(sideTarget_-sideGain_);
         detailGain_+=gainSlew_*(detailTarget_-detailGain_);
-        detailL_+=detailAlpha_*(l-detailL_);
-        detailR_+=detailAlpha_*(r-detailR_);
+        detailL_+=detailAlpha_*(originalL-detailL_);
+        detailR_+=detailAlpha_*(originalR-detailR_);
         const float bassDeltaL=bassGain_*bassL_;
         const float bassDeltaR=bassGain_*bassR_;
         // One-pole complementary HP has Re(H)>=0. Summing a POSITIVE
@@ -136,10 +139,9 @@ public:
         const float side=.5f*(l-r);
         sideLow_+=sideAlpha_*(side-sideLow_);
         const float delta=sideGain_*inputStereoGate*(side-sideLow_);
-        // Phase-safe tonal-detail air: 1 + non-negative k*(1 - LP5600).
-        // Equal IIR coefficients per original ear, no delayed dry-wet.
-        float addL=bassDeltaL+delta+detailGain_*(l-detailL_);
-        float addR=bassDeltaR-delta+detailGain_*(r-detailR_);
+        // Equal-coefficient source-detail high shelf, not an extra HRTF.
+        float addL=bassDeltaL+delta+detailGain_*(originalL-detailL_);
+        float addR=bassDeltaR-delta+detailGain_*(originalR-detailR_);
 
         // Peak safety does not pull down the trusted P8.2 signal.
         // Unlike global AGC/limiter, it only scales optional additions.

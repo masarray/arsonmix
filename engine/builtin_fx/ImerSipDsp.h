@@ -240,7 +240,7 @@ public:
                     addL*=scale;addR*=scale;
                 }
                 float l=baseL+addL,r=baseR+addR;
-                enhancer_.process(l,r,sourceStereoGate_[i]);
+                enhancer_.process(l,r,sourceStereoGate_[i],dryL,dryR);
                 // A/B compares actual untouched ORIGINAL L/R vs DSP using
                 // the SAME output trim (not an automatic loudness match).
                 // Compare gain slews 20ms and never changes .smix.

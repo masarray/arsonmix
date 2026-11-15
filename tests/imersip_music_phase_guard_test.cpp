@@ -659,6 +659,45 @@ void verifyEachKnobAffectsActualPcm(double rate) {
         assert(effect>.003);
     }
 }
+
+void verifyOriginalMusicHiFiContour(double rate) {
+    // Tonal enhancement is source-derived and testable independently of
+    // spaciousness. Compare same physical KEMAR/room path with only BASS
+    // or AIR knob changing; a wide L/R musical source must stay independent.
+    auto measure=[rate](float hz,int axis,float amount) {
+        constexpr int count=32768;
+        Stereo src(count);
+        for(int i=0;i<count;++i) {
+            const float x=.08f*std::sin(2.*pi*hz*i/rate);
+            src.l[i]=x;
+            src.r[i]=.61f*x;
+        }
+        Settings s{};s.immersion=1.f;s.outputTrim=1.f;
+        s.bassImpact=0.f;s.detail=0.f;
+        if(axis==0)s.bassImpact=amount;
+        else s.detail=amount;
+        const auto rendered=render(rate,s,src,128);
+        const double amp=rms(rendered,8192,false);
+        return std::pair<double,double>{amp,rms(rendered,8192,true)};
+    };
+    for(int axis=0;axis<2;++axis) {
+        const float boostHz=axis==0?80.f:11000.f;
+        const float guardHz=axis==0?2000.f:1500.f;
+        const auto off=measure(boostHz,axis,0.f);
+        const auto max=measure(boostHz,axis,1.f);
+        const auto midOff=measure(guardHz,axis,0.f);
+        const auto midMax=measure(guardHz,axis,1.f);
+        const double gain=max.first/(off.first+1.e-14);
+        const double midGain=midMax.first/(midOff.first+1.e-14);
+        const double sideGain=max.second/(off.second+1.e-14);
+        std::fprintf(stderr,
+            "IMERSIP_SOURCE_HIFI rate=%.0f axis=%s wanted=%.4f mid=%.4f side=%.4f\n",
+            rate,axis==0?"BASS":"AIR",gain,midGain,sideGain);
+        assert(gain>1.10 && gain<1.48);
+        assert(midGain>.995 && midGain<1.095);
+        assert(sideGain>.995 && sideGain<1.48);
+    }
+}
 void verifyBassFoundation(double rate) {
     for(int venue=0;venue<3;++venue)for(float hz:{40.f,70.f,110.f,160.f,220.f}) {
         Stereo source;
@@ -971,6 +1010,7 @@ int main() {
         verifyRealP86DirectSpeakerReachesOutput(rate);
         verifyP87MusicalAirBodyRealIntegration(rate);
         verifyConcertStageLateralReflection(rate);
+        verifyOriginalMusicHiFiContour(rate);
         verifyBassFoundation(rate);
         verifyRoomLinkedBassStaysCoherent(rate);
         verifyDetailIsNotMidBoost(rate);
