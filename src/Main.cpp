@@ -24,9 +24,11 @@
 #if defined(_WIN32)
 #include "../engine/device/WasapiCapabilityProbe.h"
 #include <windows.h>
+#include <commctrl.h> // SetWindowSubclass: observe REAL system resume without touching JUCE audio
 #include <psapi.h>
 #if defined(_MSC_VER)
 #pragma comment(lib, "Psapi.lib")
+#pragma comment(lib, "Comctl32.lib")
 #endif
 #endif
 #include "PluginCatalog.h"
@@ -410,6 +412,12 @@ public:
     {
         hotkeys_.detach(); // release global keys before the JUCE HWND disappears
         stopTimer();
+#if defined(_WIN32)
+        if (powerNoticeHwnd_) {
+            RemoveWindowSubclass(powerNoticeHwnd_, &ConsoleWindow::audioPowerWndProc, 0xA50);
+            powerNoticeHwnd_ = nullptr;
+        }
+#endif
         orbit_.stop();
         catalog_.onChanged = nullptr;
         closePluginEditor();
@@ -420,7 +428,9 @@ public:
         engine_.devices().removeChangeListener (this);
         // Drain any earlier file work before the final muted checkpoint.
         // Remember MAIN before the shutdown mute changes the hardware state.
-        const bool resumeMain=engine_.isMonitorEnabled();
+        // A driver STOP may have gated hardware already. Preserve the
+        // operator's intended MAIN state in the crash-safe .smix checkpoint.
+        const bool resumeMain=engine_.wantsMainContinuation() && !operatorOutputMuted_;
         engine_.setOutputMuted(true);
         engine_.disconnectSecondaryOutput();
         mixerSessionWorker_.finishForShutdown(logicalVendorEditor_.has_value());
@@ -431,7 +441,7 @@ public:
         if (!updaterProbeMode_ &&
             (static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false)) ||
              logicalMixer_.loaded())) {
-            const auto error=saveMixerSession(resumeMain);
+            const auto error=saveMixerSession(resumeMain,{},true); // shutdown checkpoint, not timer autosave
             if(error.isNotEmpty())
                 diagnostics_.record("DYNAMIC_MIXER_EXIT_SAVE_REJECTED",error);
         }
@@ -638,6 +648,48 @@ private:
         }
     }
     bool deviceSettingsDirty_ = false;
+    // P0: last verified DIRECT WASAPI profile survives missing hardware;
+    // never replace it with JUCE's incidental default after hotplug.
+    std::optional<juce::AudioDeviceManager::AudioDeviceSetup> verifiedWasapiSetup_;
+    armix::device::AudioContinuityRetry wasapiRecovery_;
+    std::uint64_t callbackWatchTickMs_=0, callbackProgressMs_=0;
+    std::uint64_t callbackWatchCount_=0;
+    bool directCallbackStalled_=false, feedbackMasterTripNotified_=false;
+#if defined(_WIN32)
+    HWND powerNoticeHwnd_=nullptr;
+    bool actualSystemResumePending_=false;
+    bool actualSystemSuspendObserved_=false;
+
+    static LRESULT CALLBACK audioPowerWndProc(HWND hwnd,UINT message,WPARAM wp,
+                                               LPARAM lp,UINT_PTR id,DWORD_PTR ref) {
+        auto* self=reinterpret_cast<ConsoleWindow*>(ref);
+        if(message==WM_POWERBROADCAST && self) {
+            // Screen/monitor power events are NOT a system suspend.
+            // Never gate PCM, mutate MAIN intent, or reopen a healthy device.
+            if(wp==PBT_APMSUSPEND)
+                self->actualSystemSuspendObserved_=true;
+            else if(wp==PBT_APMRESUMEAUTOMATIC &&
+                    armix::device::AudioPowerPolicy::inspectDevice(
+                        armix::device::NativePowerEvent::systemResume))
+                self->actualSystemResumePending_=true;
+        }
+        if(message==WM_NCDESTROY) {
+            RemoveWindowSubclass(hwnd,&ConsoleWindow::audioPowerWndProc,id);
+            if(self && self->powerNoticeHwnd_==hwnd)self->powerNoticeHwnd_=nullptr;
+        }
+        return DefSubclassProc(hwnd,message,wp,lp);
+    }
+    void attachAudioPowerNotifications(void* nativeHandle) {
+        auto* hwnd=static_cast<HWND>(nativeHandle);
+        if(!hwnd || hwnd==powerNoticeHwnd_)return;
+        if(powerNoticeHwnd_)
+            RemoveWindowSubclass(powerNoticeHwnd_,&ConsoleWindow::audioPowerWndProc,0xA50);
+        powerNoticeHwnd_=nullptr;
+        if(SetWindowSubclass(hwnd,&ConsoleWindow::audioPowerWndProc,0xA50,
+                              reinterpret_cast<DWORD_PTR>(this)))
+            powerNoticeHwnd_=hwnd;
+    }
+#endif
     bool unexpectedRouteNoticeSent_ = false;
     armix::device::DirectRestoreBackoff directRestore_;
     armix::diagnostics::CrackleEvidenceWindow crackleEvidence_; // 1Hz message-thread snapshots
@@ -1646,7 +1698,11 @@ private:
 
     void fireNativeHotkey(const armix::hotkey::Mapping& mapping) {
         if(mapping.operation=="PANIC_MUTE") {
-            engine_.setOutputMuted(true);
+            // PANIC is explicit user intent, unlike device stop/restart.
+            operatorOutputMuted_=true;
+            engine_.setMonitorEnabled(false);
+            engine_.cancelAsioResetMonitorIntent();
+            autoMainEpoch_=0;
             emitApprovedNativeSnapshot();
             return;
         }
@@ -1965,8 +2021,10 @@ private:
             engine_.setChannelPan (valueNumber * 0.01f);
         else if (name == "mute" && channel == 1 && value.isBool())
             engine_.setChannelMuted (bool (value));
-        else if (name == "masterMute" && value.isBool())
+        else if (name == "masterMute" && value.isBool()) {
             engine_.setMasterMuted (bool (value));
+            if (!bool(value)) feedbackMasterTripNotified_=false;
+        }
         else if (name == "masterMono" && value.isBool())
             engine_.setMasterMono (bool (value));
     }
@@ -2244,7 +2302,11 @@ private:
         // Only same-epoch, driver-verified pins qualify (not stale .smix text).
         const bool requireInput=autoMainRequiresInput_ &&
             !engine_.hasVerifiedExternalOutputIntent();
-        if(engine_.liveOutputArmFault(requireInput).isNotEmpty())return;
+        const auto fault=engine_.liveOutputArmFault(requireInput);
+        if(fault.isNotEmpty()) {
+            protectKnownFeedbackLoop(fault);
+            return;
+        }
         autoMainCheckedRevision_=revision;
         engine_.setMonitorEnabled(true);
         autoMainEpoch_=0;
@@ -2508,6 +2570,9 @@ private:
             deviceSettingsDirty_=true;
             directRestore_.cancel();
             asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
+            // New explicit selection supersedes any old automatic reopen.
+            verifiedWasapiSetup_.reset();
+            wasapiRecovery_.cancel();
             diagnostics_.record("CUSTOM_AUDIO_APPLY_OK",
                 typeName+" | "+juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
             requestAutomaticMain();
@@ -3520,7 +3585,8 @@ private:
         return {};
     }
 
-    juce::String saveMixerSession(bool resumeMain, const juce::File& exportFile={}) {
+    juce::String saveMixerSession(bool resumeMain, const juce::File& exportFile={},
+                                    bool shutdownCheckpoint=false) {
         const bool automatic=exportFile==juce::File{};
         ensureLogicalWorkspace();
         if(mixerSessionWorker_.busy()||nativeShowBusy_||studioBackupBusy_||
@@ -3547,18 +3613,33 @@ private:
         }
         if(automatic&&mixerSessionRecoveryPending_)
             return "The retained mixer checkpoint is awaiting a verified device";
+        // Auto-checkpoints must never replace an acknowledged .smix with a
+        // transient STOP/default/empty device state. Keep the last verified
+        // file on disk until the original physical route has returned.
+        if(automatic && !shutdownCheckpoint) {
+            auto* audio=engine_.devices().getCurrentAudioDevice();
+            if(!audio || !audio->isOpen() || !engine_.directRouteAuthorized() ||
+               engine_.mainInterruptedByDevice())
+                return "Automatic checkpoint paused until audio device recovery";
+        }
         const bool monitoring=engine_.isMonitorEnabled();
         if(engine_.secondaryArmed())return "Stop STREAM before saving the mixer";
         const auto epoch=engine_.dryRoutingLabEpoch();
-        if(monitoring)engine_.setMonitorEnabled(false);
+        // Temporary capture fence is NOT an operator MUTE. Keep the
+        // persisted MAIN desire intact across device loss during Save.
+        if(monitoring)engine_.setOutputMuted(true);
         armix::session::MixerSessionDocument doc;
         std::vector<armix::shows::BinaryState> states;
         auto error=engine_.captureNativeMixerSession(doc,states);
         if(monitoring && epoch==engine_.dryRoutingLabEpoch() &&
            engine_.liveOutputArmFault(false).isEmpty())
-            engine_.setMonitorEnabled(true);
+            engine_.setOutputMuted(false); // restore the existing operator intent
         if(error.isNotEmpty())return error;
-        if(automatic)doc.resumeMain=resumeMain;
+        // The periodic autosave caller passes false because speakers must
+        // be gated for snapshot capture. That does NOT mean the operator
+        // disabled MAIN. Capture desired intent independently of the gate.
+        if(automatic)doc.resumeMain=resumeMain ||
+            (engine_.wantsMainContinuation() && !operatorOutputMuted_);
         doc.id=mixerSessionId_.isNotEmpty()?mixerSessionId_:
             juce::Uuid().toDashedString().toLowerCase();
         // Shortcut entries are additive .smix data, never callback state.
@@ -5485,8 +5566,10 @@ private:
                          static_cast<float>(numeric));
             else if(applied && name=="masterGain")
                 engine_.setMasterGainDb(static_cast<float>(numeric));
-            else if(applied && name=="masterMute")
+            else if(applied && name=="masterMute") {
                 engine_.setMasterMuted(bool(val));
+                if(!bool(val))feedbackMasterTripNotified_=false;
+            }
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",requestId);
             ack->setProperty("ok",applied);
@@ -7266,6 +7349,7 @@ private:
             if (arm && fault.isEmpty() &&
                 engine_.diagnosticRoute()==armix::diagnostics::Route::normal)
                 fault=engine_.liveOutputArmFault();
+            if (fault.isNotEmpty())protectKnownFeedbackLoop(fault);
             if (fault.isEmpty()) {
                 operatorOutputMuted_=!arm; // an explicit user control, not setup mute
                 autoMainEpoch_=0;
@@ -7337,7 +7421,11 @@ private:
         const bool retained=engine_.hasRetainedNativeSession();
         const bool silent=!mixerSessionRecoveryPending_ &&
             engine_.hasPristineSilentMixerAwaitingAsio();
-        if(epoch==asioRecoveryEpoch_ || (!retained && !silent) ||
+        auto* current=engine_.devices().getCurrentAudioDevice();
+        const bool missingDevice=!current || !current->isOpen();
+        if((epoch==asioRecoveryEpoch_ && !missingDevice &&
+            !directCallbackStalled_ && !engine_.mainInterruptedByDevice()) ||
+           (!retained && !silent) ||
            deviceApply_.busy() || (audioSetupWindow_ && audioSetupWindow_->isVisible()) ||
            nativeShowBusy_ || studioBackupBusy_ || mixerSessionWorker_.busy() || catalog_.busy() ||
            engine_.isGraphSwitchPending() || engine_.independentClockActive() ||
@@ -7346,6 +7434,15 @@ private:
         if(device) {
             if(device->getTypeName()!="ASIO" ||
                !engine_.sameRetainedAsioDriver())return;
+            if(device->isOpen() && !directCallbackStalled_ &&
+               engine_.directRouteAuthorized() && engine_.hasBoundMixerRoute()) {
+                // Do not reopen a healthy ASIO stream on display idle.
+                if(engine_.mainInterruptedByDevice() &&
+                   engine_.wantsMainContinuation() && !operatorOutputMuted_)
+                    requestAutomaticMain(false);
+                asioRecoveryEpoch_=epoch;
+                return;
+            }
         } else if(!engine_.selectedRetainedAsioDriverForReopen()) {
             // The device pointer disappeared: never open an unapproved or
             // guessed driver name, even if ASIO4ALL happens to be installed.
@@ -7357,7 +7454,7 @@ private:
         auto applying=deviceApply_.tryBegin(
             armix::device::NativeDeviceApplyCoordinator::Purpose::asioRecovery);
         if(!applying)return;
-        if(!device || !device->isOpen() ||
+        if(!device || !device->isOpen() || directCallbackStalled_ ||
            device->getActiveOutputChannels().countNumberOfSetBits()<2) {
             // A missing, closed or output-less ASIO device requires a vendor call.
             // Never reopen it repeatedly on each UI timer tick.
@@ -7375,7 +7472,7 @@ private:
             asioRecoveryGate_.driverTransaction(now);
             if(!device)diagnostics_.record("ASIO_DEVICE_MISSING",
                 "Reopening previously approved registered ASIO driver; no fallback");
-            const auto error=openSelectedAudioDevice("ASIO",setup,true);
+            const auto error=openSelectedAudioDevice("ASIO",setup,true); // force fresh driver stream, not a no-op same setup
             asioRecoveryGate_.carryInternalEpoch(engine_.dryRoutingLabEpoch());
             device=engine_.devices().getCurrentAudioDevice();
             if(error.isNotEmpty() || !device || !device->isOpen()) {
@@ -7453,24 +7550,216 @@ private:
         asioRecoveryGate_.recovered();
         mixerSessionStatus_="RESTORED_MUTED";
         mixerSessionError_.clear();
-        if(engine_.takeAsioResetMonitorIntent())requestAutomaticMain(false);
+        const bool previousMain=engine_.takeAsioResetMonitorIntent();
+        if((previousMain || engine_.wantsMainContinuation()) && !operatorOutputMuted_)
+            requestAutomaticMain(false);
         if(engine_.isMonitorEnabled())mixerSessionStatus_="RESTORED_MONITORING";
         diagnostics_.record("ASIO_REATTACHED","Verified driver and current MAIN pair");
         emitApprovedNativeSnapshot();
     }
 
+    // Load only the previously committed device XML, even when hardware
+    // is absent at cold start. A JUCE default is never an approved profile.
+    void rememberSavedWasapiProfile(const juce::XmlElement* saved) {
+        if(!saved || saved->getTagName()!="DEVICESETUP" ||
+           saved->getStringAttribute("deviceType")!="Windows Audio")return;
+        juce::AudioDeviceManager::AudioDeviceSetup setup;
+        setup.inputDeviceName=saved->getStringAttribute("audioInputDeviceName");
+        setup.outputDeviceName=saved->getStringAttribute("audioOutputDeviceName");
+        if(setup.outputDeviceName.isEmpty())return;
+        setup.sampleRate=saved->getDoubleAttribute("audioDeviceRate",0.);
+        setup.bufferSize=saved->getIntAttribute("audioDeviceBufferSize",0);
+        if(saved->hasAttribute("audioDeviceInChans")) {
+            setup.useDefaultInputChannels=false;
+            setup.inputChannels.parseString(saved->getStringAttribute("audioDeviceInChans"),2);
+        }
+        if(saved->hasAttribute("audioDeviceOutChans")) {
+            setup.useDefaultOutputChannels=false;
+            setup.outputChannels.parseString(saved->getStringAttribute("audioDeviceOutChans"),2);
+        }
+        verifiedWasapiSetup_=std::move(setup);
+    }
+
+    // Read back both physical device names AND actual pin masks. Backend
+    // name alone does not prove a Windows default-endpoint switch retained
+    // the selected speakers. A default pin mask becomes fixed only after the
+    // user's device actually opens and is verified, not at a missing-device
+    // startup. Never route audio to another Windows Audio endpoint.
+    static bool matchesPinnedWasapiReadback(
+        const juce::AudioDeviceManager::AudioDeviceSetup& wanted,
+        const juce::AudioDeviceManager::AudioDeviceSetup& actual,
+        juce::AudioIODevice* device) noexcept {
+        return device && device->isOpen() &&
+            wanted.outputDeviceName.isNotEmpty() &&
+            actual.inputDeviceName==wanted.inputDeviceName &&
+            actual.outputDeviceName==wanted.outputDeviceName &&
+            device->getActiveOutputChannels().countNumberOfSetBits()>=2 &&
+            (wanted.useDefaultInputChannels ||
+             device->getActiveInputChannels()==wanted.inputChannels) &&
+            (wanted.useDefaultOutputChannels ||
+             device->getActiveOutputChannels()==wanted.outputChannels);
+    }
+
+    // Recovery only for a verified saved Windows Audio endpoint; no
+    // fallback, no graph CLEAR, no attempt while an explicit device dialog
+    // owns the lifecycle. The current native graph remains the PCM authority.
+    void rememberVerifiedWasapiSetup() {
+        if(!audioEngineStarted_ || deviceApply_.busy() ||
+           engine_.independentClockActive() ||
+           engine_.diagnosticRoute()!=armix::diagnostics::Route::normal ||
+           !engine_.directRouteAuthorized() ||
+           engine_.hasRetainedUnboundMixer())return;
+        auto& manager=engine_.devices();
+        auto* device=manager.getCurrentAudioDevice();
+        if(!device || !device->isOpen())return;
+        if(manager.getCurrentAudioDeviceType()!="Windows Audio" ||
+           device->getTypeName()!="Windows Audio") {
+            // An explicitly approved ASIO replaces the old WASAPI intent.
+            verifiedWasapiSetup_.reset();
+            wasapiRecovery_.cancel();
+            return;
+        }
+        juce::AudioDeviceManager::AudioDeviceSetup actual;
+        manager.getAudioDeviceSetup(actual);
+        if(!verifiedWasapiSetup_ && actual.outputDeviceName.isNotEmpty() &&
+           device->getActiveOutputChannels().countNumberOfSetBits()>=2)
+            verifiedWasapiSetup_=actual;
+        if(verifiedWasapiSetup_ &&
+           matchesPinnedWasapiReadback(*verifiedWasapiSetup_,actual,device)) {
+            // JUCE "default channel" requests are resolved now. Remember
+            // exact physical masks so later driver re-enumeration cannot
+            // silently substitute another stereo output or microphone.
+            auto& pinned=*verifiedWasapiSetup_;
+            if(pinned.useDefaultInputChannels) {
+                pinned.inputChannels=device->getActiveInputChannels();
+                pinned.useDefaultInputChannels=false;
+            }
+            if(pinned.useDefaultOutputChannels) {
+                pinned.outputChannels=device->getActiveOutputChannels();
+                pinned.useDefaultOutputChannels=false;
+            }
+            if(!directCallbackStalled_)wasapiRecovery_.recovered();
+        }
+    }
+
+    void observeNativeCallbackHeartbeat() {
+        const auto now=monotonicMilliseconds();
+        const auto count=engine_.directCallbackCount();
+        // A long message-loop pause (including true laptop sleep) is NOT
+        // proof of a dead audio callback. Restart the observation window.
+        if(callbackWatchTickMs_==0 || now<callbackWatchTickMs_ ||
+           now-callbackWatchTickMs_>1500 || count!=callbackWatchCount_) {
+            callbackProgressMs_=now;
+            directCallbackStalled_=false;
+        } else {
+            auto* device=engine_.devices().getCurrentAudioDevice();
+            directCallbackStalled_=device && device->isOpen() &&
+                engine_.directRouteAuthorized() && !engine_.independentClockActive() &&
+                engine_.hasBoundMixerRoute() && now>=callbackProgressMs_ &&
+                now-callbackProgressMs_>=3500;
+        }
+        callbackWatchTickMs_=now;
+        callbackWatchCount_=count;
+    }
+
+    void serviceWasapiDeviceContinuity() {
+        if(!audioEngineStarted_ || !verifiedWasapiSetup_ ||
+           engine_.independentClockActive() || deviceApply_.busy() ||
+           (audioSetupWindow_ && audioSetupWindow_->isVisible()) ||
+           nativeShowBusy_ || studioBackupBusy_ || mixerSessionWorker_.busy() ||
+           catalog_.busy() || engine_.isGraphSwitchPending() ||
+           engine_.diagnosticRoute()!=armix::diagnostics::Route::normal)return;
+        auto& manager=engine_.devices();
+        auto* device=manager.getCurrentAudioDevice();
+        juce::AudioDeviceManager::AudioDeviceSetup live;
+        manager.getAudioDeviceSetup(live);
+        const bool expected=device && device->isOpen() &&
+            manager.getCurrentAudioDeviceType()=="Windows Audio" &&
+            device->getTypeName()=="Windows Audio" && engine_.directRouteAuthorized() &&
+            !engine_.hasRetainedUnboundMixer() &&
+            matchesPinnedWasapiReadback(*verifiedWasapiSetup_,live,device);
+        if(expected && !directCallbackStalled_) {
+            wasapiRecovery_.recovered();
+            // A short JUCE STOP/START must not leave MAIN latched off.
+            if(engine_.mainInterruptedByDevice() && engine_.wantsMainContinuation() &&
+               !operatorOutputMuted_)requestAutomaticMain(false);
+            return;
+        }
+        // Healthy intentionally selected ASIO is never replaced by an old
+        // WASAPI profile. Nor is an unknown fallback given sound permission.
+        if(expected==false && device && device->isOpen() &&
+           manager.getCurrentAudioDeviceType()!="Windows Audio" &&
+           engine_.directRouteAuthorized())return;
+        const auto now=monotonicMilliseconds();
+        wasapiRecovery_.fault(now);
+        if(!wasapiRecovery_.due(now))return;
+        auto applying=deviceApply_.tryBegin(
+            armix::device::NativeDeviceApplyCoordinator::Purpose::wasapiRecovery);
+        if(!applying)return;
+        const auto wanted=*verifiedWasapiSetup_;
+        engine_.beginManualAudioSetup(true);
+        auto error=openSelectedAudioDevice("Windows Audio",wanted,
+            !device || !device->isOpen() || directCallbackStalled_);
+        if(error.isEmpty()) {
+            auto* opened=manager.getCurrentAudioDevice();
+            juce::AudioDeviceManager::AudioDeviceSetup actual;
+            manager.getAudioDeviceSetup(actual);
+            if(!opened || !opened->isOpen() ||
+               manager.getCurrentAudioDeviceType()!="Windows Audio" ||
+               actual.inputDeviceName!=wanted.inputDeviceName ||
+               actual.outputDeviceName!=wanted.outputDeviceName ||
+               !matchesPinnedWasapiReadback(wanted,actual,opened))
+                error="Previously verified WASAPI endpoints are not available";
+            else if(!finishAudioSetupAndRecoverMixer())
+                error="WASAPI reopened, but retained native mixer binding is not ready";
+        }
+        if(error.isEmpty()) {
+            wasapiRecovery_.recovered();
+            directCallbackStalled_=false;
+            callbackProgressMs_=monotonicMilliseconds();
+            if(engine_.wantsMainContinuation() && !operatorOutputMuted_)
+                requestAutomaticMain(false);
+            diagnostics_.record("WASAPI_CONTINUITY_RESTORED",
+                "Exact saved endpoint and native mixer verified; MAIN intent preserved");
+            emitApprovedNativeSnapshot();
+        } else {
+            wasapiRecovery_.failed(now);
+            diagnostics_.record("WASAPI_CONTINUITY_RETRY",error);
+            // Do not persist the temporary null/default manager setup.
+        }
+    }
+
+    // Only a positively identified virtual-cable self-loop trips the true
+    // MASTER mute; an ordinary device/driver fault never touches that fader.
+    // Internal graph cycles are rejected by the existing native DAG compiler.
+    void protectKnownFeedbackLoop(const juce::String& fault) {
+        if(!fault.contains("VB-Cable capture/playback self-loop"))return;
+        engine_.setMasterMuted(true);
+        if(!feedbackMasterTripNotified_) {
+            feedbackMasterTripNotified_=true;
+            diagnostics_.record("MASTER_FEEDBACK_AUTO_MUTE",
+                "Identical VB-Cable capture/playback route detected");
+            emitNotice("Feedback loop detected. MASTER MUTE engaged; correct the input/output route.",true);
+            emitApprovedNativeSnapshot();
+        }
+    }
+
     void changeListenerCallback (juce::ChangeBroadcaster*) override
     {
         if(deviceApply_.busy())return; // synchronous transaction owns recovery
-        // Save device state only after a real change, not on every 3-second tick.
-        deviceSettingsDirty_ = true;
+        // An OS/JUCE device notification is NOT an operator configuration
+        // edit. A missing device or temporary default must never overwrite
+        // the last verified audio-devices.xml selection.
         // The retention gate closes only on an actual epoch/owner change.
         diagnostics_.record ("DEVICE_CHANGE", "Device manager event");
         if((audioSetupWindow_==nullptr || !audioSetupWindow_->isVisible()) &&
            engine_.recoverSameWasapiMixer()) {
             mixerSessionStatus_="RESTORED_MUTED";
             mixerSessionError_.clear();
-            diagnostics_.record("DYNAMIC_MIXER_REATTACHED","Verified WASAPI callback epoch; outputs DISARMED");
+            if(engine_.wantsMainContinuation() && !operatorOutputMuted_)
+                requestAutomaticMain(false); // same verified pair only
+            diagnostics_.record("DYNAMIC_MIXER_REATTACHED",
+                "Verified WASAPI callback epoch; previous MAIN intent retained");
             emitApprovedNativeSnapshot();
         }
     }
@@ -7481,8 +7770,10 @@ private:
         // A startup splash can delay HWND creation; attach once the real JUCE
         // peer exists. Never install a low-level keyboard hook.
         if (!updaterProbeMode_)
-            if(auto* peer=getPeer())
+            if(auto* peer=getPeer()) {
                 hotkeys_.attach(peer->getNativeHandle());
+                attachAudioPowerNotifications(peer->getNativeHandle());
+            }
 #endif
         if(deviceApply_.busy())return; // a vendor modal loop may re-enter JUCE
         // Always disabled unless the user explicitly starts a bounded trace.
@@ -7547,6 +7838,7 @@ private:
             }
             auto saved = juce::XmlDocument::parse (
                 machineSettingsDirectory().getChildFile ("audio-devices.xml"));
+            rememberSavedWasapiProfile(saved.get());
             startupError_ = engine_.start (saved.get());
             engine_.devices().addChangeListener (this);
             diagnostics_.record ("STARTUP",
@@ -7604,7 +7896,21 @@ private:
            juce::Time::getMillisecondCounter()-startupFxGuardTick_>=15000u) {
             if(startupFxGuard_->complete())startupFxGuard_.reset();
         }
+        observeNativeCallbackHeartbeat();
+#if defined(_WIN32)
+        if(actualSystemResumePending_) {
+            actualSystemResumePending_=false;
+            diagnostics_.record("WINDOWS_SYSTEM_RESUME",
+                actualSystemSuspendObserved_?"Real suspend/resume":"Resume event");
+            actualSystemSuspendObserved_=false;
+            // Do not restart a healthy audio device after a display-only event.
+            if(engine_.mainInterruptedByDevice() || !engine_.directRouteAuthorized())
+                wasapiRecovery_.endpointReturned(monotonicMilliseconds());
+        }
+#endif
         serviceAsioMixerRestart();
+        serviceWasapiDeviceContinuity();
+        rememberVerifiedWasapiSetup();
         // ONE actionable notice per unexpected DIRECT reroute. The audio
         // callback has already zero-filled output atomically; status, log and
         // WebView notifications belong only on this JUCE control timer.
@@ -7688,15 +7994,17 @@ private:
 
         if (deviceSettingsDirty_)
         {
-            deviceSettingsDirty_ = false;
-            // DeviceManager signals even when a temporary capture-only /
-            // output-only route is selected. Never persist that test route.
+            // Keep a newly approved device selection pending while the
+            // driver is temporarily closed; never serialize JUCE's empty
+            // default and never silently discard the unsaved user binding.
+            auto* activeDevice=engine_.devices().getCurrentAudioDevice();
             if (!engine_.hasTemporaryDiagnosticDevice() && !engine_.independentClockActive() &&
                 engine_.directRouteAuthorized() && !engine_.hasRetainedUnboundMixer() &&
                 (audioSetupWindow_ == nullptr || !audioSetupWindow_->isVisible()) &&
-                engine_.devices().getCurrentAudioDevice() != nullptr)
+                activeDevice != nullptr && activeDevice->isOpen())
             if (auto xml = engine_.devices().createStateXml())
             {
+                deviceSettingsDirty_ = false;
                 const auto text = xml->toString();
                 if (text != lastAudioXml_)
                 {

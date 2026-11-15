@@ -218,6 +218,10 @@ target_link_libraries(ARMixConsole PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+  # Pure-C++ P0 audio-continuity gate: display idle must never reset MAIN.
+  add_executable(ARMixAudioContinuityPolicyTests tests/audio_continuity_policy_test.cpp)
+  target_compile_features(ARMixAudioContinuityPolicyTests PRIVATE cxx_std_20)
+  add_test(NAME P0DisplayIdlePreservesAudioAndDeviceRecoveryIntent COMMAND ARMixAudioContinuityPolicyTests)
   juce_add_console_app(ARMixFactoryFxRegistryTests PRODUCT_NAME "ArSonMix Factory FX Integrity Tests")
   target_sources(ARMixFactoryFxRegistryTests PRIVATE tests/factory_fx_registry_test.cpp src/FactoryFxRegistry.h)
   target_link_libraries(ARMixFactoryFxRegistryTests PRIVATE juce::juce_core juce::juce_cryptography juce::juce_recommended_config_flags)

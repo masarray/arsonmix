@@ -181,6 +181,18 @@ jobs:
           node --check web/approved-native-bridge.js
           node --check web/approved-native-contract.js
           node --test --test-name-pattern="ASIO4ALL|ASIO restart" tests/mixer_io_operator_contract_test.mjs
+          node --test tests/audio_continuity_contract_test.mjs
+          # This is also in the full Windows contract set; enforce it on the
+          # fast runner so a stale device-persistence assertion cannot waste
+          # a complete JUCE/MSVC job again.
+          node --test tests/direct_restore_recovery_contract_test.mjs
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror tests/audio_continuity_policy_test.cpp -o "$RUNNER_TEMP/armix-audio-continuity"
+          "$RUNNER_TEMP/armix-audio-continuity"
+          # SonKu has >192 KiB acoustic rings per DSP instance. Prove the
+          # actual PCM assertions under a Windows-sized 1 MiB stack *before*
+          # allocating a full MSVC runner; never skip the native Windows CTest.
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror tests/sonku_spatial_core_test.cpp -o "$RUNNER_TEMP/armix-sonku-spatial-core"
+          (ulimit -s 1024; "$RUNNER_TEMP/armix-sonku-spatial-core")
           g++ -std=c++20 -O2 -Wall -Wextra -Werror tests/first_run_endpoint_policy_test.cpp -o "$RUNNER_TEMP/armix-first-run-policy"
           "$RUNNER_TEMP/armix-first-run-policy"
           node --test tests/native_first_run_bootstrap_contract.test.mjs
