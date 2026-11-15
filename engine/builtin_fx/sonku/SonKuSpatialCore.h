@@ -1002,6 +1002,9 @@ private:
             p83Mode_==p83::Mode::MusicSpatialP87 ||
 #if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
             p83Mode_==p83::Mode::MusicSpatialP88 ||
+#if defined(SONKU_P89_DEPTH_COHERENCE_RESEARCH) && SONKU_P89_DEPTH_COHERENCE_RESEARCH
+            p83Mode_==p83::Mode::MusicSpatialP89 ||
+#endif
 #endif
 #endif
 #endif
