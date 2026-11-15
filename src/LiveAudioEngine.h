@@ -101,6 +101,8 @@ public:
         std::array<Slot, maxFx> slots {};
         std::array<std::atomic<bool>, maxFx> bypassFlags {};
         std::atomic<bool> rackBypassed{false}; // does not overwrite per-slot flags
+        // Stable, CONTROL-bound pointer to lab's single global bypass atomic.
+        const std::atomic<bool>* globalRackOverride=nullptr;
         // Owned and advanced exclusively by the realtime render callback.
         // Physical-slot identity survives an atomic logical reorder (PR #102).
         std::array<armix::dsp::FxBypassEnvelope, maxFx> bypassEnvelope {};
@@ -118,6 +120,7 @@ public:
         scratch_.setSize (2, maxFrames, false, true, false);
         // CH1 bypass scratch now belongs to its shared Graph lifetime so
         // a ChannelId PCM snapshot can retain the SAME original FX state.
+        graphOwned_->globalRackOverride=dryRoutingLab_.globalFxBypassFlag();
         handoff_.initialize (graphOwned_.get());
     }
 
@@ -971,6 +974,10 @@ public:
     std::unique_ptr<Graph> preparedFxEdit() const
     {
         auto next=std::make_unique<Graph>();
+        next->globalRackOverride=dryRoutingLab_.globalFxBypassFlag();
+        next->rackBypassed.store(
+            graphOwned_->rackBypassed.load(std::memory_order_acquire),
+            std::memory_order_relaxed);
         next->count=graphOwned_->count;
         // A previous lock-free MOVE may have changed logical order, not
         // physical plugin addresses. Normalize only in the NEW graph.
@@ -1197,6 +1204,7 @@ public:
         // Ownership stays with the control thread. The audio thread switches
         // only an immutable pointer at a callback boundary (never detach).
         auto staged = std::make_unique<Graph>();
+        staged->globalRackOverride=dryRoutingLab_.globalFxBypassFlag();
         staged->slots = std::move (stagedSlots);
         staged->count = static_cast<int> (snapshot.effects.size());
         staged->hasRecallState = true;
@@ -2242,6 +2250,19 @@ public:
         return dryRoutingLab_.bypassNativeInsert(epoch,revision,id,slot,
                                                  token,bypass);
     }
+    // Native global A/B is one DSP atomic, never N per-lane intents. All
+    // processors retain their slot bypass and latency-aligned fade envelopes.
+    bool setGlobalFxBypassed(std::uint64_t epoch,std::uint64_t revision,
+                             bool bypass) noexcept {
+        if(routeReconfiguring_.load(std::memory_order_acquire) ||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal ||
+           independent_.active())return false;
+        return dryRoutingLab_.setGlobalFxBypassed(epoch,revision,bypass);
+    }
+    bool globalFxBypassed() const noexcept {
+        return dryRoutingLab_.globalFxBypassed();
+    }
     bool bypassNativeFxRack(std::uint64_t epoch,std::uint64_t revision,
             armix::mixer::ChannelId id,bool bypass) noexcept {
         if(routeReconfiguring_.load(std::memory_order_acquire)||
@@ -3070,6 +3091,8 @@ private:
             if(!slot.processor)continue;
             auto& bypass=graph.bypassEnvelope[physical];
             bypass.request(graph.rackBypassed.load(std::memory_order_acquire) ||
+                           (graph.globalRackOverride &&
+                            graph.globalRackOverride->load(std::memory_order_acquire)) ||
                            graph.bypassFlags[physical].load(std::memory_order_acquire));
             const bool blend=bypass.transitioning();
             if(blend)

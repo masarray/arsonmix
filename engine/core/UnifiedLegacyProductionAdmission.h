@@ -105,7 +105,8 @@ public:
         bool allOutputsDisarmed,
         DynamicNativeSessionPublisher& publisher,
         UnifiedLegacyAccepted& accepted,
-        DynamicChannelFxLeaseBank::ExternalLease externalCh1={}) {
+        DynamicChannelFxLeaseBank::ExternalLease externalCh1={},
+        const std::atomic<bool>* globalFxOverride=nullptr) {
         Report result;
         if(!hardware.valid() ||
            hardware.monitorEnabled!=acceptedM4Fx.monitorEnabled() ||
@@ -180,6 +181,7 @@ public:
             result.fault=Fault::fxLeaseInvalid;return result;
         }
         auto owner=std::make_shared<Bank>(std::move(bank));
+        owner->bindGlobalRackOverride(globalFxOverride); // before PCM publication
         DynamicNativeSessionPublisher::FxPlan plan;
         plan.owner=std::static_pointer_cast<void>(owner);
         plan.context=owner.get();

@@ -58,3 +58,36 @@ button:disabled{opacity:.45;cursor:not-allowed}
   .app .console-pane{min-width:0}
   .app .tracks-viewport{min-width:0}
 }
+
+/* One physical FX toolbar button: the standard contextual metal owner
+   paints the ENTIRE button green when FX is enabled and silver when
+   bypassed. Text and unframed SVG share the button's normal ink. */
+.app .command-bar #globalFxToggle{
+ display:inline-flex!important;align-items:center!important;justify-content:center!important;
+ gap:4px;
+ width:52px;min-width:52px;max-width:52px;flex:0 0 52px;
+ height:23px;min-height:23px;padding:0 6px!important;
+ /* Inherit exact font, baseline, line-height and ink from .command-bar .tool.
+    The old 14px text linebox + translateY(1px) shifted FX away from the
+    adjacent GAIN / FX RACK / Sends on Faders labels. */
+
+}
+/* Caption occupies the same natural linebox as every other toolbar label.
+   No optical transform, forced line-height, separate type scale or baseline. */
+.app .command-bar #globalFxToggle .global-fx-label{
+ display:block;flex:0 0 auto;align-self:center;
+ line-height:inherit!important;
+ margin:0;padding:0;border:0;transform:none!important;white-space:nowrap;
+}
+.app .command-bar #globalFxToggle svg.global-fx-power-icon{
+ display:block;align-self:center;flex:0 0 14px;width:14px;height:14px;
+ vertical-align:middle;padding:0;margin:0;border:0;box-shadow:none;
+ background:none!important;filter:none;pointer-events:none;
+ fill:currentColor;color:inherit!important;
+}
+.app .command-bar #globalFxToggle:focus-visible{
+ outline:2px solid #94d9e8;outline-offset:2px;
+}
+.app .command-bar #globalFxToggle[aria-busy="true"]{
+ opacity:.75;cursor:progress;
+}

@@ -1774,6 +1774,8 @@ private:
             accepted.getDynamicObject()->setProperty("logicalMixer",logicalMixer_.readback());
         }
         if(auto* obj=accepted.getDynamicObject()) {
+            // PCM-authoritative global A/B readback; not a mirrored button state.
+            obj->setProperty("globalFxBypassed",engine_.globalFxBypassed());
             obj->setProperty("channelAppearance",channelAppearance_.snapshot(accepted.getProperty("graph",{})));
             obj->setProperty("waitingAsioInputs",live.getProperty("waitingAsioInputs",0));
             obj->setProperty("externalOutputs",
@@ -4654,6 +4656,7 @@ private:
             action == "scanVst3" || action == "routingDryApply" ||
             action == "routingFxBypass" ||
             action == "routingNativeFxRackBypass" ||
+            action == "routingGlobalFxBypass" ||
             action == "routingNativeFxInsertBypass" ||
             action == "routingFxRackBypass" ||
             action == "nativeEqSetBand" || action == "nativeCompSet" ||
@@ -4685,6 +4688,14 @@ private:
                 ack->setProperty("error",reason);
                 browser_.emitEventIfBrowserIsVisible(
                     "arMixRoutingFxRackAck",juce::var(ack.release()));
+            }
+            if(action=="routingGlobalFxBypass" && browser_.loaded) {
+                auto ack=std::make_unique<juce::DynamicObject>();
+                ack->setProperty("requestId",args.getProperty("requestId",{}));
+                ack->setProperty("ok",false);
+                ack->setProperty("error",reason);
+                browser_.emitEventIfBrowserIsVisible(
+                    "arMixGlobalFxAck",juce::var(ack.release()));
             }
             if((action=="routingNativeFxRackBypass" ||
                 action=="routingNativeFxInsertBypass") && browser_.loaded) {
@@ -5743,6 +5754,50 @@ private:
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
                 "arMixAuxSendGainAck",juce::var(ack.release()));
             if(!ok)emitNotice("Live AUX send rejected; refresh accepted routing.",true);
+            return;
+        }
+        // The only global FX A/B authority. One atomic read by all active
+        // native PCM inserts (including BUS and FX_RETURN), with each plugin's
+        // existing latency-aligned bypass envelope. Never touch rack/slot
+        // settings, change topology or publish a competing M4 graph.
+        if(action=="routingGlobalFxBypass") {
+            const auto request=args.getProperty("requestId",{}).toString();
+            const auto rawEpoch=args.getProperty("deviceEpoch",{});
+            const auto rawRevision=args.getProperty("revision",{});
+            const auto desired=args.getProperty("value",{});
+            const auto accepted=approvedNativeSnapshot();
+            const auto authority=accepted.getProperty("mixerSession",{})
+                .getProperty("authority","").toString();
+            std::uint64_t ep=0,rev=0;
+            const bool valid=request.startsWith("global-fx-") &&
+                request.length()<=90 && desired.isBool() &&
+                armix::console::approvedNativeId(rawEpoch,ep) &&
+                armix::console::approvedNativeId(rawRevision,rev) &&
+                (authority=="CHANNEL_ID"||authority=="M4") &&
+                !acceptedControlRequests_.contains(request) &&
+                !studioBackupBusy_&&!nativeShowBusy_ &&
+                !deviceApply_.busy()&&!engine_.independentClockActive();
+            bool applied=false;
+            if(valid) {
+                acceptedControlRequests_.add(request);
+                if(acceptedControlRequests_.size()>512)
+                    acceptedControlRequests_.remove(0);
+                applied=engine_.setGlobalFxBypassed(
+                    ep,rev,static_cast<bool>(desired));
+            }
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request);
+            ack->setProperty("ok",applied);
+            ack->setProperty("bypassed",engine_.globalFxBypassed());
+            ack->setProperty("error",applied?juce::String():
+                "Global FX requires a current accepted physical PCM epoch/revision");
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixGlobalFxAck",juce::var(ack.release()));
+            if(applied) {
+                diagnostics_.record("GLOBAL_FX_AB",
+                    engine_.globalFxBypassed()?"BYPASS_ALL":"ENABLE_RESTORED");
+                emitApprovedNativeSnapshot();
+            }
             return;
         }
         // Accepted ChannelId FX power. A rack master is an additive gate,
