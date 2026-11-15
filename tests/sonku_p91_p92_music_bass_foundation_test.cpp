@@ -77,6 +77,8 @@ int main(){
         // Musical default must not simply win A/B by being twice as loud.
         // A narrow test tone is not integrated LUFS; this bounds only the
         // deterministic steady-state electrical gain to within ~2.5 dB.
+        std::fprintf(stderr,"P91P92_LEVEL_%d input=%.8f actual=%.8f ratio=%.5f\n",
+                     rate,sourceTotalRms,p9TotalRms,p9TotalRms/sourceTotalRms);
         assert(p9TotalRms>.75*sourceTotalRms &&
                p9TotalRms<1.33*sourceTotalRms &&
                "P9 has excessive loss or hidden makeup gain");
