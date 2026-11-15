@@ -72,6 +72,9 @@ struct Settings {
     int renderMode = 0;
     bool musicCompatibleLowFrequency = false;
     float headYawDegrees = 0.f; // deterministic world/head separation
+#if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
+    float hrtfElevationTrimDegrees=0.f; // spectral only, never room XYZ
+#endif
 #endif
 };
 inline bool valid(const Settings& s) noexcept {
@@ -94,7 +97,11 @@ inline bool valid(const Settings& s) noexcept {
 #if defined(SONKU_P85_WORLD_COHERENCE_RESEARCH) && SONKU_P85_WORLD_COHERENCE_RESEARCH
 #if defined(SONKU_P86_HORIZONTAL_FOCUS_RESEARCH) && SONKU_P86_HORIZONTAL_FOCUS_RESEARCH
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
+#if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
+        s.renderMode<=7 && ((s.renderMode!=3 && s.renderMode!=4 && s.renderMode!=5 && s.renderMode!=6 && s.renderMode!=7) || !s.musicCompatibleLowFrequency) &&
+#else
         s.renderMode<=6 && ((s.renderMode!=3 && s.renderMode!=4 && s.renderMode!=5 && s.renderMode!=6) || !s.musicCompatibleLowFrequency) &&
+#endif
 #else
         s.renderMode<=5 && ((s.renderMode!=3 && s.renderMode!=4 && s.renderMode!=5) || !s.musicCompatibleLowFrequency) &&
 #endif
@@ -106,6 +113,12 @@ inline bool valid(const Settings& s) noexcept {
 #endif
 #else
         s.renderMode<=2 &&
+#endif
+#if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
+        std::isfinite(s.hrtfElevationTrimDegrees) &&
+        s.hrtfElevationTrimDegrees>=-30.f && s.hrtfElevationTrimDegrees<=20.f &&
+        (s.renderMode!=7 || (s.directElevationDegrees+s.hrtfElevationTrimDegrees>=-40.f &&
+                             s.directElevationDegrees+s.hrtfElevationTrimDegrees<=60.f)) &&
 #endif
         p83::validYaw(s.headYawDegrees) &&
         (s.renderMode!=2 || (s.stereoSpreadDegrees>=20.f &&
@@ -456,6 +469,9 @@ public:
             && p83Mode_!=p83::Mode::MusicSpatialP86
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
             && p83Mode_!=p83::Mode::MusicSpatialP87
+#if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
+            && p83Mode_!=p83::Mode::MusicSpatialP88
+#endif
 #endif
 #endif
 #endif
@@ -492,6 +508,9 @@ public:
              || p83Mode_==p83::Mode::MusicSpatialP86
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
              || p83Mode_==p83::Mode::MusicSpatialP87
+#if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
+             || p83Mode_==p83::Mode::MusicSpatialP88
+#endif
 #endif
 #endif
 #endif
@@ -504,18 +523,32 @@ public:
         const bool horizontalFocus=p83Mode_==p83::Mode::MusicSpatialP86
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
             || p83Mode_==p83::Mode::MusicSpatialP87
+#if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
+             || p83Mode_==p83::Mode::MusicSpatialP88
+#endif
 #endif
             ;
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
-        const bool musicalBody=p83Mode_==p83::Mode::MusicSpatialP87;
+        const bool musicalBody=p83Mode_==p83::Mode::MusicSpatialP87
+#if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
+            || p83Mode_==p83::Mode::MusicSpatialP88
+#endif
+            ;
 #endif
 #endif
         // Deliberate music-monitor compensation: real distance perception
         // still comes from direct/reflected ratio and high-frequency cues,
         // while the direct field is not attenuated by the full physical 1/r.
         // 1.6m=1; 8m~0.55 instead of 0.20. No pow/exp on the PCM callback.
+        // P8.8: meaningful source-distance cue at 7+ m, no huge diffuse tail.
         const float targetDistance=roomEnabled?
-            1.f/(1.f+0.13f*(settings_.sourceDistanceMeters-1.6f)):1.f;
+            1.f/(1.f+
+#if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
+                (p83Mode_==p83::Mode::MusicSpatialP88?0.27f:0.13f)*
+#else
+                0.13f*
+#endif
+                (settings_.sourceDistanceMeters-1.6f)):1.f;
         for(int i=0;i<samples;++i) {
             smoothedMix_+=levelSlew_*(settings_.spatialMix-smoothedMix_);
             smoothedTrim_+=levelSlew_*(settings_.outputTrim-smoothedTrim_);
@@ -798,11 +831,22 @@ private:
     void interpolate(EarKernel& destination,double azimuth) noexcept {
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
         if(room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch &&
-           researchElevationDegrees_!=0.f){
+           (researchElevationDegrees_!=0.f
+#if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
+             || (p83Mode_==p83::Mode::MusicSpatialP88 &&
+                 settings_.hrtfElevationTrimDegrees!=0.f)
+#endif
+             )){
             // Both stereo emitters AND the coherent MID correction use the
             // very same truly measured direct elevation, no third FIR.
+            const float spectralElevation=researchElevationDegrees_
+#if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
+                +(p83Mode_==p83::Mode::MusicSpatialP88?
+                     settings_.hrtfElevationTrimDegrees:0.f)
+#endif
+                ;
             hrir3d::interpolate(static_cast<float>(azimuth),
-                                 researchElevationDegrees_,
+                                 spectralElevation,
                                  std::abs(sampleRate_-44100.)<=.1,destination);
             return;
         }
@@ -836,6 +880,9 @@ private:
            && p83Mode_!=p83::Mode::MusicSpatialP86
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
             && p83Mode_!=p83::Mode::MusicSpatialP87
+#if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
+            && p83Mode_!=p83::Mode::MusicSpatialP88
+#endif
 #endif
 #endif
 #endif
@@ -868,6 +915,9 @@ private:
             p83Mode_==p83::Mode::MusicSpatialP86 ||
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
             p83Mode_==p83::Mode::MusicSpatialP87 ||
+#if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
+            p83Mode_==p83::Mode::MusicSpatialP88 ||
+#endif
 #endif
 #endif
 #endif
@@ -887,6 +937,9 @@ private:
                 || p83Mode_==p83::Mode::MusicSpatialP86
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
              || p83Mode_==p83::Mode::MusicSpatialP87
+#if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
+             || p83Mode_==p83::Mode::MusicSpatialP88
+#endif
 #endif
 #endif
                 )?static_cast<double>(p83::toHead(static_cast<float>(degrees_),p83HeadYaw_))
