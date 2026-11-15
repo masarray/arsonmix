@@ -226,7 +226,7 @@ function render(){
      '<option value="external">P9.0 · TRUE EXTERNAL SPEAKER (EXPERIMENT)</option>';
     picker.dataset.nativeModeSet="p90";
     root.querySelector(".sk-render-label").textContent="RENDER MODE · P9.0 HEADPHONE FAT";
-   }else if(p89Capable && picker.dataset.nativeModeSet!=="p89"){
+   }else if(!p90Capable && p89Capable && picker.dataset.nativeModeSet!=="p89"){
     picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
      '<option value="clarity">SPATIAL · P8.4 REFERENCE</option>'+
      '<option value="coherence">SPATIAL · P8.5 REFERENCE</option>'+
@@ -288,7 +288,9 @@ function render(){
     p84Capable?(s.renderMode===3?"clarity":"music"):
     s.renderMode===1?"mono":s.renderMode===2?
     (s.musicCompatibleLowFrequency?"musiclf":"physical"):"music";
-  $("skRenderMode").value=v;
+  // Native readback arrives every 250ms. A no-op assignment to an open native
+  // select is unnecessary; preserve popup interaction while value is unchanged.
+  if(picker.value!==v)picker.value=v;
   $("skHeadYaw").value=String(s.headYawDegrees);
   $("skYawValue").textContent=Math.round(s.headYawDegrees)+"°";
  }
