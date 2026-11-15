@@ -50,8 +50,8 @@ public:
     template<std::size_t N>
     void compose(const std::array<std::array<float,N>,2>& center,
                  std::array<std::array<float,N>,2>& left,
-                 std::array<std::array<float,N>,2>& right) const noexcept {
-        const float c=std::clamp(centerBlend_,0.f,1.f);
+                 std::array<std::array<float,N>,2>& right) noexcept {
+        const float c=centerBlend();
         for(std::size_t ear=0;ear<2;++ear)
             for(std::size_t k=0;k<N;++k) {
                 const float mid=.5f*(left[ear][k]+right[ear][k]);
