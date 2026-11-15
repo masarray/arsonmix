@@ -34,7 +34,8 @@ def main():
             page.goto((dst / "index.html").as_uri())
             page.wait_for_function("""()=>document.documentElement.classList.contains('armix-native-desktop') &&
                 document.querySelectorAll('.command-bar .mixer-file-tool').length===2 &&
-                document.querySelectorAll('.command-bar .armix-toolbar-divider').length===4 &&
+                document.querySelectorAll('.command-bar .armix-toolbar-divider').length===3 &&
+                !document.querySelector('.command-bar [data-native-monitor]') &&
                 !!document.getElementById('playerToggle')""")
             metrics = page.evaluate("""()=>{
               const bar=document.querySelector('.command-bar');
