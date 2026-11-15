@@ -46,7 +46,10 @@ int main() {
     assert(fx->hasEditor());
     {
         std::unique_ptr<juce::AudioProcessorEditor> ui(fx->createEditor());
-        assert(ui && ui->getWidth()==840 && ui->getHeight()==474);
+        assert(ui &&
+            ui->getWidth()==armix::builtin_fx::ImerSipEditor::editorWidth &&
+            ui->getHeight()==armix::builtin_fx::ImerSipEditor::editorHeight);
+        assert(ui->findChildWithID("imersip.power"));
         // No fake browser PCM or secondary processing engine.
     }
     assert(fx->isBusesLayoutSupported(fx->getBusesLayout()));
