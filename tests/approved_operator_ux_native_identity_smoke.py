@@ -43,10 +43,25 @@ def main():
         assert ready and ready["viewportWidth"]==1366 and ready["viewportHeight"]==768
         # No unimplemented native functionality advertised as a working action.
         for id in ("saveScene","recallScene","copy","paste","group","ungroup",
-                   "preview","clearCue","reset","sofToggle","sofTarget"):
+                   "preview","clearCue","sofToggle","sofTarget"):
             el=page.locator("#"+id)
             assert el.is_hidden() and el.is_disabled(),id
         assert page.locator("#pluginsButton").is_visible()
+        # Reset is now a REAL host action, not the retired demo reducer.
+        # It must be discoverable, confirmable and cancel-safe. Do not mock
+        # an accepted PCM graph or rewrite user settings to test this menu.
+        page.locator("#moreTools summary").click()
+        reset=page.locator("#reset")
+        assert reset.is_visible() and reset.is_enabled()
+        reset.click()
+        dialog=page.locator("#mixerResetDialog")
+        assert dialog.is_visible()
+        assert not page.evaluate("""()=>window.__nativeEvents.some(e=>
+          e.name==='arMixAction'&&e.payload?.action==='nativeMixerFactoryReset')""")
+        page.locator("#mixerResetCancel").click()
+        assert dialog.is_hidden()
+        assert not page.evaluate("""()=>window.__nativeEvents.some(e=>
+          e.name==='arMixAction'&&e.payload?.action==='nativeMixerFactoryReset')""")
         emit(page,"arMixConsoleSnapshot",state)
         strip=page.locator('#tracks .strip[data-id="1"]')
         strip.wait_for(state="visible")
@@ -183,6 +198,23 @@ def main():
           '#tracks .strip[data-id="1"]').textContent.includes('Legacy Vocal') &&
           localStorage.getItem('arsonmix.native.channel-presentation.v1')===null""")
         assert page.evaluate("()=>window.__nativeIntents.length")==0
+        # Explicit second confirmation reaches only the native host. It
+        # does NOT call the Pages demo reset or optimistically mutate PCM.
+        page.locator("#moreTools summary").click()
+        page.locator("#reset").click()
+        assert page.locator("#mixerResetDialog").is_visible()
+        page.locator("#mixerResetConfirm").click()
+        commands=page.evaluate("""()=>window.__nativeEvents.filter(e=>
+          e.name==='arMixAction'&&e.payload?.action==='nativeMixerFactoryReset')""")
+        assert len(commands)==1 and commands[0]["payload"]["confirmation"]=="RESET_MIXER"
+        assert page.locator("#mixerResetConfirm").is_disabled()
+        assert page.locator("#mixerResetDialog").is_visible(), "UI cannot claim reset before ACK"
+        emit(page,"arMixNativeSessionAck",
+             {"operation":"RESET","ok":False,"error":"MIXER_IO_BUSY","state":""})
+        assert page.locator("#mixerResetConfirm").is_enabled()
+        assert page.locator("#mixerResetDialog").is_visible(), "rejected reset retains dialog"
+        page.locator("#mixerResetCancel").click()
+        assert page.locator("#mixerResetDialog").is_hidden()
         assert not errors,errors
         page.close();context.close();browser.close()
     print("PASS native identity double-click/ACK/readback/reject/restart/legacy migration with zero PCM graph intents")
