@@ -458,6 +458,8 @@ private:
         return history_[source][i0]*(1.f-fract)+history_[source][i1]*fract;
     }
     void updateGeometry(double azimuth,float spread,float headYawDegrees) noexcept {
+        // Used only by world-yaw research variants; keep P6/P8.4 -Werror builds valid.
+        (void)headYawDegrees;
         constexpr float pi=3.14159265358979323846f;
         const float sourceDistance=custom_?geometry_.distanceMeters:1.60f;
         // The existing four-wall path stays bit-exact at equal source/ear
