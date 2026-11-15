@@ -80,11 +80,12 @@ public:
             limiterRelease_=static_cast<float>(1./(rate*.080));
             compareSlew_=static_cast<float>(1.-std::exp(-1./(rate*.020)));
             for(auto& ear:directDifferenceLow_)ear.fill(0.f);
+            directMeasuredSideLow_.fill(0.f);
             earlyLow_.fill(0.f);lateLow_.fill(0.f);
             finalLimiter_=1.f;
             updateTargets(settings_);
             directGain_=directTarget_;
-            stereoTransfer_=stereoTransferTarget_;
+            stereoKeep_=stereoKeepTarget_;
             compareDryGain_=compareDryTarget_;
             earlyGain_=earlyTarget_;
             lateGain_=lateTarget_;
@@ -135,7 +136,7 @@ public:
             core_.process(left+at,right+at,count,roomReturns_.data());
             for(int i=0;i<count;++i) {
                 directGain_+=stageSlew_*(directTarget_-directGain_);
-                stereoTransfer_+=stageSlew_*(stereoTransferTarget_-stereoTransfer_);
+                stereoKeep_+=stageSlew_*(stereoKeepTarget_-stereoKeep_);
                 compareDryGain_+=compareSlew_*(compareDryTarget_-compareDryGain_);
                 earlyGain_+=stageSlew_*(earlyTarget_-earlyGain_);
                 lateGain_+=stageSlew_*(lateTarget_-lateGain_);
@@ -165,19 +166,33 @@ public:
                     deltaL-=lowL;
                     deltaR-=lowR;
                 }
-                // The rejected rendering directly replaced almost ALL
-                // original stereo SIDE with dual-speaker HRTF SIDE, causing
-                // the owner's music to approach MONO. Keep original stereo
-                // SIDE as the authoritative direct bed. Preserve full
-                // measured KEMAR center/front MID transfer and an adjustable
-                // 10..100% fraction of binaural SIDE *difference*. Never
-                // collapse independent stereo to a mono HRTF anchor.
+                // Preserve original stereo SIDE as the authoritative direct
+                // source while rendering a separate, band-limited binaural
+                // speaker contrast. Keep mode must not turn off the HRTF.
                 const float deltaMid=.5f*(deltaL+deltaR);
                 const float deltaSide=.5f*(deltaL-deltaR);
-                const float baseL=dryL+directGain_*
-                    (deltaMid+stereoTransfer_*deltaSide);
-                const float baseR=dryR+directGain_*
-                    (deltaMid-stereoTransfer_*deltaSide);
+                // Previous Stereo Keep=100% multiplied measured HRTF SIDE
+                // by only 0.10: music was protected by effectively
+                // disabling directional externalization. Treat fidelity
+                // and binaural speaker contrast as INDEPENDENT axes.
+                // In Keep mode the music's original stereo SIDE remains
+                // exactly present; a band-limited measured KEMAR SIDE is
+                // added at bounded 45% strength, NOT a subtractive dry
+                // replacement. No fake Haas delay or decorrelated signal.
+                float measuredSide=.5f*(hrL-hrR);
+                for(int pole=0;pole<4;++pole) {
+                    auto& low=directMeasuredSideLow_[pole];
+                    low+=directHp_*(measuredSide-low);
+                    measuredSide-=low;
+                }
+                const float keep=std::clamp(stereoKeep_,0.f,1.f);
+                const float directionalSide=directGain_*(
+                    (1.f-keep)*deltaSide+
+                    keep*.45f*measuredSide);
+                const float baseL=dryL+directGain_*deltaMid+
+                                  directionalSide;
+                const float baseR=dryR+directGain_*deltaMid-
+                                  directionalSide;
                 earlyLow_[0]+=earlyHp_*(wet.earlyL-earlyLow_[0]);
                 earlyLow_[1]+=earlyHp_*(wet.earlyR-earlyLow_[1]);
                 lateLow_[0]+=lateHp_*(wet.lateL-lateLow_[0]);
@@ -272,9 +287,10 @@ private:
         // These levels are small measured reflections, NOT dry gain.
         earlyTarget_=s.immersion*(2.60f*s.space)*(1.f+.55f*s.depth);
         lateTarget_=s.immersion*(1.0f*s.lateRoom);
-        // At 100% lock 90% of original source SIDE is kept even when HRTF
-        // is strongest; 0% allows the former full measured binaural SIDE.
-        stereoTransferTarget_=1.f-.90f*s.stereoLock;
+        // KEEP is now source-stereo preservation, NOT an inverse spatial
+        // strength dial. 100% keeps original SIDE + bounded measured HRIR
+        // directional contribution. 0% retains the older full transfer.
+        stereoKeepTarget_=s.stereoLock;
         concertStage_.setScene(s.immersion,s.space,s.width);
     }
     static constexpr int scratchFrames=8192;
@@ -288,11 +304,12 @@ private:
     std::array<float,scratchFrames> sourceStereoGate_{},mid_{},side_{};
     std::array<float,2> earlyLow_{},lateLow_{};
     std::array<std::array<float,4>,2> directDifferenceLow_{};
+    std::array<float,4> directMeasuredSideLow_{};
     Settings settings_{};
     float stageSlew_=0.f,trimSlew_=0.f;
     float earlyHp_=0.f,lateHp_=0.f,directHp_=0.f;
     float directGain_=0.f,directTarget_=0.f;
-    float stereoTransfer_=1.f,stereoTransferTarget_=1.f;
+    float stereoKeep_=1.f,stereoKeepTarget_=1.f;
     float compareDryGain_=0.f,compareDryTarget_=0.f,compareSlew_=0.f;
     float finalLimiter_=1.f,limiterRelease_=0.f;
     float earlyGain_=0.f,earlyTarget_=0.f;

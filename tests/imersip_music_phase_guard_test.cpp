@@ -513,6 +513,54 @@ void verifyDirectOnlyHrtfHeightCalibration(double rate) {
     s.earAlignDegrees=20.1f;assert(!armix::imersip::valid(s));
     s.earAlignDegrees=-30.1f;assert(!armix::imersip::valid(s));
 }
+
+void verifyStereoKeepDoesNotDisableMeasuredHrtf(double rate) {
+    Stereo source(32768);
+    makeSignal(source,rate,4,731.f);
+    Settings s{};
+    s.immersion=1.f;s.width=1.f;s.space=0.f;s.lateRoom=0.f;
+    s.bassImpact=0.f;s.detail=0.f;s.outputTrim=1.f;
+    s.stereoLock=1.f;
+    const auto kept=render(rate,s,source,128);
+    const auto kept64=render(rate,s,source,64);
+    assertChunkParity(kept,kept64);
+    // At zero room, increasing width must still change the measured
+    // direct HRTF in both ears: Stereo Keep is no longer a "spatial OFF".
+    s.width=0.f;
+    const auto narrow=render(rate,s,source,128);
+    s.width=1.f;
+    double sourceEnergy=0.,directional=0.,sideBefore=0.,sideAfter=0.;
+    for(int i=4096;i<32768;++i) {
+        const double dl=kept.l[i]-narrow.l[i],dr=kept.r[i]-narrow.r[i];
+        directional+=dl*dl+dr*dr;
+        sourceEnergy+=source.l[i]*source.l[i]+source.r[i]*source.r[i];
+        const double a=.5*(source.l[i]-source.r[i]);
+        const double b=.5*(kept.l[i]-kept.r[i]);
+        sideBefore+=a*a;sideAfter+=b*b;
+    }
+    const double widthDelta=std::sqrt(directional/(sourceEnergy+1.e-14));
+    const double sideRatio=std::sqrt(sideAfter/(sideBefore+1.e-14));
+    std::fprintf(stderr,
+       "IMERSIP_HRTF_KEEP_WIDTH rate=%.0f widthDelta=%.5f side=%.5f\\n",
+       rate,widthDelta,sideRatio);
+    assert(widthDelta>.015);
+    assert(sideRatio>.86 && sideRatio<1.8);
+
+    // Genuine mono voice must stay mono when ROOM is OFF and two virtual
+    // speakers share the same centered source. No fake stereo excitation.
+    Stereo mono(32768);
+    for(int i=0;i<32768;++i){
+        const float v=.11f*std::sin(2.*pi*790.*i/rate);
+        mono.l[i]=mono.r[i]=v;
+    }
+    const auto monoOut=render(rate,s,mono,128);
+    double extraSide=0.,sourceMono=0.;
+    for(int i=4096;i<32768;++i){
+        extraSide+=std::pow(.5*(monoOut.l[i]-monoOut.r[i]),2);
+        sourceMono+=mono.l[i]*mono.l[i];
+    }
+    assert(std::sqrt(extraSide/(sourceMono+1.e-14))<.12);
+}
 void verifyBassFoundation(double rate) {
     for(int venue=0;venue<3;++venue)for(float hz:{40.f,70.f,110.f,160.f,220.f}) {
         Stereo source;
@@ -812,6 +860,7 @@ int main() {
         verifyFrontSpeakerVocalDoesNotNull(rate);
         verifyOriginalStereoSurvives(rate);
         verifyStereoIntegrityOwnerRejection(rate);
+        verifyStereoKeepDoesNotDisableMeasuredHrtf(rate);
         verifyP87NotTheQualityReferenceAndRealDepth(rate);
         verifyDirectOnlyHrtfHeightCalibration(rate);
         verifyCompareNeverChangesSettings(rate);
