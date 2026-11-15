@@ -239,10 +239,17 @@ public:
                 const float revSide=.5f*(revL-revR);
                 // P8.6 horizontal early reflections support the DIRECT
                 // speakers; diffuse late tail is deliberately restrained.
-                float addL=earlyGain_*(erSide+.40f*erMid)+
+                // Measured six-wall early MID is a distance cue for a
+                // centered source, not a replacement direct vocal EQ.
+                // With source MID protected, the old .40 early MID left
+                // mono material near-dry even in full Concert space.
+                // Admit modestly more TRUE early reflection pressure;
+                // leave diffuse late MID at .10 to avoid a boxy wash.
+                constexpr float earlyCenterPresence=.62f;
+                float addL=earlyGain_*(erSide+earlyCenterPresence*erMid)+
                            lateGain_*(revSide+.10f*revMid+body.left)+
                            (concertStageEnabled_?lateral.left:0.f);
-                float addR=earlyGain_*(-erSide+.40f*erMid)+
+                float addR=earlyGain_*(-erSide+earlyCenterPresence*erMid)+
                            lateGain_*(-revSide+.10f*revMid+body.right)+
                            (concertStageEnabled_?lateral.right:0.f);
                 // Preserve the *direct binaural substitution* at high input
