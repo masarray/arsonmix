@@ -44,6 +44,8 @@ public:
 
     void prepareToPlay(double rate,int) override {
         ready_=dsp_.prepare(rate);
+        // A/B compare is a transient monitor action, not session state.
+        compareDry_.store(false,std::memory_order_relaxed);
     }
     void releaseResources() override {ready_=false;}
     bool isReady() const noexcept {return ready_;}
@@ -62,15 +64,29 @@ public:
     float liveDifferenceEnergy() const noexcept {
         return liveDifferenceEnergy_.load(std::memory_order_relaxed);
     }
+    float liveStereoRetention() const noexcept {
+        return liveStereoRetention_.load(std::memory_order_relaxed);
+    }
+    // UI thread only writes the atomic; PCM callback owns its sample ramp.
+    // Save/restore NEVER serializes this transient monitor comparison.
+    void setCompareDry(bool compare) noexcept {
+        compareDry_.store(compare,std::memory_order_release);
+    }
+    bool comparingOriginal() const noexcept {
+        return compareDry_.load(std::memory_order_acquire);
+    }
     void processBlock(juce::AudioBuffer<float>& pcm,juce::MidiBuffer&) override {
         juce::ScopedNoDenormals guard;
         if(!ready_ || pcm.getNumChannels()<2 || pcm.getNumSamples()<=0)return;
         consumeRealtimeEdits();
+        dsp_.setCompareDry(compareDry_.load(std::memory_order_acquire));
         dsp_.process(pcm.getWritePointer(0),pcm.getWritePointer(1),
                      pcm.getNumSamples());
         liveInputEnergy_.store(dsp_.lastInputEnergy(),std::memory_order_relaxed);
         liveDifferenceEnergy_.store(dsp_.lastDifferenceEnergy(),
                                     std::memory_order_relaxed);
+        liveStereoRetention_.store(dsp_.lastStereoRetention(),
+                                   std::memory_order_relaxed);
         processedFrames_.fetch_add(static_cast<std::uint64_t>(
             pcm.getNumSamples()),std::memory_order_relaxed);
     }
@@ -125,7 +141,7 @@ public:
         while(pollCompletion(drained)){}
         juce::MemoryOutputStream out(dest,false);
         out.writeInt(0x494D5253); // IMRS; isolated from SonKu/old research state
-        out.writeInt(2); // IMRS v2: append DETAIL to avoid v1 ABI drift
+        out.writeInt(3); // IMRS v3: separately persisted stereo and late tail
         out.writeInt(accepted_.venue);
         out.writeFloat(accepted_.immersion);
         out.writeFloat(accepted_.space);
@@ -133,14 +149,16 @@ public:
         out.writeFloat(accepted_.bassImpact);
         out.writeFloat(accepted_.outputTrim);
         out.writeFloat(accepted_.detail);
+        out.writeFloat(accepted_.stereoLock);
+        out.writeFloat(accepted_.lateRoom);
     }
     bool restoreUnpublishedState(const void* data,int size) {
-        if(published_ || !data || (size!=32 && size!=36) ||
+        if(published_ || !data || (size!=32 && size!=36 && size!=44) ||
            !queue_.empty() || !complete_.empty())return false;
         juce::MemoryInputStream in(data,static_cast<std::size_t>(size),false);
         if(in.readInt()!=0x494D5253)return false;
         const int version=in.readInt();
-        if(version!=(size==32?1:2))return false;
+        if(version!=(size==32?1:size==36?2:3))return false;
         armix::imersip::Settings next{};
         next.venue=in.readInt();
         next.immersion=in.readFloat();
@@ -150,7 +168,9 @@ public:
         next.outputTrim=in.readFloat();
         // Exactly preserved v1 record; Detail defaults OFF on migration
         // rather than silently altering old tonal preferences.
-        next.detail=version==2?in.readFloat():0.f;
+        next.detail=version>=2?in.readFloat():0.f;
+        next.stereoLock=version>=3?in.readFloat():1.f;
+        next.lateRoom=version>=3?in.readFloat():.45f;
         if(!in.isExhausted() || !armix::imersip::valid(next))return false;
         if(ready_ && !dsp_.setSettings(next))return false;
         accepted_=next;
@@ -175,6 +195,8 @@ private:
     bool lastCompletedApplied_=false;
     std::atomic<std::uint64_t> processedFrames_{0};
     std::atomic<float> liveInputEnergy_{0.f},liveDifferenceEnergy_{0.f};
+    std::atomic<float> liveStereoRetention_{-1.f};
+    std::atomic<bool> compareDry_{false};
 };
 } // namespace armix::builtin_fx
 

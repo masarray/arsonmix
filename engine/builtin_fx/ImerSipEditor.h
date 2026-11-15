@@ -69,16 +69,20 @@ public:
             button.onClick=[this,i]{venue_=i;refreshVenues();submit();};
             addAndMakeVisible(button);
         }
-        const char* names[]{"IMMERSION","STAGE WIDTH","VENUE SPACE","BASS IMPACT","DETAIL","OUTPUT"};
-        for(int i=0;i<6;++i) {
+        // The previous 6-knob editor hid stereo fidelity and linked early
+        // and late energy; maxing all knobs could make music nearly mono.
+        const char* names[]{"IMMERSION","STAGE WIDTH","EARLY SPACE","LATE TAIL",
+                            "STEREO LOCK","BASS IMPACT","AIR DETAIL","OUTPUT"};
+        for(int i=0;i<8;++i) {
             auto& slider=knobs_[static_cast<std::size_t>(i)];
             slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
             slider.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
-            slider.setRange(i==5?-12.:0.,i==5?3.5:100.,i==5?.1:1.);
+            slider.setRange(i==7?-12.:0.,i==7?3.5:100.,i==7?.1:1.);
             slider.setRotaryParameters(juce::degreesToRadians(225.f),
                                        juce::degreesToRadians(495.f),true);
             slider.setDoubleClickReturnValue(true,
-                i==0?82.:i==1?95.:i==2?65.:i==3?75.:i==4?40.:0.);
+                i==0?82.:i==1?95.:i==2?65.:i==3?45.:
+                i==4?100.:i==5?75.:i==6?40.:0.);
             slider.onValueChange=[this,i]{
                 refreshReadout(i);
                 if(!knobs_[static_cast<std::size_t>(i)].isMouseButtonDown())
@@ -90,7 +94,7 @@ public:
             auto& cap=captions_[static_cast<std::size_t>(i)];
             cap.setText(names[i],juce::dontSendNotification);
             cap.setJustificationType(juce::Justification::centred);
-            cap.setFont(juce::FontOptions(10.f,juce::Font::plain));
+            cap.setFont(juce::FontOptions(9.f,juce::Font::plain));
             cap.setColour(juce::Label::textColourId,juce::Colour(0xff819ba8));
             addAndMakeVisible(cap);
             auto& value=values_[static_cast<std::size_t>(i)];
@@ -99,6 +103,28 @@ public:
             value.setColour(juce::Label::textColourId,juce::Colour(0xffdcf4fa));
             addAndMakeVisible(value);
         }
+        originalAb_.setButtonText("ORIGINAL / A-B");
+        originalAb_.setClickingTogglesState(true);
+        originalAb_.setColour(juce::TextButton::textColourOffId,
+                             juce::Colour(0xffaac9d6));
+        originalAb_.setColour(juce::TextButton::textColourOnId,
+                             juce::Colour(0xffe8faff));
+        originalAb_.onClick=[this] {
+            fx_.setCompareDry(originalAb_.getToggleState());
+            status_=originalAb_.getToggleState()
+                ?"ORIGINAL SOURCE / A-B ON (NOT SAVED)"
+                :"PROCESSED OUTPUT / A-B OFF";
+            repaint();
+        };
+        addAndMakeVisible(originalAb_);
+        musicalReset_.setButtonText("MUSIC DEFAULT");
+        musicalReset_.onClick=[this] {
+            originalAb_.setToggleState(false,juce::dontSendNotification);
+            fx_.setCompareDry(false);
+            sync(armix::imersip::Settings{});
+            submit();
+        };
+        addAndMakeVisible(musicalReset_);
         sync(fx_.acceptedSettings());
         status_="READY · AUDIO-APPLIED CONTROLS";
         setSize(840,474);
@@ -107,6 +133,8 @@ public:
 
     ~ImerSipEditor() override {
         stopTimer();
+        // Closing the popup must NEVER leave the signal monitor bypassed.
+        fx_.setCompareDry(false);
         setLookAndFeel(nullptr);
     }
     void paint(juce::Graphics& g) override {
@@ -120,8 +148,8 @@ public:
         g.drawText("ImerSip",22,14,190,31,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff91adbb));
         g.setFont(juce::FontOptions(11.f,juce::Font::plain));
-        g.drawText("FUSED MUSIC STAGE   ·   P8.2 BASS / P8.4 DIRECTION",
-                   170,20,445,24,juce::Justification::centredLeft);
+        g.drawText("P8.7 MUSIC  /  STEREO-FIRST FRONT SPEAKERS",
+                   170,20,455,24,juce::Justification::centredLeft);
         const auto stageBox=stage_.toFloat();
         const auto controlBox=juce::Rectangle<float>(368.f,81.f,452.f,341.f);
         g.setColour(juce::Colour(0xff122632));
@@ -135,8 +163,7 @@ public:
         g.setFont(juce::FontOptions(11.f,juce::Font::plain));
         g.drawText("VENUE",385,94,110,20,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xffa1c0cd));
-        g.drawText("CLOSE STAGE · EARLY ROOM · COHERENT BASS",
-                   384,406,425,14,juce::Justification::centredLeft);
+        // No overlapping footer: the 8 readouts now occupy the lower row.
         g.setColour(juce::Colour(0xff244452));g.fillRect(0,440,840,1);
         g.setColour(juce::Colour(0xff84bbc7));
         g.setFont(juce::FontOptions(11.f,juce::Font::plain));
@@ -152,13 +179,15 @@ public:
         stage_={19,81,335,341};
         for(int i=0;i<3;++i)
             venues_[static_cast<std::size_t>(i)].setBounds(385+i*141,121,134,35);
-        const int xs[]{391,532,673,391,532,673};
-        const int ys[]{186,186,186,309,309,309};
-        for(int i=0;i<6;++i) {
+        originalAb_.setBounds(385,160,171,23);
+        musicalReset_.setBounds(569,160,170,23);
+        const int xs[]{382,488,594,700,382,488,594,700};
+        const int ys[]{191,191,191,191,311,311,311,311};
+        for(int i=0;i<8;++i) {
             const int x=xs[i],y=ys[i];
-            knobs_[static_cast<std::size_t>(i)].setBounds(x+18,y,104,87);
-            captions_[static_cast<std::size_t>(i)].setBounds(x,y+83,139,17);
-            values_[static_cast<std::size_t>(i)].setBounds(x,y+101,139,18);
+            knobs_[static_cast<std::size_t>(i)].setBounds(x+16,y,72,69);
+            captions_[static_cast<std::size_t>(i)].setBounds(x,y+72,104,16);
+            values_[static_cast<std::size_t>(i)].setBounds(x,y+91,104,17);
         }
     }
 private:
@@ -168,8 +197,13 @@ private:
         g.setFont(juce::FontOptions(11.f,juce::Font::plain));
         g.drawText("FRONT STAGE",115,106,145,20,juce::Justification::centred);
         g.setColour(juce::Colour(0xff79bdc9));
-        g.drawText("SOURCE 1.6 m  ·  CLOSE / DIRECT",
+        g.drawText("SOURCE 1.6 m  /  FRONTAL SPEAKERS",
                    56,355,260,19,juce::Justification::centred);
+        g.drawText("STEREO LOCK "+
+                   juce::String(static_cast<int>(std::round(knobs_[4].getValue())))+
+                   "%   /   LATE "+
+                   juce::String(static_cast<int>(std::round(knobs_[3].getValue())))+"%",
+                   56,328,260,18,juce::Justification::centred);
         g.setColour(juce::Colour(0xff234452));
         g.drawEllipse(cx-r,cy-r,r*2,r*2,1.f);
         g.drawLine(cx-r,cy,cx+r,cy,1.f);
@@ -206,7 +240,7 @@ private:
         g.setColour(juce::Colour(0xff8facbb));
         g.setFont(juce::FontOptions(12.f,juce::Font::plain));
         g.drawText(juce::String(40+static_cast<int>(std::round(width*60)))+
-                   "° STAGE  ·  NO ORBIT",56,383,260,20,
+                   "° STAGE  /  NO ORBIT",56,383,260,20,
                    juce::Justification::centred);
     }
     void refreshVenues() {
@@ -218,7 +252,7 @@ private:
             knobs_[static_cast<std::size_t>(i)].getValue());
         juce::String out;
         if(i==1)out=juce::String(40+static_cast<int>(std::round(.60*v)))+"°";
-        else if(i==5)out=(v>0.f?"+":"")+juce::String(v,1)+" dB";
+        else if(i==7)out=(v>0.f?"+":"")+juce::String(v,1)+" dB";
         else out=juce::String(static_cast<int>(std::round(v)))+"%";
         values_[static_cast<std::size_t>(i)].setText(out,
             juce::dontSendNotification);
@@ -229,19 +263,23 @@ private:
         next.immersion=static_cast<float>(knobs_[0].getValue()*.01);
         next.width=static_cast<float>(knobs_[1].getValue()*.01);
         next.space=static_cast<float>(knobs_[2].getValue()*.01);
-        next.bassImpact=static_cast<float>(knobs_[3].getValue()*.01);
-        next.detail=static_cast<float>(knobs_[4].getValue()*.01);
+        next.lateRoom=static_cast<float>(knobs_[3].getValue()*.01);
+        next.stereoLock=static_cast<float>(knobs_[4].getValue()*.01);
+        next.bassImpact=static_cast<float>(knobs_[5].getValue()*.01);
+        next.detail=static_cast<float>(knobs_[6].getValue()*.01);
         next.outputTrim=static_cast<float>(
-            std::pow(10.,knobs_[5].getValue()/20.));
+            std::pow(10.,knobs_[7].getValue()/20.));
         return next;
     }
     void sync(const armix::imersip::Settings& s) {
         venue_=s.venue;
         refreshVenues();
         const float vals[]{s.immersion*100.f,s.width*100.f,
-                           s.space*100.f,s.bassImpact*100.f,s.detail*100.f,
+                           s.space*100.f,s.lateRoom*100.f,
+                           s.stereoLock*100.f,s.bassImpact*100.f,
+                           s.detail*100.f,
                            static_cast<float>(20.*std::log10(s.outputTrim))};
-        for(int i=0;i<6;++i) {
+        for(int i=0;i<8;++i) {
             knobs_[static_cast<std::size_t>(i)].setValue(vals[i],
                 juce::dontSendNotification);
             refreshReadout(i);
@@ -272,11 +310,16 @@ private:
         } else if(fx_.liveInputEnergy()<1.e-10f) {
             liveReadout_="SILENT INSERT INPUT";
         } else {
-            // Delta is real time-domain difference to incoming original.
-            // Not a psychoacoustic quality score, but exposes near-bypass.
+            // PCM difference alone was incorrectly certified as spatial
+            // "quality". Show actual output SIDE energy relative to
+            // original stereo, normalized to final output trim.
             const float db=10.f*std::log10(
                 std::max(fx_.liveDifferenceEnergy(),1.e-12f));
-            liveReadout_="LIVE PCM DELTA "+juce::String(db,1)+" dB";
+            const float stereo=fx_.liveStereoRetention();
+            liveReadout_=stereo<0.f?
+                "MONO INPUT / PCM "+juce::String(db,1)+"dB":
+                "STEREO "+juce::String(stereo,2)+"x / PCM "+
+                juce::String(db,1)+"dB";
         }
         lastObservedFrames_=frames;
         repaint(juce::Rectangle<int>(422,448,235,22));
@@ -300,8 +343,9 @@ private:
     ImerSipProcessor& fx_;
     ImerSipLook look_{};
     std::array<juce::TextButton,3> venues_{};
-    std::array<juce::Slider,6> knobs_{};
-    std::array<juce::Label,6> captions_{},values_{};
+    juce::TextButton originalAb_{},musicalReset_{};
+    std::array<juce::Slider,8> knobs_{};
+    std::array<juce::Label,8> captions_{},values_{};
     juce::Rectangle<int> stage_{};
     armix::imersip::Settings deferred_{};
     juce::String status_;

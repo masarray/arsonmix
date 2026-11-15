@@ -57,15 +57,16 @@ int main() {
     assert(settings.bassImpact==.75f);
     juce::MemoryBlock before;
     fx->getStateInformation(before);
-    assert(before.getSize()==36);
-    assert(!fx->restoreUnpublishedState(before.getData(),35));
-    std::array<std::uint8_t,36> corrupted{};
-    std::memcpy(corrupted.data(),before.getData(),36);
+    assert(before.getSize()==44);
+    assert(!fx->restoreUnpublishedState(before.getData(),43));
+    std::array<std::uint8_t,44> corrupted{};
+    std::memcpy(corrupted.data(),before.getData(),44);
     corrupted[0]=0;
-    assert(!fx->restoreUnpublishedState(corrupted.data(),36));
+    assert(!fx->restoreUnpublishedState(corrupted.data(),44));
     assert(!fx->queueSettings(settings,0));
     settings.venue=1;settings.immersion=.81f;
     settings.width=.9f;settings.bassImpact=.95f;settings.detail=.65f;
+    settings.stereoLock=.92f;settings.lateRoom=.31f;
     assert(fx->queueSettings(settings,52));
     assert(!fx->stateSnapshotQuiescent());
     juce::AudioBuffer<float> pcm(2,128);
@@ -91,7 +92,7 @@ int main() {
     fx->processBlock(pcm,midi);
     juce::MemoryBlock savedDuringEdit;
     fx->getStateInformation(savedDuringEdit);
-    assert(savedDuringEdit.getSize()==36);
+    assert(savedDuringEdit.getSize()==44);
     assert(fx->lastCompletedRequestId()==53);
     assert(fx->lastCompletionApplied());
     assert(fx->acceptedSettings().detail==.72f);
@@ -102,7 +103,7 @@ int main() {
     }
     juce::MemoryBlock snapshot;
     fx->getStateInformation(snapshot);
-    assert(snapshot.getSize()==36);
+    assert(snapshot.getSize()==44);
     // This processor owns large, fixed DSP ring buffers. Keeping several
     // instances on the Windows test thread's ~1MB stack caused SegFault.
     auto restored=std::make_unique<ImerSipProcessor>();
@@ -114,8 +115,9 @@ int main() {
     assert(selected.venue==1&&selected.width==.9f);
     assert(selected.bassImpact==.95f&&selected.immersion==.81f);
     assert(selected.detail==.72f);
+    assert(selected.stereoLock==.92f&&selected.lateRoom==.31f);
     restored->sealForRealtime();
-    assert(!restored->restoreUnpublishedState(snapshot.getData(),36));
+    assert(!restored->restoreUnpublishedState(snapshot.getData(),44));
     // Old 32-byte IMRS v1 sessions must load WITHOUT unexpected Detail boost.
     juce::MemoryBlock legacy;
     {
@@ -140,6 +142,39 @@ int main() {
     assert(oldSession->isReady());
     assert(oldSession->restoreUnpublishedState(legacy.getData(),32));
     assert(oldSession->acceptedSettings().detail==0.f);
+    assert(oldSession->acceptedSettings().stereoLock==1.f);
+    assert(oldSession->acceptedSettings().lateRoom==.45f);
+    // Legacy v2 (36-byte) must preserve DETAIL while migrating new
+    // controls to music-safe defaults, not silently adopt full wet.
+    juce::MemoryBlock v2;
+    {
+        juce::MemoryOutputStream writer(v2,false);
+        writer.writeInt(0x494D5253);writer.writeInt(2);
+        writer.writeInt(selected.venue);
+        writer.writeFloat(selected.immersion);
+        writer.writeFloat(selected.space);
+        writer.writeFloat(selected.width);
+        writer.writeFloat(selected.bassImpact);
+        writer.writeFloat(selected.outputTrim);
+        writer.writeFloat(selected.detail);
+    }
+    assert(v2.getSize()==36);
+    auto v2Session=std::make_unique<ImerSipProcessor>();
+    v2Session->prepareToPlay(48000.,128);
+    assert(v2Session->restoreUnpublishedState(v2.getData(),36));
+    assert(v2Session->acceptedSettings().detail==selected.detail);
+    assert(v2Session->acceptedSettings().stereoLock==1.f);
+    assert(v2Session->acceptedSettings().lateRoom==.45f);
+    // A/B is a transient monitor control, not an accepted session edit.
+    juce::MemoryBlock initialCompareState;
+    v2Session->getStateInformation(initialCompareState);
+    v2Session->setCompareDry(true);
+    assert(v2Session->comparingOriginal());
+    juce::MemoryBlock whileComparing;
+    v2Session->getStateInformation(whileComparing);
+    assert(whileComparing==initialCompareState);
+    v2Session->setCompareDry(false);
+    assert(!v2Session->comparingOriginal());
     // REAL JUCE processor PCM callback, not merely the standalone DSP
     // helper: prove the native FX insert produces a measurable wet room
     // output even for a CENTERED MONO orchestra instrument.
