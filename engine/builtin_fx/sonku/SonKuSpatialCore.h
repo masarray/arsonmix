@@ -20,6 +20,9 @@
 #endif
 #include "SonKuP84FusedMusicHrir.h"
 #endif
+#if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
+#include "SonKuP87MusicalAirBody.h"
+#endif
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
 #include "SonKuHrtfTonalCalibration.h"
 #endif
@@ -90,7 +93,11 @@ inline bool valid(const Settings& s) noexcept {
 #if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
 #if defined(SONKU_P85_WORLD_COHERENCE_RESEARCH) && SONKU_P85_WORLD_COHERENCE_RESEARCH
 #if defined(SONKU_P86_HORIZONTAL_FOCUS_RESEARCH) && SONKU_P86_HORIZONTAL_FOCUS_RESEARCH
+#if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
+        s.renderMode<=6 && ((s.renderMode!=3 && s.renderMode!=4 && s.renderMode!=5 && s.renderMode!=6) || !s.musicCompatibleLowFrequency) &&
+#else
         s.renderMode<=5 && ((s.renderMode!=3 && s.renderMode!=4 && s.renderMode!=5) || !s.musicCompatibleLowFrequency) &&
+#endif
 #else
         s.renderMode<=4 && ((s.renderMode!=3 && s.renderMode!=4) || !s.musicCompatibleLowFrequency) &&
 #endif
@@ -163,6 +170,9 @@ public:
 #if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
         if(!p84MusicKernel_.prepare(rate))return false;
 #endif
+#if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
+        if(!p87Body_.prepare(rate))return false;
+#endif
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
         // The special elevation control is not serialized or published to
         // a public host. Downgrading the prepared profile clears it.
@@ -203,6 +213,9 @@ public:
         earBass_.fill(0.f);
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
         tonalCalibration_.reset();
+#if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
+        p87Body_.reset();
+#endif
 #endif
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
         originalBass_.fill(0.f);
@@ -256,6 +269,10 @@ public:
         if(!s.moving || !settings_.moving ||
            s.startAzimuthDegrees!=settings_.startAzimuthDegrees)
             degrees_=wrapDegrees(s.startAzimuthDegrees);
+#if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
+        if(s.renderMode!=settings_.renderMode ||
+           s.spacePreset!=settings_.spacePreset)p87Body_.reset();
+#endif
         settings_=s;
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
         // Apply typed real-time SPSC state, not quiescent-only test setters.
@@ -437,6 +454,9 @@ public:
             && p83Mode_!=p83::Mode::MusicSpatialP85
 #if defined(SONKU_P86_HORIZONTAL_FOCUS_RESEARCH) && SONKU_P86_HORIZONTAL_FOCUS_RESEARCH
             && p83Mode_!=p83::Mode::MusicSpatialP86
+#if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
+            && p83Mode_!=p83::Mode::MusicSpatialP87
+#endif
 #endif
 #endif
 #endif
@@ -470,6 +490,9 @@ public:
              || p83Mode_==p83::Mode::MusicSpatialP85
 #if defined(SONKU_P86_HORIZONTAL_FOCUS_RESEARCH) && SONKU_P86_HORIZONTAL_FOCUS_RESEARCH
              || p83Mode_==p83::Mode::MusicSpatialP86
+#if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
+             || p83Mode_==p83::Mode::MusicSpatialP87
+#endif
 #endif
 #endif
              );
@@ -478,7 +501,14 @@ public:
 #endif
 #if defined(SONKU_P86_HORIZONTAL_FOCUS_RESEARCH) && SONKU_P86_HORIZONTAL_FOCUS_RESEARCH
         // Mode 5 changes wet only; P8.5 direct HRIR/LF/stereo/tonal remain.
-        const bool horizontalFocus=p83Mode_==p83::Mode::MusicSpatialP86;
+        const bool horizontalFocus=p83Mode_==p83::Mode::MusicSpatialP86
+#if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
+            || p83Mode_==p83::Mode::MusicSpatialP87
+#endif
+            ;
+#if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
+        const bool musicalBody=p83Mode_==p83::Mode::MusicSpatialP87;
+#endif
 #endif
         // Deliberate music-monitor compensation: real distance perception
         // still comes from direct/reflected ratio and high-frequency cues,
@@ -571,6 +601,10 @@ public:
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
             if(transparentBass || positionedMode)
                 tonalCalibration_.process(ears[0],ears[1]);
+#if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
+            if(musicalBody && roomEnabled)
+                p87Body_.enhanceDirect(ears[0],ears[1]);
+#endif
 #endif
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
             if(positionedMode && !monoObject && p83MusicCompatibleLf_)
@@ -597,6 +631,13 @@ public:
                 ?reverb_.process(transparentBass?x0:(musicSafe?inputMid:x0),
                     transparentBass?x1:(musicSafe?inputMid:x1))
                 :SonKuMusicalReverb::Ears{};
+#if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
+            if(musicalBody && roomEnabled){
+                const auto body=p87Body_.diffuseLowBody(late.left,late.right);
+                late.left+=body.left;
+                late.right+=body.right;
+            }
+#endif
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
             if(positionedMode && p83Stem_!=p83::Stem::Combined) {
                 if(p83Stem_!=p83::Stem::Direct)ears[0]=ears[1]=0.f;
@@ -686,9 +727,17 @@ public:
                 // When ROOM OFF is reselected after a native scene, the
                 // additional wet presence smoothly decays with its own engine.
                 const float musicLowL=transparentBass?
-                    smoothedMix_*originalLowL:0.f;
+                    smoothedMix_*originalLowL
+#if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
+                    *(musicalBody&&roomEnabled?p87::MusicalAirBody::musicBassRoomGain:1.f)
+#endif
+                    :0.f;
                 const float musicLowR=transparentBass?
-                    smoothedMix_*originalLowR:0.f;
+                    smoothedMix_*originalLowR
+#if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
+                    *(musicalBody&&roomEnabled?p87::MusicalAirBody::musicBassRoomGain:1.f)
+#endif
+                    :0.f;
                 const float baseDryL=transparentBass?dryLevel*x0:0.f;
                 const float baseDryR=transparentBass?dryLevel*x1:0.f;
                 float outL=baseDryL+smoothedTrim_*
@@ -785,6 +834,9 @@ private:
            && p83Mode_!=p83::Mode::MusicSpatialP85
 #if defined(SONKU_P86_HORIZONTAL_FOCUS_RESEARCH) && SONKU_P86_HORIZONTAL_FOCUS_RESEARCH
            && p83Mode_!=p83::Mode::MusicSpatialP86
+#if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
+            && p83Mode_!=p83::Mode::MusicSpatialP87
+#endif
 #endif
 #endif
 #endif
@@ -814,6 +866,9 @@ private:
             p83Mode_==p83::Mode::MusicSpatialP85 ||
 #if defined(SONKU_P86_HORIZONTAL_FOCUS_RESEARCH) && SONKU_P86_HORIZONTAL_FOCUS_RESEARCH
             p83Mode_==p83::Mode::MusicSpatialP86 ||
+#if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
+            p83Mode_==p83::Mode::MusicSpatialP87 ||
+#endif
 #endif
 #endif
             (p84FusedMusic_ && p83Mode_==p83::Mode::MusicBedP82)) &&
@@ -830,6 +885,9 @@ private:
             interpolate(centerTarget_,(p83Mode_==p83::Mode::MusicSpatialP85
 #if defined(SONKU_P86_HORIZONTAL_FOCUS_RESEARCH) && SONKU_P86_HORIZONTAL_FOCUS_RESEARCH
                 || p83Mode_==p83::Mode::MusicSpatialP86
+#if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
+             || p83Mode_==p83::Mode::MusicSpatialP87
+#endif
 #endif
                 )?static_cast<double>(p83::toHead(static_cast<float>(degrees_),p83HeadYaw_))
                 :degrees_);
@@ -931,6 +989,9 @@ private:
 #endif
 #if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
     p84::FusedMusicHrir p84MusicKernel_{};
+#if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
+    p87::MusicalAirBody p87Body_{};
+#endif
     bool p84FusedMusic_=false; // research opt-in only; P8.2 default untouched
 #endif
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
