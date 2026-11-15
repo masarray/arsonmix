@@ -49,6 +49,8 @@ jobs:
         run: |
           set -euo pipefail
           node --check site/preview-v2/assets/mixer-native-sonku.js
+          grep -q 'r.schemaVersion===9' site/preview-v2/assets/mixer-native-sonku.js
+          grep -q 'skHrtfAlign' site/preview-v2/assets/mixer-native-sonku.js
           node tests/sonku_p73_gui_contract_test.js
           grep -q "'FIELD_PREVIEW_FULL_CTEST_NOT_RUN'" scripts/m3e_fat_evidence_gate.mjs
           python -m unittest discover -s tests -p native_peq_assembly_test.py
