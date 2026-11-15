@@ -75,6 +75,16 @@ test("preview reset is explicitly FX-free and WIRE-free, not demo-init",()=>{
   assert.match(ui,/setDensity\('comfort'\);init\(true\)/);
 });
 
+test("PANIC shortcut is recoverable from visible MASTER MUTE, never a hidden hardware latch",()=>{
+  const start=host.indexOf('if(mapping.operation=="PANIC_MUTE")');
+  const end=host.indexOf('if(mapping.scope!="SESSION"',start);
+  const panic=host.slice(start,end);
+  assert.ok(start>0&&end>start);
+  assert.match(panic,/engine_\.setMasterMuted\(true\)/);
+  assert.doesNotMatch(panic,/setOutputMuted\(true\)/);
+  assert.match(bridge,/sendM4Control\("masterMute",t,!t\.mute\)/);
+});
+
 test("Show/secondary/refresh maintenance never require permanent output MUTE",()=>{
   assert.match(host,/struct ScopedMainTransaction final/);
   assert.match(host,/~ScopedMainTransaction\(\)\{resume\(\);\}/);
