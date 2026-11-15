@@ -2075,7 +2075,7 @@ private:
         // the sole backend-switch owner. No OS default changes or WebAudio.
         if (!result.inspected || !d.mayAttemptApply() ||
             !engine_.allOutputsDisarmed() || !engine_.hasPristineStartupMixer() ||
-            operatorOutputMuted_ || deviceApply_.busy() ||
+            deviceApply_.busy() ||
             nativeShowBusy_ || mixerSessionWorker_.busy()) return;
         const juce::String input (d.captureName.c_str());
         const juce::String output (d.renderName.c_str());
@@ -2213,17 +2213,15 @@ private:
         return juce::var(o.release());
     }
 
-    // One-shot on a verified setup or startup, including the first input
-    // patch. A later device epoch or a user MUTE cancels the pending arm.
+    // Verified-source MAIN readiness is automatic: no output-mute button,
+    // no persistent operator latch, and no one-shot lost on graph preparation.
+    // An unpatched SOURCE NONE graph waits silently (not operator-muted)
+    // until a verified audio source/route becomes available.
     std::uint64_t autoMainEpoch_=0;
     bool autoMainRequiresInput_=true;
-    // Operator's explicit OUTPUT MUTE must survive later input/FX/EXT edits.
-    // This control-thread intent is NOT a new callback gate or device lock.
-    bool operatorOutputMuted_=false;
     std::optional<std::uint64_t> autoMainCheckedRevision_;
     void serviceAutomaticMain() {
         if(autoMainEpoch_==0)return;
-        if(operatorOutputMuted_){autoMainEpoch_=0;return;}
         if(autoMainEpoch_!=engine_.dryRoutingLabEpoch() ||
            engine_.isMonitorEnabled()) {
             autoMainEpoch_=0;
@@ -3377,7 +3375,16 @@ private:
 
         // Never reset a live PA. Hardware monitoring and secondary STREAM
         // are disarmed before closing FX/editor owners or touching the graph.
-        operatorOutputMuted_=true;
+        // Retire the journal BEFORE disrupting audible output. If storage
+        // fails, the running graph and operator's sound remain unchanged.
+        const auto detachError=armix::session::NativeMixerSessionStore(
+            settingsDirectory()).discardForFactoryReset();
+        if(detachError.isNotEmpty()) {
+            diagnostics_.record("MIXER_FACTORY_RESET_REJECTED",detachError);
+            return emitMixerSessionAck("RESET",detachError);
+        }
+        // Only the teardown transaction is silent. The new verified graph
+        // will automatically admit MAIN when an actual source is connected.
         autoMainEpoch_=0;
         engine_.cancelAsioResetMonitorIntent();
         engine_.setOutputMuted(true);
@@ -3390,13 +3397,6 @@ private:
         stopOrbit();
         closePluginEditor();
         logicalVendorEditor_.reset(); // discard uncommitted vendor editor edits
-
-        const auto detachError=armix::session::NativeMixerSessionStore(
-            settingsDirectory()).discardForFactoryReset();
-        if(detachError.isNotEmpty()) {
-            diagnostics_.record("MIXER_FACTORY_RESET_REJECTED",detachError);
-            return emitMixerSessionAck("RESET",detachError);
-        }
         // Invalidate any queued completion, saved logical editor and
         // fingerprint. The shutdown checkpoint must never republish old FX.
         mixerSessionWorker_.finishForShutdown();
@@ -3437,22 +3437,26 @@ private:
         engine_.setMasterMuted(false);
         engine_.setMasterMono(false);
         engine_.setDryTestEnabled(false);
-        engine_.setOutputMuted(true);
+        // No latched factory MUTE. MAIN is a verified output readiness
+        // policy, not an operator toggle. SOURCE NONE is naturally silent
+        // until an INPUT is connected; PLAYER can also start independently.
+        if(startupError_.isEmpty())requestAutomaticMain(false);
         mixerSessionStatus_=startupError_.isEmpty()?
-            "FACTORY_RESET_MUTED":"FACTORY_RESET_NEEDS_AUDIO_SETUP";
+            "FACTORY_RESET_READY":"FACTORY_RESET_NEEDS_AUDIO_SETUP";
         if(startupError_.isNotEmpty())mixerSessionError_=startupError_;
-        if(appearanceError.isNotEmpty() || keysError.isNotEmpty()) {
+        if(startupError_.isEmpty() &&
+           (appearanceError.isNotEmpty() || keysError.isNotEmpty())) {
             mixerSessionStatus_="FACTORY_RESET_SETTINGS_WARNING";
             mixerSessionError_=appearanceError.isNotEmpty()
                 ?appearanceError:keysError;
         }
         diagnostics_.record("MIXER_FACTORY_RESET",
-            mixerSessionStatus_+" | SOURCE NONE / NO FX / NO CUSTOM WIRE / MAIN MUTED");
+            mixerSessionStatus_+" | SOURCE NONE / NO FX / NO CUSTOM WIRE / AUTO MAIN");
         emitApprovedNativeSnapshot();
         emitPlayerState(true);
         emitMixerSessionAck("RESET");
         emitNotice(startupError_.isEmpty()
-            ? "Mixer reset to factory defaults. No FX or custom WIRE; output muted. Select INPUT and verify MAIN before unmuting."
+            ? "Mixer reset complete: no FX or custom WIRE. Connect an INPUT or play music; MAIN becomes live automatically once hardware and route are verified."
             : "Saved mixer cleared; audio device needs reconfiguration in Audio I/O: "+startupError_,
             startupError_.isNotEmpty() || appearanceError.isNotEmpty() || keysError.isNotEmpty());
     }
@@ -5640,7 +5644,7 @@ private:
                 // The operator has already confirmed this exact ASIO pair.
                 // Complete first-sound automatically; never force MONITOR/ARM
                 // again, and never override a deliberate OUTPUT MUTE.
-                if(left>=0 && !operatorOutputMuted_ && !engine_.isMonitorEnabled())
+                if(left>=0 && !engine_.isMonitorEnabled())
                     requestAutomaticMain(false);
                 emitApprovedNativeSnapshot(); // callback readback proves LIVE
             }
@@ -7296,10 +7300,12 @@ private:
         }
         else if (action == "monitor" && value.isBool())
         {
-            // P0 panic MUTE is always accepted. Explicit ARM is verified
-            // against the actual native route, never against UI appearance.
+            // Compatibility for older WebView clients only. Manual hardware
+            // MUTE is deliberately unsupported; the output is automatically
+            // enabled when the native device/route is verified.
             const bool arm=bool(value);
-            juce::String fault;
+            juce::String fault=arm?juce::String():
+                juce::String("OUTPUT_MUTE_REMOVED: use channel or master MUTE");
             if (arm && (nativeShowBusy_ || studioBackupBusy_))
                 fault="Finish Show/backup work before arming hardware OUTPUT.";
             const auto expectedEpoch=args.getProperty("expectedEpoch",juce::var());
@@ -7317,11 +7323,11 @@ private:
                 engine_.diagnosticRoute()==armix::diagnostics::Route::normal)
                 fault=engine_.liveOutputArmFault();
             if (fault.isEmpty()) {
-                operatorOutputMuted_=!arm; // an explicit user control, not setup mute
-                autoMainEpoch_=0;
-                if(!arm)engine_.cancelAsioResetMonitorIntent();
-                engine_.setMonitorEnabled(arm);
-                diagnostics_.record("OUTPUT_MUTE",arm?"OFF":"ON");
+                // Legacy clients may request readiness, but may no longer
+                // latch a global OUTPUT MUTE. Channel/Master MUTE remains a
+                // normal mixer processing control, not a hardware deadlock.
+                requestAutomaticMain(false);
+                diagnostics_.record("MAIN_READY_REQUEST","Verified automatic output policy");
             }
             if (browser_.loaded) {
                 auto ack=std::make_unique<juce::DynamicObject>();
