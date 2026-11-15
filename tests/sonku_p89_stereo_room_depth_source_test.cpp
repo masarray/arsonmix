@@ -61,6 +61,13 @@ static double difference(const Stereo& x,const Stereo& y){
  }
  return d;
 }
+static double differenceAfter(const Stereo& x,const Stereo& y,std::size_t first){
+ assert(x.left.size()==y.left.size());double e=0.;
+ for(std::size_t i=first;i<x.left.size();++i){
+  const double l=double(x.left[i])-y.left[i],r=double(x.right[i])-y.right[i];
+  e+=l*l+r*r;
+ }return e;
+}
 static double earlyDifferencePower(const Stereo& wet,const Stereo& noEr){
  assert(wet.left.size()==noEr.left.size());double e=0;
  for(std::size_t i=1200;i<11500;++i){
@@ -115,7 +122,9 @@ int main(){
   // Legacy/offline dry mix still bit-identical and independent of P8.9.
   auto dry=render(8,rate,128,3,7.3f,1.f,1.f,0.f,false,-10.f,0.f);
   auto dryP88=render(7,rate,128,3,7.3f,1.f,1.f,0.f,false,-10.f,0.f);
-  assert(difference(dry,dryP88)==0.);
+  // A 0%-mix edit is deliberately smoothed from the initial active DSP
+  // value. Compare settled dry PCM after the crossfade, not startup wet.
+  assert(differenceAfter(dry,dryP88,8192)==0.);
   Settings invalid{};invalid.renderMode=8;invalid.spacePreset=3;
   invalid.sourceDistanceMeters=7.3f;invalid.hrtfElevationTrimDegrees=-10.f;
   assert(armix::sonku::valid(invalid));
