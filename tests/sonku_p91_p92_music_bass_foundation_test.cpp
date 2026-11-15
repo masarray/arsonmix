@@ -71,8 +71,16 @@ int main(){
         // The P9 direct stereo scene is now 0.72 rather than the old
         // 0.5 attenuation. It should not be quieter than old P8.9 for
         // this bounded 70/116Hz and 5.2k stimulus.
-        assert(rms(p9,0)+rms(p9,1)>
-               .78*(rms(p89,0)+rms(p89,1)));
+        const double p9TotalRms=rms(p9,0)+rms(p9,1);
+        const double sourceTotalRms=2.*std::sqrt(
+            (.24*.24+.14*.14+.08*.08)/2.);
+        // Musical default must not simply win A/B by being twice as loud.
+        // A narrow test tone is not integrated LUFS; this bounds only the
+        // deterministic steady-state electrical gain to within ~2.5 dB.
+        assert(p9TotalRms>.75*sourceTotalRms &&
+               p9TotalRms<1.33*sourceTotalRms &&
+               "P9 has excessive loss or hidden makeup gain");
+        assert(p9TotalRms>.78*(rms(p89,0)+rms(p89,1)));
         const auto left=simulate(rate,9,3,.8f,0.f,0,rate);
         const auto right=simulate(rate,9,3,.8f,0.f,1,rate);
         assert(difference(left,right)>1.e-4);
