@@ -21,6 +21,7 @@
 #include "SonKuP84FusedMusicHrir.h"
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
 #include "SonKuP90StereoDecoder.h"
+#include "SonKuP91P92WorldBassFoundation.h"
 #endif
 #endif
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
@@ -202,6 +203,7 @@ public:
         if(!p84MusicKernel_.prepare(rate))return false;
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
         if(!p90Decoder_.prepare(rate))return false;
+        if(!p92Bass_.prepare(rate))return false;
 #endif
 #endif
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
@@ -269,6 +271,7 @@ public:
         integrity_.reset();
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
         p90Decoder_.reset();
+        p92Bass_.reset();
 #endif
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
         p83LowFrequency_.reset();
@@ -587,6 +590,11 @@ public:
             ;
 #endif
 #endif
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+        const bool p90World=p83Mode_==p83::Mode::MusicSpatialP90;
+#else
+        constexpr bool p90World=false;
+#endif
         // Deliberate music-monitor compensation: real distance perception
         // still comes from direct/reflected ratio and high-frequency cues,
         // while the direct field is not attenuated by the full physical 1/r.
@@ -652,7 +660,9 @@ public:
             // Preserve HRTF-only stored-state arithmetic exactly; scene ON
             // uses an actual full-output gain (dry+wet) instead of trim-only.
             const float legacyBinauralLevel=.5f*smoothedMix_*smoothedTrim_;
-            const float sceneBinauralLevel=.5f*smoothedMix_;
+            // P9: remove the legacy monitor attenuation only for the new
+            // spatialized-world scene; the linked peak guard is unchanged.
+            const float sceneBinauralLevel=(p90World?.72f:.5f)*smoothedMix_;
             if(remaining_==0) {
                 updateKernels();
                 remaining_=updateInterval;
@@ -732,6 +742,12 @@ public:
                 }
             }
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+            p92::WorldBassFoundation::Ears p92RoomBass{};
+            if(p90World)p92RoomBass=p92Bass_.process(
+                x0,x1,ears[0],ears[1],
+                settings_.spacePreset,settings_.roomAmount);
+#endif
             if(transparentBass || positionedMode)
                 tonalCalibration_.process(ears[0],ears[1]);
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
@@ -744,9 +760,9 @@ public:
                 p83LowFrequency_.process(x0,x1,ears[0],ears[1]);
 #endif
             auto reflection=room_.active()
-                ?room_.process(transparentBass?x0:(musicSafe?inputMid:x0),
-                    transparentBass?x1:(musicSafe?inputMid:x1),
-                    degrees_,transparentBass?settings_.stereoSpreadDegrees:
+                ?room_.process((p90World||transparentBass)?x0:(musicSafe?inputMid:x0),
+                    (p90World||transparentBass)?x1:(musicSafe?inputMid:x1),
+                    degrees_,(p90World||transparentBass)?settings_.stereoSpreadDegrees:
                         ((musicSafe||monoObject)?0.f:settings_.stereoSpreadDegrees)
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
 #if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
@@ -761,8 +777,8 @@ public:
                     )
                 :SonKuEarlyReflections::Ears{};
             auto late=reverb_.active()
-                ?reverb_.process(transparentBass?x0:(musicSafe?inputMid:x0),
-                    transparentBass?x1:(musicSafe?inputMid:x1))
+                ?reverb_.process((p90World||transparentBass)?x0:(musicSafe?inputMid:x0),
+                    (p90World||transparentBass)?x1:(musicSafe?inputMid:x1))
                 :SonKuMusicalReverb::Ears{};
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
             if(musicalBody && roomEnabled){
@@ -841,6 +857,14 @@ public:
                 float spatialR=smoothedDistanceGain_*ears[1]+
                     smoothedErPresence_*reflection.right+
                     smoothedTailPresence_*late.right;
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+                if(p90World){
+                    // Position-aware LF modes return separately from direct
+                    // pressure; room OFF is exactly zero, no added dry SIDE.
+                    spatialL+=p92RoomBass.left;
+                    spatialR+=p92RoomBass.right;
+                }
+#endif
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
                 if(transparentBass){
                     // Decompose DIRECT HRTF only. Room returns remain true
@@ -1102,8 +1126,10 @@ private:
             interpolate(targets_[0],positions.leftHead);
             interpolate(targets_[1],positions.rightHead);
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
-            if(p83Mode_==p83::Mode::MusicSpatialP90)
+            if(p83Mode_==p83::Mode::MusicSpatialP90){
                 p90Decoder_.compose(centerTarget_,targets_[0],targets_[1]);
+                p92Bass_.updateDirections(positions.leftHead,positions.rightHead);
+            }
             else
 #endif
                 p84MusicKernel_.merge(centerTarget_,targets_[0],targets_[1]);
@@ -1202,6 +1228,7 @@ private:
     p84::FusedMusicHrir p84MusicKernel_{};
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
     p90::StereoDecoder p90Decoder_{};
+    p92::WorldBassFoundation p92Bass_{};
 #endif
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
     p87::MusicalAirBody p87Body_{};
