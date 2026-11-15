@@ -14,7 +14,7 @@ const elevationLimits=s=>{
  const distance=s.sourceDistanceMeters;
  const height=roomHeights[s.spacePreset];
  if(!Number.isFinite(distance)||!height)return {min:0,max:0};
- const spectralOffset=(s.renderMode===7||s.renderMode===8||s.renderMode===9)?(s.hrtfElevationTrimDegrees??0):0;
+ const spectralOffset=(s.renderMode===7||s.renderMode===8||s.renderMode===9||s.renderMode===10)?(s.hrtfElevationTrimDegrees??0):0;
   const bottom=Math.max(-40-spectralOffset,Math.asin(Math.max(-1,Math.min(1,(.5-1.45)/distance)))*180/Math.PI);
  const top=Math.min(60-spectralOffset,Math.asin(Math.max(-1,Math.min(1,(height-.5-1.45)/distance)))*180/Math.PI);
  // Keep a 0.1 degree safety margin for C++ float boundary rounding.
@@ -54,12 +54,12 @@ const valid=s=>s && Number.isFinite(s.startAzimuthDegrees) &&
    1.45+s.sourceDistanceMeters*Math.sin(s.directElevationDegrees*Math.PI/180)<=
        roomHeights[s.spacePreset]-.5)) &&
  (s.renderMode===undefined || (
-    Number.isInteger(s.renderMode)&&s.renderMode>=0&&s.renderMode<=9 &&
+    Number.isInteger(s.renderMode)&&s.renderMode>=0&&s.renderMode<=10 &&
     typeof s.musicCompatibleLowFrequency==="boolean" &&
     (s.hrtfElevationTrimDegrees===undefined || (
       Number.isFinite(s.hrtfElevationTrimDegrees) &&
       s.hrtfElevationTrimDegrees>=-30 && s.hrtfElevationTrimDegrees<=20 &&
-      ((s.renderMode!==7&&s.renderMode!==8&&s.renderMode!==9) || (s.directElevationDegrees+s.hrtfElevationTrimDegrees>=-40 &&
+      ((s.renderMode!==7&&s.renderMode!==8&&s.renderMode!==9&&s.renderMode!==10) || (s.directElevationDegrees+s.hrtfElevationTrimDegrees>=-40 &&
                             s.directElevationDegrees+s.hrtfElevationTrimDegrees<=60)))) &&
     Number.isFinite(s.headYawDegrees)&&Math.abs(s.headYawDegrees)<=360 &&
     (s.renderMode!==2 || (s.stereoSpreadDegrees>=20&&s.stereoSpreadDegrees<=120))));
@@ -195,7 +195,7 @@ const depthLayers={far:$("skFarSources"),near:$("skNearSources")};
 const mount=()=>{if(!root.isConnected)document.body.append(root)};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
- xyzCapable=false,p83Capable=false,p84Capable=false,p85Capable=false,p86Capable=false,p87Capable=false,p88Capable=false,p89Capable=false,p90Capable=false,musicSafeStereo=false,p8TransparentBass=false,p82MultibandRoom=false,
+ xyzCapable=false,p83Capable=false,p84Capable=false,p85Capable=false,p86Capable=false,p87Capable=false,p88Capable=false,p89Capable=false,p90Capable=false,p92Capable=false,musicSafeStereo=false,p8TransparentBass=false,p82MultibandRoom=false,
  readId="",readSentAt=0,seq=1,clock=null,frame=null,observed=0,observedAt=0,
  drag=null,dialDrag=null,rangeEdits=new Set(),gestureStart=new Map(),
  visualPhase=0,visualAt=0,liveTimer=null,lastLiveAt=0;
@@ -215,7 +215,19 @@ function render(){
  const row=$("skRenderRow");row.hidden=!(p83Capable||p84Capable);
  if(p83Capable||p84Capable){
   const picker=$("skRenderMode");
-  if(p90Capable && picker.dataset.nativeModeSet!=="p90"){
+  if(p92Capable && picker.dataset.nativeModeSet!=="p92"){
+    picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
+     '<option value="clarity">SPATIAL · P8.4 REFERENCE</option>'+
+     '<option value="coherence">SPATIAL · P8.5 REFERENCE</option>'+
+     '<option value="focus">SPATIAL · P8.6 REFERENCE</option>'+
+     '<option value="body">SPATIAL · P8.7 REFERENCE</option>'+
+     '<option value="align">SPATIAL · P8.8 REFERENCE</option>'+
+     '<option value="depth">SPATIAL · P8.9 REFERENCE</option>'+
+     '<option value="external">P9.0 · TRUE EXTERNAL SPEAKER (REFERENCE)</option>'+
+     '<option value="foundation">P9.2 · MUSIC FIDELITY + PHYSICAL BASS (FAT)</option>';
+    picker.dataset.nativeModeSet="p92";
+    root.querySelector(".sk-render-label").textContent="RENDER MODE · P9.1+P9.2 HEADPHONE FAT";
+   }else if(!p92Capable && p90Capable && picker.dataset.nativeModeSet!=="p90"){
     picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
      '<option value="clarity">SPATIAL · P8.4 REFERENCE</option>'+
      '<option value="coherence">SPATIAL · P8.5 REFERENCE</option>'+
@@ -279,7 +291,8 @@ function render(){
    picker.dataset.nativeModeSet="p83";
    root.querySelector(".sk-render-label").textContent="RENDER MODE · P8.3 TEST";
   }
-  const v=p90Capable?(s.renderMode===9?"external":s.renderMode===8?"depth":s.renderMode===7?"align":s.renderMode===6?"body":s.renderMode===5?"focus":s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
+  const v=p92Capable?(s.renderMode===10?"foundation":s.renderMode===9?"external":s.renderMode===8?"depth":s.renderMode===7?"align":s.renderMode===6?"body":s.renderMode===5?"focus":s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
+     p90Capable?(s.renderMode===9?"external":s.renderMode===8?"depth":s.renderMode===7?"align":s.renderMode===6?"body":s.renderMode===5?"focus":s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
      p89Capable?(s.renderMode===8?"depth":s.renderMode===7?"align":s.renderMode===6?"body":s.renderMode===5?"focus":s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
      p88Capable?(s.renderMode===7?"align":s.renderMode===6?"body":s.renderMode===5?"focus":s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
     p87Capable?(s.renderMode===6?"body":s.renderMode===5?"focus":s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
@@ -337,7 +350,7 @@ function render(){
   $("skElevationValue").textContent=s.directElevationDegrees.toFixed(1)+"°";
  }
  const alignRow=$("skHrtfAlignRow"),align=$("skHrtfAlign");
- alignRow.hidden=!(p88Capable&&(s.renderMode===7||s.renderMode===8||s.renderMode===9));
+ alignRow.hidden=!(p88Capable&&(s.renderMode===7||s.renderMode===8||s.renderMode===9||s.renderMode===10));
  if(!alignRow.hidden){
   const min=Math.max(-30,-40-s.directElevationDegrees);
   const max=Math.min(20,60-s.directElevationDegrees);
@@ -345,7 +358,9 @@ function render(){
   if(!rangeEdits.has("skHrtfAlign"))align.value=String(s.hrtfElevationTrimDegrees);
   $("skHrtfAlignValue").textContent=(s.hrtfElevationTrimDegrees>=0?"+":"")+s.hrtfElevationTrimDegrees.toFixed(1)+"°";
  }
- root.querySelector(".sk-stage-caption").textContent=p90Capable&&s.renderMode===9?
+ root.querySelector(".sk-stage-caption").textContent=p92Capable&&s.renderMode===10?
+     "P9.2 CALIBRATED WORLD SPEAKERS + SOURCE-COUPLED LF ROOM · HEADPHONE FAT REQUIRED":
+     p90Capable&&s.renderMode===9?
     "P9.0 MEASURED TWIN-SPEAKER HRIR · WORLD-LOCKED STEREO · FAT REQUIRED":
     p89Capable&&s.renderMode===8?
     "P8.9 ROOM-ANCHORED STEREO · DIRECT MUSICAL BODY PRESERVED · FAT REQUIRED":
@@ -372,7 +387,9 @@ function render(){
  $("skSpread").closest("label").querySelector(".sk-param-name").textContent=
   (p83Capable||p84Capable)&&s.renderMode!==0?"SPEAKER ANGLE":
   musicSafeStereo?"SIDE WIDTH":"SPREAD";
- root.querySelector(".sk-guide").textContent=p90Capable&&s.renderMode===9
+ root.querySelector(".sk-guide").textContent=p92Capable&&s.renderMode===10
+   ?"World-anchored bass and music reference level · calibrated headphone FAT pending"
+   :p90Capable&&s.renderMode===9
   ?"Two positioned measured HRIR speakers · 0° co-location cannot preserve anti-phase"
   :musicSafeStereo
   ?"Legacy music WIDTH adjusts headlocked SIDE; P9 spatializes it"
@@ -390,7 +407,8 @@ function render(){
  // redrawn at 60 Hz. The native audio callback remains the time authority.
  drawSpeakers();
  $("skMode").textContent=native()?(context()?
-  (p90Capable&&s.renderMode===9?"NATIVE P9.0 TRUE EXTERNAL · TEST":
+  (p92Capable&&s.renderMode===10?"NATIVE P9.2 MUSIC + ROOM BASS · TEST":
+   p90Capable&&s.renderMode===9?"NATIVE P9.0 TRUE EXTERNAL · TEST":
    p89Capable&&s.renderMode===8?"NATIVE P8.9 STEREO + ROOM · TEST":
     p88Capable&&s.renderMode===7?"NATIVE P8.8 EAR ALIGN + DISTANCE · TEST":
     p87Capable&&s.renderMode===6?"NATIVE P8.7 MUSICAL AIR + BODY · TEST":
@@ -542,7 +560,7 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
    String(r.deviceEpoch)!==String(c.deviceEpoch)||
    String(r.graphRevision)!==String(c.graphRevision))return;
  const measured=(r.schemaVersion===3 || r.schemaVersion===4 ||
-   r.schemaVersion===5 || r.schemaVersion===6 || r.schemaVersion===7 || r.schemaVersion===8 || r.schemaVersion===9 || r.schemaVersion===10 || r.schemaVersion===11) &&
+   r.schemaVersion===5 || r.schemaVersion===6 || r.schemaVersion===7 || r.schemaVersion===8 || r.schemaVersion===9 || r.schemaVersion===10 || r.schemaVersion===11 || r.schemaVersion===12) &&
    Number.isFinite(r.settings?.directElevationDegrees);
  if(r.schemaVersion!==2&&!measured)return;
  const incoming=normalizeSettings(r.settings);
@@ -554,7 +572,9 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
    Number.isInteger(incoming.renderMode) &&
    typeof incoming.musicCompatibleLowFrequency==="boolean" &&
    Number.isFinite(incoming.headYawDegrees);
- p90Capable=r.schemaVersion===11 && r.p90TrueExternalSpeaker===true &&
+ p92Capable=r.schemaVersion===12 && r.p92MusicBassFoundation===true &&
+     Number.isFinite(incoming.hrtfElevationTrimDegrees);
+ p90Capable=(r.schemaVersion===11||p92Capable) && r.p90TrueExternalSpeaker===true &&
     Number.isFinite(incoming.hrtfElevationTrimDegrees);
  p89Capable=(r.schemaVersion===10||p90Capable) && r.p89StereoRoomDepth===true &&
     Number.isFinite(incoming.hrtfElevationTrimDegrees);
@@ -571,7 +591,8 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
     (p87Capable&&incoming.renderMode===6)||
     (p88Capable&&incoming.renderMode===7)||
      (p89Capable&&incoming.renderMode===8)||
-     (p90Capable&&incoming.renderMode===9)) &&
+     (p90Capable&&incoming.renderMode===9)||
+     (p92Capable&&incoming.renderMode===10)) &&
    typeof incoming.musicCompatibleLowFrequency==="boolean" &&
    incoming.musicCompatibleLowFrequency===false &&
    Number.isFinite(incoming.headYawDegrees);
@@ -606,7 +627,7 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  }
  render();
 });
-$("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapable=false;p85Capable=false;p86Capable=false;p87Capable=false;p88Capable=false;p89Capable=false;p90Capable=false;musicSafeStereo=false;p8TransparentBass=false;p82MultibandRoom=false;
+$("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapable=false;p85Capable=false;p86Capable=false;p87Capable=false;p88Capable=false;p89Capable=false;p90Capable=false;p92Capable=false;musicSafeStereo=false;p8TransparentBass=false;p82MultibandRoom=false;
  cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
  drag=null;rangeEdits.clear();gestureStart.clear();lastLiveAt=0;
  if(clock!==null){clearInterval(clock);clock=null;}
@@ -614,7 +635,8 @@ $("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapa
 $("skRenderMode").addEventListener("change",()=>{
  if(!(p83Capable||p84Capable))return;
  const v=$("skRenderMode").value;
- const mode=p90Capable?(v==="external"?9:v==="depth"?8:v==="align"?7:v==="body"?6:v==="focus"?5:v==="coherence"?4:v==="clarity"?3:0):
+ const mode=p92Capable?(v==="foundation"?10:v==="external"?9:v==="depth"?8:v==="align"?7:v==="body"?6:v==="focus"?5:v==="coherence"?4:v==="clarity"?3:0):
+     p90Capable?(v==="external"?9:v==="depth"?8:v==="align"?7:v==="body"?6:v==="focus"?5:v==="coherence"?4:v==="clarity"?3:0):
      p89Capable?(v==="depth"?8:v==="align"?7:v==="body"?6:v==="focus"?5:v==="coherence"?4:v==="clarity"?3:0):
      p88Capable?(v==="align"?7:v==="body"?6:v==="focus"?5:v==="coherence"?4:v==="clarity"?3:0):
     p87Capable?(v==="body"?6:v==="focus"?5:v==="coherence"?4:v==="clarity"?3:0):
@@ -623,6 +645,14 @@ $("skRenderMode").addEventListener("change",()=>{
     p84Capable?(v==="clarity"?3:0):
     v==="mono"?1:v==="physical"||v==="musiclf"?2:0;
  const scene={...draft,renderMode:mode,musicCompatibleLowFrequency:v==="musiclf"};
+ // Apply only on deliberate P9.2 selection. Existing saved sessions and
+ // P8/P9 mode switches are never rewritten or migrated speculatively.
+ if(mode===10 && draft.renderMode!==10){
+  Object.assign(scene,{moving:false,startAzimuthDegrees:0,
+   stereoSpreadDegrees:82,spatialMix:1,outputTrim:1,spacePreset:3,
+   sourceDistanceMeters:1.6,roomAmount:.72,ambience:.38,
+   hrtfElevationTrimDegrees:0});
+ }
  // Mode changes in v6 must not reset the owner scene, yaw or motion.
  if(mode!==0 && !p85Capable){
   scene.moving=false;
