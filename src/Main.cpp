@@ -441,7 +441,7 @@ public:
         if (!updaterProbeMode_ &&
             (static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false)) ||
              logicalMixer_.loaded())) {
-            const auto error=saveMixerSession(resumeMain);
+            const auto error=saveMixerSession(resumeMain,{},true); // shutdown checkpoint, not timer autosave
             if(error.isNotEmpty())
                 diagnostics_.record("DYNAMIC_MIXER_EXIT_SAVE_REJECTED",error);
         }
@@ -3583,7 +3583,8 @@ private:
         return {};
     }
 
-    juce::String saveMixerSession(bool resumeMain, const juce::File& exportFile={}) {
+    juce::String saveMixerSession(bool resumeMain, const juce::File& exportFile={},
+                                    bool shutdownCheckpoint=false) {
         const bool automatic=exportFile==juce::File{};
         ensureLogicalWorkspace();
         if(mixerSessionWorker_.busy()||nativeShowBusy_||studioBackupBusy_||
@@ -3613,7 +3614,7 @@ private:
         // Auto-checkpoints must never replace an acknowledged .smix with a
         // transient STOP/default/empty device state. Keep the last verified
         // file on disk until the original physical route has returned.
-        if(automatic) {
+        if(automatic && !shutdownCheckpoint) {
             const auto* audio=engine_.devices().getCurrentAudioDevice();
             if(!audio || !audio->isOpen() || !engine_.directRouteAuthorized() ||
                engine_.mainInterruptedByDevice())
