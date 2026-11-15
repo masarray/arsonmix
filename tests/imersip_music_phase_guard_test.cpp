@@ -926,6 +926,41 @@ void verifyActualP82RoomChangesSideOnly(double rate) {
     // the previous exact MID invariant made center source sound near-dry.
     assert(std::isfinite(rms(second,4096,false)));
 }
+void verifyDrySourceVocalMidFidelity(double rate) {
+    // Previous tests only required the center music to remain above 70%
+    // of the original, allowing a large audible radio/nasal coloration.
+    // Test original dry MID at untrimmed unity with room, bass and AIR
+    // turned OFF, so the actual dual-HRTF direct transfer is isolated.
+    // Keep FULL WIDTH and both lateral / narrow measured speaker geometry.
+    for(float width:{0.f,1.f})for(float hz:{500.f,1100.f,1900.f,2600.f}) {
+        Stereo source(32768);
+        for(int i=0;i<32768;++i) {
+            const float v=.12f*static_cast<float>(
+                std::sin(2.*pi*hz*i/rate));
+            source.l[i]=source.r[i]=v;
+        }
+        Settings s{};
+        s.immersion=1.f;s.width=width;s.stereoLock=1.f;
+        s.space=0.f;s.lateRoom=0.f;
+        s.bassImpact=0.f;s.detail=0.f;s.outputTrim=1.f;
+        const auto wet=render(rate,s,source,128);
+        assertChunkParity(wet,render(rate,s,source,64));
+        double dryMid=0.,wetMid=0.;
+        for(int i=8192;i<32768;++i) {
+            const double a=.5*(source.l[i]+source.r[i]);
+            const double b=.5*(wet.l[i]+wet.r[i]);
+            dryMid+=a*a;wetMid+=b*b;
+        }
+        const double ratio=std::sqrt(wetMid/(dryMid+1.e-16));
+        std::fprintf(stderr,
+            "IMERSIP_ORIGINAL_MID rate=%.0f width=%.0f hz=%.0f ratio=%.5f\n",
+            rate,width,hz,ratio);
+        // 1-3 kHz should remain within a bounded ~+/-1dB level window;
+        // source color is assessed separately from room externalization.
+        assert(ratio>.89 && ratio<1.12);
+    }
+}
+
 void verifyDetailIsNotMidBoost(double rate) {
     // Detail is a positive >5k high shelf, never a 1-4k shout EQ.
     // Compare the EXACT same core/venue with detail OFF and ON.
@@ -1047,6 +1082,7 @@ int main() {
         verifyDefaultMusicLevelEvidence(rate);
         verifyBassFoundation(rate);
         verifyRoomLinkedBassStaysCoherent(rate);
+        verifyDrySourceVocalMidFidelity(rate);
         verifyDetailIsNotMidBoost(rate);
         verifyActualP82RoomChangesSideOnly(rate);
         verifyAudibleWetIsNotNearBypassed(rate);

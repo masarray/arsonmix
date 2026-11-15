@@ -78,10 +78,17 @@ public:
             // Four-pole 480Hz difference HP expands speaker midrange
             // relative to 700Hz while retaining the old strict LF tests.
             directHp_=static_cast<float>(1.-std::exp(-2.*pi*480./rate));
+            // The original music MID is the timbral reference. An
+            // additional three-pole 3.2 kHz HP admits high-pinna HRTF
+            // differences but suppresses the 1-3 kHz center-vocal
+            // coloration that a 480 Hz crossover alone admitted.
+            // Prepared once; only affine one-pole updates on PCM.
+            directMidHp_=static_cast<float>(1.-std::exp(-2.*pi*3200./rate));
             limiterRelease_=static_cast<float>(1./(rate*.080));
             compareSlew_=static_cast<float>(1.-std::exp(-1./(rate*.020)));
             for(auto& ear:directDifferenceLow_)ear.fill(0.f);
             directMeasuredSideLow_.fill(0.f);
+            directMidLow_.fill(0.f);
             earlyLow_.fill(0.f);lateLow_.fill(0.f);
             finalLimiter_=1.f;
             updateTargets(settings_);
@@ -170,8 +177,16 @@ public:
                 // Preserve original stereo SIDE as the authoritative direct
                 // source while rendering a separate, band-limited binaural
                 // speaker contrast. Keep mode must not turn off the HRTF.
-                const float deltaMid=.5f*(deltaL+deltaR);
+                float deltaMid=.5f*(deltaL+deltaR);
                 const float deltaSide=.5f*(deltaL-deltaR);
+                // MID and SIDE need different psychoacoustic admission.
+                // Preserve original vocal body and instrument timbre
+                // while retaining the upper pinna/front HRTF MID cue.
+                // This does NOT attenuate measured directional SIDE.
+                for(auto& low:directMidLow_) {
+                    low+=directMidHp_*(deltaMid-low);
+                    deltaMid-=low;
+                }
                 // Previous Stereo Keep=100% multiplied measured HRTF SIDE
                 // by only 0.10: music was protected by effectively
                 // disabling directional externalization. Treat fidelity
@@ -327,9 +342,10 @@ private:
     std::array<float,2> earlyLow_{},lateLow_{};
     std::array<std::array<float,4>,2> directDifferenceLow_{};
     std::array<float,4> directMeasuredSideLow_{};
+    std::array<float,3> directMidLow_{};
     Settings settings_{};
     float stageSlew_=0.f,trimSlew_=0.f;
-    float earlyHp_=0.f,lateHp_=0.f,directHp_=0.f;
+    float earlyHp_=0.f,lateHp_=0.f,directHp_=0.f,directMidHp_=0.f;
     float directGain_=0.f,directTarget_=0.f;
     float stereoKeep_=1.f,stereoKeepTarget_=1.f;
     float compareDryGain_=0.f,compareDryTarget_=0.f,compareSlew_=0.f;
