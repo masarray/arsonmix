@@ -3075,7 +3075,7 @@ document.getElementById('addBus').addEventListener('click',()=>{
 document.getElementById('clearCue').addEventListener('click',()=>{tracks.forEach(t=>t.cue=false);master.cue=false;render();say('All Cue / PFL requests cleared · no hardware monitor connected');});
 const mixerResetDialog=document.getElementById('mixerResetDialog');
 document.getElementById('reset').addEventListener('click',()=>{
- moreTools.open=false;mixerResetDialog.showModal();
+ document.getElementById('moreTools').open=false;mixerResetDialog.showModal();
 });
 document.getElementById('mixerResetCancel').addEventListener('click',()=>mixerResetDialog.close());
 document.getElementById('mixerResetConfirm').addEventListener('click',()=>{
