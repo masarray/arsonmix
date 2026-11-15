@@ -6499,8 +6499,9 @@ private:
             if(updateShowId.isNotEmpty()&&!armix::shows::detail::uuid(updateShowId))
                 return reject("Invalid Show identity for version update.");
             if (nativeShowBusy_ || studioBackupBusy_ || catalog_.busy() ||
-                engine_.isGraphSwitchPending() || engine_.hasTemporaryDiagnosticDevice())
-                return reject("Finish the current Studio task before capturing a native Show.");
+                engine_.isGraphSwitchPending() || engine_.hasTemporaryDiagnosticDevice() ||
+                engine_.secondaryArmed())
+                return reject("Finish Studio/FX work or stop STREAM before capturing a native Show.");
             ScopedMainTransaction mainGate(*this);
             // Only this synchronous vendor-state capture is quiescent.
             // Resume original verified MAIN BEFORE the disk IO worker runs.
@@ -6841,7 +6842,9 @@ private:
             if(studioBackupBusy_ || nativeShowBusy_)
                 error="Complete active Show/backup operation before editing secondary output";
             else if(action=="secondaryOutputConnect") {
-                if(!value.isString() || value.toString().length()>240)
+                if(engine_.secondaryArmed())
+                    error="Stop the current STREAM before changing its output endpoint";
+                else if(!value.isString() || value.toString().length()>240)
                     error="Select a real named Windows playback endpoint";
                 else {
                     // Secondary endpoint creation needs exclusive CONTROL
@@ -6938,10 +6941,14 @@ private:
         }
         else if (action == "audioDeviceRefresh")
         {
-            // Deliberate vendor rescan, isolated only while enumerating.
-            // No manual OUTPUT MUTE switch and no permanent pause.
-            ScopedMainTransaction mainGate(*this);
-            emitDeviceInventory(true);
+            // STREAM has its own clock/consumer. Never disarm MAIN for a
+            // rescan that cannot be admitted while that stream is running.
+            if(engine_.secondaryArmed()) {
+                emitDeviceInventory(true); // explicit BLOCKED_ARMED
+            } else {
+                ScopedMainTransaction mainGate(*this);
+                emitDeviceInventory(true);
+            }
         }
         else if (action == "audioDeviceApply")
         {
