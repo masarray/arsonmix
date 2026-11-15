@@ -7,13 +7,13 @@ const assert=require("node:assert/strict");
 const fs=require("node:fs");
 const vm=require("node:vm");
 const source=fs.readFileSync("site/preview-v2/assets/mixer-native-sonku.js","utf8");
-const start=source.indexOf('  if(p90Capable && picker.dataset.nativeModeSet!=="p90"){');
-const end=source.indexOf("  const v=p90Capable?",start);
+const start=source.indexOf('  if(p92Capable && picker.dataset.nativeModeSet!=="p92"){');
+const end=source.indexOf("  const v=p92Capable?",start);
 assert(start!==-1&&end>start,"Locate actual native SonKu mode menu reconciliation");
 const actualReconcile=source.slice(start,end);
 const renderMenu=vm.runInNewContext(
   '(function(picker,root,cap){ const {'+
-  'p90Capable,p89Capable,p88Capable,p87Capable,p86Capable,'+
+  'p92Capable,p90Capable,p89Capable,p88Capable,p87Capable,p86Capable,'+
   'p85Capable,p84Capable,p83Capable}=cap;\n'+
   actualReconcile+'\n})',{}
 );
@@ -45,7 +45,7 @@ const label={textContent:""};
 const root={querySelector(selector){
   assert.equal(selector,".sk-render-label");return label;
 }};
-const full={p90Capable:true,p89Capable:true,p88Capable:true,
+const full={p92Capable:false,p90Capable:true,p89Capable:true,p88Capable:true,
   p87Capable:true,p86Capable:true,p85Capable:true,p84Capable:true,
   p83Capable:false};
 renderMenu(picker,root,full);
