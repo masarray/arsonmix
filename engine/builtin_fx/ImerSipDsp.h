@@ -17,9 +17,10 @@ inline armix::sonku::Settings sceneFor(const Settings& in) noexcept {
     armix::sonku::Settings s{};
     s.moving=false;                     // Never auto-orbit music
     s.startAzimuthDegrees=0.f;          // Front stationary anchor
-    // Real two-loudspeaker front arc. Old 95% default meant 97/100°,
-    // so MAX changed angle by just 3° and sounded like an inert knob.
-    s.stereoSpreadDegrees=32.f+94.f*in.width; // +/-16..63 degrees
+    // Owner-requested 180-degree endpoint reaches measured +/-90 KEMAR
+    // directions. 180 is a LATERAL speaker extreme (not a guarantee of
+    // frontal externalization). UI uses this identical 30..180 mapping.
+    s.stereoSpreadDegrees=30.f+150.f*in.width;
     s.spatialMix=.75f*in.immersion;     // SonKu internal HRIR, direct explicitly exported
     s.outputTrim=1.f;                  // Final trim belongs to ImerSip
     s.spacePreset=in.immersion==0.f?0:(in.venue==2?2:3);

@@ -85,7 +85,7 @@ public:
             slider.setRotaryParameters(juce::degreesToRadians(225.f),
                                        juce::degreesToRadians(495.f),true);
             slider.setDoubleClickReturnValue(true,
-                i==0?88.:i==1?82.:i==2?78.:i==3?25.:
+                i==0?88.:i==1?67.:i==2?78.:i==3?25.:
                 i==4?100.:i==5?50.:i==6?40.:0.);
             slider.onValueChange=[this,i]{
                 refreshReadout(i);
@@ -236,8 +236,10 @@ private:
         g.setColour(juce::Colour(0xff80aebf));
         g.setFont(juce::FontOptions(11.f,juce::Font::plain));
         const float width=static_cast<float>(knobs_[1].getValue())*.01f;
-        const int totalAngle=32+static_cast<int>(std::round(width*94));
-        g.drawText("FRONT STAGE  /  "+juce::String(totalAngle)+"°",
+        const int totalAngle=30+static_cast<int>(std::round(width*150));
+        const juce::String geometry=totalAngle>=150?
+            "LATERAL STAGE  /  ":"FRONT STAGE  /  ";
+        g.drawText(geometry+juce::String(totalAngle)+"°",
                    74,99,225,18,juce::Justification::centred);
         g.setColour(juce::Colour(0xff79bdc9));
         const float depth=static_cast<float>(depth_.getValue())*.01f;
@@ -258,7 +260,7 @@ private:
         g.setColour(juce::Colour(0xffcceaf0));
         g.setFont(juce::FontOptions(12.f,juce::Font::plain));
         g.drawText("YOU",cx-22,cy+22,44,17,juce::Justification::centred);
-        const float angle=juce::degreesToRadians(16.f+47.f*width);
+        const float angle=juce::degreesToRadians(15.f+75.f*width);
         // Simple top-view cue: drawn radial distance tracks real DSP
         // source position rather than remaining decorative on all edits.
         const float positionRadius=(.60f+.38f*depth)*r;
@@ -294,7 +296,7 @@ private:
         const float v=static_cast<float>(
             knobs_[static_cast<std::size_t>(i)].getValue());
         juce::String out;
-        if(i==1)out=juce::String(32+static_cast<int>(std::round(.94*v)))+"°";
+        if(i==1)out=juce::String(30+static_cast<int>(std::round(1.5*v)))+"°";
         else if(i==7)out=(v>0.f?"+":"")+juce::String(v,1)+" dB";
         else out=juce::String(static_cast<int>(std::round(v)))+"%";
         values_[static_cast<std::size_t>(i)].setText(out,

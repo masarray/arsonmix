@@ -15,7 +15,7 @@ struct Settings {
     int venue=0;             // 0 Concert Hall, 1 Cinema, 2 Live Room
     float immersion=.88f;    // clearly spatial music default; 100% still stronger
     float space=.78f;        // prominent directional ER without full reverb
-    float width=.82f;        // frontal 109° stage, not near-mono 24°
+    float width=.67f;        // ~130.5 degree stage, 180 available at max
     float bassImpact=.50f;   // retain clean original music low end
     float detail=.40f;       // moderate presence without excessive HF
     float outputTrim=1.f;    // P8.2 full-output linear trim

@@ -74,11 +74,11 @@ void assertChunkParity(const Stereo& a,const Stereo& b) {
 }
 void verifySceneGeometry() {
     Settings s{};
-    assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-109.08f)<.02f);
+    assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-130.5f)<.02f);
     s.width=1.f;
-    assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-126.f)<.01f);
+    assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-180.f)<.01f);
     s.width=0.f;
-    assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-32.f)<.01f);
+    assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-30.f)<.01f);
     for(int venue=0;venue<3;++venue) {
         s.venue=venue;
         auto scene=armix::imersip::sceneFor(s);
@@ -465,7 +465,7 @@ void verifyP87NotTheQualityReferenceAndRealDepth(double rate) {
     const auto wide=render(rate,s,stereo,128);
     const double spreadDelta=compare(narrow,wide);
     std::fprintf(stderr,
-        "IMERSIP_WIDTH_FULL_RANGE rate=%.0f from=32 to=126 delta=%.5f\n",
+        "IMERSIP_WIDTH_FULL_RANGE rate=%.0f from=30 to=180 delta=%.5f\n",
         rate,spreadDelta);
     assert(spreadDelta>.025);
     // The FULL STOP must also matter from a usable musical default.
@@ -560,6 +560,82 @@ void verifyStereoKeepDoesNotDisableMeasuredHrtf(double rate) {
         sourceMono+=mono.l[i]*mono.l[i];
     }
     assert(std::sqrt(extraSide/(sourceMono+1.e-14))<.12);
+}
+
+void verifyMeasuredFullSpeakerSeparation180(double rate) {
+    using Core=armix::sonku::SonKuSpatialCore;
+    using Profile=armix::sonku::SonKuReflectionProfile;
+    auto measure=[rate](float angle,bool mono) {
+        auto fx=std::make_unique<Core>();
+        assert(fx->prepare(rate,Profile::SixSurfaceKemarResearch));
+        armix::sonku::Settings s{};
+        s.moving=false;s.spacePreset=0;s.spatialMix=1.f;
+        s.stereoSpreadDegrees=angle;
+        assert(fx->setSettings(s));
+        assert(fx->enableImerSipMeasuredStereoSide(true));
+        Stereo input(1024);input.l[0]=.16f;
+        if(mono)input.r[0]=.16f;
+        std::vector<Core::RoomReturns> ears(1024);
+        fx->process(input.l.data(),input.r.data(),1024,ears.data());
+        double side=0.,mid=0.;
+        for(const auto& x:ears) {
+            const double d=.5*(x.directL-x.directR);
+            const double m=.5*(x.directL+x.directR);
+            side+=d*d;mid+=m*m;
+        }
+        return std::array<double,2>{side,mid};
+    };
+    const auto narrow=measure(30.f,false);
+    const auto lateral=measure(180.f,false);
+    const auto mono=measure(180.f,true);
+    const double ratio=std::sqrt(lateral[0]/(narrow[0]+1.e-14));
+    const double monoSide=std::sqrt(mono[0]/(mono[1]+1.e-14));
+    std::fprintf(stderr,
+        "IMERSIP_PHYSICAL_180 rate=%.0f lateralVs30=%.4f monoLeak=%.5f\n",
+        rate,ratio,monoSide);
+    // Genuine +/-90 degree *measured* ear separation, not GUI relabel.
+    assert(ratio>1.25);
+    // Center-correlated music must not acquire false L-R cancellation.
+    assert(monoSide<.10);
+}
+void verifyEachKnobAffectsActualPcm(double rate) {
+    Stereo music(16384);makeSignal(music,rate,4,2500.f);
+    // Include additional treble content for real 5.6k AIR stage.
+    for(int i=0;i<16384;++i) {
+        const float air=.030f*std::sin(2.*pi*8200.*i/rate);
+        music.l[i]+=air;
+        music.r[i]+=.45f*air;
+    }
+    Settings s{};s.outputTrim=1.f;
+    const auto delta=[&](const Settings& a,const Settings& b) {
+        const auto x=render(rate,a,music),y=render(rate,b,music);
+        double changed=0.,source=0.;
+        for(int i=4096;i<16384;++i) {
+            const double l=x.l[i]-y.l[i],r=x.r[i]-y.r[i];
+            changed+=l*l+r*r;
+            source+=music.l[i]*music.l[i]+music.r[i]*music.r[i];
+        }
+        return std::sqrt(changed/(source+1.e-14));
+    };
+    for(int knob=0;knob<9;++knob) {
+        auto a=s,b=s;
+        switch(knob) {
+        case 0:a.immersion=0.f;b.immersion=1.f;break;
+        case 1:a.width=0.f;b.width=1.f;break;
+        case 2:a.space=0.f;b.space=1.f;break;
+        case 3:a.lateRoom=0.f;b.lateRoom=1.f;break;
+        case 4:a.stereoLock=0.f;b.stereoLock=1.f;break;
+        case 5:a.bassImpact=0.f;b.bassImpact=1.f;break;
+        case 6:a.detail=0.f;b.detail=1.f;break;
+        case 7:a.depth=0.f;b.depth=1.f;break;
+        case 8:a.earAlignDegrees=-20.f;b.earAlignDegrees=20.f;break;
+        }
+        const double effect=delta(a,b);
+        std::fprintf(stderr,
+            "IMERSIP_KNOB_ENDPOINT rate=%.0f knob=%d relDelta=%.6f\n",
+            rate,knob,effect);
+        assert(effect>.003);
+    }
 }
 void verifyBassFoundation(double rate) {
     for(int venue=0;venue<3;++venue)for(float hz:{40.f,70.f,110.f,160.f,220.f}) {
@@ -861,6 +937,8 @@ int main() {
         verifyOriginalStereoSurvives(rate);
         verifyStereoIntegrityOwnerRejection(rate);
         verifyStereoKeepDoesNotDisableMeasuredHrtf(rate);
+        verifyMeasuredFullSpeakerSeparation180(rate);
+        verifyEachKnobAffectsActualPcm(rate);
         verifyP87NotTheQualityReferenceAndRealDepth(rate);
         verifyDirectOnlyHrtfHeightCalibration(rate);
         verifyCompareNeverChangesSettings(rate);

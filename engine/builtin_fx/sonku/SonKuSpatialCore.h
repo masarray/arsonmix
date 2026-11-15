@@ -292,10 +292,10 @@ public:
     bool setMusicalReverbPreset(SonKuReverbPreset preset) noexcept {
         return reverb_.setPreset(preset);
     }
-    // ImerSip-only P8.2 research admission: two independent measured KEMAR
-    // directions fused with a centered music anchor (P8.4 12% HP750 transfer).
-    // Its host discards wet MID, preserving ORIGINAL dry vocal MID.
-    // Default OFF, preserving byte-exact original SonKu P8.2 PCM elsewhere.
+    // ImerSip-only admission: full two-speaker measured KEMAR SIDE and
+    // mono-safe center HRIR MID. Default OFF; original SonKu PCM unchanged.
+    // The previous P8.4 30% directional fusion, then 45% SIDE blending,
+    // effectively reduced a stereo KEMAR speaker cue to about 13.5%.
     bool enableImerSipMeasuredStereoSide(bool enable) noexcept {
 #if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
         if(!ready_ || room_.preparedProfile()!=
@@ -669,13 +669,25 @@ private:
             degrees_+static_cast<double>(settings_.stereoSpreadDegrees)*0.5);
 #if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
         if(imersipStereoSideResearch_) {
-            // Extract ONLY the proven P8.4 FIR fusion. The normal P8.2
-            // centered renderer, room, state and FX graph never enter here.
-            // A centered music anchor with 30% HP750 directional contrast:
-            // stronger actual interaural speaker cues than the former 12%.
-            // The exclusive LF crossover in ImerSip preserves original bass.
+            // Full measured physical left/right speaker differential,
+            // NOT the former twice-attenuated (30% x 45%) approximation.
+            // Keep a coherent MONO source at the exact measured center by
+            // projecting only the common FIR mode to H_center:
+            //   H_left'  = H_left  + [H_center - (H_left+H_right)/2]
+            //   H_right' = H_right + [H_center - (H_left+H_right)/2].
+            // Difference H_left'-H_right' stays FULL measured strength,
+            // and L==R gives exactly one centered HRIR, no twin-HRTF
+            // combing or phantom stereo. Only enabled for ImerSip.
+            // Coefficient interpolation/slew remains in existing one graph.
             interpolate(centerTarget_,degrees_);
-            imersipMusicFusion_.merge(centerTarget_,targets_[0],targets_[1]);
+            for(int ear=0;ear<2;++ear) {
+                for(int k=0;k<taps;++k) {
+                    const float correction=centerTarget_[ear][k]-
+                        .5f*(targets_[0][ear][k]+targets_[1][ear][k]);
+                    targets_[0][ear][k]+=correction;
+                    targets_[1][ear][k]+=correction;
+                }
+            }
         }
 #endif
         // A stereo L=R object should become ONE virtual source at the central
@@ -743,7 +755,7 @@ private:
     bool nativeSpaceEverUsed_=false;
     bool imersipStereoSideResearch_=false;
 #if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
-    p84::FusedMusicHrir imersipMusicFusion_{};
+    p84::FusedMusicHrir imersipMusicFusion_{}; // retains independent P8.4 reference
 #endif
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
     float researchElevationDegrees_=0.f;
