@@ -10,3 +10,6 @@ Measured two-ear KEMAR direct response from the existing P8.2/8.4 core is retain
 
 ## Qualification
 Real PCM 44.1/48k assertions must establish stereo integrity on independent, anti-phase and hard-pan fixture signals, 0 ROOM width sensitivity with KEEP 100%, mono front stability, 64/128 chunk parity, original P8.2 unaffected, bass, peak, dry bypass and true Windows JUCE IMRS v1-v5 ACK/restore. A real 100% control must not have the previous ~10% HRIR SIDE restriction. No claim of audible dearVR equivalence without same-headphone owner audition. No release, branch remains PR draft until full Windows and user listening.
+
+## Default tuning correction
+Prior v5 used 76% immersion, 68% width, 70% early, 34% late and 60% depth. It left default musical scene too restrained relative to the user's P8.7 reference. New opt-in default (not a hidden migration of saved sessions): 88% immersion, 82% width (=109.1° frontal angle), 78% early, 25% late, 78% depth (=6.12m), 100% stereo keep, bass 50%, air 40%, 0dB trim, 0° KEMAR ear correction. Old IMRS records remain restored exactly; UI double-click default matches C++ initializer. No blanket 100% reverb and no hidden output boost.

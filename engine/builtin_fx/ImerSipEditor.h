@@ -85,8 +85,8 @@ public:
             slider.setRotaryParameters(juce::degreesToRadians(225.f),
                                        juce::degreesToRadians(495.f),true);
             slider.setDoubleClickReturnValue(true,
-                i==0?76.:i==1?68.:i==2?70.:i==3?34.:
-                i==4?100.:i==5?55.:i==6?35.:0.);
+                i==0?88.:i==1?82.:i==2?78.:i==3?25.:
+                i==4?100.:i==5?50.:i==6?40.:0.);
             slider.onValueChange=[this,i]{
                 refreshReadout(i);
                 // Previously ALL DSP changes were postponed to mouse-up.
@@ -117,7 +117,7 @@ public:
         depth_.setSliderStyle(juce::Slider::LinearHorizontal);
         depth_.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
         depth_.setRange(0.,100.,1.);
-        depth_.setDoubleClickReturnValue(true,60.);
+        depth_.setDoubleClickReturnValue(true,78.);
         depth_.onValueChange=[this]{
             if(depth_.isMouseButtonDown()) {
                 deferred_=readControls();hasDeferred_=true;

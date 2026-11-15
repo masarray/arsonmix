@@ -13,15 +13,15 @@ namespace armix::imersip {
 
 struct Settings {
     int venue=0;             // 0 Concert Hall, 1 Cinema, 2 Live Room
-    float immersion=.76f;    // direct speakers already audible, max meaningful
-    float space=.70f;        // genuine directional early reflections
-    float width=.68f;        // 32..126 degree front-stage spread
-    float bassImpact=.55f;   // coherent music LF boost on original stereo
-    float detail=.35f;       // >=5.6kHz musical air with a useful end stop
+    float immersion=.88f;    // clearly spatial music default; 100% still stronger
+    float space=.78f;        // prominent directional ER without full reverb
+    float width=.82f;        // frontal 109° stage, not near-mono 24°
+    float bassImpact=.50f;   // retain clean original music low end
+    float detail=.40f;       // moderate presence without excessive HF
     float outputTrim=1.f;    // P8.2 full-output linear trim
     float stereoLock=1.f;    // 100% retains >=90% original direct SIDE
-    float lateRoom=.34f;     // late reverb separate from early stage
-    float depth=.60f;        // real source radius 1.6..7.4 m
+    float lateRoom=.25f;     // lighter tail preserves front speaker focus
+    float depth=.78f;        // 6.1m actual source/wall geometry
     float earAlignDegrees=0.f; // separate spectral KEMAR HRTF -30..+20°
 };
 inline bool valid(const Settings& s) noexcept {
