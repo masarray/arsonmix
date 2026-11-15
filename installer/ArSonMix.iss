@@ -61,6 +61,9 @@ Source: "{#SourceRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\FactoryFX\*"; DestDir: "{app}\FactoryFX"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 [Icons]
 Name: "{autoprograms}\ArSonMix"; Filename: "{app}\ArSonMix.exe"; WorkingDir: "{app}"
+; Dedicated emergency shortcut works before WebView/FX restoration. Native
+; confirmation is mandatory; simply clicking the icon never erases a Show.
+Name: "{autoprograms}\Reset ArSonMix Mixer"; Filename: "{app}\ArSonMix.exe"; Parameters: "--reset-mixer"; WorkingDir: "{app}"
 ; User-facing fallback when the main EXE cannot even open. The helper
 ; authenticates the published current release and repairs in place.
 Name: "{autoprograms}\Repair ArSonMix"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\ArSonMixAutoUpdate.ps1"" -RecoveryMode"; WorkingDir: "{app}"
