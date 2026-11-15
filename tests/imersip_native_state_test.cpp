@@ -370,9 +370,13 @@ int main() {
     ImerSipProcessor::Completion audibleAck{};
     assert(audible->pollCompletion(audibleAck));
     assert(audibleAck.requestId==6001&&audibleAck.applied);
-    // The native editor acceptance test now processes two genuine 128f
-    // PCM ACK blocks BEFORE the 256x128 full musical signal below.
-    assert(audible->processedFrames()==32768u+256u);
+    // The editor exercises four genuine 128-frame audio callbacks before
+    // the 256 x 128-frame musical PCM loop: two preset ACKs, depth ACK,
+    // and ear-alignment ACK. Count ALL real callbacks, never relax the
+    // inserted-FX audio-processing evidence to make CI green.
+    constexpr std::uint64_t editorAckFrames=4u*128u;
+    constexpr std::uint64_t musicalFrames=256u*128u;
+    assert(audible->processedFrames()==editorAckFrames+musicalFrames);
     assert(audible->liveInputEnergy()>1.e-5f);
     assert(audible->liveDifferenceEnergy()>1.e-4f);
     const double actualDelta=std::sqrt(
