@@ -21,6 +21,9 @@
 #include "SonKuP84FusedMusicHrir.h"
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
 #include "SonKuP90StereoDecoder.h"
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+#include "SonKuP92MusicBassFoundation.h"
+#endif
 #endif
 #endif
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
@@ -103,7 +106,11 @@ inline bool valid(const Settings& s) noexcept {
 #if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
 #if defined(SONKU_P89_DEPTH_COHERENCE_RESEARCH) && SONKU_P89_DEPTH_COHERENCE_RESEARCH
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+        s.renderMode<=10 && ((s.renderMode<3 || s.renderMode>10) || !s.musicCompatibleLowFrequency) &&
+#else
         s.renderMode<=9 && ((s.renderMode<3 || s.renderMode>9) || !s.musicCompatibleLowFrequency) &&
+#endif
 #else
         s.renderMode<=8 && ((s.renderMode!=3 && s.renderMode!=4 && s.renderMode!=5 && s.renderMode!=6 && s.renderMode!=7 && s.renderMode!=8) || !s.musicCompatibleLowFrequency) &&
 #endif
@@ -133,6 +140,9 @@ inline bool valid(const Settings& s) noexcept {
            && s.renderMode!=8
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
            && s.renderMode!=9
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+           && s.renderMode!=10
+#endif
 #endif
 #endif
            ) || (s.directElevationDegrees+s.hrtfElevationTrimDegrees>=-40.f &&
@@ -202,6 +212,9 @@ public:
         if(!p84MusicKernel_.prepare(rate))return false;
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
         if(!p90Decoder_.prepare(rate))return false;
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+        if(!p92Foundation_.prepare(rate,bank_))return false;
+#endif
 #endif
 #endif
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
@@ -269,6 +282,9 @@ public:
         integrity_.reset();
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
         p90Decoder_.reset();
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+        p92Foundation_.reset();
+#endif
 #endif
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
         p83LowFrequency_.reset();
@@ -502,6 +518,9 @@ public:
             && p83Mode_!=p83::Mode::MusicSpatialP89
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
             && p83Mode_!=p83::Mode::MusicSpatialP90
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+            && p83Mode_!=p83::Mode::MusicSpatialP92
+#endif
 #endif
 #endif
 #endif
@@ -513,6 +532,11 @@ public:
         const bool monoObject=positionedMode && p83Mode_==p83::Mode::MonoObject;
 #else
         constexpr bool positionedMode=false,monoObject=false;
+#endif
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+        const bool p92Stage=p83Mode_==p83::Mode::MusicSpatialP92;
+#else
+        constexpr bool p92Stage=false;
 #endif
         const float distanceGain=room_.relativeDistanceGain();
         const bool nativeSpace=nativeSpaceEverUsed_;
@@ -547,6 +571,9 @@ public:
              || p83Mode_==p83::Mode::MusicSpatialP89
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
              || p83Mode_==p83::Mode::MusicSpatialP90
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+             || p83Mode_==p83::Mode::MusicSpatialP92
+#endif
 #endif
 #endif
 #endif
@@ -568,6 +595,9 @@ public:
              || p83Mode_==p83::Mode::MusicSpatialP89
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
              || p83Mode_==p83::Mode::MusicSpatialP90
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+             || p83Mode_==p83::Mode::MusicSpatialP92
+#endif
 #endif
 #endif
 #endif
@@ -581,6 +611,9 @@ public:
              || p83Mode_==p83::Mode::MusicSpatialP89
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
              || p83Mode_==p83::Mode::MusicSpatialP90
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+             || p83Mode_==p83::Mode::MusicSpatialP92
+#endif
 #endif
 #endif
 #endif
@@ -600,6 +633,9 @@ public:
                     || p83Mode_==p83::Mode::MusicSpatialP89
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
                     || p83Mode_==p83::Mode::MusicSpatialP90
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+             || p83Mode_==p83::Mode::MusicSpatialP92
+#endif
 #endif
 #endif
                     )?0.27f:0.13f)*
@@ -616,6 +652,9 @@ public:
              || p83Mode_==p83::Mode::MusicSpatialP89
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
              || p83Mode_==p83::Mode::MusicSpatialP90
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+             || p83Mode_==p83::Mode::MusicSpatialP92
+#endif
 #endif
 #endif
              )?
@@ -660,7 +699,11 @@ public:
             const float x0=std::isfinite(left[i])?left[i]:0.f;
             const float x1=monoObject?0.f:(std::isfinite(right[i])?right[i]:0.f);
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
-            if(p83Mode_==p83::Mode::MusicSpatialP90)p90Decoder_.observe(x0,x1);
+            if(p83Mode_==p83::Mode::MusicSpatialP90
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+               ||p83Mode_==p83::Mode::MusicSpatialP92
+#endif
+               )p90Decoder_.observe(x0,x1);
 #endif
             // Preserve strong anti-correlated music side energy without
             // collapsing it into the two virtual mono HRTF sources. The
@@ -698,11 +741,22 @@ public:
             // world-locked measured reflections shoulder the extra space.
             sideRescue*=p89SideGain;
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
-            if(p83Mode_==p83::Mode::MusicSpatialP90)sideRescue=0.f;
+            if(p83Mode_==p83::Mode::MusicSpatialP90
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+               ||p83Mode_==p83::Mode::MusicSpatialP92
+#endif
+               )sideRescue=0.f;
 #endif
 #endif
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+            const auto bassRoom=p92Stage?p92Foundation_.process(x0,x1):
+                p92::MusicBassFoundation::Sources{};
+            history_[0][write_]=x0+bassRoom.left;
+            history_[1][write_]=x1+bassRoom.right;
+#else
             history_[0][write_]=x0;
             history_[1][write_]=x1;
+#endif
             float ears[2]{0.f,0.f};
             for(int tap=0;tap<taps;++tap) {
                 int at=write_-tap;
@@ -734,6 +788,9 @@ public:
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
             if(transparentBass || positionedMode)
                 tonalCalibration_.process(ears[0],ears[1]);
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+            if(p92Stage)p92Foundation_.enhanceLowBody(ears[0],ears[1]);
+#endif
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
             if(musicalBody && roomEnabled)
                 p87Body_.enhanceDirect(ears[0],ears[1]);
@@ -852,11 +909,11 @@ public:
                     binauralBass_[1]+=bassCrossoverAlpha_*
                         (ears[1]-binauralBass_[1]);
                     spatialL=smoothedDistanceGain_*
-                        (ears[0]-binauralBass_[0])+
+                        (ears[0]-(p92Stage?0.f:binauralBass_[0]))+
                         smoothedErPresence_*reflection.left+
                         smoothedTailPresence_*late.left;
                     spatialR=smoothedDistanceGain_*
-                        (ears[1]-binauralBass_[1])+
+                        (ears[1]-(p92Stage?0.f:binauralBass_[1]))+
                         smoothedErPresence_*reflection.right+
                         smoothedTailPresence_*late.right;
                 }else
@@ -868,6 +925,21 @@ public:
                     spatialL+=smoothedBassShelf_*earBass_[0];
                     spatialR+=smoothedBassShelf_*earBass_[1];
                 }
+                // P9.2 restores the COMPLETE directional LF HRTF, plus a
+                // fixed measured music calibration. Previously the original
+                // unpositioned headphone bass bypassed speaker yaw entirely.
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+                if(p92Stage) {
+                    const float er=roomEnabled?
+                        (1.05f+1.15f*settings_.roomAmount):0.f;
+                    const float tail=roomEnabled?
+                        (.55f+1.05f*settings_.ambience):0.f;
+                    spatialL=smoothedDistanceGain_*p92Foundation_.directMakeup()*
+                        ears[0]+er*reflection.left+tail*late.left;
+                    spatialR=smoothedDistanceGain_*p92Foundation_.directMakeup()*
+                        ears[1]+er*reflection.right+tail*late.right;
+                }
+#endif
                 // GAIN is final full-output gain, not the old wet-only trim.
                 // When ROOM OFF is reselected after a native scene, the
                 // additional wet presence smoothly decays with its own engine.
@@ -892,10 +964,10 @@ public:
                 const float baseDryL=transparentBass?dryLevel*x0:0.f;
                 const float baseDryR=transparentBass?dryLevel*x1:0.f;
                 float outL=baseDryL+smoothedTrim_*
-                    ((transparentBass?musicLowL:dryLevel*x0)+
+                    (((p92Stage?0.f:(transparentBass?musicLowL:dryLevel*x0)))+
                      sceneBinauralLevel*(transparentBass?1.f:smoothedRoomLevel_)*spatialL)+sideRescue;
                 float outR=baseDryR+smoothedTrim_*
-                    ((transparentBass?musicLowR:dryLevel*x1)+
+                    (((p92Stage?0.f:(transparentBass?musicLowR:dryLevel*x1)))+
                      sceneBinauralLevel*(transparentBass?1.f:smoothedRoomLevel_)*spatialR)-sideRescue;
                 // Zero-lookahead *linked* sample-peak safety guard. Quiet
                 // signals are linear; peaks are gently returned below unity
@@ -956,6 +1028,9 @@ private:
                       || p83Mode_==p83::Mode::MusicSpatialP89
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
                       || p83Mode_==p83::Mode::MusicSpatialP90
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+             || p83Mode_==p83::Mode::MusicSpatialP92
+#endif
 #endif
 #endif
                       ) &&
@@ -971,6 +1046,9 @@ private:
              || p83Mode_==p83::Mode::MusicSpatialP89
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
              || p83Mode_==p83::Mode::MusicSpatialP90
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+             || p83Mode_==p83::Mode::MusicSpatialP92
+#endif
 #endif
 #endif
              )?
@@ -1018,6 +1096,9 @@ private:
             && p83Mode_!=p83::Mode::MusicSpatialP89
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
             && p83Mode_!=p83::Mode::MusicSpatialP90
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+            && p83Mode_!=p83::Mode::MusicSpatialP92
+#endif
 #endif
 #endif
 #endif
@@ -1087,6 +1168,9 @@ private:
              || p83Mode_==p83::Mode::MusicSpatialP89
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
              || p83Mode_==p83::Mode::MusicSpatialP90
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+             || p83Mode_==p83::Mode::MusicSpatialP92
+#endif
 #endif
 #endif
 #endif
@@ -1102,8 +1186,19 @@ private:
             interpolate(targets_[0],positions.leftHead);
             interpolate(targets_[1],positions.rightHead);
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
-            if(p83Mode_==p83::Mode::MusicSpatialP90)
+            if(p83Mode_==p83::Mode::MusicSpatialP90
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+               ||p83Mode_==p83::Mode::MusicSpatialP92
+#endif
+               ){
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+                if(p83Mode_==p83::Mode::MusicSpatialP92)
+                    p92Foundation_.updateScene(settings_.spacePreset,
+                        settings_.roomAmount,settings_.sourceDistanceMeters,
+                        static_cast<float>(degrees_),settings_.stereoSpreadDegrees);
+#endif
                 p90Decoder_.compose(centerTarget_,targets_[0],targets_[1]);
+            }
             else
 #endif
                 p84MusicKernel_.merge(centerTarget_,targets_[0],targets_[1]);
@@ -1202,6 +1297,9 @@ private:
     p84::FusedMusicHrir p84MusicKernel_{};
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
     p90::StereoDecoder p90Decoder_{};
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+    p92::MusicBassFoundation p92Foundation_{};
+#endif
 #endif
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
     p87::MusicalAirBody p87Body_{};
