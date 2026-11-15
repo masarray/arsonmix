@@ -41,13 +41,14 @@ test("reset is transactional and automatically readies verified MAIN without per
   const body=host.slice(start,end);
   assert.ok(start>=0&&end>start);
   const journal=body.indexOf("discardForFactoryReset()");
-  const transition=body.indexOf("engine_.setOutputMuted(true)");
   const stop=body.indexOf("engine_.stop()");
   const restart=body.indexOf("engine_.start(saved.get())");
   const rearm=body.indexOf("requestAutomaticMain(false)");
-  assert.ok(journal>=0&&transition>journal&&stop>transition&&restart>stop&&rearm>restart);
-  assert.equal(body.lastIndexOf("engine_.setOutputMuted(true)"),transition,
-    "output transition must not be left latched AFTER engine startup");
+  assert.ok(journal>=0&&stop>journal&&restart>stop&&rearm>restart);
+  assert.doesNotMatch(body,/engine_\\.setOutputMuted\\(true\\)/,
+    "reset never writes a sticky hardware mute, even temporarily");
+  assert.match(body,/engine_\\.cancelAsioResetMonitorIntent\\(\\)/);
+  assert.match(body,/engine_\\.resetLegacyMixerControlsForFactory\\(\\)/);
   assert.match(body,/FACTORY_RESET_READY/);
   assert.match(body,/engine_\.setMasterGainLinear\(1\.f\)/);
   assert.match(body,/engine_\.setMasterMuted\(false\)/);
