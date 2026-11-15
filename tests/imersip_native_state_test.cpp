@@ -52,15 +52,15 @@ int main() {
     assert(settings.bassImpact==.75f);
     juce::MemoryBlock before;
     fx.getStateInformation(before);
-    assert(before.getSize()==32);
-    assert(!fx.restoreUnpublishedState(before.getData(),31));
-    std::array<std::uint8_t,32> corrupted{};
-    std::memcpy(corrupted.data(),before.getData(),32);
+    assert(before.getSize()==36);
+    assert(!fx.restoreUnpublishedState(before.getData(),35));
+    std::array<std::uint8_t,36> corrupted{};
+    std::memcpy(corrupted.data(),before.getData(),36);
     corrupted[0]=0;
-    assert(!fx.restoreUnpublishedState(corrupted.data(),32));
+    assert(!fx.restoreUnpublishedState(corrupted.data(),36));
     assert(!fx.queueSettings(settings,0));
     settings.venue=1;settings.immersion=.81f;
-    settings.width=.9f;settings.bassImpact=.95f;
+    settings.width=.9f;settings.bassImpact=.95f;settings.detail=.65f;
     assert(fx.queueSettings(settings,52));
     assert(!fx.stateSnapshotQuiescent());
     juce::AudioBuffer<float> pcm(2,128);
@@ -84,7 +84,7 @@ int main() {
     }
     juce::MemoryBlock snapshot;
     fx.getStateInformation(snapshot);
-    assert(snapshot.getSize()==32);
+    assert(snapshot.getSize()==36);
     ImerSipProcessor restored;
     restored.prepareToPlay(48000.,128);
     assert(restored.isReady());
@@ -93,8 +93,26 @@ int main() {
     auto selected=restored.acceptedSettings();
     assert(selected.venue==1&&selected.width==.9f);
     assert(selected.bassImpact==.95f&&selected.immersion==.81f);
+    assert(selected.detail==.65f);
     restored.sealForRealtime();
-    assert(!restored.restoreUnpublishedState(snapshot.getData(),32));
+    assert(!restored.restoreUnpublishedState(snapshot.getData(),36));
+    // Old 32-byte IMRS v1 sessions must load WITHOUT unexpected Detail boost.
+    juce::MemoryBlock legacy;
+    juce::MemoryOutputStream v1(legacy,false);
+    v1.writeInt(0x494D5253);
+    v1.writeInt(1);
+    v1.writeInt(selected.venue);
+    v1.writeFloat(selected.immersion);
+    v1.writeFloat(selected.space);
+    v1.writeFloat(selected.width);
+    v1.writeFloat(selected.bassImpact);
+    v1.writeFloat(selected.outputTrim);
+    assert(legacy.getSize()==32);
+    ImerSipProcessor oldSession;
+    oldSession.prepareToPlay(48000.,128);
+    assert(oldSession.isReady());
+    assert(oldSession.restoreUnpublishedState(legacy.getData(),32));
+    assert(oldSession.acceptedSettings().detail==0.f);
     fx.releaseResources();
     assert(!fx.isReady());
     return 0;
