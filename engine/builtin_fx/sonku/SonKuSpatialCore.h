@@ -329,6 +329,13 @@ public:
         if(s.renderMode!=settings_.renderMode ||
            s.spacePreset!=settings_.spacePreset)p87Body_.reset();
 #endif
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+        if(s.renderMode!=settings_.renderMode &&
+           (s.renderMode==10 || settings_.renderMode==10)){
+            p92Foundation_.reset(); // prevent stale bass modes after P9 A/B
+            p90Decoder_.reset(); // no old correlation evidence after mode fade
+        }
+#endif
         settings_=s;
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
         // Apply typed real-time SPSC state, not quiescent-only test setters.
