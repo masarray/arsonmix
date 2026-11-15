@@ -78,6 +78,22 @@ test('session capture and shutdown keep requested MAIN through a device STOP',()
   assert.match(shutdown,/engine_\.wantsMainContinuation\(\) && !operatorOutputMuted_/);
 });
 
+test('automatic checkpoints cannot overwrite saved MAIN and device binding during STOP',()=>{
+  const save=main.split('juce::String saveMixerSession(bool resumeMain')[1]
+      .split('void openMixerFile(')[0];
+  assert.match(save,/!audio \|\| !audio->isOpen\(\)/);
+  assert.match(save,/engine_\.mainInterruptedByDevice\(\)/);
+  assert.match(save,/doc\.resumeMain=resumeMain \|\|/);
+  assert.match(save,/engine_\.wantsMainContinuation\(\) && !operatorOutputMuted_/);
+  const persistence=main.split('if (deviceSettingsDirty_)')[1]
+      .split('if (timerTicks_')[0];
+  assert.match(persistence,/activeDevice != nullptr && activeDevice->isOpen\(\)/);
+  assert.match(persistence,/deviceSettingsDirty_ = false/);
+  assert.ok(persistence.indexOf('deviceSettingsDirty_ = false')>
+            persistence.indexOf('activeDevice->isOpen()'),
+            'Do not consume a pending device profile while its driver is absent');
+});
+
 test('bounded retry + callback watchdog cannot spin in realtime PCM',()=>{
   assert.match(policy,/30000ull/);
   assert.match(main,/callbackWatchTickMs_/);
