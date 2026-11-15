@@ -275,6 +275,29 @@ public:
     bool setMusicalReverbPreset(SonKuReverbPreset preset) noexcept {
         return reverb_.setPreset(preset);
     }
+    // ImerSip-only P8.2 research admission: actual independently positioned
+    // KEMAR L/R virtual loudspeakers. Its host discards the resultant binaural
+    // MID (which might color vocals), retaining only differential SIDE cues.
+    // Default OFF, preserving byte-exact original SonKu P8.2 PCM elsewhere.
+    bool enableImerSipMeasuredStereoSide(bool enable) noexcept {
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+        if(!ready_ || room_.preparedProfile()!=
+                SonKuReflectionProfile::SixSurfaceKemarResearch)return false;
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
+        if(researchPcmStarted_)return false; // prepare-only, never live toggle
+#endif
+        imersipStereoSideResearch_=enable;
+        haveKernel_=false;
+        remaining_=0;
+        return true;
+#else
+        (void)enable;
+        return false;
+#endif
+    }
+    bool imersipMeasuredStereoSideEnabled() const noexcept {
+        return imersipStereoSideResearch_;
+    }
     bool ready() const noexcept {return ready_;}
     SonKuReflectionProfile preparedReflectionProfile() const noexcept {
         return room_.preparedProfile();
@@ -380,8 +403,8 @@ public:
                 auto& r1=kernels_[1][1][tap];
                 l0+=filterSlew_*(targets_[0][0][tap]-l0);
                 r0+=filterSlew_*(targets_[0][1][tap]-r0);
-                if(musicSafe) {
-                    // Both musical input channels share exactly one centered
+                if(musicSafe&&!imersipStereoSideResearch_) {
+                    // Default SonKu music-safe: both inputs share one centered
                     // measured HRIR. No dual-HRTF center interference; the
                     // unprocessed SIDE is returned in its own stereo axis.
                     // Only two FIR multiply-accumulates per tap, not four.
@@ -577,7 +600,8 @@ private:
     }
     void updateKernels() noexcept {
 #if defined(SONKU_P75_MUSIC_SAFE_RESEARCH) && SONKU_P75_MUSIC_SAFE_RESEARCH
-        if(room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch) {
+        if(room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch &&
+           !imersipStereoSideResearch_) {
             // Control evidence no longer gates musical MID coefficients:
             // the first sample already has a single centered KEMAR HRIR.
             // Never add two offset HRTFs for correlated source material.
@@ -603,7 +627,11 @@ private:
         // transfer H_L'-H_R' is unchanged for ANY mu. Mono channel
         // inputs/correlated scene intensity remain native PCM-only.
         const float coherent=integrity_.coherentAmount();
-        if(coherent>1.e-5f && settings_.stereoSpreadDegrees>0.f) {
+        // Only existing SonKu center correction needs this interpolation.
+        // ImerSip takes the true TWO measured speakers' SIDE difference;
+        // its ORIGINAL dry MID is restored outside this core.
+        if(!imersipStereoSideResearch_ &&
+           coherent>1.e-5f && settings_.stereoSpreadDegrees>0.f) {
             interpolate(centerTarget_,degrees_);
             for(int ear=0;ear<2;++ear) {
                 for(int k=0;k<taps;++k) {
@@ -652,6 +680,7 @@ private:
     bool ready_=false;
     bool haveKernel_=false;
     bool nativeSpaceEverUsed_=false;
+    bool imersipStereoSideResearch_=false;
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
     float researchElevationDegrees_=0.f;
     bool researchPcmStarted_=false;
