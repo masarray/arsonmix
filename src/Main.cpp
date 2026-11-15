@@ -2258,6 +2258,27 @@ private:
         serviceAutomaticMain();
     }
 
+    // Explicit Show/device maintenance gets a scoped output gate, never a
+    // persisted operator MUTE. Preparation/capture may need isolated PCM;
+    // every success, failure and exception path restores automatic MAIN
+    // readiness after the current audio transaction releases the gate.
+    struct ScopedMainTransaction final {
+        ConsoleWindow& owner;
+        bool restore=false;
+        explicit ScopedMainTransaction(ConsoleWindow& host)
+            :owner(host),restore(host.engine_.isMonitorEnabled()) {
+            if(restore)owner.engine_.setOutputMuted(true);
+        }
+        ScopedMainTransaction(const ScopedMainTransaction&)=delete;
+        ScopedMainTransaction& operator=(const ScopedMainTransaction&)=delete;
+        ~ScopedMainTransaction(){resume();}
+        void resume(){
+            if(!restore)return;
+            restore=false;
+            owner.requestAutomaticMain(false);
+        }
+    };
+
     using MixerBindingMode=armix::session::MixerDeviceBindingPolicy::Mode;
     armix::device::NativeDeviceApplyCoordinator deviceApply_; // one CONTROL-thread transaction owner
 
