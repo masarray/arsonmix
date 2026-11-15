@@ -133,6 +133,15 @@ permissions:
   pull-requests: read
 
 jobs:
+  sonku-p90-private-fat:
+    # Draft-only research branch. Calls the isolated, exact-SHA source + JUCE
+    # Windows portable producer; does NOT publish a release or alter main.
+    name: SonKu P9 targeted source + Windows portable FAT
+    if: ${{ github.event_name == 'pull_request' && startsWith(github.event.pull_request.head.ref, 'research/sonku-p90-') }}
+    uses: ./.github/workflows/sonku-p90-windows-field.yml
+    permissions:
+      contents: read
+
 
   quick:
     name: Fast native contracts (no Windows / JUCE checkout)
