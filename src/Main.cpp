@@ -2252,7 +2252,6 @@ private:
     }
 
     void requestAutomaticMain(bool requireInput=true) {
-        if(operatorOutputMuted_){autoMainEpoch_=0;return;}
         autoMainRequiresInput_=requireInput;
         autoMainEpoch_=engine_.dryRoutingLabEpoch();
         autoMainCheckedRevision_.reset();
