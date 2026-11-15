@@ -75,6 +75,24 @@ test("preview reset is explicitly FX-free and WIRE-free, not demo-init",()=>{
   assert.match(ui,/setDensity\('comfort'\);init\(true\)/);
 });
 
+test("bounded control-thread automatic MAIN self-heals without an output toggle",()=>{
+  const start=host.indexOf("void serviceAutomaticMain()");
+  const end=host.indexOf("void requestAutomaticMain(",start);
+  const gate=host.slice(start,end);
+  assert.ok(start>=0&&end>start);
+  assert.match(gate,/timerTicks_%12!=0/);
+  assert.match(gate,/if\(autoMainEpoch_==0\)/);
+  assert.match(gate,/!engine_\.hasBoundMixerRoute\(\)/);
+  assert.match(gate,/engine_\.isGraphSwitchPending\(\)/);
+  assert.match(gate,/engine_\.secondaryArmed\(\)/);
+  assert.match(gate,/engine_\.diagnosticRoute\(\)!=armix::diagnostics::Route::normal/);
+  assert.match(gate,/autoMainRequiresInput_=false/);
+  assert.match(gate,/autoMainCheckedRevision_\.reset\(\)/);
+  assert.match(gate,/engine_\.liveOutputArmFault\(requireInput\)/);
+  assert.match(gate,/engine_\.setMonitorEnabled\(true\)/);
+  assert.match(host,/serviceAutomaticMain\(\);\s*\/\/ Autosave/);
+});
+
 test("PANIC shortcut is recoverable from visible MASTER MUTE, never a hidden hardware latch",()=>{
   const start=host.indexOf('if(mapping.operation=="PANIC_MUTE")');
   const end=host.indexOf('if(mapping.scope!="SESSION"',start);
