@@ -195,7 +195,7 @@ const depthLayers={far:$("skFarSources"),near:$("skNearSources")};
 const mount=()=>{if(!root.isConnected)document.body.append(root)};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
- xyzCapable=false,p83Capable=false,p84Capable=false,p85Capable=false,p86Capable=false,p87Capable=false,p88Capable=false,p89Capable=false,p90Capable=false,musicSafeStereo=false,p8TransparentBass=false,p82MultibandRoom=false,
+ xyzCapable=false,p83Capable=false,p84Capable=false,p85Capable=false,p86Capable=false,p87Capable=false,p88Capable=false,p89Capable=false,p90Capable=false,p91p92Capable=false,musicSafeStereo=false,p8TransparentBass=false,p82MultibandRoom=false,
  readId="",readSentAt=0,seq=1,clock=null,frame=null,observed=0,observedAt=0,
  drag=null,dialDrag=null,rangeEdits=new Set(),gestureStart=new Map(),
  visualPhase=0,visualAt=0,liveTimer=null,lastLiveAt=0;
@@ -215,7 +215,7 @@ function render(){
  const row=$("skRenderRow");row.hidden=!(p83Capable||p84Capable);
  if(p83Capable||p84Capable){
   const picker=$("skRenderMode");
-  if(p90Capable && picker.dataset.nativeModeSet!=="p90"){
+  if(p90Capable && picker.dataset.nativeModeSet!==(p91p92Capable?"p91p92":"p90")){
     picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
      '<option value="clarity">SPATIAL · P8.4 REFERENCE</option>'+
      '<option value="coherence">SPATIAL · P8.5 REFERENCE</option>'+
@@ -223,9 +223,12 @@ function render(){
      '<option value="body">SPATIAL · P8.7 REFERENCE</option>'+
      '<option value="align">SPATIAL · P8.8 REFERENCE</option>'+
      '<option value="depth">SPATIAL · P8.9 REFERENCE</option>'+
-     '<option value="external">P9.0 · TRUE EXTERNAL SPEAKER (EXPERIMENT)</option>';
-    picker.dataset.nativeModeSet="p90";
-    root.querySelector(".sk-render-label").textContent="RENDER MODE · P9.0 HEADPHONE FAT";
+     (p91p92Capable?
+       '<option value="external">P9.1 + P9.2 · MUSIC + PHYSICAL BASS</option>':
+       '<option value="external">P9.0 · TRUE EXTERNAL SPEAKER (EXPERIMENT)</option>');
+    picker.dataset.nativeModeSet=p91p92Capable?"p91p92":"p90";
+    root.querySelector(".sk-render-label").textContent=p91p92Capable?
+      "RENDER MODE · P9.1 + P9.2 FAT":"RENDER MODE · P9.0 HEADPHONE FAT";
    }else if(!p90Capable && p89Capable && picker.dataset.nativeModeSet!=="p89"){
     picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
      '<option value="clarity">SPATIAL · P8.4 REFERENCE</option>'+
@@ -345,8 +348,10 @@ function render(){
   if(!rangeEdits.has("skHrtfAlign"))align.value=String(s.hrtfElevationTrimDegrees);
   $("skHrtfAlignValue").textContent=(s.hrtfElevationTrimDegrees>=0?"+":"")+s.hrtfElevationTrimDegrees.toFixed(1)+"°";
  }
- root.querySelector(".sk-stage-caption").textContent=p90Capable&&s.renderMode===9?
+ root.querySelector(".sk-stage-caption").textContent=p91p92Capable&&s.renderMode===9?
     "P9.1 + P9.2 · MUSIC FIDELITY · WORLD BASS · ROOM MODES · FAT REQUIRED":
+    p90Capable&&s.renderMode===9?
+    "P9.0 · MEASURED TWIN-SPEAKER HRIR · HEADPHONE FAT REQUIRED":
     p89Capable&&s.renderMode===8?
     "P8.9 ROOM-ANCHORED STEREO · DIRECT MUSICAL BODY PRESERVED · FAT REQUIRED":
     p88Capable&&s.renderMode===7?
@@ -390,7 +395,8 @@ function render(){
  // redrawn at 60 Hz. The native audio callback remains the time authority.
  drawSpeakers();
  $("skMode").textContent=native()?(context()?
-  (p90Capable&&s.renderMode===9?"NATIVE P9.0 TRUE EXTERNAL · TEST":
+  (p91p92Capable&&s.renderMode===9?"NATIVE P9.1+P9.2 WORLD BASS · FAT":
+   p90Capable&&s.renderMode===9?"NATIVE P9.0 TRUE EXTERNAL · TEST":
    p89Capable&&s.renderMode===8?"NATIVE P8.9 STEREO + ROOM · TEST":
     p88Capable&&s.renderMode===7?"NATIVE P8.8 EAR ALIGN + DISTANCE · TEST":
     p87Capable&&s.renderMode===6?"NATIVE P8.7 MUSICAL AIR + BODY · TEST":
@@ -556,6 +562,8 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
    Number.isFinite(incoming.headYawDegrees);
  p90Capable=r.schemaVersion===11 && r.p90TrueExternalSpeaker===true &&
     Number.isFinite(incoming.hrtfElevationTrimDegrees);
+ // Separate from schema v11: old P9.0 DSP must not receive the P9.1/9.2 label.
+ p91p92Capable=p90Capable && r.p91p92MusicBassFoundation===true;
  p89Capable=(r.schemaVersion===10||p90Capable) && r.p89StereoRoomDepth===true &&
     Number.isFinite(incoming.hrtfElevationTrimDegrees);
   p88Capable=(r.schemaVersion===9||p89Capable) && r.p88PerceptualAlignment===true &&
@@ -606,7 +614,7 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  }
  render();
 });
-$("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapable=false;p85Capable=false;p86Capable=false;p87Capable=false;p88Capable=false;p89Capable=false;p90Capable=false;musicSafeStereo=false;p8TransparentBass=false;p82MultibandRoom=false;
+$("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapable=false;p85Capable=false;p86Capable=false;p87Capable=false;p88Capable=false;p89Capable=false;p90Capable=false;p91p92Capable=false;musicSafeStereo=false;p8TransparentBass=false;p82MultibandRoom=false;
  cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
  drag=null;rangeEdits.clear();gestureStart.clear();lastLiveAt=0;
  if(clock!==null){clearInterval(clock);clock=null;}
