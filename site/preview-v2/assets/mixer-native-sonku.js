@@ -14,7 +14,7 @@ const elevationLimits=s=>{
  const distance=s.sourceDistanceMeters;
  const height=roomHeights[s.spacePreset];
  if(!Number.isFinite(distance)||!height)return {min:0,max:0};
- const spectralOffset=p88Capable&&s.renderMode===7?(s.hrtfElevationTrimDegrees??0):0;
+ const spectralOffset=s.renderMode===7?(s.hrtfElevationTrimDegrees??0):0;
   const bottom=Math.max(-40-spectralOffset,Math.asin(Math.max(-1,Math.min(1,(.5-1.45)/distance)))*180/Math.PI);
  const top=Math.min(60-spectralOffset,Math.asin(Math.max(-1,Math.min(1,(height-.5-1.45)/distance)))*180/Math.PI);
  // Keep a 0.1 degree safety margin for C++ float boundary rounding.
