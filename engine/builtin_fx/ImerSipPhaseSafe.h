@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include <algorithm>
+#include <array>
 #include <cmath>
 
-// ImerSip after P8.2: coherent/minimum-phase LF shelf + monotone SIDE shelf.
+// ImerSip after P8.2: coherent LF source shelf + matched binaural AIR shelf.
 // Unlike independent Haas delays, neither stage inserts an out-of-polarity
 // crossfeed. Both L/R bass filters share IDENTICAL coefficients.
 // The SIDE delta is added to L and SUBTRACTED from R: mono fold-down equals
@@ -43,6 +44,45 @@ inline bool valid(const Settings& s) noexcept {
 // replacement. It never attenuates the P8.2 output as a safety workaround.
 // Near 0 dBFS only the ADDITIONAL enhancement is suppressed: P8.2 remains.
 class PhaseSafeEnhancer final {
+    // Stable RBJ second-order high shelf, designed once per device rate.
+    // +4dB above ~7kHz, near-unity below 3kHz: no broad 1-4k shout.
+    // Identical coefficients for both ears preserve binaural differences.
+    // No coefficients calculated on PCM edit/callback.
+    struct AirShelf {
+        bool prepare(double rate) noexcept {
+            constexpr double pi=3.14159265358979323846;
+            constexpr double db=4.0,frequency=7200.,slope=1.0;
+            const double A=std::pow(10.,db/40.);
+            const double w=2.*pi*frequency/rate;
+            const double cw=std::cos(w);
+            const double alpha=std::sin(w)*.5*
+                std::sqrt((A+1./A)*(1./slope-1.)+2.);
+            const double beta=2.*std::sqrt(A)*alpha;
+            const double a0=(A+1.)-(A-1.)*cw+beta;
+            if(!std::isfinite(a0)||a0<=0.)return false;
+            b0=static_cast<float>(
+                A*((A+1.)+(A-1.)*cw+beta)/a0);
+            b1=static_cast<float>(
+                -2.*A*((A-1.)+(A+1.)*cw)/a0);
+            b2=static_cast<float>(
+                A*((A+1.)+(A-1.)*cw-beta)/a0);
+            a1=static_cast<float>(
+                2.*((A-1.)-(A+1.)*cw)/a0);
+            a2=static_cast<float>(
+                ((A+1.)-(A-1.)*cw-beta)/a0);
+            reset();return true;
+        }
+        void reset() noexcept {z1={};z2={};}
+        float process(float x,int ear) noexcept {
+            const auto i=static_cast<std::size_t>(ear);
+            const float y=b0*x+z1[i];
+            z1[i]=b1*x-a1*y+z2[i];
+            z2[i]=b2*x-a2*y;
+            return y;
+        }
+        float b0=1.f,b1=0.f,b2=0.f,a1=0.f,a2=0.f;
+        std::array<float,2> z1{},z2{};
+    };
 public:
     bool prepare(double rate) noexcept {
         ready_=false;
@@ -51,7 +91,7 @@ public:
         constexpr double pi=3.1415926535897932384626433832795;
         bassAlpha_=static_cast<float>(1.-std::exp(-2.*pi*155./rate));
         sideAlpha_=static_cast<float>(1.-std::exp(-2.*pi*680./rate));
-        detailAlpha_=static_cast<float>(1.-std::exp(-2.*pi*6100./rate));
+        if(!airShelf_.prepare(rate))return false;
         gainSlew_=static_cast<float>(1.-std::exp(-1./(rate*.025)));
         gateSlew_=static_cast<float>(1.-std::exp(-1./(rate*.035)));
         energySlew_=static_cast<float>(1.-std::exp(-1./(rate*.075)));
@@ -80,17 +120,15 @@ public:
             (1.f+.45f*s.space);
         // Music SIDE retains original stereo, with bounded positive tilt.
         sideTarget_=.25f*s.width*s.immersion;
-        // Output-phase-aligned open air >6.1kHz with 15% dry HF anchor.
-        // At max the linear HF shelf coefficient is +0.59; the actual
-        // gain at 10k remains smaller due to one-pole transition.
-        // No 1-4k vocal lift, inverted KEMAR notch or artificial echo.
-        detailTarget_=.59f*s.detail*s.immersion;
+        // Output-phase-aligned +4dB RBJ air shelf at 100% setting.
+        // Near-flat <3k, musical clarity at >7k, and a genuine audible
+        // difference at both default and end stop. One native DSP.
+        detailTarget_=s.detail*s.immersion;
         return true;
     }
     void reset() noexcept {
         bassL_=bassR_=sideLow_=midEnergy_=sideEnergy_=gate_=0.f;
-        detailL_=detailR_=0.f;
-        processedDetailL_=processedDetailR_=0.f;
+        airShelf_.reset();
         bassGain_=bassTarget_;
         sideGain_=sideTarget_;
         detailGain_=detailTarget_;
@@ -130,14 +168,8 @@ public:
         bassGain_+=gainSlew_*(bassTarget_-bassGain_);
         sideGain_+=gainSlew_*(sideTarget_-sideGain_);
         detailGain_+=gainSlew_*(detailTarget_-detailGain_);
-        detailL_+=detailAlpha_*(originalL-detailL_);
-        detailR_+=detailAlpha_*(originalR-detailR_);
-        // Phase-aligned output shelf restores measured HRTF air first;
-        // only a small original-source HF anchor remains. A 100% dry HF
-        // addition was measurably out of phase with the binaural MID at
-        // 11 kHz and *reduced* the apparent centre sparkle.
-        processedDetailL_+=detailAlpha_*(l-processedDetailL_);
-        processedDetailR_+=detailAlpha_*(r-processedDetailR_);
+        const float shelfL=airShelf_.process(l,0);
+        const float shelfR=airShelf_.process(r,1);
         const float bassDeltaL=bassGain_*bassL_;
         const float bassDeltaR=bassGain_*bassR_;
         // One-pole complementary HP has Re(H)>=0. Summing a POSITIVE
@@ -146,11 +178,10 @@ public:
         const float side=.5f*(l-r);
         sideLow_+=sideAlpha_*(side-sideLow_);
         const float delta=sideGain_*inputStereoGate*(side-sideLow_);
-        // Equal-coefficient source-detail high shelf, not an extra HRTF.
-        float addL=bassDeltaL+delta+detailGain_*(
-            .85f*(l-processedDetailL_)+.15f*(originalL-detailL_));
-        float addR=bassDeltaR-delta+detailGain_*(
-            .85f*(r-processedDetailR_)+.15f*(originalR-detailR_));
+        // Source LF + phase-aligned minimum-phase processed HF. Apply
+        // identical air-shelf biquad to L/R; preserve original KEMAR cues.
+        float addL=bassDeltaL+delta+detailGain_*(shelfL-l);
+        float addR=bassDeltaR-delta+detailGain_*(shelfR-r);
 
         // Peak safety does not pull down the trusted P8.2 signal.
         // Unlike global AGC/limiter, it only scales optional additions.
@@ -168,12 +199,12 @@ public:
     }
 private:
     Settings settings_{};
-    float bassAlpha_=0.f,sideAlpha_=0.f,detailAlpha_=0.f;
+    float bassAlpha_=0.f,sideAlpha_=0.f;
+    AirShelf airShelf_{};
     float gainSlew_=0.f,gateSlew_=0.f,energySlew_=0.f;
     float bassTarget_=0.f,sideTarget_=0.f,detailTarget_=0.f;
     float bassGain_=0.f,sideGain_=0.f,detailGain_=0.f;
-    float bassL_=0.f,bassR_=0.f,sideLow_=0.f,detailL_=0.f,detailR_=0.f;
-    float processedDetailL_=0.f,processedDetailR_=0.f;
+    float bassL_=0.f,bassR_=0.f,sideLow_=0.f;
     float midEnergy_=0.f,sideEnergy_=0.f,gate_=0.f;
     bool ready_=false;
 };
