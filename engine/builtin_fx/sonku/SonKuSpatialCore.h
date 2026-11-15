@@ -522,7 +522,13 @@ public:
         const bool roomEnabled=settings_.spacePreset!=0;
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
         const bool transparentBass=
-            room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch && !positionedMode;
+            room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch && !positionedMode
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+            // P9 owns its complementary WORLD LF return. Never replace it
+            // with P8.2's original headphone-locked low frequencies.
+            && p83Mode_!=p83::Mode::MusicSpatialP90
+#endif
+            ;
 #else
         constexpr bool transparentBass=false;
 #endif
@@ -748,7 +754,11 @@ public:
                 x0,x1,ears[0],ears[1],
                 settings_.spacePreset,settings_.roomAmount);
 #endif
-            if(transparentBass || positionedMode)
+            if(transparentBass || positionedMode
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+               || p90World
+#endif
+               )
                 tonalCalibration_.process(ears[0],ears[1]);
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
             if(musicalBody && roomEnabled)
@@ -794,7 +804,8 @@ public:
                 if(p83Stem_!=p83::Stem::Late)late={};
             }
 #endif
-            if(!transparentBass && !nativeSpace && settings_.outputTrim<=1.f &&
+            if(!transparentBass && !nativeSpace && !p90World &&
+               settings_.outputTrim<=1.f &&
                smoothedTrim_<=1.f) {
                 // Preserve byte-for-byte original HRTF/old .smix output for
                 // ROOM OFF and gain <= unity. Newly boosted GAIN > unity
