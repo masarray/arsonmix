@@ -96,11 +96,13 @@ def run(page, width, height):
     master=page.locator('.strip.master .fx-section')
     assert master.get_attribute("data-global-fx-enabled")=="false"
     assert master.get_attribute("data-fx-chain-enabled")=="true"
+    page.screenshot(path=f"arsonmix-global-fx-{width}-bypassed.png")
     toggle.click()
     after=rack(page,1)
     assert after==ch_before | {"global":"true"},(ch_before,after)
     assert power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="100%"
     assert slot_power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="100%"
+    page.screenshot(path=f"arsonmix-global-fx-{width}-enabled.png")
     # Individual OFF remains OFF across the master A/B roundtrip.
     slot_power.click()
     assert slot_power.get_attribute("aria-pressed")=="false"

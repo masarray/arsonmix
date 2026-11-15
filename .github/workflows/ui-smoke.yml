@@ -394,6 +394,37 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+
+  mixer-global-fx-visual:
+    name: Global FX hardware power + PAN real Chromium (3 viewports)
+    needs: quick
+    # Deliberately scoped: one current GUI milestone, no generic full-suite,
+    # no unrelated SonKu, GAIN or paid Windows native rebuild.
+    if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/mixer-global-fx-ab-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install one Chromium
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Assemble exact PR head /preview/ assets
+        run: python scripts/build_pages.py --out dist-pages --sha "${{ github.event.pull_request.head.sha }}" --branch main
+      - name: Verify FX master power face and individual state; PAN no-collision
+        run: python tests/pages_global_fx_ab_pan_wire_smoke.py
+      - name: Retain ON/OFF screenshots from all viewports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-Global-FX-PAN-${{ github.run_id }}
+          path: arsonmix-global-fx-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
   frontend:
     name: Full Chromium /preview/ visual and interaction qualification
     # Draft edits are cheap; ChatGPT milestone comments dispatch this full suite.
