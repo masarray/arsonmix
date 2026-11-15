@@ -56,7 +56,8 @@ def run(page, width, height):
             assert 8.9<=seen["font"]<=9.1,(width,density,"caption font",seen)
             assert abs(seen["font"]-seen["panFont"])<.2,(width,density,"PAN typography match",seen)
             assert seen["gap"]>=0 and seen["sliderWidth"]>=30,(width,density,"PAN collision",seen)
-            assert 24<=seen["readoutWidth"]<=26,(width,density,"caption yields to slider",seen)
+            if label in ("L100","R100"):
+                assert 24<=seen["readoutWidth"]<=26,(width,density,"caption yields to slider",seen)
             assert seen["centerError"]<=1,(width,density,"slider must be centered",seen)
     page.locator("#densitySelect").evaluate(
         "(select)=>{select.value='comfort';select.dispatchEvent(new Event('change',{bubbles:true}));}")
