@@ -25,6 +25,7 @@
 #include "../engine/device/AsioRegistryIdentityProbe.h"
 #include "../engine/device/DirectRouteFence.h"
 #include "../engine/device/DeviceSessionTransitionPolicy.h"
+#include "../engine/device/AudioContinuityPolicy.h"
 #include "../engine/device/WasapiEndpointIdentityGuard.h"
 #include "../engine/core/FxOrderPlan.h"
 #include "../engine/core/FxMoveRamp.h"
@@ -395,8 +396,19 @@ public:
             return "No physical input assigned. Connect CH1/CH2 first.";
         return {};
     }
-    void setMonitorEnabled (bool value) noexcept { monitor_.store (value); }
-    bool isMonitorEnabled() const noexcept { return monitor_.load(); }
+    // User/approved-workflow MAIN intent is NOT the volatile JUCE callback gate.
+    // Screen-off does not touch either; device stop gates only physical output.
+    void setMonitorEnabled (bool value) noexcept {
+        mainOutputIntent_.operatorRequested(value);
+        monitor_.store(value,std::memory_order_release);
+        if (!value) resumeMainAfterAsioReset_.store(false,std::memory_order_release);
+    }
+    bool isMonitorEnabled() const noexcept { return monitor_.load(std::memory_order_acquire); }
+    bool wantsMainContinuation() const noexcept { return mainOutputIntent_.desired(); }
+    bool mainInterruptedByDevice() const noexcept { return mainOutputIntent_.interrupted(); }
+    std::uint64_t directCallbackCount() const noexcept {
+        return callbackCount_.load(std::memory_order_relaxed);
+    }
     // Emergency output mute, not a prerequisite for receiving audio.
     void setOutputMuted (bool mute) noexcept { monitor_.store (!mute, std::memory_order_release); }
     bool isOutputMuted() const noexcept { return !monitor_.load (std::memory_order_acquire); }
@@ -414,7 +426,7 @@ public:
     void beginManualAudioSetup(bool preserveMonitorIntent=false) noexcept {
         offeredWasapiBinding_.reset();
         if(!preserveMonitorIntent)resumeMainAfterAsioReset_.store(false,std::memory_order_release);
-        else if(isMonitorEnabled())resumeMainAfterAsioReset_.store(true,std::memory_order_release);
+        else if(wantsMainContinuation())resumeMainAfterAsioReset_.store(true,std::memory_order_release);
         setOutputMuted(true);
         secondaryOutput_.disarm();
         directFence_.suspend();
@@ -2888,6 +2900,8 @@ private:
     // Temporary publication silence never changes operator MONITOR or MAIN MUTE.
     // The DIRECT device fence and physical-output verification remain separate.
     std::atomic<bool> topologyPublicationMute_ { false };
+    // Persistent in-process operator intent; independent of audio device epoch.
+    armix::device::OutputContinuityIntent mainOutputIntent_;
     std::atomic<bool> resumeMainAfterAsioReset_{false};
     std::atomic<bool> monitor_ { false }, channelMute_ { false }, masterMute_ { false }, masterMono_ { false }, dryTest_ { false };
     std::atomic<float> masterGain_ { 1.f }, channelGain_ { 1.f }, channelPan_ { 0.f };
@@ -2978,9 +2992,11 @@ private:
         // Some ASIO implementations announce a new callback before STOP.
         // Remember the existing MAIN intent before muting this epoch; only
         // the verified same-driver CONTROL rebind may resume it. No RT work.
-        if(monitor_.load(std::memory_order_acquire))
+        if(mainOutputIntent_.desired()) {
+            mainOutputIntent_.deviceInterrupted();
             resumeMainAfterAsioReset_.store(true,std::memory_order_release);
-        setOutputMuted(true);
+        }
+        setOutputMuted(true); // transient hardware gate, NOT an operator MUTE
         secondaryOutput_.invalidateSource(); // source clock may have changed
         dryRoutingLab_.prepareDevice(d); // exact active mask, before callback
         if (!independent_.active())
@@ -3034,8 +3050,13 @@ private:
 
     void audioDeviceStopped() override
     {
-        if(monitor_.exchange(false,std::memory_order_acq_rel))
+        // Never turn a device STOP into a persistent MUTE. Display idle is not
+        // a device event, and even a genuine device STOP preserves desired MAIN.
+        if(mainOutputIntent_.desired()) {
+            mainOutputIntent_.deviceInterrupted();
             resumeMainAfterAsioReset_.store(true,std::memory_order_release);
+        }
+        monitor_.store(false,std::memory_order_release);
         secondaryOutput_.invalidateSource(); // explicit reconnect required after device stop
         masterLoudness_.prepare (0.0); // clear validity across device epoch
         dryRoutingLab_.deviceStopped();
