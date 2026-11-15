@@ -286,13 +286,24 @@ private:
         // source-wall delays; it also increases ratio of anchored ER to
         // unchanged original stereo direct as the stage moves farther.
         // These levels are small measured reflections, NOT dry gain.
-        earlyTarget_=s.immersion*(2.60f*s.space)*(1.f+.55f*s.depth);
+        // A small LIVE ROOM must not recycle hall-scale lateral ER gain.
+        // At full 180° two real KEMAR SIDE cues already provide separation;
+        // excessively strong signed reflection SIDE in venue=2 physically
+        // opposed dry music SIDE on independent-stereo test material.
+        // Calibrate a per-venue ER envelope (still 0..100% user-tweakable),
+        // never turn off actual direct speaker HRIR or alter ordinary SonKu.
+        const float lateralRoomScale=s.venue==2?.45f:
+                                     s.venue==1?.82f:1.f;
+        earlyTarget_=s.immersion*(2.60f*s.space)*
+                     (1.f+.55f*s.depth)*lateralRoomScale;
         lateTarget_=s.immersion*(1.0f*s.lateRoom);
         // KEEP is now source-stereo preservation, NOT an inverse spatial
         // strength dial. 100% keeps original SIDE + bounded measured HRIR
         // directional contribution. 0% retains the older full transfer.
         stereoKeepTarget_=s.stereoLock;
-        concertStage_.setScene(s.immersion,s.space,s.width);
+        // Same physical ER energy budget for concert-stage SIDE as for
+        // early room. Two independent 6x and 4x stacks are not allowed.
+        concertStage_.setScene(s.immersion,s.space*lateralRoomScale,s.width);
     }
     static constexpr int scratchFrames=8192;
     armix::sonku::SonKuSpatialCore core_{};
