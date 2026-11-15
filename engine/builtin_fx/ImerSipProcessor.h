@@ -5,6 +5,7 @@
 #include "../core/RealtimeNativeFxControl.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <cstdint>
+#include <atomic>
 
 // Native mixer INSERT, not an independent player or ASIO callback.
 // Control -> audio via SPSC, applied ACK only after callback completion;
@@ -50,12 +51,28 @@ public:
     bool measuredStereoStageEnabled() const noexcept {
         return ready_ && dsp_.measuredStereoStageEnabled();
     }
+    // Measured LIVE PCM, not just parameter ACK. Unchanged counts imply
+    // the INSERT is bypassed/not being called by the actual audio graph.
+    std::uint64_t processedFrames() const noexcept {
+        return processedFrames_.load(std::memory_order_relaxed);
+    }
+    float liveInputEnergy() const noexcept {
+        return liveInputEnergy_.load(std::memory_order_relaxed);
+    }
+    float liveDifferenceEnergy() const noexcept {
+        return liveDifferenceEnergy_.load(std::memory_order_relaxed);
+    }
     void processBlock(juce::AudioBuffer<float>& pcm,juce::MidiBuffer&) override {
         juce::ScopedNoDenormals guard;
         if(!ready_ || pcm.getNumChannels()<2 || pcm.getNumSamples()<=0)return;
         consumeRealtimeEdits();
         dsp_.process(pcm.getWritePointer(0),pcm.getWritePointer(1),
                      pcm.getNumSamples());
+        liveInputEnergy_.store(dsp_.lastInputEnergy(),std::memory_order_relaxed);
+        liveDifferenceEnergy_.store(dsp_.lastDifferenceEnergy(),
+                                    std::memory_order_relaxed);
+        processedFrames_.fetch_add(static_cast<std::uint64_t>(
+            pcm.getNumSamples()),std::memory_order_relaxed);
     }
     void processBlock(juce::AudioBuffer<double>&,juce::MidiBuffer&) override {}
 
@@ -156,6 +173,8 @@ private:
     bool published_=false;
     std::uint64_t lastCompletedRequest_=0,lastIssuedRequest_=0;
     bool lastCompletedApplied_=false;
+    std::atomic<std::uint64_t> processedFrames_{0};
+    std::atomic<float> liveInputEnergy_{0.f},liveDifferenceEnergy_{0.f};
 };
 } // namespace armix::builtin_fx
 

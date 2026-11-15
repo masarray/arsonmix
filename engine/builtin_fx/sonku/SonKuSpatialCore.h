@@ -92,6 +92,8 @@ class SonKuSpatialCore final {
 public:
     static constexpr int taps=hrir::taps;
     static constexpr int updateInterval=16;
+    // Optional ImerSip sink: SAME real P8.2 room and FIR, no second processor.
+    struct RoomReturns {float earlyL=0.f,earlyR=0.f,lateL=0.f,lateR=0.f;};
     bool prepare(double rate, SonKuReflectionProfile profile=
                  SonKuReflectionProfile::Lightweight) noexcept {
         ready_=false;
@@ -314,7 +316,8 @@ public:
     double azimuthDegrees() const noexcept {return degrees_;}
     // In-place stereo; caller owns valid, non-overlapping L/R PCM pointers.
     // No vector, heap, blocking calls, I/O or filter bank allocation.
-    void process(float* left,float* right,int samples) noexcept {
+    void process(float* left,float* right,int samples,
+                 RoomReturns* optionalWet=nullptr) noexcept {
         if(!ready_ || !left || !right || samples<=0)return;
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
         researchPcmStarted_=true;
@@ -441,6 +444,11 @@ public:
                 ?reverb_.process(transparentBass?x0:(musicSafe?inputMid:x0),
                     transparentBass?x1:(musicSafe?inputMid:x1))
                 :SonKuMusicalReverb::Ears{};
+            // Exact P8.2 measured ER and existing 3-band FDN, BEFORE
+            // the generic SonKu scene downscales its complete wet signal.
+            // Normal SonKu caller passes nullptr: ordinary PCM is unchanged.
+            if(optionalWet)optionalWet[i]={reflection.left,reflection.right,
+                                         late.left,late.right};
             if(!transparentBass && !nativeSpace && settings_.outputTrim<=1.f &&
                smoothedTrim_<=1.f) {
                 // Preserve byte-for-byte original HRTF/old .smix output for

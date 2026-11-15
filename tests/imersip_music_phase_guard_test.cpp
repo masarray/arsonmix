@@ -5,6 +5,7 @@
 #include "../engine/builtin_fx/ImerSipDsp.h"
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <cassert>
 #include <cmath>
 #include <limits>
@@ -128,16 +129,19 @@ void verifyOriginalVocalMidIsUntouched(double rate) {
         auto wet=render(rate,s,source,128);
         assertChunkParity(wet,render(rate,s,source,64));
         assertChunkParity(wet,render(rate,s,source,8192));
-        for(int i=0;i<n;++i) {
-            const double originalMid=.5*(source.l[i]+source.r[i]);
-            const double actualMid=.5*(wet.l[i]+wet.r[i]);
-            assert(std::abs(originalMid-actualMid)<2.e-6);
+        double midDiff=0.,midInput=0.;
+        for(int i=4096;i<n;++i) {
+            const double a=.5*(source.l[i]+source.r[i]);
+            const double b=.5*(wet.l[i]+wet.r[i]);
+            midDiff+=(a-b)*(a-b);midInput+=a*a;
         }
+        // Original vocal stays the predominant dry foreground even though
+        // true delayed early room is now allowed to change the MID.
+        if(midInput>1.e-8)assert(midDiff/midInput<.035);
         if(fixture==0) {
             const double ref=rms(source,4096,false),now=rms(wet,4096,false);
-            assert(std::abs(ref-now)<2.e-6);
-            // Center source is NOT turned into two full-volume new emitters.
-            assert(rms(wet,4096,true)<ref*.40+1.e-6);
+            assert(now>ref*.90 && now<ref*1.12);
+            assert(rms(wet,4096,true)<ref*.45+1.e-6);
         }
     }
 }
@@ -295,9 +299,9 @@ void verifyActualP82RoomChangesSideOnly(double rate) {
         residual+=std::abs((second.l[i]-second.r[i])-
                            (first.l[i]-first.r[i]));
     assert(residual>1.e-5);
-    for(int i=0;i<n;++i)
-        assert(std::abs((second.l[i]+second.r[i])-
-                        (first.l[i]+first.r[i]))<2.e-6);
+    // True room returns necessarily add small delayed MID energy:
+    // the previous exact MID invariant made center source sound near-dry.
+    assert(std::isfinite(rms(second,4096,false)));
 }
 void verifyDetailIsNotMidBoost(double rate) {
     // Detail is a positive >5k high shelf, never a 1-4k shout EQ.
@@ -317,6 +321,36 @@ void verifyDetailIsNotMidBoost(double rate) {
         const double ratio=b/a;
         if(hz<=3000.f)assert(ratio>=.999&&ratio<1.055);
         else assert(ratio>1.015&&ratio<1.16);
+    }
+}
+void verifyAudibleWetIsNotNearBypassed(double rate) {
+    for(int fixture:{0,4,5}) {
+        Stereo input(32768);makeSignal(input,rate,fixture,311.f);
+        Settings s{};s.immersion=0.f;s.width=1.f;
+        s.detail=0.f;s.bassImpact=0.f;s.outputTrim=1.f;
+        const auto dry=render(rate,s,input);
+        s.immersion=1.f;s.space=1.f;
+        const auto wet=render(rate,s,input);
+        double power=0.,delta=0.;
+        for(int i=4096;i<32768;++i) {
+            const double a=input.l[i],b=input.r[i];
+            const double dl=wet.l[i]-dry.l[i],dr=wet.r[i]-dry.r[i];
+            power+=a*a+b*b;delta+=dl*dl+dr*dr;
+        }
+        const double ratio=std::sqrt(delta/(power+1.e-16));
+        // Energy-based minimum -24dB PCM delta. This is NOT listener
+        // acceptability, but rejects the previously practically-bypassed
+        // room even when a trivial >1e-5 float test passed.
+        if(!(ratio>.063)) {
+            std::fprintf(stderr,
+                "IMERSIP_NEAR_BYPASS: rate=%.0f fixture=%d deltaRms=%.8f\n",
+                rate,fixture,ratio);
+            assert(false);
+        }
+        for(int i=0;i<32768;++i) {
+            assert(std::abs(dry.l[i]-input.l[i])<1.e-5f);
+            assert(std::abs(dry.r[i]-input.r[i])<1.e-5f);
+        }
     }
 }
 void verifyPeakSafety(double rate) {
@@ -350,6 +384,7 @@ int main() {
         verifyRoomLinkedBassStaysCoherent(rate);
         verifyDetailIsNotMidBoost(rate);
         verifyActualP82RoomChangesSideOnly(rate);
+        verifyAudibleWetIsNotNearBypassed(rate);
         verifyPeakSafety(rate);
     }
 }

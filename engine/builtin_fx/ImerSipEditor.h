@@ -140,7 +140,10 @@ public:
         g.setColour(juce::Colour(0xff244452));g.fillRect(0,440,840,1);
         g.setColour(juce::Colour(0xff84bbc7));
         g.setFont(juce::FontOptions(11.f,juce::Font::plain));
-        g.drawText(status_,20,449,650,19,juce::Justification::centredLeft);
+        g.drawText(status_,20,449,400,19,juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xff90d6e5));
+        g.drawText(liveReadout_,422,449,233,19,
+                   juce::Justification::centredRight);
         g.setColour(juce::Colour(0xff6d8f9b));
         g.drawText("44.1 / 48 kHz  ·  HEADPHONES",650,449,170,19,
                    juce::Justification::centredRight);
@@ -263,6 +266,20 @@ private:
         status_="APPLYING ON NATIVE AUDIO CALLBACK…";repaint();
     }
     void timerCallback() override {
+        const auto frames=fx_.processedFrames();
+        if(frames==lastObservedFrames_) {
+            liveReadout_="NO PCM CALLBACK / BYPASSED";
+        } else if(fx_.liveInputEnergy()<1.e-10f) {
+            liveReadout_="SILENT INSERT INPUT";
+        } else {
+            // Delta is real time-domain difference to incoming original.
+            // Not a psychoacoustic quality score, but exposes near-bypass.
+            const float db=10.f*std::log10(
+                std::max(fx_.liveDifferenceEnergy(),1.e-12f));
+            liveReadout_="LIVE PCM DELTA "+juce::String(db,1)+" dB";
+        }
+        lastObservedFrames_=frames;
+        repaint(juce::Rectangle<int>(422,448,235,22));
         // The host may save/serialize this FX while its editor is open.
         // Save also drains audio completions to capture accepted state.
         // Read the latched CONTROL-side record, not only a FIFO pop.
@@ -288,7 +305,8 @@ private:
     juce::Rectangle<int> stage_{};
     armix::imersip::Settings deferred_{};
     juce::String status_;
-    std::uint64_t pending_=0;
+    juce::String liveReadout_="PCM DELTA —";
+    std::uint64_t lastObservedFrames_=0,pending_=0;
     int venue_=0;
     bool hasDeferred_=false;
 };
