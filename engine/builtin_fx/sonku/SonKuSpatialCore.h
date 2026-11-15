@@ -316,6 +316,15 @@ public:
         if(s.renderMode!=settings_.renderMode ||
            s.spacePreset!=settings_.spacePreset)p87Body_.reset();
 #endif
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+        // Native mode changes are already zero-gated by JUCE. Reset only
+        // small P9 LF/coherence memories when entering or leaving mode 9:
+        // a frozen previous P9 scene must never leak stale bass after P8 A/B.
+        if((s.renderMode==9)!=(settings_.renderMode==9)){
+            p90Decoder_.reset();
+            p92Bass_.reset();
+        }
+#endif
         settings_=s;
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
         // Apply typed real-time SPSC state, not quiescent-only test setters.
