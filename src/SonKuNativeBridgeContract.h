@@ -8,7 +8,9 @@
 #include <memory>
 namespace armix::builtin_fx::sonku_bridge {
 inline constexpr int schemaVersion() noexcept {
-#if defined(ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT
+    return 7;
+#elif defined(ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT
     return 6;
 #elif defined(ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT
     return 5;
@@ -84,7 +86,11 @@ inline bool decodeSettings(const juce::var& values,armix::sonku::Settings& out) 
     // Rejected P8.3 physical/mono path is not an exposed option in
     // the P8.4 research binary. A/B is only P8.2 golden vs fused.
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT
+    if(proposed.renderMode!=0 && proposed.renderMode!=3 && proposed.renderMode!=4 && proposed.renderMode!=5)return false;
+#else
     if(proposed.renderMode!=0 && proposed.renderMode!=3 && proposed.renderMode!=4)return false;
+#endif
 #else
     if(proposed.renderMode!=0 && proposed.renderMode!=3)return false;
 #endif

@@ -3046,7 +3046,14 @@ private:
                 armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch)
             reply->setProperty("p8TransparentBass",true);
 #endif
-#if defined(ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT
+        if(processor && processor->preparedReflectionProfile()==
+               armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch) {
+            reply->setProperty("p84MusicFusion",true);
+            reply->setProperty("p85AcousticCoherence",true);
+            reply->setProperty("p86HorizontalFocus",true);
+        }
+#elif defined(ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT
         if(processor && processor->preparedReflectionProfile()==
                armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch) {
             reply->setProperty("p84MusicFusion",true);

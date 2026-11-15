@@ -158,8 +158,11 @@ public:
 #if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT
-#if defined(ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT
+        out.writeInt(7); // 59-byte layout; mode 5, old sessions intact
+#else
         out.writeInt(6); // unchanged 59-byte state; P8.5 is opt-in mode 4
+#endif
 #else
         out.writeInt(5); // same 59-byte layout as v4, new P8.4 mode
 #endif
@@ -216,6 +219,9 @@ public:
              &&version!=5
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT
              &&version!=6
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT
+             &&version!=7
+#endif
 #endif
 #endif
 #endif
@@ -229,6 +235,9 @@ public:
             ||(version==5&&size!=59)
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT
             ||(version==6&&size!=59)
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT
+            ||(version==7&&size!=59)
+#endif
 #endif
 #endif
 #endif
@@ -288,6 +297,12 @@ public:
             if(version==6 && next.renderMode!=0 && next.renderMode!=3 && next.renderMode!=4)
                 return false;
             if(version==6 && next.musicCompatibleLowFrequency)return false;
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT
+            // P8.6 mode 5 is opt-in only. v6 mode 4 is never migrated.
+            if(version==7 && next.renderMode!=0 && next.renderMode!=3 &&
+               next.renderMode!=4 && next.renderMode!=5)return false;
+            if(version==7 && next.musicCompatibleLowFrequency)return false;
+#endif
 #endif
 #endif
         }
