@@ -133,118 +133,6 @@ permissions:
   pull-requests: read
 
 jobs:
-  sonku-p90-source:
-    # Runs only on the P9 research PR, even while its production jobs skip.
-    name: SonKu P9 exact-source C++ PCM preflight
-    if: ${{ github.event_name == 'pull_request' && startsWith(github.event.pull_request.head.ref, 'research/sonku-p90-') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          persist-credentials: false
-      - name: Real P9 single-graph PCM / anti-phase / 44.1–48k
-        shell: bash
-        run: |
-          set -euo pipefail
-          node --check site/preview-v2/assets/mixer-native-sonku.js
-          FLAGS="-std=c++20 -O2 -Wall -Wextra -Werror -pedantic -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 -DSONKU_P72_NATIVE_XYZ_RT=1 -DSONKU_P75_MUSIC_SAFE_RESEARCH=1 -DSONKU_P80_TRANSPARENT_BASS_RESEARCH=1 -DSONKU_P82_MULTIBAND_ROOM_RESEARCH=1 -DSONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1 -DSONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1 -DSONKU_P85_WORLD_COHERENCE_RESEARCH=1 -DSONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1 -DSONKU_P87_MUSIC_BODY_RESEARCH=1 -DSONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1 -DSONKU_P89_DEPTH_COHERENCE_RESEARCH=1 -DSONKU_P90_TRUE_EXTERNAL_RESEARCH=1"
-          g++ $FLAGS tests/sonku_p90_true_external_source_test.cpp -o /tmp/sonku-p90
-          /tmp/sonku-p90
-          g++ $FLAGS tests/sonku_p89_stereo_room_depth_source_test.cpp -o /tmp/sonku-p89
-          /tmp/sonku-p89
-          echo "SONKU_P90_NATIVE_SOURCE_CTEST_PASSED"
-
-  sonku-p90-windows-fat:
-    name: SonKu P9 actual JUCE / GUI portable x64
-    needs: sonku-p90-source
-    if: ${{ github.event_name == 'pull_request' && startsWith(github.event.pull_request.head.ref, 'research/sonku-p90-') }}
-    runs-on: windows-2022
-    timeout-minutes: 55
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          persist-credentials: false
-      - uses: actions/checkout@v4
-        with:
-          repository: juce-framework/JUCE
-          ref: 8.0.15
-          path: third_party/JUCE
-          persist-credentials: false
-      - name: Pinned WebView2 SDK
-        shell: pwsh
-        run: |
-          nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Configure the actual native app with P9 OFF by default except FAT
-        shell: pwsh
-        run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
-            -DJUCE_ROOT="$env:GITHUB_WORKSPACE/third_party/JUCE" `
-            -DJUCE_WEBVIEW2_PACKAGE_LOCATION="$env:GITHUB_WORKSPACE/.deps" `
-            -DARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=ON `
-            -DARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE=ON `
-            -DARMIX_SONKU_EXPERIMENTAL_P8_TRANSPARENT_BASS=ON `
-            -DARMIX_SONKU_EXPERIMENTAL_P82_ROOM=ON `
-            -DARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT=ON `
-            -DARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT=ON `
-            -DARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT=ON `
-            -DARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT=ON `
-            -DARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT=ON `
-            -DARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT=ON `
-            -DARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT=ON `
-            -DARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT=ON `
-            -DBUILD_TESTING=ON
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $cache = Get-Content build/CMakeCache.txt -Raw
-          if ($cache -notmatch 'ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT:BOOL=ON') {
-            throw 'SONKU_P90_WRONG_NATIVE_CONFIGURATION'
-          }
-      - name: Build real native JUCE PCM, state ACK, and Windows GUI
-        shell: pwsh
-        run: |
-          cmake --build build --config Release --parallel 2 --target ARMixSonKuP90NativeTests ARMixSonKuP90SourceTests ARMixSonKuP89NativeTests ARMixSonKuP89SourceTests ARMixConsole
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path -LiteralPath 'build/ARMixConsole_artefacts/Release/AR MIX Studio.exe' -PathType Leaf)) {
-            throw 'SONKU_P90_NATIVE_GUI_EXE_MISSING'
-          }
-          ctest --test-dir build -C Release --output-on-failure -R '^NativeSonKuP(89RoomAnchoredStereoAndP88GoldenParity|89JuceV10AppliedAckAndV9Restore|90StereoExternalizationSource|90JuceV11AppliedAckAndLegacyRestore)$'
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Verified portable package, no installer or release
-        shell: pwsh
-        run: |
-          & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist --best-effort
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Copy-Item docs/THIRD_PARTY_8D_SONKU_HRTF.md dist/THIRD_PARTY_8D_SONKU_HRTF.md
-          Copy-Item docs/SONKU_P90_TRUE_EXTERNAL_SPEAKER_FAT_20261115.md dist/SONKU_P90_FIELD_FAT.md
-          $provenance = Get-Content -LiteralPath dist/BUILD_PROVENANCE.json -Raw | ConvertFrom-Json
-          if ($provenance.sourceCommit -ne (git rev-parse HEAD).Trim()) {
-            throw 'SONKU_P90_SOURCE_COMMIT_MISMATCH'
-          }
-          $provenance | Add-Member -Force -NotePropertyName sonkuExperiment -NotePropertyValue @{
-            mode = 'P9.0_TRUE_EXTERNAL_SPEAKER'
-            stateSchema = 11
-            headphoneFat = 'PENDING'
-            publicRelease = $false
-            physicalAsioQualified = $false
-            dearVrParityProven = $false
-          }
-          $provenance | ConvertTo-Json -Depth 20 | Set-Content dist/BUILD_PROVENANCE.json -Encoding utf8
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ArSonMix-SonKu-P90-Windows-x64-${{ github.run_id }}
-          path: dist/
-          if-no-files-found: error
-          retention-days: 21
-          compression-level: 0
-
-
   quick:
     name: Fast native contracts (no Windows / JUCE checkout)
     runs-on: ubuntu-latest
@@ -755,3 +643,114 @@ jobs:
           retention-days: 14
           compression-level: 0
           overwrite: true
+
+  sonku-p90-source:
+    # Runs only on the P9 research PR, even while its production jobs skip.
+    name: SonKu P9 exact-source C++ PCM preflight
+    if: ${{ github.event_name == 'pull_request' && startsWith(github.event.pull_request.head.ref, 'research/sonku-p90-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Real P9 single-graph PCM / anti-phase / 44.1–48k
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check site/preview-v2/assets/mixer-native-sonku.js
+          FLAGS="-std=c++20 -O2 -Wall -Wextra -Werror -pedantic -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 -DSONKU_P72_NATIVE_XYZ_RT=1 -DSONKU_P75_MUSIC_SAFE_RESEARCH=1 -DSONKU_P80_TRANSPARENT_BASS_RESEARCH=1 -DSONKU_P82_MULTIBAND_ROOM_RESEARCH=1 -DSONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1 -DSONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1 -DSONKU_P85_WORLD_COHERENCE_RESEARCH=1 -DSONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1 -DSONKU_P87_MUSIC_BODY_RESEARCH=1 -DSONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1 -DSONKU_P89_DEPTH_COHERENCE_RESEARCH=1 -DSONKU_P90_TRUE_EXTERNAL_RESEARCH=1"
+          g++ $FLAGS tests/sonku_p90_true_external_source_test.cpp -o /tmp/sonku-p90
+          /tmp/sonku-p90
+          g++ $FLAGS tests/sonku_p89_stereo_room_depth_source_test.cpp -o /tmp/sonku-p89
+          /tmp/sonku-p89
+          echo "SONKU_P90_NATIVE_SOURCE_CTEST_PASSED"
+
+  sonku-p90-windows-fat:
+    name: SonKu P9 actual JUCE / GUI portable x64
+    needs: sonku-p90-source
+    if: ${{ github.event_name == 'pull_request' && startsWith(github.event.pull_request.head.ref, 'research/sonku-p90-') }}
+    runs-on: windows-2022
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.15
+          path: third_party/JUCE
+          persist-credentials: false
+      - name: Pinned WebView2 SDK
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Configure the actual native app with P9 OFF by default except FAT
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DJUCE_ROOT="$env:GITHUB_WORKSPACE/third_party/JUCE" `
+            -DJUCE_WEBVIEW2_PACKAGE_LOCATION="$env:GITHUB_WORKSPACE/.deps" `
+            -DARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=ON `
+            -DARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE=ON `
+            -DARMIX_SONKU_EXPERIMENTAL_P8_TRANSPARENT_BASS=ON `
+            -DARMIX_SONKU_EXPERIMENTAL_P82_ROOM=ON `
+            -DARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT=ON `
+            -DARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT=ON `
+            -DARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT=ON `
+            -DARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT=ON `
+            -DARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT=ON `
+            -DARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT=ON `
+            -DARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT=ON `
+            -DARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT=ON `
+            -DBUILD_TESTING=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $cache = Get-Content build/CMakeCache.txt -Raw
+          if ($cache -notmatch 'ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT:BOOL=ON') {
+            throw 'SONKU_P90_WRONG_NATIVE_CONFIGURATION'
+          }
+      - name: Build real native JUCE PCM, state ACK, and Windows GUI
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel 2 --target ARMixSonKuP90NativeTests ARMixSonKuP90SourceTests ARMixSonKuP89NativeTests ARMixSonKuP89SourceTests ARMixConsole
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path -LiteralPath 'build/ARMixConsole_artefacts/Release/AR MIX Studio.exe' -PathType Leaf)) {
+            throw 'SONKU_P90_NATIVE_GUI_EXE_MISSING'
+          }
+          ctest --test-dir build -C Release --output-on-failure -R '^NativeSonKuP(89RoomAnchoredStereoAndP88GoldenParity|89JuceV10AppliedAckAndV9Restore|90StereoExternalizationSource|90JuceV11AppliedAckAndLegacyRestore)$'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verified portable package, no installer or release
+        shell: pwsh
+        run: |
+          & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist --best-effort
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item docs/THIRD_PARTY_8D_SONKU_HRTF.md dist/THIRD_PARTY_8D_SONKU_HRTF.md
+          Copy-Item docs/SONKU_P90_TRUE_EXTERNAL_SPEAKER_FAT_20261115.md dist/SONKU_P90_FIELD_FAT.md
+          $provenance = Get-Content -LiteralPath dist/BUILD_PROVENANCE.json -Raw | ConvertFrom-Json
+          if ($provenance.sourceCommit -ne (git rev-parse HEAD).Trim()) {
+            throw 'SONKU_P90_SOURCE_COMMIT_MISMATCH'
+          }
+          $provenance | Add-Member -Force -NotePropertyName sonkuExperiment -NotePropertyValue @{
+            mode = 'P9.0_TRUE_EXTERNAL_SPEAKER'
+            stateSchema = 11
+            headphoneFat = 'PENDING'
+            publicRelease = $false
+            physicalAsioQualified = $false
+            dearVrParityProven = $false
+          }
+          $provenance | ConvertTo-Json -Depth 20 | Set-Content dist/BUILD_PROVENANCE.json -Encoding utf8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-SonKu-P90-Windows-x64-${{ github.run_id }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 21
+          compression-level: 1
