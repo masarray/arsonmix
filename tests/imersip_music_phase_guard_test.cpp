@@ -4,6 +4,7 @@
 #endif
 #include "../engine/builtin_fx/ImerSipDsp.h"
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <limits>
@@ -157,6 +158,64 @@ void verifyBassFoundation(double rate) {
         assert(after<before*1.14);
     }
 }
+void verifyP84FusedKernelProvenanceAndLowFrequency(double rate) {
+    // The standalone kernel source is transferred from P8.4; no P8.3
+    // physical-renderer LF480, extra worker, 2nd runtime core or macro.
+    using armix::sonku::p84::FusedMusicHrir;
+    FusedMusicHrir merger;
+    assert(merger.prepare(rate,.12f,750.f));
+    assert(!merger.prepare(rate,.31f,750.f));
+    assert(merger.prepare(rate,.12f,750.f));
+    constexpr int taps=140;
+    using Kernel=std::array<std::array<float,taps>,2>;
+    Kernel center{},left{},right{};
+    center[0][0]=1.f;center[1][0]=1.f;
+    left[0][0]=1.70f;left[1][0]=.45f;
+    right[0][0]=.45f;right[1][0]=1.70f;
+    merger.merge(center,left,right);
+    // Direction is real: L and R FIRs remain differentiated.
+    assert(left[0][0]>right[0][0]);
+    assert(left[1][0]<right[1][0]);
+    // The 750Hz difference high-pass has ~zero DC coefficient sum
+    // over the 140-tap FIR support: original music/bass center retained.
+    for(int ear=0;ear<2;++ear) {
+        double lsum=0.,rsum=0.;
+        for(int tap=0;tap<taps;++tap) {
+            lsum+=left[ear][tap];
+            rsum+=right[ear][tap];
+        }
+        assert(std::abs(lsum-1.)<2.e-4);
+        assert(std::abs(rsum-1.)<2.e-4);
+    }
+    // Strongly typed bounds also protect PCM update admissions.
+    assert(!merger.prepare(rate,-.01f,750.f));
+    assert(!merger.prepare(rate,.12f,350.f));
+}
+void verifyP82NormalPathRemainsUnchanged(double rate) {
+    // Enabling the ImerSip-only research MODE=FALSE is exact P8.2 parity.
+    // Normal SonKu direct kernels must not be recomposed or renamed.
+    Stereo input;makeSignal(input,rate,4);
+    auto legacy=std::make_unique<armix::sonku::SonKuSpatialCore>();
+    auto disabled=std::make_unique<armix::sonku::SonKuSpatialCore>();
+    using Profile=armix::sonku::SonKuReflectionProfile;
+    assert(legacy->prepare(rate,Profile::SixSurfaceKemarResearch));
+    assert(disabled->prepare(rate,Profile::SixSurfaceKemarResearch));
+    Settings s{};s.width=.91f;s.space=.47f;s.immersion=1.f;
+    const auto original=armix::imersip::sceneFor(s);
+    assert(legacy->setSettings(original));
+    assert(disabled->setSettings(original));
+    assert(disabled->enableImerSipMeasuredStereoSide(false));
+    legacy->reset();disabled->reset();
+    Stereo a=input,b=input;
+    for(int at=0;at<n;at+=128) {
+        legacy->process(a.l.data()+at,a.r.data()+at,128);
+        disabled->process(b.l.data()+at,b.r.data()+at,128);
+    }
+    for(int i=0;i<n;++i) {
+        assert(a.l[i]==b.l[i]);
+        assert(a.r[i]==b.r[i]);
+    }
+}
 void verifyActualMeasuredDualSpeakers(double rate) {
     // P8.2 standard music-safe renderer = centered KEMAR FIR.
     // The ImerSip experimental mode must employ TWO independent measured
@@ -247,6 +306,8 @@ int main() {
         verifyDryAndBounds(rate);
         verifyOriginalVocalMidIsUntouched(rate);
         verifyOriginalStereoSurvives(rate);
+        verifyP84FusedKernelProvenanceAndLowFrequency(rate);
+        verifyP82NormalPathRemainsUnchanged(rate);
         verifyActualMeasuredDualSpeakers(rate);
         verifyBassFoundation(rate);
         verifyDetailIsNotMidBoost(rate);

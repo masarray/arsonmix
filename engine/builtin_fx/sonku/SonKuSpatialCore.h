@@ -4,6 +4,11 @@
 #include "SonKuEarlyReflections.h"
 #include "SonKuMusicalReverb.h"
 #include "SonKuStereoIntegrity.h"
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+// Kernel transferred verbatim from the P8.4 source-research branch.
+// Only ImerSip uses this independent 12% directional-contrast fusion.
+#include "SonKuP84FusedMusicHrir.h"
+#endif
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
 #include "SonKuHrtfTonalCalibration.h"
 #endif
@@ -94,6 +99,10 @@ public:
                                     std::abs(rate-48000.)>.1))return false;
         sampleRate_=rate;
         bank_=(std::abs(rate-44100.)<=.1)?hrir::normal44100:hrir::normal48000;
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+        if(profile==SonKuReflectionProfile::SixSurfaceKemarResearch &&
+           !imersipMusicFusion_.prepare(rate,.12f,750.f))return false;
+#endif
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
         if(profile==SonKuReflectionProfile::SixSurfaceKemarResearch &&
            !tonalCalibration_.prepare(rate,bank_))return false;
@@ -275,9 +284,9 @@ public:
     bool setMusicalReverbPreset(SonKuReverbPreset preset) noexcept {
         return reverb_.setPreset(preset);
     }
-    // ImerSip-only P8.2 research admission: actual independently positioned
-    // KEMAR L/R virtual loudspeakers. Its host discards the resultant binaural
-    // MID (which might color vocals), retaining only differential SIDE cues.
+    // ImerSip-only P8.2 research admission: two independent measured KEMAR
+    // directions fused with a centered music anchor (P8.4 12% HP750 transfer).
+    // Its host discards wet MID, preserving ORIGINAL dry vocal MID.
     // Default OFF, preserving byte-exact original SonKu P8.2 PCM elsewhere.
     bool enableImerSipMeasuredStereoSide(bool enable) noexcept {
 #if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
@@ -617,6 +626,17 @@ private:
             degrees_-static_cast<double>(settings_.stereoSpreadDegrees)*0.5);
         interpolate(targets_[1],
             degrees_+static_cast<double>(settings_.stereoSpreadDegrees)*0.5);
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+        if(imersipStereoSideResearch_) {
+            // Extract ONLY the proven P8.4 FIR fusion. The normal P8.2
+            // centered renderer, room, state and FX graph never enter here.
+            // A centered music anchor plus 12% HP750 directional contrast
+            // avoids full-strength opposing HRIR coloration on vocals.
+            // ImerSip itself restores the unfiltered source music MID.
+            interpolate(centerTarget_,degrees_);
+            imersipMusicFusion_.merge(centerTarget_,targets_[0],targets_[1]);
+        }
+#endif
         // A stereo L=R object should become ONE virtual source at the central
         // azimuth. Averaging two displaced HRIRs generates comb filtering
         // (for example ~11dB attenuation near 2 kHz at rear/60° in KEMAR).
@@ -681,6 +701,9 @@ private:
     bool haveKernel_=false;
     bool nativeSpaceEverUsed_=false;
     bool imersipStereoSideResearch_=false;
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+    p84::FusedMusicHrir imersipMusicFusion_{};
+#endif
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
     float researchElevationDegrees_=0.f;
     bool researchPcmStarted_=false;

@@ -120,7 +120,7 @@ public:
         g.drawText("ImerSip",22,14,190,31,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff91adbb));
         g.setFont(juce::FontOptions(11.f,juce::Font::plain));
-        g.drawText("IMMERSIVE CONCERT STAGE   ·   P8.2 MUSIC-SAFE",
+        g.drawText("FUSED MUSIC STAGE   ·   P8.2 BASS / P8.4 DIRECTION",
                    170,20,445,24,juce::Justification::centredLeft);
         const auto stageBox=stage_.toFloat();
         const auto controlBox=juce::Rectangle<float>(368.f,81.f,452.f,341.f);
