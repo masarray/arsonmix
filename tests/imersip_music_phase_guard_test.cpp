@@ -98,7 +98,10 @@ void verifyNearOrchestraRoomContract() {
         Settings s{};s.venue=venue;s.space=amount;s.immersion=1.f;
         const auto room=armix::imersip::sceneFor(s);
         assert(std::abs(room.sourceDistanceMeters-(1.6f+5.8f*s.depth))<1.e-4f);
-        assert(room.roomAmount>room.ambience);
+        // Early and late are INDEPENDENT. At Early=0 no phantom
+        // floor/wall returns may survive, even if FDN late is active.
+        if(amount==0.f)assert(room.roomAmount==0.f);
+        else assert(room.roomAmount>room.ambience);
         assert(room.spacePreset>=2);
         s.immersion=0.f;
         const auto dry=armix::imersip::sceneFor(s);
