@@ -3123,6 +3123,9 @@ private:
             reply->setProperty("p88PerceptualAlignment",true);
             reply->setProperty("p89StereoRoomDepth",true);
             reply->setProperty("p90TrueExternalSpeaker",true);
+            // This capability is emitted only by the new reconciled DSP build.
+            // Older v11 P9.0 binaries must NOT be advertised as P9.1+P9.2.
+            reply->setProperty("p91p92MusicBassFoundation",true);
         }
 #elif defined(ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT
         if(processor && processor->preparedReflectionProfile()==
