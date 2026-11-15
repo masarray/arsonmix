@@ -8,7 +8,7 @@ const fs=require("node:fs");
 const vm=require("node:vm");
 const source=fs.readFileSync("site/preview-v2/assets/mixer-native-sonku.js","utf8");
 const start=source.indexOf('   if(p90Capable && picker.dataset.nativeModeSet!=="p90"){');
-const end=source.indexOf("   const v=p90Capable?",start);
+const end=source.indexOf("  const v=p90Capable?",start);
 assert(start!==-1&&end>start,"Locate actual native SonKu mode menu reconciliation");
 const actualReconcile=source.slice(start,end);
 const renderMenu=vm.runInNewContext(
