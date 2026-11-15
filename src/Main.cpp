@@ -3610,6 +3610,15 @@ private:
         }
         if(automatic&&mixerSessionRecoveryPending_)
             return "The retained mixer checkpoint is awaiting a verified device";
+        // Auto-checkpoints must never replace an acknowledged .smix with a
+        // transient STOP/default/empty device state. Keep the last verified
+        // file on disk until the original physical route has returned.
+        if(automatic) {
+            const auto* audio=engine_.devices().getCurrentAudioDevice();
+            if(!audio || !audio->isOpen() || !engine_.directRouteAuthorized() ||
+               engine_.mainInterruptedByDevice())
+                return "Automatic checkpoint paused until audio device recovery";
+        }
         const bool monitoring=engine_.isMonitorEnabled();
         if(engine_.secondaryArmed())return "Stop STREAM before saving the mixer";
         const auto epoch=engine_.dryRoutingLabEpoch();
@@ -3623,7 +3632,11 @@ private:
            engine_.liveOutputArmFault(false).isEmpty())
             engine_.setOutputMuted(false); // restore the existing operator intent
         if(error.isNotEmpty())return error;
-        if(automatic)doc.resumeMain=resumeMain;
+        // The periodic autosave caller passes false because speakers must
+        // be gated for snapshot capture. That does NOT mean the operator
+        // disabled MAIN. Capture desired intent independently of the gate.
+        if(automatic)doc.resumeMain=resumeMain ||
+            (engine_.wantsMainContinuation() && !operatorOutputMuted_);
         doc.id=mixerSessionId_.isNotEmpty()?mixerSessionId_:
             juce::Uuid().toDashedString().toLowerCase();
         // Shortcut entries are additive .smix data, never callback state.
@@ -7925,15 +7938,17 @@ private:
 
         if (deviceSettingsDirty_)
         {
-            deviceSettingsDirty_ = false;
-            // DeviceManager signals even when a temporary capture-only /
-            // output-only route is selected. Never persist that test route.
+            // Keep a newly approved device selection pending while the
+            // driver is temporarily closed; never serialize JUCE's empty
+            // default and never silently discard the unsaved user binding.
+            auto* activeDevice=engine_.devices().getCurrentAudioDevice();
             if (!engine_.hasTemporaryDiagnosticDevice() && !engine_.independentClockActive() &&
                 engine_.directRouteAuthorized() && !engine_.hasRetainedUnboundMixer() &&
                 (audioSetupWindow_ == nullptr || !audioSetupWindow_->isVisible()) &&
-                engine_.devices().getCurrentAudioDevice() != nullptr)
+                activeDevice != nullptr && activeDevice->isOpen())
             if (auto xml = engine_.devices().createStateXml())
             {
+                deviceSettingsDirty_ = false;
                 const auto text = xml->toString();
                 if (text != lastAudioXml_)
                 {
