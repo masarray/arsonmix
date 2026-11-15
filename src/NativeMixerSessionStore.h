@@ -180,6 +180,23 @@ public:
         out=std::move(doc);states=std::move(binary);
         return {};
     }
+    // CONTROL thread only, after the serialized worker is idle. Rename the
+    // entire journal off its authoritative path BEFORE deleting any blobs.
+    // A power loss after the rename cannot resurrect an old HEAD/PREVIOUS
+    // on next startup; exported .smix files and other Studio data are untouched.
+    juce::String discardForFactoryReset() const {
+        if(!root_.exists())return {};
+        if(!root_.isDirectory() || root_.isSymbolicLink())
+            return "Mixer session folder is not a regular directory";
+        const auto retired=root_.getParentDirectory().getChildFile(
+            ".MixerSession-reset-"+juce::Uuid().toDashedString().toLowerCase());
+        if(retired.exists() || !root_.moveFileTo(retired))
+            return "Cannot detach saved mixer session; check Studio permissions";
+        // Best-effort cleanup; no recovery path ever reads a retired journal.
+        // A failed deletion must not make reset appear unsafe to repeat.
+        (void)retired.deleteRecursively();
+        return {};
+    }
     bool exists() const noexcept {return root_.getChildFile("HEAD").existsAsFile();}
     // Recovery does NOT arm output or publish a graph. Valid HEAD wins.
     juce::String recoverPrevious() const {

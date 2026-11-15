@@ -22,6 +22,20 @@ public:
 
     struct Entry final {juce::String name,color,icon;};
     juce::String error() const {return loadError_;}
+    // Channel identity is a separate Studio journal: a mixer-only reset
+    // must clear its in-memory overlays AND durable file. Preserve global
+    // plugin presets and the installed catalog.
+    juce::String resetForFactory() {
+        if(revision_==std::numeric_limits<std::uint64_t>::max())
+            return "CHANNEL_APPEARANCE_REVISION_EXHAUSTED";
+        const std::map<std::string,Entry> empty;
+        const auto error=commit(empty,revision_+1);
+        if(error.isNotEmpty())return error;
+        entries_.clear();
+        ++revision_;
+        loadError_.clear();
+        return {};
+    }
     static bool decimal(const juce::var& input,std::uint64_t& value,bool zero=false) {
         if(!input.isString())return false;
         const auto text=input.toString().toStdString();

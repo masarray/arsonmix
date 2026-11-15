@@ -476,6 +476,11 @@
     }
     if(!admitted&&scope?.sofEnabled)scope.toggleSof(false);
   }
+  // Preserve the actual reference strip palette/icons for a clean mixer.
+  // Do not mutate or re-create tracks until a verified graph is accepted.
+  const factoryVisualSeed=(scope?.tracks||[]).filter(t=>t.kind==="audio")
+    .map(t=>({color:t.color,icon:t.icon}));
+  let factoryResetProjectionPending=false;
   function projection(native) {
     if ((!native?.admitted && !native?.retained && !native?.logical) ||
         !Array.isArray(native.graph.edges) ||
@@ -504,8 +509,21 @@
       nextNativeByUi.set(t.id,ch.id);
       t.name=displayNameFor(ch);t.kind=kind;
       const appearance=channelPresentation.get(ch.id);
+      // Do not replace reference defaults on ordinary native snapshots.
+      // Once a reset succeeds, clear old custom identity and reuse the
+      // same seeded colors/icons displayed by the initial mixer UI.
+      const defaults=ch.role==="INPUT"?factoryVisualSeed[inputOrdinal-1]:null;
       if(appearance?.color)t.color=appearance.color;
+      else if(factoryResetProjectionPending)
+        t.color=defaults?.color||scope.colors[index%scope.colors.length]||"#568ead";
       if(appearance?.icon)t.icon=appearance.icon;
+      else if(factoryResetProjectionPending)
+        t.icon=defaults?.icon||
+          (kind==="master"?"◎":kind==="bus"?"⊞":kind==="fx"?"◉":"♩");
+      if(factoryResetProjectionPending){
+        t.group=null;t.safe=false;t.cue=false;t.mon=false;t.pre=false;
+        t.clip=false;t.selected=false;
+      }
       t.format=ch.processingFormat.toLowerCase();
       t.level=ch.controls.faderDb;
       t.trim=Number.isFinite(ch.controls.inputGainDb)?ch.controls.inputGainDb:0;
@@ -590,6 +608,7 @@
     uiByWireId.clear();for(const [id,ui] of newUiByWire)uiByWireId.set(id,ui);
     meterElements.clear(); // installGraph() replaces strip HTML and meter nodes
     scope.installGraph(nextTracks,nextMaster,edges);
+    factoryResetProjectionPending=false;
     syncNativeSofAvailability(native);
     return true;
   }
@@ -832,10 +851,9 @@
     }
   }
 
-  // Native-only operator controls in the EXISTING approved More menu:
-  // user selects REAL JUCE active pin -> explicitly patches CH1 -> arms output.
-  // No auto-arm, demo PCM, guessed physical port or second GUI.
-  let hardware=null, inputSelect=null, routeBtn=null, armBtn=null, muteBtn=null;
+  // Physical device and native mixer SSOT. Output admission is automatic
+  // after verified input/route publication; no global MUTE/UNMUTE control.
+  let hardware=null, inputSelect=null, routeBtn=null;
   let externalSerial=0;
   const pendingExternal=new Map(); // each ChannelId independent; no mixer-wide lock
   let hardwareNote=null, pendingSourceId=0, sourceSerial=100;
@@ -1904,17 +1922,6 @@
          mixerSession()?.authority==="NONE") &&
         legacy()?.active===true &&
         safeNativeCounter(legacy()?.routingRevision)!==null));
-  function syncMonitorButton(d) {
-    const monitorButton=document.querySelector?.("[data-native-monitor]");
-    if(monitorButton){
-      monitorButton.textContent=d?.outputArmed?"Mute Output":"Unmute Output";
-      monitorButton.setAttribute("aria-pressed",String(!!d?.outputArmed));
-      monitorButton.title=d?.outputArmed?
-        "Mute actual MAIN output immediately":"Listen through verified MAIN hardware output";
-      monitorButton.disabled=!d?.outputArmed && !deviceReady();
-      monitorButton.dataset.armed=String(!!d?.outputArmed);
-    }
-  }
   // Output patching is rendered from physical native readback, never a
   // second routing state. Repainting only on changes avoids 12 Hz DOM churn.
   function paintPhysicalOutputs(next) {
@@ -1957,7 +1964,6 @@
     const label=document.getElementById("transport");
     const playback=String(d?.playbackDevice||"unknown output");
     const virtualOut=/VB-Audio Virtual Cable|CABLE Input/i.test(playback);
-    syncMonitorButton(d);
     paintPhysicalOutputs(next);
     const mainOutput=next?.retained?NEEDS_REMAP:deviceOpen?playback:null;
     if(scope?.master && mainOutput && scope.master.output!==mainOutput){
@@ -1966,7 +1972,7 @@
     }
     const transport=next?.retained?"Output disconnected · Open Audio I/O":
       !deviceOpen?"Audio device unavailable · Open Audio I/O":
-      (d.outputArmed?"Output enabled":"Output muted")+" · "+playback+
+      (d.outputArmed?"MAIN live":"MAIN waiting for verified source / route")+" · "+playback+
       (virtualOut?" · Virtual output · No speakers":"");
     const operatorTransport=operatorMessage(transport);
     if(label && label.textContent!==operatorTransport)label.textContent=operatorTransport;
@@ -1983,8 +1989,8 @@
         "CHECK AUDIO CONNECTION"):
       !d.enabledInputs?.length?(next.admitted?"CHOOSE AN INPUT":
         "CHECK AUDIO I/O SETTINGS"):
-      legacy()?.routeAccepted?"NATIVE INPUT ROUTED · MONITOR OFF":
-      deviceReady()?"SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK":
+      legacy()?.routeAccepted?"MAIN AUTO-READY · VERIFYING ROUTE":
+      deviceReady()?"SELECT CHANNEL IN · MAIN AUTO-CONNECTS":
       "NO VERIFIED INPUT ROUTE · OPEN AUDIO I/O";
     if(warning && warning.textContent!==warningText)warning.textContent=warningText;
     if(!inputSelect)return;
@@ -2011,10 +2017,6 @@
     if(inputSelect.disabled!==selectDisabled)inputSelect.disabled=selectDisabled;
     const routeDisabled=!ready || inputSelect.value==="" || pendingSourceId!==0;
     if(routeBtn && routeBtn.disabled!==routeDisabled)routeBtn.disabled=routeDisabled;
-    const armDisabled=!ready || legacy()?.routeAccepted!==true || d.outputArmed;
-    if(armBtn && armBtn.disabled!==armDisabled)armBtn.disabled=armDisabled;
-    const muteDisabled=!deviceOpen || !d.outputArmed;
-    if(muteBtn && muteBtn.disabled!==muteDisabled)muteBtn.disabled=muteDisabled;
     if(hardwareNote) {
       const evidence=protocol.diagnoseFirstSound?.(next,inputSelect.value);
       // Human-readable PCM stages from the ORIGINAL native callback only.
@@ -2381,8 +2383,8 @@
         ack.active.enabledOutputs.length>=2;
       const outputReady=ack.outputMuted===false;
       deviceResult=accepted?
-        (outputReady?"Mixer ready · Output live":
-          ack.mixerBound?"Mixer ready · FX/WIRE available":"Audio device ready · no hardware input required"):
+        (outputReady?"Mixer ready · MAIN live":
+          ack.mixerBound?"Mixer ready · MAIN connects automatically after patch":"Audio device ready · select INPUT or play music"):
         ack.state==="NEEDS_REMAP"?
           String(ack.error||"Playback unavailable").replace(/^NEEDS_REMAP:\s*/,""):
           "Device rejected · "+(ack.error||"native hardware readback failed");
@@ -2437,26 +2439,11 @@
       });
       status("NATIVE: CH1 physical input patch pending real ACK.");
     });
-    armBtn=item("button","tool","Arm output");
-    armBtn.addEventListener("click",()=>{
-      if(!deviceReady()||legacy()?.routeAccepted!==true)return;
-      const epoch=safeNativeCounter(hardware.device.epoch);
-      const revision=safeNativeCounter(legacy().routingRevision);
-      if(epoch===null||revision===null)return;
-      backend.emitEvent("arMixAction",{action:"monitor",value:true,
-        expectedEpoch:epoch,expectedRevision:revision});
-      status("NATIVE: output ARM requested; awaiting JUCE ACK.");
-    });
-    muteBtn=item("button","tool","Mute output");
-    muteBtn.addEventListener("click",()=>{
-      backend.emitEvent("arMixAction",{action:"monitor",value:false});
-      status("NATIVE: output MUTE requested; awaiting JUCE ACK.");
-    });
     hardwareNote=item("span","more-tools-caption","Device not initialized");
     hardwareNote.style.whiteSpace="normal";
     // Everyday I/O remains in the one approved /preview/ mixer. Keep the
     // raw JUCE selector as an explicitly advanced recovery tool only.
-    inputSelect.hidden=true;routeBtn.hidden=true;armBtn.hidden=true;
+    inputSelect.hidden=true;routeBtn.hidden=true;
     const advanced=document.createElement("details");
     advanced.className="arNativeAdvancedRecovery";
     const summary=item("summary","more-tools-caption","Advanced driver recovery");
@@ -2519,13 +2506,12 @@
     };
     function showControls(){
       const entry=showEntries.get(showSelect.value);
-      const muted=hardware?.device?.outputArmed===false &&
-        hardware?.raw?.monitor!==true;
+      // Automatic native main isolation, no operator MUTE prerequisite.
       showSave.disabled=showBusy;
       showBrowse.disabled=showBusy;
-      showUpdate.disabled=showBusy||!muted||!entry||entry.needsRecovery;
-      showRecall.disabled=showBusy||!muted||!entry||entry.needsRecovery;
-      showRecover.disabled=showBusy||!muted||!entry||!entry.hasPrevious;
+      showUpdate.disabled=showBusy||!entry||entry.needsRecovery;
+      showRecall.disabled=showBusy||!entry||entry.needsRecovery;
+      showRecover.disabled=showBusy||!entry||!entry.hasPrevious;
     }
     function showRefresh(){
       showBusy=true;showControls();
@@ -2534,17 +2520,13 @@
     }
     showSave.addEventListener("click",()=>{
       if(showBusy)return;
-      if(hardware?.device?.outputArmed!==false||hardware?.raw?.monitor===true){
-        status("SHOW SAVE requires MUTED output");return;
-      }
       showBusy=true;showControls();
       showNote.textContent="Capturing accepted routing and VST3 state…";
       backend.emitEvent("arMixAction",{action:"routingDryShowSave"});
     });
     showUpdate.addEventListener("click",()=>{
       const id=showSelect.value,entry=showEntries.get(id);
-      if(showBusy||!entry||entry.needsRecovery||!showUuid.test(id)||
-         hardware?.device?.outputArmed!==false)return;
+      if(showBusy||!entry||entry.needsRecovery||!showUuid.test(id))return;
       showBusy=true;showControls();
       showNote.textContent="Saving verified next generation · previous Show retained…";
       backend.emitEvent("arMixAction",{action:"routingDryShowSave",value:id});
@@ -2553,16 +2535,14 @@
     showSelect.addEventListener("change",showControls);
     showRecall.addEventListener("click",()=>{
       const id=showSelect.value,entry=showEntries.get(id);
-      if(showBusy||!entry||entry.needsRecovery||!showUuid.test(id)||
-         hardware?.device?.outputArmed!==false)return;
+      if(showBusy||!entry||entry.needsRecovery||!showUuid.test(id))return;
       showBusy=true;showControls();
-      showNote.textContent="Verifying Show / preparing native FX · output stays MUTED…";
+      showNote.textContent="Verifying Show / preparing native FX · MAIN reconnects automatically…";
       backend.emitEvent("arMixAction",{action:"routingDryShowRecall",value:id});
     });
     showRecover.addEventListener("click",()=>{
       const id=showSelect.value,entry=showEntries.get(id);
-      if(showBusy||!entry?.hasPrevious||!showUuid.test(id)||
-         hardware?.device?.outputArmed!==false)return;
+      if(showBusy||!entry?.hasPrevious||!showUuid.test(id))return;
       showBusy=true;showControls();
       showNote.textContent="Verifying previous generation · valid latest will NOT be overwritten…";
       backend.emitEvent("arMixAction",{action:"routingDryShowRecover",value:id});
@@ -2570,7 +2550,7 @@
     backend.addEventListener("arMixNativeShowSaveAck",ack=>{
       showBusy=false;showControls();
       if(ack?.ok===true){
-        status("SHOW SAVED · native verified state · OUTPUT MUTED");
+        status("SHOW SAVED · native verified state · MAIN auto-ready");
         showRefresh();
       }else{
         showNote.textContent="Save rejected: "+String(ack?.error||"Native capture rejected");
@@ -2595,14 +2575,14 @@
       showSelect.hidden=false;showUpdate.hidden=false;
       showRecall.hidden=false;showRecover.hidden=false;
       showNote.textContent=ack?.ok===true
-        ?showEntries.size+" saved Shows · mute output before recall/recovery"
+        ?showEntries.size+" saved Shows · native engine handles safe recall"
         :"Browse rejected: "+String(ack?.error||"Native storage unavailable");
       showControls();
     });
     backend.addEventListener("arMixNativeShowRecallAck",ack=>{
       showBusy=false;showControls();
       showNote.textContent=ack?.ok===true
-        ?"SHOW RESTORED · OUTPUT MUTED; verify physical pins before MONITOR ON"
+        ?"SHOW RESTORED · MAIN reconnects automatically on verified route"
         :"Recall rejected: "+String(ack?.error||"Native route unchanged");
       if(ack?.ok===true)controller?.subscribe();
       status(showNote.textContent);
@@ -2610,7 +2590,7 @@
     backend.addEventListener("arMixNativeShowRecoverAck",ack=>{
       showBusy=false;showControls();
       if(ack?.ok===true){
-        status("Last verified Show restored on disk · muted; recall explicitly");
+        status("Last verified Show restored on disk · current audio unchanged");
         showRefresh();
       }else{
         showNote.textContent="Recovery rejected: "+String(ack?.error||"Previous generation invalid");
@@ -2635,6 +2615,26 @@
       controller?.subscribe(); // ACK alone cannot claim LIVE audio
     });
     backend.addEventListener("arMixNativeSessionAck",ack=>{
+      if(ack?.operation==="RESET") {
+        factoryResetPending=false;
+        const confirm=document.getElementById("mixerResetConfirm");
+        if(confirm)confirm.disabled=false;
+        if(ack.ok!==true) {
+          const error=String(ack.error||"Factory reset rejected");
+          status(error);nativeToast(error);return;
+        }
+        document.getElementById("mixerResetDialog")?.close?.();
+        factoryResetProjectionPending=true;
+        const state=String(ack.state||"");
+        const message=state==="FACTORY_RESET_NEEDS_AUDIO_SETUP"?
+          "Mixer reset · open Audio I/O to reconnect playback":
+          state==="FACTORY_RESET_SETTINGS_WARNING"?
+          "Mixer reset · check saved channel appearance permissions":
+          "Mixer reset · no FX or custom WIRE · MAIN auto-connects after valid INPUT / playback";
+        status(message);nativeToast(message);
+        controller?.subscribe();
+        return;
+      }
       const save=ack?.operation==="SAVE";
       if(!save&&ack?.operation!=="OPEN")return;
       if(ack.ok!==true){
@@ -2646,7 +2646,7 @@
       status(message);nativeToast(message);
       if(!save)controller?.subscribe();
     });
-    menu.append(caption,setup,muteBtn,hardwareNote,
+    menu.append(caption,setup,hardwareNote,
       healthTitle,tone,mark,report,advanced,
       showHeading,showSave,showBrowse,showSelect,showUpdate,showRecall,showRecover,showNote);
     // Single discoverable AUDIO I/O button next to ordinary mixer tools.
@@ -2680,33 +2680,12 @@
         toolbar.insertBefore(addTrack,io);
       }
       syncAddTrack();
-      const monitor=item("button","tool","Unmute Output");
-      monitor.dataset.nativeMonitor="true";
-      monitor.addEventListener("click",()=>{
-        const armed=hardware?.device?.outputArmed===true;
-        if(!armed && (!deviceReady()||
-            (mixerSession()?.authority!=="CHANNEL_ID"&&legacy()?.routeAccepted!==true)||
-            virtualCableFeedbackPair())){
-          status("MONITOR OFF · select real input and safe playback device");
-          return;
-        }
-        const ep=safeNativeCounter(hardware?.device?.epoch),
-          rev=safeNativeCounter(mixerSession()?.authority==="CHANNEL_ID"?
-            mixerSession()?.routeRevision:legacy()?.routingRevision);
-        if(!armed&&(ep===null||rev===null))return;
-        backend.emitEvent("arMixAction",{action:"monitor",value:!armed,
-          requestId:"manual-monitor-"+(++m4RequestSerial),
-          ...(armed?{}:{expectedEpoch:ep,expectedRevision:rev})});
-        status(armed?"Hardware MUTE requested":"MAIN monitor verifying hardware route");
-      });
-      toolbar.insertBefore(monitor,io);
       // Fixed groups, not extra controls. Placement is DOM-only at startup;
       // no resize listeners, repaint loops or menu reparenting.
       for(const [name,element] of [
         ["files",document.getElementById("pluginsButton")],
         ["routing",document.getElementById("wireNavigatorToggle")],
-        ["channels",addTrack],
-        ["monitor",monitor]
+        ["channels",addTrack]
       ]){
         if(!element || element.parentElement!==toolbar)continue;
         const divider=document.createElement("span");
@@ -2944,7 +2923,6 @@
     }
     document.documentElement.dataset.armixNativeRoster="accepted";
     flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;
-    syncMonitorButton(next.device);
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
     if(confirmed?.operation==="APPLY_WIRE_TRANSACTION")
       playAcceptedWireImpact(confirmed.payload.changes);
@@ -4032,6 +4010,28 @@
     event.preventDefault();event.stopImmediatePropagation();
     status("NATIVE G0: physical gain/pan unavailable until engine graph admission");
   },true);
+  // Shared Pages Reset Mixer dialog; native click is intercepted before
+  // the demo reducer and never executes a browser-only graph mutation.
+  let factoryResetPending=false;
+  document.addEventListener("click",event=>{
+    const target=event.target.closest?.("#reset,#mixerResetConfirm");
+    if(!target)return;
+    event.preventDefault();event.stopImmediatePropagation();
+    const dialog=document.getElementById("mixerResetDialog");
+    if(target.id==="reset") {
+      document.getElementById("moreTools").open=false;
+      if(!factoryResetPending)dialog?.showModal?.();
+      return;
+    }
+    if(factoryResetPending)return;
+    if(!dialog?.open)return; // a detached or synthetic confirm is not consent
+    factoryResetPending=true;
+    target.disabled=true;
+    backend.emitEvent("arMixAction",{
+      action:"nativeMixerFactoryReset",confirmation:"RESET_MIXER"
+    });
+    status("Resetting mixer · retiring old FX/WIRE and rebuilding the native graph");
+  },true);
   // Reference-only buttons outside strips must not mutate fake Show/FX state.
   document.addEventListener("click",event=>{
     const target=event.target.closest?.(
@@ -4114,7 +4114,6 @@
     paste:"Native channel paste not yet admitted",
     clearCue:"PFL requires dedicated physical monitoring",
     preview:"Demo meters never run inside the native audio host",
-    reset:"Demo reset must not erase a live mixer",
     addFx:"Use a verified FX insert slot on an admitted channel"
   });
   function presentNativeOnlyTools(){

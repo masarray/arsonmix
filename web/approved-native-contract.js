@@ -418,7 +418,7 @@
     else if(pin && raw===0)nextAction="Selected input is silent; check physical source and input gain.";
     else if(raw===null)nextAction="Capture peak unavailable; do not assume an active source.";
     else if(m4.routeAccepted!==true)nextAction="PATCH CH1 to the selected hardware input.";
-    else if(d.outputArmed!==true)nextAction="Patch accepted; lower volume then ARM output.";
+    else if(d.outputArmed!==true)nextAction="INPUT accepted; MAIN is auto-connecting after native output verification.";
     else if(!mainObserved)nextAction="No MAIN PCM measurement; check routing and output state.";
     else if(main===0)nextAction="MAIN PCM silent; check CH1 fader/MUTE and MASTER MUTE.";
     else nextAction="MAIN PCM measured; verify headphone/speaker sound physically.";

@@ -175,3 +175,20 @@
   outline:2px solid #9bd9e8;outline-offset:1px;
 }
 /* No new button element, JS state, opacity animation or tool-tip overlay. */
+
+/* Shared Preview / JUCE WebView2 mixer recovery confirmation, no bulky card. */
+.app .mixer-reset-dialog{
+  box-sizing:border-box;position:fixed;inset:0;margin:auto;
+  width:min(390px,calc(100vw - 32px));max-height:calc(100vh - 28px);
+  overflow:auto;padding:20px 22px 18px;border:1px solid #546679;
+  border-radius:9px;background:#1a2633;color:#e5edf4;
+  box-shadow:0 16px 48px #0009;font:400 12px/1.55 Inter,system-ui,sans-serif;
+}
+.app .mixer-reset-dialog::backdrop{background:rgba(3,10,18,.72)}
+.app .mixer-reset-heading{font-size:15px;font-weight:600;letter-spacing:.01em}
+.app .mixer-reset-dialog p{margin:10px 0;color:#c8d1d9}
+.app .mixer-reset-dialog .mixer-reset-detail{color:#91a5b8;font-size:11px}
+.app .mixer-reset-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.app .mixer-reset-confirm{color:#ffd9d7;border-color:#8d4c4c;background:#493036}
+.app .mixer-reset-confirm:hover{background:#643840}
+.app .mixer-reset-dialog :focus-visible{outline:2px solid #9bd9e8;outline-offset:2px}

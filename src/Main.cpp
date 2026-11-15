@@ -904,8 +904,12 @@ private:
             diagnostics_.record ("SMART_CLOCK_RECOVERY",
                 juce::String ("DIRECT_RESTORED after ") + juce::String (snapshot.attempts + 1) +
                 " attempt(s) | " + watchdogSummary + " | " + faultStatus);
-            if (engine_.isOutputMuted())
-                emitNotice ("DIRECT device reopened. Output remains muted for safety; unmute only when ready.", true);
+            if (engine_.isOutputMuted()) {
+                // A verified, same-device failback must not inherit a stale
+                // permanent output MUTE from the interrupted bridge.
+                requestAutomaticMain(false);
+                emitNotice ("DIRECT device reopened. MAIN is reconnecting automatically after route verification.");
+            }
             else
                 emitNotice (wasIndependent
                     ? "Independent device fault: safe DIRECT audio restored."
@@ -1646,7 +1650,12 @@ private:
 
     void fireNativeHotkey(const armix::hotkey::Mapping& mapping) {
         if(mapping.operation=="PANIC_MUTE") {
-            engine_.setOutputMuted(true);
+            // Emergency silence is the VISIBLE MASTER MUTE, not the
+            // retired global hardware-output latch. The same master
+            // button/readback can release it; no hidden MONITOR OFF state.
+            engine_.setMasterMuted(true);
+            diagnostics_.record("MASTER_PANIC_MUTE",
+                "MASTER mute engaged; output hardware remains auto-ready");
             emitApprovedNativeSnapshot();
             return;
         }
@@ -2075,7 +2084,7 @@ private:
         // the sole backend-switch owner. No OS default changes or WebAudio.
         if (!result.inspected || !d.mayAttemptApply() ||
             !engine_.allOutputsDisarmed() || !engine_.hasPristineStartupMixer() ||
-            operatorOutputMuted_ || deviceApply_.busy() ||
+            deviceApply_.busy() ||
             nativeShowBusy_ || mixerSessionWorker_.busy()) return;
         const juce::String input (d.captureName.c_str());
         const juce::String output (d.renderName.c_str());
@@ -2213,23 +2222,47 @@ private:
         return juce::var(o.release());
     }
 
-    // One-shot on a verified setup or startup, including the first input
-    // patch. A later device epoch or a user MUTE cancels the pending arm.
+    // Verified-source MAIN readiness is automatic: no output-mute button,
+    // no persistent operator latch, and no one-shot lost on graph preparation.
+    // An unpatched SOURCE NONE graph waits silently (not operator-muted)
+    // until a verified audio source/route becomes available.
     std::uint64_t autoMainEpoch_=0;
+    // MAIN maintenance is message-thread only, including nested JUCE plugin
+    // windows. An automatic retry cannot re-arm a device mid-transaction.
+    int mainMaintenanceDepth_=0;
+    bool mainMaintenanceResume_=false;
     bool autoMainRequiresInput_=true;
-    // Operator's explicit OUTPUT MUTE must survive later input/FX/EXT edits.
-    // This control-thread intent is NOT a new callback gate or device lock.
-    bool operatorOutputMuted_=false;
     std::optional<std::uint64_t> autoMainCheckedRevision_;
     void serviceAutomaticMain() {
-        if(autoMainEpoch_==0)return;
-        if(operatorOutputMuted_){autoMainEpoch_=0;return;}
+        // A rejected graph/hardware transition can leave MAIN disarmed
+        // AFTER its one-shot auto request has been consumed. There is no
+        // longer a user OUTPUT-UNMUTE button, so recover once per second
+        // on CONTROL after the verified device and graph become stable.
+        // This never runs in the audio callback and never guesses a port.
+        if(autoMainEpoch_==0) {
+            if(!audioEngineStarted_ || updaterProbeMode_ ||
+               timerTicks_%12!=0 || engine_.isMonitorEnabled() ||
+               startupError_.isNotEmpty() || mixerSessionRecoveryPending_ ||
+               nativeShowBusy_ || studioBackupBusy_ || deviceApply_.busy() ||
+               mainMaintenanceDepth_!=0 ||
+               audioSetupLease_.has_value() || setupLaunching_ ||
+               engine_.isGraphSwitchPending() || engine_.secondaryArmed() ||
+               engine_.independentClockActive() ||
+               engine_.hasTemporaryDiagnosticDevice() ||
+               engine_.diagnosticRoute()!=armix::diagnostics::Route::normal ||
+               !engine_.hasBoundMixerRoute())
+                return;
+            autoMainEpoch_=engine_.dryRoutingLabEpoch();
+            autoMainRequiresInput_=false;
+            autoMainCheckedRevision_.reset();
+        }
         if(autoMainEpoch_!=engine_.dryRoutingLabEpoch() ||
            engine_.isMonitorEnabled()) {
             autoMainEpoch_=0;
             return;
         }
-        if(nativeShowBusy_||studioBackupBusy_||engine_.secondaryArmed()||
+        if(nativeShowBusy_||studioBackupBusy_||mainMaintenanceDepth_!=0||
+           engine_.secondaryArmed()||
            engine_.diagnosticRoute()!=armix::diagnostics::Route::normal)return;
         const auto revision=engine_.outputArmRevision();
         if(autoMainCheckedRevision_==revision)return;
@@ -2250,12 +2283,40 @@ private:
     }
 
     void requestAutomaticMain(bool requireInput=true) {
-        if(operatorOutputMuted_){autoMainEpoch_=0;return;}
         autoMainRequiresInput_=requireInput;
         autoMainEpoch_=engine_.dryRoutingLabEpoch();
         autoMainCheckedRevision_.reset();
         serviceAutomaticMain();
     }
+
+    // Explicit Show/device maintenance gets a scoped output gate, never a
+    // persisted operator MUTE. Preparation/capture may need isolated PCM;
+    // every success, failure and exception path restores automatic MAIN
+    // readiness after the current audio transaction releases the gate.
+    struct ScopedMainTransaction final {
+        ConsoleWindow& owner;
+        bool active=true;
+        explicit ScopedMainTransaction(ConsoleWindow& host) :owner(host) {
+            ++owner.mainMaintenanceDepth_;
+            if(owner.engine_.isMonitorEnabled()) {
+                owner.mainMaintenanceResume_=true;
+                owner.engine_.setOutputMuted(true);
+            }
+        }
+        ScopedMainTransaction(const ScopedMainTransaction&)=delete;
+        ScopedMainTransaction& operator=(const ScopedMainTransaction&)=delete;
+        ~ScopedMainTransaction(){resume();}
+        void resume(){
+            if(!active)return;
+            active=false;
+            jassert(owner.mainMaintenanceDepth_>0);
+            --owner.mainMaintenanceDepth_;
+            if(owner.mainMaintenanceDepth_==0 && owner.mainMaintenanceResume_) {
+                owner.mainMaintenanceResume_=false;
+                owner.requestAutomaticMain(false);
+            }
+        }
+    };
 
     using MixerBindingMode=armix::session::MixerDeviceBindingPolicy::Mode;
     armix::device::NativeDeviceApplyCoordinator deviceApply_; // one CONTROL-thread transaction owner
@@ -2508,7 +2569,7 @@ private:
             asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
             diagnostics_.record("CUSTOM_AUDIO_APPLY_OK",
                 typeName+" | "+juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
-            requestAutomaticMain();
+            requestAutomaticMain(false);
             send(true,engine_.isMonitorEnabled()?"ACCEPTED_LIVE":"ACCEPTED_MUTED",{});
             emitApprovedNativeSnapshot();
             return;
@@ -3360,6 +3421,108 @@ private:
                 juce::var(ack.release()));
     }
 
+    // Mixer-only factory recovery. The native JUCE graph is stopped before
+    // any new callback can see stale FX/WIRE state. The old durable HEAD is
+    // retired first so a crash/reinstall cannot replay a broken session.
+    void resetMixerToFactory() {
+        if(updaterProbeMode_ || mixerSessionWorker_.busy() || nativeShowBusy_ ||
+           studioBackupBusy_ || deviceApply_.busy() || mixerFileDialogOpen_ ||
+           audioSetupLease_.has_value() || setupLaunching_ ||
+           engine_.isGraphSwitchPending() ||
+           engine_.diagnosticRoute()!=armix::diagnostics::Route::normal ||
+           engine_.hasTemporaryDiagnosticDevice())
+            return emitMixerSessionAck("RESET",
+                "Finish mixer IO, device changes and diagnostic playback before reset");
+        if(!audioEngineStarted_)
+            return emitMixerSessionAck("RESET","Mixer startup is still initializing");
+
+        // Retire the journal BEFORE touching the native graph. On storage
+        // failure, live audio is unchanged. Teardown detaches the realtime
+        // callback; SOURCE NONE supplies silence without muting output.
+        const auto detachError=armix::session::NativeMixerSessionStore(
+            settingsDirectory()).discardForFactoryReset();
+        if(detachError.isNotEmpty()) {
+            diagnostics_.record("MIXER_FACTORY_RESET_REJECTED",detachError);
+            return emitMixerSessionAck("RESET",detachError);
+        }
+        // The callback is detached by engine_.stop() below; never use a
+        // latched output mute as a reset control or require manual unmute.
+        // Verified MAIN is admitted automatically for the fresh graph.
+        autoMainEpoch_=0;
+        engine_.cancelAsioResetMonitorIntent();
+        engine_.disconnectSecondaryOutput();
+        engine_.discardPlayerSourceForFactory();
+        playerCurrent_=-1;playerPendingIndex_=-1;
+        playerPendingQueueFile_={};
+        playerLoopCurrent_=false;
+        playerAutoAdvanceGate_.rearm();
+        stopOrbit();
+        closePluginEditor();
+        logicalVendorEditor_.reset(); // discard uncommitted vendor editor edits
+        // Invalidate any queued completion, saved logical editor and
+        // fingerprint. The shutdown checkpoint must never republish old FX.
+        mixerSessionWorker_.finishForShutdown();
+        logicalMixer_.resetForFactory();
+        const auto keysError=hotkeys_.resetMixerMappings();
+        if(keysError.isNotEmpty())
+            diagnostics_.record("MIXER_FACTORY_HOTKEY_CLEANUP",keysError);
+        const auto appearanceError=channelAppearance_.resetForFactory();
+        if(appearanceError.isNotEmpty())
+            diagnostics_.record("MIXER_FACTORY_APPEARANCE_CLEANUP",appearanceError);
+
+        mixerSessionId_.clear();
+        lastMixerSessionFingerprint_.clear();
+        mixerSessionError_.clear();
+        mixerSessionRecoveryPending_=false;
+        mixerSessionStartupInspected_=true;
+        acceptedControlRequests_.clear();
+        acceptedAppearanceRequests_.clear();
+        directRestore_.cancel();
+        lastDirectRestoreError_.clear();
+        if(startupFxGuard_) {
+            (void)startupFxGuard_->complete();
+            startupFxGuard_.reset();
+        }
+        // The selected MACHINE audio interface survives. No VST3 catalog,
+        // user FX preset, exported .smix, music, driver or WebView cache is
+        // removed. First-run SOURCE NONE graph is recreated from native code.
+        auto saved=juce::XmlDocument::parse(
+            machineSettingsDirectory().getChildFile("audio-devices.xml"));
+        engine_.devices().removeChangeListener(this);
+        engine_.stop();
+        engine_.resetLegacyMixerControlsForFactory();
+        startupError_=engine_.start(saved.get());
+        engine_.devices().addChangeListener(this);
+        // MAIN is owned outside the channel graph. A silent/zero master
+        // from the old Show must not survive this factory reset.
+        engine_.setMasterGainLinear(1.f);
+        engine_.setMasterMuted(false);
+        engine_.setMasterMono(false);
+        engine_.setDryTestEnabled(false);
+        // No latched factory MUTE. MAIN is a verified output readiness
+        // policy, not an operator toggle. SOURCE NONE is naturally silent
+        // until an INPUT is connected; PLAYER can also start independently.
+        if(startupError_.isEmpty())requestAutomaticMain(false);
+        mixerSessionStatus_=startupError_.isEmpty()?
+            "FACTORY_RESET_READY":"FACTORY_RESET_NEEDS_AUDIO_SETUP";
+        if(startupError_.isNotEmpty())mixerSessionError_=startupError_;
+        if(startupError_.isEmpty() &&
+           (appearanceError.isNotEmpty() || keysError.isNotEmpty())) {
+            mixerSessionStatus_="FACTORY_RESET_SETTINGS_WARNING";
+            mixerSessionError_=appearanceError.isNotEmpty()
+                ?appearanceError:keysError;
+        }
+        diagnostics_.record("MIXER_FACTORY_RESET",
+            mixerSessionStatus_+" | SOURCE NONE / NO FX / NO CUSTOM WIRE / AUTO MAIN");
+        emitApprovedNativeSnapshot();
+        emitPlayerState(true);
+        emitMixerSessionAck("RESET");
+        emitNotice(startupError_.isEmpty()
+            ? "Mixer reset complete: no FX or custom WIRE. Connect an INPUT or play music; MAIN becomes live automatically once hardware and route are verified."
+            : "Saved mixer cleared; audio device needs reconfiguration in Audio I/O: "+startupError_,
+            startupError_.isNotEmpty() || appearanceError.isNotEmpty() || keysError.isNotEmpty());
+    }
+
     juce::String resolveMixerSessionCatalog(armix::session::MixerSessionDocument& doc,
                                            bool captureIdentity) {
         for(auto& insert:doc.inserts) {
@@ -3472,10 +3635,12 @@ private:
         if(bindingMode==MixerBindingMode::exact && startupOnSavedDevice &&
            armix::session::MixerDeviceBindingPolicy::isAsio4All(doc.binding))
             bindingMode=MixerBindingMode::verifiedAsioRestart;
+        // Old session files may contain resumeMain=false from the retired
+        // global OUTPUT-MUTE button. Never restore it as an invisible latch.
+        // Corrupt PREVIOUS recovery remains unarmed until user verification.
         const bool resume=!firstBinding && startupOnSavedDevice &&
             (bindingMode==MixerBindingMode::exact || bindingMode==MixerBindingMode::verifiedAsioRestart) &&
-            !usedPrevious && !retained &&
-            doc.resumeMain.value_or(true);
+            !usedPrevious && !retained;
         const auto live=engine_.status().getProperty("dryRoutingLab",{});
         const bool nativeAlreadyActive=static_cast<bool>(
             live.getProperty("nativeChannelIdPcmActive",false));
@@ -3687,6 +3852,7 @@ private:
                     safe->startupFxGuardTick_=juce::Time::getMillisecondCounter();
                     safe->diagnostics_.record("STARTUP_FX_EXPLICIT_RECOVERY_ACCEPTED",
                         "Manual FX graph restored; pending 15s stability verification");
+                    safe->requestAutomaticMain(false);
                     safe->emitApprovedNativeSnapshot();
                 }
             }
@@ -4434,6 +4600,14 @@ private:
     void onAction (const juce::var& args)
     {
         auto action = args.getProperty ("action", {}).toString();
+        // RESET replies with its own success/failure ACK and remains available
+        // even when the normal PCM topology cannot admit control intents.
+        if(action=="nativeMixerFactoryReset") {
+            if(args.getProperty("confirmation","").toString()!="RESET_MIXER")
+                return emitMixerSessionAck("RESET","Factory reset requires explicit confirmation");
+            resetMixerToFactory();
+            return;
+        }
         if(deviceApply_.busy() && action!="audioDeviceApply")return;
         const auto value = args.getProperty ("value", {});
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
@@ -5535,7 +5709,7 @@ private:
                 // The operator has already confirmed this exact ASIO pair.
                 // Complete first-sound automatically; never force MONITOR/ARM
                 // again, and never override a deliberate OUTPUT MUTE.
-                if(left>=0 && !operatorOutputMuted_ && !engine_.isMonitorEnabled())
+                if(left>=0 && !engine_.isMonitorEnabled())
                     requestAutomaticMain(false);
                 emitApprovedNativeSnapshot(); // callback readback proves LIVE
             }
@@ -6363,8 +6537,12 @@ private:
             if(updateShowId.isNotEmpty()&&!armix::shows::detail::uuid(updateShowId))
                 return reject("Invalid Show identity for version update.");
             if (nativeShowBusy_ || studioBackupBusy_ || catalog_.busy() ||
-                engine_.isGraphSwitchPending() || engine_.hasTemporaryDiagnosticDevice())
-                return reject("Finish the current Studio task before capturing a native Show.");
+                engine_.isGraphSwitchPending() || engine_.hasTemporaryDiagnosticDevice() ||
+                engine_.secondaryArmed())
+                return reject("Finish Studio/FX work or stop STREAM before capturing a native Show.");
+            ScopedMainTransaction mainGate(*this);
+            // Only this synchronous vendor-state capture is quiescent.
+            // Resume original verified MAIN BEFORE the disk IO worker runs.
             // Never save the unacknowledged JS draft. Message-thread capture
             // reads the accepted LIVE graph, updated faders and exact device epoch.
             // VST3 is fail-closed until a quiescent vendor state capture gate exists.
@@ -6433,6 +6611,7 @@ private:
                 diagnostics_.record("NATIVE_SHOW_REJECTED",error);
                 return reject(error);
             }
+            mainGate.resume();
             auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
             const bool started=nativeShowWorker_.launch(settingsDirectory(),
                 std::move(captured),std::move(blobs),[safe](armix::shows::NativeShowSaveWorker::Result result) {
@@ -6445,7 +6624,7 @@ private:
                         safe->diagnostics_.record("NATIVE_FX_SHOW_SAVED",
                             result.showId+" | "+result.snapshotId);
                         safe->emitNotice("Verified Show saved with routed VST3 state: "+
-                            result.name+". Use BROWSE SHOWS and RECALL while OUTPUT is muted.");
+                            result.name+". RECALL verifies hardware and reconnects MAIN automatically.");
                     }
                     if(safe->browser_.loaded) {
                         auto ack=std::make_unique<juce::DynamicObject>();
@@ -6521,8 +6700,8 @@ private:
             if(!armix::shows::detail::uuid(id))
                 return reject("Select a valid saved Show identity.");
             if(nativeShowBusy_||studioBackupBusy_||catalog_.busy()||
-               engine_.isGraphSwitchPending()||!engine_.allOutputsDisarmed())
-                return reject("MUTE both outputs and finish all Studio tasks before recovery.");
+               engine_.isGraphSwitchPending())
+                return reject("Finish the active Studio task before disk recovery.");
             auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
             const bool started=nativeShowWorker_.recover(settingsDirectory(),id,
                 [safe](armix::shows::NativeShowSaveWorker::Result result) {
@@ -6540,7 +6719,7 @@ private:
                             "arMixNativeShowRecoverAck",juce::var(ack.release()));
                     }
                     if(result.ok())
-                        safe->emitNotice("Last verified Show restored on disk. OUTPUT stays MUTED; review and RECALL explicitly.");
+                        safe->emitNotice("Last verified Show restored on disk. Current audio continues; RECALL applies it explicitly.");
                     else
                         safe->emitNotice("Last-good Show recovery rejected: "+result.error,true);
                 });
@@ -6564,8 +6743,8 @@ private:
             if(!armix::shows::detail::uuid(id))
                 return reject("Select a native Show UUID from the saved list.");
             if(nativeShowBusy_ || studioBackupBusy_ || catalog_.busy() ||
-               engine_.isGraphSwitchPending() || !engine_.allOutputsDisarmed())
-                return reject("Mute native output and finish ongoing Studio work.");
+               engine_.isGraphSwitchPending() || engine_.secondaryArmed())
+                return reject("Finish Show/FX or stop secondary STREAM before recall.");
             const auto d=engine_.status().getProperty("dryRoutingLab",{});
             const auto ep=d.getProperty("epoch",{}),rev=d.getProperty("revision",{});
             if(!static_cast<bool>(d.getProperty("ready",false)) ||
@@ -6581,6 +6760,11 @@ private:
                     if(safe==nullptr)return;
                     juce::String error=result.error;
                     juce::var command;
+                    // Read the saved Show without interrupting old PCM.
+                    // Quiesce MAIN only for verified prepare/graph publication,
+                    // then restore automatically even on vendor rejection.
+                    std::optional<ScopedMainTransaction> recallGate;
+                    if(error.isEmpty())recallGate.emplace(*safe.getComponent());
                     if(error.isEmpty()) {
                         const auto state=safe->engine_.status();
                         const auto lab=state.getProperty("dryRoutingLab",{});
@@ -6652,8 +6836,8 @@ private:
                             }
                         }
                         if(error.isEmpty()) {
-                            // Only AFTER native graph publication, and while
-                            // physical output remains muted. Never auto-unmute.
+                            // Only AFTER the verified native graph publishes.
+                            // The scoped gate restores MAIN after the commit.
                             safe->engine_.setMasterGainLinear(
                                 static_cast<float>(result.loaded.masterGain));
                             safe->engine_.setMasterMuted(result.loaded.masterMute);
@@ -6663,6 +6847,11 @@ private:
                         }
                     }
                     safe->nativeShowBusy_=false;
+                    // Recover the previous audible graph on any rejected
+                    // candidate; on success reconnect the newly accepted
+                    // graph without requiring operator MUTE/UNMUTE.
+                    recallGate.reset();
+                    if(error.isEmpty())safe->requestAutomaticMain(false);
                     auto ack=std::make_unique<juce::DynamicObject>();
                     ack->setProperty("ok",error.isEmpty());
                     ack->setProperty("error",error);
@@ -6675,7 +6864,7 @@ private:
                     if(error.isNotEmpty())
                         safe->emitNotice("Native Show recall rejected: "+error,true);
                     else safe->emitNotice(
-                        "Verified native Show routing and VST3 state restored in a newly prepared graph. OUTPUT remains MUTED; verify physical routing and plugin sound before unmuting.");
+                        "Verified native Show and VST3 restored. MAIN reconnects automatically on verified hardware routing.");
                 });
             if(!started)return reject("Cannot launch native Show readback worker.");
             autoMainEpoch_=0;
@@ -6691,9 +6880,17 @@ private:
             if(studioBackupBusy_ || nativeShowBusy_)
                 error="Complete active Show/backup operation before editing secondary output";
             else if(action=="secondaryOutputConnect") {
-                if(!value.isString() || value.toString().length()>240)
+                if(engine_.secondaryArmed())
+                    error="Stop the current STREAM before changing its output endpoint";
+                else if(!value.isString() || value.toString().length()>240)
                     error="Select a real named Windows playback endpoint";
-                else error=engine_.connectSecondaryOutput(value.toString());
+                else {
+                    // Secondary endpoint creation needs exclusive CONTROL
+                    // preparation. Never require the operator to leave MAIN
+                    // manually muted to configure additional playback.
+                    ScopedMainTransaction mainGate(*this);
+                    error=engine_.connectSecondaryOutput(value.toString());
+                }
             } else if(action=="secondaryOutputArm") {
                 if(!value.isBool()) error="Expected explicit Secondary output ARM true/false";
                 else error=engine_.armSecondaryOutput(bool(value));
@@ -6724,9 +6921,12 @@ private:
             // Never enable the legacy CH1 signal path on STOP or hotplug.
             closePluginEditor();
             const auto error=engine_.clearProductionRouting();
+            // SOURCE NONE is real silent PCM, not a user MUTE. The next
+            // accepted source reaches MAIN with no additional ARM gesture.
+            if(error.isEmpty())requestAutomaticMain(false);
             diagnostics_.record(error.isEmpty()?"NATIVE_INPUT_PATCH_CLEARED":
                                  "NATIVE_INPUT_PATCH_CLEAR_FAILED",
-                                error.isEmpty()?"No input assigned; output stays MUTED":error);
+                                error.isEmpty()?"No input assigned; MAIN automatically ready":error);
             if(browser_.loaded) {
                 auto ack=std::make_unique<juce::DynamicObject>();
                 ack->setProperty("ok",error.isEmpty());
@@ -6736,7 +6936,7 @@ private:
                     "arMixRoutingLabAck",juce::var(ack.release()));
             }
             return emitNotice(error.isEmpty()
-                ?"All INPUT PATCH assignments cleared. Native mixer stays ready, OUTPUT MUTED."
+                ?"All INPUT PATCH assignments cleared. Mixer remains ready; MAIN connects automatically when routed."
                 :"Input patch cleared; native session is SILENT: "+error,
                 error.isNotEmpty());
         }
@@ -6779,8 +6979,14 @@ private:
         }
         else if (action == "audioDeviceRefresh")
         {
-            // Slow vendor rescan: deliberate operator request, MUTE required.
-            emitDeviceInventory(true);
+            // STREAM has its own clock/consumer. Never disarm MAIN for a
+            // rescan that cannot be admitted while that stream is running.
+            if(engine_.secondaryArmed()) {
+                emitDeviceInventory(true); // explicit BLOCKED_ARMED
+            } else {
+                ScopedMainTransaction mainGate(*this);
+                emitDeviceInventory(true);
+            }
         }
         else if (action == "audioDeviceApply")
         {
@@ -7191,10 +7397,12 @@ private:
         }
         else if (action == "monitor" && value.isBool())
         {
-            // P0 panic MUTE is always accepted. Explicit ARM is verified
-            // against the actual native route, never against UI appearance.
+            // Compatibility for older WebView clients only. Manual hardware
+            // MUTE is deliberately unsupported; the output is automatically
+            // enabled when the native device/route is verified.
             const bool arm=bool(value);
-            juce::String fault;
+            juce::String fault=arm?juce::String():
+                juce::String("OUTPUT_MUTE_REMOVED: use channel or master MUTE");
             if (arm && (nativeShowBusy_ || studioBackupBusy_))
                 fault="Finish Show/backup work before arming hardware OUTPUT.";
             const auto expectedEpoch=args.getProperty("expectedEpoch",juce::var());
@@ -7212,11 +7420,11 @@ private:
                 engine_.diagnosticRoute()==armix::diagnostics::Route::normal)
                 fault=engine_.liveOutputArmFault();
             if (fault.isEmpty()) {
-                operatorOutputMuted_=!arm; // an explicit user control, not setup mute
-                autoMainEpoch_=0;
-                if(!arm)engine_.cancelAsioResetMonitorIntent();
-                engine_.setMonitorEnabled(arm);
-                diagnostics_.record("OUTPUT_MUTE",arm?"OFF":"ON");
+                // Legacy clients may request readiness, but may no longer
+                // latch a global OUTPUT MUTE. Channel/Master MUTE remains a
+                // normal mixer processing control, not a hardware deadlock.
+                requestAutomaticMain(false);
+                diagnostics_.record("MAIN_READY_REQUEST","Verified automatic output policy");
             }
             if (browser_.loaded) {
                 auto ack=std::make_unique<juce::DynamicObject>();
@@ -7541,7 +7749,7 @@ private:
                         deviceSettingsDirty_=true;
                     }
                 }
-            }else if(startupError_.isEmpty())requestAutomaticMain();
+            }else if(startupError_.isEmpty())requestAutomaticMain(false);
         }
         // Do not clear the marker as soon as constructors return: Waves and
         // other VST3 vendors may crash in their first audio callbacks.
@@ -7952,6 +8160,66 @@ public:
         }
     }
     void initialise (const juce::String&) override
+    {
+        const auto commandLine=juce::JUCEApplication::getCommandLineParameters();
+        // An emergency shortcut is never a one-click destructive wipe.
+        // Confirm BEFORE WebView, device startup, VST3 construction or a
+        // recovery journal rename. Cancel exits without touching user data.
+        if(!isAutoUpdateHealthProbe() && commandLine.trim()=="--reset-mixer") {
+            juce::NativeMessageBox::showAsync(
+                juce::MessageBoxOptions{}
+                    .withIconType(juce::MessageBoxIconType::WarningIcon)
+                    .withTitle("ArSonMix · Safe Mixer Recovery")
+                    .withMessage("Reset the mixer to factory defaults?\\n\\n"
+                        "This discards the automatic FX/WIRE session, channel "
+                        "settings and custom mixer shortcuts. Installed plugins, "
+                        "user presets, music and audio device choices are kept. "
+                        "MAIN becomes active automatically on verified routes.")
+                    .withButton("Cancel")
+                    .withButton("Reset Mixer"),
+                [this](int choice) {
+                    if(choice!=1) {
+                        systemRequestedQuit();
+                        return;
+                    }
+                    const auto error=armix::session::NativeMixerSessionStore(
+                        settingsDirectory()).discardForFactoryReset();
+                    if(error.isNotEmpty()) {
+                        juce::NativeMessageBox::showAsync(
+                            juce::MessageBoxOptions{}
+                                .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                .withTitle("ArSonMix · Reset Failed")
+                                .withMessage(error+"\\n\\nSaved session was not modified.")
+                                .withButton("Close"),
+                            [this](int){systemRequestedQuit();});
+                        return;
+                    }
+                    armix::appearance::Store appearance(settingsDirectory());
+                    const auto appearanceError=appearance.resetForFactory();
+                    armix::hotkey::Registry hotkeys(settingsDirectory());
+                    const auto hotkeyError=hotkeys.resetMixerMappings();
+                    if(appearanceError.isNotEmpty() || hotkeyError.isNotEmpty()) {
+                        // Mixer journal is already retired. Do not replay a
+                        // broken FX graph due to a cosmetic settings error.
+                        juce::NativeMessageBox::showAsync(
+                            juce::MessageBoxOptions{}
+                                .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                .withTitle("ArSonMix · Partial Settings Reset")
+                                .withMessage("Mixer session was cleared, but some "
+                                    "channel appearance or shortcut settings could "
+                                    "not be saved: "+appearanceError+" "+hotkeyError)
+                                .withButton("Continue"),
+                            [this](int){startNormalMixerStartup();});
+                        return;
+                    }
+                    startNormalMixerStartup();
+                });
+            return;
+        }
+        startNormalMixerStartup();
+    }
+
+    void startNormalMixerStartup()
     {
 #if defined(_WIN32)
         // Per-user-session installer handshake. An Inno update requests the

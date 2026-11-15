@@ -47,6 +47,15 @@ public:
         return {true,std::move(error)};
     }
 
+    // Only after the mixer IO worker has completed and disk HEAD is retired.
+    // Never let an old offline graph be serialized again at shutdown.
+    void resetForFactory() {
+        workspace_=Workspace{};
+        requests_.clear();
+        loaded_=false;
+        readOnly_=false;
+    }
+
     bool loaded() const noexcept {return loaded_;}
     bool readOnly() const noexcept {return readOnly_;}
     const Workspace& workspace() const noexcept {return workspace_;}

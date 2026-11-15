@@ -52,8 +52,16 @@ async def render(browser, path, viewport, state):
     try:
         await page.goto(path.resolve().as_uri())
         await page.wait_for_selector("#tracks .strip[data-id='1']")
-        await page.evaluate("document.fonts.ready")
-        await page.wait_for_timeout(100)
+        # Decode every real PNG/font asset before comparing pixels. The
+        # compiled and source-owned layouts have the same CSS and DOM, but
+        # image decoding / WIRE ResizeObserver may finish on different frames.
+        await page.evaluate("""async () => {
+          await document.fonts.ready;
+          await Promise.all([...document.images].map(img=>
+            img.complete ? Promise.resolve() : img.decode().catch(()=>{})));
+          await new Promise(done=>requestAnimationFrame(()=>
+            requestAnimationFrame(done)));
+        }""")
         if state=="hover-identity":
             await page.locator("#tracks .strip[data-id='1'] .strip-identity-top").hover()
             await page.wait_for_timeout(130)
@@ -62,8 +70,24 @@ async def render(browser, path, viewport, state):
             await page.wait_for_timeout(130)
         assert not errors,errors
         styles=await page.evaluate(STYLE_EVIDENCE)
-        screenshot=await page.screenshot(animations="disabled",full_page=False)
-        return styles,hashlib.sha256(screenshot).hexdigest()
+        # Strict byte-identical screenshot parity is valuable ONLY for a
+        # quiescent scene. A one-frame JS cable/paint update after layout
+        # settles used to produce random digest differences without any CSS
+        # change. Require three consecutive identical PNGs on BOTH builds;
+        # fail closed rather than blessing arbitrary hash drift.
+        prior=None
+        stable=0
+        hashes=[]
+        for attempt in range(24):
+            screenshot=await page.screenshot(animations="disabled",full_page=False)
+            digest=hashlib.sha256(screenshot).hexdigest()
+            hashes.append(digest)
+            stable=stable+1 if digest==prior else 1
+            if stable>=3:
+                return styles,digest
+            prior=digest
+            await page.wait_for_timeout(80)
+        raise AssertionError(("GUI scene did not settle",viewport,state,hashes[-6:]))
     finally:
         await page.close()
 
