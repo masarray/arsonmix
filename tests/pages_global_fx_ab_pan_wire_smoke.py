@@ -40,10 +40,12 @@ def run(page, width, height):
     page.on("pageerror",lambda error:errors.append(str(error)))
     page.goto(PAGE.as_uri())
     page.locator('#tracks .strip[data-id="1"]').wait_for()
-    # A real density-change event is essential: setting select.value alone
-    # never rebuilt channel geometry and gave false confidence in older QA.
+    # Legacy density select is hidden in the approved operator GUI.
+    # Dispatch the actual reducer event rather than a user gesture on a
+    # hidden element or a value-only assignment that never updates layout.
     for density in ("comfort","standard","compact"):
-        page.locator("#densitySelect").select_option(density)
+        page.locator("#densitySelect").evaluate(
+            "(select,value)=>{select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}",density)
         for value,label in [(-100,"L100"),(0,"C"),(100,"R100")]:
             seen=pan(page,value)
             assert seen["text"]==label,(width,density,label,seen)
@@ -51,7 +53,8 @@ def run(page, width, height):
             assert 9.5<=seen["font"]<=10.5,(width,density,"font",seen)
             assert seen["gap"]>=0 and seen["sliderWidth"]>=30,(width,density,"PAN collision",seen)
             assert 27<=seen["readoutWidth"]<=31,(width,density,"PAN proportions",seen)
-    page.locator("#densitySelect").select_option("comfort")
+    page.locator("#densitySelect").evaluate(
+        "(select)=>{select.value='comfort';select.dispatchEvent(new Event('change',{bubbles:true}));}")
     # The operator's folded WIRE intent must be restored on FX mode.
     body=page.locator('.console-body')
     assert "collapsed-send" in (body.get_attribute("class") or "")
