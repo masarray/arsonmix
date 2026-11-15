@@ -382,6 +382,22 @@ void verifyStereoIntegrityOwnerRejection(double rate) {
         std::fprintf(stderr,
             "IMERSIP_STEREO_LOCK rate=%.0f venue=%d fixture=%d ratio=%.5f\n",
             rate,venue,fixture,retained);
+        if(retained<=.86) {
+            // Diagnose whether the real mono-like failure is directly
+            // measured HRTF or an opposing EARLY/LATE room SIDE field.
+            auto roomOff=s;roomOff.space=0.f;roomOff.lateRoom=0.f;
+            const auto directOnly=render(rate,roomOff,source,128);
+            auto earlyOff=s;earlyOff.space=0.f;
+            const auto lateOnly=render(rate,earlyOff,source,128);
+            auto lateOff=s;lateOff.lateRoom=0.f;
+            const auto earlyOnly=render(rate,lateOff,source,128);
+            std::fprintf(stderr,
+                "IMERSIP_SIDE_COMPONENTS venue=%d fixture=%d original=%.5f direct=%.5f early=%.5f late=%.5f both=%.5f\n",
+                venue,fixture,before,
+                rms(directOnly,4096,true)/(before+1.e-12),
+                rms(earlyOnly,4096,true)/(before+1.e-12),
+                rms(lateOnly,4096,true)/(before+1.e-12),retained);
+        }
         assert(retained>.86 && retained<1.75);
         // Dedicated control must have real audio influence. At minimum
         // lock the original SIDE; without lock, deliberately more HRTF SIDE.
