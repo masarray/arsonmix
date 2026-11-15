@@ -79,7 +79,7 @@ assert.equal(optionWrites.length,2);
 const p89={...p90,p90Capable:false};
 renderMenu(picker,root,p89);
 assert.equal(picker.dataset.nativeModeSet,"p89");
-assert.equal(optionWrites.length,2);
+assert.equal(optionWrites.length,3);
 assert.doesNotMatch(picker.innerHTML,/value="foundation"/);
 for(let i=0;i<12;++i)renderMenu(picker,root,p89);
 assert.equal(optionWrites.length,3);
