@@ -666,6 +666,9 @@ public:
         const bool p89Stage=p83Mode_==p83::Mode::MusicSpatialP89
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
             ||p83Mode_==p83::Mode::MusicSpatialP90
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+            ||p83Mode_==p83::Mode::MusicSpatialP92
+#endif
 #endif
             ;
         const float p89Depth=p89Stage&&roomEnabled?
@@ -1140,6 +1143,9 @@ private:
             p83Mode_==p83::Mode::MusicSpatialP89 ||
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
             p83Mode_==p83::Mode::MusicSpatialP90 ||
+#if defined(SONKU_P92_MUSIC_BASS_FOUNDATION) && SONKU_P92_MUSIC_BASS_FOUNDATION
+            p83Mode_==p83::Mode::MusicSpatialP92 ||
+#endif
 #endif
 #endif
 #endif
