@@ -56,6 +56,7 @@ public:
         bassShelfAlpha_=static_cast<float>(
             1.-std::exp(-2.*pi*105./rate));
         roomSlew_=static_cast<float>(1.-std::exp(-1./(rate*.045)));
+        weightSlew_=static_cast<float>(1.-std::exp(-1./(rate*.008)));
         // Prepared modal frequencies are actual axial eigenfrequencies of
         // the three configured rooms: f=c*n/(2*dimension), with even n so
         // a central listener is not on a zero-pressure node.
@@ -97,10 +98,12 @@ public:
         room_=0;
         roomBlend_=targetBlend_=0.f;
         for(auto& perSource:coupling_)perSource.fill(0.f);
+        for(auto& ear:lowWeights_)ear.fill(1.f);
+        for(auto& ear:targetLowWeights_)ear.fill(1.f);
     }
     float directMakeup() const noexcept{return directMakeup_;}
     void updateScene(int room,float wet,float distance,float worldCenter,
-                     float spread) noexcept {
+                     float spread,float headYaw) noexcept {
         const int next=(room>=1&&room<=3)?room:0;
         // A different room program cannot reuse the old resonator history.
         // Only 12 float delays are cleared at most once per scene switch.
@@ -111,10 +114,21 @@ public:
             roomBlend_=0.f;
         }
         targetBlend_=room_?std::clamp(wet,0.f,1.f)*.17f:0.f;
-        if(!room_)return;
         constexpr float pi=3.14159265358979323846f;
         const float azimuths[2]{worldCenter-spread*.5f,
                                 worldCenter+spread*.5f};
+        // BELOW ~220Hz the measured KEMAR transfer can nearly cancel a
+        // deliberately anti-phase stereo programme. Preserve a physically
+        // oriented two-emitter LF pressure matrix instead of injecting
+        // unpositioned original headphone L/R bass. Small interaural
+        // asymmetry is a *psychoacoustic* compromise, not a measured BRIR.
+        for(int source=0;source<2;++source) {
+            const float head=(azimuths[source]-headYaw)*(pi/180.f);
+            const float lean=.82f*std::sin(head);
+            targetLowWeights_[0][source]=1.f-lean;
+            targetLowWeights_[1][source]=1.f+lean;
+        }
+        if(!room_)return;
         const auto& programs=programs_[room_-1];
         for(int source=0;source<2;++source) {
             const float r=azimuths[source]*(pi/180.f);
@@ -132,6 +146,21 @@ public:
                 coupling_[source][mode]=listener*std::cos(phase);
             }
         }
+    }
+    Sources transferLow(float sourceLowL,float sourceLowR) noexcept {
+        for(int ear=0;ear<2;++ear)
+            for(int source=0;source<2;++source)
+                lowWeights_[ear][source]+=weightSlew_*
+                    (targetLowWeights_[ear][source]-
+                     lowWeights_[ear][source]);
+        // No extra headphone dry signal: this is each speaker feeding BOTH
+        // ears as a function of WORLD/source direction minus HEAD yaw.
+        // Factor 2 cancels the existing native sceneBinauralLevel=0.5,
+        // so coherent front bass starts at nominal original music pressure.
+        return {lowWeights_[0][0]*sourceLowL+
+                lowWeights_[0][1]*sourceLowR,
+                lowWeights_[1][0]*sourceLowL+
+                lowWeights_[1][1]*sourceLowR};
     }
     Sources process(float left,float right) noexcept {
         if(!room_&&roomBlend_<=1.e-6f)return {};
@@ -180,7 +209,8 @@ private:
     std::array<std::array<float,modeCount>,2> coupling_{};
     std::array<float,2> bassState_{};
     float rate_=48000.f,directMakeup_=1.f,bassShelfAlpha_=0.f;
-    float roomSlew_=0.f,roomBlend_=0.f,targetBlend_=0.f;
+    float roomSlew_=0.f,roomBlend_=0.f,targetBlend_=0.f,weightSlew_=0.f;
+    std::array<std::array<float,2>,2> lowWeights_{},targetLowWeights_{};
     int room_=0;
 };
 } // namespace armix::sonku::p92
