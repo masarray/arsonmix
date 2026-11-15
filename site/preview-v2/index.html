@@ -694,7 +694,7 @@ function sectionSend(t){
   '</div>'+wireTray(t)+compactWireSummary(t)+'</div>';
 }
 function formatDb(n){return n<=-60?'-∞':(n>0?'+':'')+Number(n).toFixed(1);}
-function panLabel(n){return Number(n)===0?'C':n<0?'L'+Math.abs(n):'R'+n;}
+function panLabel(n){return Number(n)===0?'CEN':n<0?'L'+Math.abs(n):'R'+n;}
 function panStyle(n){const left=Math.min(50,50+n/2),right=Math.max(50,50+n/2);return '--pan-start:'+left+'%;--pan-end:'+right+'%';}
 /* One shared visual travel contract for fader, ticks, pointer and detent.
    dBFS meter calibration is separate; neither GUI is an audio DSP authority. */

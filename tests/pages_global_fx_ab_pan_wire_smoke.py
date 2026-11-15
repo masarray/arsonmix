@@ -49,7 +49,7 @@ def run(page, width, height):
     for density in ("comfort","standard","compact"):
         page.locator("#densitySelect").evaluate(
             "(select,value)=>{select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}",density)
-        for value,label in [(-100,"L100"),(0,"C"),(100,"R100")]:
+        for value,label in [(-100,"L100"),(0,"CEN"),(100,"R100")]:
             seen=pan(page,value)
             assert seen["text"]==label,(width,density,label,seen)
             assert not seen["clipped"] and not seen["overflow"],(width,density,label,seen)
@@ -58,6 +58,8 @@ def run(page, width, height):
             assert seen["gap"]>=0 and seen["sliderWidth"]>=30,(width,density,"PAN collision",seen)
             if label in ("L100","R100"):
                 assert 24<=seen["readoutWidth"]<=26,(width,density,"caption yields to slider",seen)
+            if label=="CEN":
+                assert 12<=seen["readoutWidth"]<25,(width,density,"CEN remains inside gutter",seen)
             assert seen["centerError"]<=1,(width,density,"slider must be centered",seen)
     page.locator("#densitySelect").evaluate(
         "(select)=>{select.value='comfort';select.dispatchEvent(new Event('change',{bubbles:true}));}")
@@ -89,6 +91,23 @@ def run(page, width, height):
     assert power.evaluate("el=>el.tagName.toLowerCase()")=="svg"
     assert toggle.locator("button").count()==0
     assert power.evaluate("el=>getComputedStyle(el).backgroundImage")=="none"
+    def check_fx_vertical_center(state):
+        positions=toggle.evaluate("""button=>{
+          const text=button.querySelector('.global-fx-label'),icon=button.querySelector('.global-fx-power-icon');
+          const b=button.getBoundingClientRect(), t=text.getBoundingClientRect(), i=icon.getBoundingClientRect();
+          const center=rect=>(rect.top+rect.bottom)/2;
+          return {button:center(b),label:center(t),icon:center(i),
+                  textLineHeight:getComputedStyle(text).lineHeight,
+                  align:getComputedStyle(button).alignItems,
+                  labelHeight:t.height,iconHeight:i.height};
+        }""")
+        assert positions["align"]=="center",(width,state,positions)
+        assert positions["textLineHeight"]=="14px",(width,state,positions)
+        assert positions["labelHeight"]==positions["iconHeight"]==14,(width,state,positions)
+        assert abs(positions["icon"]-positions["button"])<=.75,(width,state,positions)
+        assert abs(positions["label"]-positions["button"])<=1.25,(width,state,positions)
+        assert abs(positions["label"]-positions["icon"])<=1.25,(width,state,positions)
+    check_fx_vertical_center("ON")
     # The full physical button face, not only its glyph, becomes green.
     # The label and icon must share exactly the parent's ON/OFF text ink.
     on_face=toggle.evaluate("""el=>({
@@ -104,6 +123,7 @@ def run(page, width, height):
     toggle.click()
     assert toggle.get_attribute("aria-pressed")=="false"
     assert toggle.get_attribute("data-fx-power-state")=="bypassed"
+    check_fx_vertical_center("BYPASS")
     off_face=toggle.evaluate("""el=>({
       bg:getComputedStyle(el).backgroundImage,
       ink:getComputedStyle(el).color,
