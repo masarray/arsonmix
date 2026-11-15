@@ -2667,7 +2667,7 @@
         const state=String(ack.state||"");
         const message=state==="FACTORY_RESET_NEEDS_AUDIO_SETUP"?
           "Mixer reset · open Audio I/O to reconnect playback; output muted":
-          state==="FACTORY_RESET_APPEARANCE_WARNING"?
+          state==="FACTORY_RESET_SETTINGS_WARNING"?
           "Mixer reset · check saved channel appearance permissions":
           "Mixer reset · no FX or custom WIRE, all inputs disconnected · MAIN muted";
         status(message);nativeToast(message);
