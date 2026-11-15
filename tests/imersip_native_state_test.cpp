@@ -249,7 +249,7 @@ int main() {
         auto* align=dynamic_cast<juce::Slider*>(
             live->findChildWithID("imersip.ear-align"));
         assert(depth&&stereo&&align);
-        assert(std::abs(depth->getValue()-60.)<.01);
+        assert(std::abs(depth->getValue()-100.*Settings{}.depth)<.01);
         depth->setValue(87.,juce::sendNotificationSync);
         juce::AudioBuffer<float> pulse(2,128);pulse.clear();
         audible->processBlock(pulse,midi);
