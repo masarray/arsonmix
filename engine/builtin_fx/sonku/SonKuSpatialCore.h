@@ -219,6 +219,9 @@ public:
         smoothedMix_=settings_.spatialMix;
         smoothedTrim_=settings_.outputTrim;
         smoothedDistanceGain_=1.f;
+#if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
+        smoothedBassDistance_=1.f;
+#endif
         smoothedRoomLevel_=1.f;
         smoothedBassShelf_=0.f;
         smoothedErPresence_=1.f;
@@ -549,7 +552,17 @@ public:
                 0.13f*
 #endif
                 (settings_.sourceDistanceMeters-1.6f)):1.f;
+        // Original low-frequency direct return ignored distance; P8.8
+        // attenuates it gently while preserving stereo LF weight.
+#if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
+        const float targetBassDistance=roomEnabled&&
+            p83Mode_==p83::Mode::MusicSpatialP88?
+            1.f/(1.f+0.10f*(settings_.sourceDistanceMeters-1.6f)):1.f;
+#endif
         for(int i=0;i<samples;++i) {
+#if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
+            smoothedBassDistance_+=distanceSlew_*(targetBassDistance-smoothedBassDistance_);
+#endif
             smoothedMix_+=levelSlew_*(settings_.spatialMix-smoothedMix_);
             smoothedTrim_+=levelSlew_*(settings_.outputTrim-smoothedTrim_);
             // Land exactly on the accepted parameter once close enough.
@@ -764,11 +777,17 @@ public:
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
                     *(musicalBody&&roomEnabled?p87::MusicalAirBody::musicBassRoomGain:1.f)
 #endif
+#if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
+                    *smoothedBassDistance_
+#endif
                     :0.f;
                 const float musicLowR=transparentBass?
                     smoothedMix_*originalLowR
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
                     *(musicalBody&&roomEnabled?p87::MusicalAirBody::musicBassRoomGain:1.f)
+#endif
+#if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
+                    *smoothedBassDistance_
 #endif
                     :0.f;
                 const float baseDryL=transparentBass?dryLevel*x0:0.f;
@@ -1013,6 +1032,9 @@ private:
     SonKuMusicalReverb reverb_{};
     SonKuStereoIntegrity integrity_{};
     float smoothedMix_=1.f,smoothedTrim_=0.75f;
+#if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
+    float smoothedBassDistance_=1.f;
+#endif
     float smoothedDistanceGain_=1.f,smoothedRoomLevel_=1.f;
     float smoothedBassShelf_=0.f,limiterGain_=1.f;
     float smoothedErPresence_=1.f,smoothedTailPresence_=1.f;
