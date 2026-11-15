@@ -344,6 +344,8 @@ void verifyAudibleWetIsNotNearBypassed(double rate) {
         // Energy-based minimum -24dB PCM delta. This is NOT listener
         // acceptability, but rejects the previously practically-bypassed
         // room even when a trivial >1e-5 float test passed.
+        std::fprintf(stdout,"IMERSIP_FULL_ROOM_DELTA rate=%.0f fixture=%d ratio=%.6f dB=%.2f\\n",
+            rate,fixture,ratio,20.*std::log10(ratio+1.e-12));
         if(!(ratio>.063)) {
             std::fprintf(stderr,
                 "IMERSIP_NEAR_BYPASS: rate=%.0f fixture=%d deltaRms=%.8f\n",
@@ -354,6 +356,31 @@ void verifyAudibleWetIsNotNearBypassed(double rate) {
             assert(std::abs(dry.l[i]-input.l[i])<1.e-5f);
             assert(std::abs(dry.r[i]-input.r[i])<1.e-5f);
         }
+    }
+}
+void verifyDefaultRoomActuallyChangesPCM(double rate) {
+    for(int fixture:{0,4}) {
+        Stereo input(32768);makeSignal(input,rate,fixture,311.f);
+        Settings settings{};settings.immersion=0.f;
+        settings.detail=0.f;settings.bassImpact=0.f;
+        const auto dry=render(rate,settings,input);
+        settings.immersion=.58f;settings.space=.45f;
+        const auto wet=render(rate,settings,input);
+        double signal=0.,changed=0.;
+        for(int i=4096;i<32768;++i) {
+            signal+=static_cast<double>(input.l[i])*input.l[i]
+                   +static_cast<double>(input.r[i])*input.r[i];
+            changed+=static_cast<double>(wet.l[i]-dry.l[i])*
+                     (wet.l[i]-dry.l[i])
+                    +static_cast<double>(wet.r[i]-dry.r[i])*
+                     (wet.r[i]-dry.r[i]);
+        }
+        const double ratio=std::sqrt(changed/(signal+1.e-14));
+        std::fprintf(stdout,"IMERSIP_DEFAULT_ROOM_DELTA rate=%.0f fixture=%d ratio=%.6f\\n",
+                     rate,fixture,ratio);
+        // This tests REAL ROOM/HRIR: both tonal knobs are OFF. Old
+        // visually-changing near-bypass code is rejected by this gate.
+        assert(ratio>.025);
     }
 }
 void verifyPeakSafety(double rate) {
@@ -388,6 +415,7 @@ int main() {
         verifyDetailIsNotMidBoost(rate);
         verifyActualP82RoomChangesSideOnly(rate);
         verifyAudibleWetIsNotNearBypassed(rate);
+        verifyDefaultRoomActuallyChangesPCM(rate);
         verifyPeakSafety(rate);
     }
 }

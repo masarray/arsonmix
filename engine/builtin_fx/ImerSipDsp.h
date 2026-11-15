@@ -136,13 +136,13 @@ public:
                 const float erMid=.5f*(erL+erR),erSide=.5f*(erL-erR);
                 const float revMid=.5f*(revL+revR);
                 const float revSide=.5f*(revL-revR);
-                // Early room MID is restrained (32%); late MID 12%.
-                // The foreground vocal remains the ORIGINAL input.
+                // Early room MID 55% of early SIDE; late MID 12%.
+                // The foreground vocal remains predominantly ORIGINAL direct input.
                 float addL=directSide+
-                    earlyGain_*(erSide+.32f*erMid)+
+                    earlyGain_*(erSide+.55f*erMid)+
                     lateGain_*(revSide+.12f*revMid);
                 float addR=-directSide+
-                    earlyGain_*(-erSide+.32f*erMid)+
+                    earlyGain_*(-erSide+.55f*erMid)+
                     lateGain_*(-revSide+.12f*revMid);
                 // Suppress only OPTIONAL enhancement near 0dBFS.
                 // Never auto-mute/attenuate the original music direct path.
@@ -179,7 +179,7 @@ private:
         sideTarget_=.22f*s.width*s.immersion;
         roomTarget_=.24f*s.immersion*s.width;
         earlyTarget_=s.immersion*(.65f+1.35f*s.space);
-        lateTarget_=s.immersion*(.20f+.60f*s.space);
+        lateTarget_=s.immersion*(.30f+1.10f*s.space);
     }
     static constexpr int scratchFrames=8192;
     armix::sonku::SonKuSpatialCore core_{};
