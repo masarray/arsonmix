@@ -69,16 +69,16 @@ public:
             button.onClick=[this,i]{venue_=i;refreshVenues();submit();};
             addAndMakeVisible(button);
         }
-        const char* names[]{"IMMERSION","STAGE WIDTH","VENUE SPACE","BASS IMPACT","OUTPUT"};
-        for(int i=0;i<5;++i) {
+        const char* names[]{"IMMERSION","STAGE WIDTH","VENUE SPACE","BASS IMPACT","DETAIL","OUTPUT"};
+        for(int i=0;i<6;++i) {
             auto& slider=knobs_[static_cast<std::size_t>(i)];
             slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
             slider.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
-            slider.setRange(i==4?-12.:0.,i==4?3.5:100.,i==4?.1:1.);
+            slider.setRange(i==5?-12.:0.,i==5?3.5:100.,i==5?.1:1.);
             slider.setRotaryParameters(juce::degreesToRadians(225.f),
                                        juce::degreesToRadians(495.f),true);
             slider.setDoubleClickReturnValue(true,
-                i==0?58.:i==1?95.:i==2?45.:i==3?75.:0.);
+                i==0?58.:i==1?95.:i==2?45.:i==3?75.:i==4?40.:0.);
             slider.onValueChange=[this,i]{
                 refreshReadout(i);
                 if(!knobs_[static_cast<std::size_t>(i)].isMouseButtonDown())
@@ -135,7 +135,7 @@ public:
         g.setFont(juce::FontOptions(11.f,juce::Font::plain));
         g.drawText("VENUE",385,94,110,20,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xffa1c0cd));
-        g.drawText("DIRECT VOCAL · WIDE STEREO · SIDE-ONLY ROOM",
+        g.drawText("DIRECT VOCAL · WIDE STEREO · BASS & AIR DETAIL",
                    384,406,425,14,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff244452));g.fillRect(0,440,840,1);
         g.setColour(juce::Colour(0xff84bbc7));
@@ -149,9 +149,9 @@ public:
         stage_={19,81,335,341};
         for(int i=0;i<3;++i)
             venues_[static_cast<std::size_t>(i)].setBounds(385+i*141,121,134,35);
-        const int xs[]{391,532,673,456,609};
-        const int ys[]{186,186,186,309,309};
-        for(int i=0;i<5;++i) {
+        const int xs[]{391,532,673,391,532,673};
+        const int ys[]{186,186,186,309,309,309};
+        for(int i=0;i<6;++i) {
             const int x=xs[i],y=ys[i];
             knobs_[static_cast<std::size_t>(i)].setBounds(x+18,y,104,87);
             captions_[static_cast<std::size_t>(i)].setBounds(x,y+83,139,17);
@@ -212,7 +212,7 @@ private:
             knobs_[static_cast<std::size_t>(i)].getValue());
         juce::String out;
         if(i==1)out=juce::String(80+static_cast<int>(std::round(v)))+"°";
-        else if(i==4)out=(v>0.f?"+":"")+juce::String(v,1)+" dB";
+        else if(i==5)out=(v>0.f?"+":"")+juce::String(v,1)+" dB";
         else out=juce::String(static_cast<int>(std::round(v)))+"%";
         values_[static_cast<std::size_t>(i)].setText(out,
             juce::dontSendNotification);
@@ -224,17 +224,18 @@ private:
         next.width=static_cast<float>(knobs_[1].getValue()*.01);
         next.space=static_cast<float>(knobs_[2].getValue()*.01);
         next.bassImpact=static_cast<float>(knobs_[3].getValue()*.01);
+        next.detail=static_cast<float>(knobs_[4].getValue()*.01);
         next.outputTrim=static_cast<float>(
-            std::pow(10.,knobs_[4].getValue()/20.));
+            std::pow(10.,knobs_[5].getValue()/20.));
         return next;
     }
     void sync(const armix::imersip::Settings& s) {
         venue_=s.venue;
         refreshVenues();
         const float vals[]{s.immersion*100.f,s.width*100.f,
-                           s.space*100.f,s.bassImpact*100.f,
+                           s.space*100.f,s.bassImpact*100.f,s.detail*100.f,
                            static_cast<float>(20.*std::log10(s.outputTrim))};
-        for(int i=0;i<5;++i) {
+        for(int i=0;i<6;++i) {
             knobs_[static_cast<std::size_t>(i)].setValue(vals[i],
                 juce::dontSendNotification);
             refreshReadout(i);
@@ -281,8 +282,8 @@ private:
     ImerSipProcessor& fx_;
     ImerSipLook look_{};
     std::array<juce::TextButton,3> venues_{};
-    std::array<juce::Slider,5> knobs_{};
-    std::array<juce::Label,5> captions_{},values_{};
+    std::array<juce::Slider,6> knobs_{};
+    std::array<juce::Label,6> captions_{},values_{};
     juce::Rectangle<int> stage_{};
     armix::imersip::Settings deferred_{};
     juce::String status_;
