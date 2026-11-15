@@ -750,6 +750,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item docs/THIRD_PARTY_8D_SONKU_HRTF.md dist/THIRD_PARTY_8D_SONKU_HRTF.md
           Copy-Item docs/SONKU_P90_TRUE_EXTERNAL_SPEAKER_FAT_20261115.md dist/SONKU_P90_FIELD_FAT.md
+          Copy-Item docs/SONKU_P91_P92_RECONCILED_MUSIC_FIDELITY_BASS_FAT_20261116.md dist/SONKU_P91_P92_FIELD_FAT.md
           $provenance = Get-Content -LiteralPath dist/BUILD_PROVENANCE.json -Raw | ConvertFrom-Json
           if ($provenance.sourceCommit -ne (git rev-parse HEAD).Trim()) {
             throw 'SONKU_P90_SOURCE_COMMIT_MISMATCH'
