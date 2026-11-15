@@ -48,6 +48,7 @@ int main() {
     assert(fx.isBusesLayoutSupported(fx.getBusesLayout()));
     fx.prepareToPlay(48000.,128);
     assert(fx.isReady());
+    assert(fx.measuredStereoStageEnabled()); // real two KEMAR sources
     auto settings=fx.acceptedSettings();
     assert(settings.bassImpact==.75f);
     juce::MemoryBlock before;
