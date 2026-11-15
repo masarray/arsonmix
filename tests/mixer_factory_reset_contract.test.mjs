@@ -35,19 +35,36 @@ test("durable reset invalidates both saved HEAD and PREVIOUS before restart",()=
   assert.match(host,/mixerSessionRecoveryPending_=false/);
 });
 
-test("stop old callback graph and restart with preserved device, silent MAIN",()=>{
+test("reset is transactional and automatically readies verified MAIN without persistent mute",()=>{
   const start=host.indexOf("void resetMixerToFactory()");
   const end=host.indexOf("juce::String resolveMixerSessionCatalog",start);
   const body=host.slice(start,end);
   assert.ok(start>=0&&end>start);
-  assert.ok(body.indexOf("engine_.setOutputMuted(true)")<body.indexOf("engine_.stop()"));
-  assert.ok(body.indexOf("discardForFactoryReset()")<body.indexOf("engine_.stop()"));
-  assert.match(body,/engine_\.stop\(\)/);
-  assert.match(body,/engine_\.start\(saved\.get\(\)\)/);
+  const journal=body.indexOf("discardForFactoryReset()");
+  const transition=body.indexOf("engine_.setOutputMuted(true)");
+  const stop=body.indexOf("engine_.stop()");
+  const restart=body.indexOf("engine_.start(saved.get())");
+  const rearm=body.indexOf("requestAutomaticMain(false)");
+  assert.ok(journal>=0&&transition>journal&&stop>transition&&restart>stop&&rearm>restart);
+  assert.equal(body.lastIndexOf("engine_.setOutputMuted(true)"),transition,
+    "output transition must not be left latched AFTER engine startup");
+  assert.match(body,/FACTORY_RESET_READY/);
   assert.match(body,/engine_\.setMasterGainLinear\(1\.f\)/);
   assert.match(body,/engine_\.setMasterMuted\(false\)/);
-  assert.match(body,/engine_\.setOutputMuted\(true\)/);
+  assert.doesNotMatch(body,/operatorOutputMuted_/);
   assert.doesNotMatch(body,/deleteRecursively\(\).*Plugins/);
+});
+
+test("no user-facing OUTPUT Mute/Unmute button or persistent operator latch",()=>{
+  assert.doesNotMatch(bridge,/Unmute Output|Mute Output|data-native-monitor|muteBtn|armBtn/);
+  assert.doesNotMatch(bridge,/action:"monitor",value:false/);
+  assert.doesNotMatch(host,/operatorOutputMuted_/);
+  assert.match(host,/void serviceAutomaticMain\(\)/);
+  assert.match(host,/engine_\.liveOutputArmFault\(requireInput\)/);
+  assert.match(host,/else if\(startupError_\.isEmpty\(\)\)requestAutomaticMain\(false\)/);
+  assert.match(host,/OUTPUT_MUTE_REMOVED/);
+  assert.match(ui,/MAIN audio becomes active automatically/);
+  assert.doesNotMatch(ui,/Audio output will be muted/);
 });
 
 test("preview reset is explicitly FX-free and WIRE-free, not demo-init",()=>{
