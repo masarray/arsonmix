@@ -66,10 +66,10 @@ class ImerSipPickerContract(unittest.TestCase):
         # Linux tests but made the real full Windows GUI fail with C2513.
         # Catch this in the fast preflight before obtaining JUCE/WebView2.
         editor=read("engine/builtin_fx/ImerSipEditor.h")
-        self.assertRegex(editor,r"\\bequalControlValue\\s*=")
+        self.assertRegex(editor,r"\bequalControlValue\s*=")
         self.assertNotRegex(editor,re.compile(
-            r"\\b(?:const\\s+)?(?:auto|bool|float|double|int)\\s+"
-            r"(?:near|far|small|interface)\\s*(?:[=;(,])"))
+            r"\b(?:const\s+)?(?:auto|bool|float|double|int)\s+"
+            r"(?:near|far|small|interface)\s*(?:[=;(,])"))
 
     def test_native_windows_artifact_requires_compiled_picker_registry(self):
         cmake=read("CMakeLists.txt")
