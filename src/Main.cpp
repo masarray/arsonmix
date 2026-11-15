@@ -7361,6 +7361,15 @@ private:
         if(device) {
             if(device->getTypeName()!="ASIO" ||
                !engine_.sameRetainedAsioDriver())return;
+            if(device->isOpen() && !directCallbackStalled_ &&
+               engine_.directRouteAuthorized() && engine_.hasBoundMixerRoute()) {
+                // Do not reopen a healthy ASIO stream on display idle.
+                if(engine_.mainInterruptedByDevice() &&
+                   engine_.wantsMainContinuation() && !operatorOutputMuted_)
+                    requestAutomaticMain(false);
+                asioRecoveryEpoch_=epoch;
+                return;
+            }
         } else if(!engine_.selectedRetainedAsioDriverForReopen()) {
             // The device pointer disappeared: never open an unapproved or
             // guessed driver name, even if ASIO4ALL happens to be installed.
@@ -7476,6 +7485,28 @@ private:
         emitApprovedNativeSnapshot();
     }
 
+    // Load only the previously committed device XML, even when hardware
+    // is absent at cold start. A JUCE default is never an approved profile.
+    void rememberSavedWasapiProfile(const juce::XmlElement* saved) {
+        if(!saved || saved->getTagName()!="DEVICESETUP" ||
+           saved->getStringAttribute("deviceType")!="Windows Audio")return;
+        juce::AudioDeviceManager::AudioDeviceSetup setup;
+        setup.inputDeviceName=saved->getStringAttribute("audioInputDeviceName");
+        setup.outputDeviceName=saved->getStringAttribute("audioOutputDeviceName");
+        if(setup.outputDeviceName.isEmpty())return;
+        setup.sampleRate=saved->getDoubleAttribute("audioDeviceRate",0.);
+        setup.bufferSize=saved->getIntAttribute("audioDeviceBufferSize",0);
+        if(saved->hasAttribute("audioDeviceInChans")) {
+            setup.useDefaultInputChannels=false;
+            setup.inputChannels.parseString(saved->getStringAttribute("audioDeviceInChans"),2);
+        }
+        if(saved->hasAttribute("audioDeviceOutChans")) {
+            setup.useDefaultOutputChannels=false;
+            setup.outputChannels.parseString(saved->getStringAttribute("audioDeviceOutChans"),2);
+        }
+        verifiedWasapiSetup_=std::move(setup);
+    }
+
     // Recovery only for a verified saved Windows Audio endpoint; no
     // fallback, no graph CLEAR, no attempt while an explicit device dialog
     // owns the lifecycle. The current native graph remains the PCM authority.
@@ -7495,12 +7526,13 @@ private:
             wasapiRecovery_.cancel();
             return;
         }
-        auto actual=manager.getAudioDeviceSetup();
-        if(actual.outputDeviceName.isNotEmpty() &&
-           device->getActiveOutputChannels().countNumberOfSetBits()>=2) {
-            verifiedWasapiSetup_=std::move(actual);
-            if(!directCallbackStalled_)wasapiRecovery_.recovered();
+        if(!verifiedWasapiSetup_) {
+            auto actual=manager.getAudioDeviceSetup();
+            if(actual.outputDeviceName.isNotEmpty() &&
+               device->getActiveOutputChannels().countNumberOfSetBits()>=2)
+                verifiedWasapiSetup_=std::move(actual);
         }
+        if(!directCallbackStalled_)wasapiRecovery_.recovered();
     }
 
     void observeNativeCallbackHeartbeat() {
@@ -7695,6 +7727,7 @@ private:
             }
             auto saved = juce::XmlDocument::parse (
                 machineSettingsDirectory().getChildFile ("audio-devices.xml"));
+            rememberSavedWasapiProfile(saved.get());
             startupError_ = engine_.start (saved.get());
             engine_.devices().addChangeListener (this);
             diagnostics_.record ("STARTUP",
