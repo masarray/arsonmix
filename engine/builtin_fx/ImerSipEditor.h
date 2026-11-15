@@ -508,12 +508,13 @@ private:
             // PCM difference alone was incorrectly certified as spatial
             // "quality". Show actual output SIDE energy relative to
             // original stereo, normalized to final output trim.
-            const float db=10.f*std::log10(
-                std::max(fx_.liveDifferenceEnergy(),1.e-12f));
+            const float input=std::max(fx_.liveInputEnergy(),1.e-12f);
+            const float output=std::max(fx_.liveOutputEnergy(),1.e-12f);
+            const float db=10.f*std::log10(output/input);
             const float stereo=fx_.liveStereoRetention();
             liveReadout_=stereo<0.f?
-                "MONO INPUT / PCM "+juce::String(db,1)+"dB":
-                "STEREO "+juce::String(stereo,2)+"x / PCM "+
+                "MONO INPUT  ·  LEVEL "+juce::String(db,1)+"dB":
+                "STEREO "+juce::String(stereo,2)+"x  ·  LEVEL "+
                 juce::String(db,1)+"dB";
         }
         lastObservedFrames_=frames;

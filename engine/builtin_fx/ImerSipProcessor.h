@@ -61,6 +61,9 @@ public:
     float liveInputEnergy() const noexcept {
         return liveInputEnergy_.load(std::memory_order_relaxed);
     }
+    float liveOutputEnergy() const noexcept {
+        return liveOutputEnergy_.load(std::memory_order_relaxed);
+    }
     float liveDifferenceEnergy() const noexcept {
         return liveDifferenceEnergy_.load(std::memory_order_relaxed);
     }
@@ -83,6 +86,7 @@ public:
         dsp_.process(pcm.getWritePointer(0),pcm.getWritePointer(1),
                      pcm.getNumSamples());
         liveInputEnergy_.store(dsp_.lastInputEnergy(),std::memory_order_relaxed);
+        liveOutputEnergy_.store(dsp_.lastOutputEnergy(),std::memory_order_relaxed);
         liveDifferenceEnergy_.store(dsp_.lastDifferenceEnergy(),
                                     std::memory_order_relaxed);
         liveStereoRetention_.store(dsp_.lastStereoRetention(),
@@ -200,7 +204,7 @@ private:
     std::uint64_t lastCompletedRequest_=0,lastIssuedRequest_=0;
     bool lastCompletedApplied_=false;
     std::atomic<std::uint64_t> processedFrames_{0};
-    std::atomic<float> liveInputEnergy_{0.f},liveDifferenceEnergy_{0.f};
+    std::atomic<float> liveInputEnergy_{0.f},liveOutputEnergy_{0.f},liveDifferenceEnergy_{0.f};
     std::atomic<float> liveStereoRetention_{-1.f};
     std::atomic<bool> compareDry_{false};
 };

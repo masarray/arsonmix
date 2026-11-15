@@ -698,6 +698,39 @@ void verifyOriginalMusicHiFiContour(double rate) {
         assert(sideGain>.995 && sideGain<1.48);
     }
 }
+
+void verifyDefaultMusicLevelEvidence(double rate) {
+    Stereo source(32768);
+    for(int i=0;i<32768;++i) {
+        const double t=static_cast<double>(i)/rate;
+        const float bass=.10f*std::sin(2.*pi*83.*t);
+        const float body=.07f*std::sin(2.*pi*252.*t);
+        const float voice=.055f*std::sin(2.*pi*1700.*t);
+        const float air=.025f*std::sin(2.*pi*9300.*t);
+        source.l[i]=bass+body+voice+air;
+        source.r[i]=.93f*bass+.76f*body+.45f*voice-.13f*air;
+    }
+    auto measure=[](const Stereo& a) {
+        double sum=0.;
+        for(int i=8192;i<static_cast<int>(a.l.size());++i)
+            sum+=a.l[i]*a.l[i]+a.r[i]*a.r[i];
+        return std::sqrt(sum/(2.*(a.l.size()-8192)));
+    };
+    const Settings defaults{};
+    auto strongest=defaults;
+    strongest.immersion=strongest.space=strongest.width=1.f;
+    strongest.bassImpact=strongest.detail=strongest.lateRoom=1.f;
+    // Output gain is held constant; do not fake quality with +3.5dB trim.
+    strongest.outputTrim=1.f;
+    const double dry=measure(source);
+    const double levelDefault=measure(render(rate,defaults,source,128))/dry;
+    const double levelMax=measure(render(rate,strongest,source,128))/dry;
+    std::fprintf(stderr,
+        "IMERSIP_MUSIC_LEVEL rate=%.0f default=%.5f max=%.5f\\n",
+        rate,levelDefault,levelMax);
+    assert(std::isfinite(levelDefault)&&std::isfinite(levelMax));
+    assert(levelDefault>.70 && levelMax>.70); // deny near-silent render
+}
 void verifyBassFoundation(double rate) {
     for(int venue=0;venue<3;++venue)for(float hz:{40.f,70.f,110.f,160.f,220.f}) {
         Stereo source;
@@ -1011,6 +1044,7 @@ int main() {
         verifyP87MusicalAirBodyRealIntegration(rate);
         verifyConcertStageLateralReflection(rate);
         verifyOriginalMusicHiFiContour(rate);
+        verifyDefaultMusicLevelEvidence(rate);
         verifyBassFoundation(rate);
         verifyRoomLinkedBassStaysCoherent(rate);
         verifyDetailIsNotMidBoost(rate);

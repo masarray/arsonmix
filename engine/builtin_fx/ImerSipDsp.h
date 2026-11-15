@@ -121,7 +121,7 @@ public:
     void process(float* left,float* right,int frames) noexcept {
         if(!ready_||!left||!right||frames<=0)return;
         int at=0;
-        double sourceEnergy=0.,deltaEnergy=0.;
+        double sourceEnergy=0.,outputEnergy=0.,deltaEnergy=0.;
         double originalSideEnergy=0.,processedSideEnergy=0.;
         while(at<frames) {
             const int count=std::min(frames-at,scratchFrames);
@@ -264,6 +264,7 @@ public:
                 const double inL=dryL,inR=dryR;
                 const double dl=l-inL,dr=r-inR;
                 sourceEnergy+=inL*inL+inR*inR;
+                outputEnergy+=l*l+r*r;
                 deltaEnergy+=dl*dl+dr*dr;
                 // Per-block stereo preservation, normalized for final gain.
                 // Never call a large PCM delta an improvement in fidelity.
@@ -275,12 +276,14 @@ public:
             at+=count;
         }
         lastInputEnergy_=static_cast<float>(sourceEnergy/(2.*frames));
+        lastOutputEnergy_=static_cast<float>(outputEnergy/(2.*frames));
         lastDifferenceEnergy_=static_cast<float>(deltaEnergy/(sourceEnergy+1.e-14));
         lastStereoRetention_=originalSideEnergy>1.e-10?
             static_cast<float>(std::sqrt(processedSideEnergy/originalSideEnergy)):
             -1.f; // centered MONO input has no original stereo to retain
     }
     float lastInputEnergy() const noexcept {return lastInputEnergy_;}
+    float lastOutputEnergy() const noexcept {return lastOutputEnergy_;}
     float lastDifferenceEnergy() const noexcept {return lastDifferenceEnergy_;}
     float lastStereoRetention() const noexcept {return lastStereoRetention_;}
 private:
@@ -334,7 +337,7 @@ private:
     float earlyGain_=0.f,earlyTarget_=0.f;
     float lateGain_=0.f,lateTarget_=0.f;
     float outputGain_=1.f;
-    float lastInputEnergy_=0.f,lastDifferenceEnergy_=0.f;
+    float lastInputEnergy_=0.f,lastOutputEnergy_=0.f,lastDifferenceEnergy_=0.f;
     float lastStereoRetention_=-1.f;
     bool ready_=false;
 };
