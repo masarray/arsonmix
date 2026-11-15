@@ -74,35 +74,35 @@ void assertChunkParity(const Stereo& a,const Stereo& b) {
 }
 void verifySceneGeometry() {
     Settings s{};
-    assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-97.f)<.01f);
+    assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-95.92f)<.02f);
     s.width=1.f;
-    assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-100.f)<.01f);
+    assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-126.f)<.01f);
     s.width=0.f;
-    assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-40.f)<.01f);
+    assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-32.f)<.01f);
     for(int venue=0;venue<3;++venue) {
         s.venue=venue;
         auto scene=armix::imersip::sceneFor(s);
         assert(!scene.moving && scene.startAzimuthDegrees==0.f);
         assert(scene.spacePreset>=2);
         assert(scene.spatialMix>0.f && scene.outputTrim==1.f);
-        assert(scene.sourceDistanceMeters==1.6f);
+        assert(std::abs(scene.sourceDistanceMeters-(1.6f+5.8f*s.depth))<1.e-4f);
         assert(scene.roomAmount>scene.ambience);
         // P0 had a near-bypassed real room (~0.05 * core return).
         // Increased actual room-gain is intentional; its *processed PCM*
         // must now pass the robust dry/wet null-test below.
-        assert(scene.roomAmount<=.65f && scene.ambience<=.30f);
+        assert(scene.roomAmount<=.90f && scene.ambience<=.58f);
     }
 }
 void verifyNearOrchestraRoomContract() {
     for(int venue=0;venue<3;++venue)for(float amount:{0.f,.45f,1.f}) {
         Settings s{};s.venue=venue;s.space=amount;s.immersion=1.f;
         const auto room=armix::imersip::sceneFor(s);
-        assert(room.sourceDistanceMeters==1.6f);
+        assert(std::abs(room.sourceDistanceMeters-(1.6f+5.8f*s.depth))<1.e-4f);
         assert(room.roomAmount>room.ambience);
         assert(room.spacePreset>=2);
         s.immersion=0.f;
         const auto dry=armix::imersip::sceneFor(s);
-        assert(dry.sourceDistanceMeters==1.6f);
+        assert(std::abs(dry.sourceDistanceMeters-room.sourceDistanceMeters)<1.e-4f);
         assert(dry.spacePreset==0&&dry.roomAmount==0.f&&dry.ambience==0.f);
     }
 }
@@ -428,6 +428,55 @@ void verifyCompareNeverChangesSettings(double rate) {
     assert(compare->settings().stereoLock==1.f);
     assert(fx->lastStereoRetention()>0.f);
 }
+
+void verifyP87NotTheQualityReferenceAndRealDepth(double rate) {
+    // Owner FAT: SonKu P8.7 default is NOT a perceptual reference.
+    // The previous ImerSip 1.6m constant / 97-to-100deg WIDTH dial
+    // had no useful front-depth control. Require *real* geometry and PCM.
+    Settings s{};s.immersion=1.f;s.width=.65f;
+    s.space=.80f;s.lateRoom=.15f;
+    s.bassImpact=0.f;s.detail=0.f;s.outputTrim=1.f;
+    s.stereoLock=1.f;
+    assert(std::abs(armix::imersip::sceneFor(s).sourceDistanceMeters-
+                    (1.6f+5.8f*s.depth))<1.e-4f);
+    Stereo stereo(32768);makeSignal(stereo,rate,4,370.f);
+    auto compare=[&](const Stereo& a,const Stereo& b) {
+        double delta=0.,source=0.;
+        for(int i=4096;i<32768;++i){
+            const double dl=a.l[i]-b.l[i],dr=a.r[i]-b.r[i];
+            delta+=dl*dl+dr*dr;
+            source+=stereo.l[i]*stereo.l[i]+stereo.r[i]*stereo.r[i];
+        }
+        return std::sqrt(delta/(source+1.e-14));
+    };
+    s.depth=0.f;const auto near=render(rate,s,stereo,128);
+    s.depth=1.f;const auto far=render(rate,s,stereo,128);
+    const double depthDelta=compare(near,far);
+    std::fprintf(stderr,
+        "IMERSIP_REAL_DEPTH rate=%.0f near=1.6m far=7.4m delta=%.5f\n",
+        rate,depthDelta);
+    assert(depthDelta>.009);  // rejects old completely inert control
+    s.depth=.6f;s.width=0.f;
+    const auto narrow=render(rate,s,stereo,128);
+    s.width=1.f;
+    const auto wide=render(rate,s,stereo,128);
+    const double spreadDelta=compare(narrow,wide);
+    std::fprintf(stderr,
+        "IMERSIP_WIDTH_FULL_RANGE rate=%.0f from=32 to=126 delta=%.5f\n",
+        rate,spreadDelta);
+    assert(spreadDelta>.025);
+    // The FULL STOP must also matter from a usable musical default.
+    s.width=Settings{}.width;
+    const auto defWidth=render(rate,s,stereo,128);
+    const double maxVsDefault=compare(defWidth,wide);
+    std::fprintf(stderr,
+        "IMERSIP_WIDTH_DEFAULT_TO_MAX rate=%.0f delta=%.5f\n",
+        rate,maxVsDefault);
+    assert(maxVsDefault>.010);
+    Settings bad{};bad.depth=1.01f;assert(!armix::imersip::valid(bad));
+    bad.depth=std::numeric_limits<float>::quiet_NaN();
+    assert(!armix::imersip::valid(bad));
+}
 void verifyBassFoundation(double rate) {
     for(int venue=0;venue<3;++venue)for(float hz:{40.f,70.f,110.f,160.f,220.f}) {
         Stereo source;
@@ -443,7 +492,8 @@ void verifyBassFoundation(double rate) {
         std::fprintf(stderr,"IMERSIP_BASS_GUARD rate=%.0f venue=%d hz=%.0f ratio=%.5f\n",
                      rate,venue,hz,after/before);
         assert(after>before*.995);
-        assert(after<before*1.14);
+        // Up to ~2.0dB optional LF is deliberate, but never a doubling.
+        assert(after<before*1.39);
     }
 }
 void verifyP86HorizontalRoomIsolation(double rate) {
@@ -637,7 +687,7 @@ void verifyDetailIsNotMidBoost(double rate) {
         assert(a>1.e-4);
         const double ratio=b/a;
         if(hz<=3000.f)assert(ratio>=.999&&ratio<1.055);
-        else assert(ratio>1.015&&ratio<1.16);
+        else assert(ratio>1.02&&ratio<1.39);
     }
 }
 void verifyAudibleWetIsNotNearBypassed(double rate) {
@@ -724,6 +774,7 @@ int main() {
         verifyFrontSpeakerVocalDoesNotNull(rate);
         verifyOriginalStereoSurvives(rate);
         verifyStereoIntegrityOwnerRejection(rate);
+        verifyP87NotTheQualityReferenceAndRealDepth(rate);
         verifyCompareNeverChangesSettings(rate);
         verifyP84FusedKernelProvenanceAndLowFrequency(rate);
         verifyP86HorizontalRoomIsolation(rate);

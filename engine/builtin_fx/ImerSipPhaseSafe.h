@@ -13,14 +13,15 @@ namespace armix::imersip {
 
 struct Settings {
     int venue=0;             // 0 Concert Hall, 1 Cinema, 2 Live Room
-    float immersion=.82f;    // audible concert default, 0 exact dry
-    float space=.65f;        // real early room/3-band late, no extra engine
-    float width=.95f;        // +/-48.5 degree front speakers, no orbit
-    float bassImpact=.75f;   // 0 exact P8.2 bass, 1 bounded coherent uplift
-    float detail=.40f;       // 0 original source treble, 1 gentle <=1.3dB air
+    float immersion=.76f;    // direct speakers already audible, max meaningful
+    float space=.70f;        // genuine directional early reflections
+    float width=.68f;        // 32..126 degree front-stage spread
+    float bassImpact=.55f;   // coherent music LF boost on original stereo
+    float detail=.35f;       // >=5.6kHz musical air with a useful end stop
     float outputTrim=1.f;    // P8.2 full-output linear trim
     float stereoLock=1.f;    // 100% retains >=90% original direct SIDE
-    float lateRoom=.45f;     // independent real FDN tail contribution
+    float lateRoom=.34f;     // late reverb separate from early stage
+    float depth=.60f;        // real source radius 1.6..7.4 m
 };
 inline bool valid(const Settings& s) noexcept {
     return s.venue>=0 && s.venue<=2 &&
@@ -31,7 +32,8 @@ inline bool valid(const Settings& s) noexcept {
         std::isfinite(s.detail)&&s.detail>=0.f&&s.detail<=1.f &&
         std::isfinite(s.outputTrim)&&s.outputTrim>=.25f&&s.outputTrim<=1.5f &&
         std::isfinite(s.stereoLock)&&s.stereoLock>=0.f&&s.stereoLock<=1.f &&
-        std::isfinite(s.lateRoom)&&s.lateRoom>=0.f&&s.lateRoom<=1.f;
+        std::isfinite(s.lateRoom)&&s.lateRoom>=0.f&&s.lateRoom<=1.f &&
+        std::isfinite(s.depth)&&s.depth>=0.f&&s.depth<=1.f;
 }
 
 // This filter is NOT a second reverb, compressor, M/S limiter or tone
@@ -62,9 +64,13 @@ public:
         // Exact linear gain deltas for +0.85 / +0.40 / +0.70 dB at
         // maximum, precomputed OFFLINE; live audio-applied SPSC must NEVER
         // call pow(), exp() or design filter coefficients on callback.
-        constexpr float cinemaMax=.10280823385f;
-        constexpr float liveMax=.04712854805f;
-        constexpr float concertMax=.08392691402f;
+        // 100% is now a USEFUL ±2 dB coherent LF step, not an inaudible
+        // 0.7dB end stop. Original LEFT/RIGHT stay independent and phase
+        // safe. Musical default stays restrained; peak enhancer limits
+        // optional addition against available headroom.
+        constexpr float cinemaMax=.205f;
+        constexpr float liveMax=.140f;
+        constexpr float concertMax=.185f;
         const float maxDelta=s.venue==1?cinemaMax:
             s.venue==2?liveMax:concertMax;
         // VENUE SPACE links a restrained (+0..45% of the ORIGINAL
@@ -73,11 +79,11 @@ public:
         // Same filter coefficients per ear preserve the original LF phase.
         bassTarget_=maxDelta*s.bassImpact*s.immersion*
             (1.f+.45f*s.space);
-        // High SIDE boost limited to +1.58dB at maximum. P8.2 MID is intact.
-        sideTarget_=.20f*s.width*s.immersion;
+        // Music SIDE retains original stereo, with bounded positive tilt.
+        sideTarget_=.25f*s.width*s.immersion;
         // Soft, identical per-channel minimum-phase high shelf >5kHz.
         // Deliberately NO 1-4kHz vocal boost or delayed copy/crossfeed.
-        detailTarget_=.15f*s.detail*s.immersion;
+        detailTarget_=.31f*s.detail*s.immersion;
         return true;
     }
     void reset() noexcept {

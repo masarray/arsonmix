@@ -17,24 +17,29 @@ inline armix::sonku::Settings sceneFor(const Settings& in) noexcept {
     armix::sonku::Settings s{};
     s.moving=false;                     // Never auto-orbit music
     s.startAzimuthDegrees=0.f;          // Front stationary anchor
-    // Physical speakers remain in FRONT, not at +/-90 degrees beside ears.
-    s.stereoSpreadDegrees=40.f+60.f*in.width; // +/-20..50 degrees
+    // Real two-loudspeaker front arc. Old 95% default meant 97/100°,
+    // so MAX changed angle by just 3° and sounded like an inert knob.
+    s.stereoSpreadDegrees=32.f+94.f*in.width; // +/-16..63 degrees
     s.spatialMix=.75f*in.immersion;     // SonKu internal HRIR, direct explicitly exported
     s.outputTrim=1.f;                  // Final trim belongs to ImerSip
     s.spacePreset=in.immersion==0.f?0:(in.venue==2?2:3);
-    // Close front-row source in every venue; the hall itself stays large.
-    // Geometry admission uses the valid P8.2 1.6m minimum.
-    s.sourceDistanceMeters=1.6f;
+    // The original always-fixed 1.6m was the missing externalization
+    // dimension. Depth now drives actual measured six-wall path geometry
+    // (and the physical source radius) from 1.6m to 7.4m, always at
+    // listener ear height. No false room rotation or new audio graph.
+    s.sourceDistanceMeters=1.6f+5.8f*in.depth;
     // Detail-first front-row hall: prioritize six-wall EARLY reflections
     // (external cues) above diffuse LATE decay (mid masking).
     // The original P8.2 room model remains the only acoustic engine.
+    // ZERO early control is real zero, not the old hidden 20% baseline.
+    // Headroom is normalized by the measured early-reflection PCM and
+    // independent FDN/phase protection, not by a second room simulator.
     s.roomAmount=in.immersion==0.f?0.f:
-        (in.venue==1?.17f:in.venue==2?.18f:.20f)+
-        (in.venue==1?.40f:in.venue==2?.36f:.42f)*in.space;
+        (in.venue==1?.77f:in.venue==2?.72f:.88f)*in.space;
     // Independent physical late FDN level: old SPACE knob silently boosted
     // early + late together and made fully-maxed sessions sound washed out.
     s.ambience=in.immersion==0.f?0.f:
-        (in.venue==1?.25f:in.venue==2?.22f:.28f)*in.lateRoom;
+        (in.venue==1?.52f:in.venue==2?.48f:.56f)*in.lateRoom;
     return s;
 }
 
@@ -257,8 +262,12 @@ private:
         // a reverb-gain shortcut. Nonlinear fade reaches 100% true binaural
         // at the end stop while retaining smooth 0% exact-dry admission.
         directTarget_=s.immersion*(2.f-s.immersion);
-        earlyTarget_=s.immersion*(1.18f*s.space);
-        lateTarget_=s.immersion*(.42f*s.lateRoom);
+        // Both levers are independently audible. Depth modifies real
+        // source-wall delays; it also increases ratio of anchored ER to
+        // unchanged original stereo direct as the stage moves farther.
+        // These levels are small measured reflections, NOT dry gain.
+        earlyTarget_=s.immersion*(2.60f*s.space)*(1.f+.55f*s.depth);
+        lateTarget_=s.immersion*(1.0f*s.lateRoom);
         // At 100% lock 90% of original source SIDE is kept even when HRTF
         // is strongest; 0% allows the former full measured binaural SIDE.
         stereoTransferTarget_=1.f-.90f*s.stereoLock;
