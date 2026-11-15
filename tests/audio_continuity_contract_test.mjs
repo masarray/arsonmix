@@ -76,12 +76,14 @@ test('session capture and shutdown keep requested MAIN through a device STOP',()
   const shutdown=main.split('~ConsoleWindow() override')[1]
       .split('engine_\.disconnectSecondaryOutput\(\)')[0];
   assert.match(shutdown,/engine_\.wantsMainContinuation\(\) && !operatorOutputMuted_/);
+  assert.match(shutdown,/saveMixerSession\(resumeMain,\{\},true\)/);
 });
 
 test('automatic checkpoints cannot overwrite saved MAIN and device binding during STOP',()=>{
   const save=main.split('juce::String saveMixerSession(bool resumeMain')[1]
       .split('void openMixerFile(')[0];
   assert.match(save,/!audio \|\| !audio->isOpen\(\)/);
+  assert.match(save,/if\(automatic && !shutdownCheckpoint\)/);
   assert.match(save,/engine_\.mainInterruptedByDevice\(\)/);
   assert.match(save,/doc\.resumeMain=resumeMain \|\|/);
   assert.match(save,/engine_\.wantsMainContinuation\(\) && !operatorOutputMuted_/);
