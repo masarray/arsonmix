@@ -86,10 +86,10 @@ test('healthy independent sessions never arm restoration; setup can replace miss
   const persistence=main.split('if (deviceSettingsDirty_)')[1]
       .split('// A hidden/reloading WebView')[0];
   assert.ok(persistence, 'device-profile persistence path must exist');
-  assert.match(persistence, /activeDevice=engine_\\.devices\\(\\)\\.getCurrentAudioDevice\\(\\)/);
-  assert.match(persistence, /engine_\\.directRouteAuthorized\\(\\)/);
-  assert.match(persistence, /!engine_\\.hasRetainedUnboundMixer\\(\\)/);
-  assert.match(persistence, /activeDevice != nullptr && activeDevice->isOpen\\(\\)/);
+  assert.match(persistence, /activeDevice=engine_\.devices\(\)\.getCurrentAudioDevice\(\)/);
+  assert.match(persistence, /engine_\.directRouteAuthorized\(\)/);
+  assert.match(persistence, /!engine_\.hasRetainedUnboundMixer\(\)/);
+  assert.match(persistence, /activeDevice != nullptr && activeDevice->isOpen\(\)/);
   assert.ok(persistence.indexOf('deviceSettingsDirty_ = false') >
             persistence.indexOf('activeDevice->isOpen()'),
     'pending user binding must survive a temporary closed driver');
