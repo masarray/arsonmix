@@ -106,7 +106,7 @@ void verifyOriginalVocalMidIsUntouched(double rate) {
     for(int venue=0;venue<3;++venue)for(int fixture=0;fixture<6;++fixture) {
         Stereo source;makeSignal(source,rate,fixture,450.f);
         Settings s{};s.venue=venue;s.width=.95f;
-        s.space=1.f;s.immersion=1.f;s.bassImpact=0.f;s.outputTrim=1.f;
+        s.space=1.f;s.immersion=1.f;s.bassImpact=0.f;s.detail=0.f;s.outputTrim=1.f;
         auto wet=render(rate,s,source,128);
         assertChunkParity(wet,render(rate,s,source,64));
         assertChunkParity(wet,render(rate,s,source,8192));
@@ -172,6 +172,26 @@ void verifyActualP82RoomChangesSideOnly(double rate) {
         assert(std::abs((second.l[i]+second.r[i])-
                         (first.l[i]+first.r[i]))<2.e-6);
 }
+void verifyDetailIsNotMidBoost(double rate) {
+    // Detail is a positive >5k high shelf, never a 1-4k shout EQ.
+    // Compare the EXACT same core/venue with detail OFF and ON.
+    Settings s{};s.venue=0;s.bassImpact=0.f;s.width=.95f;
+    s.immersion=1.f;s.space=.45f;
+    for(float hz:{90.f,500.f,1500.f,3000.f,7000.f,11000.f}) {
+        Stereo input;
+        for(int i=0;i<n;++i) {
+            const float x=.09f*static_cast<float>(std::sin(2*pi*hz*i/rate));
+            input.l[i]=x;input.r[i]=x;
+        }
+        s.detail=0.f;const auto before=render(rate,s,input);
+        s.detail=1.f;const auto after=render(rate,s,input);
+        const double a=rms(before,4096,false),b=rms(after,4096,false);
+        assert(a>1.e-4);
+        const double ratio=b/a;
+        if(hz<=3000.f)assert(ratio>=.999&&ratio<1.055);
+        else assert(ratio>1.015&&ratio<1.16);
+    }
+}
 void verifyPeakSafety(double rate) {
     Stereo source;
     for(int i=0;i<n;++i) {
@@ -196,6 +216,7 @@ int main() {
         verifyOriginalVocalMidIsUntouched(rate);
         verifyOriginalStereoSurvives(rate);
         verifyBassFoundation(rate);
+        verifyDetailIsNotMidBoost(rate);
         verifyActualP82RoomChangesSideOnly(rate);
         verifyPeakSafety(rate);
     }
