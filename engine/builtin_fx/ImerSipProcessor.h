@@ -61,10 +61,18 @@ public:
         const bool ok=dsp_.setSettings(next.settings);
         complete_.push({next.requestId,next.settings,ok});
     }
+    // Unique across closing/reopening a JUCE editor on this FX instance.
+    // CONTROL-only; never called by the realtime PCM callback.
+    std::uint64_t nextEditorRequestId() noexcept {
+        if(++lastIssuedRequest_==0)++lastIssuedRequest_;
+        return lastIssuedRequest_;
+    }
     bool queueSettings(const armix::imersip::Settings& s,
                        std::uint64_t requestId) noexcept {
-        return ready_ && requestId && armix::imersip::valid(s)
-            && queue_.push(Edit{requestId,s});
+        if(!ready_ || !requestId || !armix::imersip::valid(s) ||
+           !queue_.push(Edit{requestId,s}))return false;
+        if(requestId>lastIssuedRequest_)lastIssuedRequest_=requestId;
+        return true;
     }
     bool pollCompletion(Completion& result) noexcept {
         if(!complete_.pop(result))return false;
@@ -142,7 +150,7 @@ private:
     armix::imersip::Settings accepted_{};
     bool ready_=false;
     bool published_=false;
-    std::uint64_t lastCompletedRequest_=0;
+    std::uint64_t lastCompletedRequest_=0,lastIssuedRequest_=0;
     bool lastCompletedApplied_=false;
 };
 } // namespace armix::builtin_fx
