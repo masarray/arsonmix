@@ -28,7 +28,13 @@ def source_contract():
     assert 'class="mini power ' not in html and 'class="mini phase ' not in html
     assert 'class="mini format-badge"' not in html and 'class="fx-remove"' not in html
     assert 'filter:blur' not in utility.replace(' ','').lower()
-    assert ':hover' not in utility
+    # Hardware utility controls never gain CSS hover, but the separate
+    # factory-reset confirmation is an ordinary destructive dialog button.
+    # Scope the original V7 artwork contract to the legacy control rules.
+    reset_section=utility.split('/* Shared Preview / JUCE WebView2 mixer recovery',1)
+    assert len(reset_section)==2
+    assert ':hover' not in reset_section[0]
+    assert '.mixer-reset-confirm:hover' in reset_section[1]
     assert utility.count('!important')==0,'Do not add new utility CSS cascade overrides'
     wire_css=(ASSET/'mixer-wire-dots.css').read_text(encoding='utf-8')
     assert 'wireWsCanJoin' in html and 'data:image/svg+xml;base64,' in (html+wire_css)
