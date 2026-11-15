@@ -93,7 +93,13 @@ public:
     static constexpr int taps=hrir::taps;
     static constexpr int updateInterval=16;
     // Optional ImerSip sink: SAME real P8.2 room and FIR, no second processor.
-    struct RoomReturns {float earlyL=0.f,earlyR=0.f,lateL=0.f,lateR=0.f;};
+    // Preserve the existing four wet fields for source compatibility.
+    // The extra pair is the REAL measured P8.4-fused DIRECT HRTF before
+    // SonKu scene/wet/downmix. Only explicit ImerSip consumers request it.
+    struct RoomReturns {
+        float earlyL=0.f,earlyR=0.f,lateL=0.f,lateR=0.f;
+        float directL=0.f,directR=0.f;
+    };
     bool prepare(double rate, SonKuReflectionProfile profile=
                  SonKuReflectionProfile::Lightweight) noexcept {
         ready_=false;
@@ -103,7 +109,7 @@ public:
         bank_=(std::abs(rate-44100.)<=.1)?hrir::normal44100:hrir::normal48000;
 #if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
         if(profile==SonKuReflectionProfile::SixSurfaceKemarResearch &&
-           !imersipMusicFusion_.prepare(rate,.12f,750.f))return false;
+           !imersipMusicFusion_.prepare(rate,.30f,750.f))return false;
 #endif
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
         if(profile==SonKuReflectionProfile::SixSurfaceKemarResearch &&
@@ -452,7 +458,8 @@ public:
             // the generic SonKu scene downscales its complete wet signal.
             // Normal SonKu caller passes nullptr: ordinary PCM is unchanged.
             if(optionalWet)optionalWet[i]={reflection.left,reflection.right,
-                                         late.left,late.right};
+                                         late.left,late.right,
+                                         .5f*ears[0],.5f*ears[1]};
             if(!transparentBass && !nativeSpace && settings_.outputTrim<=1.f &&
                smoothedTrim_<=1.f) {
                 // Preserve byte-for-byte original HRTF/old .smix output for
@@ -642,9 +649,9 @@ private:
         if(imersipStereoSideResearch_) {
             // Extract ONLY the proven P8.4 FIR fusion. The normal P8.2
             // centered renderer, room, state and FX graph never enter here.
-            // A centered music anchor plus 12% HP750 directional contrast
-            // avoids full-strength opposing HRIR coloration on vocals.
-            // ImerSip itself restores the unfiltered source music MID.
+            // A centered music anchor with 30% HP750 directional contrast:
+            // stronger actual interaural speaker cues than the former 12%.
+            // The exclusive LF crossover in ImerSip preserves original bass.
             interpolate(centerTarget_,degrees_);
             imersipMusicFusion_.merge(centerTarget_,targets_[0],targets_[1]);
         }

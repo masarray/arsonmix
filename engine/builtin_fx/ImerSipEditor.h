@@ -182,7 +182,7 @@ private:
         g.setFont(juce::FontOptions(12.f,juce::Font::plain));
         g.drawText("YOU",cx-22,cy+22,44,17,juce::Justification::centred);
         const float width=static_cast<float>(knobs_[1].getValue())*.01f;
-        const float angle=juce::degreesToRadians(40.f+50.f*width);
+        const float angle=juce::degreesToRadians(20.f+30.f*width);
         const float sx=std::sin(angle)*r,sy=std::cos(angle)*r;
         const auto left=juce::Point<float>(cx-sx,cy-sy);
         const auto right=juce::Point<float>(cx+sx,cy-sy);
@@ -205,7 +205,7 @@ private:
         }
         g.setColour(juce::Colour(0xff8facbb));
         g.setFont(juce::FontOptions(12.f,juce::Font::plain));
-        g.drawText(juce::String(80+static_cast<int>(std::round(width*100)))+
+        g.drawText(juce::String(40+static_cast<int>(std::round(width*60)))+
                    "° STAGE  ·  NO ORBIT",56,383,260,20,
                    juce::Justification::centred);
     }
@@ -217,7 +217,7 @@ private:
         const float v=static_cast<float>(
             knobs_[static_cast<std::size_t>(i)].getValue());
         juce::String out;
-        if(i==1)out=juce::String(80+static_cast<int>(std::round(v)))+"°";
+        if(i==1)out=juce::String(40+static_cast<int>(std::round(.60*v)))+"°";
         else if(i==5)out=(v>0.f?"+":"")+juce::String(v,1)+" dB";
         else out=juce::String(static_cast<int>(std::round(v)))+"%";
         values_[static_cast<std::size_t>(i)].setText(out,

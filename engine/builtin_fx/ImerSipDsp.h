@@ -20,7 +20,8 @@ inline armix::sonku::Settings sceneFor(const Settings& in) noexcept {
     armix::sonku::Settings s{};
     s.moving=false;                     // Never auto-orbit music
     s.startAzimuthDegrees=0.f;          // Front stationary anchor
-    s.stereoSpreadDegrees=80.f+100.f*in.width; // 0..1 => 80..180 degrees
+    // Physical speakers remain in FRONT, not at +/-90 degrees beside ears.
+    s.stereoSpreadDegrees=40.f+60.f*in.width; // +/-20..50 degrees
     s.spatialMix=.75f*in.immersion;     // Only SIDE residual reaches output
     s.outputTrim=1.f;                  // Final trim belongs to ImerSip
     s.spacePreset=in.immersion==0.f?0:(in.venue==2?2:3);
@@ -62,10 +63,15 @@ public:
             constexpr double pi=3.14159265358979323846;
             earlyHp_=static_cast<float>(1.-std::exp(-2.*pi*220./rate));
             lateHp_=static_cast<float>(1.-std::exp(-2.*pi*160./rate));
+            // Complementary dry LF / binaural HF: at full immersion there is
+            // NO parallel full-band headphone-dry signal to defeat HRTF cues.
+            directHp_=static_cast<float>(1.-std::exp(-2.*pi*260./rate));
+            limiterRelease_=static_cast<float>(1./(rate*.080));
+            directDryLow_.fill(0.f);directHrtfLow_.fill(0.f);
             earlyLow_.fill(0.f);lateLow_.fill(0.f);
+            finalLimiter_=1.f;
             updateTargets(settings_);
-            sideGain_=sideTarget_;
-            roomGain_=roomTarget_;
+            directGain_=directTarget_;
             earlyGain_=earlyTarget_;
             lateGain_=lateTarget_;
             outputGain_=settings_.outputTrim;
@@ -106,25 +112,26 @@ public:
             }
             core_.process(left+at,right+at,count,roomReturns_.data());
             for(int i=0;i<count;++i) {
-                sideGain_+=stageSlew_*(sideTarget_-sideGain_);
-                roomGain_+=stageSlew_*(roomTarget_-roomGain_);
+                directGain_+=stageSlew_*(directTarget_-directGain_);
                 earlyGain_+=stageSlew_*(earlyTarget_-earlyGain_);
                 lateGain_+=stageSlew_*(lateTarget_-lateGain_);
                 outputGain_+=trimSlew_*(settings_.outputTrim-outputGain_);
                 const float dryL=mid_[i]+side_[i];
                 const float dryR=mid_[i]-side_[i];
-                const float spatialSide=.5f*(left[at+i]-right[at+i]);
-                // A completely unprocessed source MID: no centered HRTF
-                // combing, no double-dry feed, no room wash over the vocal.
-                // A genuine P8.2 room component adds only to stereo SIDE;
-                // bounded positive SIDE support retains the source image.
-                const float directSide=sideGain_*side_[i]+
-                    roomGain_*(spatialSide-side_[i]);
-                // A SECOND room attenuation was the root of "no sound
-                // change". Blend the true measured P8.2 returns at an
-                // independent gain, rather than multiplying the already
-                // quiet combined SonKu output by another ~0.05.
+                // The old ImerSip threw away the rendered direct HRIR and
+                // put original unprocessed L/R back at 100% IMMERSION.
+                // This made it behave like a stereo widener plus reverb.
                 const auto& wet=roomReturns_[i];
+                directDryLow_[0]+=directHp_*(dryL-directDryLow_[0]);
+                directDryLow_[1]+=directHp_*(dryR-directDryLow_[1]);
+                directHrtfLow_[0]+=directHp_*(wet.directL-directHrtfLow_[0]);
+                directHrtfLow_[1]+=directHp_*(wet.directR-directHrtfLow_[1]);
+                // P8.6 frontal dual-speaker DIRECT kernel, with original
+                // coherent LF below crossover and exclusive HRTF above it.
+                const float binauralL=directDryLow_[0]+wet.directL-directHrtfLow_[0];
+                const float binauralR=directDryLow_[1]+wet.directR-directHrtfLow_[1];
+                const float baseL=dryL+directGain_*(binauralL-dryL);
+                const float baseR=dryR+directGain_*(binauralR-dryR);
                 earlyLow_[0]+=earlyHp_*(wet.earlyL-earlyLow_[0]);
                 earlyLow_[1]+=earlyHp_*(wet.earlyR-earlyLow_[1]);
                 lateLow_[0]+=lateHp_*(wet.lateL-lateLow_[0]);
@@ -136,26 +143,32 @@ public:
                 const float erMid=.5f*(erL+erR),erSide=.5f*(erL-erR);
                 const float revMid=.5f*(revL+revR);
                 const float revSide=.5f*(revL-revR);
-                // Early room MID 55% of early SIDE; late MID 12%.
-                // The foreground vocal remains predominantly ORIGINAL direct input.
-                float addL=directSide+
-                    earlyGain_*(erSide+.55f*erMid)+
-                    lateGain_*(revSide+.12f*revMid);
-                float addR=-directSide+
-                    earlyGain_*(-erSide+.55f*erMid)+
-                    lateGain_*(-revSide+.12f*revMid);
-                // Suppress only OPTIONAL enhancement near 0dBFS.
-                // Never auto-mute/attenuate the original music direct path.
+                // P8.6 horizontal early reflections support the DIRECT
+                // speakers; diffuse late tail is deliberately restrained.
+                float addL=earlyGain_*(erSide+.40f*erMid)+
+                           lateGain_*(revSide+.10f*revMid);
+                float addR=earlyGain_*(-erSide+.40f*erMid)+
+                           lateGain_*(-revSide+.10f*revMid);
+                // Preserve the *direct binaural substitution* at high input
+                // level: only the ADDITIONAL room returns are headroom-gated.
                 const float headroom=std::max(0.f,.98f-
-                    std::max(std::abs(dryL),std::abs(dryR)));
+                    std::max(std::abs(baseL),std::abs(baseR)));
                 const float peakExtra=std::max(std::abs(addL),std::abs(addR));
                 if(peakExtra>headroom && peakExtra>0.f) {
                     const float scale=headroom/peakExtra;
                     addL*=scale;addR*=scale;
                 }
-                float l=dryL+addL,r=dryR+addR;
+                float l=baseL+addL,r=baseR+addR;
                 enhancer_.process(l,r,sourceStereoGate_[i]);
                 l*=outputGain_;r*=outputGain_;
+                // Linked zero-lookahead sample-peak protection. A 100%
+                // binaural direct stage must not silently revert to dry when
+                // the music approaches 0dBFS. No gain changes under unity.
+                const float peak=std::max(std::abs(l),std::abs(r));
+                const float immediate=peak>.98f?.98f/peak:1.f;
+                finalLimiter_=std::min(immediate,
+                    std::min(1.f,finalLimiter_+limiterRelease_));
+                l*=finalLimiter_;r*=finalLimiter_;
                 left[at+i]=l;right[at+i]=r;
                 // Lock-free BLOCK diagnostic of actual rendered PCM, NOT
                 // an optimistic GUI knob or a parameter ACK by itself.
@@ -173,13 +186,12 @@ public:
     float lastDifferenceEnergy() const noexcept {return lastDifferenceEnergy_;}
 private:
     void updateTargets(const Settings& s) noexcept {
-        // Separate FUSED DIRECTION and ACTUAL ROOM return controls.
-        // Previous roomTarget~=0.05 at defaults, on an already attenuated
-        // SonKu source: almost no acoustic material entered PCM.
-        sideTarget_=.22f*s.width*s.immersion;
-        roomTarget_=.24f*s.immersion*s.width;
-        earlyTarget_=s.immersion*(.65f+1.35f*s.space);
-        lateTarget_=s.immersion*(.30f+1.10f*s.space);
+        // Immersion is now chiefly DIRECT virtual speaker transfer, not
+        // a reverb-gain shortcut. Nonlinear fade reaches 100% true binaural
+        // at the end stop while retaining smooth 0% exact-dry admission.
+        directTarget_=s.immersion*(2.f-s.immersion);
+        earlyTarget_=s.immersion*(.38f+.80f*s.space);
+        lateTarget_=s.immersion*(.10f+.32f*s.space);
     }
     static constexpr int scratchFrames=8192;
     armix::sonku::SonKuSpatialCore core_{};
@@ -188,11 +200,12 @@ private:
         roomReturns_{};
     std::array<float,scratchFrames> sourceStereoGate_{},mid_{},side_{};
     std::array<float,2> earlyLow_{},lateLow_{};
+    std::array<float,2> directDryLow_{},directHrtfLow_{};
     Settings settings_{};
     float stageSlew_=0.f,trimSlew_=0.f;
-    float earlyHp_=0.f,lateHp_=0.f;
-    float sideGain_=0.f,sideTarget_=0.f;
-    float roomGain_=0.f,roomTarget_=0.f;
+    float earlyHp_=0.f,lateHp_=0.f,directHp_=0.f;
+    float directGain_=0.f,directTarget_=0.f;
+    float finalLimiter_=1.f,limiterRelease_=0.f;
     float earlyGain_=0.f,earlyTarget_=0.f;
     float lateGain_=0.f,lateTarget_=0.f;
     float outputGain_=1.f;

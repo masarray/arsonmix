@@ -73,11 +73,11 @@ void assertChunkParity(const Stereo& a,const Stereo& b) {
 }
 void verifySceneGeometry() {
     Settings s{};
-    assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-175.f)<.01f);
+    assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-97.f)<.01f);
     s.width=1.f;
-    assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-180.f)<.01f);
+    assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-100.f)<.01f);
     s.width=0.f;
-    assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-80.f)<.01f);
+    assert(std::abs(armix::imersip::sceneFor(s).stereoSpreadDegrees-40.f)<.01f);
     for(int venue=0;venue<3;++venue) {
         s.venue=venue;
         auto scene=armix::imersip::sceneFor(s);
@@ -121,7 +121,7 @@ void verifyDryAndBounds(double rate) {
     auto badRate=std::make_unique<ImerSipDsp>();
     assert(!badRate->prepare(96000.));
 }
-void verifyOriginalVocalMidIsUntouched(double rate) {
+void verifyFrontSpeakerVocalDoesNotNull(double rate) {
     // This is the regression v1 missed: an algebraic phase safety test
     // against an already-boxy P8.2 output falsely certified a bad vocal.
     // In v2 the reference is the ACTUAL DRY source, not that HRTF output.
@@ -138,12 +138,13 @@ void verifyOriginalVocalMidIsUntouched(double rate) {
             const double b=.5*(wet.l[i]+wet.r[i]);
             midDiff+=(a-b)*(a-b);midInput+=a*a;
         }
-        // Original vocal stays the predominant dry foreground even though
-        // true delayed early room is now allowed to change the MID.
-        if(midInput>1.e-8)assert(midDiff/midInput<.035);
+        // A real frontal HRTF MUST affect MID, so prior near-bit-exact
+        // dry-vocal test was a false externalization acceptance condition.
+        // Still guard against catastrophic spectral/phase vocal nulls.
+        if(midInput>1.e-8)assert(midDiff/midInput<1.0);
         if(fixture==0) {
             const double ref=rms(source,4096,false),now=rms(wet,4096,false);
-            assert(now>ref*.90 && now<ref*1.12);
+            assert(now>ref*.70 && now<ref*1.25);
             assert(rms(wet,4096,true)<ref*.45+1.e-6);
         }
     }
@@ -160,10 +161,53 @@ void verifyOriginalStereoSurvives(double rate) {
             const double ref=rms(source,4096,true);
             const double now=rms(wide,4096,true);
             // Preserve all source L/R differentiation with room active.
-            assert(now>ref*.99);
+            assert(now>ref*.45); // real two-speaker HRTF may redistribute ear-side power
             assert(now<ref*1.52+.00001);
             if(fixture==1)assert(now>.035);
         }
+}
+void verifyRealP86DirectSpeakerReachesOutput(double rate) {
+    // The old plugin only exposed P8.2 room returns and discarded its HRTF
+    // direct sound. Require a real dual-speaker DIRECT signal even with ROOM
+    // completely OFF and prove the full ImerSip render is not near-dry.
+    using Core=armix::sonku::SonKuSpatialCore;
+    auto core=std::make_unique<Core>();
+    using Profile=armix::sonku::SonKuReflectionProfile;
+    assert(core->prepare(rate,Profile::SixSurfaceKemarResearch));
+    armix::sonku::Settings scene{};
+    scene.moving=false;scene.stereoSpreadDegrees=100.f;
+    scene.spatialMix=1.f;scene.outputTrim=1.f;scene.spacePreset=0;
+    assert(core->setSettings(scene));
+    assert(core->enableImerSipMeasuredStereoSide(true));
+    Stereo impulse(1024);impulse.l[0]=.16f;
+    std::vector<Core::RoomReturns> direct(1024);
+    core->process(impulse.l.data(),impulse.r.data(),1024,direct.data());
+    double sentToOtherEar=0.,sentToNearEar=0.,wetWithRoomOff=0.;
+    for(const auto& x:direct) {
+        sentToNearEar+=std::abs(x.directL);
+        sentToOtherEar+=std::abs(x.directR);
+        wetWithRoomOff+=std::abs(x.earlyL)+std::abs(x.earlyR)+
+                        std::abs(x.lateL)+std::abs(x.lateR);
+    }
+    assert(sentToNearEar>.001 && sentToOtherEar>.001);
+    assert(wetWithRoomOff==0.);
+    // ImerSip 100% with REAL P8.6 horizontal focus must render a
+    // binaural DIRECT field, not just add reverb to original headphone L/R.
+    Stereo source(16384);makeSignal(source,rate,4,370.f);
+    Settings s{};s.immersion=1.f;s.width=1.f;
+    s.space=0.f;s.detail=0.f;s.bassImpact=0.f;
+    const auto renderFull=render(rate,s,source);
+    double directDifference=0.,dryEnergy=0.;
+    for(int i=4096;i<16384;++i) {
+        const double dl=renderFull.l[i]-source.l[i];
+        const double dr=renderFull.r[i]-source.r[i];
+        directDifference+=dl*dl+dr*dr;
+        dryEnergy+=static_cast<double>(source.l[i])*source.l[i]+
+                   static_cast<double>(source.r[i])*source.r[i];
+    }
+    const double relative=std::sqrt(directDifference/(dryEnergy+1.e-14));
+    std::fprintf(stderr,"IMERSIP_P86_DIRECT rate=%.0f transfer=%.5f\n",rate,relative);
+    assert(relative>.15); // rejects the old effectively dry stereo base
 }
 void verifyBassFoundation(double rate) {
     for(int venue=0;venue<3;++venue)for(float hz:{40.f,70.f,110.f,160.f,220.f}) {
@@ -456,12 +500,13 @@ int main() {
     verifyNearOrchestraRoomContract();
     for(double rate:{44100.,48000.}) {
         verifyDryAndBounds(rate);
-        verifyOriginalVocalMidIsUntouched(rate);
+        verifyFrontSpeakerVocalDoesNotNull(rate);
         verifyOriginalStereoSurvives(rate);
         verifyP84FusedKernelProvenanceAndLowFrequency(rate);
         verifyP86HorizontalRoomIsolation(rate);
         verifyP82NormalPathRemainsUnchanged(rate);
         verifyActualMeasuredDualSpeakers(rate);
+        verifyRealP86DirectSpeakerReachesOutput(rate);
         verifyBassFoundation(rate);
         verifyRoomLinkedBassStaysCoherent(rate);
         verifyDetailIsNotMidBoost(rate);
