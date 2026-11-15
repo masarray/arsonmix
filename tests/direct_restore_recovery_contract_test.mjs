@@ -81,7 +81,18 @@ test('healthy independent sessions never arm restoration; setup can replace miss
   assert.match(engine,/bool abandonPendingDirectRestoreForSetup\(\)/);
   assert.match(engine,/deviceManager_\.addAudioCallback \(this\)/);
   assert.match(main,/DIRECT_RESTORE_ABANDON/);
-  assert.match(main,/engine_\.devices\(\)\.getCurrentAudioDevice\(\) != nullptr/);
+  // A selected JUCE device pointer can survive while its driver is CLOSED.
+  // Persist only once a physical, authorized native device is actually open.
+  const persistence=main.split('if (deviceSettingsDirty_)')[1]
+      .split('// A hidden/reloading WebView')[0];
+  assert.ok(persistence, 'device-profile persistence path must exist');
+  assert.match(persistence, /activeDevice=engine_\\.devices\\(\\)\\.getCurrentAudioDevice\\(\\)/);
+  assert.match(persistence, /engine_\\.directRouteAuthorized\\(\\)/);
+  assert.match(persistence, /!engine_\\.hasRetainedUnboundMixer\\(\\)/);
+  assert.match(persistence, /activeDevice != nullptr && activeDevice->isOpen\\(\\)/);
+  assert.ok(persistence.indexOf('deviceSettingsDirty_ = false') >
+            persistence.indexOf('activeDevice->isOpen()'),
+    'pending user binding must survive a temporary closed driver');
   assert.match(main,/Choose a replacement in AUDIO SETUP/);
 });
 
