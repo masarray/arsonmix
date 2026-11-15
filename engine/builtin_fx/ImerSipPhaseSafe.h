@@ -22,6 +22,7 @@ struct Settings {
     float stereoLock=1.f;    // 100% retains >=90% original direct SIDE
     float lateRoom=.34f;     // late reverb separate from early stage
     float depth=.60f;        // real source radius 1.6..7.4 m
+    float earAlignDegrees=0.f; // separate spectral KEMAR HRTF -30..+20°
 };
 inline bool valid(const Settings& s) noexcept {
     return s.venue>=0 && s.venue<=2 &&
@@ -33,7 +34,9 @@ inline bool valid(const Settings& s) noexcept {
         std::isfinite(s.outputTrim)&&s.outputTrim>=.25f&&s.outputTrim<=1.5f &&
         std::isfinite(s.stereoLock)&&s.stereoLock>=0.f&&s.stereoLock<=1.f &&
         std::isfinite(s.lateRoom)&&s.lateRoom>=0.f&&s.lateRoom<=1.f &&
-        std::isfinite(s.depth)&&s.depth>=0.f&&s.depth<=1.f;
+        std::isfinite(s.depth)&&s.depth>=0.f&&s.depth<=1.f &&
+        std::isfinite(s.earAlignDegrees) &&
+        s.earAlignDegrees>=-30.f && s.earAlignDegrees<=20.f;
 }
 
 // This filter is NOT a second reverb, compressor, M/S limiter or tone

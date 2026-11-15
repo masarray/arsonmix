@@ -62,6 +62,8 @@ public:
         // P8.2's default center-MID path is untouched for ordinary SonKu.
         // We take only L-R binaural difference; direct music MID remains dry.
         if(ready_)ready_=core_.enableImerSipMeasuredStereoSide(true);
+        if(ready_)ready_=core_.setImerSipDirectHrtfElevationTrim(
+            settings_.earAlignDegrees);
         if(ready_)ready_=enhancer_.prepare(rate);
         if(ready_)ready_=enhancer_.setSettings(settings_);
         if(ready_)ready_=p87Body_.prepare(rate);
@@ -98,6 +100,8 @@ public:
     bool setSettings(const Settings& next) noexcept {
         if(!valid(next))return false;
         if(ready_ && !core_.setSettings(sceneFor(next)))return false;
+        if(ready_ && !core_.setImerSipDirectHrtfElevationTrim(
+                               next.earAlignDegrees))return false;
         if(!enhancer_.setSettings(next))return false;
         settings_=next;
         updateTargets(next);

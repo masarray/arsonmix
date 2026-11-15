@@ -322,6 +322,24 @@ public:
     double azimuthDegrees() const noexcept {return degrees_;}
     // In-place stereo; caller owns valid, non-overlapping L/R PCM pointers.
     // No vector, heap, blocking calls, I/O or filter bank allocation.
+    // ImerSip-only measured KEMAR elevation alignment of the DIRECT
+    // HRTF. This is deliberately independent of SonKu physical source XYZ
+    // and its six-wall reflection geometry; ordinary SonKu never enables
+    // the private two-speaker path. The same already measured 3D KEMAR
+    // table is used: NO synthetic elevation EQ or second convolution.
+    bool setImerSipDirectHrtfElevationTrim(float degrees) noexcept {
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH \
+ && defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+        if(!ready_ || !imersipStereoSideResearch_ ||
+           !std::isfinite(degrees) || degrees < -30.f || degrees > 20.f)
+            return false;
+        imersipHrtfHeightTrimDegrees_=degrees;
+        remaining_=0; // target HRIR refresh; per-tap slew already provided
+        return true;
+#else
+        (void)degrees;return false;
+#endif
+    }
     void process(float* left,float* right,int samples,
                  RoomReturns* optionalWet=nullptr) noexcept {
         if(!ready_ || !left || !right || samples<=0)return;
@@ -599,11 +617,15 @@ private:
     void interpolate(EarKernel& destination,double azimuth) noexcept {
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
         if(room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch &&
-           researchElevationDegrees_!=0.f){
-            // Both stereo emitters AND the coherent MID correction use the
-            // very same truly measured direct elevation, no third FIR.
+           (researchElevationDegrees_!=0.f ||
+            (imersipStereoSideResearch_ && imersipHrtfHeightTrimDegrees_!=0.f))){
+            // When ImerSip is enabled, direct-only spectral calibration
+            // does NOT lower the actual speaker or reflected-wall paths.
+            // Normal SonKu's physical XYZ/elevation remains untouched.
             hrir3d::interpolate(static_cast<float>(azimuth),
-                                 researchElevationDegrees_,
+                                 imersipStereoSideResearch_
+                                     ?imersipHrtfHeightTrimDegrees_
+                                     :researchElevationDegrees_,
                                  std::abs(sampleRate_-44100.)<=.1,destination);
             return;
         }
@@ -725,6 +747,8 @@ private:
 #endif
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
     float researchElevationDegrees_=0.f;
+    // Only read on the existing opt-in ImerSip 2-speaker research path.
+    float imersipHrtfHeightTrimDegrees_=0.f;
     bool researchPcmStarted_=false;
 #endif
 };

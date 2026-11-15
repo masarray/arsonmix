@@ -480,6 +480,39 @@ void verifyP87NotTheQualityReferenceAndRealDepth(double rate) {
     bad.depth=std::numeric_limits<float>::quiet_NaN();
     assert(!armix::imersip::valid(bad));
 }
+
+void verifyDirectOnlyHrtfHeightCalibration(double rate) {
+    // Real measured KEMAR 3D elevation from SonKu P7, isolated as a
+    // P8.8-style DIRECT-only ear alignment. SOURCE XYZ must remain LEVEL.
+    Stereo music(32768);makeSignal(music,rate,4,790.f);
+    Settings s{};s.immersion=1.f;s.space=.70f;s.lateRoom=.2f;
+    s.width=.68f;s.stereoLock=1.f;s.bassImpact=0.f;s.detail=0.f;
+    s.depth=.65f;s.earAlignDegrees=0.f;
+    const auto baseline=render(rate,s,music,128);
+    s.earAlignDegrees=-19.5f;
+    const auto aligned=render(rate,s,music,128);
+    assertChunkParity(aligned,render(rate,s,music,64));
+    double delta=0.,energy=0.;
+    for(int i=4096;i<32768;++i) {
+        const double dl=aligned.l[i]-baseline.l[i];
+        const double dr=aligned.r[i]-baseline.r[i];
+        delta+=dl*dl+dr*dr;
+        energy+=music.l[i]*music.l[i]+music.r[i]*music.r[i];
+    }
+    const double changed=std::sqrt(delta/(energy+1.e-14));
+    std::fprintf(stderr,
+        "IMERSIP_REAL_KEMAR_HEIGHT rate=%.0f trim=-19.5 delta=%.5f\n",
+        rate,changed);
+    assert(changed>.01);
+    assert(armix::imersip::sceneFor(s).directElevationDegrees==0.f);
+    assert(std::abs(armix::imersip::sceneFor(s).sourceDistanceMeters-
+                    (1.6f+5.8f*s.depth))<1.e-4f);
+    assert(rms(aligned,4096,true)>rms(music,4096,true)*.78);
+    s.earAlignDegrees=-30.f;assert(armix::imersip::valid(s));
+    s.earAlignDegrees=20.f;assert(armix::imersip::valid(s));
+    s.earAlignDegrees=20.1f;assert(!armix::imersip::valid(s));
+    s.earAlignDegrees=-30.1f;assert(!armix::imersip::valid(s));
+}
 void verifyBassFoundation(double rate) {
     for(int venue=0;venue<3;++venue)for(float hz:{40.f,70.f,110.f,160.f,220.f}) {
         Stereo source;
@@ -780,6 +813,7 @@ int main() {
         verifyOriginalStereoSurvives(rate);
         verifyStereoIntegrityOwnerRejection(rate);
         verifyP87NotTheQualityReferenceAndRealDepth(rate);
+        verifyDirectOnlyHrtfHeightCalibration(rate);
         verifyCompareNeverChangesSettings(rate);
         verifyP84FusedKernelProvenanceAndLowFrequency(rate);
         verifyP86HorizontalRoomIsolation(rate);
