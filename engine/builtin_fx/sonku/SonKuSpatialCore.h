@@ -19,6 +19,9 @@
 #error P8.4 single-graph music fusion requires the explicitly measured P8.2/P8.3 engine
 #endif
 #include "SonKuP84FusedMusicHrir.h"
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+#include "SonKuP90StereoDecoder.h"
+#endif
 #endif
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
 #include "SonKuP87MusicalAirBody.h"
@@ -99,7 +102,11 @@ inline bool valid(const Settings& s) noexcept {
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
 #if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
 #if defined(SONKU_P89_DEPTH_COHERENCE_RESEARCH) && SONKU_P89_DEPTH_COHERENCE_RESEARCH
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+        s.renderMode<=9 && ((s.renderMode<3 || s.renderMode>9) || !s.musicCompatibleLowFrequency) &&
+#else
         s.renderMode<=8 && ((s.renderMode!=3 && s.renderMode!=4 && s.renderMode!=5 && s.renderMode!=6 && s.renderMode!=7 && s.renderMode!=8) || !s.musicCompatibleLowFrequency) &&
+#endif
 #else
         s.renderMode<=7 && ((s.renderMode!=3 && s.renderMode!=4 && s.renderMode!=5 && s.renderMode!=6 && s.renderMode!=7) || !s.musicCompatibleLowFrequency) &&
 #endif
@@ -124,6 +131,9 @@ inline bool valid(const Settings& s) noexcept {
         ((s.renderMode!=7
 #if defined(SONKU_P89_DEPTH_COHERENCE_RESEARCH) && SONKU_P89_DEPTH_COHERENCE_RESEARCH
            && s.renderMode!=8
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+           && s.renderMode!=9
+#endif
 #endif
            ) || (s.directElevationDegrees+s.hrtfElevationTrimDegrees>=-40.f &&
                   s.directElevationDegrees+s.hrtfElevationTrimDegrees<=60.f)) &&
@@ -190,6 +200,9 @@ public:
 #endif
 #if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
         if(!p84MusicKernel_.prepare(rate))return false;
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+        if(!p90Decoder_.prepare(rate))return false;
+#endif
 #endif
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
         if(!p87Body_.prepare(rate))return false;
@@ -254,6 +267,9 @@ public:
         room_.reset();
         reverb_.reset();
         integrity_.reset();
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+        p90Decoder_.reset();
+#endif
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
         p83LowFrequency_.reset();
 #endif
@@ -484,6 +500,9 @@ public:
             && p83Mode_!=p83::Mode::MusicSpatialP88
 #if defined(SONKU_P89_DEPTH_COHERENCE_RESEARCH) && SONKU_P89_DEPTH_COHERENCE_RESEARCH
             && p83Mode_!=p83::Mode::MusicSpatialP89
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+            && p83Mode_!=p83::Mode::MusicSpatialP90
+#endif
 #endif
 #endif
 #endif
@@ -526,6 +545,9 @@ public:
              || p83Mode_==p83::Mode::MusicSpatialP88
 #if defined(SONKU_P89_DEPTH_COHERENCE_RESEARCH) && SONKU_P89_DEPTH_COHERENCE_RESEARCH
              || p83Mode_==p83::Mode::MusicSpatialP89
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+             || p83Mode_==p83::Mode::MusicSpatialP90
+#endif
 #endif
 #endif
 #endif
@@ -544,6 +566,9 @@ public:
              || p83Mode_==p83::Mode::MusicSpatialP88
 #if defined(SONKU_P89_DEPTH_COHERENCE_RESEARCH) && SONKU_P89_DEPTH_COHERENCE_RESEARCH
              || p83Mode_==p83::Mode::MusicSpatialP89
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+             || p83Mode_==p83::Mode::MusicSpatialP90
+#endif
 #endif
 #endif
 #endif
@@ -554,6 +579,9 @@ public:
             || p83Mode_==p83::Mode::MusicSpatialP88
 #if defined(SONKU_P89_DEPTH_COHERENCE_RESEARCH) && SONKU_P89_DEPTH_COHERENCE_RESEARCH
              || p83Mode_==p83::Mode::MusicSpatialP89
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+             || p83Mode_==p83::Mode::MusicSpatialP90
+#endif
 #endif
 #endif
             ;
@@ -570,6 +598,9 @@ public:
                 ((p83Mode_==p83::Mode::MusicSpatialP88
 #if defined(SONKU_P89_DEPTH_COHERENCE_RESEARCH) && SONKU_P89_DEPTH_COHERENCE_RESEARCH
                     || p83Mode_==p83::Mode::MusicSpatialP89
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+                    || p83Mode_==p83::Mode::MusicSpatialP90
+#endif
 #endif
                     )?0.27f:0.13f)*
 #else
@@ -583,6 +614,9 @@ public:
             (p83Mode_==p83::Mode::MusicSpatialP88
 #if defined(SONKU_P89_DEPTH_COHERENCE_RESEARCH) && SONKU_P89_DEPTH_COHERENCE_RESEARCH
              || p83Mode_==p83::Mode::MusicSpatialP89
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+             || p83Mode_==p83::Mode::MusicSpatialP90
+#endif
 #endif
              )?
             1.f/(1.f+0.10f*(settings_.sourceDistanceMeters-1.6f)):1.f;
@@ -590,7 +624,11 @@ public:
 #if defined(SONKU_P89_DEPTH_COHERENCE_RESEARCH) && SONKU_P89_DEPTH_COHERENCE_RESEARCH
         // Room-energy transfer is computed once per callback block; no new
         // FIR/filter memory. 1.6m/ROOM OFF keeps exact P8.8 PCM.
-        const bool p89Stage=p83Mode_==p83::Mode::MusicSpatialP89;
+        const bool p89Stage=p83Mode_==p83::Mode::MusicSpatialP89
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+            ||p83Mode_==p83::Mode::MusicSpatialP90
+#endif
+            ;
         const float p89Depth=p89Stage&&roomEnabled?
             std::clamp((settings_.sourceDistanceMeters-1.6f)/6.4f,0.f,1.f):0.f;
         const float p89SideGain=1.f-.22f*p89Depth;
@@ -621,6 +659,9 @@ public:
             }
             const float x0=std::isfinite(left[i])?left[i]:0.f;
             const float x1=monoObject?0.f:(std::isfinite(right[i])?right[i]:0.f);
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+            if(p83Mode_==p83::Mode::MusicSpatialP90)p90Decoder_.observe(x0,x1);
+#endif
             // Preserve strong anti-correlated music side energy without
             // collapsing it into the two virtual mono HRTF sources. The
             // independent guard has no hidden UI state or new audio bus.
@@ -656,6 +697,9 @@ public:
             // Headlocked SIDE is kept >=78% at maximum distance; early
             // world-locked measured reflections shoulder the extra space.
             sideRescue*=p89SideGain;
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+            if(p83Mode_==p83::Mode::MusicSpatialP90)sideRescue=0.f;
+#endif
 #endif
             history_[0][write_]=x0;
             history_[1][write_]=x1;
@@ -910,6 +954,9 @@ private:
              || ((p83Mode_==p83::Mode::MusicSpatialP88
 #if defined(SONKU_P89_DEPTH_COHERENCE_RESEARCH) && SONKU_P89_DEPTH_COHERENCE_RESEARCH
                       || p83Mode_==p83::Mode::MusicSpatialP89
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+                      || p83Mode_==p83::Mode::MusicSpatialP90
+#endif
 #endif
                       ) &&
                  settings_.hrtfElevationTrimDegrees!=0.f)
@@ -922,6 +969,9 @@ private:
                 +((p83Mode_==p83::Mode::MusicSpatialP88
 #if defined(SONKU_P89_DEPTH_COHERENCE_RESEARCH) && SONKU_P89_DEPTH_COHERENCE_RESEARCH
              || p83Mode_==p83::Mode::MusicSpatialP89
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+             || p83Mode_==p83::Mode::MusicSpatialP90
+#endif
 #endif
              )?
                      settings_.hrtfElevationTrimDegrees:0.f)
@@ -966,6 +1016,9 @@ private:
             && p83Mode_!=p83::Mode::MusicSpatialP88
 #if defined(SONKU_P89_DEPTH_COHERENCE_RESEARCH) && SONKU_P89_DEPTH_COHERENCE_RESEARCH
             && p83Mode_!=p83::Mode::MusicSpatialP89
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+            && p83Mode_!=p83::Mode::MusicSpatialP90
+#endif
 #endif
 #endif
 #endif
@@ -1004,6 +1057,9 @@ private:
             p83Mode_==p83::Mode::MusicSpatialP88 ||
 #if defined(SONKU_P89_DEPTH_COHERENCE_RESEARCH) && SONKU_P89_DEPTH_COHERENCE_RESEARCH
             p83Mode_==p83::Mode::MusicSpatialP89 ||
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+            p83Mode_==p83::Mode::MusicSpatialP90 ||
+#endif
 #endif
 #endif
 #endif
@@ -1029,6 +1085,9 @@ private:
              || p83Mode_==p83::Mode::MusicSpatialP88
 #if defined(SONKU_P89_DEPTH_COHERENCE_RESEARCH) && SONKU_P89_DEPTH_COHERENCE_RESEARCH
              || p83Mode_==p83::Mode::MusicSpatialP89
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+             || p83Mode_==p83::Mode::MusicSpatialP90
+#endif
 #endif
 #endif
 #endif
@@ -1042,7 +1101,12 @@ private:
                 settings_.stereoSpreadDegrees,p83HeadYaw_);
             interpolate(targets_[0],positions.leftHead);
             interpolate(targets_[1],positions.rightHead);
-            p84MusicKernel_.merge(centerTarget_,targets_[0],targets_[1]);
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+            if(p83Mode_==p83::Mode::MusicSpatialP90)
+                p90Decoder_.compose(centerTarget_,targets_[0],targets_[1]);
+            else
+#endif
+                p84MusicKernel_.merge(centerTarget_,targets_[0],targets_[1]);
             if(!haveKernel_)kernels_=targets_;
             haveKernel_=true;
             return;
@@ -1136,6 +1200,9 @@ private:
 #endif
 #if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
     p84::FusedMusicHrir p84MusicKernel_{};
+#if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
+    p90::StereoDecoder p90Decoder_{};
+#endif
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
     p87::MusicalAirBody p87Body_{};
 #endif
