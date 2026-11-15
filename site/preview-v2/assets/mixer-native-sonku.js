@@ -224,7 +224,7 @@ function render(){
      '<option value="align">SPATIAL · P8.8 REFERENCE</option>'+
      '<option value="depth">SPATIAL · P8.9 REFERENCE</option>'+
      (p91p92Capable?
-       '<option value="external">P9.1 + P9.2 · MUSIC + PHYSICAL BASS</option>':
+       '<option value="external">P9.1 + P9.2 · MUSIC / BASS</option>':
        '<option value="external">P9.0 · TRUE EXTERNAL SPEAKER (EXPERIMENT)</option>');
     picker.dataset.nativeModeSet=p91p92Capable?"p91p92":"p90";
     root.querySelector(".sk-render-label").textContent=p91p92Capable?
