@@ -1422,3 +1422,15 @@
  .mx-sonku .sk-stage .sk-space-panel{grid-template-columns:1fr}
  .mx-sonku .sk-stage :is(.sk-space-head,.sk-space-options,.sk-space-hint){grid-column:1}
 }
+
+/* P9.5 uses the approved compact SonKu layout. Latest renderer is fixed;
+   the hidden legacy dropdown cannot intercept clicks or flicker. */
+.mx-sonku #skRenderMode[hidden],.mx-sonku .sk-render-label[hidden]{display:none!important}
+.mx-sonku .sk-render-row.sk-latest{padding:4px 8px;margin-bottom:7px}
+.mx-sonku .sk-space-options button[hidden]{display:none!important}
+.mx-sonku[data-acoustics="venue"] .sk-stage .sk-space-options{grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}
+.mx-sonku[data-acoustics="venue"] .sk-stage .sk-space-options button{padding:3px 1px;letter-spacing:-.1px}
+@media(max-width:420px){
+ .mx-sonku[data-acoustics="venue"] .sk-stage .sk-space-options{grid-template-columns:repeat(5,minmax(0,1fr));gap:3px}
+ .mx-sonku[data-acoustics="venue"] .sk-stage .sk-space-options button{font-size:8px}
+}
