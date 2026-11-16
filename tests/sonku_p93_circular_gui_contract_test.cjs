@@ -75,7 +75,7 @@ assert.match(source,/consumeAction\?\.\(\s*current\.track,"slotPower"/);
 assert.match(source,/root\.querySelector\("\.sk-stage"\)\.appendChild\(root\.querySelector\("\.sk-space-panel"\)\)/);
 assert.match(source,/head\.setPointerCapture\(e\.pointerId\)/);
 assert.match(source,/window\.addEventListener\("resize",constrainWindow\)/);
-assert.match(source,/if\\(!p91p92Capable\\|\\|\\(!p95Capable/);
+assert(source.includes('if(!p91p92Capable||(!p95Capable'),"Native preset gate must honor accepted P9.5 capability");
 assert.match(source,/root\\.dataset\\.fxState!=="on"/);
 assert.match(source,/p95Capable=p94Capable && r\\.p95CinematicVenues===true/);
 assert.match(source,/root\\.dataset\\.acoustics=p95Capable/);
