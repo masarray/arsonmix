@@ -101,6 +101,7 @@ jobs:
             -DSONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH \
             -DSONKU_P97_STAGE_IMPACT_RESEARCH \
             -DSONKU_P98_SCENE_VOICING_RESEARCH \
+            -DSONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH=1 \
             -DSONKU_IMMERSIB_PCM_DIAGNOSTICS=1 \
             tests/immersib_p98_native_sonic_gate.cpp -o /tmp/immersib-p98
           /tmp/immersib-p98
@@ -156,6 +157,7 @@ jobs:
             -DARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT=ON `
             -DARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT=ON `
             -DARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING=ON `
+            -DARMIX_IMMERSIB_EXPERIMENTAL_P99_VOCAL_ROOM=ON `
             -DBUILD_TESTING=ON
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $tests = (& ctest --test-dir build -C Release --show-only=json-v1 | Out-String | ConvertFrom-Json)

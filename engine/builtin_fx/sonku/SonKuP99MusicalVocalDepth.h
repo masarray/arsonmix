@@ -1,0 +1,219 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+#pragma once
+#include <algorithm>
+#include <array>
+#include <cmath>
+
+// P9.9 PRIVATE, scene-aware musical vocal focus. This is NOT voice separation
+// and does not infer a singer from a full stereo mix. Only center-dominant,
+// audible midrange earns a modest, slowly smoothed forward correction.
+// The existing two virtual speakers, measured KEMAR FIRs, directional first
+// reflections and linked limiter remain the ONLY output graph. No FFT,
+// delay line, resampling, allocation, string analysis or per-sample trig.
+// Venue/Custom (scene=0), ROOM OFF, and MIX=0 return exact P9.8/P9.7 PCM.
+namespace armix::sonku::p99 {
+class MusicalVocalDepth final {
+public:
+    struct Stereo {float left=0.f,right=0.f;};
+    bool prepare(double rate) noexcept {
+        if(!std::isfinite(rate) || (std::abs(rate-44100.)>.1 &&
+                                   std::abs(rate-48000.)>.1))return false;
+        const auto alpha=[rate](double hz) noexcept {
+            constexpr double twoPi=6.283185307179586476925286766559;
+            return static_cast<float>(1.-std::exp(-twoPi*hz/rate));
+        };
+        bodyLow_=alpha(210.);
+        bodyHigh_=alpha(880.);
+        focusLow_=alpha(760.);
+        focusHigh_=alpha(3350.);
+        // Two centered low-mid biquads, not a subtraction of unmatched
+        // low-pass phases: the original first-order warm band decreased
+        // integrated 86 Hz by 7%. Biquads reject deep LF/cymbals strongly
+        // and return near-zero phase at 330 Hz where room-body is intended.
+        roomWarmCoeff_=bandpass(rate,330.,1.4);
+        widthLow_=alpha(680.);
+        widthHigh_=alpha(3900.);
+        // Late-field relief must NOT eat vocal chest/body 200-650 Hz.
+        lateLow_=alpha(1350.);
+        lateHigh_=alpha(3800.);
+        attack_=alpha(7.5);          // ~21 ms envelope attack
+        release_=alpha(1.3);         // ~122 ms envelope release
+        attentionAttack_=alpha(5.);  // ~32 ms, no per-syllable pumping
+        attentionRelease_=alpha(.85);// ~187 ms
+        gainSlew_=static_cast<float>(1.-std::exp(-1./(rate*.055)));
+        reset();
+        return true;
+    }
+    void reset() noexcept {
+        midBodyLow_={};midBodyHigh_={};midFocusLow_={};midFocusHigh_={};
+        midFocusLow2_={};midFocusHigh2_={};
+        roomWarm1_={};roomWarm2_={};
+        roomWarmSignal_=0.f;
+        sideFocusLow_={};sideFocusHigh_={};
+        sideFocusLow2_={};sideFocusHigh2_={};
+        firstLow_={};firstHigh_={};firstLow2_={};firstHigh2_={};
+        tailLow_={};tailHigh_={};tailLow2_={};tailHigh2_={};
+        centerEnvelope_=sideEnvelope_=attention_=0.f;
+        gains_={};
+        active_=false;
+    }
+    // ID 0 = completely unmodified approved Venue or Custom/Live Orbit.
+    // Signature / Default Orbit: a clearly audible but bounded +15-25%
+    // step beyond initial conservative P9.9, not broadband output gain.
+    // Cinema preserves LF body;
+    // Studio is deliberately a lower-delta, natural room.
+    Stereo source(float left,float right,int scene,bool enabled) noexcept {
+        active_=enabled && scene>=1 && scene<=3;
+        const auto target=profiles_[active_?scene:0];
+        for(std::size_t i=0;i<gains_.size();++i) {
+            gains_[i]+=gainSlew_*(target[i]-gains_[i]);
+            if(std::abs(gains_[i]-target[i])<1.e-6f)gains_[i]=target[i];
+        }
+        if(!active_) {
+            attention_+=(attention_>0.f?attentionRelease_:attentionAttack_)*
+                        (0.f-attention_);
+            roomWarmSignal_=0.f;
+            return {left,right}; // NO altered float arithmetic
+        }
+
+        const float mid=.5f*(left+right);
+        const float side=.5f*(left-right);
+        const float body=midBodyHigh_.run(bodyHigh_,mid)-
+                         midBodyLow_.run(bodyLow_,mid);
+        // Cascaded matched one-poles form a soft 12dB/oct upper rolloff:
+        // a first-order band differential still raised 7.6kHz too much.
+        // Its *actual native test* rejected that high-sibilance excess.
+        const float focus=midFocusHigh2_.run(
+                            focusHigh_,midFocusHigh_.run(focusHigh_,mid))-
+                          midFocusLow2_.run(
+                            focusLow_,midFocusLow_.run(focusLow_,mid));
+        const float sideFocus=sideFocusHigh2_.run(
+                            focusHigh_,sideFocusHigh_.run(focusHigh_,side))-
+                              sideFocusLow2_.run(
+                            focusLow_,sideFocusLow_.run(focusLow_,side));
+        const float c=std::abs(focus);
+        const float s=std::abs(sideFocus);
+        // Envelope matching is musical-phrase-scale, not a per-sample gate.
+        centerEnvelope_+=(c>centerEnvelope_?attack_:release_)*
+                         (c-centerEnvelope_);
+        sideEnvelope_+=(s>sideEnvelope_?attack_:release_)*
+                       (s-sideEnvelope_);
+        const float centerShare=centerEnvelope_/
+            (centerEnvelope_+1.65f*sideEnvelope_+1.e-5f);
+        const float dominance=std::clamp((centerShare-.46f)*2.f,0.f,1.f);
+        // Silence and tiny leakage must never trigger a sudden voice boost.
+        const float audible=std::clamp(
+            (centerEnvelope_-.00075f)/.0035f,0.f,1.f);
+        const float desired=dominance*audible;
+        attention_+=(desired>attention_?attentionAttack_:attentionRelease_)*
+                    (desired-attention_);
+        // Feed the SAME already-prepared six-wall/late-room engines with
+        // a smooth, narrow-enough 330Hz center-body component. Prior P9.9 enhanced
+        // the DIRECT virtual loudspeaker only, while room/reverb observed
+        // original x0/x1: this could make the boosted singer sound dry.
+        // No new reflections, resonator, feedback, extra output or delay.
+        const float warm=roomWarm2_.run(roomWarmCoeff_,
+                               roomWarm1_.run(roomWarmCoeff_,mid));
+        roomWarmSignal_=attention_*warm;
+        // 210-880Hz body is explicitly reinforced, not cut. Most focus is
+        // at 760-3350Hz. No upper-air shelf, de-esser or narrow 4-8k peak.
+        const float delta=attention_*(gains_[0]*body+gains_[1]*focus);
+        return {left+delta,right+delta};
+    }
+    // Inputs to the SAME acoustic room. Original L-R SIDE is preserved.
+    // Early has enough coherent low-mid energy to sound as if the vocal
+    // actually excites the room; a lower LATE feed provides its decay
+    // without over-reverberating syllables. No broadband tail boost.
+    Stereo roomEarlyFeed(float left,float right) const noexcept {
+        if(!active_ || gains_[4]==0.f)return {left,right};
+        const float body=gains_[4]*roomWarmSignal_;
+        return {left+body,right+body};
+    }
+    Stereo roomLateFeed(float left,float right) const noexcept {
+        if(!active_ || gains_[5]==0.f)return {left,right};
+        const float body=gains_[5]*roomWarmSignal_;
+        return {left+body,right+body};
+    }
+    // Small complementary widening of REAL directional first images, not
+    // fake Haas/crossfeed. Mid stays algebraically identical. This moves
+    // stereo accompaniment/reverb around the forward center without
+    // collapsing width or duplicating a second room/IR processor.
+    Stereo early(float left,float right) noexcept {
+        if(!active_ || gains_[2]==0.f)return {left,right};
+        const float side=.5f*(left-right);
+        const float width=firstHigh2_.run(
+                    widthHigh_,firstHigh_.run(widthHigh_,side))-
+                          firstLow2_.run(
+                    widthLow_,firstLow_.run(widthLow_,side));
+        const float delta=gains_[2]*width;
+        return {left+delta,right-delta};
+    }
+    // Center midrange in existing LATE field is gently relieved when the
+    // direct source is confident/centered. Lateral late ambience and bass
+    // remain unchanged: direct center appears closer while the already-
+    // rendered instruments retain their wider acoustic layer.
+    Stereo late(float left,float right) noexcept {
+        if(!active_ || gains_[3]==0.f)return {left,right};
+        const float mid=.5f*(left+right);
+        const float band=tailHigh2_.run(
+                    lateHigh_,tailHigh_.run(lateHigh_,mid))-
+                         tailLow2_.run(
+                    lateLow_,tailLow_.run(lateLow_,mid));
+        const float delta=gains_[3]*attention_*band;
+        return {left-delta,right-delta};
+    }
+private:
+    struct LP {
+        float v=0.f;
+        float run(float coeff,float x) noexcept {
+            v+=coeff*(x-v);
+            return v;
+        }
+    };
+    struct Coeff {float b0=0.f,b1=0.f,b2=0.f,a1=0.f,a2=0.f;};
+    struct Biquad {
+        float z1=0.f,z2=0.f;
+        float run(const Coeff& c,float x) noexcept {
+            const float y=c.b0*x+z1;
+            z1=c.b1*x-c.a1*y+z2;
+            z2=c.b2*x-c.a2*y;
+            return y;
+        }
+    };
+    static Coeff bandpass(double rate,double hz,double q) noexcept {
+        constexpr double pi=3.1415926535897932384626433832795;
+        const double w=2.*pi*hz/rate;
+        const double alpha=std::sin(w)/(2.*q);
+        const double inv=1./(1.+alpha);
+        return {static_cast<float>(alpha*inv),0.f,
+                static_cast<float>(-alpha*inv),
+                static_cast<float>(-2.*std::cos(w)*inv),
+                static_cast<float>((1.-alpha)*inv)};
+    }
+    // body(210-880), focus(760-3350), directional early-side(680-3900),
+    // center-late relief(1350-3800), and 330Hz Q1.4 room-body sends.
+    // These are bounded linear mixing weights,
+    // not claimed vocal-estimation confidence or EQ dB targets.
+    static constexpr std::array<std::array<float,6>,4> profiles_{{
+        {{0.f,0.f,0.f,0.f,0.f,0.f}},           // Venue EXACT
+        {{.112f,.200f,.105f,.108f,.55f,.25f}}, // P9.9+ Signature vivid room
+        {{.040f,.062f,.030f,.038f,.22f,.095f}}, // Live Studio subtle
+        {{.070f,.115f,.065f,.070f,.34f,.15f}}  // Cinema powerful, clear
+    }};
+    LP midBodyLow_{},midBodyHigh_{},midFocusLow_{},midFocusHigh_{};
+    LP midFocusLow2_{},midFocusHigh2_{};
+    Coeff roomWarmCoeff_{};
+    Biquad roomWarm1_{},roomWarm2_{};
+    LP sideFocusLow_{},sideFocusHigh_{},sideFocusLow2_{},sideFocusHigh2_{};
+    LP firstLow_{},firstHigh_{},firstLow2_{},firstHigh2_{};
+    LP tailLow_{},tailHigh_{},tailLow2_{},tailHigh2_{};
+    float bodyLow_=0.f,bodyHigh_=0.f,focusLow_=0.f,focusHigh_=0.f;
+    float roomWarmSignal_=0.f;
+    float widthLow_=0.f,widthHigh_=0.f,lateLow_=0.f,lateHigh_=0.f;
+    float attack_=0.f,release_=0.f,attentionAttack_=0.f;
+    float attentionRelease_=0.f,gainSlew_=0.f;
+    float centerEnvelope_=0.f,sideEnvelope_=0.f,attention_=0.f;
+    std::array<float,6> gains_{};
+    bool active_=false;
+};
+} // namespace armix::sonku::p99

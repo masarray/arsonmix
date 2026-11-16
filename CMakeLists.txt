@@ -124,6 +124,14 @@ if(ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT AND
    NOT ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT)
   message(FATAL_ERROR "P9.7 requires the P9.6 sound-reinforced world-speaker engine")
 endif()
+# Brand-scoped P9.9 room/vocal adaptation. OFF by default for every
+# normal build and every non-ImmerSIB product.
+option(ARMIX_IMMERSIB_EXPERIMENTAL_P99_VOCAL_ROOM
+       "Private ImmerSIB vocal room-coupling on P9.8 Warm scenes only" OFF)
+if(ARMIX_IMMERSIB_EXPERIMENTAL_P99_VOCAL_ROOM AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING)
+  message(FATAL_ERROR "ImmerSIB P9.9 vocal-room candidate requires P9.8 warm voicing")
+endif()
 # Typed native v12 voicing of Signature/Cinema/Studio: P9.7 Venue remains immutable.
 option(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
        "Private P9.8 scene bass/voice/air voicing; preserve approved P9.7 Venue" OFF)
@@ -372,7 +380,8 @@ target_compile_definitions(ARMixConsole PRIVATE
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT}>:SONKU_P97_STAGE_IMPACT_RESEARCH=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT}>:ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:SONKU_P98_SCENE_VOICING_RESEARCH=1>
-    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING=1>)
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING=1>
+    $<$<BOOL:${ARMIX_IMMERSIB_EXPERIMENTAL_P99_VOCAL_ROOM}>:SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH=1>)
 
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
@@ -937,6 +946,10 @@ if(BUILD_TESTING)
                               ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT=1
                               SONKU_P98_SCENE_VOICING_RESEARCH=1
                               ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING=1)
+                          endif()
+                          if(ARMIX_IMMERSIB_EXPERIMENTAL_P99_VOCAL_ROOM)
+                            target_compile_definitions(ARMixImerSipP92NativeTests PRIVATE
+                              SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH=1)
                           endif()
                           if(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING)
                             add_executable(ARMixImmerSIBP98NativeSonicGate

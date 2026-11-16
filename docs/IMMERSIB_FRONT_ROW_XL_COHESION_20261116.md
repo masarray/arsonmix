@@ -115,3 +115,37 @@ rather than claiming the numerical presets are perceptually proven.
 with the same live recording, check vocal presence, clarity, spacious
 tails, cymbal harshness and compression pumping. Continue Draft until
 audition and fully green Windows JUCE FAT.
+
+## 2026-11-17 — Isolated Vocal Room Enhancement from SonKu P9.9
+
+**Donor:** byte-identical `SonKuP99MusicalVocalDepth.h` from the
+listening-approved 8D-SonKu PR #733 (blob
+`d8542d7aa333d689eea9637fc9f5f122c468277a`).
+Do NOT copy full SonKu research branches or its Orbit Stage factory.
+
+**Candidate:** P9.8 ImmerSIB Warm IDs 4/5 only, private compile
+option `ARMIX_IMMERSIB_EXPERIMENTAL_P99_VOCAL_ROOM` default OFF and
+explicit per-instance ImerSipP92Processor opt-in. Use the donor's
+center-attention algorithm, 210–880Hz musical body, carefully limited
+presence, 330Hz Q1.4 vocal room coupling, directional early widening
+and late masking relief. The adapter adds only 42% to Detail / 34% to
+Impact, with 35ms strength slew, to avoid full P9.9 on top of existing
+P9.8 body shaping. The 32%/12% P9.8 source/room coherence uses a
+*pre-P9.9* source snapshot, preventing double feeding. P9.9 sends enter
+the SAME real KEMAR/six-wall/late-room graph only once. No separate
+reverb/feedback, artificial stereo delay, dry center overlay, FFT,
+new GUI control, or allocation on the PCM callback.
+
+**Preserved:** accepted Live Concert room geometry/parameters, Front Row
+XL tuning and display, native power/ACK and preset identity, 1.1–2.5m
+slider, IMRS v7 and SONK v12 bytes, P9.5 makeup cap 1.10 and linked
+.98 peak guard. SonKu P9.9 is still exclusively opt-in for its own
+product; unopted SonKu, neutral Venue, ROOM OFF and MIX0 are bit-exact.
+44.1/48k native PCM regression must verify warmer center 330Hz without
+bass 86Hz or treble 7600Hz overboost, bounded overall power, anti-phase
+integrity, true bypass, and both Windows JUCE and portable artifacts.
+
+**Audio acceptance:** real mastered concert listening with gain-matched
+P9.8 comparison: coherent warm singer, preserved bass punch, no
+piercing 2–4kHz, natural early/late room interaction, no audible pumping.
+These hypotheses cannot be proved by synthetic PCM; keep PR Draft.

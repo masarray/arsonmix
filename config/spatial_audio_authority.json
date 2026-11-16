@@ -141,8 +141,20 @@
     "nativeRenderMode": 9,
     "featureFlag": "ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING",
     "releaseQualified": false,
+    "immersibP99VocalRoom": {
+      "product": "ImmerSIB",
+      "featureFlag": "ARMIX_IMMERSIB_EXPERIMENTAL_P99_VOCAL_ROOM",
+      "perInstanceOptIn": "ImerSipP92Processor only, never generic SonKu/IMRS",
+      "donorApprovedMainCommit": "cdee12c6f71b35b75ddb9ba3da9a98999b60d119",
+      "donorExactBlob": "d8542d7aa333d689eea9637fc9f5f122c468277a",
+      "adapterBlob": "0aee9e1154f6052db02a8e8dfdb696ef4462aa10",
+      "scope": "sceneVoicing4/5 only, room ON, MIX>0, explicit product opt-in, 42% Detail / 34% Impact of already approved P9.9 Profile1",
+      "routing": "P9.8 source delta captured BEFORE P9.9 and applied to original 32%/12% feeds; P9.9 center 330Hz feeds separately enter existing six-wall/late engines once",
+      "safety": "no new FX ID/session bytes/HRIR/dry stem/second engine/heap/FFT, neutral Venue and non-opted SonKu bit-exact",
+      "status": "DRAFT, synthetic PCM and Windows FAT plus matched-volume headphone audition pending"
+    },
     "acousticSourceBlobSha1": {
-      "engine/builtin_fx/sonku/SonKuSpatialCore.h": "de775c63df93a115232df956b7004f2463c4e530",
+      "engine/builtin_fx/sonku/SonKuSpatialCore.h": "adb44388544cf2378a282afb14cc4c4a48f2a149",
       "engine/builtin_fx/sonku/SonKuP91P92WorldBassFoundation.h": "63551d22e8dff672fe136131c32d28b568bb3170",
       "engine/builtin_fx/sonku/SonKuP94FrontBackDepthCue.h": "f0f88088c68ef6865d64c240c4c87accaf136070",
       "engine/builtin_fx/sonku/SonKuP95MusicalPresence.h": "f458d520c9ca6c75b1b961d220e15abd64b07497",
@@ -184,7 +196,7 @@
       ],
       "reason": "Owner hears farfield presets as vague and 100% early room too weak; M/S masking relief is source-domain frequency-selective, not stem separation",
       "newDSPBlobSha1": {
-        "engine/builtin_fx/sonku/SonKuSpatialCore.h": "de775c63df93a115232df956b7004f2463c4e530",
+        "engine/builtin_fx/sonku/SonKuSpatialCore.h": "adb44388544cf2378a282afb14cc4c4a48f2a149",
         "engine/builtin_fx/sonku/SonKuEarlyReflections.h": "5a6a9b48cfdc60729f130c61110c8d8590b20f35",
         "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "5ec8d135d54e846c3f8d86d80202c29de67b724f",
         "engine/builtin_fx/sonku/SonKuSourcePlacement3D.h": "9afb959bed292626c3097c2a382208ce8798e90c"

@@ -27,8 +27,14 @@ using armix::builtin_fx::imersipP92Presets;
 constexpr int n=16384;
 constexpr double pi=3.1415926535897932384626433832795;
 struct Result {std::uint64_t hash;double power,side;float peak;};
-static Result render(int rate,const Settings& s,bool phaseReverse=false){
+static Result render(int rate,const Settings& s,bool phaseReverse=false,
+                     bool immersibP99=false){
     auto dsp=std::make_unique<SonKuSpatialCore>();
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+    if(immersibP99)dsp->optInImmerSIBVocalRoom();
+#else
+    assert(!immersibP99);
+#endif
     assert(dsp->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch));
     assert(armix::sonku::valid(s) && dsp->setSettings(s));
     std::array<std::vector<float>,2> pcm{std::vector<float>(n),std::vector<float>(n)};
@@ -83,8 +89,13 @@ static Result render(int rate,const Settings& s,bool phaseReverse=false){
 // stage, P9.8 voicing, P9.5 makeup and peak guard. Real PCM, not just a
 // narrow EQ coefficient guess. Short deterministic steady-state fixture.
 static double acousticTonePower(int rate,const Settings& scene,
-                                double hz,bool mid) {
+                                double hz,bool mid,bool immersibP99=false) {
     auto dsp=std::make_unique<SonKuSpatialCore>();
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+    if(immersibP99)dsp->optInImmerSIBVocalRoom();
+#else
+    assert(!immersibP99);
+#endif
     assert(dsp->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch));
     assert(dsp->setSettings(scene));
     std::array<std::vector<float>,2> pcm{
@@ -303,6 +314,44 @@ int main(){
             assert(edgeRatio<1.05);
             assert(airRatio>.65);
         }
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+        // Whole KEMAR/room/limiter A/B: older P9.8 with no opt-in remains
+        // a fixed comparison, not a second processing graph.
+        for(int id:{2,4,8}) {
+            const auto warm=imersipP92Factory(id);
+            const auto before=render(rate,warm);
+            const auto after=render(rate,warm,false,true);
+            assert(before.hash!=after.hash);
+            const double ratio=after.power/before.power;
+            std::fprintf(stderr,
+                "IMMERSIB_P99_VOCAL_AB,rate=%d,id=%d,powerRatio=%.5f,sideRatio=%.5f,peak=%.5f\n",
+                rate,id,ratio,after.side/before.side,double(after.peak));
+            assert(ratio>.80 && ratio<1.36);
+            assert(after.peak<=.9805f);
+            const double chest0=acousticTonePower(rate,warm,330.,true);
+            const double chest1=acousticTonePower(rate,warm,330.,true,true);
+            const double bass0=acousticTonePower(rate,warm,86.,true);
+            const double bass1=acousticTonePower(rate,warm,86.,true,true);
+            const double high0=acousticTonePower(rate,warm,7600.,true);
+            const double high1=acousticTonePower(rate,warm,7600.,true,true);
+            const double chest=chest1/chest0;
+            const double bass=bass1/bass0;
+            const double high=high1/high0;
+            std::fprintf(stderr,
+                "IMMERSIB_P99_TONAL_AB,rate=%d,id=%d,chest=%.5f,bass=%.5f,high=%.5f\n",
+                rate,id,chest,bass,high);
+            assert(chest>1.0001 && chest<1.35);
+            assert(bass>.87 && bass<1.13);
+            assert(high>.88 && high<1.12);
+            auto off=warm;off.roomAmount=0.f;off.ambience=0.f;
+            assert(render(rate,off).hash==render(rate,off,false,true).hash);
+            auto noMix=warm;noMix.spatialMix=0.f;
+            assert(render(rate,noMix).hash==render(rate,noMix,false,true).hash);
+            auto neutral=warm;neutral.sceneVoicing=0;
+            assert(render(rate,neutral).hash==render(rate,neutral,false,true).hash);
+        }
+        assert(render(rate,golden).hash==render(rate,golden,false,true).hash);
+#endif
         // Historical owner Custom screenshot is a valid private audio
         // control reference, not a shipped preset or frozen Venue.
         auto oldFront=ownerPreset;

@@ -415,6 +415,11 @@ public:
         (void)restoreUnpublishedState(data,size);
     }
 protected:
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+    void optInImmerSIBVocalRoom() noexcept {
+        core_.optInImmerSIBVocalRoom(); // no change to SonKu default instance
+    }
+#endif
     // Default SonKu accepts its full native settings schema; independent
     // product inserts override this for their restricted world-P9 scenes.
     virtual bool admitQueuedScene(

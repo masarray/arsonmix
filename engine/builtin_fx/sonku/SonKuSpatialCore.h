@@ -33,6 +33,9 @@
 #endif
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
 #include "SonKuP98SceneVoicing.h"
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+#include "SonKuImmerSIBVocalRoom.h"
+#endif
 #endif
 #if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
 #include "SonKuP94FrontBackDepthCue.h"
@@ -211,6 +214,11 @@ public:
     };
     DynamicsTrace dynamicsTrace() const noexcept {return dynamicsTrace_;}
 #endif
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+    // An explicit runtime-only opt-in: no ImmerSIB scene ID in SonKu or IMRS state.
+    // Must be called before prepare(), never from the realtime callback.
+    void optInImmerSIBVocalRoom() noexcept {immersibP99Enabled_=true;}
+#endif
     bool prepare(double rate, SonKuReflectionProfile profile=
                  SonKuReflectionProfile::Lightweight) noexcept {
         ready_=false;
@@ -255,6 +263,9 @@ public:
 #endif
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
         if(!p98Voicing_.prepare(rate))return false;
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+        if(!immersibP99VocalRoom_.prepare(rate))return false;
+#endif
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
         if(!p95Presence_.prepare(rate))return false;
@@ -341,6 +352,9 @@ public:
 #endif
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
         p98Voicing_.reset();
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+        immersibP99VocalRoom_.reset();
+#endif
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
         p95Presence_.reset();
@@ -407,6 +421,9 @@ public:
 #endif
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
         p98Voicing_.reset();
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+        immersibP99VocalRoom_.reset();
+#endif
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
         p95Presence_.reset();
@@ -850,6 +867,22 @@ public:
                 (void)p98Voicing_.source(0.f,0.f,0,false);
             }
 #endif
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+            // Save P9.8 room-cohesion reference BEFORE enhancing the direct
+            // virtual-speaker source; don't send its spectral delta twice.
+            const float p98RoomSourceL=history_[0][write_];
+            const float p98RoomSourceR=history_[1][write_];
+            const bool vocalRoomOn=immersibP99Enabled_ && p90World &&
+                roomEnabled && settings_.spatialMix>0.f &&
+                (settings_.sceneVoicing==4 || settings_.sceneVoicing==5);
+            if(immersibP99Enabled_) {
+                const auto vocal=immersibP99VocalRoom_.source(
+                    history_[0][write_],history_[1][write_],
+                    settings_.sceneVoicing,vocalRoomOn);
+                history_[0][write_]=vocal.left;
+                history_[1][write_]=vocal.right;
+            }
+#endif
             float ears[2]{0.f,0.f};
             for(int tap=0;tap<taps;++tap) {
                 int at=write_-tap;
@@ -906,10 +939,25 @@ public:
             float earlyFeedL=x0,earlyFeedR=x1,lateFeedL=x0,lateFeedR=x1;
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
             if(immersiveWarm){
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+                const float deltaL=p98RoomSourceL-x0;
+                const float deltaR=p98RoomSourceR-x1;
+#else
                 const float deltaL=history_[0][write_]-x0;
                 const float deltaR=history_[1][write_]-x1;
+#endif
                 earlyFeedL+=.32f*deltaL;earlyFeedR+=.32f*deltaR;
                 lateFeedL+=.12f*deltaL;lateFeedR+=.12f*deltaR;
+            }
+#endif
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+            if(vocalRoomOn){
+                // Add only the bounded 330Hz resonance from the APPROVED
+                // P9.9 donor into the SAME first-image and late-room feeds.
+                const auto e=immersibP99VocalRoom_.roomEarlyFeed(x0,x1);
+                const auto l=immersibP99VocalRoom_.roomLateFeed(x0,x1);
+                earlyFeedL+=e.left-x0;earlyFeedR+=e.right-x1;
+                lateFeedL+=l.left-x0;lateFeedR+=l.right-x1;
             }
 #endif
             auto reflection=room_.active()
@@ -1049,6 +1097,17 @@ public:
                 if(p90World && settings_.spatialMix>0.f && roomEnabled){
                     const auto air=p98Voicing_.early(reflection.left,reflection.right);
                     reflection.left=air.left;reflection.right=air.right;
+                }
+#endif
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+                if(vocalRoomOn){
+                    // Different bands from P9.8's >5.2kHz lateral air.
+                    // Preserve exact MID and original reflections' timing.
+                    const auto e=immersibP99VocalRoom_.early(
+                        reflection.left,reflection.right);
+                    const auto l=immersibP99VocalRoom_.late(late.left,late.right);
+                    reflection.left=e.left;reflection.right=e.right;
+                    late.left=l.left;late.right=l.right;
                 }
 #endif
                 float spatialL=directL+
@@ -1495,6 +1554,10 @@ private:
 #endif
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
     p98::SceneVoicing p98Voicing_{};
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+    p99::ImmerSIBVocalRoom immersibP99VocalRoom_{};
+    bool immersibP99Enabled_=false; // explicit per-instance; not serialized
+#endif
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
     p95::MusicalPresence p95Presence_{};
