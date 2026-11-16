@@ -131,16 +131,8 @@ public:
         g.addTransform(juce::AffineTransform::scale(compactScale));
         // One authentic photo venue per scene, never the abandoned
         // holographic room or stacked artificial speaker sprites.
-        if(skin_.hasScenes()) {
-            skin_.drawScene(g,visualSceneId_);
-        } else {
-            // Defensive fallback if the binary asset pack is incomplete.
-            skin_.drawRoom(g);
-            const auto concert=imersipP92ConcertBoxes(
-                static_cast<float>(knobs_[0].getValue()),
-                static_cast<float>(knobs_[1].getValue()));
-            if(concert.safe())skin_.drawConcert(g,concert);
-        }
+        // Only approved concert photography; rejected procedural art is removed.
+        skin_.drawScene(g,visualSceneId_);
 
         // Quiet opaque branded header, readable over any approved scene.
         g.setColour(juce::Colour(0xe60c141a));

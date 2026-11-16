@@ -265,25 +265,8 @@ endif()
 file(GLOB ARMIX_GUITAR_SKIN_PNGS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/assets/gfx-*.png")
 list(SORT ARMIX_GUITAR_SKIN_PNGS)
-# All nineteen independent RGBA PNGs are reviewed source files in the draft
-# branch. CMake embeds the EXACT files used by composition proof; Windows
-# operators and native builds need no Pillow, NumPy, SVG, or sidecar folder.
-set(ARMIX_IMERSIP_PNG_BASE "${CMAKE_CURRENT_SOURCE_DIR}/assets/imersip/png")
-set(ARMIX_IMERSIP_ASSET_NAMES
-    room_background header_overlay
-    line_array_left line_array_right
-    subwoofer_left subwoofer_right
-    front_fill_left front_fill_right
-    side_fill_left side_fill_right
-    slider_track slider_thumb knob_teal knob_master_purple
-    dropdown_background button_normal button_hover button_pressed)
-foreach(name IN LISTS ARMIX_IMERSIP_ASSET_NAMES)
-  set(ARMIX_IMERSIP_PNG_FILE "${ARMIX_IMERSIP_PNG_BASE}/${name}.png")
-  if(NOT EXISTS "${ARMIX_IMERSIP_PNG_FILE}")
-    message(FATAL_ERROR "Missing checked-in ImerSip image: ${ARMIX_IMERSIP_PNG_FILE}")
-  endif()
-  list(APPEND ARMIX_IMERSIP_PNG_SOURCES "${ARMIX_IMERSIP_PNG_FILE}")
-endforeach()
+# ImmerSIB embeds only the six approved venue photographs.
+# Panel, buttons, sliders and knob are native JUCE paint.
 # The six approved photo-real venue scenes are independent full-size PNGs.
 # They are embedded into the JUCE executable, with no external image folder.
 set(ARMIX_IMERSIB_SCENE_NAMES
@@ -300,7 +283,6 @@ juce_add_binary_data(ARMixAssets SOURCES
     "${ARMIX_APPROVED_GUI_DIR}/index.html" ${ARMIX_APPROVED_GUI_BINARIES}
     ${ARMIX_GUITAR_SKIN_PNGS}
     "${ARMIX_BRAND_DIR}/arsonmix-256.png"
-    ${ARMIX_IMERSIP_PNG_SOURCES}
     ${ARMIX_IMERSIB_SCENE_PNG_SOURCES})
 target_include_directories(ARMixConsole PRIVATE "${ARMIX_APPROVED_GUI_DIR}")
 

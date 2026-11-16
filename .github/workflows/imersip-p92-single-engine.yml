@@ -7,8 +7,7 @@ on:
       - 'CMakeLists.txt'
       - 'engine/builtin_fx/ImerSipP92*.h'
       - 'assets/imersip/**'
-      - 'scripts/generate_imersip_concert_png.py'
-      - 'tests/imersip_p92_png_asset_test.py'
+      - 'tests/imersip_scene_assets_contract_test.py'
       - 'engine/builtin_fx/SonKuSpatialProcessor.h'
       - 'engine/builtin_fx/sonku/**'
       - 'src/Main.cpp'
@@ -33,16 +32,8 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Prepare reproducible native PNG generator
-        run: python -m pip install --disable-pip-version-check "pillow>=11,<13" "numpy>=2,<3"
-      - name: Validate all 19 RGBA PNGs, alpha padding, and six composition proofs
-        run: python tests/imersip_p92_png_asset_test.py --out imersip-png-qa
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ImerSip-P92-19-RGBA-PNG-AssetPack-${{ github.run_id }}
-          path: imersip-png-qa/
-          if-no-files-found: error
-          retention-days: 14
+      - name: Gate accepted six real venue PNGs; forbid rejected asset pack
+        run: python -m unittest discover -s tests -p 'imersip_scene_assets_contract_test.py' -v
       - name: Source contract and no accidental shadow DSP
         run: |
           set -euo pipefail
@@ -142,19 +133,10 @@ jobs:
         run: |
           nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Install PNG build-time dependencies (no runtime dependency)
-        shell: pwsh
-        run: |
-          python -m pip install --disable-pip-version-check "pillow>=11,<13" "numpy>=2,<3"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Configure exact P9 native FX graph and focused CTest
         shell: pwsh
         run: |
-          # The same interpreter MUST run pip and CMake's PNG generator.
-          # Hosted Windows runners may have 3.12 and 3.14 installed together.
-          $pyExe = (& python -c 'import sys; print(sys.executable)').Trim()
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
-            -DPython3_EXECUTABLE="$pyExe" `
             -DJUCE_ROOT="$env:GITHUB_WORKSPACE/third_party/JUCE" `
             -DJUCE_WEBVIEW2_PACKAGE_LOCATION="$env:GITHUB_WORKSPACE/.deps" `
             -DARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=ON `
