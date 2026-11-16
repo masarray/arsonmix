@@ -236,7 +236,11 @@ let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
  visualPhase=0,visualAt=0,liveTimer=null,lastLiveAt=0;
 function syncPower(){
  const p=$("skPower");
- if(!current){p.dataset.fxState="unknown";p.disabled=true;return;}
+ if(!current){
+  p.dataset.fxState="unknown";p.disabled=true;
+  root.querySelector(".sk-engine-led").textContent="HRTF WAIT";
+  return;
+ }
  const n=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
  const lane=n?.graph?.channels?.find(x=>x.id===id);
  const insert=lane?.inserts?.[current.slot];
@@ -255,6 +259,10 @@ function syncPower(){
     "SONKU STATE UNAVAILABLE · waiting for native readback";
  p.setAttribute("aria-label",p.title);
  root.dataset.fxState=state;
+ root.querySelector(".sk-engine-led").textContent=
+  state==="on"?"HRTF ACTIVE":
+  state==="off"?"FX BYPASSED":
+  state==="rack-off"?"RACK OFF":"HRTF WAIT";
 }
 const context=()=>{
  if(!current||!native())return null;
