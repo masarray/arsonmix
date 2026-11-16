@@ -191,7 +191,7 @@ private:
     float attack_=0.f,release_=0.f,attentionAttack_=0.f;
     float attentionRelease_=0.f,gainSlew_=0.f;
     float centerEnvelope_=0.f,sideEnvelope_=0.f,attention_=0.f;
-    std::array<float,4> gains_{};
+    std::array<float,6> gains_{};
     bool active_=false;
 };
 } // namespace armix::sonku::p99
