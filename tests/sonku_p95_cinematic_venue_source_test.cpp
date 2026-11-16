@@ -24,11 +24,11 @@ static Measurement run(int sampleRate,int scene,int framesPerBlock,bool anti=fal
     s.renderMode=9;s.moving=false;s.clockwise=true;
     s.startAzimuthDegrees=0.f;s.stereoSpreadDegrees=96.f;
     s.spacePreset=scene;s.sourceDistanceMeters=scene==4?3.f:
-          scene==5?8.2f:scene==6?9.8f:10.f;
-    s.roomAmount=scene==4?.75f:scene==5?.95f:1.f;
-    s.ambience=scene==4?.32f:scene==5?.62f:scene==6?.8f:.87f;
+          scene==5?8.9f:scene==6?9.8f:10.f;
+    s.roomAmount=scene==4?.75f:1.f;
+    s.ambience=scene==4?.32f:scene==5?.76f:scene==6?.8f:.87f;
     s.spatialMix=1.f;
-    s.outputTrim=scene==4?1.584893f:scene==5?1.778279f:
+    s.outputTrim=scene==4?1.584893f:scene==5?2.238721f:
                  scene==6?1.995262f:2.238721f;
     assert(v.width>=8.f&&v.depth>=8.f&&v.height>=4.f);
     assert(s.sourceDistanceMeters<=v.maxDistance);
@@ -91,7 +91,7 @@ int main(){
             std::printf("SONKU_P95_LEVEL,%d,scene=%d,input=%.7f,output=%.7f,ratio_dB=%.4f,peak=%.6f\n",
                 rate,scene,x.source,x.processed,db,x.peak);
             // The preset must not be a silent "distant" soundtrack.
-            assert(db>-6. && db<12.0);
+            assert(db>0.5 && db<12.0 && "No P9.5 factory scene may be quieter than dry reference");
         }
         assert(std::abs(outputs[4]-outputs[5])>1.e-4);
         assert(std::abs(outputs[5]-outputs[6])>1.e-4);
