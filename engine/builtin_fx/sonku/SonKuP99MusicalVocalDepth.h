@@ -26,10 +26,11 @@ public:
         bodyHigh_=alpha(880.);
         focusLow_=alpha(760.);
         focusHigh_=alpha(3350.);
-        // Broad low-mid energy only. Two cascaded low passes keep it out
-        // of sub/bass modes and upper consonant/cymbal transients.
-        roomWarmLow_=alpha(165.);
-        roomWarmHigh_=alpha(670.);
+        // Two centered low-mid biquads, not a subtraction of unmatched
+        // low-pass phases: the original first-order warm band decreased
+        // integrated 86 Hz by 7%. Biquads reject deep LF/cymbals strongly
+        // and return near-zero phase at 330 Hz where room-body is intended.
+        roomWarmCoeff_=bandpass(rate,330.,1.4);
         widthLow_=alpha(680.);
         widthHigh_=alpha(3900.);
         // Late-field relief must NOT eat vocal chest/body 200-650 Hz.
@@ -46,7 +47,7 @@ public:
     void reset() noexcept {
         midBodyLow_={};midBodyHigh_={};midFocusLow_={};midFocusHigh_={};
         midFocusLow2_={};midFocusHigh2_={};
-        warmLow1_={};warmLow2_={};warmHigh1_={};warmHigh2_={};
+        roomWarm1_={};roomWarm2_={};
         roomWarmSignal_=0.f;
         sideFocusLow_={};sideFocusHigh_={};
         sideFocusLow2_={};sideFocusHigh2_={};
@@ -105,14 +106,12 @@ public:
         attention_+=(desired>attention_?attentionAttack_:attentionRelease_)*
                     (desired-attention_);
         // Feed the SAME already-prepared six-wall/late-room engines with
-        // a gentle 165-670Hz center-body component. Prior P9.9 enhanced
+        // a smooth, narrow-enough 330Hz center-body component. Prior P9.9 enhanced
         // the DIRECT virtual loudspeaker only, while room/reverb observed
         // original x0/x1: this could make the boosted singer sound dry.
         // No new reflections, resonator, feedback, extra output or delay.
-        const float warm=warmHigh2_.run(roomWarmHigh_,
-                             warmHigh1_.run(roomWarmHigh_,mid))-
-                         warmLow2_.run(roomWarmLow_,
-                             warmLow1_.run(roomWarmLow_,mid));
+        const float warm=roomWarm2_.run(roomWarmCoeff_,
+                               roomWarm1_.run(roomWarmCoeff_,mid));
         roomWarmSignal_=attention_*warm;
         // 210-880Hz body is explicitly reinforced, not cut. Most focus is
         // at 760-3350Hz. No upper-air shelf, de-esser or narrow 4-8k peak.
@@ -169,24 +168,45 @@ private:
             return v;
         }
     };
+    struct Coeff {float b0=0.f,b1=0.f,b2=0.f,a1=0.f,a2=0.f;};
+    struct Biquad {
+        float z1=0.f,z2=0.f;
+        float run(const Coeff& c,float x) noexcept {
+            const float y=c.b0*x+z1;
+            z1=c.b1*x-c.a1*y+z2;
+            z2=c.b2*x-c.a2*y;
+            return y;
+        }
+    };
+    static Coeff bandpass(double rate,double hz,double q) noexcept {
+        constexpr double pi=3.1415926535897932384626433832795;
+        const double w=2.*pi*hz/rate;
+        const double alpha=std::sin(w)/(2.*q);
+        const double inv=1./(1.+alpha);
+        return {static_cast<float>(alpha*inv),0.f,
+                static_cast<float>(-alpha*inv),
+                static_cast<float>(-2.*std::cos(w)*inv),
+                static_cast<float>((1.-alpha)*inv)};
+    }
     // body(210-880), focus(760-3350), directional early-side(680-3900),
-    // center-late relief(1350-3800), and warm-band room sends(165-670).
+    // center-late relief(1350-3800), and 330Hz Q1.4 room-body sends.
     // These are bounded linear mixing weights,
     // not claimed vocal-estimation confidence or EQ dB targets.
     static constexpr std::array<std::array<float,6>,4> profiles_{{
         {{0.f,0.f,0.f,0.f,0.f,0.f}},           // Venue EXACT
-        {{.095f,.165f,.080f,.095f,.68f,.28f}}, // Signature room-body
-        {{.040f,.062f,.030f,.038f,.27f,.11f}}, // Live Studio subtle
-        {{.070f,.115f,.065f,.070f,.47f,.19f}}  // Cinema powerful, clear
+        {{.095f,.165f,.080f,.095f,.48f,.22f}}, // Signature room-body
+        {{.040f,.062f,.030f,.038f,.22f,.095f}}, // Live Studio subtle
+        {{.070f,.115f,.065f,.070f,.34f,.15f}}  // Cinema powerful, clear
     }};
     LP midBodyLow_{},midBodyHigh_{},midFocusLow_{},midFocusHigh_{};
     LP midFocusLow2_{},midFocusHigh2_{};
-    LP warmLow1_{},warmLow2_{},warmHigh1_{},warmHigh2_{};
+    Coeff roomWarmCoeff_{};
+    Biquad roomWarm1_{},roomWarm2_{};
     LP sideFocusLow_{},sideFocusHigh_{},sideFocusLow2_{},sideFocusHigh2_{};
     LP firstLow_{},firstHigh_{},firstLow2_{},firstHigh2_{};
     LP tailLow_{},tailHigh_{},tailLow2_{},tailHigh2_{};
     float bodyLow_=0.f,bodyHigh_=0.f,focusLow_=0.f,focusHigh_=0.f;
-    float roomWarmLow_=0.f,roomWarmHigh_=0.f,roomWarmSignal_=0.f;
+    float roomWarmSignal_=0.f;
     float widthLow_=0.f,widthHigh_=0.f,lateLow_=0.f,lateHigh_=0.f;
     float attack_=0.f,release_=0.f,attentionAttack_=0.f;
     float attentionRelease_=0.f,gainSlew_=0.f;
