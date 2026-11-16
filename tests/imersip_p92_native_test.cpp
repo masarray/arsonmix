@@ -485,6 +485,19 @@ int main() {
             }
         assert(sceneId==2 || signature!=previousSceneSignature);
         previousSceneSignature=signature;
+        // The exact same six embedded PNGs must reach BOTH left/right
+        // viewport edges. Prior centred 2:1 images left uniform matte bands.
+        for(const int edgeX:{8,photo.getWidth()-9}) {
+            const auto first=photo.getPixelAt(edgeX,45);
+            int matteCount=0;
+            int varied=0;
+            for(int y=52;y<385;y+=19) {
+                const auto pixel=photo.getPixelAt(edgeX,y);
+                if(pixel==juce::Colour(0xff0e161c))++matteCount;
+                if(pixel!=first)++varied;
+            }
+            assert(matteCount<3 && varied>=7);
+        }
         const auto sceneFile=juce::File::getCurrentWorkingDirectory()
             .getChildFile("ImerSip_P92_SCENE_"+juce::String(sceneId)+".png");
         juce::FileOutputStream stream(sceneFile);
