@@ -113,6 +113,32 @@ def exercise(browser,out,width,height):
     editor=page.locator("#mxNativeSonKu")
     editor.wait_for(state="visible",timeout=5000)
     assert editor.locator("#skMap .sk-src").count()==2
+    # Modeless native editor must be movable just like EQ and Compressor.
+    # Drag only the non-interactive brand area; never start drags on Power
+    # or Presets, and clamp movement to the current viewport.
+    head=editor.locator(".sk-head")
+    before_box=editor.bounding_box()
+    assert before_box
+    header_box=head.bounding_box()
+    assert header_box
+    drag_x=header_box["x"]+29
+    drag_y=header_box["y"]+header_box["height"]*.5
+    page.mouse.move(drag_x,drag_y)
+    page.mouse.down()
+    page.mouse.move(drag_x+40,drag_y+26,steps=5)
+    page.mouse.up()
+    moved_box=editor.bounding_box()
+    assert moved_box
+    assert moved_box["x"]>=-1 and moved_box["y"]>=-1,moved_box
+    assert moved_box["x"]+moved_box["width"]<=width+2,moved_box
+    if width-before_box["width"]>70:
+        assert moved_box["x"]>before_box["x"]+4,(
+            "Movable SonKu header failed to drag",before_box,moved_box)
+    assert editor.locator("#skPower").count()==1
+    assert editor.locator("#skPower").get_attribute("data-fx-state")=="unknown",(
+        "Missing native FX rack bypass readback must NOT fake power ON")
+    assert editor.locator("#skPreset").is_disabled(),(
+        "Old schema v2 must NOT offer P9.1+P9.2 factory scenes")
     assert editor.locator("#skMap .sk-speaker-shell").count()==2
     assert editor.locator("#skMap #skFarArc").count()==1
     assert editor.locator("#skMap #skNearArc").count()==1
