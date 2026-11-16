@@ -14,7 +14,7 @@ const actualReconcile=source.slice(start,end);
 const renderMenu=vm.runInNewContext(
   '(function(picker,root,cap){ const {'+
   'p90Capable,p91p92Capable,p94Capable,p89Capable,p88Capable,p87Capable,p86Capable,'+
-  'p85Capable,p84Capable,p83Capable}=cap;\n'+
+  'p85Capable,p84Capable,p83Capable}=cap;const s={renderMode:9};\n'+
   actualReconcile+'\n})',{}
 );
 const syncMatch=source.match(/if\(picker\.value!==v\)picker\.value=v;/);
