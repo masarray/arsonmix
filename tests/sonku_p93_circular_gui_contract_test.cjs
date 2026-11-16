@@ -29,23 +29,27 @@ assert(Math.hypot(same[0].visible.x-same[1].visible.x,
 assert.match(source,/M348 174 A148 83 0 0 0 52 174/);
 assert.match(source,/M52 174 A148 83 0 0 0 348 174/);
 const f=between("const factoryPresets=Object.freeze","const valid=s=>");
-const p=vm.runInNewContext("(function(){"+f+
- "return {factoryPresets,matchFactoryPreset};})()",{});
-assert.equal(Object.keys(p.factoryPresets).length,5);
+const p=vm.runInNewContext("(function(){let p95Capable=true;"+f+
+ "return {factoryPresets,legacyFactoryPresets,latest:s=>matchFactoryPreset(s),"+
+ "legacy:s=>{p95Capable=false;return matchFactoryPreset(s);}};})()",{});
+assert.equal(Object.keys(p.factoryPresets).length,6);
+assert.equal(Object.keys(p.legacyFactoryPresets).length,5);
 for(const [id,scene] of Object.entries(p.factoryPresets)){
  assert.equal(scene.spatialMix,1);
- assert.equal(scene.outputTrim,1); // Never multiply factory output by +7dB.
- assert(scene.sourceDistanceMeters>=1.6);
- const max=[10,3.1,6.7,10][scene.spacePreset];
+ assert(scene.outputTrim>=1.58&&scene.outputTrim<=2.24);
+ assert(scene.sourceDistanceMeters>=3 &&scene.sourceDistanceMeters<=10);
+ assert([4,5,6,7].includes(scene.spacePreset));
+ const max=[10,3.1,6.7,10,3.1,10,10,10][scene.spacePreset];
  assert(scene.sourceDistanceMeters<=max);
- assert(scene.stereoSpreadDegrees>=0&&scene.stereoSpreadDegrees<=180);
- assert(scene.roomAmount>=0&&scene.roomAmount<=1);
- assert(scene.ambience>=0&&scene.ambience<=1);
- assert.equal(p.matchFactoryPreset({...scene,renderMode:9}),id);
- assert.equal(p.matchFactoryPreset({...scene,renderMode:8}),"CUSTOM");
+ assert(scene.roomAmount>=.75&&scene.roomAmount<=1);
+ assert(scene.ambience>=.32&&scene.ambience<=.87);
+ assert.equal(p.latest({...scene,renderMode:9}),id);
+ assert.equal(p.latest({...scene,renderMode:8}),"CUSTOM");
 }
-const modified={...p.factoryPresets.music,renderMode:9,outputTrim:2.238721};
-assert.equal(p.matchFactoryPreset(modified),"CUSTOM");
+for(const [id,scene] of Object.entries(p.legacyFactoryPresets)){
+ assert.equal(scene.outputTrim,1);
+ assert.equal(p.legacy({...scene,renderMode:9}),id);
+}
 const sync=between("function syncPower(){","const context=()=>{");
 const state={graph:{channels:[{id:"ch-1",fxRackBypassed:false,
  inserts:[{id:"insert",catalogId:"armix.builtin.8d-sonku.v1",bypassed:false}]}]}};
@@ -54,7 +58,7 @@ const element={dataset:{},disabled:true,
 const root={dataset:{},querySelector(){return {textContent:""};}},current={track:{},slot:0};
 const power=vm.runInNewContext("(function(){let current=__current;"+
  "let root=__root;const ID=\"armix.builtin.8d-sonku.v1\";let $=()=>__element;let snapshot=()=>__state;"+
- "let native=()=>true;"+sync+"return syncPower;})()",{
+ "let native=()=>true;let visualAt=0,observedAt=0;"+sync+"return syncPower;})()",{
  __current:current,__root:root,__element:element,__state:state,
  window:{__ARMIX_NATIVE_M2__:{nativeIdFor(){return "ch-1";}}},
  document:{querySelector(){return {classList:{contains(){return false}}};}}
@@ -74,4 +78,4 @@ assert.match(source,/window\.addEventListener\("resize",constrainWindow\)/);
 assert.match(source,/if\(!p91p92Capable\|\|draft\.renderMode!==9\|\|!preset\|\|pending\)/);
 assert.match(css,/\.mx-sonku \.sk-stage \.sk-space-panel\{display:grid/);
 assert.match(source,/current\.track\.slotBypass\[current\.slot\]/);
-console.log("PASS SonKu P9.3: approved perspective orbit, inverse drag, native power readback, draggable window, five full-scene presets, compact SPACE placement");
+console.log("PASS SonKu P9.3: approved perspective orbit, inverse drag, native power readback, draggable window, six cinematic venue presets, compact SPACE placement");
