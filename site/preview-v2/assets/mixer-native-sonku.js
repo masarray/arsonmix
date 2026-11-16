@@ -9,7 +9,7 @@ const defaults=()=>({startAzimuthDegrees:0,revolutionSeconds:12,
 const normalizeSettings=s=>({...defaults(),...s});
 // Native schema v3 is the ONLY authority that enables elevation controls.
 // Public v2 never receives, edits or serializes a speculative XYZ field.
-const roomHeights=[3.2,3.2,4.8,7.2];
+const roomHeights=[3.2,3.2,4.8,7.2,4,10,12,16];
 const elevationLimits=s=>{
  const distance=s.sourceDistanceMeters;
  const height=roomHeights[s.spacePreset];
@@ -33,26 +33,31 @@ const fitElevation=s=>{
 const toDb=g=>g>0?Math.max(-24,20*Math.log10(g)):-24;
 const fromDb=db=>Number(Math.pow(10,Number(db)/20).toFixed(6));
 const dbLabel=db=>(db>0?"+":"")+db.toFixed(1)+" dB";
-const roomMaxDistance=[10,3.1,6.7,10];
+const roomMaxDistance=[10,3.1,6.7,10,3.1,10,10,10];
 // Factory presets are explicit native scene values, never browser audio DSP.
 // A preset applies the COMPLETE documented scene in one ACK-verified command.
 // Preserve custom .smix settings until the operator actually selects a preset.
+// Latest P9.5 scenes: long-distance depth, retained measured world bass,
+// and explicit creative makeup gain via the existing authoritative outputTrim.
 const factoryPresets=Object.freeze({
- music:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
-  revolutionSeconds:12,stereoSpreadDegrees:82,spatialMix:1,outputTrim:1,
-  spacePreset:3,sourceDistanceMeters:1.6,roomAmount:.78,ambience:.33}),
+ music:Object.freeze({moving:true,clockwise:true,startAzimuthDegrees:0,
+  revolutionSeconds:12,stereoSpreadDegrees:88,spatialMix:1,outputTrim:1.778279,
+  spacePreset:5,sourceDistanceMeters:8.2,roomAmount:.95,ambience:.62}),
  studio:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
-  revolutionSeconds:12,stereoSpreadDegrees:68,spatialMix:1,outputTrim:1,
-  spacePreset:1,sourceDistanceMeters:1.6,roomAmount:.42,ambience:.18}),
+  revolutionSeconds:12,stereoSpreadDegrees:76,spatialMix:1,outputTrim:1.584893,
+  spacePreset:4,sourceDistanceMeters:3,roomAmount:.75,ambience:.32}),
  wide:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
-  revolutionSeconds:12,stereoSpreadDegrees:118,spatialMix:1,outputTrim:1,
-  spacePreset:2,sourceDistanceMeters:3.2,roomAmount:.68,ambience:.32}),
+  revolutionSeconds:12,stereoSpreadDegrees:100,spatialMix:1,outputTrim:1.995262,
+  spacePreset:5,sourceDistanceMeters:9.4,roomAmount:.98,ambience:.70}),
  deep:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
-  revolutionSeconds:12,stereoSpreadDegrees:104,spatialMix:1,outputTrim:1,
-  spacePreset:3,sourceDistanceMeters:4.5,roomAmount:.82,ambience:.42}),
+  revolutionSeconds:12,stereoSpreadDegrees:98,spatialMix:1,outputTrim:1.995262,
+  spacePreset:6,sourceDistanceMeters:9.8,roomAmount:1,ambience:.80}),
+ arena:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
+  revolutionSeconds:12,stereoSpreadDegrees:108,spatialMix:1,outputTrim:2.238721,
+  spacePreset:7,sourceDistanceMeters:10,roomAmount:1,ambience:.87}),
  orbit:Object.freeze({moving:true,clockwise:true,startAzimuthDegrees:0,
-  revolutionSeconds:8.5,stereoSpreadDegrees:100,spatialMix:1,outputTrim:1,
-  spacePreset:3,sourceDistanceMeters:2.5,roomAmount:.72,ambience:.38})
+  revolutionSeconds:8.5,stereoSpreadDegrees:92,spatialMix:1,outputTrim:1.883649,
+  spacePreset:6,sourceDistanceMeters:9,roomAmount:.96,ambience:.72})
 });
 const matchFactoryPreset=s=>Object.entries(factoryPresets).find(([id,p])=>
   s.renderMode===9 && Object.keys(p).every(k=>Math.abs(Number(s[k])-Number(p[k]))<.00002))?.[0]||"CUSTOM";
@@ -63,7 +68,7 @@ const valid=s=>s && Number.isFinite(s.startAzimuthDegrees) &&
  Number.isFinite(s.spatialMix)&&s.spatialMix>=0&&s.spatialMix<=1 &&
  Number.isFinite(s.outputTrim)&&s.outputTrim>=0&&s.outputTrim<=4 &&
  typeof s.moving==="boolean"&&typeof s.clockwise==="boolean" &&
- Number.isInteger(s.spacePreset) && s.spacePreset>=0 && s.spacePreset<=3 &&
+ Number.isInteger(s.spacePreset) && s.spacePreset>=0 && s.spacePreset<=7 &&
  Number.isFinite(s.sourceDistanceMeters) && s.sourceDistanceMeters>=1.6 &&
  s.sourceDistanceMeters<=roomMaxDistance[s.spacePreset]+.0001 &&
  Number.isFinite(s.roomAmount) && s.roomAmount>=0 && s.roomAmount<=1 &&
@@ -126,11 +131,11 @@ root.innerHTML=[
  '<span class="sk-headnote">SPATIAL AUDIO</span>',
  '<select id="skPreset" class="sk-preset" aria-label="SonKu ready-to-use sound presets" title="Ready-to-use spatial scenes; settings remain editable">',
  '<option value="CUSTOM">CUSTOM · MANUAL</option>',
- '<option value="music">MUSIC · FRONT STAGE</option>',
- '<option value="studio">STUDIO · CLOSE</option>',
- '<option value="wide">CINEMA · WIDE</option>',
- '<option value="deep">IMMERSIVE · DEEP</option>',
- '<option value="orbit">ORBIT · SHOWCASE</option></select>',
+ '<option value="music">IMMERSIVE MUSIC · 3D STAGE</option>',
+ '<option value="studio">LARGE STUDIO · PUNCH</option>',
+ '<option value="wide">CINEMA · GRAND SOUND</option>',
+ '<option value="deep">LIVE VENUE · POWER</option>',
+ '<option value="arena">ARENA · MASSIVE</option><option value="orbit">ORBIT · SPATIAL SHOW</option></select>',
  '<span id="skChannel" class="sk-channel"></span>',
  '<button type="button" id="skPower" class="armix-builtin-fx-power" data-fx-state="unknown" aria-label="SonKu FX state unavailable" aria-pressed="false" disabled>⏻</button>',
  '<button type="button" id="skClose" class="sk-close armix-builtin-fx-close armix-floating-close" aria-label="Close 8D-SonKu">×</button></header>',
@@ -201,7 +206,11 @@ root.innerHTML=[
  '<button type="button" data-sk-room="0">OFF</button>',
  '<button type="button" data-sk-room="1">SQUARE</button>',
  '<button type="button" data-sk-room="2">CHAMBER</button>',
- '<button type="button" data-sk-room="3">LARGE</button></div>',
+ '<button type="button" data-sk-room="3">LARGE</button>',
+ '<button type="button" data-sk-room="4" hidden>STUDIO</button>',
+ '<button type="button" data-sk-room="5" hidden>CINEMA</button>',
+ '<button type="button" data-sk-room="6" hidden>VENUE</button>',
+ '<button type="button" data-sk-room="7" hidden>ARENA</button></div>',
  '<label class="sk-space-slider" for="skDistance">SOURCE DISTANCE <output id="skDistanceValue">1.6 m</output>',
  '<input id="skDistance" type="range" min="1.6" max="10" step="0.1" value="1.6"/></label>',
  '<label class="sk-space-slider" id="skElevationRow" for="skElevation" hidden>SOURCE ELEVATION <output id="skElevationValue">0.0°</output>',
