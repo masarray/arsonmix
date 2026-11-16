@@ -23,13 +23,16 @@ class ImerSipP92Contract(unittest.TestCase):
             self.assertIn(value,scene)
         self.assertIn("SonKuSpatialProcessor(imersipP92Factory(2))",p)
         self.assertIn("imersipP97VenueGoldenScene()",scene)
-        self.assertIn("next.sourceDistanceMeters=std::min(",p)
+        self.assertIn("next.sourceDistanceMeters=std::clamp(",p)
         self.assertIn("const double upper[]={180.,4.,180.",source(
             "engine/builtin_fx/ImerSipP92Editor.h"))
         self.assertIn("sidePresence2_.run",source(
             "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h"))
         self.assertIn("inline constexpr std::array<ImerSipP92Preset,6>",scene) # historical
-        self.assertIn("inline constexpr std::array<ImerSipP92Preset,7>",scene) # P9.8
+        self.assertIn("inline constexpr std::array<ImerSipP92Preset,7>",scene)
+        self.assertIn("imersipP92MinDistance()",scene)
+        self.assertIn("return 2.5f;",scene)
+        self.assertIn("const double upper[]={180.,2.5,180.",source("engine/builtin_fx/ImerSipP92Editor.h")) # P9.8
         self.assertIn('"Concert Front Row XL"',scene)
         self.assertIn('"Royal Concert Hall"',scene)
         self.assertIn('"Arena Thunder"',scene)

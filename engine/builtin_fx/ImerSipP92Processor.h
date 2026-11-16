@@ -115,11 +115,10 @@ public:
                !armix::sonku::valid(next) || next.renderMode!=9 ||
                next.moving || next.musicCompatibleLowFrequency ||
                next.startAzimuthDegrees!=0.f)return false;
-            // Existing IMRS v6/v7 sessions may contain far 10m scenes.
-            // Migrate distance only; preserve accepted voicing/room/gain.
-            // Keep legacy binary wire length and ID unchanged.
-            next.sourceDistanceMeters=std::min(
-                next.sourceDistanceMeters,imersipP92MaxDistance(next.spacePreset));
+            // Legacy 1.0m / 4-10m sessions migrate to the new listening
+            // envelope. Keep voicing, room, gain, IMRS bytes and FX ID.
+            next.sourceDistanceMeters=std::clamp(next.sourceDistanceMeters,
+                imersipP92MinDistance(),imersipP92MaxDistance(next.spacePreset));
             return validImerSipP92Scene(next) && adoptUnpublishedScene(next);
         }
         // Original IMRS v1-v5: read the actual previous format, fail closed
@@ -151,8 +150,8 @@ public:
         next.roomAmount=space;
         next.stereoSpreadDegrees=30.f+150.f*width;
         next.ambience=late;
-        next.sourceDistanceMeters=std::min(1.6f+5.8f*depth,
-                               imersipP92MaxDistance(next.spacePreset));
+        next.sourceDistanceMeters=std::clamp(1.6f+5.8f*depth,
+            imersipP92MinDistance(),imersipP92MaxDistance(next.spacePreset));
         next.outputTrim=trim;
         next.hrtfElevationTrimDegrees=earAlign;
         // Bass Impact, AIR, Stereo Keep were P8-only enhancer axes.

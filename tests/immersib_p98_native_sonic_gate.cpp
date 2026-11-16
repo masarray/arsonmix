@@ -65,7 +65,7 @@ static Result render(int rate,const Settings& s,bool phaseReverse=false){
     assert(diag.samples==n && diag.limitedSamples<=diag.samples);
     assert(diag.minimumLimiterGain>0.f && diag.minimumLimiterGain<=1.f);
     assert(diag.makeupGainSum>=double(diag.samples));
-    if(s.sourceDistanceMeters==1.f && s.stereoSpreadDegrees==147.f &&
+    if(s.sourceDistanceMeters==1.1f && s.stereoSpreadDegrees==147.f &&
        s.sceneVoicing==4) {
         const double meanMakeup=diag.makeupGainSum/diag.samples;
         const double limitedPct=100.*diag.limitedSamples/diag.samples;
@@ -134,7 +134,7 @@ int main(){
     assert(imersipP92Presets.size()==7);
     const auto ownerPreset=imersipP92Factory(8);
     assert(ownerPreset.spacePreset==3 && ownerPreset.stereoSpreadDegrees==147.f);
-    assert(ownerPreset.sourceDistanceMeters==1.f && ownerPreset.roomAmount==1.8f);
+    assert(ownerPreset.sourceDistanceMeters==1.1f && ownerPreset.roomAmount==1.8f);
     assert(ownerPreset.ambience==.60f && ownerPreset.spatialMix==1.f);
     assert(ownerPreset.headYawDegrees==0.f && ownerPreset.hrtfElevationTrimDegrees==0.f);
     assert(ownerPreset.sceneVoicing==4);
@@ -145,12 +145,12 @@ int main(){
     assert(armix::sonku::xyz::project(1.f,0.f,1.45f,7.2f,projected));
     assert(std::abs(projected.horizontalMeters-1.f)<1.e-6f);
     assert(!armix::sonku::xyz::project(.9f,0.f,1.45f,7.2f,projected));
-    assert(current.sourceDistanceMeters==3.f &&
+    assert(current.sourceDistanceMeters==2.f &&
            current.roomAmount>1.f && current.sceneVoicing==4);
     assert(armix::builtin_fx::validImerSipP92Scene(current));
     for(const auto& preset:imersipP92Presets) {
         const auto s=imersipP92Factory(preset.id);
-        assert(s.sourceDistanceMeters>=1.f && s.sourceDistanceMeters<=4.f);
+        assert(s.sourceDistanceMeters>=1.1f && s.sourceDistanceMeters<=2.5f);
         assert(s.roomAmount>1.f && s.roomAmount<=1.8f);
     }
     assert(armix::sonku::p98::SceneVoicing::valid(4));
@@ -205,7 +205,41 @@ int main(){
         assert(protectedEdge<baselineEdge*.85);
         assert(lateralAir>baselineAir*.75 &&
                lateralAir<baselineAir*1.10);
-        (void)spectrum(rate,4,2050,true); // mono side remains zero
+        // Probe the actual 5.2kHz-filtered EARLY path, excluding source
+        // M/S processing so this measures reflected air, not dry HF.
+        auto earlySide=[](int sr,int scene,int hz,bool mono)->double {
+            armix::sonku::p98::SceneVoicing fx;
+            assert(fx.prepare(sr));
+            double energy=0.;
+            for(int i=0;i<16000;++i) {
+                (void)fx.source(0.f,0.f,scene,true);
+                const float v=.10f*std::sin(2*pi*hz*i/double(sr));
+                const auto reflected=fx.early(v,mono?v:-v);
+                assert(std::isfinite(reflected.left)&&std::isfinite(reflected.right));
+                if(mono)assert(std::abs(reflected.left-reflected.right)<1.e-6f);
+                if(i>=9000) {
+                    const double side=.5*(reflected.left-reflected.right);
+                    energy+=side*side;
+                }
+            }
+            return energy;
+        };
+        const double firstAir=earlySide(rate,0,7400,false);
+        const double warmAir=earlySide(rate,4,7400,false);
+        const double impactAir=earlySide(rate,5,7400,false);
+        const double firstMid=earlySide(rate,0,1500,false);
+        const double warmMid=earlySide(rate,4,1500,false);
+        const double airLift=warmAir/firstAir;
+        const double midLift=warmMid/firstMid;
+        std::fprintf(stderr,
+            "IMMERSIB_EARLY_LATERAL,rate=%d,air=%.4f,impact=%.4f,mid=%.4f\\n",
+            rate,airLift,impactAir/firstAir,midLift);
+        assert(airLift>1.15 && airLift<1.80);
+        assert(impactAir>firstAir*1.10 && impactAir<firstAir*1.70);
+        assert(midLift<1.25);
+        assert(earlySide(rate,4,7400,true)<1.e-9);
+        assert(earlySide(rate,0,7400,true)<1.e-9);
+        (void)spectrum(rate,4,2050,true); // no source SIDE for mono
         auto centeredEnergy=[](int sr,int scene,int hz,bool final)->double{
             armix::sonku::p98::SceneVoicing fx;
             assert(fx.prepare(sr));
@@ -274,7 +308,7 @@ int main(){
         for(const auto& preset:imersipP92Presets){
             const auto s=imersipP92Factory(preset.id);
             assert(s.renderMode==9 && !s.moving);
-            assert(s.spacePreset==3 && s.sourceDistanceMeters<=4.f);
+            assert(s.spacePreset==3 && s.sourceDistanceMeters<=2.5f);
             const auto heard=render(rate,s);
             const auto inverse=render(rate,s,true);
             assert(inverse.side>1.e-7); // no catastrophic antiphase null
@@ -315,5 +349,5 @@ int main(){
             for(std::size_t j=i+1;j<uniquePcm.size();++j)
                 assert(uniquePcm[i]!=uniquePcm[j]);
     }
-    std::puts("PASS IMMERSIB NEARFIELD 1-4M + EARLY 180 + VENUE GOLDEN PCM");
+    std::puts("PASS IMMERSIB NEARFIELD 1.1-2.5M + REFLECTED AIR + EARLY 180 + VENUE GOLDEN PCM");
 }

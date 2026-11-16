@@ -26,10 +26,18 @@ inline armix::sonku::Settings imersipP92ReferenceScene() noexcept {
     s.outputTrim=1.f;                 // 0 dB, no P8 ImerSip shelf/limiter
     return s;
 }
+inline float imersipP92MinDistance() noexcept {
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+    return 1.1f; // bounded owner listening profile; no public P9.2 ABI change
+#else
+    return 1.f;
+#endif
+}
 inline float imersipP92MaxDistance(int room) noexcept {
     // Six-wall geometry requires 2*(distance+.5)<=room width.
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
-    return room==1?3.05f:4.f; // user-facing nearfield 1..4m
+    (void)room;
+    return 2.5f; // owner listening profile, all three valid venue geometries
 #else
     return room==1?3.05f:room==2?6.65f:7.4f;
 #endif
@@ -38,6 +46,7 @@ inline bool validImerSipP92Scene(const armix::sonku::Settings& s) noexcept {
     return armix::sonku::valid(s) && s.renderMode==9 &&
         !s.moving && !s.musicCompatibleLowFrequency &&
         s.startAzimuthDegrees==0.f &&
+        s.sourceDistanceMeters>=imersipP92MinDistance() &&
         s.sourceDistanceMeters<=imersipP92MaxDistance(s.spacePreset);
 }
 // A single typed preset catalog drives the native UI, state recognition and
@@ -55,7 +64,7 @@ struct ImerSipP92Preset {
 };
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
 // Archival P9.7 10m Venue remains a golden *private* PCM fixture, not a
-// public preset. Current owner explicitly rejects sources beyond 4m.
+// public preset. Current owner listening envelope is 1.1..2.5m.
 inline armix::sonku::Settings imersipP97VenueGoldenScene() noexcept {
     auto s=imersipP92ReferenceScene();
     s.stereoSpreadDegrees=106.f;s.sourceDistanceMeters=10.f;
@@ -65,16 +74,17 @@ inline armix::sonku::Settings imersipP97VenueGoldenScene() noexcept {
 // Nearfield factory retains the same P9 world renderer, adds P9.8
 // vocal masking relief, not stem extraction or extra Haas delays.
 inline constexpr std::array<ImerSipP92Preset,7> imersipP92Presets{{
-    {2,"Live Concert",       3,112.f,3.0f,1.36f,.84f,5.10545f,4},
-    {3,"Royal Concert Hall", 3,106.f,3.2f,1.55f,.78f,5.57507f,4},
-    {4,"Arena Thunder",     3,124.f,3.7f,1.45f,.86f,5.45f,5},
-    {5,"Front Row Power",   3,104.f,1.4f,1.26f,.70f,5.60f,4},
-    {6,"Symphonic Palace",  3,118.f,2.7f,1.60f,.80f,5.25f,4},
-    {7,"Velvet Cinema",     3,108.f,2.8f,1.42f,.82f,4.60898f,3},
-    // Owner screenshot (Custom): Large / 147deg / 1m / ER180 / Late60 /
+    {2,"Live Concert",       3,112.f,2.0f,1.36f,.84f,5.10545f,4},
+    {3,"Royal Concert Hall", 3,106.f,2.2f,1.55f,.78f,5.57507f,4},
+    {4,"Arena Thunder",     3,124.f,2.5f,1.45f,.86f,5.45f,5},
+    {5,"Front Row Power",   3,104.f,1.3f,1.26f,.70f,5.60f,4},
+    {6,"Symphonic Palace",  3,118.f,1.9f,1.60f,.80f,5.25f,4},
+    {7,"Velvet Cinema",     3,108.f,1.8f,1.42f,.82f,4.60898f,3},
+    // Original screenshot was 1.0m; updated user range sets the preset to 1.1m.
+    // Large / 147deg / ER180 / Late60 /
     // Mix100 / Ear0 / Yaw0 / +2.5dB. Hidden scene voicing is not shown in
     // that screenshot: use current ImmerSIB Detail Warm (4) explicitly.
-    {8,"Concert Front Row XL",3,147.f,1.0f,1.80f,.60f,2.50f,4}
+    {8,"Concert Front Row XL",3,147.f,1.1f,1.80f,.60f,2.50f,4}
 }};
 #else
 // Historical P9.2 candidate stays reproducible when private P9.8 OFF.

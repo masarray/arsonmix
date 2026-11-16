@@ -32,3 +32,40 @@ Research motivating the experimental candidates: Arweiler & Buchholz, JASA 2011,
 ## Status
 
 Development candidate on a branch stacked over draft PR #722. This document deliberately does not claim subjective listening approval, proof of isolated voice detection, calibrated true-peak, or physical-speaker parity. No production merge or release.
+
+## User revision 16 Nov: frontstage distance and reflected high-air
+
+The owner revised the desired distance to **1.1–2.5m**. This overrides
+the previous 1.0m screenshot *only for the new listening candidate*;
+that earlier screenshot remains recorded above as historical provenance.
+
+- P9.8 product GUI, typed presets, scene validation and IMRS v6/v7 +
+  older legacy migration share one 1.1–2.5m envelope, preserving room,
+  gain and voicing. Distances now: Live 2.0m, Royal 2.2m, Arena 2.5m,
+  Front Row 1.3m, Symphonic 1.9m, Cinema 1.8m, Front Row XL 1.1m.
+  Existing 1.0m/10m files load at the closest accepted bound;
+  session bytes, catalog IDs and the private P9.7 10m Venue fixture
+  remain unchanged.
+- Only voicings 4 and 5 add a **small linear (>5.2kHz) lateral term**
+  to the existing, already directional KEMAR EARLY-reflection output:
+  gains 0.18 (Detail Warm) and 0.14 (Impact Warm) multiply the ear
+  difference of the highpassed early component. The early MID, direct
+  HRTF, late reverb, reflection wall geometry and delay are unchanged.
+  No artificial Haas delay, extra HRTF, singer stem, compressor, FFT,
+  parameter ID, or realtime memory allocation is introduced.
+- This is **not a blanket HF increase**. Directional early image
+  energy can improve stage width and envelope fusion, but overly
+  bright/loud reflections increase metallic sibilance or mask vocals.
+  Inspect native PCM 7.4kHz lateral/1.5kHz impact and matched-volume
+  concert audition before approval. High-frequency side gain is a
+  deliberately small *candidate*, not a calibrated room model.
+
+Reference for broadband lateral early reflections and preserved envelope:
+Lokki et al., JASA 129 EL223 (2011), doi:10.1121/1.3579145.
+No research source proves any single numerical gain optimal for this
+mastered concert recording.
+
+**Gate:** both 44.1/48k native tests, old Venue PCM hash, mono symmetry,
+native JUCE state migration and source-only/ROOM OFF integrity. Keep
+PR Draft, and reject/retune if the owner's headphone FAT hears harshness
+or unchanged pumping.

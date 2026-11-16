@@ -54,7 +54,7 @@ static void nativeParity(int rate) {
     assert(actual.spacePreset==3);
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
     assert(std::abs(actual.stereoSpreadDegrees-112.f)<.001f);
-    assert(std::abs(actual.sourceDistanceMeters-3.f)<.001f);
+    assert(std::abs(actual.sourceDistanceMeters-2.f)<.001f);
     assert(actual.roomAmount==1.36f && actual.ambience==.84f);
     assert(actual.outputTrim==1.8f && actual.sceneVoicing==4);
 #else
@@ -145,10 +145,23 @@ static void nativeParity(int rate) {
     migratedFar->prepareToPlay(rate,128);
     assert(migratedFar->restoreUnpublishedState(
         farState.getData(),static_cast<int>(farState.getSize())));
-    assert(migratedFar->acceptedSettings().sourceDistanceMeters==4.f);
+    assert(migratedFar->acceptedSettings().sourceDistanceMeters==2.5f);
     assert(migratedFar->acceptedSettings().sceneVoicing==4);
     assert(migratedFar->acceptedSettings().roomAmount==1.36f);
     migratedFar->releaseResources();
+    // Earlier Custom sessions may be 1.0m; migrate UP to 1.1m.
+    auto nearState=state;
+    const float near1m=1.f;
+    std::memcpy(static_cast<std::uint8_t*>(nearState.getData())+42,
+                &near1m,sizeof(near1m));
+    auto migratedNear=std::make_unique<ImerSipP92Processor>();
+    migratedNear->prepareToPlay(rate,128);
+    assert(migratedNear->restoreUnpublishedState(
+        nearState.getData(),static_cast<int>(nearState.getSize())));
+    assert(migratedNear->acceptedSettings().sourceDistanceMeters==1.1f);
+    assert(migratedNear->acceptedSettings().roomAmount==reference.roomAmount);
+    assert(migratedNear->acceptedSettings().outputTrim==reference.outputTrim);
+    migratedNear->releaseResources();
     // Compatibility proof: an old IMRS v6 carries SONK v11 exactly
     // (63 bytes, no sceneVoicing). Restore it in the P9.8 engine as 0.
     juce::MemoryBlock oldV6;
@@ -164,7 +177,7 @@ static void nativeParity(int rate) {
     assert(migratedV6->restoreUnpublishedState(
         oldV6.getData(),static_cast<int>(oldV6.getSize())));
     assert(migratedV6->acceptedSettings().sceneVoicing==0);
-    assert(migratedV6->acceptedSettings().sourceDistanceMeters<=4.f);
+    assert(migratedV6->acceptedSettings().sourceDistanceMeters<=2.5f);
     assert(migratedV6->acceptedSettings().stereoSpreadDegrees==
            reference.stereoSpreadDegrees);
     migratedV6->releaseResources();
@@ -377,8 +390,8 @@ int main() {
         editor->findChildWithID("imersip.early"));
     assert(distanceSlider && earlySlider);
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
-    assert(distanceSlider->getMinimum()==1.0);
-    assert(distanceSlider->getMaximum()==4.0);
+    assert(distanceSlider->getMinimum()==1.1);
+    assert(distanceSlider->getMaximum()==2.5);
     assert(earlySlider->getMaximum()==180.0);
 #endif
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
@@ -396,7 +409,7 @@ int main() {
     assert(editorFx->pollCompletion(selected)&&selected.applied);
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
     assert(std::abs(editorFx->acceptedSettings().stereoSpreadDegrees-104.f)<.001f);
-    assert(std::abs(editorFx->acceptedSettings().sourceDistanceMeters-1.4f)<.001f);
+    assert(std::abs(editorFx->acceptedSettings().sourceDistanceMeters-1.3f)<.001f);
     assert(std::abs(editorFx->acceptedSettings().ambience-.70f)<.001f);
     assert(std::abs(editorFx->acceptedSettings().roomAmount-1.26f)<.001f);
     assert(editorFx->acceptedSettings().sceneVoicing==4);
@@ -408,7 +421,7 @@ int main() {
     assert(detailRestored->restoreUnpublishedState(
         detailState.getData(),static_cast<int>(detailState.getSize())));
     assert(detailRestored->acceptedSettings().sceneVoicing==4);
-    assert(detailRestored->acceptedSettings().sourceDistanceMeters<=4.f);
+    assert(detailRestored->acceptedSettings().sourceDistanceMeters<=2.5f);
     assert(detailRestored->acceptedSettings().roomAmount>1.f);
     detailRestored->releaseResources();
     assert(std::abs(editorFx->acceptedSettings().outputTrim-
@@ -445,7 +458,7 @@ int main() {
     assert(userScene.settings.stereoSpreadDegrees==147.f);
     assert(screenshot.spacePreset==3);
     assert(screenshot.stereoSpreadDegrees==147.f);
-    assert(screenshot.sourceDistanceMeters==1.f);
+    assert(screenshot.sourceDistanceMeters==1.1f);
     assert(screenshot.roomAmount==1.8f);
     assert(screenshot.ambience==.60f && screenshot.spatialMix==1.f);
     assert(screenshot.hrtfElevationTrimDegrees==0.f && screenshot.headYawDegrees==0.f);

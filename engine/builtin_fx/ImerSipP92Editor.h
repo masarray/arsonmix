@@ -52,9 +52,9 @@ public:
         const char* names[]={"STAGE WIDTH","SOURCE DISTANCE","EARLY ROOM",
                              "LATE ROOM","SPATIAL MIX","MASTER GAIN",
                              "EAR ALIGN","HEAD YAW"};
-        const double lower[]={30.,1.0,0.,0.,0.,-12.,-30.,-90.};
+        const double lower[]={30.,imersipP92MinDistance(),0.,0.,0.,-12.,-30.,-90.};
         #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
-        const double upper[]={180.,4.,180.,100.,100.,6.,20.,90.};
+        const double upper[]={180.,2.5,180.,100.,100.,6.,20.,90.};
 #else
         const double upper[]={180.,7.4,100.,100.,100.,6.,20.,90.};
 #endif
@@ -218,9 +218,9 @@ private:
         s.musicCompatibleLowFrequency=false;
         s.spacePreset=std::clamp(room_.getSelectedId()-1,0,3);
         s.stereoSpreadDegrees=static_cast<float>(knobs_[0].getValue());
-        s.sourceDistanceMeters=std::min(
+        s.sourceDistanceMeters=std::clamp(
             static_cast<float>(knobs_[1].getValue()),
-            imersipP92MaxDistance(s.spacePreset));
+            imersipP92MinDistance(),imersipP92MaxDistance(s.spacePreset));
         s.roomAmount=static_cast<float>(knobs_[2].getValue()*.01);
         s.ambience=static_cast<float>(knobs_[3].getValue()*.01);
         s.spatialMix=static_cast<float>(knobs_[4].getValue()*.01);
