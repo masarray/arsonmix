@@ -39,7 +39,8 @@ static void nativeParity(int rate) {
     fx->prepareToPlay(static_cast<double>(rate),128);
     assert(fx->isReady());
     const auto reference=imersipP92Factory(2);
-    const auto neutral=imersipP92Factory(6);
+    // Reference has NO selectable preset ID. ID 6 is now Symphonic Palace.
+    const auto neutral=imersipP92ReferenceScene();
     assert(armix::builtin_fx::validImerSipP92Scene(reference));
     assert(armix::builtin_fx::validImerSipP92Scene(neutral));
     const auto actual=fx->acceptedSettings();
