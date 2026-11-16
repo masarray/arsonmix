@@ -459,6 +459,39 @@ int main() {
     power->onClick();
     assert(bypassed && !power->getToggleState());
     const auto bypassFrame=savePowerFrame("BYPASSED");
+
+    // Validate the *real JUCE framebuffer*, not just an ON/OFF flag.
+    // The stage must darken independently of the amber label, the label
+    // must be legible near scene centre, and the lower controls must dim
+    // while the power icon itself remains interactive and visible.
+    const auto rgbEnergy=[](juce::Colour px){
+        return 3*int(px.getRed())+6*int(px.getGreen())+int(px.getBlue());
+    };
+    int stageDarker=0;
+    for(const int y:{75,110,150,285,320,350})
+        for(const int x:{80,145,210,720,790,845})
+            if(rgbEnergy(activeFrame.getPixelAt(x,y))-
+               rgbEnergy(bypassFrame.getPixelAt(x,y))>=15)
+                ++stageDarker;
+    assert(stageDarker>=12); // Wide-scene darkening, no bitmap crop or blur
+    int amberLetters=0;
+    for(int y=151;y<242;y+=2)
+        for(int x=260;x<680;x+=2) {
+            const auto px=bypassFrame.getPixelAt(x,y);
+            if(px.getRed()>140 && px.getGreen()>65 &&
+               int(px.getRed())>int(px.getGreen())+35 &&
+               int(px.getGreen())>int(px.getBlue())+20)
+                ++amberLetters;
+        }
+    assert(amberLetters>=45); // Big centered translucent BYPASSED
+    int panelDarker=0;
+    for(const int y:{410,435,475,520,552})
+        for(const int x:{45,120,225,305,415,550,675,775})
+            if(rgbEnergy(activeFrame.getPixelAt(x,y))>
+               rgbEnergy(bypassFrame.getPixelAt(x,y)))
+                ++panelDarker;
+    assert(panelDarker>=12); // 12% veil applied after JUCE child painting
+
     int changedPowerPixels=0;
     const auto powerRegion=power->getBounds();
     for(int y=powerRegion.getY()+3;y<powerRegion.getBottom()-3;y+=3)
