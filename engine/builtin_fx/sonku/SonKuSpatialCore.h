@@ -22,6 +22,9 @@
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
 #include "SonKuP90StereoDecoder.h"
 #include "SonKuP91P92WorldBassFoundation.h"
+#if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
+#include "SonKuP95MusicalPresence.h"
+#endif
 #if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
 #include "SonKuP94FrontBackDepthCue.h"
 #endif
@@ -207,6 +210,9 @@ public:
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
         if(!p90Decoder_.prepare(rate))return false;
         if(!p92Bass_.prepare(rate))return false;
+#if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
+        if(!p95Presence_.prepare(rate))return false;
+#endif
 #if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
         if(!p94Depth_.prepare(rate))return false;
 #endif
@@ -278,6 +284,9 @@ public:
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
         p90Decoder_.reset();
         p92Bass_.reset();
+#if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
+        p95Presence_.reset();
+#endif
 #if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
         p94Depth_.reset();
 #endif
@@ -332,6 +341,9 @@ public:
         if((s.renderMode==9)!=(settings_.renderMode==9)){
             p90Decoder_.reset();
             p92Bass_.reset();
+#if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
+        p95Presence_.reset();
+#endif
 #if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
         p94Depth_.reset();
 #endif
@@ -962,6 +974,16 @@ public:
                 float outR=baseDryR+smoothedTrim_*
                     ((transparentBass?musicLowR:dryLevel*x1)+
                      sceneBinauralLevel*(transparentBass?1.f:smoothedRoomLevel_)*spatialR)-sideRescue;
+#if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
+                if(p90World){
+                    // Single native PCM graph, no WebAudio or dynamic makeup
+                    // at 0% spatial MIX. Explicit user GAIN still applies.
+                    if(settings_.spatialMix>0.f){
+                        const float makeup=p95Presence_.process(x0,x1,outL,outR);
+                        outL*=makeup;outR*=makeup;
+                    }
+                }
+#endif
                 // Zero-lookahead *linked* sample-peak safety guard. Quiet
                 // signals are linear; peaks are gently returned below unity
                 // without routing through a second engine or allocating.
@@ -1274,6 +1296,9 @@ private:
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
     p90::StereoDecoder p90Decoder_{};
     p92::WorldBassFoundation p92Bass_{};
+#if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
+    p95::MusicalPresence p95Presence_{};
+#endif
 #if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
     p94::FrontBackDepthCue p94Depth_{};
 #endif
