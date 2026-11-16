@@ -127,6 +127,7 @@ public:
             case 5: art=&sceneFront_; break;
             case 6: art=&sceneSymphony_; break;
             case 7: art=&sceneCinema_; break;
+            case 8: art=&sceneLive_; break; // Same concert venue used by owner Custom screenshot
             default: break; // Custom keeps its last selected venue.
         }
         if(art->isNull()){
