@@ -583,7 +583,8 @@ def exercise(browser,out,width,height):
     assert command_count()==before+1,"Factory scene did not issue one native transaction"
     applied=last_action(page,"nativeSonKuSet")
     proposed=applied["settings"]
-    assert proposed["renderMode"]==9 and proposed["moving"] is False,proposed
+    assert proposed["renderMode"]==9 and proposed["moving"] is True,proposed
+    assert proposed["revolutionSeconds"]==6.5,proposed
     assert proposed["stereoSpreadDegrees"]==82 and proposed["outputTrim"]==1.9,proposed
     assert proposed["spacePreset"]==3 and proposed["sourceDistanceMeters"]==3.1,proposed
     assert abs(proposed["roomAmount"]-1.0)<.001 and abs(proposed["ambience"]-.62)<.001
