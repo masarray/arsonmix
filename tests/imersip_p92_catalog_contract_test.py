@@ -28,19 +28,18 @@ class ImerSipP92Contract(unittest.TestCase):
             "engine/builtin_fx/ImerSipP92Editor.h"))
         self.assertIn("sidePresence2_.run",source(
             "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h"))
-        self.assertIn("inline constexpr std::array<ImerSipP92Preset,6>",scene) # P9.2 historical
+        self.assertIn("inline constexpr std::array<ImerSipP92Preset,6>",scene) # legacy
         self.assertIn("inline constexpr std::array<ImerSipP92Preset,7>",scene) # P9.8
         self.assertIn("imersipP92MinDistance()",scene)
         self.assertIn("134.f,1.5f,1.70f,.94f,4.40f,4",scene)
-        # A factory preset must bypass quantized JUCE readback; only a
-        # real slider/ROOM edit demotes the selected label to Custom.
+        self.assertIn('"Concert Front Row XL"',scene)
+        # Named scenes bypass quantized JUCE slider roundtrip.
         ui=source("engine/builtin_fx/ImerSipP92Editor.h")
         self.assertIn("submit(factory);",ui)
         self.assertIn("uiScene_=s;",ui)
         self.assertIn("submit(uiScene_);",ui)
         self.assertIn("isCustomIntent_=true;",ui)
         self.assertNotIn("readControls()",ui)
-        self.assertIn('"Concert Front Row XL"',scene)
         self.assertIn('"Royal Concert Hall"',scene)
         self.assertIn('"Arena Thunder"',scene)
         self.assertIn('"Front Row Power"',scene)
@@ -67,6 +66,21 @@ class ImerSipP92Contract(unittest.TestCase):
         # Host state is the only authority for the native power glyph.
         self.assertIn('power_.setButtonText({})',ui)
         self.assertIn('power_.setToggleState(!bypassed',ui)
+        # The bypass UI is strictly host-readback derived, never click
+        # optimistic. JUCE paints the veil *after* child controls and
+        # cuts a hole around the native power icon, leaving it actionable.
+        self.assertIn("std::optional<bool> hostBypassed_",ui)
+        self.assertIn("hostBypassed_=bypassed",ui)
+        self.assertIn("if(changed)repaint()",ui)
+        self.assertIn("paintOverChildren(juce::Graphics& g) override",ui)
+        self.assertIn("g.excludeClipRegion(power_.getBounds())",ui)
+        self.assertIn("skin_.drawBypassedVenueOverlay(g)",ui)
+        self.assertIn('g.drawText("BYPASSED"',source(
+            "engine/builtin_fx/ImerSipP92VisualSkin.h"))
+        native=source("tests/imersip_p92_native_test.cpp")
+        self.assertIn("assert(stageDarker>=12)",native)
+        self.assertIn("assert(amberLetters>=45)",native)
+        self.assertIn("assert(panelDarker>=12)",native)
         self.assertIn('place(power_,1032,483,44,44)',ui)
         self.assertIn('place(knobs_[5],908,510,98,94)',ui)
         self.assertIn('place(labels_[5],884,484,139,22)',ui)

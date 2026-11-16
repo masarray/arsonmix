@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <optional>
 #include <utility>
 #include "ImerSipP92VisualSkin.h"
 
@@ -30,8 +31,8 @@ public:
         preset_.onChange=[this]{
             const int id=preset_.getSelectedId();
             if(!imersipP92PresetById(id))return;
-            // A preset is an exact typed factory transaction, never a
-            // round-trip through quantized 0.1dB / 0.1m slider readback.
+            // A named preset queues its exact factory scene, never a
+            // rounded slider snapshot (e.g. 1.8 linear -> displayed +5.1dB).
             const auto factory=imersipP92Factory(id);
             isCustomIntent_=false;
             visualSceneId_=id;
@@ -47,8 +48,6 @@ public:
         room_.addItem("LARGE 28.8 M",4);
         room_.setLookAndFeel(&skin_);
         room_.onChange=[this]{
-            // Edit only ROOM on the exact pending UI scene: other axes,
-            // including factory gain, retain their full-resolution values.
             uiScene_.spacePreset=std::clamp(room_.getSelectedId()-1,0,3);
             isCustomIntent_=true;
             preset_.setSelectedId(1,juce::dontSendNotification);
@@ -61,9 +60,9 @@ public:
         const char* names[]={"STAGE WIDTH","DISTANCE","EARLY ROOM",
                              "LATE ROOM","SPATIAL MIX","MASTER GAIN",
                              "EAR ALIGN","HEAD YAW"};
-        const double lower[]={30.,imersipP92MinDistance(),0.,0.,0.,-12.,-30.,-90.};
+        const double lower[]={30.,1.0,0.,0.,0.,-12.,-30.,-90.};
         #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
-        const double upper[]={180.,2.5,180.,100.,100.,6.,20.,90.};
+        const double upper[]={180.,4.,180.,100.,100.,6.,20.,90.};
 #else
         const double upper[]={180.,7.4,100.,100.,100.,6.,20.,90.};
 #endif
@@ -78,8 +77,6 @@ public:
             slider.setRange(lower[i],upper[i],step[i]);
             slider.setLookAndFeel(&skin_);
             slider.onValueChange=[this,i]{
-                // Only a real user edit demotes a named preset to Custom.
-                // setValue(..., dontSendNotification) in sync() cannot edit.
                 applySliderEdit(i);
                 isCustomIntent_=true;
                 preset_.setSelectedId(1,juce::dontSendNotification);
@@ -139,6 +136,8 @@ public:
         // holographic room or stacked artificial speaker sprites.
         // Only approved concert photography; rejected procedural art is removed.
         skin_.drawScene(g,visualSceneId_);
+        if(hostBypassed_.value_or(false))
+            skin_.drawBypassedVenueOverlay(g);
 
         // No second header: the native plugin window already owns its title.
         // Preserve the venue art's full 1100x461 scene viewport.
@@ -179,6 +178,22 @@ public:
         g.drawText("AUDIO  /  "+status_,24,648,838,23,
                    juce::Justification::centredLeft);
     }
+    void paintOverChildren(juce::Graphics& g) override {
+        // Parent paint() cannot dim child Components: JUCE draws their
+        // labels, sliders and popup controls AFTER parent paint().
+        // A restrained 12% darkening pass over the lower controls provides
+        // a unified bypass state. Exclude FX Power so its real host state
+        // stays clear, keyboard/mouse accessible and visually actionable.
+        if(!hostBypassed_.value_or(false))return;
+        juce::Graphics::ScopedSaveState saved(g);
+        const auto panelTop=juce::roundToInt(461.f*compactScale);
+        const auto panel=juce::Rectangle<int>(
+            0,panelTop,getWidth(),getHeight()-panelTop);
+        g.reduceClipRegion(panel);
+        g.excludeClipRegion(power_.getBounds());
+        g.setColour(juce::Colour(0x21000000));
+        g.fillRect(panel);
+    }
     void resized() override {
         const auto place=[](juce::Component& child,int x,int y,int w,int h){
             child.setBounds(juce::roundToInt(x*compactScale),
@@ -204,23 +219,22 @@ public:
         place(power_,1032,483,44,44);
     }
 private:
-    // Control-side intent model. Factory values remain exact until the
-    // operator changes the corresponding axis, even while ACK is pending.
-    // Native PCM always reads the queued Settings via its existing SPSC.
+    // Message-thread editor model: a genuine edit updates only its axis.
+    // The native SPSC audio callback continues to own accepted PCM state.
     void applySliderEdit(int axis) {
-        const float value=static_cast<float>(
+        const float v=static_cast<float>(
             knobs_[static_cast<std::size_t>(axis)].getValue());
         switch(axis) {
-            case 0: uiScene_.stereoSpreadDegrees=value;break;
-            case 1: uiScene_.sourceDistanceMeters=std::clamp(
-                value,imersipP92MinDistance(),
+            case 0: uiScene_.stereoSpreadDegrees=v;break;
+            case 1: uiScene_.sourceDistanceMeters=std::clamp(v,
+                imersipP92MinDistance(),
                 imersipP92MaxDistance(uiScene_.spacePreset));break;
-            case 2: uiScene_.roomAmount=value*.01f;break;
-            case 3: uiScene_.ambience=value*.01f;break;
-            case 4: uiScene_.spatialMix=value*.01f;break;
-            case 5: uiScene_.outputTrim=std::pow(10.f,value/20.f);break;
-            case 6: uiScene_.hrtfElevationTrimDegrees=value;break;
-            case 7: uiScene_.headYawDegrees=value;break;
+            case 2: uiScene_.roomAmount=v*.01f;break;
+            case 3: uiScene_.ambience=v*.01f;break;
+            case 4: uiScene_.spatialMix=v*.01f;break;
+            case 5: uiScene_.outputTrim=std::pow(10.f,v/20.f);break;
+            case 6: uiScene_.hrtfElevationTrimDegrees=v;break;
+            case 7: uiScene_.headYawDegrees=v;break;
             default: jassertfalse;break;
         }
     }
@@ -234,9 +248,8 @@ private:
         for(int i=0;i<8;++i)knobs_[static_cast<std::size_t>(i)].setValue(
             vals[i],juce::dontSendNotification);
         int preset=1;
-        // A deliberate edit stays Custom even when numerically close to a
-        // factory curve. On a new editor (e.g. restored IMRS state), exact
-        // factory recognition recovers the named scene without a wire ID.
+        // User edits remain Custom through ACK; a new editor may still
+        // recognize an exact factory state restored from old IMRS bytes.
         if(!isCustomIntent_)for(const auto& factory:imersipP92Presets){
             const int id=factory.id;
             const auto candidate=imersipP92Factory(id);
@@ -277,14 +290,27 @@ private:
         repaint();
     }
     void refreshHostPower() {
-        // Never infer bypass success from a click. Read the accepted host
-        // state, mirroring the authoritative EQ/Compressor power convention.
-        if(!readBypass_)return;
+        // Host-authoritative UI readback: never assume a power click was
+        // accepted. Unknown/unbound status MUST NOT present BYPASSED.
+        if(!readBypass_) {
+            if(hostBypassed_.has_value()){
+                hostBypassed_.reset();
+                repaint();
+            }
+            return;
+        }
         const bool bypassed=readBypass_();
+        const bool changed=!hostBypassed_.has_value() ||
+                           *hostBypassed_!=bypassed;
+        hostBypassed_=bypassed;
         power_.setToggleState(!bypassed,juce::dontSendNotification);
         power_.setTooltip(bypassed
             ? "FX BYPASSED - click to enable"
             : "FX ON - click to bypass");
+        // External host bypass can change independently of this editor's
+        // click handler. Repaint the whole scene+panel only on transition;
+        // the 25Hz timer otherwise repaints only the ACK/status strip.
+        if(changed)repaint();
     }
     void timerCallback() override {
         SonKuSpatialProcessor::Completion done{};
@@ -312,8 +338,8 @@ private:
                                      getWidth(),juce::roundToInt(34*compactScale)));
     }
     int visualSceneId_=2; // UI-only scene selection; not IMRS / PCM state.
-    bool isCustomIntent_=false; // Only a real control change sets this.
-    armix::sonku::Settings uiScene_{}; // Message-thread exact scene intent.
+    bool isCustomIntent_=false;
+    armix::sonku::Settings uiScene_{}; // Exact control-side transaction.
     ImerSipP92Processor& fx_;
     ImerSipP92VisualSkin skin_;
     juce::ComboBox preset_{},room_{};
@@ -322,6 +348,8 @@ private:
     std::array<juce::Label,8> labels_{};
     std::function<bool(bool)> requestBypass_;
     std::function<bool()> readBypass_;
+    std::optional<bool> hostBypassed_{}; // UI cache of actual host readback only
+
     armix::sonku::Settings deferred_{};
     std::uint64_t pending_=0;
     bool hasDeferred_=false;

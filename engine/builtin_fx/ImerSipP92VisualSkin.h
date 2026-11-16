@@ -11,6 +11,9 @@ namespace armix::builtin_fx {
 
 class ImerSipP92VisualSkin final : public juce::LookAndFeel_V4 {
 public:
+    // Fixed pixel master matches the 1100x461 logical stage exactly (2x).
+    static constexpr int photoWidth=2200;
+    static constexpr int photoHeight=922;
     ImerSipP92VisualSkin()
         : sceneLive_(load(BinaryData::scene_live_concert_png,BinaryData::scene_live_concert_pngSize)),
           sceneRoyal_(load(BinaryData::scene_royal_concert_hall_png,BinaryData::scene_royal_concert_hall_pngSize)),
@@ -40,13 +43,17 @@ public:
             case 5: art=&sceneFront_; break;
             case 6: art=&sceneSymphony_; break;
             case 7: art=&sceneCinema_; break;
-            case 8: art=&sceneLive_; break; // Reuse approved Live venue for owner XL
             default: break; // Custom keeps its last selected venue.
         }
-        if(art->isNull()) return; // Missing approved image fails QA, no synthetic fallback.
-        // Fit the original venue image proportionally. Scene photos already
-        // include their correctly-perspectived PA and subwoofer cabinets.
-        // Do not distort their aspect when Windows DPI or editor size changes.
+        // Fail closed on an absent/mismatched scene rather than allowing
+        // centered 2:1 art to create black matte on either side.
+        if(art->isNull() || art->getWidth()!=photoWidth ||
+           art->getHeight()!=photoHeight) {
+            jassertfalse;
+            return;
+        }
+        // The approved 2x PNG has the exact logical viewport ratio.
+        // Centred placement now fills edge-to-edge, without distortion.
         juce::Graphics::ScopedSaveState state(g);
         g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
         g.reduceClipRegion(0,0,1100,461);
@@ -54,6 +61,21 @@ public:
         g.fillRect(0,0,1100,461);
         g.drawImageWithin(*art,0,0,1100,461,
                           juce::RectanglePlacement::centred);
+    }
+    void drawBypassedVenueOverlay(juce::Graphics& g) const {
+        // Parent paint only: preserve the live JPEG/PNG scene and avoid
+        // costly bitmap manipulation, blur, animation or image decoding.
+        // Dim the approved venue, then apply a clean translucent amber
+        // status in the photographic area (not on top of native controls).
+        g.setColour(juce::Colour(0x79000000));
+        g.fillRect(0,0,1100,461);
+        const auto label=juce::Rectangle<int>(170,178,760,94);
+        g.setFont(juce::FontOptions(40.f));
+        g.setColour(juce::Colour(0x92060b12));
+        g.drawText("BYPASSED",label.translated(0,3),
+                   juce::Justification::centred,false);
+        g.setColour(juce::Colour(0xe3ffa437));
+        g.drawText("BYPASSED",label,juce::Justification::centred,false);
     }
     void drawPanel(juce::Graphics& g) const {
         // Premium restraint: one exact flat matte charcoal surface,
@@ -181,7 +203,9 @@ public:
     }
 private:
     static bool allValid(std::initializer_list<const juce::Image*> images) noexcept {
-        for(const auto* image:images)if(image->isNull())return false;
+        for(const auto* image:images)
+            if(image->isNull() || image->getWidth()!=photoWidth ||
+               image->getHeight()!=photoHeight) return false;
         return true;
     }
     static juce::Image load(const void* bytes,int size) {

@@ -1,0 +1,50 @@
+name: ImmerSIB scene panorama normalization (approved photography)
+on:
+  push:
+    branches:
+      - feat/imersip-on-sonku-p92-single-engine-20261116
+    paths:
+      - 'scripts/normalize_immersib_scene_assets.py'
+      - '.github/workflows/imersib-scene-panorama-normalize.yml'
+      - 'assets/imersip/scenes/*.png'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: immersib-photo-panorama-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  approved-venue-panorama:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Install constrained image tooling
+        shell: bash
+        run: python -m pip install --disable-pip-version-check 'Pillow==11.3.0'
+      - name: Normalize approved venue photos (never re-generate speaker sprites)
+        shell: bash
+        run: |
+          python scripts/normalize_immersib_scene_assets.py
+          python scripts/normalize_immersib_scene_assets.py --check
+      - name: Commit corrected full-resolution PNGs only to the isolated PR branch
+        shell: bash
+        run: |
+          git add -- assets/imersip/scenes/scene_*.png
+          if git diff --cached --quiet; then
+            echo "All six venue photos already have the required aspect"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(immersib): crop approved six venue photos to 2200x922 without PA stretching"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+      - name: Retain final native-source photo evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImmerSIB-Approved-2200x922-Venue-Photos-${{ github.run_id }}
+          path: assets/imersip/scenes/scene_*.png
+          retention-days: 7
+          if-no-files-found: error

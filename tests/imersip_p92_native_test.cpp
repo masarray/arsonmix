@@ -514,7 +514,11 @@ int main() {
     const auto settleGui=[&]{
         // Native JUCE 25Hz editor timer must consume ACK and reconcile
         // the selected label, not leave this assertion at pre-ACK state.
-        juce::MessageManager::getInstance()->runDispatchLoopUntil(85);
+        // The pinned headless JUCE build excludes the optional
+        // MessageManager modal loop API. Wait for the 25Hz timer to
+        // become due and pump the real JUCE timer callback synchronously.
+        juce::Thread::sleep(65);
+        juce::Timer::callPendingTimersSynchronously();
     };
     for(const auto& p:armix::builtin_fx::imersipP92Presets){
         sceneSelector->setSelectedId(p.id,juce::sendNotificationSync);
@@ -581,6 +585,39 @@ int main() {
     power->onClick();
     assert(bypassed && !power->getToggleState());
     const auto bypassFrame=savePowerFrame("BYPASSED");
+
+    // Validate the *real JUCE framebuffer*, not just an ON/OFF flag.
+    // The stage must darken independently of the amber label, the label
+    // must be legible near scene centre, and the lower controls must dim
+    // while the power icon itself remains interactive and visible.
+    const auto rgbEnergy=[](juce::Colour px){
+        return 3*int(px.getRed())+6*int(px.getGreen())+int(px.getBlue());
+    };
+    int stageDarker=0;
+    for(const int y:{75,110,150,285,320,350})
+        for(const int x:{80,145,210,720,790,845})
+            if(rgbEnergy(activeFrame.getPixelAt(x,y))-
+               rgbEnergy(bypassFrame.getPixelAt(x,y))>=15)
+                ++stageDarker;
+    assert(stageDarker>=12); // Wide-scene darkening, no bitmap crop or blur
+    int amberLetters=0;
+    for(int y=151;y<242;y+=2)
+        for(int x=260;x<680;x+=2) {
+            const auto px=bypassFrame.getPixelAt(x,y);
+            if(px.getRed()>140 && px.getGreen()>65 &&
+               int(px.getRed())>int(px.getGreen())+35 &&
+               int(px.getGreen())>int(px.getBlue())+20)
+                ++amberLetters;
+        }
+    assert(amberLetters>=45); // Big centered translucent BYPASSED
+    int panelDarker=0;
+    for(const int y:{410,435,475,520,552})
+        for(const int x:{45,120,225,305,415,550,675,775})
+            if(rgbEnergy(activeFrame.getPixelAt(x,y))>
+               rgbEnergy(bypassFrame.getPixelAt(x,y)))
+                ++panelDarker;
+    assert(panelDarker>=12); // 12% veil applied after JUCE child painting
+
     int changedPowerPixels=0;
     const auto powerRegion=power->getBounds();
     for(int y=powerRegion.getY()+3;y<powerRegion.getBottom()-3;y+=3)
@@ -607,6 +644,19 @@ int main() {
             }
         assert(sceneId==2 || signature!=previousSceneSignature);
         previousSceneSignature=signature;
+        // The exact same six embedded PNGs must reach BOTH left/right
+        // viewport edges. Prior centred 2:1 images left uniform matte bands.
+        for(const int edgeX:{8,photo.getWidth()-9}) {
+            const auto first=photo.getPixelAt(edgeX,45);
+            int matteCount=0;
+            int varied=0;
+            for(int y=52;y<385;y+=19) {
+                const auto pixel=photo.getPixelAt(edgeX,y);
+                if(pixel==juce::Colour(0xff0e161c))++matteCount;
+                if(pixel!=first)++varied;
+            }
+            assert(matteCount<3 && varied>=7);
+        }
         const auto sceneFile=juce::File::getCurrentWorkingDirectory()
             .getChildFile("ImerSip_P92_SCENE_"+juce::String(sceneId)+".png");
         juce::FileOutputStream stream(sceneFile);
