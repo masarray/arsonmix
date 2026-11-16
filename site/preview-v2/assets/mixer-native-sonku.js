@@ -314,6 +314,7 @@ function render(){
  if(arenaOption)arenaOption.hidden=!p95Capable;
  const factoryName=p91p92Capable?matchFactoryPreset(s):"CUSTOM";
  if(presetPicker.value!==factoryName)presetPicker.value=factoryName;
+ root.dataset.acoustics=p95Capable?"venue":"legacy";
  const row=$("skRenderRow");row.hidden=!(p83Capable||p84Capable);
  const renderPicker=$("skRenderMode");
  renderPicker.hidden=p95Capable;
