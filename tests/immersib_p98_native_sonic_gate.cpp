@@ -107,6 +107,13 @@ int main(){
             const auto inverse=render(rate,s,true);
             assert(inverse.side>1.e-7); // no catastrophic antiphase null
             if(preset.id!=2)assert(heard.hash!=base.hash);
+            // A named flagship hall should not collapse to near-dry, low
+            // electrical energy compared with the approved Venue fixture.
+            // This is a *synthetic PCM floor*, not LUFS or listening proof.
+            if(preset.id==3 || preset.id==6)
+                assert(heard.power>base.power*.85);
+            if(preset.id==7)
+                assert(heard.power>base.power*.75);
             uniquePcm[static_cast<std::size_t>(preset.id-2)]=heard.hash;
             std::printf("IMMERSIB_P98_SCENE,%d,%d,%s,%d,%.6f,%.6f,%.6f,%016llx\n",
                 rate,preset.id,preset.label,s.sceneVoicing,

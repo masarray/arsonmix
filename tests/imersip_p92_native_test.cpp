@@ -315,9 +315,9 @@ int main() {
     armix::builtin_fx::SonKuSpatialProcessor::Completion selected{};
     assert(editorFx->pollCompletion(selected)&&selected.applied);
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
-    assert(std::abs(editorFx->acceptedSettings().stereoSpreadDegrees-96.f)<.001f);
-    assert(std::abs(editorFx->acceptedSettings().sourceDistanceMeters-2.4f)<.001f);
-    assert(std::abs(editorFx->acceptedSettings().ambience-.88f)<.001f);
+    assert(std::abs(editorFx->acceptedSettings().stereoSpreadDegrees-100.f)<.001f);
+    assert(std::abs(editorFx->acceptedSettings().sourceDistanceMeters-4.5f)<.001f);
+    assert(std::abs(editorFx->acceptedSettings().ambience-.94f)<.001f);
     assert(editorFx->acceptedSettings().sceneVoicing==4);
     juce::MemoryBlock detailState;
     editorFx->getStateInformation(detailState);
