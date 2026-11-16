@@ -193,7 +193,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ImerSip-P92-Native-JUCE-DPI-Captures-${{ github.run_id }}
-          path: build/ImerSip_P92_JUCE_*.png
+          path: |
+            build/ImerSip_P92_JUCE_*.png
+            build/ImerSip_P92_SCENE_*.png
           if-no-files-found: error
           retention-days: 14
       - name: Compile authentic production-shaped native GUI research candidate
