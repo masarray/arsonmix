@@ -81,7 +81,7 @@ class SpatialAuthorityContract(unittest.TestCase):
         self.assertGreater(candidate["outputGainDb"],screenshot["outputGainDb"])
         self.assertIn("150.f,2.2f,1.f,.91f,4.8f",scene)
         self.assertIn('"Royal Concert Hall"',scene)
-        self.assertNotIn("P9.2 Neutral A/B",source(
+        self.assertNotIn("P9.2 Neutral A/B",read(
             "engine/builtin_fx/ImerSipP92Editor.h"))
         self.assertIn("s.roomAmount=.78f",scene)
         self.assertIn("s.ambience=.33f",scene)

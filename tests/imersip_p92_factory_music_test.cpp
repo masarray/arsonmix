@@ -90,6 +90,8 @@ static void verify(int rate) {
     const double neutralRms=std::sqrt(energy(plain)/original);
     std::printf("IMERSIP_NEUTRAL,%d,rmsRatio=%.4f\n",rate,neutralRms);
     const auto preserved=imersipP92Factory(2);
+    const auto liveRendered=render(rate,preserved,raw);
+    const double liveRms=std::sqrt(energy(liveRendered)/original);
     assert(std::abs(preserved.stereoSpreadDegrees-150.f)<1.e-4f);
     assert(std::abs(preserved.sourceDistanceMeters-2.2f)<1.e-4f);
     assert(std::abs(preserved.ambience-.91f)<1.e-4f);
@@ -135,7 +137,8 @@ static void verify(int rate) {
         if(id!=2){
             // New named scenes may not collapse into identical DSP
             // settings or a weaker version of the owner's Live Concert.
-            assert(nullDelta(heard,render(rate,preserved,raw))>.001);
+            assert(nullDelta(heard,liveRendered)>.001);
+            assert(ratio>liveRms*.90); // reject another weak renamed preset
         }
         if(id==5){
             assert(std::abs(s.stereoSpreadDegrees-150.f)<1.e-4f);
