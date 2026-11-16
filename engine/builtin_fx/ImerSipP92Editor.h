@@ -304,13 +304,23 @@ public:
 private:
     void drawPa(juce::Graphics& g,float x,float y,float width,bool left){
         const float w=width,h=width*1.8f;
-        // The generated source line-array PNG is a separate alpha sprite.
-        skin_.drawSprite(g,{x-w*.5f,y,w,h},0,206,39,73);
+        // Exact same artist PNG, geometrically mirrored for the R array.
+        // Mirror only the visual; never swap or invert any actual PCM phase.
+        const auto target=juce::Rectangle<float>(x-w*.5f,y,w,h);
+        if(left)skin_.drawSprite(g,target,0,206,39,73);
+        else {
+            const auto img=skin_.sprite(0,206,39,73);
+            if(img.isValid()) {
+                juce::Graphics::ScopedSaveState state(g);
+                g.addTransform(juce::AffineTransform::scale(-1.f,1.f)
+                    .translated(target.getX()+target.getRight(),0.f));
+                g.drawImage(img,target,juce::RectanglePlacement::stretchToFit);
+            }
+        }
         // A single trim marker grounds lateral positions without UI jitter.
         g.setColour(juce::Colour(0x9969b9b9));
         g.drawHorizontalLine(int(y+h+5.f),
             x-w*.35f,x+w*.35f);
-        (void)left;
     }
     armix::sonku::Settings readControls() const {
         auto s=fx_.acceptedSettings();
