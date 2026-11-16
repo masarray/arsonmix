@@ -73,7 +73,6 @@ class ImerSipP92VisualSkin final : public juce::LookAndFeel_V4 {
 public:
     ImerSipP92VisualSkin()
         : room_(load(BinaryData::room_background_png,BinaryData::room_background_pngSize)),
-          panel_(load(BinaryData::control_panel_png,BinaryData::control_panel_pngSize)),
           header_(load(BinaryData::header_overlay_png,BinaryData::header_overlay_pngSize)),
           lineL_(load(BinaryData::line_array_left_png,BinaryData::line_array_left_pngSize)),
           lineR_(load(BinaryData::line_array_right_png,BinaryData::line_array_right_pngSize)),
@@ -101,7 +100,7 @@ public:
         setColour(juce::TextButton::textColourOnId,juce::Colour(0xffefffff));
     }
     bool ready() const noexcept {
-        return allValid({&room_,&panel_,&header_,&lineL_,&lineR_,&subL_,&subR_,
+        return allValid({&room_,&header_,&lineL_,&lineR_,&subL_,&subR_,
           &fillL_,&fillR_,&sideL_,&sideR_,&track_,&thumb_,&knobTeal_,
           &knobPurple_,&dropdown_,&buttonNormal_,&buttonHover_,&buttonPressed_});
     }
@@ -112,7 +111,11 @@ public:
         draw(g,header_,{0.f,0.f,1100.f,73.f});
     }
     void drawPanel(juce::Graphics& g) const {
-        draw(g,panel_,{0.f,461.f,1100.f,219.f});
+        // Premium restraint: one exact flat matte charcoal surface,
+        // no image texture, gloss, neon edges, bolts, segment borders,
+        // or geometric noise. DPI-independent and low-cost to render.
+        g.setColour(juce::Colour(0xff151a20));
+        g.fillRect(0,461,1100,219);
     }
     void drawConcert(juce::Graphics& g,const ImerSipP92ConcertBoxes& b) const {
         if(!b.safe())return;
@@ -198,7 +201,7 @@ private:
             juce::roundToInt(target.getY()),juce::roundToInt(target.getWidth()),
             juce::roundToInt(target.getHeight()),juce::RectanglePlacement::centred);
     }
-    const juce::Image room_,panel_,header_;
+    const juce::Image room_,header_;
     const juce::Image lineL_,lineR_,subL_,subR_,fillL_,fillR_,sideL_,sideR_;
     const juce::Image track_,thumb_,knobTeal_,knobPurple_,dropdown_;
     const juce::Image buttonNormal_,buttonHover_,buttonPressed_;
