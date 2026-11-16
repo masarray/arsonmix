@@ -577,9 +577,9 @@ def exercise(browser,out,width,height):
     applied=last_action(page,"nativeSonKuSet")
     proposed=applied["settings"]
     assert proposed["renderMode"]==9 and proposed["moving"] is False,proposed
-    assert proposed["stereoSpreadDegrees"]==82 and proposed["outputTrim"]==1,proposed
-    assert proposed["spacePreset"]==3 and proposed["sourceDistanceMeters"]==1.6,proposed
-    assert abs(proposed["roomAmount"]-.78)<.001 and abs(proposed["ambience"]-.33)<.001
+    assert proposed["stereoSpreadDegrees"]==82 and proposed["outputTrim"]==1.9,proposed
+    assert proposed["spacePreset"]==3 and proposed["sourceDistanceMeters"]==3.1,proposed
+    assert abs(proposed["roomAmount"]-1.0)<.001 and abs(proposed["ambience"]-.62)<.001
     emit(page,"arMixBuiltinSonKuAck",{
         "requestId":applied["requestId"],"status":"APPLIED"})
     accepted_snapshot(page,state,proposed,applied=applied["requestId"],schema=11)
