@@ -74,6 +74,12 @@ public:
     ImerSipP92VisualSkin()
         : room_(load(BinaryData::room_background_png,BinaryData::room_background_pngSize)),
           header_(load(BinaryData::header_overlay_png,BinaryData::header_overlay_pngSize)),
+          sceneLive_(load(BinaryData::scene_live_concert_png,BinaryData::scene_live_concert_pngSize)),
+          sceneRoyal_(load(BinaryData::scene_royal_concert_hall_png,BinaryData::scene_royal_concert_hall_pngSize)),
+          sceneArena_(load(BinaryData::scene_arena_thunder_png,BinaryData::scene_arena_thunder_pngSize)),
+          sceneFront_(load(BinaryData::scene_front_row_power_png,BinaryData::scene_front_row_power_pngSize)),
+          sceneSymphony_(load(BinaryData::scene_symphonic_palace_png,BinaryData::scene_symphonic_palace_pngSize)),
+          sceneCinema_(load(BinaryData::scene_velvet_cinema_png,BinaryData::scene_velvet_cinema_pngSize)),
           lineL_(load(BinaryData::line_array_left_png,BinaryData::line_array_left_pngSize)),
           lineR_(load(BinaryData::line_array_right_png,BinaryData::line_array_right_pngSize)),
           subL_(load(BinaryData::subwoofer_left_png,BinaryData::subwoofer_left_pngSize)),
@@ -100,12 +106,41 @@ public:
         setColour(juce::TextButton::textColourOnId,juce::Colour(0xffefffff));
     }
     bool ready() const noexcept {
-        return allValid({&room_,&header_,&lineL_,&lineR_,&subL_,&subR_,
+        return allValid({&room_,&header_,&sceneLive_,&sceneRoyal_,&sceneArena_,
+          &sceneFront_,&sceneSymphony_,&sceneCinema_,
+          &lineL_,&lineR_,&subL_,&subR_,
           &fillL_,&fillR_,&sideL_,&sideR_,&track_,&thumb_,&knobTeal_,
           &knobPurple_,&dropdown_,&buttonNormal_,&buttonHover_,&buttonPressed_});
     }
     void drawRoom(juce::Graphics& g) const {
         draw(g,room_,{0.f,0.f,1100.f,461.f});
+    }
+    bool hasScenes() const noexcept {
+        return allValid({&sceneLive_,&sceneRoyal_,&sceneArena_,
+                         &sceneFront_,&sceneSymphony_,&sceneCinema_});
+    }
+    void drawScene(juce::Graphics& g,int presetId) const {
+        const juce::Image* art=&sceneLive_;
+        switch(presetId){
+            case 3: art=&sceneRoyal_; break;
+            case 4: art=&sceneArena_; break;
+            case 5: art=&sceneFront_; break;
+            case 6: art=&sceneSymphony_; break;
+            case 7: art=&sceneCinema_; break;
+            default: break; // Custom keeps its last selected venue.
+        }
+        if(art->isNull()){
+            drawRoom(g);
+            return;
+        }
+        // Source image is a whole venue, including its own realistic
+        // loudspeaker system. Fit to viewport without geometric distortion.
+        // Only vertical overscan is permitted; never skew the PA.
+        juce::Graphics::ScopedSaveState state(g);
+        g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
+        g.reduceClipRegion(0,0,1100,461);
+        g.drawImageWithin(*art,0,0,1100,461,
+                          juce::RectanglePlacement::fillDestination);
     }
     void drawHeader(juce::Graphics& g) const {
         draw(g,header_,{0.f,0.f,1100.f,73.f});
@@ -224,6 +259,7 @@ private:
             juce::roundToInt(target.getHeight()),juce::RectanglePlacement::centred);
     }
     const juce::Image room_,header_;
+    const juce::Image sceneLive_,sceneRoyal_,sceneArena_,sceneFront_,sceneSymphony_,sceneCinema_;
     const juce::Image lineL_,lineR_,subL_,subR_,fillL_,fillR_,sideL_,sideR_;
     const juce::Image track_,thumb_,knobTeal_,knobPurple_,dropdown_;
     const juce::Image buttonNormal_,buttonHover_,buttonPressed_;
