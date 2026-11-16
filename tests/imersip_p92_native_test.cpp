@@ -390,7 +390,7 @@ int main() {
         editor->findChildWithID("imersip.early"));
     assert(distanceSlider && earlySlider);
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
-    assert(distanceSlider->getMinimum()==1.1);
+    assert(std::abs(distanceSlider->getMinimum()-1.1)<1.e-4);
     assert(distanceSlider->getMaximum()==2.5);
     assert(earlySlider->getMaximum()==180.0);
 #endif

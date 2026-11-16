@@ -148,7 +148,7 @@
       "engine/builtin_fx/sonku/SonKuP95MusicalPresence.h": "f458d520c9ca6c75b1b961d220e15abd64b07497",
       "engine/builtin_fx/sonku/SonKuP96DistanceReinforcement.h": "a32fb6e6fdd431901323d4278c51991607c02d84",
       "engine/builtin_fx/sonku/SonKuP97StageImpact.h": "5384fd3cc67c31f0a8038b315856d20933249b5b",
-      "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "b9454bec4a5194a960d218874895e0cf438ea9bf",
+      "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "5ec8d135d54e846c3f8d86d80202c29de67b724f",
       "engine/builtin_fx/sonku/SonKuEarlyReflections.h": "5a6a9b48cfdc60729f130c61110c8d8590b20f35",
       "engine/builtin_fx/sonku/SonKuSourcePlacement3D.h": "9afb959bed292626c3097c2a382208ce8798e90c"
     },
@@ -183,7 +183,7 @@
       "newDSPBlobSha1": {
         "engine/builtin_fx/sonku/SonKuSpatialCore.h": "de775c63df93a115232df956b7004f2463c4e530",
         "engine/builtin_fx/sonku/SonKuEarlyReflections.h": "5a6a9b48cfdc60729f130c61110c8d8590b20f35",
-        "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "b9454bec4a5194a960d218874895e0cf438ea9bf",
+        "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "5ec8d135d54e846c3f8d86d80202c29de67b724f",
         "engine/builtin_fx/sonku/SonKuSourcePlacement3D.h": "9afb959bed292626c3097c2a382208ce8798e90c"
       },
       "legacyIMRS": "Old 1.0m/4-10m saved scenes migrate to 1.1-2.5m preserving room/voicing/gain; no codec or FX ID change",

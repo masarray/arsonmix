@@ -171,7 +171,7 @@ private:
     Filter sidePresence1_{},sidePresence2_{},bodyCenter_{},sideEdge_{};
     std::array<Filter,2> earEdge_{};
     float sideAirLow_=0.f;
-    std::array<float,11> gains_{};
+    std::array<float,12> gains_{};
     float bassAlpha_=0.f,airAlpha_=0.f,slew_=0.f;
 };
 } // namespace armix::sonku::p98

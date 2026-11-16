@@ -232,7 +232,7 @@ int main(){
         const double airLift=warmAir/firstAir;
         const double midLift=warmMid/firstMid;
         std::fprintf(stderr,
-            "IMMERSIB_EARLY_LATERAL,rate=%d,air=%.4f,impact=%.4f,mid=%.4f\\n",
+            "IMMERSIB_EARLY_LATERAL,rate=%d,air=%.4f,impact=%.4f,mid=%.4f\n",
             rate,airLift,impactAir/firstAir,midLift);
         assert(airLift>1.15 && airLift<1.80);
         assert(impactAir>firstAir*1.10 && impactAir<firstAir*1.70);
