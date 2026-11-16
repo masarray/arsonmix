@@ -37,22 +37,25 @@ const roomMaxDistance=[10,3.1,6.7,10];
 // Factory presets are explicit native scene values, never browser audio DSP.
 // A preset applies the COMPLETE documented scene in one ACK-verified command.
 // Preserve custom .smix settings until the operator actually selects a preset.
+// Curated against operator's *own* immersive reference (3.1 m, MAX early,
+// 62% late, 82° spread, +7dB). Scene values are deliberate starting points,
+// not acoustic measurements. No background mutation of existing .smix.
 const factoryPresets=Object.freeze({
  music:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
-  revolutionSeconds:12,stereoSpreadDegrees:82,spatialMix:1,outputTrim:1,
-  spacePreset:3,sourceDistanceMeters:1.6,roomAmount:.78,ambience:.33}),
+  revolutionSeconds:12,stereoSpreadDegrees:82,spatialMix:1,outputTrim:1.9,
+  spacePreset:3,sourceDistanceMeters:3.1,roomAmount:1,ambience:.62}),
  studio:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
-  revolutionSeconds:12,stereoSpreadDegrees:68,spatialMix:1,outputTrim:1,
-  spacePreset:1,sourceDistanceMeters:1.6,roomAmount:.42,ambience:.18}),
+  revolutionSeconds:12,stereoSpreadDegrees:76,spatialMix:1,outputTrim:1.65,
+  spacePreset:3,sourceDistanceMeters:4.8,roomAmount:.94,ambience:.72}),
  wide:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
-  revolutionSeconds:12,stereoSpreadDegrees:118,spatialMix:1,outputTrim:1,
-  spacePreset:2,sourceDistanceMeters:3.2,roomAmount:.68,ambience:.32}),
+  revolutionSeconds:12,stereoSpreadDegrees:98,spatialMix:1,outputTrim:1.7,
+  spacePreset:3,sourceDistanceMeters:7.5,roomAmount:1,ambience:.84}),
  deep:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
-  revolutionSeconds:12,stereoSpreadDegrees:104,spatialMix:1,outputTrim:1,
-  spacePreset:3,sourceDistanceMeters:4.5,roomAmount:.82,ambience:.42}),
+  revolutionSeconds:12,stereoSpreadDegrees:106,spatialMix:1,outputTrim:1.8,
+  spacePreset:3,sourceDistanceMeters:10,roomAmount:1,ambience:1}),
  orbit:Object.freeze({moving:true,clockwise:true,startAzimuthDegrees:0,
-  revolutionSeconds:8.5,stereoSpreadDegrees:100,spatialMix:1,outputTrim:1,
-  spacePreset:3,sourceDistanceMeters:2.5,roomAmount:.72,ambience:.38})
+  revolutionSeconds:8.5,stereoSpreadDegrees:82,spatialMix:1,outputTrim:1.75,
+  spacePreset:3,sourceDistanceMeters:6.5,roomAmount:1,ambience:.83})
 });
 const matchFactoryPreset=s=>Object.entries(factoryPresets).find(([id,p])=>
   s.renderMode===9 && Object.keys(p).every(k=>Math.abs(Number(s[k])-Number(p[k]))<.00002))?.[0]||"CUSTOM";
@@ -126,11 +129,11 @@ root.innerHTML=[
  '<span class="sk-headnote">SPATIAL AUDIO</span>',
  '<select id="skPreset" class="sk-preset" aria-label="SonKu ready-to-use sound presets" title="Ready-to-use spatial scenes; settings remain editable">',
  '<option value="CUSTOM">CUSTOM · MANUAL</option>',
- '<option value="music">MUSIC · FRONT STAGE</option>',
- '<option value="studio">STUDIO · CLOSE</option>',
- '<option value="wide">CINEMA · WIDE</option>',
- '<option value="deep">IMMERSIVE · DEEP</option>',
- '<option value="orbit">ORBIT · SHOWCASE</option></select>',
+ '<option value="music">SIGNATURE · IMMERSIVE</option>',
+ '<option value="studio">LARGE STUDIO · LIVE</option>',
+ '<option value="wide">CINEMA · GRAND STAGE</option>',
+ '<option value="deep">VENUE · MEGA SPACE</option>',
+ '<option value="orbit">LIVE ORBIT · SOUND SYSTEM</option></select>',
  '<span id="skChannel" class="sk-channel"></span>',
  '<button type="button" id="skPower" class="armix-builtin-fx-power" data-fx-state="unknown" aria-label="SonKu FX state unavailable" aria-pressed="false" disabled>⏻</button>',
  '<button type="button" id="skClose" class="sk-close armix-builtin-fx-close armix-floating-close" aria-label="Close 8D-SonKu">×</button></header>',
@@ -295,23 +298,13 @@ function render(){
  const row=$("skRenderRow");row.hidden=!(p83Capable||p84Capable);
  if(p83Capable||p84Capable){
  const picker=$("skRenderMode");
-  if(p90Capable && picker.dataset.nativeModeSet!==(p94Capable?"p94":p91p92Capable?"p91p92":"p90")){
-    picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
-     '<option value="clarity">SPATIAL · P8.4 REFERENCE</option>'+
-     '<option value="coherence">SPATIAL · P8.5 REFERENCE</option>'+
-     '<option value="focus">SPATIAL · P8.6 REFERENCE</option>'+
-     '<option value="body">SPATIAL · P8.7 REFERENCE</option>'+
-     '<option value="align">SPATIAL · P8.8 REFERENCE</option>'+
-     '<option value="depth">SPATIAL · P8.9 REFERENCE</option>'+
-     (p94Capable?
-       '<option value="external">P9.4 · FRONT/REAR DEPTH (A/B)</option>':
-       p91p92Capable?
-       '<option value="external">P9.1 + P9.2 · MUSIC / BASS</option>':
-       '<option value="external">P9.0 · TRUE EXTERNAL SPEAKER (EXPERIMENT)</option>');
-    picker.dataset.nativeModeSet=p94Capable?"p94":p91p92Capable?"p91p92":"p90";
-    root.querySelector(".sk-render-label").textContent=p94Capable?
-      "RENDER MODE · P9.4 EXPERIMENT":p91p92Capable?
-      "RENDER MODE · P9.1 + P9.2 FAT":"RENDER MODE · P9.0 HEADPHONE FAT";
+  if(p90Capable && picker.dataset.nativeModeSet!=="latest"){
+    // P9.5 is the sole normal user-facing engine. Preserve old .smix mode
+    // bytes in native state; show a truthful migration option only when a
+    // previously saved session actually contains an older DSP mode.
+    picker.dataset.nativeModeSet="latest";
+    root.querySelector(".sk-render-label").textContent="SPATIAL ENGINE";
+    picker.innerHTML='<option value="external">LATEST · IMMERSIVE SPATIAL</option>';
    }else if(!p90Capable && p89Capable && picker.dataset.nativeModeSet!=="p89"){
     picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
      '<option value="clarity">SPATIAL · P8.4 REFERENCE</option>'+
@@ -365,7 +358,17 @@ function render(){
    picker.dataset.nativeModeSet="p83";
    root.querySelector(".sk-render-label").textContent="RENDER MODE · P8.3 TEST";
   }
-  const v=p90Capable?(s.renderMode===9?"external":s.renderMode===8?"depth":s.renderMode===7?"align":s.renderMode===6?"body":s.renderMode===5?"focus":s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
+  // Restore-only compatibility: no legacy experiments in a new user menu.
+  // Allow the user to choose LATEST without auto-mutating saved DSP state.
+  if(p90Capable){
+   const legacy=picker.querySelector('option[value="legacy"]');
+   if(s.renderMode!==9 && !legacy){
+    picker.add(new Option("SAVED SESSION · LEGACY SOUND","legacy"));
+   }else if(s.renderMode===9 && legacy){
+    legacy.remove();
+   }
+  }
+  const v=p90Capable?(s.renderMode===9?"external":"legacy"):
      p89Capable?(s.renderMode===8?"depth":s.renderMode===7?"align":s.renderMode===6?"body":s.renderMode===5?"focus":s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
      p88Capable?(s.renderMode===7?"align":s.renderMode===6?"body":s.renderMode===5?"focus":s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
     p87Capable?(s.renderMode===6?"body":s.renderMode===5?"focus":s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
@@ -432,7 +435,7 @@ function render(){
   $("skHrtfAlignValue").textContent=(s.hrtfElevationTrimDegrees>=0?"+":"")+s.hrtfElevationTrimDegrees.toFixed(1)+"°";
  }
  root.querySelector(".sk-stage-caption").textContent=p94Capable&&s.renderMode===9?
-    "P9.4 · FRONT/REAR ROOM DEPTH · SAME 3D MOTION · HEADPHONE FAT REQUIRED":
+    "LATEST SPATIAL · FRONT/REAR DEPTH · MUSIC FIDELITY · WORLD BASS":
     p91p92Capable&&s.renderMode===9?
     "P9.1 + P9.2 · MUSIC FIDELITY · WORLD BASS · ROOM MODES · FAT REQUIRED":
     p90Capable&&s.renderMode===9?
@@ -463,7 +466,7 @@ function render(){
   (p83Capable||p84Capable)&&s.renderMode!==0?"SPEAKER ANGLE":
   musicSafeStereo?"SIDE WIDTH":"SPREAD";
  root.querySelector(".sk-guide").textContent=p90Capable&&s.renderMode===9
-  ?"Two positioned measured HRIR speakers · 0° co-location cannot preserve anti-phase"
+  ?"World-anchored stereo speakers · immersive room & musical bass"
   :musicSafeStereo
   ?"Legacy music WIDTH adjusts headlocked SIDE; P9 spatializes it"
   :"Drag monitors to position · rotary knobs: vertical drag, double-click to reset";
@@ -480,7 +483,7 @@ function render(){
  // redrawn at 60 Hz. The native audio callback remains the time authority.
  drawSpeakers();
  $("skMode").textContent=native()?(context()?
-  (p94Capable&&s.renderMode===9?"NATIVE P9.4 FRONT/REAR DEPTH · A/B FAT":
+  (p94Capable&&s.renderMode===9?"NATIVE IMMERSIVE SPATIAL · WORLD BASS":
    p91p92Capable&&s.renderMode===9?"NATIVE P9.1+P9.2 WORLD BASS · FAT":
    p90Capable&&s.renderMode===9?"NATIVE P9.0 TRUE EXTERNAL · TEST":
    p89Capable&&s.renderMode===8?"NATIVE P8.9 STEREO + ROOM · TEST":
@@ -766,7 +769,7 @@ $("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapa
 $("skRenderMode").addEventListener("change",()=>{
  if(!(p83Capable||p84Capable))return;
  const v=$("skRenderMode").value;
- const mode=p90Capable?(v==="external"?9:v==="depth"?8:v==="align"?7:v==="body"?6:v==="focus"?5:v==="coherence"?4:v==="clarity"?3:0):
+ const mode=p90Capable?(v==="external"?9:draft.renderMode):
      p89Capable?(v==="depth"?8:v==="align"?7:v==="body"?6:v==="focus"?5:v==="coherence"?4:v==="clarity"?3:0):
      p88Capable?(v==="align"?7:v==="body"?6:v==="focus"?5:v==="coherence"?4:v==="clarity"?3:0):
     p87Capable?(v==="body"?6:v==="focus"?5:v==="coherence"?4:v==="clarity"?3:0):
