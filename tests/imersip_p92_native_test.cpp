@@ -318,7 +318,7 @@ int main() {
     assert(std::abs(editorFx->acceptedSettings().stereoSpreadDegrees-96.f)<.001f);
     assert(std::abs(editorFx->acceptedSettings().sourceDistanceMeters-2.4f)<.001f);
     assert(std::abs(editorFx->acceptedSettings().ambience-.88f)<.001f);
-    assert(editorFx->acceptedSettings().sceneVoicing==1);
+    assert(editorFx->acceptedSettings().sceneVoicing==4);
     juce::MemoryBlock detailState;
     editorFx->getStateInformation(detailState);
     assert(detailState.getSize()==75);
@@ -326,7 +326,7 @@ int main() {
     detailRestored->prepareToPlay(48000.,128);
     assert(detailRestored->restoreUnpublishedState(
         detailState.getData(),static_cast<int>(detailState.getSize())));
-    assert(detailRestored->acceptedSettings().sceneVoicing==1);
+    assert(detailRestored->acceptedSettings().sceneVoicing==4);
     detailRestored->releaseResources();
     assert(std::abs(editorFx->acceptedSettings().outputTrim-
         armix::builtin_fx::imersipP92DbToLinear(5.60f))<.001f);

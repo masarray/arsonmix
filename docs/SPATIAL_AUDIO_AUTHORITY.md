@@ -45,3 +45,12 @@ Only native/engine edits trigger the expensive ImerSip Windows FAT; documentatio
 ## Future safe workflow
 
 Start from the **immutable checkpoint** for acoustic experiments; use #719 lineage for ImerSip. Run source identity/PCM parity before expensive Windows, then exact-commit native JUCE/state/host-bypass and approved GUI/distribution gates. Require user headphone A/B if altering P9 DSP. For P83-specific research, use a head branch containing `p83` or manually dispatch the archived P83 workflow. Do not delete its recorded rejection or turn an objectively failed P83 sound experiment into an artificial CI success.
+
+## ImmerSIB P9.7 + P9.8 scene tuning — owner-directed candidate (16 Nov 2026)
+
+- **Never replace the accepted Venue**: preset ID 2 is P9.7 Venue Mega Space at 10m / 106° / full early and late room / output trim 1.8, with voicing ID 0; all preexisting P9.7 and P9.8 voicing curves 0–3 remain **bit-identical**.
+- **Additive P9.8 engine extension**: native voicing ID 4 (`ImmerSIBDetail`) raises the measured-speaker HRIR center presence gently, improves vocal/foreground midband articulation and enhances real directional early-reflection air. ID 5 (`ImmerSIBImpact`) is tuned for physical LF/kick body and stage, within the same world-speaker graph. IDs 4–5 are private candidate *scene parameter profiles*, not extracted instruments/stems. No crossfeed/delay or dry-stereo widening is added.
+- Royal Concert Hall, Front Row Power, and Symphonic Palace use ID 4; Arena Thunder ID 5; Velvet Cinema existing Cinema ID 3. Exact preset geometry and gain remain unchanged to isolate voicing effects.
+- **Deliberate research hash change**, not accidental DSP drift: `SonKuP98SceneVoicing.h` originally Git blob `78d8ff28aaf9115a0d1cfff99a6cbb08d0b2bf39`; additive extension blob `5b2438d9b743612c0d22a9b7f9984b1a0289ee3a`. Both hashes are recorded in the authority ledger. The P9.7 Venue golden PCM must remain bit-exact at 44.1/48k and the existing 0–3 voicing trajectories remain identical.
+- **State compatibility**: the existing serialized SONK v12 / IMRS v7 32-bit voicing field carries IDs 4–5 without format change; IMRS v6 migrates to neutral 0; stored `armix.builtin.imersip.v1` FX identity remains unchanged.
+- **Acceptance boundaries**: measured PCM fidelity, finite peaks, anti-phase survival, room/side energy, and Windows JUCE tests qualify a candidate, not proof of isolated instrument stems or owner-approved subjective enjoyment. Physical headphones, matched loudness, and mastered content are mandatory before release.

@@ -14,7 +14,10 @@ class SceneVoicing final {
 public:
     struct Stereo {float left=0.f,right=0.f;};
     // These IDs are stable native-serialized values, NOT native ROOM sizes.
-    enum : int { Neutral=0, Signature=1, LiveStudio=2, Cinema=3 };
+    // 4/5 are opt-in ImmerSIB-only profile IDs. Existing SONK v12 IDs
+    // 0..3 retain byte-for-byte matching coefficients and meaning.
+    enum : int { Neutral=0, Signature=1, LiveStudio=2, Cinema=3,
+                 ImmerSIBDetail=4, ImmerSIBImpact=5 };
     bool prepare(double sampleRate) noexcept {
         if (!std::isfinite(sampleRate) ||
             (std::abs(sampleRate-44100.)>.1 && std::abs(sampleRate-48000.)>.1))
@@ -33,7 +36,7 @@ public:
         bass_={};air_={};earlyAir_={};
     }
     static constexpr bool valid(int scene) noexcept {
-        return scene>=Neutral && scene<=Cinema;
+        return scene>=Neutral && scene<=ImmerSIBImpact;
     }
     // Only explicit preset changes set an ID. 55ms interpolates changes in
     // gains, with no per-sample coefficient recompute, memory allocation or
@@ -85,11 +88,17 @@ private:
     // Signature is designed for high clarity AND physical music body.
     // Studio adjustment deliberately gentler than Cinema. Venue profile
     // is ALL ZEROS: its approved P9.7 acoustic graph is immutable.
-    static constexpr std::array<std::array<float,6>,4> curves_{{
+    static constexpr std::array<std::array<float,6>,6> curves_{{
         {{0.f,0.f,0.f,0.f,0.f,0.f}},        // Venue / Custom: EXACT
         {{.22f,.15f,.17f,.15f,.16f,.070f}}, // Signature flagship
         {{.035f,.045f,.055f,.045f,.04f,.020f}}, // Live Studio subtle
-        {{.075f,.15f,.15f,.060f,.065f,.035f}}  // Cinema LF weight
+        {{.075f,.15f,.15f,.060f,.065f,.035f}}, // Cinema LF weight
+        // ImmerSIB: clearer center presence + real lateral first images.
+        // Stage/source remain HRTF-positioned. This is NOT a stem
+        // extractor or post-HRTF stereo widening. Moderate boosts avoid
+        // cymbal fatigue and keep spaciousness from P9.7 room geometry.
+        {{.29f,.10f,.12f,.24f,.20f,.075f}}, // Detail and placement
+        {{.17f,.22f,.24f,.12f,.16f,.055f}}  // Physical stage impact
     }};
     struct Coeff {float b0=0,b1=0,b2=0,a1=0,a2=0;};
     struct Filter {

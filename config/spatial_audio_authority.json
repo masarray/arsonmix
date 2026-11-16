@@ -28,8 +28,8 @@
     "processor": "ImerSipP92Processor",
     "nativeRenderer": "SonKuSpatialCore",
     "settingsFormat": "IMRS",
-    "settingsVersion": 6,
-    "nestedSonKuVersion": 11,
+    "settingsVersion": 7,
+    "nestedSonKuVersion": 12,
     "researchOnly": true,
     "independentSpatialDsp": false,
     "releaseQualified": false,
@@ -79,12 +79,12 @@
       "privateBuildOnly": true
     },
     "imersipAuditionPresetIds": {
-      "2": "Live Concert — EXACT P9.7 Venue Mega Space (10m, 106deg, 100/100, trim1.8, P98 voicing0)",
-      "3": "Royal Concert Hall — P9.8 Signature voice; 3.1m, 82deg, 100/62",
-      "4": "Arena Thunder — reinforced P97 stage 8.9m, 112deg, P98 Signature",
-      "5": "Front Row Power — P97 impact + P98 Signature (2.4m, 96deg)",
-      "6": "Symphonic Palace — P97 stage + P98 Signature (6.2m, 94deg)",
-      "7": "Velvet Cinema — P97 stage + P98 Cinema (7.5m, 98deg)"
+      "2": "Live Concert — EXACT owner-approved P9.7 Venue golden (10m,106°,100/100,trim1.8,voice0)",
+      "3": "Royal Concert Hall — ImmerSIB Detail voicing 4, deeper articulation and placement",
+      "4": "Arena Thunder — ImmerSIB Impact voicing 5, physical bass and stage",
+      "5": "Front Row Power — ImmerSIB Detail voicing 4, closer front energy",
+      "6": "Symphonic Palace — ImmerSIB Detail voicing 4, separated layers in a grand hall",
+      "7": "Velvet Cinema — original P9.8 Cinema voicing 3, more cinematic weight"
     },
     "ownerScreenshotObservation": {
       "speakerSpreadDeg": 150,
@@ -149,7 +149,19 @@
       "engine/builtin_fx/sonku/SonKuP95MusicalPresence.h": "ece40572b04d4b586a61c56cf1fd1f77c1f295e7",
       "engine/builtin_fx/sonku/SonKuP96DistanceReinforcement.h": "a32fb6e6fdd431901323d4278c51991607c02d84",
       "engine/builtin_fx/sonku/SonKuP97StageImpact.h": "5384fd3cc67c31f0a8038b315856d20933249b5b",
-      "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "78d8ff28aaf9115a0d1cfff99a6cbb08d0b2bf39"
+      "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "5b2438d9b743612c0d22a9b7f9984b1a0289ee3a"
+    },
+    "productTuning": {
+      "status": "audition_candidate_not_owner_approved",
+      "approvedReference": "P9.7 Venue Mega Space, exact sceneVoicing=0 and physical settings unchanged",
+      "newVoicingIds": {
+        "4": "ImmerSIB Detail — restrained center presence, instrument edge, real first-image air",
+        "5": "ImmerSIB Impact — music punch and spatial scale without headphone widening"
+      },
+      "previousP98SceneVoicingBlobSha1": "78d8ff28aaf9115a0d1cfff99a6cbb08d0b2bf39",
+      "newP98SceneVoicingBlobSha1": "5b2438d9b743612c0d22a9b7f9984b1a0289ee3a",
+      "changeScope": "additive scene voicing IDs 4 and 5 only; existing IDs 0..3 retain original curves",
+      "headphoneListeningRequired": true
     }
   }
 }

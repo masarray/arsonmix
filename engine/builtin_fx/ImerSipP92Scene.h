@@ -56,14 +56,15 @@ struct ImerSipP92Preset {
 };
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
 // P9.7 Venue at exactly 10m,106deg, ER100,late100,trim1.8,voice0
-// is the fixed owner-accepted sonic reference. Remaining scenes deliberately
-// exercise P9.8 native center/early/ear voicings; no stem fake separator.
+// is the fixed owner-accepted sonic reference. New owner-directed ImmerSIB
+// programs use P9.8 native center/early/ear voicings 4=detail/5=impact.
+// No dry-stereo stem fake separation, second convolution or Haas widening.
 inline constexpr std::array<ImerSipP92Preset,6> imersipP92Presets{{
     {2,"Live Concert",       3,106.f,10.f, 1.f,1.00f,5.10545f,0},
-    {3,"Royal Concert Hall", 3, 82.f,3.1f,1.f,.62f,5.57507f,1},
-    {4,"Arena Thunder",     3,112.f,8.9f,1.f,1.00f,5.45f,1},
-    {5,"Front Row Power",   3, 96.f,2.4f,1.f,.88f,5.60f,1},
-    {6,"Symphonic Palace",  3, 94.f,6.2f,1.f,.88f,5.25f,1},
+    {3,"Royal Concert Hall", 3, 82.f,3.1f,1.f,.62f,5.57507f,4},
+    {4,"Arena Thunder",     3,112.f,8.9f,1.f,1.00f,5.45f,5},
+    {5,"Front Row Power",   3, 96.f,2.4f,1.f,.88f,5.60f,4},
+    {6,"Symphonic Palace",  3, 94.f,6.2f,1.f,.88f,5.25f,4},
     {7,"Velvet Cinema",     3, 98.f,7.5f,1.f,.84f,4.60898f,3}
 }};
 #else

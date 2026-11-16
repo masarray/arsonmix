@@ -85,11 +85,20 @@ int main(){
     assert(venue.outputTrim==1.8f && venue.spatialMix==1.f);
     assert(venue.startAzimuthDegrees==0.f && venue.spacePreset==3);
     assert(imersipP92Presets.size()==6);
+    assert(armix::sonku::p98::SceneVoicing::valid(4));
+    assert(armix::sonku::p98::SceneVoicing::valid(5));
+    assert(!armix::sonku::p98::SceneVoicing::valid(6));
+    // Product scene classification: preserve original Venue golden; new
+    // detail and impact voicings must NEVER silently affect its PCM.
+    constexpr int expectedProfiles[]{0,4,5,4,4,3};
+    for(std::size_t i=0;i<imersipP92Presets.size();++i)
+        assert(imersipP92Presets[i].voicing==expectedProfiles[i]);
     for(int rate:{44100,48000}){
         const auto base=render(rate,golden);
         const auto migrated=render(rate,venue);
         // The operator's approved Venue is a bit-exact audio checkpoint.
         assert(base.hash==migrated.hash);
+        std::array<std::uint64_t,6> uniquePcm{};
         for(const auto& preset:imersipP92Presets){
             const auto s=imersipP92Factory(preset.id);
             assert(s.renderMode==9 && !s.moving);
@@ -98,11 +107,16 @@ int main(){
             const auto inverse=render(rate,s,true);
             assert(inverse.side>1.e-7); // no catastrophic antiphase null
             if(preset.id!=2)assert(heard.hash!=base.hash);
+            uniquePcm[static_cast<std::size_t>(preset.id-2)]=heard.hash;
             std::printf("IMMERSIB_P98_SCENE,%d,%d,%s,%d,%.6f,%.6f,%.6f,%016llx\n",
                 rate,preset.id,preset.label,s.sceneVoicing,
                 heard.power,heard.side,double(heard.peak),
                 static_cast<unsigned long long>(heard.hash));
         }
+        // Every user-facing scene is a physically distinct PCM program.
+        for(std::size_t i=0;i<uniquePcm.size();++i)
+            for(std::size_t j=i+1;j<uniquePcm.size();++j)
+                assert(uniquePcm[i]!=uniquePcm[j]);
     }
-    std::puts("PASS IMMERSIB P9.7 VENUE GOLDEN + P9.8 SCENE PCM");
+    std::puts("PASS IMMERSIB VENUE GOLDEN + DETAIL/IMPACT NATIVE PCM");
 }
