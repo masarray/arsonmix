@@ -1,38 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
-#if defined(_WIN32)
-#include <windows.h>
-#endif
+#include "NativeFxWin32Owner.h"
 
 namespace armix::ui {
-// UI/message-thread only. A Win32 owner (NOT WS_CHILD parenting and NOT
-// WS_EX_TOPMOST) keeps native editors above their mixer while letting other
-// applications cover the whole ArSonMix group. Never used in PCM callbacks.
+// UI/message-thread only. An HWND owner keeps plugin windows above the mixer
+// without making them system-wide topmost or child components of WebView2.
 inline bool attachOwnedFloatingWindow(juce::Component& floating,
                                       juce::Component& mixer) noexcept {
 #if defined(_WIN32)
-    const auto* popupPeer = floating.getPeer();
-    const auto* mixerPeer = mixer.getPeer();
-    if (popupPeer == nullptr || mixerPeer == nullptr) return false;
-    const auto popup = static_cast<HWND>(popupPeer->getNativeHandle());
-    const auto owner = static_cast<HWND>(mixerPeer->getNativeHandle());
-    if (popup == nullptr || owner == nullptr || popup == owner ||
-        !::IsWindow(popup) || !::IsWindow(owner) ||
-        (::GetWindowLongPtrW(popup, GWL_STYLE) & WS_CHILD) != 0)
-        return false;
-    if (::GetWindow(popup, GW_OWNER) == owner) return true;
-    // For a top-level window GWLP_HWNDPARENT sets an HWND *owner*, not a
-    // child HWND parent. This preserves genuine independent FX windows.
-    ::SetLastError(0);
-    const auto prior = ::SetWindowLongPtrW(
-        popup, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(owner));
-    if (prior == 0 && ::GetLastError() != 0) return false;
-    return ::GetWindow(popup, GW_OWNER) == owner;
+    const auto* popupPeer=floating.getPeer();
+    const auto* mixerPeer=mixer.getPeer();
+    if(popupPeer==nullptr || mixerPeer==nullptr)return false;
+    return win32::attachOwnedPopup(
+        static_cast<HWND>(popupPeer->getNativeHandle()),
+        static_cast<HWND>(mixerPeer->getNativeHandle()));
 #else
-    (void) floating;
-    (void) mixer;
-    return true;  // Other platforms use JUCE normal foreground semantics.
+    (void)floating;
+    (void)mixer;
+    return true; // Native non-Windows foreground policy remains JUCE-owned.
 #endif
 }
 } // namespace armix::ui
