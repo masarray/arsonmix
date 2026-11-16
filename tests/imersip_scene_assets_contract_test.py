@@ -23,7 +23,10 @@ class ApprovedSceneAssets(unittest.TestCase):
                     ">IIBBBBB",header[16:29])
                 self.assertGreaterEqual(width,1600)
                 self.assertGreaterEqual(height,600)
-                self.assertAlmostEqual(width/height,1100/461,delta=.05)
+                # Actual approved venue photos can be 2:1. JUCE keeps
+                # their source aspect via centred fit (not distortion/crop).
+                self.assertGreater(width/height,1.7)
+                self.assertLess(width/height,2.6)
                 self.assertEqual(depth,8)
                 self.assertIn(colour,(2,6))
                 self.assertEqual((compression,filtering,interlace),(0,0,0))
