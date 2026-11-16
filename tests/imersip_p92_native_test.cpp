@@ -199,7 +199,7 @@ int main() {
     editorFx->prepareToPlay(48000.,128);
     std::unique_ptr<juce::AudioProcessorEditor> editor(editorFx->createEditor());
     assert(editor && editor->findChildWithID("imersip.preset"));
-    assert(editor->getWidth()==1100 && editor->getHeight()==680);
+    assert(editor->getWidth()==935 && editor->getHeight()==578);
     auto* visualEditor=dynamic_cast<armix::builtin_fx::ImerSipP92Editor*>(editor.get());
     assert(visualEditor && visualEditor->areVisualAssetsReady());
     for(const float stageAngle:{30.f,50.f,150.f,180.f}){
@@ -213,8 +213,8 @@ int main() {
     assert(armix::builtin_fx::imersipP92ConcertBoxes(
         std::numeric_limits<float>::quiet_NaN(),-999.f).safe());
     auto visual=editor->createComponentSnapshot(editor->getLocalBounds());
-    assert(visual.isValid() && visual.getWidth()==1100 &&
-           visual.getHeight()==680);
+    assert(visual.isValid() && visual.getWidth()==935 &&
+           visual.getHeight()==578);
     assert(visual.getPixelAt(480,120)!=visual.getPixelAt(480,484));
     // Genuine native JUCE component snapshots, not an HTML or design mock.
     // Render all requested Windows framebuffer density ratios while retaining
@@ -222,8 +222,8 @@ int main() {
     for(const auto dpi : {100,125,150,200}) {
         const float scale=static_cast<float>(dpi)/100.f;
         juce::Image frame(juce::Image::ARGB,
-                          juce::roundToInt(1100.f*scale),
-                          juce::roundToInt(680.f*scale),true);
+                          juce::roundToInt(935.f*scale),
+                          juce::roundToInt(578.f*scale),true);
         juce::Graphics gfx(frame);
         gfx.addTransform(juce::AffineTransform::scale(scale));
         editor->paintEntireComponent(gfx,true);
