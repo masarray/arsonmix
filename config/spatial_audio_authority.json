@@ -1,0 +1,272 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Research ownership/acceptance ledger. NOT audio runtime config, session state, or release approval.",
+  "selectedSonKuBaseline": {
+    "pr": 719,
+    "issue": 720,
+    "immutableCheckpointBranch": "checkpoint/sonku-p91-p92-operator-confirmed-20261116",
+    "immutableCheckpointSha": "763706a15a2617a10d23b5e2e43eb5689e454ccb",
+    "nativeRenderer": "SonKuSpatialCore",
+    "researchRenderMode": 9,
+    "modeNameInCode": "MusicSpatialP90",
+    "actualAudioFeatures": "P9.1 + P9.2: world-positioned stereo sources, P9 complementary LF world bass and bounded axial room modes",
+    "releaseQualified": false,
+    "acousticSourceBlobSha1": {
+      "engine/builtin_fx/sonku/SonKuSpatialCore.h": "5b8e26eaf4673fe2235d0b87d60b4ddc619e9602",
+      "engine/builtin_fx/sonku/SonKuP91P92WorldBassFoundation.h": "938cb96a5b7181d37f5c290c13fd39370ab18826",
+      "engine/builtin_fx/sonku/SonKuP90StereoDecoder.h": "f760c673dec8031f4dfcc76d6f1fee36beffa043",
+      "engine/builtin_fx/sonku/SonKuEarlyReflections.h": "46209c6b841bb8eb03bbd2dc65b3ac080586a826",
+      "engine/builtin_fx/sonku/SonKuMusicalReverb.h": "c2f273ef7c1ee26c5566b05568416e5cedaef6c4",
+      "engine/builtin_fx/sonku/SonKuMeasuredHrir3D.h": "816e7255939f0bb262374a5b4c0240438ec1e3a0",
+      "engine/builtin_fx/sonku/SonKuHrtfTonalCalibration.h": "233e2b26caf51e88df4ed82babc442f2b341c2d7"
+    }
+  },
+  "imersip": {
+    "activeIntegrationPr": 722,
+    "basePr": 719,
+    "catalogIdentity": "armix.builtin.imersip.v1",
+    "processor": "ImerSipP92Processor",
+    "nativeRenderer": "SonKuSpatialCore",
+    "settingsFormat": "IMRS",
+    "settingsVersion": 7,
+    "nestedSonKuVersion": 12,
+    "researchOnly": true,
+    "independentSpatialDsp": false,
+    "releaseQualified": false,
+    "displayName": "ImmerSIB",
+    "previousDisplayName": "ImerSip",
+    "renamePolicy": "Display-only rebrand. Preserve catalogIdentity, native API, IMRS wire state and saved .smix.",
+    "mainIntegrationMode": "flagged-by-ARMIX_IMMERSIB_RELEASE_CANDIDATE"
+  },
+  "audioScenes": {
+    "operatorCheckpointObservation": {
+      "speakerSpreadDeg": 82,
+      "distanceMeters": 1.6,
+      "spacePreset": 3,
+      "earlyRoom": 1,
+      "lateRoom": 0.62,
+      "spatialMix": 1,
+      "outputGainDb": 7,
+      "revolutionSeconds": 8.5,
+      "notFactoryDefault": true,
+      "referenceIssue": 720
+    },
+    "p92NeutralABReference": {
+      "speakerSpreadDeg": 82,
+      "distanceMeters": 1.6,
+      "spacePreset": 3,
+      "earlyRoom": 0.78,
+      "lateRoom": 0.33,
+      "spatialMix": 1,
+      "outputTrimLinear": 1,
+      "moving": false,
+      "internalRegressionOnly": true,
+      "userVisiblePreset": false
+    },
+    "imersipNewInsertDefault": {
+      "presetId": 2,
+      "name": "Live Concert — nearfield vocal clarity candidate",
+      "speakerSpreadDeg": 112,
+      "distanceMeters": 2,
+      "spacePreset": 3,
+      "earlyRoom": 1.36,
+      "lateRoom": 0.84,
+      "spatialMix": 1,
+      "outputTrimLinear": 1.8,
+      "sceneVoicing": 4,
+      "releaseQualified": false,
+      "outputGainDb": 5.10545
+    },
+    "imersipAuditionPresetIds": {
+      "2": "Live Concert — 2.0m, 112°, Early136%, Late84%, vocal-detail4, trim1.8",
+      "3": "Royal Concert Hall — 2.2m, 106°, Early155%, Late78%, detail4",
+      "4": "Arena Thunder — 2.5m, 124°, Early145%, Late86%, impact5",
+      "5": "Front Row Power — 1.3m, 104°, Early126%, Late70%, detail4",
+      "6": "Symphonic Palace — 1.9m, 118°, Early160%, Late80%, detail4",
+      "7": "Velvet Cinema — 1.8m, 108°, Early142%, Late82%, Cinema3",
+      "8": "Concert Front Row XL — 1.5m, 134°, Early170%, Late94%, detail4, +4.4dB"
+    },
+    "ownerScreenshotObservation": {
+      "speakerSpreadDeg": 150,
+      "distanceMeters": 1.6,
+      "spacePreset": 3,
+      "earlyRoom": 1,
+      "lateRoom": 0.91,
+      "spatialMix": 1,
+      "outputGainDb": 4.1,
+      "notFactoryDefault": true,
+      "separateFromIssue720": true
+    }
+  },
+  "nonAuthoritativeCandidates": [
+    {
+      "pr": 706,
+      "role": "Superseded ImerSip P8 DSP; archived for comparison and IMRS v1-v5 migration"
+    },
+    {
+      "pr": 718,
+      "role": "Divergent P9.1/P9.2 acoustic alternative; retained for scientific A/B, not selected renderer"
+    },
+    {
+      "pr": 717,
+      "role": "P9.0 ancestor; dependency of selected P9.1/P9.2 #719, not current owner-accepted version"
+    }
+  ],
+  "historicalP83": {
+    "workflow": ".github/workflows/sonku-p83-native-speaker-gates.yml",
+    "qualification": "REJECTED_LEGACY_NEGATIVE_ACOUSTIC_EVIDENCE",
+    "automaticExecution": "only pull request head refs containing p83",
+    "manualExecution": "workflow_dispatch",
+    "notP9OrImerSipReleaseGate": true,
+    "strictOriginalFidelityVetoRetained": true
+  },
+  "production": {
+    "mainMustRemainUnchanged": false,
+    "noAutomaticMerge": false,
+    "physicalHeadphoneAbStillRequired": true,
+    "releaseCandidateIntegratedOnMain": true,
+    "publicReleaseAllowed": false,
+    "releaseRequiresOperatorHeadphoneApproval": true
+  },
+  "immersibP98Integration": {
+    "product": "ImmerSIB",
+    "reason": "Operator explicitly requested forward-port P9.7 approved Venue and P9.8 voicing without changing production main or the frozen P9.2 checkpoint.",
+    "venueOperatorCheckpointBranch": "checkpoint/sonku-p97-venue-mega-space-owner-approved-20261116",
+    "sourceBranch": "feat/sonku-p98-signature-cinema-studio-voicing-20261116",
+    "venueGolden": {
+      "stageDegrees": 106,
+      "distanceMeters": 10,
+      "spacePreset": 3,
+      "earlyRoom": 1,
+      "lateRoom": 1,
+      "outputTrimLinear": 1.8,
+      "sceneVoicing": 0
+    },
+    "nativeRenderMode": 9,
+    "featureFlag": "ARMIX_IMMERSIB_RELEASE_CANDIDATE",
+    "releaseQualified": false,
+    "immersibP99VocalRoom": {
+      "product": "ImmerSIB",
+      "featureFlag": "ARMIX_IMMERSIB_RELEASE_CANDIDATE",
+      "perInstanceOptIn": "ImerSipP92Processor only, never generic SonKu/IMRS",
+      "donorApprovedMainCommit": "cdee12c6f71b35b75ddb9ba3da9a98999b60d119",
+      "donorExactBlob": "d8542d7aa333d689eea9637fc9f5f122c468277a",
+      "adapterBlob": "0aee9e1154f6052db02a8e8dfdb696ef4462aa10",
+      "scope": "sceneVoicing4/5 only, room ON, MIX>0, explicit product opt-in, 42% Detail / 34% Impact of already approved P9.9 Profile1",
+      "routing": "P9.8 source delta captured BEFORE P9.9 and applied to original 32%/12% feeds; P9.9 center 330Hz feeds separately enter existing six-wall/late engines once",
+      "safety": "no new FX ID/session bytes/HRIR/dry stem/second engine/heap/FFT, neutral Venue and non-opted SonKu bit-exact",
+      "status": "Main-based RC, synthetic PCM plus real Windows/owner listening gates required"
+    },
+    "acousticSourceBlobSha1": {
+      "engine/builtin_fx/sonku/SonKuSpatialCore.h": "f9fdcdec933bc62710bdb84fa44c0830bdc16868",
+      "engine/builtin_fx/sonku/SonKuP91P92WorldBassFoundation.h": "63551d22e8dff672fe136131c32d28b568bb3170",
+      "engine/builtin_fx/sonku/SonKuP94FrontBackDepthCue.h": "f0f88088c68ef6865d64c240c4c87accaf136070",
+      "engine/builtin_fx/sonku/SonKuP95MusicalPresence.h": "f458d520c9ca6c75b1b961d220e15abd64b07497",
+      "engine/builtin_fx/sonku/SonKuP96DistanceReinforcement.h": "a32fb6e6fdd431901323d4278c51991607c02d84",
+      "engine/builtin_fx/sonku/SonKuP97StageImpact.h": "5384fd3cc67c31f0a8038b315856d20933249b5b",
+      "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "5ec8d135d54e846c3f8d86d80202c29de67b724f",
+      "engine/builtin_fx/sonku/SonKuEarlyReflections.h": "5a6a9b48cfdc60729f130c61110c8d8590b20f35",
+      "engine/builtin_fx/sonku/SonKuSourcePlacement3D.h": "9afb959bed292626c3097c2a382208ce8798e90c"
+    },
+    "ownerFrontRowXLCohesionCandidate": {
+      "status": "development_only_requires_headphone_AB",
+      "screenshotPresetId": 8,
+      "screenshotPresetName": "Concert Front Row XL",
+      "revisedListeningPresetDistanceMeters": 1.5,
+      "revision": "owner_2026_11_17_front_row_grandeur_and_exact_preset_identity",
+      "revisedListeningRangeMeters": [
+        1.1,
+        2.5
+      ],
+      "note": "Historical screenshot observed 1.0m; new owner request changes candidate to 1.1m. visibleControls remains original evidence.",
+      "visibleControls": {
+        "room": 3,
+        "stageDegrees": 147,
+        "distanceMeters": 1,
+        "earlyPercent": 180,
+        "latePercent": 60,
+        "spatialMixPercent": 100,
+        "earAlignDegrees": 0,
+        "headYawDegrees": 0,
+        "outputGainDb": 2.5
+      },
+      "unobservableScreenshotState": "sceneVoicing is hidden in Custom; candidate explicitly selects Detail Warm id4, verify vs actual saved IMRS state for exact listening parity",
+      "hypothesesUnderTest": [
+        "original dry-side spectrum in room differs from warm direct HRIR feed",
+        "upward P9.5 makeup plus linked peak guard may modulate mastered music"
+      ],
+      "candidateChanges": "warm voicings 4/5 only: 32 percent already-processed source delta fed to existing early reflections; 12 percent to existing late reverb; adaptive makeup ceiling 1.10 rather than 1.65 while warm/room on",
+      "diagnostics": "offline-only native test captures P9.5 makeup and linked limiter reduction; changes do not prove subjective vocal segregation or absence of pumping",
+      "goldenConstraint": "Venue P9.7 profile0 and SonKu voicings 0..3 remain PCM-identical and immutable",
+      "lateralHighAir": "P9.8 voicings 4/5 only: first-image KEMAR early lateral >5.2kHz gains 0.18/0.14; no extra dry upper-mid, delays or second DSP",
+      "newFrontRowXLAudition": {
+        "presetId": 8,
+        "stageDegrees": 134,
+        "distanceMeters": 1.5,
+        "earlyRoom": 1.7,
+        "lateRoom": 0.94,
+        "outputGainDb": 4.4,
+        "voicing": 4,
+        "goal": "larger diffuse envelopment than original 60 percent late scene while keeping source in the nearfield",
+        "historicalScreenshotUnmodified": true,
+        "operatorHeadphoneABRequired": true
+      },
+      "presetIdentityCorrection": "JUCE sends exact factory Settings when selecting named scene; subsequent edits mutate only changed axis of message-thread scene intent; names reconcile on native ACK, Custom only after genuine control edit; IMRS wire format unchanged",
+      "released": false
+    },
+    "productTuning": {
+      "status": "nearfield_vocal_masking_candidate_owner_not_auditioned",
+      "archivedP97VenueGolden": "10m / 106° / ER100% / late100% / trim1.8 / voicing0, PRIVATE test-only",
+      "newFactoryRangeMeters": [
+        1.1,
+        2.5
+      ],
+      "newEarlyRoomRangePercent": [
+        0,
+        180
+      ],
+      "reason": "Owner hears farfield presets as vague and 100% early room too weak; M/S masking relief is source-domain frequency-selective, not stem separation",
+      "newDSPBlobSha1": {
+        "engine/builtin_fx/sonku/SonKuSpatialCore.h": "adb44388544cf2378a282afb14cc4c4a48f2a149",
+        "engine/builtin_fx/sonku/SonKuEarlyReflections.h": "5a6a9b48cfdc60729f130c61110c8d8590b20f35",
+        "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "5ec8d135d54e846c3f8d86d80202c29de67b724f",
+        "engine/builtin_fx/sonku/SonKuSourcePlacement3D.h": "9afb959bed292626c3097c2a382208ce8798e90c"
+      },
+      "legacyIMRS": "Old 1.0m/4-10m saved scenes migrate to 1.1-2.5m preserving room/voicing/gain; no codec or FX ID change",
+      "physicalHeadphoneABRequired": true,
+      "sceneBalance": "Historical Symphonic 3.6m and Cinema 2.8m sounded vague; current nearfield uses Symphonic 1.9m / Cinema 1.8m without gain-only inflation.",
+      "vocalBodyCorrection": {
+        "status": "audition_candidate_not_owner_approved",
+        "userEvidence": "Dua Lipa live concert playback: center vocal sounds thin, sharp, and unpleasant after previous 2.05kHz/5.2kHz voicing, despite PCM and Windows builds passing",
+        "diagnosis": "Stacked 1.9k/2.05k source+ear presence, high-air on side and early reflection, no independent center 285Hz body in ImmerSIB profiles 4/5",
+        "correctsProfiles": [
+          4,
+          5
+        ],
+        "chosenDSP": "pre-KEMAR world-center broad 285Hz body; suppress SIDE upper-mid 2.05k+3.45k; gentle linked-ear 3.45k fatigue notch after render; remove stacked >5.2k boost in profiles 4/5",
+        "constraints": "No actual vocal stem/AI extraction, no extra HRTF, no output loudness chase, no added latency, no tail/room change, no changes in frozen P9.7 Venue or SONK profiles 0..3",
+        "beforeVoicingGitBlob": "cc769dade5a752e0f84f02348e07332bce7c268b",
+        "afterVoicingGitBlob": "90bab191a62601021c4a7a77d64e0e4d408d3011",
+        "requiredChecks": "Native source & finished stereo tone spectral balance, 44.1/48k exact Venue PCM hash, antiphase, mono, IMRS7/SONK12 state roundtrip, JUCE Windows and portable EXE build, physical loudness-matched Dua Lipa concert FAT",
+        "qualityGateRevision": {
+          "reason": "Legacy 85% venue-total-electric-energy gate excluded the vocal chest/body band and rewarded shrillness; replace with whole native scene tonal transfer plus finite peak, anti-phase, PCM hash and 70% minimum electric safety floor",
+          "wholePcmConditions": [
+            "center 285Hz body ratio >1.08 to neutral voicing, same scene",
+            "SIDE 3.45kHz energy ratio <1.05",
+            "SIDE 7.4kHz retained >0.65",
+            "legacy P9.7 44.1/48k PCM hash must remain exact"
+          ],
+          "notEvidenceOf": "audible vocal source isolation, mastered-song loudness, subjective preference or universal de-essing"
+        }
+      }
+    },
+    "mainIntegration": {
+      "baseMain": "7b0c2fc1dea359dc98b8807ccd6806ad761ffbd6",
+      "strategy": "forward port ImmerSIB-only code over approved SonKu P9.9 main without history replay",
+      "flagDefault": false,
+      "operatorHeadphoneFAT": "pending",
+      "windowsRC": "pending",
+      "mainP99Preserved": true
+    }
+  }
+}

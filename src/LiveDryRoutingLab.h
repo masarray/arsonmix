@@ -66,6 +66,14 @@ public:
         const juce::MemoryBlock* binary=nullptr;
     };
     using FxRestores=std::array<std::array<FxRestore,maxFxPerLane>,fxSlots>;
+    // CONTROL/UI-thread snapshot of the three independent audio bypass gates.
+    // Do not overwrite saved slot/rack flags when global A/B changes.
+    struct RetainedFxPowerState final {
+        bool valid=false,slotBypassed=false,rackBypassed=false,globalBypassed=false;
+        bool effectiveBypassed() const noexcept {
+            return valid && (slotBypassed || rackBypassed || globalBypassed);
+        }
+    };
     struct ChannelEdit {
         float linear=1.f, pan=0.f;
         bool mute=false, solo=false, mono=false;
@@ -1403,6 +1411,56 @@ public:
             for(int slot=0;slot<prepared->insertsOn(lane);++slot)
                 if(prepared->insertInstanceId(lane,slot)==owner->instanceId)return true;
         return false;
+    }
+    // The editor may outlive an FX rack MOVE/revision. Resolve the actual
+    // CURRENT accepted owner, rather than using epoch/revision frozen when
+    // its window opened. A replaced/retired processor is NEVER controlled.
+    RetainedFxPowerState retainedNativeFxPower(
+            const FxGraph::InstanceLease& held,armix::mixer::ChannelId id,
+            std::size_t slot,const juce::String& token) const noexcept {
+        RetainedFxPowerState out{};
+        if(!held || !id.value || token.isEmpty() ||
+           !channelIdPhysicalPcmActive() || !nativeAccepted_.fxOwners ||
+           nativeAccepted_.deviceEpoch!=epoch() || !ready())return out;
+        const auto* live=nativeAccepted_.fxOwners->ownerForControl(id,slot);
+        if(!live || !*live || live->get()!=held.get() ||
+           (*live)->instanceId!=token || !(*live)->processor)return out;
+        out.valid=true;
+        out.slotBypassed=held->bypassRequested.load(std::memory_order_acquire);
+        out.rackBypassed=nativeAccepted_.fxOwners->rackBypassed(id);
+        out.globalBypassed=globalFxBypassed();
+        return out;
+    }
+    bool bypassRetainedNativeFx(
+            const FxGraph::InstanceLease& held,armix::mixer::ChannelId id,
+            std::size_t slot,const juce::String& token,bool bypass) noexcept {
+        if(!retainedNativeFxPower(held,id,slot,token).valid)return false;
+        return nativeAccepted_.setFxBypass(nativePublisher_,epoch(),
+                 nativeAccepted_.pcmRevision,id,slot,token,bypass);
+    }
+    RetainedFxPowerState retainedRoutedFxPower(
+            const FxGraph::InstanceLease& held,int lane,int slot,
+            const juce::String& token) const noexcept {
+        RetainedFxPowerState out{};
+        if(!held || token.isEmpty() || !ready() ||
+           channelIdPhysicalPcmActive() || !hasExplicitRoute() ||
+           lane<0 || lane>=fxSlots || slot<0 || slot>=maxFxPerLane)
+            return out;
+        const auto ep=epoch(),rev=revision();
+        const auto* current=publisher_.controlPrepared(ep,rev);
+        if(!current || current->leaseInsert(lane,slot,token)!=held)
+            return out;
+        out.valid=true;
+        out.slotBypassed=held->bypassRequested.load(std::memory_order_acquire);
+        out.rackBypassed=current->rackBypassed(lane);
+        out.globalBypassed=globalFxBypassed();
+        return out;
+    }
+    bool bypassRetainedRoutedFx(
+            const FxGraph::InstanceLease& held,int lane,int slot,
+            const juce::String& token,bool bypass) noexcept {
+        if(!retainedRoutedFxPower(held,lane,slot,token).valid)return false;
+        return setFxBypass(lane,slot,epoch(),revision(),token,bypass);
     }
     bool bypassNativeInsert(std::uint64_t epochAtEdit,std::uint64_t pcmRevision,
             armix::mixer::ChannelId target,std::size_t slot,

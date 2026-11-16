@@ -33,6 +33,9 @@
 #endif
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
 #include "SonKuP98SceneVoicing.h"
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+#include "SonKuImmerSIBVocalRoom.h"
+#endif
 #endif
 #if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
 #if !defined(SONKU_P98_SCENE_VOICING_RESEARCH) || !SONKU_P98_SCENE_VOICING_RESEARCH
@@ -115,9 +118,14 @@ inline bool valid(const Settings& s) noexcept {
         std::isfinite(s.spatialMix) && s.spatialMix>=0.f && s.spatialMix<=1.f &&
         std::isfinite(s.outputTrim) && s.outputTrim>=0.f && s.outputTrim<=4.f &&
         s.spacePreset>=0 && s.spacePreset<=3 &&
-        std::isfinite(s.sourceDistanceMeters) && s.sourceDistanceMeters>=1.6f &&
+        std::isfinite(s.sourceDistanceMeters) && s.sourceDistanceMeters>=1.f &&
         s.sourceDistanceMeters<=10.f &&
-        std::isfinite(s.roomAmount) && s.roomAmount>=0.f && s.roomAmount<=1.f &&
+        std::isfinite(s.roomAmount) && s.roomAmount>=0.f &&
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+        s.roomAmount<=(s.renderMode==9?1.8f:1.f) &&
+#else
+        s.roomAmount<=1.f &&
+#endif
         std::isfinite(s.ambience) && s.ambience>=0.f && s.ambience<=1.f &&
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
         p98::SceneVoicing::valid(s.sceneVoicing) &&
@@ -202,12 +210,23 @@ class SonKuSpatialCore final {
 public:
     static constexpr int taps=hrir::taps;
     static constexpr int updateInterval=16;
+#if defined(SONKU_IMMERSIB_PCM_DIAGNOSTICS) && SONKU_IMMERSIB_PCM_DIAGNOSTICS
+    struct DynamicsTrace {
+        std::uint64_t samples=0,limitedSamples=0;
+        double limiterReductionSum=0.,makeupGainSum=0.;
+        float minimumLimiterGain=1.f,currentMakeup=1.f;
+    };
+    DynamicsTrace dynamicsTrace() const noexcept {return dynamicsTrace_;}
+#endif
 #if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
     // Control thread, before prepare: explicitly authorize P9.9 on THIS
     // SonKu insert, not all products sharing this exact native core.
     // Separate branded processors (e.g. ImmerSIB) remain P9.8 until they
     // independently adopt its P9.9 voicing. No extra PCM graph or state ABI.
     void optInP99ForSonKuInsert() noexcept { p99ForSonKuInsert_=true; }
+#endif
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+    void optInImmerSIBVocalRoom() noexcept {immersibP99Enabled_=true;}
 #endif
     bool prepare(double rate, SonKuReflectionProfile profile=
                  SonKuReflectionProfile::Lightweight) noexcept {
@@ -256,6 +275,9 @@ public:
 #endif
 #if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
         if(!p99VocalDepth_.prepare(rate))return false;
+#endif
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+        if(!immersibP99VocalRoom_.prepare(rate))return false;
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
         if(!p95Presence_.prepare(rate))return false;
@@ -321,6 +343,9 @@ public:
         sideBass_=0.f;
 #endif
         limiterGain_=1.f;
+#if defined(SONKU_IMMERSIB_PCM_DIAGNOSTICS) && SONKU_IMMERSIB_PCM_DIAGNOSTICS
+        dynamicsTrace_={};
+#endif
         write_=0;
         remaining_=0;
         degrees_=wrapDegrees(settings_.startAzimuthDegrees);
@@ -342,6 +367,9 @@ public:
 #endif
 #if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
         p99VocalDepth_.reset();
+#endif
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+        immersibP99VocalRoom_.reset();
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
         p95Presence_.reset();
@@ -411,6 +439,9 @@ public:
 #endif
 #if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
         p99VocalDepth_.reset();
+#endif
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+        immersibP99VocalRoom_.reset();
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
         p95Presence_.reset();
@@ -705,6 +736,12 @@ public:
 #else
         constexpr bool p90World=false;
 #endif
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+        const bool immersiveWarm=p90World && roomEnabled &&
+            settings_.spatialMix>0.f &&
+            (settings_.sceneVoicing==p98::SceneVoicing::ImmerSIBDetail ||
+             settings_.sceneVoicing==p98::SceneVoicing::ImmerSIBImpact);
+#endif
         // Deliberate music-monitor compensation: real distance perception
         // still comes from direct/reflected ratio and high-frequency cues,
         // while the direct field is not attenuated by the full physical 1/r.
@@ -848,6 +885,20 @@ public:
                 (void)p98Voicing_.source(0.f,0.f,0,false);
             }
 #endif
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+            const float p98RoomSourceL=history_[0][write_];
+            const float p98RoomSourceR=history_[1][write_];
+            const bool vocalRoomOn=immersibP99Enabled_ && p90World &&
+                roomEnabled && settings_.spatialMix>0.f &&
+                (settings_.sceneVoicing==4 || settings_.sceneVoicing==5);
+            if(immersibP99Enabled_) {
+                const auto vocal=immersibP99VocalRoom_.source(
+                    history_[0][write_],history_[1][write_],
+                    settings_.sceneVoicing,vocalRoomOn);
+                history_[0][write_]=vocal.left;
+                history_[1][write_]=vocal.right;
+            }
+#endif
 #if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
             if(p99ForSonKuInsert_ && p90World && settings_.spatialMix>0.f){
                 // Source-depth control happens BEFORE measured two-speaker
@@ -920,6 +971,19 @@ public:
             // the original stereo SIDE and respecting their geometry/delay.
             float earlyFeedL=x0,earlyFeedR=x1;
             float lateFeedL=x0,lateFeedR=x1;
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+            if(immersiveWarm) {
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+                const float deltaL=p98RoomSourceL-x0;
+                const float deltaR=p98RoomSourceR-x1;
+#else
+                const float deltaL=history_[0][write_]-x0;
+                const float deltaR=history_[1][write_]-x1;
+#endif
+                earlyFeedL+=.32f*deltaL;earlyFeedR+=.32f*deltaR;
+                lateFeedL+=.12f*deltaL;lateFeedR+=.12f*deltaR;
+            }
+#endif
 #if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
             if(p99ForSonKuInsert_ && p90World && settings_.spatialMix>0.f && roomEnabled){
                 const auto earlyFeed=p99VocalDepth_.roomEarlyFeed(x0,x1);
@@ -928,6 +992,14 @@ public:
                 earlyFeedR=earlyFeed.right;
                 lateFeedL=lateFeed.left;
                 lateFeedR=lateFeed.right;
+            }
+#endif
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+            if(vocalRoomOn){
+                const auto e=immersibP99VocalRoom_.roomEarlyFeed(x0,x1);
+                const auto l=immersibP99VocalRoom_.roomLateFeed(x0,x1);
+                earlyFeedL+=e.left-x0;earlyFeedR+=e.right-x1;
+                lateFeedL+=l.left-x0;lateFeedR+=l.right-x1;
             }
 #endif
             auto reflection=room_.active()
@@ -1084,6 +1156,14 @@ public:
                     late.right=background.right;
                 }
 #endif
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+                if(vocalRoomOn) {
+                    const auto e=immersibP99VocalRoom_.early(reflection.left,reflection.right);
+                    const auto l=immersibP99VocalRoom_.late(late.left,late.right);
+                    reflection.left=e.left;reflection.right=e.right;
+                    late.left=l.left;late.right=l.right;
+                }
+#endif
                 float spatialL=directL+
                     smoothedErPresence_*calibratedEarly*reflection.left+
                     smoothedTailPresence_*late.left;
@@ -1159,7 +1239,12 @@ public:
                     // Single native PCM graph, no WebAudio or dynamic makeup
                     // at 0% spatial MIX. Explicit user GAIN still applies.
                     if(settings_.spatialMix>0.f){
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+                        const float makeup=p95Presence_.process(x0,x1,outL,outR,
+                            immersiveWarm?1.10f:1.65f);
+#else
                         const float makeup=p95Presence_.process(x0,x1,outL,outR);
+#endif
                         outL*=makeup;outR*=makeup;
                     }
                 }
@@ -1188,6 +1273,17 @@ public:
                 const float immediate=peak>0.98f?0.98f/peak:1.f;
                 limiterGain_=std::min(immediate,
                     std::min(1.f,limiterGain_+limiterRelease_));
+#if defined(SONKU_IMMERSIB_PCM_DIAGNOSTICS) && SONKU_IMMERSIB_PCM_DIAGNOSTICS
+                ++dynamicsTrace_.samples;
+                if(limiterGain_<.999f)++dynamicsTrace_.limitedSamples;
+                dynamicsTrace_.minimumLimiterGain=std::min(
+                    dynamicsTrace_.minimumLimiterGain,limiterGain_);
+                dynamicsTrace_.limiterReductionSum+=1.-limiterGain_;
+#if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
+                dynamicsTrace_.currentMakeup=p95Presence_.gain();
+                dynamicsTrace_.makeupGainSum+=dynamicsTrace_.currentMakeup;
+#endif
+#endif
                 left[i]=outL*limiterGain_;
                 right[i]=outR*limiterGain_;
             }
@@ -1223,7 +1319,7 @@ private:
         const auto preset=s.spacePreset==3?SonKuReverbPreset::LargeRoom:
             s.spacePreset==2?SonKuReverbPreset::AiryChamber:
                              SonKuReverbPreset::StudioGlue;
-        return room_.setRealtimeRoom(geometry,s.roomAmount,s.spacePreset!=0) &&
+        return room_.setRealtimeRoom(geometry,std::min(s.roomAmount,1.f),s.spacePreset!=0) &&
             reverb_.setRealtimeProgram(preset,
                 s.spacePreset!=0?s.ambience:0.f);
     }
@@ -1463,6 +1559,9 @@ private:
 #endif
     float smoothedDistanceGain_=1.f,smoothedRoomLevel_=1.f;
     float smoothedBassShelf_=0.f,limiterGain_=1.f;
+#if defined(SONKU_IMMERSIB_PCM_DIAGNOSTICS) && SONKU_IMMERSIB_PCM_DIAGNOSTICS
+    DynamicsTrace dynamicsTrace_{};
+#endif
     float smoothedErPresence_=1.f,smoothedTailPresence_=1.f;
     std::array<float,2> earBass_{};
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
@@ -1505,6 +1604,10 @@ private:
 #if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
     p99::MusicalVocalDepth p99VocalDepth_{};
     bool p99ForSonKuInsert_=false; // per-instance, never serialized
+#endif
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+    p99::ImmerSIBVocalRoom immersibP99VocalRoom_{};
+    bool immersibP99Enabled_=false;
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
     p95::MusicalPresence p95Presence_{};

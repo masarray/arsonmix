@@ -2258,6 +2258,45 @@ public:
             const armix::mixer::LiveChannelFxGraph::InstanceLease& owner) const noexcept {
         return dryRoutingLab_.retainsFxEditor(epoch,owner);
     }
+    using RetainedFxPowerState=LiveDryRoutingLab::RetainedFxPowerState;
+    // Same verified control authority as FX Rack, but the native editor
+    // resolves the CURRENT graph revision for its retained exact instance.
+    RetainedFxPowerState retainedNativeFxPower(
+            const armix::mixer::LiveChannelFxGraph::InstanceLease& held,
+            armix::mixer::ChannelId id,std::size_t slot,
+            const juce::String& token) const noexcept {
+        if(routeReconfiguring_.load(std::memory_order_acquire)||
+           independent_.active())return {};
+        return dryRoutingLab_.retainedNativeFxPower(held,id,slot,token);
+    }
+    bool bypassRetainedNativeFx(
+            const armix::mixer::LiveChannelFxGraph::InstanceLease& held,
+            armix::mixer::ChannelId id,std::size_t slot,
+            const juce::String& token,bool bypass) noexcept {
+        if(routeReconfiguring_.load(std::memory_order_acquire)||
+           independent_.active()||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+                armix::diagnostics::Route::normal)return false;
+        return dryRoutingLab_.bypassRetainedNativeFx(
+            held,id,slot,token,bypass);
+    }
+    RetainedFxPowerState retainedRoutedFxPower(
+            const armix::mixer::LiveChannelFxGraph::InstanceLease& held,
+            int lane,int slot,const juce::String& token) const noexcept {
+        if(routeReconfiguring_.load(std::memory_order_acquire)||
+           independent_.active())return {};
+        return dryRoutingLab_.retainedRoutedFxPower(held,lane,slot,token);
+    }
+    bool bypassRetainedRoutedFx(
+            const armix::mixer::LiveChannelFxGraph::InstanceLease& held,
+            int lane,int slot,const juce::String& token,bool bypass) noexcept {
+        if(routeReconfiguring_.load(std::memory_order_acquire)||
+           independent_.active()||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+                armix::diagnostics::Route::normal)return false;
+        return dryRoutingLab_.bypassRetainedRoutedFx(
+            held,lane,slot,token,bypass);
+    }
     bool bypassNativeVst3(std::uint64_t epoch,std::uint64_t revision,
             armix::mixer::ChannelId id,std::size_t slot,
             const juce::String& token,bool bypass) noexcept {

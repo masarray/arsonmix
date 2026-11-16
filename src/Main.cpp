@@ -12,6 +12,7 @@
 #include "NativeSessionToken.h"
 #include "ArSonMixStartupSplash.h"
 #include "ArSonWindowChrome.h"
+#include "NativeOwnedFloatingWindow.h"
 #include "VstOrbitController.h"
 #include "../engine/core/OrbitDistanceMapping.h"
 #include "../engine/core/DearVrPolarPolicy.h"
@@ -179,15 +180,28 @@ public:
 class PluginEditorWindow final : public juce::DocumentWindow
 {
 public:
-    PluginEditorWindow (const juce::String& title, juce::AudioProcessorEditor* editor)
+    PluginEditorWindow (const juce::String& title, juce::AudioProcessorEditor* editor,
+                        juce::Component& mixer)
         : DocumentWindow (title, juce::Colour (0xff14212a), allButtons)
     {
         setUsingNativeTitleBar (true);
         setIcon (approvedAppIcon());
         setContentOwned (editor, true);
-        setResizable (true, true);
+        // Do not offer false host resizing for fixed-geometry built-in FX.
+        setResizable (editor->isResizable(), false);
         centreWithSize (juce::jmax (380, editor->getWidth()), juce::jmax (300, editor->getHeight()));
+        // A Win32-owned floating editor stays above THIS mixer, not every app.
+        // Attach after bounds are set (JUCE 8 native owned-popup coordinates).
+        (void) armix::ui::attachOwnedFloatingWindow (*this, mixer);
         setVisible (true);
+        (void) armix::ui::attachOwnedFloatingWindow (*this, mixer);
+        present();
+    }
+    void present()
+    {
+        if (!isVisible()) setVisible (true);
+        if (isMinimised()) setMinimised (false);
+        toFront (true);
     }
     void closeButtonPressed() override { setVisible (false); }
 };
@@ -196,7 +210,8 @@ class AudioSetupWindow final : public juce::DocumentWindow
 {
 public:
     explicit AudioSetupWindow (juce::AudioDeviceManager& manager,
-                               std::function<void()> onClosed)
+                               std::function<void()> onClosed,
+                               juce::Component& mixer)
         : juce::DocumentWindow ("AR MIX — ASIO / WASAPI Setup",
                                 juce::Colour (0xff14212a), allButtons),
           onClosed_ (std::move (onClosed))
@@ -217,6 +232,7 @@ public:
         selector->setSize (720, 550);
         setContentOwned (selector, false);
         centreWithSize (740, 590);
+        (void) armix::ui::attachOwnedFloatingWindow (*this, mixer);
     }
     void closeButtonPressed() override { setVisible (false); }
     void visibilityChanged() override
@@ -586,6 +602,7 @@ private:
     juce::String lastNativeThrowEpoch_,lastNativeThrowRevision_;
     armix::mixer::NativeMusicTempoMonitor::State lastMusicTempo_{};
     std::unique_ptr<PluginEditorWindow> editorWindow_;
+    juce::AudioProcessor* editorProcessor_=nullptr; // identity only, never owns PCM
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     // Persistent modal lease: blocks an Apply/ASIO restart while JUCE's
     // device selector is open, not merely during the initial show() call.
@@ -1028,9 +1045,21 @@ private:
             browser_.emitEventIfBrowserIsVisible ("arMixPresets", presets_.list());
     }
 
+    void synchronizeOpenImmerSIBPower() {
+#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
+        // The editor must reflect accepted global/rack/slot PCM state even
+        // when the gesture originated in the WebView header or FX Rack.
+        // All these dispatches run on JUCE's UI/message thread.
+        if(editorWindow_)
+            if(auto* ui=dynamic_cast<armix::builtin_fx::ImerSipP92Editor*>(
+                  editorWindow_->getContentComponent()))
+                ui->synchronizeHostPower();
+#endif
+    }
     void closePluginEditor() noexcept {
-        // JUCE destroys the editor before releasing the owner's processor.
+        // Dispose the native UI BEFORE dropping the graph/processor lease.
         editorWindow_.reset();
+        editorProcessor_=nullptr;
         routedEditorOwner_.reset();
         routedEditorEpoch_=0;
     }
@@ -1304,14 +1333,23 @@ private:
     }
 
     void openLogicalVendorEditor(const juce::var& request) {
-        if(logicalVendorEditor_ || mixerSessionWorker_.busy() || logicalMixer_.readOnly()) {
-            emitNotice("Close the current FX editor or wait for the mixer to finish saving",true);
-            return;
-        }
         std::uint64_t channel=0;
         std::size_t slot=0;
         if(!logicalFxTarget(request,channel,slot)) {
             emitNotice("The selected FX slot changed",true);
+            return;
+        }
+        if(logicalVendorEditor_) {
+            auto& existing=*logicalVendorEditor_;
+            if(existing.window)existing.window->present();
+            if(existing.workspaceToken==logicalMixer_.workspace().workspaceToken() &&
+               existing.insert.channel==armix::mixer::ChannelId{channel} && existing.insert.slot==slot)
+                return; // Exact same logical FX: refocus without losing state.
+            emitNotice("Finish the currently open FX editor first",true);
+            return;
+        }
+        if(mixerSessionWorker_.busy() || logicalMixer_.readOnly()) {
+            emitNotice("Finish the current mixer save before opening FX",true);
             return;
         }
         LogicalVendorEditor prepared;
@@ -1320,7 +1358,7 @@ private:
             try {
                 if(auto* editor=prepared.processor->createEditorIfNeeded()) {
                     prepared.window=std::make_unique<PluginEditorWindow>(
-                        prepared.processor->getName(),editor);
+                        prepared.processor->getName(),editor,*this);
                     prepared.workspaceToken=logicalMixer_.workspace().workspaceToken();
                     logicalVendorEditor_=std::move(prepared);
                     return;
@@ -2684,8 +2722,10 @@ private:
                                     : "Choose a working stereo output in Audio I/O. Input hardware is optional.", true);
                             safe->emitApprovedNativeSnapshot();
                         }
-                    });
+                    }, *safe);
             safe->audioSetupWindow_->setVisible (true);
+            (void) armix::ui::attachOwnedFloatingWindow (
+                *safe->audioSetupWindow_, *safe);
             safe->audioSetupWindow_->toFront (true);
             // The peer now exists: perform one initial JUCE layout on the
             // message thread, rather than relying on a manual window drag.
@@ -5351,6 +5391,12 @@ private:
                 armix::mixer::LiveChannelFxGraph::InstanceLease{};
             auto* p=dynamic_cast<armix::builtin_fx::SonKuSpatialProcessor*>(
                 unbound?offline.get():owner?owner->processor.get():nullptr);
+#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
+            // Branded ImmerSIB never responds to another 8D-SonKu editor's
+            // stale WebView control requests, while retaining shared DSP.
+            if(p && dynamic_cast<armix::builtin_fx::ImerSipP92Processor*>(p))
+                p=nullptr;
+#endif
             if(action=="nativeSonKuSnapshot") {
                 emitNativeSonKuSnapshot(request,rawChannel.toString(),
                     rawEpoch.toString(),rawRevision.toString(),rawInstance.toString(),p);
@@ -5570,6 +5616,7 @@ private:
                 lane,static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
                 static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),
                 static_cast<bool>(value));
+            if(applied)synchronizeOpenImmerSIBPower();
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",requestId);
             ack->setProperty("ok",applied);
@@ -5938,6 +5985,7 @@ private:
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
                 "arMixGlobalFxAck",juce::var(ack.release()));
             if(applied) {
+                synchronizeOpenImmerSIBPower();
                 diagnostics_.record("GLOBAL_FX_AB",
                     engine_.globalFxBypassed()?"BYPASS_ALL":"ENABLE_RESTORED");
                 emitApprovedNativeSnapshot();
@@ -5997,6 +6045,13 @@ private:
                 "Native FX power rejected: stale device/revision, Show busy or instance mismatch");
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
                 "arMixNativeFxPowerAck",juce::var(ack.release()));
+            if(applied) {
+                synchronizeOpenImmerSIBPower();
+                // A native slot/rack ACK is not enough to repaint the
+                // other authority (WebView FX Rack). Publish the accepted
+                // producer state once per successful gesture, never on hover.
+                emitApprovedNativeSnapshot();
+            }
             if(applied)diagnostics_.record("NATIVE_FX_POWER",
                 rawId.toString()+(action=="routingNativeFxRackBypass"?" rack":" insert")+
                 (static_cast<bool>(value)?" BYPASS":" ENABLE"));
@@ -6469,6 +6524,7 @@ private:
                 static_cast<juce::int64>(args.getProperty("revision",juce::var(0))));
             const bool ok=value.isBool()&&engine_.setDryRoutingLabFxBypass(
                 lane,slot,epoch,revision,token,static_cast<bool>(value));
+            if(ok)synchronizeOpenImmerSIBPower();
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("ok",ok);
             ack->setProperty("requestId",args.getProperty("requestId",juce::var()));
@@ -6498,6 +6554,8 @@ private:
             if(!nativeShowBusy_&&!studioBackupBusy_&&!engine_.isGraphSwitchPending()) {
                 armix::mixer::LiveChannelFxGraph::InstanceLease owner;
                 std::uint64_t retainedEpoch=epoch;
+                std::uint64_t retainedRevision=revision,nativeChannel=0;
+                bool nativeTarget=false;
                 const auto nativeId=args.getProperty("channelId",{});
                 if(!nativeId.isVoid()) {
                     std::uint64_t id=0,ep=0,rev=0;
@@ -6508,16 +6566,71 @@ private:
                         owner=engine_.leaseNativeVst3Editor(ep,rev,
                             armix::mixer::ChannelId{id},static_cast<std::size_t>(slot),token);
                         retainedEpoch=ep;
+                        retainedRevision=rev;
+                        nativeChannel=id;
+                        nativeTarget=static_cast<bool>(owner);
                     }
                 } else owner=engine_.leaseRoutedFxForEditor(lane,slot,epoch,revision,token);
                 if(owner && owner->processor) {
-                    try {
+                    // A second click must raise an already open OR hidden
+                    // editor for exactly this accepted instance. Do not
+                    // destroy/recreate JUCE's active editor on every click.
+                    if(editorWindow_ && routedEditorOwner_==owner &&
+                       routedEditorEpoch_==retainedEpoch &&
+                       editorProcessor_==owner->processor.get()) {
+                        editorWindow_->present();
+                        opened=true;
+                        error.clear();
+                    } else try {
                         closePluginEditor();
                         if(auto* editor=owner->processor->createEditorIfNeeded()) {
+#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
+                            if(auto* imer=dynamic_cast<
+                                armix::builtin_fx::ImerSipP92Editor*>(editor)) {
+                                // Exact retained processor identity is
+                                // authoritative. Resolve CURRENT published
+                                // PCM revision at each click, not the revision
+                                // cached when the floating editor opened.
+                                // Read all three independent bypass gates so
+                                // global mixer A/B also mutes this editor.
+                                auto held=owner;
+                                const auto readPower=[this,held,nativeTarget,
+                                     nativeChannel,lane,slot,token] {
+                                    const auto current=nativeTarget?
+                                        engine_.retainedNativeFxPower(
+                                            held,armix::mixer::ChannelId{nativeChannel},
+                                            static_cast<std::size_t>(slot),token):
+                                        engine_.retainedRoutedFxPower(
+                                            held,lane,slot,token);
+                                    armix::builtin_fx::ImerSipP92Editor::HostBypassState state;
+                                    state.valid=current.valid;
+                                    state.slotBypassed=current.slotBypassed;
+                                    state.rackBypassed=current.rackBypassed;
+                                    state.globalBypassed=current.globalBypassed;
+                                    return state;
+                                };
+                                imer->bindHostPower(
+                                    [this,held,nativeTarget,nativeChannel,
+                                     lane,slot,token](bool bypass) {
+                                        const bool applied=nativeTarget?
+                                            engine_.bypassRetainedNativeFx(
+                                                held,armix::mixer::ChannelId{nativeChannel},
+                                                static_cast<std::size_t>(slot),
+                                                token,bypass):
+                                            engine_.bypassRetainedRoutedFx(
+                                                held,lane,slot,token,bypass);
+                                        if(applied)emitApprovedNativeSnapshot();
+                                        else emitNotice(
+                                            "FX Power rejected: accepted graph or instance changed",true);
+                                        return applied;
+                                    },readPower);
+                            }
+#endif
                             routedEditorOwner_=owner;
                             routedEditorEpoch_=retainedEpoch;
                             editorWindow_=std::make_unique<PluginEditorWindow>(
-                                owner->processor->getName(),editor);
+                                owner->processor->getName(),editor,*this);
+                            editorProcessor_=owner->processor.get();
                             opened=true;
                             error.clear();
                         } else error="This VST3 has no native editor";
@@ -7378,14 +7491,31 @@ private:
             // Never open an editor for an old graph waiting to be destroyed.
             if (engine_.isGraphSwitchPending())
                 return emitNotice ("FX recall is transitioning; open the editor after recall completes.", true);
-            closePluginEditor();
             if (auto* processor = engine_.pluginAt (slot))
             {
-                if (auto* editor = processor->createEditorIfNeeded())
-                    editorWindow_ = std::make_unique<PluginEditorWindow> (
-                        processor->getName(), editor);
+                if (editorWindow_ && !routedEditorOwner_ &&
+                    editorProcessor_ == processor)
+                {
+                    editorWindow_->present(); // repeated FX Rack click
+                }
                 else
-                    emitNotice ("This VST3 does not expose a graphical editor.", true);
+                {
+                    closePluginEditor();
+                    if (auto* editor = processor->createEditorIfNeeded())
+                    {
+                        editorWindow_ = std::make_unique<PluginEditorWindow> (
+                            processor->getName(), editor, *this);
+                        editorProcessor_=processor;
+                    }
+                    else
+                        emitNotice ("This VST3 does not expose a graphical editor.", true);
+                }
+            }
+            else
+            {
+                // The requested slot no longer owns a processor. Never
+                // leave a floating editor bound to a retired plugin.
+                closePluginEditor();
             }
         }
         else if (action == "monitor" && value.isBool())

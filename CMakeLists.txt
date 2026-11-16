@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
 project(ARMixConsole VERSION 0.5.0 LANGUAGES C CXX)
+# ImmerSIB is code-integrated but not publicly shipped before headphone FAT.
+# The RC flag is explicit, per-product and leaves accepted SonKu P9.9 intact.
+option(ARMIX_IMMERSIB_RELEASE_CANDIDATE
+       "Build the integrated ImmerSIB P9.9 audio + JUCE venue UI RC" OFF)
 # Experimental P6 native profile: OFF by default in production/installer.
 option(ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT
        "Enable unqualified SonKu full KEMAR directional reflections on the native JUCE callback"
@@ -273,10 +277,23 @@ endif()
 file(GLOB ARMIX_GUITAR_SKIN_PNGS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/assets/gfx-*.png")
 list(SORT ARMIX_GUITAR_SKIN_PNGS)
+set(ARMIX_IMERSIB_SCENE_PNG_SOURCES)
+if(ARMIX_IMMERSIB_RELEASE_CANDIDATE)
+  foreach(name IN ITEMS scene_live_concert scene_royal_concert_hall
+      scene_arena_thunder scene_front_row_power scene_symphonic_palace
+      scene_velvet_cinema)
+    set(scene "${CMAKE_CURRENT_SOURCE_DIR}/assets/imersip/scenes/${name}.png")
+    if(NOT EXISTS "${scene}")
+      message(FATAL_ERROR "Missing ImmerSIB venue image: ${scene}")
+    endif()
+    list(APPEND ARMIX_IMERSIB_SCENE_PNG_SOURCES "${scene}")
+  endforeach()
+endif()
 juce_add_binary_data(ARMixAssets SOURCES
     "${ARMIX_APPROVED_GUI_DIR}/index.html" ${ARMIX_APPROVED_GUI_BINARIES}
     ${ARMIX_GUITAR_SKIN_PNGS}
-    "${ARMIX_BRAND_DIR}/arsonmix-256.png")
+    "${ARMIX_BRAND_DIR}/arsonmix-256.png"
+    ${ARMIX_IMERSIB_SCENE_PNG_SOURCES})
 target_include_directories(ARMixConsole PRIVATE "${ARMIX_APPROVED_GUI_DIR}")
 
 target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h engine/builtin_fx/HarmonyDsp.h engine/builtin_fx/HarmonyMusicKey.h engine/builtin_fx/ChannelHarmonyProcessor.h engine/builtin_fx/SonKuSpatialProcessor.h engine/builtin_fx/sonku/SonKuSpatialCore.h engine/builtin_fx/sonku/SonKuMeasuredHrir.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/PreparedNativeMixerSession.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/NativeFxParameterHotkey.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/core/LiveOutputRouteGate.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
@@ -411,6 +428,14 @@ if(ARMIX_SONKU_APPROVED_P99_MAIN)
     SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH=1
     ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH=1)
 endif()
+if(ARMIX_IMMERSIB_RELEASE_CANDIDATE)
+  if(NOT ARMIX_SONKU_APPROVED_P99_MAIN)
+    message(FATAL_ERROR "ImmerSIB RC requires the approved SonKu P9.9 foundation")
+  endif()
+  target_compile_definitions(ARMixConsole PRIVATE
+      ARMIX_IMMERSIB_RELEASE_CANDIDATE=1
+      SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH=1)
+endif()
 
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
@@ -422,7 +447,7 @@ if(WIN32)
   # Dedicated INITGUID TU supplies PKEY_AudioEndpoint_FormFactor and
   # PKEY_AudioEngine_DeviceFormat to the Windows MMDevice discovery path.
   target_sources(ARMixConsole PRIVATE engine/device/WindowsAudioPropertyKeys.cpp)
-  target_link_libraries(ARMixConsole PRIVATE ole32 uuid advapi32)
+  target_link_libraries(ARMixConsole PRIVATE ole32 uuid advapi32 dwmapi)
 endif()
 
 target_link_libraries(ARMixConsole PRIVATE
@@ -479,6 +504,31 @@ if(BUILD_TESTING)
   target_compile_features(ARMixBuiltInFxAcceptedSnapshotTests PRIVATE cxx_std_20)
   add_test(NAME BuiltInFxUserPresetFourRealJuceAdaptersAndColdReopen
       COMMAND ARMixBuiltInFxAcceptedSnapshotTests)
+
+  if(ARMIX_IMMERSIB_RELEASE_CANDIDATE)
+    # Real brand-specific JUCE FX, ACK, UI DPI, state and full PCM gates.
+    juce_add_console_app(ARMixImerSipP92NativeTests
+        PRODUCT_NAME "ImmerSIB Native Editor/State Tests")
+    target_sources(ARMixImerSipP92NativeTests PRIVATE
+        tests/imersip_p92_native_test.cpp)
+    target_compile_features(ARMixImerSipP92NativeTests PRIVATE cxx_std_20)
+    target_link_libraries(ARMixImerSipP92NativeTests PRIVATE
+        ARMixAssets juce::juce_audio_processors
+        juce::juce_recommended_config_flags)
+    get_target_property(IMMERSIB_RC_DEFINES ARMixConsole COMPILE_DEFINITIONS)
+    target_compile_definitions(ARMixImerSipP92NativeTests
+        PRIVATE ${IMMERSIB_RC_DEFINES})
+    add_test(NAME NativeImmerSIBJucePresetACKStateAndBypass
+        COMMAND ARMixImerSipP92NativeTests)
+    add_executable(ARMixImmerSIBP99NativeSonicGate
+        tests/immersib_p98_native_sonic_gate.cpp)
+    target_compile_features(ARMixImmerSIBP99NativeSonicGate PRIVATE cxx_std_20)
+    target_compile_definitions(ARMixImmerSIBP99NativeSonicGate
+        PRIVATE ${IMMERSIB_RC_DEFINES}
+        SONKU_IMMERSIB_PCM_DIAGNOSTICS=1)
+    add_test(NAME NativeImmerSIBP99VocalRoomAndVenueGolden
+        COMMAND ARMixImmerSIBP99NativeSonicGate)
+  endif()
 
   # Native 8D-SonKu non-JUCE measured-HRIR PCM and deterministic orbit fixture.
   add_executable(ARMixSonKuCoreTests tests/sonku_spatial_core_test.cpp)

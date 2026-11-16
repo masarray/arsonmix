@@ -7,6 +7,9 @@
 #include "../engine/builtin_fx/VocalThrowProcessor.h"
 #include "../engine/builtin_fx/GuitarRigEditor.h"
 #include "../engine/builtin_fx/SonKuSpatialProcessor.h"
+#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
+#include "../engine/builtin_fx/ImerSipP92Processor.h"
+#endif
 #include "../engine/core/PreparedMixerBlock.h"
 #include <array>
 #include <cmath>
@@ -83,6 +86,15 @@ inline constexpr std::array nativeBuiltInFx{
         "NATIVE_SONKU_UNSUPPORTED_AUDIO_FORMAT","NATIVE_SONKU_PREPARE_REJECTED",
         "NATIVE_SONKU_PREPARE_EXCEPTION","Saved 8D-SonKu state rejected; graph unchanged",
         prepareNativeBuiltInFx<SonKuSpatialProcessor>},
+#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
+    NativeBuiltInFx{ImerSipP92Processor::catalogIdentity,
+        ImerSipP92Processor::productDisplayName,"Spatial",true,44100.,48000.,
+        "NATIVE_IMERSIP_HOST_UNAVAILABLE","NATIVE_IMERSIP_DEVICE_CHANGED",
+        "NATIVE_IMERSIP_UNSUPPORTED_AUDIO_FORMAT","NATIVE_IMERSIP_PREPARE_REJECTED",
+        "NATIVE_IMERSIP_PREPARE_EXCEPTION",
+        "Saved ImmerSIB IMRS state rejected; graph unchanged",
+        prepareNativeBuiltInFx<ImerSipP92Processor>},
+#endif
     NativeBuiltInFx{GuitarRigProcessor::catalogIdentity,"Guitar FX Rig","Guitar",true,32000.,192000.,
         "NATIVE_GFX_HOST_UNAVAILABLE","NATIVE_GFX_DEVICE_CHANGED",
         "NATIVE_GFX_UNSUPPORTED_AUDIO_FORMAT","NATIVE_GFX_PREPARE_REJECTED",

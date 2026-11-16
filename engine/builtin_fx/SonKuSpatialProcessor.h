@@ -455,6 +455,12 @@ public:
         (void)restoreUnpublishedState(data,size);
     }
 protected:
+#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+    // Distinct from approved 8D-SonKu P9.9; only ImmerSIB constructor opts in.
+    void optInImmerSIBVocalRoom() noexcept {
+        core_.optInImmerSIBVocalRoom();
+    }
+#endif
     // Product-specific admission is a CONTROL-thread operation; the audio
     // callback still owns the same core, edit queue and applied ACK.
     virtual bool admitQueuedScene(
