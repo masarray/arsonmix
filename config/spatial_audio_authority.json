@@ -141,15 +141,27 @@
     "featureFlag": "ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING",
     "releaseQualified": false,
     "acousticSourceBlobSha1": {
-      "engine/builtin_fx/sonku/SonKuSpatialCore.h": "7e7f7d5123c1fae5ed593f4252f84921832b0402",
+      "engine/builtin_fx/sonku/SonKuSpatialCore.h": "1b788064e35b412f088d371b5325d76cc6e47e11",
       "engine/builtin_fx/sonku/SonKuP91P92WorldBassFoundation.h": "63551d22e8dff672fe136131c32d28b568bb3170",
       "engine/builtin_fx/sonku/SonKuP94FrontBackDepthCue.h": "f0f88088c68ef6865d64c240c4c87accaf136070",
-      "engine/builtin_fx/sonku/SonKuP95MusicalPresence.h": "ece40572b04d4b586a61c56cf1fd1f77c1f295e7",
+      "engine/builtin_fx/sonku/SonKuP95MusicalPresence.h": "f458d520c9ca6c75b1b961d220e15abd64b07497",
       "engine/builtin_fx/sonku/SonKuP96DistanceReinforcement.h": "a32fb6e6fdd431901323d4278c51991607c02d84",
       "engine/builtin_fx/sonku/SonKuP97StageImpact.h": "5384fd3cc67c31f0a8038b315856d20933249b5b",
       "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "90bab191a62601021c4a7a77d64e0e4d408d3011",
       "engine/builtin_fx/sonku/SonKuEarlyReflections.h": "5a6a9b48cfdc60729f130c61110c8d8590b20f35",
       "engine/builtin_fx/sonku/SonKuSourcePlacement3D.h": "9afb959bed292626c3097c2a382208ce8798e90c"
+    },
+    "ownerFrontRowXLCohesionCandidate": {
+      "status": "development_only_requires_headphone_AB",
+      "screenshotPresetId": 8,
+      "screenshotPresetName": "Concert Front Row XL",
+      "visibleControls": {"room": 3, "stageDegrees": 147, "distanceMeters": 1, "earlyPercent": 180, "latePercent": 60, "spatialMixPercent": 100, "earAlignDegrees": 0, "headYawDegrees": 0, "outputGainDb": 2.5},
+      "unobservableScreenshotState": "sceneVoicing is hidden in Custom; candidate explicitly selects Detail Warm id4, verify vs actual saved IMRS state for exact listening parity",
+      "hypothesesUnderTest": ["original dry-side spectrum in room differs from warm direct HRIR feed", "upward P9.5 makeup plus linked peak guard may modulate mastered music"],
+      "candidateChanges": "warm voicings 4/5 only: 32 percent already-processed source delta fed to existing early reflections; 12 percent to existing late reverb; adaptive makeup ceiling 1.10 rather than 1.65 while warm/room on",
+      "diagnostics": "offline-only native test captures P9.5 makeup and linked limiter reduction; changes do not prove subjective vocal segregation or absence of pumping",
+      "goldenConstraint": "Venue P9.7 profile0 and SonKu voicings 0..3 remain PCM-identical and immutable",
+      "released": false
     },
     "productTuning": {
       "status": "nearfield_vocal_masking_candidate_owner_not_auditioned",
@@ -164,7 +176,7 @@
       ],
       "reason": "Owner hears farfield presets as vague and 100% early room too weak; M/S masking relief is source-domain frequency-selective, not stem separation",
       "newDSPBlobSha1": {
-        "engine/builtin_fx/sonku/SonKuSpatialCore.h": "7e7f7d5123c1fae5ed593f4252f84921832b0402",
+        "engine/builtin_fx/sonku/SonKuSpatialCore.h": "1b788064e35b412f088d371b5325d76cc6e47e11",
         "engine/builtin_fx/sonku/SonKuEarlyReflections.h": "5a6a9b48cfdc60729f130c61110c8d8590b20f35",
         "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "90bab191a62601021c4a7a77d64e0e4d408d3011",
         "engine/builtin_fx/sonku/SonKuSourcePlacement3D.h": "9afb959bed292626c3097c2a382208ce8798e90c"
