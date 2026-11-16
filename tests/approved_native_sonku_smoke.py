@@ -33,16 +33,21 @@ def last_action(page,name):
     assert actions, "Expected actual native action "+name
     return actions[-1]
 
-def accepted_snapshot(page,state,settings,applied=None):
+def accepted_snapshot(page,state,settings,applied=None,schema=2):
     read=last_action(page,"nativeSonKuSnapshot")
     payload={
-        "requestId":read["requestId"],"status":"ACCEPTED","schemaVersion":2,
+        "requestId":read["requestId"],"status":"ACCEPTED","schemaVersion":schema,
         "channelId":SOURCE,"slot":0,"instanceId":INSTANCE,
         "deviceEpoch":state["device"]["epoch"],
         "graphRevision":state["graph"]["revision"],
         "observedAzimuthDegrees":settings["startAzimuthDegrees"],
         "settings":copy.deepcopy(settings),
     }
+    if schema==11:
+        payload.update(p84MusicFusion=True,p85AcousticCoherence=True,
+            p86HorizontalFocus=True,p87MusicalAirBody=True,
+            p88PerceptualAlignment=True,p89StereoRoomDepth=True,
+            p90TrueExternalSpeaker=True,p91p92MusicBassFoundation=True)
     if applied:payload["appliedRequestId"]=applied
     emit(page,"arMixBuiltinSonKuSnapshot",payload)
 
@@ -113,6 +118,32 @@ def exercise(browser,out,width,height):
     editor=page.locator("#mxNativeSonKu")
     editor.wait_for(state="visible",timeout=5000)
     assert editor.locator("#skMap .sk-src").count()==2
+    # Modeless native editor must be movable just like EQ and Compressor.
+    # Drag only the non-interactive brand area; never start drags on Power
+    # or Presets, and clamp movement to the current viewport.
+    head=editor.locator(".sk-head")
+    before_box=editor.bounding_box()
+    assert before_box
+    header_box=head.bounding_box()
+    assert header_box
+    drag_x=header_box["x"]+29
+    drag_y=header_box["y"]+header_box["height"]*.5
+    page.mouse.move(drag_x,drag_y)
+    page.mouse.down()
+    page.mouse.move(drag_x+40,drag_y+26,steps=5)
+    page.mouse.up()
+    moved_box=editor.bounding_box()
+    assert moved_box
+    assert moved_box["x"]>=-1 and moved_box["y"]>=-1,moved_box
+    assert moved_box["x"]+moved_box["width"]<=width+2,moved_box
+    if width-before_box["width"]>70:
+        assert moved_box["x"]>before_box["x"]+4,(
+            "Movable SonKu header failed to drag",before_box,moved_box)
+    assert editor.locator("#skPower").count()==1
+    assert editor.locator("#skPower").get_attribute("data-fx-state")=="unknown",(
+        "Missing native FX rack bypass readback must NOT fake power ON")
+    assert editor.locator("#skPreset").is_disabled(),(
+        "Old schema v2 must NOT offer P9.1+P9.2 factory scenes")
     assert editor.locator("#skMap .sk-speaker-shell").count()==2
     assert editor.locator("#skMap #skFarArc").count()==1
     assert editor.locator("#skMap #skNearArc").count()==1
@@ -124,8 +155,8 @@ def exercise(browser,out,width,height):
       const near=map.querySelector('#skNearArc');
       return Boolean((far.compareDocumentPosition(art) & Node.DOCUMENT_POSITION_FOLLOWING) &&
                      (art.compareDocumentPosition(near) & Node.DOCUMENT_POSITION_FOLLOWING) &&
-                     far.getAttribute('d').startsWith('M348 174') &&
-                     near.getAttribute('d').startsWith('M52 174'));
+                     far.getAttribute('d').startsWith('M348 174 A148 83') &&
+                     near.getAttribute('d').startsWith('M52 174 A148 83'));
     }"""), "Front/back ring painter layering incorrect"
     # Each moving speaker is depth-sorted against the listener alpha silhouette.
     assert page.evaluate("""() => {
@@ -178,6 +209,13 @@ def exercise(browser,out,width,height):
     after=page.evaluate(
         "()=>window.__actions.filter(a=>a.action==='nativeSonKuSnapshot').length")
     assert after==count, "Unanswered SonKu readback was overwritten"
+    # Admission now establishes authoritative rack bypass state. Only a
+    # confirmed ON insert is allowed to extrapolate an audible orbit;
+    # UNKNOWN or bypassed should remain frozen, never simulate PCM.
+    state["graph"]["channels"][0]["fxRackBypassed"]=False
+    emit(page,"arMixConsoleSnapshot",state)
+    page.wait_for_function("""()=>document.getElementById('mxNativeSonKu')
+                             ?.dataset.fxState==='on'""")
     accepted_snapshot(page,state,SETTINGS)
     # A true visual animation must advance BETWEEN native readbacks.
     # The old 250ms setInterval was ~4fps despite valid DSP PCM.
@@ -185,6 +223,27 @@ def exercise(browser,out,width,height):
     page.wait_for_timeout(150)
     vx1=editor.locator('.sk-src[data-index="0"]').get_attribute("data-visual-x")
     assert abs(float(vx1)-float(vx0))>1.0,("Orbit is frozen between readbacks",vx0,vx1)
+    # Regression: bypassed native PCM cannot advance azimuth. The visual
+    # must FREEZE its last pose and ignore the stale 250ms readback PLL.
+    # This is the user-reported erratic left/right icon flicker.
+    state["graph"]["channels"][0]["inserts"][0]["bypassed"]=True
+    emit(page,"arMixConsoleSnapshot",state)
+    page.wait_for_function("""()=>document.getElementById('mxNativeSonKu')
+                              ?.dataset.fxState==='off'""")
+    freeze_x=editor.locator('.sk-src[data-index="0"]').get_attribute("data-visual-x")
+    page.wait_for_timeout(450)
+    still_x=editor.locator('.sk-src[data-index="0"]').get_attribute("data-visual-x")
+    assert freeze_x==still_x,("Bypassed PCM must freeze last speaker icon",freeze_x,still_x)
+    state["graph"]["channels"][0]["inserts"][0]["bypassed"]=False
+    emit(page,"arMixConsoleSnapshot",state)
+    page.wait_for_function("""()=>document.getElementById('mxNativeSonKu')
+                              ?.dataset.fxState==='on'""")
+    accepted_snapshot(page,state,SETTINGS)
+    resume_x=editor.locator('.sk-src[data-index="0"]').get_attribute("data-visual-x")
+    page.wait_for_timeout(180)
+    resumed_x=editor.locator('.sk-src[data-index="0"]').get_attribute("data-visual-x")
+    assert abs(float(resumed_x)-float(resume_x))>1.0,(
+        "Enabled PCM must resume running source orbit",resume_x,resumed_x)
     # Close/reopen must use the installed FX rack click, never a private open().
     editor.locator("#skClose").click()
     assert editor.is_hidden()
@@ -239,6 +298,14 @@ def exercise(browser,out,width,height):
     x,y,rear=pose(180);assert abs(x-200)<1 and y>245,("REAR",x,y)
     editor.locator("#skMap").screenshot(path=f"arsonmix-sonku-editor-rear-depth-{width}.png")
     x,y,left=pose(-90);assert x<60 and abs(y-174)<1,("LEFT",x,y)
+    # Approved top-rear oblique perspective: full 360° azimuth with an SVG
+    # ellipse, not a flattened physical/acoustic source orbit.
+    for x,y in ((200,91),(348,174),(200,257),(52,174)):
+        assert abs(((x-200)/148)**2+((y-174)/83)**2-1)<.001
+    assert editor.locator(".sk-stage > .sk-space-panel").count()==1,(
+        "SPACE controls must be below the motion field, not inside rotary column")
+    assert editor.locator("#skPreset").count()==1
+    assert editor.locator("#skPower.armix-builtin-fx-power").count()==1
     assert front["depth"]=="far" and rear["depth"]=="near"
     assert front["scale"]<right["scale"]<rear["scale"],(front,right,rear)
     assert rear["scale"]-front["scale"]>=.39,(front,rear)
@@ -500,6 +567,49 @@ def exercise(browser,out,width,height):
         editor.locator("#"+control).evaluate(
             "n=>n.dispatchEvent(new Event('change',{bubbles:true}))")
         assert command_count()==before+1,(control,"duplicate final edit")
+    # A genuine schema-v11 native capability unlocks the five ready-to-use
+    # scenes. This is a REAL DOM event and nativeSonKuSet/ACK/readback, not
+    # a fixture directly mutating the editor's internal draft.
+    room11={**sceneState,"renderMode":9,"musicCompatibleLowFrequency":False,
+        "headYawDegrees":0.0,"directElevationDegrees":0.0,
+        "hrtfElevationTrimDegrees":0.0}
+    page.wait_for_timeout(300)
+    accepted_snapshot(page,state,room11,schema=11)
+    factory=editor.locator("#skPreset")
+    assert factory.is_enabled(),"Valid P9.1+P9.2 native capability must unlock presets"
+    assert factory.input_value()=="CUSTOM","Saved non-factory scene was overwritten"
+    before=command_count()
+    factory.select_option("music")
+    assert command_count()==before+1,"Factory scene did not issue one native transaction"
+    applied=last_action(page,"nativeSonKuSet")
+    proposed=applied["settings"]
+    assert proposed["renderMode"]==9 and proposed["moving"] is True,proposed
+    assert proposed["revolutionSeconds"]==6.5,proposed
+    assert proposed["stereoSpreadDegrees"]==82 and proposed["outputTrim"]==1.9,proposed
+    assert proposed["spacePreset"]==3 and proposed["sourceDistanceMeters"]==3.1,proposed
+    assert abs(proposed["roomAmount"]-1.0)<.001 and abs(proposed["ambience"]-.62)<.001
+    emit(page,"arMixBuiltinSonKuAck",{
+        "requestId":applied["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,proposed,applied=applied["requestId"],schema=11)
+    assert factory.input_value()=="music","Native-accepted preset did not stay selected"
+    # Actual accepted mixer graph is the SINGLE authority for FX Power,
+    # including individual insert bypass vs whole rack disabled.
+    state["graph"]["channels"][0]["fxRackBypassed"]=False
+    state["graph"]["channels"][0]["inserts"][0]["bypassed"]=False
+    emit(page,"arMixConsoleSnapshot",state)
+    page.wait_for_function("""()=>
+      document.getElementById('skPower')?.dataset.fxState==='on'""")
+    assert editor.locator("#skPower").is_enabled()
+    state["graph"]["channels"][0]["inserts"][0]["bypassed"]=True
+    emit(page,"arMixConsoleSnapshot",state)
+    page.wait_for_function("""()=>
+      document.getElementById('skPower')?.dataset.fxState==='off'""")
+    assert editor.locator("#skPower").is_enabled()
+    state["graph"]["channels"][0]["fxRackBypassed"]=True
+    emit(page,"arMixConsoleSnapshot",state)
+    page.wait_for_function("""()=>
+      document.getElementById('skPower')?.dataset.fxState==='rack-off'""")
+    assert editor.locator("#skPower").is_disabled()
     bounds=editor.bounding_box()
     assert bounds and bounds["width"]>260 and bounds["width"]<width+2
     # All listener and rendering JS exceptions remain fatal.
