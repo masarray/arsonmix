@@ -270,7 +270,7 @@ list(SORT ARMIX_GUITAR_SKIN_PNGS)
 # operators and native builds need no Pillow, NumPy, SVG, or sidecar folder.
 set(ARMIX_IMERSIP_PNG_BASE "${CMAKE_CURRENT_SOURCE_DIR}/assets/imersip/png")
 set(ARMIX_IMERSIP_ASSET_NAMES
-    room_background control_panel header_overlay
+    room_background header_overlay
     line_array_left line_array_right
     subwoofer_left subwoofer_right
     front_fill_left front_fill_right
