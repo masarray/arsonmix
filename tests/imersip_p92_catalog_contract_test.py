@@ -81,7 +81,9 @@ class ImerSipP92Contract(unittest.TestCase):
             name="scene_"+scene+".png"
             self.assertTrue((ROOT/"assets/imersip/scenes"/name).exists())
             self.assertIn("BinaryData::scene_"+scene+"_png",skin)
-        # Keep scene photo's aspect; do not stretch concert cabinets.\n        self.assertIn("g.drawImageWithin(*art",skin)
+        # Keep scene photo's aspect; do not stretch concert cabinets.
+        self.assertIn("g.drawImageWithin(*art",skin)
+        self.assertNotIn("RectanglePlacement::fillDestination",skin)
         self.assertIn("const int x=252+317*col",ui)
 
         self.assertNotIn("execute_process(\n    COMMAND \"\${Python3_EXECUTABLE}\" \"\${ARMIX_IMERSIP_PNG_GEN}\"",cmake)
