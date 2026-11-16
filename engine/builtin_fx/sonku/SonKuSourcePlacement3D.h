@@ -18,7 +18,12 @@ inline bool project(float radialMeters,float elevationDegrees,
        !std::isfinite(listenerHeight)||!std::isfinite(roomHeight)||
        radialMeters<1.6f||radialMeters>10.f||
        elevationDegrees< -40.f||elevationDegrees>60.f||
-       roomHeight<2.4f||roomHeight>12.f||
+       roomHeight<2.4f||roomHeight>
+#if defined(SONKU_P95_CINEMATIC_RESEARCH) && SONKU_P95_CINEMATIC_RESEARCH
+       20.f||
+#else
+       12.f||
+#endif
        listenerHeight<.5f||listenerHeight>roomHeight-.5f)return false;
     constexpr float radians=.017453292519943295769f;
     const float z=radialMeters*std::sin(elevationDegrees*radians);
