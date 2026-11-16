@@ -10,7 +10,16 @@
     "researchRenderMode": 9,
     "modeNameInCode": "MusicSpatialP90",
     "actualAudioFeatures": "P9.1 + P9.2: world-positioned stereo sources, P9 complementary LF world bass and bounded axial room modes",
-    "releaseQualified": false
+    "releaseQualified": false,
+    "acousticSourceBlobSha1": {
+      "engine/builtin_fx/sonku/SonKuSpatialCore.h": "5b8e26eaf4673fe2235d0b87d60b4ddc619e9602",
+      "engine/builtin_fx/sonku/SonKuP91P92WorldBassFoundation.h": "938cb96a5b7181d37f5c290c13fd39370ab18826",
+      "engine/builtin_fx/sonku/SonKuP90StereoDecoder.h": "f760c673dec8031f4dfcc76d6f1fee36beffa043",
+      "engine/builtin_fx/sonku/SonKuEarlyReflections.h": "46209c6b841bb8eb03bbd2dc65b3ac080586a826",
+      "engine/builtin_fx/sonku/SonKuMusicalReverb.h": "c2f273ef7c1ee26c5566b05568416e5cedaef6c4",
+      "engine/builtin_fx/sonku/SonKuMeasuredHrir3D.h": "816e7255939f0bb262374a5b4c0240438ec1e3a0",
+      "engine/builtin_fx/sonku/SonKuHrtfTonalCalibration.h": "233e2b26caf51e88df4ed82babc442f2b341c2d7"
+    }
   },
   "imersip": {
     "activeIntegrationPr": 722,

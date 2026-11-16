@@ -10,10 +10,10 @@ on:
       - 'engine/builtin_fx/sonku/**'
       - 'src/Main.cpp'
       - 'src/NativeBuiltInFx.h'
-      - 'tests/imersip_p92_*'
-      - 'config/spatial_audio_authority.json'
-      - 'docs/SPATIAL_AUDIO_AUTHORITY.md'
-      - '.github/workflows/sonku-p83-native-speaker-gates.yml'
+      # Native/engine edits only. Documentation and immutable-checkpoint
+      # ledger changes have a separate fast contract job, not full JUCE.
+      - 'tests/imersip_p92_native_test.cpp'
+      - 'tests/imersip_p92_catalog_contract_test.py'
   workflow_dispatch:
 permissions:
   contents: read

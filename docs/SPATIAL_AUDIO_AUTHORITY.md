@@ -21,6 +21,12 @@
 - [Operator's frozen P9 checkpoint #720](https://github.com/masarray/arsonmix/issues/720): screenshot with **82°, 1.6m, Large, reflections 100%, reverb 62%, output +7 dB and revolution time 8.5s**. These are owner test values **not accepted factory defaults**. The moving toggle / static status was not established from the revolution-time readout alone.
 - Never overwrite a user's accepted settings with any of these on session restoration. Compare at **identical native scene and matched actual output loudness**, not just equal knob labels.
 
+## Frozen acoustic source fingerprints
+
+The ledger pins the **Git blob SHA-1** of seven source files making up the validated P9 acoustic transfer, including the measured HRTF front end, source-to-ear stereo decoder, world-positioned bass, early reflections, and late room. The independent Python contract recomputes each blob from checkout bytes. Any unintended change fails fast **even if `renderMode=9` and all interface names remain unchanged**. An intentional sound update requires a newly recorded operator-approved checkpoint and corresponding ledger review; **do not edit expected hashes merely to turn CI green**. These are source-provenance checks, not a replacement for headphone listening or a claim of identical compiler output on every platform.
+
+Only native/engine edits trigger the expensive ImerSip Windows FAT; documentation/authority changes use the separate fast `spatial-audio-authority-fast.yml` contract instead.
+
 ## Ownership boundaries and CI classification
 
 1. **Audio truth:** `SonKuSpatialCore` compiled with explicit isolated P9 research flags. ImerSip is a distinct `armix.builtin.imersip.v1` FX identity but inherits the same `SonKuSpatialProcessor` graph, not the previous `ImerSipDsp`. No unapproved DSP layering.

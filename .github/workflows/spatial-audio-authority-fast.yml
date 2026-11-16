@@ -1,0 +1,30 @@
+name: Spatial audio ownership — fast contract (no JUCE)
+on:
+  pull_request:
+    paths:
+      - 'config/spatial_audio_authority.json'
+      - 'docs/SPATIAL_AUDIO_AUTHORITY.md'
+      - 'docs/IMERSIP_P92_SINGLE_NATIVE_ENGINE_FAT_20261116.md'
+      - 'tests/imersip_p92_*contract_test.py'
+      - '.github/workflows/sonku-p83-native-speaker-gates.yml'
+      - '.github/workflows/spatial-audio-authority-fast.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: spatial-authority-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  authority:
+    name: Check frozen P9 acoustics and unambiguous P83/ImerSip ownership
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Validate authority ledger and original acoustic source fingerprints
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'imersip_p92_*contract_test.py' -v

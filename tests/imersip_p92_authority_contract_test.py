@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Fail on ambiguity between P83 historical evidence, P9 checkpoint and ImerSip."""
+import hashlib
 import json
 import pathlib
 import unittest
@@ -30,6 +31,21 @@ class SpatialAuthorityContract(unittest.TestCase):
         self.assertTrue(im["researchOnly"])
         self.assertFalse(im["releaseQualified"])
         self.assertTrue(record["production"]["mainMustRemainUnchanged"])
+
+    def test_checkpoint_audio_sources_have_not_silently_drifted(self):
+        # Git's blob identity pins real acoustics, not merely marketing
+        # render mode names. Any intentional DSP change requires a NEW
+        # listening checkpoint and explicit ledger review, never a quiet
+        # update to make this check green.
+        pinned=self.record["selectedSonKuBaseline"]["acousticSourceBlobSha1"]
+        self.assertGreaterEqual(len(pinned),7)
+        for path,expected in pinned.items():
+            raw=(ROOT/path).read_bytes()
+            actual=hashlib.sha1(
+                b"blob "+str(len(raw)).encode("ascii")+b"\x00"+raw
+            ).hexdigest()
+            self.assertEqual(actual,expected,
+                f"Acoustic source changed without checkpoint review: {path}")
 
     def test_real_core_not_marketing_mode_or_shadow_dsp(self):
         core=read("engine/builtin_fx/sonku/SonKuSpatialCore.h")
