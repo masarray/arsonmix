@@ -46,8 +46,15 @@ class ImerSipP92Contract(unittest.TestCase):
                      "side_fill_left", "side_fill_right",
                      "slider_track", "slider_thumb", "knob_master_purple"):
             self.assertIn("BinaryData::"+name+"_png",skin)
-        self.assertIn("scripts/generate_imersip_concert_png.py",cmake)
+        self.assertIn("assets/imersip/png",cmake)
         self.assertIn("ARMIX_IMERSIP_PNG_SOURCES",cmake)
+        self.assertNotIn("execute_process(\n    COMMAND \"\${Python3_EXECUTABLE}\" \"\${ARMIX_IMERSIP_PNG_GEN}\"",cmake)
+        self.assertTrue((ROOT/"scripts/generate_imersip_concert_png.py").exists())
+        self.assertTrue((ROOT/"assets/imersip/asset_manifest.json").exists())
+        for png in ("room_background.png", "control_panel.png",
+                    "line_array_left.png", "line_array_right.png",
+                    "subwoofer_left.png", "subwoofer_right.png"):
+            self.assertTrue((ROOT/"assets/imersip/png"/png).exists())
         self.assertNotIn("assets/imersip/vector/imersip_room.svg",cmake)
         self.assertIn("for(const auto& scene:imersipP92Presets)",ui)
         self.assertNotIn("P9.2 Neutral A/B",ui)
