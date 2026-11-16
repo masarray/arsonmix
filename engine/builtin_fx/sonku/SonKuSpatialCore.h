@@ -906,9 +906,26 @@ public:
             if(positionedMode && !monoObject && p83MusicCompatibleLf_)
                 p83LowFrequency_.process(x0,x1,ears[0],ears[1]);
 #endif
+            // In P9.9, SOURCE center body used to reach only the direct
+            // KEMAR virtual speakers; room received original x0/x1.
+            // Route a bounded warm MID component into the EXISTING real
+            // six-wall and late reverberation processors as well, retaining
+            // the original stereo SIDE and respecting their geometry/delay.
+            float earlyFeedL=x0,earlyFeedR=x1;
+            float lateFeedL=x0,lateFeedR=x1;
+#if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
+            if(p90World && settings_.spatialMix>0.f && roomEnabled){
+                const auto earlyFeed=p99VocalDepth_.roomEarlyFeed(x0,x1);
+                const auto lateFeed=p99VocalDepth_.roomLateFeed(x0,x1);
+                earlyFeedL=earlyFeed.left;
+                earlyFeedR=earlyFeed.right;
+                lateFeedL=lateFeed.left;
+                lateFeedR=lateFeed.right;
+            }
+#endif
             auto reflection=room_.active()
-                ?room_.process((p90World||transparentBass)?x0:(musicSafe?inputMid:x0),
-                    (p90World||transparentBass)?x1:(musicSafe?inputMid:x1),
+                ?room_.process((p90World||transparentBass)?earlyFeedL:(musicSafe?inputMid:x0),
+                    (p90World||transparentBass)?earlyFeedR:(musicSafe?inputMid:x1),
                     degrees_,(p90World||transparentBass)?settings_.stereoSpreadDegrees:
                         ((musicSafe||monoObject)?0.f:settings_.stereoSpreadDegrees)
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
@@ -924,8 +941,8 @@ public:
                     )
                 :SonKuEarlyReflections::Ears{};
             auto late=reverb_.active()
-                ?reverb_.process((p90World||transparentBass)?x0:(musicSafe?inputMid:x0),
-                    (p90World||transparentBass)?x1:(musicSafe?inputMid:x1))
+                ?reverb_.process((p90World||transparentBass)?lateFeedL:(musicSafe?inputMid:x0),
+                    (p90World||transparentBass)?lateFeedR:(musicSafe?inputMid:x1))
                 :SonKuMusicalReverb::Ears{};
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
             if(musicalBody && roomEnabled){

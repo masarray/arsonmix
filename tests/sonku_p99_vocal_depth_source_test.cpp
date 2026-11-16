@@ -28,6 +28,32 @@ static double rmsRatio(int rate,int scene,int stage,double hz,bool phaseReversed
     }
     return std::sqrt(after/before);
 }
+// Actual DSP-to-EXISTING-room input, not arbitrary post-output EQ. The
+// musical vocal-body band must excite the room at 320Hz without boosting
+// cymbals/sibilants at 7.6k. Both room paths must retain original SIDE.
+static double roomRatio(int rate,int scene,bool early,double hz,
+                        bool antiphase=false,float level=.07f){
+    MusicalVocalDepth e;
+    assert(e.prepare(rate));
+    constexpr double pi=3.1415926535897932384626433832795;
+    double before=0.,after=0.;
+    for(int i=0;i<rate;++i){
+        const float x=level*std::sin(2.*pi*hz*double(i)/rate);
+        const float y=antiphase?-x:x;
+        (void)e.source(x,y,scene,true);
+        const auto wet=early?e.roomEarlyFeed(x,y):e.roomLateFeed(x,y);
+        assert(std::isfinite(wet.left)&&std::isfinite(wet.right));
+        assert(std::abs(wet.left)<1.f && std::abs(wet.right)<1.f);
+        if(scene==0 || antiphase || level<.0001f){
+            assert(wet.left==x && wet.right==y);
+        }
+        // A coherent center-only room-body feed MUST NOT change SIDE
+        // or reintroduce stereo channels crossing from a side signal.
+        assert(std::abs((wet.left-wet.right)-(x-y))<1.e-6f);
+        if(i>rate/2){before+=double(x)*x;after+=double(wet.left)*wet.left;}
+    }
+    return std::sqrt(after/before);
+}
 int main(){
     MusicalVocalDepth unprepared;
     assert(!unprepared.prepare(96000));
@@ -63,6 +89,22 @@ int main(){
         assert(std::abs(sideLate-1.)<1.e-8);
         // Near-silent centered leakage cannot activate a loud voice gate.
         assert(rmsRatio(rate,1,0,1800.,false,.00008f)<1.012);
+        const auto earlyWarm=roomRatio(rate,1,true,320.);
+        const auto lateWarm=roomRatio(rate,1,false,320.);
+        const auto studioWarm=roomRatio(rate,2,true,320.);
+        const auto cinemaWarm=roomRatio(rate,3,true,320.);
+        // Audible ROOM warmth: early response stronger than late, Signature
+        // strongest, Cinema intermediate, Studio subtle. No excess HF.
+        assert(earlyWarm>1.15 && earlyWarm<1.60);
+        assert(lateWarm>1.04 && lateWarm<1.30);
+        assert(earlyWarm>cinemaWarm && cinemaWarm>studioWarm);
+        assert(studioWarm>1.035);
+        assert(roomRatio(rate,1,true,7600.)<1.035);
+        assert(roomRatio(rate,1,false,7600.)<1.025);
+        assert(std::abs(roomRatio(rate,1,true,320.,true)-1.)<1.e-7);
+        assert(std::abs(roomRatio(rate,1,false,320.,true)-1.)<1.e-7);
+        assert(std::abs(roomRatio(rate,1,true,320.,false,.00008f)-1.)<1.e-7);
+        assert(std::abs(roomRatio(rate,0,true,320.)-1.)<1.e-7);
         // Switching to neutral MUST return exact samples from that call.
         MusicalVocalDepth e;
         assert(e.prepare(rate));
@@ -76,17 +118,25 @@ int main(){
         const auto neutral=e.source(.084f,-.027f,0,true);
         const auto unchangedEarly=e.early(.084f,-.027f);
         const auto unchangedLate=e.late(.084f,-.027f);
-        for(const auto result:{neutral,unchangedEarly,unchangedLate}){
+        const auto neutralRoomEarly=e.roomEarlyFeed(.084f,-.027f);
+        const auto neutralRoomLate=e.roomLateFeed(.084f,-.027f);
+        for(const auto result:{neutral,unchangedEarly,unchangedLate,
+                               neutralRoomEarly,neutralRoomLate}){
             assert(result.left==.084f && result.right==-.027f);
         }
         const auto roomOff=e.source(.084f,-.027f,1,false);
         assert(roomOff.left==.084f && roomOff.right==-.027f);
+        for(const auto out:{e.roomEarlyFeed(.084f,-.027f),
+                            e.roomLateFeed(.084f,-.027f)})
+            assert(out.left==.084f && out.right==-.027f);
         std::printf(
            "P99_FOCUS,%d,warmth=%.6f,voice=%.6f,sibilance=%.6f,"
            "studio=%.6f,cinema=%.6f,earlySide=%.6f,"
-           "lateCenter=%.6f,lateSide=%.6f\n",
+           "lateCenter=%.6f,lateSide=%.6f,"
+           "ER320=%.6f,TAIL320=%.6f,STUDIO_ER320=%.6f,CINEMA_ER320=%.6f\n",
            rate,warmth,vocal,airy,studio,cinema,
-           earlySide,centerLate,sideLate);
+           earlySide,centerLate,sideLate,earlyWarm,lateWarm,
+           studioWarm,cinemaWarm);
     }
     std::puts("PASS P9.9: musical vocal body, dynamic center focus, "
               "true directional early stereo and no high treble harshness");

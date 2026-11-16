@@ -41,10 +41,18 @@ void run(int rate,int az,int index){
     assert(valid(s)&&core->setSettings(s));
     const int n=rate;
     constexpr double pi=3.1415926535897932384626433832795;
+#if defined(SONKU_P99_ROOM_BODY_PROBE) && SONKU_P99_ROOM_BODY_PROBE
+    // Dedicated FULL-ROOM source fixture: 320Hz upper chest/body excites
+    // six-wall first images and the EXISTING diffuse late network. Plain
+    // P9.8 golden source fixture remains the exact 86Hz reference.
+    constexpr int lowHz=320;
+#else
+    constexpr int lowHz=86;
+#endif
     std::vector<float> l(n),r(n);
     for(int i=0;i<n;++i) {
         const double t=double(i)/rate;
-        const float x=.055f*std::sin(2*pi*86*t)+
+        const float x=.055f*std::sin(2*pi*lowHz*t)+
                       .041f*std::sin(2*pi*2050*t)+
                       .021f*std::sin(2*pi*7500*t);
         l[i]=x;
@@ -60,7 +68,7 @@ void run(int rate,int az,int index){
         hash^=std::bit_cast<std::uint32_t>(value);
         hash*=1099511628211ull;
     }
-    constexpr std::array<int,3> hz{86,2050,7500};
+    constexpr std::array<int,3> hz{lowHz,2050,7500};
     std::array<double,3> amp{};
     for(int k=0;k<3;++k){
         double c=0,d=0;

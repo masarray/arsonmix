@@ -440,7 +440,7 @@ function render(){
  }
  root.querySelector(".sk-stage-caption").textContent=
    p99Capable&&s.renderMode===9&&s.sceneVoicing>0?
-    "VOCAL BODY + CENTER CLARITY · WIDE INSTRUMENT LAYERS · VENUE LOCKED":
+    "VOCAL BODY + CENTER CLARITY · ROOM-COUPLED REFLECTIONS · VENUE LOCKED":
    p98Capable&&s.renderMode===9?
     "SIGNATURE / CINEMA / STUDIO VOICING · VENUE P9.7 PRESERVED":
     p97Capable&&s.renderMode===9?

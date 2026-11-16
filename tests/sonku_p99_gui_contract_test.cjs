@@ -15,6 +15,14 @@ assert.match(ui,/VOCAL BODY \+ CENTER CLARITY/);
 assert.match(core,/p99VocalDepth_\.source\(/);
 assert.match(core,/p99VocalDepth_\.early\(/);
 assert.match(core,/p99VocalDepth_\.late\(/);
+assert.match(core,/p99VocalDepth_\.roomEarlyFeed\(x0,x1\)/);
+assert.match(core,/p99VocalDepth_\.roomLateFeed\(x0,x1\)/);
+assert.match(core,/room_\.process\(\(p90World\|\|transparentBass\)\?earlyFeedL/);
+assert.match(core,/reverb_\.process\(\(p90World\|\|transparentBass\)\?lateFeedL/);
+assert.match(source,/roomWarmSignal_=attention_\*warm/);
+assert.match(source,/return \{left\+body,right\+body\}/);
+assert.match(source,/lateLow_=alpha\(1350\.\)/);
+
 assert.match(source,/return \{left,right\}; \/\/ NO altered float arithmetic/);
 assert.match(source,/No upper-air shelf, de-esser or narrow 4-8k peak/);
 assert.match(ui,/spacePreset:3,sourceDistanceMeters:10,roomAmount:1,ambience:1,sceneVoicing:0/);
