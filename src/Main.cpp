@@ -1332,8 +1332,7 @@ private:
             auto& existing=*logicalVendorEditor_;
             if(existing.window)existing.window->present();
             if(existing.workspaceToken==logicalMixer_.workspace().workspaceToken() &&
-               existing.insert.channel==armix::mixer::ChannelId{channel} &&
-               existing.insert.slot==slot)
+               existing.insert.channel==armix::mixer::ChannelId{channel} && existing.insert.slot==slot)
                 return; // Exact same logical FX: refocus without losing state.
             emitNotice("Finish the currently open FX editor first",true);
             return;
@@ -7457,6 +7456,12 @@ private:
                     else
                         emitNotice ("This VST3 does not expose a graphical editor.", true);
                 }
+            }
+            else
+            {
+                // The requested slot no longer owns a processor. Never
+                // leave a floating editor bound to a retired plugin.
+                closePluginEditor();
             }
         }
         else if (action == "monitor" && value.isBool())
