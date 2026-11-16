@@ -232,7 +232,7 @@ const depthLayers={far:$("skFarSources"),near:$("skNearSources")};
 const mount=()=>{if(!root.isConnected)document.body.append(root)};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
- xyzCapable=false,p83Capable=false,p84Capable=false,p85Capable=false,p86Capable=false,p87Capable=false,p88Capable=false,p89Capable=false,p90Capable=false,p91p92Capable=false,p94Capable=false,p95Capable=false,p96Capable=false,musicSafeStereo=false,p8TransparentBass=false,p82MultibandRoom=false,
+ xyzCapable=false,p83Capable=false,p84Capable=false,p85Capable=false,p86Capable=false,p87Capable=false,p88Capable=false,p89Capable=false,p90Capable=false,p91p92Capable=false,p94Capable=false,p95Capable=false,p96Capable=false,p97Capable=false,musicSafeStereo=false,p8TransparentBass=false,p82MultibandRoom=false,
  readId="",readSentAt=0,seq=1,clock=null,frame=null,observed=0,observedAt=0,
  drag=null,dialDrag=null,rangeEdits=new Set(),gestureStart=new Map(),
  visualPhase=0,visualAt=0,liveTimer=null,lastLiveAt=0;
@@ -434,7 +434,9 @@ function render(){
   if(!rangeEdits.has("skHrtfAlign"))align.value=String(s.hrtfElevationTrimDegrees);
   $("skHrtfAlignValue").textContent=(s.hrtfElevationTrimDegrees>=0?"+":"")+s.hrtfElevationTrimDegrees.toFixed(1)+"°";
  }
- root.querySelector(".sk-stage-caption").textContent=p96Capable&&s.renderMode===9?
+ root.querySelector(".sk-stage-caption").textContent=p97Capable&&s.renderMode===9?
+    "IMMERSIVE STAGE · BASS IMPACT · CENTER PRESENCE · EARLY AIR":
+    p96Capable&&s.renderMode===9?
     "IMMERSIVE STAGE · REINFORCED BASS + AIR · CINEMA / VENUE":
     p95Capable&&s.renderMode===9?
     "IMMERSIVE SPATIAL · MUSIC PRESENCE · WORLD BASS · CINEMA / VENUE":
@@ -487,7 +489,8 @@ function render(){
  // redrawn at 60 Hz. The native audio callback remains the time authority.
  drawSpeakers();
  $("skMode").textContent=native()?(context()?
-  (p96Capable&&s.renderMode===9?"NATIVE IMMERSIVE · STAGE BASS + AIR":
+  (p97Capable&&s.renderMode===9?"NATIVE IMMERSIVE · STAGE IMPACT + EXTERNAL AIR":
+   p96Capable&&s.renderMode===9?"NATIVE IMMERSIVE · STAGE BASS + AIR":
    p95Capable&&s.renderMode===9?"NATIVE IMMERSIVE · MUSIC PRESENCE · WORLD BASS":
    p94Capable&&s.renderMode===9?"NATIVE IMMERSIVE SPATIAL · WORLD BASS":
    p91p92Capable&&s.renderMode===9?"NATIVE P9.1+P9.2 WORLD BASS · FAT":
@@ -664,6 +667,7 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  p94Capable=p91p92Capable && r.p94FrontBackDepthCue===true;
  p95Capable=p91p92Capable && r.p95MusicalPresence===true;
  p96Capable=p95Capable && r.p96DistanceReinforcement===true;
+ p97Capable=p96Capable && r.p97StageImpact===true;
  p89Capable=(r.schemaVersion===10||p90Capable) && r.p89StereoRoomDepth===true &&
     Number.isFinite(incoming.hrtfElevationTrimDegrees);
   p88Capable=(r.schemaVersion===9||p89Capable) && r.p88PerceptualAlignment===true &&
@@ -769,7 +773,7 @@ $("skPreset").addEventListener("change",()=>{
   musicCompatibleLowFrequency:false});
  if(!send(scene))render();
 });
-$("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapable=false;p85Capable=false;p86Capable=false;p87Capable=false;p88Capable=false;p89Capable=false;p90Capable=false;p91p92Capable=false;p94Capable=false;p95Capable=false;p96Capable=false;musicSafeStereo=false;p8TransparentBass=false;p82MultibandRoom=false;
+$("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapable=false;p85Capable=false;p86Capable=false;p87Capable=false;p88Capable=false;p89Capable=false;p90Capable=false;p91p92Capable=false;p94Capable=false;p95Capable=false;p96Capable=false;p97Capable=false;musicSafeStereo=false;p8TransparentBass=false;p82MultibandRoom=false;
  cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
  drag=null;windowGesture=null;rangeEdits.clear();gestureStart.clear();lastLiveAt=0;
  if(clock!==null){clearInterval(clock);clock=null;}
@@ -968,7 +972,7 @@ const api={
   drag=null;rangeEdits.clear();gestureStart.clear();
   accepted=defaults();draft=defaults();xyzCapable=false;
   p83Capable=p84Capable=p85Capable=p86Capable=p87Capable=p88Capable=
-   p89Capable=p90Capable=p91p92Capable=p94Capable=p95Capable=p96Capable=false;
+   p89Capable=p90Capable=p91p92Capable=p94Capable=p95Capable=p96Capable=p97Capable=false;
   musicSafeStereo=p8TransparentBass=p82MultibandRoom=false;
   current={track,slot,instanceId:null};
   const s=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);

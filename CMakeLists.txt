@@ -117,6 +117,13 @@ if(ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT AND
    NOT ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE)
   message(FATAL_ERROR "P9.6 requires P9.5 musical presence and P9 world speaker")
 endif()
+# P9.7 is research only and never changes the approved P9.6 checkpoint.
+option(ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT
+       "Private P9.7 concert bass impact, center HRTF and binaural early air" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT)
+  message(FATAL_ERROR "P9.7 requires the P9.6 sound-reinforced world-speaker engine")
+endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -339,7 +346,9 @@ target_compile_definitions(ARMixConsole PRIVATE
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE}>:ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE}>:SONKU_P95_MUSICAL_PRESENCE_RESEARCH=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT}>:SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH=1>
-    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT}>:ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT=1>)
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT}>:ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT}>:SONKU_P97_STAGE_IMPACT_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT}>:ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT=1>)
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
   # Never link Windows loader or sound APIs into macOS/Linux builds.
@@ -874,7 +883,8 @@ if(BUILD_TESTING)
                                 $<TARGET_PROPERTY:ARMixSonKuP91P92MusicBassTests,COMPILE_DEFINITIONS>
                                 SONKU_P94_FRONT_BACK_DEPTH_RESEARCH=1
                                 SONKU_P95_MUSICAL_PRESENCE_RESEARCH=1
-                                $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT}>:SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH=1>)
+                                $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT}>:SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH=1>
+                                $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT}>:SONKU_P97_STAGE_IMPACT_RESEARCH=1>)
                             add_test(NAME NativeSonKuP95MusicPresenceVenue
                                 COMMAND ARMixSonKuP95MusicTests)
                           endif()
@@ -884,6 +894,13 @@ if(BUILD_TESTING)
                             target_compile_features(ARMixSonKuP96DistanceTests PRIVATE cxx_std_20)
                             add_test(NAME NativeSonKuP96DistanceBassAndTrebleRetention
                                 COMMAND ARMixSonKuP96DistanceTests)
+                          endif()
+                          if(ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT)
+                            add_executable(ARMixSonKuP97StageTests
+                                tests/sonku_p97_stage_impact_source_test.cpp)
+                            target_compile_features(ARMixSonKuP97StageTests PRIVATE cxx_std_20)
+                            add_test(NAME NativeSonKuP97BassVocalExternalAirSafety
+                                COMMAND ARMixSonKuP97StageTests)
                           endif()
                           juce_add_console_app(ARMixSonKuP90NativeTests
                               PRODUCT_NAME "ArSonMix SonKu P90 JUCE v11 State Tests")

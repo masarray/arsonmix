@@ -28,6 +28,9 @@
 #if defined(SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH) && SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH
 #include "SonKuP96DistanceReinforcement.h"
 #endif
+#if defined(SONKU_P97_STAGE_IMPACT_RESEARCH) && SONKU_P97_STAGE_IMPACT_RESEARCH
+#include "SonKuP97StageImpact.h"
+#endif
 #if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
 #include "SonKuP94FrontBackDepthCue.h"
 #endif
@@ -216,6 +219,9 @@ public:
 #if defined(SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH) && SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH
         if(!p96Reinforcement_.prepare(rate))return false;
 #endif
+#if defined(SONKU_P97_STAGE_IMPACT_RESEARCH) && SONKU_P97_STAGE_IMPACT_RESEARCH
+        if(!p97Stage_.prepare(rate))return false;
+#endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
         if(!p95Presence_.prepare(rate))return false;
 #endif
@@ -293,6 +299,9 @@ public:
 #if defined(SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH) && SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH
         p96Reinforcement_.reset();
 #endif
+#if defined(SONKU_P97_STAGE_IMPACT_RESEARCH) && SONKU_P97_STAGE_IMPACT_RESEARCH
+        p97Stage_.reset();
+#endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
         p95Presence_.reset();
 #endif
@@ -352,6 +361,9 @@ public:
             p92Bass_.reset();
 #if defined(SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH) && SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH
         p96Reinforcement_.reset();
+#endif
+#if defined(SONKU_P97_STAGE_IMPACT_RESEARCH) && SONKU_P97_STAGE_IMPACT_RESEARCH
+        p97Stage_.reset();
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
         p95Presence_.reset();
@@ -762,8 +774,21 @@ public:
             if(p83Mode_==p83::Mode::MusicSpatialP90)sideRescue=0.f;
 #endif
 #endif
-            history_[0][write_]=x0;
-            history_[1][write_]=x1;
+#if defined(SONKU_P97_STAGE_IMPACT_RESEARCH) && SONKU_P97_STAGE_IMPACT_RESEARCH
+            if(p90World){
+                // Center material is reinforced ONLY before the existing
+                // world-speaker HRIR; room, P92 LF, and decoder observe
+                // the original stereo. No center headphone dry injection.
+                const auto fed=p97Stage_.source(x0,x1,
+                    settings_.sourceDistanceMeters,roomEnabled);
+                history_[0][write_]=fed.left;
+                history_[1][write_]=fed.right;
+            }else
+#endif
+            {
+                history_[0][write_]=x0;
+                history_[1][write_]=x1;
+            }
             float ears[2]{0.f,0.f};
             for(int tap=0;tap<taps;++tap) {
                 int at=write_-tap;
@@ -931,6 +956,20 @@ public:
                         directL=calibratedDirect*reinforced.left;
                         directR=calibratedDirect*reinforced.right;
                     }
+                }
+#endif
+#if defined(SONKU_P97_STAGE_IMPACT_RESEARCH) && SONKU_P97_STAGE_IMPACT_RESEARCH
+                if(p90World){
+                    // Spectral stage changes remain tied to the HRTF and
+                    // the existing 6-wall first-image / P92 modal fields.
+                    // Identical stereo-ear coefficients do not pan/delay
+                    // sources or manufacture independent mono-bass channels.
+                    const auto punch=p97Stage_.direct(directL,directR);
+                    directL=punch.left;directR=punch.right;
+                    const auto air=p97Stage_.early(reflection.left,reflection.right);
+                    reflection.left=air.left;reflection.right=air.right;
+                    const auto modal=p97Stage_.modal(p92RoomBass.left,p92RoomBass.right);
+                    p92RoomBass.left=modal.left;p92RoomBass.right=modal.right;
                 }
 #endif
                 float spatialL=directL+
@@ -1327,6 +1366,9 @@ private:
     p92::WorldBassFoundation p92Bass_{};
 #if defined(SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH) && SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH
     p96::DistanceReinforcement p96Reinforcement_{};
+#endif
+#if defined(SONKU_P97_STAGE_IMPACT_RESEARCH) && SONKU_P97_STAGE_IMPACT_RESEARCH
+    p97::StageImpact p97Stage_{};
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
     p95::MusicalPresence p95Presence_{};
