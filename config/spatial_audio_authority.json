@@ -81,8 +81,8 @@
       "3": "Royal Concert Hall — 3.2m, 106°, Early155%, Late78%, detail4",
       "4": "Arena Thunder — 3.7m, 124°, Early145%, Late86%, impact5",
       "5": "Front Row Power — 1.4m, 104°, Early126%, Late70%, detail4",
-      "6": "Symphonic Palace — 3.6m, 118°, Early160%, Late80%, detail4",
-      "7": "Velvet Cinema — 3.5m, 108°, Early142%, Late82%, Cinema3"
+      "6": "Symphonic Palace — 2.7m, 118°, Early160%, Late80%, detail4",
+      "7": "Velvet Cinema — 2.8m, 108°, Early142%, Late82%, Cinema3"
     },
     "ownerScreenshotObservation": {
       "speakerSpreadDeg": 150,
@@ -170,7 +170,8 @@
         "engine/builtin_fx/sonku/SonKuSourcePlacement3D.h": "9afb959bed292626c3097c2a382208ce8798e90c"
       },
       "legacyIMRS": "Old 4-10m restored scenes migrate source distance down to room-safe <=4m; no codec version or FX ID change",
-      "physicalHeadphoneABRequired": true
+      "physicalHeadphoneABRequired": true,
+      "sceneBalance": "44.1k nearfield PCM showed Symphonic 3.6m was <.85 archival Venue energy; retargeted to 2.7m, Cinema to 2.8m without gain-only inflation."
     }
   }
 }

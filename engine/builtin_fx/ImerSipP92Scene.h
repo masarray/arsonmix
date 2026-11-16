@@ -69,8 +69,8 @@ inline constexpr std::array<ImerSipP92Preset,6> imersipP92Presets{{
     {3,"Royal Concert Hall", 3,106.f,3.2f,1.55f,.78f,5.57507f,4},
     {4,"Arena Thunder",     3,124.f,3.7f,1.45f,.86f,5.45f,5},
     {5,"Front Row Power",   3,104.f,1.4f,1.26f,.70f,5.60f,4},
-    {6,"Symphonic Palace",  3,118.f,3.6f,1.60f,.80f,5.25f,4},
-    {7,"Velvet Cinema",     3,108.f,3.5f,1.42f,.82f,4.60898f,3}
+    {6,"Symphonic Palace",  3,118.f,2.7f,1.60f,.80f,5.25f,4},
+    {7,"Velvet Cinema",     3,108.f,2.8f,1.42f,.82f,4.60898f,3}
 }};
 #else
 // Historical P9.2 candidate stays reproducible when private P9.8 OFF.
