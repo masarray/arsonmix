@@ -171,19 +171,14 @@ public:
         g.drawText("L  /  WORLD PA",80,413,260,18,juce::Justification::centred);
         g.drawText("R  /  WORLD PA",766,413,260,18,juce::Justification::centred);
 
-        // Brushed metal PNG is the actual desk surface, not a placeholder.
-        // All labels and live values remain native JUCE text and controls.
+        // A single matte charcoal field keeps the dense native controls
+        // readable. No decorative lights, borders, separators, or texture.
+        // Preset/room labels are native text; no wording is baked into art.
         skin_.drawPanel(g);
-        g.setColour(juce::Colour(0xff54797b));
-        g.fillRect(0,461,1100,1);
-        g.setColour(juce::Colour(0xc600090c));
-        g.fillRect(251,468,2,204);
-        g.fillRect(879,468,2,204);
-        g.setColour(juce::Colour(0xffcfdadd));
-        g.setFont(juce::FontOptions(12.f));
-        g.drawText("SCENE SETUP",22,480,210,20,juce::Justification::centredLeft);
-        g.drawText("SPATIAL FIELD",270,480,590,20,juce::Justification::centredLeft);
-        g.drawText("OUTPUT",898,480,183,20,juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xffa8b8c2));
+        g.setFont(juce::FontOptions(11.f));
+        g.drawText("PRESET",20,502,213,15,juce::Justification::centredLeft);
+        g.drawText("ROOM",20,568,213,15,juce::Justification::centredLeft);
 
         // Values are text drawn by JUCE, not baked into texture.
         for(int i=0;i<8;++i){
