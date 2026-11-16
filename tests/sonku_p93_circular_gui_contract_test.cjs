@@ -51,7 +51,7 @@ const element={dataset:{},disabled:true,
  setAttribute(k,v){this[k]=v}};
 const root={dataset:{}},current={track:{},slot:0};
 const power=vm.runInNewContext("(function(){let current=__current;"+
- "let root=__root;let $=()=>__element;let snapshot=()=>__state;"+
+ "let root=__root;const ID=\"armix.builtin.8d-sonku.v1\";let $=()=>__element;let snapshot=()=>__state;"+
  "let native=()=>true;"+sync+"return syncPower;})()",{
  __current:current,__root:root,__element:element,__state:state,
  document:{querySelector(){return {classList:{contains(){return false}}};}}
