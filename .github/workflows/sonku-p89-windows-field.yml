@@ -1,5 +1,5 @@
-name: SonKu P9.0 true external speaker native mixer portable FAT x64
-# Private JUCE app, no release. Native v11 A/B P8.2 through P9.
+name: SonKu P8.9 room-anchored stereo native mixer portable FAT x64
+# Private JUCE app, no release. P8.9 native v10 field A/B, P9.0 disabled.
 on:
   pull_request:
     paths:
@@ -8,10 +8,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: sonku-p90-field-${{ github.event.pull_request.number || github.ref }}
+  group: sonku-p89-field-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
   preflight:
+    # Standalone P8.9 research, not the P9.8 current release candidate.
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.head_ref,'research/sonku-p89-') || startsWith(github.head_ref,'feat/sonku-p89-') }}
     name: Isolated fast PCM and GUI preflight
     runs-on: ubuntu-latest
     timeout-minutes: 8
@@ -48,9 +50,6 @@ jobs:
           g++ $FLAGS -DSONKU_P85_WORLD_COHERENCE_RESEARCH=1 -DSONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1 -DSONKU_P87_MUSIC_BODY_RESEARCH=1 -DSONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1 -DSONKU_P89_DEPTH_COHERENCE_RESEARCH=1 tests/sonku_p89_stereo_room_depth_source_test.cpp -o /tmp/p89-source
           /tmp/p89-source | tee /tmp/p89-source.log
           grep -q '^PASS P89 ROOM ANCHOR:' /tmp/p89-source.log
-          g++ $FLAGS -DSONKU_P85_WORLD_COHERENCE_RESEARCH=1 -DSONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1 -DSONKU_P87_MUSIC_BODY_RESEARCH=1 -DSONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1 -DSONKU_P89_DEPTH_COHERENCE_RESEARCH=1 -DSONKU_P90_TRUE_EXTERNAL_RESEARCH=1 tests/sonku_p90_true_external_source_test.cpp -o /tmp/p90-source
-          /tmp/p90-source | tee /tmp/p90-source.log
-          grep -q '^PASS P90 NATIVE PCM:' /tmp/p90-source.log
       - name: Native JS and source GUI capability checks
         run: |
           set -euo pipefail
@@ -72,7 +71,6 @@ jobs:
           PY
           grep -q 'r.schemaVersion===10' site/preview-v2/assets/mixer-native-sonku.js
           grep -q 'r.schemaVersion===11' site/preview-v2/assets/mixer-native-sonku.js
-          grep -q 'p90TrueExternalSpeaker' src/Main.cpp
           # A mode8 enum without fused FIR dispatch silently changes P8.8 timbre.
           # This source contract prevents another fallback-to-wrong-kernel regression.
           python - <<'PY'
@@ -170,7 +168,6 @@ jobs:
             -DARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT=ON `
             -DARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT=ON `
             -DARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT=ON `
-            -DARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT=ON `
             -DBUILD_TESTING=ON
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $cache = Get-Content -LiteralPath build/CMakeCache.txt -Raw
@@ -184,8 +181,7 @@ jobs:
               $cache -notmatch 'ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT:BOOL=ON' -or
               $cache -notmatch 'ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT:BOOL=ON' -or
               $cache -notmatch 'ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT:BOOL=ON' -or
-              $cache -notmatch 'ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT:BOOL=ON' -or
-              $cache -notmatch 'ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT:BOOL=ON') {
+              $cache -notmatch 'ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT:BOOL=ON') {
             throw "SONKU_P83_RESEARCH_NOT_ENABLED"
           }
           $tests = (& ctest --test-dir build -C Release --show-only=json-v1 | Out-String | ConvertFrom-Json)
@@ -209,9 +205,7 @@ jobs:
                         'NativeSonKuP88MeasuredEarHeightAndDistanceDrr',
                         'NativeSonKuP88JuceV9AppliedAckAndV8Restore',
                         'NativeSonKuP89RoomAnchoredStereoAndP88GoldenParity',
-                        'NativeSonKuP89JuceV10AppliedAckAndV9Restore',
-                        'NativeSonKuP90StereoExternalizationSource',
-                        'NativeSonKuP90JuceV11AppliedAckAndLegacyRestore')
+                        'NativeSonKuP89JuceV10AppliedAckAndV9Restore')
           $available = @($tests.tests | ForEach-Object { $_.name })
           foreach ($test in $required) {
             if ($test -notin $available) { throw "SONKU_P82_MISSING_CTEST:$test" }
@@ -219,130 +213,9 @@ jobs:
       - name: Fail fast — compile and execute real JUCE v5 state + PCM ACK first
         shell: pwsh
         run: |
-          cmake --build build --config Release --parallel 2 --target ARMixSonKuP90NativeTests
+          cmake --build build --config Release --parallel 2 --target ARMixSonKuP89NativeTests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          ctest --test-dir build -C Release --output-on-failure -R '^NativeSonKuP90JuceV11AppliedAckAndLegacyRestore
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Compile actual ARMixConsole Windows GUI and focused real JUCE tests
-        shell: pwsh
-        run: |
-          cmake --build build --config Release --parallel 2 --target `
-            ARMixConsole ARMixSonKuP72SourceTests ARMixSonKuP72NativeTests ARMixSonKuNativeStateTests ARMixSonKuP75MusicIntegrityTests ARMixSonKuP80TonalEvidenceTests ARMixSonKuP82RoomTests ARMixSonKuP83LiveSourceTests ARMixSonKuP83NativeTests ARMixSonKuP84LiveSourceTests ARMixSonKuP84NativeTests ARMixSonKuP85WorldSourceTests ARMixSonKuP85NativeTests ARMixSonKuP86FocusSourceTests ARMixSonKuP86NativeTests ARMixSonKuP87MusicSourceTests ARMixSonKuP87NativeTests ARMixSonKuP88SourceTests ARMixSonKuP88NativeTests ARMixSonKuP89SourceTests ARMixSonKuP89NativeTests ARMixSonKuP90SourceTests ARMixSonKuP90NativeTests
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $exe = 'build/ARMixConsole_artefacts/Release/AR MIX Studio.exe'
-          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "SONKU_P83_NO_GUI_EXE" }
-          if ((Get-Item -LiteralPath $exe).Length -lt 4MB) { throw "SONKU_P83_WRONG_GUI_TARGET" }
-      - name: Scoped native XYZ state, callback ACK and legacy restoration
-        shell: pwsh
-        run: |
-          ctest --test-dir build -C Release --output-on-failure `
-            -R '^NativeSonKu(P72AtomicXyzLiveEditSource|P72JuceV3XyzLiveAckV1V2Restore|SessionV1V2AndAudioAppliedAck|P75MusicStereoPhaseNoNullAndChunkParity|P80TransparentBassStereoPhaseAndRoomDiagnostic|P82SixWallThreeBandRoomTimingDecayAndParity|P83RealtimeModeSourceAndMusicIntegrity|P83JuceV4AudioAckLegacyRestoreAndHeadYaw|P84SingleCoreMusicFidelityAndWorldYaw|P84JuceV5AudioAckLegacySafeRestore|P85WorldCoherentMidYawSourceAndFidelity|P85JuceV6AudioAckLegacySafeRestore|P86SixWallHorizontalFocusAndMusicIntegrity|P86JuceV7AudioAckAndV6Restore|P87MusicalAirBodyP86DryParityAndFdnBass|P87JuceV8AudioAppliedAckV7Restore|P88MeasuredEarHeightAndDistanceDrr|P88JuceV9AppliedAckAndV8Restore|P89RoomAnchoredStereoAndP88GoldenParity|P89JuceV10AppliedAckAndV9Restore|P90StereoExternalizationSource|P90JuceV11AppliedAckAndLegacyRestore)$'
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Package real native portable mixer, never an installer
-        shell: pwsh
-        run: |
-          & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist --best-effort
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Record exact experiment and physical qualification pending
-        shell: pwsh
-        run: |
-          $path = 'dist/BUILD_PROVENANCE.json'
-          $p = Get-Content -LiteralPath $path -Raw -Encoding utf8 | ConvertFrom-Json
-          $sha = (& git rev-parse HEAD).Trim()
-          if ($p.sourceCommit -ne $sha) { throw "SONKU_P83_ARTIFACT_SHA_MISMATCH" }
-          $p.fatStatus = 'FIELD_PREVIEW_FULL_CTEST_NOT_RUN'
-          $p | Add-Member -NotePropertyName sonkuExperiment -NotePropertyValue @{
-            enabled = $true
-            nativeXYZ = $true
-            musicSafeStereo = $true
-            p8TransparentBass = $true
-            p82MultibandRoom = $true
-            p83NativeSpeakers = $false
-            p84FusedNative = $true
-            p85WorldLockedMid = $true
-            p86HorizontalFocus = $true
-            p87MusicalAirBody = $true
-            p88PerceptualAlignment = $true
-            p89StereoRoomDepth = $true
-            p90TrueExternalSpeaker = $true
-            p84RenderModes = @('MusicBedP82','MusicSpatialP84','MusicSpatialP85','MusicSpatialP86','MusicSpatialP87','MusicSpatialP88','MusicSpatialP89','MusicSpatialP90')
-            p83HeadYaw = 'DETERMINISTIC_MANUAL_NO_SENSOR'
-            p84FusionDifferenceHighpassHz = 750
-            p84MeasuredHrirContrast = 0.12
-            legacyP83V4Migration = 'OLD_SPEAKER_TO_P82'
-            p83AudioAppliedAck = $true
-            p83RealtimeModeCrossfade = '12ms_OUT_AND_IN_NATIVE_SINGLE_PCM_GRAPH'
-            p82RoomBandsHz = @(250,4800)
-            p82MaterialCalibration = 'ORIGINAL_ILLUSTRATIVE_NOT_MEASURED_RIR'
-            p82Rt60StudioSeconds = @(0.717,0.392,0.231)
-            p82Rt60ChamberSeconds = @(0.933,0.802,0.483)
-            p82Rt60HallSeconds = @(1.716,1.219,0.650)
-            p8LowBandCrossoverHz = 220
-            musicSafeAlgorithm = 'MEASURED_CENTER_MID_PLUS_UNCONDITIONAL_STEREO_SIDE_RESEARCH'
-            stateSchema = 11
-            fullWindowsExecutable = $true
-            publicRelease = $false
-            physicalAsioQualified = $false
-            dearVrPerceptualParityProven = $false
-            qualification = 'SONKU_P90_NATIVE_TWO_SPEAKER_COHERENT_PCM_JUCE_V11_FAT_PENDING'
-            licenseRedistributionApproval = $false
-            mitKemarNoticeSha256 = (Get-FileHash -LiteralPath docs/THIRD_PARTY_8D_SONKU_HRTF.md -Algorithm SHA256).Hash.ToLowerInvariant()
-            fieldFatGuideSha256 = (Get-FileHash -LiteralPath docs/SONKU_P90_TRUE_EXTERNAL_SPEAKER_FAT_20261115.md -Algorithm SHA256).Hash.ToLowerInvariant()
-          } -Force
-          $p | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $path -Encoding utf8
-      - name: Independent GUI PE, approved resources, provenance and ZIP verification
-        shell: pwsh
-        run: |
-          & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $p = Get-Content -LiteralPath dist/BUILD_PROVENANCE.json -Raw | ConvertFrom-Json
-          if (-not $p.sonkuExperiment.enabled -or
-              -not $p.sonkuExperiment.musicSafeStereo -or
-              -not $p.sonkuExperiment.p8TransparentBass -or
-              -not $p.sonkuExperiment.p82MultibandRoom -or
-              -not $p.sonkuExperiment.p84FusedNative -or
-              -not $p.sonkuExperiment.p85WorldLockedMid -or
-              -not $p.sonkuExperiment.p86HorizontalFocus -or
-              -not $p.sonkuExperiment.p87MusicalAirBody -or
-              -not $p.sonkuExperiment.p88PerceptualAlignment -or
-              -not $p.sonkuExperiment.p89StereoRoomDepth -or
-              -not $p.sonkuExperiment.p90TrueExternalSpeaker -or
-              $p.sonkuExperiment.stateSchema -ne 11 -or $p.sonkuExperiment.publicRelease) {
-            throw 'SONKU_P90_WRONG_FIELD_ARTIFACT'
-          }
-      - name: Include mandatory MIT KEMAR notice and physical FAT guide
-        shell: pwsh
-        run: |
-          # Standard distribution allowlist was verified above. Field-only notice.
-          Copy-Item -LiteralPath docs/THIRD_PARTY_8D_SONKU_HRTF.md -Destination dist/THIRD_PARTY_8D_SONKU_HRTF.md
-          Copy-Item -LiteralPath docs/SONKU_P90_TRUE_EXTERNAL_SPEAKER_FAT_20261115.md -Destination dist/SONKU_P90_FIELD_FAT.md
-          $p = Get-Content -LiteralPath dist/BUILD_PROVENANCE.json -Raw | ConvertFrom-Json
-          $checks = @{
-            'THIRD_PARTY_8D_SONKU_HRTF.md' = [string]$p.sonkuExperiment.mitKemarNoticeSha256
-            'SONKU_P90_FIELD_FAT.md' = [string]$p.sonkuExperiment.fieldFatGuideSha256
-          }
-          foreach ($item in $checks.GetEnumerator()) {
-            $file = Join-Path dist $item.Key
-            if ($item.Value -notmatch '^[0-9a-f]{64}$' -or
-                -not (Test-Path -LiteralPath $file -PathType Leaf)) {
-              throw "SONKU_P83_FIELD_NOTICE_MISSING:$($item.Key)"
-            }
-            $actual = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($actual -ne $item.Value) { throw "SONKU_P83_FIELD_NOTICE_HASH_MISMATCH:$($item.Key)" }
-          }
-          if (Test-Path -LiteralPath dist/Studio) { throw 'SONKU_FIELD_USER_DATA_MUST_NOT_SHIP' }
-          Write-Host 'SONKU_P90_FIELD_READY: GUI EXE + verified MIT notice + FAT guide'
-      - uses: actions/upload-artifact@v4
-        name: Upload isolated SonKu Windows x64 field candidate
-        with:
-          name: ArSonMix-SonKu-P90-True-External-Speaker-Windows-x64-${{ github.run_id }}
-          path: dist/
-          if-no-files-found: error
-          retention-days: 21
-          compression-level: 0
-
+          ctest --test-dir build -C Release --output-on-failure -R '^NativeSonKuP89JuceV10AppliedAckAndV9Restore$'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Compile actual ARMixConsole Windows GUI and focused real JUCE tests
         shell: pwsh
@@ -406,7 +279,7 @@ jobs:
             publicRelease = $false
             physicalAsioQualified = $false
             dearVrPerceptualParityProven = $false
-            qualification = 'SONKU_P89_SCOPED_NATIVE_PCM_JUCE_20_CTESTS_HEADPHONE_FAT_PENDING'
+            qualification = 'SONKU_P89_ROOM_ANCHORED_PCM_JUCE_V10_FAT_PENDING'
             licenseRedistributionApproval = $false
             mitKemarNoticeSha256 = (Get-FileHash -LiteralPath docs/THIRD_PARTY_8D_SONKU_HRTF.md -Algorithm SHA256).Hash.ToLowerInvariant()
             fieldFatGuideSha256 = (Get-FileHash -LiteralPath docs/SONKU_P89_ROOM_ANCHORED_STEREO_20261115.md -Algorithm SHA256).Hash.ToLowerInvariant()
