@@ -216,6 +216,27 @@ def exercise(browser,out,width,height):
     page.wait_for_timeout(150)
     vx1=editor.locator('.sk-src[data-index="0"]').get_attribute("data-visual-x")
     assert abs(float(vx1)-float(vx0))>1.0,("Orbit is frozen between readbacks",vx0,vx1)
+    # Regression: bypassed native PCM cannot advance azimuth. The visual
+    # must FREEZE its last pose and ignore the stale 250ms readback PLL.
+    # This is the user-reported erratic left/right icon flicker.
+    state["graph"]["channels"][0]["inserts"][0]["bypassed"]=True
+    emit(page,"arMixConsoleSnapshot",state)
+    page.wait_for_function("""()=>document.getElementById('mxNativeSonKu')
+                              ?.dataset.fxState==='off'""")
+    freeze_x=editor.locator('.sk-src[data-index="0"]').get_attribute("data-visual-x")
+    page.wait_for_timeout(450)
+    still_x=editor.locator('.sk-src[data-index="0"]').get_attribute("data-visual-x")
+    assert freeze_x==still_x,("Bypassed PCM must freeze last speaker icon",freeze_x,still_x)
+    state["graph"]["channels"][0]["inserts"][0]["bypassed"]=False
+    emit(page,"arMixConsoleSnapshot",state)
+    page.wait_for_function("""()=>document.getElementById('mxNativeSonKu')
+                              ?.dataset.fxState==='on'""")
+    accepted_snapshot(page,state,SETTINGS)
+    resume_x=editor.locator('.sk-src[data-index="0"]').get_attribute("data-visual-x")
+    page.wait_for_timeout(180)
+    resumed_x=editor.locator('.sk-src[data-index="0"]').get_attribute("data-visual-x")
+    assert abs(float(resumed_x)-float(resume_x))>1.0,(
+        "Enabled PCM must resume running source orbit",resume_x,resumed_x)
     # Close/reopen must use the installed FX rack click, never a private open().
     editor.locator("#skClose").click()
     assert editor.is_hidden()
