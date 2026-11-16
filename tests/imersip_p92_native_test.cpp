@@ -432,10 +432,24 @@ int main() {
     auto* actualEditor=dynamic_cast<armix::builtin_fx::ImerSipP92Editor*>(
         editor.get());
     assert(actualEditor);
-    bool bypassed=false;
+    bool bypassed=false,rackBypassed=false,globalBypassed=false;
+    bool hostAvailable=true,acceptPower=true;
+    int acceptedLocalPower=0;
+    const auto hostState=[&] {
+        armix::builtin_fx::ImerSipP92Editor::HostBypassState state{};
+        state.valid=hostAvailable;
+        state.slotBypassed=bypassed;
+        state.rackBypassed=rackBypassed;
+        state.globalBypassed=globalBypassed;
+        return state;
+    };
     actualEditor->bindHostPower(
-        [&](bool desired){bypassed=desired;return true;},
-        [&](){return bypassed;});
+        [&](bool desired) {
+            if(!acceptPower)return false;
+            bypassed=desired;
+            ++acceptedLocalPower;
+            return true;
+        },hostState);
     assert(power->isEnabled() && power->getToggleState());
     // Host-connected native screenshots prove the two actual power glyph
     // states. The earlier DPI snapshots deliberately test disabled/fail-safe
@@ -535,6 +549,58 @@ int main() {
     assert(changedPowerPixels>=10); // Visible true host ON/OFF indication
     power->onClick();
     assert(!bypassed && power->getToggleState());
+    assert(acceptedLocalPower==2);
+
+    // Rejected host commands do not optimistic-toggle the actual PCM state.
+    acceptPower=false;
+    power->onClick();
+    assert(!bypassed && power->getToggleState());
+    assert(acceptedLocalPower==2);
+    acceptPower=true;
+
+    // Mixer-header FX Power is a GLOBAL override, not a rewrite of
+    // any slot's remembered bypass preference. With editor still open
+    // it must immediately show BYPASSED and block misleading local power.
+    globalBypassed=true;
+    actualEditor->synchronizeHostPower();
+    assert(!bypassed && !power->isEnabled() && !power->getToggleState());
+    const auto globalFrame=savePowerFrame("GLOBAL_BYPASSED");
+    assert(globalFrame.getPixelAt(450,195)!=activeFrame.getPixelAt(450,195));
+    globalBypassed=false;
+    actualEditor->synchronizeHostPower();
+    assert(!bypassed && power->isEnabled() && power->getToggleState());
+
+    // Rack Power is another independent additive gate; it must dim even
+    // though this individual slot's preference is still enabled.
+    rackBypassed=true;
+    actualEditor->synchronizeHostPower();
+    assert(!bypassed && !power->isEnabled() && !power->getToggleState());
+    const auto rackFrame=savePowerFrame("RACK_BYPASSED");
+    assert(rackFrame.getPixelAt(450,195)!=activeFrame.getPixelAt(450,195));
+    rackBypassed=false;
+    actualEditor->synchronizeHostPower();
+    assert(!bypassed && power->isEnabled() && power->getToggleState());
+
+    // An invalidated processor lease can neither change another slot nor
+    // pretend that its UI owns an admitted host effect.
+    hostAvailable=false;
+    actualEditor->synchronizeHostPower();
+    assert(!power->isEnabled() && !power->getToggleState());
+    hostAvailable=true;
+    actualEditor->synchronizeHostPower();
+    assert(power->isEnabled() && power->getToggleState());
+
+    // Original per-insert bypass must survive a global A/B roundtrip.
+    power->onClick();
+    assert(bypassed);
+    globalBypassed=true;
+    actualEditor->synchronizeHostPower();
+    globalBypassed=false;
+    actualEditor->synchronizeHostPower();
+    assert(bypassed && !power->getToggleState() && power->isEnabled());
+    power->onClick();
+    assert(!bypassed && power->getToggleState());
+
     // Actual JUCE scene renders: exact same embedded venue images as shipped
     // with the native app. These captures are NOT HTML concept mockups.
     // Each of the six preset IDs must produce a distinct visual composition.
