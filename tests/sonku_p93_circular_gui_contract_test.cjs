@@ -54,6 +54,7 @@ const power=vm.runInNewContext("(function(){let current=__current;"+
  "let root=__root;const ID=\"armix.builtin.8d-sonku.v1\";let $=()=>__element;let snapshot=()=>__state;"+
  "let native=()=>true;"+sync+"return syncPower;})()",{
  __current:current,__root:root,__element:element,__state:state,
+ window:{__ARMIX_NATIVE_M2__:{nativeIdFor(){return "ch-1";}}},
  document:{querySelector(){return {classList:{contains(){return false}}};}}
 });
 power();assert.equal(element.dataset.fxState,"on");assert.equal(element.disabled,false);
