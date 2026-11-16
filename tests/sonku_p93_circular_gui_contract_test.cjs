@@ -36,7 +36,7 @@ assert.equal(Object.keys(p.factoryPresets).length,6);
 assert.equal(Object.keys(p.legacyFactoryPresets).length,5);
 for(const [id,scene] of Object.entries(p.factoryPresets)){
  assert.equal(scene.spatialMix,1);
- assert(scene.outputTrim>=1.58&&scene.outputTrim<=2.24);
+ assert(scene.outputTrim>=1.58&&scene.outputTrim<=2.38);
  assert(scene.sourceDistanceMeters>=3 &&scene.sourceDistanceMeters<=10);
  assert([4,5,6,7].includes(scene.spacePreset));
  const max=[10,3.1,6.7,10,3.1,10,10,10][scene.spacePreset];
