@@ -249,6 +249,7 @@ function syncPower(){
   (!lane||typeof lane.fxRackBypassed!=="boolean"||
     !insert||insert.catalogId!==ID||typeof insert.bypassed!=="boolean"?"unknown":
     (lane.fxRackBypassed||globalOff)?"rack-off":insert.bypassed?"off":"on");
+ const beforeState=p.dataset.fxState;
  p.dataset.fxState=state;
  p.disabled=state==="unknown"||state==="rack-off";
  p.setAttribute("aria-pressed",String(state==="on"));
@@ -258,6 +259,12 @@ function syncPower(){
     "SONKU STATE UNAVAILABLE · waiting for native readback";
  p.setAttribute("aria-label",p.title);
  root.dataset.fxState=state;
+ // Audio stops when native FX is bypassed. Do not keep predicting visual
+ // orbit against a frozen PCM phase (old behavior visibly oscillated).
+ if(beforeState!==state){
+  visualAt=0;
+  if(state!=="on")observedAt=0;
+ }
  root.querySelector(".sk-engine-led").textContent=
   state==="on"?"HRTF ACTIVE":
   state==="off"?"FX BYPASSED":
@@ -524,6 +531,11 @@ function drawSpeakers(){
 // teleporting at each ~250ms readback. Only SVG geometry is painted per frame.
 function animate(time){
  if(root.hidden||!current){frame=null;return;}
+ if(root.dataset.fxState!=="on"){
+  visualAt=0;
+  frame=requestAnimationFrame(animate);
+  return;
+ }
  if(visualAt && draft.moving && !drag){
   const dt=Math.max(0,Math.min(.08,(time-visualAt)*.001));
   const speed=(draft.clockwise?1:-1)*360/draft.revolutionSeconds;
@@ -686,7 +698,7 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
   // later failure/reopen never restores a stale value.
   accepted={...incoming};
  }
- if(Number.isFinite(r.observedAzimuthDegrees)){
+ if(Number.isFinite(r.observedAzimuthDegrees) && root.dataset.fxState==="on"){
   // First authoritative phase anchors the loop once. Subsequent readbacks
   // only adjust the PLL; never set the visible phase discontinuously.
   if(!observedAt)visualPhase=angle(r.observedAzimuthDegrees);
