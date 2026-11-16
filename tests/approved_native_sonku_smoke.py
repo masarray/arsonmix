@@ -209,6 +209,13 @@ def exercise(browser,out,width,height):
     after=page.evaluate(
         "()=>window.__actions.filter(a=>a.action==='nativeSonKuSnapshot').length")
     assert after==count, "Unanswered SonKu readback was overwritten"
+    # Admission now establishes authoritative rack bypass state. Only a
+    # confirmed ON insert is allowed to extrapolate an audible orbit;
+    # UNKNOWN or bypassed should remain frozen, never simulate PCM.
+    state["graph"]["channels"][0]["fxRackBypassed"]=False
+    emit(page,"arMixConsoleSnapshot",state)
+    page.wait_for_function("""()=>document.getElementById('mxNativeSonKu')
+                             ?.dataset.fxState==='on'""")
     accepted_snapshot(page,state,SETTINGS)
     # A true visual animation must advance BETWEEN native readbacks.
     # The old 250ms setInterval was ~4fps despite valid DSP PCM.
