@@ -39,6 +39,14 @@ class ImerSipP92Contract(unittest.TestCase):
         self.assertIn("imersipP92ConcertBoxes(",ui)
         self.assertIn("skin_.drawRoom(g)",ui)
         self.assertIn("skin_.drawPanel(g)",ui)
+        self.assertIn("skin_.drawScene(g,visualSceneId_)",ui)
+        self.assertIn("if(preset!=1)visualSceneId_=preset",ui)
+        self.assertIn("visualSceneId_=id",ui)
+        self.assertNotIn("L  /  WORLD PA",ui)
+        self.assertNotIn("LIVE CONCERT WORLD",ui)
+        self.assertNotIn("skin_.drawHeader(g)",ui)
+        for label in ("PRESET","ROOM","SPATIAL CONCERT MONITOR"):
+            self.assertIn(label,ui)
         self.assertIn("g.fillRect(0,461,1100,219)",source(
             "engine/builtin_fx/ImerSipP92VisualSkin.h"))
         self.assertIn("juce::Colour(0xff151a20)",source(
@@ -67,6 +75,15 @@ class ImerSipP92Contract(unittest.TestCase):
             self.assertIn("BinaryData::"+name+"_png",skin)
         self.assertIn("assets/imersip/png",cmake)
         self.assertIn("ARMIX_IMERSIP_PNG_SOURCES",cmake)
+        self.assertIn("ARMIX_IMERSIB_SCENE_PNG_SOURCES",cmake)
+        for scene in ("live_concert","royal_concert_hall","arena_thunder",
+                      "front_row_power","symphonic_palace","velvet_cinema"):
+            name="scene_"+scene+".png"
+            self.assertTrue((ROOT/"assets/imersip/scenes"/name).exists())
+            self.assertIn("BinaryData::scene_"+scene+"_png",skin)
+        self.assertIn("RectanglePlacement::fillDestination",skin)
+        self.assertIn("const int x=252+317*col",ui)
+
         self.assertNotIn("execute_process(\n    COMMAND \"\${Python3_EXECUTABLE}\" \"\${ARMIX_IMERSIP_PNG_GEN}\"",cmake)
         self.assertTrue((ROOT/"scripts/generate_imersip_concert_png.py").exists())
         self.assertTrue((ROOT/"assets/imersip/asset_manifest.json").exists())
