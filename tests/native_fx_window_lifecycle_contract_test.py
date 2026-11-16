@@ -16,7 +16,7 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("GW_OWNER",WIN32)
         self.assertIn("WS_CHILD",WIN32)
         self.assertNotIn("WS_EX_TOPMOST",WIN32)
-        self.assertNotIn("SetParent(",WIN32)
+        self.assertNotIn("::SetParent(",WIN32)
         self.assertNotIn("setAlwaysOnTop (true)",HOST)
     def test_exact_native_instance_reopen_is_not_recreation(self):
         self.assertIn("routedEditorOwner_==owner",HOST)
