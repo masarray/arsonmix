@@ -201,6 +201,10 @@ public:
         g.fillAll(juce::Colour(0xff0e151a));
         // Artist PNG is real source-derived, not a fabricated 3D DOM.
         skin_.drawSprite(g,{0.f,0.f,1100.f,461.f},0,0,256,144);
+        // Quiet brand/header rail: prevent white text blending into the
+        // pale generated ceiling. Independent from visual PA sprites.
+        g.setColour(juce::Colour(0xBB0B1419));
+        g.fillRect(0,0,1100,73);
         // Subtle overlay keeps the background quiet behind the L/R PA.
         g.setGradientFill(juce::ColourGradient(
             juce::Colour(0x77060d11),0.f,0.f,
@@ -242,6 +246,12 @@ public:
 
         // Image-backed three-section control desk: presets / scene / master.
         skin_.drawSprite(g,{0.f,461.f,1100.f,219.f},0,145,256,58);
+        // Real metal PNG stays underneath, but darker material contrast
+        // keeps compact labels and 7 draggable tracks readable.
+        g.setColour(juce::Colour(0xA60A1114));
+        g.fillRect(0,461,1100,219);
+        g.setColour(juce::Colour(0xff54797b));
+        g.fillRect(0,461,1100,1);
         g.setColour(juce::Colour(0xc600090c));
         g.fillRect(251,468,2,204);
         g.fillRect(879,468,2,204);
