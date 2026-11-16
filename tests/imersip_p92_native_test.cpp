@@ -405,13 +405,28 @@ int main() {
         armix::builtin_fx::imersipP92DbToLinear(5.2f))<.001f);
 #endif
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
-    // The owner screenshot must be a real native applied preset and survive IMRS.
-    selector->setSelectedId(8,juce::sendNotificationSync);
-    editPcm.clear();
-    editorFx->processBlock(editPcm,editMidi);
+    // The first editor's ACK has been consumed explicitly by the test,
+    // while its Timer normally retires pending_ on the message thread.
+    // Use a fresh real editor/processor for an independent owner-preset
+    // transaction instead of inventing a second ACK for a deferred edit.
+    auto ownerFx=std::make_unique<ImerSipP92Processor>();
+    ownerFx->prepareToPlay(48000.,128);
+    assert(ownerFx->isReady());
+    std::unique_ptr<juce::AudioProcessorEditor> ownerEditor(ownerFx->createEditor());
+    assert(ownerEditor);
+    auto* ownerSelector=dynamic_cast<juce::ComboBox*>(
+        ownerEditor->findChildWithID("imersip.preset"));
+    assert(ownerSelector && ownerSelector->getSelectedId()==2);
+    ownerSelector->setSelectedId(8,juce::sendNotificationSync);
+    juce::AudioBuffer<float> ownerPcm(2,128);
+    juce::MidiBuffer ownerMidi;
+    ownerPcm.clear();
+    ownerFx->processBlock(ownerPcm,ownerMidi);
     armix::builtin_fx::SonKuSpatialProcessor::Completion userScene{};
-    assert(editorFx->pollCompletion(userScene)&&userScene.applied);
-    const auto screenshot=editorFx->acceptedSettings();
+    assert(ownerFx->pollCompletion(userScene) && userScene.applied &&
+           userScene.requestId!=0);
+    const auto screenshot=ownerFx->acceptedSettings();
+    assert(userScene.settings.stereoSpreadDegrees==147.f);
     assert(screenshot.spacePreset==3);
     assert(screenshot.stereoSpreadDegrees==147.f);
     assert(screenshot.sourceDistanceMeters==1.f);
@@ -422,7 +437,7 @@ int main() {
     assert(std::abs(screenshot.outputTrim-
         armix::builtin_fx::imersipP92DbToLinear(2.5f))<.001f);
     juce::MemoryBlock ownerState;
-    editorFx->getStateInformation(ownerState);
+    ownerFx->getStateInformation(ownerState);
     auto ownerRestored=std::make_unique<ImerSipP92Processor>();
     ownerRestored->prepareToPlay(48000.,128);
     assert(ownerRestored->restoreUnpublishedState(
@@ -430,6 +445,8 @@ int main() {
     assert(ownerRestored->acceptedSettings().stereoSpreadDegrees==147.f);
     assert(ownerRestored->acceptedSettings().roomAmount==1.8f);
     ownerRestored->releaseResources();
+    ownerEditor.reset(); // Destroy editor before its processor.
+    ownerFx->releaseResources();
 #endif
     auto* actualEditor=dynamic_cast<armix::builtin_fx::ImerSipP92Editor*>(
         editor.get());
