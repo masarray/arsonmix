@@ -27,10 +27,14 @@ public:
         // Angle lookup avoids trig/heap in the 16-frame realtime FIR update.
         for(std::size_t i=0;i<sine_.size();++i)
             sine_[i]=static_cast<float>(std::sin((2.*pi*i)/360.));
+#if defined(SONKU_P95_CINEMATIC_RESEARCH) && SONKU_P95_CINEMATIC_RESEARCH
+        constexpr std::array<double,7> roomWidths{7.2,14.4,28.8,10.,22.,32.,39.};
+#else
         constexpr std::array<double,3> roomWidths{7.2,14.4,28.8};
+#endif
         constexpr std::array<double,3> frequencies{48.,75.,112.};
         constexpr std::array<double,3> qualities{2.0,2.8,3.8};
-        for(std::size_t room=0;room<3;++room){
+        for(std::size_t room=0;room<roomWidths.size();++room){
             for(std::size_t band=0;band<3;++band){
                 // Real axial harmonic: n*c/(2*room-width), rounded to a
                 // musically relevant LF cluster. Never invent a subharmonic.
@@ -84,14 +88,15 @@ public:
                            weights_[1][ear]*lowSrc[1]);
             *ears[ear]=*ears[ear]-earLow_[ear][1]+world[ear];
         }
-        const int room=std::clamp(roomPreset-1,0,2);
+        const int room=std::clamp(roomPreset-1,0,
+            static_cast<int>(resonators_.size())-1);
         const float target=roomPreset>0?
             std::clamp(roomAmount,0.f,1.f):0.f;
         roomGain_+=roomAlpha_*(target-roomGain_);
         Ears modal{};
         constexpr std::array<float,3> modeWeights{.14f,.105f,.075f};
-        for(int r=0;r<3;++r){
-            const float active=r==room?1.f:0.f;
+        for(std::size_t r=0;r<resonators_.size();++r){
+            const float active=static_cast<int>(r)==room?1.f:0.f;
             roomWeights_[r]+=roomAlpha_*(active-roomWeights_[r]);
             for(int b=0;b<3;++b){
                 // Tiny modal bandpass; finite decay, zero at DC, no phase
@@ -139,9 +144,21 @@ private:
     }
     std::array<std::array<float,2>,2> weights_{{{{.62f,.38f}},{{.38f,.62f}}}};
     std::array<std::array<float,2>,2> inputLow_{},earLow_{};
-    std::array<std::array<Resonator,3>,3> resonators_{};
+    std::array<std::array<Resonator,3>,
+#if defined(SONKU_P95_CINEMATIC_RESEARCH) && SONKU_P95_CINEMATIC_RESEARCH
+      7
+#else
+      3
+#endif
+      > resonators_{};
     std::array<float,361> sine_{};
-    std::array<float,3> roomWeights_{};
+    std::array<float,
+#if defined(SONKU_P95_CINEMATIC_RESEARCH) && SONKU_P95_CINEMATIC_RESEARCH
+      7
+#else
+      3
+#endif
+      > roomWeights_{};
     float roomGain_=0.f,lowAlpha_=0.f,roomAlpha_=0.f;
 };
 } // namespace armix::sonku::p92
