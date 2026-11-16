@@ -40,8 +40,11 @@ public:
     }
     void reset() noexcept {
         midBodyLow_={};midBodyHigh_={};midFocusLow_={};midFocusHigh_={};
-        sideFocusLow_={};sideFocusHigh_={};firstLow_={};firstHigh_={};
-        tailLow_={};tailHigh_={};
+        midFocusLow2_={};midFocusHigh2_={};
+        sideFocusLow_={};sideFocusHigh_={};
+        sideFocusLow2_={};sideFocusHigh2_={};
+        firstLow_={};firstHigh_={};firstLow2_={};firstHigh2_={};
+        tailLow_={};tailHigh_={};tailLow2_={};tailHigh2_={};
         centerEnvelope_=sideEnvelope_=attention_=0.f;
         gains_={};
         active_=false;
@@ -66,10 +69,17 @@ public:
         const float side=.5f*(left-right);
         const float body=midBodyHigh_.run(bodyHigh_,mid)-
                          midBodyLow_.run(bodyLow_,mid);
-        const float focus=midFocusHigh_.run(focusHigh_,mid)-
-                          midFocusLow_.run(focusLow_,mid);
-        const float sideFocus=sideFocusHigh_.run(focusHigh_,side)-
-                              sideFocusLow_.run(focusLow_,side);
+        // Cascaded matched one-poles form a soft 12dB/oct upper rolloff:
+        // a first-order band differential still raised 7.6kHz too much.
+        // Its *actual native test* rejected that high-sibilance excess.
+        const float focus=midFocusHigh2_.run(
+                            focusHigh_,midFocusHigh_.run(focusHigh_,mid))-
+                          midFocusLow2_.run(
+                            focusLow_,midFocusLow_.run(focusLow_,mid));
+        const float sideFocus=sideFocusHigh2_.run(
+                            focusHigh_,sideFocusHigh_.run(focusHigh_,side))-
+                              sideFocusLow2_.run(
+                            focusLow_,sideFocusLow_.run(focusLow_,side));
         const float c=std::abs(focus);
         const float s=std::abs(sideFocus);
         // Envelope matching is musical-phrase-scale, not a per-sample gate.
@@ -98,8 +108,10 @@ public:
     Stereo early(float left,float right) noexcept {
         if(!active_ || gains_[2]==0.f)return {left,right};
         const float side=.5f*(left-right);
-        const float width=firstHigh_.run(widthHigh_,side)-
-                          firstLow_.run(widthLow_,side);
+        const float width=firstHigh2_.run(
+                    widthHigh_,firstHigh_.run(widthHigh_,side))-
+                          firstLow2_.run(
+                    widthLow_,firstLow_.run(widthLow_,side));
         const float delta=gains_[2]*width;
         return {left+delta,right-delta};
     }
@@ -110,8 +122,10 @@ public:
     Stereo late(float left,float right) noexcept {
         if(!active_ || gains_[3]==0.f)return {left,right};
         const float mid=.5f*(left+right);
-        const float band=tailHigh_.run(lateHigh_,mid)-
-                         tailLow_.run(lateLow_,mid);
+        const float band=tailHigh2_.run(
+                    lateHigh_,tailHigh_.run(lateHigh_,mid))-
+                         tailLow2_.run(
+                    lateLow_,tailLow_.run(lateLow_,mid));
         const float delta=gains_[3]*attention_*band;
         return {left-delta,right-delta};
     }
@@ -133,8 +147,10 @@ private:
         {{.070f,.115f,.065f,.070f}}    // Cinema: full-body clear dialog
     }};
     LP midBodyLow_{},midBodyHigh_{},midFocusLow_{},midFocusHigh_{};
-    LP sideFocusLow_{},sideFocusHigh_{};
-    LP firstLow_{},firstHigh_{},tailLow_{},tailHigh_{};
+    LP midFocusLow2_{},midFocusHigh2_{};
+    LP sideFocusLow_{},sideFocusHigh_{},sideFocusLow2_{},sideFocusHigh2_{};
+    LP firstLow_{},firstHigh_{},firstLow2_{},firstHigh2_{};
+    LP tailLow_{},tailHigh_{},tailLow2_{},tailHigh2_{};
     float bodyLow_=0.f,bodyHigh_=0.f,focusLow_=0.f,focusHigh_=0.f;
     float widthLow_=0.f,widthHigh_=0.f,lateLow_=0.f,lateHigh_=0.f;
     float attack_=0.f,release_=0.f,attentionAttack_=0.f;
