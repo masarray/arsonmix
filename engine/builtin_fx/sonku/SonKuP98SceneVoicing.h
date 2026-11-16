@@ -87,6 +87,16 @@ public:
             out[c]=gains_[4]==0.f?x[c]:
                 x[c]+gains_[4]*(x[c]-earlyAir_[c]);
         }
+        // Slightly enrich only the ALREADY directional KEMAR early-image
+        // interaural high-air field (>5.2kHz). The original center (often
+        // vocal) remains unchanged. No separate HRTF, delay or stem guess.
+        if(gains_[11]!=0.f) {
+            const float lateralAir=.5f*((x[0]-earlyAir_[0])-
+                                        (x[1]-earlyAir_[1]));
+            const float spread=gains_[11]*lateralAir;
+            out[0]+=spread;
+            out[1]-=spread;
+        }
         return {out[0],out[1]};
     }
     Stereo finish(float left,float right) noexcept {
@@ -116,23 +126,23 @@ public:
 private:
     // channels: center-source, bass body, bass kick, vocal presence,
     // first-image air, final-ear air, SIDE presence masking relief,
-    // SIDE high-air field, MID chest body, SIDE harsh relief and EAR
-    // de-harsh. Prepared filters only; still no FFT, lookahead or stems.
+    // SIDE high-air field, MID chest body, SIDE harsh relief, EAR
+    // de-harsh and lateral EARLY-reflection air. Prepared filters only; still no FFT, lookahead or stems.
     // Signature is designed for high clarity AND physical music body.
     // Studio adjustment deliberately gentler than Cinema. Venue profile
     // is ALL ZEROS: its approved P9.7 acoustic graph is immutable.
-    static constexpr std::array<std::array<float,11>,6> curves_{{
+    static constexpr std::array<std::array<float,12>,6> curves_{{
         // Columns: upper-mid source; LF; kick; ear-presence; early air;
         // ear air; SIDE 2.05k; SIDE HF; center 285Hz body;
-        // SIDE 3.45k masking; EAR 3.45k fatigue control.
-        {{0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f}}, // Venue EXACT
-        {{.22f,.15f,.17f,.15f,.16f,.070f,0.f,0.f,0.f,0.f,0.f}}, // Signature
-        {{.035f,.045f,.055f,.045f,.04f,.020f,0.f,0.f,0.f,0.f,0.f}}, // Live Studio
-        {{.075f,.15f,.15f,.060f,.065f,.035f,0.f,0.f,0.f,0.f,0.f}}, // Cinema
+        // SIDE 3.45k masking; EAR 3.45k fatigue; EARLY lateral air.
+        {{0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f}}, // Venue EXACT
+        {{.22f,.15f,.17f,.15f,.16f,.070f,0.f,0.f,0.f,0.f,0.f,0.f}}, // Signature
+        {{.035f,.045f,.055f,.045f,.04f,.020f,0.f,0.f,0.f,0.f,0.f,0.f}}, // Live Studio
+        {{.075f,.15f,.15f,.060f,.065f,.035f,0.f,0.f,0.f,0.f,0.f,0.f}}, // Cinema
         // ImmerSIB-only: warmer front-center body and controlled upper
         // mids, not another 2k/5k treble boost. LF concert impact kept.
-        {{.09f,.11f,.11f,.035f,.025f,.000f,.19f,.015f,.36f,.23f,.13f}}, // Detail Warm
-        {{.08f,.22f,.20f,.030f,.025f,.000f,.16f,.015f,.29f,.20f,.12f}}  // Impact Warm
+        {{.09f,.11f,.11f,.035f,.025f,.000f,.19f,.015f,.36f,.23f,.13f,.18f}}, // Detail Warm
+        {{.08f,.22f,.20f,.030f,.025f,.000f,.16f,.015f,.29f,.20f,.12f,.14f}}  // Impact Warm
     }};
     struct Coeff {float b0=0,b1=0,b2=0,a1=0,a2=0;};
     struct Filter {
@@ -161,7 +171,7 @@ private:
     Filter sidePresence1_{},sidePresence2_{},bodyCenter_{},sideEdge_{};
     std::array<Filter,2> earEdge_{};
     float sideAirLow_=0.f;
-    std::array<float,11> gains_{};
+    std::array<float,12> gains_{};
     float bassAlpha_=0.f,airAlpha_=0.f,slew_=0.f;
 };
 } // namespace armix::sonku::p98

@@ -84,8 +84,8 @@ class SpatialAuthorityContract(unittest.TestCase):
         self.assertGreater(candidate["distanceMeters"],1.6)
         self.assertGreater(candidate["outputGainDb"],screenshot["outputGainDb"])
         self.assertIn("s.stereoSpreadDegrees=106.f;s.sourceDistanceMeters=10.f",scene)
-        self.assertIn("112.f,3.0f,1.36f,.84f,5.10545f,4",scene)
-        self.assertIn("180.,4.,180.,100.",read("engine/builtin_fx/ImerSipP92Editor.h"))
+        self.assertIn("112.f,2.0f,1.36f,.84f,5.10545f,4",scene)
+        self.assertIn("180.,2.5,180.,100.",read("engine/builtin_fx/ImerSipP92Editor.h"))
         self.assertIn("150.f,2.2f,1.f,.91f,4.8f",scene)
         self.assertIn('"Royal Concert Hall"',scene)
         self.assertNotIn("P9.2 Neutral A/B",read(
