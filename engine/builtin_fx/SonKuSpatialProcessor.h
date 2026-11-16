@@ -18,7 +18,24 @@ public:
     SonKuSpatialProcessor()
         : juce::AudioProcessor(BusesProperties()
             .withInput("Input",juce::AudioChannelSet::stereo(),true)
-            .withOutput("Output",juce::AudioChannelSet::stereo(),true)) {}
+            .withOutput("Output",juce::AudioChannelSet::stereo(),true)) {
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE) && ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE
+        // NEW inserts only. Restore from an existing .smix uses its saved
+        // settings verbatim; no automatic remapping of operator sessions.
+        // Signature reference is the operator's immersive 3.1m / full first
+        // reflection / 62% reverb scene with conservative native linked guard.
+        accepted_.renderMode=9;
+        accepted_.musicCompatibleLowFrequency=false;
+        accepted_.moving=false;
+        accepted_.stereoSpreadDegrees=82.f;
+        accepted_.spatialMix=1.f;
+        accepted_.outputTrim=1.9f;
+        accepted_.spacePreset=3;
+        accepted_.sourceDistanceMeters=3.1f;
+        accepted_.roomAmount=1.f;
+        accepted_.ambience=.62f;
+#endif
+    }
     const juce::String getName() const override {return "8D-SonKu";}
     bool acceptsMidi() const override {return false;}
     bool producesMidi() const override {return false;}
