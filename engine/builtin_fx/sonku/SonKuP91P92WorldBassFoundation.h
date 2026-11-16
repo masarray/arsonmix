@@ -99,7 +99,16 @@ public:
                 auto& resonator=resonators_[r][b];
                 const float l=resonator.state[0].run(resonator.coeff,world[0]);
                 const float rr=resonator.state[1].run(resonator.coeff,world[1]);
-                const float level=roomWeights_[r]*roomGain_*modeWeights[b];
+                // Private P9.5 venue reinforcement: augment the EXISTING
+                // low-frequency axial room modes slightly, not the direct
+                // bass, not a duplicate cabinet engine or hard EQ shelf.
+                // All modes remain damping-controlled with finite Q.
+#if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
+                const float venue=roomPreset==3?1.18f:1.f;
+#else
+                constexpr float venue=1.f;
+#endif
+                const float level=roomWeights_[r]*roomGain_*modeWeights[b]*venue;
                 modal.left+=level*l;
                 modal.right+=level*rr;
             }
