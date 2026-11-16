@@ -11,6 +11,9 @@ namespace armix::builtin_fx {
 
 class ImerSipP92VisualSkin final : public juce::LookAndFeel_V4 {
 public:
+    // Fixed pixel master matches the 1100x461 logical stage exactly (2x).
+    static constexpr int photoWidth=2200;
+    static constexpr int photoHeight=922;
     ImerSipP92VisualSkin()
         : sceneLive_(load(BinaryData::scene_live_concert_png,BinaryData::scene_live_concert_pngSize)),
           sceneRoyal_(load(BinaryData::scene_royal_concert_hall_png,BinaryData::scene_royal_concert_hall_pngSize)),
@@ -42,10 +45,15 @@ public:
             case 7: art=&sceneCinema_; break;
             default: break; // Custom keeps its last selected venue.
         }
-        if(art->isNull()) return; // Missing approved image fails QA, no synthetic fallback.
-        // Fit the original venue image proportionally. Scene photos already
-        // include their correctly-perspectived PA and subwoofer cabinets.
-        // Do not distort their aspect when Windows DPI or editor size changes.
+        // Fail closed on an absent/mismatched scene rather than allowing
+        // centered 2:1 art to create black matte on either side.
+        if(art->isNull() || art->getWidth()!=photoWidth ||
+           art->getHeight()!=photoHeight) {
+            jassertfalse;
+            return;
+        }
+        // The approved 2x PNG has the exact logical viewport ratio.
+        // Centred placement now fills edge-to-edge, without distortion.
         juce::Graphics::ScopedSaveState state(g);
         g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
         g.reduceClipRegion(0,0,1100,461);
@@ -180,7 +188,9 @@ public:
     }
 private:
     static bool allValid(std::initializer_list<const juce::Image*> images) noexcept {
-        for(const auto* image:images)if(image->isNull())return false;
+        for(const auto* image:images)
+            if(image->isNull() || image->getWidth()!=photoWidth ||
+               image->getHeight()!=photoHeight) return false;
         return true;
     }
     static juce::Image load(const void* bytes,int size) {
