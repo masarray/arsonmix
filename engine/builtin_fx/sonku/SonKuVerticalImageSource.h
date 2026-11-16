@@ -17,7 +17,12 @@ struct Arrival {
 };
 inline bool validHeight(RoomHeight g) noexcept {
     return std::isfinite(g.room)&&std::isfinite(g.listener)&&
-        std::isfinite(g.source) && g.room>=2.4f&&g.room<=12.f&&
+        std::isfinite(g.source) && g.room>=2.4f&&g.room<=
+#if defined(SONKU_P95_CINEMATIC_RESEARCH) && SONKU_P95_CINEMATIC_RESEARCH
+        20.f&&
+#else
+        12.f&&
+#endif
         g.listener>=.5f&&g.source>=.5f&&
         g.listener<=g.room-.5f&&g.source<=g.room-.5f;
 }
