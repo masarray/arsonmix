@@ -279,16 +279,32 @@ int main() {
     assert(a.getX()<b.getX());
     assert((b.getX()-a.getX())>=200);
 
-    for(const float stageAngle:{30.f,50.f,150.f,180.f}){
-        for(const float metres:{1.6f,2.2f,5.f,7.4f,10.f}){
-            const auto b=armix::builtin_fx::imersipP92ConcertBoxes(stageAngle,metres);
-            assert(b.safe());
-            assert(b.leftArray.getRight()<b.rightArray.getX());
-            assert(b.leftSub.getRight()<b.rightSub.getX());
+    // The rejected synthetic-speaker positioning engine was deleted.
+    // Test the CURRENT rendering contract instead: full-range UI values
+    // must keep the actual photo venue and controls inside the editor.
+    // No audio edit is enqueued by these display-only extreme probes.
+    auto* stageProbe=dynamic_cast<juce::Slider*>(
+        editor->findChildWithID("imersip.stage"));
+    auto* distanceProbe=dynamic_cast<juce::Slider*>(
+        editor->findChildWithID("imersip.distance"));
+    assert(stageProbe && distanceProbe);
+    const auto priorStage=stageProbe->getValue();
+    const auto priorDistance=distanceProbe->getValue();
+    for(const double angle:{stageProbe->getMinimum(),stageProbe->getMaximum()}){
+        for(const double metres:{distanceProbe->getMinimum(),
+                                 distanceProbe->getMaximum()}){
+            stageProbe->setValue(angle,juce::dontSendNotification);
+            distanceProbe->setValue(metres,juce::dontSendNotification);
+            const auto extreme=editor->createComponentSnapshot(
+                editor->getLocalBounds());
+            assert(extreme.isValid() && extreme.getWidth()==935 &&
+                   extreme.getHeight()==578);
+            for(auto* child:controls)
+                assert(editor->getLocalBounds().contains(child->getBounds()));
         }
     }
-    assert(armix::builtin_fx::imersipP92ConcertBoxes(
-        std::numeric_limits<float>::quiet_NaN(),-999.f).safe());
+    stageProbe->setValue(priorStage,juce::dontSendNotification);
+    distanceProbe->setValue(priorDistance,juce::dontSendNotification);
     auto visual=editor->createComponentSnapshot(editor->getLocalBounds());
     assert(visual.isValid() && visual.getWidth()==935 &&
            visual.getHeight()==578);
