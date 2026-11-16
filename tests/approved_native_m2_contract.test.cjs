@@ -1897,8 +1897,17 @@ test("native vendor editor retention follows current PCM ownership, not inactive
  assert.match(main,/routedEditorEpoch_=retainedEpoch/);
  assert.match(main,/retainedEpoch=ep/);
  assert.match(lab,/nativeAccepted_\.fxOwners->retainsEditor\(owner\)/);
- const editor=main.slice(main.indexOf('if(owner && owner->processor)'),main.indexOf('if(owner && owner->processor)')+700);
- assert.ok(editor.indexOf('closePluginEditor();')<editor.indexOf('createEditorIfNeeded()'),'old window must be destroyed before asking for its editor pointer');
+ const start=main.indexOf('if(owner && owner->processor)');
+ assert.ok(start>=0,'routed FX editor source must exist');
+ const editor=main.slice(start,main.indexOf('catch(const std::exception& ex)',start));
+ assert.ok(editor.includes('routedEditorOwner_==owner'),
+   'reopen only exact current accepted PCM owner');
+ assert.ok(editor.includes('editorWindow_->present()'),
+   'same FX instance must be focused instead of recreated');
+ const fresh=editor.slice(editor.indexOf('} else try {'));
+ assert.ok(fresh.includes('closePluginEditor();') &&
+   fresh.indexOf('closePluginEditor();')<fresh.indexOf('createEditorIfNeeded()'),
+   'DIFFERENT instance must destroy old window before asking for new editor');
  const change=main.slice(main.indexOf('void changeListenerCallback'),main.indexOf('void timerCallback()',main.indexOf('void changeListenerCallback')));
  assert.doesNotMatch(change,/if\(routedEditorOwner_\)closePluginEditor/);
 });
