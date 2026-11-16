@@ -3126,6 +3126,9 @@ private:
             // This capability is emitted only by the new reconciled DSP build.
             // Older v11 P9.0 binaries must NOT be advertised as P9.1+P9.2.
             reply->setProperty("p91p92MusicBassFoundation",true);
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE) && ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE
+            reply->setProperty("p95MusicalPresence",true);
+#endif
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH
             // Branch-only measured-engine A/B. A previous v11 binary cannot
             // advertise this front/rear perceptual depth research capability.
