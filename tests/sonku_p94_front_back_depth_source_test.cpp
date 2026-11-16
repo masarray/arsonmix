@@ -22,7 +22,7 @@ static void depthWeights(int rate){
     auto settle=[&](float headAzimuth,bool enabled){
         cue.retarget(headAzimuth,enabled);
         p94::FrontBackDepthCue::Gains g{};
-        for(int i=0;i<rate/2;++i)g=cue.next();
+        for(int i=0;i<rate;++i)g=cue.next();
         return g;
     };
     const auto front=settle(0.f,true);
