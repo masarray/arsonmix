@@ -403,11 +403,13 @@ public:
                next.renderMode!=7 && next.renderMode!=8)return false;
             if(version==10 && next.musicCompatibleLowFrequency)return false;
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT
-            if(version==11 && next.renderMode!=0 && next.renderMode!=3 &&
+            // Both v11 and append-only v12 forbid retired P8.3 modes.
+            // A v12 state with voicing=0 still cannot restore mode 1/2.
+            if(version>=11 && next.renderMode!=0 && next.renderMode!=3 &&
                next.renderMode!=4 && next.renderMode!=5 && next.renderMode!=6 &&
                next.renderMode!=7 && next.renderMode!=8 && next.renderMode!=9)
                 return false;
-            if(version==11 && next.musicCompatibleLowFrequency)return false;
+            if(version>=11 && next.musicCompatibleLowFrequency)return false;
 #endif
 #endif
 #endif

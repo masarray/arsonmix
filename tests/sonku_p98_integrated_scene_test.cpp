@@ -76,6 +76,17 @@ void run(int rate,int az,int index){
         static_cast<unsigned long long>(hash));
 }
 int main(){
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+    // A falsified v12 neutral voicing ID must not resurrect obsolete
+    // physical-speaker P8.3 modes. PCM reference with P98 disabled
+    // intentionally retains older compile-time behavior.
+    for(int mode:{1,2}){
+        Settings invalid{};
+        invalid.renderMode=mode;
+        invalid.sceneVoicing=0;
+        assert(!valid(invalid));
+    }
+#endif
     for(int rate:{44100,48000})for(int az:{0,180})
         for(int scene=0;scene<6;++scene)run(rate,az,scene);
 }

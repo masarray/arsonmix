@@ -241,6 +241,25 @@ int main(){
   assert(reopened->restoreUnpublishedState(saved.getData(),67));
   assert(reopened->acceptedSettings().sceneVoicing==1);
   assert(reopened->acceptedSettings().renderMode==9);
+  // All native admission routes must reject the old P8.3 physical
+  // modes, even if a v12 blob declares neutral sceneVoicing=0.
+  for(int legacyMode : {1,2}){
+   auto rejected=voiced;
+   rejected.sceneVoicing=0;
+   rejected.renderMode=legacyMode;
+   assert(!armix::sonku::valid(rejected));
+   assert(!v12->queueSettings(rejected,979));
+   auto data=acceptedSettings(rejected);
+   assert(!decodeSettings(data,decodedScene));
+   // v12 binary is append-only: the render-mode field retains v11
+   // offset 50; force that field without touching sceneVoicing=0.
+   auto corrupted=saved;
+   auto* b=static_cast<std::uint8_t*>(corrupted.getData());
+   b[50]=static_cast<std::uint8_t>(legacyMode);
+   b[51]=b[52]=b[53]=0;
+   b[63]=b[64]=b[65]=b[66]=0;
+   assert(!reopened->restoreUnpublishedState(corrupted.getData(),67));
+  }
   // v12 corrupt ID cannot bypass valid() or restore a partial blob.
   auto invalidData=saved;
   auto* bytes=static_cast<std::uint8_t*>(invalidData.getData());

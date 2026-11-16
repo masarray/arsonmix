@@ -115,6 +115,12 @@ inline bool valid(const Settings& s) noexcept {
         std::isfinite(s.ambience) && s.ambience>=0.f && s.ambience<=1.f &&
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
         p98::SceneVoicing::valid(s.sceneVoicing) &&
+        // v12 deliberately excludes the retired P8.3 physical/mono
+        // modes 1/2 even when neutral voicing=0. The old P8.3 renderer
+        // was rejected by the operator; JSON, realtime edits and .smix
+        // restore must use ONE admission rule, not three distinct gates.
+        (s.renderMode==0 || (s.renderMode>=3 && s.renderMode<=9)) &&
+        !s.musicCompatibleLowFrequency &&
         (s.sceneVoicing==0 || s.renderMode==9) &&
 #endif
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
