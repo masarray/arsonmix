@@ -230,26 +230,10 @@ endif()
 file(GLOB ARMIX_GUITAR_SKIN_PNGS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/assets/gfx-*.png")
 list(SORT ARMIX_GUITAR_SKIN_PNGS)
-# ImerSip P9.2 uses 19 independent, deterministic, full-resolution RGBA PNGs.
-# The build embeds every PNG; the deployed EXE needs no external asset folder.
-set(ARMIX_IMERSIP_PNG_DIR "${CMAKE_CURRENT_BINARY_DIR}/imersip_png")
-set(ARMIX_IMERSIP_PNG_GEN "${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_imersip_concert_png.py")
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ARMIX_IMERSIP_PNG_GEN}")
-execute_process(
-    COMMAND "${Python3_EXECUTABLE}" -c "import PIL; import numpy"
-    RESULT_VARIABLE ARMIX_IMERSIP_PNG_DEPS
-    ERROR_VARIABLE ARMIX_IMERSIP_PNG_DEPS_ERROR)
-if(NOT ARMIX_IMERSIP_PNG_DEPS EQUAL 0)
-  message(FATAL_ERROR "ImerSip native RGBA generator requires Python Pillow and NumPy (python -m pip install pillow numpy): ${ARMIX_IMERSIP_PNG_DEPS_ERROR}")
-endif()
-execute_process(
-    COMMAND "${Python3_EXECUTABLE}" "${ARMIX_IMERSIP_PNG_GEN}" --out "${ARMIX_IMERSIP_PNG_DIR}"
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-    RESULT_VARIABLE ARMIX_IMERSIP_PNG_RESULT
-    ERROR_VARIABLE ARMIX_IMERSIP_PNG_ERROR)
-if(NOT ARMIX_IMERSIP_PNG_RESULT EQUAL 0)
-  message(FATAL_ERROR "ImerSip RGBA generation failed: ${ARMIX_IMERSIP_PNG_ERROR}")
-endif()
+# All nineteen independent RGBA PNGs are reviewed source files in the draft
+# branch. CMake embeds the EXACT files used by composition proof; Windows
+# operators and native builds need no Pillow, NumPy, SVG, or sidecar folder.
+set(ARMIX_IMERSIP_PNG_BASE "${CMAKE_CURRENT_SOURCE_DIR}/assets/imersip/png")
 set(ARMIX_IMERSIP_ASSET_NAMES
     room_background control_panel header_overlay
     line_array_left line_array_right
@@ -259,7 +243,11 @@ set(ARMIX_IMERSIP_ASSET_NAMES
     slider_track slider_thumb knob_teal knob_master_purple
     dropdown_background button_normal button_hover button_pressed)
 foreach(name IN LISTS ARMIX_IMERSIP_ASSET_NAMES)
-  list(APPEND ARMIX_IMERSIP_PNG_SOURCES "${ARMIX_IMERSIP_PNG_DIR}/assets/${name}.png")
+  set(ARMIX_IMERSIP_PNG_FILE "${ARMIX_IMERSIP_PNG_BASE}/${name}.png")
+  if(NOT EXISTS "${ARMIX_IMERSIP_PNG_FILE}")
+    message(FATAL_ERROR "Missing checked-in ImerSip image: ${ARMIX_IMERSIP_PNG_FILE}")
+  endif()
+  list(APPEND ARMIX_IMERSIP_PNG_SOURCES "${ARMIX_IMERSIP_PNG_FILE}")
 endforeach()
 juce_add_binary_data(ARMixAssets SOURCES
     "${ARMIX_APPROVED_GUI_DIR}/index.html" ${ARMIX_APPROVED_GUI_BINARIES}
