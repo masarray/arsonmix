@@ -131,6 +131,14 @@ if(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING AND
    NOT ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT)
   message(FATAL_ERROR "P9.8 requires P9.7 approved stage; public default OFF")
 endif()
+# P9.9 adds modest adaptive center-vocal articulation and spatial unmasking.
+# Named scenes only; P9.8 is an independent immutable reference on its branch.
+option(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH
+       "Private low-cost musical vocal focus; keep P9.8/approved Venue unchanged" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING)
+  message(FATAL_ERROR "P9.9 requires P9.8 native typed scene voicings")
+endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -357,7 +365,9 @@ target_compile_definitions(ARMixConsole PRIVATE
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT}>:SONKU_P97_STAGE_IMPACT_RESEARCH=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT}>:ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:SONKU_P98_SCENE_VOICING_RESEARCH=1>
-    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING=1>)
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH}>:SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH}>:ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH=1>)
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
   # Never link Windows loader or sound APIs into macOS/Linux builds.
@@ -894,7 +904,8 @@ if(BUILD_TESTING)
                                 SONKU_P95_MUSICAL_PRESENCE_RESEARCH=1
                                 $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT}>:SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH=1>
                                 $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT}>:SONKU_P97_STAGE_IMPACT_RESEARCH=1>
-                                $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:SONKU_P98_SCENE_VOICING_RESEARCH=1>)
+                                $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:SONKU_P98_SCENE_VOICING_RESEARCH=1>
+                                $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH}>:SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH=1>)
                             add_test(NAME NativeSonKuP95MusicPresenceVenue
                                 COMMAND ARMixSonKuP95MusicTests)
                           endif()
@@ -919,6 +930,13 @@ if(BUILD_TESTING)
                             add_test(NAME NativeSonKuP98SceneVoicingVenueLock
                                 COMMAND ARMixSonKuP98VoicingTests)
                           endif()
+                          if(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH)
+                            add_executable(ARMixSonKuP99VocalDepthTests
+                                tests/sonku_p99_vocal_depth_source_test.cpp)
+                            target_compile_features(ARMixSonKuP99VocalDepthTests PRIVATE cxx_std_20)
+                            add_test(NAME NativeSonKuP99AdaptiveVocalDepthVenueLock
+                                COMMAND ARMixSonKuP99VocalDepthTests)
+                          endif()
                           juce_add_console_app(ARMixSonKuP90NativeTests
                               PRODUCT_NAME "ArSonMix SonKu P90 JUCE v11 State Tests")
                           target_sources(ARMixSonKuP90NativeTests PRIVATE
@@ -938,6 +956,8 @@ if(BUILD_TESTING)
                               ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT=1
                               $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING=1>
                               $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:SONKU_P98_SCENE_VOICING_RESEARCH=1>
+                              $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH}>:SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH=1>
+                              $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH}>:ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH=1>
                               SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
                               SONKU_P71_DIRECT_XYZ_RESEARCH=1
                               SONKU_P72_NATIVE_XYZ_RT=1

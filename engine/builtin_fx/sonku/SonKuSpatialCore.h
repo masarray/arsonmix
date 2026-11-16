@@ -34,6 +34,12 @@
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
 #include "SonKuP98SceneVoicing.h"
 #endif
+#if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
+#if !defined(SONKU_P98_SCENE_VOICING_RESEARCH) || !SONKU_P98_SCENE_VOICING_RESEARCH
+#error "P9.9 requires the P9.8 typed scene engine"
+#endif
+#include "SonKuP99MusicalVocalDepth.h"
+#endif
 #if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
 #include "SonKuP94FrontBackDepthCue.h"
 #endif
@@ -241,6 +247,9 @@ public:
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
         if(!p98Voicing_.prepare(rate))return false;
 #endif
+#if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
+        if(!p99VocalDepth_.prepare(rate))return false;
+#endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
         if(!p95Presence_.prepare(rate))return false;
 #endif
@@ -324,6 +333,9 @@ public:
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
         p98Voicing_.reset();
 #endif
+#if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
+        p99VocalDepth_.reset();
+#endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
         p95Presence_.reset();
 #endif
@@ -389,6 +401,9 @@ public:
 #endif
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
         p98Voicing_.reset();
+#endif
+#if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
+        p99VocalDepth_.reset();
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
         p95Presence_.reset();
@@ -826,6 +841,21 @@ public:
                 (void)p98Voicing_.source(0.f,0.f,0,false);
             }
 #endif
+#if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
+            if(p90World && settings_.spatialMix>0.f){
+                // Source-depth control happens BEFORE measured two-speaker
+                // KEMAR FIR. No center headphone-dry path or second bus.
+                const auto focus=p99VocalDepth_.source(
+                    history_[0][write_],history_[1][write_],
+                    settings_.sceneVoicing,roomEnabled);
+                history_[0][write_]=focus.left;
+                history_[1][write_]=focus.right;
+            }else{
+                // MIX=0 and mode bypass stay exact; reset attention smoothly
+                // without ever leaking a private cue into dry input PCM.
+                (void)p99VocalDepth_.source(0.f,0.f,0,false);
+            }
+#endif
             float ears[2]{0.f,0.f};
             for(int tap=0;tap<taps;++tap) {
                 int at=write_-tap;
@@ -1013,6 +1043,21 @@ public:
                 if(p90World && settings_.spatialMix>0.f && roomEnabled){
                     const auto air=p98Voicing_.early(reflection.left,reflection.right);
                     reflection.left=air.left;reflection.right=air.right;
+                }
+#endif
+#if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
+                if(p90World && settings_.spatialMix>0.f && roomEnabled){
+                    // A slightly more lateral REAL first image gives
+                    // accompaniment space without moving the singer.
+                    const auto lateral=p99VocalDepth_.early(
+                        reflection.left,reflection.right);
+                    reflection.left=lateral.left;
+                    reflection.right=lateral.right;
+                    // Reduce only center-mid late energy, preserving stereo
+                    // diffuse sides and full low-frequency reverberation.
+                    const auto background=p99VocalDepth_.late(late.left,late.right);
+                    late.left=background.left;
+                    late.right=background.right;
                 }
 #endif
                 float spatialL=directL+
@@ -1432,6 +1477,9 @@ private:
 #endif
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
     p98::SceneVoicing p98Voicing_{};
+#endif
+#if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
+    p99::MusicalVocalDepth p99VocalDepth_{};
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
     p95::MusicalPresence p95Presence_{};

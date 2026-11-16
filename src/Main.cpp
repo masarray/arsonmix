@@ -3138,6 +3138,11 @@ private:
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING) && ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
             reply->setProperty("p98SceneVoicing",true);
 #endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH
+            // Truthful native opt-in: P9.8 hosts must never claim P9.9.
+            // No new JSON scene ID or state bytes; v12 reads back normally.
+            reply->setProperty("p99MusicalVocalDepth",true);
+#endif
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH
             // Branch-only measured-engine A/B. A previous v11 binary cannot
             // advertise this front/rear perceptual depth research capability.
