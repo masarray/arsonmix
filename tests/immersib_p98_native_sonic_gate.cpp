@@ -62,6 +62,34 @@ static Result render(int rate,const Settings& s,bool phaseReverse=false){
     assert(result.power>1.e-4 && result.side>1.e-7);
     return result;
 }
+// Whole-engine tone transfer, including HRTF/world reflections, P9.7
+// stage, P9.8 voicing, P9.5 makeup and peak guard. Real PCM, not just a
+// narrow EQ coefficient guess. Short deterministic steady-state fixture.
+static double acousticTonePower(int rate,const Settings& scene,
+                                double hz,bool mid) {
+    auto dsp=std::make_unique<SonKuSpatialCore>();
+    assert(dsp->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch));
+    assert(dsp->setSettings(scene));
+    std::array<std::vector<float>,2> pcm{
+        std::vector<float>(n),std::vector<float>(n)};
+    for(int i=0;i<n;++i) {
+        const float a=static_cast<float>(
+            .065*std::sin(2*pi*hz*i/static_cast<double>(rate)));
+        pcm[0][i]=a;
+        pcm[1][i]=mid?a:-a;
+    }
+    for(int i=0;i<n;i+=128)
+        dsp->process(pcm[0].data()+i,pcm[1].data()+i,128);
+    double energy=0.;
+    for(int i=4096;i<n;++i){
+        const float l=pcm[0][i],r=pcm[1][i];
+        assert(std::isfinite(l)&&std::isfinite(r));
+        assert(std::abs(l)<.981f&&std::abs(r)<.981f);
+        energy+=double(l)*l+double(r)*r;
+    }
+    assert(energy>1.e-7);
+    return energy;
+}
 static Settings ownerVenue(){
     Settings s{};
     s.renderMode=9;
@@ -169,10 +197,33 @@ int main(){
         // Ear-side upper-mid attenuation survives the finish stage.
         assert(harshControlled<harshReference*.99);
         std::fprintf(stderr,
-            "VOCAL_TONE_GATE,rate=%d,body=%.4f,baseline=%.4f,2k=%.4f,2kBase=%.4f,edge=%.4f,edgeBase=%.4f,side3k=%.4f,sideBase=%.4f\\n",
+            "VOCAL_TONE_GATE,rate=%d,body=%.4f,baseline=%.4f,2k=%.4f,2kBase=%.4f,edge=%.4f,edgeBase=%.4f,side3k=%.4f,sideBase=%.4f\n",
             rate,bodyFull,bodyReference,noseFull,noseReference,
             harshControlled,harshReference,protectedEdge,baselineEdge);
 
+        // Confirm an actual audible-transfer direction after the ENTIRE
+        // binaural chain, not merely in standalone P9.8 filter output.
+        // Compare identical room/distance/trim, changing ONLY voicing.
+        for(int id:{2,4}) {
+            auto warm=imersipP92Factory(id);
+            auto neutral=warm;
+            neutral.sceneVoicing=0;
+            const double warmBody=acousticTonePower(rate,warm,285.,true);
+            const double baseBody=acousticTonePower(rate,neutral,285.,true);
+            const double warmEdge=acousticTonePower(rate,warm,3450.,false);
+            const double baseEdge=acousticTonePower(rate,neutral,3450.,false);
+            const double warmAir=acousticTonePower(rate,warm,7400.,false);
+            const double baseAir=acousticTonePower(rate,neutral,7400.,false);
+            const double bodyRatio=warmBody/baseBody;
+            const double edgeRatio=warmEdge/baseEdge;
+            const double airRatio=warmAir/baseAir;
+            std::fprintf(stderr,
+                "VOCAL_WHOLE_PCM,%d,id=%d,body=%.4f,edge=%.4f,air=%.4f\n",
+                rate,id,bodyRatio,edgeRatio,airRatio);
+            assert(bodyRatio>1.08);
+            assert(edgeRatio<1.05);
+            assert(airRatio>.65);
+        }
         const auto base=render(rate,golden);
         // Baseline acoustic PCM hashes captured BEFORE any ImmerSIB
         // nearfield or M/S tuning. Real regression, not self-comparison.
@@ -195,13 +246,12 @@ int main(){
             std::fprintf(stderr,"NEARFIELD_DIAG,rate=%d,id=%d,meters=%.2f,early=%.2f,energy=%.6f,venue=%.6f,side=%.6f,peak=%.5f\n",
                 rate,preset.id,s.sourceDistanceMeters,s.roomAmount,
                 heard.power,base.power,heard.side,double(heard.peak));
-            // A named flagship hall should not collapse to near-dry, low
-            // electrical energy compared with the approved Venue fixture.
-            // This is a *synthetic PCM floor*, not LUFS or listening proof.
-            if(preset.id==3 || preset.id==6)
-                assert(heard.power>base.power*.85);
-            if(preset.id==7)
-                assert(heard.power>base.power*.75);
+            // Safety floor only: older .85 electrical power gate
+            // rewarded treble-heavy sound even when the owner heard
+            // shrill, thin vocals. The independent WHOLE-PCM 285Hz/3.45k
+            // tonal tests above replace it with a physically appropriate
+            // transfer quality criterion. Still forbid silent presets.
+            assert(heard.power>base.power*.70);
             uniquePcm[static_cast<std::size_t>(preset.id-2)]=heard.hash;
             std::printf("IMMERSIB_P98_SCENE,%d,%d,%s,%d,%.6f,%.6f,%.6f,%016llx\n",
                 rate,preset.id,preset.label,s.sceneVoicing,

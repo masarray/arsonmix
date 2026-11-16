@@ -184,7 +184,17 @@
         "constraints": "No actual vocal stem/AI extraction, no extra HRTF, no output loudness chase, no added latency, no tail/room change, no changes in frozen P9.7 Venue or SONK profiles 0..3",
         "beforeVoicingGitBlob": "cc769dade5a752e0f84f02348e07332bce7c268b",
         "afterVoicingGitBlob": "90bab191a62601021c4a7a77d64e0e4d408d3011",
-        "requiredChecks": "Native source & finished stereo tone spectral balance, 44.1/48k exact Venue PCM hash, antiphase, mono, IMRS7/SONK12 state roundtrip, JUCE Windows and portable EXE build, physical loudness-matched Dua Lipa concert FAT"
+        "requiredChecks": "Native source & finished stereo tone spectral balance, 44.1/48k exact Venue PCM hash, antiphase, mono, IMRS7/SONK12 state roundtrip, JUCE Windows and portable EXE build, physical loudness-matched Dua Lipa concert FAT",
+        "qualityGateRevision": {
+          "reason": "Legacy 85% venue-total-electric-energy gate excluded the vocal chest/body band and rewarded shrillness; replace with whole native scene tonal transfer plus finite peak, anti-phase, PCM hash and 70% minimum electric safety floor",
+          "wholePcmConditions": [
+            "center 285Hz body ratio >1.08 to neutral voicing, same scene",
+            "SIDE 3.45kHz energy ratio <1.05",
+            "SIDE 7.4kHz retained >0.65",
+            "legacy P9.7 44.1/48k PCM hash must remain exact"
+          ],
+          "notEvidenceOf": "audible vocal source isolation, mastered-song loudness, subjective preference or universal de-essing"
+        }
       }
     }
   }
