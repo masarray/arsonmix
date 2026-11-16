@@ -26,7 +26,8 @@ public:
         // reflection / 62% reverb scene with conservative native linked guard.
         accepted_.renderMode=9;
         accepted_.musicCompatibleLowFrequency=false;
-        accepted_.moving=false;
+        accepted_.moving=true;
+        accepted_.revolutionSeconds=6.5f;
         accepted_.stereoSpreadDegrees=82.f;
         accepted_.spatialMix=1.f;
         accepted_.outputTrim=1.9f;
