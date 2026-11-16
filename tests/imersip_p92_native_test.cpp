@@ -108,6 +108,23 @@ static void nativeParity(int rate) {
     assert(restored->acceptedSettings().renderMode==9);
     assert(restored->acceptedSettings().stereoSpreadDegrees==82.f);
 
+    // The embedded v11 SONK mode field is at byte 50 of its 63-byte
+    // record (after the 8-byte IMRS header). Corrupting P9 -> P8.2 mode
+    // must fail BEFORE modifying a prepared FX's accepted PCM scene.
+    auto wrongMode=state;
+    auto* wrongBytes=static_cast<std::uint8_t*>(wrongMode.getData());
+    assert(wrongBytes[8+50]==9);
+    wrongBytes[8+50]=0;
+    assert(!restored->restoreUnpublishedState(
+        wrongMode.getData(),static_cast<int>(wrongMode.getSize())));
+    assert(restored->acceptedSettings().renderMode==9);
+    auto movingWorld=state;
+    auto* movingBytes=static_cast<std::uint8_t*>(movingWorld.getData());
+    movingBytes[8+28]=1; // dynamic orbit not allowed by ImerSip's scene
+    assert(!restored->restoreUnpublishedState(
+        movingWorld.getData(),static_cast<int>(movingWorld.getSize())));
+    assert(restored->acceptedSettings().renderMode==9);
+
     // Original IMRS 52-byte v5 restores without silently launching P8 DSP.
     auto old=oldImrsV5();
     auto legacy=std::make_unique<ImerSipP92Processor>();

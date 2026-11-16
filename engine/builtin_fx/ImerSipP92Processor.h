@@ -70,11 +70,37 @@ public:
             const auto* raw=static_cast<const std::uint8_t*>(data)+8;
             juce::MemoryInputStream check(raw,63,false);
             if(check.readInt()!=0x534F4E4B || check.readInt()!=11)return false;
-            // Validate mode using a temporary copy *before* touching DSP.
-            // Actual native restore still performs full schema validation.
-            if(!SonKuSpatialProcessor::restoreUnpublishedState(raw,63))
-                return false;
-            return validImerSipP92Scene(acceptedSettings());
+            // Preflight the exact SONK v11 wire schema in a local POD.
+            // Parent restoration may change its accepted scene/core; doing
+            // that before validating ImerSip would let an invalid v6
+            // session silently replace approved world-speaker P9 mode 9.
+            auto next=imersipP92ReferenceScene();
+            next.startAzimuthDegrees=check.readFloat();
+            next.revolutionSeconds=check.readFloat();
+            next.stereoSpreadDegrees=check.readFloat();
+            next.spatialMix=check.readFloat();
+            next.outputTrim=check.readFloat();
+            const int moving=check.readByte();
+            const int clockwise=check.readByte();
+            next.moving=moving!=0;
+            next.clockwise=clockwise!=0;
+            next.spacePreset=check.readInt();
+            next.sourceDistanceMeters=check.readFloat();
+            next.roomAmount=check.readFloat();
+            next.ambience=check.readFloat();
+            next.directElevationDegrees=check.readFloat();
+            next.renderMode=check.readInt();
+            const int incompatibleLf=check.readByte();
+            next.musicCompatibleLowFrequency=incompatibleLf!=0;
+            next.headYawDegrees=check.readFloat();
+            next.hrtfElevationTrimDegrees=check.readFloat();
+            if(!check.isExhausted() || (moving!=0&&moving!=1) ||
+               (clockwise!=0&&clockwise!=1) ||
+               (incompatibleLf!=0&&incompatibleLf!=1) ||
+               !validImerSipP92Scene(next))return false;
+            // Only now invoke the single authoritative native parser and
+            // publish accepted settings. Reject without partial mutation.
+            return SonKuSpatialProcessor::restoreUnpublishedState(raw,63);
         }
         // Original IMRS v1-v5: read the actual previous format, fail closed
         // on corrupt bytes and map only parameters with a real P9 counterpart.
