@@ -34,6 +34,28 @@ const toDb=g=>g>0?Math.max(-24,20*Math.log10(g)):-24;
 const fromDb=db=>Number(Math.pow(10,Number(db)/20).toFixed(6));
 const dbLabel=db=>(db>0?"+":"")+db.toFixed(1)+" dB";
 const roomMaxDistance=[10,3.1,6.7,10];
+// Factory presets are explicit native scene values, never browser audio DSP.
+// A preset applies the COMPLETE documented scene in one ACK-verified command.
+// Preserve custom .smix settings until the operator actually selects a preset.
+const factoryPresets=Object.freeze({
+ music:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
+  revolutionSeconds:12,stereoSpreadDegrees:82,spatialMix:1,outputTrim:1,
+  spacePreset:3,sourceDistanceMeters:1.6,roomAmount:.78,ambience:.33}),
+ studio:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
+  revolutionSeconds:12,stereoSpreadDegrees:68,spatialMix:1,outputTrim:1,
+  spacePreset:1,sourceDistanceMeters:1.6,roomAmount:.42,ambience:.18}),
+ wide:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
+  revolutionSeconds:12,stereoSpreadDegrees:118,spatialMix:1,outputTrim:1,
+  spacePreset:2,sourceDistanceMeters:3.2,roomAmount:.68,ambience:.32}),
+ deep:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
+  revolutionSeconds:12,stereoSpreadDegrees:104,spatialMix:1,outputTrim:1,
+  spacePreset:3,sourceDistanceMeters:4.5,roomAmount:.82,ambience:.42}),
+ orbit:Object.freeze({moving:true,clockwise:true,startAzimuthDegrees:0,
+  revolutionSeconds:8.5,stereoSpreadDegrees:100,spatialMix:1,outputTrim:1,
+  spacePreset:3,sourceDistanceMeters:2.5,roomAmount:.72,ambience:.38})
+});
+const matchFactoryPreset=s=>Object.entries(factoryPresets).find(([id,p])=>
+  s.renderMode===9 && Object.keys(p).every(k=>Math.abs(Number(s[k])-Number(p[k]))<.00002))?.[0]||"CUSTOM";
 const valid=s=>s && Number.isFinite(s.startAzimuthDegrees) &&
  Math.abs(s.startAzimuthDegrees)<=360 &&
  Number.isFinite(s.revolutionSeconds)&&s.revolutionSeconds>=.5&&s.revolutionSeconds<=120 &&
@@ -212,6 +234,28 @@ let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
  readId="",readSentAt=0,seq=1,clock=null,frame=null,observed=0,observedAt=0,
  drag=null,dialDrag=null,rangeEdits=new Set(),gestureStart=new Map(),
  visualPhase=0,visualAt=0,liveTimer=null,lastLiveAt=0;
+function syncPower(){
+ const p=$("skPower");
+ if(!current){p.dataset.fxState="unknown";p.disabled=true;return;}
+ const n=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
+ const lane=n?.graph?.channels?.find(x=>x.id===id);
+ const insert=lane?.inserts?.[current.slot];
+ const globalOff=document.querySelector(".console-body")?.classList.contains("global-fx-bypassed")===true;
+ const state=!native()?
+  (current.track?.slotBypass?.[current.slot]?"off":"on"):
+  (!lane||typeof lane.fxRackBypassed!=="boolean"||
+    !insert||insert.catalogId!==ID||typeof insert.bypassed!=="boolean"?"unknown":
+    (lane.fxRackBypassed||globalOff)?"rack-off":insert.bypassed?"off":"on");
+ p.dataset.fxState=state;
+ p.disabled=state==="unknown"||state==="rack-off";
+ p.setAttribute("aria-pressed",String(state==="on"));
+ p.title=state==="on"?"SONKU ON · click to bypass this insert":
+    state==="off"?"SONKU BYPASSED · click to enable":
+    state==="rack-off"?"FX RACK DISABLED · enable rack first":
+    "SONKU STATE UNAVAILABLE · waiting for native readback";
+ p.setAttribute("aria-label",p.title);
+ root.dataset.fxState=state;
+}
 const context=()=>{
  if(!current||!native())return null;
  const s=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
@@ -227,7 +271,12 @@ function render(){
  const s=draft;
  const row=$("skRenderRow");row.hidden=!(p83Capable||p84Capable);
  if(p83Capable||p84Capable){
-  const picker=$("skRenderMode");
+  syncPower();
+ const presetPicker=$("skPreset");
+ presetPicker.disabled=!p91p92Capable || s.renderMode!==9 || !current || Boolean(pending);
+ const factoryName=p91p92Capable?matchFactoryPreset(s):"CUSTOM";
+ if(presetPicker.value!==factoryName)presetPicker.value=factoryName;
+ const picker=$("skRenderMode");
   if(p90Capable && picker.dataset.nativeModeSet!==(p91p92Capable?"p91p92":"p90")){
     picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
      '<option value="clarity">SPATIAL · P8.4 REFERENCE</option>'+
@@ -627,9 +676,64 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  }
  render();
 });
+let windowGesture=null;
+const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
+function constrainWindow(){
+ if(root.hidden)return;
+ const r=root.getBoundingClientRect();
+ if(!r.width||!r.height)return;
+ const x=clamp(r.left,0,Math.max(0,innerWidth-r.width));
+ const y=clamp(r.top,0,Math.max(0,innerHeight-r.height));
+ if(x===r.left && y===r.top)return;
+ root.style.left=x+"px";root.style.top=y+"px";root.style.transform="none";
+}
+const head=root.querySelector(".sk-head");
+head.addEventListener("pointerdown",e=>{
+ if(e.button!==0||e.target.closest("button,select,input,a"))return;
+ const r=root.getBoundingClientRect();
+ windowGesture={id:e.pointerId,dx:e.clientX-r.left,dy:e.clientY-r.top};
+ head.setPointerCapture(e.pointerId);e.preventDefault();
+});
+head.addEventListener("pointermove",e=>{
+ if(!windowGesture||windowGesture.id!==e.pointerId)return;
+ const r=root.getBoundingClientRect();
+ root.style.left=clamp(e.clientX-windowGesture.dx,0,Math.max(0,innerWidth-r.width))+"px";
+ root.style.top=clamp(e.clientY-windowGesture.dy,0,Math.max(0,innerHeight-r.height))+"px";
+ root.style.transform="none";
+ e.preventDefault();
+});
+const stopWindowDrag=e=>{
+ if(!windowGesture||e.pointerId!==windowGesture.id)return;
+ windowGesture=null;
+ if(head.hasPointerCapture?.(e.pointerId))head.releasePointerCapture(e.pointerId);
+};
+head.addEventListener("pointerup",stopWindowDrag);
+head.addEventListener("pointercancel",stopWindowDrag);
+window.addEventListener("resize",constrainWindow);
+$("skPower").addEventListener("click",()=>{
+ if(!current || $("skPower").disabled)return;
+ if(native()){
+  window.__ARMIX_NATIVE_M2__?.consumeAction?.(
+   current.track,"slotPower",{dataset:{slot:String(current.slot)}});
+ }else{
+  current.track.slotBypass??=[];
+  current.track.slotBypass[current.slot]=!current.track.slotBypass[current.slot];
+  syncPower();
+ }
+});
+$("skPreset").addEventListener("change",()=>{
+ const picker=$("skPreset");
+ const preset=factoryPresets[picker.value];
+ if(!p91p92Capable||draft.renderMode!==9||!preset||pending){
+  render();return;
+ }
+ const scene=fitElevation({...draft,...preset,renderMode:9,
+  musicCompatibleLowFrequency:false});
+ if(!send(scene))render();
+});
 $("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapable=false;p85Capable=false;p86Capable=false;p87Capable=false;p88Capable=false;p89Capable=false;p90Capable=false;p91p92Capable=false;musicSafeStereo=false;p8TransparentBass=false;p82MultibandRoom=false;
  cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
- drag=null;rangeEdits.clear();gestureStart.clear();lastLiveAt=0;
+ drag=null;windowGesture=null;rangeEdits.clear();gestureStart.clear();lastLiveAt=0;
  if(clock!==null){clearInterval(clock);clock=null;}
  if(frame!==null){cancelAnimationFrame(frame);frame=null;}});
 $("skRenderMode").addEventListener("change",()=>{
@@ -824,18 +928,22 @@ const api={
   cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
   observedAt=0;visualAt=0;visualPhase=0;lastLiveAt=0;
   drag=null;rangeEdits.clear();gestureStart.clear();
-  accepted=defaults();draft=defaults();xyzCapable=false;p83Capable=false;p84Capable=false,p85Capable=false;musicSafeStereo=false;p8TransparentBass=false;
+  accepted=defaults();draft=defaults();xyzCapable=false;
+  p83Capable=p84Capable=p85Capable=p86Capable=p87Capable=p88Capable=
+   p89Capable=p90Capable=p91p92Capable=false;
+  musicSafeStereo=p8TransparentBass=p82MultibandRoom=false;
   current={track,slot,instanceId:null};
   const s=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const fx=s?.graph?.channels?.find(x=>x.id===id)?.inserts?.[slot];
   if(native()&&(s?.admitted||s?.logical)&&fx?.catalogId===ID)current.instanceId=fx.id;
   $("skChannel").textContent=String(track.name)+" · FX "+(slot+1);
   root.hidden=false;
+  constrainWindow();syncPower();
   hint(native()?"READING ACCEPTED DSP":"BROWSER VISUAL ONLY · NO AUDIO");
   if(native())requestSnapshot();
   if(clock!==null)clearInterval(clock);
   clock=setInterval(()=>{if(root.hidden)return;
-    if(native()&&!pending&&context())requestSnapshot();},250);
+    syncPower();if(native()&&!pending&&context())requestSnapshot();},250);
   render();
   if(frame!==null)cancelAnimationFrame(frame);
   frame=requestAnimationFrame(animate);
