@@ -24,13 +24,13 @@ class ImerSipP92Contract(unittest.TestCase):
         self.assertIn("SonKuSpatialProcessor(imersipP92Factory(2))",p)
         self.assertIn("imersipP97VenueGoldenScene()",scene)
         self.assertIn("next.sourceDistanceMeters=std::clamp(",p)
+        self.assertIn("const double upper[]={180.,2.5,180.",source(
+            "engine/builtin_fx/ImerSipP92Editor.h"))
         self.assertIn("sidePresence2_.run",source(
             "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h"))
-        self.assertIn("inline constexpr std::array<ImerSipP92Preset,6>",scene) # historical
-        self.assertIn("inline constexpr std::array<ImerSipP92Preset,7>",scene)
+        self.assertIn("inline constexpr std::array<ImerSipP92Preset,6>",scene) # P9.2 historical
+        self.assertIn("inline constexpr std::array<ImerSipP92Preset,7>",scene) # P9.8
         self.assertIn("imersipP92MinDistance()",scene)
-        self.assertIn("return 2.5f;",scene)
-        self.assertIn("const double upper[]={180.,2.5,180.",source("engine/builtin_fx/ImerSipP92Editor.h")) # P9.8
         self.assertIn('"Concert Front Row XL"',scene)
         self.assertIn('"Royal Concert Hall"',scene)
         self.assertIn('"Arena Thunder"',scene)
@@ -48,8 +48,20 @@ class ImerSipP92Contract(unittest.TestCase):
         self.assertNotIn("L  /  WORLD PA",ui)
         self.assertNotIn("LIVE CONCERT WORLD",ui)
         self.assertNotIn("skin_.drawHeader(g)",ui)
-        for label in ("PRESET","ROOM","SPATIAL CONCERT MONITOR"):
+        for label in ("PRESET","ROOM","DISTANCE","MASTER GAIN"):
             self.assertIn(label,ui)
+        # Header/footer close chrome is owned by the native plugin window.
+        self.assertNotIn("SPATIAL CONCERT MONITOR",ui)
+        self.assertNotIn('g.fillRect(0,0,1100,68)',ui)
+        self.assertNotIn('close_.setButtonText',ui)
+        self.assertNotIn("close_",ui)
+        # Host state is the only authority for the native power glyph.
+        self.assertIn('power_.setButtonText({})',ui)
+        self.assertIn('power_.setToggleState(!bypassed',ui)
+        self.assertIn('place(power_,1032,483,44,44)',ui)
+        self.assertIn('place(knobs_[5],908,510,98,94)',ui)
+        self.assertIn('place(labels_[5],884,484,139,22)',ui)
+        self.assertIn('label.setComponentID(',ui)
         self.assertIn("g.fillRect(0,461,1100,219)",source(
             "engine/builtin_fx/ImerSipP92VisualSkin.h"))
         self.assertIn("juce::Colour(0xff151a20)",source(
@@ -86,6 +98,9 @@ class ImerSipP92Contract(unittest.TestCase):
         self.assertIn("g.drawImageWithin(*art",skin)
         self.assertNotIn("RectanglePlacement::fillDestination",skin)
         self.assertIn("const int x=252+317*col",ui)
+        self.assertIn('button.getComponentID()=="imersip.power"',skin)
+        self.assertIn("powerRing.addCentredArc",skin)
+        self.assertNotIn("BinaryData::button_normal_png",skin)
 
         for old_path in (
             "scripts/generate_imersip_concert_png.py",
@@ -101,7 +116,7 @@ class ImerSipP92Contract(unittest.TestCase):
         self.assertNotIn("Grand Arena",ui)
         self.assertIn("ImerSipP92Processor::productDisplayName",catalog)
         self.assertIn("Saved ImmerSIB IMRS state rejected",catalog)
-        self.assertIn("ImerSipP92Processor::productDisplayName",ui)
+        self.assertNotIn("ImerSipP92Processor::productDisplayName",ui)
         self.assertIn("prepareNativeBuiltInFx<ImerSipP92Processor>",catalog)
         self.assertIn("ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT",catalog)
     def test_legacy_and_host_power_are_realtime_owned(self):

@@ -40,7 +40,7 @@ public:
             case 5: art=&sceneFront_; break;
             case 6: art=&sceneSymphony_; break;
             case 7: art=&sceneCinema_; break;
-            case 8: art=&sceneLive_; break; // Owner Front Row XL; reuse live venue
+            case 8: art=&sceneLive_; break; // Reuse approved Live venue for owner XL
             default: break; // Custom keeps its last selected venue.
         }
         if(art->isNull()) return; // Missing approved image fails QA, no synthetic fallback.
@@ -137,6 +137,36 @@ public:
     }
     void drawButtonBackground(juce::Graphics& g,juce::Button& button,
                               const juce::Colour&,bool hover,bool down) override {
+        if(button.getComponentID()=="imersip.power") {
+            // Same simple IEC power-ring language as built-in Compressor/EQ.
+            // Body and glyph are native JUCE; no image, font glyph, LED,
+            // faux switch, label, or GUI-side invented bypass state.
+            const auto bounds=juce::Rectangle<float>(.5f,.5f,
+                float(button.getWidth()-1),float(button.getHeight()-1));
+            const bool enabled=button.isEnabled();
+            const bool on=enabled && button.getToggleState();
+            const auto colour=!enabled?juce::Colour(0xff6b7981):
+                on?juce::Colour(0xff73d9d0):juce::Colour(0xffa6b6bd);
+            g.setColour(down?juce::Colour(0xff263941):
+                       hover&&enabled?juce::Colour(0xff21323a):
+                                       juce::Colour(0xff1c262d));
+            g.fillRoundedRectangle(bounds,6.f);
+            g.setColour(juce::Colour(hover&&enabled?0xff4c6870:0xff34464e));
+            g.drawRoundedRectangle(bounds,6.f,1.f);
+            const float cx=float(button.getWidth())*.5f;
+            const float cy=float(button.getHeight())*.52f;
+            const float radius=std::min(float(button.getWidth()),
+                                        float(button.getHeight()))*.244f;
+            juce::Path powerRing;
+            powerRing.addCentredArc(cx,cy,radius,radius,0.f,
+                .63f,juce::MathConstants<float>::twoPi-.63f,true);
+            g.setColour(colour);
+            g.strokePath(powerRing,juce::PathStrokeType(
+                2.5f,juce::PathStrokeType::curved,
+                juce::PathStrokeType::rounded));
+            g.drawLine(cx,cy-radius-3.f,cx,cy-1.f,2.5f);
+            return;
+        }
         const auto r=juce::Rectangle<float>(.5f,.5f,
                    float(button.getWidth()-1),float(button.getHeight()-1));
         const auto background=!button.isEnabled()?juce::Colour(0xff18252b):

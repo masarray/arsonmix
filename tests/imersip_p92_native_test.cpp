@@ -272,8 +272,8 @@ int main() {
     const char* controlIds[]={"imersip.preset","imersip.room",
       "imersip.stage","imersip.distance","imersip.early",
       "imersip.late","imersip.mix","imersip.gain",
-      "imersip.align","imersip.yaw","imersip.power","imersip.close"};
-    std::array<juce::Component*,12> controls{};
+      "imersip.align","imersip.yaw","imersip.power"};
+    std::array<juce::Component*,11> controls{};
     for(std::size_t i=0;i<controls.size();++i){
         controls[i]=editor->findChildWithID(controlIds[i]);
         assert(controls[i]);
@@ -283,6 +283,21 @@ int main() {
         for(std::size_t j=0;j<i;++j)
             assert(!r.intersects(controls[j]->getBounds()));
     }
+    // The native OS close control replaces the redundant in-editor CLOSE.
+    assert(editor->findChildWithID("imersip.close")==nullptr);
+    const auto powerBounds=controls[10]->getBounds();
+    const auto gainBounds=controls[7]->getBounds();
+    assert(powerBounds.getY()>=juce::roundToInt(461.f*.85f));
+    assert(powerBounds.getRight()>gainBounds.getRight());
+    assert(powerBounds.getX()>gainBounds.getRight());
+    assert(powerBounds.getY()<gainBounds.getY());
+    auto* distanceLabel=dynamic_cast<juce::Label*>(
+        editor->findChildWithID("imersip.label.distance"));
+    assert(distanceLabel && distanceLabel->getText()=="DISTANCE");
+    auto* masterLabel=dynamic_cast<juce::Label*>(
+        editor->findChildWithID("imersip.label.gain"));
+    assert(masterLabel && masterLabel->getText()=="MASTER GAIN");
+    assert(masterLabel->getX()<powerBounds.getX());
     // Seven non-master controls should occupy two clean vertical lanes
     // with uniform label/track spacing, not four cramped columns.
     const auto a=controls[2]->getBounds();
@@ -370,9 +385,11 @@ int main() {
     auto* power=dynamic_cast<juce::TextButton*>(
         editor->findChildWithID("imersip.power"));
     assert(power && !power->isEnabled());
+    assert(power->getButtonText().isEmpty());
+    assert(!power->getToggleState());
     auto* selector=dynamic_cast<juce::ComboBox*>(
         editor->findChildWithID("imersip.preset"));
-    #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
     assert(selector&&selector->getNumItems()==8); // Custom + seven scenes
 #else
     assert(selector&&selector->getNumItems()==7); // Historical P9.2
@@ -484,9 +501,38 @@ int main() {
     actualEditor->bindHostPower(
         [&](bool desired){bypassed=desired;return true;},
         [&](){return bypassed;});
-    assert(power->isEnabled());
-    power->onClick();assert(bypassed);
-    power->onClick();assert(!bypassed);
+    assert(power->isEnabled() && power->getToggleState());
+    // Host-connected native screenshots prove the two actual power glyph
+    // states. The earlier DPI snapshots deliberately test disabled/fail-safe
+    // before host binding; these frames additionally verify the real bypass
+    // response without faking a DSP power state in the editor.
+    const auto savePowerFrame=[&](const char* mode) {
+        auto frame=editor->createComponentSnapshot(editor->getLocalBounds());
+        assert(frame.isValid() && frame.getWidth()==935 &&
+               frame.getHeight()==578);
+        const auto file=juce::File::getCurrentWorkingDirectory()
+            .getChildFile("ImerSip_P92_JUCE_POWER_"+juce::String(mode)+".png");
+        juce::FileOutputStream output(file);
+        assert(output.openedOk());
+        juce::PNGImageFormat encoder;
+        assert(encoder.writeImageToStream(frame,output));
+        output.flush();
+        assert(file.existsAsFile() && file.getSize()>10000);
+        return frame;
+    };
+    const auto activeFrame=savePowerFrame("ON");
+    power->onClick();
+    assert(bypassed && !power->getToggleState());
+    const auto bypassFrame=savePowerFrame("BYPASSED");
+    int changedPowerPixels=0;
+    const auto powerRegion=power->getBounds();
+    for(int y=powerRegion.getY()+3;y<powerRegion.getBottom()-3;y+=3)
+        for(int x=powerRegion.getX()+3;x<powerRegion.getRight()-3;x+=3)
+            if(activeFrame.getPixelAt(x,y)!=bypassFrame.getPixelAt(x,y))
+                ++changedPowerPixels;
+    assert(changedPowerPixels>=10); // Visible true host ON/OFF indication
+    power->onClick();
+    assert(!bypassed && power->getToggleState());
     // Actual JUCE scene renders: exact same embedded venue images as shipped
     // with the native app. These captures are NOT HTML concept mockups.
     // Each of the six preset IDs must produce a distinct visual composition.
