@@ -7,13 +7,13 @@ const assert=require("node:assert/strict");
 const fs=require("node:fs");
 const vm=require("node:vm");
 const source=fs.readFileSync("site/preview-v2/assets/mixer-native-sonku.js","utf8");
-const start=source.indexOf('  if(p90Capable && picker.dataset.nativeModeSet!==(p91p92Capable?"p91p92":"p90")){');
+const start=source.indexOf('  if(p90Capable && picker.dataset.nativeModeSet!==(p94Capable?"p94":p91p92Capable?"p91p92":"p90")){');
 const end=source.indexOf("  const v=p90Capable?",start);
 assert(start!==-1&&end>start,"Locate actual native SonKu mode menu reconciliation");
 const actualReconcile=source.slice(start,end);
 const renderMenu=vm.runInNewContext(
   '(function(picker,root,cap){ const {'+
-  'p90Capable,p91p92Capable,p89Capable,p88Capable,p87Capable,p86Capable,'+
+  'p90Capable,p91p92Capable,p94Capable,p89Capable,p88Capable,p87Capable,p86Capable,'+
   'p85Capable,p84Capable,p83Capable}=cap;\n'+
   actualReconcile+'\n})',{}
 );
@@ -45,7 +45,7 @@ const label={textContent:""};
 const root={querySelector(selector){
   assert.equal(selector,".sk-render-label");return label;
 }};
-const full={p90Capable:true,p91p92Capable:true,p89Capable:true,p88Capable:true,
+const full={p90Capable:true,p91p92Capable:true,p94Capable:false,p89Capable:true,p88Capable:true,
   p87Capable:true,p86Capable:true,p85Capable:true,p84Capable:true,
   p83Capable:false};
 renderMenu(picker,root,full);
@@ -102,4 +102,20 @@ assert.match(nativeSource,/reply->setProperty\("p91p92MusicBassFoundation",true\
 assert.match(source,/p91p92Capable=p90Capable && r\.p91p92MusicBassFoundation===true;/);
 assert.match(source,/p91p92Capable&&s\.renderMode===9/);
 assert.match(source,/NATIVE P9\.1\+P9\.2 WORLD BASS/);
+assert.match(nativeSource,/reply->setProperty\("p94FrontBackDepthCue",true\)/);
+assert.match(source,/p94Capable=p91p92Capable && r\.p94FrontBackDepthCue===true;/);
+const p94={...full,p94Capable:true};
+renderMenu(picker,root,p94);
+assert.equal(picker.dataset.nativeModeSet,"p94");
+assert.equal(optionWrites.length,6);
+assert.match(picker.innerHTML,/P9\.4 · FRONT\/REAR DEPTH/);
+assert.match(label.textContent,/P9\.4 EXPERIMENT/);
+picker.isOpen=true;
+for(let i=0;i<40;++i){renderMenu(picker,root,p94);syncSelection(picker,"external");}
+picker.isOpen=false;
+assert.equal(optionWrites.length,6,"P9.4 must not flicker in native readback");
+renderMenu(picker,root,full);
+assert.equal(picker.dataset.nativeModeSet,"p91p92");
+assert.equal(optionWrites.length,7);
+assert.doesNotMatch(picker.innerHTML,/P9\.4/);
 console.log("PASS P91P92 dropdown: native capability-gated milestone, stable 40 readbacks, P9.0 fallback, correct one-time transitions");
