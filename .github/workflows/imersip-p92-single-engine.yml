@@ -128,14 +128,21 @@ jobs:
         run: |
           & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist --best-effort
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Copy-Item -LiteralPath docs/IMERSIP_P92_SINGLE_NATIVE_ENGINE_FAT_20261116.md -Destination dist/IMERSIP_P92_FIELD_FAT.md
-          Copy-Item -LiteralPath docs/THIRD_PARTY_8D_SONKU_HRTF.md -Destination dist/THIRD_PARTY_8D_SONKU_HRTF.md
+          # The release verifier uses a strict dist/ allowlist. Attach the
+          # acoustic FAT and MIT KEMAR attribution OUTSIDE verified dist/,
+          # not by making unverified changes to the portable application.
+          New-Item -ItemType Directory -Path field_candidate -Force | Out-Null
+          Copy-Item -LiteralPath dist -Destination field_candidate/ArSonMix-Portable -Recurse
+          Copy-Item -LiteralPath docs/IMERSIP_P92_SINGLE_NATIVE_ENGINE_FAT_20261116.md -Destination field_candidate/IMERSIP_P92_FIELD_FAT.md
+          Copy-Item -LiteralPath docs/THIRD_PARTY_8D_SONKU_HRTF.md -Destination field_candidate/THIRD_PARTY_8D_SONKU_HRTF.md
       - uses: actions/upload-artifact@v4
         with:
           name: ImerSip-P92-Shared-Core-Windows-x64-${{ github.run_id }}
-          path: dist/
+          path: field_candidate/
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

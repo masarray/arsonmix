@@ -114,6 +114,12 @@ public:
         // would destroy the owner-approved external P9 scene.
         return validImerSipP92Scene(next) && adoptUnpublishedScene(next);
     }
+    // JUCE's public AudioProcessor restore entrypoint is virtual. Without
+    // this override it would call the inherited SONK parser, silently
+    // rejecting an IMRS show even though the native FX registry restores it.
+    void setStateInformation(const void* data,int bytes) override {
+        (void)restoreUnpublishedState(data,bytes);
+    }
 private:
     std::uint64_t issued_=0,lastCompletedRequest_=0;
     bool lastCompletionApplied_=false;

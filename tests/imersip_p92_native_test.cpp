@@ -118,6 +118,15 @@ static void nativeParity(int rate) {
     assert(migrated.renderMode==9 && !migrated.moving);
     assert(std::abs(migrated.stereoSpreadDegrees-130.5f)<.01f);
     assert(migrated.spacePreset==3);
+    // Exercise the *virtual JUCE* restoration path as well as registry
+    // restore. A base-class SONK parser must not swallow ImerSip IMRS.
+    auto viaJuce=std::make_unique<ImerSipP92Processor>();
+    viaJuce->prepareToPlay(rate,128);
+    juce::AudioProcessor& conventionalHost=*viaJuce;
+    conventionalHost.setStateInformation(
+        old.getData(),static_cast<int>(old.getSize()));
+    assert(std::abs(viaJuce->acceptedSettings().stereoSpreadDegrees-
+                    130.5f)<.01f);
     auto corrupt=old;
     corrupt.getData(); // corrupted byte count must reject before mutation
     auto invalid=std::make_unique<ImerSipP92Processor>();
@@ -140,6 +149,7 @@ static void nativeParity(int rate) {
     fx->releaseResources();
     restored->releaseResources();
     legacy->releaseResources();
+    viaJuce->releaseResources();
     invalid->releaseResources();
 }
 int main() {
@@ -151,6 +161,16 @@ int main() {
     auto* power=dynamic_cast<juce::TextButton*>(
         editor->findChildWithID("imersip.power"));
     assert(power && !power->isEnabled());
+    auto* actualEditor=dynamic_cast<armix::builtin_fx::ImerSipP92Editor*>(
+        editor.get());
+    assert(actualEditor);
+    bool bypassed=false;
+    actualEditor->bindHostPower(
+        [&](bool desired){bypassed=desired;return true;},
+        [&](){return bypassed;});
+    assert(power->isEnabled());
+    power->onClick();assert(bypassed);
+    power->onClick();assert(!bypassed);
     editor.reset();
     editorFx->releaseResources();
     nativeParity(44100);

@@ -77,7 +77,7 @@ public:
         power_.onClick=[this] {
             if(!requestBypass_ || !readBypass_)return;
             const bool wanted=!readBypass_();
-            status_=requestBypass_(wanted)?"HOST BYPASS APPLIED":
+            status_=requestBypass_(wanted)?"HOST BYPASS ACCEPTED":
                                           "HOST BYPASS REJECTED";
             refreshHostPower();
             repaint();
@@ -222,7 +222,10 @@ private:
             const bool ok=fx_.lastCompletionApplied();
             pending_=0;
             status_=ok?"APPLIED TO P9 PCM":"REJECTED BY P9 PCM";
-            if(!ok)sync(fx_.acceptedSettings());
+            // Show the *accepted* physical distance after a room resize
+            // (Studio 7.2 m cannot fit a 7.4 m speaker).
+            // Do not erase the newest unacknowledged drag while deferred.
+            if(!ok || !hasDeferred_)sync(fx_.acceptedSettings());
         }
         if(pending_==0 && hasDeferred_){
             const auto next=deferred_;
