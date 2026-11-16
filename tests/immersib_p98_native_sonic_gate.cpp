@@ -289,7 +289,21 @@ int main(){
             // shrill, thin vocals. The independent WHOLE-PCM 285Hz/3.45k
             // tonal tests above replace it with a physically appropriate
             // transfer quality criterion. Still forbid silent presets.
-            assert(heard.power>base.power*.70);
+            if(preset.id==8) {
+                // The owner deliberately selected +2.5dB rather than the
+                // +5.1dB archived Venue trim. Equalize electrical output
+                // trim for this energy-only *diagnostic*, not for the PCM
+                // render or production gain. This does not equate to LUFS.
+                const double matchedPower=heard.power*
+                    (double(golden.outputTrim)*golden.outputTrim)/
+                    (double(s.outputTrim)*s.outputTrim);
+                std::fprintf(stderr,
+                    "OWNER_XL_GAIN_MATCH,rate=%d,raw=%.6f,matched=%.6f,venue=%.6f\\n",
+                    rate,heard.power,matchedPower,base.power);
+                assert(matchedPower>base.power*.70);
+            }else {
+                assert(heard.power>base.power*.70);
+            }
             uniquePcm[static_cast<std::size_t>(preset.id-2)]=heard.hash;
             std::printf("IMMERSIB_P98_SCENE,%d,%d,%s,%d,%.6f,%.6f,%.6f,%016llx\n",
                 rate,preset.id,preset.label,s.sceneVoicing,
