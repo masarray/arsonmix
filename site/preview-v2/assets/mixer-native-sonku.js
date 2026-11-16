@@ -59,7 +59,19 @@ const factoryPresets=Object.freeze({
   revolutionSeconds:8.5,stereoSpreadDegrees:92,spatialMix:1,outputTrim:1.883649,
   spacePreset:6,sourceDistanceMeters:9,roomAmount:.96,ambience:.72})
 });
-const matchFactoryPreset=s=>Object.entries(factoryPresets).find(([id,p])=>
+const legacyFactoryPresets=Object.freeze({
+ music:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,revolutionSeconds:12,
+  stereoSpreadDegrees:82,spatialMix:1,outputTrim:1,spacePreset:3,sourceDistanceMeters:1.6,roomAmount:.78,ambience:.33}),
+ studio:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,revolutionSeconds:12,
+  stereoSpreadDegrees:68,spatialMix:1,outputTrim:1,spacePreset:1,sourceDistanceMeters:1.6,roomAmount:.42,ambience:.18}),
+ wide:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,revolutionSeconds:12,
+  stereoSpreadDegrees:118,spatialMix:1,outputTrim:1,spacePreset:2,sourceDistanceMeters:3.2,roomAmount:.68,ambience:.32}),
+ deep:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,revolutionSeconds:12,
+  stereoSpreadDegrees:104,spatialMix:1,outputTrim:1,spacePreset:3,sourceDistanceMeters:4.5,roomAmount:.82,ambience:.42}),
+ orbit:Object.freeze({moving:true,clockwise:true,startAzimuthDegrees:0,revolutionSeconds:8.5,
+  stereoSpreadDegrees:100,spatialMix:1,outputTrim:1,spacePreset:3,sourceDistanceMeters:2.5,roomAmount:.72,ambience:.38})
+});
+const matchFactoryPreset=s=>Object.entries(p95Capable?factoryPresets:legacyFactoryPresets).find(([id,p])=>
   s.renderMode===9 && Object.keys(p).every(k=>Math.abs(Number(s[k])-Number(p[k]))<.00002))?.[0]||"CUSTOM";
 const valid=s=>s && Number.isFinite(s.startAzimuthDegrees) &&
  Math.abs(s.startAzimuthDegrees)<=360 &&
@@ -240,6 +252,7 @@ if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",
 let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
  xyzCapable=false,p83Capable=false,p84Capable=false,p85Capable=false,p86Capable=false,p87Capable=false,p88Capable=false,p89Capable=false,p90Capable=false,p91p92Capable=false,p94Capable=false,p95Capable=false,musicSafeStereo=false,p8TransparentBass=false,p82MultibandRoom=false,
  readId="",readSentAt=0,seq=1,clock=null,frame=null,observed=0,observedAt=0,
+ autoUpgradeAttempted=false,
  drag=null,dialDrag=null,rangeEdits=new Set(),gestureStart=new Map(),
  visualPhase=0,visualAt=0,liveTimer=null,lastLiveAt=0;
 function syncPower(){
@@ -297,7 +310,9 @@ function render(){
  syncPower();
  const presetPicker=$("skPreset");
  presetPicker.disabled=!p91p92Capable || (!p95Capable&&s.renderMode!==9) || !current || Boolean(pending);
- const factoryName=p95Capable?matchFactoryPreset(s):"CUSTOM";
+ const arenaOption=presetPicker.querySelector('option[value="arena"]');
+ if(arenaOption)arenaOption.hidden=!p95Capable;
+ const factoryName=p91p92Capable?matchFactoryPreset(s):"CUSTOM";
  if(presetPicker.value!==factoryName)presetPicker.value=factoryName;
  const row=$("skRenderRow");row.hidden=!(p83Capable||p84Capable);
  const renderPicker=$("skRenderMode");
@@ -720,6 +735,22 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
   // later failure/reopen never restores a stale value.
   accepted={...incoming};
  }
+ // Only a factory-new P8.2 state gets promoted to latest engine after
+ // native identity-bound readback. Saved CUSTOM .smix is never overwritten.
+ const factoryNew=p95Capable&&incoming.renderMode===0&&
+  incoming.spacePreset===0&&incoming.moving===true&&
+  Math.abs(incoming.startAzimuthDegrees)<.001&&
+  Math.abs(incoming.stereoSpreadDegrees-60)<.001&&
+  Math.abs(incoming.outputTrim-.75)<.001&&
+  Math.abs(incoming.roomAmount-.55)<.001&&
+  Math.abs(incoming.ambience-.30)<.001&&
+  Math.abs(incoming.sourceDistanceMeters-1.6)<.001;
+ if(factoryNew&&!autoUpgradeAttempted&&!pending){
+  autoUpgradeAttempted=true;
+  const next=fitElevation({...incoming,...factoryPresets.music,
+   renderMode:9,musicCompatibleLowFrequency:false});
+  if(send(next))hint("IMMERSIVE MUSIC · AWAITING AUDIO ACK");
+ }
  if(Number.isFinite(r.observedAzimuthDegrees) && root.dataset.fxState==="on"){
   // First authoritative phase anchors the loop once. Subsequent readbacks
   // only adjust the PLL; never set the visible phase discontinuously.
@@ -775,7 +806,7 @@ $("skPower").addEventListener("click",()=>{
 });
 $("skPreset").addEventListener("change",()=>{
  const picker=$("skPreset");
- const preset=factoryPresets[picker.value];
+ const preset=(p95Capable?factoryPresets:legacyFactoryPresets)[picker.value];
  if(!p91p92Capable||(!p95Capable&&draft.renderMode!==9)||!preset||pending){
   render();return;
  }
@@ -979,6 +1010,7 @@ const api={
  open(track,slot){
   cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
   observedAt=0;visualAt=0;visualPhase=0;lastLiveAt=0;
+  autoUpgradeAttempted=false;
   drag=null;rangeEdits.clear();gestureStart.clear();
   accepted=defaults();draft=defaults();xyzCapable=false;
   p83Capable=p84Capable=p85Capable=p86Capable=p87Capable=p88Capable=
