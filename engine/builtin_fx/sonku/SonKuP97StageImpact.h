@@ -96,7 +96,7 @@ public:
             finishWide_[c]+=airAlpha_*(x[c]-finishWide_[c]);
             result[c]=stage_==0.f?x[c]:
                 x[c]+stage_*(.080f*finishLow_[c]+
-                             .27f*(x[c]-finishWide_[c]));
+                             .35f*(x[c]-finishWide_[c]));
         }
         return {result[0],result[1]};
     }

@@ -51,7 +51,7 @@ int main(){
         assert(directAir>1.01&&directAir<1.16);
         assert(air>1.07&&air<1.35);
         assert(signal(rate,85.,3,10.f,true)>1.04);
-        assert(signal(rate,7500.,3,10.f,true)>1.12);
+        assert(signal(rate,7500.,3,10.f,true)>1.16);
         // Center cancellation protects pure anti-phase stereo; filters are
         // linked/coefficient-identical for each independently spatialized ear.
         StageImpact p;
