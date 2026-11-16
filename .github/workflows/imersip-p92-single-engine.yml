@@ -124,7 +124,11 @@ jobs:
       - name: Configure exact P9 native FX graph and focused CTest
         shell: pwsh
         run: |
+          # The same interpreter MUST run pip and CMake's PNG generator.
+          # Hosted Windows runners may have 3.12 and 3.14 installed together.
+          $pyExe = (& python -c 'import sys; print(sys.executable)').Trim()
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DPython3_EXECUTABLE="$pyExe" `
             -DJUCE_ROOT="$env:GITHUB_WORKSPACE/third_party/JUCE" `
             -DJUCE_WEBVIEW2_PACKAGE_LOCATION="$env:GITHUB_WORKSPACE/.deps" `
             -DARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=ON `
