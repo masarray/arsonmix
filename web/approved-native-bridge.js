@@ -2982,8 +2982,13 @@
     }
     // Control readback may change at the SAME structural graph revision.
     // Compare the actual accepted controls/edges, never skip native fader updates.
-    const signature=next.identity+"|"+JSON.stringify(next.graph.channels.map(ch=>[
-      ch.id,ch.controls,ch.inserts,ch.fxRackBypassed,ch.primaryOutId]))+"|"+JSON.stringify(next.graph.edges)+"|"+appearanceRevision;
+    // GLOBAL A/B is a realtime SCALAR with unchanged graph revision and
+    // unchanged saved insert flags. Include its accepted PCM readback so
+    // bypassing every FX repaints each mounted rack without rebuilding DOM.
+    const signature=next.identity+"|"+String(next.raw?.globalFxBypassed)+"|"+
+      JSON.stringify(next.graph.channels.map(ch=>[
+      ch.id,ch.controls,ch.inserts,ch.fxRackBypassed,ch.primaryOutId]))+"|"+
+      JSON.stringify(next.graph.edges)+"|"+appearanceRevision;
     if (signature===lastPaintedSignature) {
       // Telemetry-only snapshots should not traverse all channels. But an
       // expired/rejected edit with unchanged graph values must not strand its
