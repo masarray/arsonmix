@@ -6024,7 +6024,13 @@ private:
                 "Native FX power rejected: stale device/revision, Show busy or instance mismatch");
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
                 "arMixNativeFxPowerAck",juce::var(ack.release()));
-            if(applied)synchronizeOpenImmerSIBPower();
+            if(applied) {
+                synchronizeOpenImmerSIBPower();
+                // A native slot/rack ACK is not enough to repaint the
+                // other authority (WebView FX Rack). Publish the accepted
+                // producer state once per successful gesture, never on hover.
+                emitApprovedNativeSnapshot();
+            }
             if(applied)diagnostics_.record("NATIVE_FX_POWER",
                 rawId.toString()+(action=="routingNativeFxRackBypass"?" rack":" insert")+
                 (static_cast<bool>(value)?" BYPASS":" ENABLE"));
