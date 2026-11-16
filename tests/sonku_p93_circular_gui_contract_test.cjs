@@ -76,10 +76,10 @@ assert.match(source,/root\.querySelector\("\.sk-stage"\)\.appendChild\(root\.que
 assert.match(source,/head\.setPointerCapture\(e\.pointerId\)/);
 assert.match(source,/window\.addEventListener\("resize",constrainWindow\)/);
 assert(source.includes('if(!p91p92Capable||(!p95Capable'),"Native preset gate must honor accepted P9.5 capability");
-assert.match(source,/root\\.dataset\\.fxState!=="on"/);
-assert.match(source,/p95Capable=p94Capable && r\\.p95CinematicVenues===true/);
-assert.match(source,/root\\.dataset\\.acoustics=p95Capable/);
-assert.match(css,/skRenderMode\\[hidden\\]/);
+assert(source.includes('root.dataset.fxState!=="on"'));
+assert(source.includes('p95Capable=p94Capable && r.p95CinematicVenues===true'));
+assert(source.includes('root.dataset.acoustics=p95Capable'));
+assert(css.includes('skRenderMode[hidden]'));
 assert.match(css,/\.mx-sonku \.sk-stage \.sk-space-panel\{display:grid/);
 assert.match(source,/current\.track\.slotBypass\[current\.slot\]/);
 console.log("PASS SonKu P9.3: approved perspective orbit, inverse drag, native power readback, draggable window, six cinematic venue presets, compact SPACE placement");
