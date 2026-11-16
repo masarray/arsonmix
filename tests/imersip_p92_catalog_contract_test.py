@@ -30,6 +30,9 @@ class ImerSipP92Contract(unittest.TestCase):
         self.assertIn("SonKuSpatialProcessor::getStateInformation",p)
         self.assertIn("SonKuSpatialProcessor::queueSettings",p)
         self.assertIn("ImerSipP92Editor*>(editor)",host)
+        self.assertIn("ImerSipP92Processor*>(p)",host)
+        self.assertIn("admitQueuedScene",source(
+            "engine/builtin_fx/SonKuSpatialProcessor.h"))
         self.assertIn("engine_.bypassNativeVst3(",host)
         self.assertIn("engine_.setDryRoutingLabFxBypass(",host)
         self.assertIn("power_.setEnabled(false)",ui)

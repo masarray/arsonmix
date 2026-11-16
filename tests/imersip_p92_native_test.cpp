@@ -163,6 +163,18 @@ static void nativeParity(int rate) {
     assert(std::abs(fx->acceptedSettings().stereoSpreadDegrees-100.f)<.01f);
     assert(fx->stateSnapshotQuiescent());
 
+    // Even when the caller holds the SonKu BASE pointer, its public
+    // settings queue must not admit an old MusicBed or orbit mode into
+    // an ImerSip world-speaker insert.
+    armix::builtin_fx::SonKuSpatialProcessor& baseControl=*fx;
+    auto wrongP8=fx->acceptedSettings();
+    wrongP8.renderMode=0;
+    assert(!baseControl.queueSettings(wrongP8,73));
+    auto wrongOrbit=fx->acceptedSettings();
+    wrongOrbit.moving=true;
+    assert(!baseControl.queueSettings(wrongOrbit,74));
+    assert(fx->stateSnapshotQuiescent());
+
     fx->releaseResources();
     restored->releaseResources();
     legacy->releaseResources();

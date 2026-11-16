@@ -5329,6 +5329,13 @@ private:
                 armix::mixer::LiveChannelFxGraph::InstanceLease{};
             auto* p=dynamic_cast<armix::builtin_fx::SonKuSpatialProcessor*>(
                 unbound?offline.get():owner?owner->processor.get():nullptr);
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT
+            // ImerSip reuses SonKu's realtime engine, not its product
+            // control endpoint. A stale/misrouted SonKu WebView2 event
+            // must never capture or alter a separately owned ImerSip slot.
+            if(p && dynamic_cast<armix::builtin_fx::ImerSipP92Processor*>(p))
+                p=nullptr;
+#endif
             if(action=="nativeSonKuSnapshot") {
                 emitNativeSonKuSnapshot(request,rawChannel.toString(),
                     rawEpoch.toString(),rawRevision.toString(),rawInstance.toString(),p);

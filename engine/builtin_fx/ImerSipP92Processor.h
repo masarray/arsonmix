@@ -146,6 +146,11 @@ public:
     void setStateInformation(const void* data,int bytes) override {
         (void)restoreUnpublishedState(data,bytes);
     }
+protected:
+    bool admitQueuedScene(
+        const armix::sonku::Settings& next) const noexcept override {
+        return validImerSipP92Scene(next);
+    }
 private:
     std::uint64_t issued_=0,lastCompletedRequest_=0;
     bool lastCompletionApplied_=false;

@@ -125,8 +125,10 @@ public:
     // Control thread: returns QUEUED, not accepted/applied. Host native ACK
     // is permitted only after corresponding completion/readback.
     bool queueSettings(const armix::sonku::Settings& next,std::uint64_t requestId) noexcept {
+        // The SonKu GUI path can hold a base pointer to a derived FX.
+        // Do not let a SonKu edit bypass that FX's native scene contract.
         return ready_&&requestId&&armix::sonku::valid(next)
-            &&queue_.push(Edit{requestId,next});
+            &&admitQueuedScene(next)&&queue_.push(Edit{requestId,next});
     }
     bool pollCompletion(Completion& done) noexcept {
         if(!complete_.pop(done))return false;
@@ -391,6 +393,11 @@ public:
         (void)restoreUnpublishedState(data,size);
     }
 protected:
+    // Default SonKu accepts its full native settings schema; independent
+    // product inserts override this for their restricted world-P9 scenes.
+    virtual bool admitQueuedScene(
+        const armix::sonku::Settings&) const noexcept {return true;}
+
     // A product-branded insert may choose a prepared P9 owner-approved
     // scene while sharing the exact SonKu DSP and the same SPSC/ACK path.
     // Production SonKu's default constructor remains byte-for-byte as before.
