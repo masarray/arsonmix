@@ -33,16 +33,21 @@ def last_action(page,name):
     assert actions, "Expected actual native action "+name
     return actions[-1]
 
-def accepted_snapshot(page,state,settings,applied=None):
+def accepted_snapshot(page,state,settings,applied=None,schema=2):
     read=last_action(page,"nativeSonKuSnapshot")
     payload={
-        "requestId":read["requestId"],"status":"ACCEPTED","schemaVersion":2,
+        "requestId":read["requestId"],"status":"ACCEPTED","schemaVersion":schema,
         "channelId":SOURCE,"slot":0,"instanceId":INSTANCE,
         "deviceEpoch":state["device"]["epoch"],
         "graphRevision":state["graph"]["revision"],
         "observedAzimuthDegrees":settings["startAzimuthDegrees"],
         "settings":copy.deepcopy(settings),
     }
+    if schema==11:
+        payload.update(p84MusicFusion=True,p85AcousticCoherence=True,
+            p86HorizontalFocus=True,p87MusicalAirBody=True,
+            p88PerceptualAlignment=True,p89StereoRoomDepth=True,
+            p90TrueExternalSpeaker=True,p91p92MusicBassFoundation=True)
     if applied:payload["appliedRequestId"]=applied
     emit(page,"arMixBuiltinSonKuSnapshot",payload)
 
@@ -533,6 +538,48 @@ def exercise(browser,out,width,height):
         editor.locator("#"+control).evaluate(
             "n=>n.dispatchEvent(new Event('change',{bubbles:true}))")
         assert command_count()==before+1,(control,"duplicate final edit")
+    # A genuine schema-v11 native capability unlocks the five ready-to-use
+    # scenes. This is a REAL DOM event and nativeSonKuSet/ACK/readback, not
+    # a fixture directly mutating the editor's internal draft.
+    room11={**sceneState,"renderMode":9,"musicCompatibleLowFrequency":False,
+        "headYawDegrees":0.0,"directElevationDegrees":0.0,
+        "hrtfElevationTrimDegrees":0.0}
+    page.wait_for_timeout(300)
+    accepted_snapshot(page,state,room11,schema=11)
+    factory=editor.locator("#skPreset")
+    assert factory.is_enabled(),"Valid P9.1+P9.2 native capability must unlock presets"
+    assert factory.input_value()=="CUSTOM","Saved non-factory scene was overwritten"
+    before=command_count()
+    factory.select_option("music")
+    assert command_count()==before+1,"Factory scene did not issue one native transaction"
+    applied=last_action(page,"nativeSonKuSet")
+    proposed=applied["settings"]
+    assert proposed["renderMode"]==9 and proposed["moving"] is False,proposed
+    assert proposed["stereoSpreadDegrees"]==82 and proposed["outputTrim"]==1,proposed
+    assert proposed["spacePreset"]==3 and proposed["sourceDistanceMeters"]==1.6,proposed
+    assert abs(proposed["roomAmount"]-.78)<.001 and abs(proposed["ambience"]-.33)<.001
+    emit(page,"arMixBuiltinSonKuAck",{
+        "requestId":applied["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,proposed,applied=applied["requestId"],schema=11)
+    assert factory.input_value()=="music","Native-accepted preset did not stay selected"
+    # Actual accepted mixer graph is the SINGLE authority for FX Power,
+    # including individual insert bypass vs whole rack disabled.
+    state["graph"]["channels"][0]["fxRackBypassed"]=False
+    state["graph"]["channels"][0]["inserts"][0]["bypassed"]=False
+    emit(page,"arMixConsoleSnapshot",state)
+    page.wait_for_function("""()=>
+      document.getElementById('skPower')?.dataset.fxState==='on'""")
+    assert editor.locator("#skPower").is_enabled()
+    state["graph"]["channels"][0]["inserts"][0]["bypassed"]=True
+    emit(page,"arMixConsoleSnapshot",state)
+    page.wait_for_function("""()=>
+      document.getElementById('skPower')?.dataset.fxState==='off'""")
+    assert editor.locator("#skPower").is_enabled()
+    state["graph"]["channels"][0]["fxRackBypassed"]=True
+    emit(page,"arMixConsoleSnapshot",state)
+    page.wait_for_function("""()=>
+      document.getElementById('skPower')?.dataset.fxState==='rack-off'""")
+    assert editor.locator("#skPower").is_disabled()
     bounds=editor.bounding_box()
     assert bounds and bounds["width"]>260 and bounds["width"]<width+2
     # All listener and rendering JS exceptions remain fatal.
