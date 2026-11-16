@@ -172,9 +172,10 @@ public:
     void paintOverChildren(juce::Graphics& g) override {
         // Parent paint() cannot dim child Components: JUCE draws their
         // labels, sliders and popup controls AFTER parent paint().
-        // A restrained 12% darkening pass over the lower controls provides
-        // a unified bypass state. Exclude FX Power so its real host state
-        // stays clear, keyboard/mouse accessible and visually actionable.
+        // A distinct ~44% muted charcoal pass makes all inactive
+        // controls visibly recede, without losing label legibility.
+        // Exclude FX Power so the host-authoritative toggle remains
+        // crisp, keyboard/mouse accessible and visually actionable.
         if(!hostBypassed_.value_or(false))return;
         juce::Graphics::ScopedSaveState saved(g);
         const auto panelTop=juce::roundToInt(461.f*compactScale);
@@ -182,7 +183,7 @@ public:
             0,panelTop,getWidth(),getHeight()-panelTop);
         g.reduceClipRegion(panel);
         g.excludeClipRegion(power_.getBounds());
-        g.setColour(juce::Colour(0x21000000));
+        g.setColour(juce::Colour(0x71060b12)); // 44% muted charcoal
         g.fillRect(panel);
     }
     void resized() override {
