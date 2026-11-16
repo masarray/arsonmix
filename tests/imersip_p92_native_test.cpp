@@ -213,6 +213,30 @@ int main() {
     assert(visual.isValid() && visual.getWidth()==1100 &&
            visual.getHeight()==680);
     assert(visual.getPixelAt(480,120)!=visual.getPixelAt(480,484));
+    // Genuine native JUCE component snapshots, not an HTML or design mock.
+    // Render all requested Windows framebuffer density ratios while retaining
+    // the original 1100x680 logical hit-testing and parameter geometry.
+    for(const auto dpi : {100,125,150,200}) {
+        const float scale=static_cast<float>(dpi)/100.f;
+        juce::Image frame(juce::Image::ARGB,
+                          juce::roundToInt(1100.f*scale),
+                          juce::roundToInt(680.f*scale),true);
+        juce::Graphics gfx(frame);
+        gfx.addTransform(juce::AffineTransform::scale(scale));
+        editor->paintEntireComponent(gfx,true);
+        assert(frame.isValid());
+        assert(frame.getPixelAt(frame.getWidth()/2,frame.getHeight()/4)
+                !=frame.getPixelAt(frame.getWidth()/2,
+                                  frame.getHeight()*3/4));
+        const auto file=juce::File::getCurrentWorkingDirectory()
+            .getChildFile("ImerSip_P92_JUCE_"+juce::String(dpi)+".png");
+        juce::FileOutputStream output(file);
+        assert(output.openedOk());
+        juce::PNGImageFormat encoder;
+        assert(encoder.writeImageToStream(frame,output));
+        output.flush();
+        assert(file.existsAsFile() && file.getSize()>10000);
+    }
     auto* stage=dynamic_cast<juce::Slider*>(
         editor->findChildWithID("imersip.stage"));
     auto* master=dynamic_cast<juce::Slider*>(
