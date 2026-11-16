@@ -66,7 +66,7 @@ public:
         // A strong but restrained mute treatment: the six approved concert
         // photos remain visible, but stage lights and colours recede into
         // charcoal. No new PNGs, image processing, bloom or animation.
-        g.setColour(juce::Colour(0xb3070d14)); // ~70% charcoal veil
+        g.setColour(juce::Colour(0xb803060a)); // ~72% near-black charcoal veil
         g.fillRect(0,0,1100,461);
 
         // One dominant, unmistakable state label. This deliberately has
