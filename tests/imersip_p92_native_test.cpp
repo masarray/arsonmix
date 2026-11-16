@@ -13,6 +13,7 @@
 #include <cstring>
 #include <cstdio>
 #include <memory>
+#include <array>
 
 using armix::builtin_fx::ImerSipP92Processor;
 using armix::builtin_fx::imersipP92ReferenceScene;
@@ -252,6 +253,32 @@ int main() {
     assert(editor->getWidth()==935 && editor->getHeight()==578);
     auto* visualEditor=dynamic_cast<armix::builtin_fx::ImerSipP92Editor*>(editor.get());
     assert(visualEditor && visualEditor->areVisualAssetsReady());
+
+    // Actual compact native JUCE hit bounds: no overlapping controls,
+    // labels/text remain independent from the background PNG scene.
+    const char* controlIds[]={"imersip.preset","imersip.room",
+      "imersip.stage","imersip.distance","imersip.early",
+      "imersip.late","imersip.mix","imersip.gain",
+      "imersip.align","imersip.yaw","imersip.power","imersip.close"};
+    std::array<juce::Component*,12> controls{};
+    for(std::size_t i=0;i<controls.size();++i){
+        controls[i]=editor->findChildWithID(controlIds[i]);
+        assert(controls[i]);
+        const auto r=controls[i]->getBounds();
+        assert(!r.isEmpty());
+        assert(editor->getLocalBounds().contains(r));
+        for(std::size_t j=0;j<i;++j)
+            assert(!r.intersects(controls[j]->getBounds()));
+    }
+    // Seven non-master controls should occupy two clean vertical lanes
+    // with uniform label/track spacing, not four cramped columns.
+    const auto a=controls[2]->getBounds();
+    const auto b=controls[3]->getBounds();
+    const auto c=controls[4]->getBounds();
+    assert(a.getY()==b.getY() && c.getY()>a.getY());
+    assert(a.getX()<b.getX());
+    assert((b.getX()-a.getX())>=200);
+
     for(const float stageAngle:{30.f,50.f,150.f,180.f}){
         for(const float metres:{1.6f,2.2f,5.f,7.4f,10.f}){
             const auto b=armix::builtin_fx::imersipP92ConcertBoxes(stageAngle,metres);
