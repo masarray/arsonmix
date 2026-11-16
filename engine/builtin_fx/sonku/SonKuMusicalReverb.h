@@ -15,7 +15,11 @@
 // reflections; no source-following stereo pan is imposed on the reverb tail.
 // These listening-test presets are OFF in the shipping JUCE editor.
 namespace armix::sonku {
-enum class SonKuReverbPreset : std::uint8_t { StudioGlue=0, AiryChamber=1, LargeRoom=2 };
+enum class SonKuReverbPreset : std::uint8_t { StudioGlue=0, AiryChamber=1, LargeRoom=2
+#if defined(SONKU_P95_CINEMATIC_RESEARCH) && SONKU_P95_CINEMATIC_RESEARCH
+    ,LargeStudio=3,Cinema=4,LiveVenue=5,Arena=6
+#endif
+};
 
 class SonKuMusicalReverb final {
 public:
@@ -39,12 +43,26 @@ public:
         bandHighAlpha_=static_cast<float>(1.-std::exp(-2.*pi*4800./rate));
         for(int room=0;room<3;++room)
             preparedBands_[room]=prepareBandProgram(static_cast<room82::Family>(room));
+#if defined(SONKU_P95_CINEMATIC_RESEARCH) && SONKU_P95_CINEMATIC_RESEARCH
+        // User-facing large rooms get genuinely separate LF/MID/HF RT60s.
+        // All exponential coefficient calculations happen in prepare().
+        preparedBands_[3]=prepareVenueBandProgram({.92f,.78f,.52f});
+        preparedBands_[4]=prepareVenueBandProgram({2.05f,1.75f,1.16f});
+        preparedBands_[5]=prepareVenueBandProgram({2.75f,2.40f,1.55f});
+        preparedBands_[6]=prepareVenueBandProgram({3.10f,2.85f,1.78f});
+#endif
         targetBandGain_=preparedBands_[0].gains;
         bandGain_=targetBandGain_;
 #endif
         prepared_[0]=makeCoefficients(.78f,5900.f);
         prepared_[1]=makeCoefficients(1.28f,7000.f);
         prepared_[2]=makeCoefficients(2.05f,6000.f);
+#if defined(SONKU_P95_CINEMATIC_RESEARCH) && SONKU_P95_CINEMATIC_RESEARCH
+        prepared_[3]=makeCoefficients(.92f,5600.f);
+        prepared_[4]=makeCoefficients(1.75f,6200.f);
+        prepared_[5]=makeCoefficients(2.40f,5200.f);
+        prepared_[6]=makeCoefficients(2.85f,4700.f);
+#endif
         targetGain_=gain_;targetDamp_=dampCoeff_;
         realtimeMode_=false;
         reset();
@@ -83,7 +101,14 @@ public:
     bool setRealtimeProgram(SonKuReverbPreset preset,float amount) noexcept {
         if((preset!=SonKuReverbPreset::StudioGlue &&
             preset!=SonKuReverbPreset::AiryChamber &&
-            preset!=SonKuReverbPreset::LargeRoom)||
+            preset!=SonKuReverbPreset::LargeRoom
+#if defined(SONKU_P95_CINEMATIC_RESEARCH) && SONKU_P95_CINEMATIC_RESEARCH
+            && preset!=SonKuReverbPreset::LargeStudio
+            && preset!=SonKuReverbPreset::Cinema
+            && preset!=SonKuReverbPreset::LiveVenue
+            && preset!=SonKuReverbPreset::Arena
+#endif
+            )||
            !std::isfinite(amount)||amount<0.f||amount>1.f)return false;
         if(!active() && amount>0.f){
             validFrames_=0;lowpass_.fill(0.f);
@@ -198,6 +223,18 @@ private:
         return program;
     }
 #endif
+#if defined(SONKU_P95_CINEMATIC_RESEARCH) && SONKU_P95_CINEMATIC_RESEARCH
+    BandProgram prepareVenueBandProgram(room82::Bands rt60) const noexcept {
+        BandProgram result{};
+        result.estimatedRt60=rt60;
+        for(int band=0;band<room82::bands;++band)
+            for(int i=0;i<lineCount;++i)
+                result.gains[band][i]=std::exp(-6.9077553f*
+                    static_cast<float>(delay_[i])/
+                    (sampleRate_*rt60[band]));
+        return result;
+    }
+#endif
     Coefficients makeCoefficients(float rt60,float cutoff) const noexcept {
         Coefficients prepared{};
         constexpr float pi=3.14159265358979323846f;
@@ -228,14 +265,26 @@ private:
     std::array<float,lineCount> lowpass_{};
 #if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
     std::array<float,lineCount> bandLow_{},bandWide_{};
-    std::array<BandProgram,3> preparedBands_{};
+    std::array<BandProgram,
+#if defined(SONKU_P95_CINEMATIC_RESEARCH) && SONKU_P95_CINEMATIC_RESEARCH
+       7
+#else
+       3
+#endif
+       > preparedBands_{};
     std::array<std::array<float,lineCount>,room82::bands>
         bandGain_{},targetBandGain_{};
     float bandLowAlpha_=0.f,bandHighAlpha_=0.f;
     bool multibandRoom_=false;
 #endif
     std::array<float,lineCount> gain_{},targetGain_{};
-    std::array<Coefficients,3> prepared_{};
+    std::array<Coefficients,
+#if defined(SONKU_P95_CINEMATIC_RESEARCH) && SONKU_P95_CINEMATIC_RESEARCH
+        7
+#else
+        3
+#endif
+        > prepared_{};
     std::array<int,lineCount> delay_{};
     float sampleRate_=48000.f,dampCoeff_=0.f,targetDamp_=0.f,slew_=0.f;
     float amount_=0.f,amountTarget_=0.f;
