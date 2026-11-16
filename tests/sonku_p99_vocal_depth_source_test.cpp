@@ -69,8 +69,10 @@ int main(){
         const auto airy=rmsRatio(rate,1,0,7600.);
         const auto studio=rmsRatio(rate,2,0,1800.);
         const auto cinema=rmsRatio(rate,3,0,1800.);
-        assert(warmth>1.006 && warmth<1.12);
-        assert(vocal>1.025 && vocal<1.25);
+        // The user asked for a clearly stronger step beyond P9.9.
+        // Raise LOWER audibility bounds instead of only relaxing safety.
+        assert(warmth>1.102 && warmth<1.12);
+        assert(vocal>1.145 && vocal<1.25);
         assert(airy>.98 && airy<1.045);
         assert(vocal>cinema && cinema>studio && studio>1.007);
         // No invented vocal image when all signal is stereo SIDE.
@@ -95,8 +97,8 @@ int main(){
         const auto cinemaWarm=roomRatio(rate,3,true,320.);
         // Audible ROOM warmth: early response stronger than late, Signature
         // strongest, Cinema intermediate, Studio subtle. No excess HF.
-        assert(earlyWarm>1.15 && earlyWarm<1.60);
-        assert(lateWarm>1.04 && lateWarm<1.30);
+        assert(earlyWarm>1.50 && earlyWarm<1.60);
+        assert(lateWarm>1.22 && lateWarm<1.30);
         assert(earlyWarm>cinemaWarm && cinemaWarm>studioWarm);
         assert(studioWarm>1.035);
         assert(roomRatio(rate,1,true,7600.)<1.035);

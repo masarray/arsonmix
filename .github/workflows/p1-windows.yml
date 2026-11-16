@@ -727,6 +727,8 @@ jobs:
                     node tests/sonku_p99_gui_contract_test.cjs
                     g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic tests/sonku_p99_vocal_depth_source_test.cpp -o /tmp/sonku-p99-unit
                     /tmp/sonku-p99-unit
+                    g++ $PRESET_FLAGS -DSONKU_P98_SCENE_VOICING_RESEARCH=1 -DSONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH=1 tests/sonku_p99_default_orbit_source_test.cpp -o /tmp/sonku-p99-default-orbit
+                    /tmp/sonku-p99-default-orbit
                     g++ $PRESET_FLAGS -DSONKU_P98_SCENE_VOICING_RESEARCH=1 -DSONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH=1 tests/sonku_p98_integrated_scene_test.cpp -o /tmp/sonku-p99-integrated
                     /tmp/sonku-p99-integrated > /tmp/sonku-p99-integrated.csv
                     python3 scripts/verify_sonku_p99_vocal_depth.py /tmp/sonku-p98-scene-candidate.csv /tmp/sonku-p99-integrated.csv
@@ -815,7 +817,7 @@ jobs:
           if ($env:GITHUB_HEAD_REF -like 'feat/sonku-p95-p96-*' -or $env:GITHUB_HEAD_REF -like 'feat/sonku-p98-*') { $targets += 'ARMixSonKuP96DistanceTests' }
           if ($env:GITHUB_HEAD_REF -like 'feat/sonku-p95-p96-p97-*' -or $env:GITHUB_HEAD_REF -like 'feat/sonku-p98-*') { $targets += 'ARMixSonKuP97StageTests' }
           if ($env:GITHUB_HEAD_REF -like 'feat/sonku-p98-*') { $targets += 'ARMixSonKuP98VoicingTests' }
-          if ($env:GITHUB_HEAD_REF -like 'feat/sonku-p98-p99-*') { $targets += 'ARMixSonKuP99VocalDepthTests' }
+          if ($env:GITHUB_HEAD_REF -like 'feat/sonku-p98-p99-*') { $targets += @('ARMixSonKuP99VocalDepthTests','ARMixSonKuP99DefaultOrbitTests') }
           cmake --build build --config Release --parallel 2 --target $targets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path -LiteralPath 'build/ARMixConsole_artefacts/Release/AR MIX Studio.exe' -PathType Leaf)) {
@@ -826,7 +828,7 @@ jobs:
           if ($env:GITHUB_HEAD_REF -like 'feat/sonku-p95-p96-*' -or $env:GITHUB_HEAD_REF -like 'feat/sonku-p98-*') { $tests += '|96DistanceBassAndTrebleRetention' }
           if ($env:GITHUB_HEAD_REF -like 'feat/sonku-p95-p96-p97-*' -or $env:GITHUB_HEAD_REF -like 'feat/sonku-p98-*') { $tests += '|97BassVocalExternalAirSafety' }
           if ($env:GITHUB_HEAD_REF -like 'feat/sonku-p98-*') { $tests += '|98SceneVoicingVenueLock' }
-          if ($env:GITHUB_HEAD_REF -like 'feat/sonku-p98-p99-*') { $tests += '|99AdaptiveVocalDepthVenueLock' }
+          if ($env:GITHUB_HEAD_REF -like 'feat/sonku-p98-p99-*') { $tests += '|99AdaptiveVocalDepthVenueLock|99NewDefaultOrbitNative' }
           $tests += ')$'
           ctest --test-dir build -C Release --output-on-failure -R $tests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

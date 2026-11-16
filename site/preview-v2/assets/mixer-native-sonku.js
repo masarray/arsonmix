@@ -41,6 +41,12 @@ const roomMaxDistance=[10,3.1,6.7,10];
 // 62% late, 82° spread, +7dB). Scene values are deliberate starting points,
 // not acoustic measurements. No background mutation of existing .smix.
 const factoryPresets=Object.freeze({
+ // 2026-11-16 operator-accepted full scene (source of truth in P9.9
+ // native DefaultOrbitStage). Only opt-in P9.9 exposes this preset;
+ // existing sessions remain manual until their operator selects it.
+ orbitStage:Object.freeze({moving:true,clockwise:true,startAzimuthDegrees:0,
+  revolutionSeconds:12,stereoSpreadDegrees:127,spatialMix:1,outputTrim:1.8,
+  spacePreset:3,sourceDistanceMeters:2.7,roomAmount:1,ambience:.77,sceneVoicing:1}),
  music:Object.freeze({moving:true,clockwise:true,startAzimuthDegrees:0,
   revolutionSeconds:6.5,stereoSpreadDegrees:82,spatialMix:1,outputTrim:1.9,
   spacePreset:3,sourceDistanceMeters:3.1,roomAmount:1,ambience:.62,sceneVoicing:1}),
@@ -57,7 +63,9 @@ const factoryPresets=Object.freeze({
   revolutionSeconds:8.5,stereoSpreadDegrees:82,spatialMix:1,outputTrim:1.75,
   spacePreset:3,sourceDistanceMeters:6.5,roomAmount:1,ambience:.83,sceneVoicing:0})
 });
-const matchFactoryPreset=s=>Object.entries(factoryPresets).find(([id,p])=>
+const matchFactoryPreset=(s,p99Enabled=false)=>Object.entries(factoryPresets).find(([id,p])=>
+  // Older v11/P9.8 binaries cannot misrepresent the P9.9-only preset.
+  (id!=="orbitStage" || (p99Enabled && s.sceneVoicing===1)) &&
   s.renderMode===9 && Object.keys(p).every(k=>
    (k==="sceneVoicing" && s[k]===undefined) ||
    Math.abs(Number(s[k])-Number(p[k]))<.00002))?.[0]||"CUSTOM";
@@ -133,6 +141,7 @@ root.innerHTML=[
  '<span class="sk-headnote">SPATIAL AUDIO</span>',
  '<select id="skPreset" class="sk-preset" aria-label="SonKu ready-to-use sound presets" title="Ready-to-use spatial scenes; settings remain editable">',
  '<option value="CUSTOM">CUSTOM · MANUAL</option>',
+ '<option value="orbitStage">ORBIT STAGE · DEFAULT</option>',
  '<option value="music">SIGNATURE · IMMERSIVE</option>',
  '<option value="studio">LARGE STUDIO · LIVE</option>',
  '<option value="wide">CINEMA · GRAND STAGE</option>',
@@ -297,7 +306,11 @@ function render(){
  syncPower();
  const presetPicker=$("skPreset");
  presetPicker.disabled=!p91p92Capable || s.renderMode!==9 || !current || Boolean(pending);
- const factoryName=p91p92Capable?matchFactoryPreset(s):"CUSTOM";
+ // A saved P9.8 session may match the visible numbers but lacks P9.9
+ // room coupling. Don't claim this P9.9 preset exists on that engine.
+ const defaultOrbitOption=presetPicker.querySelector('option[value="orbitStage"]');
+ if(defaultOrbitOption)defaultOrbitOption.disabled=!p99Capable;
+ const factoryName=p91p92Capable?matchFactoryPreset(s,p99Capable):"CUSTOM";
  if(presetPicker.value!==factoryName)presetPicker.value=factoryName;
  const row=$("skRenderRow");row.hidden=!(p83Capable||p84Capable);
  if(p83Capable||p84Capable){
@@ -591,6 +604,8 @@ function requestSnapshot(force=false){
 const LIVE_INTERVAL_MS=40;
 const sameSettings=(a,b)=>a&&b&&Object.keys(defaults()).every(k=>a[k]===b[k]) &&
  (!xyzCapable || a.directElevationDegrees===b.directElevationDegrees) &&
+ (!p88Capable || a.hrtfElevationTrimDegrees===b.hrtfElevationTrimDegrees) &&
+ (!p98Capable || a.sceneVoicing===b.sceneVoicing) &&
  (!(p83Capable||p84Capable) || (a.renderMode===b.renderMode &&
    a.musicCompatibleLowFrequency===b.musicCompatibleLowFrequency &&
    a.headYawDegrees===b.headYawDegrees));
@@ -783,7 +798,8 @@ $("skPower").addEventListener("click",()=>{
 $("skPreset").addEventListener("change",()=>{
  const picker=$("skPreset");
  const preset=factoryPresets[picker.value];
- if(!p91p92Capable||draft.renderMode!==9||!preset||pending){
+ if(!p91p92Capable||draft.renderMode!==9||!preset||pending||
+    (picker.value==="orbitStage"&&!p99Capable)){
   render();return;
  }
  const scene=fitElevation({...draft,...preset,renderMode:9,

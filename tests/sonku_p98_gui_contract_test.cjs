@@ -16,14 +16,17 @@ const f=slice("const factoryPresets=Object.freeze(","const valid=s=>");
 const values=vm.runInNewContext(
  "(function(){"+f+"\nreturn {factoryPresets,matchFactoryPreset}})()",{});
 const {factoryPresets,matchFactoryPreset}=values;
-const expected={music:1,studio:2,wide:3,deep:0,orbit:0};
+const expected={orbitStage:1,music:1,studio:2,wide:3,deep:0,orbit:0};
 for(const [id,scene] of Object.entries(factoryPresets)){
  assert.equal(scene.sceneVoicing,expected[id]);
- assert.equal(matchFactoryPreset({...scene,renderMode:9}),id);
+ const p99Only=id==="orbitStage";
+ assert.equal(matchFactoryPreset({...scene,renderMode:9},p99Only),id);
  const legacy={...scene,renderMode:9};
  delete legacy.sceneVoicing;
- assert.equal(matchFactoryPreset(legacy),id,
-    "P9.7 v11 without voicing must keep its old preset labels");
+ assert.equal(matchFactoryPreset(legacy,p99Only),p99Only?"CUSTOM":id,
+    "P9.7 v11 labels remain compatible; P9.9 scene must require native v12");
+ if(p99Only)assert.equal(matchFactoryPreset({...scene,renderMode:9}),"CUSTOM",
+    "P9.8 must not advertise unsupported P9.9 default");
 }
 const venue=factoryPresets.deep;
 assert.equal(venue.sourceDistanceMeters,10);

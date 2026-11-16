@@ -936,6 +936,15 @@ if(BUILD_TESTING)
                             target_compile_features(ARMixSonKuP99VocalDepthTests PRIVATE cxx_std_20)
                             add_test(NAME NativeSonKuP99AdaptiveVocalDepthVenueLock
                                 COMMAND ARMixSonKuP99VocalDepthTests)
+                            add_executable(ARMixSonKuP99DefaultOrbitTests
+                                tests/sonku_p99_default_orbit_source_test.cpp)
+                            target_compile_features(ARMixSonKuP99DefaultOrbitTests PRIVATE cxx_std_20)
+                            # Exactly the same nested P9 physical/native core
+                            # flags as its P95/P96/P97/P98/P99 integrated build.
+                            target_compile_definitions(ARMixSonKuP99DefaultOrbitTests PRIVATE
+                                $<TARGET_PROPERTY:ARMixSonKuP95MusicTests,COMPILE_DEFINITIONS>)
+                            add_test(NAME NativeSonKuP99NewDefaultOrbitNative
+                                COMMAND ARMixSonKuP99DefaultOrbitTests)
                           endif()
                           juce_add_console_app(ARMixSonKuP90NativeTests
                               PRODUCT_NAME "ArSonMix SonKu P90 JUCE v11 State Tests")

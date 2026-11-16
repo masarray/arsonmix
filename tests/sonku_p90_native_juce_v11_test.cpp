@@ -90,7 +90,36 @@ int main(){
      armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch);
  fx->sealForRealtime();
  Settings s=fx->acceptedSettings();
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH
+ // Operator screenshot is the default for NEW inserts only. Source of
+ // truth: DefaultOrbitStage::settings(); no hidden migration of old .smix.
+ assert(s.renderMode==9 && s.sceneVoicing==1 && s.moving && s.clockwise);
+ assert(s.startAzimuthDegrees==0.f && s.revolutionSeconds==12.f);
+ assert(s.stereoSpreadDegrees==127.f && s.spatialMix==1.f);
+ assert(s.outputTrim==1.8f && s.spacePreset==3);
+ assert(s.sourceDistanceMeters==2.7f && s.roomAmount==1.f);
+ assert(s.ambience==.77f);
+ assert(s.headYawDegrees==0.f && s.hrtfElevationTrimDegrees==0.f);
+ // Default v12 memory snapshot must round-trip without selecting a
+ // preset manually and must not alter operator sessions restored below.
+ juce::MemoryBlock brandNewState;
+ fx->getStateInformation(brandNewState);
+ assert(brandNewState.getSize()==67);
+ auto brandNewRestored=std::make_unique<SonKuSpatialProcessor>();
+ brandNewRestored->prepareToPlay(48000.,128);
+ assert(brandNewRestored->restoreUnpublishedState(
+     brandNewState.getData(),static_cast<int>(brandNewState.getSize())));
+ const auto fresh=brandNewRestored->acceptedSettings();
+ assert(fresh.renderMode==s.renderMode && fresh.sceneVoicing==s.sceneVoicing);
+ assert(fresh.moving==s.moving && fresh.clockwise==s.clockwise);
+ assert(fresh.revolutionSeconds==s.revolutionSeconds &&
+        fresh.stereoSpreadDegrees==s.stereoSpreadDegrees);
+ assert(fresh.outputTrim==s.outputTrim && fresh.spacePreset==s.spacePreset);
+ assert(fresh.sourceDistanceMeters==s.sourceDistanceMeters &&
+        fresh.roomAmount==s.roomAmount && fresh.ambience==s.ambience);
+#else
  assert(s.renderMode==0);
+#endif
  s.moving=false;s.startAzimuthDegrees=0.f;
  s.stereoSpreadDegrees=60.f;s.spatialMix=1.f;s.outputTrim=.75f;
  s.spacePreset=1;s.sourceDistanceMeters=1.6f;s.roomAmount=.55f;s.ambience=.3f;
@@ -115,7 +144,14 @@ int main(){
  render(*fx,0);
  assert(!fx->pollCompletion(ack));
  assert(!fx->stateSnapshotQuiescent());
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH
+ // Queued edits must not mutate accepted state before the audio ACK.
+ assert(fx->acceptedSettings().renderMode==9);
+ assert(fx->acceptedSettings().moving==true);
+ assert(fx->acceptedSettings().sourceDistanceMeters==2.7f);
+#else
  assert(fx->acceptedSettings().renderMode==0);
+#endif
  complete(*fx,801,1);
  assert(fx->acceptedSettings().renderMode==9);
  juce::MemoryBlock snapshot;
@@ -135,6 +171,9 @@ int main(){
  auto golden=std::make_unique<SonKuSpatialProcessor>();
  golden->prepareToPlay(48000.,128);
  auto g=s;g.renderMode=0;
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING) && ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+ g.sceneVoicing=0; // v12 never permits voiced legacy mode 0.
+#endif
  assert(golden->queueSettings(g,811));
  golden->consumeRealtimeEdits();
  assert(golden->pollCompletion(ack)&&ack.applied&&ack.requestId==811);
@@ -154,6 +193,9 @@ int main(){
  assert(fx->acceptedSettings().renderMode==9);
  assert(fx->acceptedSettings().headYawDegrees==60.f);
  s.renderMode=0;s.headYawDegrees=0.f;
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING) && ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+ s.sceneVoicing=0; // A disabled world speaker cannot retain named voicing.
+#endif
  assert(fx->queueSettings(s,803));
  complete(*fx,803,480);
  assert(fx->acceptedSettings().renderMode==0);

@@ -58,7 +58,9 @@ public:
         active_=false;
     }
     // ID 0 = completely unmodified approved Venue or Custom/Live Orbit.
-    // Signature offers the clearest front-stage; Cinema preserves LF body;
+    // Signature / Default Orbit: a clearly audible but bounded +15-25%
+    // step beyond initial conservative P9.9, not broadband output gain.
+    // Cinema preserves LF body;
     // Studio is deliberately a lower-delta, natural room.
     Stereo source(float left,float right,int scene,bool enabled) noexcept {
         active_=enabled && scene>=1 && scene<=3;
@@ -194,7 +196,7 @@ private:
     // not claimed vocal-estimation confidence or EQ dB targets.
     static constexpr std::array<std::array<float,6>,4> profiles_{{
         {{0.f,0.f,0.f,0.f,0.f,0.f}},           // Venue EXACT
-        {{.095f,.165f,.080f,.095f,.48f,.22f}}, // Signature room-body
+        {{.112f,.200f,.105f,.108f,.55f,.25f}}, // P9.9+ Signature vivid room
         {{.040f,.062f,.030f,.038f,.22f,.095f}}, // Live Studio subtle
         {{.070f,.115f,.065f,.070f,.34f,.15f}}  // Cinema powerful, clear
     }};

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "sonku/SonKuSpatialCore.h"
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH
+#include "sonku/SonKuP99DefaultOrbitStage.h"
+#endif
 #include "FxSpsc.h"
 #include "../core/RealtimeNativeFxControl.h"
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -19,7 +22,12 @@ public:
         : juce::AudioProcessor(BusesProperties()
             .withInput("Input",juce::AudioChannelSet::stereo(),true)
             .withOutput("Output",juce::AudioChannelSet::stereo(),true)) {
-#if defined(ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE) && ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH
+        // Approved operator settings as a NEW P9.9 factory Orbit default.
+        // Existing .smix restore/accepted realtime state is never remapped.
+        // Identical shared settings() are exercised in source and JUCE tests.
+        accepted_=armix::sonku::p99::DefaultOrbitStage::settings();
+#elif defined(ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE) && ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE
         // NEW inserts only. Restore from an existing .smix uses its saved
         // settings verbatim; no automatic remapping of operator sessions.
         // Signature reference is the operator's immersive 3.1m / full first
