@@ -63,18 +63,23 @@ public:
                           juce::RectanglePlacement::centred);
     }
     void drawBypassedVenueOverlay(juce::Graphics& g) const {
-        // Parent paint only: preserve the live JPEG/PNG scene and avoid
-        // costly bitmap manipulation, blur, animation or image decoding.
-        // Dim the approved venue, then apply a clean translucent amber
-        // status in the photographic area (not on top of native controls).
-        g.setColour(juce::Colour(0x79000000));
+        // A strong but restrained mute treatment: the six approved concert
+        // photos remain visible, but stage lights and colours recede into
+        // charcoal. No new PNGs, image processing, bloom or animation.
+        g.setColour(juce::Colour(0xb803060a)); // ~72% near-black charcoal veil
         g.fillRect(0,0,1100,461);
-        const auto label=juce::Rectangle<int>(170,178,760,94);
-        g.setFont(juce::FontOptions(40.f));
-        g.setColour(juce::Colour(0x92060b12));
-        g.drawText("BYPASSED",label.translated(0,3),
+
+        // One dominant, unmistakable state label. This deliberately has
+        // more hierarchy than the original tiny 40px regular typography.
+        // Keep the entire word inside the scene safe area on every DPI.
+        const auto label=juce::Rectangle<int>(110,153,880,150);
+        auto font=juce::Font(juce::FontOptions(76.f,juce::Font::bold));
+        font.setExtraKerningFactor(0.055f);
+        g.setFont(font);
+        g.setColour(juce::Colour(0xb8000307));
+        g.drawText("BYPASSED",label.translated(0,4),
                    juce::Justification::centred,false);
-        g.setColour(juce::Colour(0xe3ffa437));
+        g.setColour(juce::Colour(0xeeffa53c)); // vivid translucent amber
         g.drawText("BYPASSED",label,juce::Justification::centred,false);
     }
     void drawPanel(juce::Graphics& g) const {
