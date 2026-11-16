@@ -25,6 +25,7 @@ public:
         return true;
     }
     void reset() noexcept {low_.fill(0.f);wide_.fill(0.f);depth_=0.f;}
+    bool active() const noexcept {return depth_!=0.f;}
     Ears process(float left,float right,float distanceGain,
                  float distanceMeters,bool roomEnabled) noexcept {
         // Preserve OFF and <=2m P9.5 PCM exactly. The state filters still

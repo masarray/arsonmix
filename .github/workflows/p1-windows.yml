@@ -692,6 +692,12 @@ jobs:
               /tmp/sonku-p96-bands
               g++ $FLAGS -DSONKU_P94_FRONT_BACK_DEPTH_RESEARCH=1 -DSONKU_P95_MUSICAL_PRESENCE_RESEARCH=1 -DSONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH=1 tests/sonku_p95_musical_presence_source_test.cpp -o /tmp/sonku-p96-full
               /tmp/sonku-p96-full
+              g++ $FLAGS -DSONKU_P94_FRONT_BACK_DEPTH_RESEARCH=1 -DSONKU_P95_MUSICAL_PRESENCE_RESEARCH=1 tests/sonku_p96_integrated_bands_test.cpp -o /tmp/sonku-p96-reference
+              /tmp/sonku-p96-reference > /tmp/sonku-p96-reference.csv
+              g++ $FLAGS -DSONKU_P94_FRONT_BACK_DEPTH_RESEARCH=1 -DSONKU_P95_MUSICAL_PRESENCE_RESEARCH=1 -DSONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH=1 tests/sonku_p96_integrated_bands_test.cpp -o /tmp/sonku-p96-candidate
+              /tmp/sonku-p96-candidate > /tmp/sonku-p96-candidate.csv
+              cat /tmp/sonku-p96-reference.csv /tmp/sonku-p96-candidate.csv
+              python3 scripts/verify_sonku_p96_bands.py /tmp/sonku-p96-reference.csv /tmp/sonku-p96-candidate.csv
             fi
           fi
           g++ $FLAGS tests/sonku_p89_stereo_room_depth_source_test.cpp -o /tmp/sonku-p89

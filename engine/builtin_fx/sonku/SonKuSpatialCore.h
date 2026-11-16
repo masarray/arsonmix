@@ -925,8 +925,12 @@ public:
                     const auto reinforced=p96Reinforcement_.process(
                         ears[0],ears[1],smoothedDistanceGain_,
                         settings_.sourceDistanceMeters,roomEnabled);
-                    directL=calibratedDirect*reinforced.left;
-                    directR=calibratedDirect*reinforced.right;
+                    // Keep P9.5 floating-point operation order bit-exact
+                    // whenever ROOM OFF or <=2m has no P9.6 reinforcement.
+                    if(p96Reinforcement_.active()){
+                        directL=calibratedDirect*reinforced.left;
+                        directR=calibratedDirect*reinforced.right;
+                    }
                 }
 #endif
                 float spatialL=directL+
