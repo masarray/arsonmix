@@ -22,6 +22,9 @@
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
 #include "SonKuP90StereoDecoder.h"
 #include "SonKuP91P92WorldBassFoundation.h"
+#if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
+#include "SonKuP94FrontBackDepthCue.h"
+#endif
 #endif
 #endif
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
@@ -204,6 +207,9 @@ public:
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
         if(!p90Decoder_.prepare(rate))return false;
         if(!p92Bass_.prepare(rate))return false;
+#if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
+        if(!p94Depth_.prepare(rate))return false;
+#endif
 #endif
 #endif
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
@@ -272,6 +278,9 @@ public:
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
         p90Decoder_.reset();
         p92Bass_.reset();
+#if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
+        p94Depth_.reset();
+#endif
 #endif
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
         p83LowFrequency_.reset();
@@ -323,6 +332,9 @@ public:
         if((s.renderMode==9)!=(settings_.renderMode==9)){
             p90Decoder_.reset();
             p92Bass_.reset();
+#if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
+        p94Depth_.reset();
+#endif
         }
 #endif
         settings_=s;
@@ -871,11 +883,20 @@ public:
                      targetTailPresence
 #endif
                      -smoothedTailPresence_);
-                float spatialL=smoothedDistanceGain_*ears[0]+
-                    smoothedErPresence_*reflection.left+
+#if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
+                // Private P9.4: no angle-dependent output gain, HRTF phase
+                // edits, artificial delay or changed orbit geometry.
+                const auto depthCue=p90World?p94Depth_.next():p94::FrontBackDepthCue::Gains{};
+                const float calibratedDirect=depthCue.direct;
+                const float calibratedEarly=depthCue.early;
+#else
+                constexpr float calibratedDirect=1.f,calibratedEarly=1.f;
+#endif
+                float spatialL=smoothedDistanceGain_*calibratedDirect*ears[0]+
+                    smoothedErPresence_*calibratedEarly*reflection.left+
                     smoothedTailPresence_*late.left;
-                float spatialR=smoothedDistanceGain_*ears[1]+
-                    smoothedErPresence_*reflection.right+
+                float spatialR=smoothedDistanceGain_*calibratedDirect*ears[1]+
+                    smoothedErPresence_*calibratedEarly*reflection.right+
                     smoothedTailPresence_*late.right;
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
                 if(p90World){
@@ -1149,6 +1170,10 @@ private:
             if(p83Mode_==p83::Mode::MusicSpatialP90){
                 p90Decoder_.compose(centerTarget_,targets_[0],targets_[1]);
                 p92Bass_.updateDirections(positions.leftHead,positions.rightHead);
+#if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
+                p94Depth_.retarget(p83::toHead(static_cast<float>(degrees_),p83HeadYaw_),
+                                  settings_.spacePreset!=0 && settings_.roomAmount>0.f);
+#endif
             }
             else
 #endif
@@ -1249,6 +1274,9 @@ private:
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
     p90::StereoDecoder p90Decoder_{};
     p92::WorldBassFoundation p92Bass_{};
+#if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
+    p94::FrontBackDepthCue p94Depth_{};
+#endif
 #endif
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
     p87::MusicalAirBody p87Body_{};
