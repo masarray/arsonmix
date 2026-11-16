@@ -343,7 +343,7 @@ int main(){
             assert(chest>1.0001 && chest<1.35);
             assert(bass>.87 && bass<1.13);
             assert(high>.88 && high<1.12);
-            auto off=warm;off.roomAmount=0.f;off.ambience=0.f;
+            auto off=warm;off.spacePreset=0;off.roomAmount=0.f;off.ambience=0.f;
             assert(render(rate,off).hash==render(rate,off,false,true).hash);
             auto noMix=warm;noMix.spatialMix=0.f;
             assert(render(rate,noMix).hash==render(rate,noMix,false,true).hash);
