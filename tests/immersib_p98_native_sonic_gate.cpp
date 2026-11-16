@@ -87,6 +87,11 @@ int main(){
     assert(venue.outputTrim==1.8f && venue.spatialMix==1.f);
     assert(venue.startAzimuthDegrees==0.f && venue.spacePreset==3);
     assert(imersipP92Presets.size()==6);
+    // Nearfield source projection now supports 1m in the physical XYZ path.
+    armix::sonku::xyz::Placement projected{};
+    assert(armix::sonku::xyz::project(1.f,0.f,1.45f,7.2f,projected));
+    assert(std::abs(projected.horizontalMeters-1.f)<1.e-6f);
+    assert(!armix::sonku::xyz::project(.9f,0.f,1.45f,7.2f,projected));
     assert(current.sourceDistanceMeters==3.f &&
            current.roomAmount>1.f && current.sceneVoicing==4);
     assert(armix::builtin_fx::validImerSipP92Scene(current));

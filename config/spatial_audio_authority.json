@@ -148,7 +148,8 @@
       "engine/builtin_fx/sonku/SonKuP96DistanceReinforcement.h": "a32fb6e6fdd431901323d4278c51991607c02d84",
       "engine/builtin_fx/sonku/SonKuP97StageImpact.h": "5384fd3cc67c31f0a8038b315856d20933249b5b",
       "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "cc769dade5a752e0f84f02348e07332bce7c268b",
-      "engine/builtin_fx/sonku/SonKuEarlyReflections.h": "5a6a9b48cfdc60729f130c61110c8d8590b20f35"
+      "engine/builtin_fx/sonku/SonKuEarlyReflections.h": "5a6a9b48cfdc60729f130c61110c8d8590b20f35",
+      "engine/builtin_fx/sonku/SonKuSourcePlacement3D.h": "9afb959bed292626c3097c2a382208ce8798e90c"
     },
     "productTuning": {
       "status": "nearfield_vocal_masking_candidate_owner_not_auditioned",
@@ -165,7 +166,8 @@
       "newDSPBlobSha1": {
         "engine/builtin_fx/sonku/SonKuSpatialCore.h": "7e7f7d5123c1fae5ed593f4252f84921832b0402",
         "engine/builtin_fx/sonku/SonKuEarlyReflections.h": "5a6a9b48cfdc60729f130c61110c8d8590b20f35",
-        "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "cc769dade5a752e0f84f02348e07332bce7c268b"
+        "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "cc769dade5a752e0f84f02348e07332bce7c268b",
+        "engine/builtin_fx/sonku/SonKuSourcePlacement3D.h": "9afb959bed292626c3097c2a382208ce8798e90c"
       },
       "legacyIMRS": "Old 4-10m restored scenes migrate source distance down to room-safe <=4m; no codec version or FX ID change",
       "physicalHeadphoneABRequired": true
