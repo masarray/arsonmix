@@ -12,6 +12,7 @@
 #include "NativeSessionToken.h"
 #include "ArSonMixStartupSplash.h"
 #include "ArSonWindowChrome.h"
+#include "NativeOwnedFloatingWindow.h"
 #include "VstOrbitController.h"
 #include "../engine/core/OrbitDistanceMapping.h"
 #include "../engine/core/DearVrPolarPolicy.h"
@@ -178,15 +179,25 @@ public:
 class PluginEditorWindow final : public juce::DocumentWindow
 {
 public:
-    PluginEditorWindow (const juce::String& title, juce::AudioProcessorEditor* editor)
+    PluginEditorWindow (const juce::String& title, juce::AudioProcessorEditor* editor,
+                        juce::Component& mixer)
         : DocumentWindow (title, juce::Colour (0xff14212a), allButtons)
     {
         setUsingNativeTitleBar (true);
         setIcon (approvedAppIcon());
         setContentOwned (editor, true);
-        setResizable (true, true);
+        setResizable (editor->isResizable(), false);
         centreWithSize (juce::jmax (380, editor->getWidth()), juce::jmax (300, editor->getHeight()));
+        (void) armix::ui::attachOwnedFloatingWindow (*this, mixer);
         setVisible (true);
+        (void) armix::ui::attachOwnedFloatingWindow (*this, mixer);
+        present();
+    }
+    void present()
+    {
+        if (!isVisible()) setVisible (true);
+        if (isMinimised()) setMinimised (false);
+        toFront (true);
     }
     void closeButtonPressed() override { setVisible (false); }
 };
@@ -195,7 +206,8 @@ class AudioSetupWindow final : public juce::DocumentWindow
 {
 public:
     explicit AudioSetupWindow (juce::AudioDeviceManager& manager,
-                               std::function<void()> onClosed)
+                               std::function<void()> onClosed,
+                               juce::Component& mixer)
         : juce::DocumentWindow ("AR MIX — ASIO / WASAPI Setup",
                                 juce::Colour (0xff14212a), allButtons),
           onClosed_ (std::move (onClosed))
@@ -216,6 +228,7 @@ public:
         selector->setSize (720, 550);
         setContentOwned (selector, false);
         centreWithSize (740, 590);
+        (void) armix::ui::attachOwnedFloatingWindow (*this, mixer);
     }
     void closeButtonPressed() override { setVisible (false); }
     void visibilityChanged() override
@@ -585,6 +598,7 @@ private:
     juce::String lastNativeThrowEpoch_,lastNativeThrowRevision_;
     armix::mixer::NativeMusicTempoMonitor::State lastMusicTempo_{};
     std::unique_ptr<PluginEditorWindow> editorWindow_;
+    juce::AudioProcessor* editorProcessor_=nullptr; // borrowed identity, UI only
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     // Persistent modal lease: blocks an Apply/ASIO restart while JUCE's
     // device selector is open, not merely during the initial show() call.
@@ -1028,8 +1042,9 @@ private:
     }
 
     void closePluginEditor() noexcept {
-        // JUCE destroys the editor before releasing the owner's processor.
+        // Destruct the editor BEFORE releasing its exact PCM instance lease.
         editorWindow_.reset();
+        editorProcessor_=nullptr;
         routedEditorOwner_.reset();
         routedEditorEpoch_=0;
     }
@@ -1303,14 +1318,23 @@ private:
     }
 
     void openLogicalVendorEditor(const juce::var& request) {
-        if(logicalVendorEditor_ || mixerSessionWorker_.busy() || logicalMixer_.readOnly()) {
-            emitNotice("Close the current FX editor or wait for the mixer to finish saving",true);
-            return;
-        }
         std::uint64_t channel=0;
         std::size_t slot=0;
         if(!logicalFxTarget(request,channel,slot)) {
             emitNotice("The selected FX slot changed",true);
+            return;
+        }
+        if(logicalVendorEditor_) {
+            auto& existing=*logicalVendorEditor_;
+            if(existing.window) existing.window->present();
+            if(existing.workspaceToken==logicalMixer_.workspace().workspaceToken() &&
+               existing.insert.channel==channel && existing.insert.slot==slot)
+                return; // Reuse the same already accepted logical instance.
+            emitNotice("Finish the currently open FX editor first",true);
+            return;
+        }
+        if(mixerSessionWorker_.busy() || logicalMixer_.readOnly()) {
+            emitNotice("Finish the current mixer save before opening FX",true);
             return;
         }
         LogicalVendorEditor prepared;
@@ -1319,7 +1343,7 @@ private:
             try {
                 if(auto* editor=prepared.processor->createEditorIfNeeded()) {
                     prepared.window=std::make_unique<PluginEditorWindow>(
-                        prepared.processor->getName(),editor);
+                        prepared.processor->getName(),editor,*this);
                     prepared.workspaceToken=logicalMixer_.workspace().workspaceToken();
                     logicalVendorEditor_=std::move(prepared);
                     return;
@@ -2683,8 +2707,10 @@ private:
                                     : "Choose a working stereo output in Audio I/O. Input hardware is optional.", true);
                             safe->emitApprovedNativeSnapshot();
                         }
-                    });
+                    }, *safe);
             safe->audioSetupWindow_->setVisible (true);
+            (void) armix::ui::attachOwnedFloatingWindow (
+                *safe->audioSetupWindow_, *safe);
             safe->audioSetupWindow_->toFront (true);
             // The peer now exists: perform one initial JUCE layout on the
             // message thread, rather than relying on a manual window drag.
@@ -6450,13 +6476,23 @@ private:
                     }
                 } else owner=engine_.leaseRoutedFxForEditor(lane,slot,epoch,revision,token);
                 if(owner && owner->processor) {
-                    try {
+                    // A second click on an exact accepted FX instance raises
+                    // its existing visible/hidden UI; do not recreate JUCE
+                    // AudioProcessor's active editor on every interaction.
+                    if(editorWindow_ && routedEditorOwner_==owner &&
+                       routedEditorEpoch_==retainedEpoch &&
+                       editorProcessor_==owner->processor.get()) {
+                        editorWindow_->present();
+                        opened=true;
+                        error.clear();
+                    } else try {
                         closePluginEditor();
                         if(auto* editor=owner->processor->createEditorIfNeeded()) {
                             routedEditorOwner_=owner;
                             routedEditorEpoch_=retainedEpoch;
                             editorWindow_=std::make_unique<PluginEditorWindow>(
-                                owner->processor->getName(),editor);
+                                owner->processor->getName(),editor,*this);
+                            editorProcessor_=owner->processor.get();
                             opened=true;
                             error.clear();
                         } else error="This VST3 has no native editor";
@@ -7317,14 +7353,25 @@ private:
             // Never open an editor for an old graph waiting to be destroyed.
             if (engine_.isGraphSwitchPending())
                 return emitNotice ("FX recall is transitioning; open the editor after recall completes.", true);
-            closePluginEditor();
             if (auto* processor = engine_.pluginAt (slot))
             {
-                if (auto* editor = processor->createEditorIfNeeded())
-                    editorWindow_ = std::make_unique<PluginEditorWindow> (
-                        processor->getName(), editor);
+                if (editorWindow_ && !routedEditorOwner_ &&
+                    editorProcessor_ == processor)
+                {
+                    editorWindow_->present();
+                }
                 else
-                    emitNotice ("This VST3 does not expose a graphical editor.", true);
+                {
+                    closePluginEditor();
+                    if (auto* editor = processor->createEditorIfNeeded())
+                    {
+                        editorWindow_ = std::make_unique<PluginEditorWindow> (
+                            processor->getName(), editor, *this);
+                        editorProcessor_=processor;
+                    }
+                    else
+                        emitNotice ("This VST3 does not expose a graphical editor.", true);
+                }
             }
         }
         else if (action == "monitor" && value.isBool())
