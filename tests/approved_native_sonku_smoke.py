@@ -374,7 +374,8 @@ def exercise(browser,out,width,height):
             "revolutionSeconds":dialAction["settings"]["revolutionSeconds"]})
     # M4: native SPACE must be an actual typed ACK/readback edit.
     # No browser-only audio, no visual success before PCM applied.
-    assert editor.locator(".sk-space-options button").count()==4
+    assert editor.locator(".sk-space-options button").count()==8
+    assert editor.locator(".sk-space-options button:visible").count()==4
     assert editor.locator("#skDistance").is_disabled()
     assert editor.locator("#skAmbience").is_disabled()
     assert editor.locator("#skReflections").is_disabled()
