@@ -17,6 +17,17 @@ namespace armix::builtin_fx {
 class ImerSipP92Editor final : public juce::AudioProcessorEditor,
                               private juce::Timer {
 public:
+    // Snapshot of actual host PCM control gates, never a GUI-local power flag.
+    // Slot preference is independent of the additive rack/global gates.
+    struct HostBypassState final {
+        bool valid=false;
+        bool slotBypassed=false;
+        bool rackBypassed=false;
+        bool globalBypassed=false;
+        bool effectiveBypassed() const noexcept {
+            return valid && (slotBypassed || rackBypassed || globalBypassed);
+        }
+    };
     explicit ImerSipP92Editor(ImerSipP92Processor& processor)
         :juce::AudioProcessorEditor(processor),fx_(processor) {
         // Compact 85% presentation of the audited 1100x680 master canvas.
@@ -90,10 +101,24 @@ public:
         power_.setLookAndFeel(&skin_);
         power_.setEnabled(false); // no fake bypass authority
         power_.onClick=[this] {
-            if(!requestBypass_ || !readBypass_)return;
-            const bool wanted=!readBypass_();
-            status_=requestBypass_(wanted)?"HOST BYPASS ACCEPTED":
-                                          "HOST BYPASS REJECTED";
+            if(!requestBypass_ || !readHostPower_)return;
+            const auto before=readHostPower_();
+            if(!before.valid || before.globalBypassed ||
+               before.rackBypassed) {
+                status_=before.globalBypassed?"GLOBAL FX BYPASSED - USE MIXER POWER":
+                        before.rackBypassed?"FX RACK BYPASSED - USE RACK POWER":
+                                            "FX INSTANCE NO LONGER ACTIVE";
+                refreshHostPower();
+                repaint();
+                return;
+            }
+            const bool wanted=!before.slotBypassed;
+            const bool accepted=requestBypass_(wanted);
+            const auto after=readHostPower_();
+            status_=!accepted?"HOST FX POWER REJECTED - REFRESH FX RACK":
+                   !after.valid?"FX INSTANCE CHANGED - REOPEN EDITOR":
+                   after.slotBypassed!=wanted?"HOST FX POWER NOT CONFIRMED":
+                   wanted?"FX BYPASS ACCEPTED":"FX ENABLE ACCEPTED";
             refreshHostPower();
             repaint();
         };
@@ -110,11 +135,9 @@ public:
     }
     bool areVisualAssetsReady() const noexcept {return skin_.ready();}
     void bindHostPower(std::function<bool(bool)> request,
-                       std::function<bool()> readback) {
+                       std::function<HostBypassState()> readback) {
         requestBypass_=std::move(request);
-        readBypass_=std::move(readback);
-        power_.setEnabled(static_cast<bool>(requestBypass_) &&
-                          static_cast<bool>(readBypass_));
+        readHostPower_=std::move(readback);
         refreshHostPower();
     }
     static constexpr float compactScale=0.85f;
@@ -286,26 +309,26 @@ private:
         repaint();
     }
     void refreshHostPower() {
-        // Host-authoritative UI readback: never assume a power click was
-        // accepted. Unknown/unbound status MUST NOT present BYPASSED.
-        if(!readBypass_) {
-            if(hostBypassed_.has_value()){
-                hostBypassed_.reset();
-                repaint();
-            }
-            return;
-        }
-        const bool bypassed=readBypass_();
+        // One effective state = individual slot OR rack gate OR global A/B.
+        // Never flatten these independent remembered bypass preferences.
+        const auto state=readHostPower_?readHostPower_():HostBypassState{};
+        const bool valid=state.valid;
+        const bool bypassed=state.effectiveBypassed();
+        const bool enabled=valid && static_cast<bool>(requestBypass_) &&
+                           !state.rackBypassed && !state.globalBypassed;
         const bool changed=!hostBypassed_.has_value() ||
                            *hostBypassed_!=bypassed;
-        hostBypassed_=bypassed;
-        power_.setToggleState(!bypassed,juce::dontSendNotification);
-        power_.setTooltip(bypassed
-            ? "FX BYPASSED - click to enable"
-            : "FX ON - click to bypass");
-        // External host bypass can change independently of this editor's
-        // click handler. Repaint the whole scene+panel only on transition;
-        // the 25Hz timer otherwise repaints only the ACK/status strip.
+        if(valid)hostBypassed_=bypassed;
+        else hostBypassed_.reset();
+        power_.setEnabled(enabled);
+        power_.setToggleState(valid && !bypassed,juce::dontSendNotification);
+        power_.setTooltip(!valid?"FX instance unavailable - reopen from rack":
+            state.globalBypassed?"GLOBAL FX BYPASSED - enable mixer FX":
+            state.rackBypassed?"FX RACK BYPASSED - enable rack power":
+            state.slotBypassed?"FX BYPASSED - click to enable":
+                               "FX ON - click to bypass");
+        // Host changes can arrive from another window while this editor is
+        // open. 25 Hz control-thread polling updates visual status on change.
         if(changed)repaint();
     }
     void timerCallback() override {
@@ -342,7 +365,7 @@ private:
     std::array<juce::Slider,8> knobs_{};
     std::array<juce::Label,8> labels_{};
     std::function<bool(bool)> requestBypass_;
-    std::function<bool()> readBypass_;
+    std::function<HostBypassState()> readHostPower_;
     std::optional<bool> hostBypassed_{}; // UI cache of actual host readback only
 
     armix::sonku::Settings deferred_{};
