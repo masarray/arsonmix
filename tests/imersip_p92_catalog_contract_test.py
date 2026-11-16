@@ -33,17 +33,22 @@ class ImerSipP92Contract(unittest.TestCase):
         self.assertIn("skin_.drawPanel(g)",ui)
         self.assertIn("skin_.drawConcert(g,concert)",ui)
         skin=source("engine/builtin_fx/ImerSipP92VisualSkin.h")
-        self.assertIn("Drawable::createFromImageData",skin)
+        cmake=source("CMakeLists.txt")
+        self.assertIn("ImageCache::getFromMemory",skin)
+        self.assertIn("Graphics::highResamplingQuality",skin)
         self.assertIn("RectanglePlacement::centred",skin)
         self.assertNotIn("getClippedImage",skin)
-        self.assertNotIn("ImageCache::getFromMemory",skin)
-        import xml.etree.ElementTree as ET
-        for name in ("room","panel","line_array","subwoofer","frontfill"):
-            asset=ROOT/"assets/imersip/vector"/("imersip_"+name+".svg")
-            xml=ET.parse(asset).getroot()
-            self.assertEqual(xml.tag,"{http://www.w3.org/2000/svg}svg")
-            self.assertEqual(len(xml.get("viewBox").split()),4)
-        self.assertIn("assets/imersip/vector/imersip_room.svg",cmake)
+        self.assertNotIn("Drawable::createFromImageData",skin)
+        self.assertNotIn("juce::Drawable",skin)
+        for name in ("line_array_left", "line_array_right",
+                     "subwoofer_left", "subwoofer_right",
+                     "front_fill_left", "front_fill_right",
+                     "side_fill_left", "side_fill_right",
+                     "slider_track", "slider_thumb", "knob_master_purple"):
+            self.assertIn("BinaryData::"+name+"_png",skin)
+        self.assertIn("scripts/generate_imersip_concert_png.py",cmake)
+        self.assertIn("ARMIX_IMERSIP_PNG_SOURCES",cmake)
+        self.assertNotIn("assets/imersip/vector/imersip_room.svg",cmake)
         self.assertIn("for(const auto& scene:imersipP92Presets)",ui)
         self.assertNotIn("P9.2 Neutral A/B",ui)
         self.assertNotIn("Warm Auditorium",ui)
