@@ -34,7 +34,7 @@ const p=vm.runInNewContext("(function(){"+f+
 assert.equal(Object.keys(p.factoryPresets).length,5);
 for(const [id,scene] of Object.entries(p.factoryPresets)){
  assert.equal(scene.spatialMix,1);
- assert.equal(scene.outputTrim,1); // Never multiply factory output by +7dB.
+ assert(scene.outputTrim>=1.5&&scene.outputTrim<=2.0); // User-selected powerful scene, bounded linked limiter.
  assert(scene.sourceDistanceMeters>=1.6);
  const max=[10,3.1,6.7,10][scene.spacePreset];
  assert(scene.sourceDistanceMeters<=max);
@@ -72,6 +72,8 @@ assert.match(source,/root\.querySelector\("\.sk-stage"\)\.appendChild\(root\.que
 assert.match(source,/head\.setPointerCapture\(e\.pointerId\)/);
 assert.match(source,/window\.addEventListener\("resize",constrainWindow\)/);
 assert.match(source,/if\(!p91p92Capable\|\|draft\.renderMode!==9\|\|!preset\|\|pending\)/);
+assert.match(source,/root\.dataset\.fxState==="on"/);
+assert.match(source,/if\(previous!==state\)/);
 assert.match(css,/\.mx-sonku \.sk-stage \.sk-space-panel\{display:grid/);
 assert.match(source,/current\.track\.slotBypass\[current\.slot\]/);
 console.log("PASS SonKu P9.3: approved perspective orbit, inverse drag, native power readback, draggable window, five full-scene presets, compact SPACE placement");
