@@ -114,7 +114,15 @@ int main(){
     assert(venue.roomAmount==1.f && venue.ambience==1.f);
     assert(venue.outputTrim==1.8f && venue.spatialMix==1.f);
     assert(venue.startAzimuthDegrees==0.f && venue.spacePreset==3);
-    assert(imersipP92Presets.size()==6);
+    assert(imersipP92Presets.size()==7);
+    const auto ownerPreset=imersipP92Factory(8);
+    assert(ownerPreset.spacePreset==3 && ownerPreset.stereoSpreadDegrees==147.f);
+    assert(ownerPreset.sourceDistanceMeters==1.f && ownerPreset.roomAmount==1.8f);
+    assert(ownerPreset.ambience==.60f && ownerPreset.spatialMix==1.f);
+    assert(ownerPreset.headYawDegrees==0.f && ownerPreset.hrtfElevationTrimDegrees==0.f);
+    assert(ownerPreset.sceneVoicing==4);
+    assert(std::abs(ownerPreset.outputTrim-imersipP92DbToLinear(2.5f))<1.e-6f);
+    assert(armix::builtin_fx::validImerSipP92Scene(ownerPreset));
     // Nearfield source projection now supports 1m in the physical XYZ path.
     armix::sonku::xyz::Placement projected{};
     assert(armix::sonku::xyz::project(1.f,0.f,1.45f,7.2f,projected));
@@ -133,7 +141,7 @@ int main(){
     assert(!armix::sonku::p98::SceneVoicing::valid(6));
     // Product scene classification: preserve original Venue golden; new
     // detail and impact voicings must NEVER silently affect its PCM.
-    constexpr int expectedProfiles[]{4,4,5,4,4,3};
+    constexpr int expectedProfiles[]{4,4,5,4,4,3,4};
     for(std::size_t i=0;i<imersipP92Presets.size();++i)
         assert(imersipP92Presets[i].voicing==expectedProfiles[i]);
     for(int rate:{44100,48000}){
@@ -232,7 +240,7 @@ int main(){
         const auto migrated=render(rate,venue);
         // The operator's approved Venue is a bit-exact audio checkpoint.
         assert(base.hash==migrated.hash);
-        std::array<std::uint64_t,6> uniquePcm{};
+        std::array<std::uint64_t,7> uniquePcm{};
         for(const auto& preset:imersipP92Presets){
             const auto s=imersipP92Factory(preset.id);
             assert(s.renderMode==9 && !s.moving);
