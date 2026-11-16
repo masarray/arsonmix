@@ -12,9 +12,11 @@ inline bool attachOwnedFloatingWindow(juce::Component& floating,
     const auto* popupPeer=floating.getPeer();
     const auto* mixerPeer=mixer.getPeer();
     if(popupPeer==nullptr || mixerPeer==nullptr)return false;
-    return win32::attachOwnedPopup(
-        static_cast<HWND>(popupPeer->getNativeHandle()),
-        static_cast<HWND>(mixerPeer->getNativeHandle()));
+    const auto child=static_cast<HWND>(popupPeer->getNativeHandle());
+    const auto owner=static_cast<HWND>(mixerPeer->getNativeHandle());
+    const bool attached=win32::attachOwnedPopup(child,owner);
+    win32::preferDarkTitleBar(child);
+    return attached;
 #else
     (void)floating;
     (void)mixer;
