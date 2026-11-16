@@ -7457,6 +7457,12 @@ private:
                         emitNotice ("This VST3 does not expose a graphical editor.", true);
                 }
             }
+            else
+            {
+                // The requested slot no longer owns a processor. Never
+                // leave a floating editor bound to a retired plugin.
+                closePluginEditor();
+            }
         }
         else if (action == "monitor" && value.isBool())
         {
