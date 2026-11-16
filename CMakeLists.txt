@@ -857,6 +857,17 @@ if(BUILD_TESTING)
                                     "$<TARGET_FILE:ARMixSonKuP94ReferenceTests>"
                                     "$<TARGET_FILE:ARMixSonKuP94SourceTests>")
                           endif()
+                          if(ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE)
+                            add_executable(ARMixSonKuP95MusicTests
+                                tests/sonku_p95_musical_presence_source_test.cpp)
+                            target_compile_features(ARMixSonKuP95MusicTests PRIVATE cxx_std_20)
+                            target_compile_definitions(ARMixSonKuP95MusicTests PRIVATE
+                                $<TARGET_PROPERTY:ARMixSonKuP91P92MusicBassTests,COMPILE_DEFINITIONS>
+                                SONKU_P94_FRONT_BACK_DEPTH_RESEARCH=1
+                                SONKU_P95_MUSICAL_PRESENCE_RESEARCH=1)
+                            add_test(NAME NativeSonKuP95MusicPresenceVenue
+                                COMMAND ARMixSonKuP95MusicTests)
+                          endif()
                           juce_add_console_app(ARMixSonKuP90NativeTests
                               PRODUCT_NAME "ArSonMix SonKu P90 JUCE v11 State Tests")
                           target_sources(ARMixSonKuP90NativeTests PRIVATE
