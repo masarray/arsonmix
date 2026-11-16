@@ -146,8 +146,13 @@ public:
                    25,16,172,28,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff89b8b8));
         g.setFont(juce::FontOptions(10.5f));
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+        g.drawText("SONKU P9.7 VENUE / P9.8 DETAIL ENGINE",
+                   25,45,380,19,juce::Justification::centredLeft);
+#else
         g.drawText("8D-SONKU P9.1/P9.2  /  LIVE CONCERT WORLD",
                    25,45,380,19,juce::Justification::centredLeft);
+#endif
         g.setColour(juce::Colour(0xffd0e7e7));
         g.setFont(juce::FontOptions(13.f));
         g.drawText("LIVE CONCERT SPATIAL MONITOR",770,19,309,22,
@@ -159,7 +164,7 @@ public:
             static_cast<float>(knobs_[0].getValue()),
             static_cast<float>(knobs_[1].getValue()));
         // Safe layout remains wholly within room for 30..180 degrees,
-        // 1.6..7.4m; never crop the artist geometry or cover the controls.
+        // 1.6..10.0m in private P9.8; protect art and control bounds.
         if(concert.safe())skin_.drawConcert(g,concert);
         g.setColour(juce::Colour(0xff88d6d2));
         g.setFont(juce::FontOptions(11.f));

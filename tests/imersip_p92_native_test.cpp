@@ -133,6 +133,24 @@ static void nativeParity(int rate) {
         reference.stereoSpreadDegrees);
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
     assert(restored->acceptedSettings().sceneVoicing==0);
+    // Compatibility proof: an old IMRS v6 carries SONK v11 exactly
+    // (63 bytes, no sceneVoicing). Restore it in the P9.8 engine as 0.
+    juce::MemoryBlock oldV6;
+    {
+        juce::MemoryOutputStream wire(oldV6,false);
+        wire.writeInt(0x494D5253);wire.writeInt(6);
+        wire.writeInt(0x534F4E4B);wire.writeInt(11);
+        wire.write(static_cast<const std::uint8_t*>(state.getData())+16,55);
+    }
+    assert(oldV6.getSize()==71);
+    auto migratedV6=std::make_unique<ImerSipP92Processor>();
+    migratedV6->prepareToPlay(rate,128);
+    assert(migratedV6->restoreUnpublishedState(
+        oldV6.getData(),static_cast<int>(oldV6.getSize())));
+    assert(migratedV6->acceptedSettings().sceneVoicing==0);
+    assert(migratedV6->acceptedSettings().stereoSpreadDegrees==
+           reference.stereoSpreadDegrees);
+    migratedV6->releaseResources();
 #endif
 
     // The embedded v11 SONK mode field is at byte 50 of its 63-byte
@@ -244,9 +262,20 @@ int main() {
         gfx.addTransform(juce::AffineTransform::scale(scale));
         editor->paintEntireComponent(gfx,true);
         assert(frame.isValid());
-        assert(frame.getPixelAt(frame.getWidth()/2,frame.getHeight()/4)
-                !=frame.getPixelAt(frame.getWidth()/2,
-                                  frame.getHeight()*3/4));
+        // A single pixel comparison can falsely fail when two dark metal
+        // points happen to have the same RGBA. Validate a distributed sample
+        // of the REAL native pixel buffer instead, and still reject blank art.
+        const auto first=frame.getPixelAt(frame.getWidth()/10,
+                                           frame.getHeight()/10);
+        int distinct=0,opaque=0;
+        for(int yy=1;yy<10;++yy)
+            for(int xx=1;xx<10;++xx){
+                const auto sample=frame.getPixelAt(
+                    xx*frame.getWidth()/10, yy*frame.getHeight()/10);
+                if(sample!=first)++distinct;
+                if(sample.getAlpha()>0)++opaque;
+            }
+        assert(distinct>=8 && opaque>=40);
         const auto file=juce::File::getCurrentWorkingDirectory()
             .getChildFile("ImerSip_P92_JUCE_"+juce::String(dpi)+".png");
         juce::FileOutputStream output(file);
@@ -290,6 +319,15 @@ int main() {
     assert(std::abs(editorFx->acceptedSettings().sourceDistanceMeters-2.4f)<.001f);
     assert(std::abs(editorFx->acceptedSettings().ambience-.88f)<.001f);
     assert(editorFx->acceptedSettings().sceneVoicing==1);
+    juce::MemoryBlock detailState;
+    editorFx->getStateInformation(detailState);
+    assert(detailState.getSize()==75);
+    auto detailRestored=std::make_unique<ImerSipP92Processor>();
+    detailRestored->prepareToPlay(48000.,128);
+    assert(detailRestored->restoreUnpublishedState(
+        detailState.getData(),static_cast<int>(detailState.getSize())));
+    assert(detailRestored->acceptedSettings().sceneVoicing==1);
+    detailRestored->releaseResources();
     assert(std::abs(editorFx->acceptedSettings().outputTrim-
         armix::builtin_fx::imersipP92DbToLinear(5.60f))<.001f);
 #else
