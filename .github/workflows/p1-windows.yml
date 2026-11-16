@@ -680,8 +680,10 @@ jobs:
           /tmp/sonku-p90
           g++ $FLAGS tests/sonku_p91_p92_music_bass_foundation_test.cpp -o /tmp/sonku-p91p92
           /tmp/sonku-p91p92
+          g++ $FLAGS tests/sonku_p94_front_back_depth_source_test.cpp -o /tmp/sonku-p94-reference
           g++ $FLAGS -DSONKU_P94_FRONT_BACK_DEPTH_RESEARCH=1 tests/sonku_p94_front_back_depth_source_test.cpp -o /tmp/sonku-p94
           /tmp/sonku-p94
+          python3 scripts/verify_sonku_p94_acoustic_levels.py /tmp/sonku-p94-reference /tmp/sonku-p94
           g++ $FLAGS tests/sonku_p89_stereo_room_depth_source_test.cpp -o /tmp/sonku-p89
           /tmp/sonku-p89
           echo "SONKU_P90_NATIVE_SOURCE_CTEST_PASSED"
@@ -739,12 +741,12 @@ jobs:
       - name: Build real native JUCE PCM, state ACK, and Windows GUI
         shell: pwsh
         run: |
-          cmake --build build --config Release --parallel 2 --target ARMixSonKuP94SourceTests ARMixSonKuP91P92MusicBassTests ARMixSonKuP90NativeTests ARMixSonKuP90SourceTests ARMixSonKuP89NativeTests ARMixSonKuP89SourceTests ARMixConsole
+          cmake --build build --config Release --parallel 2 --target ARMixSonKuP94SourceTests ARMixSonKuP94ReferenceTests ARMixSonKuP91P92MusicBassTests ARMixSonKuP90NativeTests ARMixSonKuP90SourceTests ARMixSonKuP89NativeTests ARMixSonKuP89SourceTests ARMixConsole
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path -LiteralPath 'build/ARMixConsole_artefacts/Release/AR MIX Studio.exe' -PathType Leaf)) {
             throw 'SONKU_P90_NATIVE_GUI_EXE_MISSING'
           }
-          ctest --test-dir build -C Release --output-on-failure -R '^NativeSonKuP(89RoomAnchoredStereoAndP88GoldenParity|89JuceV10AppliedAckAndV9Restore|90StereoExternalizationSource|90JuceV11AppliedAckAndLegacyRestore|91P92MusicFidelityWorldBassAndRoom|94FrontBackDepthA_BSource)$'
+          ctest --test-dir build -C Release --output-on-failure -R '^NativeSonKuP(89RoomAnchoredStereoAndP88GoldenParity|89JuceV10AppliedAckAndV9Restore|90StereoExternalizationSource|90JuceV11AppliedAckAndLegacyRestore|91P92MusicFidelityWorldBassAndRoom|94FrontBackDepthA_BSource|94LevelMatchedAB)$'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verified portable package, no installer or release
         shell: pwsh
