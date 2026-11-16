@@ -1,0 +1,740 @@
+{
+  "schema": "imersip-concert-asset-manifest-v1",
+  "coordinates": {
+    "editor": [
+      1100,
+      680
+    ],
+    "source_master": [
+      2200,
+      1360
+    ],
+    "room": [
+      0,
+      0,
+      1100,
+      461
+    ],
+    "desk": [
+      0,
+      461,
+      1100,
+      219
+    ]
+  },
+  "stage_range": [
+    30,
+    180
+  ],
+  "distance_range_m": [
+    1.6,
+    7.4
+  ],
+  "asset_count": 19,
+  "assets": [
+    {
+      "file": "room_background.png",
+      "source_px": [
+        2200,
+        922
+      ],
+      "logical_default_rect": [
+        0,
+        0,
+        1100,
+        461
+      ],
+      "anchor": [
+        0,
+        0
+      ],
+      "alpha_bbox": [
+        0,
+        0,
+        2200,
+        922
+      ],
+      "alpha_padding_px": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "mirror": false,
+      "perspective": "master scene",
+      "safe_scale": [
+        1,
+        1
+      ],
+      "z": 0,
+      "sha256": "4708ea571ca09df4a108e8b7c04d54bc4bea8ca4af6814703ec5b70b633f9965"
+    },
+    {
+      "file": "control_panel.png",
+      "source_px": [
+        2200,
+        438
+      ],
+      "logical_default_rect": [
+        0,
+        461,
+        1100,
+        219
+      ],
+      "anchor": [
+        0,
+        0
+      ],
+      "alpha_bbox": [
+        0,
+        0,
+        2200,
+        438
+      ],
+      "alpha_padding_px": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "mirror": false,
+      "perspective": "master scene",
+      "safe_scale": [
+        1,
+        1
+      ],
+      "z": 10,
+      "sha256": "582ac067593404b973ae732149585365e7634caf7804b7cddaf76f8aadccfc0b"
+    },
+    {
+      "file": "header_overlay.png",
+      "source_px": [
+        2200,
+        146
+      ],
+      "logical_default_rect": [
+        0,
+        0,
+        1100,
+        73
+      ],
+      "anchor": [
+        0,
+        0
+      ],
+      "alpha_bbox": [
+        0,
+        0,
+        2200,
+        143
+      ],
+      "alpha_padding_px": [
+        0,
+        0,
+        0,
+        3
+      ],
+      "mirror": false,
+      "perspective": "master scene",
+      "safe_scale": [
+        1,
+        1
+      ],
+      "z": 5,
+      "sha256": "8cceb6c10457d17b1a8a5546be0fdb69e44b5fc23de891a05795dce429065658"
+    },
+    {
+      "file": "line_array_left.png",
+      "source_px": [
+        392,
+        640
+      ],
+      "logical_default_rect": [
+        0,
+        0,
+        98,
+        160
+      ],
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "alpha_bbox": [
+        45,
+        53,
+        352,
+        563
+      ],
+      "alpha_padding_px": [
+        45,
+        53,
+        40,
+        77
+      ],
+      "mirror": false,
+      "perspective": "concert front three-quarter",
+      "safe_scale": [
+        0.65,
+        1.0
+      ],
+      "z": 5,
+      "sha256": "c126c5ef3c6102b986834ec2c9b70f6e63569da85e390f0027ffb479f6ea430e"
+    },
+    {
+      "file": "line_array_right.png",
+      "source_px": [
+        392,
+        640
+      ],
+      "logical_default_rect": [
+        0,
+        0,
+        98,
+        160
+      ],
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "alpha_bbox": [
+        43,
+        53,
+        354,
+        563
+      ],
+      "alpha_padding_px": [
+        43,
+        53,
+        38,
+        77
+      ],
+      "mirror": false,
+      "perspective": "concert front three-quarter",
+      "safe_scale": [
+        0.65,
+        1.0
+      ],
+      "z": 5,
+      "sha256": "35855fcc8e02df96614190354503d00631c395bab35e4297ad86804104560140"
+    },
+    {
+      "file": "subwoofer_left.png",
+      "source_px": [
+        448,
+        368
+      ],
+      "logical_default_rect": [
+        0,
+        0,
+        112,
+        92
+      ],
+      "anchor": [
+        0.5,
+        1.0
+      ],
+      "alpha_bbox": [
+        27,
+        46,
+        421,
+        343
+      ],
+      "alpha_padding_px": [
+        27,
+        46,
+        27,
+        25
+      ],
+      "mirror": false,
+      "perspective": "concert front three-quarter",
+      "safe_scale": [
+        0.65,
+        1.0
+      ],
+      "z": 5,
+      "sha256": "a34a8cdc915943dc93eb84bb869a67ade30bf7339a99498f8bb4176fc7bcaeba"
+    },
+    {
+      "file": "subwoofer_right.png",
+      "source_px": [
+        448,
+        368
+      ],
+      "logical_default_rect": [
+        0,
+        0,
+        112,
+        92
+      ],
+      "anchor": [
+        0.5,
+        1.0
+      ],
+      "alpha_bbox": [
+        41,
+        46,
+        421,
+        343
+      ],
+      "alpha_padding_px": [
+        41,
+        46,
+        27,
+        25
+      ],
+      "mirror": false,
+      "perspective": "concert front three-quarter",
+      "safe_scale": [
+        0.65,
+        1.0
+      ],
+      "z": 5,
+      "sha256": "1bc335b9de1686d1484fe26d0ce11a9779937978b298b6c71bf8f31bfb0f48af"
+    },
+    {
+      "file": "front_fill_left.png",
+      "source_px": [
+        240,
+        350
+      ],
+      "logical_default_rect": [
+        0,
+        0,
+        60,
+        87.5
+      ],
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "alpha_bbox": [
+        14,
+        44,
+        225,
+        328
+      ],
+      "alpha_padding_px": [
+        14,
+        44,
+        15,
+        22
+      ],
+      "mirror": false,
+      "perspective": "concert front three-quarter",
+      "safe_scale": [
+        0.65,
+        1.0
+      ],
+      "z": 5,
+      "sha256": "01e4d1d06b17b2e517dc91da69d0620b7fda047aa37b2901aa6b4e53b171f1b5"
+    },
+    {
+      "file": "front_fill_right.png",
+      "source_px": [
+        240,
+        350
+      ],
+      "logical_default_rect": [
+        0,
+        0,
+        60,
+        87.5
+      ],
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "alpha_bbox": [
+        14,
+        43,
+        225,
+        328
+      ],
+      "alpha_padding_px": [
+        14,
+        43,
+        15,
+        22
+      ],
+      "mirror": false,
+      "perspective": "concert front three-quarter",
+      "safe_scale": [
+        0.65,
+        1.0
+      ],
+      "z": 5,
+      "sha256": "5f24c1f59c91b21e7cab21a5250524a8d17027b8175e48b3596d01dcf1222957"
+    },
+    {
+      "file": "side_fill_left.png",
+      "source_px": [
+        216,
+        280
+      ],
+      "logical_default_rect": [
+        0,
+        0,
+        54,
+        70
+      ],
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "alpha_bbox": [
+        13,
+        32,
+        203,
+        263
+      ],
+      "alpha_padding_px": [
+        13,
+        32,
+        13,
+        17
+      ],
+      "mirror": false,
+      "perspective": "concert front three-quarter",
+      "safe_scale": [
+        0.65,
+        1.0
+      ],
+      "z": 5,
+      "sha256": "28c3df0a39890a95610b6b7658ed91ce08ed146d2bd4d17fa998dbf353004141"
+    },
+    {
+      "file": "side_fill_right.png",
+      "source_px": [
+        216,
+        280
+      ],
+      "logical_default_rect": [
+        0,
+        0,
+        54,
+        70
+      ],
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "alpha_bbox": [
+        13,
+        31,
+        203,
+        263
+      ],
+      "alpha_padding_px": [
+        13,
+        31,
+        13,
+        17
+      ],
+      "mirror": false,
+      "perspective": "concert front three-quarter",
+      "safe_scale": [
+        0.65,
+        1.0
+      ],
+      "z": 5,
+      "sha256": "a26fc4f6df4283fdec3bcee2bab06314f739de8b3750c91b777544000c2e1a4c"
+    },
+    {
+      "file": "slider_track.png",
+      "source_px": [
+        1100,
+        116
+      ],
+      "logical_default_rect": [
+        0,
+        0,
+        135,
+        14
+      ],
+      "anchor": [
+        0,
+        0
+      ],
+      "alpha_bbox": [
+        10,
+        44,
+        1091,
+        74
+      ],
+      "alpha_padding_px": [
+        10,
+        44,
+        9,
+        42
+      ],
+      "mirror": false,
+      "perspective": "master scene",
+      "safe_scale": [
+        1,
+        1
+      ],
+      "z": 5,
+      "sha256": "9bd8abd6af3ae68e8867f4918d2c10f94dd132c9ed1bd85e791d05ee6665fa36"
+    },
+    {
+      "file": "slider_thumb.png",
+      "source_px": [
+        156,
+        156
+      ],
+      "logical_default_rect": [
+        0,
+        0,
+        20,
+        20
+      ],
+      "anchor": [
+        0,
+        0
+      ],
+      "alpha_bbox": [
+        18,
+        12,
+        140,
+        139
+      ],
+      "alpha_padding_px": [
+        18,
+        12,
+        16,
+        17
+      ],
+      "mirror": false,
+      "perspective": "master scene",
+      "safe_scale": [
+        1,
+        1
+      ],
+      "z": 5,
+      "sha256": "f8d75a1156206ab5984e0a79eda80987c070c0034a03e24df64e80c271c8aa99"
+    },
+    {
+      "file": "knob_teal.png",
+      "source_px": [
+        480,
+        480
+      ],
+      "logical_default_rect": [
+        0,
+        0,
+        90,
+        90
+      ],
+      "anchor": [
+        0,
+        0
+      ],
+      "alpha_bbox": [
+        49,
+        46,
+        440,
+        448
+      ],
+      "alpha_padding_px": [
+        49,
+        46,
+        40,
+        32
+      ],
+      "mirror": false,
+      "perspective": "master scene",
+      "safe_scale": [
+        1,
+        1
+      ],
+      "z": 5,
+      "sha256": "752b08b37fbaf2bc2bafc20f4adc05356fee5bc1d3805dc1c83b46b4915e87f6"
+    },
+    {
+      "file": "knob_master_purple.png",
+      "source_px": [
+        480,
+        480
+      ],
+      "logical_default_rect": [
+        0,
+        0,
+        90,
+        90
+      ],
+      "anchor": [
+        0,
+        0
+      ],
+      "alpha_bbox": [
+        49,
+        46,
+        440,
+        448
+      ],
+      "alpha_padding_px": [
+        49,
+        46,
+        40,
+        32
+      ],
+      "mirror": false,
+      "perspective": "master scene",
+      "safe_scale": [
+        1,
+        1
+      ],
+      "z": 5,
+      "sha256": "6730018d040faca8c951802e8714031b484b1ef5404109467bce50bdb27000ff"
+    },
+    {
+      "file": "dropdown_background.png",
+      "source_px": [
+        852,
+        124
+      ],
+      "logical_default_rect": [
+        0,
+        0,
+        213,
+        31
+      ],
+      "anchor": [
+        0,
+        0
+      ],
+      "alpha_bbox": [
+        7,
+        7,
+        845,
+        115
+      ],
+      "alpha_padding_px": [
+        7,
+        7,
+        7,
+        9
+      ],
+      "mirror": false,
+      "perspective": "master scene",
+      "safe_scale": [
+        1,
+        1
+      ],
+      "z": 5,
+      "sha256": "0e7431d4b708e569346ef163c9b2406806a30ffcb777e42a0b02b4cb7d25d19a"
+    },
+    {
+      "file": "button_normal.png",
+      "source_px": [
+        420,
+        120
+      ],
+      "logical_default_rect": [
+        0,
+        0,
+        105,
+        30
+      ],
+      "anchor": [
+        0,
+        0
+      ],
+      "alpha_bbox": [
+        7,
+        7,
+        413,
+        111
+      ],
+      "alpha_padding_px": [
+        7,
+        7,
+        7,
+        9
+      ],
+      "mirror": false,
+      "perspective": "master scene",
+      "safe_scale": [
+        1,
+        1
+      ],
+      "z": 5,
+      "sha256": "4dea9b9ac51dd071410362ec059bb2c16b4c60fd436851bf33e0aaeb9780939c"
+    },
+    {
+      "file": "button_hover.png",
+      "source_px": [
+        420,
+        120
+      ],
+      "logical_default_rect": [
+        0,
+        0,
+        105,
+        30
+      ],
+      "anchor": [
+        0,
+        0
+      ],
+      "alpha_bbox": [
+        7,
+        7,
+        413,
+        111
+      ],
+      "alpha_padding_px": [
+        7,
+        7,
+        7,
+        9
+      ],
+      "mirror": false,
+      "perspective": "master scene",
+      "safe_scale": [
+        1,
+        1
+      ],
+      "z": 5,
+      "sha256": "37a5cc8c8f62db10bedd7dbcabac5c6dfad93ca65deacf3413d0d3c8dd7b303f"
+    },
+    {
+      "file": "button_pressed.png",
+      "source_px": [
+        420,
+        120
+      ],
+      "logical_default_rect": [
+        0,
+        0,
+        105,
+        30
+      ],
+      "anchor": [
+        0,
+        0
+      ],
+      "alpha_bbox": [
+        7,
+        7,
+        413,
+        111
+      ],
+      "alpha_padding_px": [
+        7,
+        7,
+        7,
+        9
+      ],
+      "mirror": false,
+      "perspective": "master scene",
+      "safe_scale": [
+        1,
+        1
+      ],
+      "z": 5,
+      "sha256": "a83c5a9f3babd53ec7ed5c8f0bbac38d6a49cad953f6b2f4aa196db16e3f30ee"
+    }
+  ],
+  "notes": "Separate left/right PNG; no mirroring, no speaker in room background."
+}
