@@ -129,11 +129,49 @@ int main(){
         };
         const double baselinePresence=spectrum(rate,0,2050,false);
         const double protectedPresence=spectrum(rate,4,2050,false);
+        const double baselineEdge=spectrum(rate,0,3450,false);
+        const double protectedEdge=spectrum(rate,4,3450,false);
         const double baselineAir=spectrum(rate,0,7400,false);
         const double lateralAir=spectrum(rate,4,7400,false);
         assert(protectedPresence<baselinePresence*.93);
-        assert(lateralAir>baselineAir*1.03);
+        // Wider side-HF emphasis previously made concert cymbals harsh.
+        // Now 3.45k masking is reduced but true >7k stereo is retained.
+        assert(protectedEdge<baselineEdge*.85);
+        assert(lateralAir>baselineAir*.75 &&
+               lateralAir<baselineAir*1.10);
         (void)spectrum(rate,4,2050,true); // mono side remains zero
+        auto centeredEnergy=[](int sr,int scene,int hz,bool final)->double{
+            armix::sonku::p98::SceneVoicing fx;
+            assert(fx.prepare(sr));
+            double energy=0.;
+            for(int i=0;i<12000;++i){
+                const float v=.10f*std::sin(2*pi*hz*i/double(sr));
+                auto out=fx.source(v,v,scene,true);
+                if(final)out=fx.finish(out.left,out.right);
+                assert(std::isfinite(out.left)&&std::isfinite(out.right));
+                assert(std::abs(out.left-out.right)<1.e-7f);
+                if(i>=7000){
+                    const double mid=.5*(out.left+out.right);
+                    energy+=mid*mid;
+                }
+            }
+            return energy;
+        };
+        const double bodyReference=centeredEnergy(rate,0,285,false);
+        const double bodyFull=centeredEnergy(rate,4,285,false);
+        const double noseReference=centeredEnergy(rate,0,2050,false);
+        const double noseFull=centeredEnergy(rate,4,2050,false);
+        const double harshReference=centeredEnergy(rate,0,3450,true);
+        const double harshControlled=centeredEnergy(rate,4,3450,true);
+        // Genuine center body improvement, not a 2k-only megaphone:
+        assert(bodyFull>bodyReference*1.20);
+        assert(noseFull<noseReference*1.32);
+        // Ear-side upper-mid attenuation survives the finish stage.
+        assert(harshControlled<harshReference*.99);
+        std::fprintf(stderr,
+            "VOCAL_TONE_GATE,rate=%d,body=%.4f,baseline=%.4f,2k=%.4f,2kBase=%.4f,edge=%.4f,edgeBase=%.4f,side3k=%.4f,sideBase=%.4f\\n",
+            rate,bodyFull,bodyReference,noseFull,noseReference,
+            harshControlled,harshReference,protectedEdge,baselineEdge);
 
         const auto base=render(rate,golden);
         // Baseline acoustic PCM hashes captured BEFORE any ImmerSIB

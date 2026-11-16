@@ -147,7 +147,7 @@
       "engine/builtin_fx/sonku/SonKuP95MusicalPresence.h": "ece40572b04d4b586a61c56cf1fd1f77c1f295e7",
       "engine/builtin_fx/sonku/SonKuP96DistanceReinforcement.h": "a32fb6e6fdd431901323d4278c51991607c02d84",
       "engine/builtin_fx/sonku/SonKuP97StageImpact.h": "5384fd3cc67c31f0a8038b315856d20933249b5b",
-      "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "cc769dade5a752e0f84f02348e07332bce7c268b",
+      "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "90bab191a62601021c4a7a77d64e0e4d408d3011",
       "engine/builtin_fx/sonku/SonKuEarlyReflections.h": "5a6a9b48cfdc60729f130c61110c8d8590b20f35",
       "engine/builtin_fx/sonku/SonKuSourcePlacement3D.h": "9afb959bed292626c3097c2a382208ce8798e90c"
     },
@@ -166,12 +166,26 @@
       "newDSPBlobSha1": {
         "engine/builtin_fx/sonku/SonKuSpatialCore.h": "7e7f7d5123c1fae5ed593f4252f84921832b0402",
         "engine/builtin_fx/sonku/SonKuEarlyReflections.h": "5a6a9b48cfdc60729f130c61110c8d8590b20f35",
-        "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "cc769dade5a752e0f84f02348e07332bce7c268b",
+        "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "90bab191a62601021c4a7a77d64e0e4d408d3011",
         "engine/builtin_fx/sonku/SonKuSourcePlacement3D.h": "9afb959bed292626c3097c2a382208ce8798e90c"
       },
       "legacyIMRS": "Old 4-10m restored scenes migrate source distance down to room-safe <=4m; no codec version or FX ID change",
       "physicalHeadphoneABRequired": true,
-      "sceneBalance": "44.1k nearfield PCM showed Symphonic 3.6m was <.85 archival Venue energy; retargeted to 2.7m, Cinema to 2.8m without gain-only inflation."
+      "sceneBalance": "44.1k nearfield PCM showed Symphonic 3.6m was <.85 archival Venue energy; retargeted to 2.7m, Cinema to 2.8m without gain-only inflation.",
+      "vocalBodyCorrection": {
+        "status": "audition_candidate_not_owner_approved",
+        "userEvidence": "Dua Lipa live concert playback: center vocal sounds thin, sharp, and unpleasant after previous 2.05kHz/5.2kHz voicing, despite PCM and Windows builds passing",
+        "diagnosis": "Stacked 1.9k/2.05k source+ear presence, high-air on side and early reflection, no independent center 285Hz body in ImmerSIB profiles 4/5",
+        "correctsProfiles": [
+          4,
+          5
+        ],
+        "chosenDSP": "pre-KEMAR world-center broad 285Hz body; suppress SIDE upper-mid 2.05k+3.45k; gentle linked-ear 3.45k fatigue notch after render; remove stacked >5.2k boost in profiles 4/5",
+        "constraints": "No actual vocal stem/AI extraction, no extra HRTF, no output loudness chase, no added latency, no tail/room change, no changes in frozen P9.7 Venue or SONK profiles 0..3",
+        "beforeVoicingGitBlob": "cc769dade5a752e0f84f02348e07332bce7c268b",
+        "afterVoicingGitBlob": "90bab191a62601021c4a7a77d64e0e4d408d3011",
+        "requiredChecks": "Native source & finished stereo tone spectral balance, 44.1/48k exact Venue PCM hash, antiphase, mono, IMRS7/SONK12 state roundtrip, JUCE Windows and portable EXE build, physical loudness-matched Dua Lipa concert FAT"
+      }
     }
   }
 }
