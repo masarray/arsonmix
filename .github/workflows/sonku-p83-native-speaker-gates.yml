@@ -21,7 +21,13 @@ concurrency:
   cancel-in-progress: true
 jobs:
   native-source:
-    name: Native C++ P8.3 source, PCM/stems/no-null and Music Bed invariants
+    # This is the intentionally REJECTED P8.3 historical acoustic candidate,
+    # not a generic SonKu, P9.1/P9.2 or ImerSip qualification check.
+    # Shared SonKu/CMake edits still trigger workflow discovery, but only
+    # explicit P8.3 research branches (or deliberate manual dispatch) run
+    # its original STRICT negative acoustic veto. Never weaken the test.
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.head_ref, 'p83') }}
+    name: P8.3-only historical acoustic veto — never P9 release gate
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

@@ -2,6 +2,8 @@
 
 **User reference:** 8D-SonKu P9.1–P9.2 is reported to sound external and alive on the user's real headphones. Do not replace its acoustic renderer with the older ImerSip P8.2/P8.4 bespoke dry-MID/room-enhancer path.
 
+**Canonical ownership and CI classification:** [SPATIAL_AUDIO_AUTHORITY.md](SPATIAL_AUDIO_AUTHORITY.md) and [machine-readable ledger](../config/spatial_audio_authority.json). The ImerSip factory scene is **not** the operator's louder/roomier #720 headphone-test scene.
+
 **Baseline:** PR #719 commit `763706a15a2617a10d23b5e2e43eb5689e454ccb`. This integration is a new research branch based on that exact PR, not a merge of divergent #706. Production `main` and both older PRs remain untouched.
 
 ## Design

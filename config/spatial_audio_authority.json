@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Research ownership/acceptance ledger. NOT audio runtime config, session state, or release approval.",
+  "selectedSonKuBaseline": {
+    "pr": 719,
+    "issue": 720,
+    "immutableCheckpointBranch": "checkpoint/sonku-p91-p92-operator-confirmed-20261116",
+    "immutableCheckpointSha": "763706a15a2617a10d23b5e2e43eb5689e454ccb",
+    "nativeRenderer": "SonKuSpatialCore",
+    "researchRenderMode": 9,
+    "modeNameInCode": "MusicSpatialP90",
+    "actualAudioFeatures": "P9.1 + P9.2: world-positioned stereo sources, P9 complementary LF world bass and bounded axial room modes",
+    "releaseQualified": false
+  },
+  "imersip": {
+    "activeIntegrationPr": 722,
+    "basePr": 719,
+    "catalogIdentity": "armix.builtin.imersip.v1",
+    "processor": "ImerSipP92Processor",
+    "nativeRenderer": "SonKuSpatialCore",
+    "settingsFormat": "IMRS",
+    "settingsVersion": 6,
+    "nestedSonKuVersion": 11,
+    "researchOnly": true,
+    "independentSpatialDsp": false,
+    "releaseQualified": false
+  },
+  "audioScenes": {
+    "imersipFactoryReference": {
+      "speakerSpreadDeg": 82,
+      "distanceMeters": 1.6,
+      "spacePreset": 3,
+      "earlyRoom": 0.78,
+      "lateRoom": 0.33,
+      "spatialMix": 1,
+      "outputTrimLinear": 1,
+      "moving": false
+    },
+    "operatorCheckpointObservation": {
+      "speakerSpreadDeg": 82,
+      "distanceMeters": 1.6,
+      "spacePreset": 3,
+      "earlyRoom": 1,
+      "lateRoom": 0.62,
+      "spatialMix": 1,
+      "outputGainDb": 7,
+      "revolutionSeconds": 8.5,
+      "notFactoryDefault": true,
+      "referenceIssue": 720
+    }
+  },
+  "nonAuthoritativeCandidates": [
+    {
+      "pr": 706,
+      "role": "Superseded ImerSip P8 DSP; archived for comparison and IMRS v1-v5 migration"
+    },
+    {
+      "pr": 718,
+      "role": "Divergent P9.1/P9.2 acoustic alternative; retained for scientific A/B, not selected renderer"
+    },
+    {
+      "pr": 717,
+      "role": "P9.0 ancestor; dependency of selected P9.1/P9.2 #719, not current owner-accepted version"
+    }
+  ],
+  "historicalP83": {
+    "workflow": ".github/workflows/sonku-p83-native-speaker-gates.yml",
+    "qualification": "REJECTED_LEGACY_NEGATIVE_ACOUSTIC_EVIDENCE",
+    "automaticExecution": "only pull request head refs containing p83",
+    "manualExecution": "workflow_dispatch",
+    "notP9OrImerSipReleaseGate": true,
+    "strictOriginalFidelityVetoRetained": true
+  },
+  "production": {
+    "mainMustRemainUnchanged": true,
+    "noAutomaticMerge": true,
+    "physicalHeadphoneAbStillRequired": true
+  }
+}

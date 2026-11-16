@@ -11,6 +11,9 @@ on:
       - 'src/Main.cpp'
       - 'src/NativeBuiltInFx.h'
       - 'tests/imersip_p92_*'
+      - 'config/spatial_audio_authority.json'
+      - 'docs/SPATIAL_AUDIO_AUTHORITY.md'
+      - '.github/workflows/sonku-p83-native-speaker-gates.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -30,7 +33,7 @@ jobs:
       - name: Source contract and no accidental shadow DSP
         run: |
           set -euo pipefail
-          python -m unittest discover -s tests -p 'imersip_p92_catalog_contract_test.py' -v
+          python -m unittest discover -s tests -p 'imersip_p92_*contract_test.py' -v
       - name: Exact P9.1+P9.2 native PCM foundation 44.1/48k
         run: |
           set -euo pipefail
