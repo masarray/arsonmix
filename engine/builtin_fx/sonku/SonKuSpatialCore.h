@@ -196,6 +196,15 @@ class SonKuSpatialCore final {
 public:
     static constexpr int taps=hrir::taps;
     static constexpr int updateInterval=16;
+#if defined(SONKU_IMMERSIB_PCM_DIAGNOSTICS) && SONKU_IMMERSIB_PCM_DIAGNOSTICS
+    // Test-build only. Read after offline rendering; never cross RT threads.
+    struct DynamicsTrace {
+        std::uint64_t samples=0,limitedSamples=0;
+        double limiterReductionSum=0.,makeupGainSum=0.;
+        float minimumLimiterGain=1.f,currentMakeup=1.f;
+    };
+    DynamicsTrace dynamicsTrace() const noexcept {return dynamicsTrace_;}
+#endif
     bool prepare(double rate, SonKuReflectionProfile profile=
                  SonKuReflectionProfile::Lightweight) noexcept {
         ready_=false;
@@ -305,6 +314,9 @@ public:
         sideBass_=0.f;
 #endif
         limiterGain_=1.f;
+#if defined(SONKU_IMMERSIB_PCM_DIAGNOSTICS) && SONKU_IMMERSIB_PCM_DIAGNOSTICS
+        dynamicsTrace_={};
+#endif
         write_=0;
         remaining_=0;
         degrees_=wrapDegrees(settings_.startAzimuthDegrees);
@@ -683,6 +695,12 @@ public:
 #else
         constexpr bool p90World=false;
 #endif
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+        const bool immersiveWarm=p90World && roomEnabled &&
+            settings_.spatialMix>0.f &&
+            (settings_.sceneVoicing==p98::SceneVoicing::ImmerSIBDetail ||
+             settings_.sceneVoicing==p98::SceneVoicing::ImmerSIBImpact);
+#endif
         // Deliberate music-monitor compensation: real distance perception
         // still comes from direct/reflected ratio and high-frequency cues,
         // while the direct field is not attenuated by the full physical 1/r.
@@ -876,9 +894,21 @@ public:
             if(positionedMode && !monoObject && p83MusicCompatibleLf_)
                 p83LowFrequency_.process(x0,x1,ears[0],ears[1]);
 #endif
+            // Tonal coherence: first images and late field share a modest
+            // portion of the source shaping that enters the KEMAR direct
+            // loudspeakers. Not a dry vocal stem or new reverb engine.
+            float earlyFeedL=x0,earlyFeedR=x1,lateFeedL=x0,lateFeedR=x1;
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+            if(immersiveWarm){
+                const float deltaL=history_[0][write_]-x0;
+                const float deltaR=history_[1][write_]-x1;
+                earlyFeedL+=.32f*deltaL;earlyFeedR+=.32f*deltaR;
+                lateFeedL+=.12f*deltaL;lateFeedR+=.12f*deltaR;
+            }
+#endif
             auto reflection=room_.active()
-                ?room_.process((p90World||transparentBass)?x0:(musicSafe?inputMid:x0),
-                    (p90World||transparentBass)?x1:(musicSafe?inputMid:x1),
+                ?room_.process((p90World||transparentBass)?earlyFeedL:(musicSafe?inputMid:x0),
+                    (p90World||transparentBass)?earlyFeedR:(musicSafe?inputMid:x1),
                     degrees_,(p90World||transparentBass)?settings_.stereoSpreadDegrees:
                         ((musicSafe||monoObject)?0.f:settings_.stereoSpreadDegrees)
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
@@ -894,8 +924,8 @@ public:
                     )
                 :SonKuEarlyReflections::Ears{};
             auto late=reverb_.active()
-                ?reverb_.process((p90World||transparentBass)?x0:(musicSafe?inputMid:x0),
-                    (p90World||transparentBass)?x1:(musicSafe?inputMid:x1))
+                ?reverb_.process((p90World||transparentBass)?lateFeedL:(musicSafe?inputMid:x0),
+                    (p90World||transparentBass)?lateFeedR:(musicSafe?inputMid:x1))
                 :SonKuMusicalReverb::Ears{};
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
             if(musicalBody && roomEnabled){
@@ -1090,7 +1120,19 @@ public:
                     // Single native PCM graph, no WebAudio or dynamic makeup
                     // at 0% spatial MIX. Explicit user GAIN still applies.
                     if(settings_.spatialMix>0.f){
-                        const float makeup=p95Presence_.process(x0,x1,outL,outR);
+                        // Positively trimmed wet ImmerSIB scenes need less
+                        // adaptive whole-mix lift; cap at +0.83dB, with the
+                        // existing 450ms slew. Other voicings stay bit-exact.
+                        const float makeup=p95Presence_.process(x0,x1,outL,outR,
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+                            immersiveWarm?1.10f:1.65f
+#else
+                            1.65f
+#endif
+                        );
+#if defined(SONKU_IMMERSIB_PCM_DIAGNOSTICS) && SONKU_IMMERSIB_PCM_DIAGNOSTICS
+                        dynamicsTrace_.currentMakeup=makeup;
+#endif
                         outL*=makeup;outR*=makeup;
                     }
                 }
@@ -1119,6 +1161,14 @@ public:
                 const float immediate=peak>0.98f?0.98f/peak:1.f;
                 limiterGain_=std::min(immediate,
                     std::min(1.f,limiterGain_+limiterRelease_));
+#if defined(SONKU_IMMERSIB_PCM_DIAGNOSTICS) && SONKU_IMMERSIB_PCM_DIAGNOSTICS
+                ++dynamicsTrace_.samples;
+                if(limiterGain_<.999f)++dynamicsTrace_.limitedSamples;
+                dynamicsTrace_.minimumLimiterGain=std::min(
+                    dynamicsTrace_.minimumLimiterGain,limiterGain_);
+                dynamicsTrace_.limiterReductionSum+=1.-limiterGain_;
+                dynamicsTrace_.makeupGainSum+=dynamicsTrace_.currentMakeup;
+#endif
                 left[i]=outL*limiterGain_;
                 right[i]=outR*limiterGain_;
             }
@@ -1398,6 +1448,9 @@ private:
 #endif
     float smoothedDistanceGain_=1.f,smoothedRoomLevel_=1.f;
     float smoothedBassShelf_=0.f,limiterGain_=1.f;
+#if defined(SONKU_IMMERSIB_PCM_DIAGNOSTICS) && SONKU_IMMERSIB_PCM_DIAGNOSTICS
+    DynamicsTrace dynamicsTrace_{};
+#endif
     float smoothedErPresence_=1.f,smoothedTailPresence_=1.f;
     std::array<float,2> earBass_{};
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
