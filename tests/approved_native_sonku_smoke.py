@@ -33,7 +33,7 @@ def last_action(page,name):
     assert actions, "Expected actual native action "+name
     return actions[-1]
 
-def accepted_snapshot(page,state,settings,applied=None,schema=2):
+def accepted_snapshot(page,state,settings,applied=None,schema=2,p95=False):
     read=last_action(page,"nativeSonKuSnapshot")
     payload={
         "requestId":read["requestId"],"status":"ACCEPTED","schemaVersion":schema,
@@ -48,6 +48,9 @@ def accepted_snapshot(page,state,settings,applied=None,schema=2):
             p86HorizontalFocus=True,p87MusicalAirBody=True,
             p88PerceptualAlignment=True,p89StereoRoomDepth=True,
             p90TrueExternalSpeaker=True,p91p92MusicBassFoundation=True)
+    if p95:
+        assert schema==11
+        payload.update(p94FrontBackDepthCue=True,p95CinematicVenues=True)
     if applied:payload["appliedRequestId"]=applied
     emit(page,"arMixBuiltinSonKuSnapshot",payload)
 
@@ -581,6 +584,63 @@ def exercise(browser,out,width,height):
     page.wait_for_function("""()=>
       document.getElementById('skPower')?.dataset.fxState==='rack-off'""")
     assert editor.locator("#skPower").is_disabled()
+    # Latest native capability makes old experimental renderer modes
+    # invisible, not merely renamed. Old schema and saved .smix remain valid.
+    state["graph"]["channels"][0]["fxRackBypassed"]=False
+    state["graph"]["channels"][0]["inserts"][0]["bypassed"]=False
+    emit(page,"arMixConsoleSnapshot",state)
+    accepted_snapshot(page,state,proposed,schema=11,p95=True)
+    page.wait_for_function("""()=>
+      document.querySelector('#mxNativeSonKu')?.dataset.acoustics==='venue'""")
+    assert editor.locator("#skRenderMode").is_hidden()
+    assert editor.locator(".sk-render-label").is_hidden()
+    for n in (1,2,3):
+        assert editor.locator(f'[data-sk-room="{n}"]').is_hidden()
+    for n in (4,5,6,7):
+        assert editor.locator(f'[data-sk-room="{n}"]').is_visible()
+    before=command_count()
+    factory.select_option("arena")
+    assert command_count()==before+1
+    a=last_action(page,"nativeSonKuSet")
+    assert a["settings"]["renderMode"]==9
+    assert a["settings"]["spacePreset"]==7
+    assert a["settings"]["sourceDistanceMeters"]==10
+    assert abs(a["settings"]["outputTrim"]-2.238721)<.00001
+    assert a["settings"]["roomAmount"]==1
+    emit(page,"arMixBuiltinSonKuAck",{
+        "requestId":a["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,a["settings"],applied=a["requestId"],schema=11,p95=True)
+    assert factory.input_value()=="arena"
+    before=command_count()
+    factory.select_option("orbit")
+    assert command_count()==before+1
+    a=last_action(page,"nativeSonKuSet")
+    assert a["settings"]["moving"] is True and a["settings"]["renderMode"]==9
+    emit(page,"arMixBuiltinSonKuAck",{
+        "requestId":a["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,a["settings"],applied=a["requestId"],schema=11,p95=True)
+    page.wait_for_timeout(180)
+    # Regression from operator g766b8d72: when native FX bypasses, native
+    # phase freezes. The UI must freeze at its last position, not fight the
+    # stale observed phase every rAF and visibly flicker sideways.
+    state["graph"]["channels"][0]["inserts"][0]["bypassed"]=True
+    emit(page,"arMixConsoleSnapshot",state)
+    page.wait_for_function("""()=>
+      document.getElementById('skPower')?.dataset.fxState==='off'""")
+    page.wait_for_timeout(40)
+    stationary=editor.locator("#skMap .sk-src").evaluate_all(
+        "nodes=>nodes.map(n=>n.getAttribute('transform'))")
+    page.wait_for_timeout(260)
+    assert stationary==editor.locator("#skMap .sk-src").evaluate_all(
+        "nodes=>nodes.map(n=>n.getAttribute('transform'))"),"OFF orbit must freeze"
+    state["graph"]["channels"][0]["inserts"][0]["bypassed"]=False
+    emit(page,"arMixConsoleSnapshot",state)
+    page.wait_for_function("""()=>
+      document.getElementById('skPower')?.dataset.fxState==='on'""")
+    page.wait_for_timeout(200)
+    resumed=editor.locator("#skMap .sk-src").evaluate_all(
+        "nodes=>nodes.map(n=>n.getAttribute('transform'))")
+    assert resumed!=stationary,"Orbit did not resume after accepted FX ON"
     bounds=editor.bounding_box()
     assert bounds and bounds["width"]>260 and bounds["width"]<width+2
     # All listener and rendering JS exceptions remain fatal.
