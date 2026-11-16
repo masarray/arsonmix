@@ -60,6 +60,23 @@ static Result render(int rate,const Settings& s,bool phaseReverse=false){
         }
     }
     assert(result.power>1.e-4 && result.side>1.e-7);
+#if defined(SONKU_IMMERSIB_PCM_DIAGNOSTICS) && SONKU_IMMERSIB_PCM_DIAGNOSTICS
+    const auto diag=dsp->dynamicsTrace();
+    assert(diag.samples==n && diag.limitedSamples<=diag.samples);
+    assert(diag.minimumLimiterGain>0.f && diag.minimumLimiterGain<=1.f);
+    assert(diag.makeupGainSum>=double(diag.samples));
+    if(s.sourceDistanceMeters==1.f && s.stereoSpreadDegrees==147.f &&
+       s.sceneVoicing==4) {
+        const double meanMakeup=diag.makeupGainSum/diag.samples;
+        const double limitedPct=100.*diag.limitedSamples/diag.samples;
+        std::fprintf(stderr,
+            "IMMERSIB_DYNAMICS,rate=%d,makeup=%.5f,limited=%.2f%%,minLimiter=%.5f,meanReduction=%.5f\\n",
+            rate,meanMakeup,limitedPct,double(diag.minimumLimiterGain),
+            diag.limiterReductionSum/diag.samples);
+        // Real PCM adaptive makeup bound, NOT a claim of perceptual no-pumping.
+        assert(meanMakeup>=1. && meanMakeup<=1.101);
+    }
+#endif
     return result;
 }
 // Whole-engine tone transfer, including HRTF/world reflections, P9.7
@@ -139,6 +156,19 @@ int main(){
     assert(armix::sonku::p98::SceneVoicing::valid(4));
     assert(armix::sonku::p98::SceneVoicing::valid(5));
     assert(!armix::sonku::p98::SceneVoicing::valid(6));
+    // Drive the upstream compensation detector into a low-output state.
+    // The ImmerSIB cap must reduce modulation range, while the legacy cap
+    // remains available for the immutable Venue and other native voicings.
+    for(int sr:{44100,48000}) {
+        armix::sonku::p95::MusicalPresence bounded,legacy;
+        assert(bounded.prepare(sr) && legacy.prepare(sr));
+        for(int i=0;i<sr*2;++i) {
+            (void)bounded.process(.25f,.25f,.012f,.012f,1.10f);
+            (void)legacy.process(.25f,.25f,.012f,.012f);
+        }
+        assert(bounded.gain()>=1.f && bounded.gain()<=1.1001f);
+        assert(legacy.gain()>1.20f && legacy.gain()<=1.6501f);
+    }
     // Product scene classification: preserve original Venue golden; new
     // detail and impact voicings must NEVER silently affect its PCM.
     constexpr int expectedProfiles[]{4,4,5,4,4,3,4};
