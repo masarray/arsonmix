@@ -963,7 +963,8 @@ if(BUILD_TESTING)
                             get_target_property(IMMERSIB_NATIVE_P98_DEFINES
                               ARMixImerSipP92NativeTests COMPILE_DEFINITIONS)
                             target_compile_definitions(ARMixImmerSIBP98NativeSonicGate
-                              PRIVATE ${IMMERSIB_NATIVE_P98_DEFINES})
+                              PRIVATE ${IMMERSIB_NATIVE_P98_DEFINES}
+                              SONKU_IMMERSIB_PCM_DIAGNOSTICS=1)
                             add_test(NAME NativeImmerSIBP98VenueGoldenAndScenePreservation
                               COMMAND ARMixImmerSIBP98NativeSonicGate)
                           endif()
