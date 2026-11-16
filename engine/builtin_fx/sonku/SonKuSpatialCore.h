@@ -775,7 +775,7 @@ public:
 #endif
 #endif
 #if defined(SONKU_P97_STAGE_IMPACT_RESEARCH) && SONKU_P97_STAGE_IMPACT_RESEARCH
-            if(p90World){
+            if(p90World && settings_.spatialMix>0.f){
                 // Center material is reinforced ONLY before the existing
                 // world-speaker HRIR; room, P92 LF, and decoder observe
                 // the original stereo. No center headphone dry injection.
@@ -959,7 +959,7 @@ public:
                 }
 #endif
 #if defined(SONKU_P97_STAGE_IMPACT_RESEARCH) && SONKU_P97_STAGE_IMPACT_RESEARCH
-                if(p90World){
+                if(p90World && settings_.spatialMix>0.f){
                     // Spectral stage changes remain tied to the HRTF and
                     // the existing 6-wall first-image / P92 modal fields.
                     // Identical stereo-ear coefficients do not pan/delay
