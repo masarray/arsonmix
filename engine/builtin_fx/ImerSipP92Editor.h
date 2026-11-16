@@ -118,13 +118,10 @@ public:
     }
     void paint(juce::Graphics& g) override {
         g.fillAll(juce::Colour(0xff0e151a));
-        // First-party scalable art: source image already has full viewport
-        // coordinates; no resampling from 256x144 or tile/sprite bleeding.
+        // The final full-resolution RGBA files are the exact same scene
+        // layers used by composition proof. Images decode once in VisualSkin.
         skin_.drawRoom(g);
-        // Quiet brand/header rail: prevent white text blending into the
-        // pale generated ceiling. Independent from visual PA sprites.
-        g.setColour(juce::Colour(0xBB0B1419));
-        g.fillRect(0,0,1100,73);
+        skin_.drawHeader(g);
         // Subtle overlay keeps the background quiet behind the L/R PA.
         g.setGradientFill(juce::ColourGradient(
             juce::Colour(0x77060d11),0.f,0.f,
@@ -156,12 +153,9 @@ public:
         g.drawText("L  /  WORLD PA",80,413,260,18,juce::Justification::centred);
         g.drawText("R  /  WORLD PA",766,413,260,18,juce::Justification::centred);
 
-        // Image-backed three-section control desk: presets / scene / master.
+        // Brushed metal PNG is the actual desk surface, not a placeholder.
+        // All labels and live values remain native JUCE text and controls.
         skin_.drawPanel(g);
-        // Real metal PNG stays underneath, but darker material contrast
-        // keeps compact labels and 7 draggable tracks readable.
-        g.setColour(juce::Colour(0xA60A1114));
-        g.fillRect(0,461,1100,219);
         g.setColour(juce::Colour(0xff54797b));
         g.fillRect(0,461,1100,1);
         g.setColour(juce::Colour(0xc600090c));
