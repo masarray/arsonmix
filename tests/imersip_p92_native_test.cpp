@@ -7,6 +7,7 @@
 #endif
 #include "../engine/builtin_fx/ImerSipP92Processor.h"
 #include <cassert>
+#include <limits>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -196,6 +197,18 @@ int main() {
     std::unique_ptr<juce::AudioProcessorEditor> editor(editorFx->createEditor());
     assert(editor && editor->findChildWithID("imersip.preset"));
     assert(editor->getWidth()==1100 && editor->getHeight()==680);
+    auto* visualEditor=dynamic_cast<armix::builtin_fx::ImerSipP92Editor*>(editor.get());
+    assert(visualEditor && visualEditor->areVisualAssetsReady());
+    for(const float stageAngle:{30.f,50.f,150.f,180.f}){
+        for(const float metres:{1.6f,2.2f,5.f,7.4f}){
+            const auto b=armix::builtin_fx::imersipP92ConcertBoxes(stageAngle,metres);
+            assert(b.safe());
+            assert(b.leftArray.getRight()<b.rightArray.getX());
+            assert(b.leftSub.getRight()<b.rightSub.getX());
+        }
+    }
+    assert(armix::builtin_fx::imersipP92ConcertBoxes(
+        std::numeric_limits<float>::quiet_NaN(),-999.f).safe());
     auto visual=editor->createComponentSnapshot(editor->getLocalBounds());
     assert(visual.isValid() && visual.getWidth()==1100 &&
            visual.getHeight()==680);

@@ -9,91 +9,9 @@
 #include <cmath>
 #include <functional>
 #include <utility>
+#include "ImerSipP92VisualSkin.h"
 
 namespace armix::builtin_fx {
-
-class ImerSipP92VisualSkin final : public juce::LookAndFeel_V4 {
-public:
-    ImerSipP92VisualSkin() {
-        // Embedded PNG resource makes native Windows ZIP independent of
-        // working directory. A matching x3 artist atlas can supersede it.
-        atlas_=juce::ImageCache::getFromMemory(
-            BinaryData::imersip_p92_skin_atlas_png,
-            BinaryData::imersip_p92_skin_atlas_pngSize);
-        const auto exe=juce::File::getSpecialLocation(
-            juce::File::currentExecutableFile);
-        const auto artist=exe.getParentDirectory().getChildFile(
-            "ImerSipAssets").getChildFile("imersip_skin_atlas_hires.png");
-        if(artist.existsAsFile()) {
-            if(const auto img=juce::ImageFileFormat::loadFrom(artist);
-               img.isValid() && img.getWidth()==768 && img.getHeight()==960)
-                atlas_=img;
-        }
-        setColour(juce::ComboBox::backgroundColourId,juce::Colour(0xff13272c));
-        setColour(juce::ComboBox::textColourId,juce::Colour(0xffdce8e9));
-        setColour(juce::ComboBox::outlineColourId,juce::Colour(0xff4b6b71));
-        setColour(juce::ComboBox::arrowColourId,juce::Colour(0xff55dad0));
-        setColour(juce::PopupMenu::backgroundColourId,juce::Colour(0xff17242a));
-        setColour(juce::PopupMenu::textColourId,juce::Colour(0xffe0edee));
-        setColour(juce::PopupMenu::highlightedBackgroundColourId,
-                  juce::Colour(0xff225d65));
-        setColour(juce::TextButton::buttonColourId,juce::Colour(0xff23343b));
-        setColour(juce::TextButton::buttonOnColourId,juce::Colour(0xff067b78));
-        setColour(juce::TextButton::textColourOffId,juce::Colour(0xffeef3f3));
-    }
-    bool hasAtlas() const noexcept {return atlas_.isValid();}
-    juce::Image sprite(int x,int y,int w,int h) const {
-        if(!hasAtlas())return {};
-        const int scale=atlas_.getWidth()/256;
-        return atlas_.getClippedImage({x*scale,y*scale,w*scale,h*scale});
-    }
-    void drawSprite(juce::Graphics& g,juce::Rectangle<float> dest,
-                    int x,int y,int w,int h) const {
-        const auto image=sprite(x,y,w,h);
-        if(image.isValid())
-            g.drawImage(image,dest,juce::RectanglePlacement::stretchToFit);
-    }
-    void drawLinearSlider(juce::Graphics& g,int x,int y,int width,int height,
-                          float sliderPos,float, float,
-                          const juce::Slider::SliderStyle style,
-                          juce::Slider& slider) override {
-        if(style!=juce::Slider::LinearHorizontal) {
-            LookAndFeel_V4::drawLinearSlider(g,x,y,width,height,
-                sliderPos,0.f,0.f,style,slider);
-            return;
-        }
-        const float left=float(x+7),right=float(x+width-7);
-        const float yy=float(y+height)*.5f;
-        drawSprite(g,{left,yy-7.f,right-left,14.f},118,270,123,11);
-        g.setColour(juce::Colour(0xff37cbbd));
-        g.fillRoundedRectangle(left,yy-2.1f,
-            std::max(0.f,std::clamp(sliderPos,left,right)-left),4.2f,2.1f);
-        drawSprite(g,{std::clamp(sliderPos,left,right)-9.f,yy-10.f,18.f,20.f},
-                   117,295,18,19);
-        g.setColour(slider.isMouseOverOrDragging()?
-            juce::Colour(0xffbffff4):juce::Colour(0xff78dbd0));
-        g.drawEllipse(std::clamp(sliderPos,left,right)-4.0f,yy-4.f,8.f,8.f,1.f);
-    }
-    void drawRotarySlider(juce::Graphics& g,int x,int y,int width,int height,
-                          float sliderPosProportional,float rotaryStartAngle,
-                          float rotaryEndAngle,juce::Slider&) override {
-        const float size=float(std::min(width,height)-6);
-        const float cx=float(x)+float(width)*.5f;
-        const float cy=float(y)+float(height)*.5f;
-        const float xx=cx-size*.5f,yy=cy-size*.5f;
-        drawSprite(g,{xx,yy,size,size},196,206,50,47);
-        const float angle=rotaryStartAngle+
-            std::clamp(sliderPosProportional,0.f,1.f)*
-            (rotaryEndAngle-rotaryStartAngle);
-        g.setColour(juce::Colour(0xfff3f6ff));
-        g.drawLine(cx+std::sin(angle)*size*.18f,
-                   cy-std::cos(angle)*size*.18f,
-                   cx+std::sin(angle)*size*.36f,
-                   cy-std::cos(angle)*size*.36f,2.f);
-    }
-private:
-    juce::Image atlas_;
-};
 
 class ImerSipP92Editor final : public juce::AudioProcessorEditor,
                               private juce::Timer {
@@ -189,6 +107,7 @@ public:
         power_.setLookAndFeel(nullptr);
         close_.setLookAndFeel(nullptr);
     }
+    bool areVisualAssetsReady() const noexcept {return skin_.ready();}
     void bindHostPower(std::function<bool(bool)> request,
                        std::function<bool()> readback) {
         requestBypass_=std::move(request);
@@ -199,8 +118,9 @@ public:
     }
     void paint(juce::Graphics& g) override {
         g.fillAll(juce::Colour(0xff0e151a));
-        // Artist PNG is real source-derived, not a fabricated 3D DOM.
-        skin_.drawSprite(g,{0.f,0.f,1100.f,461.f},0,0,256,144);
+        // First-party scalable art: source image already has full viewport
+        // coordinates; no resampling from 256x144 or tile/sprite bleeding.
+        skin_.drawRoom(g);
         // Quiet brand/header rail: prevent white text blending into the
         // pale generated ceiling. Independent from visual PA sprites.
         g.setColour(juce::Colour(0xBB0B1419));
@@ -225,27 +145,19 @@ public:
 
         // The visualization follows real stage spread and distance control.
         // It does NOT claim to be a calibrated 9.1.6 loudspeaker simulation.
-        const float stage=float(knobs_[0].getValue());
-        const float distance=float(knobs_[1].getValue());
-        const float span=juce::jmap(stage,30.f,180.f,150.f,392.f);
-        const float size=juce::jmap(distance,1.6f,7.4f,106.f,59.f);
-        const float top=juce::jmap(distance,1.6f,7.4f,132.f,185.f);
-        const float lx=550.f-span,rx=550.f+span;
-        drawPa(g,lx,top,size,true);
-        drawPa(g,rx,top,size,false);
-        // Front-fill and subwoofer visual layers are independent assets.
-        const float subY=334.f+juce::jmap(distance,1.6f,7.4f,0.f,27.f);
-        skin_.drawSprite(g,{lx-53.f,subY,106.f,87.f},41,206,49,50);
-        skin_.drawSprite(g,{rx-53.f,subY,106.f,87.f},41,206,49,50);
-        skin_.drawSprite(g,{435.f,278.f,54.f,88.f},95,206,39,60);
-        skin_.drawSprite(g,{612.f,278.f,54.f,88.f},95,206,39,60);
+        const auto concert=imersipP92ConcertBoxes(
+            static_cast<float>(knobs_[0].getValue()),
+            static_cast<float>(knobs_[1].getValue()));
+        // Safe layout remains wholly within room for 30..180 degrees,
+        // 1.6..7.4m; never crop the artist geometry or cover the controls.
+        if(concert.safe())skin_.drawConcert(g,concert);
         g.setColour(juce::Colour(0xff88d6d2));
         g.setFont(juce::FontOptions(11.f));
         g.drawText("L  /  WORLD PA",80,413,260,18,juce::Justification::centred);
         g.drawText("R  /  WORLD PA",766,413,260,18,juce::Justification::centred);
 
         // Image-backed three-section control desk: presets / scene / master.
-        skin_.drawSprite(g,{0.f,461.f,1100.f,219.f},0,145,256,58);
+        skin_.drawPanel(g);
         // Real metal PNG stays underneath, but darker material contrast
         // keeps compact labels and 7 draggable tracks readable.
         g.setColour(juce::Colour(0xA60A1114));
@@ -302,26 +214,6 @@ public:
         close_.setBounds(1000,646,80,29);
     }
 private:
-    void drawPa(juce::Graphics& g,float x,float y,float width,bool left){
-        const float w=width,h=width*1.8f;
-        // Exact same artist PNG, geometrically mirrored for the R array.
-        // Mirror only the visual; never swap or invert any actual PCM phase.
-        const auto target=juce::Rectangle<float>(x-w*.5f,y,w,h);
-        if(left)skin_.drawSprite(g,target,0,206,39,73);
-        else {
-            const auto img=skin_.sprite(0,206,39,73);
-            if(img.isValid()) {
-                juce::Graphics::ScopedSaveState state(g);
-                g.addTransform(juce::AffineTransform::scale(-1.f,1.f)
-                    .translated(target.getX()+target.getRight(),0.f));
-                g.drawImage(img,target,juce::RectanglePlacement::stretchToFit);
-            }
-        }
-        // A single trim marker grounds lateral positions without UI jitter.
-        g.setColour(juce::Colour(0x9969b9b9));
-        g.drawHorizontalLine(int(y+h+5.f),
-            x-w*.35f,x+w*.35f);
-    }
     armix::sonku::Settings readControls() const {
         auto s=fx_.acceptedSettings();
         s.renderMode=9;s.moving=false;s.startAzimuthDegrees=0.f;
