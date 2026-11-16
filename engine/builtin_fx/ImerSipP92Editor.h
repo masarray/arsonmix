@@ -211,7 +211,7 @@ public:
             place(slider,x+134,y,114,25);
         }
         place(labels_[5],938,484,128,22);
-        place(knobs_[5],947,511,106,102);
+        place(knobs_[5],951,510,98,94);
         // Host actions in the header; panel only contains audio controls.
         place(power_,939,17,74,34);
         place(close_,1019,17,61,34);
