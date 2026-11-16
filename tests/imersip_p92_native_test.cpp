@@ -343,7 +343,11 @@ int main() {
     assert(power && !power->isEnabled());
     auto* selector=dynamic_cast<juce::ComboBox*>(
         editor->findChildWithID("imersip.preset"));
-    assert(selector&&selector->getNumItems()==7); // Custom + six strong scenes
+    #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+    assert(selector&&selector->getNumItems()==8); // Custom + seven scenes
+#else
+    assert(selector&&selector->getNumItems()==7); // Historical P9.2
+#endif
     assert(selector->getSelectedId()==2);
     for(int i=0;i<selector->getNumItems();++i){
         const auto name=selector->getItemText(i);
@@ -361,7 +365,11 @@ int main() {
     assert(distanceSlider->getMaximum()==4.0);
     assert(earlySlider->getMaximum()==180.0);
 #endif
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+    assert(armix::builtin_fx::imersipP92PresetById(8)!=nullptr);
+#else
     assert(armix::builtin_fx::imersipP92PresetById(8)==nullptr);
+#endif
     // Front Row Power must be a real applied audio edit, not UI illusion.
     selector->setSelectedId(5,juce::sendNotificationSync);
     juce::MidiBuffer editMidi;
@@ -395,6 +403,33 @@ int main() {
     assert(std::abs(editorFx->acceptedSettings().ambience-.97f)<.001f);
     assert(std::abs(editorFx->acceptedSettings().outputTrim-
         armix::builtin_fx::imersipP92DbToLinear(5.2f))<.001f);
+#endif
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+    // The owner screenshot must be a real native applied preset and survive IMRS.
+    selector->setSelectedId(8,juce::sendNotificationSync);
+    editPcm.clear();
+    editorFx->processBlock(editPcm,editMidi);
+    armix::builtin_fx::SonKuSpatialProcessor::Completion userScene{};
+    assert(editorFx->pollCompletion(userScene)&&userScene.applied);
+    const auto screenshot=editorFx->acceptedSettings();
+    assert(screenshot.spacePreset==3);
+    assert(screenshot.stereoSpreadDegrees==147.f);
+    assert(screenshot.sourceDistanceMeters==1.f);
+    assert(screenshot.roomAmount==1.8f);
+    assert(screenshot.ambience==.60f && screenshot.spatialMix==1.f);
+    assert(screenshot.hrtfElevationTrimDegrees==0.f && screenshot.headYawDegrees==0.f);
+    assert(screenshot.sceneVoicing==4);
+    assert(std::abs(screenshot.outputTrim-
+        armix::builtin_fx::imersipP92DbToLinear(2.5f))<.001f);
+    juce::MemoryBlock ownerState;
+    editorFx->getStateInformation(ownerState);
+    auto ownerRestored=std::make_unique<ImerSipP92Processor>();
+    ownerRestored->prepareToPlay(48000.,128);
+    assert(ownerRestored->restoreUnpublishedState(
+        ownerState.getData(),static_cast<int>(ownerState.getSize())));
+    assert(ownerRestored->acceptedSettings().stereoSpreadDegrees==147.f);
+    assert(ownerRestored->acceptedSettings().roomAmount==1.8f);
+    ownerRestored->releaseResources();
 #endif
     auto* actualEditor=dynamic_cast<armix::builtin_fx::ImerSipP92Editor*>(
         editor.get());
