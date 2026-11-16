@@ -62,6 +62,21 @@ public:
         g.drawImageWithin(*art,0,0,1100,461,
                           juce::RectanglePlacement::centred);
     }
+    void drawBypassedVenueOverlay(juce::Graphics& g) const {
+        // Parent paint only: preserve the live JPEG/PNG scene and avoid
+        // costly bitmap manipulation, blur, animation or image decoding.
+        // Dim the approved venue, then apply a clean translucent amber
+        // status in the photographic area (not on top of native controls).
+        g.setColour(juce::Colour(0x79000000));
+        g.fillRect(0,0,1100,461);
+        const auto label=juce::Rectangle<int>(170,178,760,94);
+        g.setFont(juce::FontOptions(40.f));
+        g.setColour(juce::Colour(0x92060b12));
+        g.drawText("BYPASSED",label.translated(0,3),
+                   juce::Justification::centred,false);
+        g.setColour(juce::Colour(0xe3ffa437));
+        g.drawText("BYPASSED",label,juce::Justification::centred,false);
+    }
     void drawPanel(juce::Graphics& g) const {
         // Premium restraint: one exact flat matte charcoal surface,
         // no image texture, gloss, neon edges, bolts, segment borders,
