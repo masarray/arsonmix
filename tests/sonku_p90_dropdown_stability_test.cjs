@@ -7,7 +7,7 @@ const assert=require("node:assert/strict");
 const fs=require("node:fs");
 const vm=require("node:vm");
 const source=fs.readFileSync("site/preview-v2/assets/mixer-native-sonku.js","utf8");
-const start=source.indexOf('  if(p90Capable && picker.dataset.nativeModeSet!==(p94Capable?"p94":p91p92Capable?"p91p92":"p90")){');
+const start=source.indexOf('  if(p90Capable && picker.dataset.nativeModeSet!=="latest"){');
 const end=source.indexOf("  const v=p90Capable?",start);
 assert(start!==-1&&end>start,"Locate actual native SonKu mode menu reconciliation");
 const actualReconcile=source.slice(start,end);
@@ -24,6 +24,7 @@ const syncSelection=vm.runInNewContext(
 );
 const optionWrites=[];
 const picker={dataset:{},isOpen:false,_markup:"",_value:"music",
+  querySelector(){return null;},add(){},
   get innerHTML(){return this._markup;},
   set innerHTML(markup){
     assert.equal(this.isOpen,false,
@@ -49,10 +50,10 @@ const full={p90Capable:true,p91p92Capable:true,p94Capable:false,p89Capable:true,
   p87Capable:true,p86Capable:true,p85Capable:true,p84Capable:true,
   p83Capable:false};
 renderMenu(picker,root,full);
-assert.equal(picker.dataset.nativeModeSet,"p91p92");
+assert.equal(picker.dataset.nativeModeSet,"latest");
 assert.match(picker.innerHTML,/value="external"/);
-assert.match(picker.innerHTML,/P9\.1 \+ P9\.2 · MUSIC \/ BASS/);
-assert.match(label.textContent,/P9\.1 \+ P9\.2 FAT/);
+assert.match(picker.innerHTML,/LATEST · IMMERSIVE SPATIAL/);
+assert.match(label.textContent,/SPATIAL ENGINE/);
 syncSelection(picker,"external");
 assert.equal(picker.value,"external");
 const writesAfterChoice=picker.valueWrites;
@@ -73,11 +74,11 @@ assert.match(picker.innerHTML,/value="external"/);
 // Exactly one rebuild on a REAL capability change is allowed with popup closed.
 const p90Only={...full,p91p92Capable:false};
 renderMenu(picker,root,p90Only);
-assert.equal(picker.dataset.nativeModeSet,"p90");
-assert.equal(optionWrites.length,2);
-assert.match(picker.innerHTML,/P9\.0 · TRUE EXTERNAL/);
+assert.equal(picker.dataset.nativeModeSet,"latest");
+assert.equal(optionWrites.length,1);
+assert.match(picker.innerHTML,/LATEST · IMMERSIVE SPATIAL/);
 assert.doesNotMatch(picker.innerHTML,/P9\.1 \+ P9\.2/);
-assert.match(label.textContent,/P9\.0 HEADPHONE FAT/);
+assert.match(label.textContent,/SPATIAL ENGINE/);
 picker.isOpen=true;
 for(let i=0;i<12;++i)renderMenu(picker,root,p90Only);
 picker.isOpen=false;
@@ -85,17 +86,17 @@ assert.equal(optionWrites.length,2);
 const p89={...p90Only,p90Capable:false};
 renderMenu(picker,root,p89);
 assert.equal(picker.dataset.nativeModeSet,"p89");
-assert.equal(optionWrites.length,3);
+assert.equal(optionWrites.length,2);
 assert.doesNotMatch(picker.innerHTML,/value="external"/);
 for(let i=0;i<12;++i)renderMenu(picker,root,p89);
 assert.equal(optionWrites.length,3);
 const p88={...p89,p89Capable:false};
 renderMenu(picker,root,p88);
 assert.equal(picker.dataset.nativeModeSet,"p88");
-assert.equal(optionWrites.length,4);
+assert.equal(optionWrites.length,3);
 renderMenu(picker,root,full);
-assert.equal(picker.dataset.nativeModeSet,"p91p92");
-assert.equal(optionWrites.length,5);
+assert.equal(picker.dataset.nativeModeSet,"latest");
+assert.equal(optionWrites.length,4);
 // Native capability is authoritative; a UI-only version string is insufficient.
 const nativeSource=fs.readFileSync("src/Main.cpp","utf8");
 assert.match(nativeSource,/reply->setProperty\("p91p92MusicBassFoundation",true\)/);
@@ -106,10 +107,10 @@ assert.match(nativeSource,/reply->setProperty\("p94FrontBackDepthCue",true\)/);
 assert.match(source,/p94Capable=p91p92Capable && r\.p94FrontBackDepthCue===true;/);
 const p94={...full,p94Capable:true};
 renderMenu(picker,root,p94);
-assert.equal(picker.dataset.nativeModeSet,"p94");
-assert.equal(optionWrites.length,6);
-assert.match(picker.innerHTML,/P9\.4 · FRONT\/REAR DEPTH/);
-assert.match(label.textContent,/P9\.4 EXPERIMENT/);
+assert.equal(picker.dataset.nativeModeSet,"latest");
+assert.equal(optionWrites.length,4);
+assert.match(picker.innerHTML,/LATEST · IMMERSIVE SPATIAL/);
+assert.match(label.textContent,/SPATIAL ENGINE/);
 // The real render() immediately sets the accepted native mode after rebuilding.
 syncSelection(picker,"external");
 picker.isOpen=true;
@@ -118,6 +119,6 @@ picker.isOpen=false;
 assert.equal(optionWrites.length,6,"P9.4 must not flicker in native readback");
 renderMenu(picker,root,full);
 assert.equal(picker.dataset.nativeModeSet,"p91p92");
-assert.equal(optionWrites.length,7);
+assert.equal(optionWrites.length,4);
 assert.doesNotMatch(picker.innerHTML,/P9\.4/);
-console.log("PASS P91P92 dropdown: native capability-gated milestone, stable 40 readbacks, P9.0 fallback, correct one-time transitions");
+console.log("PASS P95 latest-only dropdown: native capability-gated milestone, stable 40 readbacks, P9.0 fallback, correct one-time transitions");
