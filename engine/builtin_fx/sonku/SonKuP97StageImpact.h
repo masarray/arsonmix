@@ -24,13 +24,15 @@ public:
         punchCoeff_=bandpass(sampleRate,85.,.85);
         subAlpha_=static_cast<float>(1.-std::exp(-2.*pi*62./sampleRate));
         airAlpha_=static_cast<float>(1.-std::exp(-2.*pi*4500./sampleRate));
+        finalLowAlpha_=static_cast<float>(1.-std::exp(-2.*pi*135./sampleRate));
         slew_=static_cast<float>(1.-std::exp(-1./(sampleRate*.045)));
         reset();
         return true;
     }
     void reset() noexcept {
         vocal_={};vocalSecond_={};vocalDirect_={};
-        punch_={};sub_={};earlyAir_={};directAir_={};stage_=0.f;
+        punch_={};sub_={};earlyAir_={};directAir_={};
+        finishLow_={};finishWide_={};stage_=0.f;
     }
     bool active() const noexcept {return stage_!=0.f;}
     float strength() const noexcept {return stage_;}
@@ -80,6 +82,24 @@ public:
         }
         return {result[0],result[1]};
     }
+    Stereo finish(float left,float right) noexcept {
+        // P9.5 upward-only RMS makeup is sensitive to increased broadband
+        // level: direct/stem boosts can make it reduce its earlier makeup,
+        // unintentionally darkening cymbals. Only AFTER its detector, but
+        // BEFORE the existing linked peak guard, restore modest LF/HF
+        // spectral energy to the already-externalized stereo EAR waveform.
+        // Shared coefficients; no crossfeed, HRTF replacement, or new delay.
+        const std::array<float,2> x{left,right};
+        std::array<float,2> result{};
+        for(int c=0;c<2;++c){
+            finishLow_[c]+=finalLowAlpha_*(x[c]-finishLow_[c]);
+            finishWide_[c]+=airAlpha_*(x[c]-finishWide_[c]);
+            result[c]=stage_==0.f?x[c]:
+                x[c]+stage_*(.080f*finishLow_[c]+
+                             .27f*(x[c]-finishWide_[c]));
+        }
+        return {result[0],result[1]};
+    }
     Stereo modal(float left,float right) const noexcept {
         if(stage_==0.f)return {left,right};
         // Small damped room mode reinforcement, no feedback alteration.
@@ -111,7 +131,7 @@ private:
     Filter vocal_{},vocalSecond_{};
     std::array<Filter,2> punch_{};
     std::array<std::array<Filter,2>,2> vocalDirect_{};
-    std::array<float,2> sub_{},earlyAir_{},directAir_{};
-    float subAlpha_=0.f,airAlpha_=0.f,slew_=0.f,stage_=0.f;
+    std::array<float,2> sub_{},earlyAir_{},directAir_{},finishLow_{},finishWide_{};
+    float subAlpha_=0.f,airAlpha_=0.f,finalLowAlpha_=0.f,slew_=0.f,stage_=0.f;
 };
 } // namespace armix::sonku::p97

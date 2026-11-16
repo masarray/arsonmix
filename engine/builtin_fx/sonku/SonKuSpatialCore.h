@@ -1052,6 +1052,12 @@ public:
                     }
                 }
 #endif
+#if defined(SONKU_P97_STAGE_IMPACT_RESEARCH) && SONKU_P97_STAGE_IMPACT_RESEARCH
+                if(p90World){
+                    const auto finished=p97Stage_.finish(outL,outR);
+                    outL=finished.left;outR=finished.right;
+                }
+#endif
                 // Zero-lookahead *linked* sample-peak safety guard. Quiet
                 // signals are linear; peaks are gently returned below unity
                 // without routing through a second engine or allocating.

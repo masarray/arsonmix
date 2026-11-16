@@ -18,7 +18,9 @@ static double signal(int rate,double hz,int section,float meters,bool room){
         const auto src=p.source(section==0?x:0.f,section==0?x:0.f,meters,room);
         const auto direct=p.direct(section==1?x:0.f,section==1?x:0.f);
         const auto early=p.early(section==2?x:0.f,section==2?x:0.f);
-        const float y=section==0?src.left:section==1?direct.left:early.left;
+        const auto finish=p.finish(section==3?x:0.f,section==3?x:0.f);
+        const float y=section==0?src.left:section==1?direct.left:
+                      section==2?early.left:finish.left;
         assert(std::isfinite(y)&&std::abs(y)<1.f);
         if((!room || meters<=2.f))assert(y==x);
         if(i>n/2) {inputPower+=double(x)*x; outputPower+=double(y)*y;}
@@ -30,11 +32,11 @@ int main(){
     assert(!bad.prepare(96000.));
     for(int rate:{44100,48000}){
         // Exact sample preservation: disabled ROOM and <=2m at all bands.
-        for(int section=0;section<3;++section){
-            assert(std::abs(signal(rate,section==1?85.:section==0?1900.:7500.,
-                section,10.f,false)-1.)<1.e-6);
-            assert(std::abs(signal(rate,section==1?85.:section==0?1900.:7500.,
-                section,2.f,true)-1.)<1.e-6);
+        for(int section=0;section<4;++section){
+            for(double hz:{85.,1900.,7500.}){
+                assert(std::abs(signal(rate,hz,section,10.f,false)-1.)<1.e-6);
+                assert(std::abs(signal(rate,hz,section,2.f,true)-1.)<1.e-6);
+            }
         }
         const double bass=signal(rate,85.,1,10.f,true);
         const double vocal=signal(rate,1900.,0,10.f,true);
@@ -48,6 +50,8 @@ int main(){
         assert(directVoice>1.065&&directVoice<1.20);
         assert(directAir>1.01&&directAir<1.16);
         assert(air>1.07&&air<1.35);
+        assert(signal(rate,85.,3,10.f,true)>1.04);
+        assert(signal(rate,7500.,3,10.f,true)>1.12);
         // Center cancellation protects pure anti-phase stereo; filters are
         // linked/coefficient-identical for each independently spatialized ear.
         StageImpact p;
@@ -60,6 +64,8 @@ int main(){
             const auto er=p.early(x,-x);
             assert(std::abs(d.left+d.right)<1.e-6f);
             assert(std::abs(er.left+er.right)<1.e-6f);
+            const auto f=p.finish(x,-x);
+            assert(std::abs(f.left+f.right)<1.e-6f);
             const auto modal=p.modal(x,-x);
             assert(std::abs(modal.left+modal.right)<1.e-6f);
             assert(std::abs(modal.left)<=std::abs(x)*1.121f);
