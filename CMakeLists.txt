@@ -850,6 +850,21 @@ if(BUILD_TESTING)
                               SONKU_P90_TRUE_EXTERNAL_RESEARCH=1)
                           add_test(NAME NativeSonKuP90JuceV11AppliedAckAndLegacyRestore
                               COMMAND ARMixSonKuP90NativeTests)
+                          # Same P9.2 core, independent ImerSip identity and IMRS.
+                          juce_add_console_app(ARMixImerSipP92NativeTests
+                              PRODUCT_NAME "ArSonMix ImerSip P92 Native Tests")
+                          target_sources(ARMixImerSipP92NativeTests PRIVATE
+                              tests/imersip_p92_native_test.cpp)
+                          target_compile_features(ARMixImerSipP92NativeTests PRIVATE cxx_std_20)
+                          target_link_libraries(ARMixImerSipP92NativeTests PRIVATE
+                              juce::juce_audio_processors
+                              juce::juce_recommended_config_flags)
+                          get_target_property(IMERSIP_P92_DEFINES
+                              ARMixSonKuP90NativeTests COMPILE_DEFINITIONS)
+                          target_compile_definitions(ARMixImerSipP92NativeTests
+                              PRIVATE ${IMERSIP_P92_DEFINES})
+                          add_test(NAME NativeImerSipP92ExactSonKuCorePCMStateAndACK
+                              COMMAND ARMixImerSipP92NativeTests)
                         endif()
                       endif()
                     endif()

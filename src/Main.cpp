@@ -6476,6 +6476,8 @@ private:
             if(!nativeShowBusy_&&!studioBackupBusy_&&!engine_.isGraphSwitchPending()) {
                 armix::mixer::LiveChannelFxGraph::InstanceLease owner;
                 std::uint64_t retainedEpoch=epoch;
+                std::uint64_t retainedRevision=revision,nativeChannel=0;
+                bool nativeTarget=false;
                 const auto nativeId=args.getProperty("channelId",{});
                 if(!nativeId.isVoid()) {
                     std::uint64_t id=0,ep=0,rev=0;
@@ -6486,12 +6488,45 @@ private:
                         owner=engine_.leaseNativeVst3Editor(ep,rev,
                             armix::mixer::ChannelId{id},static_cast<std::size_t>(slot),token);
                         retainedEpoch=ep;
+                        retainedRevision=rev;
+                        nativeChannel=id;
+                        nativeTarget=static_cast<bool>(owner);
                     }
                 } else owner=engine_.leaseRoutedFxForEditor(lane,slot,epoch,revision,token);
                 if(owner && owner->processor) {
                     try {
                         closePluginEditor();
                         if(auto* editor=owner->processor->createEditorIfNeeded()) {
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT
+                            if(auto* imer=dynamic_cast<
+                                armix::builtin_fx::ImerSipP92Editor*>(editor)) {
+                                // Per-insert host bypass; never manufacture
+                                // an independent DSP power flag in ImerSip.
+                                auto held=owner;
+                                imer->bindHostPower(
+                                    [this,held,nativeTarget,nativeChannel,
+                                     retainedEpoch,retainedRevision,
+                                     lane,slot,token](bool bypass) {
+                                        if(!engine_.retainsRoutedFxEditor(
+                                              retainedEpoch,held))return false;
+                                        const bool applied=nativeTarget?
+                                            engine_.bypassNativeVst3(
+                                                retainedEpoch,retainedRevision,
+                                                armix::mixer::ChannelId{nativeChannel},
+                                                static_cast<std::size_t>(slot),
+                                                token,bypass):
+                                            engine_.setDryRoutingLabFxBypass(
+                                                lane,slot,retainedEpoch,
+                                                retainedRevision,token,bypass);
+                                        if(applied)emitApprovedNativeSnapshot();
+                                        return applied;
+                                    },
+                                    [held] {
+                                        return held->bypassRequested.load(
+                                            std::memory_order_acquire);
+                                    });
+                            }
+#endif
                             routedEditorOwner_=owner;
                             routedEditorEpoch_=retainedEpoch;
                             editorWindow_=std::make_unique<PluginEditorWindow>(

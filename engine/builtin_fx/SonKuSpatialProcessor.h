@@ -10,15 +10,13 @@
 // Built-in insert only; JUCE VST3 packaging is a separate adapter/quality gate.
 // Existing FX instance owns bypass, MIDI scratch, ChannelId, PDC and retirement.
 namespace armix::builtin_fx {
-class SonKuSpatialProcessor final : public juce::AudioProcessor,
+class SonKuSpatialProcessor : public juce::AudioProcessor,
     public armix::mixer::RealtimeNativeFxControl {
 public:
     static constexpr const char* catalogIdentity="armix.builtin.8d-sonku.v1";
     struct Completion {std::uint64_t requestId=0;armix::sonku::Settings settings{};bool applied=false;};
     SonKuSpatialProcessor()
-        : juce::AudioProcessor(BusesProperties()
-            .withInput("Input",juce::AudioChannelSet::stereo(),true)
-            .withOutput("Output",juce::AudioChannelSet::stereo(),true)) {}
+        : SonKuSpatialProcessor(armix::sonku::Settings{}) {}
     const juce::String getName() const override {return "8D-SonKu";}
     bool acceptsMidi() const override {return false;}
     bool producesMidi() const override {return false;}
@@ -391,6 +389,30 @@ public:
     }
     void setStateInformation(const void* data,int size) override {
         (void)restoreUnpublishedState(data,size);
+    }
+protected:
+    // A product-branded insert may choose a prepared P9 owner-approved
+    // scene while sharing the exact SonKu DSP and the same SPSC/ACK path.
+    // Production SonKu's default constructor remains byte-for-byte as before.
+    explicit SonKuSpatialProcessor(const armix::sonku::Settings& initial)
+        : juce::AudioProcessor(BusesProperties()
+            .withInput("Input",juce::AudioChannelSet::stereo(),true)
+            .withOutput("Output",juce::AudioChannelSet::stereo(),true)),
+          accepted_(initial) {}
+
+    // Only a *new, unpublished* insert may migrate an earlier state.
+    // Never modify a published JUCE graph or accept a speculative UI edit.
+    bool adoptUnpublishedScene(const armix::sonku::Settings& next) noexcept {
+        if(published_ || !armix::sonku::valid(next) ||
+           !queue_.empty() || !complete_.empty())return false;
+        if(ready_ && !core_.setSettings(next))return false;
+        accepted_=next;
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+        audioSettings_=next;
+#endif
+        observedAzimuthDegrees_.store(next.startAzimuthDegrees,
+                                      std::memory_order_relaxed);
+        return true;
     }
 private:
     struct Edit {std::uint64_t requestId=0;armix::sonku::Settings settings{};};
