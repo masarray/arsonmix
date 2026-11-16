@@ -33,6 +33,17 @@ class ImerSipP92Contract(unittest.TestCase):
         self.assertIn("imersipP92ConcertBoxes(",ui)
         self.assertIn("skin_.drawRoom(g)",ui)
         self.assertIn("skin_.drawPanel(g)",ui)
+        self.assertIn("g.fillRect(0,461,1100,219)",source(
+            "engine/builtin_fx/ImerSipP92VisualSkin.h"))
+        self.assertIn("juce::Colour(0xff151a20)",source(
+            "engine/builtin_fx/ImerSipP92VisualSkin.h"))
+        self.assertNotIn("draw(g,panel_",source(
+            "engine/builtin_fx/ImerSipP92VisualSkin.h"))
+        self.assertNotIn("g.fillRect(251,468,2,204)",ui)
+        self.assertNotIn("g.fillRect(879,468,2,204)",ui)
+        self.assertNotIn('g.drawText("SCENE SETUP"',ui)
+        self.assertNotIn('g.drawText("SPATIAL FIELD"',ui)
+        self.assertNotIn('g.drawText("OUTPUT"',ui)
         self.assertIn("skin_.drawConcert(g,concert)",ui)
         skin=source("engine/builtin_fx/ImerSipP92VisualSkin.h")
         cmake=source("CMakeLists.txt")
