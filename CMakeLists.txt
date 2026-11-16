@@ -284,11 +284,24 @@ foreach(name IN LISTS ARMIX_IMERSIP_ASSET_NAMES)
   endif()
   list(APPEND ARMIX_IMERSIP_PNG_SOURCES "${ARMIX_IMERSIP_PNG_FILE}")
 endforeach()
+# The six approved photo-real venue scenes are independent full-size PNGs.
+# They are embedded into the JUCE executable, with no external image folder.
+set(ARMIX_IMERSIB_SCENE_NAMES
+    scene_live_concert scene_royal_concert_hall scene_arena_thunder
+    scene_front_row_power scene_symphonic_palace scene_velvet_cinema)
+foreach(name IN LISTS ARMIX_IMERSIB_SCENE_NAMES)
+  set(ARMIX_IMERSIB_SCENE_PNG "${CMAKE_CURRENT_SOURCE_DIR}/assets/imersip/scenes/${name}.png")
+  if(NOT EXISTS "${ARMIX_IMERSIB_SCENE_PNG}")
+    message(FATAL_ERROR "Missing ImmerSIB scene art: ${ARMIX_IMERSIB_SCENE_PNG}")
+  endif()
+  list(APPEND ARMIX_IMERSIB_SCENE_PNG_SOURCES "${ARMIX_IMERSIB_SCENE_PNG}")
+endforeach()
 juce_add_binary_data(ARMixAssets SOURCES
     "${ARMIX_APPROVED_GUI_DIR}/index.html" ${ARMIX_APPROVED_GUI_BINARIES}
     ${ARMIX_GUITAR_SKIN_PNGS}
     "${ARMIX_BRAND_DIR}/arsonmix-256.png"
-    ${ARMIX_IMERSIP_PNG_SOURCES})
+    ${ARMIX_IMERSIP_PNG_SOURCES}
+    ${ARMIX_IMERSIB_SCENE_PNG_SOURCES})
 target_include_directories(ARMixConsole PRIVATE "${ARMIX_APPROVED_GUI_DIR}")
 
 target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h engine/builtin_fx/HarmonyDsp.h engine/builtin_fx/HarmonyMusicKey.h engine/builtin_fx/ChannelHarmonyProcessor.h engine/builtin_fx/SonKuSpatialProcessor.h engine/builtin_fx/sonku/SonKuSpatialCore.h engine/builtin_fx/sonku/SonKuMeasuredHrir.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/PreparedNativeMixerSession.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/NativeFxParameterHotkey.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/core/LiveOutputRouteGate.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
