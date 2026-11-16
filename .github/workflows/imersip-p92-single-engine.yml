@@ -110,6 +110,7 @@ jobs:
             -DSONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH \
             -DSONKU_P97_STAGE_IMPACT_RESEARCH \
             -DSONKU_P98_SCENE_VOICING_RESEARCH \
+            -DSONKU_IMMERSIB_PCM_DIAGNOSTICS=1 \
             tests/immersib_p98_native_sonic_gate.cpp -o /tmp/immersib-p98
           /tmp/immersib-p98
   windows:
