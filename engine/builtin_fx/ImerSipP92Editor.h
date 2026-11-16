@@ -183,7 +183,7 @@ public:
             0,panelTop,getWidth(),getHeight()-panelTop);
         g.reduceClipRegion(panel);
         g.excludeClipRegion(power_.getBounds());
-        g.setColour(juce::Colour(0x71060b12)); // 44% muted charcoal
+        g.setColour(juce::Colour(0x7603060a)); // 46% muted neutral charcoal
         g.fillRect(panel);
     }
     void resized() override {
