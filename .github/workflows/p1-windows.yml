@@ -732,6 +732,13 @@ jobs:
                     g++ $PRESET_FLAGS -DSONKU_P98_SCENE_VOICING_RESEARCH=1 -DSONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH=1 tests/sonku_p98_integrated_scene_test.cpp -o /tmp/sonku-p99-integrated
                     /tmp/sonku-p99-integrated > /tmp/sonku-p99-integrated.csv
                     python3 scripts/verify_sonku_p99_vocal_depth.py /tmp/sonku-p98-scene-candidate.csv /tmp/sonku-p99-integrated.csv
+                    # A separate branded insert may share this native core,
+                    # but its FULL PCM must remain bit-identical to P9.8
+                    # unless that instance explicitly opts into P9.9.
+                    # Prove all 24 front/rear/rate/scene cases, not a grep.
+                    g++ $PRESET_FLAGS -DSONKU_P98_SCENE_VOICING_RESEARCH=1 -DSONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH=1 -DSONKU_P99_SHARED_CORE_UNOPTED_TEST=1 tests/sonku_p98_integrated_scene_test.cpp -o /tmp/sonku-p99-unopted-shared-core
+                    /tmp/sonku-p99-unopted-shared-core > /tmp/sonku-p99-unopted-shared-core.csv
+                    python3 scripts/verify_sonku_p99_shared_core_isolation.py /tmp/sonku-p98-scene-candidate.csv /tmp/sonku-p99-unopted-shared-core.csv
                     # Additional full-graph 320 Hz ROOM BODY probe; preserve
                     # the old 86 Hz and all approved P9.8 / Venue fixtures.
                     BODY_FLAGS="$PRESET_FLAGS -DSONKU_P98_SCENE_VOICING_RESEARCH=1 -DSONKU_P99_ROOM_BODY_PROBE=1"

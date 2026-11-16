@@ -13,7 +13,9 @@
 // Built-in insert only; JUCE VST3 packaging is a separate adapter/quality gate.
 // Existing FX instance owns bypass, MIDI scratch, ChannelId, PDC and retirement.
 namespace armix::builtin_fx {
-class SonKuSpatialProcessor final : public juce::AudioProcessor,
+// Non-final native DSP owner intentionally supports *restricted* branded
+// inserts sharing ONE PCM graph, without sharing their product defaults.
+class SonKuSpatialProcessor : public juce::AudioProcessor,
     public armix::mixer::RealtimeNativeFxControl {
 public:
     static constexpr const char* catalogIdentity="armix.builtin.8d-sonku.v1";
@@ -27,6 +29,7 @@ public:
         // Existing .smix restore/accepted realtime state is never remapped.
         // Identical shared settings() are exercised in source and JUCE tests.
         accepted_=armix::sonku::p99::DefaultOrbitStage::settings();
+        p99ForSonKuProduct_=true; // explicit only for real 8D-SonKu
 #elif defined(ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE) && ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE
         // NEW inserts only. Restore from an existing .smix uses its saved
         // settings verbatim; no automatic remapping of operator sessions.
@@ -78,6 +81,11 @@ public:
         constexpr auto profile=armix::sonku::SonKuReflectionProfile::DirectionalKemar;
 #else
         constexpr auto profile=armix::sonku::SonKuReflectionProfile::Lightweight;
+#endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH
+        // Set once, OFF the callback: branded product instances inherit
+        // P9.8 core without unrequested P9.9 vocal processing.
+        if(p99ForSonKuProduct_)core_.optInP99ForSonKuInsert();
 #endif
         ready_=core_.prepare(rate,profile);
         observedAzimuthDegrees_.store(accepted_.startAzimuthDegrees,std::memory_order_relaxed);
@@ -159,7 +167,7 @@ public:
     // is permitted only after corresponding completion/readback.
     bool queueSettings(const armix::sonku::Settings& next,std::uint64_t requestId) noexcept {
         return ready_&&requestId&&armix::sonku::valid(next)
-            &&queue_.push(Edit{requestId,next});
+            &&admitQueuedScene(next)&&queue_.push(Edit{requestId,next});
     }
     bool pollCompletion(Completion& done) noexcept {
         if(!complete_.pop(done))return false;
@@ -446,9 +454,42 @@ public:
     void setStateInformation(const void* data,int size) override {
         (void)restoreUnpublishedState(data,size);
     }
+protected:
+    // Product-specific admission is a CONTROL-thread operation; the audio
+    // callback still owns the same core, edit queue and applied ACK.
+    virtual bool admitQueuedScene(
+        const armix::sonku::Settings&) const noexcept {return true;}
+
+    // Branded insert constructor never borrows SonKu's newly approved
+    // ORBIT STAGE default or P9.9 sonic character. A derived product
+    // explicitly supplies its own scene and may adopt P9.9 separately.
+    explicit SonKuSpatialProcessor(const armix::sonku::Settings& initial)
+        : juce::AudioProcessor(BusesProperties()
+            .withInput("Input",juce::AudioChannelSet::stereo(),true)
+            .withOutput("Output",juce::AudioChannelSet::stereo(),true)),
+          accepted_(initial) {}
+
+    // Only unpublished native instances may restore their own branded
+    // state; never overwrite an active PCM graph or queued transaction.
+    bool adoptUnpublishedScene(const armix::sonku::Settings& next) noexcept {
+        if(published_ || !armix::sonku::valid(next) ||
+           !admitQueuedScene(next) ||
+           !queue_.empty() || !complete_.empty())return false;
+        if(ready_ && !core_.setSettings(next))return false;
+        accepted_=next;
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+        audioSettings_=next;
+#endif
+        observedAzimuthDegrees_.store(next.startAzimuthDegrees,
+                                      std::memory_order_relaxed);
+        return true;
+    }
 private:
     struct Edit {std::uint64_t requestId=0;armix::sonku::Settings settings{};};
     armix::sonku::SonKuSpatialCore core_{};
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH
+    bool p99ForSonKuProduct_=false; // no shared-core vocal leak
+#endif
     FxSpsc<Edit,32> queue_{};
     FxSpsc<Completion,32> complete_{};
     armix::sonku::Settings accepted_{};

@@ -202,6 +202,13 @@ class SonKuSpatialCore final {
 public:
     static constexpr int taps=hrir::taps;
     static constexpr int updateInterval=16;
+#if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
+    // Control thread, before prepare: explicitly authorize P9.9 on THIS
+    // SonKu insert, not all products sharing this exact native core.
+    // Separate branded processors (e.g. ImmerSIB) remain P9.8 until they
+    // independently adopt its P9.9 voicing. No extra PCM graph or state ABI.
+    void optInP99ForSonKuInsert() noexcept { p99ForSonKuInsert_=true; }
+#endif
     bool prepare(double rate, SonKuReflectionProfile profile=
                  SonKuReflectionProfile::Lightweight) noexcept {
         ready_=false;
@@ -842,7 +849,7 @@ public:
             }
 #endif
 #if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
-            if(p90World && settings_.spatialMix>0.f){
+            if(p99ForSonKuInsert_ && p90World && settings_.spatialMix>0.f){
                 // Source-depth control happens BEFORE measured two-speaker
                 // KEMAR FIR. No center headphone-dry path or second bus.
                 const auto focus=p99VocalDepth_.source(
@@ -850,7 +857,7 @@ public:
                     settings_.sceneVoicing,roomEnabled);
                 history_[0][write_]=focus.left;
                 history_[1][write_]=focus.right;
-            }else{
+            }else if(p99ForSonKuInsert_){
                 // MIX=0 and mode bypass stay exact; reset attention smoothly
                 // without ever leaking a private cue into dry input PCM.
                 (void)p99VocalDepth_.source(0.f,0.f,0,false);
@@ -914,7 +921,7 @@ public:
             float earlyFeedL=x0,earlyFeedR=x1;
             float lateFeedL=x0,lateFeedR=x1;
 #if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
-            if(p90World && settings_.spatialMix>0.f && roomEnabled){
+            if(p99ForSonKuInsert_ && p90World && settings_.spatialMix>0.f && roomEnabled){
                 const auto earlyFeed=p99VocalDepth_.roomEarlyFeed(x0,x1);
                 const auto lateFeed=p99VocalDepth_.roomLateFeed(x0,x1);
                 earlyFeedL=earlyFeed.left;
@@ -1063,7 +1070,7 @@ public:
                 }
 #endif
 #if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
-                if(p90World && settings_.spatialMix>0.f && roomEnabled){
+                if(p99ForSonKuInsert_ && p90World && settings_.spatialMix>0.f && roomEnabled){
                     // A slightly more lateral REAL first image gives
                     // accompaniment space without moving the singer.
                     const auto lateral=p99VocalDepth_.early(
@@ -1497,6 +1504,7 @@ private:
 #endif
 #if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
     p99::MusicalVocalDepth p99VocalDepth_{};
+    bool p99ForSonKuInsert_=false; // per-instance, never serialized
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
     p95::MusicalPresence p95Presence_{};

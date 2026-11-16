@@ -28,6 +28,12 @@ constexpr Scene scenes[]{
 void run(int rate,int az,int index){
     const auto& scene=scenes[index];
     auto core=std::make_unique<SonKuSpatialCore>();
+#if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH && \
+    !defined(SONKU_P99_SHARED_CORE_UNOPTED_TEST)
+    // The SonKu-only P9.9 behavior is explicitly opted in per instance.
+    // An ImmerSIB/branded instance using this core does not inherit it.
+    core->optInP99ForSonKuInsert();
+#endif
     assert(core->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch));
     Settings s{};
     s.renderMode=9;s.moving=false;s.startAzimuthDegrees=static_cast<float>(az);

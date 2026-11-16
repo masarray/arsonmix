@@ -34,11 +34,17 @@ int main() {
 #endif
     for(const int rate:{44100,48000}){
         auto engine=std::make_unique<SonKuSpatialCore>();
+        auto unopted=std::make_unique<SonKuSpatialCore>();
+        // Same engine and same scene. Only the true SonKu insert opts
+        // into P9.9; independent branded inserts stay P9.8 bit-correct.
+        engine->optInP99ForSonKuInsert();
         assert(engine->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch));
+        assert(unopted->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch));
         assert(engine->setSettings(reference));
+        assert(unopted->setSettings(reference));
         assert(engine->ready());
         constexpr double pi=3.1415926535897932384626433832795;
-        double energy=0.;
+        double energy=0.,difference=0.;
         float peak=0.f;
         constexpr int block=128;
         std::array<float,block> l{},r{};
@@ -53,8 +59,13 @@ int main() {
                 l[i]=mid+side;
                 r[i]=mid-side;
             }
+            auto noP99L=l,noP99R=r;
             engine->process(l.data(),r.data(),frames);
+            unopted->process(noP99L.data(),noP99R.data(),frames);
             for(int i=0;i<frames;++i){
+                assert(std::isfinite(noP99L[i]) && std::isfinite(noP99R[i]));
+                difference+=std::abs(l[i]-noP99L[i])+
+                            std::abs(r[i]-noP99R[i]);
                 assert(std::isfinite(l[i])&&std::isfinite(r[i]));
                 const float mag=std::max(std::abs(l[i]),std::abs(r[i]));
                 peak=std::max(peak,mag);
@@ -66,8 +77,12 @@ int main() {
         // no GUI velocity mock or second spatial PCM authority.
         assert(std::abs(engine->azimuthDegrees()-30.)<.01);
         assert(energy>.01 && peak>.01f);
-        std::printf("P99_REFERENCE_ORBIT_NATIVE,%d,az=%.5f,peak=%.6f,energy=%.6f\n",
-                    rate,engine->azimuthDegrees(),peak,energy);
+        // Prove isolation is real DSP behavior, not a capability string.
+        // Otherwise P9.9 would silently change ImmerSIB's own presets.
+        assert(difference>1.);
+        assert(std::abs(unopted->azimuthDegrees()-30.)<.01);
+        std::printf("P99_REFERENCE_ORBIT_NATIVE,%d,az=%.5f,peak=%.6f,energy=%.6f,isolation_delta=%.6f\n",
+                    rate,engine->azimuthDegrees(),peak,energy,difference);
         // A saved user scene can still switch the same core to static.
         auto staticScene=reference;
         staticScene.moving=false;

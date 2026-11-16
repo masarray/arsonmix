@@ -18,6 +18,27 @@
 using armix::builtin_fx::SonKuSpatialProcessor;
 using armix::sonku::Settings;
 using namespace armix::builtin_fx::sonku_bridge;
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH
+// Real JUCE class-substitution contract: the other product can inherit
+// the *same* native renderer while rejecting SonKu-only motion/voicing
+// commands. It must not inherit SonKu's screenshot factory default.
+class RestrictedBrandedInsert final : public SonKuSpatialProcessor {
+public:
+ RestrictedBrandedInsert() : SonKuSpatialProcessor(initial()) {}
+ static Settings initial() {
+  auto s=armix::sonku::p99::DefaultOrbitStage::settings();
+  s.moving=false; // Branded studio/venue editor has static source
+  return s;
+ }
+ bool adopt(const Settings& next) noexcept {
+  return adoptUnpublishedScene(next);
+ }
+protected:
+ bool admitQueuedScene(const Settings& next) const noexcept override {
+  return next.renderMode==9 && !next.moving;
+ }
+};
+#endif
 static constexpr float pi=3.14159265358979323846f;
 static double render(SonKuSpatialProcessor& fx,int sampleOffset) {
  juce::AudioBuffer<float> pcm(2,128);
@@ -82,6 +103,35 @@ int main(){
 #else
  static_assert(schemaVersion()==11);
  constexpr int activeVersion=11,activeBytes=63;
+#endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH
+ // The companion product's own state and DSP identity survive co-build.
+ // This compiles exactly the protected extension contract used by ImmerSIB
+ // without importing or overwriting any file from its independent PR.
+ {
+  auto product=std::make_unique<RestrictedBrandedInsert>();
+  const auto initial=RestrictedBrandedInsert::initial();
+  assert(!initial.moving && initial.renderMode==9 && initial.sceneVoicing==1);
+  assert(product->acceptedSettings().moving==false);
+  assert(product->acceptedSettings().sourceDistanceMeters==2.7f);
+  product->prepareToPlay(48000.,128);
+  assert(product->isReady());
+  Settings forbidden=initial;forbidden.moving=true;
+  assert(!product->queueSettings(forbidden,1801));
+  Settings legal=initial;legal.sourceDistanceMeters=3.0f;
+  assert(product->queueSettings(legal,1802));
+  SonKuSpatialProcessor::Completion ack{};
+  assert(!product->pollCompletion(ack));
+  product->consumeRealtimeEdits();
+  assert(product->pollCompletion(ack) && ack.applied && ack.requestId==1802);
+  assert(product->acceptedSettings().sourceDistanceMeters==3.0f);
+  assert(product->stateSnapshotQuiescent());
+  legal.sourceDistanceMeters=2.4f;
+  assert(product->adopt(legal));
+  assert(product->acceptedSettings().sourceDistanceMeters==2.4f);
+  product->sealForRealtime();
+  assert(!product->adopt(initial)); // no published state overwrite
+ }
 #endif
  auto fx=std::make_unique<SonKuSpatialProcessor>();
  fx->prepareToPlay(48000.,128);
