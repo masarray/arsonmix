@@ -203,7 +203,7 @@ if(WIN32)
   # Dedicated INITGUID TU supplies PKEY_AudioEndpoint_FormFactor and
   # PKEY_AudioEngine_DeviceFormat to the Windows MMDevice discovery path.
   target_sources(ARMixConsole PRIVATE engine/device/WindowsAudioPropertyKeys.cpp)
-  target_link_libraries(ARMixConsole PRIVATE ole32 uuid advapi32)
+  target_link_libraries(ARMixConsole PRIVATE ole32 uuid advapi32 dwmapi)
 endif()
 
 target_link_libraries(ARMixConsole PRIVATE
