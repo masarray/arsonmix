@@ -68,18 +68,19 @@ const native=()=>typeof backend()?.emitEvent==="function";
 const snapshot=()=>window.__ARMIX_NATIVE_M2__?.fxEditorState?.()||
  window.__ARMIX_NATIVE_M2__?.state?.()?.current;
 const angle=(v)=>((v%360)+360)%360;
-// TOP-REAR camera looks toward FRONT (image top): FRONT=0°, RIGHT=+90°, REAR=180°,
-// LEFT=-90°. Presentation-only SVG projection; native HRIR ITD/ILD
-// and audio rotation coordinates NEVER change.
-const STAGE=Object.freeze({x:200,y:174,rx:148,ry:83});
+// TRUE circular PLAN-VIEW positioning. 0°=FRONT, 90°=RIGHT, 180°=REAR.
+// The original 148x83 elliptical orbit falsely suggested smaller front/rear
+// source distance, although the DSP positions were on a constant-radius ring.
+// Only drawing and pointer inversion change; world-azimuth HRIR remains native.
+const STAGE=Object.freeze({x:200,y:170,r:119});
 const stagePoint=(azimuthDegrees)=>{
  const rad=angle(azimuthDegrees)*Math.PI/180;
- return {x:STAGE.x+STAGE.rx*Math.sin(rad),
-         y:STAGE.y-STAGE.ry*Math.cos(rad)};
+ return {x:STAGE.x+STAGE.r*Math.sin(rad),
+         y:STAGE.y-STAGE.r*Math.cos(rad)};
 };
 const stageAzimuth=(screenX,screenY)=>
- Math.atan2((screenX-STAGE.x)/STAGE.rx,
-            (STAGE.y-screenY)/STAGE.ry)*180/Math.PI;
+ Math.atan2((screenX-STAGE.x)/STAGE.r,
+            (STAGE.y-screenY)/STAGE.r)*180/Math.PI;
 // At SPREAD=0 the two actual HRIR directions coincide. Separate the
 // drawings (not their acoustic coordinates) tangentially, with tiny tethers
 // identifying the shared acoustic point. L and R remain independently draggable.
@@ -87,7 +88,7 @@ const displayPair=(azimuths)=>{
  const anchors=azimuths.map(stagePoint);
  const distance=Math.hypot(anchors[0].x-anchors[1].x,anchors[0].y-anchors[1].y);
  const mid=(azimuths[0]+azimuths[1])*0.5*Math.PI/180;
- const tangent={x:STAGE.rx*Math.cos(mid),y:STAGE.ry*Math.sin(mid)};
+ const tangent={x:STAGE.r*Math.cos(mid),y:STAGE.r*Math.sin(mid)};
  const n=Math.hypot(tangent.x,tangent.y)||1;
  const offset=Math.max(0,(46-distance)*0.5);
  return anchors.map((anchor,i)=>({
@@ -101,9 +102,17 @@ root.setAttribute("role","dialog");root.setAttribute("aria-modal","false");
 root.setAttribute("aria-label","8D-SonKu binaural spatial audio");
 root.innerHTML=[
  '<header class="sk-head"><span class="sk-brand">8D<span>·</span>SonKu</span>',
- '<span class="sk-headnote">BINAURAL SPATIAL MOTION</span>',
+ '<span class="sk-headnote">SPATIAL AUDIO</span>',
+ '<select id="skPreset" class="sk-preset" aria-label="SonKu ready-to-use sound presets" title="Ready-to-use spatial scenes; settings remain editable">',
+ '<option value="CUSTOM">CUSTOM · MANUAL</option>',
+ '<option value="music">MUSIC · FRONT STAGE</option>',
+ '<option value="studio">STUDIO · CLOSE</option>',
+ '<option value="wide">CINEMA · WIDE</option>',
+ '<option value="deep">IMMERSIVE · DEEP</option>',
+ '<option value="orbit">ORBIT · SHOWCASE</option></select>',
  '<span id="skChannel" class="sk-channel"></span>',
- '<button type="button" id="skClose" class="sk-close armix-floating-close" aria-label="Close 8D-SonKu">×</button></header>',
+ '<button type="button" id="skPower" class="armix-builtin-fx-power" data-fx-state="unknown" aria-label="SonKu FX state unavailable" aria-pressed="false" disabled>⏻</button>',
+ '<button type="button" id="skClose" class="sk-close armix-builtin-fx-close armix-floating-close" aria-label="Close 8D-SonKu">×</button></header>',
  '<div class="sk-content"><div class="sk-stage">',
  '<svg id="skMap" viewBox="0 0 400 330" role="group" aria-label="Top-rear listener with two depth-aware draggable binaural speakers">',
  '<defs><radialGradient id="skBg" cx="50%" cy="48%" r="73%"><stop offset="0" stop-color="#263b49"/><stop offset=".65" stop-color="#152533"/><stop offset="1" stop-color="#0a1622"/></radialGradient>',
@@ -111,13 +120,13 @@ root.innerHTML=[
  '<linearGradient id="skRail" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#80dce8"/><stop offset="1" stop-color="#355969"/></linearGradient>',
  '</defs>',
  '<rect width="400" height="330" rx="10" fill="url(#skBg)"/>',
- '<ellipse cx="200" cy="174" rx="148" ry="83" fill="url(#skFloor)"/>',
- '<path class="sk-axis" d="M200 79V270 M45 174H355" fill="none" stroke="#597d89" stroke-opacity=".21" stroke-width=".8" stroke-dasharray="2 9"/>',
+ '<circle cx="200" cy="170" r="119" fill="url(#skFloor)"/>',
+ '<path class="sk-axis" d="M200 44V301 M71 170H329" fill="none" stroke="#597d89" stroke-opacity=".21" stroke-width=".8" stroke-dasharray="2 9"/>',
  // FRONT is the far upper orbit, behind head from this top-rear camera.
- '<path id="skFarArc" class="sk-orbit-far" d="M348 174 A148 83 0 0 0 52 174" fill="none" stroke="#679aaa" stroke-opacity=".47" stroke-width="1.4" stroke-dasharray="4 7"/>',
- '<path class="sk-secondary-rail" d="M336 174 A136 70 0 0 0 64 174" fill="none" stroke="#538096" stroke-opacity=".19" stroke-width="1"/>',
- '<text class="sk-direction sk-front" x="200" y="55" text-anchor="middle">FRONT</text>',
- '<text class="sk-direction" x="200" y="317" text-anchor="middle">REAR</text>',
+ '<path id="skFarArc" class="sk-orbit-far" d="M319 170 A119 119 0 0 0 81 170" fill="none" stroke="#679aaa" stroke-opacity=".47" stroke-width="1.4" stroke-dasharray="4 7"/>',
+ '<path class="sk-secondary-rail" d="M310 170 A110 110 0 0 0 90 170" fill="none" stroke="#538096" stroke-opacity=".19" stroke-width="1"/>',
+ '<text class="sk-direction sk-front" x="200" y="25" text-anchor="middle">FRONT</text>',
+ '<text class="sk-direction" x="200" y="321" text-anchor="middle">REAR</text>',
  '<text class="sk-direction" x="11" y="149">LEFT</text><text class="sk-direction" x="352" y="149">RIGHT</text>',
  // Rear/top-view translucent PNG: back of skull, protruding ears and shoulders.
  // Listener looks toward FRONT at top; native source azimuth is unchanged.
@@ -125,8 +134,8 @@ root.innerHTML=[
  '<g id="skFarSources" class="sk-far-sources"></g>',
  '<image id="skListenerArt" class="sk-listener-art" href="assets/sonku-listener-top.png" x="103" y="90" width="194" height="202" preserveAspectRatio="xMidYMid meet" data-orientation="front-up-rear" aria-label="Rear/top-view listener facing front at top" pointer-events="none"/>',
  // REAR is the near lower orbit, overlaying upper back from this camera.
- '<path id="skNearArc" class="sk-orbit-near-shadow" d="M52 174 A148 83 0 0 0 348 174" fill="none" stroke="#061723" stroke-opacity=".7" stroke-width="4.5"/>',
- '<path class="sk-orbit-near" d="M52 174 A148 83 0 0 0 348 174" fill="none" stroke="url(#skRail)" stroke-opacity=".9" stroke-width="1.8" stroke-dasharray="5 7"/>',
+ '<path id="skNearArc" class="sk-orbit-near-shadow" d="M81 170 A119 119 0 0 0 319 170" fill="none" stroke="#061723" stroke-opacity=".7" stroke-width="4.5"/>',
+ '<path class="sk-orbit-near" d="M81 170 A119 119 0 0 0 319 170" fill="none" stroke="url(#skRail)" stroke-opacity=".9" stroke-width="1.8" stroke-dasharray="5 7"/>',
  // Paint independent rear/near speakers above the back; far speakers behind head.
  '<g id="skNearSources" class="sk-near-sources"></g>',
  '<path d="M193 68 L200 60 L207 68" fill="none" stroke="#77d9e6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" opacity=".83"/>',
@@ -187,6 +196,10 @@ root.innerHTML=[
  '</aside></div>',
  '<footer class="sk-status"><span id="skMode">VISUAL PREVIEW</span><span id="skHint" role="status">No browser audio</span></footer>'
 ].join("");
+// Move the complete existing SPACE controls below the orbit, retaining the
+// SAME native slider IDs, ACK, gesture ownership, and room-validation logic.
+// This is a DOM layout move, never a duplicated render/control authority.
+root.querySelector(".sk-stage").appendChild(root.querySelector(".sk-space-panel"));
 const $=id=>root.querySelector("#"+id);
 // Cache fixed SVG node references; only their transforms change at 60fps.
 const speakerNodes=[...root.querySelectorAll("#skMap .sk-src")];
