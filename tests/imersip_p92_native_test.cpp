@@ -259,8 +259,8 @@ int main() {
     const char* controlIds[]={"imersip.preset","imersip.room",
       "imersip.stage","imersip.distance","imersip.early",
       "imersip.late","imersip.mix","imersip.gain",
-      "imersip.align","imersip.yaw","imersip.power","imersip.close"};
-    std::array<juce::Component*,12> controls{};
+      "imersip.align","imersip.yaw","imersip.power"};
+    std::array<juce::Component*,11> controls{};
     for(std::size_t i=0;i<controls.size();++i){
         controls[i]=editor->findChildWithID(controlIds[i]);
         assert(controls[i]);
@@ -270,6 +270,21 @@ int main() {
         for(std::size_t j=0;j<i;++j)
             assert(!r.intersects(controls[j]->getBounds()));
     }
+    // The native OS close control replaces the redundant in-editor CLOSE.
+    assert(editor->findChildWithID("imersip.close")==nullptr);
+    const auto powerBounds=controls[10]->getBounds();
+    const auto gainBounds=controls[7]->getBounds();
+    assert(powerBounds.getY()>=juce::roundToInt(461.f*.85f));
+    assert(powerBounds.getRight()>gainBounds.getRight());
+    assert(powerBounds.getX()>gainBounds.getRight());
+    assert(powerBounds.getY()<gainBounds.getY());
+    auto* distanceLabel=dynamic_cast<juce::Label*>(
+        editor->findChildWithID("imersip.label.distance"));
+    assert(distanceLabel && distanceLabel->getText()=="DISTANCE");
+    auto* masterLabel=dynamic_cast<juce::Label*>(
+        editor->findChildWithID("imersip.label.gain"));
+    assert(masterLabel && masterLabel->getText()=="MASTER GAIN");
+    assert(masterLabel->getX()<powerBounds.getX());
     // Seven non-master controls should occupy two clean vertical lanes
     // with uniform label/track spacing, not four cramped columns.
     const auto a=controls[2]->getBounds();
@@ -357,6 +372,8 @@ int main() {
     auto* power=dynamic_cast<juce::TextButton*>(
         editor->findChildWithID("imersip.power"));
     assert(power && !power->isEnabled());
+    assert(power->getButtonText().isEmpty());
+    assert(!power->getToggleState());
     auto* selector=dynamic_cast<juce::ComboBox*>(
         editor->findChildWithID("imersip.preset"));
     assert(selector&&selector->getNumItems()==7); // Custom + six strong scenes
@@ -419,9 +436,11 @@ int main() {
     actualEditor->bindHostPower(
         [&](bool desired){bypassed=desired;return true;},
         [&](){return bypassed;});
-    assert(power->isEnabled());
-    power->onClick();assert(bypassed);
-    power->onClick();assert(!bypassed);
+    assert(power->isEnabled() && power->getToggleState());
+    power->onClick();
+    assert(bypassed && !power->getToggleState());
+    power->onClick();
+    assert(!bypassed && power->getToggleState());
     // Actual JUCE scene renders: exact same embedded venue images as shipped
     // with the native app. These captures are NOT HTML concept mockups.
     // Each of the six preset IDs must produce a distinct visual composition.
