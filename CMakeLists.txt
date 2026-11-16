@@ -1,5 +1,144 @@
 cmake_minimum_required(VERSION 3.22)
 project(ARMixConsole VERSION 0.5.0 LANGUAGES C CXX)
+# Experimental P6 native profile: OFF by default in production/installer.
+option(ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT
+       "Enable unqualified SonKu full KEMAR directional reflections on the native JUCE callback"
+       OFF)
+# Native XYZ/ACK v3: isolated research switch, OFF in every public installer.
+# This implies the measured KEMAR full-elevation research tables explicitly
+# and never changes the ordinary 46-byte SonKu v2 native FX ABI.
+option(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
+       "Enable P7.2 unqualified native real-time XYZ/v3 research adapter"
+       OFF)
+# P7.5 field-failure research: spatial MUSIC MID and strictly retain stereo SIDE.
+# No effect on public builds or original P7.4 research unless explicit ON.
+option(ARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE
+       "Enable quarantined phase-preserving music-stereo P7.5 PCM only in XYZ research"
+       OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT)
+  message(FATAL_ERROR "P7.5 music-safe requires explicit native XYZ research ON")
+endif()
+# Research-only P8 acoustic diagnostic. Does NOT change public LIGHT,
+# shipping presets, or P7.5 without explicit operator build flags.
+option(ARMIX_SONKU_EXPERIMENTAL_P8_TRANSPARENT_BASS
+       "Enable P8 original stereo low-frequency pressure with measured high-band HRTF"
+       OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P8_TRANSPARENT_BASS AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE)
+  message(FATAL_ERROR "P8 requires the isolated P7.5 music-safe research profile")
+endif()
+# P8.2 six-wall frequency-dependent material + shared LF/MID/HF late RT60.
+# Separate from the P8.1 listening checkpoint and always OFF publicly.
+option(ARMIX_SONKU_EXPERIMENTAL_P82_ROOM
+       "Enable independently gated P8.2 six-surface 3-band research room"
+       OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P82_ROOM AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P8_TRANSPARENT_BASS)
+  message(FATAL_ERROR "P8.2 room requires P8.1 transparent-bass experiment")
+endif()
+# Isolated P8.3 physical speakers + music-LF A/B, public binaries OFF.
+# Requires the already opt-in P8.2 native measured room/XYZ stack.
+option(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+       "Enable P8.3 v4 native render mode and real-time speaker audition (unreleased)"
+       OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P82_ROOM)
+  message(FATAL_ERROR "P8.3 native speaker research requires P8.2 room ON")
+endif()
+# P8.4 v5, ONLY in private/research FAT binaries. Not a public default.
+option(ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT
+       "Enable P8.4 single-core music-fused native v5 research (headphone FAT only)"
+       OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT)
+  message(FATAL_ERROR "P8.4 research requires P8.3 typed native host as transport; old P8.3 modes remain hidden/rejected")
+endif()
+option(ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT
+       "Enable opt-in P8.5 world-locked music scene for private headphone FAT" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT)
+  message(FATAL_ERROR "P8.5 requires P8.4 native fusion research; production stays OFF")
+endif()
+# Isolated post-FAT P8.6 horizontal speaker focus. OFF in production.
+option(ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT
+       "Opt-in P8.6 horizontal speaker focus while keeping golden 0/3/4" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT)
+  message(FATAL_ERROR "P8.6 focus requires P8.5 coherent-world research")
+endif()
+# P8.7 musical air and resonant FDN LF body, private A/B only.
+option(ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT
+       "Opt-in P8.7 music-first direct air + FDN LF body" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT)
+  message(FATAL_ERROR "P8.7 music body requires P8.6 horizontal focus research")
+endif()
+# Listener-calibrated HRTF elevation independent of physical source XYZ.
+option(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
+       "Private P8.8 HRTF vertical alignment and source distance research" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT)
+  message(FATAL_ERROR "P8.8 needs private P8.7 music-body research")
+endif()
+# P8.9 keeps old modes and original stereo, moves bounded far-field
+# emphasis toward measured directional early reflections.
+option(ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT
+       "Private P8.9 headphone stereo/room coherence research" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT)
+  message(FATAL_ERROR "P8.9 requires P8.8 perceptual alignment")
+endif()
+# P9.0 opt-in experiment. Production builds and previous P8.x modes remain OFF.
+option(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT
+       "Private P9 true external speaker two-source binaural PCM experiment" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT)
+  message(FATAL_ERROR "P9.0 requires P8.9 research branch baseline")
+endif()
+# Private P9.4 perceptual A/B: default OFF and never silently changes P9.1.
+option(ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH
+       "Private front/back HRTF/early reflection depth calibration experiment" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT)
+  message(FATAL_ERROR "P9.4 depth cue requires the P9 measured two-speaker engine")
+endif()
+# Optional P9.5 upward-only, slow electrical musical presence. No public default.
+option(ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE
+       "Private P9.5 cinema/venue music-level compensation" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT)
+  message(FATAL_ERROR "P9.5 requires P9 measured spatial engine")
+endif()
+# Private stage-speaker reinforcement, isolated from P9.5 production.
+option(ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT
+       "Private P9.6 stage-speaker LF/HF distance retention over 2m" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE)
+  message(FATAL_ERROR "P9.6 requires P9.5 musical presence and P9 world speaker")
+endif()
+# P9.7 is research only and never changes the approved P9.6 checkpoint.
+option(ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT
+       "Private P9.7 concert bass impact, center HRTF and binaural early air" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT)
+  message(FATAL_ERROR "P9.7 requires the P9.6 sound-reinforced world-speaker engine")
+endif()
+# Typed native v12 voicing of Signature/Cinema/Studio: P9.7 Venue remains immutable.
+option(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+       "Private P9.8 scene bass/voice/air voicing; preserve approved P9.7 Venue" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT)
+  message(FATAL_ERROR "P9.8 requires P9.7 approved stage; public default OFF")
+endif()
+# P9.9 adds modest adaptive center-vocal articulation and spatial unmasking.
+# Named scenes only; P9.8 is an independent immutable reference on its branch.
+option(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH
+       "Private low-cost musical vocal focus; keep P9.8/approved Venue unchanged" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING)
+  message(FATAL_ERROR "P9.9 requires P9.8 native typed scene voicings")
+endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -192,7 +331,87 @@ target_compile_definitions(ARMixConsole PRIVATE
     JUCE_APPLICATION_NAME_STRING="AR MIX Studio"
     JUCE_APPLICATION_VERSION_STRING="${ARMIX_APP_VERSION}"
     ARMIX_BUILD_SOURCE_SHA="${ARMIX_BUILD_SOURCE_SHA}"
-    ARMIX_GFX_EMBED_PNG_SKINS=1)
+    ARMIX_GFX_EMBED_PNG_SKINS=1
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT}>:ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:SONKU_P7_MEASURED_ELEVATION_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:SONKU_P71_DIRECT_XYZ_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:SONKU_P72_NATIVE_XYZ_RT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE}>:SONKU_P75_MUSIC_SAFE_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P8_TRANSPARENT_BASS}>:SONKU_P80_TRANSPARENT_BASS_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P82_ROOM}>:SONKU_P82_MULTIBAND_ROOM_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT}>:ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT}>:SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT}>:ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT}>:SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT}>:ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT}>:SONKU_P85_WORLD_COHERENCE_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT}>:ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT}>:SONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT}>:ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT}>:SONKU_P87_MUSIC_BODY_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT}>:ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT}>:SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT}>:ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT}>:SONKU_P89_DEPTH_COHERENCE_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT}>:ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT}>:SONKU_P90_TRUE_EXTERNAL_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH}>:SONKU_P94_FRONT_BACK_DEPTH_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH}>:ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE}>:ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE}>:SONKU_P95_MUSICAL_PRESENCE_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT}>:SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT}>:ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT}>:SONKU_P97_STAGE_IMPACT_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT}>:ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:SONKU_P98_SCENE_VOICING_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH}>:SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH}>:ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH=1>)
+# Approved SonKu P9.9 stereo-orbit engine. Product-local (8D-SonKu only),
+# not a global research gate: tests and other products retain their own flags.
+# CMake cache option can be OFF to build the previous v2 production default.
+option(ARMIX_SONKU_APPROVED_P99_MAIN
+       "Ship the user-listening-approved SonKu P9.9 in ARMixConsole only" ON)
+if(ARMIX_SONKU_APPROVED_P99_MAIN)
+  target_compile_definitions(ARMixConsole PRIVATE
+    ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=1
+    SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+    SONKU_P71_DIRECT_XYZ_RESEARCH=1
+    SONKU_P72_NATIVE_XYZ_RT=1
+    SONKU_P75_MUSIC_SAFE_RESEARCH=1
+    SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+    SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+    ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT=1
+    SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+    ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT=1
+    SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+    ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT=1
+    SONKU_P85_WORLD_COHERENCE_RESEARCH=1
+    ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT=1
+    SONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1
+    ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT=1
+    SONKU_P87_MUSIC_BODY_RESEARCH=1
+    ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT=1
+    SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1
+    ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT=1
+    SONKU_P89_DEPTH_COHERENCE_RESEARCH=1
+    ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT=1
+    SONKU_P90_TRUE_EXTERNAL_RESEARCH=1
+    SONKU_P94_FRONT_BACK_DEPTH_RESEARCH=1
+    ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH=1
+    ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE=1
+    SONKU_P95_MUSICAL_PRESENCE_RESEARCH=1
+    SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH=1
+    ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT=1
+    SONKU_P97_STAGE_IMPACT_RESEARCH=1
+    ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT=1
+    SONKU_P98_SCENE_VOICING_RESEARCH=1
+    ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING=1
+    SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH=1
+    ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH=1)
+endif()
+
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
   # Never link Windows loader or sound APIs into macOS/Linux builds.
@@ -265,14 +484,561 @@ if(BUILD_TESTING)
   add_executable(ARMixSonKuCoreTests tests/sonku_spatial_core_test.cpp)
   target_compile_features(ARMixSonKuCoreTests PRIVATE cxx_std_20)
   add_test(NAME NativeSonKuMeasuredBinauralDirectionalAndChunkParity COMMAND ARMixSonKuCoreTests)
+  # P6 same core/PCM profile: no JUCE or SDK required for source regression.
+  add_executable(ARMixSonKuP6PreparedTests tests/sonku_p6_realtime_quality_test.cpp)
+  target_compile_features(ARMixSonKuP6PreparedTests PRIVATE cxx_std_20)
+  add_test(NAME NativeSonKuP6PreparedRoomDirectionalAndChunkParity
+      COMMAND ARMixSonKuP6PreparedTests)
   # Real JUCE processor: audio-applied ACK, v1/v2 state, corruption fences.
   juce_add_console_app(ARMixSonKuNativeStateTests PRODUCT_NAME "ArSonMix SonKu Native State Tests")
   target_sources(ARMixSonKuNativeStateTests PRIVATE tests/sonku_native_state_test.cpp)
   target_link_libraries(ARMixSonKuNativeStateTests PRIVATE
       juce::juce_audio_processors juce::juce_recommended_config_flags)
   target_compile_features(ARMixSonKuNativeStateTests PRIVATE cxx_std_20)
+  # Compile and test the same opt-in native profile in the actual JUCE
+  # adapter when a deliberately qualified experimental build requests it.
+  if(ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT)
+    target_compile_definitions(ARMixSonKuNativeStateTests PRIVATE
+        ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT=1)
+  endif()
   add_test(NAME NativeSonKuSessionV1V2AndAudioAppliedAck
       COMMAND ARMixSonKuNativeStateTests)
+
+  # P7.2 native real-time 3D is never required in production: its test
+  # binaries, large measured elevation bank and v3 schema are built ONLY
+  # when explicitly opted in. Reuse the exact existing JUCE processor.
+  if(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT)
+    add_executable(ARMixSonKuP72SourceTests
+        tests/sonku_p72_realtime_xyz_test.cpp)
+    target_compile_features(ARMixSonKuP72SourceTests PRIVATE cxx_std_20)
+    target_compile_definitions(ARMixSonKuP72SourceTests PRIVATE
+        SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+        SONKU_P71_DIRECT_XYZ_RESEARCH=1
+        SONKU_P72_NATIVE_XYZ_RT=1)
+    add_test(NAME NativeSonKuP72AtomicXyzLiveEditSource
+        COMMAND ARMixSonKuP72SourceTests)
+
+    juce_add_console_app(ARMixSonKuP72NativeTests
+        PRODUCT_NAME "ArSonMix SonKu P72 Native XYZ Tests")
+    target_sources(ARMixSonKuP72NativeTests PRIVATE
+        tests/sonku_p72_native_juce_xyz_test.cpp)
+    target_link_libraries(ARMixSonKuP72NativeTests PRIVATE
+        juce::juce_audio_processors juce::juce_recommended_config_flags)
+    target_compile_features(ARMixSonKuP72NativeTests PRIVATE cxx_std_20)
+    target_compile_definitions(ARMixSonKuP72NativeTests PRIVATE
+        ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=1
+        SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+        SONKU_P71_DIRECT_XYZ_RESEARCH=1
+        SONKU_P72_NATIVE_XYZ_RT=1)
+    add_test(NAME NativeSonKuP72JuceV3XyzLiveAckV1V2Restore
+        COMMAND ARMixSonKuP72NativeTests)
+    if(ARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE)
+      # The executable and THIS actual JUCE adapter run the identical P7.5 DSP.
+      target_compile_definitions(ARMixSonKuP72NativeTests PRIVATE
+          SONKU_P75_MUSIC_SAFE_RESEARCH=1)
+      add_executable(ARMixSonKuP75MusicIntegrityTests
+          tests/sonku_p75_stereo_integrity_test.cpp)
+      target_compile_features(ARMixSonKuP75MusicIntegrityTests PRIVATE cxx_std_20)
+      target_compile_definitions(ARMixSonKuP75MusicIntegrityTests PRIVATE
+          SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+          SONKU_P71_DIRECT_XYZ_RESEARCH=1
+          SONKU_P72_NATIVE_XYZ_RT=1
+          SONKU_P75_MUSIC_SAFE_RESEARCH=1)
+      add_test(NAME NativeSonKuP75MusicStereoPhaseNoNullAndChunkParity
+          COMMAND ARMixSonKuP75MusicIntegrityTests)
+      if(ARMIX_SONKU_EXPERIMENTAL_P8_TRANSPARENT_BASS)
+        # The native JUCE adapter and the PCM fixture must compile identical
+        # P8 DSP flags. The default P7.5/ship branch retains its original DSP.
+        target_compile_definitions(ARMixSonKuP72NativeTests PRIVATE
+            SONKU_P80_TRANSPARENT_BASS_RESEARCH=1)
+        add_executable(ARMixSonKuP80TonalEvidenceTests
+            tests/sonku_p80_tonal_room_evidence_test.cpp)
+        target_compile_features(ARMixSonKuP80TonalEvidenceTests PRIVATE cxx_std_20)
+        target_compile_definitions(ARMixSonKuP80TonalEvidenceTests PRIVATE
+            SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+            SONKU_P71_DIRECT_XYZ_RESEARCH=1
+            SONKU_P72_NATIVE_XYZ_RT=1
+            SONKU_P75_MUSIC_SAFE_RESEARCH=1
+            SONKU_P80_TRANSPARENT_BASS_RESEARCH=1)
+        add_test(NAME NativeSonKuP80TransparentBassStereoPhaseAndRoomDiagnostic
+            COMMAND ARMixSonKuP80TonalEvidenceTests)
+        if(ARMIX_SONKU_EXPERIMENTAL_P82_ROOM)
+          # This is the actual live JUCE SonKu instance, not an offline
+          # room-only approximation. Preserve P8.1 as an unmodified fallback.
+          target_compile_definitions(ARMixSonKuP72NativeTests PRIVATE
+              SONKU_P82_MULTIBAND_ROOM_RESEARCH=1)
+          target_compile_definitions(ARMixSonKuP80TonalEvidenceTests PRIVATE
+              SONKU_P82_MULTIBAND_ROOM_RESEARCH=1)
+          add_executable(ARMixSonKuP82RoomTests
+              tests/sonku_p82_sixsurface_multiband_room_test.cpp)
+          target_compile_features(ARMixSonKuP82RoomTests PRIVATE cxx_std_20)
+          target_compile_definitions(ARMixSonKuP82RoomTests PRIVATE
+              SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+              SONKU_P71_DIRECT_XYZ_RESEARCH=1
+              SONKU_P72_NATIVE_XYZ_RT=1
+              SONKU_P75_MUSIC_SAFE_RESEARCH=1
+              SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+              SONKU_P82_MULTIBAND_ROOM_RESEARCH=1)
+          add_test(NAME NativeSonKuP82SixWallThreeBandRoomTimingDecayAndParity
+              COMMAND ARMixSonKuP82RoomTests)
+          if(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT)
+            add_executable(ARMixSonKuP83LiveSourceTests
+                tests/sonku_p83_live_scene_edit_test.cpp)
+            target_compile_features(ARMixSonKuP83LiveSourceTests PRIVATE cxx_std_20)
+            target_compile_definitions(ARMixSonKuP83LiveSourceTests PRIVATE
+                SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                SONKU_P72_NATIVE_XYZ_RT=1
+                SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1)
+            add_test(NAME NativeSonKuP83RealtimeModeSourceAndMusicIntegrity
+                COMMAND ARMixSonKuP83LiveSourceTests)
+            juce_add_console_app(ARMixSonKuP83NativeTests
+                PRODUCT_NAME "ArSonMix SonKu P83 Native JUCE v4 Tests")
+            target_sources(ARMixSonKuP83NativeTests PRIVATE
+                tests/sonku_p83_native_juce_v4_test.cpp)
+            target_compile_features(ARMixSonKuP83NativeTests PRIVATE cxx_std_20)
+            target_link_libraries(ARMixSonKuP83NativeTests PRIVATE
+                juce::juce_audio_processors juce::juce_recommended_config_flags)
+            target_compile_definitions(ARMixSonKuP83NativeTests PRIVATE
+                ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=1
+                ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT=1
+                SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                SONKU_P72_NATIVE_XYZ_RT=1
+                SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1)
+            add_test(NAME NativeSonKuP83JuceV4AudioAckLegacyRestoreAndHeadYaw
+                COMMAND ARMixSonKuP83NativeTests)
+            if(ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT)
+              add_executable(ARMixSonKuP84LiveSourceTests
+                  tests/sonku_p84_fused_single_core_test.cpp)
+              target_compile_features(ARMixSonKuP84LiveSourceTests PRIVATE cxx_std_20)
+              target_compile_definitions(ARMixSonKuP84LiveSourceTests PRIVATE
+                  SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                  SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                  SONKU_P72_NATIVE_XYZ_RT=1
+                  SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                  SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                  SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                  SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                  SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1)
+              add_test(NAME NativeSonKuP84SingleCoreMusicFidelityAndWorldYaw
+                  COMMAND ARMixSonKuP84LiveSourceTests)
+              juce_add_console_app(ARMixSonKuP84NativeTests
+                  PRODUCT_NAME "ArSonMix SonKu P84 Native JUCE v5 Tests")
+              target_sources(ARMixSonKuP84NativeTests PRIVATE
+                  tests/sonku_p84_native_juce_v5_test.cpp)
+              target_compile_features(ARMixSonKuP84NativeTests PRIVATE cxx_std_20)
+              target_link_libraries(ARMixSonKuP84NativeTests PRIVATE
+                  juce::juce_audio_processors juce::juce_recommended_config_flags)
+              target_compile_definitions(ARMixSonKuP84NativeTests PRIVATE
+                  ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=1
+                  ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT=1
+                  ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT=1
+                  SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                  SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                  SONKU_P72_NATIVE_XYZ_RT=1
+                  SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                  SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                  SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                  SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                  SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1)
+              add_test(NAME NativeSonKuP84JuceV5AudioAckLegacySafeRestore
+                  COMMAND ARMixSonKuP84NativeTests)
+              if(ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT)
+                add_executable(ARMixSonKuP85WorldSourceTests
+                    tests/sonku_p85_world_locked_source_test.cpp)
+                target_compile_features(ARMixSonKuP85WorldSourceTests PRIVATE cxx_std_20)
+                target_compile_definitions(ARMixSonKuP85WorldSourceTests PRIVATE
+                    SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                    SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                    SONKU_P72_NATIVE_XYZ_RT=1
+                    SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                    SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                    SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                    SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                    SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+                    SONKU_P85_WORLD_COHERENCE_RESEARCH=1)
+                add_test(NAME NativeSonKuP85WorldCoherentMidYawSourceAndFidelity
+                    COMMAND ARMixSonKuP85WorldSourceTests)
+                juce_add_console_app(ARMixSonKuP85NativeTests
+                    PRODUCT_NAME "ArSonMix SonKu P85 Native JUCE v6 Tests")
+                target_sources(ARMixSonKuP85NativeTests PRIVATE
+                    tests/sonku_p85_native_juce_v6_test.cpp)
+                target_compile_features(ARMixSonKuP85NativeTests PRIVATE cxx_std_20)
+                target_link_libraries(ARMixSonKuP85NativeTests PRIVATE
+                    juce::juce_audio_processors juce::juce_recommended_config_flags)
+                target_compile_definitions(ARMixSonKuP85NativeTests PRIVATE
+                    ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=1
+                    ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT=1
+                    ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT=1
+                    ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT=1
+                    SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                    SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                    SONKU_P72_NATIVE_XYZ_RT=1
+                    SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                    SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                    SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                    SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                    SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+                    SONKU_P85_WORLD_COHERENCE_RESEARCH=1)
+                add_test(NAME NativeSonKuP85JuceV6AudioAckLegacySafeRestore
+                    COMMAND ARMixSonKuP85NativeTests)
+                if(ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT)
+                  add_executable(ARMixSonKuP86FocusSourceTests
+                      tests/sonku_p86_horizontal_focus_native_source_test.cpp)
+                  target_compile_features(ARMixSonKuP86FocusSourceTests PRIVATE cxx_std_20)
+                  target_compile_definitions(ARMixSonKuP86FocusSourceTests PRIVATE
+                      SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                      SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                      SONKU_P72_NATIVE_XYZ_RT=1
+                      SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                      SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                      SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                      SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                      SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+                      SONKU_P85_WORLD_COHERENCE_RESEARCH=1
+                      SONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1)
+                  add_test(NAME NativeSonKuP86SixWallHorizontalFocusAndMusicIntegrity
+                      COMMAND ARMixSonKuP86FocusSourceTests)
+                  juce_add_console_app(ARMixSonKuP86NativeTests
+                      PRODUCT_NAME "ArSonMix SonKu P86 Native JUCE v7 Tests")
+                  target_sources(ARMixSonKuP86NativeTests PRIVATE
+                      tests/sonku_p86_native_juce_v7_test.cpp)
+                  target_compile_features(ARMixSonKuP86NativeTests PRIVATE cxx_std_20)
+                  target_link_libraries(ARMixSonKuP86NativeTests PRIVATE
+                      juce::juce_audio_processors juce::juce_recommended_config_flags)
+                  target_compile_definitions(ARMixSonKuP86NativeTests PRIVATE
+                      ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=1
+                      ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT=1
+                      ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT=1
+                      ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT=1
+                      ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT=1
+                      SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                      SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                      SONKU_P72_NATIVE_XYZ_RT=1
+                      SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                      SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                      SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                      SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                      SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+                      SONKU_P85_WORLD_COHERENCE_RESEARCH=1
+                      SONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1)
+                  add_test(NAME NativeSonKuP86JuceV7AudioAckAndV6Restore
+                      COMMAND ARMixSonKuP86NativeTests)
+                  if(ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT)
+                    add_executable(ARMixSonKuP87MusicSourceTests
+                        tests/sonku_p87_musical_air_body_source_test.cpp)
+                    target_compile_features(ARMixSonKuP87MusicSourceTests PRIVATE cxx_std_20)
+                    target_compile_definitions(ARMixSonKuP87MusicSourceTests PRIVATE
+                        SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                        SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                        SONKU_P72_NATIVE_XYZ_RT=1
+                        SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                        SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                        SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                        SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                        SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+                        SONKU_P85_WORLD_COHERENCE_RESEARCH=1
+                        SONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1
+                        SONKU_P87_MUSIC_BODY_RESEARCH=1)
+                    add_test(NAME NativeSonKuP87MusicalAirBodyP86DryParityAndFdnBass
+                        COMMAND ARMixSonKuP87MusicSourceTests)
+                    juce_add_console_app(ARMixSonKuP87NativeTests
+                        PRODUCT_NAME "ArSonMix SonKu P87 Native JUCE v8 Tests")
+                    target_sources(ARMixSonKuP87NativeTests PRIVATE
+                        tests/sonku_p87_native_juce_v8_test.cpp)
+                    target_compile_features(ARMixSonKuP87NativeTests PRIVATE cxx_std_20)
+                    target_link_libraries(ARMixSonKuP87NativeTests PRIVATE
+                        juce::juce_audio_processors juce::juce_recommended_config_flags)
+                    target_compile_definitions(ARMixSonKuP87NativeTests PRIVATE
+                        ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=1
+                        ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT=1
+                        ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT=1
+                        ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT=1
+                        ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT=1
+                        ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT=1
+                        SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                        SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                        SONKU_P72_NATIVE_XYZ_RT=1
+                        SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                        SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                        SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                        SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                        SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+                        SONKU_P85_WORLD_COHERENCE_RESEARCH=1
+                        SONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1
+                        SONKU_P87_MUSIC_BODY_RESEARCH=1)
+                    add_test(NAME NativeSonKuP87JuceV8AudioAppliedAckV7Restore
+                        COMMAND ARMixSonKuP87NativeTests)
+                    if(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT)
+                      add_executable(ARMixSonKuP88SourceTests
+                          tests/sonku_p88_height_distance_source_test.cpp)
+                      target_compile_features(ARMixSonKuP88SourceTests PRIVATE cxx_std_20)
+                      target_compile_definitions(ARMixSonKuP88SourceTests PRIVATE
+                          SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                          SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                          SONKU_P72_NATIVE_XYZ_RT=1
+                          SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                          SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                          SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                          SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                          SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+                          SONKU_P85_WORLD_COHERENCE_RESEARCH=1
+                          SONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1
+                          SONKU_P87_MUSIC_BODY_RESEARCH=1
+                          SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1)
+                      add_test(NAME NativeSonKuP88MeasuredEarHeightAndDistanceDrr
+                          COMMAND ARMixSonKuP88SourceTests)
+                      juce_add_console_app(ARMixSonKuP88NativeTests
+                          PRODUCT_NAME "ArSonMix SonKu P88 JUCE v9 State Tests")
+                      target_sources(ARMixSonKuP88NativeTests PRIVATE
+                          tests/sonku_p88_native_juce_v9_test.cpp)
+                      target_compile_features(ARMixSonKuP88NativeTests PRIVATE cxx_std_20)
+                      target_link_libraries(ARMixSonKuP88NativeTests PRIVATE
+                          juce::juce_audio_processors juce::juce_recommended_config_flags)
+                      target_compile_definitions(ARMixSonKuP88NativeTests PRIVATE
+                          ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=1
+                          ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT=1
+                          ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT=1
+                          ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT=1
+                          ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT=1
+                          ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT=1
+                          ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT=1
+                          SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                          SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                          SONKU_P72_NATIVE_XYZ_RT=1
+                          SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                          SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                          SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                          SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                          SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+                          SONKU_P85_WORLD_COHERENCE_RESEARCH=1
+                          SONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1
+                          SONKU_P87_MUSIC_BODY_RESEARCH=1
+                          SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1)
+                      add_test(NAME NativeSonKuP88JuceV9AppliedAckAndV8Restore
+                          COMMAND ARMixSonKuP88NativeTests)
+                      if(ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT)
+                        add_executable(ARMixSonKuP89SourceTests
+                            tests/sonku_p89_stereo_room_depth_source_test.cpp)
+                        target_compile_features(ARMixSonKuP89SourceTests PRIVATE cxx_std_20)
+                        target_compile_definitions(ARMixSonKuP89SourceTests PRIVATE
+                            SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                            SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                            SONKU_P72_NATIVE_XYZ_RT=1
+                            SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                            SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                            SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                            SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                            SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+                            SONKU_P85_WORLD_COHERENCE_RESEARCH=1
+                            SONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1
+                            SONKU_P87_MUSIC_BODY_RESEARCH=1
+                            SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1
+                            SONKU_P89_DEPTH_COHERENCE_RESEARCH=1)
+                        add_test(NAME NativeSonKuP89RoomAnchoredStereoAndP88GoldenParity
+                            COMMAND ARMixSonKuP89SourceTests)
+                        juce_add_console_app(ARMixSonKuP89NativeTests
+                            PRODUCT_NAME "ArSonMix SonKu P89 JUCE v10 State Tests")
+                        target_sources(ARMixSonKuP89NativeTests PRIVATE
+                            tests/sonku_p89_native_juce_v10_test.cpp)
+                        target_compile_features(ARMixSonKuP89NativeTests PRIVATE cxx_std_20)
+                        target_link_libraries(ARMixSonKuP89NativeTests PRIVATE
+                            juce::juce_audio_processors juce::juce_recommended_config_flags)
+                        target_compile_definitions(ARMixSonKuP89NativeTests PRIVATE
+                            ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=1
+                            ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT=1
+                            ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT=1
+                            ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT=1
+                            ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT=1
+                            ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT=1
+                            ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT=1
+                            ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT=1
+                            SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                            SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                            SONKU_P72_NATIVE_XYZ_RT=1
+                            SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                            SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                            SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                            SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                            SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+                            SONKU_P85_WORLD_COHERENCE_RESEARCH=1
+                            SONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1
+                            SONKU_P87_MUSIC_BODY_RESEARCH=1
+                            SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1
+                            SONKU_P89_DEPTH_COHERENCE_RESEARCH=1)
+                        add_test(NAME NativeSonKuP89JuceV10AppliedAckAndV9Restore
+                            COMMAND ARMixSonKuP89NativeTests)
+                        if(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT)
+                          add_executable(ARMixSonKuP90SourceTests
+                              tests/sonku_p90_true_external_source_test.cpp)
+                          target_compile_features(ARMixSonKuP90SourceTests PRIVATE cxx_std_20)
+                          target_compile_definitions(ARMixSonKuP90SourceTests PRIVATE
+                              SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                              SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                              SONKU_P72_NATIVE_XYZ_RT=1
+                              SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                              SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                              SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                              SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                              SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+                              SONKU_P85_WORLD_COHERENCE_RESEARCH=1
+                              SONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1
+                              SONKU_P87_MUSIC_BODY_RESEARCH=1
+                              SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1
+                              SONKU_P89_DEPTH_COHERENCE_RESEARCH=1
+                              SONKU_P90_TRUE_EXTERNAL_RESEARCH=1)
+                          add_test(NAME NativeSonKuP90StereoExternalizationSource
+                              COMMAND ARMixSonKuP90SourceTests)
+                          add_executable(ARMixSonKuP91P92MusicBassTests
+                              tests/sonku_p91_p92_music_bass_foundation_test.cpp)
+                          target_compile_features(ARMixSonKuP91P92MusicBassTests PRIVATE cxx_std_20)
+                          target_compile_definitions(ARMixSonKuP91P92MusicBassTests PRIVATE
+                              SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                              SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                              SONKU_P72_NATIVE_XYZ_RT=1
+                              SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                              SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                              SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                              SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                              SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+                              SONKU_P85_WORLD_COHERENCE_RESEARCH=1
+                              SONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1
+                              SONKU_P87_MUSIC_BODY_RESEARCH=1
+                              SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1
+                              SONKU_P89_DEPTH_COHERENCE_RESEARCH=1
+                              SONKU_P90_TRUE_EXTERNAL_RESEARCH=1)
+                          add_test(NAME NativeSonKuP91P92MusicFidelityWorldBassAndRoom
+                              COMMAND ARMixSonKuP91P92MusicBassTests)
+                          if(ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH)
+                            add_executable(ARMixSonKuP94ReferenceTests
+                                tests/sonku_p94_front_back_depth_source_test.cpp)
+                            target_compile_features(ARMixSonKuP94ReferenceTests PRIVATE cxx_std_20)
+                            target_compile_definitions(ARMixSonKuP94ReferenceTests PRIVATE
+                                $<TARGET_PROPERTY:ARMixSonKuP91P92MusicBassTests,COMPILE_DEFINITIONS>)
+                            add_executable(ARMixSonKuP94SourceTests
+                                tests/sonku_p94_front_back_depth_source_test.cpp)
+                            target_compile_features(ARMixSonKuP94SourceTests PRIVATE cxx_std_20)
+                            # Reuse the proven exact P9.1/P9.2 native flag set.
+                            # Do not duplicate a parallel DSP/test configuration.
+                            target_compile_definitions(ARMixSonKuP94SourceTests PRIVATE
+                                $<TARGET_PROPERTY:ARMixSonKuP91P92MusicBassTests,COMPILE_DEFINITIONS>
+                                SONKU_P94_FRONT_BACK_DEPTH_RESEARCH=1)
+                            add_test(NAME NativeSonKuP94FrontBackDepthA_BSource
+                                COMMAND ARMixSonKuP94SourceTests)
+                            add_test(NAME NativeSonKuP94LevelMatchedAB
+                                COMMAND "${Python3_EXECUTABLE}"
+                                    "${CMAKE_SOURCE_DIR}/scripts/verify_sonku_p94_acoustic_levels.py"
+                                    "$<TARGET_FILE:ARMixSonKuP94ReferenceTests>"
+                                    "$<TARGET_FILE:ARMixSonKuP94SourceTests>")
+                          endif()
+                          if(ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE)
+                            add_executable(ARMixSonKuP95MusicTests
+                                tests/sonku_p95_musical_presence_source_test.cpp)
+                            target_compile_features(ARMixSonKuP95MusicTests PRIVATE cxx_std_20)
+                            target_compile_definitions(ARMixSonKuP95MusicTests PRIVATE
+                                $<TARGET_PROPERTY:ARMixSonKuP91P92MusicBassTests,COMPILE_DEFINITIONS>
+                                SONKU_P94_FRONT_BACK_DEPTH_RESEARCH=1
+                                SONKU_P95_MUSICAL_PRESENCE_RESEARCH=1
+                                $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT}>:SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH=1>
+                                $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT}>:SONKU_P97_STAGE_IMPACT_RESEARCH=1>
+                                $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:SONKU_P98_SCENE_VOICING_RESEARCH=1>
+                                $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH}>:SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH=1>)
+                            add_test(NAME NativeSonKuP95MusicPresenceVenue
+                                COMMAND ARMixSonKuP95MusicTests)
+                          endif()
+                          if(ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT)
+                            add_executable(ARMixSonKuP96DistanceTests
+                                tests/sonku_p96_distance_reinforcement_source_test.cpp)
+                            target_compile_features(ARMixSonKuP96DistanceTests PRIVATE cxx_std_20)
+                            add_test(NAME NativeSonKuP96DistanceBassAndTrebleRetention
+                                COMMAND ARMixSonKuP96DistanceTests)
+                          endif()
+                          if(ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT)
+                            add_executable(ARMixSonKuP97StageTests
+                                tests/sonku_p97_stage_impact_source_test.cpp)
+                            target_compile_features(ARMixSonKuP97StageTests PRIVATE cxx_std_20)
+                            add_test(NAME NativeSonKuP97BassVocalExternalAirSafety
+                                COMMAND ARMixSonKuP97StageTests)
+                          endif()
+                          if(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING)
+                            add_executable(ARMixSonKuP98VoicingTests
+                                tests/sonku_p98_scene_voicing_source_test.cpp)
+                            target_compile_features(ARMixSonKuP98VoicingTests PRIVATE cxx_std_20)
+                            add_test(NAME NativeSonKuP98SceneVoicingVenueLock
+                                COMMAND ARMixSonKuP98VoicingTests)
+                          endif()
+                          if(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH)
+                            add_executable(ARMixSonKuP99VocalDepthTests
+                                tests/sonku_p99_vocal_depth_source_test.cpp)
+                            target_compile_features(ARMixSonKuP99VocalDepthTests PRIVATE cxx_std_20)
+                            add_test(NAME NativeSonKuP99AdaptiveVocalDepthVenueLock
+                                COMMAND ARMixSonKuP99VocalDepthTests)
+                            add_executable(ARMixSonKuP99DefaultOrbitTests
+                                tests/sonku_p99_default_orbit_source_test.cpp)
+                            target_compile_features(ARMixSonKuP99DefaultOrbitTests PRIVATE cxx_std_20)
+                            # Exactly the same nested P9 physical/native core
+                            # flags as its P95/P96/P97/P98/P99 integrated build.
+                            target_compile_definitions(ARMixSonKuP99DefaultOrbitTests PRIVATE
+                                $<TARGET_PROPERTY:ARMixSonKuP95MusicTests,COMPILE_DEFINITIONS>)
+                            add_test(NAME NativeSonKuP99NewDefaultOrbitNative
+                                COMMAND ARMixSonKuP99DefaultOrbitTests)
+                          endif()
+                          juce_add_console_app(ARMixSonKuP90NativeTests
+                              PRODUCT_NAME "ArSonMix SonKu P90 JUCE v11 State Tests")
+                          target_sources(ARMixSonKuP90NativeTests PRIVATE
+                              tests/sonku_p90_native_juce_v11_test.cpp)
+                          target_compile_features(ARMixSonKuP90NativeTests PRIVATE cxx_std_20)
+                          target_link_libraries(ARMixSonKuP90NativeTests PRIVATE
+                              juce::juce_audio_processors juce::juce_recommended_config_flags)
+                          target_compile_definitions(ARMixSonKuP90NativeTests PRIVATE
+                              ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=1
+                              ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT=1
+                              ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT=1
+                              ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT=1
+                              ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT=1
+                              ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT=1
+                              ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT=1
+                              ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT=1
+                              ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT=1
+                              $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING=1>
+                              $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:SONKU_P98_SCENE_VOICING_RESEARCH=1>
+                              $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH}>:SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH=1>
+                              $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH}>:ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH=1>
+                              SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                              SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                              SONKU_P72_NATIVE_XYZ_RT=1
+                              SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                              SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                              SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                              SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1
+                              SONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1
+                              SONKU_P85_WORLD_COHERENCE_RESEARCH=1
+                              SONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1
+                              SONKU_P87_MUSIC_BODY_RESEARCH=1
+                              SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1
+                              SONKU_P89_DEPTH_COHERENCE_RESEARCH=1
+                              SONKU_P90_TRUE_EXTERNAL_RESEARCH=1)
+                          add_test(NAME NativeSonKuP90JuceV11AppliedAckAndLegacyRestore
+                              COMMAND ARMixSonKuP90NativeTests)
+                        endif()
+                      endif()
+                    endif()
+                  endif()
+                endif()
+              endif()
+            endif()
+          endif()
+        endif()
+      endif()
+    endif()
+  endif()
   # Pure control-plane first-run routing selection: no JUCE, drivers,
   # WASAPI activation or callback dependencies. Full Windows CTest gate.
   add_executable(ARMixFirstRunEndpointPolicyTests

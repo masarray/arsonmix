@@ -46,6 +46,7 @@
 #include "NativeHotkeyRegistry.h"
 #include "NativeFxParameterHotkey.h"
 #include "NativeFxControlRequest.h"
+#include "SonKuNativeBridgeContract.h"
 #include "NativeDeviceApplyCoordinator.h"
 #if defined(_WIN32)
 #include "../engine/device/WindowsFirstRunEndpointDiscovery.h"
@@ -3097,23 +3098,117 @@ private:
         reply->setProperty("deviceEpoch",epoch);
         reply->setProperty("graphRevision",revision);
         reply->setProperty("instanceId",instanceId);
-        reply->setProperty("schemaVersion",2);
+        reply->setProperty("schemaVersion",
+            armix::builtin_fx::sonku_bridge::schemaVersion());
         reply->setProperty("status",processor?"ACCEPTED":"REJECTED");
+#if defined(SONKU_P75_MUSIC_SAFE_RESEARCH) && SONKU_P75_MUSIC_SAFE_RESEARCH
+        // Read-only experiment capability is authoritative only for a real
+        // leased native SonKu instance. No public UI or saved state change.
+        if(processor && processor->preparedReflectionProfile()==
+                armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch)
+            reply->setProperty("musicSafeStereo",true);
+#endif
+#if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
+        if(processor && processor->preparedReflectionProfile()==
+                armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch)
+            reply->setProperty("p8TransparentBass",true);
+#endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT
+        if(processor && processor->preparedReflectionProfile()==
+               armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch) {
+            reply->setProperty("p84MusicFusion",true);
+            reply->setProperty("p85AcousticCoherence",true);
+            reply->setProperty("p86HorizontalFocus",true);
+            reply->setProperty("p87MusicalAirBody",true);
+            reply->setProperty("p88PerceptualAlignment",true);
+            reply->setProperty("p89StereoRoomDepth",true);
+            reply->setProperty("p90TrueExternalSpeaker",true);
+            // This capability is emitted only by the new reconciled DSP build.
+            // Older v11 P9.0 binaries must NOT be advertised as P9.1+P9.2.
+            reply->setProperty("p91p92MusicBassFoundation",true);
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE) && ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE
+            reply->setProperty("p95MusicalPresence",true);
+#endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT) && ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT
+            reply->setProperty("p96DistanceReinforcement",true);
+#endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT) && ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT
+            reply->setProperty("p97StageImpact",true);
+#endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING) && ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+            reply->setProperty("p98SceneVoicing",true);
+#endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH
+            // Truthful native opt-in: P9.8 hosts must never claim P9.9.
+            // No new JSON scene ID or state bytes; v12 reads back normally.
+            reply->setProperty("p99MusicalVocalDepth",true);
+#endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH
+            // Branch-only measured-engine A/B. A previous v11 binary cannot
+            // advertise this front/rear perceptual depth research capability.
+            reply->setProperty("p94FrontBackDepthCue",true);
+#endif
+        }
+#elif defined(ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT
+        if(processor && processor->preparedReflectionProfile()==
+               armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch) {
+            reply->setProperty("p84MusicFusion",true);
+            reply->setProperty("p85AcousticCoherence",true);
+            reply->setProperty("p86HorizontalFocus",true);
+            reply->setProperty("p87MusicalAirBody",true);
+            reply->setProperty("p88PerceptualAlignment",true);
+            reply->setProperty("p89StereoRoomDepth",true);
+        }
+#elif defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
+        if(processor && processor->preparedReflectionProfile()==
+               armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch) {
+            reply->setProperty("p84MusicFusion",true);
+            reply->setProperty("p85AcousticCoherence",true);
+            reply->setProperty("p86HorizontalFocus",true);
+            reply->setProperty("p87MusicalAirBody",true);
+            reply->setProperty("p88PerceptualAlignment",true);
+        }
+#elif defined(ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT
+        if(processor && processor->preparedReflectionProfile()==
+               armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch) {
+            reply->setProperty("p84MusicFusion",true);
+            reply->setProperty("p85AcousticCoherence",true);
+            reply->setProperty("p86HorizontalFocus",true);
+            reply->setProperty("p87MusicalAirBody",true);
+        }
+#elif defined(ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT
+        if(processor && processor->preparedReflectionProfile()==
+               armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch) {
+            reply->setProperty("p84MusicFusion",true);
+            reply->setProperty("p85AcousticCoherence",true);
+            reply->setProperty("p86HorizontalFocus",true);
+        }
+#elif defined(ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT
+        if(processor && processor->preparedReflectionProfile()==
+               armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch) {
+            reply->setProperty("p84MusicFusion",true);
+            reply->setProperty("p85AcousticCoherence",true);
+        }
+#elif defined(ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT
+        if(processor && processor->preparedReflectionProfile()==
+               armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch)
+            reply->setProperty("p84MusicFusion",true);
+#elif defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+        if(processor && processor->preparedReflectionProfile()==
+               armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch)
+            reply->setProperty("p83SpeakerModes",true);
+#endif
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+        // Read-only P8.2 room capability; only a real admitted measured
+        // SonKu FX instance can claim it in the identity-bound snapshot.
+        if(processor && processor->preparedReflectionProfile()==
+                armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch)
+            reply->setProperty("p82MultibandRoom",true);
+#endif
         if(processor) {
-            const auto s=processor->acceptedSettings();
-            auto values=std::make_unique<juce::DynamicObject>();
-            values->setProperty("startAzimuthDegrees",s.startAzimuthDegrees);
-            values->setProperty("revolutionSeconds",s.revolutionSeconds);
-            values->setProperty("stereoSpreadDegrees",s.stereoSpreadDegrees);
-            values->setProperty("spatialMix",s.spatialMix);
-            values->setProperty("outputTrim",s.outputTrim);
-            values->setProperty("moving",s.moving);
-            values->setProperty("clockwise",s.clockwise);
-            values->setProperty("spacePreset",s.spacePreset);
-            values->setProperty("sourceDistanceMeters",s.sourceDistanceMeters);
-            values->setProperty("roomAmount",s.roomAmount);
-            values->setProperty("ambience",s.ambience);
-            reply->setProperty("settings",juce::var(values.release()));
+            reply->setProperty("settings",
+                armix::builtin_fx::sonku_bridge::acceptedSettings(
+                    processor->acceptedSettings()));
             reply->setProperty("observedAzimuthDegrees",
                 processor->observedAzimuthDegrees());
             if(epoch=="0" && instanceId==lastLogicalFxInstance_ &&
@@ -5261,46 +5356,12 @@ private:
                     rawEpoch.toString(),rawRevision.toString(),rawInstance.toString(),p);
                 return;
             }
-            const auto values=args.getProperty("settings",{});
             armix::sonku::Settings settings{};
-            auto number=[&values](const char* key,float& dest) {
-                const auto v=values.getProperty(key,{});
-                if(!v.isDouble()&&!v.isInt())return false;
-                const double n=static_cast<double>(v);
-                if(!std::isfinite(n) || n>1.0e6 || n< -1.0e6)return false;
-                dest=static_cast<float>(n);
-                return std::isfinite(dest);
-            };
-            const auto moving=values.getProperty("moving",{});
-            const auto clockwise=values.getProperty("clockwise",{});
-            const bool parameters=values.isObject() &&
-                number("startAzimuthDegrees",settings.startAzimuthDegrees) &&
-                number("revolutionSeconds",settings.revolutionSeconds) &&
-                number("stereoSpreadDegrees",settings.stereoSpreadDegrees) &&
-                number("spatialMix",settings.spatialMix) &&
-                number("outputTrim",settings.outputTrim) &&
-                moving.isBool()&&clockwise.isBool();
-            if(parameters){settings.moving=static_cast<bool>(moving);
-                           settings.clockwise=static_cast<bool>(clockwise);}
-            // Optional v2 fields preserve legacy v1 clients and old sessions.
-            // Typed native intent remains bounded and validated before SPSC.
-            const auto preset=values.getProperty("spacePreset",{});
-            bool acousticParameters=true;
-            if(!preset.isVoid()){
-                if(!preset.isInt())acousticParameters=false;
-                else settings.spacePreset=static_cast<int>(preset);
-            }
-            const auto optionalNumber=[&](const char* key,float& target) {
-                if(values.getProperty(key,{}).isVoid())return true;
-                return number(key,target);
-            };
-            acousticParameters=acousticParameters &&
-                optionalNumber("sourceDistanceMeters",settings.sourceDistanceMeters) &&
-                optionalNumber("roomAmount",settings.roomAmount) &&
-                optionalNumber("ambience",settings.ambience);
+            const bool parameters=armix::builtin_fx::sonku_bridge::decodeSettings(
+                args.getProperty("settings",{}),settings);
             const auto numeric=fxRequest.sequence("sonku-");
             bool queued=false;
-            if(p&&numeric&&parameters&&acousticParameters&&armix::sonku::valid(settings) &&
+            if(p&&numeric&&parameters &&
                !pendingNativeSonKu_.owner&&!nativeShowBusy_&&!studioBackupBusy_&&
                !engine_.independentClockActive()) {
                 queued=p->queueSettings(settings,numeric);

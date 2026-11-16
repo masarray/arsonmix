@@ -125,17 +125,20 @@ class NativeParametricEqIntegration(unittest.TestCase):
         processor=(ROOT/"engine/builtin_fx/SonKuSpatialProcessor.h").read_text("utf-8")
         core=(ROOT/"engine/builtin_fx/sonku/SonKuSpatialCore.h").read_text("utf-8")
         js=(ROOT/"site/preview-v2/assets/mixer-native-sonku.js").read_text("utf-8")
+        bridge=(ROOT/"src/SonKuNativeBridgeContract.h").read_text("utf-8")
         snapshot=main.split("void emitNativeSonKuSnapshot(",1)[1].split(
             "void servicePendingNativeSonKu()",1)[0]
         for field in ("spacePreset","sourceDistanceMeters","roomAmount","ambience"):
-            self.assertIn('values->setProperty("'+field+'"',snapshot)
+            self.assertIn('values->setProperty("'+field+'"',bridge)
             if field=="spacePreset":
-                self.assertIn('values.getProperty("spacePreset"',main)
+                self.assertIn('values.getProperty("spacePreset"',bridge)
             else:
-                self.assertIn('optionalNumber("'+field+'"',main)
+                self.assertIn('number(values,"'+field+'"',bridge)
             self.assertIn(field,js)
             self.assertIn(field,core)
-        self.assertIn('reply->setProperty("schemaVersion",2)',snapshot)
+        self.assertIn("sonku_bridge::schemaVersion()",snapshot)
+        self.assertIn("sonku_bridge::acceptedSettings(",snapshot)
+        self.assertIn("sonku_bridge::decodeSettings(",main)
         self.assertIn("queueSettings(settings,numeric)",main)
         self.assertIn("complete_.push(",processor)
         self.assertIn("out.writeInt(2)",processor)
@@ -144,6 +147,24 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertNotIn("new AudioContext",js)
         self.assertIn("[data-sk-room]",js)
         self.assertIn('arMixBuiltinSonKuAck',js)
+
+    def test_sonku_p73_xyz_is_authoritatively_capability_gated(self):
+        main=(ROOT/"src/Main.cpp").read_text("utf-8")
+        js=(ROOT/"site/preview-v2/assets/mixer-native-sonku.js").read_text("utf-8")
+        css=(ROOT/"site/preview-v2/assets/mixer-fx-rack.css").read_text("utf-8")
+        bridge=(ROOT/"src/SonKuNativeBridgeContract.h").read_text("utf-8")
+        self.assertIn("ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT",bridge)
+        self.assertIn('values->setProperty("directElevationDegrees"',bridge)
+        self.assertIn('number(values,"directElevationDegrees"',bridge)
+        self.assertIn('values.getProperty("directElevationDegrees",{}).isVoid()',bridge)
+        self.assertIn('r.schemaVersion===3',js)
+        self.assertIn('xyzCapable=measured',js)
+        self.assertIn('r.appliedRequestId!==pending.requestId',js)
+        self.assertIn('id="skElevationRow" for="skElevation" hidden',js)
+        self.assertIn('skElevationRow',js)
+        self.assertIn('.sk-space-slider[hidden]{display:none!important}',css)
+        self.assertNotIn("new AudioContext",js)
+        self.assertIn('sonku_bridge::decodeSettings(',main)
 
     def test_native_tempo_readback_belongs_to_vocal_throw_not_eq(self):
         # The real C++ dispatcher must populate the exact VocalThrow

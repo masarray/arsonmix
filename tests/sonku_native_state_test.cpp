@@ -5,6 +5,7 @@
 #undef NDEBUG
 #endif
 #include "../engine/builtin_fx/SonKuSpatialProcessor.h"
+#include "../src/SonKuNativeBridgeContract.h"
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -13,11 +14,29 @@ int main(){
     SonKuSpatialProcessor live;
     live.prepareToPlay(48000.,128);
     assert(live.isReady());
+#if defined(ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT) && ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT
+    assert(live.preparedReflectionProfile()==
+        armix::sonku::SonKuReflectionProfile::DirectionalKemar);
+#else
+    assert(live.preparedReflectionProfile()==
+        armix::sonku::SonKuReflectionProfile::Lightweight);
+#endif
     auto scene=live.acceptedSettings();
     assert(scene.spacePreset==0); // legacy samples always load with ROOM OFF
     scene.spacePreset=2;scene.sourceDistanceMeters=5.f;
     scene.roomAmount=.55f;scene.ambience=.30f;
     assert(armix::sonku::valid(scene));
+    // Shipping editor/bridge must NEVER pretend P7.3 elevation is active.
+    using namespace armix::builtin_fx::sonku_bridge;
+    static_assert(schemaVersion()==2);
+    armix::sonku::Settings decoded{};
+    auto json=acceptedSettings(scene);
+    assert(decodeSettings(json,decoded));
+    assert(decoded.spacePreset==2&&decoded.sourceDistanceMeters==5.f);
+    auto incompatible=acceptedSettings(scene);
+    incompatible.getDynamicObject()->setProperty("directElevationDegrees",0.f);
+    assert(!decodeSettings(incompatible,decoded));
+    assert(decoded.spacePreset==2);
     assert(live.queueSettings(scene,42));
     // Queued does NOT mean accepted; only the actual PCM callback may apply.
     assert(live.acceptedSettings().spacePreset==0);
@@ -38,6 +57,7 @@ int main(){
     assert(bytes.getSize()==46);
     SonKuSpatialProcessor restored;
     restored.prepareToPlay(48000.,128);
+    assert(restored.preparedReflectionProfile()==live.preparedReflectionProfile());
     assert(restored.restoreUnpublishedState(bytes.getData(),
                                            static_cast<int>(bytes.getSize())));
     const auto got=restored.acceptedSettings();
