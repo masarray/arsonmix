@@ -238,7 +238,7 @@ const depthLayers={far:$("skFarSources"),near:$("skNearSources")};
 const mount=()=>{if(!root.isConnected)document.body.append(root)};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
- xyzCapable=false,p83Capable=false,p84Capable=false,p85Capable=false,p86Capable=false,p87Capable=false,p88Capable=false,p89Capable=false,p90Capable=false,p91p92Capable=false,p94Capable=false,musicSafeStereo=false,p8TransparentBass=false,p82MultibandRoom=false,
+ xyzCapable=false,p83Capable=false,p84Capable=false,p85Capable=false,p86Capable=false,p87Capable=false,p88Capable=false,p89Capable=false,p90Capable=false,p91p92Capable=false,p94Capable=false,p95Capable=false,musicSafeStereo=false,p8TransparentBass=false,p82MultibandRoom=false,
  readId="",readSentAt=0,seq=1,clock=null,frame=null,observed=0,observedAt=0,
  drag=null,dialDrag=null,rangeEdits=new Set(),gestureStart=new Map(),
  visualPhase=0,visualAt=0,liveTimer=null,lastLiveAt=0;
@@ -296,12 +296,16 @@ function render(){
  // and logical sessions. A missing capability must never unlock presets.
  syncPower();
  const presetPicker=$("skPreset");
- presetPicker.disabled=!p91p92Capable || s.renderMode!==9 || !current || Boolean(pending);
- const factoryName=p91p92Capable?matchFactoryPreset(s):"CUSTOM";
+ presetPicker.disabled=!p91p92Capable || (!p95Capable&&s.renderMode!==9) || !current || Boolean(pending);
+ const factoryName=p95Capable?matchFactoryPreset(s):"CUSTOM";
  if(presetPicker.value!==factoryName)presetPicker.value=factoryName;
  const row=$("skRenderRow");row.hidden=!(p83Capable||p84Capable);
+ const renderPicker=$("skRenderMode");
+ renderPicker.hidden=p95Capable;
+ root.querySelector(".sk-render-label").hidden=p95Capable;
+ row.classList.toggle("sk-latest",p95Capable);
  if(p83Capable||p84Capable){
- const picker=$("skRenderMode");
+ const picker=renderPicker;
   if(p90Capable && picker.dataset.nativeModeSet!==(p94Capable?"p94":p91p92Capable?"p91p92":"p90")){
     picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
      '<option value="clarity">SPATIAL · P8.4 REFERENCE</option>'+
@@ -406,10 +410,12 @@ function render(){
  }
  // ROOM is one typed native scene, never a browser audio simulator.
  root.querySelectorAll("[data-sk-room]").forEach(el=>{
-  el.setAttribute("aria-pressed",
-   String(Number(el.dataset.skRoom)===s.spacePreset));
+  const n=Number(el.dataset.skRoom);
+  el.hidden=p95Capable?(n>=1&&n<=3):(n>=4);
+  el.setAttribute("aria-pressed",String(n===s.spacePreset));
  });
- const sizeLabels=["DIRECT ONLY","7.2 × 7.2 m","14.4 × 14.4 m","28.8 × 28.8 m"];
+ const sizeLabels=["DIRECT ONLY","7.2 × 7.2 m","14.4 × 14.4 m","28.8 × 28.8 m",
+  "10 × 8 m","22 × 28 m","32 × 36 m","39 × 39 m"];
  $("skSpaceText").textContent=sizeLabels[s.spacePreset];
  const distance=$("skDistance"),max=roomMaxDistance[s.spacePreset];
  distance.max=String(max);
@@ -438,7 +444,9 @@ function render(){
   if(!rangeEdits.has("skHrtfAlign"))align.value=String(s.hrtfElevationTrimDegrees);
   $("skHrtfAlignValue").textContent=(s.hrtfElevationTrimDegrees>=0?"+":"")+s.hrtfElevationTrimDegrees.toFixed(1)+"°";
  }
- root.querySelector(".sk-stage-caption").textContent=p94Capable&&s.renderMode===9?
+ root.querySelector(".sk-stage-caption").textContent=p95Capable?
+    "SPATIAL SOUND · PHYSICAL BASS · CINEMATIC ROOM · 3D ORBIT":
+    p94Capable&&s.renderMode===9?
     "P9.4 · FRONT/REAR ROOM DEPTH · SAME 3D MOTION · HEADPHONE FAT REQUIRED":
     p91p92Capable&&s.renderMode===9?
     "P9.1 + P9.2 · MUSIC FIDELITY · WORLD BASS · ROOM MODES · FAT REQUIRED":
@@ -469,7 +477,9 @@ function render(){
  $("skSpread").closest("label").querySelector(".sk-param-name").textContent=
   (p83Capable||p84Capable)&&s.renderMode!==0?"SPEAKER ANGLE":
   musicSafeStereo?"SIDE WIDTH":"SPREAD";
- root.querySelector(".sk-guide").textContent=p90Capable&&s.renderMode===9
+ root.querySelector(".sk-guide").textContent=p95Capable?
+  "Headphone 3D stage · choose an acoustic scene · bypass freezes orbit":
+  p90Capable&&s.renderMode===9
   ?"Two positioned measured HRIR speakers · 0° co-location cannot preserve anti-phase"
   :musicSafeStereo
   ?"Legacy music WIDTH adjusts headlocked SIDE; P9 spatializes it"
@@ -486,7 +496,9 @@ function render(){
  // Only source placement is animated; knobs and input ranges are NOT
  // redrawn at 60 Hz. The native audio callback remains the time authority.
  drawSpeakers();
- $("skMode").textContent=native()?(context()?
+ $("skMode").textContent=p95Capable?
+  (s.renderMode===9?"SPATIAL ENGINE · CINEMATIC SOUND":"LEGACY SESSION · SELECT A PRESET TO UPGRADE"):
+  native()?(context()?
   (p94Capable&&s.renderMode===9?"NATIVE P9.4 FRONT/REAR DEPTH · A/B FAT":
    p91p92Capable&&s.renderMode===9?"NATIVE P9.1+P9.2 WORLD BASS · FAT":
    p90Capable&&s.renderMode===9?"NATIVE P9.0 TRUE EXTERNAL · TEST":
@@ -665,6 +677,7 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  // Independent of schema version: only this exact measured native DSP
  // can claim the *experimental* depth calibration, not P9.1 baseline.
  p94Capable=p91p92Capable && r.p94FrontBackDepthCue===true;
+ p95Capable=p94Capable && r.p95CinematicVenues===true;
  p89Capable=(r.schemaVersion===10||p90Capable) && r.p89StereoRoomDepth===true &&
     Number.isFinite(incoming.hrtfElevationTrimDegrees);
   p88Capable=(r.schemaVersion===9||p89Capable) && r.p88PerceptualAlignment===true &&
@@ -763,14 +776,14 @@ $("skPower").addEventListener("click",()=>{
 $("skPreset").addEventListener("change",()=>{
  const picker=$("skPreset");
  const preset=factoryPresets[picker.value];
- if(!p91p92Capable||draft.renderMode!==9||!preset||pending){
+ if(!p91p92Capable||(!p95Capable&&draft.renderMode!==9)||!preset||pending){
   render();return;
  }
  const scene=fitElevation({...draft,...preset,renderMode:9,
   musicCompatibleLowFrequency:false});
  if(!send(scene))render();
 });
-$("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapable=false;p85Capable=false;p86Capable=false;p87Capable=false;p88Capable=false;p89Capable=false;p90Capable=false;p91p92Capable=false;p94Capable=false;musicSafeStereo=false;p8TransparentBass=false;p82MultibandRoom=false;
+$("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapable=false;p85Capable=false;p86Capable=false;p87Capable=false;p88Capable=false;p89Capable=false;p90Capable=false;p91p92Capable=false;p94Capable=false;p95Capable=false;musicSafeStereo=false;p8TransparentBass=false;p82MultibandRoom=false;
  cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
  drag=null;windowGesture=null;rangeEdits.clear();gestureStart.clear();lastLiveAt=0;
  if(clock!==null){clearInterval(clock);clock=null;}
@@ -969,7 +982,7 @@ const api={
   drag=null;rangeEdits.clear();gestureStart.clear();
   accepted=defaults();draft=defaults();xyzCapable=false;
   p83Capable=p84Capable=p85Capable=p86Capable=p87Capable=p88Capable=
-   p89Capable=p90Capable=p91p92Capable=p94Capable=false;
+   p89Capable=p90Capable=p91p92Capable=p94Capable=p95Capable=false;
   musicSafeStereo=p8TransparentBass=p82MultibandRoom=false;
   current={track,slot,instanceId:null};
   const s=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
