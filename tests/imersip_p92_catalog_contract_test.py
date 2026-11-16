@@ -14,6 +14,8 @@ class ImerSipP92Contract(unittest.TestCase):
         self.assertIn("class ImerSipP92Processor final : public SonKuSpatialProcessor",p)
         self.assertNotIn("ImerSipDsp",p.split("#include",1)[0])
         self.assertIn('armix.builtin.imersip.v1',p)
+        self.assertIn('productDisplayName="ImmerSIB"',p)
+        self.assertIn('return productDisplayName;',p)
         self.assertIn("s.renderMode=9",scene)
         for value in ("s.stereoSpreadDegrees=82.f","s.sourceDistanceMeters=1.6f",
                       "s.spacePreset=3","s.roomAmount=.78f","s.ambience=.33f",
@@ -60,6 +62,9 @@ class ImerSipP92Contract(unittest.TestCase):
         self.assertNotIn("P9.2 Neutral A/B",ui)
         self.assertNotIn("Warm Auditorium",ui)
         self.assertNotIn("Grand Arena",ui)
+        self.assertIn("ImerSipP92Processor::productDisplayName",catalog)
+        self.assertIn("Saved ImmerSIB IMRS state rejected",catalog)
+        self.assertIn("ImerSipP92Processor::productDisplayName",ui)
         self.assertIn("prepareNativeBuiltInFx<ImerSipP92Processor>",catalog)
         self.assertIn("ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT",catalog)
     def test_legacy_and_host_power_are_realtime_owned(self):

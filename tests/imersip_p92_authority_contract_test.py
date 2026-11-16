@@ -26,6 +26,8 @@ class SpatialAuthorityContract(unittest.TestCase):
         self.assertEqual(im["activeIntegrationPr"],722)
         self.assertEqual(im["basePr"],719)
         self.assertEqual(im["catalogIdentity"],"armix.builtin.imersip.v1")
+        self.assertEqual(im["displayName"],"ImmerSIB")
+        self.assertEqual(im["previousDisplayName"],"ImerSip")
         self.assertEqual(im["nativeRenderer"],base["nativeRenderer"])
         self.assertFalse(im["independentSpatialDsp"])
         self.assertTrue(im["researchOnly"])

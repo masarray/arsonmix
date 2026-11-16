@@ -13,10 +13,12 @@
 namespace armix::builtin_fx {
 class ImerSipP92Processor final : public SonKuSpatialProcessor {
 public:
+    // Public name may change; persisted .smix FX ID must not.
     static constexpr const char* catalogIdentity="armix.builtin.imersip.v1";
+    static constexpr const char* productDisplayName="ImmerSIB";
     ImerSipP92Processor()
         : SonKuSpatialProcessor(imersipP92Factory(2)) {}
-    const juce::String getName() const override {return "ImerSip";}
+    const juce::String getName() const override {return productDisplayName;}
     bool hasEditor() const override {return true;}
     juce::AudioProcessorEditor* createEditor() override;
 

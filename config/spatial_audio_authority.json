@@ -32,7 +32,10 @@
     "nestedSonKuVersion": 11,
     "researchOnly": true,
     "independentSpatialDsp": false,
-    "releaseQualified": false
+    "releaseQualified": false,
+    "displayName": "ImmerSIB",
+    "previousDisplayName": "ImerSip",
+    "renamePolicy": "Display-only rebrand. Preserve catalogIdentity, native API, IMRS wire state and saved .smix."
   },
   "audioScenes": {
     "operatorCheckpointObservation": {

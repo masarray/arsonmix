@@ -88,11 +88,12 @@ inline constexpr std::array nativeBuiltInFx{
         prepareNativeBuiltInFx<SonKuSpatialProcessor>},
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT
     // Separate product/slot identity, SAME P9.1/P9.2 native PCM engine.
-    NativeBuiltInFx{ImerSipP92Processor::catalogIdentity,"ImerSip","Spatial",true,44100.,48000.,
+    NativeBuiltInFx{ImerSipP92Processor::catalogIdentity,
+        ImerSipP92Processor::productDisplayName,"Spatial",true,44100.,48000.,
         "NATIVE_IMERSIP_HOST_UNAVAILABLE","NATIVE_IMERSIP_DEVICE_CHANGED",
         "NATIVE_IMERSIP_UNSUPPORTED_AUDIO_FORMAT","NATIVE_IMERSIP_PREPARE_REJECTED",
         "NATIVE_IMERSIP_PREPARE_EXCEPTION",
-        "Saved ImerSip IMRS state rejected; graph unchanged",
+        "Saved ImmerSIB IMRS state rejected; graph unchanged",
         prepareNativeBuiltInFx<ImerSipP92Processor>},
 #endif
     NativeBuiltInFx{GuitarRigProcessor::catalogIdentity,"Guitar FX Rig","Guitar",true,32000.,192000.,

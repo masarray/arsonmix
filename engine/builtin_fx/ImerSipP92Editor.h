@@ -130,7 +130,8 @@ public:
 
         g.setColour(juce::Colour(0xffe6f1ef));
         g.setFont(juce::FontOptions(19.f));
-        g.drawText("ImerSip",25,16,172,28,juce::Justification::centredLeft);
+        g.drawText(juce::String(ImerSipP92Processor::productDisplayName),
+                   25,16,172,28,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff89b8b8));
         g.setFont(juce::FontOptions(10.5f));
         g.drawText("8D-SONKU P9.1/P9.2  /  LIVE CONCERT WORLD",

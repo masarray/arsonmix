@@ -1,5 +1,7 @@
 # Spatial audio ownership / qualification — single source of truth
 
+**Public product name: ImmerSIB.** Former visible label: ImerSip. JUCE processor name, editor title, FX Picker and user-facing errors must use **ImmerSIB**. Preserve the original `armix.builtin.imersip.v1` catalog identity, IMRS state, C++ identifiers, asset paths and existing `.smix` sessions for backwards compatibility.
+
 **Scope (2026-11-16):** `ArSonMix` experimental spatial FX only. This document explains the machine-readable [research authority ledger](../config/spatial_audio_authority.json). The ledger is **not runtime configuration** and must never become a second audio DSP state or be used to silently migrate a user's `.smix`.
 
 ## Which one do we develop?

@@ -37,6 +37,9 @@ static juce::MemoryBlock oldImrsV5() {
 
 static void nativeParity(int rate) {
     auto fx=std::make_unique<ImerSipP92Processor>();
+    assert(fx->getName()=="ImmerSIB");
+    assert(juce::String(ImerSipP92Processor::catalogIdentity)==
+           "armix.builtin.imersip.v1");
     fx->prepareToPlay(static_cast<double>(rate),128);
     assert(fx->isReady());
     const auto reference=imersipP92Factory(2);
