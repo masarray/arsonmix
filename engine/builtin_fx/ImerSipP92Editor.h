@@ -30,6 +30,7 @@ public:
         preset_.onChange=[this]{
             const int id=preset_.getSelectedId();
             if(!imersipP92PresetById(id))return;
+            visualSceneId_=id; // Art changes only; audio still uses native SonKu.
             sync(imersipP92Factory(id));
             submit();
         };
@@ -128,13 +129,18 @@ public:
         g.fillAll(juce::Colour(0xff11181d));
         juce::Graphics::ScopedSaveState save(g);
         g.addTransform(juce::AffineTransform::scale(compactScale));
-        skin_.drawRoom(g);
-        // Existing photo-less art is kept unchanged during layout FAT.
-        // Speaker geometry is display-only and never changes PCM authority.
-        const auto concert=imersipP92ConcertBoxes(
-            static_cast<float>(knobs_[0].getValue()),
-            static_cast<float>(knobs_[1].getValue()));
-        if(concert.safe())skin_.drawConcert(g,concert);
+        // One authentic photo venue per scene, never the abandoned
+        // holographic room or stacked artificial speaker sprites.
+        if(skin_.hasScenes()) {
+            skin_.drawScene(g,visualSceneId_);
+        } else {
+            // Defensive fallback if the binary asset pack is incomplete.
+            skin_.drawRoom(g);
+            const auto concert=imersipP92ConcertBoxes(
+                static_cast<float>(knobs_[0].getValue()),
+                static_cast<float>(knobs_[1].getValue()));
+            if(concert.safe())skin_.drawConcert(g,concert);
+        }
 
         // Quiet opaque branded header, readable over any approved scene.
         g.setColour(juce::Colour(0xe60c141a));
@@ -260,6 +266,9 @@ private:
                std::abs(s.headYawDegrees)<.001f &&
                std::abs(s.hrtfElevationTrimDegrees)<.001f) {preset=id;break;}
         }
+        if(preset!=1)visualSceneId_=preset;
+        // Adjusting a slider marks "Custom" but deliberately keeps the
+        // chosen venue image until the operator picks another scene.
         preset_.setSelectedId(preset,juce::dontSendNotification);
         repaint();
     }
@@ -310,6 +319,7 @@ private:
         repaint(juce::Rectangle<int>(0,juce::roundToInt(646*compactScale),
                                      getWidth(),juce::roundToInt(34*compactScale)));
     }
+    int visualSceneId_=2; // UI-only scene selection; not IMRS / PCM state.
     int selectedVoicing_=0; // UI/control side; native SPSC owns the audio state.
     ImerSipP92Processor& fx_;
     ImerSipP92VisualSkin skin_;
