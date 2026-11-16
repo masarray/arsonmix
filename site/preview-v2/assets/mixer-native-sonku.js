@@ -269,13 +269,15 @@ const context=()=>{
 };
 function render(){
  const s=draft;
- const row=$("skRenderRow");row.hidden=!(p83Capable||p84Capable);
- if(p83Capable||p84Capable){
-  syncPower();
+ // Header identity is always authoritative, including v2 native, reconnect
+ // and logical sessions. A missing capability must never unlock presets.
+ syncPower();
  const presetPicker=$("skPreset");
  presetPicker.disabled=!p91p92Capable || s.renderMode!==9 || !current || Boolean(pending);
  const factoryName=p91p92Capable?matchFactoryPreset(s):"CUSTOM";
  if(presetPicker.value!==factoryName)presetPicker.value=factoryName;
+ const row=$("skRenderRow");row.hidden=!(p83Capable||p84Capable);
+ if(p83Capable||p84Capable){
  const picker=$("skRenderMode");
   if(p90Capable && picker.dataset.nativeModeSet!==(p91p92Capable?"p91p92":"p90")){
     picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
