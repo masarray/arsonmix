@@ -857,6 +857,16 @@ if(BUILD_TESTING)
                                     "$<TARGET_FILE:ARMixSonKuP94ReferenceTests>"
                                     "$<TARGET_FILE:ARMixSonKuP94SourceTests>")
                           endif()
+                          if(ARMIX_SONKU_EXPERIMENTAL_P95_CINEMATIC)
+                            add_executable(ARMixSonKuP95VenueTests
+                                tests/sonku_p95_cinematic_venue_source_test.cpp)
+                            target_compile_features(ARMixSonKuP95VenueTests PRIVATE cxx_std_20)
+                            target_compile_definitions(ARMixSonKuP95VenueTests PRIVATE
+                                $<TARGET_PROPERTY:ARMixSonKuP94SourceTests,COMPILE_DEFINITIONS>
+                                SONKU_P95_CINEMATIC_RESEARCH=1)
+                            add_test(NAME NativeSonKuP95VenueMusicBassSpatialLoudness
+                                COMMAND ARMixSonKuP95VenueTests)
+                          endif()
                           juce_add_console_app(ARMixSonKuP90NativeTests
                               PRODUCT_NAME "ArSonMix SonKu P90 JUCE v11 State Tests")
                           target_sources(ARMixSonKuP90NativeTests PRIVATE
