@@ -12,11 +12,13 @@ const between=(a,b)=>{
 const geometry=between("const STAGE=Object.freeze","const root=document.createElement");
 const g=vm.runInNewContext("(function(){const angle=(v)=>((v%360)+360)%360;"+
  geometry+"return {STAGE,stagePoint,stageAzimuth,displayPair};})()",{});
-assert.equal(g.STAGE.r,119);
-assert.equal(Object.prototype.hasOwnProperty.call(g.STAGE,"rx"),false);
+// The ellipse is the APPROVED oblique 3D visualization of a circular world
+// orbit. A 360° spatial acoustic scene must not be confused with SVG shape.
+assert.equal(g.STAGE.rx,148);
+assert.equal(g.STAGE.ry,83);
 for(const azimuth of [0,22.5,45,90,135,180,225,270,315,359.9,-90,-179.9]){
  const p=g.stagePoint(azimuth);
- assert(Math.abs(Math.hypot(p.x-200,p.y-170)-119)<1.e-8);
+ assert(Math.abs(((p.x-200)/148)**2+((p.y-174)/83)**2-1)<1.e-8);
  const recovered=g.stageAzimuth(p.x,p.y);
  assert(Math.abs((((recovered-azimuth+540)%360)+360)%360-180)<1.e-7);
 }
@@ -24,8 +26,8 @@ const same=g.displayPair([0,0]);
 assert(Math.abs(same[0].anchor.x-same[1].anchor.x)<1.e-9);
 assert(Math.hypot(same[0].visible.x-same[1].visible.x,
                   same[0].visible.y-same[1].visible.y)>=45);
-assert.match(source,/M319 170 A119 119 0 0 0 81 170/);
-assert.match(source,/M81 170 A119 119 0 0 0 319 170/);
+assert.match(source,/M348 174 A148 83 0 0 0 52 174/);
+assert.match(source,/M52 174 A148 83 0 0 0 348 174/);
 const f=between("const factoryPresets=Object.freeze","const valid=s=>");
 const p=vm.runInNewContext("(function(){"+f+
  "return {factoryPresets,matchFactoryPreset};})()",{});
@@ -49,7 +51,7 @@ const state={graph:{channels:[{id:"ch-1",fxRackBypassed:false,
  inserts:[{id:"insert",catalogId:"armix.builtin.8d-sonku.v1",bypassed:false}]}]}};
 const element={dataset:{},disabled:true,
  setAttribute(k,v){this[k]=v}};
-const root={dataset:{}},current={track:{},slot:0};
+const root={dataset:{},querySelector(){return {textContent:""};}},current={track:{},slot:0};
 const power=vm.runInNewContext("(function(){let current=__current;"+
  "let root=__root;const ID=\"armix.builtin.8d-sonku.v1\";let $=()=>__element;let snapshot=()=>__state;"+
  "let native=()=>true;"+sync+"return syncPower;})()",{
@@ -72,4 +74,4 @@ assert.match(source,/window\.addEventListener\("resize",constrainWindow\)/);
 assert.match(source,/if\(!p91p92Capable\|\|draft\.renderMode!==9\|\|!preset\|\|pending\)/);
 assert.match(css,/\.mx-sonku \.sk-stage \.sk-space-panel\{display:grid/);
 assert.match(source,/current\.track\.slotBypass\[current\.slot\]/);
-console.log("PASS SonKu P9.3: physical-circle geometry, inverse drag, native power readback, draggable window, five full-scene presets, compact SPACE placement");
+console.log("PASS SonKu P9.3: approved perspective orbit, inverse drag, native power readback, draggable window, five full-scene presets, compact SPACE placement");
