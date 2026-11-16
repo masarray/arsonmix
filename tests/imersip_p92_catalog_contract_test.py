@@ -36,8 +36,8 @@ class ImerSipP92Contract(unittest.TestCase):
         self.assertIn('"Velvet Cinema"',scene)
         ui=source("engine/builtin_fx/ImerSipP92Editor.h")
         self.assertIn("ImerSipP92VisualSkin",ui)
-        self.assertIn("imersipP92ConcertBoxes(",ui)
-        self.assertIn("skin_.drawRoom(g)",ui)
+        self.assertNotIn("imersipP92ConcertBoxes(",ui)
+        self.assertNotIn("skin_.drawRoom(g)",ui)
         self.assertIn("skin_.drawPanel(g)",ui)
         self.assertIn("skin_.drawScene(g,visualSceneId_)",ui)
         self.assertIn("if(preset!=1)visualSceneId_=preset",ui)
@@ -58,7 +58,7 @@ class ImerSipP92Contract(unittest.TestCase):
         self.assertNotIn('g.drawText("SCENE SETUP"',ui)
         self.assertNotIn('g.drawText("SPATIAL FIELD"',ui)
         self.assertNotIn('g.drawText("OUTPUT"',ui)
-        self.assertIn("skin_.drawConcert(g,concert)",ui)
+        self.assertNotIn("skin_.drawConcert(g,concert)",ui)
         skin=source("engine/builtin_fx/ImerSipP92VisualSkin.h")
         cmake=source("CMakeLists.txt")
         self.assertIn("ImageCache::getFromMemory",skin)
@@ -67,14 +67,12 @@ class ImerSipP92Contract(unittest.TestCase):
         self.assertNotIn("getClippedImage",skin)
         self.assertNotIn("Drawable::createFromImageData",skin)
         self.assertNotIn("juce::Drawable",skin)
-        for name in ("line_array_left", "line_array_right",
-                     "subwoofer_left", "subwoofer_right",
-                     "front_fill_left", "front_fill_right",
-                     "side_fill_left", "side_fill_right",
-                     "slider_track", "slider_thumb", "knob_master_purple"):
-            self.assertIn("BinaryData::"+name+"_png",skin)
-        self.assertIn("assets/imersip/png",cmake)
-        self.assertIn("ARMIX_IMERSIP_PNG_SOURCES",cmake)
+        self.assertNotIn("ARMIX_IMERSIP_PNG_SOURCES",cmake)
+        self.assertNotIn("assets/imersip/png",cmake)
+        for obsolete in ("room_background_png","line_array_left_png",
+                         "slider_thumb_png","knob_master_purple_png",
+                         "drawConcert(","drawRoom("):
+            self.assertNotIn(obsolete,skin)
         self.assertIn("ARMIX_IMERSIB_SCENE_PNG_SOURCES",cmake)
         for scene in ("live_concert","royal_concert_hall","arena_thunder",
                       "front_row_power","symphonic_palace","velvet_cinema"):
@@ -86,14 +84,14 @@ class ImerSipP92Contract(unittest.TestCase):
         self.assertNotIn("RectanglePlacement::fillDestination",skin)
         self.assertIn("const int x=252+317*col",ui)
 
-        self.assertNotIn("execute_process(\n    COMMAND \"\${Python3_EXECUTABLE}\" \"\${ARMIX_IMERSIP_PNG_GEN}\"",cmake)
-        self.assertTrue((ROOT/"scripts/generate_imersip_concert_png.py").exists())
-        self.assertTrue((ROOT/"assets/imersip/asset_manifest.json").exists())
-        for png in ("room_background.png", "control_panel.png",
-                    "line_array_left.png", "line_array_right.png",
-                    "subwoofer_left.png", "subwoofer_right.png"):
-            self.assertTrue((ROOT/"assets/imersip/png"/png).exists())
-        self.assertNotIn("assets/imersip/vector/imersip_room.svg",cmake)
+        for old_path in (
+            "scripts/generate_imersip_concert_png.py",
+            "tests/imersip_p92_png_asset_test.py",
+            "assets/imersip/png","assets/imersip/vector",
+            "assets/imersip/asset_manifest.json",
+            "assets/imersip/imersip_p92_skin_atlas.png",
+            ".github/workflows/imersip-p92-materialize-assets.yml"):
+            self.assertFalse((ROOT/old_path).exists(),old_path)
         self.assertIn("for(const auto& scene:imersipP92Presets)",ui)
         self.assertNotIn("P9.2 Neutral A/B",ui)
         self.assertNotIn("Warm Auditorium",ui)
