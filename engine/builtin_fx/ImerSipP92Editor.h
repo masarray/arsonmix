@@ -134,11 +134,9 @@ public:
         // layers used by composition proof. Images decode once in VisualSkin.
         skin_.drawRoom(g);
         skin_.drawHeader(g);
-        // Subtle overlay keeps the background quiet behind the L/R PA.
-        g.setGradientFill(juce::ColourGradient(
-            juce::Colour(0x77060d11),0.f,0.f,
-            juce::Colour(0x00060d11),0.f,408.f,false));
-        g.fillRect(0,0,1100,461);
+        // Preserve the authored scene's luminance. The approved visual
+        // direction uses a lively cyan/purple concert hologram; do not
+        // apply a generic black wash over scene textures.
 
         g.setColour(juce::Colour(0xffe6f1ef));
         g.setFont(juce::FontOptions(19.f));
