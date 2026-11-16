@@ -6545,31 +6545,43 @@ private:
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT
                             if(auto* imer=dynamic_cast<
                                 armix::builtin_fx::ImerSipP92Editor*>(editor)) {
-                                // Per-insert host bypass; never manufacture
-                                // an independent DSP power flag in ImerSip.
+                                // Exact retained processor identity is
+                                // authoritative. Resolve CURRENT published
+                                // PCM revision at each click, not the revision
+                                // cached when the floating editor opened.
+                                // Read all three independent bypass gates so
+                                // global mixer A/B also mutes this editor.
                                 auto held=owner;
+                                const auto readPower=[this,held,nativeTarget,
+                                     nativeChannel,lane,slot,token] {
+                                    const auto current=nativeTarget?
+                                        engine_.retainedNativeFxPower(
+                                            held,armix::mixer::ChannelId{nativeChannel},
+                                            static_cast<std::size_t>(slot),token):
+                                        engine_.retainedRoutedFxPower(
+                                            held,lane,slot,token);
+                                    armix::builtin_fx::ImerSipP92Editor::HostBypassState state;
+                                    state.valid=current.valid;
+                                    state.slotBypassed=current.slotBypassed;
+                                    state.rackBypassed=current.rackBypassed;
+                                    state.globalBypassed=current.globalBypassed;
+                                    return state;
+                                };
                                 imer->bindHostPower(
                                     [this,held,nativeTarget,nativeChannel,
-                                     retainedEpoch,retainedRevision,
                                      lane,slot,token](bool bypass) {
-                                        if(!engine_.retainsRoutedFxEditor(
-                                              retainedEpoch,held))return false;
                                         const bool applied=nativeTarget?
-                                            engine_.bypassNativeVst3(
-                                                retainedEpoch,retainedRevision,
-                                                armix::mixer::ChannelId{nativeChannel},
+                                            engine_.bypassRetainedNativeFx(
+                                                held,armix::mixer::ChannelId{nativeChannel},
                                                 static_cast<std::size_t>(slot),
                                                 token,bypass):
-                                            engine_.setDryRoutingLabFxBypass(
-                                                lane,slot,retainedEpoch,
-                                                retainedRevision,token,bypass);
+                                            engine_.bypassRetainedRoutedFx(
+                                                held,lane,slot,token,bypass);
                                         if(applied)emitApprovedNativeSnapshot();
+                                        else emitNotice(
+                                            "FX Power rejected: accepted graph or instance changed",true);
                                         return applied;
-                                    },
-                                    [held] {
-                                        return held->bypassRequested.load(
-                                            std::memory_order_acquire);
-                                    });
+                                    },readPower);
                             }
 #endif
                             routedEditorOwner_=owner;
