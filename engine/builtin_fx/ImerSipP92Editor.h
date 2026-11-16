@@ -165,19 +165,22 @@ public:
         g.drawText("PRESET",24,485,208,19,juce::Justification::centredLeft);
         g.drawText("ROOM",24,564,208,19,juce::Justification::centredLeft);
 
-        // Slider readbacks sit on their own rows, not below adjacent labels.
+        // Seven precise native controls in two relaxed 308px lanes.
+        // One row owns one label, one drag rail, and one right-aligned
+        // readback. Avoid four 106px rails squeezed under long labels.
         constexpr int ids[]={0,1,2,3,4,6,7};
         for(int j=0;j<7;++j){
-            const int idx=ids[j],col=j%4,row=j/4;
-            const int x=256+158*col,y=(row==0?514:603);
+            const int idx=ids[j],col=j%2,row=j/2;
+            const int x=252+317*col,y=485+43*row;
             const double v=knobs_[static_cast<std::size_t>(idx)].getValue();
-            const juce::String value=idx==0?juce::String(v,0):
+            const juce::String value=idx==0?juce::String(v,0)+"°":
                 idx==1?juce::String(v,1)+" m":
-                idx==6||idx==7?juce::String(v,0):
+                idx==6||idx==7?juce::String(v,0)+"°":
                 juce::String(v,0)+"%";
-            g.setColour(juce::Colour(0xffb4e5de));
+            g.setColour(juce::Colour(0xffc2e3df));
             g.setFont(juce::FontOptions(11.5f));
-            g.drawText(value,x+108,y,43,27,juce::Justification::centredRight);
+            g.drawText(value,x+254,y+3,49,22,
+                       juce::Justification::centredRight);
         }
         const auto gain=knobs_[5].getValue();
         g.setColour(juce::Colour(0xffe9e6ef));
@@ -200,14 +203,12 @@ public:
         place(room_,24,586,206,36);
         constexpr int ids[]={0,1,2,3,4,6,7};
         for(int j=0;j<7;++j){
-            const int col=j%4,row=j/4;
-            const int x=256+158*col;
-            const int labelY=row==0?485:574;
-            const int sliderY=row==0?514:603;
+            const int col=j%2,row=j/2;
+            const int x=252+317*col,y=485+43*row;
             auto& slider=knobs_[static_cast<std::size_t>(ids[j])];
             auto& label=labels_[static_cast<std::size_t>(ids[j])];
-            place(label,x,labelY,150,22);
-            place(slider,x,sliderY,106,27);
+            place(label,x,y,132,24);
+            place(slider,x+134,y,114,25);
         }
         place(labels_[5],938,484,128,22);
         place(knobs_[5],947,511,106,102);
