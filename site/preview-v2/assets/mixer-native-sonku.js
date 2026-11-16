@@ -41,14 +41,14 @@ const roomMaxDistance=[10,3.1,6.7,10,3.1,10,10,10];
 // and explicit creative makeup gain via the existing authoritative outputTrim.
 const factoryPresets=Object.freeze({
  music:Object.freeze({moving:true,clockwise:true,startAzimuthDegrees:0,
-  revolutionSeconds:12,stereoSpreadDegrees:88,spatialMix:1,outputTrim:1.778279,
-  spacePreset:5,sourceDistanceMeters:8.2,roomAmount:.95,ambience:.62}),
+  revolutionSeconds:12,stereoSpreadDegrees:88,spatialMix:1,outputTrim:2.238721,
+  spacePreset:5,sourceDistanceMeters:8.9,roomAmount:1,ambience:.76}),
  studio:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
   revolutionSeconds:12,stereoSpreadDegrees:76,spatialMix:1,outputTrim:1.584893,
   spacePreset:4,sourceDistanceMeters:3,roomAmount:.75,ambience:.32}),
  wide:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
-  revolutionSeconds:12,stereoSpreadDegrees:100,spatialMix:1,outputTrim:1.995262,
-  spacePreset:5,sourceDistanceMeters:9.4,roomAmount:.98,ambience:.70}),
+  revolutionSeconds:12,stereoSpreadDegrees:100,spatialMix:1,outputTrim:2.371374,
+  spacePreset:5,sourceDistanceMeters:9.6,roomAmount:1,ambience:.80}),
  deep:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
   revolutionSeconds:12,stereoSpreadDegrees:98,spatialMix:1,outputTrim:1.995262,
   spacePreset:6,sourceDistanceMeters:9.8,roomAmount:1,ambience:.80}),
