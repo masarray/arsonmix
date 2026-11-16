@@ -3129,6 +3129,9 @@ private:
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE) && ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE
             reply->setProperty("p95MusicalPresence",true);
 #endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT) && ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT
+            reply->setProperty("p96DistanceReinforcement",true);
+#endif
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH
             // Branch-only measured-engine A/B. A previous v11 binary cannot
             // advertise this front/rear perceptual depth research capability.

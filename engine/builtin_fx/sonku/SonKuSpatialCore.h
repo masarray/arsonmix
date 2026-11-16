@@ -25,6 +25,9 @@
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
 #include "SonKuP95MusicalPresence.h"
 #endif
+#if defined(SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH) && SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH
+#include "SonKuP96DistanceReinforcement.h"
+#endif
 #if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
 #include "SonKuP94FrontBackDepthCue.h"
 #endif
@@ -210,6 +213,9 @@ public:
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
         if(!p90Decoder_.prepare(rate))return false;
         if(!p92Bass_.prepare(rate))return false;
+#if defined(SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH) && SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH
+        if(!p96Reinforcement_.prepare(rate))return false;
+#endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
         if(!p95Presence_.prepare(rate))return false;
 #endif
@@ -284,6 +290,9 @@ public:
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
         p90Decoder_.reset();
         p92Bass_.reset();
+#if defined(SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH) && SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH
+        p96Reinforcement_.reset();
+#endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
         p95Presence_.reset();
 #endif
@@ -341,6 +350,9 @@ public:
         if((s.renderMode==9)!=(settings_.renderMode==9)){
             p90Decoder_.reset();
             p92Bass_.reset();
+#if defined(SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH) && SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH
+        p96Reinforcement_.reset();
+#endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
         p95Presence_.reset();
 #endif
@@ -904,10 +916,23 @@ public:
 #else
                 constexpr float calibratedDirect=1.f,calibratedEarly=1.f;
 #endif
-                float spatialL=smoothedDistanceGain_*calibratedDirect*ears[0]+
+                float directL=smoothedDistanceGain_*calibratedDirect*ears[0];
+                float directR=smoothedDistanceGain_*calibratedDirect*ears[1];
+#if defined(SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH) && SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH
+                if(p90World){
+                    // Same KEMAR world speakers; do not EQ/repan wet returns.
+                    // P94's independent directional calibration stays outside.
+                    const auto reinforced=p96Reinforcement_.process(
+                        ears[0],ears[1],smoothedDistanceGain_,
+                        settings_.sourceDistanceMeters,roomEnabled);
+                    directL=calibratedDirect*reinforced.left;
+                    directR=calibratedDirect*reinforced.right;
+                }
+#endif
+                float spatialL=directL+
                     smoothedErPresence_*calibratedEarly*reflection.left+
                     smoothedTailPresence_*late.left;
-                float spatialR=smoothedDistanceGain_*calibratedDirect*ears[1]+
+                float spatialR=directR+
                     smoothedErPresence_*calibratedEarly*reflection.right+
                     smoothedTailPresence_*late.right;
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
@@ -1296,6 +1321,9 @@ private:
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
     p90::StereoDecoder p90Decoder_{};
     p92::WorldBassFoundation p92Bass_{};
+#if defined(SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH) && SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH
+    p96::DistanceReinforcement p96Reinforcement_{};
+#endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
     p95::MusicalPresence p95Presence_{};
 #endif
