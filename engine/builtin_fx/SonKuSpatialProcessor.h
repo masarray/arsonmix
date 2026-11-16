@@ -35,6 +35,11 @@ public:
         accepted_.sourceDistanceMeters=3.1f;
         accepted_.roomAmount=1.f;
         accepted_.ambience=.62f;
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING) && ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+        // Only brand-new P9.8 inserts start in its actual flagship voicing.
+        // A restored v11 operator session still uses typed neutral 0.
+        accepted_.sceneVoicing=1; // SIGNATURE; not Venue.
+#endif
 #endif
     }
     const juce::String getName() const override {return "8D-SonKu";}
