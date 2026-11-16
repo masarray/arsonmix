@@ -155,8 +155,8 @@ def exercise(browser,out,width,height):
       const near=map.querySelector('#skNearArc');
       return Boolean((far.compareDocumentPosition(art) & Node.DOCUMENT_POSITION_FOLLOWING) &&
                      (art.compareDocumentPosition(near) & Node.DOCUMENT_POSITION_FOLLOWING) &&
-                     far.getAttribute('d').startsWith('M319 170 A119 119') &&
-                     near.getAttribute('d').startsWith('M81 170 A119 119'));
+                     far.getAttribute('d').startsWith('M348 174 A148 83') &&
+                     near.getAttribute('d').startsWith('M52 174 A148 83'));
     }"""), "Front/back ring painter layering incorrect"
     # Each moving speaker is depth-sorted against the listener alpha silhouette.
     assert page.evaluate("""() => {
@@ -266,13 +266,14 @@ def exercise(browser,out,width,height):
         return data[0]["ax"],data[0]["ay"],data[0]
     x,y,front=pose(0);assert abs(x-200)<1 and y<100,("FRONT",x,y)
     editor.locator("#skMap").screenshot(path=f"arsonmix-sonku-editor-front-depth-{width}.png")
-    x,y,right=pose(90);assert x>310 and abs(y-170)<1,("RIGHT",x,y)
-    x,y,rear=pose(180);assert abs(x-200)<1 and y>280,("REAR",x,y)
+    x,y,right=pose(90);assert x>335 and abs(y-174)<1,("RIGHT",x,y)
+    x,y,rear=pose(180);assert abs(x-200)<1 and y>245,("REAR",x,y)
     editor.locator("#skMap").screenshot(path=f"arsonmix-sonku-editor-rear-depth-{width}.png")
-    x,y,left=pose(-90);assert x<90 and abs(y-170)<1,("LEFT",x,y)
-    # All four cardinal azimuths sit on one true 119-unit radius.
-    for x,y in ((200,51),(319,170),(200,289),(81,170)):
-        assert abs(((x-200)**2+(y-170)**2)**.5-119)<.001
+    x,y,left=pose(-90);assert x<60 and abs(y-174)<1,("LEFT",x,y)
+    # Approved top-rear oblique perspective: full 360° azimuth with an SVG
+    # ellipse, not a flattened physical/acoustic source orbit.
+    for x,y in ((200,91),(348,174),(200,257),(52,174)):
+        assert abs(((x-200)/148)**2+((y-174)/83)**2-1)<.001
     assert editor.locator(".sk-stage > .sk-space-panel").count()==1,(
         "SPACE controls must be below the motion field, not inside rotary column")
     assert editor.locator("#skPreset").count()==1
