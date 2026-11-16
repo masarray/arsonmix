@@ -32,7 +32,15 @@ static Measurement run(int sampleRate,int scene,int framesPerBlock,bool anti=fal
                  scene==6?1.995262f:2.238721f;
     assert(v.width>=8.f&&v.depth>=8.f&&v.height>=4.f);
     assert(s.sourceDistanceMeters<=v.maxDistance);
-    assert(valid(s)&&core->setSettings(s));
+    const bool validScene=valid(s);
+    const bool applied=validScene&&core->setSettings(s);
+    if(!applied)
+        std::fprintf(stderr,
+            "P95_ADMISSION_FAILURE,rate=%d,scene=%d,dist=%.3f,valid=%d,roomGeometryValid=%d,applied=%d\\n",
+            sampleRate,scene,s.sourceDistanceMeters,int(validScene),
+            int(SonKuEarlyReflections::validGeometry({
+                v.width,v.depth,s.sourceDistanceMeters})),int(applied));
+    assert(validScene&&applied);
     const int count=sampleRate; // sustained audio, > modal/FDN settling time
     std::vector<float> l(count),r(count);
     constexpr float pi=3.14159265358979323846f;
