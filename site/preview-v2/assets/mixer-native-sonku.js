@@ -249,8 +249,17 @@ function syncPower(){
   (!lane||typeof lane.fxRackBypassed!=="boolean"||
     !insert||insert.catalogId!==ID||typeof insert.bypassed!=="boolean"?"unknown":
     (lane.fxRackBypassed||globalOff)?"rack-off":insert.bypassed?"off":"on");
+ const previous=root.dataset.fxState;
  p.dataset.fxState=state;
  p.disabled=state==="unknown"||state==="rack-off";
+ // The native insert does not render PCM/advance azimuth while bypassed.
+ // Freeze the LAST rendered pose; do not keep extrapolating an absent PCM
+ // clock, and do not PLL-correct stale observed azimuth upon re-enable.
+ // Avoid resetting visual phase on every 250ms status poll.
+ if(previous!==state){
+  visualAt=0;
+  if(state!=="on")observedAt=0;
+ }
  p.setAttribute("aria-pressed",String(state==="on"));
  p.title=state==="on"?"SONKU ON · click to bypass this insert":
     state==="off"?"SONKU BYPASSED · click to enable":
@@ -524,7 +533,7 @@ function drawSpeakers(){
 // teleporting at each ~250ms readback. Only SVG geometry is painted per frame.
 function animate(time){
  if(root.hidden||!current){frame=null;return;}
- if(visualAt && draft.moving && !drag){
+ if(visualAt && draft.moving && !drag && root.dataset.fxState==="on"){
   const dt=Math.max(0,Math.min(.08,(time-visualAt)*.001));
   const speed=(draft.clockwise?1:-1)*360/draft.revolutionSeconds;
   visualPhase=angle(visualPhase+speed*dt);
@@ -686,9 +695,9 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
   // later failure/reopen never restores a stale value.
   accepted={...incoming};
  }
- if(Number.isFinite(r.observedAzimuthDegrees)){
-  // First authoritative phase anchors the loop once. Subsequent readbacks
-  // only adjust the PLL; never set the visible phase discontinuously.
+ if(Number.isFinite(r.observedAzimuthDegrees) && root.dataset.fxState==="on"){
+  // Disabled PCM has no running phase: never oscillate around stale native
+  // readbacks or repeatedly restart a non-existent bypassed audio orbit.
   if(!observedAt)visualPhase=angle(r.observedAzimuthDegrees);
   observed=r.observedAzimuthDegrees;observedAt=performance.now();
  }
