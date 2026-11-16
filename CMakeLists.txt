@@ -827,6 +827,11 @@ if(BUILD_TESTING)
                           add_test(NAME NativeSonKuP91P92MusicFidelityWorldBassAndRoom
                               COMMAND ARMixSonKuP91P92MusicBassTests)
                           if(ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH)
+                            add_executable(ARMixSonKuP94ReferenceTests
+                                tests/sonku_p94_front_back_depth_source_test.cpp)
+                            target_compile_features(ARMixSonKuP94ReferenceTests PRIVATE cxx_std_20)
+                            target_compile_definitions(ARMixSonKuP94ReferenceTests PRIVATE
+                                $<TARGET_PROPERTY:ARMixSonKuP91P92MusicBassTests,COMPILE_DEFINITIONS>)
                             add_executable(ARMixSonKuP94SourceTests
                                 tests/sonku_p94_front_back_depth_source_test.cpp)
                             target_compile_features(ARMixSonKuP94SourceTests PRIVATE cxx_std_20)
@@ -837,6 +842,11 @@ if(BUILD_TESTING)
                                 SONKU_P94_FRONT_BACK_DEPTH_RESEARCH=1)
                             add_test(NAME NativeSonKuP94FrontBackDepthA_BSource
                                 COMMAND ARMixSonKuP94SourceTests)
+                            add_test(NAME NativeSonKuP94LevelMatchedAB
+                                COMMAND "${Python3_EXECUTABLE}"
+                                    "${CMAKE_SOURCE_DIR}/scripts/verify_sonku_p94_acoustic_levels.py"
+                                    "$<TARGET_FILE:ARMixSonKuP94ReferenceTests>"
+                                    "$<TARGET_FILE:ARMixSonKuP94SourceTests>")
                           endif()
                           juce_add_console_app(ARMixSonKuP90NativeTests
                               PRODUCT_NAME "ArSonMix SonKu P90 JUCE v11 State Tests")
