@@ -319,8 +319,10 @@ private:
         const bool bypassed=state.effectiveBypassed();
         const bool enabled=valid && static_cast<bool>(requestBypass_) &&
                            !state.rackBypassed && !state.globalBypassed;
-        const bool changed=!hostBypassed_.has_value() ||
-                           *hostBypassed_!=bypassed;
+        // An unbound/offline editor stays inert; avoid a full-scene repaint
+        // 25 times/second when no physical lease exists.
+        const bool changed=(valid!=hostBypassed_.has_value()) ||
+                           (valid && *hostBypassed_!=bypassed);
         if(valid)hostBypassed_=bypassed;
         else hostBypassed_.reset();
         power_.setEnabled(enabled);
