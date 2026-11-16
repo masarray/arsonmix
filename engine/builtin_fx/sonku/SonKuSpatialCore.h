@@ -111,7 +111,13 @@ inline bool valid(const Settings& s) noexcept {
         s.spacePreset>=0 && s.spacePreset<=3 &&
         std::isfinite(s.sourceDistanceMeters) && s.sourceDistanceMeters>=1.f &&
         s.sourceDistanceMeters<=10.f &&
-        std::isfinite(s.roomAmount) && s.roomAmount>=0.f && s.roomAmount<=(s.renderMode==9?1.8f:1.f) &&
+        std::isfinite(s.roomAmount) && s.roomAmount>=0.f &&
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+        s.roomAmount<=(s.renderMode==9?1.8f:1.f) &&
+#else
+        // Pre-P8.3 Settings has no renderMode. Keep its legacy 0..1 range.
+        s.roomAmount<=1.f &&
+#endif
         std::isfinite(s.ambience) && s.ambience>=0.f && s.ambience<=1.f &&
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
         p98::SceneVoicing::valid(s.sceneVoicing) &&
