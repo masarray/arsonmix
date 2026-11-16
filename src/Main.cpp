@@ -1045,6 +1045,17 @@ private:
             browser_.emitEventIfBrowserIsVisible ("arMixPresets", presets_.list());
     }
 
+    void synchronizeOpenImmerSIBPower() {
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT
+        // The editor must reflect accepted global/rack/slot PCM state even
+        // when the gesture originated in the WebView header or FX Rack.
+        // All these dispatches run on JUCE's UI/message thread.
+        if(editorWindow_)
+            if(auto* ui=dynamic_cast<armix::builtin_fx::ImerSipP92Editor*>(
+                  editorWindow_->getContentComponent()))
+                ui->synchronizeHostPower();
+#endif
+    }
     void closePluginEditor() noexcept {
         // Dispose the native UI BEFORE dropping the graph/processor lease.
         editorWindow_.reset();
@@ -5584,6 +5595,7 @@ private:
                 lane,static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
                 static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),
                 static_cast<bool>(value));
+            if(applied)synchronizeOpenImmerSIBPower();
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",requestId);
             ack->setProperty("ok",applied);
@@ -5952,6 +5964,7 @@ private:
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
                 "arMixGlobalFxAck",juce::var(ack.release()));
             if(applied) {
+                synchronizeOpenImmerSIBPower();
                 diagnostics_.record("GLOBAL_FX_AB",
                     engine_.globalFxBypassed()?"BYPASS_ALL":"ENABLE_RESTORED");
                 emitApprovedNativeSnapshot();
@@ -6011,6 +6024,7 @@ private:
                 "Native FX power rejected: stale device/revision, Show busy or instance mismatch");
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
                 "arMixNativeFxPowerAck",juce::var(ack.release()));
+            if(applied)synchronizeOpenImmerSIBPower();
             if(applied)diagnostics_.record("NATIVE_FX_POWER",
                 rawId.toString()+(action=="routingNativeFxRackBypass"?" rack":" insert")+
                 (static_cast<bool>(value)?" BYPASS":" ENABLE"));
@@ -6483,6 +6497,7 @@ private:
                 static_cast<juce::int64>(args.getProperty("revision",juce::var(0))));
             const bool ok=value.isBool()&&engine_.setDryRoutingLabFxBypass(
                 lane,slot,epoch,revision,token,static_cast<bool>(value));
+            if(ok)synchronizeOpenImmerSIBPower();
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("ok",ok);
             ack->setProperty("requestId",args.getProperty("requestId",juce::var()));
