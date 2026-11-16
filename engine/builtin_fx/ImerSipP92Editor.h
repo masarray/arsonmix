@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
-// Image-backed concert-room editor. AUDIO IS STILL 100% SonKu P9.1/P9.2.
-// Room, speakers, slider rails, knobs are paint-only. The sliders preserve
-// the exact existing host PCM/ACK and IMRS state paths.
+// Compact ImmerSIB concert scene + native JUCE control panel.
+// Scene photography is image-backed; all control surfaces and icons are JUCE.
+// Audio uses the existing SonKu PCM, host bypass, ACK, and IMRS state paths.
 #include <BinaryData.h>
 #include <array>
 #include <algorithm>
@@ -49,7 +49,7 @@ public:
 
         const char* ids[]={"stage","distance","early","late",
                           "mix","gain","align","yaw"};
-        const char* names[]={"STAGE WIDTH","SOURCE DISTANCE","EARLY ROOM",
+        const char* names[]={"STAGE WIDTH","DISTANCE","EARLY ROOM",
                              "LATE ROOM","SPATIAL MIX","MASTER GAIN",
                              "EAR ALIGN","HEAD YAW"};
         const double lower[]={30.,1.0,0.,0.,0.,-12.,-30.,-90.};
@@ -75,6 +75,7 @@ public:
             };
             addAndMakeVisible(slider);
             auto& label=labels_[static_cast<std::size_t>(i)];
+            label.setComponentID(juce::String("imersip.label.")+ids[i]);
             label.setText(names[i],juce::dontSendNotification);
             label.setJustificationType(juce::Justification::centredLeft);
             label.setColour(juce::Label::textColourId,juce::Colour(0xffcbd7dc));
@@ -82,7 +83,9 @@ public:
             addAndMakeVisible(label);
         }
         power_.setComponentID("imersip.power");
-        power_.setButtonText("FX ON");
+        power_.setButtonText({}); // Icon is drawn by the JUCE LookAndFeel.
+        power_.setClickingTogglesState(false); // Host readback is authoritative.
+        power_.setTooltip("FX state unavailable");
         power_.setLookAndFeel(&skin_);
         power_.setEnabled(false); // no fake bypass authority
         power_.onClick=[this] {
@@ -94,15 +97,6 @@ public:
             repaint();
         };
         addAndMakeVisible(power_);
-        close_.setComponentID("imersip.close");
-        close_.setButtonText("CLOSE");
-        close_.setLookAndFeel(&skin_);
-        close_.onClick=[this] {
-            if(auto* window=findParentComponentOfClass<juce::DocumentWindow>())
-                window->closeButtonPressed();
-            else setVisible(false);
-        };
-        addAndMakeVisible(close_);
         sync(fx_.acceptedSettings());
         startTimerHz(25);
     }
@@ -112,7 +106,6 @@ public:
         preset_.setLookAndFeel(nullptr);
         room_.setLookAndFeel(nullptr);
         power_.setLookAndFeel(nullptr);
-        close_.setLookAndFeel(nullptr);
     }
     bool areVisualAssetsReady() const noexcept {return skin_.ready();}
     void bindHostPower(std::function<bool(bool)> request,
@@ -134,19 +127,8 @@ public:
         // Only approved concert photography; rejected procedural art is removed.
         skin_.drawScene(g,visualSceneId_);
 
-        // Quiet opaque branded header, readable over any approved scene.
-        g.setColour(juce::Colour(0xe60c141a));
-        g.fillRect(0,0,1100,68);
-        g.setColour(juce::Colour(0xffe8f0f0));
-        g.setFont(juce::FontOptions(21.f));
-        g.drawText(juce::String(ImerSipP92Processor::productDisplayName),
-                   24,15,175,34,juce::Justification::centredLeft);
-        g.setColour(juce::Colour(0xffb1c5cb));
-        g.setFont(juce::FontOptions(13.6f));
-        g.drawText("SPATIAL CONCERT MONITOR",207,22,360,22,
-                   juce::Justification::centredLeft);
-        g.setColour(juce::Colour(0xff32424b));
-        g.fillRect(0,67,1100,1);
+        // No second header: the native plugin window already owns its title.
+        // Preserve the venue art's full 1100x461 scene viewport.
 
         // Flat JUCE-painted panel: no bitmap, bevels, screws, or partitions.
         skin_.drawPanel(g);
@@ -178,7 +160,7 @@ public:
         g.setColour(juce::Colour(0xfff0eafa));
         g.setFont(juce::FontOptions(16.f));
         g.drawText((gain>=0?"+":"")+juce::String(gain,1)+" dB",
-                   925,611,153,23,juce::Justification::centred);
+                   886,611,138,23,juce::Justification::centred);
         g.setColour(juce::Colour(0xffb4c3c9));
         g.setFont(juce::FontOptions(12.2f));
         g.drawText("AUDIO  /  "+status_,24,648,838,23,
@@ -202,11 +184,11 @@ public:
             place(label,x,y,132,24);
             place(slider,x+134,y,114,25);
         }
-        place(labels_[5],938,484,128,22);
-        place(knobs_[5],951,510,98,94);
-        // Host actions in the header; panel only contains audio controls.
-        place(power_,939,17,74,34);
-        place(close_,1019,17,61,34);
+        // Control order: two slider lanes -> master gain -> host FX Power.
+        // Right-side power cell is independent of the master rotary hitbox.
+        place(labels_[5],884,484,139,22);
+        place(knobs_[5],908,510,98,94);
+        place(power_,1032,483,44,44);
     }
 private:
     armix::sonku::Settings readControls() const {
@@ -284,8 +266,14 @@ private:
         repaint();
     }
     void refreshHostPower() {
+        // Never infer bypass success from a click. Read the accepted host
+        // state, mirroring the authoritative EQ/Compressor power convention.
         if(!readBypass_)return;
-        power_.setButtonText(readBypass_()?"FX OFF":"FX ON");
+        const bool bypassed=readBypass_();
+        power_.setToggleState(!bypassed,juce::dontSendNotification);
+        power_.setTooltip(bypassed
+            ? "FX BYPASSED - click to enable"
+            : "FX ON - click to bypass");
     }
     void timerCallback() override {
         SonKuSpatialProcessor::Completion done{};
@@ -317,7 +305,7 @@ private:
     ImerSipP92Processor& fx_;
     ImerSipP92VisualSkin skin_;
     juce::ComboBox preset_{},room_{};
-    juce::TextButton power_{},close_{};
+    juce::TextButton power_{};
     std::array<juce::Slider,8> knobs_{};
     std::array<juce::Label,8> labels_{};
     std::function<bool(bool)> requestBypass_;
