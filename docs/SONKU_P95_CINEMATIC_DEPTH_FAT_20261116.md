@@ -32,9 +32,9 @@ All six scene presets select mode 9, 100% native spatial mix and preserve MIDI/P
 
 | Preset | Scene | Distance | Early | Reverb | Creative output gain |
 |---|---|---:|---:|---:|---:|
-| Immersive Music | Cinema | 8.2m | 95% | 62% | +5 dB |
+| Immersive Music | Cinema | 8.9m | 100% | 76% | +7 dB |
 | Large Studio Punch | Studio | 3m | 75% | 32% | +4 dB |
-| Cinema Grand Sound | Cinema | 9.4m | 98% | 70% | +6 dB |
+| Cinema Grand Sound | Cinema | 9.6m | 100% | 80% | +7.5 dB |
 | Live Venue Power | Venue | 9.8m | 100% | 80% | +6 dB |
 | Arena Massive | Arena | 10m | 100% | 87% | +7 dB |
 | Orbit Spatial Show | Venue | 9m | 96% | 72% | +5.5 dB |
