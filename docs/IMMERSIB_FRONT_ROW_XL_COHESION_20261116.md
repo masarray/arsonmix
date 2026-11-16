@@ -69,3 +69,49 @@ mastered concert recording.
 native JUCE state migration and source-only/ROOM OFF integrity. Keep
 PR Draft, and reject/retune if the owner's headphone FAT hears harshness
 or unchanged pumping.
+
+## 2026-11-17 listening follow-up: preserve named preset + Grand Front Row
+
+Owner A/B: **Live Concert already feels majestic**, but Concert Front Row
+XL lacks the same hall envelopment. Screenshot: Live parameters display
+112deg / 2.0m / ER136 / late84 / +5.1dB while combo incorrectly shows
+`Custom` without a manual edit. Diagnosis: factory Live trim is exactly
+`1.8f`, i.e. ~5.10545dB, but JUCE slider step `0.1dB` rounds to
+5.1dB. The prior `sync(factory); submit(readControls());` loses
+precision before the native ACK, and strict factory matching on restore
+incorrectly displays Custom.
+
+**Fix in the existing native JUCE editor, no format change:**
+
+- Selecting a named preset enqueues its **exact typed factory scene**.
+  There is no readback through the rounded JUCE sliders during preset
+  selection. Native P9 PCM and ACK authority are unchanged.
+- The editor keeps one control-thread `uiScene_` with exact values. A
+  slider updates **only its own typed axis**, preserving e.g. unedited
+  1.8 gain when STAGE changes. A deliberate slider/ROOM edit sets Custom,
+  but programmatic `dontSendNotification` sync never does.
+- After ACK, the selected name is retained; canonical recognition from
+  saved IMRS settings still works at editor creation. Existing binary
+  wire layout and preset IDs stay the same. Test all preset selections
+  after real native callback and JUCE 25Hz timer, plus one genuine manual
+  control edit and untouched-gain exactness.
+- New **Concert Front Row XL** factory 8 is an audition candidate:
+  Large28.8, **134deg/1.5m/ER170%/Late94%/Mix100%/+4.4dB**,
+  Ear0/Yaw0, Warm Detail voicing 4. More diffuse hall return while
+  keeping a near-stage front image; the old screenshot 147deg/1.0m
+  (prior product candidate 1.1m)/ER180%/Late60%/+2.5dB stays archival.
+- **Live Concert is unchanged**. P9.7 private Venue 10m golden PCM
+  remains immutable. No new HRIR, stereo delay, DSP path, runtime heap,
+  preset identity serialization, or louder-than-Live target.
+
+Acoustics rationale: early lateral energy informs apparent source width,
+while late/reverberant energy informs listener envelopment. A roomier
+front-row scene is preferable to uniformly increasing treble or direct
+gain, but listening taste remains subjective. The test compares the
+old and new Front Row PCM at 44.1/48k, anti-phase and limiter guards,
+rather than claiming the numerical presets are perceptually proven.
+
+**Remaining acceptance:** real headphone, matched-loudness owner A/B
+with the same live recording, check vocal presence, clarity, spacious
+tails, cymbal harshness and compression pumping. Continue Draft until
+audition and fully green Windows JUCE FAT.

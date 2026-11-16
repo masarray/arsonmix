@@ -31,6 +31,15 @@ class ImerSipP92Contract(unittest.TestCase):
         self.assertIn("inline constexpr std::array<ImerSipP92Preset,6>",scene) # P9.2 historical
         self.assertIn("inline constexpr std::array<ImerSipP92Preset,7>",scene) # P9.8
         self.assertIn("imersipP92MinDistance()",scene)
+        self.assertIn("134.f,1.5f,1.70f,.94f,4.40f,4",scene)
+        # A factory preset must bypass quantized JUCE readback; only a
+        # real slider/ROOM edit demotes the selected label to Custom.
+        ui=source("engine/builtin_fx/ImerSipP92Editor.h")
+        self.assertIn("submit(factory);",ui)
+        self.assertIn("uiScene_=s;",ui)
+        self.assertIn("submit(uiScene_);",ui)
+        self.assertIn("isCustomIntent_=true;",ui)
+        self.assertNotIn("readControls()",ui)
         self.assertIn('"Concert Front Row XL"',scene)
         self.assertIn('"Royal Concert Hall"',scene)
         self.assertIn('"Arena Thunder"',scene)

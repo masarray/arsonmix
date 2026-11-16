@@ -472,27 +472,84 @@ int main() {
     assert(ownerFx->pollCompletion(userScene) && userScene.applied &&
            userScene.requestId!=0);
     const auto screenshot=ownerFx->acceptedSettings();
-    assert(userScene.settings.stereoSpreadDegrees==147.f);
+    assert(userScene.settings.stereoSpreadDegrees==134.f);
     assert(screenshot.spacePreset==3);
-    assert(screenshot.stereoSpreadDegrees==147.f);
-    assert(screenshot.sourceDistanceMeters==1.1f);
-    assert(screenshot.roomAmount==1.8f);
-    assert(screenshot.ambience==.60f && screenshot.spatialMix==1.f);
+    assert(screenshot.stereoSpreadDegrees==134.f);
+    assert(screenshot.sourceDistanceMeters==1.5f);
+    assert(screenshot.roomAmount==1.70f);
+    assert(screenshot.ambience==.94f && screenshot.spatialMix==1.f);
     assert(screenshot.hrtfElevationTrimDegrees==0.f && screenshot.headYawDegrees==0.f);
     assert(screenshot.sceneVoicing==4);
     assert(std::abs(screenshot.outputTrim-
-        armix::builtin_fx::imersipP92DbToLinear(2.5f))<.001f);
+        armix::builtin_fx::imersipP92DbToLinear(4.4f))<.001f);
     juce::MemoryBlock ownerState;
     ownerFx->getStateInformation(ownerState);
     auto ownerRestored=std::make_unique<ImerSipP92Processor>();
     ownerRestored->prepareToPlay(48000.,128);
     assert(ownerRestored->restoreUnpublishedState(
         ownerState.getData(),static_cast<int>(ownerState.getSize())));
-    assert(ownerRestored->acceptedSettings().stereoSpreadDegrees==147.f);
-    assert(ownerRestored->acceptedSettings().roomAmount==1.8f);
+    assert(ownerRestored->acceptedSettings().stereoSpreadDegrees==134.f);
+    assert(ownerRestored->acceptedSettings().roomAmount==1.70f);
     ownerRestored->releaseResources();
     ownerEditor.reset(); // Destroy editor before its processor.
     ownerFx->releaseResources();
+
+    // Regression: the user's exact screenshot showed Live Concert controls
+    // 112deg / 2m / ER136 / Late84 / +5.1dB, but the preset showed Custom.
+    // Factory outputTrim=1.8f is NOT equal to the rounded slider's 5.1dB
+    // conversion. An untouched preset must submit exact factory Settings,
+    // retain its NAME after the real AUDIO ACK, and serialize unchanged.
+    auto sceneFx=std::make_unique<ImerSipP92Processor>();
+    sceneFx->prepareToPlay(48000.,128);
+    assert(sceneFx->isReady());
+    std::unique_ptr<juce::AudioProcessorEditor> sceneEditor(sceneFx->createEditor());
+    assert(sceneEditor);
+    auto* sceneSelector=dynamic_cast<juce::ComboBox*>(
+        sceneEditor->findChildWithID("imersip.preset"));
+    auto* sceneStage=dynamic_cast<juce::Slider*>(
+        sceneEditor->findChildWithID("imersip.stage"));
+    assert(sceneSelector && sceneStage && sceneSelector->getSelectedId()==2);
+    juce::AudioBuffer<float> scenePcm(2,128);
+    juce::MidiBuffer sceneMidi;
+    const auto settleGui=[&]{
+        // Native JUCE 25Hz editor timer must consume ACK and reconcile
+        // the selected label, not leave this assertion at pre-ACK state.
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(85);
+    };
+    for(const auto& p:armix::builtin_fx::imersipP92Presets){
+        sceneSelector->setSelectedId(p.id,juce::sendNotificationSync);
+        assert(sceneSelector->getSelectedId()==p.id);
+        scenePcm.clear();
+        sceneFx->processBlock(scenePcm,sceneMidi);
+        settleGui();
+        assert(sceneSelector->getSelectedId()==p.id);
+        const auto expected=imersipP92Factory(p.id);
+        const auto accepted=sceneFx->acceptedSettings();
+        assert(std::abs(accepted.outputTrim-expected.outputTrim)<1.e-7f);
+        assert(std::abs(accepted.sourceDistanceMeters-
+                        expected.sourceDistanceMeters)<1.e-6f);
+        assert(std::abs(accepted.roomAmount-expected.roomAmount)<1.e-6f);
+        assert(std::abs(accepted.ambience-expected.ambience)<1.e-6f);
+        assert(accepted.sceneVoicing==expected.sceneVoicing);
+    }
+    sceneSelector->setSelectedId(2,juce::sendNotificationSync);
+    scenePcm.clear();
+    sceneFx->processBlock(scenePcm,sceneMidi);
+    settleGui();
+    assert(sceneSelector->getSelectedId()==2);
+    assert(sceneFx->acceptedSettings().outputTrim==1.8f);
+    const auto originalStage=sceneStage->getValue();
+    sceneStage->setValue(originalStage+1.,juce::sendNotificationSync);
+    assert(sceneSelector->getSelectedId()==1); // true parameter edit only
+    scenePcm.clear();
+    sceneFx->processBlock(scenePcm,sceneMidi);
+    settleGui();
+    assert(sceneSelector->getSelectedId()==1); // remains Custom after ACK
+    // Changing STAGE must not round and silently shift MASTER GAIN.
+    assert(sceneFx->acceptedSettings().outputTrim==1.8f);
+    assert(sceneFx->acceptedSettings().stereoSpreadDegrees==113.f);
+    sceneEditor.reset();
+    sceneFx->releaseResources();
 #endif
     auto* actualEditor=dynamic_cast<armix::builtin_fx::ImerSipP92Editor*>(
         editor.get());

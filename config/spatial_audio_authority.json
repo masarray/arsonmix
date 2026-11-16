@@ -83,7 +83,7 @@
       "5": "Front Row Power — 1.3m, 104°, Early126%, Late70%, detail4",
       "6": "Symphonic Palace — 1.9m, 118°, Early160%, Late80%, detail4",
       "7": "Velvet Cinema — 1.8m, 108°, Early142%, Late82%, Cinema3",
-      "8": "Concert Front Row XL — 1.1m, 147°, Early180%, Late60%, detail4, +2.5dB"
+      "8": "Concert Front Row XL — 1.5m, 134°, Early170%, Late94%, detail4, +4.4dB"
     },
     "ownerScreenshotObservation": {
       "speakerSpreadDeg": 150,
@@ -156,7 +156,8 @@
       "status": "development_only_requires_headphone_AB",
       "screenshotPresetId": 8,
       "screenshotPresetName": "Concert Front Row XL",
-      "revisedListeningPresetDistanceMeters": 1.1,
+      "revisedListeningPresetDistanceMeters": 1.5,
+      "revision": "owner_2026_11_17_front_row_grandeur_and_exact_preset_identity",
       "revisedListeningRangeMeters": [1.1, 2.5],
       "note": "Historical screenshot observed 1.0m; new owner request changes candidate to 1.1m. visibleControls remains original evidence.",
       "visibleControls": {"room": 3, "stageDegrees": 147, "distanceMeters": 1, "earlyPercent": 180, "latePercent": 60, "spatialMixPercent": 100, "earAlignDegrees": 0, "headYawDegrees": 0, "outputGainDb": 2.5},
@@ -166,6 +167,8 @@
       "diagnostics": "offline-only native test captures P9.5 makeup and linked limiter reduction; changes do not prove subjective vocal segregation or absence of pumping",
       "goldenConstraint": "Venue P9.7 profile0 and SonKu voicings 0..3 remain PCM-identical and immutable",
       "lateralHighAir": "P9.8 voicings 4/5 only: first-image KEMAR early lateral >5.2kHz gains 0.18/0.14; no extra dry upper-mid, delays or second DSP",
+      "newFrontRowXLAudition": {"presetId": 8, "stageDegrees": 134, "distanceMeters": 1.5, "earlyRoom": 1.70, "lateRoom": 0.94, "outputGainDb": 4.4, "voicing": 4, "goal": "larger diffuse envelopment than original 60 percent late scene while keeping source in the nearfield", "historicalScreenshotUnmodified": true, "operatorHeadphoneABRequired": true},
+      "presetIdentityCorrection": "JUCE sends exact factory Settings when selecting named scene; subsequent edits mutate only changed axis of message-thread scene intent; names reconcile on native ACK, Custom only after genuine control edit; IMRS wire format unchanged",
       "released": false
     },
     "productTuning": {

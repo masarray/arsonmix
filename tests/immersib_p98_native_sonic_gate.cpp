@@ -65,7 +65,7 @@ static Result render(int rate,const Settings& s,bool phaseReverse=false){
     assert(diag.samples==n && diag.limitedSamples<=diag.samples);
     assert(diag.minimumLimiterGain>0.f && diag.minimumLimiterGain<=1.f);
     assert(diag.makeupGainSum>=double(diag.samples));
-    if(s.sourceDistanceMeters==1.1f && s.stereoSpreadDegrees==147.f &&
+    if(s.sourceDistanceMeters==1.5f && s.stereoSpreadDegrees==134.f &&
        s.sceneVoicing==4) {
         const double meanMakeup=diag.makeupGainSum/diag.samples;
         const double limitedPct=100.*diag.limitedSamples/diag.samples;
@@ -133,13 +133,20 @@ int main(){
     assert(venue.startAzimuthDegrees==0.f && venue.spacePreset==3);
     assert(imersipP92Presets.size()==7);
     const auto ownerPreset=imersipP92Factory(8);
-    assert(ownerPreset.spacePreset==3 && ownerPreset.stereoSpreadDegrees==147.f);
-    assert(ownerPreset.sourceDistanceMeters==1.1f && ownerPreset.roomAmount==1.8f);
-    assert(ownerPreset.ambience==.60f && ownerPreset.spatialMix==1.f);
+    assert(ownerPreset.spacePreset==3 && ownerPreset.stereoSpreadDegrees==134.f);
+    assert(ownerPreset.sourceDistanceMeters==1.5f && ownerPreset.roomAmount==1.70f);
+    assert(ownerPreset.ambience==.94f && ownerPreset.spatialMix==1.f);
     assert(ownerPreset.headYawDegrees==0.f && ownerPreset.hrtfElevationTrimDegrees==0.f);
     assert(ownerPreset.sceneVoicing==4);
-    assert(std::abs(ownerPreset.outputTrim-armix::builtin_fx::imersipP92DbToLinear(2.5f))<1.e-6f);
+    assert(std::abs(ownerPreset.outputTrim-armix::builtin_fx::imersipP92DbToLinear(4.4f))<1.e-6f);
     assert(armix::builtin_fx::validImerSipP92Scene(ownerPreset));
+    const auto live=imersipP92Factory(2);
+    // Make XL grand through a larger room RETURN, not a new HRTF or
+    // a louder-than-Live output trim. Near-row retains front-vocal focus.
+    assert(ownerPreset.ambience>live.ambience);
+    assert(ownerPreset.stereoSpreadDegrees>live.stereoSpreadDegrees);
+    assert(ownerPreset.sourceDistanceMeters<live.sourceDistanceMeters);
+    assert(ownerPreset.outputTrim<live.outputTrim);
     // Nearfield source projection now supports 1m in the physical XYZ path.
     armix::sonku::xyz::Placement projected{};
     assert(armix::sonku::xyz::project(1.f,0.f,1.45f,7.2f,projected));
@@ -296,6 +303,25 @@ int main(){
             assert(edgeRatio<1.05);
             assert(airRatio>.65);
         }
+        // Historical owner Custom screenshot is a valid private audio
+        // control reference, not a shipped preset or frozen Venue.
+        auto oldFront=ownerPreset;
+        oldFront.stereoSpreadDegrees=147.f;
+        oldFront.sourceDistanceMeters=1.1f;
+        oldFront.roomAmount=1.8f;
+        oldFront.ambience=.60f;
+        oldFront.outputTrim=armix::builtin_fx::imersipP92DbToLinear(2.5f);
+        const auto oldFrontPcm=render(rate,oldFront);
+        const auto updatedFrontPcm=render(rate,ownerPreset);
+        assert(updatedFrontPcm.hash!=oldFrontPcm.hash);
+        std::fprintf(stderr,
+            "IMMERSIB_FRONT_ROW_A_B,rate=%d,oldEnergy=%.5f,newEnergy=%.5f,oldSide=%.5f,newSide=%.5f,oldPeak=%.5f,newPeak=%.5f\\n",
+            rate,oldFrontPcm.power,updatedFrontPcm.power,
+            oldFrontPcm.side,updatedFrontPcm.side,
+            double(oldFrontPcm.peak),double(updatedFrontPcm.peak));
+        // Electrical guard only: the spatial balance and subjective
+        // majesty still require level-matched headphone A/B.
+        assert(updatedFrontPcm.power>oldFrontPcm.power*.90);
         const auto base=render(rate,golden);
         // Baseline acoustic PCM hashes captured BEFORE any ImmerSIB
         // nearfield or M/S tuning. Real regression, not self-comparison.

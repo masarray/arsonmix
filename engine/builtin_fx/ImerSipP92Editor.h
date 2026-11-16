@@ -30,9 +30,14 @@ public:
         preset_.onChange=[this]{
             const int id=preset_.getSelectedId();
             if(!imersipP92PresetById(id))return;
-            visualSceneId_=id; // Art changes only; audio still uses native SonKu.
-            sync(imersipP92Factory(id));
-            submit();
+            // A preset is an exact typed factory transaction, never a
+            // round-trip through quantized 0.1dB / 0.1m slider readback.
+            const auto factory=imersipP92Factory(id);
+            isCustomIntent_=false;
+            visualSceneId_=id;
+            sync(factory);
+            preset_.setSelectedId(id,juce::dontSendNotification);
+            submit(factory);
         };
         addAndMakeVisible(preset_);
         room_.setComponentID("imersip.room");
@@ -42,8 +47,12 @@ public:
         room_.addItem("LARGE 28.8 M",4);
         room_.setLookAndFeel(&skin_);
         room_.onChange=[this]{
+            // Edit only ROOM on the exact pending UI scene: other axes,
+            // including factory gain, retain their full-resolution values.
+            uiScene_.spacePreset=std::clamp(room_.getSelectedId()-1,0,3);
+            isCustomIntent_=true;
             preset_.setSelectedId(1,juce::dontSendNotification);
-            submit();
+            submit(uiScene_);
         };
         addAndMakeVisible(room_);
 
@@ -68,9 +77,13 @@ public:
             slider.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
             slider.setRange(lower[i],upper[i],step[i]);
             slider.setLookAndFeel(&skin_);
-            slider.onValueChange=[this]{
+            slider.onValueChange=[this,i]{
+                // Only a real user edit demotes a named preset to Custom.
+                // setValue(..., dontSendNotification) in sync() cannot edit.
+                applySliderEdit(i);
+                isCustomIntent_=true;
                 preset_.setSelectedId(1,juce::dontSendNotification);
-                submit();
+                submit(uiScene_);
                 repaint();
             };
             addAndMakeVisible(slider);
@@ -191,32 +204,28 @@ public:
         place(power_,1032,483,44,44);
     }
 private:
-    armix::sonku::Settings readControls() const {
-        auto s=fx_.acceptedSettings();
-        s.renderMode=9;s.moving=false;s.startAzimuthDegrees=0.f;
-#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
-        s.sceneVoicing=selectedVoicing_;
-#endif
-        s.musicCompatibleLowFrequency=false;
-        s.spacePreset=std::clamp(room_.getSelectedId()-1,0,3);
-        s.stereoSpreadDegrees=static_cast<float>(knobs_[0].getValue());
-        s.sourceDistanceMeters=std::clamp(
-            static_cast<float>(knobs_[1].getValue()),
-            imersipP92MinDistance(),imersipP92MaxDistance(s.spacePreset));
-        s.roomAmount=static_cast<float>(knobs_[2].getValue()*.01);
-        s.ambience=static_cast<float>(knobs_[3].getValue()*.01);
-        s.spatialMix=static_cast<float>(knobs_[4].getValue()*.01);
-        s.outputTrim=static_cast<float>(
-            std::pow(10.,knobs_[5].getValue()/20.));
-        s.hrtfElevationTrimDegrees=
-            static_cast<float>(knobs_[6].getValue());
-        s.headYawDegrees=static_cast<float>(knobs_[7].getValue());
-        return s;
+    // Control-side intent model. Factory values remain exact until the
+    // operator changes the corresponding axis, even while ACK is pending.
+    // Native PCM always reads the queued Settings via its existing SPSC.
+    void applySliderEdit(int axis) {
+        const float value=static_cast<float>(
+            knobs_[static_cast<std::size_t>(axis)].getValue());
+        switch(axis) {
+            case 0: uiScene_.stereoSpreadDegrees=value;break;
+            case 1: uiScene_.sourceDistanceMeters=std::clamp(
+                value,imersipP92MinDistance(),
+                imersipP92MaxDistance(uiScene_.spacePreset));break;
+            case 2: uiScene_.roomAmount=value*.01f;break;
+            case 3: uiScene_.ambience=value*.01f;break;
+            case 4: uiScene_.spatialMix=value*.01f;break;
+            case 5: uiScene_.outputTrim=std::pow(10.f,value/20.f);break;
+            case 6: uiScene_.hrtfElevationTrimDegrees=value;break;
+            case 7: uiScene_.headYawDegrees=value;break;
+            default: jassertfalse;break;
+        }
     }
     void sync(const armix::sonku::Settings& s){
-#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
-        selectedVoicing_=s.sceneVoicing;
-#endif
+        uiScene_=s;
         room_.setSelectedId(s.spacePreset+1,juce::dontSendNotification);
         const double vals[]={s.stereoSpreadDegrees,s.sourceDistanceMeters,
             100.*s.roomAmount,100.*s.ambience,100.*s.spatialMix,
@@ -225,7 +234,10 @@ private:
         for(int i=0;i<8;++i)knobs_[static_cast<std::size_t>(i)].setValue(
             vals[i],juce::dontSendNotification);
         int preset=1;
-        for(const auto& factory:imersipP92Presets){
+        // A deliberate edit stays Custom even when numerically close to a
+        // factory curve. On a new editor (e.g. restored IMRS state), exact
+        // factory recognition recovers the named scene without a wire ID.
+        if(!isCustomIntent_)for(const auto& factory:imersipP92Presets){
             const int id=factory.id;
             const auto candidate=imersipP92Factory(id);
             if(s.spacePreset==candidate.spacePreset &&
@@ -247,8 +259,7 @@ private:
         preset_.setSelectedId(preset,juce::dontSendNotification);
         repaint();
     }
-    void submit() {
-        const auto wanted=readControls();
+    void submit(const armix::sonku::Settings& wanted) {
         if(!validImerSipP92Scene(wanted)){
             status_="INVALID ROOM / SOURCE GEOMETRY";repaint();return;
         }
@@ -301,7 +312,8 @@ private:
                                      getWidth(),juce::roundToInt(34*compactScale)));
     }
     int visualSceneId_=2; // UI-only scene selection; not IMRS / PCM state.
-    int selectedVoicing_=0; // UI/control side; native SPSC owns the audio state.
+    bool isCustomIntent_=false; // Only a real control change sets this.
+    armix::sonku::Settings uiScene_{}; // Message-thread exact scene intent.
     ImerSipP92Processor& fx_;
     ImerSipP92VisualSkin skin_;
     juce::ComboBox preset_{},room_{};

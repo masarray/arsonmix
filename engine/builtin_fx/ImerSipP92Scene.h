@@ -80,11 +80,13 @@ inline constexpr std::array<ImerSipP92Preset,7> imersipP92Presets{{
     {5,"Front Row Power",   3,104.f,1.3f,1.26f,.70f,5.60f,4},
     {6,"Symphonic Palace",  3,118.f,1.9f,1.60f,.80f,5.25f,4},
     {7,"Velvet Cinema",     3,108.f,1.8f,1.42f,.82f,4.60898f,3},
-    // Original screenshot was 1.0m; updated user range sets the preset to 1.1m.
-    // Large / 147deg / ER180 / Late60 /
-    // Mix100 / Ear0 / Yaw0 / +2.5dB. Hidden scene voicing is not shown in
-    // that screenshot: use current ImmerSIB Detail Warm (4) explicitly.
-    {8,"Concert Front Row XL",3,147.f,1.1f,1.80f,.60f,2.50f,4}
+    // Original owner screenshot: 147deg/1.0m/ER180/Late60/+2.5dB.
+    // Retain it as historical provenance, not as the immutable P9.7 golden.
+    // XL's stage-front revision balances the DIRECT front vocal with a
+    // longer, stronger diffuse hall envelope (late94 vs old60), bounded
+    // early energy and a matched-gain A/B against accepted Live Concert.
+    // No algorithmic changes to Venue, room IR, HRIR or scene voicing.
+    {8,"Concert Front Row XL",3,134.f,1.5f,1.70f,.94f,4.40f,4}
 }};
 #else
 // Historical P9.2 candidate stays reproducible when private P9.8 OFF.
