@@ -141,7 +141,7 @@
     "featureFlag": "ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING",
     "releaseQualified": false,
     "acousticSourceBlobSha1": {
-      "engine/builtin_fx/sonku/SonKuSpatialCore.h": "1b788064e35b412f088d371b5325d76cc6e47e11",
+      "engine/builtin_fx/sonku/SonKuSpatialCore.h": "de775c63df93a115232df956b7004f2463c4e530",
       "engine/builtin_fx/sonku/SonKuP91P92WorldBassFoundation.h": "63551d22e8dff672fe136131c32d28b568bb3170",
       "engine/builtin_fx/sonku/SonKuP94FrontBackDepthCue.h": "f0f88088c68ef6865d64c240c4c87accaf136070",
       "engine/builtin_fx/sonku/SonKuP95MusicalPresence.h": "f458d520c9ca6c75b1b961d220e15abd64b07497",
@@ -176,7 +176,7 @@
       ],
       "reason": "Owner hears farfield presets as vague and 100% early room too weak; M/S masking relief is source-domain frequency-selective, not stem separation",
       "newDSPBlobSha1": {
-        "engine/builtin_fx/sonku/SonKuSpatialCore.h": "1b788064e35b412f088d371b5325d76cc6e47e11",
+        "engine/builtin_fx/sonku/SonKuSpatialCore.h": "de775c63df93a115232df956b7004f2463c4e530",
         "engine/builtin_fx/sonku/SonKuEarlyReflections.h": "5a6a9b48cfdc60729f130c61110c8d8590b20f35",
         "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "90bab191a62601021c4a7a77d64e0e4d408d3011",
         "engine/builtin_fx/sonku/SonKuSourcePlacement3D.h": "9afb959bed292626c3097c2a382208ce8798e90c"
