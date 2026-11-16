@@ -660,7 +660,7 @@ jobs:
   sonku-p90-source:
     # Runs only on the P9 research PR, even while its production jobs skip.
     name: SonKu P9 exact-source C++ PCM preflight
-    if: ${{ github.event_name == 'pull_request' && (startsWith(github.event.pull_request.head.ref, 'research/sonku-p90-') || (startsWith(github.event.pull_request.head.ref, 'research/sonku-p91-p92-') || startsWith(github.event.pull_request.head.ref, 'feat/sonku-p93-'))) }}
+    if: ${{ github.event_name == 'pull_request' && (startsWith(github.event.pull_request.head.ref, 'research/sonku-p90-') || (startsWith(github.event.pull_request.head.ref, 'research/sonku-p91-p92-') || (startsWith(github.event.pull_request.head.ref, 'feat/sonku-p93-') || startsWith(github.event.pull_request.head.ref, 'research/sonku-p94-')))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -680,6 +680,8 @@ jobs:
           /tmp/sonku-p90
           g++ $FLAGS tests/sonku_p91_p92_music_bass_foundation_test.cpp -o /tmp/sonku-p91p92
           /tmp/sonku-p91p92
+          g++ $FLAGS -DSONKU_P94_FRONT_BACK_DEPTH_RESEARCH=1 tests/sonku_p94_front_back_depth_source_test.cpp -o /tmp/sonku-p94
+          /tmp/sonku-p94
           g++ $FLAGS tests/sonku_p89_stereo_room_depth_source_test.cpp -o /tmp/sonku-p89
           /tmp/sonku-p89
           echo "SONKU_P90_NATIVE_SOURCE_CTEST_PASSED"
@@ -687,7 +689,7 @@ jobs:
   sonku-p90-windows-fat:
     name: SonKu P9 actual JUCE / GUI portable x64
     needs: sonku-p90-source
-    if: ${{ github.event_name == 'pull_request' && (startsWith(github.event.pull_request.head.ref, 'research/sonku-p90-') || (startsWith(github.event.pull_request.head.ref, 'research/sonku-p91-p92-') || startsWith(github.event.pull_request.head.ref, 'feat/sonku-p93-'))) }}
+    if: ${{ github.event_name == 'pull_request' && (startsWith(github.event.pull_request.head.ref, 'research/sonku-p90-') || (startsWith(github.event.pull_request.head.ref, 'research/sonku-p91-p92-') || (startsWith(github.event.pull_request.head.ref, 'feat/sonku-p93-') || startsWith(github.event.pull_request.head.ref, 'research/sonku-p94-')))) }}
     runs-on: windows-2022
     timeout-minutes: 55
     steps:
@@ -724,21 +726,25 @@ jobs:
             -DARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT=ON `
             -DARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT=ON `
             -DARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT=ON `
+            -DARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH=ON `
             -DBUILD_TESTING=ON
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $cache = Get-Content build/CMakeCache.txt -Raw
           if ($cache -notmatch 'ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT:BOOL=ON') {
             throw 'SONKU_P90_WRONG_NATIVE_CONFIGURATION'
           }
+          if ($cache -notmatch 'ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH:BOOL=ON') {
+            throw 'SONKU_P94_WRONG_NATIVE_CONFIGURATION'
+          }
       - name: Build real native JUCE PCM, state ACK, and Windows GUI
         shell: pwsh
         run: |
-          cmake --build build --config Release --parallel 2 --target ARMixSonKuP91P92MusicBassTests ARMixSonKuP90NativeTests ARMixSonKuP90SourceTests ARMixSonKuP89NativeTests ARMixSonKuP89SourceTests ARMixConsole
+          cmake --build build --config Release --parallel 2 --target ARMixSonKuP94SourceTests ARMixSonKuP91P92MusicBassTests ARMixSonKuP90NativeTests ARMixSonKuP90SourceTests ARMixSonKuP89NativeTests ARMixSonKuP89SourceTests ARMixConsole
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path -LiteralPath 'build/ARMixConsole_artefacts/Release/AR MIX Studio.exe' -PathType Leaf)) {
             throw 'SONKU_P90_NATIVE_GUI_EXE_MISSING'
           }
-          ctest --test-dir build -C Release --output-on-failure -R '^NativeSonKuP(89RoomAnchoredStereoAndP88GoldenParity|89JuceV10AppliedAckAndV9Restore|90StereoExternalizationSource|90JuceV11AppliedAckAndLegacyRestore|91P92MusicFidelityWorldBassAndRoom)$'
+          ctest --test-dir build -C Release --output-on-failure -R '^NativeSonKuP(89RoomAnchoredStereoAndP88GoldenParity|89JuceV10AppliedAckAndV9Restore|90StereoExternalizationSource|90JuceV11AppliedAckAndLegacyRestore|91P92MusicFidelityWorldBassAndRoom|94FrontBackDepthA_BSource)$'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verified portable package, no installer or release
         shell: pwsh
@@ -752,12 +758,13 @@ jobs:
           Copy-Item docs/THIRD_PARTY_8D_SONKU_HRTF.md dist/THIRD_PARTY_8D_SONKU_HRTF.md
           Copy-Item docs/SONKU_P90_TRUE_EXTERNAL_SPEAKER_FAT_20261115.md dist/SONKU_P90_FIELD_FAT.md
           Copy-Item docs/SONKU_P91_P92_RECONCILED_MUSIC_FIDELITY_BASS_FAT_20261116.md dist/SONKU_P91_P92_FIELD_FAT.md
+          Copy-Item docs/SONKU_P94_FRONT_REAR_EXTERNALIZATION_FAT_20261116.md dist/SONKU_P94_FRONT_REAR_FAT.md
           $provenance = Get-Content -LiteralPath dist/BUILD_PROVENANCE.json -Raw | ConvertFrom-Json
           if ($provenance.sourceCommit -ne (git rev-parse HEAD).Trim()) {
             throw 'SONKU_P90_SOURCE_COMMIT_MISMATCH'
           }
           $provenance | Add-Member -Force -NotePropertyName sonkuExperiment -NotePropertyValue @{
-            mode = 'P9.1_P9.2_MUSIC_FIDELITY_PHYSICAL_BASS'
+            mode = 'P9.4_FRONT_REAR_DEPTH_EXPERIMENT'
             stateSchema = 11
             headphoneFat = 'PENDING'
             publicRelease = $false
@@ -767,7 +774,7 @@ jobs:
           $provenance | ConvertTo-Json -Depth 20 | Set-Content dist/BUILD_PROVENANCE.json -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:
-          name: ArSonMix-SonKu-P90-Windows-x64-${{ github.run_id }}
+          name: ArSonMix-SonKu-P94-FrontRear-Research-Windows-x64-${{ github.run_id }}
           path: dist/
           if-no-files-found: error
           retention-days: 21
