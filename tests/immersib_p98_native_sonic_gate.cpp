@@ -152,6 +152,11 @@ int main(){
             const auto inverse=render(rate,s,true);
             assert(inverse.side>1.e-7); // no catastrophic antiphase null
             assert(heard.hash!=base.hash);
+            // Always print candidate evidence BEFORE its quality floor;
+            // std::cout/stdout may be buffered and lost by abort().
+            std::fprintf(stderr,"NEARFIELD_DIAG,rate=%d,id=%d,meters=%.2f,early=%.2f,energy=%.6f,venue=%.6f,side=%.6f,peak=%.5f\n",
+                rate,preset.id,s.sourceDistanceMeters,s.roomAmount,
+                heard.power,base.power,heard.side,double(heard.peak));
             // A named flagship hall should not collapse to near-dry, low
             // electrical energy compared with the approved Venue fixture.
             // This is a *synthetic PCM floor*, not LUFS or listening proof.
