@@ -21,12 +21,10 @@ class ApprovedSceneAssets(unittest.TestCase):
                 self.assertEqual(header[12:16],b"IHDR")
                 width,height,depth,colour,compression,filtering,interlace=struct.unpack(
                     ">IIBBBBB",header[16:29])
-                self.assertGreaterEqual(width,1600)
-                self.assertGreaterEqual(height,600)
-                # Actual approved venue photos can be 2:1. JUCE keeps
-                # their source aspect via centred fit (not distortion/crop).
-                self.assertGreater(width/height,1.7)
-                self.assertLess(width/height,2.6)
+                # Exact two-times logical venue viewport: no side matte,
+                # no independent X/Y stretching, no accidental 2:1 fallback.
+                self.assertEqual((width,height),(2200,922))
+                self.assertEqual(width*461,height*1100)
                 self.assertEqual(depth,8)
                 self.assertIn(colour,(2,6))
                 self.assertEqual((compression,filtering,interlace),(0,0,0))
@@ -54,6 +52,12 @@ class ApprovedSceneAssets(unittest.TestCase):
         self.assertIn("ARMIX_IMERSIB_SCENE_PNG_SOURCES",cmake)
         self.assertIn("BinaryData::scene_live_concert_png",skin)
         self.assertIn("BinaryData::scene_velvet_cinema_png",skin)
+        self.assertIn("getWidth()!=photoWidth",skin)
+        self.assertIn("getHeight()!=photoHeight",skin)
+        self.assertIn("photoWidth=2200",skin)
+        self.assertIn("photoHeight=922",skin)
+        self.assertIn("int matteCount=0",native_test)
+        self.assertIn("assert(matteCount<3",native_test)
         self.assertIn("skin_.drawScene(g,visualSceneId_)",editor)
         self.assertIn("g.fillRect(0,461,1100,219)",skin)
         self.assertIn("drawRotarySlider(",skin)
