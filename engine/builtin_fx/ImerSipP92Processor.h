@@ -112,10 +112,15 @@ public:
             if(!check.isExhausted() || (moving!=0&&moving!=1) ||
                (clockwise!=0&&clockwise!=1) ||
                (incompatibleLf!=0&&incompatibleLf!=1) ||
-               !validImerSipP92Scene(next))return false;
-            // Only now invoke the single authoritative native parser and
-            // publish accepted settings. Reject without partial mutation.
-            return SonKuSpatialProcessor::restoreUnpublishedState(raw,nativeBytes);
+               !armix::sonku::valid(next) || next.renderMode!=9 ||
+               next.moving || next.musicCompatibleLowFrequency ||
+               next.startAzimuthDegrees!=0.f)return false;
+            // Existing IMRS v6/v7 sessions may contain far 10m scenes.
+            // Migrate distance only; preserve accepted voicing/room/gain.
+            // Keep legacy binary wire length and ID unchanged.
+            next.sourceDistanceMeters=std::min(
+                next.sourceDistanceMeters,imersipP92MaxDistance(next.spacePreset));
+            return validImerSipP92Scene(next) && adoptUnpublishedScene(next);
         }
         // Original IMRS v1-v5: read the actual previous format, fail closed
         // on corrupt bytes and map only parameters with a real P9 counterpart.

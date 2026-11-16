@@ -51,9 +51,9 @@ public:
         const char* names[]={"STAGE WIDTH","SOURCE DISTANCE","EARLY ROOM",
                              "LATE ROOM","SPATIAL MIX","MASTER GAIN",
                              "EAR ALIGN","HEAD YAW"};
-        const double lower[]={30.,1.6,0.,0.,0.,-12.,-30.,-90.};
+        const double lower[]={30.,1.0,0.,0.,0.,-12.,-30.,-90.};
         #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
-        const double upper[]={180.,10.,100.,100.,100.,6.,20.,90.};
+        const double upper[]={180.,4.,180.,100.,100.,6.,20.,90.};
 #else
         const double upper[]={180.,7.4,100.,100.,100.,6.,20.,90.};
 #endif

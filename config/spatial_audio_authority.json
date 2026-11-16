@@ -64,27 +64,24 @@
     },
     "imersipNewInsertDefault": {
       "presetId": 2,
-      "name": "Live Concert / authentic P9.7 Venue golden (P9.8 private build)",
-      "speakerSpreadDeg": 106,
-      "distanceMeters": 10,
+      "name": "Live Concert — nearfield vocal clarity candidate",
+      "speakerSpreadDeg": 112,
+      "distanceMeters": 3,
       "spacePreset": 3,
-      "earlyRoom": 1,
-      "lateRoom": 1,
+      "earlyRoom": 1.36,
+      "lateRoom": 0.84,
       "spatialMix": 1,
-      "outputGainDb": 5.10545,
-      "notOperatorCheckpoint": true,
-      "newInsertsOnly": true,
       "outputTrimLinear": 1.8,
-      "sceneVoicing": 0,
-      "privateBuildOnly": true
+      "sceneVoicing": 4,
+      "releaseQualified": false
     },
     "imersipAuditionPresetIds": {
-      "2": "Live Concert — EXACT owner-approved P9.7 Venue golden (10m,106°,100/100,trim1.8,voice0)",
-      "3": "Royal Concert Hall — 8.0m, 104°, ER100%, late98%, ImmerSIB Detail 4",
-      "4": "Arena Thunder — 8.9m, 112°, ER100%, late100%, ImmerSIB Impact 5",
-      "5": "Front Row Power — 4.5m, 100°, ER100%, late94%, ImmerSIB Detail 4",
-      "6": "Symphonic Palace — 9.2m, 110°, ER100%, late98%, ImmerSIB Detail 4",
-      "7": "Velvet Cinema — 8.5m, 100°, ER100%, late95%, P9.8 Cinema 3"
+      "2": "Live Concert — 3.0m, 112°, Early136%, Late84%, vocal-detail4, trim1.8",
+      "3": "Royal Concert Hall — 3.2m, 106°, Early155%, Late78%, detail4",
+      "4": "Arena Thunder — 3.7m, 124°, Early145%, Late86%, impact5",
+      "5": "Front Row Power — 1.4m, 104°, Early126%, Late70%, detail4",
+      "6": "Symphonic Palace — 3.6m, 118°, Early160%, Late80%, detail4",
+      "7": "Velvet Cinema — 3.5m, 108°, Early142%, Late82%, Cinema3"
     },
     "ownerScreenshotObservation": {
       "speakerSpreadDeg": 150,
@@ -143,26 +140,34 @@
     "featureFlag": "ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING",
     "releaseQualified": false,
     "acousticSourceBlobSha1": {
-      "engine/builtin_fx/sonku/SonKuSpatialCore.h": "808cb1b9a1588c9ac5d7c2879623524841056b44",
+      "engine/builtin_fx/sonku/SonKuSpatialCore.h": "7e7f7d5123c1fae5ed593f4252f84921832b0402",
       "engine/builtin_fx/sonku/SonKuP91P92WorldBassFoundation.h": "63551d22e8dff672fe136131c32d28b568bb3170",
       "engine/builtin_fx/sonku/SonKuP94FrontBackDepthCue.h": "f0f88088c68ef6865d64c240c4c87accaf136070",
       "engine/builtin_fx/sonku/SonKuP95MusicalPresence.h": "ece40572b04d4b586a61c56cf1fd1f77c1f295e7",
       "engine/builtin_fx/sonku/SonKuP96DistanceReinforcement.h": "a32fb6e6fdd431901323d4278c51991607c02d84",
       "engine/builtin_fx/sonku/SonKuP97StageImpact.h": "5384fd3cc67c31f0a8038b315856d20933249b5b",
-      "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "5b2438d9b743612c0d22a9b7f9984b1a0289ee3a"
+      "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "cc769dade5a752e0f84f02348e07332bce7c268b",
+      "engine/builtin_fx/sonku/SonKuEarlyReflections.h": "5a6a9b48cfdc60729f130c61110c8d8590b20f35"
     },
     "productTuning": {
-      "status": "audition_candidate_not_owner_approved",
-      "approvedReference": "P9.7 Venue Mega Space, exact sceneVoicing=0 and physical settings unchanged",
-      "newVoicingIds": {
-        "4": "ImmerSIB Detail — restrained center presence, instrument edge, real first-image air",
-        "5": "ImmerSIB Impact — music punch and spatial scale without headphone widening"
+      "status": "nearfield_vocal_masking_candidate_owner_not_auditioned",
+      "archivedP97VenueGolden": "10m / 106° / ER100% / late100% / trim1.8 / voicing0, PRIVATE test-only",
+      "newFactoryRangeMeters": [
+        1,
+        4
+      ],
+      "newEarlyRoomRangePercent": [
+        0,
+        180
+      ],
+      "reason": "Owner hears farfield presets as vague and 100% early room too weak; M/S masking relief is source-domain frequency-selective, not stem separation",
+      "newDSPBlobSha1": {
+        "engine/builtin_fx/sonku/SonKuSpatialCore.h": "7e7f7d5123c1fae5ed593f4252f84921832b0402",
+        "engine/builtin_fx/sonku/SonKuEarlyReflections.h": "5a6a9b48cfdc60729f130c61110c8d8590b20f35",
+        "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "cc769dade5a752e0f84f02348e07332bce7c268b"
       },
-      "previousP98SceneVoicingBlobSha1": "78d8ff28aaf9115a0d1cfff99a6cbb08d0b2bf39",
-      "newP98SceneVoicingBlobSha1": "5b2438d9b743612c0d22a9b7f9984b1a0289ee3a",
-      "changeScope": "additive scene voicing IDs 4 and 5 only; existing IDs 0..3 retain original curves",
-      "headphoneListeningRequired": true,
-      "roomCalibration": "Venue-derived: preserve late space while retaining distinct source distances and selected P9.8 tonal voicings; candidate not auditioned by owner."
+      "legacyIMRS": "Old 4-10m restored scenes migrate source distance down to room-safe <=4m; no codec version or FX ID change",
+      "physicalHeadphoneABRequired": true
     }
   }
 }

@@ -33,7 +33,8 @@ public:
     }
     void reset() noexcept {
         gains_={};center1_={};center2_={};punch_={};voice_={};
-        bass_={};air_={};earlyAir_={};
+        bass_={};air_={};earlyAir_={};sidePresence1_={};
+        sidePresence2_={};sideAirLow_=0.f;
     }
     static constexpr bool valid(int scene) noexcept {
         return scene>=Neutral && scene<=ImmerSIBImpact;
@@ -49,9 +50,22 @@ public:
         }
         const float center=.5f*(left+right);
         const float band=center2_.run(voiceCoeff_,center1_.run(voiceCoeff_,center));
-        if(gains_[0]==0.f)return {left,right};
-        const float delta=gains_[0]*band;
-        return {left+delta,right+delta};
+        // ImmerSIB selective M/S masking relief BEFORE measured HRIR:
+        // suppress only competing SIDE presence (not stems or vocals),
+        // and retain/enlarge lateral high-air image >5.2kHz. The two
+        // original KEMAR speaker paths remain the sole binaural renderer.
+        // Legacy voicing 0..3 has zero extra gains: same PCM arithmetic.
+        const float side=.5f*(left-right);
+        const float sideBand=sidePresence2_.run(voiceCoeff_,
+            sidePresence1_.run(voiceCoeff_,side));
+        sideAirLow_+=airAlpha_*(side-sideAirLow_);
+        if(gains_[0]==0.f&&gains_[6]==0.f&&gains_[7]==0.f)
+            return {left,right};
+        const float centerBoost=gains_[0]*band;
+        const float lateralAir=gains_[7]*(side-sideAirLow_);
+        const float maskedSide=gains_[6]*sideBand;
+        return {left+centerBoost-maskedSide+lateralAir,
+                right+centerBoost+maskedSide-lateralAir};
     }
     Stereo early(float left,float right) noexcept {
         const std::array<float,2> x{left,right};
@@ -84,21 +98,22 @@ public:
     }
 private:
     // channels: center-source, bass body, bass kick, vocal presence,
-    // real first-image air, already-binaural direct/final air.
+    // first-image air, final-ear air, SIDE presence masking relief,
+    // SIDE high-air field. Two fixed biquads + one pole, no FFT.
     // Signature is designed for high clarity AND physical music body.
     // Studio adjustment deliberately gentler than Cinema. Venue profile
     // is ALL ZEROS: its approved P9.7 acoustic graph is immutable.
-    static constexpr std::array<std::array<float,6>,6> curves_{{
-        {{0.f,0.f,0.f,0.f,0.f,0.f}},        // Venue / Custom: EXACT
-        {{.22f,.15f,.17f,.15f,.16f,.070f}}, // Signature flagship
-        {{.035f,.045f,.055f,.045f,.04f,.020f}}, // Live Studio subtle
-        {{.075f,.15f,.15f,.060f,.065f,.035f}}, // Cinema LF weight
+    static constexpr std::array<std::array<float,8>,6> curves_{{
+        {{0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f}}, // Venue / Custom: EXACT
+        {{.22f,.15f,.17f,.15f,.16f,.070f,0.f,0.f}}, // Signature
+        {{.035f,.045f,.055f,.045f,.04f,.020f,0.f,0.f}}, // Live Studio
+        {{.075f,.15f,.15f,.060f,.065f,.035f,0.f,0.f}}, // Cinema
         // ImmerSIB: clearer center presence + real lateral first images.
         // Stage/source remain HRTF-positioned. This is NOT a stem
         // extractor or post-HRTF stereo widening. Moderate boosts avoid
         // cymbal fatigue and keep spaciousness from P9.7 room geometry.
-        {{.29f,.10f,.12f,.24f,.20f,.075f}}, // Detail and placement
-        {{.17f,.22f,.24f,.12f,.16f,.055f}}  // Physical stage impact
+        {{.33f,.11f,.11f,.27f,.20f,.055f,.24f,.12f}}, // Detail and SIDE relief
+        {{.21f,.22f,.22f,.16f,.16f,.050f,.18f,.10f}}  // Stage and SIDE relief
     }};
     struct Coeff {float b0=0,b1=0,b2=0,a1=0,a2=0;};
     struct Filter {
@@ -124,7 +139,9 @@ private:
     std::array<Filter,2> punch_{};
     std::array<std::array<Filter,2>,2> voice_{};
     std::array<float,2> bass_{},air_{},earlyAir_{};
-    std::array<float,6> gains_{};
+    Filter sidePresence1_{},sidePresence2_{};
+    float sideAirLow_=0.f;
+    std::array<float,8> gains_{};
     float bassAlpha_=0.f,airAlpha_=0.f,slew_=0.f;
 };
 } // namespace armix::sonku::p98

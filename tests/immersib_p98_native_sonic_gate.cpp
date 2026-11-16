@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <numeric> // test-only energy aggregation
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -77,7 +78,8 @@ static Settings ownerVenue(){
     return s;
 }
 int main(){
-    const auto venue=imersipP92Factory(2);
+    const auto venue=armix::builtin_fx::imersipP97VenueGoldenScene();
+    const auto current=imersipP92Factory(2);
     const auto golden=ownerVenue();
     assert(venue.renderMode==9 && !venue.moving && venue.sceneVoicing==0);
     assert(venue.sourceDistanceMeters==10.f && venue.stereoSpreadDegrees==106.f);
@@ -85,16 +87,54 @@ int main(){
     assert(venue.outputTrim==1.8f && venue.spatialMix==1.f);
     assert(venue.startAzimuthDegrees==0.f && venue.spacePreset==3);
     assert(imersipP92Presets.size()==6);
+    assert(current.sourceDistanceMeters==3.f &&
+           current.roomAmount>1.f && current.sceneVoicing==4);
+    assert(armix::builtin_fx::validImerSipP92Scene(current));
+    for(const auto& preset:imersipP92Presets) {
+        const auto s=imersipP92Factory(preset.id);
+        assert(s.sourceDistanceMeters>=1.f && s.sourceDistanceMeters<=4.f);
+        assert(s.roomAmount>1.f && s.roomAmount<=1.8f);
+    }
     assert(armix::sonku::p98::SceneVoicing::valid(4));
     assert(armix::sonku::p98::SceneVoicing::valid(5));
     assert(!armix::sonku::p98::SceneVoicing::valid(6));
     // Product scene classification: preserve original Venue golden; new
     // detail and impact voicings must NEVER silently affect its PCM.
-    constexpr int expectedProfiles[]{0,4,5,4,4,3};
+    constexpr int expectedProfiles[]{4,4,5,4,4,3};
     for(std::size_t i=0;i<imersipP92Presets.size();++i)
         assert(imersipP92Presets[i].voicing==expectedProfiles[i]);
     for(int rate:{44100,48000}){
+        // Verify frequency-selective stereo SIDE masking relief BEFORE
+        // the measured KEMAR renderer. No assumed or fake vocal stems.
+        auto spectrum=[](int sr,int scene,int hz,bool mono)->double {
+            armix::sonku::p98::SceneVoicing fx;
+            assert(fx.prepare(sr));
+            double power=0.;
+            for(int i=0;i<12000;++i){
+                const float v=.10f*std::sin(2*pi*hz*i/double(sr));
+                const auto out=fx.source(v,mono?v:-v,scene,true);
+                assert(std::isfinite(out.left)&&std::isfinite(out.right));
+                if(mono)assert(std::abs(out.left-out.right)<1.e-7f);
+                if(i>=7000){
+                    const double side=.5*(out.left-out.right);
+                    power+=side*side;
+                }
+            }
+            return power;
+        };
+        const double baselinePresence=spectrum(rate,0,2050,false);
+        const double protectedPresence=spectrum(rate,4,2050,false);
+        const double baselineAir=spectrum(rate,0,7400,false);
+        const double lateralAir=spectrum(rate,4,7400,false);
+        assert(protectedPresence<baselinePresence*.93);
+        assert(lateralAir>baselineAir*1.03);
+        (void)spectrum(rate,4,2050,true); // mono side remains zero
+
         const auto base=render(rate,golden);
+        // Baseline acoustic PCM hashes captured BEFORE any ImmerSIB
+        // nearfield or M/S tuning. Real regression, not self-comparison.
+        assert(base.hash==(rate==44100?0x4759c0c588e0e421ull:
+                                      0x13a8e95368edcc04ull));
         const auto migrated=render(rate,venue);
         // The operator's approved Venue is a bit-exact audio checkpoint.
         assert(base.hash==migrated.hash);
@@ -102,11 +142,11 @@ int main(){
         for(const auto& preset:imersipP92Presets){
             const auto s=imersipP92Factory(preset.id);
             assert(s.renderMode==9 && !s.moving);
-            assert(s.spacePreset==3 && s.sourceDistanceMeters<=10.f);
+            assert(s.spacePreset==3 && s.sourceDistanceMeters<=4.f);
             const auto heard=render(rate,s);
             const auto inverse=render(rate,s,true);
             assert(inverse.side>1.e-7); // no catastrophic antiphase null
-            if(preset.id!=2)assert(heard.hash!=base.hash);
+            assert(heard.hash!=base.hash);
             // A named flagship hall should not collapse to near-dry, low
             // electrical energy compared with the approved Venue fixture.
             // This is a *synthetic PCM floor*, not LUFS or listening proof.
@@ -125,5 +165,5 @@ int main(){
             for(std::size_t j=i+1;j<uniquePcm.size();++j)
                 assert(uniquePcm[i]!=uniquePcm[j]);
     }
-    std::puts("PASS IMMERSIB VENUE GOLDEN + DETAIL/IMPACT NATIVE PCM");
+    std::puts("PASS IMMERSIB NEARFIELD 1-4M + EARLY 180 + VENUE GOLDEN PCM");
 }

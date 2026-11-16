@@ -161,7 +161,7 @@ public:
            !std::isfinite(g.distanceMeters))return false;
         if(g.widthMeters<5.f||g.depthMeters<5.f||
            g.widthMeters>40.f||g.depthMeters>40.f||
-           g.distanceMeters<1.6f||g.distanceMeters>10.f||
+           g.distanceMeters<1.f||g.distanceMeters>10.f||
            2.f*(g.distanceMeters+.5f)>std::min(g.widthMeters,g.depthMeters))
             return false;
         const float longest=std::max(g.widthMeters,g.depthMeters)+g.distanceMeters;

@@ -10,6 +10,7 @@
 #include <limits>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <cstdio>
 #include <memory>
 
@@ -51,10 +52,10 @@ static void nativeParity(int rate) {
     assert(actual.renderMode==9&&!actual.moving);
     assert(actual.spacePreset==3);
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
-    assert(std::abs(actual.stereoSpreadDegrees-106.f)<.001f);
-    assert(std::abs(actual.sourceDistanceMeters-10.f)<.001f);
-    assert(actual.roomAmount==1.f && actual.ambience==1.f);
-    assert(actual.outputTrim==1.8f && actual.sceneVoicing==0);
+    assert(std::abs(actual.stereoSpreadDegrees-112.f)<.001f);
+    assert(std::abs(actual.sourceDistanceMeters-3.f)<.001f);
+    assert(actual.roomAmount==1.36f && actual.ambience==.84f);
+    assert(actual.outputTrim==1.8f && actual.sceneVoicing==4);
 #else
     assert(std::abs(actual.stereoSpreadDegrees-150.f)<.001f);
     assert(std::abs(actual.sourceDistanceMeters-2.2f)<.001f);
@@ -132,7 +133,21 @@ static void nativeParity(int rate) {
     assert(restored->acceptedSettings().stereoSpreadDegrees==
         reference.stereoSpreadDegrees);
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
-    assert(restored->acceptedSettings().sceneVoicing==0);
+    assert(restored->acceptedSettings().sceneVoicing==4);
+    // Existing IMRS v7 shows saved at 10m are admitted with a nearfield
+    // distance migration, but preserve voicing, early room, and gain.
+    auto farState=state;
+    const float farDistance=10.f;
+    std::memcpy(static_cast<std::uint8_t*>(farState.getData())+42,
+                &farDistance,sizeof(farDistance)); // SONK v12 distance
+    auto migratedFar=std::make_unique<ImerSipP92Processor>();
+    migratedFar->prepareToPlay(rate,128);
+    assert(migratedFar->restoreUnpublishedState(
+        farState.getData(),static_cast<int>(farState.getSize())));
+    assert(migratedFar->acceptedSettings().sourceDistanceMeters==4.f);
+    assert(migratedFar->acceptedSettings().sceneVoicing==4);
+    assert(migratedFar->acceptedSettings().roomAmount==1.36f);
+    migratedFar->releaseResources();
     // Compatibility proof: an old IMRS v6 carries SONK v11 exactly
     // (63 bytes, no sceneVoicing). Restore it in the P9.8 engine as 0.
     juce::MemoryBlock oldV6;
@@ -148,6 +163,7 @@ static void nativeParity(int rate) {
     assert(migratedV6->restoreUnpublishedState(
         oldV6.getData(),static_cast<int>(oldV6.getSize())));
     assert(migratedV6->acceptedSettings().sceneVoicing==0);
+    assert(migratedV6->acceptedSettings().sourceDistanceMeters<=4.f);
     assert(migratedV6->acceptedSettings().stereoSpreadDegrees==
            reference.stereoSpreadDegrees);
     migratedV6->releaseResources();
@@ -308,6 +324,16 @@ int main() {
         assert(!name.containsIgnoreCase("a/b"));
     }
     assert(armix::builtin_fx::imersipP92PresetById(6)!=nullptr);
+    auto* distanceSlider=dynamic_cast<juce::Slider*>(
+        editor->findChildWithID("imersip.distance"));
+    auto* earlySlider=dynamic_cast<juce::Slider*>(
+        editor->findChildWithID("imersip.early"));
+    assert(distanceSlider && earlySlider);
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+    assert(distanceSlider->getMinimum()==1.0);
+    assert(distanceSlider->getMaximum()==4.0);
+    assert(earlySlider->getMaximum()==180.0);
+#endif
     assert(armix::builtin_fx::imersipP92PresetById(8)==nullptr);
     // Front Row Power must be a real applied audio edit, not UI illusion.
     selector->setSelectedId(5,juce::sendNotificationSync);
@@ -318,9 +344,10 @@ int main() {
     armix::builtin_fx::SonKuSpatialProcessor::Completion selected{};
     assert(editorFx->pollCompletion(selected)&&selected.applied);
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
-    assert(std::abs(editorFx->acceptedSettings().stereoSpreadDegrees-100.f)<.001f);
-    assert(std::abs(editorFx->acceptedSettings().sourceDistanceMeters-4.5f)<.001f);
-    assert(std::abs(editorFx->acceptedSettings().ambience-.94f)<.001f);
+    assert(std::abs(editorFx->acceptedSettings().stereoSpreadDegrees-104.f)<.001f);
+    assert(std::abs(editorFx->acceptedSettings().sourceDistanceMeters-1.4f)<.001f);
+    assert(std::abs(editorFx->acceptedSettings().ambience-.70f)<.001f);
+    assert(std::abs(editorFx->acceptedSettings().roomAmount-1.26f)<.001f);
     assert(editorFx->acceptedSettings().sceneVoicing==4);
     juce::MemoryBlock detailState;
     editorFx->getStateInformation(detailState);
@@ -330,6 +357,8 @@ int main() {
     assert(detailRestored->restoreUnpublishedState(
         detailState.getData(),static_cast<int>(detailState.getSize())));
     assert(detailRestored->acceptedSettings().sceneVoicing==4);
+    assert(detailRestored->acceptedSettings().sourceDistanceMeters<=4.f);
+    assert(detailRestored->acceptedSettings().roomAmount>1.f);
     detailRestored->releaseResources();
     assert(std::abs(editorFx->acceptedSettings().outputTrim-
         armix::builtin_fx::imersipP92DbToLinear(5.60f))<.001f);

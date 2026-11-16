@@ -109,9 +109,9 @@ inline bool valid(const Settings& s) noexcept {
         std::isfinite(s.spatialMix) && s.spatialMix>=0.f && s.spatialMix<=1.f &&
         std::isfinite(s.outputTrim) && s.outputTrim>=0.f && s.outputTrim<=4.f &&
         s.spacePreset>=0 && s.spacePreset<=3 &&
-        std::isfinite(s.sourceDistanceMeters) && s.sourceDistanceMeters>=1.6f &&
+        std::isfinite(s.sourceDistanceMeters) && s.sourceDistanceMeters>=1.f &&
         s.sourceDistanceMeters<=10.f &&
-        std::isfinite(s.roomAmount) && s.roomAmount>=0.f && s.roomAmount<=1.f &&
+        std::isfinite(s.roomAmount) && s.roomAmount>=0.f && s.roomAmount<=(s.renderMode==9?1.8f:1.f) &&
         std::isfinite(s.ambience) && s.ambience>=0.f && s.ambience<=1.f &&
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
         p98::SceneVoicing::valid(s.sceneVoicing) &&
@@ -1154,7 +1154,11 @@ private:
         const auto preset=s.spacePreset==3?SonKuReverbPreset::LargeRoom:
             s.spacePreset==2?SonKuReverbPreset::AiryChamber:
                              SonKuReverbPreset::StudioGlue;
-        return room_.setRealtimeRoom(geometry,s.roomAmount,s.spacePreset!=0) &&
+        return // Physical tap amount stays <=100%. Above 100%, only the
+        // bounded direct-independent early-presence gain grows.
+        // <=1 remains bit-identical to the archival P9.7 Venue.
+        room_.setRealtimeRoom(geometry,std::min(s.roomAmount,1.f),
+                              s.spacePreset!=0) &&
             reverb_.setRealtimeProgram(preset,
                 s.spacePreset!=0?s.ambience:0.f);
     }

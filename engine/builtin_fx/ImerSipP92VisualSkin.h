@@ -39,9 +39,9 @@ inline ImerSipP92ConcertBoxes imersipP92ConcertBoxes(
     const float stage=std::clamp(std::isfinite(stageDegrees)?
         stageDegrees:150.f,30.f,180.f);
     const float metres=std::clamp(std::isfinite(distanceMetres)?
-        distanceMetres:2.2f,1.6f,10.f);
+        distanceMetres:2.2f,1.f,4.f);
     const float width=(stage-30.f)/150.f;
-    const float distanceRatio=(metres-1.6f)/8.4f;
+    const float distanceRatio=(metres-1.f)/3.f;
     const float span=170.f+182.f*width;
     const float arrayW=98.f-28.f*distanceRatio;
     const float arrayH=arrayW*260.f/160.f;

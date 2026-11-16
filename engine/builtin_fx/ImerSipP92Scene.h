@@ -27,10 +27,9 @@ inline armix::sonku::Settings imersipP92ReferenceScene() noexcept {
     return s;
 }
 inline float imersipP92MaxDistance(int room) noexcept {
-    // SonKu six-wall geometry requires 2*(distance+0.5) <= room size.
-    // Authentic owner-approved P9.7 Venue uses 10m within Large 28.8m.
+    // Six-wall geometry requires 2*(distance+.5)<=room width.
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
-    return room==1?3.05f:room==2?6.65f:10.f;
+    return room==1?3.05f:4.f; // user-facing nearfield 1..4m
 #else
     return room==1?3.05f:room==2?6.65f:7.4f;
 #endif
@@ -55,19 +54,23 @@ struct ImerSipP92Preset {
     int voicing=0; // P9.8 typed profile; 0 preserves P9.7 Venue PCM
 };
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
-// P9.7 Venue at exactly 10m,106deg, ER100,late100,trim1.8,voice0
-// is the fixed owner-accepted sonic reference. New owner-directed ImmerSIB
-// programs use P9.8 native center/early/ear voicings 4=detail/5=impact.
-// Presets retain strong late-energy/distant reinforcement from Venue rather
-// than falling back to weak near-dry rooms. No dry-stereo stem fake
-// separation, second convolution or Haas widening.
+// Archival P9.7 10m Venue remains a golden *private* PCM fixture, not a
+// public preset. Current owner explicitly rejects sources beyond 4m.
+inline armix::sonku::Settings imersipP97VenueGoldenScene() noexcept {
+    auto s=imersipP92ReferenceScene();
+    s.stereoSpreadDegrees=106.f;s.sourceDistanceMeters=10.f;
+    s.roomAmount=1.f;s.ambience=1.f;s.outputTrim=1.8f;
+    return s;
+}
+// Nearfield factory retains the same P9 world renderer, adds P9.8
+// vocal masking relief, not stem extraction or extra Haas delays.
 inline constexpr std::array<ImerSipP92Preset,6> imersipP92Presets{{
-    {2,"Live Concert",       3,106.f,10.f, 1.f,1.00f,5.10545f,0},
-    {3,"Royal Concert Hall", 3,104.f,8.0f,1.f,.98f,5.57507f,4},
-    {4,"Arena Thunder",     3,112.f,8.9f,1.f,1.00f,5.45f,5},
-    {5,"Front Row Power",   3,100.f,4.5f,1.f,.94f,5.60f,4},
-    {6,"Symphonic Palace",  3,110.f,9.2f,1.f,.98f,5.25f,4},
-    {7,"Velvet Cinema",     3,100.f,8.5f,1.f,.95f,4.60898f,3}
+    {2,"Live Concert",       3,112.f,3.0f,1.36f,.84f,5.10545f,4},
+    {3,"Royal Concert Hall", 3,106.f,3.2f,1.55f,.78f,5.57507f,4},
+    {4,"Arena Thunder",     3,124.f,3.7f,1.45f,.86f,5.45f,5},
+    {5,"Front Row Power",   3,104.f,1.4f,1.26f,.70f,5.60f,4},
+    {6,"Symphonic Palace",  3,118.f,3.6f,1.60f,.80f,5.25f,4},
+    {7,"Velvet Cinema",     3,108.f,3.5f,1.42f,.82f,4.60898f,3}
 }};
 #else
 // Historical P9.2 candidate stays reproducible when private P9.8 OFF.
@@ -99,7 +102,7 @@ inline armix::sonku::Settings imersipP92Factory(int id) noexcept {
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
         s.sceneVoicing=p->voicing;
         // Do not let dB conversion alter the exact approved Venue trim hash.
-        if(id==2)s.outputTrim=1.8f;
+        if(id==2)s.outputTrim=1.8f; // preserve level, move to listener nearfield
 #endif
     }
     return s;
