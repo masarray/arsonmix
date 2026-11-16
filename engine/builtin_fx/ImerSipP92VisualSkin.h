@@ -139,15 +139,22 @@ public:
                 sliderPos,minSliderPos,maxSliderPos,style,slider);
             return;
         }
-        const auto left=float(x+8),right=float(x+width-8);
-        const float centre=float(y)+float(height)*.5f;
-        draw(g,track_,{left,centre-6.f,right-left,12.f});
+        const float left=float(x+6),right=float(x+width-6);
+        const float cy=float(y)+float(height)*.5f;
         const float thumb=std::clamp(sliderPos,left,right);
+        // Precise native vector rails avoid scaled PNG artefacts on HiDPI.
+        g.setColour(juce::Colour(0xff394a54));
+        g.fillRoundedRectangle(left,cy-2.f,right-left,4.f,2.f);
         if(thumb>left){
-            g.setColour(juce::Colour(0xff3bccbd));
-            g.drawLine(left+3.f,centre,thumb,centre,2.2f);
+            g.setColour(juce::Colour(0xff4ac5bd));
+            g.fillRoundedRectangle(left,cy-2.f,thumb-left,4.f,2.f);
         }
-        draw(g,thumb_,{thumb-9.f,centre-9.f,18.f,18.f});
+        g.setColour(juce::Colour(0xff0b2229));
+        g.fillEllipse(thumb-7.5f,cy-7.5f,15.f,15.f);
+        g.setColour(juce::Colour(0xff86dbd4));
+        g.drawEllipse(thumb-7.f,cy-7.f,14.f,14.f,1.5f);
+        g.setColour(juce::Colour(0xff9ddfd8));
+        g.fillEllipse(thumb-2.f,cy-2.f,4.f,4.f);
     }
     void drawRotarySlider(juce::Graphics& g,int x,int y,int width,int height,
                           float proportion,float start,float end,
@@ -171,18 +178,33 @@ public:
     }
     void drawComboBox(juce::Graphics& g,int width,int height,bool,
                       int,int,int,int,juce::ComboBox&) override {
-        draw(g,dropdown_,{0.f,0.f,float(width),float(height)});
-        juce::Path chevron;
-        chevron.startNewSubPath(float(width-24),float(height)*.42f);
-        chevron.lineTo(float(width-19),float(height)*.57f);
-        chevron.lineTo(float(width-14),float(height)*.42f);
-        g.setColour(juce::Colour(0xff77dcd5));
-        g.strokePath(chevron,juce::PathStrokeType(1.6f));
+        const auto bounds=juce::Rectangle<float>(.5f,.5f,
+              float(width)-1.f,float(height)-1.f);
+        g.setColour(juce::Colour(0xff1c2c33));
+        g.fillRoundedRectangle(bounds,5.f);
+        g.setColour(juce::Colour(0xff405c64));
+        g.drawRoundedRectangle(bounds,5.f,1.f);
+        juce::Path arrow;
+        const float cx=float(width)-16.f,cy=float(height)*.52f;
+        arrow.startNewSubPath(cx-4.f,cy-2.f);
+        arrow.lineTo(cx,cy+2.f);
+        arrow.lineTo(cx+4.f,cy-2.f);
+        g.setColour(juce::Colour(0xff73c5c1));
+        g.strokePath(arrow,juce::PathStrokeType(1.4f));
     }
     void drawButtonBackground(juce::Graphics& g,juce::Button& button,
                               const juce::Colour&,bool hover,bool down) override {
-        const auto& sprite=down?buttonPressed_:(hover?buttonHover_:buttonNormal_);
-        draw(g,sprite,{0.f,0.f,float(button.getWidth()),float(button.getHeight())});
+        const auto r=juce::Rectangle<float>(.5f,.5f,
+                   float(button.getWidth()-1),float(button.getHeight()-1));
+        const auto background=!button.isEnabled()?juce::Colour(0xff18252b):
+            down?juce::Colour(0xff28505a):
+            hover?juce::Colour(0xff29404b):juce::Colour(0xff203039);
+        g.setColour(background);
+        g.fillRoundedRectangle(r,5.f);
+        g.setColour(button.isEnabled()
+            ?juce::Colour(hover?0xff6fa6aa:0xff455963)
+            :juce::Colour(0xff34454b));
+        g.drawRoundedRectangle(r,5.f,1.f);
     }
 private:
     static bool allValid(std::initializer_list<const juce::Image*> images) noexcept {
