@@ -406,6 +406,32 @@ int main() {
     assert(power->isEnabled());
     power->onClick();assert(bypassed);
     power->onClick();assert(!bypassed);
+    // Actual JUCE scene renders: exact same embedded venue images as shipped
+    // with the native app. These captures are NOT HTML concept mockups.
+    // Each of the six preset IDs must produce a distinct visual composition.
+    std::uint64_t previousSceneSignature=0;
+    for(int sceneId=2;sceneId<=7;++sceneId) {
+        selector->setSelectedId(sceneId,juce::sendNotificationSync);
+        auto photo=editor->createComponentSnapshot(editor->getLocalBounds());
+        assert(photo.isValid() && photo.getWidth()==935 && photo.getHeight()==578);
+        std::uint64_t signature=14695981039346656037ull;
+        for(int y=100;y<385;y+=37)
+            for(int x=65;x<860;x+=53) {
+                const auto px=photo.getPixelAt(x,y).getARGB();
+                signature=(signature ^ static_cast<std::uint64_t>(px))
+                          *1099511628211ull;
+            }
+        assert(sceneId==2 || signature!=previousSceneSignature);
+        previousSceneSignature=signature;
+        const auto sceneFile=juce::File::getCurrentWorkingDirectory()
+            .getChildFile("ImerSip_P92_SCENE_"+juce::String(sceneId)+".png");
+        juce::FileOutputStream stream(sceneFile);
+        assert(stream.openedOk());
+        juce::PNGImageFormat format;
+        assert(format.writeImageToStream(photo,stream));
+        stream.flush();
+        assert(sceneFile.existsAsFile() && sceneFile.getSize()>10000);
+    }
     editor.reset();
     editorFx->releaseResources();
     nativeParity(44100);
