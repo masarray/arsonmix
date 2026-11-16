@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <optional>
 #include <utility>
 #include "ImerSipP92VisualSkin.h"
 
@@ -126,6 +127,8 @@ public:
         // holographic room or stacked artificial speaker sprites.
         // Only approved concert photography; rejected procedural art is removed.
         skin_.drawScene(g,visualSceneId_);
+        if(hostBypassed_.value_or(false))
+            skin_.drawBypassedVenueOverlay(g);
 
         // No second header: the native plugin window already owns its title.
         // Preserve the venue art's full 1100x461 scene viewport.
@@ -165,6 +168,22 @@ public:
         g.setFont(juce::FontOptions(12.2f));
         g.drawText("AUDIO  /  "+status_,24,648,838,23,
                    juce::Justification::centredLeft);
+    }
+    void paintOverChildren(juce::Graphics& g) override {
+        // Parent paint() cannot dim child Components: JUCE draws their
+        // labels, sliders and popup controls AFTER parent paint().
+        // A restrained 12% darkening pass over the lower controls provides
+        // a unified bypass state. Exclude FX Power so its real host state
+        // stays clear, keyboard/mouse accessible and visually actionable.
+        if(!hostBypassed_.value_or(false))return;
+        juce::Graphics::ScopedSaveState saved(g);
+        const auto panelTop=juce::roundToInt(461.f*compactScale);
+        const auto panel=juce::Rectangle<int>(
+            0,panelTop,getWidth(),getHeight()-panelTop);
+        g.reduceClipRegion(panel);
+        g.excludeClipRegion(power_.getBounds());
+        g.setColour(juce::Colour(0x21000000));
+        g.fillRect(panel);
     }
     void resized() override {
         const auto place=[](juce::Component& child,int x,int y,int w,int h){
@@ -266,14 +285,27 @@ private:
         repaint();
     }
     void refreshHostPower() {
-        // Never infer bypass success from a click. Read the accepted host
-        // state, mirroring the authoritative EQ/Compressor power convention.
-        if(!readBypass_)return;
+        // Host-authoritative UI readback: never assume a power click was
+        // accepted. Unknown/unbound status MUST NOT present BYPASSED.
+        if(!readBypass_) {
+            if(hostBypassed_.has_value()){
+                hostBypassed_.reset();
+                repaint();
+            }
+            return;
+        }
         const bool bypassed=readBypass_();
+        const bool changed=!hostBypassed_.has_value() ||
+                           *hostBypassed_!=bypassed;
+        hostBypassed_=bypassed;
         power_.setToggleState(!bypassed,juce::dontSendNotification);
         power_.setTooltip(bypassed
             ? "FX BYPASSED - click to enable"
             : "FX ON - click to bypass");
+        // External host bypass can change independently of this editor's
+        // click handler. Repaint the whole scene+panel only on transition;
+        // the 25Hz timer otherwise repaints only the ACK/status strip.
+        if(changed)repaint();
     }
     void timerCallback() override {
         SonKuSpatialProcessor::Completion done{};
@@ -310,6 +342,8 @@ private:
     std::array<juce::Label,8> labels_{};
     std::function<bool(bool)> requestBypass_;
     std::function<bool()> readBypass_;
+    std::optional<bool> hostBypassed_{}; // UI cache of actual host readback only
+
     armix::sonku::Settings deferred_{};
     std::uint64_t pending_=0;
     bool hasDeferred_=false;
