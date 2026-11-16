@@ -133,14 +133,16 @@ public:
             drawRoom(g);
             return;
         }
-        // Source image is a whole venue, including its own realistic
-        // loudspeaker system. Fit to viewport without geometric distortion.
-        // Only vertical overscan is permitted; never skew the PA.
+        // Fit the original venue image proportionally. Scene photos already
+        // include their correctly-perspectived PA and subwoofer cabinets.
+        // Do not distort their aspect when Windows DPI or editor size changes.
         juce::Graphics::ScopedSaveState state(g);
         g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
         g.reduceClipRegion(0,0,1100,461);
+        g.setColour(juce::Colour(0xff0e161c));
+        g.fillRect(0,0,1100,461);
         g.drawImageWithin(*art,0,0,1100,461,
-                          juce::RectanglePlacement::fillDestination);
+                          juce::RectanglePlacement::centred);
     }
     void drawHeader(juce::Graphics& g) const {
         draw(g,header_,{0.f,0.f,1100.f,73.f});
