@@ -255,13 +255,16 @@ int main() {
     // the original 1100x680 logical hit-testing and parameter geometry.
     for(const auto dpi : {100,125,150,200}) {
         const float scale=static_cast<float>(dpi)/100.f;
-        juce::Image frame(juce::Image::ARGB,
-                          juce::roundToInt(935.f*scale),
-                          juce::roundToInt(578.f*scale),true);
-        juce::Graphics gfx(frame);
-        gfx.addTransform(juce::AffineTransform::scale(scale));
-        editor->paintEntireComponent(gfx,true);
-        assert(frame.isValid());
+        // JUCE 8.0.15 provides a first-class scale-aware snapshot API.
+        // paintEntireComponent() into a manually transformed offscreen
+        // Graphics can produce blank/incorrect images on Windows headless
+        // runners even when createComponentSnapshot() passes above.
+        // Keep the strict non-blank/opaque assertions below.
+        auto frame=editor->createComponentSnapshot(
+            editor->getLocalBounds(),true,scale);
+        assert(frame.isValid() &&
+               frame.getWidth()==juce::roundToInt(935.f*scale) &&
+               frame.getHeight()==juce::roundToInt(578.f*scale));
         // A single pixel comparison can falsely fail when two dark metal
         // points happen to have the same RGBA. Validate a distributed sample
         // of the REAL native pixel buffer instead, and still reject blank art.
