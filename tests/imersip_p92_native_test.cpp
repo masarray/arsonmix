@@ -473,24 +473,58 @@ int main() {
             if(rgbEnergy(activeFrame.getPixelAt(x,y))-
                rgbEnergy(bypassFrame.getPixelAt(x,y))>=15)
                 ++stageDarker;
-    assert(stageDarker>=12); // Wide-scene darkening, no bitmap crop or blur
-    int amberLetters=0;
-    for(int y=151;y<242;y+=2)
-        for(int x=260;x<680;x+=2) {
-            const auto px=bypassFrame.getPixelAt(x,y);
-            if(px.getRed()>140 && px.getGreen()>65 &&
-               int(px.getRed())>int(px.getGreen())+35 &&
-               int(px.getGreen())>int(px.getBlue())+20)
-                ++amberLetters;
+    assert(stageDarker>=24); // No washed-out "barely bypassed" venue
+    // Check relative scene luminance, not just binary "some pixel changed".
+    // Keep a trace of the venue rather than turning the stage completely black.
+    std::int64_t sceneOnEnergy=0,sceneMutedEnergy=0;
+    for(const int y:{75,110,150,285,320,350})
+        for(const int x:{80,145,210,720,790,845}) {
+            sceneOnEnergy+=rgbEnergy(activeFrame.getPixelAt(x,y));
+            sceneMutedEnergy+=rgbEnergy(bypassFrame.getPixelAt(x,y));
         }
-    assert(amberLetters>=45); // Big centered translucent BYPASSED
-    int panelDarker=0;
+    assert(sceneMutedEnergy*100<sceneOnEnergy*52);
+    assert(sceneMutedEnergy*100>sceneOnEnergy*18);
+
+    // Enforce actual glyph prominence: broad amber letter coverage across
+    // at least 36 vertical framebuffer rows; a small thin 40px regular
+    // caption would not pass this native pixel-level requirement.
+    int amberLetters=0,amberRows=0;
+    for(int y=115;y<285;++y) {
+        int inThisRow=0;
+        for(int x=200;x<740;x+=2) {
+            const auto px=bypassFrame.getPixelAt(x,y);
+            if(px.getRed()>170 && px.getGreen()>85 &&
+               int(px.getRed())>int(px.getGreen())+55 &&
+               int(px.getGreen())>int(px.getBlue())+35) {
+                ++amberLetters;
+                ++inThisRow;
+            }
+        }
+        if(inThisRow>=8) ++amberRows;
+    }
+    assert(amberLetters>=380 && amberRows>=36);
+
+    std::int64_t panelOnEnergy=0,panelMutedEnergy=0;
     for(const int y:{410,435,475,520,552})
-        for(const int x:{45,120,225,305,415,550,675,775})
-            if(rgbEnergy(activeFrame.getPixelAt(x,y))>
-               rgbEnergy(bypassFrame.getPixelAt(x,y)))
-                ++panelDarker;
-    assert(panelDarker>=12); // 12% veil applied after JUCE child painting
+        for(const int x:{45,120,225,305,415,550,675,775}) {
+            panelOnEnergy+=rgbEnergy(activeFrame.getPixelAt(x,y));
+            panelMutedEnergy+=rgbEnergy(bypassFrame.getPixelAt(x,y));
+        }
+    // A true UI mute is visually distinct, but labels remain decipherable.
+    assert(panelMutedEnergy*100<panelOnEnergy*73);
+    assert(panelMutedEnergy*100>panelOnEnergy*35);
+
+    // Power is intentionally excluded from the panel veil. It must remain
+    // conspicuous and actionable when bypassed, not darkened with the rack.
+    int powerHighlightPixels=0;
+    const auto activePowerBounds=power->getBounds();
+    for(int y=activePowerBounds.getY()+3;y<activePowerBounds.getBottom()-3;++y)
+        for(int x=activePowerBounds.getX()+3;x<activePowerBounds.getRight()-3;++x) {
+            const auto px=bypassFrame.getPixelAt(x,y);
+            if(px.getRed()>112 && px.getGreen()>120 && px.getBlue()>125)
+                ++powerHighlightPixels;
+        }
+    assert(powerHighlightPixels>=15);
 
     int changedPowerPixels=0;
     const auto powerRegion=power->getBounds();
