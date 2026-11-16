@@ -64,24 +64,27 @@
     },
     "imersipNewInsertDefault": {
       "presetId": 2,
-      "name": "Live Concert",
-      "speakerSpreadDeg": 150,
-      "distanceMeters": 2.2,
+      "name": "Live Concert / authentic P9.7 Venue golden (P9.8 private build)",
+      "speakerSpreadDeg": 106,
+      "distanceMeters": 10,
       "spacePreset": 3,
       "earlyRoom": 1,
-      "lateRoom": 0.91,
+      "lateRoom": 1,
       "spatialMix": 1,
-      "outputGainDb": 4.8,
+      "outputGainDb": 5.10545,
       "notOperatorCheckpoint": true,
-      "newInsertsOnly": true
+      "newInsertsOnly": true,
+      "outputTrimLinear": 1.8,
+      "sceneVoicing": 0,
+      "privateBuildOnly": true
     },
     "imersipAuditionPresetIds": {
-      "2": "Live Concert - owner's positive baseline, unchanged",
-      "3": "Royal Concert Hall - closer direct bass, strong large-room returns",
-      "4": "Arena Thunder - bold stage, maximum late-room audition",
-      "5": "Front Row Power - screenshot-derived close live scene",
-      "6": "Symphonic Palace - layered hall, more direct clarity",
-      "7": "Velvet Cinema - close chamber saturation"
+      "2": "Live Concert — EXACT P9.7 Venue Mega Space (10m, 106deg, 100/100, trim1.8, P98 voicing0)",
+      "3": "Royal Concert Hall — P9.8 Signature voice; 3.1m, 82deg, 100/62",
+      "4": "Arena Thunder — reinforced P97 stage 8.9m, 112deg, P98 Signature",
+      "5": "Front Row Power — P97 impact + P98 Signature (2.4m, 96deg)",
+      "6": "Symphonic Palace — P97 stage + P98 Signature (6.2m, 94deg)",
+      "7": "Velvet Cinema — P97 stage + P98 Cinema (7.5m, 98deg)"
     },
     "ownerScreenshotObservation": {
       "speakerSpreadDeg": 150,
@@ -121,5 +124,32 @@
     "mainMustRemainUnchanged": true,
     "noAutomaticMerge": true,
     "physicalHeadphoneAbStillRequired": true
+  },
+  "immersibP98Integration": {
+    "product": "ImmerSIB",
+    "reason": "Operator explicitly requested forward-port P9.7 approved Venue and P9.8 voicing without changing production main or the frozen P9.2 checkpoint.",
+    "venueOperatorCheckpointBranch": "checkpoint/sonku-p97-venue-mega-space-owner-approved-20261116",
+    "sourceBranch": "feat/sonku-p98-signature-cinema-studio-voicing-20261116",
+    "venueGolden": {
+      "stageDegrees": 106,
+      "distanceMeters": 10,
+      "spacePreset": 3,
+      "earlyRoom": 1,
+      "lateRoom": 1,
+      "outputTrimLinear": 1.8,
+      "sceneVoicing": 0
+    },
+    "nativeRenderMode": 9,
+    "featureFlag": "ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING",
+    "releaseQualified": false,
+    "acousticSourceBlobSha1": {
+      "engine/builtin_fx/sonku/SonKuSpatialCore.h": "808cb1b9a1588c9ac5d7c2879623524841056b44",
+      "engine/builtin_fx/sonku/SonKuP91P92WorldBassFoundation.h": "63551d22e8dff672fe136131c32d28b568bb3170",
+      "engine/builtin_fx/sonku/SonKuP94FrontBackDepthCue.h": "f0f88088c68ef6865d64c240c4c87accaf136070",
+      "engine/builtin_fx/sonku/SonKuP95MusicalPresence.h": "ece40572b04d4b586a61c56cf1fd1f77c1f295e7",
+      "engine/builtin_fx/sonku/SonKuP96DistanceReinforcement.h": "a32fb6e6fdd431901323d4278c51991607c02d84",
+      "engine/builtin_fx/sonku/SonKuP97StageImpact.h": "5384fd3cc67c31f0a8038b315856d20933249b5b",
+      "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "78d8ff28aaf9115a0d1cfff99a6cbb08d0b2bf39"
+    }
   }
 }

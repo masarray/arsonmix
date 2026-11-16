@@ -87,6 +87,31 @@ jobs:
             -DSONKU_P90_TRUE_EXTERNAL_RESEARCH=1 \
             tests/imersip_p92_factory_music_test.cpp -o /tmp/imersip-p92-presets
           /tmp/imersip-p92-presets
+      - name: ImmerSIB P9.7 Venue golden and P9.8 scene native PCM
+        run: |
+          set -euo pipefail
+          c++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH \
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH \
+            -DSONKU_P72_NATIVE_XYZ_RT \
+            -DSONKU_P75_MUSIC_SAFE_RESEARCH \
+            -DSONKU_P80_TRANSPARENT_BASS_RESEARCH \
+            -DSONKU_P82_MULTIBAND_ROOM_RESEARCH \
+            -DSONKU_P83_PHYSICAL_SPEAKER_RESEARCH \
+            -DSONKU_P84_SINGLE_CORE_FUSION_RESEARCH \
+            -DSONKU_P85_WORLD_COHERENCE_RESEARCH \
+            -DSONKU_P86_HORIZONTAL_FOCUS_RESEARCH \
+            -DSONKU_P87_MUSIC_BODY_RESEARCH \
+            -DSONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH \
+            -DSONKU_P89_DEPTH_COHERENCE_RESEARCH \
+            -DSONKU_P90_TRUE_EXTERNAL_RESEARCH \
+            -DSONKU_P94_FRONT_BACK_DEPTH_RESEARCH \
+            -DSONKU_P95_MUSICAL_PRESENCE_RESEARCH \
+            -DSONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH \
+            -DSONKU_P97_STAGE_IMPACT_RESEARCH \
+            -DSONKU_P98_SCENE_VOICING_RESEARCH \
+            tests/immersib_p98_native_sonic_gate.cpp -o /tmp/immersib-p98
+          /tmp/immersib-p98
   windows:
     name: Actual JUCE ImerSip P9.2 insert + Windows GUI
     needs: source
@@ -143,6 +168,11 @@ jobs:
             -DARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT=ON `
             -DARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT=ON `
             -DARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT=ON `
+            -DARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH=ON `
+            -DARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE=ON `
+            -DARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT=ON `
+            -DARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT=ON `
+            -DARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING=ON `
             -DBUILD_TESTING=ON
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $tests = (& ctest --test-dir build -C Release --show-only=json-v1 | Out-String | ConvertFrom-Json)

@@ -52,7 +52,11 @@ public:
                              "LATE ROOM","SPATIAL MIX","MASTER GAIN",
                              "EAR ALIGN","HEAD YAW"};
         const double lower[]={30.,1.6,0.,0.,0.,-12.,-30.,-90.};
+        #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+        const double upper[]={180.,10.,100.,100.,100.,6.,20.,90.};
+#else
         const double upper[]={180.,7.4,100.,100.,100.,6.,20.,90.};
+#endif
         const double step[]={1.,.1,1.,1.,1.,.1,1.,1.};
         for(int i=0;i<8;++i){
             auto& slider=knobs_[static_cast<std::size_t>(i)];
@@ -229,6 +233,9 @@ private:
     armix::sonku::Settings readControls() const {
         auto s=fx_.acceptedSettings();
         s.renderMode=9;s.moving=false;s.startAzimuthDegrees=0.f;
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+        s.sceneVoicing=selectedVoicing_;
+#endif
         s.musicCompatibleLowFrequency=false;
         s.spacePreset=std::clamp(room_.getSelectedId()-1,0,3);
         s.stereoSpreadDegrees=static_cast<float>(knobs_[0].getValue());
@@ -246,6 +253,9 @@ private:
         return s;
     }
     void sync(const armix::sonku::Settings& s){
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+        selectedVoicing_=s.sceneVoicing;
+#endif
         room_.setSelectedId(s.spacePreset+1,juce::dontSendNotification);
         const double vals[]={s.stereoSpreadDegrees,s.sourceDistanceMeters,
             100.*s.roomAmount,100.*s.ambience,100.*s.spatialMix,
@@ -264,6 +274,9 @@ private:
                std::abs(s.ambience-candidate.ambience)<.001f &&
                std::abs(s.spatialMix-candidate.spatialMix)<.001f &&
                std::abs(s.outputTrim-candidate.outputTrim)<.001f &&
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+               s.sceneVoicing==candidate.sceneVoicing &&
+#endif
                std::abs(s.headYawDegrees)<.001f &&
                std::abs(s.hrtfElevationTrimDegrees)<.001f) {preset=id;break;}
         }
@@ -317,6 +330,7 @@ private:
         repaint(juce::Rectangle<int>(0,juce::roundToInt(646*compactScale),
                                      getWidth(),juce::roundToInt(34*compactScale)));
     }
+    int selectedVoicing_=0; // UI/control side; native SPSC owns the audio state.
     ImerSipP92Processor& fx_;
     ImerSipP92VisualSkin skin_;
     juce::ComboBox preset_{},room_{};

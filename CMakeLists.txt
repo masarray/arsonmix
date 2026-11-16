@@ -96,6 +96,41 @@ if(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT AND
    NOT ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT)
   message(FATAL_ERROR "P9.0 requires P8.9 research branch baseline")
 endif()
+# Private P9.4 perceptual A/B: default OFF and never silently changes P9.1.
+option(ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH
+       "Private front/back HRTF/early reflection depth calibration experiment" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT)
+  message(FATAL_ERROR "P9.4 depth cue requires the P9 measured two-speaker engine")
+endif()
+# Optional P9.5 upward-only, slow electrical musical presence. No public default.
+option(ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE
+       "Private P9.5 cinema/venue music-level compensation" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT)
+  message(FATAL_ERROR "P9.5 requires P9 measured spatial engine")
+endif()
+# Private stage-speaker reinforcement, isolated from P9.5 production.
+option(ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT
+       "Private P9.6 stage-speaker LF/HF distance retention over 2m" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE)
+  message(FATAL_ERROR "P9.6 requires P9.5 musical presence and P9 world speaker")
+endif()
+# P9.7 is research only and never changes the approved P9.6 checkpoint.
+option(ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT
+       "Private P9.7 concert bass impact, center HRTF and binaural early air" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT)
+  message(FATAL_ERROR "P9.7 requires the P9.6 sound-reinforced world-speaker engine")
+endif()
+# Typed native v12 voicing of Signature/Cinema/Studio: P9.7 Venue remains immutable.
+option(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+       "Private P9.8 scene bass/voice/air voicing; preserve approved P9.7 Venue" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT)
+  message(FATAL_ERROR "P9.8 requires P9.7 approved stage; public default OFF")
+endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -332,7 +367,18 @@ target_compile_definitions(ARMixConsole PRIVATE
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT}>:ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT}>:SONKU_P89_DEPTH_COHERENCE_RESEARCH=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT}>:ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT=1>
-    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT}>:SONKU_P90_TRUE_EXTERNAL_RESEARCH=1>)
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT}>:SONKU_P90_TRUE_EXTERNAL_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH}>:SONKU_P94_FRONT_BACK_DEPTH_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH}>:ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE}>:ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE}>:SONKU_P95_MUSICAL_PRESENCE_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT}>:SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT}>:ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT}>:SONKU_P97_STAGE_IMPACT_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT}>:ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:SONKU_P98_SCENE_VOICING_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING=1>)
+
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
   # Never link Windows loader or sound APIs into macOS/Linux builds.
@@ -884,6 +930,30 @@ if(BUILD_TESTING)
                               ARMixSonKuP90NativeTests COMPILE_DEFINITIONS)
                           target_compile_definitions(ARMixImerSipP92NativeTests
                               PRIVATE ${IMERSIP_P92_DEFINES})
+                          if(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING)
+                            target_compile_definitions(ARMixImerSipP92NativeTests PRIVATE
+                              SONKU_P94_FRONT_BACK_DEPTH_RESEARCH=1
+                              ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH=1
+                              SONKU_P95_MUSICAL_PRESENCE_RESEARCH=1
+                              ARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE=1
+                              SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH=1
+                              ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT=1
+                              SONKU_P97_STAGE_IMPACT_RESEARCH=1
+                              ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT=1
+                              SONKU_P98_SCENE_VOICING_RESEARCH=1
+                              ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING=1)
+                          endif()
+                          if(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING)
+                            add_executable(ARMixImmerSIBP98NativeSonicGate
+                              tests/immersib_p98_native_sonic_gate.cpp)
+                            target_compile_features(ARMixImmerSIBP98NativeSonicGate PRIVATE cxx_std_20)
+                            get_target_property(IMMERSIB_NATIVE_P98_DEFINES
+                              ARMixImerSipP92NativeTests COMPILE_DEFINITIONS)
+                            target_compile_definitions(ARMixImmerSIBP98NativeSonicGate
+                              PRIVATE ${IMMERSIB_NATIVE_P98_DEFINES})
+                            add_test(NAME NativeImmerSIBP98VenueGoldenAndScenePreservation
+                              COMMAND ARMixImmerSIBP98NativeSonicGate)
+                          endif()
                           add_test(NAME NativeImerSipP92ExactSonKuCorePCMStateAndACK
                               COMMAND ARMixImerSipP92NativeTests)
                         endif()

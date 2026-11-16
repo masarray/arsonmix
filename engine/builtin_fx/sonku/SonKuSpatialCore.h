@@ -22,6 +22,21 @@
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
 #include "SonKuP90StereoDecoder.h"
 #include "SonKuP91P92WorldBassFoundation.h"
+#if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
+#include "SonKuP95MusicalPresence.h"
+#endif
+#if defined(SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH) && SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH
+#include "SonKuP96DistanceReinforcement.h"
+#endif
+#if defined(SONKU_P97_STAGE_IMPACT_RESEARCH) && SONKU_P97_STAGE_IMPACT_RESEARCH
+#include "SonKuP97StageImpact.h"
+#endif
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+#include "SonKuP98SceneVoicing.h"
+#endif
+#if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
+#include "SonKuP94FrontBackDepthCue.h"
+#endif
 #endif
 #endif
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
@@ -76,6 +91,9 @@ struct Settings {
     int renderMode = 0;
     bool musicCompatibleLowFrequency = false;
     float headYawDegrees = 0.f; // deterministic world/head separation
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+    int sceneVoicing=0; // 0=unchanged Venue/Custom; 1=Signature; 2=Studio; 3=Cinema
+#endif
 #if defined(SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH) && SONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH
     float hrtfElevationTrimDegrees=0.f; // spectral only, never room XYZ
 #endif
@@ -95,6 +113,16 @@ inline bool valid(const Settings& s) noexcept {
         s.sourceDistanceMeters<=10.f &&
         std::isfinite(s.roomAmount) && s.roomAmount>=0.f && s.roomAmount<=1.f &&
         std::isfinite(s.ambience) && s.ambience>=0.f && s.ambience<=1.f &&
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+        p98::SceneVoicing::valid(s.sceneVoicing) &&
+        // v12 deliberately excludes the retired P8.3 physical/mono
+        // modes 1/2 even when neutral voicing=0. The old P8.3 renderer
+        // was rejected by the operator; JSON, realtime edits and .smix
+        // restore must use ONE admission rule, not three distinct gates.
+        (s.renderMode==0 || (s.renderMode>=3 && s.renderMode<=9)) &&
+        !s.musicCompatibleLowFrequency &&
+        (s.sceneVoicing==0 || s.renderMode==9) &&
+#endif
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
         s.renderMode>=0 &&
 #if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
@@ -204,6 +232,21 @@ public:
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
         if(!p90Decoder_.prepare(rate))return false;
         if(!p92Bass_.prepare(rate))return false;
+#if defined(SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH) && SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH
+        if(!p96Reinforcement_.prepare(rate))return false;
+#endif
+#if defined(SONKU_P97_STAGE_IMPACT_RESEARCH) && SONKU_P97_STAGE_IMPACT_RESEARCH
+        if(!p97Stage_.prepare(rate))return false;
+#endif
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+        if(!p98Voicing_.prepare(rate))return false;
+#endif
+#if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
+        if(!p95Presence_.prepare(rate))return false;
+#endif
+#if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
+        if(!p94Depth_.prepare(rate))return false;
+#endif
 #endif
 #endif
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
@@ -272,6 +315,21 @@ public:
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
         p90Decoder_.reset();
         p92Bass_.reset();
+#if defined(SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH) && SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH
+        p96Reinforcement_.reset();
+#endif
+#if defined(SONKU_P97_STAGE_IMPACT_RESEARCH) && SONKU_P97_STAGE_IMPACT_RESEARCH
+        p97Stage_.reset();
+#endif
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+        p98Voicing_.reset();
+#endif
+#if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
+        p95Presence_.reset();
+#endif
+#if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
+        p94Depth_.reset();
+#endif
 #endif
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
         p83LowFrequency_.reset();
@@ -323,6 +381,21 @@ public:
         if((s.renderMode==9)!=(settings_.renderMode==9)){
             p90Decoder_.reset();
             p92Bass_.reset();
+#if defined(SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH) && SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH
+        p96Reinforcement_.reset();
+#endif
+#if defined(SONKU_P97_STAGE_IMPACT_RESEARCH) && SONKU_P97_STAGE_IMPACT_RESEARCH
+        p97Stage_.reset();
+#endif
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+        p98Voicing_.reset();
+#endif
+#if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
+        p95Presence_.reset();
+#endif
+#if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
+        p94Depth_.reset();
+#endif
         }
 #endif
         settings_=s;
@@ -726,8 +799,33 @@ public:
             if(p83Mode_==p83::Mode::MusicSpatialP90)sideRescue=0.f;
 #endif
 #endif
-            history_[0][write_]=x0;
-            history_[1][write_]=x1;
+#if defined(SONKU_P97_STAGE_IMPACT_RESEARCH) && SONKU_P97_STAGE_IMPACT_RESEARCH
+            if(p90World && settings_.spatialMix>0.f){
+                // Center material is reinforced ONLY before the existing
+                // world-speaker HRIR; room, P92 LF, and decoder observe
+                // the original stereo. No center headphone dry injection.
+                const auto fed=p97Stage_.source(x0,x1,
+                    settings_.sourceDistanceMeters,roomEnabled);
+                history_[0][write_]=fed.left;
+                history_[1][write_]=fed.right;
+            }else
+#endif
+            {
+                history_[0][write_]=x0;
+                history_[1][write_]=x1;
+            }
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+            if(p90World && settings_.spatialMix>0.f){
+                const auto fed=p98Voicing_.source(history_[0][write_],
+                    history_[1][write_],settings_.sceneVoicing,roomEnabled);
+                history_[0][write_]=fed.left;
+                history_[1][write_]=fed.right;
+            }else{
+                // Smoothly return private voicing to neutral without ever
+                // injecting headphone-dry voice or mutating the original PCM.
+                (void)p98Voicing_.source(0.f,0.f,0,false);
+            }
+#endif
             float ears[2]{0.f,0.f};
             for(int tap=0;tap<taps;++tap) {
                 int at=write_-tap;
@@ -871,11 +969,57 @@ public:
                      targetTailPresence
 #endif
                      -smoothedTailPresence_);
-                float spatialL=smoothedDistanceGain_*ears[0]+
-                    smoothedErPresence_*reflection.left+
+#if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
+                // Private P9.4: no angle-dependent output gain, HRTF phase
+                // edits, artificial delay or changed orbit geometry.
+                const auto depthCue=p90World?p94Depth_.next():p94::FrontBackDepthCue::Gains{};
+                const float calibratedDirect=depthCue.direct;
+                const float calibratedEarly=depthCue.early;
+#else
+                constexpr float calibratedDirect=1.f,calibratedEarly=1.f;
+#endif
+                float directL=smoothedDistanceGain_*calibratedDirect*ears[0];
+                float directR=smoothedDistanceGain_*calibratedDirect*ears[1];
+#if defined(SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH) && SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH
+                if(p90World){
+                    // Same KEMAR world speakers; do not EQ/repan wet returns.
+                    // P94's independent directional calibration stays outside.
+                    const auto reinforced=p96Reinforcement_.process(
+                        ears[0],ears[1],smoothedDistanceGain_,
+                        settings_.sourceDistanceMeters,roomEnabled);
+                    // Keep P9.5 floating-point operation order bit-exact
+                    // whenever ROOM OFF or <=2m has no P9.6 reinforcement.
+                    if(p96Reinforcement_.active()){
+                        directL=calibratedDirect*reinforced.left;
+                        directR=calibratedDirect*reinforced.right;
+                    }
+                }
+#endif
+#if defined(SONKU_P97_STAGE_IMPACT_RESEARCH) && SONKU_P97_STAGE_IMPACT_RESEARCH
+                if(p90World && settings_.spatialMix>0.f){
+                    // Spectral stage changes remain tied to the HRTF and
+                    // the existing 6-wall first-image / P92 modal fields.
+                    // Identical stereo-ear coefficients do not pan/delay
+                    // sources or manufacture independent mono-bass channels.
+                    const auto punch=p97Stage_.direct(directL,directR);
+                    directL=punch.left;directR=punch.right;
+                    const auto air=p97Stage_.early(reflection.left,reflection.right);
+                    reflection.left=air.left;reflection.right=air.right;
+                    const auto modal=p97Stage_.modal(p92RoomBass.left,p92RoomBass.right);
+                    p92RoomBass.left=modal.left;p92RoomBass.right=modal.right;
+                }
+#endif
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+                if(p90World && settings_.spatialMix>0.f && roomEnabled){
+                    const auto air=p98Voicing_.early(reflection.left,reflection.right);
+                    reflection.left=air.left;reflection.right=air.right;
+                }
+#endif
+                float spatialL=directL+
+                    smoothedErPresence_*calibratedEarly*reflection.left+
                     smoothedTailPresence_*late.left;
-                float spatialR=smoothedDistanceGain_*ears[1]+
-                    smoothedErPresence_*reflection.right+
+                float spatialR=directR+
+                    smoothedErPresence_*calibratedEarly*reflection.right+
                     smoothedTailPresence_*late.right;
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
                 if(p90World){
@@ -941,6 +1085,33 @@ public:
                 float outR=baseDryR+smoothedTrim_*
                     ((transparentBass?musicLowR:dryLevel*x1)+
                      sceneBinauralLevel*(transparentBass?1.f:smoothedRoomLevel_)*spatialR)-sideRescue;
+#if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
+                if(p90World){
+                    // Single native PCM graph, no WebAudio or dynamic makeup
+                    // at 0% spatial MIX. Explicit user GAIN still applies.
+                    if(settings_.spatialMix>0.f){
+                        const float makeup=p95Presence_.process(x0,x1,outL,outR);
+                        outL*=makeup;outR*=makeup;
+                    }
+                }
+#endif
+#if defined(SONKU_P97_STAGE_IMPACT_RESEARCH) && SONKU_P97_STAGE_IMPACT_RESEARCH
+                if(p90World && settings_.spatialMix>0.f){
+                    // The finished ear tonal block MUST NOT touch
+                    // 0% MIX (native dry/bypass) even while ROOM remains ON.
+                    const auto finished=p97Stage_.finish(outL,outR);
+                    outL=finished.left;outR=finished.right;
+                }
+#endif
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+                if(p90World && settings_.spatialMix>0.f && roomEnabled){
+                    // Post-adaptive-makeup, PRE-existing 0.98 linked guard.
+                    // The cinema low-end cannot attenuate the whole mix
+                    // via the upstream automatic compensation meter.
+                    const auto voiced=p98Voicing_.finish(outL,outR);
+                    outL=voiced.left;outR=voiced.right;
+                }
+#endif
                 // Zero-lookahead *linked* sample-peak safety guard. Quiet
                 // signals are linear; peaks are gently returned below unity
                 // without routing through a second engine or allocating.
@@ -1149,6 +1320,10 @@ private:
             if(p83Mode_==p83::Mode::MusicSpatialP90){
                 p90Decoder_.compose(centerTarget_,targets_[0],targets_[1]);
                 p92Bass_.updateDirections(positions.leftHead,positions.rightHead);
+#if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
+                p94Depth_.retarget(p83::toHead(static_cast<float>(degrees_),p83HeadYaw_),
+                                  settings_.spacePreset!=0 && settings_.roomAmount>0.f);
+#endif
             }
             else
 #endif
@@ -1249,6 +1424,21 @@ private:
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
     p90::StereoDecoder p90Decoder_{};
     p92::WorldBassFoundation p92Bass_{};
+#if defined(SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH) && SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH
+    p96::DistanceReinforcement p96Reinforcement_{};
+#endif
+#if defined(SONKU_P97_STAGE_IMPACT_RESEARCH) && SONKU_P97_STAGE_IMPACT_RESEARCH
+    p97::StageImpact p97Stage_{};
+#endif
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+    p98::SceneVoicing p98Voicing_{};
+#endif
+#if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
+    p95::MusicalPresence p95Presence_{};
+#endif
+#if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
+    p94::FrontBackDepthCue p94Depth_{};
+#endif
 #endif
 #if defined(SONKU_P87_MUSIC_BODY_RESEARCH) && SONKU_P87_MUSIC_BODY_RESEARCH
     p87::MusicalAirBody p87Body_{};

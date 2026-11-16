@@ -56,7 +56,11 @@ public:
         SonKuSpatialProcessor::getStateInformation(native);
         juce::MemoryOutputStream out(destination,false);
         out.writeInt(0x494D5253); // IMRS
-        out.writeInt(6);          // v6: 8-byte header + native SONK state
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING) && ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+        out.writeInt(7); // IMRS v7: SONK v12 + typed scene, 75 bytes
+#else
+        out.writeInt(6); // IMRS v6: SONK v11, 71 bytes
+#endif
         out.write(native.getData(),native.getSize());
     }
 
@@ -65,13 +69,19 @@ public:
         juce::MemoryInputStream in(data,static_cast<std::size_t>(bytes),false);
         if(in.readInt()!=0x494D5253)return false;
         const int version=in.readInt();
-        if(version==6) {
-            // Explicit SONK v11 with P9 world-bass. No downgrade into v5
-            // room HRTF; do not accept another renderer mode as ImerSip.
-            if(bytes!=71)return false;
+        if(version==6
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING) && ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+           || version==7
+#endif
+           ) {
+            // Accept historical 71-byte IMRS v6/SONK v11 (voicing=0)
+            // and new 75-byte IMRS v7/SONK v12 atomically.
+            const int nativeBytes=version==7?67:63;
+            if(bytes!=nativeBytes+8)return false;
             const auto* raw=static_cast<const std::uint8_t*>(data)+8;
-            juce::MemoryInputStream check(raw,63,false);
-            if(check.readInt()!=0x534F4E4B || check.readInt()!=11)return false;
+            juce::MemoryInputStream check(raw,static_cast<size_t>(nativeBytes),false);
+            if(check.readInt()!=0x534F4E4B ||
+               check.readInt()!=(version==7?12:11))return false;
             // Preflight the exact SONK v11 wire schema in a local POD.
             // Parent restoration may change its accepted scene/core; doing
             // that before validating ImerSip would let an invalid v6
@@ -96,13 +106,16 @@ public:
             next.musicCompatibleLowFrequency=incompatibleLf!=0;
             next.headYawDegrees=check.readFloat();
             next.hrtfElevationTrimDegrees=check.readFloat();
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING) && ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+            if(version==7)next.sceneVoicing=check.readInt();
+#endif
             if(!check.isExhausted() || (moving!=0&&moving!=1) ||
                (clockwise!=0&&clockwise!=1) ||
                (incompatibleLf!=0&&incompatibleLf!=1) ||
                !validImerSipP92Scene(next))return false;
             // Only now invoke the single authoritative native parser and
             // publish accepted settings. Reject without partial mutation.
-            return SonKuSpatialProcessor::restoreUnpublishedState(raw,63);
+            return SonKuSpatialProcessor::restoreUnpublishedState(raw,nativeBytes);
         }
         // Original IMRS v1-v5: read the actual previous format, fail closed
         // on corrupt bytes and map only parameters with a real P9 counterpart.

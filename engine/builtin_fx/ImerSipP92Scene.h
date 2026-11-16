@@ -28,7 +28,12 @@ inline armix::sonku::Settings imersipP92ReferenceScene() noexcept {
 }
 inline float imersipP92MaxDistance(int room) noexcept {
     // SonKu six-wall geometry requires 2*(distance+0.5) <= room size.
+    // Authentic owner-approved P9.7 Venue uses 10m within Large 28.8m.
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+    return room==1?3.05f:room==2?6.65f:10.f;
+#else
     return room==1?3.05f:room==2?6.65f:7.4f;
+#endif
 }
 inline bool validImerSipP92Scene(const armix::sonku::Settings& s) noexcept {
     return armix::sonku::valid(s) && s.renderMode==9 &&
@@ -47,7 +52,22 @@ struct ImerSipP92Preset {
     int spacePreset;
     float stageDegrees, distanceMeters;
     float earlyAmount, lateAmount, outputDb;
+    int voicing=0; // P9.8 typed profile; 0 preserves P9.7 Venue PCM
 };
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+// P9.7 Venue at exactly 10m,106deg, ER100,late100,trim1.8,voice0
+// is the fixed owner-accepted sonic reference. Remaining scenes deliberately
+// exercise P9.8 native center/early/ear voicings; no stem fake separator.
+inline constexpr std::array<ImerSipP92Preset,6> imersipP92Presets{{
+    {2,"Live Concert",       3,106.f,10.f, 1.f,1.00f,5.10545f,0},
+    {3,"Royal Concert Hall", 3, 82.f,3.1f,1.f,.62f,5.57507f,1},
+    {4,"Arena Thunder",     3,112.f,8.9f,1.f,1.00f,5.45f,1},
+    {5,"Front Row Power",   3, 96.f,2.4f,1.f,.88f,5.60f,1},
+    {6,"Symphonic Palace",  3, 94.f,6.2f,1.f,.88f,5.25f,1},
+    {7,"Velvet Cinema",     3, 98.f,7.5f,1.f,.84f,4.60898f,3}
+}};
+#else
+// Historical P9.2 candidate stays reproducible when private P9.8 OFF.
 inline constexpr std::array<ImerSipP92Preset,6> imersipP92Presets{{
     {2,"Live Concert",       3,150.f,2.2f,1.f,.91f,4.8f},
     {3,"Royal Concert Hall", 3,155.f,1.8f,1.f,.98f,5.4f},
@@ -56,6 +76,7 @@ inline constexpr std::array<ImerSipP92Preset,6> imersipP92Presets{{
     {6,"Symphonic Palace",  3,146.f,1.9f,1.f,.99f,5.4f},
     {7,"Velvet Cinema",     2,155.f,1.6f,1.f,1.00f,5.7f}
 }};
+#endif
 inline const ImerSipP92Preset* imersipP92PresetById(int id) noexcept {
     for(const auto& p:imersipP92Presets)if(id==p.id)return &p;
     return nullptr;
@@ -72,6 +93,11 @@ inline armix::sonku::Settings imersipP92Factory(int id) noexcept {
         s.roomAmount=p->earlyAmount;
         s.ambience=p->lateAmount;
         s.outputTrim=imersipP92DbToLinear(p->outputDb);
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+        s.sceneVoicing=p->voicing;
+        // Do not let dB conversion alter the exact approved Venue trim hash.
+        if(id==2)s.outputTrim=1.8f;
+#endif
     }
     return s;
 }

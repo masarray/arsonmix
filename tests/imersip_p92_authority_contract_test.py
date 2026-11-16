@@ -39,7 +39,9 @@ class SpatialAuthorityContract(unittest.TestCase):
         # render mode names. Any intentional DSP change requires a NEW
         # listening checkpoint and explicit ledger review, never a quiet
         # update to make this check green.
-        pinned=self.record["selectedSonKuBaseline"]["acousticSourceBlobSha1"]
+        # Immutable historical P9.2 checkpoint is still recorded above;
+        # intentional owner-directed forward port pins the P9.8 source blobs.
+        pinned=self.record["immersibP98Integration"]["acousticSourceBlobSha1"]
         self.assertGreaterEqual(len(pinned),7)
         for path,expected in pinned.items():
             raw=(ROOT/path).read_bytes()
@@ -81,6 +83,7 @@ class SpatialAuthorityContract(unittest.TestCase):
         self.assertEqual(candidate["presetId"],2)
         self.assertGreater(candidate["distanceMeters"],1.6)
         self.assertGreater(candidate["outputGainDb"],screenshot["outputGainDb"])
+        self.assertIn("106.f,10.f, 1.f,1.00f,5.10545f,0",scene)
         self.assertIn("150.f,2.2f,1.f,.91f,4.8f",scene)
         self.assertIn('"Royal Concert Hall"',scene)
         self.assertNotIn("P9.2 Neutral A/B",read(
@@ -88,6 +91,16 @@ class SpatialAuthorityContract(unittest.TestCase):
         self.assertIn("s.roomAmount=.78f",scene)
         self.assertIn("s.ambience=.33f",scene)
         self.assertIn("s.outputTrim=1.f",scene)
+
+    def test_immersib_p97_golden_and_p98_native_wire(self):
+        self.assertEqual(self.record["immersibP98Integration"]["venueGolden"]["distanceMeters"],10)
+        self.assertEqual(self.record["immersibP98Integration"]["venueGolden"]["sceneVoicing"],0)
+        self.assertIn("SONKU_P98_SCENE_VOICING_RESEARCH",read(
+            "engine/builtin_fx/sonku/SonKuSpatialCore.h"))
+        self.assertIn("out.writeInt(12)",read(
+            "engine/builtin_fx/SonKuSpatialProcessor.h"))
+        self.assertIn("IMRS v7",read(
+            "engine/builtin_fx/ImerSipP92Processor.h"))
 
     def test_legacy_negative_evidence_kept_and_research_scoped(self):
         historical=self.record["historicalP83"]

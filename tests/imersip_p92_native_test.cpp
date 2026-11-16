@@ -50,12 +50,19 @@ static void nativeParity(int rate) {
     const auto actual=fx->acceptedSettings();
     assert(actual.renderMode==9&&!actual.moving);
     assert(actual.spacePreset==3);
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+    assert(std::abs(actual.stereoSpreadDegrees-106.f)<.001f);
+    assert(std::abs(actual.sourceDistanceMeters-10.f)<.001f);
+    assert(actual.roomAmount==1.f && actual.ambience==1.f);
+    assert(actual.outputTrim==1.8f && actual.sceneVoicing==0);
+#else
     assert(std::abs(actual.stereoSpreadDegrees-150.f)<.001f);
     assert(std::abs(actual.sourceDistanceMeters-2.2f)<.001f);
     assert(std::abs(actual.roomAmount-1.f)<.001f);
     assert(std::abs(actual.ambience-.91f)<.001f);
     assert(std::abs(actual.outputTrim-
         armix::builtin_fx::imersipP92DbToLinear(4.8f))<.001f);
+#endif
     assert(std::abs(neutral.stereoSpreadDegrees-82.f)<.001f);
     assert(std::abs(neutral.ambience-.33f)<.001f);
     assert(std::abs(neutral.outputTrim-1.f)<.001f);
@@ -112,13 +119,21 @@ static void nativeParity(int rate) {
     // v6 IMRS wraps native SONK v11, not an invented shadow DSP schema.
     juce::MemoryBlock state;
     fx->getStateInformation(state);
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+    assert(state.getSize()==75);
+#else
     assert(state.getSize()==71);
+#endif
     auto restored=std::make_unique<ImerSipP92Processor>();
     restored->prepareToPlay(rate,128);
     assert(restored->restoreUnpublishedState(state.getData(),
                                           static_cast<int>(state.getSize())));
     assert(restored->acceptedSettings().renderMode==9);
-    assert(restored->acceptedSettings().stereoSpreadDegrees==150.f);
+    assert(restored->acceptedSettings().stereoSpreadDegrees==
+        reference.stereoSpreadDegrees);
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+    assert(restored->acceptedSettings().sceneVoicing==0);
+#endif
 
     // The embedded v11 SONK mode field is at byte 50 of its 63-byte
     // record (after the 8-byte IMRS header). Corrupting P9 -> P8.2 mode
@@ -166,7 +181,8 @@ static void nativeParity(int rate) {
     auto changed=fx->acceptedSettings();
     changed.stereoSpreadDegrees=100.f;
     assert(fx->queueSettings(changed,72));
-    assert(fx->acceptedSettings().stereoSpreadDegrees==150.f);
+    assert(fx->acceptedSettings().stereoSpreadDegrees==
+        reference.stereoSpreadDegrees);
     pcm.clear();
     fx->processBlock(pcm,midi);
     armix::builtin_fx::SonKuSpatialProcessor::Completion ack{};
@@ -203,7 +219,7 @@ int main() {
     auto* visualEditor=dynamic_cast<armix::builtin_fx::ImerSipP92Editor*>(editor.get());
     assert(visualEditor && visualEditor->areVisualAssetsReady());
     for(const float stageAngle:{30.f,50.f,150.f,180.f}){
-        for(const float metres:{1.6f,2.2f,5.f,7.4f}){
+        for(const float metres:{1.6f,2.2f,5.f,7.4f,10.f}){
             const auto b=armix::builtin_fx::imersipP92ConcertBoxes(stageAngle,metres);
             assert(b.safe());
             assert(b.leftArray.getRight()<b.rightArray.getX());
@@ -269,13 +285,20 @@ int main() {
     editorFx->processBlock(editPcm,editMidi);
     armix::builtin_fx::SonKuSpatialProcessor::Completion selected{};
     assert(editorFx->pollCompletion(selected)&&selected.applied);
-    assert(std::abs(editorFx->acceptedSettings().stereoSpreadDegrees-150.f)
-           <.001f);
-    assert(std::abs(editorFx->acceptedSettings().sourceDistanceMeters-1.6f)
-           <.001f);
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+    assert(std::abs(editorFx->acceptedSettings().stereoSpreadDegrees-96.f)<.001f);
+    assert(std::abs(editorFx->acceptedSettings().sourceDistanceMeters-2.4f)<.001f);
+    assert(std::abs(editorFx->acceptedSettings().ambience-.88f)<.001f);
+    assert(editorFx->acceptedSettings().sceneVoicing==1);
+    assert(std::abs(editorFx->acceptedSettings().outputTrim-
+        armix::builtin_fx::imersipP92DbToLinear(5.60f))<.001f);
+#else
+    assert(std::abs(editorFx->acceptedSettings().stereoSpreadDegrees-150.f)<.001f);
+    assert(std::abs(editorFx->acceptedSettings().sourceDistanceMeters-1.6f)<.001f);
     assert(std::abs(editorFx->acceptedSettings().ambience-.97f)<.001f);
     assert(std::abs(editorFx->acceptedSettings().outputTrim-
         armix::builtin_fx::imersipP92DbToLinear(5.2f))<.001f);
+#endif
     auto* actualEditor=dynamic_cast<armix::builtin_fx::ImerSipP92Editor*>(
         editor.get());
     assert(actualEditor);
