@@ -25,6 +25,7 @@ int main(){
     assert(::GetWindow(popup,GW_OWNER)==nullptr);
     assert(armix::ui::win32::attachOwnedPopup(popup,mixer));
     assert(::GetWindow(popup,GW_OWNER)==mixer);
+    armix::ui::win32::preferDarkTitleBar(popup); // graceful if OS DWM unsupported
     // Repeated open has no owner churn, even when hidden and shown again.
     assert(armix::ui::win32::attachOwnedPopup(popup,mixer));
     ::ShowWindow(popup,SW_HIDE);
