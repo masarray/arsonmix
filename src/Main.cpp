@@ -3130,6 +3130,11 @@ private:
             // Branch-only measured-engine A/B. A previous v11 binary cannot
             // advertise this front/rear perceptual depth research capability.
             reply->setProperty("p94FrontBackDepthCue",true);
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P95_CINEMATIC) && ARMIX_SONKU_EXPERIMENTAL_P95_CINEMATIC
+            // This binary's true 4 extra room programs; no untrusted
+            // GUI-only value can unlock native scene IDs 4..7.
+            reply->setProperty("p95CinematicVenues",true);
+#endif
 #endif
         }
 #elif defined(ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT
