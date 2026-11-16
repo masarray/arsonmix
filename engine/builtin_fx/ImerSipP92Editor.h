@@ -76,12 +76,12 @@ public:
             auto& label=labels_[static_cast<std::size_t>(i)];
             label.setText(names[i],juce::dontSendNotification);
             label.setJustificationType(juce::Justification::centredLeft);
-            label.setColour(juce::Label::textColourId,juce::Colour(0xffc9dce0));
-            label.setFont(juce::FontOptions(11.f));
+            label.setColour(juce::Label::textColourId,juce::Colour(0xffcbd7dc));
+            label.setFont(juce::FontOptions(12.7f));
             addAndMakeVisible(label);
         }
         power_.setComponentID("imersip.power");
-        power_.setButtonText("FX POWER");
+        power_.setButtonText("FX ON");
         power_.setLookAndFeel(&skin_);
         power_.setEnabled(false); // no fake bypass authority
         power_.onClick=[this] {
@@ -123,109 +123,91 @@ public:
         refreshHostPower();
     }
     static constexpr float compactScale=0.85f;
+    // Master canvas and all native hitboxes share exactly one conversion.
     void paint(juce::Graphics& g) override {
-        g.fillAll(juce::Colour(0xff0e151a));
-        juce::Graphics::ScopedSaveState compactState(g);
-        // All background art and native-drawn captions use master geometry.
-        // Child components are independently scaled in resized() so mouse
-        // hit testing remains correct in host/editor coordinates.
+        g.fillAll(juce::Colour(0xff11181d));
+        juce::Graphics::ScopedSaveState save(g);
         g.addTransform(juce::AffineTransform::scale(compactScale));
-        // The final full-resolution RGBA files are the exact same scene
-        // layers used by composition proof. Images decode once in VisualSkin.
         skin_.drawRoom(g);
-        skin_.drawHeader(g);
-        // Preserve the authored scene's luminance. The approved visual
-        // direction uses a lively cyan/purple concert hologram; do not
-        // apply a generic black wash over scene textures.
-
-        g.setColour(juce::Colour(0xffe6f1ef));
-        g.setFont(juce::FontOptions(19.f));
-        g.drawText(juce::String(ImerSipP92Processor::productDisplayName),
-                   25,16,172,28,juce::Justification::centredLeft);
-        g.setColour(juce::Colour(0xff89b8b8));
-        g.setFont(juce::FontOptions(10.5f));
-#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
-        g.drawText("SONKU P9.7 VENUE / P9.8 DETAIL ENGINE",
-                   25,45,380,19,juce::Justification::centredLeft);
-#else
-        g.drawText("8D-SONKU P9.1/P9.2  /  LIVE CONCERT WORLD",
-                   25,45,380,19,juce::Justification::centredLeft);
-#endif
-        g.setColour(juce::Colour(0xffd0e7e7));
-        g.setFont(juce::FontOptions(13.f));
-        g.drawText("LIVE CONCERT SPATIAL MONITOR",770,19,309,22,
-                   juce::Justification::centredRight);
-
-        // The visualization follows real stage spread and distance control.
-        // It does NOT claim to be a calibrated 9.1.6 loudspeaker simulation.
+        // Existing photo-less art is kept unchanged during layout FAT.
+        // Speaker geometry is display-only and never changes PCM authority.
         const auto concert=imersipP92ConcertBoxes(
             static_cast<float>(knobs_[0].getValue()),
             static_cast<float>(knobs_[1].getValue()));
-        // Safe layout remains wholly within room for 30..180 degrees,
-        // 1.6..10.0m in private P9.8; protect art and control bounds.
         if(concert.safe())skin_.drawConcert(g,concert);
-        g.setColour(juce::Colour(0xff88d6d2));
-        g.setFont(juce::FontOptions(11.f));
-        g.drawText("L  /  WORLD PA",80,413,260,18,juce::Justification::centred);
-        g.drawText("R  /  WORLD PA",766,413,260,18,juce::Justification::centred);
 
-        // A single matte charcoal field keeps the dense native controls
-        // readable. No decorative lights, borders, separators, or texture.
-        // Preset/room labels are native text; no wording is baked into art.
+        // Quiet opaque branded header, readable over any approved scene.
+        g.setColour(juce::Colour(0xe60c141a));
+        g.fillRect(0,0,1100,68);
+        g.setColour(juce::Colour(0xffe8f0f0));
+        g.setFont(juce::FontOptions(21.f));
+        g.drawText(juce::String(ImerSipP92Processor::productDisplayName),
+                   24,15,175,34,juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xff9aadb6));
+        g.setFont(juce::FontOptions(12.5f));
+        g.drawText("SPATIAL CONCERT MONITOR",207,22,360,22,
+                   juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xff32424b));
+        g.fillRect(0,67,1100,1);
+
+        // Flat JUCE-painted panel: no bitmap, bevels, screws, or partitions.
         skin_.drawPanel(g);
-        g.setColour(juce::Colour(0xffa8b8c2));
-        g.setFont(juce::FontOptions(11.f));
-        g.drawText("PRESET",20,502,213,15,juce::Justification::centredLeft);
-        g.drawText("ROOM",20,568,213,15,juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xff33424b));
+        g.fillRect(0,461,1100,1);
+        g.setColour(juce::Colour(0xffaebdc4));
+        g.setFont(juce::FontOptions(12.5f));
+        g.drawText("PRESET",24,485,208,19,juce::Justification::centredLeft);
+        g.drawText("ROOM",24,564,208,19,juce::Justification::centredLeft);
 
-        // Values are text drawn by JUCE, not baked into texture.
-        for(int i=0;i<8;++i){
-            const double value=knobs_[static_cast<std::size_t>(i)].getValue();
-            const juce::String display=i==0?juce::String(value,0)+" deg":
-                i==1?juce::String(value,1)+" m":
-                i==5?(value>0?"+":"")+juce::String(value,1)+" dB":
-                i==6||i==7?juce::String(value,0)+" deg":
-                juce::String(value,0)+"%";
-            g.setColour(juce::Colour(0xff80e0d5));
-            g.setFont(juce::FontOptions(10.5f));
-            if(i==5) g.drawText(display,923,611,133,17,
-                                juce::Justification::centred);
-            else {
-                const auto r=knobs_[static_cast<std::size_t>(i)].getBounds();
-                const int logicalX=juce::roundToInt(r.getX()/compactScale);
-                const int logicalBottom=juce::roundToInt(r.getBottom()/compactScale);
-                const int logicalWidth=juce::roundToInt(r.getWidth()/compactScale);
-                g.drawText(display,logicalX+4,logicalBottom+1,
-                           logicalWidth-8,16,juce::Justification::centredRight);
-            }
+        // Slider readbacks sit on their own rows, not below adjacent labels.
+        constexpr int ids[]={0,1,2,3,4,6,7};
+        for(int j=0;j<7;++j){
+            const int idx=ids[j],col=j%4,row=j/4;
+            const int x=256+158*col,y=(row==0?514:603);
+            const double v=knobs_[static_cast<std::size_t>(idx)].getValue();
+            const juce::String value=idx==0?juce::String(v,0):
+                idx==1?juce::String(v,1)+" m":
+                idx==6||idx==7?juce::String(v,0):
+                juce::String(v,0)+"%";
+            g.setColour(juce::Colour(0xffb4e5de));
+            g.setFont(juce::FontOptions(11.5f));
+            g.drawText(value,x+108,y,43,27,juce::Justification::centredRight);
         }
-        g.setColour(juce::Colour(0xff91b9bf));
-        g.setFont(juce::FontOptions(10.f));
-        g.drawText("NATIVE AUDIO: "+status_,20,658,837,15,
+        const auto gain=knobs_[5].getValue();
+        g.setColour(juce::Colour(0xffe9e6ef));
+        g.setFont(juce::FontOptions(15.f));
+        g.drawText((gain>=0?"+":"")+juce::String(gain,1)+" dB",
+                   925,611,153,23,juce::Justification::centred);
+        g.setColour(juce::Colour(0xff889ba6));
+        g.setFont(juce::FontOptions(10.5f));
+        g.drawText("AUDIO  /  "+status_,24,648,838,23,
                    juce::Justification::centredLeft);
     }
     void resized() override {
-        const auto place=[](juce::Component& child,int x,int y,int w,int h) {
+        const auto place=[](juce::Component& child,int x,int y,int w,int h){
             child.setBounds(juce::roundToInt(x*compactScale),
                             juce::roundToInt(y*compactScale),
                             juce::roundToInt(w*compactScale),
                             juce::roundToInt(h*compactScale));
         };
-        place(preset_,20,523,213,31);
-        place(room_,20,591,213,30);
-        const int idx[]={0,1,2,3,4,6,7};
-        for(int j=0;j<7;++j) {
-            const int row=j/4,col=j%4;
-            const int x=273+col*151;
-            const int y=518+row*78;
-            auto& slider=knobs_[static_cast<std::size_t>(idx[j])];
-            place(slider,x,y+20,135,23);
-            place(labels_[static_cast<std::size_t>(idx[j])],x,y,135,18);
+        place(preset_,24,507,206,36);
+        place(room_,24,586,206,36);
+        constexpr int ids[]={0,1,2,3,4,6,7};
+        for(int j=0;j<7;++j){
+            const int col=j%4,row=j/4;
+            const int x=256+158*col;
+            const int labelY=row==0?485:574;
+            const int sliderY=row==0?514:603;
+            auto& slider=knobs_[static_cast<std::size_t>(ids[j])];
+            auto& label=labels_[static_cast<std::size_t>(ids[j])];
+            place(label,x,labelY,150,22);
+            place(slider,x,sliderY,106,27);
         }
-        place(knobs_[5],946,518,86,86);
-        place(labels_[5],917,619,140,17);
-        place(power_,894,646,99,29);
-        place(close_,1000,646,80,29);
+        place(labels_[5],938,484,128,22);
+        place(knobs_[5],947,511,106,102);
+        // Host actions in the header; panel only contains audio controls.
+        place(power_,939,17,74,34);
+        place(close_,1019,17,61,34);
     }
 private:
     armix::sonku::Settings readControls() const {
