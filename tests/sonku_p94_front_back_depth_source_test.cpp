@@ -3,8 +3,13 @@
 #if defined(NDEBUG)
 #undef NDEBUG
 #endif
-#if !defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) || !SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
-#error P9.4 source test must not silently run against P9.1-only DSP
+// Compile this SAME native PCM test twice: unchanged P9.1/P9.2 reference
+// versus P9.4 opt-in. A separate comparator checks exact lateral/ROOM-OFF
+// identity and bounded frontal/rear level shifts, not just test self-parity.
+#if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
+#define SONKU_P94_TEST_ACTIVE 1
+#else
+#define SONKU_P94_TEST_ACTIVE 0
 #endif
 #include "../engine/builtin_fx/sonku/SonKuSpatialCore.h"
 #include "../engine/builtin_fx/sonku/SonKuP94FrontBackDepthCue.h"
@@ -116,5 +121,5 @@ int main(){
                 rate,double(angle),rms(ref,rate/4),rms(dry,rate/4));
         }
     }
-    std::puts("PASS P94 front/back cue: no geometry change, 2.54dB DRR proxy, room OFF neutral, 44.1/48k PCM, 64/256 exact parity, phase and peak guard");
+    std::puts("PASS P94 reference/candidate native source, optional cue: no geometry change, 2.54dB DRR proxy, room OFF neutral, 44.1/48k PCM, 64/256 exact parity, phase and peak guard");
 }
