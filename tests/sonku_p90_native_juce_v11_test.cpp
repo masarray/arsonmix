@@ -138,19 +138,42 @@ int main(){
  bad=acceptedSettings(s);
  bad.getDynamicObject()->setProperty("headYawDegrees","invalid");
  assert(!decodeSettings(bad,decoded));
- assert(fx->queueSettings(s,801));
  SonKuSpatialProcessor::Completion ack{};
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH
+ // A brand-new P9.9 insert intentionally STARTS in mode 9 (Orbit).
+ // Parameter-only mode 9 -> mode 9 edits must ACK after the first
+ // render callback, WITHOUT an unnecessary mode-fade stall.
+ assert(fx->acceptedSettings().renderMode==9);
+ assert(fx->queueSettings(s,800));
+ assert(!fx->pollCompletion(ack));
+ render(*fx,0);
+ assert(fx->pollCompletion(ack) && ack.requestId==800 && ack.applied);
+ assert(fx->acceptedSettings().renderMode==9);
+ assert(fx->acceptedSettings().sourceDistanceMeters==1.6f);
+ assert(fx->stateSnapshotQuiescent());
+ // The old 801 assertion checks a DIFFERENT contract: switching from
+ // an existing legacy engine mode into 9 MUST fade and ACK only when
+ // PCM has applied the new mode. Explicitly establish that premise.
+ auto oldMode=s;
+ oldMode.renderMode=0;
+ oldMode.sceneVoicing=0;
+ assert(fx->queueSettings(oldMode,799));
+ complete(*fx,799,15);
+ assert(fx->acceptedSettings().renderMode==0);
+ assert(fx->acceptedSettings().sceneVoicing==0);
+ assert(fx->stateSnapshotQuiescent());
+#endif
+ assert(fx->queueSettings(s,801));
  assert(!fx->pollCompletion(ack));
  render(*fx,0);
  assert(!fx->pollCompletion(ack));
  assert(!fx->stateSnapshotQuiescent());
-#if defined(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH
- // Queued edits must not mutate accepted state before the audio ACK.
- assert(fx->acceptedSettings().renderMode==9);
- assert(fx->acceptedSettings().moving==true);
- assert(fx->acceptedSettings().sourceDistanceMeters==2.7f);
-#else
+ // No prematurely published settings during a mode-switch fade. This
+ // is mode-independent; P9.9 now explicitly exercises both ACK paths.
  assert(fx->acceptedSettings().renderMode==0);
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH
+ assert(fx->acceptedSettings().sceneVoicing==0);
+ assert(fx->acceptedSettings().sourceDistanceMeters==1.6f);
 #endif
  complete(*fx,801,1);
  assert(fx->acceptedSettings().renderMode==9);
