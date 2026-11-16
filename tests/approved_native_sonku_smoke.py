@@ -213,12 +213,14 @@ def exercise(browser,out,width,height):
         "()=>window.__actions.filter(a=>a.action==='nativeSonKuSnapshot').length")
     assert after==count, "Unanswered SonKu readback was overwritten"
     accepted_snapshot(page,state,SETTINGS)
-    # A true visual animation must advance BETWEEN native readbacks.
-    # The old 250ms setInterval was ~4fps despite valid DSP PCM.
+    # Until graph-level insert bypass is authoritatively known, the actual
+    # native PCM clock is not verified ON. Do NOT invent free-running motion
+    # (the operator reported exactly this bypass/OFF visual flicker).
+    assert editor.locator("#skPower").get_attribute("data-fx-state")=="unknown"
     vx0=editor.locator('.sk-src[data-index="0"]').get_attribute("data-visual-x")
     page.wait_for_timeout(150)
     vx1=editor.locator('.sk-src[data-index="0"]').get_attribute("data-visual-x")
-    assert abs(float(vx1)-float(vx0))>1.0,("Orbit is frozen between readbacks",vx0,vx1)
+    assert vx1==vx0,("Unverified native power must freeze speaker pose",vx0,vx1)
     # Close/reopen must use the installed FX rack click, never a private open().
     editor.locator("#skClose").click()
     assert editor.is_hidden()
