@@ -35,16 +35,6 @@
     "releaseQualified": false
   },
   "audioScenes": {
-    "imersipFactoryReference": {
-      "speakerSpreadDeg": 82,
-      "distanceMeters": 1.6,
-      "spacePreset": 3,
-      "earlyRoom": 0.78,
-      "lateRoom": 0.33,
-      "spatialMix": 1,
-      "outputTrimLinear": 1,
-      "moving": false
-    },
     "operatorCheckpointObservation": {
       "speakerSpreadDeg": 82,
       "distanceMeters": 1.6,
@@ -56,6 +46,47 @@
       "revolutionSeconds": 8.5,
       "notFactoryDefault": true,
       "referenceIssue": 720
+    },
+    "p92NeutralABReference": {
+      "speakerSpreadDeg": 82,
+      "distanceMeters": 1.6,
+      "spacePreset": 3,
+      "earlyRoom": 0.78,
+      "lateRoom": 0.33,
+      "spatialMix": 1,
+      "outputTrimLinear": 1,
+      "moving": false
+    },
+    "imersipNewInsertDefault": {
+      "presetId": 2,
+      "name": "Live Concert",
+      "speakerSpreadDeg": 150,
+      "distanceMeters": 2.2,
+      "spacePreset": 3,
+      "earlyRoom": 1,
+      "lateRoom": 0.91,
+      "spatialMix": 1,
+      "outputGainDb": 4.8,
+      "notOperatorCheckpoint": true,
+      "newInsertsOnly": true
+    },
+    "imersipAuditionPresetIds": {
+      "2": "Live Concert - enhanced new-insert default",
+      "3": "Warm Auditorium - Chamber 14.4m",
+      "4": "Grand Arena - larger-stage/distance",
+      "5": "Your 150-degree Scene - exact screenshot values",
+      "6": "P9.2 Neutral A/B - original reference unchanged"
+    },
+    "ownerScreenshotObservation": {
+      "speakerSpreadDeg": 150,
+      "distanceMeters": 1.6,
+      "spacePreset": 3,
+      "earlyRoom": 1,
+      "lateRoom": 0.91,
+      "spatialMix": 1,
+      "outputGainDb": 4.1,
+      "notFactoryDefault": true,
+      "separateFromIssue720": true
     }
   },
   "nonAuthoritativeCandidates": [

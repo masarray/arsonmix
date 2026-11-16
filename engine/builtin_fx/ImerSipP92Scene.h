@@ -35,17 +35,48 @@ inline bool validImerSipP92Scene(const armix::sonku::Settings& s) noexcept {
         s.startAzimuthDegrees==0.f &&
         s.sourceDistanceMeters<=imersipP92MaxDistance(s.spacePreset);
 }
+// Product presets are *scenes* of the unchanged SonKu P9.2 core.
+// The original P9.2 neutral baseline is always accessible (id=6), so
+// loudness-enhanced concert presets cannot erase reproducible A/B evidence.
+// Reused IMRS v6 sessions restore their accepted state, NOT this factory.
+inline float imersipP92DbToLinear(float db) noexcept {
+    return std::pow(10.f,db/20.f);
+}
 inline armix::sonku::Settings imersipP92Factory(int id) noexcept {
     auto s=imersipP92ReferenceScene();
-    switch(id){
-    case 3: // A genuinely near source in a smaller room
-        s.spacePreset=2;s.stereoSpreadDegrees=72.f;
-        s.roomAmount=.46f;s.ambience=.14f;break;
-    case 4: // Wider but more reverberant hall, explicit audition
-        s.spacePreset=3;s.stereoSpreadDegrees=104.f;
-        s.sourceDistanceMeters=2.2f;s.roomAmount=.84f;
-        s.ambience=.40f;break;
-    default:break; // id 2 and first-insert default: exact P9.2 reference
+    switch(id) {
+    case 2: // New insert: owner-led wide live concert, not timid near-dry
+        s.stereoSpreadDegrees=150.f;
+        s.sourceDistanceMeters=2.2f;
+        s.roomAmount=1.f;
+        s.ambience=.91f;
+        s.outputTrim=imersipP92DbToLinear(4.8f);
+        break;
+    case 3: // Room warmth with defined direct source / less diffuse wash
+        s.spacePreset=2; // Chamber 14.4 m
+        s.stereoSpreadDegrees=138.f;
+        s.sourceDistanceMeters=2.4f;
+        s.roomAmount=.96f;
+        s.ambience=.78f;
+        s.outputTrim=imersipP92DbToLinear(4.5f);
+        break;
+    case 4: // Distance-biased grand room; avoid unlimited late-feedback
+        s.stereoSpreadDegrees=164.f;
+        s.sourceDistanceMeters=3.0f;
+        s.roomAmount=1.f;
+        s.ambience=.96f;
+        s.outputTrim=imersipP92DbToLinear(5.6f);
+        break;
+    case 5: // Exact observed ImerSip screenshot, no inferred distance
+        s.stereoSpreadDegrees=150.f;
+        s.sourceDistanceMeters=1.6f;
+        s.roomAmount=1.f;
+        s.ambience=.91f;
+        s.outputTrim=imersipP92DbToLinear(4.1f);
+        break;
+    case 6: // Original P9.2 neutral ImerSip reference, 0 dB for level A/B
+    default:
+        break;
     }
     return s;
 }

@@ -15,7 +15,7 @@ class ImerSipP92Processor final : public SonKuSpatialProcessor {
 public:
     static constexpr const char* catalogIdentity="armix.builtin.imersip.v1";
     ImerSipP92Processor()
-        : SonKuSpatialProcessor(imersipP92ReferenceScene()) {}
+        : SonKuSpatialProcessor(imersipP92Factory(2)) {}
     const juce::String getName() const override {return "ImerSip";}
     bool hasEditor() const override {return true;}
     juce::AudioProcessorEditor* createEditor() override;

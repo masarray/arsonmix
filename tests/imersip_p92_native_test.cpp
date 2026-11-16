@@ -14,6 +14,7 @@
 
 using armix::builtin_fx::ImerSipP92Processor;
 using armix::builtin_fx::imersipP92ReferenceScene;
+using armix::builtin_fx::imersipP92Factory;
 using armix::sonku::SonKuSpatialCore;
 constexpr double pi=3.14159265358979323846;
 
@@ -37,16 +38,22 @@ static void nativeParity(int rate) {
     auto fx=std::make_unique<ImerSipP92Processor>();
     fx->prepareToPlay(static_cast<double>(rate),128);
     assert(fx->isReady());
-    const auto reference=imersipP92ReferenceScene();
+    const auto reference=imersipP92Factory(2);
+    const auto neutral=imersipP92Factory(6);
     assert(armix::builtin_fx::validImerSipP92Scene(reference));
+    assert(armix::builtin_fx::validImerSipP92Scene(neutral));
     const auto actual=fx->acceptedSettings();
     assert(actual.renderMode==9&&!actual.moving);
     assert(actual.spacePreset==3);
-    assert(std::abs(actual.stereoSpreadDegrees-82.f)<.001f);
-    assert(std::abs(actual.sourceDistanceMeters-1.6f)<.001f);
-    assert(std::abs(actual.roomAmount-.78f)<.001f);
-    assert(std::abs(actual.ambience-.33f)<.001f);
-    assert(std::abs(actual.outputTrim-1.f)<.001f);
+    assert(std::abs(actual.stereoSpreadDegrees-150.f)<.001f);
+    assert(std::abs(actual.sourceDistanceMeters-2.2f)<.001f);
+    assert(std::abs(actual.roomAmount-1.f)<.001f);
+    assert(std::abs(actual.ambience-.91f)<.001f);
+    assert(std::abs(actual.outputTrim-
+        armix::builtin_fx::imersipP92DbToLinear(4.8f))<.001f);
+    assert(std::abs(neutral.stereoSpreadDegrees-82.f)<.001f);
+    assert(std::abs(neutral.ambience-.33f)<.001f);
+    assert(std::abs(neutral.outputTrim-1.f)<.001f);
     assert(!actual.musicCompatibleLowFrequency);
 
     auto native=std::make_unique<SonKuSpatialCore>();
@@ -106,7 +113,7 @@ static void nativeParity(int rate) {
     assert(restored->restoreUnpublishedState(state.getData(),
                                           static_cast<int>(state.getSize())));
     assert(restored->acceptedSettings().renderMode==9);
-    assert(restored->acceptedSettings().stereoSpreadDegrees==82.f);
+    assert(restored->acceptedSettings().stereoSpreadDegrees==150.f);
 
     // The embedded v11 SONK mode field is at byte 50 of its 63-byte
     // record (after the 8-byte IMRS header). Corrupting P9 -> P8.2 mode
@@ -154,7 +161,7 @@ static void nativeParity(int rate) {
     auto changed=fx->acceptedSettings();
     changed.stereoSpreadDegrees=100.f;
     assert(fx->queueSettings(changed,72));
-    assert(fx->acceptedSettings().stereoSpreadDegrees==82.f);
+    assert(fx->acceptedSettings().stereoSpreadDegrees==150.f);
     pcm.clear();
     fx->processBlock(pcm,midi);
     armix::builtin_fx::SonKuSpatialProcessor::Completion ack{};
@@ -190,6 +197,23 @@ int main() {
     auto* power=dynamic_cast<juce::TextButton*>(
         editor->findChildWithID("imersip.power"));
     assert(power && !power->isEnabled());
+    auto* selector=dynamic_cast<juce::ComboBox*>(
+        editor->findChildWithID("imersip.preset"));
+    assert(selector&&selector->getNumItems()==6);
+    assert(selector->getSelectedId()==2);
+    // User can recall the exact screenshot and undo back to neutral.
+    selector->setSelectedId(5,juce::sendNotificationSync);
+    juce::MidiBuffer editMidi;
+    juce::AudioBuffer<float> editPcm(2,128);
+    editPcm.clear();
+    editorFx->processBlock(editPcm,editMidi);
+    armix::builtin_fx::SonKuSpatialProcessor::Completion selected{};
+    assert(editorFx->pollCompletion(selected)&&selected.applied);
+    assert(std::abs(editorFx->acceptedSettings().stereoSpreadDegrees-150.f)
+           <.001f);
+    assert(std::abs(editorFx->acceptedSettings().sourceDistanceMeters-1.6f)
+           <.001f);
+    assert(std::abs(editorFx->acceptedSettings().ambience-.91f)<.001f);
     auto* actualEditor=dynamic_cast<armix::builtin_fx::ImerSipP92Editor*>(
         editor.get());
     assert(actualEditor);

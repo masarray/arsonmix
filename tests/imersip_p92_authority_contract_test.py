@@ -63,7 +63,9 @@ class SpatialAuthorityContract(unittest.TestCase):
 
     def test_operator_scene_is_not_factory_default(self):
         scene=read("engine/builtin_fx/ImerSipP92Scene.h")
-        factory=self.record["audioScenes"]["imersipFactoryReference"]
+        factory=self.record["audioScenes"]["p92NeutralABReference"]
+        candidate=self.record["audioScenes"]["imersipNewInsertDefault"]
+        screenshot=self.record["audioScenes"]["ownerScreenshotObservation"]
         user=self.record["audioScenes"]["operatorCheckpointObservation"]
         self.assertTrue(user["notFactoryDefault"])
         self.assertEqual(factory["earlyRoom"],.78)
@@ -71,6 +73,15 @@ class SpatialAuthorityContract(unittest.TestCase):
         self.assertEqual(user["earlyRoom"],1)
         self.assertEqual(user["lateRoom"],.62)
         self.assertEqual(user["outputGainDb"],7)
+        self.assertEqual(screenshot["speakerSpreadDeg"],150)
+        self.assertEqual(screenshot["distanceMeters"],1.6)
+        self.assertEqual(screenshot["lateRoom"],.91)
+        self.assertEqual(candidate["presetId"],2)
+        self.assertGreater(candidate["distanceMeters"],1.6)
+        self.assertGreater(candidate["outputGainDb"],screenshot["outputGainDb"])
+        self.assertIn("s.roomAmount=1.f",scene)
+        self.assertIn("s.ambience=.91f",scene)
+        self.assertIn("s.stereoSpreadDegrees=150.f",scene)
         self.assertIn("s.roomAmount=.78f",scene)
         self.assertIn("s.ambience=.33f",scene)
         self.assertIn("s.outputTrim=1.f",scene)

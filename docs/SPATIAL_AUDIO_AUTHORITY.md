@@ -17,8 +17,13 @@
 
 ## Sound and factory defaults must not be conflated
 
-- ImerSip's factory `P9.2 Reference`: static FRONT, 82° stage, source 1.6m, Large 28.8m, reflections 78%, late room 33%, MIX 100%, GAIN **0 dB**.
+- **New ImerSip insert factory** (`Live Concert`): static FRONT, stage **150°**, distance **2.2 m**, Large 28.8m, EARLY **100%**, LATE **91%**, MIX **100%**, OUTPUT **+4.8 dB**. This is a user-feedback-led audition **candidate**, not guaranteed loudness or perceptual validation.
+- **Original reference preserved** as `P9.2 Neutral A/B` (id 6): 82°, 1.6m, ER 78%, late 33%, 100% mix, output 0 dB; `imersipP92ReferenceScene()` remains unchanged.
+- User's **current ImerSip screenshot**: 150°, 1.6m, ER 100%, late 91%, +4.1 dB. It is not the same thing as the older independent #720 SonKu screenshot and is selectable exactly as `Your 150° Scene` (id 5).
 - [Operator's frozen P9 checkpoint #720](https://github.com/masarray/arsonmix/issues/720): screenshot with **82°, 1.6m, Large, reflections 100%, reverb 62%, output +7 dB and revolution time 8.5s**. These are owner test values **not accepted factory defaults**. The moving toggle / static status was not established from the revolution-time readout alone.
+- Changing factory presets only affects **new, empty insert instances**. IMRS v6 accepted state and old v1-v5 migration remain unchanged; a saved Custom 150° preset must not be overwritten on reopen.
+- A physical speaker farther away changes direct-to-reverberant balance; it does **not automatically eliminate phase cancellation**. Presets use 2.2–3.0 m for audition, maintain independent L/R HRTF and retain the source anti-phase rejection guard.
+- The user wants a perceptibly louder, enveloping and rich effect: the output gain candidates are not a blind automatic loudness guarantee. The existing linked 0.98f peak guard protects sample peaks; mastered near-0 dBFS tracks may trigger reduction/compression. Compare actual levels with BS.1770 LUFS and true peak where available, and inspect limiting/noise at native PCM.
 - Never overwrite a user's accepted settings with any of these on session restoration. Compare at **identical native scene and matched actual output loudness**, not just equal knob labels.
 
 ## Frozen acoustic source fingerprints

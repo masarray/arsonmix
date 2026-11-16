@@ -19,6 +19,8 @@ class ImerSipP92Contract(unittest.TestCase):
                       "s.spacePreset=3","s.roomAmount=.78f","s.ambience=.33f",
                       "s.outputTrim=1.f"):
             self.assertIn(value,scene)
+        self.assertIn("SonKuSpatialProcessor(imersipP92Factory(2))",p)
+        self.assertIn("case 6: // Original P9.2 neutral",scene)
         self.assertIn("prepareNativeBuiltInFx<ImerSipP92Processor>",catalog)
         self.assertIn("ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT",catalog)
     def test_legacy_and_host_power_are_realtime_owned(self):

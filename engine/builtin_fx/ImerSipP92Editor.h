@@ -15,12 +15,14 @@ public:
         setSize(788,416);
         preset_.setComponentID("imersip.preset");
         preset_.addItem("Custom",1);
-        preset_.addItem("P9.2 Reference",2);
-        preset_.addItem("Intimate Studio",3);
-        preset_.addItem("Grand Stage",4);
+        preset_.addItem("Live Concert",2);
+        preset_.addItem("Warm Auditorium",3);
+        preset_.addItem("Grand Arena",4);
+        preset_.addItem("Your 150° Scene",5);
+        preset_.addItem("P9.2 Neutral A/B",6);
         preset_.onChange=[this]{
             const int id=preset_.getSelectedId();
-            if(id<2||id>4)return;
+            if(id<2||id>6)return;
             sync(imersipP92Factory(id));
             submit();
         };
@@ -114,9 +116,9 @@ public:
         g.drawText("ImerSip",19,12,140,34,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff91b7c2));
         g.setFont(juce::FontOptions(11.f));
-        g.drawText("SINGLE ENGINE  ·  8D-SonKu P9.1/P9.2",19,63,330,18,
+        g.drawText("SINGLE ENGINE  |  8D-SonKu P9.1/P9.2",19,63,330,18,
                    juce::Justification::centredLeft);
-        g.drawText("L / R WORLD SPEAKERS  •  NO HEADPHONE-LOCKED BASS",
+        g.drawText("L / R WORLD SPEAKERS  |  WORLD-POSITIONED BASS",
                    370,63,399,18,juce::Justification::centredRight);
         for(int i=0;i<8;++i){
             const int row=i/4,col=i%4;
@@ -178,7 +180,7 @@ private:
         for(int i=0;i<8;++i)knobs_[static_cast<std::size_t>(i)].setValue(
             vals[i],juce::dontSendNotification);
         int preset=1;
-        for(int id=2;id<=4;++id){
+        for(int id=2;id<=6;++id){
             const auto candidate=imersipP92Factory(id);
             if(s.spacePreset==candidate.spacePreset &&
                std::abs(s.stereoSpreadDegrees-candidate.stereoSpreadDegrees)<.01f &&
