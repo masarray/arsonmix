@@ -41,19 +41,19 @@ inline ImerSipP92ConcertBoxes imersipP92ConcertBoxes(
     const float metres=std::clamp(std::isfinite(distanceMetres)?
         distanceMetres:2.2f,1.6f,10.f);
     const float width=(stage-30.f)/150.f;
-    const float far=(metres-1.6f)/8.4f;
+    const float distanceRatio=(metres-1.6f)/8.4f;
     const float span=170.f+182.f*width;
-    const float arrayW=98.f-28.f*far;
+    const float arrayW=98.f-28.f*distanceRatio;
     const float arrayH=arrayW*260.f/160.f;
-    const float arrayY=132.f+34.f*far;
-    const float subW=112.f-32.f*far;
+    const float arrayY=132.f+34.f*distanceRatio;
+    const float subW=112.f-32.f*distanceRatio;
     const float subH=subW*150.f/180.f;
-    const float subY=320.f+16.f*far;
-    const float fillW=60.f-6.f*far;
+    const float subY=320.f+16.f*distanceRatio;
+    const float fillW=60.f-6.f*distanceRatio;
     const float fillH=fillW*160.f/112.f;
-    const float fillY=279.f+10.f*far;
-    const float sideW=40.f-5.f*far;
-    const float sideH=52.f-5.f*far;
+    const float fillY=279.f+10.f*distanceRatio;
+    const float sideW=40.f-5.f*distanceRatio;
+    const float sideH=52.f-5.f*distanceRatio;
     const auto centred=[](float cx,float y,float w,float h) {
         return juce::Rectangle<float>(cx-w*.5f,y,w,h);
     };
