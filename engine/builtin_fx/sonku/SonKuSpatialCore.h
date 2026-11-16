@@ -22,6 +22,9 @@
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
 #include "SonKuP90StereoDecoder.h"
 #include "SonKuP91P92WorldBassFoundation.h"
+#if defined(SONKU_P95_CINEMATIC_RESEARCH) && SONKU_P95_CINEMATIC_RESEARCH
+#include "SonKuP95VenuePrograms.h"
+#endif
 #if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
 #include "SonKuP94FrontBackDepthCue.h"
 #endif
@@ -93,7 +96,12 @@ inline bool valid(const Settings& s) noexcept {
         s.stereoSpreadDegrees<=180.f &&
         std::isfinite(s.spatialMix) && s.spatialMix>=0.f && s.spatialMix<=1.f &&
         std::isfinite(s.outputTrim) && s.outputTrim>=0.f && s.outputTrim<=4.f &&
-        s.spacePreset>=0 && s.spacePreset<=3 &&
+        s.spacePreset>=0 && s.spacePreset<=
+#if defined(SONKU_P95_CINEMATIC_RESEARCH) && SONKU_P95_CINEMATIC_RESEARCH
+        7 &&
+#else
+        3 &&
+#endif
         std::isfinite(s.sourceDistanceMeters) && s.sourceDistanceMeters>=1.6f &&
         s.sourceDistanceMeters<=10.f &&
         std::isfinite(s.roomAmount) && s.roomAmount>=0.f && s.roomAmount<=1.f &&
@@ -151,16 +159,26 @@ inline bool valid(const Settings& s) noexcept {
         // a later enable cannot silently admit an impossible placement.
         [&]() noexcept {
             xyz::Placement projected{};
-            const float height=s.spacePreset<=1?3.2f:
+            const float height=
+#if defined(SONKU_P95_CINEMATIC_RESEARCH) && SONKU_P95_CINEMATIC_RESEARCH
+                p95::byId(s.spacePreset).height;
+#else
+                s.spacePreset<=1?3.2f:
                 s.spacePreset==2?4.8f:7.2f;
+#endif
             return xyz::project(s.sourceDistanceMeters,
                                 s.directElevationDegrees,1.45f,
                                 height,projected);
         }() &&
 #endif
         (s.spacePreset==0 || SonKuEarlyReflections::validGeometry({
+#if defined(SONKU_P95_CINEMATIC_RESEARCH) && SONKU_P95_CINEMATIC_RESEARCH
+            p95::byId(s.spacePreset).width,
+            p95::byId(s.spacePreset).depth,
+#else
             s.spacePreset==1?7.2f:s.spacePreset==2?14.4f:28.8f,
             s.spacePreset==1?7.2f:s.spacePreset==2?14.4f:28.8f,
+#endif
             s.sourceDistanceMeters}));
 }
 inline double wrapDegrees(double degrees) noexcept {
@@ -983,10 +1001,16 @@ public:
     }
 private:
     bool applyAcousticSettings(const Settings& s) noexcept {
+#if defined(SONKU_P95_CINEMATIC_RESEARCH) && SONKU_P95_CINEMATIC_RESEARCH
+        const auto& venue=p95::byId(s.spacePreset);
+        const float width=venue.width,depth=venue.depth,roomHeight=venue.height;
+#else
         const float width=s.spacePreset==1?7.2f:
             s.spacePreset==2?14.4f:28.8f;
+        const float depth=width;
         const float roomHeight=s.spacePreset<=1?3.2f:
                                s.spacePreset==2?4.8f:7.2f;
+#endif
         float sourceHeight=1.45f;
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
         if(room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch){
@@ -997,11 +1021,18 @@ private:
         }
 #endif
         const SonKuRoomGeometry geometry{
-            width,width,s.spacePreset? s.sourceDistanceMeters:1.6f,
+            width,depth,s.spacePreset? s.sourceDistanceMeters:1.6f,
             // P7.1 keeps the user's radial source distance authoritative.
             // Source XYZ only affects the explicit offline research profile.
             roomHeight,1.45f,sourceHeight};
-        const auto preset=s.spacePreset==3?SonKuReverbPreset::LargeRoom:
+        const auto preset=
+#if defined(SONKU_P95_CINEMATIC_RESEARCH) && SONKU_P95_CINEMATIC_RESEARCH
+            s.spacePreset==4?SonKuReverbPreset::LargeStudio:
+            s.spacePreset==5?SonKuReverbPreset::Cinema:
+            s.spacePreset==6?SonKuReverbPreset::LiveVenue:
+            s.spacePreset==7?SonKuReverbPreset::Arena:
+#endif
+            s.spacePreset==3?SonKuReverbPreset::LargeRoom:
             s.spacePreset==2?SonKuReverbPreset::AiryChamber:
                              SonKuReverbPreset::StudioGlue;
         return room_.setRealtimeRoom(geometry,s.roomAmount,s.spacePreset!=0) &&
