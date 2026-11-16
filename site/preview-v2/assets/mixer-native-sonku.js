@@ -41,8 +41,8 @@ const roomMaxDistance=[10,3.1,6.7,10];
 // 62% late, 82° spread, +7dB). Scene values are deliberate starting points,
 // not acoustic measurements. No background mutation of existing .smix.
 const factoryPresets=Object.freeze({
- music:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
-  revolutionSeconds:12,stereoSpreadDegrees:82,spatialMix:1,outputTrim:1.9,
+ music:Object.freeze({moving:true,clockwise:true,startAzimuthDegrees:0,
+  revolutionSeconds:6.5,stereoSpreadDegrees:82,spatialMix:1,outputTrim:1.9,
   spacePreset:3,sourceDistanceMeters:3.1,roomAmount:1,ambience:.62}),
  studio:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
   revolutionSeconds:12,stereoSpreadDegrees:76,spatialMix:1,outputTrim:1.65,
