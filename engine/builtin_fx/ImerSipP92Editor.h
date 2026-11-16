@@ -78,7 +78,7 @@ public:
             label.setText(names[i],juce::dontSendNotification);
             label.setJustificationType(juce::Justification::centredLeft);
             label.setColour(juce::Label::textColourId,juce::Colour(0xffcbd7dc));
-            label.setFont(juce::FontOptions(12.7f));
+            label.setFont(juce::FontOptions(14.0f));
             addAndMakeVisible(label);
         }
         power_.setComponentID("imersip.power");
@@ -149,8 +149,8 @@ public:
         g.setFont(juce::FontOptions(21.f));
         g.drawText(juce::String(ImerSipP92Processor::productDisplayName),
                    24,15,175,34,juce::Justification::centredLeft);
-        g.setColour(juce::Colour(0xff9aadb6));
-        g.setFont(juce::FontOptions(12.5f));
+        g.setColour(juce::Colour(0xffb1c5cb));
+        g.setFont(juce::FontOptions(13.6f));
         g.drawText("SPATIAL CONCERT MONITOR",207,22,360,22,
                    juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff32424b));
@@ -160,8 +160,8 @@ public:
         skin_.drawPanel(g);
         g.setColour(juce::Colour(0xff33424b));
         g.fillRect(0,461,1100,1);
-        g.setColour(juce::Colour(0xffaebdc4));
-        g.setFont(juce::FontOptions(12.5f));
+        g.setColour(juce::Colour(0xffbacbd0));
+        g.setFont(juce::FontOptions(13.8f));
         g.drawText("PRESET",24,485,208,19,juce::Justification::centredLeft);
         g.drawText("ROOM",24,564,208,19,juce::Justification::centredLeft);
 
@@ -177,18 +177,18 @@ public:
                 idx==1?juce::String(v,1)+" m":
                 idx==6||idx==7?juce::String(v,0)+"°":
                 juce::String(v,0)+"%";
-            g.setColour(juce::Colour(0xffc2e3df));
-            g.setFont(juce::FontOptions(11.5f));
+            g.setColour(juce::Colour(0xffd6efea));
+            g.setFont(juce::FontOptions(13.2f));
             g.drawText(value,x+254,y+3,49,22,
                        juce::Justification::centredRight);
         }
         const auto gain=knobs_[5].getValue();
-        g.setColour(juce::Colour(0xffe9e6ef));
-        g.setFont(juce::FontOptions(15.f));
+        g.setColour(juce::Colour(0xfff0eafa));
+        g.setFont(juce::FontOptions(16.f));
         g.drawText((gain>=0?"+":"")+juce::String(gain,1)+" dB",
                    925,611,153,23,juce::Justification::centred);
-        g.setColour(juce::Colour(0xff889ba6));
-        g.setFont(juce::FontOptions(10.5f));
+        g.setColour(juce::Colour(0xffb4c3c9));
+        g.setFont(juce::FontOptions(12.2f));
         g.drawText("AUDIO  /  "+status_,24,648,838,23,
                    juce::Justification::centredLeft);
     }
