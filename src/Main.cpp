@@ -1332,7 +1332,8 @@ private:
             auto& existing=*logicalVendorEditor_;
             if(existing.window)existing.window->present();
             if(existing.workspaceToken==logicalMixer_.workspace().workspaceToken() &&
-               existing.insert.channel==channel && existing.insert.slot==slot)
+               existing.insert.channel==armix::mixer::ChannelId{channel} &&
+               existing.insert.slot==slot)
                 return; // Exact same logical FX: refocus without losing state.
             emitNotice("Finish the currently open FX editor first",true);
             return;
