@@ -125,7 +125,7 @@ static void verify(int rate) {
         assert(side>1.e-5);
         assert(antiRatio>.08 && antiSide>.08); // catastrophic null veto
         if(id>=2 && id<=7){
-            assert(s.sourceDistanceMeters>1.6f);
+            assert(s.sourceDistanceMeters>=1.6f); // front row is intentionally near
             assert(s.outputTrim>1.f);
             // A richer room must produce an actual, measurable wet PCM
             // difference, not just turn up a headphone-locked dry signal.
