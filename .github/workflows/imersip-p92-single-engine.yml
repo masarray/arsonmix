@@ -6,6 +6,7 @@ on:
       - '.github/workflows/imersip-p92-single-engine.yml'
       - 'CMakeLists.txt'
       - 'engine/builtin_fx/ImerSipP92*.h'
+      - 'assets/imersip/**'
       - 'engine/builtin_fx/SonKuSpatialProcessor.h'
       - 'engine/builtin_fx/sonku/**'
       - 'src/Main.cpp'

@@ -195,6 +195,18 @@ int main() {
     editorFx->prepareToPlay(48000.,128);
     std::unique_ptr<juce::AudioProcessorEditor> editor(editorFx->createEditor());
     assert(editor && editor->findChildWithID("imersip.preset"));
+    assert(editor->getWidth()==1100 && editor->getHeight()==680);
+    auto visual=editor->createComponentSnapshot(editor->getLocalBounds());
+    assert(visual.isValid() && visual.getWidth()==1100 &&
+           visual.getHeight()==680);
+    assert(visual.getPixelAt(480,120)!=visual.getPixelAt(480,484));
+    auto* stage=dynamic_cast<juce::Slider*>(
+        editor->findChildWithID("imersip.stage"));
+    auto* master=dynamic_cast<juce::Slider*>(
+        editor->findChildWithID("imersip.gain"));
+    assert(stage && stage->getSliderStyle()==juce::Slider::LinearHorizontal);
+    assert(master && master->getSliderStyle()==
+           juce::Slider::RotaryHorizontalVerticalDrag);
     auto* power=dynamic_cast<juce::TextButton*>(
         editor->findChildWithID("imersip.power"));
     assert(power && !power->isEnabled());
