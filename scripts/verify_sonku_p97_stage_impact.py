@@ -30,7 +30,9 @@ def main():
             if distance>=10.:
                 assert ratios[0]>1.06, (k,ratios)
                 assert ratios[1]>1.04, (k,ratios)
-                assert ratios[0]<1.7 and ratios[1]<1.7, (k,ratios)
+                # P9.7 MUST NOT sacrifice the air P9.6 already restored.
+                assert ratios[2]>.98, (k,ratios)
+                assert ratios[0]<1.7 and ratios[1]<1.7 and ratios[2]<1.20, (k,ratios)
             else:
                 # Signature at 3.1m must remain subtle, not overwritten.
                 assert .92<ratios[0]<1.4 and .92<ratios[1]<1.4, (k,ratios)

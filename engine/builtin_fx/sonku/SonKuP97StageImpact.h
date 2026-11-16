@@ -29,7 +29,8 @@ public:
         return true;
     }
     void reset() noexcept {
-        vocal_={}; punch_={};sub_={};earlyAir_={};stage_=0.f;
+        vocal_={};vocalSecond_={};vocalDirect_={};
+        punch_={};sub_={};earlyAir_={};directAir_={};stage_=0.f;
     }
     bool active() const noexcept {return stage_!=0.f;}
     float strength() const noexcept {return stage_;}
@@ -40,7 +41,10 @@ public:
         stage_+=slew_*(target-stage_);
         if(std::abs(stage_-target)<1.e-6f)stage_=target;
         const float center=.5f*(left+right);
-        const float band=vocal_.run(centerCoeff_,center);
+        // Two bandpasses suppress out-of-band leakage, especially cymbals
+        // >6kHz that a single 1.9kHz BPF would partly phase-cancel.
+        const float band=vocalSecond_.run(centerCoeff_,
+            vocal_.run(centerCoeff_,center));
         if(stage_==0.f)return {left,right};
         // Both virtual speakers receive exactly the same center delta.
         // Their established HRIRs must render it; NEVER send to dry L/R.
@@ -53,8 +57,14 @@ public:
         for(int c=0;c<2;++c) {
             const float punch=punch_[c].run(punchCoeff_,x[c]);
             sub_[c]+=subAlpha_*(x[c]-sub_[c]);
+            directAir_[c]+=airAlpha_*(x[c]-directAir_[c]);
+            const float voice=vocalDirect_[c][1].run(centerCoeff_,
+                vocalDirect_[c][0].run(centerCoeff_,x[c]));
+            // Keep spectral pressure tied to the original KEMAR ears.
+            // The second gentle vocal filter is NOT a dry/mono stem.
             result[c]=stage_==0.f?x[c]:
-                x[c]+stage_*(.23f*punch+.085f*sub_[c]);
+                x[c]+stage_*(.23f*punch+.085f*sub_[c]+
+                             .085f*voice+.038f*(x[c]-directAir_[c]));
         }
         return {result[0],result[1]};
     }
@@ -98,9 +108,10 @@ private:
                 static_cast<float>((1.-alpha)*inv)};
     }
     Coeff centerCoeff_{},punchCoeff_{};
-    Filter vocal_{};
+    Filter vocal_{},vocalSecond_{};
     std::array<Filter,2> punch_{};
-    std::array<float,2> sub_{},earlyAir_{};
+    std::array<std::array<Filter,2>,2> vocalDirect_{};
+    std::array<float,2> sub_{},earlyAir_{},directAir_{};
     float subAlpha_=0.f,airAlpha_=0.f,slew_=0.f,stage_=0.f;
 };
 } // namespace armix::sonku::p97

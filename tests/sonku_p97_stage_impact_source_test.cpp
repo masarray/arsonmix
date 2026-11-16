@@ -38,11 +38,15 @@ int main(){
         }
         const double bass=signal(rate,85.,1,10.f,true);
         const double vocal=signal(rate,1900.,0,10.f,true);
+        const double directVoice=signal(rate,1900.,1,10.f,true);
+        const double directAir=signal(rate,7500.,1,10.f,true);
         const double air=signal(rate,7500.,2,10.f,true);
         std::printf("P97_STAGE,%d,bass=%.6f,center=%.6f,earlyAir=%.6f\n",
             rate,bass,vocal,air);
         assert(bass>1.14&&bass<1.45);
         assert(vocal>1.13&&vocal<1.4);
+        assert(directVoice>1.065&&directVoice<1.20);
+        assert(directAir>1.01&&directAir<1.16);
         assert(air>1.07&&air<1.35);
         // Center cancellation protects pure anti-phase stereo; filters are
         // linked/coefficient-identical for each independently spatialized ear.
