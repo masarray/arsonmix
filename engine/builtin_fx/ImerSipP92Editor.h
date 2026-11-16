@@ -18,7 +18,9 @@ class ImerSipP92Editor final : public juce::AudioProcessorEditor,
 public:
     explicit ImerSipP92Editor(ImerSipP92Processor& processor)
         :juce::AudioProcessorEditor(processor),fx_(processor) {
-        setSize(1100,680);
+        // Compact 85% presentation of the audited 1100x680 master canvas.
+        // The host sees an actual 935x578 editor rather than an oversized FX.
+        setSize(935,578);
         setResizable(false,false);
         preset_.setComponentID("imersip.preset");
         preset_.addItem("Custom",1);
@@ -116,8 +118,14 @@ public:
                           static_cast<bool>(readBypass_));
         refreshHostPower();
     }
+    static constexpr float compactScale=0.85f;
     void paint(juce::Graphics& g) override {
         g.fillAll(juce::Colour(0xff0e151a));
+        juce::Graphics::ScopedSaveState compactState(g);
+        // All background art and native-drawn captions use master geometry.
+        // Child components are independently scaled in resized() so mouse
+        // hit testing remains correct in host/editor coordinates.
+        g.addTransform(juce::AffineTransform::scale(compactScale));
         // The final full-resolution RGBA files are the exact same scene
         // layers used by composition proof. Images decode once in VisualSkin.
         skin_.drawRoom(g);
@@ -182,8 +190,11 @@ public:
                                 juce::Justification::centred);
             else {
                 const auto r=knobs_[static_cast<std::size_t>(i)].getBounds();
-                g.drawText(display,r.getX()+4,r.getBottom()+1,
-                           r.getWidth()-8,16,juce::Justification::centredRight);
+                const int logicalX=juce::roundToInt(r.getX()/compactScale);
+                const int logicalBottom=juce::roundToInt(r.getBottom()/compactScale);
+                const int logicalWidth=juce::roundToInt(r.getWidth()/compactScale);
+                g.drawText(display,logicalX+4,logicalBottom+1,
+                           logicalWidth-8,16,juce::Justification::centredRight);
             }
         }
         g.setColour(juce::Colour(0xff91b9bf));
@@ -192,21 +203,27 @@ public:
                    juce::Justification::centredLeft);
     }
     void resized() override {
-        preset_.setBounds(20,523,213,31);
-        room_.setBounds(20,591,213,30);
+        const auto place=[](juce::Component& child,int x,int y,int w,int h) {
+            child.setBounds(juce::roundToInt(x*compactScale),
+                            juce::roundToInt(y*compactScale),
+                            juce::roundToInt(w*compactScale),
+                            juce::roundToInt(h*compactScale));
+        };
+        place(preset_,20,523,213,31);
+        place(room_,20,591,213,30);
         const int idx[]={0,1,2,3,4,6,7};
         for(int j=0;j<7;++j) {
             const int row=j/4,col=j%4;
             const int x=273+col*151;
             const int y=518+row*78;
             auto& slider=knobs_[static_cast<std::size_t>(idx[j])];
-            slider.setBounds(x,y+20,135,23);
-            labels_[static_cast<std::size_t>(idx[j])].setBounds(x,y,135,18);
+            place(slider,x,y+20,135,23);
+            place(labels_[static_cast<std::size_t>(idx[j])],x,y,135,18);
         }
-        knobs_[5].setBounds(946,518,86,86);
-        labels_[5].setBounds(917,619,140,17);
-        power_.setBounds(894,646,99,29);
-        close_.setBounds(1000,646,80,29);
+        place(knobs_[5],946,518,86,86);
+        place(labels_[5],917,619,140,17);
+        place(power_,894,646,99,29);
+        place(close_,1000,646,80,29);
     }
 private:
     armix::sonku::Settings readControls() const {
@@ -297,7 +314,8 @@ private:
             }
         }
         refreshHostPower();
-        repaint(juce::Rectangle<int>(0,646,getWidth(),34));
+        repaint(juce::Rectangle<int>(0,juce::roundToInt(646*compactScale),
+                                     getWidth(),juce::roundToInt(34*compactScale)));
     }
     ImerSipP92Processor& fx_;
     ImerSipP92VisualSkin skin_;
