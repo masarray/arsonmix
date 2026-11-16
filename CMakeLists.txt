@@ -96,6 +96,13 @@ if(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT AND
    NOT ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT)
   message(FATAL_ERROR "P9.0 requires P8.9 research branch baseline")
 endif()
+# Private P9.4 perceptual A/B: default OFF and never silently changes P9.1.
+option(ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH
+       "Private front/back HRTF/early reflection depth calibration experiment" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT)
+  message(FATAL_ERROR "P9.4 depth cue requires the P9 measured two-speaker engine")
+endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -312,7 +319,9 @@ target_compile_definitions(ARMixConsole PRIVATE
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT}>:ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT}>:SONKU_P89_DEPTH_COHERENCE_RESEARCH=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT}>:ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT=1>
-    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT}>:SONKU_P90_TRUE_EXTERNAL_RESEARCH=1>)
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT}>:SONKU_P90_TRUE_EXTERNAL_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH}>:SONKU_P94_FRONT_BACK_DEPTH_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH}>:ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH=1>)
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
   # Never link Windows loader or sound APIs into macOS/Linux builds.
@@ -817,6 +826,18 @@ if(BUILD_TESTING)
                               SONKU_P90_TRUE_EXTERNAL_RESEARCH=1)
                           add_test(NAME NativeSonKuP91P92MusicFidelityWorldBassAndRoom
                               COMMAND ARMixSonKuP91P92MusicBassTests)
+                          if(ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH)
+                            add_executable(ARMixSonKuP94SourceTests
+                                tests/sonku_p94_front_back_depth_source_test.cpp)
+                            target_compile_features(ARMixSonKuP94SourceTests PRIVATE cxx_std_20)
+                            # Reuse the proven exact P9.1/P9.2 native flag set.
+                            # Do not duplicate a parallel DSP/test configuration.
+                            target_compile_definitions(ARMixSonKuP94SourceTests PRIVATE
+                                $<TARGET_PROPERTY:ARMixSonKuP91P92MusicBassTests,COMPILE_DEFINITIONS>
+                                SONKU_P94_FRONT_BACK_DEPTH_RESEARCH=1)
+                            add_test(NAME NativeSonKuP94FrontBackDepthA_BSource
+                                COMMAND ARMixSonKuP94SourceTests)
+                          endif()
                           juce_add_console_app(ARMixSonKuP90NativeTests
                               PRODUCT_NAME "ArSonMix SonKu P90 JUCE v11 State Tests")
                           target_sources(ARMixSonKuP90NativeTests PRIVATE
