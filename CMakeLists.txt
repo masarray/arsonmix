@@ -230,15 +230,42 @@ endif()
 file(GLOB ARMIX_GUITAR_SKIN_PNGS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/assets/gfx-*.png")
 list(SORT ARMIX_GUITAR_SKIN_PNGS)
+# ImerSip P9.2 uses 19 independent, deterministic, full-resolution RGBA PNGs.
+# The build embeds every PNG; the deployed EXE needs no external asset folder.
+set(ARMIX_IMERSIP_PNG_DIR "${CMAKE_CURRENT_BINARY_DIR}/imersip_png")
+set(ARMIX_IMERSIP_PNG_GEN "${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_imersip_concert_png.py")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ARMIX_IMERSIP_PNG_GEN}")
+execute_process(
+    COMMAND "${Python3_EXECUTABLE}" -c "import PIL; import numpy"
+    RESULT_VARIABLE ARMIX_IMERSIP_PNG_DEPS
+    ERROR_VARIABLE ARMIX_IMERSIP_PNG_DEPS_ERROR)
+if(NOT ARMIX_IMERSIP_PNG_DEPS EQUAL 0)
+  message(FATAL_ERROR "ImerSip native RGBA generator requires Python Pillow and NumPy (python -m pip install pillow numpy): ${ARMIX_IMERSIP_PNG_DEPS_ERROR}")
+endif()
+execute_process(
+    COMMAND "${Python3_EXECUTABLE}" "${ARMIX_IMERSIP_PNG_GEN}" --out "${ARMIX_IMERSIP_PNG_DIR}"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    RESULT_VARIABLE ARMIX_IMERSIP_PNG_RESULT
+    ERROR_VARIABLE ARMIX_IMERSIP_PNG_ERROR)
+if(NOT ARMIX_IMERSIP_PNG_RESULT EQUAL 0)
+  message(FATAL_ERROR "ImerSip RGBA generation failed: ${ARMIX_IMERSIP_PNG_ERROR}")
+endif()
+set(ARMIX_IMERSIP_ASSET_NAMES
+    room_background control_panel header_overlay
+    line_array_left line_array_right
+    subwoofer_left subwoofer_right
+    front_fill_left front_fill_right
+    side_fill_left side_fill_right
+    slider_track slider_thumb knob_teal knob_master_purple
+    dropdown_background button_normal button_hover button_pressed)
+foreach(name IN LISTS ARMIX_IMERSIP_ASSET_NAMES)
+  list(APPEND ARMIX_IMERSIP_PNG_SOURCES "${ARMIX_IMERSIP_PNG_DIR}/assets/${name}.png")
+endforeach()
 juce_add_binary_data(ARMixAssets SOURCES
     "${ARMIX_APPROVED_GUI_DIR}/index.html" ${ARMIX_APPROVED_GUI_BINARIES}
     ${ARMIX_GUITAR_SKIN_PNGS}
     "${ARMIX_BRAND_DIR}/arsonmix-256.png"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/imersip/vector/imersip_room.svg"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/imersip/vector/imersip_panel.svg"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/imersip/vector/imersip_line_array.svg"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/imersip/vector/imersip_subwoofer.svg"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/imersip/vector/imersip_frontfill.svg")
+    ${ARMIX_IMERSIP_PNG_SOURCES})
 target_include_directories(ARMixConsole PRIVATE "${ARMIX_APPROVED_GUI_DIR}")
 
 target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h engine/builtin_fx/HarmonyDsp.h engine/builtin_fx/HarmonyMusicKey.h engine/builtin_fx/ChannelHarmonyProcessor.h engine/builtin_fx/SonKuSpatialProcessor.h engine/builtin_fx/sonku/SonKuSpatialCore.h engine/builtin_fx/sonku/SonKuMeasuredHrir.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/PreparedNativeMixerSession.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/NativeFxParameterHotkey.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/core/LiveOutputRouteGate.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
