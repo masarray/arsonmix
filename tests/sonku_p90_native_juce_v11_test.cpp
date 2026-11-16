@@ -76,7 +76,13 @@ static juce::MemoryBlock legacy(int version,int oldMode=2){
  return bytes;
 }
 int main(){
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING) && ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+ static_assert(schemaVersion()==12);
+ constexpr int activeVersion=12,activeBytes=67;
+#else
  static_assert(schemaVersion()==11);
+ constexpr int activeVersion=11,activeBytes=63;
+#endif
  auto fx=std::make_unique<SonKuSpatialProcessor>();
  fx->prepareToPlay(48000.,128);
  assert(fx->isReady());
@@ -114,9 +120,9 @@ int main(){
  assert(fx->acceptedSettings().renderMode==9);
  juce::MemoryBlock snapshot;
  fx->getStateInformation(snapshot);
- assert(snapshot.getSize()==63);
+ assert(snapshot.getSize()==static_cast<std::size_t>(activeBytes));
  juce::MemoryInputStream input(snapshot.getData(),snapshot.getSize(),false);
- assert(input.readInt()==0x534f4e4b&&input.readInt()==11);
+ assert(input.readInt()==0x534f4e4b&&input.readInt()==activeVersion);
  auto restored=std::make_unique<SonKuSpatialProcessor>();
  restored->prepareToPlay(44100.,128);
  assert(restored->restoreUnpublishedState(
@@ -195,6 +201,54 @@ int main(){
   assert(p87->acceptedSettings().renderMode==6);
   assert(p87->acceptedSettings().hrtfElevationTrimDegrees==0.f);
  }
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING) && ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+ // Old operator-approved v11 Venue has no voicing: restore exactly neutral.
+ {
+  const auto oldVenue=legacy(11,9);
+  auto v11=std::make_unique<SonKuSpatialProcessor>();
+  v11->prepareToPlay(48000.,128);
+  assert(v11->restoreUnpublishedState(oldVenue.getData(),63));
+  assert(v11->acceptedSettings().renderMode==9);
+  assert(v11->acceptedSettings().sceneVoicing==0);
+ }
+ // P9.8 round-trip and negative validation of native scene identity.
+ {
+  Settings voiced=s;
+  voiced.renderMode=9;voiced.sceneVoicing=1;
+  auto accepted=acceptedSettings(voiced);
+  Settings decodedScene{};
+  assert(decodeSettings(accepted,decodedScene));
+  assert(decodedScene.sceneVoicing==1);
+  for(const int invalid : {-1,4,127}){
+   accepted.getDynamicObject()->setProperty("sceneVoicing",invalid);
+   assert(!decodeSettings(accepted,decodedScene));
+  }
+  accepted.getDynamicObject()->setProperty("sceneVoicing",juce::String("1"));
+  assert(!decodeSettings(accepted,decodedScene));
+  accepted=acceptedSettings(voiced);
+  auto v12=std::make_unique<SonKuSpatialProcessor>();
+  v12->prepareToPlay(48000.,128);
+  assert(v12->queueSettings(voiced,977));
+  v12->consumeRealtimeEdits();
+  SonKuSpatialProcessor::Completion done{};
+  assert(v12->pollCompletion(done)&&done.applied&&done.requestId==977);
+  assert(done.settings.sceneVoicing==1);
+  juce::MemoryBlock saved;
+  v12->getStateInformation(saved);
+  assert(saved.getSize()==67);
+  auto reopened=std::make_unique<SonKuSpatialProcessor>();
+  reopened->prepareToPlay(44100.,128);
+  assert(reopened->restoreUnpublishedState(saved.getData(),67));
+  assert(reopened->acceptedSettings().sceneVoicing==1);
+  assert(reopened->acceptedSettings().renderMode==9);
+  // v12 corrupt ID cannot bypass valid() or restore a partial blob.
+  auto invalidData=saved;
+  auto* bytes=static_cast<std::uint8_t*>(invalidData.getData());
+  bytes[63]=0xff;bytes[64]=bytes[65]=bytes[66]=0;
+  assert(!reopened->restoreUnpublishedState(invalidData.getData(),67));
+  assert(!reopened->restoreUnpublishedState(saved.getData(),66));
+ }
+#endif
  // Existing v10 P8.9 session must remain byte-compatible and mode 8.
  {
   const auto v10=legacy(10,8);
@@ -235,17 +289,17 @@ int main(){
  assert(!downgrade->acceptedSettings().musicCompatibleLowFrequency);
  auto broken=std::make_unique<SonKuSpatialProcessor>();
  broken->prepareToPlay(48000.,128);
- assert(!broken->restoreUnpublishedState(snapshot.getData(),62));
+ assert(!broken->restoreUnpublishedState(snapshot.getData(),activeBytes-1));
  juce::MemoryBlock corrupt(snapshot);
  auto* ptr=static_cast<std::uint8_t*>(corrupt.getData());
  ptr[54]=0xff; // signed JUCE bool, 0xff must never become true
- assert(!broken->restoreUnpublishedState(corrupt.getData(),63));
+ assert(!broken->restoreUnpublishedState(corrupt.getData(),activeBytes));
  corrupt=snapshot;ptr=static_cast<std::uint8_t*>(corrupt.getData());
  ptr[50]=2;ptr[51]=ptr[52]=ptr[53]=0; // old physical mode in v10 forbidden
- assert(!broken->restoreUnpublishedState(corrupt.getData(),63));
+ assert(!broken->restoreUnpublishedState(corrupt.getData(),activeBytes));
  restored->sealForRealtime();
- assert(!restored->restoreUnpublishedState(snapshot.getData(),63));
+ assert(!restored->restoreUnpublishedState(snapshot.getData(),activeBytes));
  std::printf("PASS P90 JUCE v11: audio ACK fade, single native graph A/B, "
-   "safe v1-v10 migration, v11 63-byte state and device reopen; "
+   "safe v1-v11 migration, opt-in v12 state and device reopen; "
    "P90_vs_P82_RMS_dB=%.3f; ASIO/headphone NOT PROVEN\n",relativeDb);
 }

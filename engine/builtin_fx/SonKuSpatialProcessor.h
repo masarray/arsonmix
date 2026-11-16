@@ -182,7 +182,11 @@ public:
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING) && ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+        out.writeInt(12); // P9.8 append-only typed voicing, 67 bytes
+#else
         out.writeInt(11); // unchanged 63-byte state; P9 mode 9
+#endif
 #else
         out.writeInt(10); // 63 bytes v9 layout, opt-in mode 8
 #endif
@@ -232,13 +236,20 @@ public:
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
         out.writeFloat(accepted_.hrtfElevationTrimDegrees);
 #endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING) && ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+        out.writeInt(accepted_.sceneVoicing);
+#endif
     }
     bool restoreUnpublishedState(const void* data,int size) {
         if(published_||!data||
 #if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING) && ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+           (size!=30&&size!=46&&size!=50&&size!=59&&size!=63&&size!=67)||
+#else
            (size!=30&&size!=46&&size!=50&&size!=59&&size!=63)||
+#endif
 #else
            (size!=30&&size!=46&&size!=50&&size!=59)||
 #endif
@@ -271,6 +282,9 @@ public:
              &&version!=10
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT
              &&version!=11
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING) && ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+             &&version!=12
+#endif
 #endif
 #endif
 #endif
@@ -299,6 +313,9 @@ public:
             ||(version==10&&size!=63)
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT
             ||(version==11&&size!=63)
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING) && ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+            ||(version==12&&size!=67)
+#endif
 #endif
 #endif
 #endif
@@ -397,6 +414,10 @@ public:
 #endif
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT
         if(version>=9)next.hrtfElevationTrimDegrees=in.readFloat();
+#endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING) && ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+        if(version>=12)next.sceneVoicing=in.readInt();
+        // Old v11 sessions restore neutral (exact P9.7) until preset chosen.
 #endif
         // v1 OFF, v2 original scene; experimental v3 includes direct
         // elevation, and is rejected by ordinary public v2 builds.

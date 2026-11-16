@@ -43,22 +43,24 @@ const roomMaxDistance=[10,3.1,6.7,10];
 const factoryPresets=Object.freeze({
  music:Object.freeze({moving:true,clockwise:true,startAzimuthDegrees:0,
   revolutionSeconds:6.5,stereoSpreadDegrees:82,spatialMix:1,outputTrim:1.9,
-  spacePreset:3,sourceDistanceMeters:3.1,roomAmount:1,ambience:.62}),
+  spacePreset:3,sourceDistanceMeters:3.1,roomAmount:1,ambience:.62,sceneVoicing:1}),
  studio:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
   revolutionSeconds:12,stereoSpreadDegrees:76,spatialMix:1,outputTrim:1.65,
-  spacePreset:3,sourceDistanceMeters:4.8,roomAmount:.94,ambience:.72}),
+  spacePreset:3,sourceDistanceMeters:4.8,roomAmount:.94,ambience:.72,sceneVoicing:2}),
  wide:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
   revolutionSeconds:12,stereoSpreadDegrees:98,spatialMix:1,outputTrim:1.7,
-  spacePreset:3,sourceDistanceMeters:7.5,roomAmount:1,ambience:.84}),
+  spacePreset:3,sourceDistanceMeters:7.5,roomAmount:1,ambience:.84,sceneVoicing:3}),
  deep:Object.freeze({moving:false,clockwise:true,startAzimuthDegrees:0,
   revolutionSeconds:12,stereoSpreadDegrees:106,spatialMix:1,outputTrim:1.8,
-  spacePreset:3,sourceDistanceMeters:10,roomAmount:1,ambience:1}),
+  spacePreset:3,sourceDistanceMeters:10,roomAmount:1,ambience:1,sceneVoicing:0}),
  orbit:Object.freeze({moving:true,clockwise:true,startAzimuthDegrees:0,
   revolutionSeconds:8.5,stereoSpreadDegrees:82,spatialMix:1,outputTrim:1.75,
-  spacePreset:3,sourceDistanceMeters:6.5,roomAmount:1,ambience:.83})
+  spacePreset:3,sourceDistanceMeters:6.5,roomAmount:1,ambience:.83,sceneVoicing:0})
 });
 const matchFactoryPreset=s=>Object.entries(factoryPresets).find(([id,p])=>
-  s.renderMode===9 && Object.keys(p).every(k=>Math.abs(Number(s[k])-Number(p[k]))<.00002))?.[0]||"CUSTOM";
+  s.renderMode===9 && Object.keys(p).every(k=>
+   (k==="sceneVoicing" && s[k]===undefined) ||
+   Math.abs(Number(s[k])-Number(p[k]))<.00002))?.[0]||"CUSTOM";
 const valid=s=>s && Number.isFinite(s.startAzimuthDegrees) &&
  Math.abs(s.startAzimuthDegrees)<=360 &&
  Number.isFinite(s.revolutionSeconds)&&s.revolutionSeconds>=.5&&s.revolutionSeconds<=120 &&
@@ -71,6 +73,8 @@ const valid=s=>s && Number.isFinite(s.startAzimuthDegrees) &&
  s.sourceDistanceMeters<=roomMaxDistance[s.spacePreset]+.0001 &&
  Number.isFinite(s.roomAmount) && s.roomAmount>=0 && s.roomAmount<=1 &&
  Number.isFinite(s.ambience) && s.ambience>=0 && s.ambience<=1 &&
+ (s.sceneVoicing===undefined ||
+  (Number.isInteger(s.sceneVoicing) && s.sceneVoicing>=0 && s.sceneVoicing<=3)) &&
  (s.directElevationDegrees===undefined || (
    Number.isFinite(s.directElevationDegrees) &&
    s.directElevationDegrees>= -40 && s.directElevationDegrees<=60 &&
@@ -232,7 +236,7 @@ const depthLayers={far:$("skFarSources"),near:$("skNearSources")};
 const mount=()=>{if(!root.isConnected)document.body.append(root)};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
- xyzCapable=false,p83Capable=false,p84Capable=false,p85Capable=false,p86Capable=false,p87Capable=false,p88Capable=false,p89Capable=false,p90Capable=false,p91p92Capable=false,p94Capable=false,p95Capable=false,p96Capable=false,p97Capable=false,musicSafeStereo=false,p8TransparentBass=false,p82MultibandRoom=false,
+ xyzCapable=false,p83Capable=false,p84Capable=false,p85Capable=false,p86Capable=false,p87Capable=false,p88Capable=false,p89Capable=false,p90Capable=false,p91p92Capable=false,p94Capable=false,p95Capable=false,p96Capable=false,p97Capable=false,p98Capable=false,musicSafeStereo=false,p8TransparentBass=false,p82MultibandRoom=false,
  readId="",readSentAt=0,seq=1,clock=null,frame=null,observed=0,observedAt=0,
  drag=null,dialDrag=null,rangeEdits=new Set(),gestureStart=new Map(),
  visualPhase=0,visualAt=0,liveTimer=null,lastLiveAt=0;
@@ -434,7 +438,9 @@ function render(){
   if(!rangeEdits.has("skHrtfAlign"))align.value=String(s.hrtfElevationTrimDegrees);
   $("skHrtfAlignValue").textContent=(s.hrtfElevationTrimDegrees>=0?"+":"")+s.hrtfElevationTrimDegrees.toFixed(1)+"°";
  }
- root.querySelector(".sk-stage-caption").textContent=p97Capable&&s.renderMode===9?
+ root.querySelector(".sk-stage-caption").textContent=p98Capable&&s.renderMode===9?
+    "SIGNATURE / CINEMA / STUDIO VOICING · VENUE P9.7 PRESERVED":
+    p97Capable&&s.renderMode===9?
     "IMMERSIVE STAGE · BASS IMPACT · CENTER PRESENCE · EARLY AIR":
     p96Capable&&s.renderMode===9?
     "IMMERSIVE STAGE · REINFORCED BASS + AIR · CINEMA / VENUE":
@@ -489,7 +495,8 @@ function render(){
  // redrawn at 60 Hz. The native audio callback remains the time authority.
  drawSpeakers();
  $("skMode").textContent=native()?(context()?
-  (p97Capable&&s.renderMode===9?"NATIVE IMMERSIVE · STAGE IMPACT + EXTERNAL AIR":
+  (p98Capable&&s.renderMode===9?"NATIVE IMMERSIVE · SCENE VOICING · VENUE LOCKED":
+   p97Capable&&s.renderMode===9?"NATIVE IMMERSIVE · STAGE IMPACT + EXTERNAL AIR":
    p96Capable&&s.renderMode===9?"NATIVE IMMERSIVE · STAGE BASS + AIR":
    p95Capable&&s.renderMode===9?"NATIVE IMMERSIVE · MUSIC PRESENCE · WORLD BASS":
    p94Capable&&s.renderMode===9?"NATIVE IMMERSIVE SPATIAL · WORLD BASS":
@@ -646,7 +653,7 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
    String(r.deviceEpoch)!==String(c.deviceEpoch)||
    String(r.graphRevision)!==String(c.graphRevision))return;
  const measured=(r.schemaVersion===3 || r.schemaVersion===4 ||
-   r.schemaVersion===5 || r.schemaVersion===6 || r.schemaVersion===7 || r.schemaVersion===8 || r.schemaVersion===9 || r.schemaVersion===10 || r.schemaVersion===11) &&
+   r.schemaVersion===5 || r.schemaVersion===6 || r.schemaVersion===7 || r.schemaVersion===8 || r.schemaVersion===9 || r.schemaVersion===10 || r.schemaVersion===11 || r.schemaVersion===12) &&
    Number.isFinite(r.settings?.directElevationDegrees);
  if(r.schemaVersion!==2&&!measured)return;
  const incoming=normalizeSettings(r.settings);
@@ -658,7 +665,7 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
    Number.isInteger(incoming.renderMode) &&
    typeof incoming.musicCompatibleLowFrequency==="boolean" &&
    Number.isFinite(incoming.headYawDegrees);
- p90Capable=r.schemaVersion===11 && r.p90TrueExternalSpeaker===true &&
+ p90Capable=(r.schemaVersion===11||r.schemaVersion===12) && r.p90TrueExternalSpeaker===true &&
     Number.isFinite(incoming.hrtfElevationTrimDegrees);
  // Separate from schema v11: old P9.0 DSP must not receive the P9.1/9.2 label.
  p91p92Capable=p90Capable && r.p91p92MusicBassFoundation===true;
@@ -668,6 +675,9 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  p95Capable=p91p92Capable && r.p95MusicalPresence===true;
  p96Capable=p95Capable && r.p96DistanceReinforcement===true;
  p97Capable=p96Capable && r.p97StageImpact===true;
+ p98Capable=p97Capable && r.schemaVersion===12 &&
+   r.p98SceneVoicing===true && Number.isInteger(incoming.sceneVoicing) &&
+   incoming.sceneVoicing>=0 && incoming.sceneVoicing<=3;
  p89Capable=(r.schemaVersion===10||p90Capable) && r.p89StereoRoomDepth===true &&
     Number.isFinite(incoming.hrtfElevationTrimDegrees);
   p88Capable=(r.schemaVersion===9||p89Capable) && r.p88PerceptualAlignment===true &&
@@ -771,9 +781,12 @@ $("skPreset").addEventListener("change",()=>{
  }
  const scene=fitElevation({...draft,...preset,renderMode:9,
   musicCompatibleLowFrequency:false});
+ // P9.7/v11 native MUST NOT accept speculative v12 voicing fields.
+ // Venue's acoustic numbers and stage ID=0 are identical to the checkpoint.
+ if(!p98Capable)delete scene.sceneVoicing;
  if(!send(scene))render();
 });
-$("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapable=false;p85Capable=false;p86Capable=false;p87Capable=false;p88Capable=false;p89Capable=false;p90Capable=false;p91p92Capable=false;p94Capable=false;p95Capable=false;p96Capable=false;p97Capable=false;musicSafeStereo=false;p8TransparentBass=false;p82MultibandRoom=false;
+$("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapable=false;p85Capable=false;p86Capable=false;p87Capable=false;p88Capable=false;p89Capable=false;p90Capable=false;p91p92Capable=false;p94Capable=false;p95Capable=false;p96Capable=false;p97Capable=false;p98Capable=false;musicSafeStereo=false;p8TransparentBass=false;p82MultibandRoom=false;
  cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
  drag=null;windowGesture=null;rangeEdits.clear();gestureStart.clear();lastLiveAt=0;
  if(clock!==null){clearInterval(clock);clock=null;}
@@ -972,7 +985,7 @@ const api={
   drag=null;rangeEdits.clear();gestureStart.clear();
   accepted=defaults();draft=defaults();xyzCapable=false;
   p83Capable=p84Capable=p85Capable=p86Capable=p87Capable=p88Capable=
-   p89Capable=p90Capable=p91p92Capable=p94Capable=p95Capable=p96Capable=p97Capable=false;
+   p89Capable=p90Capable=p91p92Capable=p94Capable=p95Capable=p96Capable=p97Capable=p98Capable=false;
   musicSafeStereo=p8TransparentBass=p82MultibandRoom=false;
   current={track,slot,instanceId:null};
   const s=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);

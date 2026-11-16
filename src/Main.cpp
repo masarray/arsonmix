@@ -3135,6 +3135,9 @@ private:
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT) && ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT
             reply->setProperty("p97StageImpact",true);
 #endif
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING) && ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+            reply->setProperty("p98SceneVoicing",true);
+#endif
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH
             // Branch-only measured-engine A/B. A previous v11 binary cannot
             // advertise this front/rear perceptual depth research capability.

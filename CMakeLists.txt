@@ -124,6 +124,13 @@ if(ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT AND
    NOT ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT)
   message(FATAL_ERROR "P9.7 requires the P9.6 sound-reinforced world-speaker engine")
 endif()
+# Typed native v12 voicing of Signature/Cinema/Studio: P9.7 Venue remains immutable.
+option(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+       "Private P9.8 scene bass/voice/air voicing; preserve approved P9.7 Venue" OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT)
+  message(FATAL_ERROR "P9.8 requires P9.7 approved stage; public default OFF")
+endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -348,7 +355,9 @@ target_compile_definitions(ARMixConsole PRIVATE
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT}>:SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT}>:ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT}>:SONKU_P97_STAGE_IMPACT_RESEARCH=1>
-    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT}>:ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT=1>)
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT}>:ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:SONKU_P98_SCENE_VOICING_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING=1>)
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
   # Never link Windows loader or sound APIs into macOS/Linux builds.
@@ -884,7 +893,8 @@ if(BUILD_TESTING)
                                 SONKU_P94_FRONT_BACK_DEPTH_RESEARCH=1
                                 SONKU_P95_MUSICAL_PRESENCE_RESEARCH=1
                                 $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT}>:SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH=1>
-                                $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT}>:SONKU_P97_STAGE_IMPACT_RESEARCH=1>)
+                                $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT}>:SONKU_P97_STAGE_IMPACT_RESEARCH=1>
+                                $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:SONKU_P98_SCENE_VOICING_RESEARCH=1>)
                             add_test(NAME NativeSonKuP95MusicPresenceVenue
                                 COMMAND ARMixSonKuP95MusicTests)
                           endif()
@@ -901,6 +911,13 @@ if(BUILD_TESTING)
                             target_compile_features(ARMixSonKuP97StageTests PRIVATE cxx_std_20)
                             add_test(NAME NativeSonKuP97BassVocalExternalAirSafety
                                 COMMAND ARMixSonKuP97StageTests)
+                          endif()
+                          if(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING)
+                            add_executable(ARMixSonKuP98VoicingTests
+                                tests/sonku_p98_scene_voicing_source_test.cpp)
+                            target_compile_features(ARMixSonKuP98VoicingTests PRIVATE cxx_std_20)
+                            add_test(NAME NativeSonKuP98SceneVoicingVenueLock
+                                COMMAND ARMixSonKuP98VoicingTests)
                           endif()
                           juce_add_console_app(ARMixSonKuP90NativeTests
                               PRODUCT_NAME "ArSonMix SonKu P90 JUCE v11 State Tests")
@@ -919,6 +936,8 @@ if(BUILD_TESTING)
                               ARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT=1
                               ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT=1
                               ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT=1
+                              $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING=1>
+                              $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING}>:SONKU_P98_SCENE_VOICING_RESEARCH=1>
                               SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
                               SONKU_P71_DIRECT_XYZ_RESEARCH=1
                               SONKU_P72_NATIVE_XYZ_RT=1

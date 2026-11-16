@@ -8,7 +8,9 @@
 #include <memory>
 namespace armix::builtin_fx::sonku_bridge {
 inline constexpr int schemaVersion() noexcept {
-#if defined(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING) && ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+    return 12;
+#elif defined(ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT
     return 11;
 #elif defined(ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT
     return 10;
@@ -63,6 +65,16 @@ inline bool decodeSettings(const juce::var& values,armix::sonku::Settings& out) 
     if(!number(values,"sourceDistanceMeters",proposed.sourceDistanceMeters,false)||
        !number(values,"roomAmount",proposed.roomAmount,false)||
        !number(values,"ambience",proposed.ambience,false))return false;
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING) && ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+    const auto voicing=values.getProperty("sceneVoicing",{});
+    if(!voicing.isVoid()){
+        if(!voicing.isInt())return false;
+        proposed.sceneVoicing=static_cast<int>(voicing);
+    }
+#else
+    // Do not silently ACK an unsupported voicing to an older v11 engine.
+    if(!values.getProperty("sceneVoicing",{}).isVoid())return false;
+#endif
 #if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
     // Legacy clients legitimately omit elevation; default exactly zero.
     if(!number(values,"directElevationDegrees",
@@ -143,6 +155,9 @@ inline juce::var acceptedSettings(const armix::sonku::Settings& s) {
     values->setProperty("sourceDistanceMeters",s.sourceDistanceMeters);
     values->setProperty("roomAmount",s.roomAmount);
     values->setProperty("ambience",s.ambience);
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING) && ARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING
+    values->setProperty("sceneVoicing",s.sceneVoicing);
+#endif
 #if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
     values->setProperty("directElevationDegrees",s.directElevationDegrees);
 #endif
