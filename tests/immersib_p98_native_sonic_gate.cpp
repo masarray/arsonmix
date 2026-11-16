@@ -70,7 +70,7 @@ static Result render(int rate,const Settings& s,bool phaseReverse=false){
         const double meanMakeup=diag.makeupGainSum/diag.samples;
         const double limitedPct=100.*diag.limitedSamples/diag.samples;
         std::fprintf(stderr,
-            "IMMERSIB_DYNAMICS,rate=%d,makeup=%.5f,limited=%.2f%%,minLimiter=%.5f,meanReduction=%.5f\\n",
+            "IMMERSIB_DYNAMICS,rate=%d,makeup=%.5f,limited=%.2f%%,minLimiter=%.5f,meanReduction=%.5f\n",
             rate,meanMakeup,limitedPct,double(diag.minimumLimiterGain),
             diag.limiterReductionSum/diag.samples);
         // Real PCM adaptive makeup bound, NOT a claim of perceptual no-pumping.
@@ -138,7 +138,7 @@ int main(){
     assert(ownerPreset.ambience==.60f && ownerPreset.spatialMix==1.f);
     assert(ownerPreset.headYawDegrees==0.f && ownerPreset.hrtfElevationTrimDegrees==0.f);
     assert(ownerPreset.sceneVoicing==4);
-    assert(std::abs(ownerPreset.outputTrim-imersipP92DbToLinear(2.5f))<1.e-6f);
+    assert(std::abs(ownerPreset.outputTrim-armix::builtin_fx::imersipP92DbToLinear(2.5f))<1.e-6f);
     assert(armix::builtin_fx::validImerSipP92Scene(ownerPreset));
     // Nearfield source projection now supports 1m in the physical XYZ path.
     armix::sonku::xyz::Placement projected{};
