@@ -1053,7 +1053,9 @@ public:
                 }
 #endif
 #if defined(SONKU_P97_STAGE_IMPACT_RESEARCH) && SONKU_P97_STAGE_IMPACT_RESEARCH
-                if(p90World){
+                if(p90World && settings_.spatialMix>0.f){
+                    // The finished ear tonal block MUST NOT touch
+                    // 0% MIX (native dry/bypass) even while ROOM remains ON.
                     const auto finished=p97Stage_.finish(outL,outR);
                     outL=finished.left;outR=finished.right;
                 }

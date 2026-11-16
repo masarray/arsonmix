@@ -13,7 +13,7 @@
 #include <vector>
 using namespace armix::sonku;
 
-static void measure(int rate,int angle,int room,float meters) {
+static void measure(int rate,int angle,int room,float meters,float mix=1.f) {
     auto core=std::make_unique<SonKuSpatialCore>();
     assert(core->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch));
     Settings s{};
@@ -21,7 +21,7 @@ static void measure(int rate,int angle,int room,float meters) {
     s.moving=false;
     s.startAzimuthDegrees=static_cast<float>(angle);
     s.stereoSpreadDegrees=82.f;
-    s.spatialMix=1.f;
+    s.spatialMix=mix;
     s.outputTrim=1.2f;
     s.spacePreset=room;
     s.sourceDistanceMeters=meters;
@@ -62,14 +62,15 @@ static void measure(int rate,int angle,int room,float meters) {
         amps[b]=2.*std::hypot(sinSum,cosSum)/(n-n/2);
         assert(std::isfinite(amps[b]) && amps[b]>0.);
     }
-    std::printf("P97_FULL,%d,%d,%d,%.1f,%.9f,%.9f,%.9f,%016llx\n",
-                rate,angle,room,meters,amps[0],amps[1],amps[2],
+    std::printf("P97_FULL,%d,%d,%d,%.1f,%.1f,%.9f,%.9f,%.9f,%016llx\n",
+                rate,angle,room,meters,mix,amps[0],amps[1],amps[2],
                 static_cast<unsigned long long>(hash));
 }
 int main(){
     for(int rate:{44100,48000})
         for(int angle:{0,180}){
             measure(rate,angle,0,10.f); // ROOM OFF exact hash parity
+            measure(rate,angle,3,10.f,0.f); // 0% MIX exact dry bypass
             measure(rate,angle,3,2.f);  // <=2m exact hash parity
             measure(rate,angle,3,3.1f); // Signature: restrained stage impact
             measure(rate,angle,3,10.f); // Venue: full stage impact

@@ -8,11 +8,11 @@ def parse(path):
     for line in Path(path).read_text().splitlines():
         if not line.startswith("P97_FULL,"): continue
         p=line.split(",")
-        assert len(p)==9, line
-        k=(int(p[1]),int(p[2]),int(p[3]),float(p[4]))
+        assert len(p)==10, line
+        k=(int(p[1]),int(p[2]),int(p[3]),float(p[4]),float(p[5]))
         assert k not in rows
-        rows[k]=(tuple(float(v) for v in p[5:8]),p[8])
-    assert len(rows)==16,(path,len(rows))
+        rows[k]=(tuple(float(v) for v in p[6:9]),p[9])
+    assert len(rows)==20,(path,len(rows))
     return rows
 
 def main():
@@ -21,8 +21,8 @@ def main():
     assert base.keys()==new.keys()
     for k,(old,old_hash) in base.items():
         current,current_hash=new[k]
-        rate,az,room,distance=k
-        if room==0 or distance<=2.:
+        rate,az,room,distance,mix=k
+        if room==0 or distance<=2. or mix==0.:
             assert old_hash==current_hash, f"P96_CHECKPOINT_BIT_EXACT_FAILED {k}"
         else:
             ratios=[b/a for a,b in zip(old,current)]
