@@ -55,7 +55,9 @@
       "lateRoom": 0.33,
       "spatialMix": 1,
       "outputTrimLinear": 1,
-      "moving": false
+      "moving": false,
+      "internalRegressionOnly": true,
+      "userVisiblePreset": false
     },
     "imersipNewInsertDefault": {
       "presetId": 2,
@@ -71,11 +73,12 @@
       "newInsertsOnly": true
     },
     "imersipAuditionPresetIds": {
-      "2": "Live Concert - enhanced new-insert default",
-      "3": "Warm Auditorium - Chamber 14.4m",
-      "4": "Grand Arena - larger-stage/distance",
-      "5": "Your 150-degree Scene - exact screenshot values",
-      "6": "P9.2 Neutral A/B - original reference unchanged"
+      "2": "Live Concert - owner's positive baseline, unchanged",
+      "3": "Royal Concert Hall - closer direct bass, strong large-room returns",
+      "4": "Arena Thunder - bold stage, maximum late-room audition",
+      "5": "Front Row Power - screenshot-derived close live scene",
+      "6": "Symphonic Palace - layered hall, more direct clarity",
+      "7": "Velvet Cinema - close chamber saturation"
     },
     "ownerScreenshotObservation": {
       "speakerSpreadDeg": 150,

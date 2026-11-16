@@ -89,7 +89,14 @@ static void verify(int rate) {
     const double original=energy(raw);
     const double neutralRms=std::sqrt(energy(plain)/original);
     std::printf("IMERSIP_NEUTRAL,%d,rmsRatio=%.4f\n",rate,neutralRms);
-    for(int id=2;id<=6;++id) {
+    const auto preserved=imersipP92Factory(2);
+    assert(std::abs(preserved.stereoSpreadDegrees-150.f)<1.e-4f);
+    assert(std::abs(preserved.sourceDistanceMeters-2.2f)<1.e-4f);
+    assert(std::abs(preserved.ambience-.91f)<1.e-4f);
+    assert(std::abs(preserved.outputTrim-
+        armix::builtin_fx::imersipP92DbToLinear(4.8f))<1.e-4f);
+    for(const auto& spec:armix::builtin_fx::imersipP92Presets) {
+        const int id=spec.id;
         const auto s=imersipP92Factory(id);
         assert(s.renderMode==9&&!s.musicCompatibleLowFrequency&&!s.moving);
         assert(s.spacePreset>=1 && s.spacePreset<=3);
@@ -115,7 +122,7 @@ static void verify(int rate) {
         assert(std::isfinite(ratio)&&std::isfinite(roomDelta));
         assert(side>1.e-5);
         assert(antiRatio>.08 && antiSide>.08); // catastrophic null veto
-        if(id>=2 && id<=4){
+        if(id>=2 && id<=7){
             assert(s.sourceDistanceMeters>1.6f);
             assert(s.outputTrim>1.f);
             // A richer room must produce an actual, measurable wet PCM
@@ -125,18 +132,22 @@ static void verify(int rate) {
             // neutral. Mastered material is handled by the linked guard.
             assert(ratio>neutralRms*1.05);
         }
+        if(id!=2){
+            // New named scenes may not collapse into identical DSP
+            // settings or a weaker version of the owner's Live Concert.
+            assert(nullDelta(heard,render(rate,preserved,raw))>.001);
+        }
         if(id==5){
             assert(std::abs(s.stereoSpreadDegrees-150.f)<1.e-4f);
             assert(std::abs(s.sourceDistanceMeters-1.6f)<1.e-4f);
-            assert(std::abs(s.ambience-.91f)<1.e-4f);
+            assert(std::abs(s.ambience-.97f)<1.e-4f);
         }
-        if(id==6){
-            assert(nullDelta(heard,plain)<1.e-12);
-        }
+        if(id==7)assert(s.spacePreset==2);
+        assert(s.outputTrim<=armix::builtin_fx::imersipP92DbToLinear(6.f));
     }
 }
 int main(){
     verify(44100);
     verify(48000);
-    std::puts("PASS IMERSIP PRESET MUSIC: PCM stereo/phase, room wet, new factory gain and neutral A/B");
+    std::puts("PASS IMERSIP RICH SCENES: six live/room presets, phase, wet/dry, internal neutral-only guard");
 }

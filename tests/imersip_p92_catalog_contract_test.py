@@ -20,7 +20,17 @@ class ImerSipP92Contract(unittest.TestCase):
                       "s.outputTrim=1.f"):
             self.assertIn(value,scene)
         self.assertIn("SonKuSpatialProcessor(imersipP92Factory(2))",p)
-        self.assertIn("case 6: // Original P9.2 neutral",scene)
+        self.assertIn("inline constexpr std::array<ImerSipP92Preset,6>",scene)
+        self.assertIn('"Royal Concert Hall"',scene)
+        self.assertIn('"Arena Thunder"',scene)
+        self.assertIn('"Front Row Power"',scene)
+        self.assertIn('"Symphonic Palace"',scene)
+        self.assertIn('"Velvet Cinema"',scene)
+        ui=source("engine/builtin_fx/ImerSipP92Editor.h")
+        self.assertIn("for(const auto& scene:imersipP92Presets)",ui)
+        self.assertNotIn("P9.2 Neutral A/B",ui)
+        self.assertNotIn("Warm Auditorium",ui)
+        self.assertNotIn("Grand Arena",ui)
         self.assertIn("prepareNativeBuiltInFx<ImerSipP92Processor>",catalog)
         self.assertIn("ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT",catalog)
     def test_legacy_and_host_power_are_realtime_owned(self):

@@ -15,14 +15,11 @@ public:
         setSize(788,416);
         preset_.setComponentID("imersip.preset");
         preset_.addItem("Custom",1);
-        preset_.addItem("Live Concert",2);
-        preset_.addItem("Warm Auditorium",3);
-        preset_.addItem("Grand Arena",4);
-        preset_.addItem("Your 150° Scene",5);
-        preset_.addItem("P9.2 Neutral A/B",6);
+        for(const auto& scene:imersipP92Presets)
+            preset_.addItem(juce::String(scene.label),scene.id);
         preset_.onChange=[this]{
             const int id=preset_.getSelectedId();
-            if(id<2||id>6)return;
+            if(!imersipP92PresetById(id))return;
             sync(imersipP92Factory(id));
             submit();
         };
@@ -180,7 +177,8 @@ private:
         for(int i=0;i<8;++i)knobs_[static_cast<std::size_t>(i)].setValue(
             vals[i],juce::dontSendNotification);
         int preset=1;
-        for(int id=2;id<=6;++id){
+        for(const auto& factory:imersipP92Presets){
+            const int id=factory.id;
             const auto candidate=imersipP92Factory(id);
             if(s.spacePreset==candidate.spacePreset &&
                std::abs(s.stereoSpreadDegrees-candidate.stereoSpreadDegrees)<.01f &&

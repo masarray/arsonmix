@@ -2,7 +2,7 @@
 
 **User reference:** 8D-SonKu P9.1–P9.2 is reported to sound external and alive on the user's real headphones. Do not replace its acoustic renderer with the older ImerSip P8.2/P8.4 bespoke dry-MID/room-enhancer path.
 
-**New insert audition default** (after owner headphone feedback): `Live Concert`, 150°/2.2 m/Large/Early 100%/Late 91%/+4.8 dB. The original 82°/1.6 m/78%/33%/0 dB reference stays available as `P9.2 Neutral A/B`. Screenshot-match 150°/1.6 m/100%/91%/+4.1 dB is a separate `Your 150° Scene` preset. This is preset-only product tuning; **not** a change to the P9.2 DSP, and neither enhanced gain nor acoustic realism is guaranteed for full-scale mastered material.
+**New insert audition default** (after owner headphone feedback): `Live Concert`, 150°/2.2 m/Large/Early 100%/Late 91%/+4.8 dB. The original 82°/1.6 m/78%/33%/0 dB reference remains ONLY as an internal PCM regression reference, not in the preset picker. Owner-visible presets now include Live Concert, Royal Concert Hall, Arena Thunder, Front Row Power, Symphonic Palace, and Velvet Cinema. The original screenshot 150°/1.6 m/100%/91%/+4.1 dB remains documented; Front Row Power develops it into a richer audition scene. This is preset-only product tuning; **not** a change to the P9.2 DSP, and neither enhanced gain nor acoustic realism is guaranteed for full-scale mastered material.
 
 **Canonical ownership and CI classification:** [SPATIAL_AUDIO_AUTHORITY.md](SPATIAL_AUDIO_AUTHORITY.md) and [machine-readable ledger](../config/spatial_audio_authority.json). The ImerSip factory scene is **not** the operator's louder/roomier #720 headphone-test scene.
 

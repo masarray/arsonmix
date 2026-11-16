@@ -199,9 +199,16 @@ int main() {
     assert(power && !power->isEnabled());
     auto* selector=dynamic_cast<juce::ComboBox*>(
         editor->findChildWithID("imersip.preset"));
-    assert(selector&&selector->getNumItems()==6);
+    assert(selector&&selector->getNumItems()==7); // Custom + six strong scenes
     assert(selector->getSelectedId()==2);
-    // User can recall the exact screenshot and undo back to neutral.
+    for(int i=0;i<selector->getNumItems();++i){
+        const auto name=selector->getItemText(i);
+        assert(!name.containsIgnoreCase("neutral"));
+        assert(!name.containsIgnoreCase("a/b"));
+    }
+    assert(armix::builtin_fx::imersipP92PresetById(6)!=nullptr);
+    assert(armix::builtin_fx::imersipP92PresetById(8)==nullptr);
+    // Front Row Power must be a real applied audio edit, not UI illusion.
     selector->setSelectedId(5,juce::sendNotificationSync);
     juce::MidiBuffer editMidi;
     juce::AudioBuffer<float> editPcm(2,128);
@@ -213,7 +220,9 @@ int main() {
            <.001f);
     assert(std::abs(editorFx->acceptedSettings().sourceDistanceMeters-1.6f)
            <.001f);
-    assert(std::abs(editorFx->acceptedSettings().ambience-.91f)<.001f);
+    assert(std::abs(editorFx->acceptedSettings().ambience-.97f)<.001f);
+    assert(std::abs(editorFx->acceptedSettings().outputTrim-
+        armix::builtin_fx::imersipP92DbToLinear(5.2f))<.001f);
     auto* actualEditor=dynamic_cast<armix::builtin_fx::ImerSipP92Editor*>(
         editor.get());
     assert(actualEditor);

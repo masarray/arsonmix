@@ -79,9 +79,10 @@ class SpatialAuthorityContract(unittest.TestCase):
         self.assertEqual(candidate["presetId"],2)
         self.assertGreater(candidate["distanceMeters"],1.6)
         self.assertGreater(candidate["outputGainDb"],screenshot["outputGainDb"])
-        self.assertIn("s.roomAmount=1.f",scene)
-        self.assertIn("s.ambience=.91f",scene)
-        self.assertIn("s.stereoSpreadDegrees=150.f",scene)
+        self.assertIn("150.f,2.2f,1.f,.91f,4.8f",scene)
+        self.assertIn('"Royal Concert Hall"',scene)
+        self.assertNotIn("P9.2 Neutral A/B",source(
+            "engine/builtin_fx/ImerSipP92Editor.h"))
         self.assertIn("s.roomAmount=.78f",scene)
         self.assertIn("s.ambience=.33f",scene)
         self.assertIn("s.outputTrim=1.f",scene)

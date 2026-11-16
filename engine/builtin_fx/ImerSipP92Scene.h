@@ -2,6 +2,7 @@
 #pragma once
 #include "sonku/SonKuSpatialCore.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 // Thin ImerSip *product* scene, NOT another binaural DSP. Every PCM sample
@@ -35,48 +36,42 @@ inline bool validImerSipP92Scene(const armix::sonku::Settings& s) noexcept {
         s.startAzimuthDegrees==0.f &&
         s.sourceDistanceMeters<=imersipP92MaxDistance(s.spacePreset);
 }
-// Product presets are *scenes* of the unchanged SonKu P9.2 core.
-// The original P9.2 neutral baseline is always accessible (id=6), so
-// loudness-enhanced concert presets cannot erase reproducible A/B evidence.
-// Reused IMRS v6 sessions restore their accepted state, NOT this factory.
+// A single typed preset catalog drives the native UI, state recognition and
+// actual SonKu P9 PCM. IDs are UI-only (IMRS persists real accepted settings),
+// so removing Neutral from the picker does NOT invalidate old saved sessions.
+// Keep Live Concert unchanged: the owner has auditioned and liked it.
+// Don't mistake a wide stage/distant source for a guarantee of envelopment.
+struct ImerSipP92Preset {
+    int id;
+    const char* label;
+    int spacePreset;
+    float stageDegrees, distanceMeters;
+    float earlyAmount, lateAmount, outputDb;
+};
+inline constexpr std::array<ImerSipP92Preset,6> imersipP92Presets{{
+    {2,"Live Concert",       3,150.f,2.2f,1.f,.91f,4.8f},
+    {3,"Royal Concert Hall", 3,155.f,1.8f,1.f,.98f,5.4f},
+    {4,"Arena Thunder",     3,164.f,1.7f,1.f,1.00f,5.7f},
+    {5,"Front Row Power",   3,150.f,1.6f,1.f,.97f,5.2f},
+    {6,"Symphonic Palace",  3,146.f,1.9f,1.f,.99f,5.4f},
+    {7,"Velvet Cinema",     2,155.f,1.6f,1.f,1.00f,5.7f}
+}};
+inline const ImerSipP92Preset* imersipP92PresetById(int id) noexcept {
+    for(const auto& p:imersipP92Presets)if(id==p.id)return &p;
+    return nullptr;
+}
 inline float imersipP92DbToLinear(float db) noexcept {
-    return std::pow(10.f,db/20.f);
+    return std::pow(10.f,db/20.f); // editor/control thread, never PCM callback
 }
 inline armix::sonku::Settings imersipP92Factory(int id) noexcept {
-    auto s=imersipP92ReferenceScene();
-    switch(id) {
-    case 2: // New insert: owner-led wide live concert, not timid near-dry
-        s.stereoSpreadDegrees=150.f;
-        s.sourceDistanceMeters=2.2f;
-        s.roomAmount=1.f;
-        s.ambience=.91f;
-        s.outputTrim=imersipP92DbToLinear(4.8f);
-        break;
-    case 3: // Room warmth with defined direct source / less diffuse wash
-        s.spacePreset=2; // Chamber 14.4 m
-        s.stereoSpreadDegrees=138.f;
-        s.sourceDistanceMeters=2.4f;
-        s.roomAmount=.96f;
-        s.ambience=.78f;
-        s.outputTrim=imersipP92DbToLinear(4.5f);
-        break;
-    case 4: // Distance-biased grand room; avoid unlimited late-feedback
-        s.stereoSpreadDegrees=164.f;
-        s.sourceDistanceMeters=3.0f;
-        s.roomAmount=1.f;
-        s.ambience=.96f;
-        s.outputTrim=imersipP92DbToLinear(5.6f);
-        break;
-    case 5: // Exact observed ImerSip screenshot, no inferred distance
-        s.stereoSpreadDegrees=150.f;
-        s.sourceDistanceMeters=1.6f;
-        s.roomAmount=1.f;
-        s.ambience=.91f;
-        s.outputTrim=imersipP92DbToLinear(4.1f);
-        break;
-    case 6: // Original P9.2 neutral ImerSip reference, 0 dB for level A/B
-    default:
-        break;
+    auto s=imersipP92ReferenceScene(); // internal neutral test, not UI entry
+    if(const auto* p=imersipP92PresetById(id)) {
+        s.spacePreset=p->spacePreset;
+        s.stereoSpreadDegrees=p->stageDegrees;
+        s.sourceDistanceMeters=p->distanceMeters;
+        s.roomAmount=p->earlyAmount;
+        s.ambience=p->lateAmount;
+        s.outputTrim=imersipP92DbToLinear(p->outputDb);
     }
     return s;
 }
