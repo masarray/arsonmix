@@ -81,7 +81,7 @@ class ImerSipP92Contract(unittest.TestCase):
         self.assertNotIn("close_",ui)
         # Host state is the only authority for the native power glyph.
         self.assertIn('power_.setButtonText({})',ui)
-        self.assertIn('power_.setToggleState(!bypassed',ui)
+        self.assertIn('power_.setToggleState(valid && !bypassed',ui)
         # The bypass UI is strictly host-readback derived, never click
         # optimistic. JUCE paints the veil *after* child controls and
         # cuts a hole around the native power icon, leaving it actionable.

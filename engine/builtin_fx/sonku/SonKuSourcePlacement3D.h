@@ -16,7 +16,7 @@ inline bool project(float radialMeters,float elevationDegrees,
                     Placement& result) noexcept {
     if(!std::isfinite(radialMeters)||!std::isfinite(elevationDegrees)||
        !std::isfinite(listenerHeight)||!std::isfinite(roomHeight)||
-       radialMeters<1.6f||radialMeters>10.f||
+       radialMeters<1.f||radialMeters>10.f||
        elevationDegrees< -40.f||elevationDegrees>60.f||
        roomHeight<2.4f||roomHeight>12.f||
        listenerHeight<.5f||listenerHeight>roomHeight-.5f)return false;
