@@ -140,6 +140,9 @@ public:
         readHostPower_=std::move(readback);
         refreshHostPower();
     }
+    // Called by mixer dispatch after accepted Rack/Global FX ACK on JUCE's
+    // message thread. Timer polling remains a fallback for external changes.
+    void synchronizeHostPower() { refreshHostPower(); }
     static constexpr float compactScale=0.85f;
     // Master canvas and all native hitboxes share exactly one conversion.
     void paint(juce::Graphics& g) override {
