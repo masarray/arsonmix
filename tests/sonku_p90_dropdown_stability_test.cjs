@@ -110,6 +110,8 @@ assert.equal(picker.dataset.nativeModeSet,"p94");
 assert.equal(optionWrites.length,6);
 assert.match(picker.innerHTML,/P9\.4 · FRONT\/REAR DEPTH/);
 assert.match(label.textContent,/P9\.4 EXPERIMENT/);
+// The real render() immediately sets the accepted native mode after rebuilding.
+syncSelection(picker,"external");
 picker.isOpen=true;
 for(let i=0;i<40;++i){renderMenu(picker,root,p94);syncSelection(picker,"external");}
 picker.isOpen=false;
