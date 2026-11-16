@@ -437,8 +437,35 @@ int main() {
         [&](bool desired){bypassed=desired;return true;},
         [&](){return bypassed;});
     assert(power->isEnabled() && power->getToggleState());
+    // Host-connected native screenshots prove the two actual power glyph
+    // states. The earlier DPI snapshots deliberately test disabled/fail-safe
+    // before host binding; these frames additionally verify the real bypass
+    // response without faking a DSP power state in the editor.
+    const auto savePowerFrame=[&](const char* mode) {
+        auto frame=editor->createComponentSnapshot(editor->getLocalBounds());
+        assert(frame.isValid() && frame.getWidth()==935 &&
+               frame.getHeight()==578);
+        const auto file=juce::File::getCurrentWorkingDirectory()
+            .getChildFile("ImerSip_P92_JUCE_POWER_"+juce::String(mode)+".png");
+        juce::FileOutputStream output(file);
+        assert(output.openedOk());
+        juce::PNGImageFormat encoder;
+        assert(encoder.writeImageToStream(frame,output));
+        output.flush();
+        assert(file.existsAsFile() && file.getSize()>10000);
+        return frame;
+    };
+    const auto activeFrame=savePowerFrame("ON");
     power->onClick();
     assert(bypassed && !power->getToggleState());
+    const auto bypassFrame=savePowerFrame("BYPASSED");
+    int changedPowerPixels=0;
+    const auto powerRegion=power->getBounds();
+    for(int y=powerRegion.getY()+3;y<powerRegion.getBottom()-3;y+=3)
+        for(int x=powerRegion.getX()+3;x<powerRegion.getRight()-3;x+=3)
+            if(activeFrame.getPixelAt(x,y)!=bypassFrame.getPixelAt(x,y))
+                ++changedPowerPixels;
+    assert(changedPowerPixels>=10); // Visible true host ON/OFF indication
     power->onClick();
     assert(!bypassed && power->getToggleState());
     // Actual JUCE scene renders: exact same embedded venue images as shipped
