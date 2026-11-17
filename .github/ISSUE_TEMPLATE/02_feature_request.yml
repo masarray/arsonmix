@@ -1,0 +1,37 @@
+name: "Feature / engineering milestone"
+description: "Propose one scoped product change with measurable acceptance criteria."
+title: "[FEATURE] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the user outcome, not a new parallel mixer or DSP engine. Preserve approved SonKu/ImmerSIB listening checkpoints, one native PCM authority, GUI ownership and existing session compatibility. Do not claim physical FAT from unit tests.
+  - type: input
+    id: outcome
+    attributes:
+      label: "User outcome"
+      description: "What should the user be able to do that they cannot do reliably today?"
+    validations:
+      required: true
+  - type: textarea
+    id: ownership
+    attributes:
+      label: "Existing architecture and dependencies"
+      description: "Relevant current-main files/PRs/issue and owning engine, FX, UI or release workstream."
+    validations:
+      required: false
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: "Testable acceptance criteria"
+      description: "List objective behaviors, native readback/PCM tests and actual hardware FAT if applicable."
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: "Regression and rollback boundaries"
+      description: "Which accepted sound, GUI, routing, persisted sessions or released assets must remain unchanged?"
+    validations:
+      required: false
