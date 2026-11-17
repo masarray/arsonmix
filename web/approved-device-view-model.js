@@ -89,6 +89,125 @@
     return {match,state,value,marker,title};
   }
 
+  // One disposable draft for the current native hardware inventory.
+  // No selectors own a real device, a PCM graph, or persistent .smix state.
+  function setupType(inventory,backend) {
+    return Array.isArray(inventory?.types)?
+      inventory.types.find(t=>t?.name===backend):undefined;
+  }
+  function setupValidSelection(inventory,draft) {
+    const t=setupType(inventory,draft?.backend);
+    if(!inventory?.active||!t||!draft?.playback||
+       !Array.isArray(t.outputs)||!t.outputs.includes(draft.playback))
+      return false;
+    if(t.separate===true)
+      return draft.capture==="" ||
+        (Array.isArray(t.inputs)&&t.inputs.includes(draft.capture));
+    return Array.isArray(t.inputs)&&t.inputs.includes(draft.capture)&&
+      draft.capture===draft.playback;
+  }
+  function setupSameEndpoint(inventory,draft) {
+    const active=inventory?.active;
+    return active?.open===true&&
+      active.backend===draft?.backend&&
+      active.captureDevice===draft?.capture&&
+      active.playbackDevice===draft?.playback;
+  }
+  function setupInitialDraft(inventory) {
+    if(!inventory?.active)return null;
+    const active=inventory.active;
+    const backend=active.backend||inventory.types?.[0]?.name||"";
+    const type=setupType(inventory,backend);
+    // Keep a verified output-only endpoint output-only on reopen.
+    const capture=active.open===true?String(active.captureDevice||""):
+      active.captureDevice||type?.inputs?.[0]||"";
+    return {backend,capture,
+      playback:active.playbackDevice||
+        (type?.separate?type?.outputs?.[0]:capture)||"",
+      inputPins:Array.isArray(active.enabledInputs)?active.enabledInputs.slice():null,
+      outputPins:Array.isArray(active.enabledOutputs)?active.enabledOutputs.slice():null,
+      rate:0,buffer:0};
+  }
+  function setupEditDraft(inventory,draft,edit) {
+    if(!draft||!edit||!inventory?.active)return draft;
+    const t=setupType(inventory,draft.backend);
+    if(edit.pinSide==="input"||edit.pinSide==="output"){
+      if(!setupSameEndpoint(inventory,draft))return draft;
+      const input=edit.pinSide==="input";
+      const key=input?"inputPins":"outputPins";
+      const names=input?inventory.active.inputNames:inventory.active.outputNames;
+      const index=edit.pinIndex;
+      if(!Array.isArray(names)||!Array.isArray(draft[key])||
+         !Number.isSafeInteger(index)||index<0||index>=names.length||
+         typeof edit.checked!=="boolean")return draft;
+      const old=draft[key],has=old.includes(index);
+      if(has===edit.checked)return draft;
+      const pins=edit.checked?[...old,index]:old.filter(n=>n!==index);
+      return {...draft,[key]:[...new Set(pins)].sort((a,b)=>a-b)};
+    }
+    const field=edit.field,value=edit.value;
+    if(typeof value!=="string")return draft;
+    if(field==="backend"){
+      if(value===draft.backend)return draft;
+      const nextType=setupType(inventory,value);
+      if(!nextType)return draft;
+      const capture=nextType.inputs?.[0]||"";
+      return {...draft,backend:value,capture,
+        playback:nextType.separate===true?nextType.outputs?.[0]||"":capture,
+        inputPins:null,outputPins:null,rate:0,buffer:0};
+    }
+    if(!t)return draft;
+    if(field==="capture"){
+      if(value===draft.capture)return draft;
+      if(value!==""&&!t.inputs?.includes(value)||
+         value===""&&t.separate!==true)return draft;
+      return {...draft,capture:value,
+        playback:t.separate===true?draft.playback:value,
+        inputPins:null,outputPins:null,rate:0,buffer:0};
+    }
+    if(field==="playback"){
+      if(value===draft.playback)return draft;
+      if(!t.outputs?.includes(value)||
+         t.separate!==true&&!t.inputs?.includes(value))return draft;
+      // A combined (non-separate) JUCE driver has ONE endpoint identity;
+      // changing Output must follow it on Input or Apply becomes impossible.
+      return {...draft,playback:value,
+        capture:t.separate===true?draft.capture:value,
+        inputPins:null,outputPins:null,rate:0,buffer:0};
+    }
+    if(field==="rate"||field==="buffer"){
+      const number=Number(value);
+      const choices=field==="rate"?inventory.active.rates:inventory.active.buffers;
+      if(!setupSameEndpoint(inventory,draft)||!Number.isSafeInteger(number)||
+         number<0||(number!==0&&
+           (!Array.isArray(choices)||!choices.includes(number))))return draft;
+      if(draft[field]===number)return draft;
+      return {...draft,[field]:number};
+    }
+    return draft;
+  }
+  function setupUiModel(inventory,draft,state) {
+    const type=setupType(inventory,draft?.backend);
+    const same=setupSameEndpoint(inventory,draft);
+    const active=inventory?.active||{};
+    const busy=!!state?.pending;
+    return {
+      backendChoices:(inventory?.types||[]).map(t=>t.name),
+      captureChoices:type?.separate===true?["",...(type.inputs||[])]:
+        type?.inputs||[],
+      playbackChoices:type?.outputs||[],
+      rateChoices:["0",...(same?active.rates||[]:[]).map(String)],
+      bufferChoices:["0",...(same?active.buffers||[]:[]).map(String)],
+      same,busy,
+      asio4allHint:draft?.backend==="ASIO"&&
+        /asio4all/i.test(draft.capture||""),
+      canApply:!busy&&setupValidSelection(inventory,draft),
+      canAssignMain:!busy&&same&&draft?.outputPins?.length===2,
+      canRemap:!busy&&same&&state?.remapGeneration!==null&&
+        state?.remapGeneration===active.deviceGeneration
+    };
+  }
+
   // Device Setup UI transaction: pure presentation only. The native
   // coordinator remains the sole device apply/rollback and output authority.
   // Never treat a successful ACK as installed hardware readback.
@@ -102,15 +221,8 @@
     const active=inventory.active;
     const generation=active.deviceGeneration;
     if(!Number.isSafeInteger(generation)||generation<0)return null;
-    const type=inventory.types?.find(x=>x.name===draft.backend);
-    if(!type||!draft.backend||!draft.playback||
-       !type.outputs?.includes(draft.playback)||
-       (!type.separate&&!type.inputs?.includes(draft.capture))||
-       (type.separate&&draft.capture&&!type.inputs?.includes(draft.capture))||
-       (!type.separate&&draft.capture!==draft.playback))return null;
-    const same=active.open===true&&active.backend===draft.backend&&
-      active.captureDevice===draft.capture&&
-      active.playbackDevice===draft.playback;
+    if(!setupValidSelection(inventory,draft))return null;
+    const same=setupSameEndpoint(inventory,draft);
     if(confirmRetainedPinMapping &&
        (!same||state.remapGeneration!==generation))return null;
     if(assignMain&&(!same||draft.outputPins?.length!==2))return null;
@@ -219,6 +331,7 @@
     return {...state,phase:"IDLE",message:"",remapGeneration:null};
   }
   return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,
-    externalPresentation,setupInitial,setupBegin,setupAck,setupReadback,
+    externalPresentation,setupInitialDraft,setupEditDraft,setupUiModel,
+    setupInitial,setupBegin,setupAck,setupReadback,
     setupTimeout,setupClearResult});
 });

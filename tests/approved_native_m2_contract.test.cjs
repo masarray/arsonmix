@@ -2389,6 +2389,96 @@ function nativeDeviceSetupFixture() {
       enabledOutputs:[0,1],outputArmed:true}};
   return {active,inventory,draft,begin,ack,readback};
 }
+test("MV-2 Device Setup draft keeps verified output-only selection and never invents pins",()=>{
+  const active={backend:"Windows Audio",captureDevice:"",playbackDevice:"Speakers",
+    open:true,authorized:true,deviceGeneration:19,rate:48000,buffer:480,
+    enabledInputs:[],enabledOutputs:[0,1],inputNames:[],
+    outputNames:["L","R"],rates:[48000],buffers:[480]};
+  const inventory={active,types:[{name:"Windows Audio",separate:true,
+    inputs:["Studio Mic"],outputs:["Speakers"]}]};
+  const frozen=clone(inventory);
+  const draft=deviceVM.setupInitialDraft(inventory);
+  assert.equal(draft.capture,"");
+  assert.equal(draft.playback,"Speakers");
+  assert.deepEqual(draft.inputPins,[]);
+  assert.deepEqual(draft.outputPins,[0,1]);
+  const ui=deviceVM.setupUiModel(inventory,draft,deviceVM.setupInitial());
+  assert.deepEqual(ui.captureChoices,["","Studio Mic"]);
+  assert.deepEqual(ui.rateChoices,["0","48000"]);
+  assert.equal(ui.canApply,true);
+  assert.equal(ui.canAssignMain,true);
+  assert.equal(deviceVM.setupBegin(deviceVM.setupInitial(),{
+    inventory,draft,requestId:"mv2-out"}).request.config.captureDevice,"");
+  assert.deepEqual(inventory,frozen,"draft is not an accepted device mutation");
+});
+
+test("MV-2 combined driver output picker follows same physical input and discards old pin/rate draft",()=>{
+  const f=nativeDeviceSetupFixture();
+  f.inventory.types[0].inputs=["ASIO Test","ASIO Two"];
+  f.inventory.types[0].outputs=["ASIO Test","ASIO Two"];
+  const first=deviceVM.setupInitialDraft(f.inventory);
+  const same=deviceVM.setupEditDraft(f.inventory,first,{field:"playback",value:"ASIO Test"});
+  assert.equal(same,first,"unchanged selection cannot create another state");
+  const edit=deviceVM.setupEditDraft(f.inventory,first,
+    {field:"playback",value:"ASIO Two"});
+  assert.equal(edit.capture,"ASIO Two","combined driver input/output identities match");
+  assert.equal(edit.playback,"ASIO Two");
+  assert.equal(edit.inputPins,null);
+  assert.equal(edit.outputPins,null);
+  assert.equal(edit.rate,0);assert.equal(edit.buffer,0);
+  assert.equal(deviceVM.setupUiModel(f.inventory,edit,deviceVM.setupInitial()).canApply,true);
+  assert.equal(deviceVM.setupUiModel(f.inventory,edit,deviceVM.setupInitial()).same,false);
+  assert.equal(deviceVM.setupEditDraft(f.inventory,edit,
+    {field:"playback",value:"Ghost output"}),edit);
+  const request=deviceVM.setupBegin(deviceVM.setupInitial(),
+    {inventory:f.inventory,draft:edit,requestId:"mv2-combined"});
+  assert.ok(request);
+  assert.equal(request.request.config.captureDevice,"ASIO Two");
+  assert.equal(request.request.config.playbackDevice,"ASIO Two");
+  assert.deepEqual(request.request.config.enabledOutputs,[],
+    "uninspected pins cannot travel to another physical endpoint");
+  assert.equal(first.playback,"ASIO Test","prior UI draft must be immutable");
+});
+
+test("MV-2 pin/rate edits reject phantom endpoints and do not reset native ACK state",()=>{
+  const f=nativeDeviceSetupFixture();
+  f.inventory.active.inputNames=["Mic"];
+  f.inventory.active.outputNames=["L","R","Spare"];
+  f.inventory.active.rates=[44100,48000];
+  f.inventory.active.buffers=[128,256];
+  const original=deviceVM.setupInitialDraft(f.inventory);
+  const pins=deviceVM.setupEditDraft(f.inventory,original,
+    {pinSide:"output",pinIndex:2,checked:true});
+  assert.deepEqual(pins.outputPins,[0,1,2]);
+  assert.deepEqual(original.outputPins,[0,1]);
+  const deselected=deviceVM.setupEditDraft(f.inventory,pins,
+    {pinSide:"output",pinIndex:1,checked:false});
+  assert.deepEqual(deselected.outputPins,[0,2]);
+  assert.equal(deviceVM.setupEditDraft(f.inventory,pins,
+    {pinSide:"output",pinIndex:29,checked:true}),pins);
+  assert.equal(deviceVM.setupEditDraft(f.inventory,pins,
+    {pinSide:"input",pinIndex:-1,checked:true}),pins);
+  assert.equal(deviceVM.setupEditDraft(f.inventory,pins,
+    {field:"rate",value:"96000"}),pins);
+  const sample=deviceVM.setupEditDraft(f.inventory,pins,
+    {field:"rate",value:"44100"});
+  assert.equal(sample.rate,44100);
+  const buffer=deviceVM.setupEditDraft(f.inventory,sample,
+    {field:"buffer",value:"128"});
+  assert.equal(buffer.buffer,128);
+  const verifying=deviceVM.setupAck(f.begin("mv2-await").state,f.ack("mv2-await"));
+  assert.equal(deviceVM.setupUiModel(f.inventory,buffer,verifying).canApply,false);
+  assert.equal(deviceVM.setupUiModel(f.inventory,buffer,verifying).canAssignMain,false);
+  assert.equal(deviceVM.setupEditDraft(f.inventory,buffer,{field:"invalid",value:"X"}),buffer);
+  const src=read("web/approved-native-bridge.js");
+  assert.match(src,/deviceVM\.setupEditDraft\(deviceInventory,deviceChoice,edit\)/);
+  assert.match(src,/deviceVM\.setupUiModel\(deviceInventory,deviceChoice,deviceState\)/);
+  const handler=src.slice(src.indexOf('devicePanel.addEventListener("change"'),
+    src.indexOf('devicePanel.querySelector("[data-audio-apply]").onclick'));
+  assert.doesNotMatch(handler,/deviceChoice\.backend\s*=|deviceChoice\.outputPins\s*=/,
+    "bridge must no longer duplicate draft reducer rules");
+});
+
 test("Device Setup VM requires matching ACK AND later installed v6 readback, never ACK-only LIVE",()=>{
   const f=nativeDeviceSetupFixture();
   const begun=f.begin("approved-io-42");
