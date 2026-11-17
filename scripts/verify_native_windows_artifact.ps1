@@ -11,12 +11,6 @@ $expected = @(
     "BUILD_PROVENANCE.json",
     "HARDWARE_FAT_GUIDE.md",
     "README.md",
-    "LICENSE",
-    "LICENSE-NOTICE.txt",
-    "LICENSE-SIGNALSMITH-STRETCH.txt",
-    "LICENSE-SIGNALSMITH-LINEAR.txt",
-    "OFL-LICENSE-Inter.txt",
-    "THIRD_PARTY_8D_SONKU_HRTF.md",
     "portable_mode.txt",
     "collect_hardware_fat_windows.ps1",
     "m3e_fat_evidence_gate.mjs",
@@ -42,45 +36,34 @@ if (@(Compare-Object -ReferenceObject $expected -DifferenceObject $actual).Count
 }
 
 $manifest = Get-Content -LiteralPath (Join-Path $OutputDir "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
-$notice = "THIRD_PARTY_8D_SONKU_HRTF.md"
-$sourceNotice = Join-Path "docs" $notice
-$distNotice = Join-Path $OutputDir $notice
-if (-not (Test-Path -LiteralPath $sourceNotice -PathType Leaf) -or
-    -not (Test-Path -LiteralPath $distNotice -PathType Leaf)) {
-    throw "MIT/HRIR attribution absent from source or distribution"
+# Compare the exact-source legal hashes recorded at packaging, and scan
+# the REAL PE for all seven full original bytes (JUCE BinaryData).
+if ($manifest.legalEmbedding -ne "JUCE_BINARYDATA_OFFLINE_LEGAL_CENTER_V1") {
+    throw "Expected embedded legal center missing from provenance"
 }
-$noticeHash = (Get-FileHash -LiteralPath $sourceNotice -Algorithm SHA256).Hash.ToLowerInvariant()
-$distNoticeHash = (Get-FileHash -LiteralPath $distNotice -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($manifest.hrirNoticeSha256 -ne $noticeHash -or $noticeHash -ne $distNoticeHash) {
-    throw "Third-party HRIR notice differs from exact source/manifest"
+$legalSources = [ordered]@{
+    "LICENSE" = "licenseTextSha256"
+    "LICENSE-NOTICE.txt" = "licenseNoticeSha256"
+    "docs/THIRD_PARTY_8D_SONKU_HRTF.md" = "hrirNoticeSha256"
+    "third_party/signalsmith/LICENSE-STRETCH.txt" = "signalsmithStretchLicenseSha256"
+    "third_party/signalsmith/LICENSE-LINEAR.txt" = "signalsmithLinearLicenseSha256"
+    "web/assets/fonts/OFL-LICENSE-Inter.txt" = "interOflLicenseSha256"
+    "installer/VB-CABLE-NOTICE.txt" = "vbCableNoticeSha256"
 }
-$noticeText = Get-Content -LiteralPath $distNotice -Raw -Encoding UTF8
-foreach ($marker in @("Bill Gardner", "Keith Martin", "Aristotel Digenis",
-                      "Permission is hereby granted", "THE SOFTWARE IS PROVIDED")) {
-    if (-not $noticeText.Contains($marker)) { throw "Incomplete HRIR notice: $marker" }
-}
-# Source, staged bytes, and exact-source manifest hashes must ALL agree.
-$licenseFiles = [ordered]@{
-    "LICENSE" = @("LICENSE", "licenseTextSha256")
-    "LICENSE-NOTICE.txt" = @("LICENSE-NOTICE.txt", "licenseNoticeSha256")
-    "LICENSE-SIGNALSMITH-STRETCH.txt" = @("third_party/signalsmith/LICENSE-STRETCH.txt", "signalsmithStretchLicenseSha256")
-    "LICENSE-SIGNALSMITH-LINEAR.txt" = @("third_party/signalsmith/LICENSE-LINEAR.txt", "signalsmithLinearLicenseSha256")
-    "OFL-LICENSE-Inter.txt" = @("web/assets/fonts/OFL-LICENSE-Inter.txt", "interOflLicenseSha256")
-}
-foreach ($name in $licenseFiles.Keys) {
-    $source = $licenseFiles[$name][0]
-    $field = $licenseFiles[$name][1]
-    $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
-    $distHash = (Get-FileHash -LiteralPath (Join-Path $OutputDir $name) -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($sourceHash -ne $distHash -or $distHash -ne $manifest.$field) {
-        throw "Distribution licence missing or differs from source: $name"
+foreach ($source in $legalSources.Keys) {
+    $key = $legalSources[$source]
+    $actualHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($manifest.$key -ne $actualHash) {
+        throw "Embedded legal source changed since packaging: $source"
     }
 }
-$agplText = Get-Content -LiteralPath (Join-Path $OutputDir "LICENSE") -Raw -Encoding UTF8
+$agplText = Get-Content -LiteralPath "LICENSE" -Raw -Encoding UTF8
 if (-not $agplText.StartsWith("GNU AFFERO GENERAL PUBLIC LICENSE") -or
     -not $agplText.Contains("END OF TERMS AND CONDITIONS")) {
-    throw "Full AGPL-3.0 text absent from distribution"
+    throw "Source AGPL text is incomplete"
 }
+& python scripts/verify_embedded_legal.py --binary (Join-Path $OutputDir $expected[0])
+if ($LASTEXITCODE -ne 0) { throw "Exact-source embedded legal scan failed" }
 # FAT tools match source bytes, distributed bytes AND the current SHA manifest.
 $fatTools = @{
     "collect_hardware_fat_windows.ps1" = [string]$manifest.fatCollectorSha256
