@@ -259,8 +259,14 @@ public:
             const auto& change=ops->getReference(0);
             const auto type=change.getProperty("op","").toString();
             std::uint64_t from=0,to=0,edgeId=0;
-            if(!armix::session::parseDecimal(change.getProperty("from",{}),from))
+            if(!armix::session::parseDecimal(change.getProperty("from",{}),from) || !from)
                 return bad("INVALID_WIRE_SOURCE");
+            // Intent target and WIRE payload must identify the SAME stable
+            // ChannelId. A stale UI edge/ordinal must never mutate another
+            // channel's saved routes under a legitimate request envelope.
+            // Validate before edit() or wire(): rejected intents must not
+            // advance the logical revision or persist an incorrect .smix.
+            if(from!=idValue)return bad("WIRE_CHANNEL_ID_MISMATCH");
             if(type=="DISCONNECT") {
                 edit.kind=ChannelEdit::Kind::setPrimaryOutput;
                 edit.id={from};edit.target={};
