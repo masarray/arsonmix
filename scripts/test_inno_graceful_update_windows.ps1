@@ -48,22 +48,8 @@ try {
     & $csc "/nologo" "/target:winexe" "/reference:System.Windows.Forms.dll" "/out:$(Join-Path $stage 'verified-gui.exe')" (Join-Path $root "tests/fixtures/installer_graceful_close.cs")
     Assert-Condition ($LASTEXITCODE -eq 0) "Test-only WinForms fixture failed to compile"
     Copy-Item -LiteralPath (Join-Path $root "assets/icon/arsonmix-app.ico") -Destination (Join-Path $stage "arsonmix-app.ico")
-    "Test-only installer mechanics fixture" | Set-Content -LiteralPath (Join-Path $stage "README.md")
-    # Match the real Inno source manifest: full third-party legal notices
-    # are required for test fixtures as well as public native bundles.
-    Copy-Item -LiteralPath (Join-Path $root "docs/THIRD_PARTY_8D_SONKU_HRTF.md") -Destination (Join-Path $stage "THIRD_PARTY_8D_SONKU_HRTF.md")
-    # Keep Inno test staging identical to its legal [Files] contract.
-    # This is a fixture EXE, but the notices must be real source bytes.
-    $licenseSources = [ordered]@{
-        "LICENSE" = "LICENSE"
-        "LICENSE-NOTICE.txt" = "LICENSE-NOTICE.txt"
-        "LICENSE-SIGNALSMITH-STRETCH.txt" = "third_party/signalsmith/LICENSE-STRETCH.txt"
-        "LICENSE-SIGNALSMITH-LINEAR.txt" = "third_party/signalsmith/LICENSE-LINEAR.txt"
-        "OFL-LICENSE-Inter.txt" = "web/assets/fonts/OFL-LICENSE-Inter.txt"
-    }
-    foreach($name in $licenseSources.Keys){
-        Copy-Item -LiteralPath (Join-Path $root $licenseSources[$name]) -Destination (Join-Path $stage $name)
-    }
+    # Source legal texts are embedded in the Setup executable by Inno itself;
+    # the test-only staged EXE deliberately has no JUCE resources.
     '{"sourceCommit":"TEST_FIXTURE_ONLY","fatStatus":"NOT_A_PRODUCT"}' | Set-Content -LiteralPath (Join-Path $stage "BUILD_PROVENANCE.json")
     # Contract fixture, NEVER vendor bytes: /VERYSILENT has the optional
     # vendor step skipped in silent mode. This proves ordinary repair/upgrade can
@@ -84,19 +70,23 @@ try {
     Assert-Condition ($first.ExitCode -eq 0) ("First test install exit="+$first.ExitCode)
     $installedExe=Join-Path $install "ArSonMix.exe"
     Assert-Condition (Test-Path -LiteralPath $installedExe -PathType Leaf) "Installed fixture missing"
-    $mitSourceHash=(Get-FileHash -LiteralPath (Join-Path $root "docs/THIRD_PARTY_8D_SONKU_HRTF.md") -Algorithm SHA256).Hash
-    $installedMit=Join-Path $install "THIRD_PARTY_8D_SONKU_HRTF.md"
-    Assert-Condition ((Test-Path -LiteralPath $installedMit -PathType Leaf) -and
-        (Get-FileHash -LiteralPath $installedMit -Algorithm SHA256).Hash -eq $mitSourceHash) "Inno fixture did not install exact MIT KEMAR notice"
-    foreach($name in $licenseSources.Keys){
-        $actual = Join-Path $install $name
-        $expected = Join-Path $stage $name
-        Assert-Condition ((Test-Path -LiteralPath $actual -PathType Leaf) -and
-            (Get-FileHash -LiteralPath $actual -Algorithm SHA256).Hash -eq
-            (Get-FileHash -LiteralPath $expected -Algorithm SHA256).Hash) "Inno fixture omitted/modified licence: $name"
+    # No top-level loose legal documents should be installed. The real FAT
+    # separately scans the actual JUCE PE for the seven full embedded texts.
+    foreach($name in @("LICENSE","LICENSE-NOTICE.txt",
+        "LICENSE-SIGNALSMITH-STRETCH.txt","LICENSE-SIGNALSMITH-LINEAR.txt",
+        "OFL-LICENSE-Inter.txt","THIRD_PARTY_8D_SONKU_HRTF.md")){
+        Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $install $name))) "Installer left redundant legal file: $name"
     }
     $fixtureHash=(Get-FileHash -LiteralPath (Join-Path $stage "verified-gui.exe") -Algorithm SHA256).Hash
     Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -eq $fixtureHash) "First install changed test executable bytes"
+    # Simulate an actual installed alpha.24 or earlier footprint.
+    # Same-version in-place upgrade must remove only these known old files.
+    $legacyLooseFiles=@("LICENSE","LICENSE-NOTICE.txt",
+        "LICENSE-SIGNALSMITH-STRETCH.txt","LICENSE-SIGNALSMITH-LINEAR.txt",
+        "OFL-LICENSE-Inter.txt","THIRD_PARTY_8D_SONKU_HRTF.md","README.md")
+    foreach($name in $legacyLooseFiles){
+        "legacy-installer-document" | Set-Content -LiteralPath (Join-Path $install $name)
+    }
     $userFile=Join-Path $install "user-file.keep"
     "user-file-must-survive" | Set-Content -LiteralPath $userFile
     $fixtureProcess=Start-Process -FilePath $installedExe -ArgumentList @(('"' + $ready + '"'),('"' + $closed + '"')) -PassThru
@@ -119,6 +109,9 @@ try {
     Assert-Condition ($exited -and $marker -and ($acceptedSaves -contains $markerText)) "Inno did not request a saved, graceful Windows session close"
     Assert-Condition ($newHash -eq $fixtureHash) "Updated installed fixture hash mismatch"
     Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Update removed user data"
+    foreach($name in $legacyLooseFiles){
+        Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $install $name))) "Legacy legal file survived upgrade: $name"
+    }
     # Upgrade from a PRE-HANDSHAKE ArSonMix.exe, exactly the case the old
     # test omitted and which caused DeleteFile failed; code 5 in the field.
     # Its FormClosing marker proves an old GUI was asked to quit normally.

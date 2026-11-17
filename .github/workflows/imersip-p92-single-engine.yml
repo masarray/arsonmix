@@ -202,13 +202,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          # The release verifier uses a strict dist/ allowlist. Attach the
-          # acoustic FAT and MIT KEMAR attribution OUTSIDE verified dist/,
-          # not by making unverified changes to the portable application.
+          # The release verifier scans the compiled EXE for the full MIT KEMAR
+          # notice and AGPLv3. Only the field-test instruction remains outside
+          # verified dist/; don't scatter redundant legal files in artifacts.
           New-Item -ItemType Directory -Path field_candidate -Force | Out-Null
           Copy-Item -LiteralPath dist -Destination field_candidate/ArSonMix-Portable -Recurse
           Copy-Item -LiteralPath docs/IMERSIP_P92_SINGLE_NATIVE_ENGINE_FAT_20261116.md -Destination field_candidate/IMERSIP_P92_FIELD_FAT.md
-          Copy-Item -LiteralPath docs/THIRD_PARTY_8D_SONKU_HRTF.md -Destination field_candidate/THIRD_PARTY_8D_SONKU_HRTF.md
       - uses: actions/upload-artifact@v4
         with:
           name: ImerSip-P92-Shared-Core-Windows-x64-${{ github.run_id }}

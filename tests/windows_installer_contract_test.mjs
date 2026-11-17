@@ -28,8 +28,9 @@ test('per-user Inno Setup upgrades the same app and retains private Studio data'
   assert.doesNotMatch(iss, /taskkill|Stop-Process|TerminateProcess|CloseApplications=force/i);
   assert.match(iss, /Name: "\{autoprograms\}\\ArSonMix"/);
   assert.match(iss, /FactoryFX\\\*.*skipifsourcedoesntexist/);
-  assert.match(ps, /Installed third-party KEMAR\/MIT notice missing or altered/);
-  assert.match(ps, /THIRD_PARTY_8D_SONKU_HRTF\.md/);
+  assert.match(ps, /verify_embedded_legal\.py --binary \$installedExe/);
+  assert.match(ps, /Installer left a redundant top-level legal document/);
+  assert.match(iss, /Source: "\.\.\\docs\\THIRD_PARTY_8D_SONKU_HRTF\.md"; Flags: dontcopy/);
 });
 
 test('official standard VB-CABLE ZIP is pinned and checked automatically without elevating ArSonMix', () => {

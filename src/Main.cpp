@@ -5,6 +5,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <BinaryData.h>
 #include "ApprovedGuiResources.h"
+#include "EmbeddedLegalResources.h"
 #include "ApprovedConsoleNativeTransportV6.h"
 #include "../integration/ApprovedNativeRuntimeSnapshot.h"
 #include "../integration/ApprovedNativeControlIntent.h"
@@ -92,7 +93,8 @@ std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String&
     juce::String mime;
     // Auto-generated from the SAME approved Pages GUI and PNG-button skin.
     // Legacy web/index.html and web/console-native.html cannot be served here.
-    if (! resolveApprovedGuiResource (path, data, size, mime))
+    if (! resolveEmbeddedLegalResource (path, data, size, mime)
+        && ! resolveApprovedGuiResource (path, data, size, mime))
         return std::nullopt;
 
     juce::WebBrowserComponent::Resource resource;
@@ -344,6 +346,17 @@ public:
               })
               .withEventListener ("arMixParameter", [this] (juce::var args) { onParameter (args); })
               .withEventListener ("arMixAction", [this] (juce::var args) { onAction (args); })
+              .withEventListener ("arMixOpenLegalSource", [] (juce::var)
+              {
+                  // Exact source for this *binary*; open only on user request,
+                  // never from a mixer callback, startup, or a remote URL.
+                  const juce::String sha (ARMIX_BUILD_SOURCE_SHA);
+                  const auto source = sha.length() == 40
+                                   && sha.containsOnly ("0123456789abcdef")
+                      ? "https://github.com/masarray/arsonmix/tree/" + sha
+                      : "https://github.com/masarray/arsonmix";
+                  juce::URL (source).launchInDefaultBrowser();
+              })
               .withResourceProvider (assetFor))
     {
         settingsDirectory().createDirectory();

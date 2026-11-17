@@ -38,11 +38,7 @@ $fixtureProcess=$null
 try {
     New-Item -ItemType Directory -Force -Path $stage | Out-Null
     Copy-Item -LiteralPath $exe -Destination (Join-Path $stage "verified-gui.exe")
-    foreach($item in @("BUILD_PROVENANCE.json","README.md",
-                       "LICENSE","LICENSE-NOTICE.txt",
-                       "LICENSE-SIGNALSMITH-STRETCH.txt",
-                       "LICENSE-SIGNALSMITH-LINEAR.txt","OFL-LICENSE-Inter.txt",
-                       "THIRD_PARTY_8D_SONKU_HRTF.md")){
+    foreach($item in @("BUILD_PROVENANCE.json")){
         Copy-Item -LiteralPath (Join-Path $dist $item) -Destination (Join-Path $stage $item)
     }
     Copy-Item -LiteralPath "assets/icon/arsonmix-app.ico" -Destination (Join-Path $stage "arsonmix-app.ico")
@@ -70,26 +66,15 @@ try {
     }
     $installedManifest=Get-Content -LiteralPath (Join-Path $install "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
     if($installedManifest.sourceCommit -ne $sha){throw "Wrong installed provenance"}
-    $installedNotice = Join-Path $install "THIRD_PARTY_8D_SONKU_HRTF.md"
-    if(-not (Test-Path -LiteralPath $installedNotice -PathType Leaf) -or
-       (Get-FileHash -LiteralPath $installedNotice -Algorithm SHA256).Hash.ToLowerInvariant() -ne
-       $manifest.hrirNoticeSha256) {
-        throw "Installed third-party KEMAR/MIT notice missing or altered"
-    }
-    # Confirm Inno preserved all mandatory legal texts byte-for-byte.
-    $installedLicenses = [ordered]@{
-        "LICENSE" = "licenseTextSha256"
-        "LICENSE-NOTICE.txt" = "licenseNoticeSha256"
-        "LICENSE-SIGNALSMITH-STRETCH.txt" = "signalsmithStretchLicenseSha256"
-        "LICENSE-SIGNALSMITH-LINEAR.txt" = "signalsmithLinearLicenseSha256"
-        "OFL-LICENSE-Inter.txt" = "interOflLicenseSha256"
-    }
-    foreach($name in $installedLicenses.Keys){
-        $installedPath = Join-Path $install $name
-        $hashField = $installedLicenses[$name]
-        if(-not (Test-Path -LiteralPath $installedPath -PathType Leaf) -or
-           (Get-FileHash -LiteralPath $installedPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $manifest.$hashField){
-            throw "Installed licence missing or altered: $name"
+    # Full AGPL and third-party terms live in ArSonMix.exe and Setup itself.
+    # The installed directory must have NO redundant top-level legal files.
+    & python scripts/verify_embedded_legal.py --binary $installedExe
+    if($LASTEXITCODE -ne 0){throw "Installed EXE missing exact-source embedded licenses"}
+    foreach($name in @("LICENSE","LICENSE-NOTICE.txt",
+        "LICENSE-SIGNALSMITH-STRETCH.txt","LICENSE-SIGNALSMITH-LINEAR.txt",
+        "OFL-LICENSE-Inter.txt","THIRD_PARTY_8D_SONKU_HRTF.md")){
+        if(Test-Path -LiteralPath (Join-Path $install $name)){
+            throw "Installer left a redundant top-level legal document: $name"
         }
     }
     # REAL Windows in-place UPDATE test: replace the *test-installed* PE
@@ -115,6 +100,14 @@ try {
     }
     if(-not (Test-Path -LiteralPath $fixtureReady)){
         throw "Installed upgrade fixture did not show its Windows message-loop window"
+    }
+    # Upgrade fixture: migration from the old alpha.24 footprint must not
+    # leave the old top-level licenses/README in the installed application.
+    $legacyLooseFiles=@("LICENSE","LICENSE-NOTICE.txt",
+        "LICENSE-SIGNALSMITH-STRETCH.txt","LICENSE-SIGNALSMITH-LINEAR.txt",
+        "OFL-LICENSE-Inter.txt","THIRD_PARTY_8D_SONKU_HRTF.md","README.md")
+    foreach($name in $legacyLooseFiles){
+        "legacy-installer-document" | Set-Content -LiteralPath (Join-Path $install $name)
     }
     $installSentinel=Join-Path $install "arsonmix-user-file.keep"
     "preserve-user-files-across-upgrade" | Set-Content -LiteralPath $installSentinel
@@ -145,6 +138,11 @@ try {
        -not (Test-Path -LiteralPath $sentinel) -or
        (Test-Path -LiteralPath (Join-Path $install "portable_mode.txt"))){
         throw "In-place update failed verified EXE replacement or data preservation"
+    }
+    foreach($name in $legacyLooseFiles){
+        if(Test-Path -LiteralPath (Join-Path $install $name)){
+            throw "Old loose legal file survived in-place update: $name"
+        }
     }
     Write-Host "INNO_GRACEFUL_UPDATE_PASS: running app Windows session close, verified PE replacement, user files preserved"
     $uninstall=Join-Path $install "unins000.exe"

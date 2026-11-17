@@ -86,28 +86,10 @@ if (-not (Test-Path -LiteralPath $fatGuide -PathType Leaf)) {
     throw "Missing hardware FAT guide"
 }
 Copy-Item -LiteralPath $readme -Destination (Join-Path $OutputDir "README.md")
-# Preserve full AGPLv3 terms and vendor notices next to the shipped binary.
-$licenseSources = [ordered]@{
-    "LICENSE" = "LICENSE"
-    "LICENSE-NOTICE.txt" = "LICENSE-NOTICE.txt"
-    "LICENSE-SIGNALSMITH-STRETCH.txt" = "third_party/signalsmith/LICENSE-STRETCH.txt"
-    "LICENSE-SIGNALSMITH-LINEAR.txt" = "third_party/signalsmith/LICENSE-LINEAR.txt"
-    "OFL-LICENSE-Inter.txt" = "web/assets/fonts/OFL-LICENSE-Inter.txt"
-}
-foreach ($name in $licenseSources.Keys) {
-    $source = $licenseSources[$name]
-    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-        throw "Mandatory source licence missing: $source"
-    }
-    Copy-Item -LiteralPath $source -Destination (Join-Path $OutputDir $name) -Force
-}
+# Verify *compiled* JUCE BinaryData, not loose legal documents in the ZIP.
+& python scripts/verify_embedded_legal.py --binary $destination
+if ($LASTEXITCODE -ne 0) { throw "Compiled native mixer lacks the exact-source embedded legal texts" }
 Copy-Item -LiteralPath $fatGuide -Destination (Join-Path $OutputDir "HARDWARE_FAT_GUIDE.md")
-# Ship MIT KEMAR/HRIR attribution with the actual portable executable.
-$hrirNotice = "docs/THIRD_PARTY_8D_SONKU_HRTF.md"
-if (-not (Test-Path -LiteralPath $hrirNotice -PathType Leaf)) {
-    throw "Mandatory MIT KEMAR/HRIR attribution missing"
-}
-Copy-Item -LiteralPath $hrirNotice -Destination (Join-Path $OutputDir "THIRD_PARTY_8D_SONKU_HRTF.md")
 # Selective FAT-only extraction from parked #270, no PCM or GUI production code.
 $fatBundleFiles = @("collect_hardware_fat_windows.ps1", "m3e_fat_evidence_gate.mjs")
 foreach ($file in $fatBundleFiles) {
@@ -143,12 +125,14 @@ $manifest = [ordered]@{
     exeSha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
     fatCollectorSha256 = (Get-FileHash -LiteralPath (Join-Path $OutputDir "collect_hardware_fat_windows.ps1") -Algorithm SHA256).Hash.ToLowerInvariant()
     fatGateSha256 = (Get-FileHash -LiteralPath (Join-Path $OutputDir "m3e_fat_evidence_gate.mjs") -Algorithm SHA256).Hash.ToLowerInvariant()
-    hrirNoticeSha256 = (Get-FileHash -LiteralPath (Join-Path $OutputDir "THIRD_PARTY_8D_SONKU_HRTF.md") -Algorithm SHA256).Hash.ToLowerInvariant()
-    licenseTextSha256 = (Get-FileHash -LiteralPath (Join-Path $OutputDir "LICENSE") -Algorithm SHA256).Hash.ToLowerInvariant()
-    licenseNoticeSha256 = (Get-FileHash -LiteralPath (Join-Path $OutputDir "LICENSE-NOTICE.txt") -Algorithm SHA256).Hash.ToLowerInvariant()
-    signalsmithStretchLicenseSha256 = (Get-FileHash -LiteralPath (Join-Path $OutputDir "LICENSE-SIGNALSMITH-STRETCH.txt") -Algorithm SHA256).Hash.ToLowerInvariant()
-    signalsmithLinearLicenseSha256 = (Get-FileHash -LiteralPath (Join-Path $OutputDir "LICENSE-SIGNALSMITH-LINEAR.txt") -Algorithm SHA256).Hash.ToLowerInvariant()
-    interOflLicenseSha256 = (Get-FileHash -LiteralPath (Join-Path $OutputDir "OFL-LICENSE-Inter.txt") -Algorithm SHA256).Hash.ToLowerInvariant()
+    legalEmbedding = "JUCE_BINARYDATA_OFFLINE_LEGAL_CENTER_V1"
+    hrirNoticeSha256 = (Get-FileHash -LiteralPath "docs/THIRD_PARTY_8D_SONKU_HRTF.md" -Algorithm SHA256).Hash.ToLowerInvariant()
+    licenseTextSha256 = (Get-FileHash -LiteralPath "LICENSE" -Algorithm SHA256).Hash.ToLowerInvariant()
+    licenseNoticeSha256 = (Get-FileHash -LiteralPath "LICENSE-NOTICE.txt" -Algorithm SHA256).Hash.ToLowerInvariant()
+    signalsmithStretchLicenseSha256 = (Get-FileHash -LiteralPath "third_party/signalsmith/LICENSE-STRETCH.txt" -Algorithm SHA256).Hash.ToLowerInvariant()
+    signalsmithLinearLicenseSha256 = (Get-FileHash -LiteralPath "third_party/signalsmith/LICENSE-LINEAR.txt" -Algorithm SHA256).Hash.ToLowerInvariant()
+    interOflLicenseSha256 = (Get-FileHash -LiteralPath "web/assets/fonts/OFL-LICENSE-Inter.txt" -Algorithm SHA256).Hash.ToLowerInvariant()
+    vbCableNoticeSha256 = (Get-FileHash -LiteralPath "installer/VB-CABLE-NOTICE.txt" -Algorithm SHA256).Hash.ToLowerInvariant()
     approvedGuiRoute = $approvedGui.authoritativePagesRoute
     approvedGuiOutput = $approvedGui.authoritativePagesOutput
     approvedGuiCanonicalSource = $approvedGui.canonicalSource

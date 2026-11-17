@@ -202,6 +202,7 @@ file(GLOB_RECURSE ARMIX_APPROVED_GUI_SOURCE_INPUTS CONFIGURE_DEPENDS
 list(APPEND ARMIX_APPROVED_GUI_SOURCE_INPUTS
     "${CMAKE_CURRENT_SOURCE_DIR}/web/approved-native-bridge.js"
     "${CMAKE_CURRENT_SOURCE_DIR}/web/approved-native-context-menu.js"
+    "${CMAKE_CURRENT_SOURCE_DIR}/web/approved-native-legal.js"
     "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_approved_native_gui.py"
     "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_pages.py"
     "${CMAKE_CURRENT_SOURCE_DIR}/scripts/compose_native_peq.py")
@@ -289,9 +290,48 @@ if(ARMIX_IMMERSIB_RELEASE_CANDIDATE)
     list(APPEND ARMIX_IMERSIB_SCENE_PNG_SOURCES "${scene}")
   endforeach()
 endif()
+# Every original and third-party notice is compiled into the same native JUCE
+# executable. No adjacent legal .txt/.md files in any installed/portable tree.
+# Keep these resource basenames stable, alphanumeric names: EmbeddedLegalResources.h maps them.
+set(ARMIX_LEGAL_EMBED_DIR "${CMAKE_CURRENT_BINARY_DIR}/approved_legal")
+file(MAKE_DIRECTORY "${ARMIX_LEGAL_EMBED_DIR}")
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+               "${ARMIX_LEGAL_EMBED_DIR}/armixagpl.txt" COPYONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/LICENSE-NOTICE.txt"
+               "${ARMIX_LEGAL_EMBED_DIR}/armixnotice.txt" COPYONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/docs/THIRD_PARTY_8D_SONKU_HRTF.md"
+               "${ARMIX_LEGAL_EMBED_DIR}/armixhrirmit.txt" COPYONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith/LICENSE-STRETCH.txt"
+               "${ARMIX_LEGAL_EMBED_DIR}/armixsignalsmithstretch.txt" COPYONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith/LICENSE-LINEAR.txt"
+               "${ARMIX_LEGAL_EMBED_DIR}/armixsignalsmithlinear.txt" COPYONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/web/assets/fonts/OFL-LICENSE-Inter.txt"
+               "${ARMIX_LEGAL_EMBED_DIR}/armixinterofl.txt" COPYONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/installer/VB-CABLE-NOTICE.txt"
+               "${ARMIX_LEGAL_EMBED_DIR}/armixvbcablenotice.txt" COPYONLY)
+# Explicit allowlist avoids picking up stale resources from an earlier
+# incremental configure and keeps BinaryData contents reproducible.
+set(ARMIX_LEGAL_RESOURCE_FILES
+    "${ARMIX_LEGAL_EMBED_DIR}/armixagpl.txt"
+    "${ARMIX_LEGAL_EMBED_DIR}/armixnotice.txt"
+    "${ARMIX_LEGAL_EMBED_DIR}/armixhrirmit.txt"
+    "${ARMIX_LEGAL_EMBED_DIR}/armixsignalsmithstretch.txt"
+    "${ARMIX_LEGAL_EMBED_DIR}/armixsignalsmithlinear.txt"
+    "${ARMIX_LEGAL_EMBED_DIR}/armixinterofl.txt"
+    "${ARMIX_LEGAL_EMBED_DIR}/armixvbcablenotice.txt")
+list(LENGTH ARMIX_LEGAL_RESOURCE_FILES ARMIX_LEGAL_RESOURCE_COUNT)
+if(NOT ARMIX_LEGAL_RESOURCE_COUNT EQUAL 7)
+  message(FATAL_ERROR "All seven exact-source legal documents must be embedded")
+endif()
+foreach(ARMIX_LEGAL_RESOURCE IN LISTS ARMIX_LEGAL_RESOURCE_FILES)
+  if(NOT EXISTS "${ARMIX_LEGAL_RESOURCE}")
+    message(FATAL_ERROR "Missing legal BinaryData source: ${ARMIX_LEGAL_RESOURCE}")
+  endif()
+endforeach()
 juce_add_binary_data(ARMixAssets SOURCES
     "${ARMIX_APPROVED_GUI_DIR}/index.html" ${ARMIX_APPROVED_GUI_BINARIES}
     ${ARMIX_GUITAR_SKIN_PNGS}
+    ${ARMIX_LEGAL_RESOURCE_FILES}
     "${ARMIX_BRAND_DIR}/arsonmix-256.png"
     ${ARMIX_IMERSIB_SCENE_PNG_SOURCES})
 target_include_directories(ARMixConsole PRIVATE "${ARMIX_APPROVED_GUI_DIR}")
