@@ -399,7 +399,8 @@ test("P0 DAW approved Windows GUI directly binds every IN to current JUCE ports,
   assert.match(builder,/type==='input'&&window\.__JUCE__\?\.backend/);
   assert.match(builder,/__ARMIX_NATIVE_M2__\?\.inputChoices/);
   assert.match(bridge,/inputChoices\(t\)/);
-  assert.match(bridge,/hardware\.device\.enabledInputs\.includes\(p\.port\)/);
+  assert.match(bridge,/deviceVM\.inputChoices\(hardware\)/);
+  assert.match(read("web/approved-device-view-model.js"),/d\.enabledInputs\.includes\(p\.port\)/);
   assert.match(bridge,/field==="input"/);
   // Reordering /preview/ strips must NOT change the real hardware lane.
   assert.match(bridge,/const channel=m4Index\(t\)/);
@@ -1246,7 +1247,7 @@ test("M3 native-only Pages scope performs real bridge projection, fader intent a
    querySelector:()=>null,addEventListener(){}
  };
  const window={
-   __JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,
+   __JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,
    __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},queueMicrotask(fn){microtasks.push(fn);},setTimeout(fn,ms){timers.push({fn,ms});return timers.length;}
  };
  vm.runInNewContext(read("web/approved-native-bridge.js"),{
@@ -1470,7 +1471,7 @@ test("P0 native FX rack and per-slot readback update mounted strip without repla
   querySelector:selector=>selector.startsWith('.strip[data-id=')?strip:null,
   addEventListener(){}
  };
- const win={__JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,
+ const win={__JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,
   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
   setTimeout(){return 0},clearTimeout(){},queueMicrotask(fn){fn();}};
  vm.runInNewContext(read("web/approved-native-bridge.js"),
@@ -1646,7 +1647,7 @@ test("P0 FIRST SOUND G0 offers verified input and leaves automatic MAIN to nativ
   addEventListener(){}
  };
  win={
-  __JUCE__:{backend},ArSonApprovedNativeContract:protocol,
+  __JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,
   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
   setTimeout(){return 0},clearTimeout(){},queueMicrotask(fn){fn();}
  };
@@ -1733,7 +1734,7 @@ test("P0 native hardware IN remains selectable after ChannelId ownership, failed
     id==="preview"?{disabled:true}:null,
   querySelector:()=>null,addEventListener(){}
  };
- const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,
+ const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,
   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
   setTimeout(){return 0},clearTimeout(){},
   queueMicrotask(fn){microtasks.push(fn);}};
@@ -1810,8 +1811,9 @@ test("native Windows operator can explicitly patch first physical input, arm and
  assert.match(js,/function openNativeAudioIO\(\)/);
  assert.match(js,/action:"audioDeviceInventory"/);
  assert.match(js,/action:"audioDeviceApply"/);
- assert.match(js,/d\.inputEndpoints\.filter\(p=>/);
- assert.match(js,/d\.enabledInputs\.includes\(p\.port\)/);
+ assert.match(read("web/approved-device-view-model.js"),/d\.inputEndpoints\.filter\(p=>/);
+ assert.match(read("web/approved-device-view-model.js"),/d\.enabledInputs\.includes\(p\.port\)/);
+ assert.match(js,/deviceVM\.inputChoices\(hardware\)/);
  assert.match(js,/action:"routingSourceSwitch",requestId:pendingSourceId/);
  assert.match(js,/channel:0,mode:"MONO",left:pin,right:-1/);
  assert.match(js,/action:"monitor",value:true/);
@@ -2153,9 +2155,11 @@ test("O2 SOURCE ONLY confirmed ASIO EXTERNAL OUT auto-arms without a second Moni
 test("O2 external OUT never reports LIVE while driver output is muted",()=>{
  const bridge=read("web/approved-native-bridge.js");
  const css=read("site/preview-v2/assets/mixer-section-controls.css");
- assert.match(bridge,/const pcmInstalled=row\?\.status==="LIVE"&&match/);
- assert.match(bridge,/next\?\.device\?\.outputArmed===true\?"LIVE":"MUTED"/);
- assert.match(bridge,/state==="MUTED"\?"ASIO pair connected/);
+ const projection=read("web/approved-device-view-model.js");
+ assert.match(projection,/const installed=row\?\.status==="LIVE"&&match/);
+ assert.match(projection,/snapshot\?\.device\?\.outputArmed===true\?"LIVE":"MUTED"/);
+ assert.match(projection,/state==="MUTED"\?"ASIO pair connected/);
+ assert.match(bridge,/deviceVM\.externalPresentation\(next,row,choices\)/);
  assert.match(bridge,/state==="LIVE"\|\|state==="MUTED"/);
  assert.match(bridge,/EXTERNAL OUT patched · hardware output muted/);
  assert.match(css,/external-out-state\[data-status="MUTED"\]/);
@@ -2163,9 +2167,11 @@ test("O2 external OUT never reports LIVE while driver output is muted",()=>{
 
 test("O2 SHARED output means two or more ChannelIds, not one",()=>{
  const bridge=read("web/approved-native-bridge.js");
- assert.match(bridge,/shared>1\?" · SHARED "\+shared\+" SOURCES"/);
- assert.match(bridge,/const shared=Array\.isArray\(hardware\?\.raw\?\.externalOutputs\)/);
- assert.doesNotMatch(bridge,/shared\?" · SHARED "\+shared/);
+ const projection=read("web/approved-device-view-model.js");
+ assert.match(projection,/shared>1\?" · SHARED "\+shared\+" SOURCES"/);
+ assert.match(projection,/const shared=Array\.isArray\(snapshot\?\.raw\?\.externalOutputs\)/);
+ assert.doesNotMatch(projection,/shared\?" · SHARED "\+shared/);
+ assert.match(bridge,/deviceVM\.outputChoices\(hardware\)/);
 });
 
 test("O3 OUTPUTS overview reflects real ASIO 8-pin ownership and callback status",()=>{
