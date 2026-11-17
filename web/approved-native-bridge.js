@@ -4,10 +4,11 @@
   "use strict";
   const backend = window.__JUCE__?.backend;
   const protocol = window.ArSonApprovedNativeContract;
+  const deviceVM = window.ArSonApprovedDeviceViewModel;
   // The public GUI owns one lexical model. Native-only bundle exports a narrow
   // reference to that SAME model; never reconstruct a parallel DOM/DSP.
   const scope = window.__ARMIX_NATIVE_SCOPE__ || null;
-  const connected = Boolean(backend?.emitEvent && backend?.addEventListener && protocol);
+  const connected = Boolean(backend?.emitEvent && backend?.addEventListener && protocol && deviceVM);
   // Public browser preview keeps its header; the native JUCE caption replaces it.
   if (backend?.emitEvent && backend?.addEventListener)
     document.documentElement?.classList?.add?.("armix-native-desktop");
@@ -863,42 +864,14 @@
   // The shipped /preview/ IN dropdown is the sole normal hardware source
   // selector. Build options exclusively from JUCE-reported active pins, never
   // the public browser demo's hardcoded "Input 1 / CABLE / Realtek" strings.
-  const hardwarePins=()=>Array.isArray(hardware?.device?.inputEndpoints)?
-    hardware.device.inputEndpoints.filter(p=>p.active===true &&
-      Number.isInteger(p.port) && hardware.device.enabledInputs.includes(p.port)):[];
+  // Native endpoint choices are projected by a pure, testable ViewModel.
+  // Only accepted JUCE pin readback may populate these selectors.
   // BUS is verified engine state, not an available hardware input choice.
   const INTERNAL_BUS="Internal BUS (read-only)";
   const NEEDS_REMAP="Audio connection lost";
-  const monoLabel=p=>"Mono · "+p.label+" [IN "+(p.port+1)+"]";
-  const stereoLabel=(a,b)=>"Stereo · IN "+(a.port+1)+" + "+(b.port+1);
   // Only driver-verified even/odd physical pin pairs (not packed ordinals).
   // MAIN and MONITOR retain exclusive ownership of their actual pins.
-  const hardwareOutputPairs=()=>{
-    const d=hardware?.device,choices=[{label:"None",left:-1,right:-1}];
-    if(d?.backend!=="ASIO" || !Array.isArray(d.outputEndpoints) ||
-       !Array.isArray(d.enabledOutputs))return choices;
-    const map=new Map(d.outputEndpoints.filter(p=>
-      p.active===true&&Number.isInteger(p.port)&&
-      d.enabledOutputs.includes(p.port)&&
-      typeof p.label==="string"&&p.label.length>0).map(p=>[p.port,p]));
-    const main=Array.isArray(hardware?.raw?.physicalMainOutputs)?
-      hardware.raw.physicalMainOutputs:[];
-    const monitor=Array.isArray(hardware?.raw?.physicalMonitorOutputs)?
-      hardware.raw.physicalMonitorOutputs:[];
-    for(const [left,a] of map) {
-      if(left%2!==0 || !map.has(left+1))continue;
-      const b=map.get(left+1);
-      if(main.includes(left)||main.includes(left+1)||
-         monitor.includes(left)||monitor.includes(left+1))continue;
-      const shared=Array.isArray(hardware?.raw?.externalOutputs)?
-        hardware.raw.externalOutputs.filter(row=>
-          row.physicalLeft===left && row.physicalRight===left+1).length:0;
-      choices.push({label:"OUT "+(left+1)+"/"+(left+2)+" · "+
-        a.label+" + "+b.label+(shared>1?" · SHARED "+shared+" SOURCES":""),
-        left,right:left+1});
-    }
-    return choices;
-  };
+  const hardwareOutputPairs=()=>deviceVM.outputChoices(hardware);
   const paintExternalReadback=(next)=>{
     const assignments=Array.isArray(next?.raw?.externalOutputs)?
       next.raw.externalOutputs:[];
@@ -906,17 +879,9 @@
     for(const t of scope?.tracks||[]) {
       const id=nativeIdFor(t);
       const row=assignments.find(p=>p.channelId===id);
-      const match=row&&choices.find(p=>p.left===row.physicalLeft &&
-        p.right===row.physicalRight);
-      // Control ACK/applied graph is not audible LIVE while the verified
-      // hardware output is MUTED. Keep patch identity without ghost meters.
-      const pcmInstalled=row?.status==="LIVE"&&match;
-      const state=pcmInstalled?(next?.device?.outputArmed===true?"LIVE":"MUTED"):
-        row?.status==="PENDING"&&match?"PENDING":
-        row?"NEEDS_REMAP":"NONE";
-      const value=row?((state==="LIVE"||state==="MUTED")?match.label:
-        (state==="PENDING"?"Pending · ":"Needs Remap · ")+
-         "OUT "+(row.physicalLeft+1)+"/"+(row.physicalRight+1)):"None";
+      // Native PCM/armed status is projected, never asserted by the DOM.
+      const projected=deviceVM.externalPresentation(next,row,choices);
+      const {state,value}=projected;
       t.externalOutput=value;
       const select=document.querySelector('.strip[data-id="'+t.id+
         '"] select[data-field="external"]');
@@ -935,15 +900,10 @@
       select.dataset.status=state;
       const marker=select.parentElement?.querySelector(".external-out-state");
       if(marker){
-        marker.textContent=state==="NONE"?"":state==="NEEDS_REMAP"?"REMAP":state;
+        marker.textContent=projected.marker;
         marker.dataset.status=state;
       }
-      select.title=state==="PENDING"?"Native PCM pending · wait for audio callback":
-        state==="NEEDS_REMAP"?
-        "Saved physical output disarmed; choose a verified ASIO pair":
-        state==="MUTED"?"ASIO pair connected · output muted, settings retained":
-        state==="LIVE"?"LIVE · independent native post-fader PCM":
-        "None · internal WIRE remains unchanged";
+      select.title=projected.title;
       const pending=pendingExternal.get(id);
       if(pending && next?.device?.epoch && next.device.epoch!==pending.epoch)
         pendingExternal.delete(id); // stale device: release only this strip
@@ -959,25 +919,8 @@
       if(!pendingExternal.has(id))select.removeAttribute("aria-busy");
     }
   };
-  const inputChoicesFor=()=>{
-    const pins=hardwarePins(),entries=[{label:"None",mode:"NONE",left:-1,right:-1}];
-    for(const p of pins)entries.push({
-      label:monoLabel(p),mode:"MONO",left:p.port,right:-1});
-    // Expose real adjacent physical stereo pairs, never guess disabled pins.
-    for(let i=0;i+1<pins.length;++i)
-      if(pins[i+1].port===pins[i].port+1)
-        entries.push({label:stereoLabel(pins[i],pins[i+1]),
-          mode:"STEREO",left:pins[i].port,right:pins[i+1].port});
-    return entries;
-  };
-  const inputLabelFor=row=>{
-    if(!row||row.mode==="NONE")return "None";
-    if(row.mode==="BUS")return INTERNAL_BUS;
-    const entries=inputChoicesFor();
-    const exact=entries.find(x=>x.mode===row.mode &&
-      x.left===row.left && x.right===row.right);
-    return exact?.label||"None";
-  };
+  const inputChoicesFor=()=>deviceVM.inputChoices(hardware);
+  const inputLabelFor=row=>deviceVM.inputLabel(hardware,row);
   // ChannelId and the existing M4 use the SAME ten native input ordinals.
   // GUI track reorder must never silently repatch a different physical lane.
   const m4TrackIds=Array.isArray(scope?.tracks)?
