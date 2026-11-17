@@ -39,7 +39,12 @@ concurrency:
   # otherwise it cancels an active, valid push Pages deploy before the job IF.
   # Qualified main-push UI-smoke runs retain the production group.
   group: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event != 'push' && 'arsonmix-pages-ignored-pr-check' || 'arsonmix-production-pages' }}
-  cancel-in-progress: true
+  # Job-level 'if' is evaluated after workflow concurrency. Completed PR
+  # workflow_run events must NEVER cancel an active main Pages deployment,
+  # even if a provider does not resolve the dynamic group as intended.
+  # Direct main pushes, releases and explicit publish dispatches may supersede
+  # older builds; workflow_run jobs can only wait for their own guard.
+  cancel-in-progress: ${{ github.event_name != 'workflow_run' }}
 
 jobs:
   build:
