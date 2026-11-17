@@ -1619,7 +1619,16 @@ test("P0 output-only Audio I/O is a real native configuration, never blocked by 
  assert.match(apply,/out\.countNumberOfSetBits\(\)<2/);
  assert.doesNotMatch(cpp,/opened->getActiveInputChannels\(\)\.countNumberOfSetBits\(\)<1/);
  assert.match(bridge,/No hardware input \(Player \/ FX\)/);
- assert.match(bridge,/t\?\.separate\?\["",\.\.\.\(t\.inputs\|\|\[\]\)\]/);
+ const inventory={active:{open:true,backend:"Windows Audio",captureDevice:"",
+   playbackDevice:"Speakers",deviceGeneration:4,enabledInputs:[],
+   enabledOutputs:[0,1]},types:[{name:"Windows Audio",separate:true,
+     inputs:["Mic"],outputs:["Speakers"]}]};
+ const outputOnly=deviceVM.setupInitialDraft(inventory);
+ assert.equal(outputOnly.capture,"");
+ assert.deepEqual(deviceVM.setupUiModel(inventory,outputOnly,
+   deviceVM.setupInitial()).captureChoices,["","Mic"],
+   "pure selector preserves explicit zero-input option");
+ assert.match(bridge,/deviceVM\.setupUiModel\(deviceInventory,deviceChoice,deviceState\)/);
  assert.doesNotMatch(bridge,/ack\.active\.enabledInputs\.length>0/);
  assert.match(read("web/approved-device-view-model.js"),/Mixer ready · Output muted/);
 });
