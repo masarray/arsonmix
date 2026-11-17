@@ -92,7 +92,9 @@ struct Endpoint final
         // For capture B, the OUTPUT name is deliberately EMPTY, never an
         // implicit default speaker. Some ASIO vendors reject this outright:
         // return REJECT, do NOT invent a dummy output or reopen another driver.
-        device.reset(asio->createDevice(selected,primary?selected:juce::String()));
+        // JUCE createDevice signature is (OUTPUT name, INPUT name).
+        // B MUST have no output device even during construction.
+        device.reset(asio->createDevice(primary?selected:juce::String(),selected));
         if(!device)return "JUCE ASIO refused capture-only device construction";
         juce::BigInteger in,out;
         in.setRange(0,primary?2:1,true);
