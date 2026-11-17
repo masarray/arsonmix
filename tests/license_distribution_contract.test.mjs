@@ -50,6 +50,8 @@ test('all exact-source legal documents live inside the one native JUCE binary', 
   assert.match(ui, /#moreTools \.more-tools-panel/);
   assert.match(ui, /fetch\("\.\/legal\/"/);
   assert.match(ui, /aria-modal/);
+  assert.match(ui, /document\.querySelector\("#moreTools > summary"\)/);
+  assert.match(read('.github/workflows/ui-smoke.yml'),/tests\/embedded_legal_center_chromium_smoke\.py/);
   assert.doesNotMatch(ui, /AudioIODeviceCallback|nativeDSP|setInterval/);
   assert.match(read('scripts/verify_embedded_legal.py'), /source not in binary/);
 });
@@ -69,6 +71,16 @@ test('Windows portable ZIP and Inno installer retain zero top-level legal files'
   assert.match(iss,/Source: "\.\.\\docs\\THIRD_PARTY_8D_SONKU_HRTF\.md"; Flags: dontcopy/);
   assert.doesNotMatch(iss,/^LicenseFile=/m);
   assert.match(iss,/Flags: dontcopy/);
+  assert.match(iss,/\[InstallDelete\]/);
+  for (const legacy of ['LICENSE','LICENSE-NOTICE.txt','LICENSE-SIGNALSMITH-STRETCH.txt',
+                       'LICENSE-SIGNALSMITH-LINEAR.txt','OFL-LICENSE-Inter.txt',
+                       'THIRD_PARTY_8D_SONKU_HRTF.md','README.md']) {
+    assert.ok(iss.includes('Type: files; Name: "{app}\\'+legacy+'"'),
+              'legacy upgrade cleanup missing: '+legacy);
+  }
+  assert.doesNotMatch(iss,/^Source:.*\\README\.md.*DestDir: "\{app\}"/m);
+  assert.match(smoke,/Legacy legal file survived upgrade/);
+  assert.match(fat,/Old loose legal file survived in-place update/);
   for(const key of ['licenseTextSha256','licenseNoticeSha256','hrirNoticeSha256',
        'signalsmithStretchLicenseSha256','signalsmithLinearLicenseSha256',
        'interOflLicenseSha256','vbCableNoticeSha256']){
