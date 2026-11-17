@@ -35,9 +35,9 @@ test('all exact-source legal documents live inside the one native JUCE binary', 
   const app=read('src/Main.cpp');
   const build=read('scripts/build_approved_native_gui.py');
   const ui=read('web/approved-native-legal.js');
-  for(const symbol of ['armix_agpl','armix_notice','armix_hrir_mit',
-       'armix_signalsmith_stretch','armix_signalsmith_linear','armix_inter_ofl',
-       'armix_vbcable_notice']){
+  for(const symbol of ['armixagpl','armixnotice','armixhrirmit',
+       'armixsignalsmithstretch','armixsignalsmithlinear','armixinterofl',
+       'armixvbcablenotice']){
     assert.ok(cmake.includes('/'+symbol+'.txt'),symbol+' not staged for binary');
     assert.ok(hdr.includes(symbol+'_txt'),symbol+' not mapped to JUCE data');
   }
