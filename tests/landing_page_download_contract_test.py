@@ -111,7 +111,9 @@ class LandingReleaseContract(unittest.TestCase):
         # Changelogs must not silently suppress the Pages update when a
         # landing/readme synchronization also adds the corresponding notes.
         workflow = (ROOT / ".github" / "workflows" / "pages-publish.yml").read_text("utf-8")
-        self.assertIn("README.md|docs/releases/*.md|site/index.html", workflow)
+        self.assertIn("README.md|docs/releases/*.md|", workflow)
+        self.assertIn("|site/index.html|", workflow)
+        self.assertIn("docs/CLOUDFLARE_PAGES_BUILD.md", workflow)
         self.assertIn("NOT LANDING ONLY:", workflow)
         # A skipped PR workflow_run must not cancel a valid main push deploy.
         self.assertIn("arsonmix-pages-ignored-pr-check", workflow)
