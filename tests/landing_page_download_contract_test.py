@@ -77,6 +77,13 @@ class LandingReleaseContract(unittest.TestCase):
         self.assertIn("ImmerSIB", readme)
         self.assertIn("8D-SonKu P9.9", readme)
 
+    def test_release_notes_are_safe_landing_only_changes(self):
+        # Changelogs must not silently suppress the Pages update when a
+        # landing/readme synchronization also adds the corresponding notes.
+        workflow = (ROOT / ".github" / "workflows" / "pages-publish.yml").read_text("utf-8")
+        self.assertIn("README.md|docs/releases/*.md|site/index.html", workflow)
+        self.assertIn("NOT LANDING ONLY:", workflow)
+
     def test_no_unverified_binaries(self):
         js = (ROOT / "site/downloads.js").read_text("utf-8")
         self.assertIn("validUrl", js)
