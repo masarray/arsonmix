@@ -2419,7 +2419,12 @@ test("Device Setup VM requires matching ACK AND later installed v6 readback, nev
 test("Device Setup VM fails closed for device loss, unadmitted graph, stale epoch and stale ACK",()=>{
   const f=nativeDeviceSetupFixture();
   const waiting=deviceVM.setupAck(f.begin("approved-io-5").state,f.ack("approved-io-5"));
-  assert.equal(deviceVM.setupReadback(waiting,{...f.readback,admitted:false}).phase,"VERIFYING");
+  const deviceOnly=deviceVM.setupReadback(waiting,{
+    ...f.readback,admitted:false,productLive:false});
+  assert.equal(deviceOnly.phase,"ACCEPTED",
+    "the real device may be ready before a ChannelId PCM graph is admitted");
+  assert.match(deviceOnly.message,/route not yet verified/i);
+  assert.doesNotMatch(deviceOnly.message,/Mixer ready|Output live/);
   const lost=deviceVM.setupReadback(waiting,{...f.readback,
     device:{...f.readback.device,epoch:"14",sampleRate:0,enabledOutputs:[]}});
   assert.equal(lost.phase,"RECOVERY_REQUIRED");

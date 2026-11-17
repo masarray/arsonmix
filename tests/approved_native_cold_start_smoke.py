@@ -139,7 +139,7 @@ def main():
             emit(page,'arMixAudioDeviceApplyAck',{
                 'requestId':request['requestId'],'ok':True,
                 'state':'ACCEPTED_MUTED','active':out_active,
-                'outputMuted':True,'mixerBound':False})
+                'outputMuted':True,'mixerBound':True})
             assert progress.is_visible() and apply.is_disabled(), (
                 'ACK-only must never announce an installed playback device')
             emit_device_readback(out_active,'70')

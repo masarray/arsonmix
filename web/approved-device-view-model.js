@@ -197,14 +197,17 @@
       equalPins(d.enabledInputs,expected.enabledInputs)&&
       equalPins(d.enabledOutputs,expected.enabledOutputs);
     if(!same)return state; // The driver or graph may still be publishing.
-    if(state.pending.ack.mixerBound && snapshot.admitted!==true)return state;
+    // Physical device Apply is a distinct transaction from ChannelId PCM
+    // admission. Legacy M4/G0 can have a verified open driver without an
+    // admitted ChannelId graph; never trap Audio I/O behind a PCM claim.
+    const mixerVerified=snapshot.admitted===true;
     const live=state.pending.ack.outputMuted===false&&
       snapshot.admitted===true&&snapshot.productLive===true&&
       d.outputArmed===true;
     return {phase:"ACCEPTED",pending:null,remapGeneration:null,
       message:live?"Mixer ready · Output live":
-        state.pending.ack.mixerBound?"Mixer ready · Output muted":
-          "Audio device ready · no hardware input required"};
+        mixerVerified?"Mixer ready · Output muted":
+          "Audio device ready · Mixer route not yet verified"};
   }
   function setupTimeout(state,requestId) {
     if(!state.pending||state.pending.requestId!==requestId)return state;
