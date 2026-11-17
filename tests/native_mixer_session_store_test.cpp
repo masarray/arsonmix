@@ -685,6 +685,80 @@ static void verifyOfflineLogicalSessionAndFile() {
             found=true;
         }
     assert(found);
+    // P0: an offline WIRE intent must not operate on a *different* channel
+    // merely because its nested "from" points to an otherwise valid strip.
+    // Test every structural operation against the exact saved revision and
+    // byte-for-byte document. No device, callback or VST3 may be required.
+    const ChannelId offlineTrackId{static_cast<std::uint64_t>(track.getLargeIntValue())};
+    const auto primary=workspace.document().roster.find(offlineTrackId)->sends.front();
+    auto wirePayload=[&](const juce::String& op,const juce::String& from,
+                         const juce::String& to=juce::String{},std::uint64_t edge=0) {
+        auto change=juce::var(new juce::DynamicObject());
+        change.getDynamicObject()->setProperty("op",op);
+        change.getDynamicObject()->setProperty("from",from);
+        if(to.isNotEmpty())change.getDynamicObject()->setProperty("to",to);
+        if(edge)change.getDynamicObject()->setProperty(
+            "edgeId",juce::String(std::to_string(edge)));
+        juce::Array<juce::var> changes;
+        changes.add(change);
+        auto payload=juce::var(new juce::DynamicObject());
+        payload.getDynamicObject()->setProperty("changes",juce::var(changes));
+        return payload;
+    };
+    for(const char* kind:{"DISCONNECT","REMOVE","RETARGET","CONNECT","ROUTE_ONLY"}) {
+        const auto beforeRevision=workspace.revision();
+        const auto beforeDocument=Codec::encode(workspace.document());
+        const auto payload=wirePayload(kind,track,"11",primary.edgeId);
+        const auto rejected=workspace.apply(command("WIRE_TRANSACTION",payload,"1"));
+        assert(!rejected.accepted && rejected.error=="WIRE_CHANNEL_ID_MISMATCH");
+        assert(rejected.revision==beforeRevision);
+        assert(workspace.revision()==beforeRevision);
+        assert(Codec::encode(workspace.document())==beforeDocument);
+    }
+    // Legitimate SOURCE ONLY still works on the exact ChannelId, and only
+    // the explicit ROUTE_ONLY intent may restore the primary MAIN WIRE.
+    assert(workspace.apply(command("WIRE_TRANSACTION",
+        wirePayload("DISCONNECT",track),track)).accepted);
+    assert(workspace.document().roster.find(offlineTrackId)->sends.empty());
+    assert(workspace.apply(command("WIRE_TRANSACTION",
+        wirePayload("ROUTE_ONLY",track,"15"),track)).accepted);
+    assert(workspace.document().roster.find(offlineTrackId)->sends.size()==1);
+    assert(workspace.document().roster.find(offlineTrackId)->sends.front().primaryOutput);
+    // A saved parallel SEND supports offline PRE/POST and ON/OFF on exactly
+    // one EdgeId, preserving the original MAIN cable and channel gain.
+    assert(workspace.apply(command("WIRE_TRANSACTION",
+        wirePayload("CONNECT",track,"11"),track)).accepted);
+    const auto planned=workspace.document().roster.find(offlineTrackId)->sends;
+    assert(planned.size()==2 && !planned.back().primaryOutput);
+    const auto parallelEdge=planned.back().edgeId;
+    auto tap=juce::var(new juce::DynamicObject());
+    tap.getDynamicObject()->setProperty("edgeId",juce::String(std::to_string(parallelEdge)));
+    tap.getDynamicObject()->setProperty("tap","PRE_FADER");
+    assert(workspace.apply(command("SET_SEND_TAP",tap,track)).accepted);
+    auto projectedWire=workspace.snapshot().getProperty("graph",{}).getProperty("edges",{});
+    bool foundPre=false;
+    for(const auto& edge:*projectedWire.getArray())
+        if(edge.getProperty("edgeId",{}).toString()==juce::String(std::to_string(parallelEdge))) {
+            assert(edge.getProperty("tapStage",{}).toString()=="PRE_FADER");
+            assert(!static_cast<bool>(edge.getProperty("primaryOutput",true)));
+            foundPre=true;
+        }
+    assert(foundPre);
+    const auto* withPre=workspace.document().roster.find(offlineTrackId);
+    assert(withPre->sends.size()==2 && withPre->sends.front().primaryOutput &&
+           !withPre->sends.front().preFader && withPre->sends.back().preFader);
+    auto enabled=juce::var(new juce::DynamicObject());
+    enabled.getDynamicObject()->setProperty("edgeId",juce::String(std::to_string(parallelEdge)));
+    enabled.getDynamicObject()->setProperty("enabled",false);
+    assert(workspace.apply(command("SET_SEND_ENABLED",enabled,track)).accepted);
+    assert(!workspace.document().roster.find(offlineTrackId)->sends.back().enabled);
+    // Reopen must retain both OFF and PRE without inventing a LIVE PCM graph.
+    NativeLogicalMixerWorkspace offlineCopy;
+    assert(offlineCopy.load(workspace.document(),workspace.states()));
+    const auto* copied=offlineCopy.document().roster.find(offlineTrackId);
+    assert(copied && copied->sends.size()==2 && copied->sends.back().preFader &&
+           !copied->sends.back().enabled && copied->sends.front().primaryOutput);
+    assert(!static_cast<bool>(offlineCopy.snapshot().getProperty("physicalOutputAdmitted",true)));
     // Replacing the document invalidates pending intents even if its exact
     // revision (or even the saved document ID) is the same.
     auto stale=command("CREATE_CHANNEL",name);
@@ -917,6 +991,14 @@ static void verifyLogicalControlTransactions() {
     wireChange->setProperty("from",channel);
     wireChange->setProperty("to",bus);
     accept(command("logical-wire","WIRE_TRANSACTION",channel,wire));
+    // The full disk-committing control service must reject a target/source
+    // mismatch *synchronously*, without scheduling a save or producing a
+    // misleading ACCEPTED ACK. The exact saved readback is unchanged.
+    const auto beforeWireMismatch=control.readback().getProperty("revision",{});
+    submit(command("logical-wire-wrong-owner","WIRE_TRANSACTION","1",wire));
+    reject("WIRE_CHANNEL_ID_MISMATCH");
+    assert(!worker.busy());
+    assert(control.readback().getProperty("revision",{})==beforeWireMismatch);
     accept(command("logical-rename","RENAME_CHANNEL",channel,
         juce::JSON::parse(R"({"name":"Lead Vox"})")));
     for(const auto& fx:armix::builtin_fx::nativeBuiltInFx) {
