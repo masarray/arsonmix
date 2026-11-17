@@ -111,6 +111,49 @@ At any failure: reject and clean up ONLY the attempted secondary, preserve old a
 - Session/Show and plugin binary state must never be destructively rebuilt by an I/O change.
 - Keep approved /preview/ identical visually. UI changes are additive, typed and tested on the same actual rendered assembled app. No hidden duplicate UI view.
 
+## H2. Binding module, threading and MVVM integration contract — 2026-11-18
+
+This is the implementation rule complementing [root AGENTS.md](../AGENTS.md) and the [modular MVVM ADR](architecture/ADR_MODULAR_MVVM_FEASIBILITY_20261118.md). **Do not create a second router/engine/session store simply to adopt new architecture names.**
+
+### Ownership and dependency rules (precise seams)
+
+| Plane / thread | Current native owner to extend | Allowed responsibilities | Must not own |
+| --- | --- | --- | --- |
+| `/preview/` View + JS/TS ViewModel | `web/mixer-io.js`, `web/monitor.js`, `web/approved-native-bridge.js` and console-v8 contract | Per-view selection, editable drafts, request pending/error, typed actions, derived presentation selectors | Hardware discovery truth, accepted routing graph, native FX state, active PCM or MIDI/device clock |
+| One WebView2 transport + CONTROL application | `src/Main.cpp` composition root, `src/NativeLogicalMixerControl.h`, `src/NativeDeviceApplyCoordinator.h` | Parse and authorize typed intent, stage device+source/sink bindings, reconcile physical identity, publish/readback; primary setup and additional-device transactions **serialized by one owner** | UI DOM manipulation in domain service, opening hardware inside callback, second authoritative native dispatcher |
+| Persistent domain | Existing MixerSessionDocument, Workspace/Store, ChannelId/EdgeId graph | Desired offline source and sink bindings, graph revision, stable IDs, explicit schema upgrade/rollback | JUCE device pointers or callback ordinals as persisted IDs |
+| Graph compiler/publisher | `engine/core/DynamicNativeSessionPublisher.h`, `DynamicPreparedMixerBlock.h` and current installed ChannelId graph | Compile immutable source slots and post-FX tap graph, prepare scratch, publish transaction, safely retire old state | New per-device DSP/VST3 graph, duplicate FX block, synchronous thread-observer notification |
+| PRIMARY callback | `src/LiveAudioEngine.h`, accepted native graph and direct ASIO route | Consume prepared independent capture buses, render exactly once, fan-out immutable accepted output taps, write preallocated sink queues | Device scan/open/close/restart, COM/registry, locks, heap, JS calls, I/O waits |
+| SECONDARY callbacks | Separate narrowly scoped JUCE ASIO/WASAPI I/O adapter, existing `AdaptiveClockBridge` | Producer-only capture or consumer-only output work under one clock domain and one generation | Processing the mixer, duplicating MAIN ownership, VST3 lifecycle, modifying graph, UI/session persistence |
+
+**The word 'single callback' elsewhere means one mixer/DSP authority;** separate capture-only and sink-only device callbacks are allowed *only* in an explicitly qualified implementation and do not imply additional mixers. No extra manager may silently apply/replace the primary device. Avoid class-per-verb wrappers: extract a service only if it fully owns a transaction and removes the old implementation path.
+
+### Concrete source/sink binding & transaction ABI
+
+- Keep the current console native `schemaVersion`, event envelope and canonical decimal uint64 IDs (no JS precision loss) as baseline; introduce additive capability/versioned fields only after exact current consumer/producer audit. Never introduce a competing `arMixAction` namespace or a second device-applying controller.
+- A `SourceBinding` identifies saved alias + physical device key + input pin(s) + expected capture generation; an `OutputBinding` identifies saved logical tap identity + verified physical output endpoint/pin(s) + expected sink generation + output-authorized state. Reusing a pin ordinal from device A for device B without qualification is rejected.
+- Separate lifecycle fields: primary render device epoch, per-capture/per-sink generation, accepted graph revision, binding revision(s), and requestId. Secondary disconnection invalidates **only** its generation and installed hardware binding, not ChannelId or the primary graph's logical document. Driver class, display name, USB order or identical nominal 48k rate do not by themselves establish identity/clock synchronization.
+- Suggested operations `ADD_CAPTURE_DEVICE`, `ADD_RENDER_SINK`, `ASSIGN_SOURCE`, `ASSIGN_OUTPUT_TAP`, `REMOVE_SECONDARY_DEVICE` are **conceptual**. Convert to real typed existing intent operations only after checking native envelope; preserve actual existing APPLY/OUTPUT1 semantics during compatibility migration.
+- Successful `open()` or callback counter alone is **not** an installed playable route. ACK must identify accepted device + negotiated masks/rate/period + requested source/sink map and installed graph revision; UI marks active after a later matching installed hardware snapshot. Control transaction failure restores exact previously accepted state and leaves primary output permissions unchanged.
+- Physical outputs are fail-closed. New secondary sinks must be explicitly selected/verified and cannot auto-arm, replace MAIN, override MONITOR-owned pins, or redirect a saved BUS to another soundcard because of device-list reorder.
+
+### RT memory & asynchronous audio proof contract
+
+- A capture callback has one FIFO writer per independent source clock, and primary render is the one FIFO reader. For output sink direction, primary render is the one FIFO writer and secondary output callback is the reader. Real driver callback scheduling can be asynchronous, so source and sink state must use generations and safe teardown; CONTROL waits for quiescence **off audio threads** before reclaiming queues.
+- Each independently clocked source/sink uses its own bounded occupancy/ASRC correction. Both producer and consumer must be able to stop, underrun, overrun or disconnect without waiting on each other. Queue policy, priming, fade-to-silence, recovery and stale queued frame rejection need deterministic fixtures.
+- Keep primary direct ASIO/one-device processing path zero additional ASRC/FIFO. Select post-FX/fader/PDC tap points from the **one** native graph; publish MAIN/CHANNEL/BUS to independent sink queues without a second VST3 `processBlock`. DSP CPU grows with needed ASRC I/O work, not with duplicate graph render count.
+- Never promise that cross-device multiway output is sample-aligned: host graph PDC cannot remove DAC clock drift. Treat phase-critical multiway output as unsupported or measurement/hardware-sync gated until documented FAT.
+
+### MVVM migration order and measurable checks
+
+Start from the **existing** Device Setup application transaction and native status path, rather than converting the whole C++ engine. Extract a tested pure DeviceSetupViewModel with current accepted/pending/failed/native readback selectors, while preserving exact DOM/CSS/PNG from `/preview/`. Move business validation into its existing native owner (not UI JS). After the first vertical slice proves parity, apply the same ViewModel technique to Source/Output Picker and Routing state, with one native session owner.
+
+**Fitness tests:** same displayed I/O before/after extraction with fixed accepted native snapshot; negative/stale ACK UI; native device restart readback and .smix roundtrip; output permission and SOURCE ONLY/WIRE route parity; VST3 lease identity and single render; UI exact compiled /preview/ pointer/keyboard/sizing checks; callback allocation/lock budget. Record changed files and eliminated duplicated control owners. Reducing file line counts without deleting old routes is **not** acceptance.
+
+### Test order and release evidence
+
+For doc-only changes, inspect GitHub diff and references; **do not dispatch Windows/Chromium CI**. For implementation, run targeted fast contracts, then the applicable exact-SHA Windows native or FAT lane, plus UI only when actually changed. A vendor-ASIO proof is an early implementation falsification step, not a permanent approval gate or excuse to stop implementation indefinitely. If the actual hardware is unavailable, publish synthetic/CI evidence with **physical FAT pending**, not production claim. Preserve existing active PR feature owners and avoid bulk merging stale drafts.
+
 ## I. Implementation milestones and no-go gates
 
 | Milestone | Required deliverable | Evidence to proceed |
