@@ -84,8 +84,28 @@ def main():
                           'enabledInputs':[0],'enabledOutputs':[0,1],
                           'rate':48000,'buffer':480,
                           'rates':[48000],'buffers':[480]}}
+            # MV-2: a combined JUCE backend has one physical endpoint for
+            # both directions. Changing Output must automatically synchronize
+            # Input; never carry verified pins from the previous driver.
+            io_inventory['types'].append({
+                'name':'ASIO','separate':False,
+                'inputs':['Unified A','Unified B'],
+                'outputs':['Unified A','Unified B']})
             emit(page,'arMixAudioDeviceInventory',io_inventory)
+            backend_select=page.locator('.armix-audio-dialog [data-audio-field="backend"]')
             capture_select=page.locator('.armix-audio-dialog [data-audio-field="capture"]')
+            playback_select=page.locator('.armix-audio-dialog [data-audio-field="playback"]')
+            backend_select.select_option(value='ASIO')
+            assert capture_select.input_value()=='Unified A'
+            playback_select.select_option(value='Unified B')
+            assert capture_select.input_value()=='Unified B'
+            assert page.locator('[data-audio-main-pins]').is_hidden()
+            assert page.locator('[data-audio-field="rate"]').is_disabled()
+            assert page.locator('[data-audio-field="buffer"]').is_disabled()
+            assert page.locator('[data-audio-apply]').is_enabled()
+            # Return to the previous Windows device without applying the
+            # speculative ASIO draft or changing native physical hardware.
+            backend_select.select_option(value='Windows Audio')
             capture_select.select_option(value='')
             assert capture_select.input_value()==''
             assert page.locator('.armix-audio-dialog [data-audio-apply]').is_enabled()
