@@ -14,6 +14,8 @@ on:
       - 'scripts/build_landing_assets.py'
       - 'scripts/build_pages.py'
       - 'scripts/build_release_catalog.py'
+      - 'scripts/build_cloudflare_pages.py'
+      - 'tests/test_cloudflare_pages_build.py'
       - 'tests/test_release_catalog.py'
       - '.github/workflows/pages-publish.yml'
       # Release-publisher permission + its exact regression can refresh catalog
@@ -90,7 +92,7 @@ jobs:
             fi
             while IFS= read -r path; do
               case "$path" in
-                README.md|docs/releases/*.md|site/index.html|site/googlec34c43149eef6100.html|site/landing.css|site/downloads.js|site/media/*|scripts/build_landing_assets.py|scripts/build_release_catalog.py|scripts/capture_landing_screenshots.py|tests/landing_page_*|tests/downloads_runtime_contract.test.mjs|tests/test_release_catalog.py|.github/workflows/pages-publish.yml|.github/workflows/alpha-preview-publish.yml|tests/release_ci_dispatch_contract.test.mjs)
+                README.md|docs/releases/*.md|site/index.html|site/googlec34c43149eef6100.html|site/landing.css|site/downloads.js|site/media/*|scripts/build_landing_assets.py|scripts/build_release_catalog.py|scripts/build_cloudflare_pages.py|scripts/capture_landing_screenshots.py|tests/test_cloudflare_pages_build.py|tests/landing_page_*|tests/downloads_runtime_contract.test.mjs|tests/test_release_catalog.py|.github/workflows/pages-publish.yml|.github/workflows/alpha-preview-publish.yml|tests/release_ci_dispatch_contract.test.mjs)
                   ;;
                 *)
                   echo "fresh=false" >> "$GITHUB_OUTPUT"
@@ -127,7 +129,7 @@ jobs:
           test "$(cat dist-pages/googlec34c43149eef6100.html)" = "google-site-verification: googlec34c43149eef6100.html"
           python scripts/build_landing_assets.py dist-pages
           python tests/test_release_catalog.py
-          python scripts/build_release_catalog.py --output dist-pages/release-catalog.json
+          python scripts/build_release_catalog.py --output dist-pages/release-catalog.json --landing dist-pages/index.html
           # The current approved mixer remains /preview/ and is single-owner.
           # /preview-prod/ is separately pinned read-only historical evidence;
           # no extra native GUI or competing mutable source is introduced.
