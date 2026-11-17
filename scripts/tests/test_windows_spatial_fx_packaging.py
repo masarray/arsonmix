@@ -104,5 +104,10 @@ class WindowsSpatialFxArtifactGate(unittest.TestCase):
             self.assertIn("WINDOWS_SPATIAL_PRODUCT_FAT_REJECTED", stderr.getvalue())
 
 
+class CIOnlyRedMergeProbe(unittest.TestCase):
+    def test_intentional_failure_proves_ruleset_blocks_merge(self):
+        self.fail("REQUIRED_CI_RED_BLOCK_PROBE")
+
+
 if __name__ == "__main__":
     unittest.main()
