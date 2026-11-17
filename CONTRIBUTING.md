@@ -48,3 +48,9 @@ For JS protocol edits, use `node --test tests/approved_native_m2_contract.test.c
 **Never call CI PASS physical FAT.** Actual ASIO routing, hotplug, plugin-editor continuity, audible PCM, noise and latency must be witnessed on equipment. Keep that evidence separate from unit tests and do not promote a product release on an unqualified ZIP.
 
 When finishing a scoped PR, record changed responsibilities, main and PR SHAs, test results and failures, exact dispatched lane (or why none), rollback/previous accepted-state proof, physical FAT status and remaining work. Favor one cohesive change over many cosmetic cleanups.
+
+## Issue intake and release governance (17 Nov 2026)
+
+Use the repository's compact [bug report](.github/ISSUE_TEMPLATE/01_bug_report.yml) or [feature/milestone request](.github/ISSUE_TEMPLATE/02_feature_request.yml) template. Do not open duplicate work from old SonKu/ImmerSIB research PRs: read the [Milestone A source ledger](docs/governance/MILESTONE_A_PR_BRANCH_RECONCILIATION_20261117.md) first. Existing issue priority, area, status, **testable exit criteria**, and approved release boundaries are indexed in [Milestone B governance](docs/governance/MILESTONE_B_ISSUE_RELEASE_GOVERNANCE_20261117.md); change issue labels/evidence to reflect newly proven reality instead of inventing completed audio or hardware FAT.
+
+GitHub ruleset CI-required status checks are **not yet configured** even though the `main` PR/force-push ruleset is active; [#748](https://github.com/masarray/arsonmix/issues/748) tracks practical fail-closed enforcement without making path-scoped Windows/Chromium checks block documentation-only PRs. **Do not close #450**: it is the production owner-authenticated release command endpoint. Never publish or retune a proven release merely to clean up issue metadata.
