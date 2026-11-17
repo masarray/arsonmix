@@ -56,6 +56,27 @@ No custom kernel driver; no mandatory third-party virtual mixer or signing servi
 
 Existing output1 MAIN mirroring is retained as a useful compatibility mode. A generic additional sink supporting BUS/CH is **new work**, not proof the current output1 already does it. Device support displayed only from tested capabilities and real driver readback.
 
+## Maintainability, MVVM and cross-thread product requirements (2026-11-18)
+
+**User-visible goal:** adding future device, channel-routing, FX, monitor and speaker-output features must become routine and safe, without rewriting Main.cpp, the DSP callback, the approved UI, or another feature's code. **This is a product requirement, not a claim that source was already refactored.** The decision is an incremental JUCE C++ modular monolith plus a WebView2 *presentation* MVVM layer, documented in the [ADR](architecture/ADR_MODULAR_MVVM_FEASIBILITY_20261118.md).
+
+| ID | Required operator/developer outcome | Acceptance and disallowed shortcut |
+| --- | --- | --- |
+| MA01 | One native accepted state after every GUI action | Selected device/source/output appears ACTIVE **only** after correlated requestId, native ACK and matching installed graph/device readback; no second JS authoritative mixer |
+| MA02 | New I/O option does not force an unrelated feature rewrite | Device/source/output changes isolate in device application owner, source/sink binding compiler and existing GUI selectors; regression review records unrelated files touched and why |
+| MA03 | Multi-output choices remain understandable | Operators can distinguish primary device pins, OUTPUT1 MAIN mirror, and independently selected BUS/CH sink; no phantom 8-output pins or invented latency |
+| MA04 | Source disconnected, session survives | Keep named physical intent in `.smix`, independent of logical ChannelId/EdgeId/FX; offline and needs-remap are distinct from running PCM |
+| MA05 | UX remains usable for existing one-device users | Existing `/preview/` layout, workflow, PNG hardware controls and primary ASIO direct behavior preserved; no new mandatory driver wizard, latency or MONITOR ritual |
+| MA06 | Features are independently testable | Pure ViewModels (Device Setup and Source/Output Picker) tested without browser hardware; native command/graph/session tests separately; real ASIO/FAT independent |
+| MA07 | Old and new threads reconcile without overwriting | Before edit: refresh main SHA, active PR HEAD and overlapping files; one scoped integration owner, targeted tests, no bulk merge/force-push of draft GUI/FX branches |
+| MA08 | Feature status is not overstated | Publish distinct capabilities: primary ASIO multichannel, second-device INPUT FAT, independently routed OUTPUT FAT, combined I/O FAT; show unsupported vendor combination as UNSUPPORTED, not as success |
+
+**UX behavior contract:** The existing AUDIO I/O area exposes distinct verified capture and output device rows, backend, connection status, rate and buffers, with compact native Source/Output selection. Advanced diagnostics can expose measured FIFO occupancy/correction, per-device latency provenance, capture discontinuities and output underruns without overwhelming the main console. Declared rate equality never implies synchronized hardware clocks. When a secondary device fails, only channels/outputs bound to it lose PCM; the primary mix remains usable where its device is healthy.
+
+**Cross-device loudspeaker safety:** Independent USB output interfaces are not automatically phase coherent. For crossover or timing-critical multiway speakers, recommend a verified shared-clock multichannel ASIO interface or measured hardware-synchronization/alignment; do not advertise per-interface DAC sample alignment by simply adding a delay slider. Multiple simultaneous ASIO driver support remains contingent on hardware/vendor FAT.
+
+**Definition of done per implementation vertical slice:** a short ownership map; native command -> validation -> session/routing/graph preparation -> publish -> actual device/source/sink readback; tests and negative paths; prior single-device parity; measured real-device evidence for claimed features; verified GUI behavior only when UI modified; explicit remaining hardware FAT. A doc-only or synthetic-only milestone is not a production audio release. Existing [maintainability epic #527](https://github.com/masarray/arsonmix/issues/527) already includes improvements: measure *remaining* coupling before coding new service/ViewModel layers.
+
 ## Release criteria
 
 - **IO-G0:** architecture/ownership and unchanged single primary-device regression baseline recorded; no feature marketing before hardware proof.
