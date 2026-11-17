@@ -2463,6 +2463,17 @@ test("MV-2 pin/rate edits reject phantom endpoints and do not reset native ACK s
   const deselected=deviceVM.setupEditDraft(f.inventory,pins,
     {pinSide:"output",pinIndex:1,checked:false});
   assert.deepEqual(deselected.outputPins,[0,2]);
+  const single=deviceVM.setupEditDraft(f.inventory,original,
+    {pinSide:"output",pinIndex:1,checked:false});
+  assert.deepEqual(single.outputPins,[0]);
+  assert.equal(deviceVM.setupUiModel(f.inventory,single,
+    deviceVM.setupInitial()).canApply,false,
+    "UI cannot send an impossible one-pin stereo output transaction");
+  assert.equal(deviceVM.setupBegin(deviceVM.setupInitial(),{
+    inventory:f.inventory,draft:single,requestId:"mv2-one-pin"}),null,
+    "same pure safety rule gates presentation and command creation");
+  assert.equal(deviceVM.setupUiModel(f.inventory,original,
+    deviceVM.setupInitial()).canApply,true);
   assert.equal(deviceVM.setupEditDraft(f.inventory,pins,
     {pinSide:"output",pinIndex:29,checked:true}),pins);
   assert.equal(deviceVM.setupEditDraft(f.inventory,pins,

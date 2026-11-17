@@ -100,6 +100,11 @@
     if(!inventory?.active||!t||!draft?.playback||
        !Array.isArray(t.outputs)||!t.outputs.includes(draft.playback))
       return false;
+    // Existing hardware pin masks must remain a verified stereo pair.
+    // A new endpoint has no inspected pins yet; native opens it with safe
+    // defaults and publishes a fresh inventory before individual pin edits.
+    if(setupSameEndpoint(inventory,draft)&&Array.isArray(draft.outputPins)&&
+       draft.outputPins.length<2)return false;
     if(t.separate===true)
       return draft.capture==="" ||
         (Array.isArray(t.inputs)&&t.inputs.includes(draft.capture));
