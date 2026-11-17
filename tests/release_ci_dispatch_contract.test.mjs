@@ -55,6 +55,9 @@ test('Verified release tag is stamped into the native window, not a fake version
   const configure=workflow.split('      - name: Configure release application')[1]
     ?.split('      - name: Build release application only')[0]||'';
   assert.match(configure, /-DARMIX_RELEASE_TAG="\$env:ARMIX_RELEASE_TAG"/);
+  assert.match(configure, /-DARMIX_IMMERSIB_RELEASE_CANDIDATE=ON/);
+  assert.match(configure, /-DARMIX_SONKU_APPROVED_P99_MAIN=ON/);
+  assert.match(configure, /PUBLIC_SPATIAL_FX_RELEASE_FLAG_MISSING/);
   assert.match(cmake, /set\(ARMIX_RELEASE_TAG "" CACHE STRING/);
   assert.match(cmake, /if\(NOT ARMIX_RELEASE_TAG MATCHES/);
   assert.match(cmake, /ARMIX_RELEASE_TAG_PATTERN/);

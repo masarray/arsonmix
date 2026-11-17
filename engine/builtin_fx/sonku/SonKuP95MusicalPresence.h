@@ -19,7 +19,11 @@ public:
   reset();return true;
  }
  void reset() noexcept {inPower_=outPower_=0.f;target_=makeup_=1.f;counter_=0;}
- float process(float inL,float inR,float wetL,float wetR) noexcept {
+ // Optional bounded ceiling lets ImmerSIB reject high automatic makeup on
+ // deliberately wet, already-positive-trim scenes. 1.65 is the exact legacy
+ // path; the existing 450ms slew also smooths scene transitions.
+ float process(float inL,float inR,float wetL,float wetR,
+               float maxMakeup=1.65f) noexcept {
   const float a=.5f*(inL*inL+inR*inR);
   const float b=.5f*(wetL*wetL+wetR*wetR);
   inPower_+=detector_*(a-inPower_);
@@ -31,7 +35,7 @@ public:
     const float ratio=std::sqrt(inPower_/outPower_);
     // 1.12× = +0.98dB *electrical* minimum when possible.
     // Never auto-reduce the deliberate user outputTrim boost.
-    target_=std::clamp(1.12f*ratio,1.f,1.65f);
+    target_=std::clamp(1.12f*ratio,1.f,maxMakeup);
    }else target_=1.f;
   }
   makeup_+=slew_*(target_-makeup_);

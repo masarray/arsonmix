@@ -2826,8 +2826,13 @@ function syncGlobalFxButton(){
    bypass state; the native bridge calls this only with published FX status. */
 window.__ARMIX_SET_GLOBAL_FX_VIEW__=(enabled)=>{
  if(typeof enabled!=='boolean')return false;
- if(globalFxOn===enabled){syncGlobalFxButton();return true;}
- globalFxOn=enabled;render();return true;
+ // The bridge has already painted each installed FX row using the SAME
+ // authoritative PCM snapshot. Only the global button and overall muted
+ // styling change here; render() would unnecessarily replace faders, rack
+ // buttons and open editor focus on every global bypass click.
+ globalFxOn=enabled;
+ syncGlobalFxButton();
+ return true;
 };
 document.querySelector('.section-rail').addEventListener('click',e=>{
  const button=e.target.closest('[data-section]');if(!button)return;

@@ -598,11 +598,14 @@
   // structural graph change. Updating them must not replace DOM strips,
   // steal focus, interrupt a fader drag or reallocate WIRE render objects.
   // The verified individual bypass flag stays distinct from rack bypass.
-  function paintNativeFxPowerReadback(ch,t){
-    if(typeof ch.fxRackBypassed!=="boolean"||!Array.isArray(ch.inserts))
+  function paintNativeFxPowerReadback(ch,t,globalFxBypassed){
+    if(typeof ch.fxRackBypassed!=="boolean"||!Array.isArray(ch.inserts)||
+       typeof globalFxBypassed!=="boolean")
       return true; // never synthesize missing DSP readback
     const enabled=!ch.fxRackBypassed;
-    const globalEnabled=document.querySelector('.console-body')?.classList.contains('global-fx-bypassed')!==true;
+    // Read the SAME accepted native PCM snapshot as every slot, not a
+    // CSS class from the PREVIOUS browser render frame.
+    const globalEnabled=!globalFxBypassed;
     const strip=document.querySelector('.strip[data-id="'+t.id+'"]');
     // GAIN/SOF are alternate views of the FX area; power readback still
     // updates the model but must not rebuild the rack or steal knob focus.
@@ -753,7 +756,7 @@
       const t=id===scope?.master?.id?scope.master:
         scope?.tracks?.find(x=>x.id===id);
       if(!t||!ch.controls)continue;
-      if(!paintNativeFxPowerReadback(ch,t)){
+      if(!paintNativeFxPowerReadback(ch,t,next.raw?.globalFxBypassed)){
         // A plugin owner or strip DOM changed under us: do not paint an
         // unrelated instance. Rebuild from the accepted native graph.
         if(!projection(next))return false;
@@ -2979,8 +2982,13 @@
     }
     // Control readback may change at the SAME structural graph revision.
     // Compare the actual accepted controls/edges, never skip native fader updates.
-    const signature=next.identity+"|"+JSON.stringify(next.graph.channels.map(ch=>[
-      ch.id,ch.controls,ch.inserts,ch.fxRackBypassed,ch.primaryOutId]))+"|"+JSON.stringify(next.graph.edges)+"|"+appearanceRevision;
+    // GLOBAL A/B is a realtime SCALAR with unchanged graph revision and
+    // unchanged saved insert flags. Include its accepted PCM readback so
+    // bypassing every FX repaints each mounted rack without rebuilding DOM.
+    const signature=next.identity+"|"+String(next.raw?.globalFxBypassed)+"|"+
+      JSON.stringify(next.graph.channels.map(ch=>[
+      ch.id,ch.controls,ch.inserts,ch.fxRackBypassed,ch.primaryOutId]))+"|"+
+      JSON.stringify(next.graph.edges)+"|"+appearanceRevision;
     if (signature===lastPaintedSignature) {
       // Telemetry-only snapshots should not traverse all channels. But an
       // expired/rejected edit with unchanged graph values must not strand its

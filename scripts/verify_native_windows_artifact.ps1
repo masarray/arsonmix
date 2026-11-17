@@ -11,6 +11,7 @@ $expected = @(
     "BUILD_PROVENANCE.json",
     "HARDWARE_FAT_GUIDE.md",
     "README.md",
+    "THIRD_PARTY_8D_SONKU_HRTF.md",
     "portable_mode.txt",
     "collect_hardware_fat_windows.ps1",
     "m3e_fat_evidence_gate.mjs",
@@ -36,6 +37,23 @@ if (@(Compare-Object -ReferenceObject $expected -DifferenceObject $actual).Count
 }
 
 $manifest = Get-Content -LiteralPath (Join-Path $OutputDir "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+$notice = "THIRD_PARTY_8D_SONKU_HRTF.md"
+$sourceNotice = Join-Path "docs" $notice
+$distNotice = Join-Path $OutputDir $notice
+if (-not (Test-Path -LiteralPath $sourceNotice -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $distNotice -PathType Leaf)) {
+    throw "MIT/HRIR attribution absent from source or distribution"
+}
+$noticeHash = (Get-FileHash -LiteralPath $sourceNotice -Algorithm SHA256).Hash.ToLowerInvariant()
+$distNoticeHash = (Get-FileHash -LiteralPath $distNotice -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($manifest.hrirNoticeSha256 -ne $noticeHash -or $noticeHash -ne $distNoticeHash) {
+    throw "Third-party HRIR notice differs from exact source/manifest"
+}
+$noticeText = Get-Content -LiteralPath $distNotice -Raw -Encoding UTF8
+foreach ($marker in @("Bill Gardner", "Keith Martin", "Aristotel Digenis",
+                      "Permission is hereby granted", "THE SOFTWARE IS PROVIDED")) {
+    if (-not $noticeText.Contains($marker)) { throw "Incomplete HRIR notice: $marker" }
+}
 # FAT tools match source bytes, distributed bytes AND the current SHA manifest.
 $fatTools = @{
     "collect_hardware_fat_windows.ps1" = [string]$manifest.fatCollectorSha256

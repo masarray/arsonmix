@@ -87,6 +87,12 @@ if (-not (Test-Path -LiteralPath $fatGuide -PathType Leaf)) {
 }
 Copy-Item -LiteralPath $readme -Destination (Join-Path $OutputDir "README.md")
 Copy-Item -LiteralPath $fatGuide -Destination (Join-Path $OutputDir "HARDWARE_FAT_GUIDE.md")
+# Ship MIT KEMAR/HRIR attribution with the actual portable executable.
+$hrirNotice = "docs/THIRD_PARTY_8D_SONKU_HRTF.md"
+if (-not (Test-Path -LiteralPath $hrirNotice -PathType Leaf)) {
+    throw "Mandatory MIT KEMAR/HRIR attribution missing"
+}
+Copy-Item -LiteralPath $hrirNotice -Destination (Join-Path $OutputDir "THIRD_PARTY_8D_SONKU_HRTF.md")
 # Selective FAT-only extraction from parked #270, no PCM or GUI production code.
 $fatBundleFiles = @("collect_hardware_fat_windows.ps1", "m3e_fat_evidence_gate.mjs")
 foreach ($file in $fatBundleFiles) {
@@ -122,6 +128,7 @@ $manifest = [ordered]@{
     exeSha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
     fatCollectorSha256 = (Get-FileHash -LiteralPath (Join-Path $OutputDir "collect_hardware_fat_windows.ps1") -Algorithm SHA256).Hash.ToLowerInvariant()
     fatGateSha256 = (Get-FileHash -LiteralPath (Join-Path $OutputDir "m3e_fat_evidence_gate.mjs") -Algorithm SHA256).Hash.ToLowerInvariant()
+    hrirNoticeSha256 = (Get-FileHash -LiteralPath (Join-Path $OutputDir "THIRD_PARTY_8D_SONKU_HRTF.md") -Algorithm SHA256).Hash.ToLowerInvariant()
     approvedGuiRoute = $approvedGui.authoritativePagesRoute
     approvedGuiOutput = $approvedGui.authoritativePagesOutput
     approvedGuiCanonicalSource = $approvedGui.canonicalSource

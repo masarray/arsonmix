@@ -1475,6 +1475,8 @@ test("P0 native FX rack and per-slot readback update mounted strip without repla
  vm.runInNewContext(read("web/approved-native-bridge.js"),
   {window:win,document:doc,performance:{now:()=>0},console},{timeout:1500});
  const base=acceptedFixture();
+ // Production approvedNativeSnapshot publishes this PCM scalar, not CSS.
+ base.globalFxBypassed=false;
  base.graph.channels[0].fxRackBypassed=false;
  base.graph.channels[0].inserts=[
   {id:"vst-live-1",catalogId:"eq-a",name:"EQ",bypassed:false},
@@ -1528,7 +1530,21 @@ test("P0 native FX rack and per-slot readback update mounted strip without repla
  assert.equal(track.fxOn,true);
  assert.deepEqual(rows.map(r=>r.power.getAttribute("aria-pressed")),["true","false"]);
  assert.deepEqual(rows.map(r=>r.dataset.fxEffective),["true","false"]);
- const individual=clone(restored);
+ // One PCM global A/B overrides every displayed FX power without
+ // changing either remembered individual bypass preference or DOM nodes.
+ const allBypassed=clone(restored);
+ allBypassed.globalFxBypassed=true;
+ listeners.get("arMixConsoleSnapshot")(allBypassed);
+ assert.equal(paints,1,"global FX is a scalar, not a graph rebuild");
+ assert.deepEqual(rows.map(r=>r.dataset.fxEffective),["false","false"]);
+ assert.deepEqual(rows.map(r=>r.power.getAttribute("aria-pressed")),["false","false"]);
+ assert.deepEqual(Array.from(track.slotBypass.slice(0,2)),[false,true]);
+ const restoredGlobal=clone(allBypassed);
+ restoredGlobal.globalFxBypassed=false;
+ listeners.get("arMixConsoleSnapshot")(restoredGlobal);
+ assert.equal(paints,1);
+ assert.deepEqual(rows.map(r=>r.dataset.fxEffective),["true","false"]);
+ const individual=clone(restoredGlobal);
  individual.graph.channels[0].inserts[0].bypassed=true;
  listeners.get("arMixConsoleSnapshot")(individual);
  assert.equal(paints,1,"slot power is a realtime scalar, not a topology edit");
@@ -1897,8 +1913,17 @@ test("native vendor editor retention follows current PCM ownership, not inactive
  assert.match(main,/routedEditorEpoch_=retainedEpoch/);
  assert.match(main,/retainedEpoch=ep/);
  assert.match(lab,/nativeAccepted_\.fxOwners->retainsEditor\(owner\)/);
- const editor=main.slice(main.indexOf('if(owner && owner->processor)'),main.indexOf('if(owner && owner->processor)')+700);
- assert.ok(editor.indexOf('closePluginEditor();')<editor.indexOf('createEditorIfNeeded()'),'old window must be destroyed before asking for its editor pointer');
+ const start=main.indexOf('if(owner && owner->processor)');
+ assert.ok(start>=0,'routed FX editor source must exist');
+ const editor=main.slice(start,main.indexOf('catch(const std::exception& ex)',start));
+ assert.ok(editor.includes('routedEditorOwner_==owner'),
+   'reopen only exact current accepted PCM owner');
+ assert.ok(editor.includes('editorWindow_->present()'),
+   'same FX instance must be focused instead of recreated');
+ const fresh=editor.slice(editor.indexOf('} else try {'));
+ assert.ok(fresh.includes('closePluginEditor();') &&
+   fresh.indexOf('closePluginEditor();')<fresh.indexOf('createEditorIfNeeded()'),
+   'DIFFERENT instance must destroy old window before asking for new editor');
  const change=main.slice(main.indexOf('void changeListenerCallback'),main.indexOf('void timerCallback()',main.indexOf('void changeListenerCallback')));
  assert.doesNotMatch(change,/if\(routedEditorOwner_\)closePluginEditor/);
 });
