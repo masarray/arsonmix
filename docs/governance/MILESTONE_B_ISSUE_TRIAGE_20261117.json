@@ -1,0 +1,382 @@
+{
+  "schemaVersion": 1,
+  "kind": "ArSonMix-Milestone-B-Triage",
+  "date": "2026-11-17",
+  "baselineMain": "d6fd94815bd0b717e3eb7acb7c97bc18e7d87db2",
+  "publicRelease": "v0.5.0-alpha.26",
+  "sourceReleaseSha": "8ec5b8a3e07837c85fb6e06c952cff1621fecc51",
+  "ruleset": {
+    "id": 26568033,
+    "active": true,
+    "requiredStatusChecks": 0,
+    "requiredApprovals": 0,
+    "issue": 748,
+    "canWriteRulesetViaConnector": false
+  },
+  "issues": [
+    {
+      "number": 726,
+      "priority": "P2",
+      "area": "spatial",
+      "type": "research",
+      "status": "research",
+      "releaseBoundary": "Not an alpha.26 gate; do not touch listening-approved SonKu P9.9 or Venue golden",
+      "acceptance": [
+        "Create clearly distinct own-geometry Cinema/Venue/Studio acoustic impulse/early-reflection model without copying proprietary BRIR/IR.",
+        "Prove level-matched 0–360° front/back/distance A/B and no regression to P9.9 and Venue golden; require new operator approval."
+      ],
+      "retitle": "[P2][SPATIAL RESEARCH] Distinct Cinema/Venue/Studio geometry beyond approved SonKu P9.9"
+    },
+    {
+      "number": 720,
+      "priority": null,
+      "area": "spatial",
+      "type": "checkpoint",
+      "status": "archived",
+      "releaseBoundary": "Completed historical reference; keep exact SHA and checkpoint branch immutable",
+      "acceptance": [
+        "Preserve verified P9.1/P9.2 checkpoint SHA 763706a15a2617a10d23b5e2e43eb5689e454ccb and its branch unchanged.",
+        "Close issue as completed reference only; do not claim the original stacked PR was merged."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 699,
+      "priority": null,
+      "area": "architecture",
+      "type": "checkpoint",
+      "status": "archived",
+      "releaseBoundary": "Completed cross-thread safety ledger; no live code change requested",
+      "acceptance": [
+        "Preserve documented approved GAIN GUI blobs and exact cross-thread provenance.",
+        "Close issue as historical documentation; retain its discussion, links and immutable source references."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 686,
+      "priority": "P1",
+      "area": "player",
+      "type": "feature",
+      "status": "planned",
+      "releaseBoundary": "Player future work, not retroactively claimed in alpha.26",
+      "acceptance": [
+        "Produce worker-only bounded full-track waveform cache with invalidation/relink/corrupt-file fallback and no realtime allocations.",
+        "Measure actual PCM cue/crossfade/gapless transitions at 44.1/48/96 kHz with deterministic test files and native Windows qualification."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 683,
+      "priority": "P2",
+      "area": "spatial",
+      "type": "research",
+      "status": "research",
+      "releaseBoundary": "Legacy P7.1 XYZ exploration; not a dependency for approved P9.9/ImmerSIB release",
+      "acceptance": [
+        "Separate optional 3D XYZ admission from already-approved P9.9's two-speaker spatial orbit.",
+        "Require source-exact native XYZ ACK/PCM tests, target-interface hardware proof and a new operator listening decision before any enable."
+      ],
+      "retitle": "[P2][SPATIAL RESEARCH] Optional full XYZ admission beyond approved SonKu P9.9"
+    },
+    {
+      "number": 680,
+      "priority": "P1",
+      "area": "player",
+      "type": "qualification",
+      "status": "field-fat",
+      "releaseBoundary": "Physical music/FX ASIO test not replaceable by synthetic CI",
+      "acceptance": [
+        "On current Windows build, verify player WAV/MP3/FLAC playback, KEY/TEMPO and A/B cue through one native ChannelId, BUS/MAIN and physical output.",
+        "Exercise music transitions while MIC FX live; capture device/driver/buffer, actual audible result, failures and reopen behavior."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 664,
+      "priority": "P2",
+      "area": "spatial",
+      "type": "research",
+      "status": "research",
+      "releaseBoundary": "Historical room/dearVR comparisons, not authority to retune accepted sound",
+      "acceptance": [
+        "Reconcile historical P8 acoustic hypotheses against approved P9.9 and separate private research from product acceptance.",
+        "Only accept measurable, independent room/acoustic evidence plus listening approval with unchanged Venue golden PCM."
+      ],
+      "retitle": "[P2][SPATIAL RESEARCH] Optional externalization parity study after approved P9.9"
+    },
+    {
+      "number": 636,
+      "priority": "P0",
+      "area": "lms",
+      "type": "feature",
+      "status": "planned",
+      "releaseBoundary": "Safety gate before enabling any physical multichannel loudspeaker output",
+      "acceptance": [
+        "Prove fail-closed matrix/crossover/port identity: no unassigned pin can emit, no silently retargeted ASIO outputs, safe device restart and muted uncalibrated outputs.",
+        "Qualify mono/stereo crossover frequency/phase, routing and bounded output DSP with native PCM + physical multichannel field tests before exposing live output."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 625,
+      "priority": "P1",
+      "area": "updater",
+      "type": "qualification",
+      "status": "field-fat",
+      "releaseBoundary": "Published updater already exists; verify current Windows release rather than rewrite it",
+      "acceptance": [
+        "Prove upgrade, rollback, repair and interruption behavior on exact public alpha.26 installer with SHA256/provenance and old version fixture.",
+        "Verify user's Studio/.smix and VST3 settings preserved, no forced app closure during live monitoring, offline/restart recovery."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 608,
+      "priority": "P1",
+      "area": "guitar-fx",
+      "type": "feature",
+      "status": "planned",
+      "releaseBoundary": "Visual acceptance pending; experimental visuals must not replace approved GUI",
+      "acceptance": [
+        "Present original licensed transparent pedal and amp bodies without prepunched control holes, with separate knobs/switches/LED and correct hitboxes/shadows.",
+        "Verify native JUCE Guitar IN→pedal→amp→cab IR→channel FX→MAIN signal, meaningful presets, ASIO/reopen and visually accepted captured preview."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 547,
+      "priority": "P0",
+      "area": "vst3-host",
+      "type": "defect",
+      "status": "needs-repro",
+      "releaseBoundary": "Historical startup and WaveShell incident; determine reproduction on exact current public build",
+      "acceptance": [
+        "Reproduce alpha.26 startup/reopen crash or WaveShell class mismatch with WER faulting module, exact SHA, plugin IDs and ASIO/device state; distinguish the two failures.",
+        "Prove no crash loop through quarantined restore/recovery, deterministic VST3 class enumeration and native Windows regression; close only after current-build field proof."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 533,
+      "priority": "P1",
+      "area": "harmonice",
+      "type": "feature",
+      "status": "planned",
+      "releaseBoundary": "Portions may already ship; verify current before claiming work is missing",
+      "acceptance": [
+        "Audit current Windows product for VOICES=2 Duo, genuine separately controlled unison Doubler, native ACK and legacy 3/4/5 compatibility.",
+        "Verify per-effect user presets survive .smix reopen, device switch and app restart; fill only source-proven gaps with real native PCM tests."
+      ],
+      "retitle": "[P1][HARMONICE] Qualify Duo, real Doubler and built-in FX user presets"
+    },
+    {
+      "number": 527,
+      "priority": "P1",
+      "area": "architecture",
+      "type": "refactor",
+      "status": "planned",
+      "releaseBoundary": "Long-term single-owner architecture; do not fork realtime callback",
+      "acceptance": [
+        "Audit and report actual remaining mixer/FX host ownership coupling at current main instead of repeating completed M1–M6 milestones.",
+        "Refactor by bounded subsystem with deterministic native PCM/ACK/.smix regression and no additional device/audio callback; retain independent rollback."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 490,
+      "priority": "P0",
+      "area": "mixer",
+      "type": "defect",
+      "status": "needs-repro",
+      "releaseBoundary": "Core first-launch offline logical edit UX; current-build proof needed",
+      "acceptance": [
+        "On fresh alpha.26 with no audio device connected, create/rename tracks, configure FX/WIRE/session, Save/Open .smix without a fake locked reference GUI.",
+        "After device binding/restart, reconcile exactly one logical→physical graph with truthful ACK/metering and no implicit hardware IN/ARM gate."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 473,
+      "priority": "P2",
+      "area": "vocal-throw",
+      "type": "feature",
+      "status": "backlog",
+      "releaseBoundary": "Optional BPM Music BUS analysis; no fake beat phase",
+      "acceptance": [
+        "Estimate BPM and phase from actual native Music BUS on worker thread with confidence/hysteresis and tempo holdover; no FFT/IO in ASIO callback.",
+        "Verify variable-tempo and stop/restart behavior and bounded precise readback to Vocal Throw inserts at 44.1/48 kHz."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 453,
+      "priority": "P1",
+      "area": "release",
+      "type": "qualification",
+      "status": "field-fat",
+      "releaseBoundary": "Static GitHub/Cloudflare catalogs already list 3 OS: Windows alpha.26, Linux/macOS alpha.5",
+      "acceptance": [
+        "Preserve proof that both live static Pages catalogs point to alpha.26 Windows + alpha.5 Linux/macOS with official provenance/checksums.",
+        "Test native Linux/macOS install/open/audio/permissions and Windows hardware/device FAT on exact released assets; do not call old alpha.5 equivalent to Windows alpha.26."
+      ],
+      "retitle": "[P1][PORTABILITY] Native tri-OS qualification after release-catalog synchronization"
+    },
+    {
+      "number": 450,
+      "priority": "P1",
+      "area": "release",
+      "type": "operations",
+      "status": "operational",
+      "releaseBoundary": "Intentionally OPEN owner-authenticated release command endpoint",
+      "acceptance": [
+        "Keep issue number 450 open for owner-only exact-SHA /arsonmix-release, /arsonmix-port and /arsonmix-publish commands; never close or repurpose it as bug board.",
+        "For each release prove immutable SHA, valid provenance/checksums, installer/portable success and Pages static catalog parity; reject duplicate/stale release requests."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 412,
+      "priority": "P0",
+      "area": "mixer",
+      "type": "qualification",
+      "status": "field-fat",
+      "releaseBoundary": "Authoritative physical routing/SOURCE ONLY acceptance; no synthetic demo substitutions",
+      "acceptance": [
+        "On current Windows hardware, verify IN→CH05→MAIN without CH01/wizard/ARM, SOURCE ONLY retains channel meter but silences MAIN, cable reconnection restores PCM.",
+        "Verify BUS FX→MAIN and VST3 rack bypass, retarget/delete/mono/stereo/device restart with exact graph ACK and no stale sound/routing."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 349,
+      "priority": "P1",
+      "area": "gui",
+      "type": "enhancement",
+      "status": "backlog",
+      "releaseBoundary": "Aesthetic wire physics not a PCM routing bug",
+      "acceptance": [
+        "Review current approved /preview/ wire sag, damping and ripple at desktop/narrow widths; capture matched screenshots.",
+        "Implement only with stable event-based animation and CSS ownership tests; no WebAudio/PCM side effects or new renderer."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 347,
+      "priority": "P1",
+      "area": "gui",
+      "type": "enhancement",
+      "status": "backlog",
+      "releaseBoundary": "Independent mixer input accessibility UX",
+      "acceptance": [
+        "Prove precise pointer+hover-wheel control behavior for knob/slider/fader with correct focus, keyboard accessibility and reasonable step bounds.",
+        "Validate native WebView2 and Chromium desktop/narrow pointer performance with no duplicate listeners or parameter writes."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 192,
+      "priority": "P0",
+      "area": "mixer",
+      "type": "defect",
+      "status": "field-fat",
+      "releaseBoundary": "Dynamic track reliability with stable ChannelId; do not return to fixed ten-strip code",
+      "acceptance": [
+        "Test add/delete/reorder/rename arbitrary channels while keeping native FX/WIRE, bus, fader and device-independent session identities.",
+        "Verify exact PCM/ACK/readback, `.smix` reopen and physical device restart; channel5 must work without channel1, no stale route or callback lifetime leak."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 185,
+      "priority": "P2",
+      "area": "factory-fx",
+      "type": "feature",
+      "status": "backlog",
+      "releaseBoundary": "Optional native VST3 bonus, not mandatory built-in audio product path",
+      "acceptance": [
+        "For every proposed first-party VST3 module verify original rights, exact commit/CID provenance, OS-specific binary, SHA256, manifest and license terms.",
+        "Prove genuine host load, FX parameter/preset recall and audio PCM at relevant OS before advertising it as bundled."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 180,
+      "priority": "P1",
+      "area": "session",
+      "type": "feature",
+      "status": "backlog",
+      "releaseBoundary": "Show/Scene operational safety and state recovery",
+      "acceptance": [
+        "Demonstrate scoped Recall Safe, no unintended changes to hardware/device/WIRE/FX under partial scene recall.",
+        "Verify vendor VST3 state restoration, rollback, portable .smix, corrupt input fail-closed and native GUI/PCM readback."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 135,
+      "priority": "P1",
+      "area": "metering",
+      "type": "feature",
+      "status": "backlog",
+      "releaseBoundary": "Display only genuine measured loudness/true peak",
+      "acceptance": [
+        "Implement BS.1770 integrated LUFS with correct absolute/relative gating and channel weights, and ≥4× oversampled intersample dBTP.",
+        "Validate offline PCM vectors at multiple sample rates and streaming bounds; no fake sample-peak renamed as dBTP, no RT allocation/locks."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 85,
+      "priority": "P1",
+      "area": "vst3-host",
+      "type": "feature",
+      "status": "backlog",
+      "releaseBoundary": "User-owned VST3 state vault; privacy and safe restore",
+      "acceptance": [
+        "Define per-user ownership/versioning and bounded cache invalidation without storing unauthorized plugin binaries or licenses.",
+        "Measure session reopen speed and safety under missing/outdated vendors; preserve .smix FX identity and deterministic fallback."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 56,
+      "priority": "P0",
+      "area": "gui",
+      "type": "defect",
+      "status": "needs-repro",
+      "releaseBoundary": "Old GPU stutter evidence; severity conditional on current alpha.26 reproduction",
+      "acceptance": [
+        "Capture repeatable GPU/WebView2/Firefox frame time p95/p99 and pointer jitter on exact alpha.26 and stated Windows GPU/driver at idle and active meters.",
+        "Fix only measured compositor/input bottleneck with browser/narrow screenshot and no native DSP or excessive repaint regressions."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 15,
+      "priority": "P0",
+      "area": "audio-engine",
+      "type": "defect",
+      "status": "needs-repro",
+      "releaseBoundary": "Old WASAPI/BT/virtual cable crackling; qualify exact current release before claiming present regression",
+      "acceptance": [
+        "Repeat zero-VST3 44.1/48k WASAPI/ASIO monitoring on exact alpha.26 with devices, driver, clock and 10ms buffer recorded.",
+        "Capture callback gaps/xrun/packet cadence and audible crackle; isolate clocking from native DSP; pass matched physical A/B before close."
+      ],
+      "retitle": null
+    },
+    {
+      "number": 748,
+      "priority": "P0",
+      "area": "release",
+      "type": "governance",
+      "status": "needs-permission",
+      "releaseBoundary": "Ruleset active, but zero enforced required checks and zero approvals",
+      "acceptance": [
+        "Add an always-on fast merge gate whose semantics require all relevant path-scoped tests and fail closed on pending/failure, without Windows for docs-only.",
+        "With authorized ruleset administration, require that stable gate; prove CI-red cannot merge and successful docs-only can merge without weakening protection."
+      ],
+      "retitle": null
+    }
+  ]
+}
