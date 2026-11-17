@@ -17,6 +17,8 @@ on:
       - 'scripts/build_cloudflare_pages.py'
       - 'tests/test_cloudflare_pages_build.py'
       - 'tests/test_release_catalog.py'
+      - 'tests/landing_page_download_contract_test.py'
+      - 'tests/landing_page_browser_smoke.py'
       - '.github/workflows/pages-publish.yml'
       # Release-publisher permission + its exact regression can refresh catalog
       # after an already-published, validated binary without a Windows rebuild.
