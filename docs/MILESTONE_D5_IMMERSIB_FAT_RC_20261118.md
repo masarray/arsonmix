@@ -1,5 +1,7 @@
 # Milestone D5 — corrected ImmerSIB/SonKu Windows FAT (18 November 2026)
 
+> **FINAL / CLOSED (18 November 2026):** Spatial Milestones A–D have been reconciled; [PR #760](https://github.com/masarray/arsonmix/pull/760) merged to `main` at `42841dc9b451d84a3ee0332008b3af0e21ff51d2`, 102/102 corrected Windows FAT passed, and [public Windows alpha.27](https://github.com/masarray/arsonmix/releases/tag/v0.5.0-alpha.27) with complete ImmerSIB + SonKu P9.9 was published and its Pages catalog deployed. Prior text below describes the **historical candidate acceptance plan**, not the currently unpublished state. The spatial-only A–D closure and MVVM handoff are documented in [SPATIAL_IMMERSIB_SONKU_ABCD_CLOSURE_20261118.md](governance/SPATIAL_IMMERSIB_SONKU_ABCD_CLOSURE_20261118.md). General physical routing/hardware and the updater end-to-end validation remain separate issues; no DSP retune is implied.
+
 ## Why this candidate exists
 The previous FAT candidate [PR #756](https://github.com/masarray/arsonmix/pull/756) / [run #44081695177](https://github.com/masarray/arsonmix/actions/runs/44081695177) compiled the mixer from generic CMake defaults. Although the audio engine played and 100/100 CTests passed, the ImmerSIB C++ catalog descriptor was compiled **out** (default `ARMIX_IMMERSIB_RELEASE_CANDIDATE=OFF`). The EXE contained web-facing `ImmerSIB` text but not the native `NATIVE_IMERSIP_PREPARE_EXCEPTION` marker. Do not reuse that build.
 
