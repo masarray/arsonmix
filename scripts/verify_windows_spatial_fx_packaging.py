@@ -19,6 +19,7 @@ import sys
 FLAGS = ("ARMIX_IMMERSIB_RELEASE_CANDIDATE", "ARMIX_SONKU_APPROVED_P99_MAIN")
 # Markers exclusively owned by the C++ native descriptor, not by JS preview.
 NATIVE_CATALOG_MARKERS = (
+    b"armix.builtin.imersip.v1",
     b"NATIVE_IMERSIP_PREPARE_EXCEPTION",
     b"Saved ImmerSIB IMRS state rejected; graph unchanged",
     b"NATIVE_SONKU_PREPARE_EXCEPTION",
