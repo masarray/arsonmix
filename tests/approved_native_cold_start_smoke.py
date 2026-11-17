@@ -97,12 +97,35 @@ def main():
             assert progress.locator('svg animate').count()==4
             assert progress.locator('svg').evaluate('(svg)=>svg.animationsPaused()')==(width==1920)
             assert page.locator('[data-audio-close]').is_disabled()
+            # The transient request lives in the ViewModel, not in a DOM attribute.
+            apply_calls=[0]
             def wait_apply():
-                pending=page.locator('.armix-audio-shade').get_attribute('data-pending-request')
-                assert pending
-                page.wait_for_function("""id=>window.__events.some(e=>
-                    e.payload?.action==='audioDeviceApply'&&e.payload.requestId===id)""",arg=pending)
+                apply_calls[0]+=1
+                page.wait_for_function("""count=>window.__events.filter(e=>
+                    e.name==='arMixAction'&&e.payload?.action==='audioDeviceApply').length===count""",
+                    arg=apply_calls[0])
                 assert page.evaluate('()=>window.__applyPainted')
+
+            def emit_device_readback(actual, epoch):
+                # Native schema-v6 device proof without an installed PCM graph.
+                fresh=copy.deepcopy(json.loads(
+                    (ROOT/'integration/console-v6/fixtures.json').read_text())['g0'])
+                inputs=actual['enabledInputs']
+                outputs=actual['enabledOutputs']
+                fresh['device'].update(
+                    epoch=str(epoch),backend=actual['backend'],
+                    captureDevice=actual['captureDevice'],
+                    playbackDevice=actual['playbackDevice'],
+                    sampleRate=actual['rate'],bufferFrames=actual['buffer'],
+                    enabledInputs=inputs,enabledOutputs=outputs,
+                    inputEndpoints=[dict(id=f'in:{pin}',port=pin,callback=i,
+                        label=f'IN {pin+1}',active=True)
+                        for i,pin in enumerate(inputs)],
+                    outputEndpoints=[dict(id=f'out:{pin}',port=pin,callback=i,
+                        label=f'OUT {pin+1}',active=True)
+                        for i,pin in enumerate(outputs)],
+                    outputArmed=False)
+                emit(page,'arMixConsoleSnapshot',fresh)
             wait_apply()
             request=page.evaluate("""()=>window.__events.filter(e=>
               e.payload?.action==='audioDeviceApply').at(-1)?.payload""")
@@ -111,12 +134,15 @@ def main():
             assert request['config']['enabledInputs']==[]
             assert request['config']['enabledOutputs']==[]
             out_active={**io_inventory['active'],'captureDevice':'',
-                        'inputNames':[],'enabledInputs':[],
+                        'inputNames':[],'enabledInputs':[],'deviceGeneration':70,
                         'outputNames':['WDM L','WDM R','Realtek L','Realtek R']}
             emit(page,'arMixAudioDeviceApplyAck',{
                 'requestId':request['requestId'],'ok':True,
                 'state':'ACCEPTED_MUTED','active':out_active,
                 'outputMuted':True,'mixerBound':True})
+            assert progress.is_visible() and apply.is_disabled(), (
+                'ACK-only must never announce an installed playback device')
+            emit_device_readback(out_active,'70')
             assert page.locator('.armix-audio-shade').is_hidden()
             page.locator('.command-bar [data-native-io]').click()
             io_inventory['active']=out_active
@@ -138,12 +164,16 @@ def main():
             assert repatch['config']['assignSelectedPlaybackPinsToMain'] is True
             assert repatch['config']['enabledOutputs']==[2,3]
             assert repatch['config']['enabledInputs']==[]
+            main_active={**out_active,'deviceGeneration':71,'enabledOutputs':[2,3]}
             emit(page,'arMixAudioDeviceApplyAck',{
                 'requestId':repatch['requestId'],'ok':True,
-                'state':'ACCEPTED_MUTED','active':{**out_active,'enabledOutputs':[2,3]},
-                'outputMuted':True,'mixerBound':True})
+                'state':'ACCEPTED_MUTED','active':main_active,
+                'outputMuted':True,'mixerBound':False})
+            assert progress.is_visible() and apply.is_disabled()
+            emit_device_readback(main_active,'71')
             assert page.locator('.armix-audio-shade').is_hidden()
             g0=json.loads((ROOT/'integration/console-v6/fixtures.json').read_text())['g0']
+            g0['device']['epoch']='72'
             g0['mixerSession']={'authority':'NONE','deviceEpoch':g0['device']['epoch'],'channels':[]}
             g0['legacyM4']={'active':True,'routeAccepted':False,'routingRevision':'1'}
             emit(page,'arMixConsoleSnapshot',g0)
@@ -234,7 +264,8 @@ def main():
             assert page.locator('.console-pane').is_visible()
             assert not page.evaluate('()=>window.__nativeIntents.length')
             state=snapshot()
-            state['device'].update(enabledInputs=[],inputEndpoints=[])
+            state['device'].update(epoch='72',enabledInputs=[],inputEndpoints=[])
+            state['mixerSession']['deviceEpoch']='72'
             state['graph']['edges'].pop(1)  # genuinely no existing channel send
             state['graph']['capabilities']['supportedOps'] += ['LOAD_INSERT']
             for ident, role, name in [('101','GROUP','Vocal Group'),
@@ -349,7 +380,7 @@ def main():
             page.locator('[data-native-io]').click()
             backend='Windows Audio'
             active={'backend':backend,'captureDevice':'New Capture','playbackDevice':'New Playback',
-                'open':True,'authorized':True,'deviceGeneration':12,'rate':48000,'buffer':256,
+                'open':True,'authorized':True,'deviceGeneration':92,'rate':48000,'buffer':256,
                 'inputNames':['Input 1'],'outputNames':['Output 1','Output 2'],
                 'enabledInputs':[0],'enabledOutputs':[0,1],'rates':[48000],'buffers':[256]}
             emit(page,'arMixAudioDeviceInventory',{'active':active,'types':[
@@ -365,17 +396,23 @@ def main():
                 'active':active,'canReusePins':True})
             assert progress.is_visible() and apply.is_disabled()
             assert remap.is_hidden()
+            applied={**active,'deviceGeneration':93}
             emit(page,'arMixAudioDeviceApplyAck',{'requestId':opened['requestId'],'ok':True,
-                'state':'ACCEPTED_LIVE','active':active,'mixerBound':True,'outputMuted':False})
-            assert page.locator('.armix-audio-shade').is_hidden()
+                'state':'ACCEPTED_LIVE','active':applied,'mixerBound':True,'outputMuted':False})
+            assert progress.is_visible() and apply.is_disabled()
             rebound=copy.deepcopy(state)
-            rebound['device'].update(epoch='93',outputArmed=True,
-                enabledInputs=g0['device']['enabledInputs'],inputEndpoints=g0['device']['inputEndpoints'])
+            rebound['device'].update(epoch='93',backend=backend,
+                captureDevice=active['captureDevice'],playbackDevice=active['playbackDevice'],
+                sampleRate=48000,bufferFrames=256,outputArmed=True,
+                enabledInputs=active['enabledInputs'],enabledOutputs=active['enabledOutputs'],
+                inputEndpoints=g0['device']['inputEndpoints'])
             rebound['graph']['revision']='6'
             rebound['graph']['capabilities']['supportedOps'].append('CREATE_CHANNEL')
             rebound['mixerSession'].update(deviceEpoch='93',routeRevision='6')
             monitor_events=page.evaluate('()=>window.__events.filter(e=>e.payload?.action==="monitor").length')
             emit(page,'arMixConsoleSnapshot',rebound)
+            assert page.locator('.armix-audio-shade').is_hidden(), (
+                'correlated installed PCM readback must settle device apply')
             page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__.state().current?.admitted')
             assert page.locator('[data-native-monitor]').is_enabled()
             assert page.locator('[data-native-monitor]').get_attribute('data-armed')=='true'
@@ -405,14 +442,19 @@ def main():
             wait_apply()
             repeated=page.evaluate(read_apply)
             assert repeated['requestId']!=rejected['requestId']
+            next_active={**active,'deviceGeneration':94}
             emit(page,'arMixAudioDeviceApplyAck',{'requestId':repeated['requestId'],'ok':True,
-                'state':'ACCEPTED_LIVE','active':active,'mixerBound':True,'outputMuted':False})
+                'state':'ACCEPTED_LIVE','active':next_active,'mixerBound':True,'outputMuted':False})
+            assert progress.is_visible() and apply.is_disabled()
+            rebound['device']['epoch']='94'
+            rebound['mixerSession']['deviceEpoch']='94'
+            emit(page,'arMixConsoleSnapshot',rebound)
             assert page.locator('.armix-audio-shade').is_hidden()
             assert page.evaluate('()=>window.__events.filter(e=>e.payload?.action==="monitor").length')==monitor_events
             add_track.click()
             request=page.evaluate(create)[-1]['payload']
             assert (request['deviceEpoch'],request['graphRevision'],request['rosterRevision'])==(
-                '93','6',rebound['graph']['rosterRevision'])
+                '94','6',rebound['graph']['rosterRevision'])
             assert add_track.is_disabled()
             created_id='9007199254740997'
             emit(page,'arMixNativeBusAck',{'requestId':request['requestId'],

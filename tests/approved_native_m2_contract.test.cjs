@@ -4,6 +4,7 @@ const test=require("node:test");
 const assert=require("node:assert/strict");
 const {readFileSync}=require("node:fs");
 const protocol=require("../web/approved-native-contract.js");
+const deviceVM=require("../web/approved-device-view-model.js");
 const read=p=>readFileSync(p,"utf8");
 const fixtures=JSON.parse(read("integration/console-v6/fixtures.json"));
 const clone=x=>JSON.parse(JSON.stringify(x));
@@ -398,7 +399,8 @@ test("P0 DAW approved Windows GUI directly binds every IN to current JUCE ports,
   assert.match(builder,/type==='input'&&window\.__JUCE__\?\.backend/);
   assert.match(builder,/__ARMIX_NATIVE_M2__\?\.inputChoices/);
   assert.match(bridge,/inputChoices\(t\)/);
-  assert.match(bridge,/hardware\.device\.enabledInputs\.includes\(p\.port\)/);
+  assert.match(bridge,/deviceVM\.inputChoices\(hardware\)/);
+  assert.match(read("web/approved-device-view-model.js"),/d\.enabledInputs\.includes\(p\.port\)/);
   assert.match(bridge,/field==="input"/);
   // Reordering /preview/ strips must NOT change the real hardware lane.
   assert.match(bridge,/const channel=m4Index\(t\)/);
@@ -999,7 +1001,8 @@ test("single /preview/ GUI: channel IN, actual OUT and correlated device safety 
  assert.match(bridge,/source:"\/preview\/ approved compiled Pages GUI"/);
  assert.match(bridge,/field==="input"/);
  assert.match(bridge,/nativeUiSourcePending=null;[\s\S]*?INPUT timeout/);
- assert.match(bridge,/ack\?\.requestId!==devicePanel.dataset.pendingRequest/);
+ assert.match(bridge,/deviceVM\.setupAck\(deviceState,ack\)/);
+ assert.match(read("web/approved-device-view-model.js"),/ack\?\.requestId!==state\.pending\.requestId/);
  assert.match(native,/requestAutomaticMain\(\);\s*send\(true,engine_\.isMonitorEnabled\(\)\?"ACCEPTED_LIVE":"ACCEPTED_MUTED"/);
  assert.match(bridge,/Virtual output · No speakers/);
  assert.match(bridge,/Advanced driver recovery/);
@@ -1245,7 +1248,7 @@ test("M3 native-only Pages scope performs real bridge projection, fader intent a
    querySelector:()=>null,addEventListener(){}
  };
  const window={
-   __JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,
+   __JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,
    __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},queueMicrotask(fn){microtasks.push(fn);},setTimeout(fn,ms){timers.push({fn,ms});return timers.length;}
  };
  vm.runInNewContext(read("web/approved-native-bridge.js"),{
@@ -1469,7 +1472,7 @@ test("P0 native FX rack and per-slot readback update mounted strip without repla
   querySelector:selector=>selector.startsWith('.strip[data-id=')?strip:null,
   addEventListener(){}
  };
- const win={__JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,
+ const win={__JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,
   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
   setTimeout(){return 0},clearTimeout(){},queueMicrotask(fn){fn();}};
  vm.runInNewContext(read("web/approved-native-bridge.js"),
@@ -1618,7 +1621,7 @@ test("P0 output-only Audio I/O is a real native configuration, never blocked by 
  assert.match(bridge,/No hardware input \(Player \/ FX\)/);
  assert.match(bridge,/t\?\.separate\?\["",\.\.\.\(t\.inputs\|\|\[\]\)\]/);
  assert.doesNotMatch(bridge,/ack\.active\.enabledInputs\.length>0/);
- assert.match(bridge,/FX\/WIRE available/);
+ assert.match(read("web/approved-device-view-model.js"),/Mixer ready · Output muted/);
 });
 test("P0 FIRST SOUND G0 offers verified input and leaves automatic MAIN to native",()=>{
  const vm=require("node:vm"),sent=[],listeners=new Map(),renderedChoices=[];
@@ -1645,7 +1648,7 @@ test("P0 FIRST SOUND G0 offers verified input and leaves automatic MAIN to nativ
   addEventListener(){}
  };
  win={
-  __JUCE__:{backend},ArSonApprovedNativeContract:protocol,
+  __JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,
   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
   setTimeout(){return 0},clearTimeout(){},queueMicrotask(fn){fn();}
  };
@@ -1732,7 +1735,7 @@ test("P0 native hardware IN remains selectable after ChannelId ownership, failed
     id==="preview"?{disabled:true}:null,
   querySelector:()=>null,addEventListener(){}
  };
- const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,
+ const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,
   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
   setTimeout(){return 0},clearTimeout(){},
   queueMicrotask(fn){microtasks.push(fn);}};
@@ -1808,9 +1811,11 @@ test("native Windows operator can explicitly patch first physical input, arm and
  assert.match(js,/AUDIO \/ SAFETY/);
  assert.match(js,/function openNativeAudioIO\(\)/);
  assert.match(js,/action:"audioDeviceInventory"/);
- assert.match(js,/action:"audioDeviceApply"/);
- assert.match(js,/d\.inputEndpoints\.filter\(p=>/);
- assert.match(js,/d\.enabledInputs\.includes\(p\.port\)/);
+ assert.match(read("web/approved-device-view-model.js"),/action:"audioDeviceApply"/);
+ assert.match(js,/backend\.emitEvent\("arMixAction",begun\.request\)/);
+ assert.match(read("web/approved-device-view-model.js"),/d\.inputEndpoints\.filter\(p=>/);
+ assert.match(read("web/approved-device-view-model.js"),/d\.enabledInputs\.includes\(p\.port\)/);
+ assert.match(js,/deviceVM\.inputChoices\(hardware\)/);
  assert.match(js,/action:"routingSourceSwitch",requestId:pendingSourceId/);
  assert.match(js,/channel:0,mode:"MONO",left:pin,right:-1/);
  assert.match(js,/action:"monitor",value:true/);
@@ -2152,9 +2157,11 @@ test("O2 SOURCE ONLY confirmed ASIO EXTERNAL OUT auto-arms without a second Moni
 test("O2 external OUT never reports LIVE while driver output is muted",()=>{
  const bridge=read("web/approved-native-bridge.js");
  const css=read("site/preview-v2/assets/mixer-section-controls.css");
- assert.match(bridge,/const pcmInstalled=row\?\.status==="LIVE"&&match/);
- assert.match(bridge,/next\?\.device\?\.outputArmed===true\?"LIVE":"MUTED"/);
- assert.match(bridge,/state==="MUTED"\?"ASIO pair connected/);
+ const projection=read("web/approved-device-view-model.js");
+ assert.match(projection,/const installed=row\?\.status==="LIVE"&&match/);
+ assert.match(projection,/snapshot\?\.device\?\.outputArmed===true\?"LIVE":"MUTED"/);
+ assert.match(projection,/state==="MUTED"\?"ASIO pair connected/);
+ assert.match(bridge,/deviceVM\.externalPresentation\(next,row,choices\)/);
  assert.match(bridge,/state==="LIVE"\|\|state==="MUTED"/);
  assert.match(bridge,/EXTERNAL OUT patched · hardware output muted/);
  assert.match(css,/external-out-state\[data-status="MUTED"\]/);
@@ -2162,9 +2169,11 @@ test("O2 external OUT never reports LIVE while driver output is muted",()=>{
 
 test("O2 SHARED output means two or more ChannelIds, not one",()=>{
  const bridge=read("web/approved-native-bridge.js");
- assert.match(bridge,/shared>1\?" · SHARED "\+shared\+" SOURCES"/);
- assert.match(bridge,/const shared=Array\.isArray\(hardware\?\.raw\?\.externalOutputs\)/);
- assert.doesNotMatch(bridge,/shared\?" · SHARED "\+shared/);
+ const projection=read("web/approved-device-view-model.js");
+ assert.match(projection,/shared>1\?" · SHARED "\+shared\+" SOURCES"/);
+ assert.match(projection,/const shared=Array\.isArray\(snapshot\?\.raw\?\.externalOutputs\)/);
+ assert.doesNotMatch(projection,/shared\?" · SHARED "\+shared/);
+ assert.match(bridge,/deviceVM\.outputChoices\(hardware\)/);
 });
 
 test("O3 OUTPUTS overview reflects real ASIO 8-pin ownership and callback status",()=>{
@@ -2282,4 +2291,215 @@ test("SOF double-click and target selection never commandeer MAIN fader",()=>{
     "SOF must intercept fader reset BEFORE M4/Main fader ownership");
   assert.match(handler,/requestWireGain\(\{sourceId:t\.id,edgeId:id,levelDb:0\}\)/);
   assert.match(handler,/intent\("SET_INPUT_GAIN",t,\{valueDb:0\}\)/);
+});
+
+test("MVVM device selector projects only the verified native physical input pins",()=>{
+  const hardware={device:{backend:"ASIO",enabledInputs:[0,1,3],
+    inputEndpoints:[
+      {port:0,label:"Mic 1",active:true},{port:1,label:"Mic 2",active:true},
+      {port:2,label:"Disabled",active:true},{port:3,label:"Mic 4",active:true},
+      {port:4,label:"Inactive",active:false}]},raw:{}};
+  const original=JSON.stringify(hardware);
+  assert.deepEqual(deviceVM.activeInputPins(hardware).map(p=>p.port),[0,1,3]);
+  const choices=deviceVM.inputChoices(hardware);
+  assert.deepEqual(choices.map(x=>[x.mode,x.left,x.right]),[
+    ["NONE",-1,-1],["MONO",0,-1],["MONO",1,-1],["MONO",3,-1],["STEREO",0,1]
+  ]);
+  assert.equal(deviceVM.inputLabel(hardware,{mode:"MONO",left:3,right:-1}),
+    "Mono · Mic 4 [IN 4]");
+  assert.equal(deviceVM.inputLabel(hardware,{mode:"STEREO",left:0,right:1}),
+    "Stereo · IN 1 + 2");
+  assert.equal(deviceVM.inputLabel(hardware,{mode:"STEREO",left:1,right:2}),"None");
+  assert.equal(deviceVM.inputLabel(hardware,{mode:"BUS"}),"Internal BUS (read-only)");
+  assert.equal(JSON.stringify(hardware),original,"view must not mutate native readback");
+  assert.deepEqual(deviceVM.inputChoices({device:{inputEndpoints:[],enabledInputs:[]}}),
+    [{label:"None",mode:"NONE",left:-1,right:-1}]);
+  assert.deepEqual(deviceVM.activeInputPins({device:{inputEndpoints:hardware.device.inputEndpoints}}),[]);
+});
+test("MVVM external outputs never offer MAIN/MONITOR pins, disabled pairs, or WASAPI copies",()=>{
+  const snapshot={device:{backend:"ASIO",enabledOutputs:[0,1,2,3,4,5,7,8],
+    outputArmed:false,outputEndpoints:Array.from({length:9},(_,port)=>({
+      port,label:"Physical "+(port+1),active:port!==6
+    }))},raw:{physicalMainOutputs:[0,1],physicalMonitorOutputs:[4,5],
+    externalOutputs:[{physicalLeft:2,physicalRight:3},{physicalLeft:2,physicalRight:3}]}};
+  const before=JSON.stringify(snapshot);
+  const choices=deviceVM.outputChoices(snapshot);
+  assert.equal(choices.length,2);
+  assert.deepEqual(choices[0],{label:"None",left:-1,right:-1});
+  assert.deepEqual([choices[1].left,choices[1].right],[2,3]);
+  assert.match(choices[1].label,/SHARED 2 SOURCES/);
+  assert.equal(deviceVM.outputChoices({...snapshot,device:{...snapshot.device,
+    backend:"WASAPI"}}).length,1);
+  assert.equal(JSON.stringify(snapshot),before,"output projection must be read-only");
+});
+test("MVVM external readback needs verified pair and output-arm, never ACK-only LIVE",()=>{
+  const snapshot={device:{backend:"ASIO",outputArmed:false,
+    outputEndpoints:[{port:2,label:"OUT L",active:true},{port:3,label:"OUT R",active:true}],
+    enabledOutputs:[2,3]},raw:{physicalMainOutputs:[],physicalMonitorOutputs:[],externalOutputs:[]}};
+  const choices=deviceVM.outputChoices(snapshot);
+  const installed={status:"LIVE",physicalLeft:2,physicalRight:3};
+  const muted=deviceVM.externalPresentation(snapshot,installed,choices);
+  assert.equal(muted.state,"MUTED");
+  assert.equal(muted.marker,"MUTED");
+  assert.equal(muted.value,choices[1].label);
+  assert.equal(deviceVM.externalPresentation({...snapshot,
+    device:{...snapshot.device,outputArmed:true}},installed,choices).state,"LIVE");
+  assert.equal(deviceVM.externalPresentation(snapshot,{...installed,status:"PENDING"},choices).state,
+    "PENDING");
+  const invalid=deviceVM.externalPresentation(snapshot,
+    {...installed,physicalLeft:6,physicalRight:7},choices);
+  assert.equal(invalid.state,"NEEDS_REMAP");
+  assert.match(invalid.value,/Needs Remap/);
+  assert.equal(deviceVM.externalPresentation(snapshot,null,choices).state,"NONE");
+  assert.equal(deviceVM.externalPresentation(null,installed).state,"NEEDS_REMAP");
+});
+test("MVVM native bridge uses the one device read model, not retired web/mixer-io.js",()=>{
+  const bridge=read("web/approved-native-bridge.js");
+  const build=read("scripts/build_approved_native_gui.py");
+  assert.match(bridge,/deviceVM\.inputChoices\(hardware\)/);
+  assert.match(bridge,/deviceVM\.externalPresentation\(next,row,choices\)/);
+  assert.match(bridge,/deviceVM\.outputChoices\(hardware\)/);
+  assert.doesNotMatch(bridge,/const monoLabel=|const hardwareOutputPairs=\(\)=>\{/);
+  assert.match(build,/assets\/approved-device-view-model\.js/);
+  assert.match(build,/web" \/ "approved-device-view-model\.js"/);
+  assert.doesNotMatch(bridge,/AudioContext|AudioWorklet|createPluginInstance/);
+});
+
+
+// Device Setup MVVM: the same native /preview/ bundle owns one transient UI
+// transaction, but only installed schema-v6 readback may make it accepted.
+function nativeDeviceSetupFixture() {
+  const active={backend:"ASIO",captureDevice:"ASIO Test",playbackDevice:"ASIO Test",
+    deviceGeneration:12,open:true,authorized:true,rate:48000,buffer:256,
+    enabledInputs:[0],enabledOutputs:[0,1]};
+  const inventory={active,types:[{name:"ASIO",separate:false,
+    inputs:["ASIO Test"],outputs:["ASIO Test"]}]};
+  const draft={backend:"ASIO",capture:"ASIO Test",playback:"ASIO Test",
+    inputPins:[0],outputPins:[0,1],rate:48000,buffer:256};
+  const begin=requestId=>deviceVM.setupBegin(deviceVM.setupInitial(),{
+    inventory,draft,requestId,baselineEpoch:"12"});
+  const ack=(requestId,overrides={})=>({
+    requestId,ok:true,state:"ACCEPTED_LIVE",
+    active:{...active,deviceGeneration:13},mixerBound:true,
+    outputMuted:false,...overrides});
+  const readback={raw:{schemaVersion:6},retained:false,admitted:true,
+    productLive:true,device:{epoch:"13",backend:active.backend,
+      captureDevice:active.captureDevice,playbackDevice:active.playbackDevice,
+      sampleRate:48000,bufferFrames:256,enabledInputs:[0],
+      enabledOutputs:[0,1],outputArmed:true}};
+  return {active,inventory,draft,begin,ack,readback};
+}
+test("Device Setup VM requires matching ACK AND later installed v6 readback, never ACK-only LIVE",()=>{
+  const f=nativeDeviceSetupFixture();
+  const begun=f.begin("approved-io-42");
+  assert.ok(begun);assert.equal(begun.request.action,"audioDeviceApply");
+  assert.equal(begun.request.expectedDeviceGeneration,12);
+  assert.equal(begun.request.config.backend,"ASIO");
+  assert.equal(begun.request.config.sampleRate,48000);
+  const waiting=deviceVM.setupAck(begun.state,f.ack("approved-io-42"));
+  assert.equal(waiting.phase,"VERIFYING");
+  assert.equal(waiting.pending.requestId,"approved-io-42");
+  assert.equal(waiting.message,"");
+  const beforeAckDevice={...f.readback,device:{...f.readback.device,epoch:"12"}};
+  assert.equal(deviceVM.setupReadback(waiting,beforeAckDevice),waiting,
+    "matching old hardware cannot prove the later Apply ACK");
+  assert.equal(deviceVM.setupReadback(waiting,{...f.readback,device:{
+    ...f.readback.device,bufferFrames:128}}),waiting,
+    "rate/buffer mismatch never proves installed device");
+  const ready=deviceVM.setupReadback(waiting,f.readback);
+  assert.equal(ready.phase,"ACCEPTED");
+  assert.equal(ready.pending,null);
+  assert.match(ready.message,/Output live/);
+  assert.equal(deviceVM.setupReadback(waiting,{...f.readback,device:{
+    ...f.readback.device,epoch:"14"}}).phase,"ACCEPTED",
+    "routing epoch may advance beyond JUCE's generation");
+  assert.equal(deviceVM.setupAck(ready,f.ack("approved-io-42")),ready,
+    "late ACK cannot resurrect a finished request");
+});
+test("Device Setup VM fails closed for device loss, unadmitted graph, stale epoch and stale ACK",()=>{
+  const f=nativeDeviceSetupFixture();
+  const waiting=deviceVM.setupAck(f.begin("approved-io-5").state,f.ack("approved-io-5"));
+  const deviceOnly=deviceVM.setupReadback(waiting,{
+    ...f.readback,admitted:false,productLive:false});
+  assert.equal(deviceOnly.phase,"ACCEPTED",
+    "the real device may be ready before a ChannelId PCM graph is admitted");
+  assert.match(deviceOnly.message,/route not yet verified/i);
+  assert.doesNotMatch(deviceOnly.message,/Mixer ready|Output live/);
+  const lost=deviceVM.setupReadback(waiting,{...f.readback,
+    device:{...f.readback.device,epoch:"14",sampleRate:0,enabledOutputs:[]}});
+  assert.equal(lost.phase,"RECOVERY_REQUIRED");
+  assert.equal(lost.pending,null);
+  const stale=deviceVM.setupReadback(waiting,{...f.readback,
+    device:{...f.readback.device,epoch:"11"}});
+  assert.equal(stale.phase,"STALE");
+  assert.equal(deviceVM.setupAck(waiting,f.ack("approved-io-4")),waiting,
+    "old request ID cannot change the current transaction");
+  assert.equal(deviceVM.setupReadback(waiting,{...f.readback,retained:true}).phase,
+    "RECOVERY_REQUIRED");
+});
+test("Device Setup VM rejects driver negative ACK, safe rollback, wrong endpoint and absent generation",()=>{
+  const f=nativeDeviceSetupFixture();
+  const begun=f.begin("approved-io-6");
+  const fail=deviceVM.setupAck(begun.state,{requestId:"approved-io-6",ok:false,
+    state:"REJECTED",error:"Driver refused",active:f.active});
+  assert.equal(fail.phase,"REJECTED");
+  assert.match(fail.message,/Driver refused/);
+  const rollback=deviceVM.setupAck(begun.state,{requestId:"approved-io-6",ok:false,
+    state:"RESTORED_MUTED",error:"Driver refused",active:f.active});
+  assert.equal(rollback.phase,"REJECTED");
+  assert.match(rollback.message,/Previous device restored/);
+  assert.deepEqual(f.inventory.active.enabledOutputs,[0,1],
+    "refused apply cannot mutate the installed output pins in the UI");
+  const unverified=deviceVM.setupAck(begun.state,f.ack("approved-io-6",{
+    active:{...f.active,deviceGeneration:13,authorized:false}}));
+  assert.equal(unverified.phase,"REJECTED");
+  const wrongEndpoint=deviceVM.setupAck(begun.state,f.ack("approved-io-6",{
+    active:{...f.active,deviceGeneration:13,playbackDevice:"Another ASIO"}}));
+  assert.equal(wrongEndpoint.phase,"REJECTED",
+    "same requestId cannot approve another physical output");
+  const staleGeneration=deviceVM.setupAck(begun.state,f.ack("approved-io-6",{
+    active:{...f.active,deviceGeneration:11}}));
+  assert.equal(staleGeneration.phase,"REJECTED",
+    "same requestId cannot approve an older driver generation");
+  const accepted=deviceVM.setupAck(begun.state,f.ack("approved-io-6"));
+  assert.equal(deviceVM.setupReadback(accepted,{...f.readback,
+    device:{...f.readback.device,playbackDevice:"Unexpected"}}).phase,"VERIFYING");
+  assert.equal(deviceVM.setupBegin(deviceVM.setupInitial(),{
+    inventory:{...f.inventory,active:{...f.active,deviceGeneration:null}},
+    draft:f.draft,requestId:"invalid"}),null);
+});
+test("Device Setup VM times out both before and after ACK; late events never apply",()=>{
+  const f=nativeDeviceSetupFixture();
+  const begun=f.begin("approved-io-7");
+  assert.equal(deviceVM.setupBegin(begun.state,{inventory:f.inventory,
+    draft:f.draft,requestId:"approved-io-8"}),null);
+  const timed=deviceVM.setupTimeout(begun.state,"approved-io-7");
+  assert.equal(timed.phase,"TIMEOUT");
+  assert.equal(deviceVM.setupAck(timed,f.ack("approved-io-7")),timed);
+  const verifying=deviceVM.setupAck(begun.state,f.ack("approved-io-7"));
+  const staleTimer=deviceVM.setupTimeout(verifying,"approved-io-6");
+  assert.equal(staleTimer,verifying);
+  assert.equal(deviceVM.setupTimeout(verifying,"approved-io-7").phase,"TIMEOUT");
+});
+test("Device Setup VM retains offline .smix and never promotes rollback to output LIVE",()=>{
+  const f=nativeDeviceSetupFixture();
+  const document={schema:"arsonmix.native.logical-mixer.v1",revision:"18446744073709551615",
+    channels:[{id:"9007199254740993"}],outputArmed:false};
+  const frozen=JSON.stringify(document);
+  const begun=f.begin("approved-io-9");
+  const awaiting=deviceVM.setupAck(begun.state,f.ack("approved-io-9"));
+  const offline=deviceVM.setupReadback(awaiting,{...f.readback,retained:true,
+    raw:{schemaVersion:6,logicalMixer:document},admitted:false,productLive:false});
+  assert.equal(offline.phase,"RECOVERY_REQUIRED");
+  assert.equal(JSON.stringify(document),frozen);
+  assert.equal(deviceVM.setupAck(begun.state,{requestId:"approved-io-9",
+    ok:false,state:"RESTORED_LIVE",active:f.active}).phase,"REJECTED");
+  const text=read("web/approved-native-bridge.js");
+  assert.match(text,/deviceVM\.setupReadback\(deviceState,next\)/);
+  assert.match(text,/deviceVM\.setupAck\(deviceState,ack\)/);
+  const setup=text.slice(text.indexOf("  // Compact DAW-style device preferences"),
+    text.indexOf("  function installFirstSoundMenu()"));
+  assert.doesNotMatch(setup,/const accepted=ack\.ok===true/);
+  assert.doesNotMatch(text,/devicePanel\.dataset\.pendingRequest/);
+  assert.equal((text.match(/backend\.emitEvent\("arMixAction",begun\.request\)/g)||[]).length,1);
 });
