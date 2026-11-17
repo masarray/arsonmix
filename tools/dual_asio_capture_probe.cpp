@@ -85,7 +85,7 @@ struct Endpoint final
         for(auto* t:factories) if(t->getTypeName()=="ASIO"){asio=t;break;}
         if(!asio)return "Pinned JUCE build has no ASIO device type";
         asio->scanForDevices(); // CONTROL, before opening; never on callback
-        if(!asio->getDeviceNames(primary).contains(selected) ||
+        if(!asio->getDeviceNames(true).contains(selected) ||
            (primary&&!asio->getDeviceNames(false).contains(selected)))
             return "Selected exact ASIO driver is absent from input/output inventory";
         // For capture B, the OUTPUT name is deliberately EMPTY, never an
@@ -140,8 +140,9 @@ int probe(const char* primaryLabel,const char* captureLabel,double rate,int fram
         std::wstring(primaryName.toWideCharPointer())).registration;
     const auto captureReg=armix::device::AsioRegistryIdentityProbe::resolve(
         std::wstring(captureName.toWideCharPointer())).registration;
-    Policy::Request request{std::wstring_view(primaryName.toWideCharPointer()),
-        std::wstring_view(captureName.toWideCharPointer()),
+    const std::wstring primaryWide(primaryName.toWideCharPointer());
+    const std::wstring captureWide(captureName.toWideCharPointer());
+    Policy::Request request{primaryWide,captureWide,
         primaryReg.identity,captureReg.identity,3,3,1};
     const auto initial=Policy::preflight(request);
     if(!primaryReg.ok()||!captureReg.ok()||initial!=Policy::Verdict::ok)
@@ -176,9 +177,10 @@ int probe(const char* primaryLabel,const char* captureLabel,double rate,int fram
     juce::Thread::sleep(durationMs); // CONTROL only, never the hardware callback
     const auto* a=primary.device.get();
     const auto* b=capture.device.get();
+    const std::wstring openedPrimary(a->getName().toWideCharPointer());
+    const std::wstring openedCapture(b->getName().toWideCharPointer());
     const Policy::Readback readback{
-        std::wstring_view(a->getName().toWideCharPointer()),
-        std::wstring_view(b->getName().toWideCharPointer()),
+        openedPrimary,openedCapture,
         a->getCurrentSampleRate(),b->getCurrentSampleRate(),
         a->getCurrentBufferSizeSamples(),b->getCurrentBufferSizeSamples(),
         maskOf(a->getActiveInputChannels()),maskOf(a->getActiveOutputChannels()),
