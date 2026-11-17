@@ -76,7 +76,7 @@ The P7–P9 research stack includes mutually competing A/B branches, earlier rej
 ## Branch retention policy (safety first)
 
 - Before PR close: record *all 47 exact original head SHAs* in this file. Those SHAs, plus Git history, are sufficient for exact source retrieval without requiring a speculative new merge.
-- All 767 branch refs detected by prior full pagination remain **untouched** in this milestone. This includes every `checkpoint/` and `research/` ref and all PR heads.
+- Original pre-milestone inventory: **767 branch refs**; final inventory: **768** because this audit added exactly one documentation branch (`chore/milestone-a-pr-history-20261117`). **All 767 pre-existing refs remain intact**, including every `checkpoint/`, `research/` and original PR head.
 - **Never auto-delete original branch on close.** The connector does not expose a safe branch-delete operation; no deletion or garbage collection is performed.
 - Future branch pruning, if ever authorized, requires a separate dependency graph, accurate base/descendant mapping, verified release provenance and a protected checkpoint allowlist. Reducing PR count is *not* a reason to erase evidence.
 - Retained work in the nine PRs still needs independent P0/P1 scope/CI/FAT triage. No audio or GUI approval is inferred from this PR governance cleanup.
@@ -86,7 +86,21 @@ The P7–P9 research stack includes mutually competing A/B branches, earlier rej
 - [x] All 47 original open PR heads captured as immutable commit hashes, with bases and rationale
 - [x] Current approved SonKu/ImmerSIB main-integrations mapped and release pinned
 - [x] No binary, DSP, GUI, session, or release source changes in this reconciliation document
-- [ ] Close 38 selected historical PRs **without merge**, with explicit explanatory comment
-- [ ] Confirm 9 held PRs remain open and independent main is unchanged
-- [ ] Confirm every original source branch is still accessible after closure
-- [ ] Recheck public Windows release version and landing/readme are untouched
+- [x] Close **all 38** historical PRs **without merge**, each with explicit rationale and immutable original head
+- [x] Confirm exactly **9 retained open PRs** (#731, #708, #668, #661, #660, #635, #614, #521, #512); `main` remained unchanged during closure (`902dfa5a267c5f2cb5424f103fd0933b268d7053`)
+- [x] Fully paginated all **768** post-archive refs: original **47/47** PR heads remain the exact SHA of an existing branch; all **28** checkpoint branches preserved
+- [x] Recheck README still pins alpha.26, GitHub release tag still targets `8ec5b8a3e07837c85fb6e06c952cff1621fecc51` with **7 assets**, and no landing/GUI/PCM file has changed
+
+## Executed outcome and subsequent safety boundary
+
+**Result:** 47 historical open draft PRs → **9 retained open development PRs**; 38 historical spatial research PRs are CLOSED / NOT MERGED. Every closed PR includes a preservation comment and pinned original branch + SHA. This is governance cleanup, **not** a claim that the 38 PRs' contents have been merged into the production tree. Old rejected P8.3 #701 is marked rejected, P9.7 Venue golden remains intact, and the actual P9.9 / ImmerSIB public product remains owned by merged #733/#734/#742.
+
+All 47 source head SHAs were verified against the **fully paginated 768-branch final list**. The three critical checkpoints were verified exactly:
+
+- `checkpoint/sonku-p91-p92-operator-confirmed-20261116`: `763706a15a2617a10d23b5e2e43eb5689e454ccb`
+- `checkpoint/sonku-p97-venue-mega-space-approved-20261116`: `fda0eef669e0a59575c489e149662c1bf878c998`
+- `checkpoint/sonku-p99-listening-approved-20261117`: `61c304e7432955260ff783ff09610cf4200cfd65`
+
+**Unchanged during PR closure:** production main `902dfa5a267c5f2cb5424f103fd0933b268d7053`, README alpha.26, release alpha.26 assets/source. Merging this document itself will advance main by **documentation only**, not source code or public installer.
+
+**Deferred intentionally:** branch deletion (not performed; checkpoint and all 47 original donor branches preserved) and nine active PRs' technical qualification. Do **not** run automated 'delete branches after close' jobs on these refs. Any future pruning requires an independent, approved per-branch dependency and recovery proof.
