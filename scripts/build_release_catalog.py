@@ -221,6 +221,8 @@ def main():
     args = parser.parse_args()
     data = json.loads(Path(args.fixture).read_text("utf-8")) if args.fixture else download_releases()
     approved = catalog(data)
+    if not any(approved["platforms"].values()):
+        raise ValueError("No verified published native assets; preserve the last deployed Pages site")
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(approved, sort_keys=True, indent=2) + "\n", encoding="utf-8")
