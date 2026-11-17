@@ -154,7 +154,8 @@
         active:{backend:active.backend,captureDevice:active.captureDevice,
           playbackDevice:active.playbackDevice,rate:active.rate,
           buffer:active.buffer,enabledInputs:active.enabledInputs.slice(),
-          enabledOutputs:active.enabledOutputs.slice()},
+          enabledOutputs:active.enabledOutputs.slice(),
+          deviceGeneration:active.deviceGeneration},
         mixerBound:ack.mixerBound===true,outputMuted:ack.outputMuted===true}}};
     const remap=ack.state==="NEEDS_REMAP"&&ack.canReusePins===true&&
       active?.open===true&&active?.authorized===true&&
@@ -182,6 +183,9 @@
        (d?.sampleRate<=0&&baseline!==null&&BigInt(epoch)>BigInt(baseline)))
       return {phase:"RECOVERY_REQUIRED",pending:null,remapGeneration:null,
         message:"Audio device unavailable · Previous mixer settings retained"};
+    // Route epoch can advance AHEAD of the JUCE generation on STOP/START,
+    // but an old hardware snapshot cannot verify a later accepted Apply.
+    if(BigInt(epoch)<BigInt(expected.deviceGeneration))return state;
     if(snapshot?.raw?.schemaVersion!==6||!Array.isArray(d?.enabledInputs)||
        !Array.isArray(d.enabledOutputs))return state;
     const equalPins=(a,b)=>Array.isArray(a)&&Array.isArray(b)&&

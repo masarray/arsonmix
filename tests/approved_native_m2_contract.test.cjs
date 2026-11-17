@@ -2400,6 +2400,9 @@ test("Device Setup VM requires matching ACK AND later installed v6 readback, nev
   assert.equal(waiting.phase,"VERIFYING");
   assert.equal(waiting.pending.requestId,"approved-io-42");
   assert.equal(waiting.message,"");
+  const beforeAckDevice={...f.readback,device:{...f.readback.device,epoch:"12"}};
+  assert.equal(deviceVM.setupReadback(waiting,beforeAckDevice),waiting,
+    "matching old hardware cannot prove the later Apply ACK");
   assert.equal(deviceVM.setupReadback(waiting,{...f.readback,device:{
     ...f.readback.device,bufferFrames:128}}),waiting,
     "rate/buffer mismatch never proves installed device");
@@ -2407,6 +2410,9 @@ test("Device Setup VM requires matching ACK AND later installed v6 readback, nev
   assert.equal(ready.phase,"ACCEPTED");
   assert.equal(ready.pending,null);
   assert.match(ready.message,/Output live/);
+  assert.equal(deviceVM.setupReadback(waiting,{...f.readback,device:{
+    ...f.readback.device,epoch:"14"}}).phase,"ACCEPTED",
+    "routing epoch may advance beyond JUCE's generation");
   assert.equal(deviceVM.setupAck(ready,f.ack("approved-io-42")),ready,
     "late ACK cannot resurrect a finished request");
 });
