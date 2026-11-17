@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // 30-second native Win32 owner regression, no JUCE/VST/ASIO startup.
+#if defined(NDEBUG)
+#undef NDEBUG // Release FAT must execute every HWND ownership assertion.
+#endif
 #if !defined(_WIN32)
 #error This HWND test runs only on Windows
 #endif
