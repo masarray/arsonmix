@@ -43,12 +43,14 @@ test('Windows portable, Inno installer and Linux/macOS embed licence notices', (
   const verify=read('scripts/verify_native_windows_artifact.ps1');
   const iss=read('installer/ArSonMix.iss');
   const fat=read('scripts/build_verify_windows_installer.ps1');
+  const smoke=read('scripts/test_inno_graceful_update_windows.ps1');
   for (const name of ['LICENSE','LICENSE-NOTICE.txt','LICENSE-SIGNALSMITH-STRETCH.txt',
                       'LICENSE-SIGNALSMITH-LINEAR.txt','OFL-LICENSE-Inter.txt']) {
     assert.ok(win.includes('"'+name+'"'), 'Windows packager missing '+name);
     assert.ok(verify.includes('"'+name+'"'), 'Windows verifier missing '+name);
     assert.ok(iss.includes('\\'+name+'"'), 'Inno setup missing '+name);
     assert.ok(fat.includes('"'+name+'"'), 'installed FAT missing '+name);
+    assert.ok(smoke.includes('"'+name+'"'), 'Inno smoke fixture missing '+name);
   }
   for (const key of ['licenseTextSha256','licenseNoticeSha256',
                     'signalsmithStretchLicenseSha256','signalsmithLinearLicenseSha256',
