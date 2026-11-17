@@ -16,7 +16,7 @@
 
 **[Download the latest verified ArSonMix release](https://masarray.github.io/arsonmix/#download)** from the official landing page and choose your operating system. The Windows card always selects the newest verified public Windows installer; on Windows 10/11 x64, click **Download installer ZIP**, extract it, then run Setup. No GitHub account or visit to the GitHub Releases UI is needed.
 
-**Latest published Windows alpha as of 17 November 2026:** [v0.5.0-alpha.25 — Download installer ZIP](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.25/ArSonMix-v0.5.0-alpha.25-Windows-x64-Setup.zip) · [portable ZIP](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.25/ArSonMix-v0.5.0-alpha.25-Windows-x64-Portable.zip) · [SHA-256 checksums](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.25/SHA256SUMS.txt) · [release notes](docs/releases/v0.5.0-alpha.25.md). These are pinned alpha.25 hotfix links; for future verified releases, use the official version-aware landing page.
+**Latest published Windows alpha as of 17 November 2026:** [v0.5.0-alpha.26 — Download installer ZIP](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.26/ArSonMix-v0.5.0-alpha.26-Windows-x64-Setup.zip) · [portable ZIP](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.26/ArSonMix-v0.5.0-alpha.26-Windows-x64-Portable.zip) · [SHA-256 checksums](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.26/SHA256SUMS.txt) · [release notes](docs/releases/v0.5.0-alpha.26.md). These are pinned alpha.26 links; the official landing page always selects the newest verified release.
 
 The download cards show the newest verified package available for each platform, including its version and size. Windows previews are published independently of Linux and macOS builds, so their version numbers may differ.
 
@@ -29,6 +29,8 @@ The download cards show the newest verified package available for each platform,
 - **Live mixer & WIRE:** input channels, MAIN/BUS routing, gain, PRE/POST sends, mute/solo and Save/Open `.smix` sessions. ArSon Player remains part of the console workflow.
 
 **Alpha.25 hotfix:** ImmerSIB now opens its real native JUCE concert window; switching to dearVR or other VST3 editor no longer closes the ImmerSIB window, and clicking the same insert refocuses it. False “Effect settings updated” editor-open toast is removed. No spatial DSP/preset changes. Existing alpha.24 features remain. Experimental Guitar FX redesign or unmerged branches are **not** shipped. See the [alpha.25 release notes](docs/releases/v0.5.0-alpha.25.md) and [alpha.24 baseline](docs/releases/v0.5.0-alpha.24.md) for compatibility and limitations.
+
+**Alpha.26 licensing:** The native desktop app now includes a compact offline **More > About & Licenses** panel containing full AGPLv3 and bundled third-party notices. Setup and portable folders no longer scatter loose legal files; in-place upgrades clean only exact known old notices while preserving user Studio and `.smix` data. This is a licensing/distribution update, not an audio-engine change. See [alpha.26 release notes](docs/releases/v0.5.0-alpha.26.md).
 
 ## Get started
 
