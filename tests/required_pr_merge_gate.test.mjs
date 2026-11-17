@@ -39,6 +39,45 @@ test("docs-only PR succeeds without Windows/Chromium or release services",()=>{
     uiFull:false,releaseFast:false});
   assert.equal(evaluate(lanes,{},{}).state,"success");
 });
+test("native JS bridge and installed GUI assembler require the native fast gate",()=>{
+  for(const path of ["web/bridge.js","web/monitor.js",
+    "integration/console-v6/fixtures.json","scripts/check_console_puzzle.mjs",
+    "scripts/build_approved_native_gui.py","tests/live_graph_contract_test.mjs",
+    "tests/approved_native_gui_bundle_test.py",
+    "tests/fixtures/installer_graceful_close.cs",
+    "config/factoryfx-notices/NOTICE.txt",
+    "scripts/collect_hardware_fat_windows.ps1"]) {
+    const lanes=requiredLanes([path]);
+    assert.equal(lanes.nativeFast,true,path);
+    assert.equal(lanes.nativeFull,false,path+" should not request unrelated MSVC");
+    assert.equal(evaluate(lanes,{},{}).state,"pending",
+      path+" must not merge before the native quick regression");
+  }
+});
+test("UI-contract and CSS compiler changes never bypass relevant UI quick",()=>{
+  for(const path of ["tests/live_routing_ui_contract_test.mjs",
+    "tests/gui_workflow_contract_test.mjs","tests/native_ui_contract_test.mjs",
+    "tests/wire_graph_canonical_model.test.cjs",
+    "tests/wire_main_native_handoff_contract.test.cjs",
+    "scripts/build_ui_css.py","scripts/chat_ci_dispatch.mjs",
+    ".github/workflows/chat-ci-milestone.yml"]) {
+    assert.equal(requiredLanes([path]).uiFast,true,path);
+  }
+});
+test("release gate only requires paths that actually trigger release-contracts",()=>{
+  for(const path of ["installer/ArSonMix.iss",
+    "scripts/verify_native_windows_artifact.ps1",
+    "scripts/package_native_linux.sh",
+    "src/Main.cpp","site/downloads.js","tests/test_release_catalog.py"])
+    assert.equal(requiredLanes([path]).releaseFast,true,path);
+  for(const path of ["installer/VB-CABLE-NOTICE.txt",
+    "installer/Some-Other-File.txt",
+    "config/factoryfx-notices/NOTICE.txt",
+    "config/factoryfx-approved-releases.json",
+    "scripts/collect_hardware_fat_windows.ps1"])
+    assert.equal(requiredLanes([path]).releaseFast,false,
+      path+" cannot require a release workflow which never triggers");
+});
 test("native changes fail closed until quick and exact-head Windows qualification",()=>{
   const lanes=requiredLanes(["src/NativeLogicalMixerWorkspace.h","tests/native_mixer_session_store_test.cpp"]);
   assert.equal(lanes.nativeFast,true);
