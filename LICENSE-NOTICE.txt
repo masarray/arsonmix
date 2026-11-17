@@ -1,6 +1,35 @@
-AR MIX Studio UI + Architecture Starter v0.3
-Copyright (C) 2026 AR MIX contributors
-Offered under GNU Affero General Public License v3 only (AGPL-3.0-only).
-License text: https://www.gnu.org/licenses/agpl-3.0.html
-JUCE, Steinberg ASIO and VST3 SDK have separate licenses; obey them when building.
-No proprietary Soundcraft/Waves/DiGiCo sprites or plugin binaries are included.
+ArSonMix — Digital Mixer and Native Built-In FX
+Copyright (C) 2026 ArSonMix contributors
+SPDX-License-Identifier: AGPL-3.0-only
+
+The original ArSonMix digital mixer application, native mixing/routing
+implementation, original GUI/bridge source, and ArSonMix-owned native built-in
+effects are licensed under the GNU Affero General Public License, version 3
+only (AGPL-3.0-only). The complete terms are in the accompanying LICENSE.
+
+Native built-in effects in this repository include Parametric EQ, Compressor,
+Harmonice, Vocal Delay, 8D-SonKu, Guitar FX Rig, and ImmerSIB where built and
+enabled. A feature flag or product display name does not change its source
+licence. These original modules run in the same native JUCE mixer host.
+
+Corresponding source, build scripts, release tags and development history:
+https://github.com/masarray/arsonmix
+AGPL-3.0 licence text: https://www.gnu.org/licenses/agpl-3.0.html
+
+Third-party materials are NOT relicensed by this notice:
+- JUCE and its modules, Steinberg VST3 and ASIO SDKs, and independently
+  installed or optional FactoryFX VST3 plugins retain their own applicable
+  terms, distribution permissions and requirements.
+- MIT KEMAR/HRIR data attribution: THIRD_PARTY_8D_SONKU_HRTF.md.
+- Vendored Signalsmith components: LICENSE-SIGNALSMITH-STRETCH.txt and
+  LICENSE-SIGNALSMITH-LINEAR.txt.
+- Embedded Inter font: OFL-LICENSE-Inter.txt.
+- Optional VB-Audio VB-CABLE driver: ThirdParty/VB-Audio/VB-CABLE-NOTICE.txt
+  in the Windows installer; the vendor's own usage/licensing terms apply.
+
+See source files and third_party/ for component-specific copyright and notices.
+The AGPL grants recipients the rights stated in its full text, including
+access to corresponding source under its conditions. This notice does not
+grant rights to proprietary third-party plugins or SDKs.
+
+ArSonMix is provided WITHOUT ANY WARRANTY, to the extent permitted by law.
