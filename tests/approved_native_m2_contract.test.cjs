@@ -1922,15 +1922,15 @@ test("ImmerSIB opens the exact native ChannelId HWND, survives VST3 editor, no s
 test("native vendor editor retention follows current PCM ownership, not inactive M4 slots",()=>{
  const main=read('src/Main.cpp'),lab=read('src/LiveDryRoutingLab.h');
  assert.match(main,/engine_\.retainsRoutedFxEditor\(routedEditorEpoch_,routedEditorOwner_\)/);
- assert.match(main,/routedEditorEpoch_=retainedEpoch/);
+ assert.match(main,/shownEpoch=retainedEpoch/);
  assert.match(main,/retainedEpoch=ep/);
  assert.match(lab,/nativeAccepted_\.fxOwners->retainsEditor\(owner\)/);
  const start=main.indexOf('if(owner && owner->processor)');
  assert.ok(start>=0,'routed FX editor source must exist');
  const editor=main.slice(start,main.indexOf('catch(const std::exception& ex)',start));
- assert.ok(editor.includes('routedEditorOwner_==owner'),
+ assert.ok(editor.includes('shownOwner==owner'),
    'reopen only exact current accepted PCM owner');
- assert.ok(editor.includes('editorWindow_->present()'),
+ assert.ok(editor.includes('shownWindow->present()'),
    'same FX instance must be focused instead of recreated');
  const fresh=editor.slice(editor.indexOf('} else try {'));
  assert.ok(fresh.includes('closePluginEditor();') &&

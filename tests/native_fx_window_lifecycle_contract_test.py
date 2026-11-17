@@ -19,9 +19,10 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertNotIn("::SetParent(",WIN32)
         self.assertNotIn("setAlwaysOnTop (true)",HOST)
     def test_exact_native_instance_reopen_is_not_recreation(self):
-        self.assertIn("routedEditorOwner_==owner",HOST)
-        self.assertIn("editorProcessor_==owner->processor.get()",HOST)
-        self.assertIn("editorWindow_->present()",HOST)
+        self.assertIn("shownOwner==owner",HOST)
+        self.assertIn("shownProcessor==owner->processor.get()",HOST)
+        self.assertIn("shownWindow->present()",HOST)
+        self.assertIn("shownWindow=dedicatedImmerSIB?immersibEditorWindow_:editorWindow_",HOST)
         self.assertIn("if(logicalVendorEditor_)",HOST)
         self.assertIn("existing.window->present()",HOST)
         self.assertIn("editorProcessor_ == processor",HOST)
