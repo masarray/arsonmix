@@ -1907,18 +1907,30 @@ test("native FX remove/reorder/transfer requires exact token, ACK and ordered re
  assert.equal(c.state().pending,null);
 });
 
+test("ImmerSIB opens the exact native ChannelId HWND, survives VST3 editor, no success-only toast",()=>{
+ const bridge=read("web/approved-native-bridge.js"),host=read("src/Main.cpp");
+ assert.match(bridge,/insert\.catalogId==='armix\.builtin\.imersip\.v1' && current\.admitted/);
+ assert.match(bridge,/backend\.emitEvent\("arMixAction",\{action:"routingFxEditor",channelId:id,slot,/);
+ assert.doesNotMatch(bridge,/else status\("Native VST3 editor opened"\)/);
+ assert.match(host,/shownWindow=dedicatedImmerSIB\?immersibEditorWindow_:editorWindow_/);
+ assert.match(host,/shownOwner=dedicatedImmerSIB\?immersibEditorOwner_:routedEditorOwner_/);
+ assert.match(host,/shownWindow->present\(\)/);
+ assert.match(host,/immersibEditorWindow_\.reset\(\)/);
+ assert.match(host,/!engine_\.retainsRoutedFxEditor\(immersibEditorEpoch_,immersibEditorOwner_\)/);
+});
+
 test("native vendor editor retention follows current PCM ownership, not inactive M4 slots",()=>{
  const main=read('src/Main.cpp'),lab=read('src/LiveDryRoutingLab.h');
  assert.match(main,/engine_\.retainsRoutedFxEditor\(routedEditorEpoch_,routedEditorOwner_\)/);
- assert.match(main,/routedEditorEpoch_=retainedEpoch/);
+ assert.match(main,/shownEpoch=retainedEpoch/);
  assert.match(main,/retainedEpoch=ep/);
  assert.match(lab,/nativeAccepted_\.fxOwners->retainsEditor\(owner\)/);
  const start=main.indexOf('if(owner && owner->processor)');
  assert.ok(start>=0,'routed FX editor source must exist');
  const editor=main.slice(start,main.indexOf('catch(const std::exception& ex)',start));
- assert.ok(editor.includes('routedEditorOwner_==owner'),
+ assert.ok(editor.includes('shownOwner==owner'),
    'reopen only exact current accepted PCM owner');
- assert.ok(editor.includes('editorWindow_->present()'),
+ assert.ok(editor.includes('shownWindow->present()'),
    'same FX instance must be focused instead of recreated');
  const fresh=editor.slice(editor.indexOf('} else try {'));
  assert.ok(fresh.includes('closePluginEditor();') &&

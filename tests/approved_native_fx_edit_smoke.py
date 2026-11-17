@@ -93,6 +93,34 @@ def main():
             assert row(2,0).get_attribute('data-insert-id')=='actual-a'
             assert page.locator('.wire-main-fragment').count()==0
             assert any(e['to']==state['graph']['mainChannelId'] for e in state['graph']['edges'])
+            # ImmerSIB native editor must dispatch the *accepted* ChannelId
+            # token, even when a dearVR/VST3 editor is opened in the same
+            # live rack. This is a browser transport test; the JUCE HWND's
+            # separate lifetime is compiled and checked by Windows FAT.
+            state['graph']['channels'][1]['inserts']=[
+                {'id':'concert-accepted','catalogId':'armix.builtin.imersip.v1',
+                 'name':'ImmerSIB','bypassed':False},
+                {'id':'dearvr-accepted','catalogId':'vst3.dearvr.pro2',
+                 'name':'dearVR PRO 2','bypassed':False}]
+            state['mixerSession']['channels']=copy.deepcopy(state['graph']['channels'])
+            emit(page,'arMixConsoleSnapshot',state)
+            row(2,0).locator('[data-action="openPlugin"]').click()
+            opened=page.evaluate('()=>window.__actions.at(-1)')
+            assert opened['action']=='routingFxEditor' and opened['channelId']==RECEIVER,opened
+            assert opened['instanceId']=='concert-accepted',opened
+            assert str(opened['deviceEpoch'])==str(state['device']['epoch']),opened
+            assert str(opened['revision'])==str(state['graph']['revision']),opened
+            emit(page,'arMixRoutingFxEditorAck',{'ok':True,'instanceId':'concert-accepted'})
+            row(2,1).locator('[data-action="openPlugin"]').click()
+            vst=page.evaluate('()=>window.__actions.at(-1)')
+            assert vst['action']=='routingFxEditor' and vst['instanceId']=='dearvr-accepted',vst
+            emit(page,'arMixRoutingFxEditorAck',{'ok':True,'instanceId':'dearvr-accepted'})
+            row(2,0).locator('[data-action="openPlugin"]').click()
+            reopened=page.evaluate('()=>window.__actions.at(-1)')
+            assert reopened['action']=='routingFxEditor' and reopened['instanceId']=='concert-accepted',reopened
+            assert reopened['channelId']==RECEIVER,reopened
+            assert page.locator('#armixNativeToast:visible').count()==0,(
+                'Successful native editor open must not raise an FX settings toast')
             assert not errors,errors
             page.screenshot(path=f'native-fx-edit-{width}.png');page.close()
         browser.close()
