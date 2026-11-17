@@ -1001,7 +1001,8 @@ test("single /preview/ GUI: channel IN, actual OUT and correlated device safety 
  assert.match(bridge,/source:"\/preview\/ approved compiled Pages GUI"/);
  assert.match(bridge,/field==="input"/);
  assert.match(bridge,/nativeUiSourcePending=null;[\s\S]*?INPUT timeout/);
- assert.match(bridge,/ack\?\.requestId!==devicePanel.dataset.pendingRequest/);
+ assert.match(bridge,/deviceVM\.setupAck\(deviceState,ack\)/);
+ assert.match(read("web/approved-device-view-model.js"),/ack\?\.requestId!==state\.pending\.requestId/);
  assert.match(native,/requestAutomaticMain\(\);\s*send\(true,engine_\.isMonitorEnabled\(\)\?"ACCEPTED_LIVE":"ACCEPTED_MUTED"/);
  assert.match(bridge,/Virtual output · No speakers/);
  assert.match(bridge,/Advanced driver recovery/);
@@ -1620,7 +1621,7 @@ test("P0 output-only Audio I/O is a real native configuration, never blocked by 
  assert.match(bridge,/No hardware input \(Player \/ FX\)/);
  assert.match(bridge,/t\?\.separate\?\["",\.\.\.\(t\.inputs\|\|\[\]\)\]/);
  assert.doesNotMatch(bridge,/ack\.active\.enabledInputs\.length>0/);
- assert.match(bridge,/FX\/WIRE available/);
+ assert.match(read("web/approved-device-view-model.js"),/Mixer ready · Output muted/);
 });
 test("P0 FIRST SOUND G0 offers verified input and leaves automatic MAIN to native",()=>{
  const vm=require("node:vm"),sent=[],listeners=new Map(),renderedChoices=[];
@@ -1810,7 +1811,8 @@ test("native Windows operator can explicitly patch first physical input, arm and
  assert.match(js,/AUDIO \/ SAFETY/);
  assert.match(js,/function openNativeAudioIO\(\)/);
  assert.match(js,/action:"audioDeviceInventory"/);
- assert.match(js,/action:"audioDeviceApply"/);
+ assert.match(read("web/approved-device-view-model.js"),/action:"audioDeviceApply"/);
+ assert.match(js,/backend\.emitEvent\("arMixAction",begun\.request\)/);
  assert.match(read("web/approved-device-view-model.js"),/d\.inputEndpoints\.filter\(p=>/);
  assert.match(read("web/approved-device-view-model.js"),/d\.enabledInputs\.includes\(p\.port\)/);
  assert.match(js,/deviceVM\.inputChoices\(hardware\)/);
@@ -2476,7 +2478,9 @@ test("Device Setup VM retains offline .smix and never promotes rollback to outpu
   const text=read("web/approved-native-bridge.js");
   assert.match(text,/deviceVM\.setupReadback\(deviceState,next\)/);
   assert.match(text,/deviceVM\.setupAck\(deviceState,ack\)/);
-  assert.doesNotMatch(text,/const accepted=ack\.ok===true/);
+  const setup=text.slice(text.indexOf("  // Compact DAW-style device preferences"),
+    text.indexOf("  function installFirstSoundMenu()"));
+  assert.doesNotMatch(setup,/const accepted=ack\.ok===true/);
   assert.doesNotMatch(text,/devicePanel\.dataset\.pendingRequest/);
   assert.equal((text.match(/backend\.emitEvent\("arMixAction",begun\.request\)/g)||[]).length,1);
 });
