@@ -80,7 +80,10 @@ test("release gate only requires paths that actually trigger release-contracts",
 });
 test("release spatial verifier changes require both real native and release checks",()=>{
   for(const path of ["scripts/verify_windows_spatial_fx_packaging.py",
-                     "scripts/tests/test_windows_spatial_fx_packaging.py"]){
+                     "scripts/tests/test_windows_spatial_fx_packaging.py",
+                     "scripts/verify_immersib_approved_pcm_sources.py",
+                     "scripts/tests/test_immersib_approved_pcm_sources.py",
+                     "config/immersib_approved_pcm_sources.json"]){
     const lanes=requiredLanes([path]);
     assert.equal(lanes.nativeFast,true,path);
     assert.equal(lanes.releaseFast,true,path);
