@@ -27,6 +27,12 @@ if ($appBytes -lt $minimumGuiExeBytes) {
 # public alpha.26. Generic CMake defaults OMIT ImmerSIB; a successful build
 # and 100/100 generic CTests never proved that the shipped FX picker had it.
 # Check both the configured flags AND compiled native descriptor/scene bytes.
+# The owner-approved acoustic implementation is pinned to public alpha.26:
+# every SonKu kernel and ImmerSIB scene/processor source file must match.
+& python (Join-Path $PSScriptRoot "verify_immersib_approved_pcm_sources.py")
+if ($LASTEXITCODE -ne 0) {
+    throw "WINDOWS_FAT_IMMERSIB_SONKU_APPROVED_PCM_SOURCE_MISMATCH"
+}
 $spatialVerifier = Join-Path $PSScriptRoot "verify_windows_spatial_fx_packaging.py"
 & python $spatialVerifier --build-dir $BuildDir --exe $app
 if ($LASTEXITCODE -ne 0) {
