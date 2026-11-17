@@ -337,8 +337,8 @@ def main():
             copy.deepcopy(applied_extra))
         applied["logicalMixer"]["graph"]["edges"].append(applied_extra)
         emit(page,"arMixConsoleSnapshot",applied)
-        assert page.evaluate("""()=>window.__ARMIX_NATIVE_M2__.canWireTap(
-          arguments[0],arguments[1])""",[wire_ids["parallel"],wire_ids["source"]])
+        assert page.evaluate("""([edge,source])=>window.__ARMIX_NATIVE_M2__.canWireTap(
+          edge,source)""",[wire_ids["parallel"],wire_ids["source"]])
         assert page.evaluate("""()=>document.documentElement.dataset.armixNativeAuthority""")==\
             "logical-editable"
         assert not errors,errors
