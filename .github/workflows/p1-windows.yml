@@ -36,6 +36,7 @@ on:
       - 'tests/windows_installer_contract_test.mjs'
       - 'tests/fixtures/installer_graceful_close.cs'
       - 'scripts/verify_native_windows_artifact.ps1'
+      - 'scripts/verify_windows_spatial_fx_packaging.py'
       - 'scripts/collect_hardware_fat_windows.ps1'
       - 'scripts/console_v6_fat_gate.mjs'
       - 'scripts/verify_console_s0_native_fixture.mjs'
@@ -48,6 +49,7 @@ on:
       - 'config/factoryfx-approved-releases.json'
       - 'config/factoryfx-notices/**'
       - 'scripts/tests/test_factoryfx_release_bundle.py'
+      - 'scripts/tests/test_windows_spatial_fx_packaging.py'
       - '.github/workflows/p1-windows.yml'
   # Direct path scoped native qualification, without a second Windows call
   # from the UI workflow or historical multi-agent coordination.
@@ -79,6 +81,7 @@ on:
       - 'tests/windows_installer_contract_test.mjs'
       - 'tests/fixtures/installer_graceful_close.cs'
       - 'scripts/verify_native_windows_artifact.ps1'
+      - 'scripts/verify_windows_spatial_fx_packaging.py'
       - 'scripts/collect_hardware_fat_windows.ps1'
       - 'scripts/console_v6_fat_gate.mjs'
       - 'scripts/verify_console_s0_native_fixture.mjs'
@@ -91,6 +94,7 @@ on:
       - 'config/factoryfx-approved-releases.json'
       - 'config/factoryfx-notices/**'
       - 'scripts/tests/test_factoryfx_release_bundle.py'
+      - 'scripts/tests/test_windows_spatial_fx_packaging.py'
       - '.github/workflows/p1-windows.yml'
       - 'tests/live_graph_contract_test.mjs'
       - 'tests/*native*contract*.mjs'
