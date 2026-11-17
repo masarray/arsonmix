@@ -239,5 +239,9 @@ int main(int argc,char** argv)
     const double rate=std::strtod(argv[4],nullptr);
     const int frames=std::atoi(argv[5]);
     const int ms=std::atoi(argv[6]);
+    // ASIO uses JUCE message-window/COM lifecycle for reset notifications.
+    // The attended physical probe initialises it on CONTROL only; --self-test
+    // deliberately never creates a MessageManager or opens a sound device.
+    juce::ScopedJuceInitialiser_GUI initialiseJuce;
     return probe(argv[2],argv[3],rate,frames,ms);
 }
