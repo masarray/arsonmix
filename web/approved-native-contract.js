@@ -491,6 +491,27 @@
       case "SET_FX_SLOT_BYPASS":
         return !!row && Number.isInteger(v.slot) && v.slot>=0 &&
           isBool(v.enabled) && row.inserts?.[v.slot]?.bypassed===v.enabled;
+      case "SET_SEND_TAP":
+      case "SET_SEND_ENABLED": {
+        // Both are exact EdgeId edits to an existing PARALLEL send.
+        // A successful disk ACK alone is insufficient: only the matching
+        // saved graph, with the new tap/enable state, proves the edit.
+        // Never mistake old PRE_FX SPLIT_PRE for post-FX PRE_FADER.
+        if(!row || !validId(v.edgeId) || !Array.isArray(p.beforeEdges))return false;
+        const old=p.beforeEdges.filter(e=>e.edgeId===v.edgeId &&
+          e.primaryOutput===false);
+        const updated=graph.edges.filter(e=>e.edgeId===v.edgeId &&
+          e.from===p.channelId && e.primaryOutput===false && e.enabled!==false);
+        if(old.length!==1 || updated.length!==1 ||
+           old[0].to!==updated[0].to)return false;
+        if(p.operation==="SET_SEND_TAP")
+          return ["PRE_FADER","POST_FADER"].includes(v.tap) &&
+            (old[0].tapStage||old[0].tap)!==v.tap &&
+            updated[0].tapStage===v.tap;
+        return isBool(v.enabled) && isBool(old[0].sendEnabled) &&
+          old[0].sendEnabled!==v.enabled &&
+          updated[0].sendEnabled===v.enabled;
+      }
       case "WIRE_TRANSACTION": {
         // The JUCE logical workspace accepts EXACTLY one WIRE edit per
         // transaction. More edits can never be silently accepted from [0].
