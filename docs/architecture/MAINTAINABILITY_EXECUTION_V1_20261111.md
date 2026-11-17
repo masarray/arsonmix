@@ -1,5 +1,7 @@
 # ArSonMix Long-Term Maintainability — Executable Engineering Blueprint v1
 
+**2026-11-18 narrowed exception (future multi-I/O only):** [root AGENTS.md](../../AGENTS.md), [full multi-I/O ARD](../ARD_ARSONMIX_MULTI_DEVICE_IO_V2_20261118.md) and [MVVM ADR](ADR_MODULAR_MVVM_FEASIBILITY_20261118.md) clarify that the binding 'single callback/manager' principle means **one PCM graph/DSP/render-clock owner and one primary device apply owner**. Additional *independent hardware* may require proven capture-only or output-only I/O callbacks/managers with isolated FIFO/ASRC and no second renderer. This exception does not invalidate the existing one-device direct ASIO path or permit duplicate VST3 processing. The original M1–M6 execution work remains historical evidence; reuse merged seams and avoid repeating completed refactors.
+
 **Status: IMPLEMENTATION PLAN / NOT A CODE FIX.** Re-audited 2026-11-11 at main 99f580d76bf20ea994d54f8916098c680897f41d. Issue: [#527](https://github.com/masarray/arsonmix/issues/527). Navigate through [architecture map](README.md), [fast feature playbook](FEATURE_EXTENSION_PLAYBOOK.md), and [next-thread execution prompt](NEXT_THREAD_EXECUTION_PROMPT.md).
 
 ## A. Outcome: faster feature delivery with LOWER future thinking cost
