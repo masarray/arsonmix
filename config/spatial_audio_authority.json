@@ -23,7 +23,11 @@
   },
   "imersip": {
     "activeIntegrationPr": 734,
-    "sourceResearchPrs": [722, 732, 731],
+    "sourceResearchPrs": [
+      722,
+      732,
+      731
+    ],
     "approvedSonKuMainPr": 733,
     "basePr": 719,
     "catalogIdentity": "armix.builtin.imersip.v1",
@@ -32,13 +36,17 @@
     "settingsFormat": "IMRS",
     "settingsVersion": 7,
     "nestedSonKuVersion": 12,
-    "researchOnly": true,
+    "researchOnly": false,
     "independentSpatialDsp": false,
-    "releaseQualified": false,
+    "releaseQualified": true,
     "displayName": "ImmerSIB",
     "previousDisplayName": "ImerSip",
     "renamePolicy": "Display-only rebrand. Preserve catalogIdentity, native API, IMRS wire state and saved .smix.",
-    "mainIntegrationMode": "flagged-by-ARMIX_IMMERSIB_RELEASE_CANDIDATE"
+    "mainIntegrationMode": "flagged-by-ARMIX_IMMERSIB_RELEASE_CANDIDATE",
+    "releaseQualificationScope": "Windows x64 public alpha only; no claim of certified hardware latency or critical live performance",
+    "ownerListeningApproval": "approved_by_owner_for_public_alpha_2026-11-17",
+    "publicAlphaRelease": "v0.5.0-alpha.26",
+    "publicReleaseSourceSha": "8ec5b8a3e07837c85fb6e06c952cff1621fecc51"
   },
   "audioScenes": {
     "operatorCheckpointObservation": {
@@ -76,7 +84,7 @@
       "spatialMix": 1,
       "outputTrimLinear": 1.8,
       "sceneVoicing": 4,
-      "releaseQualified": false,
+      "releaseQualified": true,
       "outputGainDb": 5.10545
     },
     "imersipAuditionPresetIds": {
@@ -125,10 +133,15 @@
   "production": {
     "mainMustRemainUnchanged": false,
     "noAutomaticMerge": true,
-    "physicalHeadphoneAbStillRequired": true,
-    "releaseCandidateIntegratedOnMain": false,
-    "publicReleaseAllowed": false,
-    "releaseRequiresOperatorHeadphoneApproval": true
+    "physicalHeadphoneAbStillRequired": false,
+    "releaseCandidateIntegratedOnMain": true,
+    "publicReleaseAllowed": true,
+    "releaseRequiresOperatorHeadphoneApproval": true,
+    "operatorHeadphoneApprovalSatisfied": true,
+    "ownerListeningStatus": "approved_by_owner_2026-11-17",
+    "publicAlphaShipped": "v0.5.0-alpha.26",
+    "publicAlphaSourceSha": "8ec5b8a3e07837c85fb6e06c952cff1621fecc51",
+    "fieldHardwareCertification": "not claimed; ASIO/WASAPI and cross-editor hardware FAT are independent operational validation"
   },
   "immersibP98Integration": {
     "product": "ImmerSIB",
@@ -146,7 +159,7 @@
     },
     "nativeRenderMode": 9,
     "featureFlag": "ARMIX_IMMERSIB_RELEASE_CANDIDATE",
-    "releaseQualified": false,
+    "releaseQualified": true,
     "immersibP99VocalRoom": {
       "product": "ImmerSIB",
       "featureFlag": "ARMIX_IMMERSIB_RELEASE_CANDIDATE",
@@ -266,9 +279,11 @@
       "baseMain": "7b0c2fc1dea359dc98b8807ccd6806ad761ffbd6",
       "strategy": "forward port ImmerSIB-only code over approved SonKu P9.9 main without history replay",
       "flagDefault": false,
-      "operatorHeadphoneFAT": "pending",
-      "windowsRC": "pending",
-      "mainP99Preserved": true
-    }
+      "operatorHeadphoneFAT": "approved_by_owner_2026-11-17",
+      "windowsRC": "published_v0.5.0-alpha.26",
+      "mainP99Preserved": true,
+      "publicAlphaReleased": true
+    },
+    "releaseQualificationScope": "Windows public alpha audio/GUI; original research history remains recorded"
   }
 }
