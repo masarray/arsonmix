@@ -32,13 +32,18 @@ class SpatialAuthorityContract(unittest.TestCase):
         self.assertEqual(im["previousDisplayName"],"ImerSip")
         self.assertEqual(im["nativeRenderer"],base["nativeRenderer"])
         self.assertFalse(im["independentSpatialDsp"])
-        self.assertTrue(im["researchOnly"])
-        self.assertFalse(im["releaseQualified"])
+        self.assertFalse(im["researchOnly"])
+        self.assertTrue(im["releaseQualified"])
         self.assertFalse(record["production"]["mainMustRemainUnchanged"])
         self.assertTrue(record["production"]["noAutomaticMerge"])
-        self.assertFalse(record["production"]["releaseCandidateIntegratedOnMain"])
-        self.assertFalse(record["production"]["publicReleaseAllowed"])
-        self.assertTrue(record["production"]["physicalHeadphoneAbStillRequired"])
+        self.assertTrue(record["production"]["releaseCandidateIntegratedOnMain"])
+        self.assertTrue(record["production"]["publicReleaseAllowed"])
+        self.assertFalse(record["production"]["physicalHeadphoneAbStillRequired"])
+        self.assertTrue(record["production"]["operatorHeadphoneApprovalSatisfied"])
+        self.assertEqual(record["production"]["ownerListeningStatus"],
+                         "approved_by_owner_2026-11-17")
+        self.assertEqual(im["publicAlphaRelease"],"v0.5.0-alpha.26")
+        self.assertIn("Windows x64 public alpha",im["releaseQualificationScope"])
 
     def test_checkpoint_audio_sources_have_not_silently_drifted(self):
         # Git's blob identity pins real acoustics, not merely marketing
@@ -135,6 +140,6 @@ class SpatialAuthorityContract(unittest.TestCase):
         self.assertIn('"mainP99Preserved": true',
                       read("config/spatial_audio_authority.json"))
         self.assertTrue(self.record["production"]["releaseRequiresOperatorHeadphoneApproval"])
-        self.assertFalse(self.record["imersip"]["releaseQualified"])
+        self.assertTrue(self.record["imersip"]["releaseQualified"])
 
 if __name__=="__main__": unittest.main()
