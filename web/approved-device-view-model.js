@@ -89,6 +89,100 @@
     return {match,state,value,marker,title};
   }
 
+  // One transient draft for the existing Device Setup dialog. All native
+  // inventory and installed PCM remain external readback, never owned here.
+  function setupSameEndpoint(active,draft) {
+    return active?.open===true&&active.backend===draft?.backend&&
+      active.captureDevice===draft.capture&&active.playbackDevice===draft.playback;
+  }
+  function setupDraft(inventory) {
+    if(!inventory?.active||!Array.isArray(inventory.types))return null;
+    const active=inventory.active,types=inventory.types;
+    const backend=active.backend||types[0]?.name||"";
+    const type=types.find(t=>t.name===backend);
+    const capture=active.open?String(active.captureDevice||""):
+      active.captureDevice||type?.inputs?.[0]||"";
+    return {backend,capture,
+      playback:active.playbackDevice||
+        (type?.separate?type?.outputs?.[0]:capture)||"",
+      inputPins:Array.isArray(active.enabledInputs)?active.enabledInputs.slice():null,
+      outputPins:Array.isArray(active.enabledOutputs)?active.enabledOutputs.slice():null,
+      rate:0,buffer:0};
+  }
+  function setupPresentation(inventory,draft,state=setupInitial()) {
+    const active=inventory?.active||{},types=inventory?.types||[];
+    const type=types.find(t=>t?.name===draft?.backend);
+    const same=setupSameEndpoint(active,draft);
+    const inputOptions=type?.separate?["",...(type.inputs||[])]:type?.inputs||[];
+    const outputOptions=type?.outputs||[];
+    const rates=same?active.rates||[]:[];
+    const buffers=same?active.buffers||[]:[];
+    const mainPins=Array.isArray(active.mainOutputs)?active.mainOutputs
+      .map(pin=>active.outputNames?.[pin]).filter(Boolean):[];
+    const noInput=type?.separate===true&&draft?.capture==="";
+    const inputValid=noInput||Boolean(type?.inputs?.includes(draft?.capture));
+    const outputValid=Boolean(outputOptions.includes(draft?.playback));
+    const canApply=Boolean(type && draft?.backend && inputValid&&outputValid&&
+      (type.separate===true||draft.capture===draft.playback));
+    const selectedPins=(key,enabled)=>Array.isArray(draft?.[key])?
+      draft[key]:Array.isArray(enabled)?enabled:[];
+    return {type,same,backendOptions:types.map(t=>t.name),
+      inputOptions,outputOptions,rateOptions:["0",...rates.map(String)],
+      bufferOptions:["0",...buffers.map(String)],
+      inputPins:selectedPins("inputPins",active.enabledInputs),
+      outputPins:selectedPins("outputPins",active.enabledOutputs),
+      canApply,canAssignMain:same&&draft?.outputPins?.length===2,
+      canReusePins:same&&state.remapGeneration===active.deviceGeneration,
+      asio4allHint:draft?.backend==="ASIO"&&/asio4all/i.test(draft?.capture||""),
+      activeText:state.message||(active.open?
+        "ACTIVE · "+active.backend+" · "+active.rate+" Hz / "+active.buffer+" samples"+
+        (mainPins.length===2?" · MAIN "+mainPins.join(" / "):""):
+        "No verified audio device. Select a supported input and output.")};
+  }
+  function setupEditDraft(draft,inventory,change) {
+    if(!draft||!inventory?.active||!change||
+       typeof change!=="object")return draft;
+    const view=setupPresentation(inventory,draft);
+    if(typeof change.side==="string") {
+      if(!view.same||!["input","output"].includes(change.side)||
+         !Number.isInteger(change.index)||change.index<0||change.index>=64||
+         typeof change.checked!=="boolean")return draft;
+      const key=change.side==="input"?"inputPins":"outputPins";
+      const names=inventory.active[change.side==="input"?"inputNames":"outputNames"];
+      if(!Array.isArray(names)||change.index>=names.length)return draft;
+      const selected=new Set(view[key]);
+      if(change.checked)selected.add(change.index);
+      else selected.delete(change.index);
+      return {...draft,[key]:[...selected].sort((a,b)=>a-b)};
+    }
+    const {field,value}=change;
+    if(typeof value!=="string")return draft;
+    if(field==="backend") {
+      const type=inventory.types?.find(t=>t.name===value);
+      if(!type)return draft;
+      const capture=type.inputs?.[0]||"";
+      return {...draft,backend:value,capture,
+        playback:type.separate?type.outputs?.[0]||"":capture,
+        inputPins:null,outputPins:null,rate:0,buffer:0};
+    }
+    if(field==="capture") {
+      if(!view.inputOptions.includes(value))return draft;
+      return {...draft,capture:value,
+        playback:view.type?.separate?draft.playback:value,
+        inputPins:null,outputPins:null};
+    }
+    if(field==="playback") {
+      if(!view.outputOptions.includes(value))return draft;
+      return {...draft,playback:value,inputPins:null,outputPins:null};
+    }
+    if(field==="rate"||field==="buffer") {
+      const options=field==="rate"?view.rateOptions:view.bufferOptions;
+      if(!view.same||!options.includes(value))return draft;
+      return {...draft,[field]:Number(value)||0};
+    }
+    return draft;
+  }
+
   // Device Setup UI transaction: pure presentation only. The native
   // coordinator remains the sole device apply/rollback and output authority.
   // Never treat a successful ACK as installed hardware readback.
@@ -102,15 +196,9 @@
     const active=inventory.active;
     const generation=active.deviceGeneration;
     if(!Number.isSafeInteger(generation)||generation<0)return null;
-    const type=inventory.types?.find(x=>x.name===draft.backend);
-    if(!type||!draft.backend||!draft.playback||
-       !type.outputs?.includes(draft.playback)||
-       (!type.separate&&!type.inputs?.includes(draft.capture))||
-       (type.separate&&draft.capture&&!type.inputs?.includes(draft.capture))||
-       (!type.separate&&draft.capture!==draft.playback))return null;
-    const same=active.open===true&&active.backend===draft.backend&&
-      active.captureDevice===draft.capture&&
-      active.playbackDevice===draft.playback;
+    const presentation=setupPresentation(inventory,draft,state);
+    if(!presentation.canApply)return null;
+    const same=presentation.same;
     if(confirmRetainedPinMapping &&
        (!same||state.remapGeneration!==generation))return null;
     if(assignMain&&(!same||draft.outputPins?.length!==2))return null;
@@ -219,6 +307,7 @@
     return {...state,phase:"IDLE",message:"",remapGeneration:null};
   }
   return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,
-    externalPresentation,setupInitial,setupBegin,setupAck,setupReadback,
+    externalPresentation,setupDraft,setupPresentation,setupEditDraft,
+    setupInitial,setupBegin,setupAck,setupReadback,
     setupTimeout,setupClearResult});
 });
