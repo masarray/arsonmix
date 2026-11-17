@@ -1,5 +1,12 @@
 # ImmerSIB — main-based release-candidate integration gate (17 November 2026)
 
+> **Historical pre-release gate, superseded on 17 November 2026.** The owner
+> has completed and approved ImmerSIB headphone listening, and public Windows
+> alpha.24/25/26 releases have been published. The `NOT PUBLICLY QUALIFIED`,
+> headphone-FAT `pending` and default publisher-OFF statements below describe
+> the state *before* promotion, not the current release. For the current
+> accepted state see [ImmerSIB Public Alpha Owner Acceptance](IMMERSIB_PUBLIC_ALPHA_OWNER_ACCEPTANCE_20261117.md).
+
 ## Ownership / exact provenance
 
 This is a **selective code forward-port**, not a merge of 400+ experimental
