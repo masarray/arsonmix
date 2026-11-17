@@ -38,7 +38,7 @@ $fixtureProcess=$null
 try {
     New-Item -ItemType Directory -Force -Path $stage | Out-Null
     Copy-Item -LiteralPath $exe -Destination (Join-Path $stage "verified-gui.exe")
-    foreach($item in @("BUILD_PROVENANCE.json","README.md")){
+    foreach($item in @("BUILD_PROVENANCE.json")){
         Copy-Item -LiteralPath (Join-Path $dist $item) -Destination (Join-Path $stage $item)
     }
     Copy-Item -LiteralPath "assets/icon/arsonmix-app.ico" -Destination (Join-Path $stage "arsonmix-app.ico")
@@ -101,6 +101,14 @@ try {
     if(-not (Test-Path -LiteralPath $fixtureReady)){
         throw "Installed upgrade fixture did not show its Windows message-loop window"
     }
+    # Upgrade fixture: migration from the old alpha.24 footprint must not
+    # leave the old top-level licenses/README in the installed application.
+    $legacyLooseFiles=@("LICENSE","LICENSE-NOTICE.txt",
+        "LICENSE-SIGNALSMITH-STRETCH.txt","LICENSE-SIGNALSMITH-LINEAR.txt",
+        "OFL-LICENSE-Inter.txt","THIRD_PARTY_8D_SONKU_HRTF.md","README.md")
+    foreach($name in $legacyLooseFiles){
+        "legacy-installer-document" | Set-Content -LiteralPath (Join-Path $install $name)
+    }
     $installSentinel=Join-Path $install "arsonmix-user-file.keep"
     "preserve-user-files-across-upgrade" | Set-Content -LiteralPath $installSentinel
     $upgradeLog=Join-Path $env:RUNNER_TEMP ("arsonmix-upgrade-"+[guid]::NewGuid().ToString("N")+".log")
@@ -130,6 +138,11 @@ try {
        -not (Test-Path -LiteralPath $sentinel) -or
        (Test-Path -LiteralPath (Join-Path $install "portable_mode.txt"))){
         throw "In-place update failed verified EXE replacement or data preservation"
+    }
+    foreach($name in $legacyLooseFiles){
+        if(Test-Path -LiteralPath (Join-Path $install $name)){
+            throw "Old loose legal file survived in-place update: $name"
+        }
     }
     Write-Host "INNO_GRACEFUL_UPDATE_PASS: running app Windows session close, verified PE replacement, user files preserved"
     $uninstall=Join-Path $install "unins000.exe"
