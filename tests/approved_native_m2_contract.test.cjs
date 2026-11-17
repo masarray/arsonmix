@@ -4,6 +4,7 @@ const test=require("node:test");
 const assert=require("node:assert/strict");
 const {readFileSync}=require("node:fs");
 const protocol=require("../web/approved-native-contract.js");
+const deviceVM=require("../web/approved-device-view-model.js");
 const read=p=>readFileSync(p,"utf8");
 const fixtures=JSON.parse(read("integration/console-v6/fixtures.json"));
 const clone=x=>JSON.parse(JSON.stringify(x));
@@ -2282,4 +2283,76 @@ test("SOF double-click and target selection never commandeer MAIN fader",()=>{
     "SOF must intercept fader reset BEFORE M4/Main fader ownership");
   assert.match(handler,/requestWireGain\(\{sourceId:t\.id,edgeId:id,levelDb:0\}\)/);
   assert.match(handler,/intent\("SET_INPUT_GAIN",t,\{valueDb:0\}\)/);
+});
+
+test("MVVM device selector projects only the verified native physical input pins",()=>{
+  const hardware={device:{backend:"ASIO",enabledInputs:[0,1,3],
+    inputEndpoints:[
+      {port:0,label:"Mic 1",active:true},{port:1,label:"Mic 2",active:true},
+      {port:2,label:"Disabled",active:true},{port:3,label:"Mic 4",active:true},
+      {port:4,label:"Inactive",active:false}]},raw:{}};
+  const original=JSON.stringify(hardware);
+  assert.deepEqual(deviceVM.activeInputPins(hardware).map(p=>p.port),[0,1,3]);
+  const choices=deviceVM.inputChoices(hardware);
+  assert.deepEqual(choices.map(x=>[x.mode,x.left,x.right]),[
+    ["NONE",-1,-1],["MONO",0,-1],["MONO",1,-1],["MONO",3,-1],["STEREO",0,1]
+  ]);
+  assert.equal(deviceVM.inputLabel(hardware,{mode:"MONO",left:3,right:-1}),
+    "Mono · Mic 4 [IN 4]");
+  assert.equal(deviceVM.inputLabel(hardware,{mode:"STEREO",left:0,right:1}),
+    "Stereo · IN 1 + 2");
+  assert.equal(deviceVM.inputLabel(hardware,{mode:"STEREO",left:1,right:2}),"None");
+  assert.equal(deviceVM.inputLabel(hardware,{mode:"BUS"}),"Internal BUS (read-only)");
+  assert.equal(JSON.stringify(hardware),original,"view must not mutate native readback");
+  assert.deepEqual(deviceVM.inputChoices({device:{inputEndpoints:[],enabledInputs:[]}}),
+    [{label:"None",mode:"NONE",left:-1,right:-1}]);
+  assert.deepEqual(deviceVM.activeInputPins({device:{inputEndpoints:hardware.device.inputEndpoints}}),[]);
+});
+test("MVVM external outputs never offer MAIN/MONITOR pins, disabled pairs, or WASAPI copies",()=>{
+  const snapshot={device:{backend:"ASIO",enabledOutputs:[0,1,2,3,4,5,7,8],
+    outputArmed:false,outputEndpoints:Array.from({length:9},(_,port)=>({
+      port,label:"Physical "+(port+1),active:port!==6
+    }))},raw:{physicalMainOutputs:[0,1],physicalMonitorOutputs:[4,5],
+    externalOutputs:[{physicalLeft:2,physicalRight:3},{physicalLeft:2,physicalRight:3}]}};
+  const before=JSON.stringify(snapshot);
+  const choices=deviceVM.outputChoices(snapshot);
+  assert.equal(choices.length,2);
+  assert.deepEqual(choices[0],{label:"None",left:-1,right:-1});
+  assert.deepEqual([choices[1].left,choices[1].right],[2,3]);
+  assert.match(choices[1].label,/SHARED 2 SOURCES/);
+  assert.equal(deviceVM.outputChoices({...snapshot,device:{...snapshot.device,
+    backend:"WASAPI"}}).length,1);
+  assert.equal(JSON.stringify(snapshot),before,"output projection must be read-only");
+});
+test("MVVM external readback needs verified pair and output-arm, never ACK-only LIVE",()=>{
+  const snapshot={device:{backend:"ASIO",outputArmed:false,
+    outputEndpoints:[{port:2,label:"OUT L",active:true},{port:3,label:"OUT R",active:true}],
+    enabledOutputs:[2,3]},raw:{physicalMainOutputs:[],physicalMonitorOutputs:[],externalOutputs:[]}};
+  const choices=deviceVM.outputChoices(snapshot);
+  const installed={status:"LIVE",physicalLeft:2,physicalRight:3};
+  const muted=deviceVM.externalPresentation(snapshot,installed,choices);
+  assert.equal(muted.state,"MUTED");
+  assert.equal(muted.marker,"MUTED");
+  assert.equal(muted.value,choices[1].label);
+  assert.equal(deviceVM.externalPresentation({...snapshot,
+    device:{...snapshot.device,outputArmed:true}},installed,choices).state,"LIVE");
+  assert.equal(deviceVM.externalPresentation(snapshot,{...installed,status:"PENDING"},choices).state,
+    "PENDING");
+  const invalid=deviceVM.externalPresentation(snapshot,
+    {...installed,physicalLeft:6,physicalRight:7},choices);
+  assert.equal(invalid.state,"NEEDS_REMAP");
+  assert.match(invalid.value,/Needs Remap/);
+  assert.equal(deviceVM.externalPresentation(snapshot,null,choices).state,"NONE");
+  assert.equal(deviceVM.externalPresentation(null,installed).state,"NEEDS_REMAP");
+});
+test("MVVM native bridge uses the one device read model, not retired web/mixer-io.js",()=>{
+  const bridge=read("web/approved-native-bridge.js");
+  const build=read("scripts/build_approved_native_gui.py");
+  assert.match(bridge,/deviceVM\.inputChoices\(hardware\)/);
+  assert.match(bridge,/deviceVM\.externalPresentation\(next,row,choices\)/);
+  assert.match(bridge,/deviceVM\.outputChoices\(hardware\)/);
+  assert.doesNotMatch(bridge,/const monoLabel=|const hardwareOutputPairs=\(\)=>\{/);
+  assert.match(build,/assets\/approved-device-view-model\.js/);
+  assert.match(build,/web" \/ "approved-device-view-model\.js"/);
+  assert.doesNotMatch(bridge,/AudioContext|AudioWorklet|createPluginInstance/);
 });
