@@ -3822,6 +3822,16 @@
       return !!admittedParallelWire(uiSourceId,uiEdgeId,"SET_WIRE_GAIN");
     },
     canWireTap(uiEdgeId,uiSourceId){
+      if(logicalView){
+        const from=nativeByUiId.get(uiSourceId),edgeId=wireByUiId.get(uiEdgeId);
+        const matching=logicalView.graph.edges.filter(e=>e.enabled &&
+          e.from===from && e.edgeId===edgeId && e.primaryOutput===false);
+        const edge=matching.length===1?matching[0]:null;
+        // Offline PRE/POST is a saved document edit, never PCM admission.
+        return !!edge&&!logicalView.readOnly&&!pendingLogical&&
+          logicalView.graph.capabilities.supportedOps.includes("SET_SEND_TAP")&&
+          ["PRE_FADER","POST_FADER"].includes(edge.tapStage||edge.tap);
+      }
       const edge=admittedParallelWire(uiSourceId,uiEdgeId,"APPLY_WIRE_TRANSACTION");
       return !!edge&&["PRE_FADER","POST_FADER"].includes(edge.tap)&&
         !controller?.state()?.pending;
@@ -3840,6 +3850,24 @@
         const to=op.destId===undefined?null:nativeByUiId.get(op.destId);
         const edgeId=wireByUiId.get(op.edgeId);
         if(!from)return true;
+        if(op.type==="MODE"){
+          // The same WIRE inspector gesture must remain available before
+          // binding a physical interface. Exact native EdgeId/readback,
+          // not a reference-renderer-only toggle or a fabricated PCM ACK.
+          const tap=op.mode==="split"?"PRE_FADER":
+            op.mode==="send"?"POST_FADER":null;
+          const matching=logicalView.graph.edges.filter(e=>e.enabled &&
+            e.from===from && e.edgeId===edgeId && e.primaryOutput===false);
+          const edge=matching.length===1?matching[0]:null;
+          if(!tap||!edge||!canWireTap(op.edgeId,op.sourceId)){
+            status("Offline PRE/POST unavailable · select a saved parallel SEND");
+            return true;
+          }
+          if((edge.tapStage||edge.tap)===tap)return true;
+          const ack=logicalIntent("SET_SEND_TAP",from,{edgeId,tap});
+          if(!ack.ok)nativeToast("PRE/POST not saved · "+ack.error);
+          return true;
+        }
         const primary=(op.type==="ROUTE_ONLY" ||
           (op.type==="CONNECT"&&op.destId===scope?.master?.id&&
            op.mode!=="send"));
