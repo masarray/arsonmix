@@ -9,6 +9,7 @@
 // Explicit manual: ARMixDualAsioCaptureProbe --probe "Vendor A ASIO" "Vendor B ASIO" 48000 256 5000
 #include "../engine/device/DualAsioCaptureProbePolicy.h"
 #include "../engine/device/AsioRegistryIdentityProbe.h"
+#include "../engine/device/AsioPriorityDeviceManager.h"
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <atomic>
 #include <cmath>
@@ -67,7 +68,7 @@ struct CaptureCounters final : juce::AudioIODeviceCallback
 
 struct Endpoint final
 {
-    juce::AudioDeviceManager discoveryOnly; // never initialise / open defaults
+    armix::device::AsioPriorityDeviceManager discoveryOnly; // never initialise / open defaults
     juce::OwnedArray<juce::AudioIODeviceType> factories;
     std::unique_ptr<juce::AudioIODevice> device;
     CaptureCounters counters;
