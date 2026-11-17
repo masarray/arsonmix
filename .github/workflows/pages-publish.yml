@@ -129,6 +129,7 @@ jobs:
           test "$(cat dist-pages/googlec34c43149eef6100.html)" = "google-site-verification: googlec34c43149eef6100.html"
           python scripts/build_landing_assets.py dist-pages
           python tests/test_release_catalog.py
+          python tests/test_cloudflare_pages_build.py
           python scripts/build_release_catalog.py --output dist-pages/release-catalog.json --landing dist-pages/index.html
           # The current approved mixer remains /preview/ and is single-owner.
           # /preview-prod/ is separately pinned read-only historical evidence;
