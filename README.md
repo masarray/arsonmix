@@ -44,6 +44,12 @@ Windows alpha builds are intended for field testing. If you have a 4–8-output 
 
 **The one approved GUI:** [masarray.github.io/arsonmix/preview/](https://masarray.github.io/arsonmix/preview/). It is an interactive **visual preview only** — no browser hardware audio, no real native VST3 processing and no promise that a UI illustration is a supported sound route. Older preview URLs redirect here. The native Windows app uses the approved mixer renderer; changes must not introduce competing skins.
 
+## License — mixer and native built-in FX
+
+**AGPL-3.0-only (GNU Affero General Public License version 3 only)** applies to original ArSonMix mixer code, routing and JUCE host, original desktop/web GUI implementation, and ArSonMix-owned **native built-in FX**, including EQ, Compressor, Harmonice, Vocal Delay, 8D-SonKu, Guitar FX and feature-gated ImmerSIB. See the complete [LICENSE](LICENSE) and [LICENSE-NOTICE.txt](LICENSE-NOTICE.txt). Source code and release tags are available in this repository for recipients of the application.
+
+Third-party components are **not automatically relicensed**: JUCE, VST3/ASIO SDKs, MIT-licensed KEMAR/HRIR and Signalsmith materials, Inter font, VB-CABLE, and independently installed/approved FactoryFX VST3 may carry separate terms. Refer to distributed notices and `third_party/`. AGPL does not grant a redistribution licence for commercial VST3 plugins.
+
 ## Source, builds and contribution
 
 Each [published release](https://github.com/masarray/arsonmix/releases) provides its source tag, release notes, and SHA-256 checksums. The version displayed on the landing page identifies the package being downloaded.

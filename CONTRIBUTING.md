@@ -35,6 +35,12 @@ Use CONTROL/message thread for graph compilation, VST3 construction/destruction/
 
 A UI intent is not complete on ACK alone: verify an independent accepted same-revision snapshot. `LOGICAL_ONLY`, `RETAINED`, `INSTALLED` and **audible hardware** are different facts. A rejected/stale command must preserve the previous accepted mixer and output safety. SOURCE ONLY must preserve channel PCM/meter while cutting MAIN output, without losing user FX state.
 
+## Licensing and third-party contributions
+
+The original mixer and native built-in FX are **AGPL-3.0-only**; see [LICENSE](LICENSE) and [LICENSE-NOTICE.txt](LICENSE-NOTICE.txt). Submit original contributions only if you have the rights needed to license them accordingly. Do not copy proprietary VST3 code, restricted SDK sources, audio datasets or media into first-party modules. Keep third-party attributions and upstream licence files intact.
+
+The Windows installer/portable ZIP and Linux/macOS packages must include the complete AGPL text, first-party notice and applicable vendored-component notices. The fast licence distribution contract and Windows byte-level artifact verifier enforce this. Do not weaken release source provenance or change the native DSP graph to implement licensing.
+
 ## Targeted validation and delivery
 
 For JS protocol edits, use `node --test tests/approved_native_m2_contract.test.cjs` from the repo root and the relevant contract suites. For C++ work, choose the nearest CMake/CTest targets and build on the repository's supported JUCE/MSVC workflow. Do not skip full qualification for a changed native behavior. Use path-scoped **fast** checks while iterating; after green quick checks, the connected GitHub owner agent dispatches **one** exact-SHA `ui` for visual/gesture changes or **one** exact-SHA `native` for C++/ASIO/FX changes. When a hardware-test ZIP is required, use `fat` **instead of duplicate native**, and verify its SHA/artifact provenance. See the [runbook](docs/SMART_CI_RUNNER_WORKFLOW.md).

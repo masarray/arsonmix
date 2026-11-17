@@ -52,6 +52,18 @@ try {
     # Match the real Inno source manifest: full third-party legal notices
     # are required for test fixtures as well as public native bundles.
     Copy-Item -LiteralPath (Join-Path $root "docs/THIRD_PARTY_8D_SONKU_HRTF.md") -Destination (Join-Path $stage "THIRD_PARTY_8D_SONKU_HRTF.md")
+    # Keep Inno test staging identical to its legal [Files] contract.
+    # This is a fixture EXE, but the notices must be real source bytes.
+    $licenseSources = [ordered]@{
+        "LICENSE" = "LICENSE"
+        "LICENSE-NOTICE.txt" = "LICENSE-NOTICE.txt"
+        "LICENSE-SIGNALSMITH-STRETCH.txt" = "third_party/signalsmith/LICENSE-STRETCH.txt"
+        "LICENSE-SIGNALSMITH-LINEAR.txt" = "third_party/signalsmith/LICENSE-LINEAR.txt"
+        "OFL-LICENSE-Inter.txt" = "web/assets/fonts/OFL-LICENSE-Inter.txt"
+    }
+    foreach($name in $licenseSources.Keys){
+        Copy-Item -LiteralPath (Join-Path $root $licenseSources[$name]) -Destination (Join-Path $stage $name)
+    }
     '{"sourceCommit":"TEST_FIXTURE_ONLY","fatStatus":"NOT_A_PRODUCT"}' | Set-Content -LiteralPath (Join-Path $stage "BUILD_PROVENANCE.json")
     # Contract fixture, NEVER vendor bytes: /VERYSILENT has the optional
     # vendor step skipped in silent mode. This proves ordinary repair/upgrade can
@@ -76,6 +88,13 @@ try {
     $installedMit=Join-Path $install "THIRD_PARTY_8D_SONKU_HRTF.md"
     Assert-Condition ((Test-Path -LiteralPath $installedMit -PathType Leaf) -and
         (Get-FileHash -LiteralPath $installedMit -Algorithm SHA256).Hash -eq $mitSourceHash) "Inno fixture did not install exact MIT KEMAR notice"
+    foreach($name in $licenseSources.Keys){
+        $actual = Join-Path $install $name
+        $expected = Join-Path $stage $name
+        Assert-Condition ((Test-Path -LiteralPath $actual -PathType Leaf) -and
+            (Get-FileHash -LiteralPath $actual -Algorithm SHA256).Hash -eq
+            (Get-FileHash -LiteralPath $expected -Algorithm SHA256).Hash) "Inno fixture omitted/modified licence: $name"
+    }
     $fixtureHash=(Get-FileHash -LiteralPath (Join-Path $stage "verified-gui.exe") -Algorithm SHA256).Hash
     Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -eq $fixtureHash) "First install changed test executable bytes"
     $userFile=Join-Path $install "user-file.keep"

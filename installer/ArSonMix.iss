@@ -58,6 +58,12 @@ Source: "ArSonMixAutoUpdate.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\verified-gui.exe"; DestDir: "{app}"; DestName: "ArSonMix.exe"; Flags: ignoreversion
 Source: "{#SourceRoot}\BUILD_PROVENANCE.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
+; Ship original AGPLv3 and third-party terms without new installer UI steps.
+Source: "{#SourceRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\LICENSE-NOTICE.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\LICENSE-SIGNALSMITH-STRETCH.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\LICENSE-SIGNALSMITH-LINEAR.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\OFL-LICENSE-Inter.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\THIRD_PARTY_8D_SONKU_HRTF.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\FactoryFX\*"; DestDir: "{app}\FactoryFX"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 [Icons]
