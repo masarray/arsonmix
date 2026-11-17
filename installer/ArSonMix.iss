@@ -58,13 +58,16 @@ Source: "ArSonMixAutoUpdate.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\verified-gui.exe"; DestDir: "{app}"; DestName: "ArSonMix.exe"; Flags: ignoreversion
 Source: "{#SourceRoot}\BUILD_PROVENANCE.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
-; Ship original AGPLv3 and third-party terms without new installer UI steps.
-Source: "{#SourceRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourceRoot}\LICENSE-NOTICE.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourceRoot}\LICENSE-SIGNALSMITH-STRETCH.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourceRoot}\LICENSE-SIGNALSMITH-LINEAR.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourceRoot}\OFL-LICENSE-Inter.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourceRoot}\THIRD_PARTY_8D_SONKU_HRTF.md"; DestDir: "{app}"; Flags: ignoreversion
+; The complete original and vendor legal documents are embedded both in
+; ArSonMix.exe (offline About & Licenses) and inside this Setup payload.
+; dontcopy = not installed into {app}; no clickthrough wizard or file litter.
+Source: "..\LICENSE"; Flags: dontcopy
+Source: "..\LICENSE-NOTICE.txt"; Flags: dontcopy
+Source: "..\docs\THIRD_PARTY_8D_SONKU_HRTF.md"; Flags: dontcopy
+Source: "..\third_party\signalsmith\LICENSE-STRETCH.txt"; Flags: dontcopy
+Source: "..\third_party\signalsmith\LICENSE-LINEAR.txt"; Flags: dontcopy
+Source: "..\web\assets\fonts\OFL-LICENSE-Inter.txt"; Flags: dontcopy
+Source: "VB-CABLE-NOTICE.txt"; Flags: dontcopy
 Source: "{#SourceRoot}\FactoryFX\*"; DestDir: "{app}\FactoryFX"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 [Icons]
 Name: "{autoprograms}\ArSonMix"; Filename: "{app}\ArSonMix.exe"; WorkingDir: "{app}"
