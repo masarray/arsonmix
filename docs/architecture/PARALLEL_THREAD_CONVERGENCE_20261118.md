@@ -3,7 +3,7 @@
 **Status: PROPOSED WORKING GUIDE — NOT A SOURCE LOCK, NOT A CI ADMISSION POLICY, NOT A NEW AUTHORITY.**  
 **Audit:** 2026-11-18; `main@ef7a29933109020657accfb957b7a6ffc8d58cd7`. Always refresh live branch/PR state.  
 **Owner/user constraint:** The former four-lane file ownership and collision gates caused deadlock and were **explicitly retired** on 2026-11-05 in [AGENTS.md](../../AGENTS.md). **Never reintroduce them.**  
-**Architecture authority:** [maintainability epic #527](https://github.com/masarray/arsonmix/issues/527) and the **already active** [PR #763 Modular MVVM ADR](https://github.com/masarray/arsonmix/pull/763), alongside its multi-device PRD/ARD. This guide is a *contribution/integration supplement*, not a competing architecture ADR.  
+**Architecture authority:** [maintainability epic #527](https://github.com/masarray/arsonmix/issues/527) and the **merged** [Modular MVVM Feasibility ADR](ADR_MODULAR_MVVM_FEASIBILITY_20261118.md) from [PR #763](https://github.com/masarray/arsonmix/pull/763), alongside its multi-device PRD/ARD (merged into main at `1cbe62779319bb6505e38984111ade648ebdf42d`). This guide is a *contribution/integration supplement*, not a competing architecture ADR.  
 **Related feature work:** [#760 ImmerSIB corrected field FAT](https://github.com/masarray/arsonmix/pull/760), [#757 narrower input-only study](https://github.com/masarray/arsonmix/pull/757). No changes to their branches or release state.
 
 ## 0. Explicit decision: coordination MUST NOT block coding
@@ -31,7 +31,7 @@ The old `scripts/check_workstream_coordination.mjs` contains `audit()` that reje
 
 **Do NOT delete this script wholesale**: that would also remove test-lane selection functions used by active CI. Do not edit CI or protected-main rules merely because the script contains dormant legacy code. When a measured maintenance task justifies it, move the path selectors into a dedicated pure `ci_path_selection` module, update imports/tests, and retire the unused old `audit()` code in the **same tested PR**. This is optional cleanup, not a feature prerequisite or additional gate.
 
-The former `docs/workstreams/MULTI_AGENT_COORDINATION.md` starts with SUPERSEDED but retains a 'binding' heading and paragraphs demanding file owners. This text is a historical artifact. Keep a conspicuous note explaining that *none* of its four-lane instructions are operative; do not turn the document into an action list. The new [PR template](../../.github/PULL_REQUEST_TEMPLATE.md) is a light evidence prompt, not an enforced ownership form.
+The former `docs/workstreams/MULTI_AGENT_COORDINATION.md` starts with SUPERSEDED; its heading is clarified as HISTORICAL in this same PR, but archived paragraphs still describe retired file owners. This text is a historical artifact. Keep a conspicuous note explaining that *none* of its four-lane instructions are operative; do not turn the document into an action list. The new [PR template](../../.github/PULL_REQUEST_TEMPLATE.md) is a light evidence prompt, not an enforced ownership form.
 
 ## 2. Parallel development: discover → independently implement → reconcile just before integration
 
@@ -73,7 +73,7 @@ The only new fitness checks justified in a coding milestone are deterministic **
 
 ## 5. Existing architecture is the implementation target (avoid competing ADRs)
 
-Use [PR #763](https://github.com/masarray/arsonmix/pull/763) for the concrete modular-monolith / WebView MVVM feasibility roadmap, PRD and ARD for future multi-device I/O; issue #527 tracks existing M1–M6 extraction. This governance guide intentionally contains **no second architectural authority**.
+Use the **merged** [Modular MVVM Feasibility ADR](ADR_MODULAR_MVVM_FEASIBILITY_20261118.md), plus [full multi-device PRD](../PRD_ARSONMIX_MULTI_DEVICE_IO_20261118.md) and [ARD](../ARD_ARSONMIX_MULTI_DEVICE_IO_V2_20261118.md) from [#763](https://github.com/masarray/arsonmix/pull/763); issue #527 tracks existing M1–M6 extraction. This governance guide intentionally contains **no second architectural authority**.
 
 **Non-negotiable source rules:**
 - Keep one native `MixerSessionDocument` / ChannelId/EdgeId logical state, one installed PCM/VST3 **render graph authority** and one approved assembled `/preview/` GUI.
@@ -126,7 +126,7 @@ Identify one operator flow currently touched by many modules: DEVICE Apply or WI
 ### Slice 4 — Plugin, device extension, performance and artifact qualification
 
 - Built-in FX extensions consume current central registry and native host/FX lease semantics, not Main per-plugin routing special cases. Verify bypass/reorder/editor lifecycle/state and plugin latency reporting.
-- Multi-device work in #763 remains proof-first and independent: one mixer **render owner** with capture/output-only adapters using bounded SPSC and clock drift correction when supported. A second I/O callback is not a second DSP render engine.
+- The merged #763 multi-device **design** remains proof-first and independently implementable: one mixer **render owner** with capture/output-only adapters using bounded SPSC and clock drift correction when supported. A second I/O callback is not a second DSP render engine.
 - For public/field FAT, compile with one explicit distribution profile and **inspect the actual installed executable** for mandatory ImmerSIB/SonKu assets/catalog. Research profiles must not be confused with a distribution release.
 - Benchmark primary ASIO buffer p99/p99.9 deadline and xrun under identical conditions, plugin PDC, control-to-readback and GUI responsiveness. Never claim improved latency from MVVM by itself.
 
