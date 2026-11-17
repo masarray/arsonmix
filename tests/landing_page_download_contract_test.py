@@ -87,6 +87,7 @@ class LandingReleaseContract(unittest.TestCase):
         self.assertIn("arsonmix-pages-ignored-pr-check", workflow)
         self.assertIn("github.event.workflow_run.event != 'push'", workflow)
         self.assertIn("arsonmix-production-pages", workflow)
+        self.assertIn("cancel-in-progress: ${{ github.event_name != 'workflow_run' }}", workflow)
 
     def test_no_unverified_binaries(self):
         js = (ROOT / "site/downloads.js").read_text("utf-8")
