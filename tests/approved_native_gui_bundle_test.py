@@ -58,6 +58,17 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             self.assertEqual(manifest["approvedPagesHtmlSha256"], bundle.sha256((source / "index.html").read_bytes()))
             self.assertNotEqual(native, (ROOT / "web/index.html").read_text("utf-8"))
             self.assertIn("approved-native-bridge.js", native)
+            # Native-only pure Device Setup VM must load BEFORE the approved
+            # bridge and must never change the public /preview/ HTML.
+            self.assertIn('assets/approved-device-view-model.js', native)
+            self.assertNotIn('assets/approved-device-view-model.js', approved)
+            self.assertLess(native.index('assets/approved-native-contract.js'),
+                            native.index('assets/approved-device-view-model.js'))
+            self.assertLess(native.index('assets/approved-device-view-model.js'),
+                            native.index('assets/approved-native-bridge.js'))
+            vm_source = (ROOT / "web/approved-device-view-model.js").read_bytes()
+            self.assertEqual((out / "assets/approved-device-view-model.js").read_bytes(),
+                             vm_source)
             self.assertIn("approved-native-context-menu.js", native)
             context_menu = (out / "assets/approved-native-context-menu.js").read_text("utf-8")
             self.assertIn('document.addEventListener("contextmenu"', context_menu)
@@ -134,6 +145,7 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             self.assertIn("BinaryData::mixercontrolkeys_css", header)
             self.assertIn("BinaryData::arsonmixapprovedruntime_css", header)
             self.assertIn("BinaryData::mixercontrolkeys_js", header)
+            self.assertIn("BinaryData::approveddeviceviewmodel_js", header)
             self.assertIn('"/assets/mixer-keys-thin-flat-v9-approved-off-shadow-57x30.png"', header)
             for entry in first["files"]:
                 self.assertEqual(bundle.sha256((a / entry["path"]).read_bytes()), entry["sha256"])
