@@ -48,7 +48,6 @@ try {
     & $csc "/nologo" "/target:winexe" "/reference:System.Windows.Forms.dll" "/out:$(Join-Path $stage 'verified-gui.exe')" (Join-Path $root "tests/fixtures/installer_graceful_close.cs")
     Assert-Condition ($LASTEXITCODE -eq 0) "Test-only WinForms fixture failed to compile"
     Copy-Item -LiteralPath (Join-Path $root "assets/icon/arsonmix-app.ico") -Destination (Join-Path $stage "arsonmix-app.ico")
-    "Test-only installer mechanics fixture" | Set-Content -LiteralPath (Join-Path $stage "README.md")
     # Source legal texts are embedded in the Setup executable by Inno itself;
     # the test-only staged EXE deliberately has no JUCE resources.
     '{"sourceCommit":"TEST_FIXTURE_ONLY","fatStatus":"NOT_A_PRODUCT"}' | Set-Content -LiteralPath (Join-Path $stage "BUILD_PROVENANCE.json")
@@ -80,6 +79,14 @@ try {
     }
     $fixtureHash=(Get-FileHash -LiteralPath (Join-Path $stage "verified-gui.exe") -Algorithm SHA256).Hash
     Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -eq $fixtureHash) "First install changed test executable bytes"
+    # Simulate an actual installed alpha.24 or earlier footprint.
+    # Same-version in-place upgrade must remove only these known old files.
+    $legacyLooseFiles=@("LICENSE","LICENSE-NOTICE.txt",
+        "LICENSE-SIGNALSMITH-STRETCH.txt","LICENSE-SIGNALSMITH-LINEAR.txt",
+        "OFL-LICENSE-Inter.txt","THIRD_PARTY_8D_SONKU_HRTF.md","README.md")
+    foreach($name in $legacyLooseFiles){
+        "legacy-installer-document" | Set-Content -LiteralPath (Join-Path $install $name)
+    }
     $userFile=Join-Path $install "user-file.keep"
     "user-file-must-survive" | Set-Content -LiteralPath $userFile
     $fixtureProcess=Start-Process -FilePath $installedExe -ArgumentList @(('"' + $ready + '"'),('"' + $closed + '"')) -PassThru
@@ -102,6 +109,9 @@ try {
     Assert-Condition ($exited -and $marker -and ($acceptedSaves -contains $markerText)) "Inno did not request a saved, graceful Windows session close"
     Assert-Condition ($newHash -eq $fixtureHash) "Updated installed fixture hash mismatch"
     Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Update removed user data"
+    foreach($name in $legacyLooseFiles){
+        Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $install $name))) "Legacy legal file survived upgrade: $name"
+    }
     # Upgrade from a PRE-HANDSHAKE ArSonMix.exe, exactly the case the old
     # test omitted and which caused DeleteFile failed; code 5 in the field.
     # Its FormClosing marker proves an old GUI was asked to quit normally.
