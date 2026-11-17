@@ -1475,6 +1475,8 @@ test("P0 native FX rack and per-slot readback update mounted strip without repla
  vm.runInNewContext(read("web/approved-native-bridge.js"),
   {window:win,document:doc,performance:{now:()=>0},console},{timeout:1500});
  const base=acceptedFixture();
+ // Production approvedNativeSnapshot publishes this PCM scalar, not CSS.
+ base.globalFxBypassed=false;
  base.graph.channels[0].fxRackBypassed=false;
  base.graph.channels[0].inserts=[
   {id:"vst-live-1",catalogId:"eq-a",name:"EQ",bypassed:false},
@@ -1528,7 +1530,21 @@ test("P0 native FX rack and per-slot readback update mounted strip without repla
  assert.equal(track.fxOn,true);
  assert.deepEqual(rows.map(r=>r.power.getAttribute("aria-pressed")),["true","false"]);
  assert.deepEqual(rows.map(r=>r.dataset.fxEffective),["true","false"]);
- const individual=clone(restored);
+ // One PCM global A/B overrides every displayed FX power without
+ // changing either remembered individual bypass preference or DOM nodes.
+ const allBypassed=clone(restored);
+ allBypassed.globalFxBypassed=true;
+ listeners.get("arMixConsoleSnapshot")(allBypassed);
+ assert.equal(paints,1,"global FX is a scalar, not a graph rebuild");
+ assert.deepEqual(rows.map(r=>r.dataset.fxEffective),["false","false"]);
+ assert.deepEqual(rows.map(r=>r.power.getAttribute("aria-pressed")),["false","false"]);
+ assert.deepEqual(Array.from(track.slotBypass.slice(0,2)),[false,true]);
+ const restoredGlobal=clone(allBypassed);
+ restoredGlobal.globalFxBypassed=false;
+ listeners.get("arMixConsoleSnapshot")(restoredGlobal);
+ assert.equal(paints,1);
+ assert.deepEqual(rows.map(r=>r.dataset.fxEffective),["true","false"]);
+ const individual=clone(restoredGlobal);
  individual.graph.channels[0].inserts[0].bypassed=true;
  listeners.get("arMixConsoleSnapshot")(individual);
  assert.equal(paints,1,"slot power is a realtime scalar, not a topology edit");
