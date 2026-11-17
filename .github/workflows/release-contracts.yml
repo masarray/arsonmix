@@ -10,6 +10,12 @@ on:
       - 'scripts/build_verify_windows_installer.ps1'
       - 'scripts/test_inno_graceful_update_windows.ps1'
       - 'tests/license_distribution_contract.test.mjs'
+      - 'scripts/verify_embedded_legal.py'
+      - 'web/approved-native-legal.js'
+      - 'src/EmbeddedLegalResources.h'
+      - 'src/Main.cpp'
+      - 'scripts/build_approved_native_gui.py'
+      - 'CMakeLists.txt'
       - 'site/index.html'
       - 'site/downloads.js'
       - 'scripts/build_release_catalog.py'
@@ -39,6 +45,12 @@ on:
       - 'scripts/build_verify_windows_installer.ps1'
       - 'scripts/test_inno_graceful_update_windows.ps1'
       - 'tests/license_distribution_contract.test.mjs'
+      - 'scripts/verify_embedded_legal.py'
+      - 'web/approved-native-legal.js'
+      - 'src/EmbeddedLegalResources.h'
+      - 'src/Main.cpp'
+      - 'scripts/build_approved_native_gui.py'
+      - 'CMakeLists.txt'
       - 'scripts/build_release_catalog.py'
       - 'scripts/verify_release_setup_zip.py'
       - 'tests/test_release_setup_zip.py'
@@ -70,6 +82,8 @@ jobs:
         run: |
           node --check site/downloads.js
           node --test tests/license_distribution_contract.test.mjs
+          python scripts/verify_embedded_legal.py --self-test
+          node --check web/approved-native-legal.js
           node --test tests/downloads_runtime_contract.test.mjs
           node --check scripts/release_ci_dispatch.mjs
           node --test tests/release_ci_dispatch_contract.test.mjs
