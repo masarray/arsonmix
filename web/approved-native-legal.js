@@ -152,7 +152,9 @@
       }
     },true);
     entry.addEventListener("click",()=>{
-      origin=entry;
+      // Closing <details> hides entry itself. Restore focus to the still-
+      // visible summary, never to an invisible menu item.
+      origin=document.querySelector("#moreTools > summary") || entry;
       document.getElementById("moreTools").open=false;
       backdrop.hidden=false;
       select(notices[0]);
