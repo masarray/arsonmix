@@ -58,16 +58,32 @@ def main():
                     status=200, content_type="application/json", body=json.dumps(unavailable)))
                 page.route(LIVE_PATTERN, lambda route: route.fulfill(
                     status=200, content_type="application/json", body="[]"))
-                page.goto(site)
-                page.wait_for_function(
-                    "document.getElementById('release-summary').textContent.includes('Downloads are being prepared')")
+                page.goto(site, wait_until="networkidle")
                 browser_check(page)
-                assert page.locator(".os-card.is-available").count() == 0
-                assert page.locator("a[data-release-link][href]").count() == 0
+                # Both mocked API sources are unavailable; the build-time
+                # verified HTML must retain its approved direct asset links.
+                seeded = page.locator(".os-card[data-release-tag]").count()
+                assert page.locator(".os-card.is-available").count() == seeded
+                assert page.locator("a[data-release-link][href]").count() == seeded
+                if seeded:
+                    assert page.locator("#release-summary").inner_text().startswith("Ready to download")
+                else:
+                    assert "Downloads are being prepared" in page.locator("#release-summary").inner_text()
                 assert not errors, errors
                 page.screenshot(path="landing-v1-" + label + ".png",
                                 full_page=True, animations="disabled")
                 page.close()
+
+            # Progressive enhancement: release links are real verified HTML,
+            # not contingent on JavaScript or GitHub's live API availability.
+            nojs = browser.new_page(viewport={"width": 1100, "height": 650},
+                                    java_script_enabled=False)
+            nojs.goto(site)
+            verified = nojs.locator(".os-card[data-release-tag]").count()
+            assert verified == nojs.locator(".os-card.is-available").count()
+            assert verified == nojs.locator("a[data-release-link][href]").count()
+            assert nojs.locator(".os-state").filter(has_text="NOT PUBLISHED").count() == 0
+            nojs.close()
 
             def entry(suffix):
                 name = "ArSonMix-v0.9.0-" + suffix
