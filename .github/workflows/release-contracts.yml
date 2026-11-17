@@ -2,6 +2,13 @@ name: Smart Release/Download Contracts (fast only)
 on:
   pull_request:
     paths:
+      - 'LICENSE'
+      - 'LICENSE-NOTICE.txt'
+      - 'installer/ArSonMix.iss'
+      - 'scripts/package_native_windows.ps1'
+      - 'scripts/verify_native_windows_artifact.ps1'
+      - 'scripts/build_verify_windows_installer.ps1'
+      - 'tests/license_distribution_contract.test.mjs'
       - 'site/index.html'
       - 'site/downloads.js'
       - 'scripts/build_release_catalog.py'
@@ -23,6 +30,13 @@ on:
   push:
     branches: [main]
     paths:
+      - 'LICENSE'
+      - 'LICENSE-NOTICE.txt'
+      - 'installer/ArSonMix.iss'
+      - 'scripts/package_native_windows.ps1'
+      - 'scripts/verify_native_windows_artifact.ps1'
+      - 'scripts/build_verify_windows_installer.ps1'
+      - 'tests/license_distribution_contract.test.mjs'
       - 'scripts/build_release_catalog.py'
       - 'scripts/verify_release_setup_zip.py'
       - 'tests/test_release_setup_zip.py'
@@ -53,6 +67,7 @@ jobs:
       - name: Release identity and browser contract
         run: |
           node --check site/downloads.js
+          node --test tests/license_distribution_contract.test.mjs
           node --test tests/downloads_runtime_contract.test.mjs
           node --check scripts/release_ci_dispatch.mjs
           node --test tests/release_ci_dispatch_contract.test.mjs
