@@ -3304,8 +3304,10 @@
     });
     backend.addEventListener("arMixRoutingFxEditorAck",ack=>{
       if(ack?.ok!==true)
-        nativeToast(ack?.error||"VST3 editor could not open");
-      else status("Native VST3 editor opened");
+        nativeToast(ack?.error||"FX editor could not open");
+      // A successful native HWND is its own feedback. Do not send a
+      // generic status("... editor opened") that the UI translates to
+      // the misleading "Effect settings updated" toast.
     });
     backend.addEventListener("arMixRoutingFxInsertAck",ack=>{
       if(!pendingFxInsert||pendingFxInsert.authority==="CHANNEL_ID"||
@@ -3722,6 +3724,14 @@
               if(window.ArSonMixNativeSonKu?.open)
                 window.ArSonMixNativeSonKu.open(t,slot);
               else nativeToast("8D-SonKu editor unavailable · refresh the approved GUI bundle");
+            } else if(insert.catalogId==='armix.builtin.imersip.v1' && current.admitted) {
+              // ImmerSIB is a real JUCE AudioProcessorEditor, not a
+              // WebView2 SonKu overlay, preset-change action or demo FX.
+              // Route the exact accepted ChannelId/lease into the dedicated
+              // native HWND, which remains open when a VST3 editor is opened.
+              backend.emitEvent("arMixAction",{action:"routingFxEditor",channelId:id,slot,
+                instanceId:insert.id,deviceEpoch:current.device.epoch,
+                revision:current.graph.revision});
             } else if(current.logical) {
               backend.emitEvent("arMixAction",{action:"logicalVendorFxEditor",channelId:id,
                 slot,instanceId:insert.id,workspaceToken:current.workspaceToken,

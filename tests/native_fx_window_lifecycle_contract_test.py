@@ -30,6 +30,28 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("editorWindow_.reset();",HOST)
         self.assertIn("routedEditorOwner_.reset();",HOST)
         self.assertIn("editorProcessor_=nullptr;",HOST)
+    def test_immersib_editor_survives_vendor_window_switch_and_can_refocus(self):
+        # Distinct accepted processor leases; only a graph/lease retirement
+        # closes the ImmerSIB window, not opening a VST3 in the same rack.
+        start=HOST.index('if (action == "routingFxEditor")')
+        end=HOST.index('if(action=="nativeMixerFileSave"',start)
+        opened=HOST[start:end]
+        self.assertIn('dedicatedImmerSIB=dynamic_cast<',opened)
+        self.assertIn('shownWindow=dedicatedImmerSIB?immersibEditorWindow_:editorWindow_',opened)
+        self.assertIn('shownOwner=dedicatedImmerSIB?immersibEditorOwner_:routedEditorOwner_',opened)
+        self.assertIn('shownWindow->present()',opened)
+        self.assertIn('if(dedicatedImmerSIB)closeImmerSIBEditor();',opened)
+        self.assertIn('closePluginEditor();',opened)
+        self.assertIn('shownWindow=std::make_unique<PluginEditorWindow>',opened)
+        self.assertIn('shownOwner=owner;',opened)
+        self.assertIn('immersibEditorWindow_->getContentComponent()',HOST)
+        self.assertIn('!engine_.retainsRoutedFxEditor(immersibEditorEpoch_,immersibEditorOwner_)',HOST)
+        self.assertIn('closeAllPluginEditors();',HOST)
+        self.assertIn('immersibEditorWindow_.reset();',HOST)
+        self.assertLess(HOST.index('immersibEditorWindow_.reset();'),
+                        HOST.index('immersibEditorOwner_.reset();'))
+        self.assertNotIn('closeAllPluginEditors();',opened)
+
     def test_all_editor_paths_use_one_host(self):
         self.assertEqual(HOST.count("std::make_unique<PluginEditorWindow>"),3)
         self.assertIn("prepared.processor->getName(),editor,*this)",HOST)
