@@ -18,27 +18,55 @@ export function requiredLanes(files) {
   const any=fn=>files.some(fn);
   const nativeCore=any(f=>/^src\/|^engine\/|^integration\/.*\.(?:cpp|hpp|h)$/.test(f)||
     f==="CMakeLists.txt"||/^tests\/.*\.cpp$/.test(f));
+  // Must cover EVERY native fast-workflow trigger, including JS transport,
+  // packaging, and release-source changes. A missing run is PENDING, not green.
+  // Windows MSVC remains required separately only for actual C++/graph scope.
   const nativeFast=nativeCore||any(f=>
+    /^integration\/console-v6\//.test(f) ||
+    /^config\/factoryfx-(?:approved-releases\.json|notices\/)/.test(f) ||
+    /^installer\//.test(f) ||
+    /^scripts\/(?:package_native_windows|build_verify_windows_installer|verify_native_windows_artifact|collect_hardware_fat_windows|console_v6_fat_gate|verify_console_s0_native_fixture|run_console_native_s0|check_console_puzzle|check_approved_native_gui_release|check_pr278_console_authority|m3e_fat_evidence_gate|factoryfx_release_bundle|build_approved_native_gui)\./.test(f) ||
+    /^scripts\/tests\/test_factoryfx_release_bundle\.py$/.test(f) ||
+    /^tests\/(?:windows_installer_contract\.test\.mjs|fixtures\/installer_graceful_close\.cs|approved_native_gui_bundle_test\.py|live_graph_contract_test\.mjs|.*native.*contract.*\.mjs)$/.test(f) ||
     ["web/approved-native-bridge.js","web/approved-native-contract.js",
-     "tests/approved_native_m2_contract.test.cjs",
+     "web/bridge.js","web/monitor.js","tests/approved_native_m2_contract.test.cjs",
+     "tests/live_routing_ui_contract_test.mjs",
      ".github/workflows/p1-windows.yml"].includes(f));
   const uiFast=any(f=>/^web\/|^site\/preview-v2\/|^site\/preview-buttons\/|^integration\/console-v6\//.test(f)||
     (f.startsWith("tests/")&&f.endsWith(".py")&&
      !["tests/test_platform_portability.py","tests/test_release_catalog.py",
        "tests/test_release_setup_zip.py"].includes(f))||
-    ["scripts/build_pages.py","tests/approved_native_m2_contract.test.cjs",
+    /^tests\/(?:.*gui.*contract.*\.mjs|native_ui_contract_test\.mjs|live_routing_ui_contract_test\.mjs|wire_graph_canonical_model\.test\.cjs|wire_main_native_handoff_contract\.test\.cjs)$/.test(f) ||
+    ["scripts/build_pages.py","scripts/build_ui_css.py",
+     "tests/approved_native_m2_contract.test.cjs",
+     "tests/chat_ci_dispatch_contract.test.mjs","scripts/chat_ci_dispatch.mjs",
+     "tests/ci_workflow_efficiency_test.mjs",
+     ".github/workflows/chat-ci-milestone.yml",
+     ".github/workflows/pages-publish.yml",
      ".github/workflows/ui-smoke.yml"].includes(f));
   const uiFull=any(f=>/^web\/|^site\/preview-v2\/|^site\/preview-buttons\/|^integration\/console-v6\//.test(f)||
     (f.startsWith("tests/")&&f.endsWith(".py")&&
      !["tests/test_platform_portability.py","tests/test_release_catalog.py",
        "tests/test_release_setup_zip.py"].includes(f))||
     ["scripts/build_pages.py",".github/workflows/ui-smoke.yml"].includes(f));
-  const releaseFast=any(f=>/^(?:installer\/|config\/factoryfx-)/.test(f) ||
-    /^scripts\/(?:package_native_|build_verify_windows_installer|verify_native_windows_artifact|test_inno_graceful_update_windows|verify_embedded_legal|build_approved_native_gui|build_release_catalog|verify_release_setup_zip|release_ci_dispatch|check_platform_portability)/.test(f)||
-    /^tests\/(?:license_distribution_contract|test_release_catalog|test_release_setup_zip|test_platform_portability|downloads_runtime_contract|landing_page_download_contract|release_ci_dispatch_contract)/.test(f)||
+  // Match release-contracts.yml path triggers (not arbitrary installer/
+  // or factory lock files, which would wait forever for a workflow that
+  // does not run). The independent native gate covers other factory assets.
+  const releaseFast=any(f=>
     ["LICENSE","LICENSE-NOTICE.txt","src/Main.cpp","src/EmbeddedLegalResources.h",
      "CMakeLists.txt","site/index.html","site/downloads.js",
-     "web/approved-native-legal.js",
+     "web/approved-native-legal.js","installer/ArSonMix.iss",
+     "scripts/package_native_windows.ps1","scripts/package_native_linux.sh",
+     "scripts/package_native_macos.sh","scripts/verify_native_windows_artifact.ps1",
+     "scripts/build_verify_windows_installer.ps1","scripts/test_inno_graceful_update_windows.ps1",
+     "scripts/verify_embedded_legal.py","scripts/build_approved_native_gui.py",
+     "scripts/build_release_catalog.py","scripts/verify_release_setup_zip.py",
+     "scripts/release_ci_dispatch.mjs","scripts/check_platform_portability.py",
+     "tests/license_distribution_contract.test.mjs",
+     "tests/test_release_catalog.py","tests/test_release_setup_zip.py",
+     "tests/test_platform_portability.py","tests/downloads_runtime_contract.test.mjs",
+     "tests/landing_page_download_contract_test.py",
+     "tests/release_ci_dispatch_contract.test.mjs",
      ".github/workflows/release-contracts.yml",
      ".github/workflows/release-control.yml",
      ".github/workflows/alpha-preview-publish.yml",
