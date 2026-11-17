@@ -1619,7 +1619,9 @@ test("P0 output-only Audio I/O is a real native configuration, never blocked by 
  assert.match(apply,/out\.countNumberOfSetBits\(\)<2/);
  assert.doesNotMatch(cpp,/opened->getActiveInputChannels\(\)\.countNumberOfSetBits\(\)<1/);
  assert.match(bridge,/No hardware input \(Player \/ FX\)/);
- assert.match(bridge,/t\?\.separate\?\["",\.\.\.\(t\.inputs\|\|\[\]\)\]/);
+ assert.match(bridge,/view\.inputOptions/);
+ assert.match(read("web/approved-device-view-model.js"),
+   /type\?\.separate\?\["",\.\.\.\(type\.inputs\|\|\[\]\)\]/);
  assert.doesNotMatch(bridge,/ack\.active\.enabledInputs\.length>0/);
  assert.match(read("web/approved-device-view-model.js"),/Mixer ready · Output muted/);
 });
@@ -2502,4 +2504,124 @@ test("Device Setup VM retains offline .smix and never promotes rollback to outpu
   assert.doesNotMatch(setup,/const accepted=ack\.ok===true/);
   assert.doesNotMatch(text,/devicePanel\.dataset\.pendingRequest/);
   assert.equal((text.match(/backend\.emitEvent\("arMixAction",begun\.request\)/g)||[]).length,1);
+});
+
+
+// MV-2: native Device Setup dropdown/pin draft is ONE pure presentation
+// projection; the old approved bridge now only reads it and paints the DOM.
+function nativeDeviceDraftFixture() {
+  const f=nativeDeviceSetupFixture();
+  const active={...f.active,inputNames:["Mic 1","Mic 2"],
+    outputNames:["L","R","AUX L","AUX R"],
+    mainOutputs:[0,1],enabledInputs:[0],enabledOutputs:[0,1],
+    rates:[48000,96000],buffers:[128,256]};
+  return {active,types:[
+    {name:"ASIO",separate:false,
+      inputs:["ASIO Test","ASIO4ALL v2"],outputs:["ASIO Test","ASIO4ALL v2"]},
+    {name:"Windows Audio",separate:true,
+      inputs:["Mic"],outputs:["Speakers"]}
+  ]};
+}
+test("MV-2 native Device Setup initial draft and verified select options are pure",()=>{
+  const inventory=nativeDeviceDraftFixture(),prior=JSON.stringify(inventory);
+  const draft=deviceVM.setupDraft(inventory),untouched=JSON.stringify(draft);
+  assert.equal(draft.backend,"ASIO");
+  assert.equal(draft.capture,"ASIO Test");
+  assert.equal(draft.playback,"ASIO Test");
+  assert.deepEqual(draft.inputPins,[0]);
+  const view=deviceVM.setupPresentation(inventory,draft);
+  assert.equal(view.same,true);
+  assert.equal(view.canApply,true);
+  assert.equal(view.canAssignMain,true);
+  assert.deepEqual(view.backendOptions,["ASIO","Windows Audio"]);
+  assert.deepEqual(view.rateOptions,["0","48000","96000"]);
+  assert.deepEqual(view.bufferOptions,["0","128","256"]);
+  assert.deepEqual(view.outputPins,[0,1]);
+  assert.match(view.activeText,/MAIN L \/ R/);
+  assert.equal(view.asio4allHint,false);
+  assert.equal(JSON.stringify(draft),untouched);
+  assert.equal(JSON.stringify(inventory),prior,
+    "view must not mutate JUCE active inventory or .smix");
+  assert.equal(deviceVM.setupDraft(null),null);
+});
+test("MV-2 Device Setup backend/capture switches preserve output-only and duplex policy",()=>{
+  const inventory=nativeDeviceDraftFixture();
+  const from=deviceVM.setupDraft(inventory);
+  const external=deviceVM.setupEditDraft(from,inventory,{field:"backend",value:"Windows Audio"});
+  assert.equal(external.backend,"Windows Audio");
+  assert.equal(external.capture,"Mic");
+  assert.equal(external.playback,"Speakers");
+  assert.equal(external.rate,0);assert.equal(external.buffer,0);
+  assert.equal(external.inputPins,null);assert.equal(external.outputPins,null);
+  let outputOnly=deviceVM.setupEditDraft(external,inventory,{field:"capture",value:""});
+  const view=deviceVM.setupPresentation(inventory,outputOnly);
+  assert.equal(view.same,false);
+  assert.deepEqual(view.inputOptions,["","Mic"]);
+  assert.deepEqual(view.rateOptions,["0"]);
+  assert.equal(view.canApply,true,"no hardware input allowed for separate backend");
+  assert.equal(view.canAssignMain,false);
+  const request=deviceVM.setupBegin(deviceVM.setupInitial(),{
+    inventory,draft:outputOnly,requestId:"approved-io-output-only"});
+  assert.ok(request);assert.equal(request.request.config.captureDevice,"");
+  assert.deepEqual(request.request.config.enabledInputs,[]);
+  assert.deepEqual(request.request.config.enabledOutputs,[]);
+  assert.equal(deviceVM.setupEditDraft(outputOnly,inventory,{
+    field:"capture",value:"Ghost microphone"}),outputOnly);
+  assert.equal(deviceVM.setupEditDraft(outputOnly,inventory,{
+    field:"backend",value:"Unknown backend"}),outputOnly);
+  const invalidPair={...from,playback:"ASIO4ALL v2"};
+  assert.equal(deviceVM.setupPresentation(inventory,invalidPair).canApply,false);
+  assert.equal(deviceVM.setupBegin(deviceVM.setupInitial(),{
+    inventory,draft:invalidPair,requestId:"bad-pair"}),null);
+  assert.equal(from.backend,"ASIO","original selected device not mutated");
+});
+test("MV-2 Device Setup pin/rate edits are immutable, bounded and generation-scoped",()=>{
+  const inventory=nativeDeviceDraftFixture();
+  const original=deviceVM.setupDraft(inventory);
+  const extra=deviceVM.setupEditDraft(original,inventory,{
+    side:"output",index:2,checked:true});
+  assert.deepEqual(extra.outputPins,[0,1,2]);
+  assert.deepEqual(original.outputPins,[0,1]);
+  const pair1=deviceVM.setupEditDraft(extra,inventory,{side:"output",index:0,checked:false});
+  assert.deepEqual(pair1.outputPins,[1,2]);
+  assert.equal(deviceVM.setupPresentation(inventory,pair1).canAssignMain,true);
+  assert.equal(deviceVM.setupEditDraft(pair1,inventory,{
+    side:"output",index:63,checked:true}),pair1,"phantom jack cannot be drafted");
+  assert.equal(deviceVM.setupEditDraft(pair1,inventory,{
+    side:"output",index:1.5,checked:true}),pair1);
+  assert.equal(deviceVM.setupEditDraft(pair1,inventory,{
+    side:"output",index:-1,checked:true}),pair1);
+  assert.equal(deviceVM.setupEditDraft(pair1,inventory,{
+    field:"rate",value:"44100"}),pair1,"unsupported rate stays unchanged");
+  const rate=deviceVM.setupEditDraft(pair1,inventory,{field:"rate",value:"96000"});
+  const buffer=deviceVM.setupEditDraft(rate,inventory,{field:"buffer",value:"128"});
+  assert.equal(buffer.rate,96000);assert.equal(buffer.buffer,128);
+  const begun=deviceVM.setupBegin(deviceVM.setupInitial(),{
+    inventory,draft:buffer,requestId:"approved-io-pins"});
+  assert.deepEqual(begun.request.config.enabledOutputs,[1,2]);
+  assert.equal(begun.request.config.sampleRate,96000);
+  assert.equal(begun.request.config.bufferSize,128);
+  const stale={...inventory,active:{...inventory.active,deviceGeneration:15,
+    captureDevice:"Absent ASIO"}};
+  assert.equal(deviceVM.setupPresentation(stale,buffer).same,false);
+  assert.equal(deviceVM.setupEditDraft(buffer,stale,{
+    side:"output",index:3,checked:true}),buffer);
+  assert.deepEqual(stale.active.enabledOutputs,[0,1],
+    "draft never alters output permission or physical pin masks");
+});
+test("MV-2 render uses the existing one ViewModel and keeps native transport authority",()=>{
+  const bridge=read("web/approved-native-bridge.js");
+  const setup=bridge.slice(bridge.indexOf("  // Compact DAW-style device preferences"),
+    bridge.indexOf("  function installFirstSoundMenu()"));
+  assert.match(setup,/deviceVM\.setupDraft\(deviceInventory\)/);
+  assert.match(setup,/deviceVM\.setupEditDraft\(deviceChoice,deviceInventory,change\)/);
+  assert.match(setup,/deviceVM\.setupPresentation\(deviceInventory,deviceChoice,deviceState\)/);
+  assert.doesNotMatch(setup,/deviceChoice\.(backend|capture|playback|inputPins|outputPins|rate|buffer)\s*=/);
+  assert.doesNotMatch(setup,/const selected=types\.find/);
+  assert.equal((setup.match(/backend\.emitEvent\("arMixAction",begun\.request\)/g)||[]).length,1);
+  const vmText=read("web/approved-device-view-model.js");
+  assert.doesNotMatch(vmText,/AudioContext|AudioWorklet|document\.|window\.|localStorage/);
+  const inventory=nativeDeviceDraftFixture();
+  assert.equal(deviceVM.setupPresentation(inventory,deviceVM.setupDraft(inventory),{
+    ...deviceVM.setupInitial(),remapGeneration:inventory.active.deviceGeneration}).canReusePins,true);
 });
