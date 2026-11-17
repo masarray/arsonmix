@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import test from "node:test";
 import assert from "node:assert/strict";
-import {context,requiredLanes,expectedWindowsTitle,findRuns,evaluate,
+import {context,requiredLanes,expectedWindowsTitle,workflowPath,findRuns,evaluate,
   extractPrNumbers,refreshOne} from "../scripts/required_pr_merge_gate.mjs";
 
 const sha="478cf65d18f05d3bdb62285ab32e56e427304930";
@@ -9,14 +9,14 @@ const repo="masarray/arsonmix",number=753;
 const file=(filename)=>({filename});
 const automatic=(id,workflow)=>({
   id,event:"pull_request",head_sha:sha,status:"completed",conclusion:"success",
-  path:repo+"/.github/workflows/"+workflow+"@refs/pull/"+number+"/merge",
+  path:".github/workflows/"+workflow,
   pull_requests:[{number}]
 });
 const dispatched=(id,workflow)=>({
   id,event:"workflow_dispatch",head_sha:workflow==="p1-windows.yml"?
     "aec9158a6ab7c625a6c330b178f2f234a9020d2a":sha,
   status:"completed",conclusion:"success",
-  path:repo+"/.github/workflows/"+workflow+"@refs/heads/main",
+  path:".github/workflows/"+workflow,
   display_title:workflow==="p1-windows.yml"?expectedWindowsTitle(number,sha):"UI qualification"
 });
 const job=(name,conclusion="success")=>({name,status:"completed",conclusion});
@@ -27,6 +27,12 @@ const names={
   browser:"Full Chromium /preview/ visual and interaction qualification",
   release:"No native compiler; owner authorization, catalog integrity and YAML shape"
 };
+test("GitHub REST workflow.path may omit @ref; both path shapes are trusted",()=>{
+  assert.equal(workflowPath({path:".github/workflows/p1-windows.yml"},"p1-windows.yml"),true);
+  assert.equal(workflowPath({path:repo+"/.github/workflows/p1-windows.yml@refs/heads/main"},
+    "p1-windows.yml"),true);
+  assert.equal(workflowPath({path:".github/workflows/fake.yml"},"p1-windows.yml"),false);
+});
 test("docs-only PR succeeds without Windows/Chromium or release services",()=>{
   const lanes=requiredLanes(["docs/readme.md","README.md"]);
   assert.deepEqual(lanes,{nativeFast:false,nativeFull:false,uiFast:false,
@@ -52,6 +58,16 @@ test("native changes fail closed until quick and exact-head Windows qualificatio
   assert.equal(context,"ArSonMix / Required CI Merge Gate");
   result=evaluate(lanes,found,{10:[job(names.native)],12:[job(names.windows,"failure")]});
   assert.equal(result.state,"failure");
+});
+test("approved FAT Windows run fulfills the native CTest lane without duplicate NATIVE",()=>{
+  const lanes=requiredLanes(["src/LiveAudioEngine.h"]);
+  const fast=automatic(10,"p1-windows.yml");
+  const fat=dispatched(13,"p1-windows.yml");
+  fat.display_title="ArSonMix FAT PR"+number+" "+sha;
+  const selected=findRuns([fast,fat],number,sha);
+  assert.equal(selected.fullWin.id,13);
+  assert.equal(evaluate(lanes,selected,
+    {10:[job(names.native)],13:[job(names.windows)]}).state,"success");
 });
 test("GUI bridge requires both fast native and full Chromium, not Windows CTest",()=>{
   const lanes=requiredLanes(["web/approved-native-bridge.js"]);
@@ -122,7 +138,7 @@ test("only server event identifiers drive PR reconciliation",()=>{
 test("status publication is exact-head and uses deterministic scoped checks",async()=>{
   const writes=[];
   const pr={state:"open",base:{ref:"main",repo:{full_name:repo}},
-    head:{sha,repo:{full_name:repo}}};
+    head:{sha,repo:{full_name:"contributor/fork"}}};
   const runs=[automatic(10,"p1-windows.yml"),dispatched(12,"p1-windows.yml")];
   const api=async(path,method,payload)=>{
     if(path==="/pulls/753")return pr;
