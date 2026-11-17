@@ -27,12 +27,17 @@ class CloudflarePagesBuildTest(unittest.TestCase):
             path = Path(root) / "release-catalog.json"
             def offline():
                 raise urllib.error.URLError("rate limit")
-            actual = write_catalog(path, fetch=offline)
-            self.assertEqual(actual["platforms"],
-                             {"windows": None, "linux": None, "macos": None})
-            self.assertEqual(json.loads(path.read_text("utf-8")), actual)
+            previous = '{"schemaVersion":1,"verified":"last-known-good"}\n'
+            path.write_text(previous, encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "preserve"):
+                write_catalog(path, fetch=offline)
+            self.assertEqual(path.read_text("utf-8"), previous,
+                             "API outage must not overwrite published catalog")
             with self.assertRaises(ValueError):
                 write_catalog(path, fetch=lambda: {"invalid": "not a list"})
+            with self.assertRaisesRegex(ValueError, "No verified"):
+                write_catalog(path, fetch=lambda: [])
+            self.assertEqual(path.read_text("utf-8"), previous)
 
     def test_signed_release_cannot_be_replaced_with_fake(self):
         tag = "v0.5.0-alpha.5"
