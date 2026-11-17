@@ -275,6 +275,74 @@ def main():
             "Unacknowledged Guitar FX insert must not look accepted")
         assert not errors,errors
         page.close()
+        # A physical device is NOT required to author a parallel SEND tap.
+        # Before this change, canWireTap() rejected all offline wires and
+        # consumeWire(MODE) forwarded an unsupported WIRE_TRANSACTION instead
+        # of the saved-document SET_SEND_TAP. Test the actual compiled GUI.
+        page=browser.new_page(viewport={"width":1366,"height":768})
+        page.on("pageerror",lambda error:errors.append(str(error)))
+        page.add_init_script("""window.__nativeListeners=new Map();window.__events=[];
+          window.__JUCE__={backend:{
+             emitEvent(name,payload){window.__events.push({name,payload});},
+             addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+          }};""")
+        page.goto((out/"index.html").as_uri())
+        page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+        staged=snapshot("1",workspace_token="wire-offline")
+        graph=staged["logicalMixer"]["graph"]
+        extra={"edgeId":"1001","from":"1","to":"11","signalKind":"AUDIO",
+               "enabled":True,"sendEnabled":True,"gainLinear":0.5,
+               "primaryOutput":False,"tap":"POST_FADER","tapStage":"POST_FADER"}
+        graph["channels"][0]["sends"].append(copy.deepcopy(extra))
+        graph["edges"].append(copy.deepcopy(extra))
+        emit(page,"arMixConsoleSnapshot",staged)
+        page.wait_for_function("""()=>window.__ARMIX_NATIVE_SCOPE__.wireEdges.some(
+            e=>e.kind==='send' && e.enabled)""")
+        wire_ids=page.evaluate("""()=>{
+          const s=window.__ARMIX_NATIVE_SCOPE__;
+          const src=s.tracks.find(t=>t.name==='CH 01');
+          const bus=s.tracks.find(t=>t.name==='AUX A');
+          const edge=s.wireEdges.find(e=>e.sourceId===src?.id&&
+            e.destId===bus?.id&&e.kind==='send');
+          const primary=s.wireEdges.find(e=>e.sourceId===src?.id&&e.kind==='primary');
+          if(!edge||!primary)throw Error('Missing exact accepted logical SEND/primary');
+          return {source:src.id,parallel:edge.id,primary:primary.id};
+        }""")
+        assert page.evaluate("""([src,edge,primary])=>{
+          const hooks=window.__ARMIX_NATIVE_M2__;
+          return hooks.canWireTap(edge,src) && !hooks.canWireTap(primary,src);
+        }""",[wire_ids["source"],wire_ids["parallel"],wire_ids["primary"]])
+        page.evaluate("""([src,edge])=>
+          window.__ARMIX_NATIVE_M2__.consumeWire(
+            [{type:'MODE',sourceId:src,edgeId:edge,mode:'split'}])""",
+            [wire_ids["source"],wire_ids["parallel"]])
+        page.wait_for_function("""()=>window.__events.some(e=>
+            e.name==='arMixLogicalIntent' && e.payload?.operation==='SET_SEND_TAP')""")
+        request=page.evaluate("""()=>window.__events.filter(e=>
+            e.name==='arMixLogicalIntent').at(-1).payload""")
+        assert request["channelId"]=="1"
+        assert request["baseRevision"]=="1"
+        assert request["payload"]=={"edgeId":"1001","tap":"PRE_FADER"}
+        assert page.evaluate("""()=>window.__ARMIX_NATIVE_SCOPE__.wireEdges.some(
+            e=>e.id===arguments[0] && e.mode==='send')""",wire_ids["parallel"]), (
+            "Offline WIRE visual must not commit before native ACK + saved readback")
+        assert not page.evaluate("""()=>window.__events.some(e=>e.name==='arMixConsoleIntent')""")
+        emit(page,"arMixLogicalAck",{"requestId":request["requestId"],"status":"ACCEPTED",
+            "errorCode":"NONE","revision":"2","physicalOutputAdmitted":False})
+        applied=snapshot("2",workspace_token="wire-offline")
+        applied_extra=copy.deepcopy(extra)
+        applied_extra["tap"]="SPLIT_PRE"
+        applied_extra["tapStage"]="PRE_FADER"
+        applied["logicalMixer"]["graph"]["channels"][0]["sends"].append(
+            copy.deepcopy(applied_extra))
+        applied["logicalMixer"]["graph"]["edges"].append(applied_extra)
+        emit(page,"arMixConsoleSnapshot",applied)
+        assert page.evaluate("""()=>window.__ARMIX_NATIVE_M2__.canWireTap(
+          arguments[0],arguments[1])""",[wire_ids["parallel"],wire_ids["source"]])
+        assert page.evaluate("""()=>document.documentElement.dataset.armixNativeAuthority""")==\
+            "logical-editable"
+        assert not errors,errors
+        page.close()
         # Device-loss boundary: the retained PCM graph may still carry a
         # newer scalar at IDENTICAL topology revision. It must never
         # authorize editing an outdated disk mirror or report PCM admitted.
