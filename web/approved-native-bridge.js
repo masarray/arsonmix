@@ -2029,9 +2029,9 @@
   // Compact DAW-style device preferences INSIDE the approved Windows GUI.
   // Only the existing AudioDeviceManager inventory/APPLY API is used. This
   // replaces the 740x590 default JUCE dialog for normal operator setup.
-  let devicePanel=null,deviceInventory=null,deviceBusy=false,
-      deviceRequest=0,deviceChoice=null,deviceResult="",
-      offeredPinRemap=null;
+  let devicePanel=null,deviceInventory=null,deviceChoice=null,deviceRequest=0,
+      deviceState=deviceVM.setupInitial(),deviceApplyTimer=0;
+  const deviceBusy=()=>Boolean(deviceState.pending);
   let toastTimer=0;
   function nativeToast(message){
     let element=document.getElementById("armixNativeToast");
@@ -2151,15 +2151,14 @@
           <button type="button" data-audio-remap hidden>Use same pins on this device</button>
         </div></section>`;
       devicePanel.querySelector("[data-audio-close]").onclick=()=>{
-        if(!deviceBusy)devicePanel.hidden=true;
+        if(!deviceBusy())devicePanel.hidden=true;
       };
       devicePanel.addEventListener("click",e=>{
-        if(e.target===devicePanel&&!deviceBusy)devicePanel.hidden=true;
+        if(e.target===devicePanel&&!deviceBusy())devicePanel.hidden=true;
       });
       devicePanel.addEventListener("change",e=>{
         if(!deviceChoice)return;
-        offeredPinRemap=null;
-        deviceResult="";
+        deviceState=deviceVM.setupClearResult(deviceState);
         const pinSide=e.target.dataset.audioPin;
         if(pinSide==="input"||pinSide==="output"){
           const index=Number(e.target.dataset.pinIndex);
@@ -2192,27 +2191,26 @@
         renderDevicePanel();
       });
       devicePanel.querySelector("[data-audio-apply]").onclick=()=>{
-        if(deviceBusy||!deviceChoice||!deviceInventory?.active)return;
+        if(deviceBusy()||!deviceChoice||!deviceInventory?.active)return;
         const draft=deviceChoice,active=deviceInventory.active;
         const separate=deviceInventory.types?.find(x=>x.name===draft.backend)?.separate===true;
         if(!draft.backend||!draft.playback||(!separate&&!draft.capture))return;
         sendDeviceApply();
       };
       devicePanel.querySelector("[data-audio-main-pins]").onclick=()=>{
-        if(!deviceBusy)sendDeviceApply(false,true);
+        if(!deviceBusy())sendDeviceApply(false,true);
       };
       devicePanel.querySelector("[data-audio-remap]").onclick=()=>{
-        if(!deviceBusy && offeredPinRemap!==null)
+        if(!deviceBusy() && deviceState.remapGeneration!==null)
           sendDeviceApply(true);
       };
       document.body.appendChild(devicePanel);
     }
     devicePanel.hidden=false;
     paintPhysicalOutputs(hardware);
-    if(deviceBusy)return;
+    if(deviceBusy())return;
     const active=devicePanel.querySelector("[data-audio-active]");
-    deviceResult="";
-    offeredPinRemap=null;
+    deviceState=deviceVM.setupClearResult(deviceState);
     if(active)active.textContent="Reading verified audio devices…";
     backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
   }
@@ -2227,7 +2225,7 @@
       return option;
     }));
     if(values.includes(current))el.value=current;
-    el.disabled=deviceBusy;
+    el.disabled=deviceBusy();
   }
   function renderDevicePanel(){
     if(!devicePanel||devicePanel.hidden||!deviceInventory)return;
@@ -2262,8 +2260,8 @@
     fillAudioSelect("buffer",["0",...buffers.map(String)],String(deviceChoice.buffer||0));
     const rateSelect=devicePanel.querySelector('[data-audio-field="rate"]');
     const bufferSelect=devicePanel.querySelector('[data-audio-field="buffer"]');
-    if(rateSelect){rateSelect.options[0].textContent="Driver default";rateSelect.disabled=!same||deviceBusy;}
-    if(bufferSelect){bufferSelect.options[0].textContent="Driver default";bufferSelect.disabled=!same||deviceBusy;}
+    if(rateSelect){rateSelect.options[0].textContent="Driver default";rateSelect.disabled=!same||deviceBusy();}
+    if(bufferSelect){bufferSelect.options[0].textContent="Driver default";bufferSelect.disabled=!same||deviceBusy();}
     const pins=document.querySelector(".armix-audio-dialog [data-audio-pins]");
     if(pins){
       pins.replaceChildren();
@@ -2283,7 +2281,7 @@
             control.type="checkbox";control.dataset.audioPin=side;
             control.dataset.pinIndex=String(index);
             control.checked=(deviceChoice[key]||enabled||[]).includes(index);
-            control.disabled=deviceBusy;
+            control.disabled=deviceBusy();
             label.append(control,document.createTextNode(String(name)));
             group.appendChild(label);
           });
@@ -2295,19 +2293,19 @@
     const activeText=devicePanel.querySelector("[data-audio-active]");
     const mainPins=Array.isArray(active.mainOutputs)?active.mainOutputs
       .map(pin=>active.outputNames?.[pin]).filter(Boolean):[];
-    if(activeText && !deviceBusy)activeText.textContent=deviceResult||(active.open?
+    if(activeText && !deviceBusy())activeText.textContent=deviceState.message||(active.open?
       "ACTIVE · "+active.backend+" · "+active.rate+" Hz / "+active.buffer+" samples"+
       (mainPins.length===2?" · MAIN "+mainPins.join(" / "):""):
       "No verified audio device. Select a supported input and output.");
-    devicePanel.querySelector("[data-audio-apply]").disabled=deviceBusy||
+    devicePanel.querySelector("[data-audio-apply]").disabled=deviceBusy()||
       !deviceChoice.backend||(!t?.separate&&!deviceChoice.capture)||
       !deviceChoice.playback;
     const assignMain=devicePanel.querySelector("[data-audio-main-pins]");
     assignMain.hidden=!same || deviceChoice.outputPins?.length!==2;
-    assignMain.disabled=deviceBusy;
+    assignMain.disabled=deviceBusy();
     const remap=devicePanel.querySelector("[data-audio-remap]");
-    remap.hidden=!same || offeredPinRemap!==active.deviceGeneration;
-    remap.disabled=deviceBusy;
+    remap.hidden=!same || deviceState.remapGeneration!==active.deviceGeneration;
+    remap.disabled=deviceBusy();
     remap.title="Reuse existing input and output pin numbers on the selected device. MONITOR stays off.";
   }
   function showDeviceApplyProgress(pending){
@@ -2325,76 +2323,75 @@
     }else svg.pauseAnimations?.();
   }
   function sendDeviceApply(confirmRetainedPinMapping=false,assignMain=false){
-    if(deviceBusy||!deviceChoice||!deviceInventory?.active)return;
-    const c=deviceChoice,a=deviceInventory.active;
-    const same=a.open&&a.backend===c.backend&&
-      a.captureDevice===c.capture&&a.playbackDevice===c.playback;
-    if(confirmRetainedPinMapping && (!same || offeredPinRemap!==a.deviceGeneration))return;
-    if(assignMain && (!same || c.outputPins?.length!==2))return;
-    deviceBusy=true;
+    if(deviceBusy()||!deviceChoice||!deviceInventory?.active)return;
     const requestId="approved-io-"+(++deviceRequest);
-    devicePanel.dataset.pendingRequest=requestId;
+    const begun=deviceVM.setupBegin(deviceState,{
+      inventory:deviceInventory,draft:deviceChoice,requestId,
+      baselineEpoch:hardware?.device?.epoch,
+      confirmRetainedPinMapping,assignMain});
+    if(!begun)return;
+    deviceState=begun.state;
     showDeviceApplyProgress(true);
     renderDevicePanel();
-    const request={action:"audioDeviceApply",
-      requestId,expectedDeviceGeneration:Number(a.deviceGeneration),
-      config:{backend:c.backend,captureDevice:c.capture,
-        playbackDevice:c.playback,
-        sampleRate:confirmRetainedPinMapping?a.rate:same?c.rate:0,
-        bufferSize:confirmRetainedPinMapping?a.buffer:same?c.buffer:0,
-        enabledInputs:same?c.inputPins:[],
-        enabledOutputs:same?c.outputPins:[],
-        ...(confirmRetainedPinMapping?{confirmRetainedPinMapping:true}:{}),
-        ...(assignMain?{assignSelectedPlaybackPinsToMain:true}:{})}};
-    // Give WebView a paint before the native driver open can block JUCE.
-    // The fallback also submits when animation frames are throttled.
+    // Reuse the ONLY native arMixAction dispatcher. UI state cannot touch PCM.
+    // Allow WebView to paint before a blocking driver dialog, with one fallback.
     let submitted=false;
     const submit=()=>{
       if(submitted)return;
       submitted=true;
       window.clearTimeout(fallback);
-      backend.emitEvent("arMixAction",request);
+      backend.emitEvent("arMixAction",begun.request);
     };
     const fallback=window.setTimeout(submit,120);
     window.requestAnimationFrame(()=>window.requestAnimationFrame(submit));
+    window.clearTimeout(deviceApplyTimer);
+    deviceApplyTimer=window.setTimeout(()=>{
+      const previous=deviceState;
+      deviceState=deviceVM.setupTimeout(deviceState,requestId);
+      if(deviceState===previous)return; // expired / unrelated request
+      finishDeviceApplyUi();
+      controller?.subscribe(); // authoritative current state, not retry Apply
+      backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+    },12000);
+  }
+  function finishDeviceApplyUi(){
+    window.clearTimeout(deviceApplyTimer);
+    deviceApplyTimer=0;
+    if(!devicePanel)return;
+    showDeviceApplyProgress(false);
+    if(deviceState.phase==="ACCEPTED"){
+      deviceChoice=null;
+      devicePanel.hidden=true;
+      const active=deviceInventory?.active;
+      status("DEVICE READY · "+String(active?.backend||"Audio")+
+        " · "+String(active?.rate||0)+" Hz / "+String(active?.buffer||0)+" samples");
+      nativeToast(deviceState.message);
+    }else{
+      deviceChoice=null;
+      renderDevicePanel();
+      if(deviceState.phase==="RECOVERY_REQUIRED"||deviceState.phase==="STALE")
+        nativeToast(deviceState.message);
+    }
   }
   if(connected){
     backend.addEventListener("arMixAudioDeviceInventory",inventory=>{
-      if(!inventory||!Array.isArray(inventory.types))return;
+      if(!inventory||!Array.isArray(inventory.types)||deviceBusy())return;
+      // Inventory is a native observation, not accepted Apply proof.
       deviceInventory=inventory;
-      if(!deviceBusy)deviceChoice=null;
+      deviceChoice=null;
       renderDevicePanel();
     });
     backend.addEventListener("arMixAudioDeviceApplyAck",ack=>{
-      if(!devicePanel||!deviceBusy||ack?.requestId!==devicePanel.dataset.pendingRequest)return;
-      deviceBusy=false;
-      delete devicePanel.dataset.pendingRequest;
-      showDeviceApplyProgress(false);
-      if(ack.active)deviceInventory.active=ack.active;
-      offeredPinRemap=ack.state==="NEEDS_REMAP" && ack.canReusePins===true &&
-        ack.active?.open===true && ack.active?.authorized===true &&
-        Number.isSafeInteger(ack.active.deviceGeneration)?
-          ack.active.deviceGeneration:null;
-      const accepted=ack.ok===true&&["ACCEPTED_LIVE","ACCEPTED_MUTED"].includes(ack.state) &&
-        ack.active?.open===true && ack.active?.authorized===true &&
-        Array.isArray(ack.active.enabledInputs) &&
-        Array.isArray(ack.active.enabledOutputs) &&
-        ack.active.enabledOutputs.length>=2;
-      const outputReady=ack.outputMuted===false;
-      deviceResult=accepted?
-        (outputReady?"Mixer ready · Output live":
-          ack.mixerBound?"Mixer ready · FX/WIRE available":"Audio device ready · no hardware input required"):
-        ack.state==="NEEDS_REMAP"?
-          String(ack.error||"Playback unavailable").replace(/^NEEDS_REMAP:\s*/,""):
-          "Device rejected · "+(ack.error||"native hardware readback failed");
-      deviceChoice=null;
-      if(accepted){
-        devicePanel.hidden=true;
-        status("DEVICE READY · "+ack.active.backend+" · "+
-          ack.active.rate+" Hz / "+ack.active.buffer+" samples");
-        nativeToast(deviceResult);
+      if(!devicePanel)return;
+      const next=deviceVM.setupAck(deviceState,ack);
+      if(next===deviceState)return; // delayed or unrelated ACK
+      deviceState=next;
+      if(ack?.active && deviceInventory)
+        deviceInventory={...deviceInventory,active:ack.active};
+      if(deviceBusy()){
+        // ACK alone NEVER closes the dialog or announces LIVE.
         controller?.subscribe();
-      }else renderDevicePanel();
+      }else finishDeviceApplyUi();
     });
   }
 
@@ -2752,6 +2749,11 @@
   function onNativeReadback(next,confirmed) {
     scope?.syncNativeWireGains?.([]); // flush accepted paint after pointer release
     appearanceFromNative(next);
+    // This callback is invoked only by the existing schema-v6 reconciler.
+    // A correlated Apply ACK waits for a subsequent installed PCM snapshot.
+    const previousSetup=deviceState;
+    deviceState=deviceVM.setupReadback(deviceState,next);
+    if(deviceState!==previousSetup && !deviceState.pending)finishDeviceApplyUi();
     updateHardwarePanel(next);
     paintExternalReadback(next);
     // The installed native SessionSnapshot selects exactly one UI authority.
