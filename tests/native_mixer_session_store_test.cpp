@@ -991,6 +991,14 @@ static void verifyLogicalControlTransactions() {
     wireChange->setProperty("from",channel);
     wireChange->setProperty("to",bus);
     accept(command("logical-wire","WIRE_TRANSACTION",channel,wire));
+    // The full disk-committing control service must reject a target/source
+    // mismatch *synchronously*, without scheduling a save or producing a
+    // misleading ACCEPTED ACK. The exact saved readback is unchanged.
+    const auto beforeWireMismatch=control.readback().getProperty("revision",{});
+    submit(command("logical-wire-wrong-owner","WIRE_TRANSACTION","1",wire));
+    reject("WIRE_CHANNEL_ID_MISMATCH");
+    assert(!worker.busy());
+    assert(control.readback().getProperty("revision",{})==beforeWireMismatch);
     accept(command("logical-rename","RENAME_CHANNEL",channel,
         juce::JSON::parse(R"({"name":"Lead Vox"})")));
     for(const auto& fx:armix::builtin_fx::nativeBuiltInFx) {
