@@ -23,6 +23,16 @@ $appBytes = (Get-Item -LiteralPath $app).Length
 if ($appBytes -lt $minimumGuiExeBytes) {
     throw "GUI EXE too small ($appBytes bytes). Expected >= $minimumGuiExeBytes bytes with embedded JUCE/WebView UI."
 }
+# A release/FAT candidate must have feature parity with the owner-approved
+# public alpha.26. Generic CMake defaults OMIT ImmerSIB; a successful build
+# and 100/100 generic CTests never proved that the shipped FX picker had it.
+# Check both the configured flags AND compiled native descriptor/scene bytes.
+$spatialVerifier = Join-Path $PSScriptRoot "verify_windows_spatial_fx_packaging.py"
+& python $spatialVerifier --build-dir $BuildDir --exe $app
+if ($LASTEXITCODE -ne 0) {
+    throw "WINDOWS_FAT_INCOMPLETE_SPATIAL_FX: ImmerSIB and 8D-SonKu P9.9 must be compiled into the actual GUI"
+}
+
 
 # Structural PE check: AMD64 + PE32+ + Windows GUI subsystem (2).
 # Our previous wildcard packaging accidentally shipped a valid x64 CONSOLE
@@ -144,6 +154,8 @@ $manifest = [ordered]@{
     approvedGuiSource = "site/preview-v2 DOM + site/preview-buttons approved PNG skin (deterministic JUCE BinaryData)"
     approvedGuiAdapterStatus = "SCAFFOLD_ONLY__NOT_LIVE_PCM"
     guiCalibration = "APPROVED_PAGES_VISUAL_PROVENANCE_ONLY__M1_NOT_PRODUCT_READY"
+    spatialFxBuild = "SONKU_P99_AND_IMMERSIB_NATIVE_CATALOG_PLUS_SIX_EMBEDDED_SCENES_VERIFIED"
+    spatialFxCatalogId = "armix.builtin.imersip.v1"
     fatStatus = "SOFTWARE_VERIFIED_PREVIEW_CANDIDATE"
     note = "No assertion of clean 0-FX sound, measured round-trip latency or native render-hardware XRUN."
 }

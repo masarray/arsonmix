@@ -72,7 +72,15 @@ test('native PCM and device changes always use Windows/CTest, never Chromium by 
 });
 
 test('Full native/release qualification retains all CTests; focused vocal harmony FAT compiles only its verified targets', () => {
-  assert.match(native, /-DBUILD_TESTING=\$\{\{ env\.FIELD_PREVIEW == 'true' && 'OFF' \|\| 'ON' \}\}/);
+  // FIELD preview skips full CTest; production FAT DOES NOT skip.
+  assert.match(native, /\$tests = if \(\$env:FIELD_PREVIEW -eq 'true'\) \{ 'OFF' \} else \{ 'ON' \}/);
+  assert.match(native, /"-DBUILD_TESTING=\$tests"/);
+  // Unlike the old 100/100 OFF build, every distributable FAT must match
+  // the already-public ImmerSIB + approved SonKu P9.9 release switches.
+  assert.match(native, /FAT_SPATIAL_PRODUCTS/);
+  assert.match(native, /-DARMIX_IMMERSIB_RELEASE_CANDIDATE=ON/);
+  assert.match(native, /-DARMIX_SONKU_APPROVED_P99_MAIN=ON/);
+  assert.match(native, /WINDOWS_FAT_SPATIAL_CONFIG_VERIFIED/);
   assert.match(native, /Build portable Windows field preview[\s\S]*?--target ARMixConsole/);
   assert.match(native, /FIELD_PREVIEW_FULL_CTEST_NOT_RUN/);
   assert.match(native, /Upload portable Windows field preview[\s\S]*?name: ArSonMix-Windows-Field-Preview-/);

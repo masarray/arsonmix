@@ -78,6 +78,17 @@ test("release gate only requires paths that actually trigger release-contracts",
     assert.equal(requiredLanes([path]).releaseFast,false,
       path+" cannot require a release workflow which never triggers");
 });
+test("release spatial verifier changes require both real native and release checks",()=>{
+  for(const path of ["scripts/verify_windows_spatial_fx_packaging.py",
+                     "scripts/tests/test_windows_spatial_fx_packaging.py"]){
+    const lanes=requiredLanes([path]);
+    assert.equal(lanes.nativeFast,true,path);
+    assert.equal(lanes.releaseFast,true,path);
+    assert.equal(lanes.nativeFull,false,path);
+    assert.equal(evaluate(lanes,{},{}).state,"pending",
+       path+" must not bypass product-integrity checks");
+  }
+});
 test("native changes fail closed until quick and exact-head Windows qualification",()=>{
   const lanes=requiredLanes(["src/NativeLogicalMixerWorkspace.h","tests/native_mixer_session_store_test.cpp"]);
   assert.equal(lanes.nativeFast,true);

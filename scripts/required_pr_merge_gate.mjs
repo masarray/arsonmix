@@ -29,6 +29,8 @@ export function requiredLanes(files) {
     /^scripts\/tests\/test_factoryfx_release_bundle\.py$/.test(f) ||
     /^tests\/(?:windows_installer_contract\.test\.mjs|fixtures\/installer_graceful_close\.cs|approved_native_gui_bundle_test\.py|live_graph_contract_test\.mjs|.*native.*contract.*\.mjs)$/.test(f) ||
     ["web/approved-native-bridge.js","web/approved-native-contract.js",
+     "scripts/verify_windows_spatial_fx_packaging.py",
+     "scripts/tests/test_windows_spatial_fx_packaging.py",
      "web/bridge.js","web/monitor.js","tests/approved_native_m2_contract.test.cjs",
      "tests/live_routing_ui_contract_test.mjs",
      ".github/workflows/p1-windows.yml"].includes(f));
@@ -59,6 +61,8 @@ export function requiredLanes(files) {
      "web/approved-native-legal.js","installer/ArSonMix.iss",
      "scripts/package_native_windows.ps1","scripts/package_native_linux.sh",
      "scripts/package_native_macos.sh","scripts/verify_native_windows_artifact.ps1",
+     "scripts/verify_windows_spatial_fx_packaging.py",
+     "scripts/tests/test_windows_spatial_fx_packaging.py",
      "scripts/build_verify_windows_installer.ps1","scripts/test_inno_graceful_update_windows.ps1",
      "scripts/verify_embedded_legal.py","scripts/build_approved_native_gui.py",
      "scripts/build_release_catalog.py","scripts/verify_release_setup_zip.py",

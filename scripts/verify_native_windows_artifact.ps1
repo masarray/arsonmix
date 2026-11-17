@@ -103,7 +103,16 @@ if ($portableMarker -ne "ARSONMIX_PORTABLE_WORKSPACE_V1") { throw "Invalid porta
 if (Test-Path -LiteralPath (Join-Path $OutputDir "Studio")) {
     throw "Public artifact MUST NOT bundle user-specific plugins, presets or sessions"
 }
+# Validate THIS exact distribution, not the CMake intent alone.
+# A generic PE/CTest pass without ImmerSIB must never reach upload-artifact.
+if ($manifest.spatialFxBuild -ne "SONKU_P99_AND_IMMERSIB_NATIVE_CATALOG_PLUS_SIX_EMBEDDED_SCENES_VERIFIED" -or
+    $manifest.spatialFxCatalogId -ne "armix.builtin.imersip.v1") {
+    throw "WINDOWS_FAT_SPATIAL_PROVENANCE_MISSING"
+}
 $exePath = Join-Path $OutputDir "ArSonMix-GUI10CH-P012-Windows-x64.exe"
+& python scripts/verify_windows_spatial_fx_packaging.py --build-dir build --exe $exePath
+if ($LASTEXITCODE -ne 0) { throw "WINDOWS_FAT_SPATIAL_BINARY_MISMATCH" }
+
 $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $exePath).Path)
 if ($bytes.Length -lt 4MB) { throw "REJECT: suspiciously small executable ($($bytes.Length) bytes)" }
 if ($bytes.Length -ne $manifest.guiExeBytes) { throw "Mismatch: actual EXE size and recorded size" }
