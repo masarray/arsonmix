@@ -74,6 +74,11 @@ def main():
             # capture prerequisite. Verify native intent/ACK on the approved
             # assembled Windows GUI at every supported viewport.
             page.locator('.command-bar [data-native-io]').click()
+            assert page.evaluate("""()=>Boolean(
+                window.ArSonApprovedChannelStripViewModel &&
+                window.__ARMIX_NATIVE_M2__?.inputChoices &&
+                window.__ARMIX_NATIVE_M2__?.outputChoices)"""), (
+                'native assembled GUI missing GUI-1 Channel Strip ViewModel')
             io_inventory={
                 'types':[{'name':'Windows Audio','separate':True,
                           'inputs':['Studio Mic'],'outputs':['Speakers']}],
