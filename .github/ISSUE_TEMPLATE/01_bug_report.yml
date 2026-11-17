@@ -1,0 +1,39 @@
+name: "Bug / reliability"
+description: "Report a reproducible mixer, GUI, native audio, FX or installer failure."
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please use the current released build or name the exact research SHA. Do not upload private license keys, serial numbers or full user sessions. A green CI result is not physical audio verification.
+  - type: input
+    id: version
+    attributes:
+      label: "Affected build and environment"
+      description: "Release tag or exact commit, OS, and relevant backend/device/driver."
+      placeholder: "v0.5.0-alpha.26 / Windows 11 / ASIO / device and driver"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: "Steps to reproduce"
+      description: "Minimal repeatable steps, including .smix/FX/WIRE/device state when relevant."
+      placeholder: "1. Open... 2. Connect... 3. Observe..."
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: "Actual and expected behavior"
+      description: "Describe what failed and what correct physical/visual result should occur."
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: "Evidence and safety scope (optional)"
+      description: "Redacted logs/screenshots, audible vs UI-only evidence, exact native/CI link, and suspected regression range."
+    validations:
+      required: false
