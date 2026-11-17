@@ -45,7 +45,8 @@ def logical_graph(revision="1", extra=False, source_only=False):
             "supportedOps":["CREATE_CHANNEL","DELETE_CHANNEL","CREATE_GROUP",
                 "REMOVE_BUS","RENAME_CHANNEL","SET_FADER","SET_PAN",
                 "SET_MUTE","SET_SOLO","SET_PROCESSING_FORMAT",
-                "WIRE_TRANSACTION","ADD_FX_REFERENCE","REMOVE_FX_REFERENCE",
+                "WIRE_TRANSACTION","SET_SEND_ENABLED","SET_SEND_TAP",
+                "ADD_FX_REFERENCE","REMOVE_FX_REFERENCE",
                 "SET_FX_SLOT_BYPASS","SET_FX_RACK_BYPASS"],
             "dynamicChannels":True,"groups":True,
             "fxReturns":True,"monitor":False}
