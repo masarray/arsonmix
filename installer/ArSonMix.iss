@@ -44,6 +44,17 @@ SetupMutex=ArSonMix.PerUserInstaller.SingleInstance
 ; WM_CLOSE followed by full process exit is required before replacing EXE.
 CloseApplications=no
 RestartApplications=no
+; Clean only the exact legacy top-level documents installed by <= alpha.24.
+; No wildcards, recursion, Studio data, shows, presets or third-party dirs.
+; Inno processes [InstallDelete] before [Files], including in-place upgrades.
+[InstallDelete]
+Type: files; Name: "{app}\LICENSE"
+Type: files; Name: "{app}\LICENSE-NOTICE.txt"
+Type: files; Name: "{app}\LICENSE-SIGNALSMITH-STRETCH.txt"
+Type: files; Name: "{app}\LICENSE-SIGNALSMITH-LINEAR.txt"
+Type: files; Name: "{app}\OFL-LICENSE-Inter.txt"
+Type: files; Name: "{app}\THIRD_PARTY_8D_SONKU_HRTF.md"
+Type: files; Name: "{app}\README.md"
 [Files]
 ; The vendor standard cable ZIP is kept AS IS, with mandatory attribution.
 ; Do not redistribute extra A+B / C+D driver packages.
@@ -57,7 +68,6 @@ Source: "ArSonMixUpdateShutdown.ps1"; Flags: dontcopy
 Source: "ArSonMixAutoUpdate.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\verified-gui.exe"; DestDir: "{app}"; DestName: "ArSonMix.exe"; Flags: ignoreversion
 Source: "{#SourceRoot}\BUILD_PROVENANCE.json"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourceRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 ; The complete original and vendor legal documents are embedded both in
 ; ArSonMix.exe (offline About & Licenses) and inside this Setup payload.
 ; dontcopy = not installed into {app}; no clickthrough wizard or file litter.
