@@ -39,6 +39,9 @@ try {
     New-Item -ItemType Directory -Force -Path $stage | Out-Null
     Copy-Item -LiteralPath $exe -Destination (Join-Path $stage "verified-gui.exe")
     foreach($item in @("BUILD_PROVENANCE.json","README.md",
+                       "LICENSE","LICENSE-NOTICE.txt",
+                       "LICENSE-SIGNALSMITH-STRETCH.txt",
+                       "LICENSE-SIGNALSMITH-LINEAR.txt","OFL-LICENSE-Inter.txt",
                        "THIRD_PARTY_8D_SONKU_HRTF.md")){
         Copy-Item -LiteralPath (Join-Path $dist $item) -Destination (Join-Path $stage $item)
     }
@@ -72,6 +75,22 @@ try {
        (Get-FileHash -LiteralPath $installedNotice -Algorithm SHA256).Hash.ToLowerInvariant() -ne
        $manifest.hrirNoticeSha256) {
         throw "Installed third-party KEMAR/MIT notice missing or altered"
+    }
+    # Confirm Inno preserved all mandatory legal texts byte-for-byte.
+    $installedLicenses = [ordered]@{
+        "LICENSE" = "licenseTextSha256"
+        "LICENSE-NOTICE.txt" = "licenseNoticeSha256"
+        "LICENSE-SIGNALSMITH-STRETCH.txt" = "signalsmithStretchLicenseSha256"
+        "LICENSE-SIGNALSMITH-LINEAR.txt" = "signalsmithLinearLicenseSha256"
+        "OFL-LICENSE-Inter.txt" = "interOflLicenseSha256"
+    }
+    foreach($name in $installedLicenses.Keys){
+        $installedPath = Join-Path $install $name
+        $hashField = $installedLicenses[$name]
+        if(-not (Test-Path -LiteralPath $installedPath -PathType Leaf) -or
+           (Get-FileHash -LiteralPath $installedPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $manifest.$hashField){
+            throw "Installed licence missing or altered: $name"
+        }
     }
     # REAL Windows in-place UPDATE test: replace the *test-installed* PE
     # with a harmless WinForms window. Installer must ask it to WM_CLOSE,
