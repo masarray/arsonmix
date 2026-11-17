@@ -67,7 +67,7 @@ Source: "..\docs\THIRD_PARTY_8D_SONKU_HRTF.md"; Flags: dontcopy
 Source: "..\third_party\signalsmith\LICENSE-STRETCH.txt"; Flags: dontcopy
 Source: "..\third_party\signalsmith\LICENSE-LINEAR.txt"; Flags: dontcopy
 Source: "..\web\assets\fonts\OFL-LICENSE-Inter.txt"; Flags: dontcopy
-Source: "VB-CABLE-NOTICE.txt"; Flags: dontcopy
+; VB-CABLE vendor notice is already inside the vendor [Files] payload.
 Source: "{#SourceRoot}\FactoryFX\*"; DestDir: "{app}\FactoryFX"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 [Icons]
 Name: "{autoprograms}\ArSonMix"; Filename: "{app}\ArSonMix.exe"; WorkingDir: "{app}"
