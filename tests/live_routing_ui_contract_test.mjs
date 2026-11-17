@@ -298,7 +298,7 @@ test("G5E native Shows browse and hash-verified FX recall are worker-backed and 
   assert.match(main,/applyDryRoutingLab\(\s*command,selections,&restores\)/);
   assert.match(main,/result\.loadedStates/);
   assert.match(main,/entry->uid!=ref\.uid/);
-  assert.match(main,/safe->closePluginEditor\(\)/);
+  // Show recall invalidates both editor leases (vendor VST3 and ImmerSIB)\n  // before graph replacement; a single-window close is no longer sufficient.\n  assert.match(main,/safe->closeAllPluginEditors\(\);\\s*error=safe->engine_\\.applyDryRoutingLab\(/);
   assert.match(main,/setMasterGainLinear\(/);
   assert.match(main,/if \(arm && \(nativeShowBusy_ \|\| studioBackupBusy_\)\)/);
   assert.match(main,/engine_\.liveOutputArmFault\(\)/);
