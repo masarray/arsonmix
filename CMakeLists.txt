@@ -309,13 +309,25 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/web/assets/fonts/OFL-LICENSE-Inter.t
                "${ARMIX_LEGAL_EMBED_DIR}/armixinterofl.txt" COPYONLY)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/installer/VB-CABLE-NOTICE.txt"
                "${ARMIX_LEGAL_EMBED_DIR}/armixvbcablenotice.txt" COPYONLY)
-file(GLOB ARMIX_LEGAL_RESOURCE_FILES CONFIGURE_DEPENDS
-    "${ARMIX_LEGAL_EMBED_DIR}/armix*.txt")
+# Explicit allowlist avoids picking up stale resources from an earlier
+# incremental configure and keeps BinaryData contents reproducible.
+set(ARMIX_LEGAL_RESOURCE_FILES
+    "${ARMIX_LEGAL_EMBED_DIR}/armixagpl.txt"
+    "${ARMIX_LEGAL_EMBED_DIR}/armixnotice.txt"
+    "${ARMIX_LEGAL_EMBED_DIR}/armixhrirmit.txt"
+    "${ARMIX_LEGAL_EMBED_DIR}/armixsignalsmithstretch.txt"
+    "${ARMIX_LEGAL_EMBED_DIR}/armixsignalsmithlinear.txt"
+    "${ARMIX_LEGAL_EMBED_DIR}/armixinterofl.txt"
+    "${ARMIX_LEGAL_EMBED_DIR}/armixvbcablenotice.txt")
 list(LENGTH ARMIX_LEGAL_RESOURCE_FILES ARMIX_LEGAL_RESOURCE_COUNT)
 if(NOT ARMIX_LEGAL_RESOURCE_COUNT EQUAL 7)
   message(FATAL_ERROR "All seven exact-source legal documents must be embedded")
 endif()
-list(SORT ARMIX_LEGAL_RESOURCE_FILES)
+foreach(ARMIX_LEGAL_RESOURCE IN LISTS ARMIX_LEGAL_RESOURCE_FILES)
+  if(NOT EXISTS "${ARMIX_LEGAL_RESOURCE}")
+    message(FATAL_ERROR "Missing legal BinaryData source: ${ARMIX_LEGAL_RESOURCE}")
+  endif()
+endforeach()
 juce_add_binary_data(ARMixAssets SOURCES
     "${ARMIX_APPROVED_GUI_DIR}/index.html" ${ARMIX_APPROVED_GUI_BINARIES}
     ${ARMIX_GUITAR_SKIN_PNGS}
