@@ -437,7 +437,7 @@ public:
 #endif
         orbit_.stop();
         catalog_.onChanged = nullptr;
-        closePluginEditor();
+        closeAllPluginEditors();
         // Tear down the modal transaction first. A closing window must not
         // re-enter device rebind while ConsoleWindow is being destroyed.
         audioSetupLease_.reset();
@@ -563,6 +563,14 @@ private:
     // retained vendor processor lease. No vendor destructor runs on RT.
     armix::mixer::LiveChannelFxGraph::InstanceLease routedEditorOwner_;
     std::uint64_t routedEditorEpoch_=0;
+#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
+    // A separate native concert HWND: third-party VST3 editors must not
+    // close or silently replace the active ImmerSIB processor UI.
+    armix::mixer::LiveChannelFxGraph::InstanceLease immersibEditorOwner_;
+    std::uint64_t immersibEditorEpoch_=0;
+    juce::AudioProcessor* immersibEditorProcessor_=nullptr; // non-owning identity
+    std::unique_ptr<PluginEditorWindow> immersibEditorWindow_;
+#endif
     struct PendingNativeEq {
         armix::mixer::LiveChannelFxGraph::InstanceLease owner;
         juce::String request,channelId,deviceEpoch,revision,instanceId;
@@ -1050,9 +1058,9 @@ private:
         // The editor must reflect accepted global/rack/slot PCM state even
         // when the gesture originated in the WebView header or FX Rack.
         // All these dispatches run on JUCE's UI/message thread.
-        if(editorWindow_)
+        if(immersibEditorWindow_)
             if(auto* ui=dynamic_cast<armix::builtin_fx::ImerSipP92Editor*>(
-                  editorWindow_->getContentComponent()))
+                  immersibEditorWindow_->getContentComponent()))
                 ui->synchronizeHostPower();
 #endif
     }
@@ -1062,6 +1070,19 @@ private:
         editorProcessor_=nullptr;
         routedEditorOwner_.reset();
         routedEditorEpoch_=0;
+    }
+
+    void closeImmerSIBEditor() noexcept {
+#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
+        immersibEditorWindow_.reset(); // JUCE editor disposed before PCM owner
+        immersibEditorProcessor_=nullptr;
+        immersibEditorOwner_.reset();
+        immersibEditorEpoch_=0;
+#endif
+    }
+    void closeAllPluginEditors() noexcept {
+        closePluginEditor();
+        closeImmerSIBEditor();
     }
 
     void emitChain()
@@ -3891,7 +3912,7 @@ private:
                    chosenEpoch==engine.dryRoutingLabEpoch()&&engine.liveOutputArmFault(false).isEmpty())
                     engine.setMonitorEnabled(true);
                 if(error.isEmpty()) {
-                    safe->closePluginEditor();
+                    safe->closeAllPluginEditors();
                     safe->stopOrbit();
                     safe->mixerSessionId_=id;
                     const auto keyError=safe->hotkeys_.activateSession(id,&importedHotkeys);
@@ -5865,7 +5886,7 @@ private:
             if(error.isEmpty()) {
                 // Structural replacement can remove the vendor object.
                 // Close its editor before attempting graph publication.
-                closePluginEditor();
+                closeAllPluginEditors();
                 try {
                     error=engine_.applyDryRoutingLab(value,selected);
                 } catch(const std::exception& ex) {
@@ -6572,17 +6593,34 @@ private:
                     }
                 } else owner=engine_.leaseRoutedFxForEditor(lane,slot,epoch,revision,token);
                 if(owner && owner->processor) {
+#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
+                    const bool dedicatedImmerSIB=dynamic_cast<
+                        armix::builtin_fx::ImerSipP92Processor*>(owner->processor.get())!=nullptr;
+                    auto& shownWindow=dedicatedImmerSIB?immersibEditorWindow_:editorWindow_;
+                    auto& shownOwner=dedicatedImmerSIB?immersibEditorOwner_:routedEditorOwner_;
+                    auto& shownEpoch=dedicatedImmerSIB?immersibEditorEpoch_:routedEditorEpoch_;
+                    auto& shownProcessor=dedicatedImmerSIB?immersibEditorProcessor_:editorProcessor_;
+#else
+                    auto& shownWindow=editorWindow_;
+                    auto& shownOwner=routedEditorOwner_;
+                    auto& shownEpoch=routedEditorEpoch_;
+                    auto& shownProcessor=editorProcessor_;
+#endif
                     // A second click must raise an already open OR hidden
                     // editor for exactly this accepted instance. Do not
                     // destroy/recreate JUCE's active editor on every click.
-                    if(editorWindow_ && routedEditorOwner_==owner &&
-                       routedEditorEpoch_==retainedEpoch &&
-                       editorProcessor_==owner->processor.get()) {
-                        editorWindow_->present();
+                    if(shownWindow && shownOwner==owner &&
+                       shownEpoch==retainedEpoch &&
+                       shownProcessor==owner->processor.get()) {
+                        shownWindow->present();
                         opened=true;
                         error.clear();
                     } else try {
-                        closePluginEditor();
+#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
+                        if(dedicatedImmerSIB)closeImmerSIBEditor();
+                        else
+#endif
+                            closePluginEditor();
                         if(auto* editor=owner->processor->createEditorIfNeeded()) {
 #if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
                             if(auto* imer=dynamic_cast<
@@ -6626,19 +6664,27 @@ private:
                                     },readPower);
                             }
 #endif
-                            routedEditorOwner_=owner;
-                            routedEditorEpoch_=retainedEpoch;
-                            editorWindow_=std::make_unique<PluginEditorWindow>(
+                            shownOwner=owner;
+                            shownEpoch=retainedEpoch;
+                            shownWindow=std::make_unique<PluginEditorWindow>(
                                 owner->processor->getName(),editor,*this);
-                            editorProcessor_=owner->processor.get();
+                            shownProcessor=owner->processor.get();
                             opened=true;
                             error.clear();
                         } else error="This VST3 has no native editor";
                     } catch(const std::exception& ex) {
-                        closePluginEditor();
+#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
+                        if(dedicatedImmerSIB)closeImmerSIBEditor();
+                        else
+#endif
+                            closePluginEditor();
                         error="Vendor editor failed: "+juce::String(ex.what());
                     } catch(...) {
-                        closePluginEditor();
+#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
+                        if(dedicatedImmerSIB)closeImmerSIBEditor();
+                        else
+#endif
+                            closePluginEditor();
                         error="Vendor editor failed (plugin exception)";
                     }
                 }
@@ -6694,7 +6740,7 @@ private:
             if(error.isEmpty()) {
                 // Do not read vendor parameters while an editor is open.
                 // Output MUST already be muted by captureDry and the engine.
-                closePluginEditor();
+                closeAllPluginEditors();
                 std::vector<LiveDryRoutingLab::CapturedFxState> vendorStates;
                 error=engine_.captureRoutedFxStates(epoch,revision,vendorStates);
                 if(error.isEmpty()) {
@@ -6952,7 +6998,7 @@ private:
                                             lane-LiveDryRoutingLab::count)].fx);
                                 }
                                 if(error.isEmpty()) {
-                                    safe->closePluginEditor();
+                                    safe->closeAllPluginEditors();
                                     error=safe->engine_.applyDryRoutingLab(
                                         command,selections,&restores);
                                 }
@@ -7034,7 +7080,7 @@ private:
             // Backward-compatible command name: CLEAR PATCH keeps the one
             // native 10CH+4AUX topology, with ALL physical inputs disconnected.
             // Never enable the legacy CH1 signal path on STOP or hotplug.
-            closePluginEditor();
+            closeAllPluginEditors();
             const auto error=engine_.clearProductionRouting();
             diagnostics_.record(error.isEmpty()?"NATIVE_INPUT_PATCH_CLEARED":
                                  "NATIVE_INPUT_PATCH_CLEAR_FAILED",
@@ -7058,7 +7104,7 @@ private:
             if (!value.isBool()) return emitNotice ("Invalid smart clock command", true);
             // Close third-party editors before device/processor preparation.
             stopOrbit();
-            closePluginEditor();
+            closeAllPluginEditors();
             const auto error = engine_.setIndependentClockEnabled (bool (value));
             if (error.isNotEmpty())
             {
@@ -7202,7 +7248,7 @@ private:
             if (!engine_.allOutputsDisarmed())
                 return emitNotice ("Mute output in SIGNAL CHECK before saving a native sound preset. This avoids interrupting your live performance.", true);
             stopOrbit();
-            closePluginEditor();
+            closeAllPluginEditors();
             armix::storage::Snapshot snapshot;
             snapshot.name = name;
             auto error = engine_.captureSnapshot (snapshot);
@@ -7227,7 +7273,7 @@ private:
             if (engine_.isGraphSwitchPending())
                 return emitNotice ("FX recall is already transitioning; retry shortly.", true);
             stopOrbit();
-            closePluginEditor();
+            closeAllPluginEditors();
             armix::storage::Snapshot snapshot;
             auto error = presets_.load (name, snapshot);
             if (error.isEmpty()) error = engine_.restoreSnapshot (snapshot);
@@ -7320,7 +7366,7 @@ private:
                 // Orbit retains the same vendor instance across the prepared graph handoff.
                 const bool keepOrbit=orbit_.active();
                 if(keepOrbit)orbit_.pauseForGraphEdit();
-                closePluginEditor();
+                closeAllPluginEditors();
                 try
                 {
                     error = engine_.addVst3 (plugin->path, plugin->uid, plugin->key(),plugin->name);
@@ -7360,7 +7406,7 @@ private:
             const auto* previous=orbit_.processor();
             const bool removedOrbit=previous && engine_.pluginAt(slot)==previous;
             if(orbit_.active())orbit_.pauseForGraphEdit();
-            closePluginEditor();
+            closeAllPluginEditors();
             const bool changed=engine_.removeAt(slot);
             if(changed) {
                 // Orbit stays paused until the callback and control thread
@@ -8386,6 +8432,11 @@ private:
         if(routedEditorOwner_ &&
            !engine_.retainsRoutedFxEditor(routedEditorEpoch_,routedEditorOwner_))
             closePluginEditor();
+#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
+        if(immersibEditorOwner_ &&
+           !engine_.retainsRoutedFxEditor(immersibEditorEpoch_,immersibEditorOwner_))
+            closeImmerSIBEditor();
+#endif
         annotateRecovery (state);
         state.getDynamicObject()->setProperty("mixerSessionStatus",mixerSessionStatus_);
         if(mixerSessionError_.isNotEmpty())

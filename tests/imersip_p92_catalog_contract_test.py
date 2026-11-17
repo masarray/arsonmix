@@ -7,6 +7,16 @@ ROOT=Path(__file__).resolve().parents[1]
 def source(path): return (ROOT/path).read_text(encoding="utf-8")
 
 class ImerSipP92Contract(unittest.TestCase):
+    def test_immersib_rack_opens_real_native_editor_without_fake_toast(self):
+        bridge=source("web/approved-native-bridge.js")
+        host=source("src/Main.cpp")
+        self.assertIn("insert.catalogId==='armix.builtin.imersip.v1' && current.admitted",bridge)
+        self.assertIn('backend.emitEvent("arMixAction",{action:"routingFxEditor",channelId:id,slot,',bridge)
+        self.assertIn('instanceId:insert.id,deviceEpoch:current.device.epoch',bridge)
+        self.assertNotIn('else status("Native VST3 editor opened")',bridge)
+        self.assertIn("ImerSipP92Editor*>(editor)",host)
+        self.assertIn("std::make_unique<PluginEditorWindow>",host)
+
     def test_single_pcm_authority_and_stable_catalog(self):
         p=source("engine/builtin_fx/ImerSipP92Processor.h")
         scene=source("engine/builtin_fx/ImerSipP92Scene.h")
