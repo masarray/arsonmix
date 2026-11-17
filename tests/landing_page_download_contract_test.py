@@ -25,6 +25,7 @@ class LandingReleaseContract(unittest.TestCase):
             self.assertIn("media/console-faders.jpg", html)
             self.assertIn("prefers-reduced-motion", css)
             self.assertNotIn("https://github.com", html)  # Never navigate to GitHub UI.
+            self.assertIn('href="./LICENSE.txt"', html)
             self.assertIn("release-catalog.json", js)
             self.assertIn("https://api.github.com/repos/masarray/arsonmix/releases?per_page=40", js)
             self.assertIn("Download installer ZIP", js)
@@ -63,6 +64,13 @@ class LandingReleaseContract(unittest.TestCase):
                 self.assertTrue(path.is_file(), str(path))
                 self.assertGreater(path.stat().st_size, 12000)
                 self.assertEqual(path.read_bytes()[:3], b"\xff\xd8\xff", str(path))
+
+    def test_public_agpl_notice_is_exact_repo_license(self):
+        # Legal documentation is delivered on the official Pages domain
+        # rather than linking visitors to a GitHub source-code UI.
+        copied = DIST / "LICENSE.txt"
+        self.assertTrue(copied.is_file(), str(copied))
+        self.assertEqual(copied.read_bytes(), (ROOT / "LICENSE").read_bytes())
 
     def test_pinned_readme_release_has_local_notes_and_verified_asset_paths(self):
         readme = (ROOT / "README.md").read_text("utf-8")

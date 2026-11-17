@@ -13,6 +13,13 @@ for name in ("landing.css","downloads.js"):
     source=ROOT/"site"/name
     if not source.is_file(): raise SystemExit("Missing landing asset "+name)
     shutil.copyfile(source,OUT/name)
+# Serve the exact AGPL-3.0 source license locally. Marketing pages do not
+# navigate to GitHub UI, and the distributed license must be byte-identical
+# to the authoritative repository root LICENSE.
+license_source=ROOT/"LICENSE"
+if not license_source.is_file() or license_source.stat().st_size<1000:
+    raise SystemExit("Missing authoritative root AGPL license")
+shutil.copyfile(license_source,OUT/"LICENSE.txt")
 source_media=ROOT/"site/media"
 target_media=OUT/"media"
 if target_media.exists(): shutil.rmtree(target_media)
