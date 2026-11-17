@@ -34,7 +34,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: arsonmix-production-pages
+  # A completed PR UI-smoke also emits workflow_run; it is not eligible to
+  # publish main. Keep that *skipped* event in a different concurrency group,
+  # otherwise it cancels an active, valid push Pages deploy before the job IF.
+  # Qualified main-push UI-smoke runs retain the production group.
+  group: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event != 'push' && 'arsonmix-pages-ignored-pr-check' || 'arsonmix-production-pages' }}
   cancel-in-progress: true
 
 jobs:
