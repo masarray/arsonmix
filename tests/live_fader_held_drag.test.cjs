@@ -7,6 +7,7 @@ const {readFileSync}=require("node:fs");
 const vm=require("node:vm");
 const protocol=require("../web/approved-native-contract.js");
 const deviceVM=require("../web/approved-device-view-model.js");
+const stripVM=require("../web/approved-channel-strip-view-model.js");
 const read=p=>readFileSync(p,"utf8");
 const clone=x=>JSON.parse(JSON.stringify(x));
 const fixture=JSON.parse(read("integration/console-v6/fixtures.json")).g0;
@@ -77,6 +78,7 @@ function harness({m4=false}={}){
  };
  const window={
    __JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,
+   ArSonApprovedChannelStripViewModel:stripVM,
    __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
    setTimeout(fn,delay=0){timers.push({fn,at:now+Math.max(0,Number(delay)||0)});return timers.length;}
  };

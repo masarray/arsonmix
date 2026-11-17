@@ -2165,7 +2165,9 @@ test("O2 external OUT never reports LIVE while driver output is muted",()=>{
  assert.match(projection,/snapshot\?\.device\?\.outputArmed===true\?"LIVE":"MUTED"/);
  assert.match(projection,/state==="MUTED"\?"ASIO pair connected/);
  assert.match(bridge,/deviceVM\.externalPresentation\(next,row,choices\)/);
- assert.match(bridge,/state==="LIVE"\|\|state==="MUTED"/);
+ assert.match(bridge,/stripVM\.externalPending\(pending,next\?\.device\?\.epoch,state,row\)/);
+ assert.match(read("web/approved-channel-strip-view-model.js"),
+   /state==="LIVE"\|\|state==="MUTED"/);
  assert.match(bridge,/EXTERNAL OUT patched · hardware output muted/);
  assert.match(css,/external-out-state\[data-status="MUTED"\]/);
 });
