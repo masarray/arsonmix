@@ -1,7 +1,8 @@
-# ARD — Harmonice Multi-Device Capture Engine on JUCE 8 (Windows)
+# ARD — ArSonMix Multi-Device Capture Engine on JUCE 8 (Windows)
 
 **Revision:** 2026-11-17 · **Status:** design contract, implementation NOT started / NOT hardware-qualified  
 **Audit anchor:** `main@07cbb521fcbc173c7769001c89f321a88cd9db31`  
+**Product:** ArSonMix mixer (Harmonice is a built-in harmony plugin); historical filename retained for compatibility. Full multi-input **and** independent output-sink architecture is documented in [draft PR #763](https://github.com/masarray/arsonmix/pull/763).  
 **Companions:** [PRD](PRD_HARMONICE_MULTI_DEVICE_CAPTURE_20261117.md) · [Research/evidence](RESEARCH_JUCE_MULTI_DEVICE_CAPTURE_20261117.md) · [Current architecture map](architecture/README.md)
 
 > **Normative distinction:** exactly **ONE installed native mixer/DSP/VST3 graph and ONE render-clock-owner callback**. There may be **N separate capture-only callbacks**, each tied to an OS driver / its own clock. Prior 'no second callback' directives prohibit a second *render/mixing* engine, not the producer-only I/O callbacks that are fundamentally required for independently running devices. This exception is only active when the feature is explicitly enabled, reviewed and qualified; it does not authorize a second graph, duplicate main callback, or new WebAudio processor.
