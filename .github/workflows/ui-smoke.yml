@@ -140,6 +140,32 @@ jobs:
       - name: Block incomplete product release only when preparing product review
         if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && startsWith(github.head_ref, 'integration/product-') }}
         run: node scripts/check_console_puzzle.mjs --release
+  embedded-legal-center:
+    name: Embedded AGPL center real Chromium UX (2 sizes)
+    needs: quick
+    if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/embedded-premium-legal-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Chromium for native-only legal UI proof
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Verify offline legal tabs, source action, visual bounds and focus
+        run: python tests/embedded_legal_center_chromium_smoke.py
+      - name: Preserve actual legal-center screenshots
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-Embedded-AGPL-UX-${{ github.run_id }}
+          path: arsonmix-legal-center-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
   gain-metal-knob-preview:
     name: GAIN metal knob Chromium FAT (5 viewports)
     needs: quick
