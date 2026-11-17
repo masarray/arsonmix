@@ -1,0 +1,64 @@
+name: ArSonMix Required Merge Gate
+# Stable required commit-status context, independent of path-scoped CI names.
+# Privileged status writes use reviewed main code; never checkout PR source.
+on:
+  pull_request:
+    paths:
+      - 'scripts/required_pr_merge_gate.mjs'
+      - 'tests/required_pr_merge_gate.test.mjs'
+      - '.github/workflows/required-pr-merge-gate.yml'
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
+  workflow_run:
+    workflows:
+      - Windows Native VST3 Host
+      - UI smoke (Chromium)
+      - Smart Release/Download Contracts (fast only)
+    types: [completed]
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+  statuses: write
+concurrency:
+  group: required-merge-gate-${{ github.event.pull_request.number || github.event.workflow_run.id || github.run_id }}
+  cancel-in-progress: false
+jobs:
+  self-test:
+    name: Required merge gate source-contract tests
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tests/required_pr_merge_gate.test.mjs
+      - run: node --check scripts/required_pr_merge_gate.mjs
+
+  publish-status:
+    name: Publish exact-head fail-closed merge status
+    if: ${{ github.event_name == 'pull_request_target' || github.event_name == 'workflow_run' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify deployed status publisher before using write token
+        run: node --test tests/required_pr_merge_gate.test.mjs
+      - name: Refresh one commit status after PR change or scoped CI completion
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+        run: node scripts/required_pr_merge_gate.mjs
