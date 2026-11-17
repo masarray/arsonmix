@@ -124,7 +124,9 @@
         enabledOutputs:same?draft.outputPins:[],
         ...(confirmRetainedPinMapping?{confirmRetainedPinMapping:true}:{}),
         ...(assignMain?{assignSelectedPlaybackPinsToMain:true}:{})}};
-    const pending={requestId,baselineEpoch:
+    const pending={requestId,expected:{backend:draft.backend,
+      captureDevice:draft.capture,playbackDevice:draft.playback,
+      generation,rate,buffer},baselineEpoch:
       typeof baselineEpoch==="string"&&/^(0|[1-9]\d*)$/.test(baselineEpoch)?
         baselineEpoch:null,ack:null};
     return {request,state:{phase:"APPLYING",pending,message:"",
@@ -136,7 +138,13 @@
     const accepted=ack.ok===true &&
       (ack.state==="ACCEPTED_LIVE"||ack.state==="ACCEPTED_MUTED") &&
       active?.open===true&&active.authorized===true&&
+      active.backend===state.pending.expected.backend&&
+      active.captureDevice===state.pending.expected.captureDevice&&
+      active.playbackDevice===state.pending.expected.playbackDevice&&
       Number.isSafeInteger(active.deviceGeneration)&&
+      active.deviceGeneration>=state.pending.expected.generation&&
+      (state.pending.expected.rate===0||active.rate===state.pending.expected.rate)&&
+      (state.pending.expected.buffer===0||active.buffer===state.pending.expected.buffer)&&
       Array.isArray(active.enabledInputs)&&Array.isArray(active.enabledOutputs)&&
       active.enabledOutputs.length>=2&&
       Number.isFinite(active.rate)&&active.rate>0&&
