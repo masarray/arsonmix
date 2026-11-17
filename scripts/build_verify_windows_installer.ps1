@@ -38,7 +38,8 @@ $fixtureProcess=$null
 try {
     New-Item -ItemType Directory -Force -Path $stage | Out-Null
     Copy-Item -LiteralPath $exe -Destination (Join-Path $stage "verified-gui.exe")
-    foreach($item in @("BUILD_PROVENANCE.json","README.md")){
+    foreach($item in @("BUILD_PROVENANCE.json","README.md",
+                       "THIRD_PARTY_8D_SONKU_HRTF.md")){
         Copy-Item -LiteralPath (Join-Path $dist $item) -Destination (Join-Path $stage $item)
     }
     Copy-Item -LiteralPath "assets/icon/arsonmix-app.ico" -Destination (Join-Path $stage "arsonmix-app.ico")
@@ -66,6 +67,12 @@ try {
     }
     $installedManifest=Get-Content -LiteralPath (Join-Path $install "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
     if($installedManifest.sourceCommit -ne $sha){throw "Wrong installed provenance"}
+    $installedNotice = Join-Path $install "THIRD_PARTY_8D_SONKU_HRTF.md"
+    if(-not (Test-Path -LiteralPath $installedNotice -PathType Leaf) -or
+       (Get-FileHash -LiteralPath $installedNotice -Algorithm SHA256).Hash.ToLowerInvariant() -ne
+       $manifest.hrirNoticeSha256) {
+        throw "Installed third-party KEMAR/MIT notice missing or altered"
+    }
     # REAL Windows in-place UPDATE test: replace the *test-installed* PE
     # with a harmless WinForms window. Installer must ask it to WM_CLOSE,
     # observe the graceful close marker, replace its running .exe with the

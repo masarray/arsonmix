@@ -19,7 +19,8 @@ test('per-user Inno Setup upgrades the same app and retains private Studio data'
     'DisableWelcomePage=yes', 'DisableDirPage=yes',
     'DisableReadyPage=yes', 'DisableFinishedPage=yes',
     'SetupMutex=ArSonMix.PerUserInstaller.SingleInstance',
-    'Preview', 'verified-gui.exe', 'BUILD_PROVENANCE.json'
+    'Preview', 'verified-gui.exe', 'BUILD_PROVENANCE.json',
+    'THIRD_PARTY_8D_SONKU_HRTF.md'
   ]) assert.ok(iss.includes(item), item);
 
   assert.doesNotMatch(iss, /^\[UninstallDelete\]/m);
@@ -27,6 +28,8 @@ test('per-user Inno Setup upgrades the same app and retains private Studio data'
   assert.doesNotMatch(iss, /taskkill|Stop-Process|TerminateProcess|CloseApplications=force/i);
   assert.match(iss, /Name: "\{autoprograms\}\\ArSonMix"/);
   assert.match(iss, /FactoryFX\\\*.*skipifsourcedoesntexist/);
+  assert.match(ps, /Installed third-party KEMAR\/MIT notice missing or altered/);
+  assert.match(ps, /THIRD_PARTY_8D_SONKU_HRTF\.md/);
 });
 
 test('official standard VB-CABLE ZIP is pinned and checked automatically without elevating ArSonMix', () => {

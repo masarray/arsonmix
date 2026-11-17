@@ -10,19 +10,22 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 int main(){
     using armix::builtin_fx::SonKuSpatialProcessor;
-    SonKuSpatialProcessor live;
-    live.prepareToPlay(48000.,128);
-    assert(live.isReady());
+    // The processor owns large reverb/room buffers. Multiple native FX
+    // must not exhaust the default Windows test-process stack.
+    auto live=std::make_unique<SonKuSpatialProcessor>();
+    live->prepareToPlay(48000.,128);
+    assert(live->isReady());
 #if defined(ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT) && ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT
-    assert(live.preparedReflectionProfile()==
+    assert(live->preparedReflectionProfile()==
         armix::sonku::SonKuReflectionProfile::DirectionalKemar);
 #else
-    assert(live.preparedReflectionProfile()==
+    assert(live->preparedReflectionProfile()==
         armix::sonku::SonKuReflectionProfile::Lightweight);
 #endif
-    auto scene=live.acceptedSettings();
+    auto scene=live->acceptedSettings();
     assert(scene.spacePreset==0); // legacy samples always load with ROOM OFF
     scene.spacePreset=2;scene.sourceDistanceMeters=5.f;
     scene.roomAmount=.55f;scene.ambience=.30f;
@@ -45,44 +48,48 @@ int main(){
     assert(armix::sonku::valid(rejectedNear));
     assert(!armix::sonku::valid8DSonKuInsertSettings(rejectedNear));
     assert(!decodeSettings(acceptedSettings(rejectedNear),decoded));
-    assert(!live.queueSettings(rejectedNear,41));
-    assert(live.queueSettings(scene,42));
+    assert(!live->queueSettings(rejectedNear,41));
+    assert(live->queueSettings(scene,42));
     // Queued does NOT mean accepted; only the actual PCM callback may apply.
-    assert(live.acceptedSettings().spacePreset==0);
+    assert(live->acceptedSettings().spacePreset==0);
     juce::AudioBuffer<float> audio(2,128);
     juce::MidiBuffer midi;
     audio.clear();
     audio.getWritePointer(0)[0]=.1f;
     audio.getWritePointer(1)[0]=.1f;
-    live.processBlock(audio,midi);
+    live->processBlock(audio,midi);
     SonKuSpatialProcessor::Completion ack{};
-    assert(live.pollCompletion(ack) && ack.applied && ack.requestId==42);
-    assert(live.acceptedSettings().spacePreset==2);
-    assert(live.acceptedSettings().sourceDistanceMeters==5.f);
+    assert(live->pollCompletion(ack) && ack.applied && ack.requestId==42);
+    assert(live->acceptedSettings().spacePreset==2);
+    assert(live->acceptedSettings().sourceDistanceMeters==5.f);
     for(int c=0;c<2;++c)
         for(int i=0;i<128;++i)assert(std::isfinite(audio.getSample(c,i)));
     juce::MemoryBlock bytes;
-    live.getStateInformation(bytes);
+    live->getStateInformation(bytes);
     assert(bytes.getSize()==46);
     auto forgedNear=bytes;
     const float imersibNear=1.1f;
     std::memcpy(static_cast<std::uint8_t*>(forgedNear.getData())+34,
                 &imersibNear,sizeof(imersibNear));
-    SonKuSpatialProcessor forbidden;
-    assert(!forbidden.restoreUnpublishedState(
+    // The processor owns large reverb/room buffers. Multiple native FX
+    // must not exhaust the default Windows test-process stack.
+    auto forbidden=std::make_unique<SonKuSpatialProcessor>();
+    assert(!forbidden->restoreUnpublishedState(
         forgedNear.getData(),static_cast<int>(forgedNear.getSize())));
-    assert(forbidden.acceptedSettings().sourceDistanceMeters==1.6f);
-    SonKuSpatialProcessor restored;
-    restored.prepareToPlay(48000.,128);
-    assert(restored.preparedReflectionProfile()==live.preparedReflectionProfile());
-    assert(restored.restoreUnpublishedState(bytes.getData(),
+    assert(forbidden->acceptedSettings().sourceDistanceMeters==1.6f);
+    // The processor owns large reverb/room buffers. Multiple native FX
+    // must not exhaust the default Windows test-process stack.
+    auto restored=std::make_unique<SonKuSpatialProcessor>();
+    restored->prepareToPlay(48000.,128);
+    assert(restored->preparedReflectionProfile()==live->preparedReflectionProfile());
+    assert(restored->restoreUnpublishedState(bytes.getData(),
                                            static_cast<int>(bytes.getSize())));
-    const auto got=restored.acceptedSettings();
+    const auto got=restored->acceptedSettings();
     assert(got.spacePreset==2&&got.sourceDistanceMeters==5.f);
     assert(got.roomAmount==.55f&&got.ambience==.30f);
-    assert(restored.getTailLengthSeconds()>=2.);
+    assert(restored->getTailLengthSeconds()>=2.);
     audio.clear();audio.getWritePointer(0)[0]=.1f;
-    restored.processBlock(audio,midi);
+    restored->processBlock(audio,midi);
     for(int c=0;c<2;++c)
         for(int i=0;i<128;++i)assert(std::isfinite(audio.getSample(c,i)));
     // Strict v1 binary payload: SONK, v1, five floats and two bool bytes.
@@ -93,21 +100,25 @@ int main(){
      out.writeFloat(1.f);out.writeFloat(.75f);
      out.writeByte(1);out.writeByte(1);}
     assert(legacy.getSize()==30);
-    SonKuSpatialProcessor older;
-    older.prepareToPlay(48000.,128);
-    assert(older.restoreUnpublishedState(legacy.getData(),30));
-    assert(older.acceptedSettings().spacePreset==0);
-    assert(!older.restoreUnpublishedState(legacy.getData(),29));
+    // The processor owns large reverb/room buffers. Multiple native FX
+    // must not exhaust the default Windows test-process stack.
+    auto older=std::make_unique<SonKuSpatialProcessor>();
+    older->prepareToPlay(48000.,128);
+    assert(older->restoreUnpublishedState(legacy.getData(),30));
+    assert(older->acceptedSettings().spacePreset==0);
+    assert(!older->restoreUnpublishedState(legacy.getData(),29));
     juce::MemoryBlock invalid=bytes;
     auto* data=static_cast<std::uint8_t*>(invalid.getData());
     // Space preset starts at byte offset 30: reject out-of-range v2 schema.
     data[30]=99;data[31]=data[32]=data[33]=0;
-    SonKuSpatialProcessor bad;
-    bad.prepareToPlay(48000.,128);
-    assert(!bad.restoreUnpublishedState(invalid.getData(),46));
-    assert(bad.acceptedSettings().spacePreset==0);
+    // The processor owns large reverb/room buffers. Multiple native FX
+    // must not exhaust the default Windows test-process stack.
+    auto bad=std::make_unique<SonKuSpatialProcessor>();
+    bad->prepareToPlay(48000.,128);
+    assert(!bad->restoreUnpublishedState(invalid.getData(),46));
+    assert(bad->acceptedSettings().spacePreset==0);
     // Stale/completed active buffers may not be used as a published restore.
-    restored.sealForRealtime();
-    assert(!restored.restoreUnpublishedState(bytes.getData(),46));
+    restored->sealForRealtime();
+    assert(!restored->restoreUnpublishedState(bytes.getData(),46));
     return 0;
 }
