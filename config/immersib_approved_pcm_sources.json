@@ -1,0 +1,124 @@
+{
+  "schema": "arsonmix.approved-spatial-pcm-source-lock.v1",
+  "approvedRelease": "v0.5.0-alpha.26",
+  "approvedSourceSha": "8ec5b8a3e07837c85fb6e06c952cff1621fecc51",
+  "scope": "Core DSP/scene files only; no changes to accepted audio; this is not physical audio verification.",
+  "files": [
+    {
+      "path": "engine/builtin_fx/ImerSipP92Processor.h",
+      "blob": "bb57cdd189318a9beb5865cf8434c5b2d28fc847"
+    },
+    {
+      "path": "engine/builtin_fx/ImerSipP92Scene.h",
+      "blob": "15256e2775a66d974b612258f3eb15a665f7519a"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuEarlyReflections.h",
+      "blob": "5a6a9b48cfdc60729f130c61110c8d8590b20f35"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuHrtfTonalCalibration.h",
+      "blob": "233e2b26caf51e88df4ed82babc442f2b341c2d7"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuImmerSIBVocalRoom.h",
+      "blob": "0aee9e1154f6052db02a8e8dfdb696ef4462aa10"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuMeasuredHrir.h",
+      "blob": "0116db498c817e0c60d04bccc052bed8256b997a"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuMeasuredHrir3D.h",
+      "blob": "816e7255939f0bb262374a5b4c0240438ec1e3a0"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuMusicalReverb.h",
+      "blob": "c2f273ef7c1ee26c5566b05568416e5cedaef6c4"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuP83LowFrequencyTransfer.h",
+      "blob": "670fd9cef078d2495e9d31e959cf99566a7b1844"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuP83SpeakerScene.h",
+      "blob": "2820af40f120cdad7ac699b228eb4e5531b86a95"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuP84ClarityAnchor.h",
+      "blob": "0008741e4fe14f6d15735f187201777447524b08"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuP84FusedMusicHrir.h",
+      "blob": "3e8322ede8772b1112e12486a5ad51b4e9217d95"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuP87MusicalAirBody.h",
+      "blob": "80487b69f757d04e1f301415d4af357a272a1857"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuP90StereoDecoder.h",
+      "blob": "f760c673dec8031f4dfcc76d6f1fee36beffa043"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuP91P92WorldBassFoundation.h",
+      "blob": "63551d22e8dff672fe136131c32d28b568bb3170"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuP94FrontBackDepthCue.h",
+      "blob": "f0f88088c68ef6865d64c240c4c87accaf136070"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuP95MusicalPresence.h",
+      "blob": "f458d520c9ca6c75b1b961d220e15abd64b07497"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuP96DistanceReinforcement.h",
+      "blob": "a32fb6e6fdd431901323d4278c51991607c02d84"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuP97StageImpact.h",
+      "blob": "5384fd3cc67c31f0a8038b315856d20933249b5b"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h",
+      "blob": "5ec8d135d54e846c3f8d86d80202c29de67b724f"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuP99DefaultOrbitStage.h",
+      "blob": "c9df250b824011656179298b247fcac78d2ada2a"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuP99MusicalVocalDepth.h",
+      "blob": "d8542d7aa333d689eea9637fc9f5f122c468277a"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuProductAdmission.h",
+      "blob": "8401e75980e0898ee4f0a580ecc15fc3e514e55f"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuRoomMaterials.h",
+      "blob": "99b00bb23b72e64786cf2dd4306ccb1d97c4fb5e"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuSourcePlacement3D.h",
+      "blob": "9afb959bed292626c3097c2a382208ce8798e90c"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuSpatialCore.h",
+      "blob": "f9fdcdec933bc62710bdb84fa44c0830bdc16868"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuStereoIntegrity.h",
+      "blob": "aa708ffc8834d0981bad63ae854d4b049493f29b"
+    },
+    {
+      "path": "engine/builtin_fx/sonku/SonKuVerticalImageSource.h",
+      "blob": "07eed7cb715d4aabebfffc317aade549c9617a47"
+    },
+    {
+      "path": "engine/builtin_fx/SonKuSpatialProcessor.h",
+      "blob": "6f0bfc3cfe7a68eaa71084bd64ea03fe7c1ba587"
+    }
+  ]
+}
