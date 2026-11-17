@@ -97,7 +97,8 @@ class ImerSipP92Contract(unittest.TestCase):
             "engine/builtin_fx/ImerSipP92VisualSkin.h"))
         self.assertIn('g.drawText("FX UNAVAILABLE"',source(
             "engine/builtin_fx/ImerSipP92VisualSkin.h"))
-        self.assertIn('savePowerFrame("LEASE_UNAVAILABLE")',native)
+        self.assertIn('savePowerFrame("LEASE_UNAVAILABLE")',source(
+            "tests/imersip_p92_native_test.cpp"))
         skin=source("engine/builtin_fx/ImerSipP92VisualSkin.h")
         native=source("tests/imersip_p92_native_test.cpp")
         self.assertIn('g.drawText("BYPASSED"',skin)
