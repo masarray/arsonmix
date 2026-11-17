@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
+// CI ACCEPTANCE FIXTURE ONLY — THIS DRAFT PR MUST NEVER MERGE.
 #include <juce_core/juce_core.h>
 
 namespace armix::startup {
