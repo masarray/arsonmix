@@ -785,6 +785,15 @@ int main() {
     hostAvailable=false;
     actualEditor->synchronizeHostPower();
     assert(!power->isEnabled() && !power->getToggleState());
+    assert(power->getTooltip().contains("unavailable"));
+    const auto unavailableFrame=savePowerFrame("LEASE_UNAVAILABLE");
+    // A lost native processor lease must never look like an active
+    // concert scene or an intentionally bypassed FX. It must remain
+    // visually distinct from both, with no stale clickable Power.
+    assert(unavailableFrame.getPixelAt(85,92)!=activeFrame.getPixelAt(85,92));
+    assert(unavailableFrame.getPixelAt(450,195)!=bypassFrame.getPixelAt(450,195));
+    const auto offlineCaption=unavailableFrame.getPixelAt(460,253);
+    (void)offlineCaption;
     hostAvailable=true;
     actualEditor->synchronizeHostPower();
     assert(power->isEnabled() && power->getToggleState());

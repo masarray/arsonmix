@@ -63,6 +63,40 @@ an unapproved headphone voicing.
    jobs, and publish user-facing downloads only after all gates above.
    This integration PR does **not** trigger or enable a public release.
 
+## Exact-commit release-candidate progress
+
+- Commit `15ec57da680ac58ce1ce2cf343d5a69716c5e126` completed
+  six matching GitHub workflows: focused Windows native JUCE GUI/PCM +
+  field portable, Win32 editor reopen, Chromium UI smoke, preset tests,
+  player contracts and AUTO PR0. The portable archive and native DPI
+  captures are **FAT artifacts, not an approved public installer**.
+- The Windows EXE SHA-256 verified by the focused job was
+  `4db578828a974427d1d7550c3e7e0a0a87e8bd503bdf170f83613dc7c21202cb`.
+  This is exact `15ec57da` evidence, NOT the checksum of a later commit.
+- A further RC-only UX change explicitly distinguishes a retired host
+  processor lease from both bypass and ON; the new native screenshot
+  probe runs alongside accepted slot/rack/global bypass and native
+  audio ACK tests.
+- For every subsequent RC commit, the focused Windows FAT will upload
+  the verified RC first, then **reconfigure the same Windows tree**
+  with all isolated SonKu experimental options OFF and
+  `ARMIX_IMMERSIB_RELEASE_CANDIDATE=OFF`, preserving the accepted
+  `ARMIX_SONKU_APPROVED_P99_MAIN=ON`. It must build the actual public
+  `ARMixConsole` and pass the original SonKu state/ACK test.
+  This never packages the default-OFF binary as the ON candidate.
+- The current alpha release publisher uses standard default CMake
+  flags. It would therefore omit ImmerSIB even if the integration
+  branch were merged, until an explicit reviewed release promotion
+  changes that build configuration. **Do not claim ImmerSIB publicly
+  shipped based on a green prerelease from the default-off workflow**.
+- Required operator approvals remain physical Windows/ASIO/Rack/Global
+  persistence and matched-loudness headphone A/B of vocal, kick/bass,
+  lateral treble, room distance and Concert Front Row XL versus the
+  user-approved SonKu P9.9. Synthetic DSP numbers cannot replace that.
+  The 1.1–2.5m versus historical 1–4m user target and migration
+  clamping policy are intentionally unchanged pending compatibility
+  acceptance; neither should be silently altered in a public binary.
+
 ## Rollback
 
 If any gate regresses, disable `ARMIX_IMMERSIB_RELEASE_CANDIDATE`

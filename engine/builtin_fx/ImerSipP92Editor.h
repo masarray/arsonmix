@@ -164,6 +164,8 @@ public:
         skin_.drawScene(g,visualSceneId_);
         if(hostBypassed_.value_or(false))
             skin_.drawBypassedVenueOverlay(g);
+        else if(hostLeaseWasValid_ && !hostBypassed_.has_value())
+            skin_.drawUnavailableVenueOverlay(g);
 
         // No second header: the native plugin window already owns its title.
         // Preserve the venue art's full 1100x461 scene viewport.
@@ -211,7 +213,8 @@ public:
         // controls visibly recede, without losing label legibility.
         // Exclude FX Power so the host-authoritative toggle remains
         // crisp, keyboard/mouse accessible and visually actionable.
-        if(!hostBypassed_.value_or(false))return;
+        if(!hostBypassed_.value_or(false) &&
+           !(hostLeaseWasValid_ && !hostBypassed_.has_value()))return;
         juce::Graphics::ScopedSaveState saved(g);
         const auto panelTop=juce::roundToInt(461.f*compactScale);
         const auto panel=juce::Rectangle<int>(
@@ -324,8 +327,10 @@ private:
         // 25 times/second when no physical lease exists.
         const bool changed=(valid!=hostBypassed_.has_value()) ||
                            (valid && *hostBypassed_!=bypassed);
-        if(valid)hostBypassed_=bypassed;
-        else hostBypassed_.reset();
+        if(valid) {
+            hostLeaseWasValid_=true;
+            hostBypassed_=bypassed;
+        } else hostBypassed_.reset();
         power_.setEnabled(enabled);
         power_.setToggleState(valid && !bypassed,juce::dontSendNotification);
         power_.setTooltip(!valid?"FX instance unavailable - reopen from rack":
@@ -374,6 +379,7 @@ private:
     std::function<bool(bool)> requestBypass_;
     std::function<HostBypassState()> readHostPower_;
     std::optional<bool> hostBypassed_{}; // UI cache of actual host readback only
+    bool hostLeaseWasValid_=false; // stale-lease UI only; never audio authority
 
     armix::sonku::Settings deferred_{};
     std::uint64_t pending_=0;

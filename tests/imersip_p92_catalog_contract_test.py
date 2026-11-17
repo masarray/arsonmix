@@ -91,6 +91,13 @@ class ImerSipP92Contract(unittest.TestCase):
         self.assertIn("paintOverChildren(juce::Graphics& g) override",ui)
         self.assertIn("g.excludeClipRegion(power_.getBounds())",ui)
         self.assertIn("skin_.drawBypassedVenueOverlay(g)",ui)
+        self.assertIn("skin_.drawUnavailableVenueOverlay(g)",ui)
+        self.assertIn("hostLeaseWasValid_",ui)
+        self.assertIn("drawUnavailableVenueOverlay",source(
+            "engine/builtin_fx/ImerSipP92VisualSkin.h"))
+        self.assertIn('g.drawText("FX UNAVAILABLE"',source(
+            "engine/builtin_fx/ImerSipP92VisualSkin.h"))
+        self.assertIn('savePowerFrame("LEASE_UNAVAILABLE")',native)
         skin=source("engine/builtin_fx/ImerSipP92VisualSkin.h")
         native=source("tests/imersip_p92_native_test.cpp")
         self.assertIn('g.drawText("BYPASSED"',skin)

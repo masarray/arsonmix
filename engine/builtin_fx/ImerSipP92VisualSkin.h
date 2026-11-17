@@ -83,6 +83,23 @@ public:
         g.setColour(juce::Colour(0xeeffa53c)); // vivid translucent amber
         g.drawText("BYPASSED",label,juce::Justification::centred,false);
     }
+    void drawUnavailableVenueOverlay(juce::Graphics& g) const {
+        // A retired processor lease is neither FX ON nor an accepted
+        // BYPASSED state. Its last concert scene remains a recognisable
+        // photograph, but the host readback is explicitly unavailable.
+        g.setColour(juce::Colour(0xc003060a));
+        g.fillRect(0,0,1100,461);
+        auto headline=juce::Font(juce::FontOptions(49.f));
+        headline.setExtraKerningFactor(0.035f);
+        g.setFont(headline);
+        g.setColour(juce::Colour(0xffd0dce1));
+        g.drawText("FX UNAVAILABLE",110,166,880,100,
+                   juce::Justification::centred,false);
+        g.setFont(juce::FontOptions(20.f));
+        g.setColour(juce::Colour(0xff87b8bc));
+        g.drawText("REOPEN FROM FX RACK",110,267,880,45,
+                   juce::Justification::centred,false);
+    }
     void drawPanel(juce::Graphics& g) const {
         // Premium restraint: one exact flat matte charcoal surface,
         // no image texture, gloss, neon edges, bolts, segment borders,

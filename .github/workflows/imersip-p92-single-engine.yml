@@ -216,3 +216,56 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
+
+      - name: Recompile default public SonKu P9.9 profile with ImmerSIB RC OFF
+        shell: pwsh
+        run: |
+          # Reuse the same Windows checkout and build tree AFTER RC artifact
+          # upload. This proves default/public build compatibility without
+          # allocating a second Windows runner or changing the RC package.
+          $sourceSha = (& git rev-parse HEAD).Trim()
+          $candidate = Get-Content -LiteralPath dist/BUILD_PROVENANCE.json -Raw -Encoding UTF8 | ConvertFrom-Json
+          if ($candidate.sourceCommit -ne $sourceSha) {
+            throw 'PUBLIC_PROFILE_CANDIDATE_SOURCE_MISMATCH'
+          }
+          $cmakeText = Get-Content -LiteralPath CMakeLists.txt -Raw -Encoding UTF8
+          $flags = @([regex]::Matches($cmakeText, '(?m)^\s*option\((ARMIX_SONKU_EXPERIMENTAL_[A-Z0-9_]+)') |
+              ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+          if ($flags.Count -lt 10) { throw 'PUBLIC_PROFILE_RESEARCH_OPTION_AUDIT_INCOMPLETE' }
+          $args = @('-S','.','-B','build','-DARMIX_IMMERSIB_RELEASE_CANDIDATE=OFF')
+          foreach ($flag in $flags) { $args += "-D${flag}=OFF" }
+          & cmake @args
+          if ($LASTEXITCODE -ne 0) { throw 'PUBLIC_PROFILE_CMAKE_CONFIGURE_FAILED' }
+          $cache = Get-Content -LiteralPath build/CMakeCache.txt -Raw -Encoding UTF8
+          if ($cache -notmatch '(?m)^ARMIX_IMMERSIB_RELEASE_CANDIDATE:BOOL=OFF$' -or
+              $cache -notmatch '(?m)^ARMIX_SONKU_APPROVED_P99_MAIN:BOOL=ON$') {
+            throw 'PUBLIC_PROFILE_OPTION_MISMATCH'
+          }
+          foreach ($flag in $flags) {
+            if ($cache -notmatch "(?m)^$([regex]::Escape($flag)):BOOL=OFF$") {
+              throw "PUBLIC_PROFILE_RESEARCH_FLAG_ENABLED: $flag"
+            }
+          }
+          $catalog = (& ctest --test-dir build -C Release --show-only=json-v1 | Out-String | ConvertFrom-Json)
+          if ($LASTEXITCODE -ne 0) { throw 'PUBLIC_PROFILE_CTEST_CATALOG_FAILED' }
+          $tests = @($catalog.tests | ForEach-Object { $_.name })
+          if ('NativeImmerSIBJucePresetACKStateAndBypass' -in $tests) {
+            throw 'PUBLIC_PROFILE_IMMERSIB_TEST_STILL_REGISTERED'
+          }
+          if ('NativeSonKuSessionV1V2AndAudioAppliedAck' -notin $tests) {
+            throw 'PUBLIC_PROFILE_SONKU_REGRESSION_MISSING'
+          }
+          & cmake --build build --config Release --parallel 2 --target ARMixConsole ARMixSonKuNativeStateTests
+          if ($LASTEXITCODE -ne 0) { throw 'PUBLIC_PROFILE_WINDOWS_BUILD_FAILED' }
+          & ctest --test-dir build -C Release --output-on-failure -R '^NativeSonKuSessionV1V2AndAudioAppliedAck$'
+          if ($LASTEXITCODE -ne 0) { throw 'PUBLIC_PROFILE_SONKU_STATE_REGRESSION' }
+          $exe = 'build/ARMixConsole_artefacts/Release/AR MIX Studio.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+            throw 'PUBLIC_PROFILE_WINDOWS_GUI_MISSING'
+          }
+          $publicSha = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($publicSha -eq $candidate.exeSha256) {
+            throw 'PUBLIC_PROFILE_SAME_BINARY_AS_IMMERSIB_RC'
+          }
+          Write-Host "PUBLIC_PROFILE_RC_OFF_BUILD_ACCEPTED: source=$sourceSha exeSha256=$publicSha"
+          Write-Host 'RC PACKAGE UNCHANGED: verified artifact uploaded before public-profile recompile'
