@@ -1,6 +1,8 @@
 """Strict offline release-catalog fixtures; never query GitHub in tests."""
 import importlib.util
+import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -147,6 +149,18 @@ class ReleaseCatalogContract(unittest.TestCase):
             mod.hydrate_landing(html.replace('data-platform="windows"', 'data-platform="obsolete"'),
                                     mod.catalog([]))
 
+
+
+    def test_publisher_does_not_replace_last_good_site_with_empty_catalog(self):
+        with tempfile.TemporaryDirectory() as folder:
+            fixture = Path(folder) / "releases.json"
+            output = Path(folder) / "site" / "release-catalog.json"
+            fixture.write_text("[]", encoding="utf-8")
+            with patch("sys.argv", ["build_release_catalog.py", "--fixture", str(fixture),
+                                    "--output", str(output)]):
+                with self.assertRaisesRegex(ValueError, "No verified published"):
+                    mod.main()
+            self.assertFalse(output.exists())
 
 
 if __name__ == "__main__":
