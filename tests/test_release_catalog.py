@@ -110,5 +110,44 @@ class ReleaseCatalogContract(unittest.TestCase):
         self.assertTrue(chosen["name"].endswith("Windows-x64-Setup.exe"))
 
 
+    def test_build_time_landing_cards_use_exact_verified_catalog(self):
+        html = (ROOT / "site/index.html").read_text("utf-8")
+        older = release("v0.5.0-alpha.5", suffixes=[
+            ("Linux-x86_64.tar.gz", "LINUX_PROVENANCE.json"),
+            ("macOS-universal.dmg", "MACOS_PROVENANCE.json")])
+        newer = release("v0.5.0-alpha.26", suffixes=[
+            ("Windows-x64-Setup.zip", "INSTALLER_PROVENANCE.json")])
+        selected = mod.catalog([older, newer])
+        rendered = mod.hydrate_landing(html, selected)
+        self.assertIn("Windows v0.5.0-alpha.26", rendered)
+        self.assertIn("Linux v0.5.0-alpha.5", rendered)
+        self.assertIn("macOS v0.5.0-alpha.5", rendered)
+        self.assertEqual(rendered.count("data-release-sha256="), 3)
+        self.assertEqual(rendered.count('class="os-card is-available"'), 3)
+        self.assertEqual(rendered.count("https://github.com/masarray/arsonmix/releases/download/"), 3)
+        self.assertIn("data-link-label>Download installer ZIP", rendered)
+        self.assertNotIn("NOT PUBLISHED", rendered)
+        self.assertNotIn("Native Linux release is not yet published", rendered)
+        self.assertEqual(html.count('data-platform="'), 3)
+        self.assertNotIn("releases/download/", html, "Do not hardcode links in editable source")
+
+    def test_build_time_landing_rejects_tampered_or_missing_platform_assets(self):
+        html = (ROOT / "site/index.html").read_text("utf-8")
+        approved = mod.catalog([release("v0.5.0-alpha.26")])
+        rendered = mod.hydrate_landing(html, approved)
+        self.assertEqual(rendered.count("data-release-sha256="), 1)
+        self.assertEqual(rendered.count('data-release-link href="#download"'), 2)
+        self.assertIn("CHECKING", rendered)
+        approved["platforms"]["windows"]["url"] = "https://attacker.invalid/Setup.exe"
+        with self.assertRaisesRegex(ValueError, "Unverified download"):
+            mod.hydrate_landing(html, approved)
+        with self.assertRaisesRegex(ValueError, "Incomplete platform catalog"):
+            mod.hydrate_landing(html, {"schemaVersion": 1, "platforms": {"windows": None}})
+        with self.assertRaisesRegex(ValueError, "exactly one source card"):
+            mod.hydrate_landing(html.replace('data-platform="windows"', 'data-platform="obsolete"'),
+                                    mod.catalog([]))
+
+
+
 if __name__ == "__main__":
     unittest.main()
