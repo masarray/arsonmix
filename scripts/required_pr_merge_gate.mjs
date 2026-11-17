@@ -48,7 +48,8 @@ export function requiredLanes(files) {
     (f.startsWith("tests/")&&f.endsWith(".py")&&
      !["tests/test_platform_portability.py","tests/test_release_catalog.py",
        "tests/test_release_setup_zip.py"].includes(f))||
-    ["scripts/build_pages.py",".github/workflows/ui-smoke.yml"].includes(f));
+    ["scripts/build_pages.py","scripts/build_ui_css.py",
+     ".github/workflows/ui-smoke.yml"].includes(f));
   // Match release-contracts.yml path triggers (not arbitrary installer/
   // or factory lock files, which would wait forever for a workflow that
   // does not run). The independent native gate covers other factory assets.
