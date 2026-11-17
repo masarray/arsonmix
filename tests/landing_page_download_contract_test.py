@@ -1,5 +1,6 @@
 """Landing product/download contract: no fictitious installers or secondary GUI."""
 from pathlib import Path
+import json
 import re
 import sys
 import unittest
@@ -24,7 +25,23 @@ class LandingReleaseContract(unittest.TestCase):
             self.assertIn("media/console-routing.jpg", html)
             self.assertIn("media/console-faders.jpg", html)
             self.assertIn("prefers-reduced-motion", css)
-            self.assertNotIn("https://github.com", html)  # Never navigate to GitHub UI.
+            if base == ROOT / "site":
+                self.assertNotIn("https://github.com", html)  # No source-pinned downloads.
+            else:
+                # The deployed HTML has direct asset URLs from the exact same
+                # validated catalog, for offline/JS-blocked progressive download.
+                data = json.loads((DIST / "release-catalog.json").read_text("utf-8"))
+                available = [v for v in data["platforms"].values() if v is not None]
+                self.assertEqual(
+                    html.count("https://github.com/masarray/arsonmix/releases/download/"),
+                    len(available), "No extra or missing server-rendered download links")
+                for entry in available:
+                    self.assertIn('href="' + entry["url"] + '"', html)
+                    self.assertIn('data-release-tag="' + entry["tag"] + '"', html)
+                    self.assertIn('data-release-sha256="' + entry["sha256"] + '"', html)
+                self.assertNotIn("https://github.com/masarray/arsonmix/releases/tag/", html)
+                self.assertEqual(html.count('class="os-card is-available"'),
+                                 len(available))
             self.assertIn('href="./LICENSE.txt"', html)
             self.assertIn("release-catalog.json", js)
             self.assertIn("https://api.github.com/repos/masarray/arsonmix/releases?per_page=40", js)
@@ -84,6 +101,11 @@ class LandingReleaseContract(unittest.TestCase):
             self.assertIn(tag + "-" + suffix if suffix != "SHA256SUMS.txt" else suffix, readme)
         self.assertIn("ImmerSIB", readme)
         self.assertIn("8D-SonKu P9.9", readme)
+        notes = (ROOT / "docs" / "releases" / (tag + ".md")).read_text("utf-8")
+        self.assertNotRegex(notes, r"This note does not claim .* artifacts already exist",
+                            "Latest published release must not retain prepublication copy")
+        self.assertIn("Published release", notes,
+                      "Latest publicly downloaded tag must have a post-publication release note")
 
     def test_release_notes_are_safe_landing_only_changes(self):
         # Changelogs must not silently suppress the Pages update when a
