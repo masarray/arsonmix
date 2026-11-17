@@ -88,6 +88,122 @@
       "None · internal WIRE remains unchanged";
     return {match,state,value,marker,title};
   }
+
+  // Device Setup UI transaction: pure presentation only. The native
+  // coordinator remains the sole device apply/rollback and output authority.
+  // Never treat a successful ACK as installed hardware readback.
+  function setupInitial() {
+    return {phase:"IDLE",pending:null,message:"",remapGeneration:null};
+  }
+  function setupBegin(state,{inventory,draft,requestId,baselineEpoch=null,
+                             confirmRetainedPinMapping=false,assignMain=false}) {
+    if(state.pending||!inventory?.active||!draft||
+       typeof requestId!=="string"||!requestId||requestId.length>64)return null;
+    const active=inventory.active;
+    const generation=active.deviceGeneration;
+    if(!Number.isSafeInteger(generation)||generation<0)return null;
+    const type=inventory.types?.find(x=>x.name===draft.backend);
+    if(!type||!draft.backend||!draft.playback||
+       !type.outputs?.includes(draft.playback)||
+       (!type.separate&&!type.inputs?.includes(draft.capture))||
+       (type.separate&&draft.capture&&!type.inputs?.includes(draft.capture))||
+       (!type.separate&&draft.capture!==draft.playback))return null;
+    const same=active.open===true&&active.backend===draft.backend&&
+      active.captureDevice===draft.capture&&
+      active.playbackDevice===draft.playback;
+    if(confirmRetainedPinMapping &&
+       (!same||state.remapGeneration!==generation))return null;
+    if(assignMain&&(!same||draft.outputPins?.length!==2))return null;
+    const rate=confirmRetainedPinMapping?active.rate:same?draft.rate:0;
+    const buffer=confirmRetainedPinMapping?active.buffer:same?draft.buffer:0;
+    const request={action:"audioDeviceApply",requestId,
+      expectedDeviceGeneration:generation,
+      config:{backend:draft.backend,captureDevice:draft.capture,
+        playbackDevice:draft.playback,sampleRate:rate,bufferSize:buffer,
+        enabledInputs:same?draft.inputPins:[],
+        enabledOutputs:same?draft.outputPins:[],
+        ...(confirmRetainedPinMapping?{confirmRetainedPinMapping:true}:{}),
+        ...(assignMain?{assignSelectedPlaybackPinsToMain:true}:{})}};
+    const pending={requestId,baselineEpoch:
+      typeof baselineEpoch==="string"&&/^(0|[1-9]\d*)$/.test(baselineEpoch)?
+        baselineEpoch:null,ack:null};
+    return {request,state:{phase:"APPLYING",pending,message:"",
+      remapGeneration:null}};
+  }
+  function setupAck(state,ack) {
+    if(!state.pending||ack?.requestId!==state.pending.requestId)return state;
+    const active=ack.active;
+    const accepted=ack.ok===true &&
+      (ack.state==="ACCEPTED_LIVE"||ack.state==="ACCEPTED_MUTED") &&
+      active?.open===true&&active.authorized===true&&
+      Number.isSafeInteger(active.deviceGeneration)&&
+      Array.isArray(active.enabledInputs)&&Array.isArray(active.enabledOutputs)&&
+      active.enabledOutputs.length>=2&&
+      Number.isFinite(active.rate)&&active.rate>0&&
+      Number.isInteger(active.buffer)&&active.buffer>0;
+    if(accepted)return {...state,phase:"VERIFYING",
+      pending:{...state.pending,ack:{
+        active:{backend:active.backend,captureDevice:active.captureDevice,
+          playbackDevice:active.playbackDevice,rate:active.rate,
+          buffer:active.buffer,enabledInputs:active.enabledInputs.slice(),
+          enabledOutputs:active.enabledOutputs.slice()},
+        mixerBound:ack.mixerBound===true,outputMuted:ack.outputMuted===true}}};
+    const remap=ack.state==="NEEDS_REMAP"&&ack.canReusePins===true&&
+      active?.open===true&&active?.authorized===true&&
+      Number.isSafeInteger(active.deviceGeneration)?
+        active.deviceGeneration:null;
+    return {phase:ack.state==="RECOVERY_REQUIRED"?"RECOVERY_REQUIRED":"REJECTED",
+      pending:null,remapGeneration:remap,
+      message:ack.state==="NEEDS_REMAP"?
+        String(ack.error||"Playback unavailable").replace(/^NEEDS_REMAP:\s*/,""):
+        ack.state==="RESTORED_LIVE"||ack.state==="RESTORED_MUTED"?
+          "New device rejected · Previous device restored":
+          "Device rejected · "+String(ack.error||"native hardware readback failed")};
+  }
+  function setupReadback(state,snapshot) {
+    if(state.phase!=="VERIFYING"||!state.pending?.ack)return state;
+    const d=snapshot?.device,expected=state.pending.ack.active;
+    const epoch=d?.epoch;
+    if(typeof epoch!=="string"||!/^(0|[1-9]\d*)$/.test(epoch))return state;
+    const baseline=state.pending.baselineEpoch;
+    // Old epoch and disconnected/replaced devices may never qualify an ACK.
+    if(baseline!==null&&BigInt(epoch)<BigInt(baseline))
+      return {phase:"STALE",pending:null,remapGeneration:null,
+        message:"Device changed · Refresh Audio I/O before applying again"};
+    if(snapshot?.retained===true ||
+       (d?.sampleRate<=0&&baseline!==null&&BigInt(epoch)>BigInt(baseline)))
+      return {phase:"RECOVERY_REQUIRED",pending:null,remapGeneration:null,
+        message:"Audio device unavailable · Previous mixer settings retained"};
+    if(snapshot?.raw?.schemaVersion!==6||!Array.isArray(d?.enabledInputs)||
+       !Array.isArray(d.enabledOutputs))return state;
+    const equalPins=(a,b)=>Array.isArray(a)&&Array.isArray(b)&&
+      a.length===b.length&&a.every((n,i)=>n===b[i]);
+    const same=d.backend===expected.backend&&
+      d.captureDevice===expected.captureDevice&&
+      d.playbackDevice===expected.playbackDevice&&
+      d.sampleRate===expected.rate&&d.bufferFrames===expected.buffer&&
+      equalPins(d.enabledInputs,expected.enabledInputs)&&
+      equalPins(d.enabledOutputs,expected.enabledOutputs);
+    if(!same)return state; // The driver or graph may still be publishing.
+    if(state.pending.ack.mixerBound && snapshot.admitted!==true)return state;
+    const live=state.pending.ack.outputMuted===false&&
+      snapshot.admitted===true&&snapshot.productLive===true&&
+      d.outputArmed===true;
+    return {phase:"ACCEPTED",pending:null,remapGeneration:null,
+      message:live?"Mixer ready · Output live":
+        state.pending.ack.mixerBound?"Mixer ready · Output muted":
+          "Audio device ready · no hardware input required"};
+  }
+  function setupTimeout(state,requestId) {
+    if(!state.pending||state.pending.requestId!==requestId)return state;
+    return {phase:"TIMEOUT",pending:null,remapGeneration:null,
+      message:"Device verification timed out · Refresh Audio I/O; previous settings not confirmed"};
+  }
+  function setupClearResult(state) {
+    if(state.pending)return state;
+    return {...state,phase:"IDLE",message:"",remapGeneration:null};
+  }
   return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,
-    externalPresentation});
+    externalPresentation,setupInitial,setupBegin,setupAck,setupReadback,
+    setupTimeout,setupClearResult});
 });
