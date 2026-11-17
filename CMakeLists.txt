@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.22)
 project(ARMixConsole VERSION 0.5.0 LANGUAGES C CXX)
-# ImmerSIB is code-integrated but not publicly shipped before headphone FAT.
-# The RC flag is explicit, per-product and leaves accepted SonKu P9.9 intact.
+# ImmerSIB is owner-listening-approved and shipped in Windows public alpha.26.
+# Official Windows releases explicitly enable this per-product flag; ordinary
+# local/research builds default OFF, preserving approved SonKu P9.9 behavior.
 option(ARMIX_IMMERSIB_RELEASE_CANDIDATE
        "Build the integrated ImmerSIB P9.9 audio + JUCE venue UI RC" OFF)
 # Experimental P6 native profile: OFF by default in production/installer.
