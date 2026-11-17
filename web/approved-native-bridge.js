@@ -3859,7 +3859,7 @@
           const matching=logicalView.graph.edges.filter(e=>e.enabled &&
             e.from===from && e.edgeId===edgeId && e.primaryOutput===false);
           const edge=matching.length===1?matching[0]:null;
-          if(!tap||!edge||!canWireTap(op.edgeId,op.sourceId)){
+          if(!tap||!edge||!nativeHooks.canWireTap(op.edgeId,op.sourceId)){
             status("Offline PRE/POST unavailable · select a saved parallel SEND");
             return true;
           }
