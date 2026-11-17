@@ -563,7 +563,17 @@ int main() {
     auto* actualEditor=dynamic_cast<armix::builtin_fx::ImerSipP92Editor*>(
         editor.get());
     assert(actualEditor);
-    bool bypassed=false;
+    bool bypassed=false,rackBypassed=false,globalBypassed=false;
+    bool hostAvailable=true,acceptPower=true;
+    int acceptedLocalPower=0;
+    const auto hostState=[&] {
+        armix::builtin_fx::ImerSipP92Editor::HostBypassState state{};
+        state.valid=hostAvailable;
+        state.slotBypassed=bypassed;
+        state.rackBypassed=rackBypassed;
+        state.globalBypassed=globalBypassed;
+        return state;
+    };
     actualEditor->bindHostPower(
         [&](bool desired) {
             if(!acceptPower)return false;
