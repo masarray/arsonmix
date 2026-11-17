@@ -339,7 +339,7 @@ def audit_p0_pan_center(page, name):
     assert result['farLeft']['value']==-35,(name,'PAN left sign',result)
     for key in ('capture','held','nearRelease','recenter'):
         p=result[key]
-        assert p['value']==0 and p['centered'] and p['label']=='C' and p['text']=='Center',(
+        assert p['value']==0 and p['centered'] and p['label']=='CEN' and p['text']=='Center',(
             name,key,'PAN center detent failed',result)
     assert result['released']['value']==24 and not result['released']['centered'],(
         name,'PAN release threshold failed',result)
