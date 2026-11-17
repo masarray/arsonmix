@@ -2412,6 +2412,9 @@ test("MV-2 Device Setup draft keeps verified output-only selection and never inv
   assert.deepEqual(draft.inputPins,[]);
   assert.deepEqual(draft.outputPins,[0,1]);
   const ui=deviceVM.setupUiModel(inventory,draft,deviceVM.setupInitial());
+  assert.deepEqual(ui.selectedInputPins,[]);
+  assert.deepEqual(ui.selectedOutputPins,[0,1]);
+  assert.match(ui.activeText,/ACTIVE · Windows Audio · 48000 Hz/);
   assert.deepEqual(ui.captureChoices,["","Studio Mic"]);
   assert.deepEqual(ui.rateChoices,["0","48000"]);
   assert.equal(ui.canApply,true);
@@ -2478,6 +2481,16 @@ test("MV-2 pin/rate edits reject phantom endpoints and do not reset native ACK s
     {pinSide:"output",pinIndex:29,checked:true}),pins);
   assert.equal(deviceVM.setupEditDraft(f.inventory,pins,
     {pinSide:"input",pinIndex:-1,checked:true}),pins);
+  const unplugged={...f.inventory,active:{...f.inventory.active,
+    deviceGeneration:20,captureDevice:"Disconnected endpoint"}};
+  assert.equal(deviceVM.setupUiModel(unplugged,pins,
+    deviceVM.setupInitial()).same,false);
+  assert.equal(deviceVM.setupEditDraft(unplugged,pins,
+    {pinSide:"output",pinIndex:2,checked:true}),pins,
+    "old physical pins cannot be retargeted against a new inventory");
+  const vmText=read("web/approved-device-view-model.js");
+  assert.doesNotMatch(vmText,/AudioContext|AudioWorklet|document\\.|window\\.|localStorage/,
+    "pure device selector has no DOM or audio authority");
   assert.equal(deviceVM.setupEditDraft(f.inventory,pins,
     {field:"rate",value:"96000"}),pins);
   const sample=deviceVM.setupEditDraft(f.inventory,pins,

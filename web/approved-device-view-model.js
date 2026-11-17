@@ -196,7 +196,19 @@
     const same=setupSameEndpoint(inventory,draft);
     const active=inventory?.active||{};
     const busy=!!state?.pending;
+    const mainPins=Array.isArray(active.mainOutputs)?active.mainOutputs
+      .map(pin=>active.outputNames?.[pin]).filter(Boolean):[];
+    // Device status is presentation only. Hardware approval remains native.
+    const activeText=state?.message||(active.open?
+      "ACTIVE · "+active.backend+" · "+active.rate+" Hz / "+active.buffer+" samples"+
+      (mainPins.length===2?" · MAIN "+mainPins.join(" / "):""):
+      "No verified audio device. Select a supported input and output.");
+    const selectedPins=(draftPins,enabled)=>Array.isArray(draftPins)?
+      draftPins:Array.isArray(enabled)?enabled:[];
     return {
+      activeText,
+      selectedInputPins:selectedPins(draft?.inputPins,active.enabledInputs),
+      selectedOutputPins:selectedPins(draft?.outputPins,active.enabledOutputs),
       backendChoices:(inventory?.types||[]).map(t=>t.name),
       captureChoices:type?.separate===true?["",...(type.inputs||[])]:
         type?.inputs||[],

@@ -2238,7 +2238,8 @@
             const control=document.createElement("input");
             control.type="checkbox";control.dataset.audioPin=side;
             control.dataset.pinIndex=String(index);
-            control.checked=(deviceChoice[key]||enabled||[]).includes(index);
+            control.checked=(side==="input"?ui.selectedInputPins:
+              ui.selectedOutputPins).includes(index);
             control.disabled=deviceBusy();
             label.append(control,document.createTextNode(String(name)));
             group.appendChild(label);
@@ -2249,12 +2250,7 @@
       }else pins.textContent="Apply this device first to inspect its real enabled pins.";
     }
     const activeText=devicePanel.querySelector("[data-audio-active]");
-    const mainPins=Array.isArray(active.mainOutputs)?active.mainOutputs
-      .map(pin=>active.outputNames?.[pin]).filter(Boolean):[];
-    if(activeText && !deviceBusy())activeText.textContent=deviceState.message||(active.open?
-      "ACTIVE · "+active.backend+" · "+active.rate+" Hz / "+active.buffer+" samples"+
-      (mainPins.length===2?" · MAIN "+mainPins.join(" / "):""):
-      "No verified audio device. Select a supported input and output.");
+    if(activeText && !deviceBusy())activeText.textContent=ui.activeText;
     devicePanel.querySelector("[data-audio-apply]").disabled=!ui.canApply;
     const assignMain=devicePanel.querySelector("[data-audio-main-pins]");
     assignMain.hidden=!ui.canAssignMain;
