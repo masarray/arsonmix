@@ -337,7 +337,8 @@
       beforeInsertCatalogs:Array.isArray(previous?.inserts)?
         previous.inserts.map(fx=>fx.catalogId):null,
       beforeEdges:logicalView.graph.edges.filter(e=>e.from===channelId).map(e=>({
-        edgeId:e.edgeId,to:e.to,primaryOutput:e.primaryOutput,tap:e.tap
+        edgeId:e.edgeId,to:e.to,primaryOutput:e.primaryOutput,tap:e.tap,
+        tapStage:e.tapStage,sendEnabled:e.sendEnabled
       }))};
     backend.emitEvent("arMixLogicalIntent",{
       requestId,workspaceToken:logicalView.workspaceToken,
