@@ -64,7 +64,10 @@ class ImerSipP92Contract(unittest.TestCase):
         self.assertIn("p99::ImmerSIBVocalRoom",core)
         self.assertIn("MusicalVocalDepth donor_",wrapper)
         self.assertIn("ARMIX_IMMERSIB_RELEASE_CANDIDATE",cmake)
-        self.assertIn("publicly shipped before headphone FAT",cmake)
+        self.assertIn("shipped in Windows public alpha.26",cmake)
+        self.assertIn("local/research builds default OFF",cmake)
+        self.assertIn("-DARMIX_IMMERSIB_RELEASE_CANDIDATE=ON",source(
+            ".github/workflows/alpha-preview-publish.yml"))
         self.assertNotIn("readControls()",ui)
         self.assertIn('"Royal Concert Hall"',scene)
         self.assertIn('"Arena Thunder"',scene)
