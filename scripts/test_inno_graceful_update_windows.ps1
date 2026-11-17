@@ -49,6 +49,9 @@ try {
     Assert-Condition ($LASTEXITCODE -eq 0) "Test-only WinForms fixture failed to compile"
     Copy-Item -LiteralPath (Join-Path $root "assets/icon/arsonmix-app.ico") -Destination (Join-Path $stage "arsonmix-app.ico")
     "Test-only installer mechanics fixture" | Set-Content -LiteralPath (Join-Path $stage "README.md")
+    # Match the real Inno source manifest: full third-party legal notices
+    # are required for test fixtures as well as public native bundles.
+    Copy-Item -LiteralPath (Join-Path $root "docs/THIRD_PARTY_8D_SONKU_HRTF.md") -Destination (Join-Path $stage "THIRD_PARTY_8D_SONKU_HRTF.md")
     '{"sourceCommit":"TEST_FIXTURE_ONLY","fatStatus":"NOT_A_PRODUCT"}' | Set-Content -LiteralPath (Join-Path $stage "BUILD_PROVENANCE.json")
     # Contract fixture, NEVER vendor bytes: /VERYSILENT has the optional
     # vendor step skipped in silent mode. This proves ordinary repair/upgrade can
@@ -69,6 +72,10 @@ try {
     Assert-Condition ($first.ExitCode -eq 0) ("First test install exit="+$first.ExitCode)
     $installedExe=Join-Path $install "ArSonMix.exe"
     Assert-Condition (Test-Path -LiteralPath $installedExe -PathType Leaf) "Installed fixture missing"
+    $mitSourceHash=(Get-FileHash -LiteralPath (Join-Path $root "docs/THIRD_PARTY_8D_SONKU_HRTF.md") -Algorithm SHA256).Hash
+    $installedMit=Join-Path $install "THIRD_PARTY_8D_SONKU_HRTF.md"
+    Assert-Condition ((Test-Path -LiteralPath $installedMit -PathType Leaf) -and
+        (Get-FileHash -LiteralPath $installedMit -Algorithm SHA256).Hash -eq $mitSourceHash) "Inno fixture did not install exact MIT KEMAR notice"
     $fixtureHash=(Get-FileHash -LiteralPath (Join-Path $stage "verified-gui.exe") -Algorithm SHA256).Hash
     Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -eq $fixtureHash) "First install changed test executable bytes"
     $userFile=Join-Path $install "user-file.keep"
