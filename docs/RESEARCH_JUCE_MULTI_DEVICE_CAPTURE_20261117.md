@@ -1,7 +1,7 @@
 # Research and Decision Record — Multi-Device Audio Capture, JUCE / ASIO / WASAPI
 
 **Reviewed:** 2026-11-17  
-**Scope:** Windows user-mode audio host for Harmonice / ArSonMix, not a kernel audio driver.  
+**Scope:** Windows user-mode audio host for ArSonMix mixer (Harmonice is a separate built-in harmony plugin), not a kernel audio driver. Full independent multi-output design and MVVM analysis: [draft PR #763](https://github.com/masarray/arsonmix/pull/763).  
 **Source audit:** `masarray/arsonmix main@07cbb521fcbc173c7769001c89f321a88cd9db31` and upstream `juce-framework/JUCE tag 8.0.15` (source not only newer JUCE master).
 
 ## 1. Summary: what is fact, what remains a hypothesis
