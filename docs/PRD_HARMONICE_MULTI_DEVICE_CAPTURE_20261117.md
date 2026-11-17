@@ -1,10 +1,11 @@
-# PRD — Harmonice / ArSonMix Multi-Device Input Capture (Windows, JUCE)
+# PRD — ArSonMix Multi-Device Input Capture (Windows, JUCE)
 
 **Date:** 2026-11-17  
 **Status:** PROPOSED / architectural product contract; **not implemented or physically qualified**  
 **Audited baseline:** `main@07cbb521fcbc173c7769001c89f321a88cd9db31`  
+**Full I/O redesign (2026-11-18):** [draft PR #763](https://github.com/masarray/arsonmix/pull/763) adds independent output sinks and MVVM feasibility; this input-only PR remains narrower.  
 **Companion:** [ARD](ARD_HARMONICE_MULTI_DEVICE_CAPTURE_20261117.md) · [Research](RESEARCH_JUCE_MULTI_DEVICE_CAPTURE_20261117.md) · [Architecture map](architecture/README.md)  
-**Product name:** Harmonice (repository: ArSonMix). **Initial release target:** Windows. Other platforms require separate platform designs and tests.
+**Product:** ArSonMix mixer. Harmonice is the separate built-in harmony plugin. The historical filename is retained for incoming links. **Initial release target:** Windows. Other platforms require separate platform designs and tests.
 
 ## 1. Problem and measurable outcome
 
