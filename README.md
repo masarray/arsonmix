@@ -16,29 +16,30 @@
 
 **[Download the latest verified ArSonMix release](https://masarray.github.io/arsonmix/#download)** from the official landing page and choose your operating system. The Windows card always selects the newest verified public Windows installer; on Windows 10/11 x64, click **Download installer ZIP**, extract it, then run Setup. No GitHub account or visit to the GitHub Releases UI is needed.
 
-**Latest published Windows alpha as of 13 November 2026:** [v0.5.0-alpha.23 — Download installer ZIP](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.23/ArSonMix-v0.5.0-alpha.23-Windows-x64-Setup.zip) · [portable ZIP](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.23/ArSonMix-v0.5.0-alpha.23-Windows-x64-Portable.zip) · [SHA-256 checksums](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.23/SHA256SUMS.txt). These are pinned alpha.23 links; for any newer release, use the version-aware official download page above.
+**Latest published Windows alpha as of 17 November 2026:** [v0.5.0-alpha.24 — Download installer ZIP](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.24/ArSonMix-v0.5.0-alpha.24-Windows-x64-Setup.zip) · [portable ZIP](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.24/ArSonMix-v0.5.0-alpha.24-Windows-x64-Portable.zip) · [SHA-256 checksums](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.24/SHA256SUMS.txt) · [release notes](docs/releases/v0.5.0-alpha.24.md). These are pinned alpha.24 links; the official landing page resolves newer verified releases automatically.
 
 The download cards show the newest verified package available for each platform, including its version and size. Windows previews are published independently of Linux and macOS builds, so their version numbers may differ.
 
 ### What is included in the current Windows alpha
 
-- **8D-SonKu:** binaural 360° orbit with a transparent rear-view listener, depth-aware FRONT/REAR speakers and native SPACE controls. The PNG animation is visual feedback; the JUCE engine renders the audio.
+- **8D-SonKu P9.9:** the approved binaural 360° orbit, depth-aware FRONT/REAR perspective and native SPACE controls. The animation is visual feedback; one native JUCE PCM engine renders audio, with SonKu settings isolated from ImmerSIB-only scene tuning.
+- **ImmerSIB:** seven concert/venue scenes, including Live Concert, Velvet Cinema and Concert Front Row XL, in a compact native JUCE editor. Factory scenes, genuine Power/bypass state, audio-applied setting ACK, 1.1–2.5 m source distance and Early Room up to 180% are included in alpha.24.
 - **Vocal Delay:** native phrase-aware delay, formerly displayed as Vocal Throw. Existing `.smix` sessions and presets retain the compatible internal plugin identity.
 - **Harmonice, Guitar FX, EQ & Compressor:** native effects with dedicated GUI controls, alongside supported VST3 parameter hotkeys and built-in user presets.
 - **Live mixer & WIRE:** input channels, MAIN/BUS routing, gain, PRE/POST sends, mute/solo and Save/Open `.smix` sessions. ArSon Player remains part of the console workflow.
 
-Only features merged into the released source are listed; in-progress PRs such as the experimental Guitar FX visual redesign and LMS editor are **not** included. See the [alpha.23 release notes](docs/releases/v0.5.0-alpha.23.md) for scope and limitations.
+Only features included in the published alpha.24 source tag are described as released; unmerged Guitar FX redesign or other experimental branches are **not** shipped. See the [alpha.24 release notes](docs/releases/v0.5.0-alpha.24.md) for scope, source-distance migration behavior and testing limitations.
 
 ## Get started
 
 1. Download the Windows installer ZIP from the [official landing page](https://masarray.github.io/arsonmix/#download), extract it, run Setup, and start ArSonMix. A supported audio driver and Windows WebView2 runtime may be required.
 2. Open the audio setup and choose the actual device/pins for listening. The mixer can be edited without hardware, but it can only output sound through a valid live audio device graph.
-3. Use channel controls, FX and WIRE in the [approved console](https://masarray.github.io/arsonmix/preview/). Save/Open `.smix` sessions for your work. Start testing at safe headphone/speaker volume.
+3. Use channel controls, FX and WIRE in the [approved console](https://masarray.github.io/arsonmix/preview/); use the installed Windows app for real 8D-SonKu and ImmerSIB audio. Save/Open `.smix` sessions for your work. Start testing at safe headphone/speaker volume.
 4. Report reproducible driver, WIRE, VST3, session or dropout problems in [GitHub Issues](https://github.com/masarray/arsonmix/issues), with device type, channel graph, sample rate, buffer size and steps.
 
 ### Field-test limitations
 
-Windows alpha builds are intended for field testing. If you have a 4–8-output ASIO interface and your release includes Multi Out, report your driver version, sample rate, buffer size, and results for routing, mute, and device restart.
+Windows alpha builds are intended for field testing, not certified low-latency monitoring. Compare ImmerSIB's seven scenes and SonKu P9.9 at matched volume on headphones, then test slot/rack/global FX bypass, `.smix` reopen and device reconnect. Back up older ImmerSIB sessions: saved source distances beyond the new 1.1–2.5 m range are clamped on restore. For 4–8-output ASIO interfaces, report driver version, sample rate, buffer size, routing, mute and device restart results.
 
 ## Preview vs real audio
 
