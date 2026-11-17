@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CANONICAL = ROOT / "site" / "preview-v2"
 NATIVE_ADAPTER = ROOT / "web" / "approved-native-bridge.js"
 ADAPTER_MARKER = ('<script defer src="assets/approved-native-contract.js"></script>\n'
+                  '<script defer src="assets/approved-device-view-model.js"></script>\n'
                   '<script defer src="assets/approved-native-bridge.js"></script>\n'
                   '<script defer src="assets/approved-native-context-menu.js"></script>\n'
                   '<script defer src="assets/approved-native-legal.js"></script>\n')
@@ -359,6 +360,8 @@ def stage(out: Path) -> dict:
                      out / "assets" / "approved-native-legal.js")
         shutil.copy2(ROOT / "web" / "approved-native-contract.js",
                      out / "assets" / "approved-native-contract.js")
+        shutil.copy2(ROOT / "web" / "approved-device-view-model.js",
+                     out / "assets" / "approved-device-view-model.js")
         native = native_html(approved.decode("utf-8")).encode("utf-8")
         (out / "index.html").write_bytes(native)
     files = [out / "index.html", *sorted(p for p in (out / "assets").rglob("*") if p.is_file())]
