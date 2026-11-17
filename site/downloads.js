@@ -60,6 +60,26 @@
     return rank(candidate) >= 0 && rank(candidate) < rank(current);
   }
   function emptyCatalog() { return { windows: null, linux: null, macos: null }; }
+  // The published HTML may already contain build-time verified direct links.
+  // Keep those links usable when JavaScript, the catalog request, or the public
+  // GitHub API is temporarily unavailable; never trust unvalidated DOM data.
+  function seededCatalog() {
+    const selected = emptyCatalog();
+    for (const card of cards) {
+      const key = card.dataset.platform;
+      if (!keys.includes(key)) continue;
+      const value = card.dataset;
+      const item = {
+        tag: value.releaseTag, name: value.releaseName,
+        size: Number(value.releaseSize), sha256: value.releaseSha256,
+        url: card.querySelector("[data-release-link]").href,
+        prerelease: value.releasePrerelease === "true",
+        publishedAt: value.releasePublishedAt
+      };
+      if (validAsset(item, key)) selected[key] = item;
+    }
+    return selected;
+  }
   function signedAsset(asset, name, tag, minSize = 1) {
     return asset && asset.name === name && asset.state === "uploaded"
       && Number.isSafeInteger(asset.size) && asset.size >= minSize
@@ -137,7 +157,8 @@
       : "Downloads are being prepared. Explore the mixer in your browser.";
   }
   async function load() {
-    let selected = emptyCatalog(), hasStatic = false;
+    let selected = seededCatalog();
+    let hasStatic = keys.some(key => validAsset(selected[key], key));
     try {
       const response = await fetch("./release-catalog.json", { cache: "no-store" });
       if (!response.ok) throw Error("Static catalog unavailable");
@@ -145,7 +166,8 @@
       if (!data || data.schemaVersion !== 1 || !data.platforms
           || typeof data.platforms !== "object") throw Error("Invalid catalog");
       for (const key of keys)
-        if (validAsset(data.platforms[key], key)) selected[key] = data.platforms[key];
+        if (isPreferred(data.platforms[key], selected[key], key))
+          selected[key] = data.platforms[key];
       hasStatic = true;
     } catch { /* Recover from public GitHub Releases if Pages is stale/offline. */ }
     render(selected, "static");
@@ -165,6 +187,5 @@
         summary.textContent = "Downloads are temporarily unavailable. Please try again.";
     }
   }
-  cards.forEach(card => unavailable(card));
   load();
 })();

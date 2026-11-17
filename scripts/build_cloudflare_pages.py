@@ -17,7 +17,7 @@ import sys
 import urllib.error
 from pathlib import Path
 
-from build_release_catalog import catalog, download_releases
+from build_release_catalog import catalog, download_releases, hydrate_landing_file
 from pages_public_origin import normalize_public_url
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,16 +46,17 @@ def response_headers(branch):
 
 
 def write_catalog(path, fetch=download_releases):
-    # Use GitHub Releases metadata exactly like the existing Pages builder.
-    # Failure to fetch must never create counterfeit binaries or stale URLs.
+    # A temporary GitHub API outage must NOT redeploy an empty catalog over
+    # the last good Cloudflare production site. Fail the build instead.
     try:
         releases = fetch()
     except (OSError, urllib.error.URLError) as exc:
-        print("ARSONMIX_RELEASE_API_UNAVAILABLE:", str(exc),
-              "(empty verified catalog; browser has read-only live fallback)",
-              file=sys.stderr)
-        releases = []
+        raise RuntimeError(
+            "Release API unavailable: preserve the existing verified Cloudflare deployment"
+        ) from exc
     verified = catalog(releases)
+    if not any(verified["platforms"].values()):
+        raise ValueError("No verified published assets; preserve existing deployment")
     path.write_text(json.dumps(verified, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print("ARSONMIX_VERIFIED_RELEASES",
           " ".join(k + "=" + (v["tag"] if v else "none")
@@ -78,7 +79,8 @@ def main():
     run("scripts/build_pages.py", "--out", str(OUT),
         "--sha", sha, "--branch", branch)
     run("scripts/build_landing_assets.py", str(OUT))
-    write_catalog(OUT / "release-catalog.json")
+    verified = write_catalog(OUT / "release-catalog.json")
+    hydrate_landing_file(OUT / "index.html", verified)
     (OUT / "_headers").write_text(response_headers(branch), encoding="utf-8")
 
     # Same critical contracts as GitHub Pages; no lengthy Windows/Chromium CI.

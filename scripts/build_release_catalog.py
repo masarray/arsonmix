@@ -105,6 +105,105 @@ def catalog(releases):
     return {"schemaVersion": 1, "platforms": selected}
 
 
+
+def hydrate_landing(html_source, verified):
+    """Render verified download cards into deployed HTML, not the editable seed.
+
+    The browser may later choose newer validated assets. This generated
+    snapshot keeps all three OS download links usable without JavaScript and
+    prevents a published package from being described as "NOT PUBLISHED".
+    """
+    from html import escape
+
+    if not isinstance(verified, dict) or verified.get("schemaVersion") != 1:
+        raise ValueError("Invalid verified catalog for landing")
+    platforms = verified.get("platforms")
+    if not isinstance(platforms, dict) or set(platforms) != set(SUFFIXES):
+        raise ValueError("Incomplete platform catalog")
+    rendered = html_source
+    available = []
+    for platform, suffixes in SUFFIXES.items():
+        item = platforms[platform]
+        marker = f'<article class="os-card" data-platform="{platform}">'
+        if rendered.count(marker) != 1:
+            raise ValueError("Landing requires exactly one source card: " + platform)
+        left = rendered.index(marker)
+        right = rendered.find("</article>", left)
+        if right < 0:
+            raise ValueError("Unterminated landing card: " + platform)
+        right += len("</article>")
+        card = rendered[left:right]
+        if item is None:
+            continue  # Unknown remains CHECKING, never a fabricated download.
+        if not isinstance(item, dict):
+            raise ValueError("Malformed verified asset: " + platform)
+        tag, name, url = item.get("tag"), item.get("name"), item.get("url")
+        size, sha = item.get("size"), item.get("sha256")
+        published = item.get("publishedAt")
+        if (not isinstance(tag, str) or not TAG.fullmatch(tag) or
+                not isinstance(name, str) or
+                name not in (f"ArSonMix-{tag}-{suffix}" for suffix in suffixes) or
+                url != f"https://github.com/{REPO}/releases/download/{tag}/{name}" or
+                type(size) is not int or size < 2097152 or
+                not isinstance(sha, str) or not re.fullmatch(r"[a-f0-9]{64}", sha) or
+                type(item.get("prerelease")) is not bool or
+                not isinstance(published, str) or
+                not re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", published)):
+            raise ValueError("Unverified download cannot be embedded: " + platform)
+        attrib = {
+            "release-tag": tag, "release-name": name,
+            "release-size": str(size), "release-sha256": sha,
+            "release-prerelease": str(item["prerelease"]).lower(),
+            "release-published-at": published,
+        }
+        additional = "".join(f' data-{key}="{escape(value, quote=True)}"'
+                             for key, value in attrib.items())
+        card = card.replace('class="os-card"', 'class="os-card is-available"', 1)
+        card = card.replace(f'data-platform="{platform}"',
+                            f'data-platform="{platform}"{additional}', 1)
+        status = "EARLY ACCESS" if item["prerelease"] else "AVAILABLE"
+        label = ("Download installer ZIP" if platform == "windows" and
+                 name.endswith("-Setup.zip") else
+                 "Download Windows installer" if platform == "windows" else
+                 "Download for " + {"linux": "Linux", "macos": "macOS"}[platform])
+        note = (tag + " · " + format(size / 1048576, ".1f") + " MB" +
+                (" · Alpha preview" if item["prerelease"] else "") +
+                (" · Extract ZIP, run Setup" if label == "Download installer ZIP" else ""))
+        changes = [
+            ('data-release-state>CHECKING</span>',
+             'data-release-state>' + status + '</span>'),
+            ('data-release-link href="#download" aria-disabled="true"',
+             'data-release-link href="' + escape(url, quote=True) +
+             '" aria-label="Download verified ' + escape(name, quote=True) + '"'),
+            ('data-link-label>Checking package…</span>',
+             'data-link-label>' + escape(label) + '</span>'),
+            ('data-release-note>Checking the verified release catalog.</div>',
+             'data-release-note>' + escape(note) + '</div>'),
+        ]
+        for old, new in changes:
+            if card.count(old) != 1:
+                raise ValueError("Landing template changed at " + platform + ": " + old)
+            card = card.replace(old, new, 1)
+        rendered = rendered[:left] + card + rendered[right:]
+        available.append((platform, tag))
+    if available:
+        old = 'id="release-summary" class="release-summary" role="status" aria-live="polite">Loading verified releases…'
+        names = {"windows": "Windows", "linux": "Linux", "macos": "macOS"}
+        msg = "Ready to download · " + " · ".join(
+            names[platform] + " " + tag for platform, tag in available)
+        if rendered.count(old) != 1:
+            raise ValueError("Landing release summary marker changed")
+        rendered = rendered.replace(old, old.split(">")[0] + ">" + escape(msg), 1)
+    return rendered
+
+
+def hydrate_landing_file(path, verified):
+    landing = Path(path)
+    landing.write_text(hydrate_landing(landing.read_text(encoding="utf-8"), verified),
+                       encoding="utf-8")
+
+
+
 def download_releases():
     headers = {"Accept": "application/vnd.github+json",
                "User-Agent": "ArSonMix-Pages-Release-Catalog/1"}
@@ -118,12 +217,17 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True)
     parser.add_argument("--fixture", help="Offline fixture for deterministic tests")
+    parser.add_argument("--landing", help="Optional built landing index.html to hydrate using this same verified catalog")
     args = parser.parse_args()
     data = json.loads(Path(args.fixture).read_text("utf-8")) if args.fixture else download_releases()
     approved = catalog(data)
+    if not any(approved["platforms"].values()):
+        raise ValueError("No verified published native assets; preserve the last deployed Pages site")
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(approved, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    if args.landing:
+        hydrate_landing_file(args.landing, approved)
     print("ARSONMIX_RELEASE_CATALOG_VERIFIED " + " ".join(
         key + "=" + (v["tag"] if v else "unavailable") for key, v in approved["platforms"].items()))
 

@@ -41,8 +41,17 @@ function card(platform) {
     querySelector(sel){if(!nodes[sel])throw Error('bad selector '+sel);return nodes[sel];},
     nodes};
 }
-async function render(staticCatalog, releases, failLive=false, failStatic=false) {
+async function render(staticCatalog, releases, failLive=false, failStatic=false, seed=null) {
   const cards=['windows','linux','macos'].map(card),summary=node(),hero=node(),calls=[];
+  if (seed) {
+    const c = cards[0], value = seed;
+    Object.assign(c.dataset, {
+      releaseTag:value.tag, releaseName:value.name, releaseSize:String(value.size),
+      releaseSha256:value.sha256, releasePrerelease:String(value.prerelease),
+      releasePublishedAt:value.publishedAt
+    });
+    c.nodes['[data-release-link]'].href = value.url;
+  }
   hero.href='#download';
   const fetch=async url=>{
     calls.push(url);
@@ -136,3 +145,28 @@ test('alpha.23 Windows Setup ZIP supersedes older static and live releases',asyn
   assert.match(result.summary.textContent,/macOS v0\.5\.0-alpha\.5/);
   assert.equal(result.hero.href,'#download');
 });
+
+test('verified build-time HTML link survives both Pages catalog and GitHub API outages',async()=>{
+  const seeded = local(26,'Windows-x64-Setup.zip');
+  const result = await render(null,[],true,true,seeded);
+  const win = result.cards[0].nodes;
+  assert.equal(win['[data-release-link]'].href,seeded.url);
+  assert.equal(win['[data-link-label]'].textContent,'Download installer ZIP');
+  assert.match(result.summary.textContent,/Windows v0\.5\.0-alpha\.26/);
+  assert.equal(result.hero.href,'#download');
+});
+
+test('older static catalog cannot downgrade server-rendered verified alpha',async()=>{
+  const seeded = local(26,'Windows-x64-Setup.zip');
+  const result = await render(local(25,'Windows-x64-Setup.zip'),[],true,false,seeded);
+  assert.equal(result.cards[0].nodes['[data-release-link]'].href,seeded.url);
+});
+
+test('untrusted HTML seed is ignored rather than becoming a live download',async()=>{
+  const seeded = {...local(26,'Windows-x64-Setup.zip'),
+    url:'https://attacker.invalid/not-a-release.zip'};
+  const result = await render(null,[],true,true,seeded);
+  assert.equal(result.cards[0].nodes['[data-release-link]'].href,undefined);
+  assert.equal(result.cards[0].nodes['[data-release-link]'].attr['aria-disabled'],'true');
+});
+
