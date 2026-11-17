@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "sonku/SonKuSpatialCore.h"
+#include "sonku/SonKuProductAdmission.h"
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH
 #include "sonku/SonKuP99DefaultOrbitStage.h"
 #endif
@@ -446,7 +447,7 @@ public:
         // elevation, and is rejected by ordinary public v2 builds.
         // Never accept a partial or malformed native FX state.
         if(!in.isExhausted())return false;
-        if(!armix::sonku::valid(next))return false;
+        if(!armix::sonku::valid(next)||!admitQueuedScene(next))return false;
         if(ready_&&!core_.setSettings(next))return false;
         accepted_=next;
         return true;
@@ -464,7 +465,9 @@ protected:
     // Product-specific admission is a CONTROL-thread operation; the audio
     // callback still owns the same core, edit queue and applied ACK.
     virtual bool admitQueuedScene(
-        const armix::sonku::Settings&) const noexcept {return true;}
+        const armix::sonku::Settings& next) const noexcept {
+        return armix::sonku::valid8DSonKuInsertSettings(next);
+    }
 
     // Branded insert constructor never borrows SonKu's newly approved
     // ORBIT STAGE default or P9.9 sonic character. A derived product

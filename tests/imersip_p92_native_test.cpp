@@ -6,6 +6,7 @@
 #error ImerSip P9.2 native test requires explicit P9 experimental research
 #endif
 #include "../engine/builtin_fx/ImerSipP92Processor.h"
+#include "../src/SonKuNativeBridgeContract.h"
 #include <cassert>
 #include <limits>
 #include <cmath>
@@ -35,6 +36,73 @@ static juce::MemoryBlock oldImrsV5() {
     }
     assert(bytes.getSize()==52);
     return bytes;
+}
+
+static void sonkuProductIsolation(int rate) {
+    using armix::builtin_fx::SonKuSpatialProcessor;
+    auto sonku=std::make_unique<SonKuSpatialProcessor>();
+    sonku->prepareToPlay(static_cast<double>(rate),128);
+    assert(sonku->isReady());
+    const auto original=sonku->acceptedSettings();
+    assert(armix::sonku::valid8DSonKuInsertSettings(original));
+    // These controls are deliberately valid for the shared ImmerSIB
+    // DSP, but must NEVER be admitted to the ordinary SonKu product.
+    auto near=original;
+    near.sourceDistanceMeters=1.1f;
+    assert(armix::sonku::valid(near));
+    assert(!sonku->queueSettings(near,5101));
+    auto excessiveEarly=original;
+    excessiveEarly.roomAmount=1.7f;
+    assert(armix::sonku::valid(excessiveEarly));
+    assert(!sonku->queueSettings(excessiveEarly,5102));
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+    auto foreignVoicing=original;
+    foreignVoicing.sceneVoicing=4;
+    assert(armix::sonku::valid(foreignVoicing));
+    assert(!sonku->queueSettings(foreignVoicing,5103));
+    armix::sonku::Settings parsed{};
+    const auto foreignJson=
+        armix::builtin_fx::sonku_bridge::acceptedSettings(foreignVoicing);
+    assert(!armix::builtin_fx::sonku_bridge::decodeSettings(
+        foreignJson,parsed));
+#endif
+    assert(sonku->stateSnapshotQuiescent());
+    assert(sonku->acceptedSettings().sourceDistanceMeters==
+           original.sourceDistanceMeters);
+    // Approved P9.9/Signature SonKu still queues, applies and round-trips.
+    assert(sonku->queueSettings(original,5104));
+    juce::AudioBuffer<float> buffer(2,128);
+    juce::MidiBuffer midi;
+    buffer.clear();
+    sonku->processBlock(buffer,midi);
+    SonKuSpatialProcessor::Completion ack{};
+    assert(sonku->pollCompletion(ack) && ack.applied &&
+           ack.requestId==5104);
+    juce::MemoryBlock saved;
+    sonku->getStateInformation(saved);
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+    assert(saved.getSize()==67);
+    auto forgedVoicing=saved;
+    const int imersibOnly=4;
+    std::memcpy(static_cast<std::uint8_t*>(forgedVoicing.getData())+63,
+                &imersibOnly,sizeof(imersibOnly));
+    SonKuSpatialProcessor restored;
+    restored.prepareToPlay(static_cast<double>(rate),128);
+    assert(!restored.restoreUnpublishedState(
+        forgedVoicing.getData(),static_cast<int>(forgedVoicing.getSize())));
+    assert(restored.acceptedSettings().sceneVoicing==original.sceneVoicing);
+    auto forgedEarly=saved;
+    const float imersibEarly=1.7f;
+    std::memcpy(static_cast<std::uint8_t*>(forgedEarly.getData())+38,
+                &imersibEarly,sizeof(imersibEarly));
+    assert(!restored.restoreUnpublishedState(
+        forgedEarly.getData(),static_cast<int>(forgedEarly.getSize())));
+    assert(restored.restoreUnpublishedState(
+        saved.getData(),static_cast<int>(saved.getSize())));
+    assert(restored.acceptedSettings().sceneVoicing==original.sceneVoicing);
+    restored.releaseResources();
+#endif
+    sonku->releaseResources();
 }
 
 static void nativeParity(int rate) {
@@ -773,6 +841,8 @@ int main() {
     }
     editor.reset();
     editorFx->releaseResources();
+    sonkuProductIsolation(44100);
+    sonkuProductIsolation(48000);
     nativeParity(44100);
     nativeParity(48000);
     std::puts("PASS IMERSIP P92 JUCE: exact P9 PCM, 44.1/48k, native state, legacy IMRS, editor, audio ACK");

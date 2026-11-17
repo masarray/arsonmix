@@ -9,6 +9,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 int main(){
     using armix::builtin_fx::SonKuSpatialProcessor;
     SonKuSpatialProcessor live;
@@ -37,6 +38,14 @@ int main(){
     incompatible.getDynamicObject()->setProperty("directElevationDegrees",0.f);
     assert(!decodeSettings(incompatible,decoded));
     assert(decoded.spacePreset==2);
+    // The shared native core accepts 1.1 m for ImmerSIB, but a normal
+    // production SonKu build must reject it at both JS and PCM gates.
+    auto rejectedNear=scene;
+    rejectedNear.sourceDistanceMeters=1.1f;
+    assert(armix::sonku::valid(rejectedNear));
+    assert(!armix::sonku::valid8DSonKuInsertSettings(rejectedNear));
+    assert(!decodeSettings(acceptedSettings(rejectedNear),decoded));
+    assert(!live.queueSettings(rejectedNear,41));
     assert(live.queueSettings(scene,42));
     // Queued does NOT mean accepted; only the actual PCM callback may apply.
     assert(live.acceptedSettings().spacePreset==0);
@@ -55,6 +64,14 @@ int main(){
     juce::MemoryBlock bytes;
     live.getStateInformation(bytes);
     assert(bytes.getSize()==46);
+    auto forgedNear=bytes;
+    const float imersibNear=1.1f;
+    std::memcpy(static_cast<std::uint8_t*>(forgedNear.getData())+34,
+                &imersibNear,sizeof(imersibNear));
+    SonKuSpatialProcessor forbidden;
+    assert(!forbidden.restoreUnpublishedState(
+        forgedNear.getData(),static_cast<int>(forgedNear.getSize())));
+    assert(forbidden.acceptedSettings().sourceDistanceMeters==1.6f);
     SonKuSpatialProcessor restored;
     restored.prepareToPlay(48000.,128);
     assert(restored.preparedReflectionProfile()==live.preparedReflectionProfile());

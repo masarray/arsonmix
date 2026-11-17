@@ -22,7 +22,9 @@
     }
   },
   "imersip": {
-    "activeIntegrationPr": 722,
+    "activeIntegrationPr": 734,
+    "sourceResearchPrs": [722, 732, 731],
+    "approvedSonKuMainPr": 733,
     "basePr": 719,
     "catalogIdentity": "armix.builtin.imersip.v1",
     "processor": "ImerSipP92Processor",
@@ -122,9 +124,9 @@
   },
   "production": {
     "mainMustRemainUnchanged": false,
-    "noAutomaticMerge": false,
+    "noAutomaticMerge": true,
     "physicalHeadphoneAbStillRequired": true,
-    "releaseCandidateIntegratedOnMain": true,
+    "releaseCandidateIntegratedOnMain": false,
     "publicReleaseAllowed": false,
     "releaseRequiresOperatorHeadphoneApproval": true
   },

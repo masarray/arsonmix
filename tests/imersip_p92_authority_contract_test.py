@@ -23,7 +23,9 @@ class SpatialAuthorityContract(unittest.TestCase):
                          "763706a15a2617a10d23b5e2e43eb5689e454ccb")
         self.assertEqual(base["researchRenderMode"],9)
         self.assertEqual(base["modeNameInCode"],"MusicSpatialP90")
-        self.assertEqual(im["activeIntegrationPr"],722)
+        self.assertEqual(im["activeIntegrationPr"],734)
+        self.assertEqual(im["sourceResearchPrs"],[722,732,731])
+        self.assertEqual(im["approvedSonKuMainPr"],733)
         self.assertEqual(im["basePr"],719)
         self.assertEqual(im["catalogIdentity"],"armix.builtin.imersip.v1")
         self.assertEqual(im["displayName"],"ImmerSIB")
@@ -33,7 +35,8 @@ class SpatialAuthorityContract(unittest.TestCase):
         self.assertTrue(im["researchOnly"])
         self.assertFalse(im["releaseQualified"])
         self.assertFalse(record["production"]["mainMustRemainUnchanged"])
-        self.assertTrue(record["production"]["releaseCandidateIntegratedOnMain"])
+        self.assertTrue(record["production"]["noAutomaticMerge"])
+        self.assertFalse(record["production"]["releaseCandidateIntegratedOnMain"])
         self.assertFalse(record["production"]["publicReleaseAllowed"])
         self.assertTrue(record["production"]["physicalHeadphoneAbStillRequired"])
 
@@ -67,6 +70,19 @@ class SpatialAuthorityContract(unittest.TestCase):
         self.assertIn("public SonKuSpatialProcessor",fx)
         self.assertIn("ImerSipP92Processor::catalogIdentity",reg)
         self.assertIn("ARMIX_IMMERSIB_RELEASE_CANDIDATE",reg)
+
+    def test_regular_sonku_product_admission_is_shared_by_all_entrypoints(self):
+        gate=read("engine/builtin_fx/sonku/SonKuProductAdmission.h")
+        processor=read("engine/builtin_fx/SonKuSpatialProcessor.h")
+        bridge=read("src/SonKuNativeBridgeContract.h")
+        self.assertIn("next.sourceDistanceMeters<1.6f",gate)
+        self.assertIn("next.roomAmount>1.f",gate)
+        self.assertIn("next.sceneVoicing>p98::SceneVoicing::Cinema",gate)
+        self.assertIn("valid8DSonKuInsertSettings(next)",processor)
+        self.assertIn("!admitQueuedScene(next)",processor)
+        self.assertIn("valid8DSonKuInsertSettings(proposed)",bridge)
+        self.assertIn("sonkuProductIsolation(44100)",read(
+            "tests/imersip_p92_native_test.cpp"))
 
     def test_operator_scene_is_not_factory_default(self):
         scene=read("engine/builtin_fx/ImerSipP92Scene.h")

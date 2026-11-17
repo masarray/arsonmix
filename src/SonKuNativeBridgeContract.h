@@ -3,6 +3,7 @@
 // One typed CONTROL-plane schema for the existing SonKu JUCE/JS bridge.
 // No renderer, callback, allocation or additional FX authority lives here.
 #include "../engine/builtin_fx/sonku/SonKuSpatialCore.h"
+#include "../engine/builtin_fx/sonku/SonKuProductAdmission.h"
 #include <juce_core/juce_core.h>
 #include <cmath>
 #include <memory>
@@ -138,7 +139,7 @@ inline bool decodeSettings(const juce::var& values,armix::sonku::Settings& out) 
     if(proposed.musicCompatibleLowFrequency)
         return false; // P8.3 LF480 is forbidden throughout native v5.
 #endif
-    if(!armix::sonku::valid(proposed))return false;
+    if(!armix::sonku::valid8DSonKuInsertSettings(proposed))return false;
     out=proposed;
     return true;
 }
