@@ -5,7 +5,9 @@ SPDX-License-Identifier: AGPL-3.0-only
 The original ArSonMix digital mixer application, native mixing/routing
 implementation, original GUI/bridge source, and ArSonMix-owned native built-in
 effects are licensed under the GNU Affero General Public License, version 3
-only (AGPL-3.0-only). The complete terms are in the accompanying LICENSE.
+only (AGPL-3.0-only). The complete terms are in the source repository
+LICENSE and are embedded in the native ArSonMix executable (More > About &
+Licenses), readable offline without separate files in the installation folder.
 
 Native built-in effects in this repository include Parametric EQ, Compressor,
 Harmonice, Vocal Delay, 8D-SonKu, Guitar FX Rig, and ImmerSIB where built and
@@ -20,10 +22,10 @@ Third-party materials are NOT relicensed by this notice:
 - JUCE and its modules, Steinberg VST3 and ASIO SDKs, and independently
   installed or optional FactoryFX VST3 plugins retain their own applicable
   terms, distribution permissions and requirements.
-- MIT KEMAR/HRIR data attribution: THIRD_PARTY_8D_SONKU_HRTF.md.
-- Vendored Signalsmith components: LICENSE-SIGNALSMITH-STRETCH.txt and
-  LICENSE-SIGNALSMITH-LINEAR.txt.
-- Embedded Inter font: OFL-LICENSE-Inter.txt.
+- MIT KEMAR/HRIR attribution: docs/THIRD_PARTY_8D_SONKU_HRTF.md.
+- Vendored Signalsmith components: third_party/signalsmith/LICENSE-STRETCH.txt
+  and LICENSE-LINEAR.txt.
+- Embedded Inter font: web/assets/fonts/OFL-LICENSE-Inter.txt.
 - Optional VB-Audio VB-CABLE driver: ThirdParty/VB-Audio/VB-CABLE-NOTICE.txt
   in the Windows installer; the vendor's own usage/licensing terms apply.
 
