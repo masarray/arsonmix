@@ -2442,6 +2442,14 @@ test("Device Setup VM rejects driver negative ACK, safe rollback, wrong endpoint
   const unverified=deviceVM.setupAck(begun.state,f.ack("approved-io-6",{
     active:{...f.active,deviceGeneration:13,authorized:false}}));
   assert.equal(unverified.phase,"REJECTED");
+  const wrongEndpoint=deviceVM.setupAck(begun.state,f.ack("approved-io-6",{
+    active:{...f.active,deviceGeneration:13,playbackDevice:"Another ASIO"}}));
+  assert.equal(wrongEndpoint.phase,"REJECTED",
+    "same requestId cannot approve another physical output");
+  const staleGeneration=deviceVM.setupAck(begun.state,f.ack("approved-io-6",{
+    active:{...f.active,deviceGeneration:11}}));
+  assert.equal(staleGeneration.phase,"REJECTED",
+    "same requestId cannot approve an older driver generation");
   const accepted=deviceVM.setupAck(begun.state,f.ack("approved-io-6"));
   assert.equal(deviceVM.setupReadback(accepted,{...f.readback,
     device:{...f.readback.device,playbackDevice:"Unexpected"}}).phase,"VERIFYING");
