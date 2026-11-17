@@ -46,9 +46,16 @@ export function requiredLanes(files) {
   return {nativeFast,nativeFull:nativeCore,uiFast,uiFull,releaseFast};
 }
 
+export function workflowPath(run,workflow) {
+  // GitHub Actions REST usually returns ".github/workflows/name.yml"
+  // without an @ref, while some adapters return ".../name.yml@ref".
+  const path=typeof run?.path==="string"?run.path.split("@",1)[0]:"";
+  return path===".github/workflows/"+workflow ||
+    path.endsWith("/.github/workflows/"+workflow);
+}
 export function sourceRun(run,workflow,sha,event) {
   return !!run && run.head_sha===sha && run.event===event &&
-    typeof run.path==="string"&&run.path.includes("/"+workflow+"@");
+    workflowPath(run,workflow);
 }
 export function expectedWindowsTitle(prNumber,sha) {
   return "ArSonMix NATIVE PR"+prNumber+" "+sha;
@@ -62,8 +69,9 @@ export function findRuns(runs,number,sha) {
   const fullUi=runs.filter(r=>sourceRun(r,workflowNames.ui,sha,"workflow_dispatch"))
     .sort((a,b)=>b.id-a.id)[0];
   const fullWin=runs.filter(r=>r.event==="workflow_dispatch"&&
-    typeof r.path==="string"&&r.path.includes("/"+workflowNames.native+"@")&&
-    (r.display_title||r.name)===expectedWindowsTitle(number,sha))
+    workflowPath(r,workflowNames.native)&&
+    [expectedWindowsTitle(number,sha),
+      "ArSonMix FAT PR"+number+" "+sha].includes(r.display_title||r.name))
     .sort((a,b)=>b.id-a.id)[0];
   return {native:automatic(workflowNames.native),
     ui:automatic(workflowNames.ui),release:automatic(workflowNames.release),
@@ -136,7 +144,7 @@ export function extractPrNumbers(event) {
 export async function refreshOne(repo,number,api) {
   const pr=await api("/pulls/"+number);
   if(pr?.state!=="open"||pr?.base?.ref!=="main"||
-     pr?.base?.repo?.full_name!==repo||pr?.head?.repo?.full_name!==repo)
+     pr?.base?.repo?.full_name!==repo)
     return {kind:"ignored",number};
   const sha=pr.head.sha;
   if(!/^[a-f0-9]{40}$/.test(sha))throw Error("INVALID_PR_SHA");
