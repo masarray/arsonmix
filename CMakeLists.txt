@@ -310,7 +310,7 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/web/assets/fonts/OFL-LICENSE-Inter.t
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/installer/VB-CABLE-NOTICE.txt"
                "${ARMIX_LEGAL_EMBED_DIR}/armixvbcablenotice.txt" COPYONLY)
 file(GLOB ARMIX_LEGAL_RESOURCE_FILES CONFIGURE_DEPENDS
-    "${ARMIX_LEGAL_EMBED_DIR}/armix_*.txt")
+    "${ARMIX_LEGAL_EMBED_DIR}/armix*.txt")
 list(LENGTH ARMIX_LEGAL_RESOURCE_FILES ARMIX_LEGAL_RESOURCE_COUNT)
 if(NOT ARMIX_LEGAL_RESOURCE_COUNT EQUAL 7)
   message(FATAL_ERROR "All seven exact-source legal documents must be embedded")
