@@ -42,9 +42,14 @@ at the `pages.dev` address. Do not include a project subpath in the URL.
 The Cloudflare Pages build is **static hosting** for landing, demo GUI,
 release catalog and images. It is NOT the native audio engine. Download links
 remain official GitHub Release assets, checked for SHA-256 digests and
-provenance in the existing release-catalog generator. The JS client can query
-public GitHub Releases read-only if the static catalog was unavailable during
-build. No fake or missing native installers are shown.
+provenance in the existing release-catalog generator. The build now **fails closed** when the GitHub Release API is unavailable or
+has no verified downloadable assets: it does not replace the last production
+deployment with an empty or misleading catalog. The exact verified same-origin
+catalog also pre-renders the three OS download cards in published HTML, so
+previously approved direct asset links work without JavaScript. Browser JS can
+refresh to a newer validated public release and keeps the verified HTML links
+when the live API is rate-limited. No fake, absent or unqualified native
+installer is shown.
 
 The existing GitHub Pages publisher continues independently. Both hosts use
 the exact same single `scripts/build_pages.py` assembly, not two visual
