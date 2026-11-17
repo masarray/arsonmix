@@ -29,14 +29,9 @@ mkdir -p "$out"; out="$(cd "$out" && pwd)"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/ArSonMix"
 cp -R "$app" "$tmp/ArSonMix/ArSonMix.app"
-cp LICENSE "$tmp/ArSonMix/LICENSE"
-cp LICENSE-NOTICE.txt "$tmp/ArSonMix/LICENSE-NOTICE.txt"
-cp docs/THIRD_PARTY_8D_SONKU_HRTF.md "$tmp/ArSonMix/THIRD_PARTY_8D_SONKU_HRTF.md"
-cp third_party/signalsmith/LICENSE-STRETCH.txt "$tmp/ArSonMix/LICENSE-SIGNALSMITH-STRETCH.txt"
-cp third_party/signalsmith/LICENSE-LINEAR.txt "$tmp/ArSonMix/LICENSE-SIGNALSMITH-LINEAR.txt"
-cp web/assets/fonts/OFL-LICENSE-Inter.txt "$tmp/ArSonMix/OFL-LICENSE-Inter.txt"
-grep -q '^GNU AFFERO GENERAL PUBLIC LICENSE' "$tmp/ArSonMix/LICENSE"
-grep -q 'AGPL-3.0-only' "$tmp/ArSonMix/LICENSE-NOTICE.txt"
+# The compiled app carries all original AGPL and third-party notices.
+# Fail closed on missing bytes, without cluttering the tarball/DMG root.
+python3 scripts/verify_embedded_legal.py --binary "$app/Contents/MacOS/$bundle_exe"
 cat > "$tmp/ArSonMix/README-TEST.txt" <<'INFO'
 ArSonMix native macOS alpha; COMMUNITY TEST / NO PAID SIGNING.
 This app has free ad-hoc code signing, not Apple Developer ID/notarization.
