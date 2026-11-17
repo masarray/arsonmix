@@ -33,7 +33,7 @@ class LandingReleaseContract(unittest.TestCase):
             self.assertNotIn("heroDownload.href =", js)
             self.assertNotIn("isWindowsVisitor", js)
             self.assertIn("Free to download", html)
-            for feature in ("Vocal Delay", "8D-SonKu", "Guitar FX", "Harmonice", "WIRE"):
+            for feature in ("Vocal Delay", "8D-SonKu", "ImmerSIB", "Concert Front Row XL", "P9.9", "Guitar FX", "Harmonice", "WIRE"):
                 self.assertIn(feature, html)
             self.assertIn("latest verified Windows alpha preview", html)
             self.assertIn("updates automatically after an approved public release", html)
@@ -63,6 +63,19 @@ class LandingReleaseContract(unittest.TestCase):
                 self.assertTrue(path.is_file(), str(path))
                 self.assertGreater(path.stat().st_size, 12000)
                 self.assertEqual(path.read_bytes()[:3], b"\xff\xd8\xff", str(path))
+
+    def test_pinned_readme_release_has_local_notes_and_verified_asset_paths(self):
+        readme = (ROOT / "README.md").read_text("utf-8")
+        match = re.search(r"Latest published Windows alpha as of [^\n]+?:\*\* \[(v\d+\.\d+\.\d+-alpha\.\d+)", readme)
+        self.assertIsNotNone(match, "README must declare its pinned latest public Windows alpha")
+        tag = match.group(1)
+        self.assertTrue((ROOT / "docs" / "releases" / (tag + ".md")).is_file())
+        self.assertIn("docs/releases/" + tag + ".md", readme)
+        for suffix in ("Windows-x64-Setup.zip", "Windows-x64-Portable.zip", "SHA256SUMS.txt"):
+            self.assertIn("releases/download/" + tag + "/", readme)
+            self.assertIn(tag + "-" + suffix if suffix != "SHA256SUMS.txt" else suffix, readme)
+        self.assertIn("ImmerSIB", readme)
+        self.assertIn("8D-SonKu P9.9", readme)
 
     def test_no_unverified_binaries(self):
         js = (ROOT / "site/downloads.js").read_text("utf-8")
