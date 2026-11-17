@@ -3,8 +3,9 @@
 > No lane approval, stale PR collision or per-owner source-file barrier may
 > delay integrated production changes. Retain quality, regression, exact-SHA,
 > signed release/ZIP integrity and physical FAT safety gates.
+> **No active file/domain ownership locks.** The rejection examples and required owner markers below document a **retired failed approach**, not a workflow to follow. For current nonblocking collaboration see [Parallel Development Guide](../architecture/PARALLEL_THREAD_CONVERGENCE_20261118.md) (proposal on PR #764) and root [AGENTS.md](../../AGENTS.md).
 
-# ArSonMix — Parallel Agent Coordination (binding for new work)
+# HISTORICAL ARCHIVE — Four-Lane Parallel Agent Coordination (NOT binding)
 
 **Control tower:** [issue #397](https://github.com/masarray/arsonmix/issues/397).
 **Product authority:** [AGENTS.md](../../AGENTS.md) + ONLY the assembled [approved /preview/](https://masarray.github.io/arsonmix/preview/). Do not replace either with an agent-generated UI or JS audio engine.
