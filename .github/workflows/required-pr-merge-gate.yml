@@ -21,12 +21,12 @@ permissions:
   actions: read
   statuses: write
 concurrency:
-  group: required-merge-gate-\${{ github.event.pull_request.number || github.event.workflow_run.id || github.run_id }}
+  group: required-merge-gate-${{ github.event.pull_request.number || github.event.workflow_run.id || github.run_id }}
   cancel-in-progress: false
 jobs:
   self-test:
     name: Required merge gate source-contract tests
-    if: \${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 4
     permissions:
@@ -43,13 +43,13 @@ jobs:
 
   publish-status:
     name: Publish exact-head fail-closed merge status
-    if: \${{ github.event_name == 'pull_request_target' || github.event_name == 'workflow_run' }}
+    if: ${{ github.event_name == 'pull_request_target' || github.event_name == 'workflow_run' }}
     runs-on: ubuntu-latest
     timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: \${{ github.event.repository.default_branch }}
+          ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -58,7 +58,7 @@ jobs:
         run: node --test tests/required_pr_merge_gate.test.mjs
       - name: Refresh one commit status after PR change or scoped CI completion
         env:
-          GH_TOKEN: \${{ github.token }}
-          GITHUB_REPOSITORY: \${{ github.repository }}
-          GITHUB_EVENT_PATH: \${{ github.event_path }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
         run: node scripts/required_pr_merge_gate.mjs
