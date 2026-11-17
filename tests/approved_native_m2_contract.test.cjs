@@ -1992,6 +1992,30 @@ test("M5 logical-only editor proves the exact ACK revision and full FX/WIRE effe
  assert.equal(proves(pending("RENAME_CHANNEL",{name:"New Vocal"}),g),true);
  g=next();g.channels[0].processingFormat="STEREO";
  assert.equal(proves(pending("SET_PROCESSING_FORMAT",{format:"STEREO"}),g),true);
+ // Offline parallel SEND editing must be proved from an independent
+ // post-ACK readback, not inferred from a successful disk-commit ACK.
+ const send={edgeId:"102",from:id,to:"9007199254740999",primaryOutput:false,
+   enabled:true,sendEnabled:true,tap:"POST_FADER",tapStage:"POST_FADER",
+   gainLinear:.5};
+ const prior=[...beforeEdges,send];
+ const sendPending=(op,payload)=>pending(op,payload,{beforeEdges:prior});
+ g=next();g.edges.push({...send,tap:"SPLIT_PRE",tapStage:"PRE_FADER"});
+ assert.equal(proves(sendPending("SET_SEND_TAP",{edgeId:"102",tap:"PRE_FADER"}),g),true);
+ assert.equal(proves(sendPending("SET_SEND_TAP",{edgeId:"102",tap:"POST_FADER"}),g),false,
+   "ACK alone cannot prove PRE/POST without changed tapStage");
+ assert.equal(proves(sendPending("SET_SEND_TAP",{edgeId:"101",tap:"PRE_FADER"}),g),false,
+   "MAIN primary cable never accepts a parallel tap");
+ g=next();g.edges.push({...send,tap:"SPLIT_PRE",tapStage:"POST_FADER"});
+ assert.equal(proves(sendPending("SET_SEND_TAP",{edgeId:"102",tap:"PRE_FADER"}),g),false,
+   "old PRE_FX marker must not masquerade as post-FX PRE_FADER");
+ g=next();g.edges.push({...send,to:main,tapStage:"PRE_FADER"});
+ assert.equal(proves(sendPending("SET_SEND_TAP",{edgeId:"102",tap:"PRE_FADER"}),g),false,
+   "a redirected EdgeId cannot prove the requested SEND tap");
+ g=next();g.edges.push({...send,sendEnabled:false});
+ assert.equal(proves(sendPending("SET_SEND_ENABLED",{edgeId:"102",enabled:false}),g),true);
+ assert.equal(proves(sendPending("SET_SEND_ENABLED",{edgeId:"102",enabled:true}),g),false);
+ assert.equal(proves(sendPending("SET_SEND_ENABLED",{edgeId:"101",enabled:false}),g),false,
+   "primary output power is not a SEND ON/OFF command");
  g=next();g.channels.push({id:"9007199254740995",role:"GROUP"});
  assert.equal(proves(pending("CREATE_GROUP",{},{
    channelId:null,createdId:"9007199254740995"}),g),true);
