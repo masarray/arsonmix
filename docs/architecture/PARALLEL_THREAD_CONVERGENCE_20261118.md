@@ -4,6 +4,7 @@
 **Audit:** 2026-11-18; `main@ef7a29933109020657accfb957b7a6ffc8d58cd7`. Always refresh live branch/PR state.  
 **Owner/user constraint:** The former four-lane file ownership and collision gates caused deadlock and were **explicitly retired** on 2026-11-05 in [AGENTS.md](../../AGENTS.md). **Never reintroduce them.**  
 **Architecture authority:** [maintainability epic #527](https://github.com/masarray/arsonmix/issues/527) and the **merged** [Modular MVVM Feasibility ADR](ADR_MODULAR_MVVM_FEASIBILITY_20261118.md) from [PR #763](https://github.com/masarray/arsonmix/pull/763), alongside its multi-device PRD/ARD (merged into main at `1cbe62779319bb6505e38984111ade648ebdf42d`). This guide is a *contribution/integration supplement*, not a competing architecture ADR.  
+**Owner communication:** [Mandatory Indonesian task closeout and Multi-Device IO status examples](OWNER_FRIENDLY_TASK_HANDOFF_AND_MULTI_IO_20261118.md). Every working thread must tell the owner what is truly ready, what is pending, and one safe next action (or NONE). This is never a PR/owner lock.  
 **Related feature work:** [#760 ImmerSIB corrected field FAT](https://github.com/masarray/arsonmix/pull/760), [#757 narrower input-only study](https://github.com/masarray/arsonmix/pull/757). No changes to their branches or release state.
 
 ## 0. Explicit decision: coordination MUST NOT block coding
