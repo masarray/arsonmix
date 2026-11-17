@@ -7,6 +7,8 @@ on:
       - 'installer/ArSonMix.iss'
       - 'scripts/package_native_windows.ps1'
       - 'scripts/verify_native_windows_artifact.ps1'
+      - 'scripts/verify_windows_spatial_fx_packaging.py'
+      - 'scripts/tests/test_windows_spatial_fx_packaging.py'
       - 'scripts/build_verify_windows_installer.ps1'
       - 'scripts/test_inno_graceful_update_windows.ps1'
       - 'tests/license_distribution_contract.test.mjs'
@@ -42,6 +44,8 @@ on:
       - 'installer/ArSonMix.iss'
       - 'scripts/package_native_windows.ps1'
       - 'scripts/verify_native_windows_artifact.ps1'
+      - 'scripts/verify_windows_spatial_fx_packaging.py'
+      - 'scripts/tests/test_windows_spatial_fx_packaging.py'
       - 'scripts/build_verify_windows_installer.ps1'
       - 'scripts/test_inno_graceful_update_windows.ps1'
       - 'tests/license_distribution_contract.test.mjs'
@@ -83,6 +87,7 @@ jobs:
           node --check site/downloads.js
           node --test tests/license_distribution_contract.test.mjs
           python scripts/verify_embedded_legal.py --self-test
+          python -m unittest discover -s scripts/tests -p test_windows_spatial_fx_packaging.py -v
           node --check web/approved-native-legal.js
           node --test tests/downloads_runtime_contract.test.mjs
           node --check scripts/release_ci_dispatch.mjs
