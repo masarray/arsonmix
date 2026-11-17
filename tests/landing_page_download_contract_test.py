@@ -83,6 +83,10 @@ class LandingReleaseContract(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "pages-publish.yml").read_text("utf-8")
         self.assertIn("README.md|docs/releases/*.md|site/index.html", workflow)
         self.assertIn("NOT LANDING ONLY:", workflow)
+        # A skipped PR workflow_run must not cancel a valid main push deploy.
+        self.assertIn("arsonmix-pages-ignored-pr-check", workflow)
+        self.assertIn("github.event.workflow_run.event != 'push'", workflow)
+        self.assertIn("arsonmix-production-pages", workflow)
 
     def test_no_unverified_binaries(self):
         js = (ROOT / "site/downloads.js").read_text("utf-8")
