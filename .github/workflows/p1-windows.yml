@@ -205,6 +205,7 @@ jobs:
           python -m unittest discover -s tests -p approved_native_gui_bundle_test.py -v
           python -m unittest discover -s tests -p test_embedded_gui_resources.py -v
           python -m unittest discover -s scripts/tests -p test_factoryfx_release_bundle.py -v
+          python -m unittest discover -s scripts/tests -p test_windows_spatial_fx_packaging.py -v
       # Portable ChannelId PCM routing MUST be checked in under a minute,
       # before allocating a Windows JUCE/MSVC runner (93-CTest suite).
       - name: Native ChannelId pre/post and fader PCM golden (Linux no JUCE)
@@ -347,11 +348,32 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Configure Windows x64
         shell: pwsh
-        run: >
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-          -DJUCE_ROOT="${{ github.workspace }}/third_party/JUCE"
-          -DBUILD_TESTING=${{ env.FIELD_PREVIEW == 'true' && 'OFF' || 'ON' }}
-          -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/.deps"
+        env:
+          FAT_SPATIAL_PRODUCTS: ${{ github.event_name == 'workflow_dispatch' && (inputs.package_fat == true || inputs.field_preview == true) }}
+        run: |
+          $tests = if ($env:FIELD_PREVIEW -eq 'true') { 'OFF' } else { 'ON' }
+          $configure = @(
+            '-S', '.', '-B', 'build', '-G', 'Visual Studio 17 2022', '-A', 'x64',
+            "-DJUCE_ROOT=$env:GITHUB_WORKSPACE/third_party/JUCE",
+            "-DBUILD_TESTING=$tests",
+            "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$env:GITHUB_WORKSPACE/.deps"
+          )
+          if ($env:FAT_SPATIAL_PRODUCTS -eq 'true') {
+            # This distributable must match the already public, owner-accepted
+            # SonKu P9.9 + ImmerSIB feature set. CMake's dev default is OFF.
+            $configure += '-DARMIX_IMMERSIB_RELEASE_CANDIDATE=ON'
+            $configure += '-DARMIX_SONKU_APPROVED_P99_MAIN=ON'
+          }
+          & cmake @configure
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($env:FAT_SPATIAL_PRODUCTS -eq 'true') {
+            $cache = @(Get-Content -LiteralPath build/CMakeCache.txt -Encoding UTF8)
+            foreach ($flag in @('ARMIX_IMMERSIB_RELEASE_CANDIDATE:BOOL=ON',
+                                'ARMIX_SONKU_APPROVED_P99_MAIN:BOOL=ON')) {
+              if ($flag -notin $cache) { throw "WINDOWS_FAT_SPATIAL_CONFIG_MISMATCH: $flag" }
+            }
+            Write-Host 'WINDOWS_FAT_SPATIAL_CONFIG_VERIFIED: SonKu P9.9 + ImmerSIB'
+          }
       - name: Verify exact ONE approved /preview/ GUI CMake bundle
         run: node scripts/check_approved_native_gui_release.mjs --source-only --bundle build/approved_gui
       # Manual FAT scoped to the vocal harmony plugin must compile the actual
