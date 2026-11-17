@@ -18,7 +18,7 @@ Existing accepted visual/audio/session checkpoint protected:
 - How unique changes were reconciled without overwriting newer accepted source:
 - Changes explicitly excluded from this PR:
 
-For an established single-product integration PR that uses the historical workflow compatibility marker, include it **in the PR body intentionally**, not automatically for every draft: `<!-- arsonmix-integration: single-owner -->`. This marker **does not** authorize bypass of required CI, protected-main, actual source reconciliation or physical output safety. Research/docs-only PRs do not need a product marker.
+For an established single-product integration PR that uses the historical workflow compatibility marker, add that marker **only intentionally to its PR body** following the [convergence protocol](../docs/architecture/PARALLEL_THREAD_CONVERGENCE_20261118.md). Do NOT place the literal marker in this template: GitHub pre-fills it into unrelated PR bodies and a legacy parser would treat even a quoted example as authorization. The marker **does not** authorize bypass of required CI, protected-main, source reconciliation or physical output safety. Research/docs-only PRs do not need a product marker.
 
 ## Complete, exact-head acceptance evidence
 
