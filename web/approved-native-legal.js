@@ -73,13 +73,13 @@
     const layout = element("div", "armix-legal-layout");
     const nav = element("nav", "armix-legal-nav");
     nav.setAttribute("aria-label", "Legal documents");
-    const body = element("main", "armix-legal-body");
+    const body = element("div", "armix-legal-body");
     const subtitle = element("div", "armix-legal-subtitle");
     const content = element("pre", "armix-legal-text");
     content.setAttribute("tabindex", "0");
     body.append(subtitle,content);layout.append(nav,body);
     const footer=element("footer","armix-legal-footer");
-    const status=element("span", null, null, "AGPL-3.0-only · Third-party terms retained");
+    const status=element("span", null, null, "© 2026 ArSonMix contributors · AGPL-3.0-only · No warranty");
     const source=element("button",null,"armix-legal-action","View source");
     source.type="button";source.title="Open the source code for this build";
     source.addEventListener("click",()=>backend.emitEvent("arMixOpenLegalSource",{}));
