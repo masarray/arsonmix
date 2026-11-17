@@ -236,14 +236,23 @@ jobs:
           foreach ($flag in $flags) { $args += "-D${flag}=OFF" }
           & cmake @args
           if ($LASTEXITCODE -ne 0) { throw 'PUBLIC_PROFILE_CMAKE_CONFIGURE_FAILED' }
-          $cache = Get-Content -LiteralPath build/CMakeCache.txt -Raw -Encoding UTF8
-          if ($cache -notmatch '(?m)^ARMIX_IMMERSIB_RELEASE_CANDIDATE:BOOL=OFF$' -or
-              $cache -notmatch '(?m)^ARMIX_SONKU_APPROVED_P99_MAIN:BOOL=ON$') {
-            throw 'PUBLIC_PROFILE_OPTION_MISMATCH'
+          # Get-Content without -Raw yields exact logical lines on Windows
+          # (CMakeCache.txt uses CRLF). Regex end-of-line checks on raw CRLF
+          # incorrectly rejected valid OFF/ON cache entries.
+          $cacheLines = @(Get-Content -LiteralPath build/CMakeCache.txt -Encoding UTF8)
+          $expected = @('ARMIX_IMMERSIB_RELEASE_CANDIDATE:BOOL=OFF',
+                        'ARMIX_SONKU_APPROVED_P99_MAIN:BOOL=ON')
+          foreach ($entry in $expected) {
+            if ($entry -notin $cacheLines) {
+              $key = ($entry -split ':')[0]
+              $actual = @($cacheLines | Where-Object { $_.StartsWith("${key}:") })
+              throw "PUBLIC_PROFILE_OPTION_MISMATCH: expected=$entry actual=$($actual -join ',')"
+            }
           }
           foreach ($flag in $flags) {
-            if ($cache -notmatch "(?m)^$([regex]::Escape($flag)):BOOL=OFF$") {
-              throw "PUBLIC_PROFILE_RESEARCH_FLAG_ENABLED: $flag"
+            if ("${flag}:BOOL=OFF" -notin $cacheLines) {
+              $actual = @($cacheLines | Where-Object { $_.StartsWith("${flag}:") })
+              throw "PUBLIC_PROFILE_RESEARCH_FLAG_ENABLED: $flag actual=$($actual -join ',')"
             }
           }
           $catalog = (& ctest --test-dir build -C Release --show-only=json-v1 | Out-String | ConvertFrom-Json)
