@@ -323,8 +323,8 @@ def main():
         assert request["channelId"]=="1"
         assert request["baseRevision"]=="1"
         assert request["payload"]=={"edgeId":"1001","tap":"PRE_FADER"}
-        assert page.evaluate("""()=>window.__ARMIX_NATIVE_SCOPE__.wireEdges.some(
-            e=>e.id===arguments[0] && e.mode==='send')""",wire_ids["parallel"]), (
+        assert page.evaluate("""edgeId=>window.__ARMIX_NATIVE_SCOPE__.wireEdges.some(
+            e=>e.id===edgeId && e.mode==='send')""",wire_ids["parallel"]), (
             "Offline WIRE visual must not commit before native ACK + saved readback")
         assert not page.evaluate("""()=>window.__events.some(e=>e.name==='arMixConsoleIntent')""")
         emit(page,"arMixLogicalAck",{"requestId":request["requestId"],"status":"ACCEPTED",
