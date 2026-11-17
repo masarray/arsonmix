@@ -292,23 +292,23 @@ if(ARMIX_IMMERSIB_RELEASE_CANDIDATE)
 endif()
 # Every original and third-party notice is compiled into the same native JUCE
 # executable. No adjacent legal .txt/.md files in any installed/portable tree.
-# Keep these resource basenames stable: EmbeddedLegalResources.h maps them.
+# Keep these resource basenames stable, alphanumeric names: EmbeddedLegalResources.h maps them.
 set(ARMIX_LEGAL_EMBED_DIR "${CMAKE_CURRENT_BINARY_DIR}/approved_legal")
 file(MAKE_DIRECTORY "${ARMIX_LEGAL_EMBED_DIR}")
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
-               "${ARMIX_LEGAL_EMBED_DIR}/armix_agpl.txt" COPYONLY)
+               "${ARMIX_LEGAL_EMBED_DIR}/armixagpl.txt" COPYONLY)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/LICENSE-NOTICE.txt"
-               "${ARMIX_LEGAL_EMBED_DIR}/armix_notice.txt" COPYONLY)
+               "${ARMIX_LEGAL_EMBED_DIR}/armixnotice.txt" COPYONLY)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/docs/THIRD_PARTY_8D_SONKU_HRTF.md"
-               "${ARMIX_LEGAL_EMBED_DIR}/armix_hrir_mit.txt" COPYONLY)
+               "${ARMIX_LEGAL_EMBED_DIR}/armixhrirmit.txt" COPYONLY)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith/LICENSE-STRETCH.txt"
-               "${ARMIX_LEGAL_EMBED_DIR}/armix_signalsmith_stretch.txt" COPYONLY)
+               "${ARMIX_LEGAL_EMBED_DIR}/armixsignalsmithstretch.txt" COPYONLY)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith/LICENSE-LINEAR.txt"
-               "${ARMIX_LEGAL_EMBED_DIR}/armix_signalsmith_linear.txt" COPYONLY)
+               "${ARMIX_LEGAL_EMBED_DIR}/armixsignalsmithlinear.txt" COPYONLY)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/web/assets/fonts/OFL-LICENSE-Inter.txt"
-               "${ARMIX_LEGAL_EMBED_DIR}/armix_inter_ofl.txt" COPYONLY)
+               "${ARMIX_LEGAL_EMBED_DIR}/armixinterofl.txt" COPYONLY)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/installer/VB-CABLE-NOTICE.txt"
-               "${ARMIX_LEGAL_EMBED_DIR}/armix_vbcable_notice.txt" COPYONLY)
+               "${ARMIX_LEGAL_EMBED_DIR}/armixvbcablenotice.txt" COPYONLY)
 file(GLOB ARMIX_LEGAL_RESOURCE_FILES CONFIGURE_DEPENDS
     "${ARMIX_LEGAL_EMBED_DIR}/armix_*.txt")
 list(LENGTH ARMIX_LEGAL_RESOURCE_FILES ARMIX_LEGAL_RESOURCE_COUNT)
