@@ -110,6 +110,8 @@ if ($manifest.spatialFxBuild -ne "SONKU_P99_AND_IMMERSIB_NATIVE_CATALOG_PLUS_SIX
     throw "WINDOWS_FAT_SPATIAL_PROVENANCE_MISSING"
 }
 $exePath = Join-Path $OutputDir "ArSonMix-GUI10CH-P012-Windows-x64.exe"
+& python scripts/verify_immersib_approved_pcm_sources.py
+if ($LASTEXITCODE -ne 0) { throw "WINDOWS_FAT_IMMERSIB_APPROVED_SOURCE_CHANGED" }
 & python scripts/verify_windows_spatial_fx_packaging.py --build-dir build --exe $exePath
 if ($LASTEXITCODE -ne 0) { throw "WINDOWS_FAT_SPATIAL_BINARY_MISMATCH" }
 

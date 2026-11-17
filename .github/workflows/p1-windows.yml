@@ -37,6 +37,8 @@ on:
       - 'tests/fixtures/installer_graceful_close.cs'
       - 'scripts/verify_native_windows_artifact.ps1'
       - 'scripts/verify_windows_spatial_fx_packaging.py'
+      - 'scripts/verify_immersib_approved_pcm_sources.py'
+      - 'config/immersib_approved_pcm_sources.json'
       - 'scripts/collect_hardware_fat_windows.ps1'
       - 'scripts/console_v6_fat_gate.mjs'
       - 'scripts/verify_console_s0_native_fixture.mjs'
@@ -50,6 +52,7 @@ on:
       - 'config/factoryfx-notices/**'
       - 'scripts/tests/test_factoryfx_release_bundle.py'
       - 'scripts/tests/test_windows_spatial_fx_packaging.py'
+      - 'scripts/tests/test_immersib_approved_pcm_sources.py'
       - '.github/workflows/p1-windows.yml'
   # Direct path scoped native qualification, without a second Windows call
   # from the UI workflow or historical multi-agent coordination.
@@ -82,6 +85,8 @@ on:
       - 'tests/fixtures/installer_graceful_close.cs'
       - 'scripts/verify_native_windows_artifact.ps1'
       - 'scripts/verify_windows_spatial_fx_packaging.py'
+      - 'scripts/verify_immersib_approved_pcm_sources.py'
+      - 'config/immersib_approved_pcm_sources.json'
       - 'scripts/collect_hardware_fat_windows.ps1'
       - 'scripts/console_v6_fat_gate.mjs'
       - 'scripts/verify_console_s0_native_fixture.mjs'
@@ -95,6 +100,7 @@ on:
       - 'config/factoryfx-notices/**'
       - 'scripts/tests/test_factoryfx_release_bundle.py'
       - 'scripts/tests/test_windows_spatial_fx_packaging.py'
+      - 'scripts/tests/test_immersib_approved_pcm_sources.py'
       - '.github/workflows/p1-windows.yml'
       - 'tests/live_graph_contract_test.mjs'
       - 'tests/*native*contract*.mjs'
@@ -210,6 +216,8 @@ jobs:
           python -m unittest discover -s tests -p test_embedded_gui_resources.py -v
           python -m unittest discover -s scripts/tests -p test_factoryfx_release_bundle.py -v
           python -m unittest discover -s scripts/tests -p test_windows_spatial_fx_packaging.py -v
+          python -m unittest discover -s scripts/tests -p test_immersib_approved_pcm_sources.py -v
+          python scripts/verify_immersib_approved_pcm_sources.py
       # Portable ChannelId PCM routing MUST be checked in under a minute,
       # before allocating a Windows JUCE/MSVC runner (93-CTest suite).
       - name: Native ChannelId pre/post and fader PCM golden (Linux no JUCE)
