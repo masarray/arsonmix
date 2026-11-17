@@ -2362,3 +2362,121 @@ test("MVVM native bridge uses the one device read model, not retired web/mixer-i
   assert.match(build,/web" \/ "approved-device-view-model\.js"/);
   assert.doesNotMatch(bridge,/AudioContext|AudioWorklet|createPluginInstance/);
 });
+
+
+// Device Setup MVVM: the same native /preview/ bundle owns one transient UI
+// transaction, but only installed schema-v6 readback may make it accepted.
+function nativeDeviceSetupFixture() {
+  const active={backend:"ASIO",captureDevice:"ASIO Test",playbackDevice:"ASIO Test",
+    deviceGeneration:12,open:true,authorized:true,rate:48000,buffer:256,
+    enabledInputs:[0],enabledOutputs:[0,1]};
+  const inventory={active,types:[{name:"ASIO",separate:false,
+    inputs:["ASIO Test"],outputs:["ASIO Test"]}]};
+  const draft={backend:"ASIO",capture:"ASIO Test",playback:"ASIO Test",
+    inputPins:[0],outputPins:[0,1],rate:48000,buffer:256};
+  const begin=requestId=>deviceVM.setupBegin(deviceVM.setupInitial(),{
+    inventory,draft,requestId,baselineEpoch:"12"});
+  const ack=(requestId,overrides={})=>({
+    requestId,ok:true,state:"ACCEPTED_LIVE",
+    active:{...active,deviceGeneration:13},mixerBound:true,
+    outputMuted:false,...overrides});
+  const readback={raw:{schemaVersion:6},retained:false,admitted:true,
+    productLive:true,device:{epoch:"13",backend:active.backend,
+      captureDevice:active.captureDevice,playbackDevice:active.playbackDevice,
+      sampleRate:48000,bufferFrames:256,enabledInputs:[0],
+      enabledOutputs:[0,1],outputArmed:true}};
+  return {active,inventory,draft,begin,ack,readback};
+}
+test("Device Setup VM requires matching ACK AND later installed v6 readback, never ACK-only LIVE",()=>{
+  const f=nativeDeviceSetupFixture();
+  const begun=f.begin("approved-io-42");
+  assert.ok(begun);assert.equal(begun.request.action,"audioDeviceApply");
+  assert.equal(begun.request.expectedDeviceGeneration,12);
+  assert.equal(begun.request.config.backend,"ASIO");
+  assert.equal(begun.request.config.sampleRate,48000);
+  const waiting=deviceVM.setupAck(begun.state,f.ack("approved-io-42"));
+  assert.equal(waiting.phase,"VERIFYING");
+  assert.equal(waiting.pending.requestId,"approved-io-42");
+  assert.equal(waiting.message,"");
+  assert.equal(deviceVM.setupReadback(waiting,{...f.readback,device:{
+    ...f.readback.device,bufferFrames:128}}),waiting,
+    "rate/buffer mismatch never proves installed device");
+  const ready=deviceVM.setupReadback(waiting,f.readback);
+  assert.equal(ready.phase,"ACCEPTED");
+  assert.equal(ready.pending,null);
+  assert.match(ready.message,/Output live/);
+  assert.equal(deviceVM.setupAck(ready,f.ack("approved-io-42")),ready,
+    "late ACK cannot resurrect a finished request");
+});
+test("Device Setup VM fails closed for device loss, unadmitted graph, stale epoch and stale ACK",()=>{
+  const f=nativeDeviceSetupFixture();
+  const waiting=deviceVM.setupAck(f.begin("approved-io-5").state,f.ack("approved-io-5"));
+  assert.equal(deviceVM.setupReadback(waiting,{...f.readback,admitted:false}).phase,"VERIFYING");
+  const lost=deviceVM.setupReadback(waiting,{...f.readback,
+    device:{...f.readback.device,epoch:"14",sampleRate:0,enabledOutputs:[]}});
+  assert.equal(lost.phase,"RECOVERY_REQUIRED");
+  assert.equal(lost.pending,null);
+  const stale=deviceVM.setupReadback(waiting,{...f.readback,
+    device:{...f.readback.device,epoch:"11"}});
+  assert.equal(stale.phase,"STALE");
+  assert.equal(deviceVM.setupAck(waiting,f.ack("approved-io-4")),waiting,
+    "old request ID cannot change the current transaction");
+  assert.equal(deviceVM.setupReadback(waiting,{...f.readback,retained:true}).phase,
+    "RECOVERY_REQUIRED");
+});
+test("Device Setup VM rejects driver negative ACK, safe rollback, wrong endpoint and absent generation",()=>{
+  const f=nativeDeviceSetupFixture();
+  const begun=f.begin("approved-io-6");
+  const fail=deviceVM.setupAck(begun.state,{requestId:"approved-io-6",ok:false,
+    state:"REJECTED",error:"Driver refused",active:f.active});
+  assert.equal(fail.phase,"REJECTED");
+  assert.match(fail.message,/Driver refused/);
+  const rollback=deviceVM.setupAck(begun.state,{requestId:"approved-io-6",ok:false,
+    state:"RESTORED_MUTED",error:"Driver refused",active:f.active});
+  assert.equal(rollback.phase,"REJECTED");
+  assert.match(rollback.message,/Previous device restored/);
+  assert.deepEqual(f.inventory.active.enabledOutputs,[0,1],
+    "refused apply cannot mutate the installed output pins in the UI");
+  const unverified=deviceVM.setupAck(begun.state,f.ack("approved-io-6",{
+    active:{...f.active,deviceGeneration:13,authorized:false}}));
+  assert.equal(unverified.phase,"REJECTED");
+  const accepted=deviceVM.setupAck(begun.state,f.ack("approved-io-6"));
+  assert.equal(deviceVM.setupReadback(accepted,{...f.readback,
+    device:{...f.readback.device,playbackDevice:"Unexpected"}}).phase,"VERIFYING");
+  assert.equal(deviceVM.setupBegin(deviceVM.setupInitial(),{
+    inventory:{...f.inventory,active:{...f.active,deviceGeneration:null}},
+    draft:f.draft,requestId:"invalid"}),null);
+});
+test("Device Setup VM times out both before and after ACK; late events never apply",()=>{
+  const f=nativeDeviceSetupFixture();
+  const begun=f.begin("approved-io-7");
+  assert.equal(deviceVM.setupBegin(begun.state,{inventory:f.inventory,
+    draft:f.draft,requestId:"approved-io-8"}),null);
+  const timed=deviceVM.setupTimeout(begun.state,"approved-io-7");
+  assert.equal(timed.phase,"TIMEOUT");
+  assert.equal(deviceVM.setupAck(timed,f.ack("approved-io-7")),timed);
+  const verifying=deviceVM.setupAck(begun.state,f.ack("approved-io-7"));
+  const staleTimer=deviceVM.setupTimeout(verifying,"approved-io-6");
+  assert.equal(staleTimer,verifying);
+  assert.equal(deviceVM.setupTimeout(verifying,"approved-io-7").phase,"TIMEOUT");
+});
+test("Device Setup VM retains offline .smix and never promotes rollback to output LIVE",()=>{
+  const f=nativeDeviceSetupFixture();
+  const document={schema:"arsonmix.native.logical-mixer.v1",revision:"18446744073709551615",
+    channels:[{id:"9007199254740993"}],outputArmed:false};
+  const frozen=JSON.stringify(document);
+  const begun=f.begin("approved-io-9");
+  const awaiting=deviceVM.setupAck(begun.state,f.ack("approved-io-9"));
+  const offline=deviceVM.setupReadback(awaiting,{...f.readback,retained:true,
+    raw:{schemaVersion:6,logicalMixer:document},admitted:false,productLive:false});
+  assert.equal(offline.phase,"RECOVERY_REQUIRED");
+  assert.equal(JSON.stringify(document),frozen);
+  assert.equal(deviceVM.setupAck(begun.state,{requestId:"approved-io-9",
+    ok:false,state:"RESTORED_LIVE",active:f.active}).phase,"REJECTED");
+  const text=read("web/approved-native-bridge.js");
+  assert.match(text,/deviceVM\.setupReadback\(deviceState,next\)/);
+  assert.match(text,/deviceVM\.setupAck\(deviceState,ack\)/);
+  assert.doesNotMatch(text,/const accepted=ack\.ok===true/);
+  assert.doesNotMatch(text,/devicePanel\.dataset\.pendingRequest/);
+  assert.equal((text.match(/backend\.emitEvent\("arMixAction",begun\.request\)/g)||[]).length,1);
+});
