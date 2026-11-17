@@ -53,7 +53,7 @@ Masks must be re-read from actual opened JUCE object and translated into the cor
 
 | Adapter | Callback role | Buffer & clock | Safe lifetime |
 | --- | --- | --- | --- |
-| PrimaryJuiceAdapter (existing JUCE ASIO/WASAPI) | input+output + ONE native graph renderer | direct primary clock; zero additional resampler | existing LiveAudioEngine primary ownership and DirectRouteFence remain authoritative |
+| PrimaryDeviceAdapter (existing JUCE ASIO/WASAPI) | input+output + ONE native graph renderer | direct primary clock; zero additional resampler | existing LiveAudioEngine primary ownership and DirectRouteFence remain authoritative |
 | SecondaryCaptureAdapter | writes source PCM; no FX, no render, no GUI or graph mutation | one preallocated SPSC per independently clocked capture; ASRC consumed by primary | CONTROL open/stop/readback; callbacks use generation leases |
 | SecondaryRenderAdapter | consumes published pre-FX? **NO: only selected fully processed taps**, not VST3 | one preallocated SPSC per sink; ASRC maps primary to sink clock | stop sink, await producer/consumer quiescence on CONTROL, then reclaim queue |
 | ClockDomainBridge | ASRC per distinct independent capture/sink | initial actual rate ratio plus bounded slow correction from occupancy; configurable measured reservoir target | prepare/reset only when both ends are stopped/quiesced |
@@ -61,7 +61,7 @@ Masks must be re-read from actual opened JUCE object and translated into the cor
 | OutputTapPublisher | primary callback fans out selected precomputed native stem/bus/MAIN signals | SPSC per independent physical sink; no processing graph second time | bounded producer writes; consumer backpressure never blocks master |
 | MultiDeviceIoCoordinator | serialized control owner, endpoint inventory, transaction, resource conflicts, restart and session binding | no audio callback work; may use existing device manager coordinator where compatible | one owner for primary+secondary resource plan, explicit rollback |
 
-The name PrimaryJuiceAdapter is only a role label here, **not a proposed class or product rename**. Implementation should retain existing LiveAudioEngine/JUCE primary code rather than introducing an adapter with no tested benefit.
+The name PrimaryDeviceAdapter is only a role label here, **not a proposed class or product rename**. Implementation should retain existing LiveAudioEngine/JUCE primary code rather than introducing an adapter with no tested benefit.
 
 **Input-only ASIO nuance:** JUCE 8.0.15 ASIO exposes 16 internal slots and hasSeparateInputsAndOutputs=false *within one ASIO device*. The candidate secondary driver must be opened as a separate ASIO object with only input channels requested and output pins proven inactive, and then tested for live PCM. If driver refuses input-only, only vendor-documented, physically silent and explicitly authorized duplex fallback may be evaluated; otherwise mark unsupported. Do not hide dummy audible playback or repeatedly open until lucky.
 
