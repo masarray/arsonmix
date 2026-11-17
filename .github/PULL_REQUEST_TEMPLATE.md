@@ -1,34 +1,18 @@
-## Product outcome and source of truth
+## Product outcome
+What user-visible behavior or problem does this change address?
 
-User-visible acceptance:  
-Linked feature / architecture issue:  
-Current `main` SHA verified immediately before writing:  
-Open overlapping PRs and **exact HEAD SHAs** inspected:  
-Existing accepted visual/audio/session checkpoint protected:  
+## Reconciliation (brief, informational — NOT an owner/permission gate)
+- Current `main` / related implementation inspected (SHA or link, if relevant):
+- Existing accepted GUI/audio/session behavior to preserve:
+- Overlap with other PRs, if any, and how resulting Git changes were reconciled:
 
-**This is one coherent product integration PR**, or explicitly a documentation/research-only PR. It is NOT a legacy GUI/ENGINE/INTEGRATOR/FAT four-lane handoff. The old lane template was superseded by [AGENTS.md](../AGENTS.md) on 2026-11-05. Follow [current scalable architecture ADR](../docs/architecture/ADR_MODULAR_MVVM_REALTIME_20261118.md) and [parallel thread convergence](../docs/architecture/PARALLEL_THREAD_CONVERGENCE_20261118.md).
+**Anyone may work on any file on their own branch.** An open/draft PR, previous file owner, workstream label, missing external thread permission or same-file overlap never blocks starting a change. Resolve actual Git conflicts and verify behavior **at merge time**; see [Non-Blocking Parallel Development](../docs/architecture/PARALLEL_THREAD_CONVERGENCE_20261118.md) and [AGENTS.md](../AGENTS.md). The accepted modular MVVM direction is in [PR #763](https://github.com/masarray/arsonmix/pull/763), not a second competing ADR.
 
-## Domain ownership / parallel reconciliation
+## Verification (report only applicable evidence)
+- Current PR HEAD / relevant tests executed and result:
+- Approved `/preview/` and native ACK/PCM/.smix regression, if affected:
+- Installer compiled FX catalog and asset parity, if releasing:
+- Physical ASIO/vendor test: PASS / FAIL / PENDING / NOT APPLICABLE:
+- Known limitations and rollback:
 
-- Integration owner (this PR / receiving PR):
-- Subsystems and exact changed production files:
-- Existing implementation reused (issue/PR/commit):
-- Shared contract or native ABI changed (ChannelId/EdgeId, epoch, FX, bridge, `.smix`, device, or **none**):
-- Concurrent same-domain/same-file conflicts identified:
-- How unique changes were reconciled without overwriting newer accepted source:
-- Changes explicitly excluded from this PR:
-
-For an established single-product integration PR that uses the historical workflow compatibility marker, add that marker **only intentionally to its PR body** following the [convergence protocol](../docs/architecture/PARALLEL_THREAD_CONVERGENCE_20261118.md). Do NOT place the literal marker in this template: GitHub pre-fills it into unrelated PR bodies and a legacy parser would treat even a quoted example as authorization. The marker **does not** authorize bypass of required CI, protected-main, source reconciliation or physical output safety. Research/docs-only PRs do not need a product marker.
-
-## Complete, exact-head acceptance evidence
-
-- Recorded PR HEAD SHA / merge base:
-- Targeted fast contracts, real command/results:
-- Native JUCE/PCM/VST3 tests (exact run URL or **NOT RUN**):
-- Approved `/preview/`/Chromium tests (exact URL or **NOT RUN**):
-- Installer compiled-product/ImmerSIB/SonKu/asset parity (exact artifact SHA or **NOT APPLICABLE/PENDING**):
-- Physical ASIO/WASAPI/real vendor FAT (**PENDING** unless witnessed):
-- Rollback route and protected user/session data:
-- Remaining blocker, dependent PR and next **meaningful** product milestone:
-
-**Never claim** an offline logical ACK as installed PCM, CI PASS as physical FAT, merged code as a published installer, or a stale historical PR as current main. No new alternate GUI, callback, session authority, or duplicate DSP graph. Do not create extra paid Windows runs for documentation; FAT already covers native compilation when a field installer is required.
+No new coordination CI is required by this template. Do not confuse source PASS with physical FAT, a logical ACK with installed PCM, or merged code with a published installer. Preserve the real-time render authority and approved GUI.
