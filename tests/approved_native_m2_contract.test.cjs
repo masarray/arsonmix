@@ -3737,7 +3737,8 @@ test("MV-9B bridge uses only accepted native snapshots for global FX, fences M4 
    assert.match(bridge,new RegExp("fxRackVM\\."+name+"\\("));
  assert.match(bridge,/const current=controller\?\.state\(\)\?\.current;\s*const button=document\.getElementById\?\.\("globalFxToggle"\)/);
  assert.doesNotMatch(bridge,/const actual=snapshot\?\.globalFxBypassed;/);
- assert.match(bridge,/pendingSlotPowers\.delete\(key\);\s*}\s*else pending\.acked=true;/);
+ assert.match(bridge,/if\(verdict==="REJECTED"\)\{\s*pendingSlotPowers\.delete\(key\);/);
+ assert.match(bridge,/}\s*else pending\.acked=true;/);
  assert.doesNotMatch(vm,/backend\.emitEvent|document\.querySelector|window\.setTimeout/);
  assert.match(bridge,/controller = protocol\.createController\(/);
 });
