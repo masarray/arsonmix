@@ -153,6 +153,16 @@ int main() {
     names[1].name="setLIST 3"; // case-folded name remains occupied
     assert(Archive::nextGeneratedName(names)=="Setlist 4");
 
+    // Regression: full 2,000-song setlist -> Remove -> Import another
+    // song -> Undo. Undo is rejected before mutation; after removing an
+    // unrelated song the original undo remains available.
+    assert(Archive::canUndoRemove(0,0,1999,1999,1999));
+    assert(!Archive::canUndoRemove(0,0,1999,2000,2000));
+    assert(!Archive::canUndoRemove(0,0,1999,2001,2001));
+    assert(!Archive::canUndoRemove(0,1,1999,1999,1999));
+    assert(!Archive::canUndoRemove(0,0,-1,1999,1999));
+    assert(!Archive::canUndoRemove(0,0,1999,1999,1998));
+
     // Legacy empty v3 content migrates to a non-destructive default setlist.
     const auto empty=Archive::parse(juce::JSON::parse("{\"version\":3}"));
     assert(empty && empty->sets.size()==1);

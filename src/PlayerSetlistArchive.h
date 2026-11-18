@@ -71,6 +71,15 @@ public:
     // Keep automatic creation consistent with the archive's case-insensitive
     // uniqueness rule, including a delete-then-create cycle. At <32 sets,
     // candidate numbers 2..33 always contain an unused name.
+    // Undo is an insertion. Reject it before mutating live library/control
+    // arrays if an intervening import refilled the 2,000-song capacity.
+    // Keep this identical to serialize()/parseSongs() admission.
+    static bool canUndoRemove(int activeSet,int undoSet,int undoIndex,
+                              std::size_t songs,std::size_t controls) noexcept {
+        return undoSet==activeSet && undoIndex>=0 &&
+               songs==controls && songs<2000;
+    }
+
     static juce::String nextGeneratedName(
         const std::vector<PlayerSavedSet>& sets) {
         for(int number=2;number<=33;++number) {

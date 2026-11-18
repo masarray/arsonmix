@@ -4168,6 +4168,14 @@ private:
         if(action=="playerUndoRemove") {
             const auto removed=playerUndoRemove_;
             if(removed.set!=playerActiveSet_ || removed.index<0)return;
+            if(!armix::player::PlayerSetlistArchive::canUndoRemove(
+                    playerActiveSet_,removed.set,removed.index,
+                    playerLibrary_.size(),playerTrackSettings_.size())) {
+                // The removed slot may have been filled by an import. Do not
+                // create 2,001 songs or block all subsequent session saves.
+                playerError_="Setlist is full; remove a song before undoing";
+                emitPlayerState(true);return;
+            }
             if(std::find(playerLibrary_.begin(),playerLibrary_.end(),
                          removed.file)!=playerLibrary_.end())return;
             const int index=std::clamp(removed.index,0,
@@ -4257,8 +4265,10 @@ private:
         obj->setProperty("queueRevision",playerQueueEpoch_.revision());
         obj->setProperty("crossfadeMs",playerFadeMilliseconds_);
         obj->setProperty("canUndoRemove",
-            playerUndoRemove_.set==playerActiveSet_ &&
-            playerUndoRemove_.index>=0);
+            armix::player::PlayerSetlistArchive::canUndoRemove(
+                playerActiveSet_,playerUndoRemove_.set,
+                playerUndoRemove_.index,playerLibrary_.size(),
+                playerTrackSettings_.size()));
         obj->setProperty("libraryBusy",playerFolderBusy_);
         obj->setProperty("error",playerError_);
         obj->setProperty("chooseOutput",
