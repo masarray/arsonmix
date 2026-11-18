@@ -1043,7 +1043,8 @@
       return;
     }
     const requestId="source-native-"+(++nativeSourceSerial);
-    activeNativeSource={requestId,id,choice:entry.choice,epoch:entry.epoch};
+    activeNativeSource={requestId,id,choice:entry.choice,epoch:entry.epoch,
+      beforeRevision:current.graph.revision,acked:false};
     backend.emitEvent("arMixAction",{
       action:plan.action,requestId,...plan.payload
     });
@@ -1051,9 +1052,21 @@
     window.setTimeout(()=>{
       if(activeNativeSource?.requestId!==requestId)return;
       activeNativeSource=null;
-      nativeToast("Source ACK timed out · previous PCM preserved");
+      status("SOURCE timeout · refreshing accepted PCM and input choices");
       controller?.subscribe();
     },8000);
+  }
+  // Only independently installed ChannelId PCM readback may confirm SOURCE.
+  // Do not release the one active native transaction after ACK alone.
+  function settleNativeSourceReadback(next) {
+    const verdict=stripVM.sourceReadbackSettlement(activeNativeSource,next);
+    if(verdict!=="CONFIRMED"&&verdict!=="STALE")return;
+    const settled=activeNativeSource;
+    activeNativeSource=null;
+    if(verdict==="CONFIRMED")
+      status("Input "+settled.choice.label+" · native PCM readback verified");
+    else status("SOURCE changed or disconnected · accepted input refreshed");
+    if(pendingNativeSources.size)window.queueMicrotask(dispatchNativeSource);
   }
   let pendingBusCreate=null,pendingTrackDelete=null,stripRequestSerial=0;
   function requestNativeTrackDelete(track){
@@ -2662,6 +2675,7 @@
       status("NATIVE READBACK INVALID · existing GUI controls unchanged");
       return;
     }
+    settleNativeSourceReadback(next);
     if(readModel.kind==="LOGICAL_ONLY") {
       const staged=readModel.view;
       let revealCreatedId=null,wireImpact=null;
@@ -2969,10 +2983,17 @@
     backend.addEventListener("arMixNativeSourceAck",ack=>{
       const verdict=stripVM.sourceAckResult(activeNativeSource,ack,"CHANNEL_ID");
       if(verdict==="IGNORE")return;
-      activeNativeSource=null;
-      if(verdict!=="ACKED")
+      if(verdict==="ACKED"){
+        // ACK contains the publisher revision, but is not yet installed PCM.
+        activeNativeSource={...activeNativeSource,acked:true,
+          ackRevision:ack.graphRevision};
+        status("Native input ACKed · verifying accepted PCM source");
+        // An independently accepted snapshot can race ahead of the ACK.
+        settleNativeSourceReadback(controller?.state()?.current);
+      }else{
+        activeNativeSource=null;
         nativeToast("Native input rejected · "+(ack?.error||"stale PCM"));
-      else status("Native input accepted · checking subsequent PCM readback");
+      }
       controller?.subscribe();
     });
     backend.addEventListener("arMixNativeBusAck",ack=>{
