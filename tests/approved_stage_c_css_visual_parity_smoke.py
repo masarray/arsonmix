@@ -52,8 +52,18 @@ async def render(browser, path, viewport, state):
     try:
         await page.goto(path.resolve().as_uri())
         await page.wait_for_selector("#tracks .strip[data-id='1']")
-        await page.evaluate("document.fonts.ready")
-        await page.wait_for_timeout(100)
+        # The original/compiled CSS share the same DOM and PNGs but are
+        # opened as two file:// pages. A fixed delay can capture different
+        # image/font paint frames on a busy runner. Decode loaded images and
+        # let the compositor paint twice before comparing exact screenshots.
+        await page.evaluate("""async () => {
+          await document.fonts.ready;
+          await Promise.all([...document.images]
+            .filter(image => image.complete && image.naturalWidth > 0)
+            .map(image => image.decode().catch(() => {})));
+          await new Promise(resolve => requestAnimationFrame(() =>
+            requestAnimationFrame(resolve)));
+        }""")
         if state=="hover-identity":
             await page.locator("#tracks .strip[data-id='1'] .strip-identity-top").hover()
             await page.wait_for_timeout(130)
@@ -62,7 +72,21 @@ async def render(browser, path, viewport, state):
             await page.wait_for_timeout(130)
         assert not errors,errors
         styles=await page.evaluate(STYLE_EVIDENCE)
-        screenshot=await page.screenshot(animations="disabled",full_page=False)
+        # Do not weaken pixel parity. Wait for two identical consecutive
+        # PNG captures of EACH source, then compare their exact SHA-256 bytes.
+        # If a page never stabilizes, report failure (not an auto-pass).
+        screenshot=None
+        previous=None
+        for _ in range(12):
+            captured=await page.screenshot(animations="disabled",full_page=False)
+            if captured==previous:
+                screenshot=captured
+                break
+            previous=captured
+            await page.wait_for_timeout(100)
+        assert screenshot is not None, (
+            "GUI screenshot never stabilized; check active JS/PNG animation",
+            viewport,state,hashlib.sha256(previous or b"").hexdigest())
         return styles,hashlib.sha256(screenshot).hexdigest()
     finally:
         await page.close()
