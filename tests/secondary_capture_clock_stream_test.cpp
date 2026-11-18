@@ -70,6 +70,18 @@ static void invalidAndOverflow()
     check(!s.prepare({48000.,48000.,32769,128,2,1,1}));
     check(!s.prepare({48000.,48000.,128,32769,2,1,1}));
     check(!s.prepare({48000.,48000.,8192,8192,2,1,1}));
+
+    // A rejected replacement of a valid, unactivated preflight must NOT
+    // leave its previous bridge armed. Before this regression, prepared_
+    // remained true and activate() falsely accepted an empty format.
+    check(s.prepare({48000.,48000.,128,128,2,1,1}));
+    check(!s.prepare({48000.,48000.,128,128,0,1,1}));
+    check(!s.activate());
+    check(!s.ready());
+    check(s.format().channels==0);
+    check(!s.prepare({48000.,48000.,8192,8192,2,1,1}));
+    check(!s.activate());
+    s.stop();
     check(s.prepare({48000.,48000.,128,128,2,2,3}));
     check(s.activate());
     check(!s.prepare({48000.,48000.,128,128,2,4,3})); // live reset forbidden
