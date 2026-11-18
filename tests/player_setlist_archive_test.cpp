@@ -6,6 +6,7 @@
 #include <iostream>
 #include <limits>
 #include "../src/PlayerSetlistArchive.h"
+#include "../src/PlayerSetlistRepository.h"
 
 using Archive=armix::player::PlayerSetlistArchive;
 using SavedSet=armix::player::PlayerSavedSet;
@@ -224,6 +225,48 @@ int main() {
     full[0].files.insert(full[0].files.begin()+1000,removedSong);
     full[0].controls.insert(full[0].controls.begin()+1000,removedPreset);
     assert(!Archive::serialize(full,0,false,180).isObject());
+
+    // N-MOD-15: REAL disk adapter regression. Use an isolated directory,
+    // never the operator's settings or media library.
+    using Store=armix::player::PlayerSetlistRepository;
+    const auto sandbox=juce::File::getSpecialLocation(
+        juce::File::tempDirectory).getChildFile(
+            "arsonmix-nmod15-"+juce::Uuid().toString());
+    assert(sandbox.createDirectory().wasOk());
+    const auto target=sandbox.getChildFile("player-library.json");
+    assert(Store::load(target).status==Store::LoadStatus::missing);
+    assert(Store::save(target,doc->sets,doc->active,true,250)
+           ==Store::SaveStatus::saved);
+    const auto roundTrip=Store::load(target);
+    assert(roundTrip.status==Store::LoadStatus::loaded);
+    assert(roundTrip.document && roundTrip.document->sets.size()==2);
+    assert(roundTrip.document->active==1 && roundTrip.document->autoNext);
+    assert(roundTrip.document->fadeMs==250);
+    assert(roundTrip.document->sets[0].controls[0].cueOut==9.0);
+    const auto acceptedBytes=target.loadFileAsString();
+    assert(Store::save(target,broken,0,false,180)
+           ==Store::SaveStatus::invalidState);
+    assert(target.loadFileAsString()==acceptedBytes);
+    // An invalid parent (it is a regular file, NOT a folder) must fail
+    // atomically without modifying the already accepted setlist.
+    const auto notDirectory=sandbox.getChildFile("not-a-directory");
+    assert(notDirectory.replaceWithText("must not be replaced"));
+    const auto blocked=notDirectory.getChildFile("player-library.json");
+    assert(Store::save(blocked,doc->sets,doc->active,true,250)
+           ==Store::SaveStatus::ioError);
+    assert(notDirectory.loadFileAsString()=="must not be replaced");
+    assert(target.loadFileAsString()==acceptedBytes);
+    assert(target.replaceWithText("{bad JSON"));
+    assert(Store::load(target).status==Store::LoadStatus::invalid);
+    assert(target.loadFileAsString()=="{bad JSON");
+    // A valid operator save recovers a corrupt archive without touching
+    // the media paths referenced by song records.
+    assert(Store::save(target,fullReload->sets,0,false,180)
+           ==Store::SaveStatus::saved);
+    const auto largeReload=Store::load(target);
+    assert(largeReload.document && largeReload.document->sets[0].files.size()==2000);
+    assert(largeReload.document->sets[0].controls.size()==2000);
+    assert(sandbox.deleteRecursively());
 
     // Legacy empty v3 content migrates to a non-destructive default setlist.
     const auto empty=Archive::parse(juce::JSON::parse("{\"version\":3}"));

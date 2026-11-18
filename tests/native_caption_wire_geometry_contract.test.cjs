@@ -138,6 +138,17 @@ assert.match(main, /PlayerSetlistArchive::canUndoRemove/);
 assert.match(main, /Setlist is full; remove a song before undoing/);
 assert.doesNotMatch(main, /const int next=static_cast<int>\(playerSets_\.size\(\)\)\+1/);
 assert.match(main, /using PlayerTrackSettings=armix::player::PlayerTrackSettings/);
+const playerRepository=read('src/PlayerSetlistRepository.h');
+assert.match(playerRepository, /class PlayerSetlistRepository final/);
+assert.match(playerRepository, /juce::TemporaryFile staging\(target\)/);
+assert.match(playerRepository, /overwriteTargetFileWithTemporary\(\)/);
+assert.match(main, /PlayerSetlistRepository::load/);
+assert.match(main, /PlayerSetlistRepository::save/);
+const persistence=main.slice(main.indexOf('void restorePlayerLibrary()'),
+  main.indexOf('bool playerShowMaySwitchSet()'));
+assert.doesNotMatch(persistence,
+  /JSON::parse|JSON::toString|loadFileAsString|replaceWithText|juce::TemporaryFile/);
+
 const cuePolicy=read('engine/player/PlayerCueEditPolicy.h');
 assert.match(cuePolicy, /struct PlayerCueEditPolicy/);
 assert.match(main, /CuePolicy::plan/);

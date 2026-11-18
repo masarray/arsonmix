@@ -46,6 +46,7 @@
 #include "NativeMixerSessionSaveWorker.h"
 #include "NativeLogicalMixerControl.h"
 #include "PlayerSetlistArchive.h"
+#include "PlayerSetlistRepository.h"
 #include "NativeHotkeyRegistry.h"
 #include "NativeHotkeyCommandPlan.h"
 #include "NativeFxParameterHotkey.h"
@@ -3907,40 +3908,35 @@ private:
         playerOutputPendingIndex_=-1;
         playerUndoRemove_={};
     }
-    // Player archive owns only v1/v2/v3 JSON policy and deterministic mapping.
-    // ConsoleWindow retains the sole disk writer, set activation and deck.
+    // The repository owns only durable Player JSON I/O. ConsoleWindow
+    // retains the single deck, live selection and accepted native control.
     void restorePlayerLibrary() {
         playerSets_.clear();
-        const auto file=settingsDirectory().getChildFile("player-library.json");
-        if(!file.existsAsFile()) {
+        auto result=armix::player::PlayerSetlistRepository::load(
+            settingsDirectory().getChildFile("player-library.json"));
+        if(result.status==armix::player::PlayerSetlistRepository::LoadStatus::missing) {
             playerSets_.push_back({"My Setlist",{},{}});
             return;
         }
-        auto parsed=armix::player::PlayerSetlistArchive::parse(
-            juce::JSON::parse(file.loadFileAsString()));
-        if(!parsed) {
+        if(!result.document) {
             playerSets_.push_back({"My Setlist",{},{}});
             playerError_="Setlists could not be read; no music files were changed";
             return;
         }
-        playerSets_=std::move(parsed->sets);
-        activatePlayerSet(parsed->active);
-        playerAutoNext_=parsed->autoNext;
-        playerFadeMilliseconds_=parsed->fadeMs;
+        auto& parsed=*result.document;
+        playerSets_=std::move(parsed.sets);
+        activatePlayerSet(parsed.active);
+        playerAutoNext_=parsed.autoNext;
+        playerFadeMilliseconds_=parsed.fadeMs;
     }
     void persistPlayerLibrary() {
         saveActivePlayerSet();
-        const auto document=armix::player::PlayerSetlistArchive::serialize(
+        const auto result=armix::player::PlayerSetlistRepository::save(
+            settingsDirectory().getChildFile("player-library.json"),
             playerSets_,playerActiveSet_,playerAutoNext_,playerFadeMilliseconds_);
-        if(!document.isObject()) {
+        if(result==armix::player::PlayerSetlistRepository::SaveStatus::invalidState)
             playerError_="Unable to save setlists; invalid setlist state";
-            return;
-        }
-        const auto target=settingsDirectory().getChildFile("player-library.json");
-        juce::TemporaryFile staging(target);
-        if(!staging.getFile().replaceWithText(
-                juce::JSON::toString(document,false)) ||
-           !staging.overwriteTargetFileWithTemporary())
+        else if(result==armix::player::PlayerSetlistRepository::SaveStatus::ioError)
             playerError_="Unable to save setlists; check folder permissions";
     }
     bool playerShowMaySwitchSet() {
