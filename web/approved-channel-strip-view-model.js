@@ -381,6 +381,17 @@
     return "CONFIRMED";
   }
 
+  // MV-15: a single readback decision for both native SOURCE authorities.
+  // Each physical graph retains its own strict format, revision, epoch and
+  // pin verifier. A correlated ACK alone cannot confirm accepted PCM.
+  function sourceQueueReadback({authority,pending,snapshot}={}) {
+    if(authority==="CHANNEL_ID")
+      return sourceReadbackSettlement(pending,snapshot);
+    if(authority==="M4")
+      return m4SourceReadbackSettlement(pending,snapshot);
+    return pending?"STALE":"NONE"; // no fallback to a third source owner
+  }
+
   // MV-9: pure Channel Strip scalar gesture/readback policy. The only
   // pending Maps, native events, timers and audio transport stay in the
   // approved bridge. Treat exact decimal-string ChannelIds as opaque data.
@@ -570,7 +581,7 @@
     primaryChoices,resolvePrimarySelection,readbackBindings,externalPending,
     primaryOutMutation,externalOutputPlan,sourceQueueSelection,
     sourceDispatchPlan,sourceQueueHead,sourceAckResult,sourceReadbackSettlement,
-    m4SourceReadbackSettlement,
+    m4SourceReadbackSettlement,sourceQueueReadback,
     scalarIdentityMatches,scalarVisualSettlement,m4ScalarAckResult,
     m4ScalarReadbackSettlement,scalarDispatchLease,
     scalarGestureFlushPlan,scalarDispatchPlan,
