@@ -136,7 +136,62 @@
       edgeId:matching[0].edgeId}};
   }
 
+
+  // MV-5 pure EXTERNAL OUT preflight. Native readback alone owns physical
+  // PCM, routing, devices and permission. This never edits an accepted graph.
+  function externalOutputPlan({native,hardware,channelId,selectedLabel,
+                               currentLabel,choices=[],pending=false,
+                               channelName=""}={}) {
+    const unavailable={kind:"UNAVAILABLE"};
+    const safeCounter=x=>typeof x==="string"&&/^[1-9][0-9]*$/.test(x)&&
+      Number.isSafeInteger(Number(x))?x:null;
+    const nativeId=x=>{
+      if(typeof x!=="string"||!/^[1-9][0-9]*$/.test(x))return false;
+      try{return BigInt(x)<=18446744073709551615n;}catch{return false;}
+    };
+    const graph=native?.graph,d=hardware?.device;
+    const epoch=d?.epoch,revision=hardware?.raw?.externalRevision;
+    if(pending||native?.admitted!==true||native.retained===true||
+       !nativeId(channelId)||!Array.isArray(graph?.channels)||
+       d?.backend!=="ASIO"||!safeCounter(epoch)||!safeCounter(revision)||
+       (typeof native?.device?.epoch==="string"&&
+        native.device.epoch!==epoch))return unavailable;
+    const channel=graph.channels.find(ch=>ch?.id===channelId);
+    if(!channel||!["INPUT","GROUP","FX_RETURN"].includes(channel.role))
+      return unavailable;
+    const matches=Array.isArray(choices)?
+      choices.filter(p=>p?.label===selectedLabel):[];
+    if(matches.length!==1)return unavailable;
+    const pair=matches[0],left=pair.left,right=pair.right;
+    const none=left===-1&&right===-1;
+    if(!none){
+      if(!Number.isSafeInteger(left)||left<0||left%2!==0||
+         !Number.isSafeInteger(right)||right!==left+1||
+         !Array.isArray(d.enabledOutputs)||
+         !d.enabledOutputs.includes(left)||!d.enabledOutputs.includes(right)||
+         !Array.isArray(d.outputEndpoints)||![left,right].every(port=>
+           d.outputEndpoints.some(p=>p?.port===port&&p.active===true)))
+        return unavailable;
+      const main=hardware?.raw?.physicalMainOutputs||[];
+      const monitor=hardware?.raw?.physicalMonitorOutputs||[];
+      if((Array.isArray(main)&&[left,right].some(p=>main.includes(p)))||
+         (Array.isArray(monitor)&&[left,right].some(p=>monitor.includes(p))))
+        return unavailable;
+    }
+    if(currentLabel===selectedLabel)return {kind:"NO_CHANGE"};
+    const occupied=Array.isArray(hardware?.raw?.externalOutputs)?
+      hardware.raw.externalOutputs.filter(row=>row?.physicalLeft===left&&
+        row.physicalRight===right&&row.channelId!==channelId).length:0;
+    const sharedNote=occupied?
+      " SHARED with "+occupied+" other source(s); signals SUM. Check gains.":"";
+    const confirmation=none?"":"Enable ASIO OUT "+(left+1)+"/"+(right+1)+
+      " for "+channelName+"?"+sharedNote+" Check amplifier/speakers. "+
+      "INTERNAL OUT stays unchanged.";
+    return {kind:"READY",left,right,epoch,revision,
+      requiresConfirmation:!none,confirmation,sharedCount:occupied};
+  }
+
   return Object.freeze({outputTargets,inputChoices,externalChoices,
     primaryChoices,resolvePrimarySelection,readbackBindings,externalPending,
-    primaryOutMutation});
+    primaryOutMutation,externalOutputPlan});
 });
