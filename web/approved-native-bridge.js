@@ -1490,22 +1490,25 @@
   // null means an admitted ChannelId intent is already awaiting its ACK /
   // producer readback. Keep ONLY the newest dB target, never drop release.
   function dispatchLiveScalar(edit) {
-    if(!sameNativeEditIdentity(edit) ||
-       !liveScalarReady(edit.parameter,edit.t))return false;
-    if(logicalView&&pendingLogical)return null;
-    if(!logicalView&&(edit.t?.kind==="master" || m4ControlIsOwner()))
-      return sendM4Control(edit.parameter,edit.t,edit.value);
-    if(!logicalView&&controller?.state()?.pending)return null;
-    return intent(edit.parameter==="faderDb"||edit.parameter==="masterGain"?"SET_FADER":"SET_PAN",
-      edit.t,edit.parameter==="faderDb"||edit.parameter==="masterGain"?
-        {valueDb:edit.value}:{value:edit.value/100});
+    const plan=stripVM.scalarDispatchPlan(edit,{
+      identity:nativeEditIdentity(edit.t),
+      ready:liveScalarReady(edit.parameter,edit.t),
+      logical:!!logicalView,logicalPending:!!pendingLogical,
+      m4Owner:edit.t?.kind==="master"||m4ControlIsOwner(),
+      nativePending:!!controller?.state()?.pending
+    });
+    if(plan.kind==="REJECT")return false;
+    if(plan.kind==="WAIT")return null;
+    if(plan.kind==="M4")return sendM4Control(edit.parameter,edit.t,edit.value);
+    return intent(plan.operation,edit.t,plan.payload);
   }
   function flushLiveScalars() {
     for(const [key,edit] of pendingNativeControl) {
       const result=dispatchLiveScalar(edit);
       if(result===null)continue;
       pendingNativeControl.delete(key);
-      if(result)lastNativeControlSent.set(key,performance.now());
+      if(result)lastNativeControlSent.set(key,
+        stripVM.scalarDispatchLease(edit,performance.now()));
       else {
         if(liveFaderVisualTargets.get(key)===edit)
           liveFaderVisualTargets.delete(key);
@@ -1520,15 +1523,14 @@
     pendingNativeControl.set(key,edit); // coalesce: last writer always wins
     if(parameter==="faderDb"||parameter==="masterGain")
       liveFaderVisualTargets.set(key,edit);
-    // Offline document changes are not realtime PCM. Persist only the
-    // released target, not one .smix generation per pointer-move frame.
-    if(logicalView){
-      if(final)flushLiveScalars();
-      return true;
-    }
-    const last=lastNativeControlSent.get(key);
-    if(final||last===undefined||now-last>=30)
-      flushLiveScalars(); // pointermove publishes BEFORE pointerup
+    // One pure selector preserves last-writer-wins, pointerup release and
+    // offline .smix persistence, while ignoring old channel/epoch throttles.
+    const flush=stripVM.scalarGestureFlushPlan({
+      logical:!!logicalView,final:!!final,now,
+      lastSent:lastNativeControlSent.get(key),identity:edit
+    });
+    if(flush==="FLUSH")flushLiveScalars(); // pointermove BEFORE pointerup
+    if(logicalView)return true;
     if(pendingNativeControl.has(key))queueLiveControlFlush();
     return true;
   }
@@ -2743,6 +2745,7 @@
       pendingOutputPatch=null;pendingNativeFxPower=null;pendingBusCreate=null;
       pendingFxInsert=null;pendingTrackDelete=null;startupWire=null;activeWireAttempt=null;
       pendingWireGains.clear();pendingNativeControl.clear();liveFaderVisualTargets.clear();
+      lastNativeControlSent.clear();
       const signature="retained|"+next.identity+"|"+appearanceRevision;
       if(lastPaintedSignature!==signature && projectNativeGraphWithoutFocusLoss(next)){
         lastPaintedSignature=signature;
@@ -2865,6 +2868,9 @@
             if(edit.authority==="CHANNEL_ID")pendingNativeControl.delete(key);
           for(const [key,edit] of liveFaderVisualTargets)
             if(edit.authority==="CHANNEL_ID")liveFaderVisualTargets.delete(key);
+          // A rejected native graph invalidates its old send-time leases.
+          // M4 and offline remain readback-owned; next gesture can send now.
+          lastNativeControlSent.clear();
           lastNativeError=state.lastError;
           // Never destroy an active pointer capture. Once the user releases,
           // restore only the last independently accepted native controls.
