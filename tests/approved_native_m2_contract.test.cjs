@@ -999,11 +999,15 @@ test("Native FX GUI routes through ChannelId PCM with no operator MONITOR ritual
  const activeProjection=read("integration/ApprovedNativeV8Projection.h");
  assert.match(activeProjection,/insert->setProperty\("catalogId",catalog\)/);
  assert.match(activeProjection,/ch->setProperty\("fxRackBypassed",rackBypassed\)/);
- assert.match(bridge,/controller\.intent\("LOAD_INSERT",nativeId,/);
- assert.match(bridge,/if\(accepted\?\.admitted && nativeCh\)/);
+ assert.match(bridge,/fxRackVM\.nativeInsertPlan\(accepted,/);
+ assert.match(bridge,/controller\.intent\("LOAD_INSERT",plan\.channelId,plan\.payload\)/);
+ assert.match(bridge,/accepted\?\.admitted \|\| mixerSession\(\)\?\.authority==="CHANNEL_ID"/);
  assert.match(lab,/nativeAccepted_\.fxOwners->externalChannel\(\)==target/);
  assert.match(bridge,/pendingFxInsert=\{authority:"CHANNEL_ID"/);
- assert.match(bridge,/inserted\?\.catalogId===p\.id/);
+ const fxVM=read("web/approved-fx-rack-view-model.js");
+ assert.match(bridge,/fxRackVM\.nativeInsertSettlement\(pendingFxInsert,next,confirmed\)/);
+ assert.match(fxVM,/fx\.catalogId!==pending\.id/);
+ assert.match(fxVM,/confirmed\.requestId!==pending\.requestId/);
  assert.match(translate,/if\(op=="LOAD_INSERT"\)/);
  assert.match(snapshot,/available\.add\(juce::String\("LOAD_INSERT"\)\)/);
  assert.match(main,/engine_\.installNativeVst3\(/);
@@ -2833,7 +2837,8 @@ test("Guitar FX picker binding is real, visible and matches native installed reg
  assert.ok(bridge.includes("const presentFxCatalog=()=>scope?.setNativeCatalog?.("));
  assert.ok(guiBuilder.includes("setNativeCatalog(rows)"));
  assert.ok(guiBuilder.includes("renderPluginCatalog();renderFastPicker();"));
- assert.ok(bridge.includes('controller.intent("LOAD_INSERT",nativeId,'));
+ assert.ok(bridge.includes('fxRackVM.nativeInsertPlan(accepted,'));
+ assert.ok(bridge.includes('controller.intent("LOAD_INSERT",plan.channelId,plan.payload)'));
  assert.ok(bridge.includes('pendingFxInsert={authority:"CHANNEL_ID"'));
 });
 

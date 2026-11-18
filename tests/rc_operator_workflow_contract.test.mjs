@@ -55,8 +55,15 @@ test('FX picker closes and opens an actual editor only after accepted native or 
   assert.match(bridge,/effect\.id!==instanceId\|\|effect\.catalogId!==catalogId/);
   assert.match(bridge,/justInsertedLogicalFx/);
   assert.match(bridge,/scope\?\.closeNativePicker\?\.\(\);\s*openVerifiedInsertedFx\(p\.channelId,p\.slot,p\.catalogId,inserted\.id\)/);
-  assert.match(bridge,/openVerifiedInsertedFx\(p\.channelId,p\.slot,p\.id,inserted\.id\)/);
-  assert.match(bridge,/confirmed\.requestId===pendingFxInsert\.requestId/);
+  // Native editor requires verified accepted lease, not catalog key or ACK.
+  const fxVM=read('web/approved-fx-rack-view-model.js');
+  assert.match(bridge,/fxRackVM\.nativeInsertSettlement\(pendingFxInsert,next,confirmed\)/);
+  assert.match(bridge,/if\(fxInsert\.kind==="CONFIRMED"\)/);
+  assert.match(bridge,/openVerifiedInsertedFx\(fxInsert\.channelId,fxInsert\.slot,/);
+  assert.match(bridge,/fxInsert\.catalogId,fxInsert\.instanceId\)/);
+  assert.match(fxVM,/confirmed\.requestId!==pending\.requestId/);
+  assert.match(fxVM,/fx\.catalogId!==pending\.id/);
+  assert.match(bridge,/pendingFxInsert=null;\s*scope\?\.closeNativePicker\?\.\(\)/);
   assert.match(bridge,/ack\.channel===p\.channel && ack\.slot===p\.slot/);
   assert.match(bridge,/paintM4FxInstances\(state\);\s*scope\?\.closeNativePicker\?\.\(\);\s*openRoutedFxEditor\(p\.channel,p\.slot,actual\.instanceId,epoch,revision\)/);
   assert.match(bridge,/consumeAction\?\.\(track,"openPlugin"/);
