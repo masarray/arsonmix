@@ -33,6 +33,10 @@ class PlayerSetlistArchive final {
                            PlayerSavedSet& destination) {
         const auto* entries=items.getArray();
         if(entries==nullptr)return;
+        // Use the same JUCE File identity as serialize(). A 2,000-track
+        // archive must not do quadratic duplicate scans on every startup.
+        std::set<juce::File> knownPaths(
+            destination.files.begin(),destination.files.end());
         for(const auto& item:*entries) {
             if(destination.files.size()>=2000)break;
             if((version==1&&!item.isString()) ||
@@ -43,8 +47,7 @@ class PlayerSetlistArchive final {
                !juce::File::isAbsolutePath(path))continue;
             const juce::File source(path);
             if(!source.hasFileExtension("wav;mp3;flac;aif;aiff;ogg") ||
-               std::find(destination.files.begin(),destination.files.end(),source)
-                   !=destination.files.end())continue;
+               !knownPaths.insert(source).second)continue;
             PlayerTrackSettings settings;
             if(version>=2) {
                 settings.key=static_cast<int>(item.getProperty("key",0));

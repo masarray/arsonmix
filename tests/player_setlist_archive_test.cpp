@@ -200,7 +200,15 @@ int main() {
             "arsonmix-mv14-capacity-"+juce::String(i)+".wav"));
         full[0].controls.emplace_back();
     }
-    assert(Archive::serialize(full,0,false,180).isObject());
+    const auto fullDocument=Archive::serialize(full,0,false,180);
+    assert(fullDocument.isObject());
+    const auto fullReload=Archive::parse(juce::JSON::parse(
+        juce::JSON::toString(fullDocument,false)));
+    assert(fullReload && fullReload->sets.size()==1);
+    assert(fullReload->sets[0].files.size()==2000);
+    assert(fullReload->sets[0].controls.size()==2000);
+    assert(fullReload->sets[0].files[1000]==full[0].files[1000]);
+    assert(fullReload->sets[0].files[1999]==full[0].files[1999]);
     const auto removedSong=full[0].files[1000];
     const auto removedPreset=full[0].controls[1000];
     full[0].files.erase(full[0].files.begin()+1000);
