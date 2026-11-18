@@ -1048,17 +1048,31 @@
     dispatchSourceQueue("CHANNEL_ID");
   }
 
-  // Only independently installed ChannelId PCM readback may confirm SOURCE.
-  // Do not release the one active native transaction after ACK alone.
-  function settleNativeSourceReadback(next) {
-    const verdict=stripVM.sourceReadbackSettlement(activeNativeSource,next);
-    if(verdict!=="CONFIRMED"&&verdict!=="STALE")return;
-    const settled=activeNativeSource;
-    activeNativeSource=null;
-    if(verdict==="CONFIRMED")
-      status("Input "+settled.choice.label+" · native PCM readback verified");
-    else status("SOURCE changed or disconnected · accepted input refreshed");
-    if(pendingNativeSources.size)window.queueMicrotask(dispatchNativeSource);
+  // MV-15: one UI settlement owner after strict per-authority native PCM
+  // verification. A late ACK can check an already independently published
+  // snapshot without waiting for another audio callback.
+  function settleSourceReadback(authority,next) {
+    const channelIdOwner=authority==="CHANNEL_ID";
+    const pending=channelIdOwner?activeNativeSource:nativeUiSourcePending;
+    const verdict=stripVM.sourceQueueReadback({authority,pending,snapshot:next});
+    if(verdict!=="CONFIRMED"&&verdict!=="STALE")return verdict;
+    if(channelIdOwner){
+      activeNativeSource=null;
+      status(verdict==="CONFIRMED"?
+        "Input "+pending.choice.label+" · native PCM readback verified":
+        "SOURCE changed or disconnected · accepted input refreshed");
+      if(pendingNativeSources.size)window.queueMicrotask(dispatchNativeSource);
+    }else{
+      nativeUiSourcePending=null;
+      status(verdict==="CONFIRMED"?
+        "CH "+(pending.channel+1)+" INPUT · native PCM readback verified":
+        "Native input changed · old M4 source selection discarded");
+      // onNativeReadback already drains after an M4 snapshot. Also support
+      // a callback readback that arrives BEFORE the matching ACK event.
+      if(verdict==="CONFIRMED"&&pendingSourceQueue.size)
+        window.queueMicrotask(dispatchQueuedSource);
+    }
+    return verdict;
   }
   let pendingBusCreate=null,pendingTrackDelete=null,stripRequestSerial=0;
   function requestNativeTrackDelete(track){
@@ -2595,21 +2609,6 @@
     dispatchSourceQueue("M4");
   }
 
-  // Hold M4 source selection after ACK until independently published PCM
-  // source rows show the requested mode AND both physical input pins.
-  // The existing bridge continues to own one queue, timer and native event.
-  function settleM4SourceReadback(next){
-    const verdict=stripVM.m4SourceReadbackSettlement(nativeUiSourcePending,next);
-    if(verdict!=="CONFIRMED"&&verdict!=="STALE")return;
-    const settled=nativeUiSourcePending;
-    nativeUiSourcePending=null;
-    if(verdict==="CONFIRMED")
-      status("CH "+(settled.channel+1)+" INPUT · native PCM readback verified");
-    else status("Native input changed · old M4 source selection discarded");
-    // onNativeReadback dispatches the next latest-per-channel draft using the
-    // NEW accepted revision. No second dispatch owner or accepted UI state.
-  }
-
   function playAcceptedWireImpact(changes) {
     const plug=changes?.find(change=>["CONNECT","ROUTE_ONLY","RETARGET"].includes(change.op));
     if(!plug)return;
@@ -2671,8 +2670,8 @@
     }
     lastNativeLifecycleLease=lease;
     appearanceFromNative(next);
-    settleNativeSourceReadback(next);
-    settleM4SourceReadback(next);
+    settleSourceReadback("CHANNEL_ID",next);
+    settleSourceReadback("M4",next);
     if(readModel.kind==="LOGICAL_ONLY") {
       const staged=readModel.view;
       let revealCreatedId=null,wireImpact=null;
@@ -2989,7 +2988,7 @@
           ackRevision:ack.graphRevision};
         status("Native input ACKed · verifying accepted PCM source");
         // An independently accepted snapshot can race ahead of the ACK.
-        settleNativeSourceReadback(controller?.state()?.current);
+        settleSourceReadback("CHANNEL_ID",controller?.state()?.current);
       }else{
         activeNativeSource=null;
         nativeToast("Native input rejected · "+(ack?.error||"stale PCM"));
@@ -3067,6 +3066,9 @@
           nativeUiSourcePending.ackRevision=String(ack.state.revision);
           status("CH "+(nativeUiSourcePending.channel+1)+
             " INPUT accepted · verifying native PCM source");
+          // A separately published M4 PCM snapshot can arrive first.
+          // Same ACK+readback rule as ChannelId; never confirm from ack.state.
+          settleSourceReadback("M4",controller?.state()?.current);
         }else{
           nativeUiSourcePending=null;
           status("NATIVE INPUT REJECTED · "+(ack?.error||"stale routing"));

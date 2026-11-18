@@ -64,10 +64,10 @@ test("MV-7 native SOURCE requires ACKed graph revision AND independently install
   "SOURCE NONE must not remove a physical input from UI before installed PCM");
  const model=read("web/approved-channel-strip-view-model.js");
  const bridge=read("web/approved-native-bridge.js");
- assert.match(bridge,/stripVM\.sourceReadbackSettlement\(/);
+ assert.match(bridge,/stripVM\.sourceQueueReadback\(/);
  assert.match(bridge,/beforeRevision:current\.graph\.revision,acked:false/);
  assert.match(bridge,/ackRevision:ack\.graphRevision/);
- assert.match(bridge,/settleNativeSourceReadback\(next\)/);
+ assert.match(bridge,/settleSourceReadback\("CHANNEL_ID",next\)/);
  assert.doesNotMatch(model,/backend\.emitEvent|document\.|window\.setTimeout/,
   "Channel Strip readback remains pure; bridge holds one transient source queue");
 });
@@ -216,6 +216,61 @@ test("MV-6 M4 SOURCE dispatch reuses fresh revision but never migrates stale dev
 });
 
 
+
+test("MV-15 one SOURCE settlement policy is pure and preserves both PCM formats",()=>{
+ const nativeId="9007199254740993",epoch="18446744073709551610";
+ const rev="9223372036854775808";
+ const nativePending={requestId:"source-native-7",id:nativeId,epoch,
+   beforeRevision:"9223372036854775807",acked:true,ackRevision:rev,
+   choice:{label:"Stereo Mic",mode:"STEREO",left:2,right:3}};
+ const nativeSnapshot={admitted:true,retained:false,
+   device:{epoch},raw:{mixerSession:{authority:"CHANNEL_ID",deviceEpoch:epoch}},
+   graph:{revision:rev,channels:[{id:nativeId,role:"INPUT",
+     source:{sourceFormat:"STEREO",portId:"in:2",portIdRight:"in:3"}}]}};
+ const m4Pending={requestId:8,channel:4,epoch:71,revision:29,
+   acked:true,ackRevision:"30",
+   choice:{label:"Mono IN 1",mode:"MONO",left:0,right:-1}};
+ const channels=Array.from({length:10},(_,i)=>({id:"m4:"+String(i+1).padStart(2,"0"),
+   role:"INPUT",source:i===4?{mode:"MONO",left:0,right:-1}:
+     {mode:"NONE",left:-1,right:-1}}));
+ const m4Snapshot={admitted:false,retained:false,device:{epoch:"71"},
+   raw:{mixerSession:{authority:"M4",deviceEpoch:"71",routeRevision:"30",channels},
+     legacyM4:{active:true,routeAccepted:true,routingRevision:"30"}}};
+ const settle=(authority,pending,snapshot)=>
+   stripVM.sourceQueueReadback({authority,pending,snapshot});
+ assert.equal(settle("CHANNEL_ID",nativePending,nativeSnapshot),"CONFIRMED");
+ assert.equal(settle("M4",m4Pending,m4Snapshot),"CONFIRMED");
+ for(const [authority,pending,snapshot] of [
+   ["CHANNEL_ID",nativePending,nativeSnapshot],["M4",m4Pending,m4Snapshot]
+ ]){
+   assert.equal(settle(authority,null,snapshot),"NONE");
+   assert.equal(settle(authority,{...pending,acked:false},snapshot),"PENDING_ACK",
+     "independently installed PCM must not bypass the ACK");
+   assert.equal(settle(authority,pending,{...snapshot,
+     device:{epoch:"99"}}),"STALE","device lease must match exactly");
+ }
+ const wrong=clone(m4Snapshot);
+ wrong.raw.mixerSession.channels[4].source.left=1;
+ assert.equal(settle("M4",m4Pending,wrong),"PENDING");
+ const stereoWrong=clone(nativeSnapshot);
+ stereoWrong.graph.channels[0].source.portIdRight="in:4";
+ assert.equal(settle("CHANNEL_ID",nativePending,stereoWrong),"PENDING");
+ assert.equal(settle("UNKNOWN",m4Pending,m4Snapshot),"STALE",
+   "unrecognized authority cannot invent PCM");
+ assert.equal(settle("UNKNOWN",null,null),"NONE");
+ const bridge=read("web/approved-native-bridge.js");
+ assert.equal((bridge.match(/function settleSourceReadback\(/g)||[]).length,1);
+ assert.equal((bridge.match(/stripVM\.sourceQueueReadback\(/g)||[]).length,1);
+ assert.doesNotMatch(bridge,/function settleNativeSourceReadback\(/);
+ assert.doesNotMatch(bridge,/function settleM4SourceReadback\(/);
+ assert.match(bridge,/settleSourceReadback\("CHANNEL_ID",next\)/);
+ assert.match(bridge,/settleSourceReadback\("M4",next\)/);
+ assert.match(bridge,/settleSourceReadback\("CHANNEL_ID",controller\?\.state\(\)\?\.current\)/);
+ assert.match(bridge,/settleSourceReadback\("M4",controller\?\.state\(\)\?\.current\)/);
+ assert.doesNotMatch(stripVM.sourceQueueReadback.toString(),
+   /document\.|window\.|backend|setTimeout|localStorage/);
+});
+
 test("MV-14 one pure dispatch head preserves FIFO and exact identity across ChannelId and M4",()=>{
  const id="9007199254740993",id2="9007199254740994";
  const epoch="18446744073709551610";
@@ -283,7 +338,7 @@ test("MV-14 one pure dispatch head preserves FIFO and exact identity across Chan
 
  const bridge=read("web/approved-native-bridge.js");
  const begin=bridge.indexOf("  function dispatchSourceQueue(authority){");
- const end=bridge.indexOf("  // Only independently installed ChannelId PCM readback",begin);
+ const end=bridge.indexOf("  // MV-15: one UI settlement owner",begin);
  const body=bridge.slice(begin,end);
  assert.ok(begin>0&&end>begin);
  assert.match(body,/while\(queue\.size\)/);
@@ -371,8 +426,8 @@ test("MV-13 M4 input ACK cannot free source queue until independently accepted P
  assert.match(ackBody,/nativeUiSourcePending\.ackRevision=String\(ack\.state\.revision\)/);
  assert.doesNotMatch(ackBody,/nativeUiSourcePending=null;\s*if\(verdict==="ACKED"\)/,
    "ACK must not release M4 source queue");
- assert.match(bridge,/stripVM\.m4SourceReadbackSettlement\(nativeUiSourcePending,next\)/);
- assert.match(bridge,/settleM4SourceReadback\(next\)/);
+ assert.match(bridge,/stripVM\.sourceQueueReadback\(\{authority,pending,snapshot:next\}\)/);
+ assert.match(bridge,/settleSourceReadback\("M4",next\)/);
  assert.equal((bridge.match(/arMixSourceSwitchAck/g)||[]).length,1,
    "one physical M4 ACK owner, no new transport/controller");
  assert.doesNotMatch(stripVM.m4SourceReadbackSettlement.toString(),
@@ -2329,6 +2384,97 @@ test("P0 output-only Audio I/O is a real native configuration, never blocked by 
  assert.doesNotMatch(bridge,/ack\.active\.enabledInputs\.length>0/);
  assert.match(read("web/approved-device-view-model.js"),/Mixer ready · Output muted/);
 });
+
+test("MV-15 real M4 first-sound PCM snapshot ahead of ACK drains queued second INPUT",()=>{
+ const vm=require("node:vm"),listeners=new Map(),sent=[],microtasks=[];
+ const tracks=Array.from({length:10},(_,i)=>({id:i+1,kind:"audio",
+   name:"CH "+(i+1),input:"None",output:"Master",format:"mono",
+   fx:[],slotBypass:[],fxInsertIds:[]}));
+ const scope={tracks,master:{id:50,kind:"master",output:"Master"},
+   findTrack:el=>el?.track||null,render(){},stopDemo(){}};
+ const backend={emitEvent:(name,payload)=>sent.push({name,payload}),
+   addEventListener:(name,fn)=>listeners.set(name,fn)};
+ const doc={readyState:"complete",documentElement:{dataset:{}},
+   activeElement:null,getElementById:id=>id==="info"?{textContent:""}:
+     id==="preview"?{disabled:false}:null,
+   querySelector:()=>null,addEventListener(){}};
+ const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,
+   ArSonApprovedDeviceViewModel:deviceVM,
+   ArSonApprovedChannelStripViewModel:stripVM,
+   ArSonApprovedFxRackViewModel:fxRackVM,
+   ArSonApprovedWireViewModel:wireVM,
+   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
+   setTimeout(){return 0},clearTimeout(){},
+   queueMicrotask(fn){microtasks.push(fn);}};
+ vm.runInNewContext(read("web/approved-native-bridge.js"),{
+   window:win,document:doc,performance:{now:()=>0},console
+ },{timeout:1500});
+ const boot=clone(fixtures.g0);
+ Object.assign(boot.device,{backend:"Windows Audio",
+   captureDevice:"Real microphone",playbackDevice:"Speakers",
+   enabledInputs:[0,1],
+   inputEndpoints:[
+     {id:"in:0",port:0,callback:0,label:"IN 1",active:true},
+     {id:"in:1",port:1,callback:1,label:"IN 2",active:true}
+   ]});
+ boot.legacyM4={active:true,routeAccepted:false,routingRevision:"12"};
+ boot.mixerSession={authority:"NONE",deviceEpoch:boot.device.epoch,
+   routeRevision:"0",rosterRevision:"0",channels:[],main:{outputArmed:false}};
+ listeners.get("arMixConsoleSnapshot")(boot);
+ const choose=(channel,label)=>win.__ARMIX_NATIVE_M2__.consumeField({
+   type:"change",target:{track:tracks[channel],dataset:{field:"input"},value:label}
+ });
+ assert.equal(choose(4,"Mono · IN 1 [IN 1]"),true);
+ assert.equal(choose(5,"Mono · IN 2 [IN 2]"),true);
+ const sources=()=>sent.filter(x=>x.name==="arMixAction"&&
+   x.payload.action==="routingSourceSwitch").map(x=>x.payload);
+ assert.equal(sources().length,1,"one in-flight M4 source, second is queued");
+ const first=sources()[0];
+ assert.equal(first.revision,12);
+ const independentlyInstalled=clone(boot);
+ const actual=Array.from({length:10},(_,i)=>({
+   mode:i===4?"MONO":"NONE",left:i===4?0:-1,right:-1,main:true
+ }));
+ independentlyInstalled.legacyM4={
+   active:true,routeAccepted:true,routingRevision:"13",nativeBusStructural:false,
+   channelControls:Array.from({length:10},()=>({
+     db:0,pan:0,mute:false,solo:false
+   })),
+   channels:actual
+ };
+ independentlyInstalled.mixerSession={
+   authority:"M4",deviceEpoch:"69",routeRevision:"13",rosterRevision:"0",
+   channels:actual.map((source,i)=>({
+     id:"m4:"+String(i+1).padStart(2,"0"),ordinal:i,role:"INPUT",
+     source,controls:{faderDb:0,pan:0,mute:false,solo:false}
+   })),
+   main:{db:0,mute:false,outputArmed:false}
+ };
+ // The installed PCM callback can be observed before the correlated ACK.
+ listeners.get("arMixConsoleSnapshot")(independentlyInstalled);
+ while(microtasks.length)microtasks.shift()();
+ assert.equal(sources().length,1,
+   "correct independent PCM must still wait for correlated first ACK");
+ listeners.get("arMixSourceSwitchAck")({
+   requestId:first.requestId,ok:true,state:{
+     ready:true,epoch:69,revision:13,hasAcceptedRoute:true,
+     acceptedRoute:{channels:actual}
+   }
+ });
+ // MV-15: ACK can verify the already-published PCM immediately and
+ // schedule the queued second INPUT with its fresh revision (13).
+ while(microtasks.length)microtasks.shift()();
+ assert.equal(sources().length,2,
+   "a valid native PCM readback followed by ACK releases the queued channel");
+ assert.equal(sources()[1].channel,5);
+ assert.equal(sources()[1].left,1);
+ assert.equal(sources()[1].revision,13);
+ assert.equal(sources()[1].deviceEpoch,69);
+ assert.equal(sent.filter(x=>x.name==="arMixAction"&&
+   x.payload.action==="monitor").length,0,
+   "UI must never auto-arm MAIN as a side effect of SOURCE ACK");
+});
+
 test("P0 FIRST SOUND G0 offers verified input and leaves automatic MAIN to native",()=>{
  const vm=require("node:vm"),sent=[],listeners=new Map(),renderedChoices=[];
  let win;
