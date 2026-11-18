@@ -260,6 +260,31 @@
     }
     return unavailable;
   }
+  // MV-14: pure FIFO head shared by ChannelId and legacy M4 INPUT.
+  // The bridge alone owns queue mutation, native events, timeouts and
+  // correlated ACK/readback. Never replay pin drafts from an old device.
+  function sourceQueueHead({authority,queue,active=null,hardware,native,
+                            choices,deviceReady=false}={}) {
+    // A WebView/test harness can hand in a Map from another JS realm.
+    // instanceof Map would wrongly treat this valid queue as EMPTY.
+    if(active||!queue||!Number.isSafeInteger(queue.size)||queue.size<1||
+       typeof queue.entries!=="function")return {kind:"IDLE"};
+    if(authority==="CHANNEL_ID"){
+      if(native?.admitted!==true||
+         hardware?.raw?.mixerSession?.authority!=="CHANNEL_ID")
+        return {kind:"WAIT"};
+    }else if(authority==="M4"){
+      if(!deviceReady)return {kind:"DROP_ALL"};
+    }else return {kind:"WAIT"};
+    const [key,entry]=queue.entries().next().value;
+    const plan=sourceDispatchPlan({authority,entry,hardware,native,
+      channelId:authority==="CHANNEL_ID"?key:undefined,
+      channel:authority==="M4"?key:undefined,choices,deviceReady});
+    return plan.kind==="READY"?
+      {kind:"SEND",key,entry,action:plan.action,payload:plan.payload}:
+      {kind:"DROP",key};
+  }
+
   function sourceAckResult(pending,ack,authority) {
     if(!pending||ack?.requestId!==pending.requestId)return "IGNORE";
     if(authority==="CHANNEL_ID")
@@ -544,7 +569,7 @@
   return Object.freeze({outputTargets,inputChoices,externalChoices,
     primaryChoices,resolvePrimarySelection,readbackBindings,externalPending,
     primaryOutMutation,externalOutputPlan,sourceQueueSelection,
-    sourceDispatchPlan,sourceAckResult,sourceReadbackSettlement,
+    sourceDispatchPlan,sourceQueueHead,sourceAckResult,sourceReadbackSettlement,
     m4SourceReadbackSettlement,
     scalarIdentityMatches,scalarVisualSettlement,m4ScalarAckResult,
     m4ScalarReadbackSettlement,scalarDispatchLease,
