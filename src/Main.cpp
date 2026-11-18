@@ -46,6 +46,7 @@
 #include "NativeMixerSessionSaveWorker.h"
 #include "NativeLogicalMixerControl.h"
 #include "NativeHotkeyRegistry.h"
+#include "NativeHotkeyCommandPlan.h"
 #include "NativeFxParameterHotkey.h"
 #include "NativeFxControlRequest.h"
 #include "SonKuNativeBridgeContract.h"
@@ -1698,72 +1699,22 @@ private:
                 error=hotkeys_.remove(id);
             } else if(action=="REGISTER") {
                 const auto supplied=args.getProperty("mapping",{});
-                const auto scope=supplied.getProperty("scope","").toString();
-                auto cleaned=juce::var(new juce::DynamicObject());
-                for(const char* field:{"id","scope","sessionId","channelId",
-                                       "operation","vk","modifiers","slot","insertId",
-                                       "catalogId","paramId","paramName"}) {
-                    const auto value=supplied.getProperty(field,{});
-                    if(!value.isVoid())cleaned.getDynamicObject()->setProperty(field,value);
+                const bool session=supplied.getProperty("scope","").toString()=="SESSION";
+                const auto sessionId=session && mixerSessionId_.isEmpty()
+                    ? juce::Uuid().toDashedString().toLowerCase() : mixerSessionId_;
+                auto plan=armix::hotkey::NativeHotkeyCommandPlan::planRegistration(
+                    supplied,session?approvedNativeSnapshot():juce::var{},sessionId);
+                error=plan.error;
+                if(error.isEmpty() && session) {
+                    if(mixerSessionId_.isEmpty())mixerSessionId_=sessionId;
+                    if(hotkeys_.activeSession()!=mixerSessionId_)
+                        error=hotkeys_.activateSession(mixerSessionId_);
                 }
-                if(scope=="SESSION") {
-                    const auto accepted=approvedNativeSnapshot();
-                    const auto graph=accepted.getProperty("graph",{});
-                    const auto channels=graph.getProperty("channels",{});
-                    const auto caps=graph.getProperty("capabilities",{});
-                    const auto id=supplied.getProperty("channelId",{}).toString();
-                    const auto op=supplied.getProperty("operation","").toString();
-                    const bool fxRack=op=="SET_FX_RACK_BYPASS";
-                    const bool fxSlot=op=="SET_FX_SLOT_BYPASS";
-                    const bool fxParam=op.startsWith("SET_FX_PARAM_");
-                    bool found=false,fxAvailable=false;
-                    if(static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",false)) &&
-                       channels.isArray())for(const auto& c:*channels.getArray()) {
-                        if(c.getProperty("id","").toString()!=id ||
-                           (c.getProperty("role","").toString()!="INPUT" &&
-                            c.getProperty("role","").toString()!="GROUP" &&
-                            c.getProperty("role","").toString()!="FX_RETURN"))continue;
-                        found=true;
-                        if(fxRack)fxAvailable=c.getProperty("fxRackBypassed",{}).isBool();
-                        else if(fxSlot) {
-                            const auto inserts=c.getProperty("inserts",{});
-                            const auto slot=supplied.getProperty("slot",{});
-                            const auto token=supplied.getProperty("insertId",{});
-                            if(slot.isInt()&&token.isString()&&inserts.isArray()) {
-                                const int index=static_cast<int>(slot);
-                                if(index>=0&&index<inserts.getArray()->size())
-                                    fxAvailable=inserts.getArray()->getReference(index)
-                                        .getProperty("id","").toString()==token.toString();
-                            }
-                        }
-                        break;
-                    }
-                    if(!found)error="HOTKEY_CHANNEL_NOT_ADMITTED";
-                    if(error.isEmpty()&&(fxRack||fxSlot)&&!fxAvailable)
-                        error="HOTKEY_FX_INSTANCE_NOT_ADMITTED";
-                    const auto ops=caps.getProperty("supportedOps",{});
-                    const auto* allowed=ops.getArray();
-                    if(error.isEmpty() && !fxRack && !fxSlot && !fxParam &&
-                       op!="SET_MUTE" && op!="SET_SOLO")
-                        error="HOTKEY_ACTION_UNSUPPORTED";
-                    if(error.isEmpty() && !fxRack && !fxSlot && !fxParam &&
-                       (!allowed || !allowed->contains(juce::var(op))))
-                        error="HOTKEY_ACTION_NOT_ADMITTED";
-                    if(error.isEmpty()) {
-                        if(mixerSessionId_.isEmpty())
-                            mixerSessionId_=juce::Uuid().toDashedString().toLowerCase();
-                        if(hotkeys_.activeSession()!=mixerSessionId_)
-                            hotkeys_.activateSession(mixerSessionId_);
-                        cleaned.getDynamicObject()->setProperty("sessionId",mixerSessionId_);
-                    }
-                }
-                armix::hotkey::Mapping mapping;
-                if(error.isEmpty() && !armix::hotkey::Registry::decode(cleaned,mapping))
-                    error="INVALID_HOTKEY_MAPPING";
-                if(error.isEmpty()&&mapping.operation.startsWith("SET_FX_PARAM_")&&
-                   !fxParameterHotkeyAdmitted(mapping))
+                // VST3 ParamID ownership stays in its specialized service.
+                if(error.isEmpty()&&plan.mapping.operation.startsWith("SET_FX_PARAM_")&&
+                   !fxParameterHotkeyAdmitted(plan.mapping))
                     error="HOTKEY_PARAMETER_ID_OR_INSTANCE_UNAVAILABLE";
-                if(error.isEmpty())error=hotkeys_.upsert(std::move(mapping));
+                if(error.isEmpty())error=hotkeys_.upsert(std::move(plan.mapping));
             } else error="UNSUPPORTED_HOTKEY_OPERATION";
         }
         sendHotkeyRegistry(requestId,error);
@@ -1779,79 +1730,29 @@ private:
             emitApprovedNativeSnapshot();
             return;
         }
-        if(mapping.scope!="SESSION" ||
-           mapping.sessionId!=mixerSessionId_ || deviceApply_.busy() ||
-           nativeShowBusy_ || studioBackupBusy_ || engine_.isGraphSwitchPending())
-            return;
-        const auto accepted=approvedNativeSnapshot();
-        const auto graph=accepted.getProperty("graph",{});
-        if(!static_cast<bool>(graph.getProperty("capabilities",{})
-              .getProperty("callbackOwnsChannelIds",false)))return;
-        const auto channels=graph.getProperty("channels",{});
-        if(!channels.isArray())return;
-        const juce::var* match=nullptr;
-        for(const auto& ch:*channels.getArray())
-            if(ch.getProperty("id","").toString()==mapping.channelId &&
-               (ch.getProperty("role","").toString()=="INPUT" ||
-                ch.getProperty("role","").toString()=="GROUP" ||
-                ch.getProperty("role","").toString()=="FX_RETURN")) {
-                match=&ch;break;
-            }
-        if(!match)return;
-        if(mapping.operation.startsWith("SET_FX_PARAM_")) {
-            (void)applyFxParameterHotkey(mapping);
-            return;
+        // Existing control-thread guards, single native dispatcher and FX
+        // ParamID service remain authoritative. The planner has no side effects.
+        if(mapping.scope!="SESSION" || mapping.sessionId!=mixerSessionId_ ||
+           deviceApply_.busy() || nativeShowBusy_ || studioBackupBusy_ ||
+           engine_.isGraphSwitchPending())return;
+        const auto plan=armix::hotkey::NativeHotkeyCommandPlan::dispatch(
+            mapping,approvedNativeSnapshot(),mixerSessionId_,true,
+            firedHotkeySerial_+1);
+        using Kind=armix::hotkey::NativeHotkeyCommandPlan::Kind;
+        switch(plan.kind) {
+            case Kind::parameter:
+                (void)applyFxParameterHotkey(mapping);
+                break;
+            case Kind::action:
+                ++firedHotkeySerial_;
+                onAction(plan.request); // same FX dispatcher as GUI
+                break;
+            case Kind::intent:
+                ++firedHotkeySerial_;
+                handleApprovedNativeControl(plan.request); // one PCM intent owner
+                break;
+            case Kind::ignore: break;
         }
-        const bool fxRack=mapping.operation=="SET_FX_RACK_BYPASS";
-        const bool fxSlot=mapping.operation=="SET_FX_SLOT_BYPASS";
-        if(fxRack||fxSlot) {
-            juce::var bypass;
-            if(fxRack)bypass=match->getProperty("fxRackBypassed",{});
-            else {
-                const auto inserts=match->getProperty("inserts",{});
-                if(!inserts.isArray()||mapping.slot<0||
-                   mapping.slot>=inserts.getArray()->size())return;
-                const auto insert=inserts.getArray()->getReference(mapping.slot);
-                // Fail closed: if a plugin was replaced or reordered, hotkey
-                // must never touch the different processor at the same slot.
-                if(insert.getProperty("id","").toString()!=mapping.insertId)return;
-                bypass=insert.getProperty("bypassed",{});
-            }
-            if(!bypass.isBool())return;
-            auto native=juce::var(new juce::DynamicObject());
-            auto* n=native.getDynamicObject();
-            n->setProperty("action",fxRack?"routingNativeFxRackBypass":
-                                      "routingNativeFxInsertBypass");
-            n->setProperty("requestId","hotkey-fx-"+juce::String(
-                static_cast<juce::int64>(++firedHotkeySerial_)));
-            n->setProperty("channelId",mapping.channelId);
-            n->setProperty("deviceEpoch",accepted.getProperty("device",{}).getProperty("epoch","0"));
-            n->setProperty("revision",graph.getProperty("revision","0"));
-            n->setProperty("value",!static_cast<bool>(bypass));
-            if(fxSlot) {
-                n->setProperty("slot",mapping.slot);
-                n->setProperty("insertId",mapping.insertId);
-            }
-            // Exact same owner, guardrails and ACK as GUI rack/slot Power.
-            onAction(native);
-            return;
-        }
-        if(mapping.operation!="SET_MUTE"&&mapping.operation!="SET_SOLO")return;
-        const auto control=mapping.operation=="SET_MUTE"?"mute":"solo";
-        const auto existing=match->getProperty("controls",{}).getProperty(control,{});
-        if(!existing.isBool())return;
-        auto payload=juce::var(new juce::DynamicObject());
-        payload.getDynamicObject()->setProperty("value",!static_cast<bool>(existing));
-        auto request=juce::var(new juce::DynamicObject());
-        auto* o=request.getDynamicObject();
-        o->setProperty("requestId","hotkey-"+juce::String(static_cast<juce::int64>(++firedHotkeySerial_)));
-        o->setProperty("operation",mapping.operation);
-        o->setProperty("targetChannelId",mapping.channelId);
-        o->setProperty("deviceEpoch",accepted.getProperty("device",{}).getProperty("epoch","0"));
-        o->setProperty("baseGraphRevision",graph.getProperty("revision","0"));
-        o->setProperty("baseRosterRevision",graph.getProperty("rosterRevision","0"));
-        o->setProperty("payload",payload);
-        handleApprovedNativeControl(request);
     }
 
     void handleLogicalMixerIntent(const juce::var& request) {
