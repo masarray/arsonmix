@@ -3335,38 +3335,32 @@
       if(field==="external"){
         if(event.type!=="change")return true;
         const previous=t.externalOutput||"None";
-        const id=nativeIdFor(t),ch=controller?.state()?.current?.graph?.channels
-          ?.find(row=>row.id===id),d=hardware?.device;
-        const pair=hardwareOutputPairs().find(row=>row.label===el.value);
-        const revision=hardware?.raw?.externalRevision;
-        const epoch=hardware?.device?.epoch;
-        if(pendingExternal.has(id)||!pair||!ch ||
-           !["INPUT","GROUP","FX_RETURN"].includes(ch.role) ||
-           !controller?.state()?.current?.admitted ||
-           d?.backend!=="ASIO" || safeNativeCounter(epoch)===null ||
-           safeNativeCounter(revision)===null){
+        const id=nativeIdFor(t);
+        // One pure Channel Strip preflight for ASIO port identity and
+        // shared-output confirmation; only this bridge dispatches native.
+        const plan=stripVM.externalOutputPlan({
+          native:controller?.state()?.current,hardware,channelId:id,
+          selectedLabel:el.value,currentLabel:previous,
+          choices:hardwareOutputPairs(),pending:pendingExternal.has(id),
+          channelName:t.name
+        });
+        if(plan.kind==="UNAVAILABLE"){
           el.value=previous;
           nativeToast("EXTERNAL OUT unavailable · check ASIO, graph and pins");
           return true;
         }
-        if(pair.label===previous){el.value=previous;return true;}
-        const occupied=(Array.isArray(hardware?.raw?.externalOutputs)?
-          hardware.raw.externalOutputs:[]).filter(p=>p.physicalLeft===pair.left &&
-          p.physicalRight===pair.right && p.channelId!==id);
-        const sharedNote=occupied.length?
-          " SHARED with "+occupied.length+" other source(s); signals SUM. Check gains.":"";
-        const confirmed=pair.left<0 || window.confirm(
-          "Enable ASIO OUT "+(pair.left+1)+"/"+(pair.right+1)+
-          " for "+t.name+"?"+sharedNote+" Check amplifier/speakers. "+
-          "INTERNAL OUT stays unchanged.");
+        if(plan.kind==="NO_CHANGE"){el.value=previous;return true;}
+        const {left,right,epoch,revision}=plan;
+        const confirmed=!plan.requiresConfirmation || window.confirm(
+          plan.confirmation);
         if(!confirmed){el.value=previous;return true;}
         const requestId="out-o-"+(++externalSerial);
-        pendingExternal.set(id,{requestId,channelId:id,left:pair.left,right:pair.right,
+        pendingExternal.set(id,{requestId,channelId:id,left,right,
           epoch,revision,acked:false});
         el.value=previous;el.setAttribute("aria-busy","true");
         backend.emitEvent("arMixAction",{action:"routingExternalOutput",
           requestId,channelId:id,deviceEpoch:epoch,revision,
-          left:pair.left,right:pair.right,confirmed:true});
+          left,right,confirmed:true});
         window.setTimeout(()=>{
           if(pendingExternal.get(id)?.requestId!==requestId)return;
           pendingExternal.delete(id);el.removeAttribute("aria-busy");
