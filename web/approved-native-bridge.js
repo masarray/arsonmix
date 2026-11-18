@@ -2281,7 +2281,7 @@
       backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
     },12000);
   }
-  function finishDeviceApplyUi(){
+  function finishDeviceApplyUi(verifiedSnapshot=null){
     window.clearTimeout(deviceApplyTimer);
     deviceApplyTimer=0;
     if(!devicePanel)return;
@@ -2289,9 +2289,12 @@
     if(deviceState.phase==="ACCEPTED"){
       deviceChoice=null;
       devicePanel.hidden=true;
-      const active=deviceInventory?.active;
+      // The confirmed schema-v6 readback, not the preceding Apply ACK,
+      // is the only source for the device-ready status shown to operators.
+      const active=verifiedSnapshot?.device;
       status("DEVICE READY · "+String(active?.backend||"Audio")+
-        " · "+String(active?.rate||0)+" Hz / "+String(active?.buffer||0)+" samples");
+        " · "+String(active?.sampleRate||0)+" Hz / "+
+        String(active?.bufferFrames||0)+" samples");
       nativeToast(deviceState.message);
     }else{
       deviceChoice=null;
@@ -2313,12 +2316,19 @@
       const next=deviceVM.setupAck(deviceState,ack);
       if(next===deviceState)return; // delayed or unrelated ACK
       deviceState=next;
-      if(ack?.active && deviceInventory)
-        deviceInventory={...deviceInventory,active:ack.active};
+      // ACK.active is unverified hardware evidence. Do not allow either
+      // accepted or rejected ACKs to overwrite the installed I/O inventory.
       if(deviceBusy()){
         // ACK alone NEVER closes the dialog or announces LIVE.
         controller?.subscribe();
-      }else finishDeviceApplyUi();
+      }else{
+        finishDeviceApplyUi();
+        // G-MV21: a negative ACK can still leave a NEW native endpoint in
+        // NEEDS_REMAP. Only a freshly queried native inventory may unblock
+        // retained-pin recovery or supply the next device generation.
+        // Never commit ack.active as installed hardware.
+        backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+      }
     });
   }
 
@@ -2715,7 +2725,14 @@
     scope?.syncNativeWireGains?.([]); // flush accepted paint after pointer release
     const previousSetup=deviceState;
     deviceState=deviceVM.setupReadback(deviceState,next);
-    if(deviceState!==previousSetup && !deviceState.pending)finishDeviceApplyUi();
+    if(deviceState!==previousSetup && !deviceState.pending){
+      finishDeviceApplyUi(next);
+      // G-MV21: only after installed device verification may the UI
+      // request a fresh authoritative native inventory. A late ACK must
+      // neither poison the operator's pin choices nor close Audio I/O.
+      if(deviceState.phase==="ACCEPTED"&&connected)
+        backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+    }
     updateHardwarePanel(next);
     // The MV-18 external-output repaint must stay after the same fence.
     paintExternalReadback(next);
