@@ -126,6 +126,21 @@ int main() {
     // A valid, canonical document still saves and round-trips unchanged.
     assert(Archive::serialize(doc->sets,doc->active,true,250).isObject());
 
+    // Create -> delete -> create must never generate a colliding archive name.
+    std::vector<SavedSet> names{
+        {"My Setlist",{},{}},
+        {"Setlist 2",{},{}},
+        {"Setlist 3",{},{}}
+    };
+    assert(Archive::nextGeneratedName(names)=="Setlist 4");
+    names.erase(names.begin()+1); // delete Setlist 2, Setlist 3 remains
+    const auto newName=Archive::nextGeneratedName(names);
+    assert(newName=="Setlist 2");
+    names.push_back({newName,{},{}});
+    assert(Archive::serialize(names,2,false,180).isObject());
+    names[1].name="SETLIST 2"; // user rename still checked case-insensitively
+    assert(Archive::nextGeneratedName(names)=="Setlist 4");
+
     // Legacy empty v3 content migrates to a non-destructive default setlist.
     const auto empty=Archive::parse(juce::JSON::parse("{\"version\":3}"));
     assert(empty && empty->sets.size()==1);

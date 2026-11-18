@@ -69,6 +69,22 @@ class PlayerSetlistArchive final {
         }
     }
 public:
+    // Keep automatic creation consistent with the archive's case-insensitive
+    // uniqueness rule, including a delete-then-create cycle. At <32 sets,
+    // candidate numbers 2..33 always contain an unused name.
+    static juce::String nextGeneratedName(
+        const std::vector<PlayerSavedSet>& sets) {
+        for(int number=2;number<=33;++number) {
+            const auto candidate="Setlist "+juce::String(number);
+            const bool used=std::any_of(sets.begin(),sets.end(),
+                [&](const PlayerSavedSet& s) {
+                    return s.name.equalsIgnoreCase(candidate);
+                });
+            if(!used)return candidate;
+        }
+        return {};
+    }
+
     static std::optional<PlayerSetlistDocument> parse(const juce::var& json) {
         if(!json.isObject())return std::nullopt;
         const int version=static_cast<int>(json.getProperty("version",0));

@@ -4058,8 +4058,13 @@ private:
                     playerError_="Maximum 32 setlists";emitPlayerState();return;
                 }
                 saveActivePlayerSet();
-                const int next=static_cast<int>(playerSets_.size())+1;
-                playerSets_.push_back({"Setlist "+juce::String(next),{},{}});
+                const auto next=armix::player::PlayerSetlistArchive::
+                    nextGeneratedName(playerSets_);
+                if(next.isEmpty()) {
+                    playerError_="No available setlist name";
+                    emitPlayerState();return;
+                }
+                playerSets_.push_back({next,{},{}});
                 engine_.playerStop();
                 activatePlayerSet(static_cast<int>(playerSets_.size())-1);
             } else {
