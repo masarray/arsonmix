@@ -1506,8 +1506,11 @@
   }
   let pendingNativeControl=new Map(),lastNativeControlSent=new Map();
   const m4Meters=new Map();
-  const m4Verified=()=>{
-    const m=legacy(),d=hardware?.device;
+  // MV-19: read-model admission must use the candidate native snapshot.
+  // The installed hardware cache is updated only AFTER this candidate is
+  // validated, so old accepted M4 evidence cannot admit a new device.
+  const m4Verified=(snapshot=hardware)=>{
+    const m=snapshot?.raw?.legacyM4,d=snapshot?.device;
     return m4TrackIds.length===10 &&
       new Set(m4TrackIds).size===10 &&
       m?.active===true && m.routeAccepted===true &&
@@ -2683,16 +2686,11 @@
       "Mixer authority changed · old control gestures discarded");
   }
   function onNativeReadback(next,confirmed) {
-    scope?.syncNativeWireGains?.([]); // flush accepted paint after pointer release
     // This callback is invoked only by the existing schema-v6 reconciler.
-    // A correlated Apply ACK waits for a subsequent installed PCM snapshot.
-    const previousSetup=deviceState;
-    deviceState=deviceVM.setupReadback(deviceState,next);
-    if(deviceState!==previousSetup && !deviceState.pending)finishDeviceApplyUi();
-    updateHardwarePanel(next);
-    // One schema-v6 read-model selector decides native PCM, retained,
-    // M4 and offline document authority. Do not revalidate it in the DOM.
-    const readModel=protocol.selectNativeReadModel(next,m4Verified());
+    // No Device Setup, hardware panel or strip state may mutate until the
+    // candidate read-model AND native device identity are admitted below.
+    // Evaluate M4 against next itself, not previously painted hardware.
+    const readModel=protocol.selectNativeReadModel(next,m4Verified(next));
     const session=next?.raw?.mixerSession;
     const offline=next?.raw?.logicalMixer;
     if(readModel.kind==="INVALID"){
@@ -2711,9 +2709,15 @@
       confirmed=null;
     }
     lastNativeLifecycleLease=lease;
-    // Paint only after the lifecycle fence has expired old device-scoped
-    // output leases. This releases aria-busy immediately on the same
-    // authoritative snapshot, even if a new driver reuses its old epoch.
+    // MV-19: commit all hardware-scoped UI only after the common identity
+    // fence. Invalid/inconsistent candidates must leave the last accepted
+    // Device Setup transaction, selectors and physical output untouched.
+    scope?.syncNativeWireGains?.([]); // flush accepted paint after pointer release
+    const previousSetup=deviceState;
+    deviceState=deviceVM.setupReadback(deviceState,next);
+    if(deviceState!==previousSetup && !deviceState.pending)finishDeviceApplyUi();
+    updateHardwarePanel(next);
+    // The MV-18 external-output repaint must stay after the same fence.
     paintExternalReadback(next);
     appearanceFromNative(next);
     settleSourceReadback("CHANNEL_ID",next);
