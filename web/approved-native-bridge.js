@@ -605,7 +605,8 @@
       rows=[...rack.querySelectorAll('.fxslot-row:not(.is-empty)')];
       const mounted=rows.map(row=>({
         index:Number(row.dataset.slot),insertId:row.dataset.insertId,
-        hasPower:!!row.querySelector('[data-action="slotPower"]')
+        hasPower:row.dataset.slot===String(Number(row.dataset.slot)) &&
+          !!row.querySelector('[data-action="slotPower"]')
       }));
       if(!fxRackVM.mountedRackMatches(readback,mounted,!!header))
         return false; // existing graph projection repairs replaced FX instance
