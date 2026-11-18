@@ -12,6 +12,82 @@ const read=p=>readFileSync(p,"utf8");
 const fixtures=JSON.parse(read("integration/console-v6/fixtures.json"));
 const clone=x=>JSON.parse(JSON.stringify(x));
 
+
+// GUI-4: SOURCE ONLY and physical PRIMARY OUT must not consume a parallel SEND.
+test("GUI-4 Channel Strip PRIMARY OUT extracts exact native EdgeId without touching SEND",()=>{
+ const source="9007199254740993",bus="9007199254741001",
+   main="18446744073709551615";
+ const primary="9223372036854775808",send="9223372036854775809";
+ const snapshot={admitted:true,retained:false,graph:{
+  mainChannelId:main,capabilities:{supportedOps:["APPLY_WIRE_TRANSACTION"]},
+  channels:[
+   {id:source,role:"INPUT",primaryOutId:bus},
+   {id:bus,role:"GROUP"},
+   {id:main,role:"MAIN"}],
+  edges:[
+   {edgeId:primary,enabled:true,primaryOutput:true,from:source,to:bus},
+   {edgeId:send,enabled:true,primaryOutput:false,from:source,to:main}]
+ }};
+ const saved=JSON.stringify(snapshot);
+ const none=stripVM.primaryOutMutation(snapshot,source,"NONE",[]);
+ assert.deepEqual(none,{kind:"MUTATION",change:{
+  op:"REMOVE",from:source,edgeId:primary}});
+ assert.equal(none.change.edgeId!==send,true);
+ const redirect=stripVM.primaryOutMutation(snapshot,source,"MAIN",[]);
+ assert.deepEqual(redirect,{kind:"MUTATION",change:{
+  op:"ROUTE_ONLY",from:source,to:main,tap:"POST_FADER",gainLinear:1}});
+ const same=stripVM.primaryOutMutation(snapshot,source,"BUS A",[
+  {id:bus,label:"BUS A"}]);
+ assert.deepEqual(same,{kind:"NO_CHANGE"});
+ const other="9007199254741011";
+ const cloned=clone(snapshot);
+ cloned.graph.channels.push({id:other,role:"GROUP"});
+ const toGroup=stripVM.primaryOutMutation(cloned,source,"BUS B",[
+  {id:other,label:"BUS B"}]);
+ assert.equal(toGroup.change.to,other);
+ assert.equal(JSON.stringify(snapshot),saved,
+  "pure projection must leave both PRIMARY and parallel SEND untouched");
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/stripVM\\.primaryOutMutation\\(/);
+ assert.match(bridge,/controller\\.intent\\("APPLY_WIRE_TRANSACTION",channelId,/);
+ assert.doesNotMatch(bridge,/const edge=current\\.graph\\.edges\\.find/,
+  "source-specific PRIMARY edge search must not remain duplicated in bridge");
+});
+test("GUI-4 primary OUT rejects ambiguous, stale, mismapped or unadmitted native graph",()=>{
+ const source="9007199254740993",bus="9007199254741001";
+ const main="18446744073709551615";
+ const primary="9223372036854775808";
+ const base={admitted:true,retained:false,graph:{
+  mainChannelId:main,capabilities:{supportedOps:["APPLY_WIRE_TRANSACTION"]},
+  channels:[{id:source,role:"INPUT",primaryOutId:bus},
+            {id:bus,role:"GROUP"},{id:main,role:"MAIN"}],
+  edges:[{edgeId:primary,enabled:true,primaryOutput:true,from:source,to:bus}]
+ }};
+ const run=(s,t="NONE",targets=[])=>stripVM.primaryOutMutation(s,source,t,targets);
+ for(const invalid of [
+  {...base,admitted:false},{...base,retained:true},
+  {...base,graph:{...base.graph,capabilities:{supportedOps:[]}}},
+  {...base,graph:{...base.graph,edges:[...base.graph.edges,
+   {...base.graph.edges[0],edgeId:"9223372036854775809"}]}},
+  {...base,graph:{...base.graph,edges:[{...base.graph.edges[0],
+   edgeId:"9223372036854775809",primaryOutput:false}]}},
+  {...base,graph:{...base.graph,channels:[
+   {...base.graph.channels[0],role:"MAIN"},...base.graph.channels.slice(1)]}},
+  {...base,graph:{...base.graph,mainChannelId:"18446744073709551616"}}
+ ])assert.equal(run(invalid).kind,"UNAVAILABLE");
+ assert.equal(run(base,"BUS A",[{id:bus,label:"BUS A"},
+   {id:main,label:"BUS A"}]).kind,"UNAVAILABLE",
+   "ambiguous label must not point to an arbitrary physical destination");
+ assert.equal(run(base,"BUS C",[{id:"9007199254741011",
+   label:"BUS C"}]).kind,"UNAVAILABLE");
+ assert.equal(run(base,"9007199254740993",[]).kind,"UNAVAILABLE");
+ assert.equal(stripVM.primaryOutMutation(base,9007199254740993,"MAIN").kind,
+  "UNAVAILABLE","rounded numeric ChannelId must fail closed");
+ assert.equal(run({...base,graph:{...base.graph,channels:[
+  {...base.graph.channels[0],primaryOutId:"18446744073709551616"},
+  ...base.graph.channels.slice(1)]}}).kind,"UNAVAILABLE");
+});
+
 test("GUI-2 pure FX power readback preserves independent rack/slot/global states and labels",()=>{
  const channel={id:"9007199254740993",fxRackBypassed:false,inserts:[
   {id:"instance-1",bypassed:false,latencySamples:96},

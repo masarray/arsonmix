@@ -90,6 +90,53 @@
        (pending.left===-1&&!row))return "CONFIRMED";
     return "PENDING";
   }
+
+  // GUI-4: derive exactly one Channel Strip PRIMARY OUT change from an
+  // installed native snapshot. Both the OUT picker and WIRE jack continue to
+  // dispatch via the original controller; this selector has no side effects.
+  // SOURCE ONLY removes the exact PRIMARY EdgeId, never a parallel SEND.
+  function primaryOutMutation(snapshot,sourceId,target,targets=[]) {
+    const unavailable={kind:"UNAVAILABLE"};
+    const g=snapshot?.graph;
+    const validId=value=>{
+      if(typeof value!=="string"||!/^[1-9][0-9]*$/.test(value))return false;
+      try{return BigInt(value)<=18446744073709551615n;}catch{return false;}
+    };
+    if(snapshot?.admitted!==true||snapshot.retained===true||
+       !Array.isArray(g?.channels)||!Array.isArray(g?.edges)||
+       !g.capabilities?.supportedOps?.includes("APPLY_WIRE_TRANSACTION")||
+       !validId(sourceId)||!validId(g.mainChannelId))return unavailable;
+    const source=g.channels.find(ch=>ch.id===sourceId);
+    if(!source||!["INPUT","GROUP","FX_RETURN"].includes(source.role))
+      return unavailable;
+    let to=null;
+    if(target==="MAIN")to=g.mainChannelId;
+    else if(target!=="NONE") {
+      const choices=Array.isArray(targets)?
+        targets.filter(row=>row?.label===target):[];
+      if(choices.length!==1||!validId(choices[0].id))return unavailable;
+      to=choices[0].id;
+      if(!g.channels.some(ch=>ch.id===to&&
+         ["INPUT","GROUP","FX_RETURN"].includes(ch.role)))return unavailable;
+    }
+    if(to===sourceId|| (target!=="NONE"&&!validId(to))||
+       (target!=="NONE"&&target!=="MAIN"&&typeof target!=="string"))
+      return unavailable;
+    const previous=source.primaryOutId||null;
+    if(previous!==null&&!validId(previous))return unavailable;
+    if(previous===to)return {kind:"NO_CHANGE"};
+    if(to!==null)
+      return {kind:"MUTATION",change:{op:"ROUTE_ONLY",from:sourceId,to,
+        tap:"POST_FADER",gainLinear:1}};
+    const matching=g.edges.filter(edge=>edge?.enabled===true&&
+      edge.primaryOutput===true&&edge.from===sourceId&&edge.to===previous&&
+      validId(edge.edgeId));
+    if(matching.length!==1)return unavailable;
+    return {kind:"MUTATION",change:{op:"REMOVE",from:sourceId,
+      edgeId:matching[0].edgeId}};
+  }
+
   return Object.freeze({outputTargets,inputChoices,externalChoices,
-    primaryChoices,resolvePrimarySelection,readbackBindings,externalPending});
+    primaryChoices,resolvePrimarySelection,readbackBindings,externalPending,
+    primaryOutMutation});
 });
