@@ -564,7 +564,9 @@ test("P0 DAW approved Windows GUI directly binds every IN to current JUCE ports,
   assert.match(producer,/firstSound->setProperty\("channels",juce::var\(verifiedChannels\)\)/);
   assert.match(producer,/publishAuthoritativeMixerSession/);
   assert.match(nativeMain,/publishAuthoritativeMixerSession\(accepted\)/);
-  assert.match(bridge,/session\.authority==="CHANNEL_ID"/);
+  assert.match(bridge,/const nativeAdmitted=readModel\.kind==="CHANNEL_ID"/);
+ assert.match(read("web/approved-native-contract.js"),
+   /session\.authority==="CHANNEL_ID"&&next\.admitted===true/);
   assert.match(bridge,/m4ControlIsOwner\(\)/);
   assert.match(producer,/list->size\(\)==10/);
   assert.match(nativeMain,/engine_\.switchDryRoutingLabSource\(channel,/);
@@ -1117,7 +1119,9 @@ test("P0 native WIRE MAIN disconnect requires exact accepted EdgeId or verified 
 test("P0 native-only WIRE cables reflect actual M4 MAIN readback, not demo ghosts",()=>{
  const bridge=read("web/approved-native-bridge.js");
  const bundle=read("scripts/build_approved_native_gui.py");
- assert.match(bridge,/if\(session\.authority==="M4" && m4Verified\(\)\)/);
+ assert.match(bridge,/if\(readModel\.kind==="M4"\)/);
+ assert.match(read("web/approved-native-contract.js"),
+   /session\.authority==="M4"&&verifiedM4===true/);
  assert.match(bridge,/scope\?\.syncVerifiedM4Wires\?\.\(session\.channels\.map\(ch=>ch\.source\),m4TrackIds\)/);
  assert.match(bundle,/syncVerifiedM4Wires\(rows,ids\)/);
  assert.match(bundle,/typeof r\.main!=='boolean'/);
