@@ -2865,8 +2865,8 @@ test("GUI-2 M4 rack pending selector rejects revisions and unaccepted authority"
  assert.equal(fxRackVM.m4RackSettlement({...p,acked:true},
    {...s,channels:[{fxRackBypassed:false}]}),"WAIT");
  const source=read("web/approved-native-bridge.js");
- assert.match(source,/fxRackVM\\.m4Presentation\\(/);
- assert.match(source,/fxRackVM\\.nativePowerSettlement\\(/);
- assert.match(source,/fxRackVM\\.m4RackSettlement\\(/);
- assert.doesNotMatch(source,/const actual=p\\.kind==="rack"\\?/);
+ assert.match(source,/fxRackVM\.m4Presentation\();
+ assert.match(source,/fxRackVM\.nativePowerSettlement\();
+ assert.match(source,/fxRackVM\.m4RackSettlement\();
+ assert.doesNotMatch(source,/const actual=p\.kind==="rack"\?/);
 });
