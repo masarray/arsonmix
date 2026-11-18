@@ -66,7 +66,8 @@ test("MV-7 native SOURCE requires ACKed graph revision AND independently install
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/stripVM\.sourceQueueReadback\(/);
  assert.match(bridge,/beforeRevision:current\.graph\.revision,acked:false/);
- assert.match(bridge,/ackRevision:ack\.graphRevision/);
+ assert.match(stripVM.sourceQueueAckTransition.toString(),/ack\.graphRevision/,
+    "exact native ACK graph revision is retained in the immutable VM lease");
  assert.match(bridge,/settleSourceReadback\("CHANNEL_ID",next\)/);
  assert.doesNotMatch(model,/backend\.emitEvent|document\.|window\.setTimeout/,
   "Channel Strip readback remains pure; bridge holds one transient source queue");
@@ -326,8 +327,10 @@ test("MV-15 one SOURCE settlement policy is pure and preserves both PCM formats"
  assert.doesNotMatch(bridge,/function settleM4SourceReadback\(/);
  assert.match(bridge,/settleSourceReadback\("CHANNEL_ID",next\)/);
  assert.match(bridge,/settleSourceReadback\("M4",next\)/);
- assert.match(bridge,/settleSourceReadback\("CHANNEL_ID",controller\?\.state\(\)\?\.current\)/);
- assert.match(bridge,/settleSourceReadback\("M4",controller\?\.state\(\)\?\.current\)/);
+ assert.match(bridge,/settleSourceReadback\(authority,controller\?\.state\(\)\?\.current\)/,
+   "one source ACK handler can verify either previously installed PCM snapshot");
+ assert.match(bridge,/handleSourceAck\("CHANNEL_ID",ack\)/);
+ assert.match(bridge,/if\(handleSourceAck\("M4",ack\)\)return/);
  assert.doesNotMatch(stripVM.sourceQueueReadback.toString(),
    /document\.|window\.|backend|setTimeout|localStorage/);
 });
@@ -2531,6 +2534,38 @@ test("MV-15 real M4 first-sound PCM snapshot ahead of ACK drains queued second I
  assert.equal(sources()[1].left,1);
  assert.equal(sources()[1].revision,13);
  assert.equal(sources()[1].deviceEpoch,69);
+ // MV-16: keep a third channel queued while the SECOND transaction has
+ // received a valid ACK, followed by a contradictory late reject.
+ assert.equal(choose(6,"Mono · IN 1 [IN 1]"),true);
+ const second=sources()[1];
+ const acceptedAt14=actual.map((row,i)=>i===5?
+   {mode:"MONO",left:1,right:-1,main:true}:row);
+ const secondPositive={requestId:second.requestId,ok:true,state:{
+   ready:true,epoch:69,revision:14,hasAcceptedRoute:true,
+   acceptedRoute:{channels:acceptedAt14}}};
+ listeners.get("arMixSourceSwitchAck")(secondPositive);
+ assert.equal(sources().length,2,"ACK alone never submits the third INPUT");
+ listeners.get("arMixSourceSwitchAck")({
+   requestId:second.requestId,ok:false,error:"LATE_NEGATIVE_ACK"});
+ while(microtasks.length)microtasks.shift()();
+ assert.equal(sources().length,2,
+   "contradictory duplicate cannot release the M4 source queue before PCM");
+ const installed14=clone(independentlyInstalled);
+ installed14.legacyM4.routingRevision="14";
+ installed14.legacyM4.channels=acceptedAt14;
+ installed14.mixerSession.routeRevision="14";
+ installed14.mixerSession.channels[5].source=acceptedAt14[5];
+ listeners.get("arMixConsoleSnapshot")(installed14);
+ while(microtasks.length)microtasks.shift()();
+ assert.equal(sources().length,3,
+   "PCM readback plus original positive ACK releases exactly one queued INPUT");
+ assert.equal(sources()[2].channel,6);
+ assert.equal(sources()[2].left,0);
+ assert.equal(sources()[2].revision,14);
+ // Late ACKs from already-settled leases cannot alter another channel.
+ listeners.get("arMixSourceSwitchAck")({
+   requestId:second.requestId,ok:false,error:"EXPIRED_ACK"});
+ assert.equal(sources().length,3);
  assert.equal(sent.filter(x=>x.name==="arMixAction"&&
    x.payload.action==="monitor").length,0,
    "UI must never auto-arm MAIN as a side effect of SOURCE ACK");
