@@ -1322,18 +1322,21 @@
   }
   function editNativeFx(t,slot,target,position,token){
     const current=controller?.state()?.current,id=nativeIdFor(t);
-    const actual=current?.graph?.channels.find(c=>c.id===id)?.inserts?.[slot];
-    const to=target?nativeIdFor(target):null,operation=target?"MOVE_INSERT":"REMOVE_INSERT";
-    if(!current?.admitted||!actual||actual.id!==token||!current.graph.capabilities.supportedOps.includes(operation)){
-      status("FX edit unavailable · refresh accepted native instance");return false;
+    const decision=fxRackVM.nativeEditPlan(current,{
+      channelId:id,slot,instanceId:token,
+      destinationId:target?nativeIdFor(target):null,
+      position:target?position:null});
+    if(decision.kind!=="READY"){
+      if(decision.kind!=="NO_CHANGE")
+        status("FX edit unavailable · refresh accepted native instance");
+      return false;
     }
-    if(target&&to===id&&slot===position)return false;
-    const payload={slot,instanceId:token};
-    if(target){payload.toChannelId=to;payload.toSlot=position;}
-    const result=controller.intent(operation,id,payload);
+    const result=controller.intent(decision.operation,decision.channelId,
+                                   decision.payload);
     if(!result.ok){status("FX edit rejected · "+result.error);return false;}
     window.setTimeout(()=>controller?.expire(result.requestId),8000);
-    status(target?"Moving native FX · awaiting accepted readback":"Removing native FX · awaiting accepted readback");
+    status(target?"Moving native FX · awaiting accepted readback":
+      "Removing native FX · awaiting accepted readback");
     return true;
   }
   function requestNativeFxPower(t,slot,bypass){
@@ -1438,26 +1441,16 @@
   }
   window.__ARMIX_NATIVE_GLOBAL_FX__={toggle:toggleGlobalFx};
   function requestAdmittedFxPower(t,action,button){
-    const session=mixerSession(),current=controller?.state()?.current;
-    const channelId=nativeIdFor(t);
-    const ch=current?.graph?.channels?.find(x=>x.id===channelId);
-    if(session?.authority!=="CHANNEL_ID"||!current?.admitted||
-       !channelId||!ch||pendingNativeFxPower)return false;
-    const rack=action==="fxOn",slot=Number(button?.dataset?.slot);
-    const insert=!rack&&Number.isInteger(slot)&&slot>=0&&slot<8?
-      ch.inserts?.[slot]:null;
-    if((rack&&typeof ch.fxRackBypassed!=="boolean")||
-       (!rack&&(!insert||typeof insert.id!=="string"||
-                !insert.id||typeof insert.bypassed!=="boolean")))return false;
-    const bypassed=rack?!ch.fxRackBypassed:!insert.bypassed;
+    if(mixerSession()?.authority!=="CHANNEL_ID")return false;
+    const current=controller?.state()?.current;
+    const plan=fxRackVM.nativePowerPlan(current,{
+      channelId:nativeIdFor(t),action,
+      slot:action==="fxOn"?null:Number(button?.dataset?.slot),
+      pending:!!pendingNativeFxPower});
+    if(plan.kind!=="READY")return false;
     const requestId="native-rack-"+(++nativeFxPowerSerial);
-    pendingNativeFxPower={requestId,channelId,kind:rack?"rack":"insert",
-      insertId:insert?.id,bypassed,epoch:current.device.epoch,acked:false};
-    backend.emitEvent("arMixAction",{action:rack?
-      "routingNativeFxRackBypass":"routingNativeFxInsertBypass",
-      requestId,channelId,deviceEpoch:current.device.epoch,
-      revision:current.graph.revision,value:bypassed,
-      ...(rack?{}:{slot,insertId:insert.id})});
+    pendingNativeFxPower={requestId,...plan.pending};
+    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload});
     window.setTimeout(()=>{
       if(pendingNativeFxPower?.requestId!==requestId)return;
       pendingNativeFxPower=null;
@@ -2856,21 +2849,14 @@
     if(confirmed?.operation==="APPLY_WIRE_TRANSACTION")
       playAcceptedWireImpact(confirmed.payload.changes);
     finishNativeTrack(next);finishNativeTrackDelete(next);
-    if(pendingFxInsert?.authority==="CHANNEL_ID" &&
-       confirmed?.operation==="LOAD_INSERT" &&
-       confirmed.requestId===pendingFxInsert.requestId){
-      const p=pendingFxInsert;
-      const inserted=next.graph.channels.find(ch=>ch.id===p.channelId)
-        ?.inserts?.[p.slot];
-      // The selected catalog key is NOT the live VST3 instance token.
-      // Match catalog against catalog, while requiring a real processor ID.
-      if(inserted?.catalogId===p.id &&
-         typeof inserted.id==="string" && inserted.id.length>0){
-        pendingFxInsert=null;
-        scope?.closeNativePicker?.();
-        openVerifiedInsertedFx(p.channelId,p.slot,p.id,inserted.id);
-        status("VST3 loaded · "+inserted.name+" · native PCM readback verified");
-      }
+    const fxInsert=fxRackVM.nativeInsertSettlement(pendingFxInsert,next,confirmed);
+    if(fxInsert.kind==="STALE")pendingFxInsert=null;
+    if(fxInsert.kind==="CONFIRMED"){
+      pendingFxInsert=null;
+      scope?.closeNativePicker?.();
+      openVerifiedInsertedFx(fxInsert.channelId,fxInsert.slot,
+        fxInsert.catalogId,fxInsert.instanceId);
+      status("VST3 loaded · "+fxInsert.name+" · native PCM readback verified");
     }
     const fxSettlement=fxRackVM.nativePowerSettlement(pendingNativeFxPower,next);
     if(fxSettlement==="CONFIRMED"||fxSettlement==="STALE")
@@ -3038,13 +3024,12 @@
       controller?.subscribe(); // ACK alone never establishes physical bypass.
     });
     backend.addEventListener("arMixNativeFxPowerAck",ack=>{
-      const p=pendingNativeFxPower;
-      if(!p||ack?.requestId!==p.requestId)return;
-      if(ack?.ok!==true || ack?.channelId!==p.channelId ||
-         ack?.bypassed!==p.bypassed){
+      const verdict=fxRackVM.nativePowerAckResult(pendingNativeFxPower,ack);
+      if(verdict==="IGNORE")return;
+      if(verdict==="REJECTED"){
         pendingNativeFxPower=null;
         status("NATIVE FX rejected · "+(ack?.error||"stale epoch or insert"));
-      }else p.acked=true;
+      }else pendingNativeFxPower.acked=true;
       controller.subscribe(); // ACK is not independently observed PCM state
     });
     backend.addEventListener("arMixRoutingFxRackAck",ack=>{
@@ -3818,20 +3803,18 @@
       const channel=m4Index(track),slot=Number(target?.slot);
       const accepted=controller?.state().current;
       const nativeId=nativeIdFor(track);
-      const nativeCh=accepted?.graph?.channels?.find(ch=>ch.id===nativeId);
-      if(accepted?.admitted && nativeCh) {
-        if(!plugin || !["INPUT","GROUP","FX_RETURN","MAIN"].includes(nativeCh.role) ||
-           !accepted.graph.capabilities.supportedOps.includes("LOAD_INSERT") ||
-           !Number.isInteger(slot)||slot<0||slot>=8 ||
-           !Array.isArray(nativeCh.inserts)||nativeCh.inserts.length!==slot){
+      if(accepted?.admitted || mixerSession()?.authority==="CHANNEL_ID") {
+        const plan=fxRackVM.nativeInsertPlan(accepted,{
+          channelId:nativeId,slot,catalogId:plugin?.id,
+          pending:!!pendingFxInsert});
+        if(plan.kind!=="READY"){
           status("VST3 unavailable · select an empty native ChannelId FX slot");
           return true;
         }
-        const request=controller.intent("LOAD_INSERT",nativeId,
-                                        {catalogId:id,slot});
+        const request=controller.intent("LOAD_INSERT",plan.channelId,plan.payload);
         if(!request.ok){status("VST3 rejected · "+request.error);return true;}
         pendingFxInsert={authority:"CHANNEL_ID",requestId:request.requestId,
-                         id,channelId:nativeId,slot};
+                         id,channelId:plan.channelId,slot,epoch:accepted.device.epoch};
         status(track.name+" · preparing VST3 without stopping MAIN");
         window.setTimeout(()=>{
           if(pendingFxInsert?.requestId!==request.requestId)return;
