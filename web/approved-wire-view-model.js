@@ -83,6 +83,77 @@
         snapshot.graph?.capabilities?.supportedOps?.includes(op));
   }
 
+  // An uncommitted SOF CONNECT+GAIN UI pair is one atomic real SEND
+  // creation. Its ephemeral UI edge ID MUST NOT be translated to a native
+  // EdgeId, and the presentation graph remains entirely untouched.
+  function compactSendGesture(ops,uiEdgeIds) {
+    if(!Array.isArray(ops)||ops.length!==2||
+       ops[0]?.type!=="CONNECT"||ops[1]?.type!=="GAIN"||
+       ops[0].sourceId!==ops[1].sourceId||
+       uiEdgeIds.has(ops[1].edgeId)||
+       typeof ops[1].levelDb!=="number"||
+       !Number.isFinite(ops[1].levelDb)||
+       ops[1].levelDb< -60||ops[1].levelDb>6)return ops;
+    return [{...ops[0],mode:"send",levelDb:ops[1].levelDb}];
+  }
+
+  // Single canonical uint64 native identity. UI ordinals, numbers, and
+  // rounded large integers may not cross the native command boundary.
+  function nativeId(value) {
+    if(typeof value!=="string"||!/^[1-9][0-9]*$/.test(value))return false;
+    try{return BigInt(value)<=18446744073709551615n;}catch{return false;}
+  }
+
+  // UI gesture translation only: caller still owns one native transaction,
+  // ACK timeout, installed graph readback, and UI rollback. This helper does
+  // not decide that an operation is admitted or mutate any accepted graph.
+  function nativeTransaction(ops,channelIds,edgeIds) {
+    if(!Array.isArray(ops)||ops.length===0||
+       typeof channelIds?.get!=="function"||
+       typeof edgeIds?.get!=="function")
+      return {ok:false,error:"INVALID_WIRE_OPERATION"};
+    const changes=[];
+    for(const op of ops) {
+      if(!op||typeof op!=="object")
+        return {ok:false,error:"INVALID_WIRE_OPERATION"};
+      const from=channelIds.get(op.sourceId);
+      const to=op.destId===undefined?undefined:channelIds.get(op.destId);
+      const edgeId=op.edgeId===undefined?undefined:edgeIds.get(op.edgeId);
+      if(!nativeId(from)||
+         (op.destId!==undefined&&!nativeId(to))||
+         (op.edgeId!==undefined&&!nativeId(edgeId)))
+        return {ok:false,error:"MAPPED_IDENTITY_MISSING"};
+      if(!["CONNECT","REMOVE","RETARGET","ROUTE_ONLY"].includes(op.type)||
+         (op.mode!==undefined&&op.mode!==null&&op.mode!==""&&
+          !["send","postFader","routeOnly"].includes(op.mode)))
+        return {ok:false,error:"UNSUPPORTED_WIRE_OPERATION",operation:op.type};
+      if((op.type==="CONNECT"||op.type==="ROUTE_ONLY"||
+          op.type==="RETARGET")&&!nativeId(to))
+        return {ok:false,error:"MAPPED_IDENTITY_MISSING"};
+      if((op.type==="REMOVE"||op.type==="RETARGET")&&!nativeId(edgeId))
+        return {ok:false,error:"MAPPED_IDENTITY_MISSING"};
+      const change={op:op.type,from};
+      if(to!==undefined)change.to=to;
+      if(edgeId!==undefined)change.edgeId=edgeId;
+      if(op.type==="CONNECT"||op.type==="ROUTE_ONLY"){
+        if(op.levelDb!==undefined&&
+           (typeof op.levelDb!=="number"||!Number.isFinite(op.levelDb)))
+          return {ok:false,error:"INVALID_WIRE_GAIN"};
+        // Preserve the existing approved -60…+6 dB gesture clamp.
+        // A malformed value must never turn into a NaN native payload.
+        const db=op.levelDb===undefined?0:Math.max(-60,Math.min(6,op.levelDb));
+        change.tap="POST_FADER";
+        change.gainLinear=Math.pow(10,db/20);
+      }
+      changes.push(change);
+    }
+    const source=changes[0].from;
+    if(changes.some(change=>change.from!==source))
+      return {ok:false,error:"MULTI_SOURCE"};
+    return {ok:true,source,changes};
+  }
+
   return Object.freeze({gainDb,edgePresentation,parallelEdge,
-    acceptedParallelEdge,gainReadback,canEditTap,gestureTap,sofAvailable});
+    acceptedParallelEdge,gainReadback,canEditTap,gestureTap,sofAvailable,
+    compactSendGesture,nativeTransaction});
 });
