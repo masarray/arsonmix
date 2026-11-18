@@ -10,6 +10,21 @@
   "use strict";
   const INTERNAL_BUS = "Internal BUS (read-only)";
   const NONE = {label:"None",left:-1,right:-1};
+  // MV-8: JUCE device pin masks are SETS of physical port ordinals.
+  // Keep one pure contract for draft admission, ACK verification and
+  // independently installed device readback. Never compare array order,
+  // coerce floating ports, invent unavailable pins or mask a driver remap.
+  function validPinMask(pins,reportedNames) {
+    const upper=Array.isArray(reportedNames)?
+      Math.min(64,reportedNames.length):64;
+    return Array.isArray(pins) && pins.length<=upper &&
+      pins.every(p=>Number.isInteger(p)&&p>=0&&p<upper) &&
+      new Set(pins).size===pins.length;
+  }
+  function samePinMask(a,b) {
+    return validPinMask(a)&&validPinMask(b)&&a.length===b.length&&
+      a.every(pin=>b.includes(pin));
+  }
   // The native contract validates endpoints before reaching this selector.
   // Additional guards keep a lost/partial snapshot from advertising phantom pins.
   function activeInputPins(snapshot) {
@@ -122,11 +137,18 @@
     const noInput=type?.separate===true&&draft?.capture==="";
     const inputValid=noInput||Boolean(type?.inputs?.includes(draft?.capture));
     const outputValid=Boolean(outputOptions.includes(draft?.playback));
+    const selectedInputPins=Array.isArray(draft?.inputPins)?
+      draft.inputPins:Array.isArray(active.enabledInputs)?active.enabledInputs:[];
     const selectedOutputPins=Array.isArray(draft?.outputPins)?
       draft.outputPins:Array.isArray(active.enabledOutputs)?active.enabledOutputs:[];
+    const validSelection=!same ||
+      (validPinMask(selectedInputPins,active.inputNames)&&
+       validPinMask(selectedOutputPins,active.outputNames)&&
+       selectedOutputPins.length>=2&&
+       (!noInput||selectedInputPins.length===0));
     const canApply=Boolean(type && draft?.backend && inputValid&&outputValid&&
       (type.separate===true||draft.capture===draft.playback)&&
-      (!same||selectedOutputPins.length>=2));
+      validSelection);
     const selectedPins=(key,enabled)=>Array.isArray(draft?.[key])?
       draft[key]:Array.isArray(enabled)?enabled:[];
     return {type,same,backendOptions:types.map(t=>t.name),
@@ -134,7 +156,8 @@
       bufferOptions:["0",...buffers.map(String)],
       inputPins:selectedPins("inputPins",active.enabledInputs),
       outputPins:selectedPins("outputPins",active.enabledOutputs),
-      canApply,canAssignMain:same&&draft?.outputPins?.length===2,
+      canApply,canAssignMain:same&&validSelection&&
+        selectedOutputPins.length===2,
       canReusePins:same&&state.remapGeneration===active.deviceGeneration,
       asio4allHint:draft?.backend==="ASIO"&&/asio4all/i.test(draft?.capture||""),
       activeText:state.message||(active.open?
@@ -223,7 +246,12 @@
         ...(assignMain?{assignSelectedPlaybackPinsToMain:true}:{})}};
     const pending={requestId,expected:{backend:draft.backend,
       captureDevice:draft.capture,playbackDevice:draft.playback,
-      generation,rate,buffer},baselineEpoch:
+      generation,rate,buffer,
+      // An existing endpoint has an explicitly requested pin mask.
+      // A NEW endpoint's empty masks request JUCE driver defaults, not NONE.
+      requestedPins:same?{
+        inputs:request.config.enabledInputs.slice(),
+        outputs:request.config.enabledOutputs.slice()}:null},baselineEpoch:
       typeof baselineEpoch==="string"&&/^(0|[1-9]\d*)$/.test(baselineEpoch)?
         baselineEpoch:null,ack:null};
     return {request,state:{phase:"APPLYING",pending,message:"",
@@ -246,6 +274,19 @@
       active.enabledOutputs.length>=2&&
       Number.isFinite(active.rate)&&active.rate>0&&
       Number.isInteger(active.buffer)&&active.buffer>0;
+    // A driver can open yet return a *different* physical mask from what the
+    // operator requested. Do not close the dialog or show a false success.
+    // Native may already have changed hardware, so do NOT claim rollback.
+    const requested=state.pending.expected.requestedPins;
+    if(accepted && requested &&
+       (!samePinMask(requested.inputs,active.enabledInputs)||
+        !samePinMask(requested.outputs,active.enabledOutputs)))
+      return {phase:"RECOVERY_REQUIRED",pending:null,remapGeneration:null,
+        message:"Applied device pins differ from selection · Refresh Audio I/O and verify routes"};
+    if(accepted && (!validPinMask(active.enabledInputs)||
+                    !validPinMask(active.enabledOutputs)))
+      return {phase:"RECOVERY_REQUIRED",pending:null,remapGeneration:null,
+        message:"Device pin readback invalid · Refresh Audio I/O and verify routes"};
     if(accepted)return {...state,phase:"VERIFYING",
       pending:{...state.pending,ack:{
         active:{backend:active.backend,captureDevice:active.captureDevice,
@@ -285,14 +326,14 @@
     if(BigInt(epoch)<BigInt(expected.deviceGeneration))return state;
     if(snapshot?.raw?.schemaVersion!==6||!Array.isArray(d?.enabledInputs)||
        !Array.isArray(d.enabledOutputs))return state;
-    const equalPins=(a,b)=>Array.isArray(a)&&Array.isArray(b)&&
-      a.length===b.length&&a.every((n,i)=>n===b[i]);
+    // Endpoint lists are physical sets, not ordered callback-channel arrays.
+    // Require exact installed pins while tolerating a harmless reorder.
     const same=d.backend===expected.backend&&
       d.captureDevice===expected.captureDevice&&
       d.playbackDevice===expected.playbackDevice&&
       d.sampleRate===expected.rate&&d.bufferFrames===expected.buffer&&
-      equalPins(d.enabledInputs,expected.enabledInputs)&&
-      equalPins(d.enabledOutputs,expected.enabledOutputs);
+      samePinMask(d.enabledInputs,expected.enabledInputs)&&
+      samePinMask(d.enabledOutputs,expected.enabledOutputs);
     if(!same)return state; // The driver or graph may still be publishing.
     // Physical device Apply is a distinct transaction from ChannelId PCM
     // admission. Legacy M4/G0 can have a verified open driver without an
