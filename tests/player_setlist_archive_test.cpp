@@ -4,6 +4,7 @@
 #endif
 #include <cassert>
 #include <iostream>
+#include <limits>
 #include "../src/PlayerSetlistArchive.h"
 
 using Archive=armix::player::PlayerSetlistArchive;
@@ -137,6 +138,28 @@ int main() {
     assert(!Archive::serialize(invalid,0,false,180).isObject());
     // A valid, canonical document still saves and round-trips unchanged.
     assert(Archive::serialize(doc->sets,doc->active,true,250).isObject());
+
+    // Native cue edit is a pure candidate: quantize THEN validate. At
+    // IN=1.00, an OUT request at 1.059 becomes 1.05 (invalid) and must
+    // not mutate metadata or poison a subsequent unrelated archive Save.
+    using Cue=armix::player::PlayerCueEditPolicy;
+    const Cue::Range originalCue{1.00,0.0};
+    assert(!Cue::plan(originalCue,Cue::Command::markOut,1.059,20.));
+    assert(originalCue.in==1. && originalCue.out==0.);
+    auto untouched=doc->sets;
+    untouched[0].controls[0].cueIn=1.0;
+    untouched[0].controls[0].cueOut=0.0;
+    assert(Archive::serialize(untouched,doc->active,true,250).isObject());
+    const auto nextOut=Cue::plan(
+        originalCue,Cue::Command::markOut,1.09,20.);
+    assert(nextOut && nextOut->out>nextOut->in+0.05);
+    const auto nextIn=Cue::plan(
+        Cue::Range{1.,5.},Cue::Command::markIn,5.0,20.);
+    assert(nextIn && nextIn->in==5. && nextIn->out==0.);
+    const auto cleared=Cue::plan(
+        Cue::Range{1.,5.},Cue::Command::clear,
+        std::numeric_limits<double>::quiet_NaN(),0.);
+    assert(cleared && cleared->in==0. && cleared->out==0.);
 
     // Create -> delete -> create must never generate a colliding archive name.
     std::vector<SavedSet> names{

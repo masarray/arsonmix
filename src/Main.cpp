@@ -65,6 +65,7 @@
 #include "../engine/player/PlayerSetlistPolicy.h"
 #include "../engine/player/PlayerShowEditPolicy.h"
 #include "../engine/player/PlayerShowTransitionPolicy.h"
+#include "../engine/player/PlayerCueEditPolicy.h"
 #include "../engine/player/PlayerLibraryPolicy.h"
 #include <juce_core/juce_core.h>
 #include <thread>
@@ -4718,27 +4719,31 @@ private:
                 else playerError_.clear();
                 emitPlayerState();return;
             }
-            if(action=="playerCueClear") {
-                cues.cueIn=0.;cues.cueOut=0.;
-            } else if(!std::isfinite(now) || !std::isfinite(total) ||
-                      total<=0. || now<0. || now>=total) {
+            if(action!="playerCueClear" &&
+               (!std::isfinite(now)||!std::isfinite(total)||
+                total<=0.||now<0.||now>=total)) {
                 playerError_="Cue position is unavailable";
                 emitPlayerState();return;
-            } else if(action=="playerCueIn") {
-                cues.cueIn=std::floor(now*100.)/100.;
-                if(cues.cueOut>0. && cues.cueOut<=cues.cueIn+0.05)
-                    cues.cueOut=0.;
-            } else {
-                if(now<=cues.cueIn+0.05) {
-                    playerError_="OUT must be after IN";
-                    emitPlayerState();return;
-                }
-                cues.cueOut=std::floor(now*100.)/100.;
             }
-            if(!engine_.setPlayerCueRange(cues.cueIn,cues.cueOut)) {
+            using CuePolicy=armix::player::PlayerCueEditPolicy;
+            const auto command=action=="playerCueClear"?
+                CuePolicy::Command::clear:action=="playerCueIn"?
+                CuePolicy::Command::markIn:CuePolicy::Command::markOut;
+            const auto nextCue=CuePolicy::plan(
+                {cues.cueIn,cues.cueOut},command,now,total);
+            if(!nextCue) {
+                playerError_=action=="playerCueOut"?
+                    "OUT must be after IN":"Invalid song cue marker";
+                emitPlayerState();return;
+            }
+            // Deck admission FIRST. Failed or invalid edits must never
+            // poison the persisted v3 archive or the WebView readback.
+            if(!engine_.setPlayerCueRange(nextCue->in,nextCue->out)) {
                 playerError_="Could not update native song markers";
                 emitPlayerState();return;
             }
+            cues.cueIn=nextCue->in;
+            cues.cueOut=nextCue->out;
             if(playerLoopCurrent_ &&
                !armix::player::PlayerShowTransitionPolicy::validLoop(
                    cues.cueIn,cues.cueOut,playerFadeMilliseconds_))

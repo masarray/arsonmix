@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include <juce_core/juce_core.h>
+#include "../engine/player/PlayerCueEditPolicy.h"
 #include <algorithm>
 #include <cmath>
 #include <optional>
@@ -56,9 +57,7 @@ class PlayerSetlistArchive final {
                     item.getProperty("cueIn",0.0));
                 const double cueOut=static_cast<double>(
                     item.getProperty("cueOut",0.0));
-                if(std::isfinite(cueIn)&&std::isfinite(cueOut)&&
-                   cueIn>=0.&&cueOut>=0.&&cueIn<86400.&&cueOut<86400.&&
-                   (cueOut==0.||cueOut>cueIn+0.05)) {
+                if(PlayerCueEditPolicy::validArchive({cueIn,cueOut})) {
                     settings.cueIn=cueIn;
                     settings.cueOut=cueOut;
                 }
@@ -169,12 +168,8 @@ public:
                 const auto& settings=s.controls[i];
                 if(settings.key< -6||settings.key>6||
                    settings.tempo<80||settings.tempo>120||
-                   !std::isfinite(settings.cueIn)||
-                   !std::isfinite(settings.cueOut)||
-                   settings.cueIn<0.||settings.cueOut<0.||
-                   settings.cueIn>=86400.||settings.cueOut>=86400.||
-                   (settings.cueOut!=0.&&
-                    settings.cueOut<=settings.cueIn+0.05))
+                   !PlayerCueEditPolicy::validArchive(
+                       {settings.cueIn,settings.cueOut}))
                     return {};
             }
         }

@@ -138,6 +138,14 @@ assert.match(main, /PlayerSetlistArchive::canUndoRemove/);
 assert.match(main, /Setlist is full; remove a song before undoing/);
 assert.doesNotMatch(main, /const int next=static_cast<int>\(playerSets_\.size\(\)\)\+1/);
 assert.match(main, /using PlayerTrackSettings=armix::player::PlayerTrackSettings/);
+const cuePolicy=read('engine/player/PlayerCueEditPolicy.h');
+assert.match(cuePolicy, /struct PlayerCueEditPolicy/);
+assert.match(main, /CuePolicy::plan/);
+const cueAction=main.slice(main.indexOf('if(action=="playerCueIn"'),
+  main.indexOf('if(action=="playerPlay")'));
+assert.ok(cueAction.indexOf('engine_.setPlayerCueRange(nextCue->in,nextCue->out)') >= 0);
+assert.ok(cueAction.indexOf('cues.cueIn=nextCue->in') >
+          cueAction.indexOf('engine_.setPlayerCueRange(nextCue->in,nextCue->out)'));
 assert.match(main, /action=="playerKeyStep" \|\| action=="playerTempoStep"/);
 assert.match(main, /setPlayerPitchTempo\(next\.key,next\.tempo\)/);
 assert.match(playerHtml, /id="playerKeyMinus"/);
