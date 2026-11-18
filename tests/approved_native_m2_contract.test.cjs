@@ -2520,9 +2520,11 @@ test("MV-18 real M4 FX slot lease survives no old device ACK on same-epoch drive
    findTrack:el=>el?.track||null,render(){},stopDemo(){}};
  const backend={emitEvent:(name,payload)=>sent.push({name,payload}),
    addEventListener:(name,fn)=>listeners.set(name,fn)};
+ const toast={hidden:true,textContent:""};
  const doc={readyState:"complete",documentElement:{dataset:{}},
    activeElement:null,getElementById:id=>id==="info"?{textContent:""}:
-     id==="preview"?{disabled:false}:null,
+     id==="preview"?{disabled:false}:
+     id==="armixNativeToast"?toast:null,
    querySelector:()=>null,addEventListener(){}};
  const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,
    ArSonApprovedDeviceViewModel:deviceVM,
@@ -2555,13 +2557,22 @@ test("MV-18 real M4 FX slot lease survives no old device ACK on same-epoch drive
      source,controls:{faderDb:0,pan:0,mute:false,solo:false}
    })),main:{db:0,mute:false,outputArmed:false}};
  const publish=raw=>listeners.get("arMixConsoleSnapshot")(raw);
+ const prepared=clone(installed);
+ prepared.legacyM4.routeAccepted=false;
+ prepared.mixerSession.authority="NONE";
+ prepared.mixerSession.routeRevision="0";
+ prepared.mixerSession.channels=[];
+ publish(prepared);
  publish(installed);
+ assert.ok(win.__ARMIX_NATIVE_M2__.inputChoices(tracks[4]).length>1,
+   "real verified physical IN must be installed before M4 FX test");
  const click=()=>win.__ARMIX_NATIVE_M2__.consumeAction(
    tracks[4],"slotPower",{dataset:{slot:"0"}});
  const bypasses=()=>sent.filter(x=>x.name==="arMixAction"&&
    x.payload.action==="routingFxBypass").map(x=>x.payload);
  assert.equal(click(),true);
- assert.equal(bypasses().length,1,"first M4 slot bypass is a real native request");
+ assert.equal(bypasses().length,1,
+   "first M4 slot bypass must dispatch; feedback: "+toast.textContent);
  const first=bypasses()[0];
  assert.equal(click(),true);
  assert.equal(bypasses().length,1,"same slot is gated by its unresolved native lease");
