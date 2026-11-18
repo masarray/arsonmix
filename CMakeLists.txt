@@ -1234,6 +1234,18 @@ if(BUILD_TESTING)
   add_dependencies(ARMixMixerRoutingTests
       ARMixPlayerShowEditTests ARMixPlayerWaveformTests
       ARMixPlayerCrossfadeTests ARMixPlayerShowTransitionTests)
+  # MV-N14: isolated archive codec regression, no extra CI workflow,
+  # playback owner, audio callback or device requirement.
+  juce_add_console_app(ARMixPlayerSetlistArchiveTests
+      PRODUCT_NAME "ArSonMix Player Setlist Archive Contract")
+  target_sources(ARMixPlayerSetlistArchiveTests PRIVATE
+      tests/player_setlist_archive_test.cpp)
+  target_link_libraries(ARMixPlayerSetlistArchiveTests PRIVATE
+      juce::juce_core juce::juce_recommended_config_flags)
+  target_compile_features(ARMixPlayerSetlistArchiveTests PRIVATE cxx_std_20)
+  add_test(NAME ArSonPlayerV1V2V3SetlistArchiveMigrationAndPersistence
+      COMMAND ARMixPlayerSetlistArchiveTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixPlayerSetlistArchiveTests)
   juce_add_console_app(ARMixPlayerDecodeTests PRODUCT_NAME "ArSon Player Native Decoder Integration")
   target_sources(ARMixPlayerDecodeTests PRIVATE tests/player_native_decode_test.cpp)
   target_link_libraries(ARMixPlayerDecodeTests PRIVATE

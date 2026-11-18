@@ -45,6 +45,7 @@
 #include "NativeChannelAppearanceStore.h"
 #include "NativeMixerSessionSaveWorker.h"
 #include "NativeLogicalMixerControl.h"
+#include "PlayerSetlistArchive.h"
 #include "NativeHotkeyRegistry.h"
 #include "NativeFxParameterHotkey.h"
 #include "NativeFxControlRequest.h"
@@ -541,16 +542,9 @@ private:
     // library/controls so decoder bindings and FX routing do not change.
     // Save/restore swaps complete sets, not two independently mutated arrays.
     std::vector<juce::File> playerLibrary_;
-    struct PlayerTrackSettings {
-        int key=0,tempo=100;
-        double cueIn=0.,cueOut=0.; // seconds, 0 OUT means media end
-    };
+    using PlayerTrackSettings=armix::player::PlayerTrackSettings;
+    using PlayerSavedSet=armix::player::PlayerSavedSet;
     std::vector<PlayerTrackSettings> playerTrackSettings_;
-    struct PlayerSavedSet {
-        juce::String name;
-        std::vector<juce::File> files;
-        std::vector<PlayerTrackSettings> controls;
-    };
     std::vector<PlayerSavedSet> playerSets_;
     int playerActiveSet_=0;
     std::vector<juce::File> playerQueue_; // transient ordered PLAY NEXT queue
@@ -4011,6 +4005,8 @@ private:
         playerOutputPendingIndex_=-1;
         playerUndoRemove_={};
     }
+    // Player archive owns only v1/v2/v3 JSON policy and deterministic mapping.
+    // ConsoleWindow retains the sole disk writer, set activation and deck.
     void restorePlayerLibrary() {
         playerSets_.clear();
         const auto file=settingsDirectory().getChildFile("player-library.json");
@@ -4018,116 +4014,30 @@ private:
             playerSets_.push_back({"My Setlist",{},{}});
             return;
         }
-        const auto json=juce::JSON::parse(file.loadFileAsString());
-        const int version=static_cast<int>(json.getProperty("version",0));
-        if(!json.isObject() || (version!=1 && version!=2 && version!=3)) {
+        auto parsed=armix::player::PlayerSetlistArchive::parse(
+            juce::JSON::parse(file.loadFileAsString()));
+        if(!parsed) {
             playerSets_.push_back({"My Setlist",{},{}});
             playerError_="Setlists could not be read; no music files were changed";
             return;
         }
-        const auto parseSongs=[&](const juce::var& items,int itemVersion,
-                                  PlayerSavedSet& destination) {
-            if(const auto* list=items.getArray()) {
-                for(const auto& item:*list) {
-                    if(destination.files.size()>=2000)break;
-                    if((itemVersion==1 && !item.isString()) ||
-                       (itemVersion>=2 && !item.isObject()))continue;
-                    const auto path=itemVersion==1?item.toString():
-                        item.getProperty("path","").toString();
-                    if(path.isEmpty() || path.length()>4096 ||
-                       !juce::File::isAbsolutePath(path))continue;
-                    const juce::File source(path);
-                    if(!source.hasFileExtension("wav;mp3;flac;aif;aiff;ogg") ||
-                       std::find(destination.files.begin(),
-                                 destination.files.end(),source)
-                           !=destination.files.end())continue;
-                    PlayerTrackSettings preset;
-                    if(itemVersion>=2) {
-                        preset.key=static_cast<int>(item.getProperty("key",0));
-                        preset.tempo=static_cast<int>(item.getProperty("tempo",100));
-                        if(preset.key< -6 || preset.key>6 ||
-                           preset.tempo<80 || preset.tempo>120)preset={};
-                    }
-                    if(itemVersion>=3) {
-                        const double in=static_cast<double>(
-                            item.getProperty("cueIn",0.0));
-                        const double out=static_cast<double>(
-                            item.getProperty("cueOut",0.0));
-                        // Invalid saved markers never alter native playback.
-                        if(std::isfinite(in) && std::isfinite(out) &&
-                           in>=0. && out>=0. && in<86400. &&
-                           out<86400. && (out==0. || out>in+0.05)) {
-                            preset.cueIn=in;preset.cueOut=out;
-                        }
-                    }
-                    destination.files.push_back(source);
-                    destination.controls.push_back(preset);
-                }
-            }
-        };
-        // Keep the variant alive throughout the array walk. A pointer
-        // returned from a temporary juce::var would dangle in the body.
-        const auto savedSets=json.getProperty("setlists",{});
-        if(version<=2) {
-            PlayerSavedSet migrated{"My Setlist",{},{}};
-            parseSongs(json.getProperty("files",{}),version,migrated);
-            playerSets_.push_back(std::move(migrated));
-        } else if(const auto* sets=savedSets.getArray()) {
-            for(const auto& source:*sets) {
-                if(playerSets_.size()>=32)break;
-                if(!source.isObject())continue;
-                auto name=source.getProperty("name","").toString().trim();
-                if(name.isEmpty() || name.length()>64)continue;
-                const bool duplicate=std::any_of(
-                    playerSets_.begin(),playerSets_.end(),
-                    [&](const PlayerSavedSet& set) {
-                        return set.name.equalsIgnoreCase(name);
-                    });
-                if(duplicate)continue;
-                PlayerSavedSet next{name,{},{}};
-                parseSongs(source.getProperty("files",{}),3,next);
-                playerSets_.push_back(std::move(next));
-            }
-        }
-        if(playerSets_.empty())playerSets_.push_back({"My Setlist",{},{}});
-        const int active=version==3?
-            static_cast<int>(json.getProperty("activeSetlist",0)):0;
-        activatePlayerSet(std::clamp(active,0,
-            static_cast<int>(playerSets_.size())-1));
-        playerAutoNext_=json.getProperty("autoNext",false).isBool() &&
-            static_cast<bool>(json.getProperty("autoNext",false));
-        const int fade=static_cast<int>(json.getProperty("crossfadeMs",180));
-        playerFadeMilliseconds_=(fade>=0 && fade<=3000)?fade:180;
+        playerSets_=std::move(parsed->sets);
+        activatePlayerSet(parsed->active);
+        playerAutoNext_=parsed->autoNext;
+        playerFadeMilliseconds_=parsed->fadeMs;
     }
     void persistPlayerLibrary() {
         saveActivePlayerSet();
-        auto document=std::make_unique<juce::DynamicObject>();
-        document->setProperty("version",3);
-        document->setProperty("activeSetlist",playerActiveSet_);
-        document->setProperty("autoNext",playerAutoNext_);
-        document->setProperty("crossfadeMs",playerFadeMilliseconds_);
-        juce::Array<juce::var> sets;
-        for(const auto& set:playerSets_) {
-            auto object=std::make_unique<juce::DynamicObject>();
-            object->setProperty("name",set.name);
-            juce::Array<juce::var> files;
-            for(std::size_t i=0;i<set.files.size();++i) {
-                auto entry=std::make_unique<juce::DynamicObject>();
-                entry->setProperty("path",set.files[i].getFullPathName());
-                entry->setProperty("key",set.controls[i].key);
-                entry->setProperty("tempo",set.controls[i].tempo);
-                entry->setProperty("cueIn",set.controls[i].cueIn);
-                entry->setProperty("cueOut",set.controls[i].cueOut);
-                files.add(juce::var(entry.release()));
-            }
-            object->setProperty("files",juce::var(files));
-            sets.add(juce::var(object.release()));
+        const auto document=armix::player::PlayerSetlistArchive::serialize(
+            playerSets_,playerActiveSet_,playerAutoNext_,playerFadeMilliseconds_);
+        if(!document.isObject()) {
+            playerError_="Unable to save setlists; invalid setlist state";
+            return;
         }
-        document->setProperty("setlists",juce::var(sets));
         const auto target=settingsDirectory().getChildFile("player-library.json");
         juce::TemporaryFile staging(target);
         if(!staging.getFile().replaceWithText(
-                juce::JSON::toString(juce::var(document.release()),false)) ||
+                juce::JSON::toString(document,false)) ||
            !staging.overwriteTargetFileWithTemporary())
             playerError_="Unable to save setlists; check folder permissions";
     }
