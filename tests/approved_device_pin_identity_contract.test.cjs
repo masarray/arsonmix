@@ -240,6 +240,67 @@ test("MV-12 authority transitions expire stale M4/ChannelId work; no duplicate o
   assert.doesNotMatch(source,/document\.|window\.|AudioWorklet|new AudioContext|localStorage/);
 });
 
+
+test("MV-18 physical device swap cancels output and FX leases even at unchanged epoch",()=>{
+ const snapshot=(backend,capture,playback)=>({device:{
+   epoch:"18446744073709551614",backend,captureDevice:capture,
+   playbackDevice:playback}});
+ const old=vm.nativeLifecycleLease(snapshot("ASIO","Old ASIO","Old ASIO"),"M4");
+ const changed=vm.nativeLifecycleLease(snapshot("ASIO","New ASIO","New ASIO"),"M4");
+ assert.deepEqual(vm.nativeLifecycleDecision(old,changed),
+   {kind:"DEVICE_CHANGED",expirePending:true},
+   "a driver can change even if the epoch was reused");
+ assert.equal(vm.nativeLifecycleDecision(old,{
+   ...old,backend:"Windows Audio"}).expirePending,true);
+ assert.deepEqual(vm.nativeLifecycleDecision(old,old),
+   {kind:"SAME",expirePending:false});
+ assert.deepEqual(vm.nativeLifecycleDecision(
+   vm.nativeLifecycleLease(snapshot("ASIO","Old ASIO","Old ASIO"),"UNADMITTED"),
+   old),{kind:"M4_FIRST_SOUND",expirePending:false},
+   "first M4 input patch must preserve its own pending source");
+ const bridge=readFileSync("web/approved-native-bridge.js","utf8");
+ const a=bridge.indexOf("  function expireTransientNativeUi(reason) {");
+ const b=bridge.indexOf("  function onNativeReadback(next,confirmed)",a);
+ const cleanup=bridge.slice(a,b);
+ assert.match(cleanup,/pendingExternal\.clear\(\);pendingSlotPowers\.clear\(\)/);
+ assert.doesNotMatch(cleanup,/backend\.emitEvent|audioDeviceApply|routingExternalOutput|routingFxBypass/,
+   "UI cleanup cannot send native commands, reset FX, or reopen devices");
+});
+
+test("MV-19 invalid read-model and malformed device identity cannot mutate hardware UI",()=>{
+  const bridge=readFileSync("web/approved-native-bridge.js","utf8");
+  const readbackStart=bridge.indexOf("  function onNativeReadback(next,confirmed) {");
+  const readbackEnd=bridge.indexOf("  if (connected) {\n    controller = protocol.createController",readbackStart);
+  assert.ok(readbackStart>0&&readbackEnd>readbackStart);
+  const source=bridge.slice(readbackStart,readbackEnd);
+  const at=token=>{
+    const pos=source.indexOf(token);
+    assert.ok(pos>=0,"MV-19 lost ordered admission step: "+token);
+    return pos;
+  };
+  const selector=at("protocol.selectNativeReadModel(next,m4Verified(next))");
+  const invalid=at('if(readModel.kind==="INVALID")');
+  const lease=at("deviceVM.nativeLifecycleLease(next,readModel.kind)");
+  const noLease=at("if(!lease)");
+  const fence=at("lastNativeLifecycleLease=lease");
+  const setup=at("deviceVM.setupReadback(deviceState,next)");
+  const hardware=at("updateHardwarePanel(next)");
+  const paint=at("paintExternalReadback(next)");
+  const wirePaint=at("scope?.syncNativeWireGains?.([])");
+  assert.ok(selector<invalid&&invalid<lease&&lease<noLease&&
+    noLease<fence&&fence<wirePaint&&wirePaint<setup&&setup<hardware&&hardware<paint,
+    "invalid/stale candidates must not change Device Setup, hardware or selector UI");
+  assert.doesNotMatch(source.slice(0,fence),
+    /updateHardwarePanel\(next\)|deviceVM\.setupReadback\(deviceState,next\)|syncNativeWireGains\?\.\(\[\]\)/,
+    "no hardware mutation or drag reset before candidate admission");
+  const verified=bridge.slice(bridge.indexOf("  const m4Verified="),
+    bridge.indexOf("  // Live gestures choose the installed PCM authority."));
+  assert.match(verified,/m4Verified=\(snapshot=hardware\)/);
+  assert.match(verified,/snapshot\?\.raw\?\.legacyM4/);
+  assert.doesNotMatch(verified,/const m=legacy\(\)/,
+    "read-model M4 evidence must not use the prior hardware cache");
+});
+
 test("MV-12 approved bridge invalidates transient UI leases, not durable JUCE state",()=>{
   const source=readFileSync("web/approved-native-bridge.js","utf8");
   const start=source.indexOf("  function expireTransientNativeUi(reason) {");
@@ -251,6 +312,7 @@ test("MV-12 approved bridge invalidates transient UI leases, not durable JUCE st
     "lastNativeControlSent.clear()","pendingWireGains.clear()",
     "pendingM4Controls.clear()","pendingM4RackPowers.clear()",
     "pendingNativeFxPower=null","pendingGlobalFx=null",
+    "pendingExternal.clear()","pendingSlotPowers.clear()",
     "activeNativeSource=null","pendingIdentity"] )
     assert.ok(cleanup.includes(token),"missing old transaction cancellation: "+token);
   assert.doesNotMatch(cleanup,/backend\.emitEvent|arMixAction|routingNative|audioDeviceApply|\.smix|new AudioContext/);
@@ -259,6 +321,13 @@ test("MV-12 approved bridge invalidates transient UI leases, not durable JUCE st
   assert.match(readback,/deviceVM\.nativeLifecycleDecision\(lastNativeLifecycleLease,lease\)/);
   assert.match(readback,/if\(lifecycle\.expirePending\)/);
   assert.match(readback,/confirmed=null;/);
+  const fence=readback.indexOf("expireTransientNativeUi(lifecycle.kind)");
+  const accepted=readback.indexOf("lastNativeLifecycleLease=lease");
+  const paint=readback.indexOf("paintExternalReadback(next)");
+  assert.ok(fence>=0&&accepted>fence&&paint>accepted,
+    "EXTERNAL OUT must repaint after device cleanup on one accepted snapshot");
+  assert.doesNotMatch(readback.slice(0,fence),/paintExternalReadback\(next\)/,
+    "old hardware output lease must never be projected ahead of lifecycle");
   assert.ok(readback.indexOf("if(readModel.kind===\"INVALID\")")<
     readback.indexOf("deviceVM.nativeLifecycleLease("),
     "invalid raw readback must not create a new device owner");
