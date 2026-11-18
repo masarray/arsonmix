@@ -6,11 +6,12 @@
   const protocol = window.ArSonApprovedNativeContract;
   const deviceVM = window.ArSonApprovedDeviceViewModel;
   const stripVM = window.ArSonApprovedChannelStripViewModel;
+  const fxRackVM = window.ArSonApprovedFxRackViewModel;
   // The public GUI owns one lexical model. Native-only bundle exports a narrow
   // reference to that SAME model; never reconstruct a parallel DOM/DSP.
   const scope = window.__ARMIX_NATIVE_SCOPE__ || null;
   const connected = Boolean(backend?.emitEvent && backend?.addEventListener &&
-    protocol && deviceVM && stripVM);
+    protocol && deviceVM && stripVM && fxRackVM);
   // Public browser preview keeps its header; the native JUCE caption replaces it.
   if (backend?.emitEvent && backend?.addEventListener)
     document.documentElement?.classList?.add?.("armix-native-desktop");
@@ -591,67 +592,45 @@
   // steal focus, interrupt a fader drag or reallocate WIRE render objects.
   // The verified individual bypass flag stays distinct from rack bypass.
   function paintNativeFxPowerReadback(ch,t,globalFxBypassed){
-    if(typeof ch.fxRackBypassed!=="boolean"||!Array.isArray(ch.inserts)||
-       typeof globalFxBypassed!=="boolean")
-      return true; // never synthesize missing DSP readback
-    const enabled=!ch.fxRackBypassed;
-    // Read the SAME accepted native PCM snapshot as every slot, not a
-    // CSS class from the PREVIOUS browser render frame.
-    const globalEnabled=!globalFxBypassed;
+    const readback=fxRackVM.powerReadback(ch,globalFxBypassed,t.name);
+    if(!readback)return true; // no authoritative DSP value to paint
     const strip=document.querySelector('.strip[data-id="'+t.id+'"]');
-    // GAIN/SOF are alternate views of the FX area; power readback still
-    // updates the model but must not rebuild the rack or steal knob focus.
+    // GAIN/SOF can hide the rack without losing its accepted power model.
     const rackArea=strip?.querySelector(".fx-section");
     const rack=rackArea?.classList?.contains?.("is-gain-view") ||
       rackArea?.classList?.contains?.("is-sof-view")?null:rackArea;
-    // Virtualized mobile banks may have no mounted strip. The model still
-    // receives verified state; normal bank render creates the right buttons.
+    let header=null,rows=[];
     if(rack){
-      const header=rack.querySelector('[data-action="fxOn"]');
-      const rows=[...rack.querySelectorAll('.fxslot-row:not(.is-empty)')];
-      if(!header||rows.length!==ch.inserts.length)return false;
-      for(let slot=0;slot<ch.inserts.length;slot++){
-        const insert=ch.inserts[slot],row=rows.find(r=>
-          r.dataset.slot===String(slot));
-        if(!insert||typeof insert.bypassed!=="boolean"||
-           !row||row.dataset.insertId!==insert.id||
-           !row.querySelector('[data-action="slotPower"]'))
-          return false; // structural re-render, never modify wrong FX owner
-      }
+      header=rack.querySelector('[data-action="fxOn"]');
+      rows=[...rack.querySelectorAll('.fxslot-row:not(.is-empty)')];
+      const mounted=rows.map(row=>({
+        index:Number(row.dataset.slot),insertId:row.dataset.insertId,
+        hasPower:!!row.querySelector('[data-action="slotPower"]')
+      }));
+      if(!fxRackVM.mountedRackMatches(readback,mounted,!!header))
+        return false; // existing graph projection repairs replaced FX instance
     }
-    t.fxOn=enabled;
+    t.fxOn=readback.enabled;
     if(!Array.isArray(t.slotBypass))t.slotBypass=Array(8).fill(false);
-    for(let slot=0;slot<ch.inserts.length;slot++)
-      t.slotBypass[slot]=ch.inserts[slot].bypassed;
-    if(!rack)return true;
-    rack.dataset.fxChainEnabled=String(enabled);
-    rack.dataset.globalFxEnabled=String(globalEnabled);
-    rack.classList.toggle("is-chain-bypassed",!enabled||!globalEnabled);
-    const header=rack.querySelector('[data-action="fxOn"]');
-    header.setAttribute("aria-pressed",String(enabled&&globalEnabled));
-    header.title=(enabled?"Bypass":"Enable")+" all channel FX";
-    header.setAttribute("aria-label",
-      (enabled?"Bypass":"Enable")+" entire FX chain in "+t.name);
-    for(let slot=0;slot<ch.inserts.length;slot++){
-      const insert=ch.inserts[slot];
-      const row=[...rack.querySelectorAll('.fxslot-row:not(.is-empty)')]
-        .find(r=>r.dataset.slot===String(slot));
-      const effective=enabled&&globalEnabled&&!insert.bypassed;
-      if(insert.latencyChanged===true)
-        row.title="Plugin delay changed · aligned dry signal retained; reload the plugin before using its new delay";
-      else if(Number.isInteger(insert.latencySamples))
-        row.title="Plugin delay: "+insert.latencySamples+" samples · compensated";
-      row.dataset.fxSlotEnabled=String(!insert.bypassed);
-      row.dataset.fxEffective=String(effective);
-      row.classList.toggle("is-active",effective);
-      row.classList.toggle("is-bypassed",!effective);
+    for(const slot of readback.slots)t.slotBypass[slot.index]=slot.bypassed;
+    if(!rack)return true; // virtual bank: native snapshot still owns model
+    rack.dataset.fxChainEnabled=String(readback.enabled);
+    rack.dataset.globalFxEnabled=String(readback.globalEnabled);
+    rack.classList.toggle("is-chain-bypassed",readback.chainBypassed);
+    header.setAttribute("aria-pressed",readback.headerPressed);
+    header.title=readback.headerTitle;
+    header.setAttribute("aria-label",readback.headerLabel);
+    for(const slot of readback.slots){
+      const row=rows.find(r=>r.dataset.slot===String(slot.index));
+      if(slot.latencyTitle!==null)row.title=slot.latencyTitle;
+      row.dataset.fxSlotEnabled=String(!slot.bypassed);
+      row.dataset.fxEffective=String(slot.effective);
+      row.classList.toggle("is-active",slot.effective);
+      row.classList.toggle("is-bypassed",!slot.effective);
       const button=row.querySelector('[data-action="slotPower"]');
-      button.setAttribute("aria-pressed",String(effective));
-      button.title=(insert.bypassed?"Enable":"Bypass")+
-        " only insert "+(slot+1);
-      button.setAttribute("aria-label",
-        (insert.bypassed?"Enable":"Bypass")+" only FX insert "+
-        (slot+1)+" in "+t.name);
+      button.setAttribute("aria-pressed",slot.pressed);
+      button.title=slot.title;
+      button.setAttribute("aria-label",slot.label);
     }
     return true;
   }
