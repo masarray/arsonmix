@@ -46,6 +46,12 @@ test("MV-7 native SOURCE requires ACKed graph revision AND independently install
  const reconnect=clone(installed);reconnect.device.epoch="18446744073709551611";
  assert.equal(settle(acked,reconnect),"STALE");
  assert.equal(settle(acked,{...installed,retained:true,admitted:false}),"STALE");
+ assert.equal(settle(acked,{...installed,raw:{mixerSession:{
+   authority:"M4",deviceEpoch:epoch}}}),"STALE");
+ assert.equal(settle(acked,{...installed,raw:{mixerSession:{
+   authority:"CHANNEL_ID",deviceEpoch:"18446744073709551611"}}}),"STALE");
+ assert.equal(settle({...acked,ackRevision:beforeRevision},installed),"PENDING",
+   "ACK publisher revision cannot equal original accepted source graph");
  const missing=clone(installed);missing.graph.channels=[];
  assert.equal(settle(acked,missing),"STALE");
  const mono={...acked,choice:{label:"Mono",mode:"MONO",left:2,right:-1}};
