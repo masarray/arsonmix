@@ -1402,6 +1402,14 @@ if(BUILD_TESTING)
   add_executable(ARMixIndependentFormatTests tests/independent_stream_format_fence_test.cpp)
   target_compile_features(ARMixIndependentFormatTests PRIVATE cxx_std_20)
   add_test(NAME IndependentStreamNegotiatedFormatFence COMMAND ARMixIndependentFormatTests)
+  # IO-0: pure simultaneous-driver/physical-mask fail-closed policies.
+  # Existing AdaptiveClockBridge and ClockBridgeSizing are reused, not forked.
+  add_executable(ARMixIo0DualAsioPolicyTests
+      tests/dual_asio_capture_probe_policy_test.cpp
+      engine/device/DualAsioCaptureProbePolicy.h)
+  target_compile_features(ARMixIo0DualAsioPolicyTests PRIVATE cxx_std_20)
+  add_test(NAME IO0DualVendorCaptureDriverIdentityAndPhysicalMasks
+      COMMAND ARMixIo0DualAsioPolicyTests)
   if(WIN32)
     juce_add_console_app(ARMixAsioBackendTests PRODUCT_NAME "ArSonMix ASIO Backend Registration Tests")
     target_sources(ARMixAsioBackendTests PRIVATE tests/asio_backend_registration_test.cpp engine/device/AsioPriorityDeviceManager.h)
@@ -1414,6 +1422,22 @@ if(BUILD_TESTING)
     target_link_libraries(ARMixDualJuceTests PRIVATE juce::juce_audio_devices juce::juce_audio_basics juce::juce_recommended_config_flags)
     target_compile_features(ARMixDualJuceTests PRIVATE cxx_std_20)
     add_test(NAME IndependentJuceDeviceLifecycle COMMAND ARMixDualJuceTests)
+    # Actual pinned JUCE ASIO instance #A + separate zero-output capture B.
+    # CTest calls --self-test only: unattended CI NEVER opens hardware.
+    # Physical --probe is opt-in and does NOT run a second mixer renderer.
+    juce_add_console_app(ARMixDualAsioCaptureProbe
+        PRODUCT_NAME "ArSonMix Dual ASIO Capture Compatibility Probe")
+    target_sources(ARMixDualAsioCaptureProbe PRIVATE
+        tools/dual_asio_capture_probe.cpp
+        engine/device/DualAsioCaptureProbePolicy.h)
+    target_compile_definitions(ARMixDualAsioCaptureProbe PRIVATE JUCE_ASIO=1)
+    target_link_libraries(ARMixDualAsioCaptureProbe PRIVATE
+        juce::juce_audio_devices juce::juce_audio_basics
+        juce::juce_recommended_config_flags advapi32)
+    target_compile_features(ARMixDualAsioCaptureProbe PRIVATE cxx_std_20)
+    add_test(NAME IO0DualAsioNativeProbeNeverOpensDriversInCI
+        COMMAND ARMixDualAsioCaptureProbe --self-test)
+
     juce_add_console_app(ARMixWasapiProbeTests PRODUCT_NAME "ArSonMix WASAPI Probe Tests")
     target_sources(ARMixWasapiProbeTests PRIVATE tests/wasapi_capability_probe_test.cpp engine/device/WasapiCapabilityProbe.h)
     target_link_libraries(ARMixWasapiProbeTests PRIVATE juce::juce_core ole32 uuid juce::juce_recommended_config_flags)
