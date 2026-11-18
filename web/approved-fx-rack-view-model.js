@@ -64,5 +64,51 @@
     });
   }
 
-  return Object.freeze({powerReadback,mountedRackMatches});
+
+  // M4 inventory and catalog names are UI metadata, never an installed
+  // ChannelId processor graph or permission to resurrect a retired instance.
+  function m4Presentation(instances,catalog,acceptedRack) {
+    if(!Array.isArray(instances))return null;
+    const slots=[];
+    for(let index=0;index<8;index++){
+      const live=instances[index];
+      if(live!=null &&
+         (typeof live.instanceId!=="string"||!live.instanceId||
+          typeof live.catalogId!=="string"||!live.catalogId||
+          typeof live.bypassed!=="boolean"))return null;
+      const name=live?(catalog?.get?.(live.catalogId)?.name||"VST3 Loaded"):"None";
+      slots.push({index,name,bypassed:live?.bypassed===true,
+        instance:live?{id:live.instanceId,name}:null});
+    }
+    return {fxOn:typeof acceptedRack==="boolean"?!acceptedRack:null,slots};
+  }
+  // ACK alone is not installed PCM proof. Correlate channel, insert lease,
+  // physical device epoch and subsequent accepted readback.
+  function nativePowerSettlement(pending,snapshot) {
+    if(!pending)return "NONE";
+    if(pending.epoch!==undefined &&
+       snapshot?.device?.epoch!==pending.epoch)return "STALE";
+    if(pending.acked!==true)return "WAIT";
+    const channels=snapshot?.graph?.channels;
+    if(!Array.isArray(channels))return "WAIT";
+    const channel=channels.find(ch=>ch.id===pending.channelId);
+    if(!channel)return "WAIT";
+    const value=pending.kind==="rack"?channel.fxRackBypassed:
+      pending.kind==="insert"?
+        channel.inserts?.find(i=>i.id===pending.insertId)?.bypassed:
+        undefined;
+    return typeof value==="boolean"&&value===pending.bypassed?
+      "CONFIRMED":"WAIT";
+  }
+  function m4RackSettlement(pending,session) {
+    if(!pending)return "NONE";
+    if(session?.authority!=="M4"||
+       session.deviceEpoch!==pending.epoch||
+       session.routeRevision!==pending.revision)return "STALE";
+    return pending.acked===true&&
+      session.channels?.[pending.channel]?.fxRackBypassed===pending.bypassed?
+      "CONFIRMED":"WAIT";
+  }
+  return Object.freeze({powerReadback,mountedRackMatches,
+    m4Presentation,nativePowerSettlement,m4RackSettlement});
 });

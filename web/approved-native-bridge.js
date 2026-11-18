@@ -1385,12 +1385,9 @@
   function reconcileM4RackReadback(next){
     const session=next?.raw?.mixerSession;
     for(const [lane,p] of pendingM4RackPowers){
-      if(session?.authority!=="M4"||
-         session.deviceEpoch!==p.epoch||session.routeRevision!==p.revision){
-        pendingM4RackPowers.delete(lane);continue;
-      }
-      const actual=session.channels?.[lane]?.fxRackBypassed;
-      if(p.acked && actual===p.bypassed)pendingM4RackPowers.delete(lane);
+      const decision=fxRackVM.m4RackSettlement(p,session);
+      if(decision==="STALE"||decision==="CONFIRMED")
+        pendingM4RackPowers.delete(lane);
     }
   }
   // Global A/B is a SINGLE native atomic override. Individual racks and
@@ -1459,7 +1456,7 @@
     const bypassed=rack?!ch.fxRackBypassed:!insert.bypassed;
     const requestId="native-rack-"+(++nativeFxPowerSerial);
     pendingNativeFxPower={requestId,channelId,kind:rack?"rack":"insert",
-      insertId:insert?.id,bypassed,acked:false};
+      insertId:insert?.id,bypassed,epoch:current.device.epoch,acked:false};
     backend.emitEvent("arMixAction",{action:rack?
       "routingNativeFxRackBypass":"routingNativeFxInsertBypass",
       requestId,channelId,deviceEpoch:current.device.epoch,
@@ -1605,23 +1602,22 @@
     if(!Array.isArray(m?.fxInstances)||!scope?.tracks)return;
     for(let lane=0;lane<10;lane++){
       const t=scope.tracks.find(x=>x.id===m4TrackIds[lane]);
-      const rows=m.fxInstances[lane];
-      if(!t||!Array.isArray(rows))continue;
-      let change=false;
       const acceptedRack=mixerSession()?.authority==="M4"?
         mixerSession()?.channels?.[lane]?.fxRackBypassed:undefined;
-      if(typeof acceptedRack==="boolean" && t.fxOn===acceptedRack){
-        t.fxOn=!acceptedRack;change=true;
+      const projection=fxRackVM.m4Presentation(m.fxInstances[lane],
+        nativeCatalog,acceptedRack);
+      if(!t||!projection)continue;
+      let change=false;
+      if(projection.fxOn!==null&&t.fxOn!==projection.fxOn){
+        t.fxOn=projection.fxOn;change=true;
       }
-      for(let slot=0;slot<8;slot++){
-        const live=rows[slot],entry=nativeCatalog.get(live?.catalogId);
-        const name=live?(entry?.name||"VST3 Loaded"):"None";
-        if(t.fx[slot]!==name || t.slotBypass[slot]!==Boolean(live?.bypassed) ||
-           (t.fxInsertIds?.[slot]?.id||null)!==(live?.instanceId||null)){
-          t.fx[slot]=name;
-          t.slotBypass[slot]=Boolean(live?.bypassed);
+      for(const slot of projection.slots){
+        const index=slot.index;
+        if(t.fx[index]!==slot.name||t.slotBypass[index]!==slot.bypassed||
+           (t.fxInsertIds?.[index]?.id||null)!==(slot.instance?.id||null)){
+          t.fx[index]=slot.name;t.slotBypass[index]=slot.bypassed;
           if(!Array.isArray(t.fxInsertIds))t.fxInsertIds=Array(8).fill(null);
-          t.fxInsertIds[slot]=live?{id:live.instanceId,name}:null;
+          t.fxInsertIds[index]=slot.instance;
           change=true;
         }
       }
@@ -2871,13 +2867,9 @@
         status("VST3 loaded · "+inserted.name+" · native PCM readback verified");
       }
     }
-    if(pendingNativeFxPower?.acked){
-      const p=pendingNativeFxPower;
-      const ch=next.graph.channels.find(x=>x.id===p.channelId);
-      const actual=p.kind==="rack"?ch?.fxRackBypassed:
-        ch?.inserts?.find(x=>x.id===p.insertId)?.bypassed;
-      if(actual===p.bypassed)pendingNativeFxPower=null;
-    }
+    const fxSettlement=fxRackVM.nativePowerSettlement(pendingNativeFxPower,next);
+    if(fxSettlement==="CONFIRMED"||fxSettlement==="STALE")
+      pendingNativeFxPower=null;
     if(startupWire)window.queueMicrotask(flushStartupWire);
     status("Mixer settings updated");
   }
