@@ -743,6 +743,11 @@
       emit("arMixConsoleIntent",msg);notify();return {ok:true,requestId};
     }
     function onAck(raw) {
+      // G-MV21: the first correlated native ACK owns this request's proof
+      // lease. A duplicate positive, negative or malformed ACK cannot
+      // overwrite its graph revision, demand another subscribe, or reject
+      // a command already waiting for independent installed PCM readback.
+      if (pending?.ack) return false;
       if (!pending || !fields(raw,["requestId","status","deviceEpoch","graphRevision","rosterRevision","errorCode"]) ||
           typeof raw.requestId !== "string" || raw.requestId !== pending.requestId) return false;
       if ([raw.deviceEpoch,raw.graphRevision,raw.rosterRevision].some(x=>decimal(x)===null)) {

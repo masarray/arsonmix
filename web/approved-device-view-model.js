@@ -258,7 +258,11 @@
       remapGeneration:null}};
   }
   function setupAck(state,ack) {
-    if(!state.pending||ack?.requestId!==state.pending.requestId)return state;
+    // G-MV21: first ACK wins while APPLYING. After a matching hardware
+    // acceptance, the immutable ACK lease is verified only by an installed
+    // v6 readback, never replaced by duplicate positive/negative ACKs.
+    if(state.phase!=="APPLYING"||!state.pending||
+       state.pending.ack||ack?.requestId!==state.pending.requestId)return state;
     const active=ack.active;
     const accepted=ack.ok===true &&
       (ack.state==="ACCEPTED_LIVE"||ack.state==="ACCEPTED_MUTED") &&
