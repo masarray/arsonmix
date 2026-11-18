@@ -18,6 +18,9 @@ const clone=x=>JSON.parse(JSON.stringify(x));
 function gmv20AcceptedGraph() {
  const fixture=clone(fixtures.g2);
  fixture.graph.mainChannelId="200";
+ // The illustrative g2 inserts predate accepted catalog identities.
+ for(const channel of fixture.graph.channels)
+   for(const fx of channel.inserts||[])fx.catalogId="fixture.catalog."+fx.id;
  fixture.graph.edges=[["7","100"],["2","100"],["100","200"],
    ["101","200"]].map(([from,to],i)=>({
      edgeId:String(i+1),from,to,signalKind:"AUDIO",
