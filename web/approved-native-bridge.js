@@ -2595,6 +2595,22 @@
       return;
     }
   }
+
+  // Hold M4 source selection after ACK until independently published PCM
+  // source rows show the requested mode AND both physical input pins.
+  // The existing bridge continues to own one queue, timer and native event.
+  function settleM4SourceReadback(next){
+    const verdict=stripVM.m4SourceReadbackSettlement(nativeUiSourcePending,next);
+    if(verdict!=="CONFIRMED"&&verdict!=="STALE")return;
+    const settled=nativeUiSourcePending;
+    nativeUiSourcePending=null;
+    if(verdict==="CONFIRMED")
+      status("CH "+(settled.channel+1)+" INPUT · native PCM readback verified");
+    else status("Native input changed · old M4 source selection discarded");
+    // onNativeReadback dispatches the next latest-per-channel draft using the
+    // NEW accepted revision. No second dispatch owner or accepted UI state.
+  }
+
   function playAcceptedWireImpact(changes) {
     const plug=changes?.find(change=>["CONNECT","ROUTE_ONLY","RETARGET"].includes(change.op));
     if(!plug)return;
@@ -2657,6 +2673,7 @@
     lastNativeLifecycleLease=lease;
     appearanceFromNative(next);
     settleNativeSourceReadback(next);
+    settleM4SourceReadback(next);
     if(readModel.kind==="LOGICAL_ONLY") {
       const staged=readModel.view;
       let revealCreatedId=null,wireImpact=null;
@@ -3044,16 +3061,18 @@
     backend.addEventListener("arMixSourceSwitchAck", ack=>{
       const verdict=stripVM.sourceAckResult(nativeUiSourcePending,ack,"M4");
       if(verdict!=="IGNORE"){
-        const p=nativeUiSourcePending;
-        nativeUiSourcePending=null;
         if(verdict==="ACKED"){
-          // The acceptedRoute carried in ACK is NOT subsequent callback PCM.
-          controller.subscribe();
-          status("CH "+(p.channel+1)+" native input accepted");
+          // ACK is only correlated admission, not the installed M4 PCM row.
+          // Keep this single in-flight lease until the NEXT native snapshot.
+          nativeUiSourcePending.acked=true;
+          nativeUiSourcePending.ackRevision=String(ack.state.revision);
+          status("CH "+(nativeUiSourcePending.channel+1)+
+            " INPUT accepted · verifying native PCM source");
         }else{
+          nativeUiSourcePending=null;
           status("NATIVE INPUT REJECTED · "+(ack?.error||"stale routing"));
-          controller.subscribe();
         }
+        controller?.subscribe();
         return;
       }
       if(!pendingSourceId||ack?.requestId!==pendingSourceId)return;

@@ -213,6 +213,75 @@ test("MV-6 M4 SOURCE dispatch reuses fresh revision but never migrates stale dev
  assert.doesNotMatch(stripVM.sourceDispatchPlan.toString(),/backend|document|window/);
 });
 
+test("MV-13 M4 input ACK cannot free source queue until independently accepted PCM readback",()=>{
+ const choice={label:"Stereo · IN 3/4",mode:"STEREO",left:2,right:3};
+ const pending={requestId:501,channel:4,choice,epoch:71,revision:29,acked:false};
+ const channels=Array.from({length:10},(_,i)=>({id:"m4:"+String(i+1).padStart(2,"0"),
+   role:"INPUT",source:{mode:"NONE",left:-1,right:-1}}));
+ const snapshot={admitted:false,retained:false,device:{epoch:"71"},
+   raw:{legacyM4:{active:true,routeAccepted:true,routingRevision:"30"},
+     mixerSession:{authority:"M4",deviceEpoch:"71",routeRevision:"30",channels}}};
+ const check=(p=pending,s=snapshot)=>stripVM.m4SourceReadbackSettlement(p,s);
+ assert.equal(check(null),"NONE");
+ assert.equal(check(),"PENDING_ACK","fresh PCM values cannot bypass a pending ACK");
+ const acked={...pending,acked:true,ackRevision:"30"};
+ assert.equal(check(acked),"PENDING","a matching ACK is still not PCM proof");
+ const installed=clone(snapshot);
+ installed.raw.mixerSession.channels[4].source={mode:"STEREO",left:2,right:3};
+ assert.equal(check(acked,installed),"CONFIRMED");
+ assert.deepEqual(snapshot.raw.mixerSession.channels[4].source,
+   {mode:"NONE",left:-1,right:-1},"projection must be immutable");
+ for(const input of [
+   {mode:"STEREO",left:2,right:4},{mode:"MONO",left:2,right:-1},
+   {mode:"STEREO",left:3,right:4},{mode:"NONE",left:-1,right:-1}
+ ]){
+   const mismatch=clone(installed);
+   mismatch.raw.mixerSession.channels[4].source=input;
+   assert.equal(check(acked,mismatch),"PENDING",JSON.stringify(input));
+ }
+ for(const [description,change] of [
+   ["old callback revision",s=>{s.raw.mixerSession.routeRevision="29";
+       s.raw.legacyM4.routingRevision="29";}],
+   ["inconsistent legacy revision",s=>{s.raw.legacyM4.routingRevision="31";}],
+   ["unprepared PCM",s=>{s.raw.legacyM4.routeAccepted=false;}],
+   ["missing native source",s=>{delete s.raw.mixerSession.channels[4].source;}],
+   ["wrong lane",s=>{s.raw.mixerSession.channels[4].role="MAIN";}],
+ ]){
+   const updated=clone(installed);change(updated);
+   assert.equal(check(acked,updated),description==="wrong lane"?"STALE":"PENDING",
+     description);
+ }
+ for(const mutate of [
+   s=>{s.device.epoch="72";},
+   s=>{s.raw.mixerSession.authority="CHANNEL_ID";},
+   s=>{s.raw.mixerSession.deviceEpoch="70";},
+   s=>{s.retained=true;},
+ ]){
+   const replaced=clone(installed);mutate(replaced);
+   assert.equal(check(acked,replaced),"STALE",
+     "device/authority changes cannot confirm the old queued input");
+ }
+ assert.equal(check({...acked,ackRevision:"29"},installed),"PENDING",
+   "same-revision ACK is not later installed PCM");
+ assert.equal(check({...acked,ackRevision:"31"},installed),"PENDING",
+   "earlier M4 snapshot cannot prove a newer ACK");
+ assert.equal(check({...acked,acked:false},installed),"PENDING_ACK");
+ const bridge=read("web/approved-native-bridge.js");
+ const ackStart=bridge.indexOf('backend.addEventListener("arMixSourceSwitchAck"');
+ const ackEnd=bridge.indexOf('backend.addEventListener("arMixM4ControlAck"',ackStart);
+ const ackBody=bridge.slice(ackStart,ackEnd);
+ assert.match(ackBody,/nativeUiSourcePending\.acked=true/);
+ assert.match(ackBody,/nativeUiSourcePending\.ackRevision=String\(ack\.state\.revision\)/);
+ assert.doesNotMatch(ackBody,/nativeUiSourcePending=null;\s*if\(verdict==="ACKED"\)/,
+   "ACK must not release M4 source queue");
+ assert.match(bridge,/stripVM\.m4SourceReadbackSettlement\(nativeUiSourcePending,next\)/);
+ assert.match(bridge,/settleM4SourceReadback\(next\)/);
+ assert.equal((bridge.match(/arMixSourceSwitchAck/g)||[]).length,1,
+   "one physical M4 ACK owner, no new transport/controller");
+ assert.doesNotMatch(stripVM.m4SourceReadbackSettlement.toString(),
+   /window\.|document\.|backend|setTimeout/);
+});
+
 test("GUI-4 Channel Strip PRIMARY OUT extracts exact native EdgeId without touching SEND",()=>{
  const source="9007199254740993",bus="9007199254741001",
    main="18446744073709551615";
