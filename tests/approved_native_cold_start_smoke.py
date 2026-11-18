@@ -77,9 +77,10 @@ def main():
             assert page.evaluate("""()=>Boolean(
                 window.ArSonApprovedChannelStripViewModel &&
                 window.ArSonApprovedFxRackViewModel &&
+                window.ArSonApprovedWireViewModel &&
                 window.__ARMIX_NATIVE_M2__?.inputChoices &&
                 window.__ARMIX_NATIVE_M2__?.outputChoices)"""), (
-                'native assembled GUI missing GUI-1 Channel Strip ViewModel')
+                'native assembled GUI missing MVVM presentation modules')
             io_inventory={
                 'types':[{'name':'Windows Audio','separate':True,
                           'inputs':['Studio Mic'],'outputs':['Speakers']}],
