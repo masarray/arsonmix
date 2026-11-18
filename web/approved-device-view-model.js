@@ -357,6 +357,23 @@
     return {...state,phase:"IDLE",message:"",remapGeneration:null};
   }
 
+  // G-MV20: exact native hardware format and enabled pin SETS are part of
+  // the transient GUI lease. Same-epoch remaps cannot inherit old FX/output
+  // edits; mere enumeration order, scalar graph or MONITOR state do not reset.
+  function nativeHardwareConfiguration(d) {
+    if(!Number.isFinite(d?.sampleRate)||d.sampleRate<0||
+       !Number.isSafeInteger(d.bufferFrames)||d.bufferFrames<0||
+       !Array.isArray(d.enabledInputs)||!Array.isArray(d.enabledOutputs)||
+       ![d.enabledInputs,d.enabledOutputs].every(pins=>
+         pins.length<=256 &&
+         pins.every(pin=>Number.isInteger(pin)&&pin>=0&&pin<=255) &&
+         new Set(pins).size===pins.length))
+      return null;
+    const sorted=pins=>pins.slice().sort((a,b)=>a-b);
+    return JSON.stringify([d.sampleRate,d.bufferFrames,
+      sorted(d.enabledInputs),sorted(d.enabledOutputs)]);
+  }
+
   // MV-12: one pure identity fence for transient WebView control requests.
   // This is NOT a physical device manager or second native controller. A
   // ChannelId graph can be readmitted directly after a device switch without
@@ -366,17 +383,19 @@
     const d=snapshot?.device,epoch=d?.epoch;
     const kinds=["CHANNEL_ID","M4","NEEDS_REMAP","LOGICAL_ONLY",
       "UNADMITTED","STALE"];
+    const hardwareConfiguration=nativeHardwareConfiguration(d);
     if(!kinds.includes(readModelKind) ||
-       typeof epoch!=="string" || !/^(0|[1-9]\d*)$/.test(epoch) ||
+       typeof epoch!=="string" || !/^(0|[1-9]\\d*)$/.test(epoch) ||
        epoch.length>20 || BigInt(epoch)>18446744073709551615n ||
        typeof d.backend!=="string" ||
        typeof d.captureDevice!=="string" ||
-       typeof d.playbackDevice!=="string")return null;
-    // Store only physical identity and the canonical read-model authority.
-    // Never copy a native graph, device controller, DOM or PCM into the VM.
+       typeof d.playbackDevice!=="string" ||
+       hardwareConfiguration===null)return null;
+    // Store only physical identity/format and canonical read-model authority.
+    // Never copy a graph, mutable pin array, DOM, PCM or device controller.
     return Object.freeze({epoch,backend:d.backend,
       captureDevice:d.captureDevice,playbackDevice:d.playbackDevice,
-      authority:readModelKind});
+      hardwareConfiguration,authority:readModelKind});
   }
   function nativeLifecycleDecision(previous,next) {
     if(!next || typeof next.epoch!=="string" ||
@@ -387,7 +406,8 @@
     const changed=previous.epoch!==next.epoch ||
       previous.backend!==next.backend ||
       previous.captureDevice!==next.captureDevice ||
-      previous.playbackDevice!==next.playbackDevice;
+      previous.playbackDevice!==next.playbackDevice ||
+      previous.hardwareConfiguration!==next.hardwareConfiguration;
     if(changed)
       return Object.freeze({kind:"DEVICE_CHANGED",expirePending:true});
     // The very first accepted M4 physical SOURCE patch promotes an already
