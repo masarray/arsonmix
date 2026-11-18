@@ -2668,6 +2668,11 @@
     pendingWireGains.clear();pendingNativeControl.clear();
     liveFaderVisualTargets.clear();lastNativeControlSent.clear();
     pendingM4Controls.clear();pendingM4RackPowers.clear();
+    // MV-18: these two hardware-scoped leases were previously omitted.
+    // A same-epoch driver/endpoint replacement or M4 authority change
+    // must not strand EXTERNAL OUT selects or slot-bypass edits behind
+    // an old ACK/timer. Never touch persisted PCM/FX state here.
+    pendingExternal.clear();pendingSlotPowers.clear();
     if(pendingIdentity){
       if(pendingIdentity.migration)legacyDeferred.add(pendingIdentity.channelId);
       rejectIdentity("Channel identity expired after audio connection change");
@@ -2685,7 +2690,6 @@
     deviceState=deviceVM.setupReadback(deviceState,next);
     if(deviceState!==previousSetup && !deviceState.pending)finishDeviceApplyUi();
     updateHardwarePanel(next);
-    paintExternalReadback(next);
     // One schema-v6 read-model selector decides native PCM, retained,
     // M4 and offline document authority. Do not revalidate it in the DOM.
     const readModel=protocol.selectNativeReadModel(next,m4Verified());
@@ -2707,6 +2711,10 @@
       confirmed=null;
     }
     lastNativeLifecycleLease=lease;
+    // Paint only after the lifecycle fence has expired old device-scoped
+    // output leases. This releases aria-busy immediately on the same
+    // authoritative snapshot, even if a new driver reuses its old epoch.
+    paintExternalReadback(next);
     appearanceFromNative(next);
     settleSourceReadback("CHANNEL_ID",next);
     settleSourceReadback("M4",next);
