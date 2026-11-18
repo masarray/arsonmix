@@ -15,6 +15,57 @@ const clone=x=>JSON.parse(JSON.stringify(x));
 
 // GUI-4: SOURCE ONLY and physical PRIMARY OUT must not consume a parallel SEND.
 
+
+test("MV-7 native SOURCE requires ACKed graph revision AND independently installed input pins",()=>{
+ const id="9007199254740993",epoch="18446744073709551610";
+ const beforeRevision="9223372036854775807",afterRevision="9223372036854775808";
+ const p={requestId:"source-native-99",id,epoch,beforeRevision,
+  choice:{label:"Mic A",mode:"STEREO",left:2,right:3},acked:false};
+ const snapshot={admitted:true,retained:false,device:{epoch},
+  graph:{revision:beforeRevision,channels:[{id,role:"INPUT",
+    source:{portId:"in:2",portIdRight:"in:3",sourceFormat:"STEREO"}}]}};
+ const before=JSON.stringify(snapshot);
+ const settle=(request,readback=snapshot)=>stripVM.sourceReadbackSettlement(request,readback);
+ assert.equal(settle(null),"NONE");
+ assert.equal(settle(p),"PENDING_ACK");
+ assert.equal(settle({...p,acked:true,ackRevision:afterRevision}),"PENDING",
+  "even matching pins at old revision are not accepted readback");
+ const installed=clone(snapshot);installed.graph.revision=afterRevision;
+ assert.equal(settle({...p,acked:true,ackRevision:afterRevision},installed),
+  "CONFIRMED");
+ assert.equal(JSON.stringify(snapshot),before,"VM cannot mutate accepted PCM");
+ const acked={...p,acked:true,ackRevision:afterRevision};
+ const other=clone(installed);other.graph.channels[0].source.portIdRight="in:4";
+ assert.equal(settle(acked,other),"PENDING",
+  "stereo right pin must independently match native source readback");
+ const wrongFormat=clone(installed);
+ wrongFormat.graph.channels[0].source.sourceFormat="MONO";
+ assert.equal(settle(acked,wrongFormat),"PENDING");
+ const noRoute=clone(installed);delete noRoute.graph.channels[0].source;
+ assert.equal(settle(acked,noRoute),"PENDING");
+ const reconnect=clone(installed);reconnect.device.epoch="18446744073709551611";
+ assert.equal(settle(acked,reconnect),"STALE");
+ assert.equal(settle(acked,{...installed,retained:true,admitted:false}),"STALE");
+ const missing=clone(installed);missing.graph.channels=[];
+ assert.equal(settle(acked,missing),"STALE");
+ const mono={...acked,choice:{label:"Mono",mode:"MONO",left:2,right:-1}};
+ const monoread=clone(installed);delete monoread.graph.channels[0].source.portIdRight;
+ monoread.graph.channels[0].source.sourceFormat="MONO";
+ assert.equal(settle(mono,monoread),"CONFIRMED");
+ const none={...acked,choice:{label:"None",mode:"NONE",left:-1,right:-1}};
+ assert.equal(settle(none,noRoute),"CONFIRMED");
+ assert.equal(settle(none,installed),"PENDING",
+  "SOURCE NONE must not remove a physical input from UI before installed PCM");
+ const model=read("web/approved-channel-strip-view-model.js");
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/stripVM\.sourceReadbackSettlement\(/);
+ assert.match(bridge,/beforeRevision:current\.graph\.revision,acked:false/);
+ assert.match(bridge,/ackRevision:ack\.graphRevision/);
+ assert.match(bridge,/settleNativeSourceReadback\(next\)/);
+ assert.doesNotMatch(model,/backend\.emitEvent|document\.|window\.setTimeout/,
+  "Channel Strip readback remains pure; bridge holds one transient source queue");
+});
+
 test("MV-6 SOURCE input queues bind exact native device epoch and verified pins",()=>{
  const choices=[{label:"None",mode:"NONE",left:-1,right:-1},
   {label:"Mono · IN 1",mode:"MONO",left:0,right:-1},
@@ -124,12 +175,26 @@ test("MV-6 M4 SOURCE dispatch reuses fresh revision but never migrates stale dev
  assert.equal(stripVM.sourceAckResult(pending,{...ack,state:{...ack.state,
   acceptedRoute:{channels:Array.from({length:10},(_,i)=>i===4?
    {mode:"MONO",left:2,right:-1}:null)}}},"M4"),"REJECTED");
- assert.equal(stripVM.sourceAckResult({requestId:"source-native-1"},
-  {requestId:"source-native-1",ok:true},"CHANNEL_ID"),"ACKED");
- assert.equal(stripVM.sourceAckResult({requestId:"source-native-1"},
-  {requestId:"source-native-2",ok:true},"CHANNEL_ID"),"IGNORE");
- assert.equal(stripVM.sourceAckResult({requestId:"source-native-1"},
-  {requestId:"source-native-1",ok:false},"CHANNEL_ID"),"REJECTED");
+ const nativePending={requestId:"source-native-1",
+  id:"9007199254740993",epoch:"18446744073709551610",
+  beforeRevision:"9223372036854775807"};
+ const nativeAck={requestId:"source-native-1",
+  channelId:"9007199254740993",graphRevision:"9223372036854775808",
+  ok:true};
+ assert.equal(stripVM.sourceAckResult(nativePending,nativeAck,"CHANNEL_ID"),
+  "ACKED");
+ assert.equal(stripVM.sourceAckResult(nativePending,
+  {...nativeAck,requestId:"source-native-2"},"CHANNEL_ID"),"IGNORE");
+ assert.equal(stripVM.sourceAckResult(nativePending,
+  {...nativeAck,ok:false},"CHANNEL_ID"),"REJECTED");
+ assert.equal(stripVM.sourceAckResult(nativePending,
+  {...nativeAck,channelId:"9007199254740994"},"CHANNEL_ID"),"REJECTED");
+ assert.equal(stripVM.sourceAckResult(nativePending,
+  {...nativeAck,graphRevision:nativePending.beforeRevision},"CHANNEL_ID"),
+  "REJECTED");
+ assert.equal(stripVM.sourceAckResult(nativePending,
+  {...nativeAck,graphRevision:"18446744073709551616"},"CHANNEL_ID"),
+  "REJECTED");
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/stripVM\.sourceQueueSelection\(/);
  assert.equal((bridge.match(/stripVM\.sourceDispatchPlan\(/g)||[]).length,2,
@@ -2248,6 +2313,31 @@ test("P0 native hardware IN remains selectable after ChannelId ownership, failed
  assert.equal(sourceCommands()[1].payload.left,1);
  assert.equal(sourceCommands()[1].payload.graphRevision,base.graph.revision);
  assert.notEqual(sourceCommands()[1].payload.requestId,id);
+ // MV-7: a later positive ACK must NOT drain a third channel edit until the
+ // exact new source pins and native graph revision are observed separately.
+ assert.equal(choose(scope.tracks[0],"Mono · Mic A [IN 1]"),true);
+ const secondCommand=sourceCommands()[1];
+ listeners.get("arMixNativeSourceAck")({
+   requestId:secondCommand.payload.requestId,channelId:second.id,
+   graphRevision:"6",ok:true
+ });
+ assert.equal(sourceCommands().length,2,"ACK is not installed PCM readback");
+ listeners.get("arMixConsoleSnapshot")(base);
+ while(microtasks.length)microtasks.shift()();
+ assert.equal(sourceCommands().length,2,
+   "unchanged pre-ACK PCM must hold next queued SOURCE");
+ const installed=clone(base);
+ installed.graph.revision="6";
+ installed.graph.channels.find(ch=>ch.id===second.id).source={
+   sourceFormat:"MONO",portId:"in:1"
+ };
+ installed.mixerSession.routeRevision="6";
+ listeners.get("arMixConsoleSnapshot")(installed);
+ while(microtasks.length)microtasks.shift()();
+ assert.equal(sourceCommands().length,3,
+   "installed source readback unlocks only one next queued edit");
+ assert.equal(sourceCommands()[2].payload.channelId,first.id);
+ assert.equal(sourceCommands()[2].payload.graphRevision,"6");
 });
 test("M3/V60 Windows bundle dispatches exactly one fader release through native ACK and fences FX reorder",()=>{
  const builder=read("scripts/build_approved_native_gui.py");
