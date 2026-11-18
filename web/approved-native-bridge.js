@@ -7,11 +7,12 @@
   const deviceVM = window.ArSonApprovedDeviceViewModel;
   const stripVM = window.ArSonApprovedChannelStripViewModel;
   const fxRackVM = window.ArSonApprovedFxRackViewModel;
+  const wireVM = window.ArSonApprovedWireViewModel;
   // The public GUI owns one lexical model. Native-only bundle exports a narrow
   // reference to that SAME model; never reconstruct a parallel DOM/DSP.
   const scope = window.__ARMIX_NATIVE_SCOPE__ || null;
   const connected = Boolean(backend?.emitEvent && backend?.addEventListener &&
-    protocol && deviceVM && stripVM && fxRackVM);
+    protocol && deviceVM && stripVM && fxRackVM && wireVM);
   // Public browser preview keeps its header; the native JUCE caption replaces it.
   if (backend?.emitEvent && backend?.addEventListener)
     document.documentElement?.classList?.add?.("armix-native-desktop");
@@ -368,22 +369,14 @@
     if(state?.pending||!current?.admitted)return;
     for(const [edgeId,edit] of pendingWireGains){
       pendingWireGains.delete(edgeId);
-      if(current.identity!==edit.identity){
-        // A changed device/graph invalidates a deferred edit, but must not
-        // strand its LCD while waiting for a nonexistent ACK.
+      const decision=wireVM.flushDecision(current,edgeId,edit);
+      if(decision==="STALE"||decision==="UNROUTED"){
         scope?.rollbackNativeWireInspector?.(nativeWireGainReadback(current));
-        continue; // never replay into a new graph/device
+        continue; // changed graph or retargeted EdgeId never replays
       }
-      const edge=current.graph.edges.find(e=>e.enabled&&e.edgeId===edgeId&&e.from===edit.source);
-      if(!edge||edge.primaryOutput!==false){
-        scope?.rollbackNativeWireInspector?.(nativeWireGainReadback(current));
-        continue;
-      }
-      if(Math.abs(edge.gainLinear-edit.gain)<.00001){
-        // The accepted PCM gain already equals the requested scalar. Do not
-        // emit a redundant native intent, but DO settle the pending display.
+      if(decision==="UNCHANGED"){
         scope?.syncNativeWireGains?.(nativeWireGainReadback(current));
-        continue;
+        continue; // do not emit a redundant accepted PCM scalar
       }
       const result=controller.intent("SET_WIRE_GAIN",edit.source,{edgeId,gainLinear:edit.gain});
       if(result.ok)window.setTimeout(()=>controller?.expire(result.requestId),8000);
@@ -400,18 +393,15 @@
     if(!flags.acceptedGraphConnected||!current?.admitted||current.retained||
        !source||!edgeId||!current.graph.capabilities.supportedOps.includes(operation))
       return null;
-    const matches=current.graph.edges.filter(e=>e.enabled&&
-      e.edgeId===edgeId&&e.from===source&&e.primaryOutput===false);
-    return matches.length===1?matches[0]:null;
+    return wireVM.parallelEdge(current.graph.edges,source,edgeId);
   }
   function requestWireGain(op){
-    const db=Number(op.levelDb);
-    if(!Number.isFinite(db)||db< -60||db>6||
-       !admittedParallelWire(op.sourceId,op.edgeId,"SET_WIRE_GAIN"))return false;
+    if(!admittedParallelWire(op.sourceId,op.edgeId,"SET_WIRE_GAIN"))return false;
     const current=controller.state().current;
     const edgeId=wireByUiId.get(op.edgeId),source=nativeByUiId.get(op.sourceId);
-    // A physical SEND fader floor is -infinity (zero PCM), NOT -60 dB linear.
-    pendingWireGains.set(edgeId,{source,gain:db<=-60?0:Math.pow(10,db/20),identity:current.identity});
+    const draft=wireVM.gainDraft(op.levelDb,source,current.identity);
+    if(!draft)return false;
+    pendingWireGains.set(edgeId,draft);
     queueWireGainFlush();return true;
   }
   function nativeOutputTargets(t,channels=activeView()?.graph?.channels||[]){
@@ -638,10 +628,7 @@
   // One authoritative EdgeId gain projection for normal readback AND failure
   // rollback. No duplicate DSP math or synthetic accepted control state.
   function nativeWireGainReadback(next){
-    return (next?.graph?.edges||[]).filter(e=>e.enabled&&e.primaryOutput===false)
-      .map(e=>({id:uiByWireId.get(e.edgeId),pending:pendingWireGains.has(e.edgeId),
-        levelDb:Math.round(Math.max(-60,Math.min(6,
-          e.gainLinear>0?20*Math.log10(e.gainLinear):-60))*10)/10}));
+    return wireVM.readbackGains(next?.graph?.edges,uiByWireId,pendingWireGains);
   }
   // Paint ONLY an independently accepted ChannelId input scalar. Comparing
   // the actual DOM as well as the model also repairs a rejected/expired gain
@@ -3740,8 +3727,7 @@
       if(Array.isArray(ops)&&ops.length===1&&ops[0].type==="MODE"){
         const op=ops[0];
         const source=nativeByUiId.get(op.sourceId),edgeId=wireByUiId.get(op.edgeId);
-        const tap=op.mode==="split"?"PRE_FADER":
-          op.mode==="send"?"POST_FADER":null;
+        const tap=wireVM.tapFromGesture(op.mode);
         requestNativeTap(source,edgeId,tap);
         return true;
       }
