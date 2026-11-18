@@ -1036,18 +1036,24 @@
     if(activeNativeSource||!pendingNativeSources.size)return;
     const current=controller?.state()?.current;
     if(!current?.admitted||mixerSession()?.authority!=="CHANNEL_ID")return;
-    const [id,choice]=pendingNativeSources.entries().next().value;
+    const [id,entry]=pendingNativeSources.entries().next().value;
     pendingNativeSources.delete(id);
-    if(!current.graph.channels.some(ch=>ch.id===id&&ch.role==="INPUT"))
-      return nativeToast("Source identity changed · refresh native mixer");
+    const plan=stripVM.sourceDispatchPlan({
+      authority:"CHANNEL_ID",entry,hardware,native:current,channelId:id,
+      choices:inputChoicesFor(),deviceReady:deviceReady()
+    });
+    if(plan.kind!=="READY"){
+      nativeToast("Source identity or device pins changed · refresh native mixer");
+      // An invalid head must never strand edits queued for other channels.
+      if(pendingNativeSources.size)window.queueMicrotask(dispatchNativeSource);
+      return;
+    }
     const requestId="source-native-"+(++nativeSourceSerial);
-    activeNativeSource={requestId,id,choice};
+    activeNativeSource={requestId,id,choice:entry.choice,epoch:entry.epoch};
     backend.emitEvent("arMixAction",{
-      action:"routingNativeSourcePatch",requestId,channelId:id,
-      deviceEpoch:current.device.epoch,graphRevision:current.graph.revision,
-      rosterRevision:current.graph.rosterRevision,
-      mode:choice.mode,left:choice.left,right:choice.right});
-    status("Input "+choice.label+" · native PCM readback pending");
+      action:plan.action,requestId,...plan.payload
+    });
+    status("Input "+entry.choice.label+" · native PCM readback pending");
     window.setTimeout(()=>{
       if(activeNativeSource?.requestId!==requestId)return;
       activeNativeSource=null;
@@ -2611,22 +2617,30 @@
   function dispatchQueuedSource(){
     if(nativeUiSourcePending||pendingSourceQueue.size===0)return;
     if(!deviceReady()){pendingSourceQueue.clear();return;}
-    const [channel,choice]=pendingSourceQueue.entries().next().value;
-    pendingSourceQueue.delete(channel);
-    const ep=safeNativeCounter(hardware?.device?.epoch),
-      rev=safeNativeCounter(legacy()?.routingRevision);
-    if(ep===null||rev===null)return;
-    const requestId=++sourceSerial;
-    nativeUiSourcePending={requestId,channel,choice,epoch:ep,revision:rev};
-    backend.emitEvent("arMixAction",{action:"routingSourceSwitch",
-      requestId,channel,mode:choice.mode,left:choice.left,right:choice.right,
-      deviceEpoch:ep,revision:rev});
-    window.setTimeout(()=>{
-      if(nativeUiSourcePending?.requestId!==requestId)return;
-      nativeUiSourcePending=null;
-      status("CH "+(channel+1)+" INPUT timeout · native state preserved");
-      controller.subscribe();
-    },8000);
+    while(pendingSourceQueue.size){
+      const [channel,entry]=pendingSourceQueue.entries().next().value;
+      pendingSourceQueue.delete(channel);
+      const plan=stripVM.sourceDispatchPlan({
+        authority:"M4",entry,hardware,channel,
+        choices:inputChoicesFor(),deviceReady:deviceReady()
+      });
+      if(plan.kind!=="READY"){
+        status("CH "+(channel+1)+" INPUT dropped · device or pin identity changed");
+        continue; // stale first entry cannot starve the next valid source
+      }
+      const requestId=++sourceSerial;
+      nativeUiSourcePending={requestId,channel,choice:entry.choice,
+        epoch:plan.payload.deviceEpoch,revision:plan.payload.revision};
+      backend.emitEvent("arMixAction",{action:plan.action,requestId,
+        ...plan.payload});
+      window.setTimeout(()=>{
+        if(nativeUiSourcePending?.requestId!==requestId)return;
+        nativeUiSourcePending=null;
+        status("CH "+(channel+1)+" INPUT timeout · native state preserved");
+        controller.subscribe();
+      },8000);
+      return;
+    }
   }
   function playAcceptedWireImpact(changes) {
     const plug=changes?.find(change=>["CONNECT","ROUTE_ONLY","RETARGET"].includes(change.op));
@@ -2963,9 +2977,10 @@
       controller?.subscribe();
     });
     backend.addEventListener("arMixNativeSourceAck",ack=>{
-      if(!activeNativeSource||activeNativeSource.requestId!==ack?.requestId)return;
+      const verdict=stripVM.sourceAckResult(activeNativeSource,ack,"CHANNEL_ID");
+      if(verdict==="IGNORE")return;
       activeNativeSource=null;
-      if(ack.ok!==true)
+      if(verdict!=="ACKED")
         nativeToast("Native input rejected · "+(ack?.error||"stale PCM"));
       else status("Native input accepted · checking subsequent PCM readback");
       controller?.subscribe();
@@ -3033,22 +3048,15 @@
       controller.subscribe(); // later authoritative M4 snapshot required
     });
     backend.addEventListener("arMixSourceSwitchAck", ack=>{
-      if(nativeUiSourcePending &&
-         ack?.requestId===nativeUiSourcePending.requestId) {
+      const verdict=stripVM.sourceAckResult(nativeUiSourcePending,ack,"M4");
+      if(verdict!=="IGNORE"){
         const p=nativeUiSourcePending;
         nativeUiSourcePending=null;
-        const next=ack?.state||{},row=next.acceptedRoute?.channels?.[p.channel];
-        const verified=ack.ok===true && next.ready===true &&
-          Number(next.epoch)===p.epoch && next.hasAcceptedRoute===true &&
-          Number(next.revision)>=p.revision &&
-          row?.mode===p.choice.mode && row?.left===p.choice.left &&
-          row?.right===p.choice.right;
-        if(verified) {
-          // Native publisher + engine own the accepted graph; refresh the
-          // UI only from a subsequent authoritative snapshot.
+        if(verdict==="ACKED"){
+          // The acceptedRoute carried in ACK is NOT subsequent callback PCM.
           controller.subscribe();
           status("CH "+(p.channel+1)+" native input accepted");
-        } else {
+        }else{
           status("NATIVE INPUT REJECTED · "+(ack?.error||"stale routing"));
           controller.subscribe();
         }
@@ -3296,40 +3304,39 @@
         // source, including the very first source in an unpatched session.
         if(event.type!=="change")return true;
         const channel=m4Index(t);
-        const choice=inputChoicesFor().find(x=>x.label===el.value);
-        // After BUS/WIRE the installed ChannelId graph is sole PCM owner.
-        // Original ten channels must not send source edits to stale M4.
-        if(mixerSession()?.authority==="CHANNEL_ID"){
-          const current=controller?.state()?.current;
-          const id=nativeIdFor(t);
-          if(!choice||!id||!current?.admitted||!deviceReady()){
-            nativeToast("Select a verified physical input");
-            el.value=t.input;return true;
-          }
-          if(choice.label!==t.input){
-            pendingNativeSources.set(id,choice);
-            dispatchNativeSource();
-          }
-          el.value=t.input; // no optimistic browser patch
-          return true;
-        }
-        const ep=safeNativeCounter(hardware?.device?.epoch);
-        const rev=safeNativeCounter(legacy()?.routingRevision);
-        if(channel<0||channel>=10||!choice||!deviceReady()||
-           ep===null||rev===null){
-          status("INPUT REJECTED · refresh verified hardware pins");
+        const choices=inputChoicesFor();
+        const choice=choices.find(x=>x.label===el.value);
+        const nativeOwner=mixerSession()?.authority==="CHANNEL_ID";
+        const id=nativeOwner?nativeIdFor(t):null;
+        if((nativeOwner&&(!id||!controller?.state()?.current?.admitted))||
+           (!nativeOwner&&(channel<0||channel>=10))||!deviceReady()){
+          status("INPUT REJECTED · verify native channel and hardware pins");
           el.value=t.input;return true;
         }
-        if(choice.label===t.input&&!pendingSourceQueue.has(channel)){
+        const decision=stripVM.sourceQueueSelection({
+          choice,choices,epoch:hardware?.device?.epoch,acceptedLabel:t.input,
+          activeSameChannel:nativeOwner?activeNativeSource?.id===id:
+            nativeUiSourcePending?.channel===channel
+        });
+        if(decision.kind==="UNAVAILABLE"){
+          if(nativeOwner)nativeToast("Select a verified physical input");
+          else status("INPUT REJECTED · refresh verified hardware pins");
           el.value=t.input;return true;
         }
-        pendingSourceQueue.set(channel,choice);
-        // No browser demo optimistic patch. The selector stays operable for
-        // every channel during a previous JUCE routing transaction.
-        el.value=t.input;
-        if(nativeUiSourcePending)
-          status("CH "+(channel+1)+" input queued behind native route ACK");
-        else dispatchQueuedSource();
+        if(nativeOwner){
+          if(decision.kind==="CANCEL")pendingNativeSources.delete(id);
+          else pendingNativeSources.set(id,decision.entry);
+          if(decision.kind==="QUEUE")dispatchNativeSource();
+        }else{
+          if(decision.kind==="CANCEL")pendingSourceQueue.delete(channel);
+          else pendingSourceQueue.set(channel,decision.entry);
+          if(decision.kind==="QUEUE"){
+            if(nativeUiSourcePending)
+              status("CH "+(channel+1)+" input queued behind native route ACK");
+            else dispatchQueuedSource();
+          }
+        }
+        el.value=t.input; // installed readback, not an optimistic UI patch
         return true;
       }
       if(field==="external"){

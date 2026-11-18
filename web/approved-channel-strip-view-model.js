@@ -191,7 +191,92 @@
       requiresConfirmation:!none,confirmation,sharedCount:occupied};
   }
 
+
+  // MV-6: SOURCE selection/queue and native/M4 command preflight are pure
+  // projections of the one installed device inventory. The bridge owns the
+  // only pending queues and requestIds; neither VM nor UI owns accepted PCM.
+  const positiveCounter=v=>typeof v==="string"&&/^[1-9][0-9]*$/.test(v)&&
+    Number.isSafeInteger(Number(v));
+  const decimalId=v=>{
+    if(typeof v!=="string"||!/^[1-9][0-9]*$/.test(v))return false;
+    try{return BigInt(v)<=18446744073709551615n;}catch{return false;}
+  };
+  function sourceChoiceMatches(choice,options) {
+    if(!choice||typeof choice.label!=="string"||!Array.isArray(options))return false;
+    const exact=options.filter(p=>p?.label===choice.label);
+    if(exact.length!==1)return false;
+    if(!["NONE","MONO","STEREO"].includes(choice.mode)||
+       exact[0].mode!==choice.mode||
+       exact[0].left!==choice.left||exact[0].right!==choice.right)return false;
+    if(choice.mode==="NONE")return choice.left===-1&&choice.right===-1;
+    if(!Number.isSafeInteger(choice.left)||choice.left<0)return false;
+    if(choice.mode==="MONO")return choice.right===-1;
+    return Number.isSafeInteger(choice.right)&&
+      choice.right===choice.left+1;
+  }
+  function sourceQueueSelection({choice,choices,epoch,acceptedLabel,
+                                 activeSameChannel=false}={}) {
+    if(!decimalId(epoch)||!sourceChoiceMatches(choice,choices))
+      return {kind:"UNAVAILABLE"};
+    // The operator can cancel a queued edit by returning to installed PCM.
+    // But when THIS channel already has an in-flight edit, queuing the old
+    // accepted choice is a legitimate rollback requested after its ACK.
+    if(choice.label===acceptedLabel&&!activeSameChannel)
+      return {kind:"CANCEL"};
+    return {kind:"QUEUE",entry:{epoch,choice:{
+      label:choice.label,mode:choice.mode,left:choice.left,right:choice.right
+    }}};
+  }
+  function sourceDispatchPlan({authority,entry,hardware,native,
+                               channelId,channel,choices,deviceReady=false}={}) {
+    const unavailable={kind:"UNAVAILABLE"};
+    const choice=entry?.choice,epoch=hardware?.device?.epoch;
+    if(!deviceReady||!decimalId(epoch)||epoch!==entry?.epoch||
+       !sourceChoiceMatches(choice,choices))return unavailable;
+    if(authority==="CHANNEL_ID"){
+      const graph=native?.graph,session=hardware?.raw?.mixerSession;
+      if(!decimalId(channelId)||native?.admitted!==true||
+         native?.retained===true||session?.authority!=="CHANNEL_ID"||
+         native?.device?.epoch!==epoch||
+         !Array.isArray(graph?.channels)||
+         !graph.channels.some(ch=>ch.id===channelId&&ch.role==="INPUT")||
+         !decimalId(graph?.revision)||
+         !decimalId(graph?.rosterRevision))return unavailable;
+      return {kind:"READY",action:"routingNativeSourcePatch",
+        payload:{channelId,deviceEpoch:epoch,
+          graphRevision:graph.revision,rosterRevision:graph.rosterRevision,
+          mode:choice.mode,left:choice.left,right:choice.right}};
+    }
+    if(authority==="M4"){
+      if(hardware?.raw?.mixerSession?.authority==="CHANNEL_ID"||
+         !positiveCounter(epoch)||
+         !Number.isInteger(channel)||channel<0||channel>=10||
+         !positiveCounter(hardware?.raw?.legacyM4?.routingRevision))
+        return unavailable;
+      return {kind:"READY",action:"routingSourceSwitch",
+        payload:{channel,mode:choice.mode,left:choice.left,right:choice.right,
+          deviceEpoch:Number(epoch),
+          revision:Number(hardware.raw.legacyM4.routingRevision)}};
+    }
+    return unavailable;
+  }
+  function sourceAckResult(pending,ack,authority) {
+    if(!pending||ack?.requestId!==pending.requestId)return "IGNORE";
+    if(authority==="CHANNEL_ID")
+      return ack?.ok===true?"ACKED":"REJECTED";
+    if(authority!=="M4")return "REJECTED";
+    const next=ack?.state||{},row=next.acceptedRoute?.channels?.[pending.channel];
+    return ack?.ok===true&&next.ready===true&&
+      Number(next.epoch)===Number(pending.epoch)&&
+      next.hasAcceptedRoute===true&&
+      Number(next.revision)>=Number(pending.revision)&&
+      row?.mode===pending.choice.mode&&
+      row?.left===pending.choice.left&&row?.right===pending.choice.right?
+        "ACKED":"REJECTED";
+  }
+
   return Object.freeze({outputTargets,inputChoices,externalChoices,
     primaryChoices,resolvePrimarySelection,readbackBindings,externalPending,
-    primaryOutMutation,externalOutputPlan});
+    primaryOutMutation,externalOutputPlan,sourceQueueSelection,
+    sourceDispatchPlan,sourceAckResult});
 });

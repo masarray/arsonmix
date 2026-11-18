@@ -14,6 +14,134 @@ const clone=x=>JSON.parse(JSON.stringify(x));
 
 
 // GUI-4: SOURCE ONLY and physical PRIMARY OUT must not consume a parallel SEND.
+
+test("MV-6 SOURCE input queues bind exact native device epoch and verified pins",()=>{
+ const choices=[{label:"None",mode:"NONE",left:-1,right:-1},
+  {label:"Mono · IN 1",mode:"MONO",left:0,right:-1},
+  {label:"Mono · IN 2",mode:"MONO",left:1,right:-1},
+  {label:"Stereo · IN 1 + 2",mode:"STEREO",left:0,right:1}];
+ const change=stripVM.sourceQueueSelection({choice:choices[1],choices,
+  epoch:"19",acceptedLabel:"None"});
+ assert.deepEqual(change,{kind:"QUEUE",entry:{epoch:"19",choice:choices[1]}});
+ assert.notEqual(change.entry.choice,choices[1],
+  "queue stores an independent transient operator draft");
+ const undo=stripVM.sourceQueueSelection({choice:choices[0],choices,
+  epoch:"19",acceptedLabel:"None"});
+ assert.equal(undo.kind,"CANCEL","return to installed PCM cancels stale queued edit");
+ const compensate=stripVM.sourceQueueSelection({choice:choices[0],choices,
+  epoch:"19",acceptedLabel:"None",activeSameChannel:true});
+ assert.equal(compensate.kind,"QUEUE",
+  "an already in-flight edit must be followed by explicit revert to old input");
+ for(const invalid of [
+  {choice:choices[1],choices,epoch:"0",acceptedLabel:"None"},
+  {choice:choices[1],choices,epoch:19,acceptedLabel:"None"},
+  {choice:choices[1],choices,epoch:"18446744073709551616",acceptedLabel:"None"},
+  {choice:choices[1],choices:[...choices,choices[1]],epoch:"19"},
+  {choice:{...choices[1],left:2},choices,epoch:"19"},
+  {choice:{...choices[3],right:3},choices,epoch:"19"},
+  {choice:{...choices[0],left:0},choices,epoch:"19"}
+ ])assert.equal(stripVM.sourceQueueSelection(invalid).kind,"UNAVAILABLE");
+ assert.equal(change.entry.epoch,"19");
+ const hugeEpoch="18446744073709551610";
+ const huge=stripVM.sourceQueueSelection({choice:choices[1],choices,
+  epoch:hugeEpoch,acceptedLabel:"None"});
+ assert.equal(huge.kind,"QUEUE",
+  "full uint64 ChannelId-era device epoch must stay exact decimal text");
+ const hugeHardware={device:{epoch:hugeEpoch},raw:{
+  mixerSession:{authority:"CHANNEL_ID"}}};
+ const hugeNative={admitted:true,retained:false,device:{epoch:hugeEpoch},
+  graph:{revision:"9223372036854775808",rosterRevision:"9223372036854775809",
+   channels:[{id:"9007199254740993",role:"INPUT"}]}};
+ const hugePlan=stripVM.sourceDispatchPlan({authority:"CHANNEL_ID",
+  entry:huge.entry,hardware:hugeHardware,native:hugeNative,
+  channelId:"9007199254740993",choices,deviceReady:true});
+ assert.equal(hugePlan.kind,"READY");
+ assert.equal(hugePlan.payload.deviceEpoch,hugeEpoch);
+ assert.equal(hugePlan.payload.graphRevision,"9223372036854775808");
+ assert.equal(stripVM.sourceDispatchPlan({authority:"M4",entry:huge.entry,
+  hardware:{...hugeHardware,raw:{...hugeHardware.raw,
+   legacyM4:{routingRevision:"9"}}},channel:0,choices,
+  deviceReady:true}).kind,"UNAVAILABLE",
+  "old M4 cannot coerce a 64-bit native epoch to a rounded JS Number");
+ const hardware={device:{epoch:"19"},raw:{mixerSession:{authority:"CHANNEL_ID"},
+  legacyM4:{routingRevision:"22"}}};
+ const id="9007199254740993";
+ const native={admitted:true,retained:false,device:{epoch:"19"},
+  graph:{revision:"30",rosterRevision:"31",
+   channels:[{id,role:"INPUT"}]}};
+ const plan=stripVM.sourceDispatchPlan({authority:"CHANNEL_ID",
+  entry:change.entry,hardware,native,channelId:id,choices,deviceReady:true});
+ assert.deepEqual(plan,{kind:"READY",action:"routingNativeSourcePatch",
+  payload:{channelId:id,deviceEpoch:"19",graphRevision:"30",
+   rosterRevision:"31",mode:"MONO",left:0,right:-1}});
+ for(const invalid of [
+  {hardware:{...hardware,device:{epoch:"20"}}},
+  {native:{...native,device:{epoch:"20"}}},
+  {native:{...native,admitted:false}},
+  {native:{...native,retained:true}},
+  {native:{...native,graph:{...native.graph,
+    channels:[{id,role:"GROUP"}]}}},
+  {native:{...native,graph:{...native.graph,revision:"0"}}},
+  {channelId:Number(id)},
+  {choices:choices.filter(x=>x.label!==choices[1].label)},
+  {deviceReady:false}
+ ])assert.equal(stripVM.sourceDispatchPlan({authority:"CHANNEL_ID",
+  entry:change.entry,hardware,native,channelId:id,choices,
+  deviceReady:true,...invalid}).kind,"UNAVAILABLE",JSON.stringify(invalid));
+});
+test("MV-6 M4 SOURCE dispatch reuses fresh revision but never migrates stale device pins",()=>{
+ const choices=[{label:"None",mode:"NONE",left:-1,right:-1},
+   {label:"Mono · IN 1",mode:"MONO",left:0,right:-1}];
+ const entry=stripVM.sourceQueueSelection({choice:choices[1],choices,
+   epoch:"71",acceptedLabel:"None"}).entry;
+ const hardware={device:{epoch:"71"},raw:{
+  mixerSession:{authority:"M4"},legacyM4:{routingRevision:"29"}}};
+ const plan=(override={})=>stripVM.sourceDispatchPlan({
+  authority:"M4",entry,hardware,channel:4,choices,deviceReady:true,...override});
+ assert.deepEqual(plan(),{kind:"READY",action:"routingSourceSwitch",
+  payload:{channel:4,mode:"MONO",left:0,right:-1,deviceEpoch:71,revision:29}});
+ assert.equal(plan({hardware:{...hardware,raw:{...hardware.raw,
+  legacyM4:{routingRevision:"30"}}}}).payload.revision,30,
+  "M4 accepts fresh route revision only on the SAME physical epoch");
+ assert.equal(plan({hardware:{...hardware,device:{epoch:"72"}}}).kind,
+  "UNAVAILABLE","device switch must discard the old input choice");
+ assert.equal(plan({hardware:{...hardware,raw:{...hardware.raw,
+  mixerSession:{authority:"CHANNEL_ID"}}}}).kind,"UNAVAILABLE",
+  "M4 cannot seize authority from admitted ChannelId PCM");
+ for(const override of [
+  {channel:10},{channel:-1},{channel:"4"},
+  {hardware:{...hardware,raw:{...hardware.raw,legacyM4:{routingRevision:"0"}}}},
+  {choices:[choices[0]]},{deviceReady:false}
+ ])assert.equal(plan(override).kind,"UNAVAILABLE");
+ const pending={requestId:99,channel:4,choice:entry.choice,epoch:71,revision:29};
+ const ack={requestId:99,ok:true,state:{ready:true,epoch:71,revision:30,
+  hasAcceptedRoute:true,acceptedRoute:{channels:Array.from({length:10},
+   (_,i)=>i===4?{mode:"MONO",left:0,right:-1}:null)}}};
+ assert.equal(stripVM.sourceAckResult(pending,ack,"M4"),"ACKED");
+ assert.equal(stripVM.sourceAckResult(pending,{...ack,requestId:100},"M4"),"IGNORE");
+ assert.equal(stripVM.sourceAckResult(pending,{...ack,state:{...ack.state,
+  epoch:72}},"M4"),"REJECTED");
+ assert.equal(stripVM.sourceAckResult(pending,{...ack,state:{...ack.state,
+  acceptedRoute:{channels:Array.from({length:10},(_,i)=>i===4?
+   {mode:"MONO",left:2,right:-1}:null)}}},"M4"),"REJECTED");
+ assert.equal(stripVM.sourceAckResult({requestId:"source-native-1"},
+  {requestId:"source-native-1",ok:true},"CHANNEL_ID"),"ACKED");
+ assert.equal(stripVM.sourceAckResult({requestId:"source-native-1"},
+  {requestId:"source-native-2",ok:true},"CHANNEL_ID"),"IGNORE");
+ assert.equal(stripVM.sourceAckResult({requestId:"source-native-1"},
+  {requestId:"source-native-1",ok:false},"CHANNEL_ID"),"REJECTED");
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/stripVM\.sourceQueueSelection\(/);
+ assert.equal((bridge.match(/stripVM\.sourceDispatchPlan\(/g)||[]).length,2,
+  "both native ChannelId and M4 dispatch through one pure preflight policy");
+ assert.equal((bridge.match(/stripVM\.sourceAckResult\(/g)||[]).length,2);
+ assert.match(bridge,/pendingNativeSources\.set\(id,decision\.entry\)/);
+ assert.match(bridge,/pendingSourceQueue\.set\(channel,decision\.entry\)/);
+ assert.match(bridge,/if\(decision\.kind==="CANCEL"\)pendingNativeSources\.delete/);
+ assert.match(bridge,/if\(decision\.kind==="CANCEL"\)pendingSourceQueue\.delete/);
+ assert.doesNotMatch(stripVM.sourceDispatchPlan.toString(),/backend|document|window/);
+});
+
 test("GUI-4 Channel Strip PRIMARY OUT extracts exact native EdgeId without touching SEND",()=>{
  const source="9007199254740993",bus="9007199254741001",
    main="18446744073709551615";
@@ -728,7 +856,8 @@ test("P0 DAW approved Windows GUI directly binds every IN to current JUCE ports,
   assert.match(bridge,/const m4TrackIds=Array\.isArray\(scope\?\.tracks\)/);
   assert.match(bridge,/const savedId = uiByNativeId\.get\(ch\.id\) \?\? m4Id/);
   assert.match(bridge,/action:"routingSourceSwitch"/);
-  assert.match(bridge,/row\?\.left===p\.choice\.left/);
+  assert.match(read("web/approved-channel-strip-view-model.js"),
+    /row\?\.left===pending\.choice\.left/);
   assert.match(nativeMain,/autoMainEpoch_!=engine_\.dryRoutingLabEpoch\(\)/);
   assert.match(bridge,/inputSelect\.hidden=true;routeBtn\.hidden=true;armBtn\.hidden=true/);
   assert.match(bridge,/openNativeAudioIO\(\)/);
@@ -1024,9 +1153,11 @@ test("P0 post-BUS native IN routes NONE MONO STEREO via one PCM owner",()=>{
  const engine=read("src/LiveAudioEngine.h");
  const lab=read("src/LiveDryRoutingLab.h");
  assert.match(bridge,/function dispatchNativeSource\(\)/);
- assert.match(bridge,/action:"routingNativeSourcePatch"/);
+ assert.match(read("web/approved-channel-strip-view-model.js"),
+  /action:"routingNativeSourcePatch"/);
+ assert.match(bridge,/action:plan\.action,requestId/);
  assert.match(bridge,/arMixNativeSourceAck/);
- assert.match(bridge,/pendingNativeSources.set\(id,choice\)/);
+ assert.match(bridge,/pendingNativeSources.set\(id,decision.entry\)/);
  assert.match(host,/if\(action=="routingNativeSourcePatch"\)/);
  assert.match(host,/engine_\.patchNativeInputSource\(ep,rev,roster,/);
  assert.match(lab,/const bool disconnect=!stereo&&physicalLeft==-1&&physicalRight==-1/);
