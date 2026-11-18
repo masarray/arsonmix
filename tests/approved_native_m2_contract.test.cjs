@@ -224,7 +224,15 @@ test("MV-13 M4 input ACK cannot free source queue until independently accepted P
  const check=(p=pending,s=snapshot)=>stripVM.m4SourceReadbackSettlement(p,s);
  assert.equal(check(null),"NONE");
  assert.equal(check(),"PENDING_ACK","fresh PCM values cannot bypass a pending ACK");
+ const preparing=clone(snapshot);
+ preparing.raw.mixerSession.authority="NONE";
+ preparing.raw.mixerSession.channels=[];
+ preparing.raw.legacyM4.routeAccepted=false;
+ assert.equal(check(pending,preparing),"PENDING_ACK",
+   "first M4 source waits while native producer is prepared but not admitted");
  const acked={...pending,acked:true,ackRevision:"30"};
+ assert.equal(check(acked,preparing),"PENDING",
+   "first-source ACK may race before M4 PCM authority is published");
  assert.equal(check(acked),"PENDING","a matching ACK is still not PCM proof");
  const installed=clone(snapshot);
  installed.raw.mixerSession.channels[4].source={mode:"STEREO",left:2,right:3};

@@ -325,10 +325,16 @@
     const d=snapshot?.device,session=snapshot?.raw?.mixerSession,
       m=snapshot?.raw?.legacyM4;
     if(snapshot?.admitted!==false||snapshot?.retained===true||
-       session?.authority!=="M4"||
        !Number.isSafeInteger(pending.epoch)||pending.epoch<=0||
        d?.epoch!==String(pending.epoch)||
-       session.deviceEpoch!==d.epoch)return "STALE";
+       session?.deviceEpoch!==d.epoch)return "STALE";
+    // The prepared first-source M4 producer initially publishes NONE, and
+    // only acquires M4 authority once its first routing patch is installed.
+    // NONE before that ACK/PCM publication is not a device change.
+    if(session.authority==="NONE"&&m?.active===true&&
+       m.routeAccepted===false)
+      return pending.acked===true?"PENDING":"PENDING_ACK";
+    if(session.authority!=="M4")return "STALE";
     const channels=session.channels;
     if(!Number.isInteger(pending.channel)||pending.channel<0||
        pending.channel>=10||!Array.isArray(channels)||
