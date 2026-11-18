@@ -263,7 +263,10 @@
   function sourceAckResult(pending,ack,authority) {
     if(!pending||ack?.requestId!==pending.requestId)return "IGNORE";
     if(authority==="CHANNEL_ID")
-      return ack?.ok===true?"ACKED":"REJECTED";
+      return ack?.ok===true && ack?.channelId===pending.id &&
+        decimalId(pending.beforeRevision) && decimalId(ack.graphRevision) &&
+        BigInt(ack.graphRevision)>BigInt(pending.beforeRevision)?
+          "ACKED":"REJECTED";
     if(authority!=="M4")return "REJECTED";
     const next=ack?.state||{},row=next.acceptedRoute?.channels?.[pending.channel];
     return ack?.ok===true&&next.ready===true&&
@@ -275,8 +278,43 @@
         "ACKED":"REJECTED";
   }
 
+
+  // MV-7: ACK is only a correlated native acceptance, never proof of PCM.
+  // Compare the installed ChannelId SOURCE row, physical pins and exact
+  // revision without converting 64-bit graph identities through Number.
+  // The bridge remains the sole holder of the active transient request.
+  function sourceReadbackSettlement(pending,next) {
+    if(!pending)return "NONE";
+    if(!decimalId(pending.id)||!decimalId(pending.epoch)||
+       next?.device?.epoch!==pending.epoch||
+       next?.retained===true||next?.admitted!==true||
+       (next?.raw?.mixerSession &&
+        next.raw.mixerSession.authority!=="CHANNEL_ID"))return "STALE";
+    const rows=next?.graph?.channels;
+    if(!Array.isArray(rows))return "PENDING";
+    const channel=rows.find(row=>row?.id===pending.id);
+    if(!channel||channel.role!=="INPUT")return "STALE";
+    if(pending.acked!==true)return "PENDING_ACK";
+    if(!decimalId(pending.ackRevision)||
+       !decimalId(next.graph.revision)||
+       BigInt(next.graph.revision)<BigInt(pending.ackRevision))
+      return "PENDING";
+    const choice=pending.choice;
+    if(!choice||!["NONE","MONO","STEREO"].includes(choice.mode))
+      return "PENDING";
+    const source=channel.source;
+    if(choice.mode==="NONE")return !source?"CONFIRMED":"PENDING";
+    if(!source||source.bindingState==="NEEDS_REMAP"||
+       source.portId!=="in:"+choice.left)return "PENDING";
+    if(choice.mode==="MONO")
+      return source.sourceFormat==="MONO" &&
+        source.portIdRight===undefined?"CONFIRMED":"PENDING";
+    return source.sourceFormat==="STEREO" &&
+      source.portIdRight==="in:"+choice.right?"CONFIRMED":"PENDING";
+  }
+
   return Object.freeze({outputTargets,inputChoices,externalChoices,
     primaryChoices,resolvePrimarySelection,readbackBindings,externalPending,
     primaryOutMutation,externalOutputPlan,sourceQueueSelection,
-    sourceDispatchPlan,sourceAckResult});
+    sourceDispatchPlan,sourceAckResult,sourceReadbackSettlement});
 });
