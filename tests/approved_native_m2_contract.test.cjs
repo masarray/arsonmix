@@ -50,7 +50,9 @@ test("GUI-4 Channel Strip PRIMARY OUT extracts exact native EdgeId without touch
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/stripVM\.primaryOutMutation\(/);
  assert.match(bridge,/controller\.intent\("APPLY_WIRE_TRANSACTION",channelId,/);
- assert.doesNotMatch(bridge,/const edge=current\.graph\.edges\.find/,
+ const primaryOutOnly=bridge.slice(bridge.indexOf("function requestPrimaryOut(t,target)"),
+  bridge.indexOf("const pendingNativeSources"));
+ assert.doesNotMatch(primaryOutOnly,/const edge=current\.graph\.edges\.find/,
   "source-specific PRIMARY edge search must not remain duplicated in bridge");
 });
 test("GUI-4 primary OUT rejects ambiguous, stale, mismapped or unadmitted native graph",()=>{
@@ -1138,12 +1140,14 @@ test("P0 WIRE-to-MAIN and channel OUT use one acknowledged native transaction",(
  assert.match(bridge,/function requestPrimaryOut\(t,target\)/);
  assert.match(bridge,/session\?\.authority==="CHANNEL_ID"/);
  assert.match(bridge,/controller\.intent\("APPLY_WIRE_TRANSACTION",channelId,/);
- assert.match(bridge,/const to=target==="MAIN"\?main:destination\?\.id\|\|null/);
- assert.match(bridge,/change=\{op:"ROUTE_ONLY",from:channelId,to,/);
- assert.match(bridge,/change=\{op:"REMOVE",from:channelId,edgeId:edge\.edgeId\}/);
- // Only the accepted PRIMARY edge may be detached. A parallel SEND to
- // MAIN must not be misclassified as a physical OUT.
- assert.match(bridge,/e\.primaryOutput===true/);
+ const strip=read("web/approved-channel-strip-view-model.js");
+ assert.match(bridge,/stripVM\.primaryOutMutation\(/);
+ assert.match(strip,/if\(target==="MAIN"\)to=g\.mainChannelId/);
+ assert.match(strip,/op:"ROUTE_ONLY",from:sourceId,to,/);
+ assert.match(strip,/op:"REMOVE",from:sourceId,/);
+ // Exact PRIMARY EdgeId selection now belongs to pure Channel Strip VM.
+ // Existing WIRE MAIN hook and native dispatcher remain in bridge.
+ assert.match(strip,/edge\.primaryOutput===true/);
  const primaryOutPath=bridge.slice(bridge.indexOf("function requestPrimaryOut"),bridge.indexOf("const pendingNativeSources"));
  assert.doesNotMatch(primaryOutPath,/e\.primaryOutput!==false/);
  const roster=read("engine/core/DynamicChannelRoster.h");
