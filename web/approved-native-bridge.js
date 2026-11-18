@@ -2602,9 +2602,31 @@
     if(from===undefined||to===undefined||to===scope?.master?.id)return;
     scope?.kickWireSpring?.(from,to);
   }
+  // The schema-v6 controller owns accepted snapshots. This single bridge
+  // cleanup drops only outstanding WebView intents from an older device or
+  // changed PCM authority; the native session, .smix, FX instances and
+  // approved controls remain owned by JUCE and will be repainted by readback.
+  let lastNativeLifecycleLease=null;
+  function expireTransientNativeUi(reason) {
+    pendingNativeSources.clear();pendingSourceQueue.clear();
+    activeNativeSource=null;nativeUiSourcePending=null;pendingSourceId=0;
+    pendingOutputPatch=null;pendingNativeFxPower=null;pendingGlobalFx=null;
+    pendingBusCreate=null;pendingTrackDelete=null;pendingFxInsert=null;
+    startupWire=null;activeWireAttempt=null;pendingNativeGainIntent=false;
+    pendingWireGains.clear();pendingNativeControl.clear();
+    liveFaderVisualTargets.clear();lastNativeControlSent.clear();
+    pendingM4Controls.clear();pendingM4RackPowers.clear();
+    if(pendingIdentity){
+      if(pendingIdentity.migration)legacyDeferred.add(pendingIdentity.channelId);
+      rejectIdentity("Channel identity expired after audio connection change");
+    }
+    lastPaintedSignature="";lastNativeTopologySignature="";
+    status(reason==="DEVICE_CHANGED"?
+      "Audio connection changed · old control gestures discarded":
+      "Mixer authority changed · old control gestures discarded");
+  }
   function onNativeReadback(next,confirmed) {
     scope?.syncNativeWireGains?.([]); // flush accepted paint after pointer release
-    appearanceFromNative(next);
     // This callback is invoked only by the existing schema-v6 reconciler.
     // A correlated Apply ACK waits for a subsequent installed PCM snapshot.
     const previousSetup=deviceState;
@@ -2621,6 +2643,19 @@
       status("NATIVE READBACK INVALID · existing GUI controls unchanged");
       return;
     }
+    const lease=deviceVM.nativeLifecycleLease(next,readModel.kind);
+    if(!lease){
+      status("NATIVE DEVICE IDENTITY INVALID · existing controls unchanged");
+      return;
+    }
+    const lifecycle=deviceVM.nativeLifecycleDecision(lastNativeLifecycleLease,lease);
+    if(lifecycle.expirePending){
+      expireTransientNativeUi(lifecycle.kind);
+      // Old readback confirmations must not animate or complete new PCM work.
+      confirmed=null;
+    }
+    lastNativeLifecycleLease=lease;
+    appearanceFromNative(next);
     settleNativeSourceReadback(next);
     if(readModel.kind==="LOGICAL_ONLY") {
       const staged=readModel.view;
