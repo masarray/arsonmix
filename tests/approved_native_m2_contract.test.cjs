@@ -3627,3 +3627,184 @@ test("MV-8 FX bridge delegates preflight and settlement to existing pure FX VM",
   assert.doesNotMatch(read("web/approved-fx-rack-view-model.js"),
     /backend\.emitEvent|document\.querySelector|setTimeout\(/);
 });
+
+test("MV-9B Global FX requires one admitted native/M4 owner, ACK and accepted epoch readback",()=>{
+ const epoch="9007199254740993",revision="9007199254740995";
+ const current={admitted:true,retained:false,device:{epoch},graph:{
+   revision,capabilities:{callbackOwnsChannelIds:true}},raw:{
+   globalFxBypassed:false,mixerSession:{
+     authority:"CHANNEL_ID",deviceEpoch:epoch}}};
+ const before=JSON.stringify(current);
+ const context=fxRackVM.globalPowerContext(current,false,false);
+ assert.deepEqual(context,{authority:"CHANNEL_ID",epoch,revision});
+ assert.deepEqual(fxRackVM.globalPowerPlan(current,context),{
+   kind:"READY",bypassed:true,action:"routingGlobalFxBypass",
+   payload:{deviceEpoch:epoch,revision,value:true}});
+ const pending={requestId:"global-fx-7",authority:"CHANNEL_ID",
+   epoch,revision,bypassed:true,acked:false};
+ const settled=(p=pending,s=current,c=context)=>
+   fxRackVM.globalPowerSettlement(p,s,c);
+ assert.equal(settled(),"WAIT");
+ assert.equal(settled({...pending,acked:true}),"WAIT");
+ assert.equal(settled({...pending,acked:true},
+   {...current,raw:{...current.raw,globalFxBypassed:true}}),"CONFIRMED");
+ assert.equal(settled({...pending,acked:true},current,
+   {...context,epoch:"9007199254740996"}),"STALE");
+ assert.equal(settled({...pending,acked:true},current,
+   {...context,revision:"9007199254740996"}),"STALE");
+ assert.equal(settled({...pending,acked:true},current,
+   {...context,authority:"M4"}),"STALE");
+ assert.equal(settled({...pending,acked:true},current,null),"STALE");
+ assert.equal(settled(null),"NONE");
+ const unavailable=(s=current,m4=false,offline=false)=>
+   assert.equal(fxRackVM.globalPowerContext(s,m4,offline),null);
+ unavailable({...current,admitted:false});
+ unavailable({...current,retained:true});
+ unavailable({...current,device:{epoch:"71"}});
+ unavailable({...current,raw:{...current.raw,mixerSession:{
+   authority:"M4",deviceEpoch:epoch}}});
+ unavailable(current,false,true);
+ unavailable({...current,graph:{...current.graph,revision:12}});
+ const m4={admitted:false,retained:false,device:{epoch:"21"},graph:{revision:"0"},
+   raw:{globalFxBypassed:false,legacyM4:{routingRevision:"17"},
+     mixerSession:{authority:"M4",deviceEpoch:"21",routeRevision:"17"}}};
+ assert.deepEqual(fxRackVM.globalPowerContext(m4,true,false),
+   {authority:"M4",epoch:"21",revision:"17"});
+ assert.equal(fxRackVM.globalPowerContext(m4,false,false),null);
+ assert.equal(fxRackVM.globalPowerContext({...m4,
+   raw:{...m4.raw,legacyM4:{routingRevision:"18"}}},true,false),null);
+ assert.equal(fxRackVM.globalPowerPlan(current,null).kind,"UNAVAILABLE");
+ assert.equal(fxRackVM.globalPowerPlan(current,context,true).kind,"UNAVAILABLE");
+ assert.equal(fxRackVM.globalPowerPlan({...current,raw:{...current.raw,
+   globalFxBypassed:"false"}},context).kind,"UNAVAILABLE");
+ assert.equal(JSON.stringify(current),before,"pure selector must not mutate native state");
+});
+test("MV-9B Global FX ACK never commits without matching request and independent readback",()=>{
+ const pending={requestId:"global-fx-8",bypassed:true};
+ assert.equal(fxRackVM.globalPowerAckResult(null,{}),"IGNORE");
+ assert.equal(fxRackVM.globalPowerAckResult(pending,{requestId:"old",ok:true,
+   bypassed:true}),"IGNORE");
+ assert.equal(fxRackVM.globalPowerAckResult(pending,{requestId:"global-fx-8",
+   ok:false,bypassed:true}),"REJECTED");
+ assert.equal(fxRackVM.globalPowerAckResult(pending,{requestId:"global-fx-8",
+   ok:true,bypassed:false}),"REJECTED");
+ assert.equal(fxRackVM.globalPowerAckResult(pending,{requestId:"global-fx-8",
+   ok:true,bypassed:true}),"ACKED");
+});
+test("MV-9B M4 FX slot requires exact lease, route revision and independent accepted bypass",()=>{
+ const snapshot={admitted:false,retained:false,device:{epoch:"31"},raw:{
+   mixerSession:{authority:"M4",deviceEpoch:"31",routeRevision:"12"},
+   legacyM4:{routingRevision:"12",fxInstances:[
+     [{instanceId:"fx-one",bypassed:true,catalogId:"x"}]]}}};
+ const pending={requestId:"fxpower-6",channel:0,slot:0,token:"fx-one",
+   bypass:true,epoch:"31",revision:"12",acked:false};
+ const settle=(p=pending,s=snapshot)=>fxRackVM.m4SlotPowerSettlement(p,s);
+ assert.equal(settle(),"WAIT","ACK is required even if bypass matches");
+ assert.equal(settle({...pending,acked:true}),"CONFIRMED");
+ assert.equal(settle({...pending,acked:true},
+   {...snapshot,raw:{...snapshot.raw,legacyM4:{...snapshot.raw.legacyM4,
+     fxInstances:[[{instanceId:"fx-one",bypassed:false}]]}}}),"WAIT");
+ assert.equal(settle({...pending,acked:true},
+   {...snapshot,raw:{...snapshot.raw,legacyM4:{...snapshot.raw.legacyM4,
+     fxInstances:[[{instanceId:"replaced",bypassed:true}]]}}}),"STALE");
+ assert.equal(settle({...pending,acked:true},
+   {...snapshot,device:{epoch:"32"}}),"STALE");
+ assert.equal(settle({...pending,acked:true},
+   {...snapshot,raw:{...snapshot.raw,mixerSession:{
+     ...snapshot.raw.mixerSession,routeRevision:"13"}}}),"STALE");
+ assert.equal(settle({...pending,acked:true},
+   {...snapshot,raw:{...snapshot.raw,mixerSession:{
+     ...snapshot.raw.mixerSession,authority:"CHANNEL_ID"}}}),"STALE");
+ assert.equal(settle({...pending,acked:true},{...snapshot,admitted:true}),"STALE");
+ assert.equal(settle(null),"NONE");
+ assert.equal(fxRackVM.m4SlotPowerAckResult(null,{}),"IGNORE");
+ assert.equal(fxRackVM.m4SlotPowerAckResult(pending,{requestId:"late",
+   channel:0,slot:0,ok:true}),"IGNORE");
+ assert.equal(fxRackVM.m4SlotPowerAckResult(pending,{requestId:"fxpower-6",
+   channel:1,slot:0,ok:true}),"REJECTED");
+ assert.equal(fxRackVM.m4SlotPowerAckResult(pending,{requestId:"fxpower-6",
+   channel:0,slot:1,ok:true}),"REJECTED");
+ assert.equal(fxRackVM.m4SlotPowerAckResult(pending,{requestId:"fxpower-6",
+   channel:0,slot:0,ok:false}),"REJECTED");
+ assert.equal(fxRackVM.m4SlotPowerAckResult(pending,{requestId:"fxpower-6",
+   channel:0,slot:0,ok:true}),"ACKED");
+});
+test("MV-9B bridge uses only accepted native snapshots for global FX, fences M4 slot ACK",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const vm=read("web/approved-fx-rack-view-model.js");
+ for(const name of ["globalPowerContext","globalPowerPlan","globalPowerAckResult",
+   "globalPowerSettlement","m4SlotPowerAckResult","m4SlotPowerSettlement"])
+   assert.match(bridge,new RegExp("fxRackVM\\."+name+"\\("));
+ assert.match(bridge,/const current=controller\?\.state\(\)\?\.current;\s*const button=document\.getElementById\?\.\("globalFxToggle"\)/);
+ assert.match(bridge,/onAccepted:\(next,confirmed\)=>\{\s*onNativeReadback\(next,confirmed\);\s*syncGlobalFxReadback\(\);/);
+ assert.match(bridge,/const apply=\(\)=>controller\.onSnapshot\(snapshot\);/);
+ assert.doesNotMatch(bridge,/controller\.onSnapshot\(snapshot\);syncGlobalFxReadback/);
+ assert.doesNotMatch(bridge,/const actual=snapshot\?\.globalFxBypassed;/);
+ assert.match(bridge,/if\(verdict==="REJECTED"\)\{\s*pendingSlotPowers\.delete\(key\);/);
+ assert.match(bridge,/}\s*else pending\.acked=true;/);
+ assert.doesNotMatch(vm,/backend\.emitEvent|document\.querySelector|window\.setTimeout/);
+ assert.match(bridge,/controller = protocol\.createController\(/);
+});
+
+test("MV-9B Global FX ignores rejected post-ACK snapshot after a pre-ACK value race",()=>{
+ const vm=require("node:vm"),listeners=new Map(),sent=[];
+ let seq=101,wire=300,viewCalls=0;
+ const scope={
+   tracks:[],master:{id:1,name:"Master"},colors:["#456789"],
+   wireGraph:{validateCandidateGraph:()=>({ok:true})},
+   make:(name,kind,color)=>({id:seq++,name,kind,color,selected:false}),
+   render(){},installGraph(tracks,master,edges){
+     this.tracks=tracks;this.master=master;this.edges=edges;
+   },allocateWireId:()=>wire++,displayMeterDbfs(){},stopDemo(){}
+ };
+ const backend={emitEvent:(name,payload)=>sent.push({name,payload}),
+   addEventListener:(name,fn)=>listeners.set(name,fn)};
+ const button={disabled:false,attrs:new Map(),title:"",
+   setAttribute(name,val){this.attrs.set(name,String(val));},
+   getAttribute(name){return this.attrs.get(name);}};
+ const doc={readyState:"complete",documentElement:{dataset:{}},
+   getElementById:id=>id==="globalFxToggle"?button:null,
+   querySelector(){return null;},addEventListener(){}};
+ const win={__JUCE__:{backend},
+   ArSonApprovedNativeContract:protocol,
+   ArSonApprovedDeviceViewModel:deviceVM,
+   ArSonApprovedChannelStripViewModel:stripVM,
+   ArSonApprovedFxRackViewModel:fxRackVM,
+   ArSonApprovedWireViewModel:wireVM,
+   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
+   setTimeout(){return 0},clearTimeout(){},
+   queueMicrotask(fn){fn();},
+   __ARMIX_SET_GLOBAL_FX_VIEW__(){viewCalls++;}
+ };
+ vm.runInNewContext(read("web/approved-native-bridge.js"),
+   {window:win,document:doc,performance:{now:()=>0},console},{timeout:1500});
+ const initial=acceptedFixture();
+ initial.globalFxBypassed=false;
+ initial.mixerSession={authority:"CHANNEL_ID",deviceEpoch:initial.device.epoch,
+   routeRevision:initial.graph.revision,rosterRevision:initial.graph.rosterRevision,
+   channels:initial.graph.channels,main:{db:0,mute:false}};
+ listeners.get("arMixConsoleSnapshot")(initial);
+ assert.equal(win.__ARMIX_NATIVE_GLOBAL_FX__.toggle(),true);
+ const dispatched=sent.findLast(x=>x.payload?.action==="routingGlobalFxBypass");
+ assert.ok(dispatched);
+ assert.equal(dispatched.payload.value,true);
+ assert.equal(button.getAttribute("aria-busy"),"true");
+ // Native value has advanced before its ACK: no false completion yet.
+ const premature=clone(initial);premature.globalFxBypassed=true;
+ listeners.get("arMixConsoleSnapshot")(premature);
+ assert.equal(button.getAttribute("aria-busy"),"true");
+ const beforeInvalid=viewCalls;
+ listeners.get("arMixGlobalFxAck")({requestId:dispatched.payload.requestId,
+   ok:true,bypassed:true});
+ listeners.get("arMixConsoleSnapshot")({schemaVersion:-1,
+   globalFxBypassed:true});
+ assert.equal(button.getAttribute("aria-busy"),"true",
+   "malformed post-ACK envelope must never unlock Global FX");
+ assert.equal(viewCalls,beforeInvalid,
+   "rejected snapshot must never confirm cached pre-ACK value");
+ // Only a later fully accepted native snapshot settles Global FX.
+ listeners.get("arMixConsoleSnapshot")(clone(premature));
+ assert.equal(button.getAttribute("aria-busy"),"false");
+ assert.equal(button.disabled,false);
+ assert.ok(viewCalls>beforeInvalid);
+});

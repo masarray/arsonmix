@@ -1347,7 +1347,9 @@
     const {lane,live}=picked,requestId="fxpower-"+(++fxRequestSerial);
     if(ep===null||rev===null||pendingSlotPowers.has(lane+":"+slot))
       return false;
-    pendingSlotPowers.set(lane+":"+slot,{requestId,token:live.instanceId,bypass});
+    pendingSlotPowers.set(lane+":"+slot,{
+      requestId,channel:lane,slot,token:live.instanceId,bypass,
+      epoch:String(ep),revision:String(rev),acked:false});
     backend.emitEvent("arMixAction",{action:"routingFxBypass",
       requestId,channel:lane,slot,instanceId:live.instanceId,
       deviceEpoch:ep,revision:rev,value:bypass});
@@ -1388,49 +1390,48 @@
       if(decision==="STALE"||decision==="CONFIRMED")
         pendingM4RackPowers.delete(lane);
     }
+    // An M4 slot remains pending after ACK until its own exact instance
+    // lease and requested bypass are present in independently accepted PCM.
+    for(const [key,p] of pendingSlotPowers){
+      const decision=fxRackVM.m4SlotPowerSettlement(p,next);
+      if(decision==="STALE"||decision==="CONFIRMED")
+        pendingSlotPowers.delete(key);
+    }
   }
   // Global A/B is a SINGLE native atomic override. Individual racks and
   // inserts remain untouched. Never simulate success in WebView while device
   // admission or a matching native ACK + subsequent readback is missing.
   function globalFxContext(){
-    if(logicalView)return null; // an offline .smix has no audible PCM
-    const current=controller?.state()?.current;
-    const session=current?.raw?.mixerSession;
-    if(current?.admitted && session?.authority==="CHANNEL_ID")
-      return {epoch:String(current.device.epoch),
-              revision:String(current.graph.revision)};
-    if(session?.authority==="M4" && m4Verified())
-      return {epoch:String(session.deviceEpoch),
-              revision:String(session.routeRevision)};
-    return null;
+    return fxRackVM.globalPowerContext(controller?.state()?.current,
+      m4Verified(),!!logicalView);
   }
-  function syncGlobalFxReadback(snapshot){
+  function syncGlobalFxReadback(){
+    // Ignore raw incoming events: controller may reject an invalid/stale
+    // snapshot and retain its previous accepted native PCM read model.
+    const current=controller?.state()?.current;
     const button=document.getElementById?.("globalFxToggle");
-    const actual=snapshot?.globalFxBypassed;
     const context=globalFxContext();
-    if(pendingGlobalFx?.acked && typeof actual==="boolean" &&
-       actual===pendingGlobalFx.bypassed)pendingGlobalFx=null;
-    if(typeof actual==="boolean" && !pendingGlobalFx)
+    const decision=fxRackVM.globalPowerSettlement(pendingGlobalFx,current,context);
+    if(decision==="CONFIRMED"||decision==="STALE")pendingGlobalFx=null;
+    const actual=current?.raw?.globalFxBypassed;
+    if(context&&typeof actual==="boolean"&&!pendingGlobalFx)
       window.__ARMIX_SET_GLOBAL_FX_VIEW__?.(!actual);
-    if(button) {
+    if(button){
       button.disabled=!context||!!pendingGlobalFx;
       button.setAttribute("aria-busy",String(!!pendingGlobalFx));
       if(!context)button.title="Global FX requires admitted physical audio";
     }
   }
   function toggleGlobalFx(){
-    if(pendingGlobalFx)return false;
-    const ctx=globalFxContext(),current=controller?.state()?.current;
-    const actual=current?.raw?.globalFxBypassed;
-    if(!ctx || typeof actual!=="boolean")return false;
+    const current=controller?.state()?.current,ctx=globalFxContext();
+    const plan=fxRackVM.globalPowerPlan(current,ctx,!!pendingGlobalFx);
+    if(plan.kind!=="READY")return false;
     const requestId="global-fx-"+(++globalFxSerial);
-    pendingGlobalFx={requestId,bypassed:!actual,acked:false};
+    pendingGlobalFx={requestId,bypassed:plan.bypassed,acked:false,
+      epoch:ctx.epoch,revision:ctx.revision,authority:ctx.authority};
     const button=document.getElementById?.("globalFxToggle");
     if(button){button.disabled=true;button.setAttribute("aria-busy","true");}
-    backend.emitEvent("arMixAction",{
-      action:"routingGlobalFxBypass",requestId,
-      deviceEpoch:ctx.epoch,revision:ctx.revision,value:!actual
-    });
+    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload});
     window.setTimeout(()=>{
       if(pendingGlobalFx?.requestId!==requestId)return;
       pendingGlobalFx=null;
@@ -2849,7 +2850,10 @@
   if (connected) {
     controller = protocol.createController({
       emit:(name,payload)=>backend.emitEvent(name,payload),
-      onAccepted:onNativeReadback,
+      onAccepted:(next,confirmed)=>{
+        onNativeReadback(next,confirmed);
+        syncGlobalFxReadback();
+      },
       onStatus:state=>{
         const settledGain=pendingNativeGainIntent&&!state.pending;
         if(settledGain){
@@ -2912,9 +2916,11 @@
       }
     });
     backend.addEventListener("arMixConsoleSnapshot", snapshot=>{
-      // First reconcile the canonical engine snapshot, then the global FX
-      // view gate. Never infer FX admission from a local button press.
-      const apply=()=>{controller.onSnapshot(snapshot);syncGlobalFxReadback(snapshot);};
+      // Only the sole v6 controller may admit a PCM snapshot. Its
+      // onAccepted callback updates FX after validation; this listener
+      // must not settle an ACK using a cached pre-ACK readback if the
+      // incoming payload was rejected as invalid/stale.
+      const apply=()=>controller.onSnapshot(snapshot);
       const profiler=window.ArSonMixPerf;
       if(!profiler?.active){apply();return;}
       const started=performance.now();
@@ -2997,12 +3003,12 @@
       controller?.subscribe();
     });
     backend.addEventListener("arMixGlobalFxAck",ack=>{
-      const pending=pendingGlobalFx;
-      if(!pending || ack?.requestId!==pending.requestId)return;
-      if(ack?.ok!==true || ack?.bypassed!==pending.bypassed){
+      const verdict=fxRackVM.globalPowerAckResult(pendingGlobalFx,ack);
+      if(verdict==="IGNORE")return;
+      if(verdict==="REJECTED"){
         pendingGlobalFx=null;
         status("Global FX rejected · "+String(ack?.error||"stale device revision"));
-      }else pending.acked=true;
+      }else pendingGlobalFx.acked=true;
       controller?.subscribe(); // ACK alone never establishes physical bypass.
     });
     backend.addEventListener("arMixNativeFxPowerAck",ack=>{
@@ -3094,15 +3100,17 @@
       controller.subscribe();
     });
     backend.addEventListener("arMixRoutingFxBypassAck",ack=>{
-      const key=(Number(ack?.channel)||0)+":"+Number(ack?.slot);
-      // Legacy ACKs without channel/requestId can never authorize an
-      // arbitrary in-flight slot or paint an invented bypass state.
+      const key=Number(ack?.channel)+":"+Number(ack?.slot);
+      // The matched ACK only permits a new independently accepted M4
+      // snapshot to settle the exact pending instance and bypass value.
       const pending=pendingSlotPowers.get(key);
-      if(!pending||pending.requestId!==ack?.requestId)return;
-      pendingSlotPowers.delete(key);
-      if(ack?.ok!==true)
+      const verdict=fxRackVM.m4SlotPowerAckResult(pending,ack);
+      if(verdict==="IGNORE")return;
+      if(verdict==="REJECTED"){
+        pendingSlotPowers.delete(key);
         nativeToast(ack?.error||"Native VST3 bypass rejected");
-      controller?.subscribe(); // real FxInstance state owns visual power
+      }else pending.acked=true;
+      controller?.subscribe();
     });
     backend.addEventListener("arMixRoutingFxEditorAck",ack=>{
       if(ack?.ok!==true)
