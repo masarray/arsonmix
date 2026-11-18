@@ -3319,7 +3319,8 @@
             nativeUiSourcePending?.channel===channel
         });
         if(decision.kind==="UNAVAILABLE"){
-          nativeToast("Select a verified physical input");
+          if(nativeOwner)nativeToast("Select a verified physical input");
+          else status("INPUT REJECTED · refresh verified hardware pins");
           el.value=t.input;return true;
         }
         if(nativeOwner){
