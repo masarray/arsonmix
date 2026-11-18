@@ -264,6 +264,11 @@ test("MV-14 one pure dispatch head preserves FIFO and exact identity across Chan
     channel:4,mode:"MONO",left:0,right:-1,deviceEpoch:71,revision:29}},
    "prepared NONE first sound must still dispatch via real M4");
  assert.equal(m4Queue.size,2);
+ const crossRealmQueue=require("node:vm").runInNewContext(
+   'new Map([[4,{epoch:"71",choice:{label:"IN 1 mono",mode:"MONO",left:0,right:-1}}]])');
+ assert.equal(stripVM.sourceQueueHead({authority:"M4",queue:crossRealmQueue,
+   hardware:m4Hardware,native:null,choices:options,deviceReady:true}).kind,
+   "SEND","cross-realm WebView-like Map must not silently drop physical INPUT");
  assert.deepEqual(stripVM.sourceQueueHead({authority:"M4",queue:m4Queue,
    hardware:m4Hardware,native:null,choices:options,deviceReady:false}),
    {kind:"DROP_ALL"},"old M4 pins must be discarded on device loss");
@@ -291,7 +296,7 @@ test("MV-14 one pure dispatch head preserves FIFO and exact identity across Chan
  assert.match(bridge,/function dispatchNativeSource\(\)\{\s*dispatchSourceQueue\("CHANNEL_ID"\)/);
  assert.match(bridge,/function dispatchQueuedSource\(\)\{\s*dispatchSourceQueue\("M4"\)/);
  assert.equal((bridge.match(/function dispatchSourceQueue\(/g)||[]).length,1);
- assert.equal((bridge.match(/backend\.emitEvent\("arMixAction",\{action:plan\.action/g)||[]).length,1,
+ assert.equal((body.match(/backend\.emitEvent\("arMixAction",\{action:plan\.action/g)||[]).length,1,
    "one physical INPUT native emit path for both queues");
  assert.doesNotMatch(stripVM.sourceQueueHead.toString(),
    /backend|window\.|document\.|setTimeout|AudioContext/);

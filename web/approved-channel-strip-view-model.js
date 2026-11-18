@@ -265,7 +265,10 @@
   // correlated ACK/readback. Never replay pin drafts from an old device.
   function sourceQueueHead({authority,queue,active=null,hardware,native,
                             choices,deviceReady=false}={}) {
-    if(active||!(queue instanceof Map)||queue.size===0)return {kind:"IDLE"};
+    // A WebView/test harness can hand in a Map from another JS realm.
+    // instanceof Map would wrongly treat this valid queue as EMPTY.
+    if(active||!queue||!Number.isSafeInteger(queue.size)||queue.size<1||
+       typeof queue.entries!=="function")return {kind:"IDLE"};
     if(authority==="CHANNEL_ID"){
       if(native?.admitted!==true||
          hardware?.raw?.mixerSession?.authority!=="CHANNEL_ID")
