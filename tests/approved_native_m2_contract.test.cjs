@@ -6,6 +6,7 @@ const {readFileSync}=require("node:fs");
 const protocol=require("../web/approved-native-contract.js");
 const deviceVM=require("../web/approved-device-view-model.js");
 const stripVM=require("../web/approved-channel-strip-view-model.js");
+const fxRackVM=require("../web/approved-fx-rack-view-model.js");
 const read=p=>readFileSync(p,"utf8");
 const fixtures=JSON.parse(read("integration/console-v6/fixtures.json"));
 const clone=x=>JSON.parse(JSON.stringify(x));
@@ -1249,7 +1250,7 @@ test("M3 native-only Pages scope performs real bridge projection, fader intent a
    querySelector:()=>null,addEventListener(){}
  };
  const window={
-   __JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,
+   __JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,ArSonApprovedFxRackViewModel:fxRackVM,
    __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},queueMicrotask(fn){microtasks.push(fn);},setTimeout(fn,ms){timers.push({fn,ms});return timers.length;}
  };
  vm.runInNewContext(read("web/approved-native-bridge.js"),{
@@ -1473,7 +1474,7 @@ test("P0 native FX rack and per-slot readback update mounted strip without repla
   querySelector:selector=>selector.startsWith('.strip[data-id=')?strip:null,
   addEventListener(){}
  };
- const win={__JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,
+ const win={__JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,ArSonApprovedFxRackViewModel:fxRackVM,
   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
   setTimeout(){return 0},clearTimeout(){},queueMicrotask(fn){fn();}};
  vm.runInNewContext(read("web/approved-native-bridge.js"),
@@ -1651,7 +1652,7 @@ test("P0 FIRST SOUND G0 offers verified input and leaves automatic MAIN to nativ
   addEventListener(){}
  };
  win={
-  __JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,
+  __JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,ArSonApprovedFxRackViewModel:fxRackVM,
   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
   setTimeout(){return 0},clearTimeout(){},queueMicrotask(fn){fn();}
  };
@@ -1738,7 +1739,7 @@ test("P0 native hardware IN remains selectable after ChannelId ownership, failed
     id==="preview"?{disabled:true}:null,
   querySelector:()=>null,addEventListener(){}
  };
- const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,
+ const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,ArSonApprovedFxRackViewModel:fxRackVM,
   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
   setTimeout(){return 0},clearTimeout(){},
   queueMicrotask(fn){microtasks.push(fn);}};
