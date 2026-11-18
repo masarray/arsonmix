@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/device/AsioPriorityDeviceManager.h"
 #include "../engine/device/AudioSetupRecoveryPolicy.h"
+#include "../engine/device/LiveSecondaryCaptureDevice.h"
 #include <cstdlib>
 int main()
 {
@@ -34,6 +35,20 @@ int main()
         if (type->getTypeName() == "Windows Audio") foundWasapi = true;
     }
     if (!foundAsio || !foundWasapi) std::abort();
+    // IO-1: the SAME production capture-only class is compiled and its
+    // negative lifecycle is checked without opening ANY ASIO driver in CI.
+    armix::device::LiveSecondaryCaptureDevice extra;
+    if (extra.ready() || extra.faulted()) std::abort();
+    juce::BigInteger pin; pin.setBit(0);
+    if (extra.open({}, {}, pin, 48000., 128, 48000., 128, 1, 1).isEmpty())
+        std::abort();
+    if (extra.ready()) std::abort();
+    extra.close();
+    extra.close();
+    const auto readback = extra.readback();
+    if (readback.ready || readback.captureGeneration != 0 ||
+        readback.primaryEpoch != 0 || readback.callbackInputs != 0)
+        std::abort();
 #endif
     return 0;
 }
