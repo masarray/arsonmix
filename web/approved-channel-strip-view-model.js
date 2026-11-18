@@ -315,8 +315,60 @@
       source.portIdRight==="in:"+choice.right?"CONFIRMED":"PENDING";
   }
 
+  // MV-9: pure Channel Strip scalar gesture/readback policy. The only
+  // pending Maps, native events, timers and audio transport stay in the
+  // approved bridge. Treat exact decimal-string ChannelIds as opaque data.
+  function scalarIdentityMatches(edit,identity) {
+    return !!edit && !!identity &&
+      edit.epoch===identity.epoch &&
+      edit.authority===identity.authority &&
+      edit.channelId===identity.channelId;
+  }
+  // Last pointer target is DISPLAY-ONLY until independently installed
+  // fader PCM readback matches it; never rewrite a native track model.
+  function scalarVisualSettlement(pending,acceptedDb,identity) {
+    if(!pending)return "NONE";
+    if(!scalarIdentityMatches(pending,identity) ||
+       !Number.isFinite(pending.value))return "STALE";
+    return Number.isFinite(acceptedDb) &&
+      Math.abs(acceptedDb-pending.value)<=.11?"CONFIRMED":"WAIT";
+  }
+  function m4ScalarAckResult(pending,ack) {
+    if(!pending || ack?.requestId!==pending.requestId)return "IGNORE";
+    return ack.ok===true &&
+      String(ack.deviceEpoch)===pending.epoch &&
+      String(ack.routingRevision)===pending.revision &&
+      ack.channel===pending.channel &&
+      ack.parameter===pending.parameter?"ACKED":"REJECTED";
+  }
+  // One M4 scalar can be confirmed by only its corresponding accepted
+  // producer readback; an ACK never installs fader, PAN, MUTE, or MAIN gain.
+  // The full routing revision must still belong to the original M4 request.
+  function m4ScalarReadbackSettlement(pending,snapshot) {
+    if(!pending)return "NONE";
+    const session=snapshot?.raw?.mixerSession;
+    const revision=pending.channel===-1?
+      snapshot?.raw?.legacyM4?.routingRevision:session?.routeRevision;
+    if(snapshot?.device?.epoch!==pending.epoch ||
+       revision!==pending.revision ||
+       (pending.channel!==-1&&session?.authority!=="M4"))
+      return "STALE";
+    const row=pending.channel===-1?null:session?.channels?.[pending.channel];
+    const value=pending.channel===-1?
+      (pending.parameter==="masterGain"?session?.main?.db:session?.main?.mute):
+      pending.parameter==="faderDb"?row?.controls?.faderDb:
+      pending.parameter==="pan"?row?.controls?.pan*100:
+      row?.controls?.[pending.parameter];
+    const matches=typeof pending.value==="boolean"?value===pending.value:
+      Number.isFinite(pending.value)&&Number.isFinite(value)&&
+      Math.abs(value-pending.value)<=(pending.parameter==="pan"?.8:.11);
+    return pending.acked===true&&matches?"CONFIRMED":"WAIT";
+  }
+
   return Object.freeze({outputTargets,inputChoices,externalChoices,
     primaryChoices,resolvePrimarySelection,readbackBindings,externalPending,
     primaryOutMutation,externalOutputPlan,sourceQueueSelection,
-    sourceDispatchPlan,sourceAckResult,sourceReadbackSettlement});
+    sourceDispatchPlan,sourceAckResult,sourceReadbackSettlement,
+    scalarIdentityMatches,scalarVisualSettlement,m4ScalarAckResult,
+    m4ScalarReadbackSettlement});
 });
