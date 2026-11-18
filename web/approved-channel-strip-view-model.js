@@ -365,10 +365,42 @@
     return pending.acked===true&&matches?"CONFIRMED":"WAIT";
   }
 
+  // MV-10: pure scalar dispatch/coalescing policy. The bridge alone owns
+  // timers, one pending Map, native transport and the accepted PCM model.
+  // The throttle lease belongs to the EXACT native identity, not a recycled
+  // local strip key, so reconnect/roster replacement can send immediately.
+  function scalarDispatchLease(edit,at) {
+    return {at,epoch:edit.epoch,authority:edit.authority,
+      channelId:edit.channelId};
+  }
+  function scalarGestureFlushPlan({logical=false,final=false,now,
+                                    lastSent=null,identity=null}={}) {
+    if(final)return "FLUSH"; // never defer pointerup/release
+    if(logical)return "QUEUE"; // offline .smix: one edit on release
+    if(!lastSent || !scalarIdentityMatches(lastSent,identity) ||
+       !Number.isFinite(lastSent.at) || !Number.isFinite(now) ||
+       now<lastSent.at || now-lastSent.at>=30)return "FLUSH";
+    return "QUEUE"; // keep latest target; existing one-shot timer owns retry
+  }
+  function scalarDispatchPlan(edit,{identity=null,ready=false,
+    logical=false,logicalPending=false,m4Owner=false,nativePending=false}={}) {
+    if(!scalarIdentityMatches(edit,identity) || ready!==true ||
+       !Number.isFinite(edit.value) ||
+       !["faderDb","masterGain","pan"].includes(edit.parameter))
+      return {kind:"REJECT"};
+    if(logical && logicalPending)return {kind:"WAIT"};
+    if(!logical && m4Owner)return {kind:"M4"};
+    if(!logical && nativePending)return {kind:"WAIT"};
+    return edit.parameter==="pan"?
+      {kind:"INTENT",operation:"SET_PAN",payload:{value:edit.value/100}}:
+      {kind:"INTENT",operation:"SET_FADER",payload:{valueDb:edit.value}};
+  }
+
   return Object.freeze({outputTargets,inputChoices,externalChoices,
     primaryChoices,resolvePrimarySelection,readbackBindings,externalPending,
     primaryOutMutation,externalOutputPlan,sourceQueueSelection,
     sourceDispatchPlan,sourceAckResult,sourceReadbackSettlement,
     scalarIdentityMatches,scalarVisualSettlement,m4ScalarAckResult,
-    m4ScalarReadbackSettlement});
+    m4ScalarReadbackSettlement,scalarDispatchLease,
+    scalarGestureFlushPlan,scalarDispatchPlan});
 });
