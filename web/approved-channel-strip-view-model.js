@@ -365,10 +365,118 @@
     return pending.acked===true&&matches?"CONFIRMED":"WAIT";
   }
 
+
+  // MV-11: identity is ONLY a native-owned cosmetic document, independent
+  // of the PCM graph. The bridge owns pending requests and storage cleanup;
+  // these pure selectors own the validation, intent and settlement policy.
+  function identityReadback(snapshot,valid) {
+    const appearance=snapshot?.raw?.channelAppearance;
+    const channels=snapshot?.graph?.channels;
+    if(!appearance||appearance.schema!=="arsonmix.native.channel-appearance.v1"||
+       !Array.isArray(appearance.entries)||!Array.isArray(channels)||
+       !valid?.decimal||valid.decimal(appearance.revision)===null||
+       typeof appearance.readOnly!=="boolean")return {kind:"INVALID"};
+    const live=new Set(channels.map(ch=>ch?.id)),seen=new Set(),entries=[];
+    if(live.size!==channels.length||appearance.entries.length>512)return {kind:"INVALID"};
+    for(const p of appearance.entries){
+      if(!p||!decimalId(p.id)||!live.has(p.id)||seen.has(p.id)||
+         !valid.validPresentationName(p.name)||
+         !valid.validPresentationColor(p.color)||
+         !valid.validPresentationIcon(p.icon))return {kind:"INVALID"};
+      seen.add(p.id);
+      entries.push({id:p.id,name:p.name,color:p.color,icon:p.icon});
+    }
+    return {kind:"VALID",revision:appearance.revision,
+      writable:!appearance.readOnly,entries};
+  }
+  function identityEditPlan({native,logical,channelId,rawName,color,icon,
+                             appearance,appearanceRevision,appearanceWritable,
+                             pending=false,valid}={}) {
+    const no={kind:"UNAVAILABLE"};
+    const name=String(rawName??"").trim().replace(/\\s+/g," ");
+    if(!decimalId(channelId)||!valid?.validPresentationName?.(name))
+      return no;
+    const current=logical||native;
+    const channels=current?.graph?.channels;
+    if(!Array.isArray(channels)||channels.filter(ch=>ch?.id===channelId).length!==1)
+      return no;
+    const names=channels.filter(ch=>ch.id!==channelId).map(ch=>
+      appearance?.get?.(ch.id)?.name||ch.name);
+    if(names.some(other=>typeof other==="string"&&
+       other.toLowerCase()===name.toLowerCase()))return {kind:"DUPLICATE"};
+    if(logical) {
+      if(logical.readOnly===true||pending)return no;
+      return {kind:"LOGICAL",channelId,name,operation:"RENAME_CHANNEL",
+        payload:{name}};
+    }
+    if(pending)return {kind:"BUSY"};
+    if(native?.raw?.mixerSession?.authority!=="CHANNEL_ID"||
+       !(native.admitted===true||native.retained===true)||
+       appearanceWritable!==true||valid?.decimal?.(appearanceRevision)===null||
+       !decimalId(native.device?.epoch)||!decimalId(native.graph?.revision)||
+       !decimalId(native.graph?.rosterRevision)||
+       !valid.validPresentationColor?.(color)||
+       !valid.validPresentationIcon?.(icon))return no;
+    const payload={channelId,name,color,icon,appearanceRevision,
+      deviceEpoch:native.device.epoch,graphRevision:native.graph.revision,
+      rosterRevision:native.graph.rosterRevision};
+    return {kind:"READY",payload,pending:{
+      channelId,name,color,icon,acked:false,
+      deviceEpoch:payload.deviceEpoch,graphRevision:payload.graphRevision,
+      rosterRevision:payload.rosterRevision,
+      beforeAppearanceRevision:appearanceRevision}};
+  }
+  function identityAckResult(pending,ack) {
+    if(!pending||ack?.requestId!==pending.requestId)return "IGNORE";
+    return ack.ok===true?"ACKED":"REJECTED";
+  }
+  function identitySettlement(pending,snapshot,projection) {
+    if(!pending)return "NONE";
+    if(snapshot?.device?.epoch!==pending.deviceEpoch||
+       snapshot?.graph?.revision!==pending.graphRevision||
+       snapshot?.graph?.rosterRevision!==pending.rosterRevision||
+       snapshot?.raw?.mixerSession?.authority!=="CHANNEL_ID"||
+       !(snapshot?.admitted===true||snapshot?.retained===true)||
+       !snapshot.graph.channels?.some(ch=>ch.id===pending.channelId))
+      return "STALE";
+    if(projection?.kind!=="VALID"||
+       !decimalId(projection.revision)&&projection.revision!=="0"||
+       (projection.revision!=="0"&&
+        !decimalId(projection.revision))||
+       typeof pending.beforeAppearanceRevision!=="string"||
+       !/^(0|[1-9][0-9]*)$/.test(pending.beforeAppearanceRevision))
+      return "WAIT";
+    if(BigInt(projection.revision)<BigInt(pending.beforeAppearanceRevision))
+      return "STALE";
+    if(pending.acked!==true)return "WAIT";
+    const matches=projection.entries.filter(p=>p.id===pending.channelId);
+    return matches.length===1&&matches[0].name===pending.name&&
+       matches[0].color===pending.color&&
+       matches[0].icon===pending.icon?"CONFIRMED":"WAIT";
+  }
+  function legacyIdentityDecision({snapshot,id,identity,appearance,deferred,
+                                   writable,pending,valid}={}) {
+    if(!writable||pending||!(snapshot?.admitted||snapshot?.retained)||
+       snapshot?.raw?.mixerSession?.authority!=="CHANNEL_ID"||
+       !snapshot.graph?.channels?.some(ch=>ch.id===id)||
+       deferred?.has?.(id))return {kind:"SKIP"};
+    const original=appearance?.get?.(id);
+    if(original)return original.name===identity?.name&&
+      original.color===identity?.color&&original.icon===identity?.icon?
+        {kind:"RETIRE"}:{kind:"DEFER"};
+    const plan=identityEditPlan({native:snapshot,channelId:id,
+      rawName:identity?.name,color:identity?.color,icon:identity?.icon,
+      appearance,appearanceRevision:snapshot?.raw?.channelAppearance?.revision,
+      appearanceWritable:writable,valid});
+    if(plan.kind==="DUPLICATE")return {kind:"CONFLICT"};
+    return plan.kind==="READY"?{kind:"SEND",plan}:{kind:"DEFER"};
+  }
+
   return Object.freeze({outputTargets,inputChoices,externalChoices,
     primaryChoices,resolvePrimarySelection,readbackBindings,externalPending,
     primaryOutMutation,externalOutputPlan,sourceQueueSelection,
     sourceDispatchPlan,sourceAckResult,sourceReadbackSettlement,
     scalarIdentityMatches,scalarVisualSettlement,m4ScalarAckResult,
-    m4ScalarReadbackSettlement});
+    m4ScalarReadbackSettlement,identityReadback,identityEditPlan,
+    identityAckResult,identitySettlement,legacyIdentityDecision});
 });

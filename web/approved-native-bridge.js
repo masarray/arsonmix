@@ -63,31 +63,24 @@
     }catch(_){status("Native identity saved; legacy cache cleanup unavailable");}
   }
   function maybeMigrateLegacy(next){
-    if(!appearanceWritable||pendingIdentity||!legacyImport.size||
-       !(next?.admitted||next?.retained)||
-       next?.raw?.mixerSession?.authority!=="CHANNEL_ID")return;
+    if(!legacyImport.size)return;
     for(const [id,p] of legacyImport){
-      if(legacyDeferred.has(id)||!next.graph.channels.some(ch=>ch.id===id))continue;
-      const authoritative=channelPresentation.get(id);
-      if(authoritative){
-        // Never overwrite a genuine native edit with older browser data.
-        if(authoritative.name===p.name&&authoritative.color===p.color&&
-           authoritative.icon===p.icon)retireLegacyRow(id);
-        else legacyDeferred.add(id);
-        continue;
-      }
-      if(next.graph.channels.some(ch=>ch.id!==id&&
-         displayNameFor(ch).toLowerCase()===p.name.toLowerCase())){
+      const decision=stripVM.legacyIdentityDecision({snapshot:next,id,
+        identity:p,appearance:channelPresentation,deferred:legacyDeferred,
+        writable:appearanceWritable,pending:!!pendingIdentity,valid:protocol});
+      if(decision.kind==="SKIP")continue;
+      if(decision.kind==="RETIRE"){retireLegacyRow(id);continue;}
+      if(decision.kind==="DEFER"||decision.kind==="CONFLICT"){
         legacyDeferred.add(id);
-        status("Legacy channel identity name conflicts with native graph; cache preserved");
+        if(decision.kind==="CONFLICT")
+          status("Legacy channel identity name conflicts with native graph; cache preserved");
         continue;
       }
+      if(decision.kind!=="SEND")continue;
       const requestId="appearance-import-"+Date.now().toString(36)+"-"+(++identityRequestSerial);
-      pendingIdentity={requestId,channelId:id,...p,acked:false,migration:true};
+      pendingIdentity={...decision.plan.pending,requestId,migration:true};
       backend.emitEvent("arMixChannelIdentitySet",{
-        requestId,channelId:id,...p,appearanceRevision,
-        deviceEpoch:next.device.epoch,graphRevision:next.graph.revision,
-        rosterRevision:next.graph.rosterRevision
+        ...decision.plan.payload,requestId
       });
       window.setTimeout(()=>{
         if(pendingIdentity?.requestId!==requestId)return;
@@ -99,40 +92,32 @@
     }
   }
   function appearanceFromNative(next){
-    const data=next?.raw?.channelAppearance;
-    if(!data || data.schema!=="arsonmix.native.channel-appearance.v1" ||
-       protocol.decimal(data.revision)===null || !Array.isArray(data.entries) ||
-       typeof data.readOnly!=="boolean"){
-      appearanceWritable=false;return;
+    const projection=stripVM.identityReadback(next,protocol);
+    if(projection.kind!=="VALID"){
+      appearanceWritable=false;
+      status("Native channel identity readback invalid; no UI change");
+      return;
     }
-    const liveIds=new Set(next.graph.channels.map(ch=>ch.id));
-    const observed=new Map();
-    for(const p of data.entries){
-      if(!p||!liveIds.has(p.id)||observed.has(p.id)||
-         !legalName(p.name)||!legalColor(p.color)||!legalIcon(p.icon)){
-        appearanceWritable=false;
-        status("Native channel identity readback invalid; no UI change");
-        return;
-      }
-      observed.set(p.id,{name:p.name,color:p.color,icon:p.icon});
-    }
+    // Rendering cache is only a projection of the one accepted JUCE document.
     channelPresentation.clear();
-    for(const [id,p] of observed)channelPresentation.set(id,p);
-    appearanceRevision=data.revision;
-    appearanceWritable=!data.readOnly;
-    if(pendingIdentity?.acked){
-      const p=pendingIdentity,confirmed=channelPresentation.get(p.channelId);
-      if(confirmed?.name===p.name&&confirmed.color===p.color&&confirmed.icon===p.icon){
-        pendingIdentity=null;
-        if(p.migration){
-          retireLegacyRow(p.channelId);
-          status("Legacy channel identity migrated to native workspace · "+p.name);
-        }else{
-          const apply=document.getElementById("identitySave");
-          if(apply)apply.disabled=false;
-          scope?.closeChannelIdentity?.();
-          status("Channel updated and stored in native workspace · "+p.name);
-        }
+    for(const row of projection.entries)
+      channelPresentation.set(row.id,{name:row.name,color:row.color,icon:row.icon});
+    appearanceRevision=projection.revision;
+    appearanceWritable=projection.writable;
+    const verdict=stripVM.identitySettlement(pendingIdentity,next,projection);
+    if(verdict==="STALE"){
+      if(pendingIdentity?.migration)legacyDeferred.add(pendingIdentity.channelId);
+      rejectIdentity("Channel identity transaction expired · native graph changed");
+    }else if(verdict==="CONFIRMED"){
+      const p=pendingIdentity;pendingIdentity=null;
+      if(p.migration){
+        retireLegacyRow(p.channelId);
+        status("Legacy channel identity migrated to native workspace · "+p.name);
+      }else{
+        const apply=document.getElementById("identitySave");
+        if(apply)apply.disabled=false;
+        scope?.closeChannelIdentity?.();
+        status("Channel updated and stored in native workspace · "+p.name);
       }
     }
     maybeMigrateLegacy(next);
@@ -167,48 +152,29 @@
     const localId=scope?.identityTrackId,
       track=scope?.tracks?.concat(scope.master||[])?.find(x=>x.id===localId),
       channelId=nativeIdFor(track),current=activeView();
-    const rawName=String(document.getElementById("identityName")?.value||"");
-    const name=rawName.trim().replace(/\s+/g," ");
-    if(logicalView){
-      const unique=logicalView.graph.channels.every(ch=>ch.id===channelId||
-        ch.name.toLowerCase()!==name.toLowerCase());
-      if(!channelId||!legalName(name)||!unique){
-        status("Enter a unique valid channel name");return false;
-      }
-      const sent=logicalIntent("RENAME_CHANNEL",channelId,{name});
+    const plan=stripVM.identityEditPlan({native:current,logical:logicalView,
+      channelId,rawName:document.getElementById("identityName")?.value,
+      color:scope?.identityColor,icon:scope?.identityIcon,
+      appearance:channelPresentation,appearanceRevision,appearanceWritable,
+      pending:!!(controller?.state()?.pending||pendingIdentity),valid:protocol});
+    if(plan.kind==="LOGICAL"){
+      const sent=logicalIntent(plan.operation,plan.channelId,plan.payload);
       if(!sent.ok){status("Channel rename not saved");return false;}
       logicalRenameId=channelId;
       return false; // Native ACK + later readback closes the editor
     }
-    if(!channelId||!current||(current?.raw?.mixerSession?.authority!=="CHANNEL_ID")||
-       !(current.admitted||current.retained)||!appearanceWritable){
-      status("Native channel identity unavailable · verify saved native graph");
+    if(plan.kind!=="READY"){
+      status(plan.kind==="DUPLICATE"?"Channel name is already used":
+        plan.kind==="BUSY"?"Finish the current native operation before editing identity":
+        "Native channel identity unavailable · verify saved native graph");
       return false;
     }
-    if(controller.state().pending||pendingIdentity){
-      status("Finish the current native operation before editing identity");
-      return false;
-    }
-    const color=scope?.identityColor,icon=scope?.identityIcon;
-    if(!legalName(name)||!legalColor(color)||!legalIcon(icon)){
-      status("Enter a valid channel name, color and icon");return false;
-    }
-    const seen=current.graph.channels.some(ch=>
-      ch.id!==channelId&&displayNameFor(ch).toLowerCase()===name.toLowerCase());
-    if(seen){status("Channel name is already used");return false;}
     const requestId="appearance-"+Date.now().toString(36)+"-"+(++identityRequestSerial);
-    pendingIdentity={requestId,channelId,name,color,icon,acked:false,
-      deviceEpoch:current.device.epoch,graphRevision:current.graph.revision,
-      rosterRevision:current.graph.rosterRevision};
+    pendingIdentity={...plan.pending,requestId};
     const apply=document.getElementById("identitySave");
     if(apply)apply.disabled=true;
-    backend.emitEvent("arMixChannelIdentitySet",{
-      requestId,channelId,name,color,icon,
-      appearanceRevision,deviceEpoch:current.device.epoch,
-      graphRevision:current.graph.revision,
-      rosterRevision:current.graph.rosterRevision
-    });
-    status("Saving native channel identity · "+name);
+    backend.emitEvent("arMixChannelIdentitySet",{...plan.payload,requestId});
+    status("Saving native channel identity · "+plan.pending.name);
     window.setTimeout(()=>{
       if(pendingIdentity?.requestId!==requestId)return;
       rejectIdentity("Native identity ACK/readback timed out; original identity retained");
@@ -2945,13 +2911,14 @@
       controller?.subscribe();
     });
     backend.addEventListener("arMixChannelIdentityAck", ack=>{
-      if(!pendingIdentity||ack?.requestId!==pendingIdentity.requestId)return;
-      if(ack.ok!==true){
+      const decision=stripVM.identityAckResult(pendingIdentity,ack);
+      if(decision==="IGNORE")return;
+      if(decision==="REJECTED"){
         if(pendingIdentity.migration)legacyDeferred.add(pendingIdentity.channelId);
         rejectIdentity("Native channel identity rejected · "+String(ack.error||"Unknown error"));
-        controller?.subscribe();return;
-      }
-      pendingIdentity.acked=true;
+      }else pendingIdentity.acked=true;
+      // ACK alone cannot change an editor; the next accepted native
+      // readback, same graph lease and appearance identity must prove it.
       controller?.subscribe();
     });
     backend.addEventListener("arMixNativeSourceAck",ack=>{
