@@ -1323,7 +1323,7 @@
   function editNativeFx(t,slot,target,position,token){
     const current=controller?.state()?.current,id=nativeIdFor(t);
     const decision=fxRackVM.nativeEditPlan(current,{
-      channelId:id,slot,instanceId:token,
+      channelId:id,slot,instanceId:token,move:!!target,
       destinationId:target?nativeIdFor(target):null,
       position:target?position:null});
     if(decision.kind!=="READY"){

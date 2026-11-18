@@ -3527,7 +3527,8 @@ test("MV-8 FX move/remove preflight preserves exact instance and destination",()
     supportedOps:["MOVE_INSERT","REMOVE_INSERT"]},
     channels:[{id:a,role:"INPUT",inserts:[{id:"lease-a"},{id:"lease-b"}]},
       {id:b,role:"GROUP",inserts:[]}]}};
-  const request={channelId:a,slot:0,instanceId:"lease-a",destinationId:b,position:0};
+  const request={channelId:a,slot:0,instanceId:"lease-a",
+    move:true,destinationId:b,position:0};
   assert.deepEqual(fxRackVM.nativeEditPlan(base,request),{
     kind:"READY",operation:"MOVE_INSERT",channelId:a,
     payload:{slot:0,instanceId:"lease-a",toChannelId:b,toSlot:0}});
@@ -3541,7 +3542,10 @@ test("MV-8 FX move/remove preflight preserves exact instance and destination",()
   bad(base,{...request,slot:1});
   bad(base,{...request,instanceId:"vendor.vst3"});
   bad(base,{...request,destinationId:"0"});
+  bad(base,{...request,destinationId:null}); // lost mapping never deletes FX
   bad(base,{...request,destinationId:Number(b)});
+  bad(base,{...request,move:false}); // stray target cannot become REMOVE
+  bad(base,{...request,move:"yes"});
   bad(base,{...request,position:1});
   bad(base,{...request,position:-1});
   bad({...base,retained:true});
@@ -3615,6 +3619,7 @@ test("MV-8 FX bridge delegates preflight and settlement to existing pure FX VM",
   assert.match(bridge,/fxRackVM\.nativeInsertPlan\(/);
   assert.match(bridge,/fxRackVM\.nativeInsertSettlement\(/);
   assert.match(bridge,/fxRackVM\.nativeEditPlan\(/);
+  assert.match(bridge,/move:!!target/);
   assert.match(bridge,/fxRackVM\.nativePowerPlan\(/);
   assert.match(bridge,/fxRackVM\.nativePowerAckResult\(/);
   assert.match(bridge,/controller\.intent\(plan\.channelId,|controller\.intent\("LOAD_INSERT",plan\.channelId/);

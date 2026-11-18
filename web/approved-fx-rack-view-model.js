@@ -142,8 +142,12 @@
     return {kind:"READY",channelId:id,payload:{catalogId,slot}};
   }
   function nativeEditPlan(snapshot,{channelId:id,slot,instanceId,
-                           destinationId=null,position=null}={}) {
-    const graph=snapshot?.graph,move=destinationId!==null;
+                           move=false,destinationId=null,position=null}={}) {
+    const graph=snapshot?.graph;
+    // A MOVE with a lost destination must NEVER become a REMOVE.
+    if(typeof move!=="boolean"||
+       (!move&&(destinationId!==null||position!==null)))
+      return {kind:"UNAVAILABLE"};
     const operation=move?"MOVE_INSERT":"REMOVE_INSERT";
     if(snapshot?.admitted!==true||snapshot?.retained===true||
        !channelId(id)||!Number.isInteger(slot)||slot<0||slot>=8||
