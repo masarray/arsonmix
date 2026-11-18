@@ -356,8 +356,46 @@
     if(state.pending)return state;
     return {...state,phase:"IDLE",message:"",remapGeneration:null};
   }
+
+  // MV-12: one pure identity fence for transient WebView control requests.
+  // This is NOT a physical device manager or second native controller. A
+  // ChannelId graph can be readmitted directly after a device switch without
+  // ever publishing a retained/unavailable snapshot: UI requests must still
+  // lose their old lease. Graph revisions do NOT identify a new device.
+  function nativeLifecycleLease(snapshot,readModelKind) {
+    const d=snapshot?.device,epoch=d?.epoch;
+    const kinds=["CHANNEL_ID","M4","NEEDS_REMAP","LOGICAL_ONLY",
+      "UNADMITTED","STALE"];
+    if(!kinds.includes(readModelKind) ||
+       typeof epoch!=="string" || !/^(0|[1-9]\d*)$/.test(epoch) ||
+       epoch.length>20 || BigInt(epoch)>18446744073709551615n ||
+       typeof d.backend!=="string" ||
+       typeof d.captureDevice!=="string" ||
+       typeof d.playbackDevice!=="string")return null;
+    // Store only physical identity and the canonical read-model authority.
+    // Never copy a native graph, device controller, DOM or PCM into the VM.
+    return Object.freeze({epoch,backend:d.backend,
+      captureDevice:d.captureDevice,playbackDevice:d.playbackDevice,
+      authority:readModelKind});
+  }
+  function nativeLifecycleDecision(previous,next) {
+    if(!next || typeof next.epoch!=="string" ||
+       typeof next.authority!=="string")
+      return Object.freeze({kind:"INVALID",expirePending:false});
+    if(!previous)
+      return Object.freeze({kind:"INITIAL",expirePending:false});
+    const changed=previous.epoch!==next.epoch ||
+      previous.backend!==next.backend ||
+      previous.captureDevice!==next.captureDevice ||
+      previous.playbackDevice!==next.playbackDevice;
+    if(changed)
+      return Object.freeze({kind:"DEVICE_CHANGED",expirePending:true});
+    if(previous.authority!==next.authority)
+      return Object.freeze({kind:"AUTHORITY_CHANGED",expirePending:true});
+    return Object.freeze({kind:"SAME",expirePending:false});
+  }
   return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,
     externalPresentation,setupDraft,setupPresentation,setupEditDraft,
     setupInitial,setupBegin,setupAck,setupReadback,
-    setupTimeout,setupClearResult});
+    setupTimeout,setupClearResult,nativeLifecycleLease,nativeLifecycleDecision});
 });

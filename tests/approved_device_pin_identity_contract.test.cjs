@@ -168,3 +168,94 @@ test("MV-8 DeviceVM remains pure; exactly one unchanged native Apply transport",
   assert.equal((region.match(/backend\.emitEvent\("arMixAction",begun\.request\)/g)||[]).length,1);
   assert.doesNotMatch(source,/document\.|window\.|AudioWorklet|new AudioContext|localStorage/);
 });
+
+
+test("MV-12 native lifecycle lease preserves exact uint64 device identity",()=>{
+  const base={device:{epoch:"18446744073709551615",backend:"ASIO",
+    captureDevice:"A",playbackDevice:"A"},graph:{revision:"9"}};
+  const original=JSON.stringify(base);
+  const lease=vm.nativeLifecycleLease(base,"CHANNEL_ID");
+  assert.deepEqual(lease,{epoch:"18446744073709551615",backend:"ASIO",
+    captureDevice:"A",playbackDevice:"A",authority:"CHANNEL_ID"});
+  assert.equal(Object.isFrozen(lease),true);
+  assert.equal(JSON.stringify(base),original);
+  for(const epoch of [18446744073709551615,"01","-1","1.5","",
+    "18446744073709551616",null]) {
+    assert.equal(vm.nativeLifecycleLease({...base,
+      device:{...base.device,epoch}},"CHANNEL_ID"),null,
+      "rounding, overflow and noncanonical epoch must fail closed");
+  }
+  for(const kind of ["INVALID","DEMO","",null])
+    assert.equal(vm.nativeLifecycleLease(base,kind),null);
+  assert.equal(vm.nativeLifecycleLease({device:{...base.device,
+    captureDevice:undefined}},"CHANNEL_ID"),null);
+});
+
+test("MV-12 native lifecycle expires old device intents even when both graphs are admitted",()=>{
+  const s=(epoch="41",backend="ASIO",name="Studio ASIO")=>
+    ({device:{epoch,backend,captureDevice:name,playbackDevice:name}});
+  const first=vm.nativeLifecycleLease(s(),"CHANNEL_ID");
+  const same=vm.nativeLifecycleLease({...s(),graph:{revision:"500",
+    rosterRevision:"700"}},"CHANNEL_ID");
+  assert.deepEqual(vm.nativeLifecycleDecision(null,first),
+    {kind:"INITIAL",expirePending:false});
+  assert.deepEqual(vm.nativeLifecycleDecision(first,same),
+    {kind:"SAME",expirePending:false},
+    "graph/roster revisions and scalar telemetry cannot cancel same-device gestures");
+  const afterReconnect=vm.nativeLifecycleLease(s("42"),"CHANNEL_ID");
+  assert.deepEqual(vm.nativeLifecycleDecision(first,afterReconnect),
+    {kind:"DEVICE_CHANGED",expirePending:true},
+    "back-to-back admitted PCM snapshots must still invalidate old leases");
+  const otherDriver=vm.nativeLifecycleLease(s("41","ASIO","Backup ASIO"),"CHANNEL_ID");
+  assert.equal(vm.nativeLifecycleDecision(first,otherDriver).kind,"DEVICE_CHANGED",
+    "same-epoch endpoint replacement is never the old physical owner");
+  assert.equal(vm.nativeLifecycleDecision(first,{...first,
+    backend:"Windows Audio"}).expirePending,true);
+  assert.equal(vm.nativeLifecycleDecision(first,null).kind,"INVALID");
+});
+
+test("MV-12 authority transitions expire stale M4/ChannelId work; no duplicate owner",()=>{
+  const snapshot={device:{epoch:"91",backend:"ASIO",
+    captureDevice:"One",playbackDevice:"One"}};
+  const mk=kind=>vm.nativeLifecycleLease(snapshot,kind);
+  for(const [a,b] of [["M4","CHANNEL_ID"],["CHANNEL_ID","NEEDS_REMAP"],
+    ["NEEDS_REMAP","CHANNEL_ID"],["LOGICAL_ONLY","CHANNEL_ID"],
+    ["CHANNEL_ID","UNADMITTED"],["UNADMITTED","M4"],
+    ["STALE","CHANNEL_ID"]]) {
+    assert.deepEqual(vm.nativeLifecycleDecision(mk(a),mk(b)),
+      {kind:"AUTHORITY_CHANGED",expirePending:true},a+" -> "+b);
+  }
+  for(const kind of ["M4","CHANNEL_ID","LOGICAL_ONLY","NEEDS_REMAP",
+    "UNADMITTED","STALE"])
+    assert.equal(vm.nativeLifecycleDecision(mk(kind),mk(kind)).expirePending,
+      false,"identical authority must not erase pending current work");
+  const source=readFileSync("web/approved-device-view-model.js","utf8");
+  assert.doesNotMatch(source,/document\.|window\.|AudioWorklet|new AudioContext|localStorage/);
+});
+
+test("MV-12 approved bridge invalidates transient UI leases, not durable JUCE state",()=>{
+  const source=readFileSync("web/approved-native-bridge.js","utf8");
+  const start=source.indexOf("  function expireTransientNativeUi(reason) {");
+  const end=source.indexOf("  function onNativeReadback(next,confirmed)",start);
+  assert.ok(start>0&&end>start);
+  const cleanup=source.slice(start,end);
+  for(const token of ["pendingNativeSources.clear()","pendingSourceQueue.clear()",
+    "pendingNativeControl.clear()","liveFaderVisualTargets.clear()",
+    "lastNativeControlSent.clear()","pendingWireGains.clear()",
+    "pendingM4Controls.clear()","pendingM4RackPowers.clear()",
+    "pendingNativeFxPower=null","pendingGlobalFx=null",
+    "activeNativeSource=null","pendingIdentity"] )
+    assert.ok(cleanup.includes(token),"missing old transaction cancellation: "+token);
+  assert.doesNotMatch(cleanup,/backend\.emitEvent|arMixAction|routingNative|audioDeviceApply|\.smix|new AudioContext/);
+  const readback=source.slice(end,source.indexOf("  if (connected) {\n    controller = protocol.createController",end));
+  assert.match(readback,/deviceVM\.nativeLifecycleLease\(next,readModel\.kind\)/);
+  assert.match(readback,/deviceVM\.nativeLifecycleDecision\(lastNativeLifecycleLease,lease\)/);
+  assert.match(readback,/if\(lifecycle\.expirePending\)/);
+  assert.match(readback,/confirmed=null;/);
+  assert.ok(readback.indexOf("if(readModel.kind===\"INVALID\")")<
+    readback.indexOf("deviceVM.nativeLifecycleLease("),
+    "invalid raw readback must not create a new device owner");
+  assert.ok(readback.indexOf("expireTransientNativeUi(lifecycle.kind)")<
+    readback.indexOf("appearanceFromNative(next)"),
+    "stale cosmetic ACK cannot settle before device identity fence");
+});
