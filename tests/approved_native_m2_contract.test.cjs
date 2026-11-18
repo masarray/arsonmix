@@ -298,7 +298,9 @@ test("native PRE_FADER WIRE inspector uses one exact SET_TAP PCM intent and acce
  assert.match(bridge,/function requestNativeTap\(source,edgeId,tap\)/);
  assert.match(bridge,/ops\[0\]\.type==="MODE"/);
  assert.match(bridge,/op:"SET_TAP",from:source,edgeId,tap/);
- assert.match(bridge,/const tap=\["PRE_FADER","POST_FADER"\]\.includes\(edge\.tapStage\)/);
+ assert.match(bridge,/wireVM\.edgePresentation\(/);
+ assert.match(read("web/approved-wire-view-model.js"),
+   /const tap=TAPS\.has\(edge\.tapStage\)\?edge\.tapStage:edge\.tap/);
  assert.match(preview,/edge\.nativeTap==='PRE_FADER'\?'PRE FADER'/);
  assert.match(preview,/edge\?\.nativeTap==='PRE_FADER'\?'split'/);
  assert.match(preview,/native\?'PRE FADER':'Pre FX'/);
