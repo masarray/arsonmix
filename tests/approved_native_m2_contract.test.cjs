@@ -2510,6 +2510,100 @@ test("P0 output-only Audio I/O is a real native configuration, never blocked by 
  assert.match(read("web/approved-device-view-model.js"),/Mixer ready · Output muted/);
 });
 
+
+test("MV-18 real M4 FX slot lease survives no old device ACK on same-epoch driver switch",()=>{
+ const vm=require("node:vm"),listeners=new Map(),sent=[],timers=[],microtasks=[];
+ const tracks=Array.from({length:10},(_,i)=>({id:i+1,kind:"audio",
+   name:"CH "+(i+1),input:"None",output:"Master",format:"mono",
+   fx:[],slotBypass:[],fxInsertIds:[]}));
+ const scope={tracks,master:{id:50,kind:"master",output:"Master"},
+   findTrack:el=>el?.track||null,render(){},stopDemo(){}};
+ const backend={emitEvent:(name,payload)=>sent.push({name,payload}),
+   addEventListener:(name,fn)=>listeners.set(name,fn)};
+ const toast={hidden:true,textContent:""};
+ const doc={readyState:"complete",documentElement:{dataset:{}},
+   activeElement:null,getElementById:id=>id==="info"?{textContent:""}:
+     id==="preview"?{disabled:false}:
+     id==="armixNativeToast"?toast:null,
+   querySelector:()=>null,addEventListener(){}};
+ const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,
+   ArSonApprovedDeviceViewModel:deviceVM,
+   ArSonApprovedChannelStripViewModel:stripVM,
+   ArSonApprovedFxRackViewModel:fxRackVM,
+   ArSonApprovedWireViewModel:wireVM,
+   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
+   setTimeout(fn,ms){timers.push({fn,ms});return timers.length;},
+   clearTimeout(){},queueMicrotask(fn){microtasks.push(fn);}};
+ vm.runInNewContext(read("web/approved-native-bridge.js"),{
+   window:win,document:doc,performance:{now:()=>0},console
+ },{timeout:2000});
+ const installed=clone(fixtures.g0);
+ Object.assign(installed.device,{backend:"ASIO",captureDevice:"Vendor A ASIO",
+   playbackDevice:"Vendor A ASIO",enabledInputs:[0,1],
+   inputEndpoints:[{id:"in:0",port:0,callback:0,label:"IN 1",active:true},
+     {id:"in:1",port:1,callback:1,label:"IN 2",active:true}]});
+ const rows=Array.from({length:10},()=>({mode:"NONE",left:-1,right:-1}));
+ const fxInstances=Array.from({length:10},(_,i)=>i===4?
+   [{catalogId:"armix.builtin.channel-eq.v1",instanceId:"fx-m4-01",
+     bypassed:false}]:[]);
+ installed.legacyM4={active:true,routeAccepted:true,routingRevision:"13",
+   nativeBusStructural:false,fxInstances,
+   channelControls:Array.from({length:10},()=>({db:0,pan:0,mute:false,solo:false})),
+   channels:rows};
+ installed.mixerSession={authority:"M4",deviceEpoch:installed.device.epoch,
+   routeRevision:"13",rosterRevision:"0",
+   channels:rows.map((source,i)=>({
+     id:"m4:"+String(i+1).padStart(2,"0"),ordinal:i,role:"INPUT",
+     source,controls:{faderDb:0,pan:0,mute:false,solo:false}
+   })),main:{db:0,mute:false,outputArmed:false}};
+ const publish=raw=>listeners.get("arMixConsoleSnapshot")(raw);
+ const prepared=clone(installed);
+ prepared.legacyM4.routeAccepted=false;
+ prepared.mixerSession.authority="NONE";
+ prepared.mixerSession.routeRevision="0";
+ prepared.mixerSession.channels=[];
+ publish(prepared);
+ publish(installed);
+ assert.ok(win.__ARMIX_NATIVE_M2__.inputChoices(tracks[4]).length>1,
+   "real verified physical IN must be installed before M4 FX test");
+ const click=()=>win.__ARMIX_NATIVE_M2__.consumeAction(
+   tracks[4],"slotPower",{dataset:{slot:"0"}});
+ const bypasses=()=>sent.filter(x=>x.name==="arMixAction"&&
+   x.payload.action==="routingFxBypass").map(x=>x.payload);
+ assert.equal(click(),true);
+ assert.equal(bypasses().length,1,
+   "first M4 slot bypass must dispatch; feedback: "+toast.textContent);
+ const first=bypasses()[0];
+ assert.equal(click(),true);
+ assert.equal(bypasses().length,1,"same slot is gated by its unresolved native lease");
+ const oldTimer=timers.filter(t=>t.ms===5000).at(-1);
+ assert.ok(oldTimer);
+ // A different driver using the SAME epoch must expire the old M4 slot lease.
+ const changed=clone(installed);
+ changed.device.captureDevice="Vendor B ASIO";
+ changed.device.playbackDevice="Vendor B ASIO";
+ changed.legacyM4.routingRevision="14";
+ changed.mixerSession.routeRevision="14";
+ publish(changed);
+ while(microtasks.length)microtasks.shift()();
+ assert.equal(click(),true);
+ assert.equal(bypasses().length,2,
+   "reconnected same-epoch driver cannot leave a slot uneditable for 5 seconds");
+ const second=bypasses()[1];
+ assert.notEqual(first.requestId,second.requestId);
+ assert.equal(second.revision,14,"second bypass uses new accepted native revision");
+ listeners.get("arMixRoutingFxBypassAck")({
+   requestId:first.requestId,channel:4,slot:0,ok:false,error:"OLD_DEVICE"});
+ oldTimer.fn();
+ assert.equal(bypasses().length,2,"expired timer cannot affect new driver lease");
+ // The new request is still protected from a duplicate click until settled.
+ assert.equal(click(),true);
+ assert.equal(bypasses().length,2,
+   "an old ACK/timer cannot release a new driver's pending FX command");
+ assert.equal(sent.filter(x=>x.name==="arMixAction"&&
+   x.payload.action==="monitor").length,0,"no automatic MAIN arm");
+});
+
 test("MV-15 real M4 first-sound PCM snapshot ahead of ACK drains queued second INPUT",()=>{
  const vm=require("node:vm"),listeners=new Map(),sent=[],microtasks=[],timers=[];
  const tracks=Array.from({length:10},(_,i)=>({id:i+1,kind:"audio",
