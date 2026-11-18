@@ -114,6 +114,18 @@ int main() {
     invalid=doc->sets;
     invalid[0].files[0]=invalid[0].files[1];
     assert(!Archive::serialize(invalid,0,false,180).isObject());
+    // Duplicate path admission MUST match the same JUCE File equality
+    // used by parseSongs() on every supported platform.
+    invalid=doc->sets;
+    invalid[0].files[1]=juce::File(path.toUpperCase());
+    const bool sameFile=invalid[0].files[0]==invalid[0].files[1];
+    assert(Archive::serialize(invalid,0,false,180).isObject()!=sameFile);
+    if(!sameFile) {
+        // A case-sensitive filesystem treats these as separate file names.
+        const auto archive=Archive::serialize(invalid,0,false,180);
+        const auto reopened=Archive::parse(archive);
+        assert(reopened && reopened->sets[0].files.size()==2);
+    }
     invalid=doc->sets;
     invalid[0].controls[0].key=9;
     assert(!Archive::serialize(invalid,0,false,180).isObject());
