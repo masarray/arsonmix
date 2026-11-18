@@ -13,6 +13,73 @@ const fixtures=JSON.parse(read("integration/console-v6/fixtures.json"));
 const clone=x=>JSON.parse(JSON.stringify(x));
 
 
+test("G-MV20 schema-v6 pending intent is fenced on same-epoch physical pin or format change",()=>{
+ const base=clone(fixtures.g2),before=JSON.stringify(base);
+ const hardware=protocol.nativeHardwareConfiguration(base.device);
+ assert.equal(hardware,JSON.stringify([48000,128,[0,1],[0,1,2,3]]));
+ const normalized=protocol.normalizeSnapshot(base);
+ assert.equal(normalized.hardwareConfiguration,hardware);
+ const staleAck=(requestId)=>({
+   requestId,status:"ACCEPTED",errorCode:"NONE",deviceEpoch:"69",
+   graphRevision:"5",rosterRevision:"5"
+ });
+ for(const kind of ["input-mask","output-mask","rate","buffer"]){
+   const sent=[],accepted=[];
+   const controller=protocol.createController({
+     emit:(name,payload)=>sent.push({name,payload}),
+     onAccepted:(next,confirmed)=>accepted.push({next,confirmed})
+   });
+   assert.equal(controller.onSnapshot(base),true);
+   assert.equal(accepted.length,1);
+   const issued=controller.intent("SET_FADER","7",{valueDb:-6});
+   assert.equal(issued.ok,true);
+   const changed=clone(base);
+   if(kind==="input-mask"){
+     changed.device.enabledInputs=[0];
+     changed.device.inputEndpoints=changed.device.inputEndpoints.filter(p=>p.port===0);
+   }else if(kind==="output-mask"){
+     changed.device.enabledOutputs=[0,1];
+     changed.device.outputEndpoints=changed.device.outputEndpoints.filter(p=>p.port<2);
+   }else if(kind==="rate")changed.device.sampleRate=44100;
+   else changed.device.bufferFrames=256;
+   assert.equal(controller.onSnapshot(changed),true,kind);
+   assert.equal(controller.state().pending,null,
+     "physical remap must cancel old native pending intent: "+kind);
+   assert.equal(controller.state().lastError,"STALE_DEVICE");
+   assert.equal(accepted.length,2,
+     "new physical config must repaint from native even before an old ACK: "+kind);
+   assert.notEqual(accepted[1].next.hardwareConfiguration,hardware);
+   assert.equal(accepted[1].confirmed,undefined,"no ACK-only or false PCM success");
+   assert.equal(controller.onAck(staleAck(issued.requestId)),false,
+     "old ACK must not settle the replaced hardware configuration");
+   assert.equal(controller.state().pending,null);
+   assert.equal(controller.state().current.hardwareConfiguration,
+     accepted[1].next.hardwareConfiguration);
+   assert.equal(sent.filter(x=>x.name==="arMixConsoleIntent").length,1,
+     "new hardware readback cannot silently redispatch an old edit");
+ }
+ assert.equal(JSON.stringify(base),before,"native fixture cannot be mutated");
+});
+
+test("G-MV20 pin order and MONITOR are not a new hardware owner",()=>{
+ const base=clone(fixtures.g2),seen=[];
+ const c=protocol.createController({emit(){},
+   onAccepted:next=>seen.push(next)});
+ assert.equal(c.onSnapshot(base),true);
+ const issued=c.intent("SET_FADER","7",{valueDb:-6});
+ assert.equal(issued.ok,true);
+ const rearranged=clone(base);
+ rearranged.device.enabledInputs.reverse();
+ rearranged.device.enabledOutputs.reverse();
+ rearranged.device.outputArmed=!base.device.outputArmed;
+ assert.equal(c.onSnapshot(rearranged),true);
+ assert.equal(c.state().pending?.requestId,issued.requestId,
+   "reordering physical pin sets must preserve a valid pending channel edit");
+ assert.equal(seen.length,1,"unacknowledged operation does not repaint");
+ assert.equal(protocol.nativeHardwareConfiguration(rearranged.device),
+   protocol.nativeHardwareConfiguration(base.device));
+});
+
 // GUI-4: SOURCE ONLY and physical PRIMARY OUT must not consume a parallel SEND.
 
 
