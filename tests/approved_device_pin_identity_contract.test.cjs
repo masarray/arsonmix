@@ -182,12 +182,12 @@ test("MV-12 native lifecycle lease preserves exact uint64 device identity",()=>{
     captureDevice:"A",playbackDevice:"A",sampleRate:48000,bufferFrames:256,
     enabledInputs:[1,0],enabledOutputs:[0,1]},graph:{revision:"9"}};
   const original=JSON.stringify(base);
-  const lease=lease(base,"CHANNEL_ID");
-  assert.deepEqual(lease,{epoch:"18446744073709551615",backend:"ASIO",
+  const identityLease=lease(base,"CHANNEL_ID");
+  assert.deepEqual(identityLease,{epoch:"18446744073709551615",backend:"ASIO",
     captureDevice:"A",playbackDevice:"A",
     hardwareConfiguration:JSON.stringify([48000,256,[0,1],[0,1]]),
     authority:"CHANNEL_ID"});
-  assert.equal(Object.isFrozen(lease),true);
+  assert.equal(Object.isFrozen(identityLease),true);
   assert.equal(JSON.stringify(base),original);
   for(const epoch of [18446744073709551615,"01","-1","1.5","",
     "18446744073709551616",null]) {
