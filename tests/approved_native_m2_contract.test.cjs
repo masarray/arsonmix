@@ -1132,7 +1132,9 @@ test("P0 post-BUS native IN routes NONE MONO STEREO via one PCM owner",()=>{
  const engine=read("src/LiveAudioEngine.h");
  const lab=read("src/LiveDryRoutingLab.h");
  assert.match(bridge,/function dispatchNativeSource\(\)/);
- assert.match(bridge,/action:"routingNativeSourcePatch"/);
+ assert.match(read("web/approved-channel-strip-view-model.js"),
+  /action:"routingNativeSourcePatch"/);
+ assert.match(bridge,/action:plan\.action,requestId/);
  assert.match(bridge,/arMixNativeSourceAck/);
  assert.match(bridge,/pendingNativeSources.set\(id,decision.entry\)/);
  assert.match(host,/if\(action=="routingNativeSourcePatch"\)/);
