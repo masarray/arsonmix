@@ -2526,7 +2526,28 @@ test("MV-18 real M4 FX slot lease survives no old device ACK on same-epoch drive
      id==="preview"?{disabled:false}:
      id==="armixNativeToast"?toast:null,
    querySelector:()=>null,addEventListener(){}};
- const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,
+ // MV-19 defense-in-depth: force one controller callback with a rejected
+ // read-model candidate. Such a callback must not paint untrusted hardware
+ // even if a future controller inadvertently forwards it.
+ const guardedProtocol={...protocol,
+   createController(options){
+     const native=protocol.createController(options);
+     return {...native,onSnapshot(raw){
+       if(raw?.device?.captureDevice==="Quarantined ASIO"){
+         const normalized=protocol.normalizeSnapshot(raw);
+         assert.ok(normalized,"rejected read-model candidate must be schema-valid");
+         options.onAccepted(normalized);
+         return true;
+       }
+       return native.onSnapshot(raw);
+     }};
+   },
+   selectNativeReadModel(next,verified){
+     if(next?.device?.captureDevice==="Quarantined ASIO")
+       return {kind:"INVALID"};
+     return protocol.selectNativeReadModel(next,verified);
+   }};
+ const win={__JUCE__:{backend},ArSonApprovedNativeContract:guardedProtocol,
    ArSonApprovedDeviceViewModel:deviceVM,
    ArSonApprovedChannelStripViewModel:stripVM,
    ArSonApprovedFxRackViewModel:fxRackVM,
@@ -2578,7 +2599,25 @@ test("MV-18 real M4 FX slot lease survives no old device ACK on same-epoch drive
  assert.equal(bypasses().length,1,"same slot is gated by its unresolved native lease");
  const oldTimer=timers.filter(t=>t.ms===5000).at(-1);
  assert.ok(oldTimer);
- // A different driver using the SAME epoch must expire the old M4 slot lease.
+ // MV-19: rejected candidate has a different physical identity, but neither
+ // the active output label nor this legitimate pending M4 FX edit may change.
+ const acceptedOutput=scope.master.output;
+ const acceptedChoices=win.__ARMIX_NATIVE_M2__.inputChoices(tracks[4])
+   .map(x=>x.label).join("|");
+ const quarantined=clone(installed);
+ quarantined.device.captureDevice="Quarantined ASIO";
+ quarantined.device.playbackDevice="Quarantined ASIO";
+ quarantined.device.inputEndpoints[0].label="Untrusted IN";
+ publish(quarantined);
+ assert.equal(scope.master.output,acceptedOutput,
+   "invalid candidate cannot repaint master hardware output");
+ assert.equal(win.__ARMIX_NATIVE_M2__.inputChoices(tracks[4])
+   .map(x=>x.label).join("|"),acceptedChoices,
+   "invalid candidate cannot install untrusted physical pin choices");
+ assert.equal(click(),true);
+ assert.equal(bypasses().length,1,
+   "invalid candidate cannot release the pending physical FX lease");
+ // A different VALID driver using the SAME epoch must expire the old slot lease.
  const changed=clone(installed);
  changed.device.captureDevice="Vendor B ASIO";
  changed.device.playbackDevice="Vendor B ASIO";
