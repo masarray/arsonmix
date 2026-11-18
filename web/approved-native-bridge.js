@@ -1502,10 +1502,7 @@
     channelId:logicalView?nativeIdFor(t):t?.kind==="master"?null:nativeIdFor(t)
   });
   function sameNativeEditIdentity(edit) {
-    const now=nativeEditIdentity(edit.t);
-    return edit.epoch===now.epoch &&
-      edit.authority===now.authority &&
-      edit.channelId===now.channelId;
+    return stripVM.scalarIdentityMatches(edit,nativeEditIdentity(edit.t));
   }
   // Only the last gesture target owns the visual fader cap until the
   // producer independently reads that SAME target back. Earlier ACKs and
@@ -1516,13 +1513,12 @@
     const key=controlKey(t?.kind==="master"?"masterGain":"faderDb",t);
     const pending=liveFaderVisualTargets.get(key);
     if(!pending)return null;
-    if(!sameNativeEditIdentity(pending)){
+    const result=stripVM.scalarVisualSettlement(pending,actualDb,
+      nativeEditIdentity(t));
+    if(result==="STALE"||result==="CONFIRMED"){
       liveFaderVisualTargets.delete(key);return null;
     }
-    if(Math.abs(actualDb-pending.value)<=.11){
-      liveFaderVisualTargets.delete(key);return null;
-    }
-    return pending.value;
+    return result==="WAIT"?pending.value:null;
   }
   // null means an admitted ChannelId intent is already awaiting its ACK /
   // producer readback. Keep ONLY the newest dB target, never drop release.
@@ -1551,7 +1547,7 @@
     }
   }
   function streamFaderControl(parameter,t,value,final){
-    if(!liveScalarReady(parameter,t))return false;
+    if(!Number.isFinite(value)||!liveScalarReady(parameter,t))return false;
     const key=controlKey(parameter,t),now=performance.now();
     const edit={parameter,t,value,...nativeEditIdentity(t)};
     pendingNativeControl.set(key,edit); // coalesce: last writer always wins
@@ -1645,26 +1641,12 @@
   const m4ControlKey=(parameter,channel)=>parameter+":"+channel;
   function reconcileM4ControlReadback(next) {
     let awaiting=false;
-    const session=next?.raw?.mixerSession;
     for(const [key,p] of pendingM4Controls) {
-      const revision=p.channel===-1?
-        next?.raw?.legacyM4?.routingRevision:session?.routeRevision;
-      if(next.device.epoch!==p.epoch || revision!==p.revision ||
-         (p.channel!==-1 && session?.authority!=="M4")) {
+      const result=stripVM.m4ScalarReadbackSettlement(p,next);
+      if(result==="STALE"){
         pendingM4Controls.delete(key);
         status("STALE M4 control · device/route changed; restoring readback");
-        continue;
-      }
-      const row=p.channel===-1?null:session?.channels?.[p.channel];
-      const value=p.channel===-1?
-        (p.parameter==="masterGain"?session?.main?.db:session?.main?.mute):
-        p.parameter==="faderDb"?row?.controls?.faderDb:
-        p.parameter==="pan"?row?.controls?.pan*100:
-        row?.controls?.[p.parameter];
-      const matches=typeof p.value==="boolean"?value===p.value:
-        Number.isFinite(value)&&Math.abs(value-p.value)<=
-          (p.parameter==="pan"?.8:.11);
-      if(p.acked && matches)pendingM4Controls.delete(key);
+      }else if(result==="CONFIRMED")pendingM4Controls.delete(key);
       else awaiting=true;
     }
     return awaiting;
@@ -3070,17 +3052,14 @@
       const item=[...pendingM4Controls].find(([,p])=>p.requestId===ack?.requestId);
       if(!item)return; // late, unrelated and superseded ACKs cannot commit
       const [key,p]=item;
-      const accepted=ack.ok===true &&
-        String(ack.deviceEpoch)===p.epoch &&
-        String(ack.routingRevision)===p.revision &&
-        ack.channel===p.channel && ack.parameter===p.parameter;
-      if(!accepted) {
+      const verdict=stripVM.m4ScalarAckResult(p,ack);
+      if(verdict==="REJECTED") {
         pendingM4Controls.delete(key);
         if(p.parameter==="masterGain")liveFaderVisualTargets.delete("masterGain:main");
         else if(p.parameter==="faderDb")
           liveFaderVisualTargets.delete("faderDb:"+m4TrackIds[p.channel]);
         status("NATIVE M4 REJECTED · "+(ack?.error||"stale control token"));
-      } else p.acked=true;
+      } else if(verdict==="ACKED")p.acked=true;
       controller.subscribe(); // request later independent producer readback
     });
     backend.addEventListener("arMixChannelPatchAck",ack=>{
