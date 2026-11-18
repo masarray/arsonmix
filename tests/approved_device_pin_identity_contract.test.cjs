@@ -220,11 +220,18 @@ test("MV-12 authority transitions expire stale M4/ChannelId work; no duplicate o
   const mk=kind=>vm.nativeLifecycleLease(snapshot,kind);
   for(const [a,b] of [["M4","CHANNEL_ID"],["CHANNEL_ID","NEEDS_REMAP"],
     ["NEEDS_REMAP","CHANNEL_ID"],["LOGICAL_ONLY","CHANNEL_ID"],
-    ["CHANNEL_ID","UNADMITTED"],["UNADMITTED","M4"],
-    ["STALE","CHANNEL_ID"]]) {
+    ["CHANNEL_ID","UNADMITTED"],["STALE","CHANNEL_ID"]]) {
     assert.deepEqual(vm.nativeLifecycleDecision(mk(a),mk(b)),
       {kind:"AUTHORITY_CHANGED",expirePending:true},a+" -> "+b);
   }
+  assert.deepEqual(vm.nativeLifecycleDecision(mk("UNADMITTED"),mk("M4")),
+    {kind:"M4_FIRST_SOUND",expirePending:false},
+    "first accepted M4 input must not silently discard its own pending source");
+  const switched={device:{...snapshot.device,epoch:"92"}};
+  assert.deepEqual(vm.nativeLifecycleDecision(mk("UNADMITTED"),
+    vm.nativeLifecycleLease(switched,"M4")),
+    {kind:"DEVICE_CHANGED",expirePending:true},
+    "first-sound exemption must never bypass a physical device change");
   for(const kind of ["M4","CHANNEL_ID","LOGICAL_ONLY","NEEDS_REMAP",
     "UNADMITTED","STALE"])
     assert.equal(vm.nativeLifecycleDecision(mk(kind),mk(kind)).expirePending,

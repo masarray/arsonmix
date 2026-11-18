@@ -390,6 +390,13 @@
       previous.playbackDevice!==next.playbackDevice;
     if(changed)
       return Object.freeze({kind:"DEVICE_CHANGED",expirePending:true});
+    // The very first accepted M4 physical SOURCE patch promotes an already
+    // opened, unchanged device from UNADMITTED to M4. It is the SAME native
+    // operation that the in-flight M4 input queue is waiting to verify:
+    // discarding the queue here would silently lose follow-up source choices.
+    // Any endpoint/epoch change above still invalidates all old gestures.
+    if(previous.authority==="UNADMITTED"&&next.authority==="M4")
+      return Object.freeze({kind:"M4_FIRST_SOUND",expirePending:false});
     if(previous.authority!==next.authority)
       return Object.freeze({kind:"AUTHORITY_CHANGED",expirePending:true});
     return Object.freeze({kind:"SAME",expirePending:false});

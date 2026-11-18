@@ -315,6 +315,47 @@
       source.portIdRight==="in:"+choice.right?"CONFIRMED":"PENDING";
   }
 
+
+  // MV-13: M4's correlated acceptedRoute in an ACK is not an independently
+  // published PCM snapshot. Hold exactly one GUI source transaction until
+  // a subsequent M4 readback confirms the requested physical source and
+  // the accepted routing revision. This is pure presentation settlement.
+  function m4SourceReadbackSettlement(pending,snapshot) {
+    if(!pending)return "NONE";
+    const d=snapshot?.device,session=snapshot?.raw?.mixerSession,
+      m=snapshot?.raw?.legacyM4;
+    if(snapshot?.admitted!==false||snapshot?.retained===true||
+       !Number.isSafeInteger(pending.epoch)||pending.epoch<=0||
+       d?.epoch!==String(pending.epoch)||
+       session?.deviceEpoch!==d.epoch)return "STALE";
+    // The prepared first-source M4 producer initially publishes NONE, and
+    // only acquires M4 authority once its first routing patch is installed.
+    // NONE before that ACK/PCM publication is not a device change.
+    if(session.authority==="NONE"&&m?.active===true&&
+       m.routeAccepted===false)
+      return pending.acked===true?"PENDING":"PENDING_ACK";
+    if(session.authority!=="M4")return "STALE";
+    const channels=session.channels;
+    if(!Number.isInteger(pending.channel)||pending.channel<0||
+       pending.channel>=10||!Array.isArray(channels)||
+       channels.length!==10||channels[pending.channel]?.role!=="INPUT")
+      return "STALE";
+    if(pending.acked!==true)return "PENDING_ACK";
+    const revision=session.routeRevision,ackRevision=pending.ackRevision;
+    if(m?.active!==true||m.routeAccepted!==true||
+       !positiveCounter(revision)||!positiveCounter(m.routingRevision)||
+       revision!==m.routingRevision||!positiveCounter(ackRevision)||
+       !Number.isSafeInteger(pending.revision)||
+       BigInt(ackRevision)<=BigInt(pending.revision)||
+       BigInt(revision)<BigInt(ackRevision))return "PENDING";
+    const desired=pending.choice,source=channels[pending.channel].source;
+    if(!desired||!["NONE","MONO","STEREO"].includes(desired.mode)||
+       !source||source.mode!==desired.mode||
+       source.left!==desired.left||source.right!==desired.right)
+      return "PENDING";
+    return "CONFIRMED";
+  }
+
   // MV-9: pure Channel Strip scalar gesture/readback policy. The only
   // pending Maps, native events, timers and audio transport stay in the
   // approved bridge. Treat exact decimal-string ChannelIds as opaque data.
@@ -504,6 +545,7 @@
     primaryChoices,resolvePrimarySelection,readbackBindings,externalPending,
     primaryOutMutation,externalOutputPlan,sourceQueueSelection,
     sourceDispatchPlan,sourceAckResult,sourceReadbackSettlement,
+    m4SourceReadbackSettlement,
     scalarIdentityMatches,scalarVisualSettlement,m4ScalarAckResult,
     m4ScalarReadbackSettlement,scalarDispatchLease,
     scalarGestureFlushPlan,scalarDispatchPlan,
