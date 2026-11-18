@@ -3808,3 +3808,155 @@ test("MV-9B Global FX ignores rejected post-ACK snapshot after a pre-ACK value r
  assert.equal(button.disabled,false);
  assert.ok(viewCalls>beforeInvalid);
 });
+
+test("MV-11 channel appearance projection rejects partial, stale and forged identities",()=>{
+ const big="9007199254740993",maximum="18446744073709551615";
+ const snap={device:{epoch:"51"},graph:{revision:"21",rosterRevision:"5",
+   channels:[{id:big,name:"Vox"},{id:maximum,name:"MAIN"}]},raw:{mixerSession:{
+     authority:"CHANNEL_ID"},channelAppearance:{schema:"arsonmix.native.channel-appearance.v1",
+     revision:"0",readOnly:false,entries:[{id:big,name:"Voice",color:"#aabbcc",icon:"🎙"}]}}};
+ const before=JSON.stringify(snap),project=x=>stripVM.identityReadback(x,protocol);
+ const p=project(snap);
+ assert.deepEqual(p,{kind:"VALID",revision:"0",writable:true,
+   entries:[{id:big,name:"Voice",color:"#aabbcc",icon:"🎙"}]});
+ assert.equal(project({...snap,raw:{...snap.raw,channelAppearance:{
+   ...snap.raw.channelAppearance,readOnly:true}}}).writable,false);
+ for(const invalid of [
+   {...snap,graph:{...snap.graph,channels:[snap.graph.channels[0],snap.graph.channels[0]]}},
+   {...snap,raw:{...snap.raw,channelAppearance:{...snap.raw.channelAppearance,
+     revision:"18446744073709551616"}}},
+   {...snap,raw:{...snap.raw,channelAppearance:{...snap.raw.channelAppearance,
+     entries:[...snap.raw.channelAppearance.entries,...snap.raw.channelAppearance.entries]}}},
+   {...snap,raw:{...snap.raw,channelAppearance:{...snap.raw.channelAppearance,
+     entries:[{id:"9007199254740994",name:"Ghost",color:"#aabbcc",icon:"🎙"}]}}},
+   {...snap,raw:{...snap.raw,channelAppearance:{...snap.raw.channelAppearance,
+     entries:[{id:big,name:"Voice",color:"wrong",icon:"🎙"}]}}},
+   {...snap,raw:{...snap.raw,channelAppearance:{...snap.raw.channelAppearance,
+     entries:[{id:Number(big),name:"Voice",color:"#aabbcc",icon:"🎙"}]}}},
+   {...snap,raw:{...snap.raw,channelAppearance:{...snap.raw.channelAppearance,
+     entries:[{id:big,name:"Voice",color:"#aabbcc",icon:"<script>"}]}}}
+ ])assert.equal(project(invalid).kind,"INVALID");
+ assert.equal(JSON.stringify(snap),before);
+});
+test("MV-11 native identity plan is one exact ChannelId and no optimistic PCM mutation",()=>{
+ const a="9007199254740993",b="18446744073709551615";
+ const native={admitted:true,retained:false,device:{epoch:"71"},graph:{
+   revision:"101",rosterRevision:"13",
+   channels:[{id:a,name:"Vox"},{id:b,name:"Keys"}]},
+   raw:{mixerSession:{authority:"CHANNEL_ID"}}};
+ const presentation=new Map([[a,{name:"Vox",color:"#eeeeee",icon:"🎙"}]]);
+ const input={native,channelId:a,rawName:"  Studio    Vox ",color:"#aabbcc",
+   icon:"🎙",appearance:presentation,appearanceRevision:"0",
+   appearanceWritable:true,valid:protocol};
+ const before=JSON.stringify(native);
+ const plan=stripVM.identityEditPlan(input);
+ assert.equal(plan.kind,"READY");
+ assert.equal(plan.pending.name,"Studio Vox");
+ assert.equal(plan.payload.name,"Studio Vox");
+ assert.equal(plan.payload.deviceEpoch,"71");
+ assert.equal(plan.payload.graphRevision,"101");
+ assert.equal(plan.payload.rosterRevision,"13");
+ assert.equal(plan.payload.appearanceRevision,"0");
+ assert.equal(plan.payload.channelId,a);
+ const kind=change=>stripVM.identityEditPlan({...input,...change}).kind;
+ assert.equal(kind({channelId:Number(a)}),"UNAVAILABLE");
+ assert.equal(kind({channelId:"18446744073709551616"}),"UNAVAILABLE");
+ assert.equal(kind({channelId:"15"}),"UNAVAILABLE");
+ assert.equal(kind({rawName:"Keys"}),"DUPLICATE");
+ assert.equal(kind({rawName:"  "}),"INVALID_NAME");
+ assert.equal(kind({color:"f00"}),"INVALID_FIELDS");
+ assert.equal(kind({icon:"<img>"}),"INVALID_FIELDS");
+ assert.equal(kind({pending:true}),"BUSY");
+ assert.equal(kind({appearanceWritable:false}),"UNAVAILABLE");
+ assert.equal(kind({appearanceRevision:"18446744073709551616"}),"UNAVAILABLE");
+ assert.equal(kind({native:{...native,admitted:false,retained:false}}),"UNAVAILABLE");
+ assert.equal(kind({native:{...native,raw:{mixerSession:{authority:"M4"}}}}),"UNAVAILABLE");
+ assert.equal(kind({native:{...native,device:{epoch:"0"}}}),"UNAVAILABLE");
+ assert.equal(kind({native:{...native,graph:{...native.graph,revision:"0"}}}),"UNAVAILABLE");
+ assert.equal(kind({native:{...native,graph:{...native.graph,rosterRevision:"0"}}}),"UNAVAILABLE");
+ assert.equal(kind({native:{...native,retained:true,admitted:false}}),"READY",
+   "physical remap may retain native cosmetic editing, without PCM admission");
+ assert.equal(JSON.stringify(native),before,"pure selector never mutates accepted graph");
+});
+test("MV-11 logical-only channel rename stays a saved draft, not a physical appearance request",()=>{
+ const channelId="9007199254740993";
+ const logical={readOnly:false,graph:{channels:[{id:channelId,name:"Vox"},
+   {id:"9007199254740995",name:"Bass"}]}};
+ const p={logical,channelId,rawName:" New    Vox ",valid:protocol};
+ assert.deepEqual(stripVM.identityEditPlan(p),{
+   kind:"LOGICAL",channelId,name:"New Vox",operation:"RENAME_CHANNEL",
+   payload:{name:"New Vox"}});
+ assert.equal(stripVM.identityEditPlan({...p,rawName:"bass"}).kind,"DUPLICATE");
+ assert.equal(stripVM.identityEditPlan({...p,logical:{...logical,readOnly:true}}).kind,"UNAVAILABLE");
+ assert.equal(stripVM.identityEditPlan({...p,pending:true}).kind,"UNAVAILABLE");
+});
+test("MV-11 channel identity requires ACK and the subsequent same-lease appearance readback",()=>{
+ const id="9007199254740993";
+ const snap={admitted:true,retained:false,device:{epoch:"100"},graph:{
+   revision:"200",rosterRevision:"300",channels:[{id,name:"Original"}]},
+   raw:{mixerSession:{authority:"CHANNEL_ID"}}};
+ const row={id,name:"Studio Vox",color:"#112233",icon:"🎙"};
+ const projected={kind:"VALID",revision:"71",writable:true,entries:[row]};
+ const pending={requestId:"appearance-9",channelId:id,name:row.name,
+   color:row.color,icon:row.icon,deviceEpoch:"100",graphRevision:"200",
+   rosterRevision:"300",beforeAppearanceRevision:"70",acked:false};
+ const settle=(p=pending,s=snap,v=projected)=>
+   stripVM.identitySettlement(p,s,v);
+ assert.equal(settle(),"WAIT","pre-ACK matching value cannot confirm");
+ assert.equal(settle({...pending,acked:true}),"CONFIRMED");
+ assert.equal(settle({...pending,acked:true},snap,
+   {...projected,revision:"69"}),"STALE");
+ assert.equal(settle({...pending,acked:true},snap,
+   {...projected,revision:"18446744073709551616"}),"WAIT");
+ assert.equal(settle({...pending,acked:true},{...snap,device:{epoch:"101"}}),"STALE");
+ assert.equal(settle({...pending,acked:true},{...snap,graph:{...snap.graph,revision:"201"}}),"STALE");
+ assert.equal(settle({...pending,acked:true},{...snap,graph:{...snap.graph,rosterRevision:"301"}}),"STALE");
+ assert.equal(settle({...pending,acked:true},{...snap,raw:{mixerSession:{
+   authority:"M4"}}}),"STALE");
+ assert.equal(settle({...pending,acked:true},{...snap,retained:true,admitted:false}),
+   "CONFIRMED","retained native document may still be the appearance authority");
+ assert.equal(settle({...pending,acked:true},snap,
+   {...projected,entries:[{...row,icon:"🎹"}]}),"WAIT");
+ assert.equal(settle({...pending,acked:true},snap,{kind:"INVALID"}),"WAIT");
+ assert.equal(settle(null),"NONE");
+ assert.equal(stripVM.identityAckResult(pending,{requestId:"wrong",ok:true}),"IGNORE");
+ assert.equal(stripVM.identityAckResult(pending,{requestId:"appearance-9",ok:false}),"REJECTED");
+ assert.equal(stripVM.identityAckResult(pending,{requestId:"appearance-9",ok:true}),"ACKED");
+});
+test("MV-11 legacy WebView channel aliases cannot overwrite genuine native identity",()=>{
+ const id="9007199254740993",other="9007199254740995";
+ const source={admitted:true,retained:false,device:{epoch:"90"},graph:{
+   revision:"99",rosterRevision:"19",channels:[
+     {id,name:"Vocal"},{id:other,name:"Bass"}]},
+   raw:{mixerSession:{authority:"CHANNEL_ID"},channelAppearance:{
+     revision:"4"}}};
+ const old={name:"Old Vocal",color:"#112233",icon:"🎙"};
+ const params={snapshot:source,id,identity:old,appearance:new Map(),
+   writable:true,pending:false,deferred:new Set(),valid:protocol};
+ const send=stripVM.legacyIdentityDecision(params);
+ assert.equal(send.kind,"SEND");
+ assert.equal(send.plan.payload.channelId,id);
+ assert.equal(send.plan.pending.beforeAppearanceRevision,"4");
+ const got=changed=>stripVM.legacyIdentityDecision({...params,...changed}).kind;
+ assert.equal(got({appearance:new Map([[id,old]])}),"RETIRE");
+ assert.equal(got({appearance:new Map([[id,{...old,name:"Native Edit"}]])}),"DEFER");
+ assert.equal(got({deferred:new Set([id])}),"SKIP");
+ assert.equal(got({writable:false}),"SKIP");
+ assert.equal(got({pending:true}),"SKIP");
+ assert.equal(got({snapshot:{...source,raw:{...source.raw,mixerSession:{
+   authority:"M4"}}}}),"SKIP");
+ assert.equal(got({identity:{...old,name:"Bass"}}),"CONFLICT");
+});
+test("MV-11 bridge delegates identity decisions and retains one native host/control path",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const vm=read("web/approved-channel-strip-view-model.js");
+ for(const name of ["identityReadback","identityEditPlan","identityAckResult",
+   "identitySettlement","legacyIdentityDecision"])
+   assert.match(bridge,new RegExp("stripVM\\."+name+"\\("));
+ assert.match(bridge,/backend\.addEventListener\("arMixChannelIdentityAck"/);
+ assert.match(bridge,/backend\.emitEvent\("arMixChannelIdentitySet"/);
+ assert.match(bridge,/controller = protocol\.createController\(/);
+ assert.doesNotMatch(vm,/backend\.emitEvent|document\.getElementById|window\.setTimeout|localStorage/);
+ assert.doesNotMatch(bridge,/const liveIds=new Set\(next\.graph\.channels/);
+ assert.doesNotMatch(bridge,/if\(ack\.ok!==true\)\{\s*if\(pendingIdentity\.migration\)/);
+});
