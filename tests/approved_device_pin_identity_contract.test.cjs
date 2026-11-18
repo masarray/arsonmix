@@ -95,6 +95,8 @@ test("G-MV21 only verified device readback refreshes Audio I/O inventory",()=>{
  assert.ok(a>0&&b>a);
  const ack=bridge.slice(a,b);
  assert.match(ack,/deviceVM\.setupAck\(deviceState,ack\)/);
+ assert.match(ack,/if\(deviceBusy\(\)\)[\s\S]*?else\{[\s\S]*?finishDeviceApplyUi\(\);[\s\S]*?action:"audioDeviceInventory"/,
+   "even rejected/NEEDS_REMAP outcomes must refresh native inventory for recovery");
  assert.doesNotMatch(ack,/deviceInventory\s*=|inventory\.active\s*=|updateHardwarePanel/,
    "unverified or rejected ACK cannot mutate native hardware inventory");
  const s=bridge.indexOf("  function onNativeReadback(next,confirmed) {");

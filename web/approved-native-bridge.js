@@ -2321,7 +2321,14 @@
       if(deviceBusy()){
         // ACK alone NEVER closes the dialog or announces LIVE.
         controller?.subscribe();
-      }else finishDeviceApplyUi();
+      }else{
+        finishDeviceApplyUi();
+        // G-MV21: a negative ACK can still leave a NEW native endpoint in
+        // NEEDS_REMAP. Only a freshly queried native inventory may unblock
+        // retained-pin recovery or supply the next device generation.
+        // Never commit ack.active as installed hardware.
+        backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+      }
     });
   }
 
