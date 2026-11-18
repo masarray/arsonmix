@@ -122,8 +122,11 @@
     const noInput=type?.separate===true&&draft?.capture==="";
     const inputValid=noInput||Boolean(type?.inputs?.includes(draft?.capture));
     const outputValid=Boolean(outputOptions.includes(draft?.playback));
+    const selectedOutputPins=Array.isArray(draft?.outputPins)?
+      draft.outputPins:Array.isArray(active.enabledOutputs)?active.enabledOutputs:[];
     const canApply=Boolean(type && draft?.backend && inputValid&&outputValid&&
-      (type.separate===true||draft.capture===draft.playback));
+      (type.separate===true||draft.capture===draft.playback)&&
+      (!same||selectedOutputPins.length>=2));
     const selectedPins=(key,enabled)=>Array.isArray(draft?.[key])?
       draft[key]:Array.isArray(enabled)?enabled:[];
     return {type,same,backendOptions:types.map(t=>t.name),
@@ -169,11 +172,17 @@
       if(!view.inputOptions.includes(value))return draft;
       return {...draft,capture:value,
         playback:view.type?.separate?draft.playback:value,
-        inputPins:null,outputPins:null};
+        inputPins:null,outputPins:null,rate:0,buffer:0};
     }
     if(field==="playback") {
-      if(!view.outputOptions.includes(value))return draft;
-      return {...draft,playback:value,inputPins:null,outputPins:null};
+      if(!view.outputOptions.includes(value)||
+         (view.type?.separate!==true&&!view.inputOptions.includes(value)))
+        return draft;
+      // A JUCE non-separate backend has one duplex endpoint identity.
+      // Never present an input/output mismatch that native must reject.
+      return {...draft,playback:value,
+        capture:view.type?.separate?draft.capture:value,
+        inputPins:null,outputPins:null,rate:0,buffer:0};
     }
     if(field==="rate"||field==="buffer") {
       const options=field==="rate"?view.rateOptions:view.bufferOptions;
@@ -208,8 +217,8 @@
       expectedDeviceGeneration:generation,
       config:{backend:draft.backend,captureDevice:draft.capture,
         playbackDevice:draft.playback,sampleRate:rate,bufferSize:buffer,
-        enabledInputs:same?draft.inputPins:[],
-        enabledOutputs:same?draft.outputPins:[],
+        enabledInputs:same?presentation.inputPins:[],
+        enabledOutputs:same?presentation.outputPins:[],
         ...(confirmRetainedPinMapping?{confirmRetainedPinMapping:true}:{}),
         ...(assignMain?{assignSelectedPlaybackPinsToMain:true}:{})}};
     const pending={requestId,expected:{backend:draft.backend,

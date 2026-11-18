@@ -5,6 +5,7 @@ const assert=require("node:assert/strict");
 const {readFileSync}=require("node:fs");
 const protocol=require("../web/approved-native-contract.js");
 const deviceVM=require("../web/approved-device-view-model.js");
+const stripVM=require("../web/approved-channel-strip-view-model.js");
 const read=p=>readFileSync(p,"utf8");
 const fixtures=JSON.parse(read("integration/console-v6/fixtures.json"));
 const clone=x=>JSON.parse(JSON.stringify(x));
@@ -1248,7 +1249,7 @@ test("M3 native-only Pages scope performs real bridge projection, fader intent a
    querySelector:()=>null,addEventListener(){}
  };
  const window={
-   __JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,
+   __JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,
    __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},queueMicrotask(fn){microtasks.push(fn);},setTimeout(fn,ms){timers.push({fn,ms});return timers.length;}
  };
  vm.runInNewContext(read("web/approved-native-bridge.js"),{
@@ -1472,7 +1473,7 @@ test("P0 native FX rack and per-slot readback update mounted strip without repla
   querySelector:selector=>selector.startsWith('.strip[data-id=')?strip:null,
   addEventListener(){}
  };
- const win={__JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,
+ const win={__JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,
   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
   setTimeout(){return 0},clearTimeout(){},queueMicrotask(fn){fn();}};
  vm.runInNewContext(read("web/approved-native-bridge.js"),
@@ -1650,7 +1651,7 @@ test("P0 FIRST SOUND G0 offers verified input and leaves automatic MAIN to nativ
   addEventListener(){}
  };
  win={
-  __JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,
+  __JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,
   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
   setTimeout(){return 0},clearTimeout(){},queueMicrotask(fn){fn();}
  };
@@ -1737,7 +1738,7 @@ test("P0 native hardware IN remains selectable after ChannelId ownership, failed
     id==="preview"?{disabled:true}:null,
   querySelector:()=>null,addEventListener(){}
  };
- const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,
+ const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,
   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
   setTimeout(){return 0},clearTimeout(){},
   queueMicrotask(fn){microtasks.push(fn);}};
@@ -2164,7 +2165,9 @@ test("O2 external OUT never reports LIVE while driver output is muted",()=>{
  assert.match(projection,/snapshot\?\.device\?\.outputArmed===true\?"LIVE":"MUTED"/);
  assert.match(projection,/state==="MUTED"\?"ASIO pair connected/);
  assert.match(bridge,/deviceVM\.externalPresentation\(next,row,choices\)/);
- assert.match(bridge,/state==="LIVE"\|\|state==="MUTED"/);
+ assert.match(bridge,/stripVM\.externalPending\(pending,next\?\.device\?\.epoch,state,row\)/);
+ assert.match(read("web/approved-channel-strip-view-model.js"),
+   /state==="LIVE"\|\|state==="MUTED"/);
  assert.match(bridge,/EXTERNAL OUT patched · hardware output muted/);
  assert.match(css,/external-out-state\[data-status="MUTED"\]/);
 });
@@ -2624,4 +2627,133 @@ test("MV-2 render uses the existing one ViewModel and keeps native transport aut
   const inventory=nativeDeviceDraftFixture();
   assert.equal(deviceVM.setupPresentation(inventory,deviceVM.setupDraft(inventory),{
     ...deviceVM.setupInitial(),remapGeneration:inventory.active.deviceGeneration}).canReusePins,true);
+});
+
+
+// GUI-1: native source/OUT Channel Strip presentation has zero DOM or
+// mixer-owned state. One tested model is used by native readback & hook UI.
+test("GUI-1 Channel Strip output labels preserve uint64 identity, reserved names and source-only",()=>{
+  const large="18446744073709551615",dup="9007199254740993";
+  const channels=[
+    {id:"11",role:"INPUT",name:"Vocal"},
+    {id:large,role:"GROUP",name:"Master"},
+    {id:dup,role:"GROUP",name:"Drums"},
+    {id:"17",role:"FX_RETURN",name:"Drums"},
+    {id:"99",role:"MAIN",name:"MAIN"}];
+  const targets=stripVM.outputTargets(channels,"11",row=>row.name);
+  assert.deepEqual(targets,[
+    {id:large,label:"Master ["+large+"]"},
+    {id:dup,label:"Drums ["+dup+"]"},
+    {id:"17",label:"Drums [17]"}]);
+  assert.equal(stripVM.resolvePrimarySelection("Master",targets),"MAIN");
+  assert.equal(stripVM.resolvePrimarySelection("SOURCE ONLY (No Main)",targets),"NONE");
+  assert.equal(stripVM.resolvePrimarySelection("Drums ["+dup+"]",targets),
+    "Drums ["+dup+"]");
+  assert.equal(stripVM.resolvePrimarySelection("Drums",targets),null,
+    "ambiguous human names cannot silently route another channel");
+  assert.equal(stripVM.resolvePrimarySelection("Unknown",targets),null);
+  const output=stripVM.primaryChoices({track:{kind:"audio",output:"Master"},
+    authority:"CHANNEL_ID",targets});
+  assert.deepEqual(output.slice(0,2),["Master","SOURCE ONLY (No Main)"]);
+  assert.ok(output.includes("Master ["+large+"]"));
+  assert.equal(JSON.stringify(channels).includes(large),true);
+});
+test("GUI-1 Channel Strip source, physical output and MAIN pickers fail closed on loss",()=>{
+  const t={kind:"audio",input:"None",output:"Master",
+    externalOutput:"Needs Remap · OUT 3/4"};
+  const pins=[{label:"None"},{label:"Mono · Mic 1"}];
+  assert.deepEqual(stripVM.inputChoices(t,pins,false,false,
+    "Internal BUS (read-only)"),["None","Mono · Mic 1"]);
+  const bus={...t,input:"Internal BUS (read-only)"};
+  assert.ok(stripVM.inputChoices(bus,pins,false,false,"Internal BUS (read-only)")
+    .includes("Internal BUS (read-only)"));
+  assert.deepEqual(stripVM.inputChoices(bus,pins,true,false,
+    "Internal BUS (read-only)"),["Internal BUS (read-only)"],
+    "retained hardware cannot propose new physical IN");
+  assert.deepEqual(stripVM.inputChoices({kind:"bus",input:"Mic 1"},pins,
+    false,false,"Internal BUS (read-only)"),["None"]);
+  assert.deepEqual(stripVM.externalChoices(t,[{label:"None"},{label:"OUT 5/6"}]),
+    ["None","OUT 5/6","Needs Remap · OUT 3/4"]);
+  assert.deepEqual(stripVM.externalChoices({kind:"master"},[]),["None"]);
+  assert.deepEqual(stripVM.primaryChoices({track:{kind:"master",output:"Master"},
+    retained:true,playbackDevice:"Old ASIO"}),["Audio connection lost"]);
+  assert.deepEqual(stripVM.primaryChoices({track:{kind:"master"},
+    logical:true}),["Choose audio output"]);
+  assert.deepEqual(stripVM.primaryChoices({track:t,authority:"M4",targets:[
+    {id:"9",label:"BUS A"}]}),["Master","SOURCE ONLY (No Main)"],
+    "M4 never advertises ChannelId BUS routing");
+});
+test("GUI-1 Channel Strip input and PRIMARY OUT require installed native readback",()=>{
+  const channels=[{id:"1",role:"INPUT",primaryOutId:"100",
+    source:{portId:"in:0",sourceFormat:"MONO"}},
+    {id:"100",role:"MAIN",name:"MAIN"}];
+  const read=stripVM.readbackBindings({native:{retained:false},
+    channel:channels[0],channels,targets:[],
+    inputLabel:p=>p.left===0?"Mono · Mic 1":"None"});
+  assert.deepEqual(read,{input:"Mono · Mic 1",output:"Master"});
+  const offline=stripVM.readbackBindings({native:{retained:true},
+    channel:{...channels[0],primaryOutId:null,
+      source:{bindingState:"NEEDS_REMAP",portId:"in:0"}},
+    channels,targets:[],inputLabel:()=>{throw Error("no phantom pin");}});
+  assert.deepEqual(offline,{input:"Audio connection lost",
+    output:"SOURCE ONLY (No Main)"});
+  const invalid=stripVM.readbackBindings({native:{retained:false},
+    channel:{...channels[0],source:{portId:"in:9007199254740993"}},
+    channels,targets:[],inputLabel:()=>{throw Error("unsafe port index");}});
+  assert.equal(invalid.input,"None");
+});
+test("GUI-1 external OUT pending waits for matching ACK and later readback",()=>{
+  const p={requestId:"ext-1",epoch:"19",left:2,right:3,acked:false};
+  const row={physicalLeft:2,physicalRight:3};
+  assert.equal(stripVM.externalPending(p,"19","LIVE",row),"PENDING",
+    "installed-looking row cannot clear command without correlated ACK");
+  const ack={...p,acked:true};
+  assert.equal(stripVM.externalPending(ack,"19","LIVE",
+    {...row,physicalRight:5}),"PENDING");
+  assert.equal(stripVM.externalPending(ack,"18","LIVE",row),"STALE",
+    "new device epoch invalidates pending output");
+  assert.equal(stripVM.externalPending(ack,"19","MUTED",row),"CONFIRMED");
+  assert.equal(stripVM.externalPending(ack,"19","LIVE",null),"PENDING");
+  assert.equal(stripVM.externalPending({...ack,left:-1,right:-1},
+    "19","NONE",null),"CONFIRMED","remove requires observed absent row");
+  assert.equal(stripVM.externalPending(null,"19","LIVE",row),"NONE");
+});
+test("GUI-1 packaged native bridge uses one strip selector and one route dispatcher",()=>{
+  const s=read("web/approved-native-bridge.js");
+  const model=read("web/approved-channel-strip-view-model.js");
+  assert.match(s,/stripVM\.readbackBindings\(/);
+  assert.match(s,/stripVM\.externalPending\(/);
+  assert.match(s,/stripVM\.inputChoices\(/);
+  assert.match(s,/stripVM\.primaryChoices\(/);
+  assert.match(s,/stripVM\.resolvePrimarySelection\(/);
+  assert.doesNotMatch(s,/const source=nativeIdFor\(t\),reserved=/);
+  assert.doesNotMatch(s,/const destination=nativeOutputTargets\(t\)\.find\(ch=>ch.label===el.value\)/);
+  assert.doesNotMatch(model,/backend\.emitEvent|AudioContext|AudioWorklet|document\.|localStorage|createPluginInstance/);
+  assert.equal((s.match(/backend\.emitEvent\("arMixAction",\{action:"routingExternalOutput"/g)||[]).length,1);
+});
+test("MV-2 merged #767 retains one selector; #768 unique duplex/one-pin guards are forward-ported",()=>{
+  const inventory={active:{open:true,authorized:true,backend:"ASIO",
+    captureDevice:"Duplex A",playbackDevice:"Duplex A",deviceGeneration:12,
+    enabledInputs:[0],enabledOutputs:[0,1],inputNames:["Mic"],
+    outputNames:["L","R"],rates:[48000],buffers:[256]},
+    types:[{name:"ASIO",separate:false,inputs:["Duplex A","Duplex B"],
+      outputs:["Duplex A","Duplex B"]}]};
+  const draft=deviceVM.setupDraft(inventory);
+  const changed=deviceVM.setupEditDraft(draft,inventory,{field:"playback",value:"Duplex B"});
+  assert.equal(changed.capture,"Duplex B");
+  assert.equal(changed.playback,"Duplex B");
+  assert.deepEqual(changed.outputPins,null);
+  assert.equal(changed.rate,0);
+  assert.equal(deviceVM.setupPresentation(inventory,changed).canApply,true);
+  assert.equal(deviceVM.setupBegin(deviceVM.setupInitial(),
+    {inventory,draft:changed,requestId:"gui1-duplex"}).request.config.captureDevice,"Duplex B");
+  const onePin=deviceVM.setupEditDraft(draft,inventory,
+    {side:"output",index:1,checked:false});
+  assert.equal(deviceVM.setupPresentation(inventory,onePin).canApply,false);
+  assert.equal(deviceVM.setupBegin(deviceVM.setupInitial(),
+    {inventory,draft:onePin,requestId:"gui1-one"}),null);
+  const reset={...draft,outputPins:null,inputPins:null};
+  const recovered=deviceVM.setupBegin(deviceVM.setupInitial(),
+    {inventory,draft:reset,requestId:"gui1-fallback"});
+  assert.deepEqual(recovered.request.config.enabledOutputs,[0,1]);
 });

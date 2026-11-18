@@ -5,10 +5,12 @@
   const backend = window.__JUCE__?.backend;
   const protocol = window.ArSonApprovedNativeContract;
   const deviceVM = window.ArSonApprovedDeviceViewModel;
+  const stripVM = window.ArSonApprovedChannelStripViewModel;
   // The public GUI owns one lexical model. Native-only bundle exports a narrow
   // reference to that SAME model; never reconstruct a parallel DOM/DSP.
   const scope = window.__ARMIX_NATIVE_SCOPE__ || null;
-  const connected = Boolean(backend?.emitEvent && backend?.addEventListener && protocol && deviceVM);
+  const connected = Boolean(backend?.emitEvent && backend?.addEventListener &&
+    protocol && deviceVM && stripVM);
   // Public browser preview keeps its header; the native JUCE caption replaces it.
   if (backend?.emitEvent && backend?.addEventListener)
     document.documentElement?.classList?.add?.("armix-native-desktop");
@@ -412,12 +414,7 @@
     queueWireGainFlush();return true;
   }
   function nativeOutputTargets(t,channels=activeView()?.graph?.channels||[]){
-    const source=nativeIdFor(t),reserved=["Master","SOURCE ONLY (No Main)","MAIN","NONE"];
-    return channels.filter(ch=>ch.id!==source&&["INPUT","GROUP","FX_RETURN"].includes(ch.role))
-      .map(ch=>{const label=displayNameFor(ch);
-        return {id:ch.id,label:reserved.includes(label)||
-        channels.filter(other=>displayNameFor(other)===label).length>1?
-          label+" ["+ch.id+"]":label};});
+    return stripVM.outputTargets(channels,nativeIdFor(t),displayNameFor);
   }
   let pendingNativeGainIntent=false;
   const intent = (operation,t,payload) => {
@@ -523,20 +520,13 @@
       t.pan=ch.controls.pan*100;
       t.mute=ch.controls.mute;
       t.solo=ch.controls.solo;
-      // Admitted ChannelId readback already carries actual physical pins.
-      // Do not retain the public demo's "None" when native PCM is active.
-      if(ch.role==="INPUT"){
-        const src=ch.source||{},l=/^in:(\d+)$/.exec(src.portId||""),
-          r=/^in:(\d+)$/.exec(src.portIdRight||"");
-        t.input=native.retained && src.bindingState==="NEEDS_REMAP"?
-          NEEDS_REMAP:l?inputLabelFor({mode:src.sourceFormat==="STEREO"?"STEREO":"MONO",
-            left:Number(l[1]),right:r?Number(r[1]):-1}):"None";
-      }
-      const out=accepted.channels.find(dest=>dest.id===ch.primaryOutId);
-      // Identity-safe labels also handle duplicate names and reserved labels.
-      const target=out&&nativeOutputTargets(t,accepted.channels).find(x=>x.id===out.id);
-      if(ch.role!=="MAIN")t.output=out?.role==="MAIN"?"Master":
-        (target?.label||"SOURCE ONLY (No Main)");
+      // Derive SOURCE/PRIMARY OUT labels only from the native installed readback.
+      const labels=stripVM.readbackBindings({native,channel:ch,
+        channels:accepted.channels,
+        targets:nativeOutputTargets(t,accepted.channels),
+        inputLabel:inputLabelFor});
+      if(labels.input!==undefined)t.input=labels.input;
+      if(labels.output!==undefined)t.output=labels.output;
       const direct=Array.isArray(native.raw?.externalOutputs)?
         native.raw.externalOutputs.find(x=>x.channelId===ch.id):null;
       const pair=direct && hardwareOutputPairs().find(p=>
@@ -905,13 +895,9 @@
       }
       select.title=projected.title;
       const pending=pendingExternal.get(id);
-      if(pending && next?.device?.epoch && next.device.epoch!==pending.epoch)
-        pendingExternal.delete(id); // stale device: release only this strip
-      else if(pending?.acked &&
-        (((state==="LIVE"||state==="MUTED") &&
-          row.physicalLeft===pending.left &&
-          row.physicalRight===pending.right) ||
-         (pending.left===-1 && !row))){
+      const result=stripVM.externalPending(pending,next?.device?.epoch,state,row);
+      if(result==="STALE")pendingExternal.delete(id);
+      else if(result==="CONFIRMED"){
         pendingExternal.delete(id);
         status(state==="MUTED"?"EXTERNAL OUT patched · hardware output muted":
           "EXTERNAL OUT verified · "+t.name+" → "+value);
@@ -3296,38 +3282,18 @@
     orbitTarget:nativeOrbitTarget,
     orbitAction:nativeOrbitAction,
     inputChoices(t) {
-      if(t?.kind!=="audio")return ["None"];
-      if(controller?.state()?.current?.retained&&!logicalView)return [t.input||"None"];
-      const choices=inputChoicesFor().map(x=>x.label);
-      // The native BUS lane is selectable only for display: never invent a
-      // hardware pin or promote the internal BUS to a writable physical IN.
-      if(t.input===INTERNAL_BUS)choices.push(INTERNAL_BUS);
-      return choices;
+      return stripVM.inputChoices(t,inputChoicesFor(),
+        controller?.state()?.current?.retained,!(!logicalView),INTERNAL_BUS);
     },
     externalChoices(t) {
-      if(t?.kind==="master")return ["None"];
-      const labels=hardwareOutputPairs().map(p=>p.label);
-      if(t?.externalOutput && !labels.includes(t.externalOutput))
-        labels.push(t.externalOutput);
-      return labels;
+      return stripVM.externalChoices(t,hardwareOutputPairs());
     },
     outputChoices(t) {
-      if(logicalView&&t?.kind==="master")return ["Choose audio output"];
-      if(t?.kind==="master")
-        return [hardware?.retained?NEEDS_REMAP:
-          String(hardware?.device?.playbackDevice||t.output||"Choose audio output")];
-      if(t?.kind!=="master"){
-        // M4 accepts MAIN or source-only. Bus routing is via native WIRE,
-        // never pretend the demo's other destinations have native PCM.
-        const options=["Master","SOURCE ONLY (No Main)"];
-        const graph=controller?.state()?.current?.graph;
-        if((logicalView||mixerSession()?.authority==="CHANNEL_ID")&&
-           (logicalView?.graph?.channels||graph?.channels))
-          for(const target of nativeOutputTargets(t))options.push(target.label);
-        if(t.output&&!options.includes(t.output))options.push(t.output);
-        return options;
-      }
-      return [t?.output||"None"];
+      return stripVM.primaryChoices({track:t,logical:Boolean(logicalView),
+        retained:Boolean(hardware?.retained),
+        playbackDevice:hardware?.device?.playbackDevice,
+        authority:mixerSession()?.authority,
+        targets:nativeOutputTargets(t)});
     },
     consumeField(event) {
       if (!connected)return false;
@@ -3490,11 +3456,8 @@
         if(t.kind==="master"){
           el.value=t.output;openNativeAudioIO();return true;
         }
-        const graph=controller?.state()?.current?.graph;
-        const destination=nativeOutputTargets(t).find(ch=>ch.label===el.value);
-        const target=el.value==="Master"?"MAIN":
-          el.value==="SOURCE ONLY (No Main)"?"NONE":
-          destination?destination.label:null;
+        const target=stripVM.resolvePrimarySelection(el.value,
+          nativeOutputTargets(t));
         // No optimistic GUI state. Both this menu and the WIRE jack use
         // the same ID/epoch-guarded, acknowledged native route transaction.
         if(el.value!==t.output && !requestPrimaryOut(t,target)){
