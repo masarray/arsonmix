@@ -75,6 +75,100 @@ test("GUI-2 exact mounted FX instance/power identity rejects stale, duplicate or
  assert.doesNotMatch(bridge,/const effective=enabled&&globalEnabled&&!insert\.bypassed/,
   "old duplicated FX bypass projection must be removed from DOM bridge");
 });
+test("MV-4 native WIRE translation keeps exact uint64 IDs and one acknowledged dispatcher",()=>{
+ const ids=new Map([[1,"9007199254740993"],[2,"18446744073709551615"],
+  [3,"9007199254740999"]]);
+ const edges=new Map([[41,"9223372036854775808"],[42,"9223372036854775809"]]);
+ const before=JSON.stringify([...ids,...edges]);
+ const preview=[{type:"CONNECT",sourceId:1,destId:3,mode:"send",levelDb:-12},
+  {type:"REMOVE",sourceId:1,edgeId:41}];
+ const cmd=wireVM.nativeTransaction(preview,ids,edges);
+ assert.equal(cmd.ok,true);
+ assert.equal(cmd.source,"9007199254740993");
+ assert.deepEqual(cmd.changes,[
+  {op:"CONNECT",from:"9007199254740993",to:"9007199254740999",
+   tap:"POST_FADER",gainLinear:Math.pow(10,-12/20)},
+  {op:"REMOVE",from:"9007199254740993",edgeId:"9223372036854775808"}
+ ]);
+ assert.equal(JSON.stringify([...ids,...edges]),before);
+ assert.equal(preview[0].levelDb,-12,"view gesture must remain unmodified");
+ const route=wireVM.nativeTransaction([{type:"ROUTE_ONLY",
+  sourceId:1,destId:2}],ids,edges);
+ assert.equal(route.ok,true);
+ assert.equal(route.changes[0].gainLinear,1);
+ assert.equal(route.changes[0].tap,"POST_FADER");
+ const retarget=wireVM.nativeTransaction([{type:"RETARGET",
+  sourceId:1,destId:3,edgeId:42}],ids,edges);
+ assert.deepEqual(retarget.changes,[{op:"RETARGET",from:"9007199254740993",
+  to:"9007199254740999",edgeId:"9223372036854775809"}]);
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/wireVM\.nativeTransaction\(ops,nativeByUiId,wireByUiId\)/);
+ assert.match(bridge,/wireVM\.compactSendGesture\(ops,wireByUiId\)/);
+ assert.match(bridge,/controller\.intent\("APPLY_WIRE_TRANSACTION",source,\{changes\}\)/);
+ assert.doesNotMatch(bridge,/const changes=\[\];\s*for \(const op of ops\)/,
+  "bridge must not duplicate the moved WIRE command mapper");
+});
+test("MV-4 reject malformed, missing, duplicate and cross-source native WIRE gestures before PCM intent",()=>{
+ const ids=new Map([[1,"9007199254740993"],[2,"18446744073709551615"],
+  [3,"9007199254740999"],[4,"9007199254740994"]]);
+ const edges=new Map([[41,"9223372036854775808"]]);
+ const err=(ops,channels=ids,edgeIds=edges)=>
+  wireVM.nativeTransaction(ops,channels,edgeIds).error;
+ assert.equal(err(null),"INVALID_WIRE_OPERATION");
+ assert.equal(err([]),"INVALID_WIRE_OPERATION");
+ assert.equal(err([null]),"INVALID_WIRE_OPERATION");
+ assert.equal(err([{type:"RENAME",sourceId:1,destId:2}]),
+  "UNSUPPORTED_WIRE_OPERATION");
+ assert.equal(err([{type:"CONNECT",sourceId:1,destId:2,mode:"splitPre"}]),
+  "UNSUPPORTED_WIRE_OPERATION");
+ assert.equal(err([{type:"CONNECT",sourceId:5,destId:2}]),
+  "MAPPED_IDENTITY_MISSING");
+ assert.equal(err([{type:"CONNECT",sourceId:1,destId:5}]),
+  "MAPPED_IDENTITY_MISSING");
+ assert.equal(err([{type:"REMOVE",sourceId:1,edgeId:999}]),
+  "MAPPED_IDENTITY_MISSING");
+ assert.equal(err([{type:"REMOVE",sourceId:1}]),"MAPPED_IDENTITY_MISSING");
+ assert.equal(err([{type:"RETARGET",sourceId:1,edgeId:41}]),
+  "MAPPED_IDENTITY_MISSING");
+ assert.equal(err([{type:"CONNECT",sourceId:1,destId:2,levelDb:NaN}]),
+  "INVALID_WIRE_GAIN");
+ assert.equal(err([{type:"CONNECT",sourceId:1,destId:2,levelDb:Infinity}]),
+  "INVALID_WIRE_GAIN");
+ assert.equal(err([{type:"CONNECT",sourceId:1,destId:2,levelDb:"-12"}]),
+  "INVALID_WIRE_GAIN");
+ assert.equal(err([{type:"CONNECT",sourceId:1,destId:2},
+  {type:"CONNECT",sourceId:4,destId:2}]),"MULTI_SOURCE");
+ const badIds=new Map(ids);badIds.set(1,9007199254740993);
+ assert.equal(err([{type:"CONNECT",sourceId:1,destId:2}],badIds),
+  "MAPPED_IDENTITY_MISSING","rounded Number is not a canonical native ID");
+ badIds.set(1,"018");
+ assert.equal(err([{type:"CONNECT",sourceId:1,destId:2}],badIds),
+  "MAPPED_IDENTITY_MISSING","leading-zero identity rejected");
+ badIds.set(1,"18446744073709551616");
+ assert.equal(err([{type:"CONNECT",sourceId:1,destId:2}],badIds),
+  "MAPPED_IDENTITY_MISSING","uint64 overflow rejected");
+ assert.equal(wireVM.nativeTransaction([{type:"CONNECT",sourceId:1,destId:2,
+  levelDb:-200}],ids,edges).changes[0].gainLinear,Math.pow(10,-60/20));
+ assert.equal(wireVM.nativeTransaction([{type:"CONNECT",sourceId:1,destId:2,
+  levelDb:300}],ids,edges).changes[0].gainLinear,Math.pow(10,6/20));
+});
+test("MV-4 SOF draft CONNECT+GAIN becomes one atomic SEND without invented native EdgeId",()=>{
+ const ids=new Map([[41,"9223372036854775808"]]);
+ const gestures=[{type:"CONNECT",sourceId:1,destId:3,edgeId:undefined},
+  {type:"GAIN",sourceId:1,edgeId:999,levelDb:-9}];
+ const before=JSON.stringify(gestures);
+ const compact=wireVM.compactSendGesture(gestures,ids);
+ assert.deepEqual(compact,[{...gestures[0],mode:"send",levelDb:-9}]);
+ assert.equal(JSON.stringify(gestures),before,"draft UI is not authoritative");
+ assert.notStrictEqual(compact[0],gestures[0]);
+ for(const invalid of [
+  [{...gestures[0]},{...gestures[1],edgeId:41}],
+  [{...gestures[0]},{...gestures[1],sourceId:2}],
+  [{...gestures[0]},{...gestures[1],levelDb:NaN}],
+  [{...gestures[0]},{...gestures[1],levelDb:-61}],
+  [{...gestures[0]},{...gestures[1],levelDb:7}]
+ ])assert.strictEqual(wireVM.compactSendGesture(invalid,ids),invalid);
+});
 test("GUI-3 WIRE selector keeps exact PRIMARY OUT vs parallel SEND identity, even to MAIN",()=>{
  const source="9007199254740993",main="18446744073709551615",bus="9007199254740999";
  const primary={edgeId:"9007199254741000",from:source,to:bus,enabled:true,
@@ -1280,7 +1374,10 @@ test("native meter and PAN scale are driven by PCM readback, not Pages demo",()=
  assert.match(source,/displayMeterDbfs\(fill,/);
  assert.match(source,/t\.pan=ch\.controls\.pan\*100/);
  assert.ok(source.includes("next.productLive"));
- assert.ok(source.includes("op:op.type,from:sourceId"));
+ const wireSource=read("web/approved-wire-view-model.js");
+ assert.ok(wireSource.includes("op:op.type,from"),
+  "native WIRE operation and canonical source belong to pure ViewModel");
+ assert.match(source,/wireVM\.nativeTransaction\(ops,nativeByUiId,wireByUiId\)/);
  assert.ok(!source.includes("changes.push({type:op.type,sourceId"));
  assert.doesNotMatch(source,/Math\.sin\(/);
 });
