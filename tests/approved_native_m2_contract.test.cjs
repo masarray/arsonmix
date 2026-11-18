@@ -42,6 +42,27 @@ test("MV-6 SOURCE input queues bind exact native device epoch and verified pins"
   {choice:{...choices[0],left:0},choices,epoch:"19"}
  ])assert.equal(stripVM.sourceQueueSelection(invalid).kind,"UNAVAILABLE");
  assert.equal(change.entry.epoch,"19");
+ const hugeEpoch="18446744073709551610";
+ const huge=stripVM.sourceQueueSelection({choice:choices[1],choices,
+  epoch:hugeEpoch,acceptedLabel:"None"});
+ assert.equal(huge.kind,"QUEUE",
+  "full uint64 ChannelId-era device epoch must stay exact decimal text");
+ const hugeHardware={device:{epoch:hugeEpoch},raw:{
+  mixerSession:{authority:"CHANNEL_ID"}}};
+ const hugeNative={admitted:true,retained:false,device:{epoch:hugeEpoch},
+  graph:{revision:"9223372036854775808",rosterRevision:"9223372036854775809",
+   channels:[{id:"9007199254740993",role:"INPUT"}]}};
+ const hugePlan=stripVM.sourceDispatchPlan({authority:"CHANNEL_ID",
+  entry:huge.entry,hardware:hugeHardware,native:hugeNative,
+  channelId:"9007199254740993",choices,deviceReady:true});
+ assert.equal(hugePlan.kind,"READY");
+ assert.equal(hugePlan.payload.deviceEpoch,hugeEpoch);
+ assert.equal(hugePlan.payload.graphRevision,"9223372036854775808");
+ assert.equal(stripVM.sourceDispatchPlan({authority:"M4",entry:huge.entry,
+  hardware:{...hugeHardware,raw:{...hugeHardware.raw,
+   legacyM4:{routingRevision:"9"}}},channel:0,choices,
+  deviceReady:true}).kind,"UNAVAILABLE",
+  "old M4 cannot coerce a 64-bit native epoch to a rounded JS Number");
  const hardware={device:{epoch:"19"},raw:{mixerSession:{authority:"CHANNEL_ID"},
   legacyM4:{routingRevision:"22"}}};
  const id="9007199254740993";
