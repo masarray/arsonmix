@@ -2,6 +2,7 @@
 #pragma once
 #include <juce_core/juce_core.h>
 #include <algorithm>
+#include <cstddef>
 #include <cmath>
 #include <optional>
 #include <utility>
@@ -115,9 +116,39 @@ public:
         if(sets.empty()||sets.size()>32||active<0||
            active>=static_cast<int>(sets.size())||
            fadeMs<0||fadeMs>3000)return {};
-        for(const auto& s:sets)
-            if(s.files.size()!=s.controls.size()||s.files.size()>2000)
+        for(std::size_t index=0;index<sets.size();++index) {
+            const auto& s=sets[index];
+            const auto name=s.name.trim();
+            if(name.isEmpty()||name.length()>64||name!=s.name||
+               s.files.size()!=s.controls.size()||s.files.size()>2000)
                 return {};
+            // A saved setlist must be loadable without silently dropping a
+            // set, song or cue on the next startup. Validate before touching
+            // the staging file; active Player/PCM ownership is unchanged.
+            for(std::size_t previous=0;previous<index;++previous)
+                if(sets[previous].name.equalsIgnoreCase(name))
+                    return {};
+            for(std::size_t i=0;i<s.files.size();++i) {
+                const auto path=s.files[i].getFullPathName();
+                if(path.isEmpty()||path.length()>4096||
+                   !juce::File::isAbsolutePath(path)||
+                   !s.files[i].hasFileExtension("wav;mp3;flac;aif;aiff;ogg"))
+                    return {};
+                if(std::find(s.files.begin(),s.files.begin()+static_cast<std::ptrdiff_t>(i),
+                             s.files[i])!=s.files.begin()+static_cast<std::ptrdiff_t>(i))
+                    return {};
+                const auto& settings=s.controls[i];
+                if(settings.key< -6||settings.key>6||
+                   settings.tempo<80||settings.tempo>120||
+                   !std::isfinite(settings.cueIn)||
+                   !std::isfinite(settings.cueOut)||
+                   settings.cueIn<0.||settings.cueOut<0.||
+                   settings.cueIn>=86400.||settings.cueOut>=86400.||
+                   (settings.cueOut!=0.&&
+                    settings.cueOut<=settings.cueIn+0.05))
+                    return {};
+            }
+        }
         auto document=juce::var(new juce::DynamicObject());
         auto* out=document.getDynamicObject();
         out->setProperty("version",3);

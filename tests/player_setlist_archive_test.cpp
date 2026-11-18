@@ -100,6 +100,32 @@ int main() {
     assert(!Archive::serialize(doc->sets,1,false,-1).isObject());
     assert(!Archive::serialize({},0,false,180).isObject());
 
+    // Serializer mirrors the parser's admission rules. Otherwise a saved
+    // show could silently lose songs or an entire set on the next launch.
+    auto invalid=doc->sets;
+    invalid[0].name="Live Show"; // collides case-insensitively with set 1
+    assert(!Archive::serialize(invalid,0,false,180).isObject());
+    invalid=doc->sets;
+    invalid[0].name=" ";
+    assert(!Archive::serialize(invalid,0,false,180).isObject());
+    invalid=doc->sets;
+    invalid[0].files[0]=juce::File(path).withFileExtension(".txt");
+    assert(!Archive::serialize(invalid,0,false,180).isObject());
+    invalid=doc->sets;
+    invalid[0].files[0]=invalid[0].files[1];
+    assert(!Archive::serialize(invalid,0,false,180).isObject());
+    invalid=doc->sets;
+    invalid[0].controls[0].key=9;
+    assert(!Archive::serialize(invalid,0,false,180).isObject());
+    invalid=doc->sets;
+    invalid[0].controls[0].tempo=75;
+    assert(!Archive::serialize(invalid,0,false,180).isObject());
+    invalid=doc->sets;
+    invalid[0].controls[0].cueOut=1.0; // earlier than IN=2
+    assert(!Archive::serialize(invalid,0,false,180).isObject());
+    // A valid, canonical document still saves and round-trips unchanged.
+    assert(Archive::serialize(doc->sets,doc->active,true,250).isObject());
+
     // Legacy empty v3 content migrates to a non-destructive default setlist.
     const auto empty=Archive::parse(juce::JSON::parse("{\"version\":3}"));
     assert(empty && empty->sets.size()==1);
