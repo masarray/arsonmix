@@ -2,9 +2,10 @@
 #pragma once
 #include <juce_core/juce_core.h>
 #include <algorithm>
-#include <cstddef>
 #include <cmath>
 #include <optional>
+#include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -128,14 +129,21 @@ public:
             for(std::size_t previous=0;previous<index;++previous)
                 if(sets[previous].name.equalsIgnoreCase(name))
                     return {};
+            // O(n log n), rather than O(n^2) file comparisons for large
+            // setlists (up to 2,000 tracks in each of 32 saved sets).
+            std::set<std::string> uniquePaths;
             for(std::size_t i=0;i<s.files.size();++i) {
                 const auto path=s.files[i].getFullPathName();
                 if(path.isEmpty()||path.length()>4096||
                    !juce::File::isAbsolutePath(path)||
                    !s.files[i].hasFileExtension("wav;mp3;flac;aif;aiff;ogg"))
                     return {};
-                if(std::find(s.files.begin(),s.files.begin()+static_cast<std::ptrdiff_t>(i),
-                             s.files[i])!=s.files.begin()+static_cast<std::ptrdiff_t>(i))
+#if JUCE_WINDOWS
+                const auto pathKey=path.toLowerCase().toStdString();
+#else
+                const auto pathKey=path.toStdString();
+#endif
+                if(!uniquePaths.insert(pathKey).second)
                     return {};
                 const auto& settings=s.controls[i];
                 if(settings.key< -6||settings.key>6||
