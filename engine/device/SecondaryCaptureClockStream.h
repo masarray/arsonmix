@@ -34,7 +34,7 @@ public:
         AdaptiveClockBridge::Status asrc{};
     };
 
-    bool prepare(const Format& format,double desiredTargetMs=24.) noexcept
+    bool prepare(const Format& format,double desiredTargetMs=24.)
     {
         if(ready_.load(std::memory_order_acquire)||
            producers_.load(std::memory_order_acquire)!=0||
@@ -128,7 +128,7 @@ public:
               std::uint64_t captureGeneration,std::uint64_t primaryEpoch) noexcept
     {
         consumers_.fetch_add(1,std::memory_order_acq_rel);
-        const bool valid=output&&channels>0&&frames>0&&
+        const bool valid=output&&channels>0&&channels<=16&&frames>0&&
             frames<=maxCallbackFrames;
         if(!valid)
         {
