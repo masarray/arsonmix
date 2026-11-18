@@ -111,6 +111,32 @@ test("G-MV21 only verified device readback refreshes Audio I/O inventory",()=>{
  assert.match(finish,/active\?\.sampleRate/);
  assert.doesNotMatch(finish,/deviceInventory\?\.active/);
 });
+test("G-MV21 NEEDS_REMAP native inventory refresh restores reuse-pins recovery",()=>{
+ const f=fixture(),begin=f.begin("needs-remap");
+ const newActive={...f.active,deviceGeneration:42,enabledInputs:[0,1],
+   enabledOutputs:[0,1]};
+ const state=vm.setupAck(begin.state,{requestId:"needs-remap",
+   ok:false,state:"NEEDS_REMAP",error:"NEEDS_REMAP: Confirm physical pins",
+   canReusePins:true,active:newActive});
+ assert.equal(state.phase,"REJECTED");
+ assert.equal(state.remapGeneration,42);
+ assert.equal(vm.setupPresentation(f.inventory,f.draft,state).canReusePins,false,
+   "stale old endpoint generation cannot authorize a remap");
+ const refreshed={...f.inventory,active:newActive};
+ assert.equal(vm.setupPresentation(refreshed,f.draft,state).canReusePins,true,
+   "fresh native inventory unlocks explicit recovery, not ack.active");
+ const retry=vm.setupBegin(state,{inventory:refreshed,draft:f.draft,
+   requestId:"needs-remap-retry",baselineEpoch:"42",
+   confirmRetainedPinMapping:true});
+ assert.ok(retry,"recovery request must use fresh endpoint generation");
+ assert.equal(retry.request.expectedDeviceGeneration,42);
+ assert.equal(retry.request.config.confirmRetainedPinMapping,true);
+ assert.equal(retry.request.config.sampleRate,newActive.rate);
+ assert.equal(retry.request.config.bufferSize,newActive.buffer);
+ assert.deepEqual(f.inventory.active.enabledOutputs,[0,1],
+   "negative Apply ACK cannot mutate old installed inventory");
+});
+
 test("MV-8 native accepted ACK with changed output pins never claims selected hardware",()=>{
   const f=fixture(),begun=f.begin("pin-2");
   const acceptedDifferent=f.ack("pin-2",{active:{
