@@ -67,7 +67,13 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             self.assertLess(native.index('assets/approved-device-view-model.js'),
                             native.index('assets/approved-channel-strip-view-model.js'))
             self.assertLess(native.index('assets/approved-channel-strip-view-model.js'),
+                            native.index('assets/approved-fx-rack-view-model.js'))
+            self.assertLess(native.index('assets/approved-fx-rack-view-model.js'),
                             native.index('assets/approved-native-bridge.js'))
+            self.assertNotIn('assets/approved-fx-rack-view-model.js', approved)
+            self.assertEqual(
+                (out / 'assets/approved-fx-rack-view-model.js').read_bytes(),
+                (ROOT / 'web/approved-fx-rack-view-model.js').read_bytes())
             self.assertNotIn('assets/approved-channel-strip-view-model.js', approved)
             self.assertEqual(
                 (out / 'assets/approved-channel-strip-view-model.js').read_bytes(),

@@ -6,11 +6,12 @@
   const protocol = window.ArSonApprovedNativeContract;
   const deviceVM = window.ArSonApprovedDeviceViewModel;
   const stripVM = window.ArSonApprovedChannelStripViewModel;
+  const fxRackVM = window.ArSonApprovedFxRackViewModel;
   // The public GUI owns one lexical model. Native-only bundle exports a narrow
   // reference to that SAME model; never reconstruct a parallel DOM/DSP.
   const scope = window.__ARMIX_NATIVE_SCOPE__ || null;
   const connected = Boolean(backend?.emitEvent && backend?.addEventListener &&
-    protocol && deviceVM && stripVM);
+    protocol && deviceVM && stripVM && fxRackVM);
   // Public browser preview keeps its header; the native JUCE caption replaces it.
   if (backend?.emitEvent && backend?.addEventListener)
     document.documentElement?.classList?.add?.("armix-native-desktop");
@@ -591,67 +592,46 @@
   // steal focus, interrupt a fader drag or reallocate WIRE render objects.
   // The verified individual bypass flag stays distinct from rack bypass.
   function paintNativeFxPowerReadback(ch,t,globalFxBypassed){
-    if(typeof ch.fxRackBypassed!=="boolean"||!Array.isArray(ch.inserts)||
+    if(typeof ch?.fxRackBypassed!=="boolean"||!Array.isArray(ch.inserts)||
        typeof globalFxBypassed!=="boolean")
-      return true; // never synthesize missing DSP readback
-    const enabled=!ch.fxRackBypassed;
-    // Read the SAME accepted native PCM snapshot as every slot, not a
-    // CSS class from the PREVIOUS browser render frame.
-    const globalEnabled=!globalFxBypassed;
+      return true; // no synthetic native PCM bypass readback
+    const view=fxRackVM.powerPresentation(ch,globalFxBypassed,t.name);
+    if(!view)return false;
     const strip=document.querySelector('.strip[data-id="'+t.id+'"]');
-    // GAIN/SOF are alternate views of the FX area; power readback still
-    // updates the model but must not rebuild the rack or steal knob focus.
-    const rackArea=strip?.querySelector(".fx-section");
-    const rack=rackArea?.classList?.contains?.("is-gain-view") ||
-      rackArea?.classList?.contains?.("is-sof-view")?null:rackArea;
-    // Virtualized mobile banks may have no mounted strip. The model still
-    // receives verified state; normal bank render creates the right buttons.
-    if(rack){
-      const header=rack.querySelector('[data-action="fxOn"]');
-      const rows=[...rack.querySelectorAll('.fxslot-row:not(.is-empty)')];
-      if(!header||rows.length!==ch.inserts.length)return false;
-      for(let slot=0;slot<ch.inserts.length;slot++){
-        const insert=ch.inserts[slot],row=rows.find(r=>
-          r.dataset.slot===String(slot));
-        if(!insert||typeof insert.bypassed!=="boolean"||
-           !row||row.dataset.insertId!==insert.id||
-           !row.querySelector('[data-action="slotPower"]'))
-          return false; // structural re-render, never modify wrong FX owner
-      }
-    }
-    t.fxOn=enabled;
+    // Alternate GAIN/SOF view and virtualized banks still update the model
+    // but cannot be used to infer, replace or re-own a mounted FX editor.
+    const area=strip?.querySelector(".fx-section");
+    const rack=area?.classList?.contains?.("is-gain-view") ||
+      area?.classList?.contains?.("is-sof-view")?null:area;
+    const header=rack?.querySelector('[data-action="fxOn"]');
+    const rows=rack?[...rack.querySelectorAll('.fxslot-row:not(.is-empty)')]:[];
+    const slots=rows.map(row=>({slot:row.dataset.slot,
+      instanceId:row.dataset.insertId,
+      hasPower:!!row.querySelector('[data-action="slotPower"]')}));
+    if(rack && (!header||!fxRackVM.mountedCompatible(view,slots)))
+      return false; // structural refresh only, never paint the wrong VST3
+    t.fxOn=view.enabled;
     if(!Array.isArray(t.slotBypass))t.slotBypass=Array(8).fill(false);
-    for(let slot=0;slot<ch.inserts.length;slot++)
-      t.slotBypass[slot]=ch.inserts[slot].bypassed;
+    for(const slot of view.slots)t.slotBypass[slot.slot]=slot.bypassed;
     if(!rack)return true;
-    rack.dataset.fxChainEnabled=String(enabled);
-    rack.dataset.globalFxEnabled=String(globalEnabled);
-    rack.classList.toggle("is-chain-bypassed",!enabled||!globalEnabled);
-    const header=rack.querySelector('[data-action="fxOn"]');
-    header.setAttribute("aria-pressed",String(enabled&&globalEnabled));
-    header.title=(enabled?"Bypass":"Enable")+" all channel FX";
-    header.setAttribute("aria-label",
-      (enabled?"Bypass":"Enable")+" entire FX chain in "+t.name);
-    for(let slot=0;slot<ch.inserts.length;slot++){
-      const insert=ch.inserts[slot];
-      const row=[...rack.querySelectorAll('.fxslot-row:not(.is-empty)')]
-        .find(r=>r.dataset.slot===String(slot));
-      const effective=enabled&&globalEnabled&&!insert.bypassed;
-      if(insert.latencyChanged===true)
-        row.title="Plugin delay changed · aligned dry signal retained; reload the plugin before using its new delay";
-      else if(Number.isInteger(insert.latencySamples))
-        row.title="Plugin delay: "+insert.latencySamples+" samples · compensated";
-      row.dataset.fxSlotEnabled=String(!insert.bypassed);
-      row.dataset.fxEffective=String(effective);
-      row.classList.toggle("is-active",effective);
-      row.classList.toggle("is-bypassed",!effective);
+    rack.dataset.fxChainEnabled=String(view.enabled);
+    rack.dataset.globalFxEnabled=String(view.globalEnabled);
+    rack.classList.toggle("is-chain-bypassed",view.chainBypassed);
+    header.setAttribute("aria-pressed",String(view.headerPressed));
+    header.title=view.headerTitle;
+    header.setAttribute("aria-label",view.headerLabel);
+    const rowBySlot=new Map(rows.map(row=>[row.dataset.slot,row]));
+    for(const slot of view.slots){
+      const row=rowBySlot.get(String(slot.slot));
+      if(slot.latencyTitle!==null)row.title=slot.latencyTitle;
+      row.dataset.fxSlotEnabled=String(slot.slotEnabled);
+      row.dataset.fxEffective=String(slot.effective);
+      row.classList.toggle("is-active",slot.effective);
+      row.classList.toggle("is-bypassed",!slot.effective);
       const button=row.querySelector('[data-action="slotPower"]');
-      button.setAttribute("aria-pressed",String(effective));
-      button.title=(insert.bypassed?"Enable":"Bypass")+
-        " only insert "+(slot+1);
-      button.setAttribute("aria-label",
-        (insert.bypassed?"Enable":"Bypass")+" only FX insert "+
-        (slot+1)+" in "+t.name);
+      button.setAttribute("aria-pressed",String(slot.effective));
+      button.title=slot.buttonTitle;
+      button.setAttribute("aria-label",slot.buttonLabel);
     }
     return true;
   }
@@ -1423,12 +1403,8 @@
   function reconcileM4RackReadback(next){
     const session=next?.raw?.mixerSession;
     for(const [lane,p] of pendingM4RackPowers){
-      if(session?.authority!=="M4"||
-         session.deviceEpoch!==p.epoch||session.routeRevision!==p.revision){
-        pendingM4RackPowers.delete(lane);continue;
-      }
-      const actual=session.channels?.[lane]?.fxRackBypassed;
-      if(p.acked && actual===p.bypassed)pendingM4RackPowers.delete(lane);
+      const decision=fxRackVM.m4RackPendingState(p,session);
+      if(decision!=="WAIT")pendingM4RackPowers.delete(lane);
     }
   }
   // Global A/B is a SINGLE native atomic override. Individual racks and
@@ -1637,33 +1613,32 @@
     scope?.syncFaderVisual?.({...t,level:db});
   }
   function paintM4FxInstances(m) {
-    // Catalog refresh is metadata, never permission to replace a native
-    // rack with an inactive compatibility graph's old/empty FX inventory.
+    // Only the accepted M4 owner may populate compatibility rack controls.
     if(mixerSession()?.authority==="CHANNEL_ID")return;
     if(!Array.isArray(m?.fxInstances)||!scope?.tracks)return;
     for(let lane=0;lane<10;lane++){
       const t=scope.tracks.find(x=>x.id===m4TrackIds[lane]);
-      const rows=m.fxInstances[lane];
-      if(!t||!Array.isArray(rows))continue;
-      let change=false;
       const acceptedRack=mixerSession()?.authority==="M4"?
         mixerSession()?.channels?.[lane]?.fxRackBypassed:undefined;
-      if(typeof acceptedRack==="boolean" && t.fxOn===acceptedRack){
-        t.fxOn=!acceptedRack;change=true;
+      const view=fxRackVM.m4Presentation(m.fxInstances[lane],
+        nativeCatalog,acceptedRack);
+      if(!t||!view)continue;
+      let change=false;
+      if(view.fxOn!==null&&t.fxOn!==view.fxOn){
+        t.fxOn=view.fxOn;change=true;
       }
-      for(let slot=0;slot<8;slot++){
-        const live=rows[slot],entry=nativeCatalog.get(live?.catalogId);
-        const name=live?(entry?.name||"VST3 Loaded"):"None";
-        if(t.fx[slot]!==name || t.slotBypass[slot]!==Boolean(live?.bypassed) ||
-           (t.fxInsertIds?.[slot]?.id||null)!==(live?.instanceId||null)){
-          t.fx[slot]=name;
-          t.slotBypass[slot]=Boolean(live?.bypassed);
+      for(const slot of view.slots){
+        const i=slot.slot;
+        if(t.fx[i]!==slot.name||t.slotBypass[i]!==slot.bypassed||
+           (t.fxInsertIds?.[i]?.id||null)!==(slot.instance?.id||null)){
+          t.fx[i]=slot.name;
+          t.slotBypass[i]=slot.bypassed;
           if(!Array.isArray(t.fxInsertIds))t.fxInsertIds=Array(8).fill(null);
-          t.fxInsertIds[slot]=live?{id:live.instanceId,name}:null;
+          t.fxInsertIds[i]=slot.instance;
           change=true;
         }
       }
-      if(change && scope.activeFaderId!==t.id)
+      if(change&&scope.activeFaderId!==t.id)
         scope.refreshStrip?.(t);
     }
   }
@@ -2921,13 +2896,8 @@
         status("VST3 loaded · "+inserted.name+" · native PCM readback verified");
       }
     }
-    if(pendingNativeFxPower?.acked){
-      const p=pendingNativeFxPower;
-      const ch=next.graph.channels.find(x=>x.id===p.channelId);
-      const actual=p.kind==="rack"?ch?.fxRackBypassed:
-        ch?.inserts?.find(x=>x.id===p.insertId)?.bypassed;
-      if(actual===p.bypassed)pendingNativeFxPower=null;
-    }
+    if(fxRackVM.powerReadbackConfirmed(pendingNativeFxPower,
+      next.graph.channels))pendingNativeFxPower=null;
     if(startupWire)window.queueMicrotask(flushStartupWire);
     status("Mixer settings updated");
   }
