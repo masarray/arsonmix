@@ -393,9 +393,9 @@
                              appearance,appearanceRevision,appearanceWritable,
                              pending=false,valid}={}) {
     const no={kind:"UNAVAILABLE"};
-    const name=String(rawName??"").trim().replace(/\\s+/g," ");
-    if(!decimalId(channelId)||!valid?.validPresentationName?.(name))
-      return no;
+    const name=String(rawName??"").trim().replace(/\s+/g," ");
+    if(!decimalId(channelId))return no;
+    if(!valid?.validPresentationName?.(name))return {kind:"INVALID_NAME"};
     const current=logical||native;
     const channels=current?.graph?.channels;
     if(!Array.isArray(channels)||channels.filter(ch=>ch?.id===channelId).length!==1)
@@ -414,9 +414,9 @@
        !(native.admitted===true||native.retained===true)||
        appearanceWritable!==true||valid?.decimal?.(appearanceRevision)===null||
        !decimalId(native.device?.epoch)||!decimalId(native.graph?.revision)||
-       !decimalId(native.graph?.rosterRevision)||
-       !valid.validPresentationColor?.(color)||
-       !valid.validPresentationIcon?.(icon))return no;
+       !decimalId(native.graph?.rosterRevision))return no;
+    if(!valid.validPresentationColor?.(color)||
+       !valid.validPresentationIcon?.(icon))return {kind:"INVALID_FIELDS"};
     const payload={channelId,name,color,icon,appearanceRevision,
       deviceEpoch:native.device.epoch,graphRevision:native.graph.revision,
       rosterRevision:native.graph.rosterRevision};
@@ -439,13 +439,10 @@
        !(snapshot?.admitted===true||snapshot?.retained===true)||
        !snapshot.graph.channels?.some(ch=>ch.id===pending.channelId))
       return "STALE";
+    const validRevision=x=>x==="0"||decimalId(x);
     if(projection?.kind!=="VALID"||
-       !decimalId(projection.revision)&&projection.revision!=="0"||
-       (projection.revision!=="0"&&
-        !decimalId(projection.revision))||
-       typeof pending.beforeAppearanceRevision!=="string"||
-       !/^(0|[1-9][0-9]*)$/.test(pending.beforeAppearanceRevision))
-      return "WAIT";
+       !validRevision(projection.revision)||
+       !validRevision(pending.beforeAppearanceRevision))return "WAIT";
     if(BigInt(projection.revision)<BigInt(pending.beforeAppearanceRevision))
       return "STALE";
     if(pending.acked!==true)return "WAIT";
