@@ -3433,3 +3433,58 @@ test("GUI-2 M4 rack pending selector rejects revisions and unaccepted authority"
  assert.ok(source.includes("fxRackVM.m4RackSettlement("));
  assert.doesNotMatch(source,/const actual=p\.kind==="rack"\?/);
 });
+
+test("MV-7 deferred SEND gain requires unique exact installed EdgeId",()=>{
+ const source="9007199254740993",edgeId="9007199254740997";
+ const snap={admitted:true,retained:false,identity:"A|17",graph:{edges:[
+   {enabled:true,primaryOutput:false,from:source,edgeId,to:"2",gainLinear:0.5}]}};
+ const edit={identity:snap.identity,source,gain:0.75};
+ const before=JSON.stringify(snap);
+ assert.deepEqual(wireVM.gainDispatchPlan(snap,edgeId,edit),
+   {kind:"DISPATCH",source,edgeId,gainLinear:0.75});
+ assert.equal(wireVM.gainDispatchPlan(snap,edgeId,{...edit,gain:0.5}).kind,"CONFIRMED");
+ const fail=(s=snap,e=edgeId,d=edit)=>assert.equal(
+   wireVM.gainDispatchPlan(s,e,d).kind,"ROLLBACK");
+ fail({...snap,admitted:false});fail({...snap,retained:true});
+ fail({...snap,identity:"B|17"});fail(snap,edgeId,{...edit,identity:"B|17"});
+ fail(snap,Number(edgeId));fail(snap,"0");fail(snap,edgeId,{...edit,source:Number(source)});
+ for(const g of [NaN,Infinity,-1,4.01])fail(snap,edgeId,{...edit,gain:g});
+ fail({...snap,graph:{edges:[...snap.graph.edges,...snap.graph.edges]}});
+ fail({...snap,graph:{edges:[{...snap.graph.edges[0],primaryOutput:true}]}});
+ fail({...snap,graph:{edges:[{...snap.graph.edges[0],gainLinear:NaN}]}});
+ assert.equal(JSON.stringify(snap),before);
+});
+test("MV-7 WIRE status only retries one same-epoch initial CONNECT",()=>{
+ const state={pending:null,lastError:"STALE_NATIVE_WIRE_GRAPH",current:{device:{epoch:"71"}}};
+ const attempt={epoch:"71",retries:0,ops:[{type:"CONNECT",sourceId:1,destId:11}]};
+ const plan=(s=state,a=attempt,start=null)=>
+   wireVM.nativeRecoveryPlan(s,a,start).kind;
+ assert.equal(plan(),"REBASE_CONNECTION");
+ assert.equal(plan({...state,lastError:"STALE_NATIVE_CONTROL_REVISION"}),"REBASE_CONNECTION");
+ assert.equal(plan({...state,pending:{requestId:"r"}}),"PENDING");
+ assert.equal(plan({...state,lastError:"ACCEPTED_READBACK"}),"ACCEPTED");
+ assert.equal(plan({...state,lastError:"NONE"}),"IDLE");
+ assert.equal(plan({...state,lastError:"NATIVE_NOT_SUBSCRIBED"}),"IDLE");
+ for(const err of ["INVALID_NATIVE_ACK","UNKNOWN_CHANNEL_ID",
+   "NATIVE_ACK_OR_READBACK_TIMEOUT","ACK_READBACK_EFFECT_MISMATCH"])
+   assert.equal(plan({...state,lastError:err}),"ROLLBACK");
+ assert.equal(plan({...state,current:{device:{epoch:"72"}}}),"ROLLBACK");
+ assert.equal(plan(state,{...attempt,epoch:"72"}),"ROLLBACK");
+ assert.equal(plan(state,{...attempt,epoch:71}),"ROLLBACK");
+ assert.equal(plan(state,{...attempt,retries:1}),"ROLLBACK");
+ assert.equal(plan(state,{...attempt,ops:[{type:"REMOVE"}]}),"ROLLBACK");
+ assert.equal(plan(state,{...attempt,ops:[{type:"RETARGET"}]}),"ROLLBACK");
+ assert.equal(plan(state,{...attempt,ops:[{type:"CONNECT"},{type:"CONNECT"}]}),"ROLLBACK");
+ assert.equal(plan(state,null,{retries:1}),"FLUSH_STARTUP_RETRY");
+ assert.equal(plan({...state,lastError:"INVALID_NATIVE_ACK"},null,{retries:1}),"ROLLBACK");
+});
+test("MV-7 bridge delegates WIRE decisions, preserves only one native controller",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/wireVM\.gainDispatchPlan\(/);
+ assert.match(bridge,/wireVM\.nativeRecoveryPlan\(/);
+ assert.match(bridge,/controller\.intent\("SET_WIRE_GAIN",plan\.source/);
+ assert.match(bridge,/controller = protocol\.createController\(/);
+ assert.doesNotMatch(bridge,/const failed=!state\.pending/);
+ assert.doesNotMatch(read("web/approved-wire-view-model.js"),
+   /backend\.emitEvent|window\.setTimeout|document\.querySelector/);
+});

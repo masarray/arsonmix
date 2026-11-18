@@ -369,24 +369,18 @@
     if(state?.pending||!current?.admitted)return;
     for(const [edgeId,edit] of pendingWireGains){
       pendingWireGains.delete(edgeId);
-      if(current.identity!==edit.identity){
-        // A changed device/graph invalidates a deferred edit, but must not
-        // strand its LCD while waiting for a nonexistent ACK.
-        scope?.rollbackNativeWireInspector?.(nativeWireGainReadback(current));
-        continue; // never replay into a new graph/device
-      }
-      const edge=current.graph.edges.find(e=>e.enabled&&e.edgeId===edgeId&&e.from===edit.source);
-      if(!edge||edge.primaryOutput!==false){
+      const plan=wireVM.gainDispatchPlan(current,edgeId,edit);
+      if(plan.kind==="ROLLBACK"){
+        // Stale identity, malformed gain, or duplicate EdgeId: fail closed.
         scope?.rollbackNativeWireInspector?.(nativeWireGainReadback(current));
         continue;
       }
-      if(Math.abs(edge.gainLinear-edit.gain)<.00001){
-        // The accepted PCM gain already equals the requested scalar. Do not
-        // emit a redundant native intent, but DO settle the pending display.
+      if(plan.kind==="CONFIRMED"){
         scope?.syncNativeWireGains?.(nativeWireGainReadback(current));
         continue;
       }
-      const result=controller.intent("SET_WIRE_GAIN",edit.source,{edgeId,gainLinear:edit.gain});
+      const result=controller.intent("SET_WIRE_GAIN",plan.source,{
+        edgeId:plan.edgeId,gainLinear:plan.gainLinear});
       if(result.ok)window.setTimeout(()=>controller?.expire(result.requestId),8000);
       else status("WIRE gain rejected · "+result.error);
       return; // next coalesced target follows ACK + independent readback
@@ -2901,27 +2895,23 @@
            pendingNativeControl.size)queueLiveControlFlush();
         if(!state.pending&&state.lastError==="ACCEPTED_READBACK"&&pendingWireGains.size)
           queueWireGainFlush();
-        // Rejection cleanup and native rollback must BOTH run.
-        // Former else-if was unreachable after the cleanup branch matched.
-        const failed=!state.pending &&
-          state.lastError!=="ACCEPTED_READBACK" &&
-          state.lastError!=="NONE" &&
-          state.lastError!=="NATIVE_NOT_SUBSCRIBED";
-        if(!state.pending&&state.lastError==="ACCEPTED_READBACK"&&startupWire)
+        // Pure ViewModel decides retry/rollback; one native controller.
+        const recovery=wireVM.nativeRecoveryPlan(
+          state,activeWireAttempt,startupWire);
+        if(recovery.kind==="ACCEPTED"&&startupWire)
           window.queueMicrotask(flushStartupWire);
-        if(!state.pending&&state.lastError==="ACCEPTED_READBACK")activeWireAttempt=null;
-        if(failed&&startupWire?.retries===1&&
-           ["STALE_NATIVE_CONTROL_REVISION","STALE_NATIVE_WIRE_GRAPH"].includes(state.lastError)) {
+        if(recovery.kind==="ACCEPTED")activeWireAttempt=null;
+        if(recovery.kind==="FLUSH_STARTUP_RETRY"){
           window.queueMicrotask(flushStartupWire);return;
         }
-        if(failed){
+        if(recovery.kind==="REBASE_CONNECTION"){
           const wire=activeWireAttempt;activeWireAttempt=null;
-          // One stale-revision rebase of a new connection only. A fresh
-          // independent snapshot must still prove device/endpoints. Never
-          // replay retarget/remove, a changed epoch, or a rejected cycle.
-          if(wire&&wire.retries===0&&
-             ["STALE_NATIVE_CONTROL_REVISION","STALE_NATIVE_WIRE_GRAPH"].includes(state.lastError)&&
-             state.current?.device?.epoch===wire.epoch&&deferStartupWire(wire.ops,1))return;
+          // Existing bridge rechecks exact admission before one retry.
+          if(deferStartupWire(wire.ops,1))return;
+        }
+        if(recovery.kind==="ROLLBACK"||
+           recovery.kind==="REBASE_CONNECTION"){
+          activeWireAttempt=null;
           startupWire=null;
           pendingWireGains.clear();
           // The controller deliberately freezes current on a rejected ACK.
