@@ -2458,8 +2458,10 @@ test("O2 independent per-track external ASIO transactions and clear rejected ACK
  assert.match(src,/pendingExternal\.delete\(id\)/);
  assert.match(src,/select\?\.removeAttribute\("aria-busy"\)/);
  assert.match(src,/if\(!pendingExternal\.has\(id\)\)select\.removeAttribute/);
- assert.match(src,/SHARED with /);
- assert.match(src,/signals SUM/);
+ const vm=read("web/approved-channel-strip-view-model.js");
+ assert.match(vm,/SHARED with /);
+ assert.match(vm,/signals SUM/);
+ assert.match(src,/stripVM\.externalOutputPlan\(/);
  const page=read("site/preview-v2/index.html");
  const css=read("site/preview-v2/assets/mixer-section-controls.css");
  assert.match(page,/external-out-state/);
@@ -3033,6 +3035,74 @@ test("GUI-1 Channel Strip input and PRIMARY OUT require installed native readbac
     channels,targets:[],inputLabel:()=>{throw Error("unsafe port index");}});
   assert.equal(invalid.input,"None");
 });
+
+test("MV-5 EXTERNAL OUT preflight preserves exact native channel identity and warns on shared ASIO pins",()=>{
+ const id="9007199254740993",other="9007199254741000";
+ const native={admitted:true,retained:false,device:{epoch:"31"},
+  graph:{channels:[{id,role:"INPUT"}]}};
+ const hardware={device:{epoch:"31",backend:"ASIO",enabledOutputs:[2,3,4,5],
+  outputEndpoints:[2,3,4,5].map(port=>({port,active:true}))},
+  raw:{externalRevision:"9",physicalMainOutputs:[0,1],physicalMonitorOutputs:[],
+   externalOutputs:[{channelId:other,physicalLeft:2,physicalRight:3}]}};
+ const choices=[{label:"None",left:-1,right:-1},
+  {label:"OUT 3/4",left:2,right:3},{label:"OUT 5/6",left:4,right:5}];
+ const before=JSON.stringify([native,hardware,choices]);
+ const plan=stripVM.externalOutputPlan({native,hardware,channelId:id,
+  selectedLabel:"OUT 3/4",currentLabel:"None",choices,channelName:"Vocal"});
+ assert.deepEqual(plan,{kind:"READY",left:2,right:3,epoch:"31",revision:"9",
+  requiresConfirmation:true,sharedCount:1,confirmation:
+  "Enable ASIO OUT 3/4 for Vocal? SHARED with 1 other source(s); "+
+  "signals SUM. Check gains. Check amplifier/speakers. INTERNAL OUT stays unchanged."});
+ const remove=stripVM.externalOutputPlan({native,hardware,channelId:id,
+  selectedLabel:"None",currentLabel:"OUT 3/4",choices,channelName:"Vocal"});
+ assert.deepEqual([remove.kind,remove.left,remove.right,remove.requiresConfirmation],
+  ["READY",-1,-1,false],"None does not silently repatch internal WIRE");
+ assert.equal(stripVM.externalOutputPlan({native,hardware,channelId:id,
+  selectedLabel:"OUT 3/4",currentLabel:"OUT 3/4",choices}).kind,"NO_CHANGE");
+ assert.equal(JSON.stringify([native,hardware,choices]),before,
+  "pure preflight cannot mutate accepted device inventory or graph");
+ const bridge=read("web/approved-native-bridge.js");
+ assert.ok(bridge.includes("stripVM.externalOutputPlan("));
+ assert.ok(bridge.includes('backend.emitEvent("arMixAction",{action:"routingExternalOutput"'));
+ assert.equal((bridge.match(/action:"routingExternalOutput"/g)||[]).length,1);
+ assert.ok(!bridge.includes("SHARED with "),
+  "shared output policy must no longer be duplicated in native bridge");
+ const strip=read("web/approved-channel-strip-view-model.js");
+ assert.doesNotMatch(strip,/backend\.emitEvent|window\.confirm|document\.|localStorage/);
+});
+test("MV-5 EXTERNAL OUT preflight fails closed on stale, ambiguous or prohibited physical pins",()=>{
+ const id="9007199254740993",other="9007199254740994";
+ const native={admitted:true,retained:false,device:{epoch:"31"},
+  graph:{channels:[{id,role:"GROUP"}]}};
+ const hardware={device:{epoch:"31",backend:"ASIO",enabledOutputs:[2,3],
+  outputEndpoints:[{port:2,active:true},{port:3,active:true}]},
+  raw:{externalRevision:"9",physicalMainOutputs:[0,1],
+   physicalMonitorOutputs:[],externalOutputs:[]}};
+ const choices=[{label:"None",left:-1,right:-1},{label:"OUT 3/4",left:2,right:3}];
+ const plan=(changes={})=>stripVM.externalOutputPlan({native,hardware,
+  channelId:id,selectedLabel:"OUT 3/4",currentLabel:"None",choices,
+  channelName:"Vocal",...changes});
+ assert.equal(plan().kind,"READY");
+ for(const invalid of [
+  {pending:true},{native:{...native,admitted:false}},
+  {native:{...native,retained:true}},
+  {native:{...native,device:{epoch:"30"}}},
+  {channelId:Number(id)},{channelId:other},
+  {native:{...native,graph:{channels:[{id,role:"MAIN"}]}}},
+  {choices:[...choices,choices[1]]},
+  {choices:[{label:"OUT 3/4",left:4,right:5}]},
+  {choices:[{label:"OUT 3/4",left:3,right:4}]},
+  {choices:[{label:"OUT 3/4",left:NaN,right:3}]},
+  {hardware:{...hardware,device:{...hardware.device,backend:"WASAPI"}}},
+  {hardware:{...hardware,device:{...hardware.device,enabledOutputs:[2]}}},
+  {hardware:{...hardware,device:{...hardware.device,
+    outputEndpoints:[{port:2,active:true},{port:3,active:false}]}}},
+  {hardware:{...hardware,raw:{...hardware.raw,physicalMonitorOutputs:[3]}}},
+  {hardware:{...hardware,raw:{...hardware.raw,externalRevision:"18446744073709551616"}}},
+  {hardware:{...hardware,device:{...hardware.device,epoch:"32"}}}
+ ])assert.equal(plan(invalid).kind,"UNAVAILABLE",JSON.stringify(invalid));
+});
+
 test("GUI-1 external OUT pending waits for matching ACK and later readback",()=>{
   const p={requestId:"ext-1",epoch:"19",left:2,right:3,acked:false};
   const row={physicalLeft:2,physicalRight:3};
