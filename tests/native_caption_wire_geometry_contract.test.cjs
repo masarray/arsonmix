@@ -131,6 +131,9 @@ const playerHtml = read('site/preview-v2/assets/mixer-contextual-buttons.js');
 // Player native metadata is now owned by the extracted pure archive codec.
 const playerArchive = read('src/PlayerSetlistArchive.h');
 assert.match(playerArchive, /struct PlayerTrackSettings/);
+assert.match(playerArchive, /nextGeneratedName/);
+assert.match(main, /PlayerSetlistArchive::\\s*nextGeneratedName/);
+assert.doesNotMatch(main, /const int next=static_cast<int>\\(playerSets_\\.size\\(\\)\\)\\+1/);
 assert.match(main, /using PlayerTrackSettings=armix::player::PlayerTrackSettings/);
 assert.match(main, /action=="playerKeyStep" \|\| action=="playerTempoStep"/);
 assert.match(main, /setPlayerPitchTempo\(next\.key,next\.tempo\)/);
