@@ -1074,6 +1074,31 @@
     }
     return verdict;
   }
+  // MV-16: one lease owner handles both SOURCE ACK formats, but neither
+  // ACK event can update visible PCM without independent native readback.
+  function handleSourceAck(authority,ack){
+    const channelIdOwner=authority==="CHANNEL_ID";
+    const pending=channelIdOwner?activeNativeSource:nativeUiSourcePending;
+    const transition=stripVM.sourceQueueAckTransition({authority,pending,ack});
+    if(transition.kind==="IGNORE")return false;
+    if(channelIdOwner)activeNativeSource=transition.pending;
+    else nativeUiSourcePending=transition.pending;
+    if(transition.kind==="ACKED"){
+      if(channelIdOwner)
+        status("Native input ACKed · verifying accepted PCM source");
+      else status("CH "+(pending.channel+1)+
+        " INPUT accepted · verifying native PCM source");
+      // Callback readback may have published before this correlated ACK.
+      // NEVER use ack.state or an ACK graph revision as installed PCM.
+      settleSourceReadback(authority,controller?.state()?.current);
+    }else if(channelIdOwner){
+      nativeToast("Native input rejected · "+(ack?.error||"stale PCM"));
+    }else{
+      status("NATIVE INPUT REJECTED · "+(ack?.error||"stale routing"));
+    }
+    controller?.subscribe();
+    return true;
+  }
   let pendingBusCreate=null,pendingTrackDelete=null,stripRequestSerial=0;
   function requestNativeTrackDelete(track){
     if(logicalView)return logicalIntent("DELETE_CHANNEL",nativeIdFor(track),{}).ok;
@@ -2980,20 +3005,7 @@
       controller?.subscribe();
     });
     backend.addEventListener("arMixNativeSourceAck",ack=>{
-      const verdict=stripVM.sourceAckResult(activeNativeSource,ack,"CHANNEL_ID");
-      if(verdict==="IGNORE")return;
-      if(verdict==="ACKED"){
-        // ACK contains the publisher revision, but is not yet installed PCM.
-        activeNativeSource={...activeNativeSource,acked:true,
-          ackRevision:ack.graphRevision};
-        status("Native input ACKed · verifying accepted PCM source");
-        // An independently accepted snapshot can race ahead of the ACK.
-        settleSourceReadback("CHANNEL_ID",controller?.state()?.current);
-      }else{
-        activeNativeSource=null;
-        nativeToast("Native input rejected · "+(ack?.error||"stale PCM"));
-      }
-      controller?.subscribe();
+      handleSourceAck("CHANNEL_ID",ack);
     });
     backend.addEventListener("arMixNativeBusAck",ack=>{
       const pending=pendingBusCreate;
@@ -3057,25 +3069,7 @@
       controller.subscribe(); // later authoritative M4 snapshot required
     });
     backend.addEventListener("arMixSourceSwitchAck", ack=>{
-      const verdict=stripVM.sourceAckResult(nativeUiSourcePending,ack,"M4");
-      if(verdict!=="IGNORE"){
-        if(verdict==="ACKED"){
-          // ACK is only correlated admission, not the installed M4 PCM row.
-          // Keep this single in-flight lease until the NEXT native snapshot.
-          nativeUiSourcePending.acked=true;
-          nativeUiSourcePending.ackRevision=String(ack.state.revision);
-          status("CH "+(nativeUiSourcePending.channel+1)+
-            " INPUT accepted · verifying native PCM source");
-          // A separately published M4 PCM snapshot can arrive first.
-          // Same ACK+readback rule as ChannelId; never confirm from ack.state.
-          settleSourceReadback("M4",controller?.state()?.current);
-        }else{
-          nativeUiSourcePending=null;
-          status("NATIVE INPUT REJECTED · "+(ack?.error||"stale routing"));
-        }
-        controller?.subscribe();
-        return;
-      }
+      if(handleSourceAck("M4",ack))return;
       if(!pendingSourceId||ack?.requestId!==pendingSourceId)return;
       pendingSourceId=0;
       if(ack.ok===true) {

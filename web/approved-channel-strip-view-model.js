@@ -304,6 +304,20 @@
   }
 
 
+  // MV-16: immutable ACK transition shared by ChannelId and M4. The
+  // first correlated successful ACK wins its lease; contradictory/late
+  // duplicates cannot overwrite the revision or discard installed PCM.
+  function sourceQueueAckTransition({authority,pending,ack}={}) {
+    if(!pending||ack?.requestId!==pending.requestId||
+       pending.acked===true)return {kind:"IGNORE"};
+    const verdict=sourceAckResult(pending,ack,authority);
+    if(verdict==="IGNORE")return {kind:"IGNORE"};
+    if(verdict!=="ACKED")return {kind:"REJECTED",pending:null};
+    const ackRevision=authority==="CHANNEL_ID"?
+      ack.graphRevision:String(ack.state.revision);
+    return {kind:"ACKED",pending:{...pending,acked:true,ackRevision}};
+  }
+
   // MV-7: ACK is only a correlated native acceptance, never proof of PCM.
   // Compare the installed ChannelId SOURCE row, physical pins and exact
   // revision without converting 64-bit graph identities through Number.
@@ -581,7 +595,7 @@
     primaryChoices,resolvePrimarySelection,readbackBindings,externalPending,
     primaryOutMutation,externalOutputPlan,sourceQueueSelection,
     sourceDispatchPlan,sourceQueueHead,sourceAckResult,sourceReadbackSettlement,
-    m4SourceReadbackSettlement,sourceQueueReadback,
+    m4SourceReadbackSettlement,sourceQueueReadback,sourceQueueAckTransition,
     scalarIdentityMatches,scalarVisualSettlement,m4ScalarAckResult,
     m4ScalarReadbackSettlement,scalarDispatchLease,
     scalarGestureFlushPlan,scalarDispatchPlan,

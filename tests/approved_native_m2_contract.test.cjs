@@ -207,7 +207,8 @@ test("MV-6 M4 SOURCE dispatch reuses fresh revision but never migrates stale dev
   "source preflight now belongs only to pure Channel Strip VM");
  assert.equal((bridge.match(/stripVM\.sourceQueueHead\(/g)||[]).length,1,
   "one bridge dispatch head for ChannelId and M4");
- assert.equal((bridge.match(/stripVM\.sourceAckResult\(/g)||[]).length,2);
+ assert.equal((bridge.match(/stripVM\.sourceQueueAckTransition\(/g)||[]).length,1,
+   "one immutable ACK state transition for M4 and native ChannelId");
  assert.match(bridge,/pendingNativeSources\.set\(id,decision\.entry\)/);
  assert.match(bridge,/pendingSourceQueue\.set\(channel,decision\.entry\)/);
  assert.match(bridge,/if\(decision\.kind==="CANCEL"\)pendingNativeSources\.delete/);
@@ -216,6 +217,66 @@ test("MV-6 M4 SOURCE dispatch reuses fresh revision but never migrates stale dev
 });
 
 
+
+
+test("MV-16 SOURCE ACK lease is immutable; first valid ACK wins, duplicates fenced",()=>{
+ const id="9007199254740993",epoch="18446744073709551610";
+ const ch={requestId:"source-native-1",id,epoch,
+   beforeRevision:"9223372036854775807",acked:false,
+   choice:{label:"Mic A",mode:"MONO",left:0,right:-1}};
+ const ack={requestId:ch.requestId,channelId:id,
+   graphRevision:"9223372036854775808",ok:true};
+ const decide=(authority,pending,event)=>
+   stripVM.sourceQueueAckTransition({authority,pending,ack:event});
+ const accepted=decide("CHANNEL_ID",ch,ack);
+ assert.deepEqual(accepted,{kind:"ACKED",pending:{
+   ...ch,acked:true,ackRevision:ack.graphRevision}});
+ assert.notEqual(accepted.pending,ch);
+ assert.equal(ch.acked,false,"VM cannot mutate pending record");
+ for(const duplicate of [
+   {...ack,ok:false,error:"STALE_NATIVE_SOURCE"},
+   {...ack,graphRevision:"9223372036854775810"},
+   {...ack,channelId:"9007199254740994"},
+   ack
+ ])assert.deepEqual(decide("CHANNEL_ID",accepted.pending,duplicate),
+   {kind:"IGNORE"},"late/contradictory duplicate cannot release an ACKed lease");
+ assert.deepEqual(decide("CHANNEL_ID",ch,{...ack,requestId:"source-native-2"}),
+   {kind:"IGNORE"});
+ assert.deepEqual(decide("CHANNEL_ID",ch,{...ack,ok:false}),
+   {kind:"REJECTED",pending:null});
+ assert.deepEqual(decide("CHANNEL_ID",null,ack),{kind:"IGNORE"});
+
+ const m4Pending={requestId:107,channel:4,epoch:69,revision:12,
+   acked:false,choice:{label:"Mono IN1",mode:"MONO",left:0,right:-1}};
+ const m4Ack={requestId:107,ok:true,state:{ready:true,epoch:69,revision:13,
+   hasAcceptedRoute:true,acceptedRoute:{channels:Array.from({length:10},(_,i)=>
+     i===4?{mode:"MONO",left:0,right:-1}:null)}}};
+ const m4=decide("M4",m4Pending,m4Ack);
+ assert.deepEqual(m4,{kind:"ACKED",pending:{...m4Pending,acked:true,
+   ackRevision:"13"}});
+ assert.equal(m4Pending.acked,false);
+ assert.deepEqual(decide("M4",m4.pending,{...m4Ack,ok:false}),
+   {kind:"IGNORE"},"late negative ACK cannot invalidate M4 PCM lease");
+ assert.deepEqual(decide("M4",m4.pending,{...m4Ack,state:{
+   ...m4Ack.state,revision:14}}),{kind:"IGNORE"});
+ assert.deepEqual(decide("M4",m4Pending,{...m4Ack,requestId:108}),
+   {kind:"IGNORE"});
+ assert.deepEqual(decide("M4",m4Pending,{...m4Ack,ok:false}),
+   {kind:"REJECTED",pending:null});
+ assert.deepEqual(decide("OTHER",m4Pending,m4Ack),
+   {kind:"REJECTED",pending:null});
+ assert.doesNotMatch(stripVM.sourceQueueAckTransition.toString(),
+   /backend|document\.|window\.|setTimeout|AudioContext|localStorage/);
+ const bridge=read("web/approved-native-bridge.js");
+ assert.equal((bridge.match(/function handleSourceAck\(/g)||[]).length,1);
+ assert.equal((bridge.match(/stripVM\.sourceQueueAckTransition\(/g)||[]).length,1);
+ assert.equal((bridge.match(/stripVM\.sourceAckResult\(/g)||[]).length,0);
+ assert.match(bridge,/handleSourceAck\("CHANNEL_ID",ack\)/);
+ assert.match(bridge,/if\(handleSourceAck\("M4",ack\)\)return/);
+ assert.match(bridge,/settleSourceReadback\(authority,controller\?\.state\(\)\?\.current\)/);
+ assert.equal((bridge.match(/backend\.addEventListener\("arMixSourceSwitchAck"/g)||[]).length,1,
+   "legacy CH1 PATCH keeps the one original M4 ACK receiver");
+});
 
 test("MV-15 one SOURCE settlement policy is pure and preserves both PCM formats",()=>{
  const nativeId="9007199254740993",epoch="18446744073709551610";
@@ -422,10 +483,10 @@ test("MV-13 M4 input ACK cannot free source queue until independently accepted P
  const ackStart=bridge.indexOf('backend.addEventListener("arMixSourceSwitchAck"');
  const ackEnd=bridge.indexOf('backend.addEventListener("arMixM4ControlAck"',ackStart);
  const ackBody=bridge.slice(ackStart,ackEnd);
- assert.match(ackBody,/nativeUiSourcePending\.acked=true/);
- assert.match(ackBody,/nativeUiSourcePending\.ackRevision=String\(ack\.state\.revision\)/);
- assert.doesNotMatch(ackBody,/nativeUiSourcePending=null;\s*if\(verdict==="ACKED"\)/,
-   "ACK must not release M4 source queue");
+ assert.match(ackBody,/handleSourceAck\("M4",ack\)/);
+ assert.doesNotMatch(ackBody,/nativeUiSourcePending\.acked=true/,
+   "in-place M4 ACK mutation must be removed from the native bridge");
+ assert.match(bridge,/stripVM\.sourceQueueAckTransition\(\{authority,pending,ack\}\)/);
  assert.match(bridge,/stripVM\.sourceQueueReadback\(\{authority,pending,snapshot:next\}\)/);
  assert.match(bridge,/settleSourceReadback\("M4",next\)/);
  assert.equal((bridge.match(/arMixSourceSwitchAck/g)||[]).length,1,
