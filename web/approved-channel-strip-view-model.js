@@ -288,15 +288,17 @@
     if(!decimalId(pending.id)||!decimalId(pending.epoch)||
        next?.device?.epoch!==pending.epoch||
        next?.retained===true||next?.admitted!==true||
-       (next?.raw?.mixerSession &&
-        next.raw.mixerSession.authority!=="CHANNEL_ID"))return "STALE";
+       (next?.raw && (next.raw.mixerSession?.authority!=="CHANNEL_ID"||
+         next.raw.mixerSession.deviceEpoch!==pending.epoch)))return "STALE";
     const rows=next?.graph?.channels;
     if(!Array.isArray(rows))return "PENDING";
     const channel=rows.find(row=>row?.id===pending.id);
     if(!channel||channel.role!=="INPUT")return "STALE";
     if(pending.acked!==true)return "PENDING_ACK";
-    if(!decimalId(pending.ackRevision)||
+    if(!decimalId(pending.beforeRevision)||
+       !decimalId(pending.ackRevision)||
        !decimalId(next.graph.revision)||
+       BigInt(pending.ackRevision)<=BigInt(pending.beforeRevision)||
        BigInt(next.graph.revision)<BigInt(pending.ackRevision))
       return "PENDING";
     const choice=pending.choice;
