@@ -174,6 +174,53 @@
       productLive:admitted && raw.productionCallbackLive,
       identity: d.epoch + ":" + g.revision + ":" + g.rosterRevision };
   }
+  // MV-3: select exactly one existing native read authority for /preview/.
+  // The reconciler already validated schema-v6, epoch and accepted PCM.
+  // This is a projection of THAT immutable control-thread readback, never
+  // an alternative session, acceptance controller or JS-owned graph.
+  function selectNativeReadModel(next,verifiedM4=false) {
+    const invalid=Object.freeze({kind:"INVALID",view:null});
+    if(!next || next.raw?.schemaVersion!==6 ||
+       next.device!==next.raw.device || next.graph!==next.raw.graph ||
+       !next.device || !next.graph || typeof next.admitted!=="boolean" ||
+       typeof next.retained!=="boolean")return invalid;
+    const session=next.raw.mixerSession,offline=next.raw.logicalMixer;
+    // The physical installed producer (including NEEDS_REMAP) takes
+    // priority over a saved logical .smix, even if stale metadata is present.
+    // Do NOT use outputArmed, GUI labels, or an ACK to invent PCM admission.
+    const offlineEligible=!next.admitted&&!next.retained&&verifiedM4!==true&&
+      session?.authority!=="M4"&&session?.authority!=="CHANNEL_ID"&&
+      offline?.schema==="arsonmix.native.logical-mixer.v1"&&
+      offline.authority==="LOGICAL_ONLY"&&
+      typeof offline.workspaceToken==="string"&&offline.workspaceToken.length>0&&
+      offline.physicalOutputAdmitted===false&&offline.outputArmed===false&&
+      offline.graph?.capabilities?.callbackOwnsChannelIds===false&&
+      decimal(offline.revision)!==null&&offline.revision!=="0"&&
+      offline.revision===offline.graph?.revision&&
+      offline.revision===offline.graph?.rosterRevision&&
+      Array.isArray(offline.graph?.channels)&&Array.isArray(offline.graph?.edges);
+    if(offlineEligible) {
+      // A logical view is a read-only DISPLAY projection of the same native
+      // envelope, not a second accepted mixer or physical output authority.
+      const view={...next,graph:offline.graph,
+        workspaceToken:offline.workspaceToken,
+        identity:"logical:"+offline.workspaceToken+":"+offline.revision,
+        logical:true,readOnly:offline.readOnly===true,
+        admitted:false,retained:false,productLive:false,telemetry:{}};
+      return Object.freeze({kind:"LOGICAL_ONLY",view});
+    }
+    if(!session || session.deviceEpoch!==next.device.epoch)
+      return Object.freeze({kind:"STALE",view:null});
+    if(session.authority==="CHANNEL_ID"&&next.admitted===true&&
+       next.graph.capabilities?.callbackOwnsChannelIds===true)
+      return Object.freeze({kind:"CHANNEL_ID",view:next});
+    if(next.retained===true&&session.authority==="CHANNEL_ID")
+      return Object.freeze({kind:"NEEDS_REMAP",view:next});
+    if(session.authority==="M4"&&verifiedM4===true&&!next.admitted&&!next.retained)
+      return Object.freeze({kind:"M4",view:next});
+    return Object.freeze({kind:"UNADMITTED",view:null});
+  }
+
   // Read-only physical OUTPUTS projection from the authoritative JUCE snapshot.
   // No guessed ports, UI-owned routing, monitor activation or audible claims.
   function physicalOutputOverview(snapshot) {
@@ -705,5 +752,5 @@
     }
     return Object.freeze({subscribe,onSnapshot,onAck,intent,state,expire});
   }
-  return Object.freeze({decimal,cmp,normalizeSnapshot,readbackProvesIntent,logicalReadbackProves,diagnoseFirstSound,createController,validPresentationName,validPresentationColor,validPresentationIcon,operatorMessage,physicalOutputOverview});
+  return Object.freeze({decimal,cmp,normalizeSnapshot,selectNativeReadModel,readbackProvesIntent,logicalReadbackProves,diagnoseFirstSound,createController,validPresentationName,validPresentationColor,validPresentationIcon,operatorMessage,physicalOutputOverview});
 });
