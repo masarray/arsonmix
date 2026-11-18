@@ -994,36 +994,60 @@
   }
   const pendingNativeSources=new Map();
   let activeNativeSource=null,nativeSourceSerial=0;
-  function dispatchNativeSource(){
-    if(activeNativeSource||!pendingNativeSources.size)return;
+  // MV-14: one INPUT dispatch owner; ChannelId/M4 keep separate identity Maps.
+  function dispatchSourceQueue(authority){
+    const channelIdOwner=authority==="CHANNEL_ID";
+    const queue=channelIdOwner?pendingNativeSources:pendingSourceQueue;
+    if(!queue.size)return;
     const current=controller?.state()?.current;
-    if(!current?.admitted||mixerSession()?.authority!=="CHANNEL_ID")return;
-    const [id,entry]=pendingNativeSources.entries().next().value;
-    pendingNativeSources.delete(id);
-    const plan=stripVM.sourceDispatchPlan({
-      authority:"CHANNEL_ID",entry,hardware,native:current,channelId:id,
-      choices:inputChoicesFor(),deviceReady:deviceReady()
-    });
-    if(plan.kind!=="READY"){
-      nativeToast("Source identity or device pins changed · refresh native mixer");
-      // An invalid head must never strand edits queued for other channels.
-      if(pendingNativeSources.size)window.queueMicrotask(dispatchNativeSource);
-      return;
+    while(queue.size){
+      const plan=stripVM.sourceQueueHead({authority,queue,
+        active:channelIdOwner?activeNativeSource:nativeUiSourcePending,
+        hardware,native:current,choices:inputChoicesFor(),
+        deviceReady:deviceReady()});
+      if(plan.kind==="IDLE"||plan.kind==="WAIT")return;
+      if(plan.kind==="DROP_ALL"){queue.clear();return;}
+      queue.delete(plan.key);
+      if(plan.kind==="DROP"){
+        if(channelIdOwner)
+          nativeToast("Source identity or device pins changed · refresh native mixer");
+        else status("CH "+(plan.key+1)+" INPUT dropped · device or pin identity changed");
+        continue; // stale source cannot starve an unrelated channel
+      }
+      const requestId=channelIdOwner?
+        "source-native-"+(++nativeSourceSerial):++sourceSerial;
+      if(channelIdOwner){
+        activeNativeSource={requestId,id:plan.key,
+          choice:plan.entry.choice,epoch:plan.entry.epoch,
+          beforeRevision:current.graph.revision,acked:false};
+      }else{
+        nativeUiSourcePending={requestId,channel:plan.key,
+          choice:plan.entry.choice,epoch:plan.payload.deviceEpoch,
+          revision:plan.payload.revision,acked:false};
+      }
+      backend.emitEvent("arMixAction",{action:plan.action,requestId,
+        ...plan.payload});
+      if(channelIdOwner)
+        status("Input "+plan.entry.choice.label+" · native PCM readback pending");
+      window.setTimeout(()=>{
+        const pending=channelIdOwner?activeNativeSource:nativeUiSourcePending;
+        if(pending?.requestId!==requestId)return;
+        if(channelIdOwner){
+          activeNativeSource=null;
+          status("SOURCE timeout · refreshing accepted PCM and input choices");
+        }else{
+          nativeUiSourcePending=null;
+          status("CH "+(plan.key+1)+" INPUT timeout · native state preserved");
+        }
+        controller?.subscribe();
+      },8000);
+      return; // next request needs fresh readback/route revision
     }
-    const requestId="source-native-"+(++nativeSourceSerial);
-    activeNativeSource={requestId,id,choice:entry.choice,epoch:entry.epoch,
-      beforeRevision:current.graph.revision,acked:false};
-    backend.emitEvent("arMixAction",{
-      action:plan.action,requestId,...plan.payload
-    });
-    status("Input "+entry.choice.label+" · native PCM readback pending");
-    window.setTimeout(()=>{
-      if(activeNativeSource?.requestId!==requestId)return;
-      activeNativeSource=null;
-      status("SOURCE timeout · refreshing accepted PCM and input choices");
-      controller?.subscribe();
-    },8000);
   }
+  function dispatchNativeSource(){
+    dispatchSourceQueue("CHANNEL_ID");
+  }
+
   // Only independently installed ChannelId PCM readback may confirm SOURCE.
   // Do not release the one active native transaction after ACK alone.
   function settleNativeSourceReadback(next) {
@@ -2568,32 +2592,7 @@
   // One control-thread routing transaction at a time, but NEVER lock other
   // dropdowns or lose their choices. Latest choice wins per channel.
   function dispatchQueuedSource(){
-    if(nativeUiSourcePending||pendingSourceQueue.size===0)return;
-    if(!deviceReady()){pendingSourceQueue.clear();return;}
-    while(pendingSourceQueue.size){
-      const [channel,entry]=pendingSourceQueue.entries().next().value;
-      pendingSourceQueue.delete(channel);
-      const plan=stripVM.sourceDispatchPlan({
-        authority:"M4",entry,hardware,channel,
-        choices:inputChoicesFor(),deviceReady:deviceReady()
-      });
-      if(plan.kind!=="READY"){
-        status("CH "+(channel+1)+" INPUT dropped · device or pin identity changed");
-        continue; // stale first entry cannot starve the next valid source
-      }
-      const requestId=++sourceSerial;
-      nativeUiSourcePending={requestId,channel,choice:entry.choice,
-        epoch:plan.payload.deviceEpoch,revision:plan.payload.revision};
-      backend.emitEvent("arMixAction",{action:plan.action,requestId,
-        ...plan.payload});
-      window.setTimeout(()=>{
-        if(nativeUiSourcePending?.requestId!==requestId)return;
-        nativeUiSourcePending=null;
-        status("CH "+(channel+1)+" INPUT timeout · native state preserved");
-        controller.subscribe();
-      },8000);
-      return;
-    }
+    dispatchSourceQueue("M4");
   }
 
   // Hold M4 source selection after ACK until independently published PCM

@@ -203,14 +203,98 @@ test("MV-6 M4 SOURCE dispatch reuses fresh revision but never migrates stale dev
   "REJECTED");
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/stripVM\.sourceQueueSelection\(/);
- assert.equal((bridge.match(/stripVM\.sourceDispatchPlan\(/g)||[]).length,2,
-  "both native ChannelId and M4 dispatch through one pure preflight policy");
+ assert.equal((bridge.match(/stripVM\.sourceDispatchPlan\(/g)||[]).length,0,
+  "source preflight now belongs only to pure Channel Strip VM");
+ assert.equal((bridge.match(/stripVM\.sourceQueueHead\(/g)||[]).length,1,
+  "one bridge dispatch head for ChannelId and M4");
  assert.equal((bridge.match(/stripVM\.sourceAckResult\(/g)||[]).length,2);
  assert.match(bridge,/pendingNativeSources\.set\(id,decision\.entry\)/);
  assert.match(bridge,/pendingSourceQueue\.set\(channel,decision\.entry\)/);
  assert.match(bridge,/if\(decision\.kind==="CANCEL"\)pendingNativeSources\.delete/);
  assert.match(bridge,/if\(decision\.kind==="CANCEL"\)pendingSourceQueue\.delete/);
  assert.doesNotMatch(stripVM.sourceDispatchPlan.toString(),/backend|document|window/);
+});
+
+
+test("MV-14 one pure dispatch head preserves FIFO and exact identity across ChannelId and M4",()=>{
+ const id="9007199254740993",id2="9007199254740994";
+ const epoch="18446744073709551610";
+ const options=[{label:"None",mode:"NONE",left:-1,right:-1},
+  {label:"IN 1 mono",mode:"MONO",left:0,right:-1},
+  {label:"IN 3/4 stereo",mode:"STEREO",left:2,right:3}];
+ const entry=(choice=options[1],at=epoch)=>({epoch:at,choice});
+ const hardware={device:{epoch},raw:{mixerSession:{authority:"CHANNEL_ID"},
+   legacyM4:{routingRevision:"29"}}};
+ const native={admitted:true,retained:false,device:{epoch},
+   graph:{revision:"9223372036854775808",rosterRevision:"9223372036854775809",
+    channels:[{id,role:"INPUT"},{id:id2,role:"INPUT"}]}};
+ const queue=new Map([[id,entry(options[2])],[id2,entry()]]);
+ const original=JSON.stringify([...queue]);
+ const decide=(changes={})=>stripVM.sourceQueueHead({
+   authority:"CHANNEL_ID",queue,hardware,native,choices:options,
+   deviceReady:true,...changes});
+ assert.deepEqual(decide(),{kind:"SEND",key:id,entry:queue.get(id),
+   action:"routingNativeSourcePatch",payload:{channelId:id,deviceEpoch:epoch,
+     graphRevision:native.graph.revision,rosterRevision:native.graph.rosterRevision,
+     mode:"STEREO",left:2,right:3}});
+ assert.equal(JSON.stringify([...queue]),original,"pure selector cannot consume Map");
+ assert.equal(decide({active:{requestId:"old"}}).kind,"IDLE");
+ assert.equal(decide({native:{...native,admitted:false}}).kind,"WAIT");
+ assert.equal(decide({hardware:{...hardware,raw:{
+   ...hardware.raw,mixerSession:{authority:"M4"}}}}).kind,"WAIT");
+ assert.equal(decide({hardware:{...hardware,device:{epoch:"99"}}}).kind,"DROP");
+ assert.equal(decide({choices:[options[0]]}).kind,"DROP");
+ const stale=new Map([[id,entry(options[1],"91")],[id2,entry()]]);
+ const head=stripVM.sourceQueueHead({authority:"CHANNEL_ID",queue:stale,
+   hardware,native,choices:options,deviceReady:true});
+ assert.deepEqual(head,{kind:"DROP",key:id});
+ assert.equal(stale.size,2,"VM plan may not erase drafts");
+ stale.delete(head.key);
+ assert.equal(stripVM.sourceQueueHead({authority:"CHANNEL_ID",queue:stale,
+   hardware,native,choices:options,deviceReady:true}).kind,"SEND",
+   "bad first edit cannot starve another channel");
+
+ const m4Hardware={device:{epoch:"71"},raw:{
+   mixerSession:{authority:"NONE"},legacyM4:{routingRevision:"29"}}};
+ const m4Queue=new Map([[4,entry(options[1],"71")],[5,entry(options[2],"71")]]);
+ const m4=stripVM.sourceQueueHead({authority:"M4",queue:m4Queue,
+   hardware:m4Hardware,native:null,choices:options,deviceReady:true});
+ assert.deepEqual(m4,{kind:"SEND",key:4,entry:m4Queue.get(4),
+   action:"routingSourceSwitch",payload:{
+    channel:4,mode:"MONO",left:0,right:-1,deviceEpoch:71,revision:29}},
+   "prepared NONE first sound must still dispatch via real M4");
+ assert.equal(m4Queue.size,2);
+ assert.deepEqual(stripVM.sourceQueueHead({authority:"M4",queue:m4Queue,
+   hardware:m4Hardware,native:null,choices:options,deviceReady:false}),
+   {kind:"DROP_ALL"},"old M4 pins must be discarded on device loss");
+ assert.equal(stripVM.sourceQueueHead({authority:"M4",queue:m4Queue,
+   hardware:{...m4Hardware,raw:{...m4Hardware.raw,
+     mixerSession:{authority:"CHANNEL_ID"}}},native,choices:options,
+   deviceReady:true}).kind,"DROP");
+ assert.equal(stripVM.sourceQueueHead({authority:"INVALID",queue:m4Queue,
+   hardware:m4Hardware,choices:options,deviceReady:true}).kind,"WAIT");
+ assert.equal(stripVM.sourceQueueHead({authority:"M4",queue:new Map(),
+   hardware:m4Hardware,choices:options,deviceReady:true}).kind,"IDLE");
+
+ const bridge=read("web/approved-native-bridge.js");
+ const begin=bridge.indexOf("  function dispatchSourceQueue(authority){");
+ const end=bridge.indexOf("  // Only independently installed ChannelId PCM readback",begin);
+ const body=bridge.slice(begin,end);
+ assert.ok(begin>0&&end>begin);
+ assert.match(body,/while\(queue\.size\)/);
+ assert.match(body,/queue\.delete\(plan\.key\)/);
+ assert.match(body,/if\(plan\.kind==="DROP_ALL"\)\{queue\.clear\(\);return;\}/);
+ assert.match(body,/beforeRevision:current\.graph\.revision,acked:false/);
+ assert.match(body,/nativeUiSourcePending=null;[\s\S]*?INPUT timeout/);
+ assert.match(body,/backend\.emitEvent\("arMixAction",\{action:plan\.action,requestId/);
+ assert.match(body,/controller\?\.subscribe\(\)/);
+ assert.match(bridge,/function dispatchNativeSource\(\)\{\s*dispatchSourceQueue\("CHANNEL_ID"\)/);
+ assert.match(bridge,/function dispatchQueuedSource\(\)\{\s*dispatchSourceQueue\("M4"\)/);
+ assert.equal((bridge.match(/function dispatchSourceQueue\(/g)||[]).length,1);
+ assert.equal((bridge.match(/backend\.emitEvent\("arMixAction",\{action:plan\.action/g)||[]).length,1,
+   "one physical INPUT native emit path for both queues");
+ assert.doesNotMatch(stripVM.sourceQueueHead.toString(),
+   /backend|window\.|document\.|setTimeout|AudioContext/);
 });
 
 test("MV-13 M4 input ACK cannot free source queue until independently accepted PCM readback",()=>{
