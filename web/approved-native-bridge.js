@@ -2666,28 +2666,17 @@
     if(deviceState!==previousSetup && !deviceState.pending)finishDeviceApplyUi();
     updateHardwarePanel(next);
     paintExternalReadback(next);
-    // The installed native SessionSnapshot selects exactly one UI authority.
+    // One schema-v6 read-model selector decides native PCM, retained,
+    // M4 and offline document authority. Do not revalidate it in the DOM.
+    const readModel=protocol.selectNativeReadModel(next,m4Verified());
     const session=next?.raw?.mixerSession;
     const offline=next?.raw?.logicalMixer;
-    // Retained PCM owns vendor state even if the saved descriptors look
-    // identical. Only native can authorize the unbound logical editor.
-    const logicalAvailable=!next.admitted&&!next.retained&&!m4Verified()&&
-      session?.authority!=="M4"&&session?.authority!=="CHANNEL_ID"&&
-      offline?.schema==="arsonmix.native.logical-mixer.v1" &&
-      offline.authority==="LOGICAL_ONLY"&&
-      typeof offline.workspaceToken==="string"&&offline.workspaceToken.length>0&&
-      offline.physicalOutputAdmitted===false&&offline.outputArmed===false&&
-      offline.graph?.capabilities?.callbackOwnsChannelIds===false&&
-      protocol.decimal(offline.revision)!==null&&offline.revision!=="0"&&
-      offline.revision===offline.graph?.revision&&
-      offline.revision===offline.graph?.rosterRevision&&
-      Array.isArray(offline.graph?.channels)&&Array.isArray(offline.graph?.edges);
-    if(logicalAvailable) {
-      const staged={...next,graph:offline.graph,
-        workspaceToken:offline.workspaceToken,
-        identity:"logical:"+offline.workspaceToken+":"+offline.revision,logical:true,
-        readOnly:offline.readOnly===true,
-        admitted:false,retained:false,productLive:false,telemetry:{}};
+    if(readModel.kind==="INVALID"){
+      status("NATIVE READBACK INVALID · existing GUI controls unchanged");
+      return;
+    }
+    if(readModel.kind==="LOGICAL_ONLY") {
+      const staged=readModel.view;
       let revealCreatedId=null,wireImpact=null;
       if(pendingLogical && pendingLogical.workspaceToken!==offline.workspaceToken)
         pendingLogical=null;
@@ -2761,7 +2750,7 @@
       pendingLogical=null;
       status("Audio connection changed · refresh mixer before editing");
     }
-    if(!session || session.deviceEpoch!==next.device.epoch) {
+    if(readModel.kind==="STALE") {
       flags.acceptedGraphConnected=false;
       flags.productionCallbackLive=false;
       lastPaintedSignature="";
@@ -2775,7 +2764,7 @@
     // data can update controls; independent meters and FX racks keep moving.
     reconcileM4ControlReadback(next);
     reconcileM4RackReadback(next);
-    if(session.authority==="M4" && m4Verified()) {
+    if(readModel.kind==="M4") {
       paintM4Fallback(next);
       if(scope?.syncVerifiedM4Wires?.(session.channels.map(ch=>ch.source),m4TrackIds))
         document.documentElement.dataset.armixNativeRoster="accepted";
@@ -2786,8 +2775,7 @@
     if(!nativeUiSourcePending && pendingSourceQueue.size)
       window.queueMicrotask(()=>dispatchQueuedSource());
     const caps=next?.graph?.capabilities;
-    const nativeAdmitted=session.authority==="CHANNEL_ID" &&
-      next.admitted && caps?.callbackOwnsChannelIds===true;
+    const nativeAdmitted=readModel.kind==="CHANNEL_ID";
     if(pendingBusCreate && pendingBusCreate.epoch!==next.device.epoch)
       pendingBusCreate=null;
     syncAddTrack(next);
