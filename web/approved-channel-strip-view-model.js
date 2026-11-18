@@ -216,7 +216,7 @@
   }
   function sourceQueueSelection({choice,choices,epoch,acceptedLabel,
                                  activeSameChannel=false}={}) {
-    if(!positiveCounter(epoch)||!sourceChoiceMatches(choice,choices))
+    if(!decimalId(epoch)||!sourceChoiceMatches(choice,choices))
       return {kind:"UNAVAILABLE"};
     // The operator can cancel a queued edit by returning to installed PCM.
     // But when THIS channel already has an in-flight edit, queuing the old
@@ -231,7 +231,7 @@
                                channelId,channel,choices,deviceReady=false}={}) {
     const unavailable={kind:"UNAVAILABLE"};
     const choice=entry?.choice,epoch=hardware?.device?.epoch;
-    if(!deviceReady||!positiveCounter(epoch)||epoch!==entry?.epoch||
+    if(!deviceReady||!decimalId(epoch)||epoch!==entry?.epoch||
        !sourceChoiceMatches(choice,choices))return unavailable;
     if(authority==="CHANNEL_ID"){
       const graph=native?.graph,session=hardware?.raw?.mixerSession;
@@ -240,8 +240,8 @@
          native?.device?.epoch!==epoch||
          !Array.isArray(graph?.channels)||
          !graph.channels.some(ch=>ch.id===channelId&&ch.role==="INPUT")||
-         !positiveCounter(graph?.revision)||
-         !positiveCounter(graph?.rosterRevision))return unavailable;
+         !decimalId(graph?.revision)||
+         !decimalId(graph?.rosterRevision))return unavailable;
       return {kind:"READY",action:"routingNativeSourcePatch",
         payload:{channelId,deviceEpoch:epoch,
           graphRevision:graph.revision,rosterRevision:graph.rosterRevision,
@@ -249,6 +249,7 @@
     }
     if(authority==="M4"){
       if(hardware?.raw?.mixerSession?.authority==="CHANNEL_ID"||
+         !positiveCounter(epoch)||
          !Number.isInteger(channel)||channel<0||channel>=10||
          !positiveCounter(hardware?.raw?.legacyM4?.routingRevision))
         return unavailable;
