@@ -178,8 +178,8 @@ int probe(const char* primaryLabel,const char* captureLabel,double rate,int fram
     if(!capture.playing())
     {std::fputs("IO0_CAPTURE_START_REJECT\n",stderr);return 3;}
     juce::Thread::sleep(durationMs); // CONTROL only, never the hardware callback
-    const auto* a=primary.device.get();
-    const auto* b=capture.device.get();
+    auto* a=primary.device.get();
+    auto* b=capture.device.get();
     const std::wstring openedPrimary(a->getName().toWideCharPointer());
     const std::wstring openedCapture(b->getName().toWideCharPointer());
     const Policy::Readback readback{
