@@ -109,6 +109,125 @@
       session.channels?.[pending.channel]?.fxRackBypassed===pending.bypassed?
       "CONFIRMED":"WAIT";
   }
+
+  // MV-8: do not invent JS-owned FX identities or interpret a catalog key
+  // as an instance lease. These plans may only target admitted native PCM.
+  const VALID_ROLES=new Set(["INPUT","GROUP","FX_RETURN","MAIN"]);
+  function channelId(value) {
+    if(typeof value!=="string"||!/^[1-9][0-9]*$/.test(value))return false;
+    try{return BigInt(value)<=18446744073709551615n;}catch{return false;}
+  }
+  function rosterUnique(graph) {
+    if(!Array.isArray(graph?.channels))return false;
+    const seen=new Set();
+    for(const ch of graph.channels) {
+      if(!Array.isArray(ch?.inserts))return false;
+      for(const fx of ch.inserts) {
+        if(typeof fx?.id!=="string"||!fx.id||seen.has(fx.id))return false;
+        seen.add(fx.id);
+      }
+    }
+    return true;
+  }
+  function nativeInsertPlan(snapshot,{channelId:id,slot,catalogId,pending=false}={}) {
+    const graph=snapshot?.graph;
+    if(pending||snapshot?.admitted!==true||snapshot?.retained===true||
+       !channelId(id)||typeof catalogId!=="string"||!catalogId||
+       !Number.isInteger(slot)||slot<0||slot>=8||
+       !graph?.capabilities?.supportedOps?.includes("LOAD_INSERT")||
+       !rosterUnique(graph))return {kind:"UNAVAILABLE"};
+    const matches=graph.channels.filter(ch=>ch.id===id);
+    if(matches.length!==1||!VALID_ROLES.has(matches[0].role)||
+       matches[0].inserts.length!==slot)return {kind:"UNAVAILABLE"};
+    return {kind:"READY",channelId:id,payload:{catalogId,slot}};
+  }
+  function nativeEditPlan(snapshot,{channelId:id,slot,instanceId,
+                           move=false,destinationId=null,position=null}={}) {
+    const graph=snapshot?.graph;
+    // A MOVE with a lost destination must NEVER become a REMOVE.
+    if(typeof move!=="boolean"||
+       (!move&&(destinationId!==null||position!==null)))
+      return {kind:"UNAVAILABLE"};
+    const operation=move?"MOVE_INSERT":"REMOVE_INSERT";
+    if(snapshot?.admitted!==true||snapshot?.retained===true||
+       !channelId(id)||!Number.isInteger(slot)||slot<0||slot>=8||
+       typeof instanceId!=="string"||!instanceId||
+       !graph?.capabilities?.supportedOps?.includes(operation)||
+       !rosterUnique(graph))return {kind:"UNAVAILABLE"};
+    const sources=graph.channels.filter(ch=>ch.id===id);
+    if(sources.length!==1||!VALID_ROLES.has(sources[0].role)||
+       sources[0].inserts[slot]?.id!==instanceId)
+      return {kind:"UNAVAILABLE"};
+    const payload={slot,instanceId};
+    if(move){
+      if(!channelId(destinationId)||!Number.isInteger(position))return {kind:"UNAVAILABLE"};
+      const targets=graph.channels.filter(ch=>ch.id===destinationId);
+      if(targets.length!==1||!VALID_ROLES.has(targets[0].role))
+        return {kind:"UNAVAILABLE"};
+      const same=destinationId===id,max=targets[0].inserts.length-(same?1:0);
+      if(position<0||position>max||(!same&&max>=8))
+        return {kind:"UNAVAILABLE"};
+      if(same&&slot===position)return {kind:"NO_CHANGE"};
+      payload.toChannelId=destinationId;
+      payload.toSlot=position;
+    }
+    return {kind:"READY",operation,channelId:id,payload};
+  }
+  // createController is the ONLY source of matched ACK + independent
+  // readback. We additionally check exact editor lease before navigation.
+  function nativeInsertSettlement(pending,snapshot,confirmed){
+    if(!pending||pending.authority!=="CHANNEL_ID")return {kind:"NONE"};
+    if(snapshot?.device?.epoch!==pending.epoch)return {kind:"STALE"};
+    if(!confirmed||confirmed.operation!=="LOAD_INSERT"||
+       confirmed.requestId!==pending.requestId)return {kind:"WAIT"};
+    if(snapshot?.admitted!==true||snapshot.retained===true||
+       confirmed.targetChannelId!==pending.channelId||
+       confirmed.payload?.catalogId!==pending.id||
+       confirmed.payload?.slot!==pending.slot||
+       !channelId(pending.channelId)||!rosterUnique(snapshot.graph))
+      return {kind:"WAIT"};
+    const ch=snapshot.graph.channels.filter(c=>c.id===pending.channelId);
+    const fx=ch.length===1?ch[0].inserts[pending.slot]:null;
+    if(!fx||fx.catalogId!==pending.id||
+       typeof fx.id!=="string"||!fx.id)return {kind:"WAIT"};
+    return {kind:"CONFIRMED",channelId:pending.channelId,
+      slot:pending.slot,catalogId:fx.catalogId,instanceId:fx.id,name:fx.name};
+  }
+  function nativePowerPlan(snapshot,{channelId:id,action,slot,pending=false}={}){
+    const graph=snapshot?.graph;
+    if(pending||snapshot?.admitted!==true||snapshot?.retained===true||
+       !channelId(id)||!Array.isArray(graph?.channels)||!rosterUnique(graph))
+      return {kind:"UNAVAILABLE"};
+    const matches=graph.channels.filter(ch=>ch.id===id);
+    if(matches.length!==1)return {kind:"UNAVAILABLE"};
+    const ch=matches[0],rack=action==="fxOn";
+    if(!rack&&action!=="slotPower")return {kind:"UNAVAILABLE"};
+    const insert=rack?null:ch.inserts?.[slot];
+    if(rack?typeof ch.fxRackBypassed!=="boolean":
+       !Number.isInteger(slot)||slot<0||slot>=8||
+       typeof insert?.id!=="string"||!insert.id||
+       typeof insert.bypassed!=="boolean")return {kind:"UNAVAILABLE"};
+    const bypassed=rack?!ch.fxRackBypassed:!insert.bypassed;
+    return {kind:"READY",action:rack?"routingNativeFxRackBypass":
+      "routingNativeFxInsertBypass",
+      pending:{channelId:id,kind:rack?"rack":"insert",
+        insertId:insert?.id,bypassed,epoch:snapshot.device?.epoch,acked:false},
+      payload:{channelId:id,deviceEpoch:snapshot.device?.epoch,
+        revision:graph.revision,value:bypassed,
+        ...(rack?{}:{slot,insertId:insert.id})}};
+  }
+  function nativePowerAckResult(pending,ack){
+    if(!pending||!ack||ack.requestId!==pending.requestId)return "IGNORE";
+    if(ack.ok!==true||ack.channelId!==pending.channelId||
+       ack.bypassed!==pending.bypassed||
+       (ack.insertId!==undefined&&
+        pending.kind==="insert"&&ack.insertId!==pending.insertId))
+      return "REJECTED";
+    return "ACKED";
+  }
+
   return Object.freeze({powerReadback,mountedRackMatches,
-    m4Presentation,nativePowerSettlement,m4RackSettlement});
+    m4Presentation,nativePowerSettlement,m4RackSettlement,
+    nativeInsertPlan,nativeEditPlan,nativeInsertSettlement,
+    nativePowerPlan,nativePowerAckResult});
 });

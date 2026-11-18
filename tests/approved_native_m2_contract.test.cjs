@@ -999,11 +999,15 @@ test("Native FX GUI routes through ChannelId PCM with no operator MONITOR ritual
  const activeProjection=read("integration/ApprovedNativeV8Projection.h");
  assert.match(activeProjection,/insert->setProperty\("catalogId",catalog\)/);
  assert.match(activeProjection,/ch->setProperty\("fxRackBypassed",rackBypassed\)/);
- assert.match(bridge,/controller\.intent\("LOAD_INSERT",nativeId,/);
- assert.match(bridge,/if\(accepted\?\.admitted && nativeCh\)/);
+ assert.match(bridge,/fxRackVM\.nativeInsertPlan\(accepted,/);
+ assert.match(bridge,/controller\.intent\("LOAD_INSERT",plan\.channelId,plan\.payload\)/);
+ assert.match(bridge,/accepted\?\.admitted \|\| mixerSession\(\)\?\.authority==="CHANNEL_ID"/);
  assert.match(lab,/nativeAccepted_\.fxOwners->externalChannel\(\)==target/);
  assert.match(bridge,/pendingFxInsert=\{authority:"CHANNEL_ID"/);
- assert.match(bridge,/inserted\?\.catalogId===p\.id/);
+ const fxVM=read("web/approved-fx-rack-view-model.js");
+ assert.match(bridge,/fxRackVM\.nativeInsertSettlement\(pendingFxInsert,next,confirmed\)/);
+ assert.match(fxVM,/fx\.catalogId!==pending\.id/);
+ assert.match(fxVM,/confirmed\.requestId!==pending\.requestId/);
  assert.match(translate,/if\(op=="LOAD_INSERT"\)/);
  assert.match(snapshot,/available\.add\(juce::String\("LOAD_INSERT"\)\)/);
  assert.match(main,/engine_\.installNativeVst3\(/);
@@ -2833,7 +2837,8 @@ test("Guitar FX picker binding is real, visible and matches native installed reg
  assert.ok(bridge.includes("const presentFxCatalog=()=>scope?.setNativeCatalog?.("));
  assert.ok(guiBuilder.includes("setNativeCatalog(rows)"));
  assert.ok(guiBuilder.includes("renderPluginCatalog();renderFastPicker();"));
- assert.ok(bridge.includes('controller.intent("LOAD_INSERT",nativeId,'));
+ assert.ok(bridge.includes('fxRackVM.nativeInsertPlan(accepted,'));
+ assert.ok(bridge.includes('controller.intent("LOAD_INSERT",plan.channelId,plan.payload)'));
  assert.ok(bridge.includes('pendingFxInsert={authority:"CHANNEL_ID"'));
 });
 
@@ -3487,4 +3492,138 @@ test("MV-7 bridge delegates WIRE decisions, preserves only one native controller
  assert.doesNotMatch(bridge,/const failed=!state\.pending/);
  assert.doesNotMatch(read("web/approved-wire-view-model.js"),
    /backend\.emitEvent|window\.setTimeout|document\.querySelector/);
+});
+
+test("MV-8 FX native insert preflight keeps exact ChannelId, slot and installed roster",()=>{
+  const id="9007199254740993",id2="9007199254740995";
+  const snapshot={admitted:true,retained:false,device:{epoch:"73"},graph:{
+    revision:"55",capabilities:{supportedOps:["LOAD_INSERT","MOVE_INSERT","REMOVE_INSERT"]},
+    channels:[{id,role:"INPUT",inserts:[{id:"fx-1",catalogId:"eq"}]},
+      {id:id2,role:"GROUP",inserts:[]}]}};
+  const before=JSON.stringify(snapshot);
+  const ask={channelId:id,slot:1,catalogId:"vendor.vst3"};
+  assert.deepEqual(fxRackVM.nativeInsertPlan(snapshot,ask),{
+    kind:"READY",channelId:id,payload:{catalogId:"vendor.vst3",slot:1}});
+  const unavailable=(snap=snapshot,params=ask)=>
+    assert.equal(fxRackVM.nativeInsertPlan(snap,params).kind,"UNAVAILABLE");
+  unavailable(snapshot,{...ask,pending:true});
+  unavailable(snapshot,{...ask,slot:0});unavailable(snapshot,{...ask,slot:2});
+  unavailable(snapshot,{...ask,slot:8});unavailable(snapshot,{...ask,slot:1.5});
+  unavailable(snapshot,{...ask,channelId:Number(id)});
+  unavailable(snapshot,{...ask,channelId:"18446744073709551616"});
+  unavailable(snapshot,{...ask,catalogId:""});
+  unavailable({...snapshot,admitted:false});unavailable({...snapshot,retained:true});
+  unavailable({...snapshot,graph:{...snapshot.graph,capabilities:{supportedOps:[]}}});
+  unavailable({...snapshot,graph:{...snapshot.graph,channels:[
+    snapshot.graph.channels[0],{...snapshot.graph.channels[0]}]}});
+  unavailable({...snapshot,graph:{...snapshot.graph,channels:[
+    snapshot.graph.channels[0],
+    {id:id2,role:"GROUP",inserts:[{id:"fx-1",catalogId:"eq"}]}]}});
+  assert.equal(JSON.stringify(snapshot),before);
+});
+test("MV-8 FX move/remove preflight preserves exact instance and destination",()=>{
+  const a="9007199254740993",b="9007199254740995";
+  const base={admitted:true,retained:false,graph:{capabilities:{
+    supportedOps:["MOVE_INSERT","REMOVE_INSERT"]},
+    channels:[{id:a,role:"INPUT",inserts:[{id:"lease-a"},{id:"lease-b"}]},
+      {id:b,role:"GROUP",inserts:[]}]}};
+  const request={channelId:a,slot:0,instanceId:"lease-a",
+    move:true,destinationId:b,position:0};
+  assert.deepEqual(fxRackVM.nativeEditPlan(base,request),{
+    kind:"READY",operation:"MOVE_INSERT",channelId:a,
+    payload:{slot:0,instanceId:"lease-a",toChannelId:b,toSlot:0}});
+  assert.deepEqual(fxRackVM.nativeEditPlan(base,{channelId:a,slot:1,
+    instanceId:"lease-b"}),{kind:"READY",operation:"REMOVE_INSERT",
+    channelId:a,payload:{slot:1,instanceId:"lease-b"}});
+  assert.equal(fxRackVM.nativeEditPlan(base,{...request,destinationId:a,
+    position:0}).kind,"NO_CHANGE");
+  const bad=(s=base,args=request)=>assert.equal(
+    fxRackVM.nativeEditPlan(s,args).kind,"UNAVAILABLE");
+  bad(base,{...request,slot:1});
+  bad(base,{...request,instanceId:"vendor.vst3"});
+  bad(base,{...request,destinationId:"0"});
+  bad(base,{...request,destinationId:null}); // lost mapping never deletes FX
+  bad(base,{...request,destinationId:Number(b)});
+  bad(base,{...request,move:false}); // stray target cannot become REMOVE
+  bad(base,{...request,move:"yes"});
+  bad(base,{...request,position:1});
+  bad(base,{...request,position:-1});
+  bad({...base,retained:true});
+  bad({...base,graph:{...base.graph,channels:[
+    base.graph.channels[0],{...base.graph.channels[1],
+    inserts:[{id:"lease-a"}]}]}});
+  bad({...base,graph:{...base.graph,capabilities:{supportedOps:[]}}});
+});
+test("MV-8 FX inserted editor requires correlated controller proof and unique lease",()=>{
+  const ch="9007199254740993",cat="vendor.vst3";
+  const pending={authority:"CHANNEL_ID",requestId:"r-7",channelId:ch,
+    id:cat,slot:0,epoch:"73"};
+  const snapshot={admitted:true,retained:false,device:{epoch:"73"},graph:{
+    channels:[{id:ch,role:"INPUT",inserts:[
+      {id:"live-instance-a",catalogId:cat,name:"Vendor VST3"}]}]}};
+  const ack={requestId:"r-7",operation:"LOAD_INSERT",targetChannelId:ch,
+    payload:{catalogId:cat,slot:0}};
+  assert.deepEqual(fxRackVM.nativeInsertSettlement(pending,snapshot,ack),{
+    kind:"CONFIRMED",channelId:ch,slot:0,catalogId:cat,
+    instanceId:"live-instance-a",name:"Vendor VST3"});
+  assert.equal(fxRackVM.nativeInsertSettlement(pending,snapshot,null).kind,"WAIT");
+  assert.equal(fxRackVM.nativeInsertSettlement(pending,snapshot,
+    {...ack,requestId:"r-8"}).kind,"WAIT");
+  assert.equal(fxRackVM.nativeInsertSettlement(pending,snapshot,
+    {...ack,targetChannelId:"71"}).kind,"WAIT");
+  assert.equal(fxRackVM.nativeInsertSettlement(pending,snapshot,
+    {...ack,payload:{catalogId:"different",slot:0}}).kind,"WAIT");
+  assert.equal(fxRackVM.nativeInsertSettlement(pending,
+    {...snapshot,device:{epoch:"74"}},ack).kind,"STALE");
+  assert.equal(fxRackVM.nativeInsertSettlement(pending,
+    {...snapshot,admitted:false},ack).kind,"WAIT");
+  assert.equal(fxRackVM.nativeInsertSettlement(pending,
+    {...snapshot,graph:{channels:[...snapshot.graph.channels,
+      {id:"91",role:"GROUP",inserts:[
+        {id:"live-instance-a",catalogId:cat}]}]}},ack).kind,"WAIT");
+  assert.equal(fxRackVM.nativeInsertSettlement(pending,
+    {...snapshot,graph:{channels:[{id:ch,role:"INPUT",inserts:[
+      {id:"live-instance-b",catalogId:"different"}]}]}},ack).kind,"WAIT");
+  assert.deepEqual(fxRackVM.nativeInsertSettlement(null,snapshot,ack),{kind:"NONE"});
+});
+test("MV-8 FX native bypass plan and ACK are independent of global and insert states",()=>{
+  const channelId="9007199254740993";
+  const snapshot={admitted:true,retained:false,device:{epoch:"73"},graph:{
+    revision:"22",channels:[{id:channelId,role:"INPUT",fxRackBypassed:false,
+      inserts:[{id:"lease-1",bypassed:true},{id:"lease-2",bypassed:false}]}]}};
+  const rack=fxRackVM.nativePowerPlan(snapshot,{channelId,action:"fxOn"});
+  assert.equal(rack.kind,"READY");
+  assert.equal(rack.pending.bypassed,true);
+  assert.equal(rack.action,"routingNativeFxRackBypass");
+  assert.equal(rack.payload.revision,"22");
+  const slot=fxRackVM.nativePowerPlan(snapshot,{channelId,action:"slotPower",slot:0});
+  assert.equal(slot.kind,"READY");
+  assert.equal(slot.pending.insertId,"lease-1");
+  assert.equal(slot.pending.bypassed,false);
+  assert.equal(slot.payload.value,false);
+  assert.equal(fxRackVM.nativePowerPlan(snapshot,{channelId,action:"slotPower",slot:2}).kind,"UNAVAILABLE");
+  assert.equal(fxRackVM.nativePowerPlan(snapshot,{channelId,action:"slotPower",slot:0,
+    pending:true}).kind,"UNAVAILABLE");
+  const p={...slot.pending,requestId:"fx-17"};
+  assert.equal(fxRackVM.nativePowerAckResult(p,{requestId:"other",ok:true}),"IGNORE");
+  assert.equal(fxRackVM.nativePowerAckResult(p,{requestId:"fx-17",ok:true,
+    channelId,bypassed:false,insertId:"lease-1"}),"ACKED");
+  assert.equal(fxRackVM.nativePowerAckResult(p,{requestId:"fx-17",ok:true,
+    channelId,bypassed:false,insertId:"replaced"}),"REJECTED");
+  assert.equal(fxRackVM.nativePowerAckResult(p,{requestId:"fx-17",ok:false,
+    channelId,bypassed:false}),"REJECTED");
+  assert.equal(fxRackVM.nativePowerAckResult(null,{}),"IGNORE");
+});
+test("MV-8 FX bridge delegates preflight and settlement to existing pure FX VM",()=>{
+  const bridge=read("web/approved-native-bridge.js");
+  assert.match(bridge,/fxRackVM\.nativeInsertPlan\(/);
+  assert.match(bridge,/fxRackVM\.nativeInsertSettlement\(/);
+  assert.match(bridge,/fxRackVM\.nativeEditPlan\(/);
+  assert.match(bridge,/move:!!target/);
+  assert.match(bridge,/fxRackVM\.nativePowerPlan\(/);
+  assert.match(bridge,/fxRackVM\.nativePowerAckResult\(/);
+  assert.match(bridge,/controller\.intent\(plan\.channelId,|controller\.intent\("LOAD_INSERT",plan\.channelId/);
+  assert.match(bridge,/controller\.intent\(decision\.operation,decision\.channelId/);
+  assert.doesNotMatch(read("web/approved-fx-rack-view-model.js"),
+    /backend\.emitEvent|document\.querySelector|setTimeout\(/);
 });
