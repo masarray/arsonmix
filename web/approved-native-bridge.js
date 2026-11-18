@@ -3712,12 +3712,8 @@
         if(!requestWireGain(ops[0]))status("WIRE gain unavailable · accepted parallel send required");
         return true;
       }
-      // Sends-on-faders creates a new send plus its initial gain atomically;
-      // its draft UI EdgeId must never be sent as an accepted native EdgeId.
-      if(Array.isArray(ops)&&ops.length===2&&ops[0].type==="CONNECT"&&
-         ops[1].type==="GAIN"&&ops[0].sourceId===ops[1].sourceId&&
-         !wireByUiId.has(ops[1].edgeId)&&Number.isFinite(ops[1].levelDb))
-        ops=[{...ops[0],mode:"send",levelDb:ops[1].levelDb}];
+      // Sends-on-faders' draft EdgeId is not a native identifier.
+      ops=wireVM.compactSendGesture(ops,wireByUiId);
       const current=controller?.state().current;
       // P0 first-sound WIRE to MAIN is the very same native M4 PRIMARY_OUT
       // transaction as the ordinary OUT drop-down. Do not reject a real
@@ -3776,38 +3772,21 @@
         nativeToast(reason);
         return true;
       }
-      const changes=[];
-      for (const op of ops) {
-        const sourceId=nativeByUiId.get(op.sourceId);
-        const destId=op.destId===undefined?undefined:nativeByUiId.get(op.destId);
-        const edgeId=op.edgeId===undefined?undefined:wireByUiId.get(op.edgeId);
-        if (!sourceId || (op.destId!==undefined&&!destId) ||
-            (op.edgeId!==undefined&&!edgeId)) {
-          status("NATIVE: WIRE mapped identity missing; no mutation");return true;
-        }
-        // ENGINE #266's real PCM decoder consumes op/from/to/edgeId,
-        // NOT the Pages reducer's type/sourceId/destId. Never feed it
-        // an unrecognized demo command or an unbound EdgeId.
-        if (!["CONNECT","REMOVE","RETARGET","ROUTE_ONLY"].includes(op.type) ||
-            (op.mode && !["send","postFader","routeOnly"].includes(op.mode))) {
-          status("NATIVE: WIRE "+op.type+" needs real engine capability; unchanged");
-          return true;
-        }
-        const change={op:op.type,from:sourceId};
-        if (destId)change.to=destId;
-        if (edgeId)change.edgeId=edgeId;
-        if (op.type==="CONNECT" || op.type==="ROUTE_ONLY") {
-          change.tap="POST_FADER";
-          change.gainLinear=op.levelDb===undefined?1:
-            Math.pow(10,Math.max(-60,Math.min(6,Number(op.levelDb)))/20);
-        }
-        changes.push(change);
-      }
-      const source=changes[0]?.from;
-      if (!source || changes.some(change=>change.from!==source)) {
-        status("NATIVE: multi-source transaction requires native batch admission");
+      // Pure preflight converts exact UI tokens to native ChannelId/EdgeId.
+      // No DSP or UI mutation until the ORIGINAL controller accepts intent.
+      const translation=wireVM.nativeTransaction(ops,nativeByUiId,wireByUiId);
+      if(!translation.ok){
+        if(translation.error==="MAPPED_IDENTITY_MISSING")
+          status("NATIVE: WIRE mapped identity missing; no mutation");
+        else if(translation.error==="MULTI_SOURCE")
+          status("NATIVE: multi-source transaction requires native batch admission");
+        else if(translation.error==="INVALID_WIRE_GAIN")
+          status("NATIVE: WIRE invalid gain; accepted routing unchanged");
+        else status("NATIVE: WIRE "+(translation.operation||"gesture")+
+          " needs real engine capability; unchanged");
         return true;
       }
+      const {source,changes}=translation;
       const accepted=controller.intent("APPLY_WIRE_TRANSACTION",source,{changes});
       if(accepted.ok&&ops.length===1&&ops[0].type==="CONNECT")
         activeWireAttempt={ops:ops.map(x=>({...x})),epoch:current.device.epoch,retries};
