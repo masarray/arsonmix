@@ -111,7 +111,7 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             native_host = (ROOT / "src/Main.cpp").read_text("utf-8")
             hotkey_policy = (ROOT / "src/NativeHotkeyCommandPlan.h").read_text("utf-8")
             self.assertIn("HOTKEY_FX_INSTANCE_NOT_ADMITTED", hotkey_policy)
-            self.assertIn("NativeHotkeyCommandPlan::registrationError", native_host)
+            self.assertRegex(native_host, r"NativeHotkeyCommandPlan::\\s*registrationError")
             self.assertIn("NativeHotkeyCommandPlan::dispatch", native_host)
             self.assertIn("exactFxSlot", hotkey_policy)
             self.assertIn("Browse Parameters…", context_menu)
