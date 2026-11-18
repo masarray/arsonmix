@@ -153,7 +153,44 @@
     return {ok:true,source,changes};
   }
 
+
+  // MV-7: pure deferred WIRE gain projection. Installed PCM alone decides.
+  function gainDispatchPlan(snapshot,edgeId,edit) {
+    if(snapshot?.admitted!==true||snapshot.retained===true||
+       !edit||snapshot.identity!==edit.identity||
+       !nativeId(edgeId)||!nativeId(edit.source)||
+       typeof edit.gain!=="number"||!Number.isFinite(edit.gain)||
+       edit.gain<0||edit.gain>4)return {kind:"ROLLBACK"};
+    const edge=parallelEdge(snapshot.graph,edit.source,edgeId);
+    if(!edge||!Number.isFinite(edge.gainLinear))return {kind:"ROLLBACK"};
+    if(Math.abs(edge.gainLinear-edit.gain)<0.00001)
+      return {kind:"CONFIRMED"};
+    return {kind:"DISPATCH",source:edit.source,edgeId,
+      gainLinear:edit.gain};
+  }
+
+  // MV-7: only a same-device initial CONNECT may rebase once.
+  // The original controller remains the sole native ACK/readback authority.
+  const STALE_WIRE_ERRORS=new Set([
+    "STALE_NATIVE_CONTROL_REVISION","STALE_NATIVE_WIRE_GRAPH"]);
+  function nativeRecoveryPlan(state,activeAttempt,startupAttempt) {
+    if(state?.pending)return {kind:"PENDING"};
+    const error=state?.lastError;
+    if(error==="ACCEPTED_READBACK")return {kind:"ACCEPTED"};
+    if(error==="NONE"||error==="NATIVE_NOT_SUBSCRIBED"||!error)
+      return {kind:"IDLE"};
+    if(startupAttempt?.retries===1&&STALE_WIRE_ERRORS.has(error))
+      return {kind:"FLUSH_STARTUP_RETRY"};
+    if(activeAttempt?.retries===0&&nativeId(activeAttempt.epoch)&&
+       state?.current?.device?.epoch===activeAttempt.epoch&&
+       STALE_WIRE_ERRORS.has(error)&&
+       Array.isArray(activeAttempt.ops)&&activeAttempt.ops.length===1&&
+       activeAttempt.ops[0]?.type==="CONNECT")
+      return {kind:"REBASE_CONNECTION"};
+    return {kind:"ROLLBACK"};
+  }
+
   return Object.freeze({gainDb,edgePresentation,parallelEdge,
     acceptedParallelEdge,gainReadback,canEditTap,gestureTap,sofAvailable,
-    compactSendGesture,nativeTransaction});
+    compactSendGesture,nativeTransaction,gainDispatchPlan,nativeRecoveryPlan});
 });
