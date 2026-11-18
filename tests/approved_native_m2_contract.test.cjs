@@ -6,9 +6,74 @@ const {readFileSync}=require("node:fs");
 const protocol=require("../web/approved-native-contract.js");
 const deviceVM=require("../web/approved-device-view-model.js");
 const stripVM=require("../web/approved-channel-strip-view-model.js");
+const fxRackVM=require("../web/approved-fx-rack-view-model.js");
 const read=p=>readFileSync(p,"utf8");
 const fixtures=JSON.parse(read("integration/console-v6/fixtures.json"));
 const clone=x=>JSON.parse(JSON.stringify(x));
+
+test("GUI-2 pure FX power readback preserves independent rack/slot/global states and labels",()=>{
+ const channel={id:"9007199254740993",fxRackBypassed:false,inserts:[
+  {id:"instance-1",bypassed:false,latencySamples:96},
+  {id:"instance-2",bypassed:true,latencyChanged:true}
+ ]};
+ const original=JSON.stringify(channel);
+ const normal=fxRackVM.powerReadback(channel,false,"Vocal");
+ assert.equal(normal.enabled,true);
+ assert.equal(normal.globalEnabled,true);
+ assert.equal(normal.chainBypassed,false);
+ assert.equal(normal.headerPressed,"true");
+ assert.equal(normal.slots[0].effective,true);
+ assert.equal(normal.slots[1].effective,false);
+ assert.equal(normal.slots[0].latencyTitle,"Plugin delay: 96 samples · compensated");
+ assert.match(normal.slots[1].latencyTitle,/Plugin delay changed/);
+ assert.equal(normal.slots[0].label,"Bypass only FX insert 1 in Vocal");
+ assert.equal(normal.slots[1].title,"Enable only insert 2");
+ const rackOff=fxRackVM.powerReadback({...channel,fxRackBypassed:true},false,"Vocal");
+ assert.equal(rackOff.enabled,false);
+ assert.equal(rackOff.slots[0].bypassed,false,
+  "rack bypass must never become an insert bypass");
+ assert.equal(rackOff.slots[0].effective,false);
+ const globalOff=fxRackVM.powerReadback(channel,true,"Vocal");
+ assert.equal(globalOff.globalEnabled,false);
+ assert.equal(globalOff.slots[0].effective,false);
+ assert.equal(globalOff.slots[0].bypassed,false);
+ assert.equal(globalOff.headerPressed,"false");
+ assert.equal(JSON.stringify(channel),original,"projection cannot mutate native graph");
+
+ // Missing/incomplete readback, including wrong type, is NOT a default ON.
+ assert.equal(fxRackVM.powerReadback({},false,"Vocal"),null);
+ assert.equal(fxRackVM.powerReadback(channel,undefined,"Vocal"),null);
+ assert.equal(fxRackVM.powerReadback({...channel,
+  inserts:[{id:"instance-1",bypassed:"false"}]},false,"Vocal"),null);
+ assert.equal(fxRackVM.powerReadback({...channel,
+  inserts:[{id:"",bypassed:false}]},false,"Vocal"),null);
+});
+test("GUI-2 exact mounted FX instance/power identity rejects stale, duplicate or missing rows",()=>{
+ const data=fxRackVM.powerReadback({fxRackBypassed:false,inserts:[
+  {id:"instance-1",bypassed:false},
+  {id:"instance-2",bypassed:true}
+ ]},false,"Vocal");
+ const good=[
+  {index:0,insertId:"instance-1",hasPower:true},
+  {index:1,insertId:"instance-2",hasPower:true}
+ ];
+ assert.equal(fxRackVM.mountedRackMatches(data,good,true),true);
+ assert.equal(fxRackVM.mountedRackMatches(data,[good[1],good[0]],true),true,
+  "DOM row order is not allowed to substitute native slot identity");
+ assert.equal(fxRackVM.mountedRackMatches(data,good,false),false);
+ assert.equal(fxRackVM.mountedRackMatches(data,good.slice(0,1),true),false);
+ assert.equal(fxRackVM.mountedRackMatches(data,[good[0],good[0]],true),false);
+ assert.equal(fxRackVM.mountedRackMatches(data,[good[0],
+  {...good[1],insertId:"new-plugin"}],true),false);
+ assert.equal(fxRackVM.mountedRackMatches(data,[good[0],
+  {...good[1],hasPower:false}],true),false);
+ assert.equal(fxRackVM.mountedRackMatches(data,null,true),false);
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/fxRackVM\.powerReadback\(/);
+ assert.match(bridge,/fxRackVM\.mountedRackMatches\(/);
+ assert.doesNotMatch(bridge,/const effective=enabled&&globalEnabled&&!insert\.bypassed/,
+  "old duplicated FX bypass projection must be removed from DOM bridge");
+});
 function acceptedFixture(){
  const s=clone(fixtures.g0);
  s.device.epoch="18446744073709551610";
@@ -1249,7 +1314,7 @@ test("M3 native-only Pages scope performs real bridge projection, fader intent a
    querySelector:()=>null,addEventListener(){}
  };
  const window={
-   __JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,
+   __JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,ArSonApprovedFxRackViewModel:fxRackVM,
    __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},queueMicrotask(fn){microtasks.push(fn);},setTimeout(fn,ms){timers.push({fn,ms});return timers.length;}
  };
  vm.runInNewContext(read("web/approved-native-bridge.js"),{
@@ -1473,7 +1538,7 @@ test("P0 native FX rack and per-slot readback update mounted strip without repla
   querySelector:selector=>selector.startsWith('.strip[data-id=')?strip:null,
   addEventListener(){}
  };
- const win={__JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,
+ const win={__JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,ArSonApprovedFxRackViewModel:fxRackVM,
   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
   setTimeout(){return 0},clearTimeout(){},queueMicrotask(fn){fn();}};
  vm.runInNewContext(read("web/approved-native-bridge.js"),
@@ -1651,7 +1716,7 @@ test("P0 FIRST SOUND G0 offers verified input and leaves automatic MAIN to nativ
   addEventListener(){}
  };
  win={
-  __JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,
+  __JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,ArSonApprovedFxRackViewModel:fxRackVM,
   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
   setTimeout(){return 0},clearTimeout(){},queueMicrotask(fn){fn();}
  };
@@ -1738,7 +1803,7 @@ test("P0 native hardware IN remains selectable after ChannelId ownership, failed
     id==="preview"?{disabled:true}:null,
   querySelector:()=>null,addEventListener(){}
  };
- const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,
+ const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,ArSonApprovedFxRackViewModel:fxRackVM,
   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
   setTimeout(){return 0},clearTimeout(){},
   queueMicrotask(fn){microtasks.push(fn);}};
