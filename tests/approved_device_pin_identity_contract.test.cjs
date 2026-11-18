@@ -4,6 +4,13 @@ const test=require("node:test");
 const assert=require("node:assert/strict");
 const {readFileSync}=require("node:fs");
 const vm=require("../web/approved-device-view-model.js");
+const protocol=require("../web/approved-native-contract.js");
+// The v6 controller is the only normalizer of installed physical identity.
+// Minimal VM fixtures explicitly reuse that canonical read-only fingerprint.
+const lease=(snapshot,kind)=>vm.nativeLifecycleLease({
+  ...snapshot,
+  hardwareConfiguration:protocol.nativeHardwareConfiguration(snapshot?.device)
+},kind);
 
 function fixture(){
   const active={
@@ -175,7 +182,7 @@ test("MV-12 native lifecycle lease preserves exact uint64 device identity",()=>{
     captureDevice:"A",playbackDevice:"A",sampleRate:48000,bufferFrames:256,
     enabledInputs:[1,0],enabledOutputs:[0,1]},graph:{revision:"9"}};
   const original=JSON.stringify(base);
-  const lease=vm.nativeLifecycleLease(base,"CHANNEL_ID");
+  const lease=lease(base,"CHANNEL_ID");
   assert.deepEqual(lease,{epoch:"18446744073709551615",backend:"ASIO",
     captureDevice:"A",playbackDevice:"A",
     hardwareConfiguration:JSON.stringify([48000,256,[0,1],[0,1]]),
@@ -184,13 +191,13 @@ test("MV-12 native lifecycle lease preserves exact uint64 device identity",()=>{
   assert.equal(JSON.stringify(base),original);
   for(const epoch of [18446744073709551615,"01","-1","1.5","",
     "18446744073709551616",null]) {
-    assert.equal(vm.nativeLifecycleLease({...base,
+    assert.equal(lease({...base,
       device:{...base.device,epoch}},"CHANNEL_ID"),null,
       "rounding, overflow and noncanonical epoch must fail closed");
   }
   for(const kind of ["INVALID","DEMO","",null])
-    assert.equal(vm.nativeLifecycleLease(base,kind),null);
-  assert.equal(vm.nativeLifecycleLease({device:{...base.device,
+    assert.equal(lease(base,kind),null);
+  assert.equal(lease({device:{...base.device,
     captureDevice:undefined}},"CHANNEL_ID"),null);
 });
 
@@ -199,19 +206,19 @@ test("MV-12 native lifecycle expires old device intents even when both graphs ar
     ({device:{epoch,backend,captureDevice:name,playbackDevice:name,
       sampleRate:48000,bufferFrames:256,
       enabledInputs:[0,1],enabledOutputs:[0,1]}});
-  const first=vm.nativeLifecycleLease(s(),"CHANNEL_ID");
-  const same=vm.nativeLifecycleLease({...s(),graph:{revision:"500",
+  const first=lease(s(),"CHANNEL_ID");
+  const same=lease({...s(),graph:{revision:"500",
     rosterRevision:"700"}},"CHANNEL_ID");
   assert.deepEqual(vm.nativeLifecycleDecision(null,first),
     {kind:"INITIAL",expirePending:false});
   assert.deepEqual(vm.nativeLifecycleDecision(first,same),
     {kind:"SAME",expirePending:false},
     "graph/roster revisions and scalar telemetry cannot cancel same-device gestures");
-  const afterReconnect=vm.nativeLifecycleLease(s("42"),"CHANNEL_ID");
+  const afterReconnect=lease(s("42"),"CHANNEL_ID");
   assert.deepEqual(vm.nativeLifecycleDecision(first,afterReconnect),
     {kind:"DEVICE_CHANGED",expirePending:true},
     "back-to-back admitted PCM snapshots must still invalidate old leases");
-  const otherDriver=vm.nativeLifecycleLease(s("41","ASIO","Backup ASIO"),"CHANNEL_ID");
+  const otherDriver=lease(s("41","ASIO","Backup ASIO"),"CHANNEL_ID");
   assert.equal(vm.nativeLifecycleDecision(first,otherDriver).kind,"DEVICE_CHANGED",
     "same-epoch endpoint replacement is never the old physical owner");
   assert.equal(vm.nativeLifecycleDecision(first,{...first,
@@ -223,7 +230,7 @@ test("MV-12 authority transitions expire stale M4/ChannelId work; no duplicate o
   const snapshot={device:{epoch:"91",backend:"ASIO",
     captureDevice:"One",playbackDevice:"One",sampleRate:48000,
     bufferFrames:256,enabledInputs:[0,1],enabledOutputs:[0,1]}};
-  const mk=kind=>vm.nativeLifecycleLease(snapshot,kind);
+  const mk=kind=>lease(snapshot,kind);
   for(const [a,b] of [["M4","CHANNEL_ID"],["CHANNEL_ID","NEEDS_REMAP"],
     ["NEEDS_REMAP","CHANNEL_ID"],["LOGICAL_ONLY","CHANNEL_ID"],
     ["CHANNEL_ID","UNADMITTED"],["STALE","CHANNEL_ID"]]) {
@@ -235,7 +242,7 @@ test("MV-12 authority transitions expire stale M4/ChannelId work; no duplicate o
     "first accepted M4 input must not silently discard its own pending source");
   const switched={device:{...snapshot.device,epoch:"92"}};
   assert.deepEqual(vm.nativeLifecycleDecision(mk("UNADMITTED"),
-    vm.nativeLifecycleLease(switched,"M4")),
+    lease(switched,"M4")),
     {kind:"DEVICE_CHANGED",expirePending:true},
     "first-sound exemption must never bypass a physical device change");
   for(const kind of ["M4","CHANNEL_ID","LOGICAL_ONLY","NEEDS_REMAP",
@@ -252,8 +259,8 @@ test("MV-18 physical device swap cancels output and FX leases even at unchanged 
    epoch:"18446744073709551614",backend,captureDevice:capture,
    playbackDevice:playback,sampleRate:48000,bufferFrames:256,
    enabledInputs:[0,1],enabledOutputs:[0,1]}});
- const old=vm.nativeLifecycleLease(snapshot("ASIO","Old ASIO","Old ASIO"),"M4");
- const changed=vm.nativeLifecycleLease(snapshot("ASIO","New ASIO","New ASIO"),"M4");
+ const old=lease(snapshot("ASIO","Old ASIO","Old ASIO"),"M4");
+ const changed=lease(snapshot("ASIO","New ASIO","New ASIO"),"M4");
  assert.deepEqual(vm.nativeLifecycleDecision(old,changed),
    {kind:"DEVICE_CHANGED",expirePending:true},
    "a driver can change even if the epoch was reused");
@@ -262,7 +269,7 @@ test("MV-18 physical device swap cancels output and FX leases even at unchanged 
  assert.deepEqual(vm.nativeLifecycleDecision(old,old),
    {kind:"SAME",expirePending:false});
  assert.deepEqual(vm.nativeLifecycleDecision(
-   vm.nativeLifecycleLease(snapshot("ASIO","Old ASIO","Old ASIO"),"UNADMITTED"),
+   lease(snapshot("ASIO","Old ASIO","Old ASIO"),"UNADMITTED"),
    old),{kind:"M4_FIRST_SOUND",expirePending:false},
    "first M4 input patch must preserve its own pending source");
  const bridge=readFileSync("web/approved-native-bridge.js","utf8");
@@ -282,7 +289,7 @@ test("G-MV20 same-epoch native hardware remap invalidates transient GUI leases",
     enabledInputs:[0,2],enabledOutputs:[0,1,4,5],
     outputArmed:false,...overrides}});
   const base=snapshot(),before=JSON.stringify(base);
-  const old=vm.nativeLifecycleLease(base,"M4");
+  const old=lease(base,"M4");
   assert.ok(old);
   for(const changes of [
     {enabledInputs:[0,1]}, // physically different capture pins
@@ -290,12 +297,12 @@ test("G-MV20 same-epoch native hardware remap invalidates transient GUI leases",
     {sampleRate:44100},
     {bufferFrames:512}
   ]) {
-    const next=vm.nativeLifecycleLease(snapshot(changes),"M4");
+    const next=lease(snapshot(changes),"M4");
     assert.deepEqual(vm.nativeLifecycleDecision(old,next),
       {kind:"DEVICE_CHANGED",expirePending:true},
       "stale FX, input/output, and WIRE intents must not cross "+JSON.stringify(changes));
   }
-  const reordered=vm.nativeLifecycleLease(snapshot({
+  const reordered=lease(snapshot({
     enabledInputs:[2,0],enabledOutputs:[5,4,1,0],
     outputArmed:true}),"M4");
   assert.equal(reordered.hardwareConfiguration,old.hardwareConfiguration);
@@ -303,11 +310,11 @@ test("G-MV20 same-epoch native hardware remap invalidates transient GUI leases",
     {kind:"SAME",expirePending:false},
     "pin enumeration/monitor outputArmed must not reset current gestures");
   assert.deepEqual(vm.nativeLifecycleDecision(
-    vm.nativeLifecycleLease(snapshot({outputArmed:false}),"UNADMITTED"),reordered),
+    lease(snapshot({outputArmed:false}),"UNADMITTED"),reordered),
     {kind:"M4_FIRST_SOUND",expirePending:false},
     "first route must preserve queued second input on unchanged hardware");
   assert.deepEqual(vm.nativeLifecycleDecision(
-    vm.nativeLifecycleLease(snapshot({enabledInputs:[0,1]}),"UNADMITTED"),reordered),
+    lease(snapshot({enabledInputs:[0,1]}),"UNADMITTED"),reordered),
     {kind:"DEVICE_CHANGED",expirePending:true},
     "first-sound exemption must not keep a source from a different pin mask");
   assert.equal(JSON.stringify(base),before,"no native snapshot mutation");
@@ -315,7 +322,7 @@ test("G-MV20 same-epoch native hardware remap invalidates transient GUI leases",
     {enabledInputs:[0,0]},{enabledOutputs:[0,256]},
     {enabledInputs:[0,"2"]},{sampleRate:NaN},
     {bufferFrames:1.5},{enabledOutputs:null},{sampleRate:undefined}
-  ])assert.equal(vm.nativeLifecycleLease(snapshot(bad),"M4"),null,
+  ])assert.equal(lease(snapshot(bad),"M4"),null,
     "incomplete or malformed hardware identity must fail closed");
   const bridge=readFileSync("web/approved-native-bridge.js","utf8");
   assert.match(bridge,/deviceVM\.nativeLifecycleDecision\(lastNativeLifecycleLease,lease\)/);
