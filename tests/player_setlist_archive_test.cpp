@@ -138,7 +138,7 @@ int main() {
     assert(newName=="Setlist 2");
     names.push_back({newName,{},{}});
     assert(Archive::serialize(names,2,false,180).isObject());
-    names[1].name="SETLIST 2"; // user rename still checked case-insensitively
+    names[1].name="setLIST 3"; // case-folded name remains occupied
     assert(Archive::nextGeneratedName(names)=="Setlist 4");
 
     // Legacy empty v3 content migrates to a non-destructive default setlist.
