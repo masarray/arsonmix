@@ -981,32 +981,15 @@
     const session=mixerSession(),current=controller?.state()?.current;
     if(session?.authority==="CHANNEL_ID"){
       const channelId=nativeIdFor(t);
-      const ch=current?.graph?.channels?.find(row=>row.id===channelId);
-      const main=current?.graph?.mainChannelId;
-      if(!current?.admitted || !channelId || !ch || !main ||
-         !current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION") ||
-         !["INPUT","GROUP","FX_RETURN"].includes(ch.role) ||
-         !target)return false;
-      const destination=nativeOutputTargets(t).find(row=>row.label===target);
-      const to=target==="MAIN"?main:destination?.id||null;
-      if(target!=="NONE"&&!to)return false;
-      const dest=ch.primaryOutId||null;
-      if((to&&dest===to)||(target==="NONE"&&!dest)){
+      // Native readback and physical authority are validated once inside
+      // the existing pure Channel Strip VM, not rebuilt by the DOM bridge.
+      const plan=stripVM.primaryOutMutation(
+        current,channelId,target,nativeOutputTargets(t));
+      if(plan.kind==="UNAVAILABLE")return false;
+      if(plan.kind==="NO_CHANGE"){
         controller.subscribe();return true;
       }
-      let change;
-      if(to){
-        change={op:"ROUTE_ONLY",from:channelId,to,
-                tap:"POST_FADER",gainLinear:1};
-      }else{
-        // Exact EdgeId from the independent native readback; never invent a
-        // disconnect ID or remove an unrelated parallel SEND.
-        const edge=current.graph.edges.find(e=>e.enabled &&
-          e.from===channelId && e.to===dest &&
-          e.primaryOutput===true);
-        if(!edge)return false;
-        change={op:"REMOVE",from:channelId,edgeId:edge.edgeId};
-      }
+      const change=plan.change;
       const accepted=controller.intent("APPLY_WIRE_TRANSACTION",channelId,
                                      {changes:[change]});
       if(!accepted.ok){status("Native OUT rejected · "+accepted.error);return false;}
