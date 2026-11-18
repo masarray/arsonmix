@@ -13,8 +13,21 @@ const fixtures=JSON.parse(read("integration/console-v6/fixtures.json"));
 const clone=x=>JSON.parse(JSON.stringify(x));
 
 
+// A real admitted v6 snapshot needs MAIN identity and an installed graph.
+// The repository's g2 fixture is intentionally a partial graph source.
+function gmv20AcceptedGraph() {
+ const fixture=clone(fixtures.g2);
+ fixture.graph.mainChannelId="200";
+ fixture.graph.edges=[["7","100"],["2","100"],["100","200"],
+   ["101","200"]].map(([from,to],i)=>({
+     edgeId:String(i+1),from,to,signalKind:"AUDIO",
+     gainLinear:1,enabled:true,primaryOutput:true
+   }));
+ return fixture;
+}
+
 test("G-MV20 schema-v6 pending intent is fenced on same-epoch physical pin or format change",()=>{
- const base=clone(fixtures.g2),before=JSON.stringify(base);
+ const base=gmv20AcceptedGraph(),before=JSON.stringify(base);
  const hardware=protocol.nativeHardwareConfiguration(base.device);
  assert.equal(hardware,JSON.stringify([48000,128,[0,1],[0,1,2,3]]));
  const normalized=protocol.normalizeSnapshot(base);
@@ -62,7 +75,7 @@ test("G-MV20 schema-v6 pending intent is fenced on same-epoch physical pin or fo
 });
 
 test("G-MV20 pin order and MONITOR are not a new hardware owner",()=>{
- const base=clone(fixtures.g2),seen=[];
+ const base=gmv20AcceptedGraph(),seen=[];
  const c=protocol.createController({emit(){},
    onAccepted:next=>seen.push(next)});
  assert.equal(c.onSnapshot(base),true);
