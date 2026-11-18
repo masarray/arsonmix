@@ -2125,6 +2125,36 @@ test("SET_FADER: one exact string request, ACK then LATER same-revision native r
  assert.equal(c.state().pending,null);
  assert.equal(visible.length,2);
 });
+test("G-MV21 controller ACK lease is immutable until installed v6 readback",()=>{
+ const snap=acceptedFixture(),events=[],paints=[];
+ const c=protocol.createController({emit:(name,payload)=>events.push({name,payload}),
+   onAccepted:(next,confirmed)=>paints.push({next,confirmed})});
+ assert.equal(c.onSnapshot(snap),true);
+ const issued=c.intent("SET_FADER","9007199254740993",{valueDb:-12});
+ assert.equal(issued.ok,true);
+ const ack={requestId:issued.requestId,status:"ACCEPTED",errorCode:"NONE",
+   deviceEpoch:snap.device.epoch,graphRevision:"6",rosterRevision:"7"};
+ assert.equal(c.onAck(ack),true);
+ const n=events.length;
+ for(const late of [ack,
+   {...ack,status:"REJECTED",errorCode:"STALE_GRAPH"},
+   {...ack,graphRevision:"99"},{...ack,graphRevision:"broken"},
+   {...ack,deviceEpoch:"18446744073709551609"}]){
+   assert.equal(c.onAck(late),false);
+   assert.equal(c.state().pending?.requestId,issued.requestId);
+   assert.equal(c.state().lastError,"PENDING_ACCEPTED_SNAPSHOT");
+   assert.equal(events.length,n,"duplicate ACK cannot resubscribe");
+ }
+ assert.equal(paints.length,1,"ACK alone cannot repaint");
+ const installed=clone(snap);
+ installed.graph.revision="6";
+ installed.graph.channels[0].controls.faderDb=-12;
+ assert.equal(c.onSnapshot(installed),true);
+ assert.equal(c.state().pending,null);
+ assert.equal(paints.length,2);
+ assert.equal(paints[1].confirmed.requestId,issued.requestId);
+ assert.equal(c.onAck(ack),false);
+});
 test("STALE/REJECTED/timeout leave accepted GUI untouched and request fresh native readback",()=>{
  const sent=[],c=protocol.createController({emit:(name,payload)=>sent.push({name,payload})});
  const s=acceptedFixture();c.onSnapshot(s);

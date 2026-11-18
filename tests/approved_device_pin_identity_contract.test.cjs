@@ -68,6 +68,47 @@ test("MV-8 same-device Apply remembers explicit physical pin sets, not callback 
     "DeviceVM cannot edit authoritative JUCE inventory");
 });
 
+test("G-MV21 Device Setup first ACK wins even if native sends contradictory duplicates",()=>{
+ const f=fixture(),begun=f.begin("ack-once");
+ assert.ok(begun);
+ const accepted=f.ack("ack-once"),verifying=vm.setupAck(begun.state,accepted);
+ assert.equal(verifying.phase,"VERIFYING");
+ const original=JSON.stringify(verifying);
+ for(const duplicate of [accepted,
+   {...accepted,ok:false,state:"REJECTED",error:"Late failed driver"},
+   {...accepted,active:{...accepted.active,playbackDevice:"Wrong ASIO"}},
+   {...accepted,active:{...accepted.active,enabledOutputs:[0,1]}},
+   {...accepted,active:{...accepted.active,deviceGeneration:999}}]){
+   assert.strictEqual(vm.setupAck(verifying,duplicate),verifying);
+   assert.equal(JSON.stringify(verifying),original);
+ }
+ assert.equal(vm.setupReadback(verifying,f.readback).phase,"ACCEPTED");
+ const expired=vm.setupTimeout(verifying,"ack-once");
+ assert.equal(expired.phase,"TIMEOUT");
+ assert.strictEqual(vm.setupAck(expired,accepted),expired);
+});
+
+test("G-MV21 only verified device readback refreshes Audio I/O inventory",()=>{
+ const bridge=readFileSync("web/approved-native-bridge.js","utf8");
+ const a=bridge.indexOf('backend.addEventListener("arMixAudioDeviceApplyAck",ack=>');
+ const b=bridge.indexOf("  function installFirstSoundMenu()",a);
+ assert.ok(a>0&&b>a);
+ const ack=bridge.slice(a,b);
+ assert.match(ack,/deviceVM\.setupAck\(deviceState,ack\)/);
+ assert.doesNotMatch(ack,/deviceInventory\s*=|inventory\.active\s*=|updateHardwarePanel/,
+   "unverified or rejected ACK cannot mutate native hardware inventory");
+ const s=bridge.indexOf("  function onNativeReadback(next,confirmed) {");
+ const e=bridge.indexOf("  if (connected) {\n    controller = protocol.createController",s);
+ assert.ok(s>0&&e>s);
+ const readback=bridge.slice(s,e);
+ assert.match(readback,/deviceVM\.setupReadback\(deviceState,next\)/);
+ assert.match(readback,/finishDeviceApplyUi\(next\)/);
+ assert.match(readback,/deviceState\.phase==="ACCEPTED"&&connected[\s\S]*?action:"audioDeviceInventory"/);
+ const finish=bridge.slice(bridge.indexOf("  function finishDeviceApplyUi("),a);
+ assert.match(finish,/verifiedSnapshot\?\.device/);
+ assert.match(finish,/active\?\.sampleRate/);
+ assert.doesNotMatch(finish,/deviceInventory\?\.active/);
+});
 test("MV-8 native accepted ACK with changed output pins never claims selected hardware",()=>{
   const f=fixture(),begun=f.begin("pin-2");
   const acceptedDifferent=f.ack("pin-2",{active:{
