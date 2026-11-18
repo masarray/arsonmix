@@ -77,6 +77,7 @@ def main():
             assert page.evaluate("""()=>Boolean(
                 window.ArSonApprovedChannelStripViewModel &&
                 window.ArSonApprovedFxRackViewModel &&
+                window.ArSonApprovedWireViewModel?.readbackGains &&
                 window.__ARMIX_NATIVE_M2__?.inputChoices &&
                 window.__ARMIX_NATIVE_M2__?.outputChoices)"""), (
                 'native assembled GUI missing GUI-1 Channel Strip ViewModel')

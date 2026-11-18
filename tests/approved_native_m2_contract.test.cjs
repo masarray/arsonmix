@@ -7,6 +7,7 @@ const protocol=require("../web/approved-native-contract.js");
 const deviceVM=require("../web/approved-device-view-model.js");
 const stripVM=require("../web/approved-channel-strip-view-model.js");
 const fxRackVM=require("../web/approved-fx-rack-view-model.js");
+const wireVM=require("../web/approved-wire-view-model.js");
 const read=p=>readFileSync(p,"utf8");
 const fixtures=JSON.parse(read("integration/console-v6/fixtures.json"));
 const clone=x=>JSON.parse(JSON.stringify(x));
@@ -94,6 +95,63 @@ function acceptedFixture(){
    tap:"POST",gainLinear:1,enabled:true,signalKind:"AUDIO"}];
  return s;
 }
+// GUI-3 WIRE/BUS/MAIN projection is immutable and uses exact native ids.
+test("GUI-3 WIRE selects unique exact EdgeId and never writes PRIMARY OUT",()=>{
+ const source="9007199254740993",target="18446744073709551615";
+ const send="9223372036854775809",route="9223372036854775811";
+ const edges=[
+  {edgeId:send,from:source,to:target,enabled:true,
+   primaryOutput:false,gainLinear:0.5},
+  {edgeId:route,from:source,to:target,enabled:true,
+   primaryOutput:true,gainLinear:1}
+ ];
+ assert.equal(wireVM.parallelEdge(edges,source,send),edges[0]);
+ assert.equal(wireVM.parallelEdge(edges,source,route),null);
+ assert.equal(wireVM.parallelEdge(edges,"9007199254740994",send),null);
+ assert.equal(wireVM.parallelEdge([...edges,edges[0]],source,send),null,
+   "duplicated EdgeId cannot choose an arbitrary send");
+ assert.equal(wireVM.parallelEdge(edges,source,Number(send)),null,
+   "uint64 identity must not round through JS Number");
+});
+test("GUI-3 WIRE projection preserves infinity floor, pending, tap and BUS/MAIN readback",()=>{
+ const edges=[
+  {edgeId:"e-a",enabled:true,primaryOutput:false,gainLinear:0.5011872336272722},
+  {edgeId:"e-b",enabled:true,primaryOutput:false,gainLinear:0},
+  {edgeId:"primary",enabled:true,primaryOutput:true,gainLinear:1}
+ ];
+ const observed=wireVM.readbackGains(edges,new Map([["e-a",72],["e-b",73]]),
+   new Map([["e-b",{requestId:"pending"}]]));
+ assert.deepEqual(observed,[{id:72,pending:false,levelDb:-6},
+   {id:73,pending:true,levelDb:-60}]);
+ assert.equal(wireVM.gainDraft(-60,"ch","graph").gain,0);
+ assert.ok(Math.abs(wireVM.gainDraft(-12,"ch","graph").gain-
+   Math.pow(10,-12/20))<1e-12);
+ assert.equal(wireVM.gainDraft(6.01,"ch","graph"),null);
+ assert.equal(wireVM.gainDraft(-60.1,"ch","graph"),null);
+ assert.equal(wireVM.tapFromGesture("split"),"PRE_FADER");
+ assert.equal(wireVM.tapFromGesture("send"),"POST_FADER");
+ assert.equal(wireVM.tapFromGesture("routeOnly"),null);
+});
+test("GUI-3 queued WIRE gesture never crosses changed native graph or moved EdgeId",()=>{
+ const source="9007199254740993",id="9223372036854775809";
+ const draft=wireVM.gainDraft(-6,source,"graph:13");
+ const edge={edgeId:id,from:source,enabled:true,primaryOutput:false,gainLinear:1};
+ const current={identity:"graph:13",graph:{edges:[edge]}};
+ assert.equal(wireVM.flushDecision(current,id,draft),"SEND");
+ assert.equal(wireVM.flushDecision({...current,identity:"graph:14"},id,draft),"STALE");
+ assert.equal(wireVM.flushDecision({...current,graph:{edges:[{...edge,from:"other"}]}},
+   id,draft),"UNROUTED");
+ assert.equal(wireVM.flushDecision({...current,graph:{edges:[{...edge,primaryOutput:true}]}},
+   id,draft),"UNROUTED");
+ assert.equal(wireVM.flushDecision({...current,graph:{edges:[{...edge,gainLinear:draft.gain}]}},
+   id,draft),"UNCHANGED");
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/wireVM\.gainDraft\(op\.levelDb,source,current\.identity\)/);
+ assert.match(bridge,/wireVM\.flushDecision\(current,edgeId,edit\)/);
+ assert.match(bridge,/wireVM\.readbackGains\(next\?\.graph\?\.edges,uiByWireId,pendingWireGains\)/);
+ assert.match(bridge,/wireVM\.tapFromGesture\(op\.mode\)/);
+ assert.doesNotMatch(bridge,/db<=-60\?0:Math\.pow\(10,db\/20\)/);
+});
 test("WIRE inspector controls PRIMARY BUS and PARALLEL MAIN by actual EdgeId, with native readback only",()=>{
  const vm=require("node:vm"),{execFileSync}=require("node:child_process");
  const publicHtml=read("site/preview-v2/index.html");
@@ -112,7 +170,9 @@ test("WIRE inspector controls PRIMARY BUS and PARALLEL MAIN by actual EdgeId, wi
  const bridge=read("web/approved-native-bridge.js");
  const builder=read("scripts/build_approved_native_gui.py");
  assert.match(bridge,/function admittedParallelWire\(uiSourceId,uiEdgeId,operation\)/);
- assert.match(bridge,/e\.edgeId===edgeId&&e\.from===source&&e\.primaryOutput===false/);
+ assert.match(bridge,/wireVM\.parallelEdge\(current\.graph\.edges,source,edgeId\)/);
+ assert.match(read("web/approved-wire-view-model.js"),
+   /e\.edgeId===edgeId&&e\.from===source&&e\.primaryOutput===false/);
  assert.match(builder,/getElementById\('wireWsGainText'\)/);
  assert.match(builder,/!row\.pending/);
  const renderStart=html.indexOf("function renderWireWsInspector(){");
@@ -1314,7 +1374,7 @@ test("M3 native-only Pages scope performs real bridge projection, fader intent a
    querySelector:()=>null,addEventListener(){}
  };
  const window={
-   __JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,ArSonApprovedFxRackViewModel:fxRackVM,
+   __JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,ArSonApprovedFxRackViewModel:fxRackVM,ArSonApprovedWireViewModel:wireVM,
    __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},queueMicrotask(fn){microtasks.push(fn);},setTimeout(fn,ms){timers.push({fn,ms});return timers.length;}
  };
  vm.runInNewContext(read("web/approved-native-bridge.js"),{
@@ -1538,7 +1598,7 @@ test("P0 native FX rack and per-slot readback update mounted strip without repla
   querySelector:selector=>selector.startsWith('.strip[data-id=')?strip:null,
   addEventListener(){}
  };
- const win={__JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,ArSonApprovedFxRackViewModel:fxRackVM,
+ const win={__JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,ArSonApprovedFxRackViewModel:fxRackVM,ArSonApprovedWireViewModel:wireVM,
   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
   setTimeout(){return 0},clearTimeout(){},queueMicrotask(fn){fn();}};
  vm.runInNewContext(read("web/approved-native-bridge.js"),
@@ -1716,7 +1776,7 @@ test("P0 FIRST SOUND G0 offers verified input and leaves automatic MAIN to nativ
   addEventListener(){}
  };
  win={
-  __JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,ArSonApprovedFxRackViewModel:fxRackVM,
+  __JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,ArSonApprovedFxRackViewModel:fxRackVM,ArSonApprovedWireViewModel:wireVM,
   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
   setTimeout(){return 0},clearTimeout(){},queueMicrotask(fn){fn();}
  };
@@ -1803,7 +1863,7 @@ test("P0 native hardware IN remains selectable after ChannelId ownership, failed
     id==="preview"?{disabled:true}:null,
   querySelector:()=>null,addEventListener(){}
  };
- const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,ArSonApprovedFxRackViewModel:fxRackVM,
+ const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,ArSonApprovedFxRackViewModel:fxRackVM,ArSonApprovedWireViewModel:wireVM,
   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
   setTimeout(){return 0},clearTimeout(){},
   queueMicrotask(fn){microtasks.push(fn);}};
