@@ -153,15 +153,40 @@ int main() {
     names[1].name="setLIST 3"; // case-folded name remains occupied
     assert(Archive::nextGeneratedName(names)=="Setlist 4");
 
-    // Regression: full 2,000-song setlist -> Remove -> Import another
-    // song -> Undo. Undo is rejected before mutation; after removing an
-    // unrelated song the original undo remains available.
+    // Undo admission must reject full or malformed live library state.
     assert(Archive::canUndoRemove(0,0,1999,1999,1999));
     assert(!Archive::canUndoRemove(0,0,1999,2000,2000));
     assert(!Archive::canUndoRemove(0,0,1999,2001,2001));
     assert(!Archive::canUndoRemove(0,1,1999,1999,1999));
     assert(!Archive::canUndoRemove(0,0,-1,1999,1999));
     assert(!Archive::canUndoRemove(0,0,1999,1999,1998));
+
+    // Real archive at capacity: Remove -> Import -> Undo must not turn
+    // a valid 2,000-track library into an unpersistable 2,001-track document.
+    std::vector<SavedSet> full{{"At capacity",{}, {}}};
+    const auto tempRoot=juce::File::getSpecialLocation(
+        juce::File::tempDirectory);
+    for(int i=0;i<2000;++i) {
+        full[0].files.push_back(tempRoot.getChildFile(
+            "arsonmix-mv14-capacity-"+juce::String(i)+".wav"));
+        full[0].controls.emplace_back();
+    }
+    assert(Archive::serialize(full,0,false,180).isObject());
+    const auto removedSong=full[0].files[1000];
+    const auto removedPreset=full[0].controls[1000];
+    full[0].files.erase(full[0].files.begin()+1000);
+    full[0].controls.erase(full[0].controls.begin()+1000);
+    assert(Archive::canUndoRemove(0,0,1000,1999,1999));
+    full[0].files.push_back(tempRoot.getChildFile(
+        "arsonmix-mv14-import-after-remove.wav"));
+    full[0].controls.emplace_back();
+    assert(Archive::serialize(full,0,false,180).isObject());
+    assert(!Archive::canUndoRemove(0,0,1000,2000,2000));
+    // Simulating the old unconditional Undo proves the serializer rejects
+    // the oversized state; the native caller now refuses this insertion.
+    full[0].files.insert(full[0].files.begin()+1000,removedSong);
+    full[0].controls.insert(full[0].controls.begin()+1000,removedPreset);
+    assert(!Archive::serialize(full,0,false,180).isObject());
 
     // Legacy empty v3 content migrates to a non-destructive default setlist.
     const auto empty=Archive::parse(juce::JSON::parse("{\"version\":3}"));
