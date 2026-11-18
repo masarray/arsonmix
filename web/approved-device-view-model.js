@@ -385,7 +385,7 @@
       "UNADMITTED","STALE"];
     const hardwareConfiguration=nativeHardwareConfiguration(d);
     if(!kinds.includes(readModelKind) ||
-       typeof epoch!=="string" || !/^(0|[1-9]\\d*)$/.test(epoch) ||
+       typeof epoch!=="string" || !/^(0|[1-9]\d*)$/.test(epoch) ||
        epoch.length>20 || BigInt(epoch)>18446744073709551615n ||
        typeof d.backend!=="string" ||
        typeof d.captureDevice!=="string" ||
