@@ -43,6 +43,10 @@ public:
         // CONTROL owns the entire format and bridge reprepare interval.
         ready_.store(false,std::memory_order_release);
         fault_.store(false,std::memory_order_release);
+        // A previous successfully prepared (but not activated) stream must
+        // never survive an invalid replacement request. activate() may not
+        // re-arm a stale bridge after ANY prepare failure.
+        prepared_=false;
         format_={};targetMs_=0.;
         if(format.captureGeneration==0||format.primaryEpoch==0||
            format.channels<1||format.channels>16||
