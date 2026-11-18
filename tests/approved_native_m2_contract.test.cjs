@@ -2822,3 +2822,51 @@ test("MV-2 merged #767 retains one selector; #768 unique duplex/one-pin guards a
     {inventory,draft:reset,requestId:"gui1-fallback"});
   assert.deepEqual(recovered.request.config.enabledOutputs,[0,1]);
 });
+
+test("GUI-2 native FX catalog projection keeps exact M4 processor identity",()=>{
+ const rows=Array(8).fill(null);
+ rows[1]={instanceId:"18446744073709551615",catalogId:"eq.a",bypassed:true};
+ rows[3]={instanceId:"9007199254740993",catalogId:"unknown",bypassed:false};
+ const before=JSON.stringify(rows);
+ const result=fxRackVM.m4Presentation(rows,new Map([["eq.a",{name:"EQ One"}]]),true);
+ assert.equal(result.fxOn,false);assert.equal(result.slots.length,8);
+ assert.deepEqual(result.slots[1].instance,{id:"18446744073709551615",name:"EQ One"});
+ assert.deepEqual(result.slots[3].instance,{id:"9007199254740993",name:"VST3 Loaded"});
+ assert.equal(result.slots[0].instance,null);
+ assert.equal(fxRackVM.m4Presentation(rows,new Map(),null).fxOn,null);
+ assert.equal(JSON.stringify(rows),before,"M4 metadata never edits native FX");
+ const forged=rows.slice();forged[1]={catalogId:"eq.a",bypassed:false};
+ assert.equal(fxRackVM.m4Presentation(forged,new Map(),false),null);
+});
+test("GUI-2 native FX pending settlement requires ACK, exact lease and epoch",()=>{
+ const epoch="18446744073709551612";
+ const ch={id:"9007199254740993",fxRackBypassed:false,
+   inserts:[{id:"18446744073709551615",bypassed:true}]};
+ const next={device:{epoch},graph:{channels:[ch]}};
+ const p={requestId:"fx42",channelId:ch.id,kind:"insert",
+   insertId:"18446744073709551615",bypassed:true,epoch,acked:false};
+ assert.equal(fxRackVM.nativePowerSettlement(p,next),"WAIT");
+ assert.equal(fxRackVM.nativePowerSettlement({...p,acked:true},next),"CONFIRMED");
+ assert.equal(fxRackVM.nativePowerSettlement({...p,acked:true},
+   {...next,device:{epoch:"18446744073709551613"}}),"STALE");
+ assert.equal(fxRackVM.nativePowerSettlement({...p,acked:true},
+   {...next,graph:{channels:[{...ch,inserts:[{id:"new",bypassed:true}]}]}}),"WAIT");
+ assert.equal(fxRackVM.nativePowerSettlement({...p,acked:true,kind:"rack",bypassed:false},next),"CONFIRMED");
+ assert.equal(fxRackVM.nativePowerSettlement(null,next),"NONE");
+});
+test("GUI-2 M4 rack pending selector rejects revisions and unaccepted authority",()=>{
+ const s={authority:"M4",deviceEpoch:"17",routeRevision:"8",
+   channels:[{fxRackBypassed:true}]};
+ const p={channel:0,epoch:"17",revision:"8",bypassed:true,acked:false};
+ assert.equal(fxRackVM.m4RackSettlement(p,s),"WAIT");
+ assert.equal(fxRackVM.m4RackSettlement({...p,acked:true},s),"CONFIRMED");
+ assert.equal(fxRackVM.m4RackSettlement({...p,acked:true},{...s,routeRevision:"9"}),"STALE");
+ assert.equal(fxRackVM.m4RackSettlement({...p,acked:true},{...s,authority:"CHANNEL_ID"}),"STALE");
+ assert.equal(fxRackVM.m4RackSettlement({...p,acked:true},
+   {...s,channels:[{fxRackBypassed:false}]}),"WAIT");
+ const source=read("web/approved-native-bridge.js");
+ assert.match(source,/fxRackVM\\.m4Presentation\\(/);
+ assert.match(source,/fxRackVM\\.nativePowerSettlement\\(/);
+ assert.match(source,/fxRackVM\\.m4RackSettlement\\(/);
+ assert.doesNotMatch(source,/const actual=p\\.kind==="rack"\\?/);
+});
