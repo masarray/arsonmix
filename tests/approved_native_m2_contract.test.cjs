@@ -2511,7 +2511,8 @@ test("P0 output-only Audio I/O is a real native configuration, never blocked by 
 });
 
 
-test("MV-18 real M4 FX slot lease survives no old device ACK on same-epoch driver switch",()=>{
+for(const scenario of ["driver","pin-mask"]) test(
+ "G-MV20 M4 pending slot FX remains fenced across same-epoch "+scenario+" remap",()=>{
  const vm=require("node:vm"),listeners=new Map(),sent=[],timers=[],microtasks=[];
  const tracks=Array.from({length:10},(_,i)=>({id:i+1,kind:"audio",
    name:"CH "+(i+1),input:"None",output:"Master",format:"mono",
@@ -2617,20 +2618,26 @@ test("MV-18 real M4 FX slot lease survives no old device ACK on same-epoch drive
  assert.equal(click(),true);
  assert.equal(bypasses().length,1,
    "invalid candidate cannot release the pending physical FX lease");
- // A different VALID driver using the SAME epoch must expire the old slot lease.
+ // Different actual pins OR a different driver on the SAME epoch expires
+ // only the old UI lease; native instances are still readback-owned.
  const changed=clone(installed);
- changed.device.captureDevice="Vendor B ASIO";
- changed.device.playbackDevice="Vendor B ASIO";
+ if(scenario==="driver"){
+   changed.device.captureDevice="Vendor B ASIO";
+   changed.device.playbackDevice="Vendor B ASIO";
+ }else{
+   changed.device.enabledInputs=[0];
+   changed.device.inputEndpoints=changed.device.inputEndpoints.filter(p=>p.port===0);
+ }
  changed.legacyM4.routingRevision="14";
  changed.mixerSession.routeRevision="14";
  publish(changed);
  while(microtasks.length)microtasks.shift()();
  assert.equal(click(),true);
  assert.equal(bypasses().length,2,
-   "reconnected same-epoch driver cannot leave a slot uneditable for 5 seconds");
+   "reconfigured hardware cannot leave a slot uneditable for 5 seconds");
  const second=bypasses()[1];
  assert.notEqual(first.requestId,second.requestId);
- assert.equal(second.revision,14,"second bypass uses new accepted native revision");
+ assert.equal(second.revision,14,"second bypass uses the newly accepted routing revision");
  listeners.get("arMixRoutingFxBypassAck")({
    requestId:first.requestId,channel:4,slot:0,ok:false,error:"OLD_DEVICE"});
  oldTimer.fn();
