@@ -1029,18 +1029,7 @@
         ...plan.payload});
       if(channelIdOwner)
         status("Input "+plan.entry.choice.label+" · native PCM readback pending");
-      window.setTimeout(()=>{
-        const pending=channelIdOwner?activeNativeSource:nativeUiSourcePending;
-        if(pending?.requestId!==requestId)return;
-        if(channelIdOwner){
-          activeNativeSource=null;
-          status("SOURCE timeout · refreshing accepted PCM and input choices");
-        }else{
-          nativeUiSourcePending=null;
-          status("CH "+(plan.key+1)+" INPUT timeout · native state preserved");
-        }
-        controller?.subscribe();
-      },8000);
+      window.setTimeout(()=>handleSourceTimeout(authority,requestId),8000);
       return; // next request needs fresh readback/route revision
     }
   }
@@ -1048,6 +1037,30 @@
     dispatchSourceQueue("CHANNEL_ID");
   }
 
+  // MV-17: timeout is not native rejection evidence. Resolve a previously
+  // ACKed & independently installed PCM snapshot if it raced the callback;
+  // otherwise discard only the transient UI lease and subscribe again.
+  // Never send another queued INPUT here using a cached route revision.
+  function handleSourceTimeout(authority,requestId){
+    const channelIdOwner=authority==="CHANNEL_ID";
+    const pending=channelIdOwner?activeNativeSource:nativeUiSourcePending;
+    const snapshot=controller?.state()?.current;
+    const decision=stripVM.sourceQueueTimeoutDecision({
+      authority,pending,requestId,snapshot});
+    if(decision==="IGNORE")return;
+    if(decision==="SETTLE"){
+      settleSourceReadback(authority,snapshot);
+      return;
+    }
+    if(channelIdOwner){
+      activeNativeSource=null;
+      status("SOURCE timeout · refreshing accepted PCM and input choices");
+    }else{
+      nativeUiSourcePending=null;
+      status("CH "+(pending.channel+1)+" INPUT timeout · native state preserved");
+    }
+    controller?.subscribe(); // next source waits for authoritative callback
+  }
   // MV-15: one UI settlement owner after strict per-authority native PCM
   // verification. A late ACK can check an already independently published
   // snapshot without waiting for another audio callback.

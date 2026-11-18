@@ -220,6 +220,65 @@ test("MV-6 M4 SOURCE dispatch reuses fresh revision but never migrates stale dev
 
 
 
+
+test("MV-17 SOURCE timeout decision preserves verified PCM and fences stale timers",()=>{
+ const decide=(authority,pending,snapshot,requestId=pending?.requestId)=>
+   stripVM.sourceQueueTimeoutDecision({authority,pending,snapshot,requestId});
+ const id="9007199254740993",epoch="18446744073709551610";
+ const native={requestId:"source-native-17",id,epoch,
+   beforeRevision:"9223372036854775807",acked:true,
+   ackRevision:"9223372036854775808",
+   choice:{label:"Stereo IN3/4",mode:"STEREO",left:2,right:3}};
+ const accepted={admitted:true,retained:false,device:{epoch},graph:{
+   revision:"9223372036854775808",channels:[{id,role:"INPUT",
+     source:{sourceFormat:"STEREO",portId:"in:2",portIdRight:"in:3"}}]}};
+ const m4={requestId:51,channel:4,epoch:69,revision:12,
+   acked:true,ackRevision:"13",
+   choice:{label:"Mono IN1",mode:"MONO",left:0,right:-1}};
+ const rows=Array.from({length:10},(_,i)=>({role:"INPUT",
+   source:i===4?{mode:"MONO",left:0,right:-1}:
+     {mode:"NONE",left:-1,right:-1}}));
+ const m4Accepted={admitted:false,retained:false,device:{epoch:"69"},
+   raw:{legacyM4:{active:true,routeAccepted:true,routingRevision:"13"},
+     mixerSession:{authority:"M4",deviceEpoch:"69",routeRevision:"13",channels:rows}}};
+ assert.equal(decide("CHANNEL_ID",native,accepted),"SETTLE");
+ assert.equal(decide("M4",m4,m4Accepted),"SETTLE");
+ for(const [authority,pending,snapshot] of [
+   ["CHANNEL_ID",native,accepted],["M4",m4,m4Accepted]
+ ]){
+   assert.equal(decide(authority,null,snapshot),"IGNORE");
+   assert.equal(decide(authority,pending,snapshot,"obsolete-id"),"IGNORE");
+   assert.equal(decide(authority,{...pending,acked:false},snapshot),"REFRESH",
+     "PCM without correlated ACK is not proof");
+   assert.equal(decide(authority,pending,{...snapshot,retained:true}),"REFRESH");
+   assert.equal(decide(authority,pending,null),"REFRESH");
+ }
+ const wrongPin=clone(accepted);
+ wrongPin.graph.channels[0].source.portIdRight="in:4";
+ assert.equal(decide("CHANNEL_ID",native,wrongPin),"REFRESH");
+ const oldRevision=clone(m4Accepted);
+ oldRevision.raw.mixerSession.routeRevision="12";
+ oldRevision.raw.legacyM4.routingRevision="12";
+ assert.equal(decide("M4",m4,oldRevision),"REFRESH");
+ assert.equal(decide("INVALID",m4,m4Accepted),"IGNORE");
+ assert.deepEqual(m4.choice,{label:"Mono IN1",mode:"MONO",left:0,right:-1},
+   "a timeout policy cannot mutate a native source lease");
+ assert.doesNotMatch(stripVM.sourceQueueTimeoutDecision.toString(),
+   /backend|document\.|window\.|setTimeout|localStorage/);
+ const bridge=read("web/approved-native-bridge.js");
+ assert.equal((bridge.match(/function handleSourceTimeout\(/g)||[]).length,1);
+ assert.equal((bridge.match(/stripVM\.sourceQueueTimeoutDecision\(/g)||[]).length,1);
+ assert.match(bridge,/window\.setTimeout\(\(\)=>handleSourceTimeout\(authority,requestId\),8000\)/);
+ assert.match(bridge,/if\(decision==="SETTLE"\)\{\s*settleSourceReadback\(authority,snapshot\)/);
+ const start=bridge.indexOf("  function handleSourceTimeout(");
+ const end=bridge.indexOf("  // MV-15: one UI settlement owner",start);
+ assert.ok(start>0&&end>start);
+ const body=bridge.slice(start,end);
+ assert.match(body,/controller\?\.subscribe\(\)/);
+ assert.doesNotMatch(body,/dispatchSourceQueue|dispatchQueuedSource|backend\.emitEvent/,
+   "timeout itself cannot replay stale routing requests");
+});
+
 test("MV-16 SOURCE ACK lease is immutable; first valid ACK wins, duplicates fenced",()=>{
  const id="9007199254740993",epoch="18446744073709551610";
  const ch={requestId:"source-native-1",id,epoch,
@@ -409,7 +468,8 @@ test("MV-14 one pure dispatch head preserves FIFO and exact identity across Chan
  assert.match(body,/queue\.delete\(plan\.key\)/);
  assert.match(body,/if\(plan\.kind==="DROP_ALL"\)\{queue\.clear\(\);return;\}/);
  assert.match(body,/beforeRevision:current\.graph\.revision,acked:false/);
- assert.match(body,/nativeUiSourcePending=null;[\s\S]*?INPUT timeout/);
+ assert.match(body,/setTimeout\(\(\)=>handleSourceTimeout\(authority,requestId\),8000\)/);
+ assert.match(bridge,/nativeUiSourcePending=null;[\s\S]*?INPUT timeout/);
  assert.match(body,/backend\.emitEvent\("arMixAction",\{action:plan\.action,requestId/);
  assert.match(body,/controller\?\.subscribe\(\)/);
  assert.match(bridge,/function dispatchNativeSource\(\)\{\s*dispatchSourceQueue\("CHANNEL_ID"\)/);
@@ -1820,6 +1880,7 @@ test("single /preview/ GUI: channel IN, actual OUT and correlated device safety 
  assert.match(builder,/public = destination \/ "preview"/);
  assert.match(bridge,/source:"\/preview\/ approved compiled Pages GUI"/);
  assert.match(bridge,/field==="input"/);
+ assert.match(bridge,/handleSourceTimeout\(authority,requestId\)/);
  assert.match(bridge,/nativeUiSourcePending=null;[\s\S]*?INPUT timeout/);
  assert.match(bridge,/deviceVM\.setupAck\(deviceState,ack\)/);
  assert.match(read("web/approved-device-view-model.js"),/ack\?\.requestId!==state\.pending\.requestId/);
@@ -2450,7 +2511,7 @@ test("P0 output-only Audio I/O is a real native configuration, never blocked by 
 });
 
 test("MV-15 real M4 first-sound PCM snapshot ahead of ACK drains queued second INPUT",()=>{
- const vm=require("node:vm"),listeners=new Map(),sent=[],microtasks=[];
+ const vm=require("node:vm"),listeners=new Map(),sent=[],microtasks=[],timers=[];
  const tracks=Array.from({length:10},(_,i)=>({id:i+1,kind:"audio",
    name:"CH "+(i+1),input:"None",output:"Master",format:"mono",
    fx:[],slotBypass:[],fxInsertIds:[]}));
@@ -2468,8 +2529,8 @@ test("MV-15 real M4 first-sound PCM snapshot ahead of ACK drains queued second I
    ArSonApprovedFxRackViewModel:fxRackVM,
    ArSonApprovedWireViewModel:wireVM,
    __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
-   setTimeout(){return 0},clearTimeout(){},
-   queueMicrotask(fn){microtasks.push(fn);}};
+   setTimeout(fn,ms){timers.push({fn,ms});return timers.length;},
+   clearTimeout(){},queueMicrotask(fn){microtasks.push(fn);}};
  vm.runInNewContext(read("web/approved-native-bridge.js"),{
    window:win,document:doc,performance:{now:()=>0},console
  },{timeout:1500});
@@ -2566,6 +2627,41 @@ test("MV-15 real M4 first-sound PCM snapshot ahead of ACK drains queued second I
  listeners.get("arMixSourceSwitchAck")({
    requestId:second.requestId,ok:false,error:"EXPIRED_ACK"});
  assert.equal(sources().length,3);
+ // MV-17: third INPUT has no ACK and its request timer expires.
+ // A fourth INPUT cannot use the previously cached M4 route revision.
+ assert.equal(choose(7,"Mono · IN 2 [IN 2]"),true);
+ const third=sources()[2];
+ const timeout=timers.filter(t=>t.ms===8000).at(-1);
+ assert.ok(timeout,"SOURCE must register one bounded timeout");
+ const beforeRefresh=sent.filter(x=>x.name==="arMixConsoleSubscribe").length;
+ timeout.fn();
+ while(microtasks.length)microtasks.shift()();
+ assert.equal(sources().length,3,"timeout must not dispatch on cached revision");
+ assert.ok(sent.filter(x=>x.name==="arMixConsoleSubscribe").length>beforeRefresh,
+   "timeout resubscribes to obtain native PCM instead of retrying blindly");
+ listeners.get("arMixSourceSwitchAck")({
+   requestId:third.requestId,ok:true,state:{
+     ready:true,epoch:69,revision:15,hasAcceptedRoute:true,
+     acceptedRoute:{channels:acceptedAt14}}
+ });
+ assert.equal(sources().length,3,"late expired ACK cannot confirm a timed-out source");
+ const installed15=clone(installed14);
+ installed15.legacyM4.routingRevision="15";
+ installed15.mixerSession.routeRevision="15";
+ const thirdRow={mode:"MONO",left:0,right:-1,main:true};
+ installed15.legacyM4.channels[6]=thirdRow;
+ installed15.mixerSession.channels[6].source=thirdRow;
+ listeners.get("arMixConsoleSnapshot")(installed15);
+ while(microtasks.length)microtasks.shift()();
+ assert.equal(sources().length,4,
+   "next queued INPUT must wait for a new independently accepted snapshot");
+ assert.equal(sources()[3].channel,7);
+ assert.equal(sources()[3].left,1);
+ assert.equal(sources()[3].revision,15);
+ assert.equal(sources()[3].deviceEpoch,69);
+ timeout.fn();
+ assert.equal(sources().length,4,
+   "repeated old timeout may not affect the next channel lease");
  assert.equal(sent.filter(x=>x.name==="arMixAction"&&
    x.payload.action==="monitor").length,0,
    "UI must never auto-arm MAIN as a side effect of SOURCE ACK");

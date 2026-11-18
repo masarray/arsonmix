@@ -406,6 +406,17 @@
     return pending?"STALE":"NONE"; // no fallback to a third source owner
   }
 
+  // MV-17: one fail-closed SOURCE timeout policy. Expiring a timer cannot
+  // discard an ACKed request whose independently installed PCM snapshot
+  // is already available. There is no implicit replay of an old pin draft.
+  // The bridge remains the sole timer, transport and queue owner.
+  function sourceQueueTimeoutDecision({authority,pending,requestId,snapshot}={}) {
+    if((authority!=="CHANNEL_ID"&&authority!=="M4")||
+       !pending||pending.requestId!==requestId)return "IGNORE";
+    return sourceQueueReadback({authority,pending,snapshot})==="CONFIRMED"?
+      "SETTLE":"REFRESH";
+  }
+
   // MV-9: pure Channel Strip scalar gesture/readback policy. The only
   // pending Maps, native events, timers and audio transport stay in the
   // approved bridge. Treat exact decimal-string ChannelIds as opaque data.
@@ -596,6 +607,7 @@
     primaryOutMutation,externalOutputPlan,sourceQueueSelection,
     sourceDispatchPlan,sourceQueueHead,sourceAckResult,sourceReadbackSettlement,
     m4SourceReadbackSettlement,sourceQueueReadback,sourceQueueAckTransition,
+    sourceQueueTimeoutDecision,
     scalarIdentityMatches,scalarVisualSettlement,m4ScalarAckResult,
     m4ScalarReadbackSettlement,scalarDispatchLease,
     scalarGestureFlushPlan,scalarDispatchPlan,
