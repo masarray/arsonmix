@@ -431,7 +431,7 @@
     if(!Array.isArray(channels)||channels.filter(ch=>ch?.id===channelId).length!==1)
       return no;
     const names=channels.filter(ch=>ch.id!==channelId).map(ch=>
-      appearance?.get?.(ch.id)?.name||ch.name);
+      logical?ch.name:(appearance?.get?.(ch.id)?.name||ch.name));
     if(names.some(other=>typeof other==="string"&&
        other.toLowerCase()===name.toLowerCase()))return {kind:"DUPLICATE"};
     if(logical) {
@@ -442,7 +442,8 @@
     if(pending)return {kind:"BUSY"};
     if(native?.raw?.mixerSession?.authority!=="CHANNEL_ID"||
        !(native.admitted===true||native.retained===true)||
-       appearanceWritable!==true||valid?.decimal?.(appearanceRevision)===null||
+       appearanceWritable!==true||typeof valid?.decimal!=="function"||
+       valid.decimal(appearanceRevision)===null||
        !decimalId(native.device?.epoch)||!decimalId(native.graph?.revision)||
        !decimalId(native.graph?.rosterRevision))return no;
     if(!valid.validPresentationColor?.(color)||

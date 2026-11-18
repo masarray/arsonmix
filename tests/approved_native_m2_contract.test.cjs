@@ -3887,6 +3887,13 @@ test("MV-11 logical-only channel rename stays a saved draft, not a physical appe
    kind:"LOGICAL",channelId,name:"New Vox",operation:"RENAME_CHANNEL",
    payload:{name:"New Vox"}});
  assert.equal(stripVM.identityEditPlan({...p,rawName:"bass"}).kind,"DUPLICATE");
+ // Native workspace cosmetic aliases are not the offline .smix name owner.
+ const staleNativeAlias=new Map([["9007199254740995",{
+   name:"From Old Native",color:"#eeeeee",icon:"🎹"}]]);
+ assert.equal(stripVM.identityEditPlan({...p,rawName:"From Old Native",
+   appearance:staleNativeAlias}).kind,"LOGICAL");
+ assert.equal(stripVM.identityEditPlan({...p,rawName:"Bass",
+   appearance:staleNativeAlias}).kind,"DUPLICATE");
  assert.equal(stripVM.identityEditPlan({...p,logical:{...logical,readOnly:true}}).kind,"UNAVAILABLE");
  assert.equal(stripVM.identityEditPlan({...p,pending:true}).kind,"UNAVAILABLE");
 });

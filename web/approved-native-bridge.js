@@ -165,6 +165,8 @@
     }
     if(plan.kind!=="READY"){
       status(plan.kind==="DUPLICATE"?"Channel name is already used":
+        plan.kind==="INVALID_NAME"?"Enter a unique valid channel name":
+        plan.kind==="INVALID_FIELDS"?"Enter a valid channel name, color and icon":
         plan.kind==="BUSY"?"Finish the current native operation before editing identity":
         "Native channel identity unavailable · verify saved native graph");
       return false;
