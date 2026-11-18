@@ -48,9 +48,9 @@ test("GUI-4 Channel Strip PRIMARY OUT extracts exact native EdgeId without touch
  assert.equal(JSON.stringify(snapshot),saved,
   "pure projection must leave both PRIMARY and parallel SEND untouched");
  const bridge=read("web/approved-native-bridge.js");
- assert.match(bridge,/stripVM\\.primaryOutMutation\\(/);
- assert.match(bridge,/controller\\.intent\\("APPLY_WIRE_TRANSACTION",channelId,/);
- assert.doesNotMatch(bridge,/const edge=current\\.graph\\.edges\\.find/,
+ assert.match(bridge,/stripVM\.primaryOutMutation\(/);
+ assert.match(bridge,/controller\.intent\("APPLY_WIRE_TRANSACTION",channelId,/);
+ assert.doesNotMatch(bridge,/const edge=current\.graph\.edges\.find/,
   "source-specific PRIMARY edge search must not remain duplicated in bridge");
 });
 test("GUI-4 primary OUT rejects ambiguous, stale, mismapped or unadmitted native graph",()=>{
