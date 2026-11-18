@@ -164,7 +164,7 @@ test("MV-8 DeviceVM remains pure; exactly one unchanged native Apply transport",
   assert.match(source,/samePinMask\(requested.inputs,active.enabledInputs\)/);
   assert.match(source,/samePinMask\(d.enabledOutputs,expected.enabledOutputs\)/);
   assert.match(region,/deviceVM\.setupAck\(deviceState,ack\)/);
-  assert.match(region,/deviceVM\.setupReadback\(deviceState,next\)/);
+  assert.match(bridge,/deviceVM\.setupReadback\(deviceState,next\)/);
   assert.equal((region.match(/backend\.emitEvent\("arMixAction",begun\.request\)/g)||[]).length,1);
   assert.doesNotMatch(source,/document\.|window\.|AudioWorklet|new AudioContext|localStorage/);
 });
