@@ -10,8 +10,12 @@ test("only installed callback determines GUI channel control authority",()=>{
  assert.match(host,/publishAuthoritativeMixerSession\(accepted\)/);
  assert.match(producer,/const auto authority=hasChannelId\?"CHANNEL_ID":validM4\?"M4":"NONE"/);
  assert.match(producer,/row->setProperty\("id","m4:"/);
- assert.match(adapter,/if\(session\.authority==="M4" && m4Verified\(\)\)/);
- assert.match(adapter,/const nativeAdmitted=session\.authority==="CHANNEL_ID"/);
+ const source=read("web/approved-native-contract.js");
+ assert.match(adapter,/const readModel=protocol\.selectNativeReadModel\(next,m4Verified\(\)\)/);
+ assert.match(adapter,/if\(readModel\.kind==="M4"\)/);
+ assert.match(adapter,/const nativeAdmitted=readModel\.kind==="CHANNEL_ID"/);
+ assert.match(source,/session\.authority==="M4"&&verifiedM4===true/);
+ assert.match(source,/session\.authority==="CHANNEL_ID"&&next\.admitted===true/);
  assert.match(adapter,/m4ControlIsOwner\(\)&&m4Verified\(\)&&m4Index\(t\)>=0/);
  assert.doesNotMatch(adapter,/rackSavedBypass/);
  assert.match(adapter,/const ctl=session\.channels\.map\(row=>row\.controls\)/);
