@@ -226,8 +226,77 @@
     return "ACKED";
   }
 
+
+  // MV-9B: global FX is a single native atomic scalar. This ViewModel
+  // decides eligibility and ACK/readback settlement but never owns DSP state.
+  // ALWAYS use the original controller's normalized accepted snapshot.
+  function positiveId(value){
+    if(typeof value!=="string"||!/^[1-9][0-9]*$/.test(value))return false;
+    try{return BigInt(value)<=18446744073709551615n;}catch{return false;}
+  }
+  function globalPowerContext(snapshot,verifiedM4=false,offline=false){
+    const session=snapshot?.raw?.mixerSession,device=snapshot?.device;
+    if(offline||snapshot?.retained===true||!positiveId(device?.epoch)||
+       session?.deviceEpoch!==device.epoch)return null;
+    if(snapshot.admitted===true&&session.authority==="CHANNEL_ID"&&
+       snapshot.graph?.capabilities?.callbackOwnsChannelIds===true&&
+       positiveId(snapshot.graph.revision))
+      return {authority:"CHANNEL_ID",epoch:device.epoch,
+        revision:snapshot.graph.revision};
+    if(snapshot.admitted===false&&verifiedM4===true&&
+       session.authority==="M4"&&positiveId(session.routeRevision)&&
+       session.routeRevision===snapshot.raw?.legacyM4?.routingRevision)
+      return {authority:"M4",epoch:device.epoch,revision:session.routeRevision};
+    return null;
+  }
+  function globalPowerPlan(snapshot,context,pending=false){
+    const actual=snapshot?.raw?.globalFxBypassed;
+    if(pending||!context||typeof actual!=="boolean")return {kind:"UNAVAILABLE"};
+    return {kind:"READY",bypassed:!actual,
+      action:"routingGlobalFxBypass",
+      payload:{deviceEpoch:context.epoch,revision:context.revision,value:!actual}};
+  }
+  function globalPowerAckResult(pending,ack){
+    if(!pending||!ack||pending.requestId!==ack.requestId)return "IGNORE";
+    return ack.ok===true&&ack.bypassed===pending.bypassed?"ACKED":"REJECTED";
+  }
+  function globalPowerSettlement(pending,snapshot,context){
+    if(!pending)return "NONE";
+    if(!context||pending.epoch!==context.epoch||
+       pending.revision!==context.revision||
+       pending.authority!==context.authority)return "STALE";
+    if(pending.acked!==true)return "WAIT";
+    return typeof snapshot?.raw?.globalFxBypassed==="boolean"&&
+      snapshot.raw.globalFxBypassed===pending.bypassed?"CONFIRMED":"WAIT";
+  }
+  // M4 compatibility FX slot ACK is NOT readback. Keep the per-slot lease
+  // locked until independent accepted M4 snapshot proves its exact token.
+  function m4SlotPowerAckResult(pending,ack){
+    if(!pending||!ack||pending.requestId!==ack.requestId)return "IGNORE";
+    if(ack.channel!==pending.channel||ack.slot!==pending.slot||
+       ack.ok!==true)return "REJECTED";
+    return "ACKED";
+  }
+  function m4SlotPowerSettlement(pending,snapshot){
+    if(!pending)return "NONE";
+    const session=snapshot?.raw?.mixerSession,m=snapshot?.raw?.legacyM4;
+    if(snapshot?.retained===true||snapshot?.admitted===true||
+       session?.authority!=="M4"||
+       snapshot?.device?.epoch!==pending.epoch||
+       session.deviceEpoch!==pending.epoch||
+       session.routeRevision!==pending.revision||
+       m?.routingRevision!==pending.revision)return "STALE";
+    const slots=m.fxInstances?.[pending.channel];
+    const actual=Array.isArray(slots)?slots[pending.slot]:null;
+    if(actual?.instanceId!==pending.token)return "STALE";
+    if(pending.acked!==true)return "WAIT";
+    return actual?.bypassed===pending.bypass?"CONFIRMED":"WAIT";
+  }
+
   return Object.freeze({powerReadback,mountedRackMatches,
     m4Presentation,nativePowerSettlement,m4RackSettlement,
     nativeInsertPlan,nativeEditPlan,nativeInsertSettlement,
-    nativePowerPlan,nativePowerAckResult});
+    nativePowerPlan,nativePowerAckResult,
+    globalPowerContext,globalPowerPlan,globalPowerAckResult,
+    globalPowerSettlement,m4SlotPowerAckResult,m4SlotPowerSettlement});
 });
