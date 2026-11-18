@@ -75,6 +75,85 @@ test("GUI-2 exact mounted FX instance/power identity rejects stale, duplicate or
  assert.doesNotMatch(bridge,/const effective=enabled&&globalEnabled&&!insert\.bypassed/,
   "old duplicated FX bypass projection must be removed from DOM bridge");
 });
+test("GUI-3 WIRE selector keeps exact PRIMARY OUT vs parallel SEND identity, even to MAIN",()=>{
+ const source="9007199254740993",main="18446744073709551615",bus="9007199254740999";
+ const primary={edgeId:"9007199254741000",from:source,to:bus,enabled:true,
+  primaryOutput:true,gainLinear:1,tap:"POST_FADER",sendEnabled:true};
+ const busOut=wireVM.edgePresentation(primary,bus,main);
+ assert.equal(busOut.kind,"primary");assert.equal(busOut.mode,"routeOnly");
+ assert.equal(busOut.levelDb,0);
+ const mainSend={...primary,edgeId:"9007199254741001",to:main,
+  primaryOutput:false,gainLinear:.5,sendEnabled:false};
+ const independent=wireVM.edgePresentation(mainSend,main,main);
+ assert.equal(independent.kind,"send",
+  "parallel SEND to MAIN cannot be promoted by matching primaryOutId");
+ assert.equal(independent.mode,"send");
+ assert.equal(independent.levelDb,-6);
+ assert.equal(independent.sendEnabled,false);
+ assert.equal(wireVM.edgePresentation({...primary,gainLinear:.7},bus,main),null,
+  "primary OUT is unity; incorrect PCM readback is rejected");
+ assert.equal(wireVM.edgePresentation(primary,main,main),null,
+  "stale primary destination must not be repainted as verified");
+ const old={...primary};delete old.primaryOutput;
+ assert.equal(wireVM.edgePresentation(old,bus,main).kind,"primary",
+  "legacy readback without explicit primaryOutput keeps existing fallback");
+ const split={...mainSend,tap:"SPLIT_PRE",tapStage:"SPLIT_PRE",to:bus};
+ assert.equal(wireVM.edgePresentation(split,main,main).mode,"splitPre");
+ const updated={...split,tapStage:"PRE_FADER"};
+ assert.equal(wireVM.edgePresentation(updated,main,main).nativeTap,"PRE_FADER",
+  "actual native post-insert PRE_FADER wins over old PRE_FX tap");
+ assert.equal(wireVM.gainDb(0),-60);
+ assert.equal(wireVM.gainDb(10),6);
+ assert.equal(wireVM.gainDb(-1),null);
+});
+test("GUI-3 WIRE gain/readback and native edit eligibility are fail-closed by exact EdgeId",()=>{
+ const source="9007199254740993",other="9007199254740994",
+  edgeId="9223372036854775808",main="18446744073709551615";
+ const send={edgeId,from:source,to:main,enabled:true,
+  primaryOutput:false,gainLinear:.5,tap:"POST_FADER"};
+ const primary={...send,edgeId:"9223372036854775809",primaryOutput:true};
+ const graph={capabilities:{supportedOps:["SET_WIRE_GAIN","APPLY_WIRE_TRANSACTION",
+  "SET_SEND_ENABLED"]},edges:[send,primary]};
+ const snap={admitted:true,retained:false,graph};
+ const previous=JSON.stringify(snap);
+ assert.equal(wireVM.acceptedParallelEdge(snap,true,source,edgeId,"SET_WIRE_GAIN"),send);
+ assert.equal(wireVM.acceptedParallelEdge(snap,true,other,edgeId,"SET_WIRE_GAIN"),null);
+ assert.equal(wireVM.acceptedParallelEdge(snap,false,source,edgeId,"SET_WIRE_GAIN"),null);
+ assert.equal(wireVM.acceptedParallelEdge({...snap,retained:true},true,
+  source,edgeId,"SET_WIRE_GAIN"),null);
+ assert.equal(wireVM.acceptedParallelEdge({...snap,admitted:false},true,
+  source,edgeId,"SET_WIRE_GAIN"),null);
+ assert.equal(wireVM.acceptedParallelEdge(snap,true,source,edgeId,"MISSING_OP"),null);
+ assert.equal(wireVM.parallelEdge(graph,source,primary.edgeId),null);
+ assert.equal(wireVM.parallelEdge({...graph,edges:[send,send]},source,edgeId),null);
+ assert.equal(wireVM.parallelEdge(graph,source,edgeId,other),null);
+ const mapping=new Map([[edgeId,42],[primary.edgeId,41]]);
+ const pending=new Map([[edgeId,{requestId:"gain-1"}]]);
+ const rows=wireVM.gainReadback(graph.edges,mapping,pending);
+ assert.deepEqual(rows,[{id:42,pending:true,levelDb:-6}]);
+ assert.deepEqual(wireVM.gainReadback(graph.edges,new Map(),pending),[],
+  "unknown native EdgeId may never invent a new view-id");
+ assert.equal(JSON.stringify(snap),previous,"selectors never mutate native snapshot");
+ assert.equal(wireVM.canEditTap(send,{supported:true}),true);
+ assert.equal(wireVM.canEditTap(send,{supported:true,pending:true}),false);
+ assert.equal(wireVM.canEditTap(send,{supported:false}),false);
+ assert.equal(wireVM.canEditTap({...send,tap:"PRE_FX"},{supported:true}),false);
+ assert.equal(wireVM.gestureTap("split"),"PRE_FADER");
+ assert.equal(wireVM.gestureTap("send"),"POST_FADER");
+ assert.equal(wireVM.gestureTap("routeOnly"),null);
+ assert.equal(wireVM.sofAvailable(snap,true),true);
+ assert.equal(wireVM.sofAvailable({...snap,retained:true},true),false);
+ assert.equal(wireVM.sofAvailable(snap,false),false);
+ assert.equal(wireVM.sofAvailable({...snap,graph:{...graph,capabilities:{
+  supportedOps:["SET_WIRE_GAIN"]}}},true),false);
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/wireVM\.gainReadback\(/);
+ assert.match(bridge,/wireVM\.parallelEdge\(/);
+ assert.match(bridge,/wireVM\.canEditTap\(/);
+ assert.match(bridge,/wireVM\.sofAvailable\(/);
+ assert.doesNotMatch(bridge,/const kind=isPrimary\?"primary"/,
+  "old WIRE presentation policy must be REMOVED, not copied");
+});
 function acceptedFixture(){
  const s=clone(fixtures.g0);
  s.device.epoch="18446744073709551610";
@@ -113,7 +192,8 @@ test("WIRE inspector controls PRIMARY BUS and PARALLEL MAIN by actual EdgeId, wi
  const bridge=read("web/approved-native-bridge.js");
  const builder=read("scripts/build_approved_native_gui.py");
  assert.match(bridge,/function admittedParallelWire\(uiSourceId,uiEdgeId,operation\)/);
- assert.match(bridge,/e\.edgeId===edgeId&&e\.from===source&&e\.primaryOutput===false/);
+ assert.match(bridge,/wireVM\.acceptedParallelEdge\(/);
+ assert.match(read("web/approved-wire-view-model.js"),/e\.from===sourceId&&e\.edgeId===edgeId&&e\.primaryOutput===false/);
  assert.match(builder,/getElementById\('wireWsGainText'\)/);
  assert.match(builder,/!row\.pending/);
  const renderStart=html.indexOf("function renderWireWsInspector(){");
@@ -871,8 +951,10 @@ test("P0 installed ChannelId WIRE capability reaches the GUI",()=>{
  assert.match(native,/NATIVE_APPLY_WIRE_TRANSACTION/);
  assert.match(projection,/if\(has\("NATIVE_APPLY_WIRE_TRANSACTION"\)\)/);
  assert.match(projection,/available\.add\(juce::String\("APPLY_WIRE_TRANSACTION"\)\)/);
- assert.match(bridge,/const kind=isPrimary\?"primary"/);
- assert.match(bridge,/if \(isPrimary && edge\.gainLinear!==1\)/);
+ const wire=read("web/approved-wire-view-model.js");
+ assert.match(bridge,/wireVM\.edgePresentation\(/);
+ assert.match(wire,/const kind=primary\?"primary"/);
+ assert.match(wire,/if\(primary&&edge\.gainLinear!==1\)return null/);
  assert.doesNotMatch(bridge,/if \(isMain && edge\.gainLinear!==1\)/);
 });
 test("P0 WIRE-to-MAIN and channel OUT use one acknowledged native transaction",()=>{
