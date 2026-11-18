@@ -128,7 +128,10 @@ assert.match(page, /document\.addEventListener\('visibilitychange'/);
 assert.doesNotMatch(page, /resizeQueued=false;render\(\)/);
 // Reconciled main Player M3 controls must survive the native caption branch.
 const playerHtml = read('site/preview-v2/assets/mixer-contextual-buttons.js');
-assert.match(main, /struct PlayerTrackSettings/);
+// Player native metadata is now owned by the extracted pure archive codec.
+const playerArchive = read('src/PlayerSetlistArchive.h');
+assert.match(playerArchive, /struct PlayerTrackSettings/);
+assert.match(main, /using PlayerTrackSettings=armix::player::PlayerTrackSettings/);
 assert.match(main, /action=="playerKeyStep" \|\| action=="playerTempoStep"/);
 assert.match(main, /setPlayerPitchTempo\(next\.key,next\.tempo\)/);
 assert.match(playerHtml, /id="playerKeyMinus"/);
