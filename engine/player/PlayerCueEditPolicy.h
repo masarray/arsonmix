@@ -35,6 +35,9 @@ struct PlayerCueEditPolicy final {
             if(candidate.out>0.&&candidate.out<=candidate.in+0.05)
                 candidate.out=0.;
         } else {
+            // Mark OUT must never impersonate the OUT=0 media-end sentinel.
+            // In particular, positions below 10ms quantize to zero.
+            if(rounded<=candidate.in+0.05)return std::nullopt;
             candidate.out=rounded;
         }
         if(!validArchive(candidate))return std::nullopt;

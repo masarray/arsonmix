@@ -145,6 +145,12 @@ int main() {
     using Cue=armix::player::PlayerCueEditPolicy;
     const Cue::Range originalCue{1.00,0.0};
     assert(!Cue::plan(originalCue,Cue::Command::markOut,1.059,20.));
+    // Zero-quantized OUT must not silently clear an existing OUT marker.
+    const Cue::Range existingOut{1.0,5.0};
+    assert(!Cue::plan(existingOut,Cue::Command::markOut,0.009,20.));
+    assert(!Cue::plan(Cue::Range{0.,5.},
+                      Cue::Command::markOut,0.009,20.));
+    assert(existingOut.in==1.0 && existingOut.out==5.0);
     assert(originalCue.in==1. && originalCue.out==0.);
     auto untouched=doc->sets;
     untouched[0].controls[0].cueIn=1.0;
