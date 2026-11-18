@@ -2868,7 +2868,12 @@
   if (connected) {
     controller = protocol.createController({
       emit:(name,payload)=>backend.emitEvent(name,payload),
-      onAccepted:onNativeReadback,
+      // Global A/B must settle only on a NEW independently accepted
+      // post-ACK snapshot. Rejected snapshots never invoke onAccepted.
+      onAccepted:(next,confirmed)=>{
+        onNativeReadback(next,confirmed);
+        syncGlobalFxReadback();
+      },
       onStatus:state=>{
         const settledGain=pendingNativeGainIntent&&!state.pending;
         if(settledGain){
@@ -2931,9 +2936,11 @@
       }
     });
     backend.addEventListener("arMixConsoleSnapshot", snapshot=>{
-      // First reconcile the canonical engine snapshot, then the global FX
-      // view gate. Never infer FX admission from a local button press.
-      const apply=()=>{controller.onSnapshot(snapshot);syncGlobalFxReadback(snapshot);};
+      // Only the sole v6 controller may admit a PCM snapshot. Its
+      // onAccepted callback updates FX after validation; this listener
+      // must not settle an ACK using a cached pre-ACK readback if the
+      // incoming payload was rejected as invalid/stale.
+      const apply=()=>controller.onSnapshot(snapshot);
       const profiler=window.ArSonMixPerf;
       if(!profiler?.active){apply();return;}
       const started=performance.now();

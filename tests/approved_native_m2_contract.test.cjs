@@ -3736,9 +3736,75 @@ test("MV-9B bridge uses only accepted native snapshots for global FX, fences M4 
    "globalPowerSettlement","m4SlotPowerAckResult","m4SlotPowerSettlement"])
    assert.match(bridge,new RegExp("fxRackVM\\."+name+"\\("));
  assert.match(bridge,/const current=controller\?\.state\(\)\?\.current;\s*const button=document\.getElementById\?\.\("globalFxToggle"\)/);
+ assert.match(bridge,/onAccepted:\(next,confirmed\)=>\{\s*onNativeReadback\(next,confirmed\);\s*syncGlobalFxReadback\(\);/);
+ assert.match(bridge,/const apply=\(\)=>controller\.onSnapshot\(snapshot\);/);
+ assert.doesNotMatch(bridge,/controller\.onSnapshot\(snapshot\);syncGlobalFxReadback/);
  assert.doesNotMatch(bridge,/const actual=snapshot\?\.globalFxBypassed;/);
  assert.match(bridge,/if\(verdict==="REJECTED"\)\{\s*pendingSlotPowers\.delete\(key\);/);
  assert.match(bridge,/}\s*else pending\.acked=true;/);
  assert.doesNotMatch(vm,/backend\.emitEvent|document\.querySelector|window\.setTimeout/);
  assert.match(bridge,/controller = protocol\.createController\(/);
+});
+
+test("MV-9B Global FX ignores rejected post-ACK snapshot after a pre-ACK value race",()=>{
+ const vm=require("node:vm"),listeners=new Map(),sent=[];
+ let seq=101,wire=300,viewCalls=0;
+ const scope={
+   tracks:[],master:{id:1,name:"Master"},colors:["#456789"],
+   wireGraph:{validateCandidateGraph:()=>({ok:true})},
+   make:(name,kind,color)=>({id:seq++,name,kind,color,selected:false}),
+   render(){},installGraph(tracks,master,edges){
+     this.tracks=tracks;this.master=master;this.edges=edges;
+   },allocateWireId:()=>wire++,displayMeterDbfs(){},stopDemo(){}
+ };
+ const backend={emitEvent:(name,payload)=>sent.push({name,payload}),
+   addEventListener:(name,fn)=>listeners.set(name,fn)};
+ const button={disabled:false,attrs:new Map(),title:"",
+   setAttribute(name,val){this.attrs.set(name,String(val));},
+   getAttribute(name){return this.attrs.get(name);}};
+ const doc={readyState:"complete",documentElement:{dataset:{}},
+   getElementById:id=>id==="globalFxToggle"?button:null,
+   querySelector(){return null;},addEventListener(){}};
+ const win={__JUCE__:{backend},
+   ArSonApprovedNativeContract:protocol,
+   ArSonApprovedDeviceViewModel:deviceVM,
+   ArSonApprovedChannelStripViewModel:stripVM,
+   ArSonApprovedFxRackViewModel:fxRackVM,
+   ArSonApprovedWireViewModel:wireVM,
+   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
+   setTimeout(){return 0},clearTimeout(){},
+   queueMicrotask(fn){fn();},
+   __ARMIX_SET_GLOBAL_FX_VIEW__(){viewCalls++;}
+ };
+ vm.runInNewContext(read("web/approved-native-bridge.js"),
+   {window:win,document:doc,performance:{now:()=>0},console},{timeout:1500});
+ const initial=acceptedFixture();
+ initial.globalFxBypassed=false;
+ initial.mixerSession={authority:"CHANNEL_ID",deviceEpoch:initial.device.epoch,
+   routeRevision:initial.graph.revision,rosterRevision:initial.graph.rosterRevision,
+   channels:initial.graph.channels,main:{db:0,mute:false}};
+ listeners.get("arMixConsoleSnapshot")(initial);
+ assert.equal(win.__ARMIX_NATIVE_GLOBAL_FX__.toggle(),true);
+ const dispatched=sent.findLast(x=>x.payload?.action==="routingGlobalFxBypass");
+ assert.ok(dispatched);
+ assert.equal(dispatched.payload.value,true);
+ assert.equal(button.getAttribute("aria-busy"),"true");
+ // Native value has advanced before its ACK: no false completion yet.
+ const premature=clone(initial);premature.globalFxBypassed=true;
+ listeners.get("arMixConsoleSnapshot")(premature);
+ assert.equal(button.getAttribute("aria-busy"),"true");
+ const beforeInvalid=viewCalls;
+ listeners.get("arMixGlobalFxAck")({requestId:dispatched.payload.requestId,
+   ok:true,bypassed:true});
+ listeners.get("arMixConsoleSnapshot")({schemaVersion:-1,
+   globalFxBypassed:true});
+ assert.equal(button.getAttribute("aria-busy"),"true",
+   "malformed post-ACK envelope must never unlock Global FX");
+ assert.equal(viewCalls,beforeInvalid,
+   "rejected snapshot must never confirm cached pre-ACK value");
+ // Only a later fully accepted native snapshot settles Global FX.
+ listeners.get("arMixConsoleSnapshot")(clone(premature));
+ assert.equal(button.getAttribute("aria-busy"),"false");
+ assert.equal(button.disabled,false);
+ assert.ok(viewCalls>beforeInvalid);
 });
