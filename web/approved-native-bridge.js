@@ -7,11 +7,12 @@
   const deviceVM = window.ArSonApprovedDeviceViewModel;
   const stripVM = window.ArSonApprovedChannelStripViewModel;
   const fxRackVM = window.ArSonApprovedFxRackViewModel;
+  const wireVM = window.ArSonApprovedWireViewModel;
   // The public GUI owns one lexical model. Native-only bundle exports a narrow
   // reference to that SAME model; never reconstruct a parallel DOM/DSP.
   const scope = window.__ARMIX_NATIVE_SCOPE__ || null;
   const connected = Boolean(backend?.emitEvent && backend?.addEventListener &&
-    protocol && deviceVM && stripVM && fxRackVM);
+    protocol && deviceVM && stripVM && fxRackVM && wireVM);
   // Public browser preview keeps its header; the native JUCE caption replaces it.
   if (backend?.emitEvent && backend?.addEventListener)
     document.documentElement?.classList?.add?.("armix-native-desktop");
@@ -395,14 +396,9 @@
   // EdgeId, not a destination kind, strip label, or reference graph index.
   // A PARALLEL_SEND can legally point to MAIN; a PRIMARY_OUT can point to BUS.
   function admittedParallelWire(uiSourceId,uiEdgeId,operation){
-    const current=controller?.state()?.current;
-    const source=nativeByUiId.get(uiSourceId),edgeId=wireByUiId.get(uiEdgeId);
-    if(!flags.acceptedGraphConnected||!current?.admitted||current.retained||
-       !source||!edgeId||!current.graph.capabilities.supportedOps.includes(operation))
-      return null;
-    const matches=current.graph.edges.filter(e=>e.enabled&&
-      e.edgeId===edgeId&&e.from===source&&e.primaryOutput===false);
-    return matches.length===1?matches[0]:null;
+    return wireVM.acceptedParallelEdge(controller?.state()?.current,
+      flags.acceptedGraphConnected,nativeByUiId.get(uiSourceId),
+      wireByUiId.get(uiEdgeId),operation);
   }
   function requestWireGain(op){
     const db=Number(op.levelDb);
@@ -440,12 +436,11 @@
        !source||!edgeId||!["PRE_FADER","POST_FADER"].includes(tap)){
       status("PRE/POST unavailable · wait for an admitted native WIRE");return false;
     }
-    const matches=current.graph.edges.filter(e=>e.enabled&&e.edgeId===edgeId&&
-      e.from===source&&e.primaryOutput===false);
-    if(matches.length!==1||!["PRE_FADER","POST_FADER"].includes(matches[0].tap)){
+    const selected=wireVM.parallelEdge(current.graph,source,edgeId);
+    if(!wireVM.canEditTap(selected,{supported:true})){
       status("PRE/POST unavailable · selected send identity changed");return false;
     }
-    if(matches[0].tap===tap)return true;
+    if(selected.tap===tap)return true;
     const result=controller.intent("APPLY_WIRE_TRANSACTION",source,{changes:[{
       op:"SET_TAP",from:source,edgeId,tap
     }]});
@@ -460,14 +455,13 @@
       (x.kind==="bus"||x.kind==="fx"))||[];
     if(!current?.admitted||!source||matches.length!==1)return null;
     const dest=nativeIdFor(matches[0]);
-    const edges=current.graph.edges.filter(e=>e.enabled&&
+    const edges=current.graph.edges.filter(e=>e.enabled===true&&
       e.from===source&&e.to===dest&&e.primaryOutput===false);
-    return edges.length===1?edges[0]:null;
+    return edges.length===1?wireVM.parallelEdge(current.graph,source,
+      edges[0].edgeId,dest):null;
   }
   function syncNativeSofAvailability(next=controller?.state()?.current) {
-    const admitted=!!next?.admitted&&!!scope?.toggleSof&&
-      ["SET_WIRE_GAIN","SET_SEND_ENABLED","APPLY_WIRE_TRANSACTION"].every(op=>
-        next.graph.capabilities.supportedOps.includes(op));
+    const admitted=wireVM.sofAvailable(next,!!scope?.toggleSof);
     const toggle=document.getElementById("sofToggle"),target=document.getElementById("sofTarget");
     for(const el of [toggle,target])if(el){
       el.style?.setProperty?.("display",admitted?"":"none","important");
@@ -553,26 +547,16 @@
       const src=localByNative.get(edge.from), dst=localByNative.get(edge.to);
       if (!src || !dst || edge.from===accepted.mainChannelId) return false;
       const source=accepted.channels.find(ch=>ch.id===edge.from);
-      const isMain=edge.to===accepted.mainChannelId;
-      const isPrimary=source?.primaryOutId===edge.to;
-      // An independent SEND to MAIN is not the source's primary OUT.
-      // Explicit native tapStage disambiguates legacy PRE_FX SPLIT_PRE from
-      // real post-FX PRE_FADER. The reference 'split' mode means PRE_FX only.
-      const tap=["PRE_FADER","POST_FADER"].includes(edge.tapStage)?edge.tapStage:edge.tap;
-      const legacySplit=tap==="SPLIT_PRE"||tap==="SPLIT_POST";
-      const kind=isPrimary?"primary":legacySplit?"split":"send";
-      const mode=isMain?(isPrimary?"postFader":"send"):kind==="primary"?"routeOnly":
-        legacySplit?(tap==="SPLIT_PRE"?"splitPre":"splitPost"):"send";
-      if (isPrimary && edge.gainLinear!==1) return false;
-      const gainDb=isPrimary?0:Math.round(Math.max(-60,Math.min(6,
-        edge.gainLinear>0?20*Math.log10(edge.gainLinear):-60))*10)/10;
+      const view=wireVM.edgePresentation(edge,source?.primaryOutId,
+        accepted.mainChannelId);
+      if(!view)return false; // invalid native WIRE identity: no demo fallback
       let uiId=uiByWireId.get(edge.edgeId);
       if (uiId===undefined) uiId=scope.allocateWireId();
       newWireByUi.set(uiId,edge.edgeId);
       newUiByWire.set(edge.edgeId,uiId);
-      edges.push({id:uiId,sourceId:src,destId:dst,kind,mode,
-        nativeTap:tap,sendEnabled:edge.sendEnabled!==false,
-        enabled:true,levelDb:gainDb});
+      edges.push({id:uiId,sourceId:src,destId:dst,
+        kind:view.kind,mode:view.mode,nativeTap:view.nativeTap,
+        sendEnabled:view.sendEnabled,enabled:true,levelDb:view.levelDb});
     }
     if (!scope.wireGraph.validateCandidateGraph(nextTracks,nextMaster.id,edges).ok) return false;
     const previouslySelected = nextTracks.filter(t=>t.selected);
@@ -638,10 +622,8 @@
   // One authoritative EdgeId gain projection for normal readback AND failure
   // rollback. No duplicate DSP math or synthetic accepted control state.
   function nativeWireGainReadback(next){
-    return (next?.graph?.edges||[]).filter(e=>e.enabled&&e.primaryOutput===false)
-      .map(e=>({id:uiByWireId.get(e.edgeId),pending:pendingWireGains.has(e.edgeId),
-        levelDb:Math.round(Math.max(-60,Math.min(6,
-          e.gainLinear>0?20*Math.log10(e.gainLinear):-60))*10)/10}));
+    return wireVM.gainReadback(next?.graph?.edges||[],
+      uiByWireId,pendingWireGains);
   }
   // Paint ONLY an independently accepted ChannelId input scalar. Comparing
   // the actual DOM as well as the model also repairs a rejected/expired gain
@@ -3667,17 +3649,15 @@
     canWireTap(uiEdgeId,uiSourceId){
       if(logicalView){
         const from=nativeByUiId.get(uiSourceId),edgeId=wireByUiId.get(uiEdgeId);
-        const matching=logicalView.graph.edges.filter(e=>e.enabled &&
-          e.from===from && e.edgeId===edgeId && e.primaryOutput===false);
-        const edge=matching.length===1?matching[0]:null;
-        // Offline PRE/POST is a saved document edit, never PCM admission.
-        return !!edge&&!logicalView.readOnly&&!pendingLogical&&
-          logicalView.graph.capabilities.supportedOps.includes("SET_SEND_TAP")&&
-          ["PRE_FADER","POST_FADER"].includes(edge.tapStage||edge.tap);
+        const edge=wireVM.parallelEdge(logicalView.graph,from,edgeId);
+        // Offline PRE/POST edits only .smix, never PCM admission.
+        return wireVM.canEditTap(edge,{logical:true,
+          readOnly:logicalView.readOnly,pending:!!pendingLogical,
+          supported:logicalView.graph.capabilities.supportedOps.includes("SET_SEND_TAP")});
       }
       const edge=admittedParallelWire(uiSourceId,uiEdgeId,"APPLY_WIRE_TRANSACTION");
-      return !!edge&&["PRE_FADER","POST_FADER"].includes(edge.tap)&&
-        !controller?.state()?.pending;
+      return wireVM.canEditTap(edge,{pending:!!controller?.state()?.pending,
+        supported:true});
     },
     consumeWire(ops,retries=0) {
       if (!connected)return false;
@@ -3697,11 +3677,8 @@
           // The same WIRE inspector gesture must remain available before
           // binding a physical interface. Exact native EdgeId/readback,
           // not a reference-renderer-only toggle or a fabricated PCM ACK.
-          const tap=op.mode==="split"?"PRE_FADER":
-            op.mode==="send"?"POST_FADER":null;
-          const matching=logicalView.graph.edges.filter(e=>e.enabled &&
-            e.from===from && e.edgeId===edgeId && e.primaryOutput===false);
-          const edge=matching.length===1?matching[0]:null;
+          const tap=wireVM.gestureTap(op.mode);
+          const edge=wireVM.parallelEdge(logicalView.graph,from,edgeId);
           if(!tap||!edge||!nativeHooks.canWireTap(op.edgeId,op.sourceId)){
             status("Offline PRE/POST unavailable · select a saved parallel SEND");
             return true;
@@ -3732,8 +3709,7 @@
       if(Array.isArray(ops)&&ops.length===1&&ops[0].type==="MODE"){
         const op=ops[0];
         const source=nativeByUiId.get(op.sourceId),edgeId=wireByUiId.get(op.edgeId);
-        const tap=op.mode==="split"?"PRE_FADER":
-          op.mode==="send"?"POST_FADER":null;
+        const tap=wireVM.gestureTap(op.mode);
         requestNativeTap(source,edgeId,tap);
         return true;
       }

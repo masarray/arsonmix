@@ -25,6 +25,7 @@ ADAPTER_MARKER = ('<script defer src="assets/approved-native-contract.js"></scri
                   '<script defer src="assets/approved-device-view-model.js"></script>\n'
                   '<script defer src="assets/approved-channel-strip-view-model.js"></script>\n'
                   '<script defer src="assets/approved-fx-rack-view-model.js"></script>\n'
+                  '<script defer src="assets/approved-wire-view-model.js"></script>\n'
                   '<script defer src="assets/approved-native-bridge.js"></script>\n'
                   '<script defer src="assets/approved-native-context-menu.js"></script>\n'
                   '<script defer src="assets/approved-native-legal.js"></script>\n')
@@ -368,6 +369,8 @@ def stage(out: Path) -> dict:
                      out / "assets" / "approved-channel-strip-view-model.js")
         shutil.copy2(ROOT / "web" / "approved-fx-rack-view-model.js",
                      out / "assets" / "approved-fx-rack-view-model.js")
+        shutil.copy2(ROOT / "web" / "approved-wire-view-model.js",
+                     out / "assets" / "approved-wire-view-model.js")
         native = native_html(approved.decode("utf-8")).encode("utf-8")
         (out / "index.html").write_bytes(native)
     files = [out / "index.html", *sorted(p for p in (out / "assets").rglob("*") if p.is_file())]
