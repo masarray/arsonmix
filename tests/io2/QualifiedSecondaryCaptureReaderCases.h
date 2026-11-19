@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "../../engine/device/QualifiedSecondaryCaptureReader.h"
+#include "../../engine/device/QualifiedCaptureHostMode.h"
 #include "../../engine/device/QualifiedInputGraphBridge.h"
 #include "../../engine/core/DynamicNativeSessionPublisher.h"
 #include <array>
@@ -18,6 +19,18 @@ inline bool near(float a,float b,float tolerance=0.03f) {
     return std::abs(a-b)<tolerance;
 }
 inline void run() {
+    // The host may select direct A or qualified A+B, never a partial bridge.
+    check(d::qualifiedCaptureHostMode(false,false)==
+          d::QualifiedCaptureHostMode::directPrimary,
+          "A-only direct fast path remains default");
+    check(d::qualifiedCaptureHostMode(true,true)==
+          d::QualifiedCaptureHostMode::qualifiedDual,
+          "both qualified resources required for B capture");
+    check(d::qualifiedCaptureHostMode(true,false)==
+          d::QualifiedCaptureHostMode::rejectPartial &&
+          d::qualifiedCaptureHostMode(false,true)==
+          d::QualifiedCaptureHostMode::rejectPartial,
+          "partial clock/reader admission must fail closed");
     constexpr std::uint64_t epoch=71,captureGeneration=94;
     constexpr int frames=128;
     m::DynamicChannelRoster roster;

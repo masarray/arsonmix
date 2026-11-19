@@ -20,6 +20,8 @@
 #include "../engine/core/ProductionRenderAudit.h"
 #include "../engine/core/LiveOutputRouteGate.h"
 #include "../engine/device/LiveInputPortRegistry.h"
+#include "../engine/device/QualifiedSecondaryCaptureReader.h"
+#include "../engine/device/QualifiedCaptureHostMode.h"
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <algorithm>
 #include <array>
@@ -3067,7 +3069,9 @@ public:
                  std::array<int,2>* actualMonitorPair=nullptr,
                  bool allowMutedMetering=false,
                  std::span<const armix::mixer::DynamicPlayerPcmBlock> playerPcm={},
-                 bool mainOnlyMuted=false) noexcept {
+                 bool mainOnlyMuted=false,
+                 armix::device::QualifiedSecondaryCaptureReader* secondaryReader=nullptr,
+                 armix::device::SecondaryCaptureClockStream* secondaryClock=nullptr) noexcept {
         if(actualOutputPair)*actualOutputPair={{-1,-1}};
         if(actualMonitorPair)*actualMonitorPair={{-1,-1}};
         if(!active())return false;
@@ -3249,17 +3253,46 @@ public:
                               source.right?source.right+offset:nullptr};
                 }
                 const auto noExtraFx=[](armix::mixer::ChannelId,float*,float*,int) noexcept {};
-                processed=nativePublisher_.render(
-                    generation,shifted.data(),inputCount,
-                    meterOnly?mutedMain_[0].data():mainL+offset,
-                    meterOnly?mutedMain_[1].data():mainR+offset,n,false,noExtraFx,
-                    monitorL?(meterOnly?mutedMonitor_[0].data():monitorL+offset):nullptr,
-                    monitorR?(meterOnly?mutedMonitor_[1].data():monitorR+offset):nullptr,
-                    tapsL,tapsR,
-                    std::span<const armix::mixer::DynamicPlayerPcmBlock>(
-                        slice.data(),playerPcm.size()),
-                     meterOnly?nullptr:outputSlices.data(),
-                     meterOnly?0:outputCount);
+                // IO-2D: preserve exact physical A callback count above,
+                // while the accepted ChannelId graph may have A+B virtual
+                // capture ordinals. Only the original renderer owns FX.
+                // Qualified adapter is default-OFF until CONTROL installs
+                // a verified B clock/reader lease and matching PCM snapshot.
+                const auto renderNative=[&](
+                    std::span<const armix::device::MultiDeviceInputPlan::CaptureBlock> blocks) noexcept {
+                    const bool qualified=!blocks.empty();
+                    return nativePublisher_.render(
+                        generation,qualified?nullptr:shifted.data(),
+                        qualified?0:inputCount,
+                        meterOnly?mutedMain_[0].data():mainL+offset,
+                        meterOnly?mutedMain_[1].data():mainR+offset,n,false,noExtraFx,
+                        monitorL?(meterOnly?mutedMonitor_[0].data():monitorL+offset):nullptr,
+                        monitorR?(meterOnly?mutedMonitor_[1].data():monitorR+offset):nullptr,
+                        tapsL,tapsR,
+                        std::span<const armix::mixer::DynamicPlayerPcmBlock>(
+                            slice.data(),playerPcm.size()),
+                        meterOnly?nullptr:outputSlices.data(),
+                        meterOnly?0:outputCount,blocks);
+                };
+                // Partial resource attachment must NEVER silently call raw
+                // A-only input ordinals against an installed A+B map. When
+                // qualified resources are absent, the publisher rejects
+                // direct raw pointers if its current PCM lease requires A+B.
+                switch(armix::device::qualifiedCaptureHostMode(
+                        secondaryReader!=nullptr,secondaryClock!=nullptr)) {
+                case armix::device::QualifiedCaptureHostMode::directPrimary:
+                    processed=renderNative({});
+                    break;
+                case armix::device::QualifiedCaptureHostMode::qualifiedDual:
+                    processed=secondaryReader->withBlocks(
+                        generation,shifted.data(),inputCount,n,*secondaryClock,
+                        [&](std::span<const armix::device::MultiDeviceInputPlan::CaptureBlock>
+                                blocks) noexcept { return renderNative(blocks); });
+                    break;
+                case armix::device::QualifiedCaptureHostMode::rejectPartial:
+                    processed=false;
+                    break;
+                }
                 if(processed) {
                     for(std::size_t ch=0;ch<nativeMeterCapacity;++ch) {
                         nativeMaxL[ch]=std::max(nativeMaxL[ch],tapsL[ch]);
