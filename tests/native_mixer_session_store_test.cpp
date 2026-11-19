@@ -1814,6 +1814,12 @@ int main(){
     assert(store.load(loaded,readback).isEmpty());
     assert(loaded.masterGain==.35f);
     assert(store.recoverPrevious().isNotEmpty()); // NEVER roll back valid HEAD
+    auto rejectedRecovery=makeSession();
+    rejectedRecovery.masterGain=.12f;
+    std::vector<BinaryState> rejectedStates{binary};
+    assert(store.recoverPrevious(rejectedRecovery,rejectedStates).isNotEmpty());
+    assert(rejectedRecovery.masterGain==.12f &&
+           rejectedStates.size()==1 && rejectedStates[0].bytes==binary.bytes);
     const auto head=studio.getChildFile("MixerSession").getChildFile("HEAD");
     const auto secondId=head.loadFileAsString().trim();
     const auto vendor=studio.getChildFile("MixerSession").getChildFile("versions")
@@ -1833,6 +1839,15 @@ int main(){
     assert(loaded.masterGain==.7f);
     assert(readback[0].bytes==binary.bytes);
     assert(!store.recoverPrevious().isEmpty());
+    // A broken PREVIOUS can neither publish HEAD nor replace caller state.
+    const auto oldVendor=studio.getChildFile("MixerSession").getChildFile("versions")
+        .getChildFile(firstId).getChildFile("blobs").getChildFile(binary.sha256+".bin");
+    assert(oldVendor.appendText("CORRUPTED"));
+    checkpoint=Recovery::read(store,false,rejectedRecovery,rejectedStates,failedRetainedRead);
+    assert(checkpoint.source==Recovery::Source::head && checkpoint.error.isNotEmpty());
+    assert(rejectedRecovery.masterGain==.12f &&
+           rejectedStates.size()==1 && rejectedStates[0].bytes==binary.bytes);
+    assert(head.loadFileAsString().trim()==firstId);
     assert(base.deleteRecursively());
     std::cout<<"PASS: dynamic ChannelId/EdgeId graph, persistent vendor blobs and"
                 " explicit verified HEAD recovery\n";

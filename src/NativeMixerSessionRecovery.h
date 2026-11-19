@@ -28,10 +28,8 @@ public:
             return {Source::missing,"No saved dynamic mixer session"};
 
         auto error=store.load(doc,states);
-        if(error.isNotEmpty() && store.recoverPrevious().isEmpty()) {
-            error=store.load(doc,states);
-            if(error.isEmpty())return {Source::previous,{}};
-        }
+        if(error.isNotEmpty() && store.recoverPrevious(doc,states).isEmpty())
+            return {Source::previous,{}};
         return {Source::head,std::move(error)};
     }
 
