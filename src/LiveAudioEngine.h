@@ -724,6 +724,7 @@ public:
         // native NORMAL mixer ready, not stranded without a session.
         if(dryRoutingLab_.active()) {
             setOutputMuted(true);
+            retireQualifiedCaptureForNewGraph();
             dryRoutingLab_.disable();
         }
         directFence_.suspend(); // independent path bypasses only this DIRECT fence
@@ -811,6 +812,7 @@ public:
         // selecting a one-sided device. No phantom hardware output or CH1 mix.
         if(dryRoutingLab_.active()) {
             setOutputMuted(true);
+            retireQualifiedCaptureForNewGraph();
             dryRoutingLab_.disable();
         }
         // Muting the old/new combined backend callback during an intermediate
@@ -1345,6 +1347,9 @@ public:
     juce::String startUnpatchedProductionSession() {
         setOutputMuted(true);
         secondaryOutput_.disarm(); // never carry LIVE STREAM into a new unpatched graph
+        if(qualifiedSecondaryInstalled_.load(std::memory_order_acquire) ||
+           qualifiedCaptureNeedsRemap_.load(std::memory_order_acquire))
+            retireQualifiedCaptureForNewGraph(); // never carry A+B into A-only PCM
         if(hasRetainedUnboundMixer())
             return "Mixer session preserved, but device changed: full ChannelId graph and plugin-state rebind required (output stays muted)";
         auto* device=deviceManager_.getCurrentAudioDevice();
@@ -1370,11 +1375,27 @@ public:
         return error;
     }
 
+    // CONTROL ONLY; no audio callback may block or free driver state.
+    // Stop the qualified view before closing B's capture producer. In-flight
+    // primary reads finish under the reader's own RT lease. The subsequent
+    // new primary-only graph then uses raw A pointers again, without a
+    // stale A+B map or a second render owner.
+    void retireQualifiedCaptureForNewGraph() noexcept {
+        qualifiedSecondaryInstalled_.store(false,std::memory_order_release);
+        qualifiedSecondaryReader_.stop();
+        secondaryCapture_.close();
+        qualifiedCaptureNeedsRemap_.store(false,std::memory_order_release);
+    }
+
     // Historical STOP command retained as a safe CLEAR PATCH alias.
     // Returning to legacy CH1 is explicitly forbidden in NORMAL production.
     juce::String clearProductionRouting() {
         setOutputMuted(true);
         secondaryOutput_.disarm();
+        // IO-2D: an A+B qualified input lease cannot be passed to the fresh
+        // primary-only graph. Retire both resources while CONTROL has muted
+        // every output, before unpublishing the old graph.
+        retireQualifiedCaptureForNewGraph();
         dryRoutingLab_.disable();
         return startUnpatchedProductionSession();
     }
@@ -1384,6 +1405,11 @@ public:
         const juce::var& command,
         const LiveDryRoutingLab::FxSelections& fx,
         const LiveDryRoutingLab::FxRestores* restored=nullptr) {
+        // A successful legacy M4 apply would supersede A+B virtual input
+        // layout. Require an explicit CLEAR PATCH rather than dropping its
+        // reader on a speculative edit that might fail validation.
+        if(qualifiedSecondaryInstalled_.load(std::memory_order_acquire))
+            return "CLEAR PATCH and explicitly remove secondary capture before applying M4 routing";
         if (dryRoutingLab_.nativeBusTopologyLive())
             return "REMOVE native GROUP/FX RETURN buses before applying an M4 route";
         if (!allOutputsDisarmed()) return "MUTE hardware output and DISARM STREAM before APPLY routing";
@@ -1419,6 +1445,7 @@ public:
     }
     void disableDryRoutingLab() noexcept {
         setOutputMuted(true); // never expose CH1 unexpectedly on STOP
+        retireQualifiedCaptureForNewGraph();
         dryRoutingLab_.disable();
     }
     // One structural graph transaction for SOURCE, OUT, M/ST and FX inserts:
