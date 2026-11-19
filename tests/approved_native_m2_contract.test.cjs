@@ -965,6 +965,22 @@ test("GUI-4 Channel Strip PRIMARY OUT extracts exact native EdgeId without touch
  assert.deepEqual(none,{kind:"MUTATION",change:{
   op:"REMOVE",from:source,edgeId:primary}});
  assert.equal(none.change.edgeId!==send,true);
+ // Old accepted v6 readback lacks primaryOutput, but has exact primaryOutId
+ // and unity gain. Never infer PRIMARY from an explicit parallel SEND.
+ const legacy=clone(snapshot);
+ delete legacy.graph.edges[0].primaryOutput;
+ legacy.graph.edges[0].gainLinear=1;
+ assert.deepEqual(stripVM.primaryOutMutation(legacy,source,"NONE",[]),none);
+ legacy.graph.edges[0].primaryOutput=false;
+ assert.equal(stripVM.primaryOutMutation(legacy,source,"NONE",[]).kind,
+   "UNAVAILABLE","an explicit SEND can never become a primary OUT");
+ legacy.graph.edges[0].primaryOutput="false";
+ assert.equal(stripVM.primaryOutMutation(legacy,source,"NONE",[]).kind,
+   "UNAVAILABLE","malformed explicit PRIMARY flag cannot authorize removal");
+ delete legacy.graph.edges[0].primaryOutput;
+ legacy.graph.edges[0].gainLinear=0.9;
+ assert.equal(stripVM.primaryOutMutation(legacy,source,"NONE",[]).kind,
+   "UNAVAILABLE","unflagged non-unity is not a primary OUT");
  const redirect=stripVM.primaryOutMutation(snapshot,source,"MAIN",[]);
  assert.deepEqual(redirect,{kind:"MUTATION",change:{
   op:"ROUTE_ONLY",from:source,to:main,tap:"POST_FADER",gainLinear:1}});
@@ -2112,10 +2128,14 @@ test("P0 WIRE-to-MAIN and channel OUT use one acknowledged native transaction",(
  assert.ok(primary.indexOf('session?.authority==="CHANNEL_ID"')<
            primary.indexOf("const channel=m4Index(t)"),
            "ChannelId branch must precede the legacy M4 fallback inside requestPrimaryOut");
- assert.match(bridge,/const isMainConnect=/);
- assert.match(bridge,/const isMainRemove=/);
- assert.match(bridge,/current\.graph\.edges\.some/);
- assert.match(bridge,/if\(requestPrimaryOut\(t,target\)\)/);
+ // G-MV32: MAIN cable selection now belongs to the existing WIRE VM;
+ // both paths still converge on the one accepted OUT transaction.
+ const wirePolicy=read("web/approved-wire-view-model.js");
+ assert.match(wirePolicy,/const mainConnect=isMain&&/);
+ assert.match(wirePolicy,/const nativePrimary=globalEdges\.length===1/);
+ assert.match(bridge,/wireVM\.primaryMainGesturePlan\(current,/);
+ assert.match(bridge,/if\(plan\.kind==="ROUTE"\)/);
+ assert.match(bridge,/requestPrimaryOut\(t,plan\.target\)/);
  assert.match(native,/action=="routingChannelPatch"/);
  assert.match(native,/engine_\.repatchDryRoutingLabChannel\(channel,/);
  assert.match(bridge,/scope\?\.closeNativePicker\?\.\(\)/);
@@ -2231,18 +2251,20 @@ test("P0 JUCE native errors use the actual notice.text event contract",()=>{
  assert.match(bridge,/nativeToast\(message\)/);
  assert.doesNotMatch(bridge,/notice\.message/);
 });
-test("P0 native WIRE MAIN disconnect requires exact accepted EdgeId or verified M4 route",()=>{
+test("P0 native WIRE MAIN disconnect uses exact PRIMARY preflight, not stale UI cables",()=>{
  const bridge=read("web/approved-native-bridge.js");
+ const vm=read("web/approved-wire-view-model.js");
  const bundle=read("scripts/build_approved_native_gui.py");
- assert.match(bridge,/const edgeId=wireByUiId\.get\(op\.edgeId\)/);
- assert.match(bridge,/const graphMainRemove=op\.type==="REMOVE"/);
- assert.match(bridge,/const m4MainRemove=op\.type==="REMOVE"/);
- assert.match(bridge,/current\?\.admitted!==true/);
- assert.match(bridge,/legacy\(\)\?\.channels\?\.\[lane\]\?\.main===true/);
- assert.match(bridge,/e\.id===op\.edgeId&&e\.sourceId===op\.sourceId/);
- assert.match(bridge,/e\.destId===scope\?\.master\?\.id/);
+ assert.match(bridge,/wireVM\.primaryMainGesturePlan\(current,/);
+ assert.match(bridge,/edgeId:wireByUiId\.get\(op\.edgeId\)/);
+ assert.match(bridge,/if\(plan\.kind==="BLOCK"\)/);
+ assert.match(bridge,/requestPrimaryOut\(t,plan\.target\)/);
+ assert.doesNotMatch(bridge,/const graphMainRemove=op\.type==="REMOVE"/);
+ assert.doesNotMatch(bridge,/const m4MainRemove=op\.type==="REMOVE"/);
+ assert.match(vm,/snapshot\?\.admitted===false&&session\?\.authority==="M4"/);
  assert.match(bundle,/get wireEdges\(\)\{return wireEdges;\}/);
 });
+
 test("P0 native-only WIRE cables reflect actual M4 MAIN readback, not demo ghosts",()=>{
  const bridge=read("web/approved-native-bridge.js");
  const bundle=read("scripts/build_approved_native_gui.py");
@@ -5726,4 +5748,98 @@ test("G-MV31 SOF exact BUS/FX send selection and ON/OFF fail closed under pendin
  assert.doesNotMatch(read("web/approved-wire-view-model.js"),
    /backend\.emitEvent|document\.querySelector|window\.setTimeout/,
    "VM is deterministic and has no independent dispatcher");
+});
+
+test("G-MV32 PRIMARY MAIN WIRE is one exact ChannelId gesture with safe SEND fallthrough",()=>{
+ const source="9007199254740993",main="18446744073709551615",
+   bus="9007199254740995",primaryId="9223372036854775809",
+   sendId="9223372036854775810";
+ const primary={edgeId:primaryId,from:source,to:main,enabled:true,
+   primaryOutput:true,gainLinear:1};
+ const send={...primary,edgeId:sendId,primaryOutput:false,gainLinear:0.5};
+ const graph={mainChannelId:main,channels:[
+   {id:source,role:"INPUT",primaryOutId:main},
+   {id:bus,role:"GROUP"},{id:main,role:"MAIN"}],
+   edges:[primary,send],capabilities:{supportedOps:["APPLY_WIRE_TRANSACTION"]}};
+ const native={admitted:true,retained:false,graph};
+ const uiEdges=[{id:41,sourceId:8,destId:0,kind:"primary",enabled:true},
+   {id:42,sourceId:8,destId:0,kind:"send",enabled:true}];
+ const remove={type:"REMOVE",sourceId:8,edgeId:41};
+ const plan=(snapshot=native,overrides={})=>
+   wireVM.primaryMainGesturePlan(snapshot,{
+     op:remove,mainUiId:0,sourceId:source,edgeId:primaryId,uiEdges,
+     ...overrides});
+ const baseline=JSON.stringify(native);
+ assert.deepEqual(plan(),{kind:"ROUTE",target:"NONE"});
+ // Legacy admitted v6 graphs may omit the explicit PRIMARY flag.
+ assert.deepEqual(plan({...native,graph:{...graph,edges:[
+   {...primary,primaryOutput:undefined},send]}}),{kind:"ROUTE",target:"NONE"});
+ assert.deepEqual(plan({...native,graph:{...graph,edges:[
+   {...primary,primaryOutput:false},send]}}),{kind:"BLOCK"});
+ assert.deepEqual(plan(native,{op:{type:"ROUTE_ONLY",sourceId:8,destId:0}}),
+   {kind:"ROUTE",target:"MAIN"});
+ for(const mode of [undefined,"postFader","routeOnly"])
+   assert.deepEqual(plan(native,{op:{type:"CONNECT",sourceId:8,destId:0,mode}}),
+     {kind:"ROUTE",target:"MAIN"});
+ assert.deepEqual(plan(native,{op:{type:"CONNECT",sourceId:8,destId:0,mode:"send"}}),
+   {kind:"PASS"},"parallel send to MAIN must stay a parallel send");
+ assert.deepEqual(plan(native,{op:{type:"REMOVE",sourceId:8,edgeId:42},
+   edgeId:sendId}),{kind:"PASS"},"parallel MAIN SEND is not the PRIMARY cable");
+ assert.deepEqual(plan(native,{op:{type:"RETARGET",sourceId:8,edgeId:41,destId:9}}),
+   {kind:"PASS"});
+ for(const [label,snapshot,opts] of [
+   ["retained",{...native,retained:true},{}],
+   ["unadmitted",{...native,admitted:false},{}],
+   ["changed PRIMARY OUT",{...native,graph:{...graph,channels:[
+     {...graph.channels[0],primaryOutId:bus},...graph.channels.slice(1)]}},{}],
+   ["missing PRIMARY",{...native,graph:{...graph,edges:[send]}},{}],
+   ["duplicate producer EdgeId",{...native,graph:{...graph,edges:[
+     ...graph.edges,{...send,edgeId:primaryId,from:bus}]}},{}],
+   ["wrong native source",native,{sourceId:bus}],
+   ["noncanonical EdgeId",native,{edgeId:"18446744073709551616"}],
+   ["rounded JS EdgeId",native,{edgeId:9223372036854776000}],
+   ["missing UI PRIMARY",native,{uiEdges:[]}],
+   ["duplicate UI PRIMARY",native,{uiEdges:[uiEdges[0],uiEdges[0]]}],
+   ["retired source role",{...native,graph:{...graph,channels:[
+     {...graph.channels[0],role:"MAIN"},...graph.channels.slice(1)]}},{}],
+ ])assert.deepEqual(plan(snapshot,opts),{kind:"BLOCK"},label);
+ assert.equal(JSON.stringify(native),baseline,"pure policy cannot modify PCM");
+});
+
+test("G-MV32 M4 PRIMARY cable verifies exact owner, epoch, lane, route and UI identity",()=>{
+ const legacy={routingRevision:"12",channels:Array.from({length:10},(_,i)=>({
+   main:i===3,channelFormat:"STEREO"}))};
+ const session={authority:"M4",deviceEpoch:"5",routeRevision:"12",
+   channels:Array.from({length:10},(_,i)=>({
+     role:"INPUT",ordinal:i,source:{main:i===3}}))};
+ const native={admitted:false,retained:false,device:{epoch:"5"},
+   raw:{mixerSession:session,legacyM4:legacy}};
+ const op={type:"REMOVE",sourceId:8,edgeId:41};
+ const uiEdges=[{id:41,sourceId:8,destId:0,kind:"primary",enabled:true}];
+ const plan=(snapshot=native,overrides={})=>
+   wireVM.primaryMainGesturePlan(snapshot,{op,mainUiId:0,
+     uiEdges,m4Verified:true,m4Channel:3,...overrides});
+ assert.deepEqual(plan(),{kind:"ROUTE",target:"NONE"});
+ for(const [name,snapshot,overrides] of [
+   ["M4 not verified",native,{m4Verified:false}],
+   ["wrong lane",native,{m4Channel:2}],
+   ["stale device epoch",{...native,device:{epoch:"6"}},{}],
+   ["stale revision",{...native,raw:{...native.raw,
+     mixerSession:{...session,routeRevision:"11"}}},{}],
+   ["switch to ChannelId",{...native,raw:{...native.raw,
+     mixerSession:{...session,authority:"CHANNEL_ID"}}},{}],
+   ["retained device",{...native,retained:true},{}],
+   ["lost output",{...native,raw:{...native.raw,legacyM4:{
+     ...legacy,channels:legacy.channels.map((row,i)=>
+       i===3?{...row,main:false}:row)}}},{}],
+   ["wrong UI cable",native,{uiEdges:[{...uiEdges[0],destId:12}]}],
+ ])assert.deepEqual(plan(snapshot,overrides),{kind:"BLOCK"},name);
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/wireVM\.primaryMainGesturePlan\(current,/);
+ assert.match(bridge,/m4Verified:m4Verified\(\),m4Channel:m4Index\(t\)/);
+ assert.equal((bridge.match(/function requestPrimaryOut\(/g)||[]).length,1,
+   "same one OUT dispatcher serves strip selector and WIRE MAIN");
+ assert.doesNotMatch(read("web/approved-wire-view-model.js"),
+   /backend\.emitEvent|document\.querySelector|window\.setTimeout/,
+   "pure ViewModel never becomes a second PCM controller");
 });

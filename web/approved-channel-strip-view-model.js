@@ -129,8 +129,12 @@
       return {kind:"MUTATION",change:{op:"ROUTE_ONLY",from:sourceId,to,
         tap:"POST_FADER",gainLinear:1}};
     const matching=g.edges.filter(edge=>edge?.enabled===true&&
-      edge.primaryOutput===true&&edge.from===sourceId&&edge.to===previous&&
-      validId(edge.edgeId));
+      edge.from===sourceId&&edge.to===previous&&validId(edge.edgeId)&&
+      // Legacy admitted v6 can omit primaryOutput. Only a UNIQUE unity
+      // edge matching the accepted primaryOutId may stand in for PRIMARY.
+      // Explicit false remains a parallel SEND regardless of destination.
+      (edge.primaryOutput===true||
+       (edge.primaryOutput==null&&edge.gainLinear===1)));
     if(matching.length!==1)return unavailable;
     return {kind:"MUTATION",change:{op:"REMOVE",from:sourceId,
       edgeId:matching[0].edgeId}};
