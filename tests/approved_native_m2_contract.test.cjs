@@ -6077,6 +6077,14 @@ test("G-MV33 exact M4 FX host admission and hardware-scoped transaction settleme
  for(const plan of [rack,power,insert])
    assert.equal(plan.pending.hardwareConfiguration,token);
  assert.equal(editor.instanceId,"fx-old");
+ for(const badSlot of [undefined,null,"0",-1,8,NaN]){
+   assert.equal(fxRackVM.m4InsertPlan(base,{...opts,slot:badSlot,
+     catalogId:"vendor.new"}).kind,"UNAVAILABLE");
+   assert.equal(fxRackVM.m4EditorPlan(base,{...opts,slot:badSlot}).kind,
+     "UNAVAILABLE");
+   assert.equal(fxRackVM.m4PowerPlan(base,{...opts,slot:badSlot,
+     action:"slotPower"}).kind,"UNAVAILABLE");
+ }
  for(const delta of [
    {verifiedM4:false},{offline:true},{hardwareConfiguration:null},
    {hardwareConfiguration:""},{channel:10}

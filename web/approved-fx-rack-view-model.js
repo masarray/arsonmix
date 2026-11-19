@@ -162,7 +162,7 @@
         timeoutMs:8000,pending:{...lease,bypassed},
         payload:{channel,deviceEpoch:epoch,revision,value:bypassed}};
     }
-    if(action!=="slotPower"||slot===null)return unavailable;
+    if(action!=="slotPower"||!Number.isInteger(slot))return unavailable;
     const instances=m.fxInstances?.[channel],live=instances?.[slot];
     if(!Array.isArray(instances)||
        typeof live?.instanceId!=="string"||!live.instanceId||
@@ -231,7 +231,8 @@
     const unavailable={kind:"UNAVAILABLE"};
     const host=m4FxHost(snapshot,{channel,slot,verifiedM4,offline,pending,
       hardwareConfiguration});
-    if(!host||slot===null||typeof catalogId!=="string"||!catalogId)
+    if(!host||!Number.isInteger(slot)||
+       typeof catalogId!=="string"||!catalogId)
       return unavailable;
     const {m,epoch,revision}=host;
     const instances=m.fxInstances?.[channel];
@@ -337,7 +338,7 @@
     const unavailable={kind:"UNAVAILABLE"};
     const host=m4FxHost(snapshot,{channel,slot,verifiedM4,offline,
       hardwareConfiguration});
-    if(!host||slot===null)return unavailable;
+    if(!host||!Number.isInteger(slot))return unavailable;
     const {m,epoch,revision}=host;
     const slots=m.fxInstances?.[channel];
     if(!Array.isArray(slots))return unavailable;
