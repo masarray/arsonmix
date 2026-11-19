@@ -1408,6 +1408,19 @@ if(BUILD_TESTING)
   add_executable(ARMixRecoveryTests tests/direct_restore_backoff_test.cpp)
   target_compile_features(ARMixRecoveryTests PRIVATE cxx_std_20)
   add_test(NAME BoundedDirectDeviceRecovery COMMAND ARMixRecoveryTests)
+  # N-MOD-19: native JUCE CONTROL coordinator tested with fake device/driver
+  # status and real diagnostics, but never opening hardware or rendering PCM.
+  juce_add_console_app(ARMixNativeDirectRestoreTests
+      PRODUCT_NAME "ArSonMix Native Direct Restore Coordinator Contract")
+  target_sources(ARMixNativeDirectRestoreTests PRIVATE
+      tests/native_direct_restore_coordinator_test.cpp
+      src/NativeDirectRestoreCoordinator.h)
+  target_compile_features(ARMixNativeDirectRestoreTests PRIVATE cxx_std_20)
+  target_link_libraries(ARMixNativeDirectRestoreTests PRIVATE
+      juce::juce_core juce::juce_recommended_config_flags)
+  add_test(NAME NativeDirectRestoreBoundedRetryAndFaultEvidence
+      COMMAND ARMixNativeDirectRestoreTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixNativeDirectRestoreTests)
   add_executable(ARMixClockSizingTests tests/clock_bridge_sizing_test.cpp)
   target_compile_features(ARMixClockSizingTests PRIVATE cxx_std_20)
   add_test(NAME AdaptiveClockPeriodHeadroom COMMAND ARMixClockSizingTests)
