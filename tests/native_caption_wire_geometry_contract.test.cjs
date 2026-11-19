@@ -155,7 +155,7 @@ assert.match(playerProjection, /canUndoRemove/);
 assert.match(main, /PlayerStateProjection/);
 const playerProjectionHost=main.slice(main.indexOf('void emitPlayerState('),
   main.indexOf('void choosePlayerFiles()'));
-assert.doesNotMatch(playerProjectionHost, /setProperty\\(/);
+assert.doesNotMatch(playerProjectionHost, /setProperty/);
 assert.match(main, /Edit::replaceActiveTracks/);
 assert.match(playerArchive, /static bool canUndoRemove/);
 assert.match(main, /PlayerSetlistArchive::canUndoRemove/);
