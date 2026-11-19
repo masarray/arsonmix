@@ -44,6 +44,7 @@
 #include "NativeShowSaveWorker.h"
 #include "NativeChannelAppearanceStore.h"
 #include "NativeMixerSessionSaveWorker.h"
+#include "NativeMixerSessionRecovery.h"
 #include "NativeLogicalMixerControl.h"
 #include "NativeHotkeyRegistry.h"
 #include "NativeHotkeyCommandPlan.h"
@@ -3541,43 +3542,35 @@ private:
         return {};
     }
 
-    juce::String readMixerSessionForRecovery(armix::session::MixerSessionDocument& doc,
-            std::vector<armix::shows::BinaryState>& blobs) {
-        if(engine_.hasRetainedNativeSession()) {
-            const auto error=engine_.captureNativeMixerSession(doc,blobs,true);
-            if(error.isNotEmpty())return error;
-            doc.id=mixerSessionId_;
-            return resolveMixerSessionCatalog(doc,true);
-        }
-        return armix::session::NativeMixerSessionStore(settingsDirectory()).load(doc,blobs);
-    }
-
     juce::String restoreSavedMixerSession(bool startupOnSavedDevice=false,
             armix::session::MixerDeviceBindingPolicy::Mode bindingMode=
                 armix::session::MixerDeviceBindingPolicy::Mode::exact) {
         if(!engine_.allOutputsDisarmed() || mixerSessionWorker_.busy() || logicalVendorEditor_ ||
            nativeShowBusy_ || studioBackupBusy_ || engine_.isGraphSwitchPending())
             return "MUTE output and finish Studio IO before restoring mixer";
-        armix::session::NativeMixerSessionStore store(settingsDirectory());
-        if(!engine_.hasRetainedNativeSession() && !store.exists()) {
-            mixerSessionStatus_="NO_SAVED_SESSION";
-            return "No saved dynamic mixer session";
-        }
+        using Recovery=armix::session::NativeMixerSessionRecovery;
+        const armix::session::NativeMixerSessionStore store(settingsDirectory());
         armix::session::MixerSessionDocument doc;
         std::vector<armix::shows::BinaryState> states;
-        const bool retained=engine_.hasRetainedNativeSession();
-        auto error=readMixerSessionForRecovery(doc,states);
-        bool usedPrevious=false;
-        if(error.isNotEmpty()&&!retained&&store.recoverPrevious().isEmpty()) {
-            error=store.load(doc,states);
-            usedPrevious=error.isEmpty();
+        const auto checkpoint=Recovery::read(store,engine_.hasRetainedNativeSession(),
+            doc,states,[this](auto& retainedDoc,auto& retainedStates) {
+                const auto error=engine_.captureNativeMixerSession(retainedDoc,retainedStates,true);
+                if(error.isNotEmpty())return error;
+                retainedDoc.id=mixerSessionId_;
+                return resolveMixerSessionCatalog(retainedDoc,true);
+            });
+        if(checkpoint.source==Recovery::Source::missing) {
+            mixerSessionStatus_="NO_SAVED_SESSION";
+            return checkpoint.error;
         }
-        if(error.isNotEmpty()) {
-            mixerSessionStatus_=retained?"RETAINED_SESSION_UNAVAILABLE":"DAMAGED_SESSION";
-            mixerSessionError_=error;
-            diagnostics_.record("DYNAMIC_MIXER_READ_REJECTED",error);
-            return error;
+        if(checkpoint.error.isNotEmpty()) {
+            mixerSessionStatus_=checkpoint.source==Recovery::Source::retained
+                ?"RETAINED_SESSION_UNAVAILABLE":"DAMAGED_SESSION";
+            mixerSessionError_=checkpoint.error;
+            diagnostics_.record("DYNAMIC_MIXER_READ_REJECTED",checkpoint.error);
+            return checkpoint.error;
         }
+        const bool usedPrevious=checkpoint.source==Recovery::Source::previous;
         mixerSessionId_=doc.id;
         const auto restoredHotkeys=doc.hotkeys;
         if(usedPrevious)
@@ -3593,7 +3586,7 @@ private:
             mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND";
             return "Saved mixer is offline and awaiting verified device binding";
         }
-        error=materializeLogicalFxForBinding(doc,states);
+        auto error=materializeLogicalFxForBinding(doc,states);
         if(error.isNotEmpty())return error;
         // A disk SHA is NOT permission to instantiate executable code.
         // Every external VST3 must still match today's verified catalog
@@ -3606,33 +3599,18 @@ private:
             diagnostics_.record("DYNAMIC_MIXER_VST3_REMAP_REQUIRED",error);
             return error;
         }
-        if(bindingMode==MixerBindingMode::exact && startupOnSavedDevice &&
-           armix::session::MixerDeviceBindingPolicy::isAsio4All(doc.binding))
-            bindingMode=MixerBindingMode::verifiedAsioRestart;
-        const bool resume=!firstBinding && startupOnSavedDevice &&
-            (bindingMode==MixerBindingMode::exact || bindingMode==MixerBindingMode::verifiedAsioRestart) &&
-            !usedPrevious && !retained &&
-            doc.resumeMain.value_or(true);
         const auto live=engine_.status().getProperty("dryRoutingLab",{});
         const bool nativeAlreadyActive=static_cast<bool>(
             live.getProperty("nativeChannelIdPcmActive",false));
-        // A fresh silent ChannelId starter is now admitted before the saved
-        // Show is inspected. Only THAT unmodified bootstrap may be replaced
-        // by cold-start restore or by verified Apply after a failed startup. User-authored FX,
-        // WIRE, BUS and fader edits must never be overwritten by late scan.
-        // A verified PREVIOUS checkpoint is also eligible: the separate
-        // resume policy keeps MAIN muted after recovery from corrupt HEAD.
-        const bool recoveringAfterDeviceApply=bindingMode!=MixerBindingMode::exact &&
-            mixerSessionRecoveryPending_;
-        const bool replacePristineStartup=nativeAlreadyActive && !retained &&
-            (startupOnSavedDevice || recoveringAfterDeviceApply || firstBinding) &&
-            engine_.hasPristineStartupMixer();
-        if(nativeAlreadyActive && !replacePristineStartup) {
+        const auto plan=Recovery::plan(doc,{bindingMode,checkpoint.source,
+            startupOnSavedDevice,mixerSessionRecoveryPending_,nativeAlreadyActive,
+            engine_.hasPristineStartupMixer(),firstBinding});
+        if(!plan.restoreAllowed) {
             mixerSessionStatus_="LIVE_MIXER_UNCHANGED";
             return "Live native mixer already edited; refusing to replace it";
         }
         error=engine_.restoreNativeMixerSession(std::move(doc),states,
-            replacePristineStartup,nullptr,bindingMode);
+            plan.replacePristineStartup,nullptr,plan.bindingMode);
         if(error.isNotEmpty()) {
             mixerSessionStatus_=error.contains("NEEDS_REMAP")
                 ?"NEEDS_REMAP":"RESTORE_REJECTED";
@@ -3646,7 +3624,8 @@ private:
             const auto issue=hotkeys_.activateSession(mixerSessionId_,&restoredHotkeys);
             if(issue.isNotEmpty())diagnostics_.record("HOTKEY_IMPORT_REJECTED",issue);
         }
-        if(resume)requestAutomaticMain(bindingMode!=MixerBindingMode::verifiedAsioRestart);
+        if(plan.resumeMain)
+            requestAutomaticMain(plan.bindingMode!=MixerBindingMode::verifiedAsioRestart);
         mixerSessionStatus_=engine_.isMonitorEnabled()?"RESTORED_MONITORING":"RESTORED_MUTED";
         mixerSessionError_.clear();
         diagnostics_.record("DYNAMIC_MIXER_RESTORED",mixerSessionStatus_);

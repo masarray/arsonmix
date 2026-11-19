@@ -2869,14 +2869,15 @@ test("P0 native FX rack and per-slot readback update mounted strip without repla
 
 test("P0 automatic cold-start Show replaces only pristine SOURCE NONE ChannelId",()=>{
  const main=read('src/Main.cpp');
+ const recovery=read('src/NativeMixerSessionRecovery.h');
  const engine=read('src/LiveAudioEngine.h');
  const route=read('src/LiveDryRoutingLab.h');
- assert.match(main,/nativeAlreadyActive && !retained &&/);
- assert.match(main,/\(startupOnSavedDevice \|\| recoveringAfterDeviceApply \|\| firstBinding\) &&/);
- assert.match(main,/recoveringAfterDeviceApply=bindingMode!=MixerBindingMode::exact &&\s*mixerSessionRecoveryPending_/);
- assert.match(main,/!usedPrevious && !retained/); // only normal auto-resume, not recovery admission
- assert.match(main,/engine_\.hasPristineStartupMixer\(\)/);
- assert.match(main,/restoreNativeMixerSession\(std::move\(doc\),states,\s*replacePristineStartup/);
+ assert.match(main,/Recovery::plan\(doc,\{bindingMode,checkpoint.source,\s*startupOnSavedDevice,mixerSessionRecoveryPending_,nativeAlreadyActive,\s*engine_\.hasPristineStartupMixer\(\),firstBinding\}\)/);
+ assert.match(main,/if\(!plan.restoreAllowed\)/);
+ assert.match(main,/restoreNativeMixerSession\(std::move\(doc\),states,\s*plan.replacePristineStartup,nullptr,plan.bindingMode\)/);
+ assert.match(main,/if\(plan.resumeMain\)\s*requestAutomaticMain/);
+ assert.match(recovery,/context.nativeAlreadyActive && fromDisk &&/);
+ assert.match(recovery,/Source::head && doc.resumeMain.value_or\(true\)/);
  assert.match(engine,/dryRoutingLab_\.canReplacePristineStartupMixer\(\)/);
  assert.match(route,/bool canReplacePristineStartupMixer\(\) const noexcept/);
  assert.match(route,/!nativeControlDirty_ && nativeAccepted_\.fxOwners/);
