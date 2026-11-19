@@ -215,24 +215,40 @@
       choice.right===choice.left+1;
   }
   function sourceQueueSelection({choice,choices,epoch,acceptedLabel,
-                                 activeSameChannel=false}={}) {
-    if(!decimalId(epoch)||!sourceChoiceMatches(choice,choices))
+                                 activeSameChannel=false,
+                                 hardwareConfiguration}={}) {
+    // G-MV22: the operator's transient pin choice belongs to the EXACT
+    // installed physical pin/format configuration, not merely an epoch.
+    // The v6 native controller is the sole owner of this canonical token.
+    if(!decimalId(epoch)||!sourceChoiceMatches(choice,choices)||
+       (hardwareConfiguration!==undefined&&
+        (typeof hardwareConfiguration!=="string"||!hardwareConfiguration)))
       return {kind:"UNAVAILABLE"};
     // The operator can cancel a queued edit by returning to installed PCM.
     // But when THIS channel already has an in-flight edit, queuing the old
     // accepted choice is a legitimate rollback requested after its ACK.
     if(choice.label===acceptedLabel&&!activeSameChannel)
       return {kind:"CANCEL"};
-    return {kind:"QUEUE",entry:{epoch,choice:{
-      label:choice.label,mode:choice.mode,left:choice.left,right:choice.right
-    }}};
+    return {kind:"QUEUE",entry:{epoch,
+      ...(hardwareConfiguration!==undefined?{hardwareConfiguration}:{}),
+      choice:{label:choice.label,mode:choice.mode,
+        left:choice.left,right:choice.right}}};
   }
   function sourceDispatchPlan({authority,entry,hardware,native,
                                channelId,channel,choices,deviceReady=false}={}) {
     const unavailable={kind:"UNAVAILABLE"};
     const choice=entry?.choice,epoch=hardware?.device?.epoch;
     if(!deviceReady||!decimalId(epoch)||epoch!==entry?.epoch||
-       !sourceChoiceMatches(choice,choices))return unavailable;
+       !sourceChoiceMatches(choice,choices)||
+       // A live normalized native readback always has a fingerprint.
+       // Never let an unscoped old queue entry slip into that device.
+       (hardware?.hardwareConfiguration!==undefined?
+         !hardware.hardwareConfiguration||
+         entry?.hardwareConfiguration!==hardware.hardwareConfiguration:
+         entry?.hardwareConfiguration!==undefined)||
+       (native?.hardwareConfiguration!==undefined&&
+        entry?.hardwareConfiguration!==native.hardwareConfiguration))
+      return unavailable;
     if(authority==="CHANNEL_ID"){
       const graph=native?.graph,session=hardware?.raw?.mixerSession;
       if(!decimalId(channelId)||native?.admitted!==true||
@@ -283,6 +299,48 @@
     return plan.kind==="READY"?
       {kind:"SEND",key,entry,action:plan.action,payload:plan.payload}:
       {kind:"DROP",key};
+  }
+
+  // G-MV22: one pure request-lease factory for both native SOURCE paths.
+  // Previously the bridge duplicated ChannelId/M4 pending shape, silently
+  // omitting the installed physical pin/format identity from both. The
+  // bridge still owns queues, timers and the ONE native command dispatcher.
+  function sourceQueueRequestLease({authority,requestId,plan,hardware,native}={}) {
+    if(plan?.kind!=="SEND"||!plan.entry?.choice||
+       !decimalId(plan.entry.epoch))return null;
+    const {entry,payload,key}=plan,config=entry.hardwareConfiguration;
+    if(config!==undefined&&
+       (typeof config!=="string"||!config||
+        config!==hardware?.hardwareConfiguration||
+        (native?.hardwareConfiguration!==undefined&&
+         config!==native.hardwareConfiguration)))return null;
+    const common={requestId,choice:Object.freeze({...entry.choice}),
+      ...(config!==undefined?{hardwareConfiguration:config}:{})};
+    if(authority==="CHANNEL_ID") {
+      if(typeof requestId!=="string"||!requestId||
+         plan.action!=="routingNativeSourcePatch"||
+         !decimalId(key)||payload?.channelId!==key||
+         payload.deviceEpoch!==entry.epoch||
+         !decimalId(native?.graph?.revision)||
+         !decimalId(native?.graph?.rosterRevision)||
+         payload.graphRevision!==native.graph.revision||
+         payload.rosterRevision!==native.graph.rosterRevision)
+        return null;
+      return Object.freeze({...common,id:key,epoch:entry.epoch,
+        beforeRevision:native.graph.revision,acked:false});
+    }
+    if(authority==="M4"){
+      if(!Number.isSafeInteger(requestId)||requestId<=0||
+         !Number.isInteger(key)||key<0||key>=10||
+         plan.action!=="routingSourceSwitch"||
+         payload?.channel!==key||!positiveCounter(entry.epoch)||
+         payload.deviceEpoch!==Number(entry.epoch)||
+         !Number.isSafeInteger(payload.revision)||payload.revision<=0)
+        return null;
+      return Object.freeze({...common,channel:key,
+        epoch:payload.deviceEpoch,revision:payload.revision,acked:false});
+    }
+    return null;
   }
 
   function sourceAckResult(pending,ack,authority) {
@@ -399,6 +457,9 @@
   // Each physical graph retains its own strict format, revision, epoch and
   // pin verifier. A correlated ACK alone cannot confirm accepted PCM.
   function sourceQueueReadback({authority,pending,snapshot}={}) {
+    if(pending?.hardwareConfiguration!==undefined&&
+       pending.hardwareConfiguration!==snapshot?.hardwareConfiguration)
+      return "STALE"; // same-epoch physical replacement cannot settle old ACK
     if(authority==="CHANNEL_ID")
       return sourceReadbackSettlement(pending,snapshot);
     if(authority==="M4")
@@ -605,7 +666,8 @@
   return Object.freeze({outputTargets,inputChoices,externalChoices,
     primaryChoices,resolvePrimarySelection,readbackBindings,externalPending,
     primaryOutMutation,externalOutputPlan,sourceQueueSelection,
-    sourceDispatchPlan,sourceQueueHead,sourceAckResult,sourceReadbackSettlement,
+    sourceDispatchPlan,sourceQueueHead,sourceQueueRequestLease,
+    sourceAckResult,sourceReadbackSettlement,
     m4SourceReadbackSettlement,sourceQueueReadback,sourceQueueAckTransition,
     sourceQueueTimeoutDecision,
     scalarIdentityMatches,scalarVisualSettlement,m4ScalarAckResult,
