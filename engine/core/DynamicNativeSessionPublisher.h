@@ -369,6 +369,11 @@ public:
                            ChannelId id,int inputL,int inputR,bool stereo) noexcept {
         return publisher_.updateActiveControl(epoch,revision,
             [&](Prepared& active) noexcept {
+                // An installed qualified virtual namespace must never accept
+                // an ordinal-only live switch. That would bypass DeviceKey
+                // and physical pin attestation. Recompile/publish the full
+                // detached map+graph on CONTROL instead.
+                if(active.inputMap)return false;
                 return active.graph.setPhysicalSource(id,inputL,inputR,stereo);
             });
     }

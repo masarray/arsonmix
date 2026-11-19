@@ -132,6 +132,10 @@ inline void run() {
     require(near(l[frames-1],2.f*(.2f*center+.4f))&&
             near(r[frames-1],2.f*(.2f*center+.6f)),
             "real PCM from device A and B reaches MAIN separately");
+    require(!native.setPhysicalSource(epoch,1,a,0,-1,false),
+            "no legacy ordinal-only source swap under qualified map");
+    require(native.setChannelMix(epoch,1,a,1.f,0.f),
+            "normal ChannelId fader/PAN remains editable without graph rebuild");
     // Device B unplug/fault is isolated; never substitute A Input1 for B.
     blocks[1].admitted=false;
     require(render(fxCalls)&&fxCalls==2,"B dropout never stalls A FX");
