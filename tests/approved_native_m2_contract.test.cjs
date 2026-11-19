@@ -6388,12 +6388,12 @@ test("G-MV35 native MOVE/REMOVE FX demands installed ChannelId hardware owner",(
  }
  const bridge=read("web/approved-native-bridge.js"),
        pure=read("web/approved-fx-rack-view-model.js");
- assert.equal((pure.match(/function m4EditorDispatchPlan\\(/g)||[]).length,1);
- assert.equal((pure.match(/function m4EditorDispatchLeaseMatches\\(/g)||[]).length,1);
- assert.match(bridge,/fxRackVM\\.m4EditorDispatchPlan\\(accepted,/);
- assert.match(bridge,/fxRackVM\\.m4EditorDispatchLeaseMatches\\(current,lease,/);
- assert.match(bridge,/window\\.queueMicrotask\\(\\(\\)=>\\{/);
- assert.match(bridge,/hardwareConfiguration:protocol\\.nativeHardwareConfiguration\\(current\\?\\.device\\)/);
- assert.match(bridge,/fxRackVM\\.nativeEditPlan\\(current,/);
- assert.doesNotMatch(pure,/backend\\.emitEvent|document\\.|window\\.|setTimeout/);
+ assert.equal((pure.match(/function m4EditorDispatchPlan\(/g)||[]).length,1);
+ assert.equal((pure.match(/function m4EditorDispatchLeaseMatches\(/g)||[]).length,1);
+ assert.match(bridge,/fxRackVM\.m4EditorDispatchPlan\(accepted,/);
+ assert.match(bridge,/fxRackVM\.m4EditorDispatchLeaseMatches\(current,lease,/);
+ assert.match(bridge,/window\.queueMicrotask\(\(\)=>\{/);
+ assert.match(bridge,/hardwareConfiguration:protocol\.nativeHardwareConfiguration\(current\?\.device\)/);
+ assert.match(bridge,/fxRackVM\.nativeEditPlan\(current,/);
+ assert.doesNotMatch(pure,/backend\.emitEvent|document\.|window\.|setTimeout/);
 });
