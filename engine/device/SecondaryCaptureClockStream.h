@@ -25,7 +25,7 @@ public:
     {
         double captureHz=0.,primaryHz=0.;
         int capturePeriod=0,primaryPeriod=0,channels=0;
-        std::uint64_t captureGeneration=0,primaryEpoch=0;
+        std::uint64_t captureGeneration=0,primaryEpoch=0,deviceLease=0;
     };
     struct Status
     {
@@ -49,6 +49,7 @@ public:
         prepared_=false;
         format_={};targetMs_=0.;
         if(format.captureGeneration==0||format.primaryEpoch==0||
+           format.deviceLease==0||
            format.channels<1||format.channels>16||
            format.capturePeriod<1||format.capturePeriod>maxCallbackFrames||
            format.primaryPeriod<1||format.primaryPeriod>maxCallbackFrames)
@@ -129,7 +130,8 @@ public:
     }
 
     bool pull(float* const* output,int channels,int frames,
-              std::uint64_t captureGeneration,std::uint64_t primaryEpoch) noexcept
+              std::uint64_t captureGeneration,std::uint64_t primaryEpoch,
+              std::uint64_t deviceLease) noexcept
     {
         consumers_.fetch_add(1,std::memory_order_acq_rel);
         const bool valid=output&&channels>0&&channels<=16&&frames>0&&
@@ -151,6 +153,7 @@ public:
             !fault_.load(std::memory_order_acquire)&&
             captureGeneration==format_.captureGeneration&&
             primaryEpoch==format_.primaryEpoch&&
+            deviceLease==format_.deviceLease&&
             channels==format_.channels;
         if(authorised)
         {

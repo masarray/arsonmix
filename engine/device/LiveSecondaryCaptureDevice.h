@@ -66,7 +66,7 @@ public:
         juce::BigInteger activeInputPins; // physical indices, not callback order
         double captureRate=0.,primaryRate=0.,bridgeTargetMs=0.;
         int capturePeriod=0,primaryPeriod=0,callbackInputs=0;
-        std::uint64_t captureGeneration=0,primaryEpoch=0;
+        std::uint64_t captureGeneration=0,primaryEpoch=0,deviceLease=0;
         std::uint64_t driverClassFingerprint=0; // diagnostic, not authorization
         bool ready=false,faulted=false;
         SecondaryCaptureClockStream::Status clock{};
@@ -86,21 +86,22 @@ public:
                       double requestedCaptureHz,int requestedCapturePeriod,
                       double primaryHz,int primaryPeriod,
                       std::uint64_t captureGeneration,
-                      std::uint64_t primaryEpoch)
+                      std::uint64_t primaryEpoch,
+                      std::uint64_t deviceLease)
     {
         close();
 #if !defined(_WIN32) || !JUCE_ASIO
         (void)secondaryName;(void)primaryAsioName;(void)selectedInputPins;
         (void)requestedCaptureHz;(void)requestedCapturePeriod;
         (void)primaryHz;(void)primaryPeriod;
-        (void)captureGeneration;(void)primaryEpoch;
+        (void)captureGeneration;(void)primaryEpoch;(void)deviceLease;
         return "Independent ASIO capture is Windows JUCE ASIO only";
 #else
         if(primaryAsioName.isEmpty()||secondaryName.isEmpty()||
            secondaryName==primaryAsioName||selectedInputPins.isZero()||
            selectedInputPins.countNumberOfSetBits()>16||
            selectedInputPins.getHighestBit()>=64||
-           captureGeneration==0||primaryEpoch==0||
+           captureGeneration==0||primaryEpoch==0||deviceLease==0||
            !std::isfinite(requestedCaptureHz)||
            requestedCaptureHz<8000.||requestedCaptureHz>192000.||
            requestedCapturePeriod<32||
@@ -147,13 +148,14 @@ public:
         {close();return "ASIO registry driver class changed during capture open";}
         if(!stream_.prepare({actualHz,primaryHz,actualPeriod,primaryPeriod,
                 selectedInputPins.countNumberOfSetBits(),
-                captureGeneration,primaryEpoch}))
+                captureGeneration,primaryEpoch,deviceLease}))
         {close();return "Existing bounded clock bridge cannot admit negotiated periods";}
         name_=secondaryName;
         inputMask_=selectedInputPins;
         captureRate_=actualHz;capturePeriod_=actualPeriod;
         primaryRate_=primaryHz;primaryPeriod_=primaryPeriod;
         generation_=captureGeneration;primaryEpoch_=primaryEpoch;
+        deviceLease_=deviceLease;
         classFingerprint_=AsioRegistryIdentityProbe::diagnosticFingerprint(
             secondary.identity);
         if(!stream_.activate()){close();return "Capture bridge activation refused";}
@@ -178,7 +180,7 @@ public:
         name_.clear();inputMask_.clear();
         captureRate_=primaryRate_=0.;
         capturePeriod_=primaryPeriod_=0;
-        generation_=primaryEpoch_=classFingerprint_=0;
+        generation_=primaryEpoch_=deviceLease_=classFingerprint_=0;
     }
 
     // RT primary render-clock READ ONLY. Return silence on stale primary
@@ -186,9 +188,11 @@ public:
     // non-admitted channel format. No DSP or secondary device access.
     bool pullForPrimary(float* const* dest,int channels,int frames,
                         std::uint64_t captureGeneration,
-                        std::uint64_t primaryEpoch) noexcept
+                        std::uint64_t primaryEpoch,
+                        std::uint64_t deviceLease) noexcept
     {
-        return stream_.pull(dest,channels,frames,captureGeneration,primaryEpoch);
+        return stream_.pull(dest,channels,frames,
+                            captureGeneration,primaryEpoch,deviceLease);
     }
     void invalidatePrimaryClock() noexcept {stream_.fault();}
     bool ready() const noexcept{return opened_.load(std::memory_order_acquire)&&
@@ -204,7 +208,7 @@ public:
         b.callbackInputs=inputMask_.countNumberOfSetBits();
         b.bridgeTargetMs=stream_.targetMs();
         b.captureGeneration=generation_;
-        b.primaryEpoch=primaryEpoch_;
+        b.primaryEpoch=primaryEpoch_;b.deviceLease=deviceLease_;
         b.driverClassFingerprint=classFingerprint_;
         b.ready=ready();b.faulted=faulted();
         b.clock=stream_.status();
@@ -221,7 +225,8 @@ private:
     juce::BigInteger inputMask_;
     double captureRate_=0.,primaryRate_=0.;
     int capturePeriod_=0,primaryPeriod_=0;
-    std::uint64_t generation_=0,primaryEpoch_=0,classFingerprint_=0;
+    std::uint64_t generation_=0,primaryEpoch_=0,deviceLease_=0,
+                  classFingerprint_=0;
     std::atomic<bool> opened_{false};
 };
 } // namespace armix::device

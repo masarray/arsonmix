@@ -337,7 +337,7 @@ juce_add_binary_data(ARMixAssets SOURCES
     ${ARMIX_IMERSIB_SCENE_PNG_SOURCES})
 target_include_directories(ARMixConsole PRIVATE "${ARMIX_APPROVED_GUI_DIR}")
 
-target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h engine/builtin_fx/HarmonyDsp.h engine/builtin_fx/HarmonyMusicKey.h engine/builtin_fx/ChannelHarmonyProcessor.h engine/builtin_fx/SonKuSpatialProcessor.h engine/builtin_fx/sonku/SonKuSpatialCore.h engine/builtin_fx/sonku/SonKuMeasuredHrir.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/PreparedNativeMixerSession.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/NativeFxParameterHotkey.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/device/LiveSecondaryCaptureDevice.h engine/device/SecondaryCaptureClockStream.h engine/core/LiveOutputRouteGate.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
+target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h engine/builtin_fx/HarmonyDsp.h engine/builtin_fx/HarmonyMusicKey.h engine/builtin_fx/ChannelHarmonyProcessor.h engine/builtin_fx/SonKuSpatialProcessor.h engine/builtin_fx/sonku/SonKuSpatialCore.h engine/builtin_fx/sonku/SonKuMeasuredHrir.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/PreparedNativeMixerSession.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/NativeFxParameterHotkey.h src/NativeHotkeyCommandPlan.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/device/LiveSecondaryCaptureDevice.h engine/device/SecondaryCaptureClockStream.h engine/core/LiveOutputRouteGate.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
 # Explicit UTF-8 source decoding: native channel icons are Unicode, and
 # MSVC's machine-specific ANSI source charset corrupts emoji literals.
 # Limit the flag to C++ (not Windows .rc/resource compilation).
@@ -1234,6 +1234,18 @@ if(BUILD_TESTING)
   add_dependencies(ARMixMixerRoutingTests
       ARMixPlayerShowEditTests ARMixPlayerWaveformTests
       ARMixPlayerCrossfadeTests ARMixPlayerShowTransitionTests)
+  # MV-N14: isolated archive codec regression, no extra CI workflow,
+  # playback owner, audio callback or device requirement.
+  juce_add_console_app(ARMixPlayerSetlistArchiveTests
+      PRODUCT_NAME "ArSonMix Player Setlist Archive Contract")
+  target_sources(ARMixPlayerSetlistArchiveTests PRIVATE
+      tests/player_setlist_archive_test.cpp)
+  target_link_libraries(ARMixPlayerSetlistArchiveTests PRIVATE
+      juce::juce_core juce::juce_recommended_config_flags)
+  target_compile_features(ARMixPlayerSetlistArchiveTests PRIVATE cxx_std_20)
+  add_test(NAME ArSonPlayerV1V2V3SetlistArchiveMigrationAndPersistence
+      COMMAND ARMixPlayerSetlistArchiveTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixPlayerSetlistArchiveTests)
   juce_add_console_app(ARMixPlayerDecodeTests PRODUCT_NAME "ArSon Player Native Decoder Integration")
   target_sources(ARMixPlayerDecodeTests PRIVATE tests/player_native_decode_test.cpp)
   target_link_libraries(ARMixPlayerDecodeTests PRIVATE
@@ -1396,6 +1408,19 @@ if(BUILD_TESTING)
   add_executable(ARMixRecoveryTests tests/direct_restore_backoff_test.cpp)
   target_compile_features(ARMixRecoveryTests PRIVATE cxx_std_20)
   add_test(NAME BoundedDirectDeviceRecovery COMMAND ARMixRecoveryTests)
+  # N-MOD-19: native JUCE CONTROL coordinator tested with fake device/driver
+  # status and real diagnostics, but never opening hardware or rendering PCM.
+  juce_add_console_app(ARMixNativeDirectRestoreTests
+      PRODUCT_NAME "ArSonMix Native Direct Restore Coordinator Contract")
+  target_sources(ARMixNativeDirectRestoreTests PRIVATE
+      tests/native_direct_restore_coordinator_test.cpp
+      src/NativeDirectRestoreCoordinator.h)
+  target_compile_features(ARMixNativeDirectRestoreTests PRIVATE cxx_std_20)
+  target_link_libraries(ARMixNativeDirectRestoreTests PRIVATE
+      juce::juce_core juce::juce_recommended_config_flags)
+  add_test(NAME NativeDirectRestoreBoundedRetryAndFaultEvidence
+      COMMAND ARMixNativeDirectRestoreTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixNativeDirectRestoreTests)
   add_executable(ARMixClockSizingTests tests/clock_bridge_sizing_test.cpp)
   target_compile_features(ARMixClockSizingTests PRIVATE cxx_std_20)
   add_test(NAME AdaptiveClockPeriodHeadroom COMMAND ARMixClockSizingTests)
@@ -1410,14 +1435,12 @@ if(BUILD_TESTING)
   target_compile_features(ARMixIo0DualAsioPolicyTests PRIVATE cxx_std_20)
   add_test(NAME IO0DualVendorCaptureDriverIdentityAndPhysicalMasks
       COMMAND ARMixIo0DualAsioPolicyTests)
-  # IO-1: driver-independent production SPSC/ASRC capture lease regression.
-  # The actual JUCE input-only hardware class is compiled in the existing
-  # Windows ASIO backend test; unattended CI NEVER opens its physical driver.
+  # IO-1: bounded secondary ASIO producer, device-lease and epoch-fenced ASRC.
   add_executable(ARMixIo1CaptureClockTests
       tests/secondary_capture_clock_stream_test.cpp
       engine/device/SecondaryCaptureClockStream.h)
   target_compile_features(ARMixIo1CaptureClockTests PRIVATE cxx_std_20)
-  add_test(NAME IO1SecondaryCaptureEpochAndNineClockDomains
+  add_test(NAME IO1SecondaryCaptureDeviceLeaseEpochAndNineClocks
       COMMAND ARMixIo1CaptureClockTests)
   if(WIN32)
     juce_add_console_app(ARMixAsioBackendTests PRODUCT_NAME "ArSonMix ASIO Backend Registration Tests")
@@ -1550,7 +1573,7 @@ if(BUILD_TESTING)
   # H1 OS-global shortcut registration and stable identity are control-only.
   juce_add_console_app(ARMixNativeHotkeyTests PRODUCT_NAME "ArSonMix Native Hotkey Registry Tests")
   target_sources(ARMixNativeHotkeyTests PRIVATE tests/native_hotkey_registry_test.cpp
-      src/NativeHotkeyRegistry.h)
+      src/NativeHotkeyRegistry.h src/NativeHotkeyCommandPlan.h)
   target_link_libraries(ARMixNativeHotkeyTests PRIVATE
       juce::juce_core juce::juce_recommended_config_flags)
   if(WIN32)

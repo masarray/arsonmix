@@ -7,6 +7,9 @@ const {readFileSync}=require("node:fs");
 const vm=require("node:vm");
 const protocol=require("../web/approved-native-contract.js");
 const deviceVM=require("../web/approved-device-view-model.js");
+const stripVM=require("../web/approved-channel-strip-view-model.js");
+const fxRackVM=require("../web/approved-fx-rack-view-model.js");
+const wireVM=require("../web/approved-wire-view-model.js");
 const read=p=>readFileSync(p,"utf8");
 const clone=x=>JSON.parse(JSON.stringify(x));
 const fixture=JSON.parse(read("integration/console-v6/fixtures.json")).g0;
@@ -37,7 +40,7 @@ function nativeChannelIdFixture(){
  };
  return s;
 }
-function harness({m4=false}={}){
+function harness({m4=false,rejectMaster=false}={}){
  const sent=[],listeners=new Map(),timers=[],visual=[],meters=[];
  const m4Tracks=m4?Array.from({length:10},(_,i)=>({
    id:1000+i,name:"CH"+(i+1),kind:"audio",format:"mono",level:-6,
@@ -77,6 +80,8 @@ function harness({m4=false}={}){
  };
  const window={
    __JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,
+   ArSonApprovedChannelStripViewModel:rejectMaster?
+     Object.freeze({...stripVM,masterScalarAuthority:()=>"UNAVAILABLE"}):stripVM,ArSonApprovedFxRackViewModel:fxRackVM,ArSonApprovedWireViewModel:wireVM,
    __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
    setTimeout(fn,delay=0){timers.push({fn,at:now+Math.max(0,Number(delay)||0)});return timers.length;}
  };
@@ -94,6 +99,171 @@ function harness({m4=false}={}){
     }
  };
 }
+test("G-MV26 refused MAIN MUTE and fader reset never fall through to ChannelId",()=>{
+ const h=harness({rejectMaster:true}),s=nativeChannelIdFixture();
+ s.device.epoch="77";s.mixerSession.deviceEpoch="77";
+ h.listeners.get("arMixConsoleSnapshot")(s);
+ assert.equal(h.window.__ARMIX_APPROVED_NATIVE_GUI__.acceptedGraphConnected,true);
+ const master=h.scope.master;
+ const commands=()=>h.sent.filter(e=>e.name==="arMixConsoleIntent" ||
+   (e.name==="arMixAction"&&e.payload?.action==="routingM4Control"));
+ const before=commands().length;
+ assert.equal(h.window.__ARMIX_NATIVE_M2__.consumeAction(master,"mute",{}),true);
+ assert.equal(h.window.__ARMIX_NATIVE_M2__.consumeDoubleClick({
+   target:{classList:{contains:cls=>cls==="fader"}}
+ },master),true);
+ assert.equal(commands().length,before,
+   "refused MAIN can neither emit host scalar nor bypass via generic v6 intent");
+});
+
+test("G-MV26 offline .smix MAIN MUTE and unity reset keep logical native ACK path",()=>{
+ const makeOffline=()=>{
+   const h=harness(),s=clone(fixture),live=nativeChannelIdFixture();
+   s.productionCallbackLive=false;
+   s.mixerSession={authority:"NONE",deviceEpoch:s.device.epoch};
+   const graph=clone(live.graph);
+   graph.revision="12";graph.rosterRevision="12";
+   graph.capabilities.callbackOwnsChannelIds=false;
+   graph.capabilities.supportedOps=["SET_FADER","SET_MUTE"];
+   s.logicalMixer={schema:"arsonmix.native.logical-mixer.v1",
+     authority:"LOGICAL_ONLY",workspaceToken:"offline-main-gmv26",
+     readOnly:false,revision:"12",physicalOutputAdmitted:false,
+     outputArmed:false,graph};
+   h.listeners.get("arMixConsoleSnapshot")(s);
+   return {h,graph};
+ };
+ for(const operation of ["SET_MUTE","SET_FADER"]){
+   const {h,graph}=makeOffline(),master=h.scope.master;
+   if(operation==="SET_MUTE")
+     assert.equal(h.window.__ARMIX_NATIVE_M2__.consumeAction(master,"mute",{}),true);
+   else
+     assert.equal(h.window.__ARMIX_NATIVE_M2__.consumeDoubleClick({
+       target:{classList:{contains:x=>x==="fader"}}
+     },master),true);
+   const emitted=h.sent.filter(e=>e.name==="arMixLogicalIntent");
+   assert.equal(emitted.length,1,operation+" must edit offline .smix via logical authority");
+   assert.equal(emitted[0].payload.operation,operation);
+   assert.equal(emitted[0].payload.channelId,graph.mainChannelId);
+   assert.equal(h.sent.some(e=>e.name==="arMixConsoleIntent" ||
+      e.payload?.action==="routingM4Control"),false,
+      "logical MAIN edit must never trigger physical PCM or output");
+ }
+});
+
+test("G-MV27 ChannelId one-shot MUTE, FADER reset and PAN reset use exact native intent",()=>{
+ for(const scenario of [
+   {action:"mute",operation:"SET_MUTE",field:"mute"},
+   {dbl:"fader",operation:"SET_FADER"},
+   {dbl:"center-pan",operation:"SET_PAN"}
+ ]){
+   const h=harness(),source=nativeChannelIdFixture();
+   source.device.epoch="77";source.mixerSession.deviceEpoch="77";
+   h.listeners.get("arMixConsoleSnapshot")(source);
+   const channel=h.scope.tracks[4];
+   assert.ok(channel?.id,"accepted native strip must exist");
+   if(scenario.action){
+     assert.equal(h.window.__ARMIX_NATIVE_M2__.consumeAction(
+       channel,scenario.action,{}),true);
+   }else{
+     assert.equal(h.window.__ARMIX_NATIVE_M2__.consumeDoubleClick({
+       target:{classList:{contains:name=>name===scenario.dbl},
+         closest:()=>null}
+     },channel),true);
+   }
+   const msg=h.sent.filter(x=>x.name==="arMixConsoleIntent").at(-1)?.payload;
+   assert.equal(msg?.operation,scenario.operation);
+   assert.equal(msg?.targetChannelId,source.graph.channels[4].id);
+   if(scenario.operation==="SET_MUTE")assert.equal(msg.payload.enabled,true);
+   if(scenario.operation==="SET_FADER")assert.equal(msg.payload.valueDb,0);
+   if(scenario.operation==="SET_PAN")assert.equal(msg.payload.value,0);
+   assert.equal(h.sent.some(x=>x.payload?.action==="routingM4Control"),false);
+ }
+});
+
+test("G-MV27 unsupported ChannelId SOLO/PAN field and reset never bypass capability gate",()=>{
+ const h=harness(),s=nativeChannelIdFixture();
+ s.device.epoch="77";s.mixerSession.deviceEpoch="77";
+ s.graph.capabilities.supportedOps=["SET_FADER","SET_MUTE"];
+ h.listeners.get("arMixConsoleSnapshot")(s);
+ const t=h.scope.tracks[4],native=h.window.__ARMIX_NATIVE_M2__;
+ const count=()=>h.sent.filter(x=>x.name==="arMixConsoleIntent" ||
+   x.payload?.action==="routingM4Control").length;
+ const before=count();
+ assert.equal(native.consumeAction(t,"solo",{}),true);
+ assert.equal(native.consumeDoubleClick({target:{
+   classList:{contains:q=>q==="center-pan"},closest:()=>null}},t),true);
+ const el={dataset:{field:"pan",panKeyboard:"false"},lane:4,
+   value:"80",min:"-100",max:"100"};
+ assert.equal(native.consumeField({target:el,type:"change"}),true);
+ assert.equal(count(),before,
+   "denied live PAN must not re-enter generic SET_PAN intent on release");
+ assert.equal(el.value,String(t.pan),"refuse restores accepted PAN readback");
+});
+
+test("G-MV27 active M4 one-shot controls use only the legacy owner and ordinal",()=>{
+ const h=harness({m4:true}),s=clone(fixture),rev="3";
+ const controls=()=>({faderDb:-6,pan:0,mute:false,solo:false});
+ const source=()=>({mode:"MONO",left:0,right:-1,main:true,channelFormat:"MONO"});
+ s.legacyM4={active:true,routeAccepted:true,routingRevision:rev,
+   channelControls:Array.from({length:10},controls),
+   channels:Array.from({length:10},source),
+   fxInstances:Array.from({length:10},()=>Array(8).fill(null))};
+ s.mixerSession={authority:"M4",deviceEpoch:s.device.epoch,routeRevision:rev,
+   channels:Array.from({length:10},()=>({source:source(),main:true,
+     channelFormat:"MONO",controls:controls(),fxRackBypassed:false,
+     peakL:0.1,peakR:0.1})),main:{db:0,mute:false}};
+ h.listeners.get("arMixConsoleSnapshot")(s);
+ const t=h.scope.tracks[4],native=h.window.__ARMIX_NATIVE_M2__;
+ assert.equal(native.consumeAction(t,"mute",{}),true);
+ assert.equal(native.consumeAction(t,"solo",{}),true);
+ assert.equal(native.consumeDoubleClick({target:{
+   classList:{contains:x=>x==="fader"},closest:()=>null}},t),true);
+ assert.equal(native.consumeDoubleClick({target:{
+   classList:{contains:x=>x==="center-pan"},closest:()=>null}},t),true);
+ const cmds=h.sent.filter(e=>e.payload?.action==="routingM4Control");
+ assert.deepEqual(cmds.map(e=>[e.payload.channel,e.payload.parameter,e.payload.controlValue]),
+   [[4,"mute",true],[4,"solo",true],[4,"faderDb",0],[4,"pan",0]]);
+ assert.equal(h.sent.some(e=>e.name==="arMixConsoleIntent"),false);
+ const gone=clone(s);gone.legacyM4.routeAccepted=false;
+ h.listeners.get("arMixConsoleSnapshot")(gone);
+ const before=cmds.length;
+ native.consumeAction(t,"mute",{});
+ assert.equal(h.sent.filter(e=>e.payload?.action==="routingM4Control").length,before,
+   "retired M4 cannot fall through to either M4 or ChannelId");
+});
+
+test("G-MV27 offline .smix one-shot channel controls edit only logical document",()=>{
+ for(const operation of ["SET_MUTE","SET_SOLO","SET_FADER","SET_PAN"]){
+   const h=harness(),s=clone(fixture),live=nativeChannelIdFixture();
+   s.productionCallbackLive=false;
+   s.mixerSession={authority:"NONE",deviceEpoch:s.device.epoch};
+   const graph=clone(live.graph);
+   graph.revision="12";graph.rosterRevision="12";
+   graph.capabilities.callbackOwnsChannelIds=false;
+   graph.capabilities.supportedOps=["SET_FADER","SET_PAN","SET_MUTE","SET_SOLO"];
+   s.logicalMixer={schema:"arsonmix.native.logical-mixer.v1",
+     authority:"LOGICAL_ONLY",workspaceToken:"offline-gmv27",
+     readOnly:false,revision:"12",physicalOutputAdmitted:false,
+     outputArmed:false,graph};
+   h.listeners.get("arMixConsoleSnapshot")(s);
+   const t=h.scope.tracks[4],native=h.window.__ARMIX_NATIVE_M2__;
+   assert.ok(t?.id,"logical read-model projects CH5");
+   if(operation==="SET_MUTE"||operation==="SET_SOLO"){
+     native.consumeAction(t,operation==="SET_MUTE"?"mute":"solo",{});
+   }else{
+     native.consumeDoubleClick({target:{classList:{
+       contains:q=>q===(operation==="SET_FADER"?"fader":"center-pan")},
+       closest:()=>null}},t);
+   }
+   const sent=h.sent.filter(x=>x.name==="arMixLogicalIntent");
+   assert.equal(sent.length,1,"one offline "+operation+" after one action");
+   assert.equal(sent[0].payload.operation,operation);
+   assert.equal(sent[0].payload.channelId,graph.channels[4].id);
+   assert.equal(h.sent.some(x=>x.name==="arMixConsoleIntent" ||
+      x.payload?.action==="routingM4Control"),false);
+ }
+});
+
 test("held ChannelId drag publishes first gain and coalesces latest BEFORE release",()=>{
  const h=harness(),s=nativeChannelIdFixture();
  h.listeners.get("arMixConsoleSnapshot")(s);

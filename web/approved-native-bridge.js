@@ -5,10 +5,14 @@
   const backend = window.__JUCE__?.backend;
   const protocol = window.ArSonApprovedNativeContract;
   const deviceVM = window.ArSonApprovedDeviceViewModel;
+  const stripVM = window.ArSonApprovedChannelStripViewModel;
+  const fxRackVM = window.ArSonApprovedFxRackViewModel;
+  const wireVM = window.ArSonApprovedWireViewModel;
   // The public GUI owns one lexical model. Native-only bundle exports a narrow
   // reference to that SAME model; never reconstruct a parallel DOM/DSP.
   const scope = window.__ARMIX_NATIVE_SCOPE__ || null;
-  const connected = Boolean(backend?.emitEvent && backend?.addEventListener && protocol && deviceVM);
+  const connected = Boolean(backend?.emitEvent && backend?.addEventListener &&
+    protocol && deviceVM && stripVM && fxRackVM && wireVM);
   // Public browser preview keeps its header; the native JUCE caption replaces it.
   if (backend?.emitEvent && backend?.addEventListener)
     document.documentElement?.classList?.add?.("armix-native-desktop");
@@ -59,31 +63,24 @@
     }catch(_){status("Native identity saved; legacy cache cleanup unavailable");}
   }
   function maybeMigrateLegacy(next){
-    if(!appearanceWritable||pendingIdentity||!legacyImport.size||
-       !(next?.admitted||next?.retained)||
-       next?.raw?.mixerSession?.authority!=="CHANNEL_ID")return;
+    if(!legacyImport.size)return;
     for(const [id,p] of legacyImport){
-      if(legacyDeferred.has(id)||!next.graph.channels.some(ch=>ch.id===id))continue;
-      const authoritative=channelPresentation.get(id);
-      if(authoritative){
-        // Never overwrite a genuine native edit with older browser data.
-        if(authoritative.name===p.name&&authoritative.color===p.color&&
-           authoritative.icon===p.icon)retireLegacyRow(id);
-        else legacyDeferred.add(id);
-        continue;
-      }
-      if(next.graph.channels.some(ch=>ch.id!==id&&
-         displayNameFor(ch).toLowerCase()===p.name.toLowerCase())){
+      const decision=stripVM.legacyIdentityDecision({snapshot:next,id,
+        identity:p,appearance:channelPresentation,deferred:legacyDeferred,
+        writable:appearanceWritable,pending:!!pendingIdentity,valid:protocol});
+      if(decision.kind==="SKIP")continue;
+      if(decision.kind==="RETIRE"){retireLegacyRow(id);continue;}
+      if(decision.kind==="DEFER"||decision.kind==="CONFLICT"){
         legacyDeferred.add(id);
-        status("Legacy channel identity name conflicts with native graph; cache preserved");
+        if(decision.kind==="CONFLICT")
+          status("Legacy channel identity name conflicts with native graph; cache preserved");
         continue;
       }
+      if(decision.kind!=="SEND")continue;
       const requestId="appearance-import-"+Date.now().toString(36)+"-"+(++identityRequestSerial);
-      pendingIdentity={requestId,channelId:id,...p,acked:false,migration:true};
+      pendingIdentity={...decision.plan.pending,requestId,migration:true};
       backend.emitEvent("arMixChannelIdentitySet",{
-        requestId,channelId:id,...p,appearanceRevision,
-        deviceEpoch:next.device.epoch,graphRevision:next.graph.revision,
-        rosterRevision:next.graph.rosterRevision
+        ...decision.plan.payload,requestId
       });
       window.setTimeout(()=>{
         if(pendingIdentity?.requestId!==requestId)return;
@@ -95,40 +92,32 @@
     }
   }
   function appearanceFromNative(next){
-    const data=next?.raw?.channelAppearance;
-    if(!data || data.schema!=="arsonmix.native.channel-appearance.v1" ||
-       protocol.decimal(data.revision)===null || !Array.isArray(data.entries) ||
-       typeof data.readOnly!=="boolean"){
-      appearanceWritable=false;return;
+    const projection=stripVM.identityReadback(next,protocol);
+    if(projection.kind!=="VALID"){
+      appearanceWritable=false;
+      status("Native channel identity readback invalid; no UI change");
+      return;
     }
-    const liveIds=new Set(next.graph.channels.map(ch=>ch.id));
-    const observed=new Map();
-    for(const p of data.entries){
-      if(!p||!liveIds.has(p.id)||observed.has(p.id)||
-         !legalName(p.name)||!legalColor(p.color)||!legalIcon(p.icon)){
-        appearanceWritable=false;
-        status("Native channel identity readback invalid; no UI change");
-        return;
-      }
-      observed.set(p.id,{name:p.name,color:p.color,icon:p.icon});
-    }
+    // Rendering cache is only a projection of the one accepted JUCE document.
     channelPresentation.clear();
-    for(const [id,p] of observed)channelPresentation.set(id,p);
-    appearanceRevision=data.revision;
-    appearanceWritable=!data.readOnly;
-    if(pendingIdentity?.acked){
-      const p=pendingIdentity,confirmed=channelPresentation.get(p.channelId);
-      if(confirmed?.name===p.name&&confirmed.color===p.color&&confirmed.icon===p.icon){
-        pendingIdentity=null;
-        if(p.migration){
-          retireLegacyRow(p.channelId);
-          status("Legacy channel identity migrated to native workspace · "+p.name);
-        }else{
-          const apply=document.getElementById("identitySave");
-          if(apply)apply.disabled=false;
-          scope?.closeChannelIdentity?.();
-          status("Channel updated and stored in native workspace · "+p.name);
-        }
+    for(const row of projection.entries)
+      channelPresentation.set(row.id,{name:row.name,color:row.color,icon:row.icon});
+    appearanceRevision=projection.revision;
+    appearanceWritable=projection.writable;
+    const verdict=stripVM.identitySettlement(pendingIdentity,next,projection);
+    if(verdict==="STALE"){
+      if(pendingIdentity?.migration)legacyDeferred.add(pendingIdentity.channelId);
+      rejectIdentity("Channel identity transaction expired · native graph changed");
+    }else if(verdict==="CONFIRMED"){
+      const p=pendingIdentity;pendingIdentity=null;
+      if(p.migration){
+        retireLegacyRow(p.channelId);
+        status("Legacy channel identity migrated to native workspace · "+p.name);
+      }else{
+        const apply=document.getElementById("identitySave");
+        if(apply)apply.disabled=false;
+        scope?.closeChannelIdentity?.();
+        status("Channel updated and stored in native workspace · "+p.name);
       }
     }
     maybeMigrateLegacy(next);
@@ -163,48 +152,31 @@
     const localId=scope?.identityTrackId,
       track=scope?.tracks?.concat(scope.master||[])?.find(x=>x.id===localId),
       channelId=nativeIdFor(track),current=activeView();
-    const rawName=String(document.getElementById("identityName")?.value||"");
-    const name=rawName.trim().replace(/\s+/g," ");
-    if(logicalView){
-      const unique=logicalView.graph.channels.every(ch=>ch.id===channelId||
-        ch.name.toLowerCase()!==name.toLowerCase());
-      if(!channelId||!legalName(name)||!unique){
-        status("Enter a unique valid channel name");return false;
-      }
-      const sent=logicalIntent("RENAME_CHANNEL",channelId,{name});
+    const plan=stripVM.identityEditPlan({native:current,logical:logicalView,
+      channelId,rawName:document.getElementById("identityName")?.value,
+      color:scope?.identityColor,icon:scope?.identityIcon,
+      appearance:channelPresentation,appearanceRevision,appearanceWritable,
+      pending:!!(controller?.state()?.pending||pendingIdentity),valid:protocol});
+    if(plan.kind==="LOGICAL"){
+      const sent=logicalIntent(plan.operation,plan.channelId,plan.payload);
       if(!sent.ok){status("Channel rename not saved");return false;}
       logicalRenameId=channelId;
       return false; // Native ACK + later readback closes the editor
     }
-    if(!channelId||!current||(current?.raw?.mixerSession?.authority!=="CHANNEL_ID")||
-       !(current.admitted||current.retained)||!appearanceWritable){
-      status("Native channel identity unavailable · verify saved native graph");
+    if(plan.kind!=="READY"){
+      status(plan.kind==="DUPLICATE"?"Channel name is already used":
+        plan.kind==="INVALID_NAME"?"Enter a unique valid channel name":
+        plan.kind==="INVALID_FIELDS"?"Enter a valid channel name, color and icon":
+        plan.kind==="BUSY"?"Finish the current native operation before editing identity":
+        "Native channel identity unavailable · verify saved native graph");
       return false;
     }
-    if(controller.state().pending||pendingIdentity){
-      status("Finish the current native operation before editing identity");
-      return false;
-    }
-    const color=scope?.identityColor,icon=scope?.identityIcon;
-    if(!legalName(name)||!legalColor(color)||!legalIcon(icon)){
-      status("Enter a valid channel name, color and icon");return false;
-    }
-    const seen=current.graph.channels.some(ch=>
-      ch.id!==channelId&&displayNameFor(ch).toLowerCase()===name.toLowerCase());
-    if(seen){status("Channel name is already used");return false;}
     const requestId="appearance-"+Date.now().toString(36)+"-"+(++identityRequestSerial);
-    pendingIdentity={requestId,channelId,name,color,icon,acked:false,
-      deviceEpoch:current.device.epoch,graphRevision:current.graph.revision,
-      rosterRevision:current.graph.rosterRevision};
+    pendingIdentity={...plan.pending,requestId};
     const apply=document.getElementById("identitySave");
     if(apply)apply.disabled=true;
-    backend.emitEvent("arMixChannelIdentitySet",{
-      requestId,channelId,name,color,icon,
-      appearanceRevision,deviceEpoch:current.device.epoch,
-      graphRevision:current.graph.revision,
-      rosterRevision:current.graph.rosterRevision
-    });
-    status("Saving native channel identity · "+name);
+    backend.emitEvent("arMixChannelIdentitySet",{...plan.payload,requestId});
+    status("Saving native channel identity · "+plan.pending.name);
     window.setTimeout(()=>{
       if(pendingIdentity?.requestId!==requestId)return;
       rejectIdentity("Native identity ACK/readback timed out; original identity retained");
@@ -365,24 +337,18 @@
     if(state?.pending||!current?.admitted)return;
     for(const [edgeId,edit] of pendingWireGains){
       pendingWireGains.delete(edgeId);
-      if(current.identity!==edit.identity){
-        // A changed device/graph invalidates a deferred edit, but must not
-        // strand its LCD while waiting for a nonexistent ACK.
-        scope?.rollbackNativeWireInspector?.(nativeWireGainReadback(current));
-        continue; // never replay into a new graph/device
-      }
-      const edge=current.graph.edges.find(e=>e.enabled&&e.edgeId===edgeId&&e.from===edit.source);
-      if(!edge||edge.primaryOutput!==false){
+      const plan=wireVM.gainDispatchPlan(current,edgeId,edit);
+      if(plan.kind==="ROLLBACK"){
+        // Stale identity, malformed gain, or duplicate EdgeId: fail closed.
         scope?.rollbackNativeWireInspector?.(nativeWireGainReadback(current));
         continue;
       }
-      if(Math.abs(edge.gainLinear-edit.gain)<.00001){
-        // The accepted PCM gain already equals the requested scalar. Do not
-        // emit a redundant native intent, but DO settle the pending display.
+      if(plan.kind==="CONFIRMED"){
         scope?.syncNativeWireGains?.(nativeWireGainReadback(current));
         continue;
       }
-      const result=controller.intent("SET_WIRE_GAIN",edit.source,{edgeId,gainLinear:edit.gain});
+      const result=controller.intent("SET_WIRE_GAIN",plan.source,{
+        edgeId:plan.edgeId,gainLinear:plan.gainLinear});
       if(result.ok)window.setTimeout(()=>controller?.expire(result.requestId),8000);
       else status("WIRE gain rejected · "+result.error);
       return; // next coalesced target follows ACK + independent readback
@@ -392,14 +358,9 @@
   // EdgeId, not a destination kind, strip label, or reference graph index.
   // A PARALLEL_SEND can legally point to MAIN; a PRIMARY_OUT can point to BUS.
   function admittedParallelWire(uiSourceId,uiEdgeId,operation){
-    const current=controller?.state()?.current;
-    const source=nativeByUiId.get(uiSourceId),edgeId=wireByUiId.get(uiEdgeId);
-    if(!flags.acceptedGraphConnected||!current?.admitted||current.retained||
-       !source||!edgeId||!current.graph.capabilities.supportedOps.includes(operation))
-      return null;
-    const matches=current.graph.edges.filter(e=>e.enabled&&
-      e.edgeId===edgeId&&e.from===source&&e.primaryOutput===false);
-    return matches.length===1?matches[0]:null;
+    return wireVM.acceptedParallelEdge(controller?.state()?.current,
+      flags.acceptedGraphConnected,nativeByUiId.get(uiSourceId),
+      wireByUiId.get(uiEdgeId),operation);
   }
   function requestWireGain(op){
     const db=Number(op.levelDb);
@@ -412,12 +373,7 @@
     queueWireGainFlush();return true;
   }
   function nativeOutputTargets(t,channels=activeView()?.graph?.channels||[]){
-    const source=nativeIdFor(t),reserved=["Master","SOURCE ONLY (No Main)","MAIN","NONE"];
-    return channels.filter(ch=>ch.id!==source&&["INPUT","GROUP","FX_RETURN"].includes(ch.role))
-      .map(ch=>{const label=displayNameFor(ch);
-        return {id:ch.id,label:reserved.includes(label)||
-        channels.filter(other=>displayNameFor(other)===label).length>1?
-          label+" ["+ch.id+"]":label};});
+    return stripVM.outputTargets(channels,nativeIdFor(t),displayNameFor);
   }
   let pendingNativeGainIntent=false;
   const intent = (operation,t,payload) => {
@@ -437,39 +393,30 @@
   // repaint PRE/POST until the subsequent independent accepted readback.
   function requestNativeTap(source,edgeId,tap){
     const state=controller?.state(),current=state?.current;
-    if(!current?.admitted||current.retained||state.pending||
-       !current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION")||
-       !source||!edgeId||!["PRE_FADER","POST_FADER"].includes(tap)){
-      status("PRE/POST unavailable · wait for an admitted native WIRE");return false;
+    const plan=wireVM.nativeTapPlan(current,{sourceId:source,edgeId,
+      targetTap:tap,projected:flags.acceptedGraphConnected,
+      pending:!!state?.pending});
+    if(plan.kind==="NO_CHANGE")return true;
+    if(plan.kind!=="DISPATCH"){
+      status("PRE/POST unavailable · select an admitted parallel SEND");
+      return false;
     }
-    const matches=current.graph.edges.filter(e=>e.enabled&&e.edgeId===edgeId&&
-      e.from===source&&e.primaryOutput===false);
-    if(matches.length!==1||!["PRE_FADER","POST_FADER"].includes(matches[0].tap)){
-      status("PRE/POST unavailable · selected send identity changed");return false;
-    }
-    if(matches[0].tap===tap)return true;
-    const result=controller.intent("APPLY_WIRE_TRANSACTION",source,{changes:[{
-      op:"SET_TAP",from:source,edgeId,tap
-    }]});
+    const result=controller.intent(plan.operation,plan.source,plan.payload);
     if(!result.ok){status("PRE/POST unchanged · "+result.error);return false;}
     window.setTimeout(()=>controller?.expire(result.requestId),8000);
     return true;
   }
   function selectedNativeSofEdge(t) {
     if(!scope?.sofEnabled||!t||t.kind!=="audio")return null;
-    const current=controller?.state()?.current,source=nativeIdFor(t);
+    const current=controller?.state()?.current;
     const matches=scope?.tracks?.filter(x=>x.id===scope.sofTargetId&&
       (x.kind==="bus"||x.kind==="fx"))||[];
-    if(!current?.admitted||!source||matches.length!==1)return null;
-    const dest=nativeIdFor(matches[0]);
-    const edges=current.graph.edges.filter(e=>e.enabled&&
-      e.from===source&&e.to===dest&&e.primaryOutput===false);
-    return edges.length===1?edges[0]:null;
+    if(matches.length!==1)return null;
+    return wireVM.sofSendEdge(current,{sourceId:nativeIdFor(t),
+      destinationId:nativeIdFor(matches[0])});
   }
   function syncNativeSofAvailability(next=controller?.state()?.current) {
-    const admitted=!!next?.admitted&&!!scope?.toggleSof&&
-      ["SET_WIRE_GAIN","SET_SEND_ENABLED","APPLY_WIRE_TRANSACTION"].every(op=>
-        next.graph.capabilities.supportedOps.includes(op));
+    const admitted=wireVM.sofAvailable(next,!!scope?.toggleSof);
     const toggle=document.getElementById("sofToggle"),target=document.getElementById("sofTarget");
     for(const el of [toggle,target])if(el){
       el.style?.setProperty?.("display",admitted?"":"none","important");
@@ -523,20 +470,13 @@
       t.pan=ch.controls.pan*100;
       t.mute=ch.controls.mute;
       t.solo=ch.controls.solo;
-      // Admitted ChannelId readback already carries actual physical pins.
-      // Do not retain the public demo's "None" when native PCM is active.
-      if(ch.role==="INPUT"){
-        const src=ch.source||{},l=/^in:(\d+)$/.exec(src.portId||""),
-          r=/^in:(\d+)$/.exec(src.portIdRight||"");
-        t.input=native.retained && src.bindingState==="NEEDS_REMAP"?
-          NEEDS_REMAP:l?inputLabelFor({mode:src.sourceFormat==="STEREO"?"STEREO":"MONO",
-            left:Number(l[1]),right:r?Number(r[1]):-1}):"None";
-      }
-      const out=accepted.channels.find(dest=>dest.id===ch.primaryOutId);
-      // Identity-safe labels also handle duplicate names and reserved labels.
-      const target=out&&nativeOutputTargets(t,accepted.channels).find(x=>x.id===out.id);
-      if(ch.role!=="MAIN")t.output=out?.role==="MAIN"?"Master":
-        (target?.label||"SOURCE ONLY (No Main)");
+      // Derive SOURCE/PRIMARY OUT labels only from the native installed readback.
+      const labels=stripVM.readbackBindings({native,channel:ch,
+        channels:accepted.channels,
+        targets:nativeOutputTargets(t,accepted.channels),
+        inputLabel:inputLabelFor});
+      if(labels.input!==undefined)t.input=labels.input;
+      if(labels.output!==undefined)t.output=labels.output;
       const direct=Array.isArray(native.raw?.externalOutputs)?
         native.raw.externalOutputs.find(x=>x.channelId===ch.id):null;
       const pair=direct && hardwareOutputPairs().find(p=>
@@ -562,26 +502,16 @@
       const src=localByNative.get(edge.from), dst=localByNative.get(edge.to);
       if (!src || !dst || edge.from===accepted.mainChannelId) return false;
       const source=accepted.channels.find(ch=>ch.id===edge.from);
-      const isMain=edge.to===accepted.mainChannelId;
-      const isPrimary=source?.primaryOutId===edge.to;
-      // An independent SEND to MAIN is not the source's primary OUT.
-      // Explicit native tapStage disambiguates legacy PRE_FX SPLIT_PRE from
-      // real post-FX PRE_FADER. The reference 'split' mode means PRE_FX only.
-      const tap=["PRE_FADER","POST_FADER"].includes(edge.tapStage)?edge.tapStage:edge.tap;
-      const legacySplit=tap==="SPLIT_PRE"||tap==="SPLIT_POST";
-      const kind=isPrimary?"primary":legacySplit?"split":"send";
-      const mode=isMain?(isPrimary?"postFader":"send"):kind==="primary"?"routeOnly":
-        legacySplit?(tap==="SPLIT_PRE"?"splitPre":"splitPost"):"send";
-      if (isPrimary && edge.gainLinear!==1) return false;
-      const gainDb=isPrimary?0:Math.round(Math.max(-60,Math.min(6,
-        edge.gainLinear>0?20*Math.log10(edge.gainLinear):-60))*10)/10;
+      const view=wireVM.edgePresentation(edge,source?.primaryOutId,
+        accepted.mainChannelId);
+      if(!view)return false; // invalid native WIRE identity: no demo fallback
       let uiId=uiByWireId.get(edge.edgeId);
       if (uiId===undefined) uiId=scope.allocateWireId();
       newWireByUi.set(uiId,edge.edgeId);
       newUiByWire.set(edge.edgeId,uiId);
-      edges.push({id:uiId,sourceId:src,destId:dst,kind,mode,
-        nativeTap:tap,sendEnabled:edge.sendEnabled!==false,
-        enabled:true,levelDb:gainDb});
+      edges.push({id:uiId,sourceId:src,destId:dst,
+        kind:view.kind,mode:view.mode,nativeTap:view.nativeTap,
+        sendEnabled:view.sendEnabled,enabled:true,levelDb:view.levelDb});
     }
     if (!scope.wireGraph.validateCandidateGraph(nextTracks,nextMaster.id,edges).ok) return false;
     const previouslySelected = nextTracks.filter(t=>t.selected);
@@ -601,77 +531,54 @@
   // steal focus, interrupt a fader drag or reallocate WIRE render objects.
   // The verified individual bypass flag stays distinct from rack bypass.
   function paintNativeFxPowerReadback(ch,t,globalFxBypassed){
-    if(typeof ch.fxRackBypassed!=="boolean"||!Array.isArray(ch.inserts)||
-       typeof globalFxBypassed!=="boolean")
-      return true; // never synthesize missing DSP readback
-    const enabled=!ch.fxRackBypassed;
-    // Read the SAME accepted native PCM snapshot as every slot, not a
-    // CSS class from the PREVIOUS browser render frame.
-    const globalEnabled=!globalFxBypassed;
+    const readback=fxRackVM.powerReadback(ch,globalFxBypassed,t.name);
+    if(!readback)return true; // no authoritative DSP value to paint
     const strip=document.querySelector('.strip[data-id="'+t.id+'"]');
-    // GAIN/SOF are alternate views of the FX area; power readback still
-    // updates the model but must not rebuild the rack or steal knob focus.
+    // GAIN/SOF can hide the rack without losing its accepted power model.
     const rackArea=strip?.querySelector(".fx-section");
     const rack=rackArea?.classList?.contains?.("is-gain-view") ||
       rackArea?.classList?.contains?.("is-sof-view")?null:rackArea;
-    // Virtualized mobile banks may have no mounted strip. The model still
-    // receives verified state; normal bank render creates the right buttons.
+    let header=null,rows=[];
     if(rack){
-      const header=rack.querySelector('[data-action="fxOn"]');
-      const rows=[...rack.querySelectorAll('.fxslot-row:not(.is-empty)')];
-      if(!header||rows.length!==ch.inserts.length)return false;
-      for(let slot=0;slot<ch.inserts.length;slot++){
-        const insert=ch.inserts[slot],row=rows.find(r=>
-          r.dataset.slot===String(slot));
-        if(!insert||typeof insert.bypassed!=="boolean"||
-           !row||row.dataset.insertId!==insert.id||
-           !row.querySelector('[data-action="slotPower"]'))
-          return false; // structural re-render, never modify wrong FX owner
-      }
+      header=rack.querySelector('[data-action="fxOn"]');
+      rows=[...rack.querySelectorAll('.fxslot-row:not(.is-empty)')];
+      const mounted=rows.map(row=>({
+        index:Number(row.dataset.slot),insertId:row.dataset.insertId,
+        hasPower:row.dataset.slot===String(Number(row.dataset.slot)) &&
+          !!row.querySelector('[data-action="slotPower"]')
+      }));
+      if(!fxRackVM.mountedRackMatches(readback,mounted,!!header))
+        return false; // existing graph projection repairs replaced FX instance
     }
-    t.fxOn=enabled;
+    t.fxOn=readback.enabled;
     if(!Array.isArray(t.slotBypass))t.slotBypass=Array(8).fill(false);
-    for(let slot=0;slot<ch.inserts.length;slot++)
-      t.slotBypass[slot]=ch.inserts[slot].bypassed;
-    if(!rack)return true;
-    rack.dataset.fxChainEnabled=String(enabled);
-    rack.dataset.globalFxEnabled=String(globalEnabled);
-    rack.classList.toggle("is-chain-bypassed",!enabled||!globalEnabled);
-    const header=rack.querySelector('[data-action="fxOn"]');
-    header.setAttribute("aria-pressed",String(enabled&&globalEnabled));
-    header.title=(enabled?"Bypass":"Enable")+" all channel FX";
-    header.setAttribute("aria-label",
-      (enabled?"Bypass":"Enable")+" entire FX chain in "+t.name);
-    for(let slot=0;slot<ch.inserts.length;slot++){
-      const insert=ch.inserts[slot];
-      const row=[...rack.querySelectorAll('.fxslot-row:not(.is-empty)')]
-        .find(r=>r.dataset.slot===String(slot));
-      const effective=enabled&&globalEnabled&&!insert.bypassed;
-      if(insert.latencyChanged===true)
-        row.title="Plugin delay changed · aligned dry signal retained; reload the plugin before using its new delay";
-      else if(Number.isInteger(insert.latencySamples))
-        row.title="Plugin delay: "+insert.latencySamples+" samples · compensated";
-      row.dataset.fxSlotEnabled=String(!insert.bypassed);
-      row.dataset.fxEffective=String(effective);
-      row.classList.toggle("is-active",effective);
-      row.classList.toggle("is-bypassed",!effective);
+    for(const slot of readback.slots)t.slotBypass[slot.index]=slot.bypassed;
+    if(!rack)return true; // virtual bank: native snapshot still owns model
+    rack.dataset.fxChainEnabled=String(readback.enabled);
+    rack.dataset.globalFxEnabled=String(readback.globalEnabled);
+    rack.classList.toggle("is-chain-bypassed",readback.chainBypassed);
+    header.setAttribute("aria-pressed",readback.headerPressed);
+    header.title=readback.headerTitle;
+    header.setAttribute("aria-label",readback.headerLabel);
+    for(const slot of readback.slots){
+      const row=rows.find(r=>r.dataset.slot===String(slot.index));
+      if(slot.latencyTitle!==null)row.title=slot.latencyTitle;
+      row.dataset.fxSlotEnabled=String(!slot.bypassed);
+      row.dataset.fxEffective=String(slot.effective);
+      row.classList.toggle("is-active",slot.effective);
+      row.classList.toggle("is-bypassed",!slot.effective);
       const button=row.querySelector('[data-action="slotPower"]');
-      button.setAttribute("aria-pressed",String(effective));
-      button.title=(insert.bypassed?"Enable":"Bypass")+
-        " only insert "+(slot+1);
-      button.setAttribute("aria-label",
-        (insert.bypassed?"Enable":"Bypass")+" only FX insert "+
-        (slot+1)+" in "+t.name);
+      button.setAttribute("aria-pressed",slot.pressed);
+      button.title=slot.title;
+      button.setAttribute("aria-label",slot.label);
     }
     return true;
   }
   // One authoritative EdgeId gain projection for normal readback AND failure
   // rollback. No duplicate DSP math or synthetic accepted control state.
   function nativeWireGainReadback(next){
-    return (next?.graph?.edges||[]).filter(e=>e.enabled&&e.primaryOutput===false)
-      .map(e=>({id:uiByWireId.get(e.edgeId),pending:pendingWireGains.has(e.edgeId),
-        levelDb:Math.round(Math.max(-60,Math.min(6,
-          e.gainLinear>0?20*Math.log10(e.gainLinear):-60))*10)/10}));
+    return wireVM.gainReadback(next?.graph?.edges||[],
+      uiByWireId,pendingWireGains);
   }
   // Paint ONLY an independently accepted ChannelId input scalar. Comparing
   // the actual DOM as well as the model also repairs a rejected/expired gain
@@ -856,11 +763,11 @@
   // One native SessionSnapshot, not an independently reconstructed M4 model.
   const mixerSession=()=>hardware?.raw?.mixerSession;
   const m4ControlIsOwner=()=>mixerSession()?.authority==="M4";
-  const nativeMasterReady=()=>mixerSession()?.authority==="CHANNEL_ID" &&
-    safeNativeCounter(hardware?.device?.epoch)!==null &&
-    safeNativeCounter(legacy()?.routingRevision)!==null &&
-    Number.isFinite(mixerSession()?.main?.db) &&
-    typeof mixerSession()?.main?.mute==="boolean";
+  // The pure Strip VM admits MAIN only for the CURRENT, installed PCM
+  // producer. Old M4 status is never permission to control a retired owner.
+  const nativeMasterAuthority=()=>stripVM.masterScalarAuthority(
+    controller?.state()?.current,{m4Verified:m4Verified(),
+      graphConnected:flags.acceptedGraphConnected});
   // The shipped /preview/ IN dropdown is the sole normal hardware source
   // selector. Build options exclusively from JUCE-reported active pins, never
   // the public browser demo's hardcoded "Input 1 / CABLE / Realtek" strings.
@@ -905,13 +812,9 @@
       }
       select.title=projected.title;
       const pending=pendingExternal.get(id);
-      if(pending && next?.device?.epoch && next.device.epoch!==pending.epoch)
-        pendingExternal.delete(id); // stale device: release only this strip
-      else if(pending?.acked &&
-        (((state==="LIVE"||state==="MUTED") &&
-          row.physicalLeft===pending.left &&
-          row.physicalRight===pending.right) ||
-         (pending.left===-1 && !row))){
+      const result=stripVM.externalPending(pending,next?.device?.epoch,state,row);
+      if(result==="STALE")pendingExternal.delete(id);
+      else if(result==="CONFIRMED"){
         pendingExternal.delete(id);
         status(state==="MUTED"?"EXTERNAL OUT patched · hardware output muted":
           "EXTERNAL OUT verified · "+t.name+" → "+value);
@@ -929,6 +832,74 @@
   let lastM4UiSignature="",lastM4Controls="",nativeUiSourcePending=null;
   let lastM4PortSignature="",pendingOutputPatch=null,m4RequestSerial=0,outputSerial=7000;
   const pendingSourceQueue=new Map();
+  // G-MV29: one M4 routingChannelPatch adapter for OUT and M/ST.
+  // Pure strip VM decides admitted producer, safe host tokens, no-op,
+  // and exact pending lease. The bridge retains ONE native dispatcher.
+  function m4PatchSelect(p){
+    const t=scope?.tracks?.find(x=>m4Index(x)===p?.channel);
+    return t?document.querySelector(
+      '.strip[data-id="'+t.id+'"] select[data-field="output"]'):null;
+  }
+  function resetM4PatchUi(p,snapshot=null){
+    if(!p||p.operation!=="SET_PRIMARY_OUT")return;
+    const el=m4PatchSelect(p);
+    if(!el)return;
+    el.removeAttribute("aria-busy");
+    el.title="Primary output · verified native routing";
+    const row=snapshot?.raw?.legacyM4?.channels?.[p.channel];
+    const t=scope?.tracks?.find(x=>m4Index(x)===p.channel);
+    el.value=typeof row?.main==="boolean"?
+      (row.main?"Master":"SOURCE ONLY (No Main)"):(t?.output||"Master");
+  }
+  function reconcileM4ChannelPatchReadback(next){
+    const p=pendingOutputPatch;
+    if(!p)return;
+    const result=stripVM.m4ChannelPatchSettlement(p,next);
+    if(result==="WAIT")return;
+    pendingOutputPatch=null;
+    resetM4PatchUi(p,result==="CONFIRMED"?next:null);
+    if(result==="CONFIRMED")
+      status("CH "+(p.channel+1)+" "+
+        (p.operation==="SET_PROCESSING_FORMAT"?"M/ST ":"OUT ")+
+        p.target+" · native PCM readback verified");
+    else status("CH "+(p.channel+1)+
+      " channel patch expired · restoring independently accepted routing");
+  }
+  function dispatchM4ChannelPatch(t,operation,target,channel=m4Index(t)){
+    const plan=stripVM.m4ChannelPatchPlan(controller?.state()?.current,{
+      operation,channel,target,verifiedM4:m4Verified(),deviceReady:deviceReady(),
+      pending:!!pendingOutputPatch,sourcePending:!!nativeUiSourcePending
+    });
+    if(plan.kind==="NO_CHANGE"){
+      controller?.subscribe();return true;
+    }
+    if(plan.kind!=="READY")return false;
+    const requestId=++outputSerial;
+    pendingOutputPatch={requestId,...plan.pending};
+    if(operation==="SET_PRIMARY_OUT"){
+      const menu=m4PatchSelect(pendingOutputPatch);
+      if(menu){
+        // Pending selection is a draft, not accepted PCM.
+        menu.value=target==="MAIN"?"Master":"SOURCE ONLY (No Main)";
+        menu.setAttribute("aria-busy","true");
+        menu.title="Routing pending · awaiting native ACK and PCM readback";
+      }
+    }
+    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload});
+    status("CH "+(channel+1)+" "+
+      (operation==="SET_PROCESSING_FORMAT"?"processing ":"OUT → ")+
+      target+" · awaiting native PCM ACK/readback");
+    window.setTimeout(()=>{
+      if(pendingOutputPatch?.requestId!==requestId)return;
+      const p=pendingOutputPatch;
+      pendingOutputPatch=null;
+      resetM4PatchUi(p);
+      status("CH "+(channel+1)+" channel patch timed out · prior native state preserved");
+      controller?.subscribe();
+    },8000);
+    return true;
+  }
+
   function requestProcessingFormat(t){
     if(logicalView){
       const id=nativeIdFor(t),source=logicalView.graph.channels.find(ch=>ch.id===id);
@@ -960,28 +931,13 @@
       return true;
     }
     const channel=m4Index(t);
-    const ep=safeNativeCounter(hardware?.device?.epoch),
-      rev=safeNativeCounter(legacy()?.routingRevision);
-    if(!m4Verified()||channel<0||channel>=10||
-       ep===null||rev===null||pendingOutputPatch||nativeUiSourcePending||
-       !deviceReady()){
+    const accepted=controller?.state()?.current?.raw?.legacyM4?.channels?.[channel];
+    const target=accepted?.channelFormat==="MONO"?"STEREO":
+      accepted?.channelFormat==="STEREO"?"MONO":null;
+    if(!dispatchM4ChannelPatch(t,"SET_PROCESSING_FORMAT",target,channel)){
       status("M/ST unavailable · wait for accepted hardware route");
       return false;
     }
-    const target=t.format==="mono"?"STEREO":"MONO";
-    const requestId=++outputSerial;
-    pendingOutputPatch={requestId,channel,target,epoch:ep,
-      operation:"SET_PROCESSING_FORMAT"};
-    backend.emitEvent("arMixAction",{action:"routingChannelPatch",
-      operation:"SET_PROCESSING_FORMAT",requestId,channel,target,
-      deviceEpoch:ep,revision:rev});
-    status("CH "+(channel+1)+" processing "+target+" · verifying native PCM");
-    window.setTimeout(()=>{
-      if(pendingOutputPatch?.requestId!==requestId)return;
-      pendingOutputPatch=null;
-      status("CH "+(channel+1)+" M/ST timed out · prior format preserved");
-      controller?.subscribe();
-    },8000);
     return true;
   }
   function previewNativePan(t,el,event){
@@ -1033,32 +989,15 @@
     const session=mixerSession(),current=controller?.state()?.current;
     if(session?.authority==="CHANNEL_ID"){
       const channelId=nativeIdFor(t);
-      const ch=current?.graph?.channels?.find(row=>row.id===channelId);
-      const main=current?.graph?.mainChannelId;
-      if(!current?.admitted || !channelId || !ch || !main ||
-         !current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION") ||
-         !["INPUT","GROUP","FX_RETURN"].includes(ch.role) ||
-         !target)return false;
-      const destination=nativeOutputTargets(t).find(row=>row.label===target);
-      const to=target==="MAIN"?main:destination?.id||null;
-      if(target!=="NONE"&&!to)return false;
-      const dest=ch.primaryOutId||null;
-      if((to&&dest===to)||(target==="NONE"&&!dest)){
+      // Native readback and physical authority are validated once inside
+      // the existing pure Channel Strip VM, not rebuilt by the DOM bridge.
+      const plan=stripVM.primaryOutMutation(
+        current,channelId,target,nativeOutputTargets(t));
+      if(plan.kind==="UNAVAILABLE")return false;
+      if(plan.kind==="NO_CHANGE"){
         controller.subscribe();return true;
       }
-      let change;
-      if(to){
-        change={op:"ROUTE_ONLY",from:channelId,to,
-                tap:"POST_FADER",gainLinear:1};
-      }else{
-        // Exact EdgeId from the independent native readback; never invent a
-        // disconnect ID or remove an unrelated parallel SEND.
-        const edge=current.graph.edges.find(e=>e.enabled &&
-          e.from===channelId && e.to===dest &&
-          e.primaryOutput===true);
-        if(!edge)return false;
-        change={op:"REMOVE",from:channelId,edgeId:edge.edgeId};
-      }
+      const change=plan.change;
       const accepted=controller.intent("APPLY_WIRE_TRANSACTION",channelId,
                                      {changes:[change]});
       if(!accepted.ok){status("Native OUT rejected · "+accepted.error);return false;}
@@ -1068,113 +1007,151 @@
       return true;
     }
     const channel=m4Index(t);
-    const ep=safeNativeCounter(hardware?.device?.epoch),
-      rev=safeNativeCounter(legacy()?.routingRevision);
-    if(!m4Verified()||channel<0||channel>=10||
-       (target!=="MAIN"&&target!=="NONE")||ep===null||rev===null||
-       pendingOutputPatch||!deviceReady())return false;
-    const accepted=legacy()?.channels?.[channel];
-    if(accepted?.main===(target==="MAIN")){
-      status("CH "+(channel+1)+" OUT already "+
-        (target==="MAIN"?"MAIN":"SOURCE ONLY")+" · native readback");
-      controller?.subscribe();return true; // no need to blink audio
-    }
-    const requestId=++outputSerial;
-    pendingOutputPatch={requestId,channel,target,epoch:ep,operation:"SET_PRIMARY_OUT"};
-    const menu=document.querySelector('.strip[data-id="'+t.id+'"] select[data-field="output"]');
-    // A draft visibly stays selected while pending, but t.output and
-    // audio graph remain exclusively the native accepted readback.
-    if(menu){
-      menu.value=target==="MAIN"?"Master":"SOURCE ONLY (No Main)";
-      menu.setAttribute("aria-busy","true");
-      menu.title="Routing pending · awaiting native ACK and PCM readback";
-    }
-    backend.emitEvent("arMixAction",{action:"routingChannelPatch",
-      requestId,channel,target,deviceEpoch:ep,revision:rev});
-    window.setTimeout(()=>{
-      if(pendingOutputPatch?.requestId!==requestId)return;
-      pendingOutputPatch=null;
-      status("CH "+(channel+1)+" OUT timed out · restoring verified native route");
-      controller?.subscribe();
-    },8000);
-    return true;
+    return dispatchM4ChannelPatch(t,"SET_PRIMARY_OUT",target,channel);
   }
   const pendingNativeSources=new Map();
   let activeNativeSource=null,nativeSourceSerial=0;
-  function dispatchNativeSource(){
-    if(activeNativeSource||!pendingNativeSources.size)return;
+  // MV-14: one INPUT dispatch owner; ChannelId/M4 keep separate identity Maps.
+  function dispatchSourceQueue(authority){
+    const channelIdOwner=authority==="CHANNEL_ID";
+    const queue=channelIdOwner?pendingNativeSources:pendingSourceQueue;
+    if(!queue.size)return;
     const current=controller?.state()?.current;
-    if(!current?.admitted||mixerSession()?.authority!=="CHANNEL_ID")return;
-    const [id,choice]=pendingNativeSources.entries().next().value;
-    pendingNativeSources.delete(id);
-    if(!current.graph.channels.some(ch=>ch.id===id&&ch.role==="INPUT"))
-      return nativeToast("Source identity changed · refresh native mixer");
-    const requestId="source-native-"+(++nativeSourceSerial);
-    activeNativeSource={requestId,id,choice};
-    backend.emitEvent("arMixAction",{
-      action:"routingNativeSourcePatch",requestId,channelId:id,
-      deviceEpoch:current.device.epoch,graphRevision:current.graph.revision,
-      rosterRevision:current.graph.rosterRevision,
-      mode:choice.mode,left:choice.left,right:choice.right});
-    status("Input "+choice.label+" · native PCM readback pending");
-    window.setTimeout(()=>{
-      if(activeNativeSource?.requestId!==requestId)return;
-      activeNativeSource=null;
-      nativeToast("Source ACK timed out · previous PCM preserved");
-      controller?.subscribe();
-    },8000);
-  }
-  let pendingBusCreate=null,pendingTrackDelete=null,stripRequestSerial=0;
-  function requestNativeTrackDelete(track){
-    if(logicalView)return logicalIntent("DELETE_CHANNEL",nativeIdFor(track),{}).ok;
-    const current=controller?.state()?.current,id=nativeIdFor(track);
-    const channel=current?.graph?.channels?.find(ch=>ch.id===id);
-    if(!connected||pendingTrackDelete||pendingBusCreate||controller?.state()?.pending||
-       !current?.admitted||current.retained||channel?.role!=="INPUT"||
-       !current.graph.capabilities.supportedOps.includes("DELETE_CHANNEL")){
-      nativeToast("Delete Track unavailable · wait for an admitted native input channel");
-      return false;
+    while(queue.size){
+      const plan=stripVM.sourceQueueHead({authority,queue,
+        active:channelIdOwner?activeNativeSource:nativeUiSourcePending,
+        hardware,native:current,choices:inputChoicesFor(),
+        deviceReady:deviceReady()});
+      if(plan.kind==="IDLE"||plan.kind==="WAIT")return;
+      if(plan.kind==="DROP_ALL"){queue.clear();return;}
+      queue.delete(plan.key);
+      // G-MV23: after ACK/readback races or timeout, skip a last-choice
+      // draft that the accepted native PCM has ALREADY installed. Avoid
+      // reissuing the same routing switch and risking needless audio churn.
+      // The pure VM allows this only with the exact hardware/PCM lease.
+      if(plan.kind==="SKIP_INSTALLED")continue;
+      if(plan.kind==="DROP"){
+        if(channelIdOwner)
+          nativeToast("Source identity or device pins changed · refresh native mixer");
+        else status("CH "+(plan.key+1)+" INPUT dropped · device or pin identity changed");
+        continue; // stale source cannot starve an unrelated channel
+      }
+      const requestId=channelIdOwner?
+        "source-native-"+(++nativeSourceSerial):++sourceSerial;
+      const lease=stripVM.sourceQueueRequestLease({
+        authority,requestId,plan,hardware,native:current});
+      if(!lease){
+        status("SOURCE identity changed · old input choice discarded");
+        continue; // no old pin intent is emitted to a replaced device
+      }
+      if(channelIdOwner)activeNativeSource=lease;
+      else nativeUiSourcePending=lease;
+      backend.emitEvent("arMixAction",{action:plan.action,requestId,
+        ...plan.payload});
+      if(channelIdOwner)
+        status("Input "+plan.entry.choice.label+" · native PCM readback pending");
+      window.setTimeout(()=>handleSourceTimeout(authority,requestId),8000);
+      return; // next request needs fresh readback/route revision
     }
-    const requestId="track-delete-"+(++stripRequestSerial);
-    pendingTrackDelete={requestId,id,name:track.name,epoch:current.device.epoch,
-      revision:current.graph.revision,acked:false};
-    syncAddTrack(current);
-    backend.emitEvent("arMixAction",{
-      action:"routingNativeTrackDelete",requestId,channelId:id,
-      deviceEpoch:current.device.epoch,graphRevision:current.graph.revision,
-      rosterRevision:current.graph.rosterRevision
-    });
-    status("Deleting "+track.name+" · waiting for native PCM ACK/readback");
-    window.setTimeout(()=>{
-      if(pendingTrackDelete?.requestId!==requestId)return;
-      pendingTrackDelete=null;syncAddTrack();
-      nativeToast("Delete Track timed out · accepted mixer unchanged until readback");
-      controller?.subscribe();
-    },8000);
+  }
+  function dispatchNativeSource(){
+    dispatchSourceQueue("CHANNEL_ID");
+  }
+
+  // MV-17: timeout is not native rejection evidence. Resolve a previously
+  // ACKed & independently installed PCM snapshot if it raced the callback;
+  // otherwise discard only the transient UI lease and subscribe again.
+  // Never send another queued INPUT here using a cached route revision.
+  function handleSourceTimeout(authority,requestId){
+    const channelIdOwner=authority==="CHANNEL_ID";
+    const pending=channelIdOwner?activeNativeSource:nativeUiSourcePending;
+    const snapshot=controller?.state()?.current;
+    const decision=stripVM.sourceQueueTimeoutDecision({
+      authority,pending,requestId,snapshot});
+    if(decision==="IGNORE")return;
+    if(decision==="SETTLE"){
+      settleSourceReadback(authority,snapshot);
+      return;
+    }
+    if(channelIdOwner){
+      activeNativeSource=null;
+      status("SOURCE timeout · refreshing accepted PCM and input choices");
+    }else{
+      nativeUiSourcePending=null;
+      status("CH "+(pending.channel+1)+" INPUT timeout · native state preserved");
+    }
+    controller?.subscribe(); // next source waits for authoritative callback
+  }
+  // MV-15: one UI settlement owner after strict per-authority native PCM
+  // verification. A late ACK can check an already independently published
+  // snapshot without waiting for another audio callback.
+  function settleSourceReadback(authority,next) {
+    const channelIdOwner=authority==="CHANNEL_ID";
+    const pending=channelIdOwner?activeNativeSource:nativeUiSourcePending;
+    const verdict=stripVM.sourceQueueReadback({authority,pending,snapshot:next});
+    if(verdict!=="CONFIRMED"&&verdict!=="STALE")return verdict;
+    if(channelIdOwner){
+      activeNativeSource=null;
+      status(verdict==="CONFIRMED"?
+        "Input "+pending.choice.label+" · native PCM readback verified":
+        "SOURCE changed or disconnected · accepted input refreshed");
+      if(pendingNativeSources.size)window.queueMicrotask(dispatchNativeSource);
+    }else{
+      nativeUiSourcePending=null;
+      status(verdict==="CONFIRMED"?
+        "CH "+(pending.channel+1)+" INPUT · native PCM readback verified":
+        "Native input changed · old M4 source selection discarded");
+      // onNativeReadback already drains after an M4 snapshot. Also support
+      // a callback readback that arrives BEFORE the matching ACK event.
+      if(verdict==="CONFIRMED"&&pendingSourceQueue.size)
+        window.queueMicrotask(dispatchQueuedSource);
+    }
+    return verdict;
+  }
+  // MV-16: one lease owner handles both SOURCE ACK formats, but neither
+  // ACK event can update visible PCM without independent native readback.
+  function handleSourceAck(authority,ack){
+    const channelIdOwner=authority==="CHANNEL_ID";
+    const pending=channelIdOwner?activeNativeSource:nativeUiSourcePending;
+    const transition=stripVM.sourceQueueAckTransition({authority,pending,ack});
+    if(transition.kind==="IGNORE")return false;
+    if(channelIdOwner)activeNativeSource=transition.pending;
+    else nativeUiSourcePending=transition.pending;
+    if(transition.kind==="ACKED"){
+      if(channelIdOwner)
+        status("Native input ACKed · verifying accepted PCM source");
+      else status("CH "+(pending.channel+1)+
+        " INPUT accepted · verifying native PCM source");
+      // Callback readback may have published before this correlated ACK.
+      // NEVER use ack.state or an ACK graph revision as installed PCM.
+      settleSourceReadback(authority,controller?.state()?.current);
+    }else if(channelIdOwner){
+      nativeToast("Native input rejected · "+(ack?.error||"stale PCM"));
+    }else{
+      status("NATIVE INPUT REJECTED · "+(ack?.error||"stale routing"));
+    }
+    controller?.subscribe();
     return true;
   }
-  // BUS and FX_RETURN use their actual ChannelId; never remove them from
-  // browser state before the native publisher ACK and independent graph readback.
-  function requestNativeBusDelete(track){
-    if(logicalView)return logicalIntent("REMOVE_BUS",nativeIdFor(track),{}).ok;
-    const current=controller?.state()?.current,id=nativeIdFor(track);
-    const channel=current?.graph?.channels?.find(ch=>ch.id===id);
-    if(!connected||pendingTrackDelete||pendingBusCreate||controller?.state()?.pending||
-       !current?.admitted||current.retained||
-       !["GROUP","FX_RETURN"].includes(channel?.role)||
-       !current.graph.capabilities.supportedOps.includes("REMOVE_BUS")){
-      nativeToast("Delete unavailable · wait for an admitted native AUX/BUS");
+  let pendingBusCreate=null,pendingTrackDelete=null,stripRequestSerial=0;
+  // G-MV30: delete INPUT / GROUP / FX_RETURN via ONE ChannelId roster
+  // authority and ONE native ACK + independently installed graph lease.
+  function dispatchNativeRosterDelete(track,operation){
+    const current=controller?.state()?.current;
+    const plan=stripVM.rosterMutationPlan(current,{
+      operation,channelId:nativeIdFor(track),hardware,
+      deviceReady:deviceReady(),controllerPending:!!controller?.state()?.pending,
+      structuralPending:!!pendingTrackDelete||!!pendingBusCreate
+    });
+    if(!connected||plan.kind!=="READY"){
+      nativeToast("Delete unavailable · wait for an admitted native channel");
       return false;
     }
-    const requestId="bus-delete-"+(++stripRequestSerial);
-    pendingTrackDelete={requestId,id,name:track.name,role:channel.role,
-      epoch:current.device.epoch,revision:current.graph.revision,acked:false};
+    const requestId=(operation==="DELETE_CHANNEL"?"track-delete-":"bus-delete-")+
+      (++stripRequestSerial);
+    pendingTrackDelete={requestId,...plan.pending,name:track.name};
     syncAddTrack(current);
-    backend.emitEvent("arMixAction",{
-      action:"routingNativeBusDelete",requestId,channelId:id,
-      deviceEpoch:current.device.epoch,graphRevision:current.graph.revision,
-      rosterRevision:current.graph.rosterRevision
-    });
+    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload});
     status("Deleting "+track.name+" · waiting for native PCM ACK/readback");
     window.setTimeout(()=>{
       if(pendingTrackDelete?.requestId!==requestId)return;
@@ -1183,6 +1160,14 @@
       controller?.subscribe();
     },8000);
     return true;
+  }
+  function requestNativeTrackDelete(track){
+    if(logicalView)return logicalIntent("DELETE_CHANNEL",nativeIdFor(track),{}).ok;
+    return dispatchNativeRosterDelete(track,"DELETE_CHANNEL");
+  }
+  function requestNativeBusDelete(track){
+    if(logicalView)return logicalIntent("REMOVE_BUS",nativeIdFor(track),{}).ok;
+    return dispatchNativeRosterDelete(track,"REMOVE_BUS");
   }
   function requestNativeStripDelete(track){
     if(track?.kind==="audio")return requestNativeTrackDelete(track);
@@ -1196,22 +1181,23 @@
       return !logicalView.readOnly&&
         ["INPUT","GROUP","FX_RETURN"].includes(row?.role);
     }
-    const current=controller?.state()?.current,id=nativeIdFor(track);
-    const ch=current?.graph?.channels?.find(row=>row.id===id);
-    return Boolean(current?.admitted&&!current.retained&&ch&&
-      ((ch.role==="INPUT"&&current.graph.capabilities.supportedOps.includes("DELETE_CHANNEL"))||
-       (["GROUP","FX_RETURN"].includes(ch.role)&&
-        current.graph.capabilities.supportedOps.includes("REMOVE_BUS"))));
+    const operation=track?.kind==="audio"?"DELETE_CHANNEL":
+      (track?.kind==="bus"||track?.kind==="fx")?"REMOVE_BUS":null;
+    return !!operation&&stripVM.rosterMutationPlan(controller?.state()?.current,{
+      operation,channelId:nativeIdFor(track),hardware,deviceReady:deviceReady(),
+      controllerPending:!!controller?.state()?.pending,
+      structuralPending:!!pendingTrackDelete||!!pendingBusCreate
+    }).kind==="READY";
   }
   function finishNativeTrackDelete(next){
-    const pending=pendingTrackDelete;
-    if(!pending?.acked||!next?.admitted||next.retained||
-       pending.epoch!==next.device.epoch||
-       BigInt(next.graph.revision)<BigInt(pending.revision)||
-       next.graph.channels.some(ch=>ch.id===pending.id))return;
-    pendingTrackDelete=null;
-    syncAddTrack(next);
-    nativeToast(pending.name+" deleted · native PCM and WIRE readback verified");
+    const p=pendingTrackDelete;
+    if(!p)return;
+    const verdict=stripVM.rosterReadbackSettlement(p,next);
+    if(verdict==="WAIT")return;
+    pendingTrackDelete=null;syncAddTrack(next);
+    if(verdict==="CONFIRMED")
+      nativeToast(p.name+" deleted · native PCM and WIRE readback verified");
+    else status("Native deletion expired · refreshing accepted mixer roster");
   }
   function nativeOrbitTarget(track,slot){
     if(!track||!Number.isInteger(slot)||slot<0||slot>=8)return null;
@@ -1254,10 +1240,11 @@
   function canCreateNativeTrack(next){
     if(logicalView)return !logicalView.readOnly &&
       logicalView.graph.capabilities.supportedOps.includes("CREATE_CHANNEL");
-    if(next?.retained)return false;
-    if(next?.admitted)
-      return next.graph.capabilities.supportedOps.includes("CREATE_CHANNEL");
-    return mixerSession()?.authority==="NONE" && deviceReady();
+    return stripVM.rosterMutationPlan(next,{
+      operation:"CREATE_CHANNEL",hardware,deviceReady:deviceReady(),
+      controllerPending:!!controller?.state()?.pending,
+      structuralPending:false
+    }).kind==="READY";
   }
   function syncAddTrack(next=controller?.state()?.current){
     const button=document.getElementById("addTrack");
@@ -1268,41 +1255,46 @@
     button.title=available?"Add a stereo audio track routed to MAIN":
       "Connect a verified audio device in Audio I/O to add tracks";
   }
+  // Both audio-track and BUS addition retain the structural lease until
+  // a strictly newer independently accepted ChannelId roster proves the
+  // precise createdId and role. ACK.state can never create a browser strip.
   function finishNativeTrack(next){
-    const pending=pendingBusCreate;
-    if(!pending?.track || !pending.createdId || !next?.admitted ||
-       next.device.epoch!==pending.epoch ||
-       BigInt(next.graph.revision)<BigInt(pending.revision))return;
-    const channel=next.graph.channels.find(ch=>ch.id===pending.createdId && ch.role==="INPUT");
-    const id=channel && uiByNativeId.get(channel.id);
-    const strip=scope?.tracks.find(t=>t.id===id);
-    if(!strip||!scope.revealTrack)return;
-    pendingBusCreate=null;
-    syncAddTrack(next);
-    scope.revealTrack(strip);
-    nativeToast(strip.name+" added · choose its IN to receive audio");
+    const p=pendingBusCreate;
+    if(!p)return;
+    const verdict=stripVM.rosterReadbackSettlement(p,next);
+    if(verdict==="WAIT")return;
+    if(verdict==="STALE"){
+      pendingBusCreate=null;syncAddTrack(next);
+      status("Native roster changed · add operation expired");return;
+    }
+    if(p.track){
+      const id=uiByNativeId.get(p.createdId);
+      const strip=scope?.tracks?.find(t=>t.id===id);
+      if(!strip||!scope?.revealTrack)return;
+      pendingBusCreate=null;
+      syncAddTrack(next);
+      scope.revealTrack(strip);
+      nativeToast(strip.name+" added · choose its IN to receive audio");
+    }else{
+      pendingBusCreate=null;syncAddTrack(next);
+      status("BUS added · native ChannelId PCM and WIRE readback verified");
+    }
   }
   function requestNativeBusCreate(track=false){
     if(logicalView)
       return logicalIntent(track?"CREATE_CHANNEL":"CREATE_GROUP",null,{}).ok;
-    const accepted=controller?.state()?.current;
-    const session=mixerSession();
-    const capabilities=accepted?.graph?.capabilities?.supportedOps;
-    const available=track?canCreateNativeTrack(accepted):
-      session?.authority==="CHANNEL_ID" && accepted?.admitted &&
-      capabilities?.includes("CREATE_GROUP");
-    if(pendingBusCreate||pendingTrackDelete||!available)return false;
+    const accepted=controller?.state()?.current,operation=
+      track?"CREATE_CHANNEL":"CREATE_GROUP";
+    const plan=stripVM.rosterMutationPlan(accepted,{
+      operation,hardware,deviceReady:deviceReady(),
+      controllerPending:!!controller?.state()?.pending,
+      structuralPending:!!pendingBusCreate||!!pendingTrackDelete
+    });
+    if(plan.kind!=="READY")return false;
     const requestId=(track?"track-":"bus-")+(++stripRequestSerial);
-    const epoch=hardware.device.epoch;
-    const bootstrap=track && session.authority==="NONE";
-    pendingBusCreate={requestId,track,epoch};
+    pendingBusCreate={requestId,track,...plan.pending};
     syncAddTrack(accepted);
-    backend.emitEvent("arMixAction",{
-      action:track?"routingNativeTrackCreate":"routingNativeBusCreate",requestId,
-      deviceEpoch:epoch,
-      ...(bootstrap?{bootstrapRevision:legacy().routingRevision}:{
-        graphRevision:accepted.graph.revision,
-        rosterRevision:accepted.graph.rosterRevision})});
+    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload});
     const label=track?"Audio Track":"BUS";
     status("Adding "+label+" → MAIN · native PCM pending");
     window.setTimeout(()=>{
@@ -1378,115 +1370,100 @@
   }
   function editNativeFx(t,slot,target,position,token){
     const current=controller?.state()?.current,id=nativeIdFor(t);
-    const actual=current?.graph?.channels.find(c=>c.id===id)?.inserts?.[slot];
-    const to=target?nativeIdFor(target):null,operation=target?"MOVE_INSERT":"REMOVE_INSERT";
-    if(!current?.admitted||!actual||actual.id!==token||!current.graph.capabilities.supportedOps.includes(operation)){
-      status("FX edit unavailable · refresh accepted native instance");return false;
+    const decision=fxRackVM.nativeEditPlan(current,{
+      channelId:id,slot,instanceId:token,move:!!target,
+      destinationId:target?nativeIdFor(target):null,
+      position:target?position:null});
+    if(decision.kind!=="READY"){
+      if(decision.kind!=="NO_CHANGE")
+        status("FX edit unavailable · refresh accepted native instance");
+      return false;
     }
-    if(target&&to===id&&slot===position)return false;
-    const payload={slot,instanceId:token};
-    if(target){payload.toChannelId=to;payload.toSlot=position;}
-    const result=controller.intent(operation,id,payload);
+    const result=controller.intent(decision.operation,decision.channelId,
+                                   decision.payload);
     if(!result.ok){status("FX edit rejected · "+result.error);return false;}
     window.setTimeout(()=>controller?.expire(result.requestId),8000);
-    status(target?"Moving native FX · awaiting accepted readback":"Removing native FX · awaiting accepted readback");
+    status(target?"Moving native FX · awaiting accepted readback":
+      "Removing native FX · awaiting accepted readback");
     return true;
   }
-  function requestNativeFxPower(t,slot,bypass){
-    const picked=verifiedFxFor(t,slot);
-    if(!picked||!m4Verified())return false;
-    const ep=safeNativeCounter(hardware?.device?.epoch),
-      rev=safeNativeCounter(legacy()?.routingRevision);
-    const {lane,live}=picked,requestId="fxpower-"+(++fxRequestSerial);
-    if(ep===null||rev===null||pendingSlotPowers.has(lane+":"+slot))
-      return false;
-    pendingSlotPowers.set(lane+":"+slot,{requestId,token:live.instanceId,bypass});
-    backend.emitEvent("arMixAction",{action:"routingFxBypass",
-      requestId,channel:lane,slot,instanceId:live.instanceId,
-      deviceEpoch:ep,revision:rev,value:bypass});
+  // G-MV28: one physical M4 rack/slot transaction adapter. The pure FX
+  // ViewModel validates the CURRENT accepted M4 session, legacy routing
+  // revision, active FX instance and safe host tokens before any native IPC.
+  // Reuse existing per-rack/per-slot queues; ACK alone never paints FX.
+  function requestM4FxPower(t,action,button=null){
+    const channel=m4Index(t),slot=action==="slotPower"?
+      Number(button?.dataset?.slot):null;
+    const map=action==="fxOn"?pendingM4RackPowers:pendingSlotPowers;
+    const key=action==="fxOn"?channel:channel+":"+slot;
+    const plan=fxRackVM.m4PowerPlan(controller?.state()?.current,{
+      action,channel,slot,pending:map.has(key),
+      verifiedM4:m4Verified(),offline:!!logicalView
+    });
+    if(plan.kind!=="READY")return false;
+    const requestId=action==="fxOn"?
+      "rack-m4-"+(++nativeFxPowerSerial):"fxpower-"+(++fxRequestSerial);
+    map.set(plan.key,{requestId,...plan.pending});
+    backend.emitEvent("arMixAction",{
+      action:plan.action,requestId,...plan.payload});
     window.setTimeout(()=>{
-      if(pendingSlotPowers.get(lane+":"+slot)?.requestId!==requestId)return;
-      pendingSlotPowers.delete(lane+":"+slot);
-      status("FX bypass timed out · restoring real rack state");
+      if(map.get(plan.key)?.requestId!==requestId)return;
+      map.delete(plan.key);
+      status(action==="fxOn"?
+        "Native rack gate timed out · restoring accepted readback":
+        "FX bypass timed out · restoring real rack state");
       controller?.subscribe();
-    },5000);
-    return true;
-  }
-  // M4 remains an internal PCM implementation; only native mixerSession
-  // readback commits UI state. Rack gate never rewrites saved plugin flags.
-  function requestM4RackPower(t){
-    const lane=m4Index(t),session=mixerSession(),row=session?.channels?.[lane];
-    const ep=safeNativeCounter(session?.deviceEpoch),
-      rev=safeNativeCounter(session?.routeRevision);
-    if(session?.authority!=="M4"||lane<0||!row ||
-       typeof row.fxRackBypassed!=="boolean"||ep===null||rev===null||
-       pendingM4RackPowers.has(lane))return false;
-    const bypassed=!row.fxRackBypassed,requestId="rack-m4-"+(++nativeFxPowerSerial);
-    pendingM4RackPowers.set(lane,{requestId,channel:lane,bypassed,
-      epoch:String(ep),revision:String(rev),acked:false});
-    backend.emitEvent("arMixAction",{action:"routingFxRackBypass",
-      requestId,channel:lane,deviceEpoch:ep,revision:rev,value:bypassed});
-    window.setTimeout(()=>{
-      if(pendingM4RackPowers.get(lane)?.requestId!==requestId)return;
-      pendingM4RackPowers.delete(lane);
-      status("Native rack gate timed out · restoring accepted readback");
-      controller?.subscribe();
-    },8000);
+    },plan.timeoutMs);
     return true;
   }
   function reconcileM4RackReadback(next){
-    const session=next?.raw?.mixerSession;
     for(const [lane,p] of pendingM4RackPowers){
-      if(session?.authority!=="M4"||
-         session.deviceEpoch!==p.epoch||session.routeRevision!==p.revision){
-        pendingM4RackPowers.delete(lane);continue;
-      }
-      const actual=session.channels?.[lane]?.fxRackBypassed;
-      if(p.acked && actual===p.bypassed)pendingM4RackPowers.delete(lane);
+      const decision=fxRackVM.m4RackSettlement(p,next);
+      if(decision==="STALE"||decision==="CONFIRMED")
+        pendingM4RackPowers.delete(lane);
+    }
+    // An M4 slot remains pending after ACK until its own exact instance
+    // lease and requested bypass are present in independently accepted PCM.
+    for(const [key,p] of pendingSlotPowers){
+      const decision=fxRackVM.m4SlotPowerSettlement(p,next);
+      if(decision==="STALE"||decision==="CONFIRMED")
+        pendingSlotPowers.delete(key);
     }
   }
   // Global A/B is a SINGLE native atomic override. Individual racks and
   // inserts remain untouched. Never simulate success in WebView while device
   // admission or a matching native ACK + subsequent readback is missing.
   function globalFxContext(){
-    if(logicalView)return null; // an offline .smix has no audible PCM
-    const current=controller?.state()?.current;
-    const session=current?.raw?.mixerSession;
-    if(current?.admitted && session?.authority==="CHANNEL_ID")
-      return {epoch:String(current.device.epoch),
-              revision:String(current.graph.revision)};
-    if(session?.authority==="M4" && m4Verified())
-      return {epoch:String(session.deviceEpoch),
-              revision:String(session.routeRevision)};
-    return null;
+    return fxRackVM.globalPowerContext(controller?.state()?.current,
+      m4Verified(),!!logicalView);
   }
-  function syncGlobalFxReadback(snapshot){
+  function syncGlobalFxReadback(){
+    // Ignore raw incoming events: controller may reject an invalid/stale
+    // snapshot and retain its previous accepted native PCM read model.
+    const current=controller?.state()?.current;
     const button=document.getElementById?.("globalFxToggle");
-    const actual=snapshot?.globalFxBypassed;
     const context=globalFxContext();
-    if(pendingGlobalFx?.acked && typeof actual==="boolean" &&
-       actual===pendingGlobalFx.bypassed)pendingGlobalFx=null;
-    if(typeof actual==="boolean" && !pendingGlobalFx)
+    const decision=fxRackVM.globalPowerSettlement(pendingGlobalFx,current,context);
+    if(decision==="CONFIRMED"||decision==="STALE")pendingGlobalFx=null;
+    const actual=current?.raw?.globalFxBypassed;
+    if(context&&typeof actual==="boolean"&&!pendingGlobalFx)
       window.__ARMIX_SET_GLOBAL_FX_VIEW__?.(!actual);
-    if(button) {
+    if(button){
       button.disabled=!context||!!pendingGlobalFx;
       button.setAttribute("aria-busy",String(!!pendingGlobalFx));
       if(!context)button.title="Global FX requires admitted physical audio";
     }
   }
   function toggleGlobalFx(){
-    if(pendingGlobalFx)return false;
-    const ctx=globalFxContext(),current=controller?.state()?.current;
-    const actual=current?.raw?.globalFxBypassed;
-    if(!ctx || typeof actual!=="boolean")return false;
+    const current=controller?.state()?.current,ctx=globalFxContext();
+    const plan=fxRackVM.globalPowerPlan(current,ctx,!!pendingGlobalFx);
+    if(plan.kind!=="READY")return false;
     const requestId="global-fx-"+(++globalFxSerial);
-    pendingGlobalFx={requestId,bypassed:!actual,acked:false};
+    pendingGlobalFx={requestId,bypassed:plan.bypassed,acked:false,
+      epoch:ctx.epoch,revision:ctx.revision,authority:ctx.authority};
     const button=document.getElementById?.("globalFxToggle");
     if(button){button.disabled=true;button.setAttribute("aria-busy","true");}
-    backend.emitEvent("arMixAction",{
-      action:"routingGlobalFxBypass",requestId,
-      deviceEpoch:ctx.epoch,revision:ctx.revision,value:!actual
-    });
+    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload});
     window.setTimeout(()=>{
       if(pendingGlobalFx?.requestId!==requestId)return;
       pendingGlobalFx=null;
@@ -1497,26 +1474,16 @@
   }
   window.__ARMIX_NATIVE_GLOBAL_FX__={toggle:toggleGlobalFx};
   function requestAdmittedFxPower(t,action,button){
-    const session=mixerSession(),current=controller?.state()?.current;
-    const channelId=nativeIdFor(t);
-    const ch=current?.graph?.channels?.find(x=>x.id===channelId);
-    if(session?.authority!=="CHANNEL_ID"||!current?.admitted||
-       !channelId||!ch||pendingNativeFxPower)return false;
-    const rack=action==="fxOn",slot=Number(button?.dataset?.slot);
-    const insert=!rack&&Number.isInteger(slot)&&slot>=0&&slot<8?
-      ch.inserts?.[slot]:null;
-    if((rack&&typeof ch.fxRackBypassed!=="boolean")||
-       (!rack&&(!insert||typeof insert.id!=="string"||
-                !insert.id||typeof insert.bypassed!=="boolean")))return false;
-    const bypassed=rack?!ch.fxRackBypassed:!insert.bypassed;
+    if(mixerSession()?.authority!=="CHANNEL_ID")return false;
+    const current=controller?.state()?.current;
+    const plan=fxRackVM.nativePowerPlan(current,{
+      channelId:nativeIdFor(t),action,
+      slot:action==="fxOn"?null:Number(button?.dataset?.slot),
+      pending:!!pendingNativeFxPower});
+    if(plan.kind!=="READY")return false;
     const requestId="native-rack-"+(++nativeFxPowerSerial);
-    pendingNativeFxPower={requestId,channelId,kind:rack?"rack":"insert",
-      insertId:insert?.id,bypassed,acked:false};
-    backend.emitEvent("arMixAction",{action:rack?
-      "routingNativeFxRackBypass":"routingNativeFxInsertBypass",
-      requestId,channelId,deviceEpoch:current.device.epoch,
-      revision:current.graph.revision,value:bypassed,
-      ...(rack?{}:{slot,insertId:insert.id})});
+    pendingNativeFxPower={requestId,...plan.pending};
+    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload});
     window.setTimeout(()=>{
       if(pendingNativeFxPower?.requestId!==requestId)return;
       pendingNativeFxPower=null;
@@ -1527,8 +1494,11 @@
   }
   let pendingNativeControl=new Map(),lastNativeControlSent=new Map();
   const m4Meters=new Map();
-  const m4Verified=()=>{
-    const m=legacy(),d=hardware?.device;
+  // MV-19: read-model admission must use the candidate native snapshot.
+  // The installed hardware cache is updated only AFTER this candidate is
+  // validated, so old accepted M4 evidence cannot admit a new device.
+  const m4Verified=(snapshot=hardware)=>{
+    const m=snapshot?.raw?.legacyM4,d=snapshot?.device;
     return m4TrackIds.length===10 &&
       new Set(m4TrackIds).size===10 &&
       m?.active===true && m.routeAccepted===true &&
@@ -1558,7 +1528,7 @@
   };
   function liveScalarReady(parameter,t) {
     if(t?.kind==="master")return logicalView?parameter==="masterGain":
-      parameter==="masterGain"&&(m4Verified()||nativeMasterReady());
+      parameter==="masterGain"&&nativeMasterAuthority()!=="UNAVAILABLE";
     if(m4ControlIsOwner())return m4Verified()&&m4Index(t)>=0;
     return channelIdScalarReady(parameter,t);
   }
@@ -1568,10 +1538,7 @@
     channelId:logicalView?nativeIdFor(t):t?.kind==="master"?null:nativeIdFor(t)
   });
   function sameNativeEditIdentity(edit) {
-    const now=nativeEditIdentity(edit.t);
-    return edit.epoch===now.epoch &&
-      edit.authority===now.authority &&
-      edit.channelId===now.channelId;
+    return stripVM.scalarIdentityMatches(edit,nativeEditIdentity(edit.t));
   }
   // Only the last gesture target owns the visual fader cap until the
   // producer independently reads that SAME target back. Earlier ACKs and
@@ -1582,33 +1549,35 @@
     const key=controlKey(t?.kind==="master"?"masterGain":"faderDb",t);
     const pending=liveFaderVisualTargets.get(key);
     if(!pending)return null;
-    if(!sameNativeEditIdentity(pending)){
+    const result=stripVM.scalarVisualSettlement(pending,actualDb,
+      nativeEditIdentity(t));
+    if(result==="STALE"||result==="CONFIRMED"){
       liveFaderVisualTargets.delete(key);return null;
     }
-    if(Math.abs(actualDb-pending.value)<=.11){
-      liveFaderVisualTargets.delete(key);return null;
-    }
-    return pending.value;
+    return result==="WAIT"?pending.value:null;
   }
   // null means an admitted ChannelId intent is already awaiting its ACK /
   // producer readback. Keep ONLY the newest dB target, never drop release.
   function dispatchLiveScalar(edit) {
-    if(!sameNativeEditIdentity(edit) ||
-       !liveScalarReady(edit.parameter,edit.t))return false;
-    if(logicalView&&pendingLogical)return null;
-    if(!logicalView&&(edit.t?.kind==="master" || m4ControlIsOwner()))
-      return sendM4Control(edit.parameter,edit.t,edit.value);
-    if(!logicalView&&controller?.state()?.pending)return null;
-    return intent(edit.parameter==="faderDb"||edit.parameter==="masterGain"?"SET_FADER":"SET_PAN",
-      edit.t,edit.parameter==="faderDb"||edit.parameter==="masterGain"?
-        {valueDb:edit.value}:{value:edit.value/100});
+    const plan=stripVM.scalarDispatchPlan(edit,{
+      identity:nativeEditIdentity(edit.t),
+      ready:liveScalarReady(edit.parameter,edit.t),
+      logical:!!logicalView,logicalPending:!!pendingLogical,
+      m4Owner:edit.t?.kind==="master"||m4ControlIsOwner(),
+      nativePending:!!controller?.state()?.pending
+    });
+    if(plan.kind==="REJECT")return false;
+    if(plan.kind==="WAIT")return null;
+    if(plan.kind==="M4")return sendM4Control(edit.parameter,edit.t,edit.value);
+    return intent(plan.operation,edit.t,plan.payload);
   }
   function flushLiveScalars() {
     for(const [key,edit] of pendingNativeControl) {
       const result=dispatchLiveScalar(edit);
       if(result===null)continue;
       pendingNativeControl.delete(key);
-      if(result)lastNativeControlSent.set(key,performance.now());
+      if(result)lastNativeControlSent.set(key,
+        stripVM.scalarDispatchLease(edit,performance.now()));
       else {
         if(liveFaderVisualTargets.get(key)===edit)
           liveFaderVisualTargets.delete(key);
@@ -1617,21 +1586,20 @@
     }
   }
   function streamFaderControl(parameter,t,value,final){
-    if(!liveScalarReady(parameter,t))return false;
+    if(!Number.isFinite(value)||!liveScalarReady(parameter,t))return false;
     const key=controlKey(parameter,t),now=performance.now();
     const edit={parameter,t,value,...nativeEditIdentity(t)};
     pendingNativeControl.set(key,edit); // coalesce: last writer always wins
     if(parameter==="faderDb"||parameter==="masterGain")
       liveFaderVisualTargets.set(key,edit);
-    // Offline document changes are not realtime PCM. Persist only the
-    // released target, not one .smix generation per pointer-move frame.
-    if(logicalView){
-      if(final)flushLiveScalars();
-      return true;
-    }
-    const last=lastNativeControlSent.get(key);
-    if(final||last===undefined||now-last>=30)
-      flushLiveScalars(); // pointermove publishes BEFORE pointerup
+    // One pure selector preserves last-writer-wins, pointerup release and
+    // offline .smix persistence, while ignoring old channel/epoch throttles.
+    const flush=stripVM.scalarGestureFlushPlan({
+      logical:!!logicalView,final:!!final,now,
+      lastSent:lastNativeControlSent.get(key),identity:edit
+    });
+    if(flush==="FLUSH")flushLiveScalars(); // pointermove BEFORE pointerup
+    if(logicalView)return true;
     if(pendingNativeControl.has(key))queueLiveControlFlush();
     return true;
   }
@@ -1657,23 +1625,22 @@
     if(!Array.isArray(m?.fxInstances)||!scope?.tracks)return;
     for(let lane=0;lane<10;lane++){
       const t=scope.tracks.find(x=>x.id===m4TrackIds[lane]);
-      const rows=m.fxInstances[lane];
-      if(!t||!Array.isArray(rows))continue;
-      let change=false;
       const acceptedRack=mixerSession()?.authority==="M4"?
         mixerSession()?.channels?.[lane]?.fxRackBypassed:undefined;
-      if(typeof acceptedRack==="boolean" && t.fxOn===acceptedRack){
-        t.fxOn=!acceptedRack;change=true;
+      const projection=fxRackVM.m4Presentation(m.fxInstances[lane],
+        nativeCatalog,acceptedRack);
+      if(!t||!projection)continue;
+      let change=false;
+      if(projection.fxOn!==null&&t.fxOn!==projection.fxOn){
+        t.fxOn=projection.fxOn;change=true;
       }
-      for(let slot=0;slot<8;slot++){
-        const live=rows[slot],entry=nativeCatalog.get(live?.catalogId);
-        const name=live?(entry?.name||"VST3 Loaded"):"None";
-        if(t.fx[slot]!==name || t.slotBypass[slot]!==Boolean(live?.bypassed) ||
-           (t.fxInsertIds?.[slot]?.id||null)!==(live?.instanceId||null)){
-          t.fx[slot]=name;
-          t.slotBypass[slot]=Boolean(live?.bypassed);
+      for(const slot of projection.slots){
+        const index=slot.index;
+        if(t.fx[index]!==slot.name||t.slotBypass[index]!==slot.bypassed||
+           (t.fxInsertIds?.[index]?.id||null)!==(slot.instance?.id||null)){
+          t.fx[index]=slot.name;t.slotBypass[index]=slot.bypassed;
           if(!Array.isArray(t.fxInsertIds))t.fxInsertIds=Array(8).fill(null);
-          t.fxInsertIds[slot]=live?{id:live.instanceId,name}:null;
+          t.fxInsertIds[index]=slot.instance;
           change=true;
         }
       }
@@ -1682,8 +1649,9 @@
     }
   }
   function sendM4Control(parameter,t,value) {
-    if((t?.kind!=="master"&&!m4ControlIsOwner()) ||
-       !(m4Verified()||(t?.kind==="master"&&nativeMasterReady())) ||
+    if((t?.kind==="master"?
+          nativeMasterAuthority()==="UNAVAILABLE":
+          !m4ControlIsOwner()||!m4Verified()) ||
        (typeof value!=="boolean"&&!Number.isFinite(value)))
       return false;
     const channel=t?.kind==="master"?-1:m4Index(t);
@@ -1712,26 +1680,12 @@
   const m4ControlKey=(parameter,channel)=>parameter+":"+channel;
   function reconcileM4ControlReadback(next) {
     let awaiting=false;
-    const session=next?.raw?.mixerSession;
     for(const [key,p] of pendingM4Controls) {
-      const revision=p.channel===-1?
-        next?.raw?.legacyM4?.routingRevision:session?.routeRevision;
-      if(next.device.epoch!==p.epoch || revision!==p.revision ||
-         (p.channel!==-1 && session?.authority!=="M4")) {
+      const result=stripVM.m4ScalarReadbackSettlement(p,next);
+      if(result==="STALE"){
         pendingM4Controls.delete(key);
         status("STALE M4 control · device/route changed; restoring readback");
-        continue;
-      }
-      const row=p.channel===-1?null:session?.channels?.[p.channel];
-      const value=p.channel===-1?
-        (p.parameter==="masterGain"?session?.main?.db:session?.main?.mute):
-        p.parameter==="faderDb"?row?.controls?.faderDb:
-        p.parameter==="pan"?row?.controls?.pan*100:
-        row?.controls?.[p.parameter];
-      const matches=typeof p.value==="boolean"?value===p.value:
-        Number.isFinite(value)&&Math.abs(value-p.value)<=
-          (p.parameter==="pan"?.8:.11);
-      if(p.acked && matches)pendingM4Controls.delete(key);
+      }else if(result==="CONFIRMED")pendingM4Controls.delete(key);
       else awaiting=true;
     }
     return awaiting;
@@ -2316,7 +2270,7 @@
       backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
     },12000);
   }
-  function finishDeviceApplyUi(){
+  function finishDeviceApplyUi(verifiedSnapshot=null){
     window.clearTimeout(deviceApplyTimer);
     deviceApplyTimer=0;
     if(!devicePanel)return;
@@ -2324,9 +2278,12 @@
     if(deviceState.phase==="ACCEPTED"){
       deviceChoice=null;
       devicePanel.hidden=true;
-      const active=deviceInventory?.active;
+      // The confirmed schema-v6 readback, not the preceding Apply ACK,
+      // is the only source for the device-ready status shown to operators.
+      const active=verifiedSnapshot?.device;
       status("DEVICE READY · "+String(active?.backend||"Audio")+
-        " · "+String(active?.rate||0)+" Hz / "+String(active?.buffer||0)+" samples");
+        " · "+String(active?.sampleRate||0)+" Hz / "+
+        String(active?.bufferFrames||0)+" samples");
       nativeToast(deviceState.message);
     }else{
       deviceChoice=null;
@@ -2348,12 +2305,19 @@
       const next=deviceVM.setupAck(deviceState,ack);
       if(next===deviceState)return; // delayed or unrelated ACK
       deviceState=next;
-      if(ack?.active && deviceInventory)
-        deviceInventory={...deviceInventory,active:ack.active};
+      // ACK.active is unverified hardware evidence. Do not allow either
+      // accepted or rejected ACKs to overwrite the installed I/O inventory.
       if(deviceBusy()){
         // ACK alone NEVER closes the dialog or announces LIVE.
         controller?.subscribe();
-      }else finishDeviceApplyUi();
+      }else{
+        finishDeviceApplyUi();
+        // G-MV21: a negative ACK can still leave a NEW native endpoint in
+        // NEEDS_REMAP. Only a freshly queried native inventory may unblock
+        // retained-pin recovery or supply the next device generation.
+        // Never commit ack.active as installed hardware.
+        backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+      }
     });
   }
 
@@ -2682,25 +2646,9 @@
   // One control-thread routing transaction at a time, but NEVER lock other
   // dropdowns or lose their choices. Latest choice wins per channel.
   function dispatchQueuedSource(){
-    if(nativeUiSourcePending||pendingSourceQueue.size===0)return;
-    if(!deviceReady()){pendingSourceQueue.clear();return;}
-    const [channel,choice]=pendingSourceQueue.entries().next().value;
-    pendingSourceQueue.delete(channel);
-    const ep=safeNativeCounter(hardware?.device?.epoch),
-      rev=safeNativeCounter(legacy()?.routingRevision);
-    if(ep===null||rev===null)return;
-    const requestId=++sourceSerial;
-    nativeUiSourcePending={requestId,channel,choice,epoch:ep,revision:rev};
-    backend.emitEvent("arMixAction",{action:"routingSourceSwitch",
-      requestId,channel,mode:choice.mode,left:choice.left,right:choice.right,
-      deviceEpoch:ep,revision:rev});
-    window.setTimeout(()=>{
-      if(nativeUiSourcePending?.requestId!==requestId)return;
-      nativeUiSourcePending=null;
-      status("CH "+(channel+1)+" INPUT timeout · native state preserved");
-      controller.subscribe();
-    },8000);
+    dispatchSourceQueue("M4");
   }
+
   function playAcceptedWireImpact(changes) {
     const plug=changes?.find(change=>["CONNECT","ROUTE_ONLY","RETARGET"].includes(change.op));
     if(!plug)return;
@@ -2708,38 +2656,90 @@
     if(from===undefined||to===undefined||to===scope?.master?.id)return;
     scope?.kickWireSpring?.(from,to);
   }
+  // The schema-v6 controller owns accepted snapshots. This single bridge
+  // cleanup drops only outstanding WebView intents from an older device or
+  // changed PCM authority; the native session, .smix, FX instances and
+  // approved controls remain owned by JUCE and will be repainted by readback.
+  let lastNativeLifecycleLease=null;
+  // G-MV24: ONE complete GUI-only discard path for both physical/authority
+  // switches and repeated NEEDS_REMAP readbacks. No second PCM ownership.
+  // Keep cosmetic readback signatures separate so retained-mixer telemetry
+  // does not force pointless full DOM repaint on every callback.
+  function discardTransientNativeUi({preserveRetainedIdentity=false}={}) {
+    pendingNativeSources.clear();pendingSourceQueue.clear();
+    activeNativeSource=null;nativeUiSourcePending=null;pendingSourceId=0;
+    pendingOutputPatch=null;pendingNativeFxPower=null;pendingGlobalFx=null;
+    pendingBusCreate=null;pendingTrackDelete=null;pendingFxInsert=null;
+    startupWire=null;activeWireAttempt=null;pendingNativeGainIntent=false;
+    pendingWireGains.clear();pendingNativeControl.clear();
+    liveFaderVisualTargets.clear();lastNativeControlSent.clear();
+    pendingM4Controls.clear();pendingM4RackPowers.clear();
+    // MV-18: these two hardware-scoped leases were previously omitted.
+    // A same-epoch driver/endpoint replacement or M4 authority change
+    // must not strand EXTERNAL OUT selects or slot-bypass edits behind
+    // an old ACK/timer. Never touch persisted PCM/FX state here.
+    pendingExternal.clear();pendingSlotPowers.clear();
+    // Cosmetic ChannelId edits remain legal while native playback is
+    // NEEDS_REMAP. They still require their own native ACK/readback proof.
+    // Only physical/authority changes must invalidate those old identities.
+    if(pendingIdentity&&!preserveRetainedIdentity){
+      if(pendingIdentity.migration)legacyDeferred.add(pendingIdentity.channelId);
+      rejectIdentity("Channel identity expired after audio connection change");
+    }
+  }
+  function expireTransientNativeUi(reason) {
+    discardTransientNativeUi();
+    lastPaintedSignature="";lastNativeTopologySignature="";
+    status(reason==="DEVICE_CHANGED"?
+      "Audio connection changed · old control gestures discarded":
+      "Mixer authority changed · old control gestures discarded");
+  }
   function onNativeReadback(next,confirmed) {
-    scope?.syncNativeWireGains?.([]); // flush accepted paint after pointer release
-    appearanceFromNative(next);
     // This callback is invoked only by the existing schema-v6 reconciler.
-    // A correlated Apply ACK waits for a subsequent installed PCM snapshot.
-    const previousSetup=deviceState;
-    deviceState=deviceVM.setupReadback(deviceState,next);
-    if(deviceState!==previousSetup && !deviceState.pending)finishDeviceApplyUi();
-    updateHardwarePanel(next);
-    paintExternalReadback(next);
-    // The installed native SessionSnapshot selects exactly one UI authority.
+    // No Device Setup, hardware panel or strip state may mutate until the
+    // candidate read-model AND native device identity are admitted below.
+    // Evaluate M4 against next itself, not previously painted hardware.
+    const readModel=protocol.selectNativeReadModel(next,m4Verified(next));
     const session=next?.raw?.mixerSession;
     const offline=next?.raw?.logicalMixer;
-    // Retained PCM owns vendor state even if the saved descriptors look
-    // identical. Only native can authorize the unbound logical editor.
-    const logicalAvailable=!next.admitted&&!next.retained&&!m4Verified()&&
-      session?.authority!=="M4"&&session?.authority!=="CHANNEL_ID"&&
-      offline?.schema==="arsonmix.native.logical-mixer.v1" &&
-      offline.authority==="LOGICAL_ONLY"&&
-      typeof offline.workspaceToken==="string"&&offline.workspaceToken.length>0&&
-      offline.physicalOutputAdmitted===false&&offline.outputArmed===false&&
-      offline.graph?.capabilities?.callbackOwnsChannelIds===false&&
-      protocol.decimal(offline.revision)!==null&&offline.revision!=="0"&&
-      offline.revision===offline.graph?.revision&&
-      offline.revision===offline.graph?.rosterRevision&&
-      Array.isArray(offline.graph?.channels)&&Array.isArray(offline.graph?.edges);
-    if(logicalAvailable) {
-      const staged={...next,graph:offline.graph,
-        workspaceToken:offline.workspaceToken,
-        identity:"logical:"+offline.workspaceToken+":"+offline.revision,logical:true,
-        readOnly:offline.readOnly===true,
-        admitted:false,retained:false,productLive:false,telemetry:{}};
+    if(readModel.kind==="INVALID"){
+      status("NATIVE READBACK INVALID · existing GUI controls unchanged");
+      return;
+    }
+    const lease=deviceVM.nativeLifecycleLease(next,readModel.kind);
+    if(!lease){
+      status("NATIVE DEVICE IDENTITY INVALID · existing controls unchanged");
+      return;
+    }
+    const lifecycle=deviceVM.nativeLifecycleDecision(lastNativeLifecycleLease,lease);
+    if(lifecycle.expirePending){
+      expireTransientNativeUi(lifecycle.kind);
+      // Old readback confirmations must not animate or complete new PCM work.
+      confirmed=null;
+    }
+    lastNativeLifecycleLease=lease;
+    // MV-19: commit all hardware-scoped UI only after the common identity
+    // fence. Invalid/inconsistent candidates must leave the last accepted
+    // Device Setup transaction, selectors and physical output untouched.
+    scope?.syncNativeWireGains?.([]); // flush accepted paint after pointer release
+    const previousSetup=deviceState;
+    deviceState=deviceVM.setupReadback(deviceState,next);
+    if(deviceState!==previousSetup && !deviceState.pending){
+      finishDeviceApplyUi(next);
+      // G-MV21: only after installed device verification may the UI
+      // request a fresh authoritative native inventory. A late ACK must
+      // neither poison the operator's pin choices nor close Audio I/O.
+      if(deviceState.phase==="ACCEPTED"&&connected)
+        backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+    }
+    updateHardwarePanel(next);
+    // The MV-18 external-output repaint must stay after the same fence.
+    paintExternalReadback(next);
+    appearanceFromNative(next);
+    settleSourceReadback("CHANNEL_ID",next);
+    settleSourceReadback("M4",next);
+    if(readModel.kind==="LOGICAL_ONLY") {
+      const staged=readModel.view;
       let revealCreatedId=null,wireImpact=null;
       if(pendingLogical && pendingLogical.workspaceToken!==offline.workspaceToken)
         pendingLogical=null;
@@ -2813,7 +2813,7 @@
       pendingLogical=null;
       status("Audio connection changed · refresh mixer before editing");
     }
-    if(!session || session.deviceEpoch!==next.device.epoch) {
+    if(readModel.kind==="STALE") {
       flags.acceptedGraphConnected=false;
       flags.productionCallbackLive=false;
       lastPaintedSignature="";
@@ -2827,19 +2827,22 @@
     // data can update controls; independent meters and FX racks keep moving.
     reconcileM4ControlReadback(next);
     reconcileM4RackReadback(next);
-    if(session.authority==="M4" && m4Verified()) {
+    reconcileM4ChannelPatchReadback(next);
+    if(readModel.kind==="M4") {
       paintM4Fallback(next);
       if(scope?.syncVerifiedM4Wires?.(session.channels.map(ch=>ch.source),m4TrackIds))
         document.documentElement.dataset.armixNativeRoster="accepted";
     }
     // A second channel's IN can be selected while the first transaction is
     // in flight. Always dispatch its latest choice with a FRESH native route
-    // revision, not stale tokens captured before the previous ACK.
-    if(!nativeUiSourcePending && pendingSourceQueue.size)
+    // revision, not stale tokens captured before the previous ACK. An old
+    // M4 microtask must never be scheduled from retained hardware state.
+    const transientPlan=deviceVM.nativeTransientReadbackPolicy(readModel.kind);
+    if(transientPlan.drainM4Sources &&
+       !nativeUiSourcePending && pendingSourceQueue.size)
       window.queueMicrotask(()=>dispatchQueuedSource());
     const caps=next?.graph?.capabilities;
-    const nativeAdmitted=session.authority==="CHANNEL_ID" &&
-      next.admitted && caps?.callbackOwnsChannelIds===true;
+    const nativeAdmitted=readModel.kind==="CHANNEL_ID";
     if(pendingBusCreate && pendingBusCreate.epoch!==next.device.epoch)
       pendingBusCreate=null;
     syncAddTrack(next);
@@ -2851,19 +2854,20 @@
         !caps?.supportedOps?.includes("CREATE_GROUP");
       addBus.disabled=!!pendingBusCreate||!!pendingTrackDelete;
     }
-    if (nativeAdmitted && !activeNativeSource && pendingNativeSources.size) {
+    if (transientPlan.drainNativeSources &&
+         !activeNativeSource && pendingNativeSources.size) {
       // A rejected/timeout source command may leave the graph revision
       // unchanged. Drain the next distinct channel after this authoritative
       // snapshot even if the GUI signature is otherwise identical.
       window.queueMicrotask(dispatchNativeSource);
     }
-    if (next.retained && !nativeAdmitted) {
+    if (transientPlan.discardRetained) {
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
-      pendingNativeSources.clear();pendingSourceQueue.clear();
-      activeNativeSource=null;nativeUiSourcePending=null;
-      pendingOutputPatch=null;pendingNativeFxPower=null;pendingBusCreate=null;
-      pendingFxInsert=null;pendingTrackDelete=null;startupWire=null;activeWireAttempt=null;
-      pendingWireGains.clear();pendingNativeControl.clear();liveFaderVisualTargets.clear();
+      // Also catches stray same-lease transient edits after reconnect. This
+      // silently discards ALL source, FX, WIRE and output gesture leases via
+      // the same method used for authority/endpoint changes. Unlike expire,
+      // it does not reset the accepted retained-graph paint signature.
+      discardTransientNativeUi({preserveRetainedIdentity:true});
       const signature="retained|"+next.identity+"|"+appearanceRevision;
       if(lastPaintedSignature!==signature && projectNativeGraphWithoutFocusLoss(next)){
         lastPaintedSignature=signature;
@@ -2914,41 +2918,38 @@
     }
     document.documentElement.dataset.armixNativeRoster="accepted";
     flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;
+    // G-MV30: first accepted ChannelId roster is projected only NOW.
+    // The earlier pre-projection syncAddTrack() was fail-closed while the
+    // native graph was unmounted; enable the button only after successful
+    // projection, without requiring a second telemetry callback/click.
+    syncAddTrack(next);
     syncMonitorButton(next.device);
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
     if(confirmed?.operation==="APPLY_WIRE_TRANSACTION")
       playAcceptedWireImpact(confirmed.payload.changes);
     finishNativeTrack(next);finishNativeTrackDelete(next);
-    if(pendingFxInsert?.authority==="CHANNEL_ID" &&
-       confirmed?.operation==="LOAD_INSERT" &&
-       confirmed.requestId===pendingFxInsert.requestId){
-      const p=pendingFxInsert;
-      const inserted=next.graph.channels.find(ch=>ch.id===p.channelId)
-        ?.inserts?.[p.slot];
-      // The selected catalog key is NOT the live VST3 instance token.
-      // Match catalog against catalog, while requiring a real processor ID.
-      if(inserted?.catalogId===p.id &&
-         typeof inserted.id==="string" && inserted.id.length>0){
-        pendingFxInsert=null;
-        scope?.closeNativePicker?.();
-        openVerifiedInsertedFx(p.channelId,p.slot,p.id,inserted.id);
-        status("VST3 loaded · "+inserted.name+" · native PCM readback verified");
-      }
+    const fxInsert=fxRackVM.nativeInsertSettlement(pendingFxInsert,next,confirmed);
+    if(fxInsert.kind==="STALE")pendingFxInsert=null;
+    if(fxInsert.kind==="CONFIRMED"){
+      pendingFxInsert=null;
+      scope?.closeNativePicker?.();
+      openVerifiedInsertedFx(fxInsert.channelId,fxInsert.slot,
+        fxInsert.catalogId,fxInsert.instanceId);
+      status("VST3 loaded · "+fxInsert.name+" · native PCM readback verified");
     }
-    if(pendingNativeFxPower?.acked){
-      const p=pendingNativeFxPower;
-      const ch=next.graph.channels.find(x=>x.id===p.channelId);
-      const actual=p.kind==="rack"?ch?.fxRackBypassed:
-        ch?.inserts?.find(x=>x.id===p.insertId)?.bypassed;
-      if(actual===p.bypassed)pendingNativeFxPower=null;
-    }
+    const fxSettlement=fxRackVM.nativePowerSettlement(pendingNativeFxPower,next);
+    if(fxSettlement==="CONFIRMED"||fxSettlement==="STALE")
+      pendingNativeFxPower=null;
     if(startupWire)window.queueMicrotask(flushStartupWire);
     status("Mixer settings updated");
   }
   if (connected) {
     controller = protocol.createController({
       emit:(name,payload)=>backend.emitEvent(name,payload),
-      onAccepted:onNativeReadback,
+      onAccepted:(next,confirmed)=>{
+        onNativeReadback(next,confirmed);
+        syncGlobalFxReadback();
+      },
       onStatus:state=>{
         const settledGain=pendingNativeGainIntent&&!state.pending;
         if(settledGain){
@@ -2962,27 +2963,23 @@
            pendingNativeControl.size)queueLiveControlFlush();
         if(!state.pending&&state.lastError==="ACCEPTED_READBACK"&&pendingWireGains.size)
           queueWireGainFlush();
-        // Rejection cleanup and native rollback must BOTH run.
-        // Former else-if was unreachable after the cleanup branch matched.
-        const failed=!state.pending &&
-          state.lastError!=="ACCEPTED_READBACK" &&
-          state.lastError!=="NONE" &&
-          state.lastError!=="NATIVE_NOT_SUBSCRIBED";
-        if(!state.pending&&state.lastError==="ACCEPTED_READBACK"&&startupWire)
+        // Pure ViewModel decides retry/rollback; one native controller.
+        const recovery=wireVM.nativeRecoveryPlan(
+          state,activeWireAttempt,startupWire);
+        if(recovery.kind==="ACCEPTED"&&startupWire)
           window.queueMicrotask(flushStartupWire);
-        if(!state.pending&&state.lastError==="ACCEPTED_READBACK")activeWireAttempt=null;
-        if(failed&&startupWire?.retries===1&&
-           ["STALE_NATIVE_CONTROL_REVISION","STALE_NATIVE_WIRE_GRAPH"].includes(state.lastError)) {
+        if(recovery.kind==="ACCEPTED")activeWireAttempt=null;
+        if(recovery.kind==="FLUSH_STARTUP_RETRY"){
           window.queueMicrotask(flushStartupWire);return;
         }
-        if(failed){
+        if(recovery.kind==="REBASE_CONNECTION"){
           const wire=activeWireAttempt;activeWireAttempt=null;
-          // One stale-revision rebase of a new connection only. A fresh
-          // independent snapshot must still prove device/endpoints. Never
-          // replay retarget/remove, a changed epoch, or a rejected cycle.
-          if(wire&&wire.retries===0&&
-             ["STALE_NATIVE_CONTROL_REVISION","STALE_NATIVE_WIRE_GRAPH"].includes(state.lastError)&&
-             state.current?.device?.epoch===wire.epoch&&deferStartupWire(wire.ops,1))return;
+          // Existing bridge rechecks exact admission before one retry.
+          if(deferStartupWire(wire.ops,1))return;
+        }
+        if(recovery.kind==="ROLLBACK"||
+           recovery.kind==="REBASE_CONNECTION"){
+          activeWireAttempt=null;
           startupWire=null;
           pendingWireGains.clear();
           // The controller deliberately freezes current on a rejected ACK.
@@ -2998,6 +2995,9 @@
             if(edit.authority==="CHANNEL_ID")pendingNativeControl.delete(key);
           for(const [key,edit] of liveFaderVisualTargets)
             if(edit.authority==="CHANNEL_ID")liveFaderVisualTargets.delete(key);
+          // A rejected native graph invalidates its old send-time leases.
+          // M4 and offline remain readback-owned; next gesture can send now.
+          lastNativeControlSent.clear();
           lastNativeError=state.lastError;
           // Never destroy an active pointer capture. Once the user releases,
           // restore only the last independently accepted native controls.
@@ -3015,9 +3015,11 @@
       }
     });
     backend.addEventListener("arMixConsoleSnapshot", snapshot=>{
-      // First reconcile the canonical engine snapshot, then the global FX
-      // view gate. Never infer FX admission from a local button press.
-      const apply=()=>{controller.onSnapshot(snapshot);syncGlobalFxReadback(snapshot);};
+      // Only the sole v6 controller may admit a PCM snapshot. Its
+      // onAccepted callback updates FX after validation; this listener
+      // must not settle an ACK using a cached pre-ACK readback if the
+      // incoming payload was rejected as invalid/stale.
+      const apply=()=>controller.onSnapshot(snapshot);
       const profiler=window.ArSonMixPerf;
       if(!profiler?.active){apply();return;}
       const started=performance.now();
@@ -3042,35 +3044,30 @@
       controller?.subscribe();
     });
     backend.addEventListener("arMixChannelIdentityAck", ack=>{
-      if(!pendingIdentity||ack?.requestId!==pendingIdentity.requestId)return;
-      if(ack.ok!==true){
+      const decision=stripVM.identityAckResult(pendingIdentity,ack);
+      if(decision==="IGNORE")return;
+      if(decision==="REJECTED"){
         if(pendingIdentity.migration)legacyDeferred.add(pendingIdentity.channelId);
         rejectIdentity("Native channel identity rejected · "+String(ack.error||"Unknown error"));
-        controller?.subscribe();return;
-      }
-      pendingIdentity.acked=true;
+      }else pendingIdentity.acked=true;
+      // ACK alone cannot change an editor; the next accepted native
+      // readback, same graph lease and appearance identity must prove it.
       controller?.subscribe();
     });
     backend.addEventListener("arMixNativeSourceAck",ack=>{
-      if(!activeNativeSource||activeNativeSource.requestId!==ack?.requestId)return;
-      activeNativeSource=null;
-      if(ack.ok!==true)
-        nativeToast("Native input rejected · "+(ack?.error||"stale PCM"));
-      else status("Native input accepted · checking subsequent PCM readback");
-      controller?.subscribe();
+      handleSourceAck("CHANNEL_ID",ack);
     });
     backend.addEventListener("arMixNativeBusAck",ack=>{
       const pending=pendingBusCreate;
-      if(!pending||pending.requestId!==ack?.requestId)return;
+      const verdict=stripVM.rosterAckResult(pending,ack);
+      if(verdict==="IGNORE")return;
       const label=pending.track?"Audio Track":"BUS";
-      if(ack.ok===true && protocol.decimal(ack.createdId) && ack.createdId!=="0" &&
-         (!pending.track || (protocol.decimal(ack.graphRevision) && ack.graphRevision!=="0"))){
-        status(label+" accepted by native PCM · verifying graph readback");
-        if(pending.track){
-          pending.createdId=ack.createdId;
-          pending.revision=ack.graphRevision;
-          finishNativeTrack(controller?.state()?.current);
-        }else pendingBusCreate=null;
+      if(verdict==="ACKED"){
+        pending.acked=true;
+        pending.createdId=ack.createdId;
+        pending.ackRevision=ack.graphRevision;
+        status(label+" ACKed · verifying installed native roster");
+        finishNativeTrack(controller?.state()?.current);
       }else{
         pendingBusCreate=null;
         nativeToast("Add "+label+" rejected · "+(ack?.error||"native graph error"));
@@ -3080,69 +3077,49 @@
     });
     backend.addEventListener("arMixNativeTrackDeleteAck",ack=>{
       const pending=pendingTrackDelete;
-      if(!pending||pending.requestId!==ack?.requestId)return;
-      if(ack.ok!==true||ack.channelId!==pending.id){
+      const verdict=stripVM.rosterAckResult(pending,ack);
+      if(verdict==="IGNORE")return;
+      if(verdict==="REJECTED"){
         pendingTrackDelete=null;syncAddTrack();
-        nativeToast("Delete Track rejected · "+(ack?.error||"native graph rejected"));
+        nativeToast("Delete rejected · "+(ack?.error||"native graph rejected"));
       }else{
         pending.acked=true;
+        pending.ackRevision=ack.graphRevision;
         status(pending.name+" removal ACKed · verifying accepted graph");
         finishNativeTrackDelete(controller?.state()?.current);
       }
       controller?.subscribe();
     });
     backend.addEventListener("arMixGlobalFxAck",ack=>{
-      const pending=pendingGlobalFx;
-      if(!pending || ack?.requestId!==pending.requestId)return;
-      if(ack?.ok!==true || ack?.bypassed!==pending.bypassed){
+      const verdict=fxRackVM.globalPowerAckResult(pendingGlobalFx,ack);
+      if(verdict==="IGNORE")return;
+      if(verdict==="REJECTED"){
         pendingGlobalFx=null;
         status("Global FX rejected · "+String(ack?.error||"stale device revision"));
-      }else pending.acked=true;
+      }else pendingGlobalFx.acked=true;
       controller?.subscribe(); // ACK alone never establishes physical bypass.
     });
     backend.addEventListener("arMixNativeFxPowerAck",ack=>{
-      const p=pendingNativeFxPower;
-      if(!p||ack?.requestId!==p.requestId)return;
-      if(ack?.ok!==true || ack?.channelId!==p.channelId ||
-         ack?.bypassed!==p.bypassed){
+      const verdict=fxRackVM.nativePowerAckResult(pendingNativeFxPower,ack);
+      if(verdict==="IGNORE")return;
+      if(verdict==="REJECTED"){
         pendingNativeFxPower=null;
         status("NATIVE FX rejected · "+(ack?.error||"stale epoch or insert"));
-      }else p.acked=true;
+      }else pendingNativeFxPower.acked=true;
       controller.subscribe(); // ACK is not independently observed PCM state
     });
     backend.addEventListener("arMixRoutingFxRackAck",ack=>{
       const p=pendingM4RackPowers.get(ack?.channel);
-      if(!p||ack?.requestId!==p.requestId)return;
-      if(ack?.ok!==true || String(ack.deviceEpoch)!==p.epoch ||
-         String(ack.routingRevision)!==p.revision ||
-         ack.bypassed!==p.bypassed){
+      const verdict=fxRackVM.m4RackAckResult(p,ack);
+      if(verdict==="IGNORE")return;
+      if(verdict==="REJECTED"){
         pendingM4RackPowers.delete(p.channel);
         status("Native M4 rack gate rejected · "+(ack?.error||"stale route"));
       }else p.acked=true;
       controller.subscribe(); // later authoritative M4 snapshot required
     });
     backend.addEventListener("arMixSourceSwitchAck", ack=>{
-      if(nativeUiSourcePending &&
-         ack?.requestId===nativeUiSourcePending.requestId) {
-        const p=nativeUiSourcePending;
-        nativeUiSourcePending=null;
-        const next=ack?.state||{},row=next.acceptedRoute?.channels?.[p.channel];
-        const verified=ack.ok===true && next.ready===true &&
-          Number(next.epoch)===p.epoch && next.hasAcceptedRoute===true &&
-          Number(next.revision)>=p.revision &&
-          row?.mode===p.choice.mode && row?.left===p.choice.left &&
-          row?.right===p.choice.right;
-        if(verified) {
-          // Native publisher + engine own the accepted graph; refresh the
-          // UI only from a subsequent authoritative snapshot.
-          controller.subscribe();
-          status("CH "+(p.channel+1)+" native input accepted");
-        } else {
-          status("NATIVE INPUT REJECTED · "+(ack?.error||"stale routing"));
-          controller.subscribe();
-        }
-        return;
-      }
+      if(handleSourceAck("M4",ack))return;
       if(!pendingSourceId||ack?.requestId!==pendingSourceId)return;
       pendingSourceId=0;
       if(ack.ok===true) {
@@ -3155,60 +3132,46 @@
       const item=[...pendingM4Controls].find(([,p])=>p.requestId===ack?.requestId);
       if(!item)return; // late, unrelated and superseded ACKs cannot commit
       const [key,p]=item;
-      const accepted=ack.ok===true &&
-        String(ack.deviceEpoch)===p.epoch &&
-        String(ack.routingRevision)===p.revision &&
-        ack.channel===p.channel && ack.parameter===p.parameter;
-      if(!accepted) {
+      const verdict=stripVM.m4ScalarAckResult(p,ack);
+      if(verdict==="REJECTED") {
         pendingM4Controls.delete(key);
         if(p.parameter==="masterGain")liveFaderVisualTargets.delete("masterGain:main");
         else if(p.parameter==="faderDb")
           liveFaderVisualTargets.delete("faderDb:"+m4TrackIds[p.channel]);
         status("NATIVE M4 REJECTED · "+(ack?.error||"stale control token"));
-      } else p.acked=true;
+      } else if(verdict==="ACKED")p.acked=true;
       controller.subscribe(); // request later independent producer readback
     });
     backend.addEventListener("arMixChannelPatchAck",ack=>{
-      if(!pendingOutputPatch||ack?.requestId!==pendingOutputPatch.requestId)return;
-      const p=pendingOutputPatch;
-      pendingOutputPatch=null;
-      const t=scope?.tracks?.find(x=>m4Index(x)===p.channel);
-      const el=t?document.querySelector(
-        '.strip[data-id="'+t.id+'"] select[data-field="output"]'):null;
-      if(el){
-        el.removeAttribute("aria-busy");
-        el.title="Primary output · verified native routing";
-      }
-      const row=ack?.state?.acceptedRoute?.channels?.[p.channel];
-      const accepted=ack?.ok===true && Number(ack.state?.epoch)===p.epoch &&
-        (p.operation==="SET_PROCESSING_FORMAT"?
-          row?.channelFormat===p.target:
-          row?.main===(p.target==="MAIN"));
-      if(accepted) {
-        if(el&&p.operation==="SET_PRIMARY_OUT")
-          el.value=p.target==="MAIN"?"Master":"SOURCE ONLY (No Main)";
-        status("CH "+(p.channel+1)+" "+
-          (p.operation==="SET_PROCESSING_FORMAT"?"M/ST ":"OUT ")+p.target+
-          " accepted · verifying native PCM");
-      } else {
-        if(el)el.value=t?.output||"Master";
+      const verdict=stripVM.m4ChannelPatchAckResult(pendingOutputPatch,ack);
+      if(verdict==="IGNORE")return;
+      if(verdict==="REJECTED"){
+        const p=pendingOutputPatch;
+        pendingOutputPatch=null;
+        resetM4PatchUi(p);
         status("CH "+(p.channel+1)+" "+
           (p.operation==="SET_PROCESSING_FORMAT"?"M/ST":"OUT")+
           " rejected · "+(ack?.error||"stale route"));
         nativeToast(ack?.error||"Native channel route rejected");
+      }else{
+        pendingOutputPatch.acked=true;
+        // Native ACK may arrive AFTER a separately accepted M4 snapshot.
+        reconcileM4ChannelPatchReadback(controller?.state()?.current);
       }
-      controller.subscribe();
+      controller?.subscribe(); // no ACK state is accepted PCM
     });
     backend.addEventListener("arMixRoutingFxBypassAck",ack=>{
-      const key=(Number(ack?.channel)||0)+":"+Number(ack?.slot);
-      // Legacy ACKs without channel/requestId can never authorize an
-      // arbitrary in-flight slot or paint an invented bypass state.
+      const key=Number(ack?.channel)+":"+Number(ack?.slot);
+      // The matched ACK only permits a new independently accepted M4
+      // snapshot to settle the exact pending instance and bypass value.
       const pending=pendingSlotPowers.get(key);
-      if(!pending||pending.requestId!==ack?.requestId)return;
-      pendingSlotPowers.delete(key);
-      if(ack?.ok!==true)
+      const verdict=fxRackVM.m4SlotPowerAckResult(pending,ack);
+      if(verdict==="IGNORE")return;
+      if(verdict==="REJECTED"){
+        pendingSlotPowers.delete(key);
         nativeToast(ack?.error||"Native VST3 bypass rejected");
-      controller?.subscribe(); // real FxInstance state owns visual power
+      }else pending.acked=true;
+      controller?.subscribe();
     });
     backend.addEventListener("arMixRoutingFxEditorAck",ack=>{
       if(ack?.ok!==true)
@@ -3287,6 +3250,39 @@
       }else status("NATIVE ARM REJECTED: "+(ack?.error||"device not ready"));
     });
   }
+  // G-MV27: UI actions (MUTE/SOLO/unity resets) share one pure native
+  // authority plan, separate from MV-10's coalesced pointer gesture lane.
+  // IPC, request IDs, ACK/readback and the PCM owner remain unchanged.
+  function controlCommandRoute(operation,t) {
+    const current=controller?.state()?.current,id=nativeIdFor(t);
+    return stripVM.controlCommandPlan({
+      operation,trackKind:t?.kind,logical:!!logicalView,
+      logicalReadOnly:logicalView?.readOnly===true,
+      logicalPending:!!pendingLogical,logicalChannelId:id,
+      logicalSupported:logicalView?.graph?.capabilities?.supportedOps?.includes(operation)===true,
+      authority:mixerSession()?.authority,admitted:current?.admitted===true &&
+        current?.retained!==true,graphConnected:flags.acceptedGraphConnected,
+      nativeChannelId:id,
+      nativeSupported:current?.graph?.capabilities?.supportedOps?.includes(operation)===true,
+      m4Verified:m4Verified(),m4Channel:m4Index(t),
+      masterAuthority:t?.kind==="master"?nativeMasterAuthority():"UNAVAILABLE"
+    });
+  }
+  function dispatchControlCommand(operation,t,payload) {
+    const route=controlCommandRoute(operation,t);
+    if(route==="LOGICAL"||route==="CHANNEL_ID")
+      return intent(operation,t,payload);
+    if(route==="M4"||route==="MAIN_HOST"){
+      const parameter=route==="MAIN_HOST"?
+        operation==="SET_FADER"?"masterGain":"masterMute":
+        {SET_FADER:"faderDb",SET_PAN:"pan",SET_MUTE:"mute",SET_SOLO:"solo"}[operation];
+      const value=operation==="SET_FADER"?payload?.valueDb:
+        operation==="SET_PAN"?payload?.value*100:payload?.enabled;
+      return sendM4Control(parameter,t,value);
+    }
+    status("Native "+operation+" unavailable · verify mixer authority/readback");
+    return false;
+  }
   const nativeHooks=Object.freeze({
     enabled:connected,
     requestDeleteTrack:requestNativeTrackDelete,
@@ -3296,38 +3292,18 @@
     orbitTarget:nativeOrbitTarget,
     orbitAction:nativeOrbitAction,
     inputChoices(t) {
-      if(t?.kind!=="audio")return ["None"];
-      if(controller?.state()?.current?.retained&&!logicalView)return [t.input||"None"];
-      const choices=inputChoicesFor().map(x=>x.label);
-      // The native BUS lane is selectable only for display: never invent a
-      // hardware pin or promote the internal BUS to a writable physical IN.
-      if(t.input===INTERNAL_BUS)choices.push(INTERNAL_BUS);
-      return choices;
+      return stripVM.inputChoices(t,inputChoicesFor(),
+        controller?.state()?.current?.retained,!(!logicalView),INTERNAL_BUS);
     },
     externalChoices(t) {
-      if(t?.kind==="master")return ["None"];
-      const labels=hardwareOutputPairs().map(p=>p.label);
-      if(t?.externalOutput && !labels.includes(t.externalOutput))
-        labels.push(t.externalOutput);
-      return labels;
+      return stripVM.externalChoices(t,hardwareOutputPairs());
     },
     outputChoices(t) {
-      if(logicalView&&t?.kind==="master")return ["Choose audio output"];
-      if(t?.kind==="master")
-        return [hardware?.retained?NEEDS_REMAP:
-          String(hardware?.device?.playbackDevice||t.output||"Choose audio output")];
-      if(t?.kind!=="master"){
-        // M4 accepts MAIN or source-only. Bus routing is via native WIRE,
-        // never pretend the demo's other destinations have native PCM.
-        const options=["Master","SOURCE ONLY (No Main)"];
-        const graph=controller?.state()?.current?.graph;
-        if((logicalView||mixerSession()?.authority==="CHANNEL_ID")&&
-           (logicalView?.graph?.channels||graph?.channels))
-          for(const target of nativeOutputTargets(t))options.push(target.label);
-        if(t.output&&!options.includes(t.output))options.push(t.output);
-        return options;
-      }
-      return [t?.output||"None"];
+      return stripVM.primaryChoices({track:t,logical:Boolean(logicalView),
+        retained:Boolean(hardware?.retained),
+        playbackDevice:hardware?.device?.playbackDevice,
+        authority:mixerSession()?.authority,
+        targets:nativeOutputTargets(t)});
     },
     consumeField(event) {
       if (!connected)return false;
@@ -3405,77 +3381,71 @@
         // source, including the very first source in an unpatched session.
         if(event.type!=="change")return true;
         const channel=m4Index(t);
-        const choice=inputChoicesFor().find(x=>x.label===el.value);
-        // After BUS/WIRE the installed ChannelId graph is sole PCM owner.
-        // Original ten channels must not send source edits to stale M4.
-        if(mixerSession()?.authority==="CHANNEL_ID"){
-          const current=controller?.state()?.current;
-          const id=nativeIdFor(t);
-          if(!choice||!id||!current?.admitted||!deviceReady()){
-            nativeToast("Select a verified physical input");
-            el.value=t.input;return true;
-          }
-          if(choice.label!==t.input){
-            pendingNativeSources.set(id,choice);
-            dispatchNativeSource();
-          }
-          el.value=t.input; // no optimistic browser patch
-          return true;
-        }
-        const ep=safeNativeCounter(hardware?.device?.epoch);
-        const rev=safeNativeCounter(legacy()?.routingRevision);
-        if(channel<0||channel>=10||!choice||!deviceReady()||
-           ep===null||rev===null){
-          status("INPUT REJECTED · refresh verified hardware pins");
+        const choices=inputChoicesFor();
+        const choice=choices.find(x=>x.label===el.value);
+        const nativeOwner=mixerSession()?.authority==="CHANNEL_ID";
+        const id=nativeOwner?nativeIdFor(t):null;
+        if((nativeOwner&&(!id||!controller?.state()?.current?.admitted))||
+           (!nativeOwner&&(channel<0||channel>=10))||!deviceReady()){
+          status("INPUT REJECTED · verify native channel and hardware pins");
           el.value=t.input;return true;
         }
-        if(choice.label===t.input&&!pendingSourceQueue.has(channel)){
+        const decision=stripVM.sourceQueueSelection({
+          choice,choices,epoch:hardware?.device?.epoch,acceptedLabel:t.input,
+          hardwareConfiguration:hardware?.hardwareConfiguration??"",
+          activeSameChannel:nativeOwner?activeNativeSource?.id===id:
+            nativeUiSourcePending?.channel===channel
+        });
+        if(decision.kind==="UNAVAILABLE"){
+          if(nativeOwner)nativeToast("Select a verified physical input");
+          else status("INPUT REJECTED · refresh verified hardware pins");
           el.value=t.input;return true;
         }
-        pendingSourceQueue.set(channel,choice);
-        // No browser demo optimistic patch. The selector stays operable for
-        // every channel during a previous JUCE routing transaction.
-        el.value=t.input;
-        if(nativeUiSourcePending)
-          status("CH "+(channel+1)+" input queued behind native route ACK");
-        else dispatchQueuedSource();
+        if(nativeOwner){
+          if(decision.kind==="CANCEL")pendingNativeSources.delete(id);
+          else pendingNativeSources.set(id,decision.entry);
+          if(decision.kind==="QUEUE")dispatchNativeSource();
+        }else{
+          if(decision.kind==="CANCEL")pendingSourceQueue.delete(channel);
+          else pendingSourceQueue.set(channel,decision.entry);
+          if(decision.kind==="QUEUE"){
+            if(nativeUiSourcePending)
+              status("CH "+(channel+1)+" input queued behind native route ACK");
+            else dispatchQueuedSource();
+          }
+        }
+        el.value=t.input; // installed readback, not an optimistic UI patch
         return true;
       }
       if(field==="external"){
         if(event.type!=="change")return true;
         const previous=t.externalOutput||"None";
-        const id=nativeIdFor(t),ch=controller?.state()?.current?.graph?.channels
-          ?.find(row=>row.id===id),d=hardware?.device;
-        const pair=hardwareOutputPairs().find(row=>row.label===el.value);
-        const revision=hardware?.raw?.externalRevision;
-        const epoch=hardware?.device?.epoch;
-        if(pendingExternal.has(id)||!pair||!ch ||
-           !["INPUT","GROUP","FX_RETURN"].includes(ch.role) ||
-           !controller?.state()?.current?.admitted ||
-           d?.backend!=="ASIO" || safeNativeCounter(epoch)===null ||
-           safeNativeCounter(revision)===null){
+        const id=nativeIdFor(t);
+        // One pure Channel Strip preflight for ASIO port identity and
+        // shared-output confirmation; only this bridge dispatches native.
+        const plan=stripVM.externalOutputPlan({
+          native:controller?.state()?.current,hardware,channelId:id,
+          selectedLabel:el.value,currentLabel:previous,
+          choices:hardwareOutputPairs(),pending:pendingExternal.has(id),
+          channelName:t.name
+        });
+        if(plan.kind==="UNAVAILABLE"){
           el.value=previous;
           nativeToast("EXTERNAL OUT unavailable · check ASIO, graph and pins");
           return true;
         }
-        if(pair.label===previous){el.value=previous;return true;}
-        const occupied=(Array.isArray(hardware?.raw?.externalOutputs)?
-          hardware.raw.externalOutputs:[]).filter(p=>p.physicalLeft===pair.left &&
-          p.physicalRight===pair.right && p.channelId!==id);
-        const sharedNote=occupied.length?
-          " SHARED with "+occupied.length+" other source(s); signals SUM. Check gains.":"";
-        const confirmed=pair.left<0 || window.confirm(
-          "Enable ASIO OUT "+(pair.left+1)+"/"+(pair.right+1)+
-          " for "+t.name+"?"+sharedNote+" Check amplifier/speakers. "+
-          "INTERNAL OUT stays unchanged.");
+        if(plan.kind==="NO_CHANGE"){el.value=previous;return true;}
+        const {left,right,epoch,revision}=plan;
+        const confirmed=!plan.requiresConfirmation || window.confirm(
+          plan.confirmation);
         if(!confirmed){el.value=previous;return true;}
         const requestId="out-o-"+(++externalSerial);
-        pendingExternal.set(id,{requestId,channelId:id,left:pair.left,right:pair.right,
+        pendingExternal.set(id,{requestId,channelId:id,left,right,
           epoch,revision,acked:false});
         el.value=previous;el.setAttribute("aria-busy","true");
         backend.emitEvent("arMixAction",{action:"routingExternalOutput",
           requestId,channelId:id,deviceEpoch:epoch,revision,
-          left:pair.left,right:pair.right,confirmed:true});
+          left,right,confirmed:true});
         window.setTimeout(()=>{
           if(pendingExternal.get(id)?.requestId!==requestId)return;
           pendingExternal.delete(id);el.removeAttribute("aria-busy");
@@ -3490,11 +3460,8 @@
         if(t.kind==="master"){
           el.value=t.output;openNativeAudioIO();return true;
         }
-        const graph=controller?.state()?.current?.graph;
-        const destination=nativeOutputTargets(t).find(ch=>ch.label===el.value);
-        const target=el.value==="Master"?"MAIN":
-          el.value==="SOURCE ONLY (No Main)"?"NONE":
-          destination?destination.label:null;
+        const target=stripVM.resolvePrimarySelection(el.value,
+          nativeOutputTargets(t));
         // No optimistic GUI state. Both this menu and the WIRE jack use
         // the same ID/epoch-guarded, acknowledged native route transaction.
         if(el.value!==t.output && !requestPrimaryOut(t,target)){
@@ -3544,19 +3511,11 @@
         }
         return true;
       }
-      const numeric=Number(el.value);
-      if (field==="level"&&Number.isFinite(numeric))
-        intent("SET_FADER",t,{valueDb:numeric});
-      else if (field==="pan"&&Number.isFinite(numeric)) {
-        // Preserve hardware center detent without publishing demo PAN state.
-        const fine=el.dataset.panKeyboard==="true";
-        const bypass=el.dataset.panAltPointer==="true";
-        const value=!fine&&!bypass&&Math.abs(numeric)<=12?0:numeric;
-        intent("SET_PAN",t,{value:value/100});
-      } else {
-        status("NATIVE: "+field+" awaits native capability; reference graph unchanged");
-        scope?.render?.(); // restore SELECT/route control from accepted graph
-      }
+      // If the streaming preflight refused a live field, do NOT bypass
+      // it by sending an unguarded ChannelId intent on pointer release.
+      if(field==="level")el.value=String(t.level);
+      else if(field==="pan")el.value=String(t.pan);
+      status("NATIVE: "+field+" awaits accepted control/readback");
       return true;
     },
     consumeAction(t,action,btn) {
@@ -3564,30 +3523,31 @@
       // PRE/POST is an exact EdgeId structural graph transaction, not a
       // cosmetic browser mode nor a channel-wide batch change.
       if(action==="tapMode"||action==="sofTap"){
-        const current=controller?.state()?.current,id=nativeIdFor(t);
-        if(!current?.admitted||!current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION")||!id){
-          status("PRE/POST unavailable · native PCM graph not admitted");return true;
-        }
-        const sends=current.graph.edges.filter(e=>e.enabled&&
-          e.from===id&&e.primaryOutput===false&&e.to!==current.graph.mainChannelId);
-        let target=action==="sofTap"?selectedNativeSofEdge(t):
-          sends.find(e=>uiByWireId.get(e.edgeId)===scope?.selectedWireEdgeId)||
-          (sends.length===1?sends[0]:null);
-        if(!target||!["PRE_FADER","POST_FADER"].includes(target.tap)){
+        const current=controller?.state()?.current,source=nativeIdFor(t);
+        // A SOF edit must own exactly one real SEND to the selected BUS.
+        // Ordinary tapMode uses only the selected EdgeId or a unique
+        // non-MAIN outgoing SEND; never guesses a sibling channel's route.
+        const edge=action==="sofTap"?selectedNativeSofEdge(t):
+          wireVM.channelTapEdge(current,{sourceId:source,
+            selectedEdgeId:wireByUiId.get(scope?.selectedWireEdgeId)??null});
+        if(!edge){
           status("Select one outgoing parallel SEND WIRE to change PRE/POST");
           return true;
         }
-        const next=target.tap==="PRE_FADER"?"POST_FADER":"PRE_FADER";
-        requestNativeTap(id,target.edgeId,next);
+        const target=edge.tap==="PRE_FADER"?"POST_FADER":"PRE_FADER";
+        requestNativeTap(source,edge.edgeId,target);
         return true;
       }
       if(action==="sofOn"){
-        const current=controller?.state()?.current,edge=selectedNativeSofEdge(t);
-        if(!current?.admitted||!current.graph.capabilities.supportedOps.includes("SET_SEND_ENABLED")||
-           !edge||typeof edge.sendEnabled!=="boolean"){
-          status("SEND ON/OFF unavailable · select an admitted WIRE send");return true;
+        const edge=selectedNativeSofEdge(t),state=controller?.state();
+        const plan=wireVM.nativeSendTogglePlan(state?.current,{
+          sourceId:nativeIdFor(t),edgeId:edge?.edgeId,
+          projected:flags.acceptedGraphConnected,pending:!!state?.pending});
+        if(plan.kind!=="DISPATCH"){
+          status("SEND ON/OFF unavailable · select an admitted WIRE send");
+          return true;
         }
-        intent("SET_SEND_ENABLED",t,{edgeId:edge.edgeId,enabled:!edge.sendEnabled});
+        intent(plan.operation,t,plan.payload);
         return true;
       }
       // Selection, WIRE inspection and section presentation are UI-only.
@@ -3675,9 +3635,7 @@
           if(!requestAdmittedFxPower(t,action,btn))
             nativeToast("Native FX slot unavailable · accepted insert/epoch required");
         }else{
-          const slot=Number(btn?.dataset.slot),instance=verifiedFxFor(t,slot);
-          if(!m4ControlIsOwner()||!instance||
-             !requestNativeFxPower(t,slot,!instance.live.bypassed))
+          if(!requestM4FxPower(t,"slotPower",btn))
             nativeToast("FX bypass unavailable · select an accepted VST3 slot");
         }
         return true;
@@ -3691,7 +3649,7 @@
           return true;
         }
         const authority=mixerSession()?.authority;
-        const ok=authority==="M4"?requestM4RackPower(t):
+        const ok=authority==="M4"?requestM4FxPower(t,"fxOn"):
           authority==="CHANNEL_ID"?requestAdmittedFxPower(t,action,btn):false;
         if(!ok){
           nativeToast("FX header requires an accepted native rack gate");
@@ -3709,20 +3667,10 @@
         status("PFL not armed · independent physical MONITOR output required");
         return true;
       }
-      if (action==="mute"||action==="solo") {
-        if((m4Verified()||nativeMasterReady()) &&
-           t.kind==="master" && action==="mute"){
-          if(!sendM4Control("masterMute",t,!t.mute))
-            status("Native MAIN mute rejected");
-          return true;
-        }
-        if(m4ControlIsOwner()&&m4Verified()&&m4Index(t)>=0){
-          if(!sendM4Control(action,t,!t[action]))
-            status("Native M4 mute/solo rejected");
-          return true;
-        }
-        const key=action==="mute"?"SET_MUTE":"SET_SOLO";
-        intent(key,t,{value:!t[action],enabled:!t[action]});return true;
+      if(action==="mute"||action==="solo"){
+        dispatchControlCommand(action==="mute"?"SET_MUTE":"SET_SOLO",
+          t,{value:!t[action],enabled:!t[action]});
+        return true;
       }
       status("NATIVE: "+action+" is not an accepted ChannelId operation");return true;
     },
@@ -3732,17 +3680,16 @@
     canWireTap(uiEdgeId,uiSourceId){
       if(logicalView){
         const from=nativeByUiId.get(uiSourceId),edgeId=wireByUiId.get(uiEdgeId);
-        const matching=logicalView.graph.edges.filter(e=>e.enabled &&
-          e.from===from && e.edgeId===edgeId && e.primaryOutput===false);
-        const edge=matching.length===1?matching[0]:null;
-        // Offline PRE/POST is a saved document edit, never PCM admission.
-        return !!edge&&!logicalView.readOnly&&!pendingLogical&&
-          logicalView.graph.capabilities.supportedOps.includes("SET_SEND_TAP")&&
-          ["PRE_FADER","POST_FADER"].includes(edge.tapStage||edge.tap);
+        const edge=wireVM.parallelEdge(logicalView.graph,from,edgeId);
+        // Offline PRE/POST edits only .smix, never PCM admission.
+        return wireVM.canEditTap(edge,{logical:true,
+          readOnly:logicalView.readOnly,pending:!!pendingLogical,
+          supported:logicalView.graph.capabilities.supportedOps.includes("SET_SEND_TAP")});
       }
-      const edge=admittedParallelWire(uiSourceId,uiEdgeId,"APPLY_WIRE_TRANSACTION");
-      return !!edge&&["PRE_FADER","POST_FADER"].includes(edge.tap)&&
-        !controller?.state()?.pending;
+      return wireVM.nativeTapPlan(controller?.state()?.current,{
+        sourceId:nativeByUiId.get(uiSourceId),edgeId:wireByUiId.get(uiEdgeId),
+        projected:flags.acceptedGraphConnected,
+        pending:!!controller?.state()?.pending}).kind==="AVAILABLE";
     },
     consumeWire(ops,retries=0) {
       if (!connected)return false;
@@ -3762,11 +3709,8 @@
           // The same WIRE inspector gesture must remain available before
           // binding a physical interface. Exact native EdgeId/readback,
           // not a reference-renderer-only toggle or a fabricated PCM ACK.
-          const tap=op.mode==="split"?"PRE_FADER":
-            op.mode==="send"?"POST_FADER":null;
-          const matching=logicalView.graph.edges.filter(e=>e.enabled &&
-            e.from===from && e.edgeId===edgeId && e.primaryOutput===false);
-          const edge=matching.length===1?matching[0]:null;
+          const tap=wireVM.gestureTap(op.mode);
+          const edge=wireVM.parallelEdge(logicalView.graph,from,edgeId);
           if(!tap||!edge||!nativeHooks.canWireTap(op.edgeId,op.sourceId)){
             status("Offline PRE/POST unavailable · select a saved parallel SEND");
             return true;
@@ -3797,8 +3741,7 @@
       if(Array.isArray(ops)&&ops.length===1&&ops[0].type==="MODE"){
         const op=ops[0];
         const source=nativeByUiId.get(op.sourceId),edgeId=wireByUiId.get(op.edgeId);
-        const tap=op.mode==="split"?"PRE_FADER":
-          op.mode==="send"?"POST_FADER":null;
+        const tap=wireVM.gestureTap(op.mode);
         requestNativeTap(source,edgeId,tap);
         return true;
       }
@@ -3813,61 +3756,34 @@
         if(!requestWireGain(ops[0]))status("WIRE gain unavailable · accepted parallel send required");
         return true;
       }
-      // Sends-on-faders creates a new send plus its initial gain atomically;
-      // its draft UI EdgeId must never be sent as an accepted native EdgeId.
-      if(Array.isArray(ops)&&ops.length===2&&ops[0].type==="CONNECT"&&
-         ops[1].type==="GAIN"&&ops[0].sourceId===ops[1].sourceId&&
-         !wireByUiId.has(ops[1].edgeId)&&Number.isFinite(ops[1].levelDb))
-        ops=[{...ops[0],mode:"send",levelDb:ops[1].levelDb}];
+      // Sends-on-faders' draft EdgeId is not a native identifier.
+      ops=wireVM.compactSendGesture(ops,wireByUiId);
       const current=controller?.state().current;
-      // P0 first-sound WIRE to MAIN is the very same native M4 PRIMARY_OUT
-      // transaction as the ordinary OUT drop-down. Do not reject a real
-      // physical CH→MAIN connection merely because P1 dynamic BUS/WIRE
-      // transaction capability has not been admitted yet.
+      // The WIRE PRIMARY MAIN cable and the ordinary OUT selector share
+      // exactly one native patch path. Pure policy resolves ChannelId EdgeId
+      // vs M4 ordinal from accepted readback; stale primary cable projection
+      // cannot turn into a generic REMOVE of another parallel SEND.
       if(Array.isArray(ops)&&ops.length===1){
         const op=ops[0];
         const t=scope?.tracks?.find(x=>x.id===op.sourceId);
-        const sourceId=t?nativeByUiId.get(t.id):null;
-        // Ordinary MAIN jack is a primary ROUTE_ONLY. An explicitly selected
-        // send mode must pass through native CONNECT instead, preserving the
-        // old primary BUS (or the absence of a primary in SOURCE ONLY).
-        const isMainConnect=(op.type==="ROUTE_ONLY" ||
-          (op.type==="CONNECT" && (!op.mode ||
-            op.mode==="postFader" || op.mode==="routeOnly"))) &&
-          op.destId===scope?.master?.id;
-        // WIRE gesture carries a UI edge id. wireByUiId is UI→native;
-        // uiByWireId is the inverse. The old inverse lookup always returned
-        // undefined, so unplugging an existing MAIN wire was impossible.
-        const edgeId=wireByUiId.get(op.edgeId);
-        const lane=m4Index(t);
-        const graphMainRemove=op.type==="REMOVE" && sourceId &&
-          current?.admitted===true &&
-          current.graph.edges.some(e=>e.enabled&&e.edgeId===edgeId&&
-            e.from===sourceId&&e.to===current.graph.mainChannelId&&
-            e.primaryOutput===true);
-        // The approved M4 renderer remains the accepted First Sound owner
-        // if ChannelId projection was not admitted. Verify BOTH an exact UI
-        // PRIMARY edge and the producer's real MAIN readback before removing.
-        // When native ChannelId *is* admitted, never replace its edge-token
-        // guard with an M4 label. No invented browser-only PCM or routing.
-        const m4MainRemove=op.type==="REMOVE" && current?.admitted!==true &&
-          lane>=0 && m4Verified() &&
-          legacy()?.channels?.[lane]?.main===true &&
-          Array.isArray(scope?.wireEdges) &&
-          scope.wireEdges.some(e=>e.enabled&&e.kind==="primary"&&
-            e.id===op.edgeId&&e.sourceId===op.sourceId&&
-            e.destId===scope?.master?.id);
-        const isMainRemove=graphMainRemove||m4MainRemove;
-        // Admitted new ChannelIds after CH10 have no M4 lane ordinal.
-        if(t&&(lane>=0||(current?.admitted===true&&sourceId))&&
-           (isMainConnect||isMainRemove)){
-          const target=isMainRemove?"NONE":"MAIN";
-          if(requestPrimaryOut(t,target))
+        const plan=wireVM.primaryMainGesturePlan(current,{
+          op,mainUiId:scope?.master?.id,
+          sourceId:t?nativeByUiId.get(t.id):null,
+          edgeId:wireByUiId.get(op.edgeId),uiEdges:scope?.wireEdges,
+          m4Verified:m4Verified(),m4Channel:m4Index(t)
+        });
+        if(plan.kind==="BLOCK"){
+          status("WIRE MAIN unchanged · stale PRIMARY cable or native authority");
+          controller?.subscribe();
+          return true;
+        }
+        if(plan.kind==="ROUTE"){
+          if(t&&requestPrimaryOut(t,plan.target))
             status(t.name+" WIRE → "+
-              (target==="MAIN"?"MAIN":"SOURCE ONLY")+
+              (plan.target==="MAIN"?"MAIN":"SOURCE ONLY")+
               " · native ACK/readback required");
           else nativeToast("WIRE MAIN unavailable · verify channel and routing state");
-          return true; // original Pages reducer never simulates native PCM
+          return true; // never simulate native PCM in the Pages reducer
         }
       }
       if (!flags.acceptedGraphConnected || !current?.admitted ||
@@ -3877,38 +3793,21 @@
         nativeToast(reason);
         return true;
       }
-      const changes=[];
-      for (const op of ops) {
-        const sourceId=nativeByUiId.get(op.sourceId);
-        const destId=op.destId===undefined?undefined:nativeByUiId.get(op.destId);
-        const edgeId=op.edgeId===undefined?undefined:wireByUiId.get(op.edgeId);
-        if (!sourceId || (op.destId!==undefined&&!destId) ||
-            (op.edgeId!==undefined&&!edgeId)) {
-          status("NATIVE: WIRE mapped identity missing; no mutation");return true;
-        }
-        // ENGINE #266's real PCM decoder consumes op/from/to/edgeId,
-        // NOT the Pages reducer's type/sourceId/destId. Never feed it
-        // an unrecognized demo command or an unbound EdgeId.
-        if (!["CONNECT","REMOVE","RETARGET","ROUTE_ONLY"].includes(op.type) ||
-            (op.mode && !["send","postFader","routeOnly"].includes(op.mode))) {
-          status("NATIVE: WIRE "+op.type+" needs real engine capability; unchanged");
-          return true;
-        }
-        const change={op:op.type,from:sourceId};
-        if (destId)change.to=destId;
-        if (edgeId)change.edgeId=edgeId;
-        if (op.type==="CONNECT" || op.type==="ROUTE_ONLY") {
-          change.tap="POST_FADER";
-          change.gainLinear=op.levelDb===undefined?1:
-            Math.pow(10,Math.max(-60,Math.min(6,Number(op.levelDb)))/20);
-        }
-        changes.push(change);
-      }
-      const source=changes[0]?.from;
-      if (!source || changes.some(change=>change.from!==source)) {
-        status("NATIVE: multi-source transaction requires native batch admission");
+      // Pure preflight converts exact UI tokens to native ChannelId/EdgeId.
+      // No DSP or UI mutation until the ORIGINAL controller accepts intent.
+      const translation=wireVM.nativeTransaction(ops,nativeByUiId,wireByUiId);
+      if(!translation.ok){
+        if(translation.error==="MAPPED_IDENTITY_MISSING")
+          status("NATIVE: WIRE mapped identity missing; no mutation");
+        else if(translation.error==="MULTI_SOURCE")
+          status("NATIVE: multi-source transaction requires native batch admission");
+        else if(translation.error==="INVALID_WIRE_GAIN")
+          status("NATIVE: WIRE invalid gain; accepted routing unchanged");
+        else status("NATIVE: WIRE "+(translation.operation||"gesture")+
+          " needs real engine capability; unchanged");
         return true;
       }
+      const {source,changes}=translation;
       const accepted=controller.intent("APPLY_WIRE_TRANSACTION",source,{changes});
       if(accepted.ok&&ops.length===1&&ops[0].type==="CONNECT")
         activeWireAttempt={ops:ops.map(x=>({...x})),epoch:current.device.epoch,retries};
@@ -3945,20 +3844,18 @@
       const channel=m4Index(track),slot=Number(target?.slot);
       const accepted=controller?.state().current;
       const nativeId=nativeIdFor(track);
-      const nativeCh=accepted?.graph?.channels?.find(ch=>ch.id===nativeId);
-      if(accepted?.admitted && nativeCh) {
-        if(!plugin || !["INPUT","GROUP","FX_RETURN","MAIN"].includes(nativeCh.role) ||
-           !accepted.graph.capabilities.supportedOps.includes("LOAD_INSERT") ||
-           !Number.isInteger(slot)||slot<0||slot>=8 ||
-           !Array.isArray(nativeCh.inserts)||nativeCh.inserts.length!==slot){
+      if(accepted?.admitted || mixerSession()?.authority==="CHANNEL_ID") {
+        const plan=fxRackVM.nativeInsertPlan(accepted,{
+          channelId:nativeId,slot,catalogId:plugin?.id,
+          pending:!!pendingFxInsert});
+        if(plan.kind!=="READY"){
           status("VST3 unavailable · select an empty native ChannelId FX slot");
           return true;
         }
-        const request=controller.intent("LOAD_INSERT",nativeId,
-                                        {catalogId:id,slot});
+        const request=controller.intent("LOAD_INSERT",plan.channelId,plan.payload);
         if(!request.ok){status("VST3 rejected · "+request.error);return true;}
         pendingFxInsert={authority:"CHANNEL_ID",requestId:request.requestId,
-                         id,channelId:nativeId,slot};
+                         id,channelId:plan.channelId,slot,epoch:accepted.device.epoch};
         status(track.name+" · preparing VST3 without stopping MAIN");
         window.setTimeout(()=>{
           if(pendingFxInsert?.requestId!==request.requestId)return;
@@ -4003,10 +3900,7 @@
             status("SOF unity reset unavailable · select one admitted SEND");
           return true;
         }
-        if((m4ControlIsOwner()&&m4Verified()) ||
-           (t?.kind==="master"&&(m4Verified()||nativeMasterReady())))
-          sendM4Control(t?.kind==="master"?"masterGain":"faderDb",t,0);
-        else intent("SET_FADER",t,{valueDb:0});
+        dispatchControlCommand("SET_FADER",t,{valueDb:0});
       }
       else if(event.target.closest?.(".gain-dial")){
         if(t?.kind!=="audio"||t.nativeGainAvailable!==true)
@@ -4014,10 +3908,8 @@
         else intent("SET_INPUT_GAIN",t,{valueDb:0});
         return true;
       }
-      else if(event.target.classList.contains("center-pan")){
-        if(m4ControlIsOwner()&&m4Verified())sendM4Control("pan",t,0);
-        else intent("SET_PAN",t,{value:0});
-      }
+      else if(event.target.classList.contains("center-pan"))
+        dispatchControlCommand("SET_PAN",t,{value:0});
       else if(event.target.closest?.(".footer-label,.strip-identity-top"))
         openNativeIdentity(t,event.target);
       return true;

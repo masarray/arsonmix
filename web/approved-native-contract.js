@@ -18,6 +18,22 @@
   const fields = (item, names) => object(item) && names.every(key => Object.prototype.hasOwnProperty.call(item, key));
   const isBool = x => typeof x === "boolean";
   const unique = values => new Set(values).size === values.length;
+  // G-MV20: ONE canonical installed-hardware fingerprint for both the v6
+  // ACK/readback controller and GUI lifecycle ViewModel. Pin masks are SETS:
+  // enumeration order and MONITOR/outputArmed are deliberately excluded.
+  // No driver name, PCM state, mutable pin array or graph revision is copied.
+  function nativeHardwareConfiguration(d) {
+    if(!object(d)||!Number.isFinite(d.sampleRate)||d.sampleRate<0||
+       !Number.isSafeInteger(d.bufferFrames)||d.bufferFrames<0||
+       !Array.isArray(d.enabledInputs)||!Array.isArray(d.enabledOutputs)||
+       ![d.enabledInputs,d.enabledOutputs].every(pins=>
+         pins.length<=256&&pins.every(pin=>
+           Number.isInteger(pin)&&pin>=0&&pin<=255)&&unique(pins)))
+      return null;
+    const canonical=pins=>pins.slice().sort((a,b)=>a-b);
+    return JSON.stringify([d.sampleRate,d.bufferFrames,
+      canonical(d.enabledInputs),canonical(d.enabledOutputs)]);
+  }
   // Pure native UI presentation policy: no DOM, physical status rewrite,
   // optimistically accepted graph or alternative mixer renderer.
   const validPresentationName=name=>typeof name==="string"&&name.length>0&&name.length<=30&&
@@ -85,6 +101,8 @@
         !Array.isArray(caps.supportedOps) || !caps.supportedOps.every(s => typeof s === "string")) return null;
     const enabled = arr => unique(arr) && arr.every(n => Number.isInteger(n) && n >= 0 && n <= 255);
     if (!enabled(d.enabledInputs) || !enabled(d.enabledOutputs)) return null;
+    const hardwareConfiguration=nativeHardwareConfiguration(d);
+    if(hardwareConfiguration===null)return null;
     // Physical endpoint numbers are safe *port indices*; graph ChannelIds are never numbers.
     const goodEndpoints = (entries,pins,prefix) => entries.every(e =>
       object(e) && Number.isInteger(e.port) && pins.includes(e.port) &&
@@ -171,9 +189,56 @@
     if (raw.productionCallbackLive && !admitted) return null;
     if (caps.callbackOwnsChannelIds && !admitted) return null;
     return { raw, device:d, graph:g, telemetry:t, admitted, retained,
-      productLive:admitted && raw.productionCallbackLive,
+      hardwareConfiguration,productLive:admitted && raw.productionCallbackLive,
       identity: d.epoch + ":" + g.revision + ":" + g.rosterRevision };
   }
+  // MV-3: select exactly one existing native read authority for /preview/.
+  // The reconciler already validated schema-v6, epoch and accepted PCM.
+  // This is a projection of THAT immutable control-thread readback, never
+  // an alternative session, acceptance controller or JS-owned graph.
+  function selectNativeReadModel(next,verifiedM4=false) {
+    const invalid=Object.freeze({kind:"INVALID",view:null});
+    if(!next || next.raw?.schemaVersion!==6 ||
+       next.device!==next.raw.device || next.graph!==next.raw.graph ||
+       !next.device || !next.graph || typeof next.admitted!=="boolean" ||
+       typeof next.retained!=="boolean")return invalid;
+    const session=next.raw.mixerSession,offline=next.raw.logicalMixer;
+    // The physical installed producer (including NEEDS_REMAP) takes
+    // priority over a saved logical .smix, even if stale metadata is present.
+    // Do NOT use outputArmed, GUI labels, or an ACK to invent PCM admission.
+    const offlineEligible=!next.admitted&&!next.retained&&verifiedM4!==true&&
+      session?.authority!=="M4"&&session?.authority!=="CHANNEL_ID"&&
+      offline?.schema==="arsonmix.native.logical-mixer.v1"&&
+      offline.authority==="LOGICAL_ONLY"&&
+      typeof offline.workspaceToken==="string"&&offline.workspaceToken.length>0&&
+      offline.physicalOutputAdmitted===false&&offline.outputArmed===false&&
+      offline.graph?.capabilities?.callbackOwnsChannelIds===false&&
+      decimal(offline.revision)!==null&&offline.revision!=="0"&&
+      offline.revision===offline.graph?.revision&&
+      offline.revision===offline.graph?.rosterRevision&&
+      Array.isArray(offline.graph?.channels)&&Array.isArray(offline.graph?.edges);
+    if(offlineEligible) {
+      // A logical view is a read-only DISPLAY projection of the same native
+      // envelope, not a second accepted mixer or physical output authority.
+      const view={...next,graph:offline.graph,
+        workspaceToken:offline.workspaceToken,
+        identity:"logical:"+offline.workspaceToken+":"+offline.revision,
+        logical:true,readOnly:offline.readOnly===true,
+        admitted:false,retained:false,productLive:false,telemetry:{}};
+      return Object.freeze({kind:"LOGICAL_ONLY",view});
+    }
+    if(!session || session.deviceEpoch!==next.device.epoch)
+      return Object.freeze({kind:"STALE",view:null});
+    if(session.authority==="CHANNEL_ID"&&next.admitted===true&&
+       next.graph.capabilities?.callbackOwnsChannelIds===true)
+      return Object.freeze({kind:"CHANNEL_ID",view:next});
+    if(next.retained===true&&session.authority==="CHANNEL_ID")
+      return Object.freeze({kind:"NEEDS_REMAP",view:next});
+    if(session.authority==="M4"&&verifiedM4===true&&!next.admitted&&!next.retained)
+      return Object.freeze({kind:"M4",view:next});
+    return Object.freeze({kind:"UNADMITTED",view:null});
+  }
+
   // Read-only physical OUTPUTS projection from the authoritative JUCE snapshot.
   // No guessed ports, UI-owned routing, monitor activation or audible claims.
   function physicalOutputOverview(snapshot) {
@@ -574,8 +639,28 @@
               cmp(next.graph.rosterRevision,current.graph.rosterRevision) < 0))) {
           lastError="OLD_NATIVE_REVISION";notify();return false;
         }
-        if (pending && (epochCompare !== 0 || next.retained)) {
-          pending=null;lastError="STALE_DEVICE";
+        // A same-epoch physical pin/format reconfiguration invalidates the
+        // current control lease even before ACK. Otherwise an older pending
+        // v6 edit would suppress the new admitted snapshot indefinitely.
+        // G-MV25: an accepted ChannelId producer can relinquish the PCM
+        // graph to M4/UNADMITTED without a hardware or epoch change. A
+        // no-ACK local gesture must not freeze that newer authoritative
+        // snapshot until its old 8-second timer fires. Fence it at the SAME
+        // schema-v6 owner switch as the physical pin/epoch fence, before
+        // the pending ACK projection gate below. The native graph revision
+        // check above remains monotonic: never resurrect older PCM graphs.
+        const authorityChanged=
+          next.admitted!==current.admitted ||
+          next.raw?.mixerSession?.authority!==
+            current.raw?.mixerSession?.authority;
+        const physicalStale=epochCompare!==0||next.retained||
+          next.hardwareConfiguration!==current.hardwareConfiguration;
+        if (pending && (physicalStale||authorityChanged)) {
+          pending=null;
+          // Preserve existing NEEDS_REMAP/physical-error contracts even if
+          // their PCM authority also changes. Distinguish only a pure
+          // same-device ChannelId → M4/UNADMITTED owner switch.
+          lastError=physicalStale?"STALE_DEVICE":"STALE_NATIVE_AUTHORITY";
         }
       }
       if (pending && !pending.ack) {
@@ -674,6 +759,11 @@
       emit("arMixConsoleIntent",msg);notify();return {ok:true,requestId};
     }
     function onAck(raw) {
+      // G-MV21: the first correlated native ACK owns this request's proof
+      // lease. A duplicate positive, negative or malformed ACK cannot
+      // overwrite its graph revision, demand another subscribe, or reject
+      // a command already waiting for independent installed PCM readback.
+      if (pending?.ack) return false;
       if (!pending || !fields(raw,["requestId","status","deviceEpoch","graphRevision","rosterRevision","errorCode"]) ||
           typeof raw.requestId !== "string" || raw.requestId !== pending.requestId) return false;
       if ([raw.deviceEpoch,raw.graphRevision,raw.rosterRevision].some(x=>decimal(x)===null)) {
@@ -705,5 +795,9 @@
     }
     return Object.freeze({subscribe,onSnapshot,onAck,intent,state,expire});
   }
-  return Object.freeze({decimal,cmp,normalizeSnapshot,readbackProvesIntent,logicalReadbackProves,diagnoseFirstSound,createController,validPresentationName,validPresentationColor,validPresentationIcon,operatorMessage,physicalOutputOverview});
+  return Object.freeze({decimal,cmp,normalizeSnapshot,
+    nativeHardwareConfiguration,selectNativeReadModel,readbackProvesIntent,
+    logicalReadbackProves,diagnoseFirstSound,createController,
+    validPresentationName,validPresentationColor,validPresentationIcon,
+    operatorMessage,physicalOutputOverview});
 });

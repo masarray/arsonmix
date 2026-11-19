@@ -40,14 +40,15 @@ int main()
     armix::device::LiveSecondaryCaptureDevice extra;
     if (extra.ready() || extra.faulted()) std::abort();
     juce::BigInteger pin; pin.setBit(0);
-    if (extra.open({}, {}, pin, 48000., 128, 48000., 128, 1, 1).isEmpty())
+    if (extra.open({}, {}, pin, 48000., 128, 48000., 128, 1, 1, 42).isEmpty())
         std::abort();
     if (extra.ready()) std::abort();
     extra.close();
     extra.close();
     const auto readback = extra.readback();
     if (readback.ready || readback.captureGeneration != 0 ||
-        readback.primaryEpoch != 0 || readback.callbackInputs != 0)
+        readback.primaryEpoch != 0 || readback.deviceLease != 0 ||
+        readback.callbackInputs != 0)
         std::abort();
 #endif
     return 0;

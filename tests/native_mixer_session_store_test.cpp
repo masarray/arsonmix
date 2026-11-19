@@ -5,6 +5,7 @@
 #include <cassert>
 #include <iostream>
 #include "../src/NativeMixerSessionStore.h"
+#include "../src/NativeMixerSessionRecovery.h"
 #include "../src/LiveDryRoutingLab.h"
 #include "../src/NativeMixerSessionFxRestore.h"
 #include "../src/NativeLogicalMixerControl.h"
@@ -13,6 +14,7 @@ using namespace armix::mixer;
 using namespace armix::session;
 using BindingMode=MixerDeviceBindingPolicy::Mode;
 using armix::shows::BinaryState;
+using Recovery=NativeMixerSessionRecovery;
 
 static MixerSessionDocument makeSession() {
     MixerSessionDocument d;
@@ -64,6 +66,55 @@ static MixerSessionDocument makeSession() {
     d.rackBypassed.push_back({1});
     return d;
 }
+
+static void checkRecoveryPlan(const MixerSessionDocument& session) {
+    auto doc=session;
+    Recovery::Context context{BindingMode::exact,Recovery::Source::head,
+        true,false,true,true,false};
+    auto plan=Recovery::plan(doc,context);
+    assert(plan.restoreAllowed && plan.replacePristineStartup && plan.resumeMain);
+    assert(plan.bindingMode==BindingMode::exact);
+
+    doc.binding.playback="ASIO4ALL v2";
+    plan=Recovery::plan(doc,context);
+    assert(plan.bindingMode==BindingMode::verifiedAsioRestart && plan.resumeMain);
+    doc.resumeMain=false;
+    assert(!Recovery::plan(doc,context).resumeMain);
+
+    doc.resumeMain=true;
+    context.source=Recovery::Source::previous;
+    plan=Recovery::plan(doc,context);
+    assert(plan.restoreAllowed && plan.replacePristineStartup && !plan.resumeMain);
+
+    context.source=Recovery::Source::retained;
+    plan=Recovery::plan(doc,context);
+    assert(!plan.restoreAllowed && !plan.replacePristineStartup && !plan.resumeMain);
+    context.nativeAlreadyActive=false;
+    plan=Recovery::plan(doc,context);
+    assert(plan.restoreAllowed && !plan.replacePristineStartup && !plan.resumeMain);
+
+    context.source=Recovery::Source::head;
+    context.nativeAlreadyActive=true;
+    context.pristineStartup=false;
+    plan=Recovery::plan(doc,context);
+    assert(!plan.restoreAllowed && !plan.replacePristineStartup && !plan.resumeMain);
+
+    context.pristineStartup=true;
+    context.startupOnSavedDevice=false;
+    context.bindingMode=BindingMode::verifiedDeviceApply;
+    assert(!Recovery::plan(doc,context).restoreAllowed);
+    context.recoveryPending=true;
+    plan=Recovery::plan(doc,context);
+    assert(plan.restoreAllowed && plan.replacePristineStartup && !plan.resumeMain);
+
+    context.recoveryPending=false;
+    context.bindingMode=BindingMode::exact;
+    context.firstBinding=true;
+    context.startupOnSavedDevice=true;
+    plan=Recovery::plan(doc,context);
+    assert(plan.restoreAllowed && plan.replacePristineStartup && !plan.resumeMain);
+}
+
 class FixtureDevice final : public juce::AudioIODevice {
 public:
     FixtureDevice():AudioIODevice("Verified WASAPI fixture","Windows Audio") {
@@ -1420,6 +1471,7 @@ int main(){
     warmVst3Discovery();
     nativeDeviceRecovery();
     auto d=makeSession();
+    checkRecoveryPlan(d);
     verifyExternalOutputPortableIntent();
     verifyIndependentAsioExternalRestoreProvenance();
     const auto before=Codec::encode(d);
@@ -1688,6 +1740,16 @@ int main(){
     const auto studio=base.getChildFile("Studio");
     assert(studio.createDirectory().wasOk());
     NativeMixerSessionStore store(studio);
+    MixerSessionDocument loaded;
+    std::vector<BinaryState> readback;
+    int retainedReads=0;
+    const auto failedRetainedRead=[&](MixerSessionDocument&,std::vector<BinaryState>&) {
+        ++retainedReads;
+        return juce::String("Retained graph unavailable");
+    };
+    auto checkpoint=Recovery::read(store,false,loaded,readback,failedRetainedRead);
+    assert(checkpoint.source==Recovery::Source::missing && checkpoint.error.isNotEmpty());
+    assert(retainedReads==0);
     BinaryState binary;
     const char bytes[]={'V','S','T','3','-','S','T','A','T','E',0,1,2};
     binary.bytes.append(bytes,sizeof(bytes));
@@ -1722,9 +1784,8 @@ int main(){
         ->setProperty("catalogId","OtherVendor|99|0");
     assert(!Codec::decode(juce::JSON::toString(damaged,false),rejected));
     assert(store.commit(d,{binary}).isEmpty());
-    MixerSessionDocument loaded;
-    std::vector<BinaryState> readback;
-    assert(store.load(loaded,readback).isEmpty());
+    checkpoint=Recovery::read(store,false,loaded,readback,failedRetainedRead);
+    assert(checkpoint.source==Recovery::Source::head && checkpoint.error.isEmpty());
     assert(readback.size()==1&&readback[0].bytes==binary.bytes);
     // Legacy JSON lacks a preference. Both explicit settings survive checkpoint
     // round trips, and portable files cannot request MAIN authorization.
@@ -1753,6 +1814,12 @@ int main(){
     assert(store.load(loaded,readback).isEmpty());
     assert(loaded.masterGain==.35f);
     assert(store.recoverPrevious().isNotEmpty()); // NEVER roll back valid HEAD
+    auto rejectedRecovery=makeSession();
+    rejectedRecovery.masterGain=.12f;
+    std::vector<BinaryState> rejectedStates{binary};
+    assert(store.recoverPrevious(rejectedRecovery,rejectedStates).isNotEmpty());
+    assert(rejectedRecovery.masterGain==.12f &&
+           rejectedStates.size()==1 && rejectedStates[0].bytes==binary.bytes);
     const auto head=studio.getChildFile("MixerSession").getChildFile("HEAD");
     const auto secondId=head.loadFileAsString().trim();
     const auto vendor=studio.getChildFile("MixerSession").getChildFile("versions")
@@ -1761,11 +1828,26 @@ int main(){
     assert(vendor.appendText("CORRUPTED"));
     assert(store.load(loaded,readback).isNotEmpty());
     assert(loaded.masterGain==.35f); // rejection did not replace output
-    assert(store.recoverPrevious().isEmpty());
-    assert(store.load(loaded,readback).isEmpty());
+    checkpoint=Recovery::read(store,true,loaded,readback,failedRetainedRead);
+    assert(checkpoint.source==Recovery::Source::retained &&
+           checkpoint.error=="Retained graph unavailable");
+    assert(retainedReads==1 && head.loadFileAsString().trim()==secondId);
+    assert(loaded.masterGain==.35f);
+    checkpoint=Recovery::read(store,false,loaded,readback,failedRetainedRead);
+    assert(checkpoint.source==Recovery::Source::previous && checkpoint.error.isEmpty());
+    assert(retainedReads==1 && head.loadFileAsString().trim()==firstId);
     assert(loaded.masterGain==.7f);
     assert(readback[0].bytes==binary.bytes);
     assert(!store.recoverPrevious().isEmpty());
+    // A broken PREVIOUS can neither publish HEAD nor replace caller state.
+    const auto oldVendor=studio.getChildFile("MixerSession").getChildFile("versions")
+        .getChildFile(firstId).getChildFile("blobs").getChildFile(binary.sha256+".bin");
+    assert(oldVendor.appendText("CORRUPTED"));
+    checkpoint=Recovery::read(store,false,rejectedRecovery,rejectedStates,failedRetainedRead);
+    assert(checkpoint.source==Recovery::Source::head && checkpoint.error.isNotEmpty());
+    assert(rejectedRecovery.masterGain==.12f &&
+           rejectedStates.size()==1 && rejectedStates[0].bytes==binary.bytes);
+    assert(head.loadFileAsString().trim()==firstId);
     assert(base.deleteRecursively());
     std::cout<<"PASS: dynamic ChannelId/EdgeId graph, persistent vendor blobs and"
                 " explicit verified HEAD recovery\n";

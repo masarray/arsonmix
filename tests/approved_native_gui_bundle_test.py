@@ -65,7 +65,25 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             self.assertLess(native.index('assets/approved-native-contract.js'),
                             native.index('assets/approved-device-view-model.js'))
             self.assertLess(native.index('assets/approved-device-view-model.js'),
+                            native.index('assets/approved-channel-strip-view-model.js'))
+            self.assertLess(native.index('assets/approved-channel-strip-view-model.js'),
+                            native.index('assets/approved-fx-rack-view-model.js'))
+            self.assertLess(native.index('assets/approved-fx-rack-view-model.js'),
+                            native.index('assets/approved-wire-view-model.js'))
+            self.assertLess(native.index('assets/approved-wire-view-model.js'),
                             native.index('assets/approved-native-bridge.js'))
+            self.assertNotIn('assets/approved-channel-strip-view-model.js', approved)
+            self.assertNotIn('assets/approved-fx-rack-view-model.js', approved)
+            self.assertNotIn('assets/approved-wire-view-model.js', approved)
+            self.assertEqual(
+                (out / 'assets/approved-channel-strip-view-model.js').read_bytes(),
+                (ROOT / 'web/approved-channel-strip-view-model.js').read_bytes())
+            self.assertEqual(
+                (out / 'assets/approved-fx-rack-view-model.js').read_bytes(),
+                (ROOT / 'web/approved-fx-rack-view-model.js').read_bytes())
+            self.assertEqual(
+                (out / 'assets/approved-wire-view-model.js').read_bytes(),
+                (ROOT / 'web/approved-wire-view-model.js').read_bytes())
             vm_source = (ROOT / "web/approved-device-view-model.js").read_bytes()
             self.assertEqual((out / "assets/approved-device-view-model.js").read_bytes(),
                              vm_source)
@@ -91,7 +109,12 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             self.assertIn('data-action="slotPower"', context_menu)
             self.assertIn('data-action="fxOn"', context_menu)
             native_host = (ROOT / "src/Main.cpp").read_text("utf-8")
-            self.assertIn("HOTKEY_FX_INSTANCE_NOT_ADMITTED", native_host)
+            hotkey_policy = (ROOT / "src/NativeHotkeyCommandPlan.h").read_text("utf-8")
+            self.assertIn("HOTKEY_FX_INSTANCE_NOT_ADMITTED", hotkey_policy)
+            self.assertIn("NativeHotkeyCommandPlan::planRegistration", native_host)
+            self.assertIn("registrationError(supplied,accepted)", hotkey_policy)
+            self.assertIn("NativeHotkeyCommandPlan::dispatch", native_host)
+            self.assertIn("exactFxSlot", hotkey_policy)
             self.assertIn("Browse Parameters…", context_menu)
             self.assertIn("Last Touched Hotkey…", context_menu)
             self.assertIn("arMixFxParameterHotkeyInspect", context_menu)
@@ -112,7 +135,8 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             self.assertIn("Orbit…", context_menu)
             self.assertIn('withEventListener ("arMixHotkeyIntent"', native_host)
             self.assertIn("fireNativeHotkey", native_host)
-            self.assertIn("handleApprovedNativeControl(request)", native_host)
+            self.assertIn("handleApprovedNativeControl(plan.request)", native_host)
+            self.assertIn("onAction(plan.request)", native_host)
             self.assertIn("WM_HOTKEY", (ROOT / "src/NativeHotkeyRegistry.h").read_text("utf-8"))
             self.assertNotIn("approved-native-context-menu.js", approved)
             self.assertIn("arMixGuiReady", (out / "assets/approved-native-bridge.js").read_text("utf-8"))
