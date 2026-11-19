@@ -84,10 +84,17 @@
   }
   // ACK alone is not installed PCM proof. Correlate channel, insert lease,
   // physical device epoch and subsequent accepted readback.
-  function nativePowerSettlement(pending,snapshot) {
+  function nativePowerSettlement(pending,snapshot,hardwareConfiguration) {
     if(!pending)return "NONE";
     if(pending.epoch!==undefined &&
        snapshot?.device?.epoch!==pending.epoch)return "STALE";
+    // A same-epoch hardware remap or changed ChannelId roster retires this
+    // gesture before ACK or even a matching bypass value may be accepted.
+    if(!physicalFxHardwareMatches(pending,hardwareConfiguration)||
+       (Object.prototype.hasOwnProperty.call(pending,"hardwareConfiguration")&&
+        (!nativePhysicalFxReady(snapshot,hardwareConfiguration)||
+         snapshot.graph.rosterRevision!==pending.rosterRevision)))
+      return "STALE";
     if(pending.acked!==true)return "WAIT";
     const channels=snapshot?.graph?.channels;
     if(!Array.isArray(channels))return "WAIT";
@@ -139,7 +146,7 @@
     return host.hardwareConfiguration===null?{}:
       {hardwareConfiguration:host.hardwareConfiguration};
   }
-  function m4FxHardwareMatches(pending,hardwareConfiguration){
+  function physicalFxHardwareMatches(pending,hardwareConfiguration){
     return !Object.prototype.hasOwnProperty.call(pending,"hardwareConfiguration")||
       (typeof hardwareConfiguration==="string"&&
        pending.hardwareConfiguration===hardwareConfiguration);
@@ -193,7 +200,7 @@
        s.deviceEpoch!==pending.epoch||
        s.routeRevision!==pending.revision||
        m.routingRevision!==pending.revision||
-       !m4FxHardwareMatches(pending,hardwareConfiguration)||
+       !physicalFxHardwareMatches(pending,hardwareConfiguration)||
        !Number.isInteger(pending.channel)||
        pending.channel<0||pending.channel>=10||
        !Array.isArray(s.channels)||s.channels.length!==10)
@@ -264,7 +271,7 @@
        s.deviceEpoch!==pending.epoch||
        s.routeRevision!==m.routingRevision||
        previous===null||revision===null||revision<previous||
-       !m4FxHardwareMatches(pending,hardwareConfiguration)||
+       !physicalFxHardwareMatches(pending,hardwareConfiguration)||
        !Number.isInteger(pending.channel)||pending.channel<0||pending.channel>=10||
        !Number.isInteger(pending.slot)||pending.slot<0||pending.slot>=8)
       return {kind:"STALE"};
@@ -351,13 +358,31 @@
       deviceEpoch:epoch,revision};
   }
 
-  function nativeInsertPlan(snapshot,{channelId:id,slot,catalogId,pending=false}={}) {
+  // G-MV34: one physically admitted ChannelId FX owner for bypass/insert.
+  // The bridge supplies the canonical existing native device fingerprint.
+  // Historical pure/partial fixtures without the optional fingerprint stay
+  // valid; a real physical request with a missing fingerprint fails closed.
+  function nativePhysicalFxReady(snapshot,hardwareConfiguration){
+    return typeof hardwareConfiguration==="string"&&
+      hardwareConfiguration.length>0&&
+      snapshot?.admitted===true&&snapshot?.retained!==true&&
+      snapshot?.raw?.mixerSession?.authority==="CHANNEL_ID"&&
+      snapshot.raw.mixerSession.deviceEpoch===snapshot.device?.epoch&&
+      snapshot?.graph?.capabilities?.callbackOwnsChannelIds===true&&
+      channelId(snapshot.graph.revision)&&
+      channelId(snapshot.graph.rosterRevision);
+  }
+  function nativeInsertPlan(snapshot,{channelId:id,slot,catalogId,
+    pending=false,hardwareConfiguration}={}) {
     const graph=snapshot?.graph;
     if(pending||snapshot?.admitted!==true||snapshot?.retained===true||
        !channelId(id)||typeof catalogId!=="string"||!catalogId||
        !Number.isInteger(slot)||slot<0||slot>=8||
        !graph?.capabilities?.supportedOps?.includes("LOAD_INSERT")||
-       !rosterUnique(graph))return {kind:"UNAVAILABLE"};
+       !rosterUnique(graph)||
+       (hardwareConfiguration!==undefined&&
+        !nativePhysicalFxReady(snapshot,hardwareConfiguration)))
+      return {kind:"UNAVAILABLE"};
     const matches=graph.channels.filter(ch=>ch.id===id);
     if(matches.length!==1||!VALID_ROLES.has(matches[0].role)||
        matches[0].inserts.length!==slot)return {kind:"UNAVAILABLE"};
@@ -397,9 +422,14 @@
   }
   // createController is the ONLY source of matched ACK + independent
   // readback. We additionally check exact editor lease before navigation.
-  function nativeInsertSettlement(pending,snapshot,confirmed){
+  function nativeInsertSettlement(pending,snapshot,confirmed,
+                                   hardwareConfiguration){
     if(!pending||pending.authority!=="CHANNEL_ID")return {kind:"NONE"};
-    if(snapshot?.device?.epoch!==pending.epoch)return {kind:"STALE"};
+    if(snapshot?.device?.epoch!==pending.epoch||
+       !physicalFxHardwareMatches(pending,hardwareConfiguration)||
+       (Object.prototype.hasOwnProperty.call(pending,"hardwareConfiguration")&&
+        !nativePhysicalFxReady(snapshot,hardwareConfiguration)))
+      return {kind:"STALE"};
     if(!confirmed||confirmed.operation!=="LOAD_INSERT"||
        confirmed.requestId!==pending.requestId)return {kind:"WAIT"};
     if(snapshot?.admitted!==true||snapshot.retained===true||
@@ -415,10 +445,13 @@
     return {kind:"CONFIRMED",channelId:pending.channelId,
       slot:pending.slot,catalogId:fx.catalogId,instanceId:fx.id,name:fx.name};
   }
-  function nativePowerPlan(snapshot,{channelId:id,action,slot,pending=false}={}){
+  function nativePowerPlan(snapshot,{channelId:id,action,slot,
+    pending=false,hardwareConfiguration}={}){
     const graph=snapshot?.graph;
     if(pending||snapshot?.admitted!==true||snapshot?.retained===true||
-       !channelId(id)||!Array.isArray(graph?.channels)||!rosterUnique(graph))
+       !channelId(id)||!Array.isArray(graph?.channels)||!rosterUnique(graph)||
+       (hardwareConfiguration!==undefined&&
+        !nativePhysicalFxReady(snapshot,hardwareConfiguration)))
       return {kind:"UNAVAILABLE"};
     const matches=graph.channels.filter(ch=>ch.id===id);
     if(matches.length!==1)return {kind:"UNAVAILABLE"};
@@ -433,13 +466,16 @@
     return {kind:"READY",action:rack?"routingNativeFxRackBypass":
       "routingNativeFxInsertBypass",
       pending:{channelId:id,kind:rack?"rack":"insert",
-        insertId:insert?.id,bypassed,epoch:snapshot.device?.epoch,acked:false},
+        insertId:insert?.id,bypassed,epoch:snapshot.device?.epoch,acked:false,
+        ...(hardwareConfiguration===undefined?{}:{
+          hardwareConfiguration,rosterRevision:graph.rosterRevision})},
       payload:{channelId:id,deviceEpoch:snapshot.device?.epoch,
         revision:graph.revision,value:bypassed,
         ...(rack?{}:{slot,insertId:insert.id})}};
   }
   function nativePowerAckResult(pending,ack){
-    if(!pending||!ack||ack.requestId!==pending.requestId)return "IGNORE";
+    if(!pending||!ack||ack.requestId!==pending.requestId||
+       pending.acked===true)return "IGNORE";
     if(ack.ok!==true||ack.channelId!==pending.channelId||
        ack.bypassed!==pending.bypassed||
        (ack.insertId!==undefined&&
@@ -456,19 +492,25 @@
     if(typeof value!=="string"||!/^[1-9][0-9]*$/.test(value))return false;
     try{return BigInt(value)<=18446744073709551615n;}catch{return false;}
   }
-  function globalPowerContext(snapshot,verifiedM4=false,offline=false){
+  function globalPowerContext(snapshot,verifiedM4=false,offline=false,
+                              hardwareConfiguration){
     const session=snapshot?.raw?.mixerSession,device=snapshot?.device;
     if(offline||snapshot?.retained===true||!positiveId(device?.epoch)||
-       session?.deviceEpoch!==device.epoch)return null;
+       session?.deviceEpoch!==device.epoch||
+       (hardwareConfiguration!==undefined&&
+        (typeof hardwareConfiguration!=="string"||!hardwareConfiguration)))
+      return null;
+    const physical=hardwareConfiguration===undefined?{}:{hardwareConfiguration};
     if(snapshot.admitted===true&&session.authority==="CHANNEL_ID"&&
        snapshot.graph?.capabilities?.callbackOwnsChannelIds===true&&
        positiveId(snapshot.graph.revision))
       return {authority:"CHANNEL_ID",epoch:device.epoch,
-        revision:snapshot.graph.revision};
+        revision:snapshot.graph.revision,...physical};
     if(snapshot.admitted===false&&verifiedM4===true&&
        session.authority==="M4"&&positiveId(session.routeRevision)&&
        session.routeRevision===snapshot.raw?.legacyM4?.routingRevision)
-      return {authority:"M4",epoch:device.epoch,revision:session.routeRevision};
+      return {authority:"M4",epoch:device.epoch,revision:session.routeRevision,
+        ...physical};
     return null;
   }
   function globalPowerPlan(snapshot,context,pending=false){
@@ -479,14 +521,17 @@
       payload:{deviceEpoch:context.epoch,revision:context.revision,value:!actual}};
   }
   function globalPowerAckResult(pending,ack){
-    if(!pending||!ack||pending.requestId!==ack.requestId)return "IGNORE";
+    if(!pending||!ack||pending.requestId!==ack.requestId||
+       pending.acked===true)return "IGNORE";
     return ack.ok===true&&ack.bypassed===pending.bypassed?"ACKED":"REJECTED";
   }
   function globalPowerSettlement(pending,snapshot,context){
     if(!pending)return "NONE";
     if(!context||pending.epoch!==context.epoch||
        pending.revision!==context.revision||
-       pending.authority!==context.authority)return "STALE";
+       pending.authority!==context.authority||
+       !physicalFxHardwareMatches(pending,context.hardwareConfiguration))
+      return "STALE";
     if(pending.acked!==true)return "WAIT";
     return typeof snapshot?.raw?.globalFxBypassed==="boolean"&&
       snapshot.raw.globalFxBypassed===pending.bypassed?"CONFIRMED":"WAIT";
@@ -509,7 +554,7 @@
        session.deviceEpoch!==pending.epoch||
        session.routeRevision!==pending.revision||
        m?.routingRevision!==pending.revision||
-       !m4FxHardwareMatches(pending,hardwareConfiguration))return "STALE";
+       !physicalFxHardwareMatches(pending,hardwareConfiguration))return "STALE";
     const slots=m.fxInstances?.[pending.channel];
     const actual=Array.isArray(slots)?slots[pending.slot]:null;
     if(actual?.instanceId!==pending.token)return "STALE";
