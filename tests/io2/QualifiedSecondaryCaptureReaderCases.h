@@ -2,6 +2,7 @@
 #pragma once
 #include "../../engine/device/QualifiedSecondaryCaptureReader.h"
 #include "../../engine/device/QualifiedCaptureHostMode.h"
+#include "../../engine/device/QualifiedCaptureAdmission.h"
 #include "../../engine/device/QualifiedInputGraphBridge.h"
 #include "../../engine/core/DynamicNativeSessionPublisher.h"
 #include <array>
@@ -79,6 +80,28 @@ inline void run() {
     const d::SecondaryCaptureClockStream::Format format{
         44100.,48000.,frames,frames,2,captureGeneration,epoch,2002};
     check(clock.prepare(format)&&clock.activate(),"independent 44.1k B into 48k A ASRC ready");
+    using Admission=d::QualifiedCaptureAdmission;
+    check(Admission::verify(plan,clock,epoch,1,frames)==Admission::Fault::none,
+          "exact two-device qualified CONTROL admission");
+    check(Admission::verify(plan,clock,epoch+1,1,frames)==
+          Admission::Fault::stalePrimary,
+          "stale A output epoch cannot publish qualified PCM");
+    check(Admission::verify(plan,clock,epoch,2,frames)==
+          Admission::Fault::wrongPrimaryPins,
+          "virtual A+B input count must not replace real A callback count");
+    check(Admission::verify(plan,clock,epoch,1,0)==
+          Admission::Fault::unsafeFrames,
+          "no zero or unsafe native callback scratch capacity");
+    auto wrongDevice=devices;
+    wrongDevice[1].deviceLease=3003;
+    d::MultiDeviceInputPlan wrongLeasePlan;
+    check(d::MultiDeviceInputPlan::prepare(epoch,wrongDevice,bindings,
+          roster.channels(),wrongLeasePlan,err),
+          "negative independent B lease candidate prepared");
+    check(Admission::verify(wrongLeasePlan,clock,epoch,1,frames)==
+          Admission::Fault::wrongCaptureLease,
+          "driver B ASRC lease cannot silently follow device-map rebind");
+
     std::array<float,4096> bLeft{},bRight{};
     bLeft.fill(.4f);bRight.fill(.6f);
     const float* bInput[]{bLeft.data(),bRight.data()};

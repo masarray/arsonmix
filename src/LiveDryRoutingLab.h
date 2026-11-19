@@ -22,6 +22,8 @@
 #include "../engine/device/LiveInputPortRegistry.h"
 #include "../engine/device/QualifiedSecondaryCaptureReader.h"
 #include "../engine/device/QualifiedCaptureHostMode.h"
+#include "../engine/device/QualifiedCaptureAdmission.h"
+#include "../engine/device/QualifiedInputGraphBridge.h"
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <algorithm>
 #include <array>
@@ -1977,6 +1979,103 @@ public:
             return reply;
         }catch(...){
             reply.error="NATIVE_TRACK_DELETE_PREPARE_FAILED";return reply;
+        }
+    }
+
+    // IO-2D CONTROL: stage B's already-open, independently attested ASIO
+    // capture inside THIS accepted native graph/FX lease. The caller keeps
+    // the output disarmed and owns the verified stream/device lifecycle;
+    // no GUI-local LIVE, second manager, processor, or output auto-arm.
+    // The matching reader/clock are then passed to process() by the same
+    // native host on the PRIMARY callback. No hardware is opened here.
+    NativeBusResult installQualifiedSecondaryInput(
+            std::uint64_t expectedEpoch,std::uint64_t expectedPcmRevision,
+            std::uint64_t expectedRosterRevision,
+            const armix::device::MultiDeviceInputPlan& plan,
+            armix::device::QualifiedSecondaryCaptureReader& reader,
+            armix::device::SecondaryCaptureClockStream& clock,
+            bool outputsDisarmed,
+            const std::function<void()>& beforePublish={}) {
+        using namespace armix::mixer;
+        NativeBusResult reply{};
+        reply.pcmRevision=nativeAccepted_.pcmRevision;
+        reply.rosterRevision=nativeAccepted_.graph.roster.revision();
+        if(!outputsDisarmed) {
+            reply.error="OUTPUT_MUST_BE_DISARMED";return reply;
+        }
+        if(!channelIdPhysicalPcmActive()||!ready()||
+           expectedEpoch!=epoch()||nativeAccepted_.deviceEpoch!=expectedEpoch||
+           expectedPcmRevision!=nativeAccepted_.pcmRevision||
+           expectedRosterRevision!=nativeAccepted_.graph.roster.revision()||
+           !nativeAccepted_.fxOwners) {
+            reply.error="STALE_NATIVE_CAPTURE_GRAPH";return reply;
+        }
+        if(reader.status().ready) {
+            reply.error="CAPTURE_READER_ALREADY_ATTACHED";return reply;
+        }
+        const auto fault=armix::device::QualifiedCaptureAdmission::verify(
+            plan,clock,expectedEpoch,
+            callbackInputCount_.load(std::memory_order_acquire),
+            nativeAccepted_.graph.request.maxFrames);
+        if(fault!=armix::device::QualifiedCaptureAdmission::Fault::none) {
+            reply.error="SECONDARY_CAPTURE_LEASE_OR_MASK_REJECTED";return reply;
+        }
+        try {
+            DynamicGraphRequest staged;
+            armix::device::QualifiedInputGraphBridge::Fault stageFault{};
+            if(!armix::device::QualifiedInputGraphBridge::stage(
+                 plan,nativeAccepted_.graph.request,staged,stageFault)) {
+                reply.error="QUALIFIED_INPUT_GRAPH_REJECTED";return reply;
+            }
+            DynamicChannelFxLeaseBank bank;
+            if(DynamicChannelFxLeaseBank::reuseRevision(
+                    expectedEpoch,expectedPcmRevision+1,
+                    *nativeAccepted_.fxOwners,bank)!=
+                    DynamicChannelFxLeaseBank::Fault::none) {
+                reply.error="QUALIFIED_INPUT_FX_LEASE_REJECTED";return reply;
+            }
+            auto owner=std::make_shared<DynamicChannelFxLeaseBank>(std::move(bank));
+            owner->bindGlobalRackOverride(&globalFxBypassed_);
+            DynamicNativeSessionPublisher::FxPlan fx;
+            fx.owner=std::static_pointer_cast<void>(owner);
+            fx.context=owner.get();
+            fx.render=+[](void* ctx,ChannelId id,float* left,float* right,int n) noexcept {
+                (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,left,right,n);
+            };
+            fx.latency=+[](void* ctx,ChannelId id) noexcept {
+                return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
+            };
+            fx.deviceEpoch=expectedEpoch;
+            fx.graphRevision=expectedPcmRevision+1;
+            if(!reader.prepare(plan,staged.maxFrames)) {
+                reply.error="QUALIFIED_READER_PREPARE_REJECTED";return reply;
+            }
+            try {
+                if(beforePublish)beforePublish();
+                const auto published=nativePublisher_.commit(
+                    nativeAccepted_.graph.roster,staged,expectedPcmRevision,
+                    expectedEpoch,epoch(),true,std::move(fx),
+                    false,false,&plan);
+                if(!published.ok()) {
+                    reader.stop(); // detached failure; old PCM remains valid
+                    reply.error="QUALIFIED_INPUT_PCM_COMMIT_REJECTED";return reply;
+                }
+                nativeAccepted_.graph.request=std::move(staged);
+                nativeAccepted_.fxOwners=std::move(owner);
+                nativeAccepted_.pcmRevision=published.revision;
+                reapplyExternalOutputsSameEpoch();
+                nativeStructureLive_=true;
+                nativeMeterEpoch_.store(0,std::memory_order_release);
+                reply.accepted=true;reply.error="";
+                reply.pcmRevision=published.revision;
+                reply.rosterRevision=nativeAccepted_.graph.roster.revision();
+                return reply;
+            }catch(...) {
+                reader.stop();
+                reply.error="QUALIFIED_CAPTURE_PUBLICATION_FAILED";return reply;
+            }
+        }catch(...) {
+            reply.error="QUALIFIED_CAPTURE_PREPARE_FAILED";return reply;
         }
     }
 
