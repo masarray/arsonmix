@@ -1757,7 +1757,7 @@ test("Native FX GUI routes through ChannelId PCM with no operator MONITOR ritual
  assert.match(lab,/nativeAccepted_\.fxOwners->externalChannel\(\)==target/);
  assert.match(bridge,/pendingFxInsert=\{authority:"CHANNEL_ID"/);
  const fxVM=read("web/approved-fx-rack-view-model.js");
- assert.match(bridge,/fxRackVM\.nativeInsertSettlement\(pendingFxInsert,next,confirmed\)/);
+ assert.match(bridge,/fxRackVM\.nativeInsertSettlement\(pendingFxInsert,next,confirmed,/);
  assert.match(fxVM,/fx\.catalogId!==pending\.id/);
  assert.match(fxVM,/confirmed\.requestId!==pending\.requestId/);
  assert.match(translate,/if\(op=="LOAD_INSERT"\)/);
@@ -6180,5 +6180,109 @@ test("G-MV33 late duplicate negative ACK cannot discard verified FX lease",()=>{
  assert.match(bridge,/fxRackVM\.m4RackSettlement\(p,next,/);
  assert.match(bridge,/fxRackVM\.m4SlotPowerSettlement\(p,next,/);
  assert.match(bridge,/fxRackVM\.m4InsertReadbackSettlement\(p,snapshot,/);
+ assert.doesNotMatch(source,/backend\.emitEvent|document\.|window\.|setTimeout/);
+});
+
+
+test("G-MV34 exact physical ChannelId FX admission + global/power/insert readback",()=>{
+ const device={epoch:"55",sampleRate:48000,bufferFrames:256,
+   enabledInputs:[0,1],enabledOutputs:[0,1]};
+ const hardwareConfiguration=protocol.nativeHardwareConfiguration(device),
+   channelId="9007199254740993";
+ const view={admitted:true,retained:false,device,graph:{
+   revision:"81",rosterRevision:"45",
+   capabilities:{callbackOwnsChannelIds:true,supportedOps:["LOAD_INSERT"]},
+   channels:[{id:channelId,role:"INPUT",fxRackBypassed:false,
+     inserts:[{id:"fx-one",catalogId:"vendor.one",bypassed:false}]}]},
+   raw:{globalFxBypassed:false,
+     mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"55"}}};
+ const o={channelId,hardwareConfiguration};
+ const context=fxRackVM.globalPowerContext(view,false,false,hardwareConfiguration);
+ const rack=fxRackVM.nativePowerPlan(view,{...o,action:"fxOn"});
+ const slot=fxRackVM.nativePowerPlan(view,{...o,action:"slotPower",slot:0});
+ const insert=fxRackVM.nativeInsertPlan(view,{...o,slot:1,catalogId:"vendor.two"});
+ assert.deepEqual([rack.kind,slot.kind,insert.kind],["READY","READY","READY"]);
+ assert.equal(context.hardwareConfiguration,hardwareConfiguration);
+ assert.equal(rack.pending.hardwareConfiguration,hardwareConfiguration);
+ assert.equal(slot.pending.rosterRevision,"45");
+ for(const invalid of [null,"",5]){
+   assert.equal(fxRackVM.globalPowerContext(view,false,false,invalid),null);
+   assert.equal(fxRackVM.nativePowerPlan(view,{...o,hardwareConfiguration:invalid,
+     action:"fxOn"}).kind,"UNAVAILABLE");
+   assert.equal(fxRackVM.nativeInsertPlan(view,{...o,hardwareConfiguration:invalid,
+     slot:1,catalogId:"vendor.two"}).kind,"UNAVAILABLE");
+ }
+ for(const mutate of [
+   v=>{v.admitted=false;},v=>{v.retained=true;},
+   v=>{v.raw.mixerSession.authority="M4";},
+   v=>{v.raw.mixerSession.deviceEpoch="56";},
+   v=>{v.graph.capabilities.callbackOwnsChannelIds=false;},
+   v=>{v.graph.rosterRevision="0";}
+ ]){
+   const altered=clone(view);mutate(altered);
+   assert.equal(fxRackVM.nativePowerPlan(altered,{...o,action:"fxOn"}).kind,
+     "UNAVAILABLE");
+   assert.equal(fxRackVM.nativeInsertPlan(altered,{...o,slot:1,
+     catalogId:"vendor.two"}).kind,"UNAVAILABLE");
+ }
+ const g={requestId:"g",...context,bypassed:true,acked:true};
+ const r={requestId:"r",...rack.pending,acked:true};
+ const s={requestId:"s",...slot.pending,acked:true};
+ const ip={authority:"CHANNEL_ID",requestId:"i",id:"vendor.two",
+   channelId,slot:1,epoch:"55",hardwareConfiguration};
+ const confirm={requestId:"i",operation:"LOAD_INSERT",targetChannelId:channelId,
+   payload:{catalogId:"vendor.two",slot:1}};
+ const read=clone(view);
+ read.raw.globalFxBypassed=true;
+ read.graph.channels[0].fxRackBypassed=true;
+ read.graph.channels[0].inserts[0].bypassed=true;
+ assert.equal(fxRackVM.globalPowerSettlement(g,read,context),"CONFIRMED");
+ assert.equal(fxRackVM.nativePowerSettlement(r,read,hardwareConfiguration),
+   "CONFIRMED");
+ assert.equal(fxRackVM.nativePowerSettlement(s,read,hardwareConfiguration),
+   "CONFIRMED");
+ assert.equal(fxRackVM.nativePowerSettlement({...r,acked:false},
+   read,hardwareConfiguration),"WAIT");
+ const loaded=clone(read);
+ loaded.graph.channels[0].inserts[1]={id:"fx-two",catalogId:"vendor.two",
+   bypassed:false,name:"Vendor Two"};
+ loaded.graph.revision="82";loaded.graph.rosterRevision="46";
+ assert.equal(fxRackVM.nativeInsertSettlement(ip,loaded,confirm,
+   hardwareConfiguration).kind,"CONFIRMED");
+ assert.equal(fxRackVM.nativePowerSettlement(r,loaded,hardwareConfiguration),
+   "STALE","changed FX roster retires old bypass gesture");
+ const remap=clone(read);
+ remap.device.enabledInputs=[2,3];
+ const remapId=protocol.nativeHardwareConfiguration(remap.device);
+ assert.notEqual(remapId,hardwareConfiguration);
+ assert.equal(fxRackVM.globalPowerSettlement(g,remap,
+   {...context,hardwareConfiguration:remapId}),"STALE");
+ assert.equal(fxRackVM.nativePowerSettlement(r,remap,remapId),"STALE");
+ assert.equal(fxRackVM.nativePowerSettlement(s,remap,remapId),"STALE");
+ assert.equal(fxRackVM.nativeInsertSettlement(ip,loaded,confirm,
+   remapId).kind,"STALE");
+ assert.equal(fxRackVM.nativeInsertSettlement(ip,loaded,confirm,
+   null).kind,"STALE");
+ assert.equal(fxRackVM.nativePowerSettlement(r,read,null),"STALE");
+});
+test("G-MV34 native/global positive FX ACK wins across duplicate negative ACK",()=>{
+ const native={requestId:"n",channelId:"9007199254740993",
+   kind:"rack",bypassed:true,acked:true};
+ const global={requestId:"g",bypassed:true,acked:true};
+ const nAck={requestId:"n",channelId:native.channelId,ok:false,bypassed:true};
+ const gAck={requestId:"g",ok:false,bypassed:true};
+ assert.equal(fxRackVM.nativePowerAckResult(native,nAck),"IGNORE");
+ assert.equal(fxRackVM.globalPowerAckResult(global,gAck),"IGNORE");
+ assert.equal(fxRackVM.nativePowerAckResult({...native,acked:false},nAck),
+   "REJECTED");
+ assert.equal(fxRackVM.globalPowerAckResult({...global,acked:false},gAck),
+   "REJECTED");
+ const source=read("web/approved-fx-rack-view-model.js"),
+   bridge=read("web/approved-native-bridge.js");
+ assert.equal((source.match(/function nativePhysicalFxReady\(/g)||[]).length,1);
+ assert.match(bridge,/fxRackVM\.nativePowerSettlement\(pendingNativeFxPower,next,/);
+ assert.match(bridge,/fxRackVM\.nativeInsertSettlement\(pendingFxInsert,next,confirmed,/);
+ assert.match(bridge,/const hardwareConfiguration=protocol\.nativeHardwareConfiguration\(accepted\?\.device\)/);
+ assert.match(bridge,/pendingGlobalFx=\{requestId,bypassed:plan\.bypassed,acked:false,\.\.\.ctx\}/);
  assert.doesNotMatch(source,/backend\.emitEvent|document\.|window\.|setTimeout/);
 });
