@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <string_view>
 
 namespace armix::io2_clocked_test {
 namespace d=armix::device;
