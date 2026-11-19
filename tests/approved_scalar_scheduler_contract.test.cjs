@@ -21,7 +21,8 @@ const gesture=(overrides={})=>({
 
 test("MV-10 throttle lease binds exact uint64 identity, not recycled strip ordinal",()=>{
   assert.deepEqual(lease(120),{at:120,epoch:identity.epoch,
-    authority:"CHANNEL_ID",channelId:identity.channelId});
+    authority:"CHANNEL_ID",channelId:identity.channelId,
+    hardwareConfiguration:undefined});
   assert.equal(vm.scalarGestureFlushPlan(gesture()),"QUEUE");
   assert.equal(vm.scalarGestureFlushPlan(gesture({now:149})),"QUEUE");
   assert.equal(vm.scalarGestureFlushPlan(gesture({now:150})),"FLUSH");
@@ -134,4 +135,21 @@ test("MV-10 bridge has ONE scalar queue/transport and immutable ViewModel policy
   assert.match(bridge,/lastNativeControlSent\.clear\(\)/);
   assert.equal((bridge.match(/action:"routingM4Control"/g)||[]).length,1);
   assert.doesNotMatch(source,/window\.|document\.|setTimeout|AudioContext|backend\.emitEvent/);
+});
+
+// G-MV28: a physically different pin/rate/buffer configuration cannot inherit
+// a pending scalar target or its 30ms throttle lease, even at the same epoch.
+test("G-MV28 same-epoch hardware remap retires gesture and throttle",()=>{
+  const old={...edit,hardwareConfiguration:"pins:A;rate:48000"};
+  const next={...old,hardwareConfiguration:"pins:B;rate:48000"};
+  const prior=vm.scalarDispatchLease(old,120);
+  assert.equal(vm.scalarIdentityMatches(old,next),false);
+  assert.equal(vm.scalarGestureFlushPlan({now:125,lastSent:prior,identity:next}),"FLUSH");
+  assert.deepEqual(vm.scalarDispatchPlan(old,ready({identity:next})),{kind:"REJECT"});
+  assert.equal(vm.scalarVisualSettlement(old,-14.5,next),"STALE");
+  assert.equal(vm.scalarIdentityMatches(old,{...old}),true);
+  assert.equal(vm.scalarGestureFlushPlan({now:125,lastSent:prior,identity:old}),"QUEUE");
+  assert.equal(vm.scalarIdentityMatches(old,{...old,hardwareConfiguration:undefined}),false);
+  const nativeBridge=readFileSync("web/approved-native-bridge.js","utf8");
+  assert.ok(nativeBridge.includes("hardwareConfiguration:logicalView?undefined:hardware?.hardwareConfiguration"));
 });
