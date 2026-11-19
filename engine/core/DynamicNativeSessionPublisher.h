@@ -55,6 +55,12 @@ public:
         none, staleDevice, staleRevision, outputArmed, invalidGraph,
         retirementFull, invalidCandidate
     };
+    // Explicit CONTROL transition: a persisted primary-only .smix may
+    // replace a qualified A+B graph. Ordinary WIRE/FX edits MUST inherit
+    // the prior qualified map; absence of an argument never drops it.
+    enum class QualifiedMapChange : std::uint8_t {
+        inherit, replaceWithPrimaryOnly
+    };
     struct CommitResult final {
         Fault fault=Fault::none;
         DynamicGraphError graphError{};
@@ -77,7 +83,8 @@ public:
                         bool allOutputsDisarmed,
                         FxPlan fx={nullptr,nullptr,nullptr,0,0,nullptr},bool verifiedInternalWireOnly=false,
                         bool verifiedInternalFxOnly=false,
-                        const armix::device::MultiDeviceInputPlan* qualifiedInputMap=nullptr) {
+                        const armix::device::MultiDeviceInputPlan* qualifiedInputMap=nullptr,
+                        QualifiedMapChange mapChange=QualifiedMapChange::inherit) {
         CommitResult report;report.revision=publisher_.lastRevision();
         if(!fx.valid() ||
            (fx.owner && (fx.deviceEpoch!=proposedDeviceEpoch ||
@@ -113,7 +120,14 @@ public:
         if(qualifiedInputMap&&!allOutputsDisarmed) {
             report.fault=Fault::outputArmed;return report;
         }
-        const auto* acceptedInputMap=qualifiedInputMap?qualifiedInputMap:
+        const bool replacing=mapChange==QualifiedMapChange::replaceWithPrimaryOnly;
+        if(replacing && (!allOutputsDisarmed || qualifiedInputMap ||
+                         verifiedInternalWireOnly || verifiedInternalFxOnly ||
+                         !prior || !prior->inputMap)) {
+            report.fault=Fault::invalidCandidate;return report;
+        }
+        const auto* acceptedInputMap=replacing?nullptr:
+            qualifiedInputMap?qualifiedInputMap:
             (prior&&prior->inputMap?prior->inputMap.get():nullptr);
         // CONTROL: validate every physical source against ONE actual
         // device-qualified map before starting a potentially costly graph
