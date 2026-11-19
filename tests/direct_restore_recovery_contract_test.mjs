@@ -7,6 +7,7 @@ const read=p=>readFileSync(p,'utf8');
 const main=read('src/Main.cpp');
 const engine=read('src/LiveAudioEngine.h');
 const gate=read('engine/device/DirectRestoreBackoff.h');
+const coordinator=read('src/NativeDirectRestoreCoordinator.h');
 const cmake=read('CMakeLists.txt');
 const workflow=read('.github/workflows/p1-windows.yml');
 
@@ -21,8 +22,10 @@ test('actual device recoveries occur on message thread, not inside audio callbac
   assert.ok(graphAck>timer);
   assert.match(main.slice(timer,graphAck),/serviceDirectRestore\(\)/);
   assert.match(main.slice(runner,main.indexOf('void emitNotice',runner)),
-    /engine_\.setIndependentClockEnabled \(false\)/);
-  assert.match(main,/engine_\.independentClockFaulted\(\)/);
+    /NativeDirectRestoreCoordinator::service/);
+  assert.match(coordinator,/engine\.setIndependentClockEnabled\(false\)/);
+  assert.match(coordinator,/engine\.independentClockFaulted\(\)/);
+  assert.doesNotMatch(coordinator,/audioDeviceIOCallbackWithContext/);
   assert.match(engine,/hasPendingDirectRestore\(\) const noexcept/);
   assert.match(engine,/verifyRestoredDirectDevice \(\*savedDirectSetup_\)/);
   assert.match(engine,/verifyRestoredDirectDevice \(original\)/);
@@ -49,18 +52,23 @@ test('output-only SAME-device WASAPI recovery never invents or requires micropho
   assert.match(main,/No verified stereo playback device; audio remains gated/);
 });
 test('restore retry is bounded and disabled on success, explicit direct and setup paths',()=>{
-  assert.match(main,/directRestore_\.failed \(snapshot\.generation, now\)/);
-  assert.match(main,/directRestore_\.recovered \(snapshot\.generation\)/);
+  assert.match(coordinator,/gate\.failed\(snapshot\.generation,nowMs\)/);
+  assert.match(coordinator,/gate\.recovered\(snapshot\.generation\)/);
   assert.match(main,/directRestore_\.cancel\(\)/);
-  assert.match(main,/independentClockActive\(\) \|\| engine_\.hasPendingDirectRestore\(\)/);
-  assert.match(main,/directRestoreAttempts/);
-  assert.match(main,/directRestoreNextMs/);
-  assert.match(main,/directRestoreError/);
-  assert.match(main,/DIRECT_RESTORE_BEGIN/);
-  assert.match(main,/SMART_CLOCK_RECOVERY/);
+  assert.match(coordinator,/engine\.independentClockActive\(\)/);
+  assert.match(coordinator,/engine\.hasPendingDirectRestore\(\)/);
+  assert.match(coordinator,/directRestoreAttempts/);
+  assert.match(coordinator,/directRestoreNextMs/);
+  assert.match(coordinator,/directRestoreError/);
+  assert.match(coordinator,/DIRECT_RESTORE_BEGIN/);
+  assert.match(coordinator,/SMART_CLOCK_RECOVERY/);
+  assert.match(coordinator,/bridgeCaptureSilentMs/);
+  assert.match(coordinator,/bridgeWatchdogFault/);
   assert.match(main,/annotateRecovery \(status\)/);
   assert.match(main,/annotateRecovery \(state\)/);
   assert.match(cmake,/add_test\(NAME BoundedDirectDeviceRecovery COMMAND ARMixRecoveryTests\)/);
+  assert.match(cmake,/add_test\(NAME NativeDirectRestoreBoundedRetryAndFaultEvidence/);
+  assert.match(main,/NativeDirectRestoreCoordinator::annotate/);
   assert.match(workflow,/direct_restore_recovery_contract_test.mjs/);
 });
 test('verified native FAT package preserves actual beta live-bridge provenance, not older offline-only claim',()=>{
@@ -77,7 +85,9 @@ test('verified native FAT package preserves actual beta live-bridge provenance, 
 });
 
 test('healthy independent sessions never arm restoration; setup can replace missing devices',()=>{
-  assert.match(main,/\(!engine_\.independentClockActive\(\) && engine_\.hasPendingDirectRestore\(\)\)/);
+  assert.match(coordinator,/!engine\.independentClockActive\(\) &&/);
+  assert.match(coordinator,/engine\.hasPendingDirectRestore\(\)/);
+  assert.doesNotMatch(coordinator,/setIndependentClockEnabled\(true\)/);
   assert.match(engine,/bool abandonPendingDirectRestoreForSetup\(\)/);
   assert.match(engine,/deviceManager_\.addAudioCallback \(this\)/);
   assert.match(main,/DIRECT_RESTORE_ABANDON/);
