@@ -47,6 +47,7 @@
 #include "NativeLogicalMixerControl.h"
 #include "PlayerSetlistArchive.h"
 #include "PlayerSetlistRepository.h"
+#include "PlayerSetlistEditTransaction.h"
 #include "NativeHotkeyRegistry.h"
 #include "NativeHotkeyCommandPlan.h"
 #include "NativeFxParameterHotkey.h"
@@ -3948,61 +3949,38 @@ private:
         return !playerFolderBusy_;
     }
     void playerEditSetlist(const juce::String& action,const juce::var& value) {
+        // Setlist metadata is durable BEFORE a deck stop or live state
+        // mutation. A failed disk write cannot switch/delete a live set.
         if(action=="playerNewSetlist" || action=="playerSelectSetlist" ||
-           action=="playerDeleteSetlist") {
-            if(!playerShowMaySwitchSet())return;
-            if(action=="playerNewSetlist") {
-                if(playerSets_.size()>=32) {
-                    playerError_="Maximum 32 setlists";emitPlayerState();return;
-                }
-                saveActivePlayerSet();
-                const auto next=armix::player::PlayerSetlistArchive::
-                    nextGeneratedName(playerSets_);
-                if(next.isEmpty()) {
-                    playerError_="No available setlist name";
-                    emitPlayerState();return;
-                }
-                playerSets_.push_back({next,{},{}});
+           action=="playerDeleteSetlist" || action=="playerRenameSetlist") {
+            const bool rename=action=="playerRenameSetlist";
+            if(!rename && !playerShowMaySwitchSet())return;
+            using Edit=armix::player::PlayerSetlistEditTransaction;
+            const auto command=action=="playerNewSetlist"?Edit::Command::create:
+                action=="playerSelectSetlist"?Edit::Command::select:
+                action=="playerDeleteSetlist"?Edit::Command::remove:
+                Edit::Command::rename;
+            const int index=rename || command==Edit::Command::create?
+                -1:static_cast<int>(value);
+            // Preserve the historical silent no-op for stale row IDs.
+            if(!rename && command!=Edit::Command::create &&
+               (index<0 || index>=static_cast<int>(playerSets_.size())))return;
+            auto outcome=Edit::apply(
+                settingsDirectory().getChildFile("player-library.json"),
+                playerSets_,playerActiveSet_,playerLibrary_,playerTrackSettings_,
+                playerAutoNext_,playerFadeMilliseconds_,command,index,
+                rename?value.toString():juce::String{});
+            if(!outcome.committed()) {
+                playerError_=outcome.error;
+                emitPlayerState(true);return;
+            }
+            playerSets_=std::move(outcome.sets);
+            if(!rename) {
                 engine_.playerStop();
-                activatePlayerSet(static_cast<int>(playerSets_.size())-1);
-            } else {
-                const int index=static_cast<int>(value);
-                if(index<0 || index>=static_cast<int>(playerSets_.size()))return;
-                saveActivePlayerSet();
-                if(action=="playerSelectSetlist") {
-                    engine_.playerStop();activatePlayerSet(index);
-                } else if(playerSets_.size()>1) {
-                    engine_.playerStop();
-                    int destination=playerActiveSet_;
-                    if(index<destination)--destination;
-                    if(index==destination)
-                        destination=std::min(index,
-                            static_cast<int>(playerSets_.size())-2);
-                    playerSets_.erase(playerSets_.begin()+index);
-                    activatePlayerSet(destination);
-                } else {
-                    playerError_="Keep at least one setlist";
-                    emitPlayerState();return;
-                }
+                activatePlayerSet(outcome.active);
             }
-            playerError_.clear();persistPlayerLibrary();emitPlayerState(true);
-            return;
-        }
-        if(action=="playerRenameSetlist") {
-            auto name=value.toString().trim();
-            if(name.isEmpty() || name.length()>64)return;
-            const bool exists=std::any_of(
-                playerSets_.begin(),playerSets_.end(),
-                [&](const PlayerSavedSet& set) {
-                    return set.name.equalsIgnoreCase(name) &&
-                           &set!=&playerSets_[static_cast<std::size_t>(playerActiveSet_)];
-                });
-            if(exists) {
-                playerError_="Setlist name already exists";
-                emitPlayerState();return;
-            }
-            playerSets_[static_cast<std::size_t>(playerActiveSet_)].name=name;
-            playerError_.clear();persistPlayerLibrary();emitPlayerState(true);
+            playerError_.clear();
+            emitPlayerState(true);
             return;
         }
         if(action=="playerMoveSong") {
