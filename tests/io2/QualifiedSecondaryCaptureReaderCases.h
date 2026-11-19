@@ -64,8 +64,8 @@ inline void run() {
 
     d::SecondaryCaptureClockStream clock;
     const d::SecondaryCaptureClockStream::Format format{
-        48000.,48000.,frames,frames,2,captureGeneration,epoch,2002};
-    check(clock.prepare(format)&&clock.activate(),"independent B producer ready");
+        44100.,48000.,frames,frames,2,captureGeneration,epoch,2002};
+    check(clock.prepare(format)&&clock.activate(),"independent 44.1k B into 48k A ASRC ready");
     std::array<float,4096> bLeft{},bRight{};
     bLeft.fill(.4f);bRight.fill(.6f);
     const float* bInput[]{bLeft.data(),bRight.data()};
@@ -150,6 +150,6 @@ inline void run() {
           "stale ASRC cannot be relabeled into newly leased device");
     reader.stop();
     clock.stop();
-    std::puts("IO2_CLOCKED_NATIVE_PASS: two clocks -> qualified A+B -> single PCM/FX/MAIN; loss isolated");
+    std::puts("IO2_CLOCKED_NATIVE_PASS: 44.1k B -> ASRC -> 48k A qualified ChannelId PCM MAIN; loss isolated");
 }
 } // namespace armix::io2_clocked_test
