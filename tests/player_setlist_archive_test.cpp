@@ -7,6 +7,7 @@
 #include <limits>
 #include "../src/PlayerSetlistArchive.h"
 #include "../src/PlayerSetlistRepository.h"
+#include "../src/PlayerSetlistEditTransaction.h"
 
 using Archive=armix::player::PlayerSetlistArchive;
 using SavedSet=armix::player::PlayerSavedSet;
