@@ -3667,10 +3667,13 @@
         return true;
       }
       if (action==="mute"||action==="solo") {
-        if(t.kind==="master" && action==="mute" &&
-           nativeMasterAuthority()!=="UNAVAILABLE"){
-          if(!sendM4Control("masterMute",t,!t.mute))
-            status("Native MAIN mute rejected");
+        // MAIN has one host scalar gateway. A refused native MAIN lease
+        // must never fall through to generic ChannelId SET_MUTE/SOLO.
+        if(t.kind==="master"){
+          if(action==="mute" && nativeMasterAuthority()!=="UNAVAILABLE"){
+            if(!sendM4Control("masterMute",t,!t.mute))
+              status("Native MAIN mute rejected");
+          }else status("MAIN mute unavailable · verified PCM required");
           return true;
         }
         if(m4ControlIsOwner()&&m4Verified()&&m4Index(t)>=0){
@@ -3931,9 +3934,16 @@
             status("SOF unity reset unavailable · select one admitted SEND");
           return true;
         }
-        if((m4ControlIsOwner()&&m4Verified()) ||
-           (t?.kind==="master"&&nativeMasterAuthority()!=="UNAVAILABLE"))
-          sendM4Control(t?.kind==="master"?"masterGain":"faderDb",t,0);
+        // MAIN reset must not become an unrelated ChannelId SET_FADER
+        // when its native physical host scalar lease is not admitted.
+        if(t?.kind==="master"){
+          if(nativeMasterAuthority()!=="UNAVAILABLE")
+            sendM4Control("masterGain",t,0);
+          else status("MAIN reset unavailable · verified PCM required");
+          return true;
+        }
+        if(m4ControlIsOwner()&&m4Verified())
+          sendM4Control("faderDb",t,0);
         else intent("SET_FADER",t,{valueDb:0});
       }
       else if(event.target.closest?.(".gain-dial")){
