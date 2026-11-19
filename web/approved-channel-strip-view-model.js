@@ -797,6 +797,27 @@
     return "BLOCK";
   }
 
+  // G-MV29: one pure revision-scoped scalar identity. M4 gestures belong
+  // to an exact accepted routing generation. ChannelId gestures belong to an
+  // exact roster generation; physical MAIN additionally uses its existing
+  // M4 host routing generation. Offline .smix has no physical lease.
+  // This only describes UI control lifetime; native still owns all PCM.
+  function scalarNativeIdentity({logical=false,epoch,authority,channelId=null,
+    hardwareConfiguration,master=false,routingRevision,rosterRevision}={}) {
+    if(logical)return Object.freeze({epoch:"LOGICAL",authority:"LOGICAL",channelId});
+    if(!decimalId(epoch)||!["CHANNEL_ID","M4"].includes(authority)||
+       typeof hardwareConfiguration!=="string"||!hardwareConfiguration||
+       (authority==="CHANNEL_ID"&&!master&&!decimalId(channelId)))return null;
+    const routeOwned=master||authority==="M4";
+    const rosterOwned=authority==="CHANNEL_ID";
+    if((routeOwned&&!positiveCounter(routingRevision))||
+       (rosterOwned&&rosterRevision!=="0"&&!decimalId(rosterRevision)))
+      return null; // no physical command without its installed generation
+    return Object.freeze({epoch,authority,channelId,hardwareConfiguration,
+      ...(routeOwned?{routeRevision:routingRevision}:{}),
+      ...(rosterOwned?{rosterRevision}:{} )});
+  }
+
   // MV-9: pure Channel Strip scalar gesture/readback policy. The only
   // pending Maps, native events, timers and audio transport stay in the
   // approved bridge. Treat exact decimal-string ChannelIds as opaque data.
@@ -805,7 +826,9 @@
       edit.epoch===identity.epoch &&
       edit.authority===identity.authority &&
       edit.channelId===identity.channelId &&
-      edit.hardwareConfiguration===identity.hardwareConfiguration;
+      edit.hardwareConfiguration===identity.hardwareConfiguration &&
+      edit.routeRevision===identity.routeRevision &&
+      edit.rosterRevision===identity.rosterRevision;
   }
   // Last pointer target is DISPLAY-ONLY until independently installed
   // fader PCM readback matches it; never rewrite a native track model.
@@ -855,7 +878,9 @@
   function scalarDispatchLease(edit,at) {
     return {at,epoch:edit.epoch,authority:edit.authority,
       channelId:edit.channelId,
-      hardwareConfiguration:edit.hardwareConfiguration};
+      hardwareConfiguration:edit.hardwareConfiguration,
+      ...(edit.routeRevision!==undefined?{routeRevision:edit.routeRevision}:{}),
+      ...(edit.rosterRevision!==undefined?{rosterRevision:edit.rosterRevision}:{})};
   }
   function scalarGestureFlushPlan({logical=false,final=false,now,
                                     lastSent=null,identity=null}={}) {
@@ -994,7 +1019,7 @@
     sourceAckResult,sourceReadbackSettlement,
     m4SourceReadbackSettlement,sourceQueueReadback,sourceQueueAckTransition,
     sourceQueueTimeoutDecision,
-    masterScalarAuthority,controlCommandPlan,scalarIdentityMatches,scalarVisualSettlement,m4ScalarAckResult,
+    masterScalarAuthority,controlCommandPlan,scalarNativeIdentity,scalarIdentityMatches,scalarVisualSettlement,m4ScalarAckResult,
     m4ScalarReadbackSettlement,scalarDispatchLease,
     scalarGestureFlushPlan,scalarDispatchPlan,
     identityReadback,identityEditPlan,
