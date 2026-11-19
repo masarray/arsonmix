@@ -126,7 +126,7 @@ inline void run() {
     const auto rejected=native.commit(roster,accepted,1,epoch,epoch,true,
                                       {},false,false,&draft);
     require(rejected.fault==m::DynamicNativeSessionPublisher::Fault::invalidCandidate
-            &&native.revision()==1,
+            &&native.acceptedRevision()==1,
             "rejected remap retains old immutable PCM + FX lease");
     constexpr float center=0.7071067811865475f;
     require(near(l[frames-1],2.f*(.2f*center+.4f))&&
