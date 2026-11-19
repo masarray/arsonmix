@@ -56,7 +56,7 @@ struct MultiDeviceInputFault final {
         invalidDeviceIdentity, invalidGeneration, duplicateDevice,
         invalidDeviceLease, duplicateDeviceLease,
         invalidDevicePins, tooManyInputs, unsupportedSecondaryChannels,
-        invalidChannel, duplicateChannel, channelFormatMismatch,
+        invalidChannel, duplicateChannel,
         missingDevice, unavailablePin, invalidStereoPair
     } kind=Kind::none;
     armix::mixer::ChannelId channel{};
@@ -197,11 +197,9 @@ public:
                 error.kind=MultiDeviceInputFault::Kind::invalidChannel;
                 return false;
             }
-            if((definition->format==armix::mixer::ProcessingFormat::stereo)
-               !=binding.stereo) {
-                error.kind=MultiDeviceInputFault::Kind::channelFormatMismatch;
-                return false;
-            }
+            // Native source format and channel/insert processing format are
+            // intentionally independent (mono mic -> stereo VST, or stereo
+            // capture -> mono processing). Match DynamicPreparedMixerBlock.
             for(int prev=0;prev<candidate.assignmentCount_;++prev)
                 if(candidate.assignments_[prev].channel==binding.channel) {
                     error.kind=MultiDeviceInputFault::Kind::duplicateChannel;
