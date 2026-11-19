@@ -1312,7 +1312,8 @@
   function reconcileM4FxInsertReadback(snapshot){
     const p=pendingFxInsert;
     if(!p||p.authority!=="M4")return {kind:"NONE"};
-    const decision=fxRackVM.m4InsertReadbackSettlement(p,snapshot);
+    const decision=fxRackVM.m4InsertReadbackSettlement(p,snapshot,
+      protocol.nativeHardwareConfiguration(snapshot?.device));
     if(decision.kind==="STALE"){
       pendingFxInsert=null;
       status("FX INSERT expired · native routing changed");
@@ -1416,9 +1417,11 @@
       Number(button?.dataset?.slot):null;
     const map=action==="fxOn"?pendingM4RackPowers:pendingSlotPowers;
     const key=action==="fxOn"?channel:channel+":"+slot;
-    const plan=fxRackVM.m4PowerPlan(controller?.state()?.current,{
+    const current=controller?.state()?.current;
+    const plan=fxRackVM.m4PowerPlan(current,{
       action,channel,slot,pending:map.has(key),
-      verifiedM4:m4Verified(),offline:!!logicalView
+      verifiedM4:m4Verified(),offline:!!logicalView,
+      hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)
     });
     if(plan.kind!=="READY")return false;
     const requestId=action==="fxOn"?
@@ -1438,14 +1441,16 @@
   }
   function reconcileM4RackReadback(next){
     for(const [lane,p] of pendingM4RackPowers){
-      const decision=fxRackVM.m4RackSettlement(p,next);
+      const decision=fxRackVM.m4RackSettlement(p,next,
+        protocol.nativeHardwareConfiguration(next?.device));
       if(decision==="STALE"||decision==="CONFIRMED")
         pendingM4RackPowers.delete(lane);
     }
     // An M4 slot remains pending after ACK until its own exact instance
     // lease and requested bypass are present in independently accepted PCM.
     for(const [key,p] of pendingSlotPowers){
-      const decision=fxRackVM.m4SlotPowerSettlement(p,next);
+      const decision=fxRackVM.m4SlotPowerSettlement(p,next,
+        protocol.nativeHardwareConfiguration(next?.device));
       if(decision==="STALE"||decision==="CONFIRMED")
         pendingSlotPowers.delete(key);
     }
@@ -3629,7 +3634,8 @@
           return true;
         }
         const plan=fxRackVM.m4EditorPlan(current,{
-          channel:m4Index(t),slot,verifiedM4:m4Verified(),offline:!!logicalView});
+          channel:m4Index(t),slot,verifiedM4:m4Verified(),offline:!!logicalView,
+          hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
         if(plan.kind==="OPEN")
           openRoutedFxEditor(plan.channel,plan.slot,plan.instanceId,
             plan.deviceEpoch,plan.revision);
@@ -3884,7 +3890,8 @@
       }
       const plan=fxRackVM.m4InsertPlan(accepted,{
         catalogId:plugin?.id,channel,slot,verifiedM4:m4Verified(),
-        offline:!!logicalView,pending:!!pendingFxInsert});
+        offline:!!logicalView,pending:!!pendingFxInsert,
+        hardwareConfiguration:protocol.nativeHardwareConfiguration(accepted?.device)});
       if(plan.kind!=="READY"){
         status("FX INSERT REJECTED · choose an empty consecutive slot on a native CH with verified route/catalog");
         return true;
