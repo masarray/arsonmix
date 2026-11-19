@@ -156,6 +156,134 @@ test("MV-7 native SOURCE requires ACKed graph revision AND independently install
   "Channel Strip readback remains pure; bridge holds one transient source queue");
 });
 
+test("G-MV23 ChannelId SOURCE queue skips an already installed choice after timeout or ACK race",()=>{
+ const epoch="18446744073709551610",id="9007199254740993";
+ const config=protocol.nativeHardwareConfiguration({sampleRate:48000,bufferFrames:256,
+   enabledInputs:[0,1,2,3],enabledOutputs:[0,1]});
+ const choices=[{label:"None",mode:"NONE",left:-1,right:-1},
+   {label:"Mic 1",mode:"MONO",left:0,right:-1},
+   {label:"Mic 2",mode:"MONO",left:1,right:-1},
+   {label:"Stereo 3+4",mode:"STEREO",left:2,right:3}];
+ const choice=choices[1];
+ const queued=stripVM.sourceQueueSelection({choice,choices,epoch,
+   acceptedLabel:"None",activeSameChannel:true,
+   hardwareConfiguration:config}).entry;
+ const hardware={device:{epoch},hardwareConfiguration:config,
+   raw:{mixerSession:{authority:"CHANNEL_ID",deviceEpoch:epoch}}};
+ const installed={admitted:true,retained:false,device:{epoch},
+   hardwareConfiguration:config,
+   graph:{revision:"70",rosterRevision:"80",channels:[{
+     id,role:"INPUT",source:{sourceFormat:"MONO",portId:"in:0"}}]}};
+ const q=new Map([[id,queued]]);
+ const check=(snapshot=installed,h=hardware,entry=queued,active=null)=>
+   stripVM.sourceQueueHead({authority:"CHANNEL_ID",queue:new Map([[id,entry]]),
+     active,hardware:h,native:snapshot,choices,deviceReady:true});
+ assert.deepEqual(check(),{kind:"SKIP_INSTALLED",key:id},
+   "native source already installed after first in-flight patch: do not send twice");
+ assert.equal(q.size,1,"pure VM must not mutate the bridge-owned pending queue");
+ assert.deepEqual(check(installed,hardware,queued,{requestId:"source-native-7"}),
+   {kind:"IDLE"},"never skip while a source request is still in flight");
+ const firstRejected={...installed,graph:{...installed.graph,revision:"71",
+   channels:[{id,role:"INPUT",source:null}]}};
+ assert.equal(check(firstRejected).kind,"SEND",
+   "after a rejected first request, latest choice must remain dispatchable");
+ assert.equal(check(firstRejected).payload.graphRevision,"71",
+   "failed first request is retried only using fresh accepted graph revision");
+ const changedChoice={...queued,choice:choices[2]};
+ assert.equal(check(installed,hardware,changedChoice).kind,"SEND",
+   "different latest choice must not be dropped just because first ACK succeeded");
+ const otherPhysical={...hardware,hardwareConfiguration:config+"-different"};
+ assert.equal(check(installed,otherPhysical).kind,"DROP",
+   "a no-op must NEVER mask same-epoch hardware identity mismatch");
+ assert.deepEqual(check({...installed,admitted:false}),{kind:"WAIT"});
+ assert.deepEqual(check(installed,{...hardware,raw:{
+   mixerSession:{authority:"M4",deviceEpoch:epoch}}}),{kind:"WAIT"});
+ assert.equal(check({...installed,graph:{...installed.graph,channels:[{
+   id,role:"INPUT",source:{sourceFormat:"MONO",portId:"in:0",
+     bindingState:"NEEDS_REMAP"}}]}}).kind,"SEND",
+   "a retained physical input mapping is never verified installed PCM");
+ assert.equal(check({...installed,graph:{...installed.graph,channels:[{
+   id,role:"GROUP",source:{sourceFormat:"MONO",portId:"in:0"}}]}}).kind,
+   "DROP","invalid graph ownership cannot be skipped");
+ const none=stripVM.sourceQueueSelection({choice:choices[0],choices,epoch,
+   acceptedLabel:"Mic 1",hardwareConfiguration:config}).entry;
+ assert.deepEqual(check(firstRejected,hardware,none),
+   {kind:"SKIP_INSTALLED",key:id},
+   "SOURCE NONE is already installed only when the real ChannelId source is absent");
+ assert.equal(check(installed,hardware,none).kind,"SEND",
+   "SOURCE NONE must remain a real patch when an input is still bound");
+ const stereo=stripVM.sourceQueueSelection({choice:choices[3],choices,epoch,
+   acceptedLabel:"None",hardwareConfiguration:config}).entry;
+ assert.equal(check({...installed,graph:{...installed.graph,channels:[{
+   id,role:"INPUT",source:{sourceFormat:"STEREO",
+     portId:"in:2",portIdRight:"in:3"}}]}},hardware,stereo).kind,"SKIP_INSTALLED");
+ assert.equal(check({...installed,graph:{...installed.graph,channels:[{
+   id,role:"INPUT",source:{sourceFormat:"STEREO",
+     portId:"in:2",portIdRight:"in:1"}}]}},hardware,stereo).kind,"SEND",
+   "right-channel pin mismatch must not be treated as already installed");
+ assert.strictEqual(stripVM.sourceQueueAlreadyInstalled({authority:"CHANNEL_ID",
+   key:id,entry:queued,hardware,native:installed}),true);
+ assert.deepEqual([...q],[[id,queued]],"SOURCE VM cannot mutate queued drafts");
+});
+
+test("G-MV23 M4 accepted SOURCE no-op avoids duplicate patch but preserves first sound",()=>{
+ const epoch="71",config=protocol.nativeHardwareConfiguration({
+   sampleRate:48000,bufferFrames:128,enabledInputs:[0,1],
+   enabledOutputs:[0,1]});
+ const choices=[{label:"None",mode:"NONE",left:-1,right:-1},
+   {label:"Mic 1",mode:"MONO",left:0,right:-1},
+   {label:"Mic 2",mode:"MONO",left:1,right:-1}];
+ const q=choice=>new Map([[4,{epoch,hardwareConfiguration:config,choice}]]);
+ const session={authority:"M4",deviceEpoch:epoch,routeRevision:"29",
+   channels:Array.from({length:10},(_,i)=>({role:"INPUT",
+     source:i===4?{mode:"MONO",left:0,right:-1}:
+       {mode:"NONE",left:-1,right:-1}}))};
+ const legacyM4={active:true,routeAccepted:true,routingRevision:"29"};
+ const hardware={admitted:false,retained:false,device:{epoch},
+   hardwareConfiguration:config,raw:{mixerSession:session,legacyM4}};
+ const native={admitted:false,retained:false,device:{epoch},
+   hardwareConfiguration:config};
+ const check=(hardwareValue=hardware,choice=choices[1])=>
+   stripVM.sourceQueueHead({authority:"M4",queue:q(choice),
+     hardware:hardwareValue,native,choices,deviceReady:true});
+ assert.deepEqual(check(),{kind:"SKIP_INSTALLED",key:4},
+   "M4 matching accepted producer readback after timeout skips redundant PCM switch");
+ assert.equal(check(hardware,choices[2]).kind,"SEND",
+   "a new physical selection must use the latest M4 routing revision");
+ assert.equal(check(hardware,choices[0]).kind,"SEND",
+   "SOURCE NONE requires real patch when old M4 route is still installed");
+ const cleared={...hardware,raw:{...hardware.raw,mixerSession:{
+   ...session,channels:session.channels.map((ch,i)=>i===4?
+     {...ch,source:{mode:"NONE",left:-1,right:-1}}:ch)}}};
+ assert.deepEqual(check(cleared,choices[0]),{kind:"SKIP_INSTALLED",key:4});
+ const preparing={...hardware,raw:{legacyM4:{...legacyM4,routeAccepted:false},
+   mixerSession:{...session,authority:"NONE"}}};
+ assert.equal(check(preparing).kind,"SEND",
+   "UNADMITTED to M4 first sound must never be mistaken for verified PCM");
+ const inconsistent={...hardware,raw:{legacyM4:{...legacyM4,routingRevision:"30"},
+   mixerSession:session}};
+ assert.equal(check(inconsistent).kind,"SEND",
+   "inconsistent route revisions cannot prove installed M4 source");
+ assert.equal(check({...hardware,admitted:true}).kind,"SEND");
+ assert.equal(check({...hardware,retained:true}).kind,"SEND");
+ assert.equal(check({...hardware,hardwareConfiguration:config+"-old"}).kind,"DROP");
+ const brokenSource={...hardware,raw:{legacyM4,mixerSession:{
+   ...session,channels:session.channels.map((ch,i)=>i===4?
+     {...ch,source:{mode:"STEREO",left:0,right:1}}:ch)}}};
+ assert.equal(check(brokenSource).kind,"SEND");
+ const bridge=read("web/approved-native-bridge.js");
+ const body=bridge.slice(bridge.indexOf("  function dispatchSourceQueue(authority){"),
+   bridge.indexOf("  function dispatchNativeSource()"));
+ assert.match(body,/if\(plan\.kind==="SKIP_INSTALLED"\)continue;/);
+ assert.ok(body.indexOf('if(plan.kind==="SKIP_INSTALLED")continue;')<
+   body.indexOf('backend.emitEvent("arMixAction"'),
+   "verified no-op must exit BEFORE the sole native SOURCE dispatcher");
+ assert.equal((body.match(/backend\.emitEvent\("arMixAction"/g)||[]).length,1,
+   "single dispatcher and no second PCM owner");
+ assert.doesNotMatch(stripVM.sourceQueueAlreadyInstalled.toString(),
+   /backend\.|document\.|window\.|setTimeout|AudioContext|localStorage/);
+});
+
 test("G-MV22 physical SOURCE leases reject same-epoch hardware remaps for ChannelId and M4",()=>{
  const epoch="91",id="9007199254740993";
  const d={sampleRate:48000,bufferFrames:256,enabledInputs:[0,1],enabledOutputs:[0,1]};
