@@ -197,6 +197,70 @@
     }
     return true;
   }
+  // G-MV30: M4 VST3 creation has ONE pure transaction policy. The host
+  // ACK can report a staged dryRoutingLab state, but that event is NEVER the
+  // independent, validated Console-v6 PCM readback. Editors open only when
+  // the accepted M4 snapshot proves the exact new catalog/instance/route.
+  function m4InsertPlan(snapshot,{channel,slot,catalogId,
+    verifiedM4=false,offline=false,pending=false}={}) {
+    const unavailable={kind:"UNAVAILABLE"};
+    const s=snapshot?.raw?.mixerSession,m=snapshot?.raw?.legacyM4;
+    const epoch=safeM4Token(snapshot?.device?.epoch),
+      revision=safeM4Token(m?.routingRevision);
+    if(offline||pending||verifiedM4!==true||
+       snapshot?.admitted!==false||snapshot?.retained===true||
+       s?.authority!=="M4"||m?.active!==true||m?.routeAccepted!==true||
+       m.nativeBusStructural===true||
+       epoch===null||revision===null||
+       s.deviceEpoch!==snapshot.device.epoch||
+       s.routeRevision!==m.routingRevision||
+       !Array.isArray(s.channels)||s.channels.length!==10||
+       !Number.isInteger(channel)||channel<0||channel>=10||
+       !s.channels[channel]||
+       !Number.isInteger(slot)||slot<0||slot>=8||
+       typeof catalogId!=="string"||!catalogId)return unavailable;
+    const instances=m.fxInstances?.[channel];
+    if(!Array.isArray(instances)||instances[slot]!=null||
+       (slot>0&&instances[slot-1]==null))return unavailable;
+    return {kind:"READY",action:"routingFxInsert",
+      payload:{id:catalogId,channel,slot,deviceEpoch:epoch,revision},
+      pending:{authority:"M4",id:catalogId,channel,slot,
+        epoch:snapshot.device.epoch,revision:m.routingRevision,acked:false}};
+  }
+  function m4InsertAckResult(pending,ack){
+    if(!pending||pending.authority!=="M4"||
+       !ack||ack.requestId!==pending.requestId)return "IGNORE";
+    return ack.ok===true&&ack.channel===pending.channel&&
+      ack.slot===pending.slot?"ACKED":"REJECTED";
+    // Deliberately ignore ack.state, including FX inventory and revision.
+  }
+  function m4InsertReadbackSettlement(pending,snapshot){
+    if(!pending||pending.authority!=="M4")return {kind:"NONE"};
+    const s=snapshot?.raw?.mixerSession,m=snapshot?.raw?.legacyM4,
+      revision=safeM4Token(m?.routingRevision),
+      previous=safeM4Token(pending.revision);
+    if(snapshot?.admitted!==false||snapshot?.retained===true||
+       s?.authority!=="M4"||m?.active!==true||m.routeAccepted!==true||
+       m.nativeBusStructural===true||
+       snapshot?.device?.epoch!==pending.epoch||
+       s.deviceEpoch!==pending.epoch||
+       s.routeRevision!==m.routingRevision||
+       previous===null||revision===null||revision<previous||
+       !Number.isInteger(pending.channel)||pending.channel<0||pending.channel>=10||
+       !Number.isInteger(pending.slot)||pending.slot<0||pending.slot>=8)
+      return {kind:"STALE"};
+    // A same-revision cached snapshot is never proof of a structural insert.
+    if(revision===previous)return {kind:"WAIT"};
+    const instances=m.fxInstances?.[pending.channel],
+      installed=Array.isArray(instances)?instances[pending.slot]:null;
+    if(installed&&installed.catalogId!==pending.id)return {kind:"STALE"};
+    if(!installed||typeof installed.instanceId!=="string"||
+       !installed.instanceId||pending.acked!==true)return {kind:"WAIT"};
+    return {kind:"CONFIRMED",channel:pending.channel,slot:pending.slot,
+      instanceId:installed.instanceId,epoch:safeM4Token(pending.epoch),
+      revision};
+  }
+
   function nativeInsertPlan(snapshot,{channelId:id,slot,catalogId,pending=false}={}) {
     const graph=snapshot?.graph;
     if(pending||snapshot?.admitted!==true||snapshot?.retained===true||
@@ -364,6 +428,7 @@
   return Object.freeze({powerReadback,mountedRackMatches,
     m4Presentation,nativePowerSettlement,m4PowerPlan,m4RackAckResult,
     m4RackSettlement,
+    m4InsertPlan,m4InsertAckResult,m4InsertReadbackSettlement,
     nativeInsertPlan,nativeEditPlan,nativeInsertSettlement,
     nativePowerPlan,nativePowerAckResult,
     globalPowerContext,globalPowerPlan,globalPowerAckResult,
