@@ -2753,9 +2753,22 @@ public:
             std::memory_order_acquire);
         const bool epochMatches=b.primaryEpoch!=0 &&
             b.primaryEpoch==dryRoutingLab_.epoch();
+        // ASRC accepted pulls can render *only priming silence*. Require
+        // positive FIR-valid output and independently fresh capture writes.
+        // The CONTROL-only guard expires a silent/stalled B after 500 ms;
+        // cumulative historical counters never imply ongoing PCM.
+        const auto usableAsrcFrames=armix::device::secondaryUsableAsrcFrames(
+            b.clock.asrc.renderedFrames,b.clock.asrc.primingFrames,
+            b.clock.asrc.underflowFrames);
+        const auto recentlyUsed=secondaryFlowEvidence_.recentUsableFrames(
+            b.deviceLease,b.clock.captureBlocks,b.clock.asrc.renderedFrames,
+            b.clock.asrc.primingFrames,b.clock.asrc.underflowFrames,
+            juce::Time::getMillisecondCounterHiRes(),
+            bInstalled && !bNeedsRemap && b.ready && !b.faulted &&
+                epochMatches);
         const auto captureState=armix::device::classifySecondaryCapture(
             bInstalled,bNeedsRemap,b.ready,b.faulted,epochMatches,
-            b.clock.captureBlocks,readerStatus.secondaryAccepted);
+            b.clock.captureBlocks,recentlyUsed);
         auto secondary=std::make_unique<juce::DynamicObject>();
         secondary->setProperty("role","INPUT_ONLY_ASIO");
         secondary->setProperty("status",
@@ -2788,6 +2801,14 @@ public:
             static_cast<double>(b.clock.captureBlocks));
         secondary->setProperty("primaryConsumedBlocks",
             static_cast<double>(readerStatus.secondaryAccepted));
+        secondary->setProperty("asrcUsableFrames",
+            static_cast<double>(usableAsrcFrames));
+        secondary->setProperty("asrcPrimingFrames",
+            static_cast<double>(b.clock.asrc.primingFrames));
+        secondary->setProperty("asrcUnderflowFrames",
+            static_cast<double>(b.clock.asrc.underflowFrames));
+        secondary->setProperty("recentUsablePcm",
+            recentlyUsed>0);
         secondary->setProperty("silentPrimaryBlocks",
             static_cast<double>(readerStatus.secondarySilent));
         secondary->setProperty("sourceAudibleProven",false);
@@ -3183,6 +3204,7 @@ private:
     std::atomic<bool> qualifiedSecondaryInstalled_{false};
     std::atomic<bool> qualifiedCaptureNeedsRemap_{false}; // device lifecycle invalidated B
     std::uint64_t secondaryLeaseSequence_=0; // CONTROL only, never callback
+    armix::device::SecondaryCaptureFlowEvidence secondaryFlowEvidence_; // CONTROL status only
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedDirectSetup_;
     juce::AudioPluginFormatManager formats_;
     // Strong ownership stays on CONTROL. The admitted native ChannelId
