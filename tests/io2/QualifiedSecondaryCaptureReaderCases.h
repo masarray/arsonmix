@@ -41,6 +41,31 @@ inline void run() {
     check(d::secondaryCaptureStateName(Health::pcmFlowObserved)==
           std::string_view("PCM_FLOW_OBSERVED"),
           "Readback state is stable and machine-readable");
+    // A successful FIFO pull is not proof of sound: ASRC may output only
+    // priming (or later starvation) frames. Epoch/lease and time freshness
+    // are required for any positive B PCM flow observation.
+    check(d::secondaryUsableAsrcFrames(128,128,0)==0 &&
+          d::secondaryUsableAsrcFrames(128,0,128)==0 &&
+          d::secondaryUsableAsrcFrames(256,128,64)==64,
+          "Only ASRC FIR-valid frames count; priming and underflow excluded");
+    d::SecondaryCaptureFlowEvidence evidence;
+    check(evidence.recentUsableFrames(22,0,0,0,0,100.,true)==0,
+          "Initial B lease observation is only a baseline");
+    check(evidence.recentUsableFrames(22,1,128,128,0,110.,true)==0,
+          "Priming-only authenticated pulls must not advertise B PCM");
+    check(evidence.recentUsableFrames(22,2,256,128,0,120.,true)==128,
+          "Both producer and actually usable consumer progress within 500ms");
+    check(evidence.recentUsableFrames(22,2,384,128,0,700.,true)==0,
+          "Stopped B producer cannot remain FLOW_OBSERVED indefinitely");
+    check(evidence.recentUsableFrames(23,100,500,0,0,710.,true)==0,
+          "Reconnect with new B lease cannot reuse accumulated PCM history");
+    check(evidence.recentUsableFrames(23,101,628,128,0,720.,true)>0,
+          "Fresh B callback and ASRC after new lease restores flow evidence");
+    check(evidence.recentUsableFrames(23,102,756,128,0,725.,false)==0,
+          "Faulted capture immediately invalidates timed flow evidence");
+    check(evidence.recentUsableFrames(23,102,756,128,0,730.,true)==0,
+          "Recovery cannot reuse data accumulated before fault");
+
     // The host may select direct A or qualified A+B, never a partial bridge.
     check(d::qualifiedCaptureHostMode(false,false)==
           d::QualifiedCaptureHostMode::directPrimary,
@@ -105,6 +130,31 @@ inline void run() {
     d::SecondaryCaptureClockStream clock;
     const d::SecondaryCaptureClockStream::Format format{
         44100.,48000.,frames,frames,2,captureGeneration,epoch,2002};
+    // REAL clock/ASRC regression (not just mocked numbers): a successful
+    // read of one B block can be entirely priming silence.
+    {
+        d::SecondaryCaptureClockStream probeClock;
+        check(probeClock.prepare(format)&&probeClock.activate(),
+              "real ASRC priming probe prepared on control thread");
+        std::array<float,frames> sourceL{},sourceR{},destL{},destR{};
+        sourceL.fill(.4f);sourceR.fill(.6f);
+        const float* probeIn[]{sourceL.data(),sourceR.data()};
+        float* probeOut[]{destL.data(),destR.data()};
+        check(probeClock.push(probeIn,2,frames),
+              "one independent B producer block accepted");
+        check(probeClock.pull(probeOut,2,frames,
+              captureGeneration,epoch,2002),
+              "B primary pull is authorized even while priming");
+        const auto probe=probeClock.status();
+        check(probe.asrc.renderedFrames==frames &&
+              probe.asrc.primingFrames==frames &&
+              d::secondaryUsableAsrcFrames(
+                  probe.asrc.renderedFrames,probe.asrc.primingFrames,
+                  probe.asrc.underflowFrames)==0,
+              "actual 44.1k->48k ASRC authorized pull has NO usable PCM");
+        probeClock.stop();
+    }
+
     check(clock.prepare(format)&&clock.activate(),"independent 44.1k B into 48k A ASRC ready");
     using Admission=d::QualifiedCaptureAdmission;
     check(Admission::verify(plan,clock,epoch,1,frames)==Admission::Fault::none,
