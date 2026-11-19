@@ -13,6 +13,89 @@ const fixtures=JSON.parse(read("integration/console-v6/fixtures.json"));
 const clone=x=>JSON.parse(JSON.stringify(x));
 
 
+// A real admitted v6 snapshot needs MAIN identity and an installed graph.
+// The repository's g2 fixture is intentionally a partial graph source.
+function gmv20AcceptedGraph() {
+ const fixture=clone(fixtures.g2);
+ fixture.graph.mainChannelId="200";
+ // The illustrative g2 inserts predate accepted catalog identities.
+ for(const channel of fixture.graph.channels)
+   for(const fx of channel.inserts||[])fx.catalogId="fixture.catalog."+fx.id;
+ fixture.graph.edges=[["7","100"],["2","100"],["100","200"],
+   ["101","200"]].map(([from,to],i)=>({
+     edgeId:String(i+1),from,to,signalKind:"AUDIO",
+     gainLinear:1,enabled:true,primaryOutput:true
+   }));
+ return fixture;
+}
+
+test("G-MV20 schema-v6 pending intent is fenced on same-epoch physical pin or format change",()=>{
+ const base=gmv20AcceptedGraph(),before=JSON.stringify(base);
+ const hardware=protocol.nativeHardwareConfiguration(base.device);
+ assert.equal(hardware,JSON.stringify([48000,128,[0,1],[0,1,2,3]]));
+ const normalized=protocol.normalizeSnapshot(base);
+ assert.equal(normalized.hardwareConfiguration,hardware);
+ const staleAck=(requestId)=>({
+   requestId,status:"ACCEPTED",errorCode:"NONE",deviceEpoch:"69",
+   graphRevision:"5",rosterRevision:"5"
+ });
+ for(const kind of ["input-mask","output-mask","rate","buffer"]){
+   const sent=[],accepted=[];
+   const controller=protocol.createController({
+     emit:(name,payload)=>sent.push({name,payload}),
+     onAccepted:(next,confirmed)=>accepted.push({next,confirmed})
+   });
+   assert.equal(controller.onSnapshot(base),true);
+   assert.equal(accepted.length,1);
+   const issued=controller.intent("SET_FADER","7",{valueDb:-6});
+   assert.equal(issued.ok,true);
+   const changed=clone(base);
+   if(kind==="input-mask"){
+     changed.device.enabledInputs=[0];
+     changed.device.inputEndpoints=changed.device.inputEndpoints.filter(p=>p.port===0);
+   }else if(kind==="output-mask"){
+     changed.device.enabledOutputs=[0,1];
+     changed.device.outputEndpoints=changed.device.outputEndpoints.filter(p=>p.port<2);
+   }else if(kind==="rate")changed.device.sampleRate=44100;
+   else changed.device.bufferFrames=256;
+   assert.equal(controller.onSnapshot(changed),true,kind);
+   assert.equal(controller.state().pending,null,
+     "physical remap must cancel old native pending intent: "+kind);
+   assert.equal(controller.state().lastError,"STALE_DEVICE");
+   assert.equal(accepted.length,2,
+     "new physical config must repaint from native even before an old ACK: "+kind);
+   assert.notEqual(accepted[1].next.hardwareConfiguration,hardware);
+   assert.equal(accepted[1].confirmed,undefined,"no ACK-only or false PCM success");
+   assert.equal(controller.onAck(staleAck(issued.requestId)),false,
+     "old ACK must not settle the replaced hardware configuration");
+   assert.equal(controller.state().pending,null);
+   assert.equal(controller.state().current.hardwareConfiguration,
+     accepted[1].next.hardwareConfiguration);
+   assert.equal(sent.filter(x=>x.name==="arMixConsoleIntent").length,1,
+     "new hardware readback cannot silently redispatch an old edit");
+ }
+ assert.equal(JSON.stringify(base),before,"native fixture cannot be mutated");
+});
+
+test("G-MV20 pin order and MONITOR are not a new hardware owner",()=>{
+ const base=gmv20AcceptedGraph(),seen=[];
+ const c=protocol.createController({emit(){},
+   onAccepted:next=>seen.push(next)});
+ assert.equal(c.onSnapshot(base),true);
+ const issued=c.intent("SET_FADER","7",{valueDb:-6});
+ assert.equal(issued.ok,true);
+ const rearranged=clone(base);
+ rearranged.device.enabledInputs.reverse();
+ rearranged.device.enabledOutputs.reverse();
+ rearranged.device.outputArmed=!base.device.outputArmed;
+ assert.equal(c.onSnapshot(rearranged),true);
+ assert.equal(c.state().pending?.requestId,issued.requestId,
+   "reordering physical pin sets must preserve a valid pending channel edit");
+ assert.equal(seen.length,1,"unacknowledged operation does not repaint");
+ assert.equal(protocol.nativeHardwareConfiguration(rearranged.device),
+   protocol.nativeHardwareConfiguration(base.device));
+});
+
 // GUI-4: SOURCE ONLY and physical PRIMARY OUT must not consume a parallel SEND.
 
 
@@ -2042,6 +2125,36 @@ test("SET_FADER: one exact string request, ACK then LATER same-revision native r
  assert.equal(c.state().pending,null);
  assert.equal(visible.length,2);
 });
+test("G-MV21 controller ACK lease is immutable until installed v6 readback",()=>{
+ const snap=acceptedFixture(),events=[],paints=[];
+ const c=protocol.createController({emit:(name,payload)=>events.push({name,payload}),
+   onAccepted:(next,confirmed)=>paints.push({next,confirmed})});
+ assert.equal(c.onSnapshot(snap),true);
+ const issued=c.intent("SET_FADER","9007199254740993",{valueDb:-12});
+ assert.equal(issued.ok,true);
+ const ack={requestId:issued.requestId,status:"ACCEPTED",errorCode:"NONE",
+   deviceEpoch:snap.device.epoch,graphRevision:"6",rosterRevision:"7"};
+ assert.equal(c.onAck(ack),true);
+ const n=events.length;
+ for(const late of [ack,
+   {...ack,status:"REJECTED",errorCode:"STALE_GRAPH"},
+   {...ack,graphRevision:"99"},{...ack,graphRevision:"broken"},
+   {...ack,deviceEpoch:"18446744073709551609"}]){
+   assert.equal(c.onAck(late),false);
+   assert.equal(c.state().pending?.requestId,issued.requestId);
+   assert.equal(c.state().lastError,"PENDING_ACCEPTED_SNAPSHOT");
+   assert.equal(events.length,n,"duplicate ACK cannot resubscribe");
+ }
+ assert.equal(paints.length,1,"ACK alone cannot repaint");
+ const installed=clone(snap);
+ installed.graph.revision="6";
+ installed.graph.channels[0].controls.faderDb=-12;
+ assert.equal(c.onSnapshot(installed),true);
+ assert.equal(c.state().pending,null);
+ assert.equal(paints.length,2);
+ assert.equal(paints[1].confirmed.requestId,issued.requestId);
+ assert.equal(c.onAck(ack),false);
+});
 test("STALE/REJECTED/timeout leave accepted GUI untouched and request fresh native readback",()=>{
  const sent=[],c=protocol.createController({emit:(name,payload)=>sent.push({name,payload})});
  const s=acceptedFixture();c.onSnapshot(s);
@@ -2511,7 +2624,8 @@ test("P0 output-only Audio I/O is a real native configuration, never blocked by 
 });
 
 
-test("MV-18 real M4 FX slot lease survives no old device ACK on same-epoch driver switch",()=>{
+for(const scenario of ["driver","pin-mask"]) test(
+ "G-MV20 M4 pending slot FX remains fenced across same-epoch "+scenario+" remap",()=>{
  const vm=require("node:vm"),listeners=new Map(),sent=[],timers=[],microtasks=[];
  const tracks=Array.from({length:10},(_,i)=>({id:i+1,kind:"audio",
    name:"CH "+(i+1),input:"None",output:"Master",format:"mono",
@@ -2617,20 +2731,26 @@ test("MV-18 real M4 FX slot lease survives no old device ACK on same-epoch drive
  assert.equal(click(),true);
  assert.equal(bypasses().length,1,
    "invalid candidate cannot release the pending physical FX lease");
- // A different VALID driver using the SAME epoch must expire the old slot lease.
+ // Different actual pins OR a different driver on the SAME epoch expires
+ // only the old UI lease; native instances are still readback-owned.
  const changed=clone(installed);
- changed.device.captureDevice="Vendor B ASIO";
- changed.device.playbackDevice="Vendor B ASIO";
+ if(scenario==="driver"){
+   changed.device.captureDevice="Vendor B ASIO";
+   changed.device.playbackDevice="Vendor B ASIO";
+ }else{
+   changed.device.enabledInputs=[0];
+   changed.device.inputEndpoints=changed.device.inputEndpoints.filter(p=>p.port===0);
+ }
  changed.legacyM4.routingRevision="14";
  changed.mixerSession.routeRevision="14";
  publish(changed);
  while(microtasks.length)microtasks.shift()();
  assert.equal(click(),true);
  assert.equal(bypasses().length,2,
-   "reconnected same-epoch driver cannot leave a slot uneditable for 5 seconds");
+   "reconfigured hardware cannot leave a slot uneditable for 5 seconds");
  const second=bypasses()[1];
  assert.notEqual(first.requestId,second.requestId);
- assert.equal(second.revision,14,"second bypass uses new accepted native revision");
+ assert.equal(second.revision,14,"second bypass uses the newly accepted routing revision");
  listeners.get("arMixRoutingFxBypassAck")({
    requestId:first.requestId,channel:4,slot:0,ok:false,error:"OLD_DEVICE"});
  oldTimer.fn();

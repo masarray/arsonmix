@@ -258,7 +258,11 @@
       remapGeneration:null}};
   }
   function setupAck(state,ack) {
-    if(!state.pending||ack?.requestId!==state.pending.requestId)return state;
+    // G-MV21: first ACK wins while APPLYING. After a matching hardware
+    // acceptance, the immutable ACK lease is verified only by an installed
+    // v6 readback, never replaced by duplicate positive/negative ACKs.
+    if(state.phase!=="APPLYING"||!state.pending||
+       state.pending.ack||ack?.requestId!==state.pending.requestId)return state;
     const active=ack.active;
     const accepted=ack.ok===true &&
       (ack.state==="ACCEPTED_LIVE"||ack.state==="ACCEPTED_MUTED") &&
@@ -357,6 +361,9 @@
     return {...state,phase:"IDLE",message:"",remapGeneration:null};
   }
 
+  // G-MV20: native schema-v6 normalizer publishes the *single* canonical
+  // installed pin/format fingerprint. DeviceVM consumes that read-only token;
+  // it must not independently calculate a competing physical identity.
   // MV-12: one pure identity fence for transient WebView control requests.
   // This is NOT a physical device manager or second native controller. A
   // ChannelId graph can be readmitted directly after a device switch without
@@ -366,17 +373,20 @@
     const d=snapshot?.device,epoch=d?.epoch;
     const kinds=["CHANNEL_ID","M4","NEEDS_REMAP","LOGICAL_ONLY",
       "UNADMITTED","STALE"];
+    const hardwareConfiguration=snapshot?.hardwareConfiguration;
     if(!kinds.includes(readModelKind) ||
        typeof epoch!=="string" || !/^(0|[1-9]\d*)$/.test(epoch) ||
        epoch.length>20 || BigInt(epoch)>18446744073709551615n ||
        typeof d.backend!=="string" ||
        typeof d.captureDevice!=="string" ||
-       typeof d.playbackDevice!=="string")return null;
-    // Store only physical identity and the canonical read-model authority.
-    // Never copy a native graph, device controller, DOM or PCM into the VM.
+       typeof d.playbackDevice!=="string" ||
+       typeof hardwareConfiguration!=="string"||
+       !hardwareConfiguration)return null;
+    // Store only physical identity/format and canonical read-model authority.
+    // Never copy a graph, mutable pin array, DOM, PCM or device controller.
     return Object.freeze({epoch,backend:d.backend,
       captureDevice:d.captureDevice,playbackDevice:d.playbackDevice,
-      authority:readModelKind});
+      hardwareConfiguration,authority:readModelKind});
   }
   function nativeLifecycleDecision(previous,next) {
     if(!next || typeof next.epoch!=="string" ||
@@ -387,7 +397,8 @@
     const changed=previous.epoch!==next.epoch ||
       previous.backend!==next.backend ||
       previous.captureDevice!==next.captureDevice ||
-      previous.playbackDevice!==next.playbackDevice;
+      previous.playbackDevice!==next.playbackDevice ||
+      previous.hardwareConfiguration!==next.hardwareConfiguration;
     if(changed)
       return Object.freeze({kind:"DEVICE_CHANGED",expirePending:true});
     // The very first accepted M4 physical SOURCE patch promotes an already
