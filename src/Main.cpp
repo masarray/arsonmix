@@ -1834,6 +1834,8 @@ private:
         bool applied=false;
         juce::String nativeError;
         juce::String requestedSecondaryMask;
+        juce::String installedCaptureGraphRevision;
+        juce::String installedCaptureRosterRevision;
         if(!replay&&installingCapture) {
             const auto decoded=armix::console::decodeQualifiedCaptureConsoleIntent(
                 request,before,installedBus);
@@ -1861,7 +1863,12 @@ private:
                     decoded.command.deviceEpoch,decoded.command.graphRevision,
                     decoded.command.rosterRevision,sources);
                 applied=result.accepted;
-                if(!applied)
+                if(applied){
+                    installedCaptureGraphRevision=
+                        juce::String(std::to_string(result.pcmRevision));
+                    installedCaptureRosterRevision=
+                        juce::String(std::to_string(result.rosterRevision));
+                }else
                     nativeError=result.error?juce::String(result.error):
                         juce::String("SECONDARY_CAPTURE_INSTALL_FAILED");
             }
@@ -1930,7 +1937,11 @@ private:
                  request.getProperty("payload",{}).getProperty("secondaryDriver","").toString()&&
              secondary.getProperty("activePinMaskHex","").toString()==
                  requestedSecondaryMask&&
-             secondary.getProperty("deviceLease","0").toString()!="0");
+             secondary.getProperty("deviceLease","0").toString()!="0"&&
+             graph.getProperty("revision","").toString()==
+                 installedCaptureGraphRevision&&
+             graph.getProperty("rosterRevision","").toString()==
+                 installedCaptureRosterRevision);
         const bool nativeStillAdmitted=applied&&caps.isObject()&&secondaryAccepted&&
             static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",false))&&
             device.getProperty("epoch","0").toString()==
