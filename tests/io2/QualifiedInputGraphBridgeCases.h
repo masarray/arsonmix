@@ -95,7 +95,8 @@ inline void run() {
             "duplicate physical patch rejects without mutation");
 
     m::DynamicNativeSessionPublisher native;
-    const auto committed=native.commit(roster,accepted,0,epoch,epoch,true);
+    const auto committed=native.commit(roster,accepted,0,epoch,epoch,true,
+                                       {},false,false,&plan);
     require(committed.ok()&&committed.revision==1,"one native graph publication");
     std::array<float,frames> a0{},a2{},b0{},b7{},l{},r{};
     a0.fill(.83f);a2.fill(.2f);b0.fill(.4f);b7.fill(.6f);
@@ -115,11 +116,18 @@ inline void run() {
                 for(int i=0;i<n;++i){ll[i]*=2.f;rr[i]*=2.f;}
             }
         };
-        return native.render(epoch,virtualFrame.pointers.data(),
-            virtualFrame.count,l.data(),r.data(),frames,false,fx);
+        return native.render(epoch,nullptr,0,l.data(),r.data(),frames,false,fx,
+            nullptr,nullptr,{},{},{},nullptr,0,blocks);
     };
     int fxCalls=0;
     require(render(fxCalls)&&fxCalls==1,"A+B -> BUS FX once -> MAIN");
+    // A source-map change cannot mutate a published graph unless the
+    // qualified map and its exact virtual sources are admitted together.
+    const auto rejected=native.commit(roster,accepted,1,epoch,epoch,true,
+                                      {},false,false,&draft);
+    require(rejected.fault==m::DynamicNativeSessionPublisher::Fault::invalidCandidate
+            &&native.revision()==1,
+            "rejected remap retains old immutable PCM + FX lease");
     constexpr float center=0.7071067811865475f;
     require(near(l[frames-1],2.f*(.2f*center+.4f))&&
             near(r[frames-1],2.f*(.2f*center+.6f)),

@@ -252,6 +252,9 @@ public:
                !snap->prepared->inputMap->assemble(deviceEpoch,frames,
                                                    qualifiedCaptureBlocks,
                                                    virtualFrame)) {
+                // The installed external destinations cannot retain an
+                // APPLIED readback from a previous, now invalid input map.
+                snap->prepared->graph.invalidateAppliedExternalOutputs();
                 clearOutputs();return false;
             }
             physical=virtualFrame.pointers.data();
