@@ -236,7 +236,8 @@
           graphRevision:g.revision,rosterRevision:g.rosterRevision},
         pending:{operation,epoch:d.epoch,baseGraphRevision:g.revision,
           baseRosterRevision:g.rosterRevision,
-          ...(creating?{}:{id:channelId,role:row.role}),
+          ...(creating?{beforeIds:g.channels.map(ch=>ch.id)}:
+            {id:channelId,role:row.role}),
           acked:false}};
     }
     // Only first AUDIO TRACK may bootstrap a verified silent prepared M4
@@ -263,7 +264,8 @@
     if(pending.operation==="CREATE_CHANNEL"||
        pending.operation==="CREATE_GROUP")
       return decimalId(ack.createdId)&&
-        ack.createdId!==pending.id?"ACKED":"REJECTED";
+        ack.createdId!==pending.id&&
+        !pending.beforeIds?.includes(ack.createdId)?"ACKED":"REJECTED";
     if(pending.operation==="DELETE_CHANNEL"||
        pending.operation==="REMOVE_BUS")
       return ack.channelId===pending.id?"ACKED":"REJECTED";
@@ -299,7 +301,9 @@
     const matches=g.channels.filter(ch=>ch.id===(pending.createdId||pending.id));
     if(pending.operation==="CREATE_CHANNEL"||
        pending.operation==="CREATE_GROUP")
-      return decimalId(pending.createdId)&&matches.length===1&&
+      return decimalId(pending.createdId)&&
+        !pending.beforeIds?.includes(pending.createdId)&&
+        matches.length===1&&
         matches[0].role===ROSTER_OPS[pending.operation].role?
         "CONFIRMED":"WAIT";
     return (pending.operation==="DELETE_CHANNEL"||
