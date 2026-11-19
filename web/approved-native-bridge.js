@@ -1459,8 +1459,9 @@
   // inserts remain untouched. Never simulate success in WebView while device
   // admission or a matching native ACK + subsequent readback is missing.
   function globalFxContext(){
-    return fxRackVM.globalPowerContext(controller?.state()?.current,
-      m4Verified(),!!logicalView);
+    const current=controller?.state()?.current;
+    return fxRackVM.globalPowerContext(current,m4Verified(),!!logicalView,
+      protocol.nativeHardwareConfiguration(current?.device));
   }
   function syncGlobalFxReadback(){
     // Ignore raw incoming events: controller may reject an invalid/stale
@@ -1484,8 +1485,7 @@
     const plan=fxRackVM.globalPowerPlan(current,ctx,!!pendingGlobalFx);
     if(plan.kind!=="READY")return false;
     const requestId="global-fx-"+(++globalFxSerial);
-    pendingGlobalFx={requestId,bypassed:plan.bypassed,acked:false,
-      epoch:ctx.epoch,revision:ctx.revision,authority:ctx.authority};
+    pendingGlobalFx={requestId,bypassed:plan.bypassed,acked:false,...ctx};
     const button=document.getElementById?.("globalFxToggle");
     if(button){button.disabled=true;button.setAttribute("aria-busy","true");}
     backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload});
@@ -1504,7 +1504,8 @@
     const plan=fxRackVM.nativePowerPlan(current,{
       channelId:nativeIdFor(t),action,
       slot:action==="fxOn"?null:Number(button?.dataset?.slot),
-      pending:!!pendingNativeFxPower});
+      pending:!!pendingNativeFxPower,
+      hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
     if(plan.kind!=="READY")return false;
     const requestId="native-rack-"+(++nativeFxPowerSerial);
     pendingNativeFxPower={requestId,...plan.pending};
@@ -2964,7 +2965,8 @@
     if(confirmed?.operation==="APPLY_WIRE_TRANSACTION")
       playAcceptedWireImpact(confirmed.payload.changes);
     finishNativeTrack(next);finishNativeTrackDelete(next);
-    const fxInsert=fxRackVM.nativeInsertSettlement(pendingFxInsert,next,confirmed);
+    const fxInsert=fxRackVM.nativeInsertSettlement(pendingFxInsert,next,confirmed,
+      protocol.nativeHardwareConfiguration(next?.device));
     if(fxInsert.kind==="STALE")pendingFxInsert=null;
     if(fxInsert.kind==="CONFIRMED"){
       pendingFxInsert=null;
@@ -2973,7 +2975,8 @@
         fxInsert.catalogId,fxInsert.instanceId);
       status("VST3 loaded · "+fxInsert.name+" · native PCM readback verified");
     }
-    const fxSettlement=fxRackVM.nativePowerSettlement(pendingNativeFxPower,next);
+    const fxSettlement=fxRackVM.nativePowerSettlement(pendingNativeFxPower,next,
+      protocol.nativeHardwareConfiguration(next?.device));
     if(fxSettlement==="CONFIRMED"||fxSettlement==="STALE")
       pendingNativeFxPower=null;
     if(startupWire)window.queueMicrotask(flushStartupWire);
@@ -3868,9 +3871,10 @@
       const accepted=controller?.state().current;
       const nativeId=nativeIdFor(track);
       if(accepted?.admitted || mixerSession()?.authority==="CHANNEL_ID") {
+        const hardwareConfiguration=protocol.nativeHardwareConfiguration(accepted?.device);
         const plan=fxRackVM.nativeInsertPlan(accepted,{
           channelId:nativeId,slot,catalogId:plugin?.id,
-          pending:!!pendingFxInsert});
+          pending:!!pendingFxInsert,hardwareConfiguration});
         if(plan.kind!=="READY"){
           status("VST3 unavailable · select an empty native ChannelId FX slot");
           return true;
@@ -3878,7 +3882,8 @@
         const request=controller.intent("LOAD_INSERT",plan.channelId,plan.payload);
         if(!request.ok){status("VST3 rejected · "+request.error);return true;}
         pendingFxInsert={authority:"CHANNEL_ID",requestId:request.requestId,
-                         id,channelId:plan.channelId,slot,epoch:accepted.device.epoch};
+                         id,channelId:plan.channelId,slot,
+                         epoch:accepted.device.epoch,hardwareConfiguration};
         status(track.name+" · preparing VST3 without stopping MAIN");
         window.setTimeout(()=>{
           if(pendingFxInsert?.requestId!==request.requestId)return;
