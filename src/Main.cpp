@@ -9,6 +9,7 @@
 #include "ApprovedConsoleNativeTransportV6.h"
 #include "../integration/ApprovedNativeRuntimeSnapshot.h"
 #include "../integration/ApprovedNativeControlIntent.h"
+#include "../integration/QualifiedCaptureConsoleIntent.h"
 #include "LiveAudioEngine.h"
 #include "NativeSessionToken.h"
 #include "ArSonMixStartupSplash.h"
@@ -1824,11 +1825,47 @@ private:
             if(acceptedControlRequests_.size()>512)
                 acceptedControlRequests_.remove(0);
         }
-        const auto translated=armix::console::translateApprovedNativeControl(
-            request,before,installedBus);
+        const bool installingCapture=
+            request.getProperty("operation","").toString()=="INSTALL_SECONDARY_CAPTURE";
+        const auto translated=installingCapture?
+            armix::console::ApprovedNativeControlIntent{}:
+            armix::console::translateApprovedNativeControl(
+                request,before,installedBus);
         bool applied=false;
         juce::String nativeError;
-        if(!replay&&translated.ok()) {
+        juce::String requestedSecondaryMask;
+        if(!replay&&installingCapture) {
+            const auto decoded=armix::console::decodeQualifiedCaptureConsoleIntent(
+                request,before,installedBus);
+            if(!decoded.ok())nativeError=decoded.error;
+            else if(nativeShowBusy_||studioBackupBusy_||
+                    engine_.isGraphSwitchPending()||mixerSessionWorker_.busy()) {
+                nativeError="SECONDARY_CAPTURE_TRANSACTION_BUSY";
+            }else{
+                std::vector<LiveAudioEngine::QualifiedPhysicalSourceChoice> sources;
+                sources.reserve(decoded.command.sources.size());
+                for(const auto& src:decoded.command.sources) {
+                    LiveAudioEngine::QualifiedPhysicalSourceChoice choice;
+                    choice.channel=armix::mixer::ChannelId{src.channelId};
+                    choice.onSecondary=src.secondary;
+                    choice.leftPhysical=src.left;
+                    choice.rightPhysical=src.right;
+                    choice.stereo=src.stereo;
+                    sources.push_back(choice);
+                }
+                requestedSecondaryMask=decoded.command.secondaryPins.toString(16);
+                const auto result=engine_.installSecondaryAsioCapture(
+                    decoded.command.secondaryDriver,
+                    decoded.command.secondaryPins,
+                    decoded.command.captureRate,decoded.command.capturePeriod,
+                    decoded.command.deviceEpoch,decoded.command.graphRevision,
+                    decoded.command.rosterRevision,sources);
+                applied=result.accepted;
+                if(!applied)
+                    nativeError=result.error?juce::String(result.error):
+                        juce::String("SECONDARY_CAPTURE_INSTALL_FAILED");
+            }
+        }else if(!replay&&translated.ok()) {
             const auto command=translated.translated;
             if(command.getProperty("operation","").toString()=="NATIVE_LOAD_INSERT") {
                 // Exactly one catalog-resolved vendor processor from the
@@ -1875,7 +1912,26 @@ private:
         const auto device=after.getProperty("device",{});
         const auto graph=after.getProperty("graph",{});
         const auto caps=graph.getProperty("capabilities",{});
-        const bool nativeStillAdmitted=applied&&caps.isObject()&&
+        const auto secondary=after.getProperty("secondaryCapture",{});
+        // A driver-open ACK is never a PCM/live-source claim. Exact B
+        // native readback must match the selected pin-mask, epoch and driver
+        // before accepting the structural graph transaction. The approved
+        // browser will demand a LATER matching producer snapshot.
+        const bool secondaryAccepted=!installingCapture||
+            (secondary.isObject()&&
+             static_cast<bool>(secondary.getProperty("installedInputMap",false))&&
+             static_cast<bool>(secondary.getProperty("driverReady",false))&&
+             !static_cast<bool>(secondary.getProperty("driverFault",true))&&
+             !static_cast<bool>(secondary.getProperty("needsRemap",true))&&
+             static_cast<bool>(secondary.getProperty("primaryEpochMatches",false))&&
+             secondary.getProperty("primaryEpoch","").toString()==
+                 request.getProperty("deviceEpoch","").toString()&&
+             secondary.getProperty("driver","").toString()==
+                 request.getProperty("payload",{}).getProperty("secondaryDriver","").toString()&&
+             secondary.getProperty("activePinMaskHex","").toString()==
+                 requestedSecondaryMask&&
+             secondary.getProperty("deviceLease","0").toString()!="0");
+        const bool nativeStillAdmitted=applied&&caps.isObject()&&secondaryAccepted&&
             static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",false))&&
             device.getProperty("epoch","0").toString()==
                 request.getProperty("deviceEpoch","").toString();
@@ -1886,11 +1942,17 @@ private:
             replay?"DUPLICATE_REQUEST_ID":
             translated.error.isNotEmpty()?translated.error:
             nativeError.isNotEmpty()?nativeError:
+            applied&&installingCapture?"SECONDARY_CAPTURE_READBACK_MISMATCH":
             applied?"NATIVE_CALLBACK_LOST":"NATIVE_PCM_MUTATION_REJECTED");
         ack->setProperty("deviceEpoch",device.getProperty("epoch","0"));
         ack->setProperty("graphRevision",graph.getProperty("revision","0"));
         ack->setProperty("rosterRevision",graph.getProperty("rosterRevision","0"));
         ack->setProperty("productionCallbackLive",false);
+        if(installingCapture){
+            // Diagnostics only, never a statement of ChannelId audibility.
+            ack->setProperty("secondaryCapture",secondary);
+            ack->setProperty("sourceAudibleProven",false);
+        }
         if(browser_.loaded)
             browser_.emitEventIfBrowserIsVisible("arMixConsoleAck",
                                                juce::var(ack.release()));
