@@ -2925,6 +2925,11 @@
     }
     document.documentElement.dataset.armixNativeRoster="accepted";
     flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;
+    // G-MV30: first accepted ChannelId roster is projected only NOW.
+    // The earlier pre-projection syncAddTrack() was fail-closed while the
+    // native graph was unmounted; enable the button only after successful
+    // projection, without requiring a second telemetry callback/click.
+    syncAddTrack(next);
     syncMonitorButton(next.device);
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
     if(confirmed?.operation==="APPLY_WIRE_TRANSACTION")
