@@ -342,10 +342,12 @@ test("MV-18 physical device swap cancels output and FX leases even at unchanged 
    old),{kind:"M4_FIRST_SOUND",expirePending:false},
    "first M4 input patch must preserve its own pending source");
  const bridge=readFileSync("web/approved-native-bridge.js","utf8");
- const a=bridge.indexOf("  function expireTransientNativeUi(reason) {");
+ const a=bridge.indexOf("  function discardTransientNativeUi() {");
  const b=bridge.indexOf("  function onNativeReadback(next,confirmed)",a);
  const cleanup=bridge.slice(a,b);
  assert.match(cleanup,/pendingExternal\.clear\(\);pendingSlotPowers\.clear\(\)/);
+ assert.match(cleanup,/function expireTransientNativeUi\(reason\)\s*\{\s*discardTransientNativeUi\(\)/,
+   "physical change must use the same complete GUI lease discard");
  assert.doesNotMatch(cleanup,/backend\.emitEvent|audioDeviceApply|routingExternalOutput|routingFxBypass/,
    "UI cleanup cannot send native commands, reset FX, or reopen devices");
 });
@@ -432,9 +434,76 @@ test("MV-19 invalid read-model and malformed device identity cannot mutate hardw
     "read-model M4 evidence must not use the prior hardware cache");
 });
 
+test("G-MV24 readback policy quarantines retained PCM without starving first M4 input",()=>{
+ const policy=vm.nativeTransientReadbackPolicy;
+ for(const [kind,expected] of [
+   ["NEEDS_REMAP",{discardRetained:true,drainM4Sources:false,
+     drainNativeSources:false}],
+   ["CHANNEL_ID",{discardRetained:false,drainM4Sources:false,
+     drainNativeSources:true}],
+   ["M4",{discardRetained:false,drainM4Sources:true,
+     drainNativeSources:false}],
+   ["UNADMITTED",{discardRetained:false,drainM4Sources:true,
+     drainNativeSources:false}],
+   ["LOGICAL_ONLY",{discardRetained:false,drainM4Sources:false,
+     drainNativeSources:false}],
+   ["STALE",{discardRetained:false,drainM4Sources:false,
+     drainNativeSources:false}],
+   ["INVALID",{discardRetained:false,drainM4Sources:false,
+     drainNativeSources:false}],
+   [null,{discardRetained:false,drainM4Sources:false,
+     drainNativeSources:false}]
+ ]){
+   const result=policy(kind);
+   assert.deepEqual(result,expected,String(kind));
+   assert.equal(Object.isFrozen(result),true);
+ }
+ assert.doesNotMatch(policy.toString(),/document|window|backend|AudioContext|setTimeout/,
+   "readback quarantine decision belongs to the pure Device ViewModel");
+ const bridge=readFileSync("web/approved-native-bridge.js","utf8");
+ const start=bridge.indexOf("  function discardTransientNativeUi() {");
+ const expire=bridge.indexOf("  function expireTransientNativeUi(reason) {",start);
+ const readback=bridge.indexOf("  function onNativeReadback(next,confirmed)",expire);
+ assert.ok(start>0&&expire>start&&readback>expire);
+ const discard=bridge.slice(start,expire);
+ const expiration=bridge.slice(expire,readback);
+ const region=bridge.slice(readback,
+   bridge.indexOf("  if (connected) {\n    controller = protocol.createController",readback));
+ assert.match(expiration,/discardTransientNativeUi\(\)/,
+   "DEVICE_CHANGED and AUTHORITY_CHANGED reuse the sole GUI discard");
+ assert.match(region,/if\s*\(transientPlan\.discardRetained\)\s*\{/);
+ const retained=region.slice(region.indexOf("if (transientPlan.discardRetained)"),
+   region.indexOf("if (!nativeAdmitted)",region.indexOf("if (transientPlan.discardRetained)")));
+ assert.match(retained,/discardTransientNativeUi\(\)/,
+   "NEEDS_REMAP must discard all transient FX, SOURCE, WIRE and output leases");
+ assert.doesNotMatch(retained,/pendingNativeSources\.clear|pendingNativeFxPower=null|pendingWireGains\.clear|activeNativeSource=null/,
+   "there must be no second partial cleanup list to drift from reconnect");
+ for(const token of ["pendingNativeSources.clear()","pendingSourceQueue.clear()",
+   "pendingM4RackPowers.clear()","pendingExternal.clear()",
+   "pendingSlotPowers.clear()","pendingGlobalFx=null",
+   "pendingNativeFxPower=null","pendingWireGains.clear()",
+   "pendingTrackDelete=null","pendingFxInsert=null","pendingIdentity"]){
+   assert.ok(discard.includes(token),"retained cleanup must cover "+token);
+ }
+ assert.equal((bridge.match(/pendingSourceQueue\.clear\(\)/g)||[]).length,1,
+   "source queue has one complete cleanup owner, including reconnect and retention");
+ assert.match(region,/transientPlan\.drainM4Sources\s*&&\s*!nativeUiSourcePending/);
+ assert.match(region,/transientPlan\.drainNativeSources\s*&&\s*!activeNativeSource/);
+ assert.ok(region.indexOf("if (transientPlan.drainM4Sources")<
+   region.indexOf("if (transientPlan.discardRetained)"));
+ assert.doesNotMatch(region.slice(region.indexOf("if (transientPlan.discardRetained)"),
+   region.indexOf("if (!nativeAdmitted)",region.indexOf("if (transientPlan.discardRetained)"))),
+   /window\.queueMicrotask|backend\.emitEvent|controller\?\.intent/,
+   "quarantined retained graph cannot create routing operations");
+ assert.doesNotMatch(discard,/lastPaintedSignature=|lastNativeTopologySignature=|backend\.emitEvent|localStorage/,
+   "repeated retained readbacks must preserve paint signature and never change PCM");
+ assert.match(expiration,/lastPaintedSignature="";lastNativeTopologySignature="";/,
+   "only a real authority/physical device change invalidates full GUI paint");
+});
+
 test("MV-12 approved bridge invalidates transient UI leases, not durable JUCE state",()=>{
   const source=readFileSync("web/approved-native-bridge.js","utf8");
-  const start=source.indexOf("  function expireTransientNativeUi(reason) {");
+  const start=source.indexOf("  function discardTransientNativeUi() {");
   const end=source.indexOf("  function onNativeReadback(next,confirmed)",start);
   assert.ok(start>0&&end>start);
   const cleanup=source.slice(start,end);
