@@ -28,6 +28,7 @@ struct CaptureEndpointView final {
     std::uint64_t generation=0;
     bool primary=false;
     std::span<const int> enabledPhysicalPinsInCallbackOrder{};
+    std::uint64_t deviceLease=0; // native-issued, unique within accepted roster
 };
 
 struct QualifiedInputPin final {
@@ -51,6 +52,7 @@ struct MultiDeviceInputFault final {
     enum class Kind : std::uint8_t {
         none, invalidPrimaryEpoch, invalidDeviceCount, missingPrimary,
         invalidDeviceIdentity, invalidGeneration, duplicateDevice,
+        invalidDeviceLease, duplicateDeviceLease,
         invalidDevicePins, tooManyInputs, unsupportedSecondaryChannels,
         invalidChannel, duplicateChannel, channelFormatMismatch,
         missingDevice, unavailablePin, invalidStereoPair
@@ -71,10 +73,11 @@ public:
         std::uint8_t device=0;
         int packedOrdinal=-1; // index in exactly this driver's callback
         std::uint64_t generation=0;
+        std::uint64_t deviceLease=0;
     };
     struct DeviceReadback final {
         std::string verifiedKey; // CONTROL only, never compared in callback
-        std::uint64_t generation=0;
+        std::uint64_t generation=0,deviceLease=0;
         int firstVirtual=0,activePins=0;
         bool primary=false;
     };
@@ -83,6 +86,7 @@ public:
         int channels=0,frames=0;
         std::uint64_t generation=0;
         bool admitted=false; // actual native capture/ASRC readback
+        std::uint64_t deviceLease=0; // disambiguates reordered equal epochs
     };
     struct VirtualFrame final {
         std::array<const float*,maxVirtualInputs> pointers{};
@@ -132,6 +136,10 @@ public:
                 error.kind=MultiDeviceInputFault::Kind::invalidGeneration;
                 return false;
             }
+            if(src.deviceLease==0) {
+                error.kind=MultiDeviceInputFault::Kind::invalidDeviceLease;
+                return false;
+            }
             if(d!=0&&src.primary) {
                 error.kind=MultiDeviceInputFault::Kind::missingPrimary;
                 return false;
@@ -139,6 +147,9 @@ public:
             for(std::size_t prev=0;prev<d;++prev)
                 if(candidate.devices_[prev].verifiedKey==src.verifiedDeviceKey) {
                     error.kind=MultiDeviceInputFault::Kind::duplicateDevice;
+                    return false;
+                } else if(candidate.devices_[prev].deviceLease==src.deviceLease) {
+                    error.kind=MultiDeviceInputFault::Kind::duplicateDeviceLease;
                     return false;
                 }
             if(d!=0&&src.enabledPhysicalPinsInCallbackOrder.size()>16) {
@@ -160,6 +171,7 @@ public:
             auto& prepared=candidate.devices_[d];
             prepared.verifiedKey=std::string(src.verifiedDeviceKey);
             prepared.generation=src.generation;
+            prepared.deviceLease=src.deviceLease;
             prepared.primary=src.primary;
             prepared.firstVirtual=candidate.inputCount_;
             prepared.activePins=registries[d].enabledCount;
@@ -168,6 +180,7 @@ public:
                 slot.device=static_cast<std::uint8_t>(d);
                 slot.packedOrdinal=pin;
                 slot.generation=src.generation;
+                slot.deviceLease=src.deviceLease;
             }
         }
 
@@ -252,6 +265,7 @@ public:
             const auto& slot=slots_[i];
             const auto& block=blocks[slot.device];
             if(!block.admitted||block.generation!=slot.generation||
+               block.deviceLease!=slot.deviceLease||
                block.frames!=frames||!block.packedChannels||
                block.channels!=devices_[slot.device].activePins||
                !block.packedChannels[slot.packedOrdinal])
