@@ -212,13 +212,18 @@
     if(snapshot?.admitted===false&&uiPrimary.length>0&&visible.length!==1)
       return {kind:"BLOCK"};
     const graph=snapshot?.graph;
+    const sources=Array.isArray(graph?.channels)?
+      graph.channels.filter(ch=>ch?.id===sourceId):[];
     const globalEdges=Array.isArray(graph?.edges)&&nativeId(edgeId)?
       graph.edges.filter(e=>e?.edgeId===edgeId):[];
-    const nativePrimary=globalEdges.length===1&&
-      globalEdges[0].enabled===true&&
-      globalEdges[0].primaryOutput===true&&
+    // Older v6 producers omit primaryOutput: use the SAME explicit-field
+    // precedence + accepted primaryOutId fallback as edgePresentation.
+    // A native false is always decisive and can NEVER become PRIMARY.
+    const nativePrimary=globalEdges.length===1&&sources.length===1&&
       globalEdges[0].from===sourceId&&
-      globalEdges[0].to===graph?.mainChannelId;
+      globalEdges[0].to===graph?.mainChannelId&&
+      edgePresentation(globalEdges[0],sources[0].primaryOutId,
+        graph.mainChannelId)?.primary===true;
     // A mapped primary native EdgeId cannot bypass this policy through
     // the generic REMOVE path just because the UI projection went stale.
     if(visible.length!==1)
@@ -226,10 +231,9 @@
     if(snapshot?.retained===true)return {kind:"BLOCK"};
 
     if(snapshot?.admitted===true) {
-      const sources=graph?.channels?.filter(ch=>ch.id===sourceId);
       if(nativeId(sourceId)&&nativeId(edgeId)&&
          nativeId(graph?.mainChannelId)&&
-         sources?.length===1&&
+         sources.length===1&&
          ["INPUT","GROUP","FX_RETURN"].includes(sources[0].role)&&
          sources[0].primaryOutId===graph.mainChannelId&&
          nativePrimary)return {kind:"ROUTE",target:"NONE"};
