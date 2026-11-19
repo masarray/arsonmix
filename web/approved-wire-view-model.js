@@ -104,6 +104,158 @@
     try{return BigInt(value)<=18446744073709551615n;}catch{return false;}
   }
 
+  // G-MV31: the one admitted ChannelId / EdgeId send-edit authority.
+  // These pure selectors have NO browser, transport or PCM ownership. A
+  // projected/native readback, not a Pages edge or an ACK, admits a gesture.
+  function nativeSendEdge(snapshot,{sourceId,edgeId,projected=false,
+    pending=false,operation}={}) {
+    if(projected!==true||pending===true||
+       snapshot?.admitted!==true||snapshot.retained===true||
+       !nativeId(sourceId)||!nativeId(edgeId)||
+       !snapshot.graph?.capabilities?.supportedOps?.includes(operation))
+      return null;
+    const matches=snapshot.graph?.channels?.filter(ch=>ch.id===sourceId);
+    if(matches?.length!==1)return null;
+    const edge=parallelEdge(snapshot.graph,sourceId,edgeId);
+    return edge&&nativeId(edge.to)?edge:null;
+  }
+
+  // PRE/POST must be a typed SET_TAP on an exact installed parallel SEND.
+  // A missing targetTap is a read-only eligibility query for both operator
+  // surfaces; no click-only mutation or native gesture is ever synthesized.
+  function nativeTapPlan(snapshot,{sourceId,edgeId,targetTap=null,
+    projected=false,pending=false}={}) {
+    const edge=nativeSendEdge(snapshot,{sourceId,edgeId,projected,pending,
+      operation:"APPLY_WIRE_TRANSACTION"});
+    if(!canEditTap(edge,{supported:true}))return {kind:"UNAVAILABLE"};
+    if(targetTap===null)return {kind:"AVAILABLE",tap:edge.tap};
+    if(!TAPS.has(targetTap))return {kind:"UNAVAILABLE"};
+    if(edge.tap===targetTap)return {kind:"NO_CHANGE"};
+    return {kind:"DISPATCH",operation:"APPLY_WIRE_TRANSACTION",source:sourceId,
+      payload:{changes:[{op:"SET_TAP",from:sourceId,edgeId,tap:targetTap}]}};
+  }
+
+  // Only one parallel SEND can own a selected SOF destination. It must be
+  // an actual GROUP/FX_RETURN ChannelId, never MAIN/primary, an ordinal or
+  // an ambiguous duplicate. SOF gain, PRE/POST, and enable share this edge.
+  function sofSendEdge(snapshot,{sourceId,destinationId}={}) {
+    if(snapshot?.admitted!==true||snapshot.retained===true||
+       !nativeId(sourceId)||!nativeId(destinationId))return null;
+    const graph=snapshot.graph;
+    const source=graph?.channels?.filter(ch=>ch.id===sourceId);
+    const target=graph?.channels?.filter(ch=>ch.id===destinationId);
+    if(source?.length!==1||source[0].role!=="INPUT"||
+       target?.length!==1||!["GROUP","FX_RETURN"].includes(target[0].role))
+      return null;
+    const matches=graph.edges?.filter(e=>e.enabled===true&&
+      e.from===sourceId&&e.to===destinationId&&
+      e.primaryOutput===false&&nativeId(e.edgeId));
+    return matches?.length===1?
+      parallelEdge(graph,sourceId,matches[0].edgeId,destinationId):null;
+  }
+
+  // Ordinary channel PRE/POST considers only non-MAIN sends. A selected
+  // EdgeId must belong to this channel; a stale selection is never silently
+  // changed into an edit of another send. With no selection, exactly one
+  // eligible send may be used.
+  function channelTapEdge(snapshot,{sourceId,selectedEdgeId=null}={}) {
+    if(snapshot?.admitted!==true||snapshot.retained===true||
+       !nativeId(sourceId))return null;
+    const graph=snapshot.graph,main=graph?.mainChannelId;
+    const eligible=graph?.edges?.filter(e=>e.enabled===true&&
+      e.from===sourceId&&e.primaryOutput===false&&e.to!==main&&
+      nativeId(e.edgeId)&&nativeId(e.to)&&TAPS.has(e.tap))||[];
+    if(selectedEdgeId!==null&&selectedEdgeId!==undefined)
+      return nativeId(selectedEdgeId)?
+        (eligible.some(e=>e.edgeId===selectedEdgeId)?
+          parallelEdge(graph,sourceId,selectedEdgeId):null):null;
+    return eligible.length===1?eligible[0]:null;
+  }
+
+  function nativeSendTogglePlan(snapshot,{sourceId,edgeId,projected=false,
+    pending=false}={}) {
+    const edge=nativeSendEdge(snapshot,{sourceId,edgeId,projected,pending,
+      operation:"SET_SEND_ENABLED"});
+    if(!edge||typeof edge.sendEnabled!=="boolean")
+      return {kind:"UNAVAILABLE"};
+    return {kind:"DISPATCH",operation:"SET_SEND_ENABLED",source:sourceId,
+      payload:{edgeId,enabled:!edge.sendEnabled}};
+  }
+
+  // G-MV32: one pure PRIMARY MAIN gesture owner for both verified ChannelId
+  // and the legacy M4 first-sound patch. A Pages PRIMARY cable must match
+  // its own accepted physical route before unplugging; a parallel SEND to
+  // MAIN remains a different edge and falls through to ordinary WIRE edits.
+  // No command is emitted here. The existing OUT dispatcher still performs
+  // final admission, ACK, later native readback and timeout handling.
+  function primaryMainGesturePlan(snapshot,{op,mainUiId,sourceId,edgeId,
+    uiEdges=[],m4Verified=false,m4Channel=-1}={}) {
+    const pass={kind:"PASS"};
+    if(!op||typeof op!=="object")return pass;
+    const isMain=mainUiId!==null&&mainUiId!==undefined&&
+      op.destId===mainUiId;
+    const mainConnect=isMain&&(op.type==="ROUTE_ONLY"||
+      (op.type==="CONNECT"&&
+        (!op.mode||op.mode==="postFader"||op.mode==="routeOnly")));
+    if(mainConnect)return {kind:"ROUTE",target:"MAIN"};
+    if(op.type!=="REMOVE")return pass;
+
+    // UI IDs are cosmetic; they are never a substitute for the exact
+    // producer EdgeId. Check for a *unique* visible PRIMARY cable first.
+    const uiPrimary=Array.isArray(uiEdges)?uiEdges.filter(e=>
+      e?.id===op.edgeId&&e.sourceId===op.sourceId&&
+      e.kind==="primary"&&e.enabled===true):[];
+    const visible=uiPrimary.filter(e=>e.destId===mainUiId);
+    if(visible.length>1)return {kind:"BLOCK"};
+    // M4 has no native EdgeId. A PRIMARY shown against any other target
+    // cannot be interpreted as a verified MAIN unplug.
+    if(snapshot?.admitted===false&&uiPrimary.length>0&&visible.length!==1)
+      return {kind:"BLOCK"};
+    const graph=snapshot?.graph;
+    const sources=Array.isArray(graph?.channels)?
+      graph.channels.filter(ch=>ch?.id===sourceId):[];
+    const globalEdges=Array.isArray(graph?.edges)&&nativeId(edgeId)?
+      graph.edges.filter(e=>e?.edgeId===edgeId):[];
+    // Older v6 producers omit primaryOutput: use the SAME explicit-field
+    // precedence + accepted primaryOutId fallback as edgePresentation.
+    // A native false is always decisive and can NEVER become PRIMARY.
+    const nativePrimary=globalEdges.length===1&&sources.length===1&&
+      globalEdges[0].from===sourceId&&
+      globalEdges[0].to===graph?.mainChannelId&&
+      edgePresentation(globalEdges[0],sources[0].primaryOutId,
+        graph.mainChannelId)?.primary===true;
+    // A mapped primary native EdgeId cannot bypass this policy through
+    // the generic REMOVE path just because the UI projection went stale.
+    if(visible.length!==1)
+      return nativePrimary?{kind:"BLOCK"}:pass;
+    if(snapshot?.retained===true)return {kind:"BLOCK"};
+
+    if(snapshot?.admitted===true) {
+      if(nativeId(sourceId)&&nativeId(edgeId)&&
+         nativeId(graph?.mainChannelId)&&
+         sources.length===1&&
+         ["INPUT","GROUP","FX_RETURN"].includes(sources[0].role)&&
+         sources[0].primaryOutId===graph.mainChannelId&&
+         nativePrimary)return {kind:"ROUTE",target:"NONE"};
+      return {kind:"BLOCK"};
+    }
+    // M4 is ordinal-only: NEVER infer its identity from a stale ChannelId
+    // graph or from a cosmetic cable if the producer switched owners.
+    const session=snapshot?.raw?.mixerSession;
+    const m4=snapshot?.raw?.legacyM4;
+    if(snapshot?.admitted===false&&session?.authority==="M4"&&
+       m4Verified===true&&Number.isInteger(m4Channel)&&
+       m4Channel>=0&&m4Channel<10&&
+       session.deviceEpoch===snapshot.device?.epoch&&
+       session.routeRevision===m4?.routingRevision&&
+       session.channels?.[m4Channel]?.role==="INPUT"&&
+       session.channels[m4Channel].ordinal===m4Channel&&
+       session.channels[m4Channel].source?.main===true&&
+       m4?.channels?.[m4Channel]?.main===true)
+      return {kind:"ROUTE",target:"NONE"};
+    return {kind:"BLOCK"};
+  }
+
   // UI gesture translation only: caller still owns one native transaction,
   // ACK timeout, installed graph readback, and UI rollback. This helper does
   // not decide that an operation is admitted or mutate any accepted graph.
@@ -192,5 +344,7 @@
 
   return Object.freeze({gainDb,edgePresentation,parallelEdge,
     acceptedParallelEdge,gainReadback,canEditTap,gestureTap,sofAvailable,
-    compactSendGesture,nativeTransaction,gainDispatchPlan,nativeRecoveryPlan});
+    compactSendGesture,nativeSendEdge,nativeTapPlan,sofSendEdge,
+    channelTapEdge,nativeSendTogglePlan,primaryMainGesturePlan,nativeTransaction,
+    gainDispatchPlan,nativeRecoveryPlan});
 });

@@ -19,6 +19,7 @@
 #include "../engine/core/DearVrPolarPolicy.h"
 #include "DiagnosticsRecorder.h"
 #include "../engine/device/DirectRestoreBackoff.h"
+#include "NativeDirectRestoreCoordinator.h"
 #include "../engine/device/AudioSetupRecoveryPolicy.h"
 #include "../engine/device/AsioRestartRecoveryGate.h"
 #include "../engine/device/PeriodCapabilityEvidence.h"
@@ -44,7 +45,13 @@
 #include "NativeShowSaveWorker.h"
 #include "NativeChannelAppearanceStore.h"
 #include "NativeMixerSessionSaveWorker.h"
+#include "NativeMixerSessionRecovery.h"
 #include "NativeLogicalMixerControl.h"
+#include "PlayerSetlistArchive.h"
+#include "PlayerSetlistRepository.h"
+#include "PlayerSetlistEditTransaction.h"
+#include "PlayerLibraryEditPlan.h"
+#include "PlayerStateProjection.h"
 #include "NativeHotkeyRegistry.h"
 #include "NativeHotkeyCommandPlan.h"
 #include "NativeFxParameterHotkey.h"
@@ -55,6 +62,8 @@
 #include "../engine/device/WindowsFirstRunEndpointDiscovery.h"
 #endif
 #include <algorithm>
+#include <map>
+#include <set>
 #include <cstring>
 #include <optional>
 #include <memory>
@@ -65,6 +74,8 @@
 #include "../engine/player/PlayerSetlistPolicy.h"
 #include "../engine/player/PlayerShowEditPolicy.h"
 #include "../engine/player/PlayerShowTransitionPolicy.h"
+#include "../engine/player/PlayerCueEditPolicy.h"
+#include "../engine/player/PlayerLiveMetadataCommitPolicy.h"
 #include "../engine/player/PlayerLibraryPolicy.h"
 #include <juce_core/juce_core.h>
 #include <thread>
@@ -542,16 +553,9 @@ private:
     // library/controls so decoder bindings and FX routing do not change.
     // Save/restore swaps complete sets, not two independently mutated arrays.
     std::vector<juce::File> playerLibrary_;
-    struct PlayerTrackSettings {
-        int key=0,tempo=100;
-        double cueIn=0.,cueOut=0.; // seconds, 0 OUT means media end
-    };
+    using PlayerTrackSettings=armix::player::PlayerTrackSettings;
+    using PlayerSavedSet=armix::player::PlayerSavedSet;
     std::vector<PlayerTrackSettings> playerTrackSettings_;
-    struct PlayerSavedSet {
-        juce::String name;
-        std::vector<juce::File> files;
-        std::vector<PlayerTrackSettings> controls;
-    };
     std::vector<PlayerSavedSet> playerSets_;
     int playerActiveSet_=0;
     std::vector<juce::File> playerQueue_; // transient ordered PLAY NEXT queue
@@ -928,95 +932,24 @@ private:
         return report;
     }
 
-    void annotateRecovery (juce::var& state) const
-    {
-        auto* object = state.getDynamicObject();
-        if (object == nullptr) return;
-        const auto snapshot = directRestore_.snapshot();
-        using State = armix::device::DirectRestoreBackoff::State;
-        const char* label = snapshot.state == State::idle ? "IDLE"
-                          : snapshot.state == State::waiting ? "WAITING" : "EXHAUSTED";
-        object->setProperty ("directRestoreState", label);
-        object->setProperty ("directRestoreAttempts", static_cast<int> (snapshot.attempts));
-        object->setProperty ("directRestoreNextMs",
-            static_cast<double> (directRestore_.remainingMs (monotonicMilliseconds())));
-        object->setProperty ("directRestoreGeneration", static_cast<double> (snapshot.generation));
-        object->setProperty ("directRestoreError", lastDirectRestoreError_);
-        object->setProperty ("directRestorePending", engine_.hasPendingDirectRestore());
+    void annotateRecovery (juce::var& state) const {
+        armix::device::NativeDirectRestoreCoordinator::annotate(
+            state,directRestore_,lastDirectRestoreError_,
+            engine_.hasPendingDirectRestore(),monotonicMilliseconds());
     }
 
-    // Device reopens happen on the JUCE message thread, never the RT callback.
-    // Restoring DIRECT never silently re-enables a faulting bridged route.
-    void serviceDirectRestore()
-    {
-        using Gate = armix::device::DirectRestoreBackoff;
-        const auto now = monotonicMilliseconds();
-        // Independent drivers can stop callbacks without emitting JUCE error.
-        // Read existing atomic progress on message thread before failback gate.
-        engine_.pollIndependentClockHealth (now);
-        auto snapshot = directRestore_.snapshot();
-        if (snapshot.state == Gate::State::idle &&
-            (engine_.independentClockFaulted() ||
-             (!engine_.independentClockActive() && engine_.hasPendingDirectRestore())))
-        {
-            const auto generation = directRestore_.begin (now);
-            diagnostics_.record ("DIRECT_RESTORE_BEGIN",
-                juce::String ("Generation ") + juce::String (static_cast<juce::int64> (generation)));
-            snapshot = directRestore_.snapshot();
-        }
-        if (!directRestore_.due (snapshot.generation, now)) return;
-
-        const bool wasIndependent = engine_.independentClockActive();
-        const auto stateBeforeRestore = engine_.status();
-        const auto faultStatus = juce::JSON::toString (stateBeforeRestore, false);
-        // DiagnosticsRecorder bounds event details to 950 characters. Keep
-        // the independent stream fault source and durations FIRST, before the
-        // potentially long full status JSON, so field reports retain evidence
-        // after closing the adapter resets its watchdog.
-        const auto watchdogSummary = juce::String ("format=")
-            + stateBeforeRestore.getProperty ("bridgeNegotiationFault", "NONE").toString()
-            + " watchdog="
-            + stateBeforeRestore.getProperty ("bridgeWatchdogFault", "NONE").toString()
-            + " captureSilentMs="
-            + stateBeforeRestore.getProperty ("bridgeCaptureSilentMs", 0).toString()
-            + " renderSilentMs="
-            + stateBeforeRestore.getProperty ("bridgeRenderSilentMs", 0).toString()
-            + " continuity="
-            + stateBeforeRestore.getProperty ("bridgeContinuityFault", "NONE").toString()
-            + " lossBp="
-            + stateBeforeRestore.getProperty ("bridgeContinuityLossBp", 0).toString()
-            + " badWindows="
-            + stateBeforeRestore.getProperty ("bridgeContinuityBadWindows", 0).toString();
-        const auto error = engine_.setIndependentClockEnabled (false);
-        if (error.isEmpty())
-        {
-            directRestore_.recovered (snapshot.generation);
-            lastDirectRestoreError_.clear();
-            deviceSettingsDirty_ = true;
-            diagnostics_.record ("SMART_CLOCK_RECOVERY",
-                juce::String ("DIRECT_RESTORED after ") + juce::String (snapshot.attempts + 1) +
-                " attempt(s) | " + watchdogSummary + " | " + faultStatus);
-            if (engine_.isOutputMuted())
-                emitNotice ("DIRECT device reopened. Output remains muted for safety; unmute only when ready.", true);
-            else
-                emitNotice (wasIndependent
-                    ? "Independent device fault: safe DIRECT audio restored."
-                    : "DIRECT audio device restored after a bounded retry.", true);
-            return;
-        }
-
-        directRestore_.failed (snapshot.generation, now);
-        lastDirectRestoreError_ = error;
-        const auto next = directRestore_.snapshot();
-        diagnostics_.record ("SMART_CLOCK_RECOVERY",
-            juce::String ("RESTORE_FAIL ") + juce::String (next.attempts) + "/" +
-            juce::String (static_cast<int> (Gate::maxAttempts)) + ": " + error +
-            " | " + watchdogSummary + " | " + faultStatus);
-        if (next.state == Gate::State::exhausted)
-            emitNotice ("Automatic DIRECT recovery exhausted; audio remains safe/muted. "
-                        "Check AUDIO SETUP or retry DIRECT manually. " + error, true);
-        else if (next.attempts == 1)
-            emitNotice ("Device interrupted. DIRECT restore is retrying with bounded backoff.", true);
+    // One control owner; recovery policy, telemetry and bounded retries live
+    // in the dedicated Native coordinator. No change to ASIO callback path.
+    void serviceDirectRestore() {
+        armix::device::NativeDirectRestoreCoordinator::service(
+            directRestore_,lastDirectRestoreError_,deviceSettingsDirty_,
+            monotonicMilliseconds(),engine_,
+            [this](const juce::String& code,const juce::String& detail) {
+                diagnostics_.record(code,detail);
+            },
+            [this](const juce::String& message,bool error) {
+                emitNotice(message,error);
+            });
     }
 
     void emitNotice (const juce::String& message, bool error = false)
@@ -3541,59 +3474,61 @@ private:
         return {};
     }
 
-    juce::String readMixerSessionForRecovery(armix::session::MixerSessionDocument& doc,
-            std::vector<armix::shows::BinaryState>& blobs) {
-        if(engine_.hasRetainedNativeSession()) {
-            const auto error=engine_.captureNativeMixerSession(doc,blobs,true);
-            if(error.isNotEmpty())return error;
-            doc.id=mixerSessionId_;
-            return resolveMixerSessionCatalog(doc,true);
-        }
-        return armix::session::NativeMixerSessionStore(settingsDirectory()).load(doc,blobs);
-    }
-
     juce::String restoreSavedMixerSession(bool startupOnSavedDevice=false,
             armix::session::MixerDeviceBindingPolicy::Mode bindingMode=
                 armix::session::MixerDeviceBindingPolicy::Mode::exact) {
         if(!engine_.allOutputsDisarmed() || mixerSessionWorker_.busy() || logicalVendorEditor_ ||
            nativeShowBusy_ || studioBackupBusy_ || engine_.isGraphSwitchPending())
             return "MUTE output and finish Studio IO before restoring mixer";
-        armix::session::NativeMixerSessionStore store(settingsDirectory());
-        if(!engine_.hasRetainedNativeSession() && !store.exists()) {
-            mixerSessionStatus_="NO_SAVED_SESSION";
-            return "No saved dynamic mixer session";
-        }
+        using Recovery=armix::session::NativeMixerSessionRecovery;
+        const armix::session::NativeMixerSessionStore store(settingsDirectory());
         armix::session::MixerSessionDocument doc;
         std::vector<armix::shows::BinaryState> states;
-        const bool retained=engine_.hasRetainedNativeSession();
-        auto error=readMixerSessionForRecovery(doc,states);
-        bool usedPrevious=false;
-        if(error.isNotEmpty()&&!retained&&store.recoverPrevious().isEmpty()) {
-            error=store.load(doc,states);
-            usedPrevious=error.isEmpty();
+        const auto checkpoint=Recovery::read(store,engine_.hasRetainedNativeSession(),
+            doc,states,[this](auto& retainedDoc,auto& retainedStates) {
+                const auto error=engine_.captureNativeMixerSession(retainedDoc,retainedStates,true);
+                if(error.isNotEmpty())return error;
+                retainedDoc.id=mixerSessionId_;
+                return resolveMixerSessionCatalog(retainedDoc,true);
+            });
+        if(checkpoint.source==Recovery::Source::missing) {
+            mixerSessionStatus_="NO_SAVED_SESSION";
+            return checkpoint.error;
         }
-        if(error.isNotEmpty()) {
-            mixerSessionStatus_=retained?"RETAINED_SESSION_UNAVAILABLE":"DAMAGED_SESSION";
-            mixerSessionError_=error;
-            diagnostics_.record("DYNAMIC_MIXER_READ_REJECTED",error);
-            return error;
+        if(checkpoint.error.isNotEmpty()) {
+            mixerSessionStatus_=checkpoint.source==Recovery::Source::retained
+                ?"RETAINED_SESSION_UNAVAILABLE":"DAMAGED_SESSION";
+            mixerSessionError_=checkpoint.error;
+            diagnostics_.record("DYNAMIC_MIXER_READ_REJECTED",checkpoint.error);
+            return checkpoint.error;
         }
-        mixerSessionId_=doc.id;
-        const auto restoredHotkeys=doc.hotkeys;
+        const bool usedPrevious=checkpoint.source==Recovery::Source::previous;
+        const bool firstBinding=doc.logicalOnly;
+        const auto isNativeMixerActive=[this] {
+            const auto live=engine_.status().getProperty("dryRoutingLab",{});
+            return static_cast<bool>(live.getProperty("nativeChannelIdPcmActive",false));
+        };
         if(usedPrevious)
             (void)logicalMixer_.restoreCheckpoint(doc,states);
-        const bool firstBinding=doc.logicalOnly;
-        if(firstBinding && !engine_.hasPristineStartupMixer()) {
+        const auto restoredId=doc.id;
+        const auto restoredHotkeys=doc.hotkeys;
+        const auto acceptSessionIdentity=[this,&restoredId,&restoredHotkeys] {
+            mixerSessionId_=restoredId;
             (void)hotkeys_.activateSession(mixerSessionId_);
             if(hotkeys_.sessionEntries().empty() && !restoredHotkeys.empty()) {
                 const auto issue=hotkeys_.activateSession(mixerSessionId_,&restoredHotkeys);
                 if(issue.isNotEmpty())diagnostics_.record("HOTKEY_IMPORT_REJECTED",issue);
             }
+        };
+        if(firstBinding && !engine_.hasPristineStartupMixer()) {
+            // A deferred offline binding cannot take ownership of a live
+            // mixer's session ID or activate its own session hotkeys.
+            if(!isNativeMixerActive())acceptSessionIdentity();
             mixerSessionRecoveryPending_=true;
             mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND";
             return "Saved mixer is offline and awaiting verified device binding";
         }
-        error=materializeLogicalFxForBinding(doc,states);
+        auto error=materializeLogicalFxForBinding(doc,states);
         if(error.isNotEmpty())return error;
         // A disk SHA is NOT permission to instantiate executable code.
         // Every external VST3 must still match today's verified catalog
@@ -3606,33 +3541,18 @@ private:
             diagnostics_.record("DYNAMIC_MIXER_VST3_REMAP_REQUIRED",error);
             return error;
         }
-        if(bindingMode==MixerBindingMode::exact && startupOnSavedDevice &&
-           armix::session::MixerDeviceBindingPolicy::isAsio4All(doc.binding))
-            bindingMode=MixerBindingMode::verifiedAsioRestart;
-        const bool resume=!firstBinding && startupOnSavedDevice &&
-            (bindingMode==MixerBindingMode::exact || bindingMode==MixerBindingMode::verifiedAsioRestart) &&
-            !usedPrevious && !retained &&
-            doc.resumeMain.value_or(true);
-        const auto live=engine_.status().getProperty("dryRoutingLab",{});
-        const bool nativeAlreadyActive=static_cast<bool>(
-            live.getProperty("nativeChannelIdPcmActive",false));
-        // A fresh silent ChannelId starter is now admitted before the saved
-        // Show is inspected. Only THAT unmodified bootstrap may be replaced
-        // by cold-start restore or by verified Apply after a failed startup. User-authored FX,
-        // WIRE, BUS and fader edits must never be overwritten by late scan.
-        // A verified PREVIOUS checkpoint is also eligible: the separate
-        // resume policy keeps MAIN muted after recovery from corrupt HEAD.
-        const bool recoveringAfterDeviceApply=bindingMode!=MixerBindingMode::exact &&
-            mixerSessionRecoveryPending_;
-        const bool replacePristineStartup=nativeAlreadyActive && !retained &&
-            (startupOnSavedDevice || recoveringAfterDeviceApply || firstBinding) &&
-            engine_.hasPristineStartupMixer();
-        if(nativeAlreadyActive && !replacePristineStartup) {
+        // Query current admission after FX preparation, immediately before
+        // the engine is asked to publish a physical graph.
+        const bool nativeAlreadyActive=isNativeMixerActive();
+        const auto plan=Recovery::plan(doc,{bindingMode,checkpoint.source,
+            startupOnSavedDevice,mixerSessionRecoveryPending_,nativeAlreadyActive,
+            engine_.hasPristineStartupMixer(),firstBinding});
+        if(!plan.restoreAllowed) {
             mixerSessionStatus_="LIVE_MIXER_UNCHANGED";
             return "Live native mixer already edited; refusing to replace it";
         }
         error=engine_.restoreNativeMixerSession(std::move(doc),states,
-            replacePristineStartup,nullptr,bindingMode);
+            plan.replacePristineStartup,nullptr,plan.bindingMode);
         if(error.isNotEmpty()) {
             mixerSessionStatus_=error.contains("NEEDS_REMAP")
                 ?"NEEDS_REMAP":"RESTORE_REJECTED";
@@ -3641,12 +3561,9 @@ private:
             return error;
         }
         mixerSessionRecoveryPending_=false;
-        (void)hotkeys_.activateSession(mixerSessionId_);
-        if(hotkeys_.sessionEntries().empty() && !restoredHotkeys.empty()) {
-            const auto issue=hotkeys_.activateSession(mixerSessionId_,&restoredHotkeys);
-            if(issue.isNotEmpty())diagnostics_.record("HOTKEY_IMPORT_REJECTED",issue);
-        }
-        if(resume)requestAutomaticMain(bindingMode!=MixerBindingMode::verifiedAsioRestart);
+        acceptSessionIdentity();
+        if(plan.resumeMain)
+            requestAutomaticMain(plan.bindingMode!=MixerBindingMode::verifiedAsioRestart);
         mixerSessionStatus_=engine_.isMonitorEnabled()?"RESTORED_MONITORING":"RESTORED_MUTED";
         mixerSessionError_.clear();
         diagnostics_.record("DYNAMIC_MIXER_RESTORED",mixerSessionStatus_);
@@ -3886,15 +3803,6 @@ private:
 
     // Versioned setlist v3. Song paths remain external and are NEVER moved,
     // deleted or copied by editing a show. v1/v2 migrate non-destructively.
-    void saveActivePlayerSet() {
-        if(playerSets_.empty())playerSets_.push_back({"My Setlist",{},{}});
-        if(playerActiveSet_<0 ||
-           playerActiveSet_>=static_cast<int>(playerSets_.size()))
-            playerActiveSet_=0;
-        auto& active=playerSets_[static_cast<std::size_t>(playerActiveSet_)];
-        active.files=playerLibrary_;
-        active.controls=playerTrackSettings_;
-    }
     void activatePlayerSet(int index) {
         if(index<0 || index>=static_cast<int>(playerSets_.size()))return;
         playerActiveSet_=index;
@@ -3912,125 +3820,69 @@ private:
         playerOutputPendingIndex_=-1;
         playerUndoRemove_={};
     }
+    // The repository owns only durable Player JSON I/O. ConsoleWindow
+    // retains the single deck, live selection and accepted native control.
     void restorePlayerLibrary() {
         playerSets_.clear();
-        const auto file=settingsDirectory().getChildFile("player-library.json");
-        if(!file.existsAsFile()) {
+        auto result=armix::player::PlayerSetlistRepository::load(
+            settingsDirectory().getChildFile("player-library.json"));
+        if(result.status==armix::player::PlayerSetlistRepository::LoadStatus::missing) {
             playerSets_.push_back({"My Setlist",{},{}});
             return;
         }
-        const auto json=juce::JSON::parse(file.loadFileAsString());
-        const int version=static_cast<int>(json.getProperty("version",0));
-        if(!json.isObject() || (version!=1 && version!=2 && version!=3)) {
+        if(!result.document) {
             playerSets_.push_back({"My Setlist",{},{}});
             playerError_="Setlists could not be read; no music files were changed";
             return;
         }
-        const auto parseSongs=[&](const juce::var& items,int itemVersion,
-                                  PlayerSavedSet& destination) {
-            if(const auto* list=items.getArray()) {
-                for(const auto& item:*list) {
-                    if(destination.files.size()>=2000)break;
-                    if((itemVersion==1 && !item.isString()) ||
-                       (itemVersion>=2 && !item.isObject()))continue;
-                    const auto path=itemVersion==1?item.toString():
-                        item.getProperty("path","").toString();
-                    if(path.isEmpty() || path.length()>4096 ||
-                       !juce::File::isAbsolutePath(path))continue;
-                    const juce::File source(path);
-                    if(!source.hasFileExtension("wav;mp3;flac;aif;aiff;ogg") ||
-                       std::find(destination.files.begin(),
-                                 destination.files.end(),source)
-                           !=destination.files.end())continue;
-                    PlayerTrackSettings preset;
-                    if(itemVersion>=2) {
-                        preset.key=static_cast<int>(item.getProperty("key",0));
-                        preset.tempo=static_cast<int>(item.getProperty("tempo",100));
-                        if(preset.key< -6 || preset.key>6 ||
-                           preset.tempo<80 || preset.tempo>120)preset={};
-                    }
-                    if(itemVersion>=3) {
-                        const double in=static_cast<double>(
-                            item.getProperty("cueIn",0.0));
-                        const double out=static_cast<double>(
-                            item.getProperty("cueOut",0.0));
-                        // Invalid saved markers never alter native playback.
-                        if(std::isfinite(in) && std::isfinite(out) &&
-                           in>=0. && out>=0. && in<86400. &&
-                           out<86400. && (out==0. || out>in+0.05)) {
-                            preset.cueIn=in;preset.cueOut=out;
-                        }
-                    }
-                    destination.files.push_back(source);
-                    destination.controls.push_back(preset);
-                }
-            }
-        };
-        // Keep the variant alive throughout the array walk. A pointer
-        // returned from a temporary juce::var would dangle in the body.
-        const auto savedSets=json.getProperty("setlists",{});
-        if(version<=2) {
-            PlayerSavedSet migrated{"My Setlist",{},{}};
-            parseSongs(json.getProperty("files",{}),version,migrated);
-            playerSets_.push_back(std::move(migrated));
-        } else if(const auto* sets=savedSets.getArray()) {
-            for(const auto& source:*sets) {
-                if(playerSets_.size()>=32)break;
-                if(!source.isObject())continue;
-                auto name=source.getProperty("name","").toString().trim();
-                if(name.isEmpty() || name.length()>64)continue;
-                const bool duplicate=std::any_of(
-                    playerSets_.begin(),playerSets_.end(),
-                    [&](const PlayerSavedSet& set) {
-                        return set.name.equalsIgnoreCase(name);
-                    });
-                if(duplicate)continue;
-                PlayerSavedSet next{name,{},{}};
-                parseSongs(source.getProperty("files",{}),3,next);
-                playerSets_.push_back(std::move(next));
-            }
-        }
-        if(playerSets_.empty())playerSets_.push_back({"My Setlist",{},{}});
-        const int active=version==3?
-            static_cast<int>(json.getProperty("activeSetlist",0)):0;
-        activatePlayerSet(std::clamp(active,0,
-            static_cast<int>(playerSets_.size())-1));
-        playerAutoNext_=json.getProperty("autoNext",false).isBool() &&
-            static_cast<bool>(json.getProperty("autoNext",false));
-        const int fade=static_cast<int>(json.getProperty("crossfadeMs",180));
-        playerFadeMilliseconds_=(fade>=0 && fade<=3000)?fade:180;
+        auto& parsed=*result.document;
+        playerSets_=std::move(parsed.sets);
+        activatePlayerSet(parsed.active);
+        playerAutoNext_=parsed.autoNext;
+        playerFadeMilliseconds_=parsed.fadeMs;
     }
-    void persistPlayerLibrary() {
-        saveActivePlayerSet();
-        auto document=std::make_unique<juce::DynamicObject>();
-        document->setProperty("version",3);
-        document->setProperty("activeSetlist",playerActiveSet_);
-        document->setProperty("autoNext",playerAutoNext_);
-        document->setProperty("crossfadeMs",playerFadeMilliseconds_);
-        juce::Array<juce::var> sets;
-        for(const auto& set:playerSets_) {
-            auto object=std::make_unique<juce::DynamicObject>();
-            object->setProperty("name",set.name);
-            juce::Array<juce::var> files;
-            for(std::size_t i=0;i<set.files.size();++i) {
-                auto entry=std::make_unique<juce::DynamicObject>();
-                entry->setProperty("path",set.files[i].getFullPathName());
-                entry->setProperty("key",set.controls[i].key);
-                entry->setProperty("tempo",set.controls[i].tempo);
-                entry->setProperty("cueIn",set.controls[i].cueIn);
-                entry->setProperty("cueOut",set.controls[i].cueOut);
-                files.add(juce::var(entry.release()));
-            }
-            object->setProperty("files",juce::var(files));
-            sets.add(juce::var(object.release()));
+    bool commitPlayerMetadata(std::vector<juce::File> nextFiles,
+                              std::vector<PlayerTrackSettings> nextControls,
+                              bool nextAutoNext,int nextFadeMs) {
+        using Edit=armix::player::PlayerSetlistEditTransaction;
+        auto outcome=Edit::replaceActiveTracks(
+            settingsDirectory().getChildFile("player-library.json"),
+            playerSets_,playerActiveSet_,nextFiles,nextControls,
+            nextAutoNext,nextFadeMs);
+        if(!outcome.committed()) {
+            playerError_=outcome.error;
+            return false;
         }
-        document->setProperty("setlists",juce::var(sets));
-        const auto target=settingsDirectory().getChildFile("player-library.json");
-        juce::TemporaryFile staging(target);
-        if(!staging.getFile().replaceWithText(
-                juce::JSON::toString(juce::var(document.release()),false)) ||
-           !staging.overwriteTargetFileWithTemporary())
-            playerError_="Unable to save setlists; check folder permissions";
+        // File acceptance comes before EVERY durable in-memory mutation.
+        playerSets_=std::move(outcome.sets);
+        playerLibrary_=std::move(nextFiles);
+        playerTrackSettings_=std::move(nextControls);
+        playerAutoNext_=nextAutoNext;
+        playerFadeMilliseconds_=nextFadeMs;
+        return true;
+    }
+    bool commitPlayerTrackEdit(std::vector<juce::File> nextFiles,
+                               std::vector<PlayerTrackSettings> nextControls) {
+        return commitPlayerMetadata(std::move(nextFiles),
+            std::move(nextControls),playerAutoNext_,playerFadeMilliseconds_);
+    }
+    bool commitPlayerPreferences(bool nextAutoNext,int nextFadeMs) {
+        return commitPlayerMetadata(playerLibrary_,playerTrackSettings_,
+                                    nextAutoNext,nextFadeMs);
+    }
+    void stopPlayerAfterUnrecoveredMetadata() {
+        // Persist rejected AND native restore rejected. Never leave an
+        // unrecorded live deck applying controls different from the setlist.
+        if(playerPendingIndex_>=0)playerQueueEpoch_.changed();
+        engine_.playerStop();
+        playerCurrent_=-1;
+        playerPendingIndex_=-1;
+        playerPendingQueueFile_={};
+        playerOutputPendingIndex_=-1;
+        playerLoopCurrent_=false;
+        playerAutoAdvanceGate_.rearm();
+        playerError_="Could not save song settings or restore native playback; "
+                     "Player stopped to keep setlist safe";
     }
     bool playerShowMaySwitchSet() {
         const auto state=engine_.playerStatus().getProperty("state","").toString();
@@ -4041,56 +3893,38 @@ private:
         return !playerFolderBusy_;
     }
     void playerEditSetlist(const juce::String& action,const juce::var& value) {
+        // Setlist metadata is durable BEFORE a deck stop or live state
+        // mutation. A failed disk write cannot switch/delete a live set.
         if(action=="playerNewSetlist" || action=="playerSelectSetlist" ||
-           action=="playerDeleteSetlist") {
-            if(!playerShowMaySwitchSet())return;
-            if(action=="playerNewSetlist") {
-                if(playerSets_.size()>=32) {
-                    playerError_="Maximum 32 setlists";emitPlayerState();return;
-                }
-                saveActivePlayerSet();
-                const int next=static_cast<int>(playerSets_.size())+1;
-                playerSets_.push_back({"Setlist "+juce::String(next),{},{}});
+           action=="playerDeleteSetlist" || action=="playerRenameSetlist") {
+            const bool rename=action=="playerRenameSetlist";
+            if(!rename && !playerShowMaySwitchSet())return;
+            using Edit=armix::player::PlayerSetlistEditTransaction;
+            const auto command=action=="playerNewSetlist"?Edit::Command::create:
+                action=="playerSelectSetlist"?Edit::Command::select:
+                action=="playerDeleteSetlist"?Edit::Command::remove:
+                Edit::Command::rename;
+            const int index=rename || command==Edit::Command::create?
+                -1:static_cast<int>(value);
+            // Preserve the historical silent no-op for stale row IDs.
+            if(!rename && command!=Edit::Command::create &&
+               (index<0 || index>=static_cast<int>(playerSets_.size())))return;
+            auto outcome=Edit::apply(
+                settingsDirectory().getChildFile("player-library.json"),
+                playerSets_,playerActiveSet_,playerLibrary_,playerTrackSettings_,
+                playerAutoNext_,playerFadeMilliseconds_,command,index,
+                rename?value.toString():juce::String{});
+            if(!outcome.committed()) {
+                playerError_=outcome.error;
+                emitPlayerState(true);return;
+            }
+            playerSets_=std::move(outcome.sets);
+            if(!rename) {
                 engine_.playerStop();
-                activatePlayerSet(static_cast<int>(playerSets_.size())-1);
-            } else {
-                const int index=static_cast<int>(value);
-                if(index<0 || index>=static_cast<int>(playerSets_.size()))return;
-                saveActivePlayerSet();
-                if(action=="playerSelectSetlist") {
-                    engine_.playerStop();activatePlayerSet(index);
-                } else if(playerSets_.size()>1) {
-                    engine_.playerStop();
-                    int destination=playerActiveSet_;
-                    if(index<destination)--destination;
-                    if(index==destination)
-                        destination=std::min(index,
-                            static_cast<int>(playerSets_.size())-2);
-                    playerSets_.erase(playerSets_.begin()+index);
-                    activatePlayerSet(destination);
-                } else {
-                    playerError_="Keep at least one setlist";
-                    emitPlayerState();return;
-                }
+                activatePlayerSet(outcome.active);
             }
-            playerError_.clear();persistPlayerLibrary();emitPlayerState(true);
-            return;
-        }
-        if(action=="playerRenameSetlist") {
-            auto name=value.toString().trim();
-            if(name.isEmpty() || name.length()>64)return;
-            const bool exists=std::any_of(
-                playerSets_.begin(),playerSets_.end(),
-                [&](const PlayerSavedSet& set) {
-                    return set.name.equalsIgnoreCase(name) &&
-                           &set!=&playerSets_[static_cast<std::size_t>(playerActiveSet_)];
-                });
-            if(exists) {
-                playerError_="Setlist name already exists";
-                emitPlayerState();return;
-            }
-            playerSets_[static_cast<std::size_t>(playerActiveSet_)].name=name;
-            playerError_.clear();persistPlayerLibrary();emitPlayerState(true);
+            playerError_.clear();
+            emitPlayerState(true);
             return;
         }
         if(action=="playerMoveSong") {
@@ -4098,12 +3932,13 @@ private:
             const int to=static_cast<int>(value.getProperty("to",-1));
             const int count=static_cast<int>(playerLibrary_.size());
             if(from<0 || to<0 || from>=count || to>=count || from==to)return;
-            auto move=[&](auto& items) {
-                auto item=std::move(items[static_cast<std::size_t>(from)]);
-                items.erase(items.begin()+from);
-                items.insert(items.begin()+to,std::move(item));
-            };
-            move(playerLibrary_);move(playerTrackSettings_);
+            auto plan=armix::player::PlayerLibraryEditPlan::move(
+                playerLibrary_,playerTrackSettings_,from,to);
+            if(!plan)return;
+            if(!commitPlayerTrackEdit(
+                std::move(plan->files),std::move(plan->controls))) {
+                emitPlayerState(true);return;
+            }
             const auto remap=[&](int index) {
                 return armix::player::PlayerShowEditPolicy::afterMove(
                     index,from,to,count);
@@ -4111,7 +3946,7 @@ private:
             playerSelected_=remap(playerSelected_);
             playerCurrent_=remap(playerCurrent_);
             playerPendingIndex_=remap(playerPendingIndex_);
-            persistPlayerLibrary();emitPlayerState(true);
+            playerError_.clear();emitPlayerState(true);
             return;
         }
         if(action=="playerRemoveSong") {
@@ -4127,17 +3962,22 @@ private:
                 playerError_="Stop the playing song before removing it";
                 emitPlayerState();return;
             }
-            playerUndoRemove_={playerActiveSet_,index,
-                playerLibrary_[static_cast<std::size_t>(index)],
-                playerTrackSettings_[static_cast<std::size_t>(index)]};
+            const auto removedFile=playerLibrary_[static_cast<std::size_t>(index)];
+            const auto removedControls=playerTrackSettings_[static_cast<std::size_t>(index)];
+            auto plan=armix::player::PlayerLibraryEditPlan::remove(
+                playerLibrary_,playerTrackSettings_,index);
+            if(!plan)return;
+            if(!commitPlayerTrackEdit(
+                std::move(plan->files),std::move(plan->controls))) {
+                emitPlayerState(true);return;
+            }
+            playerUndoRemove_={playerActiveSet_,index,removedFile,removedControls};
             const auto queueCountBefore=playerQueue_.size();
             playerQueue_.erase(
                 std::remove(playerQueue_.begin(),playerQueue_.end(),
                             playerUndoRemove_.file),playerQueue_.end());
             if(queueCountBefore!=playerQueue_.size())
                 playerQueueEpoch_.changed();
-            playerLibrary_.erase(playerLibrary_.begin()+index);
-            playerTrackSettings_.erase(playerTrackSettings_.begin()+index);
             const auto remap=[&](int old) {
                 return armix::player::PlayerShowEditPolicy::afterRemove(
                     old,index);
@@ -4148,19 +3988,31 @@ private:
             if(playerSelected_<0 && !playerLibrary_.empty())
                 playerSelected_=std::min(index,
                     static_cast<int>(playerLibrary_.size())-1);
-            playerError_.clear();persistPlayerLibrary();emitPlayerState(true);
+            playerError_.clear();emitPlayerState(true);
             return;
         }
         if(action=="playerUndoRemove") {
             const auto removed=playerUndoRemove_;
             if(removed.set!=playerActiveSet_ || removed.index<0)return;
+            if(!armix::player::PlayerSetlistArchive::canUndoRemove(
+                    playerActiveSet_,removed.set,removed.index,
+                    playerLibrary_.size(),playerTrackSettings_.size())) {
+                // The removed slot may have been filled by an import. Do not
+                // create 2,001 songs or block all subsequent session saves.
+                playerError_="Setlist is full; remove a song before undoing";
+                emitPlayerState(true);return;
+            }
             if(std::find(playerLibrary_.begin(),playerLibrary_.end(),
                          removed.file)!=playerLibrary_.end())return;
-            const int index=std::clamp(removed.index,0,
-                static_cast<int>(playerLibrary_.size()));
-            playerLibrary_.insert(playerLibrary_.begin()+index,removed.file);
-            playerTrackSettings_.insert(
-                playerTrackSettings_.begin()+index,removed.controls);
+            auto plan=armix::player::PlayerLibraryEditPlan::undo(
+                playerLibrary_,playerTrackSettings_,removed.index,
+                removed.file,removed.controls);
+            if(!plan)return;
+            const int index=plan->first;
+            if(!commitPlayerTrackEdit(
+                std::move(plan->files),std::move(plan->controls))) {
+                emitPlayerState(true);return;
+            }
             playerCurrent_=armix::player::PlayerShowEditPolicy::afterInsert(
                 playerCurrent_,index);
             playerSelected_=armix::player::PlayerShowEditPolicy::afterInsert(
@@ -4168,7 +4020,7 @@ private:
             playerPendingIndex_=armix::player::PlayerShowEditPolicy::afterInsert(
                 playerPendingIndex_,index);
             playerUndoRemove_={};
-            playerError_.clear();persistPlayerLibrary();emitPlayerState(true);
+            playerError_.clear();emitPlayerState(true);
             return;
         }
         if(action=="playerQueueNext" || action=="playerQueueAppend") {
@@ -4231,65 +4083,20 @@ private:
     void emitPlayerState(bool includeLibrary=false,
                          bool includeTracks=true) {
         if(!browser_.loaded)return;
-        auto obj=std::make_unique<juce::DynamicObject>();
-        obj->setProperty("schema","arsonmix.player.v1");
-        obj->setProperty("transport",engine_.playerStatus());
-        obj->setProperty("selected",playerSelected_);
-        obj->setProperty("current",playerCurrent_);
-        obj->setProperty("autoNext",playerAutoNext_);
-        obj->setProperty("loopAB",playerLoopCurrent_);
-        obj->setProperty("activeSetlist",playerActiveSet_);
-        obj->setProperty("pending",playerPendingIndex_);
-        obj->setProperty("queueRevision",playerQueueEpoch_.revision());
-        obj->setProperty("crossfadeMs",playerFadeMilliseconds_);
-        obj->setProperty("canUndoRemove",
-            playerUndoRemove_.set==playerActiveSet_ &&
-            playerUndoRemove_.index>=0);
-        obj->setProperty("libraryBusy",playerFolderBusy_);
-        obj->setProperty("error",playerError_);
-        obj->setProperty("chooseOutput",
-            playerError_.containsIgnoreCase("Choose a verified MAIN output") ||
-            playerError_.containsIgnoreCase("native mixer is preparing"));
-        if(includeLibrary) {
-            juce::Array<juce::var> sets;
-            for(std::size_t i=0;i<playerSets_.size();++i) {
-                auto row=std::make_unique<juce::DynamicObject>();
-                row->setProperty("id",static_cast<int>(i));
-                row->setProperty("name",playerSets_[i].name);
-                row->setProperty("count",static_cast<int>(
-                    static_cast<int>(i)==playerActiveSet_?
-                        playerLibrary_.size():playerSets_[i].files.size()));
-                sets.add(juce::var(row.release()));
-            }
-            obj->setProperty("setlists",juce::var(sets));
-            juce::Array<juce::var> queue;
-            for(std::size_t i=0;i<playerQueue_.size();++i) {
-                auto item=std::make_unique<juce::DynamicObject>();
-                item->setProperty("id",static_cast<int>(i));
-                item->setProperty("title",
-                    playerQueue_[i].getFileNameWithoutExtension());
-                queue.add(juce::var(item.release()));
-            }
-            obj->setProperty("queue",juce::var(queue));
-            if(includeTracks) {
-                juce::Array<juce::var> rows;
-                for(std::size_t i=0;i<playerLibrary_.size();++i) {
-                    auto song=std::make_unique<juce::DynamicObject>();
-                    song->setProperty("id",static_cast<int>(i));
-                    song->setProperty("title",
-                        playerLibrary_[i].getFileNameWithoutExtension());
-                    song->setProperty("missing",!playerLibrary_[i].existsAsFile());
-                    song->setProperty("keySemitones",playerTrackSettings_[i].key);
-                    song->setProperty("tempoPercent",playerTrackSettings_[i].tempo);
-                    song->setProperty("cueIn",playerTrackSettings_[i].cueIn);
-                    song->setProperty("cueOut",playerTrackSettings_[i].cueOut);
-                    rows.add(juce::var(song.release()));
-                }
-                obj->setProperty("tracks",juce::var(rows));
-            }
+        using Projection=armix::player::PlayerStateProjection;
+        const auto snapshot=Projection::build({
+            playerLibrary_,playerTrackSettings_,playerSets_,playerQueue_,
+            engine_.playerStatus(),playerError_,
+            playerSelected_,playerCurrent_,playerActiveSet_,playerPendingIndex_,
+            playerQueueEpoch_.revision(),playerFadeMilliseconds_,
+            playerUndoRemove_.set,playerUndoRemove_.index,
+            playerAutoNext_,playerLoopCurrent_,playerFolderBusy_
+        },includeLibrary,includeTracks);
+        if(!snapshot.isObject()) {
+            playerError_="Player library state is inconsistent; no snapshot published";
+            return;
         }
-        browser_.emitEventIfBrowserIsVisible("arMixPlayerState",
-                                               juce::var(obj.release()));
+        browser_.emitEventIfBrowserIsVisible("arMixPlayerState",snapshot);
     }
     void choosePlayerFiles() {
         if(playerFileChooser_)return; // one native dialog only
@@ -4304,31 +4111,22 @@ private:
             [safe=juce::Component::SafePointer<ConsoleWindow>(this)]
             (const juce::FileChooser& picker) {
                 if(!safe)return;
-                const auto files=picker.getResults();
-                std::size_t first=static_cast<std::size_t>(-1);
-                for(const auto& file:files) {
-                    if(!file.existsAsFile() ||
-                       !file.hasFileExtension("wav;mp3;flac;aif;aiff;ogg"))
-                        continue;
-                    const auto found=std::find(safe->playerLibrary_.begin(),
-                        safe->playerLibrary_.end(),file);
-                    if(found!=safe->playerLibrary_.end()) {
-                        if(first==static_cast<std::size_t>(-1))
-                            first=static_cast<std::size_t>(
-                                found-safe->playerLibrary_.begin());
-                        continue;
+                const auto plan=armix::player::PlayerLibraryEditPlan::append(
+                    safe->playerLibrary_,safe->playerTrackSettings_,
+                    picker.getResults());
+                if(!plan) {
+                    safe->playerError_="Unable to import music; invalid library state";
+                    safe->emitPlayerState(true);
+                } else {
+                    const int first=plan->first;
+                    if(safe->commitPlayerTrackEdit(
+                        std::move(plan->files),std::move(plan->controls))) {
+                        if(safe->playerSelected_<0 && first>=0)
+                            safe->playerSelected_=first;
+                        safe->playerError_.clear();
                     }
-                    if(safe->playerLibrary_.size()>=2000)break;
-                    if(first==static_cast<std::size_t>(-1))
-                        first=safe->playerLibrary_.size();
-                    safe->playerLibrary_.push_back(file);
-                    safe->playerTrackSettings_.push_back({});
+                    safe->emitPlayerState(true);
                 }
-                if(safe->playerSelected_<0 && first!=static_cast<std::size_t>(-1))
-                    safe->playerSelected_=static_cast<int>(first);
-                safe->playerError_.clear();
-                safe->persistPlayerLibrary();
-                safe->emitPlayerState(true);
                 // Do not destroy FileChooser inside its own callback.
                 juce::MessageManager::callAsync([safe] {
                     if(safe)safe->playerFileChooser_.reset();
@@ -4372,35 +4170,19 @@ private:
                          relinks=std::move(relinks),initialLibrary]() mutable {
                             if(!safe)return;
                             safe->playerFolderBusy_=false;
-                            int added=0,relinked=0;
-                            // Update only the exact rows the worker saw.
-                            // Edits made during the scan must remain intact.
-                            for(const auto& change:relinks) {
-                                if(change.index>=initialLibrary.size() ||
-                                   change.index>=safe->playerLibrary_.size() ||
-                                   static_cast<int>(change.index)==safe->playerCurrent_ ||
-                                   safe->playerLibrary_[change.index]!=
-                                       initialLibrary[change.index] ||
-                                   std::find(safe->playerLibrary_.begin(),
-                                       safe->playerLibrary_.end(),
-                                       change.replacement)!=safe->playerLibrary_.end())
-                                    continue;
-                                safe->playerLibrary_[change.index]=change.replacement;
-                                ++relinked; // keep stable IDs + KEY/TEMPO
+                            auto plan=armix::player::PlayerLibraryEditPlan::folder(
+                                initialLibrary,safe->playerLibrary_,
+                                safe->playerTrackSettings_,scan,relinks,
+                                safe->playerCurrent_);
+                            if(!plan) {
+                                safe->playerError_="Unable to import folder; invalid library state";
+                                safe->emitPlayerState(true);return;
                             }
-                            int first=-1;
-                            for(const auto& file:scan.files) {
-                                const auto found=std::find(
-                                    safe->playerLibrary_.begin(),
-                                    safe->playerLibrary_.end(),file);
-                                if(found!=safe->playerLibrary_.end())continue;
-                                if(safe->playerLibrary_.size()>=
-                                   armix::player::PlayerLibraryPolicy::maxSongs)break;
-                                if(first<0)
-                                    first=static_cast<int>(safe->playerLibrary_.size());
-                                safe->playerLibrary_.push_back(file);
-                                safe->playerTrackSettings_.push_back({});
-                                ++added;
+                            const int added=plan->added,relinked=plan->relinked;
+                            const int first=plan->first;
+                            if(!safe->commitPlayerTrackEdit(
+                                  std::move(plan->files),std::move(plan->controls))) {
+                                safe->emitPlayerState(true);return;
                             }
                             if(safe->playerSelected_<0 && first>=0)
                                 safe->playerSelected_=first;
@@ -4409,7 +4191,6 @@ private:
                                 added==0 && relinked==0?
                                     "No new supported songs or safe missing-file matches found":
                                     juce::String{};
-                            safe->persistPlayerLibrary();
                             safe->emitPlayerState(true);
                         });
                 }).detach();
@@ -4439,28 +4220,28 @@ private:
                     if(safe)safe->playerFileChooser_.reset();
                 });
                 if(chosen==juce::File{})return;
-                if(index>=static_cast<int>(safe->playerLibrary_.size()) ||
-                   safe->playerLibrary_[static_cast<std::size_t>(index)]!=old) {
+                auto planned=armix::player::PlayerLibraryEditPlan::manualRelink(
+                    safe->playerLibrary_,safe->playerTrackSettings_,
+                    index,old,chosen);
+                using RelinkError=armix::player::PlayerLibraryEditPlan::RelinkError;
+                if(planned.error==RelinkError::staleRow)
                     safe->playerError_="Setlist changed; locate the song again";
-                } else if(!armix::player::PlayerLibraryPolicy::sameSongName(
-                              old,chosen)) {
+                else if(planned.error==RelinkError::wrongSong)
                     safe->playerError_="Choose the same song filename to avoid relinking the wrong music";
-                } else if(std::find(safe->playerLibrary_.begin(),
-                                   safe->playerLibrary_.end(),chosen)!=
-                          safe->playerLibrary_.end()) {
+                else if(planned.error==RelinkError::alreadyPresent)
                     safe->playerError_="This music file is already in your setlist";
-                } else {
-                    // Preserve same logical song ID, order and per-song
-                    // KEY/TEMPO. Never start a song or switch the output
-                    // as a side effect of locating a file.
+                else if(planned.candidate &&
+                        safe->commitPlayerTrackEdit(
+                            std::move(planned.candidate->files),
+                            std::move(planned.candidate->controls))) {
+                    // File path identity and KEY/TEMPO/Cue remain stable.
+                    // No transport changes before durable acceptance.
                     if(safe->playerCurrent_==index) {
                         safe->engine_.playerStop();
                         safe->playerCurrent_=-1;
                     }
-                    safe->playerLibrary_[static_cast<std::size_t>(index)]=chosen;
                     safe->playerOutputPendingIndex_=-1;
                     safe->playerError_.clear();
-                    safe->persistPlayerLibrary();
                 }
                 safe->emitPlayerState(true);
             });
@@ -4637,17 +4418,25 @@ private:
             else if(direction==1 || direction==-1)
                 next.tempo=std::clamp(next.tempo+direction*5,80,120);
             else return; // invalid native control intent cannot mutate DSP
-            // A performer must be able to tune NEXT while CURRENT is
-            // playing without changing CURRENT audio. Only send live DSP
-            // commands for the currently loaded song.
-            if(!target.updateLiveDeck ||
-               engine_.setPlayerPitchTempo(next.key,next.tempo)) {
-                playerTrackSettings_[static_cast<std::size_t>(i)]=next;
+            // NEXT changes persist without touching CURRENT audio. For a
+            // loaded CURRENT, use native-first acceptance, durable Save and
+            // compensation on failure; never publish unsaved track state.
+            using NativeMeta=armix::player::PlayerLiveMetadataCommitPolicy;
+            const auto previous=playerTrackSettings_[static_cast<std::size_t>(i)];
+            auto staged=playerTrackSettings_;
+            staged[static_cast<std::size_t>(i)]=next;
+            const auto outcome=NativeMeta::run(
+                target.updateLiveDeck,
+                [&]{return engine_.setPlayerPitchTempo(next.key,next.tempo);},
+                [&]{return commitPlayerTrackEdit(playerLibrary_,std::move(staged));},
+                [&]{return engine_.setPlayerPitchTempo(previous.key,previous.tempo);});
+            if(outcome==NativeMeta::Outcome::accepted)
                 playerError_.clear();
-                persistPlayerLibrary();
-                emitPlayerState(true);
-            }
-            return;
+            else if(outcome==NativeMeta::Outcome::nativeRejected)
+                playerError_="Unable to apply native KEY or TEMPO";
+            else if(outcome==NativeMeta::Outcome::saveRejectedRollbackFailed)
+                stopPlayerAfterUnrecoveredMetadata();
+            emitPlayerState(true);return;
         }
         if(action=="playerLoopToggle") {
             const bool enable=value.isBool() && static_cast<bool>(value);
@@ -4681,7 +4470,7 @@ private:
                 playerError_="Select the playing song to edit its cue";
                 emitPlayerState();return;
             }
-            auto& cues=playerTrackSettings_[static_cast<std::size_t>(
+            const auto cues=playerTrackSettings_[static_cast<std::size_t>(
                 playerCurrent_)];
             const auto transport=engine_.playerStatus();
             const double now=static_cast<double>(
@@ -4694,33 +4483,49 @@ private:
                 else playerError_.clear();
                 emitPlayerState();return;
             }
-            if(action=="playerCueClear") {
-                cues.cueIn=0.;cues.cueOut=0.;
-            } else if(!std::isfinite(now) || !std::isfinite(total) ||
-                      total<=0. || now<0. || now>=total) {
+            if(action!="playerCueClear" &&
+               (!std::isfinite(now)||!std::isfinite(total)||
+                total<=0.||now<0.||now>=total)) {
                 playerError_="Cue position is unavailable";
                 emitPlayerState();return;
-            } else if(action=="playerCueIn") {
-                cues.cueIn=std::floor(now*100.)/100.;
-                if(cues.cueOut>0. && cues.cueOut<=cues.cueIn+0.05)
-                    cues.cueOut=0.;
-            } else {
-                if(now<=cues.cueIn+0.05) {
-                    playerError_="OUT must be after IN";
-                    emitPlayerState();return;
-                }
-                cues.cueOut=std::floor(now*100.)/100.;
             }
-            if(!engine_.setPlayerCueRange(cues.cueIn,cues.cueOut)) {
+            using CuePolicy=armix::player::PlayerCueEditPolicy;
+            const auto command=action=="playerCueClear"?
+                CuePolicy::Command::clear:action=="playerCueIn"?
+                CuePolicy::Command::markIn:CuePolicy::Command::markOut;
+            const auto nextCue=CuePolicy::plan(
+                {cues.cueIn,cues.cueOut},command,now,total);
+            if(!nextCue) {
+                playerError_=action=="playerCueOut"?
+                    "OUT must be after IN":"Invalid song cue marker";
+                emitPlayerState();return;
+            }
+            // Native admission FIRST (as before); stage the proposed
+            // archive edit, and restore the previous accepted cue if the
+            // durable Save rejects. Never mutate the live control vector
+            // until both native and disk accepted the candidate.
+            using NativeMeta=armix::player::PlayerLiveMetadataCommitPolicy;
+            auto staged=playerTrackSettings_;
+            staged[static_cast<std::size_t>(playerCurrent_)].cueIn=nextCue->in;
+            staged[static_cast<std::size_t>(playerCurrent_)].cueOut=nextCue->out;
+            const auto outcome=NativeMeta::run(true,
+                [&]{return engine_.setPlayerCueRange(nextCue->in,nextCue->out);},
+                [&]{return commitPlayerTrackEdit(playerLibrary_,std::move(staged));},
+                [&]{return engine_.setPlayerCueRange(cues.cueIn,cues.cueOut);});
+            if(outcome==NativeMeta::Outcome::nativeRejected) {
                 playerError_="Could not update native song markers";
                 emitPlayerState();return;
             }
+            if(outcome==NativeMeta::Outcome::saveRejectedRollbackFailed)
+                stopPlayerAfterUnrecoveredMetadata();
+            if(outcome!=NativeMeta::Outcome::accepted) {
+                emitPlayerState(true);return;
+            }
             if(playerLoopCurrent_ &&
                !armix::player::PlayerShowTransitionPolicy::validLoop(
-                   cues.cueIn,cues.cueOut,playerFadeMilliseconds_))
+                   nextCue->in,nextCue->out,playerFadeMilliseconds_))
                 playerLoopCurrent_=false;
-            playerError_.clear();persistPlayerLibrary();
-            emitPlayerState(true);return;
+            playerError_.clear();emitPlayerState(true);return;
         }
         if(action=="playerPlay")return playTransportMusic();
         if(action=="playerSeek") {
@@ -4753,14 +4558,19 @@ private:
             return playNextMusic();
         }
         if(action=="playerAutoNext") {
+            const bool next=value.isBool() && static_cast<bool>(value);
+            if(!commitPlayerPreferences(next,playerFadeMilliseconds_)) {
+                emitPlayerState(true);return;
+            }
             playerAutoAdvanceGate_.rearm();
-            playerAutoNext_=value.isBool() && static_cast<bool>(value);
-            persistPlayerLibrary();emitPlayerState(true);return;
+            playerError_.clear();emitPlayerState(true);return;
         }
         if(action=="playerFadeMs") {
             const int ms=static_cast<int>(value);
             if(ms!=0 && ms!=180 && ms!=500 && ms!=1500)return;
-            playerFadeMilliseconds_=ms;
+            if(!commitPlayerPreferences(playerAutoNext_,ms)) {
+                emitPlayerState();return;
+            }
             if(playerLoopCurrent_ && playerCurrent_>=0 &&
                playerCurrent_<static_cast<int>(playerTrackSettings_.size())) {
                 const auto cue=playerTrackSettings_[
@@ -4769,7 +4579,7 @@ private:
                     cue.cueIn,cue.cueOut,ms))
                     playerLoopCurrent_=false;
             }
-            persistPlayerLibrary();emitPlayerState();return;
+            playerError_.clear();emitPlayerState();return;
         }
         if(action=="playerSelect" || action=="playerPlayNow") {
             const int i=static_cast<int>(value);

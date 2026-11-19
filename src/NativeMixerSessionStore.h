@@ -183,18 +183,34 @@ public:
     bool exists() const noexcept {return root_.getChildFile("HEAD").existsAsFile();}
     // Recovery does NOT arm output or publish a graph. Valid HEAD wins.
     juce::String recoverPrevious() const {
-        MixerSessionDocument current;
-        std::vector<armix::shows::BinaryState> currentStates;
-        if(load(current,currentStates).isEmpty())
+        MixerSessionDocument recovered;
+        std::vector<armix::shows::BinaryState> states;
+        return recoverPrevious(recovered,states);
+    }
+    juce::String recoverPrevious(MixerSessionDocument& out,
+                     std::vector<armix::shows::BinaryState>& states) const {
+        const auto head=root_.getChildFile("HEAD");
+        const auto before=readPointer(head);
+        MixerSessionDocument verified;
+        std::vector<armix::shows::BinaryState> binary;
+        if(load(verified,binary).isEmpty())
             return "Saved mixer generation is already verified";
         const auto pointer=readPointer(root_.getChildFile("PREVIOUS"));
         if(pointer.isEmpty())return "Last-good mixer pointer missing";
-        MixerSessionDocument verified;
-        std::vector<armix::shows::BinaryState> binary;
-        const auto error=readGeneration(root_.getChildFile("versions").getChildFile(pointer),
-                                        verified,binary);
+        auto error=readGeneration(root_.getChildFile("versions").getChildFile(pointer),
+                                  verified,binary);
         if(error.isNotEmpty())return "Previous mixer generation invalid: "+error;
-        return writePointer(root_.getChildFile("HEAD"),pointer);
+        if(readPointer(head)!=before)
+            return "Mixer HEAD changed during recovery";
+        error=writePointer(head,pointer);
+        if(error.isNotEmpty())return error;
+        if(readPointer(head)!=pointer)
+            return "Mixer HEAD changed after recovery";
+        // Return the same verified immutable generation that was published.
+        // No second blob read or hash pass is needed on the control thread.
+        out=std::move(verified);
+        states=std::move(binary);
+        return {};
     }
 private:
     juce::File root_;
