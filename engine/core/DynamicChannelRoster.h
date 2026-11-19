@@ -791,9 +791,12 @@ public:
     // CONTROL ONLY; no audio is ever published by this operation.
     bool restoreExact(std::uint64_t restoredRevision,
                       std::span<const ChannelStripDefinition> entries) {
-        if(restoredRevision==0 || entries.empty() ||
-           !withinBudget(std::vector<ChannelStripDefinition>(entries.begin(),entries.end())))
-            return false;
+        if(restoredRevision==0 || entries.empty())return false;
+        // A single CONTROL-only candidate avoids the second full roster
+        // copy and the GCC 15 false-positive temporary deallocation under
+        // -O2 -Werror. Rejected restores never mutate the accepted roster.
+        auto candidate=std::vector<ChannelStripDefinition>(entries.begin(),entries.end());
+        if(!withinBudget(candidate))return false;
         std::unordered_set<std::uint64_t> ids,edges;
         std::uint64_t maxId=0,maxEdge=0;
         int mains=0,monitors=0;
@@ -829,7 +832,6 @@ public:
         for(const auto& ch:entries)
             for(const auto& send:ch.sends)
                 if(ids.count(send.destination.value)==0)return false;
-        auto candidate=std::vector<ChannelStripDefinition>(entries.begin(),entries.end());
         auto index=buildIndex(candidate);
         if(index.size()!=candidate.size())return false;
         channels_.swap(candidate);
