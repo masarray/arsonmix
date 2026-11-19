@@ -202,10 +202,15 @@
 
     // UI IDs are cosmetic; they are never a substitute for the exact
     // producer EdgeId. Check for a *unique* visible PRIMARY cable first.
-    const visible=Array.isArray(uiEdges)?uiEdges.filter(e=>
+    const uiPrimary=Array.isArray(uiEdges)?uiEdges.filter(e=>
       e?.id===op.edgeId&&e.sourceId===op.sourceId&&
-      e.destId===mainUiId&&e.kind==="primary"&&e.enabled===true):[];
+      e.kind==="primary"&&e.enabled===true):[];
+    const visible=uiPrimary.filter(e=>e.destId===mainUiId);
     if(visible.length>1)return {kind:"BLOCK"};
+    // M4 has no native EdgeId. A PRIMARY shown against any other target
+    // cannot be interpreted as a verified MAIN unplug.
+    if(snapshot?.admitted===false&&uiPrimary.length>0&&visible.length!==1)
+      return {kind:"BLOCK"};
     const graph=snapshot?.graph;
     const globalEdges=Array.isArray(graph?.edges)&&nativeId(edgeId)?
       graph.edges.filter(e=>e?.edgeId===edgeId):[];
