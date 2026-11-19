@@ -153,3 +153,54 @@ test("G-MV28 same-epoch hardware remap retires gesture and throttle",()=>{
   const nativeBridge=readFileSync("web/approved-native-bridge.js","utf8");
   assert.ok(nativeBridge.includes("hardwareConfiguration:logicalView?undefined:hardware?.hardwareConfiguration"));
 });
+
+// G-MV29: channel roster and physical M4 routing generations are distinct
+// immutable leases; no stale last-writer target may cross either boundary.
+test("G-MV29 M4 same-epoch reroute drops pending fader and 30ms lease",()=>{
+  const params={epoch:"14",authority:"M4",channelId:null,
+    hardwareConfiguration:"same-pins:48000",routingRevision:"23"};
+  const before=vm.scalarNativeIdentity(params);
+  const after=vm.scalarNativeIdentity({...params,routingRevision:"24"});
+  const pending={...edit,...before};
+  assert.equal(before.routeRevision,"23");
+  assert.equal(vm.scalarIdentityMatches(pending,after),false);
+  assert.equal(vm.scalarGestureFlushPlan({now:129,lastSent:vm.scalarDispatchLease(pending,120),identity:after}),"FLUSH");
+  assert.deepEqual(vm.scalarDispatchPlan(pending,ready({identity:after})),{kind:"REJECT"});
+  assert.equal(vm.scalarVisualSettlement(pending,-14.5,after),"STALE");
+  assert.equal(vm.scalarGestureFlushPlan({now:129,lastSent:vm.scalarDispatchLease(pending,120),identity:before}),"QUEUE");
+  assert.equal(vm.scalarDispatchPlan({...pending,routeRevision:"24"},ready({identity:after})).kind,"INTENT");
+});
+
+test("G-MV29 ChannelId roster replacement and MAIN host revision retire gestures",()=>{
+  const params={epoch:identity.epoch,authority:"CHANNEL_ID",channelId:identity.channelId,
+    hardwareConfiguration:"same-device",rosterRevision:"8",routingRevision:"3"};
+  const first=vm.scalarNativeIdentity(params);
+  const second=vm.scalarNativeIdentity({...params,rosterRevision:"9"});
+  const pending={...edit,...first};
+  assert.equal(first.rosterRevision,"8");
+  assert.equal(first.routeRevision,undefined,"normal ChannelId fader is not a legacy M4 control");
+  assert.equal(vm.scalarIdentityMatches(pending,second),false);
+  assert.deepEqual(vm.scalarDispatchPlan(pending,ready({identity:second})),{kind:"REJECT"});
+  assert.equal(vm.scalarGestureFlushPlan({now:123,lastSent:vm.scalarDispatchLease(pending,120),identity:second}),"FLUSH");
+  const main=vm.scalarNativeIdentity({...params,master:true,channelId:null});
+  const rerouted=vm.scalarNativeIdentity({...params,master:true,channelId:null,routingRevision:"4"});
+  assert.equal(main.routeRevision,"3");
+  assert.equal(main.rosterRevision,"8");
+  assert.equal(vm.scalarIdentityMatches({...edit,...main},rerouted),false);
+  assert.equal(vm.scalarNativeIdentity({...params,master:true,channelId:null,routingRevision:"broken"}),null);
+});
+
+test("G-MV29 incomplete physical generations fail closed, offline remains independent",()=>{
+  const base={epoch:"14",authority:"M4",channelId:null,
+    hardwareConfiguration:"pins:stable",routingRevision:"2"};
+  assert.equal(vm.scalarNativeIdentity({...base,routingRevision:undefined}),null);
+  assert.equal(vm.scalarNativeIdentity({...base,hardwareConfiguration:""}),null);
+  assert.equal(vm.scalarNativeIdentity({...base,authority:"CHANNEL_ID",channelId:identity.channelId}),null);
+  assert.equal(vm.scalarNativeIdentity({...base,authority:"CHANNEL_ID",channelId:identity.channelId,rosterRevision:"8"}).rosterRevision,"8");
+  assert.deepEqual(vm.scalarNativeIdentity({logical:true,channelId:identity.channelId}),
+    {epoch:"LOGICAL",authority:"LOGICAL",channelId:identity.channelId});
+  const source=readFileSync("web/approved-native-bridge.js","utf8");
+  assert.ok(source.includes("stripVM.scalarNativeIdentity({"));
+  assert.ok(source.includes("routingRevision:logicalView?undefined:String(legacy()?.routingRevision)"));
+  assert.ok(source.includes("rosterRevision:logicalView?undefined:controller?.state()?.current?.graph?.rosterRevision"));
+});
