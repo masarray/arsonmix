@@ -5586,3 +5586,18 @@ test("G-MV30 native roster ACK, concurrent lanes and exact later graph+roster pr
  assert.equal(bridge.includes('action:"routingNativeBusDelete"'),false,
    "routing action comes from one pure transaction plan");
 });
+
+
+test("G-MV30 first native ChannelId projection enables Add Track without a second callback",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const success=bridge.indexOf("flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;");
+ assert.ok(success>=0);
+ const after=bridge.slice(success,success+500);
+ assert.ok(after.includes("syncAddTrack(next);"),
+   "native button should re-evaluate only AFTER successful graph projection");
+ assert.ok(after.indexOf("syncAddTrack(next);")<
+   after.indexOf("syncMonitorButton(next.device);"));
+ const before=bridge.indexOf("if (!projectNativeGraphWithoutFocusLoss(next))",success-500);
+ assert.ok(before>=0&&before<success,
+   "never enable a native Add before the authoritative ChannelId graph projects");
+});
