@@ -276,6 +276,65 @@
     }
     return unavailable;
   }
+  // G-MV23: ONE pure accepted-source comparator reused by the normal
+  // correlated ACK/readback settlement and the queue's no-op optimization.
+  // No GUI label, ACK payload, or pending request may prove installed PCM.
+  function installedSourceMatches(authority,choice,source) {
+    if(!choice||!["NONE","MONO","STEREO"].includes(choice.mode))return false;
+    if(authority==="CHANNEL_ID"){
+      if(choice.mode==="NONE")return !source;
+      if(!source||source.bindingState==="NEEDS_REMAP"||
+         source.portId!=="in:"+choice.left)return false;
+      if(choice.mode==="MONO")
+        return source.sourceFormat==="MONO"&&source.portIdRight===undefined;
+      return source.sourceFormat==="STEREO"&&
+        source.portIdRight==="in:"+choice.right;
+    }
+    return authority==="M4"&&!!source&&
+      source.mode===choice.mode&&source.left===choice.left&&
+      source.right===choice.right;
+  }
+  // Never skip a native SOURCE patch merely because its pin numbers match.
+  // An independently installed, admitted ChannelId graph (or fully
+  // accepted M4 producer) with the exact current physical lease is required.
+  // A stale/NEEDS_REMAP/unadmitted session must still use normal native
+  // preflight rather than be optimistically accepted as already installed.
+  function sourceQueueAlreadyInstalled({authority,key,entry,hardware,native}={}) {
+    if(!entry?.choice||!decimalId(entry.epoch)||
+       hardware?.device?.epoch!==entry.epoch||
+       (hardware?.hardwareConfiguration!==undefined&&
+         entry.hardwareConfiguration!==hardware.hardwareConfiguration)||
+       (native?.hardwareConfiguration!==undefined&&
+         entry.hardwareConfiguration!==native.hardwareConfiguration))
+      return false;
+    if(authority==="CHANNEL_ID"){
+      const session=hardware?.raw?.mixerSession;
+      if(!decimalId(key)||native?.admitted!==true||
+         native?.retained===true||session?.authority!=="CHANNEL_ID"||
+         session.deviceEpoch!==entry.epoch||
+         native?.device?.epoch!==entry.epoch)return false;
+      const row=native.graph?.channels?.find(ch=>ch.id===key);
+      return row?.role==="INPUT"&&installedSourceMatches(
+        authority,entry.choice,row.source);
+    }
+    if(authority==="M4"){
+      const m=hardware?.raw?.legacyM4,session=hardware?.raw?.mixerSession;
+      if(hardware?.admitted!==false||hardware?.retained===true||
+         m?.active!==true||m.routeAccepted!==true||
+         session?.authority!=="M4"||
+         session.deviceEpoch!==entry.epoch||
+         !positiveCounter(session.routeRevision)||
+         session.routeRevision!==m.routingRevision||
+         !Number.isInteger(key)||key<0||key>=10||
+         !Array.isArray(session.channels)||session.channels.length!==10)
+        return false;
+      const row=session.channels[key];
+      return row?.role==="INPUT"&&installedSourceMatches(
+        authority,entry.choice,row.source);
+    }
+    return false;
+  }
+
   // MV-14: pure FIFO head shared by ChannelId and legacy M4 INPUT.
   // The bridge alone owns queue mutation, native events, timeouts and
   // correlated ACK/readback. Never replay pin drafts from an old device.
@@ -296,9 +355,10 @@
     const plan=sourceDispatchPlan({authority,entry,hardware,native,
       channelId:authority==="CHANNEL_ID"?key:undefined,
       channel:authority==="M4"?key:undefined,choices,deviceReady});
-    return plan.kind==="READY"?
-      {kind:"SEND",key,entry,action:plan.action,payload:plan.payload}:
-      {kind:"DROP",key};
+    if(plan.kind!=="READY")return {kind:"DROP",key};
+    if(sourceQueueAlreadyInstalled({authority,key,entry,hardware,native}))
+      return {kind:"SKIP_INSTALLED",key};
+    return {kind:"SEND",key,entry,action:plan.action,payload:plan.payload};
   }
 
   // G-MV22: one pure request-lease factory for both native SOURCE paths.
@@ -398,18 +458,8 @@
        BigInt(pending.ackRevision)<=BigInt(pending.beforeRevision)||
        BigInt(next.graph.revision)<BigInt(pending.ackRevision))
       return "PENDING";
-    const choice=pending.choice;
-    if(!choice||!["NONE","MONO","STEREO"].includes(choice.mode))
-      return "PENDING";
-    const source=channel.source;
-    if(choice.mode==="NONE")return !source?"CONFIRMED":"PENDING";
-    if(!source||source.bindingState==="NEEDS_REMAP"||
-       source.portId!=="in:"+choice.left)return "PENDING";
-    if(choice.mode==="MONO")
-      return source.sourceFormat==="MONO" &&
-        source.portIdRight===undefined?"CONFIRMED":"PENDING";
-    return source.sourceFormat==="STEREO" &&
-      source.portIdRight==="in:"+choice.right?"CONFIRMED":"PENDING";
+    return installedSourceMatches("CHANNEL_ID",pending.choice,channel.source)?
+      "CONFIRMED":"PENDING";
   }
 
 
@@ -445,12 +495,8 @@
        !Number.isSafeInteger(pending.revision)||
        BigInt(ackRevision)<=BigInt(pending.revision)||
        BigInt(revision)<BigInt(ackRevision))return "PENDING";
-    const desired=pending.choice,source=channels[pending.channel].source;
-    if(!desired||!["NONE","MONO","STEREO"].includes(desired.mode)||
-       !source||source.mode!==desired.mode||
-       source.left!==desired.left||source.right!==desired.right)
-      return "PENDING";
-    return "CONFIRMED";
+    return installedSourceMatches("M4",pending.choice,
+      channels[pending.channel].source)?"CONFIRMED":"PENDING";
   }
 
   // MV-15: a single readback decision for both native SOURCE authorities.
@@ -666,7 +712,8 @@
   return Object.freeze({outputTargets,inputChoices,externalChoices,
     primaryChoices,resolvePrimarySelection,readbackBindings,externalPending,
     primaryOutMutation,externalOutputPlan,sourceQueueSelection,
-    sourceDispatchPlan,sourceQueueHead,sourceQueueRequestLease,
+    sourceDispatchPlan,sourceQueueHead,sourceQueueAlreadyInstalled,
+    sourceQueueRequestLease,
     sourceAckResult,sourceReadbackSettlement,
     m4SourceReadbackSettlement,sourceQueueReadback,sourceQueueAckTransition,
     sourceQueueTimeoutDecision,
