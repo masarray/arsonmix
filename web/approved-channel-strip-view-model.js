@@ -192,6 +192,101 @@
   }
 
 
+  // G-MV29: one M4-native physical channel-patch policy for both OUT
+  // (MAIN/SOURCE ONLY) and MONO/STEREO. The bridge keeps one dispatcher,
+  // request ID and timeout, but no longer decides PCM eligibility from
+  // a local strip label, a stale legacy revision, or an ACK payload.
+  // The M4 host accepts only JS-safe epoch/revision integer tokens;
+  // ChannelId's separate uint64 path MUST NOT be rounded here.
+  function m4ChannelPatchPlan(snapshot,{operation,channel,target,
+    verifiedM4=false,deviceReady=false,pending=false,
+    sourcePending=false}={}) {
+    const unavailable={kind:"UNAVAILABLE"};
+    const session=snapshot?.raw?.mixerSession,m=snapshot?.raw?.legacyM4,
+      epoch=snapshot?.device?.epoch,revision=m?.routingRevision;
+    if(pending||sourcePending||verifiedM4!==true||deviceReady!==true||
+       snapshot?.admitted!==false||snapshot?.retained===true||
+       session?.authority!=="M4"||m?.active!==true||
+       m.routeAccepted!==true||m.nativeBusStructural===true||
+       !positiveCounter(epoch)||!positiveCounter(revision)||
+       session.deviceEpoch!==epoch||session.routeRevision!==revision||
+       !Number.isInteger(channel)||channel<0||channel>=10||
+       !Array.isArray(session.channels)||session.channels.length!==10||
+       !Array.isArray(m.channels)||m.channels.length!==10)
+      return unavailable;
+    const row=session.channels[channel],source=m.channels[channel];
+    if(row?.role!=="INPUT"||row.ordinal!==channel||!source||
+       row.source?.main!==source.main)return unavailable;
+    let actual;
+    if(operation==="SET_PRIMARY_OUT"){
+      if(target!=="MAIN"&&target!=="NONE"||
+         typeof source.main!=="boolean"||
+         row.primaryOut!==(source.main?"MAIN":"NONE"))
+        return unavailable;
+      actual=source.main?"MAIN":"NONE";
+    }else if(operation==="SET_PROCESSING_FORMAT"){
+      if(target!=="MONO"&&target!=="STEREO"||
+         !["MONO","STEREO"].includes(source.channelFormat)||
+         row.source?.channelFormat!==source.channelFormat)
+        return unavailable;
+      actual=source.channelFormat;
+    }else return unavailable;
+    if(actual===target)return {kind:"NO_CHANGE"};
+    return {kind:"READY",action:"routingChannelPatch",
+      payload:{operation,channel,target,
+        deviceEpoch:Number(epoch),revision:Number(revision)},
+      pending:{channel,operation,target,epoch,baseRevision:revision,
+        acked:false}};
+  }
+  // ACK is just a matching producer response. The ACK's embedded state
+  // is NOT independently installed PCM and must never repaint the strip.
+  function m4ChannelPatchAckResult(pending,ack) {
+    if(!pending||!ack||ack.requestId!==pending.requestId)return "IGNORE";
+    return ack.ok===true&&ack.channel===pending.channel&&
+      String(ack.state?.epoch)===pending.epoch?"ACKED":"REJECTED";
+  }
+  // Only a subsequent accepted M4 native session, with a strictly newer
+  // route revision and exact installed channel format/OUT, can unlock the
+  // next patch and mark this one successful. One stale ACK cannot settle it.
+  function m4ChannelPatchSettlement(pending,snapshot) {
+    if(!pending)return "NONE";
+    const session=snapshot?.raw?.mixerSession,m=snapshot?.raw?.legacyM4;
+    if(snapshot?.admitted!==false||snapshot?.retained===true||
+       snapshot?.device?.epoch!==pending.epoch||
+       session?.authority!=="M4"||session.deviceEpoch!==pending.epoch||
+       m?.active!==true||m.routeAccepted!==true||
+       m.nativeBusStructural===true||
+       !positiveCounter(session.routeRevision)||
+       session.routeRevision!==m.routingRevision||
+       !Number.isInteger(pending.channel)||pending.channel<0||
+       pending.channel>=10||!Array.isArray(session.channels)||
+       session.channels.length!==10||
+       !Array.isArray(m.channels)||m.channels.length!==10)
+      return "STALE";
+    const row=session.channels[pending.channel],
+      source=m.channels[pending.channel];
+    if(row?.role!=="INPUT"||row.ordinal!==pending.channel||
+       !source||row.source?.main!==source.main)
+      return "STALE";
+    // Revision cannot decrease or be reused by a different installed
+    // producer, even if its visible output happens to equal the request.
+    if(!positiveCounter(pending.baseRevision)||
+       Number(session.routeRevision)<Number(pending.baseRevision))
+      return "STALE";
+    if(pending.acked!==true||
+       Number(session.routeRevision)<=Number(pending.baseRevision))
+      return "WAIT";
+    const installed=pending.operation==="SET_PRIMARY_OUT"?
+      (typeof source.main==="boolean"&&
+        row.primaryOut===(source.main?"MAIN":"NONE")?
+        (source.main?"MAIN":"NONE"):null):
+      pending.operation==="SET_PROCESSING_FORMAT"?
+        (["MONO","STEREO"].includes(source.channelFormat)&&
+         row.source?.channelFormat===source.channelFormat?
+           source.channelFormat:null):null;
+    return installed!==null&&installed===pending.target?"CONFIRMED":"WAIT";
+  }
+
   // MV-6: SOURCE selection/queue and native/M4 command preflight are pure
   // projections of the one installed device inventory. The bridge owns the
   // only pending queues and requestIds; neither VM nor UI owns accepted PCM.
@@ -766,7 +861,8 @@
 
   return Object.freeze({outputTargets,inputChoices,externalChoices,
     primaryChoices,resolvePrimarySelection,readbackBindings,externalPending,
-    primaryOutMutation,externalOutputPlan,sourceQueueSelection,
+    primaryOutMutation,externalOutputPlan,m4ChannelPatchPlan,
+    m4ChannelPatchAckResult,m4ChannelPatchSettlement,sourceQueueSelection,
     sourceDispatchPlan,sourceQueueHead,sourceQueueAlreadyInstalled,
     sourceQueueRequestLease,
     sourceAckResult,sourceReadbackSettlement,
