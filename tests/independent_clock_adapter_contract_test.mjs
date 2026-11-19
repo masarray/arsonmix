@@ -6,6 +6,7 @@ const r=p=>readFileSync(p,'utf8');
 const device=r('engine/device/JuceIndependentClockDevice.h');
 const engine=r('src/LiveAudioEngine.h');
 const host=r('src/Main.cpp');
+const coordinator=r('src/NativeDirectRestoreCoordinator.h');
 const sizing=r('engine/device/ClockBridgeSizing.h');
 const watchdog=r('engine/device/IndependentStreamWatchdog.h');
 const ui=r('web/monitor.js');
@@ -43,7 +44,7 @@ test('P0 immutable independent stream format fence blocks silent device/period/m
   assert.match(device,/formatFence_\.observeCallbackChannels/);
   assert.match(device,/formatFence_\.resetStopped\(\)/);
   assert.match(engine,/bridgeNegotiationFault/);
-  assert.match(host,/getProperty \("bridgeNegotiationFault", "NONE"\)/);
+  assert.match(coordinator,/getProperty\("bridgeNegotiationFault","NONE"\)/);
   assert.match(cmake,/add_test\(NAME IndependentStreamNegotiatedFormatFence COMMAND ARMixIndependentFormatTests\)/);
 });
 
@@ -58,10 +59,11 @@ test('live deployment preserves direct ASIO and bounded rollback semantics',()=>
   assert.match(engine,/bridgeUnderflowFrames/);
   assert.match(engine,/bridgeCorrectionPpm/);
   assert.match(engine,/WASAPI_CAPTURE_DISCONTINUITIES_ONLY/);
-  assert.match(host,/engine_\.independentClockFaulted\(\)/);
+  assert.match(coordinator,/engine\.independentClockFaulted\(\)/);
   assert.match(host,/serviceDirectRestore\(\)/);
-  assert.match(host,/SMART_CLOCK_RECOVERY/);
-  assert.match(host,/!engine_\.independentClockActive\(\)/);
+  assert.match(coordinator,/SMART_CLOCK_RECOVERY/);
+  assert.match(host,/NativeDirectRestoreCoordinator::service/);
+  assert.match(coordinator,/!engine\.independentClockActive\(\)/);
   assert.match(host,/editing VST3 graph/);
   assert.match(host,/emitFxAddResult \(requestId, name, error, 0\)/);
 });
@@ -79,18 +81,18 @@ test('silent JUCE callback watchdog routes through control timer and DIRECT fail
   assert.match(watchdog,/renderCount != renderCount_/);
   assert.match(device,/streamWatchdog_\.observe/);
   assert.match(engine,/pollIndependentClockHealth/);
-  assert.match(host,/engine_\.pollIndependentClockHealth \(now\)/);
+  assert.match(coordinator,/engine\.pollIndependentClockHealth\(nowMs\)/);
   assert.match(engine,/bridgeWatchdogFault/);
   assert.match(engine,/bridgeCaptureSilentMs/);
   assert.match(engine,/bridgeRenderSilentMs/);
 });
 
 test('watchdog fault cause precedes bounded diagnostics JSON on both recovery outcomes',()=>{
-  assert.match(host,/const auto watchdogSummary =/);
-  assert.match(host,/getProperty \("bridgeWatchdogFault", "NONE"\)/);
-  assert.match(host,/getProperty \("bridgeCaptureSilentMs", 0\)/);
-  assert.match(host,/getProperty \("bridgeRenderSilentMs", 0\)/);
-  assert.equal((host.match(/watchdogSummary \+ " \| " \+ faultStatus/g)||[]).length,2);
+  assert.match(coordinator,/const auto watchdogSummary=/);
+  assert.match(coordinator,/getProperty\("bridgeWatchdogFault","NONE"\)/);
+  assert.match(coordinator,/getProperty\("bridgeCaptureSilentMs",0\)/);
+  assert.match(coordinator,/getProperty\("bridgeRenderSilentMs",0\)/);
+  assert.equal((coordinator.match(/watchdogSummary\s*\+\s*" \| "\s*\+\s*faultStatus/g)||[]).length,2);
 });
 
 test('sustained live FIFO loss feeds bounded DIRECT recovery without audio-callback policy work',()=>{
@@ -104,9 +106,9 @@ test('sustained live FIFO loss feeds bounded DIRECT recovery without audio-callb
   assert.match(device,/pcm\.overflowFrames/);
   assert.match(engine,/bridgeContinuityFault/);
   assert.match(engine,/bridgeContinuityLossBp/);
-  assert.match(host,/getProperty \("bridgeContinuityFault", "NONE"\)/);
-  assert.match(host,/getProperty \("bridgeContinuityLossBp", 0\)/);
-  assert.match(host,/engine_\.pollIndependentClockHealth \(now\)/);
+  assert.match(coordinator,/getProperty\("bridgeContinuityFault","NONE"\)/);
+  assert.match(coordinator,/getProperty\("bridgeContinuityLossBp",0\)/);
+  assert.match(coordinator,/engine\.pollIndependentClockHealth\(nowMs\)/);
 });
 
 test('dual-WASAPI opening is guarded by unique native endpoint IDs without GUI or RT work',()=>{
