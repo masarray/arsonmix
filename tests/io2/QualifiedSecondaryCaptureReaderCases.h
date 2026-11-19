@@ -112,9 +112,9 @@ inline void run() {
           "committed BUS/WIRE revision retains capture B");
     auto wrongPatch=request;
     wrongPatch.sources.back().inputL=0; // erroneously aliases A, no longer B map
-    const auto wrong=native.commit(roster,wrongPatch,2,epoch,epoch,false,
+    const auto wrongCommit=native.commit(roster,wrongPatch,2,epoch,epoch,false,
                                    {},true,false);
-    check(wrong.fault==m::DynamicNativeSessionPublisher::Fault::invalidCandidate
+    check(wrongCommit.fault==m::DynamicNativeSessionPublisher::Fault::invalidCandidate
           &&native.acceptedRevision()==2,
           "cannot silently remap B by reusing native WIRE-only authorization");
     const auto whileArmed=native.commit(roster,request,2,epoch,epoch,false,
