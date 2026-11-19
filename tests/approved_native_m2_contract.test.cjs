@@ -1691,7 +1691,8 @@ test("DAW G0 native M4 controls, source clear, OUT & monitoring are real",()=>{
  assert.match(bridge,/function paintM4Fallback\(next\)/);
  assert.match(bridge,/function sendM4Control\(parameter,t,value\)/);
  assert.match(bridge,/action:"routingM4Control"/);
- assert.match(bridge,/action:"routingChannelPatch"/);
+ assert.ok(bridge.includes("stripVM.m4ChannelPatchPlan("));
+ assert.ok(read("web/approved-channel-strip-view-model.js").includes('action:"routingChannelPatch"'));
  assert.match(bridge,/const channel=m4Index\(t\)/);
  assert.match(bridge,/data-native-monitor/);
  assert.match(native,/void serviceAutomaticMain\(\)/);
@@ -1906,8 +1907,9 @@ test("M/ST after BUS/WIRE uses native ChannelId intent and accepted PCM processi
     bridge.indexOf("function previewNativePan(t,el,event)"));
   assert.match(fn,/session\(\)\?\.authority|mixerSession\(\)\?\.authority/);
   assert.match(fn,/controller.intent\("SET_PROCESSING_FORMAT",channelId,/);
+  assert.ok(fn.includes('dispatchM4ChannelPatch(t,"SET_PROCESSING_FORMAT"'));
   assert.ok(fn.indexOf('authority==="CHANNEL_ID"')<
-    fn.indexOf('action:"routingChannelPatch"'));
+    fn.indexOf('dispatchM4ChannelPatch(t,"SET_PROCESSING_FORMAT"'));
 });
 test("P0 first Add FX discovers real local VST3 lazily without an audio-thread scan",()=>{
  const bridge=read("web/approved-native-bridge.js");
@@ -2129,7 +2131,8 @@ test("P0 typed mono-stereo, PAN detent, fader geometry & FX failure diagnostics"
  assert.match(bridge,/const width=event\.type==="change"\?18:latched\?22:14/);
  assert.match(bridge,/readout\.textContent=value===0\?"C"/);
  assert.match(bridge,/function requestProcessingFormat\(t\)/);
- assert.match(bridge,/operation:"SET_PROCESSING_FORMAT"/);
+ assert.ok(bridge.includes('dispatchM4ChannelPatch(t,"SET_PROCESSING_FORMAT"'));
+ assert.ok(read("web/approved-channel-strip-view-model.js").includes('operation==="SET_PROCESSING_FORMAT"'));
  assert.match(bridge,/if\(action==="format"&&t\?\.kind==="audio"\)/);
  assert.match(main,/operation=="SET_PROCESSING_FORMAT"/);
  assert.match(main,/operation,target\)/);
@@ -5163,4 +5166,122 @@ test("MV-11 bridge delegates identity decisions and retains one native host/cont
  assert.doesNotMatch(vm,/backend\.emitEvent|document\.getElementById|window\.setTimeout|localStorage/);
  assert.doesNotMatch(bridge,/const liveIds=new Set\(next\.graph\.channels/);
  assert.doesNotMatch(bridge,/if\(ack\.ok!==true\)\{\s*if\(pendingIdentity\.migration\)/);
+});
+
+
+test("G-MV29 M4 OUT and M/ST pure policy denies stale authority, unsafe tokens, and busy source",()=>{
+ const rows=Array.from({length:10},(_,i)=>({ordinal:i,role:"INPUT",
+   primaryOut:"NONE",source:{main:false,channelFormat:"MONO"}}));
+ const sources=rows.map(x=>({...x.source}));
+ const session={authority:"M4",deviceEpoch:"21",routeRevision:"12",channels:rows};
+ const legacy={active:true,routeAccepted:true,nativeBusStructural:false,
+   routingRevision:"12",channels:sources};
+ const snapshot={admitted:false,retained:false,device:{epoch:"21"},
+   raw:{mixerSession:session,legacyM4:legacy}};
+ const plan=(operation,target,extra={},raw=snapshot)=>
+   stripVM.m4ChannelPatchPlan(raw,{operation,target,channel:4,
+     verifiedM4:true,deviceReady:true,...extra});
+ const baseline=JSON.stringify(snapshot);
+ const out=plan("SET_PRIMARY_OUT","MAIN");
+ assert.equal(out.kind,"READY");
+ assert.equal(out.action,"routingChannelPatch");
+ assert.deepEqual(out.payload,{operation:"SET_PRIMARY_OUT",channel:4,
+   target:"MAIN",deviceEpoch:21,revision:12});
+ assert.deepEqual(out.pending,{channel:4,operation:"SET_PRIMARY_OUT",target:"MAIN",
+   epoch:"21",baseRevision:"12",acked:false});
+ const fmt=plan("SET_PROCESSING_FORMAT","STEREO");
+ assert.equal(fmt.kind,"READY");
+ assert.equal(fmt.action,out.action);
+ assert.deepEqual(fmt.payload,{operation:"SET_PROCESSING_FORMAT",channel:4,
+   target:"STEREO",deviceEpoch:21,revision:12});
+ assert.equal(plan("SET_PRIMARY_OUT","NONE").kind,"NO_CHANGE");
+ assert.equal(plan("SET_PROCESSING_FORMAT","MONO").kind,"NO_CHANGE");
+ const deny=(op="SET_PRIMARY_OUT",target="MAIN",extra={},raw=snapshot)=>
+   assert.equal(plan(op,target,extra,raw).kind,"UNAVAILABLE");
+ deny("SET_PRIMARY_OUT","bus");
+ deny("SET_PROCESSING_FORMAT","SIDE");
+ deny("DELETE","MAIN");
+ for(const extra of [{verifiedM4:false},{deviceReady:false},{pending:true},
+   {sourcePending:true},{channel:-1},{channel:10}])deny("SET_PRIMARY_OUT","MAIN",extra);
+ for(const raw of [
+   {...snapshot,admitted:true},{...snapshot,retained:true},
+   {...snapshot,device:{epoch:"22"}},
+   {...snapshot,device:{epoch:"9007199254740993"},raw:{...snapshot.raw,
+     mixerSession:{...session,deviceEpoch:"9007199254740993"}}},
+   {...snapshot,raw:{...snapshot.raw,mixerSession:{...session,authority:"CHANNEL_ID"}}},
+   {...snapshot,raw:{...snapshot.raw,legacyM4:{...legacy,active:false}}},
+   {...snapshot,raw:{...snapshot.raw,legacyM4:{...legacy,routeAccepted:false}}},
+   {...snapshot,raw:{...snapshot.raw,legacyM4:{...legacy,nativeBusStructural:true}}},
+   {...snapshot,raw:{...snapshot.raw,legacyM4:{...legacy,routingRevision:"13"}}},
+   {...snapshot,raw:{...snapshot.raw,mixerSession:{...session,
+     channels:rows.slice(0,9)}}},
+   {...snapshot,raw:{...snapshot.raw,legacyM4:{...legacy,
+     channels:sources.slice(0,9)}}},
+   {...snapshot,raw:{...snapshot.raw,mixerSession:{...session,
+     channels:rows.map((r,i)=>i===4?{...r,primaryOut:"MAIN"}:r)}}}
+ ])deny("SET_PRIMARY_OUT","MAIN",{},raw);
+ deny("SET_PROCESSING_FORMAT","STEREO",{}, {...snapshot,raw:{...snapshot.raw,
+   legacyM4:{...legacy,channels:sources.map((s,i)=>i===4?
+     {...s,channelFormat:undefined}:s)}}});
+ assert.equal(JSON.stringify(snapshot),baseline,"ViewModel cannot mutate installed PCM");
+});
+test("G-MV29 M4 channel patch ACK and accepted readback are independently correlated",()=>{
+ const rows=Array.from({length:10},(_,i)=>({ordinal:i,role:"INPUT",
+   source:{main:false,channelFormat:"MONO"},primaryOut:"NONE"}));
+ const sources=rows.map(x=>({...x.source}));
+ const sess={authority:"M4",deviceEpoch:"21",routeRevision:"12",channels:rows};
+ const m={active:true,routeAccepted:true,nativeBusStructural:false,
+   routingRevision:"12",channels:sources};
+ const old={admitted:false,retained:false,device:{epoch:"21"},
+   raw:{mixerSession:sess,legacyM4:m}};
+ const p={requestId:7002,channel:4,operation:"SET_PRIMARY_OUT",target:"MAIN",
+   epoch:"21",baseRevision:"12",acked:false};
+ const ack={requestId:7002,channel:4,ok:true,
+   state:{epoch:21,revision:13,acceptedRoute:{channels:[]}}};
+ const ackResult=(a)=>stripVM.m4ChannelPatchAckResult(p,a);
+ assert.equal(ackResult({...ack,requestId:1}),"IGNORE");
+ assert.equal(ackResult({...ack,channel:5}),"REJECTED");
+ assert.equal(ackResult({...ack,ok:false}),"REJECTED");
+ assert.equal(ackResult({...ack,state:{epoch:22}}),"REJECTED");
+ assert.equal(ackResult(ack),"ACKED");
+ const check=(pending,view)=>stripVM.m4ChannelPatchSettlement(pending,view);
+ assert.equal(check(p,old),"WAIT");
+ assert.equal(check({...p,acked:true},old),"WAIT");
+ const changed=rows.map((row,i)=>i===4?
+   {...row,primaryOut:"MAIN",source:{...row.source,main:true}}:row);
+ const changedSources=sources.map((s,i)=>i===4?{...s,main:true}:s);
+ const next={...old,raw:{mixerSession:{...sess,routeRevision:"13",channels:changed},
+   legacyM4:{...m,routingRevision:"13",channels:changedSources}}};
+ assert.equal(check(p,next),"WAIT");
+ assert.equal(check({...p,acked:true},next),"CONFIRMED");
+ for(const bad of [{...next,retained:true},{...next,admitted:true},
+   {...next,device:{epoch:"22"}},
+   {...next,raw:{...next.raw,mixerSession:{...next.raw.mixerSession,
+     authority:"CHANNEL_ID"}}},
+   {...next,raw:{...next.raw,legacyM4:{...next.raw.legacyM4,
+     routingRevision:"14"}}},
+   {...next,raw:{...next.raw,legacyM4:{...next.raw.legacyM4,
+     channels:sources}}}])
+   assert.equal(check({...p,acked:true},bad),"STALE");
+ const notYet={...next,raw:{mixerSession:{...next.raw.mixerSession,channels:rows},
+   legacyM4:{...next.raw.legacyM4,channels:sources}}};
+ assert.equal(check({...p,acked:true},notYet),"WAIT");
+ const noRevision={...old,raw:{mixerSession:{...sess,channels:changed},
+   legacyM4:{...m,channels:changedSources}}};
+ assert.equal(check({...p,acked:true},noRevision),"WAIT");
+ const format={...p,operation:"SET_PROCESSING_FORMAT",target:"STEREO"};
+ const newFmt=changed.map((row,i)=>i===4?{...row,
+   source:{...row.source,channelFormat:"STEREO"}}:row);
+ const newFmtLegacy=changedSources.map((row,i)=>i===4?
+   {...row,channelFormat:"STEREO"}:row);
+ assert.equal(check({...format,acked:true},{...next,raw:{
+   mixerSession:{...next.raw.mixerSession,channels:newFmt},
+   legacyM4:{...next.raw.legacyM4,channels:newFmtLegacy}}}),"CONFIRMED");
+ assert.equal(check({...format,acked:true},next),"WAIT");
+ const bridge=read("web/approved-native-bridge.js");
+ for(const name of ["m4ChannelPatchPlan","m4ChannelPatchAckResult",
+   "m4ChannelPatchSettlement"])assert.ok(bridge.includes("stripVM."+name+"("));
+ assert.ok(bridge.includes("reconcileM4ChannelPatchReadback(next)"));
+ assert.ok(bridge.includes("action:plan.action,requestId,...plan.payload"));
+ assert.equal(bridge.includes("const row=ack?.state?.acceptedRoute?.channels"),false);
 });
