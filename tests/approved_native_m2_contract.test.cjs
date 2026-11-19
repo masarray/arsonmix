@@ -965,6 +965,19 @@ test("GUI-4 Channel Strip PRIMARY OUT extracts exact native EdgeId without touch
  assert.deepEqual(none,{kind:"MUTATION",change:{
   op:"REMOVE",from:source,edgeId:primary}});
  assert.equal(none.change.edgeId!==send,true);
+ // Old accepted v6 readback lacks primaryOutput, but has exact primaryOutId
+ // and unity gain. Never infer PRIMARY from an explicit parallel SEND.
+ const legacy=clone(snapshot);
+ delete legacy.graph.edges[0].primaryOutput;
+ legacy.graph.edges[0].gainLinear=1;
+ assert.deepEqual(stripVM.primaryOutMutation(legacy,source,"NONE",[]),none);
+ legacy.graph.edges[0].primaryOutput=false;
+ assert.equal(stripVM.primaryOutMutation(legacy,source,"NONE",[]).kind,
+   "UNAVAILABLE","an explicit SEND can never become a primary OUT");
+ delete legacy.graph.edges[0].primaryOutput;
+ legacy.graph.edges[0].gainLinear=0.9;
+ assert.equal(stripVM.primaryOutMutation(legacy,source,"NONE",[]).kind,
+   "UNAVAILABLE","unflagged non-unity is not a primary OUT");
  const redirect=stripVM.primaryOutMutation(snapshot,source,"MAIN",[]);
  assert.deepEqual(redirect,{kind:"MUTATION",change:{
   op:"ROUTE_ONLY",from:source,to:main,tap:"POST_FADER",gainLinear:1}});
