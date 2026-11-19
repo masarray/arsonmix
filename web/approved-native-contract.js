@@ -642,9 +642,25 @@
         // A same-epoch physical pin/format reconfiguration invalidates the
         // current control lease even before ACK. Otherwise an older pending
         // v6 edit would suppress the new admitted snapshot indefinitely.
-        if (pending && (epochCompare !== 0 || next.retained ||
-            next.hardwareConfiguration!==current.hardwareConfiguration)) {
-          pending=null;lastError="STALE_DEVICE";
+        // G-MV25: an accepted ChannelId producer can relinquish the PCM
+        // graph to M4/UNADMITTED without a hardware or epoch change. A
+        // no-ACK local gesture must not freeze that newer authoritative
+        // snapshot until its old 8-second timer fires. Fence it at the SAME
+        // schema-v6 owner switch as the physical pin/epoch fence, before
+        // the pending ACK projection gate below. The native graph revision
+        // check above remains monotonic: never resurrect older PCM graphs.
+        const authorityChanged=
+          next.admitted!==current.admitted ||
+          next.raw?.mixerSession?.authority!==
+            current.raw?.mixerSession?.authority;
+        const physicalStale=epochCompare!==0||next.retained||
+          next.hardwareConfiguration!==current.hardwareConfiguration;
+        if (pending && (physicalStale||authorityChanged)) {
+          pending=null;
+          // Preserve existing NEEDS_REMAP/physical-error contracts even if
+          // their PCM authority also changes. Distinguish only a pure
+          // same-device ChannelId → M4/UNADMITTED owner switch.
+          lastError=physicalStale?"STALE_DEVICE":"STALE_NATIVE_AUTHORITY";
         }
       }
       if (pending && !pending.ack) {
