@@ -524,6 +524,33 @@
       "SETTLE":"REFRESH";
   }
 
+  // G-MV26: one native-authority gate for physical MAIN gain and mute.
+  // The host still accepts MAIN via its existing routingM4Control scalar
+  // transport, but stale legacy M4 telemetry is NEVER enough to authorize
+  // a new command after ChannelId takeover or loss of PCM admission.
+  // Keep this pure: no GUI, ACK state, output arming, or graph mutation.
+  function masterScalarAuthority(snapshot,{m4Verified=false,
+      graphConnected=false}={}) {
+    const epoch=snapshot?.device?.epoch,
+      session=snapshot?.raw?.mixerSession,
+      legacy=snapshot?.raw?.legacyM4;
+    // MAIN host IPC uses safe integer M4 epoch/revision tokens, unlike
+    // the separate uint64 ChannelId controller. Require real readback.
+    if(!positiveCounter(epoch)||!positiveCounter(legacy?.routingRevision)||
+       session?.deviceEpoch!==epoch||snapshot?.retained===true||
+       !Number.isFinite(session?.main?.db)||
+       typeof session?.main?.mute!=="boolean")return "UNAVAILABLE";
+    if(session.authority==="CHANNEL_ID")
+      return snapshot?.admitted===true && graphConnected===true?
+        "CHANNEL_ID":"UNAVAILABLE";
+    if(session.authority==="M4")
+      return snapshot?.admitted===false && m4Verified===true &&
+        legacy.active===true && legacy.routeAccepted===true &&
+        session.routeRevision===legacy.routingRevision?
+          "M4":"UNAVAILABLE";
+    return "UNAVAILABLE";
+  }
+
   // MV-9: pure Channel Strip scalar gesture/readback policy. The only
   // pending Maps, native events, timers and audio transport stay in the
   // approved bridge. Treat exact decimal-string ChannelIds as opaque data.
@@ -717,7 +744,7 @@
     sourceAckResult,sourceReadbackSettlement,
     m4SourceReadbackSettlement,sourceQueueReadback,sourceQueueAckTransition,
     sourceQueueTimeoutDecision,
-    scalarIdentityMatches,scalarVisualSettlement,m4ScalarAckResult,
+    masterScalarAuthority,scalarIdentityMatches,scalarVisualSettlement,m4ScalarAckResult,
     m4ScalarReadbackSettlement,scalarDispatchLease,
     scalarGestureFlushPlan,scalarDispatchPlan,
     identityReadback,identityEditPlan,
