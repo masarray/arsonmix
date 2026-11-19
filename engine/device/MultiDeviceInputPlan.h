@@ -6,6 +6,8 @@
 #include <array>
 #include <algorithm>
 #include <cstdint>
+#include <cstddef>
+#include <utility>
 #include <span>
 #include <string>
 #include <string_view>
@@ -108,7 +110,7 @@ public:
             error.kind=MultiDeviceInputFault::Kind::invalidPrimaryEpoch;
             return false;
         }
-        if(devices.empty()||devices.size()>maxDevices) {
+        if(devices.empty()||devices.size()>static_cast<std::size_t>(maxDevices)) {
             error.kind=MultiDeviceInputFault::Kind::invalidDeviceCount;
             return false;
         }
@@ -116,7 +118,7 @@ public:
             error.kind=MultiDeviceInputFault::Kind::missingPrimary;
             return false;
         }
-        if(bindings.size()>maxAssignments) {
+        if(bindings.size()>static_cast<std::size_t>(maxAssignments)) {
             error.kind=MultiDeviceInputFault::Kind::invalidChannel;
             return false;
         }
