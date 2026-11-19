@@ -1757,7 +1757,7 @@ test("Native FX GUI routes through ChannelId PCM with no operator MONITOR ritual
  assert.match(lab,/nativeAccepted_\.fxOwners->externalChannel\(\)==target/);
  assert.match(bridge,/pendingFxInsert=\{authority:"CHANNEL_ID"/);
  const fxVM=read("web/approved-fx-rack-view-model.js");
- assert.match(bridge,/fxRackVM\.nativeInsertSettlement\(pendingFxInsert,next,confirmed\)/);
+ assert.match(bridge,/fxRackVM\.nativeInsertSettlement\(pendingFxInsert,next,confirmed,/);
  assert.match(fxVM,/fx\.catalogId!==pending\.id/);
  assert.match(fxVM,/confirmed\.requestId!==pending\.requestId/);
  assert.match(translate,/if\(op=="LOAD_INSERT"\)/);
