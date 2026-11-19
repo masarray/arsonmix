@@ -3541,6 +3541,10 @@ private:
                                 playerScratch_[1].data()};
                 deckCount=1;
             }
+            // One acquire: CONTROL changes the admitted A+B resource pair
+            // atomically; a callback never observes half a pair.
+            const bool qualifiedInput=qualifiedSecondaryInstalled_.load(
+                std::memory_order_acquire);
             const bool routed=dryRoutingLab_.process(inputs,inputChannels,outputs,
                      outputChannels,samples,
                      masterGain_.load(std::memory_order_relaxed),
@@ -3552,10 +3556,8 @@ private:
                      !topologyPublicationMute_.load(std::memory_order_acquire),
                      std::span<const armix::mixer::DynamicPlayerPcmBlock>(
                          deckBlocks.data(),deckCount),mainOnlyMuted,
-                     qualifiedSecondaryInstalled_.load(std::memory_order_acquire)
-                       ?&qualifiedSecondaryReader_:nullptr,
-                     qualifiedSecondaryInstalled_.load(std::memory_order_acquire)
-                       ?&secondaryCapture_.clockStream():nullptr);
+                     qualifiedInput?&qualifiedSecondaryReader_:nullptr,
+                     qualifiedInput?&secondaryCapture_.clockStream():nullptr);
             // Constant-time, callback-local physical PCM tap. Nothing is
             // reconfigured or acquired from another graph generation.
             const auto nativeMain=armix::mixer::NativeOutputPairTap::select(
