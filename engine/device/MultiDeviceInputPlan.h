@@ -95,8 +95,11 @@ public:
         int count=0,available=0;
     };
 
-    // CONTROL ONLY; success commits the full plan atomically. Failed validation
-    // leaves the previously accepted destination untouched.
+    // CONTROL ONLY. Prepare into a DETACHED candidate (never the live plan).
+    // All-or-nothing validation leaves destination unchanged on failure.
+    // The existing realtime graph publisher must publish its immutable
+    // snapshot at the safe render boundary; this assignment is NOT an
+    // atomic callback-visible update and must not race with assemble().
     static bool prepare(
         std::uint64_t primaryEpoch,
         std::span<const CaptureEndpointView> devices,
