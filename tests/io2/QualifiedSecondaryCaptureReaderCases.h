@@ -111,7 +111,7 @@ inline void run() {
     check(near(left[frames-1],.2f*monoCenter+.4f),
           "committed BUS/WIRE revision retains capture B");
     auto wrongPatch=request;
-    wrongPatch.sources.back().inputL=1; // no longer exact B map
+    wrongPatch.sources.back().inputL=0; // erroneously aliases A, no longer B map
     const auto wrong=native.commit(roster,wrongPatch,2,epoch,epoch,false,
                                    {},true,false);
     check(wrong.fault==m::DynamicNativeSessionPublisher::Fault::invalidCandidate
