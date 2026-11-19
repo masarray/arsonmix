@@ -27,6 +27,7 @@ struct QualifiedCaptureConsoleIntent final {
     double captureRate=0.;
     int capturePeriod=0;
     std::uint64_t deviceEpoch=0,graphRevision=0,rosterRevision=0;
+    std::uint64_t targetChannelId=0; // exact approved v8 INPUT target
     std::vector<QualifiedCaptureSourceIntent> sources;
 };
 struct QualifiedCaptureConsoleDecode final {
@@ -103,7 +104,9 @@ inline QualifiedCaptureConsoleDecode decodeQualifiedCaptureConsoleIntent(
     QualifiedCaptureConsoleIntent command;
     if(!qualifiedCaptureDecimal(epochRaw,command.deviceEpoch)||
        !qualifiedCaptureDecimal(revisionRaw,command.graphRevision)||
-       !qualifiedCaptureDecimal(rosterRaw,command.rosterRevision))
+       !qualifiedCaptureDecimal(rosterRaw,command.rosterRevision)||
+       !qualifiedCaptureDecimal(request.getProperty("targetChannelId",{}),
+                                command.targetChannelId))
         return reject("INVALID_SECONDARY_CAPTURE_REVISION");
     command.requestId=requestId.toString();
     const auto driver=payload.getProperty("secondaryDriver",{});
@@ -192,6 +195,14 @@ inline QualifiedCaptureConsoleDecode decodeQualifiedCaptureConsoleIntent(
         command.sources.push_back(source);
     }
     if(!usesSecondary)return reject("NO_SECONDARY_SOURCE_SELECTED");
+    // The existing v8 controller's one ChannelId target must be the
+    // actually selected B source. Do not allow a misleading main/primary
+    // target to acquire ACK for a different channel's physical binding.
+    bool targetIsSecondary=false;
+    for(const auto& source:command.sources)
+        if(source.channelId==command.targetChannelId && source.secondary)
+            targetIsSecondary=true;
+    if(!targetIsSecondary)return reject("SECONDARY_CAPTURE_TARGET_MISMATCH");
     return {std::move(command),{}};
 }
 } // namespace armix::console
