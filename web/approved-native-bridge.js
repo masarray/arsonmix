@@ -1322,16 +1322,34 @@
       presentFxCatalog();
       scope?.closeNativePicker?.();
       openRoutedFxEditor(decision.channel,decision.slot,decision.instanceId,
-        decision.epoch,decision.revision);
+        decision.epoch,decision.revision,
+        protocol.nativeHardwareConfiguration(snapshot?.device));
       status("CH "+(decision.channel+1)+
         " FX loaded · independent native PCM readback verified");
     }
     return decision;
   }
 
-  function openRoutedFxEditor(lane,slot,instanceId,deviceEpoch,revision){
-    backend.emitEvent("arMixAction",{action:"routingFxEditor",
-      channel:lane,slot,instanceId,deviceEpoch,revision});
+  function openRoutedFxEditor(lane,slot,instanceId,deviceEpoch,revision,
+                              hardwareConfiguration){
+    const accepted=controller?.state()?.current;
+    const plan=fxRackVM.m4EditorDispatchPlan(accepted,{
+      channel:lane,slot,instanceId,deviceEpoch,revision,
+      verifiedM4:m4Verified(accepted),offline:!!logicalView,
+      hardwareConfiguration});
+    if(plan.kind!=="READY")return false;
+    const lease=plan.lease;
+    // No stale queued M4 editor HWND may survive an owner/route/pin/FX
+    // change between accepted readback and the native IPC dispatch.
+    window.queueMicrotask(()=>{
+      const current=controller?.state()?.current;
+      if(!fxRackVM.m4EditorDispatchLeaseMatches(current,lease,{
+        verifiedM4:m4Verified(current),offline:!!logicalView,
+        hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)}))
+        return;
+      backend.emitEvent("arMixAction",{action:plan.action,...plan.payload});
+    });
+    return true;
   }
   // One verified post-insert navigation: never open an unaccepted slot and
   // never infer an instance from a catalog name. Reuse the installed editor
@@ -1394,7 +1412,8 @@
     const decision=fxRackVM.nativeEditPlan(current,{
       channelId:id,slot,instanceId:token,move:!!target,
       destinationId:target?nativeIdFor(target):null,
-      position:target?position:null});
+      position:target?position:null,
+      hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
     if(decision.kind!=="READY"){
       if(decision.kind!=="NO_CHANGE")
         status("FX edit unavailable · refresh accepted native instance");
@@ -3641,7 +3660,8 @@
           hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
         if(plan.kind==="OPEN")
           openRoutedFxEditor(plan.channel,plan.slot,plan.instanceId,
-            plan.deviceEpoch,plan.revision);
+            plan.deviceEpoch,plan.revision,
+            protocol.nativeHardwareConfiguration(current?.device));
         else if(plan.kind==="PICKER"){
           discoverFxOnFirstPickerOpen();
           scope?.openFastPicker?.(t,slot,btn);
