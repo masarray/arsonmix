@@ -487,6 +487,14 @@ public:
         const auto* p=publisher_.controlPrepared(epoch,revision);
         return p?p->graph.latencySamples():0;
     }
+    // CONTROL-only durability guard: v1 .smix binds only the primary A
+    // hardware mask. Qualified A+B virtual input ordinals cannot safely
+    // replace physical device-qualified saved source intent.
+    bool hasQualifiedInputMap(std::uint64_t epoch,
+                              std::uint64_t revision) const noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p && static_cast<bool>(p->inputMap);
+    }
     void unpublish() noexcept {publisher_.unpublish();}
     void pollRetirement() noexcept {publisher_.pollRetirement();}
     std::uint64_t acceptedRevision() const noexcept {
