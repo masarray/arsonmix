@@ -3273,6 +3273,39 @@
       }else status("NATIVE ARM REJECTED: "+(ack?.error||"device not ready"));
     });
   }
+  // G-MV27: UI actions (MUTE/SOLO/unity resets) share one pure native
+  // authority plan, separate from MV-10's coalesced pointer gesture lane.
+  // IPC, request IDs, ACK/readback and the PCM owner remain unchanged.
+  function controlCommandRoute(operation,t) {
+    const current=controller?.state()?.current,id=nativeIdFor(t);
+    return stripVM.controlCommandPlan({
+      operation,trackKind:t?.kind,logical:!!logicalView,
+      logicalReadOnly:logicalView?.readOnly===true,
+      logicalPending:!!pendingLogical,logicalChannelId:id,
+      logicalSupported:logicalView?.graph?.capabilities?.supportedOps?.includes(operation)===true,
+      authority:mixerSession()?.authority,admitted:current?.admitted===true &&
+        current?.retained!==true,graphConnected:flags.acceptedGraphConnected,
+      nativeChannelId:id,
+      nativeSupported:current?.graph?.capabilities?.supportedOps?.includes(operation)===true,
+      m4Verified:m4Verified(),m4Channel:m4Index(t),
+      masterAuthority:t?.kind==="master"?nativeMasterAuthority():"UNAVAILABLE"
+    });
+  }
+  function dispatchControlCommand(operation,t,payload) {
+    const route=controlCommandRoute(operation,t);
+    if(route==="LOGICAL"||route==="CHANNEL_ID")
+      return intent(operation,t,payload);
+    if(route==="M4"||route==="MAIN_HOST"){
+      const parameter=route==="MAIN_HOST"?
+        operation==="SET_FADER"?"masterGain":"masterMute":
+        {SET_FADER:"faderDb",SET_PAN:"pan",SET_MUTE:"mute",SET_SOLO:"solo"}[operation];
+      const value=operation==="SET_FADER"?payload?.valueDb:
+        operation==="SET_PAN"?payload?.value*100:payload?.enabled;
+      return sendM4Control(parameter,t,value);
+    }
+    status("Native "+operation+" unavailable · verify mixer authority/readback");
+    return false;
+  }
   const nativeHooks=Object.freeze({
     enabled:connected,
     requestDeleteTrack:requestNativeTrackDelete,
@@ -3501,19 +3534,11 @@
         }
         return true;
       }
-      const numeric=Number(el.value);
-      if (field==="level"&&Number.isFinite(numeric))
-        intent("SET_FADER",t,{valueDb:numeric});
-      else if (field==="pan"&&Number.isFinite(numeric)) {
-        // Preserve hardware center detent without publishing demo PAN state.
-        const fine=el.dataset.panKeyboard==="true";
-        const bypass=el.dataset.panAltPointer==="true";
-        const value=!fine&&!bypass&&Math.abs(numeric)<=12?0:numeric;
-        intent("SET_PAN",t,{value:value/100});
-      } else {
-        status("NATIVE: "+field+" awaits native capability; reference graph unchanged");
-        scope?.render?.(); // restore SELECT/route control from accepted graph
-      }
+      // If the streaming preflight refused a live field, do NOT bypass
+      // it by sending an unguarded ChannelId intent on pointer release.
+      if(field==="level")el.value=String(t.level);
+      else if(field==="pan")el.value=String(t.pan);
+      status("NATIVE: "+field+" awaits accepted control/readback");
       return true;
     },
     consumeAction(t,action,btn) {
@@ -3666,28 +3691,10 @@
         status("PFL not armed · independent physical MONITOR output required");
         return true;
       }
-      if (action==="mute"||action==="solo") {
-        // MAIN has one host scalar gateway. A refused native MAIN lease
-        // must never fall through to generic ChannelId SET_MUTE/SOLO.
-        if(t.kind==="master"){
-          // Offline .smix remains an editable durable logical mixer:
-          // its native logical-intent owner is distinct from physical PCM.
-          if(logicalView){
-            intent(action==="mute"?"SET_MUTE":"SET_SOLO",t,
-                   {value:!t[action],enabled:!t[action]});
-          }else if(action==="mute" && nativeMasterAuthority()!=="UNAVAILABLE"){
-            if(!sendM4Control("masterMute",t,!t.mute))
-              status("Native MAIN mute rejected");
-          }else status("MAIN mute unavailable · verified PCM required");
-          return true;
-        }
-        if(m4ControlIsOwner()&&m4Verified()&&m4Index(t)>=0){
-          if(!sendM4Control(action,t,!t[action]))
-            status("Native M4 mute/solo rejected");
-          return true;
-        }
-        const key=action==="mute"?"SET_MUTE":"SET_SOLO";
-        intent(key,t,{value:!t[action],enabled:!t[action]});return true;
+      if(action==="mute"||action==="solo"){
+        dispatchControlCommand(action==="mute"?"SET_MUTE":"SET_SOLO",
+          t,{value:!t[action],enabled:!t[action]});
+        return true;
       }
       status("NATIVE: "+action+" is not an accepted ChannelId operation");return true;
     },
@@ -3939,20 +3946,7 @@
             status("SOF unity reset unavailable · select one admitted SEND");
           return true;
         }
-        // MAIN reset must not become an unrelated ChannelId SET_FADER
-        // when its native physical host scalar lease is not admitted.
-        if(t?.kind==="master"){
-          // An offline MAIN unity reset edits the logical .smix document,
-          // never the unavailable physical host/ChannelId PCM authority.
-          if(logicalView)intent("SET_FADER",t,{valueDb:0});
-          else if(nativeMasterAuthority()!=="UNAVAILABLE")
-            sendM4Control("masterGain",t,0);
-          else status("MAIN reset unavailable · verified PCM required");
-          return true;
-        }
-        if(m4ControlIsOwner()&&m4Verified())
-          sendM4Control("faderDb",t,0);
-        else intent("SET_FADER",t,{valueDb:0});
+        dispatchControlCommand("SET_FADER",t,{valueDb:0});
       }
       else if(event.target.closest?.(".gain-dial")){
         if(t?.kind!=="audio"||t.nativeGainAvailable!==true)
@@ -3960,10 +3954,8 @@
         else intent("SET_INPUT_GAIN",t,{valueDb:0});
         return true;
       }
-      else if(event.target.classList.contains("center-pan")){
-        if(m4ControlIsOwner()&&m4Verified())sendM4Control("pan",t,0);
-        else intent("SET_PAN",t,{value:0});
-      }
+      else if(event.target.classList.contains("center-pan"))
+        dispatchControlCommand("SET_PAN",t,{value:0});
       else if(event.target.closest?.(".footer-label,.strip-identity-top"))
         openNativeIdentity(t,event.target);
       return true;

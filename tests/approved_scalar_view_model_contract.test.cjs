@@ -89,6 +89,60 @@ test("G-MV26 MAIN scalar gate uses current PCM authority, never stale M4 status"
     /document\.|window\.|backend|setTimeout|AudioContext|emitEvent/);
 });
 
+test("G-MV27 one-shot controls use exactly one authority and fail closed",()=>{
+ const plan=p=>vm.controlCommandPlan({operation:"SET_MUTE",trackKind:"audio",
+   authority:"CHANNEL_ID",admitted:true,graphConnected:true,
+   nativeChannelId:bigId,nativeSupported:true,...p});
+ for(const operation of ["SET_FADER","SET_PAN","SET_MUTE","SET_SOLO"])
+   assert.equal(plan({operation}),"CHANNEL_ID");
+ assert.equal(plan({authority:"M4",admitted:false,m4Verified:true,
+   m4Channel:4,nativeSupported:false}),"M4");
+ assert.equal(plan({authority:"M4",admitted:false,m4Verified:false,
+   m4Channel:4}),"BLOCK","stale M4 cannot become ChannelId request");
+ assert.equal(plan({authority:"M4",admitted:false,m4Verified:true,
+   m4Channel:10}),"BLOCK");
+ assert.equal(plan({authority:"M4",admitted:false,m4Verified:true,
+   trackKind:"bus",m4Channel:4}),"BLOCK");
+ assert.equal(plan({authority:"CHANNEL_ID",admitted:false,m4Verified:true,
+   m4Channel:4}),"BLOCK","stale M4 cannot authorize ChannelId");
+ assert.equal(plan({nativeSupported:false}),"BLOCK");
+ assert.equal(plan({graphConnected:false}),"BLOCK");
+ assert.equal(plan({nativeChannelId:Number(bigId)}),"BLOCK",
+   "uint64 ChannelId is not a rounded JS number");
+ assert.equal(plan({authority:"NONE",m4Verified:true,m4Channel:4}),"BLOCK");
+ assert.equal(plan({trackKind:"master",operation:"SET_MUTE",
+   masterAuthority:"CHANNEL_ID"}),"MAIN_HOST");
+ assert.equal(plan({trackKind:"master",operation:"SET_FADER",
+   masterAuthority:"M4"}),"MAIN_HOST");
+ assert.equal(plan({trackKind:"master",operation:"SET_SOLO",
+   masterAuthority:"CHANNEL_ID"}),"BLOCK");
+ assert.equal(plan({trackKind:"master",operation:"SET_PAN",
+   masterAuthority:"CHANNEL_ID"}),"BLOCK");
+ assert.equal(plan({trackKind:"master",operation:"SET_MUTE",
+   masterAuthority:"UNAVAILABLE"}),"BLOCK");
+ assert.equal(plan({operation:"SET_OUTPUT_ARM"}),"BLOCK");
+ assert.equal(plan({logical:true,authority:"NONE",admitted:false,
+   logicalChannelId:bigId,logicalSupported:true}),"LOGICAL");
+ assert.equal(plan({logical:true,trackKind:"master",operation:"SET_MUTE",
+   masterAuthority:"UNAVAILABLE",logicalChannelId:bigId,
+   logicalSupported:true}),"LOGICAL","offline MAIN never needs physical PCM");
+ assert.equal(plan({logical:true,logicalReadOnly:true,
+   logicalChannelId:bigId,logicalSupported:true}),"BLOCK");
+ assert.equal(plan({logical:true,logicalPending:true,
+   logicalChannelId:bigId,logicalSupported:true}),"BLOCK");
+ assert.equal(plan({logical:true,logicalSupported:false,
+   logicalChannelId:bigId}),"BLOCK");
+ assert.equal(plan({logical:true,logicalChannelId:"0",
+   logicalSupported:true}),"BLOCK");
+ assert.equal(plan(), "CHANNEL_ID");
+ const bridge=readFileSync("web/approved-native-bridge.js","utf8");
+ assert.match(bridge,/stripVM\.controlCommandPlan\(/);
+ assert.equal((bridge.match(/function dispatchControlCommand\(/g)||[]).length,1);
+ assert.equal((bridge.match(/action:"routingM4Control"/g)||[]).length,1);
+ assert.doesNotMatch(vm.controlCommandPlan.toString(),
+   /document\.|window\.|backend|setTimeout|AudioContext|emitEvent/);
+});
+
 test("MV-9 exact native edit identity never rounds uint64 channel/device values",()=>{
   assert.equal(vm.scalarIdentityMatches(edit,identity),true);
   assert.equal(vm.scalarIdentityMatches(edit,{...identity,channelId:bigNext}),false);
