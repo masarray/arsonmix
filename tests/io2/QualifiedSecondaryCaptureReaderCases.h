@@ -59,7 +59,7 @@ inline void run() {
           "Stopped B producer cannot remain FLOW_OBSERVED indefinitely");
     check(evidence.recentUsableFrames(23,100,500,0,0,710.,true)==0,
           "Reconnect with new B lease cannot reuse accumulated PCM history");
-    check(evidence.recentUsableFrames(23,101,628,128,0,720.,true)>0,
+    check(evidence.recentUsableFrames(23,101,628,0,0,720.,true)>0,
           "Fresh B callback and ASRC after new lease restores flow evidence");
     check(evidence.recentUsableFrames(23,102,756,128,0,725.,false)==0,
           "Faulted capture immediately invalidates timed flow evidence");
