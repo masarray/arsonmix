@@ -48,6 +48,7 @@
 #include "PlayerSetlistArchive.h"
 #include "PlayerSetlistRepository.h"
 #include "PlayerSetlistEditTransaction.h"
+#include "PlayerLibraryEditPlan.h"
 #include "NativeHotkeyRegistry.h"
 #include "NativeHotkeyCommandPlan.h"
 #include "NativeFxParameterHotkey.h"
@@ -4015,15 +4016,11 @@ private:
             const int to=static_cast<int>(value.getProperty("to",-1));
             const int count=static_cast<int>(playerLibrary_.size());
             if(from<0 || to<0 || from>=count || to>=count || from==to)return;
-            auto move=[&](auto& items) {
-                auto item=std::move(items[static_cast<std::size_t>(from)]);
-                items.erase(items.begin()+from);
-                items.insert(items.begin()+to,std::move(item));
-            };
-            auto nextFiles=playerLibrary_;
-            auto nextControls=playerTrackSettings_;
-            move(nextFiles);move(nextControls);
-            if(!commitPlayerTrackEdit(std::move(nextFiles),std::move(nextControls))) {
+            auto plan=armix::player::PlayerLibraryEditPlan::move(
+                playerLibrary_,playerTrackSettings_,from,to);
+            if(!plan)return;
+            if(!commitPlayerTrackEdit(
+                std::move(plan->files),std::move(plan->controls))) {
                 emitPlayerState(true);return;
             }
             const auto remap=[&](int index) {
@@ -4051,11 +4048,11 @@ private:
             }
             const auto removedFile=playerLibrary_[static_cast<std::size_t>(index)];
             const auto removedControls=playerTrackSettings_[static_cast<std::size_t>(index)];
-            auto nextFiles=playerLibrary_;
-            auto nextControls=playerTrackSettings_;
-            nextFiles.erase(nextFiles.begin()+index);
-            nextControls.erase(nextControls.begin()+index);
-            if(!commitPlayerTrackEdit(std::move(nextFiles),std::move(nextControls))) {
+            auto plan=armix::player::PlayerLibraryEditPlan::remove(
+                playerLibrary_,playerTrackSettings_,index);
+            if(!plan)return;
+            if(!commitPlayerTrackEdit(
+                std::move(plan->files),std::move(plan->controls))) {
                 emitPlayerState(true);return;
             }
             playerUndoRemove_={playerActiveSet_,index,removedFile,removedControls};
@@ -4091,13 +4088,13 @@ private:
             }
             if(std::find(playerLibrary_.begin(),playerLibrary_.end(),
                          removed.file)!=playerLibrary_.end())return;
-            const int index=std::clamp(removed.index,0,
-                static_cast<int>(playerLibrary_.size()));
-            auto nextFiles=playerLibrary_;
-            auto nextControls=playerTrackSettings_;
-            nextFiles.insert(nextFiles.begin()+index,removed.file);
-            nextControls.insert(nextControls.begin()+index,removed.controls);
-            if(!commitPlayerTrackEdit(std::move(nextFiles),std::move(nextControls))) {
+            auto plan=armix::player::PlayerLibraryEditPlan::undo(
+                playerLibrary_,playerTrackSettings_,removed.index,
+                removed.file,removed.controls);
+            if(!plan)return;
+            const int index=plan->first;
+            if(!commitPlayerTrackEdit(
+                std::move(plan->files),std::move(plan->controls))) {
                 emitPlayerState(true);return;
             }
             playerCurrent_=armix::player::PlayerShowEditPolicy::afterInsert(
@@ -4245,39 +4242,22 @@ private:
             [safe=juce::Component::SafePointer<ConsoleWindow>(this)]
             (const juce::FileChooser& picker) {
                 if(!safe)return;
-                const auto files=picker.getResults();
-                auto nextFiles=safe->playerLibrary_;
-                auto nextControls=safe->playerTrackSettings_;
-                // JUCE File order matches the native archive path identity;
-                // a 2,000-song import never needs quadratic scans.
-                std::map<juce::File,std::size_t> positions;
-                for(std::size_t i=0;i<nextFiles.size();++i)
-                    positions.emplace(nextFiles[i],i);
-                std::size_t first=static_cast<std::size_t>(-1);
-                for(const auto& file:files) {
-                    if(!file.existsAsFile() ||
-                       !file.hasFileExtension("wav;mp3;flac;aif;aiff;ogg"))
-                        continue;
-                    const auto known=positions.find(file);
-                    if(known!=positions.end()) {
-                        if(first==static_cast<std::size_t>(-1))
-                            first=known->second;
-                        continue;
+                const auto plan=armix::player::PlayerLibraryEditPlan::append(
+                    safe->playerLibrary_,safe->playerTrackSettings_,
+                    picker.getResults());
+                if(!plan) {
+                    safe->playerError_="Unable to import music; invalid library state";
+                    safe->emitPlayerState(true);
+                } else {
+                    const int first=plan->first;
+                    if(safe->commitPlayerTrackEdit(
+                        std::move(plan->files),std::move(plan->controls))) {
+                        if(safe->playerSelected_<0 && first>=0)
+                            safe->playerSelected_=first;
+                        safe->playerError_.clear();
                     }
-                    if(nextFiles.size()>=2000)break;
-                    if(first==static_cast<std::size_t>(-1))
-                        first=nextFiles.size();
-                    positions.emplace(file,nextFiles.size());
-                    nextFiles.push_back(file);
-                    nextControls.push_back({});
+                    safe->emitPlayerState(true);
                 }
-                if(safe->commitPlayerTrackEdit(
-                    std::move(nextFiles),std::move(nextControls))) {
-                    if(safe->playerSelected_<0 && first!=static_cast<std::size_t>(-1))
-                        safe->playerSelected_=static_cast<int>(first);
-                    safe->playerError_.clear();
-                }
-                safe->emitPlayerState(true);
                 // Do not destroy FileChooser inside its own callback.
                 juce::MessageManager::callAsync([safe] {
                     if(safe)safe->playerFileChooser_.reset();
@@ -4321,37 +4301,18 @@ private:
                          relinks=std::move(relinks),initialLibrary]() mutable {
                             if(!safe)return;
                             safe->playerFolderBusy_=false;
-                            auto nextFiles=safe->playerLibrary_;
-                            auto nextControls=safe->playerTrackSettings_;
-                            std::set<juce::File> known(nextFiles.begin(),nextFiles.end());
-                            int added=0,relinked=0;
-                            // Reconcile by exact row identity against the
-                            // worker snapshot, without losing later live edits.
-                            for(const auto& change:relinks) {
-                                if(change.index>=initialLibrary.size() ||
-                                   change.index>=nextFiles.size() ||
-                                   static_cast<int>(change.index)==safe->playerCurrent_ ||
-                                   nextFiles[change.index]!=initialLibrary[change.index] ||
-                                   known.contains(change.replacement))
-                                    continue;
-                                known.erase(nextFiles[change.index]);
-                                known.insert(change.replacement);
-                                nextFiles[change.index]=change.replacement;
-                                ++relinked;
+                            auto plan=armix::player::PlayerLibraryEditPlan::folder(
+                                initialLibrary,safe->playerLibrary_,
+                                safe->playerTrackSettings_,scan,relinks,
+                                safe->playerCurrent_);
+                            if(!plan) {
+                                safe->playerError_="Unable to import folder; invalid library state";
+                                safe->emitPlayerState(true);return;
                             }
-                            int first=-1;
-                            for(const auto& file:scan.files) {
-                                if(known.contains(file))continue;
-                                if(nextFiles.size()>=armix::player::PlayerLibraryPolicy::maxSongs)
-                                    break;
-                                if(first<0)first=static_cast<int>(nextFiles.size());
-                                known.insert(file);
-                                nextFiles.push_back(file);
-                                nextControls.push_back({});
-                                ++added;
-                            }
+                            const int added=plan->added,relinked=plan->relinked;
+                            const int first=plan->first;
                             if(!safe->commitPlayerTrackEdit(
-                                  std::move(nextFiles),std::move(nextControls))) {
+                                  std::move(plan->files),std::move(plan->controls))) {
                                 safe->emitPlayerState(true);return;
                             }
                             if(safe->playerSelected_<0 && first>=0)
@@ -4390,32 +4351,28 @@ private:
                     if(safe)safe->playerFileChooser_.reset();
                 });
                 if(chosen==juce::File{})return;
-                if(index>=static_cast<int>(safe->playerLibrary_.size()) ||
-                   safe->playerLibrary_[static_cast<std::size_t>(index)]!=old) {
+                auto planned=armix::player::PlayerLibraryEditPlan::manualRelink(
+                    safe->playerLibrary_,safe->playerTrackSettings_,
+                    index,old,chosen);
+                using RelinkError=armix::player::PlayerLibraryEditPlan::RelinkError;
+                if(planned.error==RelinkError::staleRow)
                     safe->playerError_="Setlist changed; locate the song again";
-                } else if(!armix::player::PlayerLibraryPolicy::sameSongName(
-                              old,chosen)) {
+                else if(planned.error==RelinkError::wrongSong)
                     safe->playerError_="Choose the same song filename to avoid relinking the wrong music";
-                } else if(std::find(safe->playerLibrary_.begin(),
-                                   safe->playerLibrary_.end(),chosen)!=
-                          safe->playerLibrary_.end()) {
+                else if(planned.error==RelinkError::alreadyPresent)
                     safe->playerError_="This music file is already in your setlist";
-                } else {
-                    // Preserve same logical song ID, order and per-song
-                    // KEY/TEMPO. Never start a song or switch the output
-                    // as a side effect of locating a file.
-                    auto nextFiles=safe->playerLibrary_;
-                    auto nextControls=safe->playerTrackSettings_;
-                    nextFiles[static_cast<std::size_t>(index)]=chosen;
-                    if(safe->commitPlayerTrackEdit(
-                            std::move(nextFiles),std::move(nextControls))) {
-                        if(safe->playerCurrent_==index) {
-                            safe->engine_.playerStop();
-                            safe->playerCurrent_=-1;
-                        }
-                        safe->playerOutputPendingIndex_=-1;
-                        safe->playerError_.clear();
+                else if(planned.candidate &&
+                        safe->commitPlayerTrackEdit(
+                            std::move(planned.candidate->files),
+                            std::move(planned.candidate->controls))) {
+                    // File path identity and KEY/TEMPO/Cue remain stable.
+                    // No transport changes before durable acceptance.
+                    if(safe->playerCurrent_==index) {
+                        safe->engine_.playerStop();
+                        safe->playerCurrent_=-1;
                     }
+                    safe->playerOutputPendingIndex_=-1;
+                    safe->playerError_.clear();
                 }
                 safe->emitPlayerState(true);
             });

@@ -8,6 +8,7 @@
 #include "../src/PlayerSetlistArchive.h"
 #include "../src/PlayerSetlistRepository.h"
 #include "../src/PlayerSetlistEditTransaction.h"
+#include "../src/PlayerLibraryEditPlan.h"
 #include "../engine/player/PlayerLiveMetadataCommitPolicy.h"
 
 using Archive=armix::player::PlayerSetlistArchive;
@@ -387,6 +388,73 @@ int main() {
     verifyMeta(true,true,false,false,
                Meta::Outcome::saveRejectedRollbackFailed,"ASR");
     assert(sandbox.deleteRecursively());
+
+    // N-MOD-18: real JUCE File plan with in-memory candidate immutability.
+    using LibraryPlan=armix::player::PlayerLibraryEditPlan;
+    const auto physical=sandbox.getChildFile("music");
+    assert(physical.createDirectory().wasOk());
+    const auto songA=physical.getChildFile("song-a.wav");
+    const auto songB=physical.getChildFile("song-b.flac");
+    const auto bad=physical.getChildFile("song-c.txt");
+    assert(songA.replaceWithText("audio-fixture"));
+    assert(songB.replaceWithText("audio-fixture"));
+    assert(bad.replaceWithText("not music"));
+    juce::Array<juce::File> selectedFiles;
+    selectedFiles.add(songA);selectedFiles.add(songA);
+    selectedFiles.add(bad);selectedFiles.add(songB);
+    auto imported=LibraryPlan::append({}, {},selectedFiles);
+    assert(imported && imported->added==2 && imported->first==0);
+    assert(imported->files[0]==songA && imported->files[1]==songB);
+    assert(imported->controls.size()==2);
+    auto importedAgain=LibraryPlan::append(
+        imported->files,imported->controls,selectedFiles);
+    assert(importedAgain && importedAgain->added==0 && importedAgain->first==0);
+    auto pairControls=imported->controls;
+    pairControls[0].key=4;pairControls[1].tempo=115;
+    const auto moved=LibraryPlan::move(imported->files,pairControls,0,1);
+    assert(moved && moved->files[1]==songA);
+    assert(moved->controls[1].key==4 && moved->controls[0].tempo==115);
+    assert(imported->files[0]==songA && pairControls[0].key==4);
+    const auto removed=LibraryPlan::remove(moved->files,moved->controls,1);
+    assert(removed && removed->files.size()==1 && removed->files[0]==songB);
+    const auto undone=LibraryPlan::undo(
+        removed->files,removed->controls,1,songA,pairControls[0]);
+    assert(undone && undone->first==1 && undone->controls[1].key==4);
+    assert(!LibraryPlan::undo(
+        undone->files,undone->controls,0,songA,pairControls[0]));
+    assert(!LibraryPlan::move(imported->files,pairControls,-1,1));
+    assert(!LibraryPlan::append(imported->files,{},selectedFiles));
+
+    const auto missing=sandbox.getChildFile("lost/song-b.flac");
+    const auto staleReplaced=LibraryPlan::manualRelink(
+        {missing},{Track{}},0,missing,songB);
+    assert(staleReplaced.candidate && staleReplaced.candidate->files[0]==songB);
+    assert(LibraryPlan::manualRelink({songA},{Track{}},0,missing,songB).error==
+           LibraryPlan::RelinkError::staleRow);
+    assert(LibraryPlan::manualRelink({missing},{Track{}},0,missing,songA).error==
+           LibraryPlan::RelinkError::wrongSong);
+    assert(LibraryPlan::manualRelink(
+        {missing,songB},{Track{},Track{}},0,missing,songB).error==
+           LibraryPlan::RelinkError::alreadyPresent);
+    armix::player::PlayerLibraryPolicy::Scan foundMusic;
+    foundMusic.files={songA,songB};
+    const auto folderResult=LibraryPlan::folder(
+        {missing},{missing},{Track{}},foundMusic,
+        {{0,songB}},-1);
+    assert(folderResult && folderResult->relinked==1);
+    assert(folderResult->added==1 && folderResult->files[0]==songB);
+    assert(folderResult->files[1]==songA);
+    // A concurrent UI replacement invalidates the scan's row identity.
+    const auto staleFolder=LibraryPlan::folder(
+        {missing},{songA},{Track{}},foundMusic,
+        {{0,songB}},-1);
+    assert(staleFolder && staleFolder->relinked==0);
+    assert(staleFolder->files[0]==songA);
+    const auto noLiveRelink=LibraryPlan::folder(
+        {missing},{missing},{Track{}},foundMusic,
+        {{0,songB}},0);
+    assert(noLiveRelink && noLiveRelink->relinked==0);
+    assert(physical.deleteRecursively());
 
     // Legacy empty v3 content migrates to a non-destructive default setlist.
     const auto empty=Archive::parse(juce::JSON::parse("{\"version\":3}"));
