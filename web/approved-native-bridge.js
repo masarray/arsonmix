@@ -1387,54 +1387,38 @@
       "Removing native FX · awaiting accepted readback");
     return true;
   }
-  function requestNativeFxPower(t,slot,bypass){
-    const picked=verifiedFxFor(t,slot);
-    if(!picked||!m4Verified())return false;
-    const ep=safeNativeCounter(hardware?.device?.epoch),
-      rev=safeNativeCounter(legacy()?.routingRevision);
-    const {lane,live}=picked,requestId="fxpower-"+(++fxRequestSerial);
-    if(ep===null||rev===null||pendingSlotPowers.has(lane+":"+slot))
-      return false;
-    pendingSlotPowers.set(lane+":"+slot,{
-      requestId,channel:lane,slot,token:live.instanceId,bypass,
-      epoch:String(ep),revision:String(rev),acked:false});
-    backend.emitEvent("arMixAction",{action:"routingFxBypass",
-      requestId,channel:lane,slot,instanceId:live.instanceId,
-      deviceEpoch:ep,revision:rev,value:bypass});
+  // G-MV28: one physical M4 rack/slot transaction adapter. The pure FX
+  // ViewModel validates the CURRENT accepted M4 session, legacy routing
+  // revision, active FX instance and safe host tokens before any native IPC.
+  // Reuse existing per-rack/per-slot queues; ACK alone never paints FX.
+  function requestM4FxPower(t,action,button=null){
+    const channel=m4Index(t),slot=action==="slotPower"?
+      Number(button?.dataset?.slot):null;
+    const map=action==="fxOn"?pendingM4RackPowers:pendingSlotPowers;
+    const key=action==="fxOn"?channel:channel+":"+slot;
+    const plan=fxRackVM.m4PowerPlan(controller?.state()?.current,{
+      action,channel,slot,pending:map.has(key),
+      verifiedM4:m4Verified(),offline:!!logicalView
+    });
+    if(plan.kind!=="READY")return false;
+    const requestId=action==="fxOn"?
+      "rack-m4-"+(++nativeFxPowerSerial):"fxpower-"+(++fxRequestSerial);
+    map.set(plan.key,{requestId,...plan.pending});
+    backend.emitEvent("arMixAction",{
+      action:plan.action,requestId,...plan.payload});
     window.setTimeout(()=>{
-      if(pendingSlotPowers.get(lane+":"+slot)?.requestId!==requestId)return;
-      pendingSlotPowers.delete(lane+":"+slot);
-      status("FX bypass timed out · restoring real rack state");
+      if(map.get(plan.key)?.requestId!==requestId)return;
+      map.delete(plan.key);
+      status(action==="fxOn"?
+        "Native rack gate timed out · restoring accepted readback":
+        "FX bypass timed out · restoring real rack state");
       controller?.subscribe();
-    },5000);
-    return true;
-  }
-  // M4 remains an internal PCM implementation; only native mixerSession
-  // readback commits UI state. Rack gate never rewrites saved plugin flags.
-  function requestM4RackPower(t){
-    const lane=m4Index(t),session=mixerSession(),row=session?.channels?.[lane];
-    const ep=safeNativeCounter(session?.deviceEpoch),
-      rev=safeNativeCounter(session?.routeRevision);
-    if(session?.authority!=="M4"||lane<0||!row ||
-       typeof row.fxRackBypassed!=="boolean"||ep===null||rev===null||
-       pendingM4RackPowers.has(lane))return false;
-    const bypassed=!row.fxRackBypassed,requestId="rack-m4-"+(++nativeFxPowerSerial);
-    pendingM4RackPowers.set(lane,{requestId,channel:lane,bypassed,
-      epoch:String(ep),revision:String(rev),acked:false});
-    backend.emitEvent("arMixAction",{action:"routingFxRackBypass",
-      requestId,channel:lane,deviceEpoch:ep,revision:rev,value:bypassed});
-    window.setTimeout(()=>{
-      if(pendingM4RackPowers.get(lane)?.requestId!==requestId)return;
-      pendingM4RackPowers.delete(lane);
-      status("Native rack gate timed out · restoring accepted readback");
-      controller?.subscribe();
-    },8000);
+    },plan.timeoutMs);
     return true;
   }
   function reconcileM4RackReadback(next){
-    const session=next?.raw?.mixerSession;
     for(const [lane,p] of pendingM4RackPowers){
-      const decision=fxRackVM.m4RackSettlement(p,session);
+      const decision=fxRackVM.m4RackSettlement(p,next);
       if(decision==="STALE"||decision==="CONFIRMED")
         pendingM4RackPowers.delete(lane);
     }
@@ -3119,10 +3103,9 @@
     });
     backend.addEventListener("arMixRoutingFxRackAck",ack=>{
       const p=pendingM4RackPowers.get(ack?.channel);
-      if(!p||ack?.requestId!==p.requestId)return;
-      if(ack?.ok!==true || String(ack.deviceEpoch)!==p.epoch ||
-         String(ack.routingRevision)!==p.revision ||
-         ack.bypassed!==p.bypassed){
+      const verdict=fxRackVM.m4RackAckResult(p,ack);
+      if(verdict==="IGNORE")return;
+      if(verdict==="REJECTED"){
         pendingM4RackPowers.delete(p.channel);
         status("Native M4 rack gate rejected · "+(ack?.error||"stale route"));
       }else p.acked=true;
@@ -3272,6 +3255,39 @@
         controller.subscribe();
       }else status("NATIVE ARM REJECTED: "+(ack?.error||"device not ready"));
     });
+  }
+  // G-MV27: UI actions (MUTE/SOLO/unity resets) share one pure native
+  // authority plan, separate from MV-10's coalesced pointer gesture lane.
+  // IPC, request IDs, ACK/readback and the PCM owner remain unchanged.
+  function controlCommandRoute(operation,t) {
+    const current=controller?.state()?.current,id=nativeIdFor(t);
+    return stripVM.controlCommandPlan({
+      operation,trackKind:t?.kind,logical:!!logicalView,
+      logicalReadOnly:logicalView?.readOnly===true,
+      logicalPending:!!pendingLogical,logicalChannelId:id,
+      logicalSupported:logicalView?.graph?.capabilities?.supportedOps?.includes(operation)===true,
+      authority:mixerSession()?.authority,admitted:current?.admitted===true &&
+        current?.retained!==true,graphConnected:flags.acceptedGraphConnected,
+      nativeChannelId:id,
+      nativeSupported:current?.graph?.capabilities?.supportedOps?.includes(operation)===true,
+      m4Verified:m4Verified(),m4Channel:m4Index(t),
+      masterAuthority:t?.kind==="master"?nativeMasterAuthority():"UNAVAILABLE"
+    });
+  }
+  function dispatchControlCommand(operation,t,payload) {
+    const route=controlCommandRoute(operation,t);
+    if(route==="LOGICAL"||route==="CHANNEL_ID")
+      return intent(operation,t,payload);
+    if(route==="M4"||route==="MAIN_HOST"){
+      const parameter=route==="MAIN_HOST"?
+        operation==="SET_FADER"?"masterGain":"masterMute":
+        {SET_FADER:"faderDb",SET_PAN:"pan",SET_MUTE:"mute",SET_SOLO:"solo"}[operation];
+      const value=operation==="SET_FADER"?payload?.valueDb:
+        operation==="SET_PAN"?payload?.value*100:payload?.enabled;
+      return sendM4Control(parameter,t,value);
+    }
+    status("Native "+operation+" unavailable · verify mixer authority/readback");
+    return false;
   }
   const nativeHooks=Object.freeze({
     enabled:connected,
@@ -3501,19 +3517,11 @@
         }
         return true;
       }
-      const numeric=Number(el.value);
-      if (field==="level"&&Number.isFinite(numeric))
-        intent("SET_FADER",t,{valueDb:numeric});
-      else if (field==="pan"&&Number.isFinite(numeric)) {
-        // Preserve hardware center detent without publishing demo PAN state.
-        const fine=el.dataset.panKeyboard==="true";
-        const bypass=el.dataset.panAltPointer==="true";
-        const value=!fine&&!bypass&&Math.abs(numeric)<=12?0:numeric;
-        intent("SET_PAN",t,{value:value/100});
-      } else {
-        status("NATIVE: "+field+" awaits native capability; reference graph unchanged");
-        scope?.render?.(); // restore SELECT/route control from accepted graph
-      }
+      // If the streaming preflight refused a live field, do NOT bypass
+      // it by sending an unguarded ChannelId intent on pointer release.
+      if(field==="level")el.value=String(t.level);
+      else if(field==="pan")el.value=String(t.pan);
+      status("NATIVE: "+field+" awaits accepted control/readback");
       return true;
     },
     consumeAction(t,action,btn) {
@@ -3632,9 +3640,7 @@
           if(!requestAdmittedFxPower(t,action,btn))
             nativeToast("Native FX slot unavailable · accepted insert/epoch required");
         }else{
-          const slot=Number(btn?.dataset.slot),instance=verifiedFxFor(t,slot);
-          if(!m4ControlIsOwner()||!instance||
-             !requestNativeFxPower(t,slot,!instance.live.bypassed))
+          if(!requestM4FxPower(t,"slotPower",btn))
             nativeToast("FX bypass unavailable · select an accepted VST3 slot");
         }
         return true;
@@ -3648,7 +3654,7 @@
           return true;
         }
         const authority=mixerSession()?.authority;
-        const ok=authority==="M4"?requestM4RackPower(t):
+        const ok=authority==="M4"?requestM4FxPower(t,"fxOn"):
           authority==="CHANNEL_ID"?requestAdmittedFxPower(t,action,btn):false;
         if(!ok){
           nativeToast("FX header requires an accepted native rack gate");
@@ -3666,28 +3672,10 @@
         status("PFL not armed · independent physical MONITOR output required");
         return true;
       }
-      if (action==="mute"||action==="solo") {
-        // MAIN has one host scalar gateway. A refused native MAIN lease
-        // must never fall through to generic ChannelId SET_MUTE/SOLO.
-        if(t.kind==="master"){
-          // Offline .smix remains an editable durable logical mixer:
-          // its native logical-intent owner is distinct from physical PCM.
-          if(logicalView){
-            intent(action==="mute"?"SET_MUTE":"SET_SOLO",t,
-                   {value:!t[action],enabled:!t[action]});
-          }else if(action==="mute" && nativeMasterAuthority()!=="UNAVAILABLE"){
-            if(!sendM4Control("masterMute",t,!t.mute))
-              status("Native MAIN mute rejected");
-          }else status("MAIN mute unavailable · verified PCM required");
-          return true;
-        }
-        if(m4ControlIsOwner()&&m4Verified()&&m4Index(t)>=0){
-          if(!sendM4Control(action,t,!t[action]))
-            status("Native M4 mute/solo rejected");
-          return true;
-        }
-        const key=action==="mute"?"SET_MUTE":"SET_SOLO";
-        intent(key,t,{value:!t[action],enabled:!t[action]});return true;
+      if(action==="mute"||action==="solo"){
+        dispatchControlCommand(action==="mute"?"SET_MUTE":"SET_SOLO",
+          t,{value:!t[action],enabled:!t[action]});
+        return true;
       }
       status("NATIVE: "+action+" is not an accepted ChannelId operation");return true;
     },
@@ -3939,20 +3927,7 @@
             status("SOF unity reset unavailable · select one admitted SEND");
           return true;
         }
-        // MAIN reset must not become an unrelated ChannelId SET_FADER
-        // when its native physical host scalar lease is not admitted.
-        if(t?.kind==="master"){
-          // An offline MAIN unity reset edits the logical .smix document,
-          // never the unavailable physical host/ChannelId PCM authority.
-          if(logicalView)intent("SET_FADER",t,{valueDb:0});
-          else if(nativeMasterAuthority()!=="UNAVAILABLE")
-            sendM4Control("masterGain",t,0);
-          else status("MAIN reset unavailable · verified PCM required");
-          return true;
-        }
-        if(m4ControlIsOwner()&&m4Verified())
-          sendM4Control("faderDb",t,0);
-        else intent("SET_FADER",t,{valueDb:0});
+        dispatchControlCommand("SET_FADER",t,{valueDb:0});
       }
       else if(event.target.closest?.(".gain-dial")){
         if(t?.kind!=="audio"||t.nativeGainAvailable!==true)
@@ -3960,10 +3935,8 @@
         else intent("SET_INPUT_GAIN",t,{valueDb:0});
         return true;
       }
-      else if(event.target.classList.contains("center-pan")){
-        if(m4ControlIsOwner()&&m4Verified())sendM4Control("pan",t,0);
-        else intent("SET_PAN",t,{value:0});
-      }
+      else if(event.target.classList.contains("center-pan"))
+        dispatchControlCommand("SET_PAN",t,{value:0});
       else if(event.target.closest?.(".footer-label,.strip-identity-top"))
         openNativeIdentity(t,event.target);
       return true;

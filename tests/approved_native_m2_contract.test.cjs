@@ -2151,16 +2151,19 @@ test("P0 real slot VST3 power and native editor use verified instance tokens",()
  const bridge=read("web/approved-native-bridge.js");
  const main=read("src/Main.cpp");
  assert.match(bridge,/function verifiedFxFor\(t,slot\)/);
- assert.match(bridge,/function requestNativeFxPower\(t,slot,bypass\)/);
+ assert.match(bridge,/function requestM4FxPower\(t,action,button=null\)/);
  assert.match(bridge,/if\(action==="slotPower"\)/);
  assert.match(bridge,/if\(action==="fxOn"\)/);
  assert.doesNotMatch(bridge,/rackSavedBypass/);
- assert.match(bridge,/requestM4RackPower\(t\)/);
+ assert.match(bridge,/requestM4FxPower\(t,"fxOn"\)/);
+ assert.match(bridge,/requestM4FxPower\(t,"slotPower",btn\)/);
  assert.match(bridge,/requestAdmittedFxPower\(t,action,btn\)/);
  assert.match(bridge,/FX rack unchanged/);
  assert.match(bridge,/pendingM4RackPowers/);
  assert.match(bridge,/action:"routingFxEditor"/);
- assert.match(bridge,/action:"routingFxBypass"/);
+ assert.match(bridge,/action:plan\.action,requestId,\.\.\.plan\.payload/);
+ assert.match(read("web/approved-fx-rack-view-model.js"),
+   /action:"routingFxBypass"/);
  assert.match(bridge,/backend\.addEventListener\("arMixRoutingFxBypassAck"/);
  assert.match(main,/ack->setProperty\("requestId",args\.getProperty\("requestId",juce::var\(\)\)\)/);
  assert.match(main,/action == "routingFxEditor"/);
@@ -2994,7 +2997,8 @@ for(const scenario of ["driver","pin-mask"]) test(
    routeRevision:"13",rosterRevision:"0",
    channels:rows.map((source,i)=>({
      id:"m4:"+String(i+1).padStart(2,"0"),ordinal:i,role:"INPUT",
-     source,controls:{faderDb:0,pan:0,mute:false,solo:false}
+     source,controls:{faderDb:0,pan:0,mute:false,solo:false},
+     fxRackBypassed:false
    })),main:{db:0,mute:false,outputArmed:false}};
  const publish=raw=>listeners.get("arMixConsoleSnapshot")(raw);
  const prepared=clone(installed);
@@ -3014,6 +3018,21 @@ for(const scenario of ["driver","pin-mask"]) test(
  assert.equal(bypasses().length,1,
    "first M4 slot bypass must dispatch; feedback: "+toast.textContent);
  const first=bypasses()[0];
+ // The header uses the SAME M4 authority plan as the insert button.
+ const rackClick=()=>win.__ARMIX_NATIVE_M2__.consumeAction(
+   tracks[4],"fxOn",{});
+ const racks=()=>sent.filter(x=>x.name==="arMixAction"&&
+   x.payload.action==="routingFxRackBypass").map(x=>x.payload);
+ assert.equal(rackClick(),true);
+ assert.equal(racks().length,1,"verified M4 rack gate must dispatch");
+ const oldRack=racks()[0];
+ assert.equal(oldRack.channel,4);
+ assert.equal(oldRack.revision,13);
+ assert.equal(rackClick(),true);
+ assert.equal(racks().length,1,
+   "second rack click cannot escape its unconfirmed native lease");
+ const oldRackTimer=timers.filter(t=>t.ms===8000).at(-1);
+ assert.ok(oldRackTimer);
  assert.equal(click(),true);
  assert.equal(bypasses().length,1,"same slot is gated by its unresolved native lease");
  const oldTimer=timers.filter(t=>t.ms===5000).at(-1);
@@ -3053,17 +3072,29 @@ for(const scenario of ["driver","pin-mask"]) test(
  assert.equal(click(),true);
  assert.equal(bypasses().length,2,
    "reconfigured hardware cannot leave a slot uneditable for 5 seconds");
+ assert.equal(rackClick(),true);
+ assert.equal(racks().length,2,
+   "reconfigured hardware must release prior M4 rack lease immediately");
+ const newRack=racks()[1];
+ assert.equal(newRack.revision,14);
  const second=bypasses()[1];
  assert.notEqual(first.requestId,second.requestId);
  assert.equal(second.revision,14,"second bypass uses the newly accepted routing revision");
  listeners.get("arMixRoutingFxBypassAck")({
    requestId:first.requestId,channel:4,slot:0,ok:false,error:"OLD_DEVICE"});
- oldTimer.fn();
+ listeners.get("arMixRoutingFxRackAck")({
+   requestId:oldRack.requestId,channel:4,ok:false,
+   deviceEpoch:13,routingRevision:13,error:"OLD_DEVICE"});
+ oldTimer.fn();oldRackTimer.fn();
  assert.equal(bypasses().length,2,"expired timer cannot affect new driver lease");
+ assert.equal(racks().length,2,"expired rack timer cannot retarget new lease");
  // The new request is still protected from a duplicate click until settled.
  assert.equal(click(),true);
  assert.equal(bypasses().length,2,
    "an old ACK/timer cannot release a new driver's pending FX command");
+ assert.equal(rackClick(),true);
+ assert.equal(racks().length,2,
+   "old rack ACK/timer cannot release the new driver's pending rack gate");
  assert.equal(sent.filter(x=>x.name==="arMixAction"&&
    x.payload.action==="monitor").length,0,"no automatic MAIN arm");
 });
@@ -3919,8 +3950,8 @@ test("SOF double-click and target selection never commandeer MAIN fader",()=>{
   assert.ok(start>0&&end>start,"native delegate must own double-click");
   const handler=bridge.slice(start,end);
   assert.ok(handler.indexOf("scope?.sofEnabled") <
-            handler.indexOf('sendM4Control'),
-    "SOF must intercept fader reset BEFORE M4/Main fader ownership");
+            handler.indexOf('dispatchControlCommand'),
+    "SOF must intercept fader reset BEFORE unified native control routing");
   assert.match(handler,/requestWireGain\(\{sourceId:t\.id,edgeId:id,levelDb:0\}\)/);
   assert.match(handler,/intent\("SET_INPUT_GAIN",t,\{valueDb:0\}\)/);
 });
@@ -4484,22 +4515,126 @@ test("GUI-2 native FX pending settlement requires ACK, exact lease and epoch",()
  assert.equal(fxRackVM.nativePowerSettlement({...p,acked:true,kind:"rack",bypassed:false},next),"CONFIRMED");
  assert.equal(fxRackVM.nativePowerSettlement(null,next),"NONE");
 });
-test("GUI-2 M4 rack pending selector rejects revisions and unaccepted authority",()=>{
- const s={authority:"M4",deviceEpoch:"17",routeRevision:"8",
-   channels:[{fxRackBypassed:true}]};
+test("G-MV28 M4 rack settlement needs exact full installed snapshot, not an old session",()=>{
+ const session={authority:"M4",deviceEpoch:"17",routeRevision:"8",
+   channels:Array.from({length:10},()=>({fxRackBypassed:true}))};
+ const snapshot={admitted:false,retained:false,device:{epoch:"17"},raw:{
+   mixerSession:session,legacyM4:{active:true,routeAccepted:true,
+     routingRevision:"8"}}};
  const p={channel:0,epoch:"17",revision:"8",bypassed:true,acked:false};
- assert.equal(fxRackVM.m4RackSettlement(p,s),"WAIT");
- assert.equal(fxRackVM.m4RackSettlement({...p,acked:true},s),"CONFIRMED");
- assert.equal(fxRackVM.m4RackSettlement({...p,acked:true},{...s,routeRevision:"9"}),"STALE");
- assert.equal(fxRackVM.m4RackSettlement({...p,acked:true},{...s,authority:"CHANNEL_ID"}),"STALE");
- assert.equal(fxRackVM.m4RackSettlement({...p,acked:true},
-   {...s,channels:[{fxRackBypassed:false}]}),"WAIT");
+ const settle=(pending=p,view=snapshot)=>fxRackVM.m4RackSettlement(pending,view);
+ assert.equal(settle(),"WAIT");
+ assert.equal(settle({...p,acked:true}),"CONFIRMED");
+ assert.equal(settle({...p,acked:true},{...snapshot,raw:{...snapshot.raw,
+   mixerSession:{...session,routeRevision:"9"}}}),"STALE");
+ assert.equal(settle({...p,acked:true},{...snapshot,raw:{...snapshot.raw,
+   mixerSession:{...session,authority:"CHANNEL_ID"}}}),"STALE");
+ assert.equal(settle({...p,acked:true},{...snapshot,raw:{...snapshot.raw,
+   legacyM4:{...snapshot.raw.legacyM4,routingRevision:"9"}}}),"STALE",
+   "stale legacy M4 revision cannot confirm an earlier physical rack gate");
+ assert.equal(settle({...p,acked:true},{...snapshot,retained:true}),"STALE");
+ assert.equal(settle({...p,acked:true},{...snapshot,admitted:true}),"STALE");
+ assert.equal(settle({...p,acked:true},{...snapshot,raw:{...snapshot.raw,
+   legacyM4:{...snapshot.raw.legacyM4,routeAccepted:false}}}),"STALE");
+ assert.equal(settle({...p,acked:true},{...snapshot,raw:{...snapshot.raw,
+   mixerSession:{...session,channels:[
+     {...session.channels[0],fxRackBypassed:false},
+     ...session.channels.slice(1)]}}}),"WAIT");
+ assert.equal(settle(null),"NONE");
  const source=read("web/approved-native-bridge.js");
  assert.ok(source.includes("fxRackVM.m4Presentation("));
  assert.ok(source.includes("fxRackVM.nativePowerSettlement("));
- assert.ok(source.includes("fxRackVM.m4RackSettlement("));
+ assert.match(source,/fxRackVM\.m4RackSettlement\(p,next\)/);
  assert.doesNotMatch(source,/const actual=p\.kind==="rack"\?/);
 });
+
+test("G-MV28 pure M4 FX power plan owns exact rack/slot authority, lease and IPC envelope",()=>{
+ const rows=Array.from({length:10},()=>({fxRackBypassed:false}));
+ const instances=Array.from({length:10},(_,i)=>i===4?
+   [{instanceId:"m4-vst-lease",catalogId:"vendor.fx",bypassed:false}]:[]);
+ const m={active:true,routeAccepted:true,nativeBusStructural:false,
+   routingRevision:"12",fxInstances:instances};
+ const session={authority:"M4",deviceEpoch:"31",routeRevision:"12",
+   channels:rows};
+ const snapshot={admitted:false,retained:false,device:{epoch:"31"},raw:{
+   mixerSession:session,legacyM4:m}};
+ const plan=(action="fxOn",extra={},view=snapshot)=>fxRackVM.m4PowerPlan(view,{
+   action,channel:4,slot:action==="slotPower"?0:null,verifiedM4:true,...extra});
+ const before=JSON.stringify(snapshot);
+ const rack=plan();
+ assert.equal(rack.kind,"READY");
+ assert.equal(rack.action,"routingFxRackBypass");
+ assert.equal(rack.key,4);
+ assert.equal(rack.timeoutMs,8000);
+ assert.deepEqual(rack.pending,{channel:4,epoch:"31",revision:"12",
+   acked:false,bypassed:true});
+ assert.deepEqual(rack.payload,{channel:4,deviceEpoch:31,revision:12,value:true});
+ const slot=plan("slotPower");
+ assert.equal(slot.kind,"READY");
+ assert.equal(slot.action,"routingFxBypass");
+ assert.equal(slot.key,"4:0");
+ assert.equal(slot.timeoutMs,5000);
+ assert.deepEqual(slot.pending,{channel:4,epoch:"31",revision:"12",
+   acked:false,slot:0,token:"m4-vst-lease",bypass:true});
+ assert.deepEqual(slot.payload,{channel:4,slot:0,instanceId:"m4-vst-lease",
+   deviceEpoch:31,revision:12,value:true});
+ const unavailable=(a="fxOn",extra={},view=snapshot)=>{
+   assert.equal(plan(a,extra,view).kind,"UNAVAILABLE");};
+ unavailable("fxOn",{verifiedM4:false});
+ unavailable("fxOn",{offline:true});
+ unavailable("fxOn",{pending:true});
+ unavailable("fxOn",{channel:10});
+ unavailable("fxOn",{channel:-1});
+ unavailable("fxOn",{slot:0});
+ unavailable("slotPower",{slot:-1});
+ unavailable("slotPower",{slot:8});
+ unavailable("slotPower",{pending:true});
+ unavailable("slotPower",{channel:5});
+ unavailable("slotPower",{slot:0}, {...snapshot,raw:{...snapshot.raw,
+   legacyM4:{...m,fxInstances:instances.map((xs,i)=>i===4?
+     [{...xs[0],instanceId:""}]:xs)}}});
+ unavailable("fxOn",{}, {...snapshot,admitted:true});
+ unavailable("fxOn",{}, {...snapshot,retained:true});
+ unavailable("fxOn",{}, {...snapshot,device:{epoch:"32"}});
+ unavailable("fxOn",{}, {...snapshot,raw:{...snapshot.raw,
+   mixerSession:{...session,authority:"CHANNEL_ID"}}});
+ unavailable("slotPower",{}, {...snapshot,raw:{...snapshot.raw,
+   mixerSession:{...session,authority:"NONE"}}});
+ unavailable("fxOn",{}, {...snapshot,raw:{...snapshot.raw,
+   mixerSession:{...session,routeRevision:"13"}}});
+ unavailable("fxOn",{}, {...snapshot,raw:{...snapshot.raw,
+   legacyM4:{...m,routingRevision:"13"}}});
+ unavailable("fxOn",{}, {...snapshot,raw:{...snapshot.raw,
+   legacyM4:{...m,active:false}}});
+ unavailable("fxOn",{}, {...snapshot,raw:{...snapshot.raw,
+   legacyM4:{...m,routeAccepted:false}}});
+ unavailable("fxOn",{}, {...snapshot,raw:{...snapshot.raw,
+   legacyM4:{...m,nativeBusStructural:true}}});
+ unavailable("fxOn",{}, {...snapshot,device:{epoch:"9007199254740993"},raw:{
+   ...snapshot.raw,mixerSession:{...session,deviceEpoch:"9007199254740993"}}});
+ unavailable("fxOn",{}, {...snapshot,raw:{...snapshot.raw,
+   legacyM4:{...m,routingRevision:"9007199254740993"},
+   mixerSession:{...session,routeRevision:"9007199254740993"}}});
+ assert.equal(fxRackVM.m4RackAckResult(null,{}),"IGNORE");
+ const pending={requestId:"rack-m4-42",...rack.pending};
+ const ack={requestId:"rack-m4-42",channel:4,deviceEpoch:31,
+   routingRevision:12,bypassed:true,ok:true};
+ assert.equal(fxRackVM.m4RackAckResult(pending,{...ack,requestId:"old"}),"IGNORE");
+ assert.equal(fxRackVM.m4RackAckResult(pending,ack),"ACKED");
+ for(const faulty of [{channel:5},{deviceEpoch:32},{routingRevision:13},
+   {bypassed:false},{ok:false}])
+   assert.equal(fxRackVM.m4RackAckResult(pending,{...ack,...faulty}),"REJECTED");
+ assert.equal(JSON.stringify(snapshot),before,"pure plan must never mutate native readback");
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/fxRackVM\.m4PowerPlan\(/);
+ assert.match(bridge,/fxRackVM\.m4RackAckResult\(/);
+ assert.doesNotMatch(bridge,/function requestNativeFxPower\(/);
+ assert.doesNotMatch(bridge,/function requestM4RackPower\(/);
+ assert.equal((bridge.match(/function requestM4FxPower\(/g)||[]).length,1);
+ assert.equal((bridge.match(/action:"routingFxBypass"/g)||[]).length,0,
+   "native M4 FX command envelope must be owned by the pure power plan");
+});
+
 
 test("MV-7 deferred SEND gain requires unique exact installed EdgeId",()=>{
  const source="9007199254740993",edgeId="9007199254740997";
