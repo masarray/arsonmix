@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "DynamicPreparedMixerBlock.h"
+#include "../device/MultiDeviceInputPlan.h"
 #include "DynamicConsoleRoutingView.h"
 #include "NativeMusicTempoMonitor.h"
 #include "NativeBeatFrameContext.h"
@@ -42,6 +43,9 @@ private:
         DynamicPreparedMixerBlock graph;
         DynamicConsoleRoutingView routing;
         FxPlan fx; // SAME lifetime and revision as native PCM graph
+        // IO-2B: optional immutable qualified physical source map in THIS
+        // same graph lease. Never publish/retire it independently of FX/PCM.
+        std::unique_ptr<armix::device::MultiDeviceInputPlan> inputMap;
         int physicalInputs=0;
         bool monitor=false;
     };
@@ -72,7 +76,8 @@ public:
                         std::uint64_t activeDeviceEpoch,
                         bool allOutputsDisarmed,
                         FxPlan fx={nullptr,nullptr,nullptr,0,0,nullptr},bool verifiedInternalWireOnly=false,
-                        bool verifiedInternalFxOnly=false) {
+                        bool verifiedInternalFxOnly=false,
+                        const armix::device::MultiDeviceInputPlan* qualifiedInputMap=nullptr) {
         CommitResult report;report.revision=publisher_.lastRevision();
         if(!fx.valid() ||
            (fx.owner && (fx.deviceEpoch!=proposedDeviceEpoch ||
@@ -98,6 +103,37 @@ public:
            !verifiedInternalFxOnly) {
             report.fault=Fault::outputArmed;return report;
         }
+        // CONTROL: validate every physical source against ONE actual
+        // device-qualified map before starting a potentially costly graph
+        // compile. Reject mixed old/new source namespaces as a transaction.
+        if(qualifiedInputMap) {
+            if(qualifiedInputMap->primaryEpoch()!=proposedDeviceEpoch ||
+               qualifiedInputMap->deviceCount()<1 ||
+               qualifiedInputMap->virtualInputCount()!=request.physicalInputs) {
+                report.fault=Fault::invalidCandidate;return report;
+            }
+            std::size_t matched=0;
+            for(const auto& source:request.sources) {
+                if(source.kind!=DynamicSourceKind::physical)continue;
+                bool verified=false;
+                for(int i=0;i<qualifiedInputMap->sourceCount();++i) {
+                    const auto& mapped=qualifiedInputMap->source(i);
+                    if(source.id==mapped.channel &&
+                       source.inputL==mapped.inputL &&
+                       source.inputR==mapped.inputR &&
+                       source.stereo==mapped.stereo) {
+                        verified=true;break;
+                    }
+                }
+                if(!verified) {
+                    report.fault=Fault::invalidCandidate;return report;
+                }
+                ++matched;
+            }
+            if(matched!=static_cast<std::size_t>(qualifiedInputMap->sourceCount())) {
+                report.fault=Fault::invalidCandidate;return report;
+            }
+        }
         auto next=std::make_unique<Publisher::Snapshot>();
         next->deviceEpoch=proposedDeviceEpoch;
         next->graphRevision=expectedRevision+1;
@@ -117,6 +153,9 @@ public:
             report.fault=Fault::invalidGraph;return report;
         }
         prepared->physicalInputs=request.physicalInputs;
+        if(qualifiedInputMap)
+            prepared->inputMap=
+                std::make_unique<armix::device::MultiDeviceInputPlan>(*qualifiedInputMap);
         prepared->fx=std::move(fx); // one accepted control-plane publication
         prepared->monitor=std::any_of(roster.channels().begin(),
           roster.channels().end(),[](const ChannelStripDefinition& row) {
@@ -168,7 +207,9 @@ public:
                 std::span<float> channelPeaksR={},
                 std::span<const DynamicPlayerPcmBlock> playerPcm={},
                 float* const* hardwareOutputs=nullptr,
-                int hardwareOutputCount=0) noexcept {
+                int hardwareOutputCount=0,
+                std::span<const armix::device::MultiDeviceInputPlan::CaptureBlock>
+                    qualifiedCaptureBlocks={}) noexcept {
         static_assert(std::is_nothrow_invocable_v<Fx,ChannelId,float*,float*,int>,
                       "Realtime VST dispatch must be noexcept");
         const auto clearOutputs=[&]() noexcept {
@@ -201,6 +242,23 @@ public:
         }
         auto lease=publisher_.acquire();
         const auto* snap=lease.get(deviceEpoch);
+        // The source-map lifetime and its PCM DSP graph are protected by
+        // this SAME publisher acquire() lease; never acquire them separately.
+        // For installed multi-device topology, only explicit per-device
+        // generations + native leases authorize the borrowed input pointers.
+        armix::device::MultiDeviceInputPlan::VirtualFrame virtualFrame;
+        if(snap && snap->prepared && snap->prepared->inputMap) {
+            if(physical || physicalCount!=0 ||
+               !snap->prepared->inputMap->assemble(deviceEpoch,frames,
+                                                   qualifiedCaptureBlocks,
+                                                   virtualFrame)) {
+                clearOutputs();return false;
+            }
+            physical=virtualFrame.pointers.data();
+            physicalCount=virtualFrame.count;
+        } else if(!qualifiedCaptureBlocks.empty()) {
+            clearOutputs();return false; // not qualified for legacy ASIO
+        }
         if(!snap || !snap->prepared ||
            physicalCount!=snap->prepared->physicalInputs ||
            (snap->prepared->monitor && !monitorL) ||
