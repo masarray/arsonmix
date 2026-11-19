@@ -388,6 +388,16 @@
       captureDevice:d.captureDevice,playbackDevice:d.playbackDevice,
       hardwareConfiguration,authority:readModelKind});
   }
+  // G-MV24: pure readback scheduling/quarantine policy. The accepted native
+  // read-model is the only authority; old SOURCE timers and microtasks may
+  // never be scheduled from a retained or stale PCM snapshot.
+  function nativeTransientReadbackPolicy(kind) {
+    return Object.freeze({
+      discardRetained:kind==="NEEDS_REMAP",
+      drainM4Sources:kind==="M4"||kind==="UNADMITTED",
+      drainNativeSources:kind==="CHANNEL_ID"
+    });
+  }
   function nativeLifecycleDecision(previous,next) {
     if(!next || typeof next.epoch!=="string" ||
        typeof next.authority!=="string")
@@ -415,5 +425,6 @@
   return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,
     externalPresentation,setupDraft,setupPresentation,setupEditDraft,
     setupInitial,setupBegin,setupAck,setupReadback,
-    setupTimeout,setupClearResult,nativeLifecycleLease,nativeLifecycleDecision});
+    setupTimeout,setupClearResult,nativeLifecycleLease,nativeLifecycleDecision,
+    nativeTransientReadbackPolicy});
 });

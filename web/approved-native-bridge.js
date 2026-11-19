@@ -2676,7 +2676,11 @@
   // changed PCM authority; the native session, .smix, FX instances and
   // approved controls remain owned by JUCE and will be repainted by readback.
   let lastNativeLifecycleLease=null;
-  function expireTransientNativeUi(reason) {
+  // G-MV24: ONE complete GUI-only discard path for both physical/authority
+  // switches and repeated NEEDS_REMAP readbacks. No second PCM ownership.
+  // Keep cosmetic readback signatures separate so retained-mixer telemetry
+  // does not force pointless full DOM repaint on every callback.
+  function discardTransientNativeUi({preserveRetainedIdentity=false}={}) {
     pendingNativeSources.clear();pendingSourceQueue.clear();
     activeNativeSource=null;nativeUiSourcePending=null;pendingSourceId=0;
     pendingOutputPatch=null;pendingNativeFxPower=null;pendingGlobalFx=null;
@@ -2690,10 +2694,16 @@
     // must not strand EXTERNAL OUT selects or slot-bypass edits behind
     // an old ACK/timer. Never touch persisted PCM/FX state here.
     pendingExternal.clear();pendingSlotPowers.clear();
-    if(pendingIdentity){
+    // Cosmetic ChannelId edits remain legal while native playback is
+    // NEEDS_REMAP. They still require their own native ACK/readback proof.
+    // Only physical/authority changes must invalidate those old identities.
+    if(pendingIdentity&&!preserveRetainedIdentity){
       if(pendingIdentity.migration)legacyDeferred.add(pendingIdentity.channelId);
       rejectIdentity("Channel identity expired after audio connection change");
     }
+  }
+  function expireTransientNativeUi(reason) {
+    discardTransientNativeUi();
     lastPaintedSignature="";lastNativeTopologySignature="";
     status(reason==="DEVICE_CHANGED"?
       "Audio connection changed · old control gestures discarded":
@@ -2839,8 +2849,11 @@
     }
     // A second channel's IN can be selected while the first transaction is
     // in flight. Always dispatch its latest choice with a FRESH native route
-    // revision, not stale tokens captured before the previous ACK.
-    if(!nativeUiSourcePending && pendingSourceQueue.size)
+    // revision, not stale tokens captured before the previous ACK. An old
+    // M4 microtask must never be scheduled from retained hardware state.
+    const transientPlan=deviceVM.nativeTransientReadbackPolicy(readModel.kind);
+    if(transientPlan.drainM4Sources &&
+       !nativeUiSourcePending && pendingSourceQueue.size)
       window.queueMicrotask(()=>dispatchQueuedSource());
     const caps=next?.graph?.capabilities;
     const nativeAdmitted=readModel.kind==="CHANNEL_ID";
@@ -2855,20 +2868,20 @@
         !caps?.supportedOps?.includes("CREATE_GROUP");
       addBus.disabled=!!pendingBusCreate||!!pendingTrackDelete;
     }
-    if (nativeAdmitted && !activeNativeSource && pendingNativeSources.size) {
+    if (transientPlan.drainNativeSources &&
+         !activeNativeSource && pendingNativeSources.size) {
       // A rejected/timeout source command may leave the graph revision
       // unchanged. Drain the next distinct channel after this authoritative
       // snapshot even if the GUI signature is otherwise identical.
       window.queueMicrotask(dispatchNativeSource);
     }
-    if (next.retained && !nativeAdmitted) {
+    if (transientPlan.discardRetained) {
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
-      pendingNativeSources.clear();pendingSourceQueue.clear();
-      activeNativeSource=null;nativeUiSourcePending=null;
-      pendingOutputPatch=null;pendingNativeFxPower=null;pendingBusCreate=null;
-      pendingFxInsert=null;pendingTrackDelete=null;startupWire=null;activeWireAttempt=null;
-      pendingWireGains.clear();pendingNativeControl.clear();liveFaderVisualTargets.clear();
-      lastNativeControlSent.clear();
+      // Also catches stray same-lease transient edits after reconnect. This
+      // silently discards ALL source, FX, WIRE and output gesture leases via
+      // the same method used for authority/endpoint changes. Unlike expire,
+      // it does not reset the accepted retained-graph paint signature.
+      discardTransientNativeUi({preserveRetainedIdentity:true});
       const signature="retained|"+next.identity+"|"+appearanceRevision;
       if(lastPaintedSignature!==signature && projectNativeGraphWithoutFocusLoss(next)){
         lastPaintedSignature=signature;
