@@ -40,6 +40,23 @@ public:
         std::uint64_t captureInputMask = 0, captureOutputMask = 0;
     };
 
+    // Two post-open observation windows are mandatory. Historical >0
+    // counters alone incorrectly passed when A stopped as B was opened.
+    struct CallbackProgress final
+    {
+        std::uint64_t primaryAtCaptureStart=0,captureAtCaptureStart=0;
+        std::uint64_t primaryMid=0,captureMid=0;
+        std::uint64_t primaryEnd=0,captureEnd=0;
+    };
+
+    static bool continuousAfterCaptureStart(const CallbackProgress& p) noexcept
+    {
+        return p.primaryMid>p.primaryAtCaptureStart &&
+               p.captureMid>p.captureAtCaptureStart &&
+               p.primaryEnd>p.primaryMid &&
+               p.captureEnd>p.captureMid;
+    }
+
     static Verdict preflight(const Request& r) noexcept
     {
         if (r.primaryName.empty() || r.captureName.empty())
