@@ -342,7 +342,7 @@ test("MV-18 physical device swap cancels output and FX leases even at unchanged 
    old),{kind:"M4_FIRST_SOUND",expirePending:false},
    "first M4 input patch must preserve its own pending source");
  const bridge=readFileSync("web/approved-native-bridge.js","utf8");
- const a=bridge.indexOf("  function discardTransientNativeUi() {");
+ const a=bridge.indexOf("  function discardTransientNativeUi({preserveRetainedIdentity=false}={}) {");
  const b=bridge.indexOf("  function onNativeReadback(next,confirmed)",a);
  const cleanup=bridge.slice(a,b);
  assert.match(cleanup,/pendingExternal\.clear\(\);pendingSlotPowers\.clear\(\)/);
@@ -461,7 +461,7 @@ test("G-MV24 readback policy quarantines retained PCM without starving first M4 
  assert.doesNotMatch(policy.toString(),/document|window|backend|AudioContext|setTimeout/,
    "readback quarantine decision belongs to the pure Device ViewModel");
  const bridge=readFileSync("web/approved-native-bridge.js","utf8");
- const start=bridge.indexOf("  function discardTransientNativeUi() {");
+ const start=bridge.indexOf("  function discardTransientNativeUi({preserveRetainedIdentity=false}={}) {");
  const expire=bridge.indexOf("  function expireTransientNativeUi(reason) {",start);
  const readback=bridge.indexOf("  function onNativeReadback(next,confirmed)",expire);
  assert.ok(start>0&&expire>start&&readback>expire);
@@ -507,7 +507,7 @@ test("G-MV24 readback policy quarantines retained PCM without starving first M4 
 
 test("MV-12 approved bridge invalidates transient UI leases, not durable JUCE state",()=>{
   const source=readFileSync("web/approved-native-bridge.js","utf8");
-  const start=source.indexOf("  function discardTransientNativeUi() {");
+  const start=source.indexOf("  function discardTransientNativeUi({preserveRetainedIdentity=false}={}) {");
   const end=source.indexOf("  function onNativeReadback(next,confirmed)",start);
   assert.ok(start>0&&end>start);
   const cleanup=source.slice(start,end);
