@@ -177,7 +177,16 @@ int probe(const char* primaryLabel,const char* captureLabel,double rate,int fram
     capture.start();
     if(!capture.playing())
     {std::fputs("IO0_CAPTURE_START_REJECT\n",stderr);return 3;}
-    juce::Thread::sleep(durationMs); // CONTROL only, never the hardware callback
+    // Observe real callback movement AFTER B has started, in two separate
+    // windows. A can run before B opens then silently stall when B starts.
+    // Sleeping is CONTROL-only; neither realtime callback waits.
+    const auto aAtCaptureStart=primary.counters.calls.load();
+    const auto bAtCaptureStart=capture.counters.calls.load();
+    const int firstWindow=durationMs/2;
+    juce::Thread::sleep(firstWindow);
+    const auto aMid=primary.counters.calls.load();
+    const auto bMid=capture.counters.calls.load();
+    juce::Thread::sleep(durationMs-firstWindow);
     auto* a=primary.device.get();
     auto* b=capture.device.get();
     const std::wstring openedPrimary(a->getName().toWideCharPointer());
@@ -192,13 +201,18 @@ int probe(const char* primaryLabel,const char* captureLabel,double rate,int fram
     const auto aCalls=primary.counters.calls.load();
     const auto bCalls=capture.counters.calls.load();
     const auto bSignal=capture.counters.nonzero.load();
+    const bool primaryContinued=aMid>aAtCaptureStart&&aCalls>aMid;
+    const bool captureContinued=bMid>bAtCaptureStart&&bCalls>bMid;
+    const bool callbackContinuity=Policy::continuousAfterCaptureStart(
+        {aAtCaptureStart,bAtCaptureStart,aMid,bMid,aCalls,bCalls});
     const bool ok=verified==Policy::Verdict::ok&&
-        primary.playing()&&capture.playing()&&aCalls>0&&bCalls>0&&
+        primary.playing()&&capture.playing()&&callbackContinuity&&
         bSignal>0&&capture.counters.nonfinite.load()==0&&
         !primary.counters.violated.load()&&!capture.counters.violated.load();
     std::printf("IO0_RESULT=%s READBACK=%s PRIMARY_RATE=%.1f CAPTURE_RATE=%.1f "
         "PRIMARY_PERIOD=%d CAPTURE_PERIOD=%d PRIMARY_CALLBACKS=%llu "
         "CAPTURE_CALLBACKS=%llu CAPTURE_NONZERO_SAMPLES=%llu "
+        "PRIMARY_POST_B_PROGRESS=%d CAPTURE_POST_B_PROGRESS=%d "
         "CAPTURE_OUTPUT_MASK=%llu DSP_PROCESSED=0\n",
         ok?"PHYSICAL_PROBE_PASS":"PHYSICAL_PROBE_FAIL",Policy::reason(verified),
         readback.primaryRate,readback.captureRate,
@@ -206,6 +220,8 @@ int probe(const char* primaryLabel,const char* captureLabel,double rate,int fram
         static_cast<unsigned long long>(aCalls),
         static_cast<unsigned long long>(bCalls),
         static_cast<unsigned long long>(bSignal),
+        static_cast<int>(primaryContinued),
+        static_cast<int>(captureContinued),
         static_cast<unsigned long long>(readback.captureOutputMask));
     return ok?0:4;
 #endif
