@@ -197,6 +197,150 @@
     }
     return true;
   }
+  // G-MV30: M4 VST3 creation has ONE pure transaction policy. The host
+  // ACK can report a staged dryRoutingLab state, but that event is NEVER the
+  // independent, validated Console-v6 PCM readback. Editors open only when
+  // the accepted M4 snapshot proves the exact new catalog/instance/route.
+  function m4InsertPlan(snapshot,{channel,slot,catalogId,
+    verifiedM4=false,offline=false,pending=false}={}) {
+    const unavailable={kind:"UNAVAILABLE"};
+    const s=snapshot?.raw?.mixerSession,m=snapshot?.raw?.legacyM4;
+    const epoch=safeM4Token(snapshot?.device?.epoch),
+      revision=safeM4Token(m?.routingRevision);
+    if(offline||pending||verifiedM4!==true||
+       snapshot?.admitted!==false||snapshot?.retained===true||
+       s?.authority!=="M4"||m?.active!==true||m?.routeAccepted!==true||
+       m.nativeBusStructural===true||
+       epoch===null||revision===null||
+       s.deviceEpoch!==snapshot.device.epoch||
+       s.routeRevision!==m.routingRevision||
+       !Array.isArray(s.channels)||s.channels.length!==10||
+       !Number.isInteger(channel)||channel<0||channel>=10||
+       !s.channels[channel]||
+       !Number.isInteger(slot)||slot<0||slot>=8||
+       typeof catalogId!=="string"||!catalogId)return unavailable;
+    const instances=m.fxInstances?.[channel];
+    if(!Array.isArray(instances)||instances[slot]!=null||
+       (slot>0&&instances[slot-1]==null))return unavailable;
+    return {kind:"READY",action:"routingFxInsert",
+      payload:{id:catalogId,channel,slot,deviceEpoch:epoch,revision},
+      pending:{authority:"M4",id:catalogId,channel,slot,
+        epoch:snapshot.device.epoch,revision:m.routingRevision,acked:false}};
+  }
+  function m4InsertAckResult(pending,ack){
+    if(!pending||pending.authority!=="M4"||
+       !ack||ack.requestId!==pending.requestId)return "IGNORE";
+    return ack.ok===true&&ack.channel===pending.channel&&
+      ack.slot===pending.slot?"ACKED":"REJECTED";
+    // Deliberately ignore ack.state, including FX inventory and revision.
+  }
+  function m4InsertReadbackSettlement(pending,snapshot){
+    if(!pending||pending.authority!=="M4")return {kind:"NONE"};
+    const s=snapshot?.raw?.mixerSession,m=snapshot?.raw?.legacyM4,
+      revision=safeM4Token(m?.routingRevision),
+      previous=safeM4Token(pending.revision);
+    if(snapshot?.admitted!==false||snapshot?.retained===true||
+       s?.authority!=="M4"||m?.active!==true||m.routeAccepted!==true||
+       m.nativeBusStructural===true||
+       snapshot?.device?.epoch!==pending.epoch||
+       s.deviceEpoch!==pending.epoch||
+       s.routeRevision!==m.routingRevision||
+       previous===null||revision===null||revision<previous||
+       !Number.isInteger(pending.channel)||pending.channel<0||pending.channel>=10||
+       !Number.isInteger(pending.slot)||pending.slot<0||pending.slot>=8)
+      return {kind:"STALE"};
+    // A same-revision cached snapshot is never proof of a structural insert.
+    if(revision===previous)return {kind:"WAIT"};
+    const instances=m.fxInstances?.[pending.channel],
+      installed=Array.isArray(instances)?instances[pending.slot]:null;
+    if(installed&&installed.catalogId!==pending.id)return {kind:"STALE"};
+    if(!installed||typeof installed.instanceId!=="string"||
+       !installed.instanceId||pending.acked!==true)return {kind:"WAIT"};
+    return {kind:"CONFIRMED",channel:pending.channel,slot:pending.slot,
+      instanceId:installed.instanceId,epoch:safeM4Token(pending.epoch),
+      revision};
+  }
+
+
+  // G-MV31: one exact, immutable navigation policy for the verified /preview/
+  // FX editor. No HWND, IPC, DOM or duplicated editor state lives in this VM.
+  // Capture the accepted graph and device generation before a deferred click;
+  // the same generation must still own the instance when it is consumed.
+  function editorNavigationPlan(view,{channelId:id,slot,
+    hardwareConfiguration}={}) {
+    const unavailable={kind:"UNAVAILABLE"},graph=view?.graph;
+    if(!channelId(id)||!Number.isInteger(slot)||slot<0||slot>=8||
+       !rosterUnique(graph)||!Array.isArray(graph?.channels)||
+       !channelId(graph.revision)||!channelId(graph.rosterRevision)||
+       new Set(graph.channels.map(ch=>ch.id)).size!==graph.channels.length)
+      return unavailable;
+    const offline=view?.logical===true&&view?.admitted===false&&
+      view?.retained===false&&
+      typeof view.workspaceToken==="string"&&view.workspaceToken.length>0;
+    const physical=view?.logical!==true&&view?.admitted===true&&
+      view?.retained===false&&
+      view.graph.capabilities?.callbackOwnsChannelIds===true&&
+      view.raw?.mixerSession?.authority==="CHANNEL_ID"&&
+      view.raw.mixerSession.deviceEpoch===view.device?.epoch&&
+      channelId(view.device.epoch)&&
+      typeof hardwareConfiguration==="string"&&hardwareConfiguration.length>0;
+    if(!offline&&!physical)return unavailable;
+    const rows=graph.channels.filter(ch=>ch.id===id);
+    if(rows.length!==1||!VALID_ROLES.has(rows[0].role)||
+       !Array.isArray(rows[0].inserts))return unavailable;
+    const effect=rows[0].inserts[slot];
+    if(effect==null)return {kind:"PICKER"};
+    if(typeof effect.id!=="string"||!effect.id||
+       typeof effect.catalogId!=="string"||!effect.catalogId)
+      return unavailable;
+    const lease=Object.freeze({
+      authority:offline?"LOGICAL":"CHANNEL_ID",
+      channelId:id,slot,instanceId:effect.id,catalogId:effect.catalogId,
+      graphRevision:graph.revision,rosterRevision:graph.rosterRevision,
+      workspaceToken:offline?view.workspaceToken:null,
+      deviceEpoch:physical?view.device.epoch:null,
+      hardwareConfiguration:physical?hardwareConfiguration:null
+    });
+    return {kind:"OPEN",lease};
+  }
+  function editorNavigationLeaseMatches(view,lease,{hardwareConfiguration}={}) {
+    if(!lease||typeof lease!=="object")return false;
+    const now=editorNavigationPlan(view,{
+      channelId:lease.channelId,slot:lease.slot,hardwareConfiguration});
+    if(now.kind!=="OPEN")return false;
+    return Object.keys(now.lease).every(key=>now.lease[key]===lease[key])&&
+      Object.keys(lease).length===Object.keys(now.lease).length;
+  }
+
+  // M4 uses host ordinals, never ChannelIds. An old accepted FX inventory
+  // cannot be permission to open an editor after device/route owner changes.
+  function m4EditorPlan(snapshot,{channel,slot,verifiedM4=false,
+    offline=false}={}) {
+    const unavailable={kind:"UNAVAILABLE"},s=snapshot?.raw?.mixerSession,
+      m=snapshot?.raw?.legacyM4,
+      epoch=safeM4Token(snapshot?.device?.epoch),
+      revision=safeM4Token(m?.routingRevision);
+    if(offline||verifiedM4!==true||snapshot?.admitted!==false||
+       snapshot?.retained===true||s?.authority!=="M4"||
+       m?.active!==true||m.routeAccepted!==true||
+       m.nativeBusStructural===true||epoch===null||revision===null||
+       s.deviceEpoch!==snapshot.device.epoch||
+       s.routeRevision!==m.routingRevision||
+       !Array.isArray(s.channels)||s.channels.length!==10||
+       !Number.isInteger(channel)||channel<0||channel>=10||
+       !s.channels[channel]||
+       !Number.isInteger(slot)||slot<0||slot>=8)return unavailable;
+    const slots=m.fxInstances?.[channel];
+    if(!Array.isArray(slots))return unavailable;
+    const effect=slots[slot];
+    if(effect==null)return {kind:"PICKER"};
+    if(typeof effect.instanceId!=="string"||!effect.instanceId||
+       typeof effect.catalogId!=="string"||!effect.catalogId)
+      return unavailable;
+    return {kind:"OPEN",channel,slot,instanceId:effect.instanceId,
+      deviceEpoch:epoch,revision};
+  }
+
   function nativeInsertPlan(snapshot,{channelId:id,slot,catalogId,pending=false}={}) {
     const graph=snapshot?.graph;
     if(pending||snapshot?.admitted!==true||snapshot?.retained===true||
@@ -364,6 +508,8 @@
   return Object.freeze({powerReadback,mountedRackMatches,
     m4Presentation,nativePowerSettlement,m4PowerPlan,m4RackAckResult,
     m4RackSettlement,
+    m4InsertPlan,m4InsertAckResult,m4InsertReadbackSettlement,
+    editorNavigationPlan,editorNavigationLeaseMatches,m4EditorPlan,
     nativeInsertPlan,nativeEditPlan,nativeInsertSettlement,
     nativePowerPlan,nativePowerAckResult,
     globalPowerContext,globalPowerPlan,globalPowerAckResult,
