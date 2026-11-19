@@ -150,7 +150,13 @@ assert.match(playerRepository, /class PlayerSetlistRepository final/);
 assert.match(playerRepository, /juce::TemporaryFile staging\(target\)/);
 assert.match(playerRepository, /overwriteTargetFileWithTemporary\(\)/);
 assert.match(main, /PlayerSetlistRepository::load/);
-assert.match(main, /PlayerSetlistRepository::save/);
+assert.doesNotMatch(main, /PlayerSetlistRepository::save/);
+assert.doesNotMatch(main, /void persistPlayerLibrary\(\)/);
+assert.match(main, /commitPlayerMetadata/);
+const playerLiveCommit=read('engine/player/PlayerLiveMetadataCommitPolicy.h');
+assert.match(playerLiveCommit, /saveRejectedRollbackFailed/);
+assert.match(main, /NativeMeta::run/);
+assert.match(main, /stopPlayerAfterUnrecoveredMetadata/);
 const persistence=main.slice(main.indexOf('void restorePlayerLibrary()'),
   main.indexOf('bool playerShowMaySwitchSet()'));
 assert.doesNotMatch(persistence,
@@ -162,8 +168,9 @@ assert.match(main, /CuePolicy::plan/);
 const cueAction=main.slice(main.indexOf('if(action=="playerCueIn"'),
   main.indexOf('if(action=="playerPlay")'));
 assert.ok(cueAction.indexOf('engine_.setPlayerCueRange(nextCue->in,nextCue->out)') >= 0);
-assert.ok(cueAction.indexOf('cues.cueIn=nextCue->in') >
+assert.ok(cueAction.indexOf('commitPlayerTrackEdit(playerLibrary_,std::move(staged))') >
           cueAction.indexOf('engine_.setPlayerCueRange(nextCue->in,nextCue->out)'));
+assert.match(cueAction, /engine_\.setPlayerCueRange\(cues\.cueIn,cues\.cueOut\)/);
 assert.match(main, /action=="playerKeyStep" \|\| action=="playerTempoStep"/);
 assert.match(main, /setPlayerPitchTempo\(next\.key,next\.tempo\)/);
 assert.match(playerHtml, /id="playerKeyMinus"/);

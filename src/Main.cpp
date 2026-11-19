@@ -71,6 +71,7 @@
 #include "../engine/player/PlayerShowEditPolicy.h"
 #include "../engine/player/PlayerShowTransitionPolicy.h"
 #include "../engine/player/PlayerCueEditPolicy.h"
+#include "../engine/player/PlayerLiveMetadataCommitPolicy.h"
 #include "../engine/player/PlayerLibraryPolicy.h"
 #include <juce_core/juce_core.h>
 #include <thread>
@@ -3885,15 +3886,6 @@ private:
 
     // Versioned setlist v3. Song paths remain external and are NEVER moved,
     // deleted or copied by editing a show. v1/v2 migrate non-destructively.
-    void saveActivePlayerSet() {
-        if(playerSets_.empty())playerSets_.push_back({"My Setlist",{},{}});
-        if(playerActiveSet_<0 ||
-           playerActiveSet_>=static_cast<int>(playerSets_.size()))
-            playerActiveSet_=0;
-        auto& active=playerSets_[static_cast<std::size_t>(playerActiveSet_)];
-        active.files=playerLibrary_;
-        active.controls=playerTrackSettings_;
-    }
     void activatePlayerSet(int index) {
         if(index<0 || index>=static_cast<int>(playerSets_.size()))return;
         playerActiveSet_=index;
@@ -3932,32 +3924,48 @@ private:
         playerAutoNext_=parsed.autoNext;
         playerFadeMilliseconds_=parsed.fadeMs;
     }
-    void persistPlayerLibrary() {
-        saveActivePlayerSet();
-        const auto result=armix::player::PlayerSetlistRepository::save(
-            settingsDirectory().getChildFile("player-library.json"),
-            playerSets_,playerActiveSet_,playerAutoNext_,playerFadeMilliseconds_);
-        if(result==armix::player::PlayerSetlistRepository::SaveStatus::invalidState)
-            playerError_="Unable to save setlists; invalid setlist state";
-        else if(result==armix::player::PlayerSetlistRepository::SaveStatus::ioError)
-            playerError_="Unable to save setlists; check folder permissions";
-    }
-    bool commitPlayerTrackEdit(std::vector<juce::File> nextFiles,
-                               std::vector<PlayerTrackSettings> nextControls) {
+    bool commitPlayerMetadata(std::vector<juce::File> nextFiles,
+                              std::vector<PlayerTrackSettings> nextControls,
+                              bool nextAutoNext,int nextFadeMs) {
         using Edit=armix::player::PlayerSetlistEditTransaction;
         auto outcome=Edit::replaceActiveTracks(
             settingsDirectory().getChildFile("player-library.json"),
             playerSets_,playerActiveSet_,nextFiles,nextControls,
-            playerAutoNext_,playerFadeMilliseconds_);
+            nextAutoNext,nextFadeMs);
         if(!outcome.committed()) {
             playerError_=outcome.error;
             return false;
         }
-        // No accepted Player identity/queue/index change precedes disk commit.
+        // File acceptance comes before EVERY durable in-memory mutation.
         playerSets_=std::move(outcome.sets);
         playerLibrary_=std::move(nextFiles);
         playerTrackSettings_=std::move(nextControls);
+        playerAutoNext_=nextAutoNext;
+        playerFadeMilliseconds_=nextFadeMs;
         return true;
+    }
+    bool commitPlayerTrackEdit(std::vector<juce::File> nextFiles,
+                               std::vector<PlayerTrackSettings> nextControls) {
+        return commitPlayerMetadata(std::move(nextFiles),
+            std::move(nextControls),playerAutoNext_,playerFadeMilliseconds_);
+    }
+    bool commitPlayerPreferences(bool nextAutoNext,int nextFadeMs) {
+        return commitPlayerMetadata(playerLibrary_,playerTrackSettings_,
+                                    nextAutoNext,nextFadeMs);
+    }
+    void stopPlayerAfterUnrecoveredMetadata() {
+        // Persist rejected AND native restore rejected. Never leave an
+        // unrecorded live deck applying controls different from the setlist.
+        if(playerPendingIndex_>=0)playerQueueEpoch_.changed();
+        engine_.playerStop();
+        playerCurrent_=-1;
+        playerPendingIndex_=-1;
+        playerPendingQueueFile_={};
+        playerOutputPendingIndex_=-1;
+        playerLoopCurrent_=false;
+        playerAutoAdvanceGate_.rearm();
+        playerError_="Could not save song settings or restore native playback; "
+                     "Player stopped to keep setlist safe";
     }
     bool playerShowMaySwitchSet() {
         const auto state=engine_.playerStatus().getProperty("state","").toString();
@@ -4584,17 +4592,25 @@ private:
             else if(direction==1 || direction==-1)
                 next.tempo=std::clamp(next.tempo+direction*5,80,120);
             else return; // invalid native control intent cannot mutate DSP
-            // A performer must be able to tune NEXT while CURRENT is
-            // playing without changing CURRENT audio. Only send live DSP
-            // commands for the currently loaded song.
-            if(!target.updateLiveDeck ||
-               engine_.setPlayerPitchTempo(next.key,next.tempo)) {
-                playerTrackSettings_[static_cast<std::size_t>(i)]=next;
+            // NEXT changes persist without touching CURRENT audio. For a
+            // loaded CURRENT, use native-first acceptance, durable Save and
+            // compensation on failure; never publish unsaved track state.
+            using NativeMeta=armix::player::PlayerLiveMetadataCommitPolicy;
+            const auto previous=playerTrackSettings_[static_cast<std::size_t>(i)];
+            auto staged=playerTrackSettings_;
+            staged[static_cast<std::size_t>(i)]=next;
+            const auto outcome=NativeMeta::run(
+                target.updateLiveDeck,
+                [&]{return engine_.setPlayerPitchTempo(next.key,next.tempo);},
+                [&]{return commitPlayerTrackEdit(playerLibrary_,std::move(staged));},
+                [&]{return engine_.setPlayerPitchTempo(previous.key,previous.tempo);});
+            if(outcome==NativeMeta::Outcome::accepted)
                 playerError_.clear();
-                persistPlayerLibrary();
-                emitPlayerState(true);
-            }
-            return;
+            else if(outcome==NativeMeta::Outcome::nativeRejected)
+                playerError_="Unable to apply native KEY or TEMPO";
+            else if(outcome==NativeMeta::Outcome::saveRejectedRollbackFailed)
+                stopPlayerAfterUnrecoveredMetadata();
+            emitPlayerState(true);return;
         }
         if(action=="playerLoopToggle") {
             const bool enable=value.isBool() && static_cast<bool>(value);
@@ -4628,7 +4644,7 @@ private:
                 playerError_="Select the playing song to edit its cue";
                 emitPlayerState();return;
             }
-            auto& cues=playerTrackSettings_[static_cast<std::size_t>(
+            const auto cues=playerTrackSettings_[static_cast<std::size_t>(
                 playerCurrent_)];
             const auto transport=engine_.playerStatus();
             const double now=static_cast<double>(
@@ -4658,20 +4674,32 @@ private:
                     "OUT must be after IN":"Invalid song cue marker";
                 emitPlayerState();return;
             }
-            // Deck admission FIRST. Failed or invalid edits must never
-            // poison the persisted v3 archive or the WebView readback.
-            if(!engine_.setPlayerCueRange(nextCue->in,nextCue->out)) {
+            // Native admission FIRST (as before); stage the proposed
+            // archive edit, and restore the previous accepted cue if the
+            // durable Save rejects. Never mutate the live control vector
+            // until both native and disk accepted the candidate.
+            using NativeMeta=armix::player::PlayerLiveMetadataCommitPolicy;
+            auto staged=playerTrackSettings_;
+            staged[static_cast<std::size_t>(playerCurrent_)].cueIn=nextCue->in;
+            staged[static_cast<std::size_t>(playerCurrent_)].cueOut=nextCue->out;
+            const auto outcome=NativeMeta::run(true,
+                [&]{return engine_.setPlayerCueRange(nextCue->in,nextCue->out);},
+                [&]{return commitPlayerTrackEdit(playerLibrary_,std::move(staged));},
+                [&]{return engine_.setPlayerCueRange(cues.cueIn,cues.cueOut);});
+            if(outcome==NativeMeta::Outcome::nativeRejected) {
                 playerError_="Could not update native song markers";
                 emitPlayerState();return;
             }
-            cues.cueIn=nextCue->in;
-            cues.cueOut=nextCue->out;
+            if(outcome==NativeMeta::Outcome::saveRejectedRollbackFailed)
+                stopPlayerAfterUnrecoveredMetadata();
+            if(outcome!=NativeMeta::Outcome::accepted) {
+                emitPlayerState(true);return;
+            }
             if(playerLoopCurrent_ &&
                !armix::player::PlayerShowTransitionPolicy::validLoop(
-                   cues.cueIn,cues.cueOut,playerFadeMilliseconds_))
+                   nextCue->in,nextCue->out,playerFadeMilliseconds_))
                 playerLoopCurrent_=false;
-            playerError_.clear();persistPlayerLibrary();
-            emitPlayerState(true);return;
+            playerError_.clear();emitPlayerState(true);return;
         }
         if(action=="playerPlay")return playTransportMusic();
         if(action=="playerSeek") {
@@ -4704,14 +4732,19 @@ private:
             return playNextMusic();
         }
         if(action=="playerAutoNext") {
+            const bool next=value.isBool() && static_cast<bool>(value);
+            if(!commitPlayerPreferences(next,playerFadeMilliseconds_)) {
+                emitPlayerState(true);return;
+            }
             playerAutoAdvanceGate_.rearm();
-            playerAutoNext_=value.isBool() && static_cast<bool>(value);
-            persistPlayerLibrary();emitPlayerState(true);return;
+            playerError_.clear();emitPlayerState(true);return;
         }
         if(action=="playerFadeMs") {
             const int ms=static_cast<int>(value);
             if(ms!=0 && ms!=180 && ms!=500 && ms!=1500)return;
-            playerFadeMilliseconds_=ms;
+            if(!commitPlayerPreferences(playerAutoNext_,ms)) {
+                emitPlayerState();return;
+            }
             if(playerLoopCurrent_ && playerCurrent_>=0 &&
                playerCurrent_<static_cast<int>(playerTrackSettings_.size())) {
                 const auto cue=playerTrackSettings_[
@@ -4720,7 +4753,7 @@ private:
                     cue.cueIn,cue.cueOut,ms))
                     playerLoopCurrent_=false;
             }
-            persistPlayerLibrary();emitPlayerState();return;
+            playerError_.clear();emitPlayerState();return;
         }
         if(action=="playerSelect" || action=="playerPlayNow") {
             const int i=static_cast<int>(value);

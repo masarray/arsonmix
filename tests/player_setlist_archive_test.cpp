@@ -8,6 +8,7 @@
 #include "../src/PlayerSetlistArchive.h"
 #include "../src/PlayerSetlistRepository.h"
 #include "../src/PlayerSetlistEditTransaction.h"
+#include "../engine/player/PlayerLiveMetadataCommitPolicy.h"
 
 using Archive=armix::player::PlayerSetlistArchive;
 using SavedSet=armix::player::PlayerSavedSet;
@@ -351,6 +352,40 @@ int main() {
            failedTracks.status==Store::SaveStatus::ioError);
     assert(committedTracks.sets[0].files.size()==1);
     assert(transactionFile.loadFileAsString()==tracksBytes);
+    // N-MOD-17: preferences are saved on the same durable-first boundary.
+    // A rejected disk write cannot enable Auto Next or alter future fades.
+    const auto prefs=Edit::replaceActiveTracks(
+        transactionFile,committedTracks.sets,0,revisedFiles,revisedControls,
+        false,500);
+    assert(prefs.committed());
+    const auto acceptedPrefs=Store::load(transactionFile);
+    assert(acceptedPrefs.document && !acceptedPrefs.document->autoNext);
+    assert(acceptedPrefs.document->fadeMs==500);
+    const auto prefsBytes=transactionFile.loadFileAsString();
+    const auto failedPrefs=Edit::replaceActiveTracks(
+        blocked,prefs.sets,0,revisedFiles,revisedControls,true,1500);
+    assert(!failedPrefs.committed() &&
+           failedPrefs.status==Store::SaveStatus::ioError);
+    assert(transactionFile.loadFileAsString()==prefsBytes);
+
+    // Pure native+disk compensation sequencing. No JUCE audio device needed.
+    using Meta=armix::player::PlayerLiveMetadataCommitPolicy;
+    auto verifyMeta=[&](bool live,bool nativeOk,bool saveOk,bool rollbackOk,
+                        Meta::Outcome expected,const char* order) {
+        std::string sequence;
+        const auto outcome=Meta::run(live,
+            [&]{sequence+='A';return nativeOk;},
+            [&]{sequence+='S';return saveOk;},
+            [&]{sequence+='R';return rollbackOk;});
+        assert(outcome==expected && sequence==order);
+    };
+    verifyMeta(false,false,true,false,Meta::Outcome::accepted,"S");
+    verifyMeta(false,false,false,false,Meta::Outcome::saveRejectedRecovered,"S");
+    verifyMeta(true,false,true,true,Meta::Outcome::nativeRejected,"A");
+    verifyMeta(true,true,true,false,Meta::Outcome::accepted,"AS");
+    verifyMeta(true,true,false,true,Meta::Outcome::saveRejectedRecovered,"ASR");
+    verifyMeta(true,true,false,false,
+               Meta::Outcome::saveRejectedRollbackFailed,"ASR");
     assert(sandbox.deleteRecursively());
 
     // Legacy empty v3 content migrates to a non-destructive default setlist.
