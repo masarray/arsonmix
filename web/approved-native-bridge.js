@@ -839,6 +839,74 @@
   let lastM4UiSignature="",lastM4Controls="",nativeUiSourcePending=null;
   let lastM4PortSignature="",pendingOutputPatch=null,m4RequestSerial=0,outputSerial=7000;
   const pendingSourceQueue=new Map();
+  // G-MV29: one M4 routingChannelPatch adapter for OUT and M/ST.
+  // Pure strip VM decides admitted producer, safe host tokens, no-op,
+  // and exact pending lease. The bridge retains ONE native dispatcher.
+  function m4PatchSelect(p){
+    const t=scope?.tracks?.find(x=>m4Index(x)===p?.channel);
+    return t?document.querySelector(
+      '.strip[data-id="'+t.id+'"] select[data-field="output"]'):null;
+  }
+  function resetM4PatchUi(p,snapshot=null){
+    if(!p||p.operation!=="SET_PRIMARY_OUT")return;
+    const el=m4PatchSelect(p);
+    if(!el)return;
+    el.removeAttribute("aria-busy");
+    el.title="Primary output · verified native routing";
+    const row=snapshot?.raw?.legacyM4?.channels?.[p.channel];
+    const t=scope?.tracks?.find(x=>m4Index(x)===p.channel);
+    el.value=typeof row?.main==="boolean"?
+      (row.main?"Master":"SOURCE ONLY (No Main)"):(t?.output||"Master");
+  }
+  function reconcileM4ChannelPatchReadback(next){
+    const p=pendingOutputPatch;
+    if(!p)return;
+    const result=stripVM.m4ChannelPatchSettlement(p,next);
+    if(result==="WAIT")return;
+    pendingOutputPatch=null;
+    resetM4PatchUi(p,result==="CONFIRMED"?next:null);
+    if(result==="CONFIRMED")
+      status("CH "+(p.channel+1)+" "+
+        (p.operation==="SET_PROCESSING_FORMAT"?"M/ST ":"OUT ")+
+        p.target+" · native PCM readback verified");
+    else status("CH "+(p.channel+1)+
+      " channel patch expired · restoring independently accepted routing");
+  }
+  function dispatchM4ChannelPatch(t,operation,target,channel=m4Index(t)){
+    const plan=stripVM.m4ChannelPatchPlan(controller?.state()?.current,{
+      operation,channel,target,verifiedM4:m4Verified(),deviceReady:deviceReady(),
+      pending:!!pendingOutputPatch,sourcePending:!!nativeUiSourcePending
+    });
+    if(plan.kind==="NO_CHANGE"){
+      controller?.subscribe();return true;
+    }
+    if(plan.kind!=="READY")return false;
+    const requestId=++outputSerial;
+    pendingOutputPatch={requestId,...plan.pending};
+    if(operation==="SET_PRIMARY_OUT"){
+      const menu=m4PatchSelect(pendingOutputPatch);
+      if(menu){
+        // Pending selection is a draft, not accepted PCM.
+        menu.value=target==="MAIN"?"Master":"SOURCE ONLY (No Main)";
+        menu.setAttribute("aria-busy","true");
+        menu.title="Routing pending · awaiting native ACK and PCM readback";
+      }
+    }
+    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload});
+    status("CH "+(channel+1)+" "+
+      (operation==="SET_PROCESSING_FORMAT"?"processing ":"OUT → ")+
+      target+" · awaiting native PCM ACK/readback");
+    window.setTimeout(()=>{
+      if(pendingOutputPatch?.requestId!==requestId)return;
+      const p=pendingOutputPatch;
+      pendingOutputPatch=null;
+      resetM4PatchUi(p);
+      status("CH "+(channel+1)+" channel patch timed out · prior native state preserved");
+      controller?.subscribe();
+    },8000);
+    return true;
+  }
+
   function requestProcessingFormat(t){
     if(logicalView){
       const id=nativeIdFor(t),source=logicalView.graph.channels.find(ch=>ch.id===id);
@@ -870,28 +938,13 @@
       return true;
     }
     const channel=m4Index(t);
-    const ep=safeNativeCounter(hardware?.device?.epoch),
-      rev=safeNativeCounter(legacy()?.routingRevision);
-    if(!m4Verified()||channel<0||channel>=10||
-       ep===null||rev===null||pendingOutputPatch||nativeUiSourcePending||
-       !deviceReady()){
+    const accepted=controller?.state()?.current?.raw?.legacyM4?.channels?.[channel];
+    const target=accepted?.channelFormat==="MONO"?"STEREO":
+      accepted?.channelFormat==="STEREO"?"MONO":null;
+    if(!dispatchM4ChannelPatch(t,"SET_PROCESSING_FORMAT",target,channel)){
       status("M/ST unavailable · wait for accepted hardware route");
       return false;
     }
-    const target=t.format==="mono"?"STEREO":"MONO";
-    const requestId=++outputSerial;
-    pendingOutputPatch={requestId,channel,target,epoch:ep,
-      operation:"SET_PROCESSING_FORMAT"};
-    backend.emitEvent("arMixAction",{action:"routingChannelPatch",
-      operation:"SET_PROCESSING_FORMAT",requestId,channel,target,
-      deviceEpoch:ep,revision:rev});
-    status("CH "+(channel+1)+" processing "+target+" · verifying native PCM");
-    window.setTimeout(()=>{
-      if(pendingOutputPatch?.requestId!==requestId)return;
-      pendingOutputPatch=null;
-      status("CH "+(channel+1)+" M/ST timed out · prior format preserved");
-      controller?.subscribe();
-    },8000);
     return true;
   }
   function previewNativePan(t,el,event){
@@ -961,36 +1014,7 @@
       return true;
     }
     const channel=m4Index(t);
-    const ep=safeNativeCounter(hardware?.device?.epoch),
-      rev=safeNativeCounter(legacy()?.routingRevision);
-    if(!m4Verified()||channel<0||channel>=10||
-       (target!=="MAIN"&&target!=="NONE")||ep===null||rev===null||
-       pendingOutputPatch||!deviceReady())return false;
-    const accepted=legacy()?.channels?.[channel];
-    if(accepted?.main===(target==="MAIN")){
-      status("CH "+(channel+1)+" OUT already "+
-        (target==="MAIN"?"MAIN":"SOURCE ONLY")+" · native readback");
-      controller?.subscribe();return true; // no need to blink audio
-    }
-    const requestId=++outputSerial;
-    pendingOutputPatch={requestId,channel,target,epoch:ep,operation:"SET_PRIMARY_OUT"};
-    const menu=document.querySelector('.strip[data-id="'+t.id+'"] select[data-field="output"]');
-    // A draft visibly stays selected while pending, but t.output and
-    // audio graph remain exclusively the native accepted readback.
-    if(menu){
-      menu.value=target==="MAIN"?"Master":"SOURCE ONLY (No Main)";
-      menu.setAttribute("aria-busy","true");
-      menu.title="Routing pending · awaiting native ACK and PCM readback";
-    }
-    backend.emitEvent("arMixAction",{action:"routingChannelPatch",
-      requestId,channel,target,deviceEpoch:ep,revision:rev});
-    window.setTimeout(()=>{
-      if(pendingOutputPatch?.requestId!==requestId)return;
-      pendingOutputPatch=null;
-      status("CH "+(channel+1)+" OUT timed out · restoring verified native route");
-      controller?.subscribe();
-    },8000);
-    return true;
+    return dispatchM4ChannelPatch(t,"SET_PRIMARY_OUT",target,channel);
   }
   const pendingNativeSources=new Map();
   let activeNativeSource=null,nativeSourceSerial=0;
@@ -2827,6 +2851,7 @@
     // data can update controls; independent meters and FX racks keep moving.
     reconcileM4ControlReadback(next);
     reconcileM4RackReadback(next);
+    reconcileM4ChannelPatchReadback(next);
     if(readModel.kind==="M4") {
       paintM4Fallback(next);
       if(scope?.syncVerifiedM4Wires?.(session.channels.map(ch=>ch.source),m4TrackIds))
@@ -3136,35 +3161,22 @@
       controller.subscribe(); // request later independent producer readback
     });
     backend.addEventListener("arMixChannelPatchAck",ack=>{
-      if(!pendingOutputPatch||ack?.requestId!==pendingOutputPatch.requestId)return;
-      const p=pendingOutputPatch;
-      pendingOutputPatch=null;
-      const t=scope?.tracks?.find(x=>m4Index(x)===p.channel);
-      const el=t?document.querySelector(
-        '.strip[data-id="'+t.id+'"] select[data-field="output"]'):null;
-      if(el){
-        el.removeAttribute("aria-busy");
-        el.title="Primary output · verified native routing";
-      }
-      const row=ack?.state?.acceptedRoute?.channels?.[p.channel];
-      const accepted=ack?.ok===true && Number(ack.state?.epoch)===p.epoch &&
-        (p.operation==="SET_PROCESSING_FORMAT"?
-          row?.channelFormat===p.target:
-          row?.main===(p.target==="MAIN"));
-      if(accepted) {
-        if(el&&p.operation==="SET_PRIMARY_OUT")
-          el.value=p.target==="MAIN"?"Master":"SOURCE ONLY (No Main)";
-        status("CH "+(p.channel+1)+" "+
-          (p.operation==="SET_PROCESSING_FORMAT"?"M/ST ":"OUT ")+p.target+
-          " accepted · verifying native PCM");
-      } else {
-        if(el)el.value=t?.output||"Master";
+      const verdict=stripVM.m4ChannelPatchAckResult(pendingOutputPatch,ack);
+      if(verdict==="IGNORE")return;
+      if(verdict==="REJECTED"){
+        const p=pendingOutputPatch;
+        pendingOutputPatch=null;
+        resetM4PatchUi(p);
         status("CH "+(p.channel+1)+" "+
           (p.operation==="SET_PROCESSING_FORMAT"?"M/ST":"OUT")+
           " rejected · "+(ack?.error||"stale route"));
         nativeToast(ack?.error||"Native channel route rejected");
+      }else{
+        pendingOutputPatch.acked=true;
+        // Native ACK may arrive AFTER a separately accepted M4 snapshot.
+        reconcileM4ChannelPatchReadback(controller?.state()?.current);
       }
-      controller.subscribe();
+      controller?.subscribe(); // no ACK state is accepted PCM
     });
     backend.addEventListener("arMixRoutingFxBypassAck",ack=>{
       const key=Number(ack?.channel)+":"+Number(ack?.slot);
