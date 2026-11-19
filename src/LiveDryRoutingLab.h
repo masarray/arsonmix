@@ -1982,6 +1982,23 @@ public:
         }
     }
 
+    // CONTROL staging only: check the current accepted ChannelId roster.
+    // Source bindings and exact hardware masks must originate from genuine
+    // native device preflight; offline friendly names cannot authorize PCM.
+    bool prepareQualifiedCapturePlan(
+        std::uint64_t expectedEpoch,
+        std::span<const armix::device::CaptureEndpointView> devices,
+        std::span<const armix::device::QualifiedChannelSource> bindings,
+        armix::device::MultiDeviceInputPlan& destination,
+        armix::device::MultiDeviceInputFault& fault) const {
+        if(!channelIdPhysicalPcmActive()||!ready()||
+           expectedEpoch!=epoch()||nativeAccepted_.deviceEpoch!=expectedEpoch||
+           !nativeAccepted_.fxOwners)return false;
+        return armix::device::MultiDeviceInputPlan::prepare(
+            expectedEpoch,devices,bindings,
+            nativeAccepted_.graph.roster.channels(),destination,fault);
+    }
+
     // IO-2D CONTROL: stage B's already-open, independently attested ASIO
     // capture inside THIS accepted native graph/FX lease. The caller keeps
     // the output disarmed and owns the verified stream/device lifecycle;
