@@ -2181,7 +2181,9 @@ test("P0 MAIN WIRE unplug uses UI-to-native EdgeId and no fake graph",()=>{
 test("P0 real slot VST3 power and native editor use verified instance tokens",()=>{
  const bridge=read("web/approved-native-bridge.js");
  const main=read("src/Main.cpp");
- assert.match(bridge,/function verifiedFxFor\(t,slot\)/);
+ assert.match(bridge,/fxRackVM\.m4EditorPlan\(current,/);
+ assert.match(read("web/approved-fx-rack-view-model.js"),/function m4EditorPlan\(snapshot,/);
+ assert.doesNotMatch(bridge,/function verifiedFxFor\(/);
  assert.match(bridge,/function requestM4FxPower\(t,action,button=null\)/);
  assert.match(bridge,/if\(action==="slotPower"\)/);
  assert.match(bridge,/if\(action==="fxOn"\)/);
@@ -3611,8 +3613,13 @@ test("native FX remove/reorder/transfer requires exact token, ACK and ordered re
 
 test("ImmerSIB opens the exact native ChannelId HWND, survives VST3 editor, no success-only toast",()=>{
  const bridge=read("web/approved-native-bridge.js"),host=read("src/Main.cpp");
- assert.match(bridge,/insert\.catalogId==='armix\.builtin\.imersip\.v1' && current\.admitted/);
- assert.match(bridge,/backend\.emitEvent\("arMixAction",\{action:"routingFxEditor",channelId:id,slot,/);
+ const editorVM=read("web/approved-fx-rack-view-model.js");
+ assert.match(bridge,/fxRackVM\.editorNavigationPlan\(current,/);
+ assert.match(editorVM,/view\.raw\?\.mixerSession\?\.authority==="CHANNEL_ID"/);
+ assert.match(bridge,/else \{\s*\/\/ Both vendor VST3 and ImmerSIB retain their exact real/);
+ assert.match(bridge,/backend\.emitEvent\("arMixAction",\{action:"routingFxEditor",\s*channelId:editor\.channelId,slot:editor\.slot,/);
+ assert.match(bridge,/else if\(editor\.authority==="LOGICAL"\)/);
+ assert.match(bridge,/action:"logicalVendorFxEditor"/);
  assert.doesNotMatch(bridge,/else status\("Native VST3 editor opened"\)/);
  assert.match(host,/shownWindow=dedicatedImmerSIB\?immersibEditorWindow_:editorWindow_/);
  assert.match(host,/shownOwner=dedicatedImmerSIB\?immersibEditorOwner_:routedEditorOwner_/);
@@ -5842,4 +5849,207 @@ test("G-MV32 M4 PRIMARY cable verifies exact owner, epoch, lane, route and UI id
  assert.doesNotMatch(read("web/approved-wire-view-model.js"),
    /backend\.emitEvent|document\.querySelector|window\.setTimeout/,
    "pure ViewModel never becomes a second PCM controller");
+});
+
+test("G-MV30 M4 insert preflight requires one exact physical producer and next empty slot",()=>{
+ const snapshot={admitted:false,retained:false,device:{epoch:"42"},raw:{
+   mixerSession:{authority:"M4",deviceEpoch:"42",routeRevision:"10",
+     channels:Array.from({length:10},()=>({role:"INPUT"}))},
+   legacyM4:{active:true,routeAccepted:true,nativeBusStructural:false,
+     routingRevision:"10",fxInstances:Array.from({length:10},()=>[])}
+ }};
+ const opts={channel:2,slot:0,catalogId:"com.vendor.delay",verifiedM4:true};
+ const p=fxRackVM.m4InsertPlan(snapshot,opts);
+ assert.equal(p.kind,"READY");
+ assert.deepEqual(p.payload,{id:"com.vendor.delay",channel:2,slot:0,
+   deviceEpoch:42,revision:10});
+ assert.deepEqual(p.pending,{authority:"M4",id:"com.vendor.delay",
+   channel:2,slot:0,epoch:"42",revision:"10",acked:false});
+ for(const changed of [
+   {verifiedM4:false},{offline:true},{pending:true},{channel:10},
+   {channel:-1},{slot:8},{slot:1},{catalogId:""}
+ ])assert.deepEqual(fxRackVM.m4InsertPlan(snapshot,{...opts,...changed}),
+   {kind:"UNAVAILABLE"});
+ for(const change of [
+   s=>{s.admitted=true;},s=>{s.retained=true;},
+   s=>{s.raw.mixerSession.authority="CHANNEL_ID";},
+   s=>{s.raw.legacyM4.active=false;},
+   s=>{s.raw.legacyM4.routeAccepted=false;},
+   s=>{s.raw.legacyM4.nativeBusStructural=true;},
+   s=>{s.raw.mixerSession.routeRevision="11";},
+   s=>{s.device.epoch="9007199254740993";s.raw.mixerSession.deviceEpoch=s.device.epoch;},
+   s=>{s.raw.legacyM4.fxInstances[2][0]={catalogId:"already-installed"};}
+ ]){
+   const next=clone(snapshot);change(next);
+   assert.equal(fxRackVM.m4InsertPlan(next,opts).kind,"UNAVAILABLE");
+ }
+ const ordered=clone(snapshot);
+ ordered.raw.legacyM4.fxInstances[2].push({instanceId:"fx-original",catalogId:"first",bypassed:false});
+ assert.equal(fxRackVM.m4InsertPlan(ordered,{...opts,slot:1}).kind,"READY");
+});
+test("G-MV30 M4 insert ACK is not installed FX; only accepted producer readback opens editor",()=>{
+ const p={authority:"M4",id:"com.vendor.delay",requestId:"fx-95",channel:2,
+   slot:0,epoch:"42",revision:"10",acked:false};
+ const snap=(revision="10",entry=null)=>{
+   const fx=Array.from({length:10},()=>[]);if(entry)fx[2][0]=entry;
+   return {admitted:false,retained:false,device:{epoch:"42"},raw:{
+     mixerSession:{authority:"M4",deviceEpoch:"42",routeRevision:revision},
+     legacyM4:{active:true,routeAccepted:true,nativeBusStructural:false,
+       routingRevision:revision,fxInstances:fx}}};
+ };
+ const genuine={catalogId:p.id,instanceId:"native-instance-77",bypassed:false};
+ const forged={requestId:p.requestId,ok:true,channel:2,slot:0,state:{
+   epoch:"42",revision:"999",fxInstances:Array.from({length:10},()=>[])
+ }};
+ forged.state.fxInstances[2][0]=genuine;
+ assert.equal(fxRackVM.m4InsertAckResult(p,forged),"ACKED");
+ assert.equal(fxRackVM.m4InsertReadbackSettlement(p,snap()).kind,"WAIT");
+ assert.equal(fxRackVM.m4InsertReadbackSettlement({...p,acked:true},snap()).kind,"WAIT");
+ assert.equal(fxRackVM.m4InsertReadbackSettlement(p,snap("11",genuine)).kind,"WAIT",
+   "producer readback before ACK cannot open a plugin editor");
+ assert.deepEqual(fxRackVM.m4InsertReadbackSettlement({...p,acked:true},snap("11",genuine)),
+   {kind:"CONFIRMED",channel:2,slot:0,instanceId:genuine.instanceId,
+    epoch:42,revision:11});
+ assert.equal(fxRackVM.m4InsertReadbackSettlement({...p,acked:true},
+   snap("10",genuine)).kind,"WAIT","cached same revision cannot prove a structural insert");
+ assert.equal(fxRackVM.m4InsertReadbackSettlement({...p,acked:true},snap("11")).kind,"WAIT");
+ assert.equal(fxRackVM.m4InsertAckResult(p,{...forged,requestId:"fx-94"}),"IGNORE");
+ assert.equal(fxRackVM.m4InsertAckResult(p,{...forged,channel:3}),"REJECTED");
+ assert.equal(fxRackVM.m4InsertAckResult(p,{...forged,slot:1}),"REJECTED");
+ assert.equal(fxRackVM.m4InsertAckResult(p,{...forged,ok:false}),"REJECTED");
+ assert.equal(fxRackVM.m4InsertReadbackSettlement({...p,acked:true},
+   snap("11",{...genuine,catalogId:"other"})).kind,"STALE");
+ const wrongOwner=snap("11",genuine);wrongOwner.raw.mixerSession.authority="CHANNEL_ID";
+ assert.equal(fxRackVM.m4InsertReadbackSettlement({...p,acked:true},wrongOwner).kind,"STALE");
+ const unplugged=snap("11",genuine);unplugged.device.epoch="43";
+ assert.equal(fxRackVM.m4InsertReadbackSettlement({...p,acked:true},unplugged).kind,"STALE");
+ const stale=snap("9",genuine);
+ assert.equal(fxRackVM.m4InsertReadbackSettlement({...p,acked:true},stale).kind,"STALE");
+});
+test("G-MV30 bridge has one M4 insert IPC, and never paints or opens from ack.state",()=>{
+ const bridge=read("web/approved-native-bridge.js"),
+   source=read("web/approved-fx-rack-view-model.js");
+ assert.match(bridge,/fxRackVM\.m4InsertPlan\(accepted,/);
+ assert.match(bridge,/fxRackVM\.m4InsertAckResult\(pendingFxInsert,ack\)/);
+ assert.match(bridge,/fxRackVM\.m4InsertReadbackSettlement\(p,snapshot\)/);
+ assert.match(bridge,/reconcileM4FxInsertReadback\(next\)/);
+ assert.equal((bridge.match(/action:"routingFxInsert"/g)||[]).length,0,
+   "bridge must emit one ViewModel-planned action, not a duplicated raw dispatcher");
+ const ack=bridge.split('backend.addEventListener("arMixRoutingFxInsertAck",ack=>{')[1]
+   ?.split('backend.addEventListener("arMixCatalog",catalog=>{')[0];
+ assert.ok(ack);
+ assert.doesNotMatch(ack,/ack\?\.state|paintM4FxInstances\(|openRoutedFxEditor\(/);
+ assert.doesNotMatch(source,/document\.|window\.|backend\.emitEvent|setTimeout/);
+});
+
+// G-MV31: automatic native/logical FX editor navigation must never cross a
+// session generation between confirmed readback and the queued microtask.
+test("G-MV31 ChannelId FX editor action is bound to physical graph, roster, device and instance",()=>{
+  const raw=gmv20AcceptedGraph();
+  raw.mixerSession={authority:"CHANNEL_ID",deviceEpoch:raw.device.epoch,
+    routeRevision:raw.graph.revision,rosterRevision:raw.graph.rosterRevision};
+  raw.graph.channels[0].inserts=[{id:"instance-native-22",
+    catalogId:"vendor.fx-22",name:"Delay",bypassed:false}];
+  const snap=protocol.normalizeSnapshot(raw);
+  assert.ok(snap?.admitted,"must start from genuinely normalized native snapshot");
+  const id=snap.graph.channels[0].id,
+    hw=protocol.nativeHardwareConfiguration(snap.device);
+  const open=fxRackVM.editorNavigationPlan(snap,{
+    channelId:id,slot:0,hardwareConfiguration:hw});
+  assert.equal(open.kind,"OPEN");
+  assert.equal(open.lease.authority,"CHANNEL_ID");
+  assert.equal(open.lease.channelId,id);
+  assert.equal(open.lease.instanceId,"instance-native-22");
+  assert.equal(fxRackVM.editorNavigationLeaseMatches(snap,open.lease,
+    {hardwareConfiguration:hw}),true);
+  for(const edit of [
+    s=>{s.device.epoch="9999";s.raw.mixerSession.deviceEpoch="9999";},
+    s=>{s.graph.revision="998";},
+    s=>{s.graph.rosterRevision="997";},
+    s=>{s.graph.channels[0].inserts[0].id="instance-replacement";},
+    s=>{s.graph.channels[0].inserts[0].catalogId="another.vendor";},
+    s=>{s.raw.mixerSession.authority="M4";},
+    s=>{s.retained=true;s.admitted=false;},
+    s=>{s.graph.channels[0].inserts=[];},
+    s=>{s.graph.channels.push({...s.graph.channels[0]});},
+  ]){
+    const next=clone(snap);edit(next);
+    assert.equal(fxRackVM.editorNavigationLeaseMatches(next,open.lease,
+      {hardwareConfiguration:hw}),false);
+  }
+  assert.equal(fxRackVM.editorNavigationLeaseMatches(snap,open.lease,
+    {hardwareConfiguration:hw+":new-buffer"}),false,
+    "same-epoch device configuration replacement must revoke HWND navigation");
+  assert.equal(fxRackVM.editorNavigationPlan(snap,{
+    channelId:id,slot:1,hardwareConfiguration:hw}).kind,"PICKER");
+  assert.equal(fxRackVM.editorNavigationPlan(snap,{
+    channelId:id,slot:0,hardwareConfiguration:null}).kind,"UNAVAILABLE");
+  assert.equal(fxRackVM.editorNavigationPlan(snap,{
+    channelId:"9007199254740993",slot:0,hardwareConfiguration:hw}).kind,"UNAVAILABLE");
+});
+test("G-MV31 .smix editor navigation is scoped to exact workspace, graph, and FX lease",()=>{
+  const ch={id:"9007199254740993",role:"INPUT",
+    inserts:[{id:"logical-instance",catalogId:"catalog.test"}]};
+  const base={logical:true,admitted:false,retained:false,workspaceToken:"work-a",
+    device:{epoch:"0"},
+    graph:{revision:"5",rosterRevision:"5",channels:[ch]}};
+  const params={channelId:ch.id,slot:0};
+  const open=fxRackVM.editorNavigationPlan(base,params);
+  assert.equal(open.kind,"OPEN");
+  assert.equal(open.lease.authority,"LOGICAL");
+  assert.equal(open.lease.workspaceToken,"work-a");
+  assert.equal(open.lease.deviceEpoch,null);
+  assert.equal(fxRackVM.editorNavigationLeaseMatches(base,open.lease),true);
+  const changed=clone(base);
+  changed.workspaceToken="work-b";
+  assert.equal(fxRackVM.editorNavigationLeaseMatches(changed,open.lease),false);
+  changed.workspaceToken="work-a";changed.graph.revision="6";
+  assert.equal(fxRackVM.editorNavigationLeaseMatches(changed,open.lease),false);
+  const physical=clone(base);physical.logical=false;physical.admitted=true;
+  assert.equal(fxRackVM.editorNavigationLeaseMatches(physical,open.lease),false);
+  const offline=clone(base);offline.retained=true;
+  assert.equal(fxRackVM.editorNavigationPlan(offline,params).kind,"UNAVAILABLE");
+  const empty=clone(base);empty.graph.channels[0].inserts=[];
+  assert.equal(fxRackVM.editorNavigationPlan(empty,params).kind,"PICKER");
+});
+test("G-MV31 manual M4 editor must read one admitted FX slot from current host",()=>{
+  const snap={admitted:false,retained:false,device:{epoch:"55"},raw:{
+    mixerSession:{authority:"M4",deviceEpoch:"55",routeRevision:"12",
+      channels:Array.from({length:10},()=>({role:"INPUT"}))},
+    legacyM4:{active:true,routeAccepted:true,nativeBusStructural:false,
+      routingRevision:"12",fxInstances:Array.from({length:10},()=>[])}
+  }};
+  snap.raw.legacyM4.fxInstances[4][0]={
+    instanceId:"verified-m4-fx",catalogId:"vendor.m4",bypassed:false};
+  const args={channel:4,slot:0,verifiedM4:true};
+  assert.deepEqual(fxRackVM.m4EditorPlan(snap,args),{kind:"OPEN",
+    channel:4,slot:0,instanceId:"verified-m4-fx",deviceEpoch:55,revision:12});
+  assert.equal(fxRackVM.m4EditorPlan(snap,{...args,slot:1}).kind,"PICKER");
+  for(const delta of [
+    {verifiedM4:false},{offline:true},{channel:-1},{slot:8}
+  ])assert.equal(fxRackVM.m4EditorPlan(snap,{...args,...delta}).kind,"UNAVAILABLE");
+  for(const change of [
+    s=>{s.raw.mixerSession.authority="CHANNEL_ID";},
+    s=>{s.raw.legacyM4.routingRevision="13";},
+    s=>{s.device.epoch="56";},
+    s=>{s.raw.legacyM4.routeAccepted=false;},
+    s=>{s.raw.legacyM4.nativeBusStructural=true;},
+    s=>{s.raw.legacyM4.fxInstances[4][0].instanceId="";}
+  ]){
+    const v=clone(snap);change(v);
+    assert.equal(fxRackVM.m4EditorPlan(v,args).kind,"UNAVAILABLE");
+  }
+});
+test("G-MV31 bridge delegates deferred and manually opened FX editors to one pure plan",()=>{
+  const bridge=read("web/approved-native-bridge.js");
+  assert.match(bridge,/fxRackVM\.editorNavigationPlan\(verified,/);
+  assert.match(bridge,/fxRackVM\.editorNavigationPlan\(current,/);
+  assert.match(bridge,/fxRackVM\.editorNavigationLeaseMatches\(current,lease,/);
+  assert.match(bridge,/track&&nativeIdFor\(track\)===channelId/);
+  assert.match(bridge,/fxRackVM\.m4EditorPlan\(current,/);
+  assert.doesNotMatch(bridge,/function verifiedFxFor\(/);
+  assert.match(bridge,/scope\?\.closeNativePicker\?\.\(\)/);
+  assert.match(bridge,/openVerifiedInsertedFx\(p\.channelId,p\.slot,p\.catalogId,inserted\.id\)/);
+  assert.doesNotMatch(read("web/approved-fx-rack-view-model.js"),
+    /backend\.emitEvent|document\.|window\.|setTimeout/);
 });

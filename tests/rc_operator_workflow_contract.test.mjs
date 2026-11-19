@@ -52,7 +52,10 @@ test('built-in FX preset store works with verified offline logical workspace',()
 });
 test('FX picker closes and opens an actual editor only after accepted native or logical readback',()=>{
   assert.match(bridge,/function openVerifiedInsertedFx\(channelId,slot,catalogId,instanceId\)/);
-  assert.match(bridge,/effect\.id!==instanceId\|\|effect\.catalogId!==catalogId/);
+  assert.match(bridge,/plan\.lease\.instanceId!==instanceId/);
+  assert.match(bridge,/plan\.lease\.catalogId!==catalogId/);
+  assert.match(bridge,/fxRackVM\.editorNavigationLeaseMatches\(current,lease,/);
+  assert.match(bridge,/fxRackVM\.m4EditorPlan\(current,/);
   assert.match(bridge,/justInsertedLogicalFx/);
   assert.match(bridge,/scope\?\.closeNativePicker\?\.\(\);\s*openVerifiedInsertedFx\(p\.channelId,p\.slot,p\.catalogId,inserted\.id\)/);
   // Native editor requires verified accepted lease, not catalog key or ACK.
@@ -64,8 +67,18 @@ test('FX picker closes and opens an actual editor only after accepted native or 
   assert.match(fxVM,/confirmed\.requestId!==pending\.requestId/);
   assert.match(fxVM,/fx\.catalogId!==pending\.id/);
   assert.match(bridge,/pendingFxInsert=null;\s*scope\?\.closeNativePicker\?\.\(\)/);
-  assert.match(bridge,/ack\.channel===p\.channel && ack\.slot===p\.slot/);
-  assert.match(bridge,/paintM4FxInstances\(state\);\s*scope\?\.closeNativePicker\?\.\(\);\s*openRoutedFxEditor\(p\.channel,p\.slot,actual\.instanceId,epoch,revision\)/);
+  // G-MV30: the compatibility M4 insert must use the SAME accepted PCM
+  // principle as ChannelId; ACK-attached native state is never renderer proof.
+  assert.match(fxVM,/function m4InsertAckResult\(pending,ack\)/);
+  assert.match(fxVM,/ack\.channel===pending\.channel&&/);
+  assert.match(fxVM,/ack\.slot===pending\.slot/);
+  assert.match(fxVM,/function m4InsertReadbackSettlement\(pending,snapshot\)/);
+  assert.match(bridge,/fxRackVM\.m4InsertReadbackSettlement\(p,snapshot\)/);
+  assert.match(bridge,/openRoutedFxEditor\(decision\.channel,decision\.slot,decision\.instanceId,/);
+  const m4AckHandler=bridge.split('backend.addEventListener("arMixRoutingFxInsertAck",ack=>{')[1]
+    ?.split('backend.addEventListener("arMixCatalog",catalog=>{')[0];
+  assert.ok(m4AckHandler);
+  assert.doesNotMatch(m4AckHandler,/ack\?\.state|paintM4FxInstances\(state\)|openRoutedFxEditor\(/);
   assert.match(bridge,/consumeAction\?\.\(track,"openPlugin"/);
 });
 test('Vocal Throw wheel does not flicker performance button and presets have dark dropdown',()=>{
