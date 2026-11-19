@@ -134,7 +134,7 @@
       // edge matching the accepted primaryOutId may stand in for PRIMARY.
       // Explicit false remains a parallel SEND regardless of destination.
       (edge.primaryOutput===true||
-       (typeof edge.primaryOutput!=="boolean"&&edge.gainLinear===1)));
+       (edge.primaryOutput==null&&edge.gainLinear===1)));
     if(matching.length!==1)return unavailable;
     return {kind:"MUTATION",change:{op:"REMOVE",from:sourceId,
       edgeId:matching[0].edgeId}};
