@@ -1369,11 +1369,27 @@ public:
         return error;
     }
 
+    // CONTROL ONLY; no audio callback may block or free driver state.
+    // Stop the qualified view before closing B's capture producer. In-flight
+    // primary reads finish under the reader's own RT lease. The subsequent
+    // new primary-only graph then uses raw A pointers again, without a
+    // stale A+B map or a second render owner.
+    void retireQualifiedCaptureForNewGraph() noexcept {
+        qualifiedSecondaryInstalled_.store(false,std::memory_order_release);
+        qualifiedSecondaryReader_.stop();
+        secondaryCapture_.close();
+        qualifiedCaptureNeedsRemap_.store(false,std::memory_order_release);
+    }
+
     // Historical STOP command retained as a safe CLEAR PATCH alias.
     // Returning to legacy CH1 is explicitly forbidden in NORMAL production.
     juce::String clearProductionRouting() {
         setOutputMuted(true);
         secondaryOutput_.disarm();
+        // IO-2D: an A+B qualified input lease cannot be passed to the fresh
+        // primary-only graph. Retire both resources while CONTROL has muted
+        // every output, before unpublishing the old graph.
+        retireQualifiedCaptureForNewGraph();
         dryRoutingLab_.disable();
         return startUnpatchedProductionSession();
     }
@@ -1383,6 +1399,11 @@ public:
         const juce::var& command,
         const LiveDryRoutingLab::FxSelections& fx,
         const LiveDryRoutingLab::FxRestores* restored=nullptr) {
+        // A successful legacy M4 apply would supersede A+B virtual input
+        // layout. Require an explicit CLEAR PATCH rather than dropping its
+        // reader on a speculative edit that might fail validation.
+        if(qualifiedSecondaryInstalled_.load(std::memory_order_acquire))
+            return "CLEAR PATCH and explicitly remove secondary capture before applying M4 routing";
         if (dryRoutingLab_.nativeBusTopologyLive())
             return "REMOVE native GROUP/FX RETURN buses before applying an M4 route";
         if (!allOutputsDisarmed()) return "MUTE hardware output and DISARM STREAM before APPLY routing";
@@ -1418,6 +1439,7 @@ public:
     }
     void disableDryRoutingLab() noexcept {
         setOutputMuted(true); // never expose CH1 unexpectedly on STOP
+        retireQualifiedCaptureForNewGraph();
         dryRoutingLab_.disable();
     }
     // One structural graph transaction for SOURCE, OUT, M/ST and FX inserts:
