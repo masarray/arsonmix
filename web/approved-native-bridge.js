@@ -1532,10 +1532,18 @@
     if(m4ControlIsOwner())return m4Verified()&&m4Index(t)>=0;
     return channelIdScalarReady(parameter,t);
   }
-  const nativeEditIdentity=(t)=>({
+  // G-MV29: use one pure ViewModel projection of the current accepted
+  // physical generation. Route/roster changes retire queued targets even if
+  // epoch, hardware pin mask and local GUI strip number are unchanged.
+  const nativeEditIdentity=(t)=>stripVM.scalarNativeIdentity({
+    logical:!!logicalView,
     epoch:logicalView?"LOGICAL":String(hardware?.device?.epoch),
     authority:logicalView?"LOGICAL":mixerSession()?.authority,
-    channelId:logicalView?nativeIdFor(t):t?.kind==="master"?null:nativeIdFor(t)
+    channelId:logicalView?nativeIdFor(t):t?.kind==="master"?null:nativeIdFor(t),
+    master:t?.kind==="master",
+    hardwareConfiguration:logicalView?undefined:hardware?.hardwareConfiguration,
+    routingRevision:logicalView?undefined:String(legacy()?.routingRevision),
+    rosterRevision:logicalView?undefined:controller?.state()?.current?.graph?.rosterRevision
   });
   function sameNativeEditIdentity(edit) {
     return stripVM.scalarIdentityMatches(edit,nativeEditIdentity(edit.t));
