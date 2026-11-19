@@ -100,14 +100,82 @@
     return typeof value==="boolean"&&value===pending.bypassed?
       "CONFIRMED":"WAIT";
   }
-  function m4RackSettlement(pending,session) {
+  // G-MV28: the two M4 FX power buttons share a *single* pure
+  // admission/transaction plan. Legacy FX inventory is not permission to
+  // control a retired driver, M4 route or ChannelId-owned PCM.
+  // M4 host IPC uses JS-safe integer epoch/revision numbers. Never round
+  // the v6 uint64 identity in this compatibility adapter.
+  function safeM4Token(x) {
+    if(typeof x!=="string"||!/^[1-9][0-9]*$/.test(x))return null;
+    const n=Number(x);
+    return Number.isSafeInteger(n)&&n>0? n:null;
+  }
+  function m4PowerPlan(snapshot,{action,channel,slot=null,
+    verifiedM4=false,offline=false,pending=false}={}) {
+    const unavailable={kind:"UNAVAILABLE"};
+    const s=snapshot?.raw?.mixerSession,m=snapshot?.raw?.legacyM4,
+      epoch=safeM4Token(snapshot?.device?.epoch),
+      revision=safeM4Token(m?.routingRevision);
+    if(pending||offline||verifiedM4!==true||
+       snapshot?.admitted!==false||snapshot?.retained===true||
+       s?.authority!=="M4"||m?.active!==true||m?.routeAccepted!==true||
+       m.nativeBusStructural===true||
+       epoch===null||revision===null||
+       s.deviceEpoch!==snapshot.device.epoch||
+       s.routeRevision!==m.routingRevision||
+       !Array.isArray(s.channels)||s.channels.length!==10||
+       !Number.isInteger(channel)||channel<0||channel>=10||
+       !s.channels[channel])return unavailable;
+    const lease={channel,epoch:s.deviceEpoch,
+      revision:s.routeRevision,acked:false};
+    if(action==="fxOn") {
+      const row=s.channels[channel];
+      if(typeof row.fxRackBypassed!=="boolean"||slot!==null)
+        return unavailable;
+      const bypassed=!row.fxRackBypassed;
+      return {kind:"READY",action:"routingFxRackBypass",key:channel,
+        timeoutMs:8000,
+        pending:{...lease,bypassed},
+        payload:{channel,deviceEpoch:epoch,revision,value:bypassed}};
+    }
+    if(action!=="slotPower"||!Number.isInteger(slot)||
+       slot<0||slot>=8)return unavailable;
+    const instances=m.fxInstances?.[channel],live=instances?.[slot];
+    if(!Array.isArray(instances)||
+       typeof live?.instanceId!=="string"||!live.instanceId||
+       typeof live.catalogId!=="string"||!live.catalogId||
+       typeof live.bypassed!=="boolean")return unavailable;
+    const bypass=!live.bypassed;
+    return {kind:"READY",action:"routingFxBypass",
+      key:channel+":"+slot,timeoutMs:5000,
+      pending:{...lease,slot,token:live.instanceId,bypass},
+      payload:{channel,slot,instanceId:live.instanceId,
+        deviceEpoch:epoch,revision,value:bypass}};
+  }
+  function m4RackAckResult(pending,ack) {
+    if(!pending||!ack||ack.requestId!==pending.requestId)return "IGNORE";
+    return ack.ok===true&&ack.channel===pending.channel&&
+      String(ack.deviceEpoch)===pending.epoch&&
+      String(ack.routingRevision)===pending.revision&&
+      ack.bypassed===pending.bypassed?"ACKED":"REJECTED";
+  }
+  function m4RackSettlement(pending,snapshot) {
     if(!pending)return "NONE";
-    if(session?.authority!=="M4"||
-       session.deviceEpoch!==pending.epoch||
-       session.routeRevision!==pending.revision)return "STALE";
+    const s=snapshot?.raw?.mixerSession,m=snapshot?.raw?.legacyM4;
+    if(snapshot?.admitted!==false||snapshot?.retained===true||
+       s?.authority!=="M4"||m?.active!==true||
+       m.routeAccepted!==true||
+       snapshot?.device?.epoch!==pending.epoch||
+       s.deviceEpoch!==pending.epoch||
+       s.routeRevision!==pending.revision||
+       m.routingRevision!==pending.revision||
+       !Number.isInteger(pending.channel)||
+       pending.channel<0||pending.channel>=10||
+       !Array.isArray(s.channels)||s.channels.length!==10)
+      return "STALE";
     return pending.acked===true&&
-      session.channels?.[pending.channel]?.fxRackBypassed===pending.bypassed?
-      "CONFIRMED":"WAIT";
+      s.channels[pending.channel]?.fxRackBypassed===pending.bypassed?
+        "CONFIRMED":"WAIT";
   }
 
   // MV-8: do not invent JS-owned FX identities or interpret a catalog key
@@ -294,7 +362,8 @@
   }
 
   return Object.freeze({powerReadback,mountedRackMatches,
-    m4Presentation,nativePowerSettlement,m4RackSettlement,
+    m4Presentation,nativePowerSettlement,m4PowerPlan,m4RackAckResult,
+    m4RackSettlement,
     nativeInsertPlan,nativeEditPlan,nativeInsertSettlement,
     nativePowerPlan,nativePowerAckResult,
     globalPowerContext,globalPowerPlan,globalPowerAckResult,
