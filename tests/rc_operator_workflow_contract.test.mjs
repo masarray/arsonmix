@@ -52,7 +52,10 @@ test('built-in FX preset store works with verified offline logical workspace',()
 });
 test('FX picker closes and opens an actual editor only after accepted native or logical readback',()=>{
   assert.match(bridge,/function openVerifiedInsertedFx\(channelId,slot,catalogId,instanceId\)/);
-  assert.match(bridge,/effect\.id!==instanceId\|\|effect\.catalogId!==catalogId/);
+  assert.match(bridge,/plan\.lease\.instanceId!==instanceId/);
+  assert.match(bridge,/plan\.lease\.catalogId!==catalogId/);
+  assert.match(bridge,/fxRackVM\.editorNavigationLeaseMatches\(current,lease,/);
+  assert.match(bridge,/fxRackVM\.m4EditorPlan\(current,/);
   assert.match(bridge,/justInsertedLogicalFx/);
   assert.match(bridge,/scope\?\.closeNativePicker\?\.\(\);\s*openVerifiedInsertedFx\(p\.channelId,p\.slot,p\.catalogId,inserted\.id\)/);
   // Native editor requires verified accepted lease, not catalog key or ACK.
