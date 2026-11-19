@@ -17,7 +17,54 @@ static juce::var config(const juce::String& json) {
     return v;
 }
 
+static void verifyTransactionOutcomes() {
+    using Outcome=Coordinator::Outcome;
+    int bindCalls=0,rollbackCalls=0;
+    Coordinator::BindResult binding;
+    bool canRestore=true;
+    const auto bind=[&] {
+        ++bindCalls;
+        return binding;
+    };
+    const auto rollback=[&] {
+        ++rollbackCalls;
+        return canRestore;
+    };
+
+    auto result=Coordinator::complete({},false,bind,rollback);
+    assert(result.state==Outcome::accepted && bindCalls==1 && rollbackCalls==0);
+
+    binding={"Retained pin mapping requires confirmation",true,true};
+    result=Coordinator::complete({},false,bind,rollback);
+    assert(result.state==Outcome::needsRemap && result.canReusePins &&
+           result.error==binding.error && bindCalls==2 && rollbackCalls==0);
+
+    result=Coordinator::complete("ASIO pin names changed",true,bind,rollback);
+    assert(result.state==Outcome::topologyChanged && bindCalls==2 && rollbackCalls==0);
+
+    result=Coordinator::complete("Driver readback mismatch",false,bind,rollback);
+    assert(result.state==Outcome::restored && result.error=="Driver readback mismatch" &&
+           bindCalls==2 && rollbackCalls==1);
+
+    binding={"Mixer preparation was rejected"};
+    canRestore=false;
+    result=Coordinator::complete({},false,bind,rollback);
+    assert(result.state==Outcome::recoveryRequired && result.error==binding.error &&
+           bindCalls==3 && rollbackCalls==2);
+
+    juce::BigInteger selected;
+    selected.setBit(0);
+    selected.setBit(1);
+    const auto moved=armix::device::translateNamedPins(selected,{"Left","Right"},
+        {"Unused","Right","Left"});
+    assert(moved && !(*moved)[0] && (*moved)[1] && (*moved)[2]);
+    assert(!armix::device::translateNamedPins(selected,{"Left","Right"},
+        {"Left","Left","Right"}));
+    assert(!armix::device::translateNamedPins(selected,{"Left","Right"},{"Left"}));
+}
+
 int main() {
+    verifyTransactionOutcomes();
     // Nested JUCE driver modal loops must reject another concurrent APPLY
     // and release exactly once, including moved lease ownership.
     Coordinator owner;

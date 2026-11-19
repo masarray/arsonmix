@@ -206,8 +206,9 @@ test('DEVICE1 existing matrix drives real JUCE manager with gated native readbac
    native.indexOf('void applyCustomAudioDevice('));
  const coordinator=read('src/NativeDeviceApplyCoordinator.h');
  assert.match(open,/NativeDeviceApplyCoordinator::openSelected/);
- assert.match(native,/openSelectedAudioDevice\(typeName,candidate\)/);
- assert.match(native,/openSelectedAudioDevice\(previousType,before\)/);
+ assert.match(native,/deviceApply_\.execute\(engine_\.devices\(\),prepared/);
+ assert.match(coordinator,/openSelected\(manager,r.backend,candidate,false,phase\)/);
+ assert.match(coordinator,/openSelected\(manager,plan.previousBackend,plan.before,false,phase\)/);
  assert.match(coordinator,/setAudioDeviceSetup\(setup,true\)/);
   // OUTPUT ONLY has no physical microphone; do not invent input pins.
   assert.ok(coordinator.includes('manager.initialise(setup.inputDeviceName.isEmpty()?0:2,'));
@@ -230,13 +231,15 @@ test('DEVICE1 existing matrix drives real JUCE manager with gated native readbac
 test('explicit device Apply restores the authored mixer after driver readback and can roll back',()=>{
  const main=read('src/Main.cpp');
  const apply=main.slice(main.indexOf('void applyCustomAudioDevice('),main.indexOf('void showDeviceSetup()'));
- assert.match(apply,/if\(error\.isEmpty\(\)&&!finishAudioSetupAndRecoverMixer\(bindingMode\)\)/);
- assert.match(apply,/if\(!previousMixerBound && engine_\.directRouteAuthorized\(\)/);
- assert.match(apply,/finishAudioSetupAndRecoverMixer\(\);/);
- assert.match(apply,/explicitPairStillIdentified\?MixerBindingMode::verifiedMainPinApply/);
- assert.match(apply,/pinOutput.getArray\(\)->size\(\)!=2/);
+ const owner=read('src/NativeDeviceApplyCoordinator.h');
+ assert.match(apply,/finishAudioSetupAndRecoverMixer\(mode\)/);
+ assert.match(apply,/mode!=MixerBindingMode::exact && !previousMixerBound &&\s*engine_\.directRouteAuthorized\(\)/);
+ assert.doesNotMatch(apply,/getCurrentAudioDevice\(|closeAudioDevice\(|inspectRollback\(/);
+ assert.match(owner,/explicitPairStillIdentified\?BindingMode::verifiedMainPinApply/);
+ assert.match(owner,/output.getArray\(\)->size\(\)!=2/);
  assert.match(main,/restoreSavedMixerSession\(false,bindingMode\)/);
- assert.match(apply,/if\(refreshedAsio4All\) \{[\s\S]*?openSelectedAudioDevice\(typeName,candidate,true\)/);
+ assert.match(owner,/if\(refreshAsio4All\) \{[\s\S]*?openSelected\(manager,r.backend,candidate,true,phase\)/);
+ assert.match(owner,/matchesRollback\(plan.before,[\s\S]*?inspectRollback\(manager\)\) &&\s*hooks.bind\(BindingMode::exact\)/);
  assert.match(main,/epoch==asioRecoveryEpoch_/);
  assert.match(main,/authorizeRetainedAsioRestart\(\)[\s\S]*?restoreSavedMixerSession\(false,MixerBindingMode::verifiedAsioRestart\)/);
 });
@@ -324,8 +327,8 @@ test('P0 MAONO: one APPLY MUTE-ACKs before switching and native ARM',()=>{
   assert.match(js,/disabled=!!deviceBlocker\|\|deviceBusy\|\|applyMutePending/);
   assert.match(js,/deviceNote=ack\?\.ok\?'DEVICE ACCEPTED · OUTPUT MUTED · '\+devicePinNextStep\(\)/);
   assert.match(main,/!engine_\.allOutputsDisarmed\(\)/);
-  assert.match(main,/NativeDeviceApplyCoordinator::matchesApplied/);
-  assert.match(main,/NativeDeviceApplyCoordinator::inspectApplied\(manager\)/);
+  assert.match(main,/deviceApply_\.execute/);
+  assert.match(applyOwner,/!matchesApplied\(r,candidate,inspectApplied\(manager\)\)/);
   assert.match(applyOwner,/evidence\.activeInputs=device->getActiveInputChannels\(\)/);
   assert.match(applyOwner,/live\.deviceName==requested\.playback/);
   assert.match(applyOwner,/live\.activeInputs==a\.inputChannels/);
@@ -362,12 +365,12 @@ test('DEVICE2 native device list is cached on overlay open; explicit scan is fai
  assert.match(gui,/SCAN_ERROR|BLOCKED_ARMED/);
  const apply=native.slice(native.indexOf('void applyCustomAudioDevice('),
                           native.indexOf('void showDeviceSetup()',native.indexOf('void applyCustomAudioDevice(')));
- assert.match(apply,/NativeDeviceApplyCoordinator::matchesApplied/);
- assert.match(apply,/NativeDeviceApplyCoordinator::inspectApplied\(manager\)/);
+ assert.match(apply,/deviceApply_\.execute/);
+ assert.match(applyOwner,/!matchesApplied\(r,candidate,inspectApplied\(manager\)\)/);
  assert.match(applyOwner,/evidence\.activeInputs=device->getActiveInputChannels\(\)/);
  assert.match(applyOwner,/evidence\.activeOutputs=device->getActiveOutputChannels\(\)/);
  assert.match(applyOwner,/evidence\.deviceBuffer=device->getCurrentBufferSizeSamples\(\)/);
- assert.match(apply,/NativeDeviceApplyCoordinator::inspectRollback\(manager\)/);
+ assert.match(applyOwner,/inspectRollback\(manager\)/);
  assert.match(applyOwner,/live\.deviceName==before\.outputDeviceName/);
  assert.match(applyOwner,/live\.activeInputs==a\.inputChannels/);
  assert.match(applyOwner,/live\.activeOutputs==a\.outputChannels/);
@@ -630,7 +633,8 @@ test('ASIO4ALL automatic rebind has bounded retries, succeeds only after verifie
   assert.match(service,/asioRecoveryEpoch_=engine_\.dryRoutingLabEpoch\(\)/);
   assert.match(service,/setup\.useDefaultInputChannels=refreshWdm && !setup\.inputChannels\.isZero\(\)/);
   const apply=src.slice(src.indexOf('void applyCustomAudioDevice('),src.indexOf('void showDeviceSetup()'));
-  assert.doesNotMatch(apply,/asioRecoveryEpoch_=engine_\.dryRoutingLabEpoch\(\);\s*if\(changedAsioPinLayout\)/);
+  assert.match(apply,/case Apply::Outcome::topologyChanged:[\s\S]*?return send\(false,"RECOVERY_REQUIRED",result.error\);/);
+  assert.match(apply,/if\(restored\)asioRecoveryEpoch_=engine_\.dryRoutingLabEpoch\(\)/);
 });
 
 test('Missing ASIO device can reopen only the pinned registered user-selected driver',()=>{
