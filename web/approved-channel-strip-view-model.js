@@ -192,6 +192,121 @@
   }
 
 
+  // G-MV30: ONE pure ChannelId roster transaction authority for native
+  // CREATE_CHANNEL / CREATE_GROUP / DELETE_CHANNEL / REMOVE_BUS. The bridge
+  // owns one pending create and delete lane, native IPC, timers and UI.
+  // Neither ACK contents nor an unmodified accepted graph prove PCM edits.
+  const ROSTER_OPS=Object.freeze({
+    CREATE_CHANNEL:{action:"routingNativeTrackCreate",role:"INPUT"},
+    CREATE_GROUP:{action:"routingNativeBusCreate",role:"GROUP"},
+    DELETE_CHANNEL:{action:"routingNativeTrackDelete",role:"INPUT"},
+    REMOVE_BUS:{action:"routingNativeBusDelete",role:"BUS"}
+  });
+  function rosterMutationPlan(snapshot,{operation,channelId=null,
+    hardware=null,deviceReady=false,controllerPending=false,
+    structuralPending=false}={}) {
+    const unavailable={kind:"UNAVAILABLE"},spec=ROSTER_OPS[operation];
+    const d=snapshot?.device,session=snapshot?.raw?.mixerSession;
+    if(!spec||controllerPending||structuralPending||snapshot?.retained===true||
+       !decimalId(d?.epoch)||hardware?.device?.epoch!==d.epoch||
+       deviceReady!==true)return unavailable;
+    const g=snapshot?.graph,creating=operation.startsWith("CREATE_");
+    const admitted=snapshot?.admitted===true&&
+      session?.authority==="CHANNEL_ID"&&
+      session?.deviceEpoch===d.epoch&&
+      g?.capabilities?.supportedOps?.includes(operation)===true&&
+      decimalId(g?.revision)&&decimalId(g?.rosterRevision)&&
+      session?.routeRevision===g.revision&&
+      session?.rosterRevision===g.rosterRevision&&
+      Array.isArray(g?.channels);
+    if(admitted) {
+      let row=null;
+      if(!creating){
+        if(!decimalId(channelId))return unavailable;
+        const rows=g.channels.filter(ch=>ch.id===channelId);
+        if(rows.length!==1)return unavailable;
+        row=rows[0];
+        if(operation==="DELETE_CHANNEL"&&row.role!=="INPUT"||
+           operation==="REMOVE_BUS"&&
+           !["GROUP","FX_RETURN"].includes(row.role))
+          return unavailable;
+      }
+      return {kind:"READY",action:spec.action,
+        payload:{...(creating?{}:{channelId}),deviceEpoch:d.epoch,
+          graphRevision:g.revision,rosterRevision:g.rosterRevision},
+        pending:{operation,epoch:d.epoch,baseGraphRevision:g.revision,
+          baseRosterRevision:g.rosterRevision,
+          ...(creating?{}:{id:channelId,role:row.role}),
+          acked:false}};
+    }
+    // Only first AUDIO TRACK may bootstrap a verified silent prepared M4
+    // graph. A BUS cannot bootstrap. No browser-made graph or auto-arm.
+    const m=snapshot?.raw?.legacyM4;
+    if(operation!=="CREATE_CHANNEL"||snapshot?.admitted!==false||
+       session?.authority!=="NONE"||session.deviceEpoch!==d.epoch||
+       m?.active!==true||m?.routeAccepted!==false||
+       !positiveCounter(m.routingRevision))return unavailable;
+    return {kind:"READY",action:spec.action,
+      payload:{deviceEpoch:d.epoch,bootstrapRevision:m.routingRevision},
+      pending:{operation,epoch:d.epoch,bootstrap:true,acked:false}};
+  }
+  function rosterAckResult(pending,ack) {
+    if(!pending||ack?.requestId!==pending.requestId)return "IGNORE";
+    if(ack.ok!==true)return "REJECTED";
+    // Native host emits graphRevision on both create/delete. It is a
+    // correlated ACK target, not the independently installed PCM graph.
+    if(!decimalId(ack.graphRevision)||
+       (!pending.bootstrap&&
+        (!decimalId(pending.baseGraphRevision)||
+         BigInt(ack.graphRevision)<=BigInt(pending.baseGraphRevision))))
+      return "REJECTED";
+    if(pending.operation==="CREATE_CHANNEL"||
+       pending.operation==="CREATE_GROUP")
+      return decimalId(ack.createdId)&&
+        ack.createdId!==pending.id?"ACKED":"REJECTED";
+    if(pending.operation==="DELETE_CHANNEL"||
+       pending.operation==="REMOVE_BUS")
+      return ack.channelId===pending.id?"ACKED":"REJECTED";
+    return "REJECTED";
+  }
+  function rosterReadbackSettlement(pending,snapshot) {
+    if(!pending)return "NONE";
+    if(snapshot?.device?.epoch!==pending.epoch||
+       snapshot?.retained===true)return "STALE";
+    const session=snapshot?.raw?.mixerSession,g=snapshot?.graph;
+    // Initial bootstrap can be in-flight before ChannelId admission.
+    if(snapshot?.admitted!==true)
+      return pending.bootstrap&&session?.authority==="NONE"?"WAIT":"STALE";
+    if(session?.authority!=="CHANNEL_ID"||
+       session.deviceEpoch!==pending.epoch||
+       !decimalId(g?.revision)||!decimalId(g?.rosterRevision)||
+       session.routeRevision!==g.revision||
+       session.rosterRevision!==g.rosterRevision||
+       !Array.isArray(g?.channels))return "STALE";
+    if(!pending.bootstrap){
+      if(!decimalId(pending.baseGraphRevision)||
+         !decimalId(pending.baseRosterRevision)||
+         BigInt(g.revision)<BigInt(pending.baseGraphRevision)||
+         BigInt(g.rosterRevision)<BigInt(pending.baseRosterRevision))
+        return "STALE";
+    }
+    if(pending.acked!==true||!decimalId(pending.ackRevision)||
+       BigInt(g.revision)<BigInt(pending.ackRevision)||
+       (!pending.bootstrap&&
+        (BigInt(g.revision)<=BigInt(pending.baseGraphRevision)||
+         BigInt(g.rosterRevision)<=BigInt(pending.baseRosterRevision))))
+      return "WAIT";
+    const matches=g.channels.filter(ch=>ch.id===(pending.createdId||pending.id));
+    if(pending.operation==="CREATE_CHANNEL"||
+       pending.operation==="CREATE_GROUP")
+      return decimalId(pending.createdId)&&matches.length===1&&
+        matches[0].role===ROSTER_OPS[pending.operation].role?
+        "CONFIRMED":"WAIT";
+    return (pending.operation==="DELETE_CHANNEL"||
+       pending.operation==="REMOVE_BUS")&&
+       decimalId(pending.id)&&matches.length===0?"CONFIRMED":"WAIT";
+  }
+
   // G-MV29: one M4-native physical channel-patch policy for both OUT
   // (MAIN/SOURCE ONLY) and MONO/STEREO. The bridge keeps one dispatcher,
   // request ID and timeout, but no longer decides PCM eligibility from
@@ -861,7 +976,8 @@
 
   return Object.freeze({outputTargets,inputChoices,externalChoices,
     primaryChoices,resolvePrimarySelection,readbackBindings,externalPending,
-    primaryOutMutation,externalOutputPlan,m4ChannelPatchPlan,
+    primaryOutMutation,externalOutputPlan,rosterMutationPlan,
+    rosterAckResult,rosterReadbackSettlement,m4ChannelPatchPlan,
     m4ChannelPatchAckResult,m4ChannelPatchSettlement,sourceQueueSelection,
     sourceDispatchPlan,sourceQueueHead,sourceQueueAlreadyInstalled,
     sourceQueueRequestLease,
