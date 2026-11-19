@@ -804,7 +804,8 @@
     return !!edit && !!identity &&
       edit.epoch===identity.epoch &&
       edit.authority===identity.authority &&
-      edit.channelId===identity.channelId;
+      edit.channelId===identity.channelId &&
+      edit.hardwareConfiguration===identity.hardwareConfiguration;
   }
   // Last pointer target is DISPLAY-ONLY until independently installed
   // fader PCM readback matches it; never rewrite a native track model.
@@ -853,7 +854,8 @@
   // local strip key, so reconnect/roster replacement can send immediately.
   function scalarDispatchLease(edit,at) {
     return {at,epoch:edit.epoch,authority:edit.authority,
-      channelId:edit.channelId};
+      channelId:edit.channelId,
+      hardwareConfiguration:edit.hardwareConfiguration};
   }
   function scalarGestureFlushPlan({logical=false,final=false,now,
                                     lastSent=null,identity=null}={}) {
