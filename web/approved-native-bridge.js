@@ -1535,7 +1535,9 @@
   const nativeEditIdentity=(t)=>({
     epoch:logicalView?"LOGICAL":String(hardware?.device?.epoch),
     authority:logicalView?"LOGICAL":mixerSession()?.authority,
-    channelId:logicalView?nativeIdFor(t):t?.kind==="master"?null:nativeIdFor(t)
+    channelId:logicalView?nativeIdFor(t):t?.kind==="master"?null:nativeIdFor(t),
+    // A same-epoch pin/rate/buffer remap retires all previous GUI gestures.
+    hardwareConfiguration:logicalView?undefined:hardware?.hardwareConfiguration
   });
   function sameNativeEditIdentity(edit) {
     return stripVM.scalarIdentityMatches(edit,nativeEditIdentity(edit.t));
