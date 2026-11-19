@@ -19,6 +19,7 @@
 #include "../engine/device/JuceIndependentClockDevice.h"
 #include "../engine/device/LiveSecondaryOutputDevice.h"
 #include "../engine/device/LiveSecondaryCaptureDevice.h"
+#include "../engine/device/SecondaryCaptureReadbackState.h"
 #include "../engine/core/LiveOutputRouteGate.h"
 #include "../engine/core/NativeOutputTransition.h"
 #include "../engine/core/NativeRenderAuthority.h"
@@ -2714,6 +2715,56 @@ public:
         o->setProperty ("secondaryOutputUnderflow",static_cast<double>(streamFifo.underflowFrames));
         o->setProperty ("secondaryOutputPriming",static_cast<double>(streamFifo.primingFrames));
         o->setProperty ("secondaryOutputOverflow",static_cast<double>(streamFifo.overflowFrames));
+        // IO-3A: device B is a capture producer only. Native readback is
+        // projected off the audio callback; this is NOT a GUI-selected source
+        // and NOT proof of acoustic hardware FAT or a routed live ChannelId.
+        const auto b=secondaryCapture_.readback();
+        const auto readerStatus=qualifiedSecondaryReader_.status();
+        const bool bInstalled=qualifiedSecondaryInstalled_.load(
+            std::memory_order_acquire);
+        const bool bNeedsRemap=qualifiedCaptureNeedsRemap_.load(
+            std::memory_order_acquire);
+        const bool epochMatches=b.primaryEpoch!=0 &&
+            b.primaryEpoch==dryRoutingLab_.epoch();
+        const auto captureState=armix::device::classifySecondaryCapture(
+            bInstalled,bNeedsRemap,b.ready,b.faulted,epochMatches,
+            b.clock.captureBlocks,readerStatus.secondaryAccepted);
+        auto secondary=std::make_unique<juce::DynamicObject>();
+        secondary->setProperty("role","INPUT_ONLY_ASIO");
+        secondary->setProperty("status",
+            armix::device::secondaryCaptureStateName(captureState));
+        secondary->setProperty("installedInputMap",bInstalled);
+        secondary->setProperty("needsRemap",bNeedsRemap);
+        secondary->setProperty("driverReady",b.ready);
+        secondary->setProperty("driverFault",b.faulted);
+        secondary->setProperty("primaryEpochMatches",epochMatches);
+        secondary->setProperty("driver",b.driverName);
+        secondary->setProperty("activePinMaskHex",b.activeInputPins.toString(16));
+        secondary->setProperty("inputChannels",b.callbackInputs);
+        secondary->setProperty("captureRate",b.captureRate);
+        secondary->setProperty("primaryRate",b.primaryRate);
+        secondary->setProperty("capturePeriod",b.capturePeriod);
+        secondary->setProperty("primaryPeriod",b.primaryPeriod);
+        secondary->setProperty("bridgeTargetMs",b.bridgeTargetMs);
+        secondary->setProperty("primaryEpoch",
+            juce::String(std::to_string(b.primaryEpoch)));
+        secondary->setProperty("captureGeneration",
+            juce::String(std::to_string(b.captureGeneration)));
+        secondary->setProperty("deviceLease",
+            juce::String(std::to_string(b.deviceLease)));
+        secondary->setProperty("classFingerprintHex",
+            juce::String::toHexString(
+                static_cast<juce::int64>(b.driverClassFingerprint)));
+        secondary->setProperty("identityProvenance",
+            "ASIO_REGISTERED_CLASS_NOT_PHYSICAL_ENDPOINT_GUID");
+        secondary->setProperty("captureBlocks",
+            static_cast<double>(b.clock.captureBlocks));
+        secondary->setProperty("primaryConsumedBlocks",
+            static_cast<double>(readerStatus.secondaryAccepted));
+        secondary->setProperty("silentPrimaryBlocks",
+            static_cast<double>(readerStatus.secondarySilent));
+        secondary->setProperty("sourceAudibleProven",false);
+        o->setProperty("secondaryCapture",juce::var(secondary.release()));
         o->setProperty ("adaptiveClockActive", dual);
         o->setProperty ("adaptiveClockFaulted", dual && independent_.faulted());
         o->setProperty ("adaptiveClockMode", dual ? "INDEPENDENT_WASAPI_RENDER_MASTER" : "DIRECT");

@@ -3,6 +3,7 @@
 #include "../../engine/device/QualifiedSecondaryCaptureReader.h"
 #include "../../engine/device/QualifiedCaptureHostMode.h"
 #include "../../engine/device/QualifiedCaptureAdmission.h"
+#include "../../engine/device/SecondaryCaptureReadbackState.h"
 #include "../../engine/device/QualifiedInputGraphBridge.h"
 #include "../../engine/core/DynamicNativeSessionPublisher.h"
 #include <array>
@@ -20,6 +21,25 @@ inline bool near(float a,float b,float tolerance=0.03f) {
     return std::abs(a-b)<tolerance;
 }
 inline void run() {
+    using Health=d::SecondaryCaptureReadbackState;
+    const auto health=d::classifySecondaryCapture;
+    check(health(false,false,false,false,false,0,0)==Health::notConfigured,
+          "No secondary is not a phantom hardware device");
+    check(health(true,true,true,false,true,4,4)==Health::needsRemap,
+          "Actual A epoch change invalidates B even with old callback evidence");
+    check(health(true,false,true,false,false,4,4)==Health::degraded,
+          "A epoch mismatch never advertises B capture LIVE");
+    check(health(true,false,false,true,true,0,0)==Health::degraded,
+          "B fault isolates capture without optimistic READY");
+    check(health(true,false,true,false,true,0,0)==Health::waitingForPcm,
+          "Driver-open is not capture PCM evidence");
+    check(health(true,false,true,false,true,4,0)==Health::waitingForPcm,
+          "B-only producer blocks do not prove primary consumption");
+    check(health(true,false,true,false,true,4,2)==Health::pcmFlowObserved,
+          "Both independent capture and master PCM consumption observed");
+    check(d::secondaryCaptureStateName(Health::pcmFlowObserved)==
+          std::string_view("PCM_FLOW_OBSERVED"),
+          "Readback state is stable and machine-readable");
     // The host may select direct A or qualified A+B, never a partial bridge.
     check(d::qualifiedCaptureHostMode(false,false)==
           d::QualifiedCaptureHostMode::directPrimary,

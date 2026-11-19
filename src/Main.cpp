@@ -1741,6 +1741,9 @@ private:
             obj->setProperty("globalFxBypassed",engine_.globalFxBypassed());
             obj->setProperty("channelAppearance",channelAppearance_.snapshot(accepted.getProperty("graph",{})));
             obj->setProperty("waitingAsioInputs",live.getProperty("waitingAsioInputs",0));
+            // IO-3A: native diagnostic only; no UI-side claim of accepted
+            // A+B source routing or an authorized driver by display name.
+            obj->setProperty("secondaryCapture",live.getProperty("secondaryCapture",{}));
             obj->setProperty("externalOutputs",
                 live.getProperty("dryRoutingLab",{}).getProperty("externalOutputs",{}));
             obj->setProperty("externalRevision",

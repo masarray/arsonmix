@@ -1346,7 +1346,28 @@
     captureRow.id='arIODeviceCaptureEvidence';
     captureRow.setAttribute('aria-label','Verified raw input PCM before mixer routing');
     panel.appendChild(captureRow);
-
+    // IO-3A additive native readback. No optimistic LIVE status, no
+    // unqualified GUI device controls or phantom driver selection.
+    const b=lastStatus.secondaryCapture||{};
+    if(b.status&&b.status!=='NOT_CONFIGURED'){
+      const status=String(b.status);
+      const name=String(b.driver||'SECONDARY CAPTURE B');
+      const details=b.driverReady?
+        Number(b.inputChannels||0)+' IN · '+Number(b.captureRate||0).toLocaleString('en-US')+
+        ' Hz · '+Number(b.capturePeriod||0)+' samples':
+        'No active verified capture callback';
+      const row=node('div','arIODeviceCaptureEvidence');
+      row.setAttribute('aria-label','Secondary ASIO input native readback');
+      row.append(node('span','arIODeviceMicro','DEVICE B · CAPTURE ONLY · '+status.replaceAll('_',' ')),
+        node('span','',name+' · '+details));
+      if(status==='PCM_FLOW_OBSERVED')
+        row.appendChild(node('small','','Native A+B capture blocks observed; ChannelId source routing still requires matching graph readback.'));
+      else if(status==='NEEDS_REMAP')
+        row.appendChild(node('small','','Primary device generation changed; explicit native source remap required.'));
+      else if(status==='DEGRADED')
+        row.appendChild(node('small','','B unavailable or faulted; do not substitute Device A pins.'));
+      panel.appendChild(row);
+    }
 
     if(!types.length&&!a.open)
       panel.appendChild(node('p','arIODeviceEmpty',
@@ -1519,6 +1540,8 @@
     const signature=ioTab+'|'+JSON.stringify([s.epoch,s.revision,s.pending,s.draftRoutes,
       s.outputPorts,s.mainOutputs,s.draftMainOutputs,s.monitorOutputs,s.draftMonitorOutputs,s.monitorSends,s.draftMonitorSends,s.ports,deviceInventory,deviceDraft,deviceBusy,deviceNote,matrixPage[ioTab==='device'?deviceMatrixView:ioTab],deviceMatrixView,monitorSendsExpanded,
       [...matrixDraft],[...matrixSide],softwareEdit,softwarePage,sourceIdentity(s),sourceAliases(s),
+      lastStatus.secondaryCapture?.status,lastStatus.secondaryCapture?.driver,
+      lastStatus.secondaryCapture?.deviceLease,
       !!lastStatus.monitor,window.__arMixFastAudioState?.()]);
     if(lastSignature===signature)return;
     lastSignature=signature;
@@ -1977,7 +2000,12 @@
     if(!overlay.hidden){
       refreshAudioPath(); // P0 text-only 12Hz; no matrix DOM churn
       const identity=(d.driver||'')+'/'+(d.rate||0)+'/'+(d.buffer||0);
-      if(overlay.dataset.deviceIdentity!==identity){overlay.dataset.deviceIdentity=identity;refreshIO();}
+      const b=d.secondaryCapture||{};
+      const deviceIdentity=identity+'/'+String(b.status||'')+'/'+
+        String(b.driver||'')+'/'+String(b.deviceLease||'');
+      if(overlay.dataset.deviceIdentity!==deviceIdentity){
+        overlay.dataset.deviceIdentity=deviceIdentity;refreshIO();
+      }
     }
   });
   backend?.addEventListener?.('arMixAudioDeviceInventory',d=>{
