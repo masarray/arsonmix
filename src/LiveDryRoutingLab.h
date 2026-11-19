@@ -2499,6 +2499,15 @@ public:
            (retained && channelIdPhysicalPcmActive()) ||
            !nativeAccepted_.matches(nativePublisher_,documentEpoch,nativeAccepted_.pcmRevision))
             return "No authoritative native ChannelId graph";
+        // IO-2D persistence P1: v1 .smix can store primary A physical
+        // HardwareBinding only. Saving a qualified A+B graph would persist
+        // virtual callback ordinals with no B device identity, making the
+        // new file unrestorable and destroying recoverable autosave state.
+        // Reject BEFORE writing document/blobs or enqueueing any save worker.
+        // IO-5 must add durable device-qualified source binding first.
+        if(nativePublisher_.hasQualifiedInputMap(
+               documentEpoch,nativeAccepted_.pcmRevision))
+            return "SECONDARY_CAPTURE_NEEDS_SMIX_BINDING_SCHEMA: old checkpoint preserved; disconnect/remap B or wait for qualified persistence";
         if(nativeAccepted_.fxOwners->externalChannel().value)
             return "External CH1 FX owner cannot yet be serialized independently";
         // MAIN and STREAM are muted by the caller. Wait briefly for the

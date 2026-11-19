@@ -96,6 +96,11 @@ inline void run() {
     m::DynamicNativeSessionPublisher native;
     check(native.commit(roster,request,0,epoch,epoch,true,
         {},false,false,&plan).ok(),"one PCM and device map publication");
+    check(native.hasQualifiedInputMap(epoch,1),
+          "v1 .smix cannot safely save virtual A+B input ordinals");
+    check(!native.hasQualifiedInputMap(epoch+1,1)&&
+          !native.hasQualifiedInputMap(epoch,0),
+          "stale graph generation cannot authorize persistence");
 
     d::SecondaryCaptureClockStream clock;
     const d::SecondaryCaptureClockStream::Format format{
@@ -164,6 +169,8 @@ inline void run() {
                                    {},true,false);
     check(wired.ok()&&wired.revision==2,
           "WIRE-only graph revision inherits qualified input lease");
+    check(native.hasQualifiedInputMap(epoch,2),
+          "WIRE-only revision must not restore unsafe v1 .smix saving");
     check(render(),"B still audible after internal graph recompile");
     check(near(left[frames-1],.2f*monoCenter+.4f),
           "committed BUS/WIRE revision retains capture B");
