@@ -1401,7 +1401,9 @@ test("native PRE_FADER WIRE inspector uses one exact SET_TAP PCM intent and acce
  const preview=read("site/preview-v2/index.html");
  assert.match(bridge,/function requestNativeTap\(source,edgeId,tap\)/);
  assert.match(bridge,/ops\[0\]\.type==="MODE"/);
- assert.match(bridge,/op:"SET_TAP",from:source,edgeId,tap/);
+ assert.match(read("web/approved-wire-view-model.js"),
+   /op:"SET_TAP",from:sourceId,edgeId,tap:targetTap/);
+ assert.match(bridge,/wireVM\.nativeTapPlan\(/);
  assert.match(bridge,/wireVM\.edgePresentation\(/);
  assert.match(read("web/approved-wire-view-model.js"),
    /const tap=TAPS\.has\(edge\.tapStage\)\?edge\.tapStage:edge\.tap/);
@@ -1691,7 +1693,8 @@ test("DAW G0 native M4 controls, source clear, OUT & monitoring are real",()=>{
  assert.match(bridge,/function paintM4Fallback\(next\)/);
  assert.match(bridge,/function sendM4Control\(parameter,t,value\)/);
  assert.match(bridge,/action:"routingM4Control"/);
- assert.match(bridge,/action:"routingChannelPatch"/);
+ assert.ok(bridge.includes("stripVM.m4ChannelPatchPlan("));
+ assert.ok(read("web/approved-channel-strip-view-model.js").includes('action:"routingChannelPatch"'));
  assert.match(bridge,/const channel=m4Index\(t\)/);
  assert.match(bridge,/data-native-monitor/);
  assert.match(native,/void serviceAutomaticMain\(\)/);
@@ -1906,8 +1909,9 @@ test("M/ST after BUS/WIRE uses native ChannelId intent and accepted PCM processi
     bridge.indexOf("function previewNativePan(t,el,event)"));
   assert.match(fn,/session\(\)\?\.authority|mixerSession\(\)\?\.authority/);
   assert.match(fn,/controller.intent\("SET_PROCESSING_FORMAT",channelId,/);
+  assert.ok(fn.includes('dispatchM4ChannelPatch(t,"SET_PROCESSING_FORMAT"'));
   assert.ok(fn.indexOf('authority==="CHANNEL_ID"')<
-    fn.indexOf('action:"routingChannelPatch"'));
+    fn.indexOf('dispatchM4ChannelPatch(t,"SET_PROCESSING_FORMAT"'));
 });
 test("P0 first Add FX discovers real local VST3 lazily without an audio-thread scan",()=>{
  const bridge=read("web/approved-native-bridge.js");
@@ -1989,7 +1993,9 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(menu,/Confirm Delete Track/);
  assert.match(menu,/requestDeleteTrack\(track\)/);
  assert.match(menu,/hooks\.orbitTarget\(track,slot\)/);
- assert.match(bridge,/action:"routingNativeTrackDelete"/);
+ assert.ok(bridge.includes('stripVM.rosterMutationPlan('));
+ assert.ok(read("web/approved-channel-strip-view-model.js").includes(
+   'action:"routingNativeTrackDelete"'));
  assert.match(bridge,/arMixNativeTrackDeleteAck/);
  assert.match(bridge,/function finishNativeTrackDelete\(next\)/);
  assert.match(bridge,/pending\.acked/);
@@ -2027,7 +2033,9 @@ test("all native strip menus bind true AUX/BUS deletion and persistent Rename, O
  assert.match(menu,/user-select:none/);
  assert.match(menu,/clearTitles\(document\.documentElement\)/);
  assert.match(menu,/attributeFilter:\["title"\]/);
- assert.match(bridge,/action:"routingNativeBusDelete"/);
+ assert.ok(bridge.includes('dispatchNativeRosterDelete(track,"REMOVE_BUS")'));
+ assert.ok(read("web/approved-channel-strip-view-model.js").includes(
+   'action:"routingNativeBusDelete"'));
  assert.match(bridge,/requestDeleteStrip:requestNativeStripDelete/);
  assert.match(bridge,/renameStrip:openNativeIdentity/);
  assert.match(bridge,/canDeleteStrip:canDeleteNativeStrip/);
@@ -2049,7 +2057,9 @@ test("P0 actual Add BUS reaches the live ChannelId graph",()=>{
  const lab=read("src/LiveDryRoutingLab.h");
  const projection=read("integration/ApprovedNativeRuntimeSnapshot.h");
  assert.match(bridge,/function requestNativeBusCreate\(track=false\)/);
- assert.match(bridge,/action:track\?"routingNativeTrackCreate":"routingNativeBusCreate"/);
+ assert.ok(bridge.includes('backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload})'));
+ assert.ok(read("web/approved-channel-strip-view-model.js").includes(
+   'action:"routingNativeBusCreate"'));
  assert.match(bridge,/target.id==="addBus"/);
  assert.match(bridge,/arMixNativeBusAck/);
  assert.match(bridge,/addBus.hidden=!nativeAdmitted/);
@@ -2129,7 +2139,8 @@ test("P0 typed mono-stereo, PAN detent, fader geometry & FX failure diagnostics"
  assert.match(bridge,/const width=event\.type==="change"\?18:latched\?22:14/);
  assert.match(bridge,/readout\.textContent=value===0\?"C"/);
  assert.match(bridge,/function requestProcessingFormat\(t\)/);
- assert.match(bridge,/operation:"SET_PROCESSING_FORMAT"/);
+ assert.ok(bridge.includes('dispatchM4ChannelPatch(t,"SET_PROCESSING_FORMAT"'));
+ assert.ok(read("web/approved-channel-strip-view-model.js").includes('operation==="SET_PROCESSING_FORMAT"'));
  assert.match(bridge,/if\(action==="format"&&t\?\.kind==="audio"\)/);
  assert.match(main,/operation=="SET_PROCESSING_FORMAT"/);
  assert.match(main,/operation,target\)/);
@@ -2151,16 +2162,19 @@ test("P0 real slot VST3 power and native editor use verified instance tokens",()
  const bridge=read("web/approved-native-bridge.js");
  const main=read("src/Main.cpp");
  assert.match(bridge,/function verifiedFxFor\(t,slot\)/);
- assert.match(bridge,/function requestNativeFxPower\(t,slot,bypass\)/);
+ assert.match(bridge,/function requestM4FxPower\(t,action,button=null\)/);
  assert.match(bridge,/if\(action==="slotPower"\)/);
  assert.match(bridge,/if\(action==="fxOn"\)/);
  assert.doesNotMatch(bridge,/rackSavedBypass/);
- assert.match(bridge,/requestM4RackPower\(t\)/);
+ assert.match(bridge,/requestM4FxPower\(t,"fxOn"\)/);
+ assert.match(bridge,/requestM4FxPower\(t,"slotPower",btn\)/);
  assert.match(bridge,/requestAdmittedFxPower\(t,action,btn\)/);
  assert.match(bridge,/FX rack unchanged/);
  assert.match(bridge,/pendingM4RackPowers/);
  assert.match(bridge,/action:"routingFxEditor"/);
- assert.match(bridge,/action:"routingFxBypass"/);
+ assert.match(bridge,/action:plan\.action,requestId,\.\.\.plan\.payload/);
+ assert.match(read("web/approved-fx-rack-view-model.js"),
+   /action:"routingFxBypass"/);
  assert.match(bridge,/backend\.addEventListener\("arMixRoutingFxBypassAck"/);
  assert.match(main,/ack->setProperty\("requestId",args\.getProperty\("requestId",juce::var\(\)\)\)/);
  assert.match(main,/action == "routingFxEditor"/);
@@ -2994,7 +3008,8 @@ for(const scenario of ["driver","pin-mask"]) test(
    routeRevision:"13",rosterRevision:"0",
    channels:rows.map((source,i)=>({
      id:"m4:"+String(i+1).padStart(2,"0"),ordinal:i,role:"INPUT",
-     source,controls:{faderDb:0,pan:0,mute:false,solo:false}
+     source,controls:{faderDb:0,pan:0,mute:false,solo:false},
+     fxRackBypassed:false
    })),main:{db:0,mute:false,outputArmed:false}};
  const publish=raw=>listeners.get("arMixConsoleSnapshot")(raw);
  const prepared=clone(installed);
@@ -3014,6 +3029,21 @@ for(const scenario of ["driver","pin-mask"]) test(
  assert.equal(bypasses().length,1,
    "first M4 slot bypass must dispatch; feedback: "+toast.textContent);
  const first=bypasses()[0];
+ // The header uses the SAME M4 authority plan as the insert button.
+ const rackClick=()=>win.__ARMIX_NATIVE_M2__.consumeAction(
+   tracks[4],"fxOn",{});
+ const racks=()=>sent.filter(x=>x.name==="arMixAction"&&
+   x.payload.action==="routingFxRackBypass").map(x=>x.payload);
+ assert.equal(rackClick(),true);
+ assert.equal(racks().length,1,"verified M4 rack gate must dispatch");
+ const oldRack=racks()[0];
+ assert.equal(oldRack.channel,4);
+ assert.equal(oldRack.revision,13);
+ assert.equal(rackClick(),true);
+ assert.equal(racks().length,1,
+   "second rack click cannot escape its unconfirmed native lease");
+ const oldRackTimer=timers.filter(t=>t.ms===8000).at(-1);
+ assert.ok(oldRackTimer);
  assert.equal(click(),true);
  assert.equal(bypasses().length,1,"same slot is gated by its unresolved native lease");
  const oldTimer=timers.filter(t=>t.ms===5000).at(-1);
@@ -3053,17 +3083,29 @@ for(const scenario of ["driver","pin-mask"]) test(
  assert.equal(click(),true);
  assert.equal(bypasses().length,2,
    "reconfigured hardware cannot leave a slot uneditable for 5 seconds");
+ assert.equal(rackClick(),true);
+ assert.equal(racks().length,2,
+   "reconfigured hardware must release prior M4 rack lease immediately");
+ const newRack=racks()[1];
+ assert.equal(newRack.revision,14);
  const second=bypasses()[1];
  assert.notEqual(first.requestId,second.requestId);
  assert.equal(second.revision,14,"second bypass uses the newly accepted routing revision");
  listeners.get("arMixRoutingFxBypassAck")({
    requestId:first.requestId,channel:4,slot:0,ok:false,error:"OLD_DEVICE"});
- oldTimer.fn();
+ listeners.get("arMixRoutingFxRackAck")({
+   requestId:oldRack.requestId,channel:4,ok:false,
+   deviceEpoch:13,routingRevision:13,error:"OLD_DEVICE"});
+ oldTimer.fn();oldRackTimer.fn();
  assert.equal(bypasses().length,2,"expired timer cannot affect new driver lease");
+ assert.equal(racks().length,2,"expired rack timer cannot retarget new lease");
  // The new request is still protected from a duplicate click until settled.
  assert.equal(click(),true);
  assert.equal(bypasses().length,2,
    "an old ACK/timer cannot release a new driver's pending FX command");
+ assert.equal(rackClick(),true);
+ assert.equal(racks().length,2,
+   "old rack ACK/timer cannot release the new driver's pending rack gate");
  assert.equal(sent.filter(x=>x.name==="arMixAction"&&
    x.payload.action==="monitor").length,0,"no automatic MAIN arm");
 });
@@ -3919,8 +3961,8 @@ test("SOF double-click and target selection never commandeer MAIN fader",()=>{
   assert.ok(start>0&&end>start,"native delegate must own double-click");
   const handler=bridge.slice(start,end);
   assert.ok(handler.indexOf("scope?.sofEnabled") <
-            handler.indexOf('sendM4Control'),
-    "SOF must intercept fader reset BEFORE M4/Main fader ownership");
+            handler.indexOf('dispatchControlCommand'),
+    "SOF must intercept fader reset BEFORE unified native control routing");
   assert.match(handler,/requestWireGain\(\{sourceId:t\.id,edgeId:id,levelDb:0\}\)/);
   assert.match(handler,/intent\("SET_INPUT_GAIN",t,\{valueDb:0\}\)/);
 });
@@ -4484,22 +4526,126 @@ test("GUI-2 native FX pending settlement requires ACK, exact lease and epoch",()
  assert.equal(fxRackVM.nativePowerSettlement({...p,acked:true,kind:"rack",bypassed:false},next),"CONFIRMED");
  assert.equal(fxRackVM.nativePowerSettlement(null,next),"NONE");
 });
-test("GUI-2 M4 rack pending selector rejects revisions and unaccepted authority",()=>{
- const s={authority:"M4",deviceEpoch:"17",routeRevision:"8",
-   channels:[{fxRackBypassed:true}]};
+test("G-MV28 M4 rack settlement needs exact full installed snapshot, not an old session",()=>{
+ const session={authority:"M4",deviceEpoch:"17",routeRevision:"8",
+   channels:Array.from({length:10},()=>({fxRackBypassed:true}))};
+ const snapshot={admitted:false,retained:false,device:{epoch:"17"},raw:{
+   mixerSession:session,legacyM4:{active:true,routeAccepted:true,
+     routingRevision:"8"}}};
  const p={channel:0,epoch:"17",revision:"8",bypassed:true,acked:false};
- assert.equal(fxRackVM.m4RackSettlement(p,s),"WAIT");
- assert.equal(fxRackVM.m4RackSettlement({...p,acked:true},s),"CONFIRMED");
- assert.equal(fxRackVM.m4RackSettlement({...p,acked:true},{...s,routeRevision:"9"}),"STALE");
- assert.equal(fxRackVM.m4RackSettlement({...p,acked:true},{...s,authority:"CHANNEL_ID"}),"STALE");
- assert.equal(fxRackVM.m4RackSettlement({...p,acked:true},
-   {...s,channels:[{fxRackBypassed:false}]}),"WAIT");
+ const settle=(pending=p,view=snapshot)=>fxRackVM.m4RackSettlement(pending,view);
+ assert.equal(settle(),"WAIT");
+ assert.equal(settle({...p,acked:true}),"CONFIRMED");
+ assert.equal(settle({...p,acked:true},{...snapshot,raw:{...snapshot.raw,
+   mixerSession:{...session,routeRevision:"9"}}}),"STALE");
+ assert.equal(settle({...p,acked:true},{...snapshot,raw:{...snapshot.raw,
+   mixerSession:{...session,authority:"CHANNEL_ID"}}}),"STALE");
+ assert.equal(settle({...p,acked:true},{...snapshot,raw:{...snapshot.raw,
+   legacyM4:{...snapshot.raw.legacyM4,routingRevision:"9"}}}),"STALE",
+   "stale legacy M4 revision cannot confirm an earlier physical rack gate");
+ assert.equal(settle({...p,acked:true},{...snapshot,retained:true}),"STALE");
+ assert.equal(settle({...p,acked:true},{...snapshot,admitted:true}),"STALE");
+ assert.equal(settle({...p,acked:true},{...snapshot,raw:{...snapshot.raw,
+   legacyM4:{...snapshot.raw.legacyM4,routeAccepted:false}}}),"STALE");
+ assert.equal(settle({...p,acked:true},{...snapshot,raw:{...snapshot.raw,
+   mixerSession:{...session,channels:[
+     {...session.channels[0],fxRackBypassed:false},
+     ...session.channels.slice(1)]}}}),"WAIT");
+ assert.equal(settle(null),"NONE");
  const source=read("web/approved-native-bridge.js");
  assert.ok(source.includes("fxRackVM.m4Presentation("));
  assert.ok(source.includes("fxRackVM.nativePowerSettlement("));
- assert.ok(source.includes("fxRackVM.m4RackSettlement("));
+ assert.match(source,/fxRackVM\.m4RackSettlement\(p,next\)/);
  assert.doesNotMatch(source,/const actual=p\.kind==="rack"\?/);
 });
+
+test("G-MV28 pure M4 FX power plan owns exact rack/slot authority, lease and IPC envelope",()=>{
+ const rows=Array.from({length:10},()=>({fxRackBypassed:false}));
+ const instances=Array.from({length:10},(_,i)=>i===4?
+   [{instanceId:"m4-vst-lease",catalogId:"vendor.fx",bypassed:false}]:[]);
+ const m={active:true,routeAccepted:true,nativeBusStructural:false,
+   routingRevision:"12",fxInstances:instances};
+ const session={authority:"M4",deviceEpoch:"31",routeRevision:"12",
+   channels:rows};
+ const snapshot={admitted:false,retained:false,device:{epoch:"31"},raw:{
+   mixerSession:session,legacyM4:m}};
+ const plan=(action="fxOn",extra={},view=snapshot)=>fxRackVM.m4PowerPlan(view,{
+   action,channel:4,slot:action==="slotPower"?0:null,verifiedM4:true,...extra});
+ const before=JSON.stringify(snapshot);
+ const rack=plan();
+ assert.equal(rack.kind,"READY");
+ assert.equal(rack.action,"routingFxRackBypass");
+ assert.equal(rack.key,4);
+ assert.equal(rack.timeoutMs,8000);
+ assert.deepEqual(rack.pending,{channel:4,epoch:"31",revision:"12",
+   acked:false,bypassed:true});
+ assert.deepEqual(rack.payload,{channel:4,deviceEpoch:31,revision:12,value:true});
+ const slot=plan("slotPower");
+ assert.equal(slot.kind,"READY");
+ assert.equal(slot.action,"routingFxBypass");
+ assert.equal(slot.key,"4:0");
+ assert.equal(slot.timeoutMs,5000);
+ assert.deepEqual(slot.pending,{channel:4,epoch:"31",revision:"12",
+   acked:false,slot:0,token:"m4-vst-lease",bypass:true});
+ assert.deepEqual(slot.payload,{channel:4,slot:0,instanceId:"m4-vst-lease",
+   deviceEpoch:31,revision:12,value:true});
+ const unavailable=(a="fxOn",extra={},view=snapshot)=>{
+   assert.equal(plan(a,extra,view).kind,"UNAVAILABLE");};
+ unavailable("fxOn",{verifiedM4:false});
+ unavailable("fxOn",{offline:true});
+ unavailable("fxOn",{pending:true});
+ unavailable("fxOn",{channel:10});
+ unavailable("fxOn",{channel:-1});
+ unavailable("fxOn",{slot:0});
+ unavailable("slotPower",{slot:-1});
+ unavailable("slotPower",{slot:8});
+ unavailable("slotPower",{pending:true});
+ unavailable("slotPower",{channel:5});
+ unavailable("slotPower",{slot:0}, {...snapshot,raw:{...snapshot.raw,
+   legacyM4:{...m,fxInstances:instances.map((xs,i)=>i===4?
+     [{...xs[0],instanceId:""}]:xs)}}});
+ unavailable("fxOn",{}, {...snapshot,admitted:true});
+ unavailable("fxOn",{}, {...snapshot,retained:true});
+ unavailable("fxOn",{}, {...snapshot,device:{epoch:"32"}});
+ unavailable("fxOn",{}, {...snapshot,raw:{...snapshot.raw,
+   mixerSession:{...session,authority:"CHANNEL_ID"}}});
+ unavailable("slotPower",{}, {...snapshot,raw:{...snapshot.raw,
+   mixerSession:{...session,authority:"NONE"}}});
+ unavailable("fxOn",{}, {...snapshot,raw:{...snapshot.raw,
+   mixerSession:{...session,routeRevision:"13"}}});
+ unavailable("fxOn",{}, {...snapshot,raw:{...snapshot.raw,
+   legacyM4:{...m,routingRevision:"13"}}});
+ unavailable("fxOn",{}, {...snapshot,raw:{...snapshot.raw,
+   legacyM4:{...m,active:false}}});
+ unavailable("fxOn",{}, {...snapshot,raw:{...snapshot.raw,
+   legacyM4:{...m,routeAccepted:false}}});
+ unavailable("fxOn",{}, {...snapshot,raw:{...snapshot.raw,
+   legacyM4:{...m,nativeBusStructural:true}}});
+ unavailable("fxOn",{}, {...snapshot,device:{epoch:"9007199254740993"},raw:{
+   ...snapshot.raw,mixerSession:{...session,deviceEpoch:"9007199254740993"}}});
+ unavailable("fxOn",{}, {...snapshot,raw:{...snapshot.raw,
+   legacyM4:{...m,routingRevision:"9007199254740993"},
+   mixerSession:{...session,routeRevision:"9007199254740993"}}});
+ assert.equal(fxRackVM.m4RackAckResult(null,{}),"IGNORE");
+ const pending={requestId:"rack-m4-42",...rack.pending};
+ const ack={requestId:"rack-m4-42",channel:4,deviceEpoch:31,
+   routingRevision:12,bypassed:true,ok:true};
+ assert.equal(fxRackVM.m4RackAckResult(pending,{...ack,requestId:"old"}),"IGNORE");
+ assert.equal(fxRackVM.m4RackAckResult(pending,ack),"ACKED");
+ for(const faulty of [{channel:5},{deviceEpoch:32},{routingRevision:13},
+   {bypassed:false},{ok:false}])
+   assert.equal(fxRackVM.m4RackAckResult(pending,{...ack,...faulty}),"REJECTED");
+ assert.equal(JSON.stringify(snapshot),before,"pure plan must never mutate native readback");
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/fxRackVM\.m4PowerPlan\(/);
+ assert.match(bridge,/fxRackVM\.m4RackAckResult\(/);
+ assert.doesNotMatch(bridge,/function requestNativeFxPower\(/);
+ assert.doesNotMatch(bridge,/function requestM4RackPower\(/);
+ assert.equal((bridge.match(/function requestM4FxPower\(/g)||[]).length,1);
+ assert.equal((bridge.match(/action:"routingFxBypass"/g)||[]).length,0,
+   "native M4 FX command envelope must be owned by the pure power plan");
+});
+
 
 test("MV-7 deferred SEND gain requires unique exact installed EdgeId",()=>{
  const source="9007199254740993",edgeId="9007199254740997";
@@ -5028,4 +5174,550 @@ test("MV-11 bridge delegates identity decisions and retains one native host/cont
  assert.doesNotMatch(vm,/backend\.emitEvent|document\.getElementById|window\.setTimeout|localStorage/);
  assert.doesNotMatch(bridge,/const liveIds=new Set\(next\.graph\.channels/);
  assert.doesNotMatch(bridge,/if\(ack\.ok!==true\)\{\s*if\(pendingIdentity\.migration\)/);
+});
+
+
+test("G-MV29 M4 OUT and M/ST pure policy denies stale authority, unsafe tokens, and busy source",()=>{
+ const rows=Array.from({length:10},(_,i)=>({ordinal:i,role:"INPUT",
+   primaryOut:"NONE",source:{main:false,channelFormat:"MONO"}}));
+ const sources=rows.map(x=>({...x.source}));
+ const session={authority:"M4",deviceEpoch:"21",routeRevision:"12",channels:rows};
+ const legacy={active:true,routeAccepted:true,nativeBusStructural:false,
+   routingRevision:"12",channels:sources};
+ const snapshot={admitted:false,retained:false,device:{epoch:"21"},
+   raw:{mixerSession:session,legacyM4:legacy}};
+ const plan=(operation,target,extra={},raw=snapshot)=>
+   stripVM.m4ChannelPatchPlan(raw,{operation,target,channel:4,
+     verifiedM4:true,deviceReady:true,...extra});
+ const baseline=JSON.stringify(snapshot);
+ const out=plan("SET_PRIMARY_OUT","MAIN");
+ assert.equal(out.kind,"READY");
+ assert.equal(out.action,"routingChannelPatch");
+ assert.deepEqual(out.payload,{operation:"SET_PRIMARY_OUT",channel:4,
+   target:"MAIN",deviceEpoch:21,revision:12});
+ assert.deepEqual(out.pending,{channel:4,operation:"SET_PRIMARY_OUT",target:"MAIN",
+   epoch:"21",baseRevision:"12",acked:false});
+ const fmt=plan("SET_PROCESSING_FORMAT","STEREO");
+ assert.equal(fmt.kind,"READY");
+ assert.equal(fmt.action,out.action);
+ assert.deepEqual(fmt.payload,{operation:"SET_PROCESSING_FORMAT",channel:4,
+   target:"STEREO",deviceEpoch:21,revision:12});
+ assert.equal(plan("SET_PRIMARY_OUT","NONE").kind,"NO_CHANGE");
+ assert.equal(plan("SET_PROCESSING_FORMAT","MONO").kind,"NO_CHANGE");
+ const deny=(op="SET_PRIMARY_OUT",target="MAIN",extra={},raw=snapshot)=>
+   assert.equal(plan(op,target,extra,raw).kind,"UNAVAILABLE");
+ deny("SET_PRIMARY_OUT","bus");
+ deny("SET_PROCESSING_FORMAT","SIDE");
+ deny("DELETE","MAIN");
+ for(const extra of [{verifiedM4:false},{deviceReady:false},{pending:true},
+   {sourcePending:true},{channel:-1},{channel:10}])deny("SET_PRIMARY_OUT","MAIN",extra);
+ for(const raw of [
+   {...snapshot,admitted:true},{...snapshot,retained:true},
+   {...snapshot,device:{epoch:"22"}},
+   {...snapshot,device:{epoch:"9007199254740993"},raw:{...snapshot.raw,
+     mixerSession:{...session,deviceEpoch:"9007199254740993"}}},
+   {...snapshot,raw:{...snapshot.raw,mixerSession:{...session,authority:"CHANNEL_ID"}}},
+   {...snapshot,raw:{...snapshot.raw,legacyM4:{...legacy,active:false}}},
+   {...snapshot,raw:{...snapshot.raw,legacyM4:{...legacy,routeAccepted:false}}},
+   {...snapshot,raw:{...snapshot.raw,legacyM4:{...legacy,nativeBusStructural:true}}},
+   {...snapshot,raw:{...snapshot.raw,legacyM4:{...legacy,routingRevision:"13"}}},
+   {...snapshot,raw:{...snapshot.raw,mixerSession:{...session,
+     channels:rows.slice(0,9)}}},
+   {...snapshot,raw:{...snapshot.raw,legacyM4:{...legacy,
+     channels:sources.slice(0,9)}}},
+   {...snapshot,raw:{...snapshot.raw,mixerSession:{...session,
+     channels:rows.map((r,i)=>i===4?{...r,primaryOut:"MAIN"}:r)}}}
+ ])deny("SET_PRIMARY_OUT","MAIN",{},raw);
+ deny("SET_PROCESSING_FORMAT","STEREO",{}, {...snapshot,raw:{...snapshot.raw,
+   legacyM4:{...legacy,channels:sources.map((s,i)=>i===4?
+     {...s,channelFormat:undefined}:s)}}});
+ assert.equal(JSON.stringify(snapshot),baseline,"ViewModel cannot mutate installed PCM");
+});
+test("G-MV29 M4 channel patch ACK and accepted readback are independently correlated",()=>{
+ const rows=Array.from({length:10},(_,i)=>({ordinal:i,role:"INPUT",
+   source:{main:false,channelFormat:"MONO"},primaryOut:"NONE"}));
+ const sources=rows.map(x=>({...x.source}));
+ const sess={authority:"M4",deviceEpoch:"21",routeRevision:"12",channels:rows};
+ const m={active:true,routeAccepted:true,nativeBusStructural:false,
+   routingRevision:"12",channels:sources};
+ const old={admitted:false,retained:false,device:{epoch:"21"},
+   raw:{mixerSession:sess,legacyM4:m}};
+ const p={requestId:7002,channel:4,operation:"SET_PRIMARY_OUT",target:"MAIN",
+   epoch:"21",baseRevision:"12",acked:false};
+ const ack={requestId:7002,channel:4,ok:true,
+   state:{epoch:21,revision:13,acceptedRoute:{channels:[]}}};
+ const ackResult=(a)=>stripVM.m4ChannelPatchAckResult(p,a);
+ assert.equal(ackResult({...ack,requestId:1}),"IGNORE");
+ assert.equal(ackResult({...ack,channel:5}),"REJECTED");
+ assert.equal(ackResult({...ack,ok:false}),"REJECTED");
+ assert.equal(ackResult({...ack,state:{epoch:22}}),"REJECTED");
+ assert.equal(ackResult(ack),"ACKED");
+ const check=(pending,view)=>stripVM.m4ChannelPatchSettlement(pending,view);
+ assert.equal(check(p,old),"WAIT");
+ assert.equal(check({...p,acked:true},old),"WAIT");
+ const changed=rows.map((row,i)=>i===4?
+   {...row,primaryOut:"MAIN",source:{...row.source,main:true}}:row);
+ const changedSources=sources.map((s,i)=>i===4?{...s,main:true}:s);
+ const next={...old,raw:{mixerSession:{...sess,routeRevision:"13",channels:changed},
+   legacyM4:{...m,routingRevision:"13",channels:changedSources}}};
+ assert.equal(check(p,next),"WAIT");
+ assert.equal(check({...p,acked:true},next),"CONFIRMED");
+ for(const bad of [{...next,retained:true},{...next,admitted:true},
+   {...next,device:{epoch:"22"}},
+   {...next,raw:{...next.raw,mixerSession:{...next.raw.mixerSession,
+     authority:"CHANNEL_ID"}}},
+   {...next,raw:{...next.raw,legacyM4:{...next.raw.legacyM4,
+     routingRevision:"14"}}},
+   {...next,raw:{...next.raw,legacyM4:{...next.raw.legacyM4,
+     channels:sources}}}])
+   assert.equal(check({...p,acked:true},bad),"STALE");
+ const notYet={...next,raw:{mixerSession:{...next.raw.mixerSession,channels:rows},
+   legacyM4:{...next.raw.legacyM4,channels:sources}}};
+ assert.equal(check({...p,acked:true},notYet),"WAIT");
+ const noRevision={...old,raw:{mixerSession:{...sess,channels:changed},
+   legacyM4:{...m,channels:changedSources}}};
+ assert.equal(check({...p,acked:true},noRevision),"WAIT");
+ const format={...p,operation:"SET_PROCESSING_FORMAT",target:"STEREO"};
+ const newFmt=changed.map((row,i)=>i===4?{...row,
+   source:{...row.source,channelFormat:"STEREO"}}:row);
+ const newFmtLegacy=changedSources.map((row,i)=>i===4?
+   {...row,channelFormat:"STEREO"}:row);
+ assert.equal(check({...format,acked:true},{...next,raw:{
+   mixerSession:{...next.raw.mixerSession,channels:newFmt},
+   legacyM4:{...next.raw.legacyM4,channels:newFmtLegacy}}}),"CONFIRMED");
+ assert.equal(check({...format,acked:true},next),"WAIT");
+ const bridge=read("web/approved-native-bridge.js");
+ for(const name of ["m4ChannelPatchPlan","m4ChannelPatchAckResult",
+   "m4ChannelPatchSettlement"])assert.ok(bridge.includes("stripVM."+name+"("));
+ assert.ok(bridge.includes("reconcileM4ChannelPatchReadback(next)"));
+ assert.ok(bridge.includes("action:plan.action,requestId,...plan.payload"));
+ assert.equal(bridge.includes("const row=ack?.state?.acceptedRoute?.channels"),false);
+});
+
+
+test("G-MV29 real M4 bridge holds OUT and M/ST pending until accepted PCM, including late ACK/timer",()=>{
+ const vm=require("node:vm"),listeners=new Map(),sent=[],timers=[],microtasks=[];
+ const tracks=Array.from({length:10},(_,i)=>({
+   id:i+1,kind:"audio",name:"CH "+(i+1),input:"None",
+   output:"SOURCE ONLY (No Main)",format:"mono",fx:[],slotBypass:[],fxInsertIds:[]}));
+ const master={id:50,kind:"master",output:"Master"};
+ const scope={tracks,master,findTrack:el=>el?.track||null,
+   stopDemo(){},render(){}};
+ const backend={emitEvent:(name,payload)=>sent.push({name,payload}),
+   addEventListener:(name,fn)=>listeners.set(name,fn)};
+ const menu={dataset:{field:"output"},value:"Master",track:tracks[4],
+   attrs:{},setAttribute(k,v){this.attrs[k]=v;},
+   removeAttribute(k){delete this.attrs[k];}};
+ const doc={readyState:"complete",documentElement:{dataset:{}},
+   activeElement:null,
+   getElementById:id=>id==="info"?{textContent:""}:
+     id==="preview"?{disabled:false}:
+     id==="armixNativeToast"?{hidden:true,textContent:""}:null,
+   querySelector:q=>q.includes('select[data-field="output"]')?menu:null,
+   addEventListener(){}};
+ const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,
+   ArSonApprovedDeviceViewModel:deviceVM,
+   ArSonApprovedChannelStripViewModel:stripVM,
+   ArSonApprovedFxRackViewModel:fxRackVM,
+   ArSonApprovedWireViewModel:wireVM,
+   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
+   setTimeout(fn,ms){timers.push({fn,ms});return timers.length;},
+   clearTimeout(){},queueMicrotask(fn){microtasks.push(fn);}};
+ vm.runInNewContext(read("web/approved-native-bridge.js"),{
+   window:win,document:doc,performance:{now:()=>0},console},{timeout:2000});
+ const installed=clone(fixtures.g0);
+ Object.assign(installed.device,{backend:"ASIO",captureDevice:"Test Driver ASIO",
+   playbackDevice:"Test Driver ASIO",enabledInputs:[0,1],
+   inputEndpoints:[{id:"in:0",port:0,callback:0,label:"IN 1",active:true},
+     {id:"in:1",port:1,callback:1,label:"IN 2",active:true}]});
+ const rows=Array.from({length:10},(_,i)=>({
+   mode:"NONE",left:-1,right:-1,main:false,channelFormat:"MONO"}));
+ const controls=Array.from({length:10},()=>({
+   db:0,pan:0,mute:false,solo:false}));
+ installed.legacyM4={active:true,routeAccepted:true,nativeBusStructural:false,
+   routingRevision:"13",fxInstances:Array.from({length:10},()=>[]),
+   channelControls:controls,channels:rows};
+ const makeSession=(src=rows,rev="13")=>({
+   authority:"M4",deviceEpoch:installed.device.epoch,routeRevision:rev,
+   rosterRevision:"0",channels:src.map((row,i)=>({
+     id:"m4:"+String(i+1).padStart(2,"0"),ordinal:i,role:"INPUT",
+     source:{...row},primaryOut:row.main?"MAIN":"NONE",
+     controls:{faderDb:0,pan:0,mute:false,solo:false},
+     fxRackBypassed:false
+   })),main:{db:0,mute:false,outputArmed:false}
+ });
+ installed.mixerSession=makeSession();
+ const publish=v=>listeners.get("arMixConsoleSnapshot")(v);
+ const none=clone(installed);
+ none.legacyM4.routeAccepted=false;
+ none.mixerSession.authority="NONE";
+ none.mixerSession.routeRevision="0";
+ none.mixerSession.channels=[];
+ publish(none);publish(installed);
+ const actions=()=>sent.filter(e=>e.name==="arMixAction"&&
+   e.payload.action==="routingChannelPatch").map(e=>e.payload);
+ const formatClick=()=>win.__ARMIX_NATIVE_M2__.consumeAction(
+   tracks[4],"format",{dataset:{}});
+ assert.equal(formatClick(),true);
+ assert.equal(actions().length,1,"verified M4 M/ST dispatches");
+ const first=actions()[0];
+ assert.equal(first.operation,"SET_PROCESSING_FORMAT");
+ assert.equal(first.target,"STEREO");
+ assert.equal(first.revision,13);
+ formatClick();
+ assert.equal(actions().length,1,"same in-flight format is fenced");
+ // ACK is real but has no right to clear pending without readback.
+ listeners.get("arMixChannelPatchAck")({
+   requestId:first.requestId,channel:4,ok:true,state:{epoch:Number(installed.device.epoch),
+     revision:14,acceptedRoute:{channels:[]}}});
+ formatClick();
+ assert.equal(actions().length,1,
+   "even ACK claiming formatted output cannot unlock without readback");
+ publish(installed);formatClick();
+ assert.equal(actions().length,1,"unchanged accepted revision must not settle ACK");
+ const newFormat=clone(installed);
+ newFormat.legacyM4.routingRevision="14";
+ newFormat.legacyM4.channels[4].channelFormat="STEREO";
+ newFormat.mixerSession=makeSession(newFormat.legacyM4.channels,"14");
+ publish(newFormat);
+ // Now its native producer and session agree on a strictly newer format.
+ formatClick();
+ assert.equal(actions().length,2,"independent native readback releases format lease");
+ const second=actions()[1];
+ assert.equal(second.operation,"SET_PROCESSING_FORMAT");
+ assert.equal(second.target,"MONO");
+ const firstTimer=timers.filter(x=>x.ms===8000).at(-2);
+ if(firstTimer)firstTimer.fn();
+ listeners.get("arMixChannelPatchAck")({
+   requestId:first.requestId,channel:4,ok:false,error:"OLD_DEVICE"});
+ formatClick();
+ assert.equal(actions().length,2,
+   "superseded ACK and timeout cannot release second format request");
+ // A failed second ACK releases the lease but must not fabricate a value.
+ listeners.get("arMixChannelPatchAck")({
+   requestId:second.requestId,channel:4,ok:false,error:"REJECTED"});
+ // Source remains readback-owned STEREO; change OUT using same adapter.
+ menu.value="Master";
+ win.__ARMIX_NATIVE_M2__.consumeField({type:"change",target:menu});
+ assert.equal(actions().length,3,"M4 primary OUT uses same native adapter");
+ const out=actions()[2];
+ assert.equal(out.operation,"SET_PRIMARY_OUT");
+ assert.equal(out.target,"MAIN");
+ assert.equal(menu.attrs["aria-busy"],"true");
+ listeners.get("arMixChannelPatchAck")({
+   requestId:out.requestId,channel:4,ok:true,state:{
+     epoch:Number(installed.device.epoch),revision:15}});
+ assert.equal(menu.attrs["aria-busy"],"true",
+   "ACK alone must retain pending UI gate");
+ const newOut=clone(newFormat);
+ newOut.legacyM4.routingRevision="15";
+ newOut.legacyM4.channels[4].main=true;
+ newOut.mixerSession=makeSession(newOut.legacyM4.channels,"15");
+ publish(newOut);
+ assert.equal(menu.attrs["aria-busy"],undefined,
+   "accepted M4 readback clears busy once native PCM proves OUT");
+ assert.equal(menu.value,"Master");
+ assert.equal(sent.filter(e=>e.name==="arMixAction"&&
+   e.payload.action==="monitor").length,0,
+   "no output monitor auto-arm in GUI refactor");
+});
+
+
+test("G-MV30 exact ChannelId roster create/delete policy, including safe bootstrap",()=>{
+ const epoch="18446744073709551610",input="9007199254740993",
+   bus="9007199254740994",fx="9007199254740995",main="9007199254740996";
+ const rows=[{id:input,role:"INPUT"},{id:bus,role:"GROUP"},
+   {id:fx,role:"FX_RETURN"},{id:main,role:"MAIN"}];
+ const graph={revision:"5",rosterRevision:"7",channels:rows,
+   capabilities:{supportedOps:["CREATE_CHANNEL","CREATE_GROUP",
+     "DELETE_CHANNEL","REMOVE_BUS"]}};
+ const session={authority:"CHANNEL_ID",deviceEpoch:epoch,
+   routeRevision:"5",rosterRevision:"7"};
+ const accepted={admitted:true,retained:false,device:{epoch},graph,
+   raw:{mixerSession:session}};
+ const hardware={device:{epoch}};
+ const before=JSON.stringify(accepted);
+ const p=(operation,channelId=null,override={},state=accepted)=>
+   stripVM.rosterMutationPlan(state,{
+     operation,channelId,hardware,deviceReady:true,...override
+   });
+ const cases=[["CREATE_CHANNEL",null,"routingNativeTrackCreate","INPUT"],
+   ["CREATE_GROUP",null,"routingNativeBusCreate","GROUP"],
+   ["DELETE_CHANNEL",input,"routingNativeTrackDelete","INPUT"],
+   ["REMOVE_BUS",bus,"routingNativeBusDelete","GROUP"],
+   ["REMOVE_BUS",fx,"routingNativeBusDelete","FX_RETURN"]];
+ for(const [operation,id,action,role] of cases){
+   const plan=p(operation,id);
+   assert.equal(plan.kind,"READY",operation);
+   assert.equal(plan.action,action);
+   assert.equal(plan.payload.deviceEpoch,epoch);
+   assert.equal(plan.payload.graphRevision,"5");
+   assert.equal(plan.payload.rosterRevision,"7");
+   assert.equal(plan.pending.operation,operation);
+   if(id){assert.equal(plan.payload.channelId,id);
+     assert.equal(plan.pending.id,id);assert.equal(plan.pending.role,role);}
+   else assert.deepEqual(plan.pending.beforeIds,rows.map(x=>x.id));
+ }
+ for(const args of [
+   ["DELETE_CHANNEL",bus],["REMOVE_BUS",input],["REMOVE_BUS",main],
+   ["CREATE_BUS"],["DELETE_CHANNEL","7"],
+   ["DELETE_CHANNEL",9007199254740993]
+ ])assert.equal(p(...args).kind,"UNAVAILABLE");
+ for(const options of [{deviceReady:false},{controllerPending:true},
+   {structuralPending:true}])
+   assert.equal(p("CREATE_CHANNEL",null,options).kind,"UNAVAILABLE");
+ for(const state of [
+   {...accepted,admitted:false},
+   {...accepted,retained:true},
+   {...accepted,device:{epoch:"12"}},
+   {...accepted,raw:{mixerSession:{...session,authority:"M4"}}},
+   {...accepted,raw:{mixerSession:{...session,routeRevision:"6"}}},
+   {...accepted,raw:{mixerSession:{...session,rosterRevision:"8"}}},
+   {...accepted,graph:{...graph,revision:"0"}},
+   {...accepted,graph:{...graph,rosterRevision:"0"}},
+   {...accepted,graph:{...graph,capabilities:{supportedOps:[]}}}
+ ])assert.equal(p("CREATE_GROUP",null,{},state).kind,"UNAVAILABLE");
+ const duplicate={...accepted,graph:{...graph,channels:rows.concat(rows[0])}};
+ assert.equal(p("DELETE_CHANNEL",input,{},duplicate).kind,"UNAVAILABLE");
+ const silent={admitted:false,retained:false,device:{epoch},raw:{
+   mixerSession:{authority:"NONE",deviceEpoch:epoch},
+   legacyM4:{active:true,routeAccepted:false,routingRevision:"13"}}};
+ const bootstrap=p("CREATE_CHANNEL",null,{},silent);
+ assert.equal(bootstrap.kind,"READY");
+ assert.deepEqual(bootstrap.payload,{deviceEpoch:epoch,bootstrapRevision:"13"});
+ assert.equal(bootstrap.pending.bootstrap,true);
+ assert.equal(p("CREATE_GROUP",null,{},silent).kind,"UNAVAILABLE");
+ assert.equal(p("DELETE_CHANNEL",input,{},silent).kind,"UNAVAILABLE");
+ for(const legacy of [
+   {...silent.raw.legacyM4,active:false},
+   {...silent.raw.legacyM4,routeAccepted:true},
+   {...silent.raw.legacyM4,routingRevision:"9007199254740993"}
+ ])assert.equal(p("CREATE_CHANNEL",null,{}, {...silent,raw:{...silent.raw,
+   legacyM4:legacy}}).kind,"UNAVAILABLE");
+ assert.equal(JSON.stringify(accepted),before,
+   "pure roster policy cannot mutate native mixer or UI graph");
+});
+test("G-MV30 native roster ACK, concurrent lanes and exact later graph+roster proof",()=>{
+ const epoch="18446744073709551610",src="9007199254740993",
+   newId="9007199254740994",bus="9007199254740995",main="9007199254740996";
+ const channels=[{id:src,role:"INPUT"},{id:bus,role:"GROUP"},{id:main,role:"MAIN"}];
+ const graph={revision:"5",rosterRevision:"7",channels,
+   capabilities:{supportedOps:["CREATE_CHANNEL","CREATE_GROUP",
+     "DELETE_CHANNEL","REMOVE_BUS"]}};
+ const session={authority:"CHANNEL_ID",deviceEpoch:epoch,
+   routeRevision:"5",rosterRevision:"7"};
+ const base={admitted:true,retained:false,device:{epoch},graph,
+   raw:{mixerSession:session}};
+ const plan=(operation,channelId=null)=>stripVM.rosterMutationPlan(base,{
+   operation,channelId,hardware:{device:{epoch}},deviceReady:true});
+ const acked=(p,ack)=>stripVM.rosterAckResult(p,ack);
+ const settle=(p,s)=>stripVM.rosterReadbackSettlement(p,s);
+ const create={requestId:"bus-81",...plan("CREATE_GROUP").pending};
+ const createAck={requestId:create.requestId,ok:true,
+   createdId:newId,graphRevision:"6"};
+ assert.equal(acked(create,{...createAck,requestId:"bus-80"}),"IGNORE");
+ assert.equal(acked(create,{...createAck,ok:false}),"REJECTED");
+ assert.equal(acked(create,{...createAck,graphRevision:"5"}),"REJECTED");
+ assert.equal(acked(create,{...createAck,createdId:bus}),"REJECTED",
+   "replayed ID of an existing channel can never prove new BUS");
+ assert.equal(acked(create,{...createAck,createdId:"9007199254740993.1"}),"REJECTED");
+ assert.equal(acked(create,createAck),"ACKED");
+ const pCreate={...create,acked:true,ackRevision:"6",createdId:newId};
+ assert.equal(settle(create,base),"WAIT");
+ assert.equal(settle(pCreate,base),"WAIT",
+   "ACK does not unlock a BUS without independently accepted PCM");
+ const newlyCreated=channels.concat({id:newId,role:"GROUP"});
+ const advanced=(rows=newlyCreated,revision="6",rosterRevision="8")=>({
+   ...base,graph:{...graph,revision,rosterRevision,channels:rows},
+   raw:{mixerSession:{...session,routeRevision:revision,rosterRevision}}
+ });
+ assert.equal(settle(pCreate,advanced()),"CONFIRMED");
+ assert.equal(settle(create,advanced()),"WAIT","readback-before-ACK does not finish");
+ assert.equal(settle(pCreate,advanced(newlyCreated,"6","7")),"WAIT",
+   "roster revision must advance beyond request baseline");
+ assert.equal(settle(pCreate,advanced(newlyCreated,"5","8")),"WAIT",
+   "graph revision must advance beyond request baseline");
+ assert.equal(settle(pCreate,advanced(channels)),"WAIT",
+   "new revision alone cannot synthesize missing createdId");
+ assert.equal(settle(pCreate,advanced(channels.concat({id:newId,role:"INPUT"}))),
+   "WAIT","requested native BUS must have installed GROUP role");
+ assert.equal(settle(pCreate,{...advanced(),retained:true}),"STALE");
+ assert.equal(settle(pCreate,{...advanced(),device:{epoch:"22"}}),"STALE");
+ assert.equal(settle(pCreate,{...advanced(),raw:{mixerSession:{
+   ...session,authority:"M4",routeRevision:"6",rosterRevision:"8"}}}),"STALE");
+ assert.equal(settle(pCreate,{...advanced(),raw:{mixerSession:{
+   ...session,routeRevision:"6",rosterRevision:"7"}}}),"STALE");
+ assert.equal(settle(pCreate,advanced(newlyCreated,"4","8")),"STALE",
+   "a regressed native graph cannot close an old transaction");
+ const remove={requestId:"bus-delete-82",...plan("REMOVE_BUS",bus).pending};
+ const removeAck={requestId:remove.requestId,channelId:bus,ok:true,
+   graphRevision:"6"};
+ assert.equal(acked(remove,{...removeAck,channelId:src}),"REJECTED");
+ assert.equal(acked(remove,{...removeAck,requestId:"bus-delete-1"}),"IGNORE");
+ assert.equal(acked(remove,removeAck),"ACKED");
+ const pRemove={...remove,acked:true,ackRevision:"6"};
+ assert.equal(settle(pRemove,advanced(channels.filter(x=>x.id!==bus))),"CONFIRMED");
+ assert.equal(settle(pRemove,advanced(channels)),"WAIT");
+ assert.equal(settle(remove,advanced(channels.filter(x=>x.id!==bus))),"WAIT");
+ const inputDelete={requestId:"track-delete-83",...plan("DELETE_CHANNEL",src).pending};
+ assert.equal(acked(inputDelete,{...removeAck,requestId:inputDelete.requestId,
+   channelId:src}),"ACKED");
+ assert.equal(settle({...inputDelete,acked:true,ackRevision:"6"},
+   advanced(channels.filter(x=>x.id!==src))),"CONFIRMED");
+ const silent={admitted:false,retained:false,device:{epoch},
+   raw:{mixerSession:{authority:"NONE",deviceEpoch:epoch},
+   legacyM4:{active:true,routeAccepted:false,routingRevision:"13"}}};
+ const bootstrap=stripVM.rosterMutationPlan(silent,{
+   operation:"CREATE_CHANNEL",hardware:{device:{epoch}},deviceReady:true});
+ const bPending={requestId:"track-99",...bootstrap.pending};
+ assert.equal(acked(bPending,{requestId:"track-99",ok:true,
+   createdId:newId,graphRevision:"6"}),"ACKED");
+ assert.equal(settle({...bPending,acked:true,ackRevision:"6",
+   createdId:newId},silent),"WAIT","first track stays pending while native admits");
+ const installedInput=advanced(channels.concat({id:newId,role:"INPUT"}));
+ assert.equal(settle({...bPending,acked:true,ackRevision:"6",
+   createdId:newId},installedInput),"CONFIRMED");
+ const bridge=read("web/approved-native-bridge.js");
+ for(const symbol of ["rosterMutationPlan","rosterAckResult","rosterReadbackSettlement"])
+   assert.ok(bridge.includes("stripVM."+symbol+"("),
+     "bridge must use one pure roster authority: "+symbol);
+ assert.ok(bridge.includes('if(verdict==="ACKED")'));
+ assert.ok(bridge.includes('finishNativeTrack(controller?.state()?.current)'));
+ assert.equal(bridge.includes("else pendingBusCreate=null"),false,
+   "BUS ACK cannot release the mutation before accepted readback");
+ assert.equal(bridge.includes('action:"routingNativeBusDelete"'),false,
+   "routing action comes from one pure transaction plan");
+});
+
+
+test("G-MV30 first native ChannelId projection enables Add Track without a second callback",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const success=bridge.indexOf("flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;");
+ assert.ok(success>=0);
+ const after=bridge.slice(success,success+500);
+ assert.ok(after.includes("syncAddTrack(next);"),
+   "native button should re-evaluate only AFTER successful graph projection");
+ assert.ok(after.indexOf("syncAddTrack(next);")<
+   after.indexOf("syncMonitorButton(next.device);"));
+ const before=bridge.indexOf("if (!projectNativeGraphWithoutFocusLoss(next))",success-500);
+ assert.ok(before>=0&&before<success,
+   "never enable a native Add before the authoritative ChannelId graph projects");
+});
+
+
+test("G-MV31 pure WIRE PRE/POST plans bind exact send identities, never PRIMARY/MAIN/mystery EdgeId",()=>{
+ const src="9007199254740993",other="9007199254740994",
+   bus="9007199254740995",fx="9007199254740996",
+   main="18446744073709551615",id="9223372036854775809",
+   otherId="9223372036854775810",mainId="9223372036854775811",
+   primaryId="9223372036854775812";
+ const send={edgeId:id,from:src,to:bus,enabled:true,primaryOutput:false,
+   tap:"POST_FADER",sendEnabled:true,gainLinear:0.5};
+ const fxSend={...send,edgeId:otherId,to:fx};
+ const mainSend={...send,edgeId:mainId,to:main};
+ const primary={...send,edgeId:primaryId,primaryOutput:true,gainLinear:1};
+ const graph={mainChannelId:main,channels:[
+   {id:src,role:"INPUT"},{id:other,role:"INPUT"},
+   {id:bus,role:"GROUP"},{id:fx,role:"FX_RETURN"},
+   {id:main,role:"MAIN"}],edges:[send,mainSend,primary],
+   capabilities:{supportedOps:["APPLY_WIRE_TRANSACTION","SET_SEND_ENABLED"]}};
+ const snap={admitted:true,retained:false,graph};
+ const before=JSON.stringify(snap);
+ const tap=(edgeId=id,targetTap="PRE_FADER",extra={},state=snap)=>
+   wireVM.nativeTapPlan(state,{sourceId:src,edgeId,targetTap,
+     projected:true,...extra});
+ const expected={kind:"DISPATCH",operation:"APPLY_WIRE_TRANSACTION",
+   source:src,payload:{changes:[{op:"SET_TAP",from:src,edgeId:id,tap:"PRE_FADER"}]}};
+ assert.deepEqual(tap(),expected);
+ assert.deepEqual(tap(id,"POST_FADER"),{kind:"NO_CHANGE"});
+ assert.deepEqual(tap(id,null),{kind:"AVAILABLE",tap:"POST_FADER"});
+ assert.equal(wireVM.channelTapEdge(snap,{sourceId:src}).edgeId,id,
+   "parallel MAIN and PRIMARY do not steal channel PRE/POST fallback");
+ assert.equal(wireVM.channelTapEdge(snap,{sourceId:src,selectedEdgeId:id}).edgeId,id);
+ assert.equal(wireVM.channelTapEdge(snap,{sourceId:src,selectedEdgeId:primaryId}),null);
+ assert.equal(wireVM.channelTapEdge(snap,{sourceId:src,selectedEdgeId:mainId}),null);
+ assert.equal(wireVM.channelTapEdge(snap,{sourceId:src,selectedEdgeId:otherId}),null);
+ assert.equal(wireVM.channelTapEdge(snap,{sourceId:other}),null);
+ const two={...snap,graph:{...graph,edges:[...graph.edges,fxSend]}};
+ assert.equal(wireVM.channelTapEdge(two,{sourceId:src}),null,
+   "two SENDs require explicit identity, not a guessed first match");
+ assert.equal(wireVM.channelTapEdge(two,{sourceId:src,selectedEdgeId:otherId}).edgeId,otherId);
+ assert.equal(wireVM.channelTapEdge(two,{sourceId:src,selectedEdgeId:"invalid"}),null);
+ for(const [edgeId,target,extra,state] of [
+   [primaryId,"PRE_FADER",{},snap],
+   [id,"NO_TAP",{},snap],
+   [id,"PRE_FADER",{projected:false},snap],
+   [id,"PRE_FADER",{pending:true},snap],
+   [id,"PRE_FADER",{}, {...snap,admitted:false}],
+   [id,"PRE_FADER",{}, {...snap,retained:true}],
+   [id,"PRE_FADER",{}, {...snap,graph:{...graph,capabilities:{supportedOps:[]}}}],
+   [id,"PRE_FADER",{}, {...snap,graph:{...graph,edges:[...graph.edges,send]}}],
+   [id,"PRE_FADER",{}, {...snap,graph:{...graph,channels:graph.channels.filter(ch=>ch.id!==src)}}],
+   [id,"PRE_FADER",{}, {...snap,graph:{...graph,edges:[{...send,from:other},mainSend,primary]}}]
+ ])assert.equal(tap(edgeId,target,extra,state).kind,"UNAVAILABLE");
+ for(const wrong of ["0","-1","9007199254740993.1","18446744073709551616",
+   9223372036854775808])
+   assert.equal(tap(wrong).kind,"UNAVAILABLE");
+ assert.equal(wireVM.nativeTapPlan(snap,{sourceId:src,
+   edgeId:undefined,targetTap:"PRE_FADER",projected:true}).kind,"UNAVAILABLE",
+   "missing EdgeId must not be replaced by the test helper default");
+ assert.equal(JSON.stringify(snap),before,"pure selectors cannot mutate live PCM graph");
+});
+test("G-MV31 SOF exact BUS/FX send selection and ON/OFF fail closed under pending or owner change",()=>{
+ const src="9007199254740993",other="9007199254740994",
+   bus="9007199254740995",fx="9007199254740996",
+   main="18446744073709551615",edgeId="9223372036854775809";
+ const rows=[{id:src,role:"INPUT"},{id:other,role:"INPUT"},
+   {id:bus,role:"GROUP"},{id:fx,role:"FX_RETURN"},{id:main,role:"MAIN"}];
+ const edge={edgeId,from:src,to:bus,enabled:true,primaryOutput:false,
+   tap:"POST_FADER",sendEnabled:true,gainLinear:1};
+ const graph={channels:rows,mainChannelId:main,edges:[edge],
+   capabilities:{supportedOps:["SET_SEND_ENABLED","APPLY_WIRE_TRANSACTION",
+     "SET_WIRE_GAIN"]}};
+ const snap={admitted:true,retained:false,graph};
+ const sof=(sourceId=src,destinationId=bus,state=snap)=>
+   wireVM.sofSendEdge(state,{sourceId,destinationId});
+ assert.equal(sof(),edge);
+ assert.equal(sof(src,fx),null,"FX return without a wire is not an SOF route");
+ assert.equal(sof(src,main),null,"SOF cannot control a parallel MAIN send");
+ assert.equal(sof(other,bus),null);
+ assert.equal(sof(src,src),null);
+ assert.equal(sof(src,bus,{...snap,retained:true}),null);
+ assert.equal(sof(src,bus,{...snap,admitted:false}),null);
+ assert.equal(sof(src,bus,{...snap,graph:{...graph,edges:[edge,edge]}}),null);
+ assert.equal(sof(src,bus,{...snap,graph:{...graph,edges:[
+   {...edge,primaryOutput:true}]}}),null);
+ assert.equal(sof(src,bus,{...snap,graph:{...graph,edges:[{
+   ...edge,from:other}]}}),null);
+ assert.equal(sof(src,fx,{...snap,graph:{...graph,edges:[{
+   ...edge,to:fx}]}}).edgeId,edgeId);
+ const enabled=(overrides={},state=snap)=>wireVM.nativeSendTogglePlan(state,{
+   sourceId:src,edgeId,projected:true,...overrides});
+ assert.deepEqual(enabled(),{kind:"DISPATCH",operation:"SET_SEND_ENABLED",
+   source:src,payload:{edgeId,enabled:false}});
+ assert.equal(enabled({}, {...snap,graph:{...graph,edges:[{
+   ...edge,sendEnabled:false}]}}).payload.enabled,true);
+ for(const item of [
+   [{projected:false},snap],[{pending:true},snap],[{}, {...snap,admitted:false}],
+   [{}, {...snap,retained:true}],[{edgeId:"0"},snap],
+   [{sourceId:other},snap],
+   [{}, {...snap,graph:{...graph,edges:[{...edge,sendEnabled:null}]}}],
+   [{}, {...snap,graph:{...graph,edges:[{...edge,primaryOutput:true}]}}],
+   [{}, {...snap,graph:{...graph,capabilities:{supportedOps:["SET_WIRE_GAIN"]}}}]
+ ])assert.equal(enabled(item[0],item[1]).kind,"UNAVAILABLE");
+ assert.equal(wireVM.nativeTapPlan(snap,{sourceId:src,edgeId,
+   projected:true}).kind,"AVAILABLE",
+   "SOF PRE/POST and inspector share one exact EdgeId policy");
+ const bridge=read("web/approved-native-bridge.js");
+ for(const fn of ["sofSendEdge","channelTapEdge","nativeSendTogglePlan","nativeTapPlan"])
+   assert.match(bridge,new RegExp("wireVM\\."+fn+"\\("));
+ assert.equal((bridge.match(/function requestNativeTap\(/g)||[]).length,1,
+   "SOF + WIRE inspector use one native transaction sender");
+ assert.ok(bridge.includes('controller.intent(plan.operation,plan.source,plan.payload)'));
+ assert.ok(bridge.includes('intent(plan.operation,t,plan.payload)'));
+ assert.doesNotMatch(bridge,/const sends=current\.graph\.edges\.filter\(/,
+   "native channel tapping no longer duplicates graph selection policy");
+ assert.doesNotMatch(read("web/approved-wire-view-model.js"),
+   /backend\.emitEvent|document\.querySelector|window\.setTimeout/,
+   "VM is deterministic and has no independent dispatcher");
 });

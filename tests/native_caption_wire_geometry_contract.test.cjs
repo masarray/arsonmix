@@ -128,7 +128,66 @@ assert.match(page, /document\.addEventListener\('visibilitychange'/);
 assert.doesNotMatch(page, /resizeQueued=false;render\(\)/);
 // Reconciled main Player M3 controls must survive the native caption branch.
 const playerHtml = read('site/preview-v2/assets/mixer-contextual-buttons.js');
-assert.match(main, /struct PlayerTrackSettings/);
+// Player native metadata is now owned by the extracted pure archive codec.
+const playerArchive = read('src/PlayerSetlistArchive.h');
+assert.match(playerArchive, /struct PlayerTrackSettings/);
+assert.match(playerArchive, /nextGeneratedName/);
+const playerEditTransaction=read('src/PlayerSetlistEditTransaction.h');
+assert.match(playerEditTransaction, /PlayerSetlistArchive::nextGeneratedName/);
+assert.match(playerEditTransaction, /PlayerSetlistRepository::save/);
+assert.match(main, /using Edit=armix::player::PlayerSetlistEditTransaction/);
+assert.match(main, /auto outcome=Edit::apply/);
+assert.match(playerEditTransaction, /replaceActiveTracks/);
+assert.match(main, /commitPlayerTrackEdit/);
+const libraryPlan=read('src/PlayerLibraryEditPlan.h');
+assert.match(libraryPlan, /class PlayerLibraryEditPlan final/);
+assert.match(libraryPlan, /static std::optional<Candidate> folder/);
+assert.match(main, /PlayerLibraryEditPlan::append/);
+assert.match(main, /PlayerLibraryEditPlan::folder/);
+assert.match(main, /PlayerLibraryEditPlan::manualRelink/);
+assert.match(main, /PlayerLibraryEditPlan::move/);
+assert.match(main, /PlayerLibraryEditPlan::remove/);
+assert.match(main, /PlayerLibraryEditPlan::undo/);
+const playerProjection=read('src/PlayerStateProjection.h');
+assert.match(playerProjection, /class PlayerStateProjection final/);
+assert.match(playerProjection, /queueRevision/);
+assert.match(playerProjection, /canUndoRemove/);
+assert.match(main, /PlayerStateProjection/);
+const playerProjectionHost=main.slice(main.indexOf('void emitPlayerState('),
+  main.indexOf('void choosePlayerFiles()'));
+assert.doesNotMatch(playerProjectionHost, /setProperty/);
+assert.match(main, /Edit::replaceActiveTracks/);
+assert.match(playerArchive, /static bool canUndoRemove/);
+assert.match(main, /PlayerSetlistArchive::canUndoRemove/);
+assert.match(main, /Setlist is full; remove a song before undoing/);
+assert.doesNotMatch(main, /const int next=static_cast<int>\(playerSets_\.size\(\)\)\+1/);
+assert.match(main, /using PlayerTrackSettings=armix::player::PlayerTrackSettings/);
+const playerRepository=read('src/PlayerSetlistRepository.h');
+assert.match(playerRepository, /class PlayerSetlistRepository final/);
+assert.match(playerRepository, /juce::TemporaryFile staging\(target\)/);
+assert.match(playerRepository, /overwriteTargetFileWithTemporary\(\)/);
+assert.match(main, /PlayerSetlistRepository::load/);
+assert.doesNotMatch(main, /PlayerSetlistRepository::save/);
+assert.doesNotMatch(main, /void persistPlayerLibrary\(\)/);
+assert.match(main, /commitPlayerMetadata/);
+const playerLiveCommit=read('engine/player/PlayerLiveMetadataCommitPolicy.h');
+assert.match(playerLiveCommit, /saveRejectedRollbackFailed/);
+assert.match(main, /NativeMeta::run/);
+assert.match(main, /stopPlayerAfterUnrecoveredMetadata/);
+const persistence=main.slice(main.indexOf('void restorePlayerLibrary()'),
+  main.indexOf('bool playerShowMaySwitchSet()'));
+assert.doesNotMatch(persistence,
+  /JSON::parse|JSON::toString|loadFileAsString|replaceWithText|juce::TemporaryFile/);
+
+const cuePolicy=read('engine/player/PlayerCueEditPolicy.h');
+assert.match(cuePolicy, /struct PlayerCueEditPolicy/);
+assert.match(main, /CuePolicy::plan/);
+const cueAction=main.slice(main.indexOf('if(action=="playerCueIn"'),
+  main.indexOf('if(action=="playerPlay")'));
+assert.ok(cueAction.indexOf('engine_.setPlayerCueRange(nextCue->in,nextCue->out)') >= 0);
+assert.ok(cueAction.indexOf('commitPlayerTrackEdit(playerLibrary_,std::move(staged))') >
+          cueAction.indexOf('engine_.setPlayerCueRange(nextCue->in,nextCue->out)'));
+assert.match(cueAction, /engine_\.setPlayerCueRange\(cues\.cueIn,cues\.cueOut\)/);
 assert.match(main, /action=="playerKeyStep" \|\| action=="playerTempoStep"/);
 assert.match(main, /setPlayerPitchTempo\(next\.key,next\.tempo\)/);
 assert.match(playerHtml, /id="playerKeyMinus"/);
