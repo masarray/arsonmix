@@ -6,7 +6,9 @@ cmake_minimum_required(VERSION 3.22)
 project(ARMixIO2QualifiedInputMap LANGUAGES CXX)
 include(CTest)
 add_executable(ARMixIO2QualifiedInputMapTests
-    ../multi_device_input_plan_test.cpp)
+    ../multi_device_input_plan_test.cpp
+    ../../engine/device/QualifiedInputGraphBridge.h
+    QualifiedInputGraphBridgeCases.h)
 target_compile_features(ARMixIO2QualifiedInputMapTests PRIVATE cxx_std_20)
 if(MSVC)
     target_compile_options(ARMixIO2QualifiedInputMapTests PRIVATE /W4 /WX)
