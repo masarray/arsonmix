@@ -82,11 +82,11 @@ test("G-MV26 MAIN scalar gate uses current PCM authority, never stale M4 status"
     "numeric M4 host tokens must not silently round uint64 device epochs");
   assert.equal(gate(null),"UNAVAILABLE");
   const bridge=readFileSync("web/approved-native-bridge.js","utf8");
-  assert.match(bridge,/stripVM\\.masterScalarAuthority\\(/);
-  assert.match(bridge,/nativeMasterAuthority\\(\\)===?"UNAVAILABLE"/);
-  assert.doesNotMatch(bridge,/m4Verified\\(\\)\\s*\\|\\|\\s*nativeMasterReady\\(\\)/);
+  assert.match(bridge,/stripVM\.masterScalarAuthority\(/);
+  assert.match(bridge,/nativeMasterAuthority\(\)===?"UNAVAILABLE"/);
+  assert.doesNotMatch(bridge,/m4Verified\(\)\s*\|\|\s*nativeMasterReady\(\)/);
   assert.doesNotMatch(vm.masterScalarAuthority.toString(),
-    /document\\.|window\\.|backend|setTimeout|AudioContext|emitEvent/);
+    /document\.|window\.|backend|setTimeout|AudioContext|emitEvent/);
 });
 
 test("MV-9 exact native edit identity never rounds uint64 channel/device values",()=>{
