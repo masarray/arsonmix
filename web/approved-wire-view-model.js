@@ -182,6 +182,80 @@
       payload:{edgeId,enabled:!edge.sendEnabled}};
   }
 
+  // G-MV32: one pure PRIMARY MAIN gesture owner for both verified ChannelId
+  // and the legacy M4 first-sound patch. A Pages PRIMARY cable must match
+  // its own accepted physical route before unplugging; a parallel SEND to
+  // MAIN remains a different edge and falls through to ordinary WIRE edits.
+  // No command is emitted here. The existing OUT dispatcher still performs
+  // final admission, ACK, later native readback and timeout handling.
+  function primaryMainGesturePlan(snapshot,{op,mainUiId,sourceId,edgeId,
+    uiEdges=[],m4Verified=false,m4Channel=-1}={}) {
+    const pass={kind:"PASS"};
+    if(!op||typeof op!=="object")return pass;
+    const isMain=mainUiId!==null&&mainUiId!==undefined&&
+      op.destId===mainUiId;
+    const mainConnect=isMain&&(op.type==="ROUTE_ONLY"||
+      (op.type==="CONNECT"&&
+        (!op.mode||op.mode==="postFader"||op.mode==="routeOnly")));
+    if(mainConnect)return {kind:"ROUTE",target:"MAIN"};
+    if(op.type!=="REMOVE")return pass;
+
+    // UI IDs are cosmetic; they are never a substitute for the exact
+    // producer EdgeId. Check for a *unique* visible PRIMARY cable first.
+    const uiPrimary=Array.isArray(uiEdges)?uiEdges.filter(e=>
+      e?.id===op.edgeId&&e.sourceId===op.sourceId&&
+      e.kind==="primary"&&e.enabled===true):[];
+    const visible=uiPrimary.filter(e=>e.destId===mainUiId);
+    if(visible.length>1)return {kind:"BLOCK"};
+    // M4 has no native EdgeId. A PRIMARY shown against any other target
+    // cannot be interpreted as a verified MAIN unplug.
+    if(snapshot?.admitted===false&&uiPrimary.length>0&&visible.length!==1)
+      return {kind:"BLOCK"};
+    const graph=snapshot?.graph;
+    const sources=Array.isArray(graph?.channels)?
+      graph.channels.filter(ch=>ch?.id===sourceId):[];
+    const globalEdges=Array.isArray(graph?.edges)&&nativeId(edgeId)?
+      graph.edges.filter(e=>e?.edgeId===edgeId):[];
+    // Older v6 producers omit primaryOutput: use the SAME explicit-field
+    // precedence + accepted primaryOutId fallback as edgePresentation.
+    // A native false is always decisive and can NEVER become PRIMARY.
+    const nativePrimary=globalEdges.length===1&&sources.length===1&&
+      globalEdges[0].from===sourceId&&
+      globalEdges[0].to===graph?.mainChannelId&&
+      edgePresentation(globalEdges[0],sources[0].primaryOutId,
+        graph.mainChannelId)?.primary===true;
+    // A mapped primary native EdgeId cannot bypass this policy through
+    // the generic REMOVE path just because the UI projection went stale.
+    if(visible.length!==1)
+      return nativePrimary?{kind:"BLOCK"}:pass;
+    if(snapshot?.retained===true)return {kind:"BLOCK"};
+
+    if(snapshot?.admitted===true) {
+      if(nativeId(sourceId)&&nativeId(edgeId)&&
+         nativeId(graph?.mainChannelId)&&
+         sources.length===1&&
+         ["INPUT","GROUP","FX_RETURN"].includes(sources[0].role)&&
+         sources[0].primaryOutId===graph.mainChannelId&&
+         nativePrimary)return {kind:"ROUTE",target:"NONE"};
+      return {kind:"BLOCK"};
+    }
+    // M4 is ordinal-only: NEVER infer its identity from a stale ChannelId
+    // graph or from a cosmetic cable if the producer switched owners.
+    const session=snapshot?.raw?.mixerSession;
+    const m4=snapshot?.raw?.legacyM4;
+    if(snapshot?.admitted===false&&session?.authority==="M4"&&
+       m4Verified===true&&Number.isInteger(m4Channel)&&
+       m4Channel>=0&&m4Channel<10&&
+       session.deviceEpoch===snapshot.device?.epoch&&
+       session.routeRevision===m4?.routingRevision&&
+       session.channels?.[m4Channel]?.role==="INPUT"&&
+       session.channels[m4Channel].ordinal===m4Channel&&
+       session.channels[m4Channel].source?.main===true&&
+       m4?.channels?.[m4Channel]?.main===true)
+      return {kind:"ROUTE",target:"NONE"};
+    return {kind:"BLOCK"};
+  }
+
   // UI gesture translation only: caller still owns one native transaction,
   // ACK timeout, installed graph readback, and UI rollback. This helper does
   // not decide that an operation is admitted or mutate any accepted graph.
@@ -271,6 +345,6 @@
   return Object.freeze({gainDb,edgePresentation,parallelEdge,
     acceptedParallelEdge,gainReadback,canEditTap,gestureTap,sofAvailable,
     compactSendGesture,nativeSendEdge,nativeTapPlan,sofSendEdge,
-    channelTapEdge,nativeSendTogglePlan,nativeTransaction,
+    channelTapEdge,nativeSendTogglePlan,primaryMainGesturePlan,nativeTransaction,
     gainDispatchPlan,nativeRecoveryPlan});
 });

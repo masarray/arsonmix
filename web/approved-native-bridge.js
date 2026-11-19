@@ -3759,54 +3759,31 @@
       // Sends-on-faders' draft EdgeId is not a native identifier.
       ops=wireVM.compactSendGesture(ops,wireByUiId);
       const current=controller?.state().current;
-      // P0 first-sound WIRE to MAIN is the very same native M4 PRIMARY_OUT
-      // transaction as the ordinary OUT drop-down. Do not reject a real
-      // physical CH→MAIN connection merely because P1 dynamic BUS/WIRE
-      // transaction capability has not been admitted yet.
+      // The WIRE PRIMARY MAIN cable and the ordinary OUT selector share
+      // exactly one native patch path. Pure policy resolves ChannelId EdgeId
+      // vs M4 ordinal from accepted readback; stale primary cable projection
+      // cannot turn into a generic REMOVE of another parallel SEND.
       if(Array.isArray(ops)&&ops.length===1){
         const op=ops[0];
         const t=scope?.tracks?.find(x=>x.id===op.sourceId);
-        const sourceId=t?nativeByUiId.get(t.id):null;
-        // Ordinary MAIN jack is a primary ROUTE_ONLY. An explicitly selected
-        // send mode must pass through native CONNECT instead, preserving the
-        // old primary BUS (or the absence of a primary in SOURCE ONLY).
-        const isMainConnect=(op.type==="ROUTE_ONLY" ||
-          (op.type==="CONNECT" && (!op.mode ||
-            op.mode==="postFader" || op.mode==="routeOnly"))) &&
-          op.destId===scope?.master?.id;
-        // WIRE gesture carries a UI edge id. wireByUiId is UI→native;
-        // uiByWireId is the inverse. The old inverse lookup always returned
-        // undefined, so unplugging an existing MAIN wire was impossible.
-        const edgeId=wireByUiId.get(op.edgeId);
-        const lane=m4Index(t);
-        const graphMainRemove=op.type==="REMOVE" && sourceId &&
-          current?.admitted===true &&
-          current.graph.edges.some(e=>e.enabled&&e.edgeId===edgeId&&
-            e.from===sourceId&&e.to===current.graph.mainChannelId&&
-            e.primaryOutput===true);
-        // The approved M4 renderer remains the accepted First Sound owner
-        // if ChannelId projection was not admitted. Verify BOTH an exact UI
-        // PRIMARY edge and the producer's real MAIN readback before removing.
-        // When native ChannelId *is* admitted, never replace its edge-token
-        // guard with an M4 label. No invented browser-only PCM or routing.
-        const m4MainRemove=op.type==="REMOVE" && current?.admitted!==true &&
-          lane>=0 && m4Verified() &&
-          legacy()?.channels?.[lane]?.main===true &&
-          Array.isArray(scope?.wireEdges) &&
-          scope.wireEdges.some(e=>e.enabled&&e.kind==="primary"&&
-            e.id===op.edgeId&&e.sourceId===op.sourceId&&
-            e.destId===scope?.master?.id);
-        const isMainRemove=graphMainRemove||m4MainRemove;
-        // Admitted new ChannelIds after CH10 have no M4 lane ordinal.
-        if(t&&(lane>=0||(current?.admitted===true&&sourceId))&&
-           (isMainConnect||isMainRemove)){
-          const target=isMainRemove?"NONE":"MAIN";
-          if(requestPrimaryOut(t,target))
+        const plan=wireVM.primaryMainGesturePlan(current,{
+          op,mainUiId:scope?.master?.id,
+          sourceId:t?nativeByUiId.get(t.id):null,
+          edgeId:wireByUiId.get(op.edgeId),uiEdges:scope?.wireEdges,
+          m4Verified:m4Verified(),m4Channel:m4Index(t)
+        });
+        if(plan.kind==="BLOCK"){
+          status("WIRE MAIN unchanged · stale PRIMARY cable or native authority");
+          controller?.subscribe();
+          return true;
+        }
+        if(plan.kind==="ROUTE"){
+          if(t&&requestPrimaryOut(t,plan.target))
             status(t.name+" WIRE → "+
-              (target==="MAIN"?"MAIN":"SOURCE ONLY")+
+              (plan.target==="MAIN"?"MAIN":"SOURCE ONLY")+
               " · native ACK/readback required");
           else nativeToast("WIRE MAIN unavailable · verify channel and routing state");
-          return true; // original Pages reducer never simulates native PCM
+          return true; // never simulate native PCM in the Pages reducer
         }
       }
       if (!flags.acceptedGraphConnected || !current?.admitted ||
