@@ -2112,10 +2112,14 @@ test("P0 WIRE-to-MAIN and channel OUT use one acknowledged native transaction",(
  assert.ok(primary.indexOf('session?.authority==="CHANNEL_ID"')<
            primary.indexOf("const channel=m4Index(t)"),
            "ChannelId branch must precede the legacy M4 fallback inside requestPrimaryOut");
- assert.match(bridge,/const isMainConnect=/);
- assert.match(bridge,/const isMainRemove=/);
- assert.match(bridge,/current\.graph\.edges\.some/);
- assert.match(bridge,/if\(requestPrimaryOut\(t,target\)\)/);
+ // G-MV32: MAIN cable selection now belongs to the existing WIRE VM;
+ // both paths still converge on the one accepted OUT transaction.
+ const wirePolicy=read("web/approved-wire-view-model.js");
+ assert.match(wirePolicy,/const mainConnect=isMain&&/);
+ assert.match(wirePolicy,/const nativePrimary=globalEdges\.length===1/);
+ assert.match(bridge,/wireVM\.primaryMainGesturePlan\(current,/);
+ assert.match(bridge,/if\(plan\.kind==="ROUTE"\)/);
+ assert.match(bridge,/requestPrimaryOut\(t,plan\.target\)/);
  assert.match(native,/action=="routingChannelPatch"/);
  assert.match(native,/engine_\.repatchDryRoutingLabChannel\(channel,/);
  assert.match(bridge,/scope\?\.closeNativePicker\?\.\(\)/);
@@ -5745,6 +5749,11 @@ test("G-MV32 PRIMARY MAIN WIRE is one exact ChannelId gesture with safe SEND fal
      ...overrides});
  const baseline=JSON.stringify(native);
  assert.deepEqual(plan(),{kind:"ROUTE",target:"NONE"});
+ // Legacy admitted v6 graphs may omit the explicit PRIMARY flag.
+ assert.deepEqual(plan({...native,graph:{...graph,edges:[
+   {...primary,primaryOutput:undefined},send]}}),{kind:"ROUTE",target:"NONE"});
+ assert.deepEqual(plan({...native,graph:{...graph,edges:[
+   {...primary,primaryOutput:false},send]}}),{kind:"BLOCK"});
  assert.deepEqual(plan(native,{op:{type:"ROUTE_ONLY",sourceId:8,destId:0}}),
    {kind:"ROUTE",target:"MAIN"});
  for(const mode of [undefined,"postFader","routeOnly"])
