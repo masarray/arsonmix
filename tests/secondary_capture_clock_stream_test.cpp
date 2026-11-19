@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/device/SecondaryCaptureClockStream.h"
+#include "../engine/device/DualAsioCaptureProbePolicy.h"
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -114,6 +115,14 @@ static void invalidAndOverflow()
 }
 int main()
 {
+    using Probe=armix::device::DualAsioCaptureProbePolicy;
+    check(Probe::continuousAfterCaptureStart({5,1,10,6,15,10}));
+    // A may count callbacks before B is opened: only sustained progress
+    // in both post-B observation windows is proof of simultaneous capture.
+    check(!Probe::continuousAfterCaptureStart({5,1,5,6,15,10}));
+    check(!Probe::continuousAfterCaptureStart({5,1,10,6,10,10}));
+    check(!Probe::continuousAfterCaptureStart({5,1,10,1,15,10}));
+    check(!Probe::continuousAfterCaptureStart({5,1,10,6,15,6}));
     for(double capture:{44100.,48000.,96000.})
         for(double primary:{44100.,48000.,96000.})
             oneClockPair(capture,primary);
