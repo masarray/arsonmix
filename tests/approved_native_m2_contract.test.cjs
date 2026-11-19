@@ -5285,3 +5285,131 @@ test("G-MV29 M4 channel patch ACK and accepted readback are independently correl
  assert.ok(bridge.includes("action:plan.action,requestId,...plan.payload"));
  assert.equal(bridge.includes("const row=ack?.state?.acceptedRoute?.channels"),false);
 });
+
+
+test("G-MV29 real M4 bridge holds OUT and M/ST pending until accepted PCM, including late ACK/timer",()=>{
+ const vm=require("node:vm"),listeners=new Map(),sent=[],timers=[],microtasks=[];
+ const tracks=Array.from({length:10},(_,i)=>({
+   id:i+1,kind:"audio",name:"CH "+(i+1),input:"None",
+   output:"SOURCE ONLY (No Main)",format:"mono",fx:[],slotBypass:[],fxInsertIds:[]}));
+ const master={id:50,kind:"master",output:"Master"};
+ const scope={tracks,master,findTrack:el=>el?.track||null,
+   stopDemo(){},render(){}};
+ const backend={emitEvent:(name,payload)=>sent.push({name,payload}),
+   addEventListener:(name,fn)=>listeners.set(name,fn)};
+ const menu={dataset:{field:"output"},value:"Master",track:tracks[4],
+   attrs:{},setAttribute(k,v){this.attrs[k]=v;},
+   removeAttribute(k){delete this.attrs[k];}};
+ const doc={readyState:"complete",documentElement:{dataset:{}},
+   activeElement:null,
+   getElementById:id=>id==="info"?{textContent:""}:
+     id==="preview"?{disabled:false}:
+     id==="armixNativeToast"?{hidden:true,textContent:""}:null,
+   querySelector:q=>q.includes('select[data-field="output"]')?menu:null,
+   addEventListener(){}};
+ const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,
+   ArSonApprovedDeviceViewModel:deviceVM,
+   ArSonApprovedChannelStripViewModel:stripVM,
+   ArSonApprovedFxRackViewModel:fxRackVM,
+   ArSonApprovedWireViewModel:wireVM,
+   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
+   setTimeout(fn,ms){timers.push({fn,ms});return timers.length;},
+   clearTimeout(){},queueMicrotask(fn){microtasks.push(fn);}};
+ vm.runInNewContext(read("web/approved-native-bridge.js"),{
+   window:win,document:doc,performance:{now:()=>0},console},{timeout:2000});
+ const installed=clone(fixtures.g0);
+ Object.assign(installed.device,{backend:"ASIO",captureDevice:"Test Driver ASIO",
+   playbackDevice:"Test Driver ASIO",enabledInputs:[0,1],
+   inputEndpoints:[{id:"in:0",port:0,callback:0,label:"IN 1",active:true},
+     {id:"in:1",port:1,callback:1,label:"IN 2",active:true}]});
+ const rows=Array.from({length:10},(_,i)=>({
+   mode:"NONE",left:-1,right:-1,main:false,channelFormat:"MONO"}));
+ const controls=Array.from({length:10},()=>({
+   db:0,pan:0,mute:false,solo:false}));
+ installed.legacyM4={active:true,routeAccepted:true,nativeBusStructural:false,
+   routingRevision:"13",fxInstances:Array.from({length:10},()=>[]),
+   channelControls:controls,channels:rows};
+ const makeSession=(src=rows,rev="13")=>({
+   authority:"M4",deviceEpoch:installed.device.epoch,routeRevision:rev,
+   rosterRevision:"0",channels:src.map((row,i)=>({
+     id:"m4:"+String(i+1).padStart(2,"0"),ordinal:i,role:"INPUT",
+     source:{...row},primaryOut:row.main?"MAIN":"NONE",
+     controls:{faderDb:0,pan:0,mute:false,solo:false},
+     fxRackBypassed:false
+   })),main:{db:0,mute:false,outputArmed:false}
+ });
+ installed.mixerSession=makeSession();
+ const publish=v=>listeners.get("arMixConsoleSnapshot")(v);
+ const none=clone(installed);
+ none.legacyM4.routeAccepted=false;
+ none.mixerSession.authority="NONE";
+ none.mixerSession.routeRevision="0";
+ none.mixerSession.channels=[];
+ publish(none);publish(installed);
+ const actions=()=>sent.filter(e=>e.name==="arMixAction"&&
+   e.payload.action==="routingChannelPatch").map(e=>e.payload);
+ const formatClick=()=>win.__ARMIX_NATIVE_M2__.consumeAction(
+   tracks[4],"format",{dataset:{}});
+ assert.equal(formatClick(),true);
+ assert.equal(actions().length,1,"verified M4 M/ST dispatches");
+ const first=actions()[0];
+ assert.equal(first.operation,"SET_PROCESSING_FORMAT");
+ assert.equal(first.target,"STEREO");
+ assert.equal(first.revision,13);
+ formatClick();
+ assert.equal(actions().length,1,"same in-flight format is fenced");
+ // ACK is real but has no right to clear pending without readback.
+ listeners.get("arMixChannelPatchAck")({
+   requestId:first.requestId,channel:4,ok:true,state:{epoch:Number(installed.device.epoch),
+     revision:14,acceptedRoute:{channels:[]}}});
+ formatClick();
+ assert.equal(actions().length,1,
+   "even ACK claiming formatted output cannot unlock without readback");
+ publish(installed);formatClick();
+ assert.equal(actions().length,1,"unchanged accepted revision must not settle ACK");
+ const newFormat=clone(installed);
+ newFormat.legacyM4.routingRevision="14";
+ newFormat.legacyM4.channels[4].channelFormat="STEREO";
+ newFormat.mixerSession=makeSession(newFormat.legacyM4.channels,"14");
+ publish(newFormat);
+ // Now its native producer and session agree on a strictly newer format.
+ formatClick();
+ assert.equal(actions().length,2,"independent native readback releases format lease");
+ const second=actions()[1];
+ assert.equal(second.operation,"SET_PROCESSING_FORMAT");
+ assert.equal(second.target,"MONO");
+ const firstTimer=timers.filter(x=>x.ms===8000).at(-2);
+ if(firstTimer)firstTimer.fn();
+ listeners.get("arMixChannelPatchAck")({
+   requestId:first.requestId,channel:4,ok:false,error:"OLD_DEVICE"});
+ formatClick();
+ assert.equal(actions().length,2,
+   "superseded ACK and timeout cannot release second format request");
+ // A failed second ACK releases the lease but must not fabricate a value.
+ listeners.get("arMixChannelPatchAck")({
+   requestId:second.requestId,channel:4,ok:false,error:"REJECTED"});
+ // Source remains readback-owned STEREO; change OUT using same adapter.
+ menu.value="Master";
+ win.__ARMIX_NATIVE_M2__.consumeField({type:"change",target:menu});
+ assert.equal(actions().length,3,"M4 primary OUT uses same native adapter");
+ const out=actions()[2];
+ assert.equal(out.operation,"SET_PRIMARY_OUT");
+ assert.equal(out.target,"MAIN");
+ assert.equal(menu.attrs["aria-busy"],"true");
+ listeners.get("arMixChannelPatchAck")({
+   requestId:out.requestId,channel:4,ok:true,state:{
+     epoch:Number(installed.device.epoch),revision:15}});
+ assert.equal(menu.attrs["aria-busy"],"true",
+   "ACK alone must retain pending UI gate");
+ const newOut=clone(newFormat);
+ newOut.legacyM4.routingRevision="15";
+ newOut.legacyM4.channels[4].main=true;
+ newOut.mixerSession=makeSession(newOut.legacyM4.channels,"15");
+ publish(newOut);
+ assert.equal(menu.attrs["aria-busy"],undefined,
+   "accepted M4 readback clears busy once native PCM proves OUT");
+ assert.equal(menu.value,"Master");
+ assert.equal(sent.filter(e=>e.name==="arMixAction"&&
+   e.payload.action==="monitor").length,0,
+   "no output monitor auto-arm in GUI refactor");
+});
