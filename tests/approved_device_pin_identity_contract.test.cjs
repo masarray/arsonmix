@@ -474,8 +474,12 @@ test("G-MV24 readback policy quarantines retained PCM without starving first M4 
  assert.match(region,/if\s*\(transientPlan\.discardRetained\)\s*\{/);
  const retained=region.slice(region.indexOf("if (transientPlan.discardRetained)"),
    region.indexOf("if (!nativeAdmitted)",region.indexOf("if (transientPlan.discardRetained)")));
- assert.match(retained,/discardTransientNativeUi\(\)/,
-   "NEEDS_REMAP must discard all transient FX, SOURCE, WIRE and output leases");
+ assert.match(retained,/discardTransientNativeUi\(\{preserveRetainedIdentity:true\}\)/,
+   "NEEDS_REMAP must discard physical leases but retain legal cosmetic edits");
+ assert.match(discard,/if\(pendingIdentity&&!preserveRetainedIdentity\)/,
+   "retained ChannelId name/color/icon edits must finish on native ACK/readback");
+ assert.match(expiration,/discardTransientNativeUi\(\)/,
+   "real authority or physical device change still cancels cosmetic edit");
  assert.doesNotMatch(retained,/pendingNativeSources\.clear|pendingNativeFxPower=null|pendingWireGains\.clear|activeNativeSource=null/,
    "there must be no second partial cleanup list to drift from reconnect");
  for(const token of ["pendingNativeSources.clear()","pendingSourceQueue.clear()",

@@ -2680,7 +2680,7 @@
   // switches and repeated NEEDS_REMAP readbacks. No second PCM ownership.
   // Keep cosmetic readback signatures separate so retained-mixer telemetry
   // does not force pointless full DOM repaint on every callback.
-  function discardTransientNativeUi() {
+  function discardTransientNativeUi({preserveRetainedIdentity=false}={}) {
     pendingNativeSources.clear();pendingSourceQueue.clear();
     activeNativeSource=null;nativeUiSourcePending=null;pendingSourceId=0;
     pendingOutputPatch=null;pendingNativeFxPower=null;pendingGlobalFx=null;
@@ -2694,7 +2694,10 @@
     // must not strand EXTERNAL OUT selects or slot-bypass edits behind
     // an old ACK/timer. Never touch persisted PCM/FX state here.
     pendingExternal.clear();pendingSlotPowers.clear();
-    if(pendingIdentity){
+    // Cosmetic ChannelId edits remain legal while native playback is
+    // NEEDS_REMAP. They still require their own native ACK/readback proof.
+    // Only physical/authority changes must invalidate those old identities.
+    if(pendingIdentity&&!preserveRetainedIdentity){
       if(pendingIdentity.migration)legacyDeferred.add(pendingIdentity.channelId);
       rejectIdentity("Channel identity expired after audio connection change");
     }
@@ -2878,7 +2881,7 @@
       // silently discards ALL source, FX, WIRE and output gesture leases via
       // the same method used for authority/endpoint changes. Unlike expire,
       // it does not reset the accepted retained-graph paint signature.
-      discardTransientNativeUi();
+      discardTransientNativeUi({preserveRetainedIdentity:true});
       const signature="retained|"+next.identity+"|"+appearanceRevision;
       if(lastPaintedSignature!==signature && projectNativeGraphWithoutFocusLoss(next)){
         lastPaintedSignature=signature;
