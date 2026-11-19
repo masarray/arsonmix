@@ -49,6 +49,7 @@
 #include "PlayerSetlistRepository.h"
 #include "PlayerSetlistEditTransaction.h"
 #include "PlayerLibraryEditPlan.h"
+#include "PlayerStateProjection.h"
 #include "NativeHotkeyRegistry.h"
 #include "NativeHotkeyCommandPlan.h"
 #include "NativeFxParameterHotkey.h"
@@ -4167,67 +4168,20 @@ private:
     void emitPlayerState(bool includeLibrary=false,
                          bool includeTracks=true) {
         if(!browser_.loaded)return;
-        auto obj=std::make_unique<juce::DynamicObject>();
-        obj->setProperty("schema","arsonmix.player.v1");
-        obj->setProperty("transport",engine_.playerStatus());
-        obj->setProperty("selected",playerSelected_);
-        obj->setProperty("current",playerCurrent_);
-        obj->setProperty("autoNext",playerAutoNext_);
-        obj->setProperty("loopAB",playerLoopCurrent_);
-        obj->setProperty("activeSetlist",playerActiveSet_);
-        obj->setProperty("pending",playerPendingIndex_);
-        obj->setProperty("queueRevision",playerQueueEpoch_.revision());
-        obj->setProperty("crossfadeMs",playerFadeMilliseconds_);
-        obj->setProperty("canUndoRemove",
-            armix::player::PlayerSetlistArchive::canUndoRemove(
-                playerActiveSet_,playerUndoRemove_.set,
-                playerUndoRemove_.index,playerLibrary_.size(),
-                playerTrackSettings_.size()));
-        obj->setProperty("libraryBusy",playerFolderBusy_);
-        obj->setProperty("error",playerError_);
-        obj->setProperty("chooseOutput",
-            playerError_.containsIgnoreCase("Choose a verified MAIN output") ||
-            playerError_.containsIgnoreCase("native mixer is preparing"));
-        if(includeLibrary) {
-            juce::Array<juce::var> sets;
-            for(std::size_t i=0;i<playerSets_.size();++i) {
-                auto row=std::make_unique<juce::DynamicObject>();
-                row->setProperty("id",static_cast<int>(i));
-                row->setProperty("name",playerSets_[i].name);
-                row->setProperty("count",static_cast<int>(
-                    static_cast<int>(i)==playerActiveSet_?
-                        playerLibrary_.size():playerSets_[i].files.size()));
-                sets.add(juce::var(row.release()));
-            }
-            obj->setProperty("setlists",juce::var(sets));
-            juce::Array<juce::var> queue;
-            for(std::size_t i=0;i<playerQueue_.size();++i) {
-                auto item=std::make_unique<juce::DynamicObject>();
-                item->setProperty("id",static_cast<int>(i));
-                item->setProperty("title",
-                    playerQueue_[i].getFileNameWithoutExtension());
-                queue.add(juce::var(item.release()));
-            }
-            obj->setProperty("queue",juce::var(queue));
-            if(includeTracks) {
-                juce::Array<juce::var> rows;
-                for(std::size_t i=0;i<playerLibrary_.size();++i) {
-                    auto song=std::make_unique<juce::DynamicObject>();
-                    song->setProperty("id",static_cast<int>(i));
-                    song->setProperty("title",
-                        playerLibrary_[i].getFileNameWithoutExtension());
-                    song->setProperty("missing",!playerLibrary_[i].existsAsFile());
-                    song->setProperty("keySemitones",playerTrackSettings_[i].key);
-                    song->setProperty("tempoPercent",playerTrackSettings_[i].tempo);
-                    song->setProperty("cueIn",playerTrackSettings_[i].cueIn);
-                    song->setProperty("cueOut",playerTrackSettings_[i].cueOut);
-                    rows.add(juce::var(song.release()));
-                }
-                obj->setProperty("tracks",juce::var(rows));
-            }
+        using Projection=armix::player::PlayerStateProjection;
+        const auto snapshot=Projection::build({
+            playerLibrary_,playerTrackSettings_,playerSets_,playerQueue_,
+            engine_.playerStatus(),playerError_,
+            playerSelected_,playerCurrent_,playerActiveSet_,playerPendingIndex_,
+            playerQueueEpoch_.revision(),playerFadeMilliseconds_,
+            playerUndoRemove_.set,playerUndoRemove_.index,
+            playerAutoNext_,playerLoopCurrent_,playerFolderBusy_
+        },includeLibrary,includeTracks);
+        if(!snapshot.isObject()) {
+            playerError_="Player library state is inconsistent; no snapshot published";
+            return;
         }
-        browser_.emitEventIfBrowserIsVisible("arMixPlayerState",
-                                               juce::var(obj.release()));
+        browser_.emitEventIfBrowserIsVisible("arMixPlayerState",snapshot);
     }
     void choosePlayerFiles() {
         if(playerFileChooser_)return; // one native dialog only

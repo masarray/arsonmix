@@ -9,6 +9,7 @@
 #include "../src/PlayerSetlistRepository.h"
 #include "../src/PlayerSetlistEditTransaction.h"
 #include "../src/PlayerLibraryEditPlan.h"
+#include "../src/PlayerStateProjection.h"
 #include "../engine/player/PlayerLiveMetadataCommitPolicy.h"
 
 using Archive=armix::player::PlayerSetlistArchive;
@@ -387,7 +388,6 @@ int main() {
     verifyMeta(true,true,false,true,Meta::Outcome::saveRejectedRecovered,"ASR");
     verifyMeta(true,true,false,false,
                Meta::Outcome::saveRejectedRollbackFailed,"ASR");
-    assert(sandbox.deleteRecursively());
 
     // N-MOD-18: real JUCE File plan with in-memory candidate immutability.
     using LibraryPlan=armix::player::PlayerLibraryEditPlan;
@@ -454,7 +454,43 @@ int main() {
         {missing},{missing},{Track{}},foundMusic,
         {{0,songB}},0);
     assert(noLiveRelink && noLiveRelink->relinked==0);
+    // One native Player v1 projection: queue revision, metadata, undo
+    // admission and optional fields are inspectable without ConsoleWindow.
+    using Project=armix::player::PlayerStateProjection;
+    const auto projection=Project::build({
+        imported->files,pairControls,doc->sets,imported->files,
+        juce::var(new juce::DynamicObject()),"Choose a verified MAIN output",
+        1,0,0,-1,23,500,0,0,true,false,false
+    },true,true);
+    assert(projection.isObject());
+    assert(projection.getProperty("schema","")=="arsonmix.player.v1");
+    assert(static_cast<int>(projection.getProperty("queueRevision",-1))==23);
+    assert(static_cast<int>(projection.getProperty("crossfadeMs",-1))==500);
+    assert(static_cast<bool>(projection.getProperty("chooseOutput",false)));
+    assert(static_cast<bool>(projection.getProperty("canUndoRemove",false)));
+    assert(projection.getProperty("setlists",juce::var{}).isArray());
+    const auto displayed=projection.getProperty("tracks",juce::var{});
+    assert(displayed.isArray() && displayed.getArray()->size()==2);
+    assert(static_cast<int>((*displayed.getArray())[0].getProperty(
+        "keySemitones",-1))==4);
+    assert(static_cast<int>((*displayed.getArray())[1].getProperty(
+        "tempoPercent",-1))==115);
+    const auto lean=Project::build({
+        imported->files,pairControls,doc->sets,imported->files,
+        juce::var(new juce::DynamicObject()),"",1,0,0,-1,
+        24,180,-1,-1,false,false,false
+    },false,true);
+    assert(lean.isObject());
+    assert(lean.getProperty("setlists",juce::var{}).isVoid());
+    assert(lean.getProperty("tracks",juce::var{}).isVoid());
+    assert(lean.getProperty("queue",juce::var{}).isVoid());
+    assert(!Project::build({
+        imported->files,std::vector<Track>{},doc->sets,imported->files,
+        juce::var(new juce::DynamicObject()),"",0,0,0,-1,
+        24,180,-1,-1,false,false,false
+    },true,true).isObject());
     assert(physical.deleteRecursively());
+    assert(sandbox.deleteRecursively());
 
     // Legacy empty v3 content migrates to a non-destructive default setlist.
     const auto empty=Archive::parse(juce::JSON::parse("{\"version\":3}"));
