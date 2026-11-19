@@ -166,9 +166,31 @@ static void negativeContracts()
     bindings[1].channel={1};
     attempt(io::MultiDeviceInputFault::Kind::duplicateChannel);
     bindings[1].channel={5};
+    // Source and processing-format contracts differ. Native graph permits
+    // mono capture -> stereo VST, preserving the channel processing format.
     bindings[1].stereo=false;
-    attempt(io::MultiDeviceInputFault::Kind::channelFormatMismatch);
+    bindings[1].right={};
+    io::MultiDeviceInputPlan monoToStereo;
+    check(io::MultiDeviceInputPlan::prepare(91,devices,bindings,roster,
+                                         monoToStereo,err),
+          "mono source may feed a stereo-processing channel");
+    check(monoToStereo.source(1).inputL==2 &&
+          monoToStereo.source(1).inputR==-1,
+          "mono source stays mono in physical patch");
     bindings[1].stereo=true;
+    bindings[1].right={"ASIO/verified-B",7};
+    // Reverse also legal: stereo physical inputs may feed mono processing.
+    bindings[0].stereo=true;
+    bindings[0].right={"ASIO/verified-A",0};
+    io::MultiDeviceInputPlan stereoToMono;
+    check(io::MultiDeviceInputPlan::prepare(91,devices,bindings,roster,
+                                         stereoToMono,err),
+          "stereo capture may feed a mono-processing channel");
+    check(stereoToMono.source(0).inputL==1 &&
+          stereoToMono.source(0).inputR==0,
+          "physical stereo source preserves exact packed ordinals");
+    bindings[0].stereo=false;
+    bindings[0].right={};
     roster[1].role=mix::ChannelRole::group;
     attempt(io::MultiDeviceInputFault::Kind::invalidChannel);
     roster[1].role=mix::ChannelRole::input;
