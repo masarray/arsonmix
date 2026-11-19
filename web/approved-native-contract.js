@@ -653,11 +653,14 @@
           next.admitted!==current.admitted ||
           next.raw?.mixerSession?.authority!==
             current.raw?.mixerSession?.authority;
-        if (pending && (epochCompare !== 0 || next.retained ||
-            next.hardwareConfiguration!==current.hardwareConfiguration ||
-            authorityChanged)) {
+        const physicalStale=epochCompare!==0||next.retained||
+          next.hardwareConfiguration!==current.hardwareConfiguration;
+        if (pending && (physicalStale||authorityChanged)) {
           pending=null;
-          lastError=authorityChanged?"STALE_NATIVE_AUTHORITY":"STALE_DEVICE";
+          // Preserve existing NEEDS_REMAP/physical-error contracts even if
+          // their PCM authority also changes. Distinguish only a pure
+          // same-device ChannelId → M4/UNADMITTED owner switch.
+          lastError=physicalStale?"STALE_DEVICE":"STALE_NATIVE_AUTHORITY";
         }
       }
       if (pending && !pending.ack) {
