@@ -297,6 +297,7 @@ public:
     {
         dryRoutingLab_.disable();
         qualifiedSecondaryInstalled_.store(false,std::memory_order_release);
+        qualifiedCaptureNeedsRemap_.store(false,std::memory_order_release);
         directFence_.suspend();
         asioPinnedRegistration_ = {};
         asioRegistrationScope_ = "NONE";
@@ -439,15 +440,24 @@ public:
         else if(wantsMainContinuation())resumeMainAfterAsioReset_.store(true,std::memory_order_release);
         setOutputMuted(true);
         secondaryOutput_.disarm();
-        qualifiedSecondaryInstalled_.store(false,std::memory_order_release);
-        qualifiedSecondaryReader_.stop(); // CONTROL only, while output muted
-        secondaryCapture_.close();
+        // A no-op AUDIO SETUP must not destroy the live A+B graph's reader:
+        // finishManualAudioSetup() can retain this exact same PCM lease.
+        // If JUCE actually restarts A, its lifecycle callback fences B and
+        // marks that physical binding as requiring an explicit remap.
         directFence_.suspend();
         // Do NOT disable the accepted ChannelId graph. Audio Setup is a
         // device-binding operation, not an implicit CLEAR MIXER command.
         // The JUCE selector may change the driver before its window closes.
     }
     bool finishManualAudioSetup(bool reuseAsioBinding=true) {
+        if(qualifiedCaptureNeedsRemap_.load(std::memory_order_acquire)) {
+            // The primary hardware epoch changed. Never claim a retained
+            // dual-source map is installed on the newly opened ASIO class.
+            setOutputMuted(true);
+            qualifiedSecondaryReader_.stop();
+            secondaryCapture_.close();
+            return false; // explicit native physical remap required
+        }
         if(!approveDirectRoute())return false;
         using Decision=armix::device::DeviceSessionDecision;
         switch(armix::device::decideDeviceSession(
@@ -2398,6 +2408,7 @@ public:
         reply.error="SECONDARY_CAPTURE_NOT_ADMITTED";
         if(!allOutputsDisarmed()||independent_.active()||!attached_||
            !directFence_.permitted()||qualifiedSecondaryInstalled_.load(
+               std::memory_order_acquire)||qualifiedCaptureNeedsRemap_.load(
                std::memory_order_acquire)||secondaryCapture_.ready()||
            routeReconfiguring_.load(std::memory_order_acquire)||
            diagnosticRoute_.load(std::memory_order_acquire)!=
@@ -2509,6 +2520,7 @@ public:
             // One release-store AFTER the same snapshot/FX publication.
             // Before this flag, a qualified map rejects raw A-only inputs,
             // so a transient callback is SILENT, never wrong-device PCM.
+            qualifiedCaptureNeedsRemap_.store(false,std::memory_order_release);
             qualifiedSecondaryInstalled_.store(true,std::memory_order_release);
             return verified;
         } catch(...) {
@@ -3091,6 +3103,7 @@ private:
     armix::device::LiveSecondaryCaptureDevice secondaryCapture_;
     armix::device::QualifiedSecondaryCaptureReader qualifiedSecondaryReader_;
     std::atomic<bool> qualifiedSecondaryInstalled_{false};
+    std::atomic<bool> qualifiedCaptureNeedsRemap_{false}; // device lifecycle invalidated B
     std::uint64_t secondaryLeaseSequence_=0; // CONTROL only, never callback
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedDirectSetup_;
     juce::AudioPluginFormatManager formats_;
@@ -3226,7 +3239,8 @@ private:
         }
         setOutputMuted(true); // transient hardware gate, NOT an operator MUTE
         secondaryOutput_.invalidateSource(); // source clock may have changed
-        qualifiedSecondaryInstalled_.store(false,std::memory_order_release);
+        if(qualifiedSecondaryInstalled_.exchange(false,std::memory_order_acq_rel))
+            qualifiedCaptureNeedsRemap_.store(true,std::memory_order_release);
         secondaryCapture_.invalidatePrimaryClock(); // RT-safe fault only
         dryRoutingLab_.prepareDevice(d); // exact active mask, before callback
         if (!independent_.active())
@@ -3289,7 +3303,8 @@ private:
         monitor_.store(false,std::memory_order_release);
         secondaryOutput_.invalidateSource(); // explicit reconnect required after device stop
         masterLoudness_.prepare (0.0); // clear validity across device epoch
-        qualifiedSecondaryInstalled_.store(false,std::memory_order_release);
+        if(qualifiedSecondaryInstalled_.exchange(false,std::memory_order_acq_rel))
+            qualifiedCaptureNeedsRemap_.store(true,std::memory_order_release);
         secondaryCapture_.invalidatePrimaryClock(); // no driver teardown in JUCE callback
         dryRoutingLab_.deviceStopped();
         playerDeck_.deviceRate(0.0); // invalidates old PCM generation
