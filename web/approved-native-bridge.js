@@ -770,11 +770,11 @@
   // One native SessionSnapshot, not an independently reconstructed M4 model.
   const mixerSession=()=>hardware?.raw?.mixerSession;
   const m4ControlIsOwner=()=>mixerSession()?.authority==="M4";
-  const nativeMasterReady=()=>mixerSession()?.authority==="CHANNEL_ID" &&
-    safeNativeCounter(hardware?.device?.epoch)!==null &&
-    safeNativeCounter(legacy()?.routingRevision)!==null &&
-    Number.isFinite(mixerSession()?.main?.db) &&
-    typeof mixerSession()?.main?.mute==="boolean";
+  // The pure Strip VM admits MAIN only for the CURRENT, installed PCM
+  // producer. Old M4 status is never permission to control a retired owner.
+  const nativeMasterAuthority=()=>stripVM.masterScalarAuthority(
+    controller?.state()?.current,{m4Verified:m4Verified(),
+      graphConnected:flags.acceptedGraphConnected});
   // The shipped /preview/ IN dropdown is the sole normal hardware source
   // selector. Build options exclusively from JUCE-reported active pins, never
   // the public browser demo's hardcoded "Input 1 / CABLE / Realtek" strings.
@@ -1544,7 +1544,7 @@
   };
   function liveScalarReady(parameter,t) {
     if(t?.kind==="master")return logicalView?parameter==="masterGain":
-      parameter==="masterGain"&&(m4Verified()||nativeMasterReady());
+      parameter==="masterGain"&&nativeMasterAuthority()!=="UNAVAILABLE";
     if(m4ControlIsOwner())return m4Verified()&&m4Index(t)>=0;
     return channelIdScalarReady(parameter,t);
   }
@@ -1665,8 +1665,9 @@
     }
   }
   function sendM4Control(parameter,t,value) {
-    if((t?.kind!=="master"&&!m4ControlIsOwner()) ||
-       !(m4Verified()||(t?.kind==="master"&&nativeMasterReady())) ||
+    if((t?.kind==="master"?
+          nativeMasterAuthority()==="UNAVAILABLE":
+          !m4ControlIsOwner()||!m4Verified()) ||
        (typeof value!=="boolean"&&!Number.isFinite(value)))
       return false;
     const channel=t?.kind==="master"?-1:m4Index(t);
@@ -3666,8 +3667,8 @@
         return true;
       }
       if (action==="mute"||action==="solo") {
-        if((m4Verified()||nativeMasterReady()) &&
-           t.kind==="master" && action==="mute"){
+        if(t.kind==="master" && action==="mute" &&
+           nativeMasterAuthority()!=="UNAVAILABLE"){
           if(!sendM4Control("masterMute",t,!t.mute))
             status("Native MAIN mute rejected");
           return true;
@@ -3931,7 +3932,7 @@
           return true;
         }
         if((m4ControlIsOwner()&&m4Verified()) ||
-           (t?.kind==="master"&&(m4Verified()||nativeMasterReady())))
+           (t?.kind==="master"&&nativeMasterAuthority()!=="UNAVAILABLE"))
           sendM4Control(t?.kind==="master"?"masterGain":"faderDb",t,0);
         else intent("SET_FADER",t,{valueDb:0});
       }
