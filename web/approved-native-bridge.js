@@ -1016,15 +1016,14 @@
       }
       const requestId=channelIdOwner?
         "source-native-"+(++nativeSourceSerial):++sourceSerial;
-      if(channelIdOwner){
-        activeNativeSource={requestId,id:plan.key,
-          choice:plan.entry.choice,epoch:plan.entry.epoch,
-          beforeRevision:current.graph.revision,acked:false};
-      }else{
-        nativeUiSourcePending={requestId,channel:plan.key,
-          choice:plan.entry.choice,epoch:plan.payload.deviceEpoch,
-          revision:plan.payload.revision,acked:false};
+      const lease=stripVM.sourceQueueRequestLease({
+        authority,requestId,plan,hardware,native:current});
+      if(!lease){
+        status("SOURCE identity changed · old input choice discarded");
+        continue; // no old pin intent is emitted to a replaced device
       }
+      if(channelIdOwner)activeNativeSource=lease;
+      else nativeUiSourcePending=lease;
       backend.emitEvent("arMixAction",{action:plan.action,requestId,
         ...plan.payload});
       if(channelIdOwner)
@@ -3364,6 +3363,7 @@
         }
         const decision=stripVM.sourceQueueSelection({
           choice,choices,epoch:hardware?.device?.epoch,acceptedLabel:t.input,
+          hardwareConfiguration:hardware?.hardwareConfiguration??"",
           activeSameChannel:nativeOwner?activeNativeSource?.id===id:
             nativeUiSourcePending?.channel===channel
         });
