@@ -3,6 +3,7 @@
 #include "../engine/device/ClockBridgeSizing.h"
 #include "io2/QualifiedInputPlanCases.h"
 #include "io2/QualifiedInputGraphBridgeCases.h"
+#include "io2/QualifiedSecondaryCaptureReaderCases.h"
 #include <cstdlib>
 #include <cstdio>
 #include <string_view>
@@ -78,6 +79,7 @@ int main()
     check(!impossible.valid);
     armix::io2_test::run();
     armix::io2_graph_test::run(); // same registered IO0 native CTest now compiles IO-2
+    armix::io2_clocked_test::run(); // real producer ASRC -> native PCM/FX, B loss isolated
     std::puts("IO0_POLICY_PASS: identity, zero-output capture, exact masks, 9 clock profiles");
     return 0;
 }

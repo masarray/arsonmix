@@ -103,21 +103,33 @@ public:
            !verifiedInternalFxOnly) {
             report.fault=Fault::outputArmed;return report;
         }
+        // CONTROL: the next BUS/WIRE/FX-only revision retains the exact
+        // already-qualified device map. Omitting the optional argument must
+        // never turn a dual-device graph into unqualified ordinal-only PCM.
+        // Replacing a device map is ALWAYS a hardware transaction requiring
+        // MAIN/MONITOR/output disarm, not a hidden in-place WIRE edit.
+        const auto* prior=publisher_.controlPrepared(
+            proposedDeviceEpoch,expectedRevision);
+        if(qualifiedInputMap&&!allOutputsDisarmed) {
+            report.fault=Fault::outputArmed;return report;
+        }
+        const auto* acceptedInputMap=qualifiedInputMap?qualifiedInputMap:
+            (prior&&prior->inputMap?prior->inputMap.get():nullptr);
         // CONTROL: validate every physical source against ONE actual
         // device-qualified map before starting a potentially costly graph
         // compile. Reject mixed old/new source namespaces as a transaction.
-        if(qualifiedInputMap) {
-            if(qualifiedInputMap->primaryEpoch()!=proposedDeviceEpoch ||
-               qualifiedInputMap->deviceCount()<1 ||
-               qualifiedInputMap->virtualInputCount()!=request.physicalInputs) {
+        if(acceptedInputMap) {
+            if(acceptedInputMap->primaryEpoch()!=proposedDeviceEpoch ||
+               acceptedInputMap->deviceCount()<1 ||
+               acceptedInputMap->virtualInputCount()!=request.physicalInputs) {
                 report.fault=Fault::invalidCandidate;return report;
             }
             std::size_t matched=0;
             for(const auto& source:request.sources) {
                 if(source.kind!=DynamicSourceKind::physical)continue;
                 bool verified=false;
-                for(int i=0;i<qualifiedInputMap->sourceCount();++i) {
-                    const auto& mapped=qualifiedInputMap->source(i);
+                for(int i=0;i<acceptedInputMap->sourceCount();++i) {
+                    const auto& mapped=acceptedInputMap->source(i);
                     if(source.id==mapped.channel &&
                        source.inputL==mapped.inputL &&
                        source.inputR==mapped.inputR &&
@@ -130,7 +142,7 @@ public:
                 }
                 ++matched;
             }
-            if(matched!=static_cast<std::size_t>(qualifiedInputMap->sourceCount())) {
+            if(matched!=static_cast<std::size_t>(acceptedInputMap->sourceCount())) {
                 report.fault=Fault::invalidCandidate;return report;
             }
         }
@@ -153,9 +165,9 @@ public:
             report.fault=Fault::invalidGraph;return report;
         }
         prepared->physicalInputs=request.physicalInputs;
-        if(qualifiedInputMap)
+        if(acceptedInputMap)
             prepared->inputMap=
-                std::make_unique<armix::device::MultiDeviceInputPlan>(*qualifiedInputMap);
+                std::make_unique<armix::device::MultiDeviceInputPlan>(*acceptedInputMap);
         prepared->fx=std::move(fx); // one accepted control-plane publication
         prepared->monitor=std::any_of(roster.channels().begin(),
           roster.channels().end(),[](const ChannelStripDefinition& row) {

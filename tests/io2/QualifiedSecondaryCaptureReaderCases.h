@@ -100,6 +100,28 @@ inline void run() {
           "B's real clock bridge PCM reaches MAIN with A");
     check(reader.status().secondaryAccepted==1&&reader.status().overlaps==1,
           "one successful capture consumption, overlap rejected");
+    // Structural WIRE/FX edits cannot silently drop the verified B map.
+    // An identical authenticated topology is allowed even with MAIN armed
+    // when the native caller proved this is internal WIRE-only.
+    const auto wired=native.commit(roster,request,1,epoch,epoch,false,
+                                   {},true,false);
+    check(wired.ok()&&wired.revision==2,
+          "WIRE-only graph revision inherits qualified input lease");
+    check(render(),"B still audible after internal graph recompile");
+    check(near(left[frames-1],.2f*monoCenter+.4f),
+          "committed BUS/WIRE revision retains capture B");
+    auto wrongPatch=request;
+    wrongPatch.sources.back().inputL=1; // no longer exact B map
+    const auto wrong=native.commit(roster,wrongPatch,2,epoch,epoch,false,
+                                   {},true,false);
+    check(wrong.fault==m::DynamicNativeSessionPublisher::Fault::invalidCandidate
+          &&native.acceptedRevision()==2,
+          "cannot silently remap B by reusing native WIRE-only authorization");
+    const auto whileArmed=native.commit(roster,request,2,epoch,epoch,false,
+                                       {},true,false,&plan);
+    check(whileArmed.fault==m::DynamicNativeSessionPublisher::Fault::outputArmed,
+          "explicit device map replacement must disarm MAIN first");
+
     // B lost/failed is SILENCE in B channels, never relabeled A Input1.
     clock.fault();
     check(render(),"faulted B cannot block verified primary A");
