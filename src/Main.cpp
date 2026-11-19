@@ -20,7 +20,6 @@
 #include "DiagnosticsRecorder.h"
 #include "../engine/device/DirectRestoreBackoff.h"
 #include "NativeDirectRestoreCoordinator.h"
-#include "../engine/device/AudioSetupRecoveryPolicy.h"
 #include "../engine/device/AsioRestartRecoveryGate.h"
 #include "../engine/device/PeriodCapabilityEvidence.h"
 #include "../engine/diagnostics/CrackleEvidenceWindow.h"
@@ -2288,44 +2287,13 @@ private:
             engine_.secondaryArmed())
             return send(false,"REJECTED",
                 "Stop STREAM and finish Show/FX/diagnostic/clock transition first");
-        const auto config=args.getProperty("config",{});
-        const auto parsed=armix::device::NativeDeviceApplyCoordinator::parse(config);
-        if(!parsed)return send(false,"REJECTED",parsed.error);
-        const auto& requested=parsed.value;
-        const auto& typeName=requested.backend;
-        const auto& capture=requested.capture;
-        const auto& playback=requested.playback;
-        const double rate=requested.rate,block=requested.block;
-        auto& manager=engine_.devices();
-        juce::AudioIODeviceType* selectedType=nullptr;
-        for(auto* type:manager.getAvailableDeviceTypes())
-            if(type!=nullptr&&type->getTypeName()==typeName)selectedType=type;
-        if(selectedType==nullptr)return send(false,"REJECTED","Audio backend is not installed");
-        // Do not let JS submit arbitrary names or combine unmatched ASIO devices.
-        const bool separate=selectedType->hasSeparateInputsAndOutputs();
-        const bool outputOnly=separate&&capture.isEmpty();
-        const auto namesError=armix::device::NativeDeviceApplyCoordinator::validateNames(
-            requested,selectedType->getDeviceNames(true),
-            selectedType->getDeviceNames(false),separate);
-        if(namesError.isNotEmpty())return send(false,"REJECTED",namesError);
-        const bool unchangedDevice=manager.getCurrentAudioDeviceType()==typeName;
-        juce::AudioDeviceManager::AudioDeviceSetup before;
-        manager.getAudioDeviceSetup(before);
-        const auto previousType=manager.getCurrentAudioDeviceType();
-        const bool sameEndpoint=unchangedDevice&&before.inputDeviceName==capture
-                             &&before.outputDeviceName==playback;
-        auto* previousDevice=manager.getCurrentAudioDevice();
-        const bool previousWasOpen=previousDevice!=nullptr&&previousDevice->isOpen();
-        const bool previousMixerBound=engine_.hasBoundMixerRoute();
-        const bool previousMonitor=engine_.isMonitorEnabled();
-        const bool explicitMain=requested.assignMain;
-        if(requested.confirmRetainedPinMapping) {
-            // The first Apply must open and verify the selected device.
-            // Confirmation binds only that exact, still-open generation;
-            // draft rate, buffer and pin changes use the normal Apply path.
-            if(explicitMain || !sameEndpoint || !previousWasOpen || rate!=before.sampleRate ||
-               block!=before.bufferSize ||
-               !engine_.confirmRetainedWasapiPortMapping())
+        using Apply=armix::device::NativeDeviceApplyCoordinator;
+        const auto prepared=Apply::prepare(engine_.devices(),args.getProperty("config",{}));
+        if(prepared.error.isNotEmpty())return send(false,"REJECTED",prepared.error);
+
+        const auto& typeName=prepared.requested.backend;
+        if(prepared.requested.confirmRetainedPinMapping) {
+            if(!prepared.canConfirmRetainedPins || !engine_.confirmRetainedWasapiPortMapping())
                 return send(false,"NEEDS_REMAP",
                     "Cannot reuse mixer pins. Endpoint, pin layout or FX format is incompatible.");
             deviceSettingsDirty_=true;
@@ -2336,143 +2304,42 @@ private:
             emitApprovedNativeSnapshot();
             return;
         }
-        const auto originalInputNames=previousWasOpen
-            ?previousDevice->getInputChannelNames():juce::StringArray{};
-        const auto originalOutputNames=previousWasOpen
-            ?previousDevice->getOutputChannelNames():juce::StringArray{};
-        juce::AudioDeviceManager::AudioDeviceSetup candidate=before;
-        candidate.inputDeviceName=capture;
-        candidate.outputDeviceName=playback;
-        candidate.sampleRate=rate;
-        candidate.bufferSize=static_cast<int>(block);
-        // Pins are explicit only when candidate is the CURRENT active device.
-        // Other device pin labels do not exist until JUCE actually opens it.
-        // Its first APPLY uses safe defaults; then users refine real pin masks.
-        const auto pinInput=config.getProperty("enabledInputs",{});
-        const auto pinOutput=config.getProperty("enabledOutputs",{});
-        // External ASIO4ALL changes can leave the same endpoint name in JUCE
-        // with a closed object. Reopen with safe default masks first; the
-        // previous (possibly reordered) physical pin indices are not valid.
-        const auto recovery=armix::device::AudioSetupRecoveryPolicy::select(
-            sameEndpoint,previousWasOpen,typeName=="ASIO",
-            pinInput.isArray()&&pinOutput.isArray());
-        if(explicitMain && (!recovery.reuseActivePins ||
-                           pinOutput.getArray()->size()!=2))
-            return send(false,"REJECTED","Select exactly two inspected playback pins for MAIN.");
-        if(recovery.reuseActivePins) {
-            juce::BigInteger inMask,outMask;
-            if(!armix::device::NativeDeviceApplyCoordinator::parsePinMasks(
-                  pinInput,pinOutput,previousDevice->getInputChannelNames().size(),
-                  previousDevice->getOutputChannelNames().size(),outputOnly,
-                  inMask,outMask))
-                return send(false,"REJECTED",
-                    "Select real input pins (or none) and >=2 verified playback pins");
-            candidate.useDefaultInputChannels=false;
-            candidate.useDefaultOutputChannels=false;
-            candidate.inputChannels=inMask;
-            candidate.outputChannels=outMask;
-        }else {
-            // The requested 0-IN option must not reopen a microphone merely
-            // because JUCE defaults to enabling available capture channels.
-            // Output pin selection still requires actual driver readback.
-            candidate.useDefaultInputChannels=!outputOnly;
-            if(outputOnly)candidate.inputChannels.clear();
-            candidate.useDefaultOutputChannels=true;
-        }
-        auto* active=manager.getCurrentAudioDevice();
-        if(sameEndpoint && active!=nullptr && active->isOpen()) {
-            if(rate>0&&!active->getAvailableSampleRates().contains(rate))
-                return send(false,"REJECTED","Requested sample rate not reported by selected device");
-            if(block>0&&!active->getAvailableBufferSizes().contains(static_cast<int>(block)))
-                return send(false,"REJECTED","Requested buffer size not reported by selected device");
-        }
 
-        // Full device transaction: never enable audio during an intermediate
-        // backend auto-open, and never persist an unverified partial selection.
-        // A missing prior endpoint can leave the direct callback detached;
-        // reuse the existing explicit replacement path instead of creating a
-        // second callback or trusting the unreachable device.
-        if(engine_.hasPendingDirectRestore() &&
-           !engine_.abandonPendingDirectRestoreForSetup())
-            return send(false,"REJECTED","Failed to prepare an explicit replacement for the missing device");
+        const bool previousMixerBound=engine_.hasBoundMixerRoute();
+        const bool previousMonitor=engine_.isMonitorEnabled();
         const auto start=monotonicMilliseconds();
-        autoMainEpoch_=0;
-        engine_.beginManualAudioSetup();
-        // JUCE setAudioDeviceSetup() can return success without reopening when
-        // setup == currentSetup and currentAudioDevice != nullptr, even when
-        // that driver object has stopped. closeAudioDevice() deletes it but
-        // keeps the setup for an explicit, fresh driver instance on APPLY.
-        // For ASIO this also observes changed ASIO4ALL aggregate WDM pins.
-        // Only the operator initiates this; never auto-reopen/arm on a timer.
-        if(recovery.recreateDevice && manager.getCurrentAudioDeviceType()==typeName) {
-            diagnostics_.record("CUSTOM_AUDIO_RECREATE",
-                typeName+" | "+(previousWasOpen?"REFRESH_ASIO_PINS":"CLOSED_DEVICE_RECOVERY"));
-            manager.closeAudioDevice();
-        }
-        diagnostics_.record("CUSTOM_AUDIO_PHASE","APPLY | "+typeName);
-        auto error=openSelectedAudioDevice(typeName,candidate);
-        diagnostics_.record("CUSTOM_AUDIO_PHASE","VERIFY_READBACK | "+typeName);
-        juce::AudioDeviceManager::AudioDeviceSetup actual;
-        manager.getAudioDeviceSetup(actual);
-        auto* opened=manager.getCurrentAudioDevice();
-        bool changedAsioPinLayout=error.isEmpty()&&recovery.verifyAsioPinIdentity&&
-            opened!=nullptr&&opened->isOpen()&&
-            (opened->getInputChannelNames()!=originalInputNames||
-             opened->getOutputChannelNames()!=originalOutputNames);
-        const bool refreshedAsio4All=typeName=="ASIO" && playback.startsWithIgnoreCase("ASIO4ALL") &&
-            recovery.reuseActivePins && (changedAsioPinLayout || error.isNotEmpty());
-        bool explicitPairStillIdentified=explicitMain;
-        if(refreshedAsio4All) {
-            // Never replay an index into a newly enumerated ASIO aggregate.
-            // Preserve verified selected names if they still exist, including
-            // VB-Cable capture moved past newly enabled input channels.
-            using BindingPolicy=armix::session::MixerDeviceBindingPolicy;
-            const auto freshInputNames=changedAsioPinLayout?opened->getInputChannelNames():juce::StringArray{};
-            const auto freshOutputNames=changedAsioPinLayout?opened->getOutputChannelNames():juce::StringArray{};
-            const auto capturePins=changedAsioPinLayout?BindingPolicy::translateNamedPins(
-                candidate.inputChannels,originalInputNames,freshInputNames):std::nullopt;
-            const auto playbackPins=changedAsioPinLayout?BindingPolicy::translateNamedPins(
-                candidate.outputChannels,originalOutputNames,freshOutputNames):std::nullopt;
-            candidate.useDefaultInputChannels=!capturePins && !candidate.inputChannels.isZero();
-            candidate.useDefaultOutputChannels=!playbackPins;
-            if(capturePins)candidate.inputChannels=*capturePins;
-            if(playbackPins)candidate.outputChannels=*playbackPins;
-            explicitPairStillIdentified=explicitMain && playbackPins.has_value();
-            diagnostics_.record("CUSTOM_AUDIO_PHASE","REFRESH_ASIO4ALL_INVENTORY");
-            error=openSelectedAudioDevice(typeName,candidate,true);
-            manager.getAudioDeviceSetup(actual);
-            opened=manager.getCurrentAudioDevice();
-            changedAsioPinLayout=error.isEmpty() && opened && opened->isOpen() &&
-                ((capturePins && opened->getInputChannelNames()!=freshInputNames) ||
-                 (playbackPins && opened->getOutputChannelNames()!=freshOutputNames));
-        }
-        // Never consume the automatic recovery epoch before a mixer bind.
-        // A transient ASIO4ALL pin inventory can settle on the next tick.
-        if(changedAsioPinLayout)
-            error="ASIO pin layout changed. Output remains muted; review the new playback pins.";
-        if(error.isEmpty()) {
-            const auto observed=armix::device::NativeDeviceApplyCoordinator::inspectApplied(manager);
-            if(!armix::device::NativeDeviceApplyCoordinator::matchesApplied(
-                    requested,candidate,observed))
-                error="Driver readback mismatch; device setting was not accepted";
-        }
-        if(error.isEmpty())diagnostics_.record("CUSTOM_AUDIO_PHASE","BIND_MIXER | "+typeName);
-        const auto bindingMode=explicitPairStillIdentified?MixerBindingMode::verifiedMainPinApply:
-                                            MixerBindingMode::verifiedDeviceApply;
-        if(error.isEmpty()&&!finishAudioSetupAndRecoverMixer(bindingMode)) {
-            if(!previousMixerBound && engine_.directRouteAuthorized() &&
-               (engine_.hasRetainedUnboundMixer() || mixerSessionRecoveryPending_)) {
-                const auto needsRemap=mixerSessionError_.isNotEmpty()?mixerSessionError_:
-                    juce::String("Device opened, but the mixer could not bind to its playback pins.");
-                diagnostics_.record("CUSTOM_AUDIO_NEEDS_REMAP",needsRemap);
-                send(false,"NEEDS_REMAP",needsRemap,engine_.stageRetainedWasapiPortMapping());
-                emitApprovedNativeSnapshot();
-                return;
+        const auto result=deviceApply_.execute(engine_.devices(),prepared,{
+            [this] {
+                if(engine_.hasPendingDirectRestore() &&
+                   !engine_.abandonPendingDirectRestoreForSetup())return false;
+                autoMainEpoch_=0;
+                return true;
+            },
+            [this] {engine_.beginManualAudioSetup();},
+            [this,previousMixerBound](MixerBindingMode mode) -> Apply::BindResult {
+                if(finishAudioSetupAndRecoverMixer(mode))return {};
+                if(mode!=MixerBindingMode::exact && !previousMixerBound &&
+                   engine_.directRouteAuthorized() &&
+                   (engine_.hasRetainedUnboundMixer() || mixerSessionRecoveryPending_)) {
+                    const auto error=mixerSessionError_.isNotEmpty()?mixerSessionError_:
+                        juce::String("Device opened, but the mixer could not bind to its playback pins.");
+                    return {error,true,engine_.stageRetainedWasapiPortMapping()};
+                }
+                return {mixerSessionError_.isNotEmpty()?mixerSessionError_:
+                    juce::String("Device opened but mixer preparation was rejected")};
+            },
+            [this](const juce::String& key,const juce::String& value) {
+                diagnostics_.record(key,value);
             }
-            error=mixerSessionError_.isNotEmpty()?mixerSessionError_:
-                juce::String("Device opened but mixer preparation was rejected");
-        }
-        if(error.isEmpty()) {
+        });
+        switch(result.state) {
+        case Apply::Outcome::rejected:
+            return send(false,"REJECTED",result.error);
+        case Apply::Outcome::needsRemap:
+            diagnostics_.record("CUSTOM_AUDIO_NEEDS_REMAP",result.error);
+            send(false,"NEEDS_REMAP",result.error,result.canReusePins);
+            break;
+        case Apply::Outcome::accepted:
             startupError_.clear();
             deviceSettingsDirty_=true;
             directRestore_.cancel();
@@ -2484,35 +2351,23 @@ private:
                 typeName+" | "+juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
             requestAutomaticMain();
             send(true,engine_.isMonitorEnabled()?"ACCEPTED_LIVE":"ACCEPTED_MUTED",{});
-            emitApprovedNativeSnapshot();
-            return;
+            break;
+        case Apply::Outcome::topologyChanged:
+            diagnostics_.record("CUSTOM_AUDIO_ASIO_TOPOLOGY_CHANGED",result.error);
+            return send(false,"RECOVERY_REQUIRED",result.error);
+        case Apply::Outcome::restored:
+        case Apply::Outcome::recoveryRequired: {
+            const bool restored=result.state==Apply::Outcome::restored;
+            if(restored)asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
+            diagnostics_.record("CUSTOM_AUDIO_APPLY_FAIL",result.error+" | rollback="+
+                (restored?"RESTORED":"RECOVERY_REQUIRED")+" | "+
+                juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
+            if(restored&&previousMonitor)requestAutomaticMain();
+            send(false,restored?(engine_.isMonitorEnabled()?"RESTORED_LIVE":"RESTORED_MUTED"):
+                "RECOVERY_REQUIRED",result.error);
+            break;
         }
-        // A changed ASIO layout cannot be 'restored' by replaying indices
-        // that now refer to different WDM pins. Keep the fresh device MUTED,
-        // unauthorised, and show its new pin names for deliberate remapping.
-        if(changedAsioPinLayout) {
-            diagnostics_.record("CUSTOM_AUDIO_ASIO_TOPOLOGY_CHANGED",error);
-            return send(false,"RECOVERY_REQUIRED",error);
         }
-        // One rollback, never blind default endpoint fallback, no auto-unmute.
-        // A previously CLOSED device was never a verified rollback target.
-        engine_.beginManualAudioSetup();
-        diagnostics_.record("CUSTOM_AUDIO_PHASE","ROLLBACK | "+previousType);
-        const auto restored=recovery.priorKnownOpen&&previousType.isNotEmpty()&&
-            openSelectedAudioDevice(previousType,before).isEmpty()&&
-            manager.getCurrentAudioDeviceType()==previousType;
-        const auto rollback=armix::device::NativeDeviceApplyCoordinator::inspectRollback(manager);
-        const bool verified=restored&&
-            armix::device::NativeDeviceApplyCoordinator::matchesRollback(
-                before,previousType,originalInputNames,originalOutputNames,rollback)&&
-            finishAudioSetupAndRecoverMixer();
-        if(verified)asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
-        diagnostics_.record("CUSTOM_AUDIO_APPLY_FAIL",error+" | rollback="+
-            (verified?"RESTORED":"RECOVERY_REQUIRED")+" | "+
-            juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
-        if(verified&&previousMonitor)requestAutomaticMain();
-        send(false,verified?(engine_.isMonitorEnabled()?"RESTORED_LIVE":"RESTORED_MUTED"):
-            "RECOVERY_REQUIRED",error);
         emitApprovedNativeSnapshot();
     }
 

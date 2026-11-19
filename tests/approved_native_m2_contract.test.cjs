@@ -2957,10 +2957,11 @@ test("P0 built-in EQ/Compressor/Harmony load independent of slow external VST3 c
 test("P0 output-only Audio I/O is a real native configuration, never blocked by missing capture",()=>{
  const cpp=read("src/Main.cpp"),bridge=read("web/approved-native-bridge.js");
  const apply=read("src/NativeDeviceApplyCoordinator.h");
- assert.match(cpp,/const bool outputOnly=separate&&capture\.isEmpty\(\)/);
- assert.match(cpp,/candidate\.useDefaultInputChannels=!outputOnly/);
- assert.match(cpp,/if\(outputOnly\)candidate\.inputChannels\.clear\(\)/);
- assert.match(cpp,/NativeDeviceApplyCoordinator::parsePinMasks/);
+ assert.match(cpp,/Apply::prepare\(engine_\.devices\(\),args\.getProperty\("config",\{\}\)\)/);
+ assert.match(apply,/const bool outputOnly=separate&&r.capture\.isEmpty\(\)/);
+ assert.match(apply,/candidate\.useDefaultInputChannels=!outputOnly/);
+ assert.match(apply,/if\(outputOnly\)candidate\.inputChannels\.clear\(\)/);
+ assert.match(apply,/parsePinMasks\(input,output,plan.originalInputNames.size\(\)/);
  assert.match(apply,/\(outputOnly&&!in\.isZero\(\)\)/);
  assert.match(apply,/out\.countNumberOfSetBits\(\)<2/);
  assert.doesNotMatch(cpp,/opened->getActiveInputChannels\(\)\.countNumberOfSetBits\(\)<1/);
