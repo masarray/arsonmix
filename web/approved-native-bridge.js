@@ -3670,7 +3670,12 @@
         // MAIN has one host scalar gateway. A refused native MAIN lease
         // must never fall through to generic ChannelId SET_MUTE/SOLO.
         if(t.kind==="master"){
-          if(action==="mute" && nativeMasterAuthority()!=="UNAVAILABLE"){
+          // Offline .smix remains an editable durable logical mixer:
+          // its native logical-intent owner is distinct from physical PCM.
+          if(logicalView){
+            intent(action==="mute"?"SET_MUTE":"SET_SOLO",t,
+                   {value:!t[action],enabled:!t[action]});
+          }else if(action==="mute" && nativeMasterAuthority()!=="UNAVAILABLE"){
             if(!sendM4Control("masterMute",t,!t.mute))
               status("Native MAIN mute rejected");
           }else status("MAIN mute unavailable · verified PCM required");
@@ -3937,7 +3942,10 @@
         // MAIN reset must not become an unrelated ChannelId SET_FADER
         // when its native physical host scalar lease is not admitted.
         if(t?.kind==="master"){
-          if(nativeMasterAuthority()!=="UNAVAILABLE")
+          // An offline MAIN unity reset edits the logical .smix document,
+          // never the unavailable physical host/ChannelId PCM authority.
+          if(logicalView)intent("SET_FADER",t,{valueDb:0});
+          else if(nativeMasterAuthority()!=="UNAVAILABLE")
             sendM4Control("masterGain",t,0);
           else status("MAIN reset unavailable · verified PCM required");
           return true;
