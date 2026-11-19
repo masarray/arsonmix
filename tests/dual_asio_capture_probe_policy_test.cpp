@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/device/DualAsioCaptureProbePolicy.h"
 #include "../engine/device/ClockBridgeSizing.h"
+#include "io2/QualifiedInputPlanCases.h"
 #include <cstdlib>
 #include <cstdio>
 #include <string_view>
@@ -74,6 +75,7 @@ int main()
     const auto impossible=armix::device::ClockBridgeSizing::choose(
         48000.,48000.,32768,32768,48,32768,24.);
     check(!impossible.valid);
+    armix::io2_test::run(); // same registered IO0 native CTest now compiles IO-2
     std::puts("IO0_POLICY_PASS: identity, zero-output capture, exact masks, 9 clock profiles");
     return 0;
 }
