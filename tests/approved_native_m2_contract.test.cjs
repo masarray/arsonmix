@@ -1401,7 +1401,9 @@ test("native PRE_FADER WIRE inspector uses one exact SET_TAP PCM intent and acce
  const preview=read("site/preview-v2/index.html");
  assert.match(bridge,/function requestNativeTap\(source,edgeId,tap\)/);
  assert.match(bridge,/ops\[0\]\.type==="MODE"/);
- assert.match(bridge,/op:"SET_TAP",from:source,edgeId,tap/);
+ assert.match(read("web/approved-wire-view-model.js"),
+   /op:"SET_TAP",from:sourceId,edgeId,tap:targetTap/);
+ assert.match(bridge,/wireVM\.nativeTapPlan\(/);
  assert.match(bridge,/wireVM\.edgePresentation\(/);
  assert.match(read("web/approved-wire-view-model.js"),
    /const tap=TAPS\.has\(edge\.tapStage\)\?edge\.tapStage:edge\.tap/);
@@ -1991,7 +1993,9 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(menu,/Confirm Delete Track/);
  assert.match(menu,/requestDeleteTrack\(track\)/);
  assert.match(menu,/hooks\.orbitTarget\(track,slot\)/);
- assert.match(bridge,/action:"routingNativeTrackDelete"/);
+ assert.ok(bridge.includes('stripVM.rosterMutationPlan('));
+ assert.ok(read("web/approved-channel-strip-view-model.js").includes(
+   'action:"routingNativeTrackDelete"'));
  assert.match(bridge,/arMixNativeTrackDeleteAck/);
  assert.match(bridge,/function finishNativeTrackDelete\(next\)/);
  assert.match(bridge,/pending\.acked/);
@@ -2029,7 +2033,9 @@ test("all native strip menus bind true AUX/BUS deletion and persistent Rename, O
  assert.match(menu,/user-select:none/);
  assert.match(menu,/clearTitles\(document\.documentElement\)/);
  assert.match(menu,/attributeFilter:\["title"\]/);
- assert.match(bridge,/action:"routingNativeBusDelete"/);
+ assert.ok(bridge.includes('dispatchNativeRosterDelete(track,"REMOVE_BUS")'));
+ assert.ok(read("web/approved-channel-strip-view-model.js").includes(
+   'action:"routingNativeBusDelete"'));
  assert.match(bridge,/requestDeleteStrip:requestNativeStripDelete/);
  assert.match(bridge,/renameStrip:openNativeIdentity/);
  assert.match(bridge,/canDeleteStrip:canDeleteNativeStrip/);
@@ -2051,7 +2057,9 @@ test("P0 actual Add BUS reaches the live ChannelId graph",()=>{
  const lab=read("src/LiveDryRoutingLab.h");
  const projection=read("integration/ApprovedNativeRuntimeSnapshot.h");
  assert.match(bridge,/function requestNativeBusCreate\(track=false\)/);
- assert.match(bridge,/action:track\?"routingNativeTrackCreate":"routingNativeBusCreate"/);
+ assert.ok(bridge.includes('backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload})'));
+ assert.ok(read("web/approved-channel-strip-view-model.js").includes(
+   'action:"routingNativeBusCreate"'));
  assert.match(bridge,/target.id==="addBus"/);
  assert.match(bridge,/arMixNativeBusAck/);
  assert.match(bridge,/addBus.hidden=!nativeAdmitted/);
@@ -5418,4 +5426,304 @@ test("G-MV29 real M4 bridge holds OUT and M/ST pending until accepted PCM, inclu
  assert.equal(sent.filter(e=>e.name==="arMixAction"&&
    e.payload.action==="monitor").length,0,
    "no output monitor auto-arm in GUI refactor");
+});
+
+
+test("G-MV30 exact ChannelId roster create/delete policy, including safe bootstrap",()=>{
+ const epoch="18446744073709551610",input="9007199254740993",
+   bus="9007199254740994",fx="9007199254740995",main="9007199254740996";
+ const rows=[{id:input,role:"INPUT"},{id:bus,role:"GROUP"},
+   {id:fx,role:"FX_RETURN"},{id:main,role:"MAIN"}];
+ const graph={revision:"5",rosterRevision:"7",channels:rows,
+   capabilities:{supportedOps:["CREATE_CHANNEL","CREATE_GROUP",
+     "DELETE_CHANNEL","REMOVE_BUS"]}};
+ const session={authority:"CHANNEL_ID",deviceEpoch:epoch,
+   routeRevision:"5",rosterRevision:"7"};
+ const accepted={admitted:true,retained:false,device:{epoch},graph,
+   raw:{mixerSession:session}};
+ const hardware={device:{epoch}};
+ const before=JSON.stringify(accepted);
+ const p=(operation,channelId=null,override={},state=accepted)=>
+   stripVM.rosterMutationPlan(state,{
+     operation,channelId,hardware,deviceReady:true,...override
+   });
+ const cases=[["CREATE_CHANNEL",null,"routingNativeTrackCreate","INPUT"],
+   ["CREATE_GROUP",null,"routingNativeBusCreate","GROUP"],
+   ["DELETE_CHANNEL",input,"routingNativeTrackDelete","INPUT"],
+   ["REMOVE_BUS",bus,"routingNativeBusDelete","GROUP"],
+   ["REMOVE_BUS",fx,"routingNativeBusDelete","FX_RETURN"]];
+ for(const [operation,id,action,role] of cases){
+   const plan=p(operation,id);
+   assert.equal(plan.kind,"READY",operation);
+   assert.equal(plan.action,action);
+   assert.equal(plan.payload.deviceEpoch,epoch);
+   assert.equal(plan.payload.graphRevision,"5");
+   assert.equal(plan.payload.rosterRevision,"7");
+   assert.equal(plan.pending.operation,operation);
+   if(id){assert.equal(plan.payload.channelId,id);
+     assert.equal(plan.pending.id,id);assert.equal(plan.pending.role,role);}
+   else assert.deepEqual(plan.pending.beforeIds,rows.map(x=>x.id));
+ }
+ for(const args of [
+   ["DELETE_CHANNEL",bus],["REMOVE_BUS",input],["REMOVE_BUS",main],
+   ["CREATE_BUS"],["DELETE_CHANNEL","7"],
+   ["DELETE_CHANNEL",9007199254740993]
+ ])assert.equal(p(...args).kind,"UNAVAILABLE");
+ for(const options of [{deviceReady:false},{controllerPending:true},
+   {structuralPending:true}])
+   assert.equal(p("CREATE_CHANNEL",null,options).kind,"UNAVAILABLE");
+ for(const state of [
+   {...accepted,admitted:false},
+   {...accepted,retained:true},
+   {...accepted,device:{epoch:"12"}},
+   {...accepted,raw:{mixerSession:{...session,authority:"M4"}}},
+   {...accepted,raw:{mixerSession:{...session,routeRevision:"6"}}},
+   {...accepted,raw:{mixerSession:{...session,rosterRevision:"8"}}},
+   {...accepted,graph:{...graph,revision:"0"}},
+   {...accepted,graph:{...graph,rosterRevision:"0"}},
+   {...accepted,graph:{...graph,capabilities:{supportedOps:[]}}}
+ ])assert.equal(p("CREATE_GROUP",null,{},state).kind,"UNAVAILABLE");
+ const duplicate={...accepted,graph:{...graph,channels:rows.concat(rows[0])}};
+ assert.equal(p("DELETE_CHANNEL",input,{},duplicate).kind,"UNAVAILABLE");
+ const silent={admitted:false,retained:false,device:{epoch},raw:{
+   mixerSession:{authority:"NONE",deviceEpoch:epoch},
+   legacyM4:{active:true,routeAccepted:false,routingRevision:"13"}}};
+ const bootstrap=p("CREATE_CHANNEL",null,{},silent);
+ assert.equal(bootstrap.kind,"READY");
+ assert.deepEqual(bootstrap.payload,{deviceEpoch:epoch,bootstrapRevision:"13"});
+ assert.equal(bootstrap.pending.bootstrap,true);
+ assert.equal(p("CREATE_GROUP",null,{},silent).kind,"UNAVAILABLE");
+ assert.equal(p("DELETE_CHANNEL",input,{},silent).kind,"UNAVAILABLE");
+ for(const legacy of [
+   {...silent.raw.legacyM4,active:false},
+   {...silent.raw.legacyM4,routeAccepted:true},
+   {...silent.raw.legacyM4,routingRevision:"9007199254740993"}
+ ])assert.equal(p("CREATE_CHANNEL",null,{}, {...silent,raw:{...silent.raw,
+   legacyM4:legacy}}).kind,"UNAVAILABLE");
+ assert.equal(JSON.stringify(accepted),before,
+   "pure roster policy cannot mutate native mixer or UI graph");
+});
+test("G-MV30 native roster ACK, concurrent lanes and exact later graph+roster proof",()=>{
+ const epoch="18446744073709551610",src="9007199254740993",
+   newId="9007199254740994",bus="9007199254740995",main="9007199254740996";
+ const channels=[{id:src,role:"INPUT"},{id:bus,role:"GROUP"},{id:main,role:"MAIN"}];
+ const graph={revision:"5",rosterRevision:"7",channels,
+   capabilities:{supportedOps:["CREATE_CHANNEL","CREATE_GROUP",
+     "DELETE_CHANNEL","REMOVE_BUS"]}};
+ const session={authority:"CHANNEL_ID",deviceEpoch:epoch,
+   routeRevision:"5",rosterRevision:"7"};
+ const base={admitted:true,retained:false,device:{epoch},graph,
+   raw:{mixerSession:session}};
+ const plan=(operation,channelId=null)=>stripVM.rosterMutationPlan(base,{
+   operation,channelId,hardware:{device:{epoch}},deviceReady:true});
+ const acked=(p,ack)=>stripVM.rosterAckResult(p,ack);
+ const settle=(p,s)=>stripVM.rosterReadbackSettlement(p,s);
+ const create={requestId:"bus-81",...plan("CREATE_GROUP").pending};
+ const createAck={requestId:create.requestId,ok:true,
+   createdId:newId,graphRevision:"6"};
+ assert.equal(acked(create,{...createAck,requestId:"bus-80"}),"IGNORE");
+ assert.equal(acked(create,{...createAck,ok:false}),"REJECTED");
+ assert.equal(acked(create,{...createAck,graphRevision:"5"}),"REJECTED");
+ assert.equal(acked(create,{...createAck,createdId:bus}),"REJECTED",
+   "replayed ID of an existing channel can never prove new BUS");
+ assert.equal(acked(create,{...createAck,createdId:"9007199254740993.1"}),"REJECTED");
+ assert.equal(acked(create,createAck),"ACKED");
+ const pCreate={...create,acked:true,ackRevision:"6",createdId:newId};
+ assert.equal(settle(create,base),"WAIT");
+ assert.equal(settle(pCreate,base),"WAIT",
+   "ACK does not unlock a BUS without independently accepted PCM");
+ const newlyCreated=channels.concat({id:newId,role:"GROUP"});
+ const advanced=(rows=newlyCreated,revision="6",rosterRevision="8")=>({
+   ...base,graph:{...graph,revision,rosterRevision,channels:rows},
+   raw:{mixerSession:{...session,routeRevision:revision,rosterRevision}}
+ });
+ assert.equal(settle(pCreate,advanced()),"CONFIRMED");
+ assert.equal(settle(create,advanced()),"WAIT","readback-before-ACK does not finish");
+ assert.equal(settle(pCreate,advanced(newlyCreated,"6","7")),"WAIT",
+   "roster revision must advance beyond request baseline");
+ assert.equal(settle(pCreate,advanced(newlyCreated,"5","8")),"WAIT",
+   "graph revision must advance beyond request baseline");
+ assert.equal(settle(pCreate,advanced(channels)),"WAIT",
+   "new revision alone cannot synthesize missing createdId");
+ assert.equal(settle(pCreate,advanced(channels.concat({id:newId,role:"INPUT"}))),
+   "WAIT","requested native BUS must have installed GROUP role");
+ assert.equal(settle(pCreate,{...advanced(),retained:true}),"STALE");
+ assert.equal(settle(pCreate,{...advanced(),device:{epoch:"22"}}),"STALE");
+ assert.equal(settle(pCreate,{...advanced(),raw:{mixerSession:{
+   ...session,authority:"M4",routeRevision:"6",rosterRevision:"8"}}}),"STALE");
+ assert.equal(settle(pCreate,{...advanced(),raw:{mixerSession:{
+   ...session,routeRevision:"6",rosterRevision:"7"}}}),"STALE");
+ assert.equal(settle(pCreate,advanced(newlyCreated,"4","8")),"STALE",
+   "a regressed native graph cannot close an old transaction");
+ const remove={requestId:"bus-delete-82",...plan("REMOVE_BUS",bus).pending};
+ const removeAck={requestId:remove.requestId,channelId:bus,ok:true,
+   graphRevision:"6"};
+ assert.equal(acked(remove,{...removeAck,channelId:src}),"REJECTED");
+ assert.equal(acked(remove,{...removeAck,requestId:"bus-delete-1"}),"IGNORE");
+ assert.equal(acked(remove,removeAck),"ACKED");
+ const pRemove={...remove,acked:true,ackRevision:"6"};
+ assert.equal(settle(pRemove,advanced(channels.filter(x=>x.id!==bus))),"CONFIRMED");
+ assert.equal(settle(pRemove,advanced(channels)),"WAIT");
+ assert.equal(settle(remove,advanced(channels.filter(x=>x.id!==bus))),"WAIT");
+ const inputDelete={requestId:"track-delete-83",...plan("DELETE_CHANNEL",src).pending};
+ assert.equal(acked(inputDelete,{...removeAck,requestId:inputDelete.requestId,
+   channelId:src}),"ACKED");
+ assert.equal(settle({...inputDelete,acked:true,ackRevision:"6"},
+   advanced(channels.filter(x=>x.id!==src))),"CONFIRMED");
+ const silent={admitted:false,retained:false,device:{epoch},
+   raw:{mixerSession:{authority:"NONE",deviceEpoch:epoch},
+   legacyM4:{active:true,routeAccepted:false,routingRevision:"13"}}};
+ const bootstrap=stripVM.rosterMutationPlan(silent,{
+   operation:"CREATE_CHANNEL",hardware:{device:{epoch}},deviceReady:true});
+ const bPending={requestId:"track-99",...bootstrap.pending};
+ assert.equal(acked(bPending,{requestId:"track-99",ok:true,
+   createdId:newId,graphRevision:"6"}),"ACKED");
+ assert.equal(settle({...bPending,acked:true,ackRevision:"6",
+   createdId:newId},silent),"WAIT","first track stays pending while native admits");
+ const installedInput=advanced(channels.concat({id:newId,role:"INPUT"}));
+ assert.equal(settle({...bPending,acked:true,ackRevision:"6",
+   createdId:newId},installedInput),"CONFIRMED");
+ const bridge=read("web/approved-native-bridge.js");
+ for(const symbol of ["rosterMutationPlan","rosterAckResult","rosterReadbackSettlement"])
+   assert.ok(bridge.includes("stripVM."+symbol+"("),
+     "bridge must use one pure roster authority: "+symbol);
+ assert.ok(bridge.includes('if(verdict==="ACKED")'));
+ assert.ok(bridge.includes('finishNativeTrack(controller?.state()?.current)'));
+ assert.equal(bridge.includes("else pendingBusCreate=null"),false,
+   "BUS ACK cannot release the mutation before accepted readback");
+ assert.equal(bridge.includes('action:"routingNativeBusDelete"'),false,
+   "routing action comes from one pure transaction plan");
+});
+
+
+test("G-MV30 first native ChannelId projection enables Add Track without a second callback",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const success=bridge.indexOf("flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;");
+ assert.ok(success>=0);
+ const after=bridge.slice(success,success+500);
+ assert.ok(after.includes("syncAddTrack(next);"),
+   "native button should re-evaluate only AFTER successful graph projection");
+ assert.ok(after.indexOf("syncAddTrack(next);")<
+   after.indexOf("syncMonitorButton(next.device);"));
+ const before=bridge.indexOf("if (!projectNativeGraphWithoutFocusLoss(next))",success-500);
+ assert.ok(before>=0&&before<success,
+   "never enable a native Add before the authoritative ChannelId graph projects");
+});
+
+
+test("G-MV31 pure WIRE PRE/POST plans bind exact send identities, never PRIMARY/MAIN/mystery EdgeId",()=>{
+ const src="9007199254740993",other="9007199254740994",
+   bus="9007199254740995",fx="9007199254740996",
+   main="18446744073709551615",id="9223372036854775809",
+   otherId="9223372036854775810",mainId="9223372036854775811",
+   primaryId="9223372036854775812";
+ const send={edgeId:id,from:src,to:bus,enabled:true,primaryOutput:false,
+   tap:"POST_FADER",sendEnabled:true,gainLinear:0.5};
+ const fxSend={...send,edgeId:otherId,to:fx};
+ const mainSend={...send,edgeId:mainId,to:main};
+ const primary={...send,edgeId:primaryId,primaryOutput:true,gainLinear:1};
+ const graph={mainChannelId:main,channels:[
+   {id:src,role:"INPUT"},{id:other,role:"INPUT"},
+   {id:bus,role:"GROUP"},{id:fx,role:"FX_RETURN"},
+   {id:main,role:"MAIN"}],edges:[send,mainSend,primary],
+   capabilities:{supportedOps:["APPLY_WIRE_TRANSACTION","SET_SEND_ENABLED"]}};
+ const snap={admitted:true,retained:false,graph};
+ const before=JSON.stringify(snap);
+ const tap=(edgeId=id,targetTap="PRE_FADER",extra={},state=snap)=>
+   wireVM.nativeTapPlan(state,{sourceId:src,edgeId,targetTap,
+     projected:true,...extra});
+ const expected={kind:"DISPATCH",operation:"APPLY_WIRE_TRANSACTION",
+   source:src,payload:{changes:[{op:"SET_TAP",from:src,edgeId:id,tap:"PRE_FADER"}]}};
+ assert.deepEqual(tap(),expected);
+ assert.deepEqual(tap(id,"POST_FADER"),{kind:"NO_CHANGE"});
+ assert.deepEqual(tap(id,null),{kind:"AVAILABLE",tap:"POST_FADER"});
+ assert.equal(wireVM.channelTapEdge(snap,{sourceId:src}).edgeId,id,
+   "parallel MAIN and PRIMARY do not steal channel PRE/POST fallback");
+ assert.equal(wireVM.channelTapEdge(snap,{sourceId:src,selectedEdgeId:id}).edgeId,id);
+ assert.equal(wireVM.channelTapEdge(snap,{sourceId:src,selectedEdgeId:primaryId}),null);
+ assert.equal(wireVM.channelTapEdge(snap,{sourceId:src,selectedEdgeId:mainId}),null);
+ assert.equal(wireVM.channelTapEdge(snap,{sourceId:src,selectedEdgeId:otherId}),null);
+ assert.equal(wireVM.channelTapEdge(snap,{sourceId:other}),null);
+ const two={...snap,graph:{...graph,edges:[...graph.edges,fxSend]}};
+ assert.equal(wireVM.channelTapEdge(two,{sourceId:src}),null,
+   "two SENDs require explicit identity, not a guessed first match");
+ assert.equal(wireVM.channelTapEdge(two,{sourceId:src,selectedEdgeId:otherId}).edgeId,otherId);
+ assert.equal(wireVM.channelTapEdge(two,{sourceId:src,selectedEdgeId:"invalid"}),null);
+ for(const [edgeId,target,extra,state] of [
+   [primaryId,"PRE_FADER",{},snap],
+   [id,"NO_TAP",{},snap],
+   [id,"PRE_FADER",{projected:false},snap],
+   [id,"PRE_FADER",{pending:true},snap],
+   [id,"PRE_FADER",{}, {...snap,admitted:false}],
+   [id,"PRE_FADER",{}, {...snap,retained:true}],
+   [id,"PRE_FADER",{}, {...snap,graph:{...graph,capabilities:{supportedOps:[]}}}],
+   [id,"PRE_FADER",{}, {...snap,graph:{...graph,edges:[...graph.edges,send]}}],
+   [id,"PRE_FADER",{}, {...snap,graph:{...graph,channels:graph.channels.filter(ch=>ch.id!==src)}}],
+   [id,"PRE_FADER",{}, {...snap,graph:{...graph,edges:[{...send,from:other},mainSend,primary]}}]
+ ])assert.equal(tap(edgeId,target,extra,state).kind,"UNAVAILABLE");
+ for(const wrong of ["0","-1","9007199254740993.1","18446744073709551616",
+   9223372036854775808])
+   assert.equal(tap(wrong).kind,"UNAVAILABLE");
+ assert.equal(wireVM.nativeTapPlan(snap,{sourceId:src,
+   edgeId:undefined,targetTap:"PRE_FADER",projected:true}).kind,"UNAVAILABLE",
+   "missing EdgeId must not be replaced by the test helper default");
+ assert.equal(JSON.stringify(snap),before,"pure selectors cannot mutate live PCM graph");
+});
+test("G-MV31 SOF exact BUS/FX send selection and ON/OFF fail closed under pending or owner change",()=>{
+ const src="9007199254740993",other="9007199254740994",
+   bus="9007199254740995",fx="9007199254740996",
+   main="18446744073709551615",edgeId="9223372036854775809";
+ const rows=[{id:src,role:"INPUT"},{id:other,role:"INPUT"},
+   {id:bus,role:"GROUP"},{id:fx,role:"FX_RETURN"},{id:main,role:"MAIN"}];
+ const edge={edgeId,from:src,to:bus,enabled:true,primaryOutput:false,
+   tap:"POST_FADER",sendEnabled:true,gainLinear:1};
+ const graph={channels:rows,mainChannelId:main,edges:[edge],
+   capabilities:{supportedOps:["SET_SEND_ENABLED","APPLY_WIRE_TRANSACTION",
+     "SET_WIRE_GAIN"]}};
+ const snap={admitted:true,retained:false,graph};
+ const sof=(sourceId=src,destinationId=bus,state=snap)=>
+   wireVM.sofSendEdge(state,{sourceId,destinationId});
+ assert.equal(sof(),edge);
+ assert.equal(sof(src,fx),null,"FX return without a wire is not an SOF route");
+ assert.equal(sof(src,main),null,"SOF cannot control a parallel MAIN send");
+ assert.equal(sof(other,bus),null);
+ assert.equal(sof(src,src),null);
+ assert.equal(sof(src,bus,{...snap,retained:true}),null);
+ assert.equal(sof(src,bus,{...snap,admitted:false}),null);
+ assert.equal(sof(src,bus,{...snap,graph:{...graph,edges:[edge,edge]}}),null);
+ assert.equal(sof(src,bus,{...snap,graph:{...graph,edges:[
+   {...edge,primaryOutput:true}]}}),null);
+ assert.equal(sof(src,bus,{...snap,graph:{...graph,edges:[{
+   ...edge,from:other}]}}),null);
+ assert.equal(sof(src,fx,{...snap,graph:{...graph,edges:[{
+   ...edge,to:fx}]}}).edgeId,edgeId);
+ const enabled=(overrides={},state=snap)=>wireVM.nativeSendTogglePlan(state,{
+   sourceId:src,edgeId,projected:true,...overrides});
+ assert.deepEqual(enabled(),{kind:"DISPATCH",operation:"SET_SEND_ENABLED",
+   source:src,payload:{edgeId,enabled:false}});
+ assert.equal(enabled({}, {...snap,graph:{...graph,edges:[{
+   ...edge,sendEnabled:false}]}}).payload.enabled,true);
+ for(const item of [
+   [{projected:false},snap],[{pending:true},snap],[{}, {...snap,admitted:false}],
+   [{}, {...snap,retained:true}],[{edgeId:"0"},snap],
+   [{sourceId:other},snap],
+   [{}, {...snap,graph:{...graph,edges:[{...edge,sendEnabled:null}]}}],
+   [{}, {...snap,graph:{...graph,edges:[{...edge,primaryOutput:true}]}}],
+   [{}, {...snap,graph:{...graph,capabilities:{supportedOps:["SET_WIRE_GAIN"]}}}]
+ ])assert.equal(enabled(item[0],item[1]).kind,"UNAVAILABLE");
+ assert.equal(wireVM.nativeTapPlan(snap,{sourceId:src,edgeId,
+   projected:true}).kind,"AVAILABLE",
+   "SOF PRE/POST and inspector share one exact EdgeId policy");
+ const bridge=read("web/approved-native-bridge.js");
+ for(const fn of ["sofSendEdge","channelTapEdge","nativeSendTogglePlan","nativeTapPlan"])
+   assert.match(bridge,new RegExp("wireVM\\."+fn+"\\("));
+ assert.equal((bridge.match(/function requestNativeTap\(/g)||[]).length,1,
+   "SOF + WIRE inspector use one native transaction sender");
+ assert.ok(bridge.includes('controller.intent(plan.operation,plan.source,plan.payload)'));
+ assert.ok(bridge.includes('intent(plan.operation,t,plan.payload)'));
+ assert.doesNotMatch(bridge,/const sends=current\.graph\.edges\.filter\(/,
+   "native channel tapping no longer duplicates graph selection policy");
+ assert.doesNotMatch(read("web/approved-wire-view-model.js"),
+   /backend\.emitEvent|document\.querySelector|window\.setTimeout/,
+   "VM is deterministic and has no independent dispatcher");
 });
