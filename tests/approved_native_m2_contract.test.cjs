@@ -2181,7 +2181,9 @@ test("P0 MAIN WIRE unplug uses UI-to-native EdgeId and no fake graph",()=>{
 test("P0 real slot VST3 power and native editor use verified instance tokens",()=>{
  const bridge=read("web/approved-native-bridge.js");
  const main=read("src/Main.cpp");
- assert.match(bridge,/function verifiedFxFor\(t,slot\)/);
+ assert.match(bridge,/fxRackVM\.m4EditorPlan\(current,/);
+ assert.match(read("web/approved-fx-rack-view-model.js"),/function m4EditorPlan\(snapshot,/);
+ assert.doesNotMatch(bridge,/function verifiedFxFor\(/);
  assert.match(bridge,/function requestM4FxPower\(t,action,button=null\)/);
  assert.match(bridge,/if\(action==="slotPower"\)/);
  assert.match(bridge,/if\(action==="fxOn"\)/);
@@ -3611,8 +3613,13 @@ test("native FX remove/reorder/transfer requires exact token, ACK and ordered re
 
 test("ImmerSIB opens the exact native ChannelId HWND, survives VST3 editor, no success-only toast",()=>{
  const bridge=read("web/approved-native-bridge.js"),host=read("src/Main.cpp");
- assert.match(bridge,/insert\.catalogId==='armix\.builtin\.imersip\.v1' && current\.admitted/);
- assert.match(bridge,/backend\.emitEvent\("arMixAction",\{action:"routingFxEditor",channelId:id,slot,/);
+ const editorVM=read("web/approved-fx-rack-view-model.js");
+ assert.match(bridge,/fxRackVM\.editorNavigationPlan\(current,/);
+ assert.match(editorVM,/view\.raw\?\.mixerSession\?\.authority==="CHANNEL_ID"/);
+ assert.match(bridge,/else \{\s*\/\/ Both vendor VST3 and ImmerSIB retain their exact real/);
+ assert.match(bridge,/backend\.emitEvent\("arMixAction",\{action:"routingFxEditor",\s*channelId:editor\.channelId,slot:editor\.slot,/);
+ assert.match(bridge,/else if\(editor\.authority==="LOGICAL"\)/);
+ assert.match(bridge,/action:"logicalVendorFxEditor"/);
  assert.doesNotMatch(bridge,/else status\("Native VST3 editor opened"\)/);
  assert.match(host,/shownWindow=dedicatedImmerSIB\?immersibEditorWindow_:editorWindow_/);
  assert.match(host,/shownOwner=dedicatedImmerSIB\?immersibEditorOwner_:routedEditorOwner_/);
