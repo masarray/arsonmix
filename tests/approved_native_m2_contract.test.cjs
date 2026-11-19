@@ -5656,8 +5656,11 @@ test("G-MV31 pure WIRE PRE/POST plans bind exact send identities, never PRIMARY/
    [id,"PRE_FADER",{}, {...snap,graph:{...graph,edges:[{...send,from:other},mainSend,primary]}}]
  ])assert.equal(tap(edgeId,target,extra,state).kind,"UNAVAILABLE");
  for(const wrong of ["0","-1","9007199254740993.1","18446744073709551616",
-   9223372036854775808,undefined])
+   9223372036854775808])
    assert.equal(tap(wrong).kind,"UNAVAILABLE");
+ assert.equal(wireVM.nativeTapPlan(snap,{sourceId:src,
+   edgeId:undefined,targetTap:"PRE_FADER",projected:true}).kind,"UNAVAILABLE",
+   "missing EdgeId must not be replaced by the test helper default");
  assert.equal(JSON.stringify(snap),before,"pure selectors cannot mutate live PCM graph");
 });
 test("G-MV31 SOF exact BUS/FX send selection and ON/OFF fail closed under pending or owner change",()=>{
