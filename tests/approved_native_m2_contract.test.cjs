@@ -148,12 +148,112 @@ test("MV-7 native SOURCE requires ACKed graph revision AND independently install
  const model=read("web/approved-channel-strip-view-model.js");
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/stripVM\.sourceQueueReadback\(/);
- assert.match(bridge,/beforeRevision:current\.graph\.revision,acked:false/);
+ assert.match(bridge,/stripVM\.sourceQueueRequestLease\(\{/);
  assert.match(stripVM.sourceQueueAckTransition.toString(),/ack\.graphRevision/,
     "exact native ACK graph revision is retained in the immutable VM lease");
  assert.match(bridge,/settleSourceReadback\("CHANNEL_ID",next\)/);
  assert.doesNotMatch(model,/backend\.emitEvent|document\.|window\.setTimeout/,
   "Channel Strip readback remains pure; bridge holds one transient source queue");
+});
+
+test("G-MV22 physical SOURCE leases reject same-epoch hardware remaps for ChannelId and M4",()=>{
+ const epoch="91",id="9007199254740993";
+ const d={sampleRate:48000,bufferFrames:256,enabledInputs:[0,1],enabledOutputs:[0,1]};
+ const token=protocol.nativeHardwareConfiguration(d);
+ const choices=[{label:"None",mode:"NONE",left:-1,right:-1},
+   {label:"Mono IN1",mode:"MONO",left:0,right:-1}];
+ const selection=stripVM.sourceQueueSelection({choice:choices[1],choices,
+   epoch,acceptedLabel:"None",hardwareConfiguration:token});
+ assert.deepEqual(selection,{kind:"QUEUE",entry:{
+   epoch,hardwareConfiguration:token,choice:choices[1]}});
+ assert.equal(stripVM.sourceQueueSelection({choice:choices[1],choices,
+   epoch,acceptedLabel:"None",hardwareConfiguration:""}).kind,"UNAVAILABLE");
+ const hardware={device:{epoch},hardwareConfiguration:token,
+   raw:{mixerSession:{authority:"CHANNEL_ID"},legacyM4:{routingRevision:"34"}}};
+ const native={admitted:true,retained:false,device:{epoch},
+   hardwareConfiguration:token,raw:{mixerSession:{
+     authority:"CHANNEL_ID",deviceEpoch:epoch}},
+   graph:{revision:"61",rosterRevision:"17",
+     channels:[{id,role:"INPUT",source:null}]}};
+ const queue=new Map([[id,selection.entry]]);
+ const pick=(authority,h=hardware,n=native,q=queue)=>
+   stripVM.sourceQueueHead({authority,queue:q,hardware:h,
+     native:n,choices,deviceReady:true});
+ const plan=pick("CHANNEL_ID");
+ assert.equal(plan.kind,"SEND");
+ const pending=stripVM.sourceQueueRequestLease({authority:"CHANNEL_ID",
+   requestId:"source-native-99",plan,hardware,native});
+ assert.deepEqual(pending,{requestId:"source-native-99",id,epoch,
+   choice:choices[1],hardwareConfiguration:token,
+   beforeRevision:"61",acked:false});
+ assert.ok(Object.isFrozen(pending)&&Object.isFrozen(pending.choice));
+ const acked=stripVM.sourceQueueAckTransition({authority:"CHANNEL_ID",
+   pending,ack:{requestId:pending.requestId,channelId:id,
+     graphRevision:"62",ok:true}}).pending;
+ const installed={...native,graph:{...native.graph,revision:"62",
+   channels:[{id,role:"INPUT",source:{sourceFormat:"MONO",portId:"in:0"}}]}};
+ assert.equal(stripVM.sourceQueueReadback({authority:"CHANNEL_ID",
+   pending:acked,snapshot:installed}),"CONFIRMED");
+ assert.equal(protocol.nativeHardwareConfiguration({...d,
+   enabledInputs:[1,0],enabledOutputs:[1,0]}),token,
+   "physical port order is a set and must not restart valid source leases");
+ for(const variant of [
+   {...d,enabledInputs:[0]},{...d,enabledOutputs:[0,1,2,3]},
+   {...d,sampleRate:44100},{...d,bufferFrames:512}
+ ]){
+   const other=protocol.nativeHardwareConfiguration(variant);
+   assert.notEqual(other,token);
+   const changed={...hardware,hardwareConfiguration:other};
+   assert.equal(pick("CHANNEL_ID",changed).kind,"DROP",
+     "old source cannot dispatch to replaced hardware within same epoch");
+   assert.equal(stripVM.sourceQueueRequestLease({authority:"CHANNEL_ID",
+     requestId:"source-native-99",plan,hardware:changed,native}),null);
+   assert.equal(stripVM.sourceQueueReadback({authority:"CHANNEL_ID",
+     pending:acked,snapshot:{...installed,hardwareConfiguration:other}}),"STALE");
+   assert.equal(stripVM.sourceQueueTimeoutDecision({authority:"CHANNEL_ID",
+     pending:acked,requestId:acked.requestId,
+     snapshot:{...installed,hardwareConfiguration:other}}),"REFRESH");
+ }
+ assert.equal(pick("CHANNEL_ID",hardware,
+   {...native,hardwareConfiguration:"other"}).kind,"DROP");
+ assert.equal(pick("CHANNEL_ID",hardware,native,
+   new Map([[id,{epoch,choice:choices[1]}]])).kind,"DROP",
+   "unscoped queue entries cannot enter real fingerprinted hardware");
+ const m4Hardware={...hardware,raw:{
+   mixerSession:{authority:"NONE"},legacyM4:{routingRevision:"34"}}};
+ const m4Native={...native,admitted:false,raw:{mixerSession:{
+   authority:"NONE",deviceEpoch:epoch}}};
+ const m4Plan=pick("M4",m4Hardware,m4Native,
+   new Map([[4,selection.entry]]));
+ assert.equal(m4Plan.kind,"SEND","first-sound M4 retains same hardware lease");
+ const m4Lease=stripVM.sourceQueueRequestLease({authority:"M4",requestId:101,
+   plan:m4Plan,hardware:m4Hardware,native:m4Native});
+ assert.deepEqual(m4Lease,{requestId:101,channel:4,epoch:91,revision:34,
+   choice:choices[1],hardwareConfiguration:token,acked:false});
+ const ack=stripVM.sourceQueueAckTransition({authority:"M4",pending:m4Lease,
+   ack:{requestId:101,ok:true,state:{ready:true,epoch:91,revision:35,
+     hasAcceptedRoute:true,acceptedRoute:{channels:Array.from({length:10},
+       (_,i)=>i===4?{mode:"MONO",left:0,right:-1}:null)}}}}).pending;
+ const readback={admitted:false,retained:false,device:{epoch},
+   hardwareConfiguration:token,raw:{
+     legacyM4:{active:true,routeAccepted:true,routingRevision:"35"},
+     mixerSession:{authority:"M4",deviceEpoch:epoch,routeRevision:"35",
+       channels:Array.from({length:10},(_,i)=>({role:"INPUT",
+         source:i===4?{mode:"MONO",left:0,right:-1}:
+           {mode:"NONE",left:-1,right:-1}}))}}};
+ assert.equal(stripVM.sourceQueueReadback({authority:"M4",
+   pending:ack,snapshot:readback}),"CONFIRMED");
+ assert.equal(stripVM.sourceQueueReadback({authority:"M4",
+   pending:ack,snapshot:{...readback,hardwareConfiguration:"other"}}),"STALE");
+ assert.equal(stripVM.sourceQueueRequestLease({authority:"M4",requestId:"101",
+   plan:m4Plan,hardware:m4Hardware,native:m4Native}),null);
+ assert.equal(queue.size,1,"VM selection cannot mutate bridge-owned queues");
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/hardwareConfiguration:hardware\?\.hardwareConfiguration\?\?""/);
+ assert.equal((bridge.match(/stripVM\.sourceQueueRequestLease\(\{/g)||[]).length,1);
+ assert.doesNotMatch(bridge,/activeNativeSource=\{requestId,id:plan\.key/);
+ assert.doesNotMatch(stripVM.sourceQueueRequestLease.toString(),
+   /backend|document\.|window\.|setTimeout|emitEvent|AudioContext/);
 });
 
 test("MV-6 SOURCE input queues bind exact native device epoch and verified pins",()=>{
@@ -550,7 +650,7 @@ test("MV-14 one pure dispatch head preserves FIFO and exact identity across Chan
  assert.match(body,/while\(queue\.size\)/);
  assert.match(body,/queue\.delete\(plan\.key\)/);
  assert.match(body,/if\(plan\.kind==="DROP_ALL"\)\{queue\.clear\(\);return;\}/);
- assert.match(body,/beforeRevision:current\.graph\.revision,acked:false/);
+ assert.match(body,/stripVM\.sourceQueueRequestLease\(\{/);
  assert.match(body,/setTimeout\(\(\)=>handleSourceTimeout\(authority,requestId\),8000\)/);
  assert.match(bridge,/nativeUiSourcePending=null;[\s\S]*?INPUT timeout/);
  assert.match(body,/backend\.emitEvent\("arMixAction",\{action:plan\.action,requestId/);
