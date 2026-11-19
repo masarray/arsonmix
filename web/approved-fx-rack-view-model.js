@@ -110,11 +110,13 @@
     const n=Number(x);
     return Number.isSafeInteger(n)&&n>0? n:null;
   }
-  function m4PowerPlan(snapshot,{action,channel,slot=null,
-    verifiedM4=false,offline=false,pending=false}={}) {
-    const unavailable={kind:"UNAVAILABLE"};
-    const s=snapshot?.raw?.mixerSession,m=snapshot?.raw?.legacyM4,
-      epoch=safeM4Token(snapshot?.device?.epoch),
+  // G-MV33: ONE immutable-readback physical M4 FX admission core.
+  // The bridge provides the existing protocol's canonical hardware fingerprint;
+  // no second device model, FX host, WebView controller or IPC dispatcher.
+  function m4FxHost(snapshot,{channel,slot=null,verifiedM4=false,
+    offline=false,pending=false,hardwareConfiguration}={}) {
+    const s=snapshot?.raw?.mixerSession,m=snapshot?.raw?.legacyM4;
+    const epoch=safeM4Token(snapshot?.device?.epoch),
       revision=safeM4Token(m?.routingRevision);
     if(pending||offline||verifiedM4!==true||
        snapshot?.admitted!==false||snapshot?.retained===true||
@@ -125,21 +127,42 @@
        s.routeRevision!==m.routingRevision||
        !Array.isArray(s.channels)||s.channels.length!==10||
        !Number.isInteger(channel)||channel<0||channel>=10||
-       !s.channels[channel])return unavailable;
-    const lease={channel,epoch:s.deviceEpoch,
-      revision:s.routeRevision,acked:false};
-    if(action==="fxOn") {
+       !s.channels[channel]||
+       (slot!==null&&(!Number.isInteger(slot)||slot<0||slot>=8))||
+       (hardwareConfiguration!==undefined&&
+        (typeof hardwareConfiguration!=="string"||!hardwareConfiguration)))
+      return null;
+    return {s,m,epoch,revision,hardwareConfiguration:
+      hardwareConfiguration===undefined?null:hardwareConfiguration};
+  }
+  function m4FxHardwareLease(host){
+    return host.hardwareConfiguration===null?{}:
+      {hardwareConfiguration:host.hardwareConfiguration};
+  }
+  function m4FxHardwareMatches(pending,hardwareConfiguration){
+    return !Object.prototype.hasOwnProperty.call(pending,"hardwareConfiguration")||
+      (typeof hardwareConfiguration==="string"&&
+       pending.hardwareConfiguration===hardwareConfiguration);
+  }
+  function m4PowerPlan(snapshot,{action,channel,slot=null,
+    verifiedM4=false,offline=false,pending=false,hardwareConfiguration}={}) {
+    const unavailable={kind:"UNAVAILABLE"};
+    const host=m4FxHost(snapshot,{channel,slot,verifiedM4,offline,pending,
+      hardwareConfiguration});
+    if(!host)return unavailable;
+    const {s,m,epoch,revision}=host;
+    const lease={channel,epoch:s.deviceEpoch,revision:s.routeRevision,
+      acked:false,...m4FxHardwareLease(host)};
+    if(action==="fxOn"){
       const row=s.channels[channel];
       if(typeof row.fxRackBypassed!=="boolean"||slot!==null)
         return unavailable;
       const bypassed=!row.fxRackBypassed;
       return {kind:"READY",action:"routingFxRackBypass",key:channel,
-        timeoutMs:8000,
-        pending:{...lease,bypassed},
+        timeoutMs:8000,pending:{...lease,bypassed},
         payload:{channel,deviceEpoch:epoch,revision,value:bypassed}};
     }
-    if(action!=="slotPower"||!Number.isInteger(slot)||
-       slot<0||slot>=8)return unavailable;
+    if(action!=="slotPower"||!Number.isInteger(slot))return unavailable;
     const instances=m.fxInstances?.[channel],live=instances?.[slot];
     if(!Array.isArray(instances)||
        typeof live?.instanceId!=="string"||!live.instanceId||
@@ -153,13 +176,14 @@
         deviceEpoch:epoch,revision,value:bypass}};
   }
   function m4RackAckResult(pending,ack) {
-    if(!pending||!ack||ack.requestId!==pending.requestId)return "IGNORE";
+    if(!pending||!ack||ack.requestId!==pending.requestId||
+       pending.acked===true)return "IGNORE";
     return ack.ok===true&&ack.channel===pending.channel&&
       String(ack.deviceEpoch)===pending.epoch&&
       String(ack.routingRevision)===pending.revision&&
       ack.bypassed===pending.bypassed?"ACKED":"REJECTED";
   }
-  function m4RackSettlement(pending,snapshot) {
+  function m4RackSettlement(pending,snapshot,hardwareConfiguration) {
     if(!pending)return "NONE";
     const s=snapshot?.raw?.mixerSession,m=snapshot?.raw?.legacyM4;
     if(snapshot?.admitted!==false||snapshot?.retained===true||
@@ -169,6 +193,7 @@
        s.deviceEpoch!==pending.epoch||
        s.routeRevision!==pending.revision||
        m.routingRevision!==pending.revision||
+       !m4FxHardwareMatches(pending,hardwareConfiguration)||
        !Number.isInteger(pending.channel)||
        pending.channel<0||pending.channel>=10||
        !Array.isArray(s.channels)||s.channels.length!==10)
@@ -202,39 +227,32 @@
   // independent, validated Console-v6 PCM readback. Editors open only when
   // the accepted M4 snapshot proves the exact new catalog/instance/route.
   function m4InsertPlan(snapshot,{channel,slot,catalogId,
-    verifiedM4=false,offline=false,pending=false}={}) {
+    verifiedM4=false,offline=false,pending=false,hardwareConfiguration}={}) {
     const unavailable={kind:"UNAVAILABLE"};
-    const s=snapshot?.raw?.mixerSession,m=snapshot?.raw?.legacyM4;
-    const epoch=safeM4Token(snapshot?.device?.epoch),
-      revision=safeM4Token(m?.routingRevision);
-    if(offline||pending||verifiedM4!==true||
-       snapshot?.admitted!==false||snapshot?.retained===true||
-       s?.authority!=="M4"||m?.active!==true||m?.routeAccepted!==true||
-       m.nativeBusStructural===true||
-       epoch===null||revision===null||
-       s.deviceEpoch!==snapshot.device.epoch||
-       s.routeRevision!==m.routingRevision||
-       !Array.isArray(s.channels)||s.channels.length!==10||
-       !Number.isInteger(channel)||channel<0||channel>=10||
-       !s.channels[channel]||
-       !Number.isInteger(slot)||slot<0||slot>=8||
-       typeof catalogId!=="string"||!catalogId)return unavailable;
+    const host=m4FxHost(snapshot,{channel,slot,verifiedM4,offline,pending,
+      hardwareConfiguration});
+    if(!host||!Number.isInteger(slot)||
+       typeof catalogId!=="string"||!catalogId)
+      return unavailable;
+    const {m,epoch,revision}=host;
     const instances=m.fxInstances?.[channel];
     if(!Array.isArray(instances)||instances[slot]!=null||
        (slot>0&&instances[slot-1]==null))return unavailable;
     return {kind:"READY",action:"routingFxInsert",
       payload:{id:catalogId,channel,slot,deviceEpoch:epoch,revision},
       pending:{authority:"M4",id:catalogId,channel,slot,
-        epoch:snapshot.device.epoch,revision:m.routingRevision,acked:false}};
+        epoch:snapshot.device.epoch,revision:m.routingRevision,acked:false,
+        ...m4FxHardwareLease(host)}};
   }
   function m4InsertAckResult(pending,ack){
     if(!pending||pending.authority!=="M4"||
-       !ack||ack.requestId!==pending.requestId)return "IGNORE";
+       !ack||ack.requestId!==pending.requestId||
+       pending.acked===true)return "IGNORE";
     return ack.ok===true&&ack.channel===pending.channel&&
       ack.slot===pending.slot?"ACKED":"REJECTED";
     // Deliberately ignore ack.state, including FX inventory and revision.
   }
-  function m4InsertReadbackSettlement(pending,snapshot){
+  function m4InsertReadbackSettlement(pending,snapshot,hardwareConfiguration){
     if(!pending||pending.authority!=="M4")return {kind:"NONE"};
     const s=snapshot?.raw?.mixerSession,m=snapshot?.raw?.legacyM4,
       revision=safeM4Token(m?.routingRevision),
@@ -246,6 +264,7 @@
        s.deviceEpoch!==pending.epoch||
        s.routeRevision!==m.routingRevision||
        previous===null||revision===null||revision<previous||
+       !m4FxHardwareMatches(pending,hardwareConfiguration)||
        !Number.isInteger(pending.channel)||pending.channel<0||pending.channel>=10||
        !Number.isInteger(pending.slot)||pending.slot<0||pending.slot>=8)
       return {kind:"STALE"};
@@ -315,21 +334,12 @@
   // M4 uses host ordinals, never ChannelIds. An old accepted FX inventory
   // cannot be permission to open an editor after device/route owner changes.
   function m4EditorPlan(snapshot,{channel,slot,verifiedM4=false,
-    offline=false}={}) {
-    const unavailable={kind:"UNAVAILABLE"},s=snapshot?.raw?.mixerSession,
-      m=snapshot?.raw?.legacyM4,
-      epoch=safeM4Token(snapshot?.device?.epoch),
-      revision=safeM4Token(m?.routingRevision);
-    if(offline||verifiedM4!==true||snapshot?.admitted!==false||
-       snapshot?.retained===true||s?.authority!=="M4"||
-       m?.active!==true||m.routeAccepted!==true||
-       m.nativeBusStructural===true||epoch===null||revision===null||
-       s.deviceEpoch!==snapshot.device.epoch||
-       s.routeRevision!==m.routingRevision||
-       !Array.isArray(s.channels)||s.channels.length!==10||
-       !Number.isInteger(channel)||channel<0||channel>=10||
-       !s.channels[channel]||
-       !Number.isInteger(slot)||slot<0||slot>=8)return unavailable;
+    offline=false,hardwareConfiguration}={}) {
+    const unavailable={kind:"UNAVAILABLE"};
+    const host=m4FxHost(snapshot,{channel,slot,verifiedM4,offline,
+      hardwareConfiguration});
+    if(!host||!Number.isInteger(slot))return unavailable;
+    const {m,epoch,revision}=host;
     const slots=m.fxInstances?.[channel];
     if(!Array.isArray(slots))return unavailable;
     const effect=slots[slot];
@@ -484,12 +494,13 @@
   // M4 compatibility FX slot ACK is NOT readback. Keep the per-slot lease
   // locked until independent accepted M4 snapshot proves its exact token.
   function m4SlotPowerAckResult(pending,ack){
-    if(!pending||!ack||pending.requestId!==ack.requestId)return "IGNORE";
+    if(!pending||!ack||pending.requestId!==ack.requestId||
+       pending.acked===true)return "IGNORE";
     if(ack.channel!==pending.channel||ack.slot!==pending.slot||
        ack.ok!==true)return "REJECTED";
     return "ACKED";
   }
-  function m4SlotPowerSettlement(pending,snapshot){
+  function m4SlotPowerSettlement(pending,snapshot,hardwareConfiguration){
     if(!pending)return "NONE";
     const session=snapshot?.raw?.mixerSession,m=snapshot?.raw?.legacyM4;
     if(snapshot?.retained===true||snapshot?.admitted===true||
@@ -497,7 +508,8 @@
        snapshot?.device?.epoch!==pending.epoch||
        session.deviceEpoch!==pending.epoch||
        session.routeRevision!==pending.revision||
-       m?.routingRevision!==pending.revision)return "STALE";
+       m?.routingRevision!==pending.revision||
+       !m4FxHardwareMatches(pending,hardwareConfiguration))return "STALE";
     const slots=m.fxInstances?.[pending.channel];
     const actual=Array.isArray(slots)?slots[pending.slot]:null;
     if(actual?.instanceId!==pending.token)return "STALE";

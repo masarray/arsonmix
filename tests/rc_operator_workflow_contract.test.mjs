@@ -72,8 +72,8 @@ test('FX picker closes and opens an actual editor only after accepted native or 
   assert.match(fxVM,/function m4InsertAckResult\(pending,ack\)/);
   assert.match(fxVM,/ack\.channel===pending\.channel&&/);
   assert.match(fxVM,/ack\.slot===pending\.slot/);
-  assert.match(fxVM,/function m4InsertReadbackSettlement\(pending,snapshot\)/);
-  assert.match(bridge,/fxRackVM\.m4InsertReadbackSettlement\(p,snapshot\)/);
+  assert.match(fxVM,/function m4InsertReadbackSettlement\(pending,snapshot,/);
+  assert.match(bridge,/fxRackVM\.m4InsertReadbackSettlement\(p,snapshot,/);
   assert.match(bridge,/openRoutedFxEditor\(decision\.channel,decision\.slot,decision\.instanceId,/);
   const m4AckHandler=bridge.split('backend.addEventListener("arMixRoutingFxInsertAck",ack=>{')[1]
     ?.split('backend.addEventListener("arMixCatalog",catalog=>{')[0];
