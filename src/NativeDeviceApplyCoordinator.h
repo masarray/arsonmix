@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "../engine/device/AudioSetupRecoveryPolicy.h"
-#include "NativeMixerSessionDocument.h"
+#include "../engine/device/DeviceSessionTransitionPolicy.h"
+#include "../engine/device/NamedDevicePins.h"
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <cmath>
 #include <cstdint>
@@ -321,7 +322,7 @@ public:
                                   2,xml.get(),false);
     }
 
-    using BindingMode=armix::session::MixerDeviceBindingPolicy::Mode;
+    using BindingMode=DeviceBindingMode;
     using Setup=juce::AudioDeviceManager::AudioDeviceSetup;
 
     struct ApplyPlan {
@@ -484,12 +485,11 @@ public:
         bool explicitPairStillIdentified=r.assignMain;
         if(refreshAsio4All) {
             // Translate physical names before the one bounded fresh open.
-            using BindingPolicy=armix::session::MixerDeviceBindingPolicy;
             const auto freshInputs=changedPins?opened->getInputChannelNames():juce::StringArray{};
             const auto freshOutputs=changedPins?opened->getOutputChannelNames():juce::StringArray{};
-            const auto capturePins=changedPins?BindingPolicy::translateNamedPins(
+            const auto capturePins=changedPins?translateNamedPins(
                 candidate.inputChannels,plan.originalInputNames,freshInputs):std::nullopt;
-            const auto playbackPins=changedPins?BindingPolicy::translateNamedPins(
+            const auto playbackPins=changedPins?translateNamedPins(
                 candidate.outputChannels,plan.originalOutputNames,freshOutputs):std::nullopt;
             candidate.useDefaultInputChannels=!capturePins && !candidate.inputChannels.isZero();
             candidate.useDefaultOutputChannels=!playbackPins;

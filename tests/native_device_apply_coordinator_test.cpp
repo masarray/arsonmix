@@ -51,6 +51,16 @@ static void verifyTransactionOutcomes() {
     result=Coordinator::complete({},false,bind,rollback);
     assert(result.state==Outcome::recoveryRequired && result.error==binding.error &&
            bindCalls==3 && rollbackCalls==2);
+
+    juce::BigInteger selected;
+    selected.setBit(0);
+    selected.setBit(1);
+    const auto moved=armix::device::translateNamedPins(selected,{"Left","Right"},
+        {"Unused","Right","Left"});
+    assert(moved && !(*moved)[0] && (*moved)[1] && (*moved)[2]);
+    assert(!armix::device::translateNamedPins(selected,{"Left","Right"},
+        {"Left","Left","Right"}));
+    assert(!armix::device::translateNamedPins(selected,{"Left","Right"},{"Left"}));
 }
 
 int main() {
