@@ -19,6 +19,7 @@
 #include "../engine/core/DearVrPolarPolicy.h"
 #include "DiagnosticsRecorder.h"
 #include "../engine/device/DirectRestoreBackoff.h"
+#include "NativeDirectRestoreCoordinator.h"
 #include "../engine/device/AudioSetupRecoveryPolicy.h"
 #include "../engine/device/AsioRestartRecoveryGate.h"
 #include "../engine/device/PeriodCapabilityEvidence.h"
@@ -928,95 +929,24 @@ private:
         return report;
     }
 
-    void annotateRecovery (juce::var& state) const
-    {
-        auto* object = state.getDynamicObject();
-        if (object == nullptr) return;
-        const auto snapshot = directRestore_.snapshot();
-        using State = armix::device::DirectRestoreBackoff::State;
-        const char* label = snapshot.state == State::idle ? "IDLE"
-                          : snapshot.state == State::waiting ? "WAITING" : "EXHAUSTED";
-        object->setProperty ("directRestoreState", label);
-        object->setProperty ("directRestoreAttempts", static_cast<int> (snapshot.attempts));
-        object->setProperty ("directRestoreNextMs",
-            static_cast<double> (directRestore_.remainingMs (monotonicMilliseconds())));
-        object->setProperty ("directRestoreGeneration", static_cast<double> (snapshot.generation));
-        object->setProperty ("directRestoreError", lastDirectRestoreError_);
-        object->setProperty ("directRestorePending", engine_.hasPendingDirectRestore());
+    void annotateRecovery (juce::var& state) const {
+        armix::device::NativeDirectRestoreCoordinator::annotate(
+            state,directRestore_,lastDirectRestoreError_,
+            engine_.hasPendingDirectRestore(),monotonicMilliseconds());
     }
 
-    // Device reopens happen on the JUCE message thread, never the RT callback.
-    // Restoring DIRECT never silently re-enables a faulting bridged route.
-    void serviceDirectRestore()
-    {
-        using Gate = armix::device::DirectRestoreBackoff;
-        const auto now = monotonicMilliseconds();
-        // Independent drivers can stop callbacks without emitting JUCE error.
-        // Read existing atomic progress on message thread before failback gate.
-        engine_.pollIndependentClockHealth (now);
-        auto snapshot = directRestore_.snapshot();
-        if (snapshot.state == Gate::State::idle &&
-            (engine_.independentClockFaulted() ||
-             (!engine_.independentClockActive() && engine_.hasPendingDirectRestore())))
-        {
-            const auto generation = directRestore_.begin (now);
-            diagnostics_.record ("DIRECT_RESTORE_BEGIN",
-                juce::String ("Generation ") + juce::String (static_cast<juce::int64> (generation)));
-            snapshot = directRestore_.snapshot();
-        }
-        if (!directRestore_.due (snapshot.generation, now)) return;
-
-        const bool wasIndependent = engine_.independentClockActive();
-        const auto stateBeforeRestore = engine_.status();
-        const auto faultStatus = juce::JSON::toString (stateBeforeRestore, false);
-        // DiagnosticsRecorder bounds event details to 950 characters. Keep
-        // the independent stream fault source and durations FIRST, before the
-        // potentially long full status JSON, so field reports retain evidence
-        // after closing the adapter resets its watchdog.
-        const auto watchdogSummary = juce::String ("format=")
-            + stateBeforeRestore.getProperty ("bridgeNegotiationFault", "NONE").toString()
-            + " watchdog="
-            + stateBeforeRestore.getProperty ("bridgeWatchdogFault", "NONE").toString()
-            + " captureSilentMs="
-            + stateBeforeRestore.getProperty ("bridgeCaptureSilentMs", 0).toString()
-            + " renderSilentMs="
-            + stateBeforeRestore.getProperty ("bridgeRenderSilentMs", 0).toString()
-            + " continuity="
-            + stateBeforeRestore.getProperty ("bridgeContinuityFault", "NONE").toString()
-            + " lossBp="
-            + stateBeforeRestore.getProperty ("bridgeContinuityLossBp", 0).toString()
-            + " badWindows="
-            + stateBeforeRestore.getProperty ("bridgeContinuityBadWindows", 0).toString();
-        const auto error = engine_.setIndependentClockEnabled (false);
-        if (error.isEmpty())
-        {
-            directRestore_.recovered (snapshot.generation);
-            lastDirectRestoreError_.clear();
-            deviceSettingsDirty_ = true;
-            diagnostics_.record ("SMART_CLOCK_RECOVERY",
-                juce::String ("DIRECT_RESTORED after ") + juce::String (snapshot.attempts + 1) +
-                " attempt(s) | " + watchdogSummary + " | " + faultStatus);
-            if (engine_.isOutputMuted())
-                emitNotice ("DIRECT device reopened. Output remains muted for safety; unmute only when ready.", true);
-            else
-                emitNotice (wasIndependent
-                    ? "Independent device fault: safe DIRECT audio restored."
-                    : "DIRECT audio device restored after a bounded retry.", true);
-            return;
-        }
-
-        directRestore_.failed (snapshot.generation, now);
-        lastDirectRestoreError_ = error;
-        const auto next = directRestore_.snapshot();
-        diagnostics_.record ("SMART_CLOCK_RECOVERY",
-            juce::String ("RESTORE_FAIL ") + juce::String (next.attempts) + "/" +
-            juce::String (static_cast<int> (Gate::maxAttempts)) + ": " + error +
-            " | " + watchdogSummary + " | " + faultStatus);
-        if (next.state == Gate::State::exhausted)
-            emitNotice ("Automatic DIRECT recovery exhausted; audio remains safe/muted. "
-                        "Check AUDIO SETUP or retry DIRECT manually. " + error, true);
-        else if (next.attempts == 1)
-            emitNotice ("Device interrupted. DIRECT restore is retrying with bounded backoff.", true);
+    // One control owner; recovery policy, telemetry and bounded retries live
+    // in the dedicated Native coordinator. No change to ASIO callback path.
+    void serviceDirectRestore() {
+        armix::device::NativeDirectRestoreCoordinator::service(
+            directRestore_,lastDirectRestoreError_,deviceSettingsDirty_,
+            monotonicMilliseconds(),engine_,
+            [this](const juce::String& code,const juce::String& detail) {
+                diagnostics_.record(code,detail);
+            },
+            [this](const juce::String& message,bool error) {
+                emitNotice(message,error);
+            });
     }
 
     void emitNotice (const juce::String& message, bool error = false)
