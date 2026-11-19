@@ -393,34 +393,27 @@
   // repaint PRE/POST until the subsequent independent accepted readback.
   function requestNativeTap(source,edgeId,tap){
     const state=controller?.state(),current=state?.current;
-    if(!current?.admitted||current.retained||state.pending||
-       !current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION")||
-       !source||!edgeId||!["PRE_FADER","POST_FADER"].includes(tap)){
-      status("PRE/POST unavailable · wait for an admitted native WIRE");return false;
+    const plan=wireVM.nativeTapPlan(current,{sourceId:source,edgeId,
+      targetTap:tap,projected:flags.acceptedGraphConnected,
+      pending:!!state?.pending});
+    if(plan.kind==="NO_CHANGE")return true;
+    if(plan.kind!=="DISPATCH"){
+      status("PRE/POST unavailable · select an admitted parallel SEND");
+      return false;
     }
-    const selected=wireVM.parallelEdge(current.graph,source,edgeId);
-    if(!wireVM.canEditTap(selected,{supported:true})){
-      status("PRE/POST unavailable · selected send identity changed");return false;
-    }
-    if(selected.tap===tap)return true;
-    const result=controller.intent("APPLY_WIRE_TRANSACTION",source,{changes:[{
-      op:"SET_TAP",from:source,edgeId,tap
-    }]});
+    const result=controller.intent(plan.operation,plan.source,plan.payload);
     if(!result.ok){status("PRE/POST unchanged · "+result.error);return false;}
     window.setTimeout(()=>controller?.expire(result.requestId),8000);
     return true;
   }
   function selectedNativeSofEdge(t) {
     if(!scope?.sofEnabled||!t||t.kind!=="audio")return null;
-    const current=controller?.state()?.current,source=nativeIdFor(t);
+    const current=controller?.state()?.current;
     const matches=scope?.tracks?.filter(x=>x.id===scope.sofTargetId&&
       (x.kind==="bus"||x.kind==="fx"))||[];
-    if(!current?.admitted||!source||matches.length!==1)return null;
-    const dest=nativeIdFor(matches[0]);
-    const edges=current.graph.edges.filter(e=>e.enabled===true&&
-      e.from===source&&e.to===dest&&e.primaryOutput===false);
-    return edges.length===1?wireVM.parallelEdge(current.graph,source,
-      edges[0].edgeId,dest):null;
+    if(matches.length!==1)return null;
+    return wireVM.sofSendEdge(current,{sourceId:nativeIdFor(t),
+      destinationId:nativeIdFor(matches[0])});
   }
   function syncNativeSofAvailability(next=controller?.state()?.current) {
     const admitted=wireVM.sofAvailable(next,!!scope?.toggleSof);
@@ -3530,30 +3523,31 @@
       // PRE/POST is an exact EdgeId structural graph transaction, not a
       // cosmetic browser mode nor a channel-wide batch change.
       if(action==="tapMode"||action==="sofTap"){
-        const current=controller?.state()?.current,id=nativeIdFor(t);
-        if(!current?.admitted||!current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION")||!id){
-          status("PRE/POST unavailable · native PCM graph not admitted");return true;
-        }
-        const sends=current.graph.edges.filter(e=>e.enabled&&
-          e.from===id&&e.primaryOutput===false&&e.to!==current.graph.mainChannelId);
-        let target=action==="sofTap"?selectedNativeSofEdge(t):
-          sends.find(e=>uiByWireId.get(e.edgeId)===scope?.selectedWireEdgeId)||
-          (sends.length===1?sends[0]:null);
-        if(!target||!["PRE_FADER","POST_FADER"].includes(target.tap)){
+        const current=controller?.state()?.current,source=nativeIdFor(t);
+        // A SOF edit must own exactly one real SEND to the selected BUS.
+        // Ordinary tapMode uses only the selected EdgeId or a unique
+        // non-MAIN outgoing SEND; never guesses a sibling channel's route.
+        const edge=action==="sofTap"?selectedNativeSofEdge(t):
+          wireVM.channelTapEdge(current,{sourceId:source,
+            selectedEdgeId:wireByUiId.get(scope?.selectedWireEdgeId)??null});
+        if(!edge){
           status("Select one outgoing parallel SEND WIRE to change PRE/POST");
           return true;
         }
-        const next=target.tap==="PRE_FADER"?"POST_FADER":"PRE_FADER";
-        requestNativeTap(id,target.edgeId,next);
+        const target=edge.tap==="PRE_FADER"?"POST_FADER":"PRE_FADER";
+        requestNativeTap(source,edge.edgeId,target);
         return true;
       }
       if(action==="sofOn"){
-        const current=controller?.state()?.current,edge=selectedNativeSofEdge(t);
-        if(!current?.admitted||!current.graph.capabilities.supportedOps.includes("SET_SEND_ENABLED")||
-           !edge||typeof edge.sendEnabled!=="boolean"){
-          status("SEND ON/OFF unavailable · select an admitted WIRE send");return true;
+        const edge=selectedNativeSofEdge(t),state=controller?.state();
+        const plan=wireVM.nativeSendTogglePlan(state?.current,{
+          sourceId:nativeIdFor(t),edgeId:edge?.edgeId,
+          projected:flags.acceptedGraphConnected,pending:!!state?.pending});
+        if(plan.kind!=="DISPATCH"){
+          status("SEND ON/OFF unavailable · select an admitted WIRE send");
+          return true;
         }
-        intent("SET_SEND_ENABLED",t,{edgeId:edge.edgeId,enabled:!edge.sendEnabled});
+        intent(plan.operation,t,plan.payload);
         return true;
       }
       // Selection, WIRE inspection and section presentation are UI-only.
@@ -3692,9 +3686,10 @@
           readOnly:logicalView.readOnly,pending:!!pendingLogical,
           supported:logicalView.graph.capabilities.supportedOps.includes("SET_SEND_TAP")});
       }
-      const edge=admittedParallelWire(uiSourceId,uiEdgeId,"APPLY_WIRE_TRANSACTION");
-      return wireVM.canEditTap(edge,{pending:!!controller?.state()?.pending,
-        supported:true});
+      return wireVM.nativeTapPlan(controller?.state()?.current,{
+        sourceId:nativeByUiId.get(uiSourceId),edgeId:wireByUiId.get(uiEdgeId),
+        projected:flags.acceptedGraphConnected,
+        pending:!!controller?.state()?.pending}).kind==="AVAILABLE";
     },
     consumeWire(ops,retries=0) {
       if (!connected)return false;
