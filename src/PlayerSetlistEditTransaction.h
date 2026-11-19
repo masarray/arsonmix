@@ -79,15 +79,41 @@ public:
         }
         }
 
-        const auto stored = PlayerSetlistRepository::save(
-            archive,candidate,destination,autoNext,fadeMs);
-        if(stored == SaveStatus::invalidState)
-            return reject(stored,"Unable to save setlists; invalid setlist state");
-        if(stored == SaveStatus::ioError)
-            return reject(stored,"Unable to save setlists; check folder permissions");
-        return {SaveStatus::saved,{},std::move(candidate),destination};
+        return persist(archive,std::move(candidate),destination,autoNext,fadeMs);
+    }
+
+    // Any validated active-song edit uses the same durable-before-adopt gate.
+    // Callers stage MOVE/REMOVE/UNDO/import/relink and adjust the deck/queue
+    // indices only after this returns a successfully stored candidate.
+    static Result replaceActiveTracks(
+            const juce::File& archive,
+            const std::vector<PlayerSavedSet>& original,int active,
+            const std::vector<juce::File>& files,
+            const std::vector<PlayerTrackSettings>& controls,
+            bool autoNext,int fadeMs) {
+        if(original.empty() || active < 0 ||
+           active >= static_cast<int>(original.size()) ||
+           files.size() != controls.size())
+            return reject(SaveStatus::invalidState,
+                          "Unable to save setlists; invalid setlist state");
+        auto candidate=original;
+        auto& set=candidate[static_cast<std::size_t>(active)];
+        set.files=files;
+        set.controls=controls;
+        return persist(archive,std::move(candidate),active,autoNext,fadeMs);
     }
 private:
+    static Result persist(const juce::File& archive,
+                          std::vector<PlayerSavedSet> candidate,int active,
+                          bool autoNext,int fadeMs) {
+        const auto stored=PlayerSetlistRepository::save(
+            archive,candidate,active,autoNext,fadeMs);
+        if(stored==SaveStatus::invalidState)
+            return reject(stored,"Unable to save setlists; invalid setlist state");
+        if(stored==SaveStatus::ioError)
+            return reject(stored,"Unable to save setlists; check folder permissions");
+        return {SaveStatus::saved,{},std::move(candidate),active};
+    }
     static Result reject(SaveStatus status,juce::String error) {
         return {status,std::move(error),{},-1};
     }

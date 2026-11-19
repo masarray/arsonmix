@@ -326,6 +326,30 @@ int main() {
         false,180,Edit::Command::remove,0);
     assert(!deleteLast.committed());
     assert(transactionFile.loadFileAsString()==written);
+    // N-MOD-16 active-track replacement is a transaction too. Invalid
+    // media/control cardinality and occupied destinations never modify disk
+    // or require the caller to advance playback/queue indices.
+    auto revisedFiles=deleted.sets[0].files;
+    auto revisedControls=deleted.sets[0].controls;
+    revisedFiles.push_back(tempRoot.getChildFile("nmod16-import.mp3"));
+    revisedControls.push_back({});
+    const auto committedTracks=Edit::replaceActiveTracks(transactionFile,
+        deleted.sets,deleted.active,revisedFiles,revisedControls,true,250);
+    assert(committedTracks.committed());
+    assert(committedTracks.sets[0].files.size()==1);
+    assert(deleted.sets[0].files.empty());
+    assert(Store::load(transactionFile).document->sets[0].files.size()==1);
+    const auto tracksBytes=transactionFile.loadFileAsString();
+    const auto rejectedTracks=Edit::replaceActiveTracks(transactionFile,
+        committedTracks.sets,0,revisedFiles,{},true,250);
+    assert(!rejectedTracks.committed());
+    assert(transactionFile.loadFileAsString()==tracksBytes);
+    const auto failedTracks=Edit::replaceActiveTracks(blocked,
+        committedTracks.sets,0,revisedFiles,revisedControls,true,250);
+    assert(!failedTracks.committed() &&
+           failedTracks.status==Store::SaveStatus::ioError);
+    assert(committedTracks.sets[0].files.size()==1);
+    assert(transactionFile.loadFileAsString()==tracksBytes);
     assert(sandbox.deleteRecursively());
 
     // Legacy empty v3 content migrates to a non-destructive default setlist.
