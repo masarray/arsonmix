@@ -69,7 +69,8 @@ int main() {
     Coordinator::annotate(state,gate,lastError,true,300);
     assert(state.getProperty("directRestoreState","")=="WAITING");
     assert(static_cast<int>(state.getProperty("directRestoreNextMs",0))==150);
-    assert(state.getProperty("directRestorePending",false)==true);
+    const auto pending=state.getProperty("directRestorePending",false);
+    assert(pending.isBool() && static_cast<bool>(pending));
     tick(449);
     assert(engine.attempts==1);
     engine.result.clear();
