@@ -770,11 +770,11 @@
   // One native SessionSnapshot, not an independently reconstructed M4 model.
   const mixerSession=()=>hardware?.raw?.mixerSession;
   const m4ControlIsOwner=()=>mixerSession()?.authority==="M4";
-  const nativeMasterReady=()=>mixerSession()?.authority==="CHANNEL_ID" &&
-    safeNativeCounter(hardware?.device?.epoch)!==null &&
-    safeNativeCounter(legacy()?.routingRevision)!==null &&
-    Number.isFinite(mixerSession()?.main?.db) &&
-    typeof mixerSession()?.main?.mute==="boolean";
+  // The pure Strip VM admits MAIN only for the CURRENT, installed PCM
+  // producer. Old M4 status is never permission to control a retired owner.
+  const nativeMasterAuthority=()=>stripVM.masterScalarAuthority(
+    controller?.state()?.current,{m4Verified:m4Verified(),
+      graphConnected:flags.acceptedGraphConnected});
   // The shipped /preview/ IN dropdown is the sole normal hardware source
   // selector. Build options exclusively from JUCE-reported active pins, never
   // the public browser demo's hardcoded "Input 1 / CABLE / Realtek" strings.
@@ -1544,7 +1544,7 @@
   };
   function liveScalarReady(parameter,t) {
     if(t?.kind==="master")return logicalView?parameter==="masterGain":
-      parameter==="masterGain"&&(m4Verified()||nativeMasterReady());
+      parameter==="masterGain"&&nativeMasterAuthority()!=="UNAVAILABLE";
     if(m4ControlIsOwner())return m4Verified()&&m4Index(t)>=0;
     return channelIdScalarReady(parameter,t);
   }
@@ -1665,8 +1665,9 @@
     }
   }
   function sendM4Control(parameter,t,value) {
-    if((t?.kind!=="master"&&!m4ControlIsOwner()) ||
-       !(m4Verified()||(t?.kind==="master"&&nativeMasterReady())) ||
+    if((t?.kind==="master"?
+          nativeMasterAuthority()==="UNAVAILABLE":
+          !m4ControlIsOwner()||!m4Verified()) ||
        (typeof value!=="boolean"&&!Number.isFinite(value)))
       return false;
     const channel=t?.kind==="master"?-1:m4Index(t);
@@ -3666,10 +3667,18 @@
         return true;
       }
       if (action==="mute"||action==="solo") {
-        if((m4Verified()||nativeMasterReady()) &&
-           t.kind==="master" && action==="mute"){
-          if(!sendM4Control("masterMute",t,!t.mute))
-            status("Native MAIN mute rejected");
+        // MAIN has one host scalar gateway. A refused native MAIN lease
+        // must never fall through to generic ChannelId SET_MUTE/SOLO.
+        if(t.kind==="master"){
+          // Offline .smix remains an editable durable logical mixer:
+          // its native logical-intent owner is distinct from physical PCM.
+          if(logicalView){
+            intent(action==="mute"?"SET_MUTE":"SET_SOLO",t,
+                   {value:!t[action],enabled:!t[action]});
+          }else if(action==="mute" && nativeMasterAuthority()!=="UNAVAILABLE"){
+            if(!sendM4Control("masterMute",t,!t.mute))
+              status("Native MAIN mute rejected");
+          }else status("MAIN mute unavailable · verified PCM required");
           return true;
         }
         if(m4ControlIsOwner()&&m4Verified()&&m4Index(t)>=0){
@@ -3930,9 +3939,19 @@
             status("SOF unity reset unavailable · select one admitted SEND");
           return true;
         }
-        if((m4ControlIsOwner()&&m4Verified()) ||
-           (t?.kind==="master"&&(m4Verified()||nativeMasterReady())))
-          sendM4Control(t?.kind==="master"?"masterGain":"faderDb",t,0);
+        // MAIN reset must not become an unrelated ChannelId SET_FADER
+        // when its native physical host scalar lease is not admitted.
+        if(t?.kind==="master"){
+          // An offline MAIN unity reset edits the logical .smix document,
+          // never the unavailable physical host/ChannelId PCM authority.
+          if(logicalView)intent("SET_FADER",t,{valueDb:0});
+          else if(nativeMasterAuthority()!=="UNAVAILABLE")
+            sendM4Control("masterGain",t,0);
+          else status("MAIN reset unavailable · verified PCM required");
+          return true;
+        }
+        if(m4ControlIsOwner()&&m4Verified())
+          sendM4Control("faderDb",t,0);
         else intent("SET_FADER",t,{valueDb:0});
       }
       else if(event.target.closest?.(".gain-dial")){

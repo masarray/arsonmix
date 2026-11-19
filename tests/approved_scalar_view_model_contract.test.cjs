@@ -33,6 +33,62 @@ const ack=(p,extra={})=>({
   parameter:p.parameter,ok:true,...extra
 });
 
+test("G-MV26 MAIN scalar gate uses current PCM authority, never stale M4 status",()=>{
+  const main=(authority="CHANNEL_ID")=>{
+    const s=m4Snapshot({authority});
+    s.admitted=authority==="CHANNEL_ID";
+    s.retained=false;
+    s.raw.legacyM4.active=true;
+    s.raw.legacyM4.routeAccepted=true;
+    s.raw.mixerSession.deviceEpoch=s.device.epoch;
+    return s;
+  };
+  const gate=(s,options={})=>vm.masterScalarAuthority(s,{
+    m4Verified:true,graphConnected:true,...options
+  });
+  const channel=main();
+  assert.equal(gate(channel),"CHANNEL_ID");
+  assert.equal(gate({...channel,admitted:false}),"UNAVAILABLE",
+    "old M4 routeAccepted cannot authorize MAIN after ChannelId loses PCM");
+  assert.equal(gate(channel,{graphConnected:false}),"UNAVAILABLE",
+    "ChannelId MAIN command waits for accepted GUI projection");
+  const retained=main();
+  retained.retained=true;
+  assert.equal(gate(retained),"UNAVAILABLE");
+  const replacement=main("M4");
+  assert.equal(gate(replacement),"M4",
+    "a verified current M4 producer retains native physical MAIN control");
+  assert.equal(gate(replacement,{m4Verified:false}),"UNAVAILABLE");
+  assert.equal(gate({...replacement,admitted:true}),"UNAVAILABLE");
+  const oldM4=main("NONE");
+  assert.equal(gate(oldM4),"UNAVAILABLE",
+    "unadmitted first sound must not inherit retired MAIN controls");
+  const stale=main("M4");
+  stale.raw.mixerSession.routeRevision="24";
+  assert.equal(gate(stale),"UNAVAILABLE");
+  const lost=main("M4");
+  lost.raw.legacyM4.routeAccepted=false;
+  assert.equal(gate(lost),"UNAVAILABLE");
+  const changed=main();
+  changed.raw.mixerSession.deviceEpoch="999";
+  assert.equal(gate(changed),"UNAVAILABLE");
+  const incomplete=main();
+  delete incomplete.raw.mixerSession.main;
+  assert.equal(gate(incomplete),"UNAVAILABLE");
+  const overflow=main();
+  overflow.device.epoch="18446744073709551610";
+  overflow.raw.mixerSession.deviceEpoch=overflow.device.epoch;
+  assert.equal(gate(overflow),"UNAVAILABLE",
+    "numeric M4 host tokens must not silently round uint64 device epochs");
+  assert.equal(gate(null),"UNAVAILABLE");
+  const bridge=readFileSync("web/approved-native-bridge.js","utf8");
+  assert.match(bridge,/stripVM\.masterScalarAuthority\(/);
+  assert.match(bridge,/nativeMasterAuthority\(\)===?"UNAVAILABLE"/);
+  assert.doesNotMatch(bridge,/m4Verified\(\)\s*\|\|\s*nativeMasterReady\(\)/);
+  assert.doesNotMatch(vm.masterScalarAuthority.toString(),
+    /document\.|window\.|backend|setTimeout|AudioContext|emitEvent/);
+});
+
 test("MV-9 exact native edit identity never rounds uint64 channel/device values",()=>{
   assert.equal(vm.scalarIdentityMatches(edit,identity),true);
   assert.equal(vm.scalarIdentityMatches(edit,{...identity,channelId:bigNext}),false);

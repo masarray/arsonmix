@@ -40,7 +40,7 @@ function nativeChannelIdFixture(){
  };
  return s;
 }
-function harness({m4=false}={}){
+function harness({m4=false,rejectMaster=false}={}){
  const sent=[],listeners=new Map(),timers=[],visual=[],meters=[];
  const m4Tracks=m4?Array.from({length:10},(_,i)=>({
    id:1000+i,name:"CH"+(i+1),kind:"audio",format:"mono",level:-6,
@@ -80,7 +80,8 @@ function harness({m4=false}={}){
  };
  const window={
    __JUCE__:{backend},ArSonApprovedNativeContract:protocol,ArSonApprovedDeviceViewModel:deviceVM,
-   ArSonApprovedChannelStripViewModel:stripVM,ArSonApprovedFxRackViewModel:fxRackVM,ArSonApprovedWireViewModel:wireVM,
+   ArSonApprovedChannelStripViewModel:rejectMaster?
+     Object.freeze({...stripVM,masterScalarAuthority:()=>"UNAVAILABLE"}):stripVM,ArSonApprovedFxRackViewModel:fxRackVM,ArSonApprovedWireViewModel:wireVM,
    __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
    setTimeout(fn,delay=0){timers.push({fn,at:now+Math.max(0,Number(delay)||0)});return timers.length;}
  };
@@ -98,6 +99,57 @@ function harness({m4=false}={}){
     }
  };
 }
+test("G-MV26 refused MAIN MUTE and fader reset never fall through to ChannelId",()=>{
+ const h=harness({rejectMaster:true}),s=nativeChannelIdFixture();
+ s.device.epoch="77";s.mixerSession.deviceEpoch="77";
+ h.listeners.get("arMixConsoleSnapshot")(s);
+ assert.equal(h.window.__ARMIX_APPROVED_NATIVE_GUI__.acceptedGraphConnected,true);
+ const master=h.scope.master;
+ const commands=()=>h.sent.filter(e=>e.name==="arMixConsoleIntent" ||
+   (e.name==="arMixAction"&&e.payload?.action==="routingM4Control"));
+ const before=commands().length;
+ assert.equal(h.window.__ARMIX_NATIVE_M2__.consumeAction(master,"mute",{}),true);
+ assert.equal(h.window.__ARMIX_NATIVE_M2__.consumeDoubleClick({
+   target:{classList:{contains:cls=>cls==="fader"}}
+ },master),true);
+ assert.equal(commands().length,before,
+   "refused MAIN can neither emit host scalar nor bypass via generic v6 intent");
+});
+
+test("G-MV26 offline .smix MAIN MUTE and unity reset keep logical native ACK path",()=>{
+ const makeOffline=()=>{
+   const h=harness(),s=clone(fixture),live=nativeChannelIdFixture();
+   s.productionCallbackLive=false;
+   s.mixerSession={authority:"NONE",deviceEpoch:s.device.epoch};
+   const graph=clone(live.graph);
+   graph.revision="12";graph.rosterRevision="12";
+   graph.capabilities.callbackOwnsChannelIds=false;
+   graph.capabilities.supportedOps=["SET_FADER","SET_MUTE"];
+   s.logicalMixer={schema:"arsonmix.native.logical-mixer.v1",
+     authority:"LOGICAL_ONLY",workspaceToken:"offline-main-gmv26",
+     readOnly:false,revision:"12",physicalOutputAdmitted:false,
+     outputArmed:false,graph};
+   h.listeners.get("arMixConsoleSnapshot")(s);
+   return {h,graph};
+ };
+ for(const operation of ["SET_MUTE","SET_FADER"]){
+   const {h,graph}=makeOffline(),master=h.scope.master;
+   if(operation==="SET_MUTE")
+     assert.equal(h.window.__ARMIX_NATIVE_M2__.consumeAction(master,"mute",{}),true);
+   else
+     assert.equal(h.window.__ARMIX_NATIVE_M2__.consumeDoubleClick({
+       target:{classList:{contains:x=>x==="fader"}}
+     },master),true);
+   const emitted=h.sent.filter(e=>e.name==="arMixLogicalIntent");
+   assert.equal(emitted.length,1,operation+" must edit offline .smix via logical authority");
+   assert.equal(emitted[0].payload.operation,operation);
+   assert.equal(emitted[0].payload.channelId,graph.mainChannelId);
+   assert.equal(h.sent.some(e=>e.name==="arMixConsoleIntent" ||
+      e.payload?.action==="routingM4Control"),false,
+      "logical MAIN edit must never trigger physical PCM or output");
+ }
+});
+
 test("held ChannelId drag publishes first gain and coalesces latest BEFORE release",()=>{
  const h=harness(),s=nativeChannelIdFixture();
  h.listeners.get("arMixConsoleSnapshot")(s);
