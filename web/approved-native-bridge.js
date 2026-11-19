@@ -1387,54 +1387,38 @@
       "Removing native FX · awaiting accepted readback");
     return true;
   }
-  function requestNativeFxPower(t,slot,bypass){
-    const picked=verifiedFxFor(t,slot);
-    if(!picked||!m4Verified())return false;
-    const ep=safeNativeCounter(hardware?.device?.epoch),
-      rev=safeNativeCounter(legacy()?.routingRevision);
-    const {lane,live}=picked,requestId="fxpower-"+(++fxRequestSerial);
-    if(ep===null||rev===null||pendingSlotPowers.has(lane+":"+slot))
-      return false;
-    pendingSlotPowers.set(lane+":"+slot,{
-      requestId,channel:lane,slot,token:live.instanceId,bypass,
-      epoch:String(ep),revision:String(rev),acked:false});
-    backend.emitEvent("arMixAction",{action:"routingFxBypass",
-      requestId,channel:lane,slot,instanceId:live.instanceId,
-      deviceEpoch:ep,revision:rev,value:bypass});
+  // G-MV28: one physical M4 rack/slot transaction adapter. The pure FX
+  // ViewModel validates the CURRENT accepted M4 session, legacy routing
+  // revision, active FX instance and safe host tokens before any native IPC.
+  // Reuse existing per-rack/per-slot queues; ACK alone never paints FX.
+  function requestM4FxPower(t,action,button=null){
+    const channel=m4Index(t),slot=action==="slotPower"?
+      Number(button?.dataset?.slot):null;
+    const map=action==="fxOn"?pendingM4RackPowers:pendingSlotPowers;
+    const key=action==="fxOn"?channel:channel+":"+slot;
+    const plan=fxRackVM.m4PowerPlan(controller?.state()?.current,{
+      action,channel,slot,pending:map.has(key),
+      verifiedM4:m4Verified(),offline:!!logicalView
+    });
+    if(plan.kind!=="READY")return false;
+    const requestId=action==="fxOn"?
+      "rack-m4-"+(++nativeFxPowerSerial):"fxpower-"+(++fxRequestSerial);
+    map.set(plan.key,{requestId,...plan.pending});
+    backend.emitEvent("arMixAction",{
+      action:plan.action,requestId,...plan.payload});
     window.setTimeout(()=>{
-      if(pendingSlotPowers.get(lane+":"+slot)?.requestId!==requestId)return;
-      pendingSlotPowers.delete(lane+":"+slot);
-      status("FX bypass timed out · restoring real rack state");
+      if(map.get(plan.key)?.requestId!==requestId)return;
+      map.delete(plan.key);
+      status(action==="fxOn"?
+        "Native rack gate timed out · restoring accepted readback":
+        "FX bypass timed out · restoring real rack state");
       controller?.subscribe();
-    },5000);
-    return true;
-  }
-  // M4 remains an internal PCM implementation; only native mixerSession
-  // readback commits UI state. Rack gate never rewrites saved plugin flags.
-  function requestM4RackPower(t){
-    const lane=m4Index(t),session=mixerSession(),row=session?.channels?.[lane];
-    const ep=safeNativeCounter(session?.deviceEpoch),
-      rev=safeNativeCounter(session?.routeRevision);
-    if(session?.authority!=="M4"||lane<0||!row ||
-       typeof row.fxRackBypassed!=="boolean"||ep===null||rev===null||
-       pendingM4RackPowers.has(lane))return false;
-    const bypassed=!row.fxRackBypassed,requestId="rack-m4-"+(++nativeFxPowerSerial);
-    pendingM4RackPowers.set(lane,{requestId,channel:lane,bypassed,
-      epoch:String(ep),revision:String(rev),acked:false});
-    backend.emitEvent("arMixAction",{action:"routingFxRackBypass",
-      requestId,channel:lane,deviceEpoch:ep,revision:rev,value:bypassed});
-    window.setTimeout(()=>{
-      if(pendingM4RackPowers.get(lane)?.requestId!==requestId)return;
-      pendingM4RackPowers.delete(lane);
-      status("Native rack gate timed out · restoring accepted readback");
-      controller?.subscribe();
-    },8000);
+    },plan.timeoutMs);
     return true;
   }
   function reconcileM4RackReadback(next){
-    const session=next?.raw?.mixerSession;
     for(const [lane,p] of pendingM4RackPowers){
-      const decision=fxRackVM.m4RackSettlement(p,session);
+      const decision=fxRackVM.m4RackSettlement(p,next);
       if(decision==="STALE"||decision==="CONFIRMED")
         pendingM4RackPowers.delete(lane);
     }
@@ -3119,10 +3103,9 @@
     });
     backend.addEventListener("arMixRoutingFxRackAck",ack=>{
       const p=pendingM4RackPowers.get(ack?.channel);
-      if(!p||ack?.requestId!==p.requestId)return;
-      if(ack?.ok!==true || String(ack.deviceEpoch)!==p.epoch ||
-         String(ack.routingRevision)!==p.revision ||
-         ack.bypassed!==p.bypassed){
+      const verdict=fxRackVM.m4RackAckResult(p,ack);
+      if(verdict==="IGNORE")return;
+      if(verdict==="REJECTED"){
         pendingM4RackPowers.delete(p.channel);
         status("Native M4 rack gate rejected · "+(ack?.error||"stale route"));
       }else p.acked=true;
@@ -3657,9 +3640,7 @@
           if(!requestAdmittedFxPower(t,action,btn))
             nativeToast("Native FX slot unavailable · accepted insert/epoch required");
         }else{
-          const slot=Number(btn?.dataset.slot),instance=verifiedFxFor(t,slot);
-          if(!m4ControlIsOwner()||!instance||
-             !requestNativeFxPower(t,slot,!instance.live.bypassed))
+          if(!requestM4FxPower(t,"slotPower",btn))
             nativeToast("FX bypass unavailable · select an accepted VST3 slot");
         }
         return true;
@@ -3673,7 +3654,7 @@
           return true;
         }
         const authority=mixerSession()?.authority;
-        const ok=authority==="M4"?requestM4RackPower(t):
+        const ok=authority==="M4"?requestM4FxPower(t,"fxOn"):
           authority==="CHANNEL_ID"?requestAdmittedFxPower(t,action,btn):false;
         if(!ok){
           nativeToast("FX header requires an accepted native rack gate");
