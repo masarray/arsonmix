@@ -3571,17 +3571,27 @@ private:
             return checkpoint.error;
         }
         const bool usedPrevious=checkpoint.source==Recovery::Source::previous;
-        mixerSessionId_=doc.id;
-        const auto restoredHotkeys=doc.hotkeys;
+        const bool firstBinding=doc.logicalOnly;
+        const auto isNativeMixerActive=[this] {
+            const auto live=engine_.status().getProperty("dryRoutingLab",{});
+            return static_cast<bool>(live.getProperty("nativeChannelIdPcmActive",false));
+        };
         if(usedPrevious)
             (void)logicalMixer_.restoreCheckpoint(doc,states);
-        const bool firstBinding=doc.logicalOnly;
-        if(firstBinding && !engine_.hasPristineStartupMixer()) {
+        const auto restoredId=doc.id;
+        const auto restoredHotkeys=doc.hotkeys;
+        const auto acceptSessionIdentity=[this,&restoredId,&restoredHotkeys] {
+            mixerSessionId_=restoredId;
             (void)hotkeys_.activateSession(mixerSessionId_);
             if(hotkeys_.sessionEntries().empty() && !restoredHotkeys.empty()) {
                 const auto issue=hotkeys_.activateSession(mixerSessionId_,&restoredHotkeys);
                 if(issue.isNotEmpty())diagnostics_.record("HOTKEY_IMPORT_REJECTED",issue);
             }
+        };
+        if(firstBinding && !engine_.hasPristineStartupMixer()) {
+            // A deferred offline binding cannot take ownership of a live
+            // mixer's session ID or activate its own session hotkeys.
+            if(!isNativeMixerActive())acceptSessionIdentity();
             mixerSessionRecoveryPending_=true;
             mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND";
             return "Saved mixer is offline and awaiting verified device binding";
@@ -3599,9 +3609,9 @@ private:
             diagnostics_.record("DYNAMIC_MIXER_VST3_REMAP_REQUIRED",error);
             return error;
         }
-        const auto live=engine_.status().getProperty("dryRoutingLab",{});
-        const bool nativeAlreadyActive=static_cast<bool>(
-            live.getProperty("nativeChannelIdPcmActive",false));
+        // Query current admission after FX preparation, immediately before
+        // the engine is asked to publish a physical graph.
+        const bool nativeAlreadyActive=isNativeMixerActive();
         const auto plan=Recovery::plan(doc,{bindingMode,checkpoint.source,
             startupOnSavedDevice,mixerSessionRecoveryPending_,nativeAlreadyActive,
             engine_.hasPristineStartupMixer(),firstBinding});
@@ -3619,11 +3629,7 @@ private:
             return error;
         }
         mixerSessionRecoveryPending_=false;
-        (void)hotkeys_.activateSession(mixerSessionId_);
-        if(hotkeys_.sessionEntries().empty() && !restoredHotkeys.empty()) {
-            const auto issue=hotkeys_.activateSession(mixerSessionId_,&restoredHotkeys);
-            if(issue.isNotEmpty())diagnostics_.record("HOTKEY_IMPORT_REJECTED",issue);
-        }
+        acceptSessionIdentity();
         if(plan.resumeMain)
             requestAutomaticMain(plan.bindingMode!=MixerBindingMode::verifiedAsioRestart);
         mixerSessionStatus_=engine_.isMonitorEnabled()?"RESTORED_MONITORING":"RESTORED_MUTED";
