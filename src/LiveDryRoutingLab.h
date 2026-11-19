@@ -2686,6 +2686,12 @@ public:
         return true;
     }
 
+    // CONTROL readback of the same PCM/FX snapshot. Session replacement
+    // must explicitly drop this qualified map before restoring A-only .smix.
+    bool qualifiedInputMapActive() const noexcept {
+        return nativePublisher_.hasQualifiedInputMap(
+            nativeAccepted_.deviceEpoch,nativeAccepted_.pcmRevision);
+    }
     bool rebindRetainedAsioSession(armix::session::MixerSessionDocument document,
             const armix::device::JuceActivePortSnapshot& pins,int deviceFrames) {
         const auto next=nativeGraphRevisionForRestore();
@@ -2726,7 +2732,8 @@ public:
             armix::session::MixerSessionDocument document,
             std::shared_ptr<armix::mixer::DynamicChannelFxLeaseBank> bank,
             const armix::device::JuceActivePortSnapshot& pins,
-            bool outputsDisarmed,bool replaceActive=false) {
+            bool outputsDisarmed,bool replaceActive=false,
+            bool replaceQualifiedWithPrimaryOnly=false) {
         using namespace armix::mixer;
         if(!outputsDisarmed || (!replaceActive && channelIdPhysicalPcmActive()) || !bank)
             return "Restore requires a muted device";
@@ -2754,7 +2761,10 @@ public:
             };
             const auto published=nativePublisher_.commit(
                 document.roster,document.request,previous,generation,epoch(),
-                true,std::move(fx));
+                true,std::move(fx),false,false,nullptr,
+                replaceQualifiedWithPrimaryOnly?
+                    DynamicNativeSessionPublisher::QualifiedMapChange::replaceWithPrimaryOnly:
+                    DynamicNativeSessionPublisher::QualifiedMapChange::inherit);
             if(!published.ok())
                 return "Native ChannelId PCM rejected persisted topology: "+
                     juce::String(static_cast<int>(published.fault));

@@ -1865,14 +1865,33 @@ public:
         // Graph publication is a temporary PHYSICAL silence, not a user MUTE.
         // Retain MAIN intent across the accepted ChannelId/FX rebind.
         if(monitoring)setOutputMuted(true);
+        // IO-2D: explicit .smix replacement is a paired PCM+device-map
+        // transaction. No capture driver closes until a new A-only graph
+        // is accepted; on failed candidate, restore the old B admission.
+        // A short muted control handoff prevents old qualified PCM from
+        // receiving raw A-only callback pointers during the swap.
+        const bool hadQualifiedMap=dryRoutingLab_.qualifiedInputMapActive();
+        const bool oldQualifiedAdmission=qualifiedSecondaryInstalled_.load(
+            std::memory_order_acquire);
+        if(hadQualifiedMap)
+            qualifiedSecondaryInstalled_.store(false,std::memory_order_release);
         const auto applied=dryRoutingLab_.restoreNativeMixerSession(
             std::move(document),std::move(bank),inspected.pins,
-            allOutputsDisarmed(),replaceActive);
+            allOutputsDisarmed(),replaceActive,hadQualifiedMap);
         if(applied.isNotEmpty()) {
+            if(hadQualifiedMap) {
+                if(dryRoutingLab_.qualifiedInputMapActive())
+                    qualifiedSecondaryInstalled_.store(oldQualifiedAdmission,
+                                                      std::memory_order_release);
+                else
+                    retireQualifiedCaptureForNewGraph(); // publication did complete
+            }
             if(monitoring&&ep==dryRoutingLab_.epoch()&&liveOutputArmFault(false).isEmpty())
-                setOutputMuted(false); // same user intent; safe original graph
+                setOutputMuted(false); // only restore verified original intent
             return applied;
         }
+        if(hadQualifiedMap)
+            retireQualifiedCaptureForNewGraph(); // A-only PCM accepted, B retired
         acceptedWasapiBinding_=std::move(profile);
         acceptedMixerBinding_=std::move(inspected.live);
         setMasterGainLinear(gain);

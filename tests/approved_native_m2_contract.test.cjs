@@ -6286,3 +6286,114 @@ test("G-MV34 native/global positive FX ACK wins across duplicate negative ACK",(
  assert.match(bridge,/pendingGlobalFx=\{requestId,bypassed:plan\.bypassed,acked:false,\.\.\.ctx\}/);
  assert.doesNotMatch(source,/backend\.emitEvent|document\.|window\.|setTimeout/);
 });
+
+test("G-MV35 queued M4 FX editor dispatch rejects replaced accepted PCM owner",()=>{
+ const device={epoch:"55",sampleRate:48000,bufferFrames:256,
+   enabledInputs:[0,1],enabledOutputs:[0,1]};
+ const hardwareConfiguration=protocol.nativeHardwareConfiguration(device);
+ const snap={admitted:false,retained:false,device,raw:{
+   mixerSession:{authority:"M4",deviceEpoch:"55",routeRevision:"12",
+     channels:Array.from({length:10},()=>({role:"INPUT"}))},
+   legacyM4:{active:true,routeAccepted:true,nativeBusStructural:false,
+     routingRevision:"12",fxInstances:Array.from({length:10},()=>[])}
+ }};
+ snap.raw.legacyM4.fxInstances[4][0]={instanceId:"installed-4",
+   catalogId:"vendor.alpha",bypassed:false};
+ const opts={channel:4,slot:0,instanceId:"installed-4",
+   deviceEpoch:55,revision:12,verifiedM4:true,hardwareConfiguration};
+ const initial=JSON.stringify(snap);
+ const plan=fxRackVM.m4EditorDispatchPlan(snap,opts);
+ assert.equal(plan.kind,"READY");
+ assert.deepEqual(plan.payload,{channel:4,slot:0,instanceId:"installed-4",
+   deviceEpoch:55,revision:12});
+ assert.equal(plan.action,"routingFxEditor");
+ assert.equal(Object.isFrozen(plan.lease),true);
+ assert.equal(plan.lease.catalogId,"vendor.alpha");
+ const matches=(s=snap,c=hardwareConfiguration)=>
+   fxRackVM.m4EditorDispatchLeaseMatches(s,plan.lease,{
+     verifiedM4:true,hardwareConfiguration:c});
+ assert.equal(matches(),true);
+ assert.equal(matches(snap,"changed"),false);
+ for(const mutation of [
+   s=>{s.device.epoch="56";},
+   s=>{s.device.enabledOutputs=[2,3];},
+   s=>{s.raw.legacyM4.routeAccepted=false;},
+   s=>{s.raw.legacyM4.active=false;},
+   s=>{s.raw.legacyM4.nativeBusStructural=true;},
+   s=>{s.raw.legacyM4.routingRevision="13";s.raw.mixerSession.routeRevision="13";},
+   s=>{s.raw.mixerSession.authority="CHANNEL_ID";},
+   s=>{s.raw.mixerSession.deviceEpoch="56";},
+   s=>{s.raw.legacyM4.fxInstances[4][0].instanceId="replacement";},
+   s=>{s.raw.legacyM4.fxInstances[4][0].catalogId="vendor.beta";},
+   s=>{s.raw.legacyM4.fxInstances[4][0]=null;},
+   s=>{s.retained=true;},
+   s=>{s.admitted=true;}
+ ]) {
+   const next=clone(snap);mutation(next);
+   const physical=protocol.nativeHardwareConfiguration(next.device);
+   assert.equal(matches(next,physical),false);
+ }
+ for(const corrupted of [
+   {...opts,slot:-1},{...opts,slot:8},{...opts,deviceEpoch:56},
+   {...opts,revision:13},{...opts,instanceId:"wrong"},
+   {...opts,verifiedM4:false},{...opts,offline:true},
+   {...opts,hardwareConfiguration:""},
+   {...opts,hardwareConfiguration:null}
+ ])assert.equal(fxRackVM.m4EditorDispatchPlan(snap,corrupted).kind,"UNAVAILABLE");
+ assert.equal(fxRackVM.m4EditorDispatchLeaseMatches(snap,
+   {...plan.lease,unexpected:true},{verifiedM4:true,hardwareConfiguration}),false);
+ assert.equal(fxRackVM.m4EditorDispatchLeaseMatches(snap,null,{
+   verifiedM4:true,hardwareConfiguration}),false);
+ assert.equal(JSON.stringify(snap),initial,"pure editor guard never mutates readback");
+});
+test("G-MV35 native MOVE/REMOVE FX demands installed ChannelId hardware owner",()=>{
+ const device={epoch:"31",sampleRate:48000,bufferFrames:256,
+   enabledInputs:[0,1],enabledOutputs:[0,1]};
+ const hardwareConfiguration=protocol.nativeHardwareConfiguration(device);
+ const source="9007199254740993",target="9007199254740995";
+ const snapshot={admitted:true,retained:false,device,raw:{
+   mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"31"}},graph:{
+     revision:"45",rosterRevision:"18",
+     capabilities:{callbackOwnsChannelIds:true,supportedOps:[
+       "MOVE_INSERT","REMOVE_INSERT"]},
+     channels:[{id:source,role:"INPUT",inserts:[
+       {id:"one",catalogId:"vendor.fx",bypassed:false}]},
+       {id:target,role:"GROUP",inserts:[]}]
+ }};
+ const opts={channelId:source,slot:0,instanceId:"one",hardwareConfiguration};
+ assert.deepEqual(fxRackVM.nativeEditPlan(snapshot,opts),{
+   kind:"READY",operation:"REMOVE_INSERT",channelId:source,
+   payload:{slot:0,instanceId:"one"}});
+ assert.deepEqual(fxRackVM.nativeEditPlan(snapshot,{
+   ...opts,move:true,destinationId:target,position:0}),{
+   kind:"READY",operation:"MOVE_INSERT",channelId:source,
+   payload:{slot:0,instanceId:"one",toChannelId:target,toSlot:0}});
+ for(const badHardware of [null,"",123]){
+   assert.equal(fxRackVM.nativeEditPlan(snapshot,{
+     ...opts,hardwareConfiguration:badHardware}).kind,"UNAVAILABLE");
+ }
+ for(const mutation of [
+   s=>{s.admitted=false;},s=>{s.retained=true;},
+   s=>{s.raw.mixerSession.authority="M4";},
+   s=>{s.raw.mixerSession.deviceEpoch="32";},
+   s=>{s.graph.capabilities.callbackOwnsChannelIds=false;},
+   s=>{s.graph.rosterRevision="0";},
+   s=>{s.graph.revision="0";},
+   s=>{s.graph.channels[0].inserts[0].id="replacement";}
+ ]) {
+   const current=clone(snapshot);mutation(current);
+   assert.equal(fxRackVM.nativeEditPlan(current,opts).kind,"UNAVAILABLE");
+   assert.equal(fxRackVM.nativeEditPlan(current,{...opts,move:true,
+     destinationId:target,position:0}).kind,"UNAVAILABLE");
+ }
+ const bridge=read("web/approved-native-bridge.js"),
+       pure=read("web/approved-fx-rack-view-model.js");
+ assert.equal((pure.match(/function m4EditorDispatchPlan\(/g)||[]).length,1);
+ assert.equal((pure.match(/function m4EditorDispatchLeaseMatches\(/g)||[]).length,1);
+ assert.match(bridge,/fxRackVM\.m4EditorDispatchPlan\(accepted,/);
+ assert.match(bridge,/fxRackVM\.m4EditorDispatchLeaseMatches\(current,lease,/);
+ assert.match(bridge,/window\.queueMicrotask\(\(\)=>\{/);
+ assert.match(bridge,/hardwareConfiguration:protocol\.nativeHardwareConfiguration\(current\?\.device\)/);
+ assert.match(bridge,/fxRackVM\.nativeEditPlan\(current,/);
+ assert.doesNotMatch(pure,/backend\.emitEvent|document\.|window\.|setTimeout/);
+});

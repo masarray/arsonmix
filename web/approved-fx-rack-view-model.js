@@ -358,6 +358,36 @@
       deviceEpoch:epoch,revision};
   }
 
+  // G-MV35: exact M4 editor dispatch is an independent, short-lived
+  // navigation lease, not an ACK and not a second accepted FX state.
+  // Keep the original M4 plan as the single host admission authority.
+  function m4EditorDispatchPlan(snapshot,{channel,slot,instanceId,
+    deviceEpoch,revision,verifiedM4=false,offline=false,
+    hardwareConfiguration}={}) {
+    const unavailable={kind:"UNAVAILABLE"};
+    if(typeof hardwareConfiguration!=="string"||!hardwareConfiguration)
+      return unavailable;
+    const plan=m4EditorPlan(snapshot,{channel,slot,verifiedM4,offline,
+      hardwareConfiguration});
+    if(plan.kind!=="OPEN"||plan.instanceId!==instanceId||
+       plan.deviceEpoch!==deviceEpoch||plan.revision!==revision)
+      return unavailable;
+    const catalogId=snapshot.raw.legacyM4.fxInstances[channel][slot].catalogId;
+    const lease=Object.freeze({channel,slot,instanceId,catalogId,
+      deviceEpoch,revision,hardwareConfiguration});
+    return {kind:"READY",lease,action:"routingFxEditor",
+      payload:{channel,slot,instanceId,deviceEpoch,revision}};
+  }
+  function m4EditorDispatchLeaseMatches(snapshot,lease,{
+    verifiedM4=false,offline=false,hardwareConfiguration}={}) {
+    if(!lease||typeof lease!=="object")return false;
+    const current=m4EditorDispatchPlan(snapshot,{...lease,
+      verifiedM4,offline,hardwareConfiguration});
+    return current.kind==="READY"&&
+      Object.keys(current.lease).length===Object.keys(lease).length&&
+      Object.keys(current.lease).every(key=>current.lease[key]===lease[key]);
+  }
+
   // G-MV34: one physically admitted ChannelId FX owner for bypass/insert.
   // The bridge supplies the canonical existing native device fingerprint.
   // Historical pure/partial fixtures without the optional fingerprint stay
@@ -389,7 +419,8 @@
     return {kind:"READY",channelId:id,payload:{catalogId,slot}};
   }
   function nativeEditPlan(snapshot,{channelId:id,slot,instanceId,
-                           move=false,destinationId=null,position=null}={}) {
+                           move=false,destinationId=null,position=null,
+                           hardwareConfiguration}={}) {
     const graph=snapshot?.graph;
     // A MOVE with a lost destination must NEVER become a REMOVE.
     if(typeof move!=="boolean"||
@@ -400,7 +431,10 @@
        !channelId(id)||!Number.isInteger(slot)||slot<0||slot>=8||
        typeof instanceId!=="string"||!instanceId||
        !graph?.capabilities?.supportedOps?.includes(operation)||
-       !rosterUnique(graph))return {kind:"UNAVAILABLE"};
+       !rosterUnique(graph)||
+       (hardwareConfiguration!==undefined&&
+        !nativePhysicalFxReady(snapshot,hardwareConfiguration)))
+      return {kind:"UNAVAILABLE"};
     const sources=graph.channels.filter(ch=>ch.id===id);
     if(sources.length!==1||!VALID_ROLES.has(sources[0].role)||
        sources[0].inserts[slot]?.id!==instanceId)
@@ -564,7 +598,7 @@
 
   return Object.freeze({powerReadback,mountedRackMatches,
     m4Presentation,nativePowerSettlement,m4PowerPlan,m4RackAckResult,
-    m4RackSettlement,
+    m4RackSettlement,m4EditorDispatchPlan,m4EditorDispatchLeaseMatches,
     m4InsertPlan,m4InsertAckResult,m4InsertReadbackSettlement,
     editorNavigationPlan,editorNavigationLeaseMatches,m4EditorPlan,
     nativeInsertPlan,nativeEditPlan,nativeInsertSettlement,

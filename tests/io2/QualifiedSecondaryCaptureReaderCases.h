@@ -264,6 +264,37 @@ inline void run() {
           "stale ASRC cannot be relabeled into newly leased device");
     reader.stop();
     clock.stop();
-    std::puts("IO2_CLOCKED_NATIVE_PASS: 44.1k B -> ASRC -> 48k A qualified ChannelId PCM MAIN; loss isolated");
+    // IO-2D persistence recovery: a saved primary-only .smix can replace
+    // A+B only by an explicit, muted native session transaction. WIRE/FX
+    // omission of a map still inherits B and must never silently alias pins.
+    using MapChange=m::DynamicNativeSessionPublisher::QualifiedMapChange;
+    check(native.hasQualifiedInputMap(epoch,2),
+          "prior A+B PCM map installed before restore");
+    const auto unsafeRestore=native.commit(
+        roster,old,2,epoch,epoch,false,{},false,false,nullptr,
+        MapChange::replaceWithPrimaryOnly);
+    check(unsafeRestore.fault==
+            m::DynamicNativeSessionPublisher::Fault::outputArmed &&
+          native.hasQualifiedInputMap(epoch,2),
+          "unmuted primary-only .smix replacement cannot remove B map");
+    const auto restored=native.commit(
+        roster,old,2,epoch,epoch,true,{},false,false,nullptr,
+        MapChange::replaceWithPrimaryOnly);
+    check(restored.ok()&&restored.revision==3 &&
+          !native.hasQualifiedInputMap(epoch,3),
+          "muted explicit A-only .smix publishes one new PCM without B map");
+    check(native.render(epoch,aInput,1,left.data(),right.data(),
+           frames,false,fx,nullptr,nullptr,{},{},{},nullptr,0),
+          "restored A-only PCM accepts raw primary callback again");
+    check(near(left[frames-1],.2f*monoCenter,0.005f)&&
+          near(right[frames-1],.2f*monoCenter,0.005f),
+          "restored primary-only .smix never aliases or sums B PCM");
+    const auto doubleRemove=native.commit(
+        roster,old,3,epoch,epoch,true,{},false,false,nullptr,
+        MapChange::replaceWithPrimaryOnly);
+    check(doubleRemove.fault==
+          m::DynamicNativeSessionPublisher::Fault::invalidCandidate,
+          "a nonqualified A-only session cannot spoof a B map retirement");
+    std::puts("IO2_CLOCKED_NATIVE_PASS: 44.1k B -> ASRC -> 48k A qualified ChannelId PCM MAIN; loss isolated; exact A-only restore");
 }
 } // namespace armix::io2_clocked_test
