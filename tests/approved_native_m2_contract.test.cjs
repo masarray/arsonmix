@@ -29,6 +29,83 @@ function gmv20AcceptedGraph() {
  return fixture;
 }
 
+test("G-MV25 schema-v6 owner switch cancels no-ACK/ACKed ChannelId without stale PCM repaint",()=>{
+ const base=gmv20AcceptedGraph();
+ base.mixerSession={authority:"CHANNEL_ID",deviceEpoch:base.device.epoch,
+   routeRevision:base.graph.revision,rosterRevision:base.graph.rosterRevision};
+ base.device.outputArmed=false;
+ const m4=clone(base);
+ m4.productionCallbackLive=false;
+ m4.graph.capabilities.callbackOwnsChannelIds=false;
+ m4.graph.capabilities.supportedOps=[];
+ m4.mixerSession={authority:"M4",deviceEpoch:base.device.epoch,
+   routeRevision:base.graph.revision,rosterRevision:base.graph.rosterRevision};
+ assert.ok(protocol.normalizeSnapshot(base)?.admitted);
+ assert.equal(protocol.normalizeSnapshot(m4)?.admitted,false);
+ assert.equal(protocol.nativeHardwareConfiguration(base.device),
+   protocol.nativeHardwareConfiguration(m4.device));
+ for(const acknowledged of [false,true]){
+   const emitted=[],accepted=[],controller=protocol.createController({
+     emit:(name,payload)=>emitted.push({name,payload}),
+     onAccepted:(snapshot,confirmed)=>accepted.push({snapshot,confirmed})
+   });
+   assert.equal(controller.onSnapshot(clone(base)),true);
+   const pending=controller.intent("SET_FADER","7",{valueDb:-5});
+   assert.equal(pending.ok,true);
+   if(acknowledged) {
+     assert.equal(controller.onAck({
+       requestId:pending.requestId,status:"ACCEPTED",errorCode:"NONE",
+       deviceEpoch:base.device.epoch,graphRevision:base.graph.revision,
+       rosterRevision:base.graph.rosterRevision}),true);
+     assert.equal(controller.state().pending?.requestId,pending.requestId);
+   }
+   assert.equal(controller.onSnapshot(clone(m4)),true,
+     "same-epoch M4 authority must not be hidden behind old ChannelId ACK");
+   assert.equal(controller.state().pending,null);
+   assert.equal(controller.state().lastError,"STALE_NATIVE_AUTHORITY");
+   assert.equal(controller.state().current.admitted,false);
+   assert.equal(controller.state().current.raw.mixerSession.authority,"M4");
+   assert.equal(accepted.length,2,"M4 readback is projected in the same callback");
+   assert.equal(accepted[1].confirmed,undefined,
+     "an old ACK cannot confirm PCM on the replacement producer");
+   assert.equal(controller.onAck({
+     requestId:pending.requestId,status:"ACCEPTED",errorCode:"NONE",
+     deviceEpoch:base.device.epoch,graphRevision:base.graph.revision,
+     rosterRevision:base.graph.rosterRevision}),false,
+     "late ChannelId ACK cannot reactivate retired owner");
+   assert.equal(controller.state().current.admitted,false);
+   assert.equal(controller.intent("SET_FADER","7",{valueDb:-4}).ok,false,
+     "unadmitted M4 has no ChannelId write authority");
+   const recovered=clone(base);
+   recovered.graph.revision="6";
+   recovered.graph.rosterRevision="8";
+   recovered.mixerSession.routeRevision="6";
+   recovered.mixerSession.rosterRevision="8";
+   assert.equal(controller.onSnapshot(recovered),true);
+   assert.equal(controller.state().current.admitted,true);
+   assert.equal(controller.state().current.device.outputArmed,false,
+     "recovery never invents physical MONITOR ON");
+   assert.equal(accepted.length,3);
+   assert.equal(accepted[2].confirmed,undefined,
+     "recovered producer readback is not confirmation of old fader intent");
+   const send=controller.intent("SET_FADER","7",{valueDb:-4});
+   assert.equal(send.ok,true,"fresh accepted revision can accept new UI gesture");
+   assert.equal(emitted.filter(e=>e.name==="arMixConsoleIntent").length,2,
+     "no automatic replay of old local controls or monitor commands");
+   assert.equal(emitted.some(e=>e.payload?.action==="monitor"),false);
+ }
+ const altered=clone(m4);
+ altered.graph.revision="4";
+ const seen=[],c=protocol.createController({
+   emit(){},onAccepted:n=>seen.push(n)
+ });
+ assert.equal(c.onSnapshot(clone(base)),true);
+ assert.equal(c.onSnapshot(altered),false,
+   "older graph revisions remain fail-closed even across authority changes");
+ assert.equal(c.state().lastError,"OLD_NATIVE_REVISION");
+ assert.equal(seen.length,1);
+});
+
 test("G-MV20 schema-v6 pending intent is fenced on same-epoch physical pin or format change",()=>{
  const base=gmv20AcceptedGraph(),before=JSON.stringify(base);
  const hardware=protocol.nativeHardwareConfiguration(base.device);
