@@ -2151,16 +2151,19 @@ test("P0 real slot VST3 power and native editor use verified instance tokens",()
  const bridge=read("web/approved-native-bridge.js");
  const main=read("src/Main.cpp");
  assert.match(bridge,/function verifiedFxFor\(t,slot\)/);
- assert.match(bridge,/function requestNativeFxPower\(t,slot,bypass\)/);
+ assert.match(bridge,/function requestM4FxPower\(t,action,button=null\)/);
  assert.match(bridge,/if\(action==="slotPower"\)/);
  assert.match(bridge,/if\(action==="fxOn"\)/);
  assert.doesNotMatch(bridge,/rackSavedBypass/);
- assert.match(bridge,/requestM4RackPower\(t\)/);
+ assert.match(bridge,/requestM4FxPower\(t,"fxOn"\)/);
+ assert.match(bridge,/requestM4FxPower\(t,"slotPower",btn\)/);
  assert.match(bridge,/requestAdmittedFxPower\(t,action,btn\)/);
  assert.match(bridge,/FX rack unchanged/);
  assert.match(bridge,/pendingM4RackPowers/);
  assert.match(bridge,/action:"routingFxEditor"/);
- assert.match(bridge,/action:"routingFxBypass"/);
+ assert.match(bridge,/action:plan\.action,requestId,\.\.\.plan\.payload/);
+ assert.match(read("web/approved-fx-rack-view-model.js"),
+   /action:"routingFxBypass"/);
  assert.match(bridge,/backend\.addEventListener\("arMixRoutingFxBypassAck"/);
  assert.match(main,/ack->setProperty\("requestId",args\.getProperty\("requestId",juce::var\(\)\)\)/);
  assert.match(main,/action == "routingFxEditor"/);
