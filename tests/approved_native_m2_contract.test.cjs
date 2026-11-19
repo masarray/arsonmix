@@ -3919,8 +3919,8 @@ test("SOF double-click and target selection never commandeer MAIN fader",()=>{
   assert.ok(start>0&&end>start,"native delegate must own double-click");
   const handler=bridge.slice(start,end);
   assert.ok(handler.indexOf("scope?.sofEnabled") <
-            handler.indexOf('sendM4Control'),
-    "SOF must intercept fader reset BEFORE M4/Main fader ownership");
+            handler.indexOf('dispatchControlCommand'),
+    "SOF must intercept fader reset BEFORE unified native control routing");
   assert.match(handler,/requestWireGain\(\{sourceId:t\.id,edgeId:id,levelDb:0\}\)/);
   assert.match(handler,/intent\("SET_INPUT_GAIN",t,\{valueDb:0\}\)/);
 });
