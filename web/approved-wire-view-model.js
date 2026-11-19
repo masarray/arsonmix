@@ -104,6 +104,84 @@
     try{return BigInt(value)<=18446744073709551615n;}catch{return false;}
   }
 
+  // G-MV31: the one admitted ChannelId / EdgeId send-edit authority.
+  // These pure selectors have NO browser, transport or PCM ownership. A
+  // projected/native readback, not a Pages edge or an ACK, admits a gesture.
+  function nativeSendEdge(snapshot,{sourceId,edgeId,projected=false,
+    pending=false,operation}={}) {
+    if(projected!==true||pending===true||
+       snapshot?.admitted!==true||snapshot.retained===true||
+       !nativeId(sourceId)||!nativeId(edgeId)||
+       !snapshot.graph?.capabilities?.supportedOps?.includes(operation))
+      return null;
+    const matches=snapshot.graph?.channels?.filter(ch=>ch.id===sourceId);
+    if(matches?.length!==1)return null;
+    const edge=parallelEdge(snapshot.graph,sourceId,edgeId);
+    return edge&&nativeId(edge.to)?edge:null;
+  }
+
+  // PRE/POST must be a typed SET_TAP on an exact installed parallel SEND.
+  // A missing targetTap is a read-only eligibility query for both operator
+  // surfaces; no click-only mutation or native gesture is ever synthesized.
+  function nativeTapPlan(snapshot,{sourceId,edgeId,targetTap=null,
+    projected=false,pending=false}={}) {
+    const edge=nativeSendEdge(snapshot,{sourceId,edgeId,projected,pending,
+      operation:"APPLY_WIRE_TRANSACTION"});
+    if(!canEditTap(edge,{supported:true}))return {kind:"UNAVAILABLE"};
+    if(targetTap===null)return {kind:"AVAILABLE",tap:edge.tap};
+    if(!TAPS.has(targetTap))return {kind:"UNAVAILABLE"};
+    if(edge.tap===targetTap)return {kind:"NO_CHANGE"};
+    return {kind:"DISPATCH",operation:"APPLY_WIRE_TRANSACTION",source:sourceId,
+      payload:{changes:[{op:"SET_TAP",from:sourceId,edgeId,tap:targetTap}]}};
+  }
+
+  // Only one parallel SEND can own a selected SOF destination. It must be
+  // an actual GROUP/FX_RETURN ChannelId, never MAIN/primary, an ordinal or
+  // an ambiguous duplicate. SOF gain, PRE/POST, and enable share this edge.
+  function sofSendEdge(snapshot,{sourceId,destinationId}={}) {
+    if(snapshot?.admitted!==true||snapshot.retained===true||
+       !nativeId(sourceId)||!nativeId(destinationId))return null;
+    const graph=snapshot.graph;
+    const source=graph?.channels?.filter(ch=>ch.id===sourceId);
+    const target=graph?.channels?.filter(ch=>ch.id===destinationId);
+    if(source?.length!==1||source[0].role!=="INPUT"||
+       target?.length!==1||!["GROUP","FX_RETURN"].includes(target[0].role))
+      return null;
+    const matches=graph.edges?.filter(e=>e.enabled===true&&
+      e.from===sourceId&&e.to===destinationId&&
+      e.primaryOutput===false&&nativeId(e.edgeId));
+    return matches?.length===1?
+      parallelEdge(graph,sourceId,matches[0].edgeId,destinationId):null;
+  }
+
+  // Ordinary channel PRE/POST considers only non-MAIN sends. A selected
+  // EdgeId must belong to this channel; a stale selection is never silently
+  // changed into an edit of another send. With no selection, exactly one
+  // eligible send may be used.
+  function channelTapEdge(snapshot,{sourceId,selectedEdgeId=null}={}) {
+    if(snapshot?.admitted!==true||snapshot.retained===true||
+       !nativeId(sourceId))return null;
+    const graph=snapshot.graph,main=graph?.mainChannelId;
+    const eligible=graph?.edges?.filter(e=>e.enabled===true&&
+      e.from===sourceId&&e.primaryOutput===false&&e.to!==main&&
+      nativeId(e.edgeId)&&nativeId(e.to)&&TAPS.has(e.tap))||[];
+    if(selectedEdgeId!==null&&selectedEdgeId!==undefined)
+      return nativeId(selectedEdgeId)?
+        (eligible.some(e=>e.edgeId===selectedEdgeId)?
+          parallelEdge(graph,sourceId,selectedEdgeId):null):null;
+    return eligible.length===1?eligible[0]:null;
+  }
+
+  function nativeSendTogglePlan(snapshot,{sourceId,edgeId,projected=false,
+    pending=false}={}) {
+    const edge=nativeSendEdge(snapshot,{sourceId,edgeId,projected,pending,
+      operation:"SET_SEND_ENABLED"});
+    if(!edge||typeof edge.sendEnabled!=="boolean")
+      return {kind:"UNAVAILABLE"};
+    return {kind:"DISPATCH",operation:"SET_SEND_ENABLED",source:sourceId,
+      payload:{edgeId,enabled:!edge.sendEnabled}};
+  }
+
   // UI gesture translation only: caller still owns one native transaction,
   // ACK timeout, installed graph readback, and UI rollback. This helper does
   // not decide that an operation is admitted or mutate any accepted graph.
@@ -192,5 +270,7 @@
 
   return Object.freeze({gainDb,edgePresentation,parallelEdge,
     acceptedParallelEdge,gainReadback,canEditTap,gestureTap,sofAvailable,
-    compactSendGesture,nativeTransaction,gainDispatchPlan,nativeRecoveryPlan});
+    compactSendGesture,nativeSendEdge,nativeTapPlan,sofSendEdge,
+    channelTapEdge,nativeSendTogglePlan,nativeTransaction,
+    gainDispatchPlan,nativeRecoveryPlan});
 });

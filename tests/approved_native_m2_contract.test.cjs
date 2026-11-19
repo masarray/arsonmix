@@ -1401,7 +1401,9 @@ test("native PRE_FADER WIRE inspector uses one exact SET_TAP PCM intent and acce
  const preview=read("site/preview-v2/index.html");
  assert.match(bridge,/function requestNativeTap\(source,edgeId,tap\)/);
  assert.match(bridge,/ops\[0\]\.type==="MODE"/);
- assert.match(bridge,/op:"SET_TAP",from:source,edgeId,tap/);
+ assert.match(read("web/approved-wire-view-model.js"),
+   /op:"SET_TAP",from:sourceId,edgeId,tap:targetTap/);
+ assert.match(bridge,/wireVM\.nativeTapPlan\(/);
  assert.match(bridge,/wireVM\.edgePresentation\(/);
  assert.match(read("web/approved-wire-view-model.js"),
    /const tap=TAPS\.has\(edge\.tapStage\)\?edge\.tapStage:edge\.tap/);
@@ -5600,4 +5602,122 @@ test("G-MV30 first native ChannelId projection enables Add Track without a secon
  const before=bridge.indexOf("if (!projectNativeGraphWithoutFocusLoss(next))",success-500);
  assert.ok(before>=0&&before<success,
    "never enable a native Add before the authoritative ChannelId graph projects");
+});
+
+
+test("G-MV31 pure WIRE PRE/POST plans bind exact send identities, never PRIMARY/MAIN/mystery EdgeId",()=>{
+ const src="9007199254740993",other="9007199254740994",
+   bus="9007199254740995",fx="9007199254740996",
+   main="18446744073709551615",id="9223372036854775809",
+   otherId="9223372036854775810",mainId="9223372036854775811",
+   primaryId="9223372036854775812";
+ const send={edgeId:id,from:src,to:bus,enabled:true,primaryOutput:false,
+   tap:"POST_FADER",sendEnabled:true,gainLinear:0.5};
+ const fxSend={...send,edgeId:otherId,to:fx};
+ const mainSend={...send,edgeId:mainId,to:main};
+ const primary={...send,edgeId:primaryId,primaryOutput:true,gainLinear:1};
+ const graph={mainChannelId:main,channels:[
+   {id:src,role:"INPUT"},{id:other,role:"INPUT"},
+   {id:bus,role:"GROUP"},{id:fx,role:"FX_RETURN"},
+   {id:main,role:"MAIN"}],edges:[send,mainSend,primary],
+   capabilities:{supportedOps:["APPLY_WIRE_TRANSACTION","SET_SEND_ENABLED"]}};
+ const snap={admitted:true,retained:false,graph};
+ const before=JSON.stringify(snap);
+ const tap=(edgeId=id,targetTap="PRE_FADER",extra={},state=snap)=>
+   wireVM.nativeTapPlan(state,{sourceId:src,edgeId,targetTap,
+     projected:true,...extra});
+ const expected={kind:"DISPATCH",operation:"APPLY_WIRE_TRANSACTION",
+   source:src,payload:{changes:[{op:"SET_TAP",from:src,edgeId:id,tap:"PRE_FADER"}]}};
+ assert.deepEqual(tap(),expected);
+ assert.deepEqual(tap(id,"POST_FADER"),{kind:"NO_CHANGE"});
+ assert.deepEqual(tap(id,null),{kind:"AVAILABLE",tap:"POST_FADER"});
+ assert.equal(wireVM.channelTapEdge(snap,{sourceId:src}).edgeId,id,
+   "parallel MAIN and PRIMARY do not steal channel PRE/POST fallback");
+ assert.equal(wireVM.channelTapEdge(snap,{sourceId:src,selectedEdgeId:id}).edgeId,id);
+ assert.equal(wireVM.channelTapEdge(snap,{sourceId:src,selectedEdgeId:primaryId}),null);
+ assert.equal(wireVM.channelTapEdge(snap,{sourceId:src,selectedEdgeId:mainId}),null);
+ assert.equal(wireVM.channelTapEdge(snap,{sourceId:src,selectedEdgeId:otherId}),null);
+ assert.equal(wireVM.channelTapEdge(snap,{sourceId:other}),null);
+ const two={...snap,graph:{...graph,edges:[...graph.edges,fxSend]}};
+ assert.equal(wireVM.channelTapEdge(two,{sourceId:src}),null,
+   "two SENDs require explicit identity, not a guessed first match");
+ assert.equal(wireVM.channelTapEdge(two,{sourceId:src,selectedEdgeId:otherId}).edgeId,otherId);
+ assert.equal(wireVM.channelTapEdge(two,{sourceId:src,selectedEdgeId:"invalid"}),null);
+ for(const [edgeId,target,extra,state] of [
+   [primaryId,"PRE_FADER",{},snap],
+   [id,"NO_TAP",{},snap],
+   [id,"PRE_FADER",{projected:false},snap],
+   [id,"PRE_FADER",{pending:true},snap],
+   [id,"PRE_FADER",{}, {...snap,admitted:false}],
+   [id,"PRE_FADER",{}, {...snap,retained:true}],
+   [id,"PRE_FADER",{}, {...snap,graph:{...graph,capabilities:{supportedOps:[]}}}],
+   [id,"PRE_FADER",{}, {...snap,graph:{...graph,edges:[...graph.edges,send]}}],
+   [id,"PRE_FADER",{}, {...snap,graph:{...graph,channels:graph.channels.filter(ch=>ch.id!==src)}}],
+   [id,"PRE_FADER",{}, {...snap,graph:{...graph,edges:[{...send,from:other},mainSend,primary]}}]
+ ])assert.equal(tap(edgeId,target,extra,state).kind,"UNAVAILABLE");
+ for(const wrong of ["0","-1","9007199254740993.1","18446744073709551616",
+   9223372036854775808])
+   assert.equal(tap(wrong).kind,"UNAVAILABLE");
+ assert.equal(wireVM.nativeTapPlan(snap,{sourceId:src,
+   edgeId:undefined,targetTap:"PRE_FADER",projected:true}).kind,"UNAVAILABLE",
+   "missing EdgeId must not be replaced by the test helper default");
+ assert.equal(JSON.stringify(snap),before,"pure selectors cannot mutate live PCM graph");
+});
+test("G-MV31 SOF exact BUS/FX send selection and ON/OFF fail closed under pending or owner change",()=>{
+ const src="9007199254740993",other="9007199254740994",
+   bus="9007199254740995",fx="9007199254740996",
+   main="18446744073709551615",edgeId="9223372036854775809";
+ const rows=[{id:src,role:"INPUT"},{id:other,role:"INPUT"},
+   {id:bus,role:"GROUP"},{id:fx,role:"FX_RETURN"},{id:main,role:"MAIN"}];
+ const edge={edgeId,from:src,to:bus,enabled:true,primaryOutput:false,
+   tap:"POST_FADER",sendEnabled:true,gainLinear:1};
+ const graph={channels:rows,mainChannelId:main,edges:[edge],
+   capabilities:{supportedOps:["SET_SEND_ENABLED","APPLY_WIRE_TRANSACTION",
+     "SET_WIRE_GAIN"]}};
+ const snap={admitted:true,retained:false,graph};
+ const sof=(sourceId=src,destinationId=bus,state=snap)=>
+   wireVM.sofSendEdge(state,{sourceId,destinationId});
+ assert.equal(sof(),edge);
+ assert.equal(sof(src,fx),null,"FX return without a wire is not an SOF route");
+ assert.equal(sof(src,main),null,"SOF cannot control a parallel MAIN send");
+ assert.equal(sof(other,bus),null);
+ assert.equal(sof(src,src),null);
+ assert.equal(sof(src,bus,{...snap,retained:true}),null);
+ assert.equal(sof(src,bus,{...snap,admitted:false}),null);
+ assert.equal(sof(src,bus,{...snap,graph:{...graph,edges:[edge,edge]}}),null);
+ assert.equal(sof(src,bus,{...snap,graph:{...graph,edges:[
+   {...edge,primaryOutput:true}]}}),null);
+ assert.equal(sof(src,bus,{...snap,graph:{...graph,edges:[{
+   ...edge,from:other}]}}),null);
+ assert.equal(sof(src,fx,{...snap,graph:{...graph,edges:[{
+   ...edge,to:fx}]}}).edgeId,edgeId);
+ const enabled=(overrides={},state=snap)=>wireVM.nativeSendTogglePlan(state,{
+   sourceId:src,edgeId,projected:true,...overrides});
+ assert.deepEqual(enabled(),{kind:"DISPATCH",operation:"SET_SEND_ENABLED",
+   source:src,payload:{edgeId,enabled:false}});
+ assert.equal(enabled({}, {...snap,graph:{...graph,edges:[{
+   ...edge,sendEnabled:false}]}}).payload.enabled,true);
+ for(const item of [
+   [{projected:false},snap],[{pending:true},snap],[{}, {...snap,admitted:false}],
+   [{}, {...snap,retained:true}],[{edgeId:"0"},snap],
+   [{sourceId:other},snap],
+   [{}, {...snap,graph:{...graph,edges:[{...edge,sendEnabled:null}]}}],
+   [{}, {...snap,graph:{...graph,edges:[{...edge,primaryOutput:true}]}}],
+   [{}, {...snap,graph:{...graph,capabilities:{supportedOps:["SET_WIRE_GAIN"]}}}]
+ ])assert.equal(enabled(item[0],item[1]).kind,"UNAVAILABLE");
+ assert.equal(wireVM.nativeTapPlan(snap,{sourceId:src,edgeId,
+   projected:true}).kind,"AVAILABLE",
+   "SOF PRE/POST and inspector share one exact EdgeId policy");
+ const bridge=read("web/approved-native-bridge.js");
+ for(const fn of ["sofSendEdge","channelTapEdge","nativeSendTogglePlan","nativeTapPlan"])
+   assert.match(bridge,new RegExp("wireVM\\."+fn+"\\("));
+ assert.equal((bridge.match(/function requestNativeTap\(/g)||[]).length,1,
+   "SOF + WIRE inspector use one native transaction sender");
+ assert.ok(bridge.includes('controller.intent(plan.operation,plan.source,plan.payload)'));
+ assert.ok(bridge.includes('intent(plan.operation,t,plan.payload)'));
+ assert.doesNotMatch(bridge,/const sends=current\.graph\.edges\.filter\(/,
+   "native channel tapping no longer duplicates graph selection policy");
+ assert.doesNotMatch(read("web/approved-wire-view-model.js"),
+   /backend\.emitEvent|document\.querySelector|window\.setTimeout/,
+   "VM is deterministic and has no independent dispatcher");
 });
