@@ -1141,56 +1141,24 @@
     return true;
   }
   let pendingBusCreate=null,pendingTrackDelete=null,stripRequestSerial=0;
-  function requestNativeTrackDelete(track){
-    if(logicalView)return logicalIntent("DELETE_CHANNEL",nativeIdFor(track),{}).ok;
-    const current=controller?.state()?.current,id=nativeIdFor(track);
-    const channel=current?.graph?.channels?.find(ch=>ch.id===id);
-    if(!connected||pendingTrackDelete||pendingBusCreate||controller?.state()?.pending||
-       !current?.admitted||current.retained||channel?.role!=="INPUT"||
-       !current.graph.capabilities.supportedOps.includes("DELETE_CHANNEL")){
-      nativeToast("Delete Track unavailable · wait for an admitted native input channel");
+  // G-MV30: delete INPUT / GROUP / FX_RETURN via ONE ChannelId roster
+  // authority and ONE native ACK + independently installed graph lease.
+  function dispatchNativeRosterDelete(track,operation){
+    const current=controller?.state()?.current;
+    const plan=stripVM.rosterMutationPlan(current,{
+      operation,channelId:nativeIdFor(track),hardware,
+      deviceReady:deviceReady(),controllerPending:!!controller?.state()?.pending,
+      structuralPending:!!pendingTrackDelete||!!pendingBusCreate
+    });
+    if(!connected||plan.kind!=="READY"){
+      nativeToast("Delete unavailable · wait for an admitted native channel");
       return false;
     }
-    const requestId="track-delete-"+(++stripRequestSerial);
-    pendingTrackDelete={requestId,id,name:track.name,epoch:current.device.epoch,
-      revision:current.graph.revision,acked:false};
+    const requestId=(operation==="DELETE_CHANNEL"?"track-delete-":"bus-delete-")+
+      (++stripRequestSerial);
+    pendingTrackDelete={requestId,...plan.pending,name:track.name};
     syncAddTrack(current);
-    backend.emitEvent("arMixAction",{
-      action:"routingNativeTrackDelete",requestId,channelId:id,
-      deviceEpoch:current.device.epoch,graphRevision:current.graph.revision,
-      rosterRevision:current.graph.rosterRevision
-    });
-    status("Deleting "+track.name+" · waiting for native PCM ACK/readback");
-    window.setTimeout(()=>{
-      if(pendingTrackDelete?.requestId!==requestId)return;
-      pendingTrackDelete=null;syncAddTrack();
-      nativeToast("Delete Track timed out · accepted mixer unchanged until readback");
-      controller?.subscribe();
-    },8000);
-    return true;
-  }
-  // BUS and FX_RETURN use their actual ChannelId; never remove them from
-  // browser state before the native publisher ACK and independent graph readback.
-  function requestNativeBusDelete(track){
-    if(logicalView)return logicalIntent("REMOVE_BUS",nativeIdFor(track),{}).ok;
-    const current=controller?.state()?.current,id=nativeIdFor(track);
-    const channel=current?.graph?.channels?.find(ch=>ch.id===id);
-    if(!connected||pendingTrackDelete||pendingBusCreate||controller?.state()?.pending||
-       !current?.admitted||current.retained||
-       !["GROUP","FX_RETURN"].includes(channel?.role)||
-       !current.graph.capabilities.supportedOps.includes("REMOVE_BUS")){
-      nativeToast("Delete unavailable · wait for an admitted native AUX/BUS");
-      return false;
-    }
-    const requestId="bus-delete-"+(++stripRequestSerial);
-    pendingTrackDelete={requestId,id,name:track.name,role:channel.role,
-      epoch:current.device.epoch,revision:current.graph.revision,acked:false};
-    syncAddTrack(current);
-    backend.emitEvent("arMixAction",{
-      action:"routingNativeBusDelete",requestId,channelId:id,
-      deviceEpoch:current.device.epoch,graphRevision:current.graph.revision,
-      rosterRevision:current.graph.rosterRevision
-    });
+    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload});
     status("Deleting "+track.name+" · waiting for native PCM ACK/readback");
     window.setTimeout(()=>{
       if(pendingTrackDelete?.requestId!==requestId)return;
@@ -1199,6 +1167,14 @@
       controller?.subscribe();
     },8000);
     return true;
+  }
+  function requestNativeTrackDelete(track){
+    if(logicalView)return logicalIntent("DELETE_CHANNEL",nativeIdFor(track),{}).ok;
+    return dispatchNativeRosterDelete(track,"DELETE_CHANNEL");
+  }
+  function requestNativeBusDelete(track){
+    if(logicalView)return logicalIntent("REMOVE_BUS",nativeIdFor(track),{}).ok;
+    return dispatchNativeRosterDelete(track,"REMOVE_BUS");
   }
   function requestNativeStripDelete(track){
     if(track?.kind==="audio")return requestNativeTrackDelete(track);
@@ -1212,22 +1188,23 @@
       return !logicalView.readOnly&&
         ["INPUT","GROUP","FX_RETURN"].includes(row?.role);
     }
-    const current=controller?.state()?.current,id=nativeIdFor(track);
-    const ch=current?.graph?.channels?.find(row=>row.id===id);
-    return Boolean(current?.admitted&&!current.retained&&ch&&
-      ((ch.role==="INPUT"&&current.graph.capabilities.supportedOps.includes("DELETE_CHANNEL"))||
-       (["GROUP","FX_RETURN"].includes(ch.role)&&
-        current.graph.capabilities.supportedOps.includes("REMOVE_BUS"))));
+    const operation=track?.kind==="audio"?"DELETE_CHANNEL":
+      (track?.kind==="bus"||track?.kind==="fx")?"REMOVE_BUS":null;
+    return !!operation&&stripVM.rosterMutationPlan(controller?.state()?.current,{
+      operation,channelId:nativeIdFor(track),hardware,deviceReady:deviceReady(),
+      controllerPending:!!controller?.state()?.pending,
+      structuralPending:!!pendingTrackDelete||!!pendingBusCreate
+    }).kind==="READY";
   }
   function finishNativeTrackDelete(next){
-    const pending=pendingTrackDelete;
-    if(!pending?.acked||!next?.admitted||next.retained||
-       pending.epoch!==next.device.epoch||
-       BigInt(next.graph.revision)<BigInt(pending.revision)||
-       next.graph.channels.some(ch=>ch.id===pending.id))return;
-    pendingTrackDelete=null;
-    syncAddTrack(next);
-    nativeToast(pending.name+" deleted · native PCM and WIRE readback verified");
+    const p=pendingTrackDelete;
+    if(!p)return;
+    const verdict=stripVM.rosterReadbackSettlement(p,next);
+    if(verdict==="WAIT")return;
+    pendingTrackDelete=null;syncAddTrack(next);
+    if(verdict==="CONFIRMED")
+      nativeToast(p.name+" deleted · native PCM and WIRE readback verified");
+    else status("Native deletion expired · refreshing accepted mixer roster");
   }
   function nativeOrbitTarget(track,slot){
     if(!track||!Number.isInteger(slot)||slot<0||slot>=8)return null;
@@ -1270,10 +1247,11 @@
   function canCreateNativeTrack(next){
     if(logicalView)return !logicalView.readOnly &&
       logicalView.graph.capabilities.supportedOps.includes("CREATE_CHANNEL");
-    if(next?.retained)return false;
-    if(next?.admitted)
-      return next.graph.capabilities.supportedOps.includes("CREATE_CHANNEL");
-    return mixerSession()?.authority==="NONE" && deviceReady();
+    return stripVM.rosterMutationPlan(next,{
+      operation:"CREATE_CHANNEL",hardware,deviceReady:deviceReady(),
+      controllerPending:!!controller?.state()?.pending,
+      structuralPending:false
+    }).kind==="READY";
   }
   function syncAddTrack(next=controller?.state()?.current){
     const button=document.getElementById("addTrack");
@@ -1284,41 +1262,46 @@
     button.title=available?"Add a stereo audio track routed to MAIN":
       "Connect a verified audio device in Audio I/O to add tracks";
   }
+  // Both audio-track and BUS addition retain the structural lease until
+  // a strictly newer independently accepted ChannelId roster proves the
+  // precise createdId and role. ACK.state can never create a browser strip.
   function finishNativeTrack(next){
-    const pending=pendingBusCreate;
-    if(!pending?.track || !pending.createdId || !next?.admitted ||
-       next.device.epoch!==pending.epoch ||
-       BigInt(next.graph.revision)<BigInt(pending.revision))return;
-    const channel=next.graph.channels.find(ch=>ch.id===pending.createdId && ch.role==="INPUT");
-    const id=channel && uiByNativeId.get(channel.id);
-    const strip=scope?.tracks.find(t=>t.id===id);
-    if(!strip||!scope.revealTrack)return;
-    pendingBusCreate=null;
-    syncAddTrack(next);
-    scope.revealTrack(strip);
-    nativeToast(strip.name+" added · choose its IN to receive audio");
+    const p=pendingBusCreate;
+    if(!p)return;
+    const verdict=stripVM.rosterReadbackSettlement(p,next);
+    if(verdict==="WAIT")return;
+    if(verdict==="STALE"){
+      pendingBusCreate=null;syncAddTrack(next);
+      status("Native roster changed · add operation expired");return;
+    }
+    if(p.track){
+      const id=uiByNativeId.get(p.createdId);
+      const strip=scope?.tracks?.find(t=>t.id===id);
+      if(!strip||!scope?.revealTrack)return;
+      pendingBusCreate=null;
+      syncAddTrack(next);
+      scope.revealTrack(strip);
+      nativeToast(strip.name+" added · choose its IN to receive audio");
+    }else{
+      pendingBusCreate=null;syncAddTrack(next);
+      status("BUS added · native ChannelId PCM and WIRE readback verified");
+    }
   }
   function requestNativeBusCreate(track=false){
     if(logicalView)
       return logicalIntent(track?"CREATE_CHANNEL":"CREATE_GROUP",null,{}).ok;
-    const accepted=controller?.state()?.current;
-    const session=mixerSession();
-    const capabilities=accepted?.graph?.capabilities?.supportedOps;
-    const available=track?canCreateNativeTrack(accepted):
-      session?.authority==="CHANNEL_ID" && accepted?.admitted &&
-      capabilities?.includes("CREATE_GROUP");
-    if(pendingBusCreate||pendingTrackDelete||!available)return false;
+    const accepted=controller?.state()?.current,operation=
+      track?"CREATE_CHANNEL":"CREATE_GROUP";
+    const plan=stripVM.rosterMutationPlan(accepted,{
+      operation,hardware,deviceReady:deviceReady(),
+      controllerPending:!!controller?.state()?.pending,
+      structuralPending:!!pendingBusCreate||!!pendingTrackDelete
+    });
+    if(plan.kind!=="READY")return false;
     const requestId=(track?"track-":"bus-")+(++stripRequestSerial);
-    const epoch=hardware.device.epoch;
-    const bootstrap=track && session.authority==="NONE";
-    pendingBusCreate={requestId,track,epoch};
+    pendingBusCreate={requestId,track,...plan.pending};
     syncAddTrack(accepted);
-    backend.emitEvent("arMixAction",{
-      action:track?"routingNativeTrackCreate":"routingNativeBusCreate",requestId,
-      deviceEpoch:epoch,
-      ...(bootstrap?{bootstrapRevision:legacy().routingRevision}:{
-        graphRevision:accepted.graph.revision,
-        rosterRevision:accepted.graph.rosterRevision})});
+    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload});
     const label=track?"Audio Track":"BUS";
     status("Adding "+label+" → MAIN · native PCM pending");
     window.setTimeout(()=>{
@@ -2942,6 +2925,11 @@
     }
     document.documentElement.dataset.armixNativeRoster="accepted";
     flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;
+    // G-MV30: first accepted ChannelId roster is projected only NOW.
+    // The earlier pre-projection syncAddTrack() was fail-closed while the
+    // native graph was unmounted; enable the button only after successful
+    // projection, without requiring a second telemetry callback/click.
+    syncAddTrack(next);
     syncMonitorButton(next.device);
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
     if(confirmed?.operation==="APPLY_WIRE_TRANSACTION")
@@ -3078,16 +3066,15 @@
     });
     backend.addEventListener("arMixNativeBusAck",ack=>{
       const pending=pendingBusCreate;
-      if(!pending||pending.requestId!==ack?.requestId)return;
+      const verdict=stripVM.rosterAckResult(pending,ack);
+      if(verdict==="IGNORE")return;
       const label=pending.track?"Audio Track":"BUS";
-      if(ack.ok===true && protocol.decimal(ack.createdId) && ack.createdId!=="0" &&
-         (!pending.track || (protocol.decimal(ack.graphRevision) && ack.graphRevision!=="0"))){
-        status(label+" accepted by native PCM · verifying graph readback");
-        if(pending.track){
-          pending.createdId=ack.createdId;
-          pending.revision=ack.graphRevision;
-          finishNativeTrack(controller?.state()?.current);
-        }else pendingBusCreate=null;
+      if(verdict==="ACKED"){
+        pending.acked=true;
+        pending.createdId=ack.createdId;
+        pending.ackRevision=ack.graphRevision;
+        status(label+" ACKed · verifying installed native roster");
+        finishNativeTrack(controller?.state()?.current);
       }else{
         pendingBusCreate=null;
         nativeToast("Add "+label+" rejected · "+(ack?.error||"native graph error"));
@@ -3097,12 +3084,14 @@
     });
     backend.addEventListener("arMixNativeTrackDeleteAck",ack=>{
       const pending=pendingTrackDelete;
-      if(!pending||pending.requestId!==ack?.requestId)return;
-      if(ack.ok!==true||ack.channelId!==pending.id){
+      const verdict=stripVM.rosterAckResult(pending,ack);
+      if(verdict==="IGNORE")return;
+      if(verdict==="REJECTED"){
         pendingTrackDelete=null;syncAddTrack();
-        nativeToast("Delete Track rejected · "+(ack?.error||"native graph rejected"));
+        nativeToast("Delete rejected · "+(ack?.error||"native graph rejected"));
       }else{
         pending.acked=true;
+        pending.ackRevision=ack.graphRevision;
         status(pending.name+" removal ACKed · verifying accepted graph");
         finishNativeTrackDelete(controller?.state()?.current);
       }
