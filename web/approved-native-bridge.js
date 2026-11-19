@@ -1008,6 +1008,11 @@
       if(plan.kind==="IDLE"||plan.kind==="WAIT")return;
       if(plan.kind==="DROP_ALL"){queue.clear();return;}
       queue.delete(plan.key);
+      // G-MV23: after ACK/readback races or timeout, skip a last-choice
+      // draft that the accepted native PCM has ALREADY installed. Avoid
+      // reissuing the same routing switch and risking needless audio churn.
+      // The pure VM allows this only with the exact hardware/PCM lease.
+      if(plan.kind==="SKIP_INSTALLED")continue;
       if(plan.kind==="DROP"){
         if(channelIdOwner)
           nativeToast("Source identity or device pins changed · refresh native mixer");
