@@ -47,6 +47,7 @@
 #include "NativeLogicalMixerControl.h"
 #include "PlayerSetlistArchive.h"
 #include "PlayerSetlistRepository.h"
+#include "PlayerSetlistEditTransaction.h"
 #include "NativeHotkeyRegistry.h"
 #include "NativeHotkeyCommandPlan.h"
 #include "NativeFxParameterHotkey.h"
@@ -57,6 +58,8 @@
 #include "../engine/device/WindowsFirstRunEndpointDiscovery.h"
 #endif
 #include <algorithm>
+#include <map>
+#include <set>
 #include <cstring>
 #include <optional>
 #include <memory>
@@ -3939,6 +3942,23 @@ private:
         else if(result==armix::player::PlayerSetlistRepository::SaveStatus::ioError)
             playerError_="Unable to save setlists; check folder permissions";
     }
+    bool commitPlayerTrackEdit(std::vector<juce::File> nextFiles,
+                               std::vector<PlayerTrackSettings> nextControls) {
+        using Edit=armix::player::PlayerSetlistEditTransaction;
+        auto outcome=Edit::replaceActiveTracks(
+            settingsDirectory().getChildFile("player-library.json"),
+            playerSets_,playerActiveSet_,nextFiles,nextControls,
+            playerAutoNext_,playerFadeMilliseconds_);
+        if(!outcome.committed()) {
+            playerError_=outcome.error;
+            return false;
+        }
+        // No accepted Player identity/queue/index change precedes disk commit.
+        playerSets_=std::move(outcome.sets);
+        playerLibrary_=std::move(nextFiles);
+        playerTrackSettings_=std::move(nextControls);
+        return true;
+    }
     bool playerShowMaySwitchSet() {
         const auto state=engine_.playerStatus().getProperty("state","").toString();
         if(state=="PLAYING" || state=="PREPARING" || state=="PAUSED") {
@@ -3948,61 +3968,38 @@ private:
         return !playerFolderBusy_;
     }
     void playerEditSetlist(const juce::String& action,const juce::var& value) {
+        // Setlist metadata is durable BEFORE a deck stop or live state
+        // mutation. A failed disk write cannot switch/delete a live set.
         if(action=="playerNewSetlist" || action=="playerSelectSetlist" ||
-           action=="playerDeleteSetlist") {
-            if(!playerShowMaySwitchSet())return;
-            if(action=="playerNewSetlist") {
-                if(playerSets_.size()>=32) {
-                    playerError_="Maximum 32 setlists";emitPlayerState();return;
-                }
-                saveActivePlayerSet();
-                const auto next=armix::player::PlayerSetlistArchive::
-                    nextGeneratedName(playerSets_);
-                if(next.isEmpty()) {
-                    playerError_="No available setlist name";
-                    emitPlayerState();return;
-                }
-                playerSets_.push_back({next,{},{}});
+           action=="playerDeleteSetlist" || action=="playerRenameSetlist") {
+            const bool rename=action=="playerRenameSetlist";
+            if(!rename && !playerShowMaySwitchSet())return;
+            using Edit=armix::player::PlayerSetlistEditTransaction;
+            const auto command=action=="playerNewSetlist"?Edit::Command::create:
+                action=="playerSelectSetlist"?Edit::Command::select:
+                action=="playerDeleteSetlist"?Edit::Command::remove:
+                Edit::Command::rename;
+            const int index=rename || command==Edit::Command::create?
+                -1:static_cast<int>(value);
+            // Preserve the historical silent no-op for stale row IDs.
+            if(!rename && command!=Edit::Command::create &&
+               (index<0 || index>=static_cast<int>(playerSets_.size())))return;
+            auto outcome=Edit::apply(
+                settingsDirectory().getChildFile("player-library.json"),
+                playerSets_,playerActiveSet_,playerLibrary_,playerTrackSettings_,
+                playerAutoNext_,playerFadeMilliseconds_,command,index,
+                rename?value.toString():juce::String{});
+            if(!outcome.committed()) {
+                playerError_=outcome.error;
+                emitPlayerState(true);return;
+            }
+            playerSets_=std::move(outcome.sets);
+            if(!rename) {
                 engine_.playerStop();
-                activatePlayerSet(static_cast<int>(playerSets_.size())-1);
-            } else {
-                const int index=static_cast<int>(value);
-                if(index<0 || index>=static_cast<int>(playerSets_.size()))return;
-                saveActivePlayerSet();
-                if(action=="playerSelectSetlist") {
-                    engine_.playerStop();activatePlayerSet(index);
-                } else if(playerSets_.size()>1) {
-                    engine_.playerStop();
-                    int destination=playerActiveSet_;
-                    if(index<destination)--destination;
-                    if(index==destination)
-                        destination=std::min(index,
-                            static_cast<int>(playerSets_.size())-2);
-                    playerSets_.erase(playerSets_.begin()+index);
-                    activatePlayerSet(destination);
-                } else {
-                    playerError_="Keep at least one setlist";
-                    emitPlayerState();return;
-                }
+                activatePlayerSet(outcome.active);
             }
-            playerError_.clear();persistPlayerLibrary();emitPlayerState(true);
-            return;
-        }
-        if(action=="playerRenameSetlist") {
-            auto name=value.toString().trim();
-            if(name.isEmpty() || name.length()>64)return;
-            const bool exists=std::any_of(
-                playerSets_.begin(),playerSets_.end(),
-                [&](const PlayerSavedSet& set) {
-                    return set.name.equalsIgnoreCase(name) &&
-                           &set!=&playerSets_[static_cast<std::size_t>(playerActiveSet_)];
-                });
-            if(exists) {
-                playerError_="Setlist name already exists";
-                emitPlayerState();return;
-            }
-            playerSets_[static_cast<std::size_t>(playerActiveSet_)].name=name;
-            playerError_.clear();persistPlayerLibrary();emitPlayerState(true);
+            playerError_.clear();
+            emitPlayerState(true);
             return;
         }
         if(action=="playerMoveSong") {
@@ -4015,7 +4012,12 @@ private:
                 items.erase(items.begin()+from);
                 items.insert(items.begin()+to,std::move(item));
             };
-            move(playerLibrary_);move(playerTrackSettings_);
+            auto nextFiles=playerLibrary_;
+            auto nextControls=playerTrackSettings_;
+            move(nextFiles);move(nextControls);
+            if(!commitPlayerTrackEdit(std::move(nextFiles),std::move(nextControls))) {
+                emitPlayerState(true);return;
+            }
             const auto remap=[&](int index) {
                 return armix::player::PlayerShowEditPolicy::afterMove(
                     index,from,to,count);
@@ -4023,7 +4025,7 @@ private:
             playerSelected_=remap(playerSelected_);
             playerCurrent_=remap(playerCurrent_);
             playerPendingIndex_=remap(playerPendingIndex_);
-            persistPlayerLibrary();emitPlayerState(true);
+            playerError_.clear();emitPlayerState(true);
             return;
         }
         if(action=="playerRemoveSong") {
@@ -4039,17 +4041,22 @@ private:
                 playerError_="Stop the playing song before removing it";
                 emitPlayerState();return;
             }
-            playerUndoRemove_={playerActiveSet_,index,
-                playerLibrary_[static_cast<std::size_t>(index)],
-                playerTrackSettings_[static_cast<std::size_t>(index)]};
+            const auto removedFile=playerLibrary_[static_cast<std::size_t>(index)];
+            const auto removedControls=playerTrackSettings_[static_cast<std::size_t>(index)];
+            auto nextFiles=playerLibrary_;
+            auto nextControls=playerTrackSettings_;
+            nextFiles.erase(nextFiles.begin()+index);
+            nextControls.erase(nextControls.begin()+index);
+            if(!commitPlayerTrackEdit(std::move(nextFiles),std::move(nextControls))) {
+                emitPlayerState(true);return;
+            }
+            playerUndoRemove_={playerActiveSet_,index,removedFile,removedControls};
             const auto queueCountBefore=playerQueue_.size();
             playerQueue_.erase(
                 std::remove(playerQueue_.begin(),playerQueue_.end(),
                             playerUndoRemove_.file),playerQueue_.end());
             if(queueCountBefore!=playerQueue_.size())
                 playerQueueEpoch_.changed();
-            playerLibrary_.erase(playerLibrary_.begin()+index);
-            playerTrackSettings_.erase(playerTrackSettings_.begin()+index);
             const auto remap=[&](int old) {
                 return armix::player::PlayerShowEditPolicy::afterRemove(
                     old,index);
@@ -4060,7 +4067,7 @@ private:
             if(playerSelected_<0 && !playerLibrary_.empty())
                 playerSelected_=std::min(index,
                     static_cast<int>(playerLibrary_.size())-1);
-            playerError_.clear();persistPlayerLibrary();emitPlayerState(true);
+            playerError_.clear();emitPlayerState(true);
             return;
         }
         if(action=="playerUndoRemove") {
@@ -4078,9 +4085,13 @@ private:
                          removed.file)!=playerLibrary_.end())return;
             const int index=std::clamp(removed.index,0,
                 static_cast<int>(playerLibrary_.size()));
-            playerLibrary_.insert(playerLibrary_.begin()+index,removed.file);
-            playerTrackSettings_.insert(
-                playerTrackSettings_.begin()+index,removed.controls);
+            auto nextFiles=playerLibrary_;
+            auto nextControls=playerTrackSettings_;
+            nextFiles.insert(nextFiles.begin()+index,removed.file);
+            nextControls.insert(nextControls.begin()+index,removed.controls);
+            if(!commitPlayerTrackEdit(std::move(nextFiles),std::move(nextControls))) {
+                emitPlayerState(true);return;
+            }
             playerCurrent_=armix::player::PlayerShowEditPolicy::afterInsert(
                 playerCurrent_,index);
             playerSelected_=armix::player::PlayerShowEditPolicy::afterInsert(
@@ -4088,7 +4099,7 @@ private:
             playerPendingIndex_=armix::player::PlayerShowEditPolicy::afterInsert(
                 playerPendingIndex_,index);
             playerUndoRemove_={};
-            playerError_.clear();persistPlayerLibrary();emitPlayerState(true);
+            playerError_.clear();emitPlayerState(true);
             return;
         }
         if(action=="playerQueueNext" || action=="playerQueueAppend") {
@@ -4227,29 +4238,37 @@ private:
             (const juce::FileChooser& picker) {
                 if(!safe)return;
                 const auto files=picker.getResults();
+                auto nextFiles=safe->playerLibrary_;
+                auto nextControls=safe->playerTrackSettings_;
+                // JUCE File order matches the native archive path identity;
+                // a 2,000-song import never needs quadratic scans.
+                std::map<juce::File,std::size_t> positions;
+                for(std::size_t i=0;i<nextFiles.size();++i)
+                    positions.emplace(nextFiles[i],i);
                 std::size_t first=static_cast<std::size_t>(-1);
                 for(const auto& file:files) {
                     if(!file.existsAsFile() ||
                        !file.hasFileExtension("wav;mp3;flac;aif;aiff;ogg"))
                         continue;
-                    const auto found=std::find(safe->playerLibrary_.begin(),
-                        safe->playerLibrary_.end(),file);
-                    if(found!=safe->playerLibrary_.end()) {
+                    const auto known=positions.find(file);
+                    if(known!=positions.end()) {
                         if(first==static_cast<std::size_t>(-1))
-                            first=static_cast<std::size_t>(
-                                found-safe->playerLibrary_.begin());
+                            first=known->second;
                         continue;
                     }
-                    if(safe->playerLibrary_.size()>=2000)break;
+                    if(nextFiles.size()>=2000)break;
                     if(first==static_cast<std::size_t>(-1))
-                        first=safe->playerLibrary_.size();
-                    safe->playerLibrary_.push_back(file);
-                    safe->playerTrackSettings_.push_back({});
+                        first=nextFiles.size();
+                    positions.emplace(file,nextFiles.size());
+                    nextFiles.push_back(file);
+                    nextControls.push_back({});
                 }
-                if(safe->playerSelected_<0 && first!=static_cast<std::size_t>(-1))
-                    safe->playerSelected_=static_cast<int>(first);
-                safe->playerError_.clear();
-                safe->persistPlayerLibrary();
+                if(safe->commitPlayerTrackEdit(
+                    std::move(nextFiles),std::move(nextControls))) {
+                    if(safe->playerSelected_<0 && first!=static_cast<std::size_t>(-1))
+                        safe->playerSelected_=static_cast<int>(first);
+                    safe->playerError_.clear();
+                }
                 safe->emitPlayerState(true);
                 // Do not destroy FileChooser inside its own callback.
                 juce::MessageManager::callAsync([safe] {
@@ -4294,35 +4313,38 @@ private:
                          relinks=std::move(relinks),initialLibrary]() mutable {
                             if(!safe)return;
                             safe->playerFolderBusy_=false;
+                            auto nextFiles=safe->playerLibrary_;
+                            auto nextControls=safe->playerTrackSettings_;
+                            std::set<juce::File> known(nextFiles.begin(),nextFiles.end());
                             int added=0,relinked=0;
-                            // Update only the exact rows the worker saw.
-                            // Edits made during the scan must remain intact.
+                            // Reconcile by exact row identity against the
+                            // worker snapshot, without losing later live edits.
                             for(const auto& change:relinks) {
                                 if(change.index>=initialLibrary.size() ||
-                                   change.index>=safe->playerLibrary_.size() ||
+                                   change.index>=nextFiles.size() ||
                                    static_cast<int>(change.index)==safe->playerCurrent_ ||
-                                   safe->playerLibrary_[change.index]!=
-                                       initialLibrary[change.index] ||
-                                   std::find(safe->playerLibrary_.begin(),
-                                       safe->playerLibrary_.end(),
-                                       change.replacement)!=safe->playerLibrary_.end())
+                                   nextFiles[change.index]!=initialLibrary[change.index] ||
+                                   known.contains(change.replacement))
                                     continue;
-                                safe->playerLibrary_[change.index]=change.replacement;
-                                ++relinked; // keep stable IDs + KEY/TEMPO
+                                known.erase(nextFiles[change.index]);
+                                known.insert(change.replacement);
+                                nextFiles[change.index]=change.replacement;
+                                ++relinked;
                             }
                             int first=-1;
                             for(const auto& file:scan.files) {
-                                const auto found=std::find(
-                                    safe->playerLibrary_.begin(),
-                                    safe->playerLibrary_.end(),file);
-                                if(found!=safe->playerLibrary_.end())continue;
-                                if(safe->playerLibrary_.size()>=
-                                   armix::player::PlayerLibraryPolicy::maxSongs)break;
-                                if(first<0)
-                                    first=static_cast<int>(safe->playerLibrary_.size());
-                                safe->playerLibrary_.push_back(file);
-                                safe->playerTrackSettings_.push_back({});
+                                if(known.contains(file))continue;
+                                if(nextFiles.size()>=armix::player::PlayerLibraryPolicy::maxSongs)
+                                    break;
+                                if(first<0)first=static_cast<int>(nextFiles.size());
+                                known.insert(file);
+                                nextFiles.push_back(file);
+                                nextControls.push_back({});
                                 ++added;
+                            }
+                            if(!safe->commitPlayerTrackEdit(
+                                  std::move(nextFiles),std::move(nextControls))) {
+                                safe->emitPlayerState(true);return;
                             }
                             if(safe->playerSelected_<0 && first>=0)
                                 safe->playerSelected_=first;
@@ -4331,7 +4353,6 @@ private:
                                 added==0 && relinked==0?
                                     "No new supported songs or safe missing-file matches found":
                                     juce::String{};
-                            safe->persistPlayerLibrary();
                             safe->emitPlayerState(true);
                         });
                 }).detach();
@@ -4375,14 +4396,18 @@ private:
                     // Preserve same logical song ID, order and per-song
                     // KEY/TEMPO. Never start a song or switch the output
                     // as a side effect of locating a file.
-                    if(safe->playerCurrent_==index) {
-                        safe->engine_.playerStop();
-                        safe->playerCurrent_=-1;
+                    auto nextFiles=safe->playerLibrary_;
+                    auto nextControls=safe->playerTrackSettings_;
+                    nextFiles[static_cast<std::size_t>(index)]=chosen;
+                    if(safe->commitPlayerTrackEdit(
+                            std::move(nextFiles),std::move(nextControls))) {
+                        if(safe->playerCurrent_==index) {
+                            safe->engine_.playerStop();
+                            safe->playerCurrent_=-1;
+                        }
+                        safe->playerOutputPendingIndex_=-1;
+                        safe->playerError_.clear();
                     }
-                    safe->playerLibrary_[static_cast<std::size_t>(index)]=chosen;
-                    safe->playerOutputPendingIndex_=-1;
-                    safe->playerError_.clear();
-                    safe->persistPlayerLibrary();
                 }
                 safe->emitPlayerState(true);
             });

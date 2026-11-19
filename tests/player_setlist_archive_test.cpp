@@ -7,6 +7,7 @@
 #include <limits>
 #include "../src/PlayerSetlistArchive.h"
 #include "../src/PlayerSetlistRepository.h"
+#include "../src/PlayerSetlistEditTransaction.h"
 
 using Archive=armix::player::PlayerSetlistArchive;
 using SavedSet=armix::player::PlayerSavedSet;
@@ -266,6 +267,90 @@ int main() {
     const auto largeReload=Store::load(target);
     assert(largeReload.document && largeReload.document->sets[0].files.size()==2000);
     assert(largeReload.document->sets[0].controls.size()==2000);
+    // N-MOD-16: durable-first metadata edit. An accepted write changes
+    // neither the caller's live model nor its deck until it explicitly adopts
+    // the returned candidate. The disk is the acceptance boundary.
+    using Edit=armix::player::PlayerSetlistEditTransaction;
+    const auto transactionFile=sandbox.getChildFile("transactional-setlists.json");
+    auto originalSets=doc->sets;
+    const auto originalName=originalSets[0].name;
+    auto liveFiles=originalSets[0].files;
+    auto liveControls=originalSets[0].controls;
+    liveFiles.push_back(juce::File(tempRoot.getChildFile("nmod16-new-track.wav")));
+    liveControls.push_back({});
+    const auto created=Edit::apply(transactionFile,originalSets,0,
+        liveFiles,liveControls,true,250,Edit::Command::create);
+    assert(created.committed() && created.active==2);
+    assert(created.sets.size()==3 && created.sets[0].files.size()==3);
+    assert(originalSets.size()==2 && originalSets[0].files.size()==2);
+    const auto createdOnDisk=Store::load(transactionFile);
+    assert(createdOnDisk.document && createdOnDisk.document->active==2);
+    assert(createdOnDisk.document->sets[0].files.size()==3);
+    auto selected=Edit::apply(transactionFile,created.sets,created.active,
+        created.sets[2].files,created.sets[2].controls,true,250,
+        Edit::Command::select,0);
+    assert(selected.committed() && selected.active==0);
+    assert(Store::load(transactionFile).document->active==0);
+    const auto collisionBytes=transactionFile.loadFileAsString();
+    const auto collision=Edit::apply(transactionFile,selected.sets,0,
+        selected.sets[0].files,selected.sets[0].controls,true,250,
+        Edit::Command::rename,-1,"live SHOW");
+    assert(!collision.committed());
+    assert(collision.error=="Setlist name already exists");
+    assert(transactionFile.loadFileAsString()==collisionBytes);
+    auto renamed=Edit::apply(transactionFile,selected.sets,0,
+        selected.sets[0].files,selected.sets[0].controls,true,250,
+        Edit::Command::rename,-1,"  Main Gig  ");
+    assert(renamed.committed() && renamed.sets[0].name=="Main Gig");
+    assert(selected.sets[0].name==originalName);
+    assert(Store::load(transactionFile).document->sets[0].name=="Main Gig");
+    const auto deleted=Edit::apply(transactionFile,renamed.sets,0,
+        renamed.sets[0].files,renamed.sets[0].controls,true,250,
+        Edit::Command::remove,0);
+    assert(deleted.committed() && deleted.active==0);
+    assert(deleted.sets.size()==2 && deleted.sets[0].name=="Live Show");
+    assert(Store::load(transactionFile).document->sets.size()==2);
+    const auto written=transactionFile.loadFileAsString();
+    const auto failed=Edit::apply(blocked,renamed.sets,0,
+        renamed.sets[0].files,renamed.sets[0].controls,true,250,
+        Edit::Command::remove,0);
+    assert(!failed.committed() && failed.status==Store::SaveStatus::ioError);
+    assert(renamed.sets.size()==3 && renamed.sets[0].name=="Main Gig");
+    assert(transactionFile.loadFileAsString()==written);
+    assert(notDirectory.loadFileAsString()=="must not be replaced");
+    const auto badCardinality=Edit::apply(transactionFile,renamed.sets,0,
+        renamed.sets[0].files,{},true,250,Edit::Command::rename,-1,"Good");
+    assert(!badCardinality.committed());
+    assert(transactionFile.loadFileAsString()==written);
+    const std::vector<SavedSet> lastOne{{"One",{}, {}}};
+    const auto deleteLast=Edit::apply(transactionFile,lastOne,0,{}, {},
+        false,180,Edit::Command::remove,0);
+    assert(!deleteLast.committed());
+    assert(transactionFile.loadFileAsString()==written);
+    // N-MOD-16 active-track replacement is a transaction too. Invalid
+    // media/control cardinality and occupied destinations never modify disk
+    // or require the caller to advance playback/queue indices.
+    auto revisedFiles=deleted.sets[0].files;
+    auto revisedControls=deleted.sets[0].controls;
+    revisedFiles.push_back(tempRoot.getChildFile("nmod16-import.mp3"));
+    revisedControls.push_back({});
+    const auto committedTracks=Edit::replaceActiveTracks(transactionFile,
+        deleted.sets,deleted.active,revisedFiles,revisedControls,true,250);
+    assert(committedTracks.committed());
+    assert(committedTracks.sets[0].files.size()==1);
+    assert(deleted.sets[0].files.empty());
+    assert(Store::load(transactionFile).document->sets[0].files.size()==1);
+    const auto tracksBytes=transactionFile.loadFileAsString();
+    const auto rejectedTracks=Edit::replaceActiveTracks(transactionFile,
+        committedTracks.sets,0,revisedFiles,{},true,250);
+    assert(!rejectedTracks.committed());
+    assert(transactionFile.loadFileAsString()==tracksBytes);
+    const auto failedTracks=Edit::replaceActiveTracks(blocked,
+        committedTracks.sets,0,revisedFiles,revisedControls,true,250);
+    assert(!failedTracks.committed() &&
+           failedTracks.status==Store::SaveStatus::ioError);
+    assert(committedTracks.sets[0].files.size()==1);
+    assert(transactionFile.loadFileAsString()==tracksBytes);
     assert(sandbox.deleteRecursively());
 
     // Legacy empty v3 content migrates to a non-destructive default setlist.
