@@ -551,6 +551,34 @@
     return "UNAVAILABLE";
   }
 
+  // G-MV27: one-shot controls use a pure authority selector, not divergent
+  // button/double-click branches. MV-10 gesture scheduling remains independent.
+  function controlCommandPlan({operation,trackKind,logical=false,
+    logicalReadOnly=false,logicalPending=false,logicalChannelId=null,
+    logicalSupported=false,authority="",admitted=false,graphConnected=false,
+    nativeChannelId=null,nativeSupported=false,m4Verified=false,
+    m4Channel=-1,masterAuthority="UNAVAILABLE"}={}) {
+    if(!["SET_FADER","SET_PAN","SET_MUTE","SET_SOLO"].includes(operation))
+      return "BLOCK";
+    if(logical)return logicalReadOnly!==true && logicalPending!==true &&
+      decimalId(logicalChannelId) && logicalSupported===true?"LOGICAL":"BLOCK";
+    // The physical MAIN host gateway owns its gain/mute even under ChannelId.
+    // Never fall through to ChannelId SET_FADER or SET_MUTE for MAIN.
+    if(trackKind==="master")
+      return ["SET_FADER","SET_MUTE"].includes(operation) &&
+        ["CHANNEL_ID","M4"].includes(masterAuthority)?"MAIN_HOST":"BLOCK";
+    if(!trackKind)return "BLOCK";
+    if(authority==="M4")
+      return trackKind==="audio" && m4Verified===true &&
+        Number.isInteger(m4Channel) && m4Channel>=0 && m4Channel<10?
+          "M4":"BLOCK";
+    if(authority==="CHANNEL_ID")
+      return admitted===true && graphConnected===true &&
+        decimalId(nativeChannelId) && nativeSupported===true?
+          "CHANNEL_ID":"BLOCK";
+    return "BLOCK";
+  }
+
   // MV-9: pure Channel Strip scalar gesture/readback policy. The only
   // pending Maps, native events, timers and audio transport stay in the
   // approved bridge. Treat exact decimal-string ChannelIds as opaque data.
@@ -744,7 +772,7 @@
     sourceAckResult,sourceReadbackSettlement,
     m4SourceReadbackSettlement,sourceQueueReadback,sourceQueueAckTransition,
     sourceQueueTimeoutDecision,
-    masterScalarAuthority,scalarIdentityMatches,scalarVisualSettlement,m4ScalarAckResult,
+    masterScalarAuthority,controlCommandPlan,scalarIdentityMatches,scalarVisualSettlement,m4ScalarAckResult,
     m4ScalarReadbackSettlement,scalarDispatchLease,
     scalarGestureFlushPlan,scalarDispatchPlan,
     identityReadback,identityEditPlan,
