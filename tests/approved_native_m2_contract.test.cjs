@@ -974,6 +974,9 @@ test("GUI-4 Channel Strip PRIMARY OUT extracts exact native EdgeId without touch
  legacy.graph.edges[0].primaryOutput=false;
  assert.equal(stripVM.primaryOutMutation(legacy,source,"NONE",[]).kind,
    "UNAVAILABLE","an explicit SEND can never become a primary OUT");
+ legacy.graph.edges[0].primaryOutput="false";
+ assert.equal(stripVM.primaryOutMutation(legacy,source,"NONE",[]).kind,
+   "UNAVAILABLE","malformed explicit PRIMARY flag cannot authorize removal");
  delete legacy.graph.edges[0].primaryOutput;
  legacy.graph.edges[0].gainLinear=0.9;
  assert.equal(stripVM.primaryOutMutation(legacy,source,"NONE",[]).kind,
