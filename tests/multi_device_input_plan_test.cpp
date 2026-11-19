@@ -26,7 +26,7 @@ static void mappingAndRealtimeIsolation()
     const std::array<int,2> aPins{0,2},bPins{0,7};
     const std::array<io::CaptureEndpointView,2> devices{{
         {"ASIO/verified-A",91,true,aPins,1001},
-        {"ASIO/verified-B",7,false,bPins,2002}
+        {"ASIO/verified-B",91,false,bPins,2002}
     }};
     const std::array<io::QualifiedChannelSource,2> bindings{{
         {{1},{"ASIO/verified-A",2},{},false},
@@ -62,7 +62,7 @@ static void mappingAndRealtimeIsolation()
     const float* aBlock[2]={a0.data(),a2.data()};
     const float* bBlock[2]={b0.data(),b7.data()};
     std::array<io::MultiDeviceInputPlan::CaptureBlock,2> blocks{{
-        {aBlock,2,4,91,true,1001},{bBlock,2,4,7,true,2002}
+        {aBlock,2,4,91,true,1001},{bBlock,2,4,91,true,2002}
     }};
     io::MultiDeviceInputPlan::VirtualFrame frame;
     check(plan.assemble(91,4,blocks,frame),"frame assembled");
@@ -76,7 +76,7 @@ static void mappingAndRealtimeIsolation()
           frame.pointers[0]==a0.data()&&frame.pointers[1]==a2.data()&&
           frame.pointers[2]==nullptr&&frame.pointers[3]==nullptr,
           "B stale generation only silences B");
-    blocks[1].generation=7;blocks[1].admitted=false;
+    blocks[1].generation=91;blocks[1].admitted=false;
     check(plan.assemble(91,4,blocks,frame)&&frame.available==2&&
           frame.pointers[2]==nullptr,"B no actual PCM = silence");
     blocks[1].admitted=true;blocks[1].frames=8;
@@ -113,7 +113,7 @@ static void negativeContracts()
     const std::array<int,2> aPins{0,2},bPins{0,7};
     std::array<io::CaptureEndpointView,2> devices{{
         {"ASIO/verified-A",91,true,aPins,1001},
-        {"ASIO/verified-B",7,false,bPins,2002}
+        {"ASIO/verified-B",91,false,bPins,2002}
     }};
     std::array<io::QualifiedChannelSource,2> bindings{{
         {{1},{"ASIO/verified-A",2},{},false},
