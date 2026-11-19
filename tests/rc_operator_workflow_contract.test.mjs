@@ -60,7 +60,7 @@ test('FX picker closes and opens an actual editor only after accepted native or 
   assert.match(bridge,/scope\?\.closeNativePicker\?\.\(\);\s*openVerifiedInsertedFx\(p\.channelId,p\.slot,p\.catalogId,inserted\.id\)/);
   // Native editor requires verified accepted lease, not catalog key or ACK.
   const fxVM=read('web/approved-fx-rack-view-model.js');
-  assert.match(bridge,/fxRackVM\.nativeInsertSettlement\(pendingFxInsert,next,confirmed\)/);
+  assert.match(bridge,/fxRackVM\.nativeInsertSettlement\(pendingFxInsert,next,confirmed,/);
   assert.match(bridge,/if\(fxInsert\.kind==="CONFIRMED"\)/);
   assert.match(bridge,/openVerifiedInsertedFx\(fxInsert\.channelId,fxInsert\.slot,/);
   assert.match(bridge,/fxInsert\.catalogId,fxInsert\.instanceId\)/);
