@@ -9,13 +9,19 @@ def source(path): return (ROOT/path).read_text(encoding="utf-8")
 class ImerSipP92Contract(unittest.TestCase):
     def test_immersib_rack_opens_real_native_editor_without_fake_toast(self):
         bridge=source("web/approved-native-bridge.js")
+        editor_vm=source("web/approved-fx-rack-view-model.js")
         host=source("src/Main.cpp")
-        self.assertIn("insert.catalogId==='armix.builtin.imersip.v1' && current.admitted",bridge)
-        self.assertIn('backend.emitEvent("arMixAction",{action:"routingFxEditor",channelId:id,slot,',bridge)
-        self.assertIn('instanceId:insert.id,deviceEpoch:current.device.epoch',bridge)
+        self.assertIn("fxRackVM.editorNavigationPlan(current,",bridge)
+        self.assertIn('view.raw?.mixerSession?.authority==="CHANNEL_ID"',editor_vm)
+        self.assertRegex(bridge,
+            r'backend\.emitEvent\("arMixAction",\{action:"routingFxEditor",\s*'
+            r'channelId:editor\.channelId,slot:editor\.slot,\s*'
+            r'instanceId:editor\.instanceId,deviceEpoch:editor\.deviceEpoch,\s*'
+            r'revision:editor\.graphRevision\}\)')
         self.assertNotIn('else status("Native VST3 editor opened")',bridge)
         self.assertIn("ImerSipP92Editor*>(editor)",host)
         self.assertIn("std::make_unique<PluginEditorWindow>",host)
+        self.assertIn("shownWindow=dedicatedImmerSIB?immersibEditorWindow_:editorWindow_",host)
 
     def test_single_pcm_authority_and_stable_catalog(self):
         p=source("engine/builtin_fx/ImerSipP92Processor.h")
