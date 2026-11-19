@@ -1054,6 +1054,7 @@ static void qualifiedCaptureNativeIntentRegression() {
     auto valid=[]() {
         return parse(R"JSON({
           "operation":"INSTALL_SECONDARY_CAPTURE",
+          "targetChannelId":"9007199254740993",
           "requestId":"io-capture-00001",
           "deviceEpoch":"91",
           "baseGraphRevision":"25",
@@ -1079,7 +1080,13 @@ static void qualifiedCaptureNativeIntentRegression() {
     assert(accepted.command.requestId=="io-capture-00001");
     assert(accepted.command.deviceEpoch==91 &&
            accepted.command.graphRevision==25 &&
-           accepted.command.rosterRevision==9);
+           accepted.command.rosterRevision==9 &&
+           accepted.command.targetChannelId==9007199254740993ULL);
+    // Reuse the approved v8 session's opaque requestId rather than a
+    // second JS-side command sequence or an IO-specific prefix requirement.
+    auto alternate=valid();
+    alternate.getDynamicObject()->setProperty("requestId","session-control-42");
+    assert(decodeQualifiedCaptureConsoleIntent(alternate,snap,bus).ok());
     assert(accepted.command.captureRate==44100.);
     assert(accepted.command.capturePeriod==128);
     assert(accepted.command.secondaryPins[0]&&accepted.command.secondaryPins[7]&&
@@ -1090,6 +1097,9 @@ static void qualifiedCaptureNativeIntentRegression() {
            accepted.command.sources[0].left==7);
     auto bad=valid();
     bad.getProperty("payload",{}).getDynamicObject()->setProperty("confirmed",false);
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
+    bad=valid();
+    bad.getDynamicObject()->setProperty("targetChannelId","18446744073709551615");
     assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
     bad=valid();
     bad.getDynamicObject()->setProperty("baseGraphRevision","24");
