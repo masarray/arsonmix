@@ -3,6 +3,7 @@
 #include "../integration/ApprovedNativeV8Projection.h"
 #include "../src/ApprovedNativeV8Projection.h"
 #include "../integration/ApprovedNativeControlIntent.h"
+#include "../integration/QualifiedCaptureConsoleIntent.h"
 #include "../integration/ApprovedNativeRuntimeSnapshot.h"
 #include "../integration/FirstSoundSignalEvidence.h"
 #if defined(NDEBUG)
@@ -1045,7 +1046,91 @@ static void retainedDocumentDoesNotAdmitPcm() {
     assert(!projectRetainedNativeChannelIdGraph(snapshot,live));
 }
 
+static void qualifiedCaptureNativeIntentRegression() {
+    auto snap=canonicalSnapshot();
+    auto bus=realBusReadbackFixture();
+    snap.getProperty("device",{}).getDynamicObject()->setProperty("backend","ASIO");
+    assert(projectApprovedNativeV8(snap,bus,true));
+    auto valid=[]() {
+        return parse(R"JSON({
+          "operation":"INSTALL_SECONDARY_CAPTURE",
+          "requestId":"io-capture-00001",
+          "deviceEpoch":"91",
+          "baseGraphRevision":"25",
+          "baseRosterRevision":"9",
+          "payload":{
+            "confirmed":true,
+            "secondaryDriver":"Qualified B ASIO",
+            "secondaryInputPins":[0,7],
+            "captureRate":44100,
+            "capturePeriod":128,
+            "sources":[{
+              "channelId":"9007199254740993",
+              "deviceRole":"SECONDARY",
+              "leftPhysical":7,
+              "rightPhysical":-1,
+              "stereo":false
+            }]
+          }
+        })JSON");
+    };
+    const auto accepted=decodeQualifiedCaptureConsoleIntent(valid(),snap,bus);
+    assert(accepted.ok());
+    assert(accepted.command.requestId=="io-capture-00001");
+    assert(accepted.command.deviceEpoch==91 &&
+           accepted.command.graphRevision==25 &&
+           accepted.command.rosterRevision==9);
+    assert(accepted.command.captureRate==44100.);
+    assert(accepted.command.capturePeriod==128);
+    assert(accepted.command.secondaryPins[0]&&accepted.command.secondaryPins[7]&&
+           accepted.command.secondaryPins.countNumberOfSetBits()==2);
+    assert(accepted.command.sources.size()==1);
+    assert(accepted.command.sources[0].channelId==9007199254740993ULL &&
+           accepted.command.sources[0].secondary &&
+           accepted.command.sources[0].left==7);
+    auto bad=valid();
+    bad.getProperty("payload",{}).getDynamicObject()->setProperty("confirmed",false);
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
+    bad=valid();
+    bad.getDynamicObject()->setProperty("baseGraphRevision","24");
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
+    bad=valid();
+    bad.getProperty("payload",{}).getDynamicObject()->setProperty(
+        "secondaryInputPins",parse(R"JSON({"p":[0,0]})JSON").getProperty("p",{}));
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
+    bad=valid();
+    bad.getProperty("payload",{}).getProperty("sources",{})[0].getDynamicObject()
+        ->setProperty("leftPhysical",3);
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
+    bad=valid();
+    bad.getProperty("payload",{}).getProperty("sources",{})[0].getDynamicObject()
+        ->setProperty("channelId","18446744073709551615"); // actual MAIN
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
+    bad=valid();
+    bad.getProperty("payload",{}).getProperty("sources",{})[0].getDynamicObject()
+        ->setProperty("channelId","18446744073709551616"); // uint64 overflow
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
+    bad=valid();
+    bad.getProperty("payload",{}).getProperty("sources",{})[0].getDynamicObject()
+        ->setProperty("deviceRole","PRIMARY");
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
+    bad=valid();
+    bad.getProperty("payload",{}).getDynamicObject()->setProperty("capturePeriod",12);
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
+    bad=valid();
+    bad.getProperty("payload",{}).getProperty("sources",{})[0].getDynamicObject()
+        ->setProperty("stereo",true);
+    bad.getProperty("payload",{}).getProperty("sources",{})[0].getDynamicObject()
+        ->setProperty("rightPhysical",7);
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
+    bad=valid();
+    bad.getDynamicObject()->setProperty("requestId","io-capture-0001");
+    const auto wrongBackend=canonicalSnapshot(); // NOT ASIO and NOT admitted
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,wrongBackend,bus).ok());
+}
+
 int main() {
+    qualifiedCaptureNativeIntentRegression();
     retainedDocumentDoesNotAdmitPcm();
     auto snap=canonicalSnapshot();
     auto bus=realBusReadbackFixture();
