@@ -151,5 +151,5 @@ test("G-MV28 same-epoch hardware remap retires gesture and throttle",()=>{
   assert.equal(vm.scalarGestureFlushPlan({now:125,lastSent:prior,identity:old}),"QUEUE");
   assert.equal(vm.scalarIdentityMatches(old,{...old,hardwareConfiguration:undefined}),false);
   const nativeBridge=readFileSync("web/approved-native-bridge.js","utf8");
-  assert.match(nativeBridge,/hardwareConfiguration:logicalView\\?undefined:hardware\\?\\.hardwareConfiguration/);
+  assert.ok(nativeBridge.includes("hardwareConfiguration:logicalView?undefined:hardware?.hardwareConfiguration"));
 });
