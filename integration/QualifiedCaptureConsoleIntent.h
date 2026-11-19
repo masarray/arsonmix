@@ -88,10 +88,8 @@ inline QualifiedCaptureConsoleDecode decodeQualifiedCaptureConsoleIntent(
        !payload.isObject()||!graphRows.isArray()||!busRows.isArray()||
        !static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",false))||
        device.getProperty("backend","").toString()!="ASIO"||
-       !requestId.isString()||
-       !requestId.toString().startsWith("io-capture-")||
+       !requestId.isString()||requestId.toString().isEmpty()||
        requestId.toString().length()>128||
-       requestId.toString().length()<13||
        payload.getProperty("confirmed",{})!=juce::var(true))
         return reject("SECONDARY_CAPTURE_OPERATOR_OR_GRAPH_NOT_ADMITTED");
     if(!nativeV8Decimal(epochRaw)||!nativeV8Decimal(revisionRaw)||
