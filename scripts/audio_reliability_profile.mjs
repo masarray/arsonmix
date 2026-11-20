@@ -16,7 +16,9 @@ const percent=(a,b)=>b>0?Math.round(10000*a/b)/100:null;
 
 export function parseHealthLog(log) {
   const samples=[], warnings=[], rejectedLines=[];
+  let sessionId=0;
   for(const [idx,line] of String(log).split(/\r?\n/).entries()){
+    if(/ \| SESSION \| started\s*$/.test(line)){sessionId++;continue;}
     if(!line.includes(" | AUDIO_HEALTH | "))continue;
     const m=/^(\S+) \| AUDIO_HEALTH \| (\{.*\})$/.exec(line);
     if(!m){warnings.push("line "+(idx+1)+": malformed/truncated AUDIO_HEALTH");rejectedLines.push(idx+1);continue;}
@@ -61,7 +63,7 @@ export function parseHealthLog(log) {
       rejectedLines.push(idx+1);
       continue;
     }
-    samples.push({...sample,atMs:time,line:idx+1});
+    samples.push({...sample,atMs:time,line:idx+1,sessionId});
   }
   return {samples,warnings,rejectedLines};
 }
@@ -85,7 +87,7 @@ export function p95p99FromDelta(counts) {
 }
 
 const sameScope=(a,b)=>[
-  "deviceGeneration","device","liveBackendClass","driver","rate","buffer",
+  "sessionId","deviceGeneration","device","liveBackendClass","driver","rate","buffer",
   "inputDevice","outputDevice","deviceInputChannels","deviceOutputChannels",
   "activeInputMaskHex","activeOutputMaskHex","nativeFxGraphRevision",
   "nativeFxInstalledCount","nativeFxProcessingCount","nativeGlobalFxBypassed",
@@ -118,6 +120,9 @@ function describeSegment(segment){
     // The legacy dryTest control is only a UI intent; actual DRY/FX is
     // derived from accepted native INSERT+rack+GLOBAL bypass readback.
     lineStart:first.line,lineEnd:last.line,
+    sessionId:s.sessionId,startedAt:new Date(first.atMs).toISOString(),
+    endedAt:new Date(last.atMs).toISOString(),
+    startTimeMs:first.atMs,endTimeMs:last.atMs,
     mode:s.nativeFxProcessingCount===0?"DRY":"FX",
     nativeFxInstalledCount:s.nativeFxInstalledCount,
     nativeFxProcessingCount:s.nativeFxProcessingCount,
@@ -193,12 +198,22 @@ export function analyzeHealthLog(log) {
 export function compareDryFx(analysis){
   const ready=analysis.segments.filter(s=>s.comparable&&
     s.diagnosticRoute==="NORMAL"&&s.renderHardwareXrun==="UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE");
-  const dry=[...ready].reverse().find(s=>s.mode==="DRY");
-  const fx=[...ready].reverse().find(s=>s.mode==="FX" &&
-    s.nativeFxInstalledCount>0 && s.nativeFxProcessingCount>0);
-  if(!dry||!fx)return {comparable:false,reason:"Need >=30s each of real accepted NORMAL/DRY and NORMAL/FX under the same device."};
+  // Pair only an immediately preceding accepted DRY window with the next
+  // accepted FX window. Never compare an earlier app session, an unrelated
+  // third run, or a hours-old source recording with today's loaded inserts.
+  const fxIndex=analysis.segments.findLastIndex(s=>ready.includes(s) &&
+    s.mode==="FX" && s.nativeFxInstalledCount>0 && s.nativeFxProcessingCount>0);
+  const fx=fxIndex>=0?analysis.segments[fxIndex]:null;
+  const dry=fxIndex>0?analysis.segments[fxIndex-1]:null;
+  if(!fx||!dry||!dry.comparable||dry.mode!=="DRY"||
+     dry.diagnosticRoute!=="NORMAL")
+    return {comparable:false,reason:"Need contiguous real NORMAL/DRY then NORMAL/FX windows, each >=30s."};
+  if(dry.sessionId!==fx.sessionId ||
+     fx.startTimeMs<dry.endTimeMs ||
+     fx.startTimeMs-dry.endTimeMs>60000)
+    return {comparable:false,reason:"DRY/FX windows belong to different app sessions or are more than 60s apart."};
   for(const key of ["backend","device","inputDevice","outputDevice",
-                     "deviceGeneration","nativeFxGraphRevision",
+                     "sessionId","deviceGeneration","nativeFxGraphRevision",
                      "inputMask","outputMask","inputChannels","outputChannels",
                      "sampleRate","bufferFrames"]){
     if(dry[key]!==fx[key])return {comparable:false,reason:"Mismatched "+key+": do not compare unlike hardware profiles."};
