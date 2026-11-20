@@ -6361,7 +6361,7 @@ private:
                                         }
                                         const auto bands=entry.settings
                                             .getProperty("bands",{}).getArray();
-                                        std::array<float,G::bandCount> values{};
+                                        std::array<float,armix::builtin_fx::GraphicEq31Core::bandCount> values{};
                                         if(!bands||bands->size()!=static_cast<int>(values.size()))
                                             return false;
                                         for(std::size_t i=0;i<values.size();++i)
