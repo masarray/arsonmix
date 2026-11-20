@@ -124,6 +124,36 @@
       outputPins:Array.isArray(active.enabledOutputs)?active.enabledOutputs.slice():null,
       rate:0,buffer:0};
   }
+  // DAW-style read-only latency from the ACTUAL active JUCE device.
+  // Driver input/output hints are not an electrical loopback measurement.
+  // Unavailable or independently clocked paths are NEVER converted to 0 ms.
+  function setupLatencyReadback(active) {
+    const rate=Number(active?.rate);
+    if(active?.open!==true || !Number.isFinite(rate)||rate<=0)
+      return Object.freeze({ready:false});
+    const milliseconds=frames=>{
+      if(frames===null||frames===undefined||frames===''||
+         !Number.isSafeInteger(Number(frames))||Number(frames)<0)return null;
+      return Math.round(Number(frames)*10000/rate)/10;
+    };
+    const input=milliseconds(active.driverInputLatencyFrames);
+    const output=milliseconds(active.driverOutputLatencyFrames);
+    const fx=milliseconds(active.hostFxLatencyFrames);
+    const buffer=milliseconds(active.buffer);
+    const sameClock=active.latencyClockScope==="SINGLE_CLOCK_DRIVER_HINTS";
+    const hint=sameClock&&input!==null&&output!==null
+      ?Math.round((input+output)*10)/10:null;
+    const fmt=x=>x===null?"N/A":x.toFixed(1)+" ms";
+    return Object.freeze({
+      ready:true,inputMs:input,outputMs:output,fxMs:fx,bufferMs:buffer,
+      driverIoHintMs:hint,
+      line:"IN "+fmt(input)+" · OUT "+fmt(output)+
+        " · FX "+fmt(fx)+" · BUFFER "+fmt(buffer),
+      note:hint===null?"Driver I/O estimate unavailable · verify driver and clock":
+        "Driver I/O hint ≈ "+fmt(hint)+" · not measured round-trip",
+      provenance:active.latencyProvenance||"UNKNOWN"
+    });
+  }
   function setupPresentation(inventory,draft,state=setupInitial()) {
     const active=inventory?.active||{},types=inventory?.types||[];
     const type=types.find(t=>t?.name===draft?.backend);
@@ -423,7 +453,7 @@
     return Object.freeze({kind:"SAME",expirePending:false});
   }
   return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,
-    externalPresentation,setupDraft,setupPresentation,setupEditDraft,
+    externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,
     setupInitial,setupBegin,setupAck,setupReadback,
     setupTimeout,setupClearResult,nativeLifecycleLease,nativeLifecycleDecision,
     nativeTransientReadbackPolicy});
