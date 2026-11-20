@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace armix::diagnostics {
