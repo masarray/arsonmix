@@ -6302,7 +6302,7 @@ private:
                                     return state.valid;
                                 };
                                 geq->bindUserPresetService(
-                                    [this,validLease] {
+                                    [this,validLease,catalog] {
                                         std::vector<armix::builtin_fx::
                                             GraphicEq31Editor::UserPresetEntry> list;
                                         if(!validLease())return list;
@@ -6311,7 +6311,7 @@ private:
                                             list.push_back({item.id,item.name});
                                         return list;
                                     },
-                                    [this,validLease,held](const juce::String& name) {
+                                    [this,validLease,held,catalog](const juce::String& name) {
                                         if(!validLease()||
                                            !Store::safeText(name,80)) {
                                             emitNotice("Graphic EQ preset name/FX instance invalid",true);
@@ -6339,7 +6339,7 @@ private:
                                         emitNotice("Graphic EQ preset saved: "+name);
                                         return entry.id;
                                     },
-                                    [this,validLease,held](const juce::String& presetId) {
+                                    [this,validLease,held,catalog](const juce::String& presetId) {
                                         if(!validLease()||!Store::safeId(presetId)) {
                                             emitNotice("Graphic EQ preset lease invalid",true);
                                             return false;
