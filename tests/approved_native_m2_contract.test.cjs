@@ -6444,6 +6444,8 @@ test("G-MV36 ChannelId vendor FX editor dispatch retains exactly one physical in
      protocol.nativeHardwareConfiguration(next.device)).kind,"UNAVAILABLE");
  }
  assert.equal(plan(snap,navigation.lease,"wrong-device").kind,"UNAVAILABLE");
+ assert.equal(fxRackVM.nativeEditorDispatchPlan(snap,navigation.lease,{
+   hardwareConfiguration,offline:true}).kind,"UNAVAILABLE");
  assert.equal(JSON.stringify(snap),original,"pure editor plan never writes PCM");
 });
 test("G-MV36 correlated FX HWND ACK guards request, device, roster, and plugin instance",()=>{
@@ -6476,6 +6478,8 @@ test("G-MV36 correlated FX HWND ACK guards request, device, roster, and plugin i
  assert.equal(verdict(pending,{requestId:pending.requestId,
    instanceId:"native-fx-8",ok:true}),"ACKED");
  assert.equal(verdict(pending,{instanceId:"native-fx-8",ok:true}),"IGNORE");
+ assert.equal(fxRackVM.nativeEditorAckResult(pending,null,native,{
+   hardwareConfiguration,offline:true}),"STALE");
  for(const mutate of [
    s=>{s.graph.rosterRevision="20";},
    s=>{s.graph.revision="47";},
@@ -6529,6 +6533,7 @@ test("G-MV36 one correlated native editor transport and JUCE echo, no duplicate 
  assert.match(bridge,/backend\.emitEvent\("arMixAction",\{action:plan\.action,requestId,\.\.\.plan\.payload\}\);/);
  assert.match(bridge,/dispatchPhysicalFxEditor\(plan,lease,"M4"\)/);
  assert.match(bridge,/dispatchPhysicalFxEditor\(plan,lease,"CHANNEL_ID"\)/);
+ assert.match(bridge,/if\(logicalView\|\|fxRackVM\.nativeEditorDispatchPlan\(current,lease,/);
  assert.match(bridge,/pendingFxEditorAck=null; \/\/ expire old native HWND/);
  assert.match(bridge,/fxRackVM\.nativeEditorAckResult\(pendingFxEditorAck,ack,accepted,/);
  assert.match(bridge,/if\(verdict==="IGNORE"\)return; \/\/ obsolete, duplicate or unrelated ACK/);
