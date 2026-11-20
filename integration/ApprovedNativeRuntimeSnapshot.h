@@ -45,8 +45,10 @@ inline bool publishQualifiedSecondaryCaptureCapability(
        !static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",false))||
        !static_cast<bool>(live.getProperty("directRouteAuthorized",false))||
        static_cast<bool>(live.getProperty("adaptiveClockActive",true))||
-       live.getProperty("asioRegistryAttestation","").toString().isEmpty()||
-       live.getProperty("asioRegistryAttestation","").toString()=="NONE"||
+       (live.getProperty("asioRegistryAttestation","").toString()!=
+            "POSTOPEN_REGISTERED_ASIO_DRIVER_CLASS_PINNED" &&
+        live.getProperty("asioRegistryAttestation","").toString()!=
+            "SAVED_PREFLIGHT_POSTOPEN_REGISTRATION_CONSISTENT")||
        secondary.getProperty("role","").toString()!="INPUT_ONLY_ASIO"||
        static_cast<bool>(secondary.getProperty("installedInputMap",true))||
        static_cast<bool>(secondary.getProperty("driverReady",true))||
