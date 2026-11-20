@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <thread>
 
 namespace armix::device
@@ -21,6 +22,8 @@ class SecondaryCaptureClockStream final
 public:
     static constexpr int capacityFrames=32768;
     static constexpr int maxCallbackFrames=8192;
+    // Independent atomic admission gates avoid A/B clock callback contention.
+    static constexpr std::uint32_t writerFlag=1U,readerUnit=2U;
     struct Format
     {
         double captureHz=0.,primaryHz=0.;
@@ -36,12 +39,11 @@ public:
 
     bool prepare(const Format& format,double desiredTargetMs=24.)
     {
-        if(ready_.load(std::memory_order_acquire)||
-           producers_.load(std::memory_order_acquire)!=0||
-           consumers_.load(std::memory_order_acquire)!=0)
-            return false;
+        if(ready_.load(std::memory_order_acquire))return false;
+        // Faulted callbacks may still be in flight even with ready=false.
+        // CONTROL closes BOTH entry gates and drains old leases before ASRC.
+        stop(); // leaves both writer bits held until activate()
         // CONTROL owns the entire format and bridge reprepare interval.
-        ready_.store(false,std::memory_order_release);
         fault_.store(false,std::memory_order_release);
         // A previous successfully prepared (but not activated) stream must
         // never survive an invalid replacement request. activate() may not
@@ -75,6 +77,9 @@ public:
         if(!prepared_||fault_.load(std::memory_order_acquire))
             return false;
         ready_.store(true,std::memory_order_release);
+        // Complete physical format + FIR initialization before opening RT.
+        producerActivity_.fetch_and(~writerFlag,std::memory_order_seq_cst);
+        consumerActivity_.fetch_and(~writerFlag,std::memory_order_seq_cst);
         return true;
     }
 
@@ -90,10 +95,14 @@ public:
     // Never call this or yield on either audio callback.
     void stop() noexcept
     {
+        // Set BOTH writer bits BEFORE observing in-flight borrow counts.
+        // Each CAS-admitted producer/consumer must retire before resetStopped.
+        producerActivity_.fetch_or(writerFlag,std::memory_order_seq_cst);
+        consumerActivity_.fetch_or(writerFlag,std::memory_order_seq_cst);
         ready_.store(false,std::memory_order_release);
-        while(producers_.load(std::memory_order_acquire)!=0||
-              consumers_.load(std::memory_order_acquire)!=0)
-            std::this_thread::yield();
+        while((producerActivity_.load(std::memory_order_seq_cst)&~writerFlag)!=0||
+              (consumerActivity_.load(std::memory_order_seq_cst)&~writerFlag)!=0)
+            std::this_thread::yield(); // CONTROL only, never RT
         prepared_=false;
         fault_.store(false,std::memory_order_release);
         bridge_.resetStopped(); // no live producer or consumer
@@ -102,16 +111,23 @@ public:
 
     bool push(const float* const* capture,int channels,int frames) noexcept
     {
-        producers_.fetch_add(1,std::memory_order_acq_rel);
+        // One nonblocking CAS; no spin/lock/device call on B callback.
+        auto state=producerActivity_.load(std::memory_order_seq_cst);
+        if((state&writerFlag)!=0 ||
+           state>std::numeric_limits<std::uint32_t>::max()-readerUnit ||
+           !producerActivity_.compare_exchange_strong(
+                state,state+readerUnit,
+                std::memory_order_seq_cst,std::memory_order_seq_cst))
+            return false;
         const bool enabled=ready_.load(std::memory_order_acquire)&&
             !fault_.load(std::memory_order_acquire);
-        if(!enabled){producers_.fetch_sub(1,std::memory_order_release);return false;}
+        if(!enabled){producerActivity_.fetch_sub(readerUnit,std::memory_order_seq_cst);return false;}
         if(!capture||channels!=format_.channels||frames<1||
            frames>maxCallbackFrames)
         {
             invalidBlocks_.fetch_add(1,std::memory_order_relaxed);
             fault();
-            producers_.fetch_sub(1,std::memory_order_release);
+            producerActivity_.fetch_sub(readerUnit,std::memory_order_seq_cst);
             return false;
         }
         for(int c=0;c<channels;++c)
@@ -119,13 +135,13 @@ public:
             {
                 invalidBlocks_.fetch_add(1,std::memory_order_relaxed);
                 fault();
-                producers_.fetch_sub(1,std::memory_order_release);
+                producerActivity_.fetch_sub(readerUnit,std::memory_order_seq_cst);
                 return false;
             }
         captureBlocks_.fetch_add(1,std::memory_order_relaxed);
         // AdaptiveClockBridge drops NEWEST frames on overflow; no RT wait.
         const bool accepted=bridge_.push(capture,channels,frames)==frames;
-        producers_.fetch_sub(1,std::memory_order_release);
+        producerActivity_.fetch_sub(readerUnit,std::memory_order_seq_cst);
         return accepted;
     }
 
@@ -133,12 +149,19 @@ public:
               std::uint64_t captureGeneration,std::uint64_t primaryEpoch,
               std::uint64_t deviceLease) noexcept
     {
-        consumers_.fetch_add(1,std::memory_order_acq_rel);
+        // Independent A render gate: no producer-vs-consumer CAS collision.
+        auto state=consumerActivity_.load(std::memory_order_seq_cst);
+        if((state&writerFlag)!=0 ||
+           state>std::numeric_limits<std::uint32_t>::max()-readerUnit ||
+           !consumerActivity_.compare_exchange_strong(
+                state,state+readerUnit,
+                std::memory_order_seq_cst,std::memory_order_seq_cst))
+            return false;
         const bool valid=output&&channels>0&&channels<=16&&frames>0&&
             frames<=maxCallbackFrames;
         if(!valid)
         {
-            consumers_.fetch_sub(1,std::memory_order_release);
+            consumerActivity_.fetch_sub(readerUnit,std::memory_order_seq_cst);
             return false;
         }
         for(int c=0;c<channels;++c)
@@ -146,7 +169,7 @@ public:
             {
                 invalidBlocks_.fetch_add(1,std::memory_order_relaxed);
                 fault();
-                consumers_.fetch_sub(1,std::memory_order_release);
+                consumerActivity_.fetch_sub(readerUnit,std::memory_order_seq_cst);
                 return false;
             }
         const bool authorised=ready_.load(std::memory_order_acquire)&&
@@ -166,14 +189,16 @@ public:
             for(int c=0;c<channels;++c)
                 std::fill_n(output[c],frames,0.f);
         }
-        consumers_.fetch_sub(1,std::memory_order_release);
+        consumerActivity_.fetch_sub(readerUnit,std::memory_order_seq_cst);
         return authorised;
     }
 
     bool ready() const noexcept
     {
         return ready_.load(std::memory_order_acquire)&&
-               !fault_.load(std::memory_order_acquire);
+               !fault_.load(std::memory_order_acquire)&&
+               !(producerActivity_.load(std::memory_order_seq_cst)&writerFlag)&&
+               !(consumerActivity_.load(std::memory_order_seq_cst)&writerFlag);
     }
     bool faulted() const noexcept{return fault_.load(std::memory_order_acquire);}
     const Format& format() const noexcept{return format_;} // CONTROL ONLY
@@ -194,7 +219,8 @@ private:
     double targetMs_=0.;
     bool prepared_=false; // CONTROL
     std::atomic<bool> ready_{false},fault_{false};
-    std::atomic<unsigned> producers_{0},consumers_{0};
+    std::atomic<std::uint32_t> producerActivity_{writerFlag},
+                               consumerActivity_{writerFlag};
     std::atomic<std::uint64_t> captureBlocks_{0},primaryBlocks_{0},
                                invalidBlocks_{0},staleReads_{0};
 };
