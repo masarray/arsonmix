@@ -232,7 +232,7 @@ public:
         addAndMakeVisible(peakLabel_);
         setResizable(true, true);
         setResizeLimits(900, 470, 1920, 470);
-        setSize(1420, 470);
+        setSize(1280, 470);
         startTimerHz(20);
     }
 
@@ -290,11 +290,10 @@ public:
     }
 
 private:
-    // Never reinterpret/trace the owner artwork with JUCE Paths. The complete
-    // slider_eq_grp.svg (Track + Text + THUMB + embedded thumb image) is parsed
-    // once per value change on the MESSAGE thread. Only two named SVG groups
-    // are changed: Text gets the canonical dbx label; THUMB gets translate Y.
-    // Cached Drawables are repainted without reparsing on every frame.
+    // Preserve the owner's authored SVG as an editable DRAWABLE TREE.
+    // Parse once per band on the message thread, then move only the existing
+    // THUMB Drawable via a cheap affine transform during drag/automation.
+    // No raster decode, XML parsing or heap allocation in the drag path.
     class EqSkin final : public juce::LookAndFeel_V4 {
     public:
         EqSkin() {
@@ -302,7 +301,8 @@ private:
             originalSvg_ = juce::String::fromUTF8(BinaryData::slider_eq_grp_svg,
                 static_cast<int>(BinaryData::slider_eq_grp_svgSize));
 #endif
-            cachedGain_.fill(std::numeric_limits<float>::quiet_NaN());
+            lastGain_.fill(std::numeric_limits<float>::quiet_NaN());
+            thumbGroups_.fill(nullptr);
             setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(232, 236, 237));
             setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(78, 85, 88));
         }
@@ -312,19 +312,24 @@ private:
                               juce::Slider& slider) override {
             const auto id = slider.getComponentID();
             if (!id.startsWith("geq31-band-")) return;
-            const int band = id.fromFirstOccurrenceOf("geq31-band-", false, false).getIntValue();
-            if (band < 0 || band >= static_cast<int>(GraphicEq31Core::bandCount)) return;
-            const float gain = static_cast<float>(slider.getValue());
-            if (!drawables_[static_cast<std::size_t>(band)] ||
-                cachedGain_[static_cast<std::size_t>(band)] != gain)
-                rebuild(static_cast<std::size_t>(band), gain);
-            if (auto* art = drawables_[static_cast<std::size_t>(band)].get()) {
+            const int index = id.fromFirstOccurrenceOf("geq31-band-", false, false).getIntValue();
+            if (index < 0 || index >= static_cast<int>(GraphicEq31Core::bandCount)) return;
+            const auto band = static_cast<std::size_t>(index);
+            if (!drawables_[band]) createBandArtwork(band);
+            if (auto* art = drawables_[band].get()) {
+                const auto gain = static_cast<float>(slider.getValue());
+                if (lastGain_[band] != gain && thumbGroups_[band] != nullptr) {
+                    // Authored SVG THUMB centre: y~=916, native viewBox 2042.
+                    // +/-560px keeps the original 418px thumb inside Track.
+                    const float shift = -560.f * juce::jlimit(-12.f, 12.f, gain) / 12.f;
+                    thumbGroups_[band]->setTransform(juce::AffineTransform::translation(0.f, shift));
+                    lastGain_[band] = gain;
+                }
                 art->drawWithin(g, {static_cast<float>(x), static_cast<float>(y),
                                    static_cast<float>(width), static_cast<float>(height)},
                                 juce::RectanglePlacement::stretchToFit, 1.f);
             } else {
-                // Fail visibly if the owner's SVG cannot be rendered. There is
-                // deliberately NO hand-painted replacement thumb/track.
+                // No silent surrogate design: broken asset is a visible error.
                 g.setColour(juce::Colours::red);
                 g.drawFittedText("SVG ERROR", x, y, width, height,
                                  juce::Justification::centred, 2);
@@ -359,7 +364,7 @@ private:
         }
 
     private:
-        void rebuild(std::size_t band, float gain) {
+        void createBandArtwork(std::size_t band) {
             if (originalSvg_.isEmpty()) return;
             auto document = juce::XmlDocument::parse(originalSvg_);
             if (!document) return;
@@ -376,19 +381,22 @@ private:
             tspan->addTextElement(juce::String(graphicEq31Labels[band]));
             frequency->setAttribute("text-anchor", "middle");
             frequency->setAttribute("style", "transform: matrix(4.167,0,0,4.167,237.76,1850.466)");
-            // The authored THUMB centre is at y~=916 in a 2042px viewBox.
-            // Move its ORIGINAL embedded image and vector layers together.
-            // Top/bottom keep the full 418px-high thumb inside the artwork.
-            const float travelSvg = 560.f;
-            thumbGroup->setAttribute("transform", "translate(0," +
-                juce::String(-travelSvg * juce::jlimit(-12.f, 12.f, gain) / 12.f, 3) + ")");
-            drawables_[band] = juce::Drawable::createFromSVG(*document);
-            if (drawables_[band]) cachedGain_[band] = gain;
+            auto drawable = juce::Drawable::createFromSVG(*document);
+            if (!drawable) return;
+            // JUCE 8.0.15 maps SVG group IDs onto Drawable component IDs.
+            // findChildWithID searches only DIRECT children; first descend
+            // root -> Slider_EQ -> THUMB. This is the untouched author layer.
+            auto* authoredFader = drawable->findChildWithID("Slider_EQ");
+            auto* authoredThumb = authoredFader ? authoredFader->findChildWithID("THUMB") : nullptr;
+            if (!authoredThumb) return;
+            thumbGroups_[band] = authoredThumb;
+            drawables_[band] = std::move(drawable);
         }
 
         juce::String originalSvg_;
         std::array<std::unique_ptr<juce::Drawable>, GraphicEq31Core::bandCount> drawables_{};
-        std::array<float, GraphicEq31Core::bandCount> cachedGain_{};
+        std::array<juce::Component*, GraphicEq31Core::bandCount> thumbGroups_{};
+        std::array<float, GraphicEq31Core::bandCount> lastGain_{};
     };
 
     void timerCallback() override {
