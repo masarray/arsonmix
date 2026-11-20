@@ -88,6 +88,16 @@ public:
     // The coefficient ramp is sample-accurate and remains click-free.
     void processStereo(float* left,float* right,std::size_t frames) noexcept {
         if(!ready_||!left||!right)return;
+        // A third-party upstream FX may deliver a non-finite sample. Never
+        // let it poison the persistent IIR memories for every later block.
+        // Bounded in-place validation; ordinary finite PCM is bit-unchanged.
+        bool invalidInput=false;
+        for(std::size_t n=0;n<frames;++n) {
+            if(!std::isfinite(left[n])){left[n]=0.f;invalidInput=true;}
+            if(!std::isfinite(right[n])){right[n]=0.f;invalidInput=true;}
+        }
+        if(invalidInput)reset(); // AUDIO-owned histories only
+        bool processed=false;
         for(auto& b:bands_) {
             if(b.frames==0 && b.db==0.) {
                 // Flush stale IIR memories after a completed ramp-to-unity,
@@ -95,6 +105,7 @@ public:
                 b.l1=b.l2=b.r1=b.r2=0.;
                 continue;
             }
+            processed=true;
             for(std::size_t n=0;n<frames;++n) {
                 if(b.frames>0) {
                     b.current.b0+=b.step.b0;b.current.b1+=b.step.b1;
@@ -113,6 +124,18 @@ public:
                 left[n]=static_cast<float>(yl);
                 right[n]=static_cast<float>(yr);
             }
+        }
+        // Extreme, invalid upstream amplitudes may overflow when converting
+        // double biquad results back to float. This is an error-recovery path,
+        // not a musical limiter or automatic gain control. Finite >0 dBFS
+        // PCM remains untouched for the operator to manage headroom.
+        if(processed) {
+            bool invalidOutput=false;
+            for(std::size_t n=0;n<frames;++n) {
+                if(!std::isfinite(left[n])){left[n]=0.f;invalidOutput=true;}
+                if(!std::isfinite(right[n])){right[n]=0.f;invalidOutput=true;}
+            }
+            if(invalidOutput)reset();
         }
     }
     void reset() noexcept {
