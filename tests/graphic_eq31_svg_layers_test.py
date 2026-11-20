@@ -126,7 +126,7 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('int matchingFactoryPreset() const', self.native)
         self.assertIn('if(preset_.getSelectedId()!=accepted)', self.native)
         self.assertIn('flat_.setBounds(r-125,16,44,24)', self.native)
-        self.assertIn('constexpr int x0=46;', self.native)
+        self.assertIn('constexpr int x0=45, artY=55, artH=229', self.native)
         self.assertNotIn('jump_', self.native)
 
     def test_black_svg_ticks_but_original_source_unchanged(self):
