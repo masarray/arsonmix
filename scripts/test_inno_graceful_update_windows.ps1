@@ -47,9 +47,9 @@ function Test-VBCableSmartDetection {
         [pscustomobject]@{FriendlyName="CABLE Output (VB-Audio Virtual Cable)";Status="OK"}
     }
     # Mock vendor handoff: no real device, driver, elevation, or external EXE.
-    $script:vendorHandoffCount=0
+    $global:ArSonMixTestVendorHandoffCount=0
     function Start-Process {
-        $script:vendorHandoffCount++
+        $global:ArSonMixTestVendorHandoffCount++
         throw "Fixture vendor handoff failure before process handle"
     }
     function Get-AuthenticodeSignature {
@@ -99,7 +99,7 @@ function Test-VBCableSmartDetection {
                 Assert-Condition ($result.reason -ceq $case.Reason) "VB-CABLE reason mismatch for $($case.Name)"
             }
         }
-        Assert-Condition ($script:vendorHandoffCount -eq 0) "Preflight PnP fixtures unexpectedly launched vendor"
+        Assert-Condition ($global:ArSonMixTestVendorHandoffCount -eq 0) "Preflight PnP fixtures unexpectedly launched vendor"
         # Use a synthetic ZIP and a mocked signature to enter the *real*
         # setup handoff code without ever executing a driver or showing UAC.
         $source=Join-Path $work 'vendor-handoff-source'
@@ -116,13 +116,14 @@ function Test-VBCableSmartDetection {
         & $bootstrap -Archive $archive -ExpectedSha256 $sha
         $outcome=Get-Content -LiteralPath $record -Raw | ConvertFrom-Json
         Assert-Condition ($outcome.state -ceq 'REPAIR_REQUIRED') "Failed vendor handoff became retryable: $($outcome.state)"
-        Assert-Condition ($script:vendorHandoffCount -eq 1) "Fixture did not reach single mocked vendor handoff"
+        Assert-Condition ($global:ArSonMixTestVendorHandoffCount -eq 1) "Fixture did not reach single mocked vendor handoff"
         & $bootstrap -Archive $archive -ExpectedSha256 $sha
         $outcome=Get-Content -LiteralPath $record -Raw | ConvertFrom-Json
         Assert-Condition ($outcome.state -ceq 'REPAIR_REQUIRED') "Repeated setup did not remain fail-closed"
-        Assert-Condition ($script:vendorHandoffCount -eq 1) "Repeat setup incorrectly relaunched uncertain vendor installer"
+        Assert-Condition ($global:ArSonMixTestVendorHandoffCount -eq 1) "Repeat setup incorrectly relaunched uncertain vendor installer"
     } finally {
         $env:APPDATA=$originalAppData
+        Remove-Variable -Name ArSonMixTestVendorHandoffCount -Scope Global -ErrorAction SilentlyContinue
     }
     Write-Host 'VBCABLE_SMART_DETECTION_PASS'
 }
