@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <string>
+#include <limits>
 
 #define REQUIRE(x) do {if(!(x))throw std::runtime_error( \
   std::string("FX_ACCEPTED_SNAPSHOT_REJECTED: ")+ #x +" line "+ \
@@ -107,6 +108,24 @@ int main(){
     REQUIRE(peakAfter<peakBefore*.5f);
     output->endChangeGesture();
     REQUIRE(geq.getLatencySamples()==0);
+    // Final post-EQ Output boost must not reintroduce Inf after the core
+    // sanitized PCM. Normal, valid PCM above unity is never limited.
+    std::array<float,GraphicEq31Core::bandCount> flatBands{};
+    REQUIRE(geq.setBandsFromPreset(flatBands,6.f));
+    for(int block=0;block<10;++block) {
+      fillTone();
+      geq.processBlock(pcm,midi); // settle the 15 ms Output gain ramp
+    }
+    pcm.clear();
+    pcm.setSample(0,0,std::numeric_limits<float>::max());
+    pcm.setSample(1,0,-std::numeric_limits<float>::max());
+    pcm.setSample(0,7,std::numeric_limits<float>::quiet_NaN());
+    pcm.setSample(1,11,std::numeric_limits<float>::infinity());
+    geq.processBlock(pcm,midi);
+    for(int n=0;n<pcm.getNumSamples();++n) {
+      REQUIRE(std::isfinite(pcm.getSample(0,n)));
+      REQUIRE(std::isfinite(pcm.getSample(1,n)));
+    }
   }
   // Atomic preset/factory/Flat contract: one valid 31+Output batch, never
   // a partially committed corrupt preset. Flat must retain Output Level.
