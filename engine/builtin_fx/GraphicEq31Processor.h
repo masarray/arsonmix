@@ -319,6 +319,18 @@ public:
             attachments_.emplace_back(std::make_unique<Attachment>(
                 processor_.parameters(),"band"+juce::String(static_cast<int>(i)),slider));
         }
+        level_.setComponentID("geq31.output-level");
+        level_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        level_.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
+        level_.setDoubleClickReturnValue(true,0.);
+        level_.setTooltip("Output Level: -24 to +6 dB, unity at 0 dB");
+        level_.onValueChange=[this]{
+            repaint(juce::Rectangle<int>(getWidth()-110,85,105,142));
+        };
+        levelAttachment_=std::make_unique<Attachment>(
+            processor_.parameters(),"levelDb",level_);
+        addAndMakeVisible(level_);
+
         viewport_.setViewedComponent(&bandSurface_,false);
         viewport_.setScrollBarsShown(false,true);
         viewport_.setScrollBarThickness(7);
@@ -379,8 +391,8 @@ public:
         setResizable(true,true);
         // Hardware stays 1:1 as authored SVG; only the 31-band viewport
         // renders at 80%. Header/control sizes are deliberately unchanged.
-        setResizeLimits(760,305,1660,305);
-        setSize(1330,305);
+        setResizeLimits(760,305,1750,305);
+        setSize(1430,305);
         startTimerHz(6); // GUI-only external host readback; no audio work
     }
 
@@ -411,29 +423,36 @@ public:
                        216,22,310,20,juce::Justification::centredLeft);
         g.setColour(juce::Colour::fromRGB(76,90,97).withAlpha(.45f));
         g.drawHorizontalLine(53,0.f,static_cast<float>(width));
-        // Two calibrated scales, adjacent to the first and last visible
-        // track: 12.5px bold Inter after shrinking just the hardware to 80%.
+        // Calibrated scales use the SAME ink as the Inter frequency numbers,
+        // slightly smaller so they never dominate the 31 band captions.
         const auto majorTickY=[this](float sourceY) noexcept {
             return juce::roundToInt(
                 static_cast<float>(viewport_.getY())+
                 sourceY*static_cast<float>(sliders_[0].getHeight())/2042.f);
         };
-        g.setColour(juce::Colour::fromRGB(23,32,37));
-        g.setFont(inter(12.5f).boldened());
+        g.setColour(juce::Colour::fromRGB(52,64,71)); // #344047
+        g.setFont(inter(10.5f).boldened());
         for(const auto& tick:std::array<std::pair<float,const char*>,3>{{
                 {208.75f,"+12"},{918.33f,"0"},{1627.92f,"-12"}}}) {
             const int labelY=majorTickY(tick.first)-9;
             g.drawText(tick.second,4,labelY,36,19,
                        juce::Justification::centredRight);
-            g.drawText(tick.second,getWidth()-40,labelY,36,19,
+            g.drawText(tick.second,viewport_.getRight()+6,labelY,36,19,
                        juce::Justification::centredLeft);
         }
+        g.setColour(juce::Colour::fromRGB(52,64,71));
+        g.setFont(inter(10.5f).boldened());
+        g.drawText("LEVEL",getWidth()-105,96,94,17,juce::Justification::centred);
+        g.drawText(juce::String(level_.getValue(),1)+" dB",
+                   getWidth()-105,205,94,19,juce::Justification::centred);
     }
     void resized() override {
         // Compact 80%-scale hardware: 31 x 40 px = 1240px, 229px tall.
         // Header is unchanged; 2px from divider to art, 12px bottom inset.
-        constexpr int x0=45, artY=55, artH=229;
-        viewport_.setBounds(x0,artY,juce::jmax(1,getWidth()-2*x0),238);
+        constexpr int x0=45, artY=55, artH=229, rightReserve=145;
+        viewport_.setBounds(x0,artY,
+            juce::jmax(1,getWidth()-x0-rightReserve),238);
+        level_.setBounds(getWidth()-94,125,72,72);
         bandSurface_.setSize(static_cast<int>(
             GraphicEq31Core::bandCount)*bandCellWidth,artH);
         for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i)
@@ -621,6 +640,15 @@ private:
 #if defined(ARMIX_GEQ31_VECTOR_ASSET) && ARMIX_GEQ31_VECTOR_ASSET
             originalSvg_=juce::String::fromUTF8(BinaryData::slider_eq_grp_svg,
                 static_cast<int>(BinaryData::slider_eq_grp_svgSize));
+            // Reuse the owner's distinct KNOB and POINTER artwork unchanged.
+            auto knobXML=juce::XmlDocument::parse(juce::String::fromUTF8(
+                BinaryData::KNOB_EQ_svg,static_cast<int>(BinaryData::KNOB_EQ_svgSize)));
+            if(knobXML) {
+                knobXML->setAttribute("viewBox","-40 38 150 152");
+                knobArtwork_=juce::Drawable::createFromSVG(*knobXML);
+                if(knobArtwork_)
+                    pointer_=knobArtwork_->findChildWithID("POINTER");
+            }
 #endif
             lastGain_.fill(std::numeric_limits<float>::quiet_NaN());
             thumbGroups_.fill(nullptr);
@@ -689,6 +717,30 @@ private:
             g.fillPath(x,juce::AffineTransform::scale(22.f/24.f)
                 .translated((button.getWidth()-22.f)*.5f,
                             (button.getHeight()-22.f)*.5f));
+        }
+        void drawRotarySlider(juce::Graphics& g,int x,int y,int width,
+                              int height,float sliderPos,float,float,
+                              juce::Slider& slider) override {
+            if(slider.getComponentID()!="geq31.output-level")return;
+            if(knobArtwork_) {
+                if(pointer_)
+                    pointer_->setTransform(juce::AffineTransform::rotation(
+                        (-0.75f+1.5f*sliderPos)*juce::MathConstants<float>::pi,
+                        35.f,113.6f));
+                knobArtwork_->drawWithin(g,{
+                    static_cast<float>(x),static_cast<float>(y),
+                    static_cast<float>(width),static_cast<float>(height)},
+                    juce::RectanglePlacement::centred,1.f);
+            }else {
+                // Standalone CTest target without BinaryData: safe fallback.
+                const auto bounds=juce::Rectangle<float>(
+                    static_cast<float>(x+4),static_cast<float>(y+4),
+                    static_cast<float>(width-8),static_cast<float>(height-8));
+                g.setColour(juce::Colour(0xff2b343a));
+                g.fillEllipse(bounds);
+                g.setColour(juce::Colour(0xff9ba6ac));
+                g.drawEllipse(bounds,1.f);
+            }
         }
         void drawLinearSlider(juce::Graphics& g,int x,int y,int width,int height,
                               float,float,float,juce::Slider::SliderStyle,
@@ -873,6 +925,8 @@ private:
             drawables_[band]=std::move(drawable);
         }
         juce::String originalSvg_;
+        std::unique_ptr<juce::Drawable> knobArtwork_;
+        juce::Component* pointer_=nullptr;
         std::array<std::unique_ptr<juce::Drawable>,GraphicEq31Core::bandCount> drawables_{};
         std::array<juce::Component*,GraphicEq31Core::bandCount> thumbGroups_{};
         std::array<float,GraphicEq31Core::bandCount> lastGain_{};
@@ -886,6 +940,8 @@ private:
     juce::Component bandSurface_;
     juce::Viewport viewport_;
     std::array<GraphicEq31DetentSlider,GraphicEq31Core::bandCount> sliders_;
+    juce::Slider level_;
+    std::unique_ptr<Attachment> levelAttachment_;
     std::vector<std::unique_ptr<Attachment>> attachments_;
     juce::ComboBox preset_;
     juce::TextButton flat_,save_,power_,close_;
