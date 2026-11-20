@@ -721,3 +721,30 @@ test('M2b native AUDIO SETUP holds one lease through visible selection and rebin
  assert.match(cpp,/Purpose::explicitApply/);
  assert.doesNotMatch(setup,/\.closeAudioDevice\(/);
 });
+
+
+test('P0 Audio Setup reports native driver latency ms, never fake measured loopback',()=>{
+  assert.match(main,/setProperty\("driverInputLatencyFrames",latencyReady/);
+  assert.match(main,/setProperty\("driverOutputLatencyFrames",latencyReady/);
+  assert.match(main,/setProperty\("hostFxLatencyFrames",latencyReady/);
+  assert.match(main,/JUCE_DRIVER_REPORTED_NOT_MEASURED_LOOPBACK_OR_ASIO_RTL/);
+  assert.match(gui,/AUDIO LATENCY · VERIFIED NATIVE DEVICE/);
+  assert.match(gui,/Driver-reported JUCE latency, not a measured analog loopback/);
+  const m=/function deviceLatencyDisplay\(active\)\{([\s\S]*?)\n  \}\n  function latencyText/.exec(gui);
+  assert.ok(m,'pure latency model must remain under one approved Audio Setup');
+  const compute=new Function('active',m[1]);
+  const actual={open:true,rate:48000,buffer:256,driverInputLatencyFrames:240,
+    driverOutputLatencyFrames:360,hostFxLatencyFrames:96,
+    latencyClockScope:'SINGLE_CLOCK_DRIVER_HINTS'};
+  assert.deepEqual(compute(actual),{
+    ready:true,input:5,output:7.5,fx:2,period:5.3,driverIoHintMs:12.5,
+    provenance:'UNKNOWN'
+  });
+  const noReport=compute({...actual,driverInputLatencyFrames:null,
+    latencyClockScope:'INDEPENDENT_CLOCKS_NO_DIRECT_ROUNDTRIP_ESTIMATE'});
+  assert.equal(noReport.input,null);
+  assert.equal(noReport.driverIoHintMs,null);
+  assert.equal(compute({...actual,open:false}).ready,false);
+  assert.equal(compute({...actual,driverOutputLatencyFrames:-1}).output,null);
+  assert.equal(compute({...actual,driverInputLatencyFrames:0}).input,0);
+});
