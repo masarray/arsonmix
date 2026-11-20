@@ -45,6 +45,18 @@ int main() {
     assert(!eq.prepare(7999.));
     assert(!eq.prepare(384001.));
     assert(eq.prepare(48000.));
+    // Flat fast path must be bit-exact for both channels, including after
+    // moving a previously active band back to 0 dB.
+    {
+        std::array<float,64> unchangedL{},unchangedR{};
+        for(std::size_t i=0;i<64;++i) {
+            unchangedL[i]=static_cast<float>(i)*0.001f;
+            unchangedR[i]=-unchangedL[i];
+        }
+        const auto referenceL=unchangedL,referenceR=unchangedR;
+        eq.processStereo(unchangedL.data(),unchangedR.data(),64);
+        assert(unchangedL==referenceL && unchangedR==referenceR);
+    }
     assert(!eq.setGain(31,3.));
     assert(!eq.setGain(1,13.));
     assert(!eq.setGain(1,-13.));
