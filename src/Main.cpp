@@ -6367,17 +6367,25 @@ private:
                                         for(std::size_t i=0;i<values.size();++i)
                                             values[i]=static_cast<float>(
                                                 static_cast<double>((*bands)[static_cast<int>(i)]));
-                                        // Entire payload was validated before changing
-                                        // any JUCE parameter. No external VST/device.
+                                        // Entire payload was validated before any
+                                        // change. Legacy band-only preset defaults
+                                        // the explicit Output Level to unity (0 dB).
+                                        const float levelDb=static_cast<float>(
+                                            static_cast<double>(entry.settings
+                                                .getProperty("levelDb",0.0)));
                                         const auto previous=fx->acceptedBands();
-                                        if(!fx->setBandsFromPreset(values))return false;
+                                        const float previousLevel=fx->acceptedLevelDb();
+                                        if(!fx->setBandsFromPreset(values,levelDb))
+                                            return false;
                                         const auto accepted=fx->acceptedBands();
-                                        bool matches=true;
+                                        bool matches=std::abs(
+                                            fx->acceptedLevelDb()-levelDb)<=.06f;
                                         for(std::size_t i=0;i<values.size();++i)
                                             if(std::abs(accepted[i]-values[i])>.06f)
                                                 matches=false;
                                         if(!matches) {
-                                            (void)fx->setBandsFromPreset(previous);
+                                            (void)fx->setBandsFromPreset(
+                                                previous,previousLevel);
                                             emitNotice("Graphic EQ preset readback rejected",true);
                                             return false;
                                         }

@@ -14,6 +14,7 @@ SVG = ROOT / 'assets/fx/graphic-eq31/slider_eq_grp.svg'
 PROCESSOR = ROOT / 'engine/builtin_fx/GraphicEq31Processor.h'
 MAIN = ROOT / 'src/Main.cpp'
 TEXTURE = ROOT / 'assets/fx/graphic-eq31/geq31_brushed_metal.jpg'
+KNOB = ROOT / 'assets/fx/graphic-eq31/geq31_knob_black.png'
 CMAKE = ROOT / 'CMakeLists.txt'
 EXPECTED_SHA256 = 'aeaf02b8904a667724f34774a692da39a5a466bae302611f347fae4d9fd14dba'
 TEXTURE_SHA256 = '4b7b5f68f502482f5d1fc1c973a48ae817087104485c71020c5bdfb8f6d1388c'
@@ -80,7 +81,7 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('getChildByAttribute("id","g2")', self.native)
         self.assertIn('"#080c0f","#12181c"', self.native)
         self.assertIn('static constexpr int bandCellWidth=40', self.native)
-        self.assertIn('setSize(1330,305)', self.native)
+        self.assertIn('setSize(1430,305)', self.native)
         self.assertIn('font-family: Inter; font-size: 27px; font-weight: 700', self.native)
         self.assertIn('font-family: Inter; font-size: 18px; font-weight: 600', self.native)
         self.assertIn('unitSpan->addTextElement(isKhz?"kHz":"Hz")', self.native)
@@ -92,17 +93,17 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('{208.75f,"+12"}',self.native)
         self.assertIn('{918.33f,"0"}',self.native)
         self.assertIn('{1627.92f,"-12"}',self.native)
-        self.assertIn('getWidth()-40,labelY,36,19',self.native)
+        self.assertIn('viewport_.getRight()+6,labelY,36,19',self.native)
         self.assertIn('g.setFont(inter(12.5f).boldened())',self.native)
         self.assertNotIn('smile_', self.native)
         self.assertNotIn('peakLabel_', self.native)
         self.assertIn('void timerCallback() override', self.native)
         self.assertNotIn('31 BANDS  /  +/-12 dB', self.native)
         self.assertNotIn('BinaryData::KNOB_EQ_svg', self.native)
-        self.assertNotIn('drawRotarySlider(', self.native)
+        self.assertIn('drawRotarySlider(', self.native)
         self.assertNotIn('getRawParameterValue("inputDb")', self.native)
         self.assertNotIn('getRawParameterValue("outputDb")', self.native)
-        self.assertIn('out.writeInt(stateMagic);out.writeInt(3);', self.native)
+        self.assertIn('out.writeInt(stateMagic);out.writeInt(4);', self.native)
 
     def test_shared_header_control_lease_and_right_rail(self):
         self.assertIn('dynamic_cast<juce::DocumentWindow*>(', self.native)
@@ -192,17 +193,17 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
     def test_compact_scale_and_symmetric_layout_without_header_changes(self):
         # 31 x 50px -> 31 x 40px and 286px -> 229px.
         self.assertEqual(31*40,1240)
-        self.assertEqual(1330-1240,2*45)
+        self.assertEqual(1430-1240,2*45+100)
         self.assertAlmostEqual(40/50,.8,places=6)
         self.assertLess(abs(229/286-.8),.002)
-        self.assertIn('setResizeLimits(760,305,1660,305)',self.native)
-        self.assertIn('setSize(1330,305)',self.native)
+        self.assertIn('setResizeLimits(860,305,1760,305)',self.native)
+        self.assertIn('setSize(1430,305)',self.native)
         self.assertIn('constexpr int x0=45, artY=55, artH=229',self.native)
-        self.assertIn('viewport_.setBounds(x0,artY,juce::jmax(1,getWidth()-2*x0),238)',self.native)
+        self.assertIn('juce::jmax(1,getWidth()-rightRailWidth-2*x0)',self.native)
         self.assertIn('static constexpr int bandCellWidth=40',self.native)
-        self.assertIn('juce::jmax(1,getWidth()-2*x0)',self.native)
+        self.assertIn('static constexpr int rightRailWidth=100',self.native)
         self.assertIn('g.drawText(tick.second,4,labelY,36,19',self.native)
-        self.assertIn('g.drawText(tick.second,getWidth()-40,labelY,36,19',self.native)
+        self.assertIn('g.drawText(tick.second,viewport_.getRight()+6,labelY,36,19',self.native)
         # Header remains the identical five placements established before v7.
         for spec in ('preset_.setBounds(r-349,16,152,24)',
                      'save_.setBounds(r-189,16,56,24)',
@@ -248,6 +249,35 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('g.setColour(juce::Colours::white);',self.native)
         # Full original THUMB/Track groups and source checksum remain unchanged.
         self.assertEqual(hashlib.sha256(self.raw).hexdigest(),EXPECTED_SHA256)
+
+
+    def test_static_png_dynamic_pointer_and_outer_blue_arc(self):
+        raw=KNOB.read_bytes()
+        self.assertTrue(raw.startswith(b'\\x89PNG\\r\\n\\x1a\\n'))
+        self.assertEqual(hashlib.sha256(raw).hexdigest(),
+                         '270aaf8220aa5659a15c46531fbcab55803d6351148400df1e86f0e143f75e03')
+        self.assertIn('assets/fx/graphic-eq31/geq31_knob_black.png',self.cmake)
+        self.assertIn('BinaryData::geq31_knob_black_png',self.native)
+        self.assertNotIn('BinaryData::KNOB_EQ_svg',self.native)
+        self.assertIn('g.drawImage(knobImage_',self.native)
+        self.assertIn('g.strokePath(arc',self.native)
+        self.assertIn('const auto dot=polar(side*.325f,end)',self.native)
+        self.assertIn('juce::Colour(0xff26b8f6)',self.native)
+        self.assertIn('juce::Colour(0xff27c8ff)',self.native)
+        self.assertIn('juce::jmap(db,-24.f,0.f,0.f,.5f)',self.native)
+        self.assertIn('juce::jmap(db,0.f,6.f,.5f,1.f)',self.native)
+        self.assertIn('static constexpr int bandCellWidth=40',self.native)
+        self.assertNotIn('knobArtwork_',self.native)
+        self.assertNotIn('rightReserve=145',self.native)
+        self.assertNotIn('innerCutout',self.native)
+        # Blue indicator and progress arc belong to JUCE, not PNG pixels.
+        try:
+            from PIL import Image
+        except ImportError:
+            return
+        blue=sum(1 for red,green,b,a in Image.open(KNOB).convert('RGBA').getdata()
+                 if a>100 and b>red*1.5 and b>green*1.3 and b>80)
+        self.assertEqual(blue,0)
 
     def test_saved_user_presets_are_host_owned_and_header_uniform(self):
         self.assertIn('bindUserPresetService(',self.native)

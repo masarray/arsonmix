@@ -431,68 +431,114 @@ static void verifyGraphicEq31Processor() {
     auto* geq=dynamic_cast<armix::builtin_fx::GraphicEq31Processor*>(processor.get());
     assert(geq && geq->isReady());
     geq->setBandFromUi(17,6.f);
-    juce::MemoryBlock state;
-    processor->getStateInformation(state);
-    assert(state.getSize()==8u+31u*4u); // GEQ1 v3, no hidden gain
+    assert(geq->parameters().getParameter("levelDb")!=nullptr);
     assert(geq->parameters().getParameter("inputDb")==nullptr);
     assert(geq->parameters().getParameter("outputDb")==nullptr);
-    // Both historic state schemas must restore without reactivating obsolete
-    // gain. Each legacy trim is fully validated, never applied to PCM.
+    juce::MemoryBlock state;
+    processor->getStateInformation(state);
+    assert(state.getSize()==8u+32u*4u); // GEQ1 v4, 31 bands + explicit level
+
+    // Historic v1/v2 trims are validated and discarded, and old band-only
+    // v3 always restores Output Level at 0 dB. v4 has a genuine level value.
     auto makeLegacy=[&](int version) {
         juce::MemoryBlock legacy;
         juce::MemoryOutputStream out(legacy,false);
         out.writeInt(armix::builtin_fx::GraphicEq31Processor::stateMagic);
         out.writeInt(version);
-        out.write(static_cast<const char*>(state.getData())+8,state.getSize()-8);
-        out.writeFloat(6.5f); // old inputDb
-        if(version==1)out.writeFloat(9.5f); // old outputDb
+        out.write(static_cast<const char*>(state.getData())+8,31u*4u);
+        if(version==1||version==2)out.writeFloat(6.5f); // old input
+        if(version==1)out.writeFloat(9.5f); // old output
+        out.flush();
         return legacy;
     };
-    for(int version:{1,2}) {
+    for(const int version:{1,2,3}) {
         auto legacy=makeLegacy(version);
-        assert(legacy.getSize()==8u+31u*4u+(version==1?8u:4u));
+        assert(legacy.getSize()==8u+31u*4u+
+               (version==1?8u:version==2?4u:0u));
         auto migrated=descriptor->prepare(48000.,128,
             legacy.getData(),static_cast<int>(legacy.getSize()));
         assert(migrated);
+        auto* old=dynamic_cast<armix::builtin_fx::GraphicEq31Processor*>(
+            migrated.get());
+        assert(old&&old->acceptedLevelDb()==0.f);
         juce::MemoryBlock converted;
         migrated->getStateInformation(converted);
         assert(converted==state);
+        if(version==3)continue;
         auto badLegacy=legacy;
-        const float badTrim=std::numeric_limits<float>::quiet_NaN();
+        const float invalid=std::numeric_limits<float>::quiet_NaN();
         std::memcpy(static_cast<char*>(badLegacy.getData())+8+31*4,
-            &badTrim,sizeof(badTrim));
+            &invalid,sizeof(invalid));
         assert(!descriptor->prepare(48000.,128,badLegacy.getData(),
             static_cast<int>(badLegacy.getSize())));
         if(version==1) {
             auto badOutput=legacy;
             std::memcpy(static_cast<char*>(badOutput.getData())+8+32*4,
-                &badTrim,sizeof(badTrim));
+                &invalid,sizeof(invalid));
             assert(!descriptor->prepare(48000.,128,badOutput.getData(),
                 static_cast<int>(badOutput.getSize())));
         }
     }
+    geq->setLevelFromUi(-9.f);
+    assert(geq->acceptedLevelDb()==-9.f);
+    juce::MemoryBlock adjusted;
+    geq->getStateInformation(adjusted);
     auto restored=descriptor->prepare(44100.,256,
-        state.getData(),static_cast<int>(state.getSize()));
-    assert(restored && restored->getName()=="Graphic EQ 31");
+        adjusted.getData(),static_cast<int>(adjusted.getSize()));
+    auto* restoredGeq=dynamic_cast<armix::builtin_fx::GraphicEq31Processor*>(
+        restored.get());
+    assert(restoredGeq&&std::abs(restoredGeq->acceptedLevelDb()+9.f)<.06f);
     juce::MemoryBlock roundtrip;
     restored->getStateInformation(roundtrip);
-    assert(roundtrip==state);
-    juce::AudioBuffer<float> pcm(2,256);
-    pcm.clear();pcm.setSample(0,0,.5f);pcm.setSample(1,0,-.5f);
+    assert(roundtrip==adjusted);
+
+    // Reject malformed v4 level before mutating any of the 31 bands.
+    for(float invalid:{-24.1f,6.1f,
+                       std::numeric_limits<float>::quiet_NaN()}) {
+        auto bad=adjusted;
+        std::memcpy(static_cast<char*>(bad.getData())+8+31*4,
+                    &invalid,sizeof(invalid));
+        assert(!descriptor->prepare(48000.,128,bad.getData(),
+            static_cast<int>(bad.getSize())));
+    }
+
+    // Actual PCM test: -6 dB Output Level attenuates by ~0.5 after a
+    // 15ms smoothing ramp, without a new graph or latency.
+    auto unity=descriptor->prepare(48000.,2048,nullptr,0);
+    auto lower=descriptor->prepare(48000.,2048,nullptr,0);
+    auto* atten=dynamic_cast<armix::builtin_fx::GraphicEq31Processor*>(lower.get());
+    assert(atten&&atten->getLatencySamples()==0);
+    atten->setLevelFromUi(-6.f);
+    juce::AudioBuffer<float> a(2,2048),b(2,2048);
+    for(int n=0;n<2048;++n) {
+        const auto sample=.08f*std::sin(
+            2.f*3.14159265358979323846f*440.f*static_cast<float>(n)/48000.f);
+        for(int ch=0;ch<2;++ch) {
+            a.setSample(ch,n,sample);b.setSample(ch,n,sample);
+        }
+    }
     juce::MidiBuffer midi;
-    processor->processBlock(pcm,midi);
-    for(int ch=0;ch<2;++ch)
-        for(int n=0;n<pcm.getNumSamples();++n)
-            assert(std::isfinite(pcm.getSample(ch,n)));
-    auto malformed=state;
+    unity->processBlock(a,midi);
+    lower->processBlock(b,midi);
+    double numerator=0.,denominator=0.;
+    for(int n=1550;n<2048;++n) {
+        const auto v=a.getSample(0,n),o=b.getSample(0,n);
+        assert(std::isfinite(v)&&std::isfinite(o));
+        denominator+=std::abs(v);numerator+=std::abs(o);
+    }
+    assert(denominator>.01);
+    const auto ratio=numerator/denominator;
+    assert(ratio>.47&&ratio<.54);
+
+    auto malformed=adjusted;
     malformed[0]=0;
     assert(!descriptor->prepare(48000.,128,malformed.getData(),
         static_cast<int>(malformed.getSize())));
-    assert(!descriptor->prepare(48000.,128,state.getData(),
-        static_cast<int>(state.getSize()-1)));
+    assert(!descriptor->prepare(48000.,128,adjusted.getData(),
+        static_cast<int>(adjusted.getSize()-1)));
     geq->sealForRealtime();
-    assert(!geq->restoreUnpublishedState(state.getData(),
-        static_cast<int>(state.getSize())));
+    assert(!geq->restoreUnpublishedState(adjusted.getData(),
+        static_cast<int>(adjusted.getSize())));
 }
 
 int main() {

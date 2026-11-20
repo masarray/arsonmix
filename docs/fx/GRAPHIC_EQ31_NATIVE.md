@@ -70,3 +70,13 @@ The versioned state loader validates magic, version, exact byte length, every pe
 - **Still requires owner equipment FAT**: audition all 31 faders at representative rates, verify Flat unity (0dB trims), inspect bypass/restore and `.smix`, open/close editor while live ASIO runs, verify CPU/XRUN and confirm headroom/clipping at ±12dB in a complete music mix.
 
 No claim is made that this is a hardware-accurate proprietary dbx transfer function: frequency centres and classic panel controls are matched, while the original JUCE biquad implementation is independently authored.
+
+
+## Owner-approved NEW knob (21 Nov 2026): static black-metal PNG, blue arc/dot in code
+
+The previous V7 rollback **still owns the 31 slider visuals and their coakan**. This new explicit request adds one isolated Output Level knob, but **does not** revive rejected V8/V9 fader rendering. The existing 31 × 40 = 1240px SVG bank and 229px art height remain unchanged. Add a **100px side rail at right**; default editor is 1430 × 305px, with the dual ±12/0 scales still directly beside the faders.
+
+- New transparent `geq31_knob_black.png` asset: 192×192, sha256 `270aaf8220aa5659a15c46531fbcab55803d6351148400df1e86f0e143f75e03`, based on the generated black-metal knob the user selected, **no embedded blue dot or ring**. Embedded in production JUCE `BinaryData`, decoded/cached once. PNG **never rotates**.
+- `EqSkin::drawRotarySlider` paints the moving **blue pointer** on the brushed face and a **thin blue progress arc in the black outer recessed annulus**, both using the identical polar angle. Arc starts -135°; 0 dB is at the top (half sweep), max +6dB at +135°. Only code draws blue.
+- `levelDb` parameter -24…+6 dB, double-click unity, 15ms smoothed post-31-band output multiplier inside the existing one native FX graph; no extra latency, threads or device callback. `SliderAttachment` supports native parameter update/readback. GEQ1 v4 validates and restores explicit level; v1/v2 obsolete trims remain discarded, v3 resets unity; host .armixfx preset snapshot and atomic 31+level recall/save include level, old band-only presets default unity. Factory presets restore unity; Flat button resets bands only.
+- Local browser review preview is **not** the native JUCE screenshot. Actual Windows build/CTest and physical ASIO FAT remain separate. Do not publish an independent console; approved mixer `/preview/` stays unchanged.

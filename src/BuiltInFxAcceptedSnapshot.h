@@ -64,6 +64,9 @@ struct BuiltInFxAcceptedSnapshot final {
             for(const auto db:bands)
                 values.append(static_cast<double>(db));
             data->setProperty("bands",values);
+            data->setProperty("levelDb",static_cast<double>(
+                static_cast<armix::builtin_fx::GraphicEq31Processor*>(p)
+                ->acceptedLevelDb()));
         }else if(catalog==armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity) {
             const auto v=static_cast<armix::builtin_fx::ChannelCompressorProcessor*>(p)
                 ->acceptedSettings();
