@@ -73,6 +73,15 @@ test('interactive Setup automatically checks for signed VB-CABLE while mixer lau
   assert.match(bootstrap, /previous\.PSObject\.Properties\['bootUtc'\]/);
   assert.match(bootstrap, /PENDING_REBOOT.*Restart Windows|Record "PENDING_REBOOT"/);
   assert.match(bootstrap, /Record "REPAIR_REQUIRED"/);
+  // Interrupted vendor/UAC attempts must not be treated as fresh installs;
+  // rerunning the vendor GUI can switch into destructive REMOVE mode.
+  assert.match(bootstrap, /previousState -notin/);
+  assert.match(bootstrap, /\$driverAttemptUncertain\)\{/);
+  assert.match(bootstrap, /\$vendorStarted=\$true/);
+  assert.match(bootstrap, /Vendor installation result uncertain/);
+  assert.match(isolatedSmoke, /interrupted-uac-missing/);
+  assert.match(isolatedSmoke, /interrupted-uac-present/);
+  assert.match(isolatedSmoke, /corrupt-status/);
   assert.match(bootstrap, /if\(\$all.Count -gt 0\)\{[\s\S]*?\$present \| Where-Object[\s\S]*?Record "ALREADY_PRESENT"[\s\S]*?exit 0/);
   assert.ok(bootstrap.indexOf("previous.state -eq 'PENDING_REBOOT'") <
             bootstrap.indexOf('Start-Process -FilePath $setups[0].FullName'),

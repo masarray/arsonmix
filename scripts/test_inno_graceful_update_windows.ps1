@@ -57,14 +57,28 @@ function Test-VBCableSmartDetection {
             @{Name='after-reboot'; Device='present'; Expected='ALREADY_PRESENT'; RecordedBoot=$boot.AddDays(-1)},
             @{Name='missing-after-reboot'; Device='absent'; Expected='REPAIR_REQUIRED'; RecordedBoot=$boot.AddDays(-1)},
             @{Name='missing'; Device='absent'; Expected='FAILED'; Reason='Bundled driver ZIP absent'},
-            @{Name='query-failure'; Device='error'; Expected='FAILED'; Reason='Fixture PnP query denied'}
+            @{Name='query-failure'; Device='error'; Expected='FAILED'; Reason='Fixture PnP query denied'},
+            @{Name='interrupted-uac-missing'; Device='absent'; Expected='REPAIR_REQUIRED'; PreviousState='AWAITING_UAC'},
+            @{Name='interrupted-uac-present'; Device='present'; Expected='ALREADY_PRESENT'; PreviousState='AWAITING_UAC'},
+            @{Name='repair-missing'; Device='absent'; Expected='REPAIR_REQUIRED'; PreviousState='REPAIR_REQUIRED'},
+            @{Name='unknown-state-missing'; Device='absent'; Expected='REPAIR_REQUIRED'; PreviousState='UNKNOWN'},
+            @{Name='corrupt-status'; Device='absent'; Expected='REPAIR_REQUIRED'; Corrupt=$true}
         )) {
             $env:APPDATA=Join-Path $work ("cable-"+$case.Name)
             $status=Join-Path $env:APPDATA "AR-MIX-Studio/VB-CABLE-STATUS.json"
+            $statusFixture=@{}
             if ($case.ContainsKey('RecordedBoot')) {
+                $statusFixture.state='PENDING_REBOOT'
+                $statusFixture.bootUtc=$case.RecordedBoot.ToString('o')
+            }
+            if ($case.ContainsKey('PreviousState')) { $statusFixture.state=$case.PreviousState }
+            if ($statusFixture.Count -gt 0 -or $case.ContainsKey('Corrupt')) {
                 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $status) | Out-Null
-                @{state='PENDING_REBOOT';bootUtc=$case.RecordedBoot.ToString('o')} |
-                    ConvertTo-Json | Set-Content -LiteralPath $status
+                if ($case.ContainsKey('Corrupt')) {
+                    '{ invalid incomplete installer status' | Set-Content -LiteralPath $status
+                } else {
+                    $statusFixture | ConvertTo-Json | Set-Content -LiteralPath $status
+                }
             }
             # Deliberately absent payload: the missing-device case alone should
             # check for the archive. Presence and pending must return earlier.

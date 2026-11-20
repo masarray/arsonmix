@@ -35,14 +35,28 @@ function Read-BootEpoch($value) {
 }
 $dir=Join-Path $env:TEMP ("armix-cable-"+[guid]::NewGuid().ToString("N"))
 $pending=$false
+$driverAttemptUncertain=$false
+$vendorStarted=$false
 try {
   # A driver already queued for reboot must NOT be run again: the VB-Audio
   # setup utility can switch into REMOVE mode on a second invocation.
   $previous=$null
   if(Test-Path -LiteralPath $statusPath -PathType Leaf){
-    $previous=Get-Content -LiteralPath $statusPath -Raw -ErrorAction Stop | ConvertFrom-Json
+    try {
+      $previous=Get-Content -LiteralPath $statusPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+      # A damaged record may conceal an interrupted vendor install. Never
+      # assume the hardware is absent and run a setup with a REMOVE button.
+      Record "REPAIR_REQUIRED" "Previous VB-CABLE install status unreadable; inspect Windows Device Manager"
+      exit 3
+    }
   }
-  $pending=$null -ne $previous -and $previous.state -eq 'PENDING_REBOOT'
+  $previousState=if($null -ne $previous){[string]$previous.state}else{""}
+  $pending=$previousState -eq 'PENDING_REBOOT'
+  # A prior invocation may have died after starting the vendor GUI but
+  # before recording its result. An uncertain or repair-required attempt
+  # must never launch the same setup automatically again.
+  $driverAttemptUncertain=$previousState -notin @("","ALREADY_PRESENT","FAILED","PENDING_REBOOT")
   $os=Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
   $script:bootUtc=$os.LastBootUpTime.ToUniversalTime().ToString('o')
   if($pending){
@@ -76,6 +90,10 @@ try {
     Record "ALREADY_PRESENT" "VB-CABLE device already installed; vendor installer skipped"
     exit 0
   }
+  if($driverAttemptUncertain){
+    Record "REPAIR_REQUIRED" "Previous VB-CABLE install outcome uncertain; inspect Device Manager before manual recovery"
+    exit 3
+  }
   if(-not (Test-Path -LiteralPath $Archive -PathType Leaf)){throw "Bundled driver ZIP absent"}
   $hash=(Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant()
   if($hash -cne $ExpectedSha256.ToLowerInvariant()){throw "Pinned driver ZIP hash mismatch"}
@@ -105,12 +123,19 @@ try {
   # Official reference manual requires the vendor GUI, admin and reboot.
   # No undocumented silent switches and no TrustedPublisher modification.
   $process=Start-Process -FilePath $setups[0].FullName -WorkingDirectory $setups[0].DirectoryName -Verb RunAs -Wait -PassThru
+  $vendorStarted=$true
   if($process.ExitCode -ne 0){throw ("Vendor installer returned "+$process.ExitCode)}
   Record "PENDING_REBOOT" "Reboot Windows, then verify CABLE Output and physical speaker"
   exit 0
 } catch {
   # A failed OS/PnP query is not proof a recorded installation vanished.
-  if(-not $pending){Record "FAILED" $_.Exception.Message}
+  if($vendorStarted){
+    # Nonzero vendor exit can mean partial driver changes. A subsequent
+    # auto-run could invoke REMOVE instead of INSTALL.
+    Record "REPAIR_REQUIRED" ("Vendor installation result uncertain: "+$_.Exception.Message)
+  } elseif(-not $pending -and -not $driverAttemptUncertain){
+    Record "FAILED" $_.Exception.Message
+  }
   Write-Warning ("Optional VB-Audio driver step incomplete: "+$_.Exception.Message)
   exit 2
 } finally {
