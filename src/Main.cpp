@@ -863,7 +863,9 @@ private:
         compact->setProperty ("schema", "arsonmix.audio-health.int1b.v1");
         for (const char* key : {
                  "connected", "liveBackendClass", "device", "driver",
-                 "rate", "buffer", "periodUs", "deviceGeneration",
+                 "inputDevice", "outputDevice", "deviceInputChannels",
+                 "deviceOutputChannels", "rate", "buffer", "periodUs",
+                 "deviceGeneration",
                  "deviceStartCount", "deviceStopCount", "diagnosticRoute",
                  "productionRoutingState", "directRouteAuthorized",
                  "dryTest", "callbackCount", "callbackBudgetBuckets",
