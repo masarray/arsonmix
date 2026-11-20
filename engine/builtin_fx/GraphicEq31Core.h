@@ -65,30 +65,37 @@ public:
         b.frames=rampFrames_;
         return true;
     }
-    // In-place, stereo, no heap, locks or control-side work on the callback.
-    // Each band uses a bounded 5ms coefficient ramp to avoid gain-step clicks.
+    // Per-band, in-place stereo cascade: the active band processes the
+    // entire buffer before the next band. Flat EQ skips all 31 biquads,
+    // avoiding work in the default zero-gain state without extra buffers.
+    // The coefficient ramp is sample-accurate and remains click-free.
     void processStereo(float* left,float* right,std::size_t frames) noexcept {
         if(!ready_||!left||!right)return;
-        for(std::size_t n=0;n<frames;++n) {
-            double l=left[n],r=right[n];
-            for(auto& b:bands_) {
+        for(auto& b:bands_) {
+            if(b.frames==0 && b.db==0.) {
+                // Flush stale IIR memories after a completed ramp-to-unity,
+                // so re-enabling a band never exposes a frozen old history.
+                b.l1=b.l2=b.r1=b.r2=0.;
+                continue;
+            }
+            for(std::size_t n=0;n<frames;++n) {
                 if(b.frames>0) {
                     b.current.b0+=b.step.b0;b.current.b1+=b.step.b1;
                     b.current.b2+=b.step.b2;b.current.a1+=b.step.a1;
                     b.current.a2+=b.step.a2;
                     if(--b.frames==0)b.current=b.target;
                 }
-                const auto& c=b.current;
-                const double yl=c.b0*l+b.l1;
-                b.l1=c.b1*l-c.a1*yl+b.l2;
-                b.l2=c.b2*l-c.a2*yl;
-                const double yr=c.b0*r+b.r1;
-                b.r1=c.b1*r-c.a1*yr+b.r2;
-                b.r2=c.b2*r-c.a2*yr;
-                l=yl;r=yr;
+                const auto& co=b.current;
+                const double l=left[n],r=right[n];
+                const double yl=co.b0*l+b.l1;
+                b.l1=co.b1*l-co.a1*yl+b.l2;
+                b.l2=co.b2*l-co.a2*yl;
+                const double yr=co.b0*r+b.r1;
+                b.r1=co.b1*r-co.a1*yr+b.r2;
+                b.r2=co.b2*r-co.a2*yr;
+                left[n]=static_cast<float>(yl);
+                right[n]=static_cast<float>(yr);
             }
-            left[n]=static_cast<float>(l);
-            right[n]=static_cast<float>(r);
         }
     }
     void reset() noexcept {
