@@ -730,9 +730,13 @@ test('P0 Audio Setup reports native driver latency ms, never fake measured loopb
   assert.match(main,/JUCE_DRIVER_REPORTED_NOT_MEASURED_LOOPBACK_OR_ASIO_RTL/);
   assert.match(gui,/AUDIO LATENCY · VERIFIED NATIVE DEVICE/);
   assert.match(gui,/Driver-reported JUCE latency, not a measured analog loopback/);
-  const m=/function deviceLatencyDisplay\(active\)\{([\s\S]*?)\n  \}\n  function latencyText/.exec(gui);
-  assert.ok(m,'pure latency model must remain under one approved Audio Setup');
-  const compute=new Function('active',m[1]);
+  const start=gui.indexOf('  function deviceLatencyDisplay(active){');
+  const end=gui.indexOf('  function latencyText(',start);
+  assert.ok(start>=0&&end>start,
+    'pure latency model must remain in the single legacy compatibility surface');
+  // Extract the ENTIRE function declaration (which itself has nested helpers)
+  // rather than treating the first inner brace as the function boundary.
+  const compute=new Function('return ('+gui.slice(start,end).trim()+')')();
   const actual={open:true,rate:48000,buffer:256,driverInputLatencyFrames:240,
     driverOutputLatencyFrames:360,hostFxLatencyFrames:96,
     latencyClockScope:'SINGLE_CLOCK_DRIVER_HINTS'};
