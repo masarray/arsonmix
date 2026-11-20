@@ -2562,11 +2562,40 @@ public:
                         flags != nullptr && lane < flags->size()
                         && bool ((*flags)[lane]));
         }
+        // Original Channel 1 vendor/Orbit inserts are one SHARED Graph
+        // leased by the admitted ChannelId renderer, not ordinary entries
+        // of nativeBus.channels[].inserts. Those entries are intentionally
+        // zero for the external channel. Never report the live vendor rack
+        // as DRY simply because its FX live in a distinct native lease.
+        int externalCh1Installed = 0, externalCh1Processing = 0;
+        const bool externalCh1Leased = bool (
+            nativeRoutingStatus.getProperty ("originalCh1GraphLeased", false));
+        if (externalCh1Leased && graphOwned_)
+        {
+            const bool externalRackBypassed =
+                graphOwned_->rackBypassed.load (std::memory_order_acquire);
+            for (int i = 0; i < graphOwned_->count; ++i)
+            {
+                const int physical = graphOwned_->physicalAt (i);
+                if (!graphOwned_->slots[physical].processor)
+                    continue;
+                ++externalCh1Installed;
+                if (!globalFxBypassed && !externalRackBypassed &&
+                    !graphOwned_->bypassFlags[physical].load (
+                        std::memory_order_acquire))
+                    ++externalCh1Processing;
+            }
+            installedNativeFx += externalCh1Installed;
+            processingNativeFx += externalCh1Processing;
+        }
+        o->setProperty ("nativeExternalCh1Leased", externalCh1Leased);
+        o->setProperty ("nativeExternalCh1InstalledCount", externalCh1Installed);
+        o->setProperty ("nativeExternalCh1ProcessingCount", externalCh1Processing);
         o->setProperty ("nativeGlobalFxBypassed", globalFxBypassed);
         o->setProperty ("nativeFxInstalledCount", installedNativeFx);
         o->setProperty ("nativeFxProcessingCount", processingNativeFx);
         o->setProperty ("nativeFxCountProvenance",
-            "ACCEPTED_CONTROL_READBACK_INSERT_AND_RACK_BYPASS_NOT_dryTest_FLAG");
+            "ACCEPTED_CHANNELID_PLUS_LEASED_EXTERNAL_CH1_SLOT_RACK_GLOBAL_BYPASS_NOT_dryTest");
         o->setProperty ("nativeFxGraphRevision",
             nativeRoutingStatus.getProperty ("revision", {}).toString());
         o->setProperty("waitingAsioInputs",dryRoutingLab_.waitingAsioInputCount());
