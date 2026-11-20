@@ -33,9 +33,18 @@ public:
         if(!ready_)return false;
         rate_=rate;
         rampFrames_=std::max(32,static_cast<int>(std::round(rate_*0.005)));
+        // prepare() belongs to the unpublished CONTROL lifecycle. Precompute
+        // expensive functions here, never on the sample-processing callback.
+        for(std::size_t index=0;index<dbFactors_.size();++index)
+            dbFactors_[index]=std::pow(10.,(factorMinDb_+
+                factorStepDb_*static_cast<double>(index))/40.);
+        constexpr double pi=3.1415926535897932384626433832795;
         for(std::size_t i=0;i<bandCount;++i) {
+            const double omega=2.*pi*graphicEq31Hz[i]/rate_;
+            bandConstants_[i]={std::cos(omega),
+                               std::sin(omega)/(2.*nominalQ)};
             auto& b=bands_[i];
-            b.current=b.target=coefficients(i,b.db,rate_);
+            b.current=b.target=coefficients(i,b.db);
             b.step={};b.frames=0;
             b.l1=b.l2=b.r1=b.r2=0.;
         }
@@ -43,6 +52,14 @@ public:
     }
     bool ready() const noexcept {return ready_;}
     double sampleRate() const noexcept {return rate_;}
+    // One prepared table also covers the post-EQ Output Level [-24,+6] dB.
+    // The APVTS publishes 0.1 dB steps; linear interpolation safely handles
+    // out-of-grid host/state values without any transcendental RT operation.
+    float linearGainForDb(float db) const noexcept {
+        if(!ready_ || !std::isfinite(db))return 1.f;
+        const double a=factorForDb(static_cast<double>(db));
+        return static_cast<float>(a*a);
+    }
     double gainDb(std::size_t i) const noexcept {
         return i<bandCount?bands_[i].db:0.;
     }
@@ -53,7 +70,7 @@ public:
         if(std::abs(b.db-db)<1e-5)return true;
         b.db=db;
         if(!ready_)return true;
-        b.target=coefficients(i,db,rate_);
+        b.target=coefficients(i,db);
         const double inv=1./static_cast<double>(rampFrames_);
         b.step={
             (b.target.b0-b.current.b0)*inv,
@@ -111,21 +128,34 @@ private:
         int frames=0;
         double l1=0.,l2=0.,r1=0.,r2=0.;
     };
-    static Coeff coefficients(std::size_t i,double db,double rate) noexcept {
-        // Bands over the physical Nyquist guard are transparent at low sample
-        // rates. Preserve the operator's saved dB setting for a future rate.
-        const double hz=graphicEq31Hz[i];
-        if(std::abs(db)<1e-5 || hz>=rate*0.45)return {};
-        constexpr double pi=3.1415926535897932384626433832795;
-        const double omega=2.*pi*hz/rate;
-        const double cs=std::cos(omega);
-        const double alpha=std::sin(omega)/(2.*nominalQ);
-        const double a=std::pow(10.,db/40.);
-        const double norm=1./(1.+alpha/a);
-        return {(1.+alpha*a)*norm,(-2.*cs)*norm,
-                (1.-alpha*a)*norm,(-2.*cs)*norm,
-                (1.-alpha/a)*norm};
+    static constexpr double factorMinDb_=-24.;
+    static constexpr double factorStepDb_=0.1;
+    static constexpr std::size_t factorCount_=361; // -24..+12 inclusive
+    struct BandConstant { double cs=1.,alpha=0.; };
+    double factorForDb(double db) const noexcept {
+        const double position=std::clamp(
+            (db-factorMinDb_)/factorStepDb_,0.,
+            static_cast<double>(factorCount_-1));
+        const auto lower=static_cast<std::size_t>(position);
+        if(lower>=factorCount_-1)return dbFactors_.back();
+        const double fraction=position-static_cast<double>(lower);
+        return dbFactors_[lower]+fraction*
+            (dbFactors_[lower+1]-dbFactors_[lower]);
     }
+    Coeff coefficients(std::size_t i,double db) const noexcept {
+        // This is called during realtime edits. Only bounded arithmetic,
+        // one table interpolation and a division; no sin/cos/pow/alloc.
+        const double hz=graphicEq31Hz[i];
+        if(std::abs(db)<1e-5 || hz>=rate_*0.45)return {};
+        const auto& constant=bandConstants_[i];
+        const double a=factorForDb(db);
+        const double norm=1./(1.+constant.alpha/a);
+        return {(1.+constant.alpha*a)*norm,(-2.*constant.cs)*norm,
+                (1.-constant.alpha*a)*norm,(-2.*constant.cs)*norm,
+                (1.-constant.alpha/a)*norm};
+    }
+    std::array<double,factorCount_> dbFactors_{};
+    std::array<BandConstant,bandCount> bandConstants_{};
     std::array<Band,bandCount> bands_{};
     double rate_=0.;
     int rampFrames_=240;
