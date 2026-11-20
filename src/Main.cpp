@@ -6370,16 +6370,14 @@ private:
                                         // Entire payload was validated before changing
                                         // any JUCE parameter. No external VST/device.
                                         const auto previous=fx->acceptedBands();
-                                        for(std::size_t i=0;i<values.size();++i)
-                                            fx->setBandFromUi(i,values[i]);
+                                        if(!fx->setBandsFromPreset(values))return false;
                                         const auto accepted=fx->acceptedBands();
                                         bool matches=true;
                                         for(std::size_t i=0;i<values.size();++i)
                                             if(std::abs(accepted[i]-values[i])>.06f)
                                                 matches=false;
                                         if(!matches) {
-                                            for(std::size_t i=0;i<previous.size();++i)
-                                                fx->setBandFromUi(i,previous[i]);
+                                            (void)fx->setBandsFromPreset(previous);
                                             emitNotice("Graphic EQ preset readback rejected",true);
                                             return false;
                                         }
