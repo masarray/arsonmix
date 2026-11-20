@@ -2518,7 +2518,96 @@ public:
         auto* d = dual ? independent_.renderDevice()
                        : deviceManager_.getCurrentAudioDevice();
         auto* capture = dual ? independent_.captureDevice() : d;
-        o->setProperty ("dryRoutingLab",dryRoutingLab_.status(capture));
+        const auto nativeRoutingStatus = dryRoutingLab_.status(capture);
+        o->setProperty ("dryRoutingLab", nativeRoutingStatus);
+        // INT-1B: native DRY is an accepted DSP fact, NOT the legacy
+        // dryTest_ UI flag (which only tracks operator intent).
+        // Count installed/effectively processing inserts from the already
+        // generated CONTROL readback. No extra render/FX scan on RT.
+        const bool globalFxBypassed = dryRoutingLab_.globalFxBypassed();
+        int installedNativeFx = 0, processingNativeFx = 0;
+        const auto accountInserts = [&] (const juce::var& inserts,
+                                         bool rackBypassed)
+        {
+            if (const auto* list = inserts.getArray())
+                for (const auto& insert : *list)
+                    if (insert.isObject())
+                    {
+                        ++installedNativeFx;
+                        if (!globalFxBypassed && !rackBypassed &&
+                            !bool (insert.getProperty ("bypassed", false)))
+                            ++processingNativeFx;
+                    }
+        };
+        const auto bus = nativeRoutingStatus.getProperty ("nativeBus", {});
+        if (bus.isObject())
+        {
+            const auto channelRows = bus.getProperty ("channels", {});
+            if (const auto* channels = channelRows.getArray())
+                for (const auto& channel : *channels)
+                    accountInserts (
+                        channel.getProperty ("inserts", {}),
+                        bool (channel.getProperty ("fxRackBypassed", false)));
+        }
+        else
+        {
+            const auto rackFlags =
+                nativeRoutingStatus.getProperty ("fxRackBypassed", {});
+            const auto* flags = rackFlags.getArray();
+            const auto rackInstances =
+                nativeRoutingStatus.getProperty ("fxInstances", {});
+            if (const auto* racks = rackInstances.getArray())
+                for (int lane = 0; lane < racks->size(); ++lane)
+                    accountInserts ((*racks)[lane],
+                        flags != nullptr && lane < flags->size()
+                        && bool ((*flags)[lane]));
+        }
+        // Original Channel 1 vendor/Orbit inserts are one SHARED Graph
+        // leased by the admitted ChannelId renderer, not ordinary entries
+        // of nativeBus.channels[].inserts. Those entries are intentionally
+        // zero for the external channel. Never report the live vendor rack
+        // as DRY simply because its FX live in a distinct native lease.
+        int externalCh1Installed = 0, externalCh1Processing = 0;
+        const auto* acceptedExternal =
+            dryRoutingLab_.acceptedOriginalCh1ExternalLeaseForControl();
+        // Admit only OUR historical JUCE Graph callback. Future external
+        // lease types must not be cast into Graph or falsely labeled DRY.
+        const bool externalCh1Leased = acceptedExternal != nullptr &&
+            acceptedExternal->render == &processOwnedChannelOne;
+        const bool externalFxActivityComplete =
+            !bool (nativeRoutingStatus.getProperty (
+                "originalCh1GraphLeased", false)) || externalCh1Leased;
+        if (externalCh1Leased)
+        {
+            const auto* acceptedGraph =
+                static_cast<const Graph*> (acceptedExternal->context);
+            const bool externalRackBypassed =
+                acceptedGraph->rackBypassed.load (std::memory_order_acquire);
+            for (int i = 0; i < acceptedGraph->count; ++i)
+            {
+                const int physical = acceptedGraph->physicalAt (i);
+                if (!acceptedGraph->slots[physical].processor)
+                    continue;
+                ++externalCh1Installed;
+                if (!globalFxBypassed && !externalRackBypassed &&
+                    !acceptedGraph->bypassFlags[physical].load (
+                        std::memory_order_acquire))
+                    ++externalCh1Processing;
+            }
+            installedNativeFx += externalCh1Installed;
+            processingNativeFx += externalCh1Processing;
+        }
+        o->setProperty ("nativeFxActivityComplete", externalFxActivityComplete);
+        o->setProperty ("nativeExternalCh1Leased", externalCh1Leased);
+        o->setProperty ("nativeExternalCh1InstalledCount", externalCh1Installed);
+        o->setProperty ("nativeExternalCh1ProcessingCount", externalCh1Processing);
+        o->setProperty ("nativeGlobalFxBypassed", globalFxBypassed);
+        o->setProperty ("nativeFxInstalledCount", installedNativeFx);
+        o->setProperty ("nativeFxProcessingCount", processingNativeFx);
+        o->setProperty ("nativeFxCountProvenance",
+            "ACCEPTED_CHANNELID_PLUS_LEASED_EXTERNAL_CH1_SLOT_RACK_GLOBAL_BYPASS_NOT_dryTest");
+        o->setProperty ("nativeFxGraphRevision",
+            nativeRoutingStatus.getProperty ("revision", {}).toString());
         o->setProperty("waitingAsioInputs",dryRoutingLab_.waitingAsioInputCount());
         // NORMAL mode is never silently served by the legacy CH1 fallback.
         // This state is for operator feedback; it does not authorize output.
@@ -2627,6 +2716,12 @@ public:
         o->setProperty ("outputDevice", dual && d ? d->getName() : setup.outputDeviceName);
         o->setProperty ("deviceInputChannels", capture ? capture->getActiveInputChannels().countNumberOfSetBits() : 0);
         o->setProperty ("deviceOutputChannels", d ? d->getActiveOutputChannels().countNumberOfSetBits() : 0);
+        // Control-only pin-mask evidence: matching channel COUNTS do not
+        // imply the same physical ASIO pin assignment after a remap.
+        o->setProperty ("activeInputMaskHex", capture ?
+            capture->getActiveInputChannels().toString (16) : juce::String());
+        o->setProperty ("activeOutputMaskHex", d ?
+            d->getActiveOutputChannels().toString (16) : juce::String());
         o->setProperty ("callbackInputChannels", callbackInputs_.load());
         o->setProperty ("callbackOutputChannels", callbackOutputs_.load());
         o->setProperty ("callbackCount", static_cast<double> (callbackCount_.load()));
@@ -2663,6 +2758,16 @@ public:
         o->setProperty ("callbackP95BeyondDeadline", histogram.p95Ceiling < 0);
         o->setProperty ("callbackP99BeyondDeadline", histogram.p99Ceiling < 0);
         o->setProperty ("callbackBudgetSamples", static_cast<double> (histogram.total));
+        // INT-1B: cumulative buckets enable true 1 Hz interval percentiles
+        // without resetting/replacing RT atomics at ASIO device transitions.
+        // The message thread alone allocates this 13-value readback array.
+        // Never label these host callback timing buckets as hardware XRUNs.
+        juce::Array<juce::var> budgetBuckets;
+        for (const auto count : histogram.counts)
+            budgetBuckets.add (static_cast<double> (count));
+        o->setProperty ("callbackBudgetBuckets", juce::var (budgetBuckets));
+        o->setProperty ("callbackBudgetBucketProvenance",
+            "HOST_CALLBACK_BUDGET_CUMULATIVE_13_BUCKETS_NOT_DRIVER_RENDER_XRUN");
         o->setProperty ("inputPeak", inputPeak_.load());
         o->setProperty ("inputPeakProvenance", "RAW_PCM_BEFORE_HARDWARE_MUTE");
         // First Sound: JUCE supplies callback-COMPACT input channels.
