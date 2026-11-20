@@ -92,7 +92,7 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
             self.assertIn('majorTickY('+point+')', self.native)
         self.assertNotIn('smile_', self.native)
         self.assertNotIn('peakLabel_', self.native)
-        self.assertNotIn('timerCallback()', self.native)
+        self.assertIn('void timerCallback() override', self.native)
         self.assertNotIn('31 BANDS  /  +/-12 dB', self.native)
         self.assertNotIn('BinaryData::KNOB_EQ_svg', self.native)
         self.assertNotIn('drawRotarySlider(', self.native)
