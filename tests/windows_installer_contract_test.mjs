@@ -124,6 +124,28 @@ test('WebView2 GUI prerequisite runs only on interactive setup from Microsoft-si
   assert.match(read('scripts/test_inno_graceful_update_windows.ps1'), /ARSONMIX_WEBVIEW2_PREREQUISITE_POLICY_PASS/);
 });
 
+test('Start Menu diagnostics distinguish host loader, vendor VST3, WebView2 and unsupported OS without mutation', () => {
+  const helper=read('installer/ArSonMixStartupDiagnostics.ps1');
+  assert.match(iss, /Diagnose ArSonMix Startup/);
+  assert.match(helper, /ARSONMIX_STARTUP_DIAGNOSTIC_POLICY_PASS/);
+  for (const cls of [
+    'UNSUPPORTED_WINDOWS', 'HOST_EXE_MISSING', 'VC_RUNTIME_RELATED_ERROR',
+    'THIRD_PARTY_PLUGIN_CRASH_SUSPECTED', 'EARLY_DLL_LOADER_FAILURE_SUSPECTED',
+    'WEBVIEW2_OR_PROFILE_STARTUP_FAILURE', 'WEBVIEW2_RUNTIME_NOT_VERIFIED',
+    'WINDOWS_APP_FAILURE_NEEDS_FAULT_MODULE', 'NO_FATAL_STARTUP_CAUSE_IDENTIFIED'
+  ]) assert.ok(helper.includes(cls), cls);
+  assert.match(helper, /Faulting module name: VCRUNTIME140_1\.dll/);
+  assert.match(helper, /0xc0000135/);
+  assert.match(helper, /msedgewebview2\.exe/);
+  assert.match(helper, /-MaxEvents 1200/);
+  assert.match(helper, /STARTUP_DIAGNOSIS:/);
+  assert.match(helper, /RECOMMENDED_ACTION:/);
+  assert.match(helper, /No diagnostics are uploaded/);
+  assert.match(helper, /if \(\$PolicySelfTest\)/);
+  assert.match(isolatedSmoke, /ARSONMIX_STARTUP_DIAGNOSTIC_POLICY_PASS/);
+  assert.doesNotMatch(helper, /Invoke-WebRequest|Invoke-RestMethod|Start-BitsTransfer|Remove-Item|Stop-Process|taskkill|SetDefaultEndpoint|certutil/i);
+});
+
 test('single installer preflight requests graceful shutdown; Restart Manager cannot force old mixer', () => {
   assert.match(iss, /^CloseApplications=no$/m);
   assert.doesNotMatch(iss, /^CloseApplicationsFilter=/m);

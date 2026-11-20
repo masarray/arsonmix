@@ -24,6 +24,15 @@ if($LASTEXITCODE -ne 0 -or $webviewOutput -notcontains 'ARSONMIX_WEBVIEW2_PREREQ
 }
 Write-Host "ARSONMIX_WEBVIEW2_PREREQUISITE_POLICY_PASS"
 
+# Real installed Start-menu diagnostic helper: classify synthetic crash
+# evidence without registry access, network, VSTs, audio or Windows 10 VM.
+$startupPolicy=Join-Path (Resolve-Path .).Path "installer/ArSonMixStartupDiagnostics.ps1"
+$startupOutput=& "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -File $startupPolicy -PolicySelfTest
+if($LASTEXITCODE -ne 0 -or $startupOutput -notcontains 'ARSONMIX_STARTUP_DIAGNOSTIC_POLICY_PASS') {
+    throw "Startup diagnostics classification regression: $startupOutput"
+}
+Write-Host "ARSONMIX_STARTUP_DIAGNOSTIC_POLICY_PASS"
+
 $ErrorActionPreference="Stop"
 $root=(Resolve-Path .).Path
 $work=Join-Path $env:RUNNER_TEMP ("arsonmix-inno-smoke-"+[guid]::NewGuid().ToString("N"))
