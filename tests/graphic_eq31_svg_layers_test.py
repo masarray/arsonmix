@@ -253,7 +253,7 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
 
     def test_static_png_dynamic_pointer_and_outer_blue_arc(self):
         raw=KNOB.read_bytes()
-        self.assertTrue(raw.startswith(b'\\x89PNG\\r\\n\\x1a\\n'))
+        self.assertTrue(raw.startswith(b'\x89PNG\r\n\x1a\n'))
         self.assertEqual(hashlib.sha256(raw).hexdigest(),
                          '270aaf8220aa5659a15c46531fbcab55803d6351148400df1e86f0e143f75e03')
         self.assertIn('assets/fx/graphic-eq31/geq31_knob_black.png',self.cmake)
