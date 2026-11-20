@@ -852,6 +852,38 @@ private:
         return out;
     }
 
+    // INT-1B: preserve a parseable, bounded 1 Hz native health timeline.
+    // The entire UI status contains large device/FX arrays and can exceed the
+    // diagnostic worker's 4096-byte record; silently truncated JSON makes
+    // offline p95/p99 profiling impossible. Reuse the EXISTING status read,
+    // only on the message thread, with no new timer or audio callback work.
+    static juce::var makeAudioHealthRecord (const juce::var& state)
+    {
+        auto compact = std::make_unique<juce::DynamicObject>();
+        compact->setProperty ("schema", "arsonmix.audio-health.int1b.v1");
+        for (const char* key : {
+                 "connected", "liveBackendClass", "device", "driver",
+                 "rate", "buffer", "periodUs", "deviceGeneration",
+                 "deviceStartCount", "deviceStopCount", "diagnosticRoute",
+                 "productionRoutingState", "directRouteAuthorized",
+                 "dryTest", "callbackCount", "callbackBudgetBuckets",
+                 "callbackBudgetBucketProvenance", "callbackBudgetSamples",
+                 "callbackP95BudgetUpperPct", "callbackP99BudgetUpperPct",
+                 "slowCallbackCount", "overBudgetCount", "callbackGapCount",
+                 "lateCallbackIntervals", "callbackCadenceClockRegressions",
+                 "callbackCadenceComparedIntervals", "worstCallbackUs",
+                 "worstPluginUs", "slowPluginCount",
+                 "backendXrunCount", "backendXrunMeaning",
+                 "renderUnderrunSource", "secondaryOutputUnderflow",
+                 "secondaryOutputOverflow", "secondaryOutputFrames"})
+        {
+            const auto value = state.getProperty (key, {});
+            if (!value.isVoid())
+                compact->setProperty (juce::Identifier (key), value);
+        }
+        return juce::var (compact.release());
+    }
+
     static juce::String compactMemoryWindowReport (
         const armix::diagnostics::CrackleEvidenceWindow::Window& window)
     {
@@ -7820,7 +7852,7 @@ private:
         {
             const auto health = engine_.status();
             crackleEvidence_.push (makeEvidenceSample (health));
-            diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (health, false));
+            diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (makeAudioHealthRecord (health), false));
         }
 
         if (deviceSettingsDirty_)
@@ -8016,7 +8048,7 @@ private:
         if (timerTicks_ % 12 == 0)
         {
             crackleEvidence_.push (makeEvidenceSample (state));
-            diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (state, false));
+            diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (makeAudioHealthRecord (state), false));
         }
         // Guard borrowed VST parameter pointers when a native graph edit,
         // device epoch change or Show recall retires the instance.
