@@ -28,7 +28,6 @@ public:
           params_(*this,nullptr,"GEQ31",makeParameters()) {
         for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i)
             bandValues_[i]=params_.getRawParameterValue(paramId(i));
-        inputValue_=params_.getRawParameterValue("inputDb");
     }
 
     const juce::String getName() const override {return "Graphic EQ 31";}
@@ -53,8 +52,6 @@ public:
         if(!ready_)return;
         for(std::size_t i=0;i<bandValues_.size();++i)
             core_.setGain(i,static_cast<double>(bandValues_[i]->load(std::memory_order_relaxed)));
-        inputSmooth_.reset(sampleRate,.006);
-        inputSmooth_.setCurrentAndTargetValue(dbToGain(inputValue_->load()));
         peak_.store(0.f,std::memory_order_relaxed);
     }
     void releaseResources() override {ready_=false;}
@@ -76,11 +73,8 @@ public:
         const auto count=pcm.getNumSamples();
         auto* l=pcm.getWritePointer(0);
         auto* r=pcm.getWritePointer(1);
-        inputSmooth_.setTargetValue(dbToGain(inputValue_->load(std::memory_order_relaxed)));
-        for(int n=0;n<count;++n) {
-            const float g=static_cast<float>(inputSmooth_.getNextValue());
-            l[n]*=g;r[n]*=g;
-        }
+        // Graphic EQ 31 has only the 31 band controls. No invisible
+        // input/output gain, and no extra multiplier in the realtime path.
         core_.processStereo(l,r,static_cast<std::size_t>(count));
         float peak=0.f;
         // Output gain was removed from Graphic EQ 31: meter post-EQ PCM,
@@ -93,37 +87,40 @@ public:
     void getStateInformation(juce::MemoryBlock& destination) override {
         // CONTROL thread. Only one fixed-size, versioned state per insert.
         juce::MemoryOutputStream out(destination,false);
-        // GEQ1 v2: 31 bands + one input gain, 136 bytes.
-        // Legacy GEQ1 v1 (140 bytes) still restores without its output trim.
-        out.writeInt(stateMagic);out.writeInt(2);
+        // GEQ1 v3: 31 band gains, no hidden trim (132 bytes).
+        // Restore supports legacy v1/v2 and discards old input/output trims.
+        out.writeInt(stateMagic);out.writeInt(3);
         for(auto* p:bandValues_)out.writeFloat(p->load(std::memory_order_acquire));
-        out.writeFloat(inputValue_->load(std::memory_order_acquire));
     }
     bool restoreUnpublishedState(const void* bytes,int length) {
-        constexpr int v1Bytes=8+static_cast<int>(GraphicEq31Core::bandCount+2)*4;
-        constexpr int v2Bytes=8+static_cast<int>(GraphicEq31Core::bandCount+1)*4;
-        if(published_||!bytes||(length!=v1Bytes&&length!=v2Bytes))return false;
+        constexpr int bandBytes=static_cast<int>(GraphicEq31Core::bandCount)*4;
+        constexpr int v1Bytes=8+bandBytes+8; // band + input + output
+        constexpr int v2Bytes=8+bandBytes+4; // band + input
+        constexpr int v3Bytes=8+bandBytes;   // band only
+        if(published_||!bytes||
+           (length!=v1Bytes&&length!=v2Bytes&&length!=v3Bytes))return false;
         juce::MemoryInputStream input(bytes,static_cast<std::size_t>(length),false);
         if(input.readInt()!=stateMagic)return false;
         const int version=input.readInt();
-        if((version==1&&length!=v1Bytes)||(version==2&&length!=v2Bytes)||
-           (version!=1&&version!=2))return false;
-        // Validate the entire state, including the deprecated v1 output trim,
-        // before touching live parameters. v1 output gain is NOT reapplied.
-        std::array<float,GraphicEq31Core::bandCount+1> values{};
-        for(auto& value:values) {
+        if((version==1&&length!=v1Bytes)||
+           (version==2&&length!=v2Bytes)||
+           (version==3&&length!=v3Bytes)||
+           (version!=1&&version!=2&&version!=3))return false;
+        std::array<float,GraphicEq31Core::bandCount> bands{};
+        for(auto& value:bands) {
             value=input.readFloat();
             if(!std::isfinite(value)||value < -12.f||value>12.f)return false;
         }
-        if(version==1) {
-            const float discardedOutputDb=input.readFloat();
-            if(!std::isfinite(discardedOutputDb)||
-               discardedOutputDb < -12.f||discardedOutputDb>12.f)return false;
+        // Strictly validate legacy trims before any state mutation, then
+        // discard them. Hidden gain must NEVER survive a UI migration.
+        for(int i=0;i<(version==1?2:version==2?1:0);++i) {
+            const auto obsoleteTrim=input.readFloat();
+            if(!std::isfinite(obsoleteTrim)||
+               obsoleteTrim < -12.f||obsoleteTrim>12.f)return false;
         }
         if(!input.isExhausted())return false;
         for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i)
-            setParameter(paramId(i),values[i]);
-        setParameter("inputDb",values[GraphicEq31Core::bandCount]);
+            setParameter(paramId(i),bands[i]);
         if(ready_)prepareToPlay(core_.sampleRate(),0);
         return true;
     }
@@ -152,9 +149,6 @@ private:
                 juce::ParameterID{paramId(i),1},
                 juce::String(graphicEq31Labels[i])+" Hz",
                 juce::NormalisableRange<float>(-12.f,12.f,.1f),0.f));
-        result.add(std::make_unique<juce::AudioParameterFloat>(
-            juce::ParameterID{"inputDb",1},"Input Gain",
-            juce::NormalisableRange<float>(-12.f,12.f,.1f),0.f));
         return result;
     }
     void setParameter(const juce::String& id,float db) {
@@ -164,12 +158,9 @@ private:
             p->endChangeGesture();
         }
     }
-    static double dbToGain(float db) noexcept {return std::pow(10.,static_cast<double>(db)/20.);}
     juce::AudioProcessorValueTreeState params_;
     GraphicEq31Core core_;
     std::array<std::atomic<float>*,GraphicEq31Core::bandCount> bandValues_{};
-    std::atomic<float>* inputValue_=nullptr;
-    juce::SmoothedValue<double,juce::ValueSmoothingTypes::Linear> inputSmooth_;
     std::atomic<float> peak_{0.f};
     bool published_=false,ready_=false;
 };
