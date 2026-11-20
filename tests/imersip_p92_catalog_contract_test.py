@@ -13,11 +13,11 @@ class ImerSipP92Contract(unittest.TestCase):
         host=source("src/Main.cpp")
         self.assertIn("fxRackVM.editorNavigationPlan(current,",bridge)
         self.assertIn('view.raw?.mixerSession?.authority==="CHANNEL_ID"',editor_vm)
-        self.assertRegex(bridge,
-            r'backend\.emitEvent\("arMixAction",\{action:"routingFxEditor",\s*'
-            r'channelId:editor\.channelId,slot:editor\.slot,\s*'
-            r'instanceId:editor\.instanceId,deviceEpoch:editor\.deviceEpoch,\s*'
-            r'revision:editor\.graphRevision\}\)')
+        self.assertIn("openChannelIdFxEditor(editor)",bridge)
+        self.assertIn("fxRackVM.nativeEditorDispatchPlan(current,lease,",bridge)
+        self.assertIn('dispatchPhysicalFxEditor(plan,lease,"CHANNEL_ID")',bridge)
+        self.assertIn('action:"routingFxEditor"',editor_vm)
+        self.assertIn('ack->setProperty("requestId",args.getProperty("requestId",juce::var()))',host)
         self.assertNotIn('else status("Native VST3 editor opened")',bridge)
         self.assertIn("ImerSipP92Editor*>(editor)",host)
         self.assertIn("std::make_unique<PluginEditorWindow>",host)
