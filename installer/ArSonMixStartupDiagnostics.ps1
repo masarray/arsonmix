@@ -36,6 +36,18 @@ if ($registrations) {
 } else {
     $lines += 'WebView2 Evergreen registration absent. Download or repair the Microsoft WebView2 Runtime.'
 }
+$preflight = Join-Path $folder 'webview2-prerequisite.json'
+if (Test-Path -LiteralPath $preflight -PathType Leaf) {
+    try {
+        $prereqStatus = Get-Content -LiteralPath $preflight -Raw | ConvertFrom-Json -ErrorAction Stop
+        $lines += "Installer WebView2 prerequisite: $($prereqStatus.state)"
+        if ($prereqStatus.state -eq 'NEEDS_ATTENTION') {
+            $lines += "Installer dependency detail: $($prereqStatus.detail)"
+        }
+    } catch {
+        $lines += 'Installer WebView2 prerequisite status unreadable.'
+    }
+}
 $startupLog = Join-Path $folder 'startup-failure.txt'
 if (Test-Path -LiteralPath $startupLog -PathType Leaf) {
     $lines += ''
