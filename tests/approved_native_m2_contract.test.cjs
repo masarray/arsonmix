@@ -4983,7 +4983,9 @@ test("MV-9B bridge uses only accepted native snapshots for global FX, fences M4 
    "globalPowerSettlement","m4SlotPowerAckResult","m4SlotPowerSettlement"])
    assert.match(bridge,new RegExp("fxRackVM\\."+name+"\\("));
  assert.match(bridge,/const current=controller\?\.state\(\)\?\.current;\s*const button=document\.getElementById\?\.\("globalFxToggle"\)/);
- assert.match(bridge,/onAccepted:\(next,confirmed\)=>\{\s*onNativeReadback\(next,confirmed\);\s*syncGlobalFxReadback\(\);/);
+ assert.match(bridge,/onAccepted:\(next,confirmed\)=>\{\s*onNativeReadback\(next,confirmed\);/);
+ assert.match(bridge,/fxRackVM\.nativeEditorAckResult\(pendingFxEditorAck,null,accepted,/);
+ assert.match(bridge,/pendingFxEditorAck=null;\s*syncGlobalFxReadback\(\);/);
  assert.match(bridge,/const apply=\(\)=>controller\.onSnapshot\(snapshot\);/);
  assert.doesNotMatch(bridge,/controller\.onSnapshot\(snapshot\);syncGlobalFxReadback/);
  assert.doesNotMatch(bridge,/const actual=snapshot\?\.globalFxBypassed;/);
