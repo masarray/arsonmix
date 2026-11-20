@@ -208,8 +208,10 @@ public:
             setParameter(paramId(index),db);
     }
     void setFlatFromUi() {
-        for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i)
-            setBandFromUi(i,0.f);
+        // Flat preserves the currently accepted Output Level, while all 31
+        // bands pass through the same bounded preset generation fence.
+        const std::array<float,GraphicEq31Core::bandCount> flat{};
+        (void)setBandsFromPreset(flat,acceptedLevelDb());
     }
 private:
     static juce::String paramId(std::size_t i) {
@@ -715,9 +717,12 @@ private:
     }
     void applyFactoryPreset(int choice) {
         if(choice<2||choice>5)return;
-        for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i)
-            processor_.setBandFromUi(i,presetGain(choice,graphicEq31Hz[i]));
-        processor_.setLevelFromUi(0.f);
+        std::array<float,GraphicEq31Core::bandCount> gains{};
+        for(std::size_t i=0;i<gains.size();++i)
+            gains[i]=presetGain(choice,graphicEq31Hz[i]);
+        // Factory recall and user recall must be equally atomic at the
+        // callback boundary, including the post-EQ Output Level.
+        (void)processor_.setBandsFromPreset(gains,0.f);
     }
     // 512x256 image generated once per editor, never in the PCM callback.
     // The supplied original metal is still embedded unchanged. Only 8% of
