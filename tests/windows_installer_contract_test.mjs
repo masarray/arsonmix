@@ -33,7 +33,7 @@ test('per-user Inno Setup upgrades the same app and retains private Studio data'
   assert.match(iss, /Source: "\.\.\\docs\\THIRD_PARTY_8D_SONKU_HRTF\.md"; Flags: dontcopy/);
 });
 
-test('official standard VB-CABLE ZIP is pinned and checked automatically without elevating ArSonMix', () => {
+test('optional signed VB-CABLE driver does not block clean Windows 10 first launch', () => {
   const m = JSON.parse(read('config/vbcable-official-package.json'));
   const pack = read('scripts/prepare_vbcable_package.ps1');
   const bootstrap = read('installer/ArSonMixVBCableInstall.ps1');
@@ -43,12 +43,15 @@ test('official standard VB-CABLE ZIP is pinned and checked automatically without
   assert.match(m.sha256, /^[a-f0-9]{64}$/);
   assert.match(m.proof, /actions\/runs\/43079930924/);
   assert.match(iss, /^PrivilegesRequired=lowest$/m);
-  assert.doesNotMatch(iss, /^\[Tasks\]$|Tasks: vbcable_driver/m);
+  assert.match(iss, /^\[Tasks\]$/m);
+  assert.match(iss, /Name: "installvbcable_driver";[^\n]*Flags: unchecked/);
+  assert.equal((iss.match(/Name: "installvbcable_driver"/g) || []).length, 1);
   assert.match(iss, /VBCABLE_Driver_Pack45\.zip/);
   assert.match(iss, /ArSonMixVBCableInstall\.ps1/);
   const run = iss.slice(iss.indexOf('[Run]'), iss.indexOf('[Code]'));
-  assert.match(run, /StatusMsg: "Checking VB-Audio VB-CABLE[^"]*"; Flags: runasoriginaluser skipifsilent waituntilterminated runhidden/);
+  assert.match(run, /StatusMsg: "Installing OPTIONAL VB-CABLE[^"]*"; Tasks: installvbcable_driver; Flags: runasoriginaluser skipifsilent waituntilterminated runhidden/);
   assert.ok(run.indexOf('ArSonMixVBCableInstall.ps1') < run.indexOf('Filename: "{app}\\ArSonMix.exe"'));
+  assert.doesNotMatch(run,/ArSonMixVBCableInstall\.ps1[^\n]*Flags:[^\n]*(?!Tasks: installvbcable_driver)/);
   assert.match(iss, /Check: CanLaunchMixer/);
   assert.match(iss, /function NeedRestart\(\): Boolean;[\s\S]*?FileExists/);
   assert.match(bootstrap, /if\(\$stateName -eq 'PENDING_REBOOT'\)\{[\s\S]*?New-Item -ItemType File -Path \$RestartMarker/);
