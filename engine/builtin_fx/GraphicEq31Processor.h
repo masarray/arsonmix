@@ -130,6 +130,14 @@ public:
     void setStateInformation(const void* bytes,int count) override {
         (void)restoreUnpublishedState(bytes,count);
     }
+    // CONTROL/UI snapshot of the accepted 31 APVTS targets. Never reads
+    // a transient slider pixel position and never touches realtime history.
+    std::array<float,GraphicEq31Core::bandCount> acceptedBands() const noexcept {
+        std::array<float,GraphicEq31Core::bandCount> bands{};
+        for(std::size_t i=0;i<bands.size();++i)
+            bands[i]=bandValues_[i]->load(std::memory_order_acquire);
+        return bands;
+    }
     juce::AudioProcessorValueTreeState& parameters() noexcept {return params_;}
     float observedPeak() const noexcept {return peak_.load(std::memory_order_relaxed);}
     void setBandFromUi(std::size_t index,float db) {
@@ -538,6 +546,21 @@ private:
                 art->drawWithin(g,{static_cast<float>(x),static_cast<float>(y),
                     static_cast<float>(width),static_cast<float>(height)},
                     juce::RectanglePlacement::stretchToFit,1.f);
+                // 7 SVG units used to collapse to ~0.98 physical px and
+                // rasterised inconsistently. This screen-space index is
+                // snapped to whole pixels, so all 31 faders get the same
+                // legible, optically centred 2px WHITE ridge. The original
+                // s11 path remains in the genuine SVG artwork.
+                const int indexY=juce::roundToInt(y+
+                    (indexCenterY+shift)*static_cast<float>(height)/2042.f);
+                const int indexX=juce::roundToInt(x+
+                    (160.3f-60.f)*static_cast<float>(width)/352.f);
+                const int indexWidth=juce::jmax(2,juce::roundToInt(
+                    154.5f*static_cast<float>(width)/352.f));
+                g.setColour(juce::Colour(0xff0a0f12));
+                g.fillRect(indexX,indexY-1,indexWidth,4);
+                g.setColour(juce::Colours::white);
+                g.fillRect(indexX,indexY,indexWidth,2);
             }else {
                 g.setColour(juce::Colours::red);
                 g.drawFittedText("SVG ERROR",x,y,width,height,
@@ -547,9 +570,14 @@ private:
     private:
         // Exact ends measured from the owner's original vector SVG paths:
         // slot outer Y=147.08..1696.67, THUMB Y=776.33..1055.50.
+        // The WHITE index line (not the body's upper/lower edge) must meet
+        // the actual ±12 tick path. White ridge s11: y=913..920,
+        // centre=916.5; SVG major ticks: y=208.75 / 918.33 / 1627.92.
+        static constexpr float indexCenterY=916.5f;
         static float thumbShift(float gain) noexcept {
             const float t=juce::jlimit(-12.f,12.f,gain)/12.f;
-            return t>=0.f ? -629.25f*t : -641.17f*t;
+            return t>=0.f ? -(indexCenterY-208.75f)*t :
+                             -(1627.92f-indexCenterY)*t;
         }
         void createBandArtwork(std::size_t band) {
             if(originalSvg_.isEmpty())return;
