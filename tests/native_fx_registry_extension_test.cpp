@@ -420,7 +420,46 @@ static void verifyFirstSoundGuitarProcessor() {
         static_cast<int>(snapshot.getSize())));
 }
 
+
+static void verifyGraphicEq31Processor() {
+    const auto* descriptor=armix::builtin_fx::findNativeBuiltInFx(
+        armix::builtin_fx::GraphicEq31Processor::catalogIdentity);
+    assert(descriptor && descriptor->showInPicker);
+    assert(juce::String(descriptor->name)=="Graphic EQ 31");
+    auto processor=descriptor->prepare(48000.,128,nullptr,0);
+    assert(processor && processor->getLatencySamples()==0);
+    auto* geq=dynamic_cast<armix::builtin_fx::GraphicEq31Processor*>(processor.get());
+    assert(geq && geq->isReady());
+    geq->setBandFromUi(17,6.f);
+    juce::MemoryBlock state;
+    processor->getStateInformation(state);
+    assert(state.getSize()==8u+(31u+2u)*4u);
+    auto restored=descriptor->prepare(44100.,256,
+        state.getData(),static_cast<int>(state.getSize()));
+    assert(restored && restored->getName()=="Graphic EQ 31");
+    juce::MemoryBlock roundtrip;
+    restored->getStateInformation(roundtrip);
+    assert(roundtrip==state);
+    juce::AudioBuffer<float> pcm(2,256);
+    pcm.clear();pcm.setSample(0,0,.5f);pcm.setSample(1,0,-.5f);
+    juce::MidiBuffer midi;
+    processor->processBlock(pcm,midi);
+    for(int ch=0;ch<2;++ch)
+        for(int n=0;n<pcm.getNumSamples();++n)
+            assert(std::isfinite(pcm.getSample(ch,n)));
+    auto malformed=state;
+    malformed[0]=0;
+    assert(!descriptor->prepare(48000.,128,malformed.getData(),
+        static_cast<int>(malformed.getSize())));
+    assert(!descriptor->prepare(48000.,128,state.getData(),
+        static_cast<int>(state.getSize()-1)));
+    geq->sealForRealtime();
+    assert(!geq->restoreUnpublishedState(state.getData(),
+        static_cast<int>(state.getSize())));
+}
+
 int main() {
+    verifyGraphicEq31Processor();
     verifySharedNativeFxControlRequest(); 
     verifyFirstSoundGuitarProcessor();
     const auto* found=findNativeBuiltInFxIn(injected,"armix.test.fixture-gain.v1");
