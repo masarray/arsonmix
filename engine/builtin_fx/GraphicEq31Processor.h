@@ -203,10 +203,9 @@ public:
             slider.setDoubleClickReturnValue(true,0.);
             slider.setTooltip(juce::String(graphicEq31Labels[i])+
                 " Hz  |  -12 ... +12 dB  |  Double-click: 0 dB");
-            slider.onValueChange=[this]{
-                if(!applyingPreset_)
-                    preset_.setSelectedId(1,juce::dontSendNotification);
-            };
+            // Preset identity is reconciled from all 31 accepted parameter
+            // values on the message-thread refresh, not from one async
+            // SliderAttachment notification that might arrive mid-preset.
             bandSurface_.addAndMakeVisible(slider);
             attachments_.emplace_back(std::make_unique<Attachment>(
                 processor_.parameters(),"band"+juce::String(static_cast<int>(i)),slider));
@@ -351,24 +350,42 @@ private:
             active?juce::Colour::fromRGB(24,105,89):
                    juce::Colour::fromRGB(87,91,92));
     }
-    void timerCallback() override {refreshHostPower();}
+    static float presetGain(int choice,float hz) noexcept {
+        if(choice==3) // Voice presence, subtract mud without hype.
+            return hz<100.f?-2.5f:hz<270.f?-1.5f:
+                   hz>=1800.f&&hz<5600.f?2.f:0.f;
+        if(choice==4)
+            return hz<=160.f?2.f:hz>=5000.f?-1.f:0.f;
+        if(choice==5)
+            return hz<=125.f?-3.f:hz>=200.f&&hz<=500.f?-1.f:
+                   hz>=1600.f&&hz<=4000.f?2.5f:0.f;
+        return 0.f;
+    }
+    int matchingFactoryPreset() const {
+        for(int preset=2;preset<=5;++preset) {
+            bool match=true;
+            for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i) {
+                const auto* value=processor_.parameters().getRawParameterValue(
+                    "band"+juce::String(static_cast<int>(i)));
+                if(!value||std::abs(value->load(std::memory_order_relaxed)-
+                           presetGain(preset,graphicEq31Hz[i]))>.06f) {
+                    match=false;break;
+                }
+            }
+            if(match)return preset;
+        }
+        return 1;
+    }
+    void timerCallback() override {
+        refreshHostPower();
+        const auto accepted=matchingFactoryPreset();
+        if(preset_.getSelectedId()!=accepted)
+            preset_.setSelectedId(accepted,juce::dontSendNotification);
+    }
     void applyFactoryPreset(int choice) {
         if(choice<2||choice>5)return;
-        applyingPreset_=true;
-        for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i) {
-            const float hz=graphicEq31Hz[i];
-            float db=0.f;
-            if(choice==3) // Voice presence, subtract mud without hype.
-                db=hz<100.f?-2.5f:hz<270.f?-1.5f:
-                   hz>=1800.f&&hz<5600.f?2.f:0.f;
-            else if(choice==4)
-                db=hz<=160.f?2.f:hz>=5000.f?-1.f:0.f;
-            else if(choice==5)
-                db=hz<=125.f?-3.f:hz>=200.f&&hz<=500.f?-1.f:
-                   hz>=1600.f&&hz<=4000.f?2.5f:0.f;
-            processor_.setBandFromUi(i,db);
-        }
-        applyingPreset_=false;
+        for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i)
+            processor_.setBandFromUi(i,presetGain(choice,graphicEq31Hz[i]));
     }
     static juce::Font inter(float size) {return juce::Font("Inter",size,juce::Font::plain);}
     class EqSkin final : public juce::LookAndFeel_V4 {
@@ -571,7 +588,6 @@ private:
     juce::TextButton flat_,power_,close_;
     std::function<bool(bool)> requestBypass_;
     std::function<HostBypassState()> readHostPower_;
-    bool applyingPreset_=false;
 };
 inline juce::AudioProcessorEditor* GraphicEq31Processor::createEditor() {
     return new GraphicEq31Editor(*this);
