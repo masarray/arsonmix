@@ -110,8 +110,13 @@ test('ASIO/WASAPI DIRECT authorizes the exact active input/output channel map',(
   const fence=read('engine/device/DirectRouteFence.h');
   // Bind BOTH untruncated JUCE BigInteger masks at startup, manual selection,
   // and verified DIRECT restore, rather than only the friendly device name.
-  assert.equal(engine.split('getActiveInputChannels().toString (16)').length-1,3);
-  assert.equal(engine.split('getActiveOutputChannels().toString (16)').length-1,3);
+  // INT-1B reads the same two untruncated masks once more on CONTROL
+  // for evidence-only status. Retain ALL three exact direct-fence checks
+  // below: telemetry is not authorization to arm a different device.
+  assert.equal(engine.split('getActiveInputChannels().toString (16)').length-1,4);
+  assert.equal(engine.split('getActiveOutputChannels().toString (16)').length-1,4);
+  assert.match(engine, /setProperty \("activeInputMaskHex"/);
+  assert.match(engine, /setProperty \("activeOutputMaskHex"/);
   for (const operation of ['approve','resumeExpected','observeStart']) {
     // Match the verified native device/mask inputs independently of cosmetic
     // line wrapping introduced by the ASIO control-plane identity guard.
