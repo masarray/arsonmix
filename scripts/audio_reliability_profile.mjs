@@ -70,6 +70,7 @@ export function p95p99FromDelta(counts) {
 
 const sameScope=(a,b)=>[
   "deviceGeneration","device","liveBackendClass","driver","rate","buffer",
+  "inputDevice","outputDevice","deviceInputChannels","deviceOutputChannels",
   "dryTest","connected","diagnosticRoute","productionRoutingState",
   "directRouteAuthorized","backendXrunMeaning"
 ].every(k=>a[k]===b[k]);
@@ -98,6 +99,9 @@ function describeSegment(segment){
   return {
     lineStart:first.line,lineEnd:last.line,mode:s.dryTest?"DRY":"FX",
     device:String(s.device??"UNKNOWN"),backend:s.liveBackendClass,
+    inputDevice:s.inputDevice??"UNKNOWN",outputDevice:s.outputDevice??"UNKNOWN",
+    inputChannels:s.deviceInputChannels??null,
+    outputChannels:s.deviceOutputChannels??null,
     sampleRate:s.rate,bufferFrames:s.buffer,periodUs:Math.round(period*10)/10,
     deviceGeneration:s.deviceGeneration,
     diagnosticRoute:s.diagnosticRoute??"UNKNOWN",
@@ -163,7 +167,8 @@ export function compareDryFx(analysis){
   const dry=[...ready].reverse().find(s=>s.mode==="DRY");
   const fx=[...ready].reverse().find(s=>s.mode==="FX");
   if(!dry||!fx)return {comparable:false,reason:"Need >=30s each of real accepted NORMAL/DRY and NORMAL/FX under the same device."};
-  for(const key of ["backend","device","sampleRate","bufferFrames"]){
+  for(const key of ["backend","device","inputDevice","outputDevice",
+                     "inputChannels","outputChannels","sampleRate","bufferFrames"]){
     if(dry[key]!==fx[key])return {comparable:false,reason:"Mismatched "+key+": do not compare unlike hardware profiles."};
   }
   return {comparable:true,baseline:"DRY",candidate:"FX",
