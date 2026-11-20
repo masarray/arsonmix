@@ -51,7 +51,10 @@ test('optional signed VB-CABLE driver does not block clean Windows 10 first laun
   const run = iss.slice(iss.indexOf('[Run]'), iss.indexOf('[Code]'));
   assert.match(run, /StatusMsg: "Installing OPTIONAL VB-CABLE[^"]*"; Tasks: installvbcable_driver; Flags: runasoriginaluser skipifsilent waituntilterminated runhidden/);
   assert.ok(run.indexOf('ArSonMixVBCableInstall.ps1') < run.indexOf('Filename: "{app}\\ArSonMix.exe"'));
-  assert.doesNotMatch(run,/ArSonMixVBCableInstall\.ps1[^\n]*Flags:[^\n]*(?!Tasks: installvbcable_driver)/);
+  const vendorRunLine=run.split('\n').find(s=>s.includes('ArSonMixVBCableInstall.ps1'));
+  assert.ok(vendorRunLine,'optional vendor installer remains available');
+  assert.match(vendorRunLine,/Tasks: installvbcable_driver/);
+  assert.equal((run.match(/Tasks: installvbcable_driver/g)||[]).length,1);
   assert.match(iss, /Check: CanLaunchMixer/);
   assert.match(iss, /function NeedRestart\(\): Boolean;[\s\S]*?FileExists/);
   assert.match(bootstrap, /if\(\$stateName -eq 'PENDING_REBOOT'\)\{[\s\S]*?New-Item -ItemType File -Path \$RestartMarker/);
@@ -481,4 +484,18 @@ test('updater rechecks both verified installer binaries before execution and rol
   assert.match(script.slice(lastCheck,transition), /Test-InstallableAssetPair \$newPath \$state.newAsset \$oldPath \$state.previousAsset/);
   assert.match(script, /if\(-not \(Test-StagedAsset \$oldPath \$oldAsset\)\)/);
   assert.match(script, /INSTALLER_BYTES_CHANGED_UPDATE_DEFERRED/);
+});
+
+
+test('P0 Windows 10 fresh install needs no VC redistributable and reports missing WebView2',()=>{
+  const cmake=read('CMakeLists.txt'),native=read('src/Main.cpp');
+  assert.match(cmake,/if \(MSVC AND WIN32 AND NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY\)/);
+  assert.match(cmake,/set\(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded\$<\$<CONFIG:Debug>:Debug>"\)/);
+  assert.ok(cmake.indexOf('set(CMAKE_MSVC_RUNTIME_LIBRARY')<
+    cmake.indexOf('add_subdirectory("${JUCE_ROOT}"'),
+    'static CRT must apply to JUCE and app as one ABI');
+  assert.match(native,/Download \/ Repair WebView2/);
+  assert.match(native,/developer\.microsoft\.com\/en-us\/microsoft-edge\/webview2/);
+  assert.match(native,/if \(result == 0\)/);
+  assert.match(iss,/Flags: unchecked/);
 });
