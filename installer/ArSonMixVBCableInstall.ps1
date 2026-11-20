@@ -4,8 +4,7 @@
 # endpoint default changes, silent UAC bypass or driver uninstall.
 [CmdletBinding()]param(
   [Parameter(Mandatory=$true)][string]$Archive,
-  [Parameter(Mandatory=$true)][ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$ExpectedSha256,
-  [Parameter(Mandatory=$true)][string]$RestartMarker
+  [Parameter(Mandatory=$true)][ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$ExpectedSha256
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference="Stop"
@@ -21,9 +20,6 @@ function Record([string]$stateName,[string]$reason) {
     rebootRequired=($stateName -eq 'PENDING_REBOOT')} |
       ConvertTo-Json | Set-Content -LiteralPath $temp -Encoding UTF8
   Move-Item -LiteralPath $temp -Destination $statusPath -Force
-  if($stateName -eq 'PENDING_REBOOT'){
-    New-Item -ItemType File -Path $RestartMarker -Force | Out-Null
-  }
 }
 $dir=Join-Path $env:TEMP ("armix-cable-"+[guid]::NewGuid().ToString("N"))
 try {

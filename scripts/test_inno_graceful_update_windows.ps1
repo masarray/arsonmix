@@ -32,6 +32,51 @@ $privateSentinel=Join-Path $studio ("installer-smoke-"+[guid]::NewGuid().ToStrin
 function Assert-Condition([bool]$condition,[string]$message) {
     if(-not $condition){throw $message}
 }
+function Test-VBCableSmartDetection {
+    $bootstrap=Join-Path $root "installer/ArSonMixVBCableInstall.ps1"
+    $originalAppData=$env:APPDATA
+    $boot=[DateTime]::SpecifyKind([DateTime]"2026-11-01", [DateTimeKind]::Utc)
+    function Get-CimInstance {
+        [CmdletBinding()] param([string]$ClassName)
+        [pscustomobject]@{LastBootUpTime=$boot}
+    }
+    function Get-PnpDevice {
+        [CmdletBinding()] param([switch]$PresentOnly)
+        if ($case.Device -eq 'error') { throw "Fixture PnP query denied" }
+        if ($case.Device -eq 'absent' -or ($case.Device -eq 'offline' -and $PresentOnly)) { return }
+        [pscustomobject]@{FriendlyName="CABLE Output (VB-Audio Virtual Cable)";Status="OK"}
+    }
+    # Guard the fixture from every attempt to launch a vendor process.
+    function Start-Process { throw "Unexpected vendor launch in detection fixture" }
+    try {
+        foreach ($case in @(
+            @{Name='healthy'; Device='present'; Expected='ALREADY_PRESENT'},
+            @{Name='offline'; Device='offline'; Expected='REPAIR_REQUIRED'},
+            @{Name='pending'; Device='absent'; Expected='PENDING_REBOOT'; Pending=$true},
+            @{Name='missing'; Device='absent'; Expected='FAILED'; Reason='Bundled driver ZIP absent'},
+            @{Name='query-failure'; Device='error'; Expected='FAILED'; Reason='Fixture PnP query denied'}
+        )) {
+            $env:APPDATA=Join-Path $work ("cable-"+$case.Name)
+            $status=Join-Path $env:APPDATA "AR-MIX-Studio/VB-CABLE-STATUS.json"
+            if ($case.ContainsKey('Pending')) {
+                New-Item -ItemType Directory -Force -Path (Split-Path -Parent $status) | Out-Null
+                @{state='PENDING_REBOOT';bootUtc=$boot.ToString('o')} |
+                    ConvertTo-Json | Set-Content -LiteralPath $status
+            }
+            # Deliberately absent payload: the missing-device case alone should
+            # check for the archive. Presence and pending must return earlier.
+            & $bootstrap -Archive (Join-Path $work 'absent-vendor.zip') -ExpectedSha256 ('0'*64)
+            $result=Get-Content -LiteralPath $status -Raw | ConvertFrom-Json
+            Assert-Condition ($result.state -ceq $case.Expected) "VB-CABLE state mismatch for $($case.Name)"
+            if ($case.ContainsKey('Reason')) {
+                Assert-Condition ($result.reason -ceq $case.Reason) "VB-CABLE reason mismatch for $($case.Name)"
+            }
+        }
+    } finally {
+        $env:APPDATA=$originalAppData
+    }
+    Write-Host 'VBCABLE_SMART_DETECTION_PASS'
+}
 function Show-UpgradeDiagnostics([string]$logFile){
     if(Test-Path -LiteralPath $logFile){
         Get-Content -LiteralPath $logFile |
@@ -41,6 +86,7 @@ function Show-UpgradeDiagnostics([string]$logFile){
     }else{Write-Host "INNO_RESTART_MANAGER_LOG_MISSING"}
 }
 try {
+    Test-VBCableSmartDetection
     New-Item -ItemType Directory -Force -Path $stage,$out,$install,$studio | Out-Null
     "private-user-data" | Set-Content -LiteralPath $privateSentinel
     $csc=Join-Path $env:WINDIR "Microsoft.NET/Framework/v4.0.30319/csc.exe"
