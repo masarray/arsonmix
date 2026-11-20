@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <optional>
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
+#include "../engine/device/DeviceSessionTransitionPolicy.h"
+#include "../engine/device/NamedDevicePins.h"
 #include "NativeShowStore.h"
 #include "NativeHotkeyRegistry.h"
 #include <charconv>
@@ -101,7 +103,7 @@ struct MixerDeviceBindingPolicy final {
                (!a.monitorEnabled ||
                 (a.monitorL==b.monitorL && a.monitorR==b.monitorR));
     }
-    enum class Mode { exact, verifiedDeviceApply, verifiedMainPinApply, verifiedAsioRestart };
+    using Mode=armix::device::DeviceBindingMode;
     // CONTROL-only independent ASIO EXTERNAL restore admission. Each saved
     // ChannelId is judged against its original driver and currently enabled
     // physical pins; a missing pair or MAIN/MONITOR collision cannot arm an
@@ -139,13 +141,7 @@ struct MixerDeviceBindingPolicy final {
     static std::optional<juce::BigInteger> translateNamedPins(
             const juce::BigInteger& previous,const juce::StringArray& oldNames,
             const juce::StringArray& newNames) {
-        juce::BigInteger result;
-        for(int pin=previous.findNextSetBit(0);pin>=0;pin=previous.findNextSetBit(pin+1)) {
-            const int next=findSamePin(oldNames,newNames,pin);
-            if(next<0 || next>=64)return {};
-            result.setBit(next);
-        }
-        return result;
+        return armix::device::translateNamedPins(previous,oldNames,newNames);
     }
     static bool addReturningCapturePins(std::span<const WaitingAsioInput> waiting,
             const juce::StringArray& names,juce::BigInteger& mask) {
@@ -350,13 +346,7 @@ private:
         return chosen;
     }
     static int uniquePin(const juce::StringArray& names,const juce::String& name) {
-        if(name.isEmpty())return -1;
-        const auto pin=names.indexOf(name);
-        return pin>=0 && names.indexOf(name,false,pin+1)<0?pin:-1;
-    }
-    static int findSamePin(const juce::StringArray& previous,const juce::StringArray& live,int pin) {
-        const auto name=previous[pin];
-        return uniquePin(previous,name)==pin?uniquePin(live,name):-1;
+        return armix::device::uniqueNamedPin(names,name);
     }
     static int physicalAt(const juce::BigInteger& mask,int ordinal) {
         if(ordinal<0)return -1;
@@ -379,7 +369,7 @@ private:
             if(savedNames.isEmpty()) {
                 if(requireNames && saved!=current)return -1;
             } else {
-                physical=findSamePin(savedNames,currentNames,physical);
+                physical=armix::device::findSameNamedPin(savedNames,currentNames,physical);
             }
         }
         return callbackAt(current,physical);

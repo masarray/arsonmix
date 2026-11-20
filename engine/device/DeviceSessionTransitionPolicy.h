@@ -5,6 +5,8 @@
 
 namespace armix::device {
 
+enum class DeviceBindingMode { exact, verifiedDeviceApply, verifiedMainPinApply, verifiedAsioRestart };
+
 // The mixer document is not a hardware binding. An epoch change invalidates
 // PCM admission, NOT the operator's authored controls, WIREs or VST3 leases.
 // All decisions happen on the JUCE message/control thread; no audio callback
