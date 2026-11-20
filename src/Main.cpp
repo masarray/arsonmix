@@ -140,6 +140,25 @@ juce::WebBrowserComponent::Options webViewOptions()
 
 void showWebViewStartupError (const juce::String& detail)
 {
+#if defined(_WIN32)
+    // Before ConsoleWindow/browser/diagnostics exist, there may be NO app
+    // window and NO regular diagnostics log on a fresh Windows 10 machine.
+    // Record only bounded OS/error information to the user's private profile.
+    // No .smix, plugin state, audio device, registry edit, or callback work.
+    const auto local = juce::SystemStats::getEnvironmentVariable ("LOCALAPPDATA", {});
+    if (local.isNotEmpty())
+    {
+        const auto failure = juce::File (local).getChildFile ("ArSonMix")
+            .getChildFile ("diagnostics").getChildFile ("startup-failure.txt");
+        if (failure.getParentDirectory().createDirectory().wasOk()
+            || failure.getParentDirectory().isDirectory())
+            (void) failure.replaceWithText (
+                "ArSonMix GUI startup failure\\nTime: "
+                + juce::Time::getCurrentTime().toISO8601 (true)
+                + "\\nOS: " + juce::SystemStats::getOperatingSystemName()
+                + "\\nReason: " + detail.substring (0, 512) + "\\n");
+    }
+#endif
     juce::NativeMessageBox::showAsync (
         juce::MessageBoxOptions{}
             .withIconType (juce::MessageBoxIconType::WarningIcon)
@@ -148,7 +167,8 @@ void showWebViewStartupError (const juce::String& detail)
             .withMessage ("The offline ArSonMix mixer needs Microsoft Edge WebView2 Runtime.\\n\\n"
                           + detail + "\\n\\nDownload / repair from Microsoft:\\n"
                           "https://developer.microsoft.com/en-us/microsoft-edge/webview2/\\n\\n"
-                          "No VST3, mixer presets or session data were deleted.")
+                          "No VST3, mixer presets or session data were deleted.\\n"
+                          "Local diagnostic: %LOCALAPPDATA%\\\\ArSonMix\\\\diagnostics\\\\startup-failure.txt")
 #else
             .withTitle ("ArSonMix - native WebKit unavailable")
             .withMessage ("ArSonMix requires the system WebKit browser backend "
