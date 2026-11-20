@@ -1727,6 +1727,13 @@ private:
         armix::console::publishAuthoritativeMixerSession(accepted);
         // Project B readback from the same engine-issued control snapshot.
         (void)armix::console::projectSecondaryCaptureNativeReadback(accepted,live);
+        // IO-3D: one CONTROL-owned installed ASIO capability. Do not advertise
+        // a B command on unadmitted, armed, stale or busy primary sessions.
+        // The engine rechecks all physical leases at the actual driver open.
+        (void)armix::console::publishQualifiedSecondaryCaptureCapability(
+            accepted,live,
+            !deviceApply_.busy()&&!nativeShowBusy_&&!studioBackupBusy_&&
+            !engine_.isGraphSwitchPending()&&!mixerSessionWorker_.busy());
         const auto caps=accepted.getProperty("graph",{})
             .getProperty("capabilities",{});
         const auto authority=accepted.getProperty("mixerSession",{})
