@@ -1924,10 +1924,10 @@ test("M/ST after BUS/WIRE uses native ChannelId intent and accepted PCM processi
   const fn=bridge.slice(bridge.indexOf("function requestProcessingFormat(t)"),
     bridge.indexOf("function previewNativePan(t,el,event)"));
   assert.match(fn,/session\(\)\?\.authority|mixerSession\(\)\?\.authority/);
-  assert.match(fn,/controller.intent\("SET_PROCESSING_FORMAT",channelId,/);
-  assert.ok(fn.includes('dispatchM4ChannelPatch(t,"SET_PROCESSING_FORMAT"'));
+  assert.ok(fn.includes('controller.intent(plan.operation,plan.channelId,plan.payload)'));
+  assert.ok(fn.includes('dispatchM4ChannelPatch(t,plan.operation,plan.target,plan.channel)'));
   assert.ok(fn.indexOf('authority==="CHANNEL_ID"')<
-    fn.indexOf('dispatchM4ChannelPatch(t,"SET_PROCESSING_FORMAT"'));
+    fn.indexOf('dispatchM4ChannelPatch(t,plan.operation,plan.target,plan.channel)'));
 });
 test("P0 first Add FX discovers real local VST3 lazily without an audio-thread scan",()=>{
  const bridge=read("web/approved-native-bridge.js");
@@ -2159,7 +2159,7 @@ test("P0 typed mono-stereo, PAN detent, fader geometry & FX failure diagnostics"
  assert.match(bridge,/const width=event\.type==="change"\?18:latched\?22:14/);
  assert.match(bridge,/readout\.textContent=value===0\?"C"/);
  assert.match(bridge,/function requestProcessingFormat\(t\)/);
- assert.ok(bridge.includes('dispatchM4ChannelPatch(t,"SET_PROCESSING_FORMAT"'));
+ assert.ok(bridge.includes('dispatchM4ChannelPatch(t,plan.operation,plan.target,plan.channel)'));
  assert.ok(read("web/approved-channel-strip-view-model.js").includes('operation==="SET_PROCESSING_FORMAT"'));
  assert.match(bridge,/if\(action==="format"&&t\?\.kind==="audio"\)/);
  assert.match(main,/operation=="SET_PROCESSING_FORMAT"/);
@@ -6540,4 +6540,95 @@ test("G-MV36 one correlated native editor transport and JUCE echo, no duplicate 
  assert.match(bridge,/fxRackVM\.nativeEditorAckResult\(pendingFxEditorAck,null,accepted,/);
  assert.doesNotMatch(bridge,/if\(ack\?\.ok!==true\)\s*nativeToast\(ack\?\.error\|\|/);
  assert.doesNotMatch(viewmodel,/backend\.emitEvent|document\.|window\.|setTimeout/);
+});
+
+test("G-MV37 one physical ChannelId M/ST policy validates exact accepted input",()=>{
+ const id="9007199254740993",hw="asio|48000|256|0,1|0,1";
+ const graph={revision:"45",rosterRevision:"8",
+   capabilities:{callbackOwnsChannelIds:true,
+     supportedOps:["SET_PROCESSING_FORMAT"]},
+   channels:[{id,role:"INPUT",processingFormat:"MONO"}]};
+ const native={admitted:true,retained:false,logical:false,
+   device:{epoch:"17"},raw:{mixerSession:{
+     authority:"CHANNEL_ID",deviceEpoch:"17"}},graph};
+ const get=(snapshot=native,args={})=>stripVM.processingFormatPlan(snapshot,{
+   authority:"CHANNEL_ID",channelId:id,hardwareConfiguration:hw,...args});
+ assert.deepEqual(get(),{kind:"READY",authority:"CHANNEL_ID",
+   operation:"SET_PROCESSING_FORMAT",channelId:id,
+   payload:{format:"STEREO"},target:"STEREO"});
+ const stereo=clone(native);stereo.graph.channels[0].processingFormat="STEREO";
+ assert.equal(get(stereo).target,"MONO");
+ for(const h of ["",null,0])
+   assert.equal(get(native,{hardwareConfiguration:h}).kind,"UNAVAILABLE");
+ for(const mutation of [
+   s=>{s.admitted=false;},s=>{s.retained=true;},s=>{s.logical=true;},
+   s=>{s.raw.mixerSession.authority="M4";},
+   s=>{s.raw.mixerSession.deviceEpoch="18";},
+   s=>{s.device.epoch="0";},s=>{s.graph.revision="0";},
+   s=>{s.graph.rosterRevision="0";},
+   s=>{s.graph.capabilities.callbackOwnsChannelIds=false;},
+   s=>{s.graph.capabilities.supportedOps=[];},
+   s=>{s.graph.channels[0].role="GROUP";},
+   s=>{s.graph.channels[0].processingFormat="UNKNOWN";},
+   s=>{s.graph.channels.push({...s.graph.channels[0]});}
+ ]){const snapshot=clone(native);mutation(snapshot);
+   assert.equal(get(snapshot).kind,"UNAVAILABLE");}
+ assert.equal(get(native,{pending:true}).kind,"UNAVAILABLE");
+});
+test("G-MV37 .smix M/ST stays offline and workspace-scoped",()=>{
+ const id="9007199254740993";
+ const saved={logical:true,admitted:false,retained:false,readOnly:false,
+   workspaceToken:"workspace-A",graph:{
+     capabilities:{supportedOps:["SET_PROCESSING_FORMAT"]},
+     channels:[{id,role:"INPUT",processingFormat:"STEREO"}]}};
+ const get=(snapshot=saved,args={})=>stripVM.processingFormatPlan(snapshot,{
+   authority:"LOGICAL",channelId:id,...args});
+ assert.deepEqual(get(),{kind:"READY",authority:"LOGICAL",
+   operation:"SET_PROCESSING_FORMAT",channelId:id,
+   payload:{format:"MONO"},target:"MONO"});
+ for(const mutation of [
+   s=>{s.logical=false;},s=>{s.admitted=true;},s=>{s.retained=true;},
+   s=>{s.readOnly=true;},s=>{s.workspaceToken="";},
+   s=>{s.graph.capabilities.supportedOps=[];},
+   s=>{s.graph.channels[0].processingFormat=null;},
+   s=>{s.graph.channels.push({...s.graph.channels[0]});}
+ ]){const snapshot=clone(saved);mutation(snapshot);
+   assert.equal(get(snapshot).kind,"UNAVAILABLE");}
+ assert.equal(get(saved,{pending:true}).kind,"UNAVAILABLE");
+});
+test("G-MV37 M4 M/ST reuses exact existing routed channel patch",()=>{
+ const sessionChannels=Array.from({length:10},(_,i)=>({
+   role:"INPUT",ordinal:i,source:{main:false,channelFormat:"MONO"},
+   primaryOut:"NONE"}));
+ const legacyChannels=sessionChannels.map(()=>({main:false,channelFormat:"MONO"}));
+ const snapshot={admitted:false,retained:false,device:{epoch:"21"},raw:{
+   mixerSession:{authority:"M4",deviceEpoch:"21",routeRevision:"12",
+     channels:sessionChannels},
+   legacyM4:{active:true,routeAccepted:true,nativeBusStructural:false,
+     routingRevision:"12",channels:legacyChannels}}};
+ const opts={authority:"M4",channel:4,verifiedM4:true,deviceReady:true,
+   hardwareConfiguration:"physical-lease"};
+ const plan=stripVM.processingFormatPlan(snapshot,opts);
+ assert.equal(plan.kind,"READY");
+ assert.equal(plan.operation,"SET_PROCESSING_FORMAT");
+ assert.equal(plan.action,"routingChannelPatch");
+ assert.equal(plan.target,"STEREO");
+ assert.equal(plan.payload.channel,4);
+ for(const change of [
+   {verifiedM4:false},{deviceReady:false},{pending:true},
+   {sourcePending:true},{hardwareConfiguration:null},
+   {hardwareConfiguration:""},{channel:10}
+ ])assert.equal(stripVM.processingFormatPlan(snapshot,{...opts,...change}).kind,
+    "UNAVAILABLE");
+ const wrong=clone(snapshot);
+ wrong.raw.mixerSession.channels[4].source.channelFormat="STEREO";
+ assert.equal(stripVM.processingFormatPlan(wrong,opts).kind,"UNAVAILABLE");
+ const bridge=read("web/approved-native-bridge.js");
+ const section=bridge.slice(bridge.indexOf("function requestProcessingFormat(t)"),
+   bridge.indexOf("function previewNativePan(t,el,event)"));
+ assert.match(section,/stripVM\.processingFormatPlan\(snapshot,/);
+ assert.match(section,/logicalIntent\(plan\.operation,plan\.channelId,plan\.payload\)/);
+ assert.match(section,/controller\.intent\(plan\.operation,plan\.channelId,plan\.payload\)/);
+ assert.match(section,/dispatchM4ChannelPatch\(t,plan\.operation,plan\.target,plan\.channel\)/);
+ assert.doesNotMatch(section,/const target=.*processingFormat|channelFormat===/);
 });

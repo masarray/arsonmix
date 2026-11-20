@@ -901,40 +901,31 @@
   }
 
   function requestProcessingFormat(t){
-    if(logicalView){
-      const id=nativeIdFor(t),source=logicalView.graph.channels.find(ch=>ch.id===id);
-      if(source?.role!=="INPUT")return false;
-      const format=source.processingFormat==="MONO"?"STEREO":"MONO";
-      return logicalIntent("SET_PROCESSING_FORMAT",id,{format}).ok;
+    const snapshot=activeView(),authority=logicalView?"LOGICAL":
+      mixerSession()?.authority;
+    const plan=stripVM.processingFormatPlan(snapshot,{
+      authority,channelId:nativeIdFor(t),channel:m4Index(t),
+      hardwareConfiguration:logicalView?undefined:
+        protocol.nativeHardwareConfiguration(snapshot?.device),
+      verifiedM4:m4Verified(),deviceReady:deviceReady(),
+      pending:!!pendingOutputPatch||!!pendingLogical,
+      sourcePending:!!nativeUiSourcePending
+    });
+    if(plan.kind!=="READY"){
+      status("M/ST unavailable · refresh accepted native input/format");
+      return false;
     }
-    // Once the native ChannelId callback owns PCM, the old M4 routing
-    // revision is no longer authoritative. Send M/ST through the SAME
-    // admitted epoch/revision/roster transaction as WIRE and SOURCE.
-    if(mixerSession()?.authority==="CHANNEL_ID"){
-      const current=controller?.state()?.current;
-      const channelId=nativeIdFor(t);
-      const source=current?.graph?.channels?.find(ch=>ch.id===channelId);
-      if(!current?.admitted || !channelId || source?.role!=="INPUT" ||
-         !current.graph.capabilities.supportedOps.includes("SET_PROCESSING_FORMAT")){
-        status("M/ST unavailable · native processing format not admitted");
-        return false;
-      }
-      const target=source.processingFormat==="MONO"?"STEREO":"MONO";
-      const request=controller.intent("SET_PROCESSING_FORMAT",channelId,
-                                      {format:target});
-      if(!request.ok){
-        status("M/ST rejected · "+request.error);
-        return false;
-      }
+    if(authority==="LOGICAL")
+      return logicalIntent(plan.operation,plan.channelId,plan.payload).ok;
+    if(authority==="CHANNEL_ID"){
+      // Existing controller alone correlates ACK + accepted PCM readback.
+      const request=controller.intent(plan.operation,plan.channelId,plan.payload);
+      if(!request.ok){status("M/ST rejected · "+request.error);return false;}
       window.setTimeout(()=>controller?.expire(request.requestId),8000);
-      status(t.name+" M/ST → "+target+" · verifying native PCM readback");
+      status(t.name+" M/ST → "+plan.target+" · verifying native PCM readback");
       return true;
     }
-    const channel=m4Index(t);
-    const accepted=controller?.state()?.current?.raw?.legacyM4?.channels?.[channel];
-    const target=accepted?.channelFormat==="MONO"?"STEREO":
-      accepted?.channelFormat==="STEREO"?"MONO":null;
-    if(!dispatchM4ChannelPatch(t,"SET_PROCESSING_FORMAT",target,channel)){
+    if(!dispatchM4ChannelPatch(t,plan.operation,plan.target,plan.channel)){
       status("M/ST unavailable · wait for accepted hardware route");
       return false;
     }
