@@ -2193,7 +2193,8 @@ test("P0 real slot VST3 power and native editor use verified instance tokens",()
  assert.match(bridge,/requestAdmittedFxPower\(t,action,btn\)/);
  assert.match(bridge,/FX rack unchanged/);
  assert.match(bridge,/pendingM4RackPowers/);
- assert.match(bridge,/action:"routingFxEditor"/);
+ assert.match(read("web/approved-fx-rack-view-model.js"),/action:"routingFxEditor"/);
+ assert.match(bridge,/dispatchPhysicalFxEditor\(plan,lease,"M4"\)/);
  assert.match(bridge,/action:plan\.action,requestId,\.\.\.plan\.payload/);
  assert.match(read("web/approved-fx-rack-view-model.js"),
    /action:"routingFxBypass"/);
