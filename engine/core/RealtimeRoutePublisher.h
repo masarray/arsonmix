@@ -160,6 +160,15 @@ public:
                owned_->graphRevision==expectedRevision
                    ?owned_->prepared.get():nullptr;
     }
+    // CONTROL only. Cross-epoch recovery may need to inspect the LAST
+    // accepted qualified lease for explicit transaction retirement. Do not
+    // expose the old epoch as a valid RT producer: ReadLease::get() remains
+    // exact-epoch guarded, and no stale graph may render after device START.
+    std::uint64_t controlOwnedEpoch(std::uint64_t revision) const noexcept {
+        return owned_ && owned_->prepared && revision_==revision &&
+               owned_->graphRevision==revision
+            ? owned_->deviceEpoch:0;
+    }
     [[nodiscard]] ReadLease acquire(bool skip=false) noexcept {return ReadLease(*this,skip);}
     std::uint64_t lastRevision() const noexcept {return revision_;} // CONTROL
     std::size_t pendingRetirements() const noexcept {return retiredCount_;} // CONTROL
