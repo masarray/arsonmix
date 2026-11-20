@@ -1611,6 +1611,14 @@ if(BUILD_TESTING)
   add_test(NAME NativePEQEightBandsRTAndFrequencyResponse COMMAND ARMixNativeChannelEqTests)
   add_dependencies(ARMixMixerRoutingTests ARMixNativeChannelEqTests)
 
+  # Graphic EQ 31: ISO one-third-octave centres, stereo PCM, Nyquist and RT ramps.
+  add_executable(ARMixGraphicEq31CoreTests tests/graphic_eq31_core_test.cpp
+      engine/builtin_fx/GraphicEq31Core.h)
+  target_compile_features(ARMixGraphicEq31CoreTests PRIVATE cxx_std_20)
+  add_test(NAME GraphicEq31FrequencyResponseAndRealtimeStability
+      COMMAND ARMixGraphicEq31CoreTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixGraphicEq31CoreTests)
+
   # Zero-lookahead native compressor DSP: zero PDC, stereo-linked peak,
   # soft knee, dry/wet, parameter validation and variable sample rates.
   add_executable(ARMixNativeCompressorTests tests/builtin_channel_compressor_test.cpp
