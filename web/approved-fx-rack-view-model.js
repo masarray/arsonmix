@@ -388,6 +388,39 @@
       Object.keys(current.lease).every(key=>current.lease[key]===lease[key]);
   }
 
+  // G-MV36: physical ChannelId VST3 / ImmerSIB editors use the original
+  // JUCE HWND only when the EXACT G-MV31 accepted instance lease survives.
+  // Logical .smix and native built-in /preview/ editor owners stay separate.
+  function nativeEditorDispatchPlan(snapshot,lease,{hardwareConfiguration}={}){
+    if(lease?.authority!=="CHANNEL_ID"||
+       !editorNavigationLeaseMatches(snapshot,lease,{hardwareConfiguration}))
+      return {kind:"UNAVAILABLE"};
+    return {kind:"READY",action:"routingFxEditor",
+      payload:{channelId:lease.channelId,slot:lease.slot,
+        instanceId:lease.instanceId,deviceEpoch:lease.deviceEpoch,
+        revision:lease.graphRevision}};
+  }
+  // One pure HWND ACK policy for M4 and ChannelId: transport requestId AND
+  // installed FX instance must match, and the current accepted hardware,
+  // route, roster, catalog and owner must still hold the exact click lease.
+  // Called with ack=null by the controller on every accepted PCM snapshot;
+  // this retires stale HWND requests even if the native host never responds.
+  function nativeEditorAckResult(pending,ack,snapshot,{
+    verifiedM4=false,offline=false,hardwareConfiguration}={}){
+    if(!pending)return "IGNORE";
+    const lease=pending.lease;
+    const valid=pending.authority==="CHANNEL_ID"?
+      lease?.authority==="CHANNEL_ID"&&
+        editorNavigationLeaseMatches(snapshot,lease,{hardwareConfiguration}):
+      pending.authority==="M4"&&
+        m4EditorDispatchLeaseMatches(snapshot,lease,{
+          verifiedM4,offline,hardwareConfiguration});
+    if(!valid)return "STALE";
+    if(!ack||ack.requestId!==pending.requestId)return "IGNORE";
+    if(ack.instanceId!==lease.instanceId||ack.ok!==true)return "REJECTED";
+    return "ACKED";
+  }
+
   // G-MV34: one physically admitted ChannelId FX owner for bypass/insert.
   // The bridge supplies the canonical existing native device fingerprint.
   // Historical pure/partial fixtures without the optional fingerprint stay
@@ -599,6 +632,7 @@
   return Object.freeze({powerReadback,mountedRackMatches,
     m4Presentation,nativePowerSettlement,m4PowerPlan,m4RackAckResult,
     m4RackSettlement,m4EditorDispatchPlan,m4EditorDispatchLeaseMatches,
+    nativeEditorDispatchPlan,nativeEditorAckResult,
     m4InsertPlan,m4InsertAckResult,m4InsertReadbackSettlement,
     editorNavigationPlan,editorNavigationLeaseMatches,m4EditorPlan,
     nativeInsertPlan,nativeEditPlan,nativeInsertSettlement,
