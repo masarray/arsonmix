@@ -115,6 +115,118 @@ static void checkRecoveryPlan(const MixerSessionDocument& session) {
     assert(plan.restoreAllowed && plan.replacePristineStartup && !plan.resumeMain);
 }
 
+
+static void checkSessionControlPlans() {
+    using Save=Recovery::SaveAction;
+    using Open=Recovery::OpenAction;
+    Recovery::SaveContext save;
+    save.automatic=true;
+    save.channelIdInstalled=true;
+    save.physicalOpen=true;
+    save.directAuthorized=true;
+    assert(Recovery::planSave(save).action==Save::captureInstalled);
+    save.workerBusy=true;
+    assert(Recovery::planSave(save).action==Save::reject);
+    save.workerBusy=false;
+    save.deviceBusy=true;
+    assert(Recovery::planSave(save).action==Save::reject);
+    save.deviceBusy=false;
+    save.vendorEditorOpen=true;
+    assert(Recovery::planSave(save).action==Save::reject);
+    save.vendorEditorOpen=false;
+    save.readOnly=true;
+    assert(Recovery::planSave(save).action==Save::reject);
+    save.readOnly=false;
+    save.channelIdInstalled=false;
+    assert(Recovery::planSave(save).action==Save::unchanged);
+    save.automatic=false;
+    assert(Recovery::planSave(save).action==Save::exportLogical);
+    save.retainedNative=true;
+    assert(Recovery::planSave(save).action==Save::reject);
+    save.retainedNative=false;
+    save.m4Installed=true; // Legacy M4 is installed, not an offline export.
+    assert(Recovery::planSave(save).action==Save::captureInstalled);
+    save.m4Installed=false;
+    save.channelIdInstalled=true;
+    save.automatic=true;
+    save.recoveryPending=true;
+    assert(Recovery::planSave(save).action==Save::reject);
+    save.recoveryPending=false;
+    save.physicalOpen=false;
+    assert(Recovery::planSave(save).action==Save::reject);
+    save.shutdownCheckpoint=true; // Explicit shutdown checkpoint exception.
+    assert(Recovery::planSave(save).action==Save::captureInstalled);
+    save.shutdownCheckpoint=false;
+    save.physicalOpen=true;
+    save.directAuthorized=false;
+    assert(Recovery::planSave(save).action==Save::reject);
+    save.directAuthorized=true;
+    save.mainInterrupted=true;
+    assert(Recovery::planSave(save).action==Save::reject);
+    save.mainInterrupted=false;
+    save.secondaryArmed=true;
+    assert(Recovery::planSave(save).action==Save::reject);
+    save.secondaryArmed=false;
+    save.graphPending=true;
+    assert(Recovery::planSave(save).action==Save::reject);
+
+    Recovery::OpenContext open;
+    assert(Recovery::planOpen(open).action==Open::openLogical);
+    open.retainedNative=true;
+    assert(Recovery::planOpen(open).action==Open::reject);
+    open.channelIdInstalled=true;
+    assert(Recovery::planOpen(open).action==Open::restoreInstalled);
+    open.channelIdInstalled=false;
+    open.m4Installed=true;
+    assert(Recovery::planOpen(open).action==Open::restoreInstalled);
+    open.m4Installed=false;
+    open.retainedNative=false;
+    open.secondaryArmed=true;
+    assert(Recovery::planOpen(open).action==Open::reject);
+    open.secondaryArmed=false;
+    open.epochChanged=true;
+    assert(Recovery::planOpen(open).action==Open::reject);
+    open.epochChanged=false;
+    open.operationBusy=true;
+    assert(Recovery::planOpen(open).action==Open::reject);
+    open.operationBusy=false;
+    open.vendorEditorOpen=true;
+    assert(Recovery::planOpen(open).action==Open::reject);
+
+    // Save deduplication only follows a prior ACCEPTED fingerprint and
+    // must not depend on wall clock; distinct edits always requalify.
+    auto doc=makeSession();
+    const auto first=Recovery::stageSave(doc,true,{},1762521000000LL);
+    assert(first.error.isEmpty() && !first.unchanged);
+    assert(first.fingerprint.isNotEmpty() && doc.savedMs==1762521000000LL);
+    const auto again=Recovery::stageSave(doc,true,first.fingerprint,1762522000000LL);
+    assert(again.error.isEmpty() && again.unchanged);
+    const auto forced=Recovery::stageSave(doc,false,first.fingerprint,1762523000000LL);
+    assert(forced.error.isEmpty() && !forced.unchanged);
+    doc.masterGain=.4f;
+    const auto changed=Recovery::stageSave(doc,true,first.fingerprint,1762524000000LL);
+    assert(changed.error.isEmpty() && !changed.unchanged &&
+           changed.fingerprint!=first.fingerprint);
+    doc.id="UNTRUSTED";
+    const auto invalid=Recovery::stageSave(doc,true,{},1762525000000LL);
+    assert(invalid.error.isNotEmpty());
+
+    Recovery::RestoreContext restore;
+    restore.outputsDisarmed=true;
+    assert(Recovery::restoreBlocker(restore)==nullptr);
+    restore.workerBusy=true;
+    assert(Recovery::restoreBlocker(restore)!=nullptr);
+    restore.workerBusy=false;
+    restore.vendorEditorOpen=true;
+    assert(Recovery::restoreBlocker(restore)!=nullptr);
+    restore.vendorEditorOpen=false;
+    restore.graphPending=true;
+    assert(Recovery::restoreBlocker(restore)!=nullptr);
+    restore.graphPending=false;
+    restore.outputsDisarmed=false;
+    assert(Recovery::restoreBlocker(restore)!=nullptr);
+}
+
 class FixtureDevice final : public juce::AudioIODevice {
 public:
     FixtureDevice():AudioIODevice("Verified WASAPI fixture","Windows Audio") {
@@ -1472,6 +1584,7 @@ int main(){
     nativeDeviceRecovery();
     auto d=makeSession();
     checkRecoveryPlan(d);
+    checkSessionControlPlans();
     verifyExternalOutputPortableIntent();
     verifyIndependentAsioExternalRestoreProvenance();
     const auto before=Codec::encode(d);

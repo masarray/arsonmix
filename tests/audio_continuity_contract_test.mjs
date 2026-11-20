@@ -7,6 +7,7 @@ const main=read('src/Main.cpp');
 const engine=read('src/LiveAudioEngine.h');
 const policy=read('engine/device/AudioContinuityPolicy.h');
 const coordinator=read('src/NativeDeviceApplyCoordinator.h');
+const sessionRecovery=read('src/NativeMixerSessionRecovery.h');
 const cmake=read('CMakeLists.txt');
 
 test('display sleep never changes logical mixer intent or device configuration',()=>{
@@ -69,7 +70,7 @@ test('WASAPI recovery fails closed against substituted endpoint names or pin mas
 
 test('session capture and shutdown keep requested MAIN through a device STOP',()=>{
   const capture=main.split('juce::String saveMixerSession(bool resumeMain')[1]
-      .split('const auto canonical=')[0];
+      .split('const auto pendingId=doc.id;')[0];
   assert.match(capture,/if\(monitoring\)engine_\.setOutputMuted\(true\)/);
   assert.match(capture,/engine_\.setOutputMuted\(false\)/);
   assert.doesNotMatch(capture,/engine_\.setMonitorEnabled\(/);
@@ -82,9 +83,16 @@ test('session capture and shutdown keep requested MAIN through a device STOP',()
 test('automatic checkpoints cannot overwrite saved MAIN and device binding during STOP',()=>{
   const save=main.split('juce::String saveMixerSession(bool resumeMain')[1]
       .split('void openMixerFile(')[0];
-  assert.match(save,/!audio \|\| !audio->isOpen\(\)/);
-  assert.match(save,/if\(automatic && !shutdownCheckpoint\)/);
+  // Recovery is the single SAVE admission owner; Main provides physical
+  // readback evidence. STOP must never be an implicit checkpoint success.
+  const admit=sessionRecovery.split('static SavePlan planSave(')[1]
+      .split('enum class OpenAction')[0];
+  assert.match(save,/audio!=nullptr && audio->isOpen\(\)/);
   assert.match(save,/engine_\.mainInterruptedByDevice\(\)/);
+  assert.match(save,/Recovery::planSave\(/);
+  assert.match(admit,/c\.automatic && !c\.shutdownCheckpoint/);
+  assert.match(admit,/!c\.physicalOpen \|\| !c\.directAuthorized \|\| c\.mainInterrupted/);
+  assert.match(admit,/SaveAction::reject/);
   assert.match(save,/doc\.resumeMain=resumeMain \|\|/);
   assert.match(save,/engine_\.wantsMainContinuation\(\) && !operatorOutputMuted_/);
   const persistence=main.split('if (deviceSettingsDirty_)')[1]
