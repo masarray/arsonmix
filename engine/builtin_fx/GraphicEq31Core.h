@@ -91,12 +91,15 @@ public:
         // A third-party upstream FX may deliver a non-finite sample. Never
         // let it poison the persistent IIR memories for every later block.
         // Bounded in-place validation; ordinary finite PCM is bit-unchanged.
-        bool invalidInput=false;
+        bool invalidLeft=false,invalidRight=false;
         for(std::size_t n=0;n<frames;++n) {
-            if(!std::isfinite(left[n])){left[n]=0.f;invalidInput=true;}
-            if(!std::isfinite(right[n])){right[n]=0.f;invalidInput=true;}
+            if(!std::isfinite(left[n])){left[n]=0.f;invalidLeft=true;}
+            if(!std::isfinite(right[n])){right[n]=0.f;invalidRight=true;}
         }
-        if(invalidInput)reset(); // AUDIO-owned histories only
+        // The stereo filters have independent delay memories. A fault on
+        // one input must not erase the other channel's healthy IIR tail.
+        if(invalidLeft||invalidRight)
+            resetHistories(invalidLeft,invalidRight);
         bool processed=false;
         for(auto& b:bands_) {
             if(b.frames==0 && b.db==0.) {
@@ -130,17 +133,16 @@ public:
         // not a musical limiter or automatic gain control. Finite >0 dBFS
         // PCM remains untouched for the operator to manage headroom.
         if(processed) {
-            bool invalidOutput=false;
+            bool invalidLeft=false,invalidRight=false;
             for(std::size_t n=0;n<frames;++n) {
-                if(!std::isfinite(left[n])){left[n]=0.f;invalidOutput=true;}
-                if(!std::isfinite(right[n])){right[n]=0.f;invalidOutput=true;}
+                if(!std::isfinite(left[n])){left[n]=0.f;invalidLeft=true;}
+                if(!std::isfinite(right[n])){right[n]=0.f;invalidRight=true;}
             }
-            if(invalidOutput)reset();
+            if(invalidLeft||invalidRight)
+                resetHistories(invalidLeft,invalidRight);
         }
     }
-    void reset() noexcept {
-        for(auto& b:bands_)b.l1=b.l2=b.r1=b.r2=0.;
-    }
+    void reset() noexcept {resetHistories(true,true);}
 private:
     struct Coeff {
         double b0=1.,b1=0.,b2=0.,a1=0.,a2=0.;
@@ -151,6 +153,12 @@ private:
         int frames=0;
         double l1=0.,l2=0.,r1=0.,r2=0.;
     };
+    void resetHistories(bool left,bool right) noexcept {
+        for(auto& b:bands_) {
+            if(left)b.l1=b.l2=0.;
+            if(right)b.r1=b.r2=0.;
+        }
+    }
     static constexpr double factorMinDb_=-24.;
     static constexpr double factorStepDb_=0.1;
     static constexpr std::size_t factorCount_=361; // -24..+12 inclusive
