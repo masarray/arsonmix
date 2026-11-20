@@ -170,6 +170,7 @@ function int1bSample(second,{dryTest=true,deviceGeneration=2,device="ASIO Driver
     diagnosticRoute:"NORMAL",productionRoutingState:"NATIVE_ROUTE_ACCEPTED",
     directRouteAuthorized:true,dryTest,
     nativeGlobalFxBypassed,nativeFxInstalledCount:1,nativeFxProcessingCount,
+    nativeFxActivityComplete:true,
     nativeExternalCh1Leased,nativeExternalCh1InstalledCount,
     nativeExternalCh1ProcessingCount,
     callbackCount:cumulative,
