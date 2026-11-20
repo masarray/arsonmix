@@ -215,7 +215,12 @@ public:
         peakLabel_.setJustificationType(juce::Justification::centred);
         peakLabel_.setColour(juce::Label::textColourId,juce::Colours::black);
         addAndMakeVisible(peakLabel_);
-        setSize(1500,328);
+        // Fit a normal 1366px desktop without clipping the last three bands.
+        // Host-owned JUCE editor stays one surface; width-only resize reflows
+        // frequency labels and all 31 independent SVG faders.
+        setResizable(true,true);
+        setResizeLimits(1070,328,1700,328);
+        setSize(1280,328);
         startTimerHz(20);
     }
     ~GraphicEq31Editor() override {stopTimer();setLookAndFeel(nullptr);}
@@ -252,11 +257,19 @@ public:
         flat_.setBounds(19,205,68,27);
         smile_.setBounds(93,205,68,27);
         peakLabel_.setBounds(16,253,150,26);
-        constexpr int x0=211,step=41;
+        // Every column is derived from the live editor width, not a fixed
+        // 1500px desktop. Integer-rounded boundaries never overlap or clip.
+        constexpr int x0=202,rightMargin=15;
+        const float cell=static_cast<float>(getWidth()-x0-rightMargin)/
+            static_cast<float>(GraphicEq31Core::bandCount);
         for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i) {
-            const int x=x0+static_cast<int>(i)*step;
-            labels_[i].setBounds(x,61,40,19);
-            sliders_[i].setBounds(x+3,83,34,203);
+            const int left=juce::roundToInt(x0+static_cast<float>(i)*cell);
+            const int right=juce::roundToInt(x0+static_cast<float>(i+1)*cell);
+            const int width=right-left;
+            labels_[i].setBounds(left,61,width,19);
+            labels_[i].setFont(juce::Font(juce::jlimit(8.2f,11.f,
+                (static_cast<float>(width)-3.f)*0.34f),juce::Font::plain));
+            sliders_[i].setBounds(left+1,83,width-2,203);
         }
     }
 private:
