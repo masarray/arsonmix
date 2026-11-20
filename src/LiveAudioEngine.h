@@ -601,7 +601,7 @@ public:
         if(Policy::apply(document,inspected.live,inspected.outputs,
                          inspected.callbackInputs,mode).isNotEmpty() ||
            !dryRoutingLab_.rebindRetainedAsioSession(std::move(document),
-               inspected.pins,inspected.live.frames))return false;
+               inspected.pins,inspected.live.frames,lostB))return false;
         if(lostB) {
             retireQualifiedCaptureForNewGraph(); // only AFTER A graph published
             qualifiedCaptureNeedsRemap_.store(true,std::memory_order_release);
