@@ -6272,6 +6272,9 @@ private:
             ack->setProperty("ok",opened);
             ack->setProperty("error",error);
             ack->setProperty("instanceId",token);
+            // G-MV36: correlate the HWND result to its exact GUI click.
+            // The requestId is feedback only; it is not installed PCM proof.
+            ack->setProperty("requestId",args.getProperty("requestId",juce::var()));
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
                 "arMixRoutingFxEditorAck",juce::var(ack.release()));
             if(opened)diagnostics_.record("ROUTED_FX_EDITOR_OPENED",
