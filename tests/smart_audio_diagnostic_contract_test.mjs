@@ -287,6 +287,30 @@ test('INT-1B ignores legacy dryTest visual intent when native FX still processes
   assert.equal(compareDryFx(result).comparable,false);
 });
 
+test('INT-1B never pairs another app session or a stale DRY baseline',()=>{
+  const makeWindow=(start,end,dryTest)=>Array.from(
+    {length:end-start+1},(_,i)=>int1bLine(start+i,{dryTest}));
+  const sessionHeader=new Date(Date.UTC(2026,10,20,8,0,40)).toISOString()+
+    ' | SESSION | started';
+  const differentApp=analyzeHealthLog([
+    ...makeWindow(0,40,true),sessionHeader,...makeWindow(41,81,false)
+  ].join('\n'));
+  assert.equal(differentApp.segments.length,2);
+  assert.equal(compareDryFx(differentApp).comparable,false,
+    'the same generation on a new process is not comparable');
+  const stale=analyzeHealthLog([
+    ...makeWindow(0,40,true),...makeWindow(200,240,false)
+  ].join('\n'));
+  assert.equal(compareDryFx(stale).comparable,false,
+    'a session gap must not silently pair different performances');
+  const intervening=analyzeHealthLog([
+    ...makeWindow(0,40,true),...makeWindow(41,81,false),
+    ...makeWindow(82,122,true)
+  ].join('\n'));
+  assert.equal(compareDryFx(intervening).comparable,true,
+    'a complete adjacent dry then fx pair remains valid even with a later DRY run');
+});
+
 test('INT-1B rejects missed/unknown data rather than counting missing as zero',()=>{
   const s=int1bSample(1,{});
   delete s.callbackBudgetBuckets;
