@@ -354,6 +354,56 @@ inline void run() {
     primary.join();
     reader.stop();
     clock.stop();
+
+    // IO-2H P1: B capture closes/resets its ASRC while the primary render
+    // callback is still consuming B. Exactly the unsafe sequence on an
+    // intentional disconnect. No global A reader shutdown is allowed:
+    // qualified A+B stays installed; B must become SILENT and A stays live.
+    check(clock.prepare(format)&&clock.activate(),
+          "fresh B clock is prepared for independent disconnect race");
+    check(reader.prepare(plan,frames),"same native A+B reader stays installed");
+    std::atomic<bool> keepRendering{true};
+    std::atomic<unsigned> validPrimary{0},aOnly{0};
+    std::thread aCallback([&] {
+        while(keepRendering.load(std::memory_order_acquire)) {
+            if(reader.withBlocks(epoch,aInput,1,frames,clock,
+               [&](std::span<const d::MultiDeviceInputPlan::CaptureBlock> blocks)
+                    noexcept {
+                   const bool ok=native.render(epoch,nullptr,0,
+                       left.data(),right.data(),frames,false,fx,
+                       nullptr,nullptr,{},{},{},nullptr,0,blocks);
+                   if(ok) {
+                       validPrimary.fetch_add(1,std::memory_order_relaxed);
+                       if(near(left[frames-1],.2f*monoCenter,0.005f))
+                           aOnly.fetch_add(1,std::memory_order_relaxed);
+                   }
+                   return ok;
+               })){} // test only: single primary callback
+        }
+    });
+    for(int i=0;i<160;++i) {
+        clock.stop(); // CONTROL must wait for both admitted clock callbacks
+        if(i!=159)
+            check(clock.prepare(format)&&clock.activate(),
+                  "B ASRC reprepare with competing A pulls never races reset");
+    }
+    keepRendering.store(false,std::memory_order_release);
+    aCallback.join();
+    check(validPrimary.load(std::memory_order_relaxed)>0 &&
+          aOnly.load(std::memory_order_relaxed)>0,
+          "primary ChannelId MAIN and A-only PCM survive competing B disconnect");
+    // After B has fully disconnected, the same qualified reader must still
+    // invoke the ONE A graph and silence only the missing B source.
+    check(reader.withBlocks(epoch,aInput,1,frames,clock,
+       [&](std::span<const d::MultiDeviceInputPlan::CaptureBlock> blocks)
+           noexcept {
+           return native.render(epoch,nullptr,0,left.data(),right.data(),
+               frames,false,fx,nullptr,nullptr,{},{},{},nullptr,0,blocks);
+       }) && near(left[frames-1],.2f*monoCenter,0.005f) &&
+           near(right[frames-1],.2f*monoCenter,0.005f),
+          "B absent never mutes or aliases direct primary A PCM");
+    reader.stop();
+    clock.stop();
     // IO-2D persistence recovery: a saved primary-only .smix can replace
     // A+B only by an explicit, muted native session transaction. WIRE/FX
     // omission of a map still inherits B and must never silently alias pins.
