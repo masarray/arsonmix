@@ -216,6 +216,76 @@ int main() {
                 "(reference checksum %.4f; machine dependent)\n",
                 us(before1-before0),400*31,us(after1-before1),400*31,
                 callbackUs[242],callbackUs[253],baselineSink);
+    // Upstream plugin fault isolation: NaN/Inf must not poison the
+    // long-lived stereo IIR histories or escape to downstream PCM. This is
+    // recovery from invalid samples, not level limiting for valid audio.
+    {
+        GraphicEq31Core guard;
+        GEQ_CHECK(guard.prepare(48000.));
+        for(std::size_t band=0;band<31;++band)
+            GEQ_CHECK(guard.setGain(band,band%2?12.:-12.));
+        std::array<float,128> inputL{},inputR{};
+        inputL.fill(.01f);inputR.fill(-.01f);
+        guard.processStereo(inputL.data(),inputR.data(),inputL.size());
+        inputL.fill(.002f);inputR.fill(-.002f);
+        inputL[7]=std::numeric_limits<float>::quiet_NaN();
+        inputR[33]=std::numeric_limits<float>::infinity();
+        guard.processStereo(inputL.data(),inputR.data(),inputL.size());
+        for(const auto x:inputL)GEQ_CHECK(std::isfinite(x));
+        for(const auto x:inputR)GEQ_CHECK(std::isfinite(x));
+        inputL.fill(0.f);inputR.fill(0.f);
+        // Even the large finite values of an already-corrupted upstream
+        // processor must never leave a nonfinite output in the next callback.
+        inputL[0]=std::numeric_limits<float>::max();
+        inputR[0]=-std::numeric_limits<float>::max();
+        guard.processStereo(inputL.data(),inputR.data(),inputL.size());
+        for(const auto x:inputL)GEQ_CHECK(std::isfinite(x));
+        for(const auto x:inputR)GEQ_CHECK(std::isfinite(x));
+        for(int block=0;block<8;++block) {
+            inputL.fill(0.f);inputR.fill(0.f);
+            guard.processStereo(inputL.data(),inputR.data(),inputL.size());
+            for(const auto x:inputL)GEQ_CHECK(std::isfinite(x));
+            for(const auto x:inputR)GEQ_CHECK(std::isfinite(x));
+        }
+    }
+
+    // Inter-band boost is additive, NOT limited to the +12 dB of any single
+    // fader. Preserve operator responsibility for headroom: no undocumented
+    // auto-trim, soft clipping or limiter when valid PCM exceeds 0 dBFS.
+    {
+        GraphicEq31Core boosted;
+        GEQ_CHECK(boosted.prepare(48000.));
+        for(std::size_t band=0;band<31;++band)
+            GEQ_CHECK(boosted.setGain(band,12.));
+        std::array<float,128> left{},right{};
+        double wetEnergy=0.;
+        std::size_t wetSamples=0;
+        float outputPeak=0.f;
+        for(int block=0;block<350;++block) {
+            for(std::size_t n=0;n<left.size();++n) {
+                const float sample=.15f*static_cast<float>(std::sin(
+                    6.2831853071795864769*1000.*(block*128+n)/48000.));
+                left[n]=sample;right[n]=-sample;
+            }
+            boosted.processStereo(left.data(),right.data(),left.size());
+            if(block>=100)for(std::size_t n=0;n<left.size();++n) {
+                GEQ_CHECK(std::isfinite(left[n])&&std::isfinite(right[n]));
+                GEQ_CHECK(std::fabs(left[n]+right[n])<.001f);
+                outputPeak=std::max(outputPeak,std::fabs(left[n]));
+                wetEnergy+=static_cast<double>(left[n])*left[n];
+                ++wetSamples;
+            }
+        }
+        const double gainDb=20.*std::log10(std::sqrt(
+            wetEnergy/static_cast<double>(wetSamples))/
+            (.15/std::sqrt(2.)));
+        GEQ_CHECK(gainDb>19. && gainDb<23.);
+        GEQ_CHECK(outputPeak>1.05f); // valid float >0 dBFS is NOT clamped
+        std::printf("GEQ31 all-31-band +12 dB at 1kHz: measured %.2f dB, "
+                    "output peak %.3f (>1 is intentional, not hard-clipped)\n",
+                    gainDb,outputPeak);
+    }
+
     std::puts("Graphic EQ 31 core: frequency/RT matrix, zero allocations, "
               "stereo, 0-frame PCM onset, rapid edits, and Nyquist PASS");
 }
