@@ -1927,7 +1927,7 @@ test("M/ST after BUS/WIRE uses native ChannelId intent and accepted PCM processi
   assert.ok(fn.includes('controller.intent(plan.operation,plan.channelId,plan.payload)'));
   assert.ok(fn.includes('dispatchM4ChannelPatch(t,plan.operation,plan.target,plan.channel)'));
   assert.ok(fn.indexOf('authority==="CHANNEL_ID"')<
-    fn.indexOf('dispatchM4ChannelPatch(t,"SET_PROCESSING_FORMAT"'));
+    fn.indexOf('dispatchM4ChannelPatch(t,plan.operation,plan.target,plan.channel)'));
 });
 test("P0 first Add FX discovers real local VST3 lazily without an audio-thread scan",()=>{
  const bridge=read("web/approved-native-bridge.js");
