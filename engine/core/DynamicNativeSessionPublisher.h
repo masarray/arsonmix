@@ -118,13 +118,25 @@ public:
         // MAIN/MONITOR/output disarm, not a hidden in-place WIRE edit.
         const auto* prior=publisher_.controlPrepared(
             proposedDeviceEpoch,expectedRevision);
+        // Old A+B input maps are still CONTROL-owned after a primary epoch
+        // change, but cannot render in that new epoch. Only explicit A-only
+        // session replacement may retire that previous qualified lease.
+        const auto ownedEpoch=publisher_.controlOwnedEpoch(expectedRevision);
+        const auto* retained=ownedEpoch?
+            publisher_.controlPrepared(ownedEpoch,expectedRevision):nullptr;
         if(qualifiedInputMap&&!allOutputsDisarmed) {
             report.fault=Fault::outputArmed;return report;
         }
         const bool replacing=mapChange==QualifiedMapChange::replaceWithPrimaryOnly;
         if(replacing && (!allOutputsDisarmed || qualifiedInputMap ||
                          verifiedInternalWireOnly || verifiedInternalFxOnly ||
-                         !prior || !prior->inputMap)) {
+                         !retained || !retained->inputMap)) {
+            report.fault=Fault::invalidCandidate;return report;
+        }
+        // A cross-epoch commit missing the explicit retirement marker must
+        // NOT discard B's map and reinterpret its virtual pins as A inputs.
+        if(!replacing && retained && retained->inputMap && !prior &&
+           !qualifiedInputMap) {
             report.fault=Fault::invalidCandidate;return report;
         }
         const auto* acceptedInputMap=replacing?nullptr:
