@@ -107,6 +107,51 @@ inline void run() {
     check(recoveredPcm.commit(roster,primaryFallback,1,epoch+2,epoch+2,true).ok() &&
           !recoveredPcm.hasQualifiedInputMap(epoch+2,2),
           "second A restart rebinds the recovered A-only graph without stale B map");
+    // IO-2F caller-path regression: the REAL retained owner has an A+B
+    // input map on the previous epoch. Merely staging the safe A-only
+    // document is insufficient; ASIO restart must explicitly pass the map
+    // retirement token all the way through restoreNativeMixerSession().
+    // The preceding A-only fixture never had B installed and missed P1.
+    m::DynamicNativeSessionPublisher restarted;
+    using Change=m::DynamicNativeSessionPublisher::QualifiedMapChange;
+    using Fault=m::DynamicNativeSessionPublisher::Fault;
+    check(restarted.commit(roster,request,0,epoch,epoch,true,
+          {},false,false,&plan).ok() &&
+          restarted.hasQualifiedInputMap(epoch,1),
+          "actual A+B PCM installed before driver restart");
+    check(restarted.commit(roster,primaryFallback,1,epoch+1,epoch+1,true).fault==
+          Fault::invalidCandidate &&
+          restarted.acceptedRevision()==1 &&
+          restarted.hasQualifiedInputMap(epoch,1),
+          "P1 regression reproduction: restart without explicit retirement fails closed");
+    check(restarted.commit(roster,primaryFallback,1,epoch+1,epoch+2,true,
+          {},false,false,nullptr,Change::replaceWithPrimaryOnly).fault==
+          Fault::staleDevice &&
+          restarted.hasQualifiedInputMap(epoch,1),
+          "mismatched live A epoch must preserve old B lease on rejected recovery");
+    check(restarted.commit(roster,primaryFallback,1,epoch+1,epoch+1,false,
+          {},false,false,nullptr,Change::replaceWithPrimaryOnly).fault==
+          Fault::outputArmed &&
+          restarted.hasQualifiedInputMap(epoch,1),
+          "ARM cannot pass the explicit map retirement boundary");
+    check(restarted.commit(roster,primaryFallback,1,epoch+1,epoch+1,true,
+          {},false,false,nullptr,Change::replaceWithPrimaryOnly).ok() &&
+          restarted.acceptedRevision()==2 &&
+          !restarted.hasQualifiedInputMap(epoch+1,2) &&
+          !restarted.hasQualifiedInputMap(epoch,1),
+          "verified A-only restart atomically retires old B map");
+    const auto* retainedRouting=restarted.acceptedRouting(epoch+1,2);
+    check(retainedRouting && retainedRouting->find(a) &&
+          retainedRouting->find(b) && retainedRouting->find(main),
+          "A, silent B, MAIN ChannelId roster survives ASIO restart");
+    check(restarted.commit(roster,primaryFallback,2,epoch+2,epoch+2,true,
+          {},false,false,nullptr,Change::replaceWithPrimaryOnly).fault==
+          Fault::invalidCandidate,
+          "second restart must not retire nonexistent B mapping again");
+    check(restarted.commit(roster,primaryFallback,2,epoch+2,epoch+2,true).ok() &&
+          !restarted.hasQualifiedInputMap(epoch+2,3) &&
+          restarted.acceptedRouting(epoch+2,3)->find(b),
+          "second ASIO restart keeps original B track silent but session usable");
     m::DynamicNativeSessionPublisher native;
     check(native.commit(roster,request,0,epoch,epoch,true,
         {},false,false,&plan).ok(),"one PCM and device map publication");
