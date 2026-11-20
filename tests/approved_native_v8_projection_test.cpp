@@ -3,6 +3,7 @@
 #include "../integration/ApprovedNativeV8Projection.h"
 #include "../src/ApprovedNativeV8Projection.h"
 #include "../integration/ApprovedNativeControlIntent.h"
+#include "../integration/QualifiedCaptureConsoleIntent.h"
 #include "../integration/ApprovedNativeRuntimeSnapshot.h"
 #include "../integration/FirstSoundSignalEvidence.h"
 #if defined(NDEBUG)
@@ -1045,7 +1046,204 @@ static void retainedDocumentDoesNotAdmitPcm() {
     assert(!projectRetainedNativeChannelIdGraph(snapshot,live));
 }
 
+static void qualifiedCaptureNativeIntentRegression() {
+    auto snap=canonicalSnapshot();
+    auto bus=realBusReadbackFixture();
+    snap.getProperty("device",{}).getDynamicObject()->setProperty("backend","ASIO");
+    assert(projectApprovedNativeV8(snap,bus,true));
+    auto valid=[]() {
+        return parse(R"JSON({
+          "operation":"INSTALL_SECONDARY_CAPTURE",
+          "targetChannelId":"9007199254740993",
+          "requestId":"io-capture-00001",
+          "deviceEpoch":"91",
+          "baseGraphRevision":"25",
+          "baseRosterRevision":"9",
+          "payload":{
+            "confirmed":true,
+            "secondaryDriver":"Qualified B ASIO",
+            "secondaryInputPins":[0,7],
+            "captureRate":44100,
+            "capturePeriod":128,
+            "sources":[{
+              "channelId":"9007199254740993",
+              "deviceRole":"SECONDARY",
+              "leftPhysical":7,
+              "rightPhysical":-1,
+              "stereo":false
+            }]
+          }
+        })JSON");
+    };
+    // Advertised capability is a preflight offer on the ONE native graph,
+    // never proof that B driver is compatible or any microphone audible.
+    // Arbitrary WebView intents cannot bypass the native capability.
+    assert(!decodeQualifiedCaptureConsoleIntent(valid(),snap,bus).ok());
+    snap.getProperty("device",{}).getDynamicObject()
+        ->setProperty("outputArmed",false);
+    const auto live=parse(R"JSON({
+      "directRouteAuthorized":true,"adaptiveClockActive":false,
+      "asioRegistryAttestation":"POSTOPEN_REGISTERED_ASIO_DRIVER_CLASS_PINNED",
+      "secondaryCapture":{"role":"INPUT_ONLY_ASIO","status":"NOT_CONFIGURED",
+        "installedInputMap":false,"driverReady":false,"driverFault":false}
+    })JSON");
+    auto copy=[](const juce::var& value) {
+        return juce::JSON::parse(juce::JSON::toString(value,false));
+    };
+    const auto deny=[&](const juce::var& source,const juce::var& state,
+                       bool idle=true) {
+        auto target=copy(source);
+        const auto before=juce::JSON::toString(target,false);
+        assert(!publishQualifiedSecondaryCaptureCapability(target,state,idle));
+        assert(juce::JSON::toString(target,false)==before);
+    };
+    deny(snap,live,false); // CONTROL is busy
+    {
+        auto bad=copy(snap);
+        bad.getProperty("device",{}).getDynamicObject()->setProperty("backend","WASAPI");
+        deny(bad,live);
+        bad=copy(snap);
+        bad.getProperty("device",{}).getDynamicObject()->setProperty("outputArmed",true);
+        deny(bad,live);
+        bad=copy(snap);
+        bad.getProperty("graph",{}).getProperty("capabilities",{})
+            .getDynamicObject()->setProperty("callbackOwnsChannelIds",false);
+        deny(bad,live);
+        bad=copy(snap);
+        bad.getProperty("device",{}).getDynamicObject()
+            ->setProperty("enabledInputs",juce::var(juce::Array<juce::var>{}));
+        deny(bad,live);
+    }
+    {
+        auto bad=copy(live);
+        bad.getDynamicObject()->setProperty("directRouteAuthorized",false);
+        deny(snap,bad);
+        bad=copy(live);
+        bad.getDynamicObject()->setProperty("adaptiveClockActive",true);
+        deny(snap,bad);
+        bad=copy(live);
+        bad.getDynamicObject()->setProperty("asioRegistryAttestation","NONE");
+        deny(snap,bad);
+        bad=copy(live);
+        bad.getProperty("secondaryCapture",{}).getDynamicObject()
+            ->setProperty("installedInputMap",true);
+        deny(snap,bad);
+        bad=copy(live);
+        bad.getProperty("secondaryCapture",{}).getDynamicObject()
+            ->setProperty("driverFault",true);
+        deny(snap,bad);
+        bad=copy(live);
+        bad.getProperty("secondaryCapture",{}).getDynamicObject()
+            ->setProperty("status","PCM_FLOW_OBSERVED");
+        deny(snap,bad);
+    }
+    assert(publishQualifiedSecondaryCaptureCapability(snap,live,true));
+    const auto advertised=snap.getProperty("graph",{})
+        .getProperty("capabilities",{}).getProperty("supportedOps",{});
+    assert(advertised.isArray() && advertised.getArray()->contains(
+        juce::String("INSTALL_SECONDARY_CAPTURE")));
+    assert(publishQualifiedSecondaryCaptureCapability(snap,live,true));
+    assert(snap.getProperty("graph",{}).getProperty("capabilities",{})
+        .getProperty("supportedOps",{}).getArray()->size()==advertised.getArray()->size());
+    // An explicit B remap is allowed to be re-attempted only when the
+    // old B device is CLOSED; this still requires the new physical lease.
+    auto remap=copy(live);
+    remap.getProperty("secondaryCapture",{}).getDynamicObject()
+        ->setProperty("status","NEEDS_REMAP");
+    // A mutable approved copy can expose the offer; do not touch the old bus.
+    auto remapSnapshot=copy(snap);
+    assert(publishQualifiedSecondaryCaptureCapability(remapSnapshot,remap,true));
+    assert(!static_cast<bool>(snap.getProperty("productionCallbackLive",true)));
+    const auto accepted=decodeQualifiedCaptureConsoleIntent(valid(),snap,bus);
+    assert(accepted.ok());
+    assert(accepted.command.requestId=="io-capture-00001");
+    assert(accepted.command.deviceEpoch==91 &&
+           accepted.command.graphRevision==25 &&
+           accepted.command.rosterRevision==9 &&
+           accepted.command.targetChannelId==9007199254740993ULL);
+    // Reuse the approved v8 session's opaque requestId rather than a
+    // second JS-side command sequence or an IO-specific prefix requirement.
+    auto alternate=valid();
+    alternate.getDynamicObject()->setProperty("requestId","session-control-42");
+    assert(decodeQualifiedCaptureConsoleIntent(alternate,snap,bus).ok());
+    assert(accepted.command.captureRate==44100.);
+    assert(accepted.command.capturePeriod==128);
+    assert(accepted.command.secondaryPins[0]&&accepted.command.secondaryPins[7]&&
+           accepted.command.secondaryPins.countNumberOfSetBits()==2);
+    assert(accepted.command.sources.size()==1);
+    assert(accepted.command.sources[0].channelId==9007199254740993ULL &&
+           accepted.command.sources[0].secondary &&
+           accepted.command.sources[0].left==7);
+    auto bad=valid();
+    bad.getProperty("payload",{}).getDynamicObject()->setProperty("confirmed",false);
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
+    bad=valid();
+    bad.getDynamicObject()->setProperty("targetChannelId","18446744073709551615");
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
+    bad=valid();
+    bad.getDynamicObject()->setProperty("baseGraphRevision","24");
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
+    bad=valid();
+    bad.getProperty("payload",{}).getDynamicObject()->setProperty(
+        "secondaryInputPins",parse(R"JSON({"p":[0,0]})JSON").getProperty("p",{}));
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
+    bad=valid();
+    bad.getProperty("payload",{}).getProperty("sources",{})[0].getDynamicObject()
+        ->setProperty("leftPhysical",3);
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
+    bad=valid();
+    bad.getProperty("payload",{}).getProperty("sources",{})[0].getDynamicObject()
+        ->setProperty("channelId","18446744073709551615"); // actual MAIN
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
+    bad=valid();
+    bad.getProperty("payload",{}).getProperty("sources",{})[0].getDynamicObject()
+        ->setProperty("channelId","18446744073709551616"); // uint64 overflow
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
+    bad=valid();
+    bad.getProperty("payload",{}).getProperty("sources",{})[0].getDynamicObject()
+        ->setProperty("deviceRole","PRIMARY");
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
+    bad=valid();
+    bad.getProperty("payload",{}).getDynamicObject()->setProperty("capturePeriod",12);
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
+    bad=valid();
+    bad.getProperty("payload",{}).getProperty("sources",{})[0].getDynamicObject()
+        ->setProperty("stereo",true);
+    bad.getProperty("payload",{}).getProperty("sources",{})[0].getDynamicObject()
+        ->setProperty("rightPhysical",7);
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,snap,bus).ok());
+    bad=valid();
+    bad.getDynamicObject()->setProperty("requestId","io-capture-0001");
+    const auto wrongBackend=canonicalSnapshot(); // NOT ASIO and NOT admitted
+    assert(!decodeQualifiedCaptureConsoleIntent(bad,wrongBackend,bus).ok());
+}
+
+static void nativeSecondaryCaptureStatusProjectionTest() {
+    auto approved=canonicalSnapshot();
+    auto real=parse(R"JSON({"secondaryCapture":{
+      "role":"INPUT_ONLY_ASIO","status":"WAITING_FOR_PCM",
+      "installedInputMap":true,"driver":"ASIO B",
+      "deviceLease":"9007199254740993","primaryEpoch":"91",
+      "activePinMaskHex":"81","sourceAudibleProven":false
+    }})JSON");
+    assert(projectSecondaryCaptureNativeReadback(approved,real));
+    const auto observed=approved.getProperty("secondaryCapture",{});
+    assert(observed.isObject() &&
+      observed.getProperty("deviceLease","").toString()=="9007199254740993" &&
+      observed.getProperty("driver","").toString()=="ASIO B" &&
+      !static_cast<bool>(observed.getProperty("sourceAudibleProven",true)));
+    const auto fake=parse(R"JSON({"secondaryCapture":{
+      "role":"SECOND_RENDER","status":"PCM_FLOW_OBSERVED",
+      "installedInputMap":true}})JSON");
+    assert(!projectSecondaryCaptureNativeReadback(approved,fake) &&
+      approved.getProperty("secondaryCapture",{}).getProperty("driver","").toString()=="ASIO B");
+    const auto none=parse(R"JSON({"secondaryCapture":null})JSON");
+    assert(!projectSecondaryCaptureNativeReadback(approved,none));
+}
+
 int main() {
+    nativeSecondaryCaptureStatusProjectionTest();
+    qualifiedCaptureNativeIntentRegression();
     retainedDocumentDoesNotAdmitPcm();
     auto snap=canonicalSnapshot();
     auto bus=realBusReadbackFixture();

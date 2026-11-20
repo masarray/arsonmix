@@ -10,6 +10,73 @@
 // its installed realtime callback owns the accepted publisher/epoch.
 // G0/M4 and any forged nativeBus without that predicate MUST stay unadmitted.
 namespace armix::console {
+// IO-3A: project only genuine native engine status into the ONE approved
+// CONTROL snapshot. No browser-selected device, DSP graph or positive LIVE
+// state is manufactured by this diagnostic projection.
+inline bool projectSecondaryCaptureNativeReadback(
+    juce::var& approved,const juce::var& live) {
+    if(!approved.isObject()||!live.isObject()||
+       !approved.getProperty("device",{}).isObject())return false;
+    const auto secondary=live.getProperty("secondaryCapture",{});
+    if(!secondary.isObject() ||
+       secondary.getProperty("role","").toString()!="INPUT_ONLY_ASIO" ||
+       !secondary.getProperty("status",{}).isString() ||
+       !secondary.getProperty("installedInputMap",{}).isBool())return false;
+    approved.getDynamicObject()->setProperty("secondaryCapture",secondary);
+    return true;
+}
+
+// IO-3D: an installed primary ChannelId callback may *offer* an explicitly
+// confirmed Device B capture transaction. The existing native engine is still
+// the final authority: offering the op is NOT an ASIO driver compatibility,
+// audible PCM, saved session, or physical dual-device FAT claim.
+// This only enriches the ONE approved v8 capability array; no extra transport.
+inline bool publishQualifiedSecondaryCaptureCapability(
+    juce::var& approved,const juce::var& live,bool controlIdle) {
+    if(!controlIdle||!approved.isObject()||!live.isObject())return false;
+    const auto device=approved.getProperty("device",{});
+    const auto graph=approved.getProperty("graph",{});
+    const auto caps=graph.getProperty("capabilities",{});
+    const auto secondary=live.getProperty("secondaryCapture",{});
+    if(!device.isObject()||!graph.isObject()||!caps.isObject()||
+       !secondary.isObject()||
+       device.getProperty("backend","").toString()!="ASIO"||
+       device.getProperty("outputArmed",juce::var(true))!=juce::var(false)||
+       !static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",false))||
+       !static_cast<bool>(live.getProperty("directRouteAuthorized",false))||
+       static_cast<bool>(live.getProperty("adaptiveClockActive",true))||
+       (live.getProperty("asioRegistryAttestation","").toString()!=
+            "POSTOPEN_REGISTERED_ASIO_DRIVER_CLASS_PINNED" &&
+        live.getProperty("asioRegistryAttestation","").toString()!=
+            "SAVED_PREFLIGHT_POSTOPEN_REGISTRATION_CONSISTENT")||
+       secondary.getProperty("role","").toString()!="INPUT_ONLY_ASIO"||
+       static_cast<bool>(secondary.getProperty("installedInputMap",true))||
+       static_cast<bool>(secondary.getProperty("driverReady",true))||
+       static_cast<bool>(secondary.getProperty("driverFault",true)))
+        return false;
+    const auto state=secondary.getProperty("status","").toString();
+    if(state!="NOT_CONFIGURED"&&state!="NEEDS_REMAP")return false;
+    const auto pins=device.getProperty("enabledInputs",{});
+    const auto channels=graph.getProperty("channels",{});
+    const auto ops=caps.getProperty("supportedOps",{});
+    if(!pins.isArray()||pins.getArray()->isEmpty()||
+       !channels.isArray()||!ops.isArray())return false;
+    bool hasInput=false;
+    for(const auto& ch:*channels.getArray())
+        if(ch.getProperty("role","").toString()=="INPUT") {
+            hasInput=true;break;
+        }
+    if(!hasInput)return false;
+    auto verified=*ops.getArray();
+    if(!verified.contains(juce::String("INSTALL_SECONDARY_CAPTURE")))
+        verified.add(juce::String("INSTALL_SECONDARY_CAPTURE"));
+    if(auto* c=caps.getDynamicObject()) {
+        c->setProperty("supportedOps",juce::var(verified));
+        return true;
+    }
+    return false;
+}
+
 // Legacy M2 counted only device START callbacks; the actual routing epoch
 // also advances on STOP. After ASIO/WASAPI re-open they can differ (e.g.,
 // G0 start=2 while accepted routing epoch=3). Always use the installed

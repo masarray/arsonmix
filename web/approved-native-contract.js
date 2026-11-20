@@ -311,6 +311,92 @@
     }
     return rows;
   }
+  // IO-3D: pure GUI preflight mirrors the native CONTROL decoder's physical
+  // source identity rules. It does NOT query/open a driver or grant a lease.
+  // Native rechecks every field at the actual one-owner transaction boundary.
+  function validQualifiedCaptureRequest(snapshot,targetChannelId,payload) {
+    if(!snapshot?.admitted || !object(payload) ||
+       snapshot.device?.backend!=="ASIO" ||
+       snapshot.device.outputArmed!==false ||
+       payload.confirmed!==true ||
+       typeof payload.secondaryDriver!=="string" ||
+       payload.secondaryDriver.length<1 ||
+       payload.secondaryDriver.length>128 ||
+       /[\r\n]/.test(payload.secondaryDriver) ||
+       !Number.isFinite(payload.captureRate) ||
+       payload.captureRate<8000 || payload.captureRate>192000 ||
+       !Number.isInteger(payload.capturePeriod) ||
+       payload.capturePeriod<32 || payload.capturePeriod>8192)
+      return false;
+    const pins=payload.secondaryInputPins;
+    if(!Array.isArray(pins)||pins.length<1||pins.length>16||
+       pins.some((n,i)=>!Number.isInteger(n)||n<0||n>63||
+         (i>0&&n<=pins[i-1])))return false;
+    const sources=payload.sources;
+    if(!Array.isArray(sources)||sources.length<1||sources.length>64)
+      return false;
+    const nativeInputs=new Set(snapshot.graph.channels.filter(
+      ch=>ch.role==="INPUT").map(ch=>ch.id));
+    const aPins=new Set(snapshot.device.enabledInputs);
+    const bPins=new Set(pins);
+    const used=new Set();
+    let selectedB=false,hasB=false;
+    for(const row of sources) {
+      if(!object(row)||decimal(row.channelId)===null ||
+         row.channelId==="0" ||!nativeInputs.has(row.channelId) ||
+         used.has(row.channelId) ||
+         !["PRIMARY","SECONDARY"].includes(row.deviceRole) ||
+         typeof row.stereo!=="boolean" ||
+         !Number.isInteger(row.leftPhysical) ||
+         row.leftPhysical<0||row.leftPhysical>63)return false;
+      const allowed=row.deviceRole==="SECONDARY"?bPins:aPins;
+      if(!allowed.has(row.leftPhysical) ||
+         (row.stereo?(!Number.isInteger(row.rightPhysical) ||
+           row.rightPhysical<0||row.rightPhysical>63 ||
+           row.leftPhysical===row.rightPhysical||
+           !allowed.has(row.rightPhysical)):row.rightPhysical!==-1))
+        return false;
+      used.add(row.channelId);
+      hasB ||= row.deviceRole==="SECONDARY";
+      if(row.channelId===targetChannelId && row.deviceRole==="SECONDARY")
+        selectedB=true;
+    }
+    return hasB && selectedB;
+  }
+  // IO-3B: the stable native device B lease is created only AFTER driver
+  // verification. ACK carries this native-issued token; a second, later
+  // independent snapshot must match it along with actual hardware masks.
+  // Never consider driver-open as ChannelId PCM or audible source proof.
+  function secondaryCaptureLeaseEvidence(status,payload,epoch) {
+    if(!object(status)||!object(payload)||
+       typeof payload.secondaryDriver!=="string" ||
+       typeof status.driver!=="string" ||
+       status.driver!==payload.secondaryDriver ||
+       status.role!=="INPUT_ONLY_ASIO" ||
+       status.installedInputMap!==true ||status.driverReady!==true ||
+       status.driverFault!==false ||status.needsRemap!==false ||
+       status.primaryEpochMatches!==true ||
+       status.primaryEpoch!==epoch ||decimal(status.deviceLease)===null ||
+       status.deviceLease==="0" ||decimal(status.captureGeneration)===null ||
+       status.captureGeneration==="0" ||
+       !Number.isFinite(payload.captureRate) ||
+       status.captureRate!==payload.captureRate ||
+       !Number.isInteger(payload.capturePeriod) ||
+       status.capturePeriod!==payload.capturePeriod ||
+       !Array.isArray(payload.secondaryInputPins) ||
+       payload.secondaryInputPins.length<1 ||
+       payload.secondaryInputPins.length>16 ||
+       payload.secondaryInputPins.some((pin,i)=>!Number.isInteger(pin) ||
+         pin<0||pin>63||(i>0&&pin<=payload.secondaryInputPins[i-1])))
+      return null;
+    let mask=0n;
+    for(const pin of payload.secondaryInputPins)mask|=1n<<BigInt(pin);
+    if(status.activePinMaskHex!==mask.toString(16))return null;
+    return Object.freeze({driver:status.driver,primaryEpoch:status.primaryEpoch,
+      deviceLease:status.deviceLease,captureGeneration:status.captureGeneration,
+      activePinMaskHex:status.activePinMaskHex,captureRate:status.captureRate,
+      capturePeriod:status.capturePeriod});
+  }
   // ACK alone is never physical evidence. Readback must prove that a known
   // control/route actually reached the accepted native graph. No invented UI
   // updates and no optimistic fader/edge commits.
@@ -321,6 +407,19 @@
     const {operation,targetChannelId,payload} = pending;
     const ch = next.graph.channels.find(c=>c.id===targetChannelId);
     if (!ch) return false;
+    if (operation==="INSTALL_SECONDARY_CAPTURE") {
+      if(ch.role!=="INPUT"||payload.confirmed!==true ||
+         !Array.isArray(payload.sources) ||
+         !payload.sources.some(source=>object(source) &&
+           source.channelId===targetChannelId &&
+           source.deviceRole==="SECONDARY") ||
+         cmp(next.graph.revision,pending.baseGraphRevision)<=0 ||
+         !pending.ack?.secondaryLease)return false;
+      const fresh=secondaryCaptureLeaseEvidence(
+        next.raw?.secondaryCapture,payload,next.device.epoch);
+      const ack=pending.ack.secondaryLease;
+      return !!fresh && Object.keys(ack).every(key=>fresh[key]===ack[key]);
+    }
     if (operation === "SET_INPUT_GAIN")
       return ch.role==="INPUT" && Number.isFinite(payload.valueDb) &&
         Number.isFinite(ch.controls?.inputGainDb) &&
@@ -715,6 +814,9 @@
         return refuseIntent("UNKNOWN_CHANNEL_ID");
       }
       if (!object(payload)) return refuseIntent("INVALID_PAYLOAD");
+      if(operation==="INSTALL_SECONDARY_CAPTURE" &&
+         !validQualifiedCaptureRequest(current,targetChannelId,payload))
+        return refuseIntent("INVALID_SECONDARY_CAPTURE_INTENT");
       let fxExpected=null;
       if(operation==="REMOVE_INSERT"||operation==="MOVE_INSERT") {
         const source=current.graph.channels.find(c=>c.id===targetChannelId);
@@ -781,8 +883,21 @@
           cmp(raw.rosterRevision,pending.baseRosterRevision) < 0) {
         pending=null;lastError="STALE_NATIVE_ACK";subscribe();notify();return false;
       }
+      let secondaryLease=null;
+      if(pending.operation==="INSTALL_SECONDARY_CAPTURE") {
+        secondaryLease=secondaryCaptureLeaseEvidence(
+          raw.secondaryCapture,pending.payload,raw.deviceEpoch);
+        if(!secondaryLease ||
+           !pending.payload.sources?.some(row=>object(row) &&
+             row.channelId===pending.targetChannelId &&
+             row.deviceRole==="SECONDARY") ||
+           cmp(raw.graphRevision,pending.baseGraphRevision)<=0) {
+          pending=null;lastError="INVALID_SECONDARY_CAPTURE_ACK";
+          subscribe();notify();return false;
+        }
+      }
       pending.ack={deviceEpoch:raw.deviceEpoch,graphRevision:raw.graphRevision,
-        rosterRevision:raw.rosterRevision};
+        rosterRevision:raw.rosterRevision,secondaryLease};
       lastError="PENDING_ACCEPTED_SNAPSHOT";notify();
       // Reject ACK-only "success": explicitly request a LATER independent readback.
       subscribe();
@@ -797,6 +912,7 @@
   }
   return Object.freeze({decimal,cmp,normalizeSnapshot,
     nativeHardwareConfiguration,selectNativeReadModel,readbackProvesIntent,
+    validQualifiedCaptureRequest,
     logicalReadbackProves,diagnoseFirstSound,createController,
     validPresentationName,validPresentationColor,validPresentationIcon,
     operatorMessage,physicalOutputOverview});

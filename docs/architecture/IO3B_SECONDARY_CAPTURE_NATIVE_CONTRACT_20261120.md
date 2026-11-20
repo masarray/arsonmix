@@ -1,0 +1,85 @@
+# IO-3B — Typed secondary ASIO capture control (native-only integration contract)
+
+**Scope:** approved ArSonMix `/preview/` **single** v8 console request/ACK/readback transport; Windows JUCE primary ASIO A plus one independently-clocked input-only ASIO B. **Not yet an operator-facing GUI or physical FAT result.** Cross-workstream source: [multi-device ARD](../ARD_ARSONMIX_MULTI_DEVICE_IO_V2_20261118.md), [coordination #812](https://github.com/masarray/arsonmix/issues/812).
+
+## Native command (implemented source boundary, not enabled in published picker)
+
+```json
+{
+  "operation":"INSTALL_SECONDARY_CAPTURE",
+  "requestId":"<one existing v8 session requestId>",
+  "deviceEpoch":"91",
+  "baseGraphRevision":"25",
+  "baseRosterRevision":"9",
+  "targetChannelId":"9007199254740993",
+  "payload":{
+    "confirmed":true,
+    "secondaryDriver":"<exact selected verified ASIO capture driver name>",
+    "secondaryInputPins":[0,7],
+    "captureRate":44100,
+    "capturePeriod":128,
+    "sources":[
+      {"channelId":"9007199254740993","deviceRole":"SECONDARY",
+       "leftPhysical":7,"rightPhysical":-1,"stereo":false}
+    ]
+  }
+}
+```
+
+All IDs are **canonical uint64 decimal strings**; do not round through JavaScript Number. `targetChannelId` must be an installed INPUT that is actually assigned to B in the `sources` list. Every source row must refer to an exact installed ChannelId and a selected, observed native **physical** input index (not a dense JUCE callback ordinal). `secondaryInputPins` must be unique, sorted, 1–16 channels and within supported driver bit bounds. `PRIMARY` input rows, when needed to preserve currently accepted A channels, use the accepted A physical mask. Incomplete A/B rows are rejected by the native qualified graph compiler.
+
+The native CONTROL decoder `integration/QualifiedCaptureConsoleIntent.h` checks the exact installed public graph, matching internal nativeBus revision/roster, operator confirmation, requestId and input roles. The one `Main.cpp::handleApprovedNativeControl` dispatcher invokes `LiveAudioEngine::installSecondaryAsioCapture`, which **rechecks** actual ASIO driver identity, registration class, current A/B pins, negotiated sample rate/buffer and native leases before publishing one ChannelId PCM/FX owner. Outputs must already be disarmed; **no speaker is auto-armed**.
+
+## ACK and later readback
+
+The existing `arMixConsoleAck` replies with requestId, `status` ACCEPTED/REJECTED, errorCode and installed deviceEpoch/graphRevision/rosterRevision. Native controller also includes `secondaryCapture` diagnostics (driver, physical mask, generation, lease, clock and fault) on this operation. ACK acceptance requires verified installed B capture readback, not merely driver `open()` success, and `productionCallbackLive` / `sourceAudibleProven` remain **false**. The approved consumer must request a *later* `arMixConsoleSnapshot` and verify the same B identity, mask, epoch, lease, ChannelId map and advanced graph revision. `WAITING_FOR_PCM` and `PCM_FLOW_OBSERVED` are native diagnostics, **not proof that the assigned channel is audible**; priming/underflow frames do not count as B PCM.
+
+**IO-3C controller milestone (implemented, fast tested):** The existing `web/approved-native-contract.js::readbackProvesIntent` now recognizes `INSTALL_SECONDARY_CAPTURE`, but only when a previously correlated native `arMixConsoleAck` supplied the exact installed Device B lease and a **later independent** `arMixConsoleSnapshot.secondaryCapture` matches driver class/name, verified physical mask, capture generation, device lease, epoch, rate and period. `WAITING_FOR_PCM` is a valid *installed but not yet flowing* state, **never proof of audible ChannelId signal**. The test in `tests/approved_native_m2_contract.test.cjs` covers stale/forged ACK, wrong mask, mismatched lease, mismatched driver and failure to publish optimistic PCM. Fast UI, Fast Native, M1–M2 and ImerSip P9 PASS for commit `af40b8e7`. The public `/preview/` Source Picker still does not expose this operation; **the user cannot yet activate B in the GUI**. IO-3D conditionally advertises `INSTALL_SECONDARY_CAPTURE` on the real native snapshot only for an admitted, pinned ASIO callback with output disarmed, idle CONTROL state and unconfigured/remappable B. This is an offer to start a transaction, **not** proof that B is installed, available or audible. Follow-up must deliver the approved operator UI with verified driver inventory, capability, canonical Pages generation and full Chromium/Windows tests. No second WebView event bus or standalone preview.
+
+## IO-3D — fail-closed native capability and GUI contract (implemented on draft #830)
+
+The one `Main.cpp::approvedNativeSnapshot` now calls
+`publishQualifiedSecondaryCaptureCapability` from
+`integration/ApprovedNativeRuntimeSnapshot.h`. It exposes the existing v8
+`INSTALL_SECONDARY_CAPTURE` operation only when the installed ChannelId
+callback owns the same graph, the primary is exact pinned/attested ASIO,
+MAIN/MONITOR output is disarmed, no independent WASAPI render clock is active,
+the primary physical input mask exists, the B map is not already installed,
+and control-side device/session/graph operations are idle. An arbitrary
+browser intent is rejected by the **native** decoder unless this capability
+is currently installed; the engine still rechecks device masks and lease
+identities before any B driver open.
+
+The pure `web/approved-native-contract.js::validQualifiedCaptureRequest`
+guards the same public command preflight against malformed driver names, rate
+or period, unsorted/duplicate B pins, nonexistent/stale INPUT ChannelIds,
+unselected physical A/B pins, duplicate source rows and mono/stereo
+inconsistency. Invalid requests are refused without emitting
+`arMixConsoleIntent` or mutating accepted graph/PCM. Tests:
+`tests/approved_native_v8_projection_test.cpp` (actual native capability
+projection/denials) and `tests/approved_native_m2_contract.test.cjs`
+(positive lease matching and invalid-intent no-emit matrix). These are
+source-level and control contract proofs, **not** two-device physical FAT.
+
+`IO-2E` parent #825 adds retained qualified A+B lease retirement across
+primary device epochs: only an explicit output-disarmed A-only session
+replacement retires the old B map; implicit cross-epoch commits are rejected.
+The device binding is independently verified before the restore.
+
+Current PR stack: #825 is the native foundation; draft #830 is based on its
+latest native HEAD and owns this typed command/readback. Parent Windows
+exact-HEAD requalification and child Windows/Chromium qualification must be
+verified separately before promotion.
+
+## Persistence, fallback and hardware qualification
+
+Current v1 `.smix` cannot store both physical driver identities/pins. While a qualified A+B graph is installed, Save/autosave is intentionally **rejected before replacing the last known-good file**. Explicit loading of a saved primary-only `.smix` now uses `QualifiedMapChange::replaceWithPrimaryOnly` under a fully muted native transaction, returning to direct A PCM and retiring the B capture reader **only after** successful publication; WIRE/FX-only edits continue inheriting the exact qualified B map. This is a safe temporary guard, not an IO-5 persistence implementation.
+
+Real simultaneous two-vendor ASIO input PCM, CLI driver open constraints, Windows installer, latency and hardware FAT remain **NOT RUN**. The synthetic native fixtures prove graph/ASRC policy, not hardware compatibility or actual acoustic performance. Independently routed BUS/CH Device B output remains a future scope, not the existing WASAPI MAIN mirror.
+
+## Required follow-up
+
+1. Parent IO-2D #825 exact-head Windows MSVC/CTest + Codex + protected Required CI Gate, then merge.
+2. Reconcile stacked #830 with *latest main*, run its own exact-head Windows and approved GUI gates.
+3. IO-3C actual compact Device B picker and later accepted readback in existing approved `/preview/` only; regenerate canonical embedded GUI with scripts and test compiled resources.
+4. IO-5 durable physical binding schema and offline remap before enabling A+B Save; physical two-vendor ASIO FAT before shipping product capability.
