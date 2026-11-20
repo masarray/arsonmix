@@ -45,7 +45,8 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('BinaryData::slider_eq_grp_svg', self.native)
         self.assertIn('getChildByAttribute("id", "Text")', self.native)
         self.assertIn('getChildByAttribute("id", "THUMB")', self.native)
-        self.assertIn('tspan->addTextElement(juce::String(graphicEq31Labels[band]))', self.native)
+        self.assertIn('tspan->addTextElement(number)', self.native)
+        self.assertIn('unitSpan->addTextElement(isKhz?"kHz":"Hz")', self.native)
         self.assertIn('thumbGroups_[band]->setTransform(juce::AffineTransform::translation(0.f, shift))', self.native)
         self.assertIn('authoredFader->findChildWithID("THUMB")', self.native)
         self.assertIn('juce::Drawable::createFromSVG(*document)', self.native)
@@ -59,7 +60,9 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('document->setAttribute("viewBox","60 0 352 2042")', self.native)
         self.assertIn('bitmapWrapper->getChildByAttribute("id","_Image3")', self.native)
         self.assertIn('thumbGroup->removeChildElement(bitmapWrapper,true)', self.native)
-        self.assertIn('labelGroup->removeChildElement(hz,true)', self.native)
+        self.assertNotIn('labelGroup->removeChildElement(hz,true)', self.native)
+        self.assertIn('auto* unitGroup=labelGroup->getChildByAttribute("id","Hz")', self.native)
+        self.assertIn('unitText->setAttribute("text-anchor","middle")', self.native)
         self.assertIn('static constexpr int bandCellWidth=50', self.native)
         self.assertIn('setSize(1610,391)', self.native)
         self.assertIn('font-family: Inter', self.native)
@@ -75,13 +78,29 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('const auto obsoleteTrim=input.readFloat();', self.native)
         self.assertNotIn('assets/fx/graphic-eq31/KNOB-EQ.svg', self.cmake)
 
-    def test_thumb_travel_stays_inside_owner_viewbox(self):
-        # Authored thumb bounds from original 469x2042 grouped SVG:
-        # top ~721, bottom ~1139.  Positive boost moves original group up.
+    def test_full_thumb_travel_and_visual_presentation(self):
+        self.assertIn('const float shift=-600.f*juce::jlimit(-12.f,12.f,gain)/12.f;', self.native)
+        self.assertIn('juce::DropShadow(juce::Colours::black.withAlpha(.27f)', self.native)
+        self.assertIn('getChildByAttribute("class","s5")', self.native)
+        self.assertIn('getChildByAttribute("class","s6")', self.native)
+        self.assertIn('getChildByAttribute("id","g2")', self.native)
+        self.assertIn('juce::Colour::fromRGB(229,233,234)', self.native)
+        self.assertIn('g.drawHorizontalLine(y,0.f,static_cast<float>(width))', self.native)
+        self.assertIn('g.drawText("+12",5,84,36,16', self.native)
+        self.assertIn('g.drawText("0",5,186,36,16', self.native)
+        self.assertIn('g.drawText("-12",5,291,36,16', self.native)
+        self.assertNotIn('smile_', self.native)
+        self.assertNotIn('peakLabel_', self.native)
+        self.assertNotIn('31 BANDS  /  +/-12 dB', self.native)
+        self.assertNotIn('timerCallback()', self.native)
+        # The authored vector thumb extends ~776..1055, while the slot
+        # extends 183..1661. Neither +/-12 endpoint leaves 40px of empty slot.
+        self.assertLessEqual(abs((776-600)-183), 10)
+        self.assertLessEqual(abs((1055+600)-1661), 10)
         for gain in [-12., -6., 0., 6., 12.]:
-            shift = -560 * gain / 12
-            self.assertGreaterEqual(721 + shift, 0)
-            self.assertLessEqual(1139 + shift, 2042)
+            shift=-600*gain/12
+            self.assertGreaterEqual(776+shift, 160)
+            self.assertLessEqual(1055+shift, 1675)
 
 if __name__ == '__main__':
     unittest.main()
