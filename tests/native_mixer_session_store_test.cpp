@@ -128,6 +128,12 @@ static void checkSessionControlPlans() {
     save.workerBusy=true;
     assert(Recovery::planSave(save).action==Save::reject);
     save.workerBusy=false;
+    save.deviceBusy=true;
+    assert(Recovery::planSave(save).action==Save::reject);
+    save.deviceBusy=false;
+    save.vendorEditorOpen=true;
+    assert(Recovery::planSave(save).action==Save::reject);
+    save.vendorEditorOpen=false;
     save.readOnly=true;
     assert(Recovery::planSave(save).action==Save::reject);
     save.readOnly=false;
@@ -182,6 +188,9 @@ static void checkSessionControlPlans() {
     assert(Recovery::planOpen(open).action==Open::reject);
     open.epochChanged=false;
     open.operationBusy=true;
+    assert(Recovery::planOpen(open).action==Open::reject);
+    open.operationBusy=false;
+    open.vendorEditorOpen=true;
     assert(Recovery::planOpen(open).action==Open::reject);
 
     // Save deduplication only follows a prior ACCEPTED fingerprint and

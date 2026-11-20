@@ -3336,7 +3336,7 @@ private:
         Recovery::RestoreContext restore;
         restore.outputsDisarmed=engine_.allOutputsDisarmed();
         restore.workerBusy=mixerSessionWorker_.busy();
-        restore.vendorEditorOpen=logicalVendorEditor_!=nullptr;
+        restore.vendorEditorOpen=logicalVendorEditor_.has_value();
         restore.showBusy=nativeShowBusy_;
         restore.backupBusy=studioBackupBusy_;
         restore.graphPending=engine_.isGraphSwitchPending();
@@ -3451,6 +3451,8 @@ private:
         save.backupBusy=studioBackupBusy_;
         save.catalogBusy=catalog_.busy();
         save.graphPending=engine_.isGraphSwitchPending();
+        save.deviceBusy=deviceApply_.busy();
+        save.vendorEditorOpen=logicalVendorEditor_.has_value();
         save.readOnly=logicalMixer_.readOnly();
         save.channelIdInstalled=static_cast<bool>(
             live.getProperty("nativeChannelIdPcmActive",false));
@@ -3550,7 +3552,9 @@ private:
                 .getProperty("mixerSession",{});
             Recovery::OpenContext opening;
             opening.operationBusy=safe->nativeShowBusy_ || safe->studioBackupBusy_ ||
-                safe->catalog_.busy() || engine.isGraphSwitchPending();
+                safe->catalog_.busy() || safe->deviceApply_.busy() ||
+                engine.isGraphSwitchPending();
+            opening.vendorEditorOpen=safe->logicalVendorEditor_.has_value();
             opening.epochChanged=chosenEpoch!=engine.dryRoutingLabEpoch();
             opening.secondaryArmed=engine.secondaryArmed();
             opening.channelIdInstalled=static_cast<bool>(

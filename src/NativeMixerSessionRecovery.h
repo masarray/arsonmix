@@ -33,8 +33,6 @@ public:
         return {Source::head,std::move(error)};
     }
 
-
-
     struct RestoreContext {
         bool outputsDisarmed = false;
         bool workerBusy = false;
@@ -87,6 +85,8 @@ public:
         bool catalogBusy = false;
         bool graphPending = false;
         bool readOnly = false;
+        bool deviceBusy = false;
+        bool vendorEditorOpen = false;
         bool channelIdInstalled = false;
         bool m4Installed = false;
         bool secondaryArmed = false;
@@ -103,9 +103,11 @@ public:
     };
     static SavePlan planSave(const SaveContext& c) noexcept {
         if(c.workerBusy || c.showBusy || c.backupBusy ||
-           c.catalogBusy || c.graphPending)
+           c.catalogBusy || c.graphPending || c.deviceBusy)
             return {SaveAction::reject,
                     "Mixer is busy. Try again after the current operation."};
+        if(c.vendorEditorOpen)
+            return {SaveAction::reject, "Close the vendor FX editor to save its settings first"};
         if(c.readOnly)
             return {SaveAction::reject,
                     "Saved mixer recovery required before writing a new session"};
@@ -130,6 +132,7 @@ public:
     struct OpenContext {
         bool operationBusy = false;
         bool epochChanged = false;
+        bool vendorEditorOpen = false;
         bool secondaryArmed = false;
         bool channelIdInstalled = false;
         bool m4Installed = false;
@@ -143,6 +146,8 @@ public:
         if(c.operationBusy || c.epochChanged)
             return {OpenAction::reject,
                     "Mixer or audio device changed while opening the file"};
+        if(c.vendorEditorOpen)
+            return {OpenAction::reject, "Close the vendor FX editor to save its settings first"};
         if(c.secondaryArmed)
             return {OpenAction::reject, "Stop STREAM before opening a mixer"};
         if(!c.channelIdInstalled && !c.m4Installed && c.retainedNative)
