@@ -53,24 +53,27 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('std::array<juce::Slider, GraphicEq31Core::bandCount> sliders_', self.native)
         self.assertNotIn('fillRoundedRectangle(cx-thumbWidth', self.native)
 
-    def test_compact_inter_and_owner_knob_input_only(self):
-        raw_knob = KNOB.read_bytes()
-        self.assertEqual(hashlib.sha256(raw_knob).hexdigest(), KNOB_SHA256)
-        knob = ET.fromstring(raw_knob)
-        self.assertIsNotNone(knob.find(".//s:g[@id='KNOB']", SVGNS))
-        self.assertIsNotNone(knob.find(".//s:g[@id='POINTER']", SVGNS))
-        self.assertIn('assets/fx/graphic-eq31/KNOB-EQ.svg', self.cmake)
-        self.assertIn('BinaryData::KNOB_EQ_svg', self.native)
-        self.assertIn('knobPointer_->setTransform(', self.native)
-        self.assertIn('static constexpr int bandCellWidth=37', self.native)
-        self.assertIn('setSize(1370,391)', self.native)
+    def test_readable_50px_zero_shadow_band_only_policy(self):
+        # Original owner asset remains untouched, but the duplicated raster
+        # shadow is omitted from the UI clone; vector THUMB stays authentic.
+        self.assertIn('document->setAttribute("viewBox","60 0 352 2042")', self.native)
+        self.assertIn('bitmapWrapper->getChildByAttribute("id","_Image3")', self.native)
+        self.assertIn('thumbGroup->removeChildElement(bitmapWrapper,true)', self.native)
+        self.assertIn('labelGroup->removeChildElement(hz,true)', self.native)
+        self.assertIn('static constexpr int bandCellWidth=50', self.native)
+        self.assertIn('setSize(1610,391)', self.native)
         self.assertIn('font-family: Inter', self.native)
         self.assertIn('return juce::Font("Inter",size,juce::Font::plain)', self.native)
-        self.assertNotIn('output_.setBounds', self.native)
+        self.assertNotIn('BinaryData::KNOB_EQ_svg', self.native)
+        self.assertNotIn('drawRotarySlider(', self.native)
+        self.assertNotIn('input_.setBounds', self.native)
+        self.assertNotIn('getRawParameterValue("inputDb")', self.native)
         self.assertNotIn('getRawParameterValue("outputDb")', self.native)
+        self.assertNotIn('inputSmooth_', self.native)
         self.assertNotIn('outputSmooth_', self.native)
-        self.assertIn('out.writeInt(stateMagic);out.writeInt(2);', self.native)
-        self.assertIn('discardedOutputDb=input.readFloat();', self.native)
+        self.assertIn('out.writeInt(stateMagic);out.writeInt(3);', self.native)
+        self.assertIn('const auto obsoleteTrim=input.readFloat();', self.native)
+        self.assertNotIn('assets/fx/graphic-eq31/KNOB-EQ.svg', self.cmake)
 
     def test_thumb_travel_stays_inside_owner_viewbox(self):
         # Authored thumb bounds from original 469x2042 grouped SVG:
