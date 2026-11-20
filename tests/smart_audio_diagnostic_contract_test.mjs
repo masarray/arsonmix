@@ -2,6 +2,7 @@
 // Permanent source contracts. CPU/FIFO functional correctness is independently
 // tested by Release-active native CTest, not source regexes alone.
 import test from 'node:test';
+import {analyzeHealthLog,compareDryFx,p95p99FromDelta,parseHealthLog,markdownReport,SCHEMA} from '../scripts/audio_reliability_profile.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const read = p=>readFileSync(p,'utf8');
@@ -144,4 +145,101 @@ test('P0 capture block-head evidence is a single-pass RT heuristic, not invented
  assert.doesNotMatch(engine,/rawCapturePeak=juce::jmax\(/);
  assert.match(fixture,/100000/);
  assert.match(cmake,/add_test\(NAME P0CaptureZeroHeadBoundaryCandidates COMMAND ARMixCaptureBoundaryTests\)/);
+});
+
+
+// INT-1B: a real 1Hz log reader with deterministic native-source fixtures.
+function int1bSample(second,{dryTest=true,deviceGeneration=2,device="ASIO Driver",
+  rate=48000,buffer=256,over=0,late=0,connected=true}={}) {
+  const cumulative=(second+1)*100;
+  const buckets=Array(13).fill(0);
+  buckets[3]=cumulative-over;
+  buckets[12]=over;
+  return {schema:SCHEMA,connected,liveBackendClass:"ASIO_DIRECT_ZERO_EXTRA_FIFO",
+    driver:"ASIO",device,rate,buffer,periodUs:1000000*buffer/rate,
+    deviceGeneration,deviceStartCount:deviceGeneration,deviceStopCount:0,
+    diagnosticRoute:"NORMAL",productionRoutingState:"NATIVE_ROUTE_ACCEPTED",
+    directRouteAuthorized:true,dryTest,callbackCount:cumulative,
+    callbackBudgetBuckets:buckets,overBudgetCount:over,slowCallbackCount:over,
+    lateCallbackIntervals:late,callbackGapCount:0,
+    callbackCadenceClockRegressions:0,backendXrunMeaning:"UNAVAILABLE",
+    renderUnderrunSource:"UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE"};
+}
+function int1bLine(second,properties){
+  return new Date(Date.UTC(2026,10,20,8,0,second)).toISOString()+
+    ' | AUDIO_HEALTH | '+JSON.stringify(int1bSample(second,properties));
+}
+test('INT-1B native log is bounded and uses one existing off-RT 1Hz snapshot',()=>{
+  assert.match(engine,/callbackBudgetBuckets/);
+  assert.match(engine,/HOST_CALLBACK_BUDGET_CUMULATIVE_13_BUCKETS_NOT_DRIVER_RENDER_XRUN/);
+  assert.match(host,/arsonmix\.audio-health\.int1b\.v1/);
+  assert.match(host,/makeAudioHealthRecord \(const juce::var& state\)/);
+  assert.match(host,/juce::JSON::toString \(makeAudioHealthRecord \(health\), false\)/);
+  assert.match(host,/juce::JSON::toString \(makeAudioHealthRecord \(state\), false\)/);
+  assert.doesNotMatch(engine,/realtimeHistogram_\.reset\(/);
+  assert.ok(int1bLine(0,{dryTest:false}).length<4096,
+    'single schema record fits existing rotating log queue');
+});
+test('INT-1B interval histogram is a 13-bin delta, not cumulative p99',()=>{
+  const pct=p95p99FromDelta([0,0,0,950,0,0,0,0,0,0,0,0,50]);
+  assert.equal(pct.p95,8);
+  assert.equal(pct.p99,null); // over deadline, never fabricate 100% p99
+  assert.equal(pct.samples,1000);
+  assert.equal(p95p99FromDelta(Array(13).fill(0)).p95,null);
+  assert.equal(p95p99FromDelta([1]).samples,0);
+});
+test('INT-1B dry vs FX matched 60s evidence and no fabricated physical XRUN',()=>{
+  const lines=[];
+  for(let s=0;s<=60;s++)lines.push(int1bLine(s,{dryTest:true}));
+  // Separate 1Hz capture, same physical driver/port/rate/buffer but FX chain.
+  for(let s=61;s<=122;s++)lines.push(int1bLine(s,{
+    dryTest:false,over:(s-61)*4,late:s-61
+  }));
+  const report=analyzeHealthLog(lines.join('\n'));
+  assert.equal(report.totalSamples,123);
+  assert.equal(report.segments.length,2);
+  assert.equal(report.segments[0].durationSeconds,60);
+  assert.equal(report.segments[0].p99BudgetUpperPct,8);
+  assert.equal(report.segments[0].overBudgetCallbacks,0);
+  assert.equal(report.segments[1].p99BudgetUpperPct,null);
+  assert.equal(report.segments[1].overBudgetPer1000,40);
+  assert.equal(report.segments[1].diagnosis,
+    'BOTH_DSP_BUDGET_AND_SCHEDULING_INDICATORS');
+  assert.equal(report.segments[1].renderHardwareXrun,
+    'UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE');
+  const compared=compareDryFx(report);
+  assert.equal(compared.comparable,true);
+  assert.equal(compared.deltaOverBudgetPer1000,40);
+  assert.match(markdownReport(report),/not physical render-XRUN/i);
+});
+test('INT-1B refuses device mismatches, resets, gaps, malformed and legacy logs',()=>{
+  const legacy='2026-11-20T08:00:00.000Z | AUDIO_HEALTH | {"callbackCount":99}';
+  const malformed='2026-11-20T08:00:00.000Z | AUDIO_HEALTH | {"bad":';
+  const badLog=[legacy,malformed,int1bLine(0,{}),int1bLine(1,{}),
+    int1bLine(7,{deviceGeneration:3}),int1bLine(8,{deviceGeneration:3}),
+    int1bLine(9,{deviceGeneration:2})].join('\n');
+  const parsed=parseHealthLog(badLog);
+  assert.equal(parsed.samples.length,5);
+  assert.equal(parsed.warnings.length,2);
+  const analysis=analyzeHealthLog(badLog);
+  assert.equal(analysis.segments.length,3);
+  assert.equal(compareDryFx(analysis).comparable,false);
+  assert.ok(analysis.warnings.some(w=>w.includes('scope/device epoch')));
+  // An interval with a counter going backwards is NOT negative optimization.
+  const previous=int1bSample(20,{});
+  const invalid={...int1bSample(21,{}),callbackCount:1};
+  const time=s=>new Date(Date.UTC(2026,10,20,8,0,s)).toISOString();
+  const report=analyzeHealthLog(
+    time(20)+' | AUDIO_HEALTH | '+JSON.stringify(previous)+'\n'+
+    time(21)+' | AUDIO_HEALTH | '+JSON.stringify(invalid));
+  assert.equal(report.segments.length,2);
+});
+test('INT-1B rejects missed/unknown data rather than counting missing as zero',()=>{
+  const s=int1bSample(1,{});
+  delete s.callbackBudgetBuckets;
+  const p=parseHealthLog(
+    new Date(Date.UTC(2026,10,20,8,0,1)).toISOString()+
+    ' | AUDIO_HEALTH | '+JSON.stringify(s));
+  assert.equal(p.samples.length,0);
+  assert.match(p.warnings[0],/missing\/invalid 13/);
 });
