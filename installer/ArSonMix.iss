@@ -88,11 +88,17 @@ Name: "{autoprograms}\Repair ArSonMix"; Filename: "{sys}\WindowsPowerShell\v1.0\
 ; preflight closes the prior verified app before [Files]; [Run] launches exactly
 ; one new executable only after a successful interactive install/update.
 ; Silent enterprise/FAT installs deliberately do not launch desktop audio.
+[Tasks]
+; P0 Win10 first-run: VB-CABLE is an OPTIONAL virtual-audio feature, not
+; a dependency of the ASIO/WASAPI mixer. Never silently elevate/replace an
+; audio driver or block a first launch for a driver reboot. Owner opt-in only.
+Name: "installvbcable_driver"; Description: "Install optional VB-CABLE virtual audio driver (may require administrator approval and restart)"; GroupDescription: "Optional audio driver:"; Flags: unchecked
+
 [Run]
 ; Check on interactive Setup before opening the mixer. Only a missing driver
 ; can reach the independently verified vendor EXE and its Windows approval.
 ; Silent updates and enterprise installs retain their noninteractive behavior.
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -ExecutionPolicy Bypass -File ""{app}\ThirdParty\VB-Audio\ArSonMixVBCableInstall.ps1"" -Archive ""{app}\ThirdParty\VB-Audio\VBCABLE_Driver_Pack45.zip"" -ExpectedSha256 ""{#VBCableSha256}"" -RestartMarker ""{tmp}\ArSonMixVBCableRestart"""; WorkingDir: "{app}"; StatusMsg: "Checking VB-Audio VB-CABLE for automatic audio setup..."; Flags: runasoriginaluser skipifsilent waituntilterminated runhidden
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -ExecutionPolicy Bypass -File ""{app}\ThirdParty\VB-Audio\ArSonMixVBCableInstall.ps1"" -Archive ""{app}\ThirdParty\VB-Audio\VBCABLE_Driver_Pack45.zip"" -ExpectedSha256 ""{#VBCableSha256}"" -RestartMarker ""{tmp}\ArSonMixVBCableRestart"""; WorkingDir: "{app}"; StatusMsg: "Installing OPTIONAL VB-CABLE audio driver..."; Tasks: installvbcable_driver; Flags: runasoriginaluser skipifsilent waituntilterminated runhidden
 Filename: "{app}\ArSonMix.exe"; WorkingDir: "{app}"; Flags: nowait runasoriginaluser skipifsilent; Check: CanLaunchMixer
 
 ; Never delete private Studio data on install/update/uninstall; never install
