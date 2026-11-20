@@ -34,7 +34,12 @@ export function parseHealthLog(log) {
        !isCount(sample.buffer)||sample.buffer===0||
        !isCount(sample.deviceGeneration)||!isCount(sample.callbackCount)||
        typeof sample.liveBackendClass!=="string" ||
-       typeof sample.dryTest!=="boolean" || typeof sample.connected!=="boolean"){
+       typeof sample.dryTest!=="boolean" || typeof sample.connected!=="boolean" ||
+       typeof sample.nativeGlobalFxBypassed!=="boolean" ||
+       !isCount(sample.nativeFxInstalledCount) ||
+       !isCount(sample.nativeFxProcessingCount) ||
+       sample.nativeFxProcessingCount>sample.nativeFxInstalledCount ||
+       (sample.nativeGlobalFxBypassed && sample.nativeFxProcessingCount!==0)){
       warnings.push("line "+(idx+1)+": invalid source metadata/counters");
       rejectedLines.push(idx+1);
       continue;
@@ -76,6 +81,7 @@ export function p95p99FromDelta(counts) {
 const sameScope=(a,b)=>[
   "deviceGeneration","device","liveBackendClass","driver","rate","buffer",
   "inputDevice","outputDevice","deviceInputChannels","deviceOutputChannels",
+  "nativeFxInstalledCount","nativeFxProcessingCount","nativeGlobalFxBypassed",
   "dryTest","connected","diagnosticRoute","productionRoutingState",
   "directRouteAuthorized","backendXrunMeaning"
 ].every(k=>a[k]===b[k]);
@@ -102,7 +108,13 @@ function describeSegment(segment){
     else diagnosis="NO_HOST_TIMING_ANOMALY_OBSERVED";
   }
   return {
-    lineStart:first.line,lineEnd:last.line,mode:s.dryTest?"DRY":"FX",
+    // The legacy dryTest control is only a UI intent; actual DRY/FX is
+    // derived from accepted native INSERT+rack+GLOBAL bypass readback.
+    lineStart:first.line,lineEnd:last.line,
+    mode:s.nativeFxProcessingCount===0?"DRY":"FX",
+    nativeFxInstalledCount:s.nativeFxInstalledCount,
+    nativeFxProcessingCount:s.nativeFxProcessingCount,
+    nativeGlobalFxBypassed:s.nativeGlobalFxBypassed,
     device:String(s.device??"UNKNOWN"),backend:s.liveBackendClass,
     inputDevice:s.inputDevice??"UNKNOWN",outputDevice:s.outputDevice??"UNKNOWN",
     inputChannels:s.deviceInputChannels??null,
@@ -129,7 +141,8 @@ function describeSegment(segment){
       segment.invalidTransitions===0&&s.connected===true&&
       s.productionRoutingState==="NATIVE_ROUTE_ACCEPTED"&&
       s.directRouteAuthorized===true,
-    notes:["Host callback p95/p99 are bucket CEILINGS, not exact CPU utilization.",
+    notes:["Actual DRY/FX is accepted native insert-bypass readback, NOT the dryTest UI flag.",
+      "Host callback p95/p99 are bucket CEILINGS, not exact CPU utilization.",
       "Callback cadence/over-budget are indicators, not driver render XRUN.",
       "Device/driver capture discontinuities are backend-specific.",
       "Reported plugin worst time can predate this window; it is not an interval peak."]
@@ -172,7 +185,8 @@ export function compareDryFx(analysis){
   const ready=analysis.segments.filter(s=>s.comparable&&
     s.diagnosticRoute==="NORMAL"&&s.renderHardwareXrun==="UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE");
   const dry=[...ready].reverse().find(s=>s.mode==="DRY");
-  const fx=[...ready].reverse().find(s=>s.mode==="FX");
+  const fx=[...ready].reverse().find(s=>s.mode==="FX" &&
+    s.nativeFxInstalledCount>0 && s.nativeFxProcessingCount>0);
   if(!dry||!fx)return {comparable:false,reason:"Need >=30s each of real accepted NORMAL/DRY and NORMAL/FX under the same device."};
   for(const key of ["backend","device","inputDevice","outputDevice",
                      "deviceGeneration","inputChannels","outputChannels","sampleRate","bufferFrames"]){
@@ -203,7 +217,7 @@ export function markdownReport(analysis){
       " | "+s.diagnosis+" |");
   }
   lines.push("",cmp.comparable?
-    "**Matched dry→FX comparison:** Δ over-budget per 1000 callbacks = "+cmp.deltaOverBudgetPer1000+
+    "**Matched actual native dry→FX comparison:** Δ over-budget per 1000 callbacks = "+cmp.deltaOverBudgetPer1000+
       "; **NOT** a hardware XRUN or causal DSP proof.":
     "**No valid matched dry/FX comparison:** "+cmp.reason);
   if(analysis.warnings.length)lines.push("","Data warnings: "+analysis.warnings.slice(0,12).join("; "));
