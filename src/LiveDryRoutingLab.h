@@ -2706,6 +2706,19 @@ public:
         return nativePublisher_.hasQualifiedInputMap(
             nativeAccepted_.deviceEpoch,nativeAccepted_.pcmRevision);
     }
+    // Off-RT retained document only; the B ChannelIds, WIRE, faders and FX
+    // remain in the roster. Removed B hardware SOURCE rows become silent
+    // until a newly attested ASIO B lease is explicitly accepted.
+    bool preparePrimaryOnlyAsioRestartDocument(
+            armix::session::MixerSessionDocument& document,
+            int primaryCallbackInputs) const {
+        armix::mixer::DynamicGraphRequest staged;
+        if(!nativePublisher_.preparePrimaryRestartFallback(
+               nativeAccepted_.deviceEpoch,nativeAccepted_.pcmRevision,
+               primaryCallbackInputs,document.request,staged))return false;
+        document.request=std::move(staged);
+        return true;
+    }
     bool rebindRetainedAsioSession(armix::session::MixerSessionDocument document,
             const armix::device::JuceActivePortSnapshot& pins,int deviceFrames) {
         const auto next=nativeGraphRevisionForRestore();

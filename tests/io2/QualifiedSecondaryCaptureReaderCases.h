@@ -4,6 +4,7 @@
 #include "../../engine/device/QualifiedCaptureHostMode.h"
 #include "../../engine/device/QualifiedCaptureAdmission.h"
 #include "../../engine/device/QualifiedInputGraphBridge.h"
+#include "../../engine/device/QualifiedPrimaryRestartRecoveryPlan.h"
 #include "../../engine/core/DynamicNativeSessionPublisher.h"
 #include <array>
 #include <cmath>
@@ -82,6 +83,27 @@ inline void run() {
     d::QualifiedInputGraphBridge::Fault bridgeError{};
     check(d::QualifiedInputGraphBridge::stage(plan,old,request,bridgeError),
         "control maps both verified sources into same graph");
+    m::DynamicGraphRequest primaryFallback;
+    check(d::QualifiedPrimaryRestartRecoveryPlan::stage(
+              plan,request,1,primaryFallback) &&
+          primaryFallback.physicalInputs==1 &&
+          primaryFallback.sources.size()==1 &&
+          primaryFallback.sources.front().id==a &&
+          primaryFallback.sources.front().inputL==0 &&
+          request.physicalInputs==3 && request.sources.size()==2,
+          "ASIO restart leaves B ChannelId/FX/WIRE roster and silences only B source");
+    check(!d::QualifiedPrimaryRestartRecoveryPlan::stage(
+              plan,request,2,primaryFallback),
+          "different A input mask is never accepted by stale B virtual slot map");
+    auto swapped=request;
+    swapped.sources.back().inputL=0;
+    check(!d::QualifiedPrimaryRestartRecoveryPlan::stage(
+              plan,swapped,1,primaryFallback),
+          "wrong-device B ordinal cannot relabel existing A source during restart");
+    m::DynamicNativeSessionPublisher recoveredPcm;
+    check(recoveredPcm.commit(roster,primaryFallback,0,epoch+1,epoch+1,true).ok() &&
+          !recoveredPcm.hasQualifiedInputMap(epoch+1,1),
+          "a new primary epoch publishes only verified A PCM but keeps original roster");
     m::DynamicNativeSessionPublisher native;
     check(native.commit(roster,request,0,epoch,epoch,true,
         {},false,false,&plan).ok(),"one PCM and device map publication");
