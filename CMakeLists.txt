@@ -146,6 +146,15 @@ if(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH AND
 endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# P0 Windows 10 fresh-install portability: the compiler's default /MD
+# silently requires a machine-wide Microsoft VC++ Redistributable which is
+# present on CI runners but NOT guaranteed on end-user Windows 10 PCs.
+# Choose one matching static CRT across BOTH JUCE static libraries and the
+# native mixer, before JUCE targets are created. Explicit downstream
+# toolchain selection remains respected. Does NOT replace WebView2 Runtime.
+if (MSVC AND WIN32 AND NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 if (NOT DEFINED JUCE_ROOT)
   message(FATAL_ERROR "Pass -DJUCE_ROOT=C:/path/to/JUCE (8.0.15+ required)")
