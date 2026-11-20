@@ -104,6 +104,9 @@ inline void run() {
     check(recoveredPcm.commit(roster,primaryFallback,0,epoch+1,epoch+1,true).ok() &&
           !recoveredPcm.hasQualifiedInputMap(epoch+1,1),
           "a new primary epoch publishes only verified A PCM but keeps original roster");
+    check(recoveredPcm.commit(roster,primaryFallback,1,epoch+2,epoch+2,true).ok() &&
+          !recoveredPcm.hasQualifiedInputMap(epoch+2,2),
+          "second A restart rebinds the recovered A-only graph without stale B map");
     m::DynamicNativeSessionPublisher native;
     check(native.commit(roster,request,0,epoch,epoch,true,
         {},false,false,&plan).ok(),"one PCM and device map publication");
@@ -137,6 +140,10 @@ inline void run() {
     using Admission=d::QualifiedCaptureAdmission;
     check(Admission::verify(plan,clock,epoch,1,frames)==Admission::Fault::none,
           "exact two-device qualified CONTROL admission");
+    check(Admission::verify(plan,clock,epoch,1,frames/2)==Admission::Fault::none,
+          "hardware ASIO period may exceed retained renderer chunk quantum");
+    check(Admission::verify(plan,clock,epoch,1,8193)==Admission::Fault::unsafeFrames,
+          "reader scratch cannot exceed absolute callback hard frame limit");
     check(Admission::verify(plan,clock,epoch+1,1,frames)==
           Admission::Fault::stalePrimary,
           "stale A output epoch cannot publish qualified PCM");

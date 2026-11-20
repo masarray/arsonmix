@@ -587,8 +587,12 @@ public:
         constexpr auto mode=Policy::Mode::verifiedAsioRestart;
         if(inspectNativeMixerSessionBinding(document,inspected,mode).isNotEmpty() ||
            inspected.live.rate!=document.binding.rate)return false;
+        // The B reconnection reminder may survive an already recovered
+        // primary-only graph. A second ASIO A restart must NOT demand an
+        // A+B map that was intentionally retired after the first recovery.
         const bool lostB=qualifiedCaptureNeedsRemap_.load(
-            std::memory_order_acquire);
+            std::memory_order_acquire) &&
+            dryRoutingLab_.qualifiedInputMapActive();
         // Rebuild from the last genuine A+B snapshot without saving a
         // corrupt virtual-input .smix. The exact prior A port count is
         // checked against current verified hardware before any mutation.

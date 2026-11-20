@@ -37,11 +37,17 @@ public:
             return Fault::unsafeFrames;
         if(!clock.ready())return Fault::secondaryNotReady;
         const auto& format=clock.format(); // CONTROL only; not in RT
+        // The ASIO callback period is a HARDWARE value. The native graph
+        // legitimately renders in smaller bounded chunks when the period
+        // exceeds the retained VST scratch quantum. Reader::prepare() and
+        // withBlocks() are constrained by maximumRenderFrames, not by the
+        // whole hardware callback size. Never reject a valid 512->256 split.
         if(format.captureGeneration!=plan.device(1).generation||
            format.deviceLease!=plan.device(1).deviceLease||
            format.primaryEpoch!=primaryEpoch||
            format.channels!=plan.device(1).activePins||
-           format.primaryPeriod<1||format.primaryPeriod>maximumRenderFrames)
+           format.primaryPeriod<1||
+           format.primaryPeriod>MultiDeviceInputPlan::maxCallbackFrames)
             return Fault::wrongCaptureLease;
         return Fault::none;
     }
