@@ -6243,6 +6243,44 @@ private:
                                     },readPower);
                             }
 #endif
+                            // Graphic EQ uses the same EXACT retained mixer
+                            // FX bypass authority/readback as ImmerSIB.
+                            // No GUI-local toggle can mutate a second graph.
+                            if(auto* geq=dynamic_cast<
+                                armix::builtin_fx::GraphicEq31Editor*>(editor)) {
+                                auto held=owner;
+                                const auto readPower=[this,held,nativeTarget,
+                                    nativeChannel,lane,slot,token] {
+                                    const auto current=nativeTarget?
+                                        engine_.retainedNativeFxPower(
+                                            held,armix::mixer::ChannelId{nativeChannel},
+                                            static_cast<std::size_t>(slot),token):
+                                        engine_.retainedRoutedFxPower(
+                                            held,lane,slot,token);
+                                    armix::builtin_fx::GraphicEq31Editor::HostBypassState state;
+                                    state.valid=current.valid;
+                                    state.slotBypassed=current.slotBypassed;
+                                    state.rackBypassed=current.rackBypassed;
+                                    state.globalBypassed=current.globalBypassed;
+                                    return state;
+                                };
+                                geq->bindHostPower(
+                                    [this,held,nativeTarget,nativeChannel,
+                                     lane,slot,token](bool bypass) {
+                                        const bool ok=nativeTarget?
+                                            engine_.bypassRetainedNativeFx(
+                                                held,armix::mixer::ChannelId{nativeChannel},
+                                                static_cast<std::size_t>(slot),
+                                                token,bypass):
+                                            engine_.bypassRetainedRoutedFx(
+                                                held,lane,slot,token,bypass);
+                                        if(ok)emitApprovedNativeSnapshot();
+                                        else emitNotice(
+                                            "Graphic EQ power rejected: FX lease changed",
+                                            true);
+                                        return ok;
+                                    },readPower);
+                            }
                             shownOwner=owner;
                             shownEpoch=retainedEpoch;
                             shownWindow=std::make_unique<PluginEditorWindow>(
