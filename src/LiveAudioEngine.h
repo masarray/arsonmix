@@ -2568,26 +2568,36 @@ public:
         // zero for the external channel. Never report the live vendor rack
         // as DRY simply because its FX live in a distinct native lease.
         int externalCh1Installed = 0, externalCh1Processing = 0;
-        const bool externalCh1Leased = bool (
-            nativeRoutingStatus.getProperty ("originalCh1GraphLeased", false));
-        if (externalCh1Leased && graphOwned_)
+        const auto* acceptedExternal =
+            dryRoutingLab_.acceptedOriginalCh1ExternalLeaseForControl();
+        // Admit only OUR historical JUCE Graph callback. Future external
+        // lease types must not be cast into Graph or falsely labeled DRY.
+        const bool externalCh1Leased = acceptedExternal != nullptr &&
+            acceptedExternal->render == &processOwnedChannelOne;
+        const bool externalFxActivityComplete =
+            !bool (nativeRoutingStatus.getProperty (
+                "originalCh1GraphLeased", false)) || externalCh1Leased;
+        if (externalCh1Leased)
         {
+            const auto* acceptedGraph =
+                static_cast<const Graph*> (acceptedExternal->context);
             const bool externalRackBypassed =
-                graphOwned_->rackBypassed.load (std::memory_order_acquire);
-            for (int i = 0; i < graphOwned_->count; ++i)
+                acceptedGraph->rackBypassed.load (std::memory_order_acquire);
+            for (int i = 0; i < acceptedGraph->count; ++i)
             {
-                const int physical = graphOwned_->physicalAt (i);
-                if (!graphOwned_->slots[physical].processor)
+                const int physical = acceptedGraph->physicalAt (i);
+                if (!acceptedGraph->slots[physical].processor)
                     continue;
                 ++externalCh1Installed;
                 if (!globalFxBypassed && !externalRackBypassed &&
-                    !graphOwned_->bypassFlags[physical].load (
+                    !acceptedGraph->bypassFlags[physical].load (
                         std::memory_order_acquire))
                     ++externalCh1Processing;
             }
             installedNativeFx += externalCh1Installed;
             processingNativeFx += externalCh1Processing;
         }
+        o->setProperty ("nativeFxActivityComplete", externalFxActivityComplete);
         o->setProperty ("nativeExternalCh1Leased", externalCh1Leased);
         o->setProperty ("nativeExternalCh1InstalledCount", externalCh1Installed);
         o->setProperty ("nativeExternalCh1ProcessingCount", externalCh1Processing);
