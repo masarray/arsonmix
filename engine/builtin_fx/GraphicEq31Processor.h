@@ -59,15 +59,25 @@ public:
     void releaseResources() override {ready_=false;}
     bool isReady() const noexcept {return ready_;}
     void consumeRealtimeEdits() noexcept override {
-        // Parameters are JUCE atomic floats. Coefficients are computed at
-        // most once per changed band per block; no allocation or mutex.
+        // Regular single-band JUCE edits remain lock-free. A 31-band user
+        // preset publishes one bounded even/odd generation so the audio
+        // callback cannot observe a partially recalled EQ curve.
         if(!ready_)return;
-        for(std::size_t i=0;i<bandValues_.size();++i)
-            (void)core_.setGain(i,bandValues_[i]->load(std::memory_order_relaxed));
+        const auto before=presetWriteSeq_.load(std::memory_order_acquire);
+        if((before&1u)!=0u)return;
+        std::array<float,GraphicEq31Core::bandCount> values{};
+        for(std::size_t i=0;i<values.size();++i)
+            values[i]=bandValues_[i]->load(std::memory_order_relaxed);
+        const auto after=presetWriteSeq_.load(std::memory_order_acquire);
+        if(before!=after||(after&1u)!=0u)return;
+        for(std::size_t i=0;i<values.size();++i)
+            (void)core_.setGain(i,values[i]);
     }
     void sealForRealtime() noexcept override {published_=true;}
-    // No pending control mailbox: JUCE publishes each target atomically.
-    bool stateSnapshotQuiescent() const noexcept override {return true;}
+    bool stateSnapshotQuiescent() const noexcept override {
+        return ready_&&
+               (presetWriteSeq_.load(std::memory_order_acquire)&1u)==0u;
+    }
     void processBlock(juce::AudioBuffer<float>& pcm,juce::MidiBuffer&) override {
         juce::ScopedNoDenormals noDenormals;
         if(!ready_||pcm.getNumChannels()<2||pcm.getNumSamples()<=0)return;
@@ -138,6 +148,18 @@ public:
             bands[i]=bandValues_[i]->load(std::memory_order_acquire);
         return bands;
     }
+    bool setBandsFromPreset(
+            const std::array<float,GraphicEq31Core::bandCount>& values) {
+        for(const auto db:values)
+            if(!std::isfinite(db)||db < -12.f||db > 12.f)return false;
+        // CONTROL thread only. Two atomic increments fence one committed
+        // 31-band target array; realtime skips incomplete batches.
+        presetWriteSeq_.fetch_add(1u,std::memory_order_acq_rel);
+        for(std::size_t i=0;i<values.size();++i)
+            setBandFromUi(i,values[i]);
+        presetWriteSeq_.fetch_add(1u,std::memory_order_release);
+        return true;
+    }
     juce::AudioProcessorValueTreeState& parameters() noexcept {return params_;}
     float observedPeak() const noexcept {return peak_.load(std::memory_order_relaxed);}
     void setBandFromUi(std::size_t index,float db) {
@@ -172,6 +194,7 @@ private:
     GraphicEq31Core core_;
     std::array<std::atomic<float>*,GraphicEq31Core::bandCount> bandValues_{};
     std::atomic<float> peak_{0.f};
+    std::atomic<std::uint32_t> presetWriteSeq_{0u};
     bool published_=false,ready_=false;
 };
 
