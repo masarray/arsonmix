@@ -108,6 +108,27 @@ int main(){
     output->endChangeGesture();
     REQUIRE(geq.getLatencySamples()==0);
   }
+  // Atomic preset/factory/Flat contract: one valid 31+Output batch, never
+  // a partially committed corrupt preset. Flat must retain Output Level.
+  {
+    std::array<float,GraphicEq31Core::bandCount> preset{};
+    for(std::size_t i=0;i<preset.size();++i)
+      preset[i]=i%2?6.f:-6.f;
+    REQUIRE(geq.setBandsFromPreset(preset,3.f));
+    REQUIRE(geq.stateSnapshotQuiescent());
+    const auto bands=geq.acceptedBands();
+    for(std::size_t i=0;i<bands.size();++i)
+      REQUIRE(std::fabs(bands[i]-preset[i])<.06f);
+    REQUIRE(std::fabs(geq.acceptedLevelDb()-3.f)<.06f);
+    auto corrupt=preset;
+    corrupt[20]=std::numeric_limits<float>::quiet_NaN();
+    REQUIRE(!geq.setBandsFromPreset(corrupt,-1.f));
+    REQUIRE(geq.acceptedBands()==bands);
+    REQUIRE(std::fabs(geq.acceptedLevelDb()-3.f)<.06f);
+    geq.setFlatFromUi();
+    for(const float gain:geq.acceptedBands())REQUIRE(std::fabs(gain)<.06f);
+    REQUIRE(std::fabs(geq.acceptedLevelDb()-3.f)<.06f);
+  }
   const auto eqSettings=BuiltInFxAcceptedSnapshot::acceptedSettings(&eq,catalogs[0]);
   REQUIRE(eqSettings.getProperty("bands",{}).isArray());
   REQUIRE(eqSettings.getProperty("bands",{}).getArray()->size()==8);
