@@ -1924,7 +1924,7 @@ test("M/ST after BUS/WIRE uses native ChannelId intent and accepted PCM processi
   const fn=bridge.slice(bridge.indexOf("function requestProcessingFormat(t)"),
     bridge.indexOf("function previewNativePan(t,el,event)"));
   assert.match(fn,/session\(\)\?\.authority|mixerSession\(\)\?\.authority/);
-  assert.match(fn,/controller\\.intent\\(plan\\.operation,plan\\.channelId,plan\\.payload\\)/);
+  assert.ok(fn.includes('controller.intent(plan.operation,plan.channelId,plan.payload)'));
   assert.ok(fn.includes('dispatchM4ChannelPatch(t,plan.operation,plan.target,plan.channel)'));
   assert.ok(fn.indexOf('authority==="CHANNEL_ID"')<
     fn.indexOf('dispatchM4ChannelPatch(t,"SET_PROCESSING_FORMAT"'));
