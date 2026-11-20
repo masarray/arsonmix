@@ -29,6 +29,79 @@ function gmv20AcceptedGraph() {
  return fixture;
 }
 
+test("IO-3C native B device capture needs matching ACK AND later independent lease readback",()=>{
+ const base=gmv20AcceptedGraph();
+ base.device.backend="ASIO";
+ base.device.outputArmed=false;
+ base.graph.capabilities.supportedOps.push("INSTALL_SECONDARY_CAPTURE");
+ const source=base.graph.channels.find(c=>c.role==="INPUT").id;
+ const payload={confirmed:true,secondaryDriver:"B ASIO",
+   captureRate:44100,capturePeriod:128,secondaryInputPins:[0,7],
+   sources:[{channelId:source,deviceRole:"SECONDARY",
+     leftPhysical:7,rightPhysical:-1,stereo:false}]};
+ const health={role:"INPUT_ONLY_ASIO",status:"WAITING_FOR_PCM",
+   installedInputMap:true,driverReady:true,driverFault:false,
+   needsRemap:false,primaryEpochMatches:true,
+   primaryEpoch:base.device.epoch,deviceLease:"9007199254740993",
+   captureGeneration:"9007199254740994",driver:"B ASIO",
+   captureRate:44100,capturePeriod:128,activePinMaskHex:"81",
+   sourceAudibleProven:false,recentUsablePcm:false};
+ const later=clone(base);
+ later.graph.revision=String(BigInt(base.graph.revision)+1n);
+ later.secondaryCapture=clone(health);
+ const make=()=>{
+   const emitted=[],accepted=[];
+   const ctl=protocol.createController({emit:(name,payload)=>emitted.push({name,payload}),
+     onAccepted:(snap,pending)=>accepted.push({snap,pending})});
+   assert.equal(ctl.onSnapshot(clone(base)),true);
+   const command=ctl.intent("INSTALL_SECONDARY_CAPTURE",source,payload);
+   assert.equal(command.ok,true,"use same opaque v8 requestId transport");
+   const ack={requestId:command.requestId,status:"ACCEPTED",errorCode:"NONE",
+     deviceEpoch:base.device.epoch,graphRevision:later.graph.revision,
+     rosterRevision:base.graph.rosterRevision,secondaryCapture:clone(health)};
+   return {ctl,emitted,accepted,ack};
+ };
+ const yes=make();
+ assert.equal(yes.ctl.onSnapshot(clone(later)),true,
+   "unsolicited B snapshot cannot settle un-ACKed operator intent");
+ assert.equal(yes.ctl.state().pending?.operation,"INSTALL_SECONDARY_CAPTURE");
+ assert.equal(yes.ctl.onAck(clone(yes.ack)),true);
+ assert.equal(yes.accepted.length,1,"ACK never promotes PCM");
+ assert.equal(yes.ctl.onSnapshot(clone(later)),true);
+ assert.equal(yes.accepted.length,2);
+ assert.equal(yes.accepted[1].pending.operation,"INSTALL_SECONDARY_CAPTURE");
+ assert.equal(yes.ctl.state().lastError,"ACCEPTED_READBACK");
+ assert.equal(yes.emitted.filter(x=>x.name==="arMixConsoleIntent").length,1);
+ assert.ok(yes.emitted.filter(x=>x.name==="arMixConsoleSubscribe").length>=1);
+ assert.equal(yes.ctl.onAck(clone(yes.ack)),false,"replayed ACK rejected");
+ for(const field of ["deviceLease","captureGeneration","driver",
+   "activePinMaskHex","captureRate","capturePeriod","driverReady",
+   "primaryEpochMatches","needsRemap","installedInputMap"]) {
+   const another=make(),corrupted=clone(later);
+   corrupted.secondaryCapture[field]=field==="driverReady"?false:
+     field==="primaryEpochMatches"?false:field==="needsRemap"?true:
+     field==="installedInputMap"?false:field==="driver"?"Other ASIO":
+     field==="activePinMaskHex"?"1":field==="captureRate"?48000:
+     field==="capturePeriod"?256:"1";
+   assert.equal(another.ctl.onAck(clone(another.ack)),true);
+   assert.equal(another.ctl.onSnapshot(corrupted),false,
+     field+" mismatch must not claim native B installed");
+   assert.equal(another.ctl.state().lastError,"ACK_READBACK_EFFECT_MISMATCH");
+   assert.equal(another.accepted.length,1,"the last accepted A graph stays intact");
+ }
+ for(const bad of [
+   {driverReady:false},{deviceLease:"0"},{activePinMaskHex:"1"},
+   {driver:"Unselected"},{captureGeneration:"0"},{primaryEpochMatches:false}
+ ]) {
+   const another=make(),ack=clone(another.ack);
+   Object.assign(ack.secondaryCapture,bad);
+   assert.equal(another.ctl.onAck(ack),false,
+     "false B-driver ACK rejected without waiting for fake PCM");
+   assert.equal(another.ctl.state().lastError,"INVALID_SECONDARY_CAPTURE_ACK");
+   assert.equal(another.accepted.length,1);
+ }
+});
+
 test("G-MV25 schema-v6 owner switch cancels no-ACK/ACKed ChannelId without stale PCM repaint",()=>{
  const base=gmv20AcceptedGraph();
  base.mixerSession={authority:"CHANNEL_ID",deviceEpoch:base.device.epoch,
