@@ -539,3 +539,34 @@ test("MV-12 approved bridge invalidates transient UI leases, not durable JUCE st
     readback.indexOf("appearanceFromNative(next)"),
     "stale cosmetic ACK cannot settle before device identity fence");
 });
+
+
+test("P0 approved Audio I/O latency shows real driver frames, never a fake loopback",()=>{
+  const active={open:true,backend:"ASIO",rate:48000,buffer:256,
+    driverInputLatencyFrames:240,driverOutputLatencyFrames:360,
+    hostFxLatencyFrames:96,latencyClockScope:"SINGLE_CLOCK_DRIVER_HINTS",
+    latencyProvenance:"JUCE_DRIVER_REPORTED_NOT_MEASURED_LOOPBACK_OR_ASIO_RTL"};
+  const ready=vm.setupLatencyReadback(active);
+  assert.equal(ready.ready,true);
+  assert.equal(ready.line,"IN 5.0 ms · OUT 7.5 ms · FX 2.0 ms · BUFFER 5.3 ms");
+  assert.equal(ready.driverIoHintMs,12.5);
+  assert.match(ready.note,/not measured round-trip/);
+  assert.equal(vm.setupLatencyReadback({...active,rate:0}).ready,false);
+  const missing=vm.setupLatencyReadback({...active,driverInputLatencyFrames:null});
+  assert.equal(missing.inputMs,null);
+  assert.equal(missing.driverIoHintMs,null);
+  assert.match(missing.line,/IN N\/A/);
+  const separate=vm.setupLatencyReadback({...active,
+    latencyClockScope:"INDEPENDENT_CLOCKS_NO_DIRECT_ROUNDTRIP_ESTIMATE"});
+  assert.equal(separate.driverIoHintMs,null);
+  assert.equal(vm.setupLatencyReadback({...active,driverOutputLatencyFrames:-1}).outputMs,null);
+  assert.equal(vm.setupLatencyReadback({...active,driverInputLatencyFrames:0}).inputMs,0);
+  const bridge=readFileSync("web/approved-native-bridge.js","utf8");
+  assert.match(bridge,/data-audio-latency/);
+  assert.match(bridge,/deviceVM\.setupLatencyReadback\(active\)/);
+  assert.match(bridge,/electrical round-trip requires physical loopback calibration/);
+  const host=readFileSync("src/Main.cpp","utf8");
+  for(const key of ["driverInputLatencyFrames","driverOutputLatencyFrames",
+                    "hostFxLatencyFrames","latencyClockScope","latencyProvenance"])
+    assert.ok(host.includes("setProperty(\""+key+"\""));
+});
