@@ -344,7 +344,7 @@ public:
         // Hardware stays 1:1 as authored SVG; only the 31-band viewport
         // renders at 80%. Header/control sizes are deliberately unchanged.
         setResizeLimits(760,305,1660,305);
-        setSize(1340,305);
+        setSize(1330,305);
         startTimerHz(6); // GUI-only external host readback; no audio work
     }
 
