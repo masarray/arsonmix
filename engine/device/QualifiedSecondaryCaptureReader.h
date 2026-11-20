@@ -7,6 +7,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <new>
 #include <span>
@@ -32,6 +33,8 @@ public:
     using CaptureBlock=MultiDeviceInputPlan::CaptureBlock;
     static constexpr int maxSecondaryChannels=16;
     static constexpr int maxCallbackFrames=8192;
+    // One seq-cst atomic for writer admission AND bounded callback leases.
+    static constexpr std::uint32_t writerFlag=1U,readerUnit=2U;
     struct Status {
         bool ready=false;
         std::uint64_t primaryBlocks=0,secondaryAccepted=0,secondarySilent=0,
@@ -80,15 +83,21 @@ public:
         rejected_.store(0,std::memory_order_relaxed);
         overlaps_.store(0,std::memory_order_relaxed);
         ready_.store(true,std::memory_order_release);
+        // stop() keeps the writer bit held until every scratch pointer and
+        // physical lease is initialized, then readers may enter atomically.
+        activity_.fetch_and(~writerFlag,std::memory_order_seq_cst);
         return true;
     }
 
     // CONTROL ONLY, never called inside either audio callback.
     // Prevent reprepare/free while a borrowed scratch view is rendering.
     void stop() noexcept {
+        // Atomically close admission before examining reader count.
+        // A reader that won the CAS must finish; new arrivals reject.
+        activity_.fetch_or(writerFlag,std::memory_order_seq_cst);
         ready_.store(false,std::memory_order_release);
-        while(readers_.load(std::memory_order_acquire)!=0)
-            std::this_thread::yield();
+        while((activity_.load(std::memory_order_seq_cst)&~writerFlag)!=0)
+            std::this_thread::yield(); // CONTROL only, never audio callback
         scratch_.reset();
         write_={};read_={};
         epoch_=primaryGeneration_=primaryLease_=0;
@@ -107,7 +116,16 @@ public:
         static_assert(std::is_nothrow_invocable_r_v<bool,Render,
                    std::span<const CaptureBlock>>,
                    "Render must synchronously consume blocks without throwing");
-        readers_.fetch_add(1,std::memory_order_acq_rel);
+        // Single non-blocking compare-exchange; no audio-thread spin.
+        // Counter and stop/admission flag share one linearizable state.
+        auto activity=activity_.load(std::memory_order_seq_cst);
+        if((activity&writerFlag)!=0 ||
+           activity>std::numeric_limits<std::uint32_t>::max()-readerUnit ||
+           !activity_.compare_exchange_strong(activity,activity+readerUnit,
+               std::memory_order_seq_cst,std::memory_order_seq_cst)) {
+            rejected_.fetch_add(1,std::memory_order_relaxed);
+            return false;
+        }
         const bool admitted=ready_.load(std::memory_order_acquire) &&
             scratch_ && primaryEpoch==epoch_ &&
             primaryChannels==primaryChannels_ &&
@@ -115,13 +133,13 @@ public:
             (primaryChannels==0||primary!=nullptr);
         if(!admitted) {
             rejected_.fetch_add(1,std::memory_order_relaxed);
-            readers_.fetch_sub(1,std::memory_order_release);
+            activity_.fetch_sub(readerUnit,std::memory_order_seq_cst);
             return false;
         }
         armix::rt::RealtimeRenderPermit exclusive{consumer_};
         if(!exclusive){
             overlaps_.fetch_add(1,std::memory_order_relaxed);
-            readers_.fetch_sub(1,std::memory_order_release);
+            activity_.fetch_sub(readerUnit,std::memory_order_seq_cst);
             return false;
         }
         primaryBlocks_.fetch_add(1,std::memory_order_relaxed);
@@ -140,12 +158,13 @@ public:
         // this primary callback; it cannot hold this view after return.
         const bool ok=std::forward<Render>(render)(
             std::span<const CaptureBlock>(blocks.data(),blocks.size()));
-        readers_.fetch_sub(1,std::memory_order_release);
+        activity_.fetch_sub(readerUnit,std::memory_order_seq_cst);
         return ok;
     }
 
     Status status() const noexcept {
-        return {ready_.load(std::memory_order_acquire),
+        return {ready_.load(std::memory_order_acquire) &&
+                    !(activity_.load(std::memory_order_seq_cst)&writerFlag),
             primaryBlocks_.load(std::memory_order_relaxed),
             secondaryAccepted_.load(std::memory_order_relaxed),
             secondarySilent_.load(std::memory_order_relaxed),
@@ -155,6 +174,7 @@ public:
 
 private:
     // No reader can remain after stop's CONTROL quiescence barrier.
+    // Same gate as RealtimeRoutePublisher: writer=bit0, each reader=+2.
     std::unique_ptr<float[]> scratch_;
     std::array<float*,maxSecondaryChannels> write_{};
     std::array<const float*,maxSecondaryChannels> read_{};
@@ -162,7 +182,7 @@ private:
                   secondaryGeneration_=0,secondaryLease_=0;
     int primaryChannels_=0,secondaryChannels_=0,maximumFrames_=0;
     std::atomic<bool> ready_{false};
-    std::atomic<unsigned> readers_{0};
+    std::atomic<std::uint32_t> activity_{writerFlag};
     std::atomic_flag consumer_=ATOMIC_FLAG_INIT;
     std::atomic<std::uint64_t> primaryBlocks_{0},secondaryAccepted_{0},
                               secondarySilent_{0},rejected_{0},overlaps_{0};
