@@ -767,8 +767,14 @@ private:
                     juce::roundToInt(y+(776.f+shift)*height/2042.f),
                     juce::roundToInt(width*161.f/352.f),
                     juce::roundToInt(height*280.f/2042.f));
-                juce::DropShadow(juce::Colours::black.withAlpha(.30f),
-                    4,{1,3}).drawForRectangle(g,shadowBounds);
+                // One cached soft contact + ambient shadow stamp, FOLLOWING
+                // only the actual 18x31px THUMB silhouette; never a dark
+                // rectangular tile for each fader. No per-paint blur work.
+                prepareThumbShadow(shadowBounds.getWidth(),shadowBounds.getHeight());
+                if(thumbShadowStamp_.isValid())
+                    g.drawImageAt(thumbShadowStamp_,
+                        shadowBounds.getX()-shadowPad,
+                        shadowBounds.getY()-shadowPad);
                 art->drawWithin(g,{static_cast<float>(x),static_cast<float>(y),
                     static_cast<float>(width),static_cast<float>(height)},
                     juce::RectanglePlacement::stretchToFit,1.f);
@@ -799,6 +805,23 @@ private:
         // The WHITE index line (not the body's upper/lower edge) must meet
         // the actual ±12 tick path. White ridge s11: y=913..920,
         // centre=916.5; SVG major ticks: y=208.75 / 918.33 / 1627.92.
+        static constexpr int shadowPad=9;
+        void prepareThumbShadow(int w,int h) {
+            if(thumbShadowStamp_.isValid()&&
+               shadowSourceW_==w&&shadowSourceH_==h)return;
+            shadowSourceW_=w; shadowSourceH_=h;
+            thumbShadowStamp_=juce::Image(juce::Image::ARGB,
+                w+2*shadowPad,h+2*shadowPad,true);
+            juce::Graphics offscreen(thumbShadowStamp_);
+            juce::Path silhouette;
+            silhouette.addRoundedRectangle(static_cast<float>(shadowPad),
+                static_cast<float>(shadowPad),
+                static_cast<float>(w),static_cast<float>(h),3.5f);
+            juce::DropShadow(juce::Colours::black.withAlpha(.55f),
+                6,{2,3}).drawForPath(offscreen,silhouette);
+            juce::DropShadow(juce::Colours::black.withAlpha(.32f),
+                2,{1,1}).drawForPath(offscreen,silhouette);
+        }
         static constexpr float indexCenterY=916.5f;
         static float thumbShift(float gain) noexcept {
             const float t=juce::jlimit(-12.f,12.f,gain)/12.f;
@@ -914,7 +937,7 @@ private:
             // Only its opacity is slightly moderated to fit the tight pitch.
             if(auto* rasterShadow=thumbGroup->getFirstChildElement()) {
                 if(rasterShadow->getChildByAttribute("id","_Image3"))
-                    rasterShadow->setAttribute("opacity",0.87);
+                    rasterShadow->setAttribute("opacity",0.96);
             }
             auto drawable=juce::Drawable::createFromSVG(*document);
             if(!drawable)return;
@@ -927,6 +950,8 @@ private:
         juce::String originalSvg_;
         std::unique_ptr<juce::Drawable> knobArtwork_;
         juce::Component* pointer_=nullptr;
+        juce::Image thumbShadowStamp_;
+        int shadowSourceW_=-1,shadowSourceH_=-1;
         std::array<std::unique_ptr<juce::Drawable>,GraphicEq31Core::bandCount> drawables_{};
         std::array<juce::Component*,GraphicEq31Core::bandCount> thumbGroups_{};
         std::array<float,GraphicEq31Core::bandCount> lastGain_{};
