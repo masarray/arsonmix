@@ -2725,7 +2725,7 @@ public:
     // an ordinary ASIO restart must not drop a still-installed B source map.
     bool rebindRetainedAsioSession(armix::session::MixerSessionDocument document,
             const armix::device::JuceActivePortSnapshot& pins,int deviceFrames,
-            bool retireLostSecondaryMap) {
+            bool retireLostSecondaryMap=false) {
         const auto next=nativeGraphRevisionForRestore();
         const auto previous=document.request.maxFrames;
         // Existing processors can still use their prepared quantum. Larger
