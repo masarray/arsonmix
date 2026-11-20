@@ -69,7 +69,7 @@ test('interactive Setup automatically checks for signed VB-CABLE while mixer lau
   assert.match(bootstrap, /Get-PnpDevice -PresentOnly/);
   assert.match(bootstrap, /Get-PnpDevice -ErrorAction Stop/);
   assert.match(bootstrap, /Get-CimInstance Win32_OperatingSystem/);
-  assert.match(bootstrap, /previous\.state -eq 'PENDING_REBOOT'/);
+  assert.match(bootstrap, /previousState -eq 'PENDING_REBOOT'/);
   assert.match(bootstrap, /previous\.PSObject\.Properties\['bootUtc'\]/);
   assert.match(bootstrap, /PENDING_REBOOT.*Restart Windows|Record "PENDING_REBOOT"/);
   assert.match(bootstrap, /Record "REPAIR_REQUIRED"/);
@@ -83,7 +83,7 @@ test('interactive Setup automatically checks for signed VB-CABLE while mixer lau
   assert.match(isolatedSmoke, /interrupted-uac-present/);
   assert.match(isolatedSmoke, /corrupt-status/);
   assert.match(bootstrap, /if\(\$all.Count -gt 0\)\{[\s\S]*?\$present \| Where-Object[\s\S]*?Record "ALREADY_PRESENT"[\s\S]*?exit 0/);
-  assert.ok(bootstrap.indexOf("previous.state -eq 'PENDING_REBOOT'") <
+  assert.ok(bootstrap.indexOf("previousState -eq 'PENDING_REBOOT'") <
             bootstrap.indexOf('Start-Process -FilePath $setups[0].FullName'),
             'pending reboot must be checked before launching a setup that can remove installed cable');
   assert.match(bootstrap, /-Verb RunAs/);

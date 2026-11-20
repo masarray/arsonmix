@@ -41,7 +41,8 @@ try {
   # A driver already queued for reboot must NOT be run again: the VB-Audio
   # setup utility can switch into REMOVE mode on a second invocation.
   $previous=$null
-  if(Test-Path -LiteralPath $statusPath -PathType Leaf){
+  $hadPreviousStatus=Test-Path -LiteralPath $statusPath -PathType Leaf
+  if($hadPreviousStatus){
     try {
       $previous=Get-Content -LiteralPath $statusPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
     } catch {
@@ -51,12 +52,14 @@ try {
       exit 3
     }
   }
-  $previousState=if($null -ne $previous){[string]$previous.state}else{""}
+  $previousState=if($null -ne $previous -and $null -ne $previous.PSObject.Properties['state']){
+    [string]$previous.state
+  }else{""}
   $pending=$previousState -eq 'PENDING_REBOOT'
   # A prior invocation may have died after starting the vendor GUI but
   # before recording its result. An uncertain or repair-required attempt
   # must never launch the same setup automatically again.
-  $driverAttemptUncertain=$previousState -notin @("","ALREADY_PRESENT","FAILED","PENDING_REBOOT")
+  $driverAttemptUncertain=$hadPreviousStatus -and $previousState -notin @("ALREADY_PRESENT","FAILED","PENDING_REBOOT")
   $os=Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
   $script:bootUtc=$os.LastBootUpTime.ToUniversalTime().ToString('o')
   if($pending){
