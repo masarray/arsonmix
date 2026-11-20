@@ -2152,6 +2152,23 @@ private:
         const auto live=engine_.status();
         o->setProperty("deviceGeneration",live.getProperty("deviceGeneration",0));
         o->setProperty("mainOutputs",live.getProperty("dryRoutingLab",{}).getProperty("mainOutputs",{}));
+        // DAW-style AUDIO SETUP telemetry: JUCE's driver-provided input/output
+        // latency hints in SAMPLES, plus the host's current admitted DSP delay.
+        // No test pulse, no loopback calibration, no re-open or RT work.
+        // The WebView must never present an untrusted draft as measured audio.
+        const bool latencyReady = device != nullptr && device->isOpen();
+        o->setProperty("driverInputLatencyFrames",latencyReady
+            ? live.getProperty("driverReportedInputLatencyFrames",{}) : juce::var());
+        o->setProperty("driverOutputLatencyFrames",latencyReady
+            ? live.getProperty("driverReportedOutputLatencyFrames",{}) : juce::var());
+        o->setProperty("hostFxLatencyFrames",latencyReady
+            ? live.getProperty("latencySamples",{}) : juce::var());
+        o->setProperty("latencyClockScope",
+            bool (live.getProperty("adaptiveClockActive",false))
+                ? "INDEPENDENT_CLOCKS_NO_DIRECT_ROUNDTRIP_ESTIMATE"
+                : "SINGLE_CLOCK_DRIVER_HINTS");
+        o->setProperty("latencyProvenance",
+            "JUCE_DRIVER_REPORTED_NOT_MEASURED_LOOPBACK_OR_ASIO_RTL");
         juce::Array<juce::var> inputNames,outputNames,inputPins,outputPins,rates,buffers;
         if(device!=nullptr&&device->isOpen()) {
             const auto inputs=device->getInputChannelNames();
