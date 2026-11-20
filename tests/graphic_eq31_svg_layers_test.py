@@ -12,6 +12,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 SVG = ROOT / 'assets/fx/graphic-eq31/slider_eq_grp.svg'
 PROCESSOR = ROOT / 'engine/builtin_fx/GraphicEq31Processor.h'
+MAIN = ROOT / 'src/Main.cpp'
 TEXTURE = ROOT / 'assets/fx/graphic-eq31/geq31_brushed_metal.jpg'
 CMAKE = ROOT / 'CMakeLists.txt'
 EXPECTED_SHA256 = 'aeaf02b8904a667724f34774a692da39a5a466bae302611f347fae4d9fd14dba'
@@ -24,6 +25,7 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         cls.raw = SVG.read_bytes()
         cls.svg = ET.fromstring(cls.raw)
         cls.native = PROCESSOR.read_text(encoding='utf-8')
+        cls.main = MAIN.read_text(encoding='utf-8')
         cls.cmake = CMAKE.read_text(encoding='utf-8')
 
     def test_exact_owner_artwork_and_named_groups(self):
@@ -97,6 +99,38 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertNotIn('getRawParameterValue("inputDb")', self.native)
         self.assertNotIn('getRawParameterValue("outputDb")', self.native)
         self.assertIn('out.writeInt(stateMagic);out.writeInt(3);', self.native)
+
+    def test_shared_header_control_lease_and_right_rail(self):
+        self.assertIn('dynamic_cast<juce::DocumentWindow*>(', self.native)
+        self.assertIn('window->setVisible(false)', self.native)
+        self.assertIn('geq31.close', self.native)
+        self.assertIn('geq31.host-bypass', self.native)
+        self.assertIn('bindHostPower(std::function<bool(bool)>', self.native)
+        self.assertIn('power_.setEnabled(false)', self.native)
+        self.assertIn('power_.setToggleState(active,juce::dontSendNotification)', self.native)
+        self.assertIn('requestBypass_(!before.slotBypassed)', self.native)
+        self.assertIn('if(!before.valid||before.globalBypassed||before.rackBypassed)', self.native)
+        self.assertIn('geq->bindHostPower(', self.main)
+        self.assertIn('engine_.bypassRetainedNativeFx(', self.main)
+        self.assertIn('engine_.bypassRetainedRoutedFx(', self.main)
+        self.assertIn('engine_.retainedNativeFxPower(', self.main)
+        self.assertIn('engine_.retainedRoutedFxPower(', self.main)
+        self.assertIn('juce::ComboBox preset_', self.native)
+        self.assertIn('preset_.addItem("Flat",2)', self.native)
+        self.assertIn('preset_.addItem("Vocal Presence",3)', self.native)
+        self.assertIn('processor_.setBandFromUi(i,db)', self.native)
+        self.assertIn('applyingPreset_=true', self.native)
+        self.assertIn('flat_.setBounds(r+25,104,126,29)', self.native)
+        self.assertIn('constexpr int x0=46,rightRail=176', self.native)
+        self.assertNotIn('jump_', self.native)
+
+    def test_black_svg_ticks_but_original_source_unchanged(self):
+        self.assertIn('tick->getStringAttribute("class")=="s0"', self.native)
+        self.assertIn('"fill:none;stroke:#131a1d;stroke-width:7.9;"', self.native)
+        self.assertIn('tick->setAttribute("style"', self.native)
+        self.assertIn('getChildByAttribute("id","g1")', self.native)
+        self.assertIn('getChildByAttribute("id","g2")', self.native)
+        self.assertEqual(hashlib.sha256(self.raw).hexdigest(), EXPECTED_SHA256)
 
     def test_thumb_endpoints_derive_from_original_svg_not_guess(self):
         # Authored track outer contour starts at 147.08 and ends at 1696.67.
