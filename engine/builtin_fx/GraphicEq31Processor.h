@@ -192,6 +192,20 @@ public:
     }
     void synchronizeHostPower() {refreshHostPower();}
 
+    struct UserPresetEntry {juce::String id,name;};
+    // Host owns disk IO, exact graph lease and typed .armixfx validation.
+    // The editor is only a view; no parallel preset file store.
+    void bindUserPresetService(
+        std::function<std::vector<UserPresetEntry>()> enumerate,
+        std::function<juce::String(const juce::String&)> saveNew,
+        std::function<bool(const juce::String&)> recall) {
+        listUserPresets_=std::move(enumerate);
+        saveUserPreset_=std::move(saveNew);
+        recallUserPreset_=std::move(recall);
+        save_.setEnabled(static_cast<bool>(saveUserPreset_));
+        refreshPresetList();
+    }
+
 public:
     explicit GraphicEq31Editor(GraphicEq31Processor& processor)
         : juce::AudioProcessorEditor(processor), processor_(processor) {
@@ -227,20 +241,21 @@ public:
         viewport_.setScrollBarThickness(7);
         addAndMakeVisible(viewport_);
 
-        // Same compact built-in FX header language as Parametric EQ /
-        // Compressor: a selectable preset, host-powered bypass and Close.
-        // Factory presets really apply all 31 JUCE parameters; user library
-        // .armixfx remains host-owned and is not falsely offered here.
+        // Factory + real host-owned .armixfx user presets share one selector.
+        // Save/read/recall are disabled until a valid host lease is bound.
         preset_.setComponentID("geq31.preset");
-        preset_.addItem("Custom",1);
-        preset_.addItem("Flat",2);
-        preset_.addItem("Vocal Presence",3);
-        preset_.addItem("Warm",4);
-        preset_.addItem("Speech Clarity",5);
-        preset_.setSelectedId(1,juce::dontSendNotification);
-        preset_.setTooltip("Graphic EQ 31 factory presets");
-        preset_.onChange=[this]{applyFactoryPreset(preset_.getSelectedId());};
+        preset_.setJustificationType(juce::Justification::centredLeft);
+        preset_.setTooltip("Factory and saved Graphic EQ 31 presets");
+        preset_.onChange=[this]{selectPreset(preset_.getSelectedId());};
+        refreshPresetList();
         addAndMakeVisible(preset_);
+
+        save_.setComponentID("geq31.save");
+        save_.setButtonText("Save");
+        save_.setTooltip("Save current 31-band EQ as a new user preset");
+        save_.setEnabled(false);
+        save_.onClick=[this]{promptSavePreset();};
+        addAndMakeVisible(save_);
 
         power_.setComponentID("geq31.host-bypass");
         power_.setButtonText(juce::String::fromUTF8("⏻"));
@@ -273,6 +288,7 @@ public:
         flat_.setButtonText("Flat");
         flat_.setTooltip("Reset all 31 EQ bands to 0 dB");
         flat_.onClick=[this]{
+            selectedUserId_.clear();
             applyFactoryPreset(2);
             preset_.setSelectedId(2,juce::dontSendNotification);
         };
@@ -305,14 +321,11 @@ public:
         g.drawText("Graphic EQ 31",19,13,250,31,juce::Justification::centredLeft);
         g.setFont(inter(10.f));
         g.setColour(juce::Colour::fromRGB(63,80,88));
-        g.drawText("ARSONMIX  /  1/3 OCTAVE  /  +/-12 dB",
-                   216,22,310,20,juce::Justification::centredLeft);
+        if(width>=920)
+            g.drawText("ARSONMIX  /  1/3 OCTAVE  /  +/-12 dB",
+                       216,22,310,20,juce::Justification::centredLeft);
         g.setColour(juce::Colour::fromRGB(76,90,97).withAlpha(.45f));
         g.drawHorizontalLine(53,0.f,static_cast<float>(width));
-        // Quiet right-hand utility rail; leave room for future real controls.
-        const int railX=getWidth()-176;
-        g.setColour(juce::Colour::fromRGB(60,71,77).withAlpha(.24f));
-        g.drawVerticalLine(railX-8,61.f,static_cast<float>(height-14));
         // The THREE long tick paths are authored SVG coordinates.
         // This mapping uses the same height/position as the actual JUCE
         // Slider, avoiding labels that float above/below their ticks.
@@ -331,19 +344,20 @@ public:
             juce::Justification::centredRight);
     }
     void resized() override {
-        constexpr int x0=46,rightRail=176;
-        viewport_.setBounds(x0,66,
-            juce::jmax(1,getWidth()-x0-rightRail-10),297);
+        constexpr int x0=46;
+        viewport_.setBounds(x0,66,juce::jmax(1,getWidth()-x0-12),297);
         bandSurface_.setSize(static_cast<int>(
             GraphicEq31Core::bandCount)*bandCellWidth,287);
         for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i)
             sliders_[i].setBounds(static_cast<int>(i)*bandCellWidth,0,
                                   bandCellWidth,286);
-        const int r=getWidth()-rightRail;
-        flat_.setBounds(r+25,104,126,29);
-        close_.setBounds(getWidth()-41,16,24,24);
-        power_.setBounds(getWidth()-87,13,33,30);
-        preset_.setBounds(getWidth()-298,13,200,30);
+        // All header controls exactly 24px tall, centred on the same y=16.
+        const int r=getWidth();
+        preset_.setBounds(r-349,16,152,24);
+        save_.setBounds(r-189,16,56,24);
+        flat_.setBounds(r-125,16,44,24);
+        power_.setBounds(r-73,16,24,24);
+        close_.setBounds(r-41,16,24,24);
     }
 
 private:
@@ -390,9 +404,81 @@ private:
     }
     void timerCallback() override {
         refreshHostPower();
-        const auto accepted=matchingFactoryPreset();
+        int accepted=matchingFactoryPreset();
+        if(selectedUserId_.isNotEmpty()) {
+            const auto current=processor_.acceptedBands();
+            bool matches=true;
+            for(std::size_t i=0;i<current.size();++i)
+                if(std::abs(current[i]-savedUserBands_[i])>.06f) {
+                    matches=false;break;
+                }
+            if(matches) {
+                for(std::size_t i=0;i<userPresets_.size();++i)
+                    if(userPresets_[i].id==selectedUserId_)
+                        accepted=static_cast<int>(100+i);
+            }else selectedUserId_.clear();
+        }
         if(preset_.getSelectedId()!=accepted)
             preset_.setSelectedId(accepted,juce::dontSendNotification);
+    }
+    void refreshPresetList() {
+        userPresets_=listUserPresets_?listUserPresets_():
+            std::vector<UserPresetEntry>{};
+        preset_.clear(juce::dontSendNotification);
+        preset_.addItem("Custom",1);
+        preset_.addItem("Flat",2);
+        preset_.addItem("Vocal Presence",3);
+        preset_.addItem("Warm",4);
+        preset_.addItem("Speech Clarity",5);
+        if(!userPresets_.empty())preset_.addSeparator();
+        for(std::size_t i=0;i<userPresets_.size();++i)
+            preset_.addItem(userPresets_[i].name,static_cast<int>(100+i));
+        int selected=matchingFactoryPreset();
+        for(std::size_t i=0;i<userPresets_.size();++i)
+            if(userPresets_[i].id==selectedUserId_)
+                selected=static_cast<int>(100+i);
+        preset_.setSelectedId(selected,juce::dontSendNotification);
+    }
+    void selectPreset(int choice) {
+        if(choice>=100) {
+            const auto index=static_cast<std::size_t>(choice-100);
+            if(index>=userPresets_.size()||!recallUserPreset_||
+               !recallUserPreset_(userPresets_[index].id)) {
+                preset_.setSelectedId(matchingFactoryPreset(),
+                                      juce::dontSendNotification);
+                return;
+            }
+            selectedUserId_=userPresets_[index].id;
+            savedUserBands_=processor_.acceptedBands();
+            return;
+        }
+        if(choice>=2&&choice<=5) {
+            selectedUserId_.clear();
+            applyFactoryPreset(choice);
+        }
+    }
+    void promptSavePreset() {
+        if(!saveUserPreset_)return;
+        auto* dialog=new juce::AlertWindow("Save Graphic EQ 31 preset",
+            "Name this EQ setting",juce::MessageBoxIconType::NoIcon,this);
+        dialog->addTextEditor("presetName","","Preset name:");
+        dialog->addButton("Save",1,juce::KeyPress(juce::KeyPress::returnKey));
+        dialog->addButton("Cancel",0,juce::KeyPress(juce::KeyPress::escapeKey));
+        const juce::Component::SafePointer<GraphicEq31Editor> weak(this);
+        dialog->enterModalState(true,
+            juce::ModalCallbackFunction::create([weak,dialog](int result) {
+                if(result==1&&weak!=nullptr)
+                    weak->saveNamedPreset(dialog->getTextEditorContents("presetName"));
+            }),true);
+    }
+    void saveNamedPreset(const juce::String& rawName) {
+        if(!saveUserPreset_)return;
+        const auto name=rawName.trim();
+        const auto id=saveUserPreset_(name);
+        if(id.isEmpty())return; // Host displays the validation error.
+        selectedUserId_=id;
+        savedUserBands_=processor_.acceptedBands();
+        refreshPresetList();
     }
     void applyFactoryPreset(int choice) {
         if(choice<2||choice>5)return;
@@ -714,7 +800,13 @@ private:
     std::array<juce::Slider,GraphicEq31Core::bandCount> sliders_;
     std::vector<std::unique_ptr<Attachment>> attachments_;
     juce::ComboBox preset_;
-    juce::TextButton flat_,power_,close_;
+    juce::TextButton flat_,save_,power_,close_;
+    std::vector<UserPresetEntry> userPresets_;
+    juce::String selectedUserId_;
+    std::array<float,GraphicEq31Core::bandCount> savedUserBands_{};
+    std::function<std::vector<UserPresetEntry>()> listUserPresets_;
+    std::function<juce::String(const juce::String&)> saveUserPreset_;
+    std::function<bool(const juce::String&)> recallUserPreset_;
     std::function<bool(bool)> requestBypass_;
     std::function<HostBypassState()> readHostPower_;
 };
