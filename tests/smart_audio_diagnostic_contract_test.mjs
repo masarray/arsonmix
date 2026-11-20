@@ -241,6 +241,19 @@ test('INT-1B refuses device mismatches, resets, gaps, malformed and legacy logs'
     time(21)+' | AUDIO_HEALTH | '+JSON.stringify(swapped));
   assert.equal(mismatch.segments.length,2,
     'Physical input endpoint change disqualifies the previous timing window');
+  const missing=analyzeHealthLog(
+    time(20)+' | AUDIO_HEALTH | '+JSON.stringify(previous)+'\n'+
+    time(20)+' | AUDIO_HEALTH | null'+'\n'+
+    time(21)+' | AUDIO_HEALTH | '+JSON.stringify(int1bSample(21,{})));
+  assert.equal(missing.segments.length,2,
+    'A malformed/unknown middle snapshot is a hard gap, not a green interval');
+  const changedGeneration=[];
+  for(let s=0;s<=40;s++)changedGeneration.push(int1bLine(s,{dryTest:true}));
+  for(let s=41;s<=82;s++)changedGeneration.push(int1bLine(s,{
+    dryTest:false,deviceGeneration:3
+  }));
+  assert.equal(compareDryFx(analyzeHealthLog(changedGeneration.join('\n'))).comparable,false,
+    'Same-named driver reopened in a new generation is not a matched DRY/FX pair');
 });
 test('INT-1B rejects missed/unknown data rather than counting missing as zero',()=>{
   const s=int1bSample(1,{});
