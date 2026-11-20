@@ -1302,6 +1302,29 @@
     field.disabled=disabled||!options.length;
     return field;
   }
+  // Pure CONTROL/UI readback conversion. JUCE reports latency in frames;
+  // this is NOT an electrical loopback measurement or a driver XRUN test.
+  // Unknown/negative values stay UNKNOWN rather than being silently 0 ms.
+  function deviceLatencyDisplay(active){
+    const rate=Number(active?.rate);
+    if(!active?.open||!Number.isFinite(rate)||rate<=0)
+      return {ready:false};
+    const toMs=frames=>{
+      if(frames===null||frames===undefined||frames===''||
+         !Number.isInteger(Number(frames))||Number(frames)<0)return null;
+      return Math.round(Number(frames)*10000/rate)/10;
+    };
+    const input=toMs(active.driverInputLatencyFrames);
+    const output=toMs(active.driverOutputLatencyFrames);
+    const fx=toMs(active.hostFxLatencyFrames);
+    const period=toMs(active.buffer);
+    const sameClock=active.latencyClockScope==='SINGLE_CLOCK_DRIVER_HINTS';
+    return {ready:true,input,output,fx,period,
+      driverIoHintMs:sameClock&&input!==null&&output!==null?
+        Math.round((input+output)*10)/10:null,
+      provenance:active.latencyProvenance||'UNKNOWN'};
+  }
+  function latencyText(value){return value===null?'N/A':value.toFixed(1)+' ms';}
   function renderCustomDevice(body){
     const a=deviceInventory?.active||{},types=deviceInventory?.types||[];
     if(!deviceDraft&&(types.length||a.open))deviceDraft=makeDeviceDraft();
@@ -1320,6 +1343,28 @@
     activeLine.append(activeText,node('span','arIODeviceActiveFlag',
       a.open&&a.authorized!==false?'ACTIVE':'NOT READY'));
     panel.appendChild(activeLine);
+    // Thin DAW-style status inside the ONE approved Audio Setup view.
+    // Shows the ACTIVE device, never the unapplied staged driver or buffer.
+    const latency=deviceLatencyDisplay(a);
+    const line=node('div','arIODeviceActiveLine arIODeviceLatencyReadback');
+    const text=node('div','');
+    text.append(
+      node('span','arIODeviceMicro','AUDIO LATENCY · VERIFIED NATIVE DEVICE'),
+      node('span','',latency.ready?
+        'IN '+latencyText(latency.input)+'  ·  OUT '+latencyText(latency.output)+
+        '  ·  HOST FX '+latencyText(latency.fx)+
+        '  ·  BUFFER '+latencyText(latency.period):
+        'Choose and APPLY an audio device to read driver latency.'));
+    if(latency.ready){
+      text.appendChild(node('small','',
+        latency.driverIoHintMs===null?
+          'Driver I/O estimate unavailable · separate clocks / missing latency report':
+          'Driver I/O hint ≈ '+latencyText(latency.driverIoHintMs)+
+          ' · excludes uncalibrated hardware/OS delay'));
+    }
+    line.title='Driver-reported JUCE latency, not a measured analog loopback or round-trip calibration. Buffer period is shown separately and is not added twice.';
+    line.appendChild(text);
+    panel.appendChild(line);
     // Operator-first First Sound action: the existing monitor.js controller
     // stages the real native route then independently ARM-ACKs hardware.
     const quick=window.__arMixFastAudioState?.()||{};
