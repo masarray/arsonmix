@@ -10,6 +10,9 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <atomic>
+#include <chrono>
+#include <thread>
 
 namespace armix::io2_clocked_test {
 namespace d=armix::device;
@@ -292,6 +295,63 @@ inline void run() {
     check(render(),"new B lease absent in ASRC must not break A");
     check(near(left[frames-1],.2f*monoCenter,0.005f),
           "stale ASRC cannot be relabeled into newly leased device");
+    // IO-2G P1: CONTROL must close callback admission BEFORE reading
+    // count/freeing scratch. In-flight render keeps the same exact borrowed
+    // B pointer pinned; a concurrent late primary callback fails immediately.
+    check(reader.prepare(plan,frames),"race fixture uses verified A+B map");
+    std::atomic<bool> entered{false},release{false},stopped{false};
+    std::thread admitted([&] {
+        const bool ok=reader.withBlocks(epoch,aInput,1,frames,clock,
+            [&](std::span<const d::MultiDeviceInputPlan::CaptureBlock>) noexcept {
+                entered.store(true,std::memory_order_release);
+                while(!release.load(std::memory_order_acquire))
+                    std::this_thread::yield(); // test-only; never production RT
+                return true;
+            });
+        check(ok,"previously admitted callback completed with scratch intact");
+    });
+    const auto deadline=std::chrono::steady_clock::now()+
+        std::chrono::seconds(5);
+    while(!entered.load(std::memory_order_acquire) &&
+          std::chrono::steady_clock::now()<deadline)
+        std::this_thread::yield();
+    check(entered.load(std::memory_order_acquire),
+          "must enter withBlocks before CONTROL stop");
+    std::thread control([&] {
+        reader.stop(); // must wait for the admitted borrowed pointer
+        stopped.store(true,std::memory_order_release);
+    });
+    while(reader.status().ready &&
+          std::chrono::steady_clock::now()<deadline)
+        std::this_thread::yield();
+    check(!reader.status().ready &&
+          !stopped.load(std::memory_order_acquire),
+          "writer bit closes new admissions before scratch reclamation");
+    check(!reader.withBlocks(epoch,aInput,1,frames,clock,
+        [](std::span<const d::MultiDeviceInputPlan::CaptureBlock>) noexcept {
+            return true;
+        }),"late primary callback rejects without borrowing freed scratch");
+    release.store(true,std::memory_order_release);
+    admitted.join();control.join();
+    check(stopped.load(std::memory_order_acquire) && !reader.status().ready,
+          "CONTROL retirement finishes only after old callback exits");
+
+    // ASan/TSan-friendly concurrent entry vs STOP/reprepare stress.
+    // The capture clock is stable; only reader scratch is being retired.
+    check(reader.prepare(plan,frames),"reader can safely reprepare after STOP");
+    std::atomic<bool> running{true};
+    std::thread primary([&] {
+        while(running.load(std::memory_order_acquire))
+            (void)reader.withBlocks(epoch,aInput,1,frames,clock,
+                [](std::span<const d::MultiDeviceInputPlan::CaptureBlock>)
+                    noexcept {return true;});
+    });
+    for(int i=0;i<1200;++i) {
+        reader.stop();
+        check(reader.prepare(plan,frames),"CONTROL reprepare gate stress");
+    }
+    running.store(false,std::memory_order_release);
+    primary.join();
     reader.stop();
     clock.stop();
     // IO-2D persistence recovery: a saved primary-only .smix can replace
