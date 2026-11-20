@@ -2518,7 +2518,53 @@ public:
         auto* d = dual ? independent_.renderDevice()
                        : deviceManager_.getCurrentAudioDevice();
         auto* capture = dual ? independent_.captureDevice() : d;
-        o->setProperty ("dryRoutingLab",dryRoutingLab_.status(capture));
+        const auto nativeRoutingStatus = dryRoutingLab_.status(capture);
+        o->setProperty ("dryRoutingLab", nativeRoutingStatus);
+        // INT-1B: native DRY is an accepted DSP fact, NOT the legacy
+        // dryTest_ UI flag (which only tracks operator intent).
+        // Count installed/effectively processing inserts from the already
+        // generated CONTROL readback. No extra render/FX scan on RT.
+        const bool globalFxBypassed = dryRoutingLab_.globalFxBypassed();
+        int installedNativeFx = 0, processingNativeFx = 0;
+        const auto accountInserts = [&] (const juce::var& inserts,
+                                         bool rackBypassed)
+        {
+            if (const auto* list = inserts.getArray())
+                for (const auto& insert : *list)
+                    if (insert.isObject())
+                    {
+                        ++installedNativeFx;
+                        if (!globalFxBypassed && !rackBypassed &&
+                            !bool (insert.getProperty ("bypassed", false)))
+                            ++processingNativeFx;
+                    }
+        };
+        const auto bus = nativeRoutingStatus.getProperty ("nativeBus", {});
+        if (bus.isObject())
+        {
+            if (const auto* channels = bus.getProperty ("channels", {}).getArray())
+                for (const auto& channel : *channels)
+                    accountInserts (
+                        channel.getProperty ("inserts", {}),
+                        bool (channel.getProperty ("fxRackBypassed", false)));
+        }
+        else
+        {
+            const auto rackFlags =
+                nativeRoutingStatus.getProperty ("fxRackBypassed", {});
+            const auto* flags = rackFlags.getArray();
+            if (const auto* racks = nativeRoutingStatus
+                    .getProperty ("fxInstances", {}).getArray())
+                for (int lane = 0; lane < racks->size(); ++lane)
+                    accountInserts ((*racks)[lane],
+                        flags != nullptr && lane < flags->size()
+                        && bool ((*flags)[lane]));
+        }
+        o->setProperty ("nativeGlobalFxBypassed", globalFxBypassed);
+        o->setProperty ("nativeFxInstalledCount", installedNativeFx);
+        o->setProperty ("nativeFxProcessingCount", processingNativeFx);
+        o->setProperty ("nativeFxCountProvenance",
+            "ACCEPTED_CONTROL_READBACK_INSERT_AND_RACK_BYPASS_NOT_dryTest_FLAG");
         o->setProperty("waitingAsioInputs",dryRoutingLab_.waitingAsioInputCount());
         // NORMAL mode is never silently served by the legacy CH1 fallback.
         // This state is for operator feedback; it does not authorize output.
