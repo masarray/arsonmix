@@ -2,6 +2,7 @@
 #pragma once
 #include "BuiltInFxUserPresetStore.h"
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
+#include "../engine/builtin_fx/GraphicEq31Processor.h"
 #include "../engine/builtin_fx/ChannelCompressorProcessor.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
 #include "../engine/builtin_fx/VocalThrowProcessor.h"
@@ -18,6 +19,10 @@ struct BuiltInFxAcceptedSnapshot final {
         if(catalog==armix::builtin_fx::ChannelEqProcessor::catalogIdentity) {
             const auto* eq=dynamic_cast<armix::builtin_fx::ChannelEqProcessor*>(p);
             return eq&&eq->isReady();
+        }
+        if(catalog==armix::builtin_fx::GraphicEq31Processor::catalogIdentity) {
+            const auto* geq=dynamic_cast<armix::builtin_fx::GraphicEq31Processor*>(p);
+            return geq&&geq->isReady();
         }
         if(catalog==armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity) {
             const auto* comp=dynamic_cast<armix::builtin_fx::ChannelCompressorProcessor*>(p);
@@ -52,6 +57,13 @@ struct BuiltInFxAcceptedSnapshot final {
                 items.append(juce::var(b.release()));
             }
             data->setProperty("bands",items);
+        }else if(catalog==armix::builtin_fx::GraphicEq31Processor::catalogIdentity) {
+            const auto bands=static_cast<armix::builtin_fx::GraphicEq31Processor*>(p)
+                ->acceptedBands();
+            juce::var values(juce::Array<juce::var>{});
+            for(const auto db:bands)
+                values.append(static_cast<double>(db));
+            data->setProperty("bands",values);
         }else if(catalog==armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity) {
             const auto v=static_cast<armix::builtin_fx::ChannelCompressorProcessor*>(p)
                 ->acceptedSettings();
