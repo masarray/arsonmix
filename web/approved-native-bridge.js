@@ -2137,6 +2137,9 @@
         <label>Input device<select data-audio-field="capture"></select></label>
         <label>Output / monitor device<select data-audio-field="playback"></select></label>
         <div class="armix-device-note" data-audio-active>Reading current audio device…</div>
+        <div class="armix-device-note" data-audio-latency aria-label="Driver-reported audio latency">
+          Latency · waiting for native device readback
+        </div>
         <div class="armix-device-progress" data-audio-progress role="status" aria-live="polite" hidden>
           <!--By Sam Herbert (@sherb), for everyone. More @ http://goo.gl/7AJzbL-->
           <svg viewBox="0 0 55 80" xmlns="http://www.w3.org/2000/svg" fill="currentColor" aria-hidden="true" focusable="false">
@@ -2286,6 +2289,16 @@
     }
     const activeText=devicePanel.querySelector("[data-audio-active]");
     if(activeText&&!deviceBusy())activeText.textContent=view.activeText;
+    const latencyText=devicePanel.querySelector("[data-audio-latency]");
+    if(latencyText){
+      const measured=deviceVM.setupLatencyReadback(active);
+      // This is only the independently read active hardware, never an ACK,
+      // proposed dropdown selection or supposed microphone loopback.
+      latencyText.textContent=measured.ready?
+        "AUDIO LATENCY · "+measured.line+" · "+measured.note:
+        "AUDIO LATENCY · select an active device to read driver estimates";
+      latencyText.title="JUCE driver-reported frames (read-only); electrical round-trip requires physical loopback calibration.";
+    }
     devicePanel.querySelector("[data-audio-apply]").disabled=
       deviceBusy()||!view.canApply;
     const assignMain=devicePanel.querySelector("[data-audio-main-pins]");
