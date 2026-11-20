@@ -384,10 +384,10 @@ private:
             // Override the authored Arial class at render time, preserving
             // the source asset and all original SVG layers byte-for-byte.
             tspan->setAttribute("style","font-family: Inter; font-size: "+
-                juce::String(juce::String(graphicEq31Labels[band]).length()>3?15:18)+"px");
+                juce::String(juce::String(graphicEq31Labels[band]).length()>3?22:28)+"px");
             frequency->setAttribute("text-anchor","middle");
             frequency->setAttribute("style",
-                "transform: matrix(4.167,0,0,4.167,237.76,1850.466); font-family: Inter");
+                "transform: matrix(5.4,0,0,4.167,237.76,1850.466); font-family: Inter");
             if(auto* hz=labelGroup->getChildByAttribute("id","Hz")) {
                 if(auto* text=hz->getFirstChildElement()) {
                     text->setAttribute("font-family","Inter");
