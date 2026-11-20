@@ -3618,7 +3618,9 @@ test("ImmerSIB opens the exact native ChannelId HWND, survives VST3 editor, no s
  assert.match(bridge,/fxRackVM\.editorNavigationPlan\(current,/);
  assert.match(editorVM,/view\.raw\?\.mixerSession\?\.authority==="CHANNEL_ID"/);
  assert.match(bridge,/else \{\s*\/\/ Both vendor VST3 and ImmerSIB retain their exact real/);
- assert.match(bridge,/backend\.emitEvent\("arMixAction",\{action:"routingFxEditor",\s*channelId:editor\.channelId,slot:editor\.slot,/);
+ assert.match(bridge,/openChannelIdFxEditor\(editor\)/);
+ assert.match(bridge,/fxRackVM\.nativeEditorDispatchPlan\(current,lease,/);
+ assert.match(bridge,/dispatchPhysicalFxEditor\(plan,lease,"CHANNEL_ID"\)/);
  assert.match(bridge,/else if\(editor\.authority==="LOGICAL"\)/);
  assert.match(bridge,/action:"logicalVendorFxEditor"/);
  assert.doesNotMatch(bridge,/else status\("Native VST3 editor opened"\)/);
