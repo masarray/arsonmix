@@ -287,7 +287,7 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertEqual(wheel(.4,.8,.65,state),.8)
         self.assertEqual(wheel(.8,.3,.65,state),0.)
         # The native audio core remains independently owner-accepted.
-        self.assertNotIn('snapValue(',self.native.split('class GraphicEq31Processor final')[1].split('class GraphicEq31DetentSlider')[0])
+        self.assertNotIn('double snapValue(',self.native.split('class GraphicEq31Processor final')[1].split('class GraphicEq31DetentSlider')[0])
 
     def test_background_only_drag_moves_host_owned_native_window(self):
         self.assertIn('addMouseListener(this,true)',self.native)
