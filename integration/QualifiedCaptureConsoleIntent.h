@@ -93,6 +93,13 @@ inline QualifiedCaptureConsoleDecode decodeQualifiedCaptureConsoleIntent(
        requestId.toString().length()>128||
        payload.getProperty("confirmed",{})!=juce::var(true))
         return reject("SECONDARY_CAPTURE_OPERATOR_OR_GRAPH_NOT_ADMITTED");
+    // An arbitrary WebView event may not bypass the capability that the
+    // installed native callback actually advertised for this exact epoch.
+    // The UI's own supportedOps check is necessary but never sufficient.
+    const auto offered=caps.getProperty("supportedOps",{});
+    if(!offered.isArray()||
+       !offered.getArray()->contains(juce::String("INSTALL_SECONDARY_CAPTURE")))
+        return reject("SECONDARY_CAPTURE_CAPABILITY_UNAVAILABLE");
     if(!nativeV8Decimal(epochRaw)||!nativeV8Decimal(revisionRaw)||
        !nativeV8Decimal(rosterRaw)||
        epochRaw.toString()!=device.getProperty("epoch",{}).toString()||
