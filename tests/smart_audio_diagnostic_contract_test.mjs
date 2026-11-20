@@ -160,6 +160,8 @@ function int1bSample(second,{dryTest=true,deviceGeneration=2,device="ASIO Driver
   return {schema:SCHEMA,connected,liveBackendClass:"ASIO_DIRECT_ZERO_EXTRA_FIFO",
     driver:"ASIO",device,inputDevice:"Interface Input",outputDevice:"Interface Output",
     deviceInputChannels:2,deviceOutputChannels:2,
+    activeInputMaskHex:"3",activeOutputMaskHex:"3",
+    nativeFxGraphRevision:"100",
     rate,buffer,periodUs:1000000*buffer/rate,
     deviceGeneration,deviceStartCount:deviceGeneration,deviceStopCount:0,
     diagnosticRoute:"NORMAL",productionRoutingState:"NATIVE_ROUTE_ACCEPTED",
@@ -182,6 +184,8 @@ test('INT-1B native log is bounded and uses one existing off-RT 1Hz snapshot',()
   assert.match(engine,/nativeFxProcessingCount/);
   assert.match(engine,/dryRoutingLab_\.globalFxBypassed\(\)/);
   assert.match(host,/nativeFxInstalledCount/);
+  assert.match(engine,/nativeFxGraphRevision/);
+  assert.match(engine,/activeInputMaskHex/);
   assert.match(host,/makeAudioHealthRecord \(const juce::var& state\)/);
   assert.match(host,/juce::JSON::toString \(makeAudioHealthRecord \(health\), false\)/);
   assert.match(host,/juce::JSON::toString \(makeAudioHealthRecord \(state\), false\)/);
@@ -251,6 +255,12 @@ test('INT-1B refuses device mismatches, resets, gaps, malformed and legacy logs'
     time(21)+' | AUDIO_HEALTH | '+JSON.stringify(swapped));
   assert.equal(mismatch.segments.length,2,
     'Physical input endpoint change disqualifies the previous timing window');
+  const changedPins=analyzeHealthLog(
+    time(20)+' | AUDIO_HEALTH | '+JSON.stringify(previous)+'\n'+
+    time(21)+' | AUDIO_HEALTH | '+
+      JSON.stringify({...int1bSample(21,{}),activeInputMaskHex:"c"}));
+  assert.equal(changedPins.segments.length,2,
+    'The same ASIO channel count can hide changed hardware pin ordinals');
   const missing=analyzeHealthLog(
     time(20)+' | AUDIO_HEALTH | '+JSON.stringify(previous)+'\n'+
     time(20)+' | AUDIO_HEALTH | null'+'\n'+
