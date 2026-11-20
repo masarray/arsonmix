@@ -39,7 +39,13 @@ export function parseHealthLog(log) {
        !isCount(sample.nativeFxInstalledCount) ||
        !isCount(sample.nativeFxProcessingCount) ||
        sample.nativeFxProcessingCount>sample.nativeFxInstalledCount ||
-       (sample.nativeGlobalFxBypassed && sample.nativeFxProcessingCount!==0)){
+       (sample.nativeGlobalFxBypassed && sample.nativeFxProcessingCount!==0) ||
+       typeof sample.nativeFxGraphRevision!=="string" ||
+       !/^\d+$/.test(sample.nativeFxGraphRevision) ||
+       typeof sample.activeInputMaskHex!=="string" ||
+       typeof sample.activeOutputMaskHex!=="string" ||
+       !/^[0-9a-f]*$/i.test(sample.activeInputMaskHex) ||
+       !/^[0-9a-f]*$/i.test(sample.activeOutputMaskHex)){
       warnings.push("line "+(idx+1)+": invalid source metadata/counters");
       rejectedLines.push(idx+1);
       continue;
@@ -81,6 +87,7 @@ export function p95p99FromDelta(counts) {
 const sameScope=(a,b)=>[
   "deviceGeneration","device","liveBackendClass","driver","rate","buffer",
   "inputDevice","outputDevice","deviceInputChannels","deviceOutputChannels",
+  "activeInputMaskHex","activeOutputMaskHex","nativeFxGraphRevision",
   "nativeFxInstalledCount","nativeFxProcessingCount","nativeGlobalFxBypassed",
   "dryTest","connected","diagnosticRoute","productionRoutingState",
   "directRouteAuthorized","backendXrunMeaning"
@@ -117,6 +124,8 @@ function describeSegment(segment){
     nativeGlobalFxBypassed:s.nativeGlobalFxBypassed,
     device:String(s.device??"UNKNOWN"),backend:s.liveBackendClass,
     inputDevice:s.inputDevice??"UNKNOWN",outputDevice:s.outputDevice??"UNKNOWN",
+    inputMask:s.activeInputMaskHex,outputMask:s.activeOutputMaskHex,
+    nativeFxGraphRevision:s.nativeFxGraphRevision,
     inputChannels:s.deviceInputChannels??null,
     outputChannels:s.deviceOutputChannels??null,
     sampleRate:s.rate,bufferFrames:s.buffer,periodUs:Math.round(period*10)/10,
@@ -189,7 +198,9 @@ export function compareDryFx(analysis){
     s.nativeFxInstalledCount>0 && s.nativeFxProcessingCount>0);
   if(!dry||!fx)return {comparable:false,reason:"Need >=30s each of real accepted NORMAL/DRY and NORMAL/FX under the same device."};
   for(const key of ["backend","device","inputDevice","outputDevice",
-                     "deviceGeneration","inputChannels","outputChannels","sampleRate","bufferFrames"]){
+                     "deviceGeneration","nativeFxGraphRevision",
+                     "inputMask","outputMask","inputChannels","outputChannels",
+                     "sampleRate","bufferFrames"]){
     if(dry[key]!==fx[key])return {comparable:false,reason:"Mismatched "+key+": do not compare unlike hardware profiles."};
   }
   return {comparable:true,baseline:"DRY",candidate:"FX",
