@@ -1083,7 +1083,7 @@ static void qualifiedCaptureNativeIntentRegression() {
         ->setProperty("outputArmed",false);
     const auto live=parse(R"JSON({
       "directRouteAuthorized":true,"adaptiveClockActive":false,
-      "asioRegistryAttestation":"REGISTERED_CLASS",
+      "asioRegistryAttestation":"POSTOPEN_REGISTERED_ASIO_DRIVER_CLASS_PINNED",
       "secondaryCapture":{"role":"INPUT_ONLY_ASIO","status":"NOT_CONFIGURED",
         "installedInputMap":false,"driverReady":false,"driverFault":false}
     })JSON");
