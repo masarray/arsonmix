@@ -694,7 +694,14 @@ test('offline checkpoints stay protected until verified native restore',()=>{
   assert.match(open,/if\(openError.isEmpty\(\)\)[\s\S]*?"LOGICAL_SESSION_OPENED_UNBOUND"/);
   const control=read('src/NativeLogicalMixerControl.h');
   assert.match(control,/workspace_=std::move\(\*candidate\);[\s\S]*?checkpointSaved_\(workspace_.document\(\).id\)/);
-  assert.match(save,/if\(automatic&&mixerSessionRecoveryPending_\)[\s\S]*?return "[^"]+";[\s\S]*?captureNativeMixerSession/);
+  // Admission is now the existing NativeMixerSessionRecovery owner, not
+  // an inline ConsoleWindow conditional. The rejection must occur before PCM capture.
+  const recovery=read('src/NativeMixerSessionRecovery.h');
+  const policy=recovery.slice(recovery.indexOf('static SavePlan planSave('),
+                              recovery.indexOf('enum class OpenAction'));
+  assert.match(policy,/if\(c\.automatic && c\.recoveryPending\)[\s\S]*?SaveAction::reject/);
+  assert.match(save,/save\.recoveryPending=mixerSessionRecoveryPending_/);
+  assert.match(save,/Recovery::planSave\(save\)[\s\S]*?SaveAction::reject[\s\S]*?captureNativeMixerSession/);
 });
 
 // Exact control-thread serialization source contract for nested JUCE modal loops.
@@ -713,4 +720,17 @@ test('M2b native AUDIO SETUP holds one lease through visible selection and rebin
  assert.match(cpp,/Purpose::asioRecovery/);
  assert.match(cpp,/Purpose::explicitApply/);
  assert.doesNotMatch(setup,/\.closeAudioDevice\(/);
+});
+
+
+test('P0 Audio Setup reports native driver latency ms, never fake measured loopback',()=>{
+  assert.match(main,/setProperty\("driverInputLatencyFrames",latencyReady/);
+  assert.match(main,/setProperty\("driverOutputLatencyFrames",latencyReady/);
+  assert.match(main,/setProperty\("hostFxLatencyFrames",latencyReady/);
+  assert.match(main,/JUCE_DRIVER_REPORTED_NOT_MEASURED_LOOPBACK_OR_ASIO_RTL/);
+  const bridge=read('web/approved-native-bridge.js');
+  assert.match(bridge,/deviceVM\.setupLatencyReadback\(active\)/);
+  assert.match(bridge,/Input and output are driver-reported/);
+  assert.match(bridge,/action:measure\?"audioLoopbackMeasure":"audioLoopbackRead"/);
+  assert.match(main,/action=="audioLoopbackCancel"/);
 });

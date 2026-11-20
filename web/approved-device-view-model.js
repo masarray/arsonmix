@@ -124,6 +124,34 @@
       outputPins:Array.isArray(active.enabledOutputs)?active.enabledOutputs.slice():null,
       rate:0,buffer:0};
   }
+  // DAW-style read-only latency from the ACTUAL active JUCE device.
+  // Driver input/output hints are not an electrical loopback measurement.
+  // Unavailable or independently clocked paths are NEVER converted to 0 ms.
+  function setupLatencyReadback(active) {
+    const rate=Number(active?.rate);
+    if(active?.open!==true || active.authorized===false || !Number.isFinite(rate)||rate<=0)
+      return Object.freeze({ready:false});
+    const frames=value=>Number.isSafeInteger(value)&&value>=0?value:null;
+    const input=frames(active.driverInputLatencyFrames);
+    const output=frames(active.driverOutputLatencyFrames);
+    const fx=frames(active.hostFxLatencyFrames);
+    const buffer=frames(active.buffer);
+    const sameClock=active.latencyClockScope==="SINGLE_CLOCK_DRIVER_HINTS";
+    const driverIo=sameClock&&input!==null&&output!==null?input+output:null;
+    // Driver I/O reports may already include buffering. The callback period
+    // is a separate metric, not an extra term in the estimate.
+    const total=driverIo!==null&&fx!==null?driverIo+fx:null;
+    const ms=value=>value===null?null:1000*value/rate;
+    const fmt=value=>value===null?"N/A":ms(value).toFixed(2)+" ms";
+    return Object.freeze({
+      ready:true,inputMs:ms(input),outputMs:ms(output),fxMs:ms(fx),bufferMs:ms(buffer),
+      estimatedTotalMs:ms(total),driverIoHintMs:ms(driverIo),
+      line:"Input "+fmt(input)+" · Output "+fmt(output)+
+        " · Buffer "+fmt(buffer)+" · FX/PDC "+fmt(fx),
+      note:"Estimated total I/O "+fmt(total)+" · JUCE driver + host FX/PDC",
+      provenance:active.latencyProvenance||"UNKNOWN"
+    });
+  }
   function setupPresentation(inventory,draft,state=setupInitial()) {
     const active=inventory?.active||{},types=inventory?.types||[];
     const type=types.find(t=>t?.name===draft?.backend);
@@ -423,7 +451,7 @@
     return Object.freeze({kind:"SAME",expirePending:false});
   }
   return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,
-    externalPresentation,setupDraft,setupPresentation,setupEditDraft,
+    externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,
     setupInitial,setupBegin,setupAck,setupReadback,
     setupTimeout,setupClearResult,nativeLifecycleLease,nativeLifecycleDecision,
     nativeTransientReadbackPolicy});

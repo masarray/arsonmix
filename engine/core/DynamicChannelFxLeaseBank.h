@@ -178,6 +178,11 @@ public:
     std::uint64_t revision() const noexcept{return revision_;}
     std::size_t lanes() const noexcept{return rows_.size();}
     ChannelId externalChannel() const noexcept{return external_.id;}
+    // Read-only CONTROL-plane visibility of the EXACT accepted external
+    // render lease. No refcount, mutation or render-side ownership change.
+    const ExternalLease* externalLeaseForControl() const noexcept {
+        return external_.valid() ? &external_ : nullptr;
+    }
     std::size_t insertCount(ChannelId id) const noexcept {
         const auto* p=find(id);return p?p->count:0;
     }

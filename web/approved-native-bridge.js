@@ -901,40 +901,31 @@
   }
 
   function requestProcessingFormat(t){
-    if(logicalView){
-      const id=nativeIdFor(t),source=logicalView.graph.channels.find(ch=>ch.id===id);
-      if(source?.role!=="INPUT")return false;
-      const format=source.processingFormat==="MONO"?"STEREO":"MONO";
-      return logicalIntent("SET_PROCESSING_FORMAT",id,{format}).ok;
+    const snapshot=activeView(),authority=logicalView?"LOGICAL":
+      mixerSession()?.authority;
+    const plan=stripVM.processingFormatPlan(snapshot,{
+      authority,channelId:nativeIdFor(t),channel:m4Index(t),
+      hardwareConfiguration:logicalView?undefined:
+        protocol.nativeHardwareConfiguration(snapshot?.device),
+      verifiedM4:m4Verified(),deviceReady:deviceReady(),
+      pending:!!pendingOutputPatch||!!pendingLogical,
+      sourcePending:!!nativeUiSourcePending
+    });
+    if(plan.kind!=="READY"){
+      status("M/ST unavailable · refresh accepted native input/format");
+      return false;
     }
-    // Once the native ChannelId callback owns PCM, the old M4 routing
-    // revision is no longer authoritative. Send M/ST through the SAME
-    // admitted epoch/revision/roster transaction as WIRE and SOURCE.
-    if(mixerSession()?.authority==="CHANNEL_ID"){
-      const current=controller?.state()?.current;
-      const channelId=nativeIdFor(t);
-      const source=current?.graph?.channels?.find(ch=>ch.id===channelId);
-      if(!current?.admitted || !channelId || source?.role!=="INPUT" ||
-         !current.graph.capabilities.supportedOps.includes("SET_PROCESSING_FORMAT")){
-        status("M/ST unavailable · native processing format not admitted");
-        return false;
-      }
-      const target=source.processingFormat==="MONO"?"STEREO":"MONO";
-      const request=controller.intent("SET_PROCESSING_FORMAT",channelId,
-                                      {format:target});
-      if(!request.ok){
-        status("M/ST rejected · "+request.error);
-        return false;
-      }
+    if(authority==="LOGICAL")
+      return logicalIntent(plan.operation,plan.channelId,plan.payload).ok;
+    if(authority==="CHANNEL_ID"){
+      // Existing controller alone correlates ACK + accepted PCM readback.
+      const request=controller.intent(plan.operation,plan.channelId,plan.payload);
+      if(!request.ok){status("M/ST rejected · "+request.error);return false;}
       window.setTimeout(()=>controller?.expire(request.requestId),8000);
-      status(t.name+" M/ST → "+target+" · verifying native PCM readback");
+      status(t.name+" M/ST → "+plan.target+" · verifying native PCM readback");
       return true;
     }
-    const channel=m4Index(t);
-    const accepted=controller?.state()?.current?.raw?.legacyM4?.channels?.[channel];
-    const target=accepted?.channelFormat==="MONO"?"STEREO":
-      accepted?.channelFormat==="STEREO"?"MONO":null;
-    if(!dispatchM4ChannelPatch(t,"SET_PROCESSING_FORMAT",target,channel)){
+    if(!dispatchM4ChannelPatch(t,plan.operation,plan.target,plan.channel)){
       status("M/ST unavailable · wait for accepted hardware route");
       return false;
     }
@@ -1307,6 +1298,7 @@
     return true;
   }
   let pendingFxInsert=null,fxRequestSerial=0,nativeCatalog=new Map();
+  let pendingFxEditorAck=null,fxEditorSerial=0; // HWND feedback, never PCM owner
   // One pending M4 insert is owned by the bridge until ACK AND independent
   // accepted Console-v6 snapshot. A stale/superseded ACK can never open HWND.
   function reconcileM4FxInsertReadback(snapshot){
@@ -1330,6 +1322,33 @@
     return decision;
   }
 
+  // One original native editor transport for M4 and ChannelId vendor FX.
+  // The publisher's accepted lease is checked again BEFORE calling this.
+  function dispatchPhysicalFxEditor(plan,lease,authority){
+    const requestId="fx-editor-"+(++fxEditorSerial);
+    pendingFxEditorAck={requestId,authority,lease};
+    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload});
+    window.setTimeout(()=>{
+      if(pendingFxEditorAck?.requestId===requestId)pendingFxEditorAck=null;
+    },8000);
+  }
+  function openChannelIdFxEditor(lease){
+    if(lease?.authority!=="CHANNEL_ID"||logicalView)return false;
+    const accepted=controller?.state()?.current;
+    const plan=fxRackVM.nativeEditorDispatchPlan(accepted,lease,{
+      hardwareConfiguration:protocol.nativeHardwareConfiguration(accepted?.device),
+      offline:!!logicalView});
+    if(plan.kind!=="READY")return false;
+    window.queueMicrotask(()=>{
+      const current=controller?.state()?.current;
+      if(logicalView||fxRackVM.nativeEditorDispatchPlan(current,lease,{
+        hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device),
+        offline:!!logicalView}).kind!=="READY")
+        return; // same-epoch hardware/FX replacement or offline .smix switch
+      dispatchPhysicalFxEditor(plan,lease,"CHANNEL_ID");
+    });
+    return true;
+  }
   function openRoutedFxEditor(lane,slot,instanceId,deviceEpoch,revision,
                               hardwareConfiguration){
     const accepted=controller?.state()?.current;
@@ -1347,7 +1366,7 @@
         verifiedM4:m4Verified(current),offline:!!logicalView,
         hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)}))
         return;
-      backend.emitEvent("arMixAction",{action:plan.action,...plan.payload});
+      dispatchPhysicalFxEditor(plan,lease,"M4");
     });
     return true;
   }
@@ -2058,6 +2077,55 @@
     window.clearTimeout(toastTimer);
     toastTimer=window.setTimeout(()=>{element.hidden=true;},3400);
   }
+  let loopbackSerial=0,loopbackId="",loopbackPending=false;
+  const loopbackField=name=>devicePanel?.querySelector("[data-audio-loopback-"+name+"]");
+  function closeNativeAudioIO(){
+    if(deviceBusy())return;
+    if(loopbackPending)backend.emitEvent("arMixAction",{action:"audioLoopbackCancel"});
+    loopbackId="";
+    loopbackPending=false;
+    loopbackField("confirmed").checked=false;
+    for(const side of ["input","output"])loopbackField(side).disabled=false;
+    devicePanel.hidden=true;
+  }
+  function requestLoopback(measure){
+    const scope=deviceInventory?.active?.physicalLoopback;
+    if(!scope||deviceBusy()||loopbackPending)return;
+    const input=loopbackField("input"),output=loopbackField("output");
+    const wired=loopbackField("confirmed");
+    if(input.value===""||output.value===""||(measure&&!wired.checked))return;
+    loopbackId="audio-loopback-"+(++loopbackSerial);
+    loopbackPending=measure;
+    const start=loopbackField("start");
+    start.disabled=measure||!wired.checked;
+    loopbackField("result").textContent=measure?"Starting wired measurement…":"";
+    backend.emitEvent("arMixAction",{
+      action:measure?"audioLoopbackMeasure":"audioLoopbackRead",
+      requestId:loopbackId,deviceEpoch:scope.deviceEpoch,
+      inputPin:Number(input.value),outputPin:Number(output.value),wiredLineLevel:wired.checked
+    });
+  }
+  function renderLoopbackPins(active){
+    const details=loopbackField("details");
+    if(!details)return;
+    const scope=active?.physicalLoopback;
+    details.hidden=!scope;
+    if(!scope)return;
+    for(const [side,values,names] of [
+      ["input",scope.inputs,active.inputNames],["output",scope.outputs,active.outputNames]]){
+      const select=loopbackField(side),prior=select.value;
+      select.replaceChildren();
+      for(const pin of values){
+        const option=document.createElement("option");
+        option.value=String(pin);
+        option.textContent=String(names?.[pin]||("Pin "+(pin+1)));
+        select.append(option);
+      }
+      if(values.some(pin=>String(pin)===prior))select.value=prior;
+    }
+    loopbackField("start").disabled=deviceBusy()||loopbackPending||
+      !loopbackField("confirmed").checked;
+  }
   function openNativeAudioIO(){
     if(!devicePanel){
       const style=document.createElement("style");
@@ -2088,6 +2156,9 @@
         .armix-device-progress span{display:block;margin-top:2px;color:#f2e0bf}
         .armix-audio-dialog details{border-top:1px solid #345666;padding-top:8px}
         .armix-audio-dialog summary{cursor:pointer;color:#c5e1ed}
+        .armix-loopback-pins{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
+        .armix-audio-dialog .armix-loopback-confirm{display:flex;align-items:flex-start;gap:6px;margin:8px 0}
+        .armix-loopback-result{margin-top:6px}
         .armix-audio-dialog{max-height:90vh;overflow:auto}
         .armix-output-overview{border-top:1px solid #345666;padding-top:8px}
         .armix-output-heading{color:#c5e1ed;font-weight:500}
@@ -2120,6 +2191,22 @@
         <label>Input device<select data-audio-field="capture"></select></label>
         <label>Output / monitor device<select data-audio-field="playback"></select></label>
         <div class="armix-device-note" data-audio-active>Reading current audio device…</div>
+        <div class="armix-device-note" data-audio-latency aria-label="Driver-reported audio latency">
+          Latency · waiting for native device readback
+        </div>
+        <details data-audio-loopback-details hidden>
+          <summary>Wired round-trip calibration · ASIO</summary>
+          <div class="armix-loopback-pins">
+            <label>Unused line input<select data-audio-loopback-input></select></label>
+            <label>MAIN line output<select data-audio-loopback-output></select></label>
+          </div>
+          <div class="armix-device-note">Pause playback and disconnect speakers. Wire these line-level ports, disable interface direct monitoring and phantom power. The probe briefly replaces mixer output.</div>
+          <label class="armix-loopback-confirm"><input type="checkbox" data-audio-loopback-confirmed>
+            Cable connected and MAIN already armed
+          </label>
+          <button type="button" data-audio-loopback-start disabled>Measure round-trip latency</button>
+          <div class="armix-loopback-result armix-device-note" data-audio-loopback-result role="status"></div>
+        </details>
         <div class="armix-device-progress" data-audio-progress role="status" aria-live="polite" hidden>
           <!--By Sam Herbert (@sherb), for everyone. More @ http://goo.gl/7AJzbL-->
           <svg viewBox="0 0 55 80" xmlns="http://www.w3.org/2000/svg" fill="currentColor" aria-hidden="true" focusable="false">
@@ -2159,12 +2246,22 @@
           <button type="button" data-audio-apply>Apply device</button>
           <button type="button" data-audio-remap hidden>Use same pins on this device</button>
         </div></section>`;
-      devicePanel.querySelector("[data-audio-close]").onclick=()=>{
-        if(!deviceBusy())devicePanel.hidden=true;
-      };
+      devicePanel.querySelector("[data-audio-close]").onclick=closeNativeAudioIO;
       devicePanel.addEventListener("click",e=>{
-        if(e.target===devicePanel&&!deviceBusy())devicePanel.hidden=true;
+        if(e.target===devicePanel)closeNativeAudioIO();
       });
+      loopbackField("start").onclick=()=>requestLoopback(true);
+      loopbackField("confirmed").onchange=e=>{
+        if(!e.target.checked&&loopbackPending)
+          backend.emitEvent("arMixAction",{action:"audioLoopbackCancel"});
+        loopbackField("start").disabled=!e.target.checked||loopbackPending;
+      };
+      for(const side of ["input","output"])
+        loopbackField(side).onchange=()=>{
+          loopbackField("confirmed").checked=false;
+          loopbackField("start").disabled=true;
+          requestLoopback(false);
+        };
       devicePanel.addEventListener("change",e=>{
         if(deviceBusy()||!deviceChoice||!deviceInventory)return;
         const side=e.target.dataset.audioPin;
@@ -2269,6 +2366,15 @@
     }
     const activeText=devicePanel.querySelector("[data-audio-active]");
     if(activeText&&!deviceBusy())activeText.textContent=view.activeText;
+    const latencyText=devicePanel.querySelector("[data-audio-latency]");
+    if(latencyText){
+      const latency=deviceVM.setupLatencyReadback(active);
+      latencyText.textContent=latency.ready?
+        latency.line+" · "+latency.note:
+        "AUDIO LATENCY · select an active device to read driver estimates";
+      latencyText.title="Input and output are driver-reported. Buffer period is shown separately. Electrical round-trip requires physical loopback calibration.";
+    }
+    renderLoopbackPins(active);
     devicePanel.querySelector("[data-audio-apply]").disabled=
       deviceBusy()||!view.canApply;
     const assignMain=devicePanel.querySelector("[data-audio-main-pins]");
@@ -2354,6 +2460,20 @@
       deviceInventory=inventory;
       deviceChoice=null;
       renderDevicePanel();
+      if(devicePanel&&!devicePanel.hidden&&!loopbackPending)requestLoopback(false);
+    });
+    backend.addEventListener("arMixPhysicalLoopback",message=>{
+      if(!loopbackId||message?.requestId!==loopbackId||!devicePanel||devicePanel.hidden)return;
+      loopbackPending=message.state==="CAPTURING";
+      const result=message.result;
+      const measured=message.state==="MEASURED_LOOPBACK"&&result?.rate>0&&result?.frames>0;
+      loopbackField("result").textContent=measured?
+        "Measured wired round-trip "+(1000*result.frames/result.rate).toFixed(2)+
+        " ms · "+result.frames+" frames · correlation "+result.confidence.toFixed(2)+
+        " · "+message.message:message.message||"No calibration saved for these pins";
+      if(!loopbackPending)loopbackField("confirmed").checked=false;
+      for(const side of ["input","output"])loopbackField(side).disabled=loopbackPending;
+      loopbackField("start").disabled=loopbackPending||!loopbackField("confirmed").checked;
     });
     backend.addEventListener("arMixAudioDeviceApplyAck",ack=>{
       if(!devicePanel)return;
@@ -2725,6 +2845,7 @@
     activeNativeSource=null;nativeUiSourcePending=null;pendingSourceId=0;
     pendingOutputPatch=null;pendingNativeFxPower=null;pendingGlobalFx=null;
     pendingBusCreate=null;pendingTrackDelete=null;pendingFxInsert=null;
+    pendingFxEditorAck=null; // expire old native HWND on device owner change
     startupWire=null;activeWireAttempt=null;pendingNativeGainIntent=false;
     pendingWireGains.clear();pendingNativeControl.clear();
     liveFaderVisualTargets.clear();lastNativeControlSent.clear();
@@ -3008,6 +3129,11 @@
       emit:(name,payload)=>backend.emitEvent(name,payload),
       onAccepted:(next,confirmed)=>{
         onNativeReadback(next,confirmed);
+        const accepted=controller?.state()?.current;
+        if(fxRackVM.nativeEditorAckResult(pendingFxEditorAck,null,accepted,{
+          verifiedM4:m4Verified(accepted),offline:!!logicalView,
+          hardwareConfiguration:protocol.nativeHardwareConfiguration(accepted?.device)})==="STALE")
+          pendingFxEditorAck=null;
         syncGlobalFxReadback();
       },
       onStatus:state=>{
@@ -3234,11 +3360,16 @@
       controller?.subscribe();
     });
     backend.addEventListener("arMixRoutingFxEditorAck",ack=>{
-      if(ack?.ok!==true)
-        nativeToast(ack?.error||"FX editor could not open");
-      // A successful native HWND is its own feedback. Do not send a
-      // generic status("... editor opened") that the UI translates to
-      // the misleading "Effect settings updated" toast.
+      const accepted=controller?.state()?.current;
+      const verdict=fxRackVM.nativeEditorAckResult(pendingFxEditorAck,ack,accepted,{
+        verifiedM4:m4Verified(accepted),offline:!!logicalView,
+        hardwareConfiguration:protocol.nativeHardwareConfiguration(accepted?.device)});
+      if(verdict==="IGNORE")return; // obsolete, duplicate or unrelated ACK
+      pendingFxEditorAck=null; // first ACK wins; no accepted PCM mutation
+      if(verdict==="REJECTED")
+        status("FX editor rejected · "+String(ack?.error||"native editor unavailable"));
+      // Original JUCE emitNotice reports errors. Its HWND controls success.
+      // Never show the misleading generic "Effect settings updated" toast.
     });
     backend.addEventListener("arMixRoutingFxInsertAck",ack=>{
       const verdict=fxRackVM.m4InsertAckResult(pendingFxInsert,ack);
@@ -3629,31 +3760,26 @@
             scope?.openFastPicker?.(t,slot,btn);
           }else if(plan.kind==="OPEN"){
             const editor=plan.lease;
-            if(editor.catalogId==='armix.builtin.channel-eq.v1') {
-              window.ArSonMixNativeEq?.open(t,slot);
-            } else if(editor.catalogId==='armix.builtin.channel-compressor.v1') {
-              window.ArSonMixNativeCompressor?.open(t,slot);
-            } else if(editor.catalogId==='armix.builtin.arson-harmony.v1') {
-              window.ArSonMixNativeHarmony?.open(t,slot);
-            } else if(editor.catalogId==='armix.builtin.vocal-throw.v1') {
-              window.ArSonMixNativeVocalThrow?.open(t,slot);
-            } else if(editor.catalogId==='armix.builtin.8d-sonku.v1') {
-              if(window.ArSonMixNativeSonKu?.open)
-                window.ArSonMixNativeSonKu.open(t,slot);
-              else nativeToast("8D-SonKu editor unavailable · refresh the approved GUI bundle");
-            } else if(editor.authority==="LOGICAL") {
+            // Pure VM selects an allowlisted browser editor, offline logical
+            // vendor reference or the existing correlated native HWND route.
+            // No catalog-specific branching, second renderer or JS PCM owner.
+            const surface=fxRackVM.editorSurfacePlan(current,editor,{
+              hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
+            if(surface.kind==="BROWSER"){
+              const host=window[surface.windowKey];
+              if(typeof host?.open==="function")host.open(t,slot);
+              else nativeToast("Built-in FX editor unavailable · refresh the approved GUI bundle");
+            }else if(surface.kind==="LOGICAL_VENDOR"){
               backend.emitEvent("arMixAction",{action:"logicalVendorFxEditor",
                 channelId:editor.channelId,slot:editor.slot,instanceId:editor.instanceId,
                 workspaceToken:editor.workspaceToken,
                 graphRevision:editor.graphRevision,deviceEpoch:"0"});
-            } else {
-              // Both vendor VST3 and ImmerSIB retain their exact real
-              // JUCE HWND path; no parallel WebView editor authority.
-              backend.emitEvent("arMixAction",{action:"routingFxEditor",
-                channelId:editor.channelId,slot:editor.slot,
-                instanceId:editor.instanceId,deviceEpoch:editor.deviceEpoch,
-                revision:editor.graphRevision});
-            }
+            }else if(surface.kind==="NATIVE_HOST"){
+              // VST3, ImmerSIB and hosted future JUCE FX retain one original
+              // correlated native editor owner and its independent lease.
+              if(!openChannelIdFxEditor(editor))
+                nativeToast("FX editor unavailable · native instance changed");
+            }else nativeToast("FX editor unavailable · accepted FX identity changed");
           }else nativeToast("This FX is held with the disconnected audio session");
           return true;
         }

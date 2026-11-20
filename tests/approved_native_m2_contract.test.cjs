@@ -1924,10 +1924,10 @@ test("M/ST after BUS/WIRE uses native ChannelId intent and accepted PCM processi
   const fn=bridge.slice(bridge.indexOf("function requestProcessingFormat(t)"),
     bridge.indexOf("function previewNativePan(t,el,event)"));
   assert.match(fn,/session\(\)\?\.authority|mixerSession\(\)\?\.authority/);
-  assert.match(fn,/controller.intent\("SET_PROCESSING_FORMAT",channelId,/);
-  assert.ok(fn.includes('dispatchM4ChannelPatch(t,"SET_PROCESSING_FORMAT"'));
+  assert.ok(fn.includes('controller.intent(plan.operation,plan.channelId,plan.payload)'));
+  assert.ok(fn.includes('dispatchM4ChannelPatch(t,plan.operation,plan.target,plan.channel)'));
   assert.ok(fn.indexOf('authority==="CHANNEL_ID"')<
-    fn.indexOf('dispatchM4ChannelPatch(t,"SET_PROCESSING_FORMAT"'));
+    fn.indexOf('dispatchM4ChannelPatch(t,plan.operation,plan.target,plan.channel)'));
 });
 test("P0 first Add FX discovers real local VST3 lazily without an audio-thread scan",()=>{
  const bridge=read("web/approved-native-bridge.js");
@@ -2159,7 +2159,7 @@ test("P0 typed mono-stereo, PAN detent, fader geometry & FX failure diagnostics"
  assert.match(bridge,/const width=event\.type==="change"\?18:latched\?22:14/);
  assert.match(bridge,/readout\.textContent=value===0\?"C"/);
  assert.match(bridge,/function requestProcessingFormat\(t\)/);
- assert.ok(bridge.includes('dispatchM4ChannelPatch(t,"SET_PROCESSING_FORMAT"'));
+ assert.ok(bridge.includes('dispatchM4ChannelPatch(t,plan.operation,plan.target,plan.channel)'));
  assert.ok(read("web/approved-channel-strip-view-model.js").includes('operation==="SET_PROCESSING_FORMAT"'));
  assert.match(bridge,/if\(action==="format"&&t\?\.kind==="audio"\)/);
  assert.match(main,/operation=="SET_PROCESSING_FORMAT"/);
@@ -2193,7 +2193,8 @@ test("P0 real slot VST3 power and native editor use verified instance tokens",()
  assert.match(bridge,/requestAdmittedFxPower\(t,action,btn\)/);
  assert.match(bridge,/FX rack unchanged/);
  assert.match(bridge,/pendingM4RackPowers/);
- assert.match(bridge,/action:"routingFxEditor"/);
+ assert.match(read("web/approved-fx-rack-view-model.js"),/action:"routingFxEditor"/);
+ assert.match(bridge,/dispatchPhysicalFxEditor\(plan,lease,"M4"\)/);
  assert.match(bridge,/action:plan\.action,requestId,\.\.\.plan\.payload/);
  assert.match(read("web/approved-fx-rack-view-model.js"),
    /action:"routingFxBypass"/);
@@ -3617,9 +3618,14 @@ test("ImmerSIB opens the exact native ChannelId HWND, survives VST3 editor, no s
  const editorVM=read("web/approved-fx-rack-view-model.js");
  assert.match(bridge,/fxRackVM\.editorNavigationPlan\(current,/);
  assert.match(editorVM,/view\.raw\?\.mixerSession\?\.authority==="CHANNEL_ID"/);
- assert.match(bridge,/else \{\s*\/\/ Both vendor VST3 and ImmerSIB retain their exact real/);
- assert.match(bridge,/backend\.emitEvent\("arMixAction",\{action:"routingFxEditor",\s*channelId:editor\.channelId,slot:editor\.slot,/);
- assert.match(bridge,/else if\(editor\.authority==="LOGICAL"\)/);
+ assert.match(bridge,/fxRackVM\.editorSurfacePlan\(current,editor,/);
+ assert.match(bridge,/surface\.kind==="NATIVE_HOST"/);
+ assert.match(editorVM,/if\(lease\.authority==="CHANNEL_ID"\)return \{kind:"NATIVE_HOST"\};/);
+ assert.match(bridge,/openChannelIdFxEditor\(editor\)/);
+ assert.match(bridge,/fxRackVM\.nativeEditorDispatchPlan\(current,lease,/);
+ assert.match(bridge,/dispatchPhysicalFxEditor\(plan,lease,"CHANNEL_ID"\)/);
+ assert.match(bridge,/surface\.kind==="LOGICAL_VENDOR"/);
+ assert.match(editorVM,/if\(lease\.authority==="LOGICAL"\)return \{kind:"LOGICAL_VENDOR"\};/);
  assert.match(bridge,/action:"logicalVendorFxEditor"/);
  assert.doesNotMatch(bridge,/else status\("Native VST3 editor opened"\)/);
  assert.match(host,/shownWindow=dedicatedImmerSIB\?immersibEditorWindow_:editorWindow_/);
@@ -4980,7 +4986,9 @@ test("MV-9B bridge uses only accepted native snapshots for global FX, fences M4 
    "globalPowerSettlement","m4SlotPowerAckResult","m4SlotPowerSettlement"])
    assert.match(bridge,new RegExp("fxRackVM\\."+name+"\\("));
  assert.match(bridge,/const current=controller\?\.state\(\)\?\.current;\s*const button=document\.getElementById\?\.\("globalFxToggle"\)/);
- assert.match(bridge,/onAccepted:\(next,confirmed\)=>\{\s*onNativeReadback\(next,confirmed\);\s*syncGlobalFxReadback\(\);/);
+ assert.match(bridge,/onAccepted:\(next,confirmed\)=>\{\s*onNativeReadback\(next,confirmed\);/);
+ assert.match(bridge,/fxRackVM\.nativeEditorAckResult\(pendingFxEditorAck,null,accepted,/);
+ assert.match(bridge,/pendingFxEditorAck=null;\s*syncGlobalFxReadback\(\);/);
  assert.match(bridge,/const apply=\(\)=>controller\.onSnapshot\(snapshot\);/);
  assert.doesNotMatch(bridge,/controller\.onSnapshot\(snapshot\);syncGlobalFxReadback/);
  assert.doesNotMatch(bridge,/const actual=snapshot\?\.globalFxBypassed;/);
@@ -6397,4 +6405,299 @@ test("G-MV35 native MOVE/REMOVE FX demands installed ChannelId hardware owner",(
  assert.match(bridge,/hardwareConfiguration:protocol\.nativeHardwareConfiguration\(current\?\.device\)/);
  assert.match(bridge,/fxRackVM\.nativeEditPlan\(current,/);
  assert.doesNotMatch(pure,/backend\.emitEvent|document\.|window\.|setTimeout/);
+});
+
+test("G-MV36 ChannelId vendor FX editor dispatch retains exactly one physical instance lease",()=>{
+ const channelId="9007199254740993",epoch="31",revision="45",rosterRevision="18";
+ const device={epoch,sampleRate:48000,bufferFrames:256,
+   enabledInputs:[0,1],enabledOutputs:[0,1]};
+ const hardwareConfiguration=protocol.nativeHardwareConfiguration(device);
+ const snap={admitted:true,retained:false,device,raw:{
+   mixerSession:{authority:"CHANNEL_ID",deviceEpoch:epoch}},graph:{
+     revision,rosterRevision,capabilities:{callbackOwnsChannelIds:true},
+     channels:[{id:channelId,role:"INPUT",inserts:[
+       {id:"vst3-instance",catalogId:"vendor.alpha",bypassed:false}]}]
+ }};
+ const original=JSON.stringify(snap);
+ const navigation=fxRackVM.editorNavigationPlan(snap,{
+   channelId,slot:0,hardwareConfiguration});
+ assert.equal(navigation.kind,"OPEN");
+ assert.equal(navigation.lease.authority,"CHANNEL_ID");
+ const plan=(snapshot=snap,lease=navigation.lease,hw=hardwareConfiguration)=>
+   fxRackVM.nativeEditorDispatchPlan(snapshot,lease,{hardwareConfiguration:hw});
+ assert.deepEqual(plan(),{kind:"READY",action:"routingFxEditor",payload:{
+   channelId,slot:0,instanceId:"vst3-instance",deviceEpoch:epoch,revision}});
+ assert.equal(Object.isFrozen(navigation.lease),true);
+ for(const bad of [null,{}, {...navigation.lease,authority:"LOGICAL"},
+   {...navigation.lease,workspaceToken:"other"}, {...navigation.lease,slot:1}])
+   assert.equal(plan(snap,bad).kind,"UNAVAILABLE");
+ for(const mutate of [
+   s=>{s.device.epoch="32";},s=>{s.device.enabledInputs=[2,3];},
+   s=>{s.raw.mixerSession.authority="M4";},
+   s=>{s.raw.mixerSession.deviceEpoch="32";},
+   s=>{s.admitted=false;},s=>{s.retained=true;},
+   s=>{s.graph.revision="46";},s=>{s.graph.rosterRevision="19";},
+   s=>{s.graph.capabilities.callbackOwnsChannelIds=false;},
+   s=>{s.graph.channels[0].inserts[0].id="replacement";},
+   s=>{s.graph.channels[0].inserts[0].catalogId="vendor.beta";},
+   s=>{s.graph.channels[0].inserts=[];}
+ ]){
+   const next=clone(snap);mutate(next);
+   assert.equal(plan(next,navigation.lease,
+     protocol.nativeHardwareConfiguration(next.device)).kind,"UNAVAILABLE");
+ }
+ assert.equal(plan(snap,navigation.lease,"wrong-device").kind,"UNAVAILABLE");
+ assert.equal(fxRackVM.nativeEditorDispatchPlan(snap,navigation.lease,{
+   hardwareConfiguration,offline:true}).kind,"UNAVAILABLE");
+ assert.equal(JSON.stringify(snap),original,"pure editor plan never writes PCM");
+});
+test("G-MV36 correlated FX HWND ACK guards request, device, roster, and plugin instance",()=>{
+ const channelId="9007199254740993",epoch="51",revision="46";
+ const device={epoch,sampleRate:48000,bufferFrames:256,
+   enabledInputs:[0,1],enabledOutputs:[0,1]};
+ const hardwareConfiguration=protocol.nativeHardwareConfiguration(device);
+ const native={admitted:true,retained:false,device,raw:{
+   mixerSession:{authority:"CHANNEL_ID",deviceEpoch:epoch}},graph:{
+     revision,rosterRevision:"19",capabilities:{callbackOwnsChannelIds:true},
+     channels:[{id:channelId,role:"INPUT",inserts:[
+       {id:"native-fx-8",catalogId:"vendor.vst3"}]}]
+ }};
+ const nav=fxRackVM.editorNavigationPlan(native,{
+   channelId,slot:0,hardwareConfiguration});
+ assert.equal(nav.kind,"OPEN");
+ const pending={authority:"CHANNEL_ID",requestId:"fx-editor-7",lease:nav.lease};
+ const verdict=(p=pending,ack=null,snapshot=native,hw=hardwareConfiguration)=>
+   fxRackVM.nativeEditorAckResult(p,ack,snapshot,{
+     hardwareConfiguration:hw,verifiedM4:true});
+ assert.equal(verdict(null,{requestId:pending.requestId,
+   instanceId:"native-fx-8",ok:true}),"IGNORE");
+ assert.equal(verdict(),"IGNORE");
+ assert.equal(verdict(pending,{requestId:"old",instanceId:"native-fx-8",
+   ok:false}),"IGNORE");
+ assert.equal(verdict(pending,{requestId:pending.requestId,
+   instanceId:"wrong",ok:true}),"REJECTED");
+ assert.equal(verdict(pending,{requestId:pending.requestId,
+   instanceId:"native-fx-8",ok:false}),"REJECTED");
+ assert.equal(verdict(pending,{requestId:pending.requestId,
+   instanceId:"native-fx-8",ok:true}),"ACKED");
+ assert.equal(verdict(pending,{instanceId:"native-fx-8",ok:true}),"IGNORE");
+ assert.equal(fxRackVM.nativeEditorAckResult(pending,null,native,{
+   hardwareConfiguration,offline:true}),"STALE");
+ for(const mutate of [
+   s=>{s.graph.rosterRevision="20";},
+   s=>{s.graph.revision="47";},
+   s=>{s.graph.channels[0].inserts[0].id="retired";},
+   s=>{s.raw.mixerSession.authority="M4";},
+   s=>{s.device.enabledOutputs=[2,3];}
+ ]){
+   const updated=clone(native);mutate(updated);
+   const hw=protocol.nativeHardwareConfiguration(updated.device);
+   assert.equal(verdict(pending,null,updated,hw),"STALE");
+   assert.equal(verdict(pending,{requestId:pending.requestId,
+     instanceId:"native-fx-8",ok:true},updated,hw),"STALE");
+ }
+ const m4Device={epoch:"55",sampleRate:48000,bufferFrames:256,
+   enabledInputs:[0,1],enabledOutputs:[0,1]};
+ const m4Hw=protocol.nativeHardwareConfiguration(m4Device);
+ const m4={admitted:false,retained:false,device:m4Device,raw:{
+   mixerSession:{authority:"M4",deviceEpoch:"55",routeRevision:"12",
+     channels:Array.from({length:10},()=>({role:"INPUT"}))},
+   legacyM4:{active:true,routeAccepted:true,nativeBusStructural:false,
+     routingRevision:"12",fxInstances:Array.from({length:10},()=>[])}
+ }};
+ m4.raw.legacyM4.fxInstances[4][0]={
+   instanceId:"m4-fx",catalogId:"vendor.m4",bypassed:false};
+ const accepted=fxRackVM.m4EditorDispatchPlan(m4,{
+   channel:4,slot:0,instanceId:"m4-fx",deviceEpoch:55,revision:12,
+   verifiedM4:true,hardwareConfiguration:m4Hw});
+ assert.equal(accepted.kind,"READY");
+ const m4Pending={requestId:"fx-editor-9",authority:"M4",lease:accepted.lease};
+ const m4Result=(p=m4Pending,ack=null,snapshot=m4,hw=m4Hw)=>
+   fxRackVM.nativeEditorAckResult(p,ack,snapshot,{
+     verifiedM4:true,hardwareConfiguration:hw});
+ assert.equal(m4Result(),"IGNORE");
+ assert.equal(m4Result(m4Pending,{requestId:"fx-editor-7",
+   instanceId:"m4-fx",ok:true}),"IGNORE");
+ assert.equal(m4Result(m4Pending,{requestId:"fx-editor-9",
+   instanceId:"m4-fx",ok:true}),"ACKED");
+ const replacement=clone(m4);
+ replacement.raw.legacyM4.fxInstances[4][0].catalogId="other";
+ assert.equal(m4Result(m4Pending,null,replacement),"STALE");
+ assert.equal(m4Result(m4Pending,null,m4,"old-hardware"),"STALE");
+ assert.equal(m4Result({...m4Pending,authority:"LOGICAL"}),"STALE");
+});
+test("G-MV36 one correlated native editor transport and JUCE echo, no duplicate toast",()=>{
+ const bridge=read("web/approved-native-bridge.js"),
+   main=read("src/Main.cpp"),viewmodel=read("web/approved-fx-rack-view-model.js");
+ assert.match(main,/if \(action == "routingFxEditor"\) \{/);
+ assert.match(main,/ack->setProperty\("requestId",args\.getProperty\("requestId",juce::var\(\)\)\);/);
+ assert.match(main,/ack->setProperty\("instanceId",token\);/);
+ assert.match(bridge,/function dispatchPhysicalFxEditor\(plan,lease,authority\)/);
+ assert.match(bridge,/backend\.emitEvent\("arMixAction",\{action:plan\.action,requestId,\.\.\.plan\.payload\}\);/);
+ assert.match(bridge,/dispatchPhysicalFxEditor\(plan,lease,"M4"\)/);
+ assert.match(bridge,/dispatchPhysicalFxEditor\(plan,lease,"CHANNEL_ID"\)/);
+ assert.match(bridge,/if\(logicalView\|\|fxRackVM\.nativeEditorDispatchPlan\(current,lease,/);
+ assert.match(bridge,/pendingFxEditorAck=null; \/\/ expire old native HWND/);
+ assert.match(bridge,/fxRackVM\.nativeEditorAckResult\(pendingFxEditorAck,ack,accepted,/);
+ assert.match(bridge,/if\(verdict==="IGNORE"\)return; \/\/ obsolete, duplicate or unrelated ACK/);
+ assert.match(bridge,/fxRackVM\.nativeEditorAckResult\(pendingFxEditorAck,null,accepted,/);
+ assert.doesNotMatch(bridge,/if\(ack\?\.ok!==true\)\s*nativeToast\(ack\?\.error\|\|/);
+ assert.doesNotMatch(viewmodel,/backend\.emitEvent|document\.|window\.|setTimeout/);
+});
+
+test("G-MV37 one physical ChannelId M/ST policy validates exact accepted input",()=>{
+ const id="9007199254740993",hw="asio|48000|256|0,1|0,1";
+ const graph={revision:"45",rosterRevision:"8",
+   capabilities:{callbackOwnsChannelIds:true,
+     supportedOps:["SET_PROCESSING_FORMAT"]},
+   channels:[{id,role:"INPUT",processingFormat:"MONO"}]};
+ const native={admitted:true,retained:false,logical:false,
+   device:{epoch:"17"},raw:{mixerSession:{
+     authority:"CHANNEL_ID",deviceEpoch:"17"}},graph};
+ const get=(snapshot=native,args={})=>stripVM.processingFormatPlan(snapshot,{
+   authority:"CHANNEL_ID",channelId:id,hardwareConfiguration:hw,...args});
+ assert.deepEqual(get(),{kind:"READY",authority:"CHANNEL_ID",
+   operation:"SET_PROCESSING_FORMAT",channelId:id,
+   payload:{format:"STEREO"},target:"STEREO"});
+ const stereo=clone(native);stereo.graph.channels[0].processingFormat="STEREO";
+ assert.equal(get(stereo).target,"MONO");
+ for(const h of ["",null,0])
+   assert.equal(get(native,{hardwareConfiguration:h}).kind,"UNAVAILABLE");
+ for(const mutation of [
+   s=>{s.admitted=false;},s=>{s.retained=true;},s=>{s.logical=true;},
+   s=>{s.raw.mixerSession.authority="M4";},
+   s=>{s.raw.mixerSession.deviceEpoch="18";},
+   s=>{s.device.epoch="0";},s=>{s.graph.revision="0";},
+   s=>{s.graph.rosterRevision="0";},
+   s=>{s.graph.capabilities.callbackOwnsChannelIds=false;},
+   s=>{s.graph.capabilities.supportedOps=[];},
+   s=>{s.graph.channels[0].role="GROUP";},
+   s=>{s.graph.channels[0].processingFormat="UNKNOWN";},
+   s=>{s.graph.channels.push({...s.graph.channels[0]});}
+ ]){const snapshot=clone(native);mutation(snapshot);
+   assert.equal(get(snapshot).kind,"UNAVAILABLE");}
+ assert.equal(get(native,{pending:true}).kind,"UNAVAILABLE");
+});
+test("G-MV37 .smix M/ST stays offline and workspace-scoped",()=>{
+ const id="9007199254740993";
+ const saved={logical:true,admitted:false,retained:false,readOnly:false,
+   workspaceToken:"workspace-A",graph:{
+     capabilities:{supportedOps:["SET_PROCESSING_FORMAT"]},
+     channels:[{id,role:"INPUT",processingFormat:"STEREO"}]}};
+ const get=(snapshot=saved,args={})=>stripVM.processingFormatPlan(snapshot,{
+   authority:"LOGICAL",channelId:id,...args});
+ assert.deepEqual(get(),{kind:"READY",authority:"LOGICAL",
+   operation:"SET_PROCESSING_FORMAT",channelId:id,
+   payload:{format:"MONO"},target:"MONO"});
+ for(const mutation of [
+   s=>{s.logical=false;},s=>{s.admitted=true;},s=>{s.retained=true;},
+   s=>{s.readOnly=true;},s=>{s.workspaceToken="";},
+   s=>{s.graph.capabilities.supportedOps=[];},
+   s=>{s.graph.channels[0].processingFormat=null;},
+   s=>{s.graph.channels.push({...s.graph.channels[0]});}
+ ]){const snapshot=clone(saved);mutation(snapshot);
+   assert.equal(get(snapshot).kind,"UNAVAILABLE");}
+ assert.equal(get(saved,{pending:true}).kind,"UNAVAILABLE");
+});
+test("G-MV37 M4 M/ST reuses exact existing routed channel patch",()=>{
+ const sessionChannels=Array.from({length:10},(_,i)=>({
+   role:"INPUT",ordinal:i,source:{main:false,channelFormat:"MONO"},
+   primaryOut:"NONE"}));
+ const legacyChannels=sessionChannels.map(()=>({main:false,channelFormat:"MONO"}));
+ const snapshot={admitted:false,retained:false,device:{epoch:"21"},raw:{
+   mixerSession:{authority:"M4",deviceEpoch:"21",routeRevision:"12",
+     channels:sessionChannels},
+   legacyM4:{active:true,routeAccepted:true,nativeBusStructural:false,
+     routingRevision:"12",channels:legacyChannels}}};
+ const opts={authority:"M4",channel:4,verifiedM4:true,deviceReady:true,
+   hardwareConfiguration:"physical-lease"};
+ const plan=stripVM.processingFormatPlan(snapshot,opts);
+ assert.equal(plan.kind,"READY");
+ assert.equal(plan.operation,"SET_PROCESSING_FORMAT");
+ assert.equal(plan.action,"routingChannelPatch");
+ assert.equal(plan.target,"STEREO");
+ assert.equal(plan.payload.channel,4);
+ for(const change of [
+   {verifiedM4:false},{deviceReady:false},{pending:true},
+   {sourcePending:true},{hardwareConfiguration:null},
+   {hardwareConfiguration:""},{channel:10}
+ ])assert.equal(stripVM.processingFormatPlan(snapshot,{...opts,...change}).kind,
+    "UNAVAILABLE");
+ const wrong=clone(snapshot);
+ wrong.raw.mixerSession.channels[4].source.channelFormat="STEREO";
+ assert.equal(stripVM.processingFormatPlan(wrong,opts).kind,"UNAVAILABLE");
+ const bridge=read("web/approved-native-bridge.js");
+ const section=bridge.slice(bridge.indexOf("function requestProcessingFormat(t)"),
+   bridge.indexOf("function previewNativePan(t,el,event)"));
+ assert.match(section,/stripVM\.processingFormatPlan\(snapshot,/);
+ assert.match(section,/logicalIntent\(plan\.operation,plan\.channelId,plan\.payload\)/);
+ assert.match(section,/controller\.intent\(plan\.operation,plan\.channelId,plan\.payload\)/);
+ assert.match(section,/dispatchM4ChannelPatch\(t,plan\.operation,plan\.target,plan\.channel\)/);
+ assert.doesNotMatch(section,/const target=.*processingFormat|channelFormat===/);
+});
+
+test("G-MV38 editor surface routing has one allowlisted browser owner; future FX remain native",()=>{
+  const channelId="9007199254740993",epoch="53";
+  const device={epoch,sampleRate:48000,bufferFrames:256,
+    enabledInputs:[0,1],enabledOutputs:[0,1]};
+  const hardwareConfiguration=protocol.nativeHardwareConfiguration(device);
+  const view={admitted:true,retained:false,device,raw:{
+    mixerSession:{authority:"CHANNEL_ID",deviceEpoch:epoch}},graph:{
+    revision:"72",rosterRevision:"11",
+    capabilities:{callbackOwnsChannelIds:true},
+    channels:[{id:channelId,role:"INPUT",inserts:[
+      {id:"native-fx-instance",catalogId:"vendor.vst3"}]}]}};
+  const project=(catalogId,snapshot=view,hw=hardwareConfiguration)=>{
+    const fx=snapshot.graph.channels[0].inserts[0];
+    fx.catalogId=catalogId;
+    const nav=fxRackVM.editorNavigationPlan(snapshot,{channelId,slot:0,
+      hardwareConfiguration:hw});
+    assert.equal(nav.kind,"OPEN");
+    return {lease:nav.lease,result:fxRackVM.editorSurfacePlan(snapshot,nav.lease,
+      {hardwareConfiguration:hw})};
+  };
+  const allowlisted=[
+    ["armix.builtin.channel-eq.v1","ArSonMixNativeEq"],
+    ["armix.builtin.channel-compressor.v1","ArSonMixNativeCompressor"],
+    ["armix.builtin.arson-harmony.v1","ArSonMixNativeHarmony"],
+    ["armix.builtin.vocal-throw.v1","ArSonMixNativeVocalThrow"],
+    ["armix.builtin.8d-sonku.v1","ArSonMixNativeSonKu"]
+  ];
+  for(const [id,windowKey] of allowlisted){
+    const {result}=project(id);
+    assert.deepEqual(result,{kind:"BROWSER",windowKey});
+  }
+  for(const id of ["vendor.vst3","armix.builtin.graphic-eq31.v1",
+                   "armix.builtin.immersib.v1","__proto__"]){
+    assert.deepEqual(project(id).result,{kind:"NATIVE_HOST"},
+      "non-allowlisted catalogs cannot choose an arbitrary browser host");
+  }
+  const {lease}=project("vendor.vst3");
+  assert.deepEqual(fxRackVM.editorSurfacePlan(view,lease,{
+    hardwareConfiguration:"wrong-hardware"}),{kind:"UNAVAILABLE"});
+  const stale=JSON.parse(JSON.stringify(view));
+  stale.graph.revision="73";
+  assert.deepEqual(fxRackVM.editorSurfacePlan(stale,lease,{
+    hardwareConfiguration}),{kind:"UNAVAILABLE"});
+  const offline=JSON.parse(JSON.stringify(view));
+  offline.logical=true;offline.admitted=false;offline.workspaceToken="saved-workspace";
+  offline.raw.mixerSession.authority="LOGICAL";
+  const logicalLease=fxRackVM.editorNavigationPlan(offline,{
+    channelId,slot:0}).lease;
+  assert.deepEqual(fxRackVM.editorSurfacePlan(offline,logicalLease),
+    {kind:"LOGICAL_VENDOR"});
+  offline.graph.channels[0].inserts[0].catalogId="armix.builtin.arson-harmony.v1";
+  const builtInLogical=fxRackVM.editorNavigationPlan(offline,{
+    channelId,slot:0}).lease;
+  assert.deepEqual(fxRackVM.editorSurfacePlan(offline,builtInLogical),
+    {kind:"BROWSER",windowKey:"ArSonMixNativeHarmony"},
+    "existing offline built-in editor remains available");
+  assert.deepEqual(fxRackVM.editorSurfacePlan(null,lease),
+    {kind:"UNAVAILABLE"});
+  const bridge=read("web/approved-native-bridge.js");
+  assert.match(bridge,/fxRackVM\.editorSurfacePlan\(current,editor,/);
+  assert.match(bridge,/const host=window\[surface\.windowKey\]/);
+  assert.match(bridge,/openChannelIdFxEditor\(editor\)/);
+  assert.match(bridge,/action:"logicalVendorFxEditor"/);
+  assert.doesNotMatch(bridge,/if\(editor\.catalogId==='armix\.builtin/);
 });

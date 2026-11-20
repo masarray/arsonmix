@@ -44,6 +44,8 @@ SetupMutex=ArSonMix.PerUserInstaller.SingleInstance
 ; WM_CLOSE followed by full process exit is required before replacing EXE.
 CloseApplications=no
 RestartApplications=no
+; The vendor can queue driver files for the next boot. Setup still opens ArSonMix.
+RestartIfNeededByRun=no
 ; Clean only the exact legacy top-level documents installed by <= alpha.24.
 ; No wildcards, recursion, Studio data, shows, presets or third-party dirs.
 ; Inno processes [InstallDelete] before [Files], including in-place upgrades.
@@ -66,6 +68,7 @@ Source: "ArSonMixVBCableInstall.ps1"; DestDir: "{app}\ThirdParty\VB-Audio"; Flag
 Source: "ArSonMixUpdateShutdown.ps1"; Flags: dontcopy
 ; The updater runs outside JUCE, never in the realtime audio callback.
 Source: "ArSonMixAutoUpdate.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "ArSonMixStartupDiagnostics.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\verified-gui.exe"; DestDir: "{app}"; DestName: "ArSonMix.exe"; Flags: ignoreversion
 Source: "{#SourceRoot}\BUILD_PROVENANCE.json"; DestDir: "{app}"; Flags: ignoreversion
 ; The complete original and vendor legal documents are embedded both in
@@ -84,16 +87,19 @@ Name: "{autoprograms}\ArSonMix"; Filename: "{app}\ArSonMix.exe"; WorkingDir: "{a
 ; User-facing fallback when the main EXE cannot even open. The helper
 ; authenticates the published current release and repairs in place.
 Name: "{autoprograms}\Repair ArSonMix"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\ArSonMixAutoUpdate.ps1"" -RecoveryMode"; WorkingDir: "{app}"
+Name: "{autoprograms}\Diagnose ArSonMix Startup"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\ArSonMixStartupDiagnostics.ps1"" -ShowReport"; WorkingDir: "{app}"
+Name: "{autoprograms}\Start ArSonMix with Recovery Profile"; Filename: "{app}\ArSonMix.exe"; Parameters: "--safe-webview-profile"; WorkingDir: "{app}"
 ; Do not create a second copy of an already running mixer. Restart Manager
 ; preflight closes the prior verified app before [Files]; [Run] launches exactly
 ; one new executable only after a successful interactive install/update.
 ; Silent enterprise/FAT installs deliberately do not launch desktop audio.
 [Run]
-; Check on interactive Setup before opening the mixer. Only a missing driver
-; can reach the independently verified vendor EXE and its Windows approval.
+; Interactive Setup automatically checks installed and pending VB-CABLE devices.
+; Only a missing driver can reach the verified vendor installer and Windows UAC.
+; The next entry opens ArSonMix even if the driver needs a restart or is declined.
 ; Silent updates and enterprise installs retain their noninteractive behavior.
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -ExecutionPolicy Bypass -File ""{app}\ThirdParty\VB-Audio\ArSonMixVBCableInstall.ps1"" -Archive ""{app}\ThirdParty\VB-Audio\VBCABLE_Driver_Pack45.zip"" -ExpectedSha256 ""{#VBCableSha256}"" -RestartMarker ""{tmp}\ArSonMixVBCableRestart"""; WorkingDir: "{app}"; StatusMsg: "Checking VB-Audio VB-CABLE for automatic audio setup..."; Flags: runasoriginaluser skipifsilent waituntilterminated runhidden
-Filename: "{app}\ArSonMix.exe"; WorkingDir: "{app}"; Flags: nowait runasoriginaluser skipifsilent; Check: CanLaunchMixer
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -ExecutionPolicy Bypass -File ""{app}\ThirdParty\VB-Audio\ArSonMixVBCableInstall.ps1"" -Archive ""{app}\ThirdParty\VB-Audio\VBCABLE_Driver_Pack45.zip"" -ExpectedSha256 ""{#VBCableSha256}"""; WorkingDir: "{app}"; StatusMsg: "Checking VB-Audio VB-CABLE for automatic audio setup..."; Flags: runasoriginaluser skipifsilent waituntilterminated runhidden
+Filename: "{app}\ArSonMix.exe"; WorkingDir: "{app}"; Flags: nowait runasoriginaluser skipifsilent
 
 ; Never delete private Studio data on install/update/uninstall; never install
 ; portable_mode.txt or silently ARM an audio output.
@@ -102,16 +108,6 @@ Filename: "{app}\ArSonMix.exe"; WorkingDir: "{app}"; Flags: nowait runasoriginal
 ; legacy versions with no shutdown handshake, verify the EXE is replaceable.
 ; Never force-terminate, never skip an occupied file, and never erase Studio.
 [Code]
-function NeedRestart(): Boolean;
-begin
-  Result := FileExists(ExpandConstant('{tmp}\ArSonMixVBCableRestart'));
-end;
-
-function CanLaunchMixer(): Boolean;
-begin
-  Result := not NeedRestart();
-end;
-
 function OpenEventW(Access: LongWord; InheritHandle: Boolean; Name: string): THandle;
   external 'OpenEventW@kernel32.dll stdcall';
 function SignalEvent(EventHandle: THandle): Boolean;
