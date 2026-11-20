@@ -15,16 +15,18 @@ const finitePositive=x=>typeof x==="number"&&Number.isFinite(x)&&x>0;
 const percent=(a,b)=>b>0?Math.round(10000*a/b)/100:null;
 
 export function parseHealthLog(log) {
-  const samples=[], warnings=[];
+  const samples=[], warnings=[], rejectedLines=[];
   for(const [idx,line] of String(log).split(/\r?\n/).entries()){
     if(!line.includes(" | AUDIO_HEALTH | "))continue;
     const m=/^(\S+) \| AUDIO_HEALTH \| (\{.*\})$/.exec(line);
-    if(!m){warnings.push("line "+(idx+1)+": malformed/truncated AUDIO_HEALTH");continue;}
+    if(!m){warnings.push("line "+(idx+1)+": malformed/truncated AUDIO_HEALTH");rejectedLines.push(idx+1);continue;}
     let sample;
     try {sample=JSON.parse(m[2]);}
-    catch {warnings.push("line "+(idx+1)+": invalid AUDIO_HEALTH JSON");continue;}
-    if(sample.schema!==SCHEMA){
+    catch {warnings.push("line "+(idx+1)+": invalid AUDIO_HEALTH JSON");rejectedLines.push(idx+1);continue;}
+    if(!sample || typeof sample!=="object" || Array.isArray(sample) ||
+       sample.schema!==SCHEMA){
       warnings.push("line "+(idx+1)+": legacy/unknown schema (excluded)");
+      rejectedLines.push(idx+1);
       continue;
     }
     const time=Date.parse(m[1]);
@@ -34,20 +36,23 @@ export function parseHealthLog(log) {
        typeof sample.liveBackendClass!=="string" ||
        typeof sample.dryTest!=="boolean" || typeof sample.connected!=="boolean"){
       warnings.push("line "+(idx+1)+": invalid source metadata/counters");
+      rejectedLines.push(idx+1);
       continue;
     }
     const buckets=sample.callbackBudgetBuckets;
     if(!Array.isArray(buckets)||buckets.length!==13||!buckets.every(isCount)){
       warnings.push("line "+(idx+1)+": missing/invalid 13 histogram buckets");
+      rejectedLines.push(idx+1);
       continue;
     }
     if(!COUNTERS.every(key=>isCount(sample[key]))){
       warnings.push("line "+(idx+1)+": missing/invalid cumulative counter");
+      rejectedLines.push(idx+1);
       continue;
     }
     samples.push({...sample,atMs:time,line:idx+1});
   }
-  return {samples,warnings};
+  return {samples,warnings,rejectedLines};
 }
 
 export function p95p99FromDelta(counts) {
@@ -132,7 +137,7 @@ function describeSegment(segment){
 }
 
 export function analyzeHealthLog(log) {
-  const {samples,warnings}=parseHealthLog(log);
+  const {samples,warnings,rejectedLines}=parseHealthLog(log);
   const groups=[];
   let segment=null;
   const start=s=>({start:s,last:s,intervals:0,durationMs:0,
@@ -140,7 +145,9 @@ export function analyzeHealthLog(log) {
     histogram:Array(13).fill(0),invalidTransitions:0});
   for(const current of samples){
     if(!segment){segment=start(current);continue;}
-    if(!validInterval(segment.last,current)){
+    // Do not compare across an unreadable/legacy sample even when <5s.
+    const missingBetween=rejectedLines.some(line=>line>segment.last.line&&line<current.line);
+    if(missingBetween || !validInterval(segment.last,current)){
       groups.push(describeSegment(segment));
       warnings.push("line "+current.line+": scope/device epoch, counter reset or >5s log gap; comparison window split");
       segment=start(current);
@@ -168,7 +175,7 @@ export function compareDryFx(analysis){
   const fx=[...ready].reverse().find(s=>s.mode==="FX");
   if(!dry||!fx)return {comparable:false,reason:"Need >=30s each of real accepted NORMAL/DRY and NORMAL/FX under the same device."};
   for(const key of ["backend","device","inputDevice","outputDevice",
-                     "inputChannels","outputChannels","sampleRate","bufferFrames"]){
+                     "deviceGeneration","inputChannels","outputChannels","sampleRate","bufferFrames"]){
     if(dry[key]!==fx[key])return {comparable:false,reason:"Mismatched "+key+": do not compare unlike hardware profiles."};
   }
   return {comparable:true,baseline:"DRY",candidate:"FX",
