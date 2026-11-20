@@ -874,6 +874,7 @@ private:
                  "nativeFxCountProvenance", "nativeFxGraphRevision",
                  "nativeExternalCh1Leased", "nativeExternalCh1InstalledCount",
                  "nativeExternalCh1ProcessingCount",
+                 "nativeFxActivityComplete",
                  "callbackCount", "callbackBudgetBuckets",
                  "callbackBudgetBucketProvenance", "callbackBudgetSamples",
                  "callbackP95BudgetUpperPct", "callbackP99BudgetUpperPct",
