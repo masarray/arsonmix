@@ -41,6 +41,7 @@ export function parseHealthLog(log) {
        !isCount(sample.nativeFxInstalledCount) ||
        !isCount(sample.nativeFxProcessingCount) ||
        sample.nativeFxProcessingCount>sample.nativeFxInstalledCount ||
+       sample.nativeFxActivityComplete!==true ||
        typeof sample.nativeExternalCh1Leased!=="boolean" ||
        !isCount(sample.nativeExternalCh1InstalledCount) ||
        !isCount(sample.nativeExternalCh1ProcessingCount) ||
