@@ -249,6 +249,50 @@ int main() {
         }
     }
 
+    // A corrupted upstream LEFT sample must not disturb an otherwise
+    // healthy RIGHT IIR tail, and vice versa. The reference receives an
+    // equivalent zero on the faulty channel while its other channel is
+    // bit-identical to the fault-injected processor. Both sides remain
+    // independent even during 5 ms per-band parameter interpolation.
+    for(const bool faultOnLeft:{true,false}) {
+        GraphicEq31Core isolated,reference;
+        GEQ_CHECK(isolated.prepare(48000.));
+        GEQ_CHECK(reference.prepare(48000.));
+        for(std::size_t band=0;band<31;++band) {
+            const double db=band%2?9.:-6.;
+            GEQ_CHECK(isolated.setGain(band,db));
+            GEQ_CHECK(reference.setGain(band,db));
+        }
+        for(int block=0;block<14;++block) {
+            std::array<float,128> faultyL{},faultyR{},refL{},refR{};
+            for(std::size_t n=0;n<faultyL.size();++n) {
+                const double t=static_cast<double>(block*128+n)/48000.;
+                faultyL[n]=.02f*static_cast<float>(
+                    std::sin(6.2831853071795864769*432.*t));
+                faultyR[n]=.01f*static_cast<float>(
+                    std::cos(6.2831853071795864769*1903.*t));
+            }
+            refL=faultyL;refR=faultyR;
+            if(block==5) {
+                if(faultOnLeft) {
+                    faultyL[19]=std::numeric_limits<float>::quiet_NaN();
+                    refL[19]=0.f;
+                }else {
+                    faultyR[19]=std::numeric_limits<float>::infinity();
+                    refR[19]=0.f;
+                }
+            }
+            isolated.processStereo(faultyL.data(),faultyR.data(),128);
+            reference.processStereo(refL.data(),refR.data(),128);
+            for(std::size_t n=0;n<faultyL.size();++n) {
+                GEQ_CHECK(std::isfinite(faultyL[n]));
+                GEQ_CHECK(std::isfinite(faultyR[n]));
+                GEQ_CHECK(faultOnLeft?faultyR[n]==refR[n]:
+                                       faultyL[n]==refL[n]);
+            }
+        }
+    }
+
     // Inter-band boost is additive, NOT limited to the +12 dB of any single
     // fader. Preserve operator responsibility for headroom: no undocumented
     // auto-trim, soft clipping or limiter when valid PCM exceeds 0 dBFS.
