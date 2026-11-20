@@ -2663,6 +2663,16 @@ public:
         o->setProperty ("callbackP95BeyondDeadline", histogram.p95Ceiling < 0);
         o->setProperty ("callbackP99BeyondDeadline", histogram.p99Ceiling < 0);
         o->setProperty ("callbackBudgetSamples", static_cast<double> (histogram.total));
+        // INT-1B: cumulative buckets enable true 1 Hz interval percentiles
+        // without resetting/replacing RT atomics at ASIO device transitions.
+        // The message thread alone allocates this 13-value readback array.
+        // Never label these host callback timing buckets as hardware XRUNs.
+        juce::Array<juce::var> budgetBuckets;
+        for (const auto count : histogram.counts)
+            budgetBuckets.add (static_cast<double> (count));
+        o->setProperty ("callbackBudgetBuckets", juce::var (budgetBuckets));
+        o->setProperty ("callbackBudgetBucketProvenance",
+            "HOST_CALLBACK_BUDGET_CUMULATIVE_13_BUCKETS_NOT_DRIVER_RENDER_XRUN");
         o->setProperty ("inputPeak", inputPeak_.load());
         o->setProperty ("inputPeakProvenance", "RAW_PCM_BEFORE_HARDWARE_MUTE");
         // First Sound: JUCE supplies callback-COMPACT input channels.
