@@ -183,6 +183,39 @@ static void checkSessionControlPlans() {
     open.epochChanged=false;
     open.operationBusy=true;
     assert(Recovery::planOpen(open).action==Open::reject);
+
+    // Save deduplication only follows a prior ACCEPTED fingerprint and
+    // must not depend on wall clock; distinct edits always requalify.
+    auto doc=makeSession();
+    const auto first=Recovery::stageSave(doc,true,{},1762521000000LL);
+    assert(first.error.isEmpty() && !first.unchanged);
+    assert(first.fingerprint.isNotEmpty() && doc.savedMs==1762521000000LL);
+    const auto again=Recovery::stageSave(doc,true,first.fingerprint,1762522000000LL);
+    assert(again.error.isEmpty() && again.unchanged);
+    const auto forced=Recovery::stageSave(doc,false,first.fingerprint,1762523000000LL);
+    assert(forced.error.isEmpty() && !forced.unchanged);
+    doc.masterGain=.4f;
+    const auto changed=Recovery::stageSave(doc,true,first.fingerprint,1762524000000LL);
+    assert(changed.error.isEmpty() && !changed.unchanged &&
+           changed.fingerprint!=first.fingerprint);
+    doc.id="UNTRUSTED";
+    const auto invalid=Recovery::stageSave(doc,true,{},1762525000000LL);
+    assert(invalid.error.isNotEmpty());
+
+    Recovery::RestoreContext restore;
+    restore.outputsDisarmed=true;
+    assert(Recovery::restoreBlocker(restore)==nullptr);
+    restore.workerBusy=true;
+    assert(Recovery::restoreBlocker(restore)!=nullptr);
+    restore.workerBusy=false;
+    restore.vendorEditorOpen=true;
+    assert(Recovery::restoreBlocker(restore)!=nullptr);
+    restore.vendorEditorOpen=false;
+    restore.graphPending=true;
+    assert(Recovery::restoreBlocker(restore)!=nullptr);
+    restore.graphPending=false;
+    restore.outputsDisarmed=false;
+    assert(Recovery::restoreBlocker(restore)!=nullptr);
 }
 
 class FixtureDevice final : public juce::AudioIODevice {

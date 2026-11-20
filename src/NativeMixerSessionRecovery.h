@@ -34,6 +34,47 @@ public:
     }
 
 
+
+    struct RestoreContext {
+        bool outputsDisarmed = false;
+        bool workerBusy = false;
+        bool vendorEditorOpen = false;
+        bool showBusy = false;
+        bool backupBusy = false;
+        bool graphPending = false;
+    };
+    static const char* restoreBlocker(const RestoreContext& c) noexcept {
+        return (!c.outputsDisarmed || c.workerBusy || c.vendorEditorOpen ||
+                c.showBusy || c.backupBusy || c.graphPending) ?
+            "MUTE output and finish Studio IO before restoring mixer" : nullptr;
+    }
+
+    struct SaveStage {
+        juce::String error;
+        juce::String fingerprint;
+        bool unchanged = false;
+    };
+    // Canonical fingerprint deliberately ignores savedMs. A failed worker
+    // never promotes it; only an accepted automatic checkpoint may dedupe.
+    // Disk persistence, binary blob hashing and HEAD admission remain owned
+    // by the existing NativeMixerSessionStore/SaveWorker.
+    static SaveStage stageSave(MixerSessionDocument& doc,
+                               bool automatic,
+                               const juce::String& acceptedFingerprint,
+                               juce::int64 capturedAtMs) {
+        doc.savedMs=1;
+        const auto canonical=Codec::encode(doc);
+        MixerSessionDocument verified;
+        if(!Codec::decode(canonical,verified))
+            return {"Mixer session document validation rejected",{},false};
+        const auto fingerprint=juce::SHA256(canonical.toRawUTF8(),
+            canonical.getNumBytesAsUTF8()).toHexString();
+        if(automatic && fingerprint==acceptedFingerprint)
+            return {{},fingerprint,true};
+        doc.savedMs=capturedAtMs;
+        return {{},fingerprint,false};
+    }
+
     // One CONTROL-thread admission policy for .smix SAVE/OPEN. The host
     // supplies observed native authority and keeps OS dialogs, callbacks,
     // physical graph ownership and UI ACK/readback; no shadow session state.

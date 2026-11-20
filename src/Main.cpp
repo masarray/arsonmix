@@ -3332,10 +3332,13 @@ private:
     juce::String restoreSavedMixerSession(bool startupOnSavedDevice=false,
             armix::session::MixerDeviceBindingPolicy::Mode bindingMode=
                 armix::session::MixerDeviceBindingPolicy::Mode::exact) {
-        if(!engine_.allOutputsDisarmed() || mixerSessionWorker_.busy() || logicalVendorEditor_ ||
-           nativeShowBusy_ || studioBackupBusy_ || engine_.isGraphSwitchPending())
-            return "MUTE output and finish Studio IO before restoring mixer";
         using Recovery=armix::session::NativeMixerSessionRecovery;
+        const auto blocked=Recovery::restoreBlocker({
+            engine_.allOutputsDisarmed(),mixerSessionWorker_.busy(),
+            logicalVendorEditor_!=nullptr,nativeShowBusy_,studioBackupBusy_,
+            engine_.isGraphSwitchPending()
+        });
+        if(blocked)return blocked;
         const armix::session::NativeMixerSessionStore store(settingsDirectory());
         armix::session::MixerSessionDocument doc;
         std::vector<armix::shows::BinaryState> states;
@@ -3487,16 +3490,11 @@ private:
         // browser-provided plugin name or relocate an arbitrary VST3 path.
         error=resolveMixerSessionCatalog(doc,true);
         if(error.isNotEmpty())return error;
-        doc.savedMs=1; // signature excludes wall time; includes FX state hashes
-        const auto canonical=armix::session::Codec::encode(doc);
-        armix::session::MixerSessionDocument verified;
-        if(!armix::session::Codec::decode(canonical,verified))
-            return "Mixer session document validation rejected";
-        const auto fingerprint=juce::SHA256(canonical.toRawUTF8(),
-            canonical.getNumBytesAsUTF8()).toHexString();
-        if(automatic&&fingerprint==lastMixerSessionFingerprint_)
-            return {};
-        doc.savedMs=juce::Time::currentTimeMillis();
+        const auto staged=Recovery::stageSave(doc,automatic,
+            lastMixerSessionFingerprint_,juce::Time::currentTimeMillis());
+        if(staged.error.isNotEmpty())return staged.error;
+        if(staged.unchanged)return {};
+        const auto fingerprint=staged.fingerprint;
         const auto pendingId=doc.id;
         auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
         if(!mixerSessionWorker_.save(settingsDirectory(),std::move(doc),
