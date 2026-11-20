@@ -383,9 +383,12 @@ public:
         flat_.setButtonText("Flat");
         flat_.setTooltip("Reset all 31 EQ bands to 0 dB");
         flat_.onClick=[this]{
+            // Hardware EQ Flat resets 31 bands ONLY, preserving the chosen
+            // Output Level. A level-adjusted Flat is a Custom full preset.
             selectedUserId_.clear();
-            applyFactoryPreset(2);
-            preset_.setSelectedId(2,juce::dontSendNotification);
+            processor_.setFlatFromUi();
+            preset_.setSelectedId(matchingFactoryPreset(),
+                                  juce::dontSendNotification);
         };
         addAndMakeVisible(flat_);
         setResizable(true,true);
@@ -495,6 +498,8 @@ private:
         return 0.f;
     }
     int matchingFactoryPreset() const {
+        // Factory full-configuration presets have unity Output Level.
+        if(std::abs(processor_.acceptedLevelDb())>.06f)return 1;
         for(int preset=2;preset<=5;++preset) {
             bool match=true;
             for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i) {
@@ -519,6 +524,8 @@ private:
                 if(std::abs(current[i]-savedUserBands_[i])>.06f) {
                     matches=false;break;
                 }
+            matches=matches&&std::abs(
+                processor_.acceptedLevelDb()-savedUserLevelDb_)<=.06f;
             if(matches) {
                 for(std::size_t i=0;i<userPresets_.size();++i)
                     if(userPresets_[i].id==selectedUserId_)
@@ -557,6 +564,7 @@ private:
             }
             selectedUserId_=userPresets_[index].id;
             savedUserBands_=processor_.acceptedBands();
+            savedUserLevelDb_=processor_.acceptedLevelDb();
             return;
         }
         if(choice>=2&&choice<=5) {
@@ -585,12 +593,14 @@ private:
         if(id.isEmpty())return; // Host displays the validation error.
         selectedUserId_=id;
         savedUserBands_=processor_.acceptedBands();
+        savedUserLevelDb_=processor_.acceptedLevelDb();
         refreshPresetList();
     }
     void applyFactoryPreset(int choice) {
         if(choice<2||choice>5)return;
         for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i)
             processor_.setBandFromUi(i,presetGain(choice,graphicEq31Hz[i]));
+        processor_.setLevelFromUi(0.f); // factory presets at unity output
     }
     // 512x256 image generated once per editor, never in the PCM callback.
     // The supplied original metal is still embedded unchanged. Only 8% of
@@ -973,6 +983,7 @@ private:
     std::vector<UserPresetEntry> userPresets_;
     juce::String selectedUserId_;
     std::array<float,GraphicEq31Core::bandCount> savedUserBands_{};
+    float savedUserLevelDb_=0.f;
     std::function<std::vector<UserPresetEntry>()> listUserPresets_;
     std::function<juce::String(const juce::String&)> saveUserPreset_;
     std::function<bool(const juce::String&)> recallUserPreset_;
