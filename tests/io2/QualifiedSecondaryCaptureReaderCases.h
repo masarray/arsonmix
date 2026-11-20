@@ -66,6 +66,16 @@ inline void run() {
     d::MultiDeviceInputFault err;
     check(d::MultiDeviceInputPlan::prepare(epoch,devices,bindings,
         roster.channels(),plan,err),"two physical namespaces qualified");
+    // SOURCE NONE and Delete Track must remove only the named ChannelId
+    // binding while preserving A/B device slots, generation and lease.
+    d::MultiDeviceInputPlan reduced;
+    check(plan.withoutSource(b,reduced) && reduced.sourceCount()==1 &&
+          plan.sourceCount()==2 && reduced.virtualInputCount()==plan.virtualInputCount() &&
+          reduced.device(1).deviceLease==plan.device(1).deviceLease &&
+          reduced.source(0).channel==a,
+          "detached qualified source removal never drops B's device lease");
+    check(!plan.withoutSource(main,reduced),
+          "deleting an unbound MAIN cannot mutate the qualified input map");
     m::DynamicGraphRequest old;old.physicalInputs=1;old.maxFrames=frames;
     old.sources={{a,0,-1,false}};
     m::DynamicGraphRequest request;
@@ -80,6 +90,23 @@ inline void run() {
     check(!native.hasQualifiedInputMap(epoch+1,1)&&
           !native.hasQualifiedInputMap(epoch,0),
           "stale graph generation cannot authorize persistence");
+    // A plain SOURCE NONE/Delete Track request is rejected if the old map
+    // remains unchanged. An explicit DETACHED subset is accepted atomically
+    // and stays qualified for the remaining A source.
+    auto subsetRequest=request;
+    std::erase_if(subsetRequest.sources,[b](const auto& row){return row.id==b;});
+    m::DynamicNativeSessionPublisher subsetPcm;
+    check(subsetPcm.commit(roster,request,0,epoch,epoch,true,
+          {},false,false,&plan).ok(),"subset fixture starts with A+B map");
+    check(subsetPcm.commit(roster,subsetRequest,1,epoch,epoch,true).fault==
+              m::DynamicNativeSessionPublisher::Fault::invalidCandidate &&
+          subsetPcm.acceptedRevision()==1,
+          "implicit SOURCE NONE must not silently desynchronize old B map");
+    check(subsetPcm.commit(roster,subsetRequest,1,epoch,epoch,true,
+          {},false,false,&reduced).ok() &&
+          subsetPcm.hasQualifiedInputMap(epoch,2),
+          "explicit source subset publishes and retains exact device leases");
+
 
     d::SecondaryCaptureClockStream clock;
     const d::SecondaryCaptureClockStream::Format format{

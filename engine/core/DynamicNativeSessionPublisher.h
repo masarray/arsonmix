@@ -509,6 +509,15 @@ public:
         const auto* p=publisher_.controlPrepared(epoch,revision);
         return p && static_cast<bool>(p->inputMap);
     }
+    // CONTROL-only explicit source disconnection; never mutate the
+    // callback-visible prior map. WIRE/FX revisions keep inheriting it.
+    bool qualifiedMapWithoutSource(std::uint64_t epoch,
+             std::uint64_t revision,ChannelId source,
+             armix::device::MultiDeviceInputPlan& candidate) const {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p && p->inputMap &&
+               p->inputMap->withoutSource(source,candidate);
+    }
     void unpublish() noexcept {publisher_.unpublish();}
     void pollRetirement() noexcept {publisher_.pollRetirement();}
     std::uint64_t acceptedRevision() const noexcept {
