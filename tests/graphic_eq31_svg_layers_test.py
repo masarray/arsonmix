@@ -123,7 +123,14 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('juce::ComboBox preset_', self.native)
         self.assertIn('preset_.addItem("Flat",2)', self.native)
         self.assertIn('preset_.addItem("Vocal Presence",3)', self.native)
-        self.assertIn('processor_.setBandFromUi(i,presetGain(choice,graphicEq31Hz[i]))', self.native)
+        # Factory recall must publish a complete 31-band + Output Level
+        # generation, not 31 independent edits (which would tear in AUDIO).
+        self.assertIn('void applyFactoryPreset(int choice)',self.native)
+        self.assertIn('gains[i]=presetGain(choice,graphicEq31Hz[i])',self.native)
+        self.assertIn('processor_.setBandsFromPreset(gains,0.f)',self.native)
+        self.assertIn('presetWriteSeq_.fetch_add(1u,std::memory_order_acq_rel)',self.native)
+        self.assertIn('presetWriteSeq_.fetch_add(1u,std::memory_order_release)',self.native)
+        self.assertNotIn('processor_.setBandFromUi(i,presetGain(choice,graphicEq31Hz[i]))',self.native)
         self.assertIn('int matchingFactoryPreset() const', self.native)
         self.assertIn('if(preset_.getSelectedId()!=accepted)', self.native)
         self.assertIn('flat_.setBounds(r-125,16,44,24)', self.native)
