@@ -1725,6 +1725,8 @@ private:
                 (void) armix::console::projectRetainedNativeChannelIdGraph (accepted, live);
         }
         armix::console::publishAuthoritativeMixerSession(accepted);
+        // Project B readback from the same engine-issued control snapshot.
+        (void)armix::console::projectSecondaryCaptureNativeReadback(accepted,live);
         const auto caps=accepted.getProperty("graph",{})
             .getProperty("capabilities",{});
         const auto authority=accepted.getProperty("mixerSession",{})

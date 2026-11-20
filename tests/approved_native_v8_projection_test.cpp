@@ -1139,7 +1139,31 @@ static void qualifiedCaptureNativeIntentRegression() {
     assert(!decodeQualifiedCaptureConsoleIntent(bad,wrongBackend,bus).ok());
 }
 
+static void nativeSecondaryCaptureStatusProjectionTest() {
+    auto approved=canonicalSnapshot();
+    auto real=parse(R"JSON({"secondaryCapture":{
+      "role":"INPUT_ONLY_ASIO","status":"WAITING_FOR_PCM",
+      "installedInputMap":true,"driver":"ASIO B",
+      "deviceLease":"9007199254740993","primaryEpoch":"91",
+      "activePinMaskHex":"81","sourceAudibleProven":false
+    }})JSON");
+    assert(projectSecondaryCaptureNativeReadback(approved,real));
+    const auto observed=approved.getProperty("secondaryCapture",{});
+    assert(observed.isObject() &&
+      observed.getProperty("deviceLease","").toString()=="9007199254740993" &&
+      observed.getProperty("driver","").toString()=="ASIO B" &&
+      !static_cast<bool>(observed.getProperty("sourceAudibleProven",true)));
+    const auto fake=parse(R"JSON({"secondaryCapture":{
+      "role":"SECOND_RENDER","status":"PCM_FLOW_OBSERVED",
+      "installedInputMap":true}})JSON");
+    assert(!projectSecondaryCaptureNativeReadback(approved,fake) &&
+      approved.getProperty("secondaryCapture",{}).getProperty("driver","").toString()=="ASIO B");
+    const auto none=parse(R"JSON({"secondaryCapture":null})JSON");
+    assert(!projectSecondaryCaptureNativeReadback(approved,none));
+}
+
 int main() {
+    nativeSecondaryCaptureStatusProjectionTest();
     qualifiedCaptureNativeIntentRegression();
     retainedDocumentDoesNotAdmitPcm();
     auto snap=canonicalSnapshot();

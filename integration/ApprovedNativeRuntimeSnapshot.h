@@ -10,6 +10,22 @@
 // its installed realtime callback owns the accepted publisher/epoch.
 // G0/M4 and any forged nativeBus without that predicate MUST stay unadmitted.
 namespace armix::console {
+// IO-3A: project only genuine native engine status into the ONE approved
+// CONTROL snapshot. No browser-selected device, DSP graph or positive LIVE
+// state is manufactured by this diagnostic projection.
+inline bool projectSecondaryCaptureNativeReadback(
+    juce::var& approved,const juce::var& live) {
+    if(!approved.isObject()||!live.isObject()||
+       !approved.getProperty("device",{}).isObject())return false;
+    const auto secondary=live.getProperty("secondaryCapture",{});
+    if(!secondary.isObject() ||
+       secondary.getProperty("role","").toString()!="INPUT_ONLY_ASIO" ||
+       !secondary.getProperty("status",{}).isString() ||
+       !secondary.getProperty("installedInputMap",{}).isBool())return false;
+    approved.getDynamicObject()->setProperty("secondaryCapture",secondary);
+    return true;
+}
+
 // Legacy M2 counted only device START callbacks; the actual routing epoch
 // also advances on STOP. After ASIO/WASAPI re-open they can differ (e.g.,
 // G0 start=2 while accepted routing epoch=3). Always use the installed
