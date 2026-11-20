@@ -1075,6 +1075,86 @@ static void qualifiedCaptureNativeIntentRegression() {
           }
         })JSON");
     };
+    // Advertised capability is a preflight offer on the ONE native graph,
+    // never proof that B driver is compatible or any microphone audible.
+    // Arbitrary WebView intents cannot bypass the native capability.
+    assert(!decodeQualifiedCaptureConsoleIntent(valid(),snap,bus).ok());
+    snap.getProperty("device",{}).getDynamicObject()
+        ->setProperty("outputArmed",false);
+    const auto live=parse(R"JSON({
+      "directRouteAuthorized":true,"adaptiveClockActive":false,
+      "asioRegistryAttestation":"REGISTERED_CLASS",
+      "secondaryCapture":{"role":"INPUT_ONLY_ASIO","status":"NOT_CONFIGURED",
+        "installedInputMap":false,"driverReady":false,"driverFault":false}
+    })JSON");
+    auto copy=[](const juce::var& value) {
+        return juce::JSON::parse(juce::JSON::toString(value,false));
+    };
+    const auto deny=[&](const juce::var& source,const juce::var& state,
+                       bool idle=true) {
+        auto target=copy(source);
+        const auto before=juce::JSON::toString(target,false);
+        assert(!publishQualifiedSecondaryCaptureCapability(target,state,idle));
+        assert(juce::JSON::toString(target,false)==before);
+    };
+    deny(snap,live,false); // CONTROL is busy
+    {
+        auto bad=copy(snap);
+        bad.getProperty("device",{}).getDynamicObject()->setProperty("backend","WASAPI");
+        deny(bad,live);
+        bad=copy(snap);
+        bad.getProperty("device",{}).getDynamicObject()->setProperty("outputArmed",true);
+        deny(bad,live);
+        bad=copy(snap);
+        bad.getProperty("graph",{}).getProperty("capabilities",{})
+            .getDynamicObject()->setProperty("callbackOwnsChannelIds",false);
+        deny(bad,live);
+        bad=copy(snap);
+        bad.getProperty("device",{}).getDynamicObject()
+            ->setProperty("enabledInputs",juce::var(juce::Array<juce::var>{}));
+        deny(bad,live);
+    }
+    {
+        auto bad=copy(live);
+        bad.getDynamicObject()->setProperty("directRouteAuthorized",false);
+        deny(snap,bad);
+        bad=copy(live);
+        bad.getDynamicObject()->setProperty("adaptiveClockActive",true);
+        deny(snap,bad);
+        bad=copy(live);
+        bad.getDynamicObject()->setProperty("asioRegistryAttestation","NONE");
+        deny(snap,bad);
+        bad=copy(live);
+        bad.getProperty("secondaryCapture",{}).getDynamicObject()
+            ->setProperty("installedInputMap",true);
+        deny(snap,bad);
+        bad=copy(live);
+        bad.getProperty("secondaryCapture",{}).getDynamicObject()
+            ->setProperty("driverFault",true);
+        deny(snap,bad);
+        bad=copy(live);
+        bad.getProperty("secondaryCapture",{}).getDynamicObject()
+            ->setProperty("status","PCM_FLOW_OBSERVED");
+        deny(snap,bad);
+    }
+    assert(publishQualifiedSecondaryCaptureCapability(snap,live,true));
+    const auto advertised=snap.getProperty("graph",{})
+        .getProperty("capabilities",{}).getProperty("supportedOps",{});
+    assert(advertised.isArray() && advertised.getArray()->contains(
+        juce::String("INSTALL_SECONDARY_CAPTURE")));
+    assert(publishQualifiedSecondaryCaptureCapability(snap,live,true));
+    assert(snap.getProperty("graph",{}).getProperty("capabilities",{})
+        .getProperty("supportedOps",{}).getArray()->size()==advertised.getArray()->size());
+    // An explicit B remap is allowed to be re-attempted only when the
+    // old B device is CLOSED; this still requires the new physical lease.
+    auto remap=copy(live);
+    remap.getProperty("secondaryCapture",{}).getDynamicObject()
+        ->setProperty("status","NEEDS_REMAP");
+    assert(publishQualifiedSecondaryCaptureCapability(copy(snap),remap,true)==false);
+    // A mutable approved copy can expose the offer; do not touch the old bus.
+    auto remapSnapshot=copy(snap);
+    assert(publishQualifiedSecondaryCaptureCapability(remapSnapshot,remap,true));
+    assert(!static_cast<bool>(snap.getProperty("productionCallbackLive",true)));
     const auto accepted=decodeQualifiedCaptureConsoleIntent(valid(),snap,bus);
     assert(accepted.ok());
     assert(accepted.command.requestId=="io-capture-00001");
