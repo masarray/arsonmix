@@ -213,7 +213,7 @@ int main() {
     std::printf("GEQ31 synthetic old trig/pow edits: %.2f us / %d edits; "
                 "prepared-cache edits: %.2f us / %d edits; "
                 "256-frame callback p95 %.3f us p99 %.3f us "
-                "(reference checksum %.4f; machine dependent)\\n",
+                "(reference checksum %.4f; machine dependent)\n",
                 us(before1-before0),400*31,us(after1-before1),400*31,
                 callbackUs[242],callbackUs[253],baselineSink);
     std::puts("Graphic EQ 31 core: frequency/RT matrix, zero allocations, "
