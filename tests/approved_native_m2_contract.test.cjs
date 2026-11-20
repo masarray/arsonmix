@@ -102,6 +102,60 @@ test("IO-3C native B device capture needs matching ACK AND later independent lea
  }
 });
 
+test("IO-3D Device B request must be a valid physical native source transaction before emit",()=>{
+ const base=gmv20AcceptedGraph();
+ base.device.backend="ASIO";
+ base.device.outputArmed=false;
+ base.graph.capabilities.supportedOps.push("INSTALL_SECONDARY_CAPTURE");
+ const source=base.graph.channels.find(c=>c.role==="INPUT").id;
+ const valid={confirmed:true,secondaryDriver:"B ASIO",captureRate:44100,
+   capturePeriod:128,secondaryInputPins:[0,7],
+   sources:[{channelId:source,deviceRole:"SECONDARY",
+     leftPhysical:7,rightPhysical:-1,stereo:false}]};
+ const snap=protocol.normalizeSnapshot(clone(base));
+ assert.ok(snap?.admitted);
+ assert.equal(protocol.validQualifiedCaptureRequest(snap,source,valid),true);
+ const reject=(payload,config=base,target=source)=>{
+   const emitted=[];
+   const ctl=protocol.createController({
+     emit:(name,p)=>emitted.push({name,p}),
+     onAccepted:()=>{},onStatus:()=>{}
+   });
+   assert.equal(ctl.onSnapshot(clone(config)),true);
+   const before=ctl.state().current;
+   const outcome=ctl.intent("INSTALL_SECONDARY_CAPTURE",target,clone(payload));
+   assert.equal(outcome.ok,false);
+   assert.equal(emitted.filter(e=>e.name==="arMixConsoleIntent").length,0,
+     "no unsafe native driver opening event");
+   assert.equal(ctl.state().current,before,"accepted PCM must not change");
+   assert.equal(ctl.state().pending,null);
+ };
+ for(const change of [
+   {confirmed:false},{secondaryDriver:""},{secondaryDriver:"Other\nASIO"},
+   {secondaryDriver:"X".repeat(129)},{captureRate:0},{captureRate:192001},
+   {capturePeriod:12},{capturePeriod:8193},
+   {secondaryInputPins:[]},{secondaryInputPins:[7,0]},
+   {secondaryInputPins:[7,7]},{secondaryInputPins:[-1]},
+   {sources:[]},{sources:[{...valid.sources[0],leftPhysical:3}]},
+   {sources:[{...valid.sources[0],channelId:"18446744073709551616"}]},
+   {sources:[{...valid.sources[0],channelId:"200"}]},
+   {sources:[{...valid.sources[0],deviceRole:"PRIMARY"}]},
+   {sources:[{...valid.sources[0],stereo:true,rightPhysical:7}]},
+   {sources:[valid.sources[0],valid.sources[0]]}
+ ]) reject({...valid,...change});
+ const armed=clone(base);
+ armed.device.outputArmed=true;
+ reject(valid,armed);
+ const other=clone(base);
+ other.device.backend="WASAPI";
+ reject(valid,other);
+ const wrongChannel=base.graph.channels.find(c=>c.role==="MAIN").id;
+ reject(valid,base,wrongChannel);
+ const missing=clone(base);
+ missing.graph.capabilities.supportedOps=[];
+ reject(valid,missing);
+});
+
 test("G-MV25 schema-v6 owner switch cancels no-ACK/ACKed ChannelId without stale PCM repaint",()=>{
  const base=gmv20AcceptedGraph();
  base.mixerSession={authority:"CHANNEL_ID",deviceEpoch:base.device.epoch,
