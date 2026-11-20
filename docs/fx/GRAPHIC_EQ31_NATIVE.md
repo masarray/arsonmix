@@ -103,3 +103,24 @@ New tests assert exact C++ source contracts, pointer hysteresis and wheel zero-e
 
 
 **v13 wheel edge-case fix:** initial notDragging capture was correctly snapping near 0 but a tiny mouse-wheel interval could oscillate `0→+0.3→0→+0.3` when the next tick remained inside the capture range. A one-control, UI-only `wheelEscapingZero_` plus direction latch now permits monotonic outbound wheel steps until outside capture; wheel reversing into zero still snaps exactly once. Pointer drag always resets the wheel latch. The source test exercises 5 successive 0.3dB wheel steps, reversal, coarse crossing and Output rotary 0.2/0.4/0.8 dB; Chromium v13 wheel regression PASS. No audio/preset value smoothing or host state changed.
+
+## GEQ-ENGINE-P0 — realtime coefficient cache and PCM qualification (21 Nov 2026)
+
+**Visual checkpoint is frozen** at `checkpoint/geq31-v13-approved-20261121` (`b850996fbda762b8d9f30af0151a46d918280511`). This engineering change alters **no GUI, SVG, PNG, /preview/ or routing owner**.
+
+### Actual DSP change
+
+- `GraphicEq31Core::prepare(rate)`, in the CONTROL/pre-publication lifecycle, calculates 31 sample-rate-specific `cos(omega)` and `sin(omega)/(2*Q)` pairs plus **361** `10^(dB/40)` gain factors (−24 to +12 dB, every 0.1 dB).
+- `setGain()`, called from `consumeRealtimeEdits()` inside the existing audio callback, now uses only constant-bound lookup, optional interpolation and finite arithmetic to calculate its five biquad coefficients. The old per-edit `sin/cos/pow` calls are removed. 0.1 dB APVTS steps land on the lookup; interpolated off-grid values support host automation and legacy state values.
+- The existing post-EQ Output Level also uses this prepared factor table squared for `10^(dB/20)`. Neither 31-band updates nor Output Level invoke `pow` on their realtime update path.
+- Cache per instance is **361 × 8 + 31 × 2 × 8 = 3,384 bytes**, initialized in `prepare` without heap allocation. No new thread, lock, shared global mutable cache, owner, FIFO, ASRC, render graph or lookahead. During device restart the retained processor's normal host prepare/retirement lifecycle controls the cache. Realtime callback never rebuilds it.
+- Existing **5 ms coefficient** and **15 ms output gain** ramps stay in place. Flat-band bypass, no-history at flat, in-place L/R processing, explicit output trim, Nyquist guard and bypass authority are unchanged. Zero added transport frames is distinct from nonzero group delay/phase response of a minimum-phase biquad and physical ASIO latency.
+
+### Reproducible native evidence, not simulator claims
+
+- `graphic_eq31_core_test.cpp`: 44.1/48/96/192 kHz × 32/64/128/256/512 frames, 31-band rapid ±12 dB/reversing ramps, stereo polarity/isolation, finite PCM, gain table numerical accuracy, reset/silence, impulse onset at frame zero, and a scoped heap-allocation counter around `setGain + processStereo`.
+- `builtin_fx_accepted_snapshot_test.cpp`: real JUCE AudioProcessor/APVTS test calls `beginChangeGesture`, publishes a band edit, processes a real audio block and checks changed PCM **before** `endChangeGesture`; repeats for Output Level and checks `getLatencySamples()==0`. This proves the native parameter → callback route, not physical mouse event injection on a Windows editor.
+- Core test prints synthetic previous-formula trig/pow vs prepared-cache edit timing for **12,400 edits each**, and a 256-frame **31-band active** callback p95/p99 (256 samples); keep raw CI logs and compiler/runner identification. Results are diagnostic and machine-dependent; don't market them as ASIO host CPU percentage or identical-binary before/after audio reliability. Physical `AUDIO_HEALTH` DRY/FX comparison requires the existing `scripts/audio_reliability_profile.mjs`.
+- Passing **focused** FX/CTests is not passing *full* Windows CTest. Report exact SHA and individual lane conclusions. Windows native hardware FAT, audio listening, multiple device buffers, real mouse-wheel/drag gesture and long-duration xrun profiling remain **NOT RUN** until supported by evidence. Do not claim an installer, public release or physical zero acoustic latency on source tests alone.
+
+**Safety note:** the output can legitimately clip if 31 bands are boosted and Output Level is high. There is deliberately no auto-gain or hidden limiter. An EQ curve's spectral group delay is not the same metric as host-reported or block-buffer latency.
