@@ -70,8 +70,8 @@ export function p95p99FromDelta(counts) {
 
 const sameScope=(a,b)=>[
   "deviceGeneration","device","liveBackendClass","driver","rate","buffer",
-  "dryTest","diagnosticRoute","productionRoutingState","directRouteAuthorized",
-  "backendXrunMeaning"
+  "dryTest","connected","diagnosticRoute","productionRoutingState",
+  "directRouteAuthorized","backendXrunMeaning"
 ].every(k=>a[k]===b[k]);
 const nondecreasing=(a,b,key)=>isCount(a[key])&&isCount(b[key])&&b[key]>=a[key];
 const validInterval=(a,b)=>b.atMs>a.atMs && b.atMs-a.atMs<=5000 &&
