@@ -180,6 +180,32 @@ export function extractPrNumbers(event) {
     .filter(n=>Number.isSafeInteger(n)&&n>0))];
 }
 
+// The workflow_run payload for an owner-dispatched full Chromium run may have
+// no pull_requests, even when GitHub's REST run readback associates a PR.
+// Only the approved UI workflow may trigger commit->PR lookup in that case.
+// Recompute ALL required lanes from verified jobs; never trust the event's
+// success or a display title as a substitute for real qualification.
+export function fallbackSourceForWorkflowRun(event) {
+  const run=event?.workflow_run;
+  const sha=run?.head_sha;
+  if (!/^[0-9a-f]{40}$/.test(sha||"")) return null;
+  const knownAutomatic=run.event==="pull_request" &&
+    Object.values(workflowNames).some(workflow=>workflowPath(run,workflow));
+  const approvedManualUi=run.event==="workflow_dispatch" &&
+    workflowPath(run,workflowNames.ui);
+  return knownAutomatic || approvedManualUi ? sha : null;
+}
+
+export function associatedCurrentPrNumbers(event,related,repo) {
+  const sha=fallbackSourceForWorkflowRun(event);
+  if (!sha || !Array.isArray(related)) return [];
+  return [...new Set(related.filter(pr=>
+    Number.isSafeInteger(pr?.number) && pr.number>0 &&
+    pr.state==="open" && pr.head?.sha===sha &&
+    pr.base?.ref==="main" && pr.base?.repo?.full_name===repo
+  ).map(pr=>pr.number))];
+}
+
 export async function refreshOne(repo,number,api) {
   const pr=await api("/pulls/"+number);
   if(pr?.state!=="open"||pr?.base?.ref!=="main"||
@@ -219,13 +245,14 @@ async function main(){
   const api=(path,method="GET",payload)=>request(repo,path,token,method,payload);
   const prs=extractPrNumbers(event);
   for(const n of prs)console.log(JSON.stringify(await refreshOne(repo,n,api)));
-  // Some workflow_run events omit pull_requests. Reconcile their source SHA
-  // from GitHub's verified commit->PR association, never guess a PR number.
-  if(!prs.length && event.workflow_run?.event==="pull_request" &&
-     /^[a-f0-9]{40}$/.test(event.workflow_run.head_sha||"")) {
-    const related=await api("/commits/"+event.workflow_run.head_sha+"/pulls?per_page=100");
-    for(const pr of related.filter(p=>p.state==="open"))
-      console.log(JSON.stringify(await refreshOne(repo,pr.number,api)));
+  // Completion events can omit pull_requests. Approved manual UI is the
+  // only workflow_dispatch fallback; manual Windows already has a verified
+  // PR+SHA title, and unrelated dispatches must not mutate PR statuses.
+  const fallbackSha=prs.length ? null : fallbackSourceForWorkflowRun(event);
+  if(fallbackSha) {
+    const related=await api("/commits/"+fallbackSha+"/pulls?per_page=100");
+    for(const n of associatedCurrentPrNumbers(event,related,repo))
+      console.log(JSON.stringify(await refreshOne(repo,n,api)));
   }
 }
 if(process.argv[1]?.endsWith("required_pr_merge_gate.mjs"))
