@@ -1499,6 +1499,20 @@ public:
                nativeAccepted_.fxOwners->externalChannel()==target &&
                target==nativeAccepted_.graph.ids.inputs[0];
     }
+    // Off-RT diagnostic only: do not infer the active external vendor Graph
+    // from the latest graphOwned_ pointer, which can differ during a staged
+    // FX handoff. Read the strong, accepted PCM lease under CONTROL instead.
+    const armix::mixer::DynamicChannelFxLeaseBank::ExternalLease*
+        acceptedOriginalCh1ExternalLeaseForControl() const noexcept
+    {
+        if (!channelIdPhysicalPcmActive() || !nativeAccepted_.fxOwners)
+            return nullptr;
+        const auto* lease =
+            nativeAccepted_.fxOwners->externalLeaseForControl();
+        return lease != nullptr &&
+            lease->id == nativeAccepted_.graph.ids.inputs[0]
+                ? lease : nullptr;
+    }
     // Single global A/B override for M4 and the authoritative ChannelId PCM
     // graph. Never rewrite saved rack/slot bypass flags or rebuild processors.
     // A physical ACK requires an accepted CURRENT epoch/revision.
