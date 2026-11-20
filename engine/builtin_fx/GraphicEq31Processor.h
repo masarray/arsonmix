@@ -170,6 +170,12 @@ public:
     explicit GraphicEq31Editor(GraphicEq31Processor& processor)
         : juce::AudioProcessorEditor(processor), processor_(processor) {
         setLookAndFeel(&skin_);
+#if defined(ARMIX_GEQ31_VECTOR_ASSET) && ARMIX_GEQ31_VECTOR_ASSET
+        // Decode supplied genuine brushed-aluminium texture ONCE on UI init.
+        brushedMetal_=juce::ImageCache::getFromMemory(
+            BinaryData::geq31_brushed_metal_jpg,
+            BinaryData::geq31_brushed_metal_jpgSize);
+#endif
         // The existing ArSonMix rack/ChannelId owns this JUCE editor window.
         // The owner's original grouped SVG provides EVERY track and thumb.
         for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i) {
@@ -207,34 +213,45 @@ public:
     ~GraphicEq31Editor() override {setLookAndFeel(nullptr);}
 
     void paint(juce::Graphics& g) override {
-        // Restrained satin brushed aluminium, ONE surface for all 31 tracks.
-        const auto width=getWidth(), height=getHeight();
+        const int width=getWidth(),height=getHeight();
+        // Actual operator-supplied horizontal brushed-aluminium texture.
+        // One decode in the editor constructor; one cached Image draw here.
+        if(brushedMetal_.isValid())
+            g.drawImageWithin(brushedMetal_,0,0,width,height,
+                juce::RectanglePlacement::stretchToFit);
+        else
+            g.fillAll(juce::Colour::fromRGB(160,161,161));
         g.setGradientFill(juce::ColourGradient(
-            juce::Colour::fromRGB(229,233,234),0.f,0.f,
-            juce::Colour::fromRGB(203,211,214),0.f,static_cast<float>(height),false));
+            juce::Colours::white.withAlpha(.045f),0.f,0.f,
+            juce::Colours::black.withAlpha(.06f),0.f,static_cast<float>(height),false));
         g.fillRect(getLocalBounds());
-        for(int y=2;y<height;y+=3) {
-            g.setColour(juce::Colours::white.withAlpha((y%2)==0?.075f:.045f));
-            g.drawHorizontalLine(y,0.f,static_cast<float>(width));
-        }
-        g.setColour(juce::Colour::fromRGB(167,180,185));
+        g.setColour(juce::Colour::fromRGB(94,102,106).withAlpha(.72f));
         g.drawRect(getLocalBounds().reduced(1),1);
-        g.setColour(juce::Colour::fromRGB(55,70,77));
+        g.setColour(juce::Colour::fromRGB(33,46,52));
         g.setFont(inter(17.f));
         g.drawText("Graphic EQ 31",19,13,250,31,juce::Justification::centredLeft);
         g.setFont(inter(10.f));
-        g.setColour(juce::Colour::fromRGB(115,130,136));
+        g.setColour(juce::Colour::fromRGB(63,80,88));
         g.drawText("ARSONMIX  /  1/3 OCTAVE  /  +/-12 dB",
                    216,22,310,20,juce::Justification::centredLeft);
-        g.setColour(juce::Colour::fromRGB(171,182,186).withAlpha(.65f));
+        g.setColour(juce::Colour::fromRGB(76,90,97).withAlpha(.45f));
         g.drawHorizontalLine(53,0.f,static_cast<float>(width));
-        // Exactly calibrated to the authored slot at y=183, 918 and 1661
-        // inside viewBox 2042, viewport local origin y=66 and height=286.
-        g.setColour(juce::Colour::fromRGB(87,102,109));
+        // The THREE long tick paths are authored SVG coordinates.
+        // This mapping uses the same height/position as the actual JUCE
+        // Slider, avoiding labels that float above/below their ticks.
+        const auto majorTickY=[this](float sourceY) {
+            return juce::roundToInt(
+                static_cast<float>(viewport_.getY())+
+                sourceY*static_cast<float>(sliders_[0].getHeight())/2042.f);
+        };
+        g.setColour(juce::Colour::fromRGB(56,72,80));
         g.setFont(inter(10.f));
-        g.drawText("+12",5,84,36,16,juce::Justification::centredRight);
-        g.drawText("0",5,186,36,16,juce::Justification::centredRight);
-        g.drawText("-12",5,291,36,16,juce::Justification::centredRight);
+        g.drawText("+12",5,majorTickY(208.75f)-8,36,16,
+            juce::Justification::centredRight);
+        g.drawText("0",5,majorTickY(918.33f)-8,36,16,
+            juce::Justification::centredRight);
+        g.drawText("-12",5,majorTickY(1627.92f)-8,36,16,
+            juce::Justification::centredRight);
     }
     void resized() override {
         constexpr int x0=46;
@@ -280,21 +297,21 @@ private:
             if(auto* art=drawables_[band].get()) {
                 const auto gain=static_cast<float>(slider.getValue());
                 if(lastGain_[band]!=gain&&thumbGroups_[band]!=nullptr) {
-                    const float shift=-600.f*juce::jlimit(-12.f,12.f,gain)/12.f;
+                    const float shift=thumbShift(gain);
                     thumbGroups_[band]->setTransform(juce::AffineTransform::translation(0.f, shift));
                     lastGain_[band]=gain;
                 }
                 // LOCAL thumb-only shadow: no per-band rectangular raster.
                 // Authored vector THUMB bounds approximately (158..319,
                 // 776..1055) in the 60..412 cropped SVG viewBox.
-                const float shift=-600.f*juce::jlimit(-12.f,12.f,gain)/12.f;
+                const float shift=thumbShift(gain);
                 const auto shadowBounds=juce::Rectangle<int>(
                     juce::roundToInt(x+width*98.f/352.f),
                     juce::roundToInt(y+(776.f+shift)*height/2042.f),
                     juce::roundToInt(width*161.f/352.f),
                     juce::roundToInt(height*280.f/2042.f));
-                juce::DropShadow(juce::Colours::black.withAlpha(.27f),
-                    4,{1,2}).drawForRectangle(g,shadowBounds);
+                juce::DropShadow(juce::Colours::black.withAlpha(.30f),
+                    4,{1,3}).drawForRectangle(g,shadowBounds);
                 art->drawWithin(g,{static_cast<float>(x),static_cast<float>(y),
                     static_cast<float>(width),static_cast<float>(height)},
                     juce::RectanglePlacement::stretchToFit,1.f);
@@ -305,6 +322,12 @@ private:
             }
         }
     private:
+        // Exact ends measured from the owner's original vector SVG paths:
+        // slot outer Y=147.08..1696.67, THUMB Y=776.33..1055.50.
+        static float thumbShift(float gain) noexcept {
+            const float t=juce::jlimit(-12.f,12.f,gain)/12.f;
+            return t>=0.f ? -629.25f*t : -641.17f*t;
+        }
         void createBandArtwork(std::size_t band) {
             if(originalSvg_.isEmpty())return;
             auto document=juce::XmlDocument::parse(originalSvg_);
@@ -331,14 +354,14 @@ private:
             tspan->deleteAllTextElements();
             tspan->addTextElement(number);
             tspan->setAttribute("style",
-                "font-family: Inter; font-size: 23px; font-weight: 500; fill: #596369");
+                "font-family: Inter; font-size: 27px; font-weight: 700; fill: #344047");
             frequency->setAttribute("text-anchor","middle");
             frequency->setAttribute("style",
                 "transform: matrix(4.167,0,0,4.167,237.76,1850.466); font-family: Inter");
             unitSpan->deleteAllTextElements();
             unitSpan->addTextElement(isKhz?"kHz":"Hz");
             unitSpan->setAttribute("style",
-                "font-family: Inter; font-size: 18px; font-weight: 400; fill: #7a858b");
+                "font-family: Inter; font-size: 18px; font-weight: 600; fill: #5b6a72");
             unitText->setAttribute("text-anchor","middle");
             unitText->setAttribute("style",
                 "transform: matrix(4.167,0,0,4.167,237.76,1933.799); font-family: Inter");
@@ -352,6 +375,18 @@ private:
                    node->getChildByAttribute("class","s6"))
                     trackGroup->removeChildElement(node,true);
             }
+            // Recessed outer lip: the original SVG g1 gradient is visually
+            // lighter than the aluminium surface, flattening the channel.
+            // Tint the UI clone only, to a darker chamfer around the hole.
+            if(auto* defs=document->getChildByName("defs")) {
+                if(auto* lip=defs->getChildByAttribute("id","g1")) {
+                    const char* shades[]={"#929b9f","#a6afb3",
+                                          "#969ea3","#858d92"};
+                    for(int j=0;j<lip->getNumChildElements();++j)
+                        lip->getChildElement(j)->setAttribute(
+                            "stop-color",shades[juce::jmin(j,3)]);
+                }
+            }
             // Deep recessed black hardware slot (existing SVG g2 gradient).
             if(auto* defs=document->getChildByName("defs")) {
                 if(auto* gradient=defs->getChildByAttribute("id","g2")) {
@@ -362,11 +397,13 @@ private:
                             "stop-color",shades[juce::jmin(j,4)]);
                 }
             }
-            // Remove ONLY the duplicated large raster shadow from this
-            // render clone; keep all original vector thumb geometry.
-            auto* bitmapWrapper=thumbGroup->getFirstChildElement();
-            if(bitmapWrapper&&bitmapWrapper->getChildByAttribute("id","_Image3"))
-                thumbGroup->removeChildElement(bitmapWrapper,true);
+            // Restore the OWNERS' AUTHORED raster _Image3 shadow,
+            // inside THUMB. No synthetic shadow graphic or flattened image.
+            // Only its opacity is slightly moderated to fit the tight pitch.
+            if(auto* rasterShadow=thumbGroup->getFirstChildElement()) {
+                if(rasterShadow->getChildByAttribute("id","_Image3"))
+                    rasterShadow->setAttribute("opacity",0.87);
+            }
             auto drawable=juce::Drawable::createFromSVG(*document);
             if(!drawable)return;
             auto* authoredFader=drawable->findChildWithID("Slider_EQ");
@@ -385,6 +422,7 @@ private:
     static constexpr int bandCellWidth=50;
     GraphicEq31Processor& processor_;
     EqSkin skin_;
+    juce::Image brushedMetal_;
     juce::Component bandSurface_;
     juce::Viewport viewport_;
     std::array<juce::Slider,GraphicEq31Core::bandCount> sliders_;
