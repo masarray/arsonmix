@@ -33,6 +33,83 @@ public:
         return {Source::head,std::move(error)};
     }
 
+
+    // One CONTROL-thread admission policy for .smix SAVE/OPEN. The host
+    // supplies observed native authority and keeps OS dialogs, callbacks,
+    // physical graph ownership and UI ACK/readback; no shadow session state.
+    enum class SaveAction { reject, unchanged, exportLogical, captureInstalled };
+    struct SaveContext {
+        bool automatic = false;
+        bool workerBusy = false;
+        bool showBusy = false;
+        bool backupBusy = false;
+        bool catalogBusy = false;
+        bool graphPending = false;
+        bool readOnly = false;
+        bool channelIdInstalled = false;
+        bool m4Installed = false;
+        bool secondaryArmed = false;
+        bool retainedNative = false;
+        bool recoveryPending = false;
+        bool shutdownCheckpoint = false;
+        bool physicalOpen = false;
+        bool directAuthorized = false;
+        bool mainInterrupted = false;
+    };
+    struct SavePlan {
+        SaveAction action;
+        const char* error = nullptr;
+    };
+    static SavePlan planSave(const SaveContext& c) noexcept {
+        if(c.workerBusy || c.showBusy || c.backupBusy ||
+           c.catalogBusy || c.graphPending)
+            return {SaveAction::reject,
+                    "Mixer is busy. Try again after the current operation."};
+        if(c.readOnly)
+            return {SaveAction::reject,
+                    "Saved mixer recovery required before writing a new session"};
+        if(!c.channelIdInstalled && !c.m4Installed && !c.secondaryArmed) {
+            if(c.retainedNative)
+                return {SaveAction::reject, "Retained native mixer still owns the session"};
+            return {c.automatic ? SaveAction::unchanged : SaveAction::exportLogical, nullptr};
+        }
+        if(c.automatic && c.recoveryPending)
+            return {SaveAction::reject,
+                    "The retained mixer checkpoint is awaiting a verified device"};
+        if(c.automatic && !c.shutdownCheckpoint &&
+           (!c.physicalOpen || !c.directAuthorized || c.mainInterrupted))
+            return {SaveAction::reject,
+                    "Automatic checkpoint paused until audio device recovery"};
+        if(c.secondaryArmed)
+            return {SaveAction::reject, "Stop STREAM before saving the mixer"};
+        return {SaveAction::captureInstalled, nullptr};
+    }
+
+    enum class OpenAction { reject, openLogical, restoreInstalled };
+    struct OpenContext {
+        bool operationBusy = false;
+        bool epochChanged = false;
+        bool secondaryArmed = false;
+        bool channelIdInstalled = false;
+        bool m4Installed = false;
+        bool retainedNative = false;
+    };
+    struct OpenPlan {
+        OpenAction action;
+        const char* error = nullptr;
+    };
+    static OpenPlan planOpen(const OpenContext& c) noexcept {
+        if(c.operationBusy || c.epochChanged)
+            return {OpenAction::reject,
+                    "Mixer or audio device changed while opening the file"};
+        if(c.secondaryArmed)
+            return {OpenAction::reject, "Stop STREAM before opening a mixer"};
+        if(!c.channelIdInstalled && !c.m4Installed && c.retainedNative)
+            return {OpenAction::reject, "Retained native mixer still owns the session"};
+        return {c.channelIdInstalled || c.m4Installed ?
+                OpenAction::restoreInstalled : OpenAction::openLogical, nullptr};
+    }
+
     struct Context {
         BindingMode bindingMode;
         Source source;

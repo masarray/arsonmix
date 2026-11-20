@@ -3431,41 +3431,37 @@ private:
                                     bool shutdownCheckpoint=false) {
         const bool automatic=exportFile==juce::File{};
         ensureLogicalWorkspace();
-        if(mixerSessionWorker_.busy()||nativeShowBusy_||studioBackupBusy_||
-           catalog_.busy()||engine_.isGraphSwitchPending())
-            return "Mixer is busy. Try again after the current operation.";
-        if(logicalMixer_.readOnly())
-            return "Saved mixer recovery required before writing a new session";
+        using Recovery=armix::session::NativeMixerSessionRecovery;
         const auto liveState=engine_.status();
         const auto live=liveState.getProperty("dryRoutingLab",{});
-        const auto observed=approvedNativeSnapshot(liveState);
-        const auto session=observed.getProperty("mixerSession",{});
-        const bool m4Active=session.getProperty("authority","").toString()=="M4";
-        if(!static_cast<bool>(live.getProperty("nativeChannelIdPcmActive",false)) &&
-           !m4Active && !engine_.secondaryArmed()) {
-            if(engine_.hasRetainedNativeSession())
-                return "Retained native mixer still owns the session";
-            // Logical edits and Open already commit HEAD before ACK.
-            if(automatic)return {};
+        const auto session=approvedNativeSnapshot(liveState)
+            .getProperty("mixerSession",{});
+        const auto* audio=engine_.devices().getCurrentAudioDevice();
+        const auto decision=Recovery::planSave({
+            automatic,mixerSessionWorker_.busy(),nativeShowBusy_,
+            studioBackupBusy_,catalog_.busy(),engine_.isGraphSwitchPending(),
+            logicalMixer_.readOnly(),
+            static_cast<bool>(live.getProperty("nativeChannelIdPcmActive",false)),
+            session.getProperty("authority","").toString()=="M4",
+            engine_.secondaryArmed(),engine_.hasRetainedNativeSession(),
+            mixerSessionRecoveryPending_,shutdownCheckpoint,
+            audio!=nullptr && audio->isOpen(),engine_.directRouteAuthorized(),
+            engine_.mainInterruptedByDevice()
+        });
+        if(decision.action==Recovery::SaveAction::reject)
+            return juce::String(decision.error);
+        if(decision.action==Recovery::SaveAction::unchanged)
+            return {}; // Offline autosave: prior logical transaction already committed HEAD.
+        if(decision.action==Recovery::SaveAction::exportLogical) {
             auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
             if(!logicalMixer_.exportTo(exportFile,[safe](juce::String error){
                 if(safe!=nullptr)safe->emitMixerSessionAck("SAVE",error);
             }))return "Mixer session IO worker unavailable";
             return {};
         }
-        if(automatic&&mixerSessionRecoveryPending_)
-            return "The retained mixer checkpoint is awaiting a verified device";
-        // Auto-checkpoints must never replace an acknowledged .smix with a
-        // transient STOP/default/empty device state. Keep the last verified
-        // file on disk until the original physical route has returned.
-        if(automatic && !shutdownCheckpoint) {
-            auto* audio=engine_.devices().getCurrentAudioDevice();
-            if(!audio || !audio->isOpen() || !engine_.directRouteAuthorized() ||
-               engine_.mainInterruptedByDevice())
-                return "Automatic checkpoint paused until audio device recovery";
-        }
+        // Only a CONTROL-approved installed session reaches the temporary
+        // output capture fence; never move plugin capture to the audio callback.
         const bool monitoring=engine_.isMonitorEnabled();
-        if(engine_.secondaryArmed())return "Stop STREAM before saving the mixer";
         const auto epoch=engine_.dryRoutingLabEpoch();
         // Temporary capture fence is NOT an operator MUTE. Keep the
         // persisted MAIN desire intact across device loss during Save.
@@ -3537,24 +3533,25 @@ private:
                 std::vector<armix::shows::BinaryState> states) {
             if(safe==nullptr)return;
             auto& engine=safe->engine_;
-            if(error.isEmpty() && (safe->nativeShowBusy_||safe->studioBackupBusy_||
-                safe->catalog_.busy()||engine.isGraphSwitchPending()||
-                chosenEpoch!=engine.dryRoutingLabEpoch()))
-                error="Mixer or audio device changed while opening the file";
-            if(error.isEmpty()&&engine.secondaryArmed())
-                error="Stop STREAM before opening a mixer";
+            using Recovery=armix::session::NativeMixerSessionRecovery;
             const auto liveState=engine.status();
             const auto lab=liveState.getProperty("dryRoutingLab",{});
             const auto session=safe->approvedNativeSnapshot(liveState)
                 .getProperty("mixerSession",{});
-            const bool physical=static_cast<bool>(lab.getProperty(
-                "nativeChannelIdPcmActive",false)) ||
-                session.getProperty("authority","").toString()=="M4";
-            if(error.isEmpty()&&!physical&&engine.hasRetainedNativeSession())
-                error="Retained native mixer still owns the session";
+            const auto decision=Recovery::planOpen({
+                safe->nativeShowBusy_ || safe->studioBackupBusy_ ||
+                    safe->catalog_.busy() || engine.isGraphSwitchPending(),
+                chosenEpoch!=engine.dryRoutingLabEpoch(),
+                engine.secondaryArmed(),
+                static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false)),
+                session.getProperty("authority","").toString()=="M4",
+                engine.hasRetainedNativeSession()
+            });
+            if(error.isEmpty() && decision.action==Recovery::OpenAction::reject)
+                error=decision.error;
             const auto importedHotkeys=doc.hotkeys;
             const auto importedId=doc.id;
-            if(error.isEmpty()&&!physical) {
+            if(error.isEmpty() && decision.action==Recovery::OpenAction::openLogical) {
                 // Open the real .smix into the same stable-ID logical
                 // document. Never demand audio hardware or instantiate VST3
                 // just to inspect and edit a saved mixer.
