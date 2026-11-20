@@ -26,6 +26,8 @@
 - Automatic sample-rate reprepare and Nyquist guard; a band above the physical rate's guard keeps its saved value but its filter is transparent until supported.
 - Linked stereo gain coefficients, separate L/R filter history, no artificial delay or lookahead.
 - UI controls: 31 faders, centre-zero double-click, Flat/Smile quick buttons, input/output gain and clip display. The one approved `/preview/` remains the mixer surface; this effect uses the existing JUCE owned plugin-editor window.
+- The native editor defaults to **1280×328** and may be resized horizontally from **1070 to 1700 px**. Frequency labels and all 31 faders use a single width-derived column layout; the moving metal thumb is clipped by its column width to prevent overlaps. The operator's SVG track is embedded only in the production JUCE binary; independent CTest targets use the procedural track fallback.
+- A source-derived HTML/PNG preview may help inspect the art direction but must be labeled **not a live JUCE screenshot** and must never be used as physical FAT proof.
 
 ## State and safety
 
@@ -35,7 +37,7 @@ Coefficient transitions are smoothed over 5ms on the audio thread when gain targ
 
 ## Verification evidence and release boundary
 
-- Static/pure-C++ checks: `ARMixGraphicEq31CoreTests` / `GraphicEq31FrequencyResponseAndRealtimeStability` (frequency response, invalid gains, stereo isolation, low-rate Nyquist and automation stress).
+- Static/pure-C++ checks: `ARMixGraphicEq31CoreTests` / `GraphicEq31FrequencyResponseAndRealtimeStability` (frequency response, invalid gains, stereo isolation, low-rate Nyquist and automation stress). Its 29 explicit `GEQ_CHECK` predicates remain executable in Release (`NDEBUG`) builds, including setup calls that used to disappear inside standard `assert`.
 - Shared host registration: `ARMixNativeFxExtensionTests` (catalog, state roundtrip, bad binary reject, PCM finite, published restore reject).
 - Follow the current exact-SHA Windows `native` GitHub CI workflow before merge. A CI success proves compilation and automated tests, not physical sound quality.
 - **Still requires owner equipment FAT**: audition all 31 faders at representative rates, verify Flat unity (0dB trims), inspect bypass/restore and `.smix`, open/close editor while live ASIO runs, verify CPU/XRUN and confirm headroom/clipping at ±12dB in a complete music mix.
