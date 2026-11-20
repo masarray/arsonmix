@@ -189,20 +189,6 @@ public:
         viewport_.setScrollBarThickness(7);
         addAndMakeVisible(viewport_);
 
-        // ONE gain control, using the owner's KNOB-EQ.svg (KNOB + POINTER).
-        // No output knob, no input/output fader, and no duplicate FX host.
-        input_.setComponentID("geq31-input");
-        input_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        input_.setRotaryParameters(juce::degreesToRadians(225.f),
-                                   juce::degreesToRadians(495.f),true);
-        input_.setTextBoxStyle(juce::Slider::TextBoxBelow,false,82,21);
-        input_.setTextValueSuffix(" dB");
-        input_.setDoubleClickReturnValue(true,0.);
-        input_.setTooltip("Input Gain -12 to +12 dB. Double-click for 0 dB");
-        inputAttachment_=std::make_unique<Attachment>(
-            processor_.parameters(),"inputDb",input_);
-        addAndMakeVisible(input_);
-
         flat_.setButtonText("Flat");
         flat_.onClick=[this]{processor_.setFlatFromUi();};
         addAndMakeVisible(flat_);
@@ -225,59 +211,50 @@ public:
         peakLabel_.setFont(inter(10.f));
         addAndMakeVisible(peakLabel_);
         setResizable(true,true);
-        setResizeLimits(850,391,1800,391);
-        setSize(1370,391);
+        setResizeLimits(850,391,1900,391);
+        setSize(1610,391);
         startTimerHz(20);
     }
 
     ~GraphicEq31Editor() override {stopTimer();setLookAndFeel(nullptr);}
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(juce::Colour::fromRGB(243,245,246));
-        auto b=getLocalBounds().toFloat().reduced(7.f);
-        g.setColour(juce::Colour::fromRGB(251,252,252));
-        g.fillRoundedRectangle(b,9.f);
-        g.setColour(juce::Colour::fromRGB(220,225,226));
-        g.drawRoundedRectangle(b,9.f,1.f);
-
-        g.setColour(juce::Colour::fromRGB(53,67,72));
-        g.setFont(inter(17.f));
-        g.drawText("Graphic EQ 31",187,19,300,28,juce::Justification::centredLeft);
+        // One uninterrupted control panel. No per-band card or shadow.
+        g.fillAll(juce::Colour::fromRGB(246,247,247));
+        g.setColour(juce::Colour::fromRGB(212,219,221));
+        g.drawRect(getLocalBounds().reduced(1),1);
+        g.setColour(juce::Colour::fromRGB(52,67,73));
+        g.setFont(inter(18.f));
+        g.drawText("Graphic EQ 31",20,15,300,32,juce::Justification::centredLeft);
+        g.setColour(juce::Colour::fromRGB(128,143,148));
         g.setFont(inter(10.5f));
-        g.setColour(juce::Colour::fromRGB(125,140,145));
         g.drawText("ARSONMIX  /  1/3 OCTAVE  /  20 Hz - 20 kHz",
-                   188,44,410,18,juce::Justification::centredLeft);
-
-        g.setColour(juce::Colour::fromRGB(224,230,230));
-        g.drawVerticalLine(177,69.f,367.f);
-        g.setColour(juce::Colour::fromRGB(65,76,79));
-        g.setFont(inter(12.f));
-        g.drawText("INPUT GAIN",18,79,149,20,juce::Justification::centred);
+                   213,24,400,20,juce::Justification::centredLeft);
+        g.setColour(juce::Colour::fromRGB(226,231,232));
+        g.drawHorizontalLine(53,0.f,static_cast<float>(getWidth()));
         g.setFont(inter(10.f));
-        g.setColour(juce::Colour::fromRGB(133,146,149));
-        g.drawText("-12",18,231,45,20,juce::Justification::centred);
-        g.drawText("+12",116,231,48,20,juce::Justification::centred);
-        g.drawText("31 BANDS  /  +/-12 dB",188,358,
-                   juce::jmax(0,getWidth()-209),20,juce::Justification::centredLeft);
+        g.setColour(juce::Colour::fromRGB(112,126,131));
+        g.drawText("+12",5,86,36,16,juce::Justification::centredRight);
+        g.drawText("0",5,195,36,16,juce::Justification::centredRight);
+        g.drawText("-12",5,307,36,16,juce::Justification::centredRight);
+        g.setColour(juce::Colour::fromRGB(143,155,159));
+        g.drawText("31 BANDS  /  +/-12 dB",53,366,
+                   juce::jmax(0,getWidth()-70),17,juce::Justification::centredLeft);
     }
-
     void resized() override {
-        constexpr int x0=186;
-        // 37px pitch instead of the former 80px: 31 bands total 1147px.
-        // At 1370px default width all 31 appear without horizontal scrolling.
-        viewport_.setBounds(x0,69,juce::jmax(1,getWidth()-x0-17),283);
-        bandSurface_.setSize(static_cast<int>(GraphicEq31Core::bandCount)*bandCellWidth,276);
+        constexpr int x0=46;
+        viewport_.setBounds(x0,66,juce::jmax(1,getWidth()-x0-12),297);
+        bandSurface_.setSize(static_cast<int>(GraphicEq31Core::bandCount)*bandCellWidth,287);
         for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i)
             sliders_[i].setBounds(static_cast<int>(i)*bandCellWidth,0,
-                                  bandCellWidth,274);
-        input_.setBounds(21,110,138,175);
-        flat_.setBounds(19,302,70,27);
-        smile_.setBounds(96,302,70,27);
-        for(int i=0;i<3;++i)
-            jump_[i].setBounds(juce::jmax(595,getWidth()-250)+i*77,26,71,25);
-        peakLabel_.setBounds(18,340,150,20);
+                                  bandCellWidth,286);
+        const int controlX=juce::jmax(440,getWidth()-415);
+        flat_.setBounds(controlX,17,64,27);
+        smile_.setBounds(controlX+71,17,64,27);
+        for(int j=0;j<3;++j)
+            jump_[j].setBounds(controlX+156+j*74,17,69,27);
+        peakLabel_.setBounds(5,352,39,20);
     }
-
 private:
     static juce::Font inter(float size) {return juce::Font("Inter",size,juce::Font::plain);}
     class EqSkin final : public juce::LookAndFeel_V4 {
@@ -286,8 +263,6 @@ private:
 #if defined(ARMIX_GEQ31_VECTOR_ASSET) && ARMIX_GEQ31_VECTOR_ASSET
             originalSvg_=juce::String::fromUTF8(BinaryData::slider_eq_grp_svg,
                 static_cast<int>(BinaryData::slider_eq_grp_svgSize));
-            knobSvg_=juce::String::fromUTF8(BinaryData::KNOB_EQ_svg,
-                static_cast<int>(BinaryData::KNOB_EQ_svgSize));
 #endif
             lastGain_.fill(std::numeric_limits<float>::quiet_NaN());
             thumbGroups_.fill(nullptr);
@@ -316,8 +291,7 @@ private:
                     thumbGroups_[band]->setTransform(juce::AffineTransform::translation(0.f, shift));
                     lastGain_[band]=gain;
                 }
-                // Constrained to each 37px column. The original grouped SVG
-                // still contains every native Track/Text/THUMB path and raster.
+                // 50px columns; original authored vector thumb, zero raster shadow.
                 art->drawWithin(g,{static_cast<float>(x),static_cast<float>(y),
                     static_cast<float>(width),static_cast<float>(height)},
                     juce::RectanglePlacement::stretchToFit,1.f);
@@ -327,43 +301,15 @@ private:
                     juce::Justification::centred,2);
             }
         }
-        void drawRotarySlider(juce::Graphics& g,int x,int y,int width,int height,
-                              float position,float,float,juce::Slider& slider) override {
-            if(slider.getComponentID()!="geq31-input")return;
-            if(!knobArt_)createKnobArtwork();
-            if(!knobArt_) {
-                g.setColour(juce::Colours::red);
-                g.drawFittedText("KNOB SVG ERROR",x,y,width,height,
-                    juce::Justification::centred,2);
-                return;
-            }
-            if(knobPointer_&&lastKnobPosition_!=position) {
-                constexpr float pi=3.14159265358979323846f;
-                const float angle=(-135.f+270.f*juce::jlimit(0.f,1.f,position))*pi/180.f;
-                // Source coordinate and POINTER group retained from KNOB-EQ.svg.
-                knobPointer_->setTransform(juce::AffineTransform::rotation(
-                    angle,35.62f,113.63f));
-                lastKnobPosition_=position;
-            }
-            knobArt_->drawWithin(g,{static_cast<float>(x),static_cast<float>(y),
-                static_cast<float>(width),static_cast<float>(height)},
-                juce::RectanglePlacement::stretchToFit,1.f);
-        }
-
     private:
-        static juce::Component* findGroup(juce::Component* root,const juce::String& id) {
-            if(root==nullptr)return nullptr;
-            if(root->getComponentID()==id)return root;
-            for(int i=0;i<root->getNumChildComponents();++i)
-                if(auto* child=findGroup(root->getChildComponent(i),id))return child;
-            return nullptr;
-        }
         void createBandArtwork(std::size_t band) {
             if(originalSvg_.isEmpty())return;
             auto document=juce::XmlDocument::parse(originalSvg_);
             if(!document)return;
             auto* fader=document->getChildByAttribute("id","Slider_EQ");
             if(!fader)return;
+            // Crop only empty source margins for readable track geometry.
+            document->setAttribute("viewBox","60 0 352 2042");
             auto* labelGroup=fader->getChildByAttribute("id","Text");
             auto* thumbGroup=fader->getChildByAttribute("id","THUMB");
             if(!labelGroup||!thumbGroup)return;
@@ -379,13 +325,13 @@ private:
             frequency->setAttribute("text-anchor","middle");
             frequency->setAttribute("style",
                 "transform: matrix(5.4,0,0,4.167,237.76,1850.466); font-family: Inter");
-            if(auto* hz=labelGroup->getChildByAttribute("id","Hz")) {
-                if(auto* text=hz->getFirstChildElement()) {
-                    text->setAttribute("font-family","Inter");
-                    if(auto* unit=text->getFirstChildElement())
-                        unit->setAttribute("style","font-family: Inter");
-                }
-            }
+            // Preserve the original SVG bytes. On this temporary UI clone:
+            // hide redundant 31x "Hz" and the bitmap duplicate shadow.
+            if(auto* hz=labelGroup->getChildByAttribute("id","Hz"))
+                labelGroup->removeChildElement(hz,true);
+            auto* bitmapWrapper=thumbGroup->getFirstChildElement();
+            if(bitmapWrapper&&bitmapWrapper->getChildByAttribute("id","_Image3"))
+                thumbGroup->removeChildElement(bitmapWrapper,true);
             auto drawable=juce::Drawable::createFromSVG(*document);
             if(!drawable)return;
             auto* authoredFader=drawable->findChildWithID("Slider_EQ");
@@ -394,43 +340,27 @@ private:
             thumbGroups_[band]=authoredThumb;
             drawables_[band]=std::move(drawable);
         }
-        void createKnobArtwork() {
-            if(knobSvg_.isEmpty())return;
-            auto document=juce::XmlDocument::parse(knobSvg_);
-            if(!document)return;
-            // Crop transparent authored margins only in the UI viewBox,
-            // never edit/flatten the original asset, KNOB or POINTER paths.
-            document->setAttribute("viewBox","-56 20 180 187");
-            knobArt_=juce::Drawable::createFromSVG(*document);
-            knobPointer_=findGroup(knobArt_.get(),"POINTER");
-        }
-
-        juce::String originalSvg_,knobSvg_;
+        juce::String originalSvg_;
         std::array<std::unique_ptr<juce::Drawable>,GraphicEq31Core::bandCount> drawables_{};
         std::array<juce::Component*,GraphicEq31Core::bandCount> thumbGroups_{};
         std::array<float,GraphicEq31Core::bandCount> lastGain_{};
-        std::unique_ptr<juce::Drawable> knobArt_;
-        juce::Component* knobPointer_=nullptr;
-        float lastKnobPosition_=std::numeric_limits<float>::quiet_NaN();
     };
 
     void timerCallback() override {
         const bool clip=processor_.observedPeak()>=.999f;
-        peakLabel_.setText(clip?"CLIP":"OUTPUT LEVEL",juce::dontSendNotification);
+        peakLabel_.setText(clip?"CLIP":"",juce::dontSendNotification);
         peakLabel_.setColour(juce::Label::textColourId,
             clip?juce::Colour::fromRGB(226,78,58):
                  juce::Colour::fromRGB(55,158,136));
     }
     using Attachment=juce::AudioProcessorValueTreeState::SliderAttachment;
-    static constexpr int bandCellWidth=37;
+    static constexpr int bandCellWidth=50;
     GraphicEq31Processor& processor_;
     EqSkin skin_;
     juce::Component bandSurface_;
     juce::Viewport viewport_;
     std::array<juce::Slider,GraphicEq31Core::bandCount> sliders_;
     std::vector<std::unique_ptr<Attachment>> attachments_;
-    juce::Slider input_;
-    std::unique_ptr<Attachment> inputAttachment_;
     juce::TextButton flat_,smile_;
     std::array<juce::TextButton,3> jump_;
     juce::Label peakLabel_;
