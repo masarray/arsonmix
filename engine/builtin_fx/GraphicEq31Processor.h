@@ -10,6 +10,7 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <limits>
@@ -189,9 +190,12 @@ public:
         setLookAndFeel(&skin_);
 #if defined(ARMIX_GEQ31_VECTOR_ASSET) && ARMIX_GEQ31_VECTOR_ASSET
         // Decode supplied genuine brushed-aluminium texture ONCE on UI init.
-        brushedMetal_=juce::ImageCache::getFromMemory(
+        const auto originalMetal=juce::ImageCache::getFromMemory(
             BinaryData::geq31_brushed_metal_jpg,
             BinaryData::geq31_brushed_metal_jpgSize);
+        // One-time photo-derived satin titanium; wood-like macro streaks
+        // attenuated while subtle fine horizontal brushing is preserved.
+        brushedMetal_=makeSatinBrushedMetal(originalMetal);
 #endif
         // The existing ArSonMix rack/ChannelId owns this JUCE editor window.
         // The owner's original grouped SVG provides EVERY track and thumb.
@@ -248,7 +252,7 @@ public:
         addAndMakeVisible(power_);
 
         close_.setComponentID("geq31.close");
-        close_.setButtonText(juce::String::fromUTF8("×"));
+        close_.setButtonText({}); // shared built-in FX vector close icon
         close_.setTooltip("Close Graphic EQ 31");
         close_.onClick=[this]{
             if(auto* window=dynamic_cast<juce::DocumentWindow*>(
@@ -329,7 +333,7 @@ public:
                                   bandCellWidth,286);
         const int r=getWidth()-rightRail;
         flat_.setBounds(r+25,104,126,29);
-        close_.setBounds(getWidth()-46,13,30,30);
+        close_.setBounds(getWidth()-41,16,24,24);
         power_.setBounds(getWidth()-87,13,33,30);
         preset_.setBounds(getWidth()-298,13,200,30);
     }
@@ -387,6 +391,47 @@ private:
         for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i)
             processor_.setBandFromUi(i,presetGain(choice,graphicEq31Hz[i]));
     }
+    // 512x256 image generated once per editor, never in the PCM callback.
+    // The supplied original metal is still embedded unchanged. Only 8% of
+    // its large-scale grain is used to avoid wood-like, dark horizontal bands.
+    static juce::Image makeSatinBrushedMetal(const juce::Image& source) {
+        constexpr int w=512,h=256;
+        juce::Image result(juce::Image::RGB,w,h,false);
+        juce::Image::BitmapData out(result,juce::Image::BitmapData::writeOnly);
+        const auto hash=[](std::uint32_t v) noexcept {
+            v^=v>>16;v*=0x7feb352du;
+            v^=v>>15;v*=0x846ca68bu;
+            return v^(v>>16);
+        };
+        for(int y=0;y<h;++y) {
+            const int rowGrain=static_cast<int>(hash(
+                static_cast<std::uint32_t>(y)+0x9e3779b9u)&31u)-15;
+            const float sheen=6.f*std::sin(
+                3.14159265f*static_cast<float>(y)/(h-1));
+            for(int x=0;x<w;++x) {
+                float sourceLuma=145.f;
+                if(source.isValid()) {
+                    const auto c=source.getPixelAt(
+                        x*source.getWidth()/w,y*source.getHeight()/h);
+                    sourceLuma=(static_cast<float>(c.getRed())+
+                                2.f*static_cast<float>(c.getGreen())+
+                                static_cast<float>(c.getBlue()))*.25f;
+                }
+                const int micro=static_cast<int>(hash(
+                    static_cast<std::uint32_t>(x)*374761393u+
+                    static_cast<std::uint32_t>(y)*668265263u)&15u)-7;
+                const int gray=juce::jlimit(0,250,juce::roundToInt(
+                    187.f+(sourceLuma-145.f)*.08f+
+                    static_cast<float>(rowGrain)*.58f+
+                    static_cast<float>(micro)*.15f+sheen));
+                out.setPixelColour(x,y,juce::Colour::fromRGB(
+                    static_cast<juce::uint8>(gray),
+                    static_cast<juce::uint8>(gray+1),
+                    static_cast<juce::uint8>(gray+3)));
+            }
+        }
+        return result;
+    }
     static juce::Font inter(float size) {return juce::Font("Inter",size,juce::Font::plain);}
     class EqSkin final : public juce::LookAndFeel_V4 {
     public:
@@ -411,9 +456,23 @@ private:
         }
         void drawButtonBackground(juce::Graphics& g,juce::Button& button,
                                   const juce::Colour&,bool highlighted,bool down) override {
-            // Exactly one neutral metallic control language for native
-            // factory preset, host-power, close and side FLAT buttons.
             auto r=button.getLocalBounds().toFloat().reduced(.6f);
+            if(button.getComponentID()=="geq31.close") {
+                // Approved /preview/ 24px close: navy face, red on hover/
+                // press, #607d8c border and 4px corner radius.
+                const auto top=down?juce::Colour(0xffef3e50):
+                    highlighted?juce::Colour(0xff633840):juce::Colour(0xff3e5866);
+                const auto bottom=down?juce::Colour(0xffc52d40):
+                    highlighted?juce::Colour(0xff48292f):juce::Colour(0xff293e4b);
+                g.setGradientFill(juce::ColourGradient(
+                    top,0.f,r.getY(),bottom,0.f,r.getBottom(),false));
+                g.fillRoundedRectangle(r,4.f);
+                g.setColour(down?juce::Colour(0xffee8b93):
+                            highlighted?juce::Colour(0xffb27078):
+                                        juce::Colour(0xff607d8c));
+                g.drawRoundedRectangle(r,4.f,1.f);
+                return;
+            }
             const bool active=button.getComponentID()=="geq31.host-bypass" &&
                               button.getToggleState();
             const auto top=active?juce::Colour::fromRGB(209,235,228):
@@ -427,6 +486,27 @@ private:
             g.setColour(highlighted?juce::Colour::fromRGB(65,84,91):
                        juce::Colour::fromRGB(115,132,138));
             g.drawRoundedRectangle(r,3.5f,1.f);
+        }
+        void drawButtonText(juce::Graphics& g,juce::TextButton& button,
+                            bool highlighted,bool down) override {
+            if(button.getComponentID()!="geq31.close") {
+                juce::LookAndFeel_V4::drawButtonText(g,button,highlighted,down);
+                return;
+            }
+            // Exact shared built-in FX X path, from CSS
+            // --armix-floating-close-icon, scaled to 22/24px.
+            juce::Path x;
+            x.startNewSubPath(6.4f,19.f);
+            x.lineTo(5.f,17.6f);x.lineTo(10.6f,12.f);
+            x.lineTo(5.f,6.4f);x.lineTo(6.4f,5.f);
+            x.lineTo(12.f,10.6f);x.lineTo(17.6f,5.f);
+            x.lineTo(19.f,6.4f);x.lineTo(13.4f,12.f);
+            x.lineTo(19.f,17.6f);x.lineTo(17.6f,19.f);
+            x.lineTo(12.f,13.4f);x.closeSubPath();
+            g.setColour(juce::Colour(0xfff4f8fa));
+            g.fillPath(x,juce::AffineTransform::scale(22.f/24.f)
+                .translated((button.getWidth()-22.f)*.5f,
+                            (button.getHeight()-22.f)*.5f));
         }
         void drawLinearSlider(juce::Graphics& g,int x,int y,int width,int height,
                               float,float,float,juce::Slider::SliderStyle,
@@ -553,6 +633,27 @@ private:
                         gradient->getChildElement(j)->setAttribute(
                             "stop-color",shades[juce::jmin(j,4)]);
                 }
+            }
+            // Anodized-black finish: recolour only the four authored
+            // THUMB gradients, never the Track or original image shadow.
+            if(auto* defs=document->getChildByName("defs")) {
+                const char* ids[]={"g3","g4","g5","g6"};
+                const char* outer[]={"#090b0e","#13181c","#262d32",
+                                     "#323a40","#262d32","#13181c","#090b0e"};
+                const char* top[]={"#30383e","#252d32","#141a1e",
+                                   "#252d32","#30383e"};
+                const char* bottom[]={"#252e33","#171e22","#0d1216",
+                                      "#171e22","#252e33"};
+                const char* ridge[]={"#646e74","#88969e","#b4bdc1",
+                                     "#88969e","#5b656b"};
+                const char* const* palettes[]={outer,top,bottom,ridge};
+                const int maxima[]={6,4,4,4};
+                for(int group=0;group<4;++group)
+                    if(auto* gradient=defs->getChildByAttribute("id",ids[group]))
+                        for(int i=0;i<gradient->getNumChildElements();++i)
+                            gradient->getChildElement(i)->setAttribute(
+                                "stop-color",
+                                palettes[group][juce::jmin(i,maxima[group])]);
             }
             // Restore the OWNERS' AUTHORED raster _Image3 shadow,
             // inside THUMB. No synthetic shadow graphic or flattened image.
