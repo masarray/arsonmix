@@ -8,6 +8,11 @@ $sha=(& git rev-parse HEAD).Trim()
 $manifest=Get-Content -LiteralPath (Join-Path $dist "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
 $exe=Join-Path $dist "ArSonMix-GUI10CH-P012-Windows-x64.exe"
 $appHash=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+# Binary-level fresh-Win10 prerequisite gate: GitHub runners have the VC++
+# redist preinstalled, so a successful CI launch alone cannot catch /MD.
+# Inspect real PE import and delay-import tables BEFORE shipping/installation.
+& python scripts/verify_win10_pe_runtime.py --exe $exe
+if($LASTEXITCODE -ne 0){throw "Packaged PE still requires dynamic MSVC redistributable"}
 if($LASTEXITCODE -ne 0 -or $manifest.sourceCommit -ne $sha -or
    $manifest.exeSha256 -ne $appHash -or $manifest.fatStatus -ne "SOFTWARE_VERIFIED_PREVIEW_CANDIDATE" -or
    (Get-Item -LiteralPath $exe).Length -ne $manifest.guiExeBytes -or
