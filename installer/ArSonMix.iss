@@ -63,6 +63,8 @@ Type: files; Name: "{app}\README.md"
 Source: "{#SourceRoot}\VBCABLE_Driver_Pack45.zip"; DestDir: "{app}\ThirdParty\VB-Audio"; Flags: ignoreversion
 Source: "{#SourceRoot}\VB-CABLE-NOTICE.txt"; DestDir: "{app}\ThirdParty\VB-Audio"; Flags: ignoreversion
 Source: "ArSonMixVBCableInstall.ps1"; DestDir: "{app}\ThirdParty\VB-Audio"; Flags: ignoreversion
+; Microsoft-signed WebView2 Evergreen prerequisite, no bundled old runtime.
+Source: "ArSonMixWebView2Prerequisite.ps1"; DestDir: "{app}"; Flags: ignoreversion
 ; The shutdown helper is EMBEDDED TEMPORARILY in Setup, never installed.
 ; It handles installed legacy builds that do not implement the new event.
 Source: "ArSonMixUpdateShutdown.ps1"; Flags: dontcopy
@@ -94,6 +96,9 @@ Name: "{autoprograms}\Start ArSonMix with Recovery Profile"; Filename: "{app}\Ar
 ; one new executable only after a successful interactive install/update.
 ; Silent enterprise/FAT installs deliberately do not launch desktop audio.
 [Run]
+; WebView2 is a real GUI prerequisite. Check/install only when missing;
+; silent/enterprise/auto-update installs never fetch or alter OS components.
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -ExecutionPolicy Bypass -File ""{app}\ArSonMixWebView2Prerequisite.ps1"""; WorkingDir: "{app}"; StatusMsg: "Checking Microsoft WebView2 for ArSonMix..."; Flags: runasoriginaluser skipifsilent waituntilterminated runhidden
 ; Interactive Setup automatically checks installed and pending VB-CABLE devices.
 ; Only a missing driver can reach the verified vendor installer and Windows UAC.
 ; The next entry opens ArSonMix even if the driver needs a restart or is declined.

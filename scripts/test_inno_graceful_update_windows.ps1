@@ -16,6 +16,14 @@ if($LASTEXITCODE -ne 0 -or $policyOutput -notcontains 'ARSONMIX_UPDATER_POLICY_P
 }
 Write-Host "ARSONMIX_UPDATER_POLICY_PASS"
 
+# Check the exact shipped WebView2 helper in a pure non-network policy mode.
+$webviewPolicy=Join-Path (Resolve-Path .).Path "installer/ArSonMixWebView2Prerequisite.ps1"
+$webviewOutput=& "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -File $webviewPolicy -PolicySelfTest
+if($LASTEXITCODE -ne 0 -or $webviewOutput -notcontains 'ARSONMIX_WEBVIEW2_PREREQUISITE_POLICY_PASS') {
+    throw "WebView2 secure bootstrapper policy failed: $webviewOutput"
+}
+Write-Host "ARSONMIX_WEBVIEW2_PREREQUISITE_POLICY_PASS"
+
 $ErrorActionPreference="Stop"
 $root=(Resolve-Path .).Path
 $work=Join-Path $env:RUNNER_TEMP ("arsonmix-inno-smoke-"+[guid]::NewGuid().ToString("N"))
