@@ -156,7 +156,7 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
 
     def test_close_matches_approved_shared_fx_24px_language(self):
         self.assertIn('close_.setButtonText({})',self.native)
-        self.assertIn('close_.setBounds(getWidth()-41,16,24,24)',self.native)
+        self.assertIn('close_.setBounds(r-41,16,24,24)',self.native)
         self.assertIn('button.getComponentID()=="geq31.close"',self.native)
         self.assertIn('juce::Colour(0xff3e5866)',self.native)
         self.assertIn('juce::Colour(0xff293e4b)',self.native)
