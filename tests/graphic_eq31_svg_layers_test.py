@@ -133,6 +133,42 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('getChildByAttribute("id","g2")', self.native)
         self.assertEqual(hashlib.sha256(self.raw).hexdigest(), EXPECTED_SHA256)
 
+    def test_black_anodized_owner_thumb_not_a_replacement(self):
+        # Original SVG geometry/embedded raster intact; only UI clones
+        # recolour original g3-g6 paths and keep authored _Image3 shadow.
+        self.assertIn('const char* ids[]={"g3","g4","g5","g6"}', self.native)
+        for color in ('#090b0e','#323a40','#141a1e','#0d1216','#b4bdc1'):
+            self.assertIn(color,self.native)
+        self.assertIn('palettes[group][juce::jmin(i,maxima[group])]',self.native)
+        self.assertIn('rasterShadow->setAttribute("opacity",0.87)',self.native)
+        self.assertIn('authoredFader->findChildWithID("THUMB")',self.native)
+        self.assertEqual(hashlib.sha256(self.raw).hexdigest(),EXPECTED_SHA256)
+
+    def test_titanium_brushing_is_cached_not_rendered_per_band(self):
+        self.assertIn('makeSatinBrushedMetal(originalMetal)',self.native)
+        self.assertIn('juce::Image::BitmapData out(result,juce::Image::BitmapData::writeOnly)',self.native)
+        self.assertIn('(sourceLuma-145.f)*.08f',self.native)
+        self.assertIn('constexpr int w=512,h=256',self.native)
+        self.assertIn('g.drawImageWithin(brushedMetal_',self.native)
+        self.assertNotIn('makeSatinBrushedMetal(source)',self.native)
+        # The exact JPEG approved earlier remains embedded, without drift.
+        self.assertEqual(hashlib.sha256(TEXTURE.read_bytes()).hexdigest(),TEXTURE_SHA256)
+
+    def test_close_matches_approved_shared_fx_24px_language(self):
+        self.assertIn('close_.setButtonText({})',self.native)
+        self.assertIn('close_.setBounds(getWidth()-41,16,24,24)',self.native)
+        self.assertIn('button.getComponentID()=="geq31.close"',self.native)
+        self.assertIn('juce::Colour(0xff3e5866)',self.native)
+        self.assertIn('juce::Colour(0xff293e4b)',self.native)
+        self.assertIn('juce::Colour(0xff633840)',self.native)
+        self.assertIn('juce::Colour(0xffc52d40)',self.native)
+        self.assertIn('juce::Colour(0xff607d8c)',self.native)
+        self.assertIn('juce::Colour(0xfff4f8fa)',self.native)
+        self.assertIn('juce::AffineTransform::scale(22.f/24.f)',self.native)
+        self.assertIn('x.lineTo(17.6f,19.f)',self.native)
+        self.assertNotIn('close_.setButtonText(juce::String::fromUTF8("×"))',self.native)
+        self.assertIn('window->setVisible(false)',self.native)
+
     def test_thumb_endpoints_derive_from_original_svg_not_guess(self):
         # Authored track outer contour starts at 147.08 and ends at 1696.67.
         # THUMB s8 path is bounded by 776.33..1055.50 at its zero pose.
