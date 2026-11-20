@@ -100,3 +100,6 @@ The owner accepted v12 styling and explicitly asked for stronger zero-centre sna
 - No new UI thread, custom CSS overrides, HTML mixer fork, new DSP path, APVTS store, or audio callback work. Effects remain mixer-rack-owned and host-authoritative for bypass/ACK/preset.
 
 New tests assert exact C++ source contracts, pointer hysteresis and wheel zero-entry/escape scenarios, drag-target exclusions, unchanged SVG/PNG SHA and v12 rendering/ownership. Full native Windows CTest and real host/window gestures still need test evidence on this exact commit.
+
+
+**v13 wheel edge-case fix:** initial notDragging capture was correctly snapping near 0 but a tiny mouse-wheel interval could oscillate `0→+0.3→0→+0.3` when the next tick remained inside the capture range. A one-control, UI-only `wheelEscapingZero_` plus direction latch now permits monotonic outbound wheel steps until outside capture; wheel reversing into zero still snaps exactly once. Pointer drag always resets the wheel latch. The source test exercises 5 successive 0.3dB wheel steps, reversal, coarse crossing and Output rotary 0.2/0.4/0.8 dB; Chromium v13 wheel regression PASS. No audio/preset value smoothing or host state changed.

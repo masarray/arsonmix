@@ -231,7 +231,11 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('level_.setScrollWheelEnabled(true)',self.native)
         self.assertIn('if(dragMode==notDragging)',self.native)
         self.assertIn('const double current=getValue()',self.native)
-        self.assertIn('if(std::abs(current)>0.001 &&',self.native)
+        self.assertIn('if(std::abs(current)<=0.001)',self.native)
+        self.assertIn('bool wheelEscapingZero_=false',self.native)
+        self.assertIn('int wheelEscapeDirection_=0',self.native)
+        self.assertIn('if(wheelEscapingZero_ &&',self.native)
+        self.assertIn('std::abs(attemptedValue)>std::abs(current)',self.native)
         self.assertIn('(current<0.0&&attemptedValue>0.0)',self.native)
         self.assertIn('(current>0.0&&attemptedValue<0.0)',self.native)
         self.assertIn('return juce::Slider::snapValue(attemptedValue,dragMode)',self.native)
@@ -252,17 +256,36 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
                          [2.,0,0,1.81,0,-1.9])
         self.assertEqual(drag([.6,.8,1.19,1.21],.65,1.2),
                          [0,0,0,1.21])
-        def wheel(current,target,capture):
-            if abs(current)>.001 and (abs(target)<=capture or
-                    (current<0<target) or (current>0>target)):
+        # Prevent the subtle multi-tick bounce: 0 -> .3 -> 0 -> .3.
+        # Once exiting 0, the wheel must continue to +1.5 monotonically.
+        def wheel(current,target,capture,state):
+            if abs(current)<=.001:
+                state['escaping']=True
+                state['direction']=1 if target>0 else -1 if target<0 else 0
+                return target
+            if (state['escaping'] and
+                    current*state['direction']>0 and
+                    target*state['direction']>0 and abs(target)>abs(current)):
+                if abs(target)>capture:
+                    state['escaping']=False
+                return target
+            state['escaping']=False
+            if abs(target)<=capture or current<0<target or current>0>target:
                 return 0.
             return target
-        self.assertEqual(wheel(-.9,-.3,1.1),0)
-        self.assertEqual(wheel(-.3,.8,1.1),0)
-        self.assertEqual(wheel(0.,.3,1.1),.3)
-        self.assertEqual(wheel(0.,-.3,1.1),-.3)
-        self.assertEqual(wheel(-2.,.2,.65),0.)
-        self.assertEqual(wheel(0.,.2,.65),.2)
+        state={'escaping':False,'direction':0}
+        self.assertEqual(wheel(-.3,.8,1.1,state),0.)
+        current=0.
+        for next_value in (.3,.6,.9,1.2,1.5):
+            current=wheel(current,next_value,1.1,state)
+            self.assertAlmostEqual(current,next_value)
+        self.assertEqual(wheel(.6,.3,1.1,{'escaping':True,'direction':1}),0.)
+        self.assertEqual(wheel(-2.,.2,.65,{'escaping':False,'direction':0}),0.)
+        state={'escaping':False,'direction':0}
+        self.assertEqual(wheel(0.,.2,.65,state),.2)
+        self.assertEqual(wheel(.2,.4,.65,state),.4)
+        self.assertEqual(wheel(.4,.8,.65,state),.8)
+        self.assertEqual(wheel(.8,.3,.65,state),0.)
         # The native audio core remains independently owner-accepted.
         self.assertNotIn('snapValue(',self.native.split('class GraphicEq31Processor final')[1].split('class GraphicEq31DetentSlider')[0])
 

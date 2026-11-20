@@ -258,21 +258,37 @@ public:
     }
     void mouseDown(const juce::MouseEvent& event) override {
         detentEngaged_=std::abs(getValue())<0.001;
+        wheelEscapingZero_=false;
         juce::Slider::mouseDown(event);
     }
     double snapValue(double attemptedValue,DragMode dragMode) override {
         if(dragMode==notDragging) {
-            // Mouse wheel is discrete: snap a step near/across zero once,
-            // and let the NEXT wheel tick leave zero (never sticky).
-            // Host/preset readback uses setValue and is never quantized.
+            // The JUCE wheel path owns the automation gesture. A step into
+            // or ACROSS 0 dB captures exactly once. Outbound steps from 0
+            // must pass through the whole capture band without oscillation.
             const double current=getValue();
-            if(std::abs(current)>0.001 &&
-               (std::abs(attemptedValue)<=captureDb_ ||
-                (current<0.0&&attemptedValue>0.0) ||
-                (current>0.0&&attemptedValue<0.0)))
+            if(std::abs(current)<=0.001) {
+                wheelEscapingZero_=true;
+                wheelEscapeDirection_=attemptedValue>0.0?1:
+                                      attemptedValue<0.0?-1:0;
+                return juce::Slider::snapValue(attemptedValue,dragMode);
+            }
+            if(wheelEscapingZero_ &&
+               current*wheelEscapeDirection_>0.0 &&
+               attemptedValue*wheelEscapeDirection_>0.0 &&
+               std::abs(attemptedValue)>std::abs(current)) {
+                if(std::abs(attemptedValue)>captureDb_)
+                    wheelEscapingZero_=false;
+                return juce::Slider::snapValue(attemptedValue,dragMode);
+            }
+            wheelEscapingZero_=false;
+            if(std::abs(attemptedValue)<=captureDb_ ||
+               (current<0.0&&attemptedValue>0.0) ||
+               (current>0.0&&attemptedValue<0.0))
                 return 0.0;
             return juce::Slider::snapValue(attemptedValue,dragMode);
         }
+        wheelEscapingZero_=false;
         // Drag hysteresis is UI-only; accepted APVTS retains 0.1dB steps.
         if(std::abs(attemptedValue)<=(detentEngaged_?releaseDb_:captureDb_)) {
             detentEngaged_=true;
@@ -284,6 +300,8 @@ public:
 private:
     double captureDb_=1.1,releaseDb_=1.8;
     bool detentEngaged_=false;
+    bool wheelEscapingZero_=false;
+    int wheelEscapeDirection_=0;
 };
 
 class GraphicEq31Editor final : public juce::AudioProcessorEditor, private juce::Timer {
