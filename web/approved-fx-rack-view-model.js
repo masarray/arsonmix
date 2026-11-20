@@ -338,6 +338,30 @@
       Object.keys(lease).length===Object.keys(now.lease).length;
   }
 
+  // G-MV38: a single allowlisted editor surface policy. The native FX catalog
+  // is *not* permission to create a browser HWND; only these five approved
+  // built-in controls have a dedicated /preview/ WebView editor. Other installed
+  // FX (including future built-ins hosted in JUCE) use the existing exact
+  // native HWND path; offline vendor references keep their logical route.
+  // Adding a new approved browser editor changes this registry, not the bridge.
+  const BROWSER_EDITOR_HANDLES=Object.freeze({
+    "armix.builtin.channel-eq.v1":"ArSonMixNativeEq",
+    "armix.builtin.channel-compressor.v1":"ArSonMixNativeCompressor",
+    "armix.builtin.arson-harmony.v1":"ArSonMixNativeHarmony",
+    "armix.builtin.vocal-throw.v1":"ArSonMixNativeVocalThrow",
+    "armix.builtin.8d-sonku.v1":"ArSonMixNativeSonKu"
+  });
+  function editorSurfacePlan(snapshot,lease,{hardwareConfiguration}={}){
+    if(!editorNavigationLeaseMatches(snapshot,lease,{hardwareConfiguration}))
+      return {kind:"UNAVAILABLE"};
+    const key=lease.catalogId;
+    if(Object.prototype.hasOwnProperty.call(BROWSER_EDITOR_HANDLES,key))
+      return {kind:"BROWSER",windowKey:BROWSER_EDITOR_HANDLES[key]};
+    if(lease.authority==="LOGICAL")return {kind:"LOGICAL_VENDOR"};
+    if(lease.authority==="CHANNEL_ID")return {kind:"NATIVE_HOST"};
+    return {kind:"UNAVAILABLE"};
+  }
+
   // M4 uses host ordinals, never ChannelIds. An old accepted FX inventory
   // cannot be permission to open an editor after device/route owner changes.
   function m4EditorPlan(snapshot,{channel,slot,verifiedM4=false,
@@ -386,6 +410,40 @@
     return current.kind==="READY"&&
       Object.keys(current.lease).length===Object.keys(lease).length&&
       Object.keys(current.lease).every(key=>current.lease[key]===lease[key]);
+  }
+
+  // G-MV36: physical ChannelId VST3 / ImmerSIB editors use the original
+  // JUCE HWND only when the EXACT G-MV31 accepted instance lease survives.
+  // Logical .smix and native built-in /preview/ editor owners stay separate.
+  function nativeEditorDispatchPlan(snapshot,lease,{
+    hardwareConfiguration,offline=false}={}){
+    if(offline||lease?.authority!=="CHANNEL_ID"||
+       !editorNavigationLeaseMatches(snapshot,lease,{hardwareConfiguration}))
+      return {kind:"UNAVAILABLE"};
+    return {kind:"READY",action:"routingFxEditor",
+      payload:{channelId:lease.channelId,slot:lease.slot,
+        instanceId:lease.instanceId,deviceEpoch:lease.deviceEpoch,
+        revision:lease.graphRevision}};
+  }
+  // One pure HWND ACK policy for M4 and ChannelId: transport requestId AND
+  // installed FX instance must match, and the current accepted hardware,
+  // route, roster, catalog and owner must still hold the exact click lease.
+  // Called with ack=null by the controller on every accepted PCM snapshot;
+  // this retires stale HWND requests even if the native host never responds.
+  function nativeEditorAckResult(pending,ack,snapshot,{
+    verifiedM4=false,offline=false,hardwareConfiguration}={}){
+    if(!pending)return "IGNORE";
+    const lease=pending.lease;
+    const valid=pending.authority==="CHANNEL_ID"?
+      !offline&&lease?.authority==="CHANNEL_ID"&&
+        editorNavigationLeaseMatches(snapshot,lease,{hardwareConfiguration}):
+      pending.authority==="M4"&&
+        m4EditorDispatchLeaseMatches(snapshot,lease,{
+          verifiedM4,offline,hardwareConfiguration});
+    if(!valid)return "STALE";
+    if(!ack||ack.requestId!==pending.requestId)return "IGNORE";
+    if(ack.instanceId!==lease.instanceId||ack.ok!==true)return "REJECTED";
+    return "ACKED";
   }
 
   // G-MV34: one physically admitted ChannelId FX owner for bypass/insert.
@@ -599,8 +657,9 @@
   return Object.freeze({powerReadback,mountedRackMatches,
     m4Presentation,nativePowerSettlement,m4PowerPlan,m4RackAckResult,
     m4RackSettlement,m4EditorDispatchPlan,m4EditorDispatchLeaseMatches,
+    nativeEditorDispatchPlan,nativeEditorAckResult,
     m4InsertPlan,m4InsertAckResult,m4InsertReadbackSettlement,
-    editorNavigationPlan,editorNavigationLeaseMatches,m4EditorPlan,
+    editorNavigationPlan,editorNavigationLeaseMatches,editorSurfacePlan,m4EditorPlan,
     nativeInsertPlan,nativeEditPlan,nativeInsertSettlement,
     nativePowerPlan,nativePowerAckResult,
     globalPowerContext,globalPowerPlan,globalPowerAckResult,
