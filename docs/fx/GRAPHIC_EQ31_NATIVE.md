@@ -46,6 +46,13 @@ The versioned state loader validates magic, version, exact byte length, every pe
 - LOW/MID/HIGH jump buttons are removed. The **Flat** reset is in a narrow right-hand utility rail with room for future actual knobs/buttons, while the 31 faders keep their readable 50px pitch and a horizontal scrollbar in narrow editor widths.
 - Header buttons use the same compact neutral silver, Inter, thin borders and accessible tooltips. No extraneous status/help/footer text is introduced.
 
+## Owner visual refinement — satin titanium, black thumb and shared Close (20 Nov 2026)
+
+- Source `slider_eq_grp.svg` is byte-identical to the owner file; the four THUMB gradients `g3`–`g6` are recoloured **only in the UI clone** to black anodized metal with graphite face highlights and a restrained silver center index. The original `_Image3` thumb shadow and measured ±12 dB travel remain intact.
+- The earlier real brushed-metal JPEG is still embedded unchanged; one 512×256 RGB **satin titanium texture is generated once at editor construction** using only 8% of the source's broad colour/luminance variation plus fine directional grain and subtle specular sheen. Paint only draws this cached image; no live per-fader texture generation, audio-thread work or second DSP path.
+- The `geq31.close` JUCE header button now mirrors the approved `site/preview-v2/assets/mixer-contextual-buttons.css` `.armix-builtin-fx-close` surface: **24×24 px**, 4px radius, navy gradient `#3e5866`→`#293e4b`, border `#607d8c`, white **22px** icon using the exact shared SVG X polygon, dark-red hover and stronger red on press. No text glyph substitution. It still hides the retained host-owned editor rather than removing FX.
+- Chromium preview with the original 31 vector faders verified that the black thumb remains readable and the Close/Flat/preset interactions work. **Browser-only screenshot is not native JUCE/Windows or hardware proof.** Exact-head Windows MSVC/CTest must pass before merge.
+
 ## Verification evidence and release boundary
 
 - Static/pure-C++ checks: `ARMixGraphicEq31CoreTests` / `GraphicEq31FrequencyResponseAndRealtimeStability` (frequency response, invalid gains, stereo isolation, low-rate Nyquist and automation stress). Its 29 explicit `GEQ_CHECK` predicates remain executable in Release (`NDEBUG`) builds, including setup calls that used to disappear inside standard `assert`.
