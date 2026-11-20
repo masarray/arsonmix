@@ -12,10 +12,10 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 SVG = ROOT / 'assets/fx/graphic-eq31/slider_eq_grp.svg'
 PROCESSOR = ROOT / 'engine/builtin_fx/GraphicEq31Processor.h'
-KNOB = ROOT / 'assets/fx/graphic-eq31/KNOB-EQ.svg'
+TEXTURE = ROOT / 'assets/fx/graphic-eq31/geq31_brushed_metal.jpg'
 CMAKE = ROOT / 'CMakeLists.txt'
 EXPECTED_SHA256 = 'aeaf02b8904a667724f34774a692da39a5a466bae302611f347fae4d9fd14dba'
-KNOB_SHA256 = '754b3d525be1d4dcbe26fdca1d6bedc5b67e2d2436efec2aa9265ad86c5aad80'
+TEXTURE_SHA256 = '4b7b5f68f502482f5d1fc1c973a48ae817087104485c71020c5bdfb8f6d1388c'
 SVGNS = {'s': 'http://www.w3.org/2000/svg'}
 
 class OwnerOriginalSvgLayersTests(unittest.TestCase):
@@ -54,53 +54,66 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('std::array<juce::Slider,GraphicEq31Core::bandCount> sliders_', self.native)
         self.assertNotIn('fillRoundedRectangle(cx-thumbWidth', self.native)
 
-    def test_readable_50px_zero_shadow_band_only_policy(self):
-        # Original owner asset remains untouched, but the duplicated raster
-        # shadow is omitted from the UI clone; vector THUMB stays authentic.
+    def test_brushed_texture_and_original_shadow(self):
+        texture = TEXTURE.read_bytes()
+        self.assertEqual(hashlib.sha256(texture).hexdigest(), TEXTURE_SHA256)
+        self.assertTrue(texture.startswith(b'\xff\xd8\xff'))
+        self.assertGreater(len(texture), 20_000)
+        self.assertIn('assets/fx/graphic-eq31/geq31_brushed_metal.jpg', self.cmake)
+        self.assertIn('BinaryData::geq31_brushed_metal_jpg', self.native)
+        self.assertIn('juce::ImageCache::getFromMemory(', self.native)
+        self.assertIn('g.drawImageWithin(brushedMetal_', self.native)
+        # Use the original source THUMB raster rather than a vector-only
+        # substitute, preserving author artwork and animation semantics.
+        self.assertIn('rasterShadow->setAttribute("opacity",0.87)', self.native)
+        self.assertNotIn('removeChildElement(bitmapWrapper,true)', self.native)
+        self.assertIn('authoredFader->findChildWithID("THUMB")', self.native)
+        self.assertIn('juce::DropShadow(juce::Colours::black.withAlpha(.30f)', self.native)
+        self.assertIn('juce::RectanglePlacement::stretchToFit', self.native)
+
+    def test_hardware_visual_fidelity_and_no_noise(self):
         self.assertIn('document->setAttribute("viewBox","60 0 352 2042")', self.native)
-        self.assertIn('bitmapWrapper->getChildByAttribute("id","_Image3")', self.native)
-        self.assertIn('thumbGroup->removeChildElement(bitmapWrapper,true)', self.native)
-        self.assertNotIn('labelGroup->removeChildElement(hz,true)', self.native)
-        self.assertIn('auto* unitGroup=labelGroup->getChildByAttribute("id","Hz")', self.native)
-        self.assertIn('unitText->setAttribute("text-anchor","middle")', self.native)
+        self.assertIn('getChildByAttribute("id","g1")', self.native)
+        self.assertIn('"#929b9f","#a6afb3"', self.native)
+        self.assertIn('getChildByAttribute("id","g2")', self.native)
+        self.assertIn('"#080c0f","#12181c"', self.native)
         self.assertIn('static constexpr int bandCellWidth=50', self.native)
         self.assertIn('setSize(1610,391)', self.native)
-        self.assertIn('font-family: Inter', self.native)
+        self.assertIn('font-family: Inter; font-size: 27px; font-weight: 700', self.native)
+        self.assertIn('font-family: Inter; font-size: 18px; font-weight: 600', self.native)
+        self.assertIn('unitSpan->addTextElement(isKhz?"kHz":"Hz")', self.native)
         self.assertIn('return juce::Font("Inter",size,juce::Font::plain)', self.native)
-        self.assertNotIn('BinaryData::KNOB_EQ_svg', self.native)
-        self.assertNotIn('drawRotarySlider(', self.native)
-        self.assertNotIn('input_.setBounds', self.native)
-        self.assertNotIn('getRawParameterValue("inputDb")', self.native)
-        self.assertNotIn('getRawParameterValue("outputDb")', self.native)
-        self.assertNotIn('inputSmooth_', self.native)
-        self.assertNotIn('outputSmooth_', self.native)
-        self.assertIn('out.writeInt(stateMagic);out.writeInt(3);', self.native)
-        self.assertIn('const auto obsoleteTrim=input.readFloat();', self.native)
-        self.assertNotIn('assets/fx/graphic-eq31/KNOB-EQ.svg', self.cmake)
-
-    def test_full_thumb_travel_and_visual_presentation(self):
-        self.assertIn('const float shift=-600.f*juce::jlimit(-12.f,12.f,gain)/12.f;', self.native)
-        self.assertIn('juce::DropShadow(juce::Colours::black.withAlpha(.27f)', self.native)
         self.assertIn('getChildByAttribute("class","s5")', self.native)
         self.assertIn('getChildByAttribute("class","s6")', self.native)
-        self.assertIn('getChildByAttribute("id","g2")', self.native)
-        self.assertIn('juce::Colour::fromRGB(229,233,234)', self.native)
-        self.assertIn('g.drawHorizontalLine(y,0.f,static_cast<float>(width))', self.native)
-        self.assertIn('g.drawText("+12",5,84,36,16', self.native)
-        self.assertIn('g.drawText("0",5,186,36,16', self.native)
-        self.assertIn('g.drawText("-12",5,291,36,16', self.native)
+        # Anchors: long ticks are at Y 208.75 / 918.33 / 1627.92 in SVG.
+        for point in ('208.75f','918.33f','1627.92f'):
+            self.assertIn('majorTickY('+point+')', self.native)
         self.assertNotIn('smile_', self.native)
         self.assertNotIn('peakLabel_', self.native)
-        self.assertNotIn('31 BANDS  /  +/-12 dB', self.native)
         self.assertNotIn('timerCallback()', self.native)
-        # The authored vector thumb extends ~776..1055, while the slot
-        # extends 183..1661. Neither +/-12 endpoint leaves 40px of empty slot.
-        self.assertLessEqual(abs((776-600)-183), 10)
-        self.assertLessEqual(abs((1055+600)-1661), 10)
+        self.assertNotIn('31 BANDS  /  +/-12 dB', self.native)
+        self.assertNotIn('BinaryData::KNOB_EQ_svg', self.native)
+        self.assertNotIn('drawRotarySlider(', self.native)
+        self.assertNotIn('getRawParameterValue("inputDb")', self.native)
+        self.assertNotIn('getRawParameterValue("outputDb")', self.native)
+        self.assertIn('out.writeInt(stateMagic);out.writeInt(3);', self.native)
+
+    def test_thumb_endpoints_derive_from_original_svg_not_guess(self):
+        # Authored track outer contour starts at 147.08 and ends at 1696.67.
+        # THUMB s8 path is bounded by 776.33..1055.50 at its zero pose.
+        top_travel = 776.33 - 147.08
+        bottom_travel = 1696.67 - 1055.50
+        self.assertAlmostEqual(top_travel,629.25,places=2)
+        self.assertAlmostEqual(bottom_travel,641.17,places=2)
+        self.assertIn('return t>=0.f ? -629.25f*t : -641.17f*t;',self.native)
         for gain in [-12., -6., 0., 6., 12.]:
-            shift=-600*gain/12
-            self.assertGreaterEqual(776+shift, 160)
-            self.assertLessEqual(1055+shift, 1675)
+            t=gain/12.
+            shift=-629.25*t if t>=0 else -641.17*t
+            start,end=776.33+shift,1055.50+shift
+            self.assertGreaterEqual(start,147.08 - 0.01)
+            self.assertLessEqual(end,1696.67 + 0.01)
+        self.assertAlmostEqual(776.33-629.25,147.08,places=2)
+        self.assertAlmostEqual(1055.50+641.17,1696.67,places=2)
 
 if __name__ == '__main__':
     unittest.main()
