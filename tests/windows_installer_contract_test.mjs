@@ -89,7 +89,7 @@ test('interactive Setup automatically checks for signed VB-CABLE while mixer lau
   assert.match(isolatedSmoke, /interrupted-uac-present/);
   assert.match(isolatedSmoke, /corrupt-status-but-healthy/);
   assert.match(isolatedSmoke, /cable-vendor-handoff/);
-  assert.match(isolatedSmoke, /vendorHandoffCount -eq 1/);
+  assert.match(isolatedSmoke, /ArSonMixTestVendorHandoffCount -eq 1/);
   assert.match(bootstrap, /if\(\$all.Count -gt 0\)\{[\s\S]*?\$present \| Where-Object[\s\S]*?Record "ALREADY_PRESENT"[\s\S]*?exit 0/);
   assert.ok(bootstrap.indexOf("previousState -eq 'PENDING_REBOOT'") <
             bootstrap.indexOf('Start-Process -FilePath $setups[0].FullName'),
