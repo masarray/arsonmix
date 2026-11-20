@@ -2567,6 +2567,8 @@ public:
         o->setProperty ("nativeFxProcessingCount", processingNativeFx);
         o->setProperty ("nativeFxCountProvenance",
             "ACCEPTED_CONTROL_READBACK_INSERT_AND_RACK_BYPASS_NOT_dryTest_FLAG");
+        o->setProperty ("nativeFxGraphRevision",
+            nativeRoutingStatus.getProperty ("revision", {}).toString());
         o->setProperty("waitingAsioInputs",dryRoutingLab_.waitingAsioInputCount());
         // NORMAL mode is never silently served by the legacy CH1 fallback.
         // This state is for operator feedback; it does not authorize output.
@@ -2675,6 +2677,12 @@ public:
         o->setProperty ("outputDevice", dual && d ? d->getName() : setup.outputDeviceName);
         o->setProperty ("deviceInputChannels", capture ? capture->getActiveInputChannels().countNumberOfSetBits() : 0);
         o->setProperty ("deviceOutputChannels", d ? d->getActiveOutputChannels().countNumberOfSetBits() : 0);
+        // Control-only pin-mask evidence: matching channel COUNTS do not
+        // imply the same physical ASIO pin assignment after a remap.
+        o->setProperty ("activeInputMaskHex", capture ?
+            capture->getActiveInputChannels().toString (16) : juce::String());
+        o->setProperty ("activeOutputMaskHex", d ?
+            d->getActiveOutputChannels().toString (16) : juce::String());
         o->setProperty ("callbackInputChannels", callbackInputs_.load());
         o->setProperty ("callbackOutputChannels", callbackOutputs_.load());
         o->setProperty ("callbackCount", static_cast<double> (callbackCount_.load()));
