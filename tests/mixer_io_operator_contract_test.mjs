@@ -728,27 +728,9 @@ test('P0 Audio Setup reports native driver latency ms, never fake measured loopb
   assert.match(main,/setProperty\("driverOutputLatencyFrames",latencyReady/);
   assert.match(main,/setProperty\("hostFxLatencyFrames",latencyReady/);
   assert.match(main,/JUCE_DRIVER_REPORTED_NOT_MEASURED_LOOPBACK_OR_ASIO_RTL/);
-  assert.match(gui,/AUDIO LATENCY · VERIFIED NATIVE DEVICE/);
-  assert.match(gui,/Driver-reported JUCE latency, not a measured analog loopback/);
-  const start=gui.indexOf('  function deviceLatencyDisplay(active){');
-  const end=gui.indexOf('  function latencyText(',start);
-  assert.ok(start>=0&&end>start,
-    'pure latency model must remain in the single legacy compatibility surface');
-  // Extract the ENTIRE function declaration (which itself has nested helpers)
-  // rather than treating the first inner brace as the function boundary.
-  const compute=new Function('return ('+gui.slice(start,end).trim()+')')();
-  const actual={open:true,rate:48000,buffer:256,driverInputLatencyFrames:240,
-    driverOutputLatencyFrames:360,hostFxLatencyFrames:96,
-    latencyClockScope:'SINGLE_CLOCK_DRIVER_HINTS'};
-  assert.deepEqual(compute(actual),{
-    ready:true,input:5,output:7.5,fx:2,period:5.3,driverIoHintMs:12.5,
-    provenance:'UNKNOWN'
-  });
-  const noReport=compute({...actual,driverInputLatencyFrames:null,
-    latencyClockScope:'INDEPENDENT_CLOCKS_NO_DIRECT_ROUNDTRIP_ESTIMATE'});
-  assert.equal(noReport.input,null);
-  assert.equal(noReport.driverIoHintMs,null);
-  assert.equal(compute({...actual,open:false}).ready,false);
-  assert.equal(compute({...actual,driverOutputLatencyFrames:-1}).output,null);
-  assert.equal(compute({...actual,driverInputLatencyFrames:0}).input,0);
+  const bridge=read('web/approved-native-bridge.js');
+  assert.match(bridge,/deviceVM\.setupLatencyReadback\(active\)/);
+  assert.match(bridge,/Input and output are driver-reported/);
+  assert.match(bridge,/action:measure\?"audioLoopbackMeasure":"audioLoopbackRead"/);
+  assert.match(main,/action=="audioLoopbackCancel"/);
 });

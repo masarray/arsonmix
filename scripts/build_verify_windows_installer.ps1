@@ -40,6 +40,9 @@ $sentinel=Join-Path $studio ("installer-test-"+[guid]::NewGuid().ToString("N")+"
 $fixtureReady=Join-Path $env:RUNNER_TEMP ("arsonmix-fixture-ready-"+[guid]::NewGuid().ToString("N"))
 $fixtureClosed=Join-Path $env:RUNNER_TEMP ("arsonmix-fixture-closed-"+[guid]::NewGuid().ToString("N"))
 $fixtureProcess=$null
+$probeProcess=$null
+$probeToken=[guid]::NewGuid().ToString('D')
+$probeMarker=Join-Path $env:LOCALAPPDATA "ArSonMix\Updates\health\$probeToken.ready"
 try {
     New-Item -ItemType Directory -Force -Path $stage | Out-Null
     Copy-Item -LiteralPath $exe -Destination (Join-Path $stage "verified-gui.exe")
@@ -71,6 +74,35 @@ try {
     }
     $installedManifest=Get-Content -LiteralPath (Join-Path $install "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
     if($installedManifest.sourceCommit -ne $sha){throw "Wrong installed provenance"}
+    $diagnosticHelper=Join-Path $install "ArSonMixStartupDiagnostics.ps1"
+    if ((Get-FileHash -LiteralPath $diagnosticHelper -Algorithm SHA256).Hash.ToLowerInvariant() -ne
+        $manifest.startupDiagnosticsSha256) {
+        throw "Installed diagnostics helper differs from the verified portable source"
+    }
+    # Verify the genuine installed GUI enters the approved native WebView.
+    # Unique probe GUID inhibits device discovery, plugin restore and output.
+    $info=[Diagnostics.ProcessStartInfo]::new()
+    $info.FileName=$installedExe
+    $info.WorkingDirectory=$install
+    $info.UseShellExecute=$false
+    $info.EnvironmentVariables['ARSONMIX_UPDATE_PROBE']=$probeToken
+    $probeProcess=[Diagnostics.Process]::Start($info)
+    $deadline=[DateTime]::UtcNow.AddSeconds(45)
+    while (!(Test-Path -LiteralPath $probeMarker -PathType Leaf) -and
+           !$probeProcess.HasExited -and [DateTime]::UtcNow -lt $deadline) {
+        Start-Sleep -Milliseconds 250
+    }
+    if (!(Test-Path -LiteralPath $probeMarker -PathType Leaf) -or
+        (Get-Content -LiteralPath $probeMarker -Raw).Trim() -cne 'GUI_READY_NO_AUDIO' -or
+        !$probeProcess.WaitForExit(12000) -or $probeProcess.ExitCode -ne 0) {
+        try {
+            & $diagnosticHelper | Write-Host
+            $diagnosticReport=Join-Path $env:LOCALAPPDATA 'ArSonMix\diagnostics\windows-startup-report.txt'
+            Get-Content -LiteralPath $diagnosticReport -TotalCount 80 | Write-Host
+        } catch { Write-Warning $_ }
+        throw "Installed ArSonMix did not complete its native GUI-only startup probe"
+    }
+    Write-Host "INSTALLER_NATIVE_GUI_READY_NO_AUDIO: runner build $([Environment]::OSVersion.Version.Build)"
     # Full AGPL and third-party terms live in ArSonMix.exe and Setup itself.
     # The installed directory must have NO redundant top-level legal files.
     & python scripts/verify_embedded_legal.py --binary $installedExe
@@ -163,11 +195,22 @@ try {
         installerSha256=(Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
         certification="PREVIEW__INSTALLER_INTEGRITY_AND_UPDATE_TESTED";mode="PER_USER_NO_AUTOARM"
         updaterTest="WM_CLOSE_IN_PLACE_SHA256_AND_USER_DATA_PRESERVED"
+        guiStartup="NATIVE_WEBVIEW_READY_NO_AUDIO"
+        guiStartupRunnerBuild=[Environment]::OSVersion.Version.Build
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $out "INSTALLER_PROVENANCE.json") -Encoding UTF8
     Write-Host "INSTALLER_RC_VERIFIED: first install, graceful running-app graceful update, SHA-matched PE, uninstall, private Studio intact"
     Write-Host "OWNER_FIELD_AUDIO_LISTENING_REPORTED__PER_BUILD_HARDWARE_REPORT_SEPARATE"
 }
 finally {
+    if($null -ne $probeProcess) {
+        # CI-owned child only. The production updater never kills ArSonMix.
+        if(!$probeProcess.HasExited) {
+            $probeProcess.Kill()
+            [void]$probeProcess.WaitForExit(5000)
+        }
+        $probeProcess.Dispose()
+    }
+    Remove-Item -LiteralPath $probeMarker -Force -ErrorAction SilentlyContinue
     # Only a failing *test fixture* may be terminated in CI teardown.
     # Production Inno Setup never force-kills the user's audio application.
     if($null -ne $fixtureProcess){

@@ -129,28 +129,26 @@
   // Unavailable or independently clocked paths are NEVER converted to 0 ms.
   function setupLatencyReadback(active) {
     const rate=Number(active?.rate);
-    if(active?.open!==true || !Number.isFinite(rate)||rate<=0)
+    if(active?.open!==true || active.authorized===false || !Number.isFinite(rate)||rate<=0)
       return Object.freeze({ready:false});
-    const milliseconds=frames=>{
-      if(frames===null||frames===undefined||frames===''||
-         !Number.isSafeInteger(Number(frames))||Number(frames)<0)return null;
-      return Math.round(Number(frames)*10000/rate)/10;
-    };
-    const input=milliseconds(active.driverInputLatencyFrames);
-    const output=milliseconds(active.driverOutputLatencyFrames);
-    const fx=milliseconds(active.hostFxLatencyFrames);
-    const buffer=milliseconds(active.buffer);
+    const frames=value=>Number.isSafeInteger(value)&&value>=0?value:null;
+    const input=frames(active.driverInputLatencyFrames);
+    const output=frames(active.driverOutputLatencyFrames);
+    const fx=frames(active.hostFxLatencyFrames);
+    const buffer=frames(active.buffer);
     const sameClock=active.latencyClockScope==="SINGLE_CLOCK_DRIVER_HINTS";
-    const hint=sameClock&&input!==null&&output!==null
-      ?Math.round((input+output)*10)/10:null;
-    const fmt=x=>x===null?"N/A":x.toFixed(1)+" ms";
+    const driverIo=sameClock&&input!==null&&output!==null?input+output:null;
+    // Driver I/O reports may already include buffering. The callback period
+    // is a separate metric, not an extra term in the estimate.
+    const total=driverIo!==null&&fx!==null?driverIo+fx:null;
+    const ms=value=>value===null?null:1000*value/rate;
+    const fmt=value=>value===null?"N/A":ms(value).toFixed(2)+" ms";
     return Object.freeze({
-      ready:true,inputMs:input,outputMs:output,fxMs:fx,bufferMs:buffer,
-      driverIoHintMs:hint,
-      line:"IN "+fmt(input)+" · OUT "+fmt(output)+
-        " · FX "+fmt(fx)+" · BUFFER "+fmt(buffer),
-      note:hint===null?"Driver I/O estimate unavailable · verify driver and clock":
-        "Driver I/O hint ≈ "+fmt(hint)+" · not measured round-trip",
+      ready:true,inputMs:ms(input),outputMs:ms(output),fxMs:ms(fx),bufferMs:ms(buffer),
+      estimatedTotalMs:ms(total),driverIoHintMs:ms(driverIo),
+      line:"Input "+fmt(input)+" · Output "+fmt(output)+
+        " · Buffer "+fmt(buffer)+" · FX/PDC "+fmt(fx),
+      note:"Estimated total I/O "+fmt(total)+" · JUCE driver + host FX/PDC",
       provenance:active.latencyProvenance||"UNKNOWN"
     });
   }

@@ -12,6 +12,7 @@ $expected = @(
     "HARDWARE_FAT_GUIDE.md",
     "README.md",
     "portable_mode.txt",
+    "ArSonMixStartupDiagnostics.ps1",
     "collect_hardware_fat_windows.ps1",
     "m3e_fat_evidence_gate.mjs",
     "FACTORYFX_STAGE_REPORT.json"
@@ -65,6 +66,14 @@ if (-not $agplText.StartsWith("GNU AFFERO GENERAL PUBLIC LICENSE") -or
 & python scripts/verify_embedded_legal.py --binary (Join-Path $OutputDir $expected[0])
 if ($LASTEXITCODE -ne 0) { throw "Exact-source embedded legal scan failed" }
 # FAT tools match source bytes, distributed bytes AND the current SHA manifest.
+$startupDiagnostics = "ArSonMixStartupDiagnostics.ps1"
+foreach ($path in @((Join-Path "installer" $startupDiagnostics), (Join-Path $OutputDir $startupDiagnostics))) {
+    if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $manifest.startupDiagnosticsSha256) {
+        throw "Startup diagnostic script differs from exact-source manifest"
+    }
+}
+& python scripts/verify_win10_pe_runtime.py --exe (Join-Path $OutputDir $expected[0])
+if ($LASTEXITCODE -ne 0) { throw "Packaged PE dependency audit failed" }
 $fatTools = @{
     "collect_hardware_fat_windows.ps1" = [string]$manifest.fatCollectorSha256
     "m3e_fat_evidence_gate.mjs" = [string]$manifest.fatGateSha256

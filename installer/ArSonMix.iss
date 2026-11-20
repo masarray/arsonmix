@@ -66,6 +66,7 @@ Source: "ArSonMixVBCableInstall.ps1"; DestDir: "{app}\ThirdParty\VB-Audio"; Flag
 Source: "ArSonMixUpdateShutdown.ps1"; Flags: dontcopy
 ; The updater runs outside JUCE, never in the realtime audio callback.
 Source: "ArSonMixAutoUpdate.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "ArSonMixStartupDiagnostics.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\verified-gui.exe"; DestDir: "{app}"; DestName: "ArSonMix.exe"; Flags: ignoreversion
 Source: "{#SourceRoot}\BUILD_PROVENANCE.json"; DestDir: "{app}"; Flags: ignoreversion
 ; The complete original and vendor legal documents are embedded both in
@@ -84,6 +85,8 @@ Name: "{autoprograms}\ArSonMix"; Filename: "{app}\ArSonMix.exe"; WorkingDir: "{a
 ; User-facing fallback when the main EXE cannot even open. The helper
 ; authenticates the published current release and repairs in place.
 Name: "{autoprograms}\Repair ArSonMix"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\ArSonMixAutoUpdate.ps1"" -RecoveryMode"; WorkingDir: "{app}"
+Name: "{autoprograms}\Diagnose ArSonMix Startup"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\ArSonMixStartupDiagnostics.ps1"" -ShowReport"; WorkingDir: "{app}"
+Name: "{autoprograms}\Start ArSonMix with Recovery Profile"; Filename: "{app}\ArSonMix.exe"; Parameters: "--safe-webview-profile"; WorkingDir: "{app}"
 ; Do not create a second copy of an already running mixer. Restart Manager
 ; preflight closes the prior verified app before [Files]; [Run] launches exactly
 ; one new executable only after a successful interactive install/update.
@@ -92,7 +95,7 @@ Name: "{autoprograms}\Repair ArSonMix"; Filename: "{sys}\WindowsPowerShell\v1.0\
 ; P0 Win10 first-run: VB-CABLE is an OPTIONAL virtual-audio feature, not
 ; a dependency of the ASIO/WASAPI mixer. Never silently elevate/replace an
 ; audio driver or block a first launch for a driver reboot. Owner opt-in only.
-Name: "installvbcable_driver"; Description: "Install optional VB-CABLE virtual audio driver (may require administrator approval and restart)"; GroupDescription: "Optional audio driver:"; Flags: unchecked
+Name: "installvbcable_driver"; Description: "Install optional VB-CABLE virtual audio driver (may require administrator approval and restart)"; GroupDescription: "Optional audio driver:"; Flags: unchecked dontinheritcheck
 
 [Run]
 ; Check on interactive Setup before opening the mixer. Only a missing driver

@@ -9,6 +9,7 @@ Standard-library only, no downloads or machine-wide changes.
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
 import re
 import struct
@@ -34,6 +35,8 @@ def imports(path: pathlib.Path) -> set[str]:
     if data[offset:offset + 4] != b"PE\x00\x00":
         raise ValueError("Not a PE executable")
     coff = offset + 4
+    if u16(coff) != 0x8664:
+        raise ValueError("Expected AMD64 PE machine")
     count = u16(coff + 2)
     optional = coff + 20
     opt_bytes = u16(coff + 16)
@@ -43,17 +46,18 @@ def imports(path: pathlib.Path) -> set[str]:
     if optional + opt_bytes > len(data):
         raise ValueError("Truncated optional header")
     directory = optional + 112
-    if directory + 16 * 8 > optional + opt_bytes:
+    if directory + 16 * 8 > optional + opt_bytes or u32(optional + 108) < 16:
         raise ValueError("Missing import data-directory")
     sections = optional + opt_bytes
     section_rows: list[tuple[int, int, int]] = []
     for i in range(count):
         sec = sections + i * 40
-        vsize = u32(sec + 8)
         vaddr = u32(sec + 12)
         rsize = u32(sec + 16)
         raw = u32(sec + 20)
-        section_rows.append((vaddr, max(vsize, rsize), raw))
+        if raw + rsize > len(data):
+            raise ValueError("Section exceeds PE file")
+        section_rows.append((vaddr, rsize, raw))
 
     def rva_to_offset(rva: int) -> int:
         for va, size, raw in section_rows:
@@ -69,36 +73,26 @@ def imports(path: pathlib.Path) -> set[str]:
         return data[at:end].decode("ascii").lower()
 
     names: set[str] = set()
-    # Standard import descriptors (20-byte structs; Name at +12).
-    base = u32(directory + 8)
-    if base:
-        at = rva_to_offset(base)
-        for _ in range(1024):
-            if at + 20 > len(data):
-                raise ValueError("Truncated import descriptors")
-            if data[at:at + 20] == b"\x00" * 20:
+    # Standard and delay-import descriptor tables have distinct record sizes.
+    for index, width, name_offset in ((1, 20, 12), (13, 32, 4)):
+        table = u32(directory + index * 8)
+        size = u32(directory + index * 8 + 4)
+        if not table and not size:
+            continue
+        if not table or size < width:
+            raise ValueError("Invalid import descriptor table")
+        for position in range(0, min(size, 1024 * width) - width + 1, width):
+            at = rva_to_offset(table + position)
+            end = rva_to_offset(table + position + width - 1)
+            if end != at + width - 1:
+                raise ValueError("Import descriptor crosses file sections")
+            if not any(data[at:end + 1]):
                 break
-            names.add(cstring(u32(at + 12)))
-            at += 20
+            if index == 13 and not u32(at) & 1:
+                raise ValueError("Unsupported absolute-VA delay import")
+            names.add(cstring(u32(at + name_offset)))
         else:
             raise ValueError("Unterminated PE imports")
-    # Delay-load descriptors (32-byte structs; DLL Name at +4).
-    delay_rva = u32(directory + 13 * 8)
-    if delay_rva:
-        at = rva_to_offset(delay_rva)
-        for _ in range(1024):
-            if at + 32 > len(data):
-                raise ValueError("Truncated delay-import descriptors")
-            if data[at:at + 32] == b"\x00" * 32:
-                break
-            attributes = u32(at)
-            if attributes & 1:  # name is RVA, not virtual address
-                names.add(cstring(u32(at + 4)))
-            else:
-                raise ValueError("Unsupported absolute-VA delay import")
-            at += 32
-        else:
-            raise ValueError("Unterminated delay imports")
     return names
 
 
@@ -106,15 +100,21 @@ def check(path: pathlib.Path) -> None:
     names = imports(path)
     if not names:
         raise ValueError("No imported libraries: unexpected native GUI PE")
-    forbidden = [n for n in sorted(names) if
-                 re.match(r"^(vcruntime\d*(?:_\d+)?|msvcp\d+(?:_\d+)?|"
-                          r"concrt\d+|mfc\d+|ucrtbased)\.dll$", n)]
+    forbidden = [n for n in sorted(names) if re.fullmatch(
+        r"(?:(?:vcruntime|msvcp|msvcr|concrt|mfcm?|vcomp|vcamp|vccorlib)\d+[a-z0-9_-]*|"
+        r"ucrtbased|webview2loader)\.dll", n)]
     if forbidden:
-        raise ValueError("Windows redistributable dependency: " + ", ".join(forbidden))
-    print("WIN10_STATIC_CRT_PE_PASS: verified executable imports no VC++ runtime "
-          f"DLLs; {len(names)} direct/delay DLL imports inspected")
+        raise ValueError("Unexpected runtime dependency: " + ", ".join(forbidden))
+    if sys.platform == "win32":
+        system32 = pathlib.Path(os.environ["SystemRoot"]) / "System32"
+        missing = sorted(name for name in names if
+                         not name.startswith(("api-ms-win-", "ext-ms-win-")) and
+                         (pathlib.PureWindowsPath(name).name != name or
+                          not (system32 / name).is_file()))
+        if missing:
+            raise ValueError("Non-OS or missing runtime dependencies: " + ", ".join(missing))
+    print("WIN10_STATIC_CRT_PE_PASS: audited direct/delay DLLs: " + ", ".join(sorted(names)))
     print("WEBVIEW2_RUNTIME_REQUIRED_SEPARATELY_NOT_PROVEN")
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

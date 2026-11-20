@@ -1499,6 +1499,20 @@ public:
                nativeAccepted_.fxOwners->externalChannel()==target &&
                target==nativeAccepted_.graph.ids.inputs[0];
     }
+    // Off-RT diagnostic only: do not infer the active external vendor Graph
+    // from the latest graphOwned_ pointer, which can differ during a staged
+    // FX handoff. Read the strong, accepted PCM lease under CONTROL instead.
+    const armix::mixer::DynamicChannelFxLeaseBank::ExternalLease*
+        acceptedOriginalCh1ExternalLeaseForControl() const noexcept
+    {
+        if (!channelIdPhysicalPcmActive() || !nativeAccepted_.fxOwners)
+            return nullptr;
+        const auto* lease =
+            nativeAccepted_.fxOwners->externalLeaseForControl();
+        return lease != nullptr &&
+            lease->id == nativeAccepted_.graph.ids.inputs[0]
+                ? lease : nullptr;
+    }
     // Single global A/B override for M4 and the authoritative ChannelId PCM
     // graph. Never rewrite saved rack/slot bypass flags or rebuild processors.
     // A physical ACK requires an accepted CURRENT epoch/revision.
@@ -3052,6 +3066,16 @@ public:
         if(const auto* graph=publisher_.controlPrepared(epoch(),revision()))
             return {{graph->mainOutputLeft(),graph->mainOutputRight()}};
         return {{-1,-1}};
+    }
+
+    bool loopbackInputUnpatched(int ordinal) const noexcept {
+        if (!channelIdPhysicalPcmActive() || !ready() || ordinal < 0)
+            return false;
+        const auto& sources = nativeAccepted_.graph.request.sources;
+        return std::none_of(sources.begin(), sources.end(), [ordinal](const auto& source) {
+            return source.kind == armix::mixer::DynamicSourceKind::physical &&
+                (source.inputL == ordinal || (source.stereo && source.inputR == ordinal));
+        });
     }
 
     // JUCE render callback, with a verified single-clock device. Routing

@@ -6,6 +6,7 @@
 #include "NativePresetArchive.h"
 #include "VstBusLayout.h"
 #include "LiveGraphHandoff.h"
+#include "../engine/diagnostics/PhysicalLoopback.h"
 #include "LiveDryRoutingLab.h"
 #include "NativeMixerSessionFxRestore.h"
 #include "NativeTopologyEditSafety.h"
@@ -2501,6 +2502,91 @@ public:
                armix::diagnostics::Route::normal)return false;
         return dryRoutingLab_.setNativeBusMix(epoch,revision,id,gain,pan);
     }
+    struct LoopbackPins {
+        juce::String identity;
+        juce::Array<int> inputs, outputs;
+        int rate = 0, block = 0, inputOrdinal = -1, outputOrdinal = -1;
+        int inputCount = 0, outputCount = 0;
+        std::uint64_t epoch = 0;
+    };
+
+    std::optional<LoopbackPins> inspectLoopback(int input = -1, int output = -1)
+    {
+        if (independent_.active() || !directFence_.permitted() ||
+            !dryRoutingLab_.channelIdPhysicalPcmActive() || !asioPinnedRegistration_.valid())
+            return {};
+        auto* device = deviceManager_.getCurrentAudioDevice();
+        if (!device || device->getTypeName() != "ASIO" ||
+            device->getName().containsIgnoreCase("ASIO4ALL"))
+            return {};
+        const auto epoch = dryRoutingLab_.epoch();
+        armix::device::JuceActivePortSnapshot pins;
+        armix::device::JuceActivePortSnapshot::Fault fault{};
+        if (!armix::device::JuceActivePortSnapshot::capture(device, epoch, pins, fault))
+            return {};
+        const auto inputNames = device->getInputChannelNames();
+        const auto main = dryRoutingLab_.acceptedMainCallbackPair();
+        LoopbackPins info;
+        info.epoch = epoch;
+        const auto rate = device->getCurrentSampleRate();
+        info.block = device->getCurrentBufferSizeSamples();
+        if (rate < 44100 || rate > 192000 || std::floor(rate) != rate ||
+            info.block < 16 || info.block > 2048 || epoch != dryRoutingLab_.epoch())
+            return {};
+        info.rate = static_cast<int>(rate);
+        info.inputCount = pins.inputs.enabledCount;
+        info.outputCount = pins.outputCount;
+        for (int i = 0; i < info.inputCount; ++i)
+            if (const int pin = pins.inputs.physicalIndex(i); pin >= 0 && pin < 64 &&
+                pin < inputNames.size() && dryRoutingLab_.loopbackInputUnpatched(i))
+                info.inputs.add(pin);
+        for (const int i : main)
+            if (const int pin = pins.outputPhysicalPort(i); pin >= 0 && pin < 64 &&
+                pin < pins.outputNames.size())
+                info.outputs.addIfNotAlreadyThere(pin);
+        if (info.inputs.isEmpty() || info.outputs.isEmpty())
+            return {};
+        if (info.inputs.contains(input) && info.outputs.contains(output)) {
+            info.inputOrdinal = pins.inputs.callbackIndex(input);
+            info.outputOrdinal = output == pins.outputPhysicalPort(main[0]) ? main[0] : main[1];
+            // Exact configured driver and physical pin scope. The raw probe
+            // bypasses the mixer graph, FX, and compensating delays.
+            juce::Array<juce::var> key;
+            key.add("arsonmix.physical-loopback.v1");
+            key.add(pins.typeName);
+            key.add(pins.deviceName);
+            key.add(juce::String(asioPinnedRegistration_.registryKey.c_str()));
+            key.add(juce::String(asioPinnedRegistration_.canonicalClsid.c_str()));
+            key.add(device->getActiveInputChannels().toString(16));
+            key.add(device->getActiveOutputChannels().toString(16));
+            key.add(info.rate);
+            key.add(info.block);
+            key.add(input);
+            key.add(inputNames[input]);
+            key.add(output);
+            key.add(pins.outputNames[output]);
+            info.identity = juce::JSON::toString(juce::var(key), true);
+        }
+        return info;
+    }
+
+    using Loopback = armix::diagnostics::PhysicalLoopback;
+    bool beginLoopback(const LoopbackPins& pins)
+    {
+        if (pins.identity.isEmpty() || pins.epoch != dryRoutingLab_.epoch() ||
+            !directFence_.permitted() || isOutputMuted() || secondaryOutput_.armed() ||
+            masterMute_.load(std::memory_order_acquire) || handoff_.busy() ||
+            routeReconfiguring_.load(std::memory_order_acquire) ||
+            topologyPublicationMute_.load(std::memory_order_acquire) ||
+            diagnosticRoute() != armix::diagnostics::Route::normal)
+            return false;
+        return loopback_.start(pins.rate, pins.block, pins.inputOrdinal, pins.outputOrdinal,
+                               pins.inputCount, pins.outputCount, pins.epoch);
+    }
+    Loopback::State loopbackState() const noexcept { return loopback_.state(); }
+    Loopback::Capture takeLoopback() { return loopback_.take(); }
+    void cancelLoopback() noexcept { loopback_.requestCancel(); }
+
     bool dryRoutingLabActive() const noexcept {return dryRoutingLab_.active();}
     bool hasBoundMixerRoute() const noexcept {return dryRoutingLab_.hasExplicitRoute();}
     // Existing verified ASIO external-pair intent is a valid output user
@@ -2518,7 +2604,96 @@ public:
         auto* d = dual ? independent_.renderDevice()
                        : deviceManager_.getCurrentAudioDevice();
         auto* capture = dual ? independent_.captureDevice() : d;
-        o->setProperty ("dryRoutingLab",dryRoutingLab_.status(capture));
+        const auto nativeRoutingStatus = dryRoutingLab_.status(capture);
+        o->setProperty ("dryRoutingLab", nativeRoutingStatus);
+        // INT-1B: native DRY is an accepted DSP fact, NOT the legacy
+        // dryTest_ UI flag (which only tracks operator intent).
+        // Count installed/effectively processing inserts from the already
+        // generated CONTROL readback. No extra render/FX scan on RT.
+        const bool globalFxBypassed = dryRoutingLab_.globalFxBypassed();
+        int installedNativeFx = 0, processingNativeFx = 0;
+        const auto accountInserts = [&] (const juce::var& inserts,
+                                         bool rackBypassed)
+        {
+            if (const auto* list = inserts.getArray())
+                for (const auto& insert : *list)
+                    if (insert.isObject())
+                    {
+                        ++installedNativeFx;
+                        if (!globalFxBypassed && !rackBypassed &&
+                            !bool (insert.getProperty ("bypassed", false)))
+                            ++processingNativeFx;
+                    }
+        };
+        const auto bus = nativeRoutingStatus.getProperty ("nativeBus", {});
+        if (bus.isObject())
+        {
+            const auto channelRows = bus.getProperty ("channels", {});
+            if (const auto* channels = channelRows.getArray())
+                for (const auto& channel : *channels)
+                    accountInserts (
+                        channel.getProperty ("inserts", {}),
+                        bool (channel.getProperty ("fxRackBypassed", false)));
+        }
+        else
+        {
+            const auto rackFlags =
+                nativeRoutingStatus.getProperty ("fxRackBypassed", {});
+            const auto* flags = rackFlags.getArray();
+            const auto rackInstances =
+                nativeRoutingStatus.getProperty ("fxInstances", {});
+            if (const auto* racks = rackInstances.getArray())
+                for (int lane = 0; lane < racks->size(); ++lane)
+                    accountInserts ((*racks)[lane],
+                        flags != nullptr && lane < flags->size()
+                        && bool ((*flags)[lane]));
+        }
+        // Original Channel 1 vendor/Orbit inserts are one SHARED Graph
+        // leased by the admitted ChannelId renderer, not ordinary entries
+        // of nativeBus.channels[].inserts. Those entries are intentionally
+        // zero for the external channel. Never report the live vendor rack
+        // as DRY simply because its FX live in a distinct native lease.
+        int externalCh1Installed = 0, externalCh1Processing = 0;
+        const auto* acceptedExternal =
+            dryRoutingLab_.acceptedOriginalCh1ExternalLeaseForControl();
+        // Admit only OUR historical JUCE Graph callback. Future external
+        // lease types must not be cast into Graph or falsely labeled DRY.
+        const bool externalCh1Leased = acceptedExternal != nullptr &&
+            acceptedExternal->render == &processOwnedChannelOne;
+        const bool externalFxActivityComplete =
+            !bool (nativeRoutingStatus.getProperty (
+                "originalCh1GraphLeased", false)) || externalCh1Leased;
+        if (externalCh1Leased)
+        {
+            const auto* acceptedGraph =
+                static_cast<const Graph*> (acceptedExternal->context);
+            const bool externalRackBypassed =
+                acceptedGraph->rackBypassed.load (std::memory_order_acquire);
+            for (int i = 0; i < acceptedGraph->count; ++i)
+            {
+                const int physical = acceptedGraph->physicalAt (i);
+                if (!acceptedGraph->slots[physical].processor)
+                    continue;
+                ++externalCh1Installed;
+                if (!globalFxBypassed && !externalRackBypassed &&
+                    !acceptedGraph->bypassFlags[physical].load (
+                        std::memory_order_acquire))
+                    ++externalCh1Processing;
+            }
+            installedNativeFx += externalCh1Installed;
+            processingNativeFx += externalCh1Processing;
+        }
+        o->setProperty ("nativeFxActivityComplete", externalFxActivityComplete);
+        o->setProperty ("nativeExternalCh1Leased", externalCh1Leased);
+        o->setProperty ("nativeExternalCh1InstalledCount", externalCh1Installed);
+        o->setProperty ("nativeExternalCh1ProcessingCount", externalCh1Processing);
+        o->setProperty ("nativeGlobalFxBypassed", globalFxBypassed);
+        o->setProperty ("nativeFxInstalledCount", installedNativeFx);
+        o->setProperty ("nativeFxProcessingCount", processingNativeFx);
+        o->setProperty ("nativeFxCountProvenance",
+            "ACCEPTED_CHANNELID_PLUS_LEASED_EXTERNAL_CH1_SLOT_RACK_GLOBAL_BYPASS_NOT_dryTest");
+        o->setProperty ("nativeFxGraphRevision",
+            nativeRoutingStatus.getProperty ("revision", {}).toString());
         o->setProperty("waitingAsioInputs",dryRoutingLab_.waitingAsioInputCount());
         // NORMAL mode is never silently served by the legacy CH1 fallback.
         // This state is for operator feedback; it does not authorize output.
@@ -2627,6 +2802,12 @@ public:
         o->setProperty ("outputDevice", dual && d ? d->getName() : setup.outputDeviceName);
         o->setProperty ("deviceInputChannels", capture ? capture->getActiveInputChannels().countNumberOfSetBits() : 0);
         o->setProperty ("deviceOutputChannels", d ? d->getActiveOutputChannels().countNumberOfSetBits() : 0);
+        // Control-only pin-mask evidence: matching channel COUNTS do not
+        // imply the same physical ASIO pin assignment after a remap.
+        o->setProperty ("activeInputMaskHex", capture ?
+            capture->getActiveInputChannels().toString (16) : juce::String());
+        o->setProperty ("activeOutputMaskHex", d ?
+            d->getActiveOutputChannels().toString (16) : juce::String());
         o->setProperty ("callbackInputChannels", callbackInputs_.load());
         o->setProperty ("callbackOutputChannels", callbackOutputs_.load());
         o->setProperty ("callbackCount", static_cast<double> (callbackCount_.load()));
@@ -2663,6 +2844,16 @@ public:
         o->setProperty ("callbackP95BeyondDeadline", histogram.p95Ceiling < 0);
         o->setProperty ("callbackP99BeyondDeadline", histogram.p99Ceiling < 0);
         o->setProperty ("callbackBudgetSamples", static_cast<double> (histogram.total));
+        // INT-1B: cumulative buckets enable true 1 Hz interval percentiles
+        // without resetting/replacing RT atomics at ASIO device transitions.
+        // The message thread alone allocates this 13-value readback array.
+        // Never label these host callback timing buckets as hardware XRUNs.
+        juce::Array<juce::var> budgetBuckets;
+        for (const auto count : histogram.counts)
+            budgetBuckets.add (static_cast<double> (count));
+        o->setProperty ("callbackBudgetBuckets", juce::var (budgetBuckets));
+        o->setProperty ("callbackBudgetBucketProvenance",
+            "HOST_CALLBACK_BUDGET_CUMULATIVE_13_BUCKETS_NOT_DRIVER_RENDER_XRUN");
         o->setProperty ("inputPeak", inputPeak_.load());
         o->setProperty ("inputPeakProvenance", "RAW_PCM_BEFORE_HARDWARE_MUTE");
         // First Sound: JUCE supplies callback-COMPACT input channels.
@@ -2961,6 +3152,8 @@ private:
     // Indexed atomic bypass flags: instant RT-safe toggles, no graph detachment.
     // Temporary publication silence never changes operator MONITOR or MAIN MUTE.
     // The DIRECT device fence and physical-output verification remain separate.
+    Loopback loopback_;
+    std::atomic_flag loopbackRendering_=ATOMIC_FLAG_INIT;
     std::atomic<bool> topologyPublicationMute_ { false };
     // Persistent in-process operator intent; independent of audio device epoch.
     armix::device::OutputContinuityIntent mainOutputIntent_;
@@ -3059,6 +3252,7 @@ private:
             resumeMainAfterAsioReset_.store(true,std::memory_order_release);
         }
         setOutputMuted(true); // transient hardware gate, NOT an operator MUTE
+        loopback_.interrupted();
         secondaryOutput_.invalidateSource(); // source clock may have changed
         dryRoutingLab_.prepareDevice(d); // exact active mask, before callback
         if (!independent_.active())
@@ -3119,6 +3313,7 @@ private:
             resumeMainAfterAsioReset_.store(true,std::memory_order_release);
         }
         monitor_.store(false,std::memory_order_release);
+        loopback_.interrupted();
         secondaryOutput_.invalidateSource(); // explicit reconnect required after device stop
         masterLoudness_.prepare (0.0); // clear validity across device epoch
         dryRoutingLab_.deviceStopped();
@@ -3239,6 +3434,19 @@ private:
         // allocations, OS calls or device restart on the realtime callback.
         // An independent WASAPI bridge has its own verified endpoint guard.
         const auto activeDiagnosticRoute = diagnosticRoute_.load (std::memory_order_acquire);
+        std::optional<armix::rt::RealtimeRenderPermit> probePermit;
+        if (loopback_.state() == Loopback::State::capturing) {
+            probePermit.emplace(loopbackRendering_);
+            if (!*probePermit) {
+                for (int c=0; c<outputChannels; ++c)
+                    if (outputs && outputs[c])
+                        juce::FloatVectorOperations::clear(outputs[c],samples);
+                return;
+            }
+            if (independent_.active() || !directFence_.permitted() ||
+                activeDiagnosticRoute != armix::diagnostics::Route::normal || !dryRoutingLab_.active())
+                loopback_.interrupted();
+        }
         // DRY_THROUGH still routes a live microphone to the hardware output:
         // it MUST use the same DIRECT authorization fence as NORMAL. Only
         // genuinely isolated OUTPUT_ONLY_TONE / CAPTURE_ONLY tests may bypass
@@ -3371,6 +3579,7 @@ private:
                                 playerScratch_[1].data()};
                 deckCount=1;
             }
+            const bool probing = probePermit && loopback_.captureInput(inputs,inputChannels,samples);
             const bool routed=dryRoutingLab_.process(inputs,inputChannels,outputs,
                      outputChannels,samples,
                      masterGain_.load(std::memory_order_relaxed),
@@ -3421,6 +3630,22 @@ private:
                     fxMovePhase_.store(0,std::memory_order_release);
             }
             if(cycle.fadeOut)handoff_.endCycle(cycle); // RT pointer publish only
+            // Replace the physical outputs only for the explicitly initiated
+            // wired probe, after the accepted render, and before any sink copy.
+            // Recheck volatile authority before emitting PCM on any block.
+            if (probing &&
+                loopback_.emitProbe(outputs,outputChannels,samples,
+                    dryRoutingLab_.epoch(),routed && nativePcm && outputGate.hardware &&
+                    !outputGate.secondary && !secondaryOutput_.armed() &&
+                    !cycle.fadeOut && !cycle.fadeIn && routedFxMove==0 &&
+                    monitor_.load(std::memory_order_acquire) && directFence_.permitted() &&
+                    !masterMute_.load(std::memory_order_acquire) &&
+                    !routeReconfiguring_.load(std::memory_order_acquire) &&
+                    !topologyPublicationMute_.load(std::memory_order_acquire),nativeMainPair))
+            {
+                publishDriverBufferPeaks(0.f,0.f);
+                return; // exclude calibration blocks from production timing evidence
+            }
             // OUTPUT1: publish the SAME post-FX, post-fader, de-clicked MAIN
             // PCM once. The virtual endpoint never invokes MIX/VST3 again.
             // Hardware monitor mute remains INDEPENDENT: streaming may run
