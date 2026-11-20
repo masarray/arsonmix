@@ -43,15 +43,15 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('assets/fx/graphic-eq31/slider_eq_grp.svg', self.cmake)
         self.assertNotIn('assets/fx/graphic-eq31/slider_eq_vector.svgz', self.cmake)
         self.assertIn('BinaryData::slider_eq_grp_svg', self.native)
-        self.assertIn('getChildByAttribute("id", "Text")', self.native)
-        self.assertIn('getChildByAttribute("id", "THUMB")', self.native)
+        self.assertIn('getChildByAttribute("id","Text")', self.native)
+        self.assertIn('getChildByAttribute("id","THUMB")', self.native)
         self.assertIn('tspan->addTextElement(number)', self.native)
         self.assertIn('unitSpan->addTextElement(isKhz?"kHz":"Hz")', self.native)
         self.assertIn('thumbGroups_[band]->setTransform(juce::AffineTransform::translation(0.f, shift))', self.native)
         self.assertIn('authoredFader->findChildWithID("THUMB")', self.native)
         self.assertIn('juce::Drawable::createFromSVG(*document)', self.native)
         self.assertIn('juce::Viewport viewport_', self.native)
-        self.assertIn('std::array<juce::Slider, GraphicEq31Core::bandCount> sliders_', self.native)
+        self.assertIn('std::array<juce::Slider,GraphicEq31Core::bandCount> sliders_', self.native)
         self.assertNotIn('fillRoundedRectangle(cx-thumbWidth', self.native)
 
     def test_readable_50px_zero_shadow_band_only_policy(self):
