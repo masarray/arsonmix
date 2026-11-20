@@ -338,6 +338,30 @@
       Object.keys(lease).length===Object.keys(now.lease).length;
   }
 
+  // G-MV38: a single allowlisted editor surface policy. The native FX catalog
+  // is *not* permission to create a browser HWND; only these five approved
+  // built-in controls have a dedicated /preview/ WebView editor. Other installed
+  // FX (including future built-ins hosted in JUCE) use the existing exact
+  // native HWND path; offline vendor references keep their logical route.
+  // Adding a new approved browser editor changes this registry, not the bridge.
+  const BROWSER_EDITOR_HANDLES=Object.freeze({
+    "armix.builtin.channel-eq.v1":"ArSonMixNativeEq",
+    "armix.builtin.channel-compressor.v1":"ArSonMixNativeCompressor",
+    "armix.builtin.arson-harmony.v1":"ArSonMixNativeHarmony",
+    "armix.builtin.vocal-throw.v1":"ArSonMixNativeVocalThrow",
+    "armix.builtin.8d-sonku.v1":"ArSonMixNativeSonKu"
+  });
+  function editorSurfacePlan(snapshot,lease,{hardwareConfiguration}={}){
+    if(!editorNavigationLeaseMatches(snapshot,lease,{hardwareConfiguration}))
+      return {kind:"UNAVAILABLE"};
+    const key=lease.catalogId;
+    if(Object.prototype.hasOwnProperty.call(BROWSER_EDITOR_HANDLES,key))
+      return {kind:"BROWSER",windowKey:BROWSER_EDITOR_HANDLES[key]};
+    if(lease.authority==="LOGICAL")return {kind:"LOGICAL_VENDOR"};
+    if(lease.authority==="CHANNEL_ID")return {kind:"NATIVE_HOST"};
+    return {kind:"UNAVAILABLE"};
+  }
+
   // M4 uses host ordinals, never ChannelIds. An old accepted FX inventory
   // cannot be permission to open an editor after device/route owner changes.
   function m4EditorPlan(snapshot,{channel,slot,verifiedM4=false,
@@ -635,7 +659,7 @@
     m4RackSettlement,m4EditorDispatchPlan,m4EditorDispatchLeaseMatches,
     nativeEditorDispatchPlan,nativeEditorAckResult,
     m4InsertPlan,m4InsertAckResult,m4InsertReadbackSettlement,
-    editorNavigationPlan,editorNavigationLeaseMatches,m4EditorPlan,
+    editorNavigationPlan,editorNavigationLeaseMatches,editorSurfacePlan,m4EditorPlan,
     nativeInsertPlan,nativeEditPlan,nativeInsertSettlement,
     nativePowerPlan,nativePowerAckResult,
     globalPowerContext,globalPowerPlan,globalPowerAckResult,

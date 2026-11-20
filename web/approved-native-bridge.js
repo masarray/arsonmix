@@ -3657,28 +3657,26 @@
             scope?.openFastPicker?.(t,slot,btn);
           }else if(plan.kind==="OPEN"){
             const editor=plan.lease;
-            if(editor.catalogId==='armix.builtin.channel-eq.v1') {
-              window.ArSonMixNativeEq?.open(t,slot);
-            } else if(editor.catalogId==='armix.builtin.channel-compressor.v1') {
-              window.ArSonMixNativeCompressor?.open(t,slot);
-            } else if(editor.catalogId==='armix.builtin.arson-harmony.v1') {
-              window.ArSonMixNativeHarmony?.open(t,slot);
-            } else if(editor.catalogId==='armix.builtin.vocal-throw.v1') {
-              window.ArSonMixNativeVocalThrow?.open(t,slot);
-            } else if(editor.catalogId==='armix.builtin.8d-sonku.v1') {
-              if(window.ArSonMixNativeSonKu?.open)
-                window.ArSonMixNativeSonKu.open(t,slot);
-              else nativeToast("8D-SonKu editor unavailable · refresh the approved GUI bundle");
-            } else if(editor.authority==="LOGICAL") {
+            // Pure VM selects an allowlisted browser editor, offline logical
+            // vendor reference or the existing correlated native HWND route.
+            // No catalog-specific branching, second renderer or JS PCM owner.
+            const surface=fxRackVM.editorSurfacePlan(current,editor,{
+              hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
+            if(surface.kind==="BROWSER"){
+              const host=window[surface.windowKey];
+              if(typeof host?.open==="function")host.open(t,slot);
+              else nativeToast("Built-in FX editor unavailable · refresh the approved GUI bundle");
+            }else if(surface.kind==="LOGICAL_VENDOR"){
               backend.emitEvent("arMixAction",{action:"logicalVendorFxEditor",
                 channelId:editor.channelId,slot:editor.slot,instanceId:editor.instanceId,
                 workspaceToken:editor.workspaceToken,
                 graphRevision:editor.graphRevision,deviceEpoch:"0"});
-            } else {
-              // Both vendor VST3 and ImmerSIB retain their exact real
-              // JUCE HWND path; no parallel WebView editor authority.
-              openChannelIdFxEditor(editor);
-            }
+            }else if(surface.kind==="NATIVE_HOST"){
+              // VST3, ImmerSIB and hosted future JUCE FX retain one original
+              // correlated native editor owner and its independent lease.
+              if(!openChannelIdFxEditor(editor))
+                nativeToast("FX editor unavailable · native instance changed");
+            }else nativeToast("FX editor unavailable · accepted FX identity changed");
           }else nativeToast("This FX is held with the disconnected audio session");
           return true;
         }

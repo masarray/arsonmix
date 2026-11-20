@@ -31,7 +31,10 @@ class NativeHarmonyAssemblyTest(unittest.TestCase):
         # User-facing FX picker and graph/snapshot names change together,
         # while persisted catalog identity and browser editor hook are stable.
         self.assertIn("armix.builtin.arson-harmony.v1",self.bridge)
-        self.assertIn("window.ArSonMixNativeHarmony?.open(t,slot)",self.bridge)
+        vm=(ROOT/"web/approved-fx-rack-view-model.js").read_text("utf-8")
+        self.assertIn('"armix.builtin.arson-harmony.v1":"ArSonMixNativeHarmony"',vm)
+        self.assertIn("const host=window[surface.windowKey]",self.bridge)
+        self.assertIn("fxRackVM.editorSurfacePlan(current,editor,",self.bridge)
         self.assertIn('data-fast-native-harmony="1"><span class="fast-effect-title">Harmonice</span>',self.html)
         self.assertNotIn('data-fast-native-harmony="1"><span class="fast-effect-title">ArSon Harmony</span>',self.html)
         self.assertIn("['harmonice','arson harmony','harmony','vocal harmony','built-in fx']",self.html)

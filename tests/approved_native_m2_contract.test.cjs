@@ -6632,3 +6632,69 @@ test("G-MV37 M4 M/ST reuses exact existing routed channel patch",()=>{
  assert.match(section,/dispatchM4ChannelPatch\(t,plan\.operation,plan\.target,plan\.channel\)/);
  assert.doesNotMatch(section,/const target=.*processingFormat|channelFormat===/);
 });
+
+test("G-MV38 editor surface routing has one allowlisted browser owner; future FX remain native",()=>{
+  const channelId="9007199254740993",epoch="53";
+  const device={epoch,sampleRate:48000,bufferFrames:256,
+    enabledInputs:[0,1],enabledOutputs:[0,1]};
+  const hardwareConfiguration=protocol.nativeHardwareConfiguration(device);
+  const view={admitted:true,retained:false,device,raw:{
+    mixerSession:{authority:"CHANNEL_ID",deviceEpoch:epoch}},graph:{
+    revision:"72",rosterRevision:"11",
+    capabilities:{callbackOwnsChannelIds:true},
+    channels:[{id:channelId,role:"INPUT",inserts:[
+      {id:"native-fx-instance",catalogId:"vendor.vst3"}]}]}};
+  const project=(catalogId,snapshot=view,hw=hardwareConfiguration)=>{
+    const fx=snapshot.graph.channels[0].inserts[0];
+    fx.catalogId=catalogId;
+    const nav=fxRackVM.editorNavigationPlan(snapshot,{channelId,slot:0,
+      hardwareConfiguration:hw});
+    assert.equal(nav.kind,"OPEN");
+    return {lease:nav.lease,result:fxRackVM.editorSurfacePlan(snapshot,nav.lease,
+      {hardwareConfiguration:hw})};
+  };
+  const allowlisted=[
+    ["armix.builtin.channel-eq.v1","ArSonMixNativeEq"],
+    ["armix.builtin.channel-compressor.v1","ArSonMixNativeCompressor"],
+    ["armix.builtin.arson-harmony.v1","ArSonMixNativeHarmony"],
+    ["armix.builtin.vocal-throw.v1","ArSonMixNativeVocalThrow"],
+    ["armix.builtin.8d-sonku.v1","ArSonMixNativeSonKu"]
+  ];
+  for(const [id,windowKey] of allowlisted){
+    const {result}=project(id);
+    assert.deepEqual(result,{kind:"BROWSER",windowKey});
+  }
+  for(const id of ["vendor.vst3","armix.builtin.graphic-eq31.v1",
+                   "armix.builtin.immersib.v1","__proto__"]){
+    assert.deepEqual(project(id).result,{kind:"NATIVE_HOST"},
+      "non-allowlisted catalogs cannot choose an arbitrary browser host");
+  }
+  const {lease}=project("vendor.vst3");
+  assert.deepEqual(fxRackVM.editorSurfacePlan(view,lease,{
+    hardwareConfiguration:"wrong-hardware"}),{kind:"UNAVAILABLE"});
+  const stale=JSON.parse(JSON.stringify(view));
+  stale.graph.revision="73";
+  assert.deepEqual(fxRackVM.editorSurfacePlan(stale,lease,{
+    hardwareConfiguration}),{kind:"UNAVAILABLE"});
+  const offline=JSON.parse(JSON.stringify(view));
+  offline.logical=true;offline.admitted=false;offline.workspaceToken="saved-workspace";
+  offline.raw.mixerSession.authority="LOGICAL";
+  const logicalLease=fxRackVM.editorNavigationPlan(offline,{
+    channelId,slot:0}).lease;
+  assert.deepEqual(fxRackVM.editorSurfacePlan(offline,logicalLease),
+    {kind:"LOGICAL_VENDOR"});
+  offline.graph.channels[0].inserts[0].catalogId="armix.builtin.arson-harmony.v1";
+  const builtInLogical=fxRackVM.editorNavigationPlan(offline,{
+    channelId,slot:0}).lease;
+  assert.deepEqual(fxRackVM.editorSurfacePlan(offline,builtInLogical),
+    {kind:"BROWSER",windowKey:"ArSonMixNativeHarmony"},
+    "existing offline built-in editor remains available");
+  assert.deepEqual(fxRackVM.editorSurfacePlan(null,lease),
+    {kind:"UNAVAILABLE"});
+  const bridge=read("web/approved-native-bridge.js");
+  assert.match(bridge,/fxRackVM\.editorSurfacePlan\(current,editor,/);
+  assert.match(bridge,/const host=window\[surface\.windowKey\]/);
+  assert.match(bridge,/openChannelIdFxEditor\(editor\)/);
+  assert.match(bridge,/action:"logicalVendorFxEditor"/);
+  assert.doesNotMatch(bridge,/if\(editor\.catalogId==='armix\.builtin/);
+});
