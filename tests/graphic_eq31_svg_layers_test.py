@@ -53,7 +53,7 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('authoredFader->findChildWithID("THUMB")', self.native)
         self.assertIn('juce::Drawable::createFromSVG(*document)', self.native)
         self.assertIn('juce::Viewport viewport_', self.native)
-        self.assertIn('std::array<juce::Slider,GraphicEq31Core::bandCount> sliders_', self.native)
+        self.assertIn('std::array<GraphicEq31DetentSlider,GraphicEq31Core::bandCount> sliders_', self.native)
         self.assertNotIn('fillRoundedRectangle(cx-thumbWidth', self.native)
 
     def test_brushed_texture_and_original_shadow(self):
@@ -79,17 +79,21 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('"#929b9f","#a6afb3"', self.native)
         self.assertIn('getChildByAttribute("id","g2")', self.native)
         self.assertIn('"#080c0f","#12181c"', self.native)
-        self.assertIn('static constexpr int bandCellWidth=50', self.native)
-        self.assertIn('setSize(1610,391)', self.native)
+        self.assertIn('static constexpr int bandCellWidth=40', self.native)
+        self.assertIn('setSize(1340,305)', self.native)
         self.assertIn('font-family: Inter; font-size: 27px; font-weight: 700', self.native)
         self.assertIn('font-family: Inter; font-size: 18px; font-weight: 600', self.native)
         self.assertIn('unitSpan->addTextElement(isKhz?"kHz":"Hz")', self.native)
         self.assertIn('return juce::Font("Inter",size,juce::Font::plain)', self.native)
         self.assertIn('getChildByAttribute("class","s5")', self.native)
         self.assertIn('getChildByAttribute("class","s6")', self.native)
-        # Anchors: long ticks are at Y 208.75 / 918.33 / 1627.92 in SVG.
-        for point in ('208.75f','918.33f','1627.92f'):
-            self.assertIn('majorTickY('+point+')', self.native)
+        # SVG tick coordinates are kept; each is mapped through the
+        # same 229px fader height and printed at BOTH window edges.
+        self.assertIn('{208.75f,"+12"}',self.native)
+        self.assertIn('{918.33f,"0"}',self.native)
+        self.assertIn('{1627.92f,"-12"}',self.native)
+        self.assertIn('getWidth()-40,labelY,36,19',self.native)
+        self.assertIn('g.setFont(inter(12.5f).boldened())',self.native)
         self.assertNotIn('smile_', self.native)
         self.assertNotIn('peakLabel_', self.native)
         self.assertIn('void timerCallback() override', self.native)
@@ -169,23 +173,65 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertNotIn('close_.setButtonText(juce::String::fromUTF8("×"))',self.native)
         self.assertIn('window->setVisible(false)',self.native)
 
-    def test_thumb_endpoints_derive_from_original_svg_not_guess(self):
-        # Authored track outer contour starts at 147.08 and ends at 1696.67.
-        # THUMB s8 path is bounded by 776.33..1055.50 at its zero pose.
-        top_travel = 776.33 - 147.08
-        bottom_travel = 1696.67 - 1055.50
-        self.assertAlmostEqual(top_travel,629.25,places=2)
-        self.assertAlmostEqual(bottom_travel,641.17,places=2)
+    def test_thumb_index_reaches_real_major_ticks(self):
+        # The mechanical metal THUMB may overhang the slot at +12/-12.
+        # What matters is the WHITE index aligned with the source ticks,
+        # not the thumb exterior reaching the outer slot edge.
+        idx=916.5
+        for db in (-12.,-6.,0.,6.,12.):
+            t=db/12.
+            shift=-(idx-208.75)*t if t>=0 else -(1627.92-idx)*t
+            y=idx+shift
+            self.assertGreaterEqual(y,208.75-1e-4)
+            self.assertLessEqual(y,1627.92+1e-4)
+        self.assertAlmostEqual(idx-(idx-208.75),208.75,places=4)
+        self.assertAlmostEqual(idx+(1627.92-idx),1627.92,places=4)
         self.assertIn('-(indexCenterY-208.75f)*t',self.native)
         self.assertIn('-(1627.92f-indexCenterY)*t',self.native)
-        for gain in [-12., -6., 0., 6., 12.]:
-            t=gain/12.
-            shift=-629.25*t if t>=0 else -641.17*t
-            start,end=776.33+shift,1055.50+shift
-            self.assertGreaterEqual(start,147.08 - 0.01)
-            self.assertLessEqual(end,1696.67 + 0.01)
-        self.assertAlmostEqual(776.33-629.25,147.08,places=2)
-        self.assertAlmostEqual(1055.50+641.17,1696.67,places=2)
+
+    def test_compact_scale_and_symmetric_layout_without_header_changes(self):
+        # 31 x 50px -> 31 x 40px and 286px -> 229px.
+        self.assertEqual(31*40,1240)
+        self.assertAlmostEqual(40/50,.8,places=6)
+        self.assertLess(abs(229/286-.8),.002)
+        self.assertIn('setResizeLimits(760,305,1660,305)',self.native)
+        self.assertIn('setSize(1340,305)',self.native)
+        self.assertIn('constexpr int x0=45, artY=55, artH=229',self.native)
+        self.assertIn('viewport_.setBounds(x0,artY,juce::jmax(1,getWidth()-2*x0),238)',self.native)
+        self.assertIn('static constexpr int bandCellWidth=40',self.native)
+        self.assertIn('juce::jmax(1,getWidth()-2*x0)',self.native)
+        self.assertIn('g.drawText(tick.second,4,labelY,36,19',self.native)
+        self.assertIn('g.drawText(tick.second,getWidth()-40,labelY,36,19',self.native)
+        # Header remains the identical five placements established before v7.
+        for spec in ('preset_.setBounds(r-349,16,152,24)',
+                     'save_.setBounds(r-189,16,56,24)',
+                     'flat_.setBounds(r-125,16,44,24)',
+                     'power_.setBounds(r-73,16,24,24)',
+                     'close_.setBounds(r-41,16,24,24)'):
+            self.assertIn(spec,self.native)
+        self.assertEqual(55-53,2)
+        self.assertEqual(305-(55+238),12)
+        for y in (208.75,918.33,1627.92):
+            pixel_y=55+y*229/2042
+            self.assertTrue(55<=pixel_y<305-12)
+
+    def test_real_hardware_zero_db_detent_on_pointer_drag(self):
+        self.assertIn('class GraphicEq31DetentSlider final : public juce::Slider',self.native)
+        self.assertIn('double snapValue(double attemptedValue,DragMode dragMode) override',self.native)
+        self.assertIn('detentEngaged_=std::abs(getValue())<0.001',self.native)
+        self.assertIn('const double limit=detentEngaged_?0.85:0.45',self.native)
+        self.assertIn('if(dragMode==notDragging)',self.native)
+        self.assertIn('return 0.0;',self.native)
+        # Mechanical-feel entry/release hysteresis in dB; does not
+        # quantise the processor, user presets or automation targets.
+        engaged=False
+        results=[]
+        for attempted in (1.5,.8,.44,.6,.84,.86,-.3,-.87):
+            limit=.85 if engaged else .45
+            engaged=abs(attempted)<=limit
+            results.append(0.0 if engaged else attempted)
+        self.assertEqual(results,[1.5,.8,0.,0.,0.,.86,0.,-.87])
+        self.assertNotIn('snapValue(',self.native.split('class GraphicEq31Processor final')[1].split('class GraphicEq31DetentSlider')[0])
 
     def test_white_index_hit_major_ticks_and_pixel_crisp(self):
         # Important: alignment uses the s11 WHITE index center, not the
