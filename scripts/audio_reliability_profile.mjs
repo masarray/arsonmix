@@ -94,20 +94,32 @@ export function p95p99FromDelta(counts) {
   return {p95:bound(0.95),p99:bound(0.99),samples:total};
 }
 
-const sameScope=(a,b)=>[
+// Immutable hardware/graph provenance must survive the DRY -> FX switch.
+// Mode keys are separate so only the actual accepted global power transition
+// can bridge adjacent windows; all other boundary reasons invalidate pairing.
+const STABLE_SCOPE_KEYS=[
   "sessionId","deviceGeneration","device","liveBackendClass","driver","rate","buffer",
   "inputDevice","outputDevice","deviceInputChannels","deviceOutputChannels",
   "activeInputMaskHex","activeOutputMaskHex","nativeFxGraphRevision",
-  "nativeFxInstalledCount","nativeFxProcessingCount","nativeGlobalFxBypassed",
-  "nativeExternalCh1Leased","nativeExternalCh1InstalledCount",
-  "nativeExternalCh1ProcessingCount",
-  "dryTest","connected","diagnosticRoute","productionRoutingState",
-  "directRouteAuthorized","backendXrunMeaning"
-].every(k=>a[k]===b[k]);
+  "nativeFxInstalledCount","nativeExternalCh1Leased","nativeExternalCh1InstalledCount",
+  "connected","diagnosticRoute","productionRoutingState","directRouteAuthorized",
+  "backendXrunMeaning"
+];
+const MODE_KEYS=[
+  "nativeFxProcessingCount","nativeGlobalFxBypassed",
+  "nativeExternalCh1ProcessingCount","dryTest"
+];
+const sameValues=(a,b,keys)=>keys.every(k=>a[k]===b[k]);
 const nondecreasing=(a,b,key)=>isCount(a[key])&&isCount(b[key])&&b[key]>=a[key];
-const validInterval=(a,b)=>b.atMs>a.atMs && b.atMs-a.atMs<=5000 &&
-  sameScope(a,b)&&COUNTERS.every(k=>nondecreasing(a,b,k))&&
+const continuousEvidence=(a,b)=>b.atMs>a.atMs && b.atMs-a.atMs<=5000 &&
+  COUNTERS.every(k=>nondecreasing(a,b,k))&&
   a.callbackBudgetBuckets.every((x,i)=>b.callbackBudgetBuckets[i]>=x);
+const validInterval=(a,b)=>continuousEvidence(a,b) &&
+  sameValues(a,b,STABLE_SCOPE_KEYS)&&sameValues(a,b,MODE_KEYS);
+const acceptedGlobalPowerTransition=(a,b)=>continuousEvidence(a,b) &&
+  sameValues(a,b,STABLE_SCOPE_KEYS) && a.connected===true && b.connected===true &&
+  a.nativeGlobalFxBypassed===true && b.nativeGlobalFxBypassed===false &&
+  a.nativeFxProcessingCount===0 && b.nativeFxProcessingCount>0;
 
 function describeSegment(segment){
   const s=segment.start, first=segment.start, last=segment.last;
@@ -130,6 +142,7 @@ function describeSegment(segment){
     // The legacy dryTest control is only a UI intent; actual DRY/FX is
     // derived from accepted native INSERT+rack+GLOBAL bypass readback.
     lineStart:first.line,lineEnd:last.line,
+    invalidBefore:segment.invalidBefore,
     sessionId:s.sessionId,startedAt:new Date(first.atMs).toISOString(),
     endedAt:new Date(last.atMs).toISOString(),
     startTimeMs:first.atMs,endTimeMs:last.atMs,
@@ -165,7 +178,7 @@ function describeSegment(segment){
       last.backendXrunCount-first.backendXrunCount:null,
     renderHardwareXrun:"UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE",
     diagnosis,comparable:!missing&&durationSeconds>=30&&callbacks>0&&
-      segment.invalidTransitions===0&&s.connected===true&&
+      s.connected===true&&
       s.productionRoutingState==="NATIVE_ROUTE_ACCEPTED"&&
       s.directRouteAuthorized===true,
     notes:["Actual DRY/FX includes admitted external CH1 vendor leases and the accepted ChannelId insert-bypass readback.",
@@ -181,17 +194,25 @@ export function analyzeHealthLog(log) {
   const {samples,warnings,rejectedLines}=parseHealthLog(log);
   const groups=[];
   let segment=null;
-  const start=s=>({start:s,last:s,intervals:0,durationMs:0,
+  const start=(s,invalidBefore=false)=>({start:s,last:s,intervals:0,durationMs:0,
     delta:Object.fromEntries(COUNTERS.map(k=>[k,0])),
-    histogram:Array(13).fill(0),invalidTransitions:0});
+    histogram:Array(13).fill(0),invalidBefore});
   for(const current of samples){
     if(!segment){segment=start(current);continue;}
-    // Do not compare across an unreadable/legacy sample even when <5s.
+    // Rejected telemetry is an absolute comparison barrier, including a
+    // failed opaque vendor lease. Only an uninterrupted *accepted* global
+    // bypass ON -> OFF transition may connect a DRY/FX pair.
     const missingBetween=rejectedLines.some(line=>line>segment.last.line&&line<current.line);
     if(missingBetween || !validInterval(segment.last,current)){
+      const acceptedPower=!missingBetween &&
+        acceptedGlobalPowerTransition(segment.last,current);
       groups.push(describeSegment(segment));
-      warnings.push("line "+current.line+": scope/device epoch, counter reset or >5s log gap; comparison window split");
-      segment=start(current);
+      warnings.push("line "+current.line+": "+
+        (missingBetween?"rejected AUDIO_HEALTH boundary; ":
+         acceptedPower?"accepted global FX bypass transition; ":
+         "device/graph/epoch/counter/timing discontinuity; ")+
+        "comparison window split");
+      segment=start(current,!acceptedPower);
       continue;
     }
     const previous=segment.last;
@@ -219,7 +240,7 @@ export function compareDryFx(analysis){
     s.mode==="FX" && s.nativeFxInstalledCount>0 && s.nativeFxProcessingCount>0);
   const fx=fxIndex>=0?analysis.segments[fxIndex]:null;
   const dry=fxIndex>0?analysis.segments[fxIndex-1]:null;
-  if(!fx||!dry||!dry.comparable||dry.mode!=="DRY"||
+  if(!fx||!dry||!dry.comparable||fx.invalidBefore||dry.mode!=="DRY"||
      dry.diagnosticRoute!=="NORMAL")
     return {comparable:false,reason:"Need contiguous real NORMAL/DRY then NORMAL/FX windows, each >=30s."};
   if(dry.sessionId!==fx.sessionId ||
