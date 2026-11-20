@@ -694,7 +694,14 @@ test('offline checkpoints stay protected until verified native restore',()=>{
   assert.match(open,/if\(openError.isEmpty\(\)\)[\s\S]*?"LOGICAL_SESSION_OPENED_UNBOUND"/);
   const control=read('src/NativeLogicalMixerControl.h');
   assert.match(control,/workspace_=std::move\(\*candidate\);[\s\S]*?checkpointSaved_\(workspace_.document\(\).id\)/);
-  assert.match(save,/if\(automatic&&mixerSessionRecoveryPending_\)[\s\S]*?return "[^"]+";[\s\S]*?captureNativeMixerSession/);
+  // Admission is now the existing NativeMixerSessionRecovery owner, not
+  // an inline ConsoleWindow conditional. The rejection must occur before PCM capture.
+  const recovery=read('src/NativeMixerSessionRecovery.h');
+  const policy=recovery.slice(recovery.indexOf('static SavePlan planSave('),
+                              recovery.indexOf('enum class OpenAction'));
+  assert.match(policy,/if\(c\.automatic && c\.recoveryPending\)[\s\S]*?SaveAction::reject/);
+  assert.match(save,/save\.recoveryPending=mixerSessionRecoveryPending_/);
+  assert.match(save,/Recovery::planSave\(save\)[\s\S]*?SaveAction::reject[\s\S]*?captureNativeMixerSession/);
 });
 
 // Exact control-thread serialization source contract for nested JUCE modal loops.
