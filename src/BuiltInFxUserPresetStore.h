@@ -29,6 +29,7 @@ public:
 
     static juce::String effectFolder(const juce::String& catalog) {
         if(catalog=="armix.builtin.channel-eq.v1")return "eq";
+        if(catalog=="armix.builtin.graphic-eq31.v1")return "graphic-eq31";
         if(catalog=="armix.builtin.channel-compressor.v1")return "compressor";
         if(catalog=="armix.builtin.arson-harmony.v1")return "harmonice";
         if(catalog=="armix.builtin.vocal-throw.v1")return "vocal-throw";
@@ -106,6 +107,19 @@ public:
                 number(settings,"captureMs",80,1500)&&number(settings,"silenceMs",80,900)&&
                 number(settings,"thresholdDb",-65,-15)&&number(settings,"wet",0,1)&&
                 number(settings,"decay",.15,.9)&&number(settings,"ducking",0,1);
+        }
+        if(catalog=="armix.builtin.graphic-eq31.v1") {
+            // Exactly 31 fixed dbx/ISO bands; no hidden gain/output trim,
+            // extra arbitrary keys, routing ID, non-finite or malformed data.
+            if(!containsOnly(settings,{"bands"}))return false;
+            const auto values=settings.getProperty("bands",{});
+            if(!values.isArray()||values.getArray()->size()!=31)return false;
+            for(const auto& value:*values.getArray()) {
+                if(!(value.isInt()||value.isDouble()))return false;
+                const double db=static_cast<double>(value);
+                if(!std::isfinite(db)||db < -12.||db > 12.)return false;
+            }
+            return true;
         }
         if(catalog=="armix.builtin.channel-eq.v1"){
             if(!containsOnly(settings,{"bands"}))return false;
