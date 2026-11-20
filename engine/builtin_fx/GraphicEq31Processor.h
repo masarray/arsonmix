@@ -737,6 +737,11 @@ private:
                     pointer_->setTransform(juce::AffineTransform::rotation(
                         (-0.75f+1.5f*sliderPos)*juce::MathConstants<float>::pi,
                         35.f,113.6f));
+                // The owner's KNOB image contains raster pixels outside
+                // its visual circle. Clip at the 72px control boundary so
+                // they cannot leave a stray dark spot on the aluminium.
+                juce::Graphics::ScopedSaveState scoped(g);
+                g.reduceClipRegion(x,y,width,height);
                 knobArtwork_->drawWithin(g,{
                     static_cast<float>(x),static_cast<float>(y),
                     static_cast<float>(width),static_cast<float>(height)},
