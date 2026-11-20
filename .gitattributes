@@ -1,0 +1,3 @@
+# Keep the user's original layered SVG byte-identical on Windows and Linux.
+# Reformatting line endings would invalidate the asset QA SHA256 contract.
+assets/fx/graphic-eq31/slider_eq_grp.svg -text
