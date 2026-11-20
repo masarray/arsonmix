@@ -121,8 +121,8 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('processor_.setBandFromUi(i,presetGain(choice,graphicEq31Hz[i]))', self.native)
         self.assertIn('int matchingFactoryPreset() const', self.native)
         self.assertIn('if(preset_.getSelectedId()!=accepted)', self.native)
-        self.assertIn('flat_.setBounds(r+25,104,126,29)', self.native)
-        self.assertIn('constexpr int x0=46,rightRail=176', self.native)
+        self.assertIn('flat_.setBounds(r-125,16,44,24)', self.native)
+        self.assertIn('constexpr int x0=46;', self.native)
         self.assertNotIn('jump_', self.native)
 
     def test_black_svg_ticks_but_original_source_unchanged(self):
@@ -176,7 +176,8 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         bottom_travel = 1696.67 - 1055.50
         self.assertAlmostEqual(top_travel,629.25,places=2)
         self.assertAlmostEqual(bottom_travel,641.17,places=2)
-        self.assertIn('return t>=0.f ? -629.25f*t : -641.17f*t;',self.native)
+        self.assertIn('-(indexCenterY-208.75f)*t',self.native)
+        self.assertIn('-(1627.92f-indexCenterY)*t',self.native)
         for gain in [-12., -6., 0., 6., 12.]:
             t=gain/12.
             shift=-629.25*t if t>=0 else -641.17*t
@@ -185,6 +186,41 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
             self.assertLessEqual(end,1696.67 + 0.01)
         self.assertAlmostEqual(776.33-629.25,147.08,places=2)
         self.assertAlmostEqual(1055.50+641.17,1696.67,places=2)
+
+    def test_white_index_hit_major_ticks_and_pixel_crisp(self):
+        # Important: alignment uses the s11 WHITE index center, not the
+        # outer THUMB ends. +12 must hit 208.75, -12 1627.92.
+        index_center=(913.+920.)*.5
+        up_shift=-(index_center-208.75)
+        down_shift=1627.92-index_center
+        self.assertAlmostEqual(index_center+up_shift,208.75,places=4)
+        self.assertAlmostEqual(index_center+down_shift,1627.92,places=4)
+        self.assertIn('static constexpr float indexCenterY=916.5f;',self.native)
+        self.assertIn('juce::roundToInt(y+',self.native)
+        self.assertIn('g.fillRect(indexX,indexY,indexWidth,2);',self.native)
+        self.assertIn('g.setColour(juce::Colours::white);',self.native)
+        # Full original THUMB/Track groups and source checksum remain unchanged.
+        self.assertEqual(hashlib.sha256(self.raw).hexdigest(),EXPECTED_SHA256)
+
+    def test_saved_user_presets_are_host_owned_and_header_uniform(self):
+        self.assertIn('bindUserPresetService(',self.native)
+        self.assertIn('save_.setComponentID("geq31.save")',self.native)
+        self.assertIn('save_.onClick=[this]{promptSavePreset();}',self.native)
+        self.assertIn('recallUserPreset_(userPresets_[index].id)',self.native)
+        self.assertIn('refreshPresetList();',self.native)
+        self.assertIn('preset_.setBounds(r-349,16,152,24)',self.native)
+        self.assertIn('save_.setBounds(r-189,16,56,24)',self.native)
+        self.assertIn('flat_.setBounds(r-125,16,44,24)',self.native)
+        self.assertIn('power_.setBounds(r-73,16,24,24)',self.native)
+        self.assertIn('close_.setBounds(r-41,16,24,24)',self.native)
+        self.assertIn('geq->bindUserPresetService(',self.main)
+        self.assertIn('builtinFxUserPresets_.saveNew(entry)',self.main)
+        self.assertIn('builtinFxUserPresets_',self.main)
+        self.assertIn('BuiltInFxAcceptedSnapshot::acceptedSettings(',self.main)
+        self.assertIn('engine_.retainedNativeFxPower(',self.main)
+        self.assertIn('engine_.retainedRoutedFxPower(',self.main)
+        self.assertNotIn('rightRail=176',self.native)
+        self.assertNotIn('preset_.setBounds(getWidth()-298,13,200,30)',self.native)
 
 if __name__ == '__main__':
     unittest.main()
