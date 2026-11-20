@@ -392,6 +392,25 @@ private:
         juce::Font getComboBoxFont(juce::ComboBox&) override {
             return GraphicEq31Editor::inter(11.f);
         }
+        void drawButtonBackground(juce::Graphics& g,juce::Button& button,
+                                  const juce::Colour&,bool highlighted,bool down) override {
+            // Exactly one neutral metallic control language for native
+            // factory preset, host-power, close and side FLAT buttons.
+            auto r=button.getLocalBounds().toFloat().reduced(.6f);
+            const bool active=button.getComponentID()=="geq31.host-bypass" &&
+                              button.getToggleState();
+            const auto top=active?juce::Colour::fromRGB(209,235,228):
+                      juce::Colour::fromRGB(226,232,233);
+            const auto bottom=active?juce::Colour::fromRGB(166,200,189):
+                      juce::Colour::fromRGB(184,197,201);
+            g.setGradientFill(juce::ColourGradient(
+                down?bottom:top,0.f,r.getY(),
+                down?top:bottom,0.f,r.getBottom(),false));
+            g.fillRoundedRectangle(r,3.5f);
+            g.setColour(highlighted?juce::Colour::fromRGB(65,84,91):
+                       juce::Colour::fromRGB(115,132,138));
+            g.drawRoundedRectangle(r,3.5f,1.f);
+        }
         void drawLinearSlider(juce::Graphics& g,int x,int y,int width,int height,
                               float,float,float,juce::Slider::SliderStyle,
                               juce::Slider& slider) override {
