@@ -46,8 +46,16 @@ function Test-VBCableSmartDetection {
         if ($case.Device -eq 'absent' -or ($case.Device -eq 'offline' -and $PresentOnly)) { return }
         [pscustomobject]@{FriendlyName="CABLE Output (VB-Audio Virtual Cable)";Status="OK"}
     }
-    # Guard the fixture from every attempt to launch a vendor process.
-    function Start-Process { throw "Unexpected vendor launch in detection fixture" }
+    # Mock vendor handoff: no real device, driver, elevation, or external EXE.
+    $global:ArSonMixTestVendorHandoffCount=0
+    function Start-Process {
+        $global:ArSonMixTestVendorHandoffCount++
+        throw "Fixture vendor handoff failure before process handle"
+    }
+    function Get-AuthenticodeSignature {
+        [CmdletBinding()] param([string]$LiteralPath)
+        [pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=VB-Audio'}}
+    }
     try {
         foreach ($case in @(
             @{Name='healthy'; Device='present'; Expected='ALREADY_PRESENT'},
@@ -57,14 +65,30 @@ function Test-VBCableSmartDetection {
             @{Name='after-reboot'; Device='present'; Expected='ALREADY_PRESENT'; RecordedBoot=$boot.AddDays(-1)},
             @{Name='missing-after-reboot'; Device='absent'; Expected='REPAIR_REQUIRED'; RecordedBoot=$boot.AddDays(-1)},
             @{Name='missing'; Device='absent'; Expected='FAILED'; Reason='Bundled driver ZIP absent'},
-            @{Name='query-failure'; Device='error'; Expected='FAILED'; Reason='Fixture PnP query denied'}
+            @{Name='query-failure'; Device='error'; Expected='FAILED'; Reason='Fixture PnP query denied'},
+            @{Name='interrupted-uac-missing'; Device='absent'; Expected='REPAIR_REQUIRED'; PreviousState='AWAITING_UAC'},
+            @{Name='interrupted-uac-present'; Device='present'; Expected='ALREADY_PRESENT'; PreviousState='AWAITING_UAC'},
+            @{Name='repair-missing'; Device='absent'; Expected='REPAIR_REQUIRED'; PreviousState='REPAIR_REQUIRED'},
+            @{Name='unknown-state-missing'; Device='absent'; Expected='REPAIR_REQUIRED'; PreviousState='UNKNOWN'},
+            @{Name='corrupt-status'; Device='absent'; Expected='REPAIR_REQUIRED'; Corrupt=$true},
+            @{Name='corrupt-status-but-healthy'; Device='present'; Expected='ALREADY_PRESENT'; Corrupt=$true},
+            @{Name='empty-json-status'; Device='absent'; Expected='REPAIR_REQUIRED'; PreviousState=''}
         )) {
             $env:APPDATA=Join-Path $work ("cable-"+$case.Name)
             $status=Join-Path $env:APPDATA "AR-MIX-Studio/VB-CABLE-STATUS.json"
+            $statusFixture=@{}
             if ($case.ContainsKey('RecordedBoot')) {
+                $statusFixture.state='PENDING_REBOOT'
+                $statusFixture.bootUtc=$case.RecordedBoot.ToString('o')
+            }
+            if ($case.ContainsKey('PreviousState')) { $statusFixture.state=$case.PreviousState }
+            if ($statusFixture.Count -gt 0 -or $case.ContainsKey('Corrupt')) {
                 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $status) | Out-Null
-                @{state='PENDING_REBOOT';bootUtc=$case.RecordedBoot.ToString('o')} |
-                    ConvertTo-Json | Set-Content -LiteralPath $status
+                if ($case.ContainsKey('Corrupt')) {
+                    '{ invalid incomplete installer status' | Set-Content -LiteralPath $status
+                } else {
+                    $statusFixture | ConvertTo-Json | Set-Content -LiteralPath $status
+                }
             }
             # Deliberately absent payload: the missing-device case alone should
             # check for the archive. Presence and pending must return earlier.
@@ -75,8 +99,31 @@ function Test-VBCableSmartDetection {
                 Assert-Condition ($result.reason -ceq $case.Reason) "VB-CABLE reason mismatch for $($case.Name)"
             }
         }
+        Assert-Condition ($global:ArSonMixTestVendorHandoffCount -eq 0) "Preflight PnP fixtures unexpectedly launched vendor"
+        # Use a synthetic ZIP and a mocked signature to enter the *real*
+        # setup handoff code without ever executing a driver or showing UAC.
+        $source=Join-Path $work 'vendor-handoff-source'
+        New-Item -ItemType Directory -Force -Path $source | Out-Null
+        foreach($name in @('VBCABLE_Setup_x64.exe','README.txt','LICENSE.txt','setup.ini','manifest.txt')){
+            [IO.File]::WriteAllText((Join-Path $source $name), "FAKE_FIXTURE_ONLY_$name")
+        }
+        $archive=Join-Path $work 'synthetic-vendor.zip'
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [IO.Compression.ZipFile]::CreateFromDirectory($source,$archive)
+        $sha=(Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
+        $env:APPDATA=Join-Path $work 'cable-vendor-handoff'
+        $record=Join-Path $env:APPDATA 'AR-MIX-Studio/VB-CABLE-STATUS.json'
+        & $bootstrap -Archive $archive -ExpectedSha256 $sha
+        $outcome=Get-Content -LiteralPath $record -Raw | ConvertFrom-Json
+        Assert-Condition ($outcome.state -ceq 'REPAIR_REQUIRED') "Failed vendor handoff became retryable: $($outcome.state)"
+        Assert-Condition ($global:ArSonMixTestVendorHandoffCount -eq 1) "Fixture did not reach single mocked vendor handoff"
+        & $bootstrap -Archive $archive -ExpectedSha256 $sha
+        $outcome=Get-Content -LiteralPath $record -Raw | ConvertFrom-Json
+        Assert-Condition ($outcome.state -ceq 'REPAIR_REQUIRED') "Repeated setup did not remain fail-closed"
+        Assert-Condition ($global:ArSonMixTestVendorHandoffCount -eq 1) "Repeat setup incorrectly relaunched uncertain vendor installer"
     } finally {
         $env:APPDATA=$originalAppData
+        Remove-Variable -Name ArSonMixTestVendorHandoffCount -Scope Global -ErrorAction SilentlyContinue
     }
     Write-Host 'VBCABLE_SMART_DETECTION_PASS'
 }
