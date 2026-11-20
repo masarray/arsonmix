@@ -1958,10 +1958,14 @@ public:
             };
             fx.deviceEpoch=expectedEpoch;
             fx.graphRevision=expectedPcmRevision+1;
+            armix::device::MultiDeviceInputPlan reducedMap;
+            const bool removingQualified=nativePublisher_.qualifiedMapWithoutSource(
+                expectedEpoch,expectedPcmRevision,id,reducedMap);
             if(beforePublish)beforePublish();
             const auto published=nativePublisher_.commit(
                 roster,request,expectedPcmRevision,
-                expectedEpoch,epoch(),true,std::move(fx));
+                expectedEpoch,epoch(),true,std::move(fx),
+                false,false,removingQualified?&reducedMap:nullptr);
             if(!published.ok()){
                 reply.error="NATIVE_TRACK_PCM_COMMIT_REJECTED";return reply;
             }
@@ -2121,6 +2125,11 @@ public:
             reply.error="NATIVE_INPUT_ID_UNAVAILABLE";return reply;
         }
         const bool disconnect=!stereo&&physicalLeft==-1&&physicalRight==-1;
+        if(!disconnect && nativePublisher_.hasQualifiedInputMap(
+               expectedEpoch,expectedPcmRevision)){
+            reply.error="QUALIFIED_CAPTURE_SOURCE_REMAP_REQUIRED";
+            return reply; // never relabel device-qualified B pins via A ordinals
+        }
         int l=-1,r=-1;
         if(!disconnect){
             for(int i=0;i<portCount_.load(std::memory_order_acquire);++i){
@@ -2162,10 +2171,15 @@ public:
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
             };
             fx.deviceEpoch=expectedEpoch;fx.graphRevision=expectedPcmRevision+1;
+            armix::device::MultiDeviceInputPlan reducedMap;
+            const bool removingQualified=disconnect &&
+                nativePublisher_.qualifiedMapWithoutSource(
+                    expectedEpoch,expectedPcmRevision,channel,reducedMap);
             if(beforePublish)beforePublish(); // late PCM publication gate
             const auto published=nativePublisher_.commit(
                 nativeAccepted_.graph.roster,request,expectedPcmRevision,
-                expectedEpoch,epoch(),true,std::move(fx));
+                expectedEpoch,epoch(),true,std::move(fx),
+                false,false,removingQualified?&reducedMap:nullptr);
             if(!published.ok()) {
                 reply.error="NATIVE_INPUT_PCM_COMMIT_REJECTED";return reply;
             }
@@ -2691,6 +2705,19 @@ public:
     bool qualifiedInputMapActive() const noexcept {
         return nativePublisher_.hasQualifiedInputMap(
             nativeAccepted_.deviceEpoch,nativeAccepted_.pcmRevision);
+    }
+    // Off-RT retained document only; the B ChannelIds, WIRE, faders and FX
+    // remain in the roster. Removed B hardware SOURCE rows become silent
+    // until a newly attested ASIO B lease is explicitly accepted.
+    bool preparePrimaryOnlyAsioRestartDocument(
+            armix::session::MixerSessionDocument& document,
+            int primaryCallbackInputs) const {
+        armix::mixer::DynamicGraphRequest staged;
+        if(!nativePublisher_.preparePrimaryRestartFallback(
+               nativeAccepted_.deviceEpoch,nativeAccepted_.pcmRevision,
+               primaryCallbackInputs,document.request,staged))return false;
+        document.request=std::move(staged);
+        return true;
     }
     bool rebindRetainedAsioSession(armix::session::MixerSessionDocument document,
             const armix::device::JuceActivePortSnapshot& pins,int deviceFrames) {

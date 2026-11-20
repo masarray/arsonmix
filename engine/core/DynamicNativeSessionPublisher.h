@@ -2,6 +2,7 @@
 #pragma once
 #include "DynamicPreparedMixerBlock.h"
 #include "../device/MultiDeviceInputPlan.h"
+#include "../device/QualifiedPrimaryRestartRecoveryPlan.h"
 #include "DynamicConsoleRoutingView.h"
 #include "NativeMusicTempoMonitor.h"
 #include "NativeBeatFrameContext.h"
@@ -508,6 +509,27 @@ public:
                               std::uint64_t revision) const noexcept {
         const auto* p=publisher_.controlPrepared(epoch,revision);
         return p && static_cast<bool>(p->inputMap);
+    }
+    // CONTROL-only primary restart: stage A-only physical sources from
+    // the PREVIOUS accepted A+B lease. Never reinterpret B virtual slots as
+    // callback indices and never destroy the original graph on failure.
+    bool preparePrimaryRestartFallback(std::uint64_t priorEpoch,
+            std::uint64_t priorRevision,int verifiedPrimaryInputs,
+            const DynamicGraphRequest& accepted,
+            DynamicGraphRequest& destination) const {
+        const auto* p=publisher_.controlPrepared(priorEpoch,priorRevision);
+        return p && p->inputMap &&
+               armix::device::QualifiedPrimaryRestartRecoveryPlan::stage(
+                   *p->inputMap,accepted,verifiedPrimaryInputs,destination);
+    }
+    // CONTROL-only explicit source disconnection; never mutate the
+    // callback-visible prior map. WIRE/FX revisions keep inheriting it.
+    bool qualifiedMapWithoutSource(std::uint64_t epoch,
+             std::uint64_t revision,ChannelId source,
+             armix::device::MultiDeviceInputPlan& candidate) const {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p && p->inputMap &&
+               p->inputMap->withoutSource(source,candidate);
     }
     void unpublish() noexcept {publisher_.unpublish();}
     void pollRetirement() noexcept {publisher_.pollRetirement();}

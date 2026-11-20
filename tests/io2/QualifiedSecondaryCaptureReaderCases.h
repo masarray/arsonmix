@@ -5,6 +5,7 @@
 #include "../../engine/device/QualifiedCaptureAdmission.h"
 #include "../../engine/device/SecondaryCaptureReadbackState.h"
 #include "../../engine/device/QualifiedInputGraphBridge.h"
+#include "../../engine/device/QualifiedPrimaryRestartRecoveryPlan.h"
 #include "../../engine/core/DynamicNativeSessionPublisher.h"
 #include <array>
 #include <cmath>
@@ -112,12 +113,46 @@ inline void run() {
     d::MultiDeviceInputFault err;
     check(d::MultiDeviceInputPlan::prepare(epoch,devices,bindings,
         roster.channels(),plan,err),"two physical namespaces qualified");
+    // SOURCE NONE and Delete Track must remove only the named ChannelId
+    // binding while preserving A/B device slots, generation and lease.
+    d::MultiDeviceInputPlan reduced;
+    check(plan.withoutSource(b,reduced) && reduced.sourceCount()==1 &&
+          plan.sourceCount()==2 && reduced.virtualInputCount()==plan.virtualInputCount() &&
+          reduced.device(1).deviceLease==plan.device(1).deviceLease &&
+          reduced.source(0).channel==a,
+          "detached qualified source removal never drops B's device lease");
+    check(!plan.withoutSource(main,reduced),
+          "deleting an unbound MAIN cannot mutate the qualified input map");
     m::DynamicGraphRequest old;old.physicalInputs=1;old.maxFrames=frames;
     old.sources={{a,0,-1,false}};
     m::DynamicGraphRequest request;
     d::QualifiedInputGraphBridge::Fault bridgeError{};
     check(d::QualifiedInputGraphBridge::stage(plan,old,request,bridgeError),
         "control maps both verified sources into same graph");
+    m::DynamicGraphRequest primaryFallback;
+    check(d::QualifiedPrimaryRestartRecoveryPlan::stage(
+              plan,request,1,primaryFallback) &&
+          primaryFallback.physicalInputs==1 &&
+          primaryFallback.sources.size()==1 &&
+          primaryFallback.sources.front().id==a &&
+          primaryFallback.sources.front().inputL==0 &&
+          request.physicalInputs==3 && request.sources.size()==2,
+          "ASIO restart leaves B ChannelId/FX/WIRE roster and silences only B source");
+    check(!d::QualifiedPrimaryRestartRecoveryPlan::stage(
+              plan,request,2,primaryFallback),
+          "different A input mask is never accepted by stale B virtual slot map");
+    auto swapped=request;
+    swapped.sources.back().inputL=0;
+    check(!d::QualifiedPrimaryRestartRecoveryPlan::stage(
+              plan,swapped,1,primaryFallback),
+          "wrong-device B ordinal cannot relabel existing A source during restart");
+    m::DynamicNativeSessionPublisher recoveredPcm;
+    check(recoveredPcm.commit(roster,primaryFallback,0,epoch+1,epoch+1,true).ok() &&
+          !recoveredPcm.hasQualifiedInputMap(epoch+1,1),
+          "a new primary epoch publishes only verified A PCM but keeps original roster");
+    check(recoveredPcm.commit(roster,primaryFallback,1,epoch+2,epoch+2,true).ok() &&
+          !recoveredPcm.hasQualifiedInputMap(epoch+2,2),
+          "second A restart rebinds the recovered A-only graph without stale B map");
     m::DynamicNativeSessionPublisher native;
     check(native.commit(roster,request,0,epoch,epoch,true,
         {},false,false,&plan).ok(),"one PCM and device map publication");
@@ -126,6 +161,23 @@ inline void run() {
     check(!native.hasQualifiedInputMap(epoch+1,1)&&
           !native.hasQualifiedInputMap(epoch,0),
           "stale graph generation cannot authorize persistence");
+    // A plain SOURCE NONE/Delete Track request is rejected if the old map
+    // remains unchanged. An explicit DETACHED subset is accepted atomically
+    // and stays qualified for the remaining A source.
+    auto subsetRequest=request;
+    std::erase_if(subsetRequest.sources,[b](const auto& row){return row.id==b;});
+    m::DynamicNativeSessionPublisher subsetPcm;
+    check(subsetPcm.commit(roster,request,0,epoch,epoch,true,
+          {},false,false,&plan).ok(),"subset fixture starts with A+B map");
+    check(subsetPcm.commit(roster,subsetRequest,1,epoch,epoch,true).fault==
+              m::DynamicNativeSessionPublisher::Fault::invalidCandidate &&
+          subsetPcm.acceptedRevision()==1,
+          "implicit SOURCE NONE must not silently desynchronize old B map");
+    check(subsetPcm.commit(roster,subsetRequest,1,epoch,epoch,true,
+          {},false,false,&reduced).ok() &&
+          subsetPcm.hasQualifiedInputMap(epoch,2),
+          "explicit source subset publishes and retains exact device leases");
+
 
     d::SecondaryCaptureClockStream clock;
     const d::SecondaryCaptureClockStream::Format format{
@@ -159,6 +211,10 @@ inline void run() {
     using Admission=d::QualifiedCaptureAdmission;
     check(Admission::verify(plan,clock,epoch,1,frames)==Admission::Fault::none,
           "exact two-device qualified CONTROL admission");
+    check(Admission::verify(plan,clock,epoch,1,frames/2)==Admission::Fault::none,
+          "hardware ASIO period may exceed retained renderer chunk quantum");
+    check(Admission::verify(plan,clock,epoch,1,8193)==Admission::Fault::unsafeFrames,
+          "reader scratch cannot exceed absolute callback hard frame limit");
     check(Admission::verify(plan,clock,epoch+1,1,frames)==
           Admission::Fault::stalePrimary,
           "stale A output epoch cannot publish qualified PCM");

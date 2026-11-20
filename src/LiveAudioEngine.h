@@ -452,12 +452,12 @@ public:
     }
     bool finishManualAudioSetup(bool reuseAsioBinding=true) {
         if(qualifiedCaptureNeedsRemap_.load(std::memory_order_acquire)) {
-            // The primary hardware epoch changed. Never claim a retained
-            // dual-source map is installed on the newly opened ASIO class.
+            // A restarted PRIMARY must not leave the authored mixer
+            // stranded. Keep B invalidated, but permit the verified A-only
+            // retained graph recovery below; the new B binding stays OFF.
             setOutputMuted(true);
-            qualifiedSecondaryReader_.stop();
+            qualifiedSecondaryReader_.stop(); // CONTROL quiescence
             secondaryCapture_.close();
-            return false; // explicit native physical remap required
         }
         if(!approveDirectRoute())return false;
         using Decision=armix::device::DeviceSessionDecision;
@@ -587,10 +587,26 @@ public:
         MixerBindingInspection inspected;
         constexpr auto mode=Policy::Mode::verifiedAsioRestart;
         if(inspectNativeMixerSessionBinding(document,inspected,mode).isNotEmpty() ||
-           inspected.live.rate!=document.binding.rate ||
-           Policy::apply(document,inspected.live,inspected.outputs,inspected.callbackInputs,mode).isNotEmpty() ||
-           !dryRoutingLab_.rebindRetainedAsioSession(std::move(document),inspected.pins,
-                                                    inspected.live.frames))return false;
+           inspected.live.rate!=document.binding.rate)return false;
+        // The B reconnection reminder may survive an already recovered
+        // primary-only graph. A second ASIO A restart must NOT demand an
+        // A+B map that was intentionally retired after the first recovery.
+        const bool lostB=qualifiedCaptureNeedsRemap_.load(
+            std::memory_order_acquire) &&
+            dryRoutingLab_.qualifiedInputMapActive();
+        // Rebuild from the last genuine A+B snapshot without saving a
+        // corrupt virtual-input .smix. The exact prior A port count is
+        // checked against current verified hardware before any mutation.
+        if(lostB && !dryRoutingLab_.preparePrimaryOnlyAsioRestartDocument(
+              document,inspected.callbackInputs))return false;
+        if(Policy::apply(document,inspected.live,inspected.outputs,
+                         inspected.callbackInputs,mode).isNotEmpty() ||
+           !dryRoutingLab_.rebindRetainedAsioSession(std::move(document),
+               inspected.pins,inspected.live.frames))return false;
+        if(lostB) {
+            retireQualifiedCaptureForNewGraph(); // only AFTER A graph published
+            qualifiedCaptureNeedsRemap_.store(true,std::memory_order_release);
+        }
         acceptedMixerBinding_=std::move(inspected.live);
         return true;
     }
@@ -1347,11 +1363,11 @@ public:
     juce::String startUnpatchedProductionSession() {
         setOutputMuted(true);
         secondaryOutput_.disarm(); // never carry LIVE STREAM into a new unpatched graph
-        if(qualifiedSecondaryInstalled_.load(std::memory_order_acquire) ||
-           qualifiedCaptureNeedsRemap_.load(std::memory_order_acquire))
-            retireQualifiedCaptureForNewGraph(); // never carry A+B into A-only PCM
         if(hasRetainedUnboundMixer())
             return "Mixer session preserved, but device changed: full ChannelId graph and plugin-state rebind required (output stays muted)";
+        if(qualifiedSecondaryInstalled_.load(std::memory_order_acquire) ||
+           qualifiedCaptureNeedsRemap_.load(std::memory_order_acquire))
+            retireQualifiedCaptureForNewGraph(); // only a genuinely new session
         auto* device=deviceManager_.getCurrentAudioDevice();
         if(!device || !directFence_.permitted() || independent_.active())
             return "No verified DIRECT full-duplex device";
@@ -2455,8 +2471,10 @@ public:
         reply.error="SECONDARY_CAPTURE_NOT_ADMITTED";
         if(!allOutputsDisarmed()||independent_.active()||!attached_||
            !directFence_.permitted()||qualifiedSecondaryInstalled_.load(
-               std::memory_order_acquire)||qualifiedCaptureNeedsRemap_.load(
-               std::memory_order_acquire)||secondaryCapture_.ready()||
+               std::memory_order_acquire)||
+           (qualifiedCaptureNeedsRemap_.load(std::memory_order_acquire)&&
+            dryRoutingLab_.qualifiedInputMapActive())||
+           secondaryCapture_.ready()||
            routeReconfiguring_.load(std::memory_order_acquire)||
            diagnosticRoute_.load(std::memory_order_acquire)!=
                armix::diagnostics::Route::normal||
