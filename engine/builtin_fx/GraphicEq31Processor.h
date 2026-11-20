@@ -313,16 +313,26 @@ private:
             }
             const auto py=juce::jlimit(static_cast<float>(y+11),
                             static_cast<float>(y+height-11),sliderPos);
+            // The supplied SVG is the track only; moving metal thumbs must
+            // fit even at the compact minimum editor width. Never overlap
+            // adjacent frequency columns when the operator resizes the host.
+            const float shadowWidth=juce::jlimit(20.f,34.f,
+                static_cast<float>(width)-2.f);
+            const float thumbWidth=juce::jlimit(16.f,26.f,
+                static_cast<float>(width)-6.f);
             g.setColour(juce::Colour::fromRGB(94,98,103).withAlpha(.35f));
-            g.fillRoundedRectangle(cx-17.f,py-13.f,34.f,27.f,7.f);
+            g.fillRoundedRectangle(cx-shadowWidth*.5f,py-13.f,
+                shadowWidth,27.f,7.f);
             g.setGradientFill(juce::ColourGradient(
                 juce::Colours::white,cx,py-10.f,
                 juce::Colour::fromRGB(187,191,195),cx,py+10.f,false));
-            g.fillRoundedRectangle(cx-13.f,py-11.f,26.f,22.f,7.f);
+            g.fillRoundedRectangle(cx-thumbWidth*.5f,py-11.f,
+                thumbWidth,22.f,7.f);
             g.setColour(juce::Colour::fromRGB(131,137,141));
-            g.drawRoundedRectangle(cx-13.f,py-11.f,26.f,22.f,7.f,1.f);
+            g.drawRoundedRectangle(cx-thumbWidth*.5f,py-11.f,
+                thumbWidth,22.f,7.f,1.f);
             g.setColour(juce::Colour::fromRGB(225,228,230));
-            g.drawLine(cx-8.f,py,cx+8.f,py,1.2f);
+            g.drawLine(cx-thumbWidth*.31f,py,cx+thumbWidth*.31f,py,1.2f);
         }
     private:
         std::unique_ptr<juce::Drawable> vectorTrack_;
