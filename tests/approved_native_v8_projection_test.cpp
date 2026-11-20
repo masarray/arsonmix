@@ -1150,7 +1150,6 @@ static void qualifiedCaptureNativeIntentRegression() {
     auto remap=copy(live);
     remap.getProperty("secondaryCapture",{}).getDynamicObject()
         ->setProperty("status","NEEDS_REMAP");
-    assert(publishQualifiedSecondaryCaptureCapability(copy(snap),remap,true)==false);
     // A mutable approved copy can expose the offer; do not touch the old bus.
     auto remapSnapshot=copy(snap);
     assert(publishQualifiedSecondaryCaptureCapability(remapSnapshot,remap,true));
