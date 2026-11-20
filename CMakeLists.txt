@@ -332,12 +332,12 @@ endforeach()
 juce_add_binary_data(ARMixAssets SOURCES
     "${ARMIX_APPROVED_GUI_DIR}/index.html" ${ARMIX_APPROVED_GUI_BINARIES}
     ${ARMIX_GUITAR_SKIN_PNGS}
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/fx/graphic-eq31/slider_eq_vector.svgz"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/fx/graphic-eq31/slider_eq_grp.svg"
     ${ARMIX_LEGAL_RESOURCE_FILES}
     "${ARMIX_BRAND_DIR}/arsonmix-256.png"
     ${ARMIX_IMERSIB_SCENE_PNG_SOURCES})
 target_include_directories(ARMixConsole PRIVATE "${ARMIX_APPROVED_GUI_DIR}")
-# Only the production GUI builds the vectorized EQ31 editor; isolated native
+# Only the production GUI embeds the owner's complete grouped EQ31 SVG; isolated native
 # FX tests use the procedural fallback without depending on BinaryData.
 target_compile_definitions(ARMixConsole PRIVATE ARMIX_GEQ31_VECTOR_ASSET=1)
 
