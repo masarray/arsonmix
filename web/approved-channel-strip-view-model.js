@@ -1009,7 +1009,60 @@
     return plan.kind==="READY"?{kind:"SEND",plan}:{kind:"DEFER"};
   }
 
-  return Object.freeze({outputTargets,inputChoices,externalChoices,
+  // G-MV37: the only M/ST decision across saved, ChannelId and M4.
+  // UI proposes a change, never mutates accepted PCM before native readback.
+  function processingFormatPlan(snapshot,{authority,channelId,channel,
+    hardwareConfiguration,verifiedM4=false,deviceReady=false,
+    pending=false,sourcePending=false}={}) {
+    const bad={kind:"UNAVAILABLE"},graph=snapshot?.graph;
+    if(pending||snapshot?.retained===true)return bad;
+    if(authority==="LOGICAL"){
+      if(snapshot?.logical!==true||snapshot?.admitted!==false||
+         snapshot?.readOnly===true||
+         typeof snapshot.workspaceToken!=="string"||!snapshot.workspaceToken||
+         !decimalId(channelId)||!Array.isArray(graph?.channels)||
+         !graph.capabilities?.supportedOps?.includes("SET_PROCESSING_FORMAT"))
+        return bad;
+      const rows=graph.channels.filter(ch=>ch?.id===channelId);
+      if(rows.length!==1||rows[0].role!=="INPUT"||
+         !["MONO","STEREO"].includes(rows[0].processingFormat))return bad;
+      const target=rows[0].processingFormat==="MONO"?"STEREO":"MONO";
+      return {kind:"READY",authority,operation:"SET_PROCESSING_FORMAT",
+        channelId,payload:{format:target},target};
+    }
+    if(typeof hardwareConfiguration!=="string"||!hardwareConfiguration)
+      return bad;
+    if(authority==="CHANNEL_ID"){
+      const session=snapshot?.raw?.mixerSession;
+      if(snapshot?.admitted!==true||snapshot?.logical===true||
+         session?.authority!=="CHANNEL_ID"||
+         session.deviceEpoch!==snapshot.device?.epoch||
+         !decimalId(snapshot.device?.epoch)||
+         !decimalId(graph?.revision)||!decimalId(graph?.rosterRevision)||
+         graph.capabilities?.callbackOwnsChannelIds!==true||
+         !graph.capabilities?.supportedOps?.includes("SET_PROCESSING_FORMAT")||
+         !decimalId(channelId)||!Array.isArray(graph?.channels))return bad;
+      const rows=graph.channels.filter(ch=>ch?.id===channelId);
+      if(rows.length!==1||rows[0].role!=="INPUT"||
+         !["MONO","STEREO"].includes(rows[0].processingFormat))return bad;
+      const target=rows[0].processingFormat==="MONO"?"STEREO":"MONO";
+      return {kind:"READY",authority,operation:"SET_PROCESSING_FORMAT",
+        channelId,payload:{format:target},target};
+    }
+    if(authority==="M4"){
+      const current=snapshot?.raw?.legacyM4?.channels?.[channel]?.channelFormat;
+      if(!["MONO","STEREO"].includes(current))return bad;
+      const target=current==="MONO"?"STEREO":"MONO";
+      const plan=m4ChannelPatchPlan(snapshot,{
+        operation:"SET_PROCESSING_FORMAT",channel,target,
+        verifiedM4,deviceReady,pending,sourcePending});
+      if(plan.kind!=="READY")return bad;
+      return {kind:"READY",authority,operation:"SET_PROCESSING_FORMAT",
+        channel,target,action:plan.action,payload:plan.payload};
+    }
+    return bad;
+  }
+  return Object.freeze({processingFormatPlan,outputTargets,inputChoices,externalChoices,
     primaryChoices,resolvePrimarySelection,readbackBindings,externalPending,
     primaryOutMutation,externalOutputPlan,rosterMutationPlan,
     rosterAckResult,rosterReadbackSettlement,m4ChannelPatchPlan,
