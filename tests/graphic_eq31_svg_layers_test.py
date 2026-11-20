@@ -261,6 +261,8 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertNotIn('BinaryData::KNOB_EQ_svg',self.native)
         self.assertIn('g.drawImage(knobImage_',self.native)
         self.assertIn('g.strokePath(arc',self.native)
+        self.assertIn('polar(side*.38f,',self.native)
+        self.assertNotIn('side*.436f',self.native)
         self.assertIn('const auto dot=polar(side*.325f,end)',self.native)
         self.assertIn('juce::Colour(0xff26b8f6)',self.native)
         self.assertIn('juce::Colour(0xff27c8ff)',self.native)

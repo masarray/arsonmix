@@ -767,12 +767,12 @@ private:
                 return juce::Point<float>(cx+radius*std::sin(a),
                                           cy-radius*std::cos(a));
             };
-            // Fine arc inside the black recessed outer annulus, NOT a
+            // Arc radius .38 lies on the PNG black annulus (192px asset:\n            // alpha body extends to ~76px radius, groove at ~73px).\n            // Fine arc inside the black recessed outer annulus, NOT a
             // permanent blue ring; length follows the moving pointer.
             juce::Path arc;
             const int segments=juce::jmax(1,juce::roundToInt(t*96.f));
             for(int i=0;i<=segments;++i) {
-                const auto point=polar(side*.436f,
+                const auto point=polar(side*.38f,
                     start+(end-start)*static_cast<float>(i)/segments);
                 if(i==0)arc.startNewSubPath(point);
                 else arc.lineTo(point);
