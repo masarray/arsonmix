@@ -333,7 +333,6 @@ juce_add_binary_data(ARMixAssets SOURCES
     "${ARMIX_APPROVED_GUI_DIR}/index.html" ${ARMIX_APPROVED_GUI_BINARIES}
     ${ARMIX_GUITAR_SKIN_PNGS}
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/fx/graphic-eq31/slider_eq_grp.svg"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/fx/graphic-eq31/KNOB-EQ.svg"
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/fx/graphic-eq31/geq31_brushed_metal.jpg"
     ${ARMIX_LEGAL_RESOURCE_FILES}
     "${ARMIX_BRAND_DIR}/arsonmix-256.png"

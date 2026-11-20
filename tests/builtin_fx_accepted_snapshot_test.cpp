@@ -66,16 +66,8 @@ int main(){
   REQUIRE(geqSettings.isObject());
   REQUIRE(geqSettings.getProperty("bands",{}).isArray());
   REQUIRE(geqSettings.getProperty("bands",{}).getArray()->size()==31);
-  REQUIRE(geqSettings.hasProperty("levelDb"));
-  REQUIRE(static_cast<double>(geqSettings.getProperty("levelDb",{}))==0.0);
   REQUIRE(!geqSettings.hasProperty("inputDb"));
   REQUIRE(!geqSettings.hasProperty("outputDb"));
-  geq.setLevelFromUi(-5.5f);
-  const auto afterLevel=BuiltInFxAcceptedSnapshot::acceptedSettings(
-      &geq,catalogs[1]);
-  REQUIRE(BuiltInFxUserPresetStore::validateSettings(catalogs[1],afterLevel));
-  REQUIRE(std::abs(static_cast<double>(afterLevel.getProperty("levelDb",{}))
-                   +5.5)<.06);
   const auto compSettings=BuiltInFxAcceptedSnapshot::acceptedSettings(&comp,catalogs[2]);
   REQUIRE(compSettings.getProperty("makeupDb",{}).isDouble()||
           compSettings.getProperty("makeupDb",{}).isInt());

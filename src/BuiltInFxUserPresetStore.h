@@ -109,13 +109,9 @@ public:
                 number(settings,"decay",.15,.9)&&number(settings,"ducking",0,1);
         }
         if(catalog=="armix.builtin.graphic-eq31.v1") {
-            // 31 fixed dbx/ISO bands plus optional EXPLICIT output Level.
-            // Historic .armixfx presets with only bands restore at 0 dB.
-            // Unknown keys, old hidden trim names, NaNs are rejected.
-            if(!containsOnly(settings,{"bands","levelDb"}))return false;
-            const auto level=settings.getProperty("levelDb",{});
-            if(!level.isVoid()&&!number(settings,"levelDb",-24,6))
-                return false;
+            // Exactly 31 fixed dbx/ISO bands; no hidden gain/output trim,
+            // extra arbitrary keys, routing ID, non-finite or malformed data.
+            if(!containsOnly(settings,{"bands"}))return false;
             const auto values=settings.getProperty("bands",{});
             if(!values.isArray()||values.getArray()->size()!=31)return false;
             for(const auto& value:*values.getArray()) {

@@ -43,7 +43,7 @@ static BuiltInFxUserPreset graphicEq31() {
     for(int i=0;i<31;++i)
         bands.append(i==0?12.0:i==30?-12.0:i==15?2.5:0.0);
     return {{}, "armix.builtin.graphic-eq31.v1","Voice Curve","My Presets",
-        object({{"bands",bands},{"levelDb",-4.5}})};
+        object({{"bands",bands}})};
 }
 static BuiltInFxUserPreset eq() {
     auto bands=juce::var(juce::Array<juce::var>{});
@@ -132,21 +132,6 @@ int main() {
     {
         auto good=graphicEq31();
         REQUIRE(BuiltInFxUserPresetStore::validateSettings(good.catalogId,good.settings));
-        REQUIRE(static_cast<double>(
-            good.settings.getProperty("levelDb",{}))==-4.5);
-        // Old band-only presets remain valid; loaded at unity (0 dB).
-        auto legacy=graphicEq31();
-        legacy.settings.getDynamicObject()->removeProperty("levelDb");
-        REQUIRE(BuiltInFxUserPresetStore::validateSettings(
-            legacy.catalogId,legacy.settings));
-        auto invalidLevel=graphicEq31();
-        invalidLevel.settings.getDynamicObject()->setProperty("levelDb",6.1);
-        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(
-            invalidLevel.catalogId,invalidLevel.settings));
-        invalidLevel.settings.getDynamicObject()->setProperty(
-            "levelDb",std::numeric_limits<double>::quiet_NaN());
-        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(
-            invalidLevel.catalogId,invalidLevel.settings));
         auto wrongCount=graphicEq31();
         wrongCount.settings.getProperty("bands",{}).getArray()->removeLast();
         REQUIRE(!BuiltInFxUserPresetStore::validateSettings(
@@ -166,8 +151,6 @@ int main() {
         REQUIRE(BuiltInFxUserPresetStore(testRoot).read(
             presetOnDisk.catalogId,presetOnDisk.id,readback).isEmpty());
         REQUIRE(readback.settings.getProperty("bands",{}).getArray()->size()==31);
-        REQUIRE(static_cast<double>(
-            readback.settings.getProperty("levelDb",{}))==-4.5);
     }
     REQUIRE(BuiltInFxUserPresetStore::safeId(
         "12345678-1234-AbCd-ABCD-0123456789Ab"));

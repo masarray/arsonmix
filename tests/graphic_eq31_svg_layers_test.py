@@ -67,21 +67,20 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('g.drawImageWithin(brushedMetal_', self.native)
         # Use the original source THUMB raster rather than a vector-only
         # substitute, preserving author artwork and animation semantics.
-        self.assertIn('rasterShadow->setAttribute("opacity",0.96)', self.native)
+        self.assertIn('rasterShadow->setAttribute("opacity",0.87)', self.native)
         self.assertNotIn('removeChildElement(bitmapWrapper,true)', self.native)
         self.assertIn('authoredFader->findChildWithID("THUMB")', self.native)
-        self.assertIn('juce::DropShadow(juce::Colours::black.withAlpha(.55f)', self.native)
+        self.assertIn('juce::DropShadow(juce::Colours::black.withAlpha(.30f)', self.native)
         self.assertIn('juce::RectanglePlacement::stretchToFit', self.native)
 
     def test_hardware_visual_fidelity_and_no_noise(self):
         self.assertIn('document->setAttribute("viewBox","60 0 352 2042")', self.native)
         self.assertIn('getChildByAttribute("id","g1")', self.native)
-        self.assertIn('"#d8dee1","#b8c2c7"', self.native)
-        self.assertIn('"#818f97","#49545c"', self.native)
+        self.assertIn('"#929b9f","#a6afb3"', self.native)
         self.assertIn('getChildByAttribute("id","g2")', self.native)
         self.assertIn('"#080c0f","#12181c"', self.native)
         self.assertIn('static constexpr int bandCellWidth=40', self.native)
-        self.assertIn('setSize(1430,305)', self.native)
+        self.assertIn('setSize(1330,305)', self.native)
         self.assertIn('font-family: Inter; font-size: 27px; font-weight: 700', self.native)
         self.assertIn('font-family: Inter; font-size: 18px; font-weight: 600', self.native)
         self.assertIn('unitSpan->addTextElement(isKhz?"kHz":"Hz")', self.native)
@@ -93,17 +92,17 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('{208.75f,"+12"}',self.native)
         self.assertIn('{918.33f,"0"}',self.native)
         self.assertIn('{1627.92f,"-12"}',self.native)
-        self.assertIn('viewport_.getRight()+6,labelY,36,19',self.native)
-        self.assertIn('g.setFont(inter(10.5f).boldened())',self.native)
+        self.assertIn('getWidth()-40,labelY,36,19',self.native)
+        self.assertIn('g.setFont(inter(12.5f).boldened())',self.native)
         self.assertNotIn('smile_', self.native)
         self.assertNotIn('peakLabel_', self.native)
         self.assertIn('void timerCallback() override', self.native)
         self.assertNotIn('31 BANDS  /  +/-12 dB', self.native)
-        self.assertIn('BinaryData::KNOB_EQ_svg', self.native)
-        self.assertIn('drawRotarySlider(', self.native)
+        self.assertNotIn('BinaryData::KNOB_EQ_svg', self.native)
+        self.assertNotIn('drawRotarySlider(', self.native)
         self.assertNotIn('getRawParameterValue("inputDb")', self.native)
         self.assertNotIn('getRawParameterValue("outputDb")', self.native)
-        self.assertIn('out.writeInt(stateMagic);out.writeInt(4);', self.native)
+        self.assertIn('out.writeInt(stateMagic);out.writeInt(3);', self.native)
 
     def test_shared_header_control_lease_and_right_rail(self):
         self.assertIn('dynamic_cast<juce::DocumentWindow*>(', self.native)
@@ -127,28 +126,8 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('int matchingFactoryPreset() const', self.native)
         self.assertIn('if(preset_.getSelectedId()!=accepted)', self.native)
         self.assertIn('flat_.setBounds(r-125,16,44,24)', self.native)
-        self.assertIn('constexpr int x0=45, artY=55, artH=229, rightReserve=145', self.native)
+        self.assertIn('constexpr int x0=45, artY=55, artH=229', self.native)
         self.assertNotIn('jump_', self.native)
-
-    def test_original_recessed_cutout_remains_under_all_svg_faders(self):
-        # The 31 faders share one milled bed; no flat individual tiles.
-        painting = self.native.split(
-            'void paint(juce::Graphics& g) override {', 1)[1].split(
-            'void resized() override {', 1)[0]
-        self.assertIn('bandSurface_.setOpaque(false)', self.native)
-        self.assertIn('viewport_.setOpaque(false)', self.native)
-        self.assertIn('viewport_.getBounds().toFloat().expanded(2.f,1.f)', painting)
-        self.assertEqual(painting.count('g.fillRoundedRectangle(cutout,5.f)'), 1)
-        self.assertIn('g.fillRoundedRectangle(innerCutout,3.5f)', painting)
-        self.assertIn('juce::Colour(0xff3e4b53)', painting)
-        self.assertIn('juce::Colour(0xff79858c)', painting)
-        self.assertIn('juce::Colour(0xffb0b8bb)', painting)
-        self.assertLess(painting.index('g.fillRoundedRectangle(cutout,5.f)'),
-                        painting.index('g.drawText("Graphic EQ 31"'))
-        self.assertIn('viewport_.setBounds(x0,artY,', self.native)
-        self.assertIn('const char* shades[]={"#d8dee1","#b8c2c7"',self.native)
-        self.assertIn('const char* shades[]={"#080c0f","#12181c"',self.native)
-        self.assertEqual(hashlib.sha256(self.raw).hexdigest(), EXPECTED_SHA256)
 
     def test_black_svg_ticks_but_original_source_unchanged(self):
         self.assertIn('tick->getStringAttribute("class")=="s0"', self.native)
@@ -158,35 +137,6 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('getChildByAttribute("id","g2")', self.native)
         self.assertEqual(hashlib.sha256(self.raw).hexdigest(), EXPECTED_SHA256)
 
-    def test_output_level_and_cached_thumb_depth(self):
-        self.assertIn('assets/fx/graphic-eq31/KNOB-EQ.svg', self.cmake)
-        self.assertIn('BinaryData::KNOB_EQ_svg', self.native)
-        self.assertIn('findChildWithID("POINTER")', self.native)
-        self.assertIn('drawRotarySlider(', self.native)
-        self.assertIn('level_.setBounds(getWidth()-94,125,72,72)', self.native)
-        self.assertIn('levelAttachment_=std::make_unique<Attachment>', self.native)
-        self.assertIn('juce::ParameterID{"levelDb",1}', self.native)
-        self.assertIn('levelGain_.reset(sampleRate,0.015)', self.native)
-        self.assertIn('levelGain_.getNextValue()', self.native)
-        self.assertIn('const float levelDb=levelValue_->load(std::memory_order_relaxed)', self.native)
-        self.assertIn('rtLevelDb_.store(levelDb,std::memory_order_release)', self.native)
-        self.assertIn('rtLevelDb_.load(std::memory_order_acquire)', self.native)
-        self.assertIn('if(acceptedLevel!=lastLevelDb_)', self.native)
-        self.assertIn('lastLevelDb_=acceptedLevel', self.native)
-        self.assertIn('float savedUserLevelDb_=0.f;', self.native)
-        self.assertIn('processor_.acceptedLevelDb()-savedUserLevelDb_', self.native)
-        self.assertIn('processor_.setFlatFromUi();', self.native)
-        self.assertIn('g.drawImageAt(thumbShadowStamp_', self.native)
-        self.assertIn('prepareThumbShadow(shadowBounds.getWidth()', self.native)
-        self.assertIn('silhouette.addRoundedRectangle(', self.native)
-        self.assertIn('juce::Colour::fromRGB(52,64,71)', self.native)
-        self.assertNotIn('drawForRectangle(g,shadowBounds)', self.native)
-        self.assertIn('out.writeInt(stateMagic);out.writeInt(4)', self.native)
-        self.assertIn('version==3&&length!=v3Bytes', self.native)
-        self.assertIn('version==4&&length!=v4Bytes', self.native)
-        self.assertIn('explicitLevel=input.readFloat()', self.native)
-        self.assertEqual(hashlib.sha256(self.raw).hexdigest(), EXPECTED_SHA256)
-
     def test_black_anodized_owner_thumb_not_a_replacement(self):
         # Original SVG geometry/embedded raster intact; only UI clones
         # recolour original g3-g6 paths and keep authored _Image3 shadow.
@@ -194,7 +144,7 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         for color in ('#090b0e','#323a40','#141a1e','#0d1216','#b4bdc1'):
             self.assertIn(color,self.native)
         self.assertIn('palettes[group][juce::jmin(i,maxima[group])]',self.native)
-        self.assertIn('rasterShadow->setAttribute("opacity",0.96)',self.native)
+        self.assertIn('rasterShadow->setAttribute("opacity",0.87)',self.native)
         self.assertIn('authoredFader->findChildWithID("THUMB")',self.native)
         self.assertEqual(hashlib.sha256(self.raw).hexdigest(),EXPECTED_SHA256)
 
@@ -242,17 +192,17 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
     def test_compact_scale_and_symmetric_layout_without_header_changes(self):
         # 31 x 50px -> 31 x 40px and 286px -> 229px.
         self.assertEqual(31*40,1240)
-        self.assertEqual(1430-1240,45+145)
+        self.assertEqual(1330-1240,2*45)
         self.assertAlmostEqual(40/50,.8,places=6)
         self.assertLess(abs(229/286-.8),.002)
-        self.assertIn('setResizeLimits(760,305,1750,305)',self.native)
-        self.assertIn('setSize(1430,305)',self.native)
-        self.assertIn('constexpr int x0=45, artY=55, artH=229, rightReserve=145',self.native)
-        self.assertIn('viewport_.setBounds(x0,artY,',self.native)
+        self.assertIn('setResizeLimits(760,305,1660,305)',self.native)
+        self.assertIn('setSize(1330,305)',self.native)
+        self.assertIn('constexpr int x0=45, artY=55, artH=229',self.native)
+        self.assertIn('viewport_.setBounds(x0,artY,juce::jmax(1,getWidth()-2*x0),238)',self.native)
         self.assertIn('static constexpr int bandCellWidth=40',self.native)
-        self.assertIn('juce::jmax(1,getWidth()-x0-rightReserve)',self.native)
+        self.assertIn('juce::jmax(1,getWidth()-2*x0)',self.native)
         self.assertIn('g.drawText(tick.second,4,labelY,36,19',self.native)
-        self.assertIn('g.drawText(tick.second,viewport_.getRight()+6,labelY,36,19',self.native)
+        self.assertIn('g.drawText(tick.second,getWidth()-40,labelY,36,19',self.native)
         # Header remains the identical five placements established before v7.
         for spec in ('preset_.setBounds(r-349,16,152,24)',
                      'save_.setBounds(r-189,16,56,24)',

@@ -31,7 +31,6 @@ public:
           params_(*this,nullptr,"GEQ31",makeParameters()) {
         for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i)
             bandValues_[i]=params_.getRawParameterValue(paramId(i));
-        levelValue_=params_.getRawParameterValue("levelDb");
     }
 
     const juce::String getName() const override {return "Graphic EQ 31";}
@@ -56,11 +55,6 @@ public:
         if(!ready_)return;
         for(std::size_t i=0;i<bandValues_.size();++i)
             core_.setGain(i,static_cast<double>(bandValues_[i]->load(std::memory_order_relaxed)));
-        levelGain_.reset(sampleRate,0.015); // 15 ms, no clicks or lookahead
-        lastLevelDb_=levelValue_->load(std::memory_order_acquire);
-        rtLevelDb_.store(lastLevelDb_,std::memory_order_release);
-        levelGain_.setCurrentAndTargetValue(
-            juce::Decibels::decibelsToGain(lastLevelDb_));
         peak_.store(0.f,std::memory_order_relaxed);
     }
     void releaseResources() override {ready_=false;}
@@ -75,14 +69,10 @@ public:
         std::array<float,GraphicEq31Core::bandCount> values{};
         for(std::size_t i=0;i<values.size();++i)
             values[i]=bandValues_[i]->load(std::memory_order_relaxed);
-        const float levelDb=levelValue_->load(std::memory_order_relaxed);
         const auto after=presetWriteSeq_.load(std::memory_order_acquire);
         if(before!=after||(after&1u)!=0u)return;
         for(std::size_t i=0;i<values.size();++i)
             (void)core_.setGain(i,values[i]);
-        // Same accepted generation as all 31 gains; never publish a
-        // partially recalled Output Level ahead of the fader curve.
-        rtLevelDb_.store(levelDb,std::memory_order_release);
     }
     void sealForRealtime() noexcept override {published_=true;}
     bool stateSnapshotQuiescent() const noexcept override {
@@ -96,73 +86,54 @@ public:
         const auto count=pcm.getNumSamples();
         auto* l=pcm.getWritePointer(0);
         auto* r=pcm.getWritePointer(1);
-        // One explicit OUTPUT LEVEL after the 31-band EQ, in the existing
-        // render graph. 15ms gain smoothing is sample-accurate and RT-safe.
+        // Graphic EQ 31 has only the 31 band controls. No invisible
+        // input/output gain, and no extra multiplier in the realtime path.
         core_.processStereo(l,r,static_cast<std::size_t>(count));
-        const float acceptedLevel=rtLevelDb_.load(std::memory_order_acquire);
-        if(acceptedLevel!=lastLevelDb_) {
-            levelGain_.setTargetValue(juce::Decibels::decibelsToGain(acceptedLevel));
-            lastLevelDb_=acceptedLevel;
-        }
         float peak=0.f;
-        for(int n=0;n<count;++n) {
-            const float gain=levelGain_.getNextValue();
-            l[n]*=gain; r[n]*=gain;
+        // Output gain was removed from Graphic EQ 31: meter post-EQ PCM,
+        // without a hidden output trim altering levels or headroom.
+        for(int n=0;n<count;++n)
             peak=std::max(peak,std::max(std::abs(l[n]),std::abs(r[n])));
-        }
         peak_.store(peak,std::memory_order_relaxed);
     }
     void processBlock(juce::AudioBuffer<double>&,juce::MidiBuffer&) override {}
     void getStateInformation(juce::MemoryBlock& destination) override {
         // CONTROL thread. Only one fixed-size, versioned state per insert.
         juce::MemoryOutputStream out(destination,false);
-        // GEQ1 v4: 31 bands + one EXPLICIT Output Level (136 bytes).
-        // v1/v2 obsolete hidden trims remain discarded; v3 restores unity.
-        out.writeInt(stateMagic);out.writeInt(4);
+        // GEQ1 v3: 31 band gains, no hidden trim (132 bytes).
+        // Restore supports legacy v1/v2 and discards old input/output trims.
+        out.writeInt(stateMagic);out.writeInt(3);
         for(auto* p:bandValues_)out.writeFloat(p->load(std::memory_order_acquire));
-        out.writeFloat(acceptedLevelDb());
     }
     bool restoreUnpublishedState(const void* bytes,int length) {
         constexpr int bandBytes=static_cast<int>(GraphicEq31Core::bandCount)*4;
-        constexpr int v1Bytes=8+bandBytes+8; // obsolete input + output
-        constexpr int v2Bytes=8+bandBytes+4; // obsolete input
-        constexpr int v3Bytes=8+bandBytes;   // band-only
-        constexpr int v4Bytes=8+bandBytes+4; // explicit Output Level
+        constexpr int v1Bytes=8+bandBytes+8; // band + input + output
+        constexpr int v2Bytes=8+bandBytes+4; // band + input
+        constexpr int v3Bytes=8+bandBytes;   // band only
         if(published_||!bytes||
-           (length!=v1Bytes&&length!=v2Bytes&&length!=v3Bytes&&
-            length!=v4Bytes))return false;
+           (length!=v1Bytes&&length!=v2Bytes&&length!=v3Bytes))return false;
         juce::MemoryInputStream input(bytes,static_cast<std::size_t>(length),false);
         if(input.readInt()!=stateMagic)return false;
         const int version=input.readInt();
         if((version==1&&length!=v1Bytes)||
            (version==2&&length!=v2Bytes)||
            (version==3&&length!=v3Bytes)||
-           (version==4&&length!=v4Bytes)||
-           (version<1||version>4))return false;
+           (version!=1&&version!=2&&version!=3))return false;
         std::array<float,GraphicEq31Core::bandCount> bands{};
         for(auto& value:bands) {
             value=input.readFloat();
-            if(!std::isfinite(value)||value< -12.f||value>12.f)return false;
+            if(!std::isfinite(value)||value < -12.f||value>12.f)return false;
         }
-        float explicitLevel=0.f;
-        if(version==4) {
-            explicitLevel=input.readFloat();
-            if(!std::isfinite(explicitLevel)||
-               explicitLevel< -24.f||explicitLevel>6.f)return false;
-        }else {
-            // Old input/output trims are validated only to reject corrupted
-            // sessions, then DISCARDED, never reactivated as Output Level.
-            for(int i=0;i<(version==1?2:version==2?1:0);++i) {
-                const float obsoleteTrim=input.readFloat();
-                if(!std::isfinite(obsoleteTrim)||
-                   obsoleteTrim< -12.f||obsoleteTrim>12.f)return false;
-            }
+        // Strictly validate legacy trims before any state mutation, then
+        // discard them. Hidden gain must NEVER survive a UI migration.
+        for(int i=0;i<(version==1?2:version==2?1:0);++i) {
+            const auto obsoleteTrim=input.readFloat();
+            if(!std::isfinite(obsoleteTrim)||
+               obsoleteTrim < -12.f||obsoleteTrim>12.f)return false;
         }
         if(!input.isExhausted())return false;
-        // Nothing mutates until the entire binary state is validated.
         for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i)
             setParameter(paramId(i),bands[i]);
-        setParameter("levelDb",explicitLevel);
         if(ready_)prepareToPlay(core_.sampleRate(),0);
         return true;
     }
@@ -179,26 +150,16 @@ public:
         return bands;
     }
     bool setBandsFromPreset(
-            const std::array<float,GraphicEq31Core::bandCount>& values,
-            float levelDb=0.f) {
+            const std::array<float,GraphicEq31Core::bandCount>& values) {
         for(const auto db:values)
             if(!std::isfinite(db)||db < -12.f||db > 12.f)return false;
-        if(!std::isfinite(levelDb)||levelDb< -24.f||levelDb>6.f)return false;
         // CONTROL thread only. Two atomic increments fence one committed
         // 31-band target array; realtime skips incomplete batches.
         presetWriteSeq_.fetch_add(1u,std::memory_order_acq_rel);
         for(std::size_t i=0;i<values.size();++i)
             setBandFromUi(i,values[i]);
-        setLevelFromUi(levelDb);
         presetWriteSeq_.fetch_add(1u,std::memory_order_release);
         return true;
-    }
-    float acceptedLevelDb() const noexcept {
-        return levelValue_->load(std::memory_order_acquire);
-    }
-    void setLevelFromUi(float db) {
-        if(std::isfinite(db)&&db>=-24.f&&db<=6.f)
-            setParameter("levelDb",db);
     }
     juce::AudioProcessorValueTreeState& parameters() noexcept {return params_;}
     float observedPeak() const noexcept {return peak_.load(std::memory_order_relaxed);}
@@ -221,9 +182,6 @@ private:
                 juce::ParameterID{paramId(i),1},
                 juce::String(graphicEq31Labels[i])+" Hz",
                 juce::NormalisableRange<float>(-12.f,12.f,.1f),0.f));
-        result.add(std::make_unique<juce::AudioParameterFloat>(
-            juce::ParameterID{"levelDb",1},"Output Level",
-            juce::NormalisableRange<float>(-24.f,6.f,.1f),0.f));
         return result;
     }
     void setParameter(const juce::String& id,float db) {
@@ -236,10 +194,6 @@ private:
     juce::AudioProcessorValueTreeState params_;
     GraphicEq31Core core_;
     std::array<std::atomic<float>*,GraphicEq31Core::bandCount> bandValues_{};
-    std::atomic<float>* levelValue_=nullptr;
-    std::atomic<float> rtLevelDb_{0.f};
-    juce::SmoothedValue<float,juce::ValueSmoothingTypes::Linear> levelGain_;
-    float lastLevelDb_=0.f;
     std::atomic<float> peak_{0.f};
     std::atomic<std::uint32_t> presetWriteSeq_{0u};
     bool published_=false,ready_=false;
@@ -329,22 +283,6 @@ public:
             attachments_.emplace_back(std::make_unique<Attachment>(
                 processor_.parameters(),"band"+juce::String(static_cast<int>(i)),slider));
         }
-        level_.setComponentID("geq31.output-level");
-        level_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        level_.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
-        level_.setDoubleClickReturnValue(true,0.);
-        level_.setTooltip("Output Level: -24 to +6 dB, unity at 0 dB");
-        level_.onValueChange=[this]{
-            repaint(juce::Rectangle<int>(getWidth()-110,85,105,142));
-        };
-        levelAttachment_=std::make_unique<Attachment>(
-            processor_.parameters(),"levelDb",level_);
-        addAndMakeVisible(level_);
-
-        // Original SVG sliders remain transparent; the common milled
-        // recess is drawn behind these surfaces in the parent paint.
-        bandSurface_.setOpaque(false);
-        viewport_.setOpaque(false);
         viewport_.setViewedComponent(&bandSurface_,false);
         viewport_.setScrollBarsShown(false,true);
         viewport_.setScrollBarThickness(7);
@@ -397,19 +335,16 @@ public:
         flat_.setButtonText("Flat");
         flat_.setTooltip("Reset all 31 EQ bands to 0 dB");
         flat_.onClick=[this]{
-            // Hardware EQ Flat resets 31 bands ONLY, preserving the chosen
-            // Output Level. A level-adjusted Flat is a Custom full preset.
             selectedUserId_.clear();
-            processor_.setFlatFromUi();
-            preset_.setSelectedId(matchingFactoryPreset(),
-                                  juce::dontSendNotification);
+            applyFactoryPreset(2);
+            preset_.setSelectedId(2,juce::dontSendNotification);
         };
         addAndMakeVisible(flat_);
         setResizable(true,true);
         // Hardware stays 1:1 as authored SVG; only the 31-band viewport
         // renders at 80%. Header/control sizes are deliberately unchanged.
-        setResizeLimits(760,305,1750,305);
-        setSize(1430,305);
+        setResizeLimits(760,305,1660,305);
+        setSize(1330,305);
         startTimerHz(6); // GUI-only external host readback; no audio work
     }
 
@@ -430,25 +365,6 @@ public:
         g.fillRect(getLocalBounds());
         g.setColour(juce::Colour::fromRGB(94,102,106).withAlpha(.72f));
         g.drawRect(getLocalBounds().reduced(1),1);
-
-        // RESTORED COAKAN: one milled 31-band recess under the original
-        // scrolling SVG faders. Not 31 dark rectangular tiles. The
-        // viewport supplies stable geometry when resized.
-        const auto cutout=viewport_.getBounds().toFloat().expanded(2.f,1.f);
-        const auto innerCutout=cutout.reduced(1.5f);
-        g.setColour(juce::Colour(0xff3e4b53).withAlpha(.90f));
-        g.fillRoundedRectangle(cutout,5.f); // dark outer milled rim
-        g.setGradientFill(juce::ColourGradient(
-            juce::Colour(0xff79858c),innerCutout.getCentreX(),innerCutout.getY(),
-            juce::Colour(0xffb0b8bb),innerCutout.getCentreX(),innerCutout.getBottom(),
-            false));
-        g.fillRoundedRectangle(innerCutout,3.5f);
-        g.setColour(juce::Colour(0xff29353b).withAlpha(.78f));
-        g.drawRoundedRectangle(innerCutout.reduced(.5f),3.f,1.f);
-        g.setColour(juce::Colours::white.withAlpha(.55f));
-        g.drawLine(innerCutout.getX()+4.f,innerCutout.getBottom()-.5f,
-                   innerCutout.getRight()-4.f,innerCutout.getBottom()-.5f,1.f);
-
         g.setColour(juce::Colour::fromRGB(33,46,52));
         g.setFont(inter(17.f));
         g.drawText("Graphic EQ 31",19,13,250,31,juce::Justification::centredLeft);
@@ -459,36 +375,29 @@ public:
                        216,22,310,20,juce::Justification::centredLeft);
         g.setColour(juce::Colour::fromRGB(76,90,97).withAlpha(.45f));
         g.drawHorizontalLine(53,0.f,static_cast<float>(width));
-        // Calibrated scales use the SAME ink as the Inter frequency numbers,
-        // slightly smaller so they never dominate the 31 band captions.
+        // Two calibrated scales, adjacent to the first and last visible
+        // track: 12.5px bold Inter after shrinking just the hardware to 80%.
         const auto majorTickY=[this](float sourceY) noexcept {
             return juce::roundToInt(
                 static_cast<float>(viewport_.getY())+
                 sourceY*static_cast<float>(sliders_[0].getHeight())/2042.f);
         };
-        g.setColour(juce::Colour::fromRGB(52,64,71)); // #344047
-        g.setFont(inter(10.5f).boldened());
+        g.setColour(juce::Colour::fromRGB(23,32,37));
+        g.setFont(inter(12.5f).boldened());
         for(const auto& tick:std::array<std::pair<float,const char*>,3>{{
                 {208.75f,"+12"},{918.33f,"0"},{1627.92f,"-12"}}}) {
             const int labelY=majorTickY(tick.first)-9;
             g.drawText(tick.second,4,labelY,36,19,
                        juce::Justification::centredRight);
-            g.drawText(tick.second,viewport_.getRight()+6,labelY,36,19,
+            g.drawText(tick.second,getWidth()-40,labelY,36,19,
                        juce::Justification::centredLeft);
         }
-        g.setColour(juce::Colour::fromRGB(52,64,71));
-        g.setFont(inter(10.5f).boldened());
-        g.drawText("LEVEL",getWidth()-105,96,94,17,juce::Justification::centred);
-        g.drawText(juce::String(level_.getValue(),1)+" dB",
-                   getWidth()-105,205,94,19,juce::Justification::centred);
     }
     void resized() override {
         // Compact 80%-scale hardware: 31 x 40 px = 1240px, 229px tall.
         // Header is unchanged; 2px from divider to art, 12px bottom inset.
-        constexpr int x0=45, artY=55, artH=229, rightReserve=145;
-        viewport_.setBounds(x0,artY,
-            juce::jmax(1,getWidth()-x0-rightReserve),238);
-        level_.setBounds(getWidth()-94,125,72,72);
+        constexpr int x0=45, artY=55, artH=229;
+        viewport_.setBounds(x0,artY,juce::jmax(1,getWidth()-2*x0),238);
         bandSurface_.setSize(static_cast<int>(
             GraphicEq31Core::bandCount)*bandCellWidth,artH);
         for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i)
@@ -531,8 +440,6 @@ private:
         return 0.f;
     }
     int matchingFactoryPreset() const {
-        // Factory full-configuration presets have unity Output Level.
-        if(std::abs(processor_.acceptedLevelDb())>.06f)return 1;
         for(int preset=2;preset<=5;++preset) {
             bool match=true;
             for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i) {
@@ -557,8 +464,6 @@ private:
                 if(std::abs(current[i]-savedUserBands_[i])>.06f) {
                     matches=false;break;
                 }
-            matches=matches&&std::abs(
-                processor_.acceptedLevelDb()-savedUserLevelDb_)<=.06f;
             if(matches) {
                 for(std::size_t i=0;i<userPresets_.size();++i)
                     if(userPresets_[i].id==selectedUserId_)
@@ -597,7 +502,6 @@ private:
             }
             selectedUserId_=userPresets_[index].id;
             savedUserBands_=processor_.acceptedBands();
-            savedUserLevelDb_=processor_.acceptedLevelDb();
             return;
         }
         if(choice>=2&&choice<=5) {
@@ -626,14 +530,12 @@ private:
         if(id.isEmpty())return; // Host displays the validation error.
         selectedUserId_=id;
         savedUserBands_=processor_.acceptedBands();
-        savedUserLevelDb_=processor_.acceptedLevelDb();
         refreshPresetList();
     }
     void applyFactoryPreset(int choice) {
         if(choice<2||choice>5)return;
         for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i)
             processor_.setBandFromUi(i,presetGain(choice,graphicEq31Hz[i]));
-        processor_.setLevelFromUi(0.f); // factory presets at unity output
     }
     // 512x256 image generated once per editor, never in the PCM callback.
     // The supplied original metal is still embedded unchanged. Only 8% of
@@ -683,15 +585,6 @@ private:
 #if defined(ARMIX_GEQ31_VECTOR_ASSET) && ARMIX_GEQ31_VECTOR_ASSET
             originalSvg_=juce::String::fromUTF8(BinaryData::slider_eq_grp_svg,
                 static_cast<int>(BinaryData::slider_eq_grp_svgSize));
-            // Reuse the owner's distinct KNOB and POINTER artwork unchanged.
-            auto knobXML=juce::XmlDocument::parse(juce::String::fromUTF8(
-                BinaryData::KNOB_EQ_svg,static_cast<int>(BinaryData::KNOB_EQ_svgSize)));
-            if(knobXML) {
-                knobXML->setAttribute("viewBox","-40 38 150 152");
-                knobArtwork_=juce::Drawable::createFromSVG(*knobXML);
-                if(knobArtwork_)
-                    pointer_=knobArtwork_->findChildWithID("POINTER");
-            }
 #endif
             lastGain_.fill(std::numeric_limits<float>::quiet_NaN());
             thumbGroups_.fill(nullptr);
@@ -761,35 +654,6 @@ private:
                 .translated((button.getWidth()-22.f)*.5f,
                             (button.getHeight()-22.f)*.5f));
         }
-        void drawRotarySlider(juce::Graphics& g,int x,int y,int width,
-                              int height,float sliderPos,float,float,
-                              juce::Slider& slider) override {
-            if(slider.getComponentID()!="geq31.output-level")return;
-            if(knobArtwork_) {
-                if(pointer_)
-                    pointer_->setTransform(juce::AffineTransform::rotation(
-                        (-0.75f+1.5f*sliderPos)*juce::MathConstants<float>::pi,
-                        35.f,113.6f));
-                // The owner's KNOB image contains raster pixels outside
-                // its visual circle. Clip at the 72px control boundary so
-                // they cannot leave a stray dark spot on the aluminium.
-                juce::Graphics::ScopedSaveState scoped(g);
-                g.reduceClipRegion(x,y,width,height);
-                knobArtwork_->drawWithin(g,{
-                    static_cast<float>(x),static_cast<float>(y),
-                    static_cast<float>(width),static_cast<float>(height)},
-                    juce::RectanglePlacement::centred,1.f);
-            }else {
-                // Standalone CTest target without BinaryData: safe fallback.
-                const auto bounds=juce::Rectangle<float>(
-                    static_cast<float>(x+4),static_cast<float>(y+4),
-                    static_cast<float>(width-8),static_cast<float>(height-8));
-                g.setColour(juce::Colour(0xff2b343a));
-                g.fillEllipse(bounds);
-                g.setColour(juce::Colour(0xff9ba6ac));
-                g.drawEllipse(bounds,1.f);
-            }
-        }
         void drawLinearSlider(juce::Graphics& g,int x,int y,int width,int height,
                               float,float,float,juce::Slider::SliderStyle,
                               juce::Slider& slider) override {
@@ -815,14 +679,8 @@ private:
                     juce::roundToInt(y+(776.f+shift)*height/2042.f),
                     juce::roundToInt(width*161.f/352.f),
                     juce::roundToInt(height*280.f/2042.f));
-                // One cached soft contact + ambient shadow stamp, FOLLOWING
-                // only the actual 18x31px THUMB silhouette; never a dark
-                // rectangular tile for each fader. No per-paint blur work.
-                prepareThumbShadow(shadowBounds.getWidth(),shadowBounds.getHeight());
-                if(thumbShadowStamp_.isValid())
-                    g.drawImageAt(thumbShadowStamp_,
-                        shadowBounds.getX()-shadowPad,
-                        shadowBounds.getY()-shadowPad);
+                juce::DropShadow(juce::Colours::black.withAlpha(.30f),
+                    4,{1,3}).drawForRectangle(g,shadowBounds);
                 art->drawWithin(g,{static_cast<float>(x),static_cast<float>(y),
                     static_cast<float>(width),static_cast<float>(height)},
                     juce::RectanglePlacement::stretchToFit,1.f);
@@ -853,23 +711,6 @@ private:
         // The WHITE index line (not the body's upper/lower edge) must meet
         // the actual ±12 tick path. White ridge s11: y=913..920,
         // centre=916.5; SVG major ticks: y=208.75 / 918.33 / 1627.92.
-        static constexpr int shadowPad=9;
-        void prepareThumbShadow(int w,int h) {
-            if(thumbShadowStamp_.isValid()&&
-               shadowSourceW_==w&&shadowSourceH_==h)return;
-            shadowSourceW_=w; shadowSourceH_=h;
-            thumbShadowStamp_=juce::Image(juce::Image::ARGB,
-                w+2*shadowPad,h+2*shadowPad,true);
-            juce::Graphics offscreen(thumbShadowStamp_);
-            juce::Path silhouette;
-            silhouette.addRoundedRectangle(static_cast<float>(shadowPad),
-                static_cast<float>(shadowPad),
-                static_cast<float>(w),static_cast<float>(h),3.5f);
-            juce::DropShadow(juce::Colours::black.withAlpha(.55f),
-                6,{2,3}).drawForPath(offscreen,silhouette);
-            juce::DropShadow(juce::Colours::black.withAlpha(.32f),
-                2,{1,1}).drawForPath(offscreen,silhouette);
-        }
         static constexpr float indexCenterY=916.5f;
         static float thumbShift(float gain) noexcept {
             const float t=juce::jlimit(-12.f,12.f,gain)/12.f;
@@ -942,8 +783,8 @@ private:
             // Tint the UI clone only, to a darker chamfer around the hole.
             if(auto* defs=document->getChildByName("defs")) {
                 if(auto* lip=defs->getChildByAttribute("id","g1")) {
-                    const char* shades[]={"#d8dee1","#b8c2c7",
-                                          "#818f97","#49545c"};
+                    const char* shades[]={"#929b9f","#a6afb3",
+                                          "#969ea3","#858d92"};
                     for(int j=0;j<lip->getNumChildElements();++j)
                         lip->getChildElement(j)->setAttribute(
                             "stop-color",shades[juce::jmin(j,3)]);
@@ -985,7 +826,7 @@ private:
             // Only its opacity is slightly moderated to fit the tight pitch.
             if(auto* rasterShadow=thumbGroup->getFirstChildElement()) {
                 if(rasterShadow->getChildByAttribute("id","_Image3"))
-                    rasterShadow->setAttribute("opacity",0.96);
+                    rasterShadow->setAttribute("opacity",0.87);
             }
             auto drawable=juce::Drawable::createFromSVG(*document);
             if(!drawable)return;
@@ -996,10 +837,6 @@ private:
             drawables_[band]=std::move(drawable);
         }
         juce::String originalSvg_;
-        std::unique_ptr<juce::Drawable> knobArtwork_;
-        juce::Component* pointer_=nullptr;
-        juce::Image thumbShadowStamp_;
-        int shadowSourceW_=-1,shadowSourceH_=-1;
         std::array<std::unique_ptr<juce::Drawable>,GraphicEq31Core::bandCount> drawables_{};
         std::array<juce::Component*,GraphicEq31Core::bandCount> thumbGroups_{};
         std::array<float,GraphicEq31Core::bandCount> lastGain_{};
@@ -1013,15 +850,12 @@ private:
     juce::Component bandSurface_;
     juce::Viewport viewport_;
     std::array<GraphicEq31DetentSlider,GraphicEq31Core::bandCount> sliders_;
-    juce::Slider level_;
-    std::unique_ptr<Attachment> levelAttachment_;
     std::vector<std::unique_ptr<Attachment>> attachments_;
     juce::ComboBox preset_;
     juce::TextButton flat_,save_,power_,close_;
     std::vector<UserPresetEntry> userPresets_;
     juce::String selectedUserId_;
     std::array<float,GraphicEq31Core::bandCount> savedUserBands_{};
-    float savedUserLevelDb_=0.f;
     std::function<std::vector<UserPresetEntry>()> listUserPresets_;
     std::function<juce::String(const juce::String&)> saveUserPreset_;
     std::function<bool(const juce::String&)> recallUserPreset_;
