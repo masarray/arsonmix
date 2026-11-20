@@ -20,11 +20,13 @@ int main(){
   } cleanup{root};
   BuiltInFxUserPresetStore store(root);
   ChannelEqProcessor eq;
+  GraphicEq31Processor geq;
   ChannelCompressorProcessor comp;
   ChannelHarmonyProcessor harmony;
   VocalThrowProcessor vthrow;
-  juce::AudioProcessor* processors[]={&eq,&comp,&harmony,&vthrow};
+  juce::AudioProcessor* processors[]={&eq,&geq,&comp,&harmony,&vthrow};
   const char* catalogs[]={ChannelEqProcessor::catalogIdentity,
+      GraphicEq31Processor::catalogIdentity,
       ChannelCompressorProcessor::catalogIdentity,
       ChannelHarmonyProcessor::catalogIdentity,
       VocalThrowProcessor::catalogIdentity};
@@ -33,11 +35,11 @@ int main(){
          "armix.builtin.arson-harmony.v1").isObject());
     p->prepareToPlay(48000.,128);
   }
-  for(int i=0;i<4;++i) {
+  for(int i=0;i<5;++i) {
     auto* p=processors[i];
     const juce::String catalog(catalogs[i]);
     REQUIRE(BuiltInFxAcceptedSnapshot::matchesReady(p,catalog));
-    for(int j=0;j<4;++j)
+    for(int j=0;j<5;++j)
       if(i!=j)REQUIRE(!BuiltInFxAcceptedSnapshot::matchesReady(p,catalogs[j]));
     const auto captured=BuiltInFxAcceptedSnapshot::acceptedSettings(p,catalog);
     REQUIRE(BuiltInFxUserPresetStore::validateSettings(catalog,captured));
@@ -52,7 +54,7 @@ int main(){
     REQUIRE(BuiltInFxUserPresetStore(root).read(catalog,first.id,second).isEmpty());
     REQUIRE(juce::JSON::toString(second.settings,false)==
             juce::JSON::toString(captured,false));
-    for(int j=0;j<4;++j)if(i!=j) {
+    for(int j=0;j<5;++j)if(i!=j) {
       BuiltInFxUserPreset wrong;
       REQUIRE(store.read(catalogs[j],first.id,wrong).isNotEmpty());
     }
@@ -60,20 +62,26 @@ int main(){
   const auto eqSettings=BuiltInFxAcceptedSnapshot::acceptedSettings(&eq,catalogs[0]);
   REQUIRE(eqSettings.getProperty("bands",{}).isArray());
   REQUIRE(eqSettings.getProperty("bands",{}).getArray()->size()==8);
-  const auto compSettings=BuiltInFxAcceptedSnapshot::acceptedSettings(&comp,catalogs[1]);
+  const auto geqSettings=BuiltInFxAcceptedSnapshot::acceptedSettings(&geq,catalogs[1]);
+  REQUIRE(geqSettings.isObject());
+  REQUIRE(geqSettings.getProperty("bands",{}).isArray());
+  REQUIRE(geqSettings.getProperty("bands",{}).getArray()->size()==31);
+  REQUIRE(!geqSettings.hasProperty("inputDb"));
+  REQUIRE(!geqSettings.hasProperty("outputDb"));
+  const auto compSettings=BuiltInFxAcceptedSnapshot::acceptedSettings(&comp,catalogs[2]);
   REQUIRE(compSettings.getProperty("makeupDb",{}).isDouble()||
           compSettings.getProperty("makeupDb",{}).isInt());
-  const auto harmonySettings=BuiltInFxAcceptedSnapshot::acceptedSettings(&harmony,catalogs[2]);
+  const auto harmonySettings=BuiltInFxAcceptedSnapshot::acceptedSettings(&harmony,catalogs[3]);
   REQUIRE(!harmonySettings.hasProperty("guideChannelId"));
   REQUIRE(!harmonySettings.hasProperty("guideMode"));
   REQUIRE(harmonySettings.hasProperty("voiceMode"));
-  const auto throwSettings=BuiltInFxAcceptedSnapshot::acceptedSettings(&vthrow,catalogs[3]);
+  const auto throwSettings=BuiltInFxAcceptedSnapshot::acceptedSettings(&vthrow,catalogs[4]);
   REQUIRE(!throwSettings.hasProperty("musicSourceChannelId"));
   REQUIRE(!throwSettings.hasProperty("throwCount"));
   for(auto* p:processors)p->releaseResources();
-  for(int i=0;i<4;++i)
+  for(int i=0;i<5;++i)
     REQUIRE(!BuiltInFxAcceptedSnapshot::matchesReady(processors[i],catalogs[i]));
-  std::cout<<"Four built-in FX: accepted DSP snapshot -> typed .armixfx -> "
+  std::cout<<"Five built-in FX: accepted DSP snapshot -> typed .armixfx -> "
            <<"cold reopen, wrong-catalog and source exclusion PASS\n";
   return 0;
  }catch(const std::exception& e) {
