@@ -52,22 +52,25 @@ function Test-VBCableSmartDetection {
         foreach ($case in @(
             @{Name='healthy'; Device='present'; Expected='ALREADY_PRESENT'},
             @{Name='offline'; Device='offline'; Expected='REPAIR_REQUIRED'},
-            @{Name='pending'; Device='absent'; Expected='PENDING_REBOOT'; Pending=$true},
+            @{Name='pending'; Device='absent'; Expected='PENDING_REBOOT'; RecordedBoot=$boot},
+            @{Name='pending-query-denied'; Device='error'; Expected='PENDING_REBOOT'; RecordedBoot=$boot},
+            @{Name='after-reboot'; Device='present'; Expected='ALREADY_PRESENT'; RecordedBoot=$boot.AddDays(-1)},
+            @{Name='missing-after-reboot'; Device='absent'; Expected='REPAIR_REQUIRED'; RecordedBoot=$boot.AddDays(-1)},
             @{Name='missing'; Device='absent'; Expected='FAILED'; Reason='Bundled driver ZIP absent'},
             @{Name='query-failure'; Device='error'; Expected='FAILED'; Reason='Fixture PnP query denied'}
         )) {
             $env:APPDATA=Join-Path $work ("cable-"+$case.Name)
             $status=Join-Path $env:APPDATA "AR-MIX-Studio/VB-CABLE-STATUS.json"
-            if ($case.ContainsKey('Pending')) {
+            if ($case.ContainsKey('RecordedBoot')) {
                 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $status) | Out-Null
-                @{state='PENDING_REBOOT';bootUtc=$boot.ToString('o')} |
+                @{state='PENDING_REBOOT';bootUtc=$case.RecordedBoot.ToString('o')} |
                     ConvertTo-Json | Set-Content -LiteralPath $status
             }
             # Deliberately absent payload: the missing-device case alone should
             # check for the archive. Presence and pending must return earlier.
             & $bootstrap -Archive (Join-Path $work 'absent-vendor.zip') -ExpectedSha256 ('0'*64)
             $result=Get-Content -LiteralPath $status -Raw | ConvertFrom-Json
-            Assert-Condition ($result.state -ceq $case.Expected) "VB-CABLE state mismatch for $($case.Name)"
+            Assert-Condition ($result.state -ceq $case.Expected) "VB-CABLE state mismatch for $($case.Name): $($result.state) ($($result.reason))"
             if ($case.ContainsKey('Reason')) {
                 Assert-Condition ($result.reason -ceq $case.Reason) "VB-CABLE reason mismatch for $($case.Name)"
             }

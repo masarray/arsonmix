@@ -21,31 +21,46 @@ function Record([string]$stateName,[string]$reason) {
       ConvertTo-Json | Set-Content -LiteralPath $temp -Encoding UTF8
   Move-Item -LiteralPath $temp -Destination $statusPath -Force
 }
+function Read-BootEpoch($value) {
+  if($value -is [DateTime] -or $value -is [DateTimeOffset]){
+    return ([DateTimeOffset]$value).UtcDateTime.ToString('o')
+  }
+  [DateTimeOffset]$parsed=[DateTimeOffset]::MinValue
+  if([DateTimeOffset]::TryParseExact([string]$value,'o',
+     [Globalization.CultureInfo]::InvariantCulture,
+     [Globalization.DateTimeStyles]::AssumeUniversal,[ref]$parsed)){
+    return $parsed.UtcDateTime.ToString('o')
+  }
+  return ""
+}
 $dir=Join-Path $env:TEMP ("armix-cable-"+[guid]::NewGuid().ToString("N"))
+$pending=$false
 try {
   # A driver already queued for reboot must NOT be run again: the VB-Audio
   # setup utility can switch into REMOVE mode on a second invocation.
-  # Record the Windows boot epoch and only clear pending after *another* boot
-  # AND a healthy PnP readback. Never infer installation from a process exit.
-  $os=Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
-  $script:bootUtc=$os.LastBootUpTime.ToUniversalTime().ToString('o')
   $previous=$null
   if(Test-Path -LiteralPath $statusPath -PathType Leaf){
     $previous=Get-Content -LiteralPath $statusPath -Raw -ErrorAction Stop | ConvertFrom-Json
+  }
+  $pending=$null -ne $previous -and $previous.state -eq 'PENDING_REBOOT'
+  $os=Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+  $script:bootUtc=$os.LastBootUpTime.ToUniversalTime().ToString('o')
+  if($pending){
+    # Windows PowerShell and newer pwsh can deserialize the same JSON field
+    # as text or as a date. Compare canonical UTC instants, before PnP reads.
+    $bootProperty=$previous.PSObject.Properties['bootUtc']
+    $recordedBoot=if($null -ne $bootProperty){Read-BootEpoch $bootProperty.Value}else{""}
+    if([string]::IsNullOrEmpty($recordedBoot) -or $recordedBoot -ceq $script:bootUtc){
+      Record "PENDING_REBOOT" "Restart Windows to complete the already-launched VB-CABLE installation"
+      exit 0
+    }
   }
   $isCable={ $_.FriendlyName -match '(?i)VB-Audio Virtual Cable|CABLE (Output|Input).*VB-Audio' }
   # Include non-present devices. Only examining PresentOnly can accidentally
   # launch the vendor setup in REMOVE mode when a driver awaits reboot.
   $all=@(Get-PnpDevice -ErrorAction Stop | Where-Object $isCable)
   $present=@(Get-PnpDevice -PresentOnly -ErrorAction Stop | Where-Object $isCable)
-  if($null -ne $previous -and $previous.state -eq 'PENDING_REBOOT'){
-    $bootProperty=$previous.PSObject.Properties['bootUtc']
-    if($null -eq $bootProperty -or
-       [string]::IsNullOrWhiteSpace([string]$bootProperty.Value) -or
-       [string]$bootProperty.Value -eq $script:bootUtc){
-      Record "PENDING_REBOOT" "Restart Windows to complete the already-launched VB-CABLE installation"
-      exit 0
-    }
+  if($pending){
     if($present.Count -eq 0 -or @($present | Where-Object {$_.Status -ne 'OK'}).Count -gt 0){
       Record "REPAIR_REQUIRED" "After reboot, VB-CABLE did not expose healthy PnP endpoints; do not rerun vendor setup automatically"
       exit 3
@@ -94,7 +109,8 @@ try {
   Record "PENDING_REBOOT" "Reboot Windows, then verify CABLE Output and physical speaker"
   exit 0
 } catch {
-  Record "FAILED" $_.Exception.Message
+  # A failed OS/PnP query is not proof a recorded installation vanished.
+  if(-not $pending){Record "FAILED" $_.Exception.Message}
   Write-Warning ("Optional VB-Audio driver step incomplete: "+$_.Exception.Message)
   exit 2
 } finally {
