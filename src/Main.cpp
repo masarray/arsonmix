@@ -3333,11 +3333,14 @@ private:
             armix::session::MixerDeviceBindingPolicy::Mode bindingMode=
                 armix::session::MixerDeviceBindingPolicy::Mode::exact) {
         using Recovery=armix::session::NativeMixerSessionRecovery;
-        const auto blocked=Recovery::restoreBlocker({
-            engine_.allOutputsDisarmed(),mixerSessionWorker_.busy(),
-            logicalVendorEditor_!=nullptr,nativeShowBusy_,studioBackupBusy_,
-            engine_.isGraphSwitchPending()
-        });
+        Recovery::RestoreContext restore;
+        restore.outputsDisarmed=engine_.allOutputsDisarmed();
+        restore.workerBusy=mixerSessionWorker_.busy();
+        restore.vendorEditorOpen=logicalVendorEditor_!=nullptr;
+        restore.showBusy=nativeShowBusy_;
+        restore.backupBusy=studioBackupBusy_;
+        restore.graphPending=engine_.isGraphSwitchPending();
+        const auto blocked=Recovery::restoreBlocker(restore);
         if(blocked)return blocked;
         const armix::session::NativeMixerSessionStore store(settingsDirectory());
         armix::session::MixerSessionDocument doc;
@@ -3439,18 +3442,27 @@ private:
         const auto live=liveState.getProperty("dryRoutingLab",{});
         const auto session=approvedNativeSnapshot(liveState)
             .getProperty("mixerSession",{});
-        const auto* audio=engine_.devices().getCurrentAudioDevice();
-        const auto decision=Recovery::planSave({
-            automatic,mixerSessionWorker_.busy(),nativeShowBusy_,
-            studioBackupBusy_,catalog_.busy(),engine_.isGraphSwitchPending(),
-            logicalMixer_.readOnly(),
-            static_cast<bool>(live.getProperty("nativeChannelIdPcmActive",false)),
-            session.getProperty("authority","").toString()=="M4",
-            engine_.secondaryArmed(),engine_.hasRetainedNativeSession(),
-            mixerSessionRecoveryPending_,shutdownCheckpoint,
-            audio!=nullptr && audio->isOpen(),engine_.directRouteAuthorized(),
-            engine_.mainInterruptedByDevice()
-        });
+        // JUCE AudioIODevice::isOpen() is deliberately non-const.
+        auto* audio=engine_.devices().getCurrentAudioDevice();
+        Recovery::SaveContext save;
+        save.automatic=automatic;
+        save.workerBusy=mixerSessionWorker_.busy();
+        save.showBusy=nativeShowBusy_;
+        save.backupBusy=studioBackupBusy_;
+        save.catalogBusy=catalog_.busy();
+        save.graphPending=engine_.isGraphSwitchPending();
+        save.readOnly=logicalMixer_.readOnly();
+        save.channelIdInstalled=static_cast<bool>(
+            live.getProperty("nativeChannelIdPcmActive",false));
+        save.m4Installed=session.getProperty("authority","").toString()=="M4";
+        save.secondaryArmed=engine_.secondaryArmed();
+        save.retainedNative=engine_.hasRetainedNativeSession();
+        save.recoveryPending=mixerSessionRecoveryPending_;
+        save.shutdownCheckpoint=shutdownCheckpoint;
+        save.physicalOpen=audio!=nullptr && audio->isOpen();
+        save.directAuthorized=engine_.directRouteAuthorized();
+        save.mainInterrupted=engine_.mainInterruptedByDevice();
+        const auto decision=Recovery::planSave(save);
         if(decision.action==Recovery::SaveAction::reject)
             return juce::String(decision.error);
         if(decision.action==Recovery::SaveAction::unchanged)
@@ -3536,15 +3548,16 @@ private:
             const auto lab=liveState.getProperty("dryRoutingLab",{});
             const auto session=safe->approvedNativeSnapshot(liveState)
                 .getProperty("mixerSession",{});
-            const auto decision=Recovery::planOpen({
-                safe->nativeShowBusy_ || safe->studioBackupBusy_ ||
-                    safe->catalog_.busy() || engine.isGraphSwitchPending(),
-                chosenEpoch!=engine.dryRoutingLabEpoch(),
-                engine.secondaryArmed(),
-                static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false)),
-                session.getProperty("authority","").toString()=="M4",
-                engine.hasRetainedNativeSession()
-            });
+            Recovery::OpenContext opening;
+            opening.operationBusy=safe->nativeShowBusy_ || safe->studioBackupBusy_ ||
+                safe->catalog_.busy() || engine.isGraphSwitchPending();
+            opening.epochChanged=chosenEpoch!=engine.dryRoutingLabEpoch();
+            opening.secondaryArmed=engine.secondaryArmed();
+            opening.channelIdInstalled=static_cast<bool>(
+                lab.getProperty("nativeChannelIdPcmActive",false));
+            opening.m4Installed=session.getProperty("authority","").toString()=="M4";
+            opening.retainedNative=engine.hasRetainedNativeSession();
+            const auto decision=Recovery::planOpen(opening);
             if(error.isEmpty() && decision.action==Recovery::OpenAction::reject)
                 error=decision.error;
             const auto importedHotkeys=doc.hotkeys;
