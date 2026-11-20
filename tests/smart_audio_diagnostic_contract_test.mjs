@@ -152,7 +152,10 @@ test('P0 capture block-head evidence is a single-pass RT heuristic, not invented
 function int1bSample(second,{dryTest=true,deviceGeneration=2,device="ASIO Driver",
   rate=48000,buffer=256,over=0,late=0,connected=true,
   nativeGlobalFxBypassed=dryTest,
-  nativeFxProcessingCount=nativeGlobalFxBypassed?0:1}={}) {
+  nativeFxProcessingCount=nativeGlobalFxBypassed?0:1,
+  nativeExternalCh1Leased=false,
+  nativeExternalCh1InstalledCount=0,
+  nativeExternalCh1ProcessingCount=0}={}) {
   const cumulative=(second+1)*100;
   const buckets=Array(13).fill(0);
   buckets[3]=cumulative-over;
@@ -167,6 +170,8 @@ function int1bSample(second,{dryTest=true,deviceGeneration=2,device="ASIO Driver
     diagnosticRoute:"NORMAL",productionRoutingState:"NATIVE_ROUTE_ACCEPTED",
     directRouteAuthorized:true,dryTest,
     nativeGlobalFxBypassed,nativeFxInstalledCount:1,nativeFxProcessingCount,
+    nativeExternalCh1Leased,nativeExternalCh1InstalledCount,
+    nativeExternalCh1ProcessingCount,
     callbackCount:cumulative,
     callbackBudgetBuckets:buckets,overBudgetCount:over,slowCallbackCount:over,
     lateCallbackIntervals:late,callbackGapCount:0,
@@ -184,6 +189,10 @@ test('INT-1B native log is bounded and uses one existing off-RT 1Hz snapshot',()
   assert.match(engine,/nativeFxProcessingCount/);
   assert.match(engine,/dryRoutingLab_\.globalFxBypassed\(\)/);
   assert.match(host,/nativeFxInstalledCount/);
+  assert.match(engine,/originalCh1GraphLeased/);
+  assert.match(engine,/graphOwned_->rackBypassed\.load/);
+  assert.match(engine,/graphOwned_->bypassFlags\[physical\]\.load/);
+  assert.match(host,/nativeExternalCh1InstalledCount/);
   assert.match(engine,/nativeFxGraphRevision/);
   assert.match(engine,/activeInputMaskHex/);
   assert.match(host,/makeAudioHealthRecord \(const juce::var& state\)/);
@@ -309,6 +318,31 @@ test('INT-1B never pairs another app session or a stale DRY baseline',()=>{
   ].join('\n'));
   assert.equal(compareDryFx(intervening).comparable,true,
     'a complete adjacent dry then fx pair remains valid even with a later DRY run');
+});
+
+test('INT-1B external-only CH1 vendor rack is FX when powered and DRY when bypassed',()=>{
+  const lines=[];
+  for(let s=0;s<=40;s++)lines.push(int1bLine(s,{
+    dryTest:false,nativeGlobalFxBypassed:true,nativeFxProcessingCount:0,
+    nativeExternalCh1Leased:true,nativeExternalCh1InstalledCount:1,
+    nativeExternalCh1ProcessingCount:0
+  }));
+  for(let s=41;s<=81;s++)lines.push(int1bLine(s,{
+    dryTest:false,nativeGlobalFxBypassed:false,nativeFxProcessingCount:1,
+    nativeExternalCh1Leased:true,nativeExternalCh1InstalledCount:1,
+    nativeExternalCh1ProcessingCount:1
+  }));
+  const report=analyzeHealthLog(lines.join('\n'));
+  assert.deepEqual(report.segments.map(s=>s.mode),['DRY','FX']);
+  assert.equal(report.segments[0].nativeExternalCh1InstalledCount,1);
+  assert.equal(report.segments[1].nativeExternalCh1ProcessingCount,1);
+  assert.equal(compareDryFx(report).comparable,true,
+    'External-only original CH1 Graph is not silently omitted from native FX');
+  const malformed=lines.slice();
+  malformed[50]=malformed[50].replace('"nativeExternalCh1ProcessingCount":1',
+      '"nativeExternalCh1ProcessingCount":2');
+  assert.ok(analyzeHealthLog(malformed.join('\n')).warnings.some(s=>s.includes('invalid source metadata')),
+    'External count cannot exceed the accepted authoritative total');
 });
 
 test('INT-1B rejects missed/unknown data rather than counting missing as zero',()=>{
