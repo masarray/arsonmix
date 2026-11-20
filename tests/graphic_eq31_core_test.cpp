@@ -17,6 +17,26 @@
 #include <cstdio>
 #include <limits>
 #include <vector>
+#include <atomic>
+#include <chrono>
+#include <new>
+
+// Count allocations only inside the explicit realtime scope. The fixture
+// prepares DSP and buffers before arming the guard; no test infrastructure
+// allocation is included in the measurement.
+static std::atomic<bool> rtAllocAudit{false};
+static std::atomic<unsigned> rtAllocCount{0};
+void* operator new(std::size_t n) {
+    if(rtAllocAudit.load(std::memory_order_relaxed))
+        rtAllocCount.fetch_add(1,std::memory_order_relaxed);
+    if(void* p=std::malloc(n?n:1))return p;
+    throw std::bad_alloc();
+}
+void* operator new[](std::size_t n) {return ::operator new(n);}
+void operator delete(void* p) noexcept {std::free(p);}
+void operator delete(void* p,std::size_t) noexcept {std::free(p);}
+void operator delete[](void* p) noexcept {std::free(p);}
+void operator delete[](void* p,std::size_t) noexcept {std::free(p);}
 
 using armix::builtin_fx::GraphicEq31Core;
 using armix::builtin_fx::graphicEq31Hz;
@@ -103,5 +123,99 @@ int main() {
         for(auto s:l)GEQ_CHECK(std::isfinite(s));
         for(auto s:r)GEQ_CHECK(std::isfinite(s));
     }
-    std::puts("Graphic EQ 31 core: frequencies, response, stereo isolation, Nyquist, stress PASS");
+    // Four shipping/hardware rates, five primary-ASIO quantum sizes.
+    // Reverse every band's target while previous 5 ms ramps are still
+    // running, with stereo-inverted input and 0.1 dB wheel-style increments.
+    for(const double rate:{44100.,48000.,96000.,192000.}) {
+        GEQ_CHECK(eq.prepare(rate));
+        for(const std::size_t frames:{32u,64u,128u,256u,512u}) {
+            std::array<float,512> left{},right{};
+            for(int tick=0;tick<42;++tick) {
+                for(std::size_t band=0;band<31;++band) {
+                    const double db=(tick%3==0?12.:tick%3==1?-12.:
+                        static_cast<double>((tick+static_cast<int>(band))%241-120)/10.);
+                    GEQ_CHECK(eq.setGain(band,db));
+                }
+                for(std::size_t i=0;i<frames;++i) {
+                    left[i]=.0005f*static_cast<float>(std::sin(
+                        6.2831853071795864769*997.*(tick*frames+i)/rate));
+                    right[i]=-left[i];
+                }
+                eq.processStereo(left.data(),right.data(),frames);
+                for(std::size_t i=0;i<frames;++i) {
+                    GEQ_CHECK(std::isfinite(left[i]));
+                    GEQ_CHECK(std::isfinite(right[i]));
+                    GEQ_CHECK(std::fabs(left[i]+right[i])<.0001f);
+                }
+            }
+        }
+        for(const float level:{-24.f,-11.7f,0.f,3.4f,6.f}) {
+            const float expected=static_cast<float>(
+                std::pow(10.,static_cast<double>(level)/20.));
+            GEQ_CHECK(std::fabs(eq.linearGainForDb(level)-expected)<.000005f);
+        }
+    }
+    // Physical impulse starts at sample 0: no FIFO, convolution lookahead,
+    // oversampling stage or transport-delay frames in the GEQ PCM path.
+    GEQ_CHECK(eq.prepare(48000.));
+    GEQ_CHECK(eq.setGain(17,12.));
+    std::array<float,512> impulseL{},impulseR{};
+    impulseL[0]=impulseR[0]=.01f;
+    eq.processStereo(impulseL.data(),impulseR.data(),impulseL.size());
+    GEQ_CHECK(impulseL[0]!=0.f&&impulseR[0]==impulseL[0]);
+    eq.reset();
+    impulseL.fill(0.f);impulseR.fill(0.f);
+    eq.processStereo(impulseL.data(),impulseR.data(),impulseL.size());
+    for(std::size_t i=0;i<impulseL.size();++i)
+        GEQ_CHECK(impulseL[i]==0.f&&impulseR[i]==0.f);
+
+    // Gain-vector lookup / biquad / per-sample smoothing must allocate zero
+    // bytes across many callback-sized rapid live edits, including crossings.
+    std::array<float,512> perfL{},perfR{};
+    rtAllocCount.store(0,std::memory_order_relaxed);
+    rtAllocAudit.store(true,std::memory_order_release);
+    for(int tick=0;tick<600;++tick) {
+        for(std::size_t band=0;band<31;++band)
+            GEQ_CHECK(eq.setGain(band,(tick%2?-.1:12.)-
+                static_cast<double>(band%3)*.1));
+        eq.processStereo(perfL.data(),perfR.data(),
+                         static_cast<std::size_t>(32*(1+tick%5)));
+    }
+    rtAllocAudit.store(false,std::memory_order_release);
+    GEQ_CHECK(rtAllocCount.load(std::memory_order_acquire)==0);
+
+    // Same-process synthetic reference to the previous hot-path formula;
+    // descriptive instrumentation, not a fabricated historical binary FAT.
+    using Clock=std::chrono::steady_clock;
+    double baselineSink=0.;
+    const auto before0=Clock::now();
+    for(int pass=0;pass<400;++pass)for(std::size_t band=0;band<31;++band) {
+        const double omega=6.2831853071795864769*graphicEq31Hz[band]/48000.;
+        const double alpha=std::sin(omega)/(2.*GraphicEq31Core::nominalQ);
+        const double cs=std::cos(omega);
+        const double a=std::pow(10.,(pass%2?-.1:12.)/40.);
+        baselineSink+=(1.+alpha*a)/(1.+alpha/a)-2.*cs/(1.+alpha/a);
+    }
+    const auto before1=Clock::now();
+    for(int pass=0;pass<400;++pass)for(std::size_t band=0;band<31;++band)
+        GEQ_CHECK(eq.setGain(band,pass%2?-.1:12.));
+    const auto after1=Clock::now();
+    std::array<double,256> callbackUs{};
+    for(auto& elapsed:callbackUs) {
+        const auto t0=Clock::now();
+        eq.processStereo(perfL.data(),perfR.data(),256);
+        elapsed=std::chrono::duration<double,std::micro>(Clock::now()-t0).count();
+    }
+    std::sort(callbackUs.begin(),callbackUs.end());
+    const auto us=[](Clock::duration duration) {
+        return std::chrono::duration<double,std::micro>(duration).count();
+    };
+    std::printf("GEQ31 synthetic old trig/pow edits: %.2f us / %d edits; "
+                "prepared-cache edits: %.2f us / %d edits; "
+                "256-frame callback p95 %.3f us p99 %.3f us "
+                "(reference checksum %.4f; machine dependent)\\n",
+                us(before1-before0),400*31,us(after1-before1),400*31,
+                callbackUs[242],callbackUs[253],baselineSink);
+    std::puts("Graphic EQ 31 core: frequency/RT matrix, zero allocations, "
+              "stereo, 0-frame PCM onset, rapid edits, and Nyquist PASS");
 }
