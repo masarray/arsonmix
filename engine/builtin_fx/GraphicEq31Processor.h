@@ -4,6 +4,9 @@
 #include "../core/RealtimeNativeFxControl.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#if defined(ARMIX_GEQ31_VECTOR_ASSET) && ARMIX_GEQ31_VECTOR_ASSET
+#include <BinaryData.h>
+#endif
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -259,10 +262,30 @@ public:
 private:
     class EqSkin final : public juce::LookAndFeel_V4 {
     public:
+        EqSkin() {
+#if defined(ARMIX_GEQ31_VECTOR_ASSET) && ARMIX_GEQ31_VECTOR_ASSET
+            // UI thread only: user's original fader-track SVG, stripped of its
+            // stationary thumb and baked label, stored as compact gzip.
+            // The JUCE attachment controls the independent live silver thumb.
+            juce::GZIPDecompressorInputStream decompressed(
+                new juce::MemoryInputStream(BinaryData::slider_eq_vector_svgz,
+                    static_cast<size_t>(BinaryData::slider_eq_vector_svgzSize),false),
+                true,juce::GZIPDecompressorInputStream::gzipFormat);
+            if(auto xml=juce::XmlDocument::parse(
+                    decompressed.readEntireStreamAsString()))
+                vectorTrack_=juce::Drawable::createFromSVG(*xml);
+#endif
+        }
         void drawLinearSlider(juce::Graphics& g,int x,int y,int width,int height,
                               float sliderPos,float /*minPos*/,float /*maxPos*/,
                               juce::Slider::SliderStyle,juce::Slider&) override {
             const float cx=x+width*.5f;
+            if(vectorTrack_) {
+                vectorTrack_->drawWithin(g,juce::Rectangle<float>(
+                    static_cast<float>(x),static_cast<float>(y),
+                    static_cast<float>(width),static_cast<float>(height)),
+                    juce::RectanglePlacement::stretchToFit,1.f);
+            }else {
             g.setColour(juce::Colour::fromRGB(175,180,184));
             for(int t=0;t<=12;++t) {
                 const float yy=y+11.f+(height-22.f)*t/12.f;
@@ -274,6 +297,7 @@ private:
             g.fillRoundedRectangle(cx-5.f,y+9.f,10.f,height-18.f,5.f);
             g.setColour(juce::Colour::fromRGB(61,67,70));
             g.drawRoundedRectangle(cx-5.f,y+9.f,10.f,height-18.f,5.f,1.f);
+            }
             const auto py=juce::jlimit(static_cast<float>(y+11),
                             static_cast<float>(y+height-11),sliderPos);
             g.setColour(juce::Colour::fromRGB(94,98,103).withAlpha(.35f));
@@ -287,6 +311,8 @@ private:
             g.setColour(juce::Colour::fromRGB(225,228,230));
             g.drawLine(cx-8.f,py,cx+8.f,py,1.2f);
         }
+    private:
+        std::unique_ptr<juce::Drawable> vectorTrack_;
     };
     void timerCallback() override {
         const auto p=processor_.observedPeak();
