@@ -391,8 +391,9 @@
   // G-MV36: physical ChannelId VST3 / ImmerSIB editors use the original
   // JUCE HWND only when the EXACT G-MV31 accepted instance lease survives.
   // Logical .smix and native built-in /preview/ editor owners stay separate.
-  function nativeEditorDispatchPlan(snapshot,lease,{hardwareConfiguration}={}){
-    if(lease?.authority!=="CHANNEL_ID"||
+  function nativeEditorDispatchPlan(snapshot,lease,{
+    hardwareConfiguration,offline=false}={}){
+    if(offline||lease?.authority!=="CHANNEL_ID"||
        !editorNavigationLeaseMatches(snapshot,lease,{hardwareConfiguration}))
       return {kind:"UNAVAILABLE"};
     return {kind:"READY",action:"routingFxEditor",
@@ -410,7 +411,7 @@
     if(!pending)return "IGNORE";
     const lease=pending.lease;
     const valid=pending.authority==="CHANNEL_ID"?
-      lease?.authority==="CHANNEL_ID"&&
+      !offline&&lease?.authority==="CHANNEL_ID"&&
         editorNavigationLeaseMatches(snapshot,lease,{hardwareConfiguration}):
       pending.authority==="M4"&&
         m4EditorDispatchLeaseMatches(snapshot,lease,{
