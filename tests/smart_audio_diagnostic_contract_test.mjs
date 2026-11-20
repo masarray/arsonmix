@@ -254,7 +254,7 @@ test('INT-1B refuses device mismatches, resets, gaps, malformed and legacy logs'
   const analysis=analyzeHealthLog(badLog);
   assert.equal(analysis.segments.length,3);
   assert.equal(compareDryFx(analysis).comparable,false);
-  assert.ok(analysis.warnings.some(w=>w.includes('scope/device epoch')));
+  assert.ok(analysis.warnings.some(w=>w.includes('device/graph/epoch')));
   // An interval with a counter going backwards is NOT negative optimization.
   const previous=int1bSample(20,{});
   const invalid={...int1bSample(21,{}),callbackCount:1};
@@ -348,6 +348,47 @@ test('INT-1B external-only CH1 vendor rack is FX when powered and DRY when bypas
       '"nativeExternalCh1ProcessingCount":2');
   assert.ok(analyzeHealthLog(malformed.join('\n')).warnings.some(s=>s.includes('invalid source metadata')),
     'External count cannot exceed the accepted authoritative total');
+});
+
+test('INT-1B P2: no DRY/FX match through malformed or opaque-lease telemetry',()=>{
+  const dry=[],fx=[];
+  for(let s=0;s<=40;s++)dry.push(int1bLine(s,{dryTest:true}));
+  for(let s=41;s<=82;s++)fx.push(int1bLine(s,{dryTest:false}));
+  const baseline=analyzeHealthLog([...dry,...fx].join('\n'));
+  assert.equal(compareDryFx(baseline).comparable,true,
+    'An accepted global bypass ON -> OFF transition is allowed');
+  assert.equal(baseline.segments[1].invalidBefore,false);
+
+  const midpoint='2026-11-20T08:00:40.500Z | AUDIO_HEALTH | {"invalid":';
+  const malformed=analyzeHealthLog([...dry,midpoint,...fx].join('\n'));
+  assert.equal(malformed.segments.length,2);
+  assert.equal(malformed.segments[1].invalidBefore,true);
+  assert.equal(compareDryFx(malformed).comparable,false,
+    'Malformed source between two valid 40s windows must invalidate pairing');
+
+  const opaque={...int1bSample(41,{dryTest:false}),nativeFxActivityComplete:false};
+  const rejected='2026-11-20T08:00:41.000Z | AUDIO_HEALTH | '+JSON.stringify(opaque);
+  const incomplete=analyzeHealthLog([...dry,rejected,...fx.slice(1)].join('\n'));
+  assert.equal(incomplete.segments.length,2);
+  assert.equal(incomplete.segments[1].invalidBefore,true);
+  assert.equal(compareDryFx(incomplete).comparable,false,
+    'Rejected opaque external CH1 FX lease is a hard comparability barrier');
+
+  const regressed={...int1bSample(41,{dryTest:false}),callbackCount:1};
+  const counterReset=analyzeHealthLog([...dry,
+    '2026-11-20T08:00:41.000Z | AUDIO_HEALTH | '+JSON.stringify(regressed),
+    ...fx.slice(1)].join('\n'));
+  assert.equal(compareDryFx(counterReset).comparable,false,
+    'Counter regression during mode transition must not be a valid pair');
+
+  const unprovenDry=[],unprovenFx=[];
+  for(let s=0;s<=40;s++)unprovenDry.push(int1bLine(s,{
+    dryTest:true,nativeGlobalFxBypassed:false,nativeFxProcessingCount:0
+  }));
+  for(let s=41;s<=82;s++)unprovenFx.push(int1bLine(s,{dryTest:false}));
+  assert.equal(compareDryFx(analyzeHealthLog(
+    [...unprovenDry,...unprovenFx].join('\n'))).comparable,false,
+    'Global power OFF -> OFF is not a verified global FX bypass transition');
 });
 
 test('INT-1B rejects missed/unknown data rather than counting missing as zero',()=>{
