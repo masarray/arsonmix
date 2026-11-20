@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <limits>
 #include <vector>
 #include <utility>
@@ -276,6 +277,9 @@ public:
         bool slotBypassed=false;
         bool rackBypassed=false;
         bool globalBypassed=false;
+        bool effectiveBypassed() const noexcept {
+            return valid && (slotBypassed || rackBypassed || globalBypassed);
+        }
     };
     void bindHostPower(std::function<bool(bool)> request,
                        std::function<HostBypassState()> readback) {
@@ -338,7 +342,7 @@ public:
         level_.setDoubleClickReturnValue(true,0.);
         level_.setTooltip("Output Level -24 ... +6 dB (double-click: 0)");
         level_.onValueChange=[this]{
-            repaint(getWidth()-rightRailWidth,86,rightRailWidth,166);
+            repaint(getWidth()-rightRailWidth-9,86,rightRailWidth+9,166);
         };
         levelAttachment_=std::make_unique<Attachment>(
             processor_.parameters(),"levelDb",level_);
@@ -437,14 +441,14 @@ public:
         g.setColour(juce::Colour::fromRGB(76,90,97).withAlpha(.45f));
         g.drawHorizontalLine(53,0.f,static_cast<float>(width));
         // Two calibrated scales, adjacent to the first and last visible
-        // track: 12.5px bold Inter after shrinking just the hardware to 80%.
+        // track: 11px Inter with matching frequency-number colour.
         const auto majorTickY=[this](float sourceY) noexcept {
             return juce::roundToInt(
                 static_cast<float>(viewport_.getY())+
                 sourceY*static_cast<float>(sliders_[0].getHeight())/2042.f);
         };
-        g.setColour(juce::Colour::fromRGB(23,32,37));
-        g.setFont(inter(12.5f).boldened());
+        g.setColour(juce::Colour(0xff344047));
+        g.setFont(inter(11.f).boldened());
         for(const auto& tick:std::array<std::pair<float,const char*>,3>{{
                 {208.75f,"+12"},{918.33f,"0"},{1627.92f,"-12"}}}) {
             const int labelY=majorTickY(tick.first)-9;
@@ -455,12 +459,38 @@ public:
         }
         g.setColour(juce::Colour(0xff344047));
         g.setFont(inter(10.f).boldened());
-        g.drawText("OUTPUT",getWidth()-rightRailWidth,104,
+        g.drawText("OUTPUT",getWidth()-rightRailWidth-6,104,
                    rightRailWidth,17,juce::Justification::centred);
         g.setFont(inter(10.f));
         g.drawText(juce::String(level_.getValue(),1)+" dB",
-                   getWidth()-rightRailWidth,224,
+                   getWidth()-rightRailWidth-6,224,
                    rightRailWidth,20,juce::Justification::centred);
+    }
+    void paintOverChildren(juce::Graphics& g) override {
+        // Same ImmerSIB visual language; from host readback only.
+        const bool bypassed=hostBypassed_.value_or(false);
+        const bool unavailable=hostLeaseWasValid_&&!hostBypassed_.has_value();
+        if(!bypassed&&!unavailable)return;
+        juce::Graphics::ScopedSaveState state(g);
+        // Dim child SVG tracks / native sliders as well as background.
+        // Keep Power/Close visible and accessible during bypass.
+        g.excludeClipRegion(power_.getBounds());
+        g.excludeClipRegion(close_.getBounds());
+        g.setColour(juce::Colour(0xb803060a));
+        g.fillRect(0,54,getWidth(),getHeight()-54);
+        const auto label=juce::Rectangle<int>(
+            viewport_.getX(),118,viewport_.getWidth(),115);
+        auto font=juce::Font(juce::FontOptions(
+            bypassed?51.f:34.f,juce::Font::bold));
+        font.setExtraKerningFactor(0.055f);
+        g.setFont(font);
+        g.setColour(juce::Colour(0xb8000307));
+        g.drawText(bypassed?"BYPASSED":"FX UNAVAILABLE",
+                   label.translated(0,3),juce::Justification::centred,false);
+        g.setColour(bypassed?juce::Colour(0xeeffa53c):
+                    juce::Colour(0xffd0dce1));
+        g.drawText(bypassed?"BYPASSED":"FX UNAVAILABLE",
+                   label,juce::Justification::centred,false);
     }
     void resized() override {
         // Compact 80%-scale hardware: 31 x 40 px = 1240px, 229px tall.
@@ -468,7 +498,7 @@ public:
         constexpr int x0=45, artY=55, artH=229;
         viewport_.setBounds(x0,artY,
             juce::jmax(1,getWidth()-rightRailWidth-2*x0),238);
-        level_.setBounds(getWidth()-92,127,84,84);
+        level_.setBounds(getWidth()-98,127,84,84); // 6px left
         bandSurface_.setSize(static_cast<int>(
             GraphicEq31Core::bandCount)*bandCellWidth,artH);
         for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i)
@@ -486,8 +516,13 @@ public:
 private:
     void refreshHostPower() {
         const auto state=readHostPower_?readHostPower_():HostBypassState{};
-        const bool active=state.valid&&!state.slotBypassed&&
-                          !state.rackBypassed&&!state.globalBypassed;
+        const bool bypassed=state.effectiveBypassed();
+        // Unbound is not bypass; expired host lease is unavailable.
+        const bool changed=(state.valid!=hostBypassed_.has_value())||
+                           (state.valid&&*hostBypassed_!=bypassed);
+        if(state.valid){hostLeaseWasValid_=true;hostBypassed_=bypassed;}
+        else hostBypassed_.reset();
+        const bool active=state.valid&&!bypassed;
         power_.setEnabled(state.valid&&requestBypass_&&
                           !state.globalBypassed&&!state.rackBypassed);
         power_.setToggleState(active,juce::dontSendNotification);
@@ -498,6 +533,7 @@ private:
         power_.setColour(juce::TextButton::textColourOffId,
             active?juce::Colour::fromRGB(24,105,89):
                    juce::Colour::fromRGB(87,91,92));
+        if(changed)repaint();
     }
     static float presetGain(int choice,float hz) noexcept {
         if(choice==3) // Voice presence, subtract mud without hype.
@@ -744,17 +780,25 @@ private:
             const float side=static_cast<float>(juce::jmin(width,height));
             const float bx=static_cast<float>(x)+(width-side)*.5f;
             const float by=static_cast<float>(y)+(height-side)*.5f;
-            if(knobImage_.isValid())
-                g.drawImage(knobImage_,bx,by,side,side,
-                    0,0,knobImage_.getWidth(),knobImage_.getHeight());
-            else {
+            if(!knobImage_.isValid()) {
                 g.setColour(juce::Colour(0xffa33434));
                 g.drawFittedText("KNOB PNG MISSING",x,y,width,height,
                                  juce::Justification::centred,2);
                 return;
             }
-            // Image never rotates. Dynamic blue dot + outer groove arc use
-            // the SAME polar angle. 0 dB points straight up.
+            {
+                juce::Graphics::ScopedSaveState imageState(g);
+                g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
+                g.drawImage(knobImage_,bx,by,side,side,
+                            0,0,knobImage_.getWidth(),knobImage_.getHeight());
+            }
+            // Optical centre of PNG alpha, source is 192px square.
+            const float cx=bx+side*(96.7f/192.f);
+            const float cy=by+side*(97.97f/192.f);
+            const auto polar=[cx,cy](float radius,float angle) noexcept {
+                return juce::Point<float>(cx+radius*std::sin(angle),
+                                          cy-radius*std::cos(angle));
+            };
             const float db=static_cast<float>(slider.getValue());
             const float travel=db<=0.f?
                 juce::jmap(db,-24.f,0.f,0.f,.5f):
@@ -762,30 +806,23 @@ private:
             const float t=juce::jlimit(0.f,1.f,travel);
             constexpr float pi=juce::MathConstants<float>::pi;
             const float start=-.75f*pi,end=start+1.5f*pi*t;
-            const float cx=bx+side*.5f,cy=by+side*.5f;
-            const auto polar=[cx,cy](float radius,float a) noexcept {
-                return juce::Point<float>(cx+radius*std::sin(a),
-                                          cy-radius*std::cos(a));
-            };
-            // Arc radius .38 lies on the PNG black annulus (192px asset:\n            // alpha body extends to ~76px radius, groove at ~73px).\n            // Fine arc inside the black recessed outer annulus, NOT a
-            // permanent blue ring; length follows the moving pointer.
-            juce::Path arc;
-            const int segments=juce::jmax(1,juce::roundToInt(t*96.f));
-            for(int i=0;i<=segments;++i) {
-                const auto point=polar(side*.38f,
-                    start+(end-start)*static_cast<float>(i)/segments);
-                if(i==0)arc.startNewSubPath(point);
-                else arc.lineTo(point);
+            // Arc radius = 70.08 source pixels, INSIDE 69..75 black groove.
+            // Bezier arc is smoother than v11 segmented polygon on high-DPI.
+            if(t>0.f) {
+                juce::Path arc;
+                arc.addCentredArc(cx,cy,side*.365f,side*.365f,
+                                  0.f,start,end,true);
+                g.setColour(juce::Colour(0xff26b8f6));
+                g.strokePath(arc,juce::PathStrokeType(2.0f,
+                    juce::PathStrokeType::curved,
+                    juce::PathStrokeType::rounded));
             }
-            g.setColour(juce::Colour(0xff26b8f6));
-            g.strokePath(arc,juce::PathStrokeType(2.3f,
-                juce::PathStrokeType::curved,
-                juce::PathStrokeType::rounded));
-            const auto dot=polar(side*.325f,end);
-            g.setColour(juce::Colour(0xff063f55).withAlpha(.55f));
-            g.fillEllipse(dot.x-3.3f,dot.y-3.3f,6.6f,6.6f);
+            // Dot halo remains inside machined face (source r ~62 < 65).
+            const auto dot=polar(side*.292f,end);
+            g.setColour(juce::Colour(0xd1042132));
+            g.fillEllipse(dot.x-2.65f,dot.y-2.65f,5.3f,5.3f);
             g.setColour(juce::Colour(0xff27c8ff));
-            g.fillEllipse(dot.x-2.15f,dot.y-2.15f,4.3f,4.3f);
+            g.fillEllipse(dot.x-1.9f,dot.y-1.9f,3.8f,3.8f);
         }
         void drawLinearSlider(juce::Graphics& g,int x,int y,int width,int height,
                               float,float,float,juce::Slider::SliderStyle,
@@ -994,6 +1031,8 @@ private:
     juce::String selectedUserId_;
     std::array<float,GraphicEq31Core::bandCount> savedUserBands_{};
     float savedUserLevelDb_=0.f;
+    std::optional<bool> hostBypassed_;
+    bool hostLeaseWasValid_=false;
     std::function<std::vector<UserPresetEntry>()> listUserPresets_;
     std::function<juce::String(const juce::String&)> saveUserPreset_;
     std::function<bool(const juce::String&)> recallUserPreset_;
