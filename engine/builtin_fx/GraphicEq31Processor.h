@@ -61,7 +61,7 @@ public:
         lastLevelDb_=levelValue_->load(std::memory_order_acquire);
         rtLevelDb_.store(lastLevelDb_,std::memory_order_release);
         levelGain_.setCurrentAndTargetValue(
-            juce::Decibels::decibelsToGain(lastLevelDb_));
+            core_.linearGainForDb(lastLevelDb_));
         peak_.store(0.f,std::memory_order_relaxed);
     }
     void releaseResources() override {ready_=false;}
@@ -102,7 +102,7 @@ public:
         core_.processStereo(l,r,static_cast<std::size_t>(count));
         const float acceptedLevel=rtLevelDb_.load(std::memory_order_acquire);
         if(acceptedLevel!=lastLevelDb_) {
-            levelGain_.setTargetValue(juce::Decibels::decibelsToGain(acceptedLevel));
+            levelGain_.setTargetValue(core_.linearGainForDb(acceptedLevel));
             lastLevelDb_=acceptedLevel;
         }
         float peak=0.f;
