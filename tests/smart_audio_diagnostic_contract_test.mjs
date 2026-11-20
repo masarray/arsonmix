@@ -156,7 +156,9 @@ function int1bSample(second,{dryTest=true,deviceGeneration=2,device="ASIO Driver
   buckets[3]=cumulative-over;
   buckets[12]=over;
   return {schema:SCHEMA,connected,liveBackendClass:"ASIO_DIRECT_ZERO_EXTRA_FIFO",
-    driver:"ASIO",device,rate,buffer,periodUs:1000000*buffer/rate,
+    driver:"ASIO",device,inputDevice:"Interface Input",outputDevice:"Interface Output",
+    deviceInputChannels:2,deviceOutputChannels:2,
+    rate,buffer,periodUs:1000000*buffer/rate,
     deviceGeneration,deviceStartCount:deviceGeneration,deviceStopCount:0,
     diagnosticRoute:"NORMAL",productionRoutingState:"NATIVE_ROUTE_ACCEPTED",
     directRouteAuthorized:true,dryTest,callbackCount:cumulative,
@@ -233,6 +235,12 @@ test('INT-1B refuses device mismatches, resets, gaps, malformed and legacy logs'
     time(20)+' | AUDIO_HEALTH | '+JSON.stringify(previous)+'\n'+
     time(21)+' | AUDIO_HEALTH | '+JSON.stringify(invalid));
   assert.equal(report.segments.length,2);
+  const swapped={...int1bSample(21,{}),inputDevice:"Other Driver Input"};
+  const mismatch=analyzeHealthLog(
+    time(20)+' | AUDIO_HEALTH | '+JSON.stringify(previous)+'\n'+
+    time(21)+' | AUDIO_HEALTH | '+JSON.stringify(swapped));
+  assert.equal(mismatch.segments.length,2,
+    'Physical input endpoint change disqualifies the previous timing window');
 });
 test('INT-1B rejects missed/unknown data rather than counting missing as zero',()=>{
   const s=int1bSample(1,{});
