@@ -144,7 +144,7 @@ void showWebViewStartupError (const juce::String& detail)
         juce::MessageBoxOptions{}
             .withIconType (juce::MessageBoxIconType::WarningIcon)
 #if defined(_WIN32)
-            .withTitle ("ArSonMix - WebView2 unavailable")
+            .withTitle ("ArSonMix - Windows GUI cannot start")
             .withMessage ("The offline ArSonMix mixer needs Microsoft Edge WebView2 Runtime.\\n\\n"
                           + detail + "\\n\\nDownload / repair from Microsoft:\\n"
                           "https://developer.microsoft.com/en-us/microsoft-edge/webview2/\\n\\n"
@@ -155,8 +155,22 @@ void showWebViewStartupError (const juce::String& detail)
                           "(WKWebView on macOS, WebKitGTK on Linux).\\n\\n"
                           + detail + "\\n\\nNo Show, plugin or preset data were deleted.")
 #endif
+#if defined(_WIN32)
+            .withButton ("Download / Repair WebView2")
+#endif
             .withButton ("Close"),
-        [] (int) { juce::JUCEApplication::getInstance()->systemRequestedQuit(); });
+        [] (int result)
+        {
+#if defined(_WIN32)
+            // JUCE 8 pinned NativeMessageBox uses 0-based button indices.
+            // Only an explicit click opens the signed vendor download page.
+            // No driver installation, audio output or private data mutation.
+            if (result == 0)
+                juce::URL ("https://developer.microsoft.com/en-us/microsoft-edge/webview2/")
+                    .launchInDefaultBrowser();
+#endif
+            juce::JUCEApplication::getInstance()->systemRequestedQuit();
+        });
 }
 
 class Browser final : public juce::WebBrowserComponent
