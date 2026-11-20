@@ -3618,11 +3618,14 @@ test("ImmerSIB opens the exact native ChannelId HWND, survives VST3 editor, no s
  const editorVM=read("web/approved-fx-rack-view-model.js");
  assert.match(bridge,/fxRackVM\.editorNavigationPlan\(current,/);
  assert.match(editorVM,/view\.raw\?\.mixerSession\?\.authority==="CHANNEL_ID"/);
- assert.match(bridge,/else \{\s*\/\/ Both vendor VST3 and ImmerSIB retain their exact real/);
+ assert.match(bridge,/fxRackVM\.editorSurfacePlan\(current,editor,/);
+ assert.match(bridge,/surface\.kind==="NATIVE_HOST"/);
+ assert.match(editorVM,/if\(lease\.authority==="CHANNEL_ID"\)return \{kind:"NATIVE_HOST"\};/);
  assert.match(bridge,/openChannelIdFxEditor\(editor\)/);
  assert.match(bridge,/fxRackVM\.nativeEditorDispatchPlan\(current,lease,/);
  assert.match(bridge,/dispatchPhysicalFxEditor\(plan,lease,"CHANNEL_ID"\)/);
- assert.match(bridge,/else if\(editor\.authority==="LOGICAL"\)/);
+ assert.match(bridge,/surface\.kind==="LOGICAL_VENDOR"/);
+ assert.match(editorVM,/if\(lease\.authority==="LOGICAL"\)return \{kind:"LOGICAL_VENDOR"\};/);
  assert.match(bridge,/action:"logicalVendorFxEditor"/);
  assert.doesNotMatch(bridge,/else status\("Native VST3 editor opened"\)/);
  assert.match(host,/shownWindow=dedicatedImmerSIB\?immersibEditorWindow_:editorWindow_/);
