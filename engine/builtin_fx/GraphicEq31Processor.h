@@ -198,6 +198,29 @@ private:
     bool published_=false,ready_=false;
 };
 
+// Native pointer-drag 0 dB detent: quick engagement at ±0.45 dB,
+ // stronger release at ±0.85 dB, no DSP quantisation or new host state.
+class GraphicEq31DetentSlider final : public juce::Slider {
+public:
+    void mouseDown(const juce::MouseEvent& event) override {
+        detentEngaged_=std::abs(getValue())<0.001;
+        juce::Slider::mouseDown(event);
+    }
+    double snapValue(double attemptedValue,DragMode dragMode) override {
+        if(dragMode==notDragging)
+            return juce::Slider::snapValue(attemptedValue,dragMode);
+        const double limit=detentEngaged_?0.85:0.45;
+        if(std::abs(attemptedValue)<=limit) {
+            detentEngaged_=true;
+            return 0.0;
+        }
+        detentEngaged_=false;
+        return juce::Slider::snapValue(attemptedValue,dragMode);
+    }
+private:
+    bool detentEngaged_=false;
+};
+
 class GraphicEq31Editor final : public juce::AudioProcessorEditor, private juce::Timer {
 public:
     // Readback from the existing mixer-authoritative global/rack/insert gates.
@@ -317,8 +340,10 @@ public:
         };
         addAndMakeVisible(flat_);
         setResizable(true,true);
-        setResizeLimits(850,391,1900,391);
-        setSize(1610,391);
+        // Hardware stays 1:1 as authored SVG; only the 31-band viewport
+        // renders at 80%. Header/control sizes are deliberately unchanged.
+        setResizeLimits(760,305,1660,305);
+        setSize(1340,305);
         startTimerHz(6); // GUI-only external host readback; no audio work
     }
 
@@ -349,32 +374,35 @@ public:
                        216,22,310,20,juce::Justification::centredLeft);
         g.setColour(juce::Colour::fromRGB(76,90,97).withAlpha(.45f));
         g.drawHorizontalLine(53,0.f,static_cast<float>(width));
-        // The THREE long tick paths are authored SVG coordinates.
-        // This mapping uses the same height/position as the actual JUCE
-        // Slider, avoiding labels that float above/below their ticks.
-        const auto majorTickY=[this](float sourceY) {
+        // Two calibrated scales, adjacent to the first and last visible
+        // track: 12.5px bold Inter after shrinking just the hardware to 80%.
+        const auto majorTickY=[this](float sourceY) noexcept {
             return juce::roundToInt(
                 static_cast<float>(viewport_.getY())+
                 sourceY*static_cast<float>(sliders_[0].getHeight())/2042.f);
         };
-        g.setColour(juce::Colour::fromRGB(56,72,80));
-        g.setFont(inter(10.f));
-        g.drawText("+12",5,majorTickY(208.75f)-8,36,16,
-            juce::Justification::centredRight);
-        g.drawText("0",5,majorTickY(918.33f)-8,36,16,
-            juce::Justification::centredRight);
-        g.drawText("-12",5,majorTickY(1627.92f)-8,36,16,
-            juce::Justification::centredRight);
+        g.setColour(juce::Colour::fromRGB(23,32,37));
+        g.setFont(inter(12.5f).boldened());
+        for(const auto& tick:std::array<std::pair<float,const char*>,3>{{
+                {208.75f,"+12"},{918.33f,"0"},{1627.92f,"-12"}}}) {
+            const int labelY=majorTickY(tick.first)-9;
+            g.drawText(tick.second,4,labelY,36,19,
+                       juce::Justification::centredRight);
+            g.drawText(tick.second,getWidth()-40,labelY,36,19,
+                       juce::Justification::centredLeft);
+        }
     }
     void resized() override {
-        constexpr int x0=46;
-        viewport_.setBounds(x0,66,juce::jmax(1,getWidth()-x0-12),297);
+        // Compact 80%-scale hardware: 31 x 40 px = 1240px, 229px tall.
+        // Header is unchanged; 2px from divider to art, 12px bottom inset.
+        constexpr int x0=45, artY=55, artH=229;
+        viewport_.setBounds(x0,artY,juce::jmax(1,getWidth()-2*x0),238);
         bandSurface_.setSize(static_cast<int>(
-            GraphicEq31Core::bandCount)*bandCellWidth,287);
+            GraphicEq31Core::bandCount)*bandCellWidth,artH);
         for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i)
             sliders_[i].setBounds(static_cast<int>(i)*bandCellWidth,0,
-                                  bandCellWidth,286);
-        // All header controls exactly 24px tall, centred on the same y=16.
+                                  bandCellWidth,artH);
+        // Approved 24px-tall header positions are deliberately untouched.
         const int r=getWidth();
         preset_.setBounds(r-349,16,152,24);
         save_.setBounds(r-189,16,56,24);
@@ -814,13 +842,13 @@ private:
     };
 
     using Attachment=juce::AudioProcessorValueTreeState::SliderAttachment;
-    static constexpr int bandCellWidth=50;
+    static constexpr int bandCellWidth=40; // 80% of authored 50px pitch
     GraphicEq31Processor& processor_;
     EqSkin skin_;
     juce::Image brushedMetal_;
     juce::Component bandSurface_;
     juce::Viewport viewport_;
-    std::array<juce::Slider,GraphicEq31Core::bandCount> sliders_;
+    std::array<GraphicEq31DetentSlider,GraphicEq31Core::bandCount> sliders_;
     std::vector<std::unique_ptr<Attachment>> attachments_;
     juce::ComboBox preset_;
     juce::TextButton flat_,save_,power_,close_;
