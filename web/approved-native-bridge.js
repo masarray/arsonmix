@@ -1342,16 +1342,18 @@
     },8000);
   }
   function openChannelIdFxEditor(lease){
-    if(lease?.authority!=="CHANNEL_ID")return false;
+    if(lease?.authority!=="CHANNEL_ID"||logicalView)return false;
     const accepted=controller?.state()?.current;
     const plan=fxRackVM.nativeEditorDispatchPlan(accepted,lease,{
-      hardwareConfiguration:protocol.nativeHardwareConfiguration(accepted?.device)});
+      hardwareConfiguration:protocol.nativeHardwareConfiguration(accepted?.device),
+      offline:!!logicalView});
     if(plan.kind!=="READY")return false;
     window.queueMicrotask(()=>{
       const current=controller?.state()?.current;
-      if(fxRackVM.nativeEditorDispatchPlan(current,lease,{
-        hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)}).kind!=="READY")
-        return; // reject stale same-epoch pin/roster/FX replacements
+      if(logicalView||fxRackVM.nativeEditorDispatchPlan(current,lease,{
+        hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device),
+        offline:!!logicalView}).kind!=="READY")
+        return; // same-epoch hardware/FX replacement or offline .smix switch
       dispatchPhysicalFxEditor(plan,lease,"CHANNEL_ID");
     });
     return true;
