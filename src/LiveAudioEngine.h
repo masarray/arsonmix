@@ -2542,7 +2542,8 @@ public:
         const auto bus = nativeRoutingStatus.getProperty ("nativeBus", {});
         if (bus.isObject())
         {
-            if (const auto* channels = bus.getProperty ("channels", {}).getArray())
+            const auto channelRows = bus.getProperty ("channels", {});
+            if (const auto* channels = channelRows.getArray())
                 for (const auto& channel : *channels)
                     accountInserts (
                         channel.getProperty ("inserts", {}),
@@ -2553,8 +2554,9 @@ public:
             const auto rackFlags =
                 nativeRoutingStatus.getProperty ("fxRackBypassed", {});
             const auto* flags = rackFlags.getArray();
-            if (const auto* racks = nativeRoutingStatus
-                    .getProperty ("fxInstances", {}).getArray())
+            const auto rackInstances =
+                nativeRoutingStatus.getProperty ("fxInstances", {});
+            if (const auto* racks = rackInstances.getArray())
                 for (int lane = 0; lane < racks->size(); ++lane)
                     accountInserts ((*racks)[lane],
                         flags != nullptr && lane < flags->size()
