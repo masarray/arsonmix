@@ -29,7 +29,6 @@ public:
         for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i)
             bandValues_[i]=params_.getRawParameterValue(paramId(i));
         inputValue_=params_.getRawParameterValue("inputDb");
-        outputValue_=params_.getRawParameterValue("outputDb");
     }
 
     const juce::String getName() const override {return "Graphic EQ 31";}
@@ -55,9 +54,7 @@ public:
         for(std::size_t i=0;i<bandValues_.size();++i)
             core_.setGain(i,static_cast<double>(bandValues_[i]->load(std::memory_order_relaxed)));
         inputSmooth_.reset(sampleRate,.006);
-        outputSmooth_.reset(sampleRate,.006);
         inputSmooth_.setCurrentAndTargetValue(dbToGain(inputValue_->load()));
-        outputSmooth_.setCurrentAndTargetValue(dbToGain(outputValue_->load()));
         peak_.store(0.f,std::memory_order_relaxed);
     }
     void releaseResources() override {ready_=false;}
@@ -80,50 +77,57 @@ public:
         auto* l=pcm.getWritePointer(0);
         auto* r=pcm.getWritePointer(1);
         inputSmooth_.setTargetValue(dbToGain(inputValue_->load(std::memory_order_relaxed)));
-        outputSmooth_.setTargetValue(dbToGain(outputValue_->load(std::memory_order_relaxed)));
         for(int n=0;n<count;++n) {
             const float g=static_cast<float>(inputSmooth_.getNextValue());
             l[n]*=g;r[n]*=g;
         }
         core_.processStereo(l,r,static_cast<std::size_t>(count));
         float peak=0.f;
-        for(int n=0;n<count;++n) {
-            const float g=static_cast<float>(outputSmooth_.getNextValue());
-            l[n]*=g;r[n]*=g;
+        // Output gain was removed from Graphic EQ 31: meter post-EQ PCM,
+        // without a hidden output trim altering levels or headroom.
+        for(int n=0;n<count;++n)
             peak=std::max(peak,std::max(std::abs(l[n]),std::abs(r[n])));
-        }
         peak_.store(peak,std::memory_order_relaxed);
     }
     void processBlock(juce::AudioBuffer<double>&,juce::MidiBuffer&) override {}
     void getStateInformation(juce::MemoryBlock& destination) override {
         // CONTROL thread. Only one fixed-size, versioned state per insert.
         juce::MemoryOutputStream out(destination,false);
-        out.writeInt(stateMagic);out.writeInt(1);
+        // GEQ1 v2: 31 bands + one input gain, 136 bytes.
+        // Legacy GEQ1 v1 (140 bytes) still restores without its output trim.
+        out.writeInt(stateMagic);out.writeInt(2);
         for(auto* p:bandValues_)out.writeFloat(p->load(std::memory_order_acquire));
         out.writeFloat(inputValue_->load(std::memory_order_acquire));
-        out.writeFloat(outputValue_->load(std::memory_order_acquire));
     }
     bool restoreUnpublishedState(const void* bytes,int length) {
-        constexpr int stateBytes=8+static_cast<int>(GraphicEq31Core::bandCount+2)*4;
-        if(published_||!bytes||length!=stateBytes)return false;
+        constexpr int v1Bytes=8+static_cast<int>(GraphicEq31Core::bandCount+2)*4;
+        constexpr int v2Bytes=8+static_cast<int>(GraphicEq31Core::bandCount+1)*4;
+        if(published_||!bytes||(length!=v1Bytes&&length!=v2Bytes))return false;
         juce::MemoryInputStream input(bytes,static_cast<std::size_t>(length),false);
-        if(input.readInt()!=stateMagic||input.readInt()!=1)return false;
-        std::array<float,GraphicEq31Core::bandCount+2> data{};
-        for(auto& v:data) {
-            v=input.readFloat();
-            if(!std::isfinite(v)||v < -12.f||v>12.f)return false;
+        if(input.readInt()!=stateMagic)return false;
+        const int version=input.readInt();
+        if((version==1&&length!=v1Bytes)||(version==2&&length!=v2Bytes)||
+           (version!=1&&version!=2))return false;
+        // Validate the entire state, including the deprecated v1 output trim,
+        // before touching live parameters. v1 output gain is NOT reapplied.
+        std::array<float,GraphicEq31Core::bandCount+1> values{};
+        for(auto& value:values) {
+            value=input.readFloat();
+            if(!std::isfinite(value)||value < -12.f||value>12.f)return false;
+        }
+        if(version==1) {
+            const float discardedOutputDb=input.readFloat();
+            if(!std::isfinite(discardedOutputDb)||
+               discardedOutputDb < -12.f||discardedOutputDb>12.f)return false;
         }
         if(!input.isExhausted())return false;
         for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i)
-            setParameter(paramId(i),data[i]);
-        setParameter("inputDb",data[GraphicEq31Core::bandCount]);
-        setParameter("outputDb",data[GraphicEq31Core::bandCount+1]);
-        if(ready_) {
-            // Only an unpublished processor may be rebuilt on CONTROL.
-            prepareToPlay(core_.sampleRate(),0);
-        }
+            setParameter(paramId(i),values[i]);
+        setParameter("inputDb",values[GraphicEq31Core::bandCount]);
+        if(ready_)prepareToPlay(core_.sampleRate(),0);
         return true;
     }
+
     void setStateInformation(const void* bytes,int count) override {
         (void)restoreUnpublishedState(bytes,count);
     }
@@ -148,10 +152,9 @@ private:
                 juce::ParameterID{paramId(i),1},
                 juce::String(graphicEq31Labels[i])+" Hz",
                 juce::NormalisableRange<float>(-12.f,12.f,.1f),0.f));
-        for(const auto& id:{"inputDb","outputDb"})
-            result.add(std::make_unique<juce::AudioParameterFloat>(
-                juce::ParameterID{id,1},juce::String(id),
-                juce::NormalisableRange<float>(-12.f,12.f,.1f),0.f));
+        result.add(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID{"inputDb",1},"Input Gain",
+            juce::NormalisableRange<float>(-12.f,12.f,.1f),0.f));
         return result;
     }
     void setParameter(const juce::String& id,float db) {
@@ -166,8 +169,7 @@ private:
     GraphicEq31Core core_;
     std::array<std::atomic<float>*,GraphicEq31Core::bandCount> bandValues_{};
     std::atomic<float>* inputValue_=nullptr;
-    std::atomic<float>* outputValue_=nullptr;
-    juce::SmoothedValue<double,juce::ValueSmoothingTypes::Linear> inputSmooth_,outputSmooth_;
+    juce::SmoothedValue<double,juce::ValueSmoothingTypes::Linear> inputSmooth_;
     std::atomic<float> peak_{0.f};
     bool published_=false,ready_=false;
 };
