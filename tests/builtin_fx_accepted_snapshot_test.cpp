@@ -59,6 +59,55 @@ int main(){
       REQUIRE(store.read(catalogs[j],first.id,wrong).isNotEmpty());
     }
   }
+  // Actual JUCE APVTS -> processBlock test while the gesture is STILL OPEN.
+  // A wheel tick or a drag update both call setValueNotifyingHost before
+  // endChangeGesture; neither path is allowed to defer sound until mouseUp.
+  {
+    juce::AudioBuffer<float> pcm(2,128);
+    juce::MidiBuffer midi;
+    const auto fillTone=[&] {
+      for(int n=0;n<128;++n) {
+        const auto sample=.04f*static_cast<float>(
+            std::sin(6.2831853071795864769*1000.*n/48000.));
+        pcm.setSample(0,n,sample);
+        pcm.setSample(1,n,-sample);
+      }
+    };
+    fillTone();
+    geq.processBlock(pcm,midi); // flat/unity reference
+    const auto dry=pcm.getSample(0,47);
+    auto* band=dynamic_cast<juce::RangedAudioParameter*>(
+        geq.parameters().getParameter("band17"));
+    REQUIRE(band!=nullptr);
+    band->beginChangeGesture();
+    band->setValueNotifyingHost(band->convertTo0to1(12.f));
+    REQUIRE(geq.acceptedBands()[17]>11.9f);
+    // No endChangeGesture/mouseUp yet: sound MUST respond in this block.
+    fillTone();
+    geq.processBlock(pcm,midi);
+    REQUIRE(std::fabs(pcm.getSample(0,47)-dry)>0.00001f);
+    REQUIRE(std::fabs(pcm.getSample(0,47)+pcm.getSample(1,47))<1.e-6f);
+    band->endChangeGesture();
+
+    auto* output=dynamic_cast<juce::RangedAudioParameter*>(
+        geq.parameters().getParameter("levelDb"));
+    REQUIRE(output!=nullptr);
+    output->beginChangeGesture();
+    output->setValueNotifyingHost(output->convertTo0to1(-24.f));
+    REQUIRE(geq.acceptedLevelDb()<-23.9f);
+    float peakBefore=0.f,peakAfter=0.f;
+    fillTone();
+    geq.processBlock(pcm,midi);
+    for(int n=0;n<128;++n)peakBefore=std::max(peakBefore,std::fabs(pcm.getSample(0,n)));
+    for(int block=0;block<8;++block) {
+      fillTone();
+      geq.processBlock(pcm,midi);
+    }
+    for(int n=0;n<128;++n)peakAfter=std::max(peakAfter,std::fabs(pcm.getSample(0,n)));
+    REQUIRE(peakAfter<peakBefore*.5f);
+    output->endChangeGesture();
+    REQUIRE(geq.getLatencySamples()==0);
+  }
   const auto eqSettings=BuiltInFxAcceptedSnapshot::acceptedSettings(&eq,catalogs[0]);
   REQUIRE(eqSettings.getProperty("bands",{}).isArray());
   REQUIRE(eqSettings.getProperty("bands",{}).getArray()->size()==8);
