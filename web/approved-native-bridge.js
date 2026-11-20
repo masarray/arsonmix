@@ -2075,6 +2075,55 @@
     window.clearTimeout(toastTimer);
     toastTimer=window.setTimeout(()=>{element.hidden=true;},3400);
   }
+  let loopbackSerial=0,loopbackId="",loopbackPending=false;
+  const loopbackField=name=>devicePanel?.querySelector("[data-audio-loopback-"+name+"]");
+  function closeNativeAudioIO(){
+    if(deviceBusy())return;
+    if(loopbackPending)backend.emitEvent("arMixAction",{action:"audioLoopbackCancel"});
+    loopbackId="";
+    loopbackPending=false;
+    loopbackField("confirmed").checked=false;
+    for(const side of ["input","output"])loopbackField(side).disabled=false;
+    devicePanel.hidden=true;
+  }
+  function requestLoopback(measure){
+    const scope=deviceInventory?.active?.physicalLoopback;
+    if(!scope||deviceBusy()||loopbackPending)return;
+    const input=loopbackField("input"),output=loopbackField("output");
+    const wired=loopbackField("confirmed");
+    if(input.value===""||output.value===""||(measure&&!wired.checked))return;
+    loopbackId="audio-loopback-"+(++loopbackSerial);
+    loopbackPending=measure;
+    const start=loopbackField("start");
+    start.disabled=measure||!wired.checked;
+    loopbackField("result").textContent=measure?"Starting wired measurement…":"";
+    backend.emitEvent("arMixAction",{
+      action:measure?"audioLoopbackMeasure":"audioLoopbackRead",
+      requestId:loopbackId,deviceEpoch:scope.deviceEpoch,
+      inputPin:Number(input.value),outputPin:Number(output.value),wiredLineLevel:wired.checked
+    });
+  }
+  function renderLoopbackPins(active){
+    const details=loopbackField("details");
+    if(!details)return;
+    const scope=active?.physicalLoopback;
+    details.hidden=!scope;
+    if(!scope)return;
+    for(const [side,values,names] of [
+      ["input",scope.inputs,active.inputNames],["output",scope.outputs,active.outputNames]]){
+      const select=loopbackField(side),prior=select.value;
+      select.replaceChildren();
+      for(const pin of values){
+        const option=document.createElement("option");
+        option.value=String(pin);
+        option.textContent=String(names?.[pin]||("Pin "+(pin+1)));
+        select.append(option);
+      }
+      if(values.some(pin=>String(pin)===prior))select.value=prior;
+    }
+    loopbackField("start").disabled=deviceBusy()||loopbackPending||
+      !loopbackField("confirmed").checked;
+  }
   function openNativeAudioIO(){
     if(!devicePanel){
       const style=document.createElement("style");
@@ -2105,6 +2154,9 @@
         .armix-device-progress span{display:block;margin-top:2px;color:#f2e0bf}
         .armix-audio-dialog details{border-top:1px solid #345666;padding-top:8px}
         .armix-audio-dialog summary{cursor:pointer;color:#c5e1ed}
+        .armix-loopback-pins{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
+        .armix-audio-dialog .armix-loopback-confirm{display:flex;align-items:flex-start;gap:6px;margin:8px 0}
+        .armix-loopback-result{margin-top:6px}
         .armix-audio-dialog{max-height:90vh;overflow:auto}
         .armix-output-overview{border-top:1px solid #345666;padding-top:8px}
         .armix-output-heading{color:#c5e1ed;font-weight:500}
@@ -2137,6 +2189,22 @@
         <label>Input device<select data-audio-field="capture"></select></label>
         <label>Output / monitor device<select data-audio-field="playback"></select></label>
         <div class="armix-device-note" data-audio-active>Reading current audio device…</div>
+        <div class="armix-device-note" data-audio-latency aria-label="Driver-reported audio latency">
+          Latency · waiting for native device readback
+        </div>
+        <details data-audio-loopback-details hidden>
+          <summary>Wired round-trip calibration · ASIO</summary>
+          <div class="armix-loopback-pins">
+            <label>Unused line input<select data-audio-loopback-input></select></label>
+            <label>MAIN line output<select data-audio-loopback-output></select></label>
+          </div>
+          <div class="armix-device-note">Pause playback and disconnect speakers. Wire these line-level ports, disable interface direct monitoring and phantom power. The probe briefly replaces mixer output.</div>
+          <label class="armix-loopback-confirm"><input type="checkbox" data-audio-loopback-confirmed>
+            Cable connected and MAIN already armed
+          </label>
+          <button type="button" data-audio-loopback-start disabled>Measure round-trip latency</button>
+          <div class="armix-loopback-result armix-device-note" data-audio-loopback-result role="status"></div>
+        </details>
         <div class="armix-device-progress" data-audio-progress role="status" aria-live="polite" hidden>
           <!--By Sam Herbert (@sherb), for everyone. More @ http://goo.gl/7AJzbL-->
           <svg viewBox="0 0 55 80" xmlns="http://www.w3.org/2000/svg" fill="currentColor" aria-hidden="true" focusable="false">
@@ -2176,12 +2244,22 @@
           <button type="button" data-audio-apply>Apply device</button>
           <button type="button" data-audio-remap hidden>Use same pins on this device</button>
         </div></section>`;
-      devicePanel.querySelector("[data-audio-close]").onclick=()=>{
-        if(!deviceBusy())devicePanel.hidden=true;
-      };
+      devicePanel.querySelector("[data-audio-close]").onclick=closeNativeAudioIO;
       devicePanel.addEventListener("click",e=>{
-        if(e.target===devicePanel&&!deviceBusy())devicePanel.hidden=true;
+        if(e.target===devicePanel)closeNativeAudioIO();
       });
+      loopbackField("start").onclick=()=>requestLoopback(true);
+      loopbackField("confirmed").onchange=e=>{
+        if(!e.target.checked&&loopbackPending)
+          backend.emitEvent("arMixAction",{action:"audioLoopbackCancel"});
+        loopbackField("start").disabled=!e.target.checked||loopbackPending;
+      };
+      for(const side of ["input","output"])
+        loopbackField(side).onchange=()=>{
+          loopbackField("confirmed").checked=false;
+          loopbackField("start").disabled=true;
+          requestLoopback(false);
+        };
       devicePanel.addEventListener("change",e=>{
         if(deviceBusy()||!deviceChoice||!deviceInventory)return;
         const side=e.target.dataset.audioPin;
@@ -2286,6 +2364,15 @@
     }
     const activeText=devicePanel.querySelector("[data-audio-active]");
     if(activeText&&!deviceBusy())activeText.textContent=view.activeText;
+    const latencyText=devicePanel.querySelector("[data-audio-latency]");
+    if(latencyText){
+      const latency=deviceVM.setupLatencyReadback(active);
+      latencyText.textContent=latency.ready?
+        latency.line+" · "+latency.note:
+        "AUDIO LATENCY · select an active device to read driver estimates";
+      latencyText.title="Input and output are driver-reported. Buffer period is shown separately. Electrical round-trip requires physical loopback calibration.";
+    }
+    renderLoopbackPins(active);
     devicePanel.querySelector("[data-audio-apply]").disabled=
       deviceBusy()||!view.canApply;
     const assignMain=devicePanel.querySelector("[data-audio-main-pins]");
@@ -2371,6 +2458,20 @@
       deviceInventory=inventory;
       deviceChoice=null;
       renderDevicePanel();
+      if(devicePanel&&!devicePanel.hidden&&!loopbackPending)requestLoopback(false);
+    });
+    backend.addEventListener("arMixPhysicalLoopback",message=>{
+      if(!loopbackId||message?.requestId!==loopbackId||!devicePanel||devicePanel.hidden)return;
+      loopbackPending=message.state==="CAPTURING";
+      const result=message.result;
+      const measured=message.state==="MEASURED_LOOPBACK"&&result?.rate>0&&result?.frames>0;
+      loopbackField("result").textContent=measured?
+        "Measured wired round-trip "+(1000*result.frames/result.rate).toFixed(2)+
+        " ms · "+result.frames+" frames · correlation "+result.confidence.toFixed(2)+
+        " · "+message.message:message.message||"No calibration saved for these pins";
+      if(!loopbackPending)loopbackField("confirmed").checked=false;
+      for(const side of ["input","output"])loopbackField(side).disabled=loopbackPending;
+      loopbackField("start").disabled=loopbackPending||!loopbackField("confirmed").checked;
     });
     backend.addEventListener("arMixAudioDeviceApplyAck",ack=>{
       if(!devicePanel)return;

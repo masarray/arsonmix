@@ -721,3 +721,16 @@ test('M2b native AUDIO SETUP holds one lease through visible selection and rebin
  assert.match(cpp,/Purpose::explicitApply/);
  assert.doesNotMatch(setup,/\.closeAudioDevice\(/);
 });
+
+
+test('P0 Audio Setup reports native driver latency ms, never fake measured loopback',()=>{
+  assert.match(main,/setProperty\("driverInputLatencyFrames",latencyReady/);
+  assert.match(main,/setProperty\("driverOutputLatencyFrames",latencyReady/);
+  assert.match(main,/setProperty\("hostFxLatencyFrames",latencyReady/);
+  assert.match(main,/JUCE_DRIVER_REPORTED_NOT_MEASURED_LOOPBACK_OR_ASIO_RTL/);
+  const bridge=read('web/approved-native-bridge.js');
+  assert.match(bridge,/deviceVM\.setupLatencyReadback\(active\)/);
+  assert.match(bridge,/Input and output are driver-reported/);
+  assert.match(bridge,/action:measure\?"audioLoopbackMeasure":"audioLoopbackRead"/);
+  assert.match(main,/action=="audioLoopbackCancel"/);
+});

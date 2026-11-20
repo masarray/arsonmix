@@ -78,6 +78,8 @@
 #include "../engine/player/PlayerLibraryPolicy.h"
 #include <juce_core/juce_core.h>
 #include <thread>
+#include <future>
+#include <juce_cryptography/juce_cryptography.h>
 
 namespace
 {
@@ -115,11 +117,21 @@ std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String&
     return resource;
 }
 
+juce::File webViewProfile()
+{
+    const auto folder=armix::storage::PortableWorkspace::browserDataRoot();
+#if defined(_WIN32)
+    if (juce::JUCEApplication::getCommandLineParameterArray().contains("--safe-webview-profile"))
+        return folder.getSiblingFile("WebView2Recovery");
+#endif
+    return folder;
+}
+
 // Materialize browser cache BEFORE WebView2 construction (USB portable mode).
 // This single options factory also drives the startup preflight below.
 juce::WebBrowserComponent::Options webViewOptions()
 {
-    const auto folder = armix::storage::PortableWorkspace::browserDataRoot();
+    const auto folder = webViewProfile();
     folder.createDirectory();
 #if defined(_WIN32)
     // Windows must keep the proven WebView2 profile, loader and native bridge.
@@ -138,25 +150,61 @@ juce::WebBrowserComponent::Options webViewOptions()
 #endif
 }
 
+void writeStartupDiagnostic(const juce::String& phase,const juce::String& detail={})
+{
+#if defined(_WIN32)
+    const auto local = juce::SystemStats::getEnvironmentVariable ("LOCALAPPDATA", {});
+    if (local.isNotEmpty())
+    {
+        const auto report = juce::File (local).getChildFile ("ArSonMix")
+            .getChildFile ("diagnostics").getChildFile ("startup-failure.txt");
+        if (report.getParentDirectory().createDirectory().wasOk())
+            (void)report.replaceWithText(
+                "ArSonMix "+juce::String(ARMIX_BUILD_SOURCE_SHA)+"\nTime: "
+                + juce::Time::getCurrentTime().toISO8601 (true)
+                + "\nOS: " + juce::SystemStats::getOperatingSystemName()
+                + "\nStage: "+phase+"\n"+detail.substring(0,512)+"\n");
+    }
+#else
+    juce::ignoreUnused(phase,detail);
+#endif
+}
+
 void showWebViewStartupError (const juce::String& detail)
 {
+    writeStartupDiagnostic("WEBVIEW_STARTUP_FAILED",detail);
     juce::NativeMessageBox::showAsync (
         juce::MessageBoxOptions{}
             .withIconType (juce::MessageBoxIconType::WarningIcon)
 #if defined(_WIN32)
-            .withTitle ("ArSonMix - WebView2 unavailable")
-            .withMessage ("The offline ArSonMix mixer needs Microsoft Edge WebView2 Runtime.\\n\\n"
-                          + detail + "\\n\\nDownload / repair from Microsoft:\\n"
-                          "https://developer.microsoft.com/en-us/microsoft-edge/webview2/\\n\\n"
-                          "No VST3, mixer presets or session data were deleted.")
+            .withTitle ("ArSonMix - Windows GUI cannot start")
+            .withMessage ("The offline ArSonMix mixer needs Microsoft Edge WebView2 Runtime.\n\n"
+                          + detail + "\n\nDownload / repair from Microsoft:\n"
+                          "https://developer.microsoft.com/en-us/microsoft-edge/webview2/\n\n"
+                          "Use Start ArSonMix with Recovery Profile from the Start menu to use a separate browser profile.\n"
+                          "Local diagnostic: %LOCALAPPDATA%\\ArSonMix\\diagnostics\\startup-failure.txt")
 #else
             .withTitle ("ArSonMix - native WebKit unavailable")
             .withMessage ("ArSonMix requires the system WebKit browser backend "
-                          "(WKWebView on macOS, WebKitGTK on Linux).\\n\\n"
-                          + detail + "\\n\\nNo Show, plugin or preset data were deleted.")
+                          "(WKWebView on macOS, WebKitGTK on Linux).\n\n"
+                          + detail + "\n\nNo Show, plugin or preset data were deleted.")
+#endif
+#if defined(_WIN32)
+            .withButton ("Download / Repair WebView2")
 #endif
             .withButton ("Close"),
-        [] (int) { juce::JUCEApplication::getInstance()->systemRequestedQuit(); });
+        [] (int result)
+        {
+#if defined(_WIN32)
+            // JUCE 8 pinned NativeMessageBox uses 0-based button indices.
+            // Only an explicit click opens the signed vendor download page.
+            // No driver installation, audio output or private data mutation.
+            if (result == 0)
+                juce::URL ("https://developer.microsoft.com/en-us/microsoft-edge/webview2/")
+                    .launchInDefaultBrowser();
+#endif
+            juce::JUCEApplication::getInstance()->systemRequestedQuit();
+        });
 }
 
 class Browser final : public juce::WebBrowserComponent
@@ -327,6 +375,7 @@ public:
                   handleNativeChannelIdentitySet(args);
               })
               .withEventListener ("arMixLogicalIntent", [this] (juce::var args) {
+                  cancelPhysicalLoopback();
                   handleLogicalMixerIntent(args);
               })
               .withEventListener ("arMixHotkeyIntent", [this] (juce::var args) {
@@ -346,6 +395,7 @@ public:
               .withEventListener ("arMixConsoleIntent", [this] (juce::var args) {
                   // The native control thread owns ONLY accepted mutations.
                   // No GUI-side PCM, no legacy ordinal fallback and no fake ACK.
+                  cancelPhysicalLoopback();
                   handleApprovedNativeControl(args);
               })
               .withEventListener ("arMixPerfControl", [this] (juce::var args) { onGuiPerfControl(args); })
@@ -850,6 +900,52 @@ private:
         set(Window::Counter::bridgeCaptureCallbacks, "bridgeCaptureCallbacks");
         set(Window::Counter::bridgeRenderCallbacks, "bridgeRenderCallbacks");
         return out;
+    }
+
+    // INT-1B: preserve a parseable, bounded 1 Hz native health timeline.
+    // The entire UI status contains large device/FX arrays and can exceed the
+    // diagnostic worker's 4096-byte record; silently truncated JSON makes
+    // offline p95/p99 profiling impossible. Reuse the EXISTING status read,
+    // only on the message thread, with no new timer or audio callback work.
+    static juce::var makeAudioHealthRecord (const juce::var& state,
+        const armix::diagnostics::CrackleEvidenceWindow::MemoryPressure& memory)
+    {
+        auto compact = std::make_unique<juce::DynamicObject>();
+        compact->setProperty ("schema", "arsonmix.audio-health.int1b.v1");
+        for (const char* key : {
+                 "connected", "liveBackendClass", "device", "driver",
+                 "inputDevice", "outputDevice", "deviceInputChannels",
+                 "deviceOutputChannels", "activeInputMaskHex",
+                 "activeOutputMaskHex", "rate", "buffer", "periodUs",
+                 "deviceGeneration",
+                 "deviceStartCount", "deviceStopCount", "diagnosticRoute",
+                 "productionRoutingState", "directRouteAuthorized",
+                 "dryTest", "nativeGlobalFxBypassed",
+                 "nativeFxInstalledCount", "nativeFxProcessingCount",
+                 "nativeFxCountProvenance", "nativeFxGraphRevision",
+                 "nativeExternalCh1Leased", "nativeExternalCh1InstalledCount",
+                 "nativeExternalCh1ProcessingCount",
+                 "nativeFxActivityComplete",
+                 "callbackCount", "callbackBudgetBuckets",
+                 "callbackBudgetBucketProvenance", "callbackBudgetSamples",
+                 "callbackP95BudgetUpperPct", "callbackP99BudgetUpperPct",
+                 "slowCallbackCount", "overBudgetCount", "callbackGapCount",
+                 "lateCallbackIntervals", "callbackCadenceClockRegressions",
+                 "callbackCadenceComparedIntervals", "worstCallbackUs",
+                 "worstPluginUs", "slowPluginCount",
+                 "backendXrunCount", "backendXrunMeaning",
+                 "renderUnderrunSource", "secondaryOutputUnderflow",
+                 "secondaryOutputOverflow", "secondaryOutputFrames"})
+        {
+            const auto value = state.getProperty (key, {});
+            if (!value.isVoid())
+                compact->setProperty (juce::Identifier (key), value);
+        }
+        if (memory.processAvailable) {
+            compact->setProperty ("processWorkingSetMiB",static_cast<juce::int64>(memory.processWorkingSetMiB));
+            compact->setProperty ("processPrivateCommitMiB",static_cast<juce::int64>(memory.processPrivateCommitMiB));
+        }
+        return juce::var (compact.release());
     }
 
     static juce::String compactMemoryWindowReport (
@@ -2132,6 +2228,144 @@ private:
 #endif
     }
 
+    struct LoopbackJob {
+        juce::String id, identity;
+        int input = -1, output = -1, rate = 0;
+        std::uint64_t epoch = 0;
+        juce::uint32 started = 0;
+        bool cancelled = false;
+    };
+    std::optional<LoopbackJob> loopbackJob_;
+    std::future<LiveAudioEngine::Loopback::Result> loopbackAnalysis_;
+
+    static juce::File loopbackCalibrationFile(const juce::String& identity)
+    {
+        const juce::SHA256 digest(identity.toRawUTF8(),identity.getNumBytesAsUTF8());
+        return settingsDirectory().getChildFile("latency-calibration")
+            .getChildFile(digest.toHexString()+".json");
+    }
+
+    void emitLoopback(const juce::String& id,const juce::String& state,
+                      const juce::String& message={},const juce::var& result={})
+    {
+        if (!browser_.loaded) return;
+        auto response=std::make_unique<juce::DynamicObject>();
+        response->setProperty("requestId",id);
+        response->setProperty("state",state);
+        response->setProperty("message",message);
+        response->setProperty("result",result);
+        browser_.emitEventIfBrowserIsVisible("arMixPhysicalLoopback",juce::var(response.release()));
+    }
+
+    void cancelPhysicalLoopback()
+    {
+        if (!loopbackJob_) return;
+        loopbackJob_->cancelled=true;
+        engine_.cancelLoopback();
+    }
+
+    void requestPhysicalLoopback(const juce::var& args,bool measure)
+    {
+        const auto id=args.getProperty("requestId",{}).toString();
+        if (id.isEmpty() || id.length()>64) return;
+        if (loopbackJob_)
+            return emitLoopback(id,"UNKNOWN","A round-trip measurement is already in progress.");
+        const auto inputValue=args.getProperty("inputPin",-1);
+        const auto outputValue=args.getProperty("outputPin",-1);
+        const int input=static_cast<int>(inputValue), output=static_cast<int>(outputValue);
+        if (input<0 || input>=64 || output<0 || output>=64 ||
+            static_cast<double>(inputValue)!=input || static_cast<double>(outputValue)!=output)
+            return emitLoopback(id,"UNKNOWN","Select an enabled line input and MAIN output.");
+        const auto pins=engine_.inspectLoopback(input,output);
+        const auto epoch=armix::console::nativeSessionTokenValue(args.getProperty("deviceEpoch",{}));
+        if (!pins || pins->identity.isEmpty() || pins->epoch!=epoch)
+            return emitLoopback(id,"UNKNOWN","The accepted ASIO device or pins changed. Reopen Audio I/O.");
+        if (!measure) {
+            const auto file=loopbackCalibrationFile(pins->identity);
+            if (!file.existsAsFile() || file.getSize()>4096)
+                return emitLoopback(id,"UNKNOWN");
+            const auto saved=juce::JSON::parse(file);
+            const int frames=static_cast<int>(saved.getProperty("frames",0));
+            const double confidence=static_cast<double>(saved.getProperty("confidence",0.0));
+            if (saved.getProperty("identity",{}).toString()!=pins->identity ||
+                frames<=0 || frames>=pins->rate/2 ||
+                !(confidence>=0.70 && confidence<=1.0))
+                return emitLoopback(id,"UNKNOWN");
+            return emitLoopback(id,"MEASURED_LOOPBACK","Saved wired calibration",saved);
+        }
+        const auto confirmed=args.getProperty("wiredLineLevel",false);
+        bool started=false;
+        try {
+            if (confirmed.isBool() && static_cast<bool>(confirmed) && !nativeShowBusy_ && !studioBackupBusy_)
+                started=engine_.beginLoopback(*pins);
+        } catch (const std::bad_alloc&) {
+            return emitLoopback(id,"UNKNOWN","Could not allocate the bounded capture buffer.");
+        }
+        if (!started)
+            return emitLoopback(id,"UNKNOWN",
+                "Use verified, already armed ASIO MAIN, an unused line input, and disarm secondary output.");
+        loopbackJob_=LoopbackJob{id,pins->identity,input,output,pins->rate,pins->epoch,
+                                 juce::Time::getMillisecondCounter(),false};
+        emitLoopback(id,"CAPTURING","Measuring wired round-trip…");
+    }
+
+    void servicePhysicalLoopback()
+    {
+        using Probe=LiveAudioEngine::Loopback;
+        if (!loopbackJob_) return;
+        auto& job=*loopbackJob_;
+        if (engine_.loopbackState()==Probe::State::capturing &&
+            juce::Time::getMillisecondCounter()-job.started>3000u) {
+            const bool reported=job.cancelled;
+            cancelPhysicalLoopback();
+            if (!reported)
+                emitLoopback(job.id,"UNKNOWN","No stable ASIO callback. Measurement cancelled.");
+            return;
+        }
+        const auto finish=[this,&job](const juce::String& state,const juce::String& message,
+                                      const juce::var& value={}) {
+            emitLoopback(job.id,state,message,value);
+            loopbackJob_.reset();
+        };
+        if (engine_.loopbackState()==Probe::State::cancelled) {
+            (void)engine_.takeLoopback();
+            return finish("UNKNOWN","Measurement cancelled. Check output arm, stream and routing.");
+        }
+        try {
+            if (engine_.loopbackState()==Probe::State::complete) {
+                auto pcm=engine_.takeLoopback();
+                if (job.cancelled) return finish("UNKNOWN","Measurement cancelled.");
+                loopbackAnalysis_=std::async(std::launch::async,[pcm=std::move(pcm)] {
+                    return Probe::analyse(pcm);
+                });
+            }
+            if (!loopbackAnalysis_.valid() ||
+                loopbackAnalysis_.wait_for(std::chrono::seconds(0))!=std::future_status::ready)
+                return;
+            const auto result=loopbackAnalysis_.get();
+            const auto current=engine_.inspectLoopback(job.input,job.output);
+            if (job.cancelled || !current || current->epoch!=job.epoch ||
+                current->identity!=job.identity)
+                return finish("UNKNOWN","Device or pin configuration changed. Measure again.");
+            if (result.error)
+                return finish("UNKNOWN",result.error);
+            auto record=std::make_unique<juce::DynamicObject>();
+            record->setProperty("identity",job.identity);
+            record->setProperty("provenance","MEASURED_LOOPBACK");
+            record->setProperty("frames",result.frames);
+            record->setProperty("rate",job.rate);
+            record->setProperty("confidence",result.confidence);
+            const juce::var saved(record.release());
+            const auto file=loopbackCalibrationFile(job.identity);
+            const bool written=file.getParentDirectory().createDirectory().wasOk() &&
+                file.replaceWithText(juce::JSON::toString(saved,true));
+            finish("MEASURED_LOOPBACK",written ?
+                "Saved for these ASIO pins · FX excluded" : "Measured · calibration file could not be saved",saved);
+        } catch (const std::exception&) {
+            finish("UNKNOWN","Could not analyse the wired return.");
+        }
+    }
+
     juce::var currentDeviceSnapshot()
     {
         // This readback is used for UI and ACK, never to claim that a staged
@@ -2152,6 +2386,23 @@ private:
         const auto live=engine_.status();
         o->setProperty("deviceGeneration",live.getProperty("deviceGeneration",0));
         o->setProperty("mainOutputs",live.getProperty("dryRoutingLab",{}).getProperty("mainOutputs",{}));
+        // DAW-style AUDIO SETUP telemetry: JUCE's driver-provided input/output
+        // latency hints in SAMPLES, plus the host's current admitted DSP delay.
+        // The WebView must never present an untrusted draft as measured audio.
+        const bool latencyReady = device != nullptr && device->isOpen() &&
+            engine_.directRouteAuthorized();
+        o->setProperty("driverInputLatencyFrames",latencyReady
+            ? live.getProperty("driverReportedInputLatencyFrames",{}) : juce::var());
+        o->setProperty("driverOutputLatencyFrames",latencyReady
+            ? live.getProperty("driverReportedOutputLatencyFrames",{}) : juce::var());
+        o->setProperty("hostFxLatencyFrames",latencyReady
+            ? live.getProperty("latencySamples",{}) : juce::var());
+        o->setProperty("latencyClockScope",
+            bool (live.getProperty("adaptiveClockActive",false))
+                ? "INDEPENDENT_CLOCKS_NO_DIRECT_ROUNDTRIP_ESTIMATE"
+                : "SINGLE_CLOCK_DRIVER_HINTS");
+        o->setProperty("latencyProvenance",
+            "JUCE_DRIVER_REPORTED_NOT_MEASURED_LOOPBACK_OR_ASIO_RTL");
         juce::Array<juce::var> inputNames,outputNames,inputPins,outputPins,rates,buffers;
         if(device!=nullptr&&device->isOpen()) {
             const auto inputs=device->getInputChannelNames();
@@ -2174,6 +2425,16 @@ private:
         o->setProperty("outputNames",juce::var(outputNames));
         o->setProperty("enabledInputs",juce::var(inputPins));
         o->setProperty("enabledOutputs",juce::var(outputPins));
+        if (const auto loopback=engine_.inspectLoopback()) {
+            juce::Array<juce::var> capture,playback;
+            for (const auto pin : loopback->inputs) capture.add(pin);
+            for (const auto pin : loopback->outputs) playback.add(pin);
+            auto probe=std::make_unique<juce::DynamicObject>();
+            probe->setProperty("inputs",juce::var(capture));
+            probe->setProperty("outputs",juce::var(playback));
+            probe->setProperty("deviceEpoch",static_cast<juce::int64>(loopback->epoch));
+            o->setProperty("physicalLoopback",juce::var(probe.release()));
+        }
         o->setProperty("rates",juce::var(rates));
         o->setProperty("buffers",juce::var(buffers));
         return juce::var(o.release());
@@ -4235,6 +4496,15 @@ private:
     void onAction (const juce::var& args)
     {
         auto action = args.getProperty ("action", {}).toString();
+        if (action=="audioLoopbackRead" || action=="audioLoopbackMeasure") {
+            if (!deviceApply_.busy())
+                requestPhysicalLoopback(args,action=="audioLoopbackMeasure");
+            return;
+        }
+        if (action=="audioLoopbackCancel")
+            return cancelPhysicalLoopback();
+        if (action!="audioDeviceInventory" && action!="copyDiagnosticReport")
+            cancelPhysicalLoopback();
         if(deviceApply_.busy() && action!="audioDeviceApply")return;
         const auto value = args.getProperty ("value", {});
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
@@ -7607,6 +7877,7 @@ private:
             }
 #endif
         if(deviceApply_.busy())return; // a vendor modal loop may re-enter JUCE
+        servicePhysicalLoopback();
         // Always disabled unless the user explicitly starts a bounded trace.
         const bool timing = guiPerf_.active;
         const double tickStart = timing ? juce::Time::getMillisecondCounterHiRes() : 0.0;
@@ -7638,15 +7909,17 @@ private:
         // Existing message-thread 12 Hz timer: no extra worker or DSP work.
         // Never allow a hidden broken GUI to continue unattended audio.
         if (!browser_.loaded && !webViewStartupNoticeSent_ &&
-            juce::Time::getMillisecondCounter() - webViewStartupTick_ > 10000u)
+            juce::Time::getMillisecondCounter() - webViewStartupTick_ > 25000u)
         {
             webViewStartupNoticeSent_ = true;
             diagnostics_.record ("WEBVIEW2_GUI_READY_TIMEOUT", "No native ArSonMix UI handshake");
             engine_.stop();
             if (onStartupStage_) onStartupStage_ (3); // dismiss splash before error dialog
             if (!updaterProbeMode_)
-                showWebViewStartupError ("The embedded mixer did not initialize in 10 seconds."
+                showWebViewStartupError ("The embedded mixer did not initialize in 25 seconds."
                                          " Check the WebView2 Runtime and browser-cache folder permissions.");
+            else
+                writeStartupDiagnostic("WEBVIEW_GUI_READY_TIMEOUT");
             return;
         }
         // Health probes verify WebView/native readiness without opening any
@@ -7819,8 +8092,9 @@ private:
         if (timerTicks_ % 12 == 0 && !browser_.loaded)
         {
             const auto health = engine_.status();
-            crackleEvidence_.push (makeEvidenceSample (health));
-            diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (health, false));
+            const auto evidence=makeEvidenceSample (health);
+            crackleEvidence_.push (evidence);
+            diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (makeAudioHealthRecord (health,evidence.memory), true));
         }
 
         if (deviceSettingsDirty_)
@@ -8015,8 +8289,9 @@ private:
         // Preserve real device/hotplug/First Sound evidence and the async writer.
         if (timerTicks_ % 12 == 0)
         {
-            crackleEvidence_.push (makeEvidenceSample (state));
-            diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (state, false));
+            const auto evidence=makeEvidenceSample (state);
+            crackleEvidence_.push (evidence);
+            diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (makeAudioHealthRecord (state,evidence.memory), true));
         }
         // Guard borrowed VST parameter pointers when a native graph edit,
         // device epoch change or Show recall retires the instance.
@@ -8201,10 +8476,11 @@ public:
             return;
         }
         startupAttempted_ = true;
+        writeStartupDiagnostic("WEBVIEW_PROFILE_PREFLIGHT");
         // Remain active only as a lightweight update handshake (4 Hz).
         // Do not touch audio-device selection, callback, or GUI geometry.
         startTimer (250);
-        const auto folder = armix::storage::PortableWorkspace::browserDataRoot();
+        const auto folder = webViewProfile();
         if (!folder.createDirectory().wasOk() && !folder.isDirectory())
         {
             splash_.reset();
@@ -8230,11 +8506,13 @@ public:
             showWebViewStartupError ("The native browser backend could not be initialized on this machine.");
             return;
         }
+        writeStartupDiagnostic("WEBVIEW_AWAITING_GUI_READY");
         window_ = std::make_unique<ConsoleWindow> ([this] (int stage)
         {
             if (splash_) splash_->setStage (stage);
             if (stage >= 2)
             {
+                if (stage==2) writeStartupDiagnostic("GUI_READY");
                 splash_.reset(); // no overlay over live mixer after engine init
 #if defined(_WIN32)
                 // A real JUCE/WebView ready acknowledgement, not simply

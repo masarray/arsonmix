@@ -155,7 +155,8 @@ def main():
             io_inventory['active']=out_active
             emit(page,'arMixAudioDeviceInventory',io_inventory)
             assert capture_select.input_value()=='' # reopening does not auto-patch a mic
-            page.locator('.armix-audio-dialog details summary').click()
+            page.locator('.armix-audio-dialog summary',
+                has_text='Advanced · rate, buffer and channel pins').click()
             assign_main=page.locator('[data-audio-main-pins]')
             def playback_pin(index):
                 return page.locator(f'[data-audio-pin="output"][data-pin-index="{index}"]')
@@ -179,6 +180,42 @@ def main():
             assert progress.is_visible() and apply.is_disabled()
             emit_device_readback(main_active,'71')
             assert page.locator('.armix-audio-shade').is_hidden()
+            # Optional calibration is a native request with an explicit
+            # consent boundary. Browser fixtures never emit real PCM.
+            page.locator('.command-bar [data-native-io]').click()
+            asio='Studio ASIO'
+            emit(page,'arMixAudioDeviceInventory',{
+                'types':[dict(name='ASIO',separate=False,inputs=[asio],outputs=[asio])],
+                'active':dict(backend='ASIO',captureDevice=asio,playbackDevice=asio,
+                    open=True,authorized=True,deviceGeneration=71,
+                    inputNames=['Mic','Spare line 2'],outputNames=['Line left','Line right'],
+                    enabledInputs=[0,1],enabledOutputs=[0,1],rates=[48000],buffers=[256],
+                    rate=48000,buffer=256,driverInputLatencyFrames=240,
+                    driverOutputLatencyFrames=360,hostFxLatencyFrames=96,
+                    latencyClockScope='SINGLE_CLOCK_DRIVER_HINTS',
+                    physicalLoopback=dict(deviceEpoch=71,inputs=[1],outputs=[0,1])),
+            })
+            latency=page.locator('[data-audio-latency]')
+            assert 'Estimated total I/O 14.50 ms' in latency.inner_text()
+            details=page.locator('[data-audio-loopback-details]')
+            details.locator('summary').click()
+            measure=page.locator('[data-audio-loopback-start]')
+            assert measure.is_disabled()
+            assert page.evaluate("""()=>window.__events.every(e=>
+                e.payload?.action!=='audioLoopbackMeasure')""")
+            page.locator('[data-audio-loopback-output]').select_option('1')
+            page.locator('[data-audio-loopback-confirmed]').check()
+            measure.click()
+            measured=page.evaluate("""()=>window.__events.filter(e=>
+                e.payload?.action==='audioLoopbackMeasure').at(-1)?.payload""")
+            assert measured['wiredLineLevel'] is True
+            assert (measured['deviceEpoch'],measured['inputPin'],measured['outputPin'])==(71,1,1)
+            emit(page,'arMixPhysicalLoopback',dict(requestId=measured['requestId'],
+                state='MEASURED_LOOPBACK',result=dict(rate=48000,frames=720,confidence=0.98)))
+            assert 'Measured wired round-trip 15.00 ms' in page.locator(
+                '[data-audio-loopback-result]').inner_text()
+            assert measure.is_disabled()
+            page.locator('[data-audio-close]').click()
             g0=json.loads((ROOT/'integration/console-v6/fixtures.json').read_text())['g0']
             g0['device']['epoch']='72'
             g0['mixerSession']={'authority':'NONE','deviceEpoch':g0['device']['epoch'],'channels':[]}

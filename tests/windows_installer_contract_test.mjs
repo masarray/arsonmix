@@ -33,7 +33,7 @@ test('per-user Inno Setup upgrades the same app and retains private Studio data'
   assert.match(iss, /Source: "\.\.\\docs\\THIRD_PARTY_8D_SONKU_HRTF\.md"; Flags: dontcopy/);
 });
 
-test('official standard VB-CABLE ZIP is pinned and checked automatically without elevating ArSonMix', () => {
+test('optional signed VB-CABLE driver does not block clean Windows 10 first launch', () => {
   const m = JSON.parse(read('config/vbcable-official-package.json'));
   const pack = read('scripts/prepare_vbcable_package.ps1');
   const bootstrap = read('installer/ArSonMixVBCableInstall.ps1');
@@ -43,12 +43,18 @@ test('official standard VB-CABLE ZIP is pinned and checked automatically without
   assert.match(m.sha256, /^[a-f0-9]{64}$/);
   assert.match(m.proof, /actions\/runs\/43079930924/);
   assert.match(iss, /^PrivilegesRequired=lowest$/m);
-  assert.doesNotMatch(iss, /^\[Tasks\]$|Tasks: vbcable_driver/m);
+  assert.match(iss, /^\[Tasks\]$/m);
+  assert.match(iss, /Name: "installvbcable_driver";[^\n]*Flags: unchecked/);
+  assert.equal((iss.match(/Name: "installvbcable_driver"/g) || []).length, 1);
   assert.match(iss, /VBCABLE_Driver_Pack45\.zip/);
   assert.match(iss, /ArSonMixVBCableInstall\.ps1/);
   const run = iss.slice(iss.indexOf('[Run]'), iss.indexOf('[Code]'));
-  assert.match(run, /StatusMsg: "Checking VB-Audio VB-CABLE[^"]*"; Flags: runasoriginaluser skipifsilent waituntilterminated runhidden/);
+  assert.match(run, /StatusMsg: "Installing OPTIONAL VB-CABLE[^"]*"; Tasks: installvbcable_driver; Flags: runasoriginaluser skipifsilent waituntilterminated runhidden/);
   assert.ok(run.indexOf('ArSonMixVBCableInstall.ps1') < run.indexOf('Filename: "{app}\\ArSonMix.exe"'));
+  const vendorRunLine=run.split('\n').find(s=>s.includes('ArSonMixVBCableInstall.ps1'));
+  assert.ok(vendorRunLine,'optional vendor installer remains available');
+  assert.match(vendorRunLine,/Tasks: installvbcable_driver/);
+  assert.equal((run.match(/Tasks: installvbcable_driver/g)||[]).length,1);
   assert.match(iss, /Check: CanLaunchMixer/);
   assert.match(iss, /function NeedRestart\(\): Boolean;[\s\S]*?FileExists/);
   assert.match(bootstrap, /if\(\$stateName -eq 'PENDING_REBOOT'\)\{[\s\S]*?New-Item -ItemType File -Path \$RestartMarker/);
@@ -478,4 +484,26 @@ test('updater rechecks both verified installer binaries before execution and rol
   assert.match(script.slice(lastCheck,transition), /Test-InstallableAssetPair \$newPath \$state.newAsset \$oldPath \$state.previousAsset/);
   assert.match(script, /if\(-not \(Test-StagedAsset \$oldPath \$oldAsset\)\)/);
   assert.match(script, /INSTALLER_BYTES_CHANGED_UPDATE_DEFERRED/);
+});
+
+
+test('P0 Windows 10 fresh install needs no VC redistributable and reports missing WebView2',()=>{
+  const cmake=read('CMakeLists.txt'),native=read('src/Main.cpp');
+  assert.match(cmake,/if \(MSVC AND WIN32 AND NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY\)/);
+  assert.match(cmake,/set\(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded\$<\$<CONFIG:Debug>:Debug>"\)/);
+  assert.ok(cmake.indexOf('set(CMAKE_MSVC_RUNTIME_LIBRARY')<
+    cmake.indexOf('add_subdirectory("${JUCE_ROOT}"'),
+    'static CRT must apply to JUCE and app as one ABI');
+  assert.match(native,/Download \/ Repair WebView2/);
+  assert.match(native,/developer\.microsoft\.com\/en-us\/microsoft-edge\/webview2/);
+  assert.match(native,/if \(result == 0\)/);
+  assert.match(iss,/Flags: unchecked/);
+  const packaged=read('scripts/build_verify_windows_installer.ps1');
+  const pe=read('scripts/verify_win10_pe_runtime.py');
+  assert.match(packaged,/verify_win10_pe_runtime\.py --exe \$exe/);
+  assert.match(pe,/WIN10_STATIC_CRT_PE_PASS/);
+  assert.match(pe,/delay-import descriptors|delay-import|Delay-load descriptors/i);
+  assert.match(pe,/vcruntime/);
+  assert.match(pe,/msvcp/);
+  assert.match(pe,/WEBVIEW2_RUNTIME_REQUIRED_SEPARATELY_NOT_PROVEN/);
 });

@@ -106,6 +106,7 @@ Copy-Item -LiteralPath $readme -Destination (Join-Path $OutputDir "README.md")
 & python scripts/verify_embedded_legal.py --binary $destination
 if ($LASTEXITCODE -ne 0) { throw "Compiled native mixer lacks the exact-source embedded legal texts" }
 Copy-Item -LiteralPath $fatGuide -Destination (Join-Path $OutputDir "HARDWARE_FAT_GUIDE.md")
+Copy-Item -LiteralPath "installer/ArSonMixStartupDiagnostics.ps1" -Destination $OutputDir
 # Selective FAT-only extraction from parked #270, no PCM or GUI production code.
 $fatBundleFiles = @("collect_hardware_fat_windows.ps1", "m3e_fat_evidence_gate.mjs")
 foreach ($file in $fatBundleFiles) {
@@ -139,6 +140,7 @@ $manifest = [ordered]@{
     peFormat = "PE32+"
     peSubsystem = "WINDOWS_GUI (2)"
     exeSha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
+    startupDiagnosticsSha256 = (Get-FileHash -LiteralPath (Join-Path $OutputDir "ArSonMixStartupDiagnostics.ps1") -Algorithm SHA256).Hash.ToLowerInvariant()
     fatCollectorSha256 = (Get-FileHash -LiteralPath (Join-Path $OutputDir "collect_hardware_fat_windows.ps1") -Algorithm SHA256).Hash.ToLowerInvariant()
     fatGateSha256 = (Get-FileHash -LiteralPath (Join-Path $OutputDir "m3e_fat_evidence_gate.mjs") -Algorithm SHA256).Hash.ToLowerInvariant()
     legalEmbedding = "JUCE_BINARYDATA_OFFLINE_LEGAL_CENTER_V1"
