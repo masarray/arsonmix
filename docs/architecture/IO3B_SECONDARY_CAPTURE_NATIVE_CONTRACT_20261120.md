@@ -34,7 +34,42 @@ The native CONTROL decoder `integration/QualifiedCaptureConsoleIntent.h` checks 
 
 The existing `arMixConsoleAck` replies with requestId, `status` ACCEPTED/REJECTED, errorCode and installed deviceEpoch/graphRevision/rosterRevision. Native controller also includes `secondaryCapture` diagnostics (driver, physical mask, generation, lease, clock and fault) on this operation. ACK acceptance requires verified installed B capture readback, not merely driver `open()` success, and `productionCallbackLive` / `sourceAudibleProven` remain **false**. The approved consumer must request a *later* `arMixConsoleSnapshot` and verify the same B identity, mask, epoch, lease, ChannelId map and advanced graph revision. `WAITING_FOR_PCM` and `PCM_FLOW_OBSERVED` are native diagnostics, **not proof that the assigned channel is audible**; priming/underflow frames do not count as B PCM.
 
-**IO-3C controller milestone (implemented, fast tested):** The existing `web/approved-native-contract.js::readbackProvesIntent` now recognizes `INSTALL_SECONDARY_CAPTURE`, but only when a previously correlated native `arMixConsoleAck` supplied the exact installed Device B lease and a **later independent** `arMixConsoleSnapshot.secondaryCapture` matches driver class/name, verified physical mask, capture generation, device lease, epoch, rate and period. `WAITING_FOR_PCM` is a valid *installed but not yet flowing* state, **never proof of audible ChannelId signal**. The test in `tests/approved_native_m2_contract.test.cjs` covers stale/forged ACK, wrong mask, mismatched lease, mismatched driver and failure to publish optimistic PCM. Fast UI, Fast Native, M1–M2 and ImerSip P9 PASS for commit `af40b8e7`. The public `/preview/` Source Picker still does not expose this operation, and `graph.capabilities.supportedOps` does not yet advertise it; therefore **the user cannot activate B in the GUI**. Follow-up must deliver the approved operator UI with verified driver inventory, capability, canonical Pages generation and full Chromium/Windows tests. No second WebView event bus or standalone preview.
+**IO-3C controller milestone (implemented, fast tested):** The existing `web/approved-native-contract.js::readbackProvesIntent` now recognizes `INSTALL_SECONDARY_CAPTURE`, but only when a previously correlated native `arMixConsoleAck` supplied the exact installed Device B lease and a **later independent** `arMixConsoleSnapshot.secondaryCapture` matches driver class/name, verified physical mask, capture generation, device lease, epoch, rate and period. `WAITING_FOR_PCM` is a valid *installed but not yet flowing* state, **never proof of audible ChannelId signal**. The test in `tests/approved_native_m2_contract.test.cjs` covers stale/forged ACK, wrong mask, mismatched lease, mismatched driver and failure to publish optimistic PCM. Fast UI, Fast Native, M1–M2 and ImerSip P9 PASS for commit `af40b8e7`. The public `/preview/` Source Picker still does not expose this operation; **the user cannot yet activate B in the GUI**. IO-3D conditionally advertises `INSTALL_SECONDARY_CAPTURE` on the real native snapshot only for an admitted, pinned ASIO callback with output disarmed, idle CONTROL state and unconfigured/remappable B. This is an offer to start a transaction, **not** proof that B is installed, available or audible. Follow-up must deliver the approved operator UI with verified driver inventory, capability, canonical Pages generation and full Chromium/Windows tests. No second WebView event bus or standalone preview.
+
+## IO-3D — fail-closed native capability and GUI contract (implemented on draft #830)
+
+The one `Main.cpp::approvedNativeSnapshot` now calls
+`publishQualifiedSecondaryCaptureCapability` from
+`integration/ApprovedNativeRuntimeSnapshot.h`. It exposes the existing v8
+`INSTALL_SECONDARY_CAPTURE` operation only when the installed ChannelId
+callback owns the same graph, the primary is exact pinned/attested ASIO,
+MAIN/MONITOR output is disarmed, no independent WASAPI render clock is active,
+the primary physical input mask exists, the B map is not already installed,
+and control-side device/session/graph operations are idle. An arbitrary
+browser intent is rejected by the **native** decoder unless this capability
+is currently installed; the engine still rechecks device masks and lease
+identities before any B driver open.
+
+The pure `web/approved-native-contract.js::validQualifiedCaptureRequest`
+guards the same public command preflight against malformed driver names, rate
+or period, unsorted/duplicate B pins, nonexistent/stale INPUT ChannelIds,
+unselected physical A/B pins, duplicate source rows and mono/stereo
+inconsistency. Invalid requests are refused without emitting
+`arMixConsoleIntent` or mutating accepted graph/PCM. Tests:
+`tests/approved_native_v8_projection_test.cpp` (actual native capability
+projection/denials) and `tests/approved_native_m2_contract.test.cjs`
+(positive lease matching and invalid-intent no-emit matrix). These are
+source-level and control contract proofs, **not** two-device physical FAT.
+
+`IO-2E` parent #825 adds retained qualified A+B lease retirement across
+primary device epochs: only an explicit output-disarmed A-only session
+replacement retires the old B map; implicit cross-epoch commits are rejected.
+The device binding is independently verified before the restore.
+
+Current PR stack: #825 is the native foundation; draft #830 is based on its
+latest native HEAD and owns this typed command/readback. Parent Windows
+exact-HEAD requalification and child Windows/Chromium qualification must be
+verified separately before promotion.
 
 ## Persistence, fallback and hardware qualification
 
