@@ -1621,6 +1621,8 @@ if(BUILD_TESTING)
   target_compile_features(ARMixGraphicEq31CoreTests PRIVATE cxx_std_20)
   add_test(NAME GraphicEq31FrequencyResponseAndRealtimeStability
       COMMAND ARMixGraphicEq31CoreTests)
+  add_test(NAME GraphicEq31OriginalSvgLayersAndDynamicThumb
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/graphic_eq31_svg_layers_test.py")
   add_dependencies(ARMixMixerRoutingTests ARMixGraphicEq31CoreTests)
 
   # Zero-lookahead native compressor DSP: zero PDC, stereo-linked peak,
