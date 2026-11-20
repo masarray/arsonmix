@@ -47,10 +47,12 @@ test('interactive Setup automatically checks for signed VB-CABLE while mixer lau
   assert.match(iss, /VBCABLE_Driver_Pack45\.zip/);
   const run = iss.slice(iss.indexOf('[Run]'), iss.indexOf('[Code]'));
   const entries = run.split('\n').filter(line => line.startsWith('Filename:'));
-  assert.equal(entries.length, 2);
-  assert.match(entries[0], /ArSonMixVBCableInstall\.ps1/);
+  assert.equal(entries.length, 3);
+  assert.match(entries[0], /ArSonMixWebView2Prerequisite\.ps1/);
   assert.match(entries[0], /Flags: runasoriginaluser skipifsilent waituntilterminated runhidden/);
-  assert.match(entries[1], /^Filename: "\{app\}\\ArSonMix\.exe"/);
+  assert.match(entries[1], /ArSonMixVBCableInstall\.ps1/);
+  assert.match(entries[1], /Flags: runasoriginaluser skipifsilent waituntilterminated runhidden/);
+  assert.match(entries[2], /^Filename: "\{app\}\\ArSonMix\.exe"/);
   for (const entry of entries) assert.doesNotMatch(entry, /;\s*(Check|Tasks):/i);
   assert.match(iss, /^RestartIfNeededByRun=no$/m);
   assert.doesNotMatch(iss + bootstrap, /VBCableRestart|RestartMarker|CanLaunchMixer|function NeedRestart/);
@@ -102,6 +104,24 @@ test('interactive Setup automatically checks for signed VB-CABLE while mixer lau
   assert.match(notice, /www\.vb-cable\.com/);
   assert.match(notice, /A\+B and C\+D/);
   assert.match(iss, /Flags: runasoriginaluser skipifsilent waituntilterminated/);
+});
+
+test('WebView2 GUI prerequisite runs only on interactive setup from Microsoft-signed bootstrapper', () => {
+  const helper=read('installer/ArSonMixWebView2Prerequisite.ps1');
+  assert.match(iss, /Source: "ArSonMixWebView2Prerequisite\.ps1"; DestDir: "\{app\}"/);
+  assert.match(helper, /ARSONMIX_WEBVIEW2_PREREQUISITE_POLICY_PASS/);
+  assert.match(helper, /go\.microsoft\.com\/fwlink\/p\/\?LinkId=2124703/);
+  assert.match(helper, /Get-AuthenticodeSignature/);
+  assert.match(helper, /Microsoft-Signer/);
+  assert.match(helper, /Microsoft-Uri \$response\.ResponseUri/);
+  assert.match(helper, /-ArgumentList @\('\/silent','\/install'\)/);
+  assert.match(helper, /ARSONMIX_WEBVIEW2_ALREADY_PRESENT/);
+  assert.match(helper, /ARSONMIX_WEBVIEW2_INSTALLED/);
+  assert.match(helper, /NEEDS_ATTENTION/);
+  assert.ok(helper.indexOf('if($installed)') < helper.indexOf('$request.GetResponse()'));
+  assert.ok(helper.indexOf('Get-AuthenticodeSignature') < helper.indexOf('Start-Process -FilePath $file'));
+  assert.doesNotMatch(helper, /vcredist|vc_redist|TrustedPublisher|SetDefaultEndpoint|--safe-webview-profile/i);
+  assert.match(read('scripts/test_inno_graceful_update_windows.ps1'), /ARSONMIX_WEBVIEW2_PREREQUISITE_POLICY_PASS/);
 });
 
 test('single installer preflight requests graceful shutdown; Restart Manager cannot force old mixer', () => {
