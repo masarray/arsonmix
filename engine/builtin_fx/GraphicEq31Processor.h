@@ -246,19 +246,35 @@ private:
     bool published_=false,ready_=false;
 };
 
-// Native pointer-drag 0 dB detent: quick engagement at ±0.45 dB,
- // stronger release at ±0.85 dB, no DSP quantisation or new host state.
+// Shared native zero-detent control: 31 faders plus Output Level.
+// JUCE slider wheel already owns its host automation gesture and calls
+// snapValue(value, notDragging); never create parallel editor param state.
 class GraphicEq31DetentSlider final : public juce::Slider {
 public:
+    void setZeroDetent(double captureDb,double releaseDb) noexcept {
+        jassert(captureDb>0.0 && releaseDb>captureDb);
+        captureDb_=captureDb;
+        releaseDb_=releaseDb;
+    }
     void mouseDown(const juce::MouseEvent& event) override {
         detentEngaged_=std::abs(getValue())<0.001;
         juce::Slider::mouseDown(event);
     }
     double snapValue(double attemptedValue,DragMode dragMode) override {
-        if(dragMode==notDragging)
+        if(dragMode==notDragging) {
+            // Mouse wheel is discrete: snap a step near/across zero once,
+            // and let the NEXT wheel tick leave zero (never sticky).
+            // Host/preset readback uses setValue and is never quantized.
+            const double current=getValue();
+            if(std::abs(current)>0.001 &&
+               (std::abs(attemptedValue)<=captureDb_ ||
+                (current<0.0&&attemptedValue>0.0) ||
+                (current>0.0&&attemptedValue<0.0)))
+                return 0.0;
             return juce::Slider::snapValue(attemptedValue,dragMode);
-        const double limit=detentEngaged_?0.85:0.45;
-        if(std::abs(attemptedValue)<=limit) {
+        }
+        // Drag hysteresis is UI-only; accepted APVTS retains 0.1dB steps.
+        if(std::abs(attemptedValue)<=(detentEngaged_?releaseDb_:captureDb_)) {
             detentEngaged_=true;
             return 0.0;
         }
@@ -266,6 +282,7 @@ public:
         return juce::Slider::snapValue(attemptedValue,dragMode);
     }
 private:
+    double captureDb_=1.1,releaseDb_=1.8;
     bool detentEngaged_=false;
 };
 
@@ -324,6 +341,8 @@ public:
             slider.setSliderStyle(juce::Slider::LinearVertical);
             slider.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
             slider.setDoubleClickReturnValue(true,0.);
+            slider.setScrollWheelEnabled(true);
+            slider.setZeroDetent(1.1,1.8); // 31-band 0dB detent
             slider.setTooltip(juce::String(graphicEq31Labels[i])+
                 " Hz  |  -12 ... +12 dB  |  Double-click: 0 dB");
             // Preset identity is reconciled from all 31 accepted parameter
@@ -340,6 +359,8 @@ public:
         level_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         level_.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
         level_.setDoubleClickReturnValue(true,0.);
+        level_.setScrollWheelEnabled(true);
+        level_.setZeroDetent(0.65,1.2); // rotary unity detent
         level_.setTooltip("Output Level -24 ... +6 dB (double-click: 0)");
         level_.onValueChange=[this]{
             repaint(getWidth()-rightRailWidth-9,86,rightRailWidth+9,166);
@@ -408,12 +429,36 @@ public:
         setResizable(true,true);
         // Hardware stays 1:1 as authored SVG; only the 31-band viewport
         // renders at 80%. Header/control sizes are deliberately unchanged.
+        // Descendant listener is passive on actual controls and active only
+        // on owner-blank background; mixer WebView2 CSS stays untouched.
+        addMouseListener(this,true);
         setResizeLimits(860,305,1760,305);
         setSize(1430,305);
         startTimerHz(6); // GUI-only external host readback; no audio work
     }
 
-    ~GraphicEq31Editor() override {stopTimer();setLookAndFeel(nullptr);}
+    ~GraphicEq31Editor() override {
+        removeMouseListener(this);
+        dragWindow_=nullptr;
+        stopTimer();
+        setLookAndFeel(nullptr);
+    }
+    // Move only the existing host-owned floating DocumentWindow. Clicking
+    // sliders/knob/buttons/preset never arms window dragging.
+    void mouseDown(const juce::MouseEvent& event) override {
+        if(!event.mods.isLeftButtonDown()||!isDragSurface(event))return;
+        if(auto* window=dynamic_cast<juce::DocumentWindow*>(getTopLevelComponent())) {
+            dragWindow_=window;
+            windowDragger_.startDraggingComponent(window,event);
+        }
+    }
+    void mouseDrag(const juce::MouseEvent& event) override {
+        if(!dragWindow_ || !event.mods.isLeftButtonDown()
+            || !isDragSurface(event))return;
+        windowDragger_.dragComponent(dragWindow_.getComponent(),event,nullptr);
+    }
+    void mouseUp(const juce::MouseEvent&) override {dragWindow_=nullptr;}
+
 
     void paint(juce::Graphics& g) override {
         const int width=getWidth(),height=getHeight();
@@ -459,11 +504,11 @@ public:
         }
         g.setColour(juce::Colour(0xff344047));
         g.setFont(inter(10.f).boldened());
-        g.drawText("OUTPUT",getWidth()-rightRailWidth-6,104,
+        g.drawText("OUTPUT",getWidth()-rightRailWidth-14,104,
                    rightRailWidth,17,juce::Justification::centred);
         g.setFont(inter(10.f));
         g.drawText(juce::String(level_.getValue(),1)+" dB",
-                   getWidth()-rightRailWidth-6,224,
+                   getWidth()-rightRailWidth-14,224,
                    rightRailWidth,20,juce::Justification::centred);
     }
     void paintOverChildren(juce::Graphics& g) override {
@@ -498,7 +543,7 @@ public:
         constexpr int x0=45, artY=55, artH=229;
         viewport_.setBounds(x0,artY,
             juce::jmax(1,getWidth()-rightRailWidth-2*x0),238);
-        level_.setBounds(getWidth()-98,127,84,84); // 6px left
+        level_.setBounds(getWidth()-106,127,84,84); // another 8px left
         bandSurface_.setSize(static_cast<int>(
             GraphicEq31Core::bandCount)*bandCellWidth,artH);
         for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i)
@@ -514,6 +559,12 @@ public:
     }
 
 private:
+    bool isDragSurface(const juce::MouseEvent& event) const noexcept {
+        // Original target identity avoids stealing mouse events from sliders
+        // even on transparent/blank pixels within their SVG bounds.
+        const auto* origin=event.originalComponent;
+        return origin==this || origin==&viewport_ || origin==&bandSurface_;
+    }
     void refreshHostPower() {
         const auto state=readHostPower_?readHostPower_():HostBypassState{};
         const bool bypassed=state.effectiveBypassed();
@@ -1022,7 +1073,7 @@ private:
     juce::Component bandSurface_;
     juce::Viewport viewport_;
     std::array<GraphicEq31DetentSlider,GraphicEq31Core::bandCount> sliders_;
-    juce::Slider level_;
+    GraphicEq31DetentSlider level_;
     std::unique_ptr<Attachment> levelAttachment_;
     std::vector<std::unique_ptr<Attachment>> attachments_;
     juce::ComboBox preset_;
@@ -1038,6 +1089,8 @@ private:
     std::function<bool(const juce::String&)> recallUserPreset_;
     std::function<bool(bool)> requestBypass_;
     std::function<HostBypassState()> readHostPower_;
+    juce::ComponentDragger windowDragger_;
+    juce::Component::SafePointer<juce::DocumentWindow> dragWindow_;
 };
 inline juce::AudioProcessorEditor* GraphicEq31Processor::createEditor() {
     return new GraphicEq31Editor(*this);

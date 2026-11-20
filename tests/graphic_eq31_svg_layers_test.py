@@ -217,23 +217,74 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
             pixel_y=55+y*229/2042
             self.assertTrue(55<=pixel_y<305-12)
 
-    def test_real_hardware_zero_db_detent_on_pointer_drag(self):
+    def test_all_faders_rotary_and_wheel_have_single_zero_detent_owner(self):
+        # One JUCE Slider subclass for 31 bands AND Output, not duplicate
+        # DSP/APVTS/local-wheel state. Default wheel path calls snapValue
+        # with DragMode::notDragging (verified against JUCE Slider.cpp).
         self.assertIn('class GraphicEq31DetentSlider final : public juce::Slider',self.native)
-        self.assertIn('double snapValue(double attemptedValue,DragMode dragMode) override',self.native)
-        self.assertIn('detentEngaged_=std::abs(getValue())<0.001',self.native)
-        self.assertIn('const double limit=detentEngaged_?0.85:0.45',self.native)
+        self.assertIn('GraphicEq31DetentSlider level_;',self.native)
+        self.assertIn('std::array<GraphicEq31DetentSlider,GraphicEq31Core::bandCount> sliders_',self.native)
+        self.assertIn('void setZeroDetent(double captureDb,double releaseDb) noexcept',self.native)
+        self.assertIn('slider.setZeroDetent(1.1,1.8)',self.native)
+        self.assertIn('level_.setZeroDetent(0.65,1.2)',self.native)
+        self.assertIn('slider.setScrollWheelEnabled(true)',self.native)
+        self.assertIn('level_.setScrollWheelEnabled(true)',self.native)
         self.assertIn('if(dragMode==notDragging)',self.native)
+        self.assertIn('const double current=getValue()',self.native)
+        self.assertIn('if(std::abs(current)>0.001 &&',self.native)
+        self.assertIn('(current<0.0&&attemptedValue>0.0)',self.native)
+        self.assertIn('(current>0.0&&attemptedValue<0.0)',self.native)
+        self.assertIn('return juce::Slider::snapValue(attemptedValue,dragMode)',self.native)
+        self.assertIn('detentEngaged_=std::abs(getValue())<0.001',self.native)
         self.assertIn('return 0.0;',self.native)
-        # Mechanical-feel entry/release hysteresis in dB; does not
-        # quantise the processor, user presets or automation targets.
-        engaged=False
-        results=[]
-        for attempted in (1.5,.8,.44,.6,.84,.86,-.3,-.87):
-            limit=.85 if engaged else .45
-            engaged=abs(attempted)<=limit
-            results.append(0.0 if engaged else attempted)
-        self.assertEqual(results,[1.5,.8,0.,0.,0.,.86,0.,-.87])
+        self.assertNotIn('const double limit=detentEngaged_?0.85:0.45',self.native)
+        # Verify the UX policy numerically: pointer hysteresis vs wheel
+        # crossing/escape, no permanent 0dB trapping.
+        def drag(values,capture,release):
+            held=False
+            result=[]
+            for x in values:
+                engage=release if held else capture
+                held=abs(x)<=engage
+                result.append(0 if held else x)
+            return result
+        self.assertEqual(drag([2.,1.09,1.7,1.81,-.8,-1.9],1.1,1.8),
+                         [2.,0,0,1.81,0,-1.9])
+        self.assertEqual(drag([.6,.8,1.19,1.21],.65,1.2),
+                         [0,0,0,1.21])
+        def wheel(current,target,capture):
+            if abs(current)>.001 and (abs(target)<=capture or
+                    (current<0<target) or (current>0>target)):
+                return 0.
+            return target
+        self.assertEqual(wheel(-.9,-.3,1.1),0)
+        self.assertEqual(wheel(-.3,.8,1.1),0)
+        self.assertEqual(wheel(0.,.3,1.1),.3)
+        self.assertEqual(wheel(0.,-.3,1.1),-.3)
+        self.assertEqual(wheel(-2.,.2,.65),0.)
+        self.assertEqual(wheel(0.,.2,.65),.2)
+        # The native audio core remains independently owner-accepted.
         self.assertNotIn('snapValue(',self.native.split('class GraphicEq31Processor final')[1].split('class GraphicEq31DetentSlider')[0])
+
+    def test_background_only_drag_moves_host_owned_native_window(self):
+        self.assertIn('addMouseListener(this,true)',self.native)
+        self.assertIn('removeMouseListener(this)',self.native)
+        self.assertIn('juce::ComponentDragger windowDragger_',self.native)
+        self.assertIn('juce::Component::SafePointer<juce::DocumentWindow> dragWindow_',self.native)
+        self.assertIn('dynamic_cast<juce::DocumentWindow*>(getTopLevelComponent())',self.native)
+        self.assertIn('windowDragger_.startDraggingComponent(window,event)',self.native)
+        self.assertIn('windowDragger_.dragComponent(dragWindow_.getComponent(),event,nullptr)',self.native)
+        self.assertIn('bool isDragSurface(const juce::MouseEvent& event) const noexcept',self.native)
+        self.assertIn('const auto* origin=event.originalComponent',self.native)
+        self.assertIn('origin==this || origin==&viewport_ || origin==&bandSurface_',self.native)
+        self.assertIn('if(!event.mods.isLeftButtonDown()||!isDragSurface(event))return',self.native)
+        self.assertNotIn('origin==&level_',self.native)
+        # The mixer /preview/ WebView2 CSS and native FX controls are separate
+        # owners; no global CSS overrides or free-floating editor replacement.
+        self.assertIn('setSize(1430,305)',self.native)
+        self.assertIn('level_.setBounds(getWidth()-106,127,84,84)',self.native)
+        self.assertIn('getWidth()-rightRailWidth-14,104',self.native)
+        self.assertIn('getWidth()-rightRailWidth-14,224',self.native)
 
     def test_white_index_hit_major_ticks_and_pixel_crisp(self):
         # Important: alignment uses the s11 WHITE index center, not the
@@ -294,9 +345,9 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('arc.addCentredArc(cx,cy,side*.365f',self.native)
         self.assertNotIn('const int segments=juce::jmax(1',self.native)
         self.assertIn('if(t>0.f)',self.native)
-        self.assertIn('level_.setBounds(getWidth()-98,127,84,84)',self.native)
-        self.assertIn('getWidth()-rightRailWidth-6,104',self.native)
-        self.assertIn('getWidth()-rightRailWidth-6,224',self.native)
+        self.assertIn('level_.setBounds(getWidth()-106,127,84,84)',self.native)
+        self.assertIn('getWidth()-rightRailWidth-14,104',self.native)
+        self.assertIn('getWidth()-rightRailWidth-14,224',self.native)
         self.assertIn('g.setFont(inter(11.f).boldened())',self.native)
         self.assertIn('juce::Colour(0xff344047)',self.native)
         self.assertIn('#include <optional>',self.native)
