@@ -80,7 +80,7 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('getChildByAttribute("id","g2")', self.native)
         self.assertIn('"#080c0f","#12181c"', self.native)
         self.assertIn('static constexpr int bandCellWidth=40', self.native)
-        self.assertIn('setSize(1340,305)', self.native)
+        self.assertIn('setSize(1330,305)', self.native)
         self.assertIn('font-family: Inter; font-size: 27px; font-weight: 700', self.native)
         self.assertIn('font-family: Inter; font-size: 18px; font-weight: 600', self.native)
         self.assertIn('unitSpan->addTextElement(isKhz?"kHz":"Hz")', self.native)
@@ -192,10 +192,11 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
     def test_compact_scale_and_symmetric_layout_without_header_changes(self):
         # 31 x 50px -> 31 x 40px and 286px -> 229px.
         self.assertEqual(31*40,1240)
+        self.assertEqual(1330-1240,2*45)
         self.assertAlmostEqual(40/50,.8,places=6)
         self.assertLess(abs(229/286-.8),.002)
         self.assertIn('setResizeLimits(760,305,1660,305)',self.native)
-        self.assertIn('setSize(1340,305)',self.native)
+        self.assertIn('setSize(1330,305)',self.native)
         self.assertIn('constexpr int x0=45, artY=55, artH=229',self.native)
         self.assertIn('viewport_.setBounds(x0,artY,juce::jmax(1,getWidth()-2*x0),238)',self.native)
         self.assertIn('static constexpr int bandCellWidth=40',self.native)
