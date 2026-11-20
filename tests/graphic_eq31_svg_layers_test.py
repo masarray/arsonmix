@@ -76,7 +76,8 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
     def test_hardware_visual_fidelity_and_no_noise(self):
         self.assertIn('document->setAttribute("viewBox","60 0 352 2042")', self.native)
         self.assertIn('getChildByAttribute("id","g1")', self.native)
-        self.assertIn('"#929b9f","#a6afb3"', self.native)
+        self.assertIn('"#d8dee1","#b8c2c7"', self.native)
+        self.assertIn('"#818f97","#49545c"', self.native)
         self.assertIn('getChildByAttribute("id","g2")', self.native)
         self.assertIn('"#080c0f","#12181c"', self.native)
         self.assertIn('static constexpr int bandCellWidth=40', self.native)
@@ -128,6 +129,26 @@ class OwnerOriginalSvgLayersTests(unittest.TestCase):
         self.assertIn('flat_.setBounds(r-125,16,44,24)', self.native)
         self.assertIn('constexpr int x0=45, artY=55, artH=229, rightReserve=145', self.native)
         self.assertNotIn('jump_', self.native)
+
+    def test_original_recessed_cutout_remains_under_all_svg_faders(self):
+        # The 31 faders share one milled bed; no flat individual tiles.
+        painting = self.native.split(
+            'void paint(juce::Graphics& g) override {', 1)[1].split(
+            'void resized() override {', 1)[0]
+        self.assertIn('bandSurface_.setOpaque(false)', self.native)
+        self.assertIn('viewport_.setOpaque(false)', self.native)
+        self.assertIn('viewport_.getBounds().toFloat().expanded(2.f,1.f)', painting)
+        self.assertEqual(painting.count('g.fillRoundedRectangle(cutout,5.f)'), 1)
+        self.assertIn('g.fillRoundedRectangle(innerCutout,3.5f)', painting)
+        self.assertIn('juce::Colour(0xff3e4b53)', painting)
+        self.assertIn('juce::Colour(0xff79858c)', painting)
+        self.assertIn('juce::Colour(0xffb0b8bb)', painting)
+        self.assertLess(painting.index('g.fillRoundedRectangle(cutout,5.f)'),
+                        painting.index('g.drawText("Graphic EQ 31"'))
+        self.assertIn('viewport_.setBounds(x0,artY,', self.native)
+        self.assertIn('const char* shades[]={"#d8dee1","#b8c2c7"',self.native)
+        self.assertIn('const char* shades[]={"#080c0f","#12181c"',self.native)
+        self.assertEqual(hashlib.sha256(self.raw).hexdigest(), EXPECTED_SHA256)
 
     def test_black_svg_ticks_but_original_source_unchanged(self):
         self.assertIn('tick->getStringAttribute("class")=="s0"', self.native)

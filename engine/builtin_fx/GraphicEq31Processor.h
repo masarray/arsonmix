@@ -341,6 +341,10 @@ public:
             processor_.parameters(),"levelDb",level_);
         addAndMakeVisible(level_);
 
+        // Original SVG sliders remain transparent; the common milled
+        // recess is drawn behind these surfaces in the parent paint.
+        bandSurface_.setOpaque(false);
+        viewport_.setOpaque(false);
         viewport_.setViewedComponent(&bandSurface_,false);
         viewport_.setScrollBarsShown(false,true);
         viewport_.setScrollBarThickness(7);
@@ -426,6 +430,25 @@ public:
         g.fillRect(getLocalBounds());
         g.setColour(juce::Colour::fromRGB(94,102,106).withAlpha(.72f));
         g.drawRect(getLocalBounds().reduced(1),1);
+
+        // RESTORED COAKAN: one milled 31-band recess under the original
+        // scrolling SVG faders. Not 31 dark rectangular tiles. The
+        // viewport supplies stable geometry when resized.
+        const auto cutout=viewport_.getBounds().toFloat().expanded(2.f,1.f);
+        const auto innerCutout=cutout.reduced(1.5f);
+        g.setColour(juce::Colour(0xff3e4b53).withAlpha(.90f));
+        g.fillRoundedRectangle(cutout,5.f); // dark outer milled rim
+        g.setGradientFill(juce::ColourGradient(
+            juce::Colour(0xff79858c),innerCutout.getCentreX(),innerCutout.getY(),
+            juce::Colour(0xffb0b8bb),innerCutout.getCentreX(),innerCutout.getBottom(),
+            false));
+        g.fillRoundedRectangle(innerCutout,3.5f);
+        g.setColour(juce::Colour(0xff29353b).withAlpha(.78f));
+        g.drawRoundedRectangle(innerCutout.reduced(.5f),3.f,1.f);
+        g.setColour(juce::Colours::white.withAlpha(.55f));
+        g.drawLine(innerCutout.getX()+4.f,innerCutout.getBottom()-.5f,
+                   innerCutout.getRight()-4.f,innerCutout.getBottom()-.5f,1.f);
+
         g.setColour(juce::Colour::fromRGB(33,46,52));
         g.setFont(inter(17.f));
         g.drawText("Graphic EQ 31",19,13,250,31,juce::Justification::centredLeft);
@@ -919,8 +942,8 @@ private:
             // Tint the UI clone only, to a darker chamfer around the hole.
             if(auto* defs=document->getChildByName("defs")) {
                 if(auto* lip=defs->getChildByAttribute("id","g1")) {
-                    const char* shades[]={"#929b9f","#a6afb3",
-                                          "#969ea3","#858d92"};
+                    const char* shades[]={"#d8dee1","#b8c2c7",
+                                          "#818f97","#49545c"};
                     for(int j=0;j<lip->getNumChildElements();++j)
                         lip->getChildElement(j)->setAttribute(
                             "stop-color",shades[juce::jmin(j,3)]);
