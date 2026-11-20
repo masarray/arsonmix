@@ -2719,8 +2719,13 @@ public:
         document.request=std::move(staged);
         return true;
     }
+    // IO-2F: primary-ASIO restart must carry the same explicit qualified
+    // map-retirement token as a verified user-requested A-only .smix restore.
+    // Only the owner that staged an A+B -> A-only recovery may supply true;
+    // an ordinary ASIO restart must not drop a still-installed B source map.
     bool rebindRetainedAsioSession(armix::session::MixerSessionDocument document,
-            const armix::device::JuceActivePortSnapshot& pins,int deviceFrames) {
+            const armix::device::JuceActivePortSnapshot& pins,int deviceFrames,
+            bool retireLostSecondaryMap) {
         const auto next=nativeGraphRevisionForRestore();
         const auto previous=document.request.maxFrames;
         // Existing processors can still use their prepared quantum. Larger
@@ -2732,7 +2737,11 @@ public:
         if(armix::mixer::DynamicChannelFxLeaseBank::rebindSameFormat(
                pins.epoch,next,*nativeAccepted_.fxOwners,*bank)!=
            armix::mixer::DynamicChannelFxLeaseBank::Fault::none)return false;
-        return restoreNativeMixerSession(std::move(document),std::move(bank),pins,true).isEmpty();
+        if(retireLostSecondaryMap && !qualifiedInputMapActive())return false;
+        // The new A callback and its real pin mask were already verified.
+        // Never publish an implicit cross-epoch B ordinal reinterpretation.
+        return restoreNativeMixerSession(std::move(document),std::move(bank),
+            pins,true,false,retireLostSecondaryMap).isEmpty();
     }
 
     // Match CONTROL's live device readback to the masks registered for the
