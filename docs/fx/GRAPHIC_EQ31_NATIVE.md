@@ -37,6 +37,15 @@
 
 The versioned state loader validates magic, version, exact byte length, every per-band value, and any legacy trims **before changing any parameters**. Live audio coefficients use existing realtime-safe smoothing; no allocation, file IO, locks, or JSON parsing is performed on the realtime callback.
 
+## Unified built-in FX header — 20 November 2026
+
+- The owner's authentic 31-slider SVG `Track` paths are **unchanged geometrically**, but the two tick groups are styled on UI clones with strong `#131a1d` stroke and 7.9 SVG units, visible against the original brushed metal. The recessed silver outer chamfer `g1` remains darker than the body, and `g2` stays nearly black.
+- The top-right window chrome now matches the other built-in editors: **Preset** (functional JUCE factory list), **FX power/bypass** (mixer-host authenticated readback), and **Close**. Native `PluginEditorWindow` still owns the actual editor HWND; the embedded Close simply hides it, permitting reopen without losing state. No duplicate floating window or WebView.
+- Bypass state comes through `GraphicEq31Editor::bindHostPower` bound in the existing `routingFxEditor` host action using retained native/routed insert lease, the exact existing `bypassRetainedNativeFx` / `bypassRetainedRoutedFx` functions and refreshed `retained*FxPower` readback. No local optimistic boolean; global/rack bypass disables the slot action, and an unavailable lease leaves the button disabled.
+- Factory preset list offers **Custom, Flat, Vocal Presence, Warm, Speech Clarity**. Selecting a factory preset updates the 31 actual JUCE band parameters; changing a fader returns the selection to Custom. This is **not a false claim of user `.armixfx` support**: Graphic EQ 31 has not yet been admitted into the shared `BuiltInFxUserPresetStore` accepted-DSP snapshot/ACK workflow. Until that is implemented and tested, the native list is explicitly **factory only**, with `.smix` session state still owned by the existing mixer.
+- LOW/MID/HIGH jump buttons are removed. The **Flat** reset is in a narrow right-hand utility rail with room for future actual knobs/buttons, while the 31 faders keep their readable 50px pitch and a horizontal scrollbar in narrow editor widths.
+- Header buttons use the same compact neutral silver, Inter, thin borders and accessible tooltips. No extraneous status/help/footer text is introduced.
+
 ## Verification evidence and release boundary
 
 - Static/pure-C++ checks: `ARMixGraphicEq31CoreTests` / `GraphicEq31FrequencyResponseAndRealtimeStability` (frequency response, invalid gains, stereo isolation, low-rate Nyquist and automation stress). Its 29 explicit `GEQ_CHECK` predicates remain executable in Release (`NDEBUG`) builds, including setup calls that used to disappear inside standard `assert`.
