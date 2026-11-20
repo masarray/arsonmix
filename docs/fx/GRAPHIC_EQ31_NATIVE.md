@@ -8,7 +8,7 @@
 ## What is owned where
 
 - `engine/builtin_fx/GraphicEq31Core.h` owns the fixed 31-frequency stereo signal path. 31 matched second-order peaking sections are directly cascaded without adding a callback or allocation. Nominal centres are the ISO/dbx-style 1/3-octave series from 20 Hz to 20 kHz; Q is fixed at 4.318473, so adjacent bands overlap.
-- `engine/builtin_fx/GraphicEq31Processor.h` adapts to the existing JUCE `AudioProcessor` and `RealtimeNativeFxControl`. Stable per-band `AudioParameterFloat` IDs `band0`…`band30`, plus exactly one `inputDb`, are used for host parameter bindings. No `outputDb` processing or output-gain UI exists in the current version.
+- `engine/builtin_fx/GraphicEq31Processor.h` is a native JUCE `AudioProcessor`, controlled by `band0`…`band30` only. The input/output trim parameters were fully removed from DSP and editor; legacy saved states migrate safely.
 - `src/NativeBuiltInFx.h` registers one catalog descriptor. Existing `FxInstance`, per-ChannelId ordering, per-insert bypass, lifecycle, `.smix` binary storage, device switching and generic owned editor remain the exclusive authorities.
 - `web/approved-native-bridge.js` adds a discovery fallback until native `arMixCatalog` returns the canonical descriptor. **No second GUI or WebAudio processing** is introduced.
 - `assets/fx/graphic-eq31/slider_eq_grp.svg` is the owner's **byte-exact original 33,354-byte SVG** (`SHA256 aeaf02b8904a667724f34774a692da39a5a466bae302611f347fae4d9fd14dba`). Its three authored children `Track`, `Text`, and `THUMB` are preserved. The production JUCE binary embeds the entire SVG including the original raster/vector THUMB. The editor changes only the `Text` frequency tspan while parsing each band **once** on the UI thread; afterwards it holds the original authored `THUMB` Drawable and applies a simple affine Y transform on parameter changes (no XML reparse, PNG decode, or allocation in the drag path). There are **no JUCE-painted substitute tracks or silver thumbs**; invalid SVG displays a visible error. No BinaryData means the graphical layer cannot render, rather than silently showing a fake substitute.
@@ -21,25 +21,23 @@
  3.15k 4k  5k     6.3k  8k    10k   12.5k 16k   20k
 ```
 
-- Per-band boost/cut: **±12 dB**, fixed nominal centres.
-- **One Input Gain only**, **±12 dB**, smoothed. The output trim control and its audio multiplier were deleted; peak metering remains post-EQ.
-- Automatic sample-rate reprepare and Nyquist guard; a band above the physical rate's guard keeps its saved value but its filter is transparent until supported.
-- Linked stereo gain coefficients, separate L/R filter history, no artificial delay or lookahead.
-- UI controls: 31 faders, centre-zero double-click, Flat/Smile quick buttons, owner `KNOB-EQ.svg` input gain and clip display. The one approved `/preview/` remains the mixer surface; this effect uses the existing JUCE owned plugin-editor window.
-- The editor defaults to **1370×391** and resizes horizontally from **850 to 1800 px**. Its pitch is **37 px per slider** (31×37=1147px), reduced from 80px. At default width all bands fit simultaneously; narrower windows retain horizontal LOW/MID/HIGH navigation. Source `slider_eq_grp.svg` remains byte-exact and retains its authored `Track`/`Text`/`THUMB` groups; the frequency label alone is updated on the UI thread and rendered in Inter.
-- The **byte-exact original `KNOB-EQ.svg`** (`SHA256 754b3d525be1d4dcbe26fdca1d6bedc5b67e2d2436efec2aa9265ad86c5aad80`) is embedded alongside the fader. The native editor draws the original `KNOB` layer and rotates the original `POINTER` group around its authored origin. All JUCE/HTML EQ labels/buttons request **Inter**, with no extra output gain control. **On Windows, JUCE needs Inter installed** to avoid automatic system-font fallback; no extra font binaries are bundled in this PR. No second UI host/PCM owner was introduced.
-- A source-derived HTML/PNG preview may help inspect the art direction but must be labeled **not a live JUCE screenshot** and must never be used as physical FAT proof.
+- 31 fixed dbx/ISO nominal one-third-octave centres, each **±12 dB**, linked stereo gains with independent L/R filter history. Zero additional delay/lookahead and normal host bypass.
+- **No input or output gain control** and no hidden input/output gain multiplication. Flat with zero bands is unity; peak metering is post-EQ.
+- **GEQ1 v3** state stores 31 bands only (**132 bytes**). Historic **v1 140-byte** and **v2 136-byte** states are validated entirely and imported, discarding obsolete input/output trim values. Invalid state fails closed; published graph state is not mutated.
+- GUI: authentic owner `slider_eq_grp.svg` remains byte-identical (original `Track`, `Text`, `THUMB` groups). The JUCE editor creates 31 independent Drawables once on the UI thread and moves each vector `THUMB` by Y translation. The duplicate raster use `_Image3` (dark rectangular shadow) is **omitted from the render clone**, not deleted from the source. The duplicate per-band `Hz` group is also hidden in each render clone to declutter the UI. Frequency labels remain within the original `Text` group, switched to Inter.
+- **50 px pitch** (31 × 50 = 1550 px) rather than the unreadable previous 37 px. The editor defaults to **1610 × 391 px** and can be resized horizontally from **850 to 1900 px**; smaller windows scroll horizontally with LOW/MID/HIGH jump controls. The source `viewBox` stays unchanged; only the UI clone is cropped horizontally (`60 0 352 2042`) to use screen real estate efficiently.
+- One uninterrupted neutral EQ background. **No per-fader shadow blocks, additional cards, gain knob, knob asset in production binary, or second GUI host.** `KNOB-EQ.svg` may remain archived in the repository but is no longer included in CMake BinaryData.
+- The only mixer interface authority remains the existing ArSonMix FX Rack and mixer-owned JUCE editor; no extra PCM path or WebView is added.
+- The screenshot/HTML design preview is a source-derived Chromium rendering, **not** evidence that the JUCE Windows native build has passed.
 
 ## State and safety
 
-A separate versioned `GEQ1` **v2 136-byte** binary payload stores 31 band gains and one input gain. **Legacy v1 140-byte** payloads are validated in full and migrated, discarding their deprecated output trim so it cannot secretly alter output PCM. `restoreUnpublishedState` validates the **entire** blob before changing parameters and refuses modifications after the instance has been sealed into a published realtime graph. The existing host prepares a replacement lease rather than mutating published DSP state. The processor exposes only an atomic per-block peak to its GUI.
-
-Coefficient transitions are smoothed over 5ms on the audio thread when gain targets change; parameter values are atomics, not locks. The realtime implementation avoids disk, JSON and heap allocation.
+The versioned state loader validates magic, version, exact byte length, every per-band value, and any legacy trims **before changing any parameters**. Live audio coefficients use existing realtime-safe smoothing; no allocation, file IO, locks, or JSON parsing is performed on the realtime callback.
 
 ## Verification evidence and release boundary
 
 - Static/pure-C++ checks: `ARMixGraphicEq31CoreTests` / `GraphicEq31FrequencyResponseAndRealtimeStability` (frequency response, invalid gains, stereo isolation, low-rate Nyquist and automation stress). Its 29 explicit `GEQ_CHECK` predicates remain executable in Release (`NDEBUG`) builds, including setup calls that used to disappear inside standard `assert`.
-- Source-artwork regression: `GraphicEq31OriginalSvgLayersAndDynamicThumb` validates byte-exact checksums for both owner assets, original `Track`/`Text`/`THUMB` and `KNOB`/`POINTER` groups, CMake BinaryData ownership, compact 37px pitch, Inter, and absence of output trim.
+- Source-artwork regression: `GraphicEq31OriginalSvgLayersAndDynamicThumb` validates the owner's byte-exact SVG, original `Track`/`Text`/`THUMB` structure, shadow removal on the UI clone, CMake BinaryData, 50px fader pitch, Inter, and absence of both gain trims.
 - Shared host registration: `ARMixNativeFxExtensionTests` (catalog, state roundtrip, bad binary reject, PCM finite, published restore reject).
 - Follow the current exact-SHA Windows `native` GitHub CI workflow before merge. A CI success proves compilation and automated tests, not physical sound quality.
 - **Still requires owner equipment FAT**: audition all 31 faders at representative rates, verify Flat unity (0dB trims), inspect bypass/restore and `.smix`, open/close editor while live ASIO runs, verify CPU/XRUN and confirm headroom/clipping at ±12dB in a complete music mix.
