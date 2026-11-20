@@ -165,7 +165,7 @@ private:
     bool published_=false,ready_=false;
 };
 
-class GraphicEq31Editor final : public juce::AudioProcessorEditor, private juce::Timer {
+class GraphicEq31Editor final : public juce::AudioProcessorEditor {
 public:
     explicit GraphicEq31Editor(GraphicEq31Processor& processor)
         : juce::AudioProcessorEditor(processor), processor_(processor) {
@@ -192,14 +192,6 @@ public:
         flat_.setButtonText("Flat");
         flat_.onClick=[this]{processor_.setFlatFromUi();};
         addAndMakeVisible(flat_);
-        smile_.setButtonText("Smile");
-        smile_.onClick=[this]{
-            for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i) {
-                const auto hz=graphicEq31Hz[i];
-                processor_.setBandFromUi(i,hz<110.?3.f:(hz>4500.?2.5f:-1.f));
-            }
-        };
-        addAndMakeVisible(smile_);
         for(int i=0;i<3;++i) {
             jump_[i].setButtonText(i==0?"LOW":i==1?"MID":"HIGH");
             jump_[i].onClick=[this,i]{
@@ -207,39 +199,42 @@ public:
             };
             addAndMakeVisible(jump_[i]);
         }
-        peakLabel_.setJustificationType(juce::Justification::centred);
-        peakLabel_.setFont(inter(10.f));
-        addAndMakeVisible(peakLabel_);
         setResizable(true,true);
         setResizeLimits(850,391,1900,391);
         setSize(1610,391);
-        startTimerHz(20);
     }
 
-    ~GraphicEq31Editor() override {stopTimer();setLookAndFeel(nullptr);}
+    ~GraphicEq31Editor() override {setLookAndFeel(nullptr);}
 
     void paint(juce::Graphics& g) override {
-        // One uninterrupted control panel. No per-band card or shadow.
-        g.fillAll(juce::Colour::fromRGB(246,247,247));
-        g.setColour(juce::Colour::fromRGB(212,219,221));
+        // Restrained satin brushed aluminium, ONE surface for all 31 tracks.
+        const auto width=getWidth(), height=getHeight();
+        g.setGradientFill(juce::ColourGradient(
+            juce::Colour::fromRGB(229,233,234),0.f,0.f,
+            juce::Colour::fromRGB(203,211,214),0.f,static_cast<float>(height),false));
+        g.fillRect(getLocalBounds());
+        for(int y=2;y<height;y+=3) {
+            g.setColour(juce::Colours::white.withAlpha((y%2)==0?.075f:.045f));
+            g.drawHorizontalLine(y,0.f,static_cast<float>(width));
+        }
+        g.setColour(juce::Colour::fromRGB(167,180,185));
         g.drawRect(getLocalBounds().reduced(1),1);
-        g.setColour(juce::Colour::fromRGB(52,67,73));
-        g.setFont(inter(18.f));
-        g.drawText("Graphic EQ 31",20,15,300,32,juce::Justification::centredLeft);
-        g.setColour(juce::Colour::fromRGB(128,143,148));
-        g.setFont(inter(10.5f));
-        g.drawText("ARSONMIX  /  1/3 OCTAVE  /  20 Hz - 20 kHz",
-                   213,24,400,20,juce::Justification::centredLeft);
-        g.setColour(juce::Colour::fromRGB(226,231,232));
-        g.drawHorizontalLine(53,0.f,static_cast<float>(getWidth()));
+        g.setColour(juce::Colour::fromRGB(55,70,77));
+        g.setFont(inter(17.f));
+        g.drawText("Graphic EQ 31",19,13,250,31,juce::Justification::centredLeft);
         g.setFont(inter(10.f));
-        g.setColour(juce::Colour::fromRGB(112,126,131));
-        g.drawText("+12",5,86,36,16,juce::Justification::centredRight);
-        g.drawText("0",5,195,36,16,juce::Justification::centredRight);
-        g.drawText("-12",5,307,36,16,juce::Justification::centredRight);
-        g.setColour(juce::Colour::fromRGB(143,155,159));
-        g.drawText("31 BANDS  /  +/-12 dB",53,366,
-                   juce::jmax(0,getWidth()-70),17,juce::Justification::centredLeft);
+        g.setColour(juce::Colour::fromRGB(115,130,136));
+        g.drawText("ARSONMIX  /  1/3 OCTAVE  /  +/-12 dB",
+                   216,22,310,20,juce::Justification::centredLeft);
+        g.setColour(juce::Colour::fromRGB(171,182,186).withAlpha(.65f));
+        g.drawHorizontalLine(53,0.f,static_cast<float>(width));
+        // Exactly calibrated to the authored slot at y=183, 918 and 1661
+        // inside viewBox 2042, viewport local origin y=66 and height=286.
+        g.setColour(juce::Colour::fromRGB(87,102,109));
+        g.setFont(inter(10.f));
+        g.drawText("+12",5,84,36,16,juce::Justification::centredRight);
+        g.drawText("0",5,186,36,16,juce::Justification::centredRight);
+        g.drawText("-12",5,291,36,16,juce::Justification::centredRight);
     }
     void resized() override {
         constexpr int x0=46;
@@ -249,11 +244,9 @@ public:
             sliders_[i].setBounds(static_cast<int>(i)*bandCellWidth,0,
                                   bandCellWidth,286);
         const int controlX=juce::jmax(440,getWidth()-415);
-        flat_.setBounds(controlX,17,64,27);
-        smile_.setBounds(controlX+71,17,64,27);
+        flat_.setBounds(controlX+71,17,64,27);
         for(int j=0;j<3;++j)
             jump_[j].setBounds(controlX+156+j*74,17,69,27);
-        peakLabel_.setBounds(5,352,39,20);
     }
 private:
     static juce::Font inter(float size) {return juce::Font("Inter",size,juce::Font::plain);}
@@ -287,11 +280,21 @@ private:
             if(auto* art=drawables_[band].get()) {
                 const auto gain=static_cast<float>(slider.getValue());
                 if(lastGain_[band]!=gain&&thumbGroups_[band]!=nullptr) {
-                    const float shift=-560.f*juce::jlimit(-12.f,12.f,gain)/12.f;
+                    const float shift=-600.f*juce::jlimit(-12.f,12.f,gain)/12.f;
                     thumbGroups_[band]->setTransform(juce::AffineTransform::translation(0.f, shift));
                     lastGain_[band]=gain;
                 }
-                // 50px columns; original authored vector thumb, zero raster shadow.
+                // LOCAL thumb-only shadow: no per-band rectangular raster.
+                // Authored vector THUMB bounds approximately (158..319,
+                // 776..1055) in the 60..412 cropped SVG viewBox.
+                const float shift=-600.f*juce::jlimit(-12.f,12.f,gain)/12.f;
+                const auto shadowBounds=juce::Rectangle<int>(
+                    juce::roundToInt(x+width*98.f/352.f),
+                    juce::roundToInt(y+(776.f+shift)*height/2042.f),
+                    juce::roundToInt(width*161.f/352.f),
+                    juce::roundToInt(height*280.f/2042.f));
+                juce::DropShadow(juce::Colours::black.withAlpha(.27f),
+                    4,{1,2}).drawForRectangle(g,shadowBounds);
                 art->drawWithin(g,{static_cast<float>(x),static_cast<float>(y),
                     static_cast<float>(width),static_cast<float>(height)},
                     juce::RectanglePlacement::stretchToFit,1.f);
@@ -313,22 +316,54 @@ private:
             auto* labelGroup=fader->getChildByAttribute("id","Text");
             auto* thumbGroup=fader->getChildByAttribute("id","THUMB");
             if(!labelGroup||!thumbGroup)return;
+            // The source stays byte-for-byte intact; adjust just this
+            // UI-thread SVG clone. Uniform Inter text, same two-line layout
+            // and visible Hz/kHz units as equalizer-interface.svg.
+            const auto nominal=juce::String(graphicEq31Labels[band]);
+            const bool isKhz=nominal.endsWithChar('k');
+            const auto number=isKhz?nominal.dropLastCharacters(1):nominal;
             auto* frequency=labelGroup->getChildByAttribute("id","32");
             auto* tspan=frequency?frequency->getFirstChildElement():nullptr;
-            if(!tspan)return;
+            auto* unitGroup=labelGroup->getChildByAttribute("id","Hz");
+            auto* unitText=unitGroup?unitGroup->getFirstChildElement():nullptr;
+            auto* unitSpan=unitText?unitText->getFirstChildElement():nullptr;
+            if(!tspan||!unitSpan)return;
             tspan->deleteAllTextElements();
-            tspan->addTextElement(juce::String(graphicEq31Labels[band]));
-            // Override the authored Arial class at render time, preserving
-            // the source asset and all original SVG layers byte-for-byte.
-            tspan->setAttribute("style","font-family: Inter; font-size: "+
-                juce::String(juce::String(graphicEq31Labels[band]).length()>3?22:28)+"px");
+            tspan->addTextElement(number);
+            tspan->setAttribute("style",
+                "font-family: Inter; font-size: 23px; font-weight: 500; fill: #596369");
             frequency->setAttribute("text-anchor","middle");
             frequency->setAttribute("style",
-                "transform: matrix(5.4,0,0,4.167,237.76,1850.466); font-family: Inter");
-            // Preserve the original SVG bytes. On this temporary UI clone:
-            // hide redundant 31x "Hz" and the bitmap duplicate shadow.
-            if(auto* hz=labelGroup->getChildByAttribute("id","Hz"))
-                labelGroup->removeChildElement(hz,true);
+                "transform: matrix(4.167,0,0,4.167,237.76,1850.466); font-family: Inter");
+            unitSpan->deleteAllTextElements();
+            unitSpan->addTextElement(isKhz?"kHz":"Hz");
+            unitSpan->setAttribute("style",
+                "font-family: Inter; font-size: 18px; font-weight: 400; fill: #7a858b");
+            unitText->setAttribute("text-anchor","middle");
+            unitText->setAttribute("style",
+                "transform: matrix(4.167,0,0,4.167,237.76,1933.799); font-family: Inter");
+
+            auto* trackGroup=fader->getChildByAttribute("id","Track");
+            if(!trackGroup)return;
+            // Original small coloured endpoint dots add no signal meaning.
+            for(int j=trackGroup->getNumChildElements()-1;j>=0;--j) {
+                auto* node=trackGroup->getChildElement(j);
+                if(node->getChildByAttribute("class","s5")||
+                   node->getChildByAttribute("class","s6"))
+                    trackGroup->removeChildElement(node,true);
+            }
+            // Deep recessed black hardware slot (existing SVG g2 gradient).
+            if(auto* defs=document->getChildByName("defs")) {
+                if(auto* gradient=defs->getChildByAttribute("id","g2")) {
+                    const char* shades[]={"#080c0f","#12181c",
+                                          "#1b2126","#20272b","#242a2d"};
+                    for(int j=0;j<gradient->getNumChildElements();++j)
+                        gradient->getChildElement(j)->setAttribute(
+                            "stop-color",shades[juce::jmin(j,4)]);
+                }
+            }
+            // Remove ONLY the duplicated large raster shadow from this
+            // render clone; keep all original vector thumb geometry.
             auto* bitmapWrapper=thumbGroup->getFirstChildElement();
             if(bitmapWrapper&&bitmapWrapper->getChildByAttribute("id","_Image3"))
                 thumbGroup->removeChildElement(bitmapWrapper,true);
@@ -346,13 +381,6 @@ private:
         std::array<float,GraphicEq31Core::bandCount> lastGain_{};
     };
 
-    void timerCallback() override {
-        const bool clip=processor_.observedPeak()>=.999f;
-        peakLabel_.setText(clip?"CLIP":"",juce::dontSendNotification);
-        peakLabel_.setColour(juce::Label::textColourId,
-            clip?juce::Colour::fromRGB(226,78,58):
-                 juce::Colour::fromRGB(55,158,136));
-    }
     using Attachment=juce::AudioProcessorValueTreeState::SliderAttachment;
     static constexpr int bandCellWidth=50;
     GraphicEq31Processor& processor_;
@@ -361,9 +389,8 @@ private:
     juce::Viewport viewport_;
     std::array<juce::Slider,GraphicEq31Core::bandCount> sliders_;
     std::vector<std::unique_ptr<Attachment>> attachments_;
-    juce::TextButton flat_,smile_;
+    juce::TextButton flat_;
     std::array<juce::TextButton,3> jump_;
-    juce::Label peakLabel_;
 };
 inline juce::AudioProcessorEditor* GraphicEq31Processor::createEditor() {
     return new GraphicEq31Editor(*this);
