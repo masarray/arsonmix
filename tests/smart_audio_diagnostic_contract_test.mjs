@@ -191,9 +191,13 @@ test('INT-1B native log is bounded and uses one existing off-RT 1Hz snapshot',()
   assert.match(engine,/dryRoutingLab_\.globalFxBypassed\(\)/);
   assert.match(host,/nativeFxInstalledCount/);
   assert.match(engine,/originalCh1GraphLeased/);
-  assert.match(engine,/graphOwned_->rackBypassed\.load/);
-  assert.match(engine,/graphOwned_->bypassFlags\[physical\]\.load/);
+  assert.match(engine,/acceptedGraph->rackBypassed\.load/);
+  assert.match(engine,/acceptedGraph->bypassFlags\[physical\]\.load/);
   assert.match(host,/nativeExternalCh1InstalledCount/);
+  assert.match(engine,/acceptedOriginalCh1ExternalLeaseForControl\(\)/);
+  assert.match(engine,/acceptedExternal->render == &processOwnedChannelOne/);
+  assert.match(engine,/nativeFxActivityComplete/);
+  assert.match(host,/nativeFxActivityComplete/);
   assert.match(engine,/nativeFxGraphRevision/);
   assert.match(engine,/activeInputMaskHex/);
   assert.match(host,/makeAudioHealthRecord \(const juce::var& state\)/);
