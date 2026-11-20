@@ -77,11 +77,19 @@ test('interactive Setup automatically checks for signed VB-CABLE while mixer lau
   // rerunning the vendor GUI can switch into destructive REMOVE mode.
   assert.match(bootstrap, /previousState -notin/);
   assert.match(bootstrap, /\$driverAttemptUncertain\)\{/);
-  assert.match(bootstrap, /\$vendorStarted=\$true/);
-  assert.match(bootstrap, /Vendor installation result uncertain/);
+  assert.match(bootstrap, /\$vendorHandoffAttempted=\$true/);
+  assert.match(bootstrap, /if\(\$vendorHandoffAttempted\)/);
+  assert.match(bootstrap, /Vendor handoff\/install result uncertain/);
+  assert.ok(bootstrap.indexOf('Record "AWAITING_UAC"') <
+            bootstrap.indexOf('$vendorHandoffAttempted=$true') &&
+            bootstrap.indexOf('$vendorHandoffAttempted=$true') <
+            bootstrap.indexOf('Start-Process -FilePath $setups[0].FullName'),
+            'vendor handoff must become fail-closed before invoking ShellExecute');
   assert.match(isolatedSmoke, /interrupted-uac-missing/);
   assert.match(isolatedSmoke, /interrupted-uac-present/);
-  assert.match(isolatedSmoke, /corrupt-status/);
+  assert.match(isolatedSmoke, /corrupt-status-but-healthy/);
+  assert.match(isolatedSmoke, /cable-vendor-handoff/);
+  assert.match(isolatedSmoke, /vendorHandoffCount -eq 1/);
   assert.match(bootstrap, /if\(\$all.Count -gt 0\)\{[\s\S]*?\$present \| Where-Object[\s\S]*?Record "ALREADY_PRESENT"[\s\S]*?exit 0/);
   assert.ok(bootstrap.indexOf("previousState -eq 'PENDING_REBOOT'") <
             bootstrap.indexOf('Start-Process -FilePath $setups[0].FullName'),

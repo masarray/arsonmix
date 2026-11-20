@@ -36,7 +36,8 @@ function Read-BootEpoch($value) {
 $dir=Join-Path $env:TEMP ("armix-cable-"+[guid]::NewGuid().ToString("N"))
 $pending=$false
 $driverAttemptUncertain=$false
-$vendorStarted=$false
+$unreadablePreviousStatus=$false
+$vendorHandoffAttempted=$false
 try {
   # A driver already queued for reboot must NOT be run again: the VB-Audio
   # setup utility can switch into REMOVE mode on a second invocation.
@@ -46,10 +47,10 @@ try {
     try {
       $previous=Get-Content -LiteralPath $statusPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
     } catch {
-      # A damaged record may conceal an interrupted vendor install. Never
-      # assume the hardware is absent and run a setup with a REMOVE button.
-      Record "REPAIR_REQUIRED" "Previous VB-CABLE install status unreadable; inspect Windows Device Manager"
-      exit 3
+      # A damaged record may conceal an interrupted vendor installation.
+      # Defer the decision until PnP: a healthy, already-installed cable must
+      # still be recognized, but a missing cable must never reach vendor setup.
+      $unreadablePreviousStatus=$true
     }
   }
   $previousState=if($null -ne $previous -and $null -ne $previous.PSObject.Properties['state']){
@@ -59,7 +60,8 @@ try {
   # A prior invocation may have died after starting the vendor GUI but
   # before recording its result. An uncertain or repair-required attempt
   # must never launch the same setup automatically again.
-  $driverAttemptUncertain=$hadPreviousStatus -and $previousState -notin @("ALREADY_PRESENT","FAILED","PENDING_REBOOT")
+  $driverAttemptUncertain=$unreadablePreviousStatus -or
+    ($hadPreviousStatus -and $previousState -notin @("ALREADY_PRESENT","FAILED","PENDING_REBOOT"))
   $os=Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
   $script:bootUtc=$os.LastBootUpTime.ToUniversalTime().ToString('o')
   if($pending){
@@ -94,7 +96,12 @@ try {
     exit 0
   }
   if($driverAttemptUncertain){
-    Record "REPAIR_REQUIRED" "Previous VB-CABLE install outcome uncertain; inspect Device Manager before manual recovery"
+    $detail=if($unreadablePreviousStatus){
+      "Previous VB-CABLE install record unreadable; inspect Device Manager before manual recovery"
+    }else{
+      "Previous VB-CABLE install outcome uncertain; inspect Device Manager before manual recovery"
+    }
+    Record "REPAIR_REQUIRED" $detail
     exit 3
   }
   if(-not (Test-Path -LiteralPath $Archive -PathType Leaf)){throw "Bundled driver ZIP absent"}
@@ -123,19 +130,21 @@ try {
     throw "VB-Audio Authenticode signature unavailable or invalid"
   }
   Record "AWAITING_UAC" "Windows may request approval to install the missing VB-Audio driver"
+  # Once handed to Windows/ShellExecute, a thrown exception does not prove
+  # the vendor process never ran. Keep the on-disk attempt fail-closed.
+  $vendorHandoffAttempted=$true
   # Official reference manual requires the vendor GUI, admin and reboot.
   # No undocumented silent switches and no TrustedPublisher modification.
   $process=Start-Process -FilePath $setups[0].FullName -WorkingDirectory $setups[0].DirectoryName -Verb RunAs -Wait -PassThru
-  $vendorStarted=$true
   if($process.ExitCode -ne 0){throw ("Vendor installer returned "+$process.ExitCode)}
   Record "PENDING_REBOOT" "Reboot Windows, then verify CABLE Output and physical speaker"
   exit 0
 } catch {
   # A failed OS/PnP query is not proof a recorded installation vanished.
-  if($vendorStarted){
-    # Nonzero vendor exit can mean partial driver changes. A subsequent
-    # auto-run could invoke REMOVE instead of INSTALL.
-    Record "REPAIR_REQUIRED" ("Vendor installation result uncertain: "+$_.Exception.Message)
+  if($vendorHandoffAttempted){
+    # A failure or nonzero exit at/after handoff may still have installed
+    # drivers. Never overwrite AWAITING_UAC with retryable FAILED.
+    Record "REPAIR_REQUIRED" ("Vendor handoff/install result uncertain: "+$_.Exception.Message)
   } elseif(-not $pending -and -not $driverAttemptUncertain){
     Record "FAILED" $_.Exception.Message
   }
