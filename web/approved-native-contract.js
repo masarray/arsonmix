@@ -311,6 +311,40 @@
     }
     return rows;
   }
+  // IO-3B: the stable native device B lease is created only AFTER driver
+  // verification. ACK carries this native-issued token; a second, later
+  // independent snapshot must match it along with actual hardware masks.
+  // Never consider driver-open as ChannelId PCM or audible source proof.
+  function secondaryCaptureLeaseEvidence(status,payload,epoch) {
+    if(!object(status)||!object(payload)||
+       typeof payload.secondaryDriver!=="string" ||
+       typeof status.driver!=="string" ||
+       status.driver!==payload.secondaryDriver ||
+       status.role!=="INPUT_ONLY_ASIO" ||
+       status.installedInputMap!==true ||status.driverReady!==true ||
+       status.driverFault!==false ||status.needsRemap!==false ||
+       status.primaryEpochMatches!==true ||
+       status.primaryEpoch!==epoch ||decimal(status.deviceLease)===null ||
+       status.deviceLease==="0" ||decimal(status.captureGeneration)===null ||
+       status.captureGeneration==="0" ||
+       !Number.isFinite(payload.captureRate) ||
+       status.captureRate!==payload.captureRate ||
+       !Number.isInteger(payload.capturePeriod) ||
+       status.capturePeriod!==payload.capturePeriod ||
+       !Array.isArray(payload.secondaryInputPins) ||
+       payload.secondaryInputPins.length<1 ||
+       payload.secondaryInputPins.length>16 ||
+       payload.secondaryInputPins.some((pin,i)=>!Number.isInteger(pin) ||
+         pin<0||pin>63||(i>0&&pin<=payload.secondaryInputPins[i-1])))
+      return null;
+    let mask=0n;
+    for(const pin of payload.secondaryInputPins)mask|=1n<<BigInt(pin);
+    if(status.activePinMaskHex!==mask.toString(16))return null;
+    return Object.freeze({driver:status.driver,primaryEpoch:status.primaryEpoch,
+      deviceLease:status.deviceLease,captureGeneration:status.captureGeneration,
+      activePinMaskHex:status.activePinMaskHex,captureRate:status.captureRate,
+      capturePeriod:status.capturePeriod});
+  }
   // ACK alone is never physical evidence. Readback must prove that a known
   // control/route actually reached the accepted native graph. No invented UI
   // updates and no optimistic fader/edge commits.
@@ -321,6 +355,19 @@
     const {operation,targetChannelId,payload} = pending;
     const ch = next.graph.channels.find(c=>c.id===targetChannelId);
     if (!ch) return false;
+    if (operation==="INSTALL_SECONDARY_CAPTURE") {
+      if(ch.role!=="INPUT"||payload.confirmed!==true ||
+         !Array.isArray(payload.sources) ||
+         !payload.sources.some(source=>object(source) &&
+           source.channelId===targetChannelId &&
+           source.deviceRole==="SECONDARY") ||
+         cmp(next.graph.revision,pending.baseGraphRevision)<=0 ||
+         !pending.ack?.secondaryLease)return false;
+      const fresh=secondaryCaptureLeaseEvidence(
+        next.raw?.secondaryCapture,payload,next.device.epoch);
+      const ack=pending.ack.secondaryLease;
+      return !!fresh && Object.keys(ack).every(key=>fresh[key]===ack[key]);
+    }
     if (operation === "SET_INPUT_GAIN")
       return ch.role==="INPUT" && Number.isFinite(payload.valueDb) &&
         Number.isFinite(ch.controls?.inputGainDb) &&
@@ -781,8 +828,21 @@
           cmp(raw.rosterRevision,pending.baseRosterRevision) < 0) {
         pending=null;lastError="STALE_NATIVE_ACK";subscribe();notify();return false;
       }
+      let secondaryLease=null;
+      if(pending.operation==="INSTALL_SECONDARY_CAPTURE") {
+        secondaryLease=secondaryCaptureLeaseEvidence(
+          raw.secondaryCapture,pending.payload,raw.deviceEpoch);
+        if(!secondaryLease ||
+           !pending.payload.sources?.some(row=>object(row) &&
+             row.channelId===pending.targetChannelId &&
+             row.deviceRole==="SECONDARY") ||
+           cmp(raw.graphRevision,pending.baseGraphRevision)<=0) {
+          pending=null;lastError="INVALID_SECONDARY_CAPTURE_ACK";
+          subscribe();notify();return false;
+        }
+      }
       pending.ack={deviceEpoch:raw.deviceEpoch,graphRevision:raw.graphRevision,
-        rosterRevision:raw.rosterRevision};
+        rosterRevision:raw.rosterRevision,secondaryLease};
       lastError="PENDING_ACCEPTED_SNAPSHOT";notify();
       // Reject ACK-only "success": explicitly request a LATER independent readback.
       subscribe();
