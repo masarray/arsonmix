@@ -41,6 +41,13 @@ export function parseHealthLog(log) {
        !isCount(sample.nativeFxInstalledCount) ||
        !isCount(sample.nativeFxProcessingCount) ||
        sample.nativeFxProcessingCount>sample.nativeFxInstalledCount ||
+       typeof sample.nativeExternalCh1Leased!=="boolean" ||
+       !isCount(sample.nativeExternalCh1InstalledCount) ||
+       !isCount(sample.nativeExternalCh1ProcessingCount) ||
+       sample.nativeExternalCh1ProcessingCount>sample.nativeExternalCh1InstalledCount ||
+       sample.nativeExternalCh1InstalledCount>sample.nativeFxInstalledCount ||
+       sample.nativeExternalCh1ProcessingCount>sample.nativeFxProcessingCount ||
+       (!sample.nativeExternalCh1Leased && sample.nativeExternalCh1InstalledCount!==0) ||
        (sample.nativeGlobalFxBypassed && sample.nativeFxProcessingCount!==0) ||
        typeof sample.nativeFxGraphRevision!=="string" ||
        !/^\d+$/.test(sample.nativeFxGraphRevision) ||
@@ -91,6 +98,8 @@ const sameScope=(a,b)=>[
   "inputDevice","outputDevice","deviceInputChannels","deviceOutputChannels",
   "activeInputMaskHex","activeOutputMaskHex","nativeFxGraphRevision",
   "nativeFxInstalledCount","nativeFxProcessingCount","nativeGlobalFxBypassed",
+  "nativeExternalCh1Leased","nativeExternalCh1InstalledCount",
+  "nativeExternalCh1ProcessingCount",
   "dryTest","connected","diagnosticRoute","productionRoutingState",
   "directRouteAuthorized","backendXrunMeaning"
 ].every(k=>a[k]===b[k]);
@@ -127,6 +136,9 @@ function describeSegment(segment){
     nativeFxInstalledCount:s.nativeFxInstalledCount,
     nativeFxProcessingCount:s.nativeFxProcessingCount,
     nativeGlobalFxBypassed:s.nativeGlobalFxBypassed,
+    nativeExternalCh1Leased:s.nativeExternalCh1Leased,
+    nativeExternalCh1InstalledCount:s.nativeExternalCh1InstalledCount,
+    nativeExternalCh1ProcessingCount:s.nativeExternalCh1ProcessingCount,
     device:String(s.device??"UNKNOWN"),backend:s.liveBackendClass,
     inputDevice:s.inputDevice??"UNKNOWN",outputDevice:s.outputDevice??"UNKNOWN",
     inputMask:s.activeInputMaskHex,outputMask:s.activeOutputMaskHex,
@@ -155,7 +167,8 @@ function describeSegment(segment){
       segment.invalidTransitions===0&&s.connected===true&&
       s.productionRoutingState==="NATIVE_ROUTE_ACCEPTED"&&
       s.directRouteAuthorized===true,
-    notes:["Actual DRY/FX is accepted native insert-bypass readback, NOT the dryTest UI flag.",
+    notes:["Actual DRY/FX includes admitted external CH1 vendor leases and the accepted ChannelId insert-bypass readback.",
+      "Actual DRY/FX is accepted native insert-bypass readback, NOT the dryTest UI flag.",
       "Host callback p95/p99 are bucket CEILINGS, not exact CPU utilization.",
       "Callback cadence/over-budget are indicators, not driver render XRUN.",
       "Device/driver capture discontinuities are backend-specific.",
