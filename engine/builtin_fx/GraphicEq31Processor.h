@@ -57,9 +57,10 @@ public:
         for(std::size_t i=0;i<bandValues_.size();++i)
             core_.setGain(i,static_cast<double>(bandValues_[i]->load(std::memory_order_relaxed)));
         levelGain_.reset(sampleRate,0.015); // 15 ms, no clicks or lookahead
+        lastLevelDb_=levelValue_->load(std::memory_order_acquire);
+        rtLevelDb_.store(lastLevelDb_,std::memory_order_release);
         levelGain_.setCurrentAndTargetValue(
-            juce::Decibels::decibelsToGain(levelValue_->load(
-                std::memory_order_acquire)));
+            juce::Decibels::decibelsToGain(lastLevelDb_));
         peak_.store(0.f,std::memory_order_relaxed);
     }
     void releaseResources() override {ready_=false;}
@@ -74,10 +75,14 @@ public:
         std::array<float,GraphicEq31Core::bandCount> values{};
         for(std::size_t i=0;i<values.size();++i)
             values[i]=bandValues_[i]->load(std::memory_order_relaxed);
+        const float levelDb=levelValue_->load(std::memory_order_relaxed);
         const auto after=presetWriteSeq_.load(std::memory_order_acquire);
         if(before!=after||(after&1u)!=0u)return;
         for(std::size_t i=0;i<values.size();++i)
             (void)core_.setGain(i,values[i]);
+        // Same accepted generation as all 31 gains; never publish a
+        // partially recalled Output Level ahead of the fader curve.
+        rtLevelDb_.store(levelDb,std::memory_order_release);
     }
     void sealForRealtime() noexcept override {published_=true;}
     bool stateSnapshotQuiescent() const noexcept override {
@@ -94,8 +99,11 @@ public:
         // One explicit OUTPUT LEVEL after the 31-band EQ, in the existing
         // render graph. 15ms gain smoothing is sample-accurate and RT-safe.
         core_.processStereo(l,r,static_cast<std::size_t>(count));
-        levelGain_.setTargetValue(juce::Decibels::decibelsToGain(
-            levelValue_->load(std::memory_order_relaxed)));
+        const float acceptedLevel=rtLevelDb_.load(std::memory_order_acquire);
+        if(acceptedLevel!=lastLevelDb_) {
+            levelGain_.setTargetValue(juce::Decibels::decibelsToGain(acceptedLevel));
+            lastLevelDb_=acceptedLevel;
+        }
         float peak=0.f;
         for(int n=0;n<count;++n) {
             const float gain=levelGain_.getNextValue();
@@ -229,7 +237,9 @@ private:
     GraphicEq31Core core_;
     std::array<std::atomic<float>*,GraphicEq31Core::bandCount> bandValues_{};
     std::atomic<float>* levelValue_=nullptr;
+    std::atomic<float> rtLevelDb_{0.f};
     juce::SmoothedValue<float,juce::ValueSmoothingTypes::Linear> levelGain_;
+    float lastLevelDb_=0.f;
     std::atomic<float> peak_{0.f};
     std::atomic<std::uint32_t> presetWriteSeq_{0u};
     bool published_=false,ready_=false;
