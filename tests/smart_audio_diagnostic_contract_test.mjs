@@ -150,7 +150,9 @@ test('P0 capture block-head evidence is a single-pass RT heuristic, not invented
 
 // INT-1B: a real 1Hz log reader with deterministic native-source fixtures.
 function int1bSample(second,{dryTest=true,deviceGeneration=2,device="ASIO Driver",
-  rate=48000,buffer=256,over=0,late=0,connected=true}={}) {
+  rate=48000,buffer=256,over=0,late=0,connected=true,
+  nativeGlobalFxBypassed=dryTest,
+  nativeFxProcessingCount=nativeGlobalFxBypassed?0:1}={}) {
   const cumulative=(second+1)*100;
   const buckets=Array(13).fill(0);
   buckets[3]=cumulative-over;
@@ -161,7 +163,9 @@ function int1bSample(second,{dryTest=true,deviceGeneration=2,device="ASIO Driver
     rate,buffer,periodUs:1000000*buffer/rate,
     deviceGeneration,deviceStartCount:deviceGeneration,deviceStopCount:0,
     diagnosticRoute:"NORMAL",productionRoutingState:"NATIVE_ROUTE_ACCEPTED",
-    directRouteAuthorized:true,dryTest,callbackCount:cumulative,
+    directRouteAuthorized:true,dryTest,
+    nativeGlobalFxBypassed,nativeFxInstalledCount:1,nativeFxProcessingCount,
+    callbackCount:cumulative,
     callbackBudgetBuckets:buckets,overBudgetCount:over,slowCallbackCount:over,
     lateCallbackIntervals:late,callbackGapCount:0,
     callbackCadenceClockRegressions:0,backendXrunMeaning:"UNAVAILABLE",
@@ -175,6 +179,9 @@ test('INT-1B native log is bounded and uses one existing off-RT 1Hz snapshot',()
   assert.match(engine,/callbackBudgetBuckets/);
   assert.match(engine,/HOST_CALLBACK_BUDGET_CUMULATIVE_13_BUCKETS_NOT_DRIVER_RENDER_XRUN/);
   assert.match(host,/arsonmix\.audio-health\.int1b\.v1/);
+  assert.match(engine,/nativeFxProcessingCount/);
+  assert.match(engine,/dryRoutingLab_\.globalFxBypassed\(\)/);
+  assert.match(host,/nativeFxInstalledCount/);
   assert.match(host,/makeAudioHealthRecord \(const juce::var& state\)/);
   assert.match(host,/juce::JSON::toString \(makeAudioHealthRecord \(health\), false\)/);
   assert.match(host,/juce::JSON::toString \(makeAudioHealthRecord \(state\), false\)/);
@@ -205,6 +212,9 @@ test('INT-1B dry vs FX matched 60s evidence and no fabricated physical XRUN',()=
   assert.equal(report.segments[0].overBudgetCallbacks,0);
   assert.equal(report.segments[1].p99BudgetUpperPct,null);
   assert.equal(report.segments[1].overBudgetPer1000,40);
+  assert.equal(report.segments[0].nativeGlobalFxBypassed,true);
+  assert.equal(report.segments[0].nativeFxProcessingCount,0);
+  assert.equal(report.segments[1].nativeFxProcessingCount,1);
   assert.equal(report.segments[1].diagnosis,
     'BOTH_DSP_BUDGET_AND_SCHEDULING_INDICATORS');
   assert.equal(report.segments[1].renderHardwareXrun,
@@ -255,6 +265,18 @@ test('INT-1B refuses device mismatches, resets, gaps, malformed and legacy logs'
   assert.equal(compareDryFx(analyzeHealthLog(changedGeneration.join('\n'))).comparable,false,
     'Same-named driver reopened in a new generation is not a matched DRY/FX pair');
 });
+test('INT-1B ignores legacy dryTest visual intent when native FX still processes',()=>{
+  const lines=[];
+  for(let s=0;s<=40;s++)lines.push(int1bLine(s,{
+    dryTest:true,nativeGlobalFxBypassed:false,nativeFxProcessingCount:1
+  }));
+  const result=analyzeHealthLog(lines.join('\n'));
+  assert.equal(result.segments.length,1);
+  assert.equal(result.segments[0].mode,'FX',
+    'The only DRY proof is actual native DSP bypass/insert readback');
+  assert.equal(compareDryFx(result).comparable,false);
+});
+
 test('INT-1B rejects missed/unknown data rather than counting missing as zero',()=>{
   const s=int1bSample(1,{});
   delete s.callbackBudgetBuckets;
