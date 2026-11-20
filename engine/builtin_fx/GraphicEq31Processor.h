@@ -108,7 +108,13 @@ public:
         float peak=0.f;
         for(int n=0;n<count;++n) {
             const float gain=levelGain_.getNextValue();
-            l[n]*=gain; r[n]*=gain;
+            const float outL=l[n]*gain, outR=r[n]*gain;
+            // Extreme finite upstream PCM can overflow float only AFTER
+            // the operator's explicit Output gain. Contain the resulting
+            // non-finite sample before the rack/mixer/DAC; do not clamp
+            // legitimate finite >0 dBFS peaks or hide headroom errors.
+            l[n]=std::isfinite(outL)?outL:0.f;
+            r[n]=std::isfinite(outR)?outR:0.f;
             peak=std::max(peak,std::max(std::abs(l[n]),std::abs(r[n])));
         }
         peak_.store(peak,std::memory_order_relaxed);
