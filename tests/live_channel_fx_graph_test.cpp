@@ -1831,6 +1831,80 @@ static void verifyNativePuzzleV8FixtureAndWire() {
         .getProperty("rawPeak",0.))==.25);
 }
 
+// IO-2E: old qualified A+B lease belongs to epoch 91, while the actual
+// verified primary callback has restarted into epoch 92. It may be retired
+// only by an explicit, disarmed primary-only session replacement. No silent
+// fallthrough from B virtual ordinals to A callback pins is ever permitted.
+static void verifyQualifiedMapCrossEpochReplacement() {
+    namespace io=armix::device;
+    DynamicChannelRoster roster;
+    std::vector<ChannelEdit> additions;
+    for(int i=0;i<3;++i) {
+        ChannelEdit add;add.kind=ChannelEdit::Kind::add;add.position=i;
+        add.role=i==2?ChannelRole::main:ChannelRole::input;
+        add.format=i==1?ProcessingFormat::stereo:ProcessingFormat::mono;
+        if(i==2)add.format=ProcessingFormat::stereo;
+        add.text=i==0?"A VOICE":i==1?"B STEREO":"MAIN";
+        additions.push_back(add);
+    }
+    const auto created=roster.edit(0,additions);
+    assert(created.ok()&&created.createdIds.size()==3);
+    const auto sourceA=created.createdIds[0],
+               sourceB=created.createdIds[1];
+    const std::array<int,2> aPins{0,2},bPins{0,7};
+    const std::array<io::CaptureEndpointView,2> devices{{
+        {"ASIO/verified-A",91,true,aPins,1001},
+        {"ASIO/verified-B",91,false,bPins,2002}
+    }};
+    const std::array<io::QualifiedChannelSource,2> mappings{{
+        {sourceA,{"ASIO/verified-A",2},{},false},
+        {sourceB,{"ASIO/verified-B",0},{"ASIO/verified-B",7},true}
+    }};
+    io::MultiDeviceInputPlan plan;
+    io::MultiDeviceInputFault err;
+    assert(io::MultiDeviceInputPlan::prepare(91,devices,mappings,
+        roster.channels(),plan,err));
+    assert(plan.virtualInputCount()==4);
+    DynamicGraphRequest qualified;
+    qualified.physicalInputs=4;qualified.maxFrames=64;
+    qualified.sources={{sourceA,1,-1,false},{sourceB,2,3,true}};
+    DynamicNativeSessionPublisher owner;
+    assert(owner.commit(roster,qualified,0,91,91,true,
+        {},false,false,&plan).ok());
+    assert(owner.acceptedRevision()==1);
+    assert(owner.hasQualifiedInputMap(91,1));
+
+    // A compatible persisted A-only .smix has real A callback ordinals,
+    // not inherited old A+B virtual ordinals.
+    DynamicGraphRequest primaryOnly;
+    primaryOnly.physicalInputs=2;primaryOnly.maxFrames=64;
+    primaryOnly.sources={{sourceA,1,-1,false}};
+    using Change=DynamicNativeSessionPublisher::QualifiedMapChange;
+    using Fault=DynamicNativeSessionPublisher::Fault;
+    // Without an explicit map-replacement transaction, old B still owns a
+    // qualified map at epoch 91. Reject rather than guess about ASIO pins.
+    assert(owner.commit(roster,primaryOnly,1,92,92,true).fault==
+        Fault::invalidCandidate);
+    assert(owner.commit(roster,primaryOnly,1,92,93,true,
+        {},false,false,nullptr,Change::replaceWithPrimaryOnly).fault==
+        Fault::staleDevice);
+    assert(owner.commit(roster,primaryOnly,1,92,92,false,
+        {},false,false,nullptr,Change::replaceWithPrimaryOnly).fault==
+        Fault::outputArmed);
+    assert(owner.acceptedRevision()==1);
+    assert(owner.hasQualifiedInputMap(91,1));
+    assert(owner.commit(roster,primaryOnly,1,92,92,true,
+        {},false,false,nullptr,Change::replaceWithPrimaryOnly).ok());
+    assert(owner.acceptedRevision()==2);
+    assert(!owner.hasQualifiedInputMap(92,2));
+    assert(!owner.hasQualifiedInputMap(91,1));
+    // A second unsolicited map retirement is never admissible.
+    assert(owner.commit(roster,primaryOnly,2,92,92,true,
+        {},false,false,nullptr,Change::replaceWithPrimaryOnly).fault==
+        Fault::invalidCandidate);
+    assert(owner.acceptedRevision()==2);
+}
+
 // E2: native JUCE VST3 stays audible through a serial GROUP edit; a missing
 // successor FX owner rejects atomically rather than deleting hosted processing.
 static void verifyChannelIdGroupPreservesHostedFx() {
@@ -2603,6 +2677,7 @@ int main(int argc,char** argv) {
     verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch();
     verifyFirstSoundOnePinNativeSourceDraft();
     verifyNativePuzzleV8FixtureAndWire();
+    verifyQualifiedMapCrossEpochReplacement();
     verifyChannelIdGroupPreservesHostedFx();
     verifyLatencyAlignedBypass();
     verifyNativeFxRackTransactions();
