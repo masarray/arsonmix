@@ -433,31 +433,44 @@ static void verifyGraphicEq31Processor() {
     geq->setBandFromUi(17,6.f);
     juce::MemoryBlock state;
     processor->getStateInformation(state);
-    assert(state.getSize()==8u+(31u+1u)*4u); // GEQ1 v2, only input trim
+    assert(state.getSize()==8u+31u*4u); // GEQ1 v3, no hidden gain
+    assert(geq->parameters().getParameter("inputDb")==nullptr);
     assert(geq->parameters().getParameter("outputDb")==nullptr);
-    // Existing user shows saved in GEQ1 v1 remain loadable. The old output
-    // trim must be valid but never be reactivated in the v2 audio path.
-    juce::MemoryBlock legacy;
-    {
+    // Both historic state schemas must restore without reactivating obsolete
+    // gain. Each legacy trim is fully validated, never applied to PCM.
+    auto makeLegacy=[&](int version) {
+        juce::MemoryBlock legacy;
         juce::MemoryOutputStream out(legacy,false);
         out.writeInt(armix::builtin_fx::GraphicEq31Processor::stateMagic);
-        out.writeInt(1);
+        out.writeInt(version);
         out.write(static_cast<const char*>(state.getData())+8,state.getSize()-8);
-        out.writeFloat(9.5f);
+        out.writeFloat(6.5f); // old inputDb
+        if(version==1)out.writeFloat(9.5f); // old outputDb
+        return legacy;
+    };
+    for(int version:{1,2}) {
+        auto legacy=makeLegacy(version);
+        assert(legacy.getSize()==8u+31u*4u+(version==1?8u:4u));
+        auto migrated=descriptor->prepare(48000.,128,
+            legacy.getData(),static_cast<int>(legacy.getSize()));
+        assert(migrated);
+        juce::MemoryBlock converted;
+        migrated->getStateInformation(converted);
+        assert(converted==state);
+        auto badLegacy=legacy;
+        const float badTrim=std::numeric_limits<float>::quiet_NaN();
+        std::memcpy(static_cast<char*>(badLegacy.getData())+8+31*4,
+            &badTrim,sizeof(badTrim));
+        assert(!descriptor->prepare(48000.,128,badLegacy.getData(),
+            static_cast<int>(badLegacy.getSize())));
+        if(version==1) {
+            auto badOutput=legacy;
+            std::memcpy(static_cast<char*>(badOutput.getData())+8+32*4,
+                &badTrim,sizeof(badTrim));
+            assert(!descriptor->prepare(48000.,128,badOutput.getData(),
+                static_cast<int>(badOutput.getSize())));
+        }
     }
-    assert(legacy.getSize()==8u+(31u+2u)*4u);
-    auto migrated=descriptor->prepare(48000.,128,
-        legacy.getData(),static_cast<int>(legacy.getSize()));
-    assert(migrated);
-    juce::MemoryBlock converted;
-    migrated->getStateInformation(converted);
-    assert(converted==state);
-    auto badLegacy=legacy;
-    const float badTrim=std::numeric_limits<float>::quiet_NaN();
-    std::memcpy(static_cast<char*>(badLegacy.getData())+badLegacy.getSize()-4,
-        &badTrim,sizeof(badTrim));
-    assert(!descriptor->prepare(48000.,128,badLegacy.getData(),
-        static_cast<int>(badLegacy.getSize())));
     auto restored=descriptor->prepare(44100.,256,
         state.getData(),static_cast<int>(state.getSize()));
     assert(restored && restored->getName()=="Graphic EQ 31");
