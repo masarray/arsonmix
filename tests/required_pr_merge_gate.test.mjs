@@ -2,7 +2,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {context,requiredLanes,expectedWindowsTitle,workflowPath,findRuns,evaluate,
-  extractPrNumbers,refreshOne} from "../scripts/required_pr_merge_gate.mjs";
+  extractPrNumbers,refreshOne,fallbackSourceForWorkflowRun,
+  associatedCurrentPrNumbers} from "../scripts/required_pr_merge_gate.mjs";
 
 const sha="478cf65d18f05d3bdb62285ab32e56e427304930";
 const repo="masarray/arsonmix",number=753;
@@ -211,4 +212,40 @@ test("status publication is exact-head and uses deterministic scoped checks",asy
   assert.equal(writes.length,1);
   assert.equal(writes[0].state,"success");
   assert.equal(writes[0].context,context);
+});
+
+test("completed manual UI exact-head can refresh when workflow_run omits pull_requests",()=>{
+  const event={workflow_run:{event:"workflow_dispatch",status:"completed",
+    path:".github/workflows/ui-smoke.yml",head_sha:sha,pull_requests:[]}};
+  assert.deepEqual(extractPrNumbers(event),[]);
+  assert.equal(fallbackSourceForWorkflowRun(event),sha);
+  const pr={number,state:"open",head:{sha},base:{ref:"main",repo:{full_name:repo}}};
+  assert.deepEqual(associatedCurrentPrNumbers(event,[pr,pr],repo),[number]);
+});
+test("manual UI fallback is fail-closed on stale SHA, unrelated workflow and PR identity",()=>{
+  const ui={workflow_run:{event:"workflow_dispatch",
+    path:".github/workflows/ui-smoke.yml",head_sha:sha,pull_requests:[]}};
+  const good={number,state:"open",head:{sha},base:{ref:"main",repo:{full_name:repo}}};
+  const wrongSha={...good,number:754,head:{sha:"a".repeat(40)}};
+  const closed={...good,number:755,state:"closed"};
+  const wrongBase={...good,number:756,base:{ref:"dev",repo:{full_name:repo}}};
+  const forkTarget={...good,number:757,base:{ref:"main",repo:{full_name:"other/repo"}}};
+  assert.deepEqual(associatedCurrentPrNumbers(ui,
+    [wrongSha,closed,wrongBase,forkTarget,good],repo),[number]);
+  assert.deepEqual(associatedCurrentPrNumbers(ui,[good],"other/repo"),[]);
+  assert.equal(fallbackSourceForWorkflowRun({workflow_run:{
+    ...ui.workflow_run,head_sha:"not-a-sha"}}),null);
+  for(const path of [".github/workflows/p1-windows.yml",
+                      ".github/workflows/release-contracts.yml",
+                      ".github/workflows/untrusted.yml"]){
+    assert.equal(fallbackSourceForWorkflowRun({workflow_run:{
+      ...ui.workflow_run,path}}),null);
+  }
+  assert.equal(fallbackSourceForWorkflowRun({workflow_run:{
+    ...ui.workflow_run,event:"schedule"}}),null);
+  assert.equal(fallbackSourceForWorkflowRun({workflow_run:{
+    event:"pull_request",path:".github/workflows/untrusted.yml",head_sha:sha}}),null);
+  assert.equal(fallbackSourceForWorkflowRun({workflow_run:{
+    event:"pull_request",path:".github/workflows/p1-windows.yml",head_sha:sha}}),sha);
+  assert.deepEqual(associatedCurrentPrNumbers(ui,null,repo),[]);
 });
