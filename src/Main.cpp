@@ -7689,14 +7689,14 @@ private:
         // Existing message-thread 12 Hz timer: no extra worker or DSP work.
         // Never allow a hidden broken GUI to continue unattended audio.
         if (!browser_.loaded && !webViewStartupNoticeSent_ &&
-            juce::Time::getMillisecondCounter() - webViewStartupTick_ > 10000u)
+            juce::Time::getMillisecondCounter() - webViewStartupTick_ > 25000u)
         {
             webViewStartupNoticeSent_ = true;
             diagnostics_.record ("WEBVIEW2_GUI_READY_TIMEOUT", "No native ArSonMix UI handshake");
             engine_.stop();
             if (onStartupStage_) onStartupStage_ (3); // dismiss splash before error dialog
             if (!updaterProbeMode_)
-                showWebViewStartupError ("The embedded mixer did not initialize in 10 seconds."
+                showWebViewStartupError ("The embedded mixer did not initialize in 25 seconds."
                                          " Check the WebView2 Runtime and browser-cache folder permissions.");
             return;
         }
