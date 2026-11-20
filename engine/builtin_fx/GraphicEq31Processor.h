@@ -10,6 +10,7 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <functional>
 #include <memory>
 #include <limits>
 #include <vector>
@@ -165,7 +166,23 @@ private:
     bool published_=false,ready_=false;
 };
 
-class GraphicEq31Editor final : public juce::AudioProcessorEditor {
+class GraphicEq31Editor final : public juce::AudioProcessorEditor, private juce::Timer {
+public:
+    // Readback from the existing mixer-authoritative global/rack/insert gates.
+    struct HostBypassState {
+        bool valid=false;
+        bool slotBypassed=false;
+        bool rackBypassed=false;
+        bool globalBypassed=false;
+    };
+    void bindHostPower(std::function<bool(bool)> request,
+                       std::function<HostBypassState()> readback) {
+        requestBypass_=std::move(request);
+        readHostPower_=std::move(readback);
+        refreshHostPower();
+    }
+    void synchronizeHostPower() {refreshHostPower();}
+
 public:
     explicit GraphicEq31Editor(GraphicEq31Processor& processor)
         : juce::AudioProcessorEditor(processor), processor_(processor) {
@@ -186,6 +203,10 @@ public:
             slider.setDoubleClickReturnValue(true,0.);
             slider.setTooltip(juce::String(graphicEq31Labels[i])+
                 " Hz  |  -12 ... +12 dB  |  Double-click: 0 dB");
+            slider.onValueChange=[this]{
+                if(!applyingPreset_)
+                    preset_.setSelectedId(1,juce::dontSendNotification);
+            };
             bandSurface_.addAndMakeVisible(slider);
             attachments_.emplace_back(std::make_unique<Attachment>(
                 processor_.parameters(),"band"+juce::String(static_cast<int>(i)),slider));
@@ -195,22 +216,63 @@ public:
         viewport_.setScrollBarThickness(7);
         addAndMakeVisible(viewport_);
 
+        // Same compact built-in FX header language as Parametric EQ /
+        // Compressor: a selectable preset, host-powered bypass and Close.
+        // Factory presets really apply all 31 JUCE parameters; user library
+        // .armixfx remains host-owned and is not falsely offered here.
+        preset_.setComponentID("geq31.preset");
+        preset_.addItem("Custom",1);
+        preset_.addItem("Flat",2);
+        preset_.addItem("Vocal Presence",3);
+        preset_.addItem("Warm",4);
+        preset_.addItem("Speech Clarity",5);
+        preset_.setSelectedId(1,juce::dontSendNotification);
+        preset_.setTooltip("Graphic EQ 31 factory presets");
+        preset_.onChange=[this]{applyFactoryPreset(preset_.getSelectedId());};
+        addAndMakeVisible(preset_);
+
+        power_.setComponentID("geq31.host-bypass");
+        power_.setButtonText(juce::String::fromUTF8("⏻"));
+        power_.setClickingTogglesState(false);
+        power_.setEnabled(false); // no mixer lease: no fake power authority
+        power_.setTooltip("FX state unavailable");
+        power_.onClick=[this]{
+            if(!readHostPower_||!requestBypass_)return;
+            const auto before=readHostPower_();
+            if(!before.valid||before.globalBypassed||before.rackBypassed) {
+                refreshHostPower();
+                return;
+            }
+            (void)requestBypass_(!before.slotBypassed);
+            refreshHostPower(); // reflect actual accepted host state only
+        };
+        addAndMakeVisible(power_);
+
+        close_.setComponentID("geq31.close");
+        close_.setButtonText(juce::String::fromUTF8("×"));
+        close_.setTooltip("Close Graphic EQ 31");
+        close_.onClick=[this]{
+            if(auto* window=dynamic_cast<juce::DocumentWindow*>(
+                   getTopLevelComponent()))
+                window->setVisible(false); // retain mixer FX & preset state
+        };
+        addAndMakeVisible(close_);
+
+        flat_.setComponentID("geq31.flat");
         flat_.setButtonText("Flat");
-        flat_.onClick=[this]{processor_.setFlatFromUi();};
+        flat_.setTooltip("Reset all 31 EQ bands to 0 dB");
+        flat_.onClick=[this]{
+            applyFactoryPreset(2);
+            preset_.setSelectedId(2,juce::dontSendNotification);
+        };
         addAndMakeVisible(flat_);
-        for(int i=0;i<3;++i) {
-            jump_[i].setButtonText(i==0?"LOW":i==1?"MID":"HIGH");
-            jump_[i].onClick=[this,i]{
-                viewport_.setViewPosition(i==0?0:(i==1?11:22)*bandCellWidth,0);
-            };
-            addAndMakeVisible(jump_[i]);
-        }
         setResizable(true,true);
         setResizeLimits(850,391,1900,391);
         setSize(1610,391);
+        startTimerHz(6); // GUI-only external host readback; no audio work
     }
 
-    ~GraphicEq31Editor() override {setLookAndFeel(nullptr);}
+    ~GraphicEq31Editor() override {stopTimer();setLookAndFeel(nullptr);}
 
     void paint(juce::Graphics& g) override {
         const int width=getWidth(),height=getHeight();
@@ -236,6 +298,10 @@ public:
                    216,22,310,20,juce::Justification::centredLeft);
         g.setColour(juce::Colour::fromRGB(76,90,97).withAlpha(.45f));
         g.drawHorizontalLine(53,0.f,static_cast<float>(width));
+        // Quiet right-hand utility rail; leave room for future real controls.
+        const int railX=getWidth()-176;
+        g.setColour(juce::Colour::fromRGB(60,71,77).withAlpha(.24f));
+        g.drawVerticalLine(railX-8,61.f,static_cast<float>(height-14));
         // The THREE long tick paths are authored SVG coordinates.
         // This mapping uses the same height/position as the actual JUCE
         // Slider, avoiding labels that float above/below their ticks.
@@ -254,18 +320,56 @@ public:
             juce::Justification::centredRight);
     }
     void resized() override {
-        constexpr int x0=46;
-        viewport_.setBounds(x0,66,juce::jmax(1,getWidth()-x0-12),297);
-        bandSurface_.setSize(static_cast<int>(GraphicEq31Core::bandCount)*bandCellWidth,287);
+        constexpr int x0=46,rightRail=176;
+        viewport_.setBounds(x0,66,
+            juce::jmax(1,getWidth()-x0-rightRail-10),297);
+        bandSurface_.setSize(static_cast<int>(
+            GraphicEq31Core::bandCount)*bandCellWidth,287);
         for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i)
             sliders_[i].setBounds(static_cast<int>(i)*bandCellWidth,0,
                                   bandCellWidth,286);
-        const int controlX=juce::jmax(440,getWidth()-415);
-        flat_.setBounds(controlX+71,17,64,27);
-        for(int j=0;j<3;++j)
-            jump_[j].setBounds(controlX+156+j*74,17,69,27);
+        const int r=getWidth()-rightRail;
+        flat_.setBounds(r+25,104,126,29);
+        close_.setBounds(getWidth()-46,13,30,30);
+        power_.setBounds(getWidth()-87,13,33,30);
+        preset_.setBounds(getWidth()-298,13,200,30);
     }
+
 private:
+    void refreshHostPower() {
+        const auto state=readHostPower_?readHostPower_():HostBypassState{};
+        const bool active=state.valid&&!state.slotBypassed&&
+                          !state.rackBypassed&&!state.globalBypassed;
+        power_.setEnabled(state.valid&&requestBypass_&&
+                          !state.globalBypassed&&!state.rackBypassed);
+        power_.setToggleState(active,juce::dontSendNotification);
+        power_.setTooltip(!state.valid?"FX instance unavailable":
+            state.globalBypassed?"Global FX bypassed in mixer":
+            state.rackBypassed?"FX Rack bypassed in mixer":
+            state.slotBypassed?"Enable Graphic EQ 31":"Bypass Graphic EQ 31");
+        power_.setColour(juce::TextButton::textColourOffId,
+            active?juce::Colour::fromRGB(24,105,89):
+                   juce::Colour::fromRGB(87,91,92));
+    }
+    void timerCallback() override {refreshHostPower();}
+    void applyFactoryPreset(int choice) {
+        if(choice<2||choice>5)return;
+        applyingPreset_=true;
+        for(std::size_t i=0;i<GraphicEq31Core::bandCount;++i) {
+            const float hz=graphicEq31Hz[i];
+            float db=0.f;
+            if(choice==3) // Voice presence, subtract mud without hype.
+                db=hz<100.f?-2.5f:hz<270.f?-1.5f:
+                   hz>=1800.f&&hz<5600.f?2.f:0.f;
+            else if(choice==4)
+                db=hz<=160.f?2.f:hz>=5000.f?-1.f:0.f;
+            else if(choice==5)
+                db=hz<=125.f?-3.f:hz>=200.f&&hz<=500.f?-1.f:
+                   hz>=1600.f&&hz<=4000.f?2.5f:0.f;
+            processor_.setBandFromUi(i,db);
+        }
+        applyingPreset_=false;
+    }
     static juce::Font inter(float size) {return juce::Font("Inter",size,juce::Font::plain);}
     class EqSkin final : public juce::LookAndFeel_V4 {
     public:
@@ -283,6 +387,9 @@ private:
             return GraphicEq31Editor::inter(11.f);
         }
         juce::Font getLabelFont(juce::Label&) override {
+            return GraphicEq31Editor::inter(11.f);
+        }
+        juce::Font getComboBoxFont(juce::ComboBox&) override {
             return GraphicEq31Editor::inter(11.f);
         }
         void drawLinearSlider(juce::Graphics& g,int x,int y,int width,int height,
@@ -375,6 +482,20 @@ private:
                    node->getChildByAttribute("class","s6"))
                     trackGroup->removeChildElement(node,true);
             }
+            // SVG Track path geometry is preserved. Use prominent black ticks
+            // on BOTH sides; change only this UI XML clone, not owner source.
+            for(int row=0;row<2;++row) {
+                if(auto* tickGroup=trackGroup->getChildElement(row)) {
+                    for(int p=0;p<tickGroup->getNumChildElements();++p) {
+                        auto* tick=tickGroup->getChildElement(p);
+                        if(tick->hasTagName("path")&&
+                           tick->getStringAttribute("class")=="s0")
+                            tick->setAttribute("style",
+                              "fill:none;stroke:#131a1d;stroke-width:7.9;"
+                              "stroke-linecap:butt;stroke-miterlimit:10");
+                    }
+                }
+            }
             // Recessed outer lip: the original SVG g1 gradient is visually
             // lighter than the aluminium surface, flattening the channel.
             // Tint the UI clone only, to a darker chamfer around the hole.
@@ -427,8 +548,11 @@ private:
     juce::Viewport viewport_;
     std::array<juce::Slider,GraphicEq31Core::bandCount> sliders_;
     std::vector<std::unique_ptr<Attachment>> attachments_;
-    juce::TextButton flat_;
-    std::array<juce::TextButton,3> jump_;
+    juce::ComboBox preset_;
+    juce::TextButton flat_,power_,close_;
+    std::function<bool(bool)> requestBypass_;
+    std::function<HostBypassState()> readHostPower_;
+    bool applyingPreset_=false;
 };
 inline juce::AudioProcessorEditor* GraphicEq31Processor::createEditor() {
     return new GraphicEq31Editor(*this);
