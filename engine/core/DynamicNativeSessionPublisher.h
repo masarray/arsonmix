@@ -2,6 +2,7 @@
 #pragma once
 #include "DynamicPreparedMixerBlock.h"
 #include "../device/MultiDeviceInputPlan.h"
+#include "../device/QualifiedPrimaryRestartRecoveryPlan.h"
 #include "DynamicConsoleRoutingView.h"
 #include "NativeMusicTempoMonitor.h"
 #include "NativeBeatFrameContext.h"
@@ -55,6 +56,12 @@ public:
         none, staleDevice, staleRevision, outputArmed, invalidGraph,
         retirementFull, invalidCandidate
     };
+    // Explicit CONTROL transition: a persisted primary-only .smix may
+    // replace a qualified A+B graph. Ordinary WIRE/FX edits MUST inherit
+    // the prior qualified map; absence of an argument never drops it.
+    enum class QualifiedMapChange : std::uint8_t {
+        inherit, replaceWithPrimaryOnly
+    };
     struct CommitResult final {
         Fault fault=Fault::none;
         DynamicGraphError graphError{};
@@ -77,7 +84,8 @@ public:
                         bool allOutputsDisarmed,
                         FxPlan fx={nullptr,nullptr,nullptr,0,0,nullptr},bool verifiedInternalWireOnly=false,
                         bool verifiedInternalFxOnly=false,
-                        const armix::device::MultiDeviceInputPlan* qualifiedInputMap=nullptr) {
+                        const armix::device::MultiDeviceInputPlan* qualifiedInputMap=nullptr,
+                        QualifiedMapChange mapChange=QualifiedMapChange::inherit) {
         CommitResult report;report.revision=publisher_.lastRevision();
         if(!fx.valid() ||
            (fx.owner && (fx.deviceEpoch!=proposedDeviceEpoch ||
@@ -103,21 +111,52 @@ public:
            !verifiedInternalFxOnly) {
             report.fault=Fault::outputArmed;return report;
         }
+        // CONTROL: the next BUS/WIRE/FX-only revision retains the exact
+        // already-qualified device map. Omitting the optional argument must
+        // never turn a dual-device graph into unqualified ordinal-only PCM.
+        // Replacing a device map is ALWAYS a hardware transaction requiring
+        // MAIN/MONITOR/output disarm, not a hidden in-place WIRE edit.
+        const auto* prior=publisher_.controlPrepared(
+            proposedDeviceEpoch,expectedRevision);
+        // Old A+B input maps are still CONTROL-owned after a primary epoch
+        // change, but cannot render in that new epoch. Only explicit A-only
+        // session replacement may retire that previous qualified lease.
+        const auto ownedEpoch=publisher_.controlOwnedEpoch(expectedRevision);
+        const auto* retained=ownedEpoch?
+            publisher_.controlPrepared(ownedEpoch,expectedRevision):nullptr;
+        if(qualifiedInputMap&&!allOutputsDisarmed) {
+            report.fault=Fault::outputArmed;return report;
+        }
+        const bool replacing=mapChange==QualifiedMapChange::replaceWithPrimaryOnly;
+        if(replacing && (!allOutputsDisarmed || qualifiedInputMap ||
+                         verifiedInternalWireOnly || verifiedInternalFxOnly ||
+                         !retained || !retained->inputMap)) {
+            report.fault=Fault::invalidCandidate;return report;
+        }
+        // A cross-epoch commit missing the explicit retirement marker must
+        // NOT discard B's map and reinterpret its virtual pins as A inputs.
+        if(!replacing && retained && retained->inputMap && !prior &&
+           !qualifiedInputMap) {
+            report.fault=Fault::invalidCandidate;return report;
+        }
+        const auto* acceptedInputMap=replacing?nullptr:
+            qualifiedInputMap?qualifiedInputMap:
+            (prior&&prior->inputMap?prior->inputMap.get():nullptr);
         // CONTROL: validate every physical source against ONE actual
         // device-qualified map before starting a potentially costly graph
         // compile. Reject mixed old/new source namespaces as a transaction.
-        if(qualifiedInputMap) {
-            if(qualifiedInputMap->primaryEpoch()!=proposedDeviceEpoch ||
-               qualifiedInputMap->deviceCount()<1 ||
-               qualifiedInputMap->virtualInputCount()!=request.physicalInputs) {
+        if(acceptedInputMap) {
+            if(acceptedInputMap->primaryEpoch()!=proposedDeviceEpoch ||
+               acceptedInputMap->deviceCount()<1 ||
+               acceptedInputMap->virtualInputCount()!=request.physicalInputs) {
                 report.fault=Fault::invalidCandidate;return report;
             }
             std::size_t matched=0;
             for(const auto& source:request.sources) {
                 if(source.kind!=DynamicSourceKind::physical)continue;
                 bool verified=false;
-                for(int i=0;i<qualifiedInputMap->sourceCount();++i) {
-                    const auto& mapped=qualifiedInputMap->source(i);
+                for(int i=0;i<acceptedInputMap->sourceCount();++i) {
+                    const auto& mapped=acceptedInputMap->source(i);
                     if(source.id==mapped.channel &&
                        source.inputL==mapped.inputL &&
                        source.inputR==mapped.inputR &&
@@ -130,7 +169,7 @@ public:
                 }
                 ++matched;
             }
-            if(matched!=static_cast<std::size_t>(qualifiedInputMap->sourceCount())) {
+            if(matched!=static_cast<std::size_t>(acceptedInputMap->sourceCount())) {
                 report.fault=Fault::invalidCandidate;return report;
             }
         }
@@ -153,9 +192,9 @@ public:
             report.fault=Fault::invalidGraph;return report;
         }
         prepared->physicalInputs=request.physicalInputs;
-        if(qualifiedInputMap)
+        if(acceptedInputMap)
             prepared->inputMap=
-                std::make_unique<armix::device::MultiDeviceInputPlan>(*qualifiedInputMap);
+                std::make_unique<armix::device::MultiDeviceInputPlan>(*acceptedInputMap);
         prepared->fx=std::move(fx); // one accepted control-plane publication
         prepared->monitor=std::any_of(roster.channels().begin(),
           roster.channels().end(),[](const ChannelStripDefinition& row) {
@@ -474,6 +513,35 @@ public:
     int latencySamples(std::uint64_t epoch,std::uint64_t revision) const noexcept {
         const auto* p=publisher_.controlPrepared(epoch,revision);
         return p?p->graph.latencySamples():0;
+    }
+    // CONTROL-only durability guard: v1 .smix binds only the primary A
+    // hardware mask. Qualified A+B virtual input ordinals cannot safely
+    // replace physical device-qualified saved source intent.
+    bool hasQualifiedInputMap(std::uint64_t epoch,
+                              std::uint64_t revision) const noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p && static_cast<bool>(p->inputMap);
+    }
+    // CONTROL-only primary restart: stage A-only physical sources from
+    // the PREVIOUS accepted A+B lease. Never reinterpret B virtual slots as
+    // callback indices and never destroy the original graph on failure.
+    bool preparePrimaryRestartFallback(std::uint64_t priorEpoch,
+            std::uint64_t priorRevision,int verifiedPrimaryInputs,
+            const DynamicGraphRequest& accepted,
+            DynamicGraphRequest& destination) const {
+        const auto* p=publisher_.controlPrepared(priorEpoch,priorRevision);
+        return p && p->inputMap &&
+               armix::device::QualifiedPrimaryRestartRecoveryPlan::stage(
+                   *p->inputMap,accepted,verifiedPrimaryInputs,destination);
+    }
+    // CONTROL-only explicit source disconnection; never mutate the
+    // callback-visible prior map. WIRE/FX revisions keep inheriting it.
+    bool qualifiedMapWithoutSource(std::uint64_t epoch,
+             std::uint64_t revision,ChannelId source,
+             armix::device::MultiDeviceInputPlan& candidate) const {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p && p->inputMap &&
+               p->inputMap->withoutSource(source,candidate);
     }
     void unpublish() noexcept {publisher_.unpublish();}
     void pollRetirement() noexcept {publisher_.pollRetirement();}

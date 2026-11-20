@@ -287,6 +287,25 @@ public:
     const PreparedChannelSource& source(int index) const noexcept {
         return assignments_[index];
     }
+    // IO-2D: explicit SOURCE NONE / Delete Track staging. Keep *every*
+    // verified device generation, lease and virtual slot unchanged; remove
+    // only one ChannelId's PCM assignment in a DETACHED CONTROL candidate.
+    // The entire graph+map publishes as one immutable snapshot on success.
+    bool withoutSource(armix::mixer::ChannelId removed,
+                       MultiDeviceInputPlan& destination) const {
+        if(!primaryEpoch_ || !removed.value)return false;
+        MultiDeviceInputPlan staged=*this;
+        int write=0;
+        bool found=false;
+        for(int i=0;i<assignmentCount_;++i){
+            if(assignments_[i].channel==removed){found=true;continue;}
+            staged.assignments_[write++]=assignments_[i];
+        }
+        if(!found)return false;
+        staged.assignmentCount_=write;
+        destination=std::move(staged);
+        return true;
+    }
     // CONTROL only. Never inspect a device name on the audio callback.
     const DeviceReadback& device(int index) const noexcept {
         return devices_[index];

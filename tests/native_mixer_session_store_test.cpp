@@ -145,6 +145,97 @@ public:
     double rate=48000.;
 };
 
+// IO-2F: execute the actual LiveDryRoutingLab restore/rebind handoff with
+// a JUCE callback fixture. No physical B driver is opened: the clock bridge
+// and device lease are deterministic off-RT test objects.
+static void qualifiedAsioRestartHandoffRetiresB() {
+    namespace d=armix::device;
+    FixtureDevice device;
+    device.frames=256;
+    juce::AudioPluginFormatManager formats;
+    LiveDryRoutingLab mixer;
+    mixer.prepareDevice(&device);
+    const auto oldEpoch=mixer.epoch();
+    auto base=makeSession();
+    d::JuceActivePortSnapshot pins;
+    d::JuceActivePortSnapshot::Fault fault{};
+    assert(d::JuceActivePortSnapshot::capture(&device,oldEpoch,pins,fault));
+    std::shared_ptr<DynamicChannelFxLeaseBank> bank;
+    assert(NativeMixerSessionFxRestore::prepare(base,{},formats,
+        device.rate,device.frames,pins.epoch,
+        mixer.nativeGraphRevisionForRestore(),bank).isEmpty() && bank);
+    assert(mixer.restoreNativeMixerSession(base,std::move(bank),
+        pins,true).isEmpty());
+    assert(mixer.channelIdPhysicalPcmActive());
+    const std::array<int,2> aPins{0,1},bPins{0,7};
+    constexpr std::uint64_t bGeneration=94,bLease=2002;
+    const std::array<d::CaptureEndpointView,2> endpoints{{
+        {"fixture-A",oldEpoch,true,aPins,1001},
+        {"fixture-B",bGeneration,false,bPins,bLease}
+    }};
+    const std::array<d::QualifiedChannelSource,2> choices{{
+        {{1},{"fixture-A",0},{},false},
+        {{2},{"fixture-B",0},{"fixture-B",7},true}
+    }};
+    d::MultiDeviceInputPlan map;
+    d::MultiDeviceInputFault mapFault{};
+    assert(mixer.prepareQualifiedCapturePlan(oldEpoch,endpoints,choices,
+        map,mapFault));
+    d::SecondaryCaptureClockStream clock;
+    const d::SecondaryCaptureClockStream::Format format{
+        44100.,device.rate,256,256,2,bGeneration,oldEpoch,bLease};
+    assert(clock.prepare(format)&&clock.activate());
+    d::QualifiedSecondaryCaptureReader reader;
+    const auto before=mixer.nativeGraphRevisionForRestore()-1;
+    const auto install=mixer.installQualifiedSecondaryInput(
+        oldEpoch,before,base.roster.revision(),map,reader,clock,true);
+    assert(install.accepted && mixer.qualifiedInputMapActive());
+    assert(mixer.nativeGraphRevisionForRestore()==before+2);
+    // A normal .smix v1 cannot persist these B virtual ordinals.
+    MixerSessionDocument unsafe;
+    std::vector<BinaryState> blobs;
+    assert(mixer.captureNativeMixerSession(unsafe,blobs).isNotEmpty());
+    mixer.deviceStopped();
+    mixer.prepareDevice(&device);
+    auto restartEpoch=mixer.epoch();
+    MixerSessionDocument recovered;
+    assert(mixer.describeRetainedAsioSession(recovered));
+    assert(mixer.preparePrimaryOnlyAsioRestartDocument(recovered,2));
+    assert(recovered.request.physicalInputs==2 &&
+           recovered.request.sources.size()==1 &&
+           recovered.request.sources.front().id.value==1 &&
+           recovered.roster.find({2})!=nullptr);
+    d::JuceActivePortSnapshot newPins;
+    assert(d::JuceActivePortSnapshot::capture(&device,
+        restartEpoch,newPins,fault));
+    // Regression reproducer: old no-marker caller rejected, preserving A+B.
+    assert(!mixer.rebindRetainedAsioSession(recovered,newPins,256,false));
+    assert(mixer.qualifiedInputMapActive());
+    // Fixed caller supplies lostB=true only after staging verified A-only PCM.
+    assert(mixer.rebindRetainedAsioSession(
+        std::move(recovered),newPins,256,true));
+    assert(!mixer.qualifiedInputMapActive());
+    assert(mixer.channelIdPhysicalPcmActive());
+    MixerSessionDocument durable;
+    assert(mixer.captureNativeMixerSession(durable,blobs).isEmpty());
+    assert(durable.roster.find({2})!=nullptr &&
+           durable.request.physicalInputs==2 &&
+           durable.request.sources.size()==1);
+    // Second primary restart must use the ordinary 3-argument compatibility
+    // path; the old B map no longer exists and must not be retired twice.
+    mixer.deviceStopped();
+    mixer.prepareDevice(&device);
+    MixerSessionDocument again;
+    assert(mixer.describeRetainedAsioSession(again));
+    assert(d::JuceActivePortSnapshot::capture(&device,
+        mixer.epoch(),newPins,fault));
+    assert(mixer.rebindRetainedAsioSession(
+        std::move(again),newPins,256));
+    assert(mixer.channelIdPhysicalPcmActive() &&
+           !mixer.qualifiedInputMapActive());
+    reader.stop();clock.stop();
+}
+
 static void outputOnlyNativeStartup() {
     // Real output-only callback: never invent a capture pin, but a silent
     // ChannelId session, its FX/WIRE bus and physical zero output are valid.
@@ -1470,6 +1561,7 @@ int main(){
     outputOnlyNativeStartup();
     warmVst3Discovery();
     nativeDeviceRecovery();
+    qualifiedAsioRestartHandoffRetiresB();
     auto d=makeSession();
     checkRecoveryPlan(d);
     verifyExternalOutputPortableIntent();

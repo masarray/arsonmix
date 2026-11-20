@@ -20,6 +20,10 @@
 #include "../engine/core/ProductionRenderAudit.h"
 #include "../engine/core/LiveOutputRouteGate.h"
 #include "../engine/device/LiveInputPortRegistry.h"
+#include "../engine/device/QualifiedSecondaryCaptureReader.h"
+#include "../engine/device/QualifiedCaptureHostMode.h"
+#include "../engine/device/QualifiedCaptureAdmission.h"
+#include "../engine/device/QualifiedInputGraphBridge.h"
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <algorithm>
 #include <array>
@@ -1954,10 +1958,14 @@ public:
             };
             fx.deviceEpoch=expectedEpoch;
             fx.graphRevision=expectedPcmRevision+1;
+            armix::device::MultiDeviceInputPlan reducedMap;
+            const bool removingQualified=nativePublisher_.qualifiedMapWithoutSource(
+                expectedEpoch,expectedPcmRevision,id,reducedMap);
             if(beforePublish)beforePublish();
             const auto published=nativePublisher_.commit(
                 roster,request,expectedPcmRevision,
-                expectedEpoch,epoch(),true,std::move(fx));
+                expectedEpoch,epoch(),true,std::move(fx),
+                false,false,removingQualified?&reducedMap:nullptr);
             if(!published.ok()){
                 reply.error="NATIVE_TRACK_PCM_COMMIT_REJECTED";return reply;
             }
@@ -1975,6 +1983,120 @@ public:
             return reply;
         }catch(...){
             reply.error="NATIVE_TRACK_DELETE_PREPARE_FAILED";return reply;
+        }
+    }
+
+    // CONTROL staging only: check the current accepted ChannelId roster.
+    // Source bindings and exact hardware masks must originate from genuine
+    // native device preflight; offline friendly names cannot authorize PCM.
+    bool prepareQualifiedCapturePlan(
+        std::uint64_t expectedEpoch,
+        std::span<const armix::device::CaptureEndpointView> devices,
+        std::span<const armix::device::QualifiedChannelSource> bindings,
+        armix::device::MultiDeviceInputPlan& destination,
+        armix::device::MultiDeviceInputFault& fault) const {
+        if(!channelIdPhysicalPcmActive()||!ready()||
+           expectedEpoch!=epoch()||nativeAccepted_.deviceEpoch!=expectedEpoch||
+           !nativeAccepted_.fxOwners)return false;
+        return armix::device::MultiDeviceInputPlan::prepare(
+            expectedEpoch,devices,bindings,
+            nativeAccepted_.graph.roster.channels(),destination,fault);
+    }
+
+    // IO-2D CONTROL: stage B's already-open, independently attested ASIO
+    // capture inside THIS accepted native graph/FX lease. The caller keeps
+    // the output disarmed and owns the verified stream/device lifecycle;
+    // no GUI-local LIVE, second manager, processor, or output auto-arm.
+    // The matching reader/clock are then passed to process() by the same
+    // native host on the PRIMARY callback. No hardware is opened here.
+    NativeBusResult installQualifiedSecondaryInput(
+            std::uint64_t expectedEpoch,std::uint64_t expectedPcmRevision,
+            std::uint64_t expectedRosterRevision,
+            const armix::device::MultiDeviceInputPlan& plan,
+            armix::device::QualifiedSecondaryCaptureReader& reader,
+            armix::device::SecondaryCaptureClockStream& clock,
+            bool outputsDisarmed,
+            const std::function<void()>& beforePublish={}) {
+        using namespace armix::mixer;
+        NativeBusResult reply{};
+        reply.pcmRevision=nativeAccepted_.pcmRevision;
+        reply.rosterRevision=nativeAccepted_.graph.roster.revision();
+        if(!outputsDisarmed) {
+            reply.error="OUTPUT_MUST_BE_DISARMED";return reply;
+        }
+        if(!channelIdPhysicalPcmActive()||!ready()||
+           expectedEpoch!=epoch()||nativeAccepted_.deviceEpoch!=expectedEpoch||
+           expectedPcmRevision!=nativeAccepted_.pcmRevision||
+           expectedRosterRevision!=nativeAccepted_.graph.roster.revision()||
+           !nativeAccepted_.fxOwners) {
+            reply.error="STALE_NATIVE_CAPTURE_GRAPH";return reply;
+        }
+        if(reader.status().ready) {
+            reply.error="CAPTURE_READER_ALREADY_ATTACHED";return reply;
+        }
+        const auto fault=armix::device::QualifiedCaptureAdmission::verify(
+            plan,clock,expectedEpoch,
+            callbackInputCount_.load(std::memory_order_acquire),
+            nativeAccepted_.graph.request.maxFrames);
+        if(fault!=armix::device::QualifiedCaptureAdmission::Fault::none) {
+            reply.error="SECONDARY_CAPTURE_LEASE_OR_MASK_REJECTED";return reply;
+        }
+        try {
+            DynamicGraphRequest staged;
+            armix::device::QualifiedInputGraphBridge::Fault stageFault{};
+            if(!armix::device::QualifiedInputGraphBridge::stage(
+                 plan,nativeAccepted_.graph.request,staged,stageFault)) {
+                reply.error="QUALIFIED_INPUT_GRAPH_REJECTED";return reply;
+            }
+            DynamicChannelFxLeaseBank bank;
+            if(DynamicChannelFxLeaseBank::reuseRevision(
+                    expectedEpoch,expectedPcmRevision+1,
+                    *nativeAccepted_.fxOwners,bank)!=
+                    DynamicChannelFxLeaseBank::Fault::none) {
+                reply.error="QUALIFIED_INPUT_FX_LEASE_REJECTED";return reply;
+            }
+            auto owner=std::make_shared<DynamicChannelFxLeaseBank>(std::move(bank));
+            owner->bindGlobalRackOverride(&globalFxBypassed_);
+            DynamicNativeSessionPublisher::FxPlan fx;
+            fx.owner=std::static_pointer_cast<void>(owner);
+            fx.context=owner.get();
+            fx.render=+[](void* ctx,ChannelId id,float* left,float* right,int n) noexcept {
+                (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,left,right,n);
+            };
+            fx.latency=+[](void* ctx,ChannelId id) noexcept {
+                return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
+            };
+            fx.deviceEpoch=expectedEpoch;
+            fx.graphRevision=expectedPcmRevision+1;
+            if(!reader.prepare(plan,staged.maxFrames)) {
+                reply.error="QUALIFIED_READER_PREPARE_REJECTED";return reply;
+            }
+            try {
+                if(beforePublish)beforePublish();
+                const auto published=nativePublisher_.commit(
+                    nativeAccepted_.graph.roster,staged,expectedPcmRevision,
+                    expectedEpoch,epoch(),true,std::move(fx),
+                    false,false,&plan);
+                if(!published.ok()) {
+                    reader.stop(); // detached failure; old PCM remains valid
+                    reply.error="QUALIFIED_INPUT_PCM_COMMIT_REJECTED";return reply;
+                }
+                nativeAccepted_.graph.request=std::move(staged);
+                nativeAccepted_.fxOwners=std::move(owner);
+                nativeAccepted_.pcmRevision=published.revision;
+                reapplyExternalOutputsSameEpoch();
+                nativeStructureLive_=true;
+                nativeMeterEpoch_.store(0,std::memory_order_release);
+                reply.accepted=true;reply.error="";
+                reply.pcmRevision=published.revision;
+                reply.rosterRevision=nativeAccepted_.graph.roster.revision();
+                return reply;
+            }catch(...) {
+                reader.stop();
+                reply.error="QUALIFIED_CAPTURE_PUBLICATION_FAILED";return reply;
+            }
+        }catch(...) {
+            reply.error="QUALIFIED_CAPTURE_PREPARE_FAILED";return reply;
         }
     }
 
@@ -2003,6 +2125,11 @@ public:
             reply.error="NATIVE_INPUT_ID_UNAVAILABLE";return reply;
         }
         const bool disconnect=!stereo&&physicalLeft==-1&&physicalRight==-1;
+        if(!disconnect && nativePublisher_.hasQualifiedInputMap(
+               expectedEpoch,expectedPcmRevision)){
+            reply.error="QUALIFIED_CAPTURE_SOURCE_REMAP_REQUIRED";
+            return reply; // never relabel device-qualified B pins via A ordinals
+        }
         int l=-1,r=-1;
         if(!disconnect){
             for(int i=0;i<portCount_.load(std::memory_order_acquire);++i){
@@ -2044,10 +2171,15 @@ public:
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
             };
             fx.deviceEpoch=expectedEpoch;fx.graphRevision=expectedPcmRevision+1;
+            armix::device::MultiDeviceInputPlan reducedMap;
+            const bool removingQualified=disconnect &&
+                nativePublisher_.qualifiedMapWithoutSource(
+                    expectedEpoch,expectedPcmRevision,channel,reducedMap);
             if(beforePublish)beforePublish(); // late PCM publication gate
             const auto published=nativePublisher_.commit(
                 nativeAccepted_.graph.roster,request,expectedPcmRevision,
-                expectedEpoch,epoch(),true,std::move(fx));
+                expectedEpoch,epoch(),true,std::move(fx),
+                false,false,removingQualified?&reducedMap:nullptr);
             if(!published.ok()) {
                 reply.error="NATIVE_INPUT_PCM_COMMIT_REJECTED";return reply;
             }
@@ -2381,6 +2513,15 @@ public:
            (retained && channelIdPhysicalPcmActive()) ||
            !nativeAccepted_.matches(nativePublisher_,documentEpoch,nativeAccepted_.pcmRevision))
             return "No authoritative native ChannelId graph";
+        // IO-2D persistence P1: v1 .smix can store primary A physical
+        // HardwareBinding only. Saving a qualified A+B graph would persist
+        // virtual callback ordinals with no B device identity, making the
+        // new file unrestorable and destroying recoverable autosave state.
+        // Reject BEFORE writing document/blobs or enqueueing any save worker.
+        // IO-5 must add durable device-qualified source binding first.
+        if(nativePublisher_.hasQualifiedInputMap(
+               documentEpoch,nativeAccepted_.pcmRevision))
+            return "SECONDARY_CAPTURE_NEEDS_SMIX_BINDING_SCHEMA: old checkpoint preserved; disconnect/remap B or wait for qualified persistence";
         if(nativeAccepted_.fxOwners->externalChannel().value)
             return "External CH1 FX owner cannot yet be serialized independently";
         // MAIN and STREAM are muted by the caller. Wait briefly for the
@@ -2559,8 +2700,32 @@ public:
         return true;
     }
 
+    // CONTROL readback of the same PCM/FX snapshot. Session replacement
+    // must explicitly drop this qualified map before restoring A-only .smix.
+    bool qualifiedInputMapActive() const noexcept {
+        return nativePublisher_.hasQualifiedInputMap(
+            nativeAccepted_.deviceEpoch,nativeAccepted_.pcmRevision);
+    }
+    // Off-RT retained document only; the B ChannelIds, WIRE, faders and FX
+    // remain in the roster. Removed B hardware SOURCE rows become silent
+    // until a newly attested ASIO B lease is explicitly accepted.
+    bool preparePrimaryOnlyAsioRestartDocument(
+            armix::session::MixerSessionDocument& document,
+            int primaryCallbackInputs) const {
+        armix::mixer::DynamicGraphRequest staged;
+        if(!nativePublisher_.preparePrimaryRestartFallback(
+               nativeAccepted_.deviceEpoch,nativeAccepted_.pcmRevision,
+               primaryCallbackInputs,document.request,staged))return false;
+        document.request=std::move(staged);
+        return true;
+    }
+    // IO-2F: primary-ASIO restart must carry the same explicit qualified
+    // map-retirement token as a verified user-requested A-only .smix restore.
+    // Only the owner that staged an A+B -> A-only recovery may supply true;
+    // an ordinary ASIO restart must not drop a still-installed B source map.
     bool rebindRetainedAsioSession(armix::session::MixerSessionDocument document,
-            const armix::device::JuceActivePortSnapshot& pins,int deviceFrames) {
+            const armix::device::JuceActivePortSnapshot& pins,int deviceFrames,
+            bool retireLostSecondaryMap=false) {
         const auto next=nativeGraphRevisionForRestore();
         const auto previous=document.request.maxFrames;
         // Existing processors can still use their prepared quantum. Larger
@@ -2572,7 +2737,11 @@ public:
         if(armix::mixer::DynamicChannelFxLeaseBank::rebindSameFormat(
                pins.epoch,next,*nativeAccepted_.fxOwners,*bank)!=
            armix::mixer::DynamicChannelFxLeaseBank::Fault::none)return false;
-        return restoreNativeMixerSession(std::move(document),std::move(bank),pins,true).isEmpty();
+        if(retireLostSecondaryMap && !qualifiedInputMapActive())return false;
+        // The new A callback and its real pin mask were already verified.
+        // Never publish an implicit cross-epoch B ordinal reinterpretation.
+        return restoreNativeMixerSession(std::move(document),std::move(bank),
+            pins,true,false,retireLostSecondaryMap).isEmpty();
     }
 
     // Match CONTROL's live device readback to the masks registered for the
@@ -2599,7 +2768,8 @@ public:
             armix::session::MixerSessionDocument document,
             std::shared_ptr<armix::mixer::DynamicChannelFxLeaseBank> bank,
             const armix::device::JuceActivePortSnapshot& pins,
-            bool outputsDisarmed,bool replaceActive=false) {
+            bool outputsDisarmed,bool replaceActive=false,
+            bool replaceQualifiedWithPrimaryOnly=false) {
         using namespace armix::mixer;
         if(!outputsDisarmed || (!replaceActive && channelIdPhysicalPcmActive()) || !bank)
             return "Restore requires a muted device";
@@ -2627,7 +2797,10 @@ public:
             };
             const auto published=nativePublisher_.commit(
                 document.roster,document.request,previous,generation,epoch(),
-                true,std::move(fx));
+                true,std::move(fx),false,false,nullptr,
+                replaceQualifiedWithPrimaryOnly?
+                    DynamicNativeSessionPublisher::QualifiedMapChange::replaceWithPrimaryOnly:
+                    DynamicNativeSessionPublisher::QualifiedMapChange::inherit);
             if(!published.ok())
                 return "Native ChannelId PCM rejected persisted topology: "+
                     juce::String(static_cast<int>(published.fault));
@@ -3067,7 +3240,9 @@ public:
                  std::array<int,2>* actualMonitorPair=nullptr,
                  bool allowMutedMetering=false,
                  std::span<const armix::mixer::DynamicPlayerPcmBlock> playerPcm={},
-                 bool mainOnlyMuted=false) noexcept {
+                 bool mainOnlyMuted=false,
+                 armix::device::QualifiedSecondaryCaptureReader* secondaryReader=nullptr,
+                 armix::device::SecondaryCaptureClockStream* secondaryClock=nullptr) noexcept {
         if(actualOutputPair)*actualOutputPair={{-1,-1}};
         if(actualMonitorPair)*actualMonitorPair={{-1,-1}};
         if(!active())return false;
@@ -3249,17 +3424,46 @@ public:
                               source.right?source.right+offset:nullptr};
                 }
                 const auto noExtraFx=[](armix::mixer::ChannelId,float*,float*,int) noexcept {};
-                processed=nativePublisher_.render(
-                    generation,shifted.data(),inputCount,
-                    meterOnly?mutedMain_[0].data():mainL+offset,
-                    meterOnly?mutedMain_[1].data():mainR+offset,n,false,noExtraFx,
-                    monitorL?(meterOnly?mutedMonitor_[0].data():monitorL+offset):nullptr,
-                    monitorR?(meterOnly?mutedMonitor_[1].data():monitorR+offset):nullptr,
-                    tapsL,tapsR,
-                    std::span<const armix::mixer::DynamicPlayerPcmBlock>(
-                        slice.data(),playerPcm.size()),
-                     meterOnly?nullptr:outputSlices.data(),
-                     meterOnly?0:outputCount);
+                // IO-2D: preserve exact physical A callback count above,
+                // while the accepted ChannelId graph may have A+B virtual
+                // capture ordinals. Only the original renderer owns FX.
+                // Qualified adapter is default-OFF until CONTROL installs
+                // a verified B clock/reader lease and matching PCM snapshot.
+                const auto renderNative=[&](
+                    std::span<const armix::device::MultiDeviceInputPlan::CaptureBlock> blocks) noexcept {
+                    const bool qualified=!blocks.empty();
+                    return nativePublisher_.render(
+                        generation,qualified?nullptr:shifted.data(),
+                        qualified?0:inputCount,
+                        meterOnly?mutedMain_[0].data():mainL+offset,
+                        meterOnly?mutedMain_[1].data():mainR+offset,n,false,noExtraFx,
+                        monitorL?(meterOnly?mutedMonitor_[0].data():monitorL+offset):nullptr,
+                        monitorR?(meterOnly?mutedMonitor_[1].data():monitorR+offset):nullptr,
+                        tapsL,tapsR,
+                        std::span<const armix::mixer::DynamicPlayerPcmBlock>(
+                            slice.data(),playerPcm.size()),
+                        meterOnly?nullptr:outputSlices.data(),
+                        meterOnly?0:outputCount,blocks);
+                };
+                // Partial resource attachment must NEVER silently call raw
+                // A-only input ordinals against an installed A+B map. When
+                // qualified resources are absent, the publisher rejects
+                // direct raw pointers if its current PCM lease requires A+B.
+                switch(armix::device::qualifiedCaptureHostMode(
+                        secondaryReader!=nullptr,secondaryClock!=nullptr)) {
+                case armix::device::QualifiedCaptureHostMode::directPrimary:
+                    processed=renderNative({});
+                    break;
+                case armix::device::QualifiedCaptureHostMode::qualifiedDual:
+                    processed=secondaryReader->withBlocks(
+                        generation,shifted.data(),inputCount,n,*secondaryClock,
+                        [&](std::span<const armix::device::MultiDeviceInputPlan::CaptureBlock>
+                                blocks) noexcept { return renderNative(blocks); });
+                    break;
+                case armix::device::QualifiedCaptureHostMode::rejectPartial:
+                    processed=false;
+                    break;
+                }
                 if(processed) {
                     for(std::size_t ch=0;ch<nativeMeterCapacity;++ch) {
                         nativeMaxL[ch]=std::max(nativeMaxL[ch],tapsL[ch]);

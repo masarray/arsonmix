@@ -4,6 +4,7 @@
 #include "../engine/core/DynamicPreparedMixerBlock.h"
 #include "../engine/core/LegacyLiveGraphMigration.h"
 #include "../engine/core/DynamicNativeSessionPublisher.h"
+#include "io2/QualifiedSecondaryCaptureReaderCases.h"
 #include <array>
 #if defined(NDEBUG)
 #undef NDEBUG // Never skip P1A assertions in Release native CTest.
@@ -1173,6 +1174,8 @@ static void verifyNativePrePostAndSendEnablePcm() {
 }
 
 int main() {
+    // Before paid Windows MSVC: prove the real IO1 ASRC feeds one native PCM graph.
+    armix::io2_clocked_test::run();
     verifyNativePrePostAndSendEnablePcm();
     verifyNativeInputGainBeforeFx();
     verifyDynamicInPlacePhysicalIOBuffers();

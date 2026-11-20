@@ -198,6 +198,9 @@ public:
     bool ready() const noexcept{return opened_.load(std::memory_order_acquire)&&
                                        stream_.ready();}
     bool faulted() const noexcept{return stream_.faulted();}
+    // Borrowed ONLY from the one native primary callback; lifetime owned by
+    // this LiveSecondaryCaptureDevice and serialized CONTROL stop/close.
+    SecondaryCaptureClockStream& clockStream() noexcept{return stream_;}
     Readback readback() const // CONTROL only: called after driver lifecycle
     {
         Readback b;

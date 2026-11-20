@@ -18,6 +18,7 @@
 #include "DiagnosticTone.h"
 #include "../engine/device/JuceIndependentClockDevice.h"
 #include "../engine/device/LiveSecondaryOutputDevice.h"
+#include "../engine/device/LiveSecondaryCaptureDevice.h"
 #include "../engine/core/LiveOutputRouteGate.h"
 #include "../engine/core/NativeOutputTransition.h"
 #include "../engine/core/NativeRenderAuthority.h"
@@ -41,6 +42,9 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <limits>
+#include <string>
+#include <vector>
 
 // One live stereo input path and up to 8 actual VST3 processors.
 // The audio callback never scans files, creates plugins, mutates the chain,
@@ -292,12 +296,16 @@ public:
     void stop()
     {
         dryRoutingLab_.disable();
+        qualifiedSecondaryInstalled_.store(false,std::memory_order_release);
+        qualifiedCaptureNeedsRemap_.store(false,std::memory_order_release);
         directFence_.suspend();
         asioPinnedRegistration_ = {};
         asioRegistrationScope_ = "NONE";
         secondaryOutput_.stop(); // stop independent OBS consumer before audio graph teardown
         independent_.close();
         detach();
+        qualifiedSecondaryReader_.stop(); // CONTROL: all callback borrows retired
+        secondaryCapture_.close(); // producer driver B stops after primary detach
         handoff_.resetAfterStop (graphOwned_.get());
         // Last owner releases vendor resources exactly once after detach.
         // Reused instances remain valid until their final control-owned slot.
@@ -432,12 +440,24 @@ public:
         else if(wantsMainContinuation())resumeMainAfterAsioReset_.store(true,std::memory_order_release);
         setOutputMuted(true);
         secondaryOutput_.disarm();
+        // A no-op AUDIO SETUP must not destroy the live A+B graph's reader:
+        // finishManualAudioSetup() can retain this exact same PCM lease.
+        // If JUCE actually restarts A, its lifecycle callback fences B and
+        // marks that physical binding as requiring an explicit remap.
         directFence_.suspend();
         // Do NOT disable the accepted ChannelId graph. Audio Setup is a
         // device-binding operation, not an implicit CLEAR MIXER command.
         // The JUCE selector may change the driver before its window closes.
     }
     bool finishManualAudioSetup(bool reuseAsioBinding=true) {
+        if(qualifiedCaptureNeedsRemap_.load(std::memory_order_acquire)) {
+            // A restarted PRIMARY must not leave the authored mixer
+            // stranded. Keep B invalidated, but permit the verified A-only
+            // retained graph recovery below; the new B binding stays OFF.
+            setOutputMuted(true);
+            qualifiedSecondaryReader_.stop(); // CONTROL quiescence
+            secondaryCapture_.close();
+        }
         if(!approveDirectRoute())return false;
         using Decision=armix::device::DeviceSessionDecision;
         switch(armix::device::decideDeviceSession(
@@ -566,10 +586,26 @@ public:
         MixerBindingInspection inspected;
         constexpr auto mode=Policy::Mode::verifiedAsioRestart;
         if(inspectNativeMixerSessionBinding(document,inspected,mode).isNotEmpty() ||
-           inspected.live.rate!=document.binding.rate ||
-           Policy::apply(document,inspected.live,inspected.outputs,inspected.callbackInputs,mode).isNotEmpty() ||
-           !dryRoutingLab_.rebindRetainedAsioSession(std::move(document),inspected.pins,
-                                                    inspected.live.frames))return false;
+           inspected.live.rate!=document.binding.rate)return false;
+        // The B reconnection reminder may survive an already recovered
+        // primary-only graph. A second ASIO A restart must NOT demand an
+        // A+B map that was intentionally retired after the first recovery.
+        const bool lostB=qualifiedCaptureNeedsRemap_.load(
+            std::memory_order_acquire) &&
+            dryRoutingLab_.qualifiedInputMapActive();
+        // Rebuild from the last genuine A+B snapshot without saving a
+        // corrupt virtual-input .smix. The exact prior A port count is
+        // checked against current verified hardware before any mutation.
+        if(lostB && !dryRoutingLab_.preparePrimaryOnlyAsioRestartDocument(
+              document,inspected.callbackInputs))return false;
+        if(Policy::apply(document,inspected.live,inspected.outputs,
+                         inspected.callbackInputs,mode).isNotEmpty() ||
+           !dryRoutingLab_.rebindRetainedAsioSession(std::move(document),
+               inspected.pins,inspected.live.frames,lostB))return false;
+        if(lostB) {
+            retireQualifiedCaptureForNewGraph(); // only AFTER A graph published
+            qualifiedCaptureNeedsRemap_.store(true,std::memory_order_release);
+        }
         acceptedMixerBinding_=std::move(inspected.live);
         return true;
     }
@@ -703,6 +739,7 @@ public:
         // native NORMAL mixer ready, not stranded without a session.
         if(dryRoutingLab_.active()) {
             setOutputMuted(true);
+            retireQualifiedCaptureForNewGraph();
             dryRoutingLab_.disable();
         }
         directFence_.suspend(); // independent path bypasses only this DIRECT fence
@@ -790,6 +827,7 @@ public:
         // selecting a one-sided device. No phantom hardware output or CH1 mix.
         if(dryRoutingLab_.active()) {
             setOutputMuted(true);
+            retireQualifiedCaptureForNewGraph();
             dryRoutingLab_.disable();
         }
         // Muting the old/new combined backend callback during an intermediate
@@ -1326,6 +1364,9 @@ public:
         secondaryOutput_.disarm(); // never carry LIVE STREAM into a new unpatched graph
         if(hasRetainedUnboundMixer())
             return "Mixer session preserved, but device changed: full ChannelId graph and plugin-state rebind required (output stays muted)";
+        if(qualifiedSecondaryInstalled_.load(std::memory_order_acquire) ||
+           qualifiedCaptureNeedsRemap_.load(std::memory_order_acquire))
+            retireQualifiedCaptureForNewGraph(); // only a genuinely new session
         auto* device=deviceManager_.getCurrentAudioDevice();
         if(!device || !directFence_.permitted() || independent_.active())
             return "No verified DIRECT full-duplex device";
@@ -1349,11 +1390,27 @@ public:
         return error;
     }
 
+    // CONTROL ONLY; no audio callback may block or free driver state.
+    // Stop the qualified view before closing B's capture producer. In-flight
+    // primary reads finish under the reader's own RT lease. The subsequent
+    // new primary-only graph then uses raw A pointers again, without a
+    // stale A+B map or a second render owner.
+    void retireQualifiedCaptureForNewGraph() noexcept {
+        qualifiedSecondaryInstalled_.store(false,std::memory_order_release);
+        qualifiedSecondaryReader_.stop();
+        secondaryCapture_.close();
+        qualifiedCaptureNeedsRemap_.store(false,std::memory_order_release);
+    }
+
     // Historical STOP command retained as a safe CLEAR PATCH alias.
     // Returning to legacy CH1 is explicitly forbidden in NORMAL production.
     juce::String clearProductionRouting() {
         setOutputMuted(true);
         secondaryOutput_.disarm();
+        // IO-2D: an A+B qualified input lease cannot be passed to the fresh
+        // primary-only graph. Retire both resources while CONTROL has muted
+        // every output, before unpublishing the old graph.
+        retireQualifiedCaptureForNewGraph();
         dryRoutingLab_.disable();
         return startUnpatchedProductionSession();
     }
@@ -1363,6 +1420,11 @@ public:
         const juce::var& command,
         const LiveDryRoutingLab::FxSelections& fx,
         const LiveDryRoutingLab::FxRestores* restored=nullptr) {
+        // A successful legacy M4 apply would supersede A+B virtual input
+        // layout. Require an explicit CLEAR PATCH rather than dropping its
+        // reader on a speculative edit that might fail validation.
+        if(qualifiedSecondaryInstalled_.load(std::memory_order_acquire))
+            return "CLEAR PATCH and explicitly remove secondary capture before applying M4 routing";
         if (dryRoutingLab_.nativeBusTopologyLive())
             return "REMOVE native GROUP/FX RETURN buses before applying an M4 route";
         if (!allOutputsDisarmed()) return "MUTE hardware output and DISARM STREAM before APPLY routing";
@@ -1398,6 +1460,7 @@ public:
     }
     void disableDryRoutingLab() noexcept {
         setOutputMuted(true); // never expose CH1 unexpectedly on STOP
+        retireQualifiedCaptureForNewGraph();
         dryRoutingLab_.disable();
     }
     // One structural graph transaction for SOURCE, OUT, M/ST and FX inserts:
@@ -1817,14 +1880,33 @@ public:
         // Graph publication is a temporary PHYSICAL silence, not a user MUTE.
         // Retain MAIN intent across the accepted ChannelId/FX rebind.
         if(monitoring)setOutputMuted(true);
+        // IO-2D: explicit .smix replacement is a paired PCM+device-map
+        // transaction. No capture driver closes until a new A-only graph
+        // is accepted; on failed candidate, restore the old B admission.
+        // A short muted control handoff prevents old qualified PCM from
+        // receiving raw A-only callback pointers during the swap.
+        const bool hadQualifiedMap=dryRoutingLab_.qualifiedInputMapActive();
+        const bool oldQualifiedAdmission=qualifiedSecondaryInstalled_.load(
+            std::memory_order_acquire);
+        if(hadQualifiedMap)
+            qualifiedSecondaryInstalled_.store(false,std::memory_order_release);
         const auto applied=dryRoutingLab_.restoreNativeMixerSession(
             std::move(document),std::move(bank),inspected.pins,
-            allOutputsDisarmed(),replaceActive);
+            allOutputsDisarmed(),replaceActive,hadQualifiedMap);
         if(applied.isNotEmpty()) {
+            if(hadQualifiedMap) {
+                if(dryRoutingLab_.qualifiedInputMapActive())
+                    qualifiedSecondaryInstalled_.store(oldQualifiedAdmission,
+                                                      std::memory_order_release);
+                else
+                    retireQualifiedCaptureForNewGraph(); // publication did complete
+            }
             if(monitoring&&ep==dryRoutingLab_.epoch()&&liveOutputArmFault(false).isEmpty())
-                setOutputMuted(false); // same user intent; safe original graph
+                setOutputMuted(false); // only restore verified original intent
             return applied;
         }
+        if(hadQualifiedMap)
+            retireQualifiedCaptureForNewGraph(); // A-only PCM accepted, B retired
         acceptedWasapiBinding_=std::move(profile);
         acceptedMixerBinding_=std::move(inspected.live);
         setMasterGainLinear(gain);
@@ -2366,6 +2448,160 @@ public:
                     true,beforePublish);
             });
     }
+    // IO-2D native product host boundary. This entrypoint is deliberately
+    // NOT exposed as a web/JS activation yet: a serialized user-approved
+    // native command must provide exact verified binding intent and wait for
+    // independently matching installed PCM readback before displaying LIVE.
+    struct QualifiedPhysicalSourceChoice final {
+        armix::mixer::ChannelId channel{};
+        bool onSecondary=false;
+        int leftPhysical=-1,rightPhysical=-1;
+        bool stereo=false;
+    };
+    LiveDryRoutingLab::NativeBusResult installSecondaryAsioCapture(
+            const juce::String& secondaryDriver,
+            const juce::BigInteger& selectedSecondaryPins,
+            double requestedCaptureHz,int requestedCaptureFrames,
+            std::uint64_t expectedEpoch,std::uint64_t expectedPcmRevision,
+            std::uint64_t expectedRosterRevision,
+            std::span<const QualifiedPhysicalSourceChoice> selectedSources) {
+        namespace d=armix::device;
+        LiveDryRoutingLab::NativeBusResult reply{};
+        reply.error="SECONDARY_CAPTURE_NOT_ADMITTED";
+        if(!allOutputsDisarmed()||independent_.active()||!attached_||
+           !directFence_.permitted()||qualifiedSecondaryInstalled_.load(
+               std::memory_order_acquire)||
+           (qualifiedCaptureNeedsRemap_.load(std::memory_order_acquire)&&
+            dryRoutingLab_.qualifiedInputMapActive())||
+           secondaryCapture_.ready()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal||
+           handoff_.busy()||fxMovePhase_.load(std::memory_order_acquire)!=0||
+           deviceManager_.getCurrentAudioDeviceType()!="ASIO"||
+           !asioPinnedRegistration_.valid()||
+           expectedEpoch!=dryRoutingLab_.epoch()||
+           !dryRoutingLab_.channelIdPhysicalPcmActive()||
+           selectedSources.empty())return reply;
+        auto* primary=deviceManager_.getCurrentAudioDevice();
+        if(!primary||!primary->isOpen()||primary->getTypeName()!="ASIO")
+            return reply;
+        d::JuceActivePortSnapshot pins;
+        d::JuceActivePortSnapshot::Fault portFault{};
+        if(!d::JuceActivePortSnapshot::capture(primary,expectedEpoch,
+               pins,portFault)||!dryRoutingLab_.matchesSessionDevice(pins)||
+           pins.inputs.enabledCount<1) {
+            reply.error="PRIMARY_CAPTURE_MASK_NOT_VERIFIED";return reply;
+        }
+        if(secondaryLeaseSequence_>std::numeric_limits<std::uint64_t>::max()-3) {
+            reply.error="SECONDARY_LEASE_EXHAUSTED";return reply;
+        }
+        // New native-issued leases every attempt; never reuse a stale B
+        // generation after a driver fault, disconnect or source remap.
+        const auto primaryLease=++secondaryLeaseSequence_;
+        const auto secondaryLease=++secondaryLeaseSequence_;
+        const auto captureGeneration=secondaryLease;
+        auto error=secondaryCapture_.open(secondaryDriver,primary->getName(),
+            selectedSecondaryPins,requestedCaptureHz,requestedCaptureFrames,
+            primary->getCurrentSampleRate(),primary->getCurrentBufferSizeSamples(),
+            captureGeneration,expectedEpoch,secondaryLease);
+        if(error.isNotEmpty()) {
+            reply.error="SECONDARY_ASIO_OPEN_REJECTED";return reply;
+        }
+        const auto rollback=[&]() noexcept {
+            qualifiedSecondaryReader_.stop();
+            secondaryCapture_.close();
+        };
+        try {
+            const auto b=secondaryCapture_.readback();
+            if(!b.ready||b.faulted||
+               b.primaryEpoch!=expectedEpoch||
+               b.captureGeneration!=captureGeneration||
+               b.deviceLease!=secondaryLease||
+               b.callbackInputs!=selectedSecondaryPins.countNumberOfSetBits()||
+               b.activeInputPins!=selectedSecondaryPins) {
+                rollback();reply.error="SECONDARY_ASIO_READBACK_MISMATCH";return reply;
+            }
+            const auto classB=d::AsioRegistryIdentityProbe::resolve(
+                std::wstring(secondaryDriver.toWideCharPointer())).registration;
+            if(!classB.ok()||
+               asioPinnedRegistration_.sameDriverClass(classB.identity)) {
+                rollback();reply.error="SECONDARY_ASIO_CLASS_NOT_INDEPENDENT";return reply;
+            }
+            // Ephemeral in-session keys refer to two independently attested
+            // native driver classes and distinct leases; NOT persistent USB
+            // endpoint GUIDs. Offline .smix remap remains explicitly pending.
+            const std::string aKey="ASIO_PRIMARY:"+
+                juce::String(asioPinnedRegistration_.canonicalClsid.c_str()).toStdString()+
+                ":"+std::to_string(expectedEpoch);
+            const std::string bKey="ASIO_CAPTURE:"+
+                juce::String(classB.identity.canonicalClsid.c_str()).toStdString()+
+                ":"+std::to_string(secondaryLease);
+            std::array<int,d::LiveInputPortRegistry::limit> primaryPins{};
+            for(int i=0;i<pins.inputs.enabledCount;++i)
+                primaryPins[i]=pins.inputs.physicalIndex(i);
+            std::array<int,16> secondaryPins{};
+            int bCount=0;
+            for(int index=b.activeInputPins.findNextSetBit(0);index>=0;
+                index=b.activeInputPins.findNextSetBit(index+1)) {
+                if(bCount>=16) {
+                    rollback();reply.error="SECONDARY_PIN_COUNT_EXCEEDED";return reply;
+                }
+                secondaryPins[bCount++]=index;
+            }
+            std::array<d::CaptureEndpointView,2> devices{{
+                {aKey,expectedEpoch,true,
+                 std::span<const int>(primaryPins.data(),
+                    static_cast<std::size_t>(pins.inputs.enabledCount)),
+                 primaryLease},
+                {bKey,captureGeneration,false,
+                 std::span<const int>(secondaryPins.data(),
+                    static_cast<std::size_t>(bCount)),secondaryLease}
+            }};
+            std::vector<d::QualifiedChannelSource> bindings;
+            bindings.reserve(selectedSources.size());
+            for(const auto& row:selectedSources) {
+                const std::string_view key=row.onSecondary?bKey:aKey;
+                d::QualifiedChannelSource next;
+                next.channel=row.channel;
+                next.left={key,row.leftPhysical};
+                next.stereo=row.stereo;
+                if(row.stereo)next.right={key,row.rightPhysical};
+                bindings.push_back(next);
+            }
+            d::MultiDeviceInputPlan plan;
+            d::MultiDeviceInputFault planFault{};
+            if(!dryRoutingLab_.prepareQualifiedCapturePlan(
+                   expectedEpoch,devices,bindings,plan,planFault)) {
+                rollback();reply.error="SECONDARY_SOURCE_MAP_REJECTED";return reply;
+            }
+            const auto verified=dryRoutingLab_.installQualifiedSecondaryInput(
+                expectedEpoch,expectedPcmRevision,expectedRosterRevision,plan,
+                qualifiedSecondaryReader_,secondaryCapture_.clockStream(),true);
+            if(!verified.accepted) {
+                rollback();return verified;
+            }
+            // One release-store AFTER the same snapshot/FX publication.
+            // Before this flag, a qualified map rejects raw A-only inputs,
+            // so a transient callback is SILENT, never wrong-device PCM.
+            qualifiedCaptureNeedsRemap_.store(false,std::memory_order_release);
+            qualifiedSecondaryInstalled_.store(true,std::memory_order_release);
+            return verified;
+        } catch(...) {
+            rollback();
+            reply.error="SECONDARY_CAPTURE_CONTROL_PREPARE_FAILED";
+            return reply;
+        }
+    }
+    // Disconnecting B intentionally retains the already-qualified map and
+    // ChannelId/FX snapshot: primary A keeps playing; B slots fail SILENT.
+    // A future explicit new binding requires output disarm and exact remap.
+    void disconnectSecondaryAsioCapture() {
+        secondaryCapture_.close(); // CONTROL, never audio callback
+    }
+    armix::device::LiveSecondaryCaptureDevice::Readback
+    secondaryCaptureReadback() const {return secondaryCapture_.readback();}
+
     template<class Edit>
     LiveDryRoutingLab::NativeBusResult editNativeInputTopology(
             std::uint64_t epoch,const char* unavailable,const char* exception,
@@ -2926,6 +3162,13 @@ private:
     juce::String startupFallbackReason_; // control-thread-only startup diagnostics
     armix::device::JuceIndependentClockDevice independent_;
     armix::device::LiveSecondaryOutputDevice secondaryOutput_;
+    // IO-2D: separate ASIO input B is capture-only. Both PCM streams enter
+    // the ONE existing ChannelId/FX callback only after CONTROL admission.
+    armix::device::LiveSecondaryCaptureDevice secondaryCapture_;
+    armix::device::QualifiedSecondaryCaptureReader qualifiedSecondaryReader_;
+    std::atomic<bool> qualifiedSecondaryInstalled_{false};
+    std::atomic<bool> qualifiedCaptureNeedsRemap_{false}; // device lifecycle invalidated B
+    std::uint64_t secondaryLeaseSequence_=0; // CONTROL only, never callback
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedDirectSetup_;
     juce::AudioPluginFormatManager formats_;
     // Strong ownership stays on CONTROL. The admitted native ChannelId
@@ -3060,6 +3303,9 @@ private:
         }
         setOutputMuted(true); // transient hardware gate, NOT an operator MUTE
         secondaryOutput_.invalidateSource(); // source clock may have changed
+        if(qualifiedSecondaryInstalled_.exchange(false,std::memory_order_acq_rel))
+            qualifiedCaptureNeedsRemap_.store(true,std::memory_order_release);
+        secondaryCapture_.invalidatePrimaryClock(); // RT-safe fault only
         dryRoutingLab_.prepareDevice(d); // exact active mask, before callback
         if (!independent_.active())
         {
@@ -3121,6 +3367,9 @@ private:
         monitor_.store(false,std::memory_order_release);
         secondaryOutput_.invalidateSource(); // explicit reconnect required after device stop
         masterLoudness_.prepare (0.0); // clear validity across device epoch
+        if(qualifiedSecondaryInstalled_.exchange(false,std::memory_order_acq_rel))
+            qualifiedCaptureNeedsRemap_.store(true,std::memory_order_release);
+        secondaryCapture_.invalidatePrimaryClock(); // no driver teardown in JUCE callback
         dryRoutingLab_.deviceStopped();
         playerDeck_.deviceRate(0.0); // invalidates old PCM generation
         deviceStopCount_.fetch_add (1, std::memory_order_relaxed);
@@ -3371,6 +3620,10 @@ private:
                                 playerScratch_[1].data()};
                 deckCount=1;
             }
+            // One acquire: CONTROL changes the admitted A+B resource pair
+            // atomically; a callback never observes half a pair.
+            const bool qualifiedInput=qualifiedSecondaryInstalled_.load(
+                std::memory_order_acquire);
             const bool routed=dryRoutingLab_.process(inputs,inputChannels,outputs,
                      outputChannels,samples,
                      masterGain_.load(std::memory_order_relaxed),
@@ -3381,7 +3634,9 @@ private:
                      !routeReconfiguring_.load(std::memory_order_acquire) &&
                      !topologyPublicationMute_.load(std::memory_order_acquire),
                      std::span<const armix::mixer::DynamicPlayerPcmBlock>(
-                         deckBlocks.data(),deckCount),mainOnlyMuted);
+                         deckBlocks.data(),deckCount),mainOnlyMuted,
+                     qualifiedInput?&qualifiedSecondaryReader_:nullptr,
+                     qualifiedInput?&secondaryCapture_.clockStream():nullptr);
             // Constant-time, callback-local physical PCM tap. Nothing is
             // reconfigured or acquired from another graph generation.
             const auto nativeMain=armix::mixer::NativeOutputPairTap::select(
