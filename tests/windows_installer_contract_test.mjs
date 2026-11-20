@@ -498,4 +498,12 @@ test('P0 Windows 10 fresh install needs no VC redistributable and reports missin
   assert.match(native,/developer\.microsoft\.com\/en-us\/microsoft-edge\/webview2/);
   assert.match(native,/if \(result == 0\)/);
   assert.match(iss,/Flags: unchecked/);
+  const packaged=read('scripts/build_verify_windows_installer.ps1');
+  const pe=read('scripts/verify_win10_pe_runtime.py');
+  assert.match(packaged,/verify_win10_pe_runtime\.py --exe \$exe/);
+  assert.match(pe,/WIN10_STATIC_CRT_PE_PASS/);
+  assert.match(pe,/delay-import descriptors|delay-import|Delay-load descriptors/i);
+  assert.match(pe,/vcruntime/);
+  assert.match(pe,/msvcp/);
+  assert.match(pe,/WEBVIEW2_RUNTIME_REQUIRED_SEPARATELY_NOT_PROVEN/);
 });
