@@ -42,7 +42,10 @@ jobs:
             tests/immersib_stage_room_balance_test.cpp \
             -o /tmp/armix-immersib-stage-room
           /tmp/armix-immersib-stage-room
-          # The whole 2x2 KEMAR + 6-wall SonKu P9 graph, not just filter units.
+          # Full 2x2 KEMAR + six-wall P9, INCLUDING P94 as in the
+          # production JUCE P99 flag set. Old synthetic test silently
+          # omitted P94, so v4/v5 full-PCM isolation could not work.
+
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic \
             -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \
             -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 \
@@ -58,6 +61,7 @@ jobs:
             -DSONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1 \
             -DSONKU_P89_DEPTH_COHERENCE_RESEARCH=1 \
             -DSONKU_P90_TRUE_EXTERNAL_RESEARCH=1 \
+            -DSONKU_P94_FRONT_BACK_DEPTH_RESEARCH=1 \
             -DSONKU_P95_MUSICAL_PRESENCE_RESEARCH=1 \
             -DSONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH=1 \
             -DSONKU_P97_STAGE_IMPACT_RESEARCH=1 \
