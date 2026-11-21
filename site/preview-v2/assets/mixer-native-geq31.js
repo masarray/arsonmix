@@ -58,13 +58,15 @@ power.type="button";power.disabled=true;power.setAttribute("aria-label","Graphic
 const close=el("button","mx-geq31-close armix-builtin-fx-close","×");
 close.type="button";close.setAttribute("aria-label","Close Graphic EQ 31");
 header.append(title,meta,channel,preset,save,flat,power,close);
+// Exact v13 author geometry: each fader is a cropped 40 x 229 original SVG,
+ // not a CSS-imitation rail/THUMB. DSP ownership remains in native C++.
 const body=el("div","mx-geq31-body");
 const left=el("div","mx-geq31-scale mx-geq31-left");
 const right=el("div","mx-geq31-scale mx-geq31-right");
-for(const [text,y] of [["+12",0],["0",50],["−12",100]]){
- for(const target of [left,right]){
-  const t=el("span","mx-geq31-scale-text",text);
-  t.style.top=y+"%";target.append(t);
+for(const [label,y] of [["+12",23.4],["0",103],["−12",182.5]]){
+ for(const edge of [left,right]){
+  const text=el("span","mx-geq31-scale-text",label);
+  text.style.top=y+"px";edge.append(text);
  }
 }
 const scroll=el("div","mx-geq31-scroll");
@@ -73,21 +75,19 @@ const controls=[];
 hz.forEach((f,i)=>{
  const cell=el("div","mx-geq31-cell");
  const track=el("div","mx-geq31-track");
- const ticks=el("div","mx-geq31-ticks");
- const zero=el("span","mx-geq31-zero");
- const thumb=el("span","mx-geq31-thumb");
- const ridge=el("span","mx-geq31-ridge");thumb.append(ridge);
+ const index=el("span","mx-geq31-index");
  const range=el("input","mx-geq31-range");
  range.type="range";range.min="-12";range.max="12";range.step=".1";
  range.value="0";range.setAttribute("aria-label",labels[i]+" Hz band");
  range.setAttribute("aria-valuetext","0.0 dB");
- range.title=labels[i]+" Hz · double-click Flat · wheel adjusts · Shift for fine";
- track.append(ticks,zero,thumb,range);
+ range.title=labels[i]+" Hz · double-click Flat · wheel · Shift fine";
  const label=el("div","mx-geq31-freq");
- const name=el("span","mx-geq31-frequency",f>=1000?labels[i].replace(/k$/,""):labels[i]);
+ label.setAttribute("aria-hidden","true");
+ const name=el("span","mx-geq31-frequency",f>=1000?String(f/1000):String(f));
  const unit=el("span","mx-geq31-unit",f>=1000?"kHz":"Hz");
- label.append(name,unit);cell.append(track,label);bank.append(cell);
- controls.push({cell,range,thumb,frequency:name,unit});
+ label.append(name,unit);
+ track.append(index,range);cell.append(track,label);bank.append(cell);
+ controls.push({cell,range,thumb:null,index,frequency:name,unit,detent:false,escape:{escaping:false,dir:0}});
 });
 scroll.append(bank);
 const output=el("div","mx-geq31-output");
@@ -95,16 +95,115 @@ const outputLabel=el("span","mx-geq31-output-label","OUTPUT");
 const dial=el("div","mx-geq31-dial");
 dial.setAttribute("role","slider");dial.tabIndex=0;
 dial.setAttribute("aria-label","Output level");dial.setAttribute("aria-valuemin","-24");
-dial.setAttribute("aria-valuemax","6");dial.title="Drag vertically; wheel; double-click to 0 dB";
-const dialPointer=el("span","mx-geq31-dial-pointer");dial.append(dialPointer);
+dial.setAttribute("aria-valuemax","6");
+dial.title="Drag vertically; wheel; double-click 0 dB";
+const knobImage=el("img","mx-geq31-knob-image");
+knobImage.src="assets/geq31-knob-black.png";
+knobImage.alt="";knobImage.draggable=false;
+const dialPointer=el("canvas","mx-geq31-dial-pointer");
+dialPointer.setAttribute("aria-hidden","true");
+dialPointer.width=336;dialPointer.height=336;
+dial.append(knobImage,dialPointer);
 const outValue=el("output","mx-geq31-output-value","0.0 dB");
 output.append(outputLabel,dial,outValue);
 body.append(left,scroll,right,output);
+const bypassShade=el("div","mx-geq31-bypass-overlay","BYPASSED");
+bypassShade.setAttribute("aria-hidden","true");
+const knobCtx=dialPointer.getContext("2d");
+function paintKnob(db){
+ if(!knobCtx)return;
+ // Exact v13 static PNG + high-DPI blue 270-degree pointer/arc geometry.
+ const t=clamp(db<=0?(db+24)/48:.5+db/12,0,1);
+ const start=-.75*Math.PI,end=start+1.5*Math.PI*t;
+ const side=84,cx=side*96.7/192,cy=side*97.97/192;
+ const polar=(radius,a)=>[cx+radius*Math.sin(a),cy-radius*Math.cos(a)];
+ knobCtx.setTransform(4,0,0,4,0,0);
+ knobCtx.clearRect(0,0,side,side);
+ knobCtx.save();knobCtx.lineWidth=2;
+ knobCtx.strokeStyle="#26b8f6";knobCtx.lineCap="round";knobCtx.lineJoin="round";
+ if(t>0){knobCtx.beginPath();knobCtx.arc(cx,cy,side*.365,start-Math.PI/2,end-Math.PI/2);knobCtx.stroke();}
+ const p=polar(side*.292,end);
+ knobCtx.beginPath();knobCtx.arc(p[0],p[1],2.65,0,2*Math.PI);
+ knobCtx.fillStyle="rgba(4,33,50,.82)";knobCtx.fill();
+ knobCtx.beginPath();knobCtx.arc(p[0],p[1],1.9,0,2*Math.PI);
+ knobCtx.fillStyle="#27c8ff";knobCtx.fill();knobCtx.restore();
+}
+function gainToShift(v){return v>=0?-(916.5-208.75)*v/12:-(1627.92-916.5)*v/12;}
+function makeOwnerSvg(base,i){
+ const svg=base.cloneNode(true);
+ svg.setAttribute("viewBox","60 0 352 2042");
+ svg.setAttribute("preserveAspectRatio","none");
+ svg.removeAttribute("width");svg.removeAttribute("height");
+ const style=svg.querySelector("style");
+ if(!style)throw Error("Owner SVG missing authored style");
+ style.textContent=style.textContent.replace(
+  /[.]s0\s*[{][^}]*[}]/,
+  ".s0 { fill:none;stroke:#131a1d;stroke-miterlimit:10;stroke-width:7.9 }");
+ for(const [id,stops] of [
+  ["g1",["#929b9f","#a6afb3","#969ea3","#858d92"]],
+  ["g2",["#080b0d","#13181c","#1b2125","#20272b","#242a2d"]]]){
+  const gradient=svg.querySelector('[id="'+id+'"]');
+  if(!gradient)throw Error("Owner SVG missing "+id);
+  gradient.querySelectorAll("stop").forEach((stop,n)=>{
+   if(stops[n])stop.setAttribute("stop-color",stops[n]);
+  });
+ }
+ // Inline 31 copies must not share paint-server IDs.
+ for(const id of ["g1","g2","g3","g4","g5","g6","img1"]){
+  const element=svg.querySelector('[id="'+id+'"]');
+  if(!element)throw Error("Owner SVG missing "+id);
+  const unique="geq31-"+i+"-"+id;
+  element.setAttribute("id",unique);
+  style.textContent=style.textContent.replaceAll("url(#"+id+")","url(#"+unique+")");
+  if(id==="img1"){
+   const use=svg.querySelector('use[id="_Image3"]');
+   if(!use)throw Error("Owner raster shadow missing");
+   use.setAttribute("href","#"+unique);
+  }
+ }
+ const freq=svg.querySelector('g[id="Text"] text[id="32"]');
+ const unit=svg.querySelector('g[id="Hz"] text');
+ const shadow=svg.querySelector('g[id="THUMB"] > g');
+ const thumb=svg.querySelector('g[id="THUMB"]');
+ if(!freq||!unit||!shadow||!thumb)throw Error("Owner SVG Text/THUMB missing");
+ freq.setAttribute("text-anchor","middle");
+ freq.setAttribute("style","transform:matrix(4.167,0,0,4.167,237.76,1850.466);font-family:Inter,Arial,sans-serif");
+ const number=freq.querySelector("tspan");
+ number.textContent=hz[i]>=1000?String(hz[i]/1000):String(hz[i]);
+ number.setAttribute("style","font-family:Inter,Arial,sans-serif;font-size:27px;font-weight:700;fill:#344047");
+ unit.setAttribute("text-anchor","middle");
+ unit.setAttribute("style","transform:matrix(4.167,0,0,4.167,237.76,1933.799);font-family:Inter,Arial,sans-serif");
+ const letter=unit.querySelector("tspan");
+ letter.textContent=hz[i]>=1000?"kHz":"Hz";
+ letter.setAttribute("style","font-family:Inter,Arial,sans-serif;font-size:18px;font-weight:600;fill:#5b6a72");
+ shadow.setAttribute("opacity","0.87");
+ return {svg,thumb};
+}
+let artworkLoaded=false;
+async function loadArtwork(){
+ try{
+  const response=await fetch("assets/geq31-owner-slider.svg");
+  if(!response.ok)throw Error("GEQ31_OWNER_SVG_HTTP_"+response.status);
+  const doc=new DOMParser().parseFromString(await response.text(),"image/svg+xml");
+  const svg=doc.documentElement;
+  if(svg.localName!=="svg"||!svg.querySelector('g[id="THUMB"]'))throw Error("GEQ31_OWNER_SVG_INVALID");
+  const rendered=controls.map((c,i)=>makeOwnerSvg(svg,i));
+  rendered.forEach(({svg,thumb},i)=>{
+   controls[i].range.before(svg);
+   controls[i].thumb=thumb;
+  });
+  artworkLoaded=true;root.dataset.artwork="v13";paint();
+ }catch(error){
+  root.dataset.artwork="unavailable";
+  hint("GEQ31 V13 ARTWORK UNAVAILABLE · CHECK GUI BUNDLE");
+  console.error("GEQ31 visual resource",error);
+ }
+}
 const footer=el("footer","mx-geq31-footer");
 const message=el("span","mx-geq31-message","BROWSER PREVIEW · NO AUDIO");
 footer.append(message);
-root.append(header,body,footer);
-function mount(){if(!root.isConnected)document.body.append(root);}
+root.append(header,body,bypassShade,footer);
+function mount(){if(!root.isConnected)document.body.append(root);loadArtwork();}
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 function hint(value){message.textContent=value;root.dataset.state=/STALE|REJECT|FAIL|UNAVAILABLE|TIMEOUT/i.test(value)?"error":/WAIT|APPLY|READING/i.test(value)?"pending":"ready";}
 function context(){
@@ -125,6 +224,8 @@ function updatePower(){
  power.dataset.fxState=!usable?"unknown":ch.fxRackBypassed?"rack-off":ins?.bypassed?"off":"on";
  power.setAttribute("aria-pressed",String(usable&&!ins?.bypassed&&!ch?.fxRackBypassed));
  power.title=!usable?"DSP instance not accepted":ins?.bypassed?"Enable Graphic EQ":"Bypass Graphic EQ";
+ const bypassed=usable&&Boolean(ins?.bypassed||ch?.fxRackBypassed);
+ bypassShade.classList.toggle("is-on",bypassed);
 }
 function paint(){
  controls.forEach((c,i)=>{
@@ -132,13 +233,15 @@ function paint(){
   c.range.value=String(v);
   c.range.setAttribute("aria-valuenow",String(v));
   c.range.setAttribute("aria-valuetext",format(v));
-  c.thumb.style.top=((12-v)/24*100).toFixed(3)+"%";
+  const shift=gainToShift(v);
+  if(c.thumb)c.thumb.setAttribute("transform","translate(0 "+shift.toFixed(3)+")");
+  c.index.style.top=Math.round((916.5+shift)*229/2042)+"px";
  });
  const t=clamp((draft.levelDb+24)/30,0,1);
  dial.style.setProperty("--geq-dial-angle",(-132+264*t).toFixed(2)+"deg");
  dial.setAttribute("aria-valuenow",String(draft.levelDb));
  dial.setAttribute("aria-valuetext",format(draft.levelDb));
- outValue.textContent=format(draft.levelDb);
+ outValue.textContent=format(draft.levelDb);paintKnob(draft.levelDb);
  const value=matchFactory(draft);
  // A selected user preset is owned by the shared .armixfx bar. Do not
  // reset that selected option on every graphic-slider paint.
@@ -197,14 +300,47 @@ function updateOutput(v){
 controls.forEach((c,i)=>{
  c.range.addEventListener("input",()=>updateBand(i,Number(c.range.value)));
  c.range.addEventListener("change",()=>{if(native())flush();});
- c.range.addEventListener("pointerdown",()=>{activeSlider=i;});
- c.range.addEventListener("pointerup",()=>{activeSlider=-1;flush();});
- c.range.addEventListener("pointercancel",()=>{activeSlider=-1;requestSnapshot(true);});
- c.range.addEventListener("wheel",e=>{
-  e.preventDefault();const delta=(e.deltaY<0?1:-1)*(e.shiftKey?.2:1);
-  updateBand(i,draft.bands[i]+delta);
+ function fromPointer(event){
+  const rect=c.cell.getBoundingClientRect();
+  const y=clamp((event.clientY-rect.top)/rect.height*2042,208.75,1627.92);
+  const proposed=y<916.5?(916.5-y)/(916.5-208.75)*12:
+    (916.5-y)/(1627.92-916.5)*12;
+  c.detent=Math.abs(proposed)<=(c.detent?1.8:1.1);
+  updateBand(i,c.detent?0:proposed);
+ }
+ c.cell.addEventListener("pointerdown",event=>{
+  if(event.button!==0||!artworkLoaded)return;
+  activeSlider=i;c.detent=Math.abs(draft.bands[i])<.001;
+  c.cell.setPointerCapture(event.pointerId);fromPointer(event);
+  event.preventDefault();
+ });
+ c.cell.addEventListener("pointermove",event=>{
+  if(c.cell.hasPointerCapture(event.pointerId))fromPointer(event);
+ });
+ c.cell.addEventListener("pointerup",event=>{
+  if(c.cell.hasPointerCapture(event.pointerId))c.cell.releasePointerCapture(event.pointerId);
+  activeSlider=-1;flush();
+ });
+ c.cell.addEventListener("pointercancel",event=>{
+  if(c.cell.hasPointerCapture(event.pointerId))c.cell.releasePointerCapture(event.pointerId);
+  activeSlider=-1;requestSnapshot(true);
+ });
+ c.cell.addEventListener("wheel",event=>{
+  if(!artworkLoaded)return;
+  event.preventDefault();
+  const cur=draft.bands[i],target=clamp(cur-Math.sign(event.deltaY)*.5,-12,12);
+  const held=c.escape;
+  let next=target;
+  if(Math.abs(cur)<.001){held.escaping=true;held.dir=Math.sign(target);}
+  else if(held.escaping&&cur*held.dir>0&&target*held.dir>0&&Math.abs(target)>Math.abs(cur)){
+   if(Math.abs(target)>1.1)held.escaping=false;
+  }else{
+   held.escaping=false;
+   if(Math.abs(target)<=1.1||(cur<0&&target>0)||(cur>0&&target<0))next=0;
+  }
+  updateBand(i,next);
  },{passive:false});
- c.range.addEventListener("dblclick",e=>{e.preventDefault();updateBand(i,0);});
+ c.cell.addEventListener("dblclick",event=>{event.preventDefault();updateBand(i,0);});
 });
 dial.addEventListener("pointerdown",e=>{
  if(e.button!==0)return;

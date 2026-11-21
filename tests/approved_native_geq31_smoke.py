@@ -1,10 +1,13 @@
-"""GEQ31 exact ONE Pages/WebView2 UI regression: 31 captions, SVG-free
+"""GEQ31 exact ONE Pages/WebView2 UI regression: 31 captions, original-SVG
 coordinate consistency, DSP lease, AUDIO ACK and final accepted readback.
 Playwright's JUCE transport here is a test double; hardware tests remain separate.
 """
 from pathlib import Path
 import importlib.util
 import tempfile
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread
 from playwright.sync_api import sync_playwright
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -21,18 +24,25 @@ def main():
     with tempfile.TemporaryDirectory(prefix="arsonmix-geq31-webview-") as directory,sync_playwright() as pw:
         out=Path(directory)
         bundle.stage(out)
+        # Serve bundled assets: file:// fetch of SVG is CORS-blocked.
+        class QuietHandler(SimpleHTTPRequestHandler):
+            def log_message(self,*args):pass
+        server=ThreadingHTTPServer(("127.0.0.1",0),partial(QuietHandler,directory=str(out)))
+        Thread(target=server.serve_forever,daemon=True).start()
+        url=f"http://127.0.0.1:{server.server_address[1]}/index.html"
         browser=pw.chromium.launch(headless=True)
         for width,height in [(1430,650),(1000,700),(390,844)]:
             page=browser.new_page(viewport={"width":width,"height":height})
             errors=[]
             page.on("pageerror",lambda err:errors.append(str(err)))
-            page.goto((out/"index.html").as_uri())
+            page.goto(url)
             page.wait_for_function("()=>!!window.ArSonMixGraphicEq31")
             page.evaluate("""()=>{
                window.ArSonMixGraphicEq31.open({id:123,name:'Visual Preview',slotBypass:[false]},0);
             }""")
             panel=page.locator("#mxNativeGeq31")
             panel.wait_for(state="visible")
+            page.wait_for_function("()=>document.querySelector('#mxNativeGeq31')?.dataset.artwork==='v13'")
             assert panel.locator(".mx-geq31-cell").count()==31
             assert panel.locator(".mx-geq31-range").count()==31
             assert panel.locator(".mx-geq31-frequency").all_text_contents()==[
@@ -58,15 +68,27 @@ def main():
             assert panel.locator(".mx-geq31-message").inner_text().startswith("BROWSER PREVIEW")
             assert panel.locator(".mx-geq31-scroll").evaluate(
                 "e=>getComputedStyle(e).overflowX")=="auto"
-            # The track, white ridge and printed +12/0/-12 scale all use
-            # exactly the same CSS 170px geometry, independent of font DPI.
+            # v13 source-authority: 31 original SVG raster THUMBs, 40x229/84 knob.
+            assert panel.locator(".mx-geq31-track svg").count()==31
+            assert panel.locator(".mx-geq31-knob-image").count()==1
+            assert panel.locator(".mx-geq31-dial-pointer").count()==1
+            assert panel.locator(".mx-geq31-knob-image").evaluate(
+                "e=>e.complete&&e.naturalWidth===192")
+            for asset in ("geq31-owner-slider.svg","geq31-brushed-metal.jpg","geq31-knob-black.png"):
+                assert (out/"assets"/asset).is_file(),asset
             for idx in [0,15,30]:
                 band=panel.locator(".mx-geq31-cell").nth(idx)
                 box=band.locator(".mx-geq31-track").bounding_box()
-                assert box and abs(box["height"]-170)<.5
+                assert box and abs(box["height"]-229)<.5 and abs(box["width"]-40)<.5
                 assert band.locator(".mx-geq31-freq").is_visible()
-                assert band.locator(".mx-geq31-thumb").evaluate(
-                    "e=>Math.abs(parseFloat(e.style.top)-50)<.001")
+                assert band.locator('g[id="THUMB"]').count()==1
+                assert band.locator('use[id="_Image3"]').count()==1
+                assert band.locator(".mx-geq31-index").evaluate(
+                    "e=>Math.abs(parseFloat(e.style.top)-103)<.5")
+            assert len(set(panel.locator('linearGradient[id^="geq31-"]').evaluate_all(
+                "es=>es.map(e=>e.id)")))==31*6
+            dial_box=panel.locator(".mx-geq31-dial").bounding_box()
+            assert dial_box and abs(dial_box["width"]-84)<.5
             first=panel.locator(".mx-geq31-range").first
             first.evaluate("""e=>{
                 e.value='6';e.dispatchEvent(new Event('input',{bubbles:true}));
@@ -98,7 +120,7 @@ def main():
             }
           }};
         })()""")
-        page.goto((out/"index.html").as_uri())
+        page.goto(url)
         page.wait_for_function("()=>window.ArSonMixGraphicEq31 && window.__ARMIX_NATIVE_M2__")
         state={"admitted":True,"logical":False,"device":{"epoch":"11"},
          "graph":{"revision":"7","channels":[{
@@ -115,6 +137,7 @@ def main():
         }""",state)
         panel=page.locator("#mxNativeGeq31")
         panel.wait_for(state="visible")
+        page.wait_for_function("()=>document.querySelector('#mxNativeGeq31')?.dataset.artwork==='v13'")
         def last_action(kind):
             actions=page.evaluate("""kind=>window.__actions.filter(
                a=>a.action===kind)""",kind)
@@ -159,6 +182,7 @@ def main():
         assert panel.locator(".mx-geq31-output-value").inner_text()=="0.0 dB"
         assert not errors,errors
         browser.close()
+        server.shutdown();server.server_close()
         print("GEQ31_WEBVIEW_ONE_RENDERER_PASS: 31 captions, 3 viewports, lease + DSP ACK/readback")
 
 if __name__=="__main__":

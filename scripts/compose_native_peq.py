@@ -8,7 +8,7 @@ COMP_SCRIPT='<script defer src="assets/mixer-native-compressor.js?v=comp-1"></sc
 HARMONY_SCRIPT='<script defer src="assets/mixer-native-harmony.js?v=harmony1"></script>'
 THROW_SCRIPT='<script defer src="assets/mixer-native-vocal-throw.js?v=throw-1"></script>'
 SONKU_SCRIPT='<script defer src="assets/mixer-native-sonku.js?v=sonku-1"></script>'
-GEQ_SCRIPT='<script defer src="assets/mixer-native-geq31.js?v=geq-webview-p0"></script>'
+GEQ_SCRIPT='<script defer src="assets/mixer-native-geq31.js?v=geq-v13-owner-svg"></script>'
 PRESET_SCRIPT='<script defer src="assets/mixer-builtin-fx-preset-bar.js?v=preset-shared-m4"></script>'
 
 PICKER_HEAD="function renderFastPicker(){"
