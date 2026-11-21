@@ -1424,8 +1424,19 @@ private:
                 return; // no duplicate WebView or processor for repeated clicks
             }
         if(floatingBuiltinFx_.size()>=maxSimultaneousBuiltinWindows) {
-            emitNotice("Close an unused built-in FX editor before opening another",true);
-            return;
+            // Closed built-in editor HWNDs have no processor ownership.
+            // Recycle the first hidden WebView before rejecting a new FX
+            // rack click; preserve all OPEN user editors and any DSP state.
+            const auto hidden=std::find_if(floatingBuiltinFx_.begin(),
+                floatingBuiltinFx_.end(),[](const auto& item) {
+                    return item && item->window && !item->window->isVisible();
+                });
+            if(hidden!=floatingBuiltinFx_.end())
+                floatingBuiltinFx_.erase(hidden);
+            else {
+                emitNotice("Close an unused built-in FX editor before opening another",true);
+                return;
+            }
         }
         auto owned=std::make_unique<FloatingBuiltinOwner>();
         owned->channelId=channel;
