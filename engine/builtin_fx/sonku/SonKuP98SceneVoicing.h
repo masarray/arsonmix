@@ -79,9 +79,15 @@ public:
         const float lateralAir=gains_[7]*(side-sideAirLow_);
         // A stereo music MASTER already contains artist-approved panning.
         // Masking SIDE to favor the center can pull guitars/keys inward.
+        const float originalMask=gains_[6]*sideBand+gains_[9]*edge;
+        // v1 removed the entire SIDE presence mask; owner listening then
+        // reported a piercing 3-5k guitar/whole-mix edge. Retain 70% of
+        // the genuine panned SIDE recovery, but restore a small 30% of
+        // the original warm voicing's gentle upper-mid control. Stereo
+        // position is fixed primarily upstream by P90 (not fake width).
         const float maskedSide=protectPannedSide &&
             (scene==ImmerSIBDetail || scene==ImmerSIBImpact)?
-            0.f:gains_[6]*sideBand+gains_[9]*edge;
+            .30f*originalMask:originalMask;
         return {left+centerBoost-maskedSide+lateralAir,
                 right+centerBoost+maskedSide-lateralAir};
     }

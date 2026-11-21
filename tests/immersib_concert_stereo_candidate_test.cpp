@@ -60,8 +60,10 @@ int main(){
         assert(settle(panned,sr,.25f)<.03f);
         assert(settle(center,sr,1.f)>.96f);
         assert(settle(hardLeft,sr,0.f)<.03f);
-        assert(sideRms(sr,2050.,true)>1.3*sideRms(sr,2050.,false));
-        assert(sideRms(sr,3450.,true)>1.2*sideRms(sr,3450.,false));
+        // Partial restore must retain panned content vs approved warm
+        // suppression; do not return to v1's fully unmasked 3-5k glare.
+        assert(sideRms(sr,2050.,true)>1.07*sideRms(sr,2050.,false));
+        assert(sideRms(sr,3450.,true)>1.07*sideRms(sr,3450.,false));
         const double bassBefore=roomLateRms(sr,86.,false);
         const double bassAfter=roomLateRms(sr,86.,true);
         const double vocal1kBefore=roomLateRms(sr,1050.,false);

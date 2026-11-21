@@ -48,13 +48,16 @@ int main(){
         assert(level(sr,3750.,false)==1.);
         const double hz86=level(sr,86.,true);
         const double hz285=level(sr,285.,true);
+        const double hz350=level(sr,350.,true);
+        assert(hz350>1.065 && hz350<1.11);
         const double hz1050=level(sr,1050.,true);
         const double hz3750=level(sr,3750.,true);
         const double hz4900=level(sr,4900.,true);
         const double hz8500=level(sr,8500.,true);
-        assert(hz86>.995 && hz86<1.003);
-        assert(hz285>.98 && hz285<1.003);
-        assert(hz1050>.91 && hz1050<=1.001);
+        // New body lift is broad and shared, NOT a bass boost.
+        assert(hz86>.995 && hz86<1.013);
+        assert(hz285>1.045 && hz285<1.110);
+        assert(hz1050>.90 && hz1050<=1.025);
         assert(hz3750>.67 && hz3750<.86);
         assert(hz4900>.68 && hz4900<.91);
         assert(hz8500>.88 && hz8500<=1.002);

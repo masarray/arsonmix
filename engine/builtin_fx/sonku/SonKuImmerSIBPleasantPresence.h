@@ -12,6 +12,8 @@
 // The isolated upper-mid band is sent in parallel ONLY as the input
 // of one subtractive tonal filter (not a dry extra renderer).
 // Shaping: x - g * BP(x), approximately a very broad peaking CUT.
+// A second VERY gentle linked 350Hz body lift (+0.67dB max)
+// restores guitar/vocal warmth on BOTH source sides, not just MID.
 // BP is a fixed-coefficient stable 2-pole IIR. Gain detector 40ms,
 // linked across ears; 20ms attack / 200ms release, no callback allocation.
 namespace armix::sonku::immersib {
@@ -34,6 +36,20 @@ public:
             static_cast<float>((1.-a)*inv)
         };
         coeff_=next;
+        // Warm BODY remains audible for both centered voice and the
+        // panned acoustic guitar. One identical, gentle band lift at
+        // 350Hz (Q=.88) across both ears; not a centered MID boost.
+        // Fixed prepared coefficients; at 86Hz the EQ change is <0.1dB.
+        constexpr double bodyHz=350.,bodyQ=.88;
+        const double bw=2.*pi*bodyHz/rate;
+        const double ba=std::sin(bw)/(2.*bodyQ);
+        const double binv=1./(1.+ba);
+        bodyCoeff_={
+            static_cast<float>(ba*binv),0.f,
+            static_cast<float>(-ba*binv),
+            static_cast<float>(-2.*std::cos(bw)*binv),
+            static_cast<float>((1.-ba)*binv)
+        };
         energyAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.040)));
         gainAttack_=static_cast<float>(1.-std::exp(-1./(rate*.020)));
         gainRelease_=static_cast<float>(1.-std::exp(-1./(rate*.200)));
@@ -43,6 +59,7 @@ public:
     }
     void reset() noexcept {
         filters_[0]={};filters_[1]={};
+        bodyFilters_[0]={};bodyFilters_[1]={};
         bandEnergy_=totalEnergy_=0.f;
         reduction_=baseReduction_;
         enabledMix_=0.f;
@@ -52,6 +69,8 @@ public:
         // retargeting does not reuse a stale spectral accumulator.
         const float bandL=filters_[0].run(coeff_,left);
         const float bandR=filters_[1].run(coeff_,right);
+        const float bodyL=bodyFilters_[0].run(bodyCoeff_,left);
+        const float bodyR=bodyFilters_[1].run(bodyCoeff_,right);
         const float bandNow=.5f*(bandL*bandL+bandR*bandR);
         const float totalNow=.5f*(left*left+right*right);
         bandEnergy_+=energyAlpha_*(bandNow-bandEnergy_);
@@ -67,7 +86,12 @@ public:
         enabledMix_+=enableSlew_*((enable?1.f:0.f)-enabledMix_);
         if(!enable)return {left,right}; // exact no-room / 0%-MIX bypass
         const float amount=reduction_*enabledMix_;
-        return {left-amount*bandL,right-amount*bandR};
+        // +0.67dB around 350Hz restores guitar/vocal musical warmth
+        // by a SHARED transfer. Do not thicken only the phantom center;
+        // 86Hz bass, actual PA world/room and L/R pan remain protected.
+        const float bodyAmount=.08f*enabledMix_;
+        return {left-amount*bandL+bodyAmount*bodyL,
+                right-amount*bandR+bodyAmount*bodyR};
     }
 private:
     static constexpr float baseReduction_=.15f; // ~-1.4 dB at band center
@@ -81,8 +105,8 @@ private:
             return y;
         }
     };
-    Coeff coeff_{};
-    Filter filters_[2]{};
+    Coeff coeff_{},bodyCoeff_{};
+    Filter filters_[2]{},bodyFilters_[2]{};
     float energyAlpha_=0.f,gainAttack_=0.f,gainRelease_=0.f,enableSlew_=0.f;
     float bandEnergy_=0.f,totalEnergy_=0.f;
     float reduction_=baseReduction_,enabledMix_=0.f;
