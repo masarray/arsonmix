@@ -6525,6 +6525,156 @@ private:
                                     },readPower);
                             }
 #endif
+                            // Graphic EQ uses the same EXACT retained mixer
+                            // FX bypass authority/readback as ImmerSIB.
+                            // No GUI-local toggle can mutate a second graph.
+                            if(auto* geq=dynamic_cast<
+                                armix::builtin_fx::GraphicEq31Editor*>(editor)) {
+                                auto held=owner;
+                                const auto readPower=[this,held,nativeTarget,
+                                    nativeChannel,lane,slot,token] {
+                                    const auto current=nativeTarget?
+                                        engine_.retainedNativeFxPower(
+                                            held,armix::mixer::ChannelId{nativeChannel},
+                                            static_cast<std::size_t>(slot),token):
+                                        engine_.retainedRoutedFxPower(
+                                            held,lane,slot,token);
+                                    armix::builtin_fx::GraphicEq31Editor::HostBypassState state;
+                                    state.valid=current.valid;
+                                    state.slotBypassed=current.slotBypassed;
+                                    state.rackBypassed=current.rackBypassed;
+                                    state.globalBypassed=current.globalBypassed;
+                                    return state;
+                                };
+                                geq->bindHostPower(
+                                    [this,held,nativeTarget,nativeChannel,
+                                     lane,slot,token](bool bypass) {
+                                        const bool ok=nativeTarget?
+                                            engine_.bypassRetainedNativeFx(
+                                                held,armix::mixer::ChannelId{nativeChannel},
+                                                static_cast<std::size_t>(slot),
+                                                token,bypass):
+                                            engine_.bypassRetainedRoutedFx(
+                                                held,lane,slot,token,bypass);
+                                        if(ok)emitApprovedNativeSnapshot();
+                                        else emitNotice(
+                                            "Graphic EQ power rejected: FX lease changed",
+                                            true);
+                                        return ok;
+                                    },readPower);
+
+                                // Graphic EQ user presets use the SAME native
+                                // typed .armixfx store as PEQ/Compressor.
+                                // Every disk operation validates this retained
+                                // insert lease; no FX editor owns files/graph.
+                                using G=armix::builtin_fx::GraphicEq31Processor;
+                                using Store=armix::storage::BuiltInFxUserPresetStore;
+                                constexpr auto catalog=G::catalogIdentity;
+                                const auto validLease=[this,held,nativeTarget,
+                                    nativeChannel,lane,slot,token] {
+                                    if(nativeShowBusy_||studioBackupBusy_||
+                                       engine_.independentClockActive()||
+                                       !held||!held->processor)return false;
+                                    const auto state=nativeTarget?
+                                        engine_.retainedNativeFxPower(
+                                            held,armix::mixer::ChannelId{nativeChannel},
+                                            static_cast<std::size_t>(slot),token):
+                                        engine_.retainedRoutedFxPower(
+                                            held,lane,slot,token);
+                                    return state.valid;
+                                };
+                                geq->bindUserPresetService(
+                                    [this,validLease,catalog] {
+                                        std::vector<armix::builtin_fx::
+                                            GraphicEq31Editor::UserPresetEntry> list;
+                                        if(!validLease())return list;
+                                        for(const auto& item:
+                                            builtinFxUserPresets_.enumerate(catalog))
+                                            list.push_back({item.id,item.name});
+                                        return list;
+                                    },
+                                    [this,validLease,held,catalog](const juce::String& name) {
+                                        if(!validLease()||
+                                           !Store::safeText(name,80)) {
+                                            emitNotice("Graphic EQ preset name/FX instance invalid",true);
+                                            return juce::String{};
+                                        }
+                                        auto* fx=dynamic_cast<G*>(held->processor.get());
+                                        if(!armix::storage::BuiltInFxAcceptedSnapshot
+                                            ::matchesReady(fx,catalog)||
+                                           !fx->stateSnapshotQuiescent()) {
+                                            emitNotice("Graphic EQ DSP state not ready",true);
+                                            return juce::String{};
+                                        }
+                                        auto settings=armix::storage::
+                                            BuiltInFxAcceptedSnapshot::acceptedSettings(fx,catalog);
+                                        armix::storage::BuiltInFxUserPreset entry;
+                                        entry.catalogId=catalog;
+                                        entry.category="My Presets";
+                                        entry.name=name;
+                                        entry.settings=std::move(settings);
+                                        const auto error=builtinFxUserPresets_.saveNew(entry);
+                                        if(error.isNotEmpty()) {
+                                            emitNotice("Graphic EQ preset not saved: "+error,true);
+                                            return juce::String{};
+                                        }
+                                        emitNotice("Graphic EQ preset saved: "+name);
+                                        return entry.id;
+                                    },
+                                    [this,validLease,held,catalog](const juce::String& presetId) {
+                                        if(!validLease()||!Store::safeId(presetId)) {
+                                            emitNotice("Graphic EQ preset lease invalid",true);
+                                            return false;
+                                        }
+                                        auto* fx=dynamic_cast<G*>(held->processor.get());
+                                        if(!armix::storage::BuiltInFxAcceptedSnapshot
+                                            ::matchesReady(fx,catalog)||
+                                           !fx->stateSnapshotQuiescent()) {
+                                            emitNotice("Graphic EQ DSP state not ready",true);
+                                            return false;
+                                        }
+                                        armix::storage::BuiltInFxUserPreset entry;
+                                        const auto error=builtinFxUserPresets_
+                                            .read(catalog,presetId,entry);
+                                        if(error.isNotEmpty()||
+                                           !Store::validateSettings(catalog,entry.settings)) {
+                                            emitNotice("Graphic EQ preset rejected: "+error,true);
+                                            return false;
+                                        }
+                                        const auto bands=entry.settings
+                                            .getProperty("bands",{}).getArray();
+                                        std::array<float,armix::builtin_fx::GraphicEq31Core::bandCount> values{};
+                                        if(!bands||bands->size()!=static_cast<int>(values.size()))
+                                            return false;
+                                        for(std::size_t i=0;i<values.size();++i)
+                                            values[i]=static_cast<float>(
+                                                static_cast<double>((*bands)[static_cast<int>(i)]));
+                                        // Entire payload was validated before any
+                                        // change. Legacy band-only preset defaults
+                                        // the explicit Output Level to unity (0 dB).
+                                        const float levelDb=static_cast<float>(
+                                            static_cast<double>(entry.settings
+                                                .getProperty("levelDb",0.0)));
+                                        const auto previous=fx->acceptedBands();
+                                        const float previousLevel=fx->acceptedLevelDb();
+                                        if(!fx->setBandsFromPreset(values,levelDb))
+                                            return false;
+                                        const auto accepted=fx->acceptedBands();
+                                        bool matches=std::abs(
+                                            fx->acceptedLevelDb()-levelDb)<=.06f;
+                                        for(std::size_t i=0;i<values.size();++i)
+                                            if(std::abs(accepted[i]-values[i])>.06f)
+                                                matches=false;
+                                        if(!matches) {
+                                            (void)fx->setBandsFromPreset(
+                                                previous,previousLevel);
+                                            emitNotice("Graphic EQ preset readback rejected",true);
+                                            return false;
+                                        }
+                                        emitNotice("Graphic EQ preset loaded: "+entry.name);
+                                        return true;
+                                    });
+                            }
                             shownOwner=owner;
                             shownEpoch=retainedEpoch;
                             shownWindow=std::make_unique<PluginEditorWindow>(

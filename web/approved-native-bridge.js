@@ -1398,6 +1398,8 @@
   let nativeBuiltins=Object.freeze([
     Object.freeze({id:"armix.builtin.channel-eq.v1",name:"Parametric EQ",
       vendor:"ArSonMix",category:"EQ",format:"Native",source:"builtin"}),
+    Object.freeze({id:"armix.builtin.graphic-eq31.v1",name:"Graphic EQ 31",
+      vendor:"ArSonMix",category:"EQ",format:"Native",source:"builtin"}),
     Object.freeze({id:"armix.builtin.channel-compressor.v1",name:"Compressor",
       vendor:"ArSonMix",category:"Dynamics",format:"Native",source:"builtin"}),
     Object.freeze({id:"armix.builtin.arson-harmony.v1",name:"Harmonice",

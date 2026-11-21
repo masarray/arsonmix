@@ -3,6 +3,7 @@
 
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
 #include "../engine/builtin_fx/ChannelCompressorProcessor.h"
+#include "../engine/builtin_fx/GraphicEq31Processor.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
 #include "../engine/builtin_fx/VocalThrowProcessor.h"
 #include "../engine/builtin_fx/GuitarRigEditor.h"
@@ -66,6 +67,11 @@ inline constexpr std::array nativeBuiltInFx{
         "NATIVE_EQ_UNSUPPORTED_AUDIO_FORMAT","NATIVE_EQ_PREPARE_REJECTED",
         "NATIVE_EQ_PREPARE_EXCEPTION","Saved native EQ state rejected; graph unchanged",
         prepareNativeBuiltInFx<ChannelEqProcessor>},
+    NativeBuiltInFx{GraphicEq31Processor::catalogIdentity,"Graphic EQ 31","EQ",true,8000.,384000.,
+        "NATIVE_GEQ31_HOST_UNAVAILABLE","NATIVE_GEQ31_DEVICE_CHANGED",
+        "NATIVE_GEQ31_UNSUPPORTED_AUDIO_FORMAT","NATIVE_GEQ31_PREPARE_REJECTED",
+        "NATIVE_GEQ31_PREPARE_EXCEPTION","Saved Graphic EQ 31 state rejected; graph unchanged",
+        prepareNativeBuiltInFx<GraphicEq31Processor>},
     NativeBuiltInFx{ChannelCompressorProcessor::catalogIdentity,"Compressor","Dynamics",true,8000.,384000.,
         "NATIVE_COMP_HOST_UNAVAILABLE","NATIVE_COMP_DEVICE_CHANGED",
         "NATIVE_COMP_UNSUPPORTED_AUDIO_FORMAT","NATIVE_COMP_PREPARE_REJECTED",

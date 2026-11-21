@@ -341,10 +341,16 @@ endforeach()
 juce_add_binary_data(ARMixAssets SOURCES
     "${ARMIX_APPROVED_GUI_DIR}/index.html" ${ARMIX_APPROVED_GUI_BINARIES}
     ${ARMIX_GUITAR_SKIN_PNGS}
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/fx/graphic-eq31/slider_eq_grp.svg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/fx/graphic-eq31/geq31_knob_black.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/fx/graphic-eq31/geq31_brushed_metal.jpg"
     ${ARMIX_LEGAL_RESOURCE_FILES}
     "${ARMIX_BRAND_DIR}/arsonmix-256.png"
     ${ARMIX_IMERSIB_SCENE_PNG_SOURCES})
 target_include_directories(ARMixConsole PRIVATE "${ARMIX_APPROVED_GUI_DIR}")
+# Only the production GUI embeds the owner's complete grouped EQ31 SVG; isolated native
+# FX tests use the procedural fallback without depending on BinaryData.
+target_compile_definitions(ARMixConsole PRIVATE ARMIX_GEQ31_VECTOR_ASSET=1)
 
 target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h engine/builtin_fx/HarmonyDsp.h engine/builtin_fx/HarmonyMusicKey.h engine/builtin_fx/ChannelHarmonyProcessor.h engine/builtin_fx/SonKuSpatialProcessor.h engine/builtin_fx/sonku/SonKuSpatialCore.h engine/builtin_fx/sonku/SonKuMeasuredHrir.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/PreparedNativeMixerSession.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/NativeFxParameterHotkey.h src/NativeHotkeyCommandPlan.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/device/LiveSecondaryCaptureDevice.h engine/device/SecondaryCaptureClockStream.h engine/core/LiveOutputRouteGate.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
 # Explicit UTF-8 source decoding: native channel icons are Unicode, and
@@ -1622,6 +1628,16 @@ if(BUILD_TESTING)
   target_compile_features(ARMixNativeChannelEqTests PRIVATE cxx_std_20)
   add_test(NAME NativePEQEightBandsRTAndFrequencyResponse COMMAND ARMixNativeChannelEqTests)
   add_dependencies(ARMixMixerRoutingTests ARMixNativeChannelEqTests)
+
+  # Graphic EQ 31: ISO one-third-octave centres, stereo PCM, Nyquist and RT ramps.
+  add_executable(ARMixGraphicEq31CoreTests tests/graphic_eq31_core_test.cpp
+      engine/builtin_fx/GraphicEq31Core.h)
+  target_compile_features(ARMixGraphicEq31CoreTests PRIVATE cxx_std_20)
+  add_test(NAME GraphicEq31FrequencyResponseAndRealtimeStability
+      COMMAND ARMixGraphicEq31CoreTests)
+  add_test(NAME GraphicEq31OriginalSvgLayersAndDynamicThumb
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/graphic_eq31_svg_layers_test.py")
+  add_dependencies(ARMixMixerRoutingTests ARMixGraphicEq31CoreTests)
 
   # Zero-lookahead native compressor DSP: zero PDC, stereo-linked peak,
   # soft knee, dry/wet, parameter validation and variable sample rates.

@@ -29,6 +29,7 @@ public:
 
     static juce::String effectFolder(const juce::String& catalog) {
         if(catalog=="armix.builtin.channel-eq.v1")return "eq";
+        if(catalog=="armix.builtin.graphic-eq31.v1")return "graphic-eq31";
         if(catalog=="armix.builtin.channel-compressor.v1")return "compressor";
         if(catalog=="armix.builtin.arson-harmony.v1")return "harmonice";
         if(catalog=="armix.builtin.vocal-throw.v1")return "vocal-throw";
@@ -106,6 +107,23 @@ public:
                 number(settings,"captureMs",80,1500)&&number(settings,"silenceMs",80,900)&&
                 number(settings,"thresholdDb",-65,-15)&&number(settings,"wet",0,1)&&
                 number(settings,"decay",.15,.9)&&number(settings,"ducking",0,1);
+        }
+        if(catalog=="armix.builtin.graphic-eq31.v1") {
+            // 31 fixed dbx/ISO bands plus optional EXPLICIT output Level.
+            // Historic .armixfx presets with only bands restore at 0 dB.
+            // Unknown keys, old hidden trim names, NaNs are rejected.
+            if(!containsOnly(settings,{"bands","levelDb"}))return false;
+            const auto level=settings.getProperty("levelDb",{});
+            if(!level.isVoid()&&!number(settings,"levelDb",-24,6))
+                return false;
+            const auto values=settings.getProperty("bands",{});
+            if(!values.isArray()||values.getArray()->size()!=31)return false;
+            for(const auto& value:*values.getArray()) {
+                if(!(value.isInt()||value.isDouble()))return false;
+                const double db=static_cast<double>(value);
+                if(!std::isfinite(db)||db < -12.||db > 12.)return false;
+            }
+            return true;
         }
         if(catalog=="armix.builtin.channel-eq.v1"){
             if(!containsOnly(settings,{"bands"}))return false;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../src/BuiltInFxUserPresetStore.h"
 #include <array>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <iostream>
@@ -37,6 +38,13 @@ static BuiltInFxUserPreset throwSettings() {
         {"captureMs",460.0},{"silenceMs",220.0},{"thresholdDb",-35.0},
         {"wet",0.42},{"decay",0.55},{"ducking",0.7}})};
 }
+static BuiltInFxUserPreset graphicEq31() {
+    juce::var bands(juce::Array<juce::var>{});
+    for(int i=0;i<31;++i)
+        bands.append(i==0?12.0:i==30?-12.0:i==15?2.5:0.0);
+    return {{}, "armix.builtin.graphic-eq31.v1","Voice Curve","My Presets",
+        object({{"bands",bands},{"levelDb",-4.5}})};
+}
 static BuiltInFxUserPreset eq() {
     auto bands=juce::var(juce::Array<juce::var>{});
     for(int i=0;i<8;++i)
@@ -53,7 +61,7 @@ int main() {
     REQUIRE(!testRoot.exists());
     struct Cleanup { juce::File folder;~Cleanup(){folder.deleteRecursively();} } cleanup{testRoot};
     BuiltInFxUserPresetStore store(testRoot);
-    auto items=std::array{comp(),harmony(),throwSettings(),eq()};
+    auto items=std::array{comp(),harmony(),throwSettings(),eq(),graphicEq31()};
     for(auto& item:items) {
         REQUIRE(BuiltInFxUserPresetStore::validateSettings(item.catalogId,item.settings));
         REQUIRE(store.saveNew(item).isEmpty());
@@ -118,6 +126,49 @@ int main() {
     REQUIRE(store.saveNew(bad).isNotEmpty());
     bad=eq();bad.settings.getDynamicObject()->setProperty("liveInput",2);
     REQUIRE(store.saveNew(bad).isNotEmpty());
+    // 31-band portable schema: exact width, strict bounds, no hidden gain,
+    // no NaN and no cross-effect injection. File remains persistent after
+    // a cold library reopen and has the shared checksummed .armixfx schema.
+    {
+        auto good=graphicEq31();
+        REQUIRE(BuiltInFxUserPresetStore::validateSettings(good.catalogId,good.settings));
+        REQUIRE(static_cast<double>(
+            good.settings.getProperty("levelDb",{}))==-4.5);
+        // Old band-only presets remain valid; loaded at unity (0 dB).
+        auto legacy=graphicEq31();
+        legacy.settings.getDynamicObject()->removeProperty("levelDb");
+        REQUIRE(BuiltInFxUserPresetStore::validateSettings(
+            legacy.catalogId,legacy.settings));
+        auto invalidLevel=graphicEq31();
+        invalidLevel.settings.getDynamicObject()->setProperty("levelDb",6.1);
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(
+            invalidLevel.catalogId,invalidLevel.settings));
+        invalidLevel.settings.getDynamicObject()->setProperty(
+            "levelDb",std::numeric_limits<double>::quiet_NaN());
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(
+            invalidLevel.catalogId,invalidLevel.settings));
+        auto wrongCount=graphicEq31();
+        wrongCount.settings.getProperty("bands",{}).getArray()->removeLast();
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(
+            wrongCount.catalogId,wrongCount.settings));
+        auto over=graphicEq31();
+        over.settings.getProperty("bands",{}).getArray()->set(0,12.1);
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(over.catalogId,over.settings));
+        auto nan=graphicEq31();
+        nan.settings.getProperty("bands",{}).getArray()->set(
+            0,std::numeric_limits<double>::quiet_NaN());
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(nan.catalogId,nan.settings));
+        auto injection=graphicEq31();
+        injection.settings.getDynamicObject()->setProperty("outputDb",5.0);
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(
+            injection.catalogId,injection.settings));
+        auto presetOnDisk=items[4];
+        REQUIRE(BuiltInFxUserPresetStore(testRoot).read(
+            presetOnDisk.catalogId,presetOnDisk.id,readback).isEmpty());
+        REQUIRE(readback.settings.getProperty("bands",{}).getArray()->size()==31);
+        REQUIRE(static_cast<double>(
+            readback.settings.getProperty("levelDb",{}))==-4.5);
+    }
     REQUIRE(BuiltInFxUserPresetStore::safeId(
         "12345678-1234-AbCd-ABCD-0123456789Ab"));
     REQUIRE(!BuiltInFxUserPresetStore::safeId(
@@ -155,7 +206,7 @@ int main() {
     REQUIRE(corrupt.deleteFile());
     // Empty/stale data from another catalogue must not become a mixer preset.
     REQUIRE(store.enumerate(comp().catalogId).empty());
-    std::cout<<"Shared per-built-in FX preset store: EQ/Comp/Harmony/Throw "
+    std::cout<<"Shared per-built-in FX preset store: EQ/GEQ31/Comp/Harmony/Throw "
              <<"native typed disk roundtrip, corruption and rollback PASS\n";
     return 0;
   } catch (const std::exception& e) {
