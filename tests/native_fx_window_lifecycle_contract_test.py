@@ -199,6 +199,27 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn('event.stopImmediatePropagation()',script)
         self.assertIn("lastGeometry=geometry;",script)
 
+    def test_wire_v66_reel_restored_only_on_native_accepted_remove(self):
+        # The V66 330ms physics survives in approved Pages, but native
+        # consumeWire() returned false from the demo graph transaction and
+        # swallowed the original pointerup animation. Never fake PCM success.
+        html=(ROOT/"site/preview-v2/index.html").read_text(encoding="utf-8")
+        bridge=(ROOT/"web/approved-native-bridge.js").read_text(encoding="utf-8")
+        builder=(ROOT/"scripts/build_approved_native_gui.py").read_text(encoding="utf-8")
+        self.assertIn("const WIRE_RETRACT_MS=330",html)
+        self.assertIn("function wireRetractPathData(",html)
+        self.assertIn("if(replugWireEdge(g.sourceId,g.originDestId,snap?.track.id??null,",html)
+        self.assertIn('("function replugWireEdge(sourceId,oldDestId,nextDestId){',builder)
+        self.assertIn("consumeNativeWireReplug?.(",builder)
+        self.assertIn("animateAcceptedWireRetract:startWireRetraction",builder)
+        self.assertIn("consumeNativeWireReplug(sourceId,oldDestId,nextDestId,releasePoint)",bridge)
+        self.assertIn("pendingNativeWireRetract=removal?",bridge)
+        self.assertIn("pendingNativeWireRetract=null; // rejected routing must never reel",bridge)
+        self.assertIn('change.op==="REMOVE"',bridge)
+        self.assertIn('change.op==="DISCONNECT"',bridge)
+        self.assertIn("scope?.animateAcceptedWireRetract?.(held.uiSource,held.point)",bridge)
+        self.assertIn("return false; // Native ACK+readback, NEVER the browser reducer",bridge)
+
     def test_all_six_builtins_escape_mixer_via_actual_native_owned_webview(self):
         script=(ROOT/"web/approved-floating-fx-bridge.js").read_text(encoding="utf-8")
         builder=(ROOT/"scripts/build_approved_native_gui.py").read_text(encoding="utf-8")

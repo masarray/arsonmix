@@ -83,6 +83,13 @@ NATIVE_EVENT_HOOKS = (
      "  return window.__ARMIX_NATIVE_M2__?.inputChoices?.(t)||['None'];\n"
      " if(type==='output'&&window.__JUCE__?.backend)\n"
      "  return window.__ARMIX_NATIVE_M2__?.outputChoices?.(t)||[t.output];\n"),
+    ("function replugWireEdge(sourceId,oldDestId,nextDestId){\n",
+     "function replugWireEdge(sourceId,oldDestId,nextDestId,releasePoint){\n"
+     " if(window.__JUCE__?.backend){\n"
+     "  window.__ARMIX_NATIVE_M2__?.consumeNativeWireReplug?.("
+     "sourceId,oldDestId,nextDestId,releasePoint);\n"
+     "  return false; // Routing is not committed until native ACK+readback.\n"
+     " }\n"),
     ("function wireGraphCommit(ops,{record=true}={}){\n",
      "function wireGraphCommit(ops,{record=true}={}){\n"
      " if(window.__JUCE__?.backend){window.__ARMIX_NATIVE_M2__?.consumeWire?.(ops);return false;}\n"),
@@ -251,6 +258,7 @@ NATIVE_EVENT_HOOKS = (
      " closeNativePicker(){setFastPicker(false);},\n"
      " colors:COLORS,channelIcons:CHANNEL_ICONS,wireGraph:ArSonWireGraph,\n"
      " allocateWireId(){return nextWireId++;},kickWireSpring,\n"
+     " animateAcceptedWireRetract:startWireRetraction,\n"
      " installGraph(channels,main,edges){\n"
      "  tracks=channels;master=main;wireEdges=edges;\n"
      "  wireWsHistory=[];selectedWireEdgeId=null;\n"

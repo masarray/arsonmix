@@ -2918,7 +2918,25 @@
     dispatchSourceQueue("M4");
   }
 
+  // This is ONLY an ephemeral visual gesture lease. PCM graph and .smix
+  // remain entirely native-authoritative. The original V66 recoil must not
+  // begin from a speculative drag, unsupported M4 route or rejected ACK.
+  let pendingNativeWireRetract=null;
   function playAcceptedWireImpact(changes) {
+    const held=pendingNativeWireRetract;
+    if(held && performance.now()-held.createdAt<=8000 &&
+       changes?.some(change=>
+         String(change.from)===held.nativeSource &&
+         ((change.op==="REMOVE" && String(change.edgeId)===held.nativeEdge) ||
+          (change.op==="DISCONNECT" && held.primary)))) {
+      // Readback has already projected the true graph; only now draw
+      // the ORIGINAL 330ms V66 wire until its dot returns to source OUT.
+      const stillConnected=scope?.wireEdges?.some(edge=>edge.enabled &&
+        edge.sourceId===held.uiSource && edge.destId===held.oldDest);
+      if(!stillConnected)
+        scope?.animateAcceptedWireRetract?.(held.uiSource,held.point);
+      pendingNativeWireRetract=null;
+    }
     const plug=changes?.find(change=>["CONNECT","ROUTE_ONLY","RETARGET"].includes(change.op));
     if(!plug)return;
     const from=uiByNativeId.get(plug.from),to=uiByNativeId.get(plug.to);
@@ -2941,6 +2959,7 @@
     pendingBusCreate=null;pendingTrackDelete=null;pendingFxInsert=null;
     pendingFxEditorAck=null; // expire old native HWND on device owner change
     startupWire=null;activeWireAttempt=null;pendingNativeGainIntent=false;
+    pendingNativeWireRetract=null; // old output/epoch cannot animate a new cable
     pendingWireGains.clear();pendingNativeControl.clear();
     liveFaderVisualTargets.clear();lastNativeControlSent.clear();
     pendingM4Controls.clear();pendingM4RackPowers.clear();
@@ -3294,6 +3313,7 @@
         }
         if(recovery.kind==="ROLLBACK"||
            recovery.kind==="REBASE_CONNECTION"){
+          pendingNativeWireRetract=null; // rejected routing must never reel
           activeWireAttempt=null;
           startupWire=null;
           pendingWireGains.clear();
@@ -4065,6 +4085,37 @@
         sourceId:nativeByUiId.get(uiSourceId),edgeId:wireByUiId.get(uiEdgeId),
         projected:flags.acceptedGraphConnected,
         pending:!!controller?.state()?.pending}).kind==="AVAILABLE";
+    },
+    consumeNativeWireReplug(sourceId,oldDestId,nextDestId,releasePoint) {
+      const edge=scope?.wireEdges?.find(e=>e.enabled &&
+        e.sourceId===sourceId && e.destId===oldDestId);
+      if(!connected||!edge||nextDestId===oldDestId)return false;
+      const uiSource=Number(sourceId);
+      const nativeSource=nativeByUiId.get(uiSource);
+      const nativeEdge=wireByUiId.get(edge.id);
+      const validPoint=releasePoint&&Number.isFinite(releasePoint.x)&&
+        Number.isFinite(releasePoint.y);
+      const offline=!!logicalView;
+      const snapshot=controller?.state()?.current;
+      if(!validPoint||!nativeSource||!nativeEdge ||
+         (offline?(logicalView.readOnly||!!pendingLogical):
+          (!flags.acceptedGraphConnected||!snapshot?.admitted||
+           !!controller?.state()?.pending ||
+           !snapshot.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION"))))
+        return false; // no demo graph mutation and no speculative recoil
+      const removal=nextDestId===null;
+      const op=removal?
+        {type:"REMOVE",sourceId:uiSource,edgeId:edge.id}:
+        {type:"RETARGET",sourceId:uiSource,edgeId:edge.id,destId:nextDestId};
+      // Only detached-to-blank receive bay is a reel. A retarget gets the
+      // existing accepted plug spring, not a misleading unplug impulse.
+      pendingNativeWireRetract=removal?{
+        uiSource,oldDest,point:{x:releasePoint.x,y:releasePoint.y},
+        nativeSource:String(nativeSource),nativeEdge:String(nativeEdge),
+        primary:edge.kind==="primary",createdAt:performance.now()
+      }:null;
+      nativeHooks.consumeWire([op]);
+      return false; // Native ACK+readback, NEVER the browser reducer
     },
     consumeWire(ops,retries=0) {
       if (!connected)return false;
