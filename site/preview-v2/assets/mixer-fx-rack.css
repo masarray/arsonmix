@@ -1427,10 +1427,11 @@
 /* GEQ31 / ONE approved browser and WebView2 editor. This is the SINGLE
  * presentation owner; JUCE hosts audio only. All 31 faders share one
  * CSS geometry (170px travel) and the same 0dB horizontal datum. */
-/* GEQ31 v14 compact hardware editor — preserve the owner-approved v13
-   original 31 THUMB SVGs, brushed JPEG and static PNG + blue pointer.
-   No visible status bar; accessible ACK announcements remain offscreen.
-   Only three 3-state LEDs may display accepted native channel PCM peak. */
+/* GEQ31 v14.1 owner-aligned compact hardware editor.
+   Original 31 THUMB SVGs, brushed JPEG + PNG knob unchanged.
+   Stereo L/R each uses exactly three 12x6px LED optical cells, 2px pitch
+   separator: the mixer channel V51 6x12px portrait LEDs rotated 90deg CW.
+   No prominent rectangular meter frame or visible status bar. */
 .mx-geq31{
  position:fixed;z-index:1100;top:clamp(58px,7vh,66px);
  left:max(8px,calc((100vw - 1430px)/2));
@@ -1534,7 +1535,7 @@
 .mx-geq31-frequency{font-size:10px}
 .mx-geq31-unit{font-size:8px}
 .mx-geq31-output{
- height:234px;width:100px;min-width:100px;display:flex;
+ position:relative;height:234px;width:100px;min-width:100px;display:flex;
  align-items:center;flex-direction:column;padding:42px 0 0;
 }
 .mx-geq31-output-label{
@@ -1543,32 +1544,42 @@
  transform:translateX(-14px);
 }
 .mx-geq31-level-meter{
- display:flex;gap:4px;align-items:center;justify-content:center;
- width:62px;height:22px;min-height:22px;margin:0 0 27px;
- padding:4px 5px;border:1px solid #53636b;border-radius:3px;
- background:linear-gradient(180deg,#0b1418,#1d2b31);
- box-shadow:inset 0 1px 3px #010507ad,0 1px 0 #f0f4f18c;
- transform:translateX(-14px);pointer-events:none;
+ display:flex;flex-direction:column;justify-content:center;
+ width:54px;height:20px;min-height:20px;flex:0 0 20px;
+ gap:3px;margin:0 0 9px;padding:0;transform:translateX(-14px);
+ background:transparent;border:0;border-radius:0;box-shadow:none;
+ pointer-events:none;
+}
+.mx-geq31-level-row{
+ display:flex;align-items:center;justify-content:center;gap:4px;
+ height:7px;min-height:7px;width:54px;padding:0;margin:0;
+}
+.mx-geq31-level-channel{
+ flex:0 0 7px;width:7px;color:#5f737b;
+ font:600 7px/7px Consolas,monospace;text-align:center;
+}
+.mx-geq31-level-cells{
+ display:flex;align-items:center;gap:2px;width:40px;height:6px;
+ background:#02080d;box-shadow:inset 0 1px #20313b;
 }
 .mx-geq31-level-led{
- display:block;flex:0 0 13px;width:13px;height:10px;
- border:1px solid #38484c;border-radius:2px;
- background:#132425;box-shadow:inset 0 1px 2px #010605be;
- transition:background-color 70ms linear;
+ display:block;flex:0 0 12px;width:12px;height:6px;
+ border:0;border-radius:0;padding:0;margin:0;
+ background:linear-gradient(to bottom,#283942,#1b2830);
+ box-shadow:inset 0 1px #42535b33;
+ transition:none;
 }
-.mx-geq31-level-led-1{background:#292a17;border-color:#48452d}
-.mx-geq31-level-led-2{background:#301b1c;border-color:#523537}
 .mx-geq31-level-led-0.is-lit{
- background:linear-gradient(#72ecae,#19b06b);border-color:#54c58c;
- box-shadow:0 0 4px #29d57a77,inset 0 1px #c3ffe7a9;
+ background:linear-gradient(to bottom,#68ed35,#139b3d);
+ box-shadow:inset 0 1px #bcff9666;
 }
 .mx-geq31-level-led-1.is-lit{
- background:linear-gradient(#ffeb86,#e6ab37);border-color:#e8ba49;
- box-shadow:0 0 4px #ffca5077,inset 0 1px #fff9d8ad;
+ background:linear-gradient(to bottom,#f1e33b,#cce732);
+ box-shadow:inset 0 1px #fff9ae66;
 }
 .mx-geq31-level-led-2.is-lit{
- background:linear-gradient(#ff937e,#f24740);border-color:#df5f55;
- box-shadow:0 0 4px #fc5e5777,inset 0 1px #ffeadbb5;
+ background:linear-gradient(to bottom,#f87824,#e83e2e);
+ box-shadow:inset 0 1px #ffd7a866;
 }
 .mx-geq31-dial{
  position:relative;width:84px;height:84px;flex:0 0 84px;
@@ -1580,8 +1591,9 @@
  pointer-events:none;object-fit:contain;
 }
 .mx-geq31-output-value{
- color:#344047;font:550 10px Inter,"Segoe UI",Arial,sans-serif;
- line-height:18px;margin-top:6px;transform:translateX(-14px);
+ position:absolute;bottom:16px;left:0;width:100%;
+ color:#344047;font:550 10px/14px Inter,"Segoe UI",Arial,sans-serif;
+ margin:0;text-align:center;transform:translateX(-14px);
  font-variant-numeric:tabular-nums;
 }
 .mx-geq31-bypass-overlay{

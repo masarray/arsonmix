@@ -121,18 +121,30 @@ dialPointer.setAttribute("aria-hidden","true");
 dialPointer.width=336;dialPointer.height=336;
 dial.append(knobImage,dialPointer);
 const outValue=el("output","mx-geq31-output-value","0.0 dB");
-// Three hardware LED segments: only confirmed native channel PCM peaks light up.
-// Never derive fake audio from the EQ band positions or Output knob.
+// Rotate the *existing channel mixer* V51 hardware LED geometry 90deg CW:
+// 6x12px portrait optical cells become 12x6px, pitch 14px (2px dark gap).
+// Two independent three-cell L/R lanes; only native PCM telemetry drives them.
 const levelMeter=el("div","mx-geq31-level-meter");
-levelMeter.setAttribute("role","meter");
-levelMeter.setAttribute("aria-label","Native channel level");
-levelMeter.setAttribute("aria-valuemin","-90");
-levelMeter.setAttribute("aria-valuemax","6");
-levelMeter.title="Native channel PCM peak · no signal";
-const levelLeds=[0,1,2].map(i=>{
- const led=el("span","mx-geq31-level-led mx-geq31-level-led-"+i);
- led.setAttribute("aria-hidden","true");
- levelMeter.append(led);return led;
+levelMeter.setAttribute("role","group");
+levelMeter.setAttribute("aria-label","Stereo native channel PCM peak meters");
+levelMeter.title="Native PCM channel peaks · Left / Right";
+const levelRows=["L","R"].map((name,side)=>{
+ const row=el("div","mx-geq31-level-row");
+ row.dataset.side=side===0?"left":"right";
+ row.setAttribute("role","meter");
+ row.setAttribute("aria-label",name==="L"?"Left PCM peak":"Right PCM peak");
+ row.setAttribute("aria-valuemin","-90");
+ row.setAttribute("aria-valuemax","6");
+ const label=el("span","mx-geq31-level-channel",name);
+ label.setAttribute("aria-hidden","true");
+ const cells=el("div","mx-geq31-level-cells");
+ cells.setAttribute("aria-hidden","true");
+ const leds=[0,1,2].map(i=>{
+  const led=el("span","mx-geq31-level-led mx-geq31-level-led-"+i);
+  cells.append(led);return led;
+ });
+ row.append(label,cells);levelMeter.append(row);
+ return {row,leds,name};
 });
 output.append(outputLabel,levelMeter,dial,outValue);
 body.append(left,scroll,right,output);
@@ -273,23 +285,29 @@ function updatePower(){
  bypassShade.classList.toggle("is-on",bypassed);
 }
 function paintChannelMeter(view){
- const lease=context();
+ const lease=context(),ch=view?.graph?.channels?.find(c=>c.id===lease?.channelId);
  const entry=native()&&lease&&view?.admitted&&!view?.retained&&!view?.logical
    ?view?.telemetry?.channelMeterRmsPeak?.[lease.channelId]:null;
  const validPeak=n=>typeof n==="number"&&Number.isFinite(n)&&n>=0;
- const peaks=typeof entry==="number"?(validPeak(entry)?[entry]:[]):
-   [entry?.peakL,entry?.peakR].filter(validPeak);
- const db=peaks.length?(Math.max(...peaks)>0
-   ?20*Math.log10(Math.max(...peaks)):-90):null;
- // Thresholds are intentionally sparse and quiet: signal, nominal, hot.
+ // Stereo is two independent measurements. Mirror MONO explicitly; absent
+ // right-channel telemetry on a stereo strip stays dark, not fabricated.
+ const left=validPeak(entry?.peakL)?entry.peakL:
+   (validPeak(entry)?entry:null);
+ const right=validPeak(entry?.peakR)?entry.peakR:
+   (ch?.processingFormat==="MONO"?left:null);
  const thresholds=[-30,-14,-3];
- levelLeds.forEach((led,i)=>led.classList.toggle("is-lit",db!==null&&db>=thresholds[i]));
- if(db===null){
-  levelMeter.removeAttribute("aria-valuenow");
-  levelMeter.title="Native channel PCM peak · unavailable";
- }else{
-  levelMeter.setAttribute("aria-valuenow",String(Math.max(-90,Math.min(6,db)).toFixed(1)));
-  levelMeter.title="Native channel PCM peak · "+db.toFixed(1)+" dBFS";
+ for(const [idx,peak] of [left,right].entries()){
+  const {row,leds,name}=levelRows[idx];
+  const db=peak===null?null:peak>0?20*Math.log10(peak):-90;
+  leds.forEach((led,i)=>led.classList.toggle("is-lit",
+   db!==null&&db>=thresholds[i]));
+  if(db===null){
+   row.removeAttribute("aria-valuenow");
+   row.title=name+" PCM peak · unavailable";
+  }else{
+   row.setAttribute("aria-valuenow",Math.max(-90,Math.min(6,db)).toFixed(1));
+   row.title=name+" PCM peak · "+db.toFixed(1)+" dBFS";
+  }
  }
 }
 function paint(){

@@ -57,9 +57,28 @@ def main():
             assert panel.locator("header.mx-geq31-head").count()==1
             assert panel.locator(".mx-geq31-footer").count()==0
             assert panel.locator(".mx-geq31-message").get_attribute("role")=="status"
-            assert panel.locator(".mx-geq31-level-led").count()==3
+            # EXACT 90-degree clockwise rotated V51 mixer LED geometry:
+            # 3 slim 12x6px cells / stereo lane, 2px dark inter-cell gap.
+            assert panel.locator(".mx-geq31-level-led").count()==6
             assert panel.locator(".mx-geq31-level-led.is-lit").count()==0
-            assert panel.locator(".mx-geq31-level-meter").get_attribute("role")=="meter"
+            assert panel.locator(".mx-geq31-level-meter").get_attribute("role")=="group"
+            rows=panel.locator(".mx-geq31-level-row")
+            assert rows.count()==2
+            assert rows.nth(0).get_attribute("data-side")=="left"
+            assert rows.nth(1).get_attribute("data-side")=="right"
+            assert rows.nth(0).get_attribute("role")=="meter"
+            assert rows.nth(1).get_attribute("role")=="meter"
+            for side in ("left","right"):
+                row=panel.locator(f'.mx-geq31-level-row[data-side="{side}"]')
+                leds=row.locator(".mx-geq31-level-led")
+                assert leds.count()==3
+                boxes=[leds.nth(i).bounding_box() for i in range(3)]
+                assert all(b and abs(b["width"]-12)<.25
+                           and abs(b["height"]-6)<.25 for b in boxes)
+                assert all(abs(boxes[i+1]["x"]-boxes[i]["x"]-14)<.25
+                           for i in range(2))
+                assert leds.first.evaluate(
+                    "e=>getComputedStyle(e).borderTopWidth")=="0px"
             # DOM existence is NOT visual acceptance: the first screenshot
             # proved a branded Close and Output can be clipped offscreen
             # even while all source/contract assertions pass.
@@ -73,7 +92,16 @@ def main():
                 "e=>Math.abs(e.getBoundingClientRect().height-44)<.5")
             led_box=panel.locator(".mx-geq31-level-meter").bounding_box()
             knob_y=panel.locator(".mx-geq31-dial").bounding_box()
-            assert led_box and knob_y and knob_y["y"]>=led_box["y"]+led_box["height"]+14
+            caption_box=panel.locator(".mx-geq31-output-value").bounding_box()
+            freq_caption=panel.locator(".mx-geq31-freq").last.bounding_box()
+            assert led_box and knob_y and caption_box and freq_caption
+            assert 19<=led_box["height"]<=21
+            assert knob_y["y"]>=led_box["y"]+led_box["height"]+7
+            # Knob is raised to avoid low-heavy balance, while the Output
+            # dB text is locked to the SAME baseline as the band captions.
+            assert knob_y["y"]+knob_y["height"]<=caption_box["y"]-17
+            assert abs(caption_box["y"]-freq_caption["y"])<=4, (
+                caption_box,freq_caption)
             assert panel_box["x"]>=0 and panel_box["x"]+panel_box["width"]<=width+1
             assert close_box["x"]>=0 and close_box["x"]+close_box["width"]<=width
             assert output_box["x"]>=0 and output_box["x"]+output_box["width"]<=width
@@ -174,7 +202,7 @@ def main():
             assert not errors,errors
             page.close()
 
-        page=browser.new_page(viewport={"width":1430,"height":740})
+        page=browser.new_page(viewport={"width":1680,"height":740})
         errors=[]
         page.on("pageerror",lambda err:errors.append(str(err)))
         page.add_init_script("""(()=>{
@@ -208,8 +236,14 @@ def main():
         panel=page.locator("#mxNativeGeq31")
         panel.wait_for(state="visible")
         page.wait_for_function("()=>document.querySelector('#mxNativeGeq31')?.dataset.artwork==='v13'")
-        assert panel.locator(".mx-geq31-level-led.is-lit").count()==2
-        assert panel.locator(".mx-geq31-level-meter").get_attribute("aria-valuenow") is not None
+        left=panel.locator('.mx-geq31-level-row[data-side="left"]')
+        right=panel.locator('.mx-geq31-level-row[data-side="right"]')
+        assert left.locator(".is-lit").count()==2
+        assert right.locator(".is-lit").count()==1
+        assert abs(float(left.get_attribute("aria-valuenow"))+8.0)<.2
+        assert abs(float(right.get_attribute("aria-valuenow"))+23.1)<.2
+        # Native simulator only: screenshot proves L/R are *visually distinct*.
+        page.screenshot(path="arsonmix-geq31-stereo-native-telemetry-mock-1680.png")
         def last_action(kind):
             actions=page.evaluate("""kind=>window.__actions.filter(
                a=>a.action===kind)""",kind)
@@ -230,12 +264,23 @@ def main():
             if applied:payload["appliedRequestId"]=applied
             dispatch("arMixBuiltinGeqSnapshot",payload)
         report(list(BANDS))
-        # The LED meter is an actual native PCM channel peak observer: when
-        # telemetry stops it MUST go dark, not fake a DAW animation.
+        # Independent native stereo peaks must NOT collapse to a mono max.
+        # High R does not cause any L LED to illuminate.
+        page.evaluate("""()=>{
+          window.__testMeterView.telemetry.channelMeterRmsPeak[
+            "9007199254740993"]={peakL:0.005,peakR:0.9};
+        }""")
+        dispatch("arMixConsoleSnapshot",{})
+        assert left.locator(".is-lit").count()==0
+        assert right.locator(".is-lit").count()==3
+        # Telemetry-loss fail closed: both L/R dark, never fake a VU pulse.
         page.evaluate("()=>{window.__testMeterView.telemetry.channelMeterRmsPeak={};}")
+        dispatch("arMixConsoleSnapshot",{})
+        assert left.locator(".is-lit").count()==0
+        assert right.locator(".is-lit").count()==0
+        assert left.get_attribute("aria-valuenow") is None
+        assert right.get_attribute("aria-valuenow") is None
         panel.locator(".mx-geq31-flat").click()
-        assert panel.locator(".mx-geq31-level-led.is-lit").count()==0
-        assert panel.locator(".mx-geq31-level-meter").get_attribute("aria-valuenow") is None
         # Drain preset edit ACK before the subsequent band-intent contract.
         action0=page.evaluate("()=>window.__actions.filter(a=>a.action==='nativeGeqSet').at(-1)")
         if action0:
