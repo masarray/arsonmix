@@ -31,6 +31,14 @@ public:
         panPreserving_=enabled;
         evidencePrimed_=false;
     }
+    // Stage-front candidate: restore center for a real mixed stereo
+    // master without making a highly panned instrument the vocalist.
+    // Exclusive with older too-strict pan preservation.
+    void enableConcertFrontBalance(bool enabled) noexcept {
+        concertFrontBalance_=enabled;
+        if(enabled)panPreserving_=false;
+        evidencePrimed_=false;
+    }
     void reset() noexcept {
         energyLeft_=energyRight_=cross_=0.f;
         centerBlend_=1.f; // legacy cold-start coherent mono
@@ -49,7 +57,27 @@ public:
             const float den=std::sqrt(std::max(energyLeft_*energyRight_,1.e-14f));
             const float rho=std::clamp(cross_/den,-1.f,1.f);
             float target=std::clamp((rho-.25f)/.70f,0.f,1.f);
-            if(panPreserving_) {
+            if(concertFrontBalance_) {
+                // Ratio-free broadband coherence alone collapses the stage;
+                // the v1 purity gate on the other hand rejected the singer
+                // whenever a side guitar was mixed with the center.
+                // Soft center evidence from BOTH inter-channel difference
+                // energy and left/right power asymmetry; the ONE measured
+                // source-to-ear HRIR matrix still renders all MID and SIDE.
+                const float total=energyLeft_+energyRight_;
+                const float diff=std::max(0.f,total-2.f*cross_);
+                const float sideShare=diff/(2.f*total+1.e-10f);
+                const float panBias=std::abs(energyLeft_-energyRight_)/
+                                    (total+1.e-10f);
+                const float stableCenter=std::clamp(
+                    (.22f-sideShare)/.20f,0.f,1.f)*
+                    std::clamp((.75f-panBias)/.50f,0.f,1.f);
+                target*=stableCenter;
+                if(!evidencePrimed_) {
+                    centerBlend_=target;
+                    evidencePrimed_=true;
+                }
+            }else if(panPreserving_) {
                 // A correlated panned source (L=x,R=0.25x) is NOT
                 // a centered vocalist. Require low difference energy
                 // before projecting music MID into center HRTF.
@@ -86,5 +114,6 @@ private:
     float evidenceAlpha_=0.f,smoothAlpha_=0.f;
     float energyLeft_=0.f,energyRight_=0.f,cross_=0.f,centerBlend_=1.f;
     bool panPreserving_=false,evidencePrimed_=false;
+    bool concertFrontBalance_=false;
 };
 } // namespace armix::sonku::p90

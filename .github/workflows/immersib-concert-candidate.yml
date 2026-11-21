@@ -9,8 +9,6 @@ on:
       - 'engine/builtin_fx/sonku/SonKuP90StereoDecoder.h'
       - 'engine/builtin_fx/sonku/SonKuP98SceneVoicing.h'
       - 'engine/builtin_fx/sonku/SonKuImmerSIBVocalRoom.h'
-      - 'engine/builtin_fx/sonku/SonKuImmerSIBPleasantPresence.h'
-      - 'tests/immersib_pleasant_presence_test.cpp'
       - 'engine/builtin_fx/sonku/SonKuP99MusicalVocalDepth.h'
       - 'scripts/package_immersib_concert_listening_preview.ps1'
       - 'tests/imersip_p92_native_test.cpp'
@@ -36,10 +34,6 @@ jobs:
             tests/immersib_concert_stereo_candidate_test.cpp \
             -o /tmp/armix-immersib-concert-candidate
           /tmp/armix-immersib-concert-candidate
-          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
-            tests/immersib_pleasant_presence_test.cpp \
-            -o /tmp/armix-immersib-pleasant-presence
-          /tmp/armix-immersib-pleasant-presence
           # The whole 2x2 KEMAR + 6-wall SonKu P9 graph, not just filter units.
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic \
             -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \

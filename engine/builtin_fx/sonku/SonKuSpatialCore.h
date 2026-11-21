@@ -22,7 +22,7 @@
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
 #include "SonKuP90StereoDecoder.h"
 #if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
-#include "SonKuImmerSIBPleasantPresence.h"
+// Rejected by owner A/B: no stacked post-binaural dynamic tonal filter.
 #endif
 #include "SonKuP91P92WorldBassFoundation.h"
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
@@ -235,8 +235,10 @@ public:
     // Per-instance ImmerSIB tuning, not a new graph/FX bus/session field.
     void optInImmerSIBConcertCandidate() noexcept {
         immersibConcertCandidate_=true;
-        p90Decoder_.enablePanPreservation(true);
-        immersibP99VocalRoom_.enableConcertLateClarity(true);
+        // The v1 pan-purity gate pushed the musical center too far away.
+        // Restore a bounded phantom-front response without changing actual
+        // stage geometry, adding a dry HRTF, or touching the bass renderer.
+        p90Decoder_.enableConcertFrontBalance(true);
     }
 #endif
     bool prepare(double rate, SonKuReflectionProfile profile=
@@ -320,9 +322,7 @@ public:
 #endif
         if(!room_.prepare(rate,profile)||!reverb_.prepare(rate)||
            !integrity_.prepare(rate))return false;
-#if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
-        if(!pleasantPresence_.prepare(rate))return false;
-#endif
+// Owner-rejected v2/v3 dynamic EQ removed from the native graph.
         reset();
         ready_=true;
         // Re-publish a saved active scene after device restart, but do NOT
@@ -370,9 +370,7 @@ public:
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
         p90Decoder_.reset();
         p92Bass_.reset();
-#if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
-        pleasantPresence_.reset();
-#endif
+// No extra candidate filter state to reset.
 #if defined(SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH) && SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH
         p96Reinforcement_.reset();
 #endif
@@ -894,9 +892,7 @@ public:
             if(p90World && settings_.spatialMix>0.f){
                 const auto fed=p98Voicing_.source(history_[0][write_],
                     history_[1][write_],settings_.sceneVoicing,roomEnabled
-#if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
-                    ,immersibConcertCandidate_
-#endif
+
                     );
                 history_[0][write_]=fed.left;
                 history_[1][write_]=fed.right;
@@ -1287,17 +1283,9 @@ public:
                     outL=voiced.left;outR=voiced.right;
                 }
 #endif
-#if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
-                if(immersibConcertCandidate_ && p90World) {
-                    // Linked-across-ears 3-5kHz comfort governor AFTER
-                    // existing KEMAR DIRECT/ER/LATE, before the linked
-                    // final limiter. Preserves stage/pan and LF body.
-                    const bool warm=roomEnabled && settings_.spatialMix>0.f &&
-                        (settings_.sceneVoicing==4 || settings_.sceneVoicing==5);
-                    const auto pleasant=pleasantPresence_.process(outL,outR,warm);
-                    outL=pleasant.left;outR=pleasant.right;
-                }
-#endif
+// v2/v3 linked-ear EQ was rejected in headphone listening.
+                // Restore accepted 2k presence, 285Hz warmth and unprocessed
+                // direct/ER/late tonal balance before the original limiter.
                 // Zero-lookahead *linked* sample-peak safety guard. Quiet
                 // signals are linear; peaks are gently returned below unity
                 // without routing through a second engine or allocating.
@@ -1642,7 +1630,6 @@ private:
     bool immersibP99Enabled_=false;
 #endif
 #if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
-    immersib::PleasantPresence pleasantPresence_{};
     bool immersibConcertCandidate_=false;
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH

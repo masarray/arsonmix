@@ -47,9 +47,7 @@ public:
     // Only explicit preset changes set an ID. 55ms interpolates changes in
     // gains, with no per-sample coefficient recompute, memory allocation or
     // trigonometry. Silent profile defaults never alter P9.7 float order.
-    // Opt-in ImmerSIB candidate only; other renderers remain byte-identical.
-    Stereo source(float left,float right,int scene,bool enabled,
-                  bool protectPannedSide=false) noexcept {
+    Stereo source(float left,float right,int scene,bool enabled) noexcept {
         const auto target=curves_[enabled && valid(scene)?scene:Neutral];
         for(unsigned i=0;i<gains_.size();++i){
             gains_[i]+=slew_*(target[i]-gains_[i]);
@@ -77,17 +75,7 @@ public:
             return {left,right}; // profiles 0..3: source stays identical
         const float centerBoost=gains_[0]*band+gains_[8]*body;
         const float lateralAir=gains_[7]*(side-sideAirLow_);
-        // A stereo music MASTER already contains artist-approved panning.
-        // Masking SIDE to favor the center can pull guitars/keys inward.
-        const float originalMask=gains_[6]*sideBand+gains_[9]*edge;
-        // v1 removed the entire SIDE presence mask; owner listening then
-        // reported a piercing 3-5k guitar/whole-mix edge. Retain 70% of
-        // the genuine panned SIDE recovery, but restore a small 30% of
-        // the original warm voicing's gentle upper-mid control. Stereo
-        // position is fixed primarily upstream by P90 (not fake width).
-        const float maskedSide=protectPannedSide &&
-            (scene==ImmerSIBDetail || scene==ImmerSIBImpact)?
-            .30f*originalMask:originalMask;
+        const float maskedSide=gains_[6]*sideBand+gains_[9]*edge;
         return {left+centerBoost-maskedSide+lateralAir,
                 right+centerBoost+maskedSide-lateralAir};
     }
