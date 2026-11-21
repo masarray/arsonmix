@@ -121,9 +121,10 @@ dialPointer.setAttribute("aria-hidden","true");
 dialPointer.width=336;dialPointer.height=336;
 dial.append(knobImage,dialPointer);
 const outValue=el("output","mx-geq31-output-value","0.0 dB");
-// Rotate the *existing channel mixer* V51 hardware LED geometry 90deg CW:
-// 6x12px portrait optical cells become 12x6px, pitch 14px (2px dark gap).
-// Two independent three-cell L/R lanes; only native PCM telemetry drives them.
+// Exact mixer V51 LED architecture, rotated 90deg CW: the native peak
+// fills ONE 6-step green->red strip; six dark glass separators/frames sit
+// OVER the gradient, not six independently coloured rectangular buttons.
+// The V51 cell remains 12x6px with 2px dark gap, one strip per stereo side.
 const levelMeter=el("div","mx-geq31-level-meter");
 levelMeter.setAttribute("role","group");
 levelMeter.setAttribute("aria-label","Stereo native channel PCM peak meters");
@@ -139,12 +140,19 @@ const levelRows=["L","R"].map((name,side)=>{
  label.setAttribute("aria-hidden","true");
  const cells=el("div","mx-geq31-level-cells");
  cells.setAttribute("aria-hidden","true");
- const leds=[0,1,2].map(i=>{
-  const led=el("span","mx-geq31-level-led mx-geq31-level-led-"+i);
+ cells.style.setProperty("--lit-px","0px");
+ const fill=el("span","mx-geq31-level-fill");
+ cells.append(fill);
+ const leds=Array.from({length:6},(_,i)=>{
+  const led=el("span","mx-geq31-level-led");
+  led.style.left=(14*i)+"px";
+  led.dataset.step=String(i+1);
+  // Frames overlay the continuous native-driven fill: they never have
+  // individual palettes or per-cell CSS LED illumination gradients.
   cells.append(led);return led;
  });
  row.append(label,cells);levelMeter.append(row);
- return {row,leds,name};
+ return {row,cells,leds,name};
 });
 output.append(outputLabel,levelMeter,dial,outValue);
 body.append(left,scroll,right,output);
@@ -295,12 +303,16 @@ function paintChannelMeter(view){
    (validPeak(entry)?entry:null);
  const right=validPeak(entry?.peakR)?entry.peakR:
    (ch?.processingFormat==="MONO"?left:null);
- const thresholds=[-30,-14,-3];
+ // Six discrete steps with mixer-like -60..0 dBFS progression.
+ // Last 3dB turns on the final red LED; a missing PCM side stays black.
+ const thresholds=[-50,-40,-30,-20,-10,-3];
  for(const [idx,peak] of [left,right].entries()){
-  const {row,leds,name}=levelRows[idx];
+  const {row,cells,leds,name}=levelRows[idx];
   const db=peak===null?null:peak>0?20*Math.log10(peak):-90;
-  leds.forEach((led,i)=>led.classList.toggle("is-lit",
-   db!==null&&db>=thresholds[i]));
+  const lit=db===null?0:thresholds.reduce((n,t)=>n+(db>=t?1:0),0);
+  // width exactly n*14-2, i.e. whole 12px LED + 2px dark separator.
+  cells.style.setProperty("--lit-px",lit?(14*lit-2)+"px":"0px");
+  leds.forEach((led,i)=>led.classList.toggle("is-lit",i<lit));
   if(db===null){
    row.removeAttribute("aria-valuenow");
    row.title=name+" PCM peak · unavailable";

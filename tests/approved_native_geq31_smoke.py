@@ -59,7 +59,7 @@ def main():
             assert panel.locator(".mx-geq31-message").get_attribute("role")=="status"
             # EXACT 90-degree clockwise rotated V51 mixer LED geometry:
             # 3 slim 12x6px cells / stereo lane, 2px dark inter-cell gap.
-            assert panel.locator(".mx-geq31-level-led").count()==6
+            assert panel.locator(".mx-geq31-level-led").count()==12
             assert panel.locator(".mx-geq31-level-led.is-lit").count()==0
             assert panel.locator(".mx-geq31-level-meter").get_attribute("role")=="group"
             rows=panel.locator(".mx-geq31-level-row")
@@ -71,12 +71,19 @@ def main():
             for side in ("left","right"):
                 row=panel.locator(f'.mx-geq31-level-row[data-side="{side}"]')
                 leds=row.locator(".mx-geq31-level-led")
-                assert leds.count()==3
-                boxes=[leds.nth(i).bounding_box() for i in range(3)]
+                assert leds.count()==6
+                boxes=[leds.nth(i).bounding_box() for i in range(6)]
                 assert all(b and abs(b["width"]-12)<.25
                            and abs(b["height"]-6)<.25 for b in boxes)
                 assert all(abs(boxes[i+1]["x"]-boxes[i]["x"]-14)<.25
-                           for i in range(2))
+                           for i in range(5))
+                assert row.locator(".mx-geq31-level-cells").evaluate(
+                    "e=>Math.abs(e.getBoundingClientRect().width-82)<.25")
+                assert row.locator(".mx-geq31-level-fill").count()==1
+                assert row.locator(".mx-geq31-level-fill").evaluate(
+                    "e=>getComputedStyle(e).backgroundImage.includes('linear-gradient')")
+                assert row.locator(".mx-geq31-level-fill").evaluate(
+                    "e=>e.nextElementSibling?.classList.contains('mx-geq31-level-led')")
                 assert leds.first.evaluate(
                     "e=>getComputedStyle(e).borderTopWidth")=="0px"
             # DOM existence is NOT visual acceptance: the first screenshot
@@ -95,11 +102,15 @@ def main():
             caption_box=panel.locator(".mx-geq31-output-value").bounding_box()
             freq_caption=panel.locator(".mx-geq31-freq").last.bounding_box()
             assert led_box and knob_y and caption_box and freq_caption
-            assert 19<=led_box["height"]<=21
-            assert knob_y["y"]>=led_box["y"]+led_box["height"]+7
-            # Knob is raised to avoid low-heavy balance, while the Output
-            # dB text is locked to the SAME baseline as the band captions.
-            assert knob_y["y"]+knob_y["height"]<=caption_box["y"]-17
+            assert abs(led_box["height"]-31)<.5
+            assert abs(led_box["width"]-100)<.5
+            assert knob_y["y"]>=led_box["y"]+led_box["height"]+15
+            # Restore one compact glass LCD (not six colored buttons):
+            # knob bottom to dB caption ~9px, caption stays on frequency line.
+            knob_to_db=caption_box["y"]-(knob_y["y"]+knob_y["height"])
+            assert 7<=knob_to_db<=12, knob_to_db
+            assert panel.locator(".mx-geq31-level-meter").evaluate(
+                "e=>getComputedStyle(e).borderTopWidth")=="1px"
             assert abs(caption_box["y"]-freq_caption["y"])<=4, (
                 caption_box,freq_caption)
             assert panel_box["x"]>=0 and panel_box["x"]+panel_box["width"]<=width+1
@@ -238,8 +249,12 @@ def main():
         page.wait_for_function("()=>document.querySelector('#mxNativeGeq31')?.dataset.artwork==='v13'")
         left=panel.locator('.mx-geq31-level-row[data-side="left"]')
         right=panel.locator('.mx-geq31-level-row[data-side="right"]')
-        assert left.locator(".is-lit").count()==2
-        assert right.locator(".is-lit").count()==1
+        assert left.locator(".is-lit").count()==5
+        assert right.locator(".is-lit").count()==3
+        assert left.locator(".mx-geq31-level-cells").evaluate(
+            "e=>e.style.getPropertyValue('--lit-px')")=="68px"
+        assert right.locator(".mx-geq31-level-cells").evaluate(
+            "e=>e.style.getPropertyValue('--lit-px')")=="40px"
         assert abs(float(left.get_attribute("aria-valuenow"))+8.0)<.2
         assert abs(float(right.get_attribute("aria-valuenow"))+23.1)<.2
         # Native simulator only: screenshot proves L/R are *visually distinct*.
@@ -272,12 +287,18 @@ def main():
         }""")
         dispatch("arMixConsoleSnapshot",{})
         assert left.locator(".is-lit").count()==0
-        assert right.locator(".is-lit").count()==3
+        assert right.locator(".is-lit").count()==6
+        assert right.locator(".mx-geq31-level-cells").evaluate(
+            "e=>e.style.getPropertyValue('--lit-px')")=="82px"
         # Telemetry-loss fail closed: both L/R dark, never fake a VU pulse.
         page.evaluate("()=>{window.__testMeterView.telemetry.channelMeterRmsPeak={};}")
         dispatch("arMixConsoleSnapshot",{})
         assert left.locator(".is-lit").count()==0
         assert right.locator(".is-lit").count()==0
+        assert left.locator(".mx-geq31-level-cells").evaluate(
+            "e=>e.style.getPropertyValue('--lit-px')")=="0px"
+        assert right.locator(".mx-geq31-level-cells").evaluate(
+            "e=>e.style.getPropertyValue('--lit-px')")=="0px"
         assert left.get_attribute("aria-valuenow") is None
         assert right.get_attribute("aria-valuenow") is None
         panel.locator(".mx-geq31-flat").click()

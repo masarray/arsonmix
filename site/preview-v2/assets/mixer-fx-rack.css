@@ -1427,11 +1427,11 @@
 /* GEQ31 / ONE approved browser and WebView2 editor. This is the SINGLE
  * presentation owner; JUCE hosts audio only. All 31 faders share one
  * CSS geometry (170px travel) and the same 0dB horizontal datum. */
-/* GEQ31 v14.1 owner-aligned compact hardware editor.
-   Original 31 THUMB SVGs, brushed JPEG + PNG knob unchanged.
-   Stereo L/R each uses exactly three 12x6px LED optical cells, 2px pitch
-   separator: the mixer channel V51 6x12px portrait LEDs rotated 90deg CW.
-   No prominent rectangular meter frame or visible status bar. */
+/* GEQ31 v14.2 — mixer-authored stereo glass LCD meter: 6 horizontal
+   cells per side, 12x6px, 2px gap. Reuses the EXACT V51 meter gradient
+   from mixer-meter-display.css, rotated 90deg CW. A single clipped level
+   gradient sits BEHIND the unlit glass LED windows. No fake audio.
+   Original owner v13 SVG faders / PNG knob and one /preview/ unchanged. */
 .mx-geq31{
  position:fixed;z-index:1100;top:clamp(58px,7vh,66px);
  left:max(8px,calc((100vw - 1430px)/2));
@@ -1545,41 +1545,51 @@
 }
 .mx-geq31-level-meter{
  display:flex;flex-direction:column;justify-content:center;
- width:54px;height:20px;min-height:20px;flex:0 0 20px;
- gap:3px;margin:0 0 9px;padding:0;transform:translateX(-14px);
- background:transparent;border:0;border-radius:0;box-shadow:none;
+ width:100px;min-width:100px;height:31px;min-height:31px;flex:0 0 31px;
+ gap:3px;margin:0 0 16px;padding:6px 3px;
+ transform:translateX(-14px);
+ border:1px solid #415762;border-radius:3px;
+ background:linear-gradient(180deg,#172a33 0%,#08151c 45%,#030a0f 100%);
+ box-shadow:inset 0 1px 2px #000b,inset 1px 0 2px #01070b,
+  inset -1px 0 2px #01070b,0 1px 0 #f3f8f38a;
  pointer-events:none;
 }
 .mx-geq31-level-row{
- display:flex;align-items:center;justify-content:center;gap:4px;
- height:7px;min-height:7px;width:54px;padding:0;margin:0;
+ display:grid;grid-template-columns:7px 82px;column-gap:3px;
+ width:92px;height:7px;min-height:7px;align-items:center;margin:0;padding:0;
 }
 .mx-geq31-level-channel{
- flex:0 0 7px;width:7px;color:#5f737b;
+ width:7px;color:#8baeba;
  font:600 7px/7px Consolas,monospace;text-align:center;
+ text-shadow:0 1px #000;
 }
 .mx-geq31-level-cells{
- display:flex;align-items:center;gap:2px;width:40px;height:6px;
- background:#02080d;box-shadow:inset 0 1px #20313b;
+ position:relative;width:82px;min-width:82px;max-width:82px;height:6px;
+ overflow:hidden;border:0;border-radius:0;isolation:isolate;
+ background:repeating-linear-gradient(to right,
+  #26343b 0 12px,#02080d 12px 14px);
+ box-shadow:inset 0 1px #43576442,inset 0 -1px #000a;
 }
-.mx-geq31-level-led{
- display:block;flex:0 0 12px;width:12px;height:6px;
- border:0;border-radius:0;padding:0;margin:0;
- background:linear-gradient(to bottom,#283942,#1b2830);
- box-shadow:inset 0 1px #42535b33;
+.mx-geq31-level-fill{
+ position:absolute;inset:0;z-index:1;display:block;pointer-events:none;
+ /* Identical V51 portrait LED stops, rotated from bottom->top to left->right. */
+ background:linear-gradient(to right,
+  #139b3d 0%,#37d443 24%,#68ed35 43%,#cce732 62%,
+  #f1d82d 74%,#ffab22 85%,#f87824 94%,#e83e2e 100%);
+ clip-path:inset(0 calc(100% - var(--lit-px,0px)) 0 0);
  transition:none;
 }
-.mx-geq31-level-led-0.is-lit{
- background:linear-gradient(to bottom,#68ed35,#139b3d);
- box-shadow:inset 0 1px #bcff9666;
+.mx-geq31-level-cells::after{
+ content:"";position:absolute;inset:0;z-index:3;pointer-events:none;
+ background:
+  repeating-linear-gradient(to right,transparent 0 12px,#02070b 12px 14px),
+  linear-gradient(to bottom,#ffffff16,transparent 45%,#0008);
 }
-.mx-geq31-level-led-1.is-lit{
- background:linear-gradient(to bottom,#f1e33b,#cce732);
- box-shadow:inset 0 1px #fff9ae66;
-}
-.mx-geq31-level-led-2.is-lit{
- background:linear-gradient(to bottom,#f87824,#e83e2e);
- box-shadow:inset 0 1px #ffd7a866;
+.mx-geq31-level-led{
+ position:absolute;top:0;z-index:4;display:block;
+ width:12px;height:6px;margin:0;padding:0;
+ border:0;border-radius:0;background:transparent;pointer-events:none;
+ box-shadow:inset 0 1px #ffffff1a,inset 0 -1px #0008;
 }
 .mx-geq31-dial{
  position:relative;width:84px;height:84px;flex:0 0 84px;
