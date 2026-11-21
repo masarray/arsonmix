@@ -579,9 +579,9 @@ private:
             mixerSessionId_=id;
             lastMixerSessionFingerprint_.clear();
             mixerSessionRecoveryPending_=true;
-            mixerSessionStatus_=retainedOfflineFxActive_
-                ?"RETAINED_OFFLINE_FX_REAPPLY_REQUIRED"
-                :"LOGICAL_SESSION_SAVED_UNBOUND";
+            mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND";
+            if(retainedOfflineFxActive_)
+                mixerSessionStatus_="RETAINED_OFFLINE_FX_REAPPLY_REQUIRED";
             mixerSessionError_.clear();
         }};
     struct LogicalVendorEditor {
