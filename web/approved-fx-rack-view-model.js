@@ -346,6 +346,7 @@
   // Adding a new approved browser editor changes this registry, not the bridge.
   const BROWSER_EDITOR_HANDLES=Object.freeze({
     "armix.builtin.channel-eq.v1":"ArSonMixNativeEq",
+    "armix.builtin.graphic-eq31.v1":"ArSonMixGraphicEq31",
     "armix.builtin.channel-compressor.v1":"ArSonMixNativeCompressor",
     "armix.builtin.arson-harmony.v1":"ArSonMixNativeHarmony",
     "armix.builtin.vocal-throw.v1":"ArSonMixNativeVocalThrow",
