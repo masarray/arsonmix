@@ -8,10 +8,29 @@ COMP_SCRIPT='<script defer src="assets/mixer-native-compressor.js?v=comp-1"></sc
 HARMONY_SCRIPT='<script defer src="assets/mixer-native-harmony.js?v=harmony1"></script>'
 THROW_SCRIPT='<script defer src="assets/mixer-native-vocal-throw.js?v=throw-1"></script>'
 SONKU_SCRIPT='<script defer src="assets/mixer-native-sonku.js?v=sonku-1"></script>'
+GEQ_SCRIPT='<script defer src="assets/mixer-native-geq31.js?v=geq-webview-p0"></script>'
 PRESET_SCRIPT='<script defer src="assets/mixer-builtin-fx-preset-bar.js?v=preset-shared-m4"></script>'
 
 PICKER_HEAD="function renderFastPicker(){"
-PICKER_FN="""function insertChosenNativeEq(){
+PICKER_FN="""function insertChosenNativeGeq(){
+ const t=tracks.concat(master).find(x=>x.id===activeFxTarget?.channelId);
+ const slot=Number(activeFxTarget?.slot);
+ if(!t||!Number.isInteger(slot)||slot<0||slot>=8){
+  say('Graphic EQ 31 · choose an empty FX insert');return false;
+ }
+ if(window.__JUCE__?.backend?.emitEvent){
+  const host=window.ArSonMixGraphicEq31;
+  if(!host?.insert){say('Graphic EQ 31 WebView editor unavailable');return false;}
+  return host.insert(activeFxTarget);
+ }
+ if(t.fx[slot]!=='None'){say('FX insert occupied');return false;}
+ t.fx[slot]='Graphic EQ 31';t.slotBypass[slot]=false;
+ t.fxInsertIds[slot]={id:'visual-geq-'+t.id+'-'+slot,name:'Graphic EQ 31'};
+ refreshStrip(t);setFastPicker(false);
+ say('Graphic EQ 31 · BROWSER PREVIEW ONLY · no audio DSP');
+ return true;
+}
+function insertChosenNativeEq(){
  const t=tracks.concat(master).find(x=>x.id===activeFxTarget?.channelId);
  const slot=Number(activeFxTarget?.slot);
  if(!t||!Number.isInteger(slot)||slot<0||slot>=8){
@@ -120,6 +139,8 @@ function renderFastPicker(){"""
 PICKER_RENDER="plugEl('fastResults').innerHTML=list.length?list.map(p=>"
 PICKER_RENDER_NEW="""const eqBuiltin=!q||['parametric eq','peq','channel eq','built-in fx'].some(n=>n.includes(q))?
  '<button class="fast-effect" type="button" data-fast-native-eq="1"><span class="fast-effect-title">Parametric EQ</span><span class="fast-effect-kind">Native · 8-band · ordered insert</span></button>':'';
+ const geqBuiltin=!q||['graphic eq 31','graphic equalizer','geq31','31-band','eq','built-in fx'].some(n=>n.includes(q))?
+ '<button class="fast-effect" type="button" data-fast-native-geq="1"><span class="fast-effect-title">Graphic EQ 31</span><span class="fast-effect-kind">Native · 31-band · 1/3 octave</span></button>':'';
  const compBuiltin=!q||['compressor','comp','dynamics','built-in fx'].some(n=>n.includes(q))?
  '<button class="fast-effect" type="button" data-fast-native-comp="1"><span class="fast-effect-title">Compressor</span><span class="fast-effect-kind">Native · 0-sample added latency · dynamics</span></button>':'';
  const harmonyBuiltin=!q||['harmonice','arson harmony','harmony','vocal harmony','built-in fx'].some(n=>n.includes(q))?
@@ -133,6 +154,7 @@ PICKER_RENDER_NEW="""const eqBuiltin=!q||['parametric eq','peq','channel eq','bu
  // EQ/Comp/Harmony/Throw which already have specialized editor actions.
  const specializedIds=new Set([
   'armix.builtin.channel-eq.v1',
+  'armix.builtin.graphic-eq31.v1',
   'armix.builtin.channel-compressor.v1',
   'armix.builtin.arson-harmony.v1',
   'armix.builtin.vocal-throw.v1',
@@ -142,28 +164,32 @@ PICKER_RENDER_NEW="""const eqBuiltin=!q||['parametric eq','peq','channel eq','bu
    p.id.startsWith('armix.builtin.')&&!specializedIds.has(p.id)).map(p=>
   '<button class="fast-effect" type="button" data-fast-id="'+escapeHtml(p.id)+'"><span class="fast-effect-title">'+escapeHtml(p.name)+'</span><span class="fast-effect-kind">Native · '+escapeHtml(p.category)+'</span></button>'
  ).join('');
- const builtin=(eqBuiltin||compBuiltin||harmonyBuiltin||throwBuiltin||sonkuBuiltin||nativeExtra?
+ const builtin=(eqBuiltin||geqBuiltin||compBuiltin||harmonyBuiltin||throwBuiltin||sonkuBuiltin||nativeExtra?
   '<div class="fast-fx-category">BUILT-IN FX</div>':'')+
-  nativeExtra+eqBuiltin+compBuiltin+harmonyBuiltin+throwBuiltin+sonkuBuiltin;
+  nativeExtra+eqBuiltin+geqBuiltin+compBuiltin+harmonyBuiltin+throwBuiltin+sonkuBuiltin;
  // Native processors must not appear twice or under the VST3 PLUGINS heading.
  const vstItems=list.filter(p=>p.format!=='Native');
  plugEl('fastResults').innerHTML=builtin+'<div class="fast-fx-category">VST3 PLUGINS</div>'+(vstItems.length?vstItems.map(p=>"""
 PICKER_END=""").join(''):'<div class="fast-empty">No matching effects</div>';"""
 PICKER_END_NEW=""").join(''):'<div class="fast-empty">No matching effects</div>');"""
 PICKER_CLICK=" const btn=e.target.closest('[data-fast-id]');if(btn)insertCatalogPlugin(btn.dataset.fastId);"
-PICKER_CLICK_NEW=""" if(e.target.closest('[data-fast-native-harmony]')){insertChosenNativeHarmony();return;}
+PICKER_CLICK_NEW=""" if(e.target.closest('[data-fast-native-geq]')){insertChosenNativeGeq();return;}
+ if(e.target.closest('[data-fast-native-harmony]')){insertChosenNativeHarmony();return;}
  if(e.target.closest('[data-fast-native-eq]')){insertChosenNativeEq();return;}
  if(e.target.closest('[data-fast-native-comp]')){insertChosenNativeCompressor();return;}
  if(e.target.closest('[data-fast-native-throw]')){insertChosenNativeThrow();return;}
  if(e.target.closest('[data-fast-native-sonku]')){insertChosenNativeSonKu();return;}
  const btn=e.target.closest('[data-fast-id]');if(btn)insertCatalogPlugin(btn.dataset.fastId);"""
 PICKER_ENTER="if(b){e.preventDefault();insertCatalogPlugin(b.dataset.fastId);}"
-PICKER_ENTER_NEW="if(b){e.preventDefault();if(b.hasAttribute('data-fast-native-harmony'))insertChosenNativeHarmony();else if(b.hasAttribute('data-fast-native-throw'))insertChosenNativeThrow();else if(b.hasAttribute('data-fast-native-eq'))insertChosenNativeEq();else if(b.hasAttribute('data-fast-native-comp'))insertChosenNativeCompressor();else if(b.hasAttribute('data-fast-native-sonku'))insertChosenNativeSonKu();else insertCatalogPlugin(b.dataset.fastId);}"
+PICKER_ENTER_NEW="if(b){e.preventDefault();if(b.hasAttribute('data-fast-native-harmony'))insertChosenNativeHarmony();else if(b.hasAttribute('data-fast-native-throw'))insertChosenNativeThrow();else if(b.hasAttribute('data-fast-native-eq'))insertChosenNativeEq();else if(b.hasAttribute('data-fast-native-geq'))insertChosenNativeGeq();else if(b.hasAttribute('data-fast-native-comp'))insertChosenNativeCompressor();else if(b.hasAttribute('data-fast-native-sonku'))insertChosenNativeSonKu();else insertCatalogPlugin(b.dataset.fastId);}"
 OPEN=" if(a==='openPlugin'){openFastPicker(t,Number(btn.dataset.slot),btn);return;}"
 OPEN_NEW=""" if(a==='openPlugin'){
   const index=Number(btn.dataset.slot);
   if(t.fx[index]==='Parametric EQ'){
    window.ArSonMixNativeEq?.open(t,index);return;
+  }
+  if(t.fx[index]==='Graphic EQ 31'){
+   window.ArSonMixGraphicEq31?.open(t,index);return;
   }
   if(t.fx[index]==='Compressor'){
    window.ArSonMixNativeCompressor?.open(t,index);return;
@@ -187,11 +213,11 @@ def apply_native_peq(html: str)->str:
              (PICKER_ENTER,PICKER_ENTER_NEW),
              (OPEN,OPEN_NEW))
     if html.count('</head>')!=1 or html.count('</body>')!=1 or \
-       SCRIPT in html or COMP_SCRIPT in html or HARMONY_SCRIPT in html or THROW_SCRIPT in html or PRESET_SCRIPT in html or SONKU_SCRIPT in html or 'insertChosenNativeEq' in html:
+       SCRIPT in html or COMP_SCRIPT in html or HARMONY_SCRIPT in html or THROW_SCRIPT in html or PRESET_SCRIPT in html or SONKU_SCRIPT in html or GEQ_SCRIPT in html or 'insertChosenNativeEq' in html:
         raise ValueError("Parametric EQ requires one pristine approved compiled GUI")
     for before,after in anchors:
         if html.count(before)!=1:
             raise ValueError('Ambiguous approved picker/editor anchor: '+before[:90])
         html=html.replace(before,after,1)
-    html=html.replace('</body>',PRESET_SCRIPT+'\n'+SCRIPT+'\n'+COMP_SCRIPT+'\n'+HARMONY_SCRIPT+'\n'+THROW_SCRIPT+'\n'+SONKU_SCRIPT+'\n</body>',1)
+    html=html.replace('</body>',PRESET_SCRIPT+'\n'+SCRIPT+'\n'+COMP_SCRIPT+'\n'+HARMONY_SCRIPT+'\n'+THROW_SCRIPT+'\n'+SONKU_SCRIPT+'\n'+GEQ_SCRIPT+'\n</body>',1)
     return html

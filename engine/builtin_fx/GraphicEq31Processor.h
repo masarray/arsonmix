@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "GraphicEq31Core.h"
+#include "FxSpsc.h"
 #include "../core/RealtimeNativeFxControl.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -25,6 +26,10 @@ class GraphicEq31Processor final : public juce::AudioProcessor,
 public:
     static constexpr const char* catalogIdentity="armix.builtin.graphic-eq31.v1";
     static constexpr int stateMagic=0x47455131; // GEQ1, independent of PEQ
+    struct Completion {
+        std::uint64_t requestId=0;
+        bool applied=false;
+    };
     GraphicEq31Processor()
         : juce::AudioProcessor(BusesProperties()
               .withInput("Input",juce::AudioChannelSet::stereo(),true)
@@ -45,7 +50,10 @@ public:
     void setCurrentProgram(int) override {}
     const juce::String getProgramName(int) override {return "Manual";}
     void changeProgramName(int,const juce::String&) override {}
-    bool hasEditor() const override {return true;}
+    // Product GUI now renders ONLY in the approved /preview/ WebView2.
+    // Keep the old JUCE Editor class compiled for source-state regression,
+    // but prevent any native HWND route from opening a second renderer.
+    bool hasEditor() const override {return false;}
     juce::AudioProcessorEditor* createEditor() override;
     bool isBusesLayoutSupported(const BusesLayout& layout) const override {
         return layout.getMainInputChannelSet()==juce::AudioChannelSet::stereo() &&
@@ -84,11 +92,18 @@ public:
         // Same accepted generation as all 31 gains; never publish a
         // partially recalled Output Level ahead of the fader curve.
         rtLevelDb_.store(levelDb,std::memory_order_release);
+        // The completed callback, NOT a WebView click, ACKs a native edit.
+        // All parameters were published by CONTROL before the request token;
+        // audio has now consumed the same atomic snapshot without allocating.
+        std::uint64_t requestId=0;
+        if(completionGeq_.canPush() && queuedGeq_.pop(requestId))
+            (void)completionGeq_.push({requestId,true});
     }
     void sealForRealtime() noexcept override {published_=true;}
     bool stateSnapshotQuiescent() const noexcept override {
         return ready_&&
-               (presetWriteSeq_.load(std::memory_order_acquire)&1u)==0u;
+               (presetWriteSeq_.load(std::memory_order_acquire)&1u)==0u &&
+            queuedGeq_.empty() && completionGeq_.empty();
     }
     void processBlock(juce::AudioBuffer<float>& pcm,juce::MidiBuffer&) override {
         juce::ScopedNoDenormals noDenormals;
@@ -200,6 +215,33 @@ public:
         presetWriteSeq_.fetch_add(1u,std::memory_order_release);
         return true;
     }
+    // One message-thread writer and ONE audio callback reader. This narrow
+    // token queue does not carry sound data or execute JUCE parameter setters
+    // on the realtime thread. Band/Output edits use the same APVTS target
+    // cache as native/editor factory recall, preserving legacy .smix states.
+    bool queueBandEdit(std::size_t index,float db,std::uint64_t requestId) {
+        if(!ready_||requestId==0||index>=GraphicEq31Core::bandCount||
+           !std::isfinite(db)||db<-12.f||db>12.f||!queuedGeq_.canPush())
+            return false;
+        setBandFromUi(index,db);
+        return queuedGeq_.push(requestId);
+    }
+    bool queueOutputEdit(float db,std::uint64_t requestId) {
+        if(!ready_||requestId==0||!std::isfinite(db)||
+           db<-24.f||db>6.f||!queuedGeq_.canPush())return false;
+        setLevelFromUi(db);
+        return queuedGeq_.push(requestId);
+    }
+    bool queueCurveEdit(
+            const std::array<float,GraphicEq31Core::bandCount>& bands,
+            float outputDb,std::uint64_t requestId) {
+        if(!ready_||requestId==0||!queuedGeq_.canPush()||
+           !setBandsFromPreset(bands,outputDb))return false;
+        return queuedGeq_.push(requestId);
+    }
+    bool pollCompletion(Completion& result) noexcept {
+        return completionGeq_.pop(result);
+    }
     float acceptedLevelDb() const noexcept {
         return levelValue_->load(std::memory_order_acquire);
     }
@@ -251,6 +293,8 @@ private:
     float lastLevelDb_=0.f;
     std::atomic<float> peak_{0.f};
     std::atomic<std::uint32_t> presetWriteSeq_{0u};
+    FxSpsc<std::uint64_t,16> queuedGeq_{};
+    FxSpsc<Completion,16> completionGeq_{};
     bool published_=false,ready_=false;
 };
 

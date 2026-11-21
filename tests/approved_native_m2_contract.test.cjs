@@ -6658,6 +6658,7 @@ test("G-MV38 editor surface routing has one allowlisted browser owner; future FX
   };
   const allowlisted=[
     ["armix.builtin.channel-eq.v1","ArSonMixNativeEq"],
+    ["armix.builtin.graphic-eq31.v1","ArSonMixGraphicEq31"],
     ["armix.builtin.channel-compressor.v1","ArSonMixNativeCompressor"],
     ["armix.builtin.arson-harmony.v1","ArSonMixNativeHarmony"],
     ["armix.builtin.vocal-throw.v1","ArSonMixNativeVocalThrow"],
@@ -6667,7 +6668,7 @@ test("G-MV38 editor surface routing has one allowlisted browser owner; future FX
     const {result}=project(id);
     assert.deepEqual(result,{kind:"BROWSER",windowKey});
   }
-  for(const id of ["vendor.vst3","armix.builtin.graphic-eq31.v1",
+  for(const id of ["vendor.vst3",
                    "armix.builtin.immersib.v1","__proto__"]){
     assert.deepEqual(project(id).result,{kind:"NATIVE_HOST"},
       "non-allowlisted catalogs cannot choose an arbitrary browser host");
@@ -6700,4 +6701,95 @@ test("G-MV38 editor surface routing has one allowlisted browser owner; future FX
   assert.match(bridge,/openChannelIdFxEditor\(editor\)/);
   assert.match(bridge,/action:"logicalVendorFxEditor"/);
   assert.doesNotMatch(bridge,/if\(editor\.catalogId==='armix\.builtin/);
+});
+
+test("UX-1 footer live metrics: exact driver hints, CPU App, last RT and process RAM",()=>{
+  const input={
+    footerHealthSequence:17,deviceGeneration:4,
+    connected:true,directRouteAuthorized:true,adaptiveClockActive:false,
+    rate:48000,periodUs:5000,driverReportedInputLatencyFrames:240,
+    driverReportedOutputLatencyFrames:480,latencySamples:240,
+    footerProcessCpuPercent:4.16,footerProcessWorkingSetMiB:318,
+    callbackDurationUs:400,buffer:240
+  };
+  const projected=protocol.footerHealthFromLive(input);
+  assert.equal(projected.latency,"LAT ~20.0 ms",
+    "do not add the separate 240-frame buffer twice");
+  assert.equal(projected.performance,"CPU App 4.2% · RT last 8% · RAM 318 MiB");
+  assert.equal(projected.deviceGeneration,"4");
+  assert.equal(projected.sequence,17);
+  assert.match(projected.provenance,/NOT_LOOPBACK/);
+  assert.equal(protocol.footerHealthFromLive({...input,footerHealthSequence:undefined}),null);
+  assert.equal(protocol.footerHealthFromLive({...input,rate:0}).latency,"LAT —");
+  assert.equal(protocol.footerHealthFromLive({...input,driverReportedInputLatencyFrames:null}).latency,"LAT —");
+  assert.equal(protocol.footerHealthFromLive({...input,adaptiveClockActive:true}).latency,"LAT —");
+  assert.equal(protocol.footerHealthFromLive({...input,connected:false}).latency,"LAT —");
+  assert.equal(protocol.footerHealthFromLive({...input,directRouteAuthorized:false}).latency,"LAT —");
+  assert.equal(protocol.footerHealthFromLive({...input,footerProcessCpuPercent:null,
+    footerProcessWorkingSetMiB:null,callbackDurationUs:null}).performance,
+    "CPU App — · RT — · RAM —",
+    "missing telemetry must NEVER be converted to a reassuring 0%");
+  assert.equal(protocol.footerHealthFromLive({...input,footerProcessCpuPercent:101}).performance,
+    "CPU App — · RT last 8% · RAM 318 MiB");
+  assert.equal(protocol.footerHealthFromLive({...input,footerProcessCpuPercent:NaN}).performance,
+    "CPU App — · RT last 8% · RAM 318 MiB");
+});
+test("UX-1 health strip uses only already-available 1 Hz host samples and existing status event",()=>{
+  const host=read("src/Main.cpp");
+  const bridge=read("web/approved-native-bridge.js");
+  const page=read("site/preview/mixer.html");
+  assert.match(host,/sampleFooterHostCpuPercent\(\)/);
+  assert.match(host,/::GetProcessTimes/);
+  assert.match(host,/timerTicks_ % 12 == 0[\s\S]*?footerHealthSequence/);
+  assert.match(host,/evidence\.memory\.processWorkingSetMiB/);
+  assert.match(host,/browser_\.emitEventIfBrowserIsVisible \("arMixStatus", state\)/);
+  assert.match(bridge,/backend\.addEventListener\("arMixStatus", live=>/);
+  assert.match(bridge,/protocol\.footerHealthFromLive\(live\)/);
+  assert.match(bridge,/paintAudioHealthFooter\(hardware\)/);
+  assert.match(bridge,/lastFooterHealth\.deviceGeneration===String\(d\?\.epoch\)/);
+  assert.match(bridge,/warningText==="OUTPUT ENABLED"/);
+  assert.doesNotMatch(bridge,/setInterval\([^)]*footer|setTimeout\([^)]*footer/i);
+  assert.match(page,/html\.armix-native-desktop \.status-bar \.warning\[data-telemetry="true"\]/);
+});
+
+test("UX-1 calm status colors use genuine app/process and callback budget evidence",()=>{
+  const base={
+    footerHealthSequence:9,deviceGeneration:9,
+    connected:true,directRouteAuthorized:true,adaptiveClockActive:false,
+    rate:48000,periodUs:5000,driverReportedInputLatencyFrames:48,
+    driverReportedOutputLatencyFrames:96,latencySamples:0,
+    footerProcessCpuPercent:4.0,footerProcessWorkingSetMiB:240,
+    callbackDurationUs:200
+  };
+  const read=x=>protocol.footerHealthFromLive({...base,...x}).metrics;
+  assert.deepEqual(Object.keys(read({})),["cpu","rt","ram"]);
+  assert.equal(read({}).cpu.tone,"normal");
+  assert.equal(read({}).rt.tone,"normal");
+  assert.equal(read({}).ram.tone,"neutral");
+  assert.equal(read({footerProcessCpuPercent:75}).cpu.tone,"attention");
+  assert.equal(read({footerProcessCpuPercent:90}).cpu.tone,"critical");
+  assert.equal(read({callbackDurationUs:4000}).rt.tone,"attention");
+  assert.equal(read({callbackDurationUs:5000}).rt.tone,"critical");
+  assert.equal(read({footerProcessCpuPercent:null}).cpu.tone,"unknown");
+  assert.equal(read({callbackDurationUs:null}).rt.tone,"unknown");
+  assert.equal(read({adaptiveClockActive:true}).rt.tone,"unknown");
+  assert.equal(read({footerProcessWorkingSetMiB:null}).ram.tone,"unknown");
+  assert.equal(read({footerProcessWorkingSetMiB:9000}).ram.tone,"neutral",
+    "RAM MiB has no machine-specific limit; never color by arbitrary size");
+  assert.equal(read({footerProcessCpuPercent:99}).cpu.label,"CPU App 99.0%");
+  const bridge=require("node:fs").readFileSync("web/approved-native-bridge.js","utf8");
+  const page=require("node:fs").readFileSync("site/preview/mixer.html","utf8");
+  assert.match(bridge,/function paintFooterMetrics\(warning,health\)/);
+  assert.doesNotMatch(bridge,/item\.setAttribute\("aria-hidden","true"\)/,
+    "numeric status values stay available to assistive technology");
+  assert.match(bridge,/warning\.replaceChildren\(nodes\.cpu,nodes\.rt,nodes\.ram\)/);
+  assert.match(bridge,/label\.dataset\.telemetry!==latencyMode/);
+  assert.match(bridge,/warning\.dataset\.telemetry!==healthMode/);
+  assert.match(bridge,/warning\.firstElementChild!==footerMetricNodes\.cpu/);
+  assert.doesNotMatch(bridge,/requestAnimationFrame\([^)]*paintFooterMetrics|setInterval\([^)]*paintFooterMetrics/);
+  for(const key of ["cpu","rt","ram"])
+    assert.match(page,new RegExp('data-metric="'+key+'"'));
+  for(const tone of ["normal","attention","critical","unknown"])
+    assert.match(page,new RegExp('data-tone="'+tone+'"'));
+  assert.match(page,/height:20px!important;min-height:20px!important/);
 });
