@@ -4159,6 +4159,12 @@ private:
                         [safe,file,importedHotkeys,importedId](juce::String openError){
                     if(safe==nullptr)return;
                     if(openError.isEmpty()) {
+                        // Explicit saved-session Open supersedes the previous
+                        // offline FX document only after durable commit.
+                        safe->retainedOfflineFxActive_=false;
+                        safe->retainedOfflineEpoch_=0;
+                        safe->retainedOfflineOwnerEpoch_=0;
+                        safe->retainedOfflineRevision_=0;
                         safe->mixerSessionId_=importedId;
                         const auto keyError=safe->hotkeys_.activateSession(importedId,&importedHotkeys);
                         if(keyError.isNotEmpty())safe->emitNotice("Hotkey import: "+keyError,true);
@@ -4195,6 +4201,12 @@ private:
                    chosenEpoch==engine.dryRoutingLabEpoch()&&engine.liveOutputArmFault(false).isEmpty())
                     engine.setMonitorEnabled(true);
                 if(error.isEmpty()) {
+                    // Explicit verified physical .smix Open supersedes pending
+                    // offline FX authority; a device reconnect cannot do so.
+                    safe->retainedOfflineFxActive_=false;
+                    safe->retainedOfflineEpoch_=0;
+                    safe->retainedOfflineOwnerEpoch_=0;
+                    safe->retainedOfflineRevision_=0;
                     safe->closeAllPluginEditors();
                     safe->stopOrbit();
                     safe->mixerSessionId_=id;
