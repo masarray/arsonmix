@@ -21,10 +21,10 @@ class NativeFxWindowLifecycle(unittest.TestCase):
     def test_exact_native_instance_reopen_is_not_recreation(self):
         self.assertIn("shownOwner==owner",HOST)
         self.assertIn("shownProcessor==owner->processor.get()",HOST)
-        self.assertIn("shownWindow->present()",HOST)
+        self.assertIn("shownWindow->present(static_cast<bool>(",HOST)
         self.assertIn("shownWindow=dedicatedImmerSIB?immersibEditorWindow_:editorWindow_",HOST)
         self.assertIn("if(logicalVendorEditor_)",HOST)
-        self.assertIn("existing.window->present()",HOST)
+        self.assertIn("existing.window->present(",HOST)
         self.assertIn("editorProcessor_ == processor",HOST)
         self.assertIn("if (!isVisible()) setVisible (true)",HOST)
         self.assertIn("toFront (true)",HOST)
@@ -40,7 +40,7 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn('dedicatedImmerSIB=dynamic_cast<',opened)
         self.assertIn('shownWindow=dedicatedImmerSIB?immersibEditorWindow_:editorWindow_',opened)
         self.assertIn('shownOwner=dedicatedImmerSIB?immersibEditorOwner_:routedEditorOwner_',opened)
-        self.assertIn('shownWindow->present()',opened)
+        self.assertIn('shownWindow->present(static_cast<bool>(',opened)
         self.assertIn('if(dedicatedImmerSIB)closeImmerSIBEditor();',opened)
         self.assertIn('closePluginEditor();',opened)
         self.assertIn('shownWindow=std::make_unique<PluginEditorWindow>',opened)
@@ -52,6 +52,26 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertLess(HOST.index('immersibEditorWindow_.reset();'),
                         HOST.index('immersibEditorOwner_.reset();'))
         self.assertNotIn('closeAllPluginEditors();',opened)
+
+    def test_native_recenter_and_unplugged_monitor_recovery(self):
+        self.assertIn("placeFloatingEditor (*this, mixer_, centreOnMixer)",HOST)
+        self.assertIn('args.getProperty("recenter",false)',HOST)
+        self.assertIn('request.getProperty("recenter",false)',HOST)
+        self.assertIn("getDisplayForRect(current)",OWNER)
+        self.assertIn("getDisplayForRect(mixerBounds)",OWNER)
+        self.assertIn("display->userArea",OWNER)
+        self.assertIn("editor.setTopLeftPosition(x,y)",OWNER)
+        # WebView2 cannot escape its parent HWND. JS only forwards exact
+        # insert selection; real native ownership remains in JUCE.
+        context=(ROOT/"site/preview-v2/assets/mixer-contextual-buttons.js").read_text(encoding="utf-8")
+        bridge=(ROOT/"web/approved-native-bridge.js").read_text(encoding="utf-8")
+        self.assertIn("arMixFxRackDoubleClick",context)
+        self.assertIn("arMixFxRackDoubleClick",bridge)
+        self.assertIn("row?matched:windows",context)
+        self.assertIn("centerInsert",context)
+        self.assertIn('recenter:"true"',bridge)
+        self.assertIn("openChannelIdFxEditor(editor,recenter)",bridge)
+        self.assertIn("nativeHooks.consumeAction(track",bridge)
 
     def test_all_editor_paths_use_one_host(self):
         self.assertEqual(HOST.count("std::make_unique<PluginEditorWindow>"),3)
