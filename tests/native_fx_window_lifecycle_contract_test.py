@@ -92,22 +92,23 @@ class NativeFxWindowLifecycle(unittest.TestCase):
     def test_multiple_exact_native_vendor_windows_and_retired_lease_cleanup(self):
         self.assertIn("struct AdditionalFxEditor final",HOST)
         self.assertIn("maxSimultaneousVendorEditors=16",HOST)
-        self.assertIn("entry.owner==owner",HOST)
-        self.assertIn("entry.processor==owner->processor.get()",HOST)
+        self.assertIn("entry->owner==owner",HOST)
+        self.assertIn("entry->processor==owner->processor.get()",HOST)
         self.assertIn("additionalFxEditors_.push_back(std::move(entry))",HOST)
-        self.assertIn("extra->channel=nativeChannel",HOST)
-        self.assertIn("extra->lane=lane;extra->slot=slot",HOST)
-        self.assertIn("extra->instanceId=token",HOST)
+        self.assertIn("(*extra)->channel=nativeChannel",HOST)
+        self.assertIn("(*extra)->lane=lane;(*extra)->slot=slot",HOST)
+        self.assertIn("(*extra)->instanceId=token",HOST)
         self.assertIn("keepOtherVendorWindow",HOST)
         self.assertIn("additionalFxEditors_.clear();",HOST)
         self.assertIn("std::erase_if(additionalFxEditors_",HOST)
-        self.assertIn("!engine_.retainsRoutedFxEditor(entry.epoch,entry.owner)",HOST)
+        self.assertIn("!engine_.retainsRoutedFxEditor(entry->epoch,entry->owner)",HOST)
         self.assertLess(HOST.index("closeImmerSIBEditor();",HOST.index("void closeAllPluginEditors()")),
                         HOST.index("additionalFxEditors_.clear();"))
         self.assertLess(HOST.index("armix::mixer::LiveChannelFxGraph::InstanceLease owner;",
             HOST.index("struct AdditionalFxEditor final")),
             HOST.index("std::unique_ptr<PluginEditorWindow> window;",
                 HOST.index("struct AdditionalFxEditor final")))
+        self.assertIn("std::vector<std::unique_ptr<AdditionalFxEditor>> additionalFxEditors_;",HOST)
         self.assertIn("std::unique_ptr<PluginEditorWindow> window;",HOST)
         self.assertIn("JUCE editor",HOST)
 
