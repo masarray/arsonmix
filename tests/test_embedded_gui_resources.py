@@ -53,6 +53,63 @@ class NativeGuiEmbeddedBytesTests(unittest.TestCase):
     def test_attests_exact_original_utf8_and_binary_bytes(self):
         self.assertEqual(mod.verify(self.exe, self.bundle, self.manifest), 3)
 
+    def stage_native_floating_fx(self, frame=None):
+        # The additional HTML is only the approved FX child HWND,
+        # not a second/public mixer GUI.
+        if frame is None:
+            frame = (b'<title>Native owned FX</title>'
+                     b'<link href="assets/arsonmix-approved-runtime.css">'
+                     b'<script src="assets/approved-floating-fx-bridge.js"></script>'
+                     b'<output id="fxWindowStatus"></output>')
+        self.assets["fx-window.html"] = frame
+        self.assets["assets/approved-floating-fx-bridge.js"] = b"APPROVED_FX_BRIDGE"
+        self.records = [
+            {"path": name, "sha256": hashlib.sha256(payload).hexdigest()}
+            for name, payload in self.assets.items()
+        ]
+        for name, payload in self.assets.items():
+            (self.bundle / name).write_bytes(payload)
+        self.write_manifest()
+        self.exe.write_bytes(
+            b"MZ" + b"\x00" * 128
+            + b"\x00".join(self.assets.values()) + b"\x00" * 64
+        )
+
+    def test_attests_native_owned_fx_frame_plus_original_pages(self):
+        self.stage_native_floating_fx()
+        self.assertEqual(mod.verify(self.exe, self.bundle, self.manifest), 5)
+
+    def test_rejects_unapproved_second_root_html(self):
+        self.stage_native_floating_fx()
+        payload = b"<title>Unauthorized second mixer</title>"
+        (self.bundle / "second-mixer.html").write_bytes(payload)
+        self.records.append({"path": "second-mixer.html",
+                             "sha256": hashlib.sha256(payload).hexdigest()})
+        self.write_manifest()
+        with self.assertRaisesRegex(mod.EmbeddedGuiError, "Unsafe"):
+            mod.verify(self.exe, self.bundle, self.manifest)
+
+    def test_rejects_fx_frame_missing_native_only_bridge_or_skin(self):
+        self.stage_native_floating_fx(b"<title>Wrong FX editor</title>")
+        with self.assertRaisesRegex(mod.EmbeddedGuiError, "native-only FX editor"):
+            mod.verify(self.exe, self.bundle, self.manifest)
+
+    def test_rejects_fx_frame_without_manifest_attested_bridge(self):
+        self.stage_native_floating_fx()
+        self.records = [r for r in self.records
+                        if r["path"] != "assets/approved-floating-fx-bridge.js"]
+        self.write_manifest()
+        with self.assertRaisesRegex(mod.EmbeddedGuiError, "missing its approved control bridge"):
+            mod.verify(self.exe, self.bundle, self.manifest)
+
+    def test_rejects_fx_frame_missing_from_executable(self):
+        self.stage_native_floating_fx()
+        self.exe.write_bytes(b"MZ" + b"\x00".join(
+            payload for path, payload in self.assets.items()
+            if path != "fx-window.html"))
+        with self.assertRaisesRegex(mod.EmbeddedGuiError, "NOT IN WINDOWS EXE: fx-window.html"):
+            mod.verify(self.exe, self.bundle, self.manifest)
+
     def test_rejects_staged_png_not_present_in_executable(self):
         self.exe.write_bytes(b"MZ" + self.assets["index.html"]
                              + self.assets["assets/mixer.css"])

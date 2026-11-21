@@ -25,6 +25,143 @@
   const wireByUiId = new Map();         // view-only EdgeId -> EXACT decimal-string native EdgeId
   const uiByWireId = new Map();
 
+  // Owner-corrected FUX-1: built-in FX are ORIGINAL /preview/ overlays
+  // clipped by this mixer's ONE WebView2 viewport, never separate JUCE HWNDs.
+  // Their audio, controls, .smix, ACK/readback still use the existing owner.
+  const inlineFxClip=connected &&
+    typeof document.createElement==="function" &&
+    typeof document.head?.appendChild==="function" &&
+    typeof document.addEventListener==="function"?(()=>{
+    const selectors=Object.freeze({
+      ArSonMixNativeEq:"#mxNativePeq",
+      ArSonMixNativeCompressor:"#mxNativeComp",
+      ArSonMixGraphicEq31:"#mxNativeGeq31",
+      ArSonMixNativeHarmony:"#mxNativeHarmony",
+      ArSonMixNativeVocalThrow:"#mxNativeVocalThrow",
+      ArSonMixNativeSonKu:"#mxNativeSonKu"
+    });
+    const roots=Object.values(selectors).join(",");
+    const headers=".mx-peq-title,.mx-comp-head,.mx-geq31-head,"+
+      ".mx-harm-head,.vt-face-header,.sk-head";
+    const style=document.createElement("style");
+    style.id="armix-native-inline-fx-clip";
+    style.textContent="html.armix-native-desktop,html.armix-native-desktop body{overflow-x:hidden!important}\nhtml.armix-native-desktop #mxNativeGeq31{width:1430px!important;min-width:1430px!important;max-width:none!important;height:280px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-body{grid-template-columns:38px minmax(0,1fr) 100px!important;padding:1px 32px 0 4px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-scale{width:38px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-head{gap:8px!important;padding:0 20px!important;height:44px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-brand{font-size:17px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-meta,html.armix-native-desktop #mxNativeGeq31 .mx-geq31-channel{display:inline!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-head select{flex:0 0 152px!important;width:152px!important;max-width:152px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-save{display:block!important;width:56px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-flat{width:44px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-head .mx-geq31-close{margin-inline-start:90px!important}\nhtml.armix-native-desktop #mxNativePeq{width:795px!important;max-height:none!important}\nhtml.armix-native-desktop #mxNativeComp{width:795px!important;max-height:none!important}\nhtml.armix-native-desktop #mxNativeHarmony{width:800px!important;max-height:none!important}\nhtml.armix-native-desktop #mxNativeVocalThrow{width:778px!important;max-height:none!important}\nhtml.armix-native-desktop #mxNativeSonKu{width:790px!important;max-height:none!important}\nhtml.armix-native-desktop :is(.mx-peq-title,.mx-comp-head,.mx-geq31-head,.mx-harm-head,.vt-face-header,.sk-head){touch-action:none!important}";
+    document.head.appendChild(style);
+    // Preserve native FX authored desktop control grids; crop/pan at the
+    // mixer viewport instead of running narrow-mobile module media queries.
+    style.textContent+="\n"+"html.armix-native-desktop #mxNativePeq .mx-peq-body{grid-template-columns:minmax(0,1fr) 143px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-title{height:36px!important;flex-basis:36px!important;gap:11px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-brand{font-size:11px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-brand::after{content:none!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-bands{gap:3px!important;padding:7px 8px 6px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-band{flex-direction:row!important;gap:4px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-select{flex-direction:row!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-band-power{height:26px!important;width:19px!important;flex:0 0 19px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-dial{width:62px!important;height:62px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-knob{min-height:84px!important}\nhtml.armix-native-desktop #mxNativeComp .mx-comp-controls{grid-template-columns:130px minmax(0,410px) minmax(0,1fr)!important;grid-template-rows:auto!important;gap:0!important;min-height:327px!important}\nhtml.armix-native-desktop #mxNativeComp .mx-comp-visual{grid-column:auto!important;grid-row:auto!important;width:auto!important}\nhtml.armix-native-desktop #mxNativeComp .mx-comp-left,#mxNativeComp .mx-comp-right{grid-column:auto!important;grid-row:auto!important}\nhtml.armix-native-desktop #mxNativeComp .mx-comp-dial{width:47px!important;height:47px!important}\nhtml.armix-native-desktop #mxNativeHarmony .mx-harm-body{grid-template-columns:150px minmax(0,1fr) 234px!important;min-height:232px!important}\nhtml.armix-native-desktop #mxNativeHarmony .mx-harm-left,#mxNativeHarmony .mx-harm-control-deck,#mxNativeHarmony .mx-harm-center{grid-column:auto!important;grid-row:auto!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-instrument{display:grid!important;grid-template-columns:minmax(0,1fr) 212px minmax(0,1fr)!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-center{order:initial!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-content{grid-template-columns:minmax(0,1.42fr) minmax(270px,1fr)!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-stage{border-right:1px solid #395565!important;border-bottom:0!important}";
+    style.textContent+="\n"+"html.armix-native-desktop #mxNativeVocalThrow #vtEncodersLeft,html.armix-native-desktop #mxNativeVocalThrow #vtEncodersRight{order:initial!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-throw-button{width:212px!important;height:212px!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-performance{grid-template-columns:88px minmax(0,1fr) 302px!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-rotary-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;min-height:190px!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-dial{width:62px!important;height:62px!important}\nhtml.armix-native-desktop #mxNativeHarmony .mx-harm-center{border-top:0!important;padding:8px 12px!important}";
+    const offsets=new WeakMap();
+    let drag=null,layer=16000;
+    const limit=(value,low,high)=>Math.max(low,Math.min(high,value));
+    const grip=()=>Math.min(130,Math.max(56,Math.floor(innerWidth*.22)));
+    function move(root,dx,dy) {
+      if(!root||root.hidden||!Number.isFinite(dx)||!Number.isFinite(dy))return;
+      const rect=root.getBoundingClientRect(),handle=grip();
+      // Show a recoverable edge while permitting the hardware panel to pass
+      // outside either side of the mixer. No layout reflow, no miniaturizing.
+      const x=limit(rect.left+dx,handle-rect.width,innerWidth-handle);
+      const y=limit(rect.top+dy,Math.min(8,innerHeight-rect.height+48),
+        Math.max(8,innerHeight-38));
+      const old=offsets.get(root)||{x:0,y:0};
+      const next={x:old.x+x-rect.left,y:old.y+y-rect.top};
+      offsets.set(root,next);
+      // CSS translate does not overwrite GEQ S/M/L scale() or Harmony
+      // translateX(-50%): both actual controls retain original geometry.
+      root.style.setProperty("translate",next.x+"px "+next.y+"px","important");
+    }
+    function center(root) {
+      if(!root||root.hidden)return false;
+      const r=root.getBoundingClientRect();
+      if(r.width<100||r.height<30)return false;
+      // Wide GEQ begins at 20 Hz; pan to its 20 kHz end by dragging the
+      // same single hardware face, clipped at the WebView viewport edge.
+      const left=r.width>innerWidth-16?8:(innerWidth-r.width)/2;
+      const top=Math.max(8,(innerHeight-r.height)/2);
+      move(root,left-r.left,top-r.top);
+      return true;
+    }
+    function openExact(host,key,track,slot,recenter=true) {
+      const selector=selectors[key],root=document.querySelector(selector||"#__none__");
+      if(!root||typeof host?.open!=="function")return false;
+      if(root.hidden){
+        offsets.delete(root);
+        root.style.removeProperty("translate");
+      }
+      host.open(track,slot);
+      root.style.zIndex=String(++layer);
+      if(recenter||!offsets.has(root))center(root);
+      return true;
+    }
+    function visibleRoot(target) {
+      const root=target?.closest?.(roots);
+      return root&&!root.hidden?root:null;
+    }
+    document.addEventListener("pointerdown",event=>{
+      if(event.button!==0||!event.isTrusted||drag)return;
+      const root=visibleRoot(event.target);
+      if(!root)return;
+      const header=event.target.closest?.(headers);
+      if(!header&&!event.altKey)return;
+      if(!event.altKey&&event.target.closest?.(
+        "button,select,input,textarea,a,[role=slider],[contenteditable]"))return;
+      const r=root.getBoundingClientRect();
+      drag={root,id:event.pointerId,startX:event.clientX,startY:event.clientY,
+        left:r.left,top:r.top,capture:header||root};
+      try{drag.capture.setPointerCapture?.(event.pointerId);}catch(_){}
+      event.preventDefault();
+      event.stopImmediatePropagation(); // prevent old viewport-clamped module drag
+    },true);
+    document.addEventListener("pointermove",event=>{
+      if(!drag||drag.id!==event.pointerId)return;
+      const x=drag.left+event.clientX-drag.startX;
+      const y=drag.top+event.clientY-drag.startY;
+      const r=drag.root.getBoundingClientRect();
+      move(drag.root,x-r.left,y-r.top);
+      event.preventDefault();event.stopImmediatePropagation();
+    },true);
+    function finishDrag(event){
+      if(!drag||drag.id!==event.pointerId)return;
+      const held=drag;drag=null;
+      try{held.capture.releasePointerCapture?.(event.pointerId);}catch(_){}
+      event.stopImmediatePropagation();
+    }
+    document.addEventListener("pointerup",finishDrag,true);
+    document.addEventListener("pointercancel",finishDrag,true);
+    window.addEventListener("blur",()=>{drag=null;});
+    // When the whole header is cropped into its right-side control buttons,
+    // Shift+wheel still slides the exact same FX; Alt+drag works anywhere.
+    document.addEventListener("wheel",event=>{
+      if(!event.shiftKey)return;
+      const root=visibleRoot(event.target);
+      if(!root)return;
+      event.preventDefault();event.stopImmediatePropagation();
+      const amount=Math.abs(event.deltaY)>Math.abs(event.deltaX)?
+        event.deltaY:event.deltaX;
+      if(Number.isFinite(amount))move(root,-amount*.8,0);
+    },{capture:true,passive:false});
+    document.addEventListener("dblclick",event=>{
+      const root=visibleRoot(event.target);
+      if(root&&event.target.closest?.(headers) &&
+         !event.target.closest?.("button,select,input"))
+        requestAnimationFrame(()=>center(root));
+    });
+    document.addEventListener("click",event=>{
+      if(!event.target.closest?.("#mxNativeGeq31 .mx-geq31-size"))return;
+      requestAnimationFrame(()=>{
+        const root=document.getElementById("mxNativeGeq31");
+        if(root&&!root.hidden)center(root);
+      });
+    });
+    window.addEventListener("resize",()=>{
+      for(const root of document.querySelectorAll(roots))
+        if(!root.hidden)requestAnimationFrame(()=>center(root));
+    });
+    return Object.freeze({openExact,center,move});
+  })():null;
+  if(inlineFxClip)window.__ARMIX_NATIVE_INLINE_FX_CLIP__=inlineFxClip;
+
+
   // Native owns durable channel presentation. The approved Pages model only
   // renders native readback; no localStorage authority, fake PCM rename or
   // UI-ordinal-dependent alias. All IDs remain exact uint64 decimal strings.
@@ -232,6 +369,9 @@
   const pendingM4RackPowers=new Map();
   let controller = null;
   let logicalView=null,pendingLogical=null,logicalSerial=0,logicalRenameId=null;
+  // Retained requests prepare a control-only .smix FX editor after ACK, never
+  // authorize PCM or silently rebind disconnected hardware.
+  let pendingRetainedEditor=null,retainedEditorSerial=0;
   const logicalClientToken=Date.now().toString(36)+"-"+
     Math.random().toString(36).slice(2,10);
   // Human-facing presentation is isolated from native diagnostic state.
@@ -1332,7 +1472,7 @@
       if(pendingFxEditorAck?.requestId===requestId)pendingFxEditorAck=null;
     },8000);
   }
-  function openChannelIdFxEditor(lease){
+  function openChannelIdFxEditor(lease,recenter=false){
     if(lease?.authority!=="CHANNEL_ID"||logicalView)return false;
     const accepted=controller?.state()?.current;
     const plan=fxRackVM.nativeEditorDispatchPlan(accepted,lease,{
@@ -1345,12 +1485,15 @@
         hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device),
         offline:!!logicalView}).kind!=="READY")
         return; // same-epoch hardware/FX replacement or offline .smix switch
-      dispatchPhysicalFxEditor(plan,lease,"CHANNEL_ID");
+      if(recenter)dispatchPhysicalFxEditor({
+        ...plan,payload:{...plan.payload,recenter:true}
+      },lease,"CHANNEL_ID");
+      else dispatchPhysicalFxEditor(plan,lease,"CHANNEL_ID");
     });
     return true;
   }
   function openRoutedFxEditor(lane,slot,instanceId,deviceEpoch,revision,
-                              hardwareConfiguration){
+                              hardwareConfiguration,recenter=false){
     const accepted=controller?.state()?.current;
     const plan=fxRackVM.m4EditorDispatchPlan(accepted,{
       channel:lane,slot,instanceId,deviceEpoch,revision,
@@ -1366,7 +1509,10 @@
         verifiedM4:m4Verified(current),offline:!!logicalView,
         hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)}))
         return;
-      dispatchPhysicalFxEditor(plan,lease,"M4");
+      if(recenter)dispatchPhysicalFxEditor({
+        ...plan,payload:{...plan.payload,recenter:true}
+      },lease,"M4");
+      else dispatchPhysicalFxEditor(plan,lease,"M4");
     });
     return true;
   }
@@ -2909,7 +3055,25 @@
     dispatchSourceQueue("M4");
   }
 
+  // This is ONLY an ephemeral visual gesture lease. PCM graph and .smix
+  // remain entirely native-authoritative. The original V66 recoil must not
+  // begin from a speculative drag, unsupported M4 route or rejected ACK.
+  let pendingNativeWireRetract=null;
   function playAcceptedWireImpact(changes) {
+    const held=pendingNativeWireRetract;
+    if(held && performance.now()-held.createdAt<=8000 &&
+       changes?.some(change=>
+         String(change.from)===held.nativeSource &&
+         ((change.op==="REMOVE" && String(change.edgeId)===held.nativeEdge) ||
+          (change.op==="DISCONNECT" && held.primary)))) {
+      // Readback has already projected the true graph; only now draw
+      // the ORIGINAL 330ms V66 wire until its dot returns to source OUT.
+      const stillConnected=scope?.wireEdges?.some(edge=>edge.enabled &&
+        edge.sourceId===held.uiSource && edge.destId===held.oldDest);
+      if(!stillConnected)
+        scope?.animateAcceptedWireRetract?.(held.uiSource,held.point);
+      pendingNativeWireRetract=null;
+    }
     const plug=changes?.find(change=>["CONNECT","ROUTE_ONLY","RETARGET"].includes(change.op));
     if(!plug)return;
     const from=uiByNativeId.get(plug.from),to=uiByNativeId.get(plug.to);
@@ -2932,6 +3096,7 @@
     pendingBusCreate=null;pendingTrackDelete=null;pendingFxInsert=null;
     pendingFxEditorAck=null; // expire old native HWND on device owner change
     startupWire=null;activeWireAttempt=null;pendingNativeGainIntent=false;
+    pendingNativeWireRetract=null; // old output/epoch cannot animate a new cable
     pendingWireGains.clear();pendingNativeControl.clear();
     liveFaderVisualTargets.clear();lastNativeControlSent.clear();
     pendingM4Controls.clear();pendingM4RackPowers.clear();
@@ -2999,7 +3164,7 @@
     appearanceFromNative(next);
     settleSourceReadback("CHANNEL_ID",next);
     settleSourceReadback("M4",next);
-    if(readModel.kind==="LOGICAL_ONLY") {
+    if(readModel.kind==="LOGICAL_ONLY"||readModel.kind==="RETAINED_OFFLINE") {
       const staged=readModel.view;
       let revealCreatedId=null,wireImpact=null;
       if(pendingLogical && pendingLogical.workspaceToken!==offline.workspaceToken)
@@ -3062,14 +3227,45 @@
       document.documentElement.dataset.armixNativeRoster="logical";
       flags.acceptedGraphConnected=false;flags.productionCallbackLive=false;
       stopDemo();syncAddTrack(staged);
+      if(pendingRetainedEditor?.acknowledged===true&&
+         readModel.kind==="RETAINED_OFFLINE"&&
+         pendingRetainedEditor.epoch===offline.retainedDeviceEpoch&&
+         pendingRetainedEditor.revision===offline.retainedGraphRevision) {
+        const held=pendingRetainedEditor;
+        const fx=staged.graph.channels.find(ch=>ch.id===held.channelId)
+          ?.inserts?.[held.slot];
+        if(fx?.catalogId===held.catalogId) {
+          pendingRetainedEditor=null;
+          window.queueMicrotask(()=>{
+            if(!logicalView||logicalView.workspaceToken!==staged.workspaceToken)return;
+            const uiId=uiByNativeId.get(held.channelId);
+            const track=[...(scope?.tracks||[]),scope?.master]
+              .find(t=>t&&t.id===uiId);
+            if(track)nativeHooks.consumeAction(track,"openPlugin",{
+              dataset:{slot:String(held.slot),recenter:held.recenter?"true":"false"}
+            });
+          });
+        } else {
+          pendingRetainedEditor=null;
+          status("Retained FX slot changed before offline editor could open");
+        }
+      }
       const addBus=document.getElementById("addBus");
-      if(addBus){addBus.hidden=false;addBus.disabled=!!pendingLogical;}
+      if(addBus){
+        addBus.hidden=readModel.kind==="RETAINED_OFFLINE";
+        addBus.disabled=!!pendingLogical||readModel.kind==="RETAINED_OFFLINE";
+      }
       status(staged.readOnly?
         "Saved mixer recovery required · Open a verified .smix file":
+        readModel.kind==="RETAINED_OFFLINE"?
+        "FX OFFLINE · output muted · saved changes require explicit .smix Open after reconnect":
         "Mixer ready to edit · connect Audio I/O to enable sound");
       return;
     }
     logicalView=null;
+    if(pendingRetainedEditor && readModel.kind!=="NEEDS_REMAP"){
+      pendingRetainedEditor=null; // never follow a newly admitted PCM owner
+    }
     if(pendingLogical) {
       pendingLogical=null;
       status("Audio connection changed · refresh mixer before editing");
@@ -3139,7 +3335,9 @@
       }
       stopDemo();
       paintNativeMeters(next);
-      status("Playback unavailable · waiting for the audio device");
+      status(next.raw?.retainedOfflineFxPending?
+        "FX offline edits saved · reconnect audio, then Open saved .smix to apply":
+        "Playback unavailable · waiting for the audio device");
       return;
     }
     if (!nativeAdmitted) {
@@ -3207,7 +3405,9 @@
     if(fxSettlement==="CONFIRMED"||fxSettlement==="STALE")
       pendingNativeFxPower=null;
     if(startupWire)window.queueMicrotask(flushStartupWire);
-    status("Mixer settings updated");
+    if(next.raw?.retainedOfflineFxPending)
+      status("Saved offline FX changes pending · Open .smix before enabling output");
+    else status("Mixer settings updated");
   }
   if (connected) {
     controller = protocol.createController({
@@ -3250,6 +3450,7 @@
         }
         if(recovery.kind==="ROLLBACK"||
            recovery.kind==="REBASE_CONNECTION"){
+          pendingNativeWireRetract=null; // rejected routing must never reel
           activeWireAttempt=null;
           startupWire=null;
           pendingWireGains.clear();
@@ -3308,6 +3509,17 @@
       finally{profiler.sample("nativeSnapshotJsMs",performance.now()-started);}
     });
     backend.addEventListener("arMixConsoleAck", ack=>controller.onAck(ack));
+    backend.addEventListener("arMixRetainedFxOfflineAck",ack=>{
+      if(!pendingRetainedEditor||ack?.requestId!==pendingRetainedEditor.requestId)return;
+      if(ack.ok!==true){
+        const error=ack?.error||"Retained FX recovery rejected";
+        pendingRetainedEditor=null;
+        status("Offline FX unavailable · "+error);
+        return;
+      }
+      pendingRetainedEditor.acknowledged=true;
+      controller.subscribe(); // only accepted native logical readback may open UI
+    });
     backend.addEventListener("arMixLogicalAck",ack=>{
       const pending=pendingLogical;
       if(!pending||pending.requestId!==ack?.requestId)return;
@@ -3846,8 +4058,39 @@
       }
       if(action==="openPlugin"){
         const slot=Number(btn?.dataset.slot),current=activeView();
+        // Position only; no parameter write or PCM change.
+        const recenter=btn?.dataset.recenter==="true";
         if(logicalView||mixerSession()?.authority==="CHANNEL_ID") {
           const id=nativeIdFor(t);
+          // A disconnected physical graph cannot authorize editor writes.
+          // Native must first capture a quiescent FX state to the .smix
+          // logical workspace; the UI opens it only after matching readback.
+          if(!logicalView&&current?.retained===true){
+            const fx=current.graph?.channels?.find(ch=>ch.id===id)?.inserts?.[slot];
+            if(!id||!Number.isInteger(slot)||slot<0||slot>=8||
+               !fx?.id||!fx.catalogId){
+              nativeToast("Disconnect recovery requires a saved FX insert");
+              return true;
+            }
+            if(pendingRetainedEditor){
+              status("Finishing the previous offline editor request");
+              return true;
+            }
+            const requestId="retained-editor-"+(++retainedEditorSerial);
+            pendingRetainedEditor={requestId,channelId:id,slot,
+              catalogId:fx.catalogId,instanceId:fx.id,
+              epoch:current.device.epoch,revision:current.graph.revision,
+              recenter,acknowledged:false};
+            backend.emitEvent("arMixAction",{action:"retainedFxOfflineOpen",
+              requestId,channelId:id,slot,instanceId:fx.id,
+              deviceEpoch:current.device.epoch,graphRevision:current.graph.revision});
+            window.setTimeout(()=>{
+              if(pendingRetainedEditor?.requestId!==requestId)return;
+              pendingRetainedEditor=null;
+              status("Offline FX recovery expired · refresh native mixer");
+            },10000);
+            return true;
+          }
           const plan=fxRackVM.editorNavigationPlan(current,{channelId:id,slot,
             hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
           if(plan.kind==="PICKER"){
@@ -3861,18 +4104,26 @@
             const surface=fxRackVM.editorSurfacePlan(current,editor,{
               hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
             if(surface.kind==="BROWSER"){
+              // G-MV approved lease stays native-authoritative; no nested
+              // WebView2/child HWND or FX DOM outside this mixer viewport.
+              const view=activeView();
+              const safe=fxRackVM.editorNavigationLeaseMatches(view,editor,{
+                hardwareConfiguration:protocol.nativeHardwareConfiguration(view?.device)});
               const host=window[surface.windowKey];
-              if(typeof host?.open==="function")host.open(t,slot);
-              else nativeToast("Built-in FX editor unavailable · refresh the approved GUI bundle");
+              if(!safe||!inlineFxClip?.openExact(
+                 host,surface.windowKey,t,slot,recenter))
+                nativeToast("Built-in FX changed · reopen current FX Rack");
             }else if(surface.kind==="LOGICAL_VENDOR"){
               backend.emitEvent("arMixAction",{action:"logicalVendorFxEditor",
                 channelId:editor.channelId,slot:editor.slot,instanceId:editor.instanceId,
                 workspaceToken:editor.workspaceToken,
-                graphRevision:editor.graphRevision,deviceEpoch:"0"});
+                graphRevision:editor.graphRevision,deviceEpoch:"0",recenter});
             }else if(surface.kind==="NATIVE_HOST"){
               // VST3, ImmerSIB and hosted future JUCE FX retain one original
               // correlated native editor owner and its independent lease.
-              if(!openChannelIdFxEditor(editor))
+              const opened=recenter?openChannelIdFxEditor(editor,true):
+                openChannelIdFxEditor(editor);
+              if(!opened)
                 nativeToast("FX editor unavailable · native instance changed");
             }else nativeToast("FX editor unavailable · accepted FX identity changed");
           }else nativeToast("This FX is held with the disconnected audio session");
@@ -3884,7 +4135,7 @@
         if(plan.kind==="OPEN")
           openRoutedFxEditor(plan.channel,plan.slot,plan.instanceId,
             plan.deviceEpoch,plan.revision,
-            protocol.nativeHardwareConfiguration(current?.device));
+            protocol.nativeHardwareConfiguration(current?.device),recenter);
         else if(plan.kind==="PICKER"){
           discoverFxOnFirstPickerOpen();
           scope?.openFastPicker?.(t,slot,btn);
@@ -3959,6 +4210,41 @@
         sourceId:nativeByUiId.get(uiSourceId),edgeId:wireByUiId.get(uiEdgeId),
         projected:flags.acceptedGraphConnected,
         pending:!!controller?.state()?.pending}).kind==="AVAILABLE";
+    },
+    consumeNativeWireReplug(sourceId,oldDestId,nextDestId,releasePoint,movingEdgeId) {
+      // Only the exact wire the operator actually grabbed is admissible.
+      // Multiple parallel sends may share FROM/TO; never remove the first
+      // matching destination or accidentally alter a different EdgeId.
+      const edge=Number.isInteger(movingEdgeId)?
+        scope?.wireEdges?.find(e=>e.id===movingEdgeId && e.enabled &&
+          e.sourceId===sourceId && e.destId===oldDestId):null;
+      if(!connected||!edge||nextDestId===oldDestId)return false;
+      const uiSource=Number(sourceId);
+      const nativeSource=nativeByUiId.get(uiSource);
+      const nativeEdge=wireByUiId.get(edge.id);
+      const validPoint=releasePoint&&Number.isFinite(releasePoint.x)&&
+        Number.isFinite(releasePoint.y);
+      const offline=!!logicalView;
+      const snapshot=controller?.state()?.current;
+      if(!validPoint||!nativeSource||!nativeEdge ||
+         (offline?(logicalView.readOnly||!!pendingLogical):
+          (!flags.acceptedGraphConnected||!snapshot?.admitted||
+           !!controller?.state()?.pending ||
+           !snapshot.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION"))))
+        return false; // no demo graph mutation and no speculative recoil
+      const removal=nextDestId===null;
+      const op=removal?
+        {type:"REMOVE",sourceId:uiSource,edgeId:edge.id}:
+        {type:"RETARGET",sourceId:uiSource,edgeId:edge.id,destId:nextDestId};
+      // Only detached-to-blank receive bay is a reel. A retarget gets the
+      // existing accepted plug spring, not a misleading unplug impulse.
+      pendingNativeWireRetract=removal?{
+        uiSource,oldDest:oldDestId,point:{x:releasePoint.x,y:releasePoint.y},
+        nativeSource:String(nativeSource),nativeEdge:String(nativeEdge),
+        primary:edge.kind==="primary",createdAt:performance.now()
+      }:null;
+      nativeHooks.consumeWire([op]);
+      return false; // Native ACK+readback, NEVER the browser reducer
     },
     consumeWire(ops,retries=0) {
       if (!connected)return false;
@@ -4188,6 +4474,18 @@
     state:()=>controller?.state() || null
   });
   window.__ARMIX_NATIVE_M2__ = nativeHooks;
+  // Shared rack double-click: resolve its exact strip and slot; no last-FX
+  // fallback and no duplicate native editor ownership.
+  document.addEventListener("arMixFxRackDoubleClick",event=>{
+    const trackId=event.detail?.trackId,slot=event.detail?.slot;
+    if(!connected||typeof trackId!=="string"||!Number.isInteger(slot)||
+       slot<0||slot>=8)return;
+    const track=[...(scope?.tracks||[]),scope?.master]
+      .find(item=>item&&String(item.id)===trackId);
+    if(track&&nativeIdFor(track))
+      nativeHooks.consumeAction(track,"openPlugin",{
+        dataset:{slot:String(slot),recenter:"true"}});
+  });
   window.ArSonFxRackAuthority=Object.freeze({move:(...args)=>nativeHooks.moveFx(...args)});
   const descriptor = Object.freeze({
     source:"/preview/ approved compiled Pages GUI",

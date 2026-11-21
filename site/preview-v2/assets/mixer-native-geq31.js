@@ -70,7 +70,9 @@ const save=el("button","mx-geq31-save","Save");
 save.type="button";save.title="Save the accepted native FX settings as a user preset";
 const flat=el("button","mx-geq31-flat","Flat");flat.type="button";
 const power=el("button","mx-geq31-power armix-builtin-fx-power","⏻");
-power.type="button";power.disabled=true;power.setAttribute("aria-label","Graphic EQ power");
+power.type="button";power.disabled=true;power.dataset.fxState="unknown";
+power.setAttribute("aria-pressed","false");
+power.setAttribute("aria-label","Graphic EQ power");
 const close=el("button","mx-geq31-close armix-builtin-fx-close","×");
 close.type="button";close.setAttribute("aria-label","Close Graphic EQ 31");
 // S/M/L resize the ONE original 1430x280 hardware editor, not a reflowed
@@ -326,12 +328,22 @@ function context(){
 function updatePower(){
  const s=state(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(active?.track);
  const ch=s?.graph?.channels?.find(c=>c.id===id),ins=ch?.inserts?.[active?.slot];
- const usable=Boolean(context());
+ // The public /preview/ has no audio backend, but its existing local
+ // slotBypass demo toggle must remain operable and truthfully labelled DEMO.
+ // Native never trusts this fallback: only context() and accepted graph
+ // readback can enable the live FX bypass action.
+ const demo=!native()&&Array.isArray(active?.track?.slotBypass);
+ const usable=Boolean(context())||demo;
+ const slotOff=demo?Boolean(active.track.slotBypass[active.slot]):
+   Boolean(ins?.bypassed);
+ const rackOff=!demo&&Boolean(ch?.fxRackBypassed);
  power.disabled=!usable;
- power.dataset.fxState=!usable?"unknown":ch.fxRackBypassed?"rack-off":ins?.bypassed?"off":"on";
- power.setAttribute("aria-pressed",String(usable&&!ins?.bypassed&&!ch?.fxRackBypassed));
- power.title=!usable?"DSP instance not accepted":ins?.bypassed?"Enable Graphic EQ":"Bypass Graphic EQ";
- const bypassed=usable&&Boolean(ins?.bypassed||ch?.fxRackBypassed);
+ power.dataset.fxState=!usable?"unknown":rackOff?"rack-off":slotOff?"off":"on";
+ power.setAttribute("aria-pressed",String(usable&&!slotOff&&!rackOff));
+ power.title=!usable?"DSP instance not accepted":
+   (slotOff?"Enable Graphic EQ":"Bypass Graphic EQ")+
+   (demo?" · PREVIEW ONLY (no audio engine)":"");
+ const bypassed=usable&&(slotOff||rackOff);
  bypassShade.classList.toggle("is-on",bypassed);
 }
 function paintChannelMeter(view){

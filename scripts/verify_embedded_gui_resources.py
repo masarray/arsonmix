@@ -48,7 +48,7 @@ def verify(exe: Path, bundle: Path, manifest_path: Path) -> int:
             if (
                 rel in seen or posix.is_absolute() or "\\" in rel
                 or any(part in (".", "..") for part in rel.split("/"))
-                or not (rel == "index.html" or rel.startswith("assets/"))
+                or not (rel in ("index.html", "fx-window.html") or rel.startswith("assets/"))
                 or not re.fullmatch(r"[0-9a-f]{64}", digest)
             ):
                 raise EmbeddedGuiError(f"Unsafe/duplicate approved GUI resource: {rel}")
@@ -59,6 +59,17 @@ def verify(exe: Path, bundle: Path, manifest_path: Path) -> int:
             raw = path.read_bytes()
             if not raw or hashlib.sha256(raw).hexdigest() != digest:
                 raise EmbeddedGuiError(f"Staged GUI resource SHA mismatch: {rel}")
+            if rel == "fx-window.html":
+                # This child HWND is an ORIGINAL /preview/ FX editor, not
+                # another published mixer page. The package verifier also
+                # reassembles and hashes the canonical native-only bundle.
+                required = (
+                    b"assets/approved-floating-fx-bridge.js",
+                    b"assets/arsonmix-approved-runtime.css",
+                    b'id="fxWindowStatus"',
+                )
+                if any(marker not in raw for marker in required):
+                    raise EmbeddedGuiError("Unsafe native-only FX editor frame")
             if image.find(raw) < 0:
                 raise EmbeddedGuiError(
                     f"APPROVED GUI BYTE RESOURCE NOT IN WINDOWS EXE: {rel}"
@@ -66,6 +77,8 @@ def verify(exe: Path, bundle: Path, manifest_path: Path) -> int:
 
     if "index.html" not in seen:
         raise EmbeddedGuiError("Approved GUI index.html not in manifest")
+    if "fx-window.html" in seen and "assets/approved-floating-fx-bridge.js" not in seen:
+        raise EmbeddedGuiError("Native-only FX frame is missing its approved control bridge")
     return len(seen)
 
 

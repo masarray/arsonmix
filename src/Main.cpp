@@ -212,6 +212,15 @@ class Browser final : public juce::WebBrowserComponent
 public:
     explicit Browser (Options options) : WebBrowserComponent (std::move (options)) {}
     bool loaded = false;
+    // Fan out ONLY native editor ACK/readback to owned FX WebViews; the
+    // canonical mixer remains the single control publisher. A method-level
+    // relay avoids duplicating 20+ existing DSP event sources.
+    std::function<void(const juce::String&,const juce::var&)> onNativeEvent;
+    void emitEventIfBrowserIsVisible(const juce::String& event,
+                                     const juce::var& payload) {
+        juce::WebBrowserComponent::emitEventIfBrowserIsVisible(event,payload);
+        if(onNativeEvent)onNativeEvent(event,payload);
+    }
     // Paint a lightweight native first-frame while WebView2 spins up. This is
     // entirely static JUCE graphics, not an overlay CSS compositor or timer.
     // The embedded browser owns the content as soon as its authenticated
@@ -243,7 +252,8 @@ class PluginEditorWindow final : public juce::DocumentWindow
 public:
     PluginEditorWindow (const juce::String& title, juce::AudioProcessorEditor* editor,
                         juce::Component& mixer)
-        : DocumentWindow (title, juce::Colour (0xff14212a), allButtons)
+        : DocumentWindow (title, juce::Colour (0xff14212a), allButtons),
+          mixer_ (mixer)
     {
         setUsingNativeTitleBar (true);
         setIcon (approvedAppIcon());
@@ -258,13 +268,176 @@ public:
         (void) armix::ui::attachOwnedFloatingWindow (*this, mixer);
         present();
     }
-    void present()
+    void present (bool centreOnMixer=false)
     {
-        if (!isVisible()) setVisible (true);
         if (isMinimised()) setMinimised (false);
+        // Retain reachable user placement; rescue a window stranded on an unplugged display.
+        armix::ui::placeFloatingEditor (*this, mixer_, centreOnMixer);
+        if (!isVisible()) setVisible (true);
         toFront (true);
     }
     void closeButtonPressed() override { setVisible (false); }
+private:
+    juce::Component& mixer_; // ConsoleWindow outlives all editor windows.
+};
+
+// A real Windows/macOS owned desktop window. The sole /preview/ asset pack
+// supplies the built-in FX drawing and JS controls; ONLY this tiny WebView
+// draws the editor, not another mixer or any second DSP/PCM callback.
+// FUX-1 UX correction: the floating FX is ONE real OS-owned top-level HWND,
+// but there is NO JUCE DocumentWindow titlebar, frame or extra Close key.
+// The WebView2 content IS the complete approved /preview/ hardware editor.
+// No duplicate mixer UI/PCM and no CSS fake window clipped to the mixer.
+class BuiltinFxDesktopWindow final : public juce::TopLevelWindow, private juce::Timer {
+public:
+    using OnIntent=std::function<void(juce::var)>;
+    BuiltinFxDesktopWindow(juce::Component& mixer,const juce::String& label,
+                           const juce::String& catalog,
+                           OnIntent onAction,OnIntent onPower,
+                           std::function<void()> onReady)
+        : TopLevelWindow(label,false),
+          mixer_(mixer),
+          browser_(webViewOptions().withNativeIntegrationEnabled()
+              .withEventListener("arMixFloatingReady",
+                  [this,ready=std::move(onReady)](juce::var message){
+                      if(message.getProperty("gui","").toString()!=
+                         "APPROVED_PAGES_NATIVE_FX_WINDOW_V1")return;
+                      browser_.loaded=true;
+                      if(ready)ready();
+                  })
+              .withEventListener("arMixAction",
+                  [intent=std::move(onAction)](juce::var request){
+                      if(intent)intent(std::move(request));
+                  })
+              .withEventListener("arMixFloatingPower",
+                  [power=std::move(onPower)](juce::var request){
+                      if(power)power(std::move(request));
+                  })
+              .withEventListener("arMixFloatingHide",[this](juce::var){
+                  stopTimer();
+                  setVisible(false); // ONLY the approved editor's Close button
+              })
+              .withEventListener("arMixFloatingDrag",[this](juce::var){
+                  startDesktopDrag(); // native OS drag, not a DOM card move
+              })
+              .withEventListener("arMixFloatingSize",[this](juce::var size){
+                  resizeToPanel(size);
+              })
+              .withResourceProvider(assetFor)) {
+        setUsingNativeTitleBar(false); // no Windows caption, no double Close
+        setOpaque(true);
+        addAndMakeVisible(browser_);   // no DocumentWindow content border
+        // Hardware editor's real dimensions are known BEFORE its first
+        // WebView navigation: never reveal a 1500x520 placeholder that
+        // subsequently collapses during WebView2 first paint.
+        const juce::Point<int> nominal=
+            catalog=="armix.builtin.graphic-eq31.v1"?juce::Point<int>(1430,280):
+            catalog=="armix.builtin.channel-eq.v1"?juce::Point<int>(850,500):
+            catalog=="armix.builtin.channel-compressor.v1"?juce::Point<int>(760,530):
+            catalog=="armix.builtin.arson-harmony.v1"?juce::Point<int>(1080,610):
+            catalog=="armix.builtin.vocal-throw.v1"?juce::Point<int>(1020,450):
+            juce::Point<int>(1080,640);
+        const auto* display=juce::Desktop::getInstance().getDisplays()
+                                 .getDisplayForRect(mixer.getScreenBounds());
+        const auto area=display?display->userArea:
+                         juce::Rectangle<int>(0,0,1550,930);
+        centreWithSize(juce::jlimit(200,juce::jmax(200,area.getWidth()-12),nominal.x),
+                       juce::jlimit(100,juce::jmax(100,area.getHeight()-12),nominal.y));
+        // One peer, allocated AFTER the frameless styling and final nominal
+        // bounds. Avoid JUCE 8's first-show peer reconstruction/flash.
+        addToDesktop();
+        // Public /preview/ remains the single canonical editor renderer.
+        // WebView navigation never opens audio devices or creates PCM.
+        browser_.goToURL(juce::WebBrowserComponent::getResourceProviderRoot()+
+                         "fx-window.html");
+    }
+    void resized() override {
+        browser_.setBounds(getLocalBounds()); // exact edge-to-edge WebView2
+    }
+    void present(bool recenter=false) {
+        recenterAfterInitialPanelSize_=recenter && !hasMeasuredPanel_;
+        (void)armix::ui::attachOwnedFloatingWindow(*this,mixer_);
+        if(!hasMeasuredPanel_) {
+            // Let WebView2 mount at its real S/M/L scale off-screen before
+            // any top-level rectangle is painted in front of the operator.
+            setTopLeftPosition(-20000,-20000);
+            if(!isVisible())setVisible(true);
+            startTimer(1800); // fail-open if asset/JS fails to mount
+            return;
+        }
+        armix::ui::placeFloatingEditor(*this,mixer_,recenter);
+        if(!isVisible())setVisible(true);
+        toFront(true);
+    }
+    void emit(const juce::String& event,const juce::var& payload) {
+        if(browser_.loaded && isVisible())
+            browser_.emitEventIfBrowserIsVisible(event,payload);
+    }
+    void resizeToPanel(const juce::var& size) {
+        const auto w=size.getProperty("width",{}),h=size.getProperty("height",{});
+        if(!w.isInt()||!h.isInt())return;
+        const int requestedW=static_cast<int>(w),requestedH=static_cast<int>(h);
+        if(requestedW<200||requestedW>4000||requestedH<100||requestedH>2600)return;
+        const auto* display=juce::Desktop::getInstance().getDisplays()
+                                 .getDisplayForRect(mixer_.getScreenBounds());
+        const auto area=display?display->userArea:
+                         juce::Rectangle<int>(0,0,1550,930);
+        // No +16px body gutter, +50px fake titlebar or JUCE content border.
+        // Deduplication keeps WebView2 ResizeObserver from jittering a peer
+        // already at its accepted pixel geometry (including GEQ S/M/L).
+        const int width=juce::jlimit(200,juce::jmax(200,area.getWidth()-12),requestedW);
+        const int height=juce::jlimit(100,juce::jmax(100,area.getHeight()-12),requestedH);
+        const bool firstPlacement=recenterAfterInitialPanelSize_||!hasMeasuredPanel_;
+        recenterAfterInitialPanelSize_=false;
+        hasMeasuredPanel_=true;
+        stopTimer();
+        if(std::abs(getWidth()-width)>2 || std::abs(getHeight()-height)>2) {
+            setSize(width,height);
+            armix::ui::placeFloatingEditor(*this,mixer_,firstPlacement);
+        } else if(firstPlacement) {
+            armix::ui::placeFloatingEditor(*this,mixer_,true);
+        }
+        if(firstPlacement)toFront(true);
+    }
+    bool ready()const noexcept{return browser_.loaded;}
+protected:
+    // JUCE 8 has no associatedComponent; keep FX off the Windows taskbar.
+    int getDesktopWindowStyleFlags() const override {
+        return juce::TopLevelWindow::getDesktopWindowStyleFlags() &
+            ~juce::ComponentPeer::windowAppearsOnTaskbar;
+    }
+private:
+    void timerCallback() override {
+        stopTimer();
+        if(!hasMeasuredPanel_&&isVisible()) {
+            // JS load failure must not strand an inaccessible HWND.
+            recenterAfterInitialPanelSize_=false;
+            armix::ui::placeFloatingEditor(*this,mixer_,true);
+            toFront(true);
+        }
+    }
+    void startDesktopDrag() {
+#if defined(_WIN32)
+        // Real Windows system-move supports snap and crossing monitor edges.
+        // WebView2's original header gesture is consumed in the native-only
+        // bridge before its demo DOM-card drag handler can run.
+        if(auto* peer=getPeer()) {
+            const auto hwnd=static_cast<HWND>(peer->getNativeHandle());
+            if(hwnd && ::IsWindow(hwnd)) {
+                POINT cursor{};
+                if(::GetCursorPos(&cursor)) {
+                    ::ReleaseCapture();
+                    ::PostMessageW(hwnd,WM_NCLBUTTONDOWN,HTCAPTION,
+                        MAKELPARAM(cursor.x,cursor.y));
+                }
+            }
+        }
+#endif
+    }
+    juce::Component& mixer_;
+    Browser browser_;
+    bool recenterAfterInitialPanelSize_=false;
+    bool hasMeasuredPanel_=false;
 };
 
 class AudioSetupWindow final : public juce::DocumentWindow
@@ -421,6 +594,20 @@ public:
               .withResourceProvider (assetFor))
     {
         settingsDirectory().createDirectory();
+        // Original native event publisher remains UNIQUE. Broadcast only
+        // built-in FX receipts plus bounded native readbacks to child HWNDs.
+        // A vendor plugin never receives a second processing callback.
+        browser_.onNativeEvent=[this](const juce::String& event,
+                                      const juce::var& payload) {
+            const bool response=event.startsWith("arMixBuiltin") ||
+                event=="arMixNativeFxPowerAck" || event=="arMixLogicalAck";
+            const bool snapshot=event=="arMixConsoleSnapshot";
+            if(!response&&!snapshot)return;
+            if(snapshot && ++floatingFxRelayTick_%4!=0)return; // <=3 Hz
+            for(const auto& owned:floatingBuiltinFx_)
+                if(owned && owned->window && owned->window->isVisible())
+                    owned->window->emit(event,payload);
+        };
         hotkeys_.setHandler([this](const armix::hotkey::Mapping& mapping) {
             fireNativeHotkey(mapping);
         });
@@ -512,6 +699,12 @@ public:
         orbit_.stop();
         catalog_.onChanged = nullptr;
         closeAllPluginEditors();
+        // Shutdown is the ONE place where the mixer event relay is detached.
+        // Ordinary .smix Open, FX replace, preset recall and device changes
+        // also call closeAllPluginEditors(): nulling the relay there made
+        // every subsequently reopened floating built-in FX window permanently
+        // lose DSP ACK/readback. Do not unregister it until final teardown.
+        browser_.onNativeEvent=nullptr;
         // Tear down the modal transaction first. A closing window must not
         // re-enter device rebind while ConsoleWindow is being destroyed.
         audioSetupLease_.reset();
@@ -575,11 +768,13 @@ private:
             lastMixerSessionFingerprint_.clear();
             mixerSessionRecoveryPending_=true;
             mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND";
+            if(retainedOfflineFxActive_)
+                mixerSessionStatus_="RETAINED_OFFLINE_FX_REAPPLY_REQUIRED";
             mixerSessionError_.clear();
         }};
     struct LogicalVendorEditor {
         armix::session::StoredInsert insert;
-        juce::String workspaceToken;
+        juce::String workspaceToken,instanceId;
         std::unique_ptr<juce::AudioProcessor> processor;
         std::unique_ptr<PluginEditorWindow> window;
     };
@@ -589,6 +784,11 @@ private:
     juce::String mixerSessionError_,lastMixerSessionFingerprint_;
     bool mixerSessionStartupInspected_=false;
     bool mixerSessionRecoveryPending_=false;
+    // Isolated read/write FX workspace captured explicitly from a disconnected
+    // retained graph. It edits persisted .smix data, NEVER the original lease.
+    bool retainedOfflineFxActive_=false;
+    std::uint64_t retainedOfflineEpoch_=0,retainedOfflineRevision_=0;
+    std::uint64_t retainedOfflineOwnerEpoch_=0;
     std::unique_ptr<armix::startup::Vst3RestoreCrashGuard> startupFxGuard_;
     juce::uint32 startupFxGuardTick_=0;
     std::unique_ptr<juce::FileChooser> mixerFileChooser_;
@@ -688,6 +888,32 @@ private:
     armix::mixer::NativeMusicTempoMonitor::State lastMusicTempo_{};
     std::unique_ptr<PluginEditorWindow> editorWindow_;
     juce::AudioProcessor* editorProcessor_=nullptr; // identity only, never owns PCM
+    // UI-thread-only additional vendor HWNDs; the peer is destroyed BEFORE
+    // its exact native processor lease. No duplicate DSP or JUCE editor.
+    struct AdditionalFxEditor final {
+        armix::mixer::LiveChannelFxGraph::InstanceLease owner;
+        std::uint64_t epoch=0,channel=0;
+        int lane=-1,slot=-1;
+        juce::String instanceId;
+        juce::AudioProcessor* processor=nullptr; // non-owning
+        std::unique_ptr<PluginEditorWindow> window;
+    };
+    // Heap-stable entries avoid std::vector erase/move-assignment releasing
+    // a processor lease before its vendor HWND. Each pointee destroys its
+    // LAST-declared window before its FIRST-declared owner.
+    std::vector<std::unique_ptr<AdditionalFxEditor>> additionalFxEditors_;
+    static constexpr std::size_t maxSimultaneousVendorEditors=16;
+    struct FloatingBuiltinOwner final {
+        juce::String channelId,instanceId,catalogId,workspaceToken;
+        // Native ACK-authorized one-step logical revision migration.
+        // Never follow an arbitrary replacement of the same FX slot.
+        juce::String rekeyFrom;
+        int slot=-1;
+        std::unique_ptr<BuiltinFxDesktopWindow> window; // last, destroyed first
+    };
+    std::vector<std::unique_ptr<FloatingBuiltinOwner>> floatingBuiltinFx_;
+    std::uint64_t floatingFxRelayTick_=0;
+    static constexpr std::size_t maxSimultaneousBuiltinWindows=16;
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     // Persistent modal lease: blocks an Apply/ASIO restart while JUCE's
     // device selector is open, not merely during the initial show() call.
@@ -1181,6 +1407,220 @@ private:
     void closeAllPluginEditors() noexcept {
         closePluginEditor();
         closeImmerSIBEditor();
+        floatingBuiltinFx_.clear(); // owned WebViews before PCM engine cleanup
+        // DO NOT disable browser_.onNativeEvent here: this is a session-reset
+        // helper used throughout the application's lifetime, not a destructor.
+        // Each additional window's own destructor releases JUCE UI before
+        // its vendor lease, all on the native message thread.
+        additionalFxEditors_.clear();
+    }
+
+    // FUX-1: only exact native published ChannelId/slot/instance can create
+    // a separate WEBVIEW editor HWND. The six FX asset modules are the same
+    // original /preview/ modules, not a second mixer or a JS DSP implementation.
+    bool floatingBuiltinPresent(const FloatingBuiltinOwner* raw) const noexcept {
+        return std::any_of(floatingBuiltinFx_.begin(),floatingBuiltinFx_.end(),
+            [raw](const auto& x){return x.get()==raw;});
+    }
+    void emitFloatingBuiltinOpen(const FloatingBuiltinOwner& owner) {
+        if(!owner.window || !owner.window->ready())return;
+        auto args=std::make_unique<juce::DynamicObject>();
+        args->setProperty("snapshot",approvedNativeSnapshot());
+        args->setProperty("channelId",owner.channelId);
+        args->setProperty("instanceId",owner.instanceId);
+        args->setProperty("catalogId",owner.catalogId);
+        args->setProperty("slot",owner.slot);
+        args->setProperty("workspaceToken",owner.workspaceToken);
+        args->setProperty("rekeyFrom",owner.rekeyFrom);
+        owner.window->emit("arMixFloatingOpen",juce::var(args.release()));
+    }
+    void openFloatingBuiltin(const juce::var& args) {
+        const auto channel=args.getProperty("channelId",{}).toString();
+        const auto instance=args.getProperty("instanceId",{}).toString();
+        const auto catalog=args.getProperty("catalogId",{}).toString();
+        const auto rawSlot=args.getProperty("slot",{});
+        const int slot=rawSlot.isInt()?static_cast<int>(rawSlot):-1;
+        const auto workspace=args.getProperty("workspaceToken","").toString();
+        // Explicitly allowlist the six existing original DOM editors; other
+        // built-ins providing JUCE editors use PluginEditorWindow instead.
+        const juce::StringArray editors{
+            "armix.builtin.channel-eq.v1",
+            "armix.builtin.channel-compressor.v1",
+            "armix.builtin.graphic-eq31.v1",
+            "armix.builtin.arson-harmony.v1",
+            "armix.builtin.vocal-throw.v1",
+            "armix.builtin.8d-sonku.v1"
+        };
+        const auto current=approvedNativeSnapshot();
+        const auto physical=current.getProperty("graph",{});
+        const auto saved=current.getProperty("logicalMixer",{});
+        const auto session=current.getProperty("mixerSession",{});
+        const auto device=current.getProperty("device",{});
+        const bool offline=workspace.isNotEmpty() &&
+            saved.getProperty("schema","").toString()=="arsonmix.native.logical-mixer.v1" &&
+            saved.getProperty("authority","").toString()=="LOGICAL_ONLY" &&
+            saved.getProperty("physicalOutputAdmitted",true)==juce::var(false) &&
+            saved.getProperty("outputArmed",true)==juce::var(false) &&
+            saved.getProperty("workspaceToken","").toString()==workspace &&
+            saved.getProperty("revision",{}).toString()==
+                args.getProperty("graphRevision",{}).toString();
+        const bool live=workspace.isEmpty() &&
+            session.getProperty("authority","").toString()=="CHANNEL_ID" &&
+            physical.getProperty("capabilities",{})
+                .getProperty("callbackOwnsChannelIds",false)==juce::var(true) &&
+            physical.getProperty("bindingState","").toString()!="NEEDS_REMAP" &&
+            device.getProperty("epoch",{}).toString()==
+                args.getProperty("deviceEpoch",{}).toString() &&
+            physical.getProperty("revision",{}).toString()==
+                args.getProperty("graphRevision",{}).toString();
+        const auto graph=offline?saved.getProperty("graph",{}):physical;
+        bool matched=false;
+        if(slot>=0&&slot<LiveDryRoutingLab::maxFxPerLane &&
+           channel.isNotEmpty()&&instance.isNotEmpty()&&
+           editors.contains(catalog)&&(offline||live)) {
+            const auto rows=graph.getProperty("channels",{});
+            if(const auto* list=rows.getArray())
+                for(const auto& row:*list) {
+                    if(row.getProperty("id",{}).toString()!=channel)continue;
+                    const auto inserts=row.getProperty("inserts",{});
+                    if(const auto* fx=inserts.getArray();fx&&slot<fx->size()) {
+                        const auto insert=(*fx)[slot];
+                        matched=insert.getProperty("id",{}).toString()==instance &&
+                            insert.getProperty("catalogId","").toString()==catalog;
+                    }
+                    break;
+                }
+        }
+        if(!matched) {
+            emitNotice("FX editor needs a current saved/live insert · refresh FX Rack",true);
+            return;
+        }
+        // Native top-level owned HWNDs are independent and physically free to
+        // leave mixer bounds, unlike any CSS fixed/absolute element in WebView.
+        for(const auto& held:floatingBuiltinFx_)
+            if(held && held->channelId==channel && held->slot==slot &&
+               held->instanceId==instance && held->catalogId==catalog &&
+               held->workspaceToken==workspace) {
+                held->window->present(static_cast<bool>(
+                    args.getProperty("recenter",false)));
+                emitFloatingBuiltinOpen(*held);
+                return; // no duplicate WebView or processor for repeated clicks
+            }
+        if(floatingBuiltinFx_.size()>=maxSimultaneousBuiltinWindows) {
+            // Closed built-in editor HWNDs have no processor ownership.
+            // Recycle the first hidden WebView before rejecting a new FX
+            // rack click; preserve all OPEN user editors and any DSP state.
+            const auto hidden=std::find_if(floatingBuiltinFx_.begin(),
+                floatingBuiltinFx_.end(),[](const auto& item) {
+                    return item && item->window && !item->window->isVisible();
+                });
+            if(hidden!=floatingBuiltinFx_.end())
+                floatingBuiltinFx_.erase(hidden);
+            else {
+                emitNotice("Close an unused built-in FX editor before opening another",true);
+                return;
+            }
+        }
+        auto owned=std::make_unique<FloatingBuiltinOwner>();
+        owned->channelId=channel;
+        owned->instanceId=instance;
+        owned->catalogId=catalog;
+        owned->workspaceToken=workspace;
+        owned->slot=slot;
+        const auto* ref=owned.get();
+        const auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
+        const auto onAction=[safe,ref](juce::var request) {
+            if(!safe || !safe->floatingBuiltinPresent(ref))return;
+            // Popup may only issue CONTROL intents for its exact open insert.
+            if(request.getProperty("channelId",{}).toString()!=ref->channelId ||
+               request.getProperty("instanceId",{}).toString()!=ref->instanceId ||
+               request.getProperty("slot",{})!=juce::var(ref->slot))return;
+            const auto action=request.getProperty("action","").toString();
+            // A popup never receives a GENERAL native control capability.
+            // Each catalog can request only its own original approved FX
+            // snapshot/edit/preset commands, never Audio Setup, routing,
+            // WIRE, mixer session, device or another insert's processor.
+            juce::StringArray permitted;
+            if(ref->catalogId=="armix.builtin.channel-eq.v1")
+                permitted={"nativeEqSnapshot","nativeEqSetBand","nativeBuiltinFxUserPreset"};
+            else if(ref->catalogId=="armix.builtin.graphic-eq31.v1")
+                permitted={"nativeGeqSnapshot","nativeGeqSet","nativeBuiltinFxUserPreset"};
+            else if(ref->catalogId=="armix.builtin.channel-compressor.v1")
+                permitted={"nativeCompSnapshot","nativeCompSet","nativeBuiltinFxUserPreset"};
+            else if(ref->catalogId=="armix.builtin.arson-harmony.v1")
+                permitted={"nativeHarmonySnapshot","nativeHarmonySetSettings",
+                           "nativeHarmonyUserPreset"};
+            else if(ref->catalogId=="armix.builtin.vocal-throw.v1")
+                permitted={"nativeThrowSnapshot","nativeThrowSet","nativeThrowTrigger",
+                           "nativeThrowTempoSource","nativeBuiltinFxUserPreset"};
+            else if(ref->catalogId=="armix.builtin.8d-sonku.v1")
+                permitted={"nativeSonKuSnapshot","nativeSonKuSet"};
+            if(!permitted.contains(action))return;
+            if(action=="nativeBuiltinFxUserPreset" &&
+               request.getProperty("catalogId","").toString()!=ref->catalogId)
+                return;
+            safe->onAction(request); // existing single native DSP request fence
+        };
+        const auto onPower=[safe,ref](juce::var request) {
+            if(!safe||!safe->floatingBuiltinPresent(ref))return;
+            if(request.getProperty("channelId",{}).toString()!=ref->channelId ||
+               request.getProperty("instanceId",{}).toString()!=ref->instanceId ||
+               request.getProperty("catalogId",{}).toString()!=ref->catalogId ||
+               request.getProperty("slot",{})!=juce::var(ref->slot))return;
+            const auto source=safe->approvedNativeSnapshot();
+            const auto logical=request.getProperty("logical",false)==juce::var(true);
+            const auto actualGraph=logical?
+                source.getProperty("logicalMixer",{}).getProperty("graph",{}):
+                source.getProperty("graph",{});
+            const auto expectedRevision=logical?
+                source.getProperty("logicalMixer",{}).getProperty("revision",{}):
+                actualGraph.getProperty("revision",{});
+            if(expectedRevision.toString()!=
+                   request.getProperty("graphRevision",{}).toString() ||
+               source.getProperty("device",{}).getProperty("epoch",{}).toString()!=
+                   request.getProperty("deviceEpoch",{}).toString() ||
+               !request.getProperty("value",{}).isBool())return;
+            auto outgoing=std::make_unique<juce::DynamicObject>();
+            const auto id=request.getProperty("requestId","").toString();
+            if(!id.startsWith("fx-window-")||id.length()>128)return;
+            outgoing->setProperty("requestId",logical?"logical-"+id:id);
+            outgoing->setProperty("channelId",ref->channelId);
+            outgoing->setProperty("slot",ref->slot);
+            outgoing->setProperty("value",request.getProperty("value",{}));
+            if(logical) {
+                if(request.getProperty("workspaceToken","").toString()!=ref->workspaceToken ||
+                   ref->workspaceToken.isEmpty())return;
+                // Logical FX policy consumes payload.slot + payload.enabled,
+                // not an untyped top-level value. The verified popup is the
+                // *only* source of this insert identity and target bypass.
+                auto payload=std::make_unique<juce::DynamicObject>();
+                payload->setProperty("slot",ref->slot);
+                payload->setProperty("enabled",request.getProperty("value",{}));
+                outgoing->setProperty("payload",juce::var(payload.release()));
+                outgoing->setProperty("insertId",ref->instanceId);
+                outgoing->setProperty("operation","SET_FX_SLOT_BYPASS");
+                outgoing->setProperty("workspaceToken",ref->workspaceToken);
+                outgoing->setProperty("baseRevision",expectedRevision);
+                safe->handleLogicalMixerIntent(juce::var(outgoing.release()));
+            } else {
+                if(ref->workspaceToken.isNotEmpty())return;
+                outgoing->setProperty("action","routingNativeFxInsertBypass");
+                outgoing->setProperty("deviceEpoch",request.getProperty("deviceEpoch",{}));
+                outgoing->setProperty("revision",expectedRevision);
+                outgoing->setProperty("insertId",ref->instanceId);
+                safe->onAction(juce::var(outgoing.release()));
+            }
+        };
+        const auto ready=[safe,ref] {
+            if(safe && safe->floatingBuiltinPresent(ref))
+                safe->emitFloatingBuiltinOpen(*ref);
+        };
+        owned->window=std::make_unique<BuiltinFxDesktopWindow>(
+            *this,"ArSonMix FX · "+catalog,catalog,std::move(onAction),
+            std::move(onPower),std::move(ready));
+        floatingBuiltinFx_.push_back(std::move(owned));
+        floatingBuiltinFx_.back()->window->present(true); // first open centred
+        emitFloatingBuiltinOpen(*floatingBuiltinFx_.back());
     }
 
     void emitChain()
@@ -1451,6 +1891,22 @@ private:
         return {};
     }
 
+    // Stable *stored FX* identity is the lifetime authority; a logical
+    // graph revision may advance for an unrelated fader without replacing
+    // the processor. The incoming click's exact instance token is verified
+    // separately by logicalFxTarget() against the current workspace.
+    bool logicalVendorSourceCurrent(const LogicalVendorEditor& fx) const {
+        const auto& workspace=logicalMixer_.workspace();
+        const auto* row=workspace.document().roster.find(fx.insert.channel);
+        const auto* current=workspace.storedFx(fx.insert.channel,fx.insert.slot);
+        return row && fx.insert.slot<row->insertCatalogIds.size() &&
+            row->insertCatalogIds[fx.insert.slot]==fx.insert.catalogId.toStdString() &&
+            ((current==nullptr && fx.insert.sha256.isEmpty()) ||
+             (current!=nullptr && current->catalogId==fx.insert.catalogId &&
+              current->sha256==fx.insert.sha256 &&
+              current->uid==fx.insert.uid && current->path==fx.insert.path));
+    }
+
     void openLogicalVendorEditor(const juce::var& request) {
         std::uint64_t channel=0;
         std::size_t slot=0;
@@ -1458,12 +1914,22 @@ private:
             emitNotice("The selected FX slot changed",true);
             return;
         }
+        const auto requestedInstance=request.getProperty("instanceId",{}).toString();
         if(logicalVendorEditor_) {
             auto& existing=*logicalVendorEditor_;
-            if(existing.window)existing.window->present();
             if(existing.workspaceToken==logicalMixer_.workspace().workspaceToken() &&
-               existing.insert.channel==armix::mixer::ChannelId{channel} && existing.insert.slot==slot)
+               existing.insert.channel==armix::mixer::ChannelId{channel} &&
+               existing.insert.slot==slot && logicalVendorSourceCurrent(existing)) {
+                // Revisions from unrelated fader changes produce a new
+                // logical click token but NOT a new underlying FX instance.
+                existing.instanceId=requestedInstance;
+                if(existing.window) {
+                    if(static_cast<bool>(request.getProperty("recenter",false)))
+                        existing.window->present(true);
+                    else existing.window->present();
+                }
                 return; // Exact same logical FX: refocus without losing state.
+            }
             emitNotice("Finish the currently open FX editor first",true);
             return;
         }
@@ -1478,7 +1944,10 @@ private:
                 if(auto* editor=prepared.processor->createEditorIfNeeded()) {
                     prepared.window=std::make_unique<PluginEditorWindow>(
                         prepared.processor->getName(),editor,*this);
+                    if(static_cast<bool>(request.getProperty("recenter",false)))
+                        prepared.window->present(true); // first-open must also centre on mixer
                     prepared.workspaceToken=logicalMixer_.workspace().workspaceToken();
+                    prepared.instanceId=requestedInstance;
                     logicalVendorEditor_=std::move(prepared);
                     return;
                 }
@@ -1496,6 +1965,14 @@ private:
         auto& fx=*logicalVendorEditor_;
         if(fx.workspaceToken!=logicalMixer_.workspace().workspaceToken()) {
             logicalVendorEditor_.reset();
+            return;
+        }
+        // Snapshot-and-compare the original logical FX identity before
+        // persisting vendor state. Unrelated fader edits are harmless, but
+        // replacing an FX or rewriting its saved blob must reject stale writes.
+        if(!logicalVendorSourceCurrent(fx)) {
+            emitNotice("FX slot or stored state changed: close/reopen its editor before saving",true);
+            if(!shutdown)fx.window->setVisible(true);
             return;
         }
         juce::MemoryBlock bytes;
@@ -1839,7 +2316,169 @@ private:
         }
     }
 
+    // Explicit retained-session FX editor handoff. A silent device STOP does
+    // not give an old HWND authority to mutate the accepted PCM processor.
+    // Capture its exact quiescent binary state into the existing logical
+    // document, then edit an isolated control-side processor. The user must
+    // explicitly re-apply the saved .smix when hardware returns; no auto ARM.
+    void openRetainedFxOffline(const juce::var& request) {
+        juce::String error;
+        const auto source=approvedNativeSnapshot();
+        const auto graph=source.getProperty("graph",{});
+        const auto device=source.getProperty("device",{});
+        const auto session=source.getProperty("mixerSession",{});
+        const auto rawSlot=request.getProperty("slot",{});
+        const int slot=rawSlot.isInt()?static_cast<int>(rawSlot):-1;
+        std::uint64_t channel=0,epoch=0,revision=0;
+        const bool identity=armix::console::approvedNativeId(
+                request.getProperty("channelId",{}),channel)&&
+            armix::console::approvedNativeId(request.getProperty("deviceEpoch",{}),epoch)&&
+            armix::console::approvedNativeId(request.getProperty("graphRevision",{}),revision)&&
+            slot>=0&&slot<LiveDryRoutingLab::maxFxPerLane&&
+            engine_.hasRetainedNativeSession()&&
+            !engine_.isGraphSwitchPending()&&!deviceApply_.busy()&&
+            !nativeShowBusy_&&!studioBackupBusy_&&!mixerSessionWorker_.busy()&&
+            !logicalVendorEditor_&&
+            graph.getProperty("bindingState","").toString()=="NEEDS_REMAP"&&
+            session.getProperty("authority","").toString()=="CHANNEL_ID"&&
+            session.getProperty("deviceEpoch",{}).toString()==juce::String(epoch)&&
+            device.getProperty("epoch",{}).toString()==juce::String(epoch)&&
+            graph.getProperty("revision",{}).toString()==juce::String(revision)&&
+            engine_.retainedNativeEpoch()!=0;
+        bool sameInsert=false;
+        if(identity) {
+            const auto rows=graph.getProperty("channels",{});
+            if(const auto* list=rows.getArray())for(const auto& row:*list) {
+                if(row.getProperty("id",{}).toString()!=juce::String(channel))continue;
+                const auto inserts=row.getProperty("inserts",{});
+                if(const auto* fx=inserts.getArray();fx && slot<fx->size()) {
+                    const auto effect=(*fx)[slot];
+                    sameInsert=effect.isObject() &&
+                        effect.getProperty("id",{}).toString()==
+                            request.getProperty("instanceId",{}).toString() &&
+                        effect.getProperty("catalogId","").toString().isNotEmpty();
+                }
+            }
+        }
+        if(!identity||!sameInsert)error="Retained FX instance changed; refresh the rack";
+        else if(retainedOfflineFxActive_&&
+                (retainedOfflineEpoch_!=epoch ||
+                 retainedOfflineRevision_!=revision ||
+                 retainedOfflineOwnerEpoch_!=engine_.retainedNativeEpoch())) {
+            // A new disconnected session must not silently replace any
+            // committed .smix offline edits from the previous exact owner.
+            // The operator can explicitly Open/restore the saved session.
+            error="A different retained session is pending offline FX recovery";
+        } else if(retainedOfflineFxActive_) {
+            // Exact same retained owner: reuse the already edited workspace,
+            // NEVER recapture its old native state over newer .smix data.
+        } else {
+            // Disconnected FX editing is always output-disarmed. A still-armed
+            // secondary output is not silently stopped or reconfigured.
+            operatorOutputMuted_=true;
+            engine_.setOutputMuted(true);
+            if(!engine_.allOutputsDisarmed())
+                error="Disarm secondary output before editing retained FX";
+            else {
+                armix::session::MixerSessionDocument document;
+                std::vector<armix::shows::BinaryState> states;
+                error=engine_.captureNativeMixerSession(document,states,true);
+                if(error.isEmpty()) {
+                    document.id=mixerSessionId_.isNotEmpty()?mixerSessionId_:
+                        logicalMixer_.workspace().document().id;
+                    document.resumeMain=false;
+                    document.savedMs=juce::Time::currentTimeMillis();
+                    error=resolveMixerSessionCatalog(document,true);
+                    if(error.isEmpty()&&
+                       !logicalMixer_.restoreCheckpoint(std::move(document),std::move(states)))
+                        error="Retained FX document could not be validated";
+                }
+                if(error.isEmpty()) {
+                    retainedOfflineFxActive_=true;
+                    retainedOfflineEpoch_=epoch;
+                    retainedOfflineRevision_=revision;
+                    retainedOfflineOwnerEpoch_=engine_.retainedNativeEpoch();
+                    mixerSessionRecoveryPending_=true;
+                    mixerSessionStatus_="RETAINED_OFFLINE_FX_REAPPLY_REQUIRED";
+                }
+            }
+        }
+        auto ack=std::make_unique<juce::DynamicObject>();
+        ack->setProperty("ok",error.isEmpty());
+        ack->setProperty("error",error);
+        ack->setProperty("requestId",request.getProperty("requestId",{}));
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+            "arMixRetainedFxOfflineAck",juce::var(ack.release()));
+        if(error.isEmpty())emitApprovedNativeSnapshot();
+        else emitNotice("Offline FX unavailable: "+error,true);
+    }
+
+    // Once the logical .smix store has COMMITTED an exact popup Power intent,
+    // the revision-scoped logical instance ID changes. Rebind ONLY that same
+    // owner from a successful correlated ACK; a same-catalog replacement,
+    // browser guess, stale revision or unrelated mixer edit cannot steal it.
+    void rekeyFloatingLogicalPower(const juce::var& request,const juce::var& ack) {
+        const auto requestId=request.getProperty("requestId","").toString();
+        if(request.getProperty("operation","").toString()!="SET_FX_SLOT_BYPASS" ||
+           !requestId.startsWith("logical-fx-window-") ||
+           ack.getProperty("requestId","").toString()!=requestId ||
+           ack.getProperty("status","").toString()!="ACCEPTED")
+            return;
+        const auto channel=request.getProperty("channelId","").toString();
+        const auto oldId=request.getProperty("insertId","").toString();
+        const auto workspace=request.getProperty("workspaceToken","").toString();
+        const auto rawSlot=request.getProperty("slot",{});
+        const int slot=rawSlot.isInt()?static_cast<int>(rawSlot):-1;
+        const auto acceptedRevision=ack.getProperty("revision","").toString();
+        const auto saved=logicalMixer_.readback();
+        if(channel.isEmpty()||oldId.isEmpty()||workspace.isEmpty()||
+           slot<0||slot>=LiveDryRoutingLab::maxFxPerLane ||
+           saved.getProperty("workspaceToken","").toString()!=workspace ||
+           saved.getProperty("revision","").toString()!=acceptedRevision ||
+           saved.getProperty("authority","").toString()!="LOGICAL_ONLY")
+            return;
+        const auto rows=saved.getProperty("graph",{}).getProperty("channels",{});
+        // Hold a COPY of the accepted readback insert. A pointer into the
+        // temporary row.getProperty("inserts") juce::var would dangle after
+        // leaving this loop and could rekey the wrong processor.
+        juce::var replacement;
+        if(const auto* channels=rows.getArray())
+            for(const auto& row:*channels) {
+                if(row.getProperty("id","").toString()!=channel)continue;
+                const auto inserts=row.getProperty("inserts",{});
+                if(const auto* fx=inserts.getArray();fx&&slot<fx->size())
+                    replacement=(*fx)[slot];
+                break;
+            }
+        if(!replacement.isObject())return;
+        const auto newId=replacement.getProperty("id","").toString();
+        if(newId.isEmpty()||newId==oldId)return;
+        for(auto& owner:floatingBuiltinFx_) {
+            if(!owner||!owner->window || owner->channelId!=channel ||
+               owner->slot!=slot || owner->workspaceToken!=workspace ||
+               owner->instanceId!=oldId ||
+               owner->catalogId!=replacement.getProperty("catalogId","").toString())
+                continue;
+            owner->rekeyFrom=oldId;
+            owner->instanceId=newId;
+            emitFloatingBuiltinOpen(*owner); // original /preview/ FX, no new HWND
+            break;
+        }
+    }
+
     void handleLogicalMixerIntent(const juce::var& request) {
+        if(retainedOfflineFxActive_&&engine_.hasRetainedNativeSession()) {
+            const auto operation=request.getProperty("operation","").toString();
+            if(operation!="SET_FX_SLOT_BYPASS"&&operation!="SET_FX_RACK_BYPASS") {
+                auto ack=std::make_unique<juce::DynamicObject>();
+                ack->setProperty("requestId",request.getProperty("requestId",{}));
+                ack->setProperty("status","REJECTED");
+                ack->setProperty("errorCode","RETAINED_OFFLINE_FX_ONLY");
+                if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                    "arMixLogicalAck",juce::var(ack.release()));
+                return;
+            }
+        }
         const auto snapshot=approvedNativeSnapshot();
         logicalMixer_.handleIntent(request,{
             deviceApply_.busy() || nativeShowBusy_ || studioBackupBusy_ ||
@@ -1851,9 +2490,14 @@ private:
                 (!catalog_.busy() && catalog_.find(key));
         },[this](const auto& workspace,auto channel,auto slot,auto& insert,auto& processor) {
             return prepareLogicalFx(workspace,channel,slot,insert,processor);
-        },[this](juce::var ack) {
-            if(browser_.loaded)
-                browser_.emitEventIfBrowserIsVisible("arMixLogicalAck",std::move(ack));
+        },[safe=juce::Component::SafePointer<ConsoleWindow>(this),
+           origin=request](juce::var ack) {
+            if(safe==nullptr)return;
+            // Commit callback runs on CONTROL after durable .smix replacement.
+            // ACK is required before changing any owned popup identity.
+            safe->rekeyFloatingLogicalPower(origin,ack);
+            if(safe->browser_.loaded)
+                safe->browser_.emitEventIfBrowserIsVisible("arMixLogicalAck",std::move(ack));
         });
     }
 
@@ -1880,16 +2524,40 @@ private:
             .getProperty("capabilities",{});
         const auto authority=accepted.getProperty("mixerSession",{})
             .getProperty("authority","").toString();
-        if(!static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",false)) &&
-           authority!="CHANNEL_ID" && authority!="M4" &&
-           !engine_.hasRetainedNativeSession()) {
+        if(retainedOfflineFxActive_ && engine_.hasRetainedNativeSession() &&
+           engine_.retainedNativeEpoch()==retainedOfflineOwnerEpoch_ &&
+           accepted.getProperty("device",{}).getProperty("epoch",{}).toString()==
+               juce::String(retainedOfflineEpoch_) &&
+           accepted.getProperty("graph",{}).getProperty("revision",{}).toString()==
+               juce::String(retainedOfflineRevision_)) {
+            // UI projection ONLY. The physical NEEDS_REMAP graph remains
+            // retained and output-disarmed, not a second PCM authority.
+            auto offline=logicalMixer_.readback();
+            offline.getDynamicObject()->setProperty("retainedOffline",true);
+            offline.getDynamicObject()->setProperty("retainedDeviceEpoch",
+                juce::String(retainedOfflineEpoch_));
+            offline.getDynamicObject()->setProperty("retainedGraphRevision",
+                juce::String(retainedOfflineRevision_));
+            // Only FX controls can write this pending .smix; never expose
+            // offline WIRE/fader/physical output as a live control operation.
+            auto caps=offline.getProperty("graph",{}).getProperty("capabilities",{});
+            if(auto* mutableCaps=caps.getDynamicObject()) {
+                juce::Array<juce::var> allowed;
+                allowed.add("SET_FX_SLOT_BYPASS");
+                allowed.add("SET_FX_RACK_BYPASS");
+                mutableCaps->setProperty("supportedOps",juce::var(std::move(allowed)));
+            }
+            accepted.getDynamicObject()->setProperty("logicalMixer",std::move(offline));
+        } else if(!static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",false)) &&
+                  authority!="CHANNEL_ID" && authority!="M4" &&
+                  !engine_.hasRetainedNativeSession()) {
             // Separate field: physical graph remains truthful/unadmitted.
-            // Browsers may render this only as an explicitly unbound editor.
             accepted.getDynamicObject()->setProperty("logicalMixer",logicalMixer_.readback());
         }
         if(auto* obj=accepted.getDynamicObject()) {
             // PCM-authoritative global A/B readback; not a mirrored button state.
             obj->setProperty("globalFxBypassed",engine_.globalFxBypassed());
+            obj->setProperty("retainedOfflineFxPending",retainedOfflineFxActive_);
             obj->setProperty("channelAppearance",channelAppearance_.snapshot(accepted.getProperty("graph",{})));
             obj->setProperty("waitingAsioInputs",live.getProperty("waitingAsioInputs",0));
             obj->setProperty("externalOutputs",
@@ -3720,6 +4388,14 @@ private:
     juce::String restoreSavedMixerSession(bool startupOnSavedDevice=false,
             armix::session::MixerDeviceBindingPolicy::Mode bindingMode=
                 armix::session::MixerDeviceBindingPolicy::Mode::exact) {
+        // Device auto-restore must NEVER overwrite newer offline VST/built-in
+        // state with the older retained DSP graph. Only the operator's
+        // explicit .smix Open may replace this pending durable document.
+        if(retainedOfflineFxActive_) {
+            mixerSessionRecoveryPending_=true;
+            mixerSessionStatus_="RETAINED_OFFLINE_FX_REAPPLY_REQUIRED";
+            return "Offline FX edits are pending: Open the saved .smix explicitly";
+        }
         using Recovery=armix::session::NativeMixerSessionRecovery;
         Recovery::RestoreContext restore;
         restore.outputsDisarmed=engine_.allOutputsDisarmed();
@@ -3824,6 +4500,10 @@ private:
     juce::String saveMixerSession(bool resumeMain, const juce::File& exportFile={},
                                     bool shutdownCheckpoint=false) {
         const bool automatic=exportFile==juce::File{};
+        // The committed logical FX save is newer than the restored live
+        // processor. Auto/shutdown capture MUST NOT replace its binary
+        // VST state until an explicit verified session Open adopts it.
+        if(retainedOfflineFxActive_ && automatic)return {};
         ensureLogicalWorkspace();
         using Recovery=armix::session::NativeMixerSessionRecovery;
         const auto liveState=engine_.status();
@@ -3847,6 +4527,11 @@ private:
         save.m4Installed=session.getProperty("authority","").toString()=="M4";
         save.secondaryArmed=engine_.secondaryArmed();
         save.retainedNative=engine_.hasRetainedNativeSession();
+        // Only a successfully captured, committed offline FX workspace
+        // can override retained native Save rejection. The logical .smix
+        // store stays the source even if a device reconnects before Open.
+        save.retainedOfflinePending=retainedOfflineFxActive_ &&
+            logicalMixer_.loaded() && !logicalMixer_.readOnly();
         save.recoveryPending=mixerSessionRecoveryPending_;
         save.shutdownCheckpoint=shutdownCheckpoint;
         save.physicalOpen=audio!=nullptr && audio->isOpen();
@@ -3962,6 +4647,12 @@ private:
                         [safe,file,importedHotkeys,importedId](juce::String openError){
                     if(safe==nullptr)return;
                     if(openError.isEmpty()) {
+                        // Explicit saved-session Open supersedes the previous
+                        // offline FX document only after durable commit.
+                        safe->retainedOfflineFxActive_=false;
+                        safe->retainedOfflineEpoch_=0;
+                        safe->retainedOfflineOwnerEpoch_=0;
+                        safe->retainedOfflineRevision_=0;
                         safe->mixerSessionId_=importedId;
                         const auto keyError=safe->hotkeys_.activateSession(importedId,&importedHotkeys);
                         if(keyError.isNotEmpty())safe->emitNotice("Hotkey import: "+keyError,true);
@@ -3998,6 +4689,12 @@ private:
                    chosenEpoch==engine.dryRoutingLabEpoch()&&engine.liveOutputArmFault(false).isEmpty())
                     engine.setMonitorEnabled(true);
                 if(error.isEmpty()) {
+                    // Explicit verified physical .smix Open supersedes pending
+                    // offline FX authority; a device reconnect cannot do so.
+                    safe->retainedOfflineFxActive_=false;
+                    safe->retainedOfflineEpoch_=0;
+                    safe->retainedOfflineOwnerEpoch_=0;
+                    safe->retainedOfflineRevision_=0;
                     safe->closeAllPluginEditors();
                     safe->stopOrbit();
                     safe->mixerSessionId_=id;
@@ -4623,6 +5320,7 @@ private:
     void onAction (const juce::var& args)
     {
         auto action = args.getProperty ("action", {}).toString();
+        if(action=="floatingBuiltinOpen")return; // retired: built-in FX stays in ONE mixer WebView
         if (action=="audioLoopbackRead" || action=="audioLoopbackMeasure") {
             if (!deviceApply_.busy())
                 requestPhysicalLoopback(args,action=="audioLoopbackMeasure");
@@ -6649,6 +7347,7 @@ private:
             else emitNotice("FX bypass rejected: refresh the FX Rack after native ACK.",true);
             return;
         }
+        if(action=="retainedFxOfflineOpen")return openRetainedFxOffline(args);
         if(action=="logicalVendorFxEditor")return openLogicalVendorEditor(args);
         if (action == "routingFxEditor") {
             const int lane=static_cast<int>(args.getProperty("channel",-1));
@@ -6693,21 +7392,53 @@ private:
                     auto& shownEpoch=routedEditorEpoch_;
                     auto& shownProcessor=editorProcessor_;
 #endif
+                    std::erase_if(additionalFxEditors_,[this](const auto& extra){
+                        return !extra || !extra->owner ||
+                            !engine_.retainsRoutedFxEditor(extra->epoch,extra->owner);
+                    });
+                    const auto extra=std::find_if(additionalFxEditors_.begin(),
+                        additionalFxEditors_.end(),[&](const auto& entry){
+                        return entry && entry->owner==owner &&
+                            entry->processor==owner->processor.get();
+                    });
+                    // Only a DIFFERENT vendor owner may occupy an additional
+                    // HWND. Allow one existing primary owner plus 16 others.
+                    bool keepOtherVendorWindow=editorWindow_ && routedEditorOwner_ &&
+                        routedEditorOwner_!=owner;
+#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
+                    if(dedicatedImmerSIB)keepOtherVendorWindow=false;
+#endif
                     // A second click must raise an already open OR hidden
-                    // editor for exactly this accepted instance. Do not
+                    // editor for exactly this instance. Do not
                     // destroy/recreate JUCE's active editor on every click.
                     if(shownWindow && shownOwner==owner &&
                        shownEpoch==retainedEpoch &&
                        shownProcessor==owner->processor.get()) {
-                        shownWindow->present();
+                        if(static_cast<bool>(args.getProperty("recenter",false)))
+                            shownWindow->present(true);
+                        else shownWindow->present();
                         opened=true;
                         error.clear();
+                    } else if(extra!=additionalFxEditors_.end()) {
+                        // Instance owner is re-leased by the current graph;
+                        // channel and slot can move, but never clone its UI.
+                        (*extra)->epoch=retainedEpoch;
+                        (*extra)->channel=nativeChannel;
+                        (*extra)->lane=lane;(*extra)->slot=slot;
+                        (*extra)->instanceId=token;
+                        (*extra)->window->present(static_cast<bool>(
+                            args.getProperty("recenter",false)));
+                        opened=true;
+                        error.clear();
+                    } else if(keepOtherVendorWindow &&
+                              additionalFxEditors_.size()>=maxSimultaneousVendorEditors) {
+                        error="Close an unused VST3 editor before opening another";
                     } else try {
 #if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
                         if(dedicatedImmerSIB)closeImmerSIBEditor();
                         else
 #endif
-                            closePluginEditor();
+                            if(!keepOtherVendorWindow)closePluginEditor();
                         if(auto* editor=owner->processor->createEditorIfNeeded()) {
 #if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
                             if(auto* imer=dynamic_cast<
@@ -6901,11 +7632,26 @@ private:
                                         return true;
                                     });
                             }
-                            shownOwner=owner;
-                            shownEpoch=retainedEpoch;
-                            shownWindow=std::make_unique<PluginEditorWindow>(
-                                owner->processor->getName(),editor,*this);
-                            shownProcessor=owner->processor.get();
+                            if(keepOtherVendorWindow) {
+                                auto entry=std::make_unique<AdditionalFxEditor>();
+                                entry->owner=owner;entry->epoch=retainedEpoch;
+                                entry->channel=nativeChannel;entry->lane=lane;
+                                entry->slot=slot;entry->instanceId=token;
+                                entry->processor=owner->processor.get();
+                                entry->window=std::make_unique<PluginEditorWindow>(
+                                    owner->processor->getName(),editor,*this);
+                                if(static_cast<bool>(args.getProperty("recenter",false)))
+                                    entry->window->present(true);
+                                additionalFxEditors_.push_back(std::move(entry));
+                            } else {
+                                shownOwner=owner;
+                                shownEpoch=retainedEpoch;
+                                shownWindow=std::make_unique<PluginEditorWindow>(
+                                    owner->processor->getName(),editor,*this);
+                                if(static_cast<bool>(args.getProperty("recenter",false)))
+                                    shownWindow->present(true); // new HWND: centre on mixer too
+                                shownProcessor=owner->processor.get();
+                            }
                             opened=true;
                             error.clear();
                         } else error="This VST3 has no native editor";
@@ -6914,14 +7660,14 @@ private:
                         if(dedicatedImmerSIB)closeImmerSIBEditor();
                         else
 #endif
-                            closePluginEditor();
+                            if(!keepOtherVendorWindow)closePluginEditor();
                         error="Vendor editor failed: "+juce::String(ex.what());
                     } catch(...) {
 #if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
                         if(dedicatedImmerSIB)closeImmerSIBEditor();
                         else
 #endif
-                            closePluginEditor();
+                            if(!keepOtherVendorWindow)closePluginEditor();
                         error="Vendor editor failed (plugin exception)";
                     }
                 }
@@ -8025,7 +8771,8 @@ private:
         asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
         asioRecoveryGate_.carryInternalEpoch(asioRecoveryEpoch_);
         asioRecoveryGate_.recovered();
-        mixerSessionStatus_="RESTORED_MUTED";
+        mixerSessionStatus_=retainedOfflineFxActive_?
+            "RETAINED_OFFLINE_FX_REAPPLY_REQUIRED":"RESTORED_MUTED";
         mixerSessionError_.clear();
         const bool previousMain=engine_.takeAsioResetMonitorIntent();
         if((previousMain || engine_.wantsMainContinuation()) && !operatorOutputMuted_)
@@ -8695,6 +9442,12 @@ private:
         if(routedEditorOwner_ &&
            !engine_.retainsRoutedFxEditor(routedEditorEpoch_,routedEditorOwner_))
             closePluginEditor();
+        // Reclaim every retired vendor HWND before the respective FX lease.
+        // This is message-thread O(open editors), never PCM callback work.
+        std::erase_if(additionalFxEditors_,[this](const auto& entry){
+            return !entry || !entry->owner ||
+                !engine_.retainsRoutedFxEditor(entry->epoch,entry->owner);
+        });
 #if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
         if(immersibEditorOwner_ &&
            !engine_.retainsRoutedFxEditor(immersibEditorEpoch_,immersibEditorOwner_))

@@ -5,6 +5,7 @@ JUCE backend is deliberately emulated here; native PCM is covered by CTest.
 import copy
 import importlib.util
 from pathlib import Path
+from approved_floating_fx_component_harness import project_approved_editor_for_component_smoke
 import tempfile
 from playwright.sync_api import sync_playwright
 from approved_native_wire_gain_smoke import snapshot, emit, ack, SOURCE
@@ -65,7 +66,10 @@ def main():
     with tempfile.TemporaryDirectory(prefix="arsonmix-comp-") as directory,sync_playwright() as pw:
         out=Path(directory);bundle.stage(out)
         browser=pw.chromium.launch(headless=True)
-        for width,height in [(1366,768),(720,600),(390,844)]:
+        # DSP/readback qualification at authentic full studio geometry. Narrow
+        # native UI keeps FULL editor size (no former mobile reflow) and is
+        # covered with drag, pan and clipping in approved_inline_fx_clip_smoke.py.
+        for width,height in [(1366,768)]:
             page=browser.new_page(viewport={"width":width,"height":height})
             errors=[]
             page.on("pageerror",lambda error:errors.append(str(error)))
@@ -81,6 +85,7 @@ def main():
                     ?payload=>{prior(payload);callback(payload);}
                     :callback);}}};""")
             page.goto((out/"index.html").as_uri())
+            project_approved_editor_for_component_smoke(page)
             page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled && window.ArSonMixNativeCompressor")
             state=snapshot()
             state["graph"]["capabilities"]["supportedOps"]+=["LOAD_INSERT","MOVE_INSERT","REMOVE_INSERT"]

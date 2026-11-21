@@ -206,9 +206,7 @@
     // The physical installed producer (including NEEDS_REMAP) takes
     // priority over a saved logical .smix, even if stale metadata is present.
     // Do NOT use outputArmed, GUI labels, or an ACK to invent PCM admission.
-    const offlineEligible=!next.admitted&&!next.retained&&verifiedM4!==true&&
-      session?.authority!=="M4"&&session?.authority!=="CHANNEL_ID"&&
-      offline?.schema==="arsonmix.native.logical-mixer.v1"&&
+    const logicalSchema=offline?.schema==="arsonmix.native.logical-mixer.v1"&&
       offline.authority==="LOGICAL_ONLY"&&
       typeof offline.workspaceToken==="string"&&offline.workspaceToken.length>0&&
       offline.physicalOutputAdmitted===false&&offline.outputArmed===false&&
@@ -217,15 +215,27 @@
       offline.revision===offline.graph?.revision&&
       offline.revision===offline.graph?.rosterRevision&&
       Array.isArray(offline.graph?.channels)&&Array.isArray(offline.graph?.edges);
-    if(offlineEligible) {
+    const retainedOffline=logicalSchema&&!next.admitted&&next.retained&&
+      verifiedM4!==true&&session?.authority==="CHANNEL_ID"&&
+      session?.bindingState==="NEEDS_REMAP"&&
+      next.device.outputArmed===false&&
+      offline.retainedOffline===true&&
+      offline.retainedDeviceEpoch===next.device.epoch&&
+      offline.retainedGraphRevision===next.graph.revision&&
+      session.deviceEpoch===next.device.epoch;
+    const offlineEligible=logicalSchema&&!next.admitted&&!next.retained&&
+      verifiedM4!==true&&session?.authority!=="M4"&&
+      session?.authority!=="CHANNEL_ID";
+    if(offlineEligible||retainedOffline) {
       // A logical view is a read-only DISPLAY projection of the same native
       // envelope, not a second accepted mixer or physical output authority.
       const view={...next,graph:offline.graph,
         workspaceToken:offline.workspaceToken,
         identity:"logical:"+offline.workspaceToken+":"+offline.revision,
         logical:true,readOnly:offline.readOnly===true,
+        physicalRetained:retainedOffline,
         admitted:false,retained:false,productLive:false,telemetry:{}};
-      return Object.freeze({kind:"LOGICAL_ONLY",view});
+      return Object.freeze({kind:retainedOffline?"RETAINED_OFFLINE":"LOGICAL_ONLY",view});
     }
     if(!session || session.deviceEpoch!==next.device.epoch)
       return Object.freeze({kind:"STALE",view:null});

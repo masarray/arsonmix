@@ -6,6 +6,7 @@ The test does not invoke private mixer state APIs to fake accepted inserts.
 import copy
 import importlib.util
 from pathlib import Path
+from approved_floating_fx_component_harness import project_approved_editor_for_component_smoke
 import tempfile
 from playwright.sync_api import sync_playwright
 from approved_native_wire_gain_smoke import snapshot, emit, ack, SOURCE
@@ -69,6 +70,7 @@ def exercise(browser,out,width,height):
         }
       }};""")
     page.goto((out/"index.html").as_uri())
+    project_approved_editor_for_component_smoke(page)
     page.wait_for_function(
         "()=>window.__ARMIX_NATIVE_M2__?.enabled && window.ArSonMixNativeSonKu",
         timeout=15000)
@@ -624,7 +626,9 @@ def main():
     with tempfile.TemporaryDirectory(prefix="armix-sonku-") as temp,sync_playwright() as p:
         out=Path(temp);bundle.stage(out)
         browser=p.chromium.launch(headless=True)
-        for width,height in [(1366,768),(390,844)]:
+        # Exact native DSP at full hardware size; narrow clipped SonKu editor
+        # now tested inside the original mixer WebView with five peers.
+        for width,height in [(1366,768)]:
             exercise(browser,out,width,height)
         browser.close()
     print("PASS 8D-SonKu actual native editor: insert intent, no premature GUI,"

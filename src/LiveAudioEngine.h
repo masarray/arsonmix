@@ -608,6 +608,9 @@ public:
     bool hasRetainedNativeSession() const noexcept {
         return dryRoutingLab_.hasRetainedNativeSession();
     }
+    std::uint64_t retainedNativeEpoch() const noexcept {
+        return dryRoutingLab_.retainedNativeEpoch();
+    }
     bool hasRetainedUnboundMixer() const noexcept {
         return dryRoutingLab_.hasAuthoredMixerContent() && !dryRoutingLab_.ready();
     }
@@ -1684,13 +1687,22 @@ public:
     juce::String captureNativeMixerSession(
             armix::session::MixerSessionDocument& document,
             std::vector<armix::shows::BinaryState>& states,bool retained=false) {
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        const bool deviceOpen=device && device->isOpen();
+        // A retained graph has NO active ChannelId callback. JUCE may keep
+        // its unplugged device object open while routing is already STOPPED;
+        // do not require the device handle to be null before capturing a
+        // disconnected FX snapshot. No PCM admission, device reopen or ARM.
+        const bool detachedRetained=retained &&
+            dryRoutingLab_.hasRetainedNativeSession() &&
+            static_cast<bool>(acceptedMixerBinding_);
         if(!allOutputsDisarmed()||independent_.active()||
-           !directFence_.permitted()||
+           (!directFence_.permitted()&&!detachedRetained)||
            routeReconfiguring_.load(std::memory_order_acquire)||
            handoff_.busy()||fxMovePhase_.load(std::memory_order_acquire)!=0)
             return "MUTE MAIN/STREAM and finish FX handoff before session save";
-        auto* device=deviceManager_.getCurrentAudioDevice();
-        if(!device||!device->isOpen())return "Audio device unavailable for session capture";
+        if(!deviceOpen&&!detachedRetained)
+            return "Audio device unavailable for session capture";
         if(retained && !acceptedMixerBinding_)
             return "Retained mixer device identity unavailable";
         auto error=dryRoutingLab_.captureNativeMixerSession(document,states,retained);

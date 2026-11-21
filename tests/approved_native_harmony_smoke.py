@@ -5,6 +5,7 @@ actual PCM/music guide evidence is covered by Windows native CTest.
 import copy
 import importlib.util
 from pathlib import Path
+from approved_floating_fx_component_harness import project_approved_editor_for_component_smoke
 import tempfile
 from playwright.sync_api import sync_playwright
 from approved_native_wire_gain_smoke import snapshot, emit, SOURCE, RECEIVER
@@ -60,7 +61,10 @@ def main():
         out=Path(directory);bundle.stage(out)
         with sync_playwright() as playwright:
             browser=playwright.chromium.launch(headless=True)
-            for width,height in ((1366,768),(720,600),(390,844)):
+            # DSP/readback qualification at full studio geometry. Four mixer
+            # viewport widths and the original clipped FX controls are
+            # exercised by approved_inline_fx_clip_smoke.py.
+            for width,height in ((1366,768),):
                 page=browser.new_page(viewport={"width":width,"height":height})
                 errors=[]
                 page.on("pageerror",lambda error:errors.append(str(error)))
@@ -78,6 +82,7 @@ def main():
                     }
                   }};""")
                 page.goto((out/"index.html").as_uri())
+                project_approved_editor_for_component_smoke(page)
                 page.wait_for_function(
                     "()=>window.__ARMIX_NATIVE_M2__?.enabled && window.ArSonMixNativeHarmony")
                 state=snapshot()

@@ -83,6 +83,14 @@ NATIVE_EVENT_HOOKS = (
      "  return window.__ARMIX_NATIVE_M2__?.inputChoices?.(t)||['None'];\n"
      " if(type==='output'&&window.__JUCE__?.backend)\n"
      "  return window.__ARMIX_NATIVE_M2__?.outputChoices?.(t)||[t.output];\n"),
+    ("function replugWireEdge(sourceId,oldDestId,nextDestId){\n",
+     "function replugWireEdge(sourceId,oldDestId,nextDestId,releasePoint,movingEdgeId){\n"
+     " if(window.__JUCE__?.backend && releasePoint!==undefined){\n"
+     "  window.__ARMIX_NATIVE_M2__?.consumeNativeWireReplug?.("
+     "sourceId,oldDestId,nextDestId,releasePoint,movingEdgeId);\n"
+     "  return false; // Gesture: native ACK+readback, never demo mutation.\n"
+     " }\n"
+     " // Workspace Remove (no pointer) continues into native wireGraphCommit.\n"),
     ("function wireGraphCommit(ops,{record=true}={}){\n",
      "function wireGraphCommit(ops,{record=true}={}){\n"
      " if(window.__JUCE__?.backend){window.__ARMIX_NATIVE_M2__?.consumeWire?.(ops);return false;}\n"),
@@ -251,6 +259,7 @@ NATIVE_EVENT_HOOKS = (
      " closeNativePicker(){setFastPicker(false);},\n"
      " colors:COLORS,channelIcons:CHANNEL_ICONS,wireGraph:ArSonWireGraph,\n"
      " allocateWireId(){return nextWireId++;},kickWireSpring,\n"
+     " animateAcceptedWireRetract:startWireRetraction,\n"
      " installGraph(channels,main,edges){\n"
      "  tracks=channels;master=main;wireEdges=edges;\n"
      "  wireWsHistory=[];selectedWireEdgeId=null;\n"
@@ -302,6 +311,39 @@ def public_from_native(native: str) -> str:
             raise ValueError("Native-only M2 control hook missing or duplicated")
         html = html.replace(after, before, 1)
     return html.replace("\n", newline)
+
+
+
+def floating_fx_html() -> str:
+    """Native-only WINDOW frame, not another public product GUI.
+
+    It imports exactly the already approved Pages CSS and the six native
+    editor modules from /preview/; JUCE remains the sole PCM/VST authority.
+    Only the selected editor module is loaded on demand by its micro-bridge.
+    """
+    return """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ArSonMix · Floating FX</title>
+<link rel="stylesheet" href="assets/arsonmix-approved-runtime.css">
+<style>
+html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;
+ background:#101921;color:#e5f6fc}
+#fxWindowStatus{position:fixed;left:20px;top:20px;font:12px sans-serif;color:#8fcfe1}
+#fxWindowAbort{position:fixed;right:10px;top:7px;border:0;border-radius:3px;
+ background:#273d49;color:#dcf2fc;cursor:pointer;font:16px sans-serif}
+/* Popup HWND itself moves beyond the mixer; DO NOT drag a second fake
+   window inside the child WebView's clipped compositing rectangle. */
+body :is(#mxNativePeq,#mxNativeComp,#mxNativeGeq31,#mxNativeHarmony,
+ #mxNativeVocalThrow,#mxNativeSonKu){left:0!important;top:0!important}
+</style>
+<script defer src="assets/approved-native-contract.js"></script>
+<script defer src="assets/mixer-builtin-fx-preset-bar.js"></script>
+<script defer src="assets/approved-floating-fx-bridge.js"></script>
+</head><body><output id="fxWindowStatus" role="status">Loading owned FX editor…</output>
+<button id="fxWindowAbort" type="button" aria-label="Close unavailable FX editor"
+ title="Close FX editor">×</button></body></html>
+"""
 
 
 def safe_symbol(filename: str) -> str:
@@ -371,10 +413,14 @@ def stage(out: Path) -> dict:
                      out / "assets" / "approved-fx-rack-view-model.js")
         shutil.copy2(ROOT / "web" / "approved-wire-view-model.js",
                      out / "assets" / "approved-wire-view-model.js")
+        shutil.copy2(ROOT / "web" / "approved-floating-fx-bridge.js",
+                     out / "assets" / "approved-floating-fx-bridge.js")
         native = native_html(approved.decode("utf-8")).encode("utf-8")
         (out / "index.html").write_bytes(native)
-    files = [out / "index.html", *sorted(p for p in (out / "assets").rglob("*") if p.is_file())]
-    if any(p.is_symlink() or p.relative_to(out).parts[0] not in ("index.html", "assets") for p in files):
+        (out / "fx-window.html").write_text(floating_fx_html(),encoding="utf-8")
+    files = [out / "index.html", out / "fx-window.html",
+             *sorted(p for p in (out / "assets").rglob("*") if p.is_file())]
+    if any(p.is_symlink() or p.relative_to(out).parts[0] not in ("index.html", "fx-window.html", "assets") for p in files):
         raise ValueError("Unsafe GUI resource input")
     if len(files) != len({f.name for f in files}):
         raise ValueError("Duplicate GUI asset basename would collide in JUCE BinaryData")
