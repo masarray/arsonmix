@@ -500,6 +500,20 @@ public:
               .withResourceProvider (assetFor))
     {
         settingsDirectory().createDirectory();
+        // Original native event publisher remains UNIQUE. Broadcast only
+        // built-in FX receipts plus bounded native readbacks to child HWNDs.
+        // A vendor plugin never receives a second processing callback.
+        browser_.onNativeEvent=[this](const juce::String& event,
+                                      const juce::var& payload) {
+            const bool response=event.startsWith("arMixBuiltin") ||
+                event=="arMixNativeFxPowerAck" || event=="arMixLogicalAck";
+            const bool snapshot=event=="arMixConsoleSnapshot";
+            if(!response&&!snapshot)return;
+            if(snapshot && ++floatingFxRelayTick_%4!=0)return; // <=3 Hz
+            for(const auto& owned:floatingBuiltinFx_)
+                if(owned && owned->window && owned->window->isVisible())
+                    owned->window->emit(event,payload);
+        };
         hotkeys_.setHandler([this](const armix::hotkey::Mapping& mapping) {
             fireNativeHotkey(mapping);
         });
@@ -789,6 +803,14 @@ private:
     // LAST-declared window before its FIRST-declared owner.
     std::vector<std::unique_ptr<AdditionalFxEditor>> additionalFxEditors_;
     static constexpr std::size_t maxSimultaneousVendorEditors=16;
+    struct FloatingBuiltinOwner final {
+        juce::String channelId,instanceId,catalogId,workspaceToken;
+        int slot=-1;
+        std::unique_ptr<BuiltinFxDesktopWindow> window; // last, destroyed first
+    };
+    std::vector<std::unique_ptr<FloatingBuiltinOwner>> floatingBuiltinFx_;
+    std::uint64_t floatingFxRelayTick_=0;
+    static constexpr std::size_t maxSimultaneousBuiltinWindows=16;
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     // Persistent modal lease: blocks an Apply/ASIO restart while JUCE's
     // device selector is open, not merely during the initial show() call.
@@ -1280,6 +1302,8 @@ private:
 #endif
     }
     void closeAllPluginEditors() noexcept {
+        floatingBuiltinFx_.clear(); // WebViews before their single PCM owner
+        browser_.onNativeEvent=nullptr;
         closePluginEditor();
         closeImmerSIBEditor();
         // Each additional window's own destructor releases JUCE UI before
