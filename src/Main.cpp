@@ -333,6 +333,12 @@ public:
     }
     void present(bool recenter=false) {
         if(isMinimised())setMinimised(false);
+        // On FIRST open the JS editor has not measured its real panel yet.
+        // Centre again exactly once after native HWND sizing, otherwise the
+        // initial 1500x520 placeholder shifts GEQ/PEQ from the mixer centre.
+        // Reopening a READY window recentres immediately and never hijacks
+        // the user's later S/M/L resize or manual desktop placement.
+        recenterAfterInitialPanelSize_=recenter && !browser_.loaded;
         armix::ui::placeFloatingEditor(*this,mixer_,recenter);
         if(!isVisible())setVisible(true);
         (void)armix::ui::attachOwnedFloatingWindow(*this,mixer_);
@@ -357,9 +363,13 @@ public:
                                      requestedH+50);
         // Avoid a browser resize feedback loop; never recenter on a normal
         // parameter gesture, only on an explicit FX Rack double-click.
+        const bool firstPlacement=recenterAfterInitialPanelSize_;
+        recenterAfterInitialPanelSize_=false;
         if(std::abs(getWidth()-width)>8 || std::abs(getHeight()-height)>8) {
             setSize(width,height);
-            armix::ui::placeFloatingEditor(*this,mixer_,false);
+            armix::ui::placeFloatingEditor(*this,mixer_,firstPlacement);
+        } else if(firstPlacement) {
+            armix::ui::placeFloatingEditor(*this,mixer_,true);
         }
     }
     bool ready()const noexcept{return browser_.loaded;}
@@ -367,6 +377,7 @@ public:
 private:
     juce::Component& mixer_;
     Browser browser_;
+    bool recenterAfterInitialPanelSize_=false; // UI thread, first measure only
 };
 
 class AudioSetupWindow final : public juce::DocumentWindow
