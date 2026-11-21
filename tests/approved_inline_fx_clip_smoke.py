@@ -163,6 +163,15 @@ def main():
                     assert abs(bounds["width"]-1430*ratio)<2,(width,mode,bounds)
                     assert root.locator(".mx-geq31-cell").count()==31
                     assert root.locator(".mx-geq31-close").count()==1
+                    # The shared FX Rack recovery shortcut MUST delegate to
+                    # the native clipped geometry owner. The old Pages helper
+                    # wrote an independent fixed/transform, breaking pan/scale.
+                    transform=root.evaluate("e=>e.style.getPropertyValue('transform')")
+                    assert page.evaluate("""()=>window.ArSonMixFxWorkspace.recenter(
+                        document.getElementById('mxNativeGeq31'))""")
+                    assert root.evaluate("e=>e.style.getPropertyValue('transform')")==transform,(
+                        width,mode,"legacy rack recenter altered hardware transform")
+                    assert abs(root.bounding_box()["width"]-1430*ratio)<2
                 # Built-in DOM open never issues a request to construct the
                 # rejected detached JUCE host (other snapshot intents allowed).
                 assert not page.evaluate("""()=>window.__nativeMessages.some(
