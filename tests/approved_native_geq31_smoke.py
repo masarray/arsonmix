@@ -279,14 +279,16 @@ def main():
             if applied:payload["appliedRequestId"]=applied
             dispatch("arMixBuiltinGeqSnapshot",payload)
         report(list(BANDS))
-        # Independent native stereo peaks must NOT collapse to a mono max.
-        # High R does not cause any L LED to illuminate.
+        # Independent stereo peaks: low left (-46 dBFS) lights ONE LED;
+        # hot right (~-0.9 dBFS) lights SIX. Never duplicate R onto L.
         page.evaluate("""()=>{
           window.__testMeterView.telemetry.channelMeterRmsPeak[
             "9007199254740993"]={peakL:0.005,peakR:0.9};
         }""")
         dispatch("arMixConsoleSnapshot",{})
-        assert left.locator(".is-lit").count()==0
+        assert left.locator(".is-lit").count()==1
+        assert left.locator(".mx-geq31-level-cells").evaluate(
+            "e=>e.style.getPropertyValue('--lit-px')")=="12px"
         assert right.locator(".is-lit").count()==6
         assert right.locator(".mx-geq31-level-cells").evaluate(
             "e=>e.style.getPropertyValue('--lit-px')")=="82px"
