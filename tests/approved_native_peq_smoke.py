@@ -152,6 +152,18 @@ def main():
             # opens the same instance again (no hidden/forced pointer click).
             editor=page.locator("#mxNativePeq")
             editor.wait_for(state="visible")
+            if width<=500:
+                # Full-width FX now intentionally clips inside the native
+                # mixer WebView, instead of folding the hardware into a
+                # miniature panel. Slide the same popup to expose its Close.
+                page.evaluate("""()=> {
+                  const root=document.querySelector('#mxNativePeq');
+                  const close=root.querySelector('.mx-peq-close').getBoundingClientRect();
+                  const shift=innerWidth-close.right-12;
+                  if(shift<0)window.__ARMIX_NATIVE_INLINE_FX_CLIP__.move(root,shift,0);
+                }""")
+                box=editor.locator(".mx-peq-close").bounding_box()
+                assert box and 0<=box["x"]<width-12,(width,box)
             editor.locator(".mx-peq-close").click()
             assert editor.is_hidden()
             if width==1366:
@@ -412,8 +424,11 @@ def main():
                     "parameter readback lost after reopen"
             else:
                 # Narrow + desktop screenshots come from the exact compiled GUI.
-                rect=editor.bounding_box();assert rect and rect["width"]<=width and rect["height"]<=height,\
+                rect=editor.bounding_box()
+                assert rect and abs(rect["width"]-795)<2 and rect["height"]<=height,\
                     (width,height,rect)
+                if width<795:
+                    assert rect["width"]>width,"Narrow viewport must crop, not shrink, FX"
                 page.screenshot(path=f"native-peq-editor-{width}.png")
             assert not errors,(width,height,errors)
             page.close()
