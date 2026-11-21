@@ -43,6 +43,18 @@ def main():
                 "+12","0","−12","+12","0","−12"]
             assert panel.locator(".mx-geq31-close").count()==1
             assert panel.locator("header.mx-geq31-head").count()==1
+            # DOM existence is NOT visual acceptance: the first screenshot
+            # proved a branded Close and Output can be clipped offscreen
+            # even while all source/contract assertions pass.
+            panel_box=panel.bounding_box()
+            close_box=panel.locator(".mx-geq31-close").bounding_box()
+            output_box=panel.locator(".mx-geq31-output").bounding_box()
+            assert panel_box and close_box and output_box
+            assert panel_box["x"]>=0 and panel_box["x"]+panel_box["width"]<=width+1
+            assert close_box["x"]>=0 and close_box["x"]+close_box["width"]<=width
+            assert output_box["x"]>=0 and output_box["x"]+output_box["width"]<=width
+            assert panel.locator(".mx-geq31-close").is_visible()
+            assert panel.locator(".mx-geq31-dial").is_visible()
             assert panel.locator(".mx-geq31-message").inner_text().startswith("BROWSER PREVIEW")
             assert panel.locator(".mx-geq31-scroll").evaluate(
                 "e=>getComputedStyle(e).overflowX")=="auto"
