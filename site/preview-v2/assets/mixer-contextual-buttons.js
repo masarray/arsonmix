@@ -362,6 +362,11 @@
    el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden';
  const center=el=>{
   if(!isVisible(el))return false;
+  // The native mixer has ONE overlay geometry owner. The old Pages
+  // recenter writes fixed/transform and would fight its cropped pan offset.
+  // Keep the unchanged public Pages recenter when there is no native host.
+  if(window.__ARMIX_NATIVE_INLINE_FX_CLIP__?.center)
+   return window.__ARMIX_NATIVE_INLINE_FX_CLIP__.center(el);
   const rect=el.getBoundingClientRect();
   const w=document.documentElement.clientWidth||innerWidth;
   const h=document.documentElement.clientHeight||innerHeight;
@@ -406,10 +411,14 @@
   // Notify the one installed native bridge of the exact insert. Its own
   // ChannelId/slot/instanceId lease verification decides whether to reopen a
   // VST3 HWND. The public /preview/ has no native listener or DSP side effect.
-  if(row&&trackId!==undefined&&slot!==undefined)
+  if(row&&trackId!==undefined&&slot!==undefined){
    document.dispatchEvent(new CustomEvent('arMixFxRackDoubleClick',{
     detail:{trackId:String(trackId),slot:Number(slot)}
    }));
+   // Native rack dispatch verifies ChannelId/slot/instance and alone
+   // positions its editor. Do not run a second, legacy center afterward.
+   if(window.__ARMIX_NATIVE_INLINE_FX_CLIP__)return;
+  }
   // A row must NEVER recenter an unrelated open built-in editor. The header
   // shortcut may still rescue the top visible modeless editor.
   const focus=(row?matched:windows).at(-1);
