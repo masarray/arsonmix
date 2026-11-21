@@ -84,7 +84,7 @@ hz.forEach((f,i)=>{
  range.title=labels[i]+" Hz · double-click Flat · wheel adjusts · Shift for fine";
  track.append(ticks,zero,thumb,range);
  const label=el("div","mx-geq31-freq");
- const name=el("span","mx-geq31-frequency",labels[i]);
+ const name=el("span","mx-geq31-frequency",f>=1000?labels[i].replace(/k$/,""):labels[i]);
  const unit=el("span","mx-geq31-unit",f>=1000?"kHz":"Hz");
  label.append(name,unit);cell.append(track,label);bank.append(cell);
  controls.push({cell,range,thumb,frequency:name,unit});
