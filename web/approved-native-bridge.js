@@ -1345,9 +1345,10 @@
         hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device),
         offline:!!logicalView}).kind!=="READY")
         return; // same-epoch hardware/FX replacement or offline .smix switch
-      dispatchPhysicalFxEditor(recenter?{
+      if(recenter)dispatchPhysicalFxEditor({
         ...plan,payload:{...plan.payload,recenter:true}
-      }:plan,lease,"CHANNEL_ID");
+      },lease,"CHANNEL_ID");
+      else dispatchPhysicalFxEditor(plan,lease,"CHANNEL_ID");
     });
     return true;
   }
@@ -1368,9 +1369,10 @@
         verifiedM4:m4Verified(current),offline:!!logicalView,
         hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)}))
         return;
-      dispatchPhysicalFxEditor(recenter?{
+      if(recenter)dispatchPhysicalFxEditor({
         ...plan,payload:{...plan.payload,recenter:true}
-      }:plan,lease,"M4");
+      },lease,"M4");
+      else dispatchPhysicalFxEditor(plan,lease,"M4");
     });
     return true;
   }
@@ -3881,7 +3883,9 @@
             }else if(surface.kind==="NATIVE_HOST"){
               // VST3, ImmerSIB and hosted future JUCE FX retain one original
               // correlated native editor owner and its independent lease.
-              if(!openChannelIdFxEditor(editor,recenter))
+              const opened=recenter?openChannelIdFxEditor(editor,true):
+                openChannelIdFxEditor(editor);
+              if(!opened)
                 nativeToast("FX editor unavailable · native instance changed");
             }else nativeToast("FX editor unavailable · accepted FX identity changed");
           }else nativeToast("This FX is held with the disconnected audio session");
