@@ -21,7 +21,7 @@ class NativeFxWindowLifecycle(unittest.TestCase):
     def test_exact_native_instance_reopen_is_not_recreation(self):
         self.assertIn("shownOwner==owner",HOST)
         self.assertIn("shownProcessor==owner->processor.get()",HOST)
-        self.assertIn("shownWindow->present(static_cast<bool>(",HOST)
+        self.assertIn("shownWindow->present(true)",HOST)
         self.assertIn("shownWindow=dedicatedImmerSIB?immersibEditorWindow_:editorWindow_",HOST)
         self.assertIn("if(logicalVendorEditor_)",HOST)
         self.assertIn("existing.window->present(",HOST)
@@ -40,7 +40,7 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn('dedicatedImmerSIB=dynamic_cast<',opened)
         self.assertIn('shownWindow=dedicatedImmerSIB?immersibEditorWindow_:editorWindow_',opened)
         self.assertIn('shownOwner=dedicatedImmerSIB?immersibEditorOwner_:routedEditorOwner_',opened)
-        self.assertIn('shownWindow->present(static_cast<bool>(',opened)
+        self.assertIn('shownWindow->present(true)',opened)
         self.assertIn('if(dedicatedImmerSIB)closeImmerSIBEditor();',opened)
         self.assertIn('closePluginEditor();',opened)
         self.assertIn('shownWindow=std::make_unique<PluginEditorWindow>',opened)
