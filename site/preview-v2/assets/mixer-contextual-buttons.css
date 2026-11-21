@@ -138,6 +138,24 @@
   background:var(--ari-other-lip)!important;
   box-shadow:none!important;transform:none!important;
 }
+/* Selected / pressed mixer HEADER actions use the same cool cyan family as
+   the fader dB readout instead of the legacy muddy-grey V6 active face.
+   Scoped to real header buttons; emergency/destructive, output master,
+   and warning controls keep their own semantic red/amber/green material.
+   No geometry, shadow stack, PNG key, click or held/latched state changes. */
+.app :is(.command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.mixer-title button.wire-v34-tool)
+:is([aria-pressed="true"],[aria-expanded="true"],[aria-selected="true"],
+ .active,.selected,:active:not(:disabled))
+:not(#reset):not(#clearCue):not(#sceneSafe):not(#globalFxToggle){
+ --ari-on-top:#167f9d!important;
+ --ari-on-hi:#2eb7cf!important;
+ --ari-on-mid:#1b9cba!important;
+ --ari-on-bottom:#177f9d!important;
+ --ari-on-edge:#125b72!important;
+ --ari-on-ink:#f0fbff!important;
+}
+
 /* Micro keys are physically smaller and must stay exactly their old size. */
 /* No button should move its OWN bounding box or its neighboring controls.
    Focus visibility is non-geometric and remains available for keyboard users. */

@@ -50,6 +50,11 @@ def check_page(browser,path,label):
     page.mouse.down()
     during=css_for(action)
     assert during['background']!=before['background'],(label,'momentary press invisible',during)
+    # The active header uses our intentional cyan, not the legacy grey.
+    # The same selector covers latching toolbar states. Do not repaint
+    # unrelated WIRE, MUTE/SOLO/PFL PNG or safety controls.
+    assert 'rgb(27, 156, 186)' in during['background'],(
+        label,'header active face is not cyan',during)
     assert during['transform']=='none',(label,'button moved on press',during)
     assert (during['w'],during['h'],during['x'],during['y'])==(
             before['w'],before['h'],before['x'],before['y']),(
