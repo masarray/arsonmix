@@ -228,6 +228,14 @@ public:
 #if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
     void optInImmerSIBVocalRoom() noexcept {immersibP99Enabled_=true;}
 #endif
+#if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
+    // Per-instance ImmerSIB tuning, not a new graph/FX bus/session field.
+    void optInImmerSIBConcertCandidate() noexcept {
+        immersibConcertCandidate_=true;
+        p90Decoder_.enablePanPreservation(true);
+        immersibP99VocalRoom_.enableConcertLateClarity(true);
+    }
+#endif
     bool prepare(double rate, SonKuReflectionProfile profile=
                  SonKuReflectionProfile::Lightweight) noexcept {
         ready_=false;
@@ -876,7 +884,11 @@ public:
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
             if(p90World && settings_.spatialMix>0.f){
                 const auto fed=p98Voicing_.source(history_[0][write_],
-                    history_[1][write_],settings_.sceneVoicing,roomEnabled);
+                    history_[1][write_],settings_.sceneVoicing,roomEnabled
+#if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
+                    ,immersibConcertCandidate_
+#endif
+                    );
                 history_[0][write_]=fed.left;
                 history_[1][write_]=fed.right;
             }else{
@@ -1608,6 +1620,9 @@ private:
 #if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
     p99::ImmerSIBVocalRoom immersibP99VocalRoom_{};
     bool immersibP99Enabled_=false;
+#endif
+#if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
+    bool immersibConcertCandidate_=false;
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
     p95::MusicalPresence p95Presence_{};

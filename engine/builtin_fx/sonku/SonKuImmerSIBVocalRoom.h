@@ -17,10 +17,18 @@ public:
         if(!donor_.prepare(rate))return false;
         // ~35ms smooth transition between warm profiles, not per-phoneme AGC.
         strengthSlew_=static_cast<float>(1.-std::exp(-1./(rate*.035)));
+        clarity1000_=bandpass(rate,1050.,1.0);
+        clarity5000_=bandpass(rate,4900.,1.25);
         reset();
         return true;
     }
-    void reset() noexcept {donor_.reset();strength_=0.f;}
+    void enableConcertLateClarity(bool enabled) noexcept {
+        concertLateClarity_=enabled;
+    }
+    void reset() noexcept {
+        donor_.reset();strength_=0.f;
+        clarity1000State_={};clarity5000State_={};
+    }
     Stereo source(float left,float right,int scene,bool enabled) noexcept {
         const float goal=enabled?(scene==4?.42f:(scene==5?.34f:0.f)):0.f;
         strength_+=strengthSlew_*(goal-strength_);
@@ -48,10 +56,44 @@ public:
     }
     Stereo late(float left,float right) noexcept {
         const auto r=donor_.late(left,right);
-        return {left+strength_*(r.left-left),right+strength_*(r.right-right)};
+        if(!concertLateClarity_ || strength_==0.f)
+            return {left+strength_*(r.left-left),
+                    right+strength_*(r.right-right)};
+        // Vocal intelligibility: ease center-correlated 1k/5k LATE
+        // room masking. DIRECT source and 200-300Hz body stay intact;
+        // no new dry path, stereo widening or sibilance boost.
+        const float mid=.5f*(left+right);
+        const float presence=clarity1000State_.run(clarity1000_,mid);
+        const float diction=clarity5000State_.run(clarity5000_,mid);
+        const float relief=strength_*(.23f*presence+.19f*diction);
+        return {left+strength_*(r.left-left)-relief,
+                right+strength_*(r.right-right)-relief};
     }
 private:
+    struct Coeff {float b0=0.f,b1=0.f,b2=0.f,a1=0.f,a2=0.f;};
+    struct Filter {
+        float z1=0.f,z2=0.f;
+        float run(const Coeff& c,float x) noexcept {
+            const float y=c.b0*x+z1;
+            z1=c.b1*x-c.a1*y+z2;
+            z2=c.b2*x-c.a2*y;
+            return y;
+        }
+    };
+    static Coeff bandpass(double rate,double hz,double q) noexcept {
+        constexpr double pi=3.14159265358979323846;
+        const double w=2.*pi*hz/rate;
+        const double a=std::sin(w)/(2.*q);
+        const double inv=1./(1.+a);
+        return {static_cast<float>(a*inv),0.f,
+                static_cast<float>(-a*inv),
+                static_cast<float>(-2.*std::cos(w)*inv),
+                static_cast<float>((1.-a)*inv)};
+    }
     MusicalVocalDepth donor_{}; // exact main/P9.9 source, no forked EQ
+    Coeff clarity1000_{},clarity5000_{};
+    Filter clarity1000State_{},clarity5000State_{};
     float strengthSlew_=0.f,strength_=0.f;
+    bool concertLateClarity_=false;
 };
 } // namespace armix::sonku::p99

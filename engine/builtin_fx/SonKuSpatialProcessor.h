@@ -54,6 +54,12 @@ public:
 #endif
 #endif
     }
+#if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
+    // The branded subclass alone invokes this prior to audio prepare.
+    void optInImmerSIBConcertCandidate() noexcept {
+        core_.optInImmerSIBConcertCandidate();
+    }
+#endif
     const juce::String getName() const override {return "8D-SonKu";}
     bool acceptsMidi() const override {return false;}
     bool producesMidi() const override {return false;}

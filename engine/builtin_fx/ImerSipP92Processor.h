@@ -22,6 +22,10 @@ public:
         // Distinct from 8D-SonKu P9.9 opt-in; original session ABI unchanged.
         optInImmerSIBVocalRoom();
 #endif
+#if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
+        // FUX-1 opt-in candidate, existing .smix and scene ABI untouched.
+        optInImmerSIBConcertCandidate();
+#endif
     }
     const juce::String getName() const override {return productDisplayName;}
     bool hasEditor() const override {return true;}

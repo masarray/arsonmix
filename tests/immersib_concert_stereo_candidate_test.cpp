@@ -5,11 +5,13 @@
 #endif
 #include "../engine/builtin_fx/sonku/SonKuP90StereoDecoder.h"
 #include "../engine/builtin_fx/sonku/SonKuP98SceneVoicing.h"
+#include "../engine/builtin_fx/sonku/SonKuImmerSIBVocalRoom.h"
 #include <cassert>
 #include <cmath>
 #include <cstdio>
 using armix::sonku::p90::StereoDecoder;
 using armix::sonku::p98::SceneVoicing;
+using armix::sonku::p99::ImmerSIBVocalRoom;
 constexpr double pi=3.14159265358979323846;
 static float settle(StereoDecoder& d,int rate,float rightGain){
     for(int i=0;i<rate;++i){
@@ -33,6 +35,19 @@ static double sideRms(int rate,double hz,bool protect){
     }
     return std::sqrt(sum/(rate/2));
 }
+static double roomLateRms(int rate,double hz,bool candidate){
+    ImmerSIBVocalRoom fx;assert(fx.prepare(rate));
+    fx.enableConcertLateClarity(candidate);
+    double sum=0.;
+    for(int i=0;i<rate;++i){
+        const float x=.04f*std::sin(2*pi*hz*i/rate);
+        (void)fx.source(x,x,SceneVoicing::ImmerSIBDetail,true);
+        const auto y=fx.late(x,x);
+        assert(std::isfinite(y.left)&&std::isfinite(y.right));
+        if(i>rate/2)sum+=double(y.left)*y.left;
+    }
+    return std::sqrt(sum/(rate/2));
+}
 int main(){
     for(int sr:{44100,48000}){
         StereoDecoder legacy,panned,center,hardLeft;
@@ -47,6 +62,16 @@ int main(){
         assert(settle(hardLeft,sr,0.f)<.03f);
         assert(sideRms(sr,2050.,true)>1.3*sideRms(sr,2050.,false));
         assert(sideRms(sr,3450.,true)>1.2*sideRms(sr,3450.,false));
+        const double bassBefore=roomLateRms(sr,86.,false);
+        const double bassAfter=roomLateRms(sr,86.,true);
+        const double vocal1kBefore=roomLateRms(sr,1050.,false);
+        const double vocal1kAfter=roomLateRms(sr,1050.,true);
+        const double vocal5kBefore=roomLateRms(sr,4900.,false);
+        const double vocal5kAfter=roomLateRms(sr,4900.,true);
+        assert(bassBefore>1.e-7);
+        assert(std::abs(bassAfter-bassBefore)/bassBefore<.005);
+        assert(vocal1kAfter<vocal1kBefore);
+        assert(vocal5kAfter<vocal5kBefore);
         SceneVoicing a,b;assert(a.prepare(sr)&&b.prepare(sr));
         for(int i=0;i<sr;++i){
             const float x=.03f*std::sin(2*pi*1100*i/sr);
