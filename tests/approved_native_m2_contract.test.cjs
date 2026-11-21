@@ -6778,7 +6778,13 @@ test("UX-1 calm status colors use genuine app/process and callback budget eviden
     "RAM MiB has no machine-specific limit; never color by arbitrary size");
   assert.equal(read({footerProcessCpuPercent:99}).cpu.label,"CPU App 99.0%");
   const bridge=require("node:fs").readFileSync("web/approved-native-bridge.js","utf8");
-  const page=require("node:fs").readFileSync("site/preview/mixer.html","utf8");
+  const page=require("node:fs").readFileSync(
+    "site/preview-v2/assets/mixer-section-controls.css","utf8");
+  // The retired site/preview/mixer.html is not part of the packaged Pages or
+  // native WebView2 GUI; asserting it produced a false-green UI status test.
+  const canonical=require("node:fs").readFileSync(
+    "site/preview-v2/index.html","utf8");
+  assert.match(canonical,/assets\/mixer-section-controls\.css/);
   assert.match(bridge,/function paintFooterMetrics\(warning,health\)/);
   assert.doesNotMatch(bridge,/item\.setAttribute\("aria-hidden","true"\)/,
     "numeric status values stay available to assistive technology");
@@ -6791,5 +6797,7 @@ test("UX-1 calm status colors use genuine app/process and callback budget eviden
     assert.match(page,new RegExp('data-metric="'+key+'"'));
   for(const tone of ["normal","attention","critical","unknown"])
     assert.match(page,new RegExp('data-tone="'+tone+'"'));
-  assert.match(page,/height:20px!important;min-height:20px!important/);
+  const geometry=require("node:fs").readFileSync(
+    "site/preview-v2/assets/mixer-chrome-material.css","utf8");
+  assert.match(geometry,/\.status-bar\{height:20px!important;min-height:20px!important/);
 });
