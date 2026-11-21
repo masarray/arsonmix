@@ -70,7 +70,8 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("row?matched:windows",context)
         self.assertIn("centerInsert",context)
         self.assertIn('recenter:"true"',bridge)
-        self.assertIn("openChannelIdFxEditor(editor,recenter)",bridge)
+        self.assertIn("openChannelIdFxEditor(editor,true)",bridge)
+        self.assertIn("openChannelIdFxEditor(editor);",bridge)
         self.assertIn("nativeHooks.consumeAction(track",bridge)
 
     def test_all_editor_paths_use_one_host(self):
