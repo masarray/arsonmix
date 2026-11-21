@@ -136,9 +136,30 @@ dial.title="Drag vertically; wheel; double-click 0 dB";
 const knobImage=el("img","mx-geq31-knob-image");
 knobImage.src="assets/geq31-knob-black.png";
 knobImage.alt="";knobImage.draggable=false;
-const dialPointer=el("canvas","mx-geq31-dial-pointer");
+// The approved v13 black knob is a real 192px PNG. Keep that original
+// asset, but render the cyan pointer/arc as true SVG geometry instead of a
+// fixed 336px backing-store Canvas that the S/M/L compositor scales again.
+const SVG_NS="http://www.w3.org/2000/svg";
+const svgNode=tag=>document.createElementNS(SVG_NS,tag);
+const dialPointer=svgNode("svg");
+dialPointer.classList.add("mx-geq31-dial-pointer");
+dialPointer.setAttribute("viewBox","0 0 84 84");
 dialPointer.setAttribute("aria-hidden","true");
-dialPointer.width=336;dialPointer.height=336;
+dialPointer.setAttribute("focusable","false");
+dialPointer.setAttribute("preserveAspectRatio","xMidYMid meet");
+const pointerArc=svgNode("path");
+pointerArc.setAttribute("fill","none");
+pointerArc.setAttribute("stroke","#26b8f6");
+pointerArc.setAttribute("stroke-width","2");
+pointerArc.setAttribute("stroke-linecap","round");
+pointerArc.setAttribute("stroke-linejoin","round");
+const pointerHalo=svgNode("circle");
+pointerHalo.setAttribute("r","2.65");
+pointerHalo.setAttribute("fill","rgba(4,33,50,.82)");
+const pointerDot=svgNode("circle");
+pointerDot.setAttribute("r","1.9");
+pointerDot.setAttribute("fill","#27c8ff");
+dialPointer.append(pointerArc,pointerHalo,pointerDot);
 dial.append(knobImage,dialPointer);
 const outValue=el("output","mx-geq31-output-value","0.0 dB");
 // Exact mixer V51 LED architecture, rotated 90deg CW: the native peak
@@ -178,24 +199,25 @@ output.append(outputLabel,levelMeter,dial,outValue);
 body.append(left,scroll,right,output);
 const bypassShade=el("div","mx-geq31-bypass-overlay","BYPASSED");
 bypassShade.setAttribute("aria-hidden","true");
-const knobCtx=dialPointer.getContext("2d");
 function paintKnob(db){
- if(!knobCtx)return;
- // Exact v13 static PNG + high-DPI blue 270-degree pointer/arc geometry.
+ // The original pointer angles and radii are unchanged; SVG geometry is
+ // rasterised at the ACTUAL compositor scale/DPI, not bitmap-upsampled.
  const t=clamp(db<=0?(db+24)/48:.5+db/12,0,1);
  const start=-.75*Math.PI,end=start+1.5*Math.PI*t;
  const side=84,cx=side*96.7/192,cy=side*97.97/192;
  const polar=(radius,a)=>[cx+radius*Math.sin(a),cy-radius*Math.cos(a)];
- knobCtx.setTransform(4,0,0,4,0,0);
- knobCtx.clearRect(0,0,side,side);
- knobCtx.save();knobCtx.lineWidth=2;
- knobCtx.strokeStyle="#26b8f6";knobCtx.lineCap="round";knobCtx.lineJoin="round";
- if(t>0){knobCtx.beginPath();knobCtx.arc(cx,cy,side*.365,start-Math.PI/2,end-Math.PI/2);knobCtx.stroke();}
+ const rad=side*.365,startPt=polar(rad,start),endPt=polar(rad,end);
+ const n=x=>x.toFixed(3);
+ const arc=t>0?
+  "M "+n(startPt[0])+" "+n(startPt[1])+
+  " A "+n(rad)+" "+n(rad)+" 0 "+(t>2/3?1:0)+" 1 "+
+  n(endPt[0])+" "+n(endPt[1]):"";
+ pointerArc.setAttribute("d",arc);
  const p=polar(side*.292,end);
- knobCtx.beginPath();knobCtx.arc(p[0],p[1],2.65,0,2*Math.PI);
- knobCtx.fillStyle="rgba(4,33,50,.82)";knobCtx.fill();
- knobCtx.beginPath();knobCtx.arc(p[0],p[1],1.9,0,2*Math.PI);
- knobCtx.fillStyle="#27c8ff";knobCtx.fill();knobCtx.restore();
+ for(const node of [pointerHalo,pointerDot]){
+  node.setAttribute("cx",n(p[0]));
+  node.setAttribute("cy",n(p[1]));
+ }
 }
 function gainToShift(v){return v>=0?-(916.5-208.75)*v/12:-(1627.92-916.5)*v/12;}
 function makeOwnerSvg(base,i){

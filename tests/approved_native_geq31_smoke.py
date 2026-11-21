@@ -121,9 +121,9 @@ def main():
             # Raise meter+knob 12px as one group without moving frequency
             # captions or reviving the original large optical empty header.
             assert panel.locator(".mx-geq31-output").evaluate(
-                "e=>getComputedStyle(e).paddingTop")=="34px"
+                "e=>getComputedStyle(e).paddingTop")=="25px"
             knob_to_db=caption_box["y"]-(knob_y["y"]+knob_y["height"])
-            assert 6<=knob_to_db<=10, knob_to_db
+            assert 8<=knob_to_db<=12, knob_to_db
             assert panel.locator(".mx-geq31-level-meter").evaluate(
                 "e=>getComputedStyle(e).borderTopWidth")=="1px"
             assert abs(caption_box["y"]-freq_caption["y"])<=4, (
@@ -136,12 +136,25 @@ def main():
             assert panel.locator(".mx-geq31-message").inner_text().startswith("BROWSER PREVIEW")
             assert panel.locator(".mx-geq31-scroll").evaluate(
                 "e=>getComputedStyle(e).overflowX")=="auto"
-            # v13 source-authority: 31 original SVG raster THUMBs, 40x229/84 knob.
+            # V13 source authority unchanged: the 31 hardware SVGs and
+            # exact 192px PNG. The 92px knob uses smooth image interpolation.
             assert panel.locator(".mx-geq31-track svg").count()==31
             assert panel.locator(".mx-geq31-knob-image").count()==1
-            assert panel.locator(".mx-geq31-dial-pointer").count()==1
-            assert panel.locator(".mx-geq31-knob-image").evaluate(
-                "e=>e.complete&&e.naturalWidth===192")
+            knob_image=panel.locator(".mx-geq31-knob-image")
+            assert knob_image.evaluate(
+                "e=>e.complete&&e.naturalWidth===192&&e.naturalHeight===192")
+            assert knob_image.evaluate(
+                "e=>getComputedStyle(e).imageRendering")=="auto"
+            # Blue arc/pointer must remain VECTOR on all three S/M/L modes,
+            # not a fixed-resolution canvas bitmap scaled by WebView2.
+            arc=panel.locator("svg.mx-geq31-dial-pointer")
+            assert arc.count()==1
+            assert arc.get_attribute("viewBox")=="0 0 84 84"
+            assert panel.locator(".mx-geq31-dial canvas").count()==0
+            assert arc.locator("path").count()==1
+            assert arc.locator("circle").count()==2
+            assert " A " in arc.locator("path").get_attribute("d")
+            assert arc.locator("path").get_attribute("stroke")=="#26b8f6"
             for asset in ("geq31-owner-slider.svg","geq31-brushed-metal.jpg","geq31-knob-black.png"):
                 assert (out/"assets"/asset).is_file(),asset
             for idx in [0,15,30]:
@@ -162,7 +175,7 @@ def main():
             assert len(set(panel.locator('linearGradient[id^="geq31-"]').evaluate_all(
                 "es=>es.map(e=>e.id)")))==31*6
             dial_box=panel.locator(".mx-geq31-dial").bounding_box()
-            assert dial_box and abs(dial_box["width"]-84)<.5
+            assert dial_box and abs(dial_box["width"]-92)<.5
             first=panel.locator(".mx-geq31-range").first
             first.evaluate("""e=>{
                 e.value='6';e.dispatchEvent(new Event('input',{bubbles:true}));
@@ -184,8 +197,12 @@ def main():
             knob.evaluate(
                 "e=>e.dispatchEvent(new WheelEvent('wheel',{deltaY:-100,bubbles:true,cancelable:true}))")
             assert panel.locator(".mx-geq31-output-value").inner_text()=="+0.5 dB"
+            mid_path=arc.locator("path").get_attribute("d")
+            assert " A " in mid_path
             knob.dblclick()
             assert panel.locator(".mx-geq31-output-value").inner_text()=="0.0 dB"
+            assert " A " in arc.locator("path").get_attribute("d")
+            assert arc.locator("path").get_attribute("d")!=mid_path
             # Same compiled WebView binary uses these exact CSS/JS files;
             # new JS cannot be hand-restyled in a separate native renderer.
             assert (out/"assets/mixer-native-geq31.js").is_file()
@@ -214,7 +231,10 @@ def main():
                 assert panel.locator(".mx-geq31-track svg").count()==31
                 assert panel.locator(".mx-geq31-level-led").count()==12
                 assert panel.locator(".mx-geq31-dial").evaluate(
-                    "e=>e.getBoundingClientRect().width")>80*scale
+                    "e=>e.getBoundingClientRect().width")>89*scale
+                assert arc.locator("path").get_attribute("d")
+                assert knob_image.evaluate(
+                    "e=>getComputedStyle(e).imageRendering")=="auto"
                 if width==1680:
                     page.screenshot(path=f"arsonmix-geq31-one-webview-{mode.lower()}-1680.png")
             assert page.evaluate("""()=>localStorage.getItem(
@@ -279,6 +299,29 @@ def main():
             }""")
             assert not errors,errors
             page.close()
+
+        # High-density WebView2/Chromium rasterization: verify the vector
+        # pointer stays SVG, while the original PNG retains 192px source
+        # resolution; capture a REAL 2x DPR PNG for visual review.
+        hi=browser.new_page(viewport={"width":1680,"height":650},
+                            device_scale_factor=2)
+        hi.goto(url)
+        hi.wait_for_function("()=>!!window.ArSonMixGraphicEq31")
+        hi.evaluate("""()=>window.ArSonMixGraphicEq31.open(
+            {id:999,name:'DPI 2x Preview',slotBypass:[false]},0)""")
+        hi.wait_for_function("()=>document.querySelector(
+            '#mxNativeGeq31')?.dataset.artwork==='v13'")
+        hp=hi.locator("#mxNativeGeq31")
+        assert hi.evaluate("()=>window.devicePixelRatio")==2
+        assert hp.locator("svg.mx-geq31-dial-pointer").count()==1
+        assert hp.locator(".mx-geq31-dial canvas").count()==0
+        assert hp.locator(".mx-geq31-knob-image").evaluate(
+            "e=>e.naturalWidth===192&&e.naturalHeight===192")
+        png=hi.screenshot(path="arsonmix-geq31-hidpi-vector-2x-1680.png")
+        assert png[:8]==b"\x89PNG\r\n\x1a\n"
+        assert int.from_bytes(png[16:20],"big")==3360
+        assert int.from_bytes(png[20:24],"big")==1300
+        hi.close()
 
         page=browser.new_page(viewport={"width":1680,"height":740})
         errors=[]

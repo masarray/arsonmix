@@ -1427,10 +1427,10 @@
 /* GEQ31 / ONE approved browser and WebView2 editor. This is the SINGLE
  * presentation owner; JUCE hosts audio only. All 31 faders share one
  * CSS geometry (170px travel) and the same 0dB horizontal datum. */
-/* GEQ31 v14.3 — owner-approved stereo 6-step glass LCD & 31 original
-   hardware SVG faders. Output cluster raised for balanced visual margins.
-   S/M/L transform the EXACT same WebView2 owner view at 50/75/100%:
-   no responsive redraw, no additional PCM/DSP authority or FX renderer. */
+/* GEQ31 v14.4 — keep the original 192px black knob PNG, remove fixed
+   bitmap Canvas for the blue pointer arc (now real antialiased SVG path).
+   Raise the glass LCD and knob together without moving the aligned dB
+   caption. S/M/L still use one unchanged native DSP and WebView2 host. */
 .mx-geq31{
  position:fixed;z-index:1100;top:clamp(58px,7vh,66px);
  left:max(8px,calc((100vw - 1430px)/2));
@@ -1556,7 +1556,7 @@
 .mx-geq31-unit{font-size:8px}
 .mx-geq31-output{
  position:relative;height:234px;width:100px;min-width:100px;display:flex;
- align-items:center;flex-direction:column;padding:34px 0 0;
+ align-items:center;flex-direction:column;padding:25px 0 0;
 }
 .mx-geq31-output-label{
  color:#344047;font:700 10px Inter,"Segoe UI",Arial,sans-serif;
@@ -1566,7 +1566,7 @@
 .mx-geq31-level-meter{
  display:flex;flex-direction:column;justify-content:center;
  width:100px;min-width:100px;height:31px;min-height:31px;flex:0 0 31px;
- gap:3px;margin:0 0 21px;padding:6px 3px;
+ gap:3px;margin:0 0 20px;padding:6px 3px;
  transform:translateX(-14px);
  border:1px solid #415762;border-radius:3px;
  background:linear-gradient(180deg,#172a33 0%,#08151c 45%,#030a0f 100%);
@@ -1612,13 +1612,21 @@
  box-shadow:inset 0 1px #ffffff1a,inset 0 -1px #0008;
 }
 .mx-geq31-dial{
- position:relative;width:84px;height:84px;flex:0 0 84px;
+ position:relative;width:92px;height:92px;flex:0 0 92px;
  cursor:ns-resize;touch-action:none;outline:none;transform:translateX(-14px);
 }
 .mx-geq31-dial:focus-visible{border-radius:50%;outline:1px solid #1595d3;outline-offset:-1px}
 .mx-geq31-knob-image,.mx-geq31-dial-pointer{
- position:absolute;top:0;left:0;width:84px;height:84px;
+ position:absolute;top:0;left:0;width:92px;height:92px;
  pointer-events:none;object-fit:contain;
+}
+.mx-geq31-knob-image{
+ /* Avoid inheriting pixelated/nearest-neighbor rendering from mixer icons.
+    Native 192px source has >=2 samples per CSS pixel at 92px display. */
+ image-rendering:auto;display:block;
+}
+.mx-geq31-dial-pointer{
+ display:block;shape-rendering:geometricPrecision;overflow:visible;
 }
 .mx-geq31-output-value{
  position:absolute;bottom:20px;left:0;width:100%;

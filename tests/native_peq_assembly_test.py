@@ -22,7 +22,7 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertEqual(self.assembled.count('id="fastPicker"'),1)
         self.assertNotIn("preview-v3",self.assembled)
         self.assertEqual(self.assembled.count('src="assets/mixer-native-peq.js?v=eq-graph2-fx-recovery"'),1)
-        self.assertEqual(self.assembled.count('src="assets/mixer-native-geq31.js?v=geq-v14f-sml-scale-safe"'),1)
+        self.assertEqual(self.assembled.count('src="assets/mixer-native-geq31.js?v=geq-v14g-svg-dpi-scale-safe"'),1)
         self.assertEqual(self.assembled.count('data-fast-native-geq="1"'),1)
         self.assertEqual(self.assembled.count('function insertChosenNativeGeq(){'),1)
         self.assertEqual(self.assembled.count('src="assets/mixer-native-compressor.js?v=comp-2-fx-recovery"'),1)
