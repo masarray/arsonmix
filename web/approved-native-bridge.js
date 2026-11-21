@@ -4110,7 +4110,7 @@
       // Only detached-to-blank receive bay is a reel. A retarget gets the
       // existing accepted plug spring, not a misleading unplug impulse.
       pendingNativeWireRetract=removal?{
-        uiSource,oldDest,point:{x:releasePoint.x,y:releasePoint.y},
+        uiSource,oldDest:oldDestId,point:{x:releasePoint.x,y:releasePoint.y},
         nativeSource:String(nativeSource),nativeEdge:String(nativeEdge),
         primary:edge.kind==="primary",createdAt:performance.now()
       }:null;
