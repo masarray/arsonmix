@@ -507,6 +507,7 @@ function open(track,slot){
   accepted=fresh();draft=fresh();hint("FX INSTANCE NOT ACCEPTED · NO AUDIO EDIT");
  }
  channel.textContent=(track.name||"Channel")+" · FX "+(slot+1);
+ root.dataset.fxTrackId=String(track.id);root.dataset.fxSlot=String(slot);
  root.hidden=false;paint();
 }
 window.ArSonMixGraphicEq31=Object.freeze({

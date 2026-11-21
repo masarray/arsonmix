@@ -446,6 +446,7 @@ window.ArSonMixNativeCompressor=Object.freeze({
    hint("BROWSER PREVIEW · NO AUDIO ENGINE");
   }else{accepted=defaults();draft={...accepted};hint("NATIVE FX NOT ACCEPTED");}
   channel.textContent=track.name;
+  panel.dataset.fxTrackId=String(track.id);panel.dataset.fxSlot=String(slot);
   panel.hidden=false;paint();
  },
  close(){panel.hidden=true;presetBar.close();}

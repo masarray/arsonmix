@@ -645,6 +645,7 @@ window.ArSonMixNativeHarmony=Object.freeze({
     mode="DEMO";settings={...(demos.get(track.id+":"+slot)||fresh())};
     hint("BROWSER PREVIEW · VISUAL ONLY · NO AUDIO");
   }
+  root.dataset.fxTrackId=String(track.id);root.dataset.fxSlot=String(slot);
   root.hidden=false;refreshGuideSources();paint();
  },
  close(){root.hidden=true;closeMyPresetForm();el("mxHPresetMenu").hidden=true;}

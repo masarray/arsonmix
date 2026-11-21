@@ -388,7 +388,16 @@
     '.fxslot-row,.fx-section > .subhead,.section-rail .rail-cell.fx'
   ))return;
   const windows=visibleEditors();
-  if(windows.length)center(windows[windows.length-1].el);
+  const row=target.closest('.fxslot-row');
+  const trackId=row?.closest('.strip')?.dataset.id;
+  const slot=row?.querySelector('[data-slot]')?.dataset.slot;
+  // The double-clicked INSERT must recover *its own* editor, not the
+  // last DOM child when several modeless built-in editors are open.
+  const matched=trackId!==undefined&&slot!==undefined?
+   windows.filter(item=>item.el.dataset.fxTrackId===String(trackId)&&
+     item.el.dataset.fxSlot===String(slot)):[];
+  const focus=(matched.length?matched:windows).at(-1);
+  if(focus)center(focus.el);
  });
  window.ArSonMixFxWorkspace=Object.freeze({
   centerVisible:()=>{const w=visibleEditors();return w.length?

@@ -43,6 +43,8 @@ def main():
             panel=page.locator("#mxNativeGeq31")
             panel.wait_for(state="visible")
             page.wait_for_function("()=>document.querySelector('#mxNativeGeq31')?.dataset.artwork==='v13'")
+            assert panel.get_attribute("data-fx-track-id")=="123"
+            assert panel.get_attribute("data-fx-slot")=="0"
             assert panel.locator(".mx-geq31-cell").count()==31
             assert panel.locator(".mx-geq31-range").count()==31
             assert panel.locator(".mx-geq31-frequency").all_text_contents()==[
@@ -145,6 +147,30 @@ def main():
             recovered=panel.bounding_box()
             assert recovered and abs((recovered["x"]+recovered["width"]/2)-width/2)<2
             assert abs((recovered["y"]+recovered["height"]/2)-height/2)<2
+            # If a separate built-in editor is in front, double-clicking
+            # a SPECIFIC occupied slot recovers its matching instance, not
+            # whichever other editor has the highest z-index.
+            panel.evaluate("e=>{e.style.setProperty('left','-700px','important');e.style.setProperty('top','12px','important');}")
+            page.evaluate("""()=>{
+              const distractor=document.createElement('section');
+              distractor.id='mxNativeComp';
+              distractor.dataset.fxTrackId='77';distractor.dataset.fxSlot='4';
+              distractor.style='position:fixed;top:80px;left:80px;width:200px;height:180px;z-index:9999';
+              document.body.append(distractor);
+              const strip=document.createElement('section');strip.className='strip';
+              strip.dataset.id='123';strip.id='fxRecoveryFixture';
+              const row=document.createElement('div');row.className='fxslot-row';
+              const btn=document.createElement('button');btn.dataset.slot='0';
+              row.append(btn);strip.append(row);document.body.append(strip);
+              row.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));
+            }""")
+            matched=panel.bounding_box()
+            assert matched and abs(matched["x"]+matched["width"]/2-width/2)<2
+            assert panel.get_attribute("data-fx-recovered")=="center"
+            page.evaluate("""()=>{
+              document.getElementById('fxRecoveryFixture')?.remove();
+              document.getElementById('mxNativeComp')?.remove();
+            }""")
             assert not errors,errors
             page.close()
 

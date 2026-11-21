@@ -1015,6 +1015,7 @@ const api={
   const fx=s?.graph?.channels?.find(x=>x.id===id)?.inserts?.[slot];
   if(native()&&(s?.admitted||s?.logical)&&fx?.catalogId===ID)current.instanceId=fx.id;
   $("skChannel").textContent=String(track.name)+" · FX "+(slot+1);
+  root.dataset.fxTrackId=String(track.id);root.dataset.fxSlot=String(slot);
   root.hidden=false;
   constrainWindow();syncPower();
   hint(native()?"READING ACCEPTED DSP":"BROWSER VISUAL ONLY · NO AUDIO");
