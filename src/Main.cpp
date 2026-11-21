@@ -2380,23 +2380,26 @@ private:
            saved.getProperty("authority","").toString()!="LOGICAL_ONLY")
             return;
         const auto rows=saved.getProperty("graph",{}).getProperty("channels",{});
-        const juce::var* replacement=nullptr;
+        // Hold a COPY of the accepted readback insert. A pointer into the
+        // temporary row.getProperty("inserts") juce::var would dangle after
+        // leaving this loop and could rekey the wrong processor.
+        juce::var replacement;
         if(const auto* channels=rows.getArray())
             for(const auto& row:*channels) {
                 if(row.getProperty("id","").toString()!=channel)continue;
                 const auto inserts=row.getProperty("inserts",{});
                 if(const auto* fx=inserts.getArray();fx&&slot<fx->size())
-                    replacement=&(*fx)[slot];
+                    replacement=(*fx)[slot];
                 break;
             }
-        if(!replacement || !replacement->isObject())return;
-        const auto newId=replacement->getProperty("id","").toString();
+        if(!replacement.isObject())return;
+        const auto newId=replacement.getProperty("id","").toString();
         if(newId.isEmpty()||newId==oldId)return;
         for(auto& owner:floatingBuiltinFx_) {
             if(!owner||!owner->window || owner->channelId!=channel ||
                owner->slot!=slot || owner->workspaceToken!=workspace ||
                owner->instanceId!=oldId ||
-               owner->catalogId!=replacement->getProperty("catalogId","").toString())
+               owner->catalogId!=replacement.getProperty("catalogId","").toString())
                 continue;
             owner->rekeyFrom=oldId;
             owner->instanceId=newId;
