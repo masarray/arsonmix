@@ -255,7 +255,7 @@ test("FUX-1 retained FX offline access requires identical native authority and d
  assert.ok(!/setMonitorEnabled\(true\)|setOutputMuted\(false\)|restoreNativeMixerSession\(/.test(host),
   "offline editor must not arm/restore PCM");
  assert.ok(read("src/LiveAudioEngine.h").includes(
-  "const bool disconnectedRetained=retained && !deviceOpen"));
+  "const bool detachedRetained=retained &&"));
  assert.ok(read("src/LiveDryRoutingLab.h").includes(
   "const bool offlineSource=retained && hasRetainedNativeSession()"));
 });
