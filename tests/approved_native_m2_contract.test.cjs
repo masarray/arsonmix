@@ -6779,6 +6779,8 @@ test("UX-1 calm status colors use genuine app/process and callback budget eviden
   const bridge=require("node:fs").readFileSync("web/approved-native-bridge.js","utf8");
   const page=require("node:fs").readFileSync("site/preview/mixer.html","utf8");
   assert.match(bridge,/function paintFooterMetrics\(warning,health\)/);
+  assert.doesNotMatch(bridge,/item\.setAttribute\("aria-hidden","true"\)/,
+    "numeric status values stay available to assistive technology");
   assert.match(bridge,/warning\.replaceChildren\(nodes\.cpu,nodes\.rt,nodes\.ram\)/);
   assert.match(bridge,/warning\.firstElementChild!==footerMetricNodes\.cpu/);
   assert.doesNotMatch(bridge,/requestAnimationFrame\([^)]*paintFooterMetrics|setInterval\([^)]*paintFooterMetrics/);

@@ -2000,7 +2000,7 @@
         const item=document.createElement("span");
         item.className="armix-health-stat";
         item.setAttribute("data-metric",key);
-        item.setAttribute("aria-hidden","true"); // tooltip carries expanded meaning
+        // Text stays accessible; the vector icon is CSS decoration only.
         nodes[key]=item;
       }
       warning.replaceChildren(nodes.cpu,nodes.rt,nodes.ram);
