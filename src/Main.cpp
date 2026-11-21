@@ -584,7 +584,7 @@ private:
         }};
     struct LogicalVendorEditor {
         armix::session::StoredInsert insert;
-        juce::String workspaceToken;
+        juce::String workspaceToken,instanceId;
         std::unique_ptr<juce::AudioProcessor> processor;
         std::unique_ptr<PluginEditorWindow> window;
     };
@@ -1463,9 +1463,11 @@ private:
             emitNotice("The selected FX slot changed",true);
             return;
         }
+        const auto requestedInstance=request.getProperty("instanceId",{}).toString();
         if(logicalVendorEditor_) {
             auto& existing=*logicalVendorEditor_;
             if(existing.workspaceToken==logicalMixer_.workspace().workspaceToken() &&
+               existing.instanceId==requestedInstance &&
                existing.insert.channel==armix::mixer::ChannelId{channel} && existing.insert.slot==slot) {
                 if(existing.window) {
                     if(static_cast<bool>(request.getProperty("recenter",false)))
@@ -1488,7 +1490,10 @@ private:
                 if(auto* editor=prepared.processor->createEditorIfNeeded()) {
                     prepared.window=std::make_unique<PluginEditorWindow>(
                         prepared.processor->getName(),editor,*this);
+                    if(static_cast<bool>(request.getProperty("recenter",false)))
+                        prepared.window->present(true); // first-open must also centre on mixer
                     prepared.workspaceToken=logicalMixer_.workspace().workspaceToken();
+                    prepared.instanceId=requestedInstance;
                     logicalVendorEditor_=std::move(prepared);
                     return;
                 }
@@ -1506,6 +1511,24 @@ private:
         auto& fx=*logicalVendorEditor_;
         if(fx.workspaceToken!=logicalMixer_.workspace().workspaceToken()) {
             logicalVendorEditor_.reset();
+            return;
+        }
+        // Snapshot-and-compare the original logical FX identity before
+        // persisting vendor state. Other mixer controls may change while the
+        // editor is open, but a removed/replaced FX or rewritten saved blob
+        // must NEVER receive its stale vendor edits.
+        const auto& workspace=logicalMixer_.workspace();
+        const auto* row=workspace.document().roster.find(fx.insert.channel);
+        const auto* current=workspace.storedFx(fx.insert.channel,fx.insert.slot);
+        const bool identical=row && fx.insert.slot<row->insertCatalogIds.size() &&
+            row->insertCatalogIds[fx.insert.slot]==fx.insert.catalogId.toStdString() &&
+            ((current==nullptr && fx.insert.sha256.isEmpty()) ||
+             (current!=nullptr && current->catalogId==fx.insert.catalogId &&
+              current->sha256==fx.insert.sha256 &&
+              current->uid==fx.insert.uid && current->path==fx.insert.path));
+        if(!identical) {
+            emitNotice("FX slot or stored state changed: close/reopen its editor before saving",true);
+            if(!shutdown)fx.window->setVisible(true);
             return;
         }
         juce::MemoryBlock bytes;
@@ -6917,6 +6940,8 @@ private:
                             shownEpoch=retainedEpoch;
                             shownWindow=std::make_unique<PluginEditorWindow>(
                                 owner->processor->getName(),editor,*this);
+                            if(static_cast<bool>(args.getProperty("recenter",false)))
+                                shownWindow->present(true); // new HWND: centre on mixer too
                             shownProcessor=owner->processor.get();
                             opened=true;
                             error.clear();
