@@ -53,6 +53,11 @@ def main():
                 "+12","0","−12","+12","0","−12"]
             assert panel.locator(".mx-geq31-close").count()==1
             assert panel.locator("header.mx-geq31-head").count()==1
+            assert panel.locator(".mx-geq31-footer").count()==0
+            assert panel.locator(".mx-geq31-message").get_attribute("role")=="status"
+            assert panel.locator(".mx-geq31-level-led").count()==3
+            assert panel.locator(".mx-geq31-level-led.is-lit").count()==0
+            assert panel.locator(".mx-geq31-level-meter").get_attribute("role")=="meter"
             # DOM existence is NOT visual acceptance: the first screenshot
             # proved a branded Close and Output can be clipped offscreen
             # even while all source/contract assertions pass.
@@ -60,6 +65,13 @@ def main():
             close_box=panel.locator(".mx-geq31-close").bounding_box()
             output_box=panel.locator(".mx-geq31-output").bounding_box()
             assert panel_box and close_box and output_box
+            assert abs(panel_box["height"]-280)<1
+            assert panel_box["y"]<=21, panel_box
+            assert panel.locator(".mx-geq31-head").evaluate(
+                "e=>Math.abs(e.getBoundingClientRect().height-44)<.5")
+            led_box=panel.locator(".mx-geq31-level-meter").bounding_box()
+            knob_y=panel.locator(".mx-geq31-dial").bounding_box()
+            assert led_box and knob_y and knob_y["y"]>=led_box["y"]+led_box["height"]+14
             assert panel_box["x"]>=0 and panel_box["x"]+panel_box["width"]<=width+1
             assert close_box["x"]>=0 and close_box["x"]+close_box["width"]<=width
             assert output_box["x"]>=0 and output_box["x"]+output_box["width"]<=width
@@ -124,6 +136,15 @@ def main():
             assert (out/"assets/mixer-fx-rack.css").is_file()
             if width in (1680,1430):
                 page.screenshot(path=f"arsonmix-geq31-one-webview-{width}.png")
+            # Accessible recovery from a parked/offscreen editor by double-click
+            # on the actual mixer FX rack (same approved Pages DOM).
+            panel.evaluate("e=>{e.style.left='-900px';e.style.top='12px';}")
+            rack=page.locator(".fx-section .subhead").first
+            assert rack.count()==1
+            rack.evaluate("e=>e.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))")
+            recovered=panel.bounding_box()
+            assert recovered and abs((recovered["x"]+recovered["width"]/2)-width/2)<2
+            assert abs((recovered["y"]+recovered["height"]/2)-height/2)<2
             assert not errors,errors
             page.close()
 
@@ -144,10 +165,12 @@ def main():
         page.goto(url)
         page.wait_for_function("()=>window.ArSonMixGraphicEq31 && window.__ARMIX_NATIVE_M2__")
         state={"admitted":True,"logical":False,"device":{"epoch":"11"},
+         "telemetry":{"channelMeterRmsPeak":{CHANNEL:{"peakL":0.4,"peakR":0.07}}},
          "graph":{"revision":"7","channels":[{
           "id":CHANNEL,"fxRackBypassed":False,
           "inserts":[{"id":INSTANCE,"catalogId":ID,"bypassed":False}]}]}}
         page.evaluate("""(state)=>{
+           window.__testMeterView=state;
            window.__ARMIX_NATIVE_M2__={
              fxEditorState:()=>state,nativeIdFor:()=>state.graph.channels[0].id,
              consumeAction:()=>true,insertPlugin:()=>true
@@ -159,6 +182,8 @@ def main():
         panel=page.locator("#mxNativeGeq31")
         panel.wait_for(state="visible")
         page.wait_for_function("()=>document.querySelector('#mxNativeGeq31')?.dataset.artwork==='v13'")
+        assert panel.locator(".mx-geq31-level-led.is-lit").count()==2
+        assert panel.locator(".mx-geq31-level-meter").get_attribute("aria-valuenow") is not None
         def last_action(kind):
             actions=page.evaluate("""kind=>window.__actions.filter(
                a=>a.action===kind)""",kind)
@@ -179,6 +204,17 @@ def main():
             if applied:payload["appliedRequestId"]=applied
             dispatch("arMixBuiltinGeqSnapshot",payload)
         report(list(BANDS))
+        # The LED meter is an actual native PCM channel peak observer: when
+        # telemetry stops it MUST go dark, not fake a DAW animation.
+        page.evaluate("()=>{window.__testMeterView.telemetry.channelMeterRmsPeak={};}")
+        panel.locator(".mx-geq31-flat").click()
+        assert panel.locator(".mx-geq31-level-led.is-lit").count()==0
+        assert panel.locator(".mx-geq31-level-meter").get_attribute("aria-valuenow") is None
+        # Drain preset edit ACK before the subsequent band-intent contract.
+        action0=page.evaluate("()=>window.__actions.filter(a=>a.action==='nativeGeqSet').at(-1)")
+        if action0:
+            dispatch("arMixBuiltinGeqAck",{"requestId":action0["requestId"],"status":"APPLIED"})
+            report(list(BANDS),applied=action0["requestId"])
         first=panel.locator(".mx-geq31-range").first
         first.evaluate("""e=>{
            e.value='5.5';e.dispatchEvent(new Event('input',{bubbles:true}));

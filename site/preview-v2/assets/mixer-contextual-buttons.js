@@ -343,3 +343,56 @@
     if(e.key==='F2' || e.key==='Enter')selectName(e.target);
   });
 })();
+
+
+/* FX RACK workstation recovery (ONE approved /preview/).
+   Double-click an FX rack lane/header to bring a visible built-in FX editor
+   back to screen centre. Applies to the existing GEQ, PEQ, Compressor,
+   Harmonice, Vocal Throw and SonKu modeless editors. No FX state, audio
+   graph, WebView2 instance or renderer is duplicated.
+   A DOM editor cannot move beyond the enclosing Windows WebView2 HWND.
+   Real out-of-mixer popout requires a JUCE-owned separate HWND. */
+(()=>{
+ 'use strict';
+ const selectors=[
+  '#mxNativeGeq31','#mxNativePeq','#mxNativeComp',
+  '#mxNativeHarmony','#mxNativeVocalThrow','#mxNativeSonKu'
+ ];
+ const isVisible=el=>el&&!el.hidden&&!el.closest('[hidden]')&&
+   el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden';
+ const center=el=>{
+  if(!isVisible(el))return false;
+  const rect=el.getBoundingClientRect();
+  const w=document.documentElement.clientWidth||innerWidth;
+  const h=document.documentElement.clientHeight||innerHeight;
+  const x=Math.max(0,Math.round((w-rect.width)/2));
+  const y=Math.max(0,Math.round((h-rect.height)/2));
+  el.style.setProperty('position','fixed','important');
+  el.style.setProperty('right','auto','important');
+  el.style.setProperty('bottom','auto','important');
+  el.style.setProperty('transform','none','important');
+  el.style.setProperty('left',x+'px','important');
+  el.style.setProperty('top',y+'px','important');
+  el.dataset.fxRecovered='center';
+  return true;
+ };
+ const visibleEditors=()=>selectors.map((s,i)=>({
+  el:document.querySelector(s),index:i
+ })).filter(x=>isVisible(x.el)).sort((a,b)=>{
+  const z=el=>Number.parseInt(getComputedStyle(el).zIndex,10)||0;
+  return z(a.el)-z(b.el)||a.index-b.index;
+ });
+ document.addEventListener('dblclick',event=>{
+  const target=event.target;
+  if(!target?.closest?.(
+    '.fxslot-row,.fx-section > .subhead,.section-rail .rail-cell.fx'
+  ))return;
+  const windows=visibleEditors();
+  if(windows.length)center(windows[windows.length-1].el);
+ });
+ window.ArSonMixFxWorkspace=Object.freeze({
+  centerVisible:()=>{const w=visibleEditors();return w.length?
+    center(w[w.length-1].el):false;},
+  recenter:center
+ });
+})();

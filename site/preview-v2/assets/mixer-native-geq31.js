@@ -121,7 +121,20 @@ dialPointer.setAttribute("aria-hidden","true");
 dialPointer.width=336;dialPointer.height=336;
 dial.append(knobImage,dialPointer);
 const outValue=el("output","mx-geq31-output-value","0.0 dB");
-output.append(outputLabel,dial,outValue);
+// Three hardware LED segments: only confirmed native channel PCM peaks light up.
+// Never derive fake audio from the EQ band positions or Output knob.
+const levelMeter=el("div","mx-geq31-level-meter");
+levelMeter.setAttribute("role","meter");
+levelMeter.setAttribute("aria-label","Native channel level");
+levelMeter.setAttribute("aria-valuemin","-90");
+levelMeter.setAttribute("aria-valuemax","6");
+levelMeter.title="Native channel PCM peak · no signal";
+const levelLeds=[0,1,2].map(i=>{
+ const led=el("span","mx-geq31-level-led mx-geq31-level-led-"+i);
+ led.setAttribute("aria-hidden","true");
+ levelMeter.append(led);return led;
+});
+output.append(outputLabel,levelMeter,dial,outValue);
 body.append(left,scroll,right,output);
 const bypassShade=el("div","mx-geq31-bypass-overlay","BYPASSED");
 bypassShade.setAttribute("aria-hidden","true");
@@ -230,10 +243,11 @@ async function loadArtwork(){
   console.error("GEQ31 visual resource",error);
  }
 }
-const footer=el("footer","mx-geq31-footer");
+// Keep operator feedback accessible, but remove the redundant visible status bar.
 const message=el("span","mx-geq31-message","BROWSER PREVIEW · NO AUDIO");
-footer.append(message);
-root.append(header,body,bypassShade,footer);
+message.setAttribute("role","status");
+message.setAttribute("aria-live","polite");
+root.append(header,body,bypassShade,message);
 function mount(){if(!root.isConnected)document.body.append(root);loadArtwork();}
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 function hint(value){message.textContent=value;root.dataset.state=/STALE|REJECT|FAIL|UNAVAILABLE|TIMEOUT/i.test(value)?"error":/WAIT|APPLY|READING/i.test(value)?"pending":"ready";}
@@ -258,6 +272,26 @@ function updatePower(){
  const bypassed=usable&&Boolean(ins?.bypassed||ch?.fxRackBypassed);
  bypassShade.classList.toggle("is-on",bypassed);
 }
+function paintChannelMeter(view){
+ const lease=context();
+ const entry=native()&&lease&&view?.admitted&&!view?.retained&&!view?.logical
+   ?view?.telemetry?.channelMeterRmsPeak?.[lease.channelId]:null;
+ const validPeak=n=>typeof n==="number"&&Number.isFinite(n)&&n>=0;
+ const peaks=typeof entry==="number"?(validPeak(entry)?[entry]:[]):
+   [entry?.peakL,entry?.peakR].filter(validPeak);
+ const db=peaks.length?(Math.max(...peaks)>0
+   ?20*Math.log10(Math.max(...peaks)):-90):null;
+ // Thresholds are intentionally sparse and quiet: signal, nominal, hot.
+ const thresholds=[-30,-14,-3];
+ levelLeds.forEach((led,i)=>led.classList.toggle("is-lit",db!==null&&db>=thresholds[i]));
+ if(db===null){
+  levelMeter.removeAttribute("aria-valuenow");
+  levelMeter.title="Native channel PCM peak · unavailable";
+ }else{
+  levelMeter.setAttribute("aria-valuenow",String(Math.max(-90,Math.min(6,db)).toFixed(1)));
+  levelMeter.title="Native channel PCM peak · "+db.toFixed(1)+" dBFS";
+ }
+}
 function paint(){
  controls.forEach((c,i)=>{
   const v=draft.bands[i];
@@ -279,7 +313,7 @@ function paint(){
  if(!preset.value.startsWith("user:")||!same(accepted,draft))
    preset.value=value;
  presetBar?.paint?.();
- updatePower();
+ updatePower();paintChannelMeter(state());
 }
 function demoSave(){if(active)demos.set(active.track.id+":"+active.slot,{bands:[...draft.bands],levelDb:draft.levelDb});}
 function requestSnapshot(force=false){
@@ -418,8 +452,22 @@ power.addEventListener("click",()=>{
  if(native()&&context())window.__ARMIX_NATIVE_M2__?.consumeAction?.(active.track,"slotPower",{dataset:{slot:String(active.slot)}});
  else if(!native()&&active){active.track.slotBypass[active.slot]=!active.track.slotBypass[active.slot];paint();}
 });
-function dismiss(){root.hidden=true;active=null;pending=null;queued.clear();readId="";presetBar.close();}
+function dismiss(){
+ root.hidden=true;active=null;pending=null;queued.clear();readId="";
+ paintChannelMeter(null);presetBar.close();
+}
 close.addEventListener("click",dismiss);
+function centerEditor(){
+ if(root.hidden)return false;
+ const r=root.getBoundingClientRect();
+ root.style.transform="none";
+ root.style.left=Math.max(0,(innerWidth-r.width)/2)+"px";
+ root.style.top=Math.max(0,(innerHeight-r.height)/2)+"px";
+ return true;
+}
+header.addEventListener("dblclick",e=>{
+ if(!e.target.closest("button,select")){e.preventDefault();centerEditor();}
+});
 header.addEventListener("pointerdown",e=>{
  if(e.button!==0||e.target.closest("button,select"))return;
  const r=root.getBoundingClientRect();
@@ -429,8 +477,10 @@ header.addEventListener("pointerdown",e=>{
 header.addEventListener("pointermove",e=>{
  if(!dragHeader||dragHeader.id!==e.pointerId)return;
  const r=root.getBoundingClientRect();
- root.style.left=clamp(e.clientX-dragHeader.dx,0,Math.max(0,innerWidth-r.width))+"px";
- root.style.top=clamp(e.clientY-dragHeader.dy,0,Math.max(0,innerHeight-r.height))+"px";
+ // WebView2 cannot paint outside its native HWND; permit edge parking with
+ // a 48px visible grip, recover with FX-rack double-click (common handler).
+ root.style.left=clamp(e.clientX-dragHeader.dx,Math.min(0,48-r.width),Math.max(0,innerWidth-48))+"px";
+ root.style.top=clamp(e.clientY-dragHeader.dy,0,Math.max(0,innerHeight-38))+"px";
  e.preventDefault();
 });
 header.addEventListener("pointerup",e=>{dragHeader=null;try{header.releasePointerCapture(e.pointerId);}catch{}});
@@ -460,7 +510,7 @@ function open(track,slot){
  root.hidden=false;paint();
 }
 window.ArSonMixGraphicEq31=Object.freeze({
- id:ID,open,close:dismiss,
+ id:ID,open,close:dismiss,recenter:centerEditor,
  insert:target=>Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target))
 });
 backend()?.addEventListener?.("arMixBuiltinGeqQueue",ack=>{
@@ -508,7 +558,7 @@ backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
  if(root.hidden||!native())return;
  if(!context()){
   pending=null;queued.clear();hint("DEVICE OR GRAPH CHANGED · REOPEN FX");
- }else updatePower();
+ }else {updatePower();paintChannelMeter(state());}
 });
 window.setInterval(()=>{
  if(root.hidden||!active)return;

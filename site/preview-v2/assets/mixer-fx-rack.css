@@ -1427,14 +1427,14 @@
 /* GEQ31 / ONE approved browser and WebView2 editor. This is the SINGLE
  * presentation owner; JUCE hosts audio only. All 31 faders share one
  * CSS geometry (170px travel) and the same 0dB horizontal datum. */
-/* GEQ31 v13 — faithful owner-approved 1430 x 305 hardware visual.
-   One /preview/ WebView2 DOM owner. Original embedded THUMB SVG, brushed JPG,
-   STATIC 192px knob PNG + 84px vector pointer arc; no CSS substitute faders.
-   The 25px native ACK footer is the ONLY addition below the 305px panel. */
+/* GEQ31 v14 compact hardware editor — preserve the owner-approved v13
+   original 31 THUMB SVGs, brushed JPEG and static PNG + blue pointer.
+   No visible status bar; accessible ACK announcements remain offscreen.
+   Only three 3-state LEDs may display accepted native channel PCM peak. */
 .mx-geq31{
- position:fixed;z-index:1100;top:clamp(8px,11vh,80px);
+ position:fixed;z-index:1100;top:clamp(6px,2vh,20px);
  left:max(8px,calc((100vw - 1430px)/2));
- width:min(1430px,calc(100vw - 16px));height:331px;min-width:320px;
+ width:min(1430px,calc(100vw - 16px));height:280px;min-width:320px;
  box-sizing:border-box;color:#344148;font:11px Inter,"Segoe UI",Arial,sans-serif;
  border:1px solid #858e93;border-radius:7px;overflow:hidden;
  background-image:linear-gradient(180deg,rgba(255,255,255,.08),rgba(0,0,0,.03)),
@@ -1451,7 +1451,7 @@
  outline:1px solid #1595d3;outline-offset:1px;
 }
 .mx-geq31-head{
- height:54px;display:flex;align-items:center;gap:8px;padding:0 20px;
+ height:44px;display:flex;align-items:center;gap:8px;padding:0 20px;
  border-bottom:1px solid #545e6450;cursor:move;
  box-shadow:inset 0 1px #fff8;
 }
@@ -1492,7 +1492,7 @@
 .mx-geq31-head .mx-geq31-close:hover{filter:none;background:linear-gradient(#633840,#48292f);border-color:#b27078}
 .mx-geq31-head .mx-geq31-close:active{background:linear-gradient(#ef3e50,#c52d40)}
 .mx-geq31-body{
- height:250px;display:grid;grid-template-columns:38px minmax(0,1fr) 40px 100px;
+ height:234px;display:grid;grid-template-columns:38px minmax(0,1fr) 40px 100px;
  align-items:start;gap:0;padding:1px 4px 0;
 }
 .mx-geq31-scale{
@@ -1507,7 +1507,7 @@
 .mx-geq31-right{width:40px}
 .mx-geq31-right .mx-geq31-scale-text{right:auto;left:3px}
 .mx-geq31-scroll{
- min-width:0;width:100%;height:238px;overflow-x:auto;overflow-y:hidden;
+ min-width:0;width:100%;height:233px;overflow-x:auto;overflow-y:hidden;
  padding:0;scrollbar-width:thin;scrollbar-color:#6c7c82 transparent;
 }
 .mx-geq31-bank{width:1240px;min-width:1240px;height:229px;display:flex;gap:0}
@@ -1534,13 +1534,41 @@
 .mx-geq31-frequency{font-size:10px}
 .mx-geq31-unit{font-size:8px}
 .mx-geq31-output{
- height:238px;width:100px;min-width:100px;display:flex;
- align-items:center;flex-direction:column;padding:47px 0 0;
+ height:234px;width:100px;min-width:100px;display:flex;
+ align-items:center;flex-direction:column;padding:42px 0 0;
 }
 .mx-geq31-output-label{
  color:#344047;font:700 10px Inter,"Segoe UI",Arial,sans-serif;
- line-height:16px;letter-spacing:.2px;margin-bottom:7px;
+ line-height:16px;letter-spacing:.2px;margin-bottom:6px;
  transform:translateX(-14px);
+}
+.mx-geq31-level-meter{
+ display:flex;gap:4px;align-items:center;justify-content:center;
+ width:62px;height:22px;min-height:22px;margin:0 0 27px;
+ padding:4px 5px;border:1px solid #53636b;border-radius:3px;
+ background:linear-gradient(180deg,#0b1418,#1d2b31);
+ box-shadow:inset 0 1px 3px #010507ad,0 1px 0 #f0f4f18c;
+ transform:translateX(-14px);pointer-events:none;
+}
+.mx-geq31-level-led{
+ display:block;flex:0 0 13px;width:13px;height:10px;
+ border:1px solid #38484c;border-radius:2px;
+ background:#132425;box-shadow:inset 0 1px 2px #010605be;
+ transition:background-color 70ms linear;
+}
+.mx-geq31-level-led-1{background:#292a17;border-color:#48452d}
+.mx-geq31-level-led-2{background:#301b1c;border-color:#523537}
+.mx-geq31-level-led-0.is-lit{
+ background:linear-gradient(#72ecae,#19b06b);border-color:#54c58c;
+ box-shadow:0 0 4px #29d57a77,inset 0 1px #c3ffe7a9;
+}
+.mx-geq31-level-led-1.is-lit{
+ background:linear-gradient(#ffeb86,#e6ab37);border-color:#e8ba49;
+ box-shadow:0 0 4px #ffca5077,inset 0 1px #fff9d8ad;
+}
+.mx-geq31-level-led-2.is-lit{
+ background:linear-gradient(#ff937e,#f24740);border-color:#df5f55;
+ box-shadow:0 0 4px #fc5e5777,inset 0 1px #ffeadbb5;
 }
 .mx-geq31-dial{
  position:relative;width:84px;height:84px;flex:0 0 84px;
@@ -1557,20 +1585,18 @@
  font-variant-numeric:tabular-nums;
 }
 .mx-geq31-bypass-overlay{
- display:none;position:absolute;left:0;right:0;top:54px;bottom:25px;
+ display:none;position:absolute;left:0;right:0;top:44px;bottom:0;
  z-index:6;pointer-events:none;background:rgba(3,6,10,.72);
  align-items:center;justify-content:center;color:rgba(255,165,60,.933);
  font:700 51px Inter,"Segoe UI",Arial,sans-serif;letter-spacing:2px;
  text-shadow:0 3px 2px rgba(0,3,7,.72);
 }
 .mx-geq31-bypass-overlay.is-on{display:flex}
-.mx-geq31-footer{
- display:flex;align-items:center;height:25px;padding:0 15px;
- border-top:1px solid #83989d66;background:#acb5ba8a;
- color:#47626e;font-size:9px;letter-spacing:.25px;
+.mx-geq31-message{
+ position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+ overflow:hidden;clip-path:inset(50%);white-space:nowrap;
+ border:0;pointer-events:none;
 }
-.mx-geq31[data-state=error] .mx-geq31-message{color:#973b3b}
-.mx-geq31[data-state=pending] .mx-geq31-message{color:#876021}
 @media(max-width:980px){
  .mx-geq31-meta,.mx-geq31-channel{display:none}
  .mx-geq31-head{gap:6px;padding:0 8px}
