@@ -2391,9 +2391,20 @@ public:
         using namespace armix::mixer;
         const auto observedEpoch=epoch();
         const auto documentEpoch=retained?nativeAccepted_.deviceEpoch:observedEpoch;
-        if((!retained && !channelIdPhysicalPcmActive()) ||
-           (retained && channelIdPhysicalPcmActive()) ||
-           !nativeAccepted_.matches(nativePublisher_,documentEpoch,nativeAccepted_.pcmRevision))
+        const auto retainedOwners=nativeAccepted_.fxOwners;
+        // On physical STOP the callback publisher may already have retired
+        // its routing generation, but the exact immutable accepted FX lease
+        // bank and authored roster are still retained by the CONTROL owner.
+        // This permits a detached binary snapshot, NOT a physical edit.
+        const bool offlineSource=retained && hasRetainedNativeSession() &&
+            documentEpoch!=0 && nativeAccepted_.pcmRevision!=0 &&
+            retainedOwners &&
+            retainedOwners->epoch()==documentEpoch &&
+            retainedOwners->revision()==nativeAccepted_.pcmRevision;
+        if((!retained && (!channelIdPhysicalPcmActive() ||
+               !nativeAccepted_.matches(nativePublisher_,documentEpoch,
+                                        nativeAccepted_.pcmRevision))) ||
+           (retained && !offlineSource))
             return "No authoritative native ChannelId graph";
         if(nativeAccepted_.fxOwners->externalChannel().value)
             return "External CH1 FX owner cannot yet be serialized independently";
@@ -2447,8 +2458,12 @@ public:
                     }
                 }
             }
-            if(epoch()!=observedEpoch ||
-               !nativeAccepted_.matches(nativePublisher_,documentEpoch,nativeAccepted_.pcmRevision))
+            if(epoch()!=observedEpoch || nativeAccepted_.fxOwners!=retainedOwners ||
+               nativeAccepted_.deviceEpoch!=documentEpoch ||
+               (!retained && !nativeAccepted_.matches(nativePublisher_,
+                                      documentEpoch,nativeAccepted_.pcmRevision)) ||
+               (retained && (!hasRetainedNativeSession() ||
+                   retainedOwners->revision()!=nativeAccepted_.pcmRevision)))
                 return "Native graph changed during FX snapshot";
             document=std::move(draft);
             blobs=std::move(staged);
