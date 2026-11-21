@@ -245,7 +245,18 @@ public:
                         juce::Component& mixer)
         : DocumentWindow (title, juce::Colour (0xff14212a), allButtons)
     {
-        setUsingNativeTitleBar (true);
+        // GEQ31 already owns its complete branded header, drag surface and
+        // authenticated Close action. The OS titlebar added a second Close
+        // and shifted every native-SVG coordinate by the Windows caption
+        // height. Remove chrome ONLY for this editor; VST3 and all other
+        // built-in FX retain their previous mixer-owned window policy.
+        const bool geqOwnsHeader =
+            dynamic_cast<armix::builtin_fx::GraphicEq31Editor*>(editor)!=nullptr;
+        setUsingNativeTitleBar (!geqOwnsHeader);
+        if (geqOwnsHeader) {
+            setTitleBarButtonsRequired (0, false);
+            setTitleBarHeight (0);
+        }
         setIcon (approvedAppIcon());
         setContentOwned (editor, true);
         // Do not offer false host resizing for fixed-geometry built-in FX.
