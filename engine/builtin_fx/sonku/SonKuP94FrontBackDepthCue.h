@@ -44,6 +44,27 @@ public:
         const float frac=d-lo;
         target_=shape_[lo]*(1.f-frac)+shape_[lo+1]*frac;
     }
+    // ImmerSIB-only stage A/B: this PCM graph has TWO real virtual PA
+    // sources, not one central loudspeaker. P94 legacy used a single
+    // world-front center even for a 104..134 degree stereo stage, giving
+    // a full +2.54 dB EARLY/DIRECT bias to the entire stage. Use the
+    // equal-power mean of each actual P83 head-relative speaker cue.
+    // The original single-source retarget() and its approved PCM stay
+    // bit-exact for every non-opted-in instance.
+    // Invoked on existing 16-frame kernel-retarget cadence; table lookup,
+    // fixed arithmetic, NO DSP allocation, new delay or added filter.
+    void retargetStereo(float leftHead,float rightHead,
+                        bool roomWithEarly) noexcept {
+        if(!std::isfinite(leftHead) || !std::isfinite(rightHead)) {
+            enabled_=false;
+            target_=0.f;
+            return;
+        }
+        retarget(leftHead,roomWithEarly);
+        const float leftTarget=target_;
+        retarget(rightHead,roomWithEarly);
+        target_=.5f*(leftTarget+target_);
+    }
     Gains next() noexcept {
         weight_+=slew_*(target_-weight_);
         if(std::abs(weight_-target_)<1.e-6f)weight_=target_;

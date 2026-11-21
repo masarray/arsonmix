@@ -7,6 +7,8 @@ on:
       - 'tests/immersib_concert_stereo_candidate_test.cpp'
       - 'tests/immersib_concert_native_core_test.cpp'
       - 'engine/builtin_fx/sonku/SonKuP90StereoDecoder.h'
+      - 'engine/builtin_fx/sonku/SonKuP94FrontBackDepthCue.h'
+      - 'tests/immersib_stage_room_balance_test.cpp'
       - 'engine/builtin_fx/sonku/SonKuP98SceneVoicing.h'
       - 'engine/builtin_fx/sonku/SonKuImmerSIBVocalRoom.h'
       - 'engine/builtin_fx/sonku/SonKuP99MusicalVocalDepth.h'
@@ -34,6 +36,12 @@ jobs:
             tests/immersib_concert_stereo_candidate_test.cpp \
             -o /tmp/armix-immersib-concert-candidate
           /tmp/armix-immersib-concert-candidate
+          # A/B table-based stage correction: actual P83 L/R directions,
+          # original single-source P94 untouched and room-off bit-exact.
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            tests/immersib_stage_room_balance_test.cpp \
+            -o /tmp/armix-immersib-stage-room
+          /tmp/armix-immersib-stage-room
           # The whole 2x2 KEMAR + 6-wall SonKu P9 graph, not just filter units.
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic \
             -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \

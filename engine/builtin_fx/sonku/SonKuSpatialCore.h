@@ -1506,8 +1506,21 @@ private:
                 p90Decoder_.compose(centerTarget_,targets_[0],targets_[1]);
                 p92Bass_.updateDirections(positions.leftHead,positions.rightHead);
 #if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
-                p94Depth_.retarget(p83::toHead(static_cast<float>(degrees_),p83HeadYaw_),
-                                  settings_.spacePreset!=0 && settings_.roomAmount>0.f);
+#if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
+                if(immersibConcertCandidate_) {
+                    // Real L/R PA geometry, not the fictitious mono-center
+                    // source for the entire 104..134-degree concert stage.
+                    // The P90 phantom vocal remains forward, measured SIDE
+                    // HRTF and bass stay identical; this adjusts only
+                    // P94's DIRECT-versus-EARLY stage weighting.
+                    p94Depth_.retargetStereo(
+                        positions.leftHead,positions.rightHead,
+                        settings_.spacePreset!=0 && settings_.roomAmount>0.f);
+                }else
+#endif
+                p94Depth_.retarget(
+                    p83::toHead(static_cast<float>(degrees_),p83HeadYaw_),
+                    settings_.spacePreset!=0 && settings_.roomAmount>0.f);
 #endif
             }
             else

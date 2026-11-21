@@ -19,7 +19,9 @@ using Stereo=std::array<std::vector<float>,2>;
 constexpr double pi=3.1415926535897932384626433832795;
 
 static Stereo run(int rate,int scene,int material,bool candidate,int block=128) {
-    constexpr int frames=2048;
+    // 6144 frames covers direct, wall/floor/ceiling ER and the first
+    // audible 44ms+ late FDN; prior 2048-frame test ended before LATE.
+    constexpr int frames=6144;
     auto c=std::make_unique<SonKuSpatialCore>();
     c->optInImmerSIBVocalRoom();
     if(candidate)c->optInImmerSIBConcertCandidate();
