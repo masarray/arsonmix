@@ -3102,7 +3102,7 @@
       status(staged.readOnly?
         "Saved mixer recovery required · Open a verified .smix file":
         readModel.kind==="RETAINED_OFFLINE"?
-        "FX OFFLINE · output muted · settings saved to .smix · Open session to apply after reconnect":
+        "FX OFFLINE · output muted · saved changes require explicit .smix Open after reconnect":
         "Mixer ready to edit · connect Audio I/O to enable sound");
       return;
     }
