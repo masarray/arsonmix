@@ -143,11 +143,14 @@
    Scoped to real header buttons; emergency/destructive, output master,
    and warning controls keep their own semantic red/amber/green material.
    No geometry, shadow stack, PNG key, click or held/latched state changes. */
+/* The :is() and :not() pseudo-classes MUST be on the SAME element.
+   A newline between them is CSS descendant whitespace and silently leaves
+   #saveScene, #fxView and other header buttons on legacy blue/grey faces. */
 .app :is(.command-bar button.tool,.command-bar summary.tool,
- .more-tools-panel button.tool,.mixer-title button.wire-v34-tool)
-:is([aria-pressed="true"],[aria-expanded="true"],[aria-selected="true"],
- .active,.selected,:active:not(:disabled))
-:not(#reset):not(#clearCue):not(#sceneSafe):not(#globalFxToggle){
+ .more-tools-panel button.tool,.mixer-title button.wire-v34-tool):is(
+ [aria-pressed="true"],[aria-expanded="true"],[aria-selected="true"],
+ .active,.selected,:active:not(:disabled)):not(#reset):not(#clearCue)
+ :not(#sceneSafe):not(#globalFxToggle){
  --ari-on-top:#167f9d!important;
  --ari-on-hi:#2eb7cf!important;
  --ari-on-mid:#1b9cba!important;
