@@ -114,6 +114,49 @@ def main():
                             # Native HWND resizes from original panel content.
                             page.wait_for_function("""()=>
                                 window.__fxOutbound.some(x=>x.name==='arMixFloatingSize')""")
+                            # A popup has no independent PCM. Power goes to
+                            # exactly the native ChannelId/slot/instance and
+                            # requires later ACK/readback to change appearance.
+                            power=page.evaluate("""(channel)=>{
+                                window.__ARMIX_NATIVE_M2__.consumeAction(
+                                  {nativeId:channel},"slotPower",
+                                  {dataset:{slot:"0"}});
+                                return window.__fxOutbound.filter(
+                                  x=>x.name==='arMixFloatingPower').at(-1)?.payload;
+                            }""",CHANNEL)
+                            assert power is not None,(catalog,"no native power intent")
+                            assert power["channelId"]==CHANNEL
+                            assert power["slot"]==0
+                            assert power["instanceId"]==INSTANCE
+                            assert power["catalogId"]==catalog
+                            assert power["workspaceToken"]=="offline-smix-fux"
+                            assert power["logical"] is True
+                            assert power["value"] is True
+                            # Closing the original editor must hide its HWND;
+                            # a double-click must reopen the *same* module.
+                            handle=page.evaluate("""(catalog)=>{
+                                const key={
+                                  "armix.builtin.channel-eq.v1":"ArSonMixNativeEq",
+                                  "armix.builtin.channel-compressor.v1":"ArSonMixNativeCompressor",
+                                  "armix.builtin.graphic-eq31.v1":"ArSonMixGraphicEq31",
+                                  "armix.builtin.arson-harmony.v1":"ArSonMixNativeHarmony",
+                                  "armix.builtin.vocal-throw.v1":"ArSonMixNativeVocalThrow",
+                                  "armix.builtin.8d-sonku.v1":"ArSonMixNativeSonKu"
+                                }[catalog];
+                                window[key].close();
+                                return key;
+                            }""",catalog)
+                            root.wait_for(state="hidden")
+                            page.evaluate("(p)=>window.__fxDispatch('arMixFloatingOpen',p)",payload)
+                            root.wait_for(state="visible")
+                            assert page.evaluate("(key)=>!!window[key]",handle)
+                            # A different instance cannot steal this editor.
+                            forged={**payload,"instanceId":"wrong-instance"}
+                            page.evaluate("(p)=>window.__fxDispatch('arMixFloatingOpen',p)",forged)
+                            assert root.is_visible(),catalog
+                            accepted_id=page.evaluate("""()=>window.__ARMIX_NATIVE_M2__
+                              .fxEditorState()?.graph?.channels?.[0]?.inserts?.[0]?.id""")
+                            assert accepted_id==INSTANCE,(catalog,accepted_id)
                             assert not errors,(catalog,errors)
                             print("PASS approved native FX popup",catalog)
                         finally:
