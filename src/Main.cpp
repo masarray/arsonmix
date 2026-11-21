@@ -628,6 +628,12 @@ public:
         orbit_.stop();
         catalog_.onChanged = nullptr;
         closeAllPluginEditors();
+        // Shutdown is the ONE place where the mixer event relay is detached.
+        // Ordinary .smix Open, FX replace, preset recall and device changes
+        // also call closeAllPluginEditors(): nulling the relay there made
+        // every subsequently reopened floating built-in FX window permanently
+        // lose DSP ACK/readback. Do not unregister it until final teardown.
+        browser_.onNativeEvent=nullptr;
         // Tear down the modal transaction first. A closing window must not
         // re-enter device rebind while ConsoleWindow is being destroyed.
         audioSetupLease_.reset();
@@ -1328,7 +1334,8 @@ private:
         closePluginEditor();
         closeImmerSIBEditor();
         floatingBuiltinFx_.clear(); // owned WebViews before PCM engine cleanup
-        browser_.onNativeEvent=nullptr;
+        // DO NOT disable browser_.onNativeEvent here: this is a session-reset
+        // helper used throughout the application's lifetime, not a destructor.
         // Each additional window's own destructor releases JUCE UI before
         // its vendor lease, all on the native message thread.
         additionalFxEditors_.clear();
