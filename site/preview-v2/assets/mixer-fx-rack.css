@@ -1432,7 +1432,7 @@
    No visible status bar; accessible ACK announcements remain offscreen.
    Only three 3-state LEDs may display accepted native channel PCM peak. */
 .mx-geq31{
- position:fixed;z-index:1100;top:clamp(6px,2vh,20px);
+ position:fixed;z-index:1100;top:clamp(58px,7vh,66px);
  left:max(8px,calc((100vw - 1430px)/2));
  width:min(1430px,calc(100vw - 16px));height:280px;min-width:320px;
  box-sizing:border-box;color:#344148;font:11px Inter,"Segoe UI",Arial,sans-serif;
