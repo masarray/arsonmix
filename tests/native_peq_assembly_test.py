@@ -22,6 +22,9 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertEqual(self.assembled.count('id="fastPicker"'),1)
         self.assertNotIn("preview-v3",self.assembled)
         self.assertEqual(self.assembled.count('src="assets/mixer-native-peq.js?v=eq-graph1"'),1)
+        self.assertEqual(self.assembled.count('src="assets/mixer-native-geq31.js?v=geq-webview-p0"'),1)
+        self.assertEqual(self.assembled.count('data-fast-native-geq="1"'),1)
+        self.assertEqual(self.assembled.count('function insertChosenNativeGeq(){'),1)
         self.assertEqual(self.assembled.count('src="assets/mixer-native-compressor.js?v=comp-1"'),1)
         self.assertEqual(self.assembled.count("function insertChosenNativeCompressor(){"),1)
         self.assertEqual(self.assembled.count("function insertChosenNativeThrow(){"),1)
@@ -37,7 +40,7 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertIn("const nativeExtra=list.filter(p=>p.format==='Native'",self.assembled)
         self.assertIn("p.id.startsWith('armix.builtin.')",self.assembled)
         self.assertIn("'armix.builtin.8d-sonku.v1'",self.assembled)
-        self.assertIn("nativeExtra+eqBuiltin+compBuiltin+harmonyBuiltin+throwBuiltin+sonkuBuiltin",self.assembled)
+        self.assertIn("nativeExtra+eqBuiltin+geqBuiltin+compBuiltin+harmonyBuiltin+throwBuiltin+sonkuBuiltin",self.assembled)
         self.assertIn("const vstItems=list.filter(p=>p.format!=='Native');",self.assembled)
         self.assertIn("(vstItems.length?vstItems.map(p=>",self.assembled)
         self.assertIn('data-fast-id="'+
