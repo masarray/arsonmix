@@ -1637,7 +1637,25 @@ if(BUILD_TESTING)
       COMMAND ARMixGraphicEq31CoreTests)
   add_test(NAME GraphicEq31OriginalSvgLayersAndDynamicThumb
       COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/graphic_eq31_svg_layers_test.py")
-  add_dependencies(ARMixMixerRoutingTests ARMixGraphicEq31CoreTests)
+  # GEQ31 has ONE official Pages/WebView2 editor. The actual native
+  # processor must ACK typed 31-band and Output requests AFTER the PCM
+  # callback, with atomic recall and device-restart safety; never JS PCM.
+  juce_add_console_app(ARMixGraphicEq31WebViewTests PRODUCT_NAME
+      "ArSonMix GEQ31 WebView Native Control Tests")
+  target_sources(ARMixGraphicEq31WebViewTests PRIVATE
+      tests/graphic_eq31_webview_control_test.cpp
+      engine/builtin_fx/GraphicEq31Processor.h)
+  target_link_libraries(ARMixGraphicEq31WebViewTests PRIVATE
+      juce::juce_audio_processors juce::juce_recommended_config_flags)
+  target_compile_features(ARMixGraphicEq31WebViewTests PRIVATE cxx_std_20)
+  if(MSVC)
+    target_compile_options(ARMixGraphicEq31WebViewTests PRIVATE
+      "$<$<COMPILE_LANGUAGE:CXX>:/utf-8>")
+  endif()
+  add_test(NAME GraphicEq31WebViewAudioAckAndAtomic31Bands
+      COMMAND ARMixGraphicEq31WebViewTests)
+  add_dependencies(ARMixMixerRoutingTests
+      ARMixGraphicEq31CoreTests ARMixGraphicEq31WebViewTests)
 
   # Zero-lookahead native compressor DSP: zero PDC, stereo-linked peak,
   # soft knee, dry/wet, parameter validation and variable sample rates.
