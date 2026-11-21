@@ -608,6 +608,9 @@ public:
     bool hasRetainedNativeSession() const noexcept {
         return dryRoutingLab_.hasRetainedNativeSession();
     }
+    std::uint64_t retainedNativeEpoch() const noexcept {
+        return dryRoutingLab_.retainedNativeEpoch();
+    }
     bool hasRetainedUnboundMixer() const noexcept {
         return dryRoutingLab_.hasAuthoredMixerContent() && !dryRoutingLab_.ready();
     }
