@@ -112,6 +112,25 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("std::unique_ptr<PluginEditorWindow> window;",HOST)
         self.assertIn("JUCE editor",HOST)
 
+    def test_native_receipt_relay_survives_session_open_and_fx_replacement(self):
+        # Session Open, preset recall and graph handoff all call
+        # closeAllPluginEditors() while the mixer remains running.
+        # Unregistering the WebView2 DSP ACK relay there permanently
+        # strands newly reopened PEQ/GEQ/Comp/Harmony/SonKu/Throw windows.
+        close=HOST.split("void closeAllPluginEditors() noexcept {",1)[1]
+        close=close.split("\\n    }",1)[0]
+        shutdown=HOST.split("~ConsoleWindow() override",1)[1]
+        shutdown=shutdown.split("void closeButtonPressed() override",1)[0]
+        self.assertIn("floatingBuiltinFx_.clear()",close)
+        self.assertNotIn("browser_.onNativeEvent=nullptr;",close)
+        self.assertIn("browser_.onNativeEvent=nullptr;",shutdown)
+        self.assertIn("closeAllPluginEditors();",shutdown)
+        self.assertLess(shutdown.index("closeAllPluginEditors();"),
+                        shutdown.index("browser_.onNativeEvent=nullptr;"))
+        self.assertIn("browser_.onNativeEvent=[this]",HOST)
+        self.assertIn('event.startsWith("arMixBuiltin")',HOST)
+        self.assertIn('owned->window->emit(event,payload)',HOST)
+
     def test_all_six_builtins_escape_mixer_via_actual_native_owned_webview(self):
         script=(ROOT/"web/approved-floating-fx-bridge.js").read_text(encoding="utf-8")
         builder=(ROOT/"scripts/build_approved_native_gui.py").read_text(encoding="utf-8")
