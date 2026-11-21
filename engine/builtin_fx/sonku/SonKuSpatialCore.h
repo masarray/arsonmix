@@ -233,8 +233,12 @@ public:
 #endif
 #if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
     // Per-instance ImmerSIB tuning, not a new graph/FX bus/session field.
-    void optInImmerSIBConcertCandidate() noexcept {
+    // Optional test-only argument keeps the exact P90 v4 candidate
+    // available for a controlled full-PCM A/B against v5; branded JUCE
+    // calls the default=true v5 behavior. No saved-state/UI ABI change.
+    void optInImmerSIBConcertCandidate(bool physicalStageP94=true) noexcept {
         immersibConcertCandidate_=true;
+        immersibPhysicalStageP94_=physicalStageP94;
         // The v1 pan-purity gate pushed the musical center too far away.
         // Restore a bounded phantom-front response without changing actual
         // stage geometry, adding a dry HRTF, or touching the bass renderer.
@@ -1507,7 +1511,7 @@ private:
                 p92Bass_.updateDirections(positions.leftHead,positions.rightHead);
 #if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
 #if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
-                if(immersibConcertCandidate_) {
+                if(immersibConcertCandidate_ && immersibPhysicalStageP94_) {
                     // Real L/R PA geometry, not the fictitious mono-center
                     // source for the entire 104..134-degree concert stage.
                     // The P90 phantom vocal remains forward, measured SIDE
@@ -1644,6 +1648,7 @@ private:
 #endif
 #if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
     bool immersibConcertCandidate_=false;
+    bool immersibPhysicalStageP94_=true; // v5 on, v4 only for native A/B
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
     p95::MusicalPresence p95Presence_{};

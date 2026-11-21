@@ -18,15 +18,21 @@ using armix::sonku::SonKuReflectionProfile;
 using Stereo=std::array<std::vector<float>,2>;
 constexpr double pi=3.1415926535897932384626433832795;
 
-static Stereo run(int rate,int scene,int material,bool candidate,int block=128) {
+static Stereo run(int rate,int scene,int material,bool candidate,
+                  int block=128,bool stageP94=true,bool withRoom=true) {
     // 6144 frames covers direct, wall/floor/ceiling ER and the first
     // audible 44ms+ late FDN; prior 2048-frame test ended before LATE.
     constexpr int frames=6144;
     auto c=std::make_unique<SonKuSpatialCore>();
     c->optInImmerSIBVocalRoom();
-    if(candidate)c->optInImmerSIBConcertCandidate();
+    if(candidate)c->optInImmerSIBConcertCandidate(stageP94);
     assert(c->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch));
     auto s=imersipP92Factory(scene);
+    if(!withRoom) {
+        s.spacePreset=0;
+        s.roomAmount=0.f;
+        s.ambience=0.f;
+    }
     assert(c->setSettings(s));
     Stereo pcm{std::vector<float>(frames),std::vector<float>(frames)};
     for(int i=0;i<frames;++i){
@@ -86,8 +92,23 @@ int main() {
                 assert(b/a>.30&&b/a<3.0);
                 if(scene==2&&material==0)
                     assert(difference(legacy,candidate)>1.e-6);
+                if(material==0) {
+                    // SAME opt-in P90 and SAME entire output render graph:
+                    // the only v4-v5 difference is P94's real dual-PA
+                    // EARLY/DIRECT control. Prove this in FULL PCM, not
+                    // merely in P94's isolated gain-coefficient fixture.
+                    const auto v4=run(rate,scene,material,true,128,false);
+                    assert(difference(v4,candidate)>1.e-8);
+                    const double ratio=energy(candidate)/energy(v4);
+                    assert(ratio>.60 && ratio<1.60);
+                }
             }
         }
+        // ROOM OFF makes P94 unity for BOTH v4 and v5; the same P90
+        // center reconstruction MUST render strict bit-identical PCM.
+        const auto dryV4=run(rate,2,0,true,128,false,false);
+        const auto dryV5=run(rate,2,0,true,128,true,false);
+        assert(difference(dryV4,dryV5)==0.);
         std::printf("IMMERSIB_CANDIDATE_NATIVE_CORE_7_SCENES,%d,PASS\n",rate);
     }
     std::puts("PASS P9 core integration: 7 scenes x full music/center/hard-L/anti-phase x 44.1/48k, block parity");
