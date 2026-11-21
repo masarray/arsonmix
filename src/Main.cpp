@@ -598,6 +598,7 @@ private:
     // retained graph. It edits persisted .smix data, NEVER the original lease.
     bool retainedOfflineFxActive_=false;
     std::uint64_t retainedOfflineEpoch_=0,retainedOfflineRevision_=0;
+    std::uint64_t retainedOfflineOwnerEpoch_=0;
     std::unique_ptr<armix::startup::Vst3RestoreCrashGuard> startupFxGuard_;
     juce::uint32 startupFxGuardTick_=0;
     std::unique_ptr<juce::FileChooser> mixerFileChooser_;
@@ -1928,7 +1929,7 @@ private:
             session.getProperty("deviceEpoch",{}).toString()==juce::String(epoch)&&
             device.getProperty("epoch",{}).toString()==juce::String(epoch)&&
             graph.getProperty("revision",{}).toString()==juce::String(revision)&&
-            engine_.retainedNativeEpoch()==epoch;
+            engine_.retainedNativeEpoch()!=0;
         bool sameInsert=false;
         if(identity) {
             const auto rows=graph.getProperty("channels",{});
@@ -1974,6 +1975,7 @@ private:
                     retainedOfflineFxActive_=true;
                     retainedOfflineEpoch_=epoch;
                     retainedOfflineRevision_=revision;
+                    retainedOfflineOwnerEpoch_=engine_.retainedNativeEpoch();
                     mixerSessionRecoveryPending_=true;
                     mixerSessionStatus_="RETAINED_OFFLINE_FX_REAPPLY_REQUIRED";
                 }
@@ -2043,7 +2045,9 @@ private:
         const auto authority=accepted.getProperty("mixerSession",{})
             .getProperty("authority","").toString();
         if(retainedOfflineFxActive_ && engine_.hasRetainedNativeSession() &&
-           engine_.retainedNativeEpoch()==retainedOfflineEpoch_ &&
+           engine_.retainedNativeEpoch()==retainedOfflineOwnerEpoch_ &&
+           accepted.getProperty("device",{}).getProperty("epoch",{}).toString()==
+               juce::String(retainedOfflineEpoch_) &&
            accepted.getProperty("graph",{}).getProperty("revision",{}).toString()==
                juce::String(retainedOfflineRevision_)) {
             // UI projection ONLY. The physical NEEDS_REMAP graph remains
