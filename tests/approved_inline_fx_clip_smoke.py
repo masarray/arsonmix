@@ -64,7 +64,7 @@ def main():
                     root.wait_for(state="visible")
                     size=root.bounding_box()
                     assert size and abs(size["width"]-expected)<2,(width,host,size)
-                    assert root.locator(".armix-builtin-fx-close, .mx-geq31-close, .sk-close").count()>=1,(width,host)
+                    assert root.locator(".armix-builtin-fx-close, .mx-geq31-close, .mx-harm-close, .sk-close").count()>=1,(width,host)
                     # Native-only popup HUD and second native titlebar never
                     # exist: the browser frame already IS the only mixer GUI.
                     assert page.locator("#fxWindowAbort").count()==0
