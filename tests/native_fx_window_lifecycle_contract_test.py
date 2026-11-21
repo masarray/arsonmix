@@ -78,12 +78,13 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         # Offline state save can outlive FX slot revisions. A stored VST3
         # blob may only be replaced when the original catalog/UID/path and
         # saved hash still match. Physical authority remains disconnected.
-        self.assertIn("existing.instanceId==requestedInstance",HOST)
+        self.assertIn("logicalVendorSourceCurrent(existing)",HOST)
+        self.assertIn("existing.instanceId=requestedInstance;",HOST)
         self.assertIn("prepared.instanceId=requestedInstance;",HOST)
         self.assertIn("current->sha256==fx.insert.sha256",HOST)
         self.assertIn("current->uid==fx.insert.uid",HOST)
         self.assertIn("current->path==fx.insert.path",HOST)
-        self.assertIn("if(!identical)",HOST)
+        self.assertIn("if(!logicalVendorSourceCurrent(fx))",HOST)
         self.assertIn('FX slot or stored state changed:',HOST)
         self.assertIn("shownWindow->present(true); // new HWND",HOST)
         self.assertIn("prepared.window->present(true); // first-open",HOST)
