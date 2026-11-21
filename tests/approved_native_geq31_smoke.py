@@ -51,8 +51,13 @@ def main():
              "20","25","31.5","40","50","63","80","100","125","160","200",
              "250","315","400","500","630","800","1","1.25","1.6","2",
              "2.5","3.15","4","5","6.3","8","10","12.5","16","20"]
+            # Owner-requested single left scale: no duplicate '+12 0 −12'
+            # to the right of the 31 faders.
             assert panel.locator(".mx-geq31-scale-text").all_text_contents()==[
-                "+12","0","−12","+12","0","−12"]
+                "+12","0","−12"]
+            assert panel.locator(".mx-geq31-right").count()==0
+            assert panel.locator(".mx-geq31-body").evaluate(
+                "e=>getComputedStyle(e).gridTemplateColumns.split(' ').length")==3
             assert panel.locator(".mx-geq31-close").count()==1
             assert panel.locator("header.mx-geq31-head").count()==1
             assert panel.locator(".mx-geq31-footer").count()==0
@@ -113,17 +118,23 @@ def main():
             knob_y=panel.locator(".mx-geq31-dial").bounding_box()
             caption_box=panel.locator(".mx-geq31-output-value").bounding_box()
             freq_caption=panel.locator(".mx-geq31-freq").last.bounding_box()
-            assert led_box and knob_y and caption_box and freq_caption
+            label_box=panel.locator(".mx-geq31-output-label").bounding_box()
+            assert led_box and knob_y and caption_box and freq_caption and label_box
+            # One true center axis, not the four unrelated -14px CSS offsets.
+            cx=output_box["x"]+output_box["width"]/2
+            for label,rect in (("OUTPUT",label_box),("stereo LCD",led_box),
+                               ("knob",knob_y),("dB caption",caption_box)):
+                actual=rect["x"]+rect["width"]/2
+                assert abs(actual-cx)<.65,(width,label,actual,cx)
             assert abs(led_box["height"]-31)<.5
             assert abs(led_box["width"]-100)<.5
             assert knob_y["y"]>=led_box["y"]+led_box["height"]+15
-            # Restore one compact glass LCD (not six colored buttons):
-            # Raise meter+knob 12px as one group without moving frequency
-            # captions or reviving the original large optical empty header.
+            # Lift both LCD and knob by 6px while retaining the close
+            # optical dB caption and pre-existing fader-caption baseline.
             assert panel.locator(".mx-geq31-output").evaluate(
-                "e=>getComputedStyle(e).paddingTop")=="25px"
+                "e=>getComputedStyle(e).paddingTop")=="19px"
             knob_to_db=caption_box["y"]-(knob_y["y"]+knob_y["height"])
-            assert 8<=knob_to_db<=12, knob_to_db
+            assert 10<=knob_to_db<=14, knob_to_db
             assert panel.locator(".mx-geq31-level-meter").evaluate(
                 "e=>getComputedStyle(e).borderTopWidth")=="1px"
             assert abs(caption_box["y"]-freq_caption["y"])<=4, (

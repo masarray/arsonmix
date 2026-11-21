@@ -97,13 +97,13 @@ header.append(title,meta,channel,preset,save,flat,sizeControls,power,close);
 // Exact v13 author geometry: each fader is a cropped 40 x 229 original SVG,
  // not a CSS-imitation rail/THUMB. DSP ownership remains in native C++.
 const body=el("div","mx-geq31-body");
+// The left gain scale is sufficient. Remove the duplicated +12/0/-12
+// right scale entirely so the Output LCD, knob and captions share one
+// geometrically centred column rather than a legacy 40px spacer.
 const left=el("div","mx-geq31-scale mx-geq31-left");
-const right=el("div","mx-geq31-scale mx-geq31-right");
 for(const [label,y] of [["+12",23.4],["0",103],["−12",182.5]]){
- for(const edge of [left,right]){
-  const text=el("span","mx-geq31-scale-text",label);
-  text.style.top=y+"px";edge.append(text);
- }
+ const text=el("span","mx-geq31-scale-text",label);
+ text.style.top=y+"px";left.append(text);
 }
 const scroll=el("div","mx-geq31-scroll");
 const bank=el("div","mx-geq31-bank");
@@ -196,7 +196,7 @@ const levelRows=["L","R"].map((name,side)=>{
  return {row,cells,leds,name};
 });
 output.append(outputLabel,levelMeter,dial,outValue);
-body.append(left,scroll,right,output);
+body.append(left,scroll,output);
 const bypassShade=el("div","mx-geq31-bypass-overlay","BYPASSED");
 bypassShade.setAttribute("aria-hidden","true");
 function paintKnob(db){

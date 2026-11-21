@@ -1427,10 +1427,10 @@
 /* GEQ31 / ONE approved browser and WebView2 editor. This is the SINGLE
  * presentation owner; JUCE hosts audio only. All 31 faders share one
  * CSS geometry (170px travel) and the same 0dB horizontal datum. */
-/* GEQ31 v14.4 — keep the original 192px black knob PNG, remove fixed
-   bitmap Canvas for the blue pointer arc (now real antialiased SVG path).
-   Raise the glass LCD and knob together without moving the aligned dB
-   caption. S/M/L still use one unchanged native DSP and WebView2 host. */
+/* GEQ31 v14.5 — use ONE mathematically centered Output column.
+   Left dB scale remains; duplicate right +12/0/-12 and 40px spacer removed.
+   Raise stereo glass LCD/92px original PNG knob by 6px and keep caption
+   optically near the knob. Preserve the crisp SVG arc and S/M/L scaling. */
 .mx-geq31{
  position:fixed;z-index:1100;top:clamp(58px,7vh,66px);
  left:max(8px,calc((100vw - 1430px)/2));
@@ -1513,7 +1513,7 @@
 .mx-geq31-head .mx-geq31-close:hover{filter:none;background:linear-gradient(#633840,#48292f);border-color:#b27078}
 .mx-geq31-head .mx-geq31-close:active{background:linear-gradient(#ef3e50,#c52d40)}
 .mx-geq31-body{
- height:234px;display:grid;grid-template-columns:38px minmax(0,1fr) 40px 100px;
+ height:234px;display:grid;grid-template-columns:38px minmax(0,1fr) 100px;
  align-items:start;gap:0;padding:1px 4px 0;
 }
 .mx-geq31-scale{
@@ -1525,9 +1525,7 @@
  display:block;position:absolute;right:2px;transform:translateY(-50%);
  line-height:1;letter-spacing:0;font-variant-numeric:tabular-nums;
 }
-.mx-geq31-right{width:40px}
-.mx-geq31-right .mx-geq31-scale-text{right:auto;left:3px}
-.mx-geq31-scroll{
+ .mx-geq31-scroll{
  min-width:0;width:100%;height:233px;overflow-x:auto;overflow-y:hidden;
  padding:0;scrollbar-width:thin;scrollbar-color:#6c7c82 transparent;
 }
@@ -1556,18 +1554,17 @@
 .mx-geq31-unit{font-size:8px}
 .mx-geq31-output{
  position:relative;height:234px;width:100px;min-width:100px;display:flex;
- align-items:center;flex-direction:column;padding:25px 0 0;
+ align-items:center;flex-direction:column;padding:19px 0 0;
 }
 .mx-geq31-output-label{
  color:#344047;font:700 10px Inter,"Segoe UI",Arial,sans-serif;
  line-height:16px;letter-spacing:.2px;margin-bottom:6px;
- transform:translateX(-14px);
+ text-align:center;
 }
 .mx-geq31-level-meter{
  display:flex;flex-direction:column;justify-content:center;
  width:100px;min-width:100px;height:31px;min-height:31px;flex:0 0 31px;
  gap:3px;margin:0 0 20px;padding:6px 3px;
- transform:translateX(-14px);
  border:1px solid #415762;border-radius:3px;
  background:linear-gradient(180deg,#172a33 0%,#08151c 45%,#030a0f 100%);
  box-shadow:inset 0 1px 2px #000b,inset 1px 0 2px #01070b,
@@ -1613,7 +1610,7 @@
 }
 .mx-geq31-dial{
  position:relative;width:92px;height:92px;flex:0 0 92px;
- cursor:ns-resize;touch-action:none;outline:none;transform:translateX(-14px);
+ cursor:ns-resize;touch-action:none;outline:none;
 }
 .mx-geq31-dial:focus-visible{border-radius:50%;outline:1px solid #1595d3;outline-offset:-1px}
 .mx-geq31-knob-image,.mx-geq31-dial-pointer{
@@ -1629,9 +1626,9 @@
  display:block;shape-rendering:geometricPrecision;overflow:visible;
 }
 .mx-geq31-output-value{
- position:absolute;bottom:20px;left:0;width:100%;
+ position:absolute;bottom:24px;left:0;width:100%;
  color:#344047;font:550 10px/14px Inter,"Segoe UI",Arial,sans-serif;
- margin:0;text-align:center;transform:translateX(-14px);
+ margin:0;text-align:center;
  font-variant-numeric:tabular-nums;
 }
 .mx-geq31-bypass-overlay{
@@ -1659,9 +1656,8 @@
  .mx-geq31-head .mx-geq31-flat{width:31px}
  .mx-geq31-head .mx-geq31-size{width:20px}
  .mx-geq31-size-controls{gap:1px;padding-left:2px;padding-right:2px}
- .mx-geq31-body{grid-template-columns:30px minmax(0,1fr) 25px 100px;padding-left:3px;padding-right:3px}
+ .mx-geq31-body{grid-template-columns:30px minmax(0,1fr) 100px;padding-left:3px;padding-right:3px}
  .mx-geq31-scale{width:30px}
- .mx-geq31-right{width:25px}
 }
 /* Shared preset services own user/save/edit forms; only one visible Save. */
 .mx-geq31 .mx-fxp-save-as{display:none}
