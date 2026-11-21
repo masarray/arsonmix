@@ -6,7 +6,7 @@ namespace armix::ui
 {
 // Only the main JUCE mixer window uses this caption. No WebView2 command
 // round trips for minimise, maximise, close, drag or OS window resizing.
-class MixerCaptionButton final : public juce::Button
+class MixerCaptionButton final : public juce::Button, private juce::Timer
 {
 public:
     explicit MixerCaptionButton (int kind) : Button ("ArSonMiX window control"), kind_ (kind)
@@ -36,16 +36,19 @@ public:
 
     void paintButton (juce::Graphics& g, bool over, bool down) override
     {
-        // Native window caption: semantic, low-glare hover followed by a
-        // clearly lit pressed face. No animations, timers, CSS or WebView2.
-        // Keep the existing 34 px click target and original SVG geometry.
-        if (over || down)
+        // The caption action would normally run on mouse-up in the SAME
+        // message-loop turn, immediately minimising/closing before JUCE can
+        // paint its bright down state. Keep the accepted pressed colour
+        // visible for one bounded 160 ms feedback interval before dispatch.
+        // Inactive/hover appearance and original SVG geometry are unchanged.
+        const bool pressed = down || pendingClick_;
+        if (over || pressed)
         {
             const auto palette = paletteFor (kind_);
             const auto face = getLocalBounds().toFloat().reduced (2.0f, 3.0f);
-            g.setColour (down ? palette.pressedFace : palette.hoverFace);
+            g.setColour (pressed ? palette.pressedFace : palette.hoverFace);
             g.fillRoundedRectangle (face, 3.0f);
-            g.setColour (down ? palette.pressedEdge : palette.hoverEdge);
+            g.setColour (pressed ? palette.pressedEdge : palette.hoverEdge);
             g.drawRoundedRectangle (face.reduced (0.5f), 3.0f, 1.0f);
         }
         if (hasKeyboardFocus (true))
@@ -57,14 +60,40 @@ public:
         const bool restoring = kind_ == juce::DocumentWindow::maximiseButton &&
                                parent != nullptr && parent->isFullScreen();
         auto* image = restoring
-                    ? (down && pressedRestoreIcon_ != nullptr ? pressedRestoreIcon_.get() : restoreIcon_.get())
-                    : (down && pressedIcon_ != nullptr ? pressedIcon_.get() : icon_.get());
+                    ? (pressed && pressedRestoreIcon_ != nullptr ? pressedRestoreIcon_.get() : restoreIcon_.get())
+                    : (pressed && pressedIcon_ != nullptr ? pressedIcon_.get() : icon_.get());
         if (image != nullptr)
         {
             const auto b = getLocalBounds().toFloat();
             image->drawWithin (g, { b.getCentreX() - 6.0f, b.getCentreY() - 6.0f, 12.0f, 12.0f },
                                juce::RectanglePlacement::centred, isEnabled() ? 1.0f : 0.45f);
         }
+    }
+
+    void internalClickCallback (const juce::ModifierKeys& modifiers) override
+    {
+        // JUCE's Button::mouseUp invokes the document window listener
+        // immediately, before the down-state repaint is serviced. Keep the
+        // exact native button command but give the operator a perceptible
+        // lit-press frame first. Repeated clicks cannot queue duplicate
+        // minimise/maximise/quit commands.
+        if (!isEnabled() || pendingClick_)
+            return;
+        pendingModifiers_ = modifiers;
+        pendingClick_ = true;
+        repaint();
+        startTimer (160); // one-shot JUCE message-thread feedback; no audio involvement
+    }
+
+    void timerCallback() override
+    {
+        stopTimer();
+        pendingClick_ = false;
+        repaint();
+        // Dispatch through JUCE's original DocumentWindow listener *only*
+        // after the pressed face has had time to paint. The command may
+        // destroy this button (Close), so do nothing after this call.
+        juce::Button::internalClickCallback (pendingModifiers_);
     }
 
 private:
@@ -100,6 +129,8 @@ private:
         return {};
     }
     int kind_;
+    bool pendingClick_ = false;
+    juce::ModifierKeys pendingModifiers_;
     std::unique_ptr<juce::Drawable> icon_, restoreIcon_, pressedIcon_, pressedRestoreIcon_;
 };
 
