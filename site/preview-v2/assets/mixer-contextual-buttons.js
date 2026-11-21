@@ -370,7 +370,14 @@
   el.style.setProperty('position','fixed','important');
   el.style.setProperty('right','auto','important');
   el.style.setProperty('bottom','auto','important');
-  el.style.setProperty('transform','none','important');
+  // GEQ S/M/L keeps the SAME SVG/PNG hardware panel at 50/75/100%.
+  // Never clear its transform when the operator rescues an FX from rack:
+  // that silently returned S/M to L and invalidated the pointer geometry.
+  const geqScale=el.id==='mxNativeGeq31'?Number(el.dataset.fxScale):null;
+  if([0.5,0.75,1].includes(geqScale)){
+   el.style.setProperty('transform-origin','top left','important');
+   el.style.setProperty('transform','scale('+geqScale+')','important');
+  }else el.style.setProperty('transform','none','important');
   el.style.setProperty('left',x+'px','important');
   el.style.setProperty('top',y+'px','important');
   el.dataset.fxRecovered='center';

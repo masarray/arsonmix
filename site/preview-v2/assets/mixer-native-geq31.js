@@ -73,7 +73,27 @@ const power=el("button","mx-geq31-power armix-builtin-fx-power","⏻");
 power.type="button";power.disabled=true;power.setAttribute("aria-label","Graphic EQ power");
 const close=el("button","mx-geq31-close armix-builtin-fx-close","×");
 close.type="button";close.setAttribute("aria-label","Close Graphic EQ 31");
-header.append(title,meta,channel,preset,save,flat,power,close);
+// S/M/L resize the ONE original 1430x280 hardware editor, not a reflowed
+// replacement renderer. All authored fader, LCD and knob proportions stay
+// invariant at 50/75/100%; the native DSP instance never changes.
+const SIZE_MODES=Object.freeze({S:0.5,M:0.75,L:1});
+const SIZE_STORAGE="arsonmix.geq31.editor-size.v1";
+let sizeMode="L";
+try{
+ const preferred=window.localStorage?.getItem(SIZE_STORAGE);
+ if(Object.prototype.hasOwnProperty.call(SIZE_MODES,preferred))sizeMode=preferred;
+}catch{/* native/preview storage may be unavailable; never block FX */}
+const sizeControls=el("div","mx-geq31-size-controls");
+sizeControls.setAttribute("role","group");
+sizeControls.setAttribute("aria-label","Graphic EQ editor size");
+const sizeButtons=Object.keys(SIZE_MODES).map(mode=>{
+ const button=el("button","mx-geq31-size",mode);
+ button.type="button";button.dataset.size=mode;
+ button.title="Graphic EQ window · "+Math.round(SIZE_MODES[mode]*100)+"%";
+ button.setAttribute("aria-label","Graphic EQ size "+Math.round(SIZE_MODES[mode]*100)+"%");
+ sizeControls.append(button);return button;
+});
+header.append(title,meta,channel,preset,save,flat,sizeControls,power,close);
 // Exact v13 author geometry: each fader is a cropped 40 x 229 original SVG,
  // not a CSS-imitation rail/THUMB. DSP ownership remains in native C++.
 const body=el("div","mx-geq31-body");
@@ -435,7 +455,10 @@ dial.addEventListener("pointerdown",e=>{
 });
 dial.addEventListener("pointermove",e=>{
  if(!dragOutput||dragOutput.id!==e.pointerId)return;
- const proposed=dragOutput.value+(dragOutput.startY-e.clientY)*(e.shiftKey?.025:.2);
+ // A CSS-scaled hardware knob must retain identical dB-per-local-pixel
+ // sensitivity at 50/75/100%, not become over-sensitive at size S.
+ const proposed=dragOutput.value+(dragOutput.startY-e.clientY)/
+  sizeFactor()*(e.shiftKey?.025:.2);
  dragOutput.held=Math.abs(proposed)<=(dragOutput.held?1.2:.65);
  updateOutput(dragOutput.held?0:proposed);
  e.preventDefault();
@@ -487,12 +510,44 @@ function dismiss(){
  paintChannelMeter(null);presetBar.close();
 }
 close.addEventListener("click",dismiss);
+function sizeFactor(){return SIZE_MODES[sizeMode];}
+function placeScaledPosition(horizontalCenter,verticalCenter){
+ const rect=root.getBoundingClientRect(),w=innerWidth,h=innerHeight;
+ const left=horizontalCenter?Math.max(0,(w-rect.width)/2):
+  clamp(rect.left,0,Math.max(0,w-rect.width));
+ const top=verticalCenter?Math.max(0,(h-rect.height)/2):
+  clamp(rect.top,0,Math.max(0,h-rect.height));
+ root.style.setProperty("left",left+"px","important");
+ root.style.setProperty("top",top+"px","important");
+}
+function applySize(mode,{persist=true,center=true}={}){
+ if(!Object.prototype.hasOwnProperty.call(SIZE_MODES,mode))return false;
+ sizeMode=mode;
+ root.dataset.fxSize=mode;
+ root.dataset.fxScale=String(sizeFactor());
+ root.style.setProperty("transform-origin","top left","important");
+ root.style.setProperty("transform","scale("+sizeFactor()+")","important");
+ sizeButtons.forEach(button=>{
+  const selected=button.dataset.size===mode;
+  button.setAttribute("aria-pressed",String(selected));
+  button.classList.toggle("is-active",selected);
+ });
+ if(persist){try{window.localStorage?.setItem(SIZE_STORAGE,mode);}catch{}}
+ // Keep the approved popup close to the toolbar after size change. The
+ // double-click rescue method below is the only explicit VERTICAL center.
+ if(!root.hidden&&center)placeScaledPosition(true,false);
+ return true;
+}
+sizeButtons.forEach(button=>button.addEventListener("click",()=>{
+ applySize(button.dataset.size);
+}));
+applySize(sizeMode,{persist:false,center:false});
 function centerEditor(){
  if(root.hidden)return false;
- const r=root.getBoundingClientRect();
- root.style.transform="none";
- root.style.left=Math.max(0,(innerWidth-r.width)/2)+"px";
- root.style.top=Math.max(0,(innerHeight-r.height)/2)+"px";
+ // Never replace the scale transform with 'none' on rescue: preserve mode
+ // chosen in GEQ AND the shared built-in FX Rack recovery handler.
+ applySize(sizeMode,{persist:false,center:false});
+ placeScaledPosition(true,true);
  return true;
 }
 header.addEventListener("dblclick",e=>{
@@ -538,10 +593,15 @@ function open(track,slot){
  }
  channel.textContent=(track.name||"Channel")+" · FX "+(slot+1);
  root.dataset.fxTrackId=String(track.id);root.dataset.fxSlot=String(slot);
- root.hidden=false;paint();
+ root.hidden=false;
+ // A reopened editor must not inherit a hidden/offscreen position, even
+ // when the operator last used S or M in a smaller WebView2 viewport.
+ placeScaledPosition(true,false);
+ paint();
 }
 window.ArSonMixGraphicEq31=Object.freeze({
  id:ID,open,close:dismiss,recenter:centerEditor,
+ setSize:mode=>applySize(mode),
  insert:target=>Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target))
 });
 backend()?.addEventListener?.("arMixBuiltinGeqQueue",ack=>{

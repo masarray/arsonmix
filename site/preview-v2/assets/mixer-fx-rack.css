@@ -1427,11 +1427,10 @@
 /* GEQ31 / ONE approved browser and WebView2 editor. This is the SINGLE
  * presentation owner; JUCE hosts audio only. All 31 faders share one
  * CSS geometry (170px travel) and the same 0dB horizontal datum. */
-/* GEQ31 v14.2 — mixer-authored stereo glass LCD meter: 6 horizontal
-   cells per side, 12x6px, 2px gap. Reuses the EXACT V51 meter gradient
-   from mixer-meter-display.css, rotated 90deg CW. A single clipped level
-   gradient sits BEHIND the unlit glass LED windows. No fake audio.
-   Original owner v13 SVG faders / PNG knob and one /preview/ unchanged. */
+/* GEQ31 v14.3 — owner-approved stereo 6-step glass LCD & 31 original
+   hardware SVG faders. Output cluster raised for balanced visual margins.
+   S/M/L transform the EXACT same WebView2 owner view at 50/75/100%:
+   no responsive redraw, no additional PCM/DSP authority or FX renderer. */
 .mx-geq31{
  position:fixed;z-index:1100;top:clamp(58px,7vh,66px);
  left:max(8px,calc((100vw - 1430px)/2));
@@ -1490,6 +1489,27 @@
  background:linear-gradient(#3e5866,#293e4b);border-color:#607d8c;
  box-shadow:inset 0 1px #ffffff22,0 1px 2px #06131f75;
 }
+.mx-geq31-size-controls{
+ display:flex;flex:none;align-items:center;gap:2px;
+ height:24px;padding:2px 3px;border:1px solid #788993;
+ border-radius:4px;background:linear-gradient(#a9b6be,#d7e0e3);
+ box-shadow:inset 0 1px #fff7,inset 0 -1px 2px #36464c3a;
+}
+.mx-geq31-head .mx-geq31-size{
+ display:block;flex:none;width:21px;height:18px;min-height:18px;
+ border:1px solid transparent;border-radius:2px;padding:0;
+ color:#4e626a;background:transparent;box-shadow:none;
+ font:650 10px/16px Inter,"Segoe UI",Arial,sans-serif;
+ text-align:center;cursor:pointer;
+}
+.mx-geq31-head .mx-geq31-size:hover{filter:none;background:#e8eff1;color:#1a3541}
+.mx-geq31-head .mx-geq31-size.is-active{
+ border-color:#47677a;background:linear-gradient(#234456,#152f40);
+ box-shadow:inset 0 1px #77a5bf55;color:#d8f2ff;
+}
+.mx-geq31-head .mx-geq31-size:focus-visible{
+ outline:1px solid #1595d3;outline-offset:1px;
+}
 .mx-geq31-head .mx-geq31-close:hover{filter:none;background:linear-gradient(#633840,#48292f);border-color:#b27078}
 .mx-geq31-head .mx-geq31-close:active{background:linear-gradient(#ef3e50,#c52d40)}
 .mx-geq31-body{
@@ -1536,7 +1556,7 @@
 .mx-geq31-unit{font-size:8px}
 .mx-geq31-output{
  position:relative;height:234px;width:100px;min-width:100px;display:flex;
- align-items:center;flex-direction:column;padding:46px 0 0;
+ align-items:center;flex-direction:column;padding:34px 0 0;
 }
 .mx-geq31-output-label{
  color:#344047;font:700 10px Inter,"Segoe UI",Arial,sans-serif;
@@ -1601,7 +1621,7 @@
  pointer-events:none;object-fit:contain;
 }
 .mx-geq31-output-value{
- position:absolute;bottom:16px;left:0;width:100%;
+ position:absolute;bottom:20px;left:0;width:100%;
  color:#344047;font:550 10px/14px Inter,"Segoe UI",Arial,sans-serif;
  margin:0;text-align:center;transform:translateX(-14px);
  font-variant-numeric:tabular-nums;
@@ -1629,6 +1649,8 @@
  .mx-geq31-head .mx-geq31-save{display:none}
  .mx-geq31-head select{flex:1 1 94px;min-width:72px;max-width:118px}
  .mx-geq31-head .mx-geq31-flat{width:31px}
+ .mx-geq31-head .mx-geq31-size{width:20px}
+ .mx-geq31-size-controls{gap:1px;padding-left:2px;padding-right:2px}
  .mx-geq31-body{grid-template-columns:30px minmax(0,1fr) 25px 100px;padding-left:3px;padding-right:3px}
  .mx-geq31-scale{width:30px}
  .mx-geq31-right{width:25px}

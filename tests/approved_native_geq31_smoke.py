@@ -57,8 +57,20 @@ def main():
             assert panel.locator("header.mx-geq31-head").count()==1
             assert panel.locator(".mx-geq31-footer").count()==0
             assert panel.locator(".mx-geq31-message").get_attribute("role")=="status"
-            # EXACT 90-degree clockwise rotated V51 mixer LED geometry:
-            # 3 slim 12x6px cells / stereo lane, 2px dark inter-cell gap.
+            sizes=panel.locator(".mx-geq31-size")
+            assert sizes.count()==3
+            assert sizes.all_text_contents()==["S","M","L"]
+            assert sizes.nth(0).get_attribute("aria-label")=="Graphic EQ size 50%"
+            assert sizes.nth(1).get_attribute("aria-label")=="Graphic EQ size 75%"
+            assert sizes.nth(2).get_attribute("aria-label")=="Graphic EQ size 100%"
+            assert panel.get_attribute("data-fx-size")=="L"
+            assert panel.get_attribute("data-fx-scale")=="1"
+            assert panel.locator(".mx-geq31-size.is-active").count()==1
+            assert panel.locator(".mx-geq31-size.is-active").inner_text()=="L"
+            assert panel.locator(".mx-geq31-head").evaluate(
+                "e=>e.scrollWidth<=e.clientWidth+1"), width
+            # Exact V51 geometry, rotated 90 CW: six 12x6px glass windows
+            # per independent L/R channel, with a continuous peak fill BEHIND.
             assert panel.locator(".mx-geq31-level-led").count()==12
             assert panel.locator(".mx-geq31-level-led.is-lit").count()==0
             assert panel.locator(".mx-geq31-level-meter").get_attribute("role")=="group"
@@ -106,10 +118,12 @@ def main():
             assert abs(led_box["width"]-100)<.5
             assert knob_y["y"]>=led_box["y"]+led_box["height"]+15
             # Restore one compact glass LCD (not six colored buttons):
-            # Image-backed knob has ~10px transparent optical inset;
-            # move the knob down 9px so the VISIBLE rim sits ~10px above dB.
+            # Raise meter+knob 12px as one group without moving frequency
+            # captions or reviving the original large optical empty header.
+            assert panel.locator(".mx-geq31-output").evaluate(
+                "e=>getComputedStyle(e).paddingTop")=="34px"
             knob_to_db=caption_box["y"]-(knob_y["y"]+knob_y["height"])
-            assert -2<=knob_to_db<=2, knob_to_db
+            assert 6<=knob_to_db<=10, knob_to_db
             assert panel.locator(".mx-geq31-level-meter").evaluate(
                 "e=>getComputedStyle(e).borderTopWidth")=="1px"
             assert abs(caption_box["y"]-freq_caption["y"])<=4, (
@@ -178,6 +192,48 @@ def main():
             assert (out/"assets/mixer-fx-rack.css").is_file()
             if width in (1680,1430):
                 page.screenshot(path=f"arsonmix-geq31-one-webview-{width}.png")
+            # S/M/L are literal visual scales over the SAME 31 SVGs/PCM
+            # component, not reflowed, not a cloned editor or CSS-only text.
+            base_width=panel_box["width"]
+            for mode,scale in (("S",.5),("M",.75),("L",1)):
+                panel.locator(f'.mx-geq31-size[data-size="{mode}"]').click()
+                assert panel.get_attribute("data-fx-size")==mode
+                assert panel.get_attribute("data-fx-scale")==str(scale if scale!=1 else 1)
+                assert panel.locator(".mx-geq31-size.is-active").count()==1
+                assert panel.locator(".mx-geq31-size.is-active").inner_text()==mode
+                assert panel.locator(f'.mx-geq31-size[data-size="{mode}"]').get_attribute(
+                    "aria-pressed")=="true"
+                scaled=panel.bounding_box()
+                assert scaled and abs(scaled["width"]-base_width*scale)<1.5
+                assert abs(scaled["height"]-280*scale)<1
+                assert abs((scaled["x"]+scaled["width"]/2)-width/2)<2
+                assert scaled["y"]>=0 and scaled["y"]+scaled["height"]<=height
+                close_scaled=panel.locator(".mx-geq31-close").bounding_box()
+                assert close_scaled and close_scaled["x"]>=scaled["x"]
+                assert close_scaled["x"]+close_scaled["width"]<=scaled["x"]+scaled["width"]
+                assert panel.locator(".mx-geq31-track svg").count()==31
+                assert panel.locator(".mx-geq31-level-led").count()==12
+                assert panel.locator(".mx-geq31-dial").evaluate(
+                    "e=>e.getBoundingClientRect().width")>80*scale
+                if width==1680:
+                    page.screenshot(path=f"arsonmix-geq31-one-webview-{mode.lower()}-1680.png")
+            assert page.evaluate("""()=>localStorage.getItem(
+                'arsonmix.geq31.editor-size.v1')""")=="L"
+            # All adjustments survive a size change; tiny S/M do not break
+            # the keyboard, wheel, flat and Native ACK workflows.
+            panel.locator('.mx-geq31-size[data-size="S"]').click()
+            first.evaluate("""e=>e.dispatchEvent(new WheelEvent('wheel',{
+                deltaY:-100,bubbles:true,cancelable:true}))""")
+            assert first.input_value()=="0.5"
+            panel.locator(".mx-geq31-flat").click()
+            assert first.input_value()=="0"
+            panel.locator('.mx-geq31-size[data-size="M"]').click()
+            knob.evaluate("""e=>e.dispatchEvent(new WheelEvent('wheel',{
+                deltaY:-100,bubbles:true,cancelable:true}))""")
+            assert panel.locator(".mx-geq31-output-value").inner_text()=="+0.5 dB"
+            knob.dblclick()
+            assert panel.locator(".mx-geq31-output-value").inner_text()=="0.0 dB"
+            panel.locator('.mx-geq31-size[data-size="L"]').click()
             # Accessible recovery from a parked/offscreen editor by double-click
             # on the actual mixer FX rack (same approved Pages DOM).
             panel.evaluate("e=>{e.style.left='-900px';e.style.top='12px';}")
@@ -187,6 +243,16 @@ def main():
             recovered=panel.bounding_box()
             assert recovered and abs((recovered["x"]+recovered["width"]/2)-width/2)<2
             assert abs((recovered["y"]+recovered["height"]/2)-height/2)<2
+            # Rack double-click MUST preserve selected GEQ scale, not force
+            # reset to 100% through the global FX editor workspace helper.
+            panel.locator('.mx-geq31-size[data-size="M"]').click()
+            panel.evaluate("""e=>e.style.setProperty('left','-900px','important')""")
+            rack.evaluate("e=>e.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))")
+            recovered_small=panel.bounding_box()
+            assert recovered_small and abs(recovered_small["height"]-210)<1
+            assert abs((recovered_small["x"]+recovered_small["width"]/2)-width/2)<2
+            assert panel.get_attribute("data-fx-size")=="M"
+            panel.locator('.mx-geq31-size[data-size="L"]').click()
             # If a separate built-in editor is in front, double-clicking
             # a SPECIFIC occupied slot recovers its matching instance, not
             # whichever other editor has the highest z-index.
