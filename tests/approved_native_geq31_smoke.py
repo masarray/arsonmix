@@ -59,6 +59,22 @@ def main():
             assert panel.locator(".mx-geq31-body").evaluate(
                 "e=>getComputedStyle(e).gridTemplateColumns.split(' ').length")==3
             assert panel.locator(".mx-geq31-close").count()==1
+            power=panel.locator(".mx-geq31-power")
+            # Browser preview is explicitly NO AUDIO but its local FX toggle
+            # must still show green ON / red OFF rather than inert grey.
+            # Native playback/safety is never inferred from this demo face.
+            assert power.is_enabled(),width
+            assert power.get_attribute("data-fx-state")=="on",width
+            assert power.get_attribute("aria-pressed")=="true"
+            assert power.evaluate("e=>getComputedStyle(e).color")=="rgb(118, 240, 185)"
+            power.click()
+            assert power.get_attribute("data-fx-state")=="off",width
+            assert power.get_attribute("aria-pressed")=="false"
+            assert power.evaluate("e=>getComputedStyle(e).color")=="rgb(233, 155, 159)"
+            assert panel.locator(".mx-geq31-bypass-overlay.is-on").count()==1
+            power.click()
+            assert power.get_attribute("data-fx-state")=="on",width
+            assert panel.locator(".mx-geq31-bypass-overlay.is-on").count()==0
             assert panel.locator("header.mx-geq31-head").count()==1
             assert panel.locator(".mx-geq31-footer").count()==0
             assert panel.locator(".mx-geq31-message").get_attribute("role")=="status"
