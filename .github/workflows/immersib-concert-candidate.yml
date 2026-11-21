@@ -10,6 +10,8 @@ on:
       - 'engine/builtin_fx/sonku/SonKuP98SceneVoicing.h'
       - 'engine/builtin_fx/sonku/SonKuImmerSIBVocalRoom.h'
       - 'engine/builtin_fx/sonku/SonKuP99MusicalVocalDepth.h'
+      - 'scripts/package_immersib_concert_listening_preview.ps1'
+      - 'tests/imersip_p92_native_test.cpp'
   workflow_dispatch:
 
 permissions:
@@ -66,7 +68,7 @@ jobs:
     needs: native-math
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: windows-2022
-    timeout-minutes: 35
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -111,3 +113,30 @@ jobs:
           cmake --build build --config Release --parallel 2 --target ARMixImerSipP92NativeTests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Write-Host 'IMMERSIB_CONCERT_WIN_JUCE_COMPILE=PASS candidate source; not audio-approved'
+      - name: Test real JUCE ImmerSIB audio-applied ACK and state parity
+        shell: pwsh
+        run: |
+          ctest --test-dir build -C Release --output-on-failure -R '^NativeImmerSIBJucePresetACKStateAndBypass
+
+          if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_CANDIDATE_NATIVE_JUCE_REGRESSION_FAILED' }
+      - name: Build ACTUAL Windows ArSonMix mixer (not a test executable)
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel 2 --target ARMixConsole
+          if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_CANDIDATE_REAL_WINDOWS_APP_BUILD_FAILED' }
+      - name: Verify binary, legal text, single approved GUI and package EXPLICITLY UNAPPROVED portable listening candidate
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          & ./scripts/package_immersib_concert_listening_preview.ps1 -BuildDir build -OutputDir listening_candidate -ExpectedSha $env:EXPECTED_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_CANDIDATE_PORTABLE_PACKAGE_FAILED' }
+      - name: Upload owner headphone A/B Windows portable (NOT STABLE RELEASE)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-ImmerSIB-FUX1-Listening-Windows-x64-${{ github.run_id }}
+          path: listening_candidate/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
