@@ -1467,8 +1467,11 @@ private:
             auto& existing=*logicalVendorEditor_;
             if(existing.workspaceToken==logicalMixer_.workspace().workspaceToken() &&
                existing.insert.channel==armix::mixer::ChannelId{channel} && existing.insert.slot==slot) {
-                if(existing.window)existing.window->present(
-                    static_cast<bool>(request.getProperty("recenter",false)));
+                if(existing.window) {
+                    if(static_cast<bool>(request.getProperty("recenter",false)))
+                        existing.window->present(true);
+                    else existing.window->present();
+                }
                 return; // Exact same logical FX: refocus without losing state.
             }
             emitNotice("Finish the currently open FX editor first",true);
@@ -6706,8 +6709,9 @@ private:
                     if(shownWindow && shownOwner==owner &&
                        shownEpoch==retainedEpoch &&
                        shownProcessor==owner->processor.get()) {
-                        shownWindow->present(static_cast<bool>(
-                            args.getProperty("recenter",false)));
+                        if(static_cast<bool>(args.getProperty("recenter",false)))
+                            shownWindow->present(true);
+                        else shownWindow->present();
                         opened=true;
                         error.clear();
                     } else try {
