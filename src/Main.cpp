@@ -1325,10 +1325,10 @@ private:
 #endif
     }
     void closeAllPluginEditors() noexcept {
-        floatingBuiltinFx_.clear(); // WebViews before their single PCM owner
-        browser_.onNativeEvent=nullptr;
         closePluginEditor();
         closeImmerSIBEditor();
+        floatingBuiltinFx_.clear(); // owned WebViews before PCM engine cleanup
+        browser_.onNativeEvent=nullptr;
         // Each additional window's own destructor releases JUCE UI before
         // its vendor lease, all on the native message thread.
         additionalFxEditors_.clear();
