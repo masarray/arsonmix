@@ -16,6 +16,17 @@
     } \
 } while (false)
 
+// Band sliders live inside Viewport -> bandSurface_, not directly under
+// the AudioProcessorEditor. A one-level findChildWithID() can never see them.
+static juce::Component* findDescendantWithID(
+    juce::Component& parent,const juce::String& id) {
+    for(auto* child:parent.getChildren()) {
+        if(child->getComponentID()==id)return child;
+        if(auto* found=findDescendantWithID(*child,id))return found;
+    }
+    return nullptr;
+}
+
 static int indexY(float authoredY) {
     return 55+juce::roundToInt(authoredY*229.f/2042.f);
 }
@@ -61,7 +72,7 @@ int main() {
 
     // The real JUCE component must track both mechanical endstops while
     // keeping the white index optically aligned with the +12/0/-12 ticks.
-    const auto slider=editor->findChildWithID("geq31-band-0");
+    const auto slider=findDescendantWithID(*editor,"geq31-band-0");
     RENDER_CHECK(slider!=nullptr);
     auto* band=dynamic_cast<juce::Slider*>(slider);
     RENDER_CHECK(band!=nullptr);
