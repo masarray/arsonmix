@@ -116,8 +116,7 @@ jobs:
       - name: Test real JUCE ImmerSIB audio-applied ACK and state parity
         shell: pwsh
         run: |
-          ctest --test-dir build -C Release --output-on-failure -R '^NativeImmerSIBJucePresetACKStateAndBypass
-
+          ctest --test-dir build -C Release --output-on-failure -R NativeImmerSIBJucePresetACKStateAndBypass
           if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_CANDIDATE_NATIVE_JUCE_REGRESSION_FAILED' }
       - name: Build ACTUAL Windows ArSonMix mixer (not a test executable)
         shell: pwsh
