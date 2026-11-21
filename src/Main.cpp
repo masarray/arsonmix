@@ -288,7 +288,7 @@ private:
 // but there is NO JUCE DocumentWindow titlebar, frame or extra Close key.
 // The WebView2 content IS the complete approved /preview/ hardware editor.
 // No duplicate mixer UI/PCM and no CSS fake window clipped to the mixer.
-class BuiltinFxDesktopWindow final : public juce::TopLevelWindow {
+class BuiltinFxDesktopWindow final : public juce::TopLevelWindow, private juce::Timer {
 public:
     using OnIntent=std::function<void(juce::var)>;
     BuiltinFxDesktopWindow(juce::Component& mixer,const juce::String& label,
@@ -314,6 +314,7 @@ public:
                       if(power)power(std::move(request));
                   })
               .withEventListener("arMixFloatingHide",[this](juce::var){
+                  stopTimer();
                   setVisible(false); // ONLY the approved editor's Close button
               })
               .withEventListener("arMixFloatingDrag",[this](juce::var){
@@ -355,10 +356,16 @@ public:
     }
     void present(bool recenter=false) {
         recenterAfterInitialPanelSize_=recenter && !hasMeasuredPanel_;
-        armix::ui::placeFloatingEditor(*this,mixer_,recenter);
-        // Attach the real HWND owner BEFORE making the peer visible, so
-        // Windows cannot flash a second taskbar/Alt-Tab entry on first open.
         (void)armix::ui::attachOwnedFloatingWindow(*this,mixer_);
+        if(!hasMeasuredPanel_) {
+            // Let WebView2 mount at its real S/M/L scale off-screen before
+            // any top-level rectangle is painted in front of the operator.
+            setTopLeftPosition(-20000,-20000);
+            if(!isVisible())setVisible(true);
+            startTimer(1800); // fail-open if asset/JS fails to mount
+            return;
+        }
+        armix::ui::placeFloatingEditor(*this,mixer_,recenter);
         if(!isVisible())setVisible(true);
         toFront(true);
     }
@@ -372,7 +379,7 @@ public:
         const int requestedW=static_cast<int>(w),requestedH=static_cast<int>(h);
         if(requestedW<200||requestedW>4000||requestedH<100||requestedH>2600)return;
         const auto* display=juce::Desktop::getInstance().getDisplays()
-                                 .getDisplayForRect(getScreenBounds());
+                                 .getDisplayForRect(mixer_.getScreenBounds());
         const auto area=display?display->userArea:
                          juce::Rectangle<int>(0,0,1550,930);
         // No +16px body gutter, +50px fake titlebar or JUCE content border.
@@ -380,18 +387,35 @@ public:
         // already at its accepted pixel geometry (including GEQ S/M/L).
         const int width=juce::jlimit(200,juce::jmax(200,area.getWidth()-12),requestedW);
         const int height=juce::jlimit(100,juce::jmax(100,area.getHeight()-12),requestedH);
-        const bool firstPlacement=recenterAfterInitialPanelSize_;
+        const bool firstPlacement=recenterAfterInitialPanelSize_||!hasMeasuredPanel_;
         recenterAfterInitialPanelSize_=false;
         hasMeasuredPanel_=true;
+        stopTimer();
         if(std::abs(getWidth()-width)>2 || std::abs(getHeight()-height)>2) {
             setSize(width,height);
             armix::ui::placeFloatingEditor(*this,mixer_,firstPlacement);
         } else if(firstPlacement) {
             armix::ui::placeFloatingEditor(*this,mixer_,true);
         }
+        if(firstPlacement)toFront(true);
     }
     bool ready()const noexcept{return browser_.loaded;}
+protected:
+    // JUCE 8 has no associatedComponent; keep FX off the Windows taskbar.
+    int getDesktopWindowStyleFlags() const override {
+        return juce::TopLevelWindow::getDesktopWindowStyleFlags() &
+            ~juce::ComponentPeer::windowAppearsOnTaskbar;
+    }
 private:
+    void timerCallback() override {
+        stopTimer();
+        if(!hasMeasuredPanel_&&isVisible()) {
+            // JS load failure must not strand an inaccessible HWND.
+            recenterAfterInitialPanelSize_=false;
+            armix::ui::placeFloatingEditor(*this,mixer_,true);
+            toFront(true);
+        }
+    }
     void startDesktopDrag() {
 #if defined(_WIN32)
         // Real Windows system-move supports snap and crossing monitor edges.
