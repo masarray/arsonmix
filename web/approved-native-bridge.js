@@ -3947,12 +3947,27 @@
             const surface=fxRackVM.editorSurfacePlan(current,editor,{
               hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
             if(surface.kind==="BROWSER"){
-              const host=window[surface.windowKey];
-              if(typeof host?.open==="function") {
-                host.open(t,slot);
-                if(recenter)window.queueMicrotask(()=>
-                  window.ArSonMixFxWorkspace?.centerInsert?.(t.id,slot));
-              }else nativeToast("Built-in FX editor unavailable · refresh the approved GUI bundle");
+              if(connected && backend?.emitEvent){
+                // A DOM card cannot escape WebView2's parent HWND. The native
+                // mixer owns a genuine top-level JUCE/WebView2 FX window;
+                // that window imports the SAME approved /preview/ editor
+                // modules and forwards edits to this original native engine.
+                backend.emitEvent("arMixAction",{
+                  action:"floatingBuiltinOpen",
+                  channelId:editor.channelId,slot:editor.slot,
+                  instanceId:editor.instanceId,catalogId:editor.catalogId,
+                  workspaceToken:editor.workspaceToken||"",
+                  graphRevision:editor.graphRevision,
+                  deviceEpoch:editor.deviceEpoch,recenter
+                });
+              }else{
+                const host=window[surface.windowKey];
+                if(typeof host?.open==="function") {
+                  host.open(t,slot);
+                  if(recenter)window.queueMicrotask(()=>
+                    window.ArSonMixFxWorkspace?.centerInsert?.(t.id,slot));
+                }else nativeToast("Built-in FX editor unavailable · refresh the approved GUI bundle");
+              }
             }else if(surface.kind==="LOGICAL_VENDOR"){
               backend.emitEvent("arMixAction",{action:"logicalVendorFxEditor",
                 channelId:editor.channelId,slot:editor.slot,instanceId:editor.instanceId,
