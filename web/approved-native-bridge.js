@@ -1975,34 +1975,32 @@
       view.appendChild(line);
     }
   }
-  function updateHardwarePanel(next) {
-    hardware=next || null;
-    refreshRealM4Inputs(next);
+  let lastFooterHealth=null;
+  function paintAudioHealthFooter(next) {
     const d=next?.device;
     const deviceOpen=Boolean(d?.backend && d.sampleRate>0 &&
-      d.enabledOutputs.length>=2);
-    const label=document.getElementById("transport");
+      d.enabledOutputs?.length>=2);
     const playback=String(d?.playbackDevice||"unknown output");
     const virtualOut=/VB-Audio Virtual Cable|CABLE Input/i.test(playback);
-    syncMonitorButton(d);
-    paintPhysicalOutputs(next);
-    const mainOutput=next?.retained?NEEDS_REMAP:deviceOpen?playback:null;
-    if(scope?.master && mainOutput && scope.master.output!==mainOutput){
-      scope.master.output=mainOutput;
-      if(!next?.admitted && !next?.retained)scope.render?.();
-    }
     const transport=next?.retained?"Output disconnected · Open Audio I/O":
       !deviceOpen?"Audio device unavailable · Open Audio I/O":
       (d.outputArmed?"Output enabled":"Output muted")+" · "+playback+
       (virtualOut?" · Virtual output · No speakers":"");
+    const healthSameEpoch=lastFooterHealth &&
+      lastFooterHealth.deviceGeneration===String(d?.epoch);
+    // The status strip is LIVE only on the exact current hardware epoch.
+    // Do not display stale latency after device disconnect or remap.
+    const activeOutput=!next?.retained && deviceOpen &&
+      d.outputArmed===true && next?.admitted===true;
+    const label=document.getElementById("transport");
+    const labelText=activeOutput?
+      (healthSameEpoch?lastFooterHealth.latency:"LAT —"):
+      operatorMessage(transport);
+    // Keep this precise display policy as the original native footer
+    // operatorMessage contract; never emit internal QA/FAT identifiers.
     const operatorTransport=operatorMessage(transport);
-    if(label && label.textContent!==operatorTransport)label.textContent=operatorTransport;
+    if(label && label.textContent!==labelText)label.textContent=labelText;
     const warning=document.querySelector?.(".status-bar .warning");
-    // A silent first-sound session is not an operator failure and does
-    // not require Patch CH1 / Arm / Start controls. The real IN dropdown
-    // initiates native source publication; only its correlated ACK may
-    // request a safe first MONITOR. If the driver exposes no physical IN,
-    // guide the operator to the existing Audio I/O panel instead.
     const warningText=next?.retained?"PLAYBACK UNAVAILABLE · MIXER SAVED":
       !deviceOpen?"NO VERIFIED AUDIO DEVICE":
       next?.raw?.waitingAsioInputs>0?"INPUT TEMPORARILY UNAVAILABLE · AUTO-RECONNECT":
@@ -2013,7 +2011,31 @@
       legacy()?.routeAccepted?"NATIVE INPUT ROUTED · MONITOR OFF":
       deviceReady()?"SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK":
       "NO VERIFIED INPUT ROUTE · OPEN AUDIO I/O";
-    if(warning && warning.textContent!==warningText)warning.textContent=warningText;
+    // A warning (missing input / disconnected / muted) always takes
+    // priority. Only the redundant healthy OUTPUT ENABLED becomes metrics.
+    const telemetry=warningText==="OUTPUT ENABLED";
+    const displayWarning=telemetry?
+      (healthSameEpoch?lastFooterHealth.performance:"CPU App — · RT — · RAM —"):
+      warningText;
+    if(warning && warning.textContent!==displayWarning)
+      warning.textContent=displayWarning;
+    if(warning?.dataset)
+      warning.dataset.telemetry=telemetry?"true":"false";
+  }
+  function updateHardwarePanel(next) {
+    hardware=next || null;
+    refreshRealM4Inputs(next);
+    const d=next?.device;
+    const deviceOpen=Boolean(d?.backend && d.sampleRate>0 &&
+      d.enabledOutputs.length>=2);
+    syncMonitorButton(d);
+    paintPhysicalOutputs(next);
+    const mainOutput=next?.retained?NEEDS_REMAP:deviceOpen?playback:null;
+    if(scope?.master && mainOutput && scope.master.output!==mainOutput){
+      scope.master.output=mainOutput;
+      if(!next?.admitted && !next?.retained)scope.render?.();
+    }
+    paintAudioHealthFooter(next);
     if(!inputSelect)return;
     const pins=deviceOpen?d.inputEndpoints.filter(p=>
       p.active===true && d.enabledInputs.includes(p.port)):[];
@@ -3197,6 +3219,16 @@
           }
         }
       }
+    });
+    // Reuse existing JUCE 12 Hz status transport; only a single event
+    // each second contains the native health sequence/CPU/RAM sample.
+    // Rendering changes ONLY two existing footer spans; no new DOM,
+    // browser polling, requestAnimationFrame or audio callback work.
+    backend.addEventListener("arMixStatus", live=>{
+      const health=protocol.footerHealthFromLive(live);
+      if(!health || health.sequence===lastFooterHealth?.sequence)return;
+      lastFooterHealth=health;
+      if(hardware)paintAudioHealthFooter(hardware);
     });
     backend.addEventListener("arMixConsoleSnapshot", snapshot=>{
       // Only the sole v6 controller may admit a PCM snapshot. Its

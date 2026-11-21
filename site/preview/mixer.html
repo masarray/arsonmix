@@ -1789,6 +1789,17 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .window-title{height:23px!important;min-height:23px!important;flex:0 0 23px!important}
 .command-bar{height:35px!important;min-height:35px!important;flex:0 0 35px!important}
 .status-bar{height:20px!important;min-height:20px!important;flex:0 0 20px!important}
+/* UX-1: no footer geometry changes or polling, native runtime only.
+   Healthy performance values are informative, not warning-colored. */
+html.armix-native-desktop .status-bar .state,
+html.armix-native-desktop .status-bar .warning[data-telemetry="true"]{
+  font-variant-numeric:tabular-nums;
+  font-weight:400;
+  color:#9ac7cd;
+}
+html.armix-native-desktop .status-bar .warning[data-telemetry="true"]{
+  white-space:nowrap;
+}
 .console-body{
  --identity-h:25px!important;--footer-h:48px!important;
  --pan-h:37px;--switch-h:40px;

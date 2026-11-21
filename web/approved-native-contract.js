@@ -795,7 +795,51 @@
     }
     return Object.freeze({subscribe,onSnapshot,onAck,intent,state,expire});
   }
-  return Object.freeze({decimal,cmp,normalizeSnapshot,
+
+  // Native health strip, explicitly separated from process/DSP authority.
+  // Data arrives on the ALREADY EXISTING 12 Hz arMixStatus event, tagged
+  // only once per second. Neither this pure function nor its caller polls,
+  // schedules timers or samples CPU/memory from the WebView.
+  function footerHealthFromLive(live) {
+    if(!object(live)||!Number.isSafeInteger(live.footerHealthSequence)||
+       live.footerHealthSequence<=0)return null;
+    const n=value=>typeof value==="number"&&Number.isFinite(value)?value:null;
+    const whole=value=>{const v=n(value);return v!==null&&Number.isSafeInteger(v)&&v>=0?v:null;};
+    const rate=n(live.rate),period=n(live.periodUs);
+    const inFrames=whole(live.driverReportedInputLatencyFrames);
+    const outFrames=whole(live.driverReportedOutputLatencyFrames);
+    const fxFrames=whole(live.latencySamples);
+    // A driver latency *hint* can include its own buffering; never add the
+    // callback buffer again or label this measured acoustic roundtrip.
+    const oneClock=live.connected===true &&
+      live.directRouteAuthorized===true && live.adaptiveClockActive===false;
+    const latencyFrames=oneClock && rate!==null && rate>0 &&
+      inFrames!==null && outFrames!==null && fxFrames!==null
+        ? inFrames+outFrames+fxFrames : null;
+    const latency=latencyFrames!==null && Number.isSafeInteger(latencyFrames)
+      ? "LAT ~"+(1000*latencyFrames/rate).toFixed(1)+" ms":"LAT —";
+    const cpu=n(live.footerProcessCpuPercent);
+    const working=whole(live.footerProcessWorkingSetMiB);
+    const cpuLabel=cpu!==null&&cpu>=0&&cpu<=100
+      ? "CPU App "+cpu.toFixed(1)+"%":"CPU App —";
+    const ramLabel=working!==null
+      ? "RAM "+working+" MiB":"RAM —";
+    // Last completed callback's duration / actual period, NOT CPU App and
+    // NOT p95, OS DPC load, system CPU or actual driver XRUN.
+    const lastCallback=n(live.callbackDurationUs);
+    const rtLabel=oneClock && period!==null && period>0 &&
+      lastCallback!==null && lastCallback>=0
+      ? "RT last "+Math.min(999,Math.round(100*lastCallback/period))+"%"
+      : "RT —";
+    return Object.freeze({
+      sequence:live.footerHealthSequence,
+      deviceGeneration:whole(live.deviceGeneration)===null?
+        null:String(live.deviceGeneration),
+      latency,performance:cpuLabel+" · "+rtLabel+" · "+ramLabel,
+      provenance:"DRIVER_HINT_NOT_LOOPBACK__PROCESS_CPU_ALL_CORES__LAST_CALLBACK_BUDGET__PROCESS_WORKING_SET"
+    });
+  }
+  return Object.freeze({footerHealthFromLive,decimal,cmp,normalizeSnapshot,
     nativeHardwareConfiguration,selectNativeReadModel,readbackProvesIntent,
     logicalReadbackProves,diagnoseFirstSound,createController,
     validPresentationName,validPresentationColor,validPresentationIcon,
