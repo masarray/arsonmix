@@ -153,6 +153,9 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn('event=="arMixConsoleSnapshot"',HOST)
         self.assertIn("floatingFxRelayTick_%4!=0",HOST)
         self.assertIn("void resizeToPanel(const juce::var& size)",HOST)
+        self.assertIn("recenterAfterInitialPanelSize_=recenter && !hasMeasuredPanel_",HOST)
+        self.assertIn("hasMeasuredPanel_=true;",HOST)
+        self.assertIn("placeFloatingEditor(*this,mixer_,firstPlacement)",HOST)
         for catalog in (
             "channel-eq","channel-compressor","graphic-eq31",
             "arson-harmony","vocal-throw","8d-sonku"
