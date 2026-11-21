@@ -243,7 +243,8 @@ class PluginEditorWindow final : public juce::DocumentWindow
 public:
     PluginEditorWindow (const juce::String& title, juce::AudioProcessorEditor* editor,
                         juce::Component& mixer)
-        : DocumentWindow (title, juce::Colour (0xff14212a), allButtons)
+        : DocumentWindow (title, juce::Colour (0xff14212a), allButtons),
+          mixer_ (mixer)
     {
         setUsingNativeTitleBar (true);
         setIcon (approvedAppIcon());
@@ -258,13 +259,17 @@ public:
         (void) armix::ui::attachOwnedFloatingWindow (*this, mixer);
         present();
     }
-    void present()
+    void present (bool centreOnMixer=false)
     {
-        if (!isVisible()) setVisible (true);
         if (isMinimised()) setMinimised (false);
+        // Retain reachable user placement; rescue a window stranded on an unplugged display.
+        armix::ui::placeFloatingEditor (*this, mixer_, centreOnMixer);
+        if (!isVisible()) setVisible (true);
         toFront (true);
     }
     void closeButtonPressed() override { setVisible (false); }
+private:
+    juce::Component& mixer_; // ConsoleWindow outlives all editor windows.
 };
 
 class AudioSetupWindow final : public juce::DocumentWindow
@@ -1460,10 +1465,12 @@ private:
         }
         if(logicalVendorEditor_) {
             auto& existing=*logicalVendorEditor_;
-            if(existing.window)existing.window->present();
             if(existing.workspaceToken==logicalMixer_.workspace().workspaceToken() &&
-               existing.insert.channel==armix::mixer::ChannelId{channel} && existing.insert.slot==slot)
+               existing.insert.channel==armix::mixer::ChannelId{channel} && existing.insert.slot==slot) {
+                if(existing.window)existing.window->present(
+                    static_cast<bool>(request.getProperty("recenter",false)));
                 return; // Exact same logical FX: refocus without losing state.
+            }
             emitNotice("Finish the currently open FX editor first",true);
             return;
         }
@@ -6699,7 +6706,8 @@ private:
                     if(shownWindow && shownOwner==owner &&
                        shownEpoch==retainedEpoch &&
                        shownProcessor==owner->processor.get()) {
-                        shownWindow->present();
+                        shownWindow->present(static_cast<bool>(
+                            args.getProperty("recenter",false)));
                         opened=true;
                         error.clear();
                     } else try {
