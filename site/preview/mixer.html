@@ -1800,6 +1800,92 @@ html.armix-native-desktop .status-bar .warning[data-telemetry="true"]{
 html.armix-native-desktop .status-bar .warning[data-telemetry="true"]{
   white-space:nowrap;
 }
+
+/* UX-1 premium calm native footer. One 20px line, no layout reflow or
+   animated paint work on audio snapshots. CSS masks are local vector data. */
+html.armix-native-desktop .status-bar{
+  gap:10px;
+  font-size:10px;
+  letter-spacing:.08px;
+}
+html.armix-native-desktop .status-bar .state[data-telemetry="true"]{
+  display:inline-flex;
+  align-items:center;
+  flex:0 0 auto;
+  gap:5px;
+  color:#9cc9d0;
+  font-weight:500;
+}
+html.armix-native-desktop .status-bar .state[data-telemetry="true"]::before,
+html.armix-native-desktop .status-bar .warning[data-telemetry="true"] .armix-health-stat::before{
+  content:"";
+  display:block;
+  width:11px;height:11px;
+  flex:0 0 11px;
+  background:currentColor;
+  -webkit-mask:var(--armix-health-icon) center/contain no-repeat;
+  mask:var(--armix-health-icon) center/contain no-repeat;
+  opacity:.82;
+}
+html.armix-native-desktop .status-bar .state[data-telemetry="true"]{
+  --armix-health-icon:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%229%22%2F%3E%3Cpath%20d%3D%22M12%207v5l3%202%22%2F%3E%3C%2Fsvg%3E");
+}
+html.armix-native-desktop .status-bar .last-action{
+  min-width:0;
+  color:#889ca5;
+}
+html.armix-native-desktop .status-bar .warning[data-telemetry="true"]{
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  font-size:10px;
+  font-weight:400;
+  color:#a0b3bb;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+html.armix-native-desktop .status-bar .armix-health-stat{
+  display:inline-flex;
+  align-items:center;
+  flex:0 0 auto;
+  gap:4px;
+  white-space:nowrap;
+  color:#a6b8be;
+  font-weight:400;
+}
+html.armix-native-desktop .status-bar .armix-health-stat + .armix-health-stat{
+  border-left:1px solid #3a454b;
+  padding-left:10px;
+}
+html.armix-native-desktop .status-bar .armix-health-stat[data-metric="cpu"]{
+  --armix-health-icon:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%225%22%20y%3D%225%22%20width%3D%2214%22%20height%3D%2214%22%20rx%3D%222%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%229%22%20width%3D%226%22%20height%3D%226%22%2F%3E%3Cpath%20d%3D%22M9%201v4M15%201v4M9%2019v4M15%2019v4M1%209h4M1%2015h4M19%209h4M19%2015h4%22%2F%3E%3C%2Fsvg%3E");
+}
+html.armix-native-desktop .status-bar .armix-health-stat[data-metric="rt"]{
+  --armix-health-icon:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M2%2012h5l3-7%204%2014%203-7h5%22%2F%3E%3C%2Fsvg%3E");
+}
+html.armix-native-desktop .status-bar .armix-health-stat[data-metric="ram"]{
+  --armix-health-icon:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%223%22%20y%3D%226%22%20width%3D%2218%22%20height%3D%2212%22%20rx%3D%222%22%2F%3E%3Cpath%20d%3D%22M7%2010h10M7%2014h4%22%2F%3E%3C%2Fsvg%3E");
+}
+html.armix-native-desktop .status-bar .armix-health-stat[data-tone="normal"]{
+  color:#9dc5bd;
+}
+html.armix-native-desktop .status-bar .armix-health-stat[data-tone="attention"]{
+  color:#d5ad6d;
+}
+html.armix-native-desktop .status-bar .armix-health-stat[data-tone="critical"]{
+  color:#e08982;
+}
+html.armix-native-desktop .status-bar .armix-health-stat[data-tone="unknown"]{
+  color:#788b96;
+}
+@media(max-width:1080px){
+  html.armix-native-desktop .status-bar .armix-health-stat[data-metric="ram"]{display:none;}
+}
+@media(max-width:800px){
+  html.armix-native-desktop .status-bar .armix-health-stat[data-metric="cpu"]{display:none;}
+  html.armix-native-desktop .status-bar .warning[data-telemetry="true"]{gap:5px;}
+}
+
 .console-body{
  --identity-h:25px!important;--footer-h:48px!important;
  --pan-h:37px;--switch-h:40px;

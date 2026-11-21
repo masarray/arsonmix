@@ -1976,6 +1976,50 @@
     }
   }
   let lastFooterHealth=null;
+  // UX-1 visual: create exactly three text-only nodes ONCE for the native
+  // footer (not cards, not per-frame markup, no animation). CSS owns icons.
+  // A mock DOM without replaceChildren uses the original plain-text path.
+  let footerMetricNodes=null;
+  function paintFooterMetrics(warning,health) {
+    if(!warning || !health)return;
+    const entries=[
+      ["cpu",health.metrics.cpu],
+      ["rt",health.metrics.rt],
+      ["ram",health.metrics.ram]
+    ];
+    if(typeof document.createElement!=="function" ||
+       typeof warning.replaceChildren!=="function") {
+      if(warning.textContent!==health.performance)
+        warning.textContent=health.performance;
+      return;
+    }
+    if(footerMetricNodes?.host!==warning ||
+       warning.firstElementChild!==footerMetricNodes.cpu) {
+      const nodes={host:warning};
+      for(const [key] of entries){
+        const item=document.createElement("span");
+        item.className="armix-health-stat";
+        item.setAttribute("data-metric",key);
+        item.setAttribute("aria-hidden","true"); // tooltip carries expanded meaning
+        nodes[key]=item;
+      }
+      warning.replaceChildren(nodes.cpu,nodes.rt,nodes.ram);
+      footerMetricNodes=nodes;
+    }
+    const help={
+      cpu:"ArSonMix process CPU across all logical cores, not whole-system CPU.",
+      rt:"Last callback duration versus device period. Not average load or a driver-confirmed XRUN.",
+      ram:"ArSonMix process working set, not dedicated audio buffers or total system RAM."
+    };
+    for(const [key,metric] of entries){
+      const node=footerMetricNodes[key];
+      if(node.textContent!==metric.label)node.textContent=metric.label;
+      if(node.dataset && node.dataset.tone!==metric.tone)
+        node.dataset.tone=metric.tone;
+      if(node.title!==help[key])node.title=help[key];
+    }
+  }
+
   function paintAudioHealthFooter(next) {
     const d=next?.device;
     const deviceOpen=Boolean(d?.backend && d.sampleRate>0 &&
@@ -2000,6 +2044,10 @@
       (healthSameEpoch?lastFooterHealth.latency:"LAT —"):
       operatorTransport;
     if(label && label.textContent!==labelText)label.textContent=labelText;
+    if(label?.dataset)label.dataset.telemetry=activeOutput?"true":"false";
+    const latencyHint="JUCE driver-reported I/O latency + FX/PDC hint, not measured acoustic round-trip.";
+    if(label && label.title!==(activeOutput?latencyHint:transport))
+      label.title=activeOutput?latencyHint:transport;
     const warning=document.querySelector?.(".status-bar .warning");
     const warningText=next?.retained?"PLAYBACK UNAVAILABLE · MIXER SAVED":
       !deviceOpen?"NO VERIFIED AUDIO DEVICE":
@@ -2017,8 +2065,15 @@
     const displayWarning=telemetry?
       (healthSameEpoch?lastFooterHealth.performance:"CPU App — · RT — · RAM —"):
       warningText;
-    if(warning && warning.textContent!==displayWarning)
-      warning.textContent=displayWarning;
+    if(telemetry && healthSameEpoch && lastFooterHealth.metrics)
+      paintFooterMetrics(warning,lastFooterHealth);
+    else {
+      if(warning && warning.textContent!==displayWarning)
+        warning.textContent=displayWarning;
+      // Next valid health must recreate its three static nodes, but every
+      // ordinary 12 Hz readback and 1 Hz sample keeps existing nodes.
+      if(footerMetricNodes?.host===warning)footerMetricNodes=null;
+    }
     if(warning?.dataset)
       warning.dataset.telemetry=telemetry?"true":"false";
   }

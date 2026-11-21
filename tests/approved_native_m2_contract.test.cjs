@@ -6750,3 +6750,41 @@ test("UX-1 health strip uses only already-available 1 Hz host samples and existi
   assert.doesNotMatch(bridge,/setInterval\([^)]*footer|setTimeout\([^)]*footer/i);
   assert.match(page,/html\.armix-native-desktop \.status-bar \.warning\[data-telemetry="true"\]/);
 });
+
+test("UX-1 calm status colors use genuine app/process and callback budget evidence",()=>{
+  const base={
+    footerHealthSequence:9,deviceGeneration:9,
+    connected:true,directRouteAuthorized:true,adaptiveClockActive:false,
+    rate:48000,periodUs:5000,driverReportedInputLatencyFrames:48,
+    driverReportedOutputLatencyFrames:96,latencySamples:0,
+    footerProcessCpuPercent:4.0,footerProcessWorkingSetMiB:240,
+    callbackDurationUs:200
+  };
+  const read=x=>protocol.footerHealthFromLive({...base,...x}).metrics;
+  assert.deepEqual(Object.keys(read({})),["cpu","rt","ram"]);
+  assert.equal(read({}).cpu.tone,"normal");
+  assert.equal(read({}).rt.tone,"normal");
+  assert.equal(read({}).ram.tone,"neutral");
+  assert.equal(read({footerProcessCpuPercent:75}).cpu.tone,"attention");
+  assert.equal(read({footerProcessCpuPercent:90}).cpu.tone,"critical");
+  assert.equal(read({callbackDurationUs:4000}).rt.tone,"attention");
+  assert.equal(read({callbackDurationUs:5000}).rt.tone,"critical");
+  assert.equal(read({footerProcessCpuPercent:null}).cpu.tone,"unknown");
+  assert.equal(read({callbackDurationUs:null}).rt.tone,"unknown");
+  assert.equal(read({adaptiveClockActive:true}).rt.tone,"unknown");
+  assert.equal(read({footerProcessWorkingSetMiB:null}).ram.tone,"unknown");
+  assert.equal(read({footerProcessWorkingSetMiB:9000}).ram.tone,"neutral",
+    "RAM MiB has no machine-specific limit; never color by arbitrary size");
+  assert.equal(read({footerProcessCpuPercent:99}).cpu.label,"CPU App 99.0%");
+  const bridge=require("node:fs").readFileSync("web/approved-native-bridge.js","utf8");
+  const page=require("node:fs").readFileSync("site/preview/mixer.html","utf8");
+  assert.match(bridge,/function paintFooterMetrics\(warning,health\)/);
+  assert.match(bridge,/warning\.replaceChildren\(nodes\.cpu,nodes\.rt,nodes\.ram\)/);
+  assert.match(bridge,/warning\.firstElementChild!==footerMetricNodes\.cpu/);
+  assert.doesNotMatch(bridge,/requestAnimationFrame\([^)]*paintFooterMetrics|setInterval\([^)]*paintFooterMetrics/);
+  for(const key of ["cpu","rt","ram"])
+    assert.match(page,new RegExp('data-metric="'+key+'"'));
+  for(const tone of ["normal","attention","critical","unknown"])
+    assert.match(page,new RegExp('data-tone="'+tone+'"'));
+  assert.match(page,/height:20px!important;min-height:20px!important/);
+});

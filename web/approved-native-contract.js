@@ -836,6 +836,16 @@
       deviceGeneration:whole(live.deviceGeneration)===null?
         null:String(live.deviceGeneration),
       latency,performance:cpuLabel+" · "+rtLabel+" · "+ramLabel,
+      // The presentation colors classify *only* the observable signals:
+      // CPU App = process CPU on all logical cores; RT = last callback
+      // budget. A deadline miss is NOT itself a confirmed hardware XRUN.
+      metrics:Object.freeze({
+        cpu:Object.freeze({label:cpuLabel,tone:cpu===null||cpu<0||cpu>100?"unknown":cpu>=90?"critical":cpu>=75?"attention":"normal"}),
+        rt:Object.freeze({label:rtLabel,tone:!oneClock||period===null||period<=0||
+          lastCallback===null||lastCallback<0?"unknown":
+          lastCallback>=period?"critical":lastCallback>=period*0.8?"attention":"normal"}),
+        ram:Object.freeze({label:ramLabel,tone:working===null?"unknown":"neutral"})
+      }),
       provenance:"DRIVER_HINT_NOT_LOOPBACK__PROCESS_CPU_ALL_CORES__LAST_CALLBACK_BUDGET__PROCESS_WORKING_SET"
     });
   }
