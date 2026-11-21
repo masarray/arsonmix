@@ -50,7 +50,10 @@ public:
     void setCurrentProgram(int) override {}
     const juce::String getProgramName(int) override {return "Manual";}
     void changeProgramName(int,const juce::String&) override {}
-    bool hasEditor() const override {return true;}
+    // Product GUI now renders ONLY in the approved /preview/ WebView2.
+    // Keep the old JUCE Editor class compiled for source-state regression,
+    // but prevent any native HWND route from opening a second renderer.
+    bool hasEditor() const override {return false;}
     juce::AudioProcessorEditor* createEditor() override;
     bool isBusesLayoutSupported(const BusesLayout& layout) const override {
         return layout.getMainInputChannelSet()==juce::AudioChannelSet::stereo() &&
