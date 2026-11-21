@@ -259,3 +259,21 @@ test("FUX-1 retained FX offline access requires identical native authority and d
  assert.ok(read("src/LiveDryRoutingLab.h").includes(
   "const bool offlineSource=retained && hasRetainedNativeSession()"));
 });
+
+test("FUX-1 offline FX remains more recent than restored audio and survives shutdown save",()=>{
+ const host=read("src/Main.cpp");
+ const restore=host.slice(host.indexOf("juce::String restoreSavedMixerSession("),
+                          host.indexOf("juce::String saveMixerSession("));
+ assert.match(restore,/if\(retainedOfflineFxActive_\)/);
+ assert.match(restore,/RETAINED_OFFLINE_FX_REAPPLY_REQUIRED/);
+ assert.match(restore,/Open the saved \.smix explicitly/);
+ const save=host.slice(host.indexOf("juce::String saveMixerSession("),
+                       host.indexOf("juce::String resolveMixer",host.indexOf("juce::String saveMixerSession("))+1);
+ // Older live PCM must not serialize over newer logical vendor binary state
+ // on automatic timer or normal shutdown, regardless of the audio backend.
+ assert.match(host,/if\(retainedOfflineFxActive_ && automatic\)return \{\};/);
+ assert.match(host,/mixerSessionStatus_=retainedOfflineFxActive_\?\s*"RETAINED_OFFLINE_FX_REAPPLY_REQUIRED":"RESTORED_MUTED"/);
+ assert.match(host,/retainedOfflineFxActive_=false;/);
+ assert.match(host,/safe->retainedOfflineFxActive_=false;/);
+ assert.doesNotMatch(restore,/setOutputMuted\(false\)|outputArmed=true/);
+});
