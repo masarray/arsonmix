@@ -131,6 +131,27 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn('event.startsWith("arMixBuiltin")',HOST)
         self.assertIn('owned->window->emit(event,payload)',HOST)
 
+    def test_retained_offline_smix_save_uses_durable_logical_export(self):
+        # A disconnected retained session used to reject manual Save even
+        # after the isolated VST3 edit had committed to the .smix workspace.
+        # The policy must allow explicit export only when the control owner
+        # reports a committed logical FX workspace, NEVER recapture old PCM.
+        policy=(ROOT/"src/NativeMixerSessionRecovery.h").read_text(encoding="utf-8")
+        unit=(ROOT/"tests/native_mixer_session_store_test.cpp").read_text(encoding="utf-8")
+        self.assertIn("save.retainedOfflinePending=retainedOfflineFxActive_",HOST)
+        self.assertIn("logicalMixer_.loaded() && !logicalMixer_.readOnly()",HOST)
+        self.assertIn("if(c.retainedOfflinePending) {",policy)
+        branch=policy.split("if(c.retainedOfflinePending) {",1)[1].split(
+            "if(!c.channelIdInstalled",1)[0]
+        self.assertIn("SaveAction::exportLogical",branch)
+        self.assertIn("SaveAction::unchanged",branch)
+        self.assertIn("if(c.secondaryArmed)",branch)
+        self.assertIn("logicalMixer_.exportTo(exportFile",HOST)
+        self.assertIn("save.retainedOfflinePending=true;",unit)
+        self.assertIn("save.channelIdInstalled=true; // Reconnect",unit)
+        self.assertIn("save.secondaryArmed=true;",unit)
+        self.assertIn("save.workerBusy=true;",unit)
+
     def test_all_six_builtins_escape_mixer_via_actual_native_owned_webview(self):
         script=(ROOT/"web/approved-floating-fx-bridge.js").read_text(encoding="utf-8")
         builder=(ROOT/"scripts/build_approved_native_gui.py").read_text(encoding="utf-8")

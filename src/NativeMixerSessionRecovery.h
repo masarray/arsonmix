@@ -91,6 +91,10 @@ public:
         bool m4Installed = false;
         bool secondaryArmed = false;
         bool retainedNative = false;
+        // An already committed offline .smix workspace has newer FX state
+        // than the detached/retained native processor. It may be EXPORTED,
+        // never recaptured from the stale physical graph.
+        bool retainedOfflinePending = false;
         bool recoveryPending = false;
         bool shutdownCheckpoint = false;
         bool physicalOpen = false;
@@ -111,6 +115,17 @@ public:
         if(c.readOnly)
             return {SaveAction::reject,
                     "Saved mixer recovery required before writing a new session"};
+        if(c.retainedOfflinePending) {
+            // Explicit Save As copies the latest *durable* logical document
+            // including VST3 blobs. Re-admission of a physical callback must
+            // never switch the source back to the OLD processor instance.
+            // Auto/shutdown checkpoints are already committed by logical FX
+            // transactions: no unsolicited PCM/device reads or output ARM.
+            if(c.automatic)return {SaveAction::unchanged,nullptr};
+            if(c.secondaryArmed)
+                return {SaveAction::reject,"Stop STREAM before exporting offline FX"};
+            return {SaveAction::exportLogical,nullptr};
+        }
         if(!c.channelIdInstalled && !c.m4Installed && !c.secondaryArmed) {
             if(c.retainedNative)
                 return {SaveAction::reject, "Retained native mixer still owns the session"};

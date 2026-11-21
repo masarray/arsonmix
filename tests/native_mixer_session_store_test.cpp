@@ -143,6 +143,30 @@ static void checkSessionControlPlans() {
     assert(Recovery::planSave(save).action==Save::exportLogical);
     save.retainedNative=true;
     assert(Recovery::planSave(save).action==Save::reject);
+    // FUX-1: once native retained FX state is safely captured and
+    // committed to a logical .smix, Save As must export the NEW FX blobs.
+    // Retained physical/ASIO session is never recaptured or auto-armed.
+    save.retainedOfflinePending=true;
+    assert(Recovery::planSave(save).action==Save::exportLogical);
+    save.channelIdInstalled=true; // Reconnect MUST NOT capture stale live DSP.
+    assert(Recovery::planSave(save).action==Save::exportLogical);
+    save.m4Installed=true;
+    assert(Recovery::planSave(save).action==Save::exportLogical);
+    save.secondaryArmed=true;
+    assert(Recovery::planSave(save).action==Save::reject);
+    save.secondaryArmed=false;
+    save.vendorEditorOpen=true;
+    assert(Recovery::planSave(save).action==Save::reject);
+    save.vendorEditorOpen=false;
+    save.workerBusy=true;
+    assert(Recovery::planSave(save).action==Save::reject);
+    save.workerBusy=false;
+    save.automatic=true;
+    assert(Recovery::planSave(save).action==Save::unchanged);
+    save.automatic=false;
+    save.retainedOfflinePending=false;
+    save.channelIdInstalled=false;
+    save.m4Installed=false;
     save.retainedNative=false;
     save.m4Installed=true; // Legacy M4 is installed, not an offline export.
     assert(Recovery::planSave(save).action==Save::captureInstalled);

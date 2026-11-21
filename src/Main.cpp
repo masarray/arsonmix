@@ -4398,6 +4398,11 @@ private:
         save.m4Installed=session.getProperty("authority","").toString()=="M4";
         save.secondaryArmed=engine_.secondaryArmed();
         save.retainedNative=engine_.hasRetainedNativeSession();
+        // Only a successfully captured, committed offline FX workspace
+        // can override retained native Save rejection. The logical .smix
+        // store stays the source even if a device reconnects before Open.
+        save.retainedOfflinePending=retainedOfflineFxActive_ &&
+            logicalMixer_.loaded() && !logicalMixer_.readOnly();
         save.recoveryPending=mixerSessionRecoveryPending_;
         save.shutdownCheckpoint=shutdownCheckpoint;
         save.physicalOpen=audio!=nullptr && audio->isOpen();
