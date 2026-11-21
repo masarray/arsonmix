@@ -36,6 +36,51 @@ def main():
                 document.querySelectorAll('.command-bar .mixer-file-tool').length===2 &&
                 document.querySelectorAll('.command-bar .armix-toolbar-divider').length===4 &&
                 !!document.getElementById('playerToggle')""")
+            # UX-1 visual regression: evaluate the ACTUAL native assembled
+            # /preview/ CSSOM, not source-only checks against retired HTML.
+            # Real Chromium must resolve the clock/CPU/RT/RAM SVG masks and
+            # sober normal/attention/critical colors at every desktop width.
+            footer = page.evaluate("""()=>{
+              const left=document.getElementById('transport');
+              const right=document.querySelector('.status-bar .warning');
+              const oldLeft=left.textContent, oldRight=right.textContent;
+              const oldLeftMode=left.getAttribute('data-telemetry');
+              const oldRightMode=right.getAttribute('data-telemetry');
+              left.textContent='LAT ~20.0 ms';
+              left.dataset.telemetry='true';
+              right.dataset.telemetry='true';
+              const spans=['cpu','rt','ram'].map((name,index)=>{
+                const node=document.createElement('span');
+                node.className='armix-health-stat';
+                node.dataset.metric=name;
+                node.dataset.tone=['normal','attention','critical'][index];
+                node.textContent=['CPU App 4.2%','RT last 84%','RAM 318 MiB'][index];
+                return node;
+              });
+              right.replaceChildren(...spans);
+              const mask=el=>{
+                const style=getComputedStyle(el,'::before');
+                return {content:style.content,mask:style.webkitMaskImage||style.maskImage,
+                  width:style.width};
+              };
+              const colors=spans.map(el=>getComputedStyle(el).color);
+              const result={left:mask(left),icons:spans.map(mask),colors,
+                footerHeight:document.querySelector('.status-bar').getBoundingClientRect().height,
+                labelHeight:left.getBoundingClientRect().height};
+              left.textContent=oldLeft;right.textContent=oldRight;
+              if(oldLeftMode===null)left.removeAttribute('data-telemetry');
+              else left.setAttribute('data-telemetry',oldLeftMode);
+              if(oldRightMode===null)right.removeAttribute('data-telemetry');
+              else right.setAttribute('data-telemetry',oldRightMode);
+              return result;
+            }""")
+            for icon in (footer["left"], *footer["icons"]):
+                assert "data:image/svg+xml" in icon["mask"] and icon["width"] == "11px", (
+                    width, "UX-1 native status icon is missing from compiled CSS", footer)
+            assert len(set(footer["colors"])) == 3, (
+                width, "native status bar has lost normal/attention/critical colors", footer)
+            assert footer["footerHeight"] == 20, (
+                width, "native footer must remain a compact 20px strip", footer)
             metrics = page.evaluate("""()=>{
               const bar=document.querySelector('.command-bar');
               const b=bar.getBoundingClientRect();
