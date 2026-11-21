@@ -75,7 +75,7 @@ def main():
         page=browser.new_page(viewport={"width":1430,"height":740})
         errors=[]
         page.on("pageerror",lambda err:errors.append(str(err)))
-        page.add_init_script("""()=>{
+        page.add_init_script("""(()=>{
           window.__nativeListeners=new Map();window.__actions=[];
           window.__JUCE__={backend:{
             emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
@@ -85,7 +85,7 @@ def main():
                 ?value=>{previous(value);callback(value)}:callback);
             }
           }};
-        }""")
+        })()""")
         page.goto((out/"index.html").as_uri())
         page.wait_for_function("()=>window.ArSonMixGraphicEq31 && window.__ARMIX_NATIVE_M2__")
         state={"admitted":True,"logical":False,"device":{"epoch":"11"},
