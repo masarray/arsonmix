@@ -83,6 +83,11 @@ def main():
                 assert band.locator(".mx-geq31-freq").is_visible()
                 assert band.locator('g[id="THUMB"]').count()==1
                 assert band.locator('use[id="_Image3"]').count()==1
+                # Visual gate: first v13 black thumb gradient (prevents white-metal fallback).
+                for gradient, color in (("g3","#090b0e"),("g4","#30383e"),
+                                        ("g5","#252e33"),("g6","#646e74")):
+                    paint=band.locator(f'linearGradient[id="geq31-{idx}-{gradient}"] stop').first
+                    assert paint.get_attribute("stop-color")==color, (idx,gradient,color)
                 assert band.locator(".mx-geq31-index").evaluate(
                     "e=>Math.abs(parseFloat(e.style.top)-103)<.5")
             assert len(set(panel.locator('linearGradient[id^="geq31-"]').evaluate_all(
