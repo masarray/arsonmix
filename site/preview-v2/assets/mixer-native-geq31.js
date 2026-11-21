@@ -16,7 +16,23 @@ const valid=s=>Boolean(s&&Array.isArray(s.bands)&&s.bands.length===31&&
  s.bands.every(v=>typeof v==="number"&&Number.isFinite(v)&&v>=-12&&v<=12)&&
  typeof s.levelDb==="number"&&Number.isFinite(s.levelDb)&&s.levelDb>=-24&&s.levelDb<=6);
 const same=(a,b)=>valid(a)&&valid(b)&&a.bands.every((v,i)=>Math.abs(v-b.bands[i])<.051)&&Math.abs(a.levelDb-b.levelDb)<.051;
-const snap0=v=>Math.abs(v)<.75?0:v;
+// v13: 0 dB captures once, but a wheel edit can escape on the next tick.
+const wheelEscape=new WeakMap();
+function wheelZeroSnap(current,target,capture,owner){
+ const state=wheelEscape.get(owner)||{escaping:false,dir:0};
+ if(Math.abs(current)<=.001){
+  state.escaping=true;state.dir=Math.sign(target);wheelEscape.set(owner,state);
+  return target;
+ }
+ if(state.escaping&&current*state.dir>0&&target*state.dir>0&&
+    Math.abs(target)>Math.abs(current)){
+  if(Math.abs(target)>capture)state.escaping=false;
+  wheelEscape.set(owner,state);return target;
+ }
+ state.escaping=false;wheelEscape.set(owner,state);
+ return Math.abs(target)<=capture||(current<0&&target>0)||
+        (current>0&&target<0)?0:target;
+}
 const format=v=>(v>0?"+":"")+v.toFixed(1)+" dB";
 const factory=(which)=>{
  const bands=hz.map(f=>{
@@ -290,13 +306,13 @@ function queue(edit){
  if(!pending)flush();
 }
 function updateBand(i,v){
- v=Math.round(clamp(snap0(v),-12,12)*10)/10;
+ v=Math.round(clamp(v,-12,12)*10)/10;
  if(draft.bands[i]===v)return;
  draft.bands[i]=v;paint();
  queue({kind:"band",index:i,value:v});
 }
 function updateOutput(v){
- v=Math.round(clamp(snap0(v),-24,6)*10)/10;
+ v=Math.round(clamp(v,-24,6)*10)/10;
  if(draft.levelDb===v)return;
  draft.levelDb=v;paint();
  queue({kind:"output",value:v});
@@ -333,32 +349,25 @@ controls.forEach((c,i)=>{
   if(!artworkLoaded)return;
   event.preventDefault();
   const cur=draft.bands[i],target=clamp(cur-Math.sign(event.deltaY)*.5,-12,12);
-  const held=c.escape;
-  let next=target;
-  if(Math.abs(cur)<.001){held.escaping=true;held.dir=Math.sign(target);}
-  else if(held.escaping&&cur*held.dir>0&&target*held.dir>0&&Math.abs(target)>Math.abs(cur)){
-   if(Math.abs(target)>1.1)held.escaping=false;
-  }else{
-   held.escaping=false;
-   if(Math.abs(target)<=1.1||(cur<0&&target>0)||(cur>0&&target<0))next=0;
-  }
-  updateBand(i,next);
+  updateBand(i,wheelZeroSnap(cur,target,1.1,c.cell));
  },{passive:false});
  c.cell.addEventListener("dblclick",event=>{event.preventDefault();updateBand(i,0);});
 });
 dial.addEventListener("pointerdown",e=>{
  if(e.button!==0)return;
- dragOutput={id:e.pointerId,startY:e.clientY,value:draft.levelDb};
+ dragOutput={id:e.pointerId,startY:e.clientY,value:draft.levelDb,held:Math.abs(draft.levelDb)<.001};
  dial.setPointerCapture(e.pointerId);e.preventDefault();
 });
 dial.addEventListener("pointermove",e=>{
  if(!dragOutput||dragOutput.id!==e.pointerId)return;
- updateOutput(dragOutput.value+(dragOutput.startY-e.clientY)*(e.shiftKey?.025:.12));
+ const proposed=dragOutput.value+(dragOutput.startY-e.clientY)*(e.shiftKey?.025:.2);
+ dragOutput.held=Math.abs(proposed)<=(dragOutput.held?1.2:.65);
+ updateOutput(dragOutput.held?0:proposed);
  e.preventDefault();
 });
 const stopDial=e=>{if(dragOutput?.id!==e.pointerId)return;dragOutput=null;try{dial.releasePointerCapture(e.pointerId);}catch{}flush();};
 dial.addEventListener("pointerup",stopDial);dial.addEventListener("pointercancel",stopDial);
-dial.addEventListener("wheel",e=>{e.preventDefault();updateOutput(draft.levelDb+(e.deltaY<0?.5:-.5));},{passive:false});
+dial.addEventListener("wheel",e=>{e.preventDefault();updateOutput(wheelZeroSnap(draft.levelDb,clamp(draft.levelDb+(e.deltaY<0?.5:-.5),-24,6),.65,dial));},{passive:false});
 dial.addEventListener("dblclick",e=>{e.preventDefault();updateOutput(0);});
 dial.addEventListener("keydown",e=>{
  const step=e.shiftKey?.1:.5;
