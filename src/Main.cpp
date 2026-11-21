@@ -5320,7 +5320,7 @@ private:
     void onAction (const juce::var& args)
     {
         auto action = args.getProperty ("action", {}).toString();
-        if(action=="floatingBuiltinOpen")return openFloatingBuiltin(args);
+        if(action=="floatingBuiltinOpen")return; // retired: built-in FX stays in ONE mixer WebView
         if (action=="audioLoopbackRead" || action=="audioLoopbackMeasure") {
             if (!deviceApply_.busy())
                 requestPhysicalLoopback(args,action=="audioLoopbackMeasure");

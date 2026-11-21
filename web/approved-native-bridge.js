@@ -25,6 +25,136 @@
   const wireByUiId = new Map();         // view-only EdgeId -> EXACT decimal-string native EdgeId
   const uiByWireId = new Map();
 
+  // Owner-corrected FUX-1: built-in FX are ORIGINAL /preview/ overlays
+  // clipped by this mixer's ONE WebView2 viewport, never separate JUCE HWNDs.
+  // Their audio, controls, .smix, ACK/readback still use the existing owner.
+  const inlineFxClip=connected?(()=>{
+    const selectors=Object.freeze({
+      ArSonMixNativeEq:"#mxNativePeq",
+      ArSonMixNativeCompressor:"#mxNativeComp",
+      ArSonMixGraphicEq31:"#mxNativeGeq31",
+      ArSonMixNativeHarmony:"#mxNativeHarmony",
+      ArSonMixNativeVocalThrow:"#mxNativeVocalThrow",
+      ArSonMixNativeSonKu:"#mxNativeSonKu"
+    });
+    const roots=Object.values(selectors).join(",");
+    const headers=".mx-peq-title,.mx-comp-head,.mx-geq31-head,"+
+      ".mx-harm-head,.vt-face-header,.sk-head";
+    const style=document.createElement("style");
+    style.id="armix-native-inline-fx-clip";
+    style.textContent="html.armix-native-desktop,html.armix-native-desktop body{overflow-x:hidden!important}\nhtml.armix-native-desktop #mxNativeGeq31{width:1430px!important;min-width:1430px!important;max-width:none!important;height:280px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-body{grid-template-columns:38px minmax(0,1fr) 100px!important;padding:1px 32px 0 4px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-scale{width:38px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-head{gap:8px!important;padding:0 20px!important;height:44px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-brand{font-size:17px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-meta,html.armix-native-desktop #mxNativeGeq31 .mx-geq31-channel{display:inline!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-head select{flex:0 0 152px!important;width:152px!important;max-width:152px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-save{display:block!important;width:56px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-flat{width:44px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-head .mx-geq31-close{margin-inline-start:90px!important}\nhtml.armix-native-desktop #mxNativePeq{width:795px!important;max-height:none!important}\nhtml.armix-native-desktop #mxNativeComp{width:795px!important;max-height:none!important}\nhtml.armix-native-desktop #mxNativeHarmony{width:800px!important;max-height:none!important}\nhtml.armix-native-desktop #mxNativeVocalThrow{width:778px!important;max-height:none!important}\nhtml.armix-native-desktop #mxNativeSonKu{width:790px!important;max-height:none!important}\nhtml.armix-native-desktop :is(.mx-peq-title,.mx-comp-head,.mx-geq31-head,.mx-harm-head,.vt-face-header,.sk-head){touch-action:none!important}";
+    document.head.appendChild(style);
+    const offsets=new WeakMap();
+    let drag=null,layer=16000;
+    const limit=(value,low,high)=>Math.max(low,Math.min(high,value));
+    const grip=()=>Math.min(130,Math.max(56,Math.floor(innerWidth*.22)));
+    function move(root,dx,dy) {
+      if(!root||root.hidden||!Number.isFinite(dx)||!Number.isFinite(dy))return;
+      const rect=root.getBoundingClientRect(),handle=grip();
+      // Show a recoverable edge while permitting the hardware panel to pass
+      // outside either side of the mixer. No layout reflow, no miniaturizing.
+      const x=limit(rect.left+dx,handle-rect.width,innerWidth-handle);
+      const y=limit(rect.top+dy,Math.min(8,innerHeight-rect.height+48),
+        Math.max(8,innerHeight-38));
+      const old=offsets.get(root)||{x:0,y:0};
+      const next={x:old.x+x-rect.left,y:old.y+y-rect.top};
+      offsets.set(root,next);
+      // CSS translate does not overwrite GEQ S/M/L scale() or Harmony
+      // translateX(-50%): both actual controls retain original geometry.
+      root.style.setProperty("translate",next.x+"px "+next.y+"px","important");
+    }
+    function center(root) {
+      if(!root||root.hidden)return false;
+      const r=root.getBoundingClientRect();
+      if(r.width<100||r.height<30)return false;
+      // Wide GEQ begins at 20 Hz; pan to its 20 kHz end by dragging the
+      // same single hardware face, clipped at the WebView viewport edge.
+      const left=r.width>innerWidth-16?8:(innerWidth-r.width)/2;
+      const top=Math.max(8,(innerHeight-r.height)/2);
+      move(root,left-r.left,top-r.top);
+      return true;
+    }
+    function openExact(host,key,track,slot,recenter=true) {
+      const selector=selectors[key],root=document.querySelector(selector||"#__none__");
+      if(!root||typeof host?.open!=="function")return false;
+      if(root.hidden){
+        offsets.delete(root);
+        root.style.removeProperty("translate");
+      }
+      host.open(track,slot);
+      root.style.zIndex=String(++layer);
+      if(recenter||!offsets.has(root))center(root);
+      return true;
+    }
+    function visibleRoot(target) {
+      const root=target?.closest?.(roots);
+      return root&&!root.hidden?root:null;
+    }
+    document.addEventListener("pointerdown",event=>{
+      if(event.button!==0||!event.isTrusted||drag)return;
+      const root=visibleRoot(event.target);
+      if(!root)return;
+      const header=event.target.closest?.(headers);
+      if(!header&&!event.altKey)return;
+      if(!event.altKey&&event.target.closest?.(
+        "button,select,input,textarea,a,[role=slider],[contenteditable]"))return;
+      const r=root.getBoundingClientRect();
+      drag={root,id:event.pointerId,startX:event.clientX,startY:event.clientY,
+        left:r.left,top:r.top,capture:header||root};
+      try{drag.capture.setPointerCapture?.(event.pointerId);}catch(_){}
+      event.preventDefault();
+      event.stopImmediatePropagation(); // prevent old viewport-clamped module drag
+    },true);
+    document.addEventListener("pointermove",event=>{
+      if(!drag||drag.id!==event.pointerId)return;
+      const x=drag.left+event.clientX-drag.startX;
+      const y=drag.top+event.clientY-drag.startY;
+      const r=drag.root.getBoundingClientRect();
+      move(drag.root,x-r.left,y-r.top);
+      event.preventDefault();event.stopImmediatePropagation();
+    },true);
+    function finishDrag(event){
+      if(!drag||drag.id!==event.pointerId)return;
+      const held=drag;drag=null;
+      try{held.capture.releasePointerCapture?.(event.pointerId);}catch(_){}
+      event.stopImmediatePropagation();
+    }
+    document.addEventListener("pointerup",finishDrag,true);
+    document.addEventListener("pointercancel",finishDrag,true);
+    window.addEventListener("blur",()=>{drag=null;});
+    // When the whole header is cropped into its right-side control buttons,
+    // Shift+wheel still slides the exact same FX; Alt+drag works anywhere.
+    document.addEventListener("wheel",event=>{
+      if(!event.shiftKey)return;
+      const root=visibleRoot(event.target);
+      if(!root)return;
+      event.preventDefault();event.stopImmediatePropagation();
+      const amount=Math.abs(event.deltaY)>Math.abs(event.deltaX)?
+        event.deltaY:event.deltaX;
+      if(Number.isFinite(amount))move(root,-amount*.8,0);
+    },{capture:true,passive:false});
+    document.addEventListener("dblclick",event=>{
+      const root=visibleRoot(event.target);
+      if(root&&event.target.closest?.(headers) &&
+         !event.target.closest?.("button,select,input"))
+        requestAnimationFrame(()=>center(root));
+    });
+    document.addEventListener("click",event=>{
+      if(!event.target.closest?.("#mxNativeGeq31 .mx-geq31-size"))return;
+      requestAnimationFrame(()=>{
+        const root=document.getElementById("mxNativeGeq31");
+        if(root&&!root.hidden)center(root);
+      });
+    });
+    window.addEventListener("resize",()=>{
+      for(const root of document.querySelectorAll(roots))
+        if(!root.hidden)requestAnimationFrame(()=>center(root));
+    });
+    return Object.freeze({openExact,center,move});
+  })():null;
+  if(inlineFxClip)window.__ARMIX_NATIVE_INLINE_FX_CLIP__=inlineFxClip;
+
+
   // Native owns durable channel presentation. The approved Pages model only
   // renders native readback; no localStorage authority, fake PCM rename or
   // UI-ordinal-dependent alias. All IDs remain exact uint64 decimal strings.
@@ -3967,27 +4097,14 @@
             const surface=fxRackVM.editorSurfacePlan(current,editor,{
               hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
             if(surface.kind==="BROWSER"){
-              if(connected && backend?.emitEvent){
-                // A DOM card cannot escape WebView2's parent HWND. The native
-                // mixer owns a genuine top-level JUCE/WebView2 FX window;
-                // that window imports the SAME approved /preview/ editor
-                // modules and forwards edits to this original native engine.
-                backend.emitEvent("arMixAction",{
-                  action:"floatingBuiltinOpen",
-                  channelId:editor.channelId,slot:editor.slot,
-                  instanceId:editor.instanceId,catalogId:editor.catalogId,
-                  workspaceToken:editor.workspaceToken||"",
-                  graphRevision:editor.graphRevision,
-                  deviceEpoch:editor.deviceEpoch,recenter
-                });
-              }else{
-                const host=window[surface.windowKey];
-                if(typeof host?.open==="function") {
-                  host.open(t,slot);
-                  if(recenter)window.queueMicrotask(()=>
-                    window.ArSonMixFxWorkspace?.centerInsert?.(t.id,slot));
-                }else nativeToast("Built-in FX editor unavailable · refresh the approved GUI bundle");
-              }
+              // G-MV approved lease stays native-authoritative; no nested
+              // WebView2/child HWND or FX DOM outside this mixer viewport.
+              const view=activeView();
+              const safe=fxRackVM.editorNavigationLeaseMatches(view,editor,{
+                hardwareConfiguration:protocol.nativeHardwareConfiguration(view?.device)});
+              if(!safe||!inlineFxClip?.openExact(
+                 window[surface.windowKey],surface.windowKey,t,slot,recenter))
+                nativeToast("Built-in FX changed · reopen current FX Rack");
             }else if(surface.kind==="LOGICAL_VENDOR"){
               backend.emitEvent("arMixAction",{action:"logicalVendorFxEditor",
                 channelId:editor.channelId,slot:editor.slot,instanceId:editor.instanceId,

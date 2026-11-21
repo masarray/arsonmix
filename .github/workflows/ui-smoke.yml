@@ -840,6 +840,9 @@ jobs:
       - name: FUX-1 six approved native-only built-in FX desktop browser surfaces
         if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'fix/fx-editor-recovery-')) }}
         run: python tests/approved_floating_fx_window_smoke.py
+      - name: FUX-1 clipped internal FX viewport (real Chromium, no nested JUCE window)
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'fix/fx-editor-recovery-')) }}
+        run: python tests/approved_inline_fx_clip_smoke.py
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
       - name: Verify V40 WIRE proximity, focus release and full-tray channel selection

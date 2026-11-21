@@ -254,7 +254,7 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("std::make_unique<BuiltinFxDesktopWindow>",HOST)
         self.assertIn("maxSimultaneousBuiltinWindows=16",HOST)
         self.assertIn("floatingBuiltinFx_.clear();",HOST)
-        self.assertIn('if(action=="floatingBuiltinOpen")return openFloatingBuiltin(args);',HOST)
+        self.assertIn('if(action=="floatingBuiltinOpen")return;',HOST)
         self.assertIn("floatingBuiltinPresent(ref)",HOST)
         self.assertIn("if(!permitted.contains(action))return;",HOST)
         self.assertIn('permitted={"nativeEqSnapshot","nativeEqSetBand","nativeBuiltinFxUserPreset"};',HOST)
@@ -288,6 +288,20 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         # The public Pages script never receives an alternate product GUI.
         public=(ROOT/"scripts/build_pages.py").read_text(encoding="utf-8")
         self.assertNotIn("fx-window.html",public)
+
+    def test_inline_fx_clip_single_native_webview_and_exact_instance(self):
+        bridge=(ROOT/"web/approved-native-bridge.js").read_text(encoding="utf-8")
+        self.assertIn("const inlineFxClip=connected?(()=>{",bridge)
+        self.assertIn("width:1430px!important;min-width:1430px!important",bridge)
+        self.assertIn('root.style.setProperty("translate",next.x+',bridge)
+        self.assertIn("fxRackVM.editorNavigationLeaseMatches(view,editor",bridge)
+        self.assertIn("inlineFxClip?.openExact(",bridge)
+        self.assertNotIn('action:"floatingBuiltinOpen"',bridge)
+        self.assertIn('if(action=="floatingBuiltinOpen")return;',HOST)
+        self.assertIn("event.stopImmediatePropagation(); // prevent old viewport-clamped",bridge)
+        self.assertIn("event.altKey",bridge)
+        self.assertIn("event.shiftKey",bridge)
+        self.assertIn("root.style.zIndex=String(++layer)",bridge)
 
     def test_all_editor_paths_use_one_host(self):
         self.assertEqual(HOST.count("std::make_unique<PluginEditorWindow>"),4)
