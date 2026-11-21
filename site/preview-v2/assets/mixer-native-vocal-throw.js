@@ -368,6 +368,7 @@ window.ArSonMixNativeVocalThrow=Object.freeze({
    hint("Browser preview only · no PCM");}
   else hint("Native FX instance unavailable");
   $("vtChannel").textContent=track.name||"CH";
+  panel.dataset.fxTrackId=String(track.id);panel.dataset.fxSlot=String(slot);
   panel.hidden=false;paint();refreshMusicChannels();requestSnapshot(true);
  },
  close(){panel.hidden=true;presetBar.close();}

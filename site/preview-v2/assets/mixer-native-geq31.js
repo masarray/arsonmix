@@ -16,7 +16,23 @@ const valid=s=>Boolean(s&&Array.isArray(s.bands)&&s.bands.length===31&&
  s.bands.every(v=>typeof v==="number"&&Number.isFinite(v)&&v>=-12&&v<=12)&&
  typeof s.levelDb==="number"&&Number.isFinite(s.levelDb)&&s.levelDb>=-24&&s.levelDb<=6);
 const same=(a,b)=>valid(a)&&valid(b)&&a.bands.every((v,i)=>Math.abs(v-b.bands[i])<.051)&&Math.abs(a.levelDb-b.levelDb)<.051;
-const snap0=v=>Math.abs(v)<.75?0:v;
+// v13: 0 dB captures once, but a wheel edit can escape on the next tick.
+const wheelEscape=new WeakMap();
+function wheelZeroSnap(current,target,capture,owner){
+ const state=wheelEscape.get(owner)||{escaping:false,dir:0};
+ if(Math.abs(current)<=.001){
+  state.escaping=true;state.dir=Math.sign(target);wheelEscape.set(owner,state);
+  return target;
+ }
+ if(state.escaping&&current*state.dir>0&&target*state.dir>0&&
+    Math.abs(target)>Math.abs(current)){
+  if(Math.abs(target)>capture)state.escaping=false;
+  wheelEscape.set(owner,state);return target;
+ }
+ state.escaping=false;wheelEscape.set(owner,state);
+ return Math.abs(target)<=capture||(current<0&&target>0)||
+        (current>0&&target<0)?0:target;
+}
 const format=v=>(v>0?"+":"")+v.toFixed(1)+" dB";
 const factory=(which)=>{
  const bands=hz.map(f=>{
@@ -57,15 +73,37 @@ const power=el("button","mx-geq31-power armix-builtin-fx-power","⏻");
 power.type="button";power.disabled=true;power.setAttribute("aria-label","Graphic EQ power");
 const close=el("button","mx-geq31-close armix-builtin-fx-close","×");
 close.type="button";close.setAttribute("aria-label","Close Graphic EQ 31");
-header.append(title,meta,channel,preset,save,flat,power,close);
+// S/M/L resize the ONE original 1430x280 hardware editor, not a reflowed
+// replacement renderer. All authored fader, LCD and knob proportions stay
+// invariant at 50/75/100%; the native DSP instance never changes.
+const SIZE_MODES=Object.freeze({S:0.5,M:0.75,L:1});
+const SIZE_STORAGE="arsonmix.geq31.editor-size.v1";
+let sizeMode="L";
+try{
+ const preferred=window.localStorage?.getItem(SIZE_STORAGE);
+ if(Object.prototype.hasOwnProperty.call(SIZE_MODES,preferred))sizeMode=preferred;
+}catch{/* native/preview storage may be unavailable; never block FX */}
+const sizeControls=el("div","mx-geq31-size-controls");
+sizeControls.setAttribute("role","group");
+sizeControls.setAttribute("aria-label","Graphic EQ editor size");
+const sizeButtons=Object.keys(SIZE_MODES).map(mode=>{
+ const button=el("button","mx-geq31-size",mode);
+ button.type="button";button.dataset.size=mode;
+ button.title="Graphic EQ window · "+Math.round(SIZE_MODES[mode]*100)+"%";
+ button.setAttribute("aria-label","Graphic EQ size "+Math.round(SIZE_MODES[mode]*100)+"%");
+ sizeControls.append(button);return button;
+});
+header.append(title,meta,channel,preset,save,flat,sizeControls,power,close);
+// Exact v13 author geometry: each fader is a cropped 40 x 229 original SVG,
+ // not a CSS-imitation rail/THUMB. DSP ownership remains in native C++.
 const body=el("div","mx-geq31-body");
+// The left gain scale is sufficient. Remove the duplicated +12/0/-12
+// right scale entirely so the Output LCD, knob and captions share one
+// geometrically centred column rather than a legacy 40px spacer.
 const left=el("div","mx-geq31-scale mx-geq31-left");
-const right=el("div","mx-geq31-scale mx-geq31-right");
-for(const [text,y] of [["+12",0],["0",50],["−12",100]]){
- for(const target of [left,right]){
-  const t=el("span","mx-geq31-scale-text",text);
-  t.style.top=y+"%";target.append(t);
- }
+for(const [label,y] of [["+12",23.4],["0",103],["−12",182.5]]){
+ const text=el("span","mx-geq31-scale-text",label);
+ text.style.top=y+"px";left.append(text);
 }
 const scroll=el("div","mx-geq31-scroll");
 const bank=el("div","mx-geq31-bank");
@@ -73,21 +111,19 @@ const controls=[];
 hz.forEach((f,i)=>{
  const cell=el("div","mx-geq31-cell");
  const track=el("div","mx-geq31-track");
- const ticks=el("div","mx-geq31-ticks");
- const zero=el("span","mx-geq31-zero");
- const thumb=el("span","mx-geq31-thumb");
- const ridge=el("span","mx-geq31-ridge");thumb.append(ridge);
+ const index=el("span","mx-geq31-index");
  const range=el("input","mx-geq31-range");
  range.type="range";range.min="-12";range.max="12";range.step=".1";
  range.value="0";range.setAttribute("aria-label",labels[i]+" Hz band");
  range.setAttribute("aria-valuetext","0.0 dB");
- range.title=labels[i]+" Hz · double-click Flat · wheel adjusts · Shift for fine";
- track.append(ticks,zero,thumb,range);
+ range.title=labels[i]+" Hz · double-click Flat · wheel · Shift fine";
  const label=el("div","mx-geq31-freq");
- const name=el("span","mx-geq31-frequency",f>=1000?labels[i].replace(/k$/,""):labels[i]);
+ label.setAttribute("aria-hidden","true");
+ const name=el("span","mx-geq31-frequency",f>=1000?String(f/1000):String(f));
  const unit=el("span","mx-geq31-unit",f>=1000?"kHz":"Hz");
- label.append(name,unit);cell.append(track,label);bank.append(cell);
- controls.push({cell,range,thumb,frequency:name,unit});
+ label.append(name,unit);
+ track.append(index,range);cell.append(track,label);bank.append(cell);
+ controls.push({cell,range,thumb:null,index,frequency:name,unit,detent:false,escape:{escaping:false,dir:0}});
 });
 scroll.append(bank);
 const output=el("div","mx-geq31-output");
@@ -95,16 +131,186 @@ const outputLabel=el("span","mx-geq31-output-label","OUTPUT");
 const dial=el("div","mx-geq31-dial");
 dial.setAttribute("role","slider");dial.tabIndex=0;
 dial.setAttribute("aria-label","Output level");dial.setAttribute("aria-valuemin","-24");
-dial.setAttribute("aria-valuemax","6");dial.title="Drag vertically; wheel; double-click to 0 dB";
-const dialPointer=el("span","mx-geq31-dial-pointer");dial.append(dialPointer);
+dial.setAttribute("aria-valuemax","6");
+dial.title="Drag vertically; wheel; double-click 0 dB";
+const knobImage=el("img","mx-geq31-knob-image");
+knobImage.src="assets/geq31-knob-black.png";
+knobImage.alt="";knobImage.draggable=false;
+// The approved v13 black knob is a real 192px PNG. Keep that original
+// asset, but render the cyan pointer/arc as true SVG geometry instead of a
+// fixed 336px backing-store Canvas that the S/M/L compositor scales again.
+const SVG_NS="http://www.w3.org/2000/svg";
+const svgNode=tag=>document.createElementNS(SVG_NS,tag);
+const dialPointer=svgNode("svg");
+dialPointer.classList.add("mx-geq31-dial-pointer");
+dialPointer.setAttribute("viewBox","0 0 84 84");
+dialPointer.setAttribute("aria-hidden","true");
+dialPointer.setAttribute("focusable","false");
+dialPointer.setAttribute("preserveAspectRatio","xMidYMid meet");
+const pointerArc=svgNode("path");
+pointerArc.setAttribute("fill","none");
+pointerArc.setAttribute("stroke","#26b8f6");
+pointerArc.setAttribute("stroke-width","2");
+pointerArc.setAttribute("stroke-linecap","round");
+pointerArc.setAttribute("stroke-linejoin","round");
+const pointerHalo=svgNode("circle");
+pointerHalo.setAttribute("r","2.65");
+pointerHalo.setAttribute("fill","rgba(4,33,50,.82)");
+const pointerDot=svgNode("circle");
+pointerDot.setAttribute("r","1.9");
+pointerDot.setAttribute("fill","#27c8ff");
+dialPointer.append(pointerArc,pointerHalo,pointerDot);
+dial.append(knobImage,dialPointer);
 const outValue=el("output","mx-geq31-output-value","0.0 dB");
-output.append(outputLabel,dial,outValue);
-body.append(left,scroll,right,output);
-const footer=el("footer","mx-geq31-footer");
+// Exact mixer V51 LED architecture, rotated 90deg CW: the native peak
+// fills ONE 6-step green->red strip; six dark glass separators/frames sit
+// OVER the gradient, not six independently coloured rectangular buttons.
+// The V51 cell remains 12x6px with 2px dark gap, one strip per stereo side.
+const levelMeter=el("div","mx-geq31-level-meter");
+levelMeter.setAttribute("role","group");
+levelMeter.setAttribute("aria-label","Stereo native channel PCM peak meters");
+levelMeter.title="Native PCM channel peaks · Left / Right";
+const levelRows=["L","R"].map((name,side)=>{
+ const row=el("div","mx-geq31-level-row");
+ row.dataset.side=side===0?"left":"right";
+ row.setAttribute("role","meter");
+ row.setAttribute("aria-label",name==="L"?"Left PCM peak":"Right PCM peak");
+ row.setAttribute("aria-valuemin","-90");
+ row.setAttribute("aria-valuemax","6");
+ const label=el("span","mx-geq31-level-channel",name);
+ label.setAttribute("aria-hidden","true");
+ const cells=el("div","mx-geq31-level-cells");
+ cells.setAttribute("aria-hidden","true");
+ cells.style.setProperty("--lit-px","0px");
+ const fill=el("span","mx-geq31-level-fill");
+ cells.append(fill);
+ const leds=Array.from({length:6},(_,i)=>{
+  const led=el("span","mx-geq31-level-led");
+  led.style.left=(14*i)+"px";
+  led.dataset.step=String(i+1);
+  // Frames overlay the continuous native-driven fill: they never have
+  // individual palettes or per-cell CSS LED illumination gradients.
+  cells.append(led);return led;
+ });
+ row.append(label,cells);levelMeter.append(row);
+ return {row,cells,leds,name};
+});
+output.append(outputLabel,levelMeter,dial,outValue);
+body.append(left,scroll,output);
+const bypassShade=el("div","mx-geq31-bypass-overlay","BYPASSED");
+bypassShade.setAttribute("aria-hidden","true");
+function paintKnob(db){
+ // The original pointer angles and radii are unchanged; SVG geometry is
+ // rasterised at the ACTUAL compositor scale/DPI, not bitmap-upsampled.
+ const t=clamp(db<=0?(db+24)/48:.5+db/12,0,1);
+ const start=-.75*Math.PI,end=start+1.5*Math.PI*t;
+ const side=84,cx=side*96.7/192,cy=side*97.97/192;
+ const polar=(radius,a)=>[cx+radius*Math.sin(a),cy-radius*Math.cos(a)];
+ const rad=side*.365,startPt=polar(rad,start),endPt=polar(rad,end);
+ const n=x=>x.toFixed(3);
+ const arc=t>0?
+  "M "+n(startPt[0])+" "+n(startPt[1])+
+  " A "+n(rad)+" "+n(rad)+" 0 "+(t>2/3?1:0)+" 1 "+
+  n(endPt[0])+" "+n(endPt[1]):"";
+ pointerArc.setAttribute("d",arc);
+ const p=polar(side*.292,end);
+ for(const node of [pointerHalo,pointerDot]){
+  node.setAttribute("cx",n(p[0]));
+  node.setAttribute("cy",n(p[1]));
+ }
+}
+function gainToShift(v){return v>=0?-(916.5-208.75)*v/12:-(1627.92-916.5)*v/12;}
+function makeOwnerSvg(base,i){
+ const svg=base.cloneNode(true);
+ svg.setAttribute("viewBox","60 0 352 2042");
+ svg.setAttribute("preserveAspectRatio","none");
+ svg.removeAttribute("width");svg.removeAttribute("height");
+ const style=svg.querySelector("style");
+ if(!style)throw Error("Owner SVG missing authored style");
+ style.textContent=style.textContent.replace(
+  /[.]s0\s*[{][^}]*[}]/,
+  ".s0 { fill:none;stroke:#131a1d;stroke-miterlimit:10;stroke-width:7.9 }");
+ for(const [id,stops] of [
+  ["g1",["#929b9f","#a6afb3","#969ea3","#858d92"]],
+  ["g2",["#080b0d","#13181c","#1b2125","#20272b","#242a2d"]],
+  ["g3",["#090b0e","#13181c","#262d32","#323a40","#262d32","#13181c","#090b0e"]],
+  ["g4",["#30383e","#252d32","#141a1e","#252d32","#30383e"]],
+  ["g5",["#252e33","#171e22","#0d1216","#171e22","#252e33"]],
+  ["g6",["#646e74","#88969e","#b4bdc1","#88969e","#5b656b"]]]){
+  const gradient=svg.querySelector('[id="'+id+'"]');
+  if(!gradient)throw Error("Owner SVG missing "+id);
+  gradient.querySelectorAll("stop").forEach((stop,n)=>{
+   if(stops[n])stop.setAttribute("stop-color",stops[n]);
+  });
+ }
+ // Inline 31 copies must not share paint-server IDs.
+ for(const id of ["g1","g2","g3","g4","g5","g6","img1"]){
+  const element=svg.querySelector('[id="'+id+'"]');
+  if(!element)throw Error("Owner SVG missing "+id);
+  const unique="geq31-"+i+"-"+id;
+  element.setAttribute("id",unique);
+  style.textContent=style.textContent.replaceAll("url(#"+id+")","url(#"+unique+")");
+  if(id==="img1"){
+   const use=svg.querySelector('use[id="_Image3"]');
+   if(!use)throw Error("Owner raster shadow missing");
+   use.setAttribute("href","#"+unique);
+  }
+ }
+ const freq=svg.querySelector('g[id="Text"] text[id="32"]');
+ const unit=svg.querySelector('g[id="Hz"] text');
+ const shadow=svg.querySelector('g[id="THUMB"] > g');
+ const thumb=svg.querySelector('g[id="THUMB"]');
+ // Exact approved v13 SVG composition omits original green/red end-stop
+ // marker groups entirely, including their dark shadow paths. The source
+ // asset stays byte-for-byte original; only this WebView clone is cropped.
+ for(const markerClass of ["s5","s6"]){
+  const marker=svg.querySelector('g[id="Track"] path.'+markerClass);
+  const holder=marker?.parentElement;
+  if(!marker||!holder||holder.children.length!==2||
+     holder.parentElement?.getAttribute("id")!=="Track")
+    throw Error("Owner end-stop marker SVG structure changed");
+  holder.remove();
+ }
+ if(!freq||!unit||!shadow||!thumb)throw Error("Owner SVG Text/THUMB missing");
+ freq.setAttribute("text-anchor","middle");
+ freq.setAttribute("style","transform:matrix(4.167,0,0,4.167,237.76,1850.466);font-family:Inter,Arial,sans-serif");
+ const number=freq.querySelector("tspan");
+ number.textContent=hz[i]>=1000?String(hz[i]/1000):String(hz[i]);
+ number.setAttribute("style","font-family:Inter,Arial,sans-serif;font-size:27px;font-weight:700;fill:#344047");
+ unit.setAttribute("text-anchor","middle");
+ unit.setAttribute("style","transform:matrix(4.167,0,0,4.167,237.76,1933.799);font-family:Inter,Arial,sans-serif");
+ const letter=unit.querySelector("tspan");
+ letter.textContent=hz[i]>=1000?"kHz":"Hz";
+ letter.setAttribute("style","font-family:Inter,Arial,sans-serif;font-size:18px;font-weight:600;fill:#5b6a72");
+ shadow.setAttribute("opacity","0.87");
+ return {svg,thumb};
+}
+let artworkLoaded=false;
+async function loadArtwork(){
+ try{
+  const response=await fetch("assets/geq31-owner-slider.svg");
+  if(!response.ok)throw Error("GEQ31_OWNER_SVG_HTTP_"+response.status);
+  const doc=new DOMParser().parseFromString(await response.text(),"image/svg+xml");
+  const svg=doc.documentElement;
+  if(svg.localName!=="svg"||!svg.querySelector('g[id="THUMB"]'))throw Error("GEQ31_OWNER_SVG_INVALID");
+  const rendered=controls.map((c,i)=>makeOwnerSvg(svg,i));
+  rendered.forEach(({svg,thumb},i)=>{
+   controls[i].range.before(svg);
+   controls[i].thumb=thumb;
+  });
+  artworkLoaded=true;root.dataset.artwork="v13";paint();
+ }catch(error){
+  root.dataset.artwork="unavailable";
+  hint("GEQ31 V13 ARTWORK UNAVAILABLE · CHECK GUI BUNDLE");
+  console.error("GEQ31 visual resource",error);
+ }
+}
+// Keep operator feedback accessible, but remove the redundant visible status bar.
 const message=el("span","mx-geq31-message","BROWSER PREVIEW · NO AUDIO");
-footer.append(message);
-root.append(header,body,footer);
-function mount(){if(!root.isConnected)document.body.append(root);}
+message.setAttribute("role","status");
+message.setAttribute("aria-live","polite");
+root.append(header,body,bypassShade,message);
+function mount(){if(!root.isConnected)document.body.append(root);loadArtwork();}
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 function hint(value){message.textContent=value;root.dataset.state=/STALE|REJECT|FAIL|UNAVAILABLE|TIMEOUT/i.test(value)?"error":/WAIT|APPLY|READING/i.test(value)?"pending":"ready";}
 function context(){
@@ -125,6 +331,38 @@ function updatePower(){
  power.dataset.fxState=!usable?"unknown":ch.fxRackBypassed?"rack-off":ins?.bypassed?"off":"on";
  power.setAttribute("aria-pressed",String(usable&&!ins?.bypassed&&!ch?.fxRackBypassed));
  power.title=!usable?"DSP instance not accepted":ins?.bypassed?"Enable Graphic EQ":"Bypass Graphic EQ";
+ const bypassed=usable&&Boolean(ins?.bypassed||ch?.fxRackBypassed);
+ bypassShade.classList.toggle("is-on",bypassed);
+}
+function paintChannelMeter(view){
+ const lease=context(),ch=view?.graph?.channels?.find(c=>c.id===lease?.channelId);
+ const entry=native()&&lease&&view?.admitted&&!view?.retained&&!view?.logical
+   ?view?.telemetry?.channelMeterRmsPeak?.[lease.channelId]:null;
+ const validPeak=n=>typeof n==="number"&&Number.isFinite(n)&&n>=0;
+ // Stereo is two independent measurements. Mirror MONO explicitly; absent
+ // right-channel telemetry on a stereo strip stays dark, not fabricated.
+ const left=validPeak(entry?.peakL)?entry.peakL:
+   (validPeak(entry)?entry:null);
+ const right=validPeak(entry?.peakR)?entry.peakR:
+   (ch?.processingFormat==="MONO"?left:null);
+ // Six discrete steps with mixer-like -60..0 dBFS progression.
+ // Last 3dB turns on the final red LED; a missing PCM side stays black.
+ const thresholds=[-50,-40,-30,-20,-10,-3];
+ for(const [idx,peak] of [left,right].entries()){
+  const {row,cells,leds,name}=levelRows[idx];
+  const db=peak===null?null:peak>0?20*Math.log10(peak):-90;
+  const lit=db===null?0:thresholds.reduce((n,t)=>n+(db>=t?1:0),0);
+  // width exactly n*14-2, i.e. whole 12px LED + 2px dark separator.
+  cells.style.setProperty("--lit-px",lit?(14*lit-2)+"px":"0px");
+  leds.forEach((led,i)=>led.classList.toggle("is-lit",i<lit));
+  if(db===null){
+   row.removeAttribute("aria-valuenow");
+   row.title=name+" PCM peak · unavailable";
+  }else{
+   row.setAttribute("aria-valuenow",Math.max(-90,Math.min(6,db)).toFixed(1));
+   row.title=name+" PCM peak · "+db.toFixed(1)+" dBFS";
+  }
+ }
 }
 function paint(){
  controls.forEach((c,i)=>{
@@ -132,20 +370,22 @@ function paint(){
   c.range.value=String(v);
   c.range.setAttribute("aria-valuenow",String(v));
   c.range.setAttribute("aria-valuetext",format(v));
-  c.thumb.style.top=((12-v)/24*100).toFixed(3)+"%";
+  const shift=gainToShift(v);
+  if(c.thumb)c.thumb.setAttribute("transform","translate(0 "+shift.toFixed(3)+")");
+  c.index.style.top=Math.round((916.5+shift)*229/2042)+"px";
  });
  const t=clamp((draft.levelDb+24)/30,0,1);
  dial.style.setProperty("--geq-dial-angle",(-132+264*t).toFixed(2)+"deg");
  dial.setAttribute("aria-valuenow",String(draft.levelDb));
  dial.setAttribute("aria-valuetext",format(draft.levelDb));
- outValue.textContent=format(draft.levelDb);
+ outValue.textContent=format(draft.levelDb);paintKnob(draft.levelDb);
  const value=matchFactory(draft);
  // A selected user preset is owned by the shared .armixfx bar. Do not
  // reset that selected option on every graphic-slider paint.
  if(!preset.value.startsWith("user:")||!same(accepted,draft))
    preset.value=value;
  presetBar?.paint?.();
- updatePower();
+ updatePower();paintChannelMeter(state());
 }
 function demoSave(){if(active)demos.set(active.track.id+":"+active.slot,{bands:[...draft.bands],levelDb:draft.levelDb});}
 function requestSnapshot(force=false){
@@ -183,13 +423,13 @@ function queue(edit){
  if(!pending)flush();
 }
 function updateBand(i,v){
- v=Math.round(clamp(snap0(v),-12,12)*10)/10;
+ v=Math.round(clamp(v,-12,12)*10)/10;
  if(draft.bands[i]===v)return;
  draft.bands[i]=v;paint();
  queue({kind:"band",index:i,value:v});
 }
 function updateOutput(v){
- v=Math.round(clamp(snap0(v),-24,6)*10)/10;
+ v=Math.round(clamp(v,-24,6)*10)/10;
  if(draft.levelDb===v)return;
  draft.levelDb=v;paint();
  queue({kind:"output",value:v});
@@ -197,28 +437,57 @@ function updateOutput(v){
 controls.forEach((c,i)=>{
  c.range.addEventListener("input",()=>updateBand(i,Number(c.range.value)));
  c.range.addEventListener("change",()=>{if(native())flush();});
- c.range.addEventListener("pointerdown",()=>{activeSlider=i;});
- c.range.addEventListener("pointerup",()=>{activeSlider=-1;flush();});
- c.range.addEventListener("pointercancel",()=>{activeSlider=-1;requestSnapshot(true);});
- c.range.addEventListener("wheel",e=>{
-  e.preventDefault();const delta=(e.deltaY<0?1:-1)*(e.shiftKey?.2:1);
-  updateBand(i,draft.bands[i]+delta);
+ function fromPointer(event){
+  const rect=c.cell.getBoundingClientRect();
+  const y=clamp((event.clientY-rect.top)/rect.height*2042,208.75,1627.92);
+  const proposed=y<916.5?(916.5-y)/(916.5-208.75)*12:
+    (916.5-y)/(1627.92-916.5)*12;
+  c.detent=Math.abs(proposed)<=(c.detent?1.8:1.1);
+  updateBand(i,c.detent?0:proposed);
+ }
+ c.cell.addEventListener("pointerdown",event=>{
+  if(event.button!==0||!artworkLoaded)return;
+  activeSlider=i;c.detent=Math.abs(draft.bands[i])<.001;
+  c.cell.setPointerCapture(event.pointerId);fromPointer(event);
+  event.preventDefault();
+ });
+ c.cell.addEventListener("pointermove",event=>{
+  if(c.cell.hasPointerCapture(event.pointerId))fromPointer(event);
+ });
+ c.cell.addEventListener("pointerup",event=>{
+  if(c.cell.hasPointerCapture(event.pointerId))c.cell.releasePointerCapture(event.pointerId);
+  activeSlider=-1;flush();
+ });
+ c.cell.addEventListener("pointercancel",event=>{
+  if(c.cell.hasPointerCapture(event.pointerId))c.cell.releasePointerCapture(event.pointerId);
+  activeSlider=-1;requestSnapshot(true);
+ });
+ c.cell.addEventListener("wheel",event=>{
+  if(!artworkLoaded)return;
+  event.preventDefault();
+  const cur=draft.bands[i],target=clamp(cur-Math.sign(event.deltaY)*.5,-12,12);
+  updateBand(i,wheelZeroSnap(cur,target,1.1,c.cell));
  },{passive:false});
- c.range.addEventListener("dblclick",e=>{e.preventDefault();updateBand(i,0);});
+ c.cell.addEventListener("dblclick",event=>{event.preventDefault();updateBand(i,0);});
 });
 dial.addEventListener("pointerdown",e=>{
  if(e.button!==0)return;
- dragOutput={id:e.pointerId,startY:e.clientY,value:draft.levelDb};
+ dragOutput={id:e.pointerId,startY:e.clientY,value:draft.levelDb,held:Math.abs(draft.levelDb)<.001};
  dial.setPointerCapture(e.pointerId);e.preventDefault();
 });
 dial.addEventListener("pointermove",e=>{
  if(!dragOutput||dragOutput.id!==e.pointerId)return;
- updateOutput(dragOutput.value+(dragOutput.startY-e.clientY)*(e.shiftKey?.025:.12));
+ // A CSS-scaled hardware knob must retain identical dB-per-local-pixel
+ // sensitivity at 50/75/100%, not become over-sensitive at size S.
+ const proposed=dragOutput.value+(dragOutput.startY-e.clientY)/
+  sizeFactor()*(e.shiftKey?.025:.2);
+ dragOutput.held=Math.abs(proposed)<=(dragOutput.held?1.2:.65);
+ updateOutput(dragOutput.held?0:proposed);
  e.preventDefault();
 });
 const stopDial=e=>{if(dragOutput?.id!==e.pointerId)return;dragOutput=null;try{dial.releasePointerCapture(e.pointerId);}catch{}flush();};
 dial.addEventListener("pointerup",stopDial);dial.addEventListener("pointercancel",stopDial);
-dial.addEventListener("wheel",e=>{e.preventDefault();updateOutput(draft.levelDb+(e.deltaY<0?.5:-.5));},{passive:false});
+dial.addEventListener("wheel",e=>{e.preventDefault();updateOutput(wheelZeroSnap(draft.levelDb,clamp(draft.levelDb+(e.deltaY<0?.5:-.5),-24,6),.65,dial));},{passive:false});
 dial.addEventListener("dblclick",e=>{e.preventDefault();updateOutput(0);});
 dial.addEventListener("keydown",e=>{
  const step=e.shiftKey?.1:.5;
@@ -258,8 +527,54 @@ power.addEventListener("click",()=>{
  if(native()&&context())window.__ARMIX_NATIVE_M2__?.consumeAction?.(active.track,"slotPower",{dataset:{slot:String(active.slot)}});
  else if(!native()&&active){active.track.slotBypass[active.slot]=!active.track.slotBypass[active.slot];paint();}
 });
-function dismiss(){root.hidden=true;active=null;pending=null;queued.clear();readId="";presetBar.close();}
+function dismiss(){
+ root.hidden=true;active=null;pending=null;queued.clear();readId="";
+ paintChannelMeter(null);presetBar.close();
+}
 close.addEventListener("click",dismiss);
+function sizeFactor(){return SIZE_MODES[sizeMode];}
+function placeScaledPosition(horizontalCenter,verticalCenter){
+ const rect=root.getBoundingClientRect(),w=innerWidth,h=innerHeight;
+ const left=horizontalCenter?Math.max(0,(w-rect.width)/2):
+  clamp(rect.left,0,Math.max(0,w-rect.width));
+ const top=verticalCenter?Math.max(0,(h-rect.height)/2):
+  clamp(rect.top,0,Math.max(0,h-rect.height));
+ root.style.setProperty("left",left+"px","important");
+ root.style.setProperty("top",top+"px","important");
+}
+function applySize(mode,{persist=true,center=true}={}){
+ if(!Object.prototype.hasOwnProperty.call(SIZE_MODES,mode))return false;
+ sizeMode=mode;
+ root.dataset.fxSize=mode;
+ root.dataset.fxScale=String(sizeFactor());
+ root.style.setProperty("transform-origin","top left","important");
+ root.style.setProperty("transform","scale("+sizeFactor()+")","important");
+ sizeButtons.forEach(button=>{
+  const selected=button.dataset.size===mode;
+  button.setAttribute("aria-pressed",String(selected));
+  button.classList.toggle("is-active",selected);
+ });
+ if(persist){try{window.localStorage?.setItem(SIZE_STORAGE,mode);}catch{}}
+ // Keep the approved popup close to the toolbar after size change. The
+ // double-click rescue method below is the only explicit VERTICAL center.
+ if(!root.hidden&&center)placeScaledPosition(true,false);
+ return true;
+}
+sizeButtons.forEach(button=>button.addEventListener("click",()=>{
+ applySize(button.dataset.size);
+}));
+applySize(sizeMode,{persist:false,center:false});
+function centerEditor(){
+ if(root.hidden)return false;
+ // Never replace the scale transform with 'none' on rescue: preserve mode
+ // chosen in GEQ AND the shared built-in FX Rack recovery handler.
+ applySize(sizeMode,{persist:false,center:false});
+ placeScaledPosition(true,true);
+ return true;
+}
+header.addEventListener("dblclick",e=>{
+ if(!e.target.closest("button,select")){e.preventDefault();centerEditor();}
+});
 header.addEventListener("pointerdown",e=>{
  if(e.button!==0||e.target.closest("button,select"))return;
  const r=root.getBoundingClientRect();
@@ -269,8 +584,10 @@ header.addEventListener("pointerdown",e=>{
 header.addEventListener("pointermove",e=>{
  if(!dragHeader||dragHeader.id!==e.pointerId)return;
  const r=root.getBoundingClientRect();
- root.style.left=clamp(e.clientX-dragHeader.dx,0,Math.max(0,innerWidth-r.width))+"px";
- root.style.top=clamp(e.clientY-dragHeader.dy,0,Math.max(0,innerHeight-r.height))+"px";
+ // WebView2 cannot paint outside its native HWND; permit edge parking with
+ // a 48px visible grip, recover with FX-rack double-click (common handler).
+ root.style.left=clamp(e.clientX-dragHeader.dx,Math.min(0,48-r.width),Math.max(0,innerWidth-48))+"px";
+ root.style.top=clamp(e.clientY-dragHeader.dy,0,Math.max(0,innerHeight-38))+"px";
  e.preventDefault();
 });
 header.addEventListener("pointerup",e=>{dragHeader=null;try{header.releasePointerCapture(e.pointerId);}catch{}});
@@ -297,10 +614,16 @@ function open(track,slot){
   accepted=fresh();draft=fresh();hint("FX INSTANCE NOT ACCEPTED · NO AUDIO EDIT");
  }
  channel.textContent=(track.name||"Channel")+" · FX "+(slot+1);
- root.hidden=false;paint();
+ root.dataset.fxTrackId=String(track.id);root.dataset.fxSlot=String(slot);
+ root.hidden=false;
+ // A reopened editor must not inherit a hidden/offscreen position, even
+ // when the operator last used S or M in a smaller WebView2 viewport.
+ placeScaledPosition(true,false);
+ paint();
 }
 window.ArSonMixGraphicEq31=Object.freeze({
- id:ID,open,close:dismiss,
+ id:ID,open,close:dismiss,recenter:centerEditor,
+ setSize:mode=>applySize(mode),
  insert:target=>Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target))
 });
 backend()?.addEventListener?.("arMixBuiltinGeqQueue",ack=>{
@@ -348,7 +671,7 @@ backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
  if(root.hidden||!native())return;
  if(!context()){
   pending=null;queued.clear();hint("DEVICE OR GRAPH CHANGED · REOPEN FX");
- }else updatePower();
+ }else {updatePower();paintChannelMeter(state());}
 });
 window.setInterval(()=>{
  if(root.hidden||!active)return;

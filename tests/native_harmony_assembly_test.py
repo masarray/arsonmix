@@ -22,7 +22,7 @@ class NativeHarmonyAssemblyTest(unittest.TestCase):
         self.assertEqual(self.html.count("function renderFastPicker(){"),1)
         self.assertEqual(self.html.count("function insertChosenNativeHarmony(){"),1)
         self.assertEqual(self.html.count('data-fast-native-harmony="1"'),1)
-        self.assertEqual(self.html.count('src="assets/mixer-native-harmony.js?v=harmony1"'),1)
+        self.assertEqual(self.html.count('src="assets/mixer-native-harmony.js?v=harmony2-fx-recovery"'),1)
         self.assertNotIn('href="assets/mixer-native-harmony.css',self.html)
         self.assertIn(".mx-harm[hidden],.mx-harm-source-picker[hidden],.mx-harm [hidden]{display:none}",self.css)
         self.assertNotIn("new AudioContext",self.ui)

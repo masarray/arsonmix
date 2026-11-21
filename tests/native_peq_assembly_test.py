@@ -21,17 +21,17 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertEqual(self.assembled.count("function insertChosenNativeEq(){"),1)
         self.assertEqual(self.assembled.count('id="fastPicker"'),1)
         self.assertNotIn("preview-v3",self.assembled)
-        self.assertEqual(self.assembled.count('src="assets/mixer-native-peq.js?v=eq-graph1"'),1)
-        self.assertEqual(self.assembled.count('src="assets/mixer-native-geq31.js?v=geq-webview-p0"'),1)
+        self.assertEqual(self.assembled.count('src="assets/mixer-native-peq.js?v=eq-graph2-fx-recovery"'),1)
+        self.assertEqual(self.assembled.count('src="assets/mixer-native-geq31.js?v=geq-v14h-centered-output"'),1)
         self.assertEqual(self.assembled.count('data-fast-native-geq="1"'),1)
         self.assertEqual(self.assembled.count('function insertChosenNativeGeq(){'),1)
-        self.assertEqual(self.assembled.count('src="assets/mixer-native-compressor.js?v=comp-1"'),1)
+        self.assertEqual(self.assembled.count('src="assets/mixer-native-compressor.js?v=comp-2-fx-recovery"'),1)
         self.assertEqual(self.assembled.count("function insertChosenNativeCompressor(){"),1)
         self.assertEqual(self.assembled.count("function insertChosenNativeThrow(){"),1)
-        self.assertEqual(self.assembled.count('src="assets/mixer-native-vocal-throw.js?v=throw-1"'),1)
+        self.assertEqual(self.assembled.count('src="assets/mixer-native-vocal-throw.js?v=throw-2-fx-recovery"'),1)
         self.assertEqual(self.assembled.count('data-fast-native-throw="1"'),1)
         self.assertEqual(self.assembled.count('data-fast-native-sonku="1"'),1)
-        self.assertEqual(self.assembled.count('src="assets/mixer-native-sonku.js?v=sonku-1"'),1)
+        self.assertEqual(self.assembled.count('src="assets/mixer-native-sonku.js?v=sonku-2-fx-recovery"'),1)
         self.assertEqual(self.assembled.count("function insertChosenNativeSonKu(){"),1)
 
     def test_catalog_driven_guitar_and_one_specialized_sonku_button(self):
@@ -205,6 +205,20 @@ class NativeParametricEqIntegration(unittest.TestCase):
                       "musicSourceChannelId"):
             self.assertIn(field,throw_js)
         self.assertNotIn("new AudioContext",throw_js)
+
+    def test_builtin_fx_recovery_tracks_clicked_instance_not_latest_window(self):
+        names = ("mixer-native-geq31.js", "mixer-native-peq.js",
+                 "mixer-native-compressor.js", "mixer-native-harmony.js",
+                 "mixer-native-vocal-throw.js", "mixer-native-sonku.js")
+        for name in names:
+            with self.subTest(fx=name):
+                js=(ROOT/"site/preview-v2/assets"/name).read_text("utf-8")
+                self.assertIn("dataset.fxTrackId=String(track.id)",js)
+                self.assertIn("dataset.fxSlot=String(slot)",js)
+        workspace=(ROOT/"site/preview-v2/assets/mixer-contextual-buttons.js").read_text("utf-8")
+        self.assertIn("matched=trackId",workspace)
+        self.assertIn("item.el.dataset.fxTrackId",workspace)
+        self.assertIn("item.el.dataset.fxSlot",workspace)
 
     def test_fail_closed_on_repeat(self):
         with self.assertRaises(ValueError):

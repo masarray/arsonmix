@@ -3,12 +3,12 @@ No alternate GUI, pseudo FX row, fixed pre-VST DSP bank or demo audio engine.
 An accepted EQ uses the same rack slot, ChannelId, and FX control as VST3.
 """
 CATALOG="armix.builtin.channel-eq.v1"
-SCRIPT='<script defer src="assets/mixer-native-peq.js?v=eq-graph1"></script>'
-COMP_SCRIPT='<script defer src="assets/mixer-native-compressor.js?v=comp-1"></script>'
-HARMONY_SCRIPT='<script defer src="assets/mixer-native-harmony.js?v=harmony1"></script>'
-THROW_SCRIPT='<script defer src="assets/mixer-native-vocal-throw.js?v=throw-1"></script>'
-SONKU_SCRIPT='<script defer src="assets/mixer-native-sonku.js?v=sonku-1"></script>'
-GEQ_SCRIPT='<script defer src="assets/mixer-native-geq31.js?v=geq-webview-p0"></script>'
+SCRIPT='<script defer src="assets/mixer-native-peq.js?v=eq-graph2-fx-recovery"></script>'
+COMP_SCRIPT='<script defer src="assets/mixer-native-compressor.js?v=comp-2-fx-recovery"></script>'
+HARMONY_SCRIPT='<script defer src="assets/mixer-native-harmony.js?v=harmony2-fx-recovery"></script>'
+THROW_SCRIPT='<script defer src="assets/mixer-native-vocal-throw.js?v=throw-2-fx-recovery"></script>'
+SONKU_SCRIPT='<script defer src="assets/mixer-native-sonku.js?v=sonku-2-fx-recovery"></script>'
+GEQ_SCRIPT='<script defer src="assets/mixer-native-geq31.js?v=geq-v14h-centered-output"></script>'
 PRESET_SCRIPT='<script defer src="assets/mixer-builtin-fx-preset-bar.js?v=preset-shared-m4"></script>'
 
 PICKER_HEAD="function renderFastPicker(){"

@@ -439,6 +439,7 @@ const api={
    sampleRate=48000;hint("BROWSER PREVIEW · NO AUDIO ENGINE");
   }else{mode="UNAVAILABLE";bands=fresh();hint("NATIVE EQ NOT ACCEPTED · CHECK FX SLOT");}
   channel.textContent=track.name+" · FX "+(slot+1);
+  root.dataset.fxTrackId=String(track.id);root.dataset.fxSlot=String(slot);
   root.hidden=false;draw();
  },
  close(){root.hidden=true;presetBar.close();}
