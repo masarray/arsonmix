@@ -1428,7 +1428,7 @@
  * presentation owner; JUCE hosts audio only. All 31 faders share one
  * CSS geometry (170px travel) and the same 0dB horizontal datum. */
 .mx-geq31{
- position:fixed;z-index:1100;top:clamp(10px,11vh,110px);left:clamp(8px,5vw,90px);
+ position:fixed;z-index:1100;top:clamp(10px,11vh,110px);left:max(8px,calc((100vw - 1420px)/2));
  width:min(1420px,calc(100vw - 16px));min-width:320px;box-sizing:border-box;
  color:#23333b;font-family:Inter,"Segoe UI",sans-serif;font-size:11px;
  border:1px solid #526870;border-radius:9px;overflow:hidden;
@@ -1580,3 +1580,4 @@
 
 /* GEQ retains one visible Save action; the shared .armixfx service owns the form. */
 .mx-geq31 .mx-fxp-save-as{display:none}
+.mx-geq31 .mx-fxp-manage:disabled{display:none}
