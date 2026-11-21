@@ -1442,8 +1442,29 @@ private:
                request.getProperty("instanceId",{}).toString()!=ref->instanceId ||
                request.getProperty("slot",{})!=juce::var(ref->slot))return;
             const auto action=request.getProperty("action","").toString();
-            if(!action.startsWith("native") &&
-               !action.startsWith("builtinFx"))return;
+            // A popup never receives a GENERAL native control capability.
+            // Each catalog can request only its own original approved FX
+            // snapshot/edit/preset commands, never Audio Setup, routing,
+            // WIRE, mixer session, device or another insert's processor.
+            juce::StringArray permitted;
+            if(ref->catalogId=="armix.builtin.channel-eq.v1")
+                permitted={"nativeEqSnapshot","nativeEqSetBand","nativeBuiltinFxUserPreset"};
+            else if(ref->catalogId=="armix.builtin.graphic-eq31.v1")
+                permitted={"nativeGeqSnapshot","nativeGeqSet","nativeBuiltinFxUserPreset"};
+            else if(ref->catalogId=="armix.builtin.channel-compressor.v1")
+                permitted={"nativeCompSnapshot","nativeCompSet","nativeBuiltinFxUserPreset"};
+            else if(ref->catalogId=="armix.builtin.arson-harmony.v1")
+                permitted={"nativeHarmonySnapshot","nativeHarmonySetSettings",
+                           "nativeHarmonyUserPreset"};
+            else if(ref->catalogId=="armix.builtin.vocal-throw.v1")
+                permitted={"nativeThrowSnapshot","nativeThrowSet","nativeThrowTrigger",
+                           "nativeThrowTempoSource","nativeBuiltinFxUserPreset"};
+            else if(ref->catalogId=="armix.builtin.8d-sonku.v1")
+                permitted={"nativeSonKuSnapshot","nativeSonKuSet"};
+            if(!permitted.contains(action))return;
+            if(action=="nativeBuiltinFxUserPreset" &&
+               request.getProperty("catalogId","").toString()!=ref->catalogId)
+                return;
             safe->onAction(request); // existing single native DSP request fence
         };
         const auto onPower=[safe,ref](juce::var request) {
