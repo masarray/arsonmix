@@ -116,6 +116,22 @@
       const root=document.querySelector(registry[request.catalogId][2]);
       if(!root){inform("FX UI failed to mount");return;}
       if(banner)banner.hidden=true;
+      // Size the real desktop HWND to the ORIGINAL FX hardware panel, not a
+      // generic oversized mixer card. GEQ31 S/M/L updates the same HWND.
+      const measure=()=>{
+        if(identity!==request||root.hidden)return;
+        const rect=root.getBoundingClientRect();
+        if(rect.width>=200&&rect.height>=100)
+          backend.emitEvent("arMixFloatingSize",{
+            width:Math.ceil(rect.width),height:Math.ceil(rect.height)});
+      };
+      requestAnimationFrame(()=>requestAnimationFrame(measure));
+      if(typeof ResizeObserver==="function")
+        new ResizeObserver(()=>requestAnimationFrame(measure)).observe(root);
+      root.addEventListener("click",event=>{
+        if(event.target.closest?.("[data-size]"))
+          requestAnimationFrame(()=>requestAnimationFrame(measure));
+      },true);
       // Editor close hides its owned top-level HWND instead of leaving a blank
       // window. DOM controls remain alive and can be re-presented safely.
       const observer=new MutationObserver(()=>{
