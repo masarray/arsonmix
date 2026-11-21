@@ -601,18 +601,38 @@ int main() {
     for(const auto& p:armix::builtin_fx::imersipP92Presets){
         sceneSelector->setSelectedId(p.id,juce::sendNotificationSync);
         assert(sceneSelector->getSelectedId()==p.id);
-        scenePcm.clear();
-        sceneFx->processBlock(scenePcm,sceneMidi);
-        settleGui();
-        assert(sceneSelector->getSelectedId()==p.id);
         const auto expected=imersipP92Factory(p.id);
-        const auto accepted=sceneFx->acceptedSettings();
-        assert(std::abs(accepted.outputTrim-expected.outputTrim)<1.e-7f);
-        assert(std::abs(accepted.sourceDistanceMeters-
-                        expected.sourceDistanceMeters)<1.e-6f);
-        assert(std::abs(accepted.roomAmount-expected.roomAmount)<1.e-6f);
-        assert(std::abs(accepted.ambience-expected.ambience)<1.e-6f);
-        assert(accepted.sceneVoicing==expected.sceneVoicing);
+        // An editor may queue the latest factory scene while a prior
+        // request is awaiting audio ACK. A single callback then only
+        // completes that prior request, and the 25Hz editor timer queues
+        // the deferred scene afterwards. Drive a BOUNDED real callback
+        // and editor-ACK cycle until the latest scene is accepted.
+        // Never infer correctness from the selected visual label alone.
+        bool applied=false;
+        for(int tick=0;tick<8;++tick){
+            scenePcm.clear();
+            sceneFx->processBlock(scenePcm,sceneMidi);
+            settleGui();
+            const auto accepted=sceneFx->acceptedSettings();
+            applied=sceneSelector->getSelectedId()==p.id &&
+                std::abs(accepted.outputTrim-expected.outputTrim)<1.e-7f &&
+                std::abs(accepted.sourceDistanceMeters-
+                         expected.sourceDistanceMeters)<1.e-6f &&
+                std::abs(accepted.roomAmount-expected.roomAmount)<1.e-6f &&
+                std::abs(accepted.ambience-expected.ambience)<1.e-6f &&
+                accepted.sceneVoicing==expected.sceneVoicing;
+            if(applied)break;
+            if(tick==7){
+                std::fprintf(stderr,
+                    "IMMERSIB_PRESET_ACK_TIMEOUT id=%d selected=%d expectedTrim=%.9g acceptedTrim=%.9g lastAck=%llu applied=%d\\n",
+                    p.id,sceneSelector->getSelectedId(),
+                    static_cast<double>(expected.outputTrim),
+                    static_cast<double>(accepted.outputTrim),
+                    static_cast<unsigned long long>(sceneFx->lastCompletedRequestId()),
+                    sceneFx->lastCompletionApplied()?1:0);
+            }
+        }
+        assert(applied); // no bypass of exact factory state roundtrip
     }
     sceneSelector->setSelectedId(2,juce::sendNotificationSync);
     scenePcm.clear();
