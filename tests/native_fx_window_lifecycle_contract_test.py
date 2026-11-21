@@ -74,6 +74,20 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("openChannelIdFxEditor(editor);",bridge)
         self.assertIn("nativeHooks.consumeAction(track",bridge)
 
+    def test_exact_logical_vendor_identity_and_first_open_recenter(self):
+        # Offline state save can outlive FX slot revisions. A stored VST3
+        # blob may only be replaced when the original catalog/UID/path and
+        # saved hash still match. Physical authority remains disconnected.
+        self.assertIn("existing.instanceId==requestedInstance",HOST)
+        self.assertIn("prepared.instanceId=requestedInstance;",HOST)
+        self.assertIn("current->sha256==fx.insert.sha256",HOST)
+        self.assertIn("current->uid==fx.insert.uid",HOST)
+        self.assertIn("current->path==fx.insert.path",HOST)
+        self.assertIn("if(!identical)",HOST)
+        self.assertIn('FX slot or stored state changed:',HOST)
+        self.assertIn("shownWindow->present(true); // new HWND",HOST)
+        self.assertIn("prepared.window->present(true); // first-open",HOST)
+
     def test_all_editor_paths_use_one_host(self):
         self.assertEqual(HOST.count("std::make_unique<PluginEditorWindow>"),3)
         self.assertIn("prepared.processor->getName(),editor,*this)",HOST)
