@@ -11,13 +11,16 @@
 // the direct HRTF source, never SIDE, DRY, ER or diffuse late reverb.
 // All analysis/trigonometry/pow is performed ONCE in prepare(), off RT.
 // A pair of bounded minimum-phase biquads adds no device/audio-block latency.
+// Native ImmerSIB v6 reuses the existing PREPARED direct-only 2.2k P80 bell
+// with up to 4dB additional calibrated reduction. It adds no new filter,
+// no dynamic detector and no frequency processing to early/late tails.
 // This research-only profile is not a substitute for a proprietary HRTF model
 // and never claims dearVR's Clarity algorithm or individualized HRTF.
 namespace armix::sonku {
 class SonKuHrtfTonalCalibration final {
 public:
     using Bank=const std::int16_t (*)[2][hrir::taps];
-    bool prepare(double rate,Bank bank) noexcept {
+    bool prepare(double rate,Bank bank,float extraConcertFrontPresenceDb=0.f) noexcept {
         if(!bank || !std::isfinite(rate) || rate<40000. || rate>50000.)return false;
         constexpr double eps=1.e-8;
         // Horizontal geometric mean of measured ear response; NOT a measured
@@ -32,6 +35,17 @@ public:
         // to retain the source-localization HRTF's pinna features.
         presenceDb_=static_cast<float>(std::clamp(
             -20.*std::log10(middle/adjacent),-5.5,0.));
+        // v6 opt-in: the real P9 ear-output diagnostic showed the
+        // measured front HRTF still dominates 1.9–2.4k by 7–9dB
+        // relative to warm 285Hz/950Hz after this legacy correction.
+        // Extend the SAME prepared minimum-phase P80 bell, rather than
+        // stacking more time-varying EQ after room/limiter. Full direct
+        // transfer at both ears stays linked; SIDE/ILD/ITD unchanged in
+        // steady state. Original non-ImmerSIB / P80 public coefficient
+        // path retains exact rounding and arithmetic when extra == 0.
+        if(std::isfinite(extraConcertFrontPresenceDb) &&
+            extraConcertFrontPresenceDb>0.f)
+            presenceDb_-=std::clamp(extraConcertFrontPresenceDb,0.f,4.f);
         // Never invert 8k pinna notches fully: modest broad air return.
         airDb_=static_cast<float>(std::clamp(
             .40*20.*std::log10(low/treble),0.,4.));

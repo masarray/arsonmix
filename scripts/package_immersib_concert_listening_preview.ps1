@@ -53,20 +53,30 @@ try {
 } finally {$stream.Dispose()}
 if(Test-Path -LiteralPath $OutputDir){throw "IMMERSIB_AB_STALE_PACKAGE_DIR"}
 New-Item -ItemType Directory -Path $OutputDir | Out-Null
-$name="ArSonMix-ImmerSIB-V5-Stage-Front-Windows-x64.exe"
+$name="ArSonMix-ImmerSIB-V6-Direct-Comfort-Windows-x64.exe"
 $dest=Join-Path $OutputDir $name
 Copy-Item -LiteralPath $exe -Destination $dest
 "ARSONMIX_PORTABLE_WORKSPACE_V1" | Set-Content -LiteralPath (Join-Path $OutputDir "portable_mode.txt") -Encoding UTF8
 Copy-Item -LiteralPath "docs/FIRST_SOUND_FAT_QUICKSTART_20261101.md" -Destination (Join-Path $OutputDir "HARDWARE_FAT_GUIDE.md")
 Copy-Item -LiteralPath "installer/ArSonMixStartupDiagnostics.ps1" -Destination $OutputDir
 @'
-# ArSonMix ImmerSIB v5 — stage-front / 3D concert, EXPERIMENTAL A/B
+# ArSonMix ImmerSIB v6 — direct-HRTF 2k comfort, EXPERIMENTAL A/B
 
 Portable Windows x64 KHUSUS uji listening, BUKAN installer/rilis stabil.
 Ekstrak dalam folder baru. Backup .smix dan sesi Studio lebih dahulu.
 Jangan menimpa instalasi ArSonMix produksi.
 
-Yang benar-benar berubah pada v5:
+Perubahan v6 dibanding v5 (feedback: mid 1–3k masih menusuk):
+- Pengukuran FULL P9 original v5 menghasilkan gain mono-center 2.05kHz
+  sekitar +11.7dB pada scene Live Concert/44.1k sementara 285Hz +4.5dB.
+  Lonjakan mid tetap terjadi ROOM OFF sehingga P94 bukan akar utama.
+- Existing SonKu P80 sudah mempunyai correction bell di 2.2kHz; v6
+  menambah hingga 4dB reduksi pada bell YANG SAMA di DIRECT HRTF saja.
+  Tidak menambah EQ baru, frequency pump/detektor, atau mengolah late/ER.
+- Koreksi P80 diberikan sama ke kedua telinga sebelum room sum sehingga
+  arah stereo/ILD tidak dibuat palsu; LF/bass dan efek ruang tetap sama.
+- Tes P9 44.1/48k mengukur apakah mid benar-benar turun di FULL PCM.
+Yang tetap sama dari v5:
 - P90: pertahankan phantom-center v4 yang telah terdengar lebih hadir di depan.
 - P94: untuk dua virtual loudspeaker stereo L/R pada sudut panggung
   104–134 derajat, hitung DIRECT-vs-EARLY dari arah KEDUA speaker,
@@ -88,7 +98,7 @@ Cara membandingkan (headphone, kerasnya disamakan):
 6. Bass, ambience akhir, mono/antiphase dan transien tidak boleh regresi.
 Jika timbul rasa menusuk/clicking, hentikan dan kembali ke versi nyaman.
 
-Eksperimen P94 v5 sudah diuji C++/PCM native, tetapi belum disetujui
+Eksperimen P94/P80 v6 diuji C++/PCM native, tetapi belum disetujui
 secara musikal oleh pendengar/hardware. Lihat BUILD_PROVENANCE.json
 untuk commit exact, SHA256 executable dan flag kandidat. PR #857 DRAFT.
 Tidak boleh dianggap versi stable atau diumumkan sebagai installer resmi.
@@ -98,7 +108,7 @@ $manifest=[ordered]@{
  sourceCommit=$actual
  pr=857
  approvedFuxMainCheckpoint="527e0216d226904288c4fe2dd8a76169dfb4417d"
- candidateAudioRevision="v5-p94-real-stereo-pa-plus-v4-phantom-front"
+ candidateAudioRevision="v6-direct-HRTF-P80-measured-2k-comfort-plus-v5-P94-and-v4-front"
  previouslyAuditionedReference="v4-pr857-3fd52a96f6a1e8c7716325342481704fd156f033"
  p98P99TonalSource="IDENTICAL_TO_APPROVED_MAIN"
  releaseStatus="NOT_STABLE_NOT_AUDIO_APPROVED"

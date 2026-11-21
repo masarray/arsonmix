@@ -18,10 +18,10 @@ using armix::builtin_fx::imersipP92Factory;
 constexpr double pi=3.141592653589793238462643383279502884;
 struct ProbeResult {double db=0., peak=0., cap=0., makeup=0.;};
 static ProbeResult probe(int sr,int scene,int hz,bool candidate,bool stage,
-                         bool room,bool pan) {
+                         bool room,bool pan,bool comfort=false) {
   auto dsp=std::make_unique<SonKuSpatialCore>();
   dsp->optInImmerSIBVocalRoom();
-  if(candidate)dsp->optInImmerSIBConcertCandidate(stage);
+  if(candidate)dsp->optInImmerSIBConcertCandidate(stage,comfort);
   assert(dsp->prepare(sr,SonKuReflectionProfile::SixSurfaceKemarResearch));
   auto s=imersipP92Factory(scene);
   if(!room) {s.spacePreset=0;s.roomAmount=0.f;s.ambience=0.f;}
@@ -66,11 +66,19 @@ int main(){
           for(int hz:{285,950,1350,1700,1950,2050,2400,2900,4500}){
             const auto neutral=probe(sr,scene,hz,false,true,room,pan);
             const auto v4=probe(sr,scene,hz,true,false,room,pan);
-            const auto v5=probe(sr,scene,hz,true,true,room,pan);
-            assert(std::isfinite(neutral.db)&&std::isfinite(v4.db)&&std::isfinite(v5.db));
-            std::printf("IMMERSIB_MID_PROBE,sr=%d,scene=%d,room=%d,pan=%d,hz=%d,legacyDb=%.3f,v4Db=%.3f,v5Db=%.3f,diffV5V4=%.3f,limiter=%.5f,makeup=%.4f\n",
-               sr,scene,int(room),int(pan),hz,
-               neutral.db,v4.db,v5.db,v5.db-v4.db,v5.cap,v5.makeup);
+            const auto v5=probe(sr,scene,hz,true,true,room,pan,false);
+            const auto v6=probe(sr,scene,hz,true,true,room,pan,true);
+            assert(std::isfinite(neutral.db)&&std::isfinite(v4.db)&&
+                   std::isfinite(v5.db)&&std::isfinite(v6.db));
+            if(hz==2050 || hz==2400) {
+                // Owner's EQ is BEFORE hearing but AFTER ImmerSIB:
+                // prove the direct-binaural target itself is reduced.
+                assert(v6.db < v5.db - 1.9);
+            }
+            if(hz==285)assert(std::abs(v6.db-v5.db)<.5);
+            std::printf("IMMERSIB_MID_PROBE,sr=%d,scene=%d,room=%d,pan=%d,hz=%d,legacyDb=%.3f,v4Db=%.3f,v5Db=%.3f,v6Db=%.3f,diffV6V5=%.3f,limiter=%.5f,makeup=%.4f\n",
+               sr,scene,int(room),int(pan),hz,neutral.db,v4.db,v5.db,
+               v6.db,v6.db-v5.db,v6.cap,v6.makeup);
           }
         }
       }

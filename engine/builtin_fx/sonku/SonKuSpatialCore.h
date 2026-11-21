@@ -236,9 +236,11 @@ public:
     // Optional test-only argument keeps the exact P90 v4 candidate
     // available for a controlled full-PCM A/B against v5; branded JUCE
     // calls the default=true v5 behavior. No saved-state/UI ABI change.
-    void optInImmerSIBConcertCandidate(bool physicalStageP94=true) noexcept {
+    void optInImmerSIBConcertCandidate(bool physicalStageP94=true,
+                                       bool directComfortV6=true) noexcept {
         immersibConcertCandidate_=true;
         immersibPhysicalStageP94_=physicalStageP94;
+        immersibFrontComfortV6_=directComfortV6;
         // The v1 pan-purity gate pushed the musical center too far away.
         // Restore a bounded phantom-front response without changing actual
         // stage geometry, adding a dry HRTF, or touching the bass renderer.
@@ -253,8 +255,14 @@ public:
         sampleRate_=rate;
         bank_=(std::abs(rate-44100.)<=.1)?hrir::normal44100:hrir::normal48000;
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
+        float extraFrontPresenceDb=0.f;
+#if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
+        if(immersibConcertCandidate_ && immersibFrontComfortV6_)
+            extraFrontPresenceDb=4.f; // observed direct-only 2k excess
+#endif
         if(profile==SonKuReflectionProfile::SixSurfaceKemarResearch &&
-           !tonalCalibration_.prepare(rate,bank_))return false;
+           !tonalCalibration_.prepare(rate,bank_,extraFrontPresenceDb))
+            return false;
 #endif
         // Prepared control-side: continuous coefficient and gain smoothing
         // without trigonometric/exponential work in the audio callback.
@@ -1649,6 +1657,7 @@ private:
 #if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
     bool immersibConcertCandidate_=false;
     bool immersibPhysicalStageP94_=true; // v5 on, v4 only for native A/B
+    bool immersibFrontComfortV6_=true;   // v6 on, v5 only for native A/B
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
     p95::MusicalPresence p95Presence_{};
