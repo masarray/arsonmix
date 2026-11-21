@@ -89,8 +89,26 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("shownWindow->present(true); // new HWND",HOST)
         self.assertIn("prepared.window->present(true); // first-open",HOST)
 
+    def test_multiple_exact_native_vendor_windows_and_retired_lease_cleanup(self):
+        self.assertIn("struct AdditionalFxEditor final",HOST)
+        self.assertIn("maxSimultaneousVendorEditors=16",HOST)
+        self.assertIn("entry.owner==owner",HOST)
+        self.assertIn("entry.processor==owner->processor.get()",HOST)
+        self.assertIn("additionalFxEditors_.push_back(std::move(entry))",HOST)
+        self.assertIn("extra->channel=nativeChannel",HOST)
+        self.assertIn("extra->lane=lane;extra->slot=slot",HOST)
+        self.assertIn("extra->instanceId=token",HOST)
+        self.assertIn("keepOtherVendorWindow",HOST)
+        self.assertIn("additionalFxEditors_.clear();",HOST)
+        self.assertIn("std::erase_if(additionalFxEditors_",HOST)
+        self.assertIn("!engine_.retainsRoutedFxEditor(entry.epoch,entry.owner)",HOST)
+        self.assertLess(HOST.index("additionalFxEditors_.clear();"),
+                        HOST.index("closePluginEditor();",HOST.index("void closeAllPluginEditors()")))
+        self.assertIn("std::unique_ptr<PluginEditorWindow> window;",HOST)
+        self.assertIn("JUCE editor",HOST)
+
     def test_all_editor_paths_use_one_host(self):
-        self.assertEqual(HOST.count("std::make_unique<PluginEditorWindow>"),3)
+        self.assertEqual(HOST.count("std::make_unique<PluginEditorWindow>"),4)
         self.assertIn("prepared.processor->getName(),editor,*this)",HOST)
         self.assertIn("owner->processor->getName(),editor,*this)",HOST)
         self.assertIn("processor->getName(), editor, *this",HOST)
