@@ -403,12 +403,27 @@
   const matched=trackId!==undefined&&slot!==undefined?
    windows.filter(item=>item.el.dataset.fxTrackId===String(trackId)&&
      item.el.dataset.fxSlot===String(slot)):[];
-  const focus=(matched.length?matched:windows).at(-1);
+  // Notify the one installed native bridge of the exact insert. Its own
+  // ChannelId/slot/instanceId lease verification decides whether to reopen a
+  // VST3 HWND. The public /preview/ has no native listener or DSP side effect.
+  if(row&&trackId!==undefined&&slot!==undefined)
+   document.dispatchEvent(new CustomEvent('arMixFxRackDoubleClick',{
+    detail:{trackId:String(trackId),slot:Number(slot)}
+   }));
+  // A row must NEVER recenter an unrelated open built-in editor. The header
+  // shortcut may still rescue the top visible modeless editor.
+  const focus=(row?matched:windows).at(-1);
   if(focus)center(focus.el);
  });
  window.ArSonMixFxWorkspace=Object.freeze({
   centerVisible:()=>{const w=visibleEditors();return w.length?
     center(w[w.length-1].el):false;},
-  recenter:center
+  recenter:center,
+  centerInsert:(trackId,slot)=>{
+   const matches=visibleEditors().filter(item=>
+    item.el.dataset.fxTrackId===String(trackId)&&
+    item.el.dataset.fxSlot===String(slot));
+   return matches.length?center(matches.at(-1).el):false;
+  }
  });
 })();
