@@ -47,7 +47,9 @@ public:
     // Only explicit preset changes set an ID. 55ms interpolates changes in
     // gains, with no per-sample coefficient recompute, memory allocation or
     // trigonometry. Silent profile defaults never alter P9.7 float order.
-    Stereo source(float left,float right,int scene,bool enabled) noexcept {
+    // Opt-in ImmerSIB candidate only; other renderers remain byte-identical.
+    Stereo source(float left,float right,int scene,bool enabled,
+                  bool protectPannedSide=false) noexcept {
         const auto target=curves_[enabled && valid(scene)?scene:Neutral];
         for(unsigned i=0;i<gains_.size();++i){
             gains_[i]+=slew_*(target[i]-gains_[i]);
@@ -75,7 +77,11 @@ public:
             return {left,right}; // profiles 0..3: source stays identical
         const float centerBoost=gains_[0]*band+gains_[8]*body;
         const float lateralAir=gains_[7]*(side-sideAirLow_);
-        const float maskedSide=gains_[6]*sideBand+gains_[9]*edge;
+        // A stereo music MASTER already contains artist-approved panning.
+        // Masking SIDE to favor the center can pull guitars/keys inward.
+        const float maskedSide=protectPannedSide &&
+            (scene==ImmerSIBDetail || scene==ImmerSIBImpact)?
+            0.f:gains_[6]*sideBand+gains_[9]*edge;
         return {left+centerBoost-maskedSide+lateralAir,
                 right+centerBoost+maskedSide-lateralAir};
     }

@@ -5,6 +5,12 @@ project(ARMixConsole VERSION 0.5.0 LANGUAGES C CXX)
 # local/research builds default OFF, preserving approved SonKu P9.9 behavior.
 option(ARMIX_IMMERSIB_RELEASE_CANDIDATE
        "Build the integrated ImmerSIB P9.9 audio + JUCE venue UI RC" OFF)
+# FUX-1-based ImmerSIB acoustic revision, intentionally OFF by default.
+option(ARMIX_IMMERSIB_CONCERT_CANDIDATE
+       "Unapproved ImmerSIB stereo/vocal concert listening candidate" OFF)
+if(ARMIX_IMMERSIB_CONCERT_CANDIDATE AND NOT ARMIX_IMMERSIB_RELEASE_CANDIDATE)
+  message(FATAL_ERROR "Concert candidate requires the actual ImmerSIB product")
+endif()
 # Experimental P6 native profile: OFF by default in production/installer.
 option(ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT
        "Enable unqualified SonKu full KEMAR directional reflections on the native JUCE callback"
@@ -520,6 +526,11 @@ target_link_libraries(ARMixConsole PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(ARMixImmerSIBConcertCandidateSourceTests
+      tests/immersib_concert_stereo_candidate_test.cpp)
+  target_compile_features(ARMixImmerSIBConcertCandidateSourceTests PRIVATE cxx_std_20)
+  add_test(NAME ImmerSIBConcertStereoCandidateSource
+      COMMAND ARMixImmerSIBConcertCandidateSourceTests)
   # Pure-C++ P0 audio-continuity gate: display idle must never reset MAIN.
   add_executable(ARMixAudioContinuityPolicyTests tests/audio_continuity_policy_test.cpp)
   target_compile_features(ARMixAudioContinuityPolicyTests PRIVATE cxx_std_20)

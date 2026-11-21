@@ -26,9 +26,15 @@ public:
         reset();
         return true;
     }
+    // Never opt in the original SonKu / alpha.26 decoder implicitly.
+    void enablePanPreservation(bool enabled) noexcept {
+        panPreserving_=enabled;
+        evidencePrimed_=false;
+    }
     void reset() noexcept {
         energyLeft_=energyRight_=cross_=0.f;
-        centerBlend_=1.f; // safe mono on first transient / cold prepare
+        centerBlend_=1.f; // legacy cold-start coherent mono
+        evidencePrimed_=false;
     }
     void observe(float left,float right) noexcept {
         const float l=std::clamp(left,-4.f,4.f);
@@ -42,7 +48,23 @@ public:
         if(energyLeft_>1.e-8f || energyRight_>1.e-8f) {
             const float den=std::sqrt(std::max(energyLeft_*energyRight_,1.e-14f));
             const float rho=std::clamp(cross_/den,-1.f,1.f);
-            const float target=std::clamp((rho-.25f)/.70f,0.f,1.f);
+            float target=std::clamp((rho-.25f)/.70f,0.f,1.f);
+            if(panPreserving_) {
+                // A correlated panned source (L=x,R=0.25x) is NOT
+                // a centered vocalist. Require low difference energy
+                // before projecting music MID into center HRTF.
+                // E[(L-R)^2]/(2*(E[L^2]+E[R^2])) is 0 for true mono.
+                const float total=energyLeft_+energyRight_;
+                const float diff=std::max(0.f,total-2.f*cross_);
+                const float sideShare=diff/(2.f*total+1.e-10f);
+                const float centerPurity=std::clamp(
+                    (.055f-sideShare)/.05f,0.f,1.f);
+                target*=centerPurity;
+                if(!evidencePrimed_) {
+                    centerBlend_=target; // first audible transient
+                    evidencePrimed_=true;
+                }
+            }
             centerBlend_+=smoothAlpha_*(target-centerBlend_);
         }
         return std::clamp(centerBlend_,0.f,1.f);
@@ -63,5 +85,6 @@ public:
 private:
     float evidenceAlpha_=0.f,smoothAlpha_=0.f;
     float energyLeft_=0.f,energyRight_=0.f,cross_=0.f,centerBlend_=1.f;
+    bool panPreserving_=false,evidencePrimed_=false;
 };
 } // namespace armix::sonku::p90
