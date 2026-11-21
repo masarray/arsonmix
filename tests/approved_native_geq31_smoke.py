@@ -106,9 +106,10 @@ def main():
             assert abs(led_box["width"]-100)<.5
             assert knob_y["y"]>=led_box["y"]+led_box["height"]+15
             # Restore one compact glass LCD (not six colored buttons):
-            # knob bottom to dB caption ~9px, caption stays on frequency line.
+            # Image-backed knob has ~10px transparent optical inset;
+            # move the knob down 9px so the VISIBLE rim sits ~10px above dB.
             knob_to_db=caption_box["y"]-(knob_y["y"]+knob_y["height"])
-            assert 7<=knob_to_db<=12, knob_to_db
+            assert -2<=knob_to_db<=2, knob_to_db
             assert panel.locator(".mx-geq31-level-meter").evaluate(
                 "e=>getComputedStyle(e).borderTopWidth")=="1px"
             assert abs(caption_box["y"]-freq_caption["y"])<=4, (

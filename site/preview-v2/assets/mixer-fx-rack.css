@@ -1536,7 +1536,7 @@
 .mx-geq31-unit{font-size:8px}
 .mx-geq31-output{
  position:relative;height:234px;width:100px;min-width:100px;display:flex;
- align-items:center;flex-direction:column;padding:42px 0 0;
+ align-items:center;flex-direction:column;padding:46px 0 0;
 }
 .mx-geq31-output-label{
  color:#344047;font:700 10px Inter,"Segoe UI",Arial,sans-serif;
@@ -1546,7 +1546,7 @@
 .mx-geq31-level-meter{
  display:flex;flex-direction:column;justify-content:center;
  width:100px;min-width:100px;height:31px;min-height:31px;flex:0 0 31px;
- gap:3px;margin:0 0 16px;padding:6px 3px;
+ gap:3px;margin:0 0 21px;padding:6px 3px;
  transform:translateX(-14px);
  border:1px solid #415762;border-radius:3px;
  background:linear-gradient(180deg,#172a33 0%,#08151c 45%,#030a0f 100%);
