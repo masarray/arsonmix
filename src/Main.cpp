@@ -1949,10 +1949,17 @@ private:
             }
         }
         if(!identity||!sameInsert)error="Retained FX instance changed; refresh the rack";
-        else if(retainedOfflineFxActive_&&retainedOfflineEpoch_==epoch&&
-                retainedOfflineRevision_==revision) {
-            // The current logical workspace already contains any committed
-            // offline edits. Never overwrite them with the stale native blob.
+        else if(retainedOfflineFxActive_&&
+                (retainedOfflineEpoch_!=epoch ||
+                 retainedOfflineRevision_!=revision ||
+                 retainedOfflineOwnerEpoch_!=engine_.retainedNativeEpoch())) {
+            // A new disconnected session must not silently replace any
+            // committed .smix offline edits from the previous exact owner.
+            // The operator can explicitly Open/restore the saved session.
+            error="A different retained session is pending offline FX recovery";
+        } else if(retainedOfflineFxActive_) {
+            // Exact same retained owner: reuse the already edited workspace,
+            // NEVER recapture its old native state over newer .smix data.
         } else {
             // Disconnected FX editing is always output-disarmed. A still-armed
             // secondary output is not silently stopped or reconfigured.
