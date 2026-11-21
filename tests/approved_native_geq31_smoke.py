@@ -102,6 +102,21 @@ def main():
             assert panel.locator(".mx-geq31-message").inner_text().startswith("BROWSER PREVIEW")
             panel.locator(".mx-geq31-flat").click()
             assert first.input_value()=="0"
+            # v13 zero detent must allow ONE outbound wheel step, not stick
+            # forever at zero as the old browser snap0 implementation did.
+            panel.locator(".mx-geq31-cell").first.evaluate(
+                "e=>e.dispatchEvent(new WheelEvent('wheel',{deltaY:-100,bubbles:true,cancelable:true}))")
+            assert first.input_value()=="0.5"
+            panel.locator(".mx-geq31-cell").first.evaluate(
+                "e=>e.dispatchEvent(new WheelEvent('wheel',{deltaY:-100,bubbles:true,cancelable:true}))")
+            assert first.input_value()=="1"
+            panel.locator(".mx-geq31-flat").click()
+            knob=panel.locator(".mx-geq31-dial")
+            knob.evaluate(
+                "e=>e.dispatchEvent(new WheelEvent('wheel',{deltaY:-100,bubbles:true,cancelable:true}))")
+            assert panel.locator(".mx-geq31-output-value").inner_text()=="0.5 dB"
+            knob.dblclick()
+            assert panel.locator(".mx-geq31-output-value").inner_text()=="0.0 dB"
             # Same compiled WebView binary uses these exact CSS/JS files;
             # new JS cannot be hand-restyled in a separate native renderer.
             assert (out/"assets/mixer-native-geq31.js").is_file()
