@@ -3249,9 +3249,9 @@
     if(fxSettlement==="CONFIRMED"||fxSettlement==="STALE")
       pendingNativeFxPower=null;
     if(startupWire)window.queueMicrotask(flushStartupWire);
-    status(next.raw?.retainedOfflineFxPending?
-      "Saved offline FX changes pending · Open .smix before enabling output":
-      "Mixer settings updated");
+    if(next.raw?.retainedOfflineFxPending)
+      status("Saved offline FX changes pending · Open .smix before enabling output");
+    else status("Mixer settings updated");
   }
   if (connected) {
     controller = protocol.createController({
