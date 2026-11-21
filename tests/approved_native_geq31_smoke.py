@@ -114,7 +114,7 @@ def main():
             knob=panel.locator(".mx-geq31-dial")
             knob.evaluate(
                 "e=>e.dispatchEvent(new WheelEvent('wheel',{deltaY:-100,bubbles:true,cancelable:true}))")
-            assert panel.locator(".mx-geq31-output-value").inner_text()=="0.5 dB"
+            assert panel.locator(".mx-geq31-output-value").inner_text()=="+0.5 dB"
             knob.dblclick()
             assert panel.locator(".mx-geq31-output-value").inner_text()=="0.0 dB"
             # Same compiled WebView binary uses these exact CSS/JS files;
