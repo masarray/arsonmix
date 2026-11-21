@@ -399,7 +399,7 @@
   // lose their old lease. Graph revisions do NOT identify a new device.
   function nativeLifecycleLease(snapshot,readModelKind) {
     const d=snapshot?.device,epoch=d?.epoch;
-    const kinds=["CHANNEL_ID","M4","NEEDS_REMAP","LOGICAL_ONLY",
+    const kinds=["CHANNEL_ID","M4","NEEDS_REMAP","LOGICAL_ONLY","RETAINED_OFFLINE",
       "UNADMITTED","STALE"];
     const hardwareConfiguration=snapshot?.hardwareConfiguration;
     if(!kinds.includes(readModelKind) ||
@@ -421,7 +421,7 @@
   // never be scheduled from a retained or stale PCM snapshot.
   function nativeTransientReadbackPolicy(kind) {
     return Object.freeze({
-      discardRetained:kind==="NEEDS_REMAP",
+      discardRetained:kind==="NEEDS_REMAP"||kind==="RETAINED_OFFLINE",
       drainM4Sources:kind==="M4"||kind==="UNADMITTED",
       drainNativeSources:kind==="CHANNEL_ID"
     });

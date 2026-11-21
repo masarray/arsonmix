@@ -6,6 +6,7 @@ import copy
 import xml.etree.ElementTree as ET
 import importlib.util
 from pathlib import Path
+from approved_floating_fx_component_harness import project_approved_editor_for_component_smoke
 import tempfile
 from playwright.sync_api import sync_playwright
 from approved_native_wire_gain_smoke import snapshot, emit, ack, SOURCE, RECEIVER
@@ -79,6 +80,7 @@ def main():
                   window.__nativeListeners.set(name,old?
                     payload=>{old(payload);callback(payload);}:callback);}}};""")
             page.goto((out/"index.html").as_uri())
+            project_approved_editor_for_component_smoke(page)
             page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled && window.ArSonMixNativeVocalThrow")
             state=snapshot()
             state["graph"]["capabilities"]["supportedOps"]+=["LOAD_INSERT","REMOVE_INSERT","MOVE_INSERT"]

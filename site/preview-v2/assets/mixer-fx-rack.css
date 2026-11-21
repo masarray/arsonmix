@@ -1480,9 +1480,9 @@
 .mx-geq31-head .mx-geq31-power{
  width:24px;min-width:24px;color:#146954;font-size:17px;
 }
-.mx-geq31-head .mx-geq31-power[data-fx-state=off]{
- color:#697479;background:linear-gradient(#bfc5c6,#e0e2e3);
-}
+/* FX power skin is owned ONLY by mixer-contextual-buttons.css:
+   accepted ON is green, bypassed OFF red, rack-off amber, unavailable grey.
+   Never paint a local pale-grey OFF face over the shared FX state chrome. */
 .mx-geq31-head .mx-geq31-power:disabled{opacity:.55}
 /* Shared Close chrome owns margin-inline-start:auto!important with ID-level
    specificity. Override THAT logical margin, not the weaker physical

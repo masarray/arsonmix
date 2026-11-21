@@ -6,6 +6,7 @@ this is NOT evidence of audio DSP/ASIO performance. DSP is tested by CTest.
 Actual PNGs are rendered by Chromium and uploaded only on successful tests.
 """
 from pathlib import Path
+from approved_floating_fx_component_harness import project_approved_editor_for_component_smoke
 import copy
 import importlib.util
 import tempfile
@@ -113,6 +114,7 @@ def main():
                     ?payload=>{prior(payload);callback(payload);}
                     :callback);}}};""")
             page.goto((out/"index.html").as_uri())
+            project_approved_editor_for_component_smoke(page)
             page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled && window.ArSonMixNativeEq")
             state=snapshot()
             state["graph"]["capabilities"]["supportedOps"]+=["LOAD_INSERT","MOVE_INSERT","REMOVE_INSERT"]
