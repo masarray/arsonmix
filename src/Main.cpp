@@ -835,6 +835,52 @@ private:
     // GlobalMemoryStatusEx load is whole-system RAM pressure, NOT process
     // usage. PROCESS_MEMORY_COUNTERS_EX PageFaultCount includes SOFT faults;
     // a Windows ETW hard-fault trace is needed to prove disk paging.
+    // Windows process CPU over one monotonic 1 Hz interval, as a percentage
+    // of ALL logical CPUs. This is application CPU (UI/VST/engine), NOT an
+    // RT callback usage estimate and NOT total system CPU. The first read,
+    // long suspend intervals and unavailable OS counters are UNKNOWN.
+    std::uint64_t lastFooterCpuTickMs_ = 0;
+    std::uint64_t lastFooterProcessCpu100ns_ = 0;
+    juce::var sampleFooterHostCpuPercent() noexcept
+    {
+#if defined(_WIN32)
+        FILETIME created {}, exited {}, kernel {}, user {};
+        if (::GetProcessTimes (::GetCurrentProcess(), &created, &exited,
+                               &kernel, &user) == FALSE)
+            return {};
+        const auto count = [] (const FILETIME& time) noexcept -> std::uint64_t
+        {
+            return (static_cast<std::uint64_t> (time.dwHighDateTime) << 32)
+                | static_cast<std::uint64_t> (time.dwLowDateTime);
+        };
+        const std::uint64_t now = ::GetTickCount64();
+        const std::uint64_t consumed = count (kernel) + count (user);
+        const auto priorWall = lastFooterCpuTickMs_;
+        const auto priorCpu = lastFooterProcessCpu100ns_;
+        lastFooterCpuTickMs_ = now;
+        lastFooterProcessCpu100ns_ = consumed;
+        if (priorWall == 0 || now <= priorWall ||
+            now - priorWall < 250 || now - priorWall > 5000 ||
+            consumed < priorCpu)
+            return {};
+        static const double logicalCpus = []
+        {
+            SYSTEM_INFO info {};
+            ::GetSystemInfo (&info);
+            return static_cast<double> (
+                juce::jmax (1u, static_cast<unsigned int> (info.dwNumberOfProcessors)));
+        }();
+        const double elapsed100ns = static_cast<double> (now - priorWall) * 10000.0;
+        const double value = 100.0 * static_cast<double> (consumed - priorCpu)
+                             / (elapsed100ns * logicalCpus);
+        return std::isfinite (value)
+            ? juce::var (juce::jlimit (0.0, 100.0, value))
+            : juce::var();
+#else
+        return {};
+#endif
+    }
+
     static armix::diagnostics::CrackleEvidenceWindow::MemoryPressure
         readMemoryPressure() noexcept
     {
@@ -8623,6 +8669,23 @@ private:
             const auto evidence=makeEvidenceSample (state);
             crackleEvidence_.push (evidence);
             diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (makeAudioHealthRecord (state,evidence.memory), true));
+            // UX-1: reuse THIS 1 Hz native status and memory sample, with no
+            // extra timer, audio-thread probe or separate browser event.
+            // Fields exist ONLY on this one 12 Hz arMixStatus snapshot each
+            // second, so WebView updates at most 1 Hz. No fake 0% on failure.
+            auto* health = state.getDynamicObject();
+            health->setProperty ("footerHealthSequence",
+                                 static_cast<int> (timerTicks_ / 12));
+            const auto cpu = sampleFooterHostCpuPercent();
+            if (!cpu.isVoid())
+                health->setProperty ("footerProcessCpuPercent", cpu);
+            if (evidence.memory.processAvailable)
+                health->setProperty ("footerProcessWorkingSetMiB",
+                    static_cast<juce::int64> (evidence.memory.processWorkingSetMiB));
+            health->setProperty ("footerCpuProvenance",
+                "WINDOWS_PROCESS_CPU_ALL_LOGICAL_CORES_1HZ_NOT_AUDIO_CALLBACK_OR_SYSTEM_TOTAL");
+            health->setProperty ("footerRamProvenance",
+                "WINDOWS_PROCESS_WORKING_SET_NOT_AUDIO_BUFFER_ALLOCATION");
         }
         // Guard borrowed VST parameter pointers when a native graph edit,
         // device epoch change or Show recall retires the instance.
