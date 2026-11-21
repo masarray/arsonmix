@@ -1484,12 +1484,16 @@
  color:#697479;background:linear-gradient(#bfc5c6,#e0e2e3);
 }
 .mx-geq31-head .mx-geq31-power:disabled{opacity:.55}
-/* The generic close control consumes an auto margin and formerly shared
-   unused width with the channel label. Reserve one predictable 88px gap
-   AFTER Power; channel's auto margin moves ALL controls left of Close as a
-   group, placing Power above the 20kHz fader on the 1430px hardware panel. */
+/* Shared Close chrome owns margin-inline-start:auto!important with ID-level
+   specificity. Override THAT logical margin, not the weaker physical
+   margin-left shorthand. This gives the channel auto-margin all remaining
+   space and shifts preset, Save, Flat, S/M/L and Power together while the
+   Close stays at the far right. Optical offsets are calibrated against the
+   31st (20kHz) 40px fader at both 1430 and 1680 viewports. */
+#mxNativeGeq31 .mx-geq31-head .mx-geq31-close{
+ margin-inline-start:clamp(87px,calc(100vw - 1343px),102px)!important;
+}
 .mx-geq31-head .mx-geq31-close{
- margin-left:88px;
  width:24px;min-width:24px;color:#f4f8fa;font-size:20px;
  background:linear-gradient(#3e5866,#293e4b);border-color:#607d8c;
  box-shadow:inset 0 1px #ffffff22,0 1px 2px #06131f75;
@@ -1658,7 +1662,7 @@
 }
 @media(max-width:980px){
  /* Narrow viewports cannot reserve the 1430px Power-to-Close spacer. */
- .mx-geq31-head .mx-geq31-close{margin-left:auto}
+ #mxNativeGeq31 .mx-geq31-head .mx-geq31-close{margin-inline-start:auto!important}
  .mx-geq31-meta,.mx-geq31-channel{display:none}
  .mx-geq31-head{gap:6px;padding:0 8px}
  .mx-geq31-head select{max-width:122px;flex-basis:122px}
