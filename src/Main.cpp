@@ -295,7 +295,7 @@ public:
                            const juce::String& catalog,
                            OnIntent onAction,OnIntent onPower,
                            std::function<void()> onReady)
-        : TopLevelWindow(label,true),
+        : TopLevelWindow(label,false),
           mixer_(mixer),
           browser_(webViewOptions().withNativeIntegrationEnabled()
               .withEventListener("arMixFloatingReady",
@@ -342,6 +342,9 @@ public:
                          juce::Rectangle<int>(0,0,1550,930);
         centreWithSize(juce::jlimit(200,juce::jmax(200,area.getWidth()-12),nominal.x),
                        juce::jlimit(100,juce::jmax(100,area.getHeight()-12),nominal.y));
+        // One peer, allocated AFTER the frameless styling and final nominal
+        // bounds. Avoid JUCE 8's first-show peer reconstruction/flash.
+        addToDesktop();
         // Public /preview/ remains the single canonical editor renderer.
         // WebView navigation never opens audio devices or creates PCM.
         browser_.goToURL(juce::WebBrowserComponent::getResourceProviderRoot()+
@@ -353,8 +356,10 @@ public:
     void present(bool recenter=false) {
         recenterAfterInitialPanelSize_=recenter && !hasMeasuredPanel_;
         armix::ui::placeFloatingEditor(*this,mixer_,recenter);
-        if(!isVisible())setVisible(true);
+        // Attach the real HWND owner BEFORE making the peer visible, so
+        // Windows cannot flash a second taskbar/Alt-Tab entry on first open.
         (void)armix::ui::attachOwnedFloatingWindow(*this,mixer_);
+        if(!isVisible())setVisible(true);
         toFront(true);
     }
     void emit(const juce::String& event,const juce::var& payload) {
