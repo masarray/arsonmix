@@ -102,8 +102,12 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("additionalFxEditors_.clear();",HOST)
         self.assertIn("std::erase_if(additionalFxEditors_",HOST)
         self.assertIn("!engine_.retainsRoutedFxEditor(entry.epoch,entry.owner)",HOST)
-        self.assertLess(HOST.index("additionalFxEditors_.clear();"),
-                        HOST.index("closePluginEditor();",HOST.index("void closeAllPluginEditors()")))
+        self.assertLess(HOST.index("closeImmerSIBEditor();",HOST.index("void closeAllPluginEditors()")),
+                        HOST.index("additionalFxEditors_.clear();"))
+        self.assertLess(HOST.index("armix::mixer::LiveChannelFxGraph::InstanceLease owner;",
+            HOST.index("struct AdditionalFxEditor final")),
+            HOST.index("std::unique_ptr<PluginEditorWindow> window;",
+                HOST.index("struct AdditionalFxEditor final")))
         self.assertIn("std::unique_ptr<PluginEditorWindow> window;",HOST)
         self.assertIn("JUCE editor",HOST)
 
