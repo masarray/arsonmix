@@ -103,7 +103,18 @@
       inform("FX identity changed · reopen from FX Rack");return;
     }
     identity=proposed;current=next;
-    if(pending===proposed.catalogId)return;
+    if(pending===proposed.catalogId) {
+      // A repeated rack double-click must re-show the SAME exact editor
+      // after its original Close button hid the DOM/owned HWND. Merely
+      // raising the HWND would show an empty dark panel.
+      const host=window[registry[proposed.catalogId][1]];
+      if(host?.open) {
+        host.open({id:proposed.channelId,nativeId:proposed.channelId,
+          name:next.channel.name||"Channel",slotBypass:[]},proposed.slot);
+        if(banner)banner.hidden=true;
+      }
+      return;
+    }
     pending=proposed.catalogId;
     const request=proposed;
     importEditor(proposed.catalogId).then(host=>{
