@@ -708,7 +708,10 @@ private:
         juce::AudioProcessor* processor=nullptr; // non-owning
         std::unique_ptr<PluginEditorWindow> window;
     };
-    std::vector<AdditionalFxEditor> additionalFxEditors_;
+    // Heap-stable entries avoid std::vector erase/move-assignment releasing
+    // a processor lease before its vendor HWND. Each pointee destroys its
+    // LAST-declared window before its FIRST-declared owner.
+    std::vector<std::unique_ptr<AdditionalFxEditor>> additionalFxEditors_;
     static constexpr std::size_t maxSimultaneousVendorEditors=16;
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     // Persistent modal lease: blocks an Apply/ASIO restart while JUCE's
@@ -6882,13 +6885,13 @@ private:
                     auto& shownProcessor=editorProcessor_;
 #endif
                     std::erase_if(additionalFxEditors_,[this](const auto& extra){
-                        return !extra.owner ||
-                            !engine_.retainsRoutedFxEditor(extra.epoch,extra.owner);
+                        return !extra || !extra->owner ||
+                            !engine_.retainsRoutedFxEditor(extra->epoch,extra->owner);
                     });
                     const auto extra=std::find_if(additionalFxEditors_.begin(),
                         additionalFxEditors_.end(),[&](const auto& entry){
-                        return entry.owner==owner &&
-                            entry.processor==owner->processor.get();
+                        return entry && entry->owner==owner &&
+                            entry->processor==owner->processor.get();
                     });
                     // Only a DIFFERENT vendor owner may occupy an additional
                     // HWND. Allow one existing primary owner plus 16 others.
@@ -6911,11 +6914,11 @@ private:
                     } else if(extra!=additionalFxEditors_.end()) {
                         // Instance owner is re-leased by the current graph;
                         // channel and slot can move, but never clone its UI.
-                        extra->epoch=retainedEpoch;
-                        extra->channel=nativeChannel;
-                        extra->lane=lane;extra->slot=slot;
-                        extra->instanceId=token;
-                        extra->window->present(static_cast<bool>(
+                        (*extra)->epoch=retainedEpoch;
+                        (*extra)->channel=nativeChannel;
+                        (*extra)->lane=lane;(*extra)->slot=slot;
+                        (*extra)->instanceId=token;
+                        (*extra)->window->present(static_cast<bool>(
                             args.getProperty("recenter",false)));
                         opened=true;
                         error.clear();
@@ -7122,15 +7125,15 @@ private:
                                     });
                             }
                             if(keepOtherVendorWindow) {
-                                AdditionalFxEditor entry;
-                                entry.owner=owner;entry.epoch=retainedEpoch;
-                                entry.channel=nativeChannel;entry.lane=lane;
-                                entry.slot=slot;entry.instanceId=token;
-                                entry.processor=owner->processor.get();
-                                entry.window=std::make_unique<PluginEditorWindow>(
+                                auto entry=std::make_unique<AdditionalFxEditor>();
+                                entry->owner=owner;entry->epoch=retainedEpoch;
+                                entry->channel=nativeChannel;entry->lane=lane;
+                                entry->slot=slot;entry->instanceId=token;
+                                entry->processor=owner->processor.get();
+                                entry->window=std::make_unique<PluginEditorWindow>(
                                     owner->processor->getName(),editor,*this);
                                 if(static_cast<bool>(args.getProperty("recenter",false)))
-                                    entry.window->present(true);
+                                    entry->window->present(true);
                                 additionalFxEditors_.push_back(std::move(entry));
                             } else {
                                 shownOwner=owner;
@@ -8933,8 +8936,8 @@ private:
         // Reclaim every retired vendor HWND before the respective FX lease.
         // This is message-thread O(open editors), never PCM callback work.
         std::erase_if(additionalFxEditors_,[this](const auto& entry){
-            return !entry.owner ||
-                !engine_.retainsRoutedFxEditor(entry.epoch,entry.owner);
+            return !entry || !entry->owner ||
+                !engine_.retainsRoutedFxEditor(entry->epoch,entry->owner);
         });
 #if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
         if(immersibEditorOwner_ &&
