@@ -212,6 +212,15 @@ class Browser final : public juce::WebBrowserComponent
 public:
     explicit Browser (Options options) : WebBrowserComponent (std::move (options)) {}
     bool loaded = false;
+    // Fan out ONLY native editor ACK/readback to owned FX WebViews; the
+    // canonical mixer remains the single control publisher. A method-level
+    // relay avoids duplicating 20+ existing DSP event sources.
+    std::function<void(const juce::String&,const juce::var&)> onNativeEvent;
+    void emitEventIfBrowserIsVisible(const juce::String& event,
+                                     const juce::var& payload) {
+        juce::WebBrowserComponent::emitEventIfBrowserIsVisible(event,payload);
+        if(onNativeEvent)onNativeEvent(event,payload);
+    }
     // Paint a lightweight native first-frame while WebView2 spins up. This is
     // entirely static JUCE graphics, not an overlay CSS compositor or timer.
     // The embedded browser owns the content as soon as its authenticated
@@ -270,6 +279,71 @@ public:
     void closeButtonPressed() override { setVisible (false); }
 private:
     juce::Component& mixer_; // ConsoleWindow outlives all editor windows.
+};
+
+// A real Windows/macOS owned desktop window. The sole /preview/ asset pack
+// supplies the built-in FX drawing and JS controls; ONLY this tiny WebView
+// draws the editor, not another mixer or any second DSP/PCM callback.
+class BuiltinFxDesktopWindow final : public juce::DocumentWindow {
+public:
+    using OnIntent=std::function<void(juce::var)>;
+    BuiltinFxDesktopWindow(juce::Component& mixer,const juce::String& label,
+                           OnIntent onAction,OnIntent onPower,
+                           std::function<void()> onReady)
+        : DocumentWindow(label,juce::Colour(0xff101921),allButtons),
+          mixer_(mixer),
+          browser_(webViewOptions().withNativeIntegrationEnabled()
+              .withEventListener("arMixFloatingReady",
+                  [this,ready=std::move(onReady)](juce::var message){
+                      if(message.getProperty("gui","").toString()!=
+                         "APPROVED_PAGES_NATIVE_FX_WINDOW_V1")return;
+                      browser_.loaded=true;
+                      if(ready)ready();
+                  })
+              .withEventListener("arMixAction",
+                  [intent=std::move(onAction)](juce::var request){
+                      if(intent)intent(std::move(request));
+                  })
+              .withEventListener("arMixFloatingPower",
+                  [power=std::move(onPower)](juce::var request){
+                      if(power)power(std::move(request));
+                  })
+              .withEventListener("arMixFloatingHide",[this](juce::var){
+                  setVisible(false);
+              })
+              .withResourceProvider(assetFor)) {
+        setUsingNativeTitleBar(true);
+        setIcon(approvedAppIcon());
+        setResizable(true,false);
+        setResizeLimits(440,280,1980,1180);
+        setContentNonOwned(&browser_,false);
+        const auto* display=juce::Desktop::getInstance().getDisplays()
+                                 .getDisplayForRect(mixer.getBounds());
+        const auto area=display?display->userArea:
+                         juce::Rectangle<int>(0,0,1550,930);
+        centreWithSize(juce::jlimit(440,1500,area.getWidth()-24),
+                       juce::jlimit(280,520,area.getHeight()-24));
+        // Start the WebView navigation without touching the audio device.
+        // The approved root /index.html still belongs to the MIXER only.
+        browser_.goToURL(juce::WebBrowserComponent::getResourceProviderRoot()+
+                         "fx-window.html");
+    }
+    void present(bool recenter=false) {
+        if(isMinimised())setMinimised(false);
+        armix::ui::placeFloatingEditor(*this,mixer_,recenter);
+        if(!isVisible())setVisible(true);
+        (void)armix::ui::attachOwnedFloatingWindow(*this,mixer_);
+        toFront(true);
+    }
+    void emit(const juce::String& event,const juce::var& payload){
+        if(browser_.loaded && isVisible())
+            browser_.emitEventIfBrowserIsVisible(event,payload);
+    }
+    bool ready()const noexcept{return browser_.loaded;}
+    void closeButtonPressed()override {setVisible(false);}
+private:
+    juce::Component& mixer_;
+    Browser browser_;
 };
 
 class AudioSetupWindow final : public juce::DocumentWindow
