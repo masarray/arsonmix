@@ -317,7 +317,7 @@ def main():
         assert hp.locator(".mx-geq31-dial canvas").count()==0
         assert hp.locator(".mx-geq31-knob-image").evaluate(
             "e=>e.naturalWidth===192&&e.naturalHeight===192")
-        png=hi.screenshot(path="arsonmix-geq31-hidpi-vector-2x-1680.png")
+        png=hi.screenshot(path="arsonmix-geq31-one-webview-hidpi-vector-2x-1680.png")
         assert png[:8]==b"\x89PNG\r\n\x1a\n"
         assert int.from_bytes(png[16:20],"big")==3360
         assert int.from_bytes(png[20:24],"big")==1300
