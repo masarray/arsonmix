@@ -1196,10 +1196,11 @@ private:
 #endif
     }
     void closeAllPluginEditors() noexcept {
-        // Top-level HWND first, exact held processor last, never on RT.
-        additionalFxEditors_.clear();
         closePluginEditor();
         closeImmerSIBEditor();
+        // Each additional window's own destructor releases JUCE UI before
+        // its vendor lease, all on the native message thread.
+        additionalFxEditors_.clear();
     }
 
     void emitChain()
@@ -7006,7 +7007,7 @@ private:
                                 shownWindow=std::make_unique<PluginEditorWindow>(
                                     owner->processor->getName(),editor,*this);
                                 if(static_cast<bool>(args.getProperty("recenter",false)))
-                                    shownWindow->present(true);
+                                    shownWindow->present(true); // new HWND: centre on mixer too
                                 shownProcessor=owner->processor.get();
                             }
                             opened=true;
