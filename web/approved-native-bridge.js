@@ -4086,9 +4086,13 @@
         projected:flags.acceptedGraphConnected,
         pending:!!controller?.state()?.pending}).kind==="AVAILABLE";
     },
-    consumeNativeWireReplug(sourceId,oldDestId,nextDestId,releasePoint) {
-      const edge=scope?.wireEdges?.find(e=>e.enabled &&
-        e.sourceId===sourceId && e.destId===oldDestId);
+    consumeNativeWireReplug(sourceId,oldDestId,nextDestId,releasePoint,movingEdgeId) {
+      // Only the exact wire the operator actually grabbed is admissible.
+      // Multiple parallel sends may share FROM/TO; never remove the first
+      // matching destination or accidentally alter a different EdgeId.
+      const edge=Number.isInteger(movingEdgeId)?
+        scope?.wireEdges?.find(e=>e.id===movingEdgeId && e.enabled &&
+          e.sourceId===sourceId && e.destId===oldDestId):null;
       if(!connected||!edge||nextDestId===oldDestId)return false;
       const uiSource=Number(sourceId);
       const nativeSource=nativeByUiId.get(uiSource);

@@ -223,13 +223,23 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn('("function replugWireEdge(sourceId,oldDestId,nextDestId){',builder)
         self.assertIn("consumeNativeWireReplug?.(",builder)
         self.assertIn("animateAcceptedWireRetract:startWireRetraction",builder)
-        self.assertIn("consumeNativeWireReplug(sourceId,oldDestId,nextDestId,releasePoint)",bridge)
+        self.assertIn("consumeNativeWireReplug(sourceId,oldDestId,nextDestId,releasePoint,movingEdgeId)",bridge)
+        self.assertIn("g.movingEdgeId)){",html)
+        self.assertIn("releasePoint!==undefined",builder)
+        self.assertIn("Workspace Remove (no pointer) continues into native wireGraphCommit",builder)
+        self.assertIn("e.id===movingEdgeId && e.enabled",bridge)
+        self.assertNotIn("scope?.wireEdges?.find(e=>e.enabled &&\n        e.sourceId===sourceId",bridge)
         self.assertIn("pendingNativeWireRetract=removal?",bridge)
         self.assertIn("pendingNativeWireRetract=null; // rejected routing must never reel",bridge)
         self.assertIn('change.op==="REMOVE"',bridge)
         self.assertIn('change.op==="DISCONNECT"',bridge)
         self.assertIn("scope?.animateAcceptedWireRetract?.(held.uiSource,held.point)",bridge)
         self.assertIn("return false; // Native ACK+readback, NEVER the browser reducer",bridge)
+        import subprocess
+        # Execute the real bridge method in bounded Node, not just strings.
+        done=subprocess.run(["node",str(ROOT/"tests/native_wire_replug_identity_node_test.js")],
+                            capture_output=True,text=True,timeout=15)
+        self.assertEqual(done.returncode,0,done.stdout+"\n"+done.stderr)
 
     def test_all_six_builtins_escape_mixer_via_actual_native_owned_webview(self):
         script=(ROOT/"web/approved-floating-fx-bridge.js").read_text(encoding="utf-8")

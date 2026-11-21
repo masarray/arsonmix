@@ -84,12 +84,13 @@ NATIVE_EVENT_HOOKS = (
      " if(type==='output'&&window.__JUCE__?.backend)\n"
      "  return window.__ARMIX_NATIVE_M2__?.outputChoices?.(t)||[t.output];\n"),
     ("function replugWireEdge(sourceId,oldDestId,nextDestId){\n",
-     "function replugWireEdge(sourceId,oldDestId,nextDestId,releasePoint){\n"
-     " if(window.__JUCE__?.backend){\n"
+     "function replugWireEdge(sourceId,oldDestId,nextDestId,releasePoint,movingEdgeId){\n"
+     " if(window.__JUCE__?.backend && releasePoint!==undefined){\n"
      "  window.__ARMIX_NATIVE_M2__?.consumeNativeWireReplug?.("
-     "sourceId,oldDestId,nextDestId,releasePoint);\n"
-     "  return false; // Routing is not committed until native ACK+readback.\n"
-     " }\n"),
+     "sourceId,oldDestId,nextDestId,releasePoint,movingEdgeId);\n"
+     "  return false; // Gesture: native ACK+readback, never demo mutation.\n"
+     " }\n"
+     " // Workspace Remove (no pointer) continues into native wireGraphCommit.\n"),
     ("function wireGraphCommit(ops,{record=true}={}){\n",
      "function wireGraphCommit(ops,{record=true}={}){\n"
      " if(window.__JUCE__?.backend){window.__ARMIX_NATIVE_M2__?.consumeWire?.(ops);return false;}\n"),

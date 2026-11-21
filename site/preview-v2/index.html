@@ -2280,7 +2280,7 @@ function finishFaderPointer(ev){
     }else{
      const before=wireWsSnapshot();
      if(replugWireEdge(g.sourceId,g.originDestId,snap?.track.id??null,
-       {x:ev.clientX,y:ev.clientY})){
+       {x:ev.clientX,y:ev.clientY},g.movingEdgeId)){
       wireWsRecord(before);
       if(!snap){
        selectedWireEdgeId=null;
