@@ -28,7 +28,10 @@
   // Owner-corrected FUX-1: built-in FX are ORIGINAL /preview/ overlays
   // clipped by this mixer's ONE WebView2 viewport, never separate JUCE HWNDs.
   // Their audio, controls, .smix, ACK/readback still use the existing owner.
-  const inlineFxClip=connected?(()=>{
+  const inlineFxClip=connected &&
+    typeof document.createElement==="function" &&
+    typeof document.head?.appendChild==="function" &&
+    typeof document.addEventListener==="function"?(()=>{
     const selectors=Object.freeze({
       ArSonMixNativeEq:"#mxNativePeq",
       ArSonMixNativeCompressor:"#mxNativeComp",
@@ -4102,8 +4105,9 @@
               const view=activeView();
               const safe=fxRackVM.editorNavigationLeaseMatches(view,editor,{
                 hardwareConfiguration:protocol.nativeHardwareConfiguration(view?.device)});
+              const host=window[surface.windowKey];
               if(!safe||!inlineFxClip?.openExact(
-                 window[surface.windowKey],surface.windowKey,t,slot,recenter))
+                 host,surface.windowKey,t,slot,recenter))
                 nativeToast("Built-in FX changed · reopen current FX Rack");
             }else if(surface.kind==="LOGICAL_VENDOR"){
               backend.emitEvent("arMixAction",{action:"logicalVendorFxEditor",

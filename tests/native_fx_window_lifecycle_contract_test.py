@@ -291,7 +291,8 @@ class NativeFxWindowLifecycle(unittest.TestCase):
 
     def test_inline_fx_clip_single_native_webview_and_exact_instance(self):
         bridge=(ROOT/"web/approved-native-bridge.js").read_text(encoding="utf-8")
-        self.assertIn("const inlineFxClip=connected?(()=>{",bridge)
+        self.assertIn('const inlineFxClip=connected &&',bridge)
+        self.assertIn('typeof document.createElement==="function"',bridge)
         self.assertIn("width:1430px!important;min-width:1430px!important",bridge)
         self.assertIn('root.style.setProperty("translate",next.x+',bridge)
         self.assertIn("fxRackVM.editorNavigationLeaseMatches(view,editor",bridge)
