@@ -173,11 +173,37 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("save.secondaryArmed=true;",unit)
         self.assertIn("save.workerBusy=true;",unit)
 
+    def test_borderless_single_surface_fx_and_os_window_drag(self):
+        script=(ROOT/"web/approved-floating-fx-bridge.js").read_text(encoding="utf-8")
+        block=HOST.split("class BuiltinFxDesktopWindow final :",1)[1].split(
+            "class AudioSetupWindow final",1)[0]
+        self.assertIn("public juce::TopLevelWindow",block)
+        self.assertIn("setUsingNativeTitleBar(false)",block)
+        self.assertIn("addAndMakeVisible(browser_)",block)
+        self.assertIn("browser_.setBounds(getLocalBounds())",block)
+        self.assertNotIn("setTitleBarButtonsRequired",block)
+        self.assertNotIn("setContentNonOwned",block)
+        self.assertNotIn("setResizable(",block)
+        self.assertNotIn("juce::DocumentWindow",block)
+        self.assertIn("catalog==\"armix.builtin.graphic-eq31.v1\"",block)
+        self.assertIn("juce::Point<int>(1430,280)",block)
+        self.assertIn("WM_NCLBUTTONDOWN,HTCAPTION",block)
+        self.assertIn("::PostMessageW(",block)
+        self.assertIn("requestedW);",block)
+        self.assertIn("requestedH);",block)
+        self.assertNotIn("requestedH+50",block)
+        self.assertNotIn("requestedW+16",block)
+        self.assertIn("arMixFloatingDrag",block)
+        self.assertIn('document.addEventListener("pointerdown"',script)
+        self.assertIn('backend.emitEvent("arMixFloatingDrag",{})',script)
+        self.assertIn('event.stopImmediatePropagation()',script)
+        self.assertIn("lastGeometry=geometry;",script)
+
     def test_all_six_builtins_escape_mixer_via_actual_native_owned_webview(self):
         script=(ROOT/"web/approved-floating-fx-bridge.js").read_text(encoding="utf-8")
         builder=(ROOT/"scripts/build_approved_native_gui.py").read_text(encoding="utf-8")
         cmake=(ROOT/"CMakeLists.txt").read_text(encoding="utf-8")
-        self.assertIn("class BuiltinFxDesktopWindow final : public juce::DocumentWindow",HOST)
+        self.assertIn("class BuiltinFxDesktopWindow final : public juce::TopLevelWindow",HOST)
         self.assertIn("withResourceProvider(assetFor)",HOST)
         self.assertIn("getResourceProviderRoot()+",HOST)
         self.assertIn('"fx-window.html"',HOST)

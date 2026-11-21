@@ -23,6 +23,20 @@
   let current=null,identity=null,busyLoad=null,pending=null;
   const banner=document.getElementById("fxWindowStatus");
   const inform=message=>{if(banner)banner.textContent=message;};
+  // This bridge exists only inside the native owned FX WebView2. A panel
+  // header grabs the REAL HWND through Windows system-move, never an inner
+  // CSS card. Preserve every original preset, Power, S/M/L and Close click.
+  // Document capture beats each original editor's DOM drag listener.
+  const dragHeaders=".mx-peq-title,.mx-comp-head,.mx-geq31-head,"+
+    ".mx-harm-head,.vt-face-header,.sk-head";
+  document.addEventListener("pointerdown",event=>{
+    if(event.button!==0||!event.isTrusted)return;
+    const head=event.target.closest?.(dragHeaders);
+    if(!head||event.target.closest?.("button,select,input,textarea,a,[role=slider]"))return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    backend.emitEvent("arMixFloatingDrag",{});
+  },true);
   const same=(a,b)=>String(a)===String(b);
   function project(snapshot,expected) {
     const next=protocol.normalizeSnapshot(snapshot);
@@ -140,12 +154,16 @@
       if(banner)banner.hidden=true;
       // Size the real desktop HWND to the ORIGINAL FX hardware panel, not a
       // generic oversized mixer card. GEQ31 S/M/L updates the same HWND.
+      let lastGeometry="";
       const measure=()=>{
         if(identity!==request||root.hidden)return;
         const rect=root.getBoundingClientRect();
-        if(rect.width>=200&&rect.height>=100)
-          backend.emitEvent("arMixFloatingSize",{
-            width:Math.ceil(rect.width),height:Math.ceil(rect.height)});
+        if(rect.width<200||rect.height<100)return;
+        const width=Math.ceil(rect.width),height=Math.ceil(rect.height);
+        const geometry=width+":"+height;
+        if(geometry===lastGeometry)return; // no HWND/ResizeObserver feedback
+        lastGeometry=geometry;
+        backend.emitEvent("arMixFloatingSize",{width,height});
       };
       requestAnimationFrame(()=>requestAnimationFrame(measure));
       if(typeof ResizeObserver==="function")

@@ -284,13 +284,18 @@ private:
 // A real Windows/macOS owned desktop window. The sole /preview/ asset pack
 // supplies the built-in FX drawing and JS controls; ONLY this tiny WebView
 // draws the editor, not another mixer or any second DSP/PCM callback.
-class BuiltinFxDesktopWindow final : public juce::DocumentWindow {
+// FUX-1 UX correction: the floating FX is ONE real OS-owned top-level HWND,
+// but there is NO JUCE DocumentWindow titlebar, frame or extra Close key.
+// The WebView2 content IS the complete approved /preview/ hardware editor.
+// No duplicate mixer UI/PCM and no CSS fake window clipped to the mixer.
+class BuiltinFxDesktopWindow final : public juce::TopLevelWindow {
 public:
     using OnIntent=std::function<void(juce::var)>;
     BuiltinFxDesktopWindow(juce::Component& mixer,const juce::String& label,
+                           const juce::String& catalog,
                            OnIntent onAction,OnIntent onPower,
                            std::function<void()> onReady)
-        : DocumentWindow(label,juce::Colour(0xff101921),allButtons),
+        : TopLevelWindow(label,true),
           mixer_(mixer),
           browser_(webViewOptions().withNativeIntegrationEnabled()
               .withEventListener("arMixFloatingReady",
@@ -309,64 +314,71 @@ public:
                       if(power)power(std::move(request));
                   })
               .withEventListener("arMixFloatingHide",[this](juce::var){
-                  setVisible(false);
+                  setVisible(false); // ONLY the approved editor's Close button
+              })
+              .withEventListener("arMixFloatingDrag",[this](juce::var){
+                  startDesktopDrag(); // native OS drag, not a DOM card move
               })
               .withEventListener("arMixFloatingSize",[this](juce::var size){
                   resizeToPanel(size);
               })
               .withResourceProvider(assetFor)) {
-        setUsingNativeTitleBar(true);
-        setIcon(approvedAppIcon());
-        setResizable(true,false);
-        setResizeLimits(440,280,1980,1180);
-        setContentNonOwned(&browser_,false);
+        setUsingNativeTitleBar(false); // no Windows caption, no double Close
+        setOpaque(true);
+        addAndMakeVisible(browser_);   // no DocumentWindow content border
+        // Hardware editor's real dimensions are known BEFORE its first
+        // WebView navigation: never reveal a 1500x520 placeholder that
+        // subsequently collapses during WebView2 first paint.
+        const juce::Point<int> nominal=
+            catalog=="armix.builtin.graphic-eq31.v1"?juce::Point<int>(1430,280):
+            catalog=="armix.builtin.channel-eq.v1"?juce::Point<int>(850,500):
+            catalog=="armix.builtin.channel-compressor.v1"?juce::Point<int>(760,530):
+            catalog=="armix.builtin.arson-harmony.v1"?juce::Point<int>(1080,610):
+            catalog=="armix.builtin.vocal-throw.v1"?juce::Point<int>(1020,450):
+            juce::Point<int>(1080,640);
         const auto* display=juce::Desktop::getInstance().getDisplays()
-                                 .getDisplayForRect(mixer.getBounds());
+                                 .getDisplayForRect(mixer.getScreenBounds());
         const auto area=display?display->userArea:
                          juce::Rectangle<int>(0,0,1550,930);
-        centreWithSize(juce::jlimit(440,1500,area.getWidth()-24),
-                       juce::jlimit(280,520,area.getHeight()-24));
-        // Start the WebView navigation without touching the audio device.
-        // The approved root /index.html still belongs to the MIXER only.
+        centreWithSize(juce::jlimit(200,juce::jmax(200,area.getWidth()-12),nominal.x),
+                       juce::jlimit(100,juce::jmax(100,area.getHeight()-12),nominal.y));
+        // Public /preview/ remains the single canonical editor renderer.
+        // WebView navigation never opens audio devices or creates PCM.
         browser_.goToURL(juce::WebBrowserComponent::getResourceProviderRoot()+
                          "fx-window.html");
     }
+    void resized() override {
+        browser_.setBounds(getLocalBounds()); // exact edge-to-edge WebView2
+    }
     void present(bool recenter=false) {
-        if(isMinimised())setMinimised(false);
-        // On FIRST open the JS editor has not measured its real panel yet.
-        // Centre again exactly once after native HWND sizing, otherwise the
-        // initial 1500x520 placeholder shifts GEQ/PEQ from the mixer centre.
-        // Reopening a READY window recentres immediately and never hijacks
-        // the user's later S/M/L resize or manual desktop placement.
         recenterAfterInitialPanelSize_=recenter && !hasMeasuredPanel_;
         armix::ui::placeFloatingEditor(*this,mixer_,recenter);
         if(!isVisible())setVisible(true);
         (void)armix::ui::attachOwnedFloatingWindow(*this,mixer_);
         toFront(true);
     }
-    void emit(const juce::String& event,const juce::var& payload){
+    void emit(const juce::String& event,const juce::var& payload) {
         if(browser_.loaded && isVisible())
             browser_.emitEventIfBrowserIsVisible(event,payload);
     }
     void resizeToPanel(const juce::var& size) {
         const auto w=size.getProperty("width",{}),h=size.getProperty("height",{});
-        if(!w.isInt()||!h.isInt())return; // no floating-point/NaN geometry
+        if(!w.isInt()||!h.isInt())return;
         const int requestedW=static_cast<int>(w),requestedH=static_cast<int>(h);
         if(requestedW<200||requestedW>4000||requestedH<100||requestedH>2600)return;
         const auto* display=juce::Desktop::getInstance().getDisplays()
-                                 .getDisplayForRect(getBounds());
+                                 .getDisplayForRect(getScreenBounds());
         const auto area=display?display->userArea:
                          juce::Rectangle<int>(0,0,1550,930);
-        const int width=juce::jlimit(440,juce::jmax(440,area.getWidth()-24),
-                                    requestedW+16);
-        const int height=juce::jlimit(280,juce::jmax(280,area.getHeight()-24),
-                                     requestedH+50);
-        // Avoid a browser resize feedback loop; never recenter on a normal
-        // parameter gesture, only on an explicit FX Rack double-click.
+        // No +16px body gutter, +50px fake titlebar or JUCE content border.
+        // Deduplication keeps WebView2 ResizeObserver from jittering a peer
+        // already at its accepted pixel geometry (including GEQ S/M/L).
+        const int width=juce::jlimit(200,juce::jmax(200,area.getWidth()-12),requestedW);
+        const int height=juce::jlimit(100,juce::jmax(100,area.getHeight()-12),requestedH);
         const bool firstPlacement=recenterAfterInitialPanelSize_;
         recenterAfterInitialPanelSize_=false;
         hasMeasuredPanel_=true;
-        if(std::abs(getWidth()-width)>8 || std::abs(getHeight()-height)>8) {
+        if(std::abs(getWidth()-width)>2 || std::abs(getHeight()-height)>2) {
             setSize(width,height);
             armix::ui::placeFloatingEditor(*this,mixer_,firstPlacement);
         } else if(firstPlacement) {
@@ -374,12 +386,29 @@ public:
         }
     }
     bool ready()const noexcept{return browser_.loaded;}
-    void closeButtonPressed()override {setVisible(false);}
 private:
+    void startDesktopDrag() {
+#if defined(_WIN32)
+        // Real Windows system-move supports snap and crossing monitor edges.
+        // WebView2's original header gesture is consumed in the native-only
+        // bridge before its demo DOM-card drag handler can run.
+        if(auto* peer=getPeer()) {
+            const auto hwnd=static_cast<HWND>(peer->getNativeHandle());
+            if(hwnd && ::IsWindow(hwnd)) {
+                POINT cursor{};
+                if(::GetCursorPos(&cursor)) {
+                    ::ReleaseCapture();
+                    ::PostMessageW(hwnd,WM_NCLBUTTONDOWN,HTCAPTION,
+                        MAKELPARAM(cursor.x,cursor.y));
+                }
+            }
+        }
+#endif
+    }
     juce::Component& mixer_;
     Browser browser_;
-    bool recenterAfterInitialPanelSize_=false; // UI thread, first measure only
-    bool hasMeasuredPanel_=false; // page-ready is NOT panel-measured
+    bool recenterAfterInitialPanelSize_=false;
+    bool hasMeasuredPanel_=false;
 };
 
 class AudioSetupWindow final : public juce::DocumentWindow
@@ -1558,7 +1587,7 @@ private:
                 safe->emitFloatingBuiltinOpen(*ref);
         };
         owned->window=std::make_unique<BuiltinFxDesktopWindow>(
-            *this,"ArSonMix FX · "+catalog,std::move(onAction),
+            *this,"ArSonMix FX · "+catalog,catalog,std::move(onAction),
             std::move(onPower),std::move(ready));
         floatingBuiltinFx_.push_back(std::move(owned));
         floatingBuiltinFx_.back()->window->present(true); // first open centred
