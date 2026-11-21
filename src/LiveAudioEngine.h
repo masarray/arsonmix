@@ -1684,13 +1684,22 @@ public:
     juce::String captureNativeMixerSession(
             armix::session::MixerSessionDocument& document,
             std::vector<armix::shows::BinaryState>& states,bool retained=false) {
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        const bool deviceOpen=device && device->isOpen();
+        // FX-only offline recovery: a retained graph is allowed to SNAPSHOT
+        // vendor state after its device has disappeared. It never publishes
+        // PCM, reopens hardware or authorizes output. A live callback still
+        // requires DIRECT authorization and the original safety fence.
+        const bool disconnectedRetained=retained && !deviceOpen &&
+            dryRoutingLab_.hasRetainedNativeSession() &&
+            static_cast<bool>(acceptedMixerBinding_);
         if(!allOutputsDisarmed()||independent_.active()||
-           !directFence_.permitted()||
+           (!directFence_.permitted()&&!disconnectedRetained)||
            routeReconfiguring_.load(std::memory_order_acquire)||
            handoff_.busy()||fxMovePhase_.load(std::memory_order_acquire)!=0)
             return "MUTE MAIN/STREAM and finish FX handoff before session save";
-        auto* device=deviceManager_.getCurrentAudioDevice();
-        if(!device||!device->isOpen())return "Audio device unavailable for session capture";
+        if(!deviceOpen&&!disconnectedRetained)
+            return "Audio device unavailable for session capture";
         if(retained && !acceptedMixerBinding_)
             return "Retained mixer device identity unavailable";
         auto error=dryRoutingLab_.captureNativeMixerSession(document,states,retained);
