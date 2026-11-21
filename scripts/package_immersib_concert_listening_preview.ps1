@@ -53,42 +53,54 @@ try {
 } finally {$stream.Dispose()}
 if(Test-Path -LiteralPath $OutputDir){throw "IMMERSIB_AB_STALE_PACKAGE_DIR"}
 New-Item -ItemType Directory -Path $OutputDir | Out-Null
-$name="ArSonMix-ImmerSIB-FUX1-Listening-Windows-x64.exe"
+$name="ArSonMix-ImmerSIB-V5-Stage-Front-Windows-x64.exe"
 $dest=Join-Path $OutputDir $name
 Copy-Item -LiteralPath $exe -Destination $dest
 "ARSONMIX_PORTABLE_WORKSPACE_V1" | Set-Content -LiteralPath (Join-Path $OutputDir "portable_mode.txt") -Encoding UTF8
 Copy-Item -LiteralPath "docs/FIRST_SOUND_FAT_QUICKSTART_20261101.md" -Destination (Join-Path $OutputDir "HARDWARE_FAT_GUIDE.md")
 Copy-Item -LiteralPath "installer/ArSonMixStartupDiagnostics.ps1" -Destination $OutputDir
 @'
-# ImmerSIB stereo + vocal (FUX-1) — EXPERIMENTAL LISTENING BUILD
+# ArSonMix ImmerSIB v5 — stage-front / 3D concert, EXPERIMENTAL A/B
 
-Portable Windows x64 test build. NOT a stable installer, release, or hardware/ASIO certification.
-Do not overwrite your installed ArSonMix application or production workspace.
-**Backup your .smix / Studio session before first launch.**
+Portable Windows x64 KHUSUS uji listening, BUKAN installer/rilis stabil.
+Ekstrak dalam folder baru. Backup .smix dan sesi Studio lebih dahulu.
+Jangan menimpa instalasi ArSonMix produksi.
 
-Changes (only for ImmerSIB): P90 preserves correlated panned left/right
-instruments; P98 restores 2–4 kHz SIDE in Detail/Impact; P99 reduces masking
-of center LATE hall at ~1 and ~5 kHz. Existing bass, physical KEMAR sources,
-room scenes, large 104–134 degree speaker spans, .smix schema and FUX-1 GUI remain.
+Yang benar-benar berubah pada v5:
+- P90: pertahankan phantom-center v4 yang telah terdengar lebih hadir di depan.
+- P94: untuk dua virtual loudspeaker stereo L/R pada sudut panggung
+  104–134 derajat, hitung DIRECT-vs-EARLY dari arah KEDUA speaker,
+  bukan menganggap semua materi berasal dari satu speaker di sudut 0.
+- Pada Live Concert 112 derajat (L=-56, R=+56), pengali P94 EARLY
+  kira-kira 1.027 vs 1.280 pada v4, dengan direct lebih mendekati unity.
+  Ini bukan EQ 1–3 kHz dan BUKAN pengurangan global semua reverb.
+- P98 dan P99: kembali ke source tonal main/alpha.31 yang disetujui.
+  Tidak ada dynamic high-mid EQ/350Hz boost tambahan dari v2/v3.
+- Sudut speaker, bass, 6-surface floor/ceiling, FDN late hall, GUI FUX-1,
+  IMRS/.smix, ASIO primary dan satu render PCM tetap sama.
 
-A/B procedure: listen on headphones at matched loudness to the same finished
-L/R stereo songs as your known-good alpha.26/FUX-1 installation. Compare:
-1. Center vocal body 200–300 Hz, presence ~1 kHz, articulation ~5 kHz.
-2. Panned guitars/keyboard left/right vs center drift.
-3. Bass punch, full 3D hall, reverb tail, cymbals and sibilance.
-4. Mono fold, loud vs soft music, several approved concert presets.
-Stop the test if any regression, distortion or unsafe monitoring occurs.
-Record preset, song characteristics and whether old/new is preferred.
+Cara membandingkan (headphone, kerasnya disamakan):
+1. Gunakan lagu stereo L/R jadi yang sama dan preset konser yang sama.
+2. Bandingkan dengan v4 artifact/alpha.31 yang sebelumnya Anda dengar.
+3. Uji vokal hangat 200–300Hz dan presence 1–3kHz: jelas/tidak menusuk?
+4. Uji gitar akustik body dan instrumen terpan kiri/kanan: tetap berisi?
+5. Uji 3D: vokal depan; reverb menyelimuti, tidak menggantung di atas?
+6. Bass, ambience akhir, mono/antiphase dan transien tidak boleh regresi.
+Jika timbul rasa menusuk/clicking, hentikan dan kembali ke versi nyaman.
 
-Read BUILD_PROVENANCE.json to verify exact tested source SHA, flags, EXE SHA256.
-This source intentionally fails the public alpha.26 acoustic-source approval
-gate. Do not publish as an official stable ArSonMix release.
+Eksperimen P94 v5 sudah diuji C++/PCM native, tetapi belum disetujui
+secara musikal oleh pendengar/hardware. Lihat BUILD_PROVENANCE.json
+untuk commit exact, SHA256 executable dan flag kandidat. PR #857 DRAFT.
+Tidak boleh dianggap versi stable atau diumumkan sebagai installer resmi.
 '@ | Set-Content -LiteralPath (Join-Path $OutputDir "README_LISTENING_TEST.md") -Encoding UTF8
 $manifest=[ordered]@{
- schema="arsonmix.immersib-unapproved-listening.v1"
+ schema="arsonmix.immersib-unapproved-listening.v2"
  sourceCommit=$actual
- pr=855
- approvedFuxMainCheckpoint="3e7e5df2cee60b561e520a468a1f08b4d185da07"
+ pr=857
+ approvedFuxMainCheckpoint="527e0216d226904288c4fe2dd8a76169dfb4417d"
+ candidateAudioRevision="v5-p94-real-stereo-pa-plus-v4-phantom-front"
+ previouslyAuditionedReference="v4-pr857-3fd52a96f6a1e8c7716325342481704fd156f033"
+ p98P99TonalSource="IDENTICAL_TO_APPROVED_MAIN"
  releaseStatus="NOT_STABLE_NOT_AUDIO_APPROVED"
  stableSourceLock="8ec5b8a3e07837c85fb6e06c952cff1621fecc51"
  sourceLockRewritten=$false
