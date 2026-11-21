@@ -1427,10 +1427,10 @@
 /* GEQ31 / ONE approved browser and WebView2 editor. This is the SINGLE
  * presentation owner; JUCE hosts audio only. All 31 faders share one
  * CSS geometry (170px travel) and the same 0dB horizontal datum. */
-/* GEQ31 v14.5 — use ONE mathematically centered Output column.
-   Left dB scale remains; duplicate right +12/0/-12 and 40px spacer removed.
-   Raise stereo glass LCD/92px original PNG knob by 6px and keep caption
-   optically near the knob. Preserve the crisp SVG arc and S/M/L scaling. */
+/* GEQ31 v14.6 — final hardware optical spacing.
+   Group Output closer to 20k without overlapping the 31st fader; move the
+   full header control run right until its Power centre matches 20k's axis.
+   Close remains parked at the far right, S/M/L and native DSP unchanged. */
 .mx-geq31{
  position:fixed;z-index:1100;top:clamp(58px,7vh,66px);
  left:max(8px,calc((100vw - 1430px)/2));
@@ -1484,7 +1484,12 @@
  color:#697479;background:linear-gradient(#bfc5c6,#e0e2e3);
 }
 .mx-geq31-head .mx-geq31-power:disabled{opacity:.55}
+/* The generic close control consumes an auto margin and formerly shared
+   unused width with the channel label. Reserve one predictable 88px gap
+   AFTER Power; channel's auto margin moves ALL controls left of Close as a
+   group, placing Power above the 20kHz fader on the 1430px hardware panel. */
 .mx-geq31-head .mx-geq31-close{
+ margin-left:88px;
  width:24px;min-width:24px;color:#f4f8fa;font-size:20px;
  background:linear-gradient(#3e5866,#293e4b);border-color:#607d8c;
  box-shadow:inset 0 1px #ffffff22,0 1px 2px #06131f75;
@@ -1512,9 +1517,13 @@
 }
 .mx-geq31-head .mx-geq31-close:hover{filter:none;background:linear-gradient(#633840,#48292f);border-color:#b27078}
 .mx-geq31-head .mx-geq31-close:active{background:linear-gradient(#ef3e50,#c52d40)}
+/* The panel's spare 20k-to-Output space becomes a quiet trailing gutter.
+   This moves OUTPUT / stereo LCD / PNG dial / dB caption together, never
+   via independent transforms. At 1430 viewport reduce the gutter slightly
+   so the final 40px fader remains completely visible. */
 .mx-geq31-body{
  height:234px;display:grid;grid-template-columns:38px minmax(0,1fr) 100px;
- align-items:start;gap:0;padding:1px 4px 0;
+ align-items:start;gap:0;padding:1px 32px 0 4px;
 }
 .mx-geq31-scale{
  position:relative;width:38px;height:229px;
@@ -1644,7 +1653,12 @@
  overflow:hidden;clip-path:inset(50%);white-space:nowrap;
  border:0;pointer-events:none;
 }
+@media(max-width:1450px){
+ .mx-geq31-body{padding-right:22px}
+}
 @media(max-width:980px){
+ /* Narrow viewports cannot reserve the 1430px Power-to-Close spacer. */
+ .mx-geq31-head .mx-geq31-close{margin-left:auto}
  .mx-geq31-meta,.mx-geq31-channel{display:none}
  .mx-geq31-head{gap:6px;padding:0 8px}
  .mx-geq31-head select{max-width:122px;flex-basis:122px}
@@ -1656,7 +1670,7 @@
  .mx-geq31-head .mx-geq31-flat{width:31px}
  .mx-geq31-head .mx-geq31-size{width:20px}
  .mx-geq31-size-controls{gap:1px;padding-left:2px;padding-right:2px}
- .mx-geq31-body{grid-template-columns:30px minmax(0,1fr) 100px;padding-left:3px;padding-right:3px}
+ .mx-geq31-body{grid-template-columns:30px minmax(0,1fr) 100px;padding-left:3px;padding-right:22px}
  .mx-geq31-scale{width:30px}
 }
 /* Shared preset services own user/save/edit forms; only one visible Save. */

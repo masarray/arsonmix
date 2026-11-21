@@ -126,6 +126,25 @@ def main():
                                ("knob",knob_y),("dB caption",caption_box)):
                 actual=rect["x"]+rect["width"]/2
                 assert abs(actual-cx)<.65,(width,label,actual,cx)
+            # The last full-size band is the physical x-axis datum for
+            # Power. Close stays to its right; the preset/Save/Flat/SML/Power
+            # group shifts together, with no per-button transform offsets.
+            if width in (1680,1430):
+                last=panel.locator(".mx-geq31-cell").last.bounding_box()
+                power_box=panel.locator(".mx-geq31-power").bounding_box()
+                assert last and power_box
+                fader_center=last["x"]+last["width"]/2
+                power_center=power_box["x"]+power_box["width"]/2
+                assert abs(power_center-fader_center)<=4, (
+                    width,"Power must align with 20kHz",power_center,fader_center)
+                gap=output_box["x"]-(last["x"]+last["width"])
+                assert 5<=gap<=19,(width,"20k-to-Output gap",gap)
+                gutter=(panel_box["x"]+panel_box["width"])-(
+                    output_box["x"]+output_box["width"])
+                assert (30<=gutter<=35 if width==1680 else 21<=gutter<=25), (
+                    width,"Output right gutter",gutter)
+                assert panel.locator(".mx-geq31-close").bounding_box()["x"]>(
+                    power_box["x"]+power_box["width"]+80)
             assert abs(led_box["height"]-31)<.5
             assert abs(led_box["width"]-100)<.5
             assert knob_y["y"]>=led_box["y"]+led_box["height"]+15
