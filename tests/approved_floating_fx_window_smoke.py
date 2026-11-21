@@ -157,6 +157,40 @@ def main():
                             accepted_id=page.evaluate("""()=>window.__ARMIX_NATIVE_M2__
                               .fxEditorState()?.graph?.channels?.[0]?.inserts?.[0]?.id""")
                             assert accepted_id==INSTANCE,(catalog,accepted_id)
+                            # A native-owned logical Power commit bumps the
+                            # revision-scoped insert token. Reject arbitrary
+                            # identity changes, but accept a rekey explicitly
+                            # authorized by the matching durable native ACK.
+                            revised=document(catalog)
+                            revised_id="logical:offline-smix-fux:13:"+CHANNEL+":0"
+                            revised["logicalMixer"]["revision"]="13"
+                            revised["logicalMixer"]["graph"]["revision"]="13"
+                            revised["logicalMixer"]["graph"]["rosterRevision"]="13"
+                            revised["logicalMixer"]["graph"]["channels"][0]["inserts"][0]["id"]=revised_id
+                            revised["logicalMixer"]["graph"]["channels"][0]["inserts"][0]["bypassed"]=True
+                            rekey={**payload,"snapshot":revised,"instanceId":revised_id,
+                                   "workspaceToken":"offline-smix-fux","rekeyFrom":INSTANCE}
+                            wrong={**rekey,"rekeyFrom":"unrelated-insert"}
+                            page.evaluate("(p)=>window.__fxDispatch('arMixFloatingOpen',p)",wrong)
+                            assert page.evaluate("""()=>window.__ARMIX_NATIVE_M2__
+                              .fxEditorState()?.graph?.channels?.[0]?.inserts?.[0]?.id""")==INSTANCE
+                            page.evaluate("(p)=>window.__fxDispatch('arMixFloatingOpen',p)",rekey)
+                            root.wait_for(state="visible")
+                            assert page.evaluate("""()=>window.__ARMIX_NATIVE_M2__
+                              .fxEditorState()?.graph?.channels?.[0]?.inserts?.[0]?.id""")==revised_id
+                            next_power=page.evaluate("""(channel)=>{
+                                window.__ARMIX_NATIVE_M2__.consumeAction(
+                                  {nativeId:channel},"slotPower",
+                                  {dataset:{slot:"0"}});
+                                return window.__fxOutbound.filter(
+                                  x=>x.name==='arMixFloatingPower').at(-1)?.payload;
+                            }""",CHANNEL)
+                            assert next_power["instanceId"]==revised_id
+                            assert next_power["graphRevision"]=="13"
+                            assert next_power["value"] is False
+                            if "graphic-eq31" in catalog:
+                                assert root.locator(".mx-geq31-power").get_attribute(
+                                    "data-fx-state")=="off"
                             assert not errors,(catalog,errors)
                             print("PASS approved native FX popup",catalog)
                         finally:

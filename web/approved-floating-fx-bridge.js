@@ -97,10 +97,21 @@
     });
     const next=project(payload.snapshot,proposed);
     if(!next){inform("FX session changed · refresh FX Rack");return;}
-    // Exactly one editor per native HWND. A different identity is never
-    // allowed to reuse a dirty panel or bypass another processor.
+    // Every revision-scoped logical identity is different after an accepted
+    // offline Power edit. Only an explicit native ACK-authorized rekey from
+    // THIS exact old instance/workspace may keep the original HWND alive.
+    // Arbitrary same-slot/same-catalog replacement is NEVER auto-followed.
     if(identity && Object.keys(proposed).some(key=>identity[key]!==proposed[key])){
-      inform("FX identity changed · reopen from FX Rack");return;
+      const safeRekey=proposed.channelId===identity.channelId &&
+        proposed.slot===identity.slot &&
+        proposed.catalogId===identity.catalogId &&
+        payload.rekeyFrom===identity.instanceId &&
+        typeof payload.workspaceToken==="string" &&
+        payload.workspaceToken.length>0 &&
+        current?.view?.workspaceToken===payload.workspaceToken &&
+        next.kind!=="CHANNEL_ID" &&
+        next.view.workspaceToken===payload.workspaceToken;
+      if(!safeRekey){inform("FX identity changed · reopen from FX Rack");return;}
     }
     identity=proposed;current=next;
     if(pending===proposed.catalogId) {

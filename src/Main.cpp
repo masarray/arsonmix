@@ -847,6 +847,9 @@ private:
     static constexpr std::size_t maxSimultaneousVendorEditors=16;
     struct FloatingBuiltinOwner final {
         juce::String channelId,instanceId,catalogId,workspaceToken;
+        // Native ACK-authorized one-step logical revision migration.
+        // Never follow an arbitrary replacement of the same FX slot.
+        juce::String rekeyFrom;
         int slot=-1;
         std::unique_ptr<BuiltinFxDesktopWindow> window; // last, destroyed first
     };
@@ -1369,6 +1372,8 @@ private:
         args->setProperty("instanceId",owner.instanceId);
         args->setProperty("catalogId",owner.catalogId);
         args->setProperty("slot",owner.slot);
+        args->setProperty("workspaceToken",owner.workspaceToken);
+        args->setProperty("rekeyFrom",owner.rekeyFrom);
         owner.window->emit("arMixFloatingOpen",juce::var(args.release()));
     }
     void openFloatingBuiltin(const juce::var& args) {
@@ -1527,6 +1532,14 @@ private:
             if(logical) {
                 if(request.getProperty("workspaceToken","").toString()!=ref->workspaceToken ||
                    ref->workspaceToken.isEmpty())return;
+                // Logical FX policy consumes payload.slot + payload.enabled,
+                // not an untyped top-level value. The verified popup is the
+                // *only* source of this insert identity and target bypass.
+                auto payload=std::make_unique<juce::DynamicObject>();
+                payload->setProperty("slot",ref->slot);
+                payload->setProperty("enabled",request.getProperty("value",{}));
+                outgoing->setProperty("payload",juce::var(payload.release()));
+                outgoing->setProperty("insertId",ref->instanceId);
                 outgoing->setProperty("operation","SET_FX_SLOT_BYPASS");
                 outgoing->setProperty("workspaceToken",ref->workspaceToken);
                 outgoing->setProperty("baseRevision",expectedRevision);
@@ -2342,6 +2355,56 @@ private:
         else emitNotice("Offline FX unavailable: "+error,true);
     }
 
+    // Once the logical .smix store has COMMITTED an exact popup Power intent,
+    // the revision-scoped logical instance ID changes. Rebind ONLY that same
+    // owner from a successful correlated ACK; a same-catalog replacement,
+    // browser guess, stale revision or unrelated mixer edit cannot steal it.
+    void rekeyFloatingLogicalPower(const juce::var& request,const juce::var& ack) {
+        const auto requestId=request.getProperty("requestId","").toString();
+        if(request.getProperty("operation","").toString()!="SET_FX_SLOT_BYPASS" ||
+           !requestId.startsWith("logical-fx-window-") ||
+           ack.getProperty("requestId","").toString()!=requestId ||
+           ack.getProperty("status","").toString()!="ACCEPTED")
+            return;
+        const auto channel=request.getProperty("channelId","").toString();
+        const auto oldId=request.getProperty("insertId","").toString();
+        const auto workspace=request.getProperty("workspaceToken","").toString();
+        const auto rawSlot=request.getProperty("slot",{});
+        const int slot=rawSlot.isInt()?static_cast<int>(rawSlot):-1;
+        const auto acceptedRevision=ack.getProperty("revision","").toString();
+        const auto saved=logicalMixer_.readback();
+        if(channel.isEmpty()||oldId.isEmpty()||workspace.isEmpty()||
+           slot<0||slot>=LiveDryRoutingLab::maxFxPerLane ||
+           saved.getProperty("workspaceToken","").toString()!=workspace ||
+           saved.getProperty("revision","").toString()!=acceptedRevision ||
+           saved.getProperty("authority","").toString()!="LOGICAL_ONLY")
+            return;
+        const auto rows=saved.getProperty("graph",{}).getProperty("channels",{});
+        const juce::var* replacement=nullptr;
+        if(const auto* channels=rows.getArray())
+            for(const auto& row:*channels) {
+                if(row.getProperty("id","").toString()!=channel)continue;
+                const auto inserts=row.getProperty("inserts",{});
+                if(const auto* fx=inserts.getArray();fx&&slot<fx->size())
+                    replacement=&(*fx)[slot];
+                break;
+            }
+        if(!replacement || !replacement->isObject())return;
+        const auto newId=replacement->getProperty("id","").toString();
+        if(newId.isEmpty()||newId==oldId)return;
+        for(auto& owner:floatingBuiltinFx_) {
+            if(!owner||!owner->window || owner->channelId!=channel ||
+               owner->slot!=slot || owner->workspaceToken!=workspace ||
+               owner->instanceId!=oldId ||
+               owner->catalogId!=replacement->getProperty("catalogId","").toString())
+                continue;
+            owner->rekeyFrom=oldId;
+            owner->instanceId=newId;
+            emitFloatingBuiltinOpen(*owner); // original /preview/ FX, no new HWND
+            break;
+        }
+    }
+
     void handleLogicalMixerIntent(const juce::var& request) {
         if(retainedOfflineFxActive_&&engine_.hasRetainedNativeSession()) {
             const auto operation=request.getProperty("operation","").toString();
@@ -2366,9 +2429,14 @@ private:
                 (!catalog_.busy() && catalog_.find(key));
         },[this](const auto& workspace,auto channel,auto slot,auto& insert,auto& processor) {
             return prepareLogicalFx(workspace,channel,slot,insert,processor);
-        },[this](juce::var ack) {
-            if(browser_.loaded)
-                browser_.emitEventIfBrowserIsVisible("arMixLogicalAck",std::move(ack));
+        },[safe=juce::Component::SafePointer<ConsoleWindow>(this),
+           origin=request](juce::var ack) {
+            if(safe==nullptr)return;
+            // Commit callback runs on CONTROL after durable .smix replacement.
+            // ACK is required before changing any owned popup identity.
+            safe->rekeyFloatingLogicalPower(origin,ack);
+            if(safe->browser_.loaded)
+                safe->browser_.emitEventIfBrowserIsVisible("arMixLogicalAck",std::move(ack));
         });
     }
 

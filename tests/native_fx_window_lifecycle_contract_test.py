@@ -131,6 +131,27 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn('event.startsWith("arMixBuiltin")',HOST)
         self.assertIn('owned->window->emit(event,payload)',HOST)
 
+    def test_offline_floating_power_uses_typed_payload_and_correlated_rekey(self):
+        # The first FUX popup sent only top-level value/slot and the logical
+        # workspace rejected every Power click (payload.slot/enabled missing).
+        # A successful bypass bumps logical revision, so the original HWND
+        # must follow ONLY its own accepted native ACK.
+        bridge=(ROOT/"web/approved-floating-fx-bridge.js").read_text(encoding="utf-8")
+        self.assertIn('payload->setProperty("slot",ref->slot);',HOST)
+        self.assertIn('payload->setProperty("enabled",request.getProperty("value",{}));',HOST)
+        self.assertIn('outgoing->setProperty("payload",juce::var(payload.release()));',HOST)
+        self.assertIn('outgoing->setProperty("insertId",ref->instanceId);',HOST)
+        self.assertIn('void rekeyFloatingLogicalPower(',HOST)
+        self.assertIn('ack.getProperty("status","").toString()!="ACCEPTED"',HOST)
+        self.assertIn('owner->instanceId!=oldId',HOST)
+        self.assertIn('owner->rekeyFrom=oldId;',HOST)
+        self.assertIn('owner->instanceId=newId;',HOST)
+        self.assertIn('safe->rekeyFloatingLogicalPower(origin,ack);',HOST)
+        self.assertIn('args->setProperty("rekeyFrom",owner.rekeyFrom);',HOST)
+        self.assertIn('payload.rekeyFrom===identity.instanceId',bridge)
+        self.assertIn('next.view.workspaceToken===payload.workspaceToken',bridge)
+        self.assertIn('FX identity changed · reopen from FX Rack',bridge)
+
     def test_retained_offline_smix_save_uses_durable_logical_export(self):
         # A disconnected retained session used to reject manual Save even
         # after the isolated VST3 edit had committed to the .smix workspace.
