@@ -185,6 +185,17 @@ function makeOwnerSvg(base,i){
  const unit=svg.querySelector('g[id="Hz"] text');
  const shadow=svg.querySelector('g[id="THUMB"] > g');
  const thumb=svg.querySelector('g[id="THUMB"]');
+ // Exact approved v13 SVG composition omits original green/red end-stop
+ // marker groups entirely, including their dark shadow paths. The source
+ // asset stays byte-for-byte original; only this WebView clone is cropped.
+ for(const markerClass of ["s5","s6"]){
+  const marker=svg.querySelector('g[id="Track"] path.'+markerClass);
+  const holder=marker?.parentElement;
+  if(!marker||!holder||holder.children.length!==2||
+     holder.parentElement?.getAttribute("id")!=="Track")
+    throw Error("Owner end-stop marker SVG structure changed");
+  holder.remove();
+ }
  if(!freq||!unit||!shadow||!thumb)throw Error("Owner SVG Text/THUMB missing");
  freq.setAttribute("text-anchor","middle");
  freq.setAttribute("style","transform:matrix(4.167,0,0,4.167,237.76,1850.466);font-family:Inter,Arial,sans-serif");
