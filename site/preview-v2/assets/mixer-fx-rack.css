@@ -1577,3 +1577,6 @@
  .mx-geq31-body{grid-template-columns:27px minmax(0,1fr) 25px 81px}
  .mx-geq31-dial{width:58px;height:58px}
 }
+
+/* GEQ retains one visible Save action; the shared .armixfx service owns the form. */
+.mx-geq31 .mx-fxp-save-as{display:none}
