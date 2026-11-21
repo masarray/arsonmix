@@ -79,7 +79,7 @@ def main():
                     }
                   }};""")
                 page.goto((out/"index.html").as_uri())
-            project_approved_editor_for_component_smoke(page)
+                project_approved_editor_for_component_smoke(page)
                 page.wait_for_function(
                     "()=>window.__ARMIX_NATIVE_M2__?.enabled && window.ArSonMixNativeHarmony")
                 state=snapshot()
