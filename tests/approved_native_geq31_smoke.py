@@ -31,7 +31,7 @@ def main():
         Thread(target=server.serve_forever,daemon=True).start()
         url=f"http://127.0.0.1:{server.server_address[1]}/index.html"
         browser=pw.chromium.launch(headless=True)
-        for width,height in [(1430,650),(1000,700),(390,844)]:
+        for width,height in [(1680,650),(1430,650),(1000,700),(390,844)]:
             page=browser.new_page(viewport={"width":width,"height":height})
             errors=[]
             page.on("pageerror",lambda err:errors.append(str(err)))
@@ -83,6 +83,7 @@ def main():
                 assert band.locator(".mx-geq31-freq").is_visible()
                 assert band.locator('g[id="THUMB"]').count()==1
                 assert band.locator('use[id="_Image3"]').count()==1
+                assert band.locator("path.s5,path.s6").count()==0
                 # Visual gate: first v13 black thumb gradient (prevents white-metal fallback).
                 for gradient, color in (("g3","#090b0e"),("g4","#30383e"),
                                         ("g5","#252e33"),("g6","#646e74")):
@@ -121,8 +122,8 @@ def main():
             # new JS cannot be hand-restyled in a separate native renderer.
             assert (out/"assets/mixer-native-geq31.js").is_file()
             assert (out/"assets/mixer-fx-rack.css").is_file()
-            if width==1430:
-                page.screenshot(path="arsonmix-geq31-one-webview-1430.png")
+            if width in (1680,1430):
+                page.screenshot(path=f"arsonmix-geq31-one-webview-{width}.png")
             assert not errors,errors
             page.close()
 
