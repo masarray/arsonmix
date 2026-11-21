@@ -6658,6 +6658,7 @@ test("G-MV38 editor surface routing has one allowlisted browser owner; future FX
   };
   const allowlisted=[
     ["armix.builtin.channel-eq.v1","ArSonMixNativeEq"],
+    ["armix.builtin.graphic-eq31.v1","ArSonMixGraphicEq31"],
     ["armix.builtin.channel-compressor.v1","ArSonMixNativeCompressor"],
     ["armix.builtin.arson-harmony.v1","ArSonMixNativeHarmony"],
     ["armix.builtin.vocal-throw.v1","ArSonMixNativeVocalThrow"],
@@ -6667,7 +6668,7 @@ test("G-MV38 editor surface routing has one allowlisted browser owner; future FX
     const {result}=project(id);
     assert.deepEqual(result,{kind:"BROWSER",windowKey});
   }
-  for(const id of ["vendor.vst3","armix.builtin.graphic-eq31.v1",
+  for(const id of ["vendor.vst3",
                    "armix.builtin.immersib.v1","__proto__"]){
     assert.deepEqual(project(id).result,{kind:"NATIVE_HOST"},
       "non-allowlisted catalogs cannot choose an arbitrary browser host");
