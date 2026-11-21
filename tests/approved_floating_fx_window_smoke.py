@@ -49,7 +49,7 @@ def document(catalog):
     return raw
 
 
-INIT="""() => {
+INIT="""(() => {
   window.__fxOutbound=[];
   const handlers=new Map();
   window.__fxDispatch=(name,payload)=>{
@@ -62,7 +62,7 @@ INIT="""() => {
     emitEvent(name,payload){window.__fxOutbound.push({name,payload});}
   };
   window.__JUCE__={backend};
-}"""
+})()"""
 
 
 def main():
