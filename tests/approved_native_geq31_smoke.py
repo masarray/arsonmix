@@ -66,7 +66,7 @@ def main():
             output_box=panel.locator(".mx-geq31-output").bounding_box()
             assert panel_box and close_box and output_box
             assert abs(panel_box["height"]-280)<1
-            assert panel_box["y"]<=21, panel_box
+            assert 57<=panel_box["y"]<=67, panel_box
             assert panel.locator(".mx-geq31-head").evaluate(
                 "e=>Math.abs(e.getBoundingClientRect().height-44)<.5")
             led_box=panel.locator(".mx-geq31-level-meter").bounding_box()
