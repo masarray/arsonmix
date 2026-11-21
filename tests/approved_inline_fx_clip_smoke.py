@@ -20,14 +20,14 @@ SIX=(
     ("ArSonMixNativeVocalThrow","#mxNativeVocalThrow",778),
     ("ArSonMixNativeSonKu","#mxNativeSonKu",790),
 )
-BACKEND="""()=>{
+BACKEND="""(()=>{
     const listeners=new Map();
     window.__nativeMessages=[];
     window.__JUCE__={backend:{
         emitEvent(name,payload){window.__nativeMessages.push({name,payload});},
         addEventListener(name,fn){listeners.set(name,fn);}
     }};
-}"""
+})();"""
 
 def main():
     spec=importlib.util.spec_from_file_location("bundle",ROOT/"scripts/build_approved_native_gui.py")
@@ -49,6 +49,11 @@ def main():
                 page.on("pageerror",lambda error: errors.append(str(error)))
                 page.add_init_script(BACKEND)
                 page.goto(f"http://127.0.0.1:{server.server_address[1]}/index.html")
+                # add_init_script must INVOKE the JUCE transport stub, not
+                # merely declare an anonymous function expression. Fail
+                # immediately with useful diagnostic if backend boot regresses.
+                assert page.evaluate("()=>typeof window.__JUCE__?.backend?.emitEvent==='function'"),(
+                    "Native transport mock never started",width,errors)
                 page.wait_for_function("""()=>Boolean(
                     window.__ARMIX_NATIVE_INLINE_FX_CLIP__ &&
                     window.ArSonMixGraphicEq31 && window.ArSonMixNativeSonKu)""")
