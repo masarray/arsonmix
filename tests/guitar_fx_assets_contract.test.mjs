@@ -2,7 +2,7 @@
 // Fast test: node --test tests/guitar_fx_assets_contract.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
+import {readFileSync,statSync} from "node:fs";
 import {resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 import {createHash} from "node:crypto";
@@ -10,6 +10,16 @@ import {execFileSync} from "node:child_process";
 import {inflateSync} from "node:zlib";
 const root=resolve(fileURLToPath(new URL("..",import.meta.url)));
 const assetDir=resolve(root,"design-references/guitar-fx/assets");
+const productionNames=[
+ "gfx-amp-head.png","gfx-cabinet.png","gfx-pedal-gate-body.png",
+ "gfx-pedal-drive-body.png","gfx-knob.png","gfx-switch-off.png",
+ "gfx-switch-on.png","gfx-button-off.png","gfx-button-on.png",
+ "gfx-stomp-off.png","gfx-stomp-on.png"];
+// Snapshot checked-in bytes at module load, BEFORE any test imports the
+// generator (which writes image files as an intentional side effect).
+const committedProductionFingerprints=productionNames.map(n=>
+ createHash("sha256").update(readFileSync(resolve(assetDir,n))).digest("hex"));
+
 const expected=[
  ["amp-head-class-a.png",920,340,400000],["cabinet-dual-12.png",720,360,340000],
  ["pedal-gate.png",260,360,130000],["pedal-compressor.png",260,360,130000],["pedal-overdrive.png",260,360,130000],["pedal-delay.png",260,360,130000],
@@ -77,7 +87,7 @@ test("native JUCE editor uses the generated binary resource identifiers",()=>{
    "gfx-amp-head.png","gfx-cabinet.png",
    "gfx-pedal-gate-body.png","gfx-pedal-drive-body.png",
    "gfx-knob.png","gfx-switch-off.png","gfx-switch-on.png",
-   "gfx-button-off.png","gfx-button-on.png","gfx-panel.png",
+   "gfx-button-off.png","gfx-button-on.png",
    "gfx-stomp-off.png","gfx-stomp-on.png"
  ]){
    const id=name.replace(/\.png$/,"").replace(/[^A-Za-z0-9_]/g,"")+"_png";
@@ -116,10 +126,10 @@ test("bypassed Guitar FX editor may enqueue tone without a live wet meter",()=>{
 
 test("native hardware PNG decoding is cached across editor close/reopen",()=>{
  const editor=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigEditor.h"),"utf8");
- assert(editor.includes("static const std::array<juce::Image,12> skins"),
+ assert(editor.includes("static const std::array<juce::Image,11> skins"),
         "native editor must cache all 12 layered PNG resources per app");
  for(const key of ["amp_","cab_","gate_","pedal_","knob_","switchOff_",
-                   "switchOn_","buttonOff_","buttonOn_","panel_",
+                   "switchOn_","buttonOff_","buttonOn_",
                    "stompOff_","stompOn_"])
   assert(editor.includes(key+"=skins["),key+" shares cached image resource");
 });
@@ -189,7 +199,7 @@ test("generated ON and OFF PNGs have byte-identical silhouettes and frame pixels
   return {w,h,raw};
  };
  const find=name=>SKINS.find(s=>s[0]===name);
- assert.equal(SKINS.length,12,"only active GFX modules and UI chrome");
+ assert.equal(SKINS.length,11,"only active GFX modules and UI chrome");
  for(const [a,b] of [["gfx-switch-off.png","gfx-switch-on.png"],
                        ["gfx-button-off.png","gfx-button-on.png"],
                        ["gfx-stomp-off.png","gfx-stomp-on.png"]]){
@@ -223,31 +233,119 @@ test("generated ON and OFF PNGs have byte-identical silhouettes and frame pixels
 });
 
 
-test("native bitmap control bounds preserve switch and button proportions",()=>{
- const s=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigEditor.h"),"utf8");
- const match=(re,label)=>{
-  const m=s.match(re);
-  assert(m,label+" must have explicit static JUCE bounds");
-  return m.slice(1).map(Number);
- };
- const [bankAX,bankAY,bankAW,bankAH]=match(
-  /bankButtons_\[0\]\.setBounds\(getWidth\(\)-([0-9]+),([0-9]+),([0-9]+),([0-9]+)\)/,
-  "bank A bounds");
- const [bankBX,bankBY,bankBW,bankBH]=match(
-  /bankButtons_\[1\]\.setBounds\(getWidth\(\)-([0-9]+),([0-9]+),([0-9]+),([0-9]+)\)/,
-  "bank B bounds");
- const [,powerY,powerW,powerH]=match(
-  /power_\[i\]\.setBounds\(x\+([0-9]+),([0-9]+),([0-9]+),([0-9]+)\)/,
-  "module power bounds");
- const ratio=(w,h)=>w/h;
- assert(Math.abs(ratio(bankAW,bankAH)-280/80)<0.10,
-   "bank A PNG must not be stretched into a square");
- assert.equal(bankAW,bankBW);assert.equal(bankAH,bankBH);
- assert.equal(bankAY,bankBY);
- assert(bankAX-bankAW > bankBX,
-   "A and B bounds must be separated before the preset");
- assert(Math.abs(ratio(powerW,powerH)-200/74)<0.15,
-   "module switch PNG must not be squeezed vertically");
- assert(powerY>=104&&powerY+powerH<=143,
-   "module switch stays within chain button row");
+test("one physical hardware-coordinate manifest drives scaled native paint and JUCE hitboxes",()=>{
+ const manifest=JSON.parse(readFileSync(resolve(root,
+   "design-references/guitar-fx/hardware-layout.json"),"utf8"));
+ const editor=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigEditor.h"),"utf8");
+ const geom=readFileSync(resolve(root,
+   "engine/builtin_fx/guitar/GuitarHardwareGeometry.h"),"utf8");
+ assert.equal(manifest.schemaVersion,2);
+ assert.equal(manifest.scaling,"uniform-contain-and-letterbox");
+ assert.equal(manifest.modules.length,4);
+ assert(geom.includes("inline constexpr Rect logicalStage {218.f,158.f,824.f,366.f}"));
+ assert(editor.includes("armix::guitarfx::art::Viewport::from"));
+ assert(editor.includes("armix::guitarfx::art::centeredControl"));
+ assert(editor.includes("mapBounds(toArtRect(knobBounds(i)))"));
+ assert(editor.includes("mapBounds(toArtRect(stompBounds()))"));
+ assert(!editor.includes("nx=i==0?.31f"),
+        "old percentage guesses must never return");
+ assert(!editor.includes("g.drawImageWithin(panel_"),
+        "avoid the old framed-background effect");
+ for(const m of manifest.modules){
+  assert(geom.includes('"'+m.file+'"'),m.file);
+  assert(geom.includes(m.canvas[0]+","+m.canvas[1]),m.file+" native canvas");
+  for(const [x,y,d] of m.knobCenters)
+   assert(geom.includes("{"+x+","+y+","+d+"}"),m.file+" native anchor "+x);
+  assert.deepEqual(m.controls.length,m.knobCenters.length);
+  for(let i=0;i<m.knobCenters.length;i++){
+   const [x,y,d]=m.knobCenters[i];
+   assert(x-d/2>=0&&x+d/2<=m.canvas[0],m.key+" control X outside body");
+   assert(y-d/2>=0&&y+d/2<=m.canvas[1],m.key+" control Y outside body");
+  }
+ }
+});
+test("new generator is repeatable and makes distinct device materials",async()=>{
+ const {render,SKINS}=await import("../scripts/build_guitar_fx_layered_assets.mjs");
+ const map=new Map(SKINS.map(spec=>[spec[0],spec]));
+ const names=["gfx-amp-head.png","gfx-cabinet.png","gfx-pedal-gate-body.png",
+              "gfx-pedal-drive-body.png"];
+ for(const name of names){
+  assert(map.has(name));
+  const spec=map.get(name);
+  const a=render(spec),b=render(spec);
+  assert.equal(sha256(a),sha256(b),name+" deterministic bytes");
+ }
+ const samples=names.map(n=>sha256(render(map.get(n))));
+ assert.equal(new Set(samples).size,4,"four uniquely authored physical devices");
+ const cmake=readFileSync(resolve(root,"CMakeLists.txt"),"utf8");
+ assert(cmake.includes("option(ARMIX_GUITAR_USE_ARTIST_SOURCE"));
+ assert(cmake.includes("if(ARMIX_GUITAR_USE_ARTIST_SOURCE)"),
+       "rejected historic PNGs must not silently override the new generator");
+});
+test("eleven committed production PNGs are byte-exact, with no obsolete panel",async()=>{
+ // Read committed bytes BEFORE importing generator (which exports PNGs).
+ // A source-only PR cannot pass by relying on config-time regenerated files.
+ const names=productionNames;
+ const original=committedProductionFingerprints;
+ const {SKINS,render}=await import("../scripts/build_guitar_fx_layered_assets.mjs");
+ assert.deepEqual(SKINS.map(s=>s[0]).sort(),[...names].sort());
+ assert.deepEqual(original,names.map(n=>{
+   const spec=SKINS.find(x=>x[0]===n);
+   return sha256(render(spec));
+ }),"shipped BinaryData input must be exact deterministic v2 output");
+ assert(!SKINS.some(spec=>spec[0]==="gfx-panel.png"),
+   "framed panel from PR #663 must remain retired");
+});
+test("production hardware manifests match real PNG alpha content bounds",async()=>{
+ const manifest=JSON.parse(readFileSync(resolve(root,
+   "design-references/guitar-fx/hardware-layout.json"),"utf8"));
+ const {SKINS,render}=await import("../scripts/build_guitar_fx_layered_assets.mjs");
+ for(const m of manifest.modules){
+  const skin=SKINS.find(s=>s[0]===m.file);
+  assert(skin,m.file+" is not a generated production body");
+  const png=render(skin),w=png.readUInt32BE(16),h=png.readUInt32BE(20);
+  let offset=8,parts=[];
+  while(offset<png.length){
+   const n=png.readUInt32BE(offset),tag=png.toString("ascii",offset+4,offset+8);
+   if(tag==="IDAT")parts.push(png.subarray(offset+8,offset+8+n));
+   offset+=12+n;
+   if(tag==="IEND")break;
+  }
+  const rows=inflateSync(Buffer.concat(parts));
+  assert.equal(rows.length,h*(w*4+1));
+  let minX=w,minY=h,maxX=-1,maxY=-1;
+  for(let y=0;y<h;++y){
+   const start=y*(w*4+1);
+   assert.equal(rows[start],0,"generated PNG requires unfiltered RGBA row");
+   for(let x=0;x<w;++x){
+    const alpha=rows[start+1+x*4+3];
+    if(alpha===0)continue;
+    minX=Math.min(minX,x);minY=Math.min(minY,y);
+    maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);
+   }
+  }
+  assert(maxX>=minX&&maxY>=minY,m.file+" blank body");
+  assert.deepEqual([minX,minY,maxX-minX+1,maxY-minY+1],
+    m.contentBounds,m.file+" metadata must match actual alpha occupancy");
+ }
+});
+test("the asset generator preserves timestamps of unchanged production PNGs",()=>{
+ const names=productionNames;
+ const before=names.map(n=>readFileSync(resolve(assetDir,n)));
+ const modified=names.map(n=>statSync(resolve(assetDir,n)).mtimeMs);
+ execFileSync(process.execPath,["scripts/build_guitar_fx_layered_assets.mjs"],{cwd:root,stdio:"pipe"});
+ assert.deepEqual(names.map(n=>statSync(resolve(assetDir,n)).mtimeMs),modified,
+    "identical bitmaps must not force incremental JUCE BinaryData compilation");
+ assert.deepEqual(names.map(n=>readFileSync(resolve(assetDir,n))),before);
+});
+test("native control PNGs maintain exact aspect on all chain switches",()=>{
+ const editor=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigEditor.h"),"utf8");
+ assert(editor.includes("put(power_[i],x+148.f,91,54,20);"));
+ assert(editor.includes("put(bankButtons_[0],618,18,77,22);"));
+ assert(editor.includes("put(bankButtons_[1],700,18,77,22);"));
+ assert(editor.includes("put(focusButtons_[i],x,79,145,44);"));
+ assert(editor.includes("setLookAndFeel(&navLook_)"),
+        "signal chain navigation uses quiet vector feedback, no chunky bezel");
+ assert(Math.abs(54/20-200/74)<0.05);
+ assert(Math.abs(77/22-280/80)<0.05);
 });
