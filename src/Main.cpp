@@ -245,18 +245,7 @@ public:
                         juce::Component& mixer)
         : DocumentWindow (title, juce::Colour (0xff14212a), allButtons)
     {
-        // GEQ31 already owns its complete branded header, drag surface and
-        // authenticated Close action. The OS titlebar added a second Close
-        // and shifted every native-SVG coordinate by the Windows caption
-        // height. Remove chrome ONLY for this editor; VST3 and all other
-        // built-in FX retain their previous mixer-owned window policy.
-        const bool geqOwnsHeader =
-            dynamic_cast<armix::builtin_fx::GraphicEq31Editor*>(editor)!=nullptr;
-        setUsingNativeTitleBar (!geqOwnsHeader);
-        if (geqOwnsHeader) {
-            setTitleBarButtonsRequired (0, false);
-            setTitleBarHeight (0);
-        }
+        setUsingNativeTitleBar (true);
         setIcon (approvedAppIcon());
         setContentOwned (editor, true);
         // Do not offer false host resizing for fixed-geometry built-in FX.
@@ -657,6 +646,16 @@ private:
     } pendingNativeEq_;
     juce::String lastNativeEqRequest_,lastNativeEqInstance_;
     juce::String lastNativeEqEpoch_,lastNativeEqRevision_;
+    // GEQ31 uses the same validated ChannelId/instance/epoch lease as PEQ.
+    // The UI lives in the one approved browser; audio ACK is from the same
+    // 31-band processor callback, never from a second JS mixer or PCM graph.
+    struct PendingNativeGeq {
+        armix::mixer::LiveChannelFxGraph::InstanceLease owner;
+        juce::String request,channelId,deviceEpoch,revision,instanceId;
+        juce::uint32 started=0;
+    } pendingNativeGeq_;
+    juce::String lastNativeGeqRequest_,lastNativeGeqInstance_;
+    juce::String lastNativeGeqEpoch_,lastNativeGeqRevision_;
     struct PendingNativeComp {
         armix::mixer::LiveChannelFxGraph::InstanceLease owner;
         juce::String request,channelId,deviceEpoch,revision,instanceId;
@@ -3037,6 +3036,77 @@ private:
 
 
 
+    // Exactly one native Graphic EQ 31 snapshot source: real APVTS targets
+    // and one PCM-callback-ACKed request ID. No UI/demo state is ever accepted.
+    void emitNativeGeqSnapshot(const juce::String& request,
+            const juce::String& channelId,const juce::String& epoch,
+            const juce::String& revision,const juce::String& instanceId,
+            armix::builtin_fx::GraphicEq31Processor* processor) {
+        auto reply=std::make_unique<juce::DynamicObject>();
+        reply->setProperty("requestId",request);
+        reply->setProperty("channelId",channelId);
+        reply->setProperty("deviceEpoch",epoch);
+        reply->setProperty("graphRevision",revision);
+        reply->setProperty("instanceId",instanceId);
+        reply->setProperty("status",processor?"ACCEPTED":"REJECTED");
+        reply->setProperty("schemaVersion",1);
+        if(processor) {
+            juce::var bands(juce::Array<juce::var>{});
+            for(const float db:processor->acceptedBands())
+                bands.append(juce::var(static_cast<double>(db)));
+            reply->setProperty("bands",bands);
+            reply->setProperty("levelDb",processor->acceptedLevelDb());
+            reply->setProperty("addedLatencySamples",processor->getLatencySamples());
+            if(epoch=="0"&&instanceId==lastLogicalFxInstance_&&
+               revision==lastLogicalFxRevision_)
+                reply->setProperty("appliedRequestId",lastLogicalFxRequest_);
+            else if(instanceId==lastNativeGeqInstance_&&
+                    epoch==lastNativeGeqEpoch_&&
+                    revision==lastNativeGeqRevision_)
+                reply->setProperty("appliedRequestId",lastNativeGeqRequest_);
+        }else reply->setProperty("error","NATIVE_GEQ_INSTANCE_OR_REVISION_UNAVAILABLE");
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+            "arMixBuiltinGeqSnapshot",juce::var(reply.release()));
+    }
+
+    void servicePendingNativeGeq() {
+        if(!pendingNativeGeq_.owner)return;
+        auto* processor=dynamic_cast<armix::builtin_fx::GraphicEq31Processor*>(
+            pendingNativeGeq_.owner->processor.get());
+        if(!processor){pendingNativeGeq_={};return;}
+        armix::builtin_fx::GraphicEq31Processor::Completion completion{};
+        const bool completed=processor->pollCompletion(completion);
+        if(!completed&&juce::Time::getMillisecondCounter()-
+                       pendingNativeGeq_.started<3000u)return;
+        const auto request=pendingNativeGeq_.request;
+        bool applied=completed&&completion.applied&&completion.requestId>0&&
+            request=="geq-"+juce::String(std::to_string(completion.requestId));
+        const auto snapshot=approvedNativeSnapshot();
+        const auto device=snapshot.getProperty("device",{});
+        const auto graph=snapshot.getProperty("graph",{});
+        applied=applied&&pendingNativeGeq_.deviceEpoch==
+            device.getProperty("epoch","").toString()&&
+            pendingNativeGeq_.revision==
+            graph.getProperty("revision","").toString();
+        if(applied) {
+            lastNativeGeqRequest_=request;
+            lastNativeGeqInstance_=pendingNativeGeq_.instanceId;
+            lastNativeGeqEpoch_=pendingNativeGeq_.deviceEpoch;
+            lastNativeGeqRevision_=pendingNativeGeq_.revision;
+        }
+        auto ack=std::make_unique<juce::DynamicObject>();
+        ack->setProperty("requestId",request);
+        ack->setProperty("channelId",pendingNativeGeq_.channelId);
+        ack->setProperty("deviceEpoch",pendingNativeGeq_.deviceEpoch);
+        ack->setProperty("graphRevision",pendingNativeGeq_.revision);
+        ack->setProperty("instanceId",pendingNativeGeq_.instanceId);
+        ack->setProperty("status",applied?"APPLIED":"REJECTED");
+        ack->setProperty("errorCode",applied?"NONE":"GEQ_PCM_ACK_TIMEOUT_OR_STALE");
+        pendingNativeGeq_={};
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+            "arMixBuiltinGeqAck",juce::var(ack.release()));
+    }
+
     // Native compressor readback is CONTROL-thread-only for accepted settings.
     // The gain-reduction meter is one atomic block summary from AUDIO.
     void emitNativeCompSnapshot(const juce::String& request,
@@ -4768,7 +4838,8 @@ private:
             action == "routingGlobalFxBypass" ||
             action == "routingNativeFxInsertBypass" ||
             action == "routingFxRackBypass" ||
-            action == "nativeEqSetBand" || action == "nativeCompSet" ||
+            action == "nativeEqSetBand" || action == "nativeGeqSet" ||
+            action == "nativeCompSet" ||
             action == "nativeSonKuSet" ||
             action == "nativeThrowSet" || action == "nativeThrowTrigger" ||
             action == "nativeThrowTempoSource"))
@@ -5187,6 +5258,102 @@ private:
             return;
         }
 
+
+        // GEQ31 browser editor: same actual retained ChannelId FX lease,
+        // APVTS targets and original native PCM graph as the previous JUCE
+        // window. The ONLY UI renderer is now the approved /preview/ page.
+        if(action=="nativeGeqSnapshot"||action=="nativeGeqSet") {
+            const auto fxRequest=armix::builtin_fx::NativeFxControlRequest::parse(
+                args,LiveDryRoutingLab::maxFxPerLane);
+            const auto& rawChannel=fxRequest.rawChannel;
+            const auto& rawEpoch=fxRequest.rawEpoch;
+            const auto& rawRevision=fxRequest.rawRevision;
+            const auto& rawInstance=fxRequest.rawInstance;
+            const auto& request=fxRequest.request;
+            const int slot=fxRequest.slot;
+            const auto channel=fxRequest.channel,epoch=fxRequest.epoch;
+            const auto revision=fxRequest.revision;
+            const bool unbound=fxRequest.unbound,valid=fxRequest.valid;
+            armix::session::StoredInsert logicalInsert;
+            auto offline=unbound?openLogicalBuiltinFx(args,logicalInsert,
+                armix::builtin_fx::GraphicEq31Processor::catalogIdentity):nullptr;
+            auto owner=valid&&!unbound?engine_.leaseNativeVst3Editor(
+                epoch,revision,armix::mixer::ChannelId{channel},
+                static_cast<std::size_t>(slot),rawInstance.toString()):
+                armix::mixer::LiveChannelFxGraph::InstanceLease{};
+            auto* processor=dynamic_cast<armix::builtin_fx::GraphicEq31Processor*>(
+                unbound?offline.get():owner?owner->processor.get():nullptr);
+            if(action=="nativeGeqSnapshot") {
+                emitNativeGeqSnapshot(request,rawChannel.toString(),
+                    rawEpoch.toString(),rawRevision.toString(),
+                    rawInstance.toString(),processor);
+                return;
+            }
+            const auto edit=args.getProperty("edit",{});
+            const auto kind=edit.getProperty("kind",{}).toString();
+            const auto numeric=fxRequest.sequence("geq-");
+            auto readFloat=[](const juce::var& value,float& out) {
+                if(!value.isInt()&&!value.isDouble())return false;
+                const double n=static_cast<double>(value);
+                if(!std::isfinite(n))return false;
+                out=static_cast<float>(n);
+                return std::isfinite(out);
+            };
+            bool queued=false;
+            if(processor&&numeric>0&&edit.isObject()&&
+               !pendingNativeGeq_.owner&&!nativeShowBusy_&&!studioBackupBusy_&&
+               !engine_.independentClockActive()) {
+                if(kind=="band") {
+                    const auto index=edit.getProperty("index",-1);
+                    float gain=0.f;
+                    if(index.isInt()&&readFloat(edit.getProperty("value",{}),gain))
+                        queued=processor->queueBandEdit(
+                            static_cast<std::size_t>(static_cast<int>(index)),
+                            gain,numeric);
+                }else if(kind=="output") {
+                    float output=0.f;
+                    if(readFloat(edit.getProperty("value",{}),output))
+                        queued=processor->queueOutputEdit(output,numeric);
+                }else if(kind=="curve"||kind=="flat") {
+                    std::array<float,armix::builtin_fx::GraphicEq31Core::bandCount>
+                        gains{};
+                    float output=processor->acceptedLevelDb();
+                    bool curveValid=kind=="flat";
+                    if(kind=="curve") {
+                        const auto settings=edit.getProperty("settings",{});
+                        const auto bands=settings.getProperty("bands",{}).getArray();
+                        curveValid=bands&&bands->size()==static_cast<int>(gains.size())&&
+                            readFloat(settings.getProperty("levelDb",{}),output);
+                        if(curveValid)for(int i=0;i<static_cast<int>(gains.size());++i)
+                            if(!readFloat((*bands)[i],gains[static_cast<std::size_t>(i)])) {
+                                curveValid=false;break;
+                            }
+                    }
+                    if(curveValid)queued=processor->queueCurveEdit(
+                        gains,output,numeric);
+                }
+                if(queued&&!unbound) {
+                    pendingNativeGeq_.owner=owner;
+                    pendingNativeGeq_.request=request;
+                    pendingNativeGeq_.channelId=rawChannel.toString();
+                    pendingNativeGeq_.deviceEpoch=rawEpoch.toString();
+                    pendingNativeGeq_.revision=rawRevision.toString();
+                    pendingNativeGeq_.instanceId=rawInstance.toString();
+                    pendingNativeGeq_.started=juce::Time::getMillisecondCounter();
+                }
+            }
+            if(unbound)
+                return completeLogicalFxEdit(args,std::move(logicalInsert),
+                    processor,queued,"arMixBuiltinGeqAck");
+            auto receipt=std::make_unique<juce::DynamicObject>();
+            receipt->setProperty("requestId",request);
+            receipt->setProperty("status",queued?"QUEUED":"REJECTED");
+            receipt->setProperty("errorCode",queued?"NONE":
+                pendingNativeGeq_.owner?"GEQ_CONTROL_BUSY":"STALE_OR_INVALID_GEQ");
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixBuiltinGeqQueue",juce::var(receipt.release()));
+            return;
+        }
 
         // Each accepted compressor edit stays on this ChannelId's ordered
         // native insert. No GUI mutation until callback ACK + graph readback.
@@ -8052,6 +8219,7 @@ private:
         ++timerTicks_;
         serviceNativeMusicTempo();
         servicePendingNativeEq();
+        servicePendingNativeGeq();
         servicePendingNativeComp();
         servicePendingNativeSonKu();
         servicePendingNativeHarmony();
