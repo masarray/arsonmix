@@ -114,6 +114,39 @@ def main():
                             # Native HWND resizes from original panel content.
                             page.wait_for_function("""()=>
                                 window.__fxOutbound.some(x=>x.name==='arMixFloatingSize')""")
+                            # Six originals are painted edge-to-edge. The only
+                            # visible Close is the original hardware editor,
+                            # never a second JUCE caption or fallback key.
+                            assert page.locator("#fxWindowAbort").is_hidden(),catalog
+                            if "graphic-eq31" in catalog:
+                                assert root.locator(".mx-geq31-close").count()==1
+                                actual=root.bounding_box()
+                                native_size=page.evaluate("""()=>window.__fxOutbound
+                                  .filter(x=>x.name==='arMixFloatingSize').at(-1)?.payload""")
+                                assert actual and native_size
+                                assert abs(actual["width"]-native_size["width"])<=2
+                                assert abs(actual["height"]-native_size["height"])<=2
+                                # The original header must initiate OS HWND drag,
+                                # not move a CSS card inside its fixed WebView.
+                                page.mouse.move(actual["x"]+30,actual["y"]+18)
+                                page.mouse.down()
+                                page.mouse.up()
+                                assert page.evaluate("""()=>window.__fxOutbound.some(
+                                  e=>e.name==='arMixFloatingDrag')""")
+                                moved=root.bounding_box()
+                                assert abs(moved["x"]-actual["x"])<1
+                                assert abs(moved["y"]-actual["y"])<1
+                                # S/M/L remeasure the real frameless HWND. No
+                                # titlebar/body padding or bogus 1500x520 resize.
+                                root.locator(".mx-geq31-size[data-size='S']").click()
+                                page.wait_for_function("""()=>window.__fxOutbound.some(
+                                  e=>e.name==='arMixFloatingSize'&&
+                                  e.payload.width>=710&&e.payload.width<=720&&
+                                  e.payload.height>=138&&e.payload.height<=142)""")
+                                root.locator(".mx-geq31-size[data-size='L']").click()
+                                page.wait_for_function("""()=>window.__fxOutbound
+                                  .filter(e=>e.name==='arMixFloatingSize').at(-1)
+                                  ?.payload.width>=1428""")
                             # A popup has no independent PCM. Power goes to
                             # exactly the native ChannelId/slot/instance and
                             # requires later ACK/readback to change appearance.
