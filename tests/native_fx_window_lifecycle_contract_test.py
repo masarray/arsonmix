@@ -112,6 +112,50 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("std::unique_ptr<PluginEditorWindow> window;",HOST)
         self.assertIn("JUCE editor",HOST)
 
+    def test_all_six_builtins_escape_mixer_via_actual_native_owned_webview(self):
+        script=(ROOT/"web/approved-floating-fx-bridge.js").read_text(encoding="utf-8")
+        builder=(ROOT/"scripts/build_approved_native_gui.py").read_text(encoding="utf-8")
+        cmake=(ROOT/"CMakeLists.txt").read_text(encoding="utf-8")
+        self.assertIn("class BuiltinFxDesktopWindow final : public juce::DocumentWindow",HOST)
+        self.assertIn("withResourceProvider(assetFor)",HOST)
+        self.assertIn("getResourceProviderRoot()+",HOST)
+        self.assertIn('"fx-window.html"',HOST)
+        self.assertIn("attachOwnedFloatingWindow(*this,mixer_)",HOST)
+        self.assertIn("placeFloatingEditor(*this,mixer_,recenter)",HOST)
+        self.assertIn("std::make_unique<BuiltinFxDesktopWindow>",HOST)
+        self.assertIn("maxSimultaneousBuiltinWindows=16",HOST)
+        self.assertIn("floatingBuiltinFx_.clear();",HOST)
+        self.assertIn('if(action=="floatingBuiltinOpen")return openFloatingBuiltin(args);',HOST)
+        self.assertIn("floatingBuiltinPresent(ref)",HOST)
+        self.assertIn("action.startsWith(\"native\")",HOST)
+        self.assertIn("safe->onAction(request); // existing single native DSP request fence",HOST)
+        self.assertIn("browser_.onNativeEvent",HOST)
+        self.assertIn('event=="arMixConsoleSnapshot"',HOST)
+        self.assertIn("floatingFxRelayTick_%4!=0",HOST)
+        self.assertIn("void resizeToPanel(const juce::var& size)",HOST)
+        for catalog in (
+            "channel-eq","channel-compressor","graphic-eq31",
+            "arson-harmony","vocal-throw","8d-sonku"
+        ):
+            self.assertIn("armix.builtin."+catalog+".v1",script)
+            self.assertIn("armix.builtin."+catalog+".v1",HOST)
+        self.assertIn("Object.freeze({",script)
+        self.assertIn("selectNativeReadModel",script)
+        self.assertIn('["CHANNEL_ID","LOGICAL_ONLY","RETAINED_OFFLINE"]',script)
+        self.assertIn("fxEditorState:()=>current?.view||null",script)
+        self.assertIn("script.src=\"assets/\"+entry[0]",script)
+        self.assertNotIn("AudioContext(",script)
+        self.assertNotIn("AudioWorklet",script)
+        self.assertNotIn("createEditorIfNeeded",script)
+        self.assertIn("def floating_fx_html()",builder)
+        self.assertIn('"fx-window.html"',builder)
+        self.assertIn("assets/arsonmix-approved-runtime.css",builder)
+        self.assertIn("approved-floating-fx-bridge.js",builder)
+        self.assertIn("${ARMIX_APPROVED_GUI_DIR}/fx-window.html",cmake)
+        # The public Pages script never receives an alternate product GUI.
+        public=(ROOT/"scripts/build_pages.py").read_text(encoding="utf-8")
+        self.assertNotIn("fx-window.html",public)
+
     def test_all_editor_paths_use_one_host(self):
         self.assertEqual(HOST.count("std::make_unique<PluginEditorWindow>"),4)
         self.assertIn("prepared.processor->getName(),editor,*this)",HOST)
