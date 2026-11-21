@@ -188,10 +188,74 @@ test("MV-3 retained device-loss readback wins over stale logical state, never re
   "source/edge intent survives device remap without phantom PCM");
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/const readModel=protocol\.selectNativeReadModel\(next,m4Verified\(\)\)/);
- assert.match(bridge,/if\(readModel\.kind==="LOGICAL_ONLY"\)/);
+ assert.match(bridge,/if\(readModel\.kind==="LOGICAL_ONLY"\|\|readModel\.kind==="RETAINED_OFFLINE"\)/);
  assert.match(bridge,/const nativeAdmitted=readModel\.kind==="CHANNEL_ID"/);
  assert.doesNotMatch(bridge,/const logicalAvailable=/,
   "legacy duplicate offline authority policy must be deleted from bridge");
  assert.doesNotMatch(bridge,/const nativeAdmitted=session\.authority===/,
   "native callback admission belongs to schema-v6 read-model, not DOM");
+});
+
+
+test("FUX-1 retained FX offline access requires identical native authority and does not arm output",()=>{
+ const source=installedReadModelFixture();
+ source.graph.bindingState="NEEDS_REMAP";
+ source.graph.capabilities.callbackOwnsChannelIds=false;
+ source.graph.capabilities.supportedOps=[];
+ source.device.outputArmed=false;source.productionCallbackLive=false;
+ source.mixerSession.bindingState="NEEDS_REMAP";
+ source.logicalMixer=offlineReadModelFixture().logicalMixer;
+ source.logicalMixer.graph.capabilities.supportedOps=["SET_FX_SLOT_BYPASS"];
+ const retained=protocol.normalizeSnapshot(source);
+ assert.ok(retained?.retained&&!retained?.admitted);
+ assert.equal(protocol.selectNativeReadModel(retained).kind,"NEEDS_REMAP",
+  "a disconnected graph and saved .smix alone cannot authorize offline edits");
+ const approved=copy(source);
+ approved.logicalMixer.retainedOffline=true;
+ approved.logicalMixer.retainedDeviceEpoch=approved.device.epoch;
+ approved.logicalMixer.retainedGraphRevision=approved.graph.revision;
+ const ready=protocol.selectNativeReadModel(protocol.normalizeSnapshot(approved));
+ assert.equal(ready.kind,"RETAINED_OFFLINE");
+ assert.equal(ready.view.logical,true);
+ assert.equal(ready.view.physicalRetained,true);
+ assert.equal(ready.view.retained,false);
+ assert.equal(ready.view.admitted,false);
+ assert.equal(ready.view.productLive,false);
+ assert.equal(ready.view.device.outputArmed,false);
+ assert.strictEqual(ready.view.graph,ready.view.raw.logicalMixer.graph);
+ for(const change of [
+  x=>{x.logicalMixer.retainedDeviceEpoch="1";},
+  x=>{x.logicalMixer.retainedGraphRevision="99";},
+  x=>{x.logicalMixer.retainedOffline=false;},
+  x=>{x.logicalMixer.outputArmed=true;},
+  x=>{x.logicalMixer.physicalOutputAdmitted=true;},
+  x=>{x.device.outputArmed=true;},
+  x=>{x.mixerSession.authority="M4";},
+  x=>{x.mixerSession.bindingState="LIVE";},
+  x=>{x.logicalMixer.graph.capabilities.callbackOwnsChannelIds=true;}
+ ]) {
+  const bad=copy(approved);change(bad);
+  const next=protocol.normalizeSnapshot(bad);
+  assert.notEqual(protocol.selectNativeReadModel(next).kind,"RETAINED_OFFLINE",
+   "stale authority must not silently create logical editor lease");
+ }
+ const bridge=read("web/approved-native-bridge.js");
+ for(const marker of ["action:\"retainedFxOfflineOpen\"",
+   "arMixRetainedFxOfflineAck","pendingRetainedEditor.acknowledged=true",
+   "readModel.kind===\"RETAINED_OFFLINE\"",
+   "controller.subscribe(); // only accepted native logical readback"])
+  assert.ok(bridge.includes(marker.replaceAll('\\"','"')),marker);
+ const main=read("src/Main.cpp");
+ const host=main.slice(main.indexOf("void openRetainedFxOffline("),
+  main.indexOf("void handleLogicalMixerIntent("));
+ for(const marker of ["engine_.captureNativeMixerSession(document,states,true)",
+  "logicalMixer_.restoreCheckpoint(std::move(document),std::move(states))",
+  "document.resumeMain=false","operatorOutputMuted_=true"])
+  assert.ok(host.includes(marker),marker);
+ assert.ok(!/setMonitorEnabled\(true\)|setOutputMuted\(false\)|restoreNativeMixerSession\(/.test(host),
+  "offline editor must not arm/restore PCM");
+ assert.ok(read("src/LiveAudioEngine.h").includes(
+  "const bool disconnectedRetained=retained && !deviceOpen"));
+ assert.ok(read("src/LiveDryRoutingLab.h").includes(
+  "const bool offlineSource=retained && hasRetainedNativeSession()"));
 });
