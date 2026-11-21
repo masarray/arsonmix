@@ -837,6 +837,9 @@ jobs:
       - name: Verify M3 meter/clip/menu/FX/receiving multi-wire operator contract
         if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_m3_operator_visual_interaction_smoke.py
+      - name: FUX-1 six approved native-only built-in FX desktop browser surfaces
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'fix/fx-editor-recovery-')) }}
+        run: python tests/approved_floating_fx_window_smoke.py
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
       - name: Verify V40 WIRE proximity, focus release and full-tray channel selection
