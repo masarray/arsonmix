@@ -1311,6 +1311,172 @@ private:
         additionalFxEditors_.clear();
     }
 
+    // FUX-1: only exact native published ChannelId/slot/instance can create
+    // a separate WEBVIEW editor HWND. The six FX asset modules are the same
+    // original /preview/ modules, not a second mixer or a JS DSP implementation.
+    bool floatingBuiltinPresent(const FloatingBuiltinOwner* raw) const noexcept {
+        return std::any_of(floatingBuiltinFx_.begin(),floatingBuiltinFx_.end(),
+            [raw](const auto& x){return x.get()==raw;});
+    }
+    void emitFloatingBuiltinOpen(const FloatingBuiltinOwner& owner) {
+        if(!owner.window || !owner.window->ready())return;
+        auto args=std::make_unique<juce::DynamicObject>();
+        args->setProperty("snapshot",approvedNativeSnapshot());
+        args->setProperty("channelId",owner.channelId);
+        args->setProperty("instanceId",owner.instanceId);
+        args->setProperty("catalogId",owner.catalogId);
+        args->setProperty("slot",owner.slot);
+        owner.window->emit("arMixFloatingOpen",juce::var(args.release()));
+    }
+    void openFloatingBuiltin(const juce::var& args) {
+        const auto channel=args.getProperty("channelId",{}).toString();
+        const auto instance=args.getProperty("instanceId",{}).toString();
+        const auto catalog=args.getProperty("catalogId",{}).toString();
+        const auto rawSlot=args.getProperty("slot",{});
+        const int slot=rawSlot.isInt()?static_cast<int>(rawSlot):-1;
+        const auto workspace=args.getProperty("workspaceToken","").toString();
+        // Explicitly allowlist the six existing original DOM editors; other
+        // built-ins providing JUCE editors use PluginEditorWindow instead.
+        const juce::StringArray editors{
+            "armix.builtin.channel-eq.v1",
+            "armix.builtin.channel-compressor.v1",
+            "armix.builtin.graphic-eq31.v1",
+            "armix.builtin.arson-harmony.v1",
+            "armix.builtin.vocal-throw.v1",
+            "armix.builtin.8d-sonku.v1"
+        };
+        const auto current=approvedNativeSnapshot();
+        const auto physical=current.getProperty("graph",{});
+        const auto saved=current.getProperty("logicalMixer",{});
+        const auto session=current.getProperty("mixerSession",{});
+        const auto device=current.getProperty("device",{});
+        const bool offline=workspace.isNotEmpty() &&
+            saved.getProperty("schema","").toString()=="arsonmix.native.logical-mixer.v1" &&
+            saved.getProperty("authority","").toString()=="LOGICAL_ONLY" &&
+            saved.getProperty("physicalOutputAdmitted",true)==juce::var(false) &&
+            saved.getProperty("outputArmed",true)==juce::var(false) &&
+            saved.getProperty("workspaceToken","").toString()==workspace &&
+            saved.getProperty("revision",{}).toString()==
+                args.getProperty("graphRevision",{}).toString();
+        const bool live=workspace.isEmpty() &&
+            session.getProperty("authority","").toString()=="CHANNEL_ID" &&
+            physical.getProperty("capabilities",{})
+                .getProperty("callbackOwnsChannelIds",false)==juce::var(true) &&
+            physical.getProperty("bindingState","").toString()!="NEEDS_REMAP" &&
+            device.getProperty("epoch",{}).toString()==
+                args.getProperty("deviceEpoch",{}).toString() &&
+            physical.getProperty("revision",{}).toString()==
+                args.getProperty("graphRevision",{}).toString();
+        const auto graph=offline?saved.getProperty("graph",{}):physical;
+        bool matched=false;
+        if(slot>=0&&slot<LiveDryRoutingLab::maxFxPerLane &&
+           channel.isNotEmpty()&&instance.isNotEmpty()&&
+           editors.contains(catalog)&&(offline||live)) {
+            const auto rows=graph.getProperty("channels",{});
+            if(const auto* list=rows.getArray())
+                for(const auto& row:*list) {
+                    if(row.getProperty("id",{}).toString()!=channel)continue;
+                    const auto inserts=row.getProperty("inserts",{});
+                    if(const auto* fx=inserts.getArray();fx&&slot<fx->size()) {
+                        const auto insert=(*fx)[slot];
+                        matched=insert.getProperty("id",{}).toString()==instance &&
+                            insert.getProperty("catalogId","").toString()==catalog;
+                    }
+                    break;
+                }
+        }
+        if(!matched) {
+            emitNotice("FX editor needs a current saved/live insert · refresh FX Rack",true);
+            return;
+        }
+        // Native top-level owned HWNDs are independent and physically free to
+        // leave mixer bounds, unlike any CSS fixed/absolute element in WebView.
+        for(const auto& held:floatingBuiltinFx_)
+            if(held && held->channelId==channel && held->slot==slot &&
+               held->instanceId==instance && held->catalogId==catalog &&
+               held->workspaceToken==workspace) {
+                held->window->present(static_cast<bool>(
+                    args.getProperty("recenter",false)));
+                emitFloatingBuiltinOpen(*held);
+                return; // no duplicate WebView or processor for repeated clicks
+            }
+        if(floatingBuiltinFx_.size()>=maxSimultaneousBuiltinWindows) {
+            emitNotice("Close an unused built-in FX editor before opening another",true);
+            return;
+        }
+        auto owned=std::make_unique<FloatingBuiltinOwner>();
+        owned->channelId=channel;
+        owned->instanceId=instance;
+        owned->catalogId=catalog;
+        owned->workspaceToken=workspace;
+        owned->slot=slot;
+        const auto* ref=owned.get();
+        const auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
+        const auto onAction=[safe,ref](juce::var request) {
+            if(!safe || !safe->floatingBuiltinPresent(ref))return;
+            // Popup may only issue CONTROL intents for its exact open insert.
+            if(request.getProperty("channelId",{}).toString()!=ref->channelId ||
+               request.getProperty("instanceId",{}).toString()!=ref->instanceId ||
+               request.getProperty("slot",{})!=juce::var(ref->slot))return;
+            const auto action=request.getProperty("action","").toString();
+            if(!action.startsWith("native") &&
+               !action.startsWith("builtinFx"))return;
+            safe->onAction(request); // existing single native DSP request fence
+        };
+        const auto onPower=[safe,ref](juce::var request) {
+            if(!safe||!safe->floatingBuiltinPresent(ref))return;
+            if(request.getProperty("channelId",{}).toString()!=ref->channelId ||
+               request.getProperty("instanceId",{}).toString()!=ref->instanceId ||
+               request.getProperty("catalogId",{}).toString()!=ref->catalogId ||
+               request.getProperty("slot",{})!=juce::var(ref->slot))return;
+            const auto source=safe->approvedNativeSnapshot();
+            const auto logical=request.getProperty("logical",false)==juce::var(true);
+            const auto actualGraph=logical?
+                source.getProperty("logicalMixer",{}).getProperty("graph",{}):
+                source.getProperty("graph",{});
+            const auto expectedRevision=logical?
+                source.getProperty("logicalMixer",{}).getProperty("revision",{}):
+                actualGraph.getProperty("revision",{});
+            if(expectedRevision.toString()!=
+                   request.getProperty("graphRevision",{}).toString() ||
+               source.getProperty("device",{}).getProperty("epoch",{}).toString()!=
+                   request.getProperty("deviceEpoch",{}).toString() ||
+               !request.getProperty("value",{}).isBool())return;
+            auto outgoing=std::make_unique<juce::DynamicObject>();
+            const auto id=request.getProperty("requestId","").toString();
+            if(!id.startsWith("fx-window-")||id.length()>128)return;
+            outgoing->setProperty("requestId",logical?"logical-"+id:id);
+            outgoing->setProperty("channelId",ref->channelId);
+            outgoing->setProperty("slot",ref->slot);
+            outgoing->setProperty("value",request.getProperty("value",{}));
+            if(logical) {
+                if(request.getProperty("workspaceToken","").toString()!=ref->workspaceToken ||
+                   ref->workspaceToken.isEmpty())return;
+                outgoing->setProperty("operation","SET_FX_SLOT_BYPASS");
+                outgoing->setProperty("workspaceToken",ref->workspaceToken);
+                outgoing->setProperty("baseRevision",expectedRevision);
+                safe->handleLogicalMixerIntent(juce::var(outgoing.release()));
+            } else {
+                if(ref->workspaceToken.isNotEmpty())return;
+                outgoing->setProperty("action","routingNativeFxInsertBypass");
+                outgoing->setProperty("deviceEpoch",request.getProperty("deviceEpoch",{}));
+                outgoing->setProperty("revision",expectedRevision);
+                outgoing->setProperty("insertId",ref->instanceId);
+                safe->onAction(juce::var(outgoing.release()));
+            }
+        };
+        const auto ready=[safe,ref] {
+            if(safe && safe->floatingBuiltinPresent(ref))
+                safe->emitFloatingBuiltinOpen(*ref);
+        };
+        owned->window=std::make_unique<BuiltinFxDesktopWindow>(
+            *this,"ArSonMix FX · "+catalog,std::move(onAction),
+            std::move(onPower),std::move(ready));
+        floatingBuiltinFx_.push_back(std::move(owned));
+        floatingBuiltinFx_.back()->window->present(true); // first open centred
+        emitFloatingBuiltinOpen(*floatingBuiltinFx_.back());
+    }
+
     void emitChain()
     {
         if (browser_.loaded)
@@ -4933,6 +5099,7 @@ private:
     void onAction (const juce::var& args)
     {
         auto action = args.getProperty ("action", {}).toString();
+        if(action=="floatingBuiltinOpen")return openFloatingBuiltin(args);
         if (action=="audioLoopbackRead" || action=="audioLoopbackMeasure") {
             if (!deviceApply_.busy())
                 requestPhysicalLoopback(args,action=="audioLoopbackMeasure");
