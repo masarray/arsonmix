@@ -1993,12 +1993,12 @@
     const activeOutput=!next?.retained && deviceOpen &&
       d.outputArmed===true && next?.admitted===true;
     const label=document.getElementById("transport");
+    // Keep the existing operator wording for muted/disconnected output;
+    // show latency hints only for the accepted and armed physical route.
+    const operatorTransport=operatorMessage(transport);
     const labelText=activeOutput?
       (healthSameEpoch?lastFooterHealth.latency:"LAT —"):
-      operatorMessage(transport);
-    // Keep this precise display policy as the original native footer
-    // operatorMessage contract; never emit internal QA/FAT identifiers.
-    const operatorTransport=operatorMessage(transport);
+      operatorTransport;
     if(label && label.textContent!==labelText)label.textContent=labelText;
     const warning=document.querySelector?.(".status-bar .warning");
     const warningText=next?.retained?"PLAYBACK UNAVAILABLE · MIXER SAVED":
