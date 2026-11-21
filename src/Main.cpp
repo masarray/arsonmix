@@ -579,7 +579,9 @@ private:
             mixerSessionId_=id;
             lastMixerSessionFingerprint_.clear();
             mixerSessionRecoveryPending_=true;
-            mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND";
+            mixerSessionStatus_=retainedOfflineFxActive_
+                ?"RETAINED_OFFLINE_FX_REAPPLY_REQUIRED"
+                :"LOGICAL_SESSION_SAVED_UNBOUND";
             mixerSessionError_.clear();
         }};
     struct LogicalVendorEditor {
@@ -2087,6 +2089,7 @@ private:
         if(auto* obj=accepted.getDynamicObject()) {
             // PCM-authoritative global A/B readback; not a mirrored button state.
             obj->setProperty("globalFxBypassed",engine_.globalFxBypassed());
+            obj->setProperty("retainedOfflineFxPending",retainedOfflineFxActive_);
             obj->setProperty("channelAppearance",channelAppearance_.snapshot(accepted.getProperty("graph",{})));
             obj->setProperty("waitingAsioInputs",live.getProperty("waitingAsioInputs",0));
             obj->setProperty("externalOutputs",
