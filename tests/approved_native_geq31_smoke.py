@@ -309,8 +309,8 @@ def main():
         hi.wait_for_function("()=>!!window.ArSonMixGraphicEq31")
         hi.evaluate("""()=>window.ArSonMixGraphicEq31.open(
             {id:999,name:'DPI 2x Preview',slotBypass:[false]},0)""")
-        hi.wait_for_function("()=>document.querySelector(
-            '#mxNativeGeq31')?.dataset.artwork==='v13'")
+        hi.wait_for_function(
+            "()=>document.querySelector('#mxNativeGeq31')?.dataset.artwork==='v13'")
         hp=hi.locator("#mxNativeGeq31")
         assert hi.evaluate("()=>window.devicePixelRatio")==2
         assert hp.locator("svg.mx-geq31-dial-pointer").count()==1
