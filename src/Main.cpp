@@ -693,6 +693,18 @@ private:
     armix::mixer::NativeMusicTempoMonitor::State lastMusicTempo_{};
     std::unique_ptr<PluginEditorWindow> editorWindow_;
     juce::AudioProcessor* editorProcessor_=nullptr; // identity only, never owns PCM
+    // UI-thread-only additional vendor HWNDs; the peer is destroyed BEFORE
+    // its exact native processor lease. No duplicate DSP or JUCE editor.
+    struct AdditionalFxEditor final {
+        armix::mixer::LiveChannelFxGraph::InstanceLease owner;
+        std::uint64_t epoch=0,channel=0;
+        int lane=-1,slot=-1;
+        juce::String instanceId;
+        juce::AudioProcessor* processor=nullptr; // non-owning
+        std::unique_ptr<PluginEditorWindow> window;
+    };
+    std::vector<AdditionalFxEditor> additionalFxEditors_;
+    static constexpr std::size_t maxSimultaneousVendorEditors=16;
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     // Persistent modal lease: blocks an Apply/ASIO restart while JUCE's
     // device selector is open, not merely during the initial show() call.
@@ -1184,6 +1196,8 @@ private:
 #endif
     }
     void closeAllPluginEditors() noexcept {
+        // Top-level HWND first, exact held processor last, never on RT.
+        additionalFxEditors_.clear();
         closePluginEditor();
         closeImmerSIBEditor();
     }
@@ -6735,8 +6749,24 @@ private:
                     auto& shownEpoch=routedEditorEpoch_;
                     auto& shownProcessor=editorProcessor_;
 #endif
+                    std::erase_if(additionalFxEditors_,[this](const auto& extra){
+                        return !extra.owner ||
+                            !engine_.retainsRoutedFxEditor(extra.epoch,extra.owner);
+                    });
+                    const auto extra=std::find_if(additionalFxEditors_.begin(),
+                        additionalFxEditors_.end(),[&](const auto& entry){
+                        return entry.owner==owner &&
+                            entry.processor==owner->processor.get();
+                    });
+                    // Only a DIFFERENT vendor owner may occupy an additional
+                    // HWND. Allow one existing primary owner plus 16 others.
+                    bool keepOtherVendorWindow=editorWindow_ && routedEditorOwner_ &&
+                        routedEditorOwner_!=owner;
+#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
+                    if(dedicatedImmerSIB)keepOtherVendorWindow=false;
+#endif
                     // A second click must raise an already open OR hidden
-                    // editor for exactly this accepted instance. Do not
+                    // editor for exactly this instance. Do not
                     // destroy/recreate JUCE's active editor on every click.
                     if(shownWindow && shownOwner==owner &&
                        shownEpoch==retainedEpoch &&
@@ -6746,12 +6776,26 @@ private:
                         else shownWindow->present();
                         opened=true;
                         error.clear();
+                    } else if(extra!=additionalFxEditors_.end()) {
+                        // Instance owner is re-leased by the current graph;
+                        // channel and slot can move, but never clone its UI.
+                        extra->epoch=retainedEpoch;
+                        extra->channel=nativeChannel;
+                        extra->lane=lane;extra->slot=slot;
+                        extra->instanceId=token;
+                        extra->window->present(static_cast<bool>(
+                            args.getProperty("recenter",false)));
+                        opened=true;
+                        error.clear();
+                    } else if(keepOtherVendorWindow &&
+                              additionalFxEditors_.size()>=maxSimultaneousVendorEditors) {
+                        error="Close an unused VST3 editor before opening another";
                     } else try {
 #if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
                         if(dedicatedImmerSIB)closeImmerSIBEditor();
                         else
 #endif
-                            closePluginEditor();
+                            if(!keepOtherVendorWindow)closePluginEditor();
                         if(auto* editor=owner->processor->createEditorIfNeeded()) {
 #if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
                             if(auto* imer=dynamic_cast<
@@ -6945,13 +6989,26 @@ private:
                                         return true;
                                     });
                             }
-                            shownOwner=owner;
-                            shownEpoch=retainedEpoch;
-                            shownWindow=std::make_unique<PluginEditorWindow>(
-                                owner->processor->getName(),editor,*this);
-                            if(static_cast<bool>(args.getProperty("recenter",false)))
-                                shownWindow->present(true); // new HWND: centre on mixer too
-                            shownProcessor=owner->processor.get();
+                            if(keepOtherVendorWindow) {
+                                AdditionalFxEditor entry;
+                                entry.owner=owner;entry.epoch=retainedEpoch;
+                                entry.channel=nativeChannel;entry.lane=lane;
+                                entry.slot=slot;entry.instanceId=token;
+                                entry.processor=owner->processor.get();
+                                entry.window=std::make_unique<PluginEditorWindow>(
+                                    owner->processor->getName(),editor,*this);
+                                if(static_cast<bool>(args.getProperty("recenter",false)))
+                                    entry.window->present(true);
+                                additionalFxEditors_.push_back(std::move(entry));
+                            } else {
+                                shownOwner=owner;
+                                shownEpoch=retainedEpoch;
+                                shownWindow=std::make_unique<PluginEditorWindow>(
+                                    owner->processor->getName(),editor,*this);
+                                if(static_cast<bool>(args.getProperty("recenter",false)))
+                                    shownWindow->present(true);
+                                shownProcessor=owner->processor.get();
+                            }
                             opened=true;
                             error.clear();
                         } else error="This VST3 has no native editor";
@@ -6960,14 +7017,14 @@ private:
                         if(dedicatedImmerSIB)closeImmerSIBEditor();
                         else
 #endif
-                            closePluginEditor();
+                            if(!keepOtherVendorWindow)closePluginEditor();
                         error="Vendor editor failed: "+juce::String(ex.what());
                     } catch(...) {
 #if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
                         if(dedicatedImmerSIB)closeImmerSIBEditor();
                         else
 #endif
-                            closePluginEditor();
+                            if(!keepOtherVendorWindow)closePluginEditor();
                         error="Vendor editor failed (plugin exception)";
                     }
                 }
@@ -8741,6 +8798,12 @@ private:
         if(routedEditorOwner_ &&
            !engine_.retainsRoutedFxEditor(routedEditorEpoch_,routedEditorOwner_))
             closePluginEditor();
+        // Reclaim every retired vendor HWND before the respective FX lease.
+        // This is message-thread O(open editors), never PCM callback work.
+        std::erase_if(additionalFxEditors_,[this](const auto& entry){
+            return !entry.owner ||
+                !engine_.retainsRoutedFxEditor(entry.epoch,entry.owner);
+        });
 #if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
         if(immersibEditorOwner_ &&
            !engine_.retainsRoutedFxEditor(immersibEditorEpoch_,immersibEditorOwner_))
