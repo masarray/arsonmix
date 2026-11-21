@@ -2030,6 +2030,9 @@
       d.enabledOutputs.length>=2);
     syncMonitorButton(d);
     paintPhysicalOutputs(next);
+    // Keep the SAME verified playback device for mixer master projection.
+    // Footer display is independent; device identity must never be dropped.
+    const playback=String(d?.playbackDevice||"unknown output");
     const mainOutput=next?.retained?NEEDS_REMAP:deviceOpen?playback:null;
     if(scope?.master && mainOutput && scope.master.output!==mainOutput){
       scope.master.output=mainOutput;
