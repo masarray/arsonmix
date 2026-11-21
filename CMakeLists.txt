@@ -1637,7 +1637,28 @@ if(BUILD_TESTING)
       COMMAND ARMixGraphicEq31CoreTests)
   add_test(NAME GraphicEq31OriginalSvgLayersAndDynamicThumb
       COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/graphic_eq31_svg_layers_test.py")
-  add_dependencies(ARMixMixerRoutingTests ARMixGraphicEq31CoreTests)
+  # P0 screenshot-driven fix: Python SVG/Chromium tests missed native JUCE's
+  # auto-fitted drawable bounds, transformed text and misaligned thumb.
+  # Link exactly the same original 31-band BinaryData as ARMixConsole.
+  juce_add_console_app(ARMixGraphicEq31NativeRenderTests PRODUCT_NAME
+      "ArSonMix Graphic EQ 31 Native Windows Render Regression")
+  target_sources(ARMixGraphicEq31NativeRenderTests PRIVATE
+      tests/graphic_eq31_native_render_test.cpp
+      engine/builtin_fx/GraphicEq31Processor.h)
+  target_compile_definitions(ARMixGraphicEq31NativeRenderTests PRIVATE
+      ARMIX_GEQ31_VECTOR_ASSET=1)
+  target_link_libraries(ARMixGraphicEq31NativeRenderTests PRIVATE
+      ARMixAssets juce::juce_audio_processors
+      juce::juce_recommended_config_flags)
+  target_compile_features(ARMixGraphicEq31NativeRenderTests PRIVATE cxx_std_20)
+  if(MSVC)
+    target_compile_options(ARMixGraphicEq31NativeRenderTests PRIVATE
+        "$<$<COMPILE_LANGUAGE:CXX>:/utf-8>")
+  endif()
+  add_test(NAME GraphicEq31ActualNativeJuceRenderingAndCaptions
+      COMMAND ARMixGraphicEq31NativeRenderTests)
+  add_dependencies(ARMixMixerRoutingTests
+      ARMixGraphicEq31CoreTests ARMixGraphicEq31NativeRenderTests)
 
   # Zero-lookahead native compressor DSP: zero PDC, stereo-linked peak,
   # soft knee, dry/wet, parameter validation and variable sample rates.
