@@ -141,7 +141,11 @@ function makeOwnerSvg(base,i){
   ".s0 { fill:none;stroke:#131a1d;stroke-miterlimit:10;stroke-width:7.9 }");
  for(const [id,stops] of [
   ["g1",["#929b9f","#a6afb3","#969ea3","#858d92"]],
-  ["g2",["#080b0d","#13181c","#1b2125","#20272b","#242a2d"]]]){
+  ["g2",["#080b0d","#13181c","#1b2125","#20272b","#242a2d"]],
+  ["g3",["#090b0e","#13181c","#262d32","#323a40","#262d32","#13181c","#090b0e"]],
+  ["g4",["#30383e","#252d32","#141a1e","#252d32","#30383e"]],
+  ["g5",["#252e33","#171e22","#0d1216","#171e22","#252e33"]],
+  ["g6",["#646e74","#88969e","#b4bdc1","#88969e","#5b656b"]]]){
   const gradient=svg.querySelector('[id="'+id+'"]');
   if(!gradient)throw Error("Owner SVG missing "+id);
   gradient.querySelectorAll("stop").forEach((stop,n)=>{
