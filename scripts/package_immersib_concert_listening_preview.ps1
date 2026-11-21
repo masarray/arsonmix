@@ -27,7 +27,9 @@ if($LASTEXITCODE -ne 0){throw "IMMERSIB_AB_LEGAL_NOT_EMBEDDED"}
 & python scripts/verify_windows_pe_brand_icon.py --exe $exe --approved assets/icon/arsonmix-256.png
 if($LASTEXITCODE -ne 0){throw "IMMERSIB_AB_BRAND_ICON_NOT_APPROVED"}
 $guiDir=Join-Path $BuildDir "approved_gui"
-& python scripts/build_approved_native_gui.py --out $guiDir --verify
+. (Join-Path "scripts" "resolve_approved_gui_python.ps1")
+$approvedGuiPython = Resolve-ArSonMixApprovedGuiPython -BuildDir $BuildDir
+& $approvedGuiPython scripts/build_approved_native_gui.py --out $guiDir --verify
 if($LASTEXITCODE -ne 0){throw "IMMERSIB_AB_GUI_PROVENANCE_FAILED"}
 $gui=Get-Content -LiteralPath (Join-Path $guiDir "approved-gui-manifest.json") -Raw | ConvertFrom-Json
 if($gui.authoritativePagesRoute -ne "/preview/" -or $gui.authoritativePagesOutput -ne "preview/index.html") {
