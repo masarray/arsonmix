@@ -65,7 +65,9 @@ def main():
         out=Path(directory);bundle.stage(out)
         browser=pw.chromium.launch(headless=True)
         # Desktop, constrained desktop and portrait operator control panel.
-        for width,height in [(1366,768),(650,720),(390,844)]:
+        # Keep full studio hardware and native FX ACK here. Cropped overlay,
+        # pointer pan and original fixed-width layouts are checked separately.
+        for width,height in [(1366,768)]:
             page=browser.new_page(viewport={"width":width,"height":height})
             errors=[]
             page.on("pageerror",lambda e:errors.append(str(e)))

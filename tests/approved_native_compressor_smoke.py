@@ -66,7 +66,10 @@ def main():
     with tempfile.TemporaryDirectory(prefix="arsonmix-comp-") as directory,sync_playwright() as pw:
         out=Path(directory);bundle.stage(out)
         browser=pw.chromium.launch(headless=True)
-        for width,height in [(1366,768),(720,600),(390,844)]:
+        # DSP/readback qualification at authentic full studio geometry. Narrow
+        # native UI keeps FULL editor size (no former mobile reflow) and is
+        # covered with drag, pan and clipping in approved_inline_fx_clip_smoke.py.
+        for width,height in [(1366,768)]:
             page=browser.new_page(viewport={"width":width,"height":height})
             errors=[]
             page.on("pageerror",lambda error:errors.append(str(error)))

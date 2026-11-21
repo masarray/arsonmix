@@ -42,7 +42,8 @@ def main():
         Thread(target=server.serve_forever,daemon=True).start()
         browser=pw.chromium.launch(headless=True)
         try:
-            for width,height in ((390,844),(1040,700),(1680,850)):
+            # Narrow, tablet, midrange and desktop mixer viewport overlay.
+            for width,height in ((390,844),(720,720),(1040,700),(1680,850)):
                 page=browser.new_page(viewport={"width":width,"height":height})
                 errors=[]
                 page.on("pageerror",lambda error: errors.append(str(error)))
@@ -104,6 +105,25 @@ def main():
                 assert root.locator(".mx-geq31-size").count()==3
                 assert root.locator(".mx-geq31-close").count()==1
                 assert abs(root.bounding_box()["width"]-1430)<1
+                # Native original Close is physically hidden behind mixer
+                # clipping until the operator pans to the right-hand controls.
+                closer=root.locator(".mx-geq31-close")
+                page.evaluate("""()=>{
+                  const root=document.getElementById('mxNativeGeq31');
+                  const button=root.querySelector('.mx-geq31-close')
+                    .getBoundingClientRect();
+                  if(button.right>innerWidth-12)
+                    window.__ARMIX_NATIVE_INLINE_FX_CLIP__.move(
+                        root,innerWidth-button.right-12,0);
+                }""")
+                box=closer.bounding_box()
+                assert box and box["x"]>=0 and box["x"]+box["width"]<=width
+                closer.click()
+                assert root.is_hidden(),(width,"Close not recoverable by pan")
+                page.evaluate("""()=>window.ArSonMixGraphicEq31.open(
+                    {id:22,name:'TEST CHANNEL',slotBypass:[false]},0)""")
+                page.evaluate("""()=>window.__ARMIX_NATIVE_INLINE_FX_CLIP__
+                    .center(document.getElementById('mxNativeGeq31'))""")
                 cell_first=root.locator(".mx-geq31-cell").first.bounding_box()
                 cell_last=root.locator(".mx-geq31-cell").last.bounding_box()
                 assert cell_last["x"]-cell_first["x"]>1190,(width,cell_first,cell_last)

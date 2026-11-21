@@ -626,7 +626,9 @@ def main():
     with tempfile.TemporaryDirectory(prefix="armix-sonku-") as temp,sync_playwright() as p:
         out=Path(temp);bundle.stage(out)
         browser=p.chromium.launch(headless=True)
-        for width,height in [(1366,768),(390,844)]:
+        # Exact native DSP at full hardware size; narrow clipped SonKu editor
+        # now tested inside the original mixer WebView with five peers.
+        for width,height in [(1366,768)]:
             exercise(browser,out,width,height)
         browser.close()
     print("PASS 8D-SonKu actual native editor: insert intent, no premature GUI,"

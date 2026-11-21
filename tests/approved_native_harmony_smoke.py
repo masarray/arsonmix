@@ -61,7 +61,10 @@ def main():
         out=Path(directory);bundle.stage(out)
         with sync_playwright() as playwright:
             browser=playwright.chromium.launch(headless=True)
-            for width,height in ((1366,768),(720,600),(390,844)):
+            # DSP/readback qualification at full studio geometry. Four mixer
+            # viewport widths and the original clipped FX controls are
+            # exercised by approved_inline_fx_clip_smoke.py.
+            for width,height in ((1366,768),):
                 page=browser.new_page(viewport={"width":width,"height":height})
                 errors=[]
                 page.on("pageerror",lambda error:errors.append(str(error)))
