@@ -37,8 +37,8 @@ def main():
             assert panel.locator(".mx-geq31-range").count()==31
             assert panel.locator(".mx-geq31-frequency").all_text_contents()==[
              "20","25","31.5","40","50","63","80","100","125","160","200",
-             "250","315","400","500","630","800","1k","1.25k","1.6k","2k",
-             "2.5k","3.15k","4k","5k","6.3k","8k","10k","12.5k","16k","20k"]
+             "250","315","400","500","630","800","1","1.25","1.6","2",
+             "2.5","3.15","4","5","6.3","8","10","12.5","16","20"]
             assert panel.locator(".mx-geq31-scale-text").all_text_contents()==[
                 "+12","0","−12","+12","0","−12"]
             assert panel.locator(".mx-geq31-close").count()==1
