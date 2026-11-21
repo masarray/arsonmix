@@ -144,6 +144,11 @@ static void nativeParity(int rate) {
     // SAME core. Generic SonKu stays unopted and byte-identical separately.
     native->optInImmerSIBVocalRoom();
 #endif
+#if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
+    // P9 reference must use the *same opted-in acoustic candidate* as
+    // the actual branded ImmerSIB JUCE processor under test.
+    native->optInImmerSIBConcertCandidate();
+#endif
     assert(native->prepare(rate,
         armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch));
     assert(native->setSettings(reference));
