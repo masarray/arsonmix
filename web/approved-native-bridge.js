@@ -232,6 +232,9 @@
   const pendingM4RackPowers=new Map();
   let controller = null;
   let logicalView=null,pendingLogical=null,logicalSerial=0,logicalRenameId=null;
+  // Retained requests prepare a control-only .smix FX editor after ACK, never
+  // authorize PCM or silently rebind disconnected hardware.
+  let pendingRetainedEditor=null,retainedEditorSerial=0;
   const logicalClientToken=Date.now().toString(36)+"-"+
     Math.random().toString(36).slice(2,10);
   // Human-facing presentation is isolated from native diagnostic state.
@@ -3005,7 +3008,7 @@
     appearanceFromNative(next);
     settleSourceReadback("CHANNEL_ID",next);
     settleSourceReadback("M4",next);
-    if(readModel.kind==="LOGICAL_ONLY") {
+    if(readModel.kind==="LOGICAL_ONLY"||readModel.kind==="RETAINED_OFFLINE") {
       const staged=readModel.view;
       let revealCreatedId=null,wireImpact=null;
       if(pendingLogical && pendingLogical.workspaceToken!==offline.workspaceToken)
@@ -3068,6 +3071,29 @@
       document.documentElement.dataset.armixNativeRoster="logical";
       flags.acceptedGraphConnected=false;flags.productionCallbackLive=false;
       stopDemo();syncAddTrack(staged);
+      if(pendingRetainedEditor?.acknowledged===true&&
+         readModel.kind==="RETAINED_OFFLINE"&&
+         pendingRetainedEditor.epoch===offline.retainedDeviceEpoch&&
+         pendingRetainedEditor.revision===offline.retainedGraphRevision) {
+        const held=pendingRetainedEditor;
+        const fx=staged.graph.channels.find(ch=>ch.id===held.channelId)
+          ?.inserts?.[held.slot];
+        if(fx?.catalogId===held.catalogId) {
+          pendingRetainedEditor=null;
+          window.queueMicrotask(()=>{
+            if(!logicalView||logicalView.workspaceToken!==staged.workspaceToken)return;
+            const uiId=uiByNativeId.get(held.channelId);
+            const track=[...(scope?.tracks||[]),scope?.master]
+              .find(t=>t&&t.id===uiId);
+            if(track)nativeHooks.consumeAction(track,"openPlugin",{
+              dataset:{slot:String(held.slot),recenter:held.recenter?"true":"false"}
+            });
+          });
+        } else {
+          pendingRetainedEditor=null;
+          status("Retained FX slot changed before offline editor could open");
+        }
+      }
       const addBus=document.getElementById("addBus");
       if(addBus){addBus.hidden=false;addBus.disabled=!!pendingLogical;}
       status(staged.readOnly?
@@ -3076,6 +3102,9 @@
       return;
     }
     logicalView=null;
+    if(pendingRetainedEditor && readModel.kind!=="NEEDS_REMAP"){
+      pendingRetainedEditor=null; // never follow a newly admitted PCM owner
+    }
     if(pendingLogical) {
       pendingLogical=null;
       status("Audio connection changed · refresh mixer before editing");
@@ -3314,6 +3343,17 @@
       finally{profiler.sample("nativeSnapshotJsMs",performance.now()-started);}
     });
     backend.addEventListener("arMixConsoleAck", ack=>controller.onAck(ack));
+    backend.addEventListener("arMixRetainedFxOfflineAck",ack=>{
+      if(!pendingRetainedEditor||ack?.requestId!==pendingRetainedEditor.requestId)return;
+      if(ack.ok!==true){
+        const error=ack?.error||"Retained FX recovery rejected";
+        pendingRetainedEditor=null;
+        status("Offline FX unavailable · "+error);
+        return;
+      }
+      pendingRetainedEditor.acknowledged=true;
+      controller.subscribe(); // only accepted native logical readback may open UI
+    });
     backend.addEventListener("arMixLogicalAck",ack=>{
       const pending=pendingLogical;
       if(!pending||pending.requestId!==ack?.requestId)return;
@@ -3856,6 +3896,35 @@
         const recenter=btn?.dataset.recenter==="true";
         if(logicalView||mixerSession()?.authority==="CHANNEL_ID") {
           const id=nativeIdFor(t);
+          // A disconnected physical graph cannot authorize editor writes.
+          // Native must first capture a quiescent FX state to the .smix
+          // logical workspace; the UI opens it only after matching readback.
+          if(!logicalView&&current?.retained===true){
+            const fx=current.graph?.channels?.find(ch=>ch.id===id)?.inserts?.[slot];
+            if(!id||!Number.isInteger(slot)||slot<0||slot>=8||
+               !fx?.id||!fx.catalogId){
+              nativeToast("Disconnect recovery requires a saved FX insert");
+              return true;
+            }
+            if(pendingRetainedEditor){
+              status("Finishing the previous offline editor request");
+              return true;
+            }
+            const requestId="retained-editor-"+(++retainedEditorSerial);
+            pendingRetainedEditor={requestId,channelId:id,slot,
+              catalogId:fx.catalogId,instanceId:fx.id,
+              epoch:current.device.epoch,revision:current.graph.revision,
+              recenter,acknowledged:false};
+            backend.emitEvent("arMixAction",{action:"retainedFxOfflineOpen",
+              requestId,channelId:id,slot,instanceId:fx.id,
+              deviceEpoch:current.device.epoch,graphRevision:current.graph.revision});
+            window.setTimeout(()=>{
+              if(pendingRetainedEditor?.requestId!==requestId)return;
+              pendingRetainedEditor=null;
+              status("Offline FX recovery expired · refresh native mixer");
+            },10000);
+            return true;
+          }
           const plan=fxRackVM.editorNavigationPlan(current,{channelId:id,slot,
             hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
           if(plan.kind==="PICKER"){
