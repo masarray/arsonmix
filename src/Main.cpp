@@ -594,6 +594,10 @@ private:
     juce::String mixerSessionError_,lastMixerSessionFingerprint_;
     bool mixerSessionStartupInspected_=false;
     bool mixerSessionRecoveryPending_=false;
+    // Isolated read/write FX workspace captured explicitly from a disconnected
+    // retained graph. It edits persisted .smix data, NEVER the original lease.
+    bool retainedOfflineFxActive_=false;
+    std::uint64_t retainedOfflineEpoch_=0,retainedOfflineRevision_=0;
     std::unique_ptr<armix::startup::Vst3RestoreCrashGuard> startupFxGuard_;
     juce::uint32 startupFxGuardTick_=0;
     std::unique_ptr<juce::FileChooser> mixerFileChooser_;
@@ -1896,7 +1900,108 @@ private:
         }
     }
 
+    // Explicit retained-session FX editor handoff. A silent device STOP does
+    // not give an old HWND authority to mutate the accepted PCM processor.
+    // Capture its exact quiescent binary state into the existing logical
+    // document, then edit an isolated control-side processor. The user must
+    // explicitly re-apply the saved .smix when hardware returns; no auto ARM.
+    void openRetainedFxOffline(const juce::var& request) {
+        juce::String error;
+        const auto source=approvedNativeSnapshot();
+        const auto graph=source.getProperty("graph",{});
+        const auto device=source.getProperty("device",{});
+        const auto session=source.getProperty("mixerSession",{});
+        const auto rawSlot=request.getProperty("slot",{});
+        const int slot=rawSlot.isInt()?static_cast<int>(rawSlot):-1;
+        std::uint64_t channel=0,epoch=0,revision=0;
+        const bool identity=armix::console::approvedNativeId(
+                request.getProperty("channelId",{}),channel)&&
+            armix::console::approvedNativeId(request.getProperty("deviceEpoch",{}),epoch)&&
+            armix::console::approvedNativeId(request.getProperty("graphRevision",{}),revision)&&
+            slot>=0&&slot<LiveDryRoutingLab::maxFxPerLane&&
+            engine_.hasRetainedNativeSession()&&
+            !engine_.isGraphSwitchPending()&&!deviceApply_.busy()&&
+            !nativeShowBusy_&&!studioBackupBusy_&&!mixerSessionWorker_.busy()&&
+            !logicalVendorEditor_&&
+            graph.getProperty("bindingState","").toString()=="NEEDS_REMAP"&&
+            session.getProperty("authority","").toString()=="CHANNEL_ID"&&
+            session.getProperty("deviceEpoch",{}).toString()==juce::String(epoch)&&
+            device.getProperty("epoch",{}).toString()==juce::String(epoch)&&
+            graph.getProperty("revision",{}).toString()==juce::String(revision)&&
+            engine_.retainedNativeEpoch()==epoch;
+        bool sameInsert=false;
+        if(identity) {
+            const auto rows=graph.getProperty("channels",{});
+            if(const auto* list=rows.getArray())for(const auto& row:*list) {
+                if(row.getProperty("id",{}).toString()!=juce::String(channel))continue;
+                const auto inserts=row.getProperty("inserts",{});
+                if(const auto* fx=inserts.getArray();fx && slot<fx->size()) {
+                    const auto effect=(*fx)[slot];
+                    sameInsert=effect.isObject() &&
+                        effect.getProperty("id",{}).toString()==
+                            request.getProperty("instanceId",{}).toString() &&
+                        effect.getProperty("catalogId","").toString().isNotEmpty();
+                }
+            }
+        }
+        if(!identity||!sameInsert)error="Retained FX instance changed; refresh the rack";
+        else if(retainedOfflineFxActive_&&retainedOfflineEpoch_==epoch&&
+                retainedOfflineRevision_==revision) {
+            // The current logical workspace already contains any committed
+            // offline edits. Never overwrite them with the stale native blob.
+        } else {
+            // Disconnected FX editing is always output-disarmed. A still-armed
+            // secondary output is not silently stopped or reconfigured.
+            operatorOutputMuted_=true;
+            engine_.setOutputMuted(true);
+            if(!engine_.allOutputsDisarmed())
+                error="Disarm secondary output before editing retained FX";
+            else {
+                armix::session::MixerSessionDocument document;
+                std::vector<armix::shows::BinaryState> states;
+                error=engine_.captureNativeMixerSession(document,states,true);
+                if(error.isEmpty()) {
+                    document.id=mixerSessionId_.isNotEmpty()?mixerSessionId_:
+                        logicalMixer_.workspace().document().id;
+                    document.resumeMain=false;
+                    document.savedMs=juce::Time::currentTimeMillis();
+                    error=resolveMixerSessionCatalog(document,true);
+                    if(error.isEmpty()&&
+                       !logicalMixer_.restoreCheckpoint(std::move(document),std::move(states)))
+                        error="Retained FX document could not be validated";
+                }
+                if(error.isEmpty()) {
+                    retainedOfflineFxActive_=true;
+                    retainedOfflineEpoch_=epoch;
+                    retainedOfflineRevision_=revision;
+                    mixerSessionRecoveryPending_=true;
+                    mixerSessionStatus_="RETAINED_OFFLINE_FX_REAPPLY_REQUIRED";
+                }
+            }
+        }
+        auto ack=std::make_unique<juce::DynamicObject>();
+        ack->setProperty("ok",error.isEmpty());
+        ack->setProperty("error",error);
+        ack->setProperty("requestId",request.getProperty("requestId",{}));
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+            "arMixRetainedFxOfflineAck",juce::var(ack.release()));
+        if(error.isEmpty())emitApprovedNativeSnapshot();
+        else emitNotice("Offline FX unavailable: "+error,true);
+    }
+
     void handleLogicalMixerIntent(const juce::var& request) {
+        if(retainedOfflineFxActive_&&engine_.hasRetainedNativeSession()) {
+            const auto operation=request.getProperty("operation","").toString();
+            if(operation!="SET_FX_SLOT_BYPASS"&&operation!="SET_FX_RACK_BYPASS") {
+                auto ack=std::make_unique<juce::DynamicObject>();
+                ack->setProperty("requestId",request.getProperty("requestId",{}));
+                ack->setProperty("status","REJECTED");
+                ack->setProperty("errorCode","RETAINED_OFFLINE_FX_ONLY");
+                if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                    "arMixLogicalAck",juce::var(ack.release()));
+                return;
+            }
+        }
         const auto snapshot=approvedNativeSnapshot();
         logicalMixer_.handleIntent(request,{
             deviceApply_.busy() || nativeShowBusy_ || studioBackupBusy_ ||
@@ -1937,11 +2042,32 @@ private:
             .getProperty("capabilities",{});
         const auto authority=accepted.getProperty("mixerSession",{})
             .getProperty("authority","").toString();
-        if(!static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",false)) &&
-           authority!="CHANNEL_ID" && authority!="M4" &&
-           !engine_.hasRetainedNativeSession()) {
+        if(retainedOfflineFxActive_ && engine_.hasRetainedNativeSession() &&
+           engine_.retainedNativeEpoch()==retainedOfflineEpoch_ &&
+           accepted.getProperty("graph",{}).getProperty("revision",{}).toString()==
+               juce::String(retainedOfflineRevision_)) {
+            // UI projection ONLY. The physical NEEDS_REMAP graph remains
+            // retained and output-disarmed, not a second PCM authority.
+            auto offline=logicalMixer_.readback();
+            offline.getDynamicObject()->setProperty("retainedOffline",true);
+            offline.getDynamicObject()->setProperty("retainedDeviceEpoch",
+                juce::String(retainedOfflineEpoch_));
+            offline.getDynamicObject()->setProperty("retainedGraphRevision",
+                juce::String(retainedOfflineRevision_));
+            // Only FX controls can write this pending .smix; never expose
+            // offline WIRE/fader/physical output as a live control operation.
+            auto caps=offline.getProperty("graph",{}).getProperty("capabilities",{});
+            if(auto* mutableCaps=caps.getDynamicObject()) {
+                juce::Array<juce::var> allowed;
+                allowed.add("SET_FX_SLOT_BYPASS");
+                allowed.add("SET_FX_RACK_BYPASS");
+                mutableCaps->setProperty("supportedOps",juce::var(std::move(allowed)));
+            }
+            accepted.getDynamicObject()->setProperty("logicalMixer",std::move(offline));
+        } else if(!static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",false)) &&
+                  authority!="CHANNEL_ID" && authority!="M4" &&
+                  !engine_.hasRetainedNativeSession()) {
             // Separate field: physical graph remains truthful/unadmitted.
-            // Browsers may render this only as an explicitly unbound editor.
             accepted.getDynamicObject()->setProperty("logicalMixer",logicalMixer_.readback());
         }
         if(auto* obj=accepted.getDynamicObject()) {
@@ -6706,6 +6832,7 @@ private:
             else emitNotice("FX bypass rejected: refresh the FX Rack after native ACK.",true);
             return;
         }
+        if(action=="retainedFxOfflineOpen")return openRetainedFxOffline(args);
         if(action=="logicalVendorFxEditor")return openLogicalVendorEditor(args);
         if (action == "routingFxEditor") {
             const int lane=static_cast<int>(args.getProperty("channel",-1));
