@@ -114,9 +114,9 @@ def main():
           }};""")
         page.goto((out/"index.html").as_uri())
         page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
-        # Only this Chromium component test mirrors the new native owned
-        # top-level HWND's original FX module into the mixer DOM. Production
-        # native opening never uses this shim or creates a second UI renderer.
+        # This mock injects only native DSP readback for the ORIGINAL
+        # mixer-hosted FX editor; there is no second JUCE HWND, WebView,
+        # browser FX copy or alternate PCM renderer in production.
         project_approved_editor_for_component_smoke(page)
         state=snapshot()
         state["logicalMixer"]["graph"]["channels"][0]["inserts"]=[
@@ -131,9 +131,13 @@ def main():
         rack.locator('[data-action="openPlugin"][data-slot="0"]').click()
         page.wait_for_function("()=>document.querySelector('#mxNativePeq')?.hidden===false")
         assert page.locator("#mxNativePeq").is_visible()
-        assert page.evaluate("""()=>window.__fux1FloatingDispatches.some(e=>
+        assert not page.evaluate("""()=>window.__fux1FloatingDispatches.some(e=>
            e.catalogId==='armix.builtin.channel-eq.v1'&&e.slot===0&&
-           e.instanceId==='logical-eq')"""),"native owned-window dispatch was skipped"
+           e.instanceId==='logical-eq')"""),"built-in FX reopened a forbidden second JUCE window"
+        assert page.locator("#mxNativePeq").evaluate(
+            "e=>Math.abs(e.getBoundingClientRect().width-795)<2"),(
+            "offline FX must retain native full-size hardware inside mixer")
+        assert page.evaluate("""()=>Boolean(window.__ARMIX_NATIVE_INLINE_FX_CLIP__)""")
         assert not page.locator("#fastPicker").is_visible()
         eq=page.evaluate("""()=>window.__events.find(e=>
             e.payload?.action==='nativeEqSnapshot')?.payload""")
