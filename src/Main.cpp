@@ -1456,6 +1456,22 @@ private:
         return {};
     }
 
+    // Stable *stored FX* identity is the lifetime authority; a logical
+    // graph revision may advance for an unrelated fader without replacing
+    // the processor. The incoming click's exact instance token is verified
+    // separately by logicalFxTarget() against the current workspace.
+    bool logicalVendorSourceCurrent(const LogicalVendorEditor& fx) const {
+        const auto& workspace=logicalMixer_.workspace();
+        const auto* row=workspace.document().roster.find(fx.insert.channel);
+        const auto* current=workspace.storedFx(fx.insert.channel,fx.insert.slot);
+        return row && fx.insert.slot<row->insertCatalogIds.size() &&
+            row->insertCatalogIds[fx.insert.slot]==fx.insert.catalogId.toStdString() &&
+            ((current==nullptr && fx.insert.sha256.isEmpty()) ||
+             (current!=nullptr && current->catalogId==fx.insert.catalogId &&
+              current->sha256==fx.insert.sha256 &&
+              current->uid==fx.insert.uid && current->path==fx.insert.path));
+    }
+
     void openLogicalVendorEditor(const juce::var& request) {
         std::uint64_t channel=0;
         std::size_t slot=0;
@@ -1467,8 +1483,11 @@ private:
         if(logicalVendorEditor_) {
             auto& existing=*logicalVendorEditor_;
             if(existing.workspaceToken==logicalMixer_.workspace().workspaceToken() &&
-               existing.instanceId==requestedInstance &&
-               existing.insert.channel==armix::mixer::ChannelId{channel} && existing.insert.slot==slot) {
+               existing.insert.channel==armix::mixer::ChannelId{channel} &&
+               existing.insert.slot==slot && logicalVendorSourceCurrent(existing)) {
+                // Revisions from unrelated fader changes produce a new
+                // logical click token but NOT a new underlying FX instance.
+                existing.instanceId=requestedInstance;
                 if(existing.window) {
                     if(static_cast<bool>(request.getProperty("recenter",false)))
                         existing.window->present(true);
@@ -1514,19 +1533,9 @@ private:
             return;
         }
         // Snapshot-and-compare the original logical FX identity before
-        // persisting vendor state. Other mixer controls may change while the
-        // editor is open, but a removed/replaced FX or rewritten saved blob
-        // must NEVER receive its stale vendor edits.
-        const auto& workspace=logicalMixer_.workspace();
-        const auto* row=workspace.document().roster.find(fx.insert.channel);
-        const auto* current=workspace.storedFx(fx.insert.channel,fx.insert.slot);
-        const bool identical=row && fx.insert.slot<row->insertCatalogIds.size() &&
-            row->insertCatalogIds[fx.insert.slot]==fx.insert.catalogId.toStdString() &&
-            ((current==nullptr && fx.insert.sha256.isEmpty()) ||
-             (current!=nullptr && current->catalogId==fx.insert.catalogId &&
-              current->sha256==fx.insert.sha256 &&
-              current->uid==fx.insert.uid && current->path==fx.insert.path));
-        if(!identical) {
+        // persisting vendor state. Unrelated fader edits are harmless, but
+        // replacing an FX or rewriting its saved blob must reject stale writes.
+        if(!logicalVendorSourceCurrent(fx)) {
             emitNotice("FX slot or stored state changed: close/reopen its editor before saving",true);
             if(!shutdown)fx.window->setVisible(true);
             return;
