@@ -65,6 +65,26 @@ def main():
                     size=root.bounding_box()
                     assert size and abs(size["width"]-expected)<2,(width,host,size)
                     assert root.locator(".armix-builtin-fx-close, .mx-geq31-close, .mx-harm-close, .sk-close").count()>=1,(width,host)
+                    # The viewport may be narrow, but original control
+                    # geometry must stay full-size and horizontally pannable.
+                    if width==390:
+                        if host=="ArSonMixNativeEq":
+                            assert root.locator(".mx-peq-band").first.evaluate(
+                                "e=>getComputedStyle(e).flexDirection")=="row"
+                            assert root.locator(".mx-peq-dial").first.evaluate(
+                                "e=>Math.abs(e.getBoundingClientRect().width-62)<1")
+                        if host=="ArSonMixNativeCompressor":
+                            assert root.locator(".mx-comp-controls").evaluate(
+                                "e=>getComputedStyle(e).gridTemplateColumns.split(' ').length")==3
+                        if host=="ArSonMixNativeHarmony":
+                            assert root.locator(".mx-harm-body").evaluate(
+                                "e=>getComputedStyle(e).gridTemplateColumns.split(' ').length")==3
+                        if host=="ArSonMixNativeVocalThrow":
+                            assert root.locator(".vt-instrument").evaluate(
+                                "e=>getComputedStyle(e).gridTemplateColumns.split(' ').length")==3
+                        if host=="ArSonMixNativeSonKu":
+                            assert root.locator(".sk-content").evaluate(
+                                "e=>getComputedStyle(e).gridTemplateColumns.split(' ').length")==2
                     # Native-only popup HUD and second native titlebar never
                     # exist: the browser frame already IS the only mixer GUI.
                     assert page.locator("#fxWindowAbort").count()==0
