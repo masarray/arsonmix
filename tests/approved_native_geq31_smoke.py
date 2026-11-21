@@ -243,7 +243,7 @@ def main():
         assert abs(float(left.get_attribute("aria-valuenow"))+8.0)<.2
         assert abs(float(right.get_attribute("aria-valuenow"))+23.1)<.2
         # Native simulator only: screenshot proves L/R are *visually distinct*.
-        page.screenshot(path="arsonmix-geq31-stereo-native-telemetry-mock-1680.png")
+        page.screenshot(path="arsonmix-geq31-one-webview-stereo-native-telemetry-mock-1680.png")
         def last_action(kind):
             actions=page.evaluate("""kind=>window.__actions.filter(
                a=>a.action===kind)""",kind)
