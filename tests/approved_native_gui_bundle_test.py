@@ -22,6 +22,28 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             approved = (source / "index.html").read_text("utf-8")
             native = (out / "index.html").read_text("utf-8")
             self.assertEqual(bundle.public_from_native(native), approved)
+            # UX-1 regression: the premium calm icon CSS previously lived in
+            # site/preview/mixer.html, which the real Pages/Windows assembler
+            # NEVER reads. Assert its actual output bytes and native parity.
+            runtime_css = "arsonmix-approved-runtime.css"
+            deployed_css = (out / "assets" / runtime_css).read_text("utf-8")
+            self.assertEqual(
+                deployed_css,
+                (source / "assets" / runtime_css).read_text("utf-8"))
+            self.assertIn("BEGIN approved owner mixer-section-controls.css", deployed_css)
+            self.assertIn(
+                'html.armix-native-desktop .status-bar .state[data-telemetry="true"]::before',
+                deployed_css)
+            self.assertIn(
+                'html.armix-native-desktop .status-bar .warning[data-telemetry="true"] .armix-health-stat::before',
+                deployed_css)
+            for metric in ("cpu", "rt", "ram"):
+                self.assertIn('data-metric="' + metric + '"', deployed_css)
+            for tone in ("normal", "attention", "critical", "unknown"):
+                self.assertIn('data-tone="' + tone + '"', deployed_css)
+            self.assertIn("arsonmix-approved-runtime.css", approved)
+            self.assertIn("arsonmix-approved-runtime.css", native)
+
             # Structural parity: route/EXT, fader taper and hardware look are
             # composed once into published Pages, never inserted as native CSS.
             self.assertIn("external-out-field", approved)
