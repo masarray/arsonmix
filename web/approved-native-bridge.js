@@ -3095,9 +3095,14 @@
         }
       }
       const addBus=document.getElementById("addBus");
-      if(addBus){addBus.hidden=false;addBus.disabled=!!pendingLogical;}
+      if(addBus){
+        addBus.hidden=readModel.kind==="RETAINED_OFFLINE";
+        addBus.disabled=!!pendingLogical||readModel.kind==="RETAINED_OFFLINE";
+      }
       status(staged.readOnly?
         "Saved mixer recovery required · Open a verified .smix file":
+        readModel.kind==="RETAINED_OFFLINE"?
+        "FX OFFLINE · output muted · settings saved to .smix · Open session to apply after reconnect":
         "Mixer ready to edit · connect Audio I/O to enable sound");
       return;
     }
@@ -3174,7 +3179,9 @@
       }
       stopDemo();
       paintNativeMeters(next);
-      status("Playback unavailable · waiting for the audio device");
+      status(next.raw?.retainedOfflineFxPending?
+        "FX offline edits saved · reconnect audio, then Open saved .smix to apply":
+        "Playback unavailable · waiting for the audio device");
       return;
     }
     if (!nativeAdmitted) {
@@ -3242,7 +3249,9 @@
     if(fxSettlement==="CONFIRMED"||fxSettlement==="STALE")
       pendingNativeFxPower=null;
     if(startupWire)window.queueMicrotask(flushStartupWire);
-    status("Mixer settings updated");
+    status(next.raw?.retainedOfflineFxPending?
+      "Saved offline FX changes pending · Open .smix before enabling output":
+      "Mixer settings updated");
   }
   if (connected) {
     controller = protocol.createController({
