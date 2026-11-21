@@ -4228,6 +4228,14 @@ private:
     juce::String restoreSavedMixerSession(bool startupOnSavedDevice=false,
             armix::session::MixerDeviceBindingPolicy::Mode bindingMode=
                 armix::session::MixerDeviceBindingPolicy::Mode::exact) {
+        // Device auto-restore must NEVER overwrite newer offline VST/built-in
+        // state with the older retained DSP graph. Only the operator's
+        // explicit .smix Open may replace this pending durable document.
+        if(retainedOfflineFxActive_) {
+            mixerSessionRecoveryPending_=true;
+            mixerSessionStatus_="RETAINED_OFFLINE_FX_REAPPLY_REQUIRED";
+            return "Offline FX edits are pending: Open the saved .smix explicitly";
+        }
         using Recovery=armix::session::NativeMixerSessionRecovery;
         Recovery::RestoreContext restore;
         restore.outputsDisarmed=engine_.allOutputsDisarmed();
@@ -4332,6 +4340,10 @@ private:
     juce::String saveMixerSession(bool resumeMain, const juce::File& exportFile={},
                                     bool shutdownCheckpoint=false) {
         const bool automatic=exportFile==juce::File{};
+        // The committed logical FX save is newer than the restored live
+        // processor. Auto/shutdown capture MUST NOT replace its binary
+        // VST state until an explicit verified session Open adopts it.
+        if(retainedOfflineFxActive_ && automatic)return {};
         ensureLogicalWorkspace();
         using Recovery=armix::session::NativeMixerSessionRecovery;
         const auto liveState=engine_.status();
@@ -8594,7 +8606,8 @@ private:
         asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
         asioRecoveryGate_.carryInternalEpoch(asioRecoveryEpoch_);
         asioRecoveryGate_.recovered();
-        mixerSessionStatus_="RESTORED_MUTED";
+        mixerSessionStatus_=retainedOfflineFxActive_?
+            "RETAINED_OFFLINE_FX_REAPPLY_REQUIRED":"RESTORED_MUTED";
         mixerSessionError_.clear();
         const bool previousMain=engine_.takeAsioResetMonitorIntent();
         if((previousMain || engine_.wantsMainContinuation()) && !operatorOutputMuted_)
