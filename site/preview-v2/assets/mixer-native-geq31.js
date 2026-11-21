@@ -140,7 +140,11 @@ function paint(){
  dial.setAttribute("aria-valuetext",format(draft.levelDb));
  outValue.textContent=format(draft.levelDb);
  const value=matchFactory(draft);
- preset.value=value;
+ // A selected user preset is owned by the shared .armixfx bar. Do not
+ // reset that selected option on every graphic-slider paint.
+ if(!preset.value.startsWith("user:")||!same(accepted,draft))
+   preset.value=value;
+ presetBar?.paint?.();
  updatePower();
 }
 function demoSave(){if(active)demos.set(active.track.id+":"+active.slot,{bands:[...draft.bands],levelDb:draft.levelDb});}
@@ -240,12 +244,16 @@ preset.addEventListener("change",()=>{
  if(presetBar.selectUser(preset.value))return;
  if(preset.value==="CUSTOM")return;
  applyCurve(factory(preset.value));
+ presetBar.factoryIntent(pending?.id||null);
 });
 flat.addEventListener("click",()=>{
  const s={bands:Array(31).fill(0),levelDb:draft.levelDb};
  applyCurve(s);
 });
-save.addEventListener("click",()=>{presetBar.saveAs?.();});
+save.addEventListener("click",()=>{
+ if(!native()){hint("BROWSER PREVIEW · NO AUDIO ENGINE");return;}
+ root.querySelector(".mx-fxp-save-as")?.click();
+});
 power.addEventListener("click",()=>{
  if(native()&&context())window.__ARMIX_NATIVE_M2__?.consumeAction?.(active.track,"slotPower",{dataset:{slot:String(active.slot)}});
  else if(!native()&&active){active.track.slotBypass[active.slot]=!active.track.slotBypass[active.slot];paint();}
