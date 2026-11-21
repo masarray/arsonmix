@@ -21,6 +21,9 @@
 #include "SonKuP84FusedMusicHrir.h"
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
 #include "SonKuP90StereoDecoder.h"
+#if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
+#include "SonKuImmerSIBPleasantPresence.h"
+#endif
 #include "SonKuP91P92WorldBassFoundation.h"
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
 #include "SonKuP95MusicalPresence.h"
@@ -317,6 +320,9 @@ public:
 #endif
         if(!room_.prepare(rate,profile)||!reverb_.prepare(rate)||
            !integrity_.prepare(rate))return false;
+#if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
+        if(!pleasantPresence_.prepare(rate))return false;
+#endif
         reset();
         ready_=true;
         // Re-publish a saved active scene after device restart, but do NOT
@@ -364,6 +370,9 @@ public:
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
         p90Decoder_.reset();
         p92Bass_.reset();
+#if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
+        pleasantPresence_.reset();
+#endif
 #if defined(SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH) && SONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH
         p96Reinforcement_.reset();
 #endif
@@ -1278,6 +1287,17 @@ public:
                     outL=voiced.left;outR=voiced.right;
                 }
 #endif
+#if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
+                if(immersibConcertCandidate_ && p90World) {
+                    // Linked-across-ears 3-5kHz comfort governor AFTER
+                    // existing KEMAR DIRECT/ER/LATE, before the linked
+                    // final limiter. Preserves stage/pan and LF body.
+                    const bool warm=roomEnabled && settings_.spatialMix>0.f &&
+                        (settings_.sceneVoicing==4 || settings_.sceneVoicing==5);
+                    const auto pleasant=pleasantPresence_.process(outL,outR,warm);
+                    outL=pleasant.left;outR=pleasant.right;
+                }
+#endif
                 // Zero-lookahead *linked* sample-peak safety guard. Quiet
                 // signals are linear; peaks are gently returned below unity
                 // without routing through a second engine or allocating.
@@ -1622,6 +1642,7 @@ private:
     bool immersibP99Enabled_=false;
 #endif
 #if defined(ARMIX_IMMERSIB_CONCERT_CANDIDATE) && ARMIX_IMMERSIB_CONCERT_CANDIDATE
+    immersib::PleasantPresence pleasantPresence_{};
     bool immersibConcertCandidate_=false;
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
