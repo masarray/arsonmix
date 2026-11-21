@@ -6782,6 +6782,8 @@ test("UX-1 calm status colors use genuine app/process and callback budget eviden
   assert.doesNotMatch(bridge,/item\.setAttribute\("aria-hidden","true"\)/,
     "numeric status values stay available to assistive technology");
   assert.match(bridge,/warning\.replaceChildren\(nodes\.cpu,nodes\.rt,nodes\.ram\)/);
+  assert.match(bridge,/label\.dataset\.telemetry!==latencyMode/);
+  assert.match(bridge,/warning\.dataset\.telemetry!==healthMode/);
   assert.match(bridge,/warning\.firstElementChild!==footerMetricNodes\.cpu/);
   assert.doesNotMatch(bridge,/requestAnimationFrame\([^)]*paintFooterMetrics|setInterval\([^)]*paintFooterMetrics/);
   for(const key of ["cpu","rt","ram"])

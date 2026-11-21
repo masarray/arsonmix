@@ -2044,7 +2044,11 @@
       (healthSameEpoch?lastFooterHealth.latency:"LAT —"):
       operatorTransport;
     if(label && label.textContent!==labelText)label.textContent=labelText;
-    if(label?.dataset)label.dataset.telemetry=activeOutput?"true":"false";
+    const latencyMode=activeOutput?"true":"false";
+    // Avoid redundant DOM attribute writes on the 12 Hz snapshot stream.
+    // Each write could trigger style invalidation even with the same value.
+    if(label?.dataset && label.dataset.telemetry!==latencyMode)
+      label.dataset.telemetry=latencyMode;
     const latencyHint="JUCE driver-reported I/O latency + FX/PDC hint, not measured acoustic round-trip.";
     if(label && label.title!==(activeOutput?latencyHint:transport))
       label.title=activeOutput?latencyHint:transport;
@@ -2074,8 +2078,9 @@
       // ordinary 12 Hz readback and 1 Hz sample keeps existing nodes.
       if(footerMetricNodes?.host===warning)footerMetricNodes=null;
     }
-    if(warning?.dataset)
-      warning.dataset.telemetry=telemetry?"true":"false";
+    const healthMode=telemetry?"true":"false";
+    if(warning?.dataset && warning.dataset.telemetry!==healthMode)
+      warning.dataset.telemetry=healthMode;
   }
   function updateHardwarePanel(next) {
     hardware=next || null;
