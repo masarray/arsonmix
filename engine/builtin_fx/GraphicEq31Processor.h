@@ -931,9 +931,13 @@ private:
                     juce::roundToInt(height*280.f/2042.f));
                 juce::DropShadow(juce::Colours::black.withAlpha(.30f),
                     4,{1,3}).drawForRectangle(g,shadowBounds);
-                art->drawWithin(g,{static_cast<float>(x),static_cast<float>(y),
-                    static_cast<float>(width),static_cast<float>(height)},
-                    juce::RectanglePlacement::stretchToFit,1.f);
+                // IMPORTANT: drawWithin fits JUCE's DrawableBounds, NOT
+                // the designer's authored SVG viewBox. Embedded SVG text,
+                // bitmap shadow and nested transforms skew those bounds,
+                // moving thumb bodies ~20 px away from their 0 dB tick.
+                // Use the SAME exact SVG->cell matrix for paths, tick labels,
+                // white index and shadow; never auto-fit the content bbox.
+                art->draw(g,1.f,authoredToCell(x,y,width,height));
                 // 7 SVG units used to collapse to ~0.98 physical px and
                 // rasterised inconsistently. This screen-space index is
                 // snapped to whole pixels, so all 31 faders get the same
@@ -949,6 +953,21 @@ private:
                 g.fillRect(indexX,indexY-1,indexWidth,4);
                 g.setColour(juce::Colours::white);
                 g.fillRect(indexX,indexY,indexWidth,2);
+                // Native JUCE text instead of SVG <text> transforms:
+                // the Windows SVG parser moves/shrinks tspan labels and
+                // affects DrawableBounds. Draw a guaranteed legible 2-line
+                // caption inside its own 40 px cell below the end stop.
+                const auto nominal=juce::String(graphicEq31Labels[band]);
+                const bool isKhz=nominal.endsWithChar('k');
+                const auto number=isKhz?nominal.dropLastCharacters(1):nominal;
+                g.setColour(juce::Colour(0xff28373e));
+                g.setFont(GraphicEq31Editor::inter(12.f).boldened());
+                g.drawFittedText(number,x+1,y+height-32,width-2,17,
+                    juce::Justification::centred,1,.83f);
+                g.setColour(juce::Colour(0xff43555e));
+                g.setFont(GraphicEq31Editor::inter(10.f));
+                g.drawFittedText(isKhz?"kHz":"Hz",x+1,y+height-17,
+                    width-2,14,juce::Justification::centred,1,.90f);
             }else {
                 g.setColour(juce::Colours::red);
                 g.drawFittedText("SVG ERROR",x,y,width,height,
@@ -962,6 +981,15 @@ private:
         // the actual ±12 tick path. White ridge s11: y=913..920,
         // centre=916.5; SVG major ticks: y=208.75 / 918.33 / 1627.92.
         static constexpr float indexCenterY=916.5f;
+        // All coordinates below are the owner's 469x2042 SVG units, cropped
+        // to authored x=60..412; no implicit JUCE DrawableBounds fit.
+        static juce::AffineTransform authoredToCell(
+            int x,int y,int width,int height) noexcept {
+            return juce::AffineTransform::translation(-60.f,0.f)
+                .scaled(static_cast<float>(width)/352.f,
+                        static_cast<float>(height)/2042.f)
+                .translated(static_cast<float>(x),static_cast<float>(y));
+        }
         static float thumbShift(float gain) noexcept {
             const float t=juce::jlimit(-12.f,12.f,gain)/12.f;
             return t>=0.f ? -(indexCenterY-208.75f)*t :
@@ -978,32 +1006,14 @@ private:
             auto* labelGroup=fader->getChildByAttribute("id","Text");
             auto* thumbGroup=fader->getChildByAttribute("id","THUMB");
             if(!labelGroup||!thumbGroup)return;
-            // The source stays byte-for-byte intact; adjust just this
-            // UI-thread SVG clone. Uniform Inter text, same two-line layout
-            // and visible Hz/kHz units as equalizer-interface.svg.
-            const auto nominal=juce::String(graphicEq31Labels[band]);
-            const bool isKhz=nominal.endsWithChar('k');
-            const auto number=isKhz?nominal.dropLastCharacters(1):nominal;
-            auto* frequency=labelGroup->getChildByAttribute("id","32");
-            auto* tspan=frequency?frequency->getFirstChildElement():nullptr;
-            auto* unitGroup=labelGroup->getChildByAttribute("id","Hz");
-            auto* unitText=unitGroup?unitGroup->getFirstChildElement():nullptr;
-            auto* unitSpan=unitText?unitText->getFirstChildElement():nullptr;
-            if(!tspan||!unitSpan)return;
-            tspan->deleteAllTextElements();
-            tspan->addTextElement(number);
-            tspan->setAttribute("style",
-                "font-family: Inter; font-size: 27px; font-weight: 700; fill: #344047");
-            frequency->setAttribute("text-anchor","middle");
-            frequency->setAttribute("style",
-                "transform: matrix(4.167,0,0,4.167,237.76,1850.466); font-family: Inter");
-            unitSpan->deleteAllTextElements();
-            unitSpan->addTextElement(isKhz?"kHz":"Hz");
-            unitSpan->setAttribute("style",
-                "font-family: Inter; font-size: 18px; font-weight: 600; fill: #5b6a72");
-            unitText->setAttribute("text-anchor","middle");
-            unitText->setAttribute("style",
-                "transform: matrix(4.167,0,0,4.167,237.76,1933.799); font-family: Inter");
+            // Preserve the owner's SOURCE SVG exactly, but remove the
+            // transformed Text child ONLY from this native render clone.
+            // JUCE's SVG tspan transform is inconsistent with the author's
+            // absolute path geometry on Windows, so each slider draws its
+            // frequency/Hz caption explicitly in native drawLinearSlider().
+            // This also prevents malformed text bounds from shifting the
+            // Track and THUMB when the Drawable is rendered.
+            fader->removeChildElement(labelGroup,true);
 
             auto* trackGroup=fader->getChildByAttribute("id","Track");
             if(!trackGroup)return;
