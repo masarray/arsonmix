@@ -174,6 +174,7 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("save.workerBusy=true;",unit)
 
     def test_borderless_single_surface_fx_and_os_window_drag(self):
+        builder=(ROOT/"scripts/build_approved_native_gui.py").read_text(encoding="utf-8")
         script=(ROOT/"web/approved-floating-fx-bridge.js").read_text(encoding="utf-8")
         block=HOST.split("class BuiltinFxDesktopWindow final :",1)[1].split(
             "class AudioSetupWindow final",1)[0]
