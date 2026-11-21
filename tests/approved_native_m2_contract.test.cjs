@@ -6797,5 +6797,7 @@ test("UX-1 calm status colors use genuine app/process and callback budget eviden
     assert.match(page,new RegExp('data-metric="'+key+'"'));
   for(const tone of ["normal","attention","critical","unknown"])
     assert.match(page,new RegExp('data-tone="'+tone+'"'));
-  assert.match(page,/height:20px!important;min-height:20px!important/);
+  const geometry=require("node:fs").readFileSync(
+    "site/preview-v2/assets/mixer-chrome-material.css","utf8");
+  assert.match(geometry,/\.status-bar\{height:20px!important;min-height:20px!important/);
 });
