@@ -55,6 +55,14 @@ def check_page(browser,path,label):
     # unrelated WIRE, MUTE/SOLO/PFL PNG or safety controls.
     assert 'rgb(27, 156, 186)' in during['background'],(
         label,'header active face is not cyan',during)
+    # Permanent FX RACK selection and momentary Save share a calm cyan
+    # computed material; global FX safety ON/OFF remains its own green face.
+    fx_view=css_for(page.locator('#fxView'))
+    assert 'rgb(27, 156, 186)' in fx_view['background'],(
+        label,'selected FX RACK header did not inherit cyan',fx_view)
+    safety=css_for(page.locator('#globalFxToggle'))
+    assert 'rgb(27, 156, 186)' not in safety['background'],(
+        label,'global FX semantic safety color overwritten',safety)
     assert during['transform']=='none',(label,'button moved on press',during)
     assert (during['w'],during['h'],during['x'],during['y'])==(
             before['w'],before['h'],before['x'],before['y']),(
@@ -114,6 +122,11 @@ def main():
     assert 'transform:none!important' in css and 'repeating-linear-gradient' in css
     assert "event.preventDefault()" in js and "event.button!==0" in js
     assert OWNER in CANON.read_text('utf-8') and SCRIPT in CANON.read_text('utf-8')
+    # A line break between pseudo-class selectors acts as a DESCENDANT
+    # combinator: it previously left Save/FX RACK blue even while style
+    # variables were correctly authored. Lock the actual selector grammar.
+    assert 'button.wire-v34-tool):is(' in css
+    assert ':not(#reset):not(#clearCue):not(#sceneSafe)' in css
     with tempfile.TemporaryDirectory(prefix='arsonmix-context-v6-') as folder:
         dist=Path(folder)/'dist'
         subprocess.run([sys.executable,str(ROOT/'scripts/build_pages.py'),
