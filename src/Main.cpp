@@ -5004,6 +5004,8 @@ private:
                 const bool busy=
                     (catalog==armix::builtin_fx::ChannelEqProcessor::catalogIdentity&&
                          static_cast<bool>(pendingNativeEq_.owner))||
+                    (catalog==armix::builtin_fx::GraphicEq31Processor::catalogIdentity&&
+                         static_cast<bool>(pendingNativeGeq_.owner))||
                     (catalog==armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity&&
                          static_cast<bool>(pendingNativeComp_.owner))||
                     (catalog==armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity&&
