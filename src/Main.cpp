@@ -311,6 +311,9 @@ public:
               .withEventListener("arMixFloatingHide",[this](juce::var){
                   setVisible(false);
               })
+              .withEventListener("arMixFloatingSize",[this](juce::var size){
+                  resizeToPanel(size);
+              })
               .withResourceProvider(assetFor)) {
         setUsingNativeTitleBar(true);
         setIcon(approvedAppIcon());
@@ -338,6 +341,26 @@ public:
     void emit(const juce::String& event,const juce::var& payload){
         if(browser_.loaded && isVisible())
             browser_.emitEventIfBrowserIsVisible(event,payload);
+    }
+    void resizeToPanel(const juce::var& size) {
+        const auto w=size.getProperty("width",{}),h=size.getProperty("height",{});
+        if(!w.isInt()||!h.isInt())return; // no floating-point/NaN geometry
+        const int requestedW=static_cast<int>(w),requestedH=static_cast<int>(h);
+        if(requestedW<200||requestedW>4000||requestedH<100||requestedH>2600)return;
+        const auto* display=juce::Desktop::getInstance().getDisplays()
+                                 .getDisplayForRect(getBounds());
+        const auto area=display?display->userArea:
+                         juce::Rectangle<int>(0,0,1550,930);
+        const int width=juce::jlimit(440,juce::jmax(440,area.getWidth()-24),
+                                    requestedW+16);
+        const int height=juce::jlimit(280,juce::jmax(280,area.getHeight()-24),
+                                     requestedH+50);
+        // Avoid a browser resize feedback loop; never recenter on a normal
+        // parameter gesture, only on an explicit FX Rack double-click.
+        if(std::abs(getWidth()-width)>8 || std::abs(getHeight()-height)>8) {
+            setSize(width,height);
+            armix::ui::placeFloatingEditor(*this,mixer_,false);
+        }
     }
     bool ready()const noexcept{return browser_.loaded;}
     void closeButtonPressed()override {setVisible(false);}
