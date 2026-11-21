@@ -188,6 +188,13 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("catalog==\"armix.builtin.graphic-eq31.v1\"",block)
         self.assertIn("juce::Point<int>(1430,280)",block)
         self.assertIn("WM_NCLBUTTONDOWN,HTCAPTION",block)
+        self.assertIn("TopLevelWindow(label,false)",block)
+        self.assertIn("addToDesktop();",block)
+        self.assertIn("setTopLeftPosition(-20000,-20000)",block)
+        self.assertIn("startTimer(1800)",block)
+        self.assertIn("stopTimer()",block)
+        self.assertIn("getDesktopWindowStyleFlags() const override",block)
+        self.assertIn("windowAppearsOnTaskbar",block)
         self.assertIn("::PostMessageW(",block)
         self.assertIn("requestedW);",block)
         self.assertIn("requestedH);",block)
@@ -198,6 +205,9 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn('backend.emitEvent("arMixFloatingDrag",{})',script)
         self.assertIn('event.stopImmediatePropagation()',script)
         self.assertIn("lastGeometry=geometry;",script)
+        self.assertIn("measure();",script)
+        self.assertIn('backend.emitEvent("arMixFloatingHide",{})',script)
+        self.assertIn("fxWindowAbort",builder)
 
     def test_wire_v66_reel_restored_only_on_native_accepted_remove(self):
         # The V66 330ms physics survives in approved Pages, but native

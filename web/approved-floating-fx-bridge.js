@@ -22,7 +22,14 @@
   });
   let current=null,identity=null,busyLoad=null,pending=null;
   const banner=document.getElementById("fxWindowStatus");
-  const inform=message=>{if(banner)banner.textContent=message;};
+  const inform=message=>{
+    if(banner){banner.textContent=message;banner.hidden=false;}
+    const abort=document.getElementById("fxWindowAbort");
+    if(abort)abort.hidden=false;
+  };
+  document.getElementById("fxWindowAbort")?.addEventListener("click",()=>{
+    backend.emitEvent("arMixFloatingHide",{});
+  });
   // This bridge exists only inside the native owned FX WebView2. A panel
   // header grabs the REAL HWND through Windows system-move, never an inner
   // CSS card. Preserve every original preset, Power, S/M/L and Close click.
@@ -137,6 +144,8 @@
         host.open({id:proposed.channelId,nativeId:proposed.channelId,
           name:next.channel.name||"Channel",slotBypass:[]},proposed.slot);
         if(banner)banner.hidden=true;
+      const abort=document.getElementById("fxWindowAbort");
+      if(abort)abort.hidden=true;
       }
       return;
     }
@@ -152,6 +161,8 @@
       const root=document.querySelector(registry[request.catalogId][2]);
       if(!root){inform("FX UI failed to mount");return;}
       if(banner)banner.hidden=true;
+      const abort=document.getElementById("fxWindowAbort");
+      if(abort)abort.hidden=true;
       // Size the real desktop HWND to the ORIGINAL FX hardware panel, not a
       // generic oversized mixer card. GEQ31 S/M/L updates the same HWND.
       let lastGeometry="";
@@ -165,6 +176,9 @@
         lastGeometry=geometry;
         backend.emitEvent("arMixFloatingSize",{width,height});
       };
+      // Off-screen WebView2 can throttle rAF. Immediately emit the first
+      // real approved FX geometry before revealing the desktop HWND.
+      measure();
       requestAnimationFrame(()=>requestAnimationFrame(measure));
       if(typeof ResizeObserver==="function")
         new ResizeObserver(()=>requestAnimationFrame(measure)).observe(root);

@@ -329,6 +329,8 @@ def floating_fx_html() -> str:
 html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;
  background:#101921;color:#e5f6fc}
 #fxWindowStatus{position:fixed;left:20px;top:20px;font:12px sans-serif;color:#8fcfe1}
+#fxWindowAbort{position:fixed;right:10px;top:7px;border:0;border-radius:3px;
+ background:#273d49;color:#dcf2fc;cursor:pointer;font:16px sans-serif}
 /* Popup HWND itself moves beyond the mixer; DO NOT drag a second fake
    window inside the child WebView's clipped compositing rectangle. */
 body :is(#mxNativePeq,#mxNativeComp,#mxNativeGeq31,#mxNativeHarmony,
@@ -337,7 +339,9 @@ body :is(#mxNativePeq,#mxNativeComp,#mxNativeGeq31,#mxNativeHarmony,
 <script defer src="assets/approved-native-contract.js"></script>
 <script defer src="assets/mixer-builtin-fx-preset-bar.js"></script>
 <script defer src="assets/approved-floating-fx-bridge.js"></script>
-</head><body><output id="fxWindowStatus" role="status">Loading owned FX editor…</output></body></html>
+</head><body><output id="fxWindowStatus" role="status">Loading owned FX editor…</output>
+<button id="fxWindowAbort" type="button" aria-label="Close unavailable FX editor"
+ title="Close FX editor">×</button></body></html>
 """
 
 
