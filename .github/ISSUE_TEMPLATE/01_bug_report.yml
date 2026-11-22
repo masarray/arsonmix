@@ -12,7 +12,7 @@ body:
     attributes:
       label: "Affected build and environment"
       description: "Release tag or exact commit, OS, and relevant backend/device/driver."
-      placeholder: "v0.5.0-alpha.26 / Windows 11 / ASIO / device and driver"
+      placeholder: "Release tag / Windows 11 / ASIO / interface and driver"
     validations:
       required: true
   - type: textarea
