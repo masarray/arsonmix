@@ -4,12 +4,10 @@
 #include <array>
 #include <cmath>
 namespace armix::sonku::p102 {
-// P102.2: retain the P102.1 warmth and add screenshot-inspired separation,
-// presence and air. Fixed PA acoustic renderer is untouched.
-// Replace ONLY the 193Hz bell with 250Hz +5.5 Q.85 (simulated against P102).
-// The original screenshot-derived 3240Hz shelf and the other two bands stay.
-// Articulation 1120Hz and local treble relief near 7.4k are approximations
-// of the visible graph, not claimed exact readback. No flat-target fit.
+// P102.3: conservative separation/presence/air on the owner-listened
+// P102.1. Preserve all four original body/detail/shelf/relief coefficients.
+// The screenshot is preference evidence, not a measured headphone target.
+// No acoustic renderer change, source detector or flat-target fit.
 class FixedPaMusicalEq final {
     struct C{double b0=1,b1=0,b2=0,a1=0,a2=0;};
     struct S{double z1=0,z2=0;};
@@ -39,12 +37,13 @@ public:
     bool prepare(double rate) noexcept {
         if(!std::isfinite(rate)||(std::abs(rate-44100.)>.1&&std::abs(rate-48000.)>.1))return false;
         // Preserve all four P102.1 filters, then add three common L/R bells.
-        // 4460Hz/+1.8/Q.77 is the owner's exact displayed PEQ setting.
-        // 300Hz/-2.5/Q2.2 and 10kHz/+3/Q2 are bounded estimates of the graph.
+        // The owner's 4460Hz/+1.8/Q.77 screenshot informs direction only.
+        // Attenuate the more aggressive P102.2 choices: combined delta near
+        // 5k <1dB and 10k <1.6dB, and retain the 200-250Hz chest region.
         c_={bell(rate,250.,.85,5.5),bell(rate,1120.,1.2,2.3),
             shelf(rate,3240.,3.3),bell(rate,7400.,1.1,-1.8),
-            bell(rate,300.,2.2,-2.5),bell(rate,4460.,.77,1.8),
-            bell(rate,10000.,2.,3.)};
+            bell(rate,310.,1.8,-1.25),bell(rate,5000.,1.1,.75),
+            bell(rate,10500.,1.5,1.35)};
         step_=float(1.-std::exp(-1./(.025*rate)));
         release_=float(1.-std::exp(-1./(.08*rate)));reset();return true;
     }

@@ -60,11 +60,27 @@ static double warmResponse(int rate,double f){
     return oldResponse(rate,f)-oldBell(rate,f,193,.53,2.8)+oldBell(rate,f,250,.85,5.5);
 }
 static double separationResponse(int rate,double f){
-    return oldBell(rate,f,300,2.2,-2.5)+oldBell(rate,f,4460,.77,1.8)+
-        oldBell(rate,f,10000,2.,3.);
+    return oldBell(rate,f,310,1.8,-1.25)+oldBell(rate,f,5000,1.1,.75)+
+        oldBell(rate,f,10500,1.5,1.35);
 }
 int main(){
     for(int rate:{44100,48000}){
+        // Dense independent sweep: constrain total AND incremental response,
+        // so bell overlap cannot inadvertently recreate harshness/large mud cut.
+        double maxTotal=-100.,maxPresence=-100.,maxAir=-100.;
+        for(int i=0;i<=2400;++i){
+            const double f=20.*std::pow((rate*.5)/20.,i/2400.);
+            const double d=separationResponse(rate,f);
+            maxTotal=std::max(maxTotal,warmResponse(rate,f)+d);
+            if(f>=2000&&f<=8000)maxPresence=std::max(maxPresence,d);
+            if(f>=8000)maxAir=std::max(maxAir,d);
+            if(f<=100)assert(std::abs(d)<.06);
+            if(f>=180&&f<=250)assert(d>-.8);
+            assert(d> -1.3);
+        }
+        assert(maxTotal<4.95 && maxPresence<1.0 && maxAir<1.55);
+        std::printf("P102_SOFT_SWEEP,%d,max_total=%.5f,max_presence=%.5f,max_air=%.5f\n",
+                    rate,maxTotal,maxPresence,maxAir);
         for(int scene:{2,3,4,5,6,7,8})for(int mode:{0,1,2}){
             auto baseline=render(rate,scene,mode,false,128);
             auto actual=render(rate,scene,mode,true,128);
@@ -76,25 +92,24 @@ int main(){
             assert(actual==baseline);
         }
         for(int k=0;k<2;++k)assert(render(rate,2,0,false,128,k==0,k==1)==render(rate,2,0,true,128,k==0,k==1));
-        for(int hz:{40,60,86,100,150,193,220,250,300,350,400,500,560,800,1120,2000,3240,4460,5000,6000,7400,10000,12000,16000}){
+        for(int hz:{40,60,86,100,150,193,220,250,300,310,350,400,500,560,800,1120,2000,3240,4460,5000,6000,7400,10000,10500,12000,16000}){
             p102::FixedPaMusicalEq eq;assert(eq.prepare(rate));double before=0,after=0;
             for(int i=0;i<rate;++i){const float v=float(.04*std::sin(2*pi*hz*i/rate));float l=v,r=-v;eq.process(l,r,1.f);assert(l==-r);if(i>rate/2){before+=double(v)*v;after+=double(l)*l;}}
             const double db=10*std::log10(after/before);
             const double prior=warmResponse(rate,hz),delta=db-prior;
             // Compare actual PCM against the independent full cascade response
             // at both rates, not just the three named centers.
-            assert(std::isfinite(db)&&db>-.25&&db<6.5);
+            assert(std::isfinite(db)&&db>-.25&&db<4.95);
             assert(std::abs(delta-separationResponse(rate,hz))<.006);
-            if(hz<=100)assert(std::abs(delta)<.08);
-            if(hz==193)assert(db>4.0&&db<4.3);
-            if(hz==250)assert(db>3.9&&db<4.2);
-            if(hz==300)assert(delta< -2.4&&delta> -2.6&&db>2.5);
-            if(hz==500)assert(std::abs(delta)<.40);
-            if(hz==800)assert(std::abs(delta)<.02);
-            if(hz==1120)assert(std::abs(delta)<.17);
-            if(hz==4460||hz==5000)assert(delta>1.8&&delta<2.1);
-            if(hz==10000)assert(delta>3.3&&delta<3.6);
-            std::printf("P102_CLARITY_EQ,%d,%d,%.5f,prior=%.5f,delta=%.5f\n",rate,hz,db,prior,delta);
+            if(hz<=100)assert(std::abs(delta)<.06);
+            if(hz==193)assert(db>4.2&&db<4.4);
+            if(hz==250)assert(db>4.7&&db<4.9);
+            if(hz==300||hz==310)assert(delta< -1.2&&delta> -1.3&&db>3.6);
+            if(hz==500)assert(std::abs(delta)<.32);
+            if(hz==800||hz==1120)assert(std::abs(delta)<.07);
+            if(hz==4460||hz==5000)assert(delta>.75&&delta<.92);
+            if(hz==10000||hz==10500)assert(delta>1.35&&delta<1.55);
+            std::printf("P102_SOFT_CLARITY_EQ,%d,%d,%.5f,prior=%.5f,delta=%.5f\n",rate,hz,db,prior,delta);
         }
         p102::FixedPaMusicalEq eq;assert(eq.prepare(rate));
         // Stress the new warmth band's maximum boost, and stereo-linked
