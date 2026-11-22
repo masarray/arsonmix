@@ -28,6 +28,21 @@ class LandingReleaseContract(unittest.TestCase):
             self.assertIn('id="fx-gallery"', html)
             for editor in ("8d-sonku","vocal-delay","harmonice","channel-eq","compressor","graphic-eq31"):
                 self.assertIn("media/fx-editor-" + editor + ".jpg", html)
+            native_screens = (
+                "fx-editor-immersib-front-row-power.jpg",
+                "fx-editor-immersib-symphonic-palace.jpg",
+                "fx-editor-immersib-velvet-cinema.jpg",
+                "fx-editor-immersib-arena-thunder.jpg",
+                "fx-editor-immersib-royal-concert-hall.jpg",
+                "fx-editor-immersib-concert-front-row-xl.jpg",
+                "fx-editor-guitar-rig-clean-studio.jpg",
+            )
+            self.assertIn('id="fx-native-gallery"', html)
+            self.assertIn('id="fx-native-scenes"', html)
+            self.assertIn("DSP OFFLINE", html)
+            self.assertIn("fx-native-scenes", css)
+            for filename in native_screens:
+                self.assertIn("media/" + filename, html)
             self.assertIn('id="getting-started"', html)
             self.assertIn('id="feedback"', html)
             self.assertIn("ArSonMix mixer FX rack with WIRE routing", html)
@@ -91,7 +106,8 @@ class LandingReleaseContract(unittest.TestCase):
             for name in ("console-overview.jpg", "console-routing.jpg", "console-faders.jpg",
                          "fx-editor-8d-sonku.jpg", "fx-editor-vocal-delay.jpg",
                          "fx-editor-harmonice.jpg", "fx-editor-channel-eq.jpg",
-                         "fx-editor-compressor.jpg", "fx-editor-graphic-eq31.jpg"):
+                         "fx-editor-compressor.jpg", "fx-editor-graphic-eq31.jpg",
+                         *native_screens):
                 path = base / "media" / name
                 self.assertTrue(path.is_file(), str(path))
                 self.assertGreater(path.stat().st_size, 12000)
@@ -105,6 +121,28 @@ class LandingReleaseContract(unittest.TestCase):
                 self.assertFalse(record["audioOrHardwareVerifiedByImage"])
                 self.assertEqual((base / "media" / record["file"]).stat().st_size,
                                  record["sizeBytes"])
+            native_manifest = json.loads((base / "media/native-fx-capture-provenance.json").read_text("utf-8"))
+            self.assertEqual(native_manifest["schemaVersion"], 1)
+            self.assertEqual(native_manifest["captureMode"],
+                             "owner-provided-windows-native-juce-screenshots")
+            self.assertIsNone(native_manifest["verifiedReleaseTag"])
+            self.assertIsNone(native_manifest["verifiedWindowsBinarySha"])
+            self.assertEqual(len(native_manifest["images"]), 7)
+            self.assertEqual({entry["file"] for entry in native_manifest["images"]},
+                             set(native_screens))
+            for entry in native_manifest["images"]:
+                self.assertTrue(entry["actualWindowsScreenshot"])
+                self.assertFalse(entry["releasedInstallerVersionVerified"])
+                self.assertFalse(entry["audioOrHardwareVerifiedByImage"])
+                self.assertRegex(entry["sha256"], r"^[0-9a-f]{64}$")
+                self.assertRegex(entry["originalSha256"], r"^[0-9a-f]{64}$")
+                screenshot = base / "media" / entry["file"]
+                self.assertEqual(screenshot.stat().st_size, entry["sizeBytes"])
+                self.assertEqual(
+                    __import__("hashlib").sha256(screenshot.read_bytes()).hexdigest(),
+                    entry["sha256"], "Native screenshot changed since approval")
+                if "guitar" in entry["file"]:
+                    self.assertIn("DSP OFFLINE", entry["capturedUiState"])
 
     def test_public_agpl_notice_is_exact_repo_license(self):
         # Legal documentation is delivered on the official Pages domain
@@ -124,6 +162,9 @@ class LandingReleaseContract(unittest.TestCase):
         self.assertIn("site/media/fx-editor-harmonice.jpg", readme)
         self.assertIn("site/media/fx-editor-8d-sonku.jpg", readme)
         self.assertIn("site/media/fx-editor-vocal-delay.jpg", readme)
+        self.assertIn("site/media/fx-editor-immersib-concert-front-row-xl.jpg", readme)
+        self.assertIn("site/media/fx-editor-guitar-rig-clean-studio.jpg", readme)
+        self.assertIn("DSP OFFLINE", readme)
         self.assertIn("8D-SonKu P9.9", readme)
         self.assertIn("GitHub account", readme)
         self.assertIn("visual only", readme)
