@@ -248,7 +248,7 @@ public:
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
         float extraDirectReliefDb=0.f;
 #if defined(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH) && ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
-        if(stageMonitor_)extraDirectReliefDb=1.2f;
+        if(stageMonitor_)extraDirectReliefDb=3.0f; // fixed DIRECT HRTF pinna relief; no content detector
 #endif
         if(profile==SonKuReflectionProfile::SixSurfaceKemarResearch &&
            !tonalCalibration_.prepare(rate,bank_,extraDirectReliefDb))return false;
