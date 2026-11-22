@@ -62,8 +62,15 @@ public:
         // center 2.05k, which spectrally masks a finished stereo master.
         // Preserve the useful vocal detail with one SMALL stationary 1.1k
         // articulator on original L/R, instead of reviving the 2k boost.
-        const auto target=curves_[stageWarm?Neutral:
-                                   (enabled && valid(scene)?scene:Neutral)];
+        auto target=curves_[stageWarm?Neutral:
+                               (enabled && valid(scene)?scene:Neutral)];
+        if(stageWarm) {
+            // Prepared EAR-linked static de-harsh (same 3450Hz transfer
+            // in both ears, after full direct+room sum). This is NOT
+            // ducking/masking by channel correlation or musical content.
+            // The v7 larger amount was too colored; start bounded.
+            target[10]=.22f;
+        }
         // +3dB-ish around 285Hz (requested warm vocal chest), not a LF
         // shelf. Detail around 1.1k stays far below the painful 2..6k
         // region and is IDENTICAL for L/R, so pan/phase are preserved.
