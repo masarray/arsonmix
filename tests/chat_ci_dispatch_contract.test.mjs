@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {parseMilestoneCommand,isTrustedOwnerComment,validateMilestone,
   hadEarlierIdenticalRequest,hasPriorDispatch,quickResult,performMilestone,
-  focusedHarmonyFileScope,parseWindowsMilestoneRun,guardWindowsMilestone,
+  focusedHarmonyFileScope,focusedImmerSIBFileScope,parseImmerSIBFocusedRun,
+  parseWindowsMilestoneRun,guardWindowsMilestone,
   planSmartMilestone,verifySmartFast,performSmartMilestone}
   from '../scripts/chat_ci_dispatch.mjs';
 
@@ -20,7 +21,7 @@ const pr=(head=sha)=>({
 });
 
 test('owner command parser requires a single bounded command and lowercase SHA',()=>{
-  for(const lane of ['check','fast','full','ui','native','fat','field'])
+  for(const lane of ['check','fast','full','ui','native','fat','field','immersib','stop'])
     assert.deepEqual(parseMilestoneCommand('/arsonmix-ci '+lane+' '+sha),{lane,sha});
   for(const bad of ['/arsonmix-ci all '+sha,'/arsonmix-ci fat main',
     '/arsonmix-ci fat '+sha+'; rm -rf .','/arsonmix-ci fat '+sha+'\necho unsafe',
@@ -37,6 +38,8 @@ test('authorization only allows same-repo OWNER comment and current PR HEAD',()=
   const target=validateMilestone(event(),repo,pr());
   assert.deepEqual([target.workflow,target.lane,target.sha],['p1-windows.yml','fat',sha]);
   assert.equal(validateMilestone(event('/arsonmix-ci ui '+sha),repo,pr()).workflow,'ui-smoke.yml');
+  assert.equal(validateMilestone(event('/arsonmix-ci immersib '+sha),repo,pr()).workflow,
+    'immersib-focused-native.yml');
   assert.throws(()=>validateMilestone(event(),repo,pr('b'.repeat(40))),/CI_STALE_SHA/);
   const fork=pr();fork.head.repo.full_name='untrusted/fork';
   assert.throws(()=>validateMilestone(event(),repo,fork),/CI_PR_INVALID/);
@@ -476,4 +479,108 @@ test('smart owner duplicate command is idempotent, no new expensive work',async(
     throw Error('UNEXPECTED_DUPLICATE_API '+path);
   };
   assert.equal((await performSmartMilestone({event:req,repo,api})).reason,'duplicate');
+});
+
+test('ImmerSIB iteration has a strict changed-file allowlist and never includes mixer/installer',()=>{
+  const isolated=[
+    'engine/builtin_fx/ImerSipP92Editor.h',
+    'engine/builtin_fx/ImerSipP92VisualSkin.h',
+    'tests/imersip_p92_native_test.cpp',
+    'tests/imersip_scene_assets_contract_test.py',
+    'tests/imersip_p92_catalog_contract_test.py',
+    'CMakeLists.txt',
+    'tools/immersib_p102_cpu_profile.cpp',
+    'docs/architecture/IMMERSIB_P102_CPU_OPTIMIZATION_PLAN_20261122.md',
+    '.github/workflows/imersip-p92-single-engine.yml'
+  ];
+  assert.equal(focusedImmerSIBFileScope(isolated),true);
+  for(const dangerous of ['src/Main.cpp','engine/builtin_fx/SonKuSpatialProcessor.h',
+    'engine/device/AsioStartupPolicy.h','installer/ArSonMix.iss',
+    'engine/builtin_fx/ChannelHarmonyProcessor.h','web/mixer-layout.js'])
+    assert.equal(focusedImmerSIBFileScope([...isolated,dangerous]),false);
+  assert.equal(focusedImmerSIBFileScope(['CMakeLists.txt']),false);
+  assert.equal(focusedImmerSIBFileScope([]),false);
+  const approved=readFileSync('.github/workflows/immersib-focused-native.yml','utf8');
+  assert.match(approved,/run-name: "ArSonMix IMMERSIB PR/);
+  assert.match(approved,/ref: \$\{\{ inputs.expected_sha \}\}/);
+  assert.match(approved,/ARMixImerSipP92NativeTests ARMixImmerSIBP99NativeSonicGate/);
+  assert.match(approved,/ctest --test-dir build -C Release --output-on-failure -R \$pattern/);
+  assert.doesNotMatch(approved,/--target ARMixConsole|ctest --test-dir build -C Release --output-on-failure\s*$/m);
+  assert.doesNotMatch(approved,/package_fat|focused_harmony_fat|build_verify_windows_installer/);
+});
+
+test('ImmerSIB owner command uses exact-source targeted workflow, no FAT/console',async()=>{
+  const calls=[],req=event('/arsonmix-ci immersib '+sha);
+  const p=pr();p.head.ref='perf/immersib-p102-editor';
+  const isolated=['engine/builtin_fx/ImerSipP92Editor.h',
+    'tests/imersip_p92_native_test.cpp'];
+  const api=async(path,method='GET',data)=>{
+    calls.push({path,method,data});
+    if(path.startsWith('/pulls/418/files?'))return isolated.map(filename=>({filename}));
+    if(path.startsWith('/pulls/418'))return p;
+    if(path.startsWith('/issues/418/comments?'))return [];
+    if(path.includes('/actions/workflows/p1-windows.yml/runs?event=pull_request'))
+      return {workflow_runs:[{id:501,head_sha:sha,event:'pull_request'}]};
+    if(path.includes('/actions/workflows/ui-smoke.yml/runs?event=pull_request'))
+      return {workflow_runs:[{id:502,head_sha:sha,event:'pull_request'}]};
+    if(path==='/actions/runs/501/jobs?per_page=100')return {jobs:[{
+      name:'Fast native contracts (no Windows / JUCE checkout)',conclusion:'success'}]};
+    if(path==='/actions/runs/502/jobs?per_page=100')return {jobs:[{
+      name:'Fast UI contracts (every relevant PR commit)',conclusion:'success'}]};
+    if(path.includes('/actions/workflows/p1-windows.yml/runs?event=workflow_dispatch'))
+      return {workflow_runs:[]};
+    if(path.includes('/actions/workflows/immersib-focused-native.yml/runs?'))
+      return {workflow_runs:[]};
+    if(path.endsWith('/dispatches'))return null;
+    throw Error('unexpected '+path);
+  };
+  const res=await performMilestone({event:req,repo,api});
+  assert.equal(res.kind,'dispatched');
+  const posts=calls.filter(c=>c.method==='POST');
+  assert.deepEqual(posts,[{path:'/actions/workflows/immersib-focused-native.yml/dispatches',
+    method:'POST',data:{ref:'main',inputs:{expected_sha:sha,request_pr_number:'418'}}}]);
+  assert.equal(calls.some(c=>c.path.includes('p1-windows.yml/dispatches')),false);
+});
+
+test('ImmerSIB scoped PR cannot accidentally request generic FAT; all other broad PRs retain explicit release FAT',async()=>{
+  const req=event('/arsonmix-ci fat '+sha);
+  const p=pr();p.head.ref='perf/immersib-p102-editor';
+  const read=async(path)=>{
+    if(path.startsWith('/pulls/418/files?'))return [
+      {filename:'engine/builtin_fx/ImerSipP92Editor.h'},
+      {filename:'tests/imersip_p92_native_test.cpp'},
+      {filename:'CMakeLists.txt'}];
+    if(path.startsWith('/pulls/418'))return p;
+    if(path.startsWith('/issues/418/comments'))return [];
+    throw Error('unexpected expensive API '+path);
+  };
+  await assert.rejects(performMilestone({event:req,repo,api:read}),
+    /CI_IMMERSIB_ITERATION_USE_FOCUSED_NOT_FAT/);
+});
+
+test('STOP owner command cancels only active matching PR+exact-SHA, never creates a runner',async()=>{
+  const calls=[], req=event('/arsonmix-ci stop '+sha);
+  const api=async(path,method='GET')=>{
+    calls.push({path,method});
+    if(path.startsWith('/pulls/418'))return pr();
+    if(path.startsWith('/issues/418/comments'))return [];
+    if(path.includes('/p1-windows.yml/runs?event=workflow_dispatch'))return {
+      workflow_runs:[
+        windowsRun(51,'fat',418,sha,'in_progress'),
+        windowsRun(52,'fat',419,sha,'in_progress'),
+        windowsRun(53,'fat',418,'b'.repeat(40),'in_progress')]};
+    if(path.includes('/immersib-focused-native.yml/runs?'))return {workflow_runs:[
+      {id:54,event:'workflow_dispatch',status:'queued',
+        display_title:'ArSonMix IMMERSIB PR418 '+sha},
+      {id:55,event:'workflow_dispatch',status:'in_progress',
+        display_title:'ArSonMix IMMERSIB PR419 '+sha}]};
+    if(path.endsWith('/cancel'))return null;
+    throw Error('UNEXPECTED_API '+path);
+  };
+  assert.deepEqual(parseImmerSIBFocusedRun({event:'workflow_dispatch',
+    display_title:'ArSonMix IMMERSIB PR418 '+sha}),{number:418,sha});
+  const got=await performMilestone({event:req,repo,api});
+  assert.equal(got.kind,'cancelled');
+  assert.deepEqual(calls.filter(c=>c.method==='POST').map(c=>c.path),
+    ['/actions/runs/51/cancel','/actions/runs/54/cancel']);
 });

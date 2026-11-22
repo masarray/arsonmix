@@ -6,7 +6,7 @@ import {requiredLanes} from './required_pr_merge_gate.mjs';
 
 export function parseMilestoneCommand(body) {
   if(typeof body!=='string')return null;
-  const m=/^\/arsonmix-ci (check|fast|full|ui|native|fat|field) ([0-9a-f]{40})$/.exec(body.trim());
+  const m=/^\/arsonmix-ci (check|fast|full|ui|native|fat|field|immersib|stop) ([0-9a-f]{40})$/.exec(body.trim());
   return m?{lane:m[1],sha:m[2]}:null;
 }
 export function isTrustedOwnerComment(event,repo) {
@@ -29,7 +29,8 @@ export function validateMilestone(event,repo,pr) {
     throw Error('CI_PR_INVALID');
   if(pr.head.sha!==cmd.sha)throw Error('CI_STALE_SHA');
   return {...cmd,number:pr.number,branch:pr.head.ref,
-    workflow:cmd.lane==='ui'?'ui-smoke.yml':'p1-windows.yml'};
+    workflow:cmd.lane==='ui'?'ui-smoke.yml':
+      cmd.lane==='immersib'?'immersib-focused-native.yml':'p1-windows.yml'};
 }
 export function hadEarlierIdenticalRequest(comments,event,repo) {
   const cmd=parseMilestoneCommand(event.comment.body);
@@ -66,6 +67,50 @@ export function focusedHarmonyFileScope(files) {
     files.every(file=>typeof file==='string' &&
         permitted.some(pattern=>pattern.test(file)));
 }
+
+/**
+ * A deliberately limited iteration/diagnostic scope, never a merge-gate
+ * replacement. CMake is allowed only to compile real ImmerSIB sources:
+ * the normal protected nativeFull gate STILL requires full Windows MSVC.
+ * Shared mixer/device/ASIO, other FX or installer edits reject this lane.
+ */
+export function focusedImmerSIBFileScope(files) {
+  if(!Array.isArray(files)||!files.length)return false;
+  const owned=[
+    /^engine\/builtin_fx\/ImerSipP92(?:Editor|VisualSkin|Processor|Scene)\.h$/,
+    /^tests\/imersip(?:_p92_.*|_scene_assets_contract_test)\.(?:cpp|py)$/,
+    /^tests\/immersib_.*\.(?:cpp|py)$/,
+    /^tools\/immersib_.*\.cpp$/,
+    /^assets\/imersip\//
+  ];
+  const allowed=[
+    ...owned,
+    /^CMakeLists\.txt$/,
+    /^\.github\/workflows\/(?:imersip-p92-single-engine|immersib-musical-eq|immersib-focused-native)\.yml$/,
+    /^docs\/architecture\/IMMERSIB_P102_[^/]+\.md$/
+  ];
+  return files.some(f=>typeof f==='string'&&owned.some(re=>re.test(f)))&&
+    files.every(f=>typeof f==='string'&&allowed.some(re=>re.test(f)));
+}
+export function parseImmerSIBFocusedRun(run) {
+  if(run?.event!=='workflow_dispatch')return null;
+  const m=/^ArSonMix IMMERSIB PR([1-9][0-9]*) ([0-9a-f]{40})$/
+    .exec(run.display_title||'');
+  return m?{number:Number(m[1]),sha:m[2]}:null;
+}
+async function recentImmerSIBFocusedRuns(api) {
+  const all=[];
+  for(let page=1;page<=5;page++){
+    const response=await api('/actions/workflows/immersib-focused-native.yml/runs?'+
+      'event=workflow_dispatch&per_page=100&page='+page);
+    if(!Array.isArray(response?.workflow_runs))
+      throw Error('CI_IMMERSIB_RUNS_INVALID');
+    all.push(...response.workflow_runs);
+    if(response.workflow_runs.length<100)return all;
+  }
+  throw Error('CI_IMMERSIB_RUNS_PAGINATION_LIMIT');
+}
+
 async function readChangedFiles(api,number) {
   const result=[];
   for(let page=1;page<=10;page++){
@@ -167,6 +212,68 @@ export async function performMilestone({event,repo,api,waitForQuick=()=>sleep(50
   }
   if(hadEarlierIdenticalRequest(older,event,repo))
     return {kind:'skipped',reason:'duplicate',target};
+  // STOP is an owner-authorized safety action. It NEVER dispatches a job
+  // and cancels ONLY this exact PR and immutable HEAD; never another PR.
+  if(target.lane==='stop') {
+    const ordinary=(await recentWindowsMilestones(api)).filter(x=>{
+      const id=parseWindowsMilestoneRun(x);
+      return id?.number===target.number&&id.sha===target.sha&&
+        isActiveWindowsRun(x);
+    });
+    const focused=(await recentImmerSIBFocusedRuns(api)).filter(x=>{
+      const id=parseImmerSIBFocusedRun(x);
+      return id?.number===target.number&&id.sha===target.sha&&
+        isActiveWindowsRun(x);
+    });
+    const cancel=[...ordinary,...focused];
+    for(const run of cancel){
+      if(!Number.isSafeInteger(run.id))throw Error('CI_STOP_RUN_ID_INVALID');
+      await api('/actions/runs/'+run.id+'/cancel','POST');
+    }
+    return {kind:cancel.length?'cancelled':'checked',
+      reason:cancel.length?'stopped-exact-pr-head':'no-matching-active-runs',
+      target,results:cancel.map(x=>({run:x.id}))};
+  }
+  // Ordinary FAT is for a REQUESTED installer, not editor iteration. The
+  // previous ImmerSIB #865 consumed 30m building 113 unrelated CTests.
+  // Explicit source-scoped denial makes repeating that mistake impossible.
+  if(target.lane==='fat'&&/immersib|imersib|imersip/i.test(target.branch)&&
+     focusedImmerSIBFileScope(await readChangedFiles(api,target.number)))
+    throw Error('CI_IMMERSIB_ITERATION_USE_FOCUSED_NOT_FAT');
+  if(target.lane==='immersib') {
+    const files=await readChangedFiles(api,target.number);
+    if(!focusedImmerSIBFileScope(files))
+      throw Error('CI_IMMERSIB_FOCUSED_SCOPE_REQUIRES_ISOLATED_SOURCE');
+    // Same PR exact-SHA quick preflight as SMART; no Windows on red UI,
+    // native or release source checks and no trust in workflow-ref SHA.
+    const proof=await verifySmartFast({target,scope:requiredLanes(files),
+      api,waitForQuick});
+    validateMilestone(event,repo,await api('/pulls/'+target.number));
+    // Do not overlap a full generic FAT with the focused editor runner.
+    const broad=(await recentWindowsMilestones(api)).filter(x=>{
+      const id=parseWindowsMilestoneRun(x);
+      return id?.number===target.number&&id.lane==='fat'&&
+        isActiveWindowsRun(x);
+    });
+    if(broad.length)return {kind:'skipped',reason:'full-fat-already-running',
+      target,proof};
+    const candidates=(await recentImmerSIBFocusedRuns(api)).map(x=>({
+      run:x,identity:parseImmerSIBFocusedRun(x)
+    })).filter(x=>x.identity?.number===target.number);
+    if(candidates.some(x=>isActiveWindowsRun(x.run)))
+      return {kind:'skipped',reason:'immersib-focused-already-running',
+        target,proof};
+    const prior=candidates.find(x=>x.identity.sha===target.sha);
+    if(prior?.run.conclusion==='success')
+      return {kind:'skipped',reason:'immersib-focused-already-passed',
+        target,proof};
+    if(prior)throw Error('CI_IMMERSIB_FAILED_FIX_SOURCE_BEFORE_REDISPATCH');
+    validateMilestone(event,repo,await api('/pulls/'+target.number));
+    await api('/actions/workflows/immersib-focused-native.yml/dispatches','POST',
+      {ref:'main',inputs:{expected_sha:target.sha,
+        request_pr_number:String(target.number)}});
+    return {kind:'dispatched',target,proof};
+  }
   const qs='/actions/workflows/'+target.workflow+'/runs?event=pull_request&branch='+
     encodeURIComponent(target.branch)+'&per_page=100';
   const prior=(await api(qs)).workflow_runs.filter(r=>r.head_sha===target.sha)
