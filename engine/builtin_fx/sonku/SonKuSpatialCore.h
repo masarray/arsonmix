@@ -228,6 +228,15 @@ public:
 #if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
     void optInImmerSIBVocalRoom() noexcept {immersibP99Enabled_=true;}
 #endif
+#if defined(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH) && ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
+    // CONTROL thread before prepare; this is a per-instance product mode,
+    // not a scene setting, a global variable or a new .smix field.
+    void optInImmerSIBStageMonitor() noexcept {
+        stageMonitor_=true;
+        p90Decoder_.useUnmodulatedStageKernels(true);
+        p98Voicing_.enableFixedStageWarmth(true);
+    }
+#endif
     bool prepare(double rate, SonKuReflectionProfile profile=
                  SonKuReflectionProfile::Lightweight) noexcept {
         ready_=false;
@@ -236,8 +245,12 @@ public:
         sampleRate_=rate;
         bank_=(std::abs(rate-44100.)<=.1)?hrir::normal44100:hrir::normal48000;
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
+        float extraDirectReliefDb=0.f;
+#if defined(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH) && ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
+        if(stageMonitor_)extraDirectReliefDb=1.2f;
+#endif
         if(profile==SonKuReflectionProfile::SixSurfaceKemarResearch &&
-           !tonalCalibration_.prepare(rate,bank_))return false;
+           !tonalCalibration_.prepare(rate,bank_,extraDirectReliefDb))return false;
 #endif
         // Prepared control-side: continuous coefficient and gain smoothing
         // without trigonometric/exponential work in the audio callback.
@@ -1577,6 +1590,9 @@ private:
     double degrees_=0.;
     int write_=0;
     int remaining_=0;
+#if defined(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH) && ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
+    bool stageMonitor_=false;
+#endif
     bool ready_=false;
     bool haveKernel_=false;
     bool nativeSpaceEverUsed_=false;
