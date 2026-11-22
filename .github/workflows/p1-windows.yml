@@ -270,21 +270,18 @@ jobs:
           g++ -std=c++20 -O2 -DNDEBUG -fno-fast-math tests/builtin_vocal_throw_test.cpp -o "$RUNNER_TEMP/native-vocal-throw-test"
           "$RUNNER_TEMP/native-vocal-throw-test"
   windows-build:
-    name: ${{ github.event_name == 'workflow_dispatch' && inputs.feature_scope != '' && 'Windows FEATURE scoped native CTest (NOT full)' || 'Windows MSVC / realtime CTest' }}
+    name: Windows MSVC / realtime CTest
     needs: quick
     # Draft commits never reserve expensive Windows runners. Non-draft PR
     # synchronizations re-test latest HEAD. Main push and manual always run.
     # A main push containing ONLY CI policy/contract files was already
     # checked by the Linux native gate. Any runtime/native or unknown diff
     # still performs full MSVC/CTest. Owner-dispatched runs always compile.
-    if: ${{ github.event_name != 'pull_request' && (github.event_name != 'push' || needs.quick.outputs.native_required == 'true') }}
+    if: ${{ github.event_name != 'pull_request' && (github.event_name != 'push' || needs.quick.outputs.native_required == 'true') && (github.event_name != 'workflow_dispatch' || inputs.feature_scope == '') }}
     runs-on: windows-2022
     timeout-minutes: 50
     env:
-      # FEATURE is developer-only. Protected nativeFull stays all-target.
       FIELD_PREVIEW: ${{ github.event_name == 'workflow_dispatch' && inputs.field_preview && !inputs.package_fat }}
-      FEATURE_SCOPE: ${{ github.event_name == 'workflow_dispatch' && inputs.feature_scope || '' }}
-      CI_PACKAGE_FAT: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat || false }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -301,33 +298,6 @@ jobs:
           }
           Write-Host "FAT_EXACT_PR_HEAD_CHECKOUT=$actual"
 
-      - name: Guard feature-scoped mode before expensive JUCE checkout
-        if: ${{ env.FEATURE_SCOPE != '' }}
-        shell: pwsh
-        run: |
-          # Feature is a lightweight development smoke, never a release
-          # proof. Reject malicious or accidental combined input BEFORE MSVC.
-          if ($env:GITHUB_EVENT_NAME -ne 'workflow_dispatch' -or
-              $env:CI_PACKAGE_FAT -eq 'true' -or
-              $env:FIELD_PREVIEW -eq 'true') {
-            throw 'FEATURE_CANNOT_PACKAGE_OR_PREVIEW'
-          }
-          $planJson = & node scripts/windows_feature_scope.mjs $env:FEATURE_SCOPE
-          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_SCOPE_UNKNOWN' }
-          $plan = $planJson | ConvertFrom-Json
-          if ($plan.id -cne $env:FEATURE_SCOPE -or
-              @($plan.targets).Count -eq 0 -or @($plan.tests).Count -eq 0) {
-            throw 'FEATURE_SCOPE_INVALID_PLAN'
-          }
-          $source = Get-Content -LiteralPath CMakeLists.txt -Raw
-          foreach ($target in @($plan.targets)) {
-            $pattern = '(?m)^\s*(?:add_executable|juce_add_console_app|juce_add_gui_app)\(\s*' +
-                       [regex]::Escape($target) + '\b'
-            if ($source -notmatch $pattern) {
-              throw "FEATURE_UNDECLARED_CMAKE_TARGET=$target"
-            }
-          }
-          Write-Host "WINDOWS_DEVELOPMENT_SCOPE=$($plan.id) targets=$(@($plan.targets).Count) tests=$(@($plan.tests).Count) fullGate=false"
       - name: Cheap canonical Console v6 puzzle socket gate (no JUCE)
         run: node scripts/check_console_puzzle.mjs
       - name: Stop incomplete integrated product promotion before JUCE checkout
@@ -421,48 +391,15 @@ jobs:
           }
       - name: Verify exact ONE approved /preview/ GUI CMake bundle
         run: node scripts/check_approved_native_gui_release.mjs --source-only --bundle build/approved_gui
-      - name: Feature-scoped Windows MSVC targets (development ONLY)
-        if: ${{ env.FEATURE_SCOPE != '' }}
-        shell: pwsh
-        run: |
-          $planJson = & node scripts/windows_feature_scope.mjs $env:FEATURE_SCOPE
-          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_PLAN_PARSE_FAILED' }
-          $plan = $planJson | ConvertFrom-Json
-          # The source CTest catalog must contain every expected case. If a
-          # branch renamed a test, fail BEFORE the JUCE test build.
-          $catalog = (& ctest --test-dir build -C Release --show-only=json-v1 |
-            Out-String | ConvertFrom-Json)
-          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_CTEST_CATALOG_FAILED' }
-          $known = @($catalog.tests | ForEach-Object { $_.name })
-          foreach ($test in @($plan.tests)) {
-            if ($test -notin $known) { throw "FEATURE_MISSING_CTEST=$test" }
-          }
-          $targets = @($plan.targets)
-          & cmake --build build --config Release --parallel 2 --target $targets
-          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_BUILD_FAILED' }
-          Write-Host "FEATURE_COMPILED=$($plan.id) targets=$($targets.Count) fullGate=false"
       - name: Build executable and native RT tests
-        if: ${{ env.FEATURE_SCOPE == '' && env.FIELD_PREVIEW != 'true' }}
+        if: ${{ env.FIELD_PREVIEW != 'true' }}
         # Full build remains mandatory for main, release and native/full requests.
         run: cmake --build build --config Release --parallel 2
-      - name: Run feature-scoped CTests (development ONLY)
-        if: ${{ env.FEATURE_SCOPE != '' }}
-        shell: pwsh
-        run: |
-          $planJson = & node scripts/windows_feature_scope.mjs $env:FEATURE_SCOPE
-          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_PLAN_PARSE_FAILED' }
-          $plan = $planJson | ConvertFrom-Json
-          $pattern = '^(' + ((@($plan.tests) | ForEach-Object {
-            [regex]::Escape($_)
-          }) -join '|') + ')$'
-          Write-Host "FEATURE_TEST_FILTER=$pattern fullGate=false"
-          & ctest --test-dir build -C Release --output-on-failure -R $pattern
-          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_CTEST_FAILED' }
       - name: Build portable Windows field preview
         if: ${{ env.FIELD_PREVIEW == 'true' }}
         run: cmake --build build --config Release --parallel 2 --target ARMixConsole
       - name: Run full realtime CTest (release or nativeFull)
-        if: ${{ env.FEATURE_SCOPE == '' && env.FIELD_PREVIEW != 'true' }}
+        if: ${{ env.FIELD_PREVIEW != 'true' }}
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Package verified JUCE GUI for hardware FAT
         if: ${{ env.FIELD_PREVIEW == 'true' || (github.event_name == 'workflow_dispatch' && inputs.package_fat == true) }}
@@ -581,6 +518,111 @@ jobs:
   # If GitHub returns HTML instead of JSON (observed at 43094957798),
   # retry ONLY this job; the completed build is preserved in the immutable
   # run-unique cache key and all bytes are re-hashed before publish.
+
+
+  windows-feature:
+    # Separate, statically named development job. Never satisfies nativeFull.
+    name: Windows FEATURE scoped native CTest (NOT full)
+    needs: quick
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.feature_scope != '' }}
+    runs-on: windows-2022
+    timeout-minutes: 30
+    env:
+      FEATURE_SCOPE: ${{ inputs.feature_scope }}
+      EXPECTED_SOURCE_SHA: ${{ inputs.expected_sha }}
+      REQUEST_PR: ${{ inputs.request_pr_number }}
+      PACKAGE_FAT_REQUESTED: ${{ inputs.package_fat }}
+      FIELD_PREVIEW_REQUESTED: ${{ inputs.field_preview }}
+    steps:
+      - name: Checkout exact source (not moving main)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.expected_sha }}
+          persist-credentials: false
+      - name: Validate feature scope and CMake targets before JUCE
+        shell: pwsh
+        run: |
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or
+              $env:EXPECTED_SOURCE_SHA -cnotmatch '^[0-9a-f]{40}$' -or
+              $env:REQUEST_PR -notmatch '^[1-9][0-9]*$' -or
+              $actual -cne $env:EXPECTED_SOURCE_SHA) {
+            throw 'FEATURE_EXACT_SOURCE_OR_PR_MISMATCH'
+          }
+          if ($env:PACKAGE_FAT_REQUESTED -eq 'true' -or
+              $env:FIELD_PREVIEW_REQUESTED -eq 'true') {
+            throw 'FEATURE_CANNOT_PACKAGE_OR_PREVIEW'
+          }
+          $planJson = & node scripts/windows_feature_scope.mjs $env:FEATURE_SCOPE
+          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_SCOPE_UNKNOWN' }
+          $plan = $planJson | ConvertFrom-Json
+          if ($plan.id -cne $env:FEATURE_SCOPE -or
+              @($plan.targets).Count -eq 0 -or @($plan.tests).Count -eq 0) {
+            throw 'FEATURE_INVALID_PLAN'
+          }
+          $cmakeSource = Get-Content -LiteralPath CMakeLists.txt -Raw
+          foreach ($target in @($plan.targets)) {
+            $pattern = '(?m)^\s*(?:add_executable|juce_add_console_app|juce_add_gui_app)\(\s*' +
+                       [regex]::Escape($target) + '\b'
+            if ($cmakeSource -notmatch $pattern) {
+              throw "FEATURE_UNDECLARED_CMAKE_TARGET=$target"
+            }
+          }
+          Write-Host "FEATURE_PREFLIGHT=$($plan.id) targets=$(@($plan.targets).Count) tests=$(@($plan.tests).Count) fullGate=false"
+      - name: Checkout pinned JUCE 8
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.15
+          path: third_party/JUCE
+          persist-credentials: false
+      - name: Install WebView2 compile headers
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
+          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_WEBVIEW2_SDK_FAILED' }
+      - name: Configure audited feature CTest registry
+        shell: pwsh
+        run: |
+          $cmakeArgs = @('-S','.','-B','build','-G','Visual Studio 17 2022',
+            '-A','x64',"-DJUCE_ROOT=$env:GITHUB_WORKSPACE/third_party/JUCE",
+            "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$env:GITHUB_WORKSPACE/.deps",
+            '-DBUILD_TESTING=ON')
+          & cmake @cmakeArgs
+          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_CMAKE_CONFIGURE_FAILED' }
+          $catalog = (& ctest --test-dir build -C Release --show-only=json-v1 |
+            Out-String | ConvertFrom-Json)
+          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_CTEST_CATALOG_FAILED' }
+          $planJson = & node scripts/windows_feature_scope.mjs $env:FEATURE_SCOPE
+          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_PLAN_PARSE_FAILED' }
+          $plan = $planJson | ConvertFrom-Json
+          $available = @($catalog.tests | ForEach-Object { $_.name })
+          foreach ($name in @($plan.tests)) {
+            if ($name -notin $available) { throw "FEATURE_MISSING_CTEST=$name" }
+          }
+      - name: Feature-scoped Windows MSVC targets (development ONLY)
+        shell: pwsh
+        run: |
+          $planJson = & node scripts/windows_feature_scope.mjs $env:FEATURE_SCOPE
+          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_PLAN_PARSE_FAILED' }
+          $plan = $planJson | ConvertFrom-Json
+          $targets = @($plan.targets)
+          & cmake --build build --config Release --parallel 2 --target $targets
+          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_BUILD_FAILED' }
+          Write-Host "FEATURE_COMPILED=$($plan.id) targets=$($targets.Count) fullGate=false"
+      - name: Run feature-scoped CTests (development ONLY)
+        shell: pwsh
+        run: |
+          $planJson = & node scripts/windows_feature_scope.mjs $env:FEATURE_SCOPE
+          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_PLAN_PARSE_FAILED' }
+          $plan = $planJson | ConvertFrom-Json
+          $pattern = '^(' + ((@($plan.tests) | ForEach-Object {
+            [regex]::Escape($_)
+          }) -join '|') + ')$'
+          Write-Host "FEATURE_TEST_FILTER=$pattern fullGate=false"
+          & ctest --test-dir build -C Release --output-on-failure -R $pattern
+          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_CTEST_FAILED' }
+
   fat-upload:
     name: Publish verified Windows FAT artifacts (retry without recompiling)
     needs: windows-build
