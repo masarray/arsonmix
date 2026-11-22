@@ -12,21 +12,23 @@
 </p>
 
 <p align="center"><a href="https://masarray.github.io/arsonmix/"><img src="site/media/console-overview.jpg" alt="Actual approved ArSonMix mixer interface with channel faders, meters, FX racks and routing" width="1100"></a></p>
-<p align="center"><sub>Screenshot from the approved interactive mixer GUI. The browser preview is visual only; audio processing runs in the desktop application.</sub></p>
+<p align="center"><sub>The ArSonMix mixing console. Explore this interface online; run audio and built-in effects in the Windows desktop app.</sub></p>
 
-## Make your live sound yours
+## Your mix, your sound
 
-ArSonMix brings your microphone, music, interface and effects into one mixer. Adjust each channel, shape your sound, connect signals with **WIRE**, and save your workspace in a `.smix` session. It's a **live mixing console**, not a multitrack recording/timeline DAW.
+Bring your voice, instruments and music together in a single live digital mixer. Shape your sound, connect channels with **WIRE**, add your favorite effects and save the entire setup as a `.smix` session. Great for karaoke, streaming, live vocals and home studios.
 
-**Windows 10/11 (x64) public alpha:** [Get the newest verified installer from the official downloads page](https://masarray.github.io/arsonmix/#download). You do **not** need a GitHub account to download. The official page selects the latest verified assets rather than a release version pinned in this README. [Browse published releases, checksums and release notes](https://github.com/masarray/arsonmix/releases).
+**Get started on Windows 10/11 (64-bit).** **[Download ArSonMix](https://masarray.github.io/arsonmix/#download)** or [explore the mixer online](https://masarray.github.io/arsonmix/preview/). Free to download, no sign-up required. The download page always points to the latest published installer.
 
-## A closer look
+
+
+## See the mixer in action
 
 | WIRE routing and FX | Channel levels and faders |
 |:--:|:--:|
 | <img src="site/media/console-routing.jpg" alt="ArSonMix WIRE patch connections and mixer FX slots" width="520"> | <img src="site/media/console-faders.jpg" alt="ArSonMix hardware-style channel faders and level meters" width="520"> |
 
-### What can you do?
+## Sound-shaping tools built in
 
 | Feature | What it means for you |
 | --- | --- |
@@ -38,31 +40,36 @@ ArSonMix brings your microphone, music, interface and effects into one mixer. Ad
 | **ArSon Player + `.smix`** | Keep music close to the console and save or reopen mixer sessions. |
 | **VST3 hosting** | Load supported external VST3 effects where compatible. Commercial plugins are not included. |
 
-See the [built-in FX showcase](https://masarray.github.io/arsonmix/#effects) and [interactive mixer](https://masarray.github.io/arsonmix/preview/). The FX-rack images above are screenshots of the approved mixer GUI, **not screenshots of each native FX editor**. Some editors are available only in the Windows app.
+Try the [built-in FX showcase](https://masarray.github.io/arsonmix/#effects) or [explore the console](https://masarray.github.io/arsonmix/preview/). The preview is visual only; native effect editors and audio run in the desktop app.
 
-## Start mixing in three steps
+## From download to your first mix
 
-1. **Install.** On Windows 10/11 x64, [download the verified installer ZIP](https://masarray.github.io/arsonmix/#download), extract it, run Setup, and open ArSonMix. The latest published release determines the exact file and version. Windows WebView2 and a compatible audio driver may be required.
-2. **Connect carefully.** In audio setup, select your actual audio device, driver and output pins. Start with speaker/headphone volume low; don't assume a disconnected or unassigned route will produce sound.
-3. **Try a simple mix.** Add or select a channel, check its MAIN routing, adjust the fader, then insert an effect. Compare FX on/bypass at matched volume and save a `.smix` session.
+1. **Get ArSonMix.** [Download the Windows installer ZIP](https://masarray.github.io/arsonmix/#download), extract it and run Setup.
+2. **Set your sound card.** Choose your audio interface and output in Audio Setup. Start with a comfortable monitoring level.
+3. **Mix and create.** Adjust a channel fader, add an effect, route it to MAIN and save your workspace as a `.smix` session.
 
-**This is an actively developed alpha.** Native hardware audio, device recovery, external VST3 behavior and latency depend on your equipment and build. Save backups of valuable `.smix` sessions before upgrading. Single-primary-ASIO behavior is the current qualified architecture; multi-vendor dual-ASIO and unmerged GUI/Graphic EQ experiments must not be presented as shipped features. Browser preview interactions never certify physical audio performance.
+<details>
+<summary>Compatibility and release information</summary>
 
-## Help us make ArSonMix better
+The Windows release is an early-access build for Windows 10/11 x64. A compatible audio driver and Windows WebView2 may be required. Features and device behavior depend on your setup; see [release notes](https://github.com/masarray/arsonmix/releases). Keep a backup of important `.smix` sessions before updating. Current audio routing uses one primary ASIO device; independently synchronized dual-vendor ASIO is not advertised as a released feature.
 
-Real users and real devices help more than polished mockups. If you try ArSonMix, we'd especially appreciate feedback on installation, first sound, driver selection, FX usability, WIRE routing, session reopening and dropouts.
+</details>
+
+## Help shape the next ArSonMix
+
+Tried a mix? We'd love to hear what you created, which FX you enjoyed and what would make the console even easier to use. Suggestions and bug reports both help prioritize the next release.
 
 - [Report a reproducible problem](https://github.com/masarray/arsonmix/issues/new?template=01_bug_report.yml) — include the installed version, Windows/audio device and driver, sample rate/buffer if relevant, steps, what you expected, and what happened.
 - [Suggest a feature or workflow improvement](https://github.com/masarray/arsonmix/issues/new?template=02_feature_request.yml) — explain the result you wanted, even if you don't know how to build it.
 - [Browse community issues](https://github.com/masarray/arsonmix/issues) — check existing reports and follow progress.
 
-Submitting an issue requires a GitHub account, but downloading ArSonMix doesn't. Please redact personal information, serial numbers and private file paths before sharing screenshots or logs.
+You can download ArSonMix without a GitHub account. Posting an issue requires GitHub sign-in.
 
-## Open source, responsibly shipped
+## Free and open source
 
-ArSonMix original mixer, routing, GUI and owned native built-in FX are licensed under **AGPL-3.0-only**. See [LICENSE](LICENSE) and [LICENSE-NOTICE.txt](LICENSE-NOTICE.txt). JUCE, VST3/ASIO SDKs, included data and separately installed plugins have their own terms; third-party commercial VST3 plugins are not bundled without permission. The Windows app exposes license notices under **More > About & Licenses**.
+ArSonMix is open-source software licensed under **AGPL-3.0-only** for its original mixer, GUI and native built-in effects. The app includes a dedicated **More > About & Licenses** section. [View the license](LICENSE), [third-party notices](LICENSE-NOTICE.txt) or [current releases](https://github.com/masarray/arsonmix/releases).
 
-Each release provides source provenance and SHA-256 checksums. Installer/CI qualification is not a claim of independent hardware field testing on every interface. See [current releases](https://github.com/masarray/arsonmix/releases) and [official downloads](https://masarray.github.io/arsonmix/#download) for what is actually public.
+Third-party plugins and audio drivers retain their own license terms.
 
 <details>
 <summary><strong>For developers and contributors</strong></summary>

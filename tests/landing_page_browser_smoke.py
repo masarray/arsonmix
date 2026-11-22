@@ -31,8 +31,14 @@ def browser_check(page):
     # sound guide, and one-click feedback, on desktop AND phone.
     assert page.locator("#effects .fx-list article").count() == 6
     assert page.locator("#effects .fx-visual img").count() == 1
-    assert page.locator("#effects .fx-visual img").evaluate(
-        "img=>img.complete && img.naturalWidth>0"), "FX rack screenshot broken"
+    # The effect image is intentionally lazy-loaded; bring it into the
+    # viewport before checking decoded bytes rather than racing Chromium.
+    rack = page.locator("#effects .fx-visual img")
+    rack.scroll_into_view_if_needed()
+    page.wait_for_function(
+        "() => {const img=document.querySelector('#effects .fx-visual img'); return img && img.complete && img.naturalWidth>0;}",
+        timeout=15000,
+    )
     assert page.locator("#getting-started .step-grid article").count() == 3
     assert page.locator("#feedback").count() == 1
     assert page.locator('a[href="#effects"]').count() >= 2
@@ -49,6 +55,12 @@ def browser_check(page):
     imgs = page.locator(".gallery img,.app-shot img,.brand img,.hero-brand-lockup img")
     assert page.locator(".hero-brand-lockup img").count() == 1
     assert page.locator(".hero-brand-lockup img").evaluate("img=>img.naturalWidth >= 512")
+    # Offscreen gallery images also use loading=lazy. Verify the genuine
+    # assets after visiting their viewport, without disabling lazy loading.
+    for idx in range(imgs.count()):
+        img = imgs.nth(idx)
+        img.scroll_into_view_if_needed()
+        img.evaluate("img => img.decode()")
     assert all(imgs.evaluate_all(
         "nodes=>nodes.map(n=>n.complete && n.naturalWidth>0)")), "Screenshot/brand broken"
     overflow = page.evaluate("document.documentElement.scrollWidth - window.innerWidth")
