@@ -42,9 +42,16 @@ at the `pages.dev` address. Do not include a project subpath in the URL.
 The Cloudflare Pages build is **static hosting** for landing, demo GUI,
 release catalog and images. It is NOT the native audio engine. Download links
 remain official GitHub Release assets, checked for SHA-256 digests and
-provenance in the existing release-catalog generator. The build now **fails closed** when the GitHub Release API is unavailable or
-has no verified downloadable assets: it does not replace the last production
-deployment with an empty or misleading catalog. The exact verified same-origin
+provenance in the existing release-catalog generator. Cloudflare's unauthenticated GitHub Release API egress can be rate-limited
+independently from GitHub Actions. The builder retries short-lived network
+errors and, only if the API is unreachable, retrieves the **independently
+verified, last published official GitHub Pages catalog** at
+`https://masarray.github.io/arsonmix/release-catalog.json`. Every fallback
+asset must satisfy exact release URL, platform filename, SHA-256, publication
+timestamp, size and schema checks before use. If both sources are unreachable,
+the fallback catalog is invalid, or the reachable API has no verified assets,
+the builder **fails closed** and retains the last Cloudflare deployment.
+No fabricated installer or unsigned third-party mirror is introduced. The exact verified same-origin
 catalog also pre-renders the three OS download cards in published HTML, so
 previously approved direct asset links work without JavaScript. Browser JS can
 refresh to a newer validated public release and keeps the verified HTML links
@@ -95,3 +102,13 @@ Verification URLs:
 Both `platforms.windows.tag` and the verified `sha256` should match
 the newest officially published Windows release. Linux/macOS retain their
 own last verified versions and are not falsely bumped to match Windows.
+
+## Production parity after a main merge
+
+After Cloudflare and GitHub Pages have deployed, inspect both `#fx-gallery`
+and each image response on the production hosts, not just PR preview. All six
+`/media/fx-editor-{8d-sonku,vocal-delay,harmonice,channel-eq,compressor,graphic-eq31}.jpg`
+must be actual JPEG bytes (not the landing HTML fallback) on both sites. Both
+`release-catalog.json` snapshots must agree on the official Windows tag,
+SHA-256 and URL. A green GitHub Pages deployment does not automatically prove
+Cloudflare production is current; the Cloudflare GitHub check is separate.
