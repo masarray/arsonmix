@@ -4,7 +4,9 @@
 #include <array>
 #include <cmath>
 namespace armix::sonku::p102 {
-// Owner screenshot: body 193Hz +2.8 Q.53 and shelf 3240Hz +3.3 Q.71.
+// P102.1 owner feedback: mid/high accepted, lower vocal body still thin.
+// Replace ONLY the 193Hz bell with 250Hz +5.5 Q.85 (simulated against P102).
+// The original screenshot-derived 3240Hz shelf and the other two bands stay.
 // Articulation 1120Hz and local treble relief near 7.4k are approximations
 // of the visible graph, not claimed exact readback. No flat-target fit.
 class FixedPaMusicalEq final {
@@ -35,7 +37,7 @@ class FixedPaMusicalEq final {
 public:
     bool prepare(double rate) noexcept {
         if(!std::isfinite(rate)||(std::abs(rate-44100.)>.1&&std::abs(rate-48000.)>.1))return false;
-        c_={bell(rate,193.,.53,2.8),bell(rate,1120.,1.2,2.3),shelf(rate,3240.,3.3),bell(rate,7400.,1.1,-1.8)};
+        c_={bell(rate,250.,.85,5.5),bell(rate,1120.,1.2,2.3),shelf(rate,3240.,3.3),bell(rate,7400.,1.1,-1.8)};
         step_=float(1.-std::exp(-1./(.025*rate)));
         release_=float(1.-std::exp(-1./(.08*rate)));reset();return true;
     }
