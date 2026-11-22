@@ -1,0 +1,69 @@
+{
+  "captureMode": "approved-native-webview-editor-chromium-offline-fixture",
+  "images": [
+    {
+      "actualWindowsScreenshot": false,
+      "audioOrHardwareVerifiedByImage": false,
+      "catalogId": "armix.builtin.channel-eq.v1",
+      "editorSelector": "#mxNativePeq",
+      "file": "fx-editor-channel-eq.jpg",
+      "sha256": "95be041e90b9d5f104421ad38d38b9bcc26ffc8812191d1e9006329a554c107f",
+      "sizeBytes": 36699,
+      "source": "approved JUCE WebView2 editor resource rendered in Chromium"
+    },
+    {
+      "actualWindowsScreenshot": false,
+      "audioOrHardwareVerifiedByImage": false,
+      "catalogId": "armix.builtin.channel-compressor.v1",
+      "editorSelector": "#mxNativeComp",
+      "file": "fx-editor-compressor.jpg",
+      "sha256": "91b68316361cf91ee28565c9810d9b6d1e6d7ebed8ce34b37eee5518b9c20aab",
+      "sizeBytes": 37903,
+      "source": "approved JUCE WebView2 editor resource rendered in Chromium"
+    },
+    {
+      "actualWindowsScreenshot": false,
+      "audioOrHardwareVerifiedByImage": false,
+      "catalogId": "armix.builtin.graphic-eq31.v1",
+      "editorSelector": "#mxNativeGeq31",
+      "file": "fx-editor-graphic-eq31.jpg",
+      "sha256": "a2f7e29b5938083f029d1f84d3ec45a0a3e4e165b5789bbc482ab076d6016b8c",
+      "sizeBytes": 103058,
+      "source": "approved JUCE WebView2 editor resource rendered in Chromium"
+    },
+    {
+      "actualWindowsScreenshot": false,
+      "audioOrHardwareVerifiedByImage": false,
+      "catalogId": "armix.builtin.arson-harmony.v1",
+      "editorSelector": "#mxNativeHarmony",
+      "file": "fx-editor-harmonice.jpg",
+      "sha256": "31b2492fa0612be21aa115bb825c8ef8727f9e8b16aef4e407ed2844ea8e027c",
+      "sizeBytes": 25188,
+      "source": "approved JUCE WebView2 editor resource rendered in Chromium"
+    },
+    {
+      "actualWindowsScreenshot": false,
+      "audioOrHardwareVerifiedByImage": false,
+      "catalogId": "armix.builtin.vocal-throw.v1",
+      "editorSelector": "#mxNativeVocalThrow",
+      "file": "fx-editor-vocal-delay.jpg",
+      "sha256": "ac2b736292ce921a691459764fca44a108492079009074e59cb539419a8b2b9a",
+      "sizeBytes": 49232,
+      "source": "approved JUCE WebView2 editor resource rendered in Chromium"
+    },
+    {
+      "actualWindowsScreenshot": false,
+      "audioOrHardwareVerifiedByImage": false,
+      "catalogId": "armix.builtin.8d-sonku.v1",
+      "editorSelector": "#mxNativeSonKu",
+      "file": "fx-editor-8d-sonku.jpg",
+      "sha256": "9bf90f62cf20eb278c54a3460f77cdec5f96fab3c7c6de3e7815d7b04a4a50c8",
+      "sizeBytes": 57373,
+      "source": "approved JUCE WebView2 editor resource rendered in Chromium"
+    }
+  ],
+  "nativeBundleApprovedPagesSha256": "88dd234f4d338b061c57b92a83abd8f93d5887eff8a1fbcf701848020b1b168e",
+  "notes": "Actual native editor HTML/CSS/JS pixels, not a Windows HWND or real DSP readback. No simulated JUCE controls beyond the documented test transport.",
+  "schemaVersion": 1,
+  "sourceCommit": "dfc87e47e27d5102f297839a9573cfee2d3430a7"
+}
