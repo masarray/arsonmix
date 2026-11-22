@@ -2,10 +2,11 @@
 // GitHub connector -> owner PR comment -> exact-SHA milestone. Runs on main.
 import {readFileSync} from 'node:fs';
 import {setTimeout as sleep} from 'node:timers/promises';
+import {requiredLanes} from './required_pr_merge_gate.mjs';
 
 export function parseMilestoneCommand(body) {
   if(typeof body!=='string')return null;
-  const m=/^\/arsonmix-ci (ui|native|fat|field) ([0-9a-f]{40})$/.exec(body.trim());
+  const m=/^\/arsonmix-ci (check|fast|full|ui|native|fat|field) ([0-9a-f]{40})$/.exec(body.trim());
   return m?{lane:m[1],sha:m[2]}:null;
 }
 export function isTrustedOwnerComment(event,repo) {
@@ -213,6 +214,110 @@ export async function performMilestone({event,repo,api,waitForQuick=()=>sleep(50
     {ref:workflowRef,inputs});
   return {kind:'dispatched',target};
 }
+
+// Smart authoring interface. CHECK proves existing fast contracts; FAST builds
+// one exact-source Windows portable when native files changed; FULL selects
+// the independently protected native and/or Chromium gates. Nothing here
+// rewrites branch protection or silently upgrades a FIELD preview to a FAT.
+export function planSmartMilestone(files,mode) {
+  if(!['check','fast','full'].includes(mode))throw Error('CI_SMART_MODE_INVALID');
+  const scope=requiredLanes(files); // same reviewed file policy as merge gate
+  // The status publisher requests nativeFull only for actual C++/graph
+  // changes. Package, native bridge, and installer changes need a Windows
+  // binary as well, even when full status does not require it.
+  const nativeBinary=files.some(f=>
+    /^src\/|^engine\/|^CMakeLists\.txt$/.test(f) ||
+    /^integration\/.*\.(?:h|hpp|cpp)$/.test(f) ||
+    /^tests\/.*\.cpp$/.test(f) ||
+    /^installer\//.test(f) ||
+    /^web\/(?:approved-native-bridge|approved-native-contract|bridge|monitor)\.js$/.test(f) ||
+    /^scripts\/(?:package_native_windows|build_verify_windows_installer|verify_native_windows_artifact|verify_windows_spatial_fx_packaging|verify_immersib_approved_pcm_sources)\./.test(f) ||
+    /^config\/immersib_approved_pcm_sources\.json$/.test(f));
+  const targets=mode==='check'?[]:
+    mode==='fast'?(nativeBinary?['field']:[]):
+    [...(scope.uiFull?['ui']:[]),...(nativeBinary?['native']:[])];
+  return {scope,nativeBinary,targets};
+}
+
+const fastJobs=[
+  ['nativeFast','p1-windows.yml','Fast native contracts (no Windows / JUCE checkout)'],
+  ['uiFast','ui-smoke.yml','Fast UI contracts (every relevant PR commit)'],
+  ['releaseFast','release-contracts.yml','No native compiler; owner authorization, catalog integrity and YAML shape']
+];
+
+// Fail closed if *any* required fast lane is missing, failed, cancelled or
+// stale. Checking only the target Windows quick lane can miss UI/release reds
+// on a mixed PR and burn 30+ minutes of CI unnecessarily.
+export async function verifySmartFast({target,scope,api,waitForQuick=()=>sleep(5000)}) {
+  const proof=[];
+  for(const [key,workflow,jobName] of fastJobs) {
+    if(!scope[key])continue;
+    const url='/actions/workflows/'+workflow+'/runs?event=pull_request&branch='+
+      encodeURIComponent(target.branch)+'&per_page=100';
+    for(let attempt=0;attempt<=12;attempt++){
+      const body=await api(url);
+      if(!Array.isArray(body?.workflow_runs))throw Error('CI_SMART_FAST_RUNS_INVALID');
+      const exact=body.workflow_runs.filter(r=>r.head_sha===target.sha &&
+        r.event==='pull_request' &&
+        (r.path===undefined ||
+          r.path.split('@',1)[0]==='.github/workflows/'+workflow))
+        .sort((a,b)=>b.id-a.id)[0];
+      if(!exact)throw Error('CI_SMART_FAST_MISSING: '+key+' '+target.sha);
+      const jobs=(await api('/actions/runs/'+exact.id+'/jobs?per_page=100'))?.jobs;
+      if(!Array.isArray(jobs))throw Error('CI_SMART_FAST_JOBS_INVALID: '+key);
+      const job=jobs.filter(j=>j.name===jobName);
+      if(job.length!==1)throw Error('CI_SMART_FAST_JOB_MISSING: '+key);
+      if(job[0].conclusion==='success'){
+        proof.push({lane:key,run:exact.id,job:jobName});
+        break;
+      }
+      if(job[0].conclusion)
+        throw Error('CI_SMART_FAST_FAILED: '+key+' '+job[0].conclusion);
+      if(attempt===12)throw Error('CI_SMART_FAST_PENDING: '+key);
+      await waitForQuick();
+      // A pushed commit during verification invalidates all earlier proof.
+      const current=await api('/pulls/'+target.number);
+      if(current?.head?.sha!==target.sha)throw Error('CI_STALE_SHA');
+    }
+  }
+  return proof;
+}
+
+export async function performSmartMilestone({event,repo,api,
+  waitForQuick=()=>sleep(5000)}) {
+  if(!isTrustedOwnerComment(event,repo))throw Error('CI_OWNER_ONLY');
+  const target=validateMilestone(event,repo,
+    await api('/pulls/'+event.issue.number));
+  if(!['check','fast','full'].includes(target.lane))
+    throw Error('CI_SMART_MODE_INVALID');
+  const earlier=[];
+  for(let page=1;page<=20;page++) {
+    const comments=await api('/issues/'+target.number+
+      '/comments?per_page=100&page='+page);
+    if(!Array.isArray(comments))throw Error('CI_COMMENTS_INVALID');
+    earlier.push(...comments);
+    if(comments.length<100)break;
+    if(page===20)throw Error('CI_COMMENTS_PAGINATION_LIMIT');
+  }
+  if(hadEarlierIdenticalRequest(earlier,event,repo))
+    return {kind:'skipped',reason:'duplicate',target};
+  const files=await readChangedFiles(api,target.number);
+  const {scope,targets}=planSmartMilestone(files,target.lane);
+  const proof=await verifySmartFast({target,scope,api,waitForQuick});
+  // One last current HEAD check immediately before any dispatch.
+  validateMilestone(event,repo,await api('/pulls/'+target.number));
+  if(targets.length===0)
+    return {kind:'checked',target,proof,reason:'no-expensive-lane-for-scope'};
+  const results=[];
+  for(const lane of targets) {
+    const request={...event,comment:{...event.comment,
+      body:'/arsonmix-ci '+lane+' '+target.sha}};
+    const outcome=await performMilestone({event:request,repo,api,waitForQuick});
+    results.push({lane,kind:outcome.kind,reason:outcome.reason||null});
+  }
+  return {kind:'selected',target,proof,results};
+}
+
 async function main(){
   const repo=process.env.GITHUB_REPOSITORY||'';
   const token=process.env.GH_TOKEN||'';
@@ -229,9 +334,14 @@ async function main(){
       (await response.text()).slice(0,400));
     return response.status===204?null:response.json();
   };
-  const result=await performMilestone({event,repo,api});
+  const command=parseMilestoneCommand(event?.comment?.body);
+  const result=command && ['check','fast','full'].includes(command.lane)
+    ? await performSmartMilestone({event,repo,api})
+    : await performMilestone({event,repo,api});
   console.log('CI_'+result.kind.toUpperCase()+' mode='+result.target.lane+
-    ' sha='+result.target.sha+' pr='+result.target.number+' '+(result.reason||''));
+    ' sha='+result.target.sha+' pr='+result.target.number+' '+
+    JSON.stringify({reason:result.reason||null,
+      proof:result.proof||[],results:result.results||[]}));
 }
 if(process.argv[1]?.endsWith('chat_ci_dispatch.mjs'))
   main().catch(e=>{console.error(e.message);process.exitCode=1;});

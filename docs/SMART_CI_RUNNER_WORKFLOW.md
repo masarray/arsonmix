@@ -57,6 +57,37 @@ The optimized FAT workflow now ends the full native Windows job by sealing a SHA
    was skipped, whether the ZIP is still UNQUALIFIED, blockers and next
    meaningful vertical milestone. **Never imply future background execution.**
 
+## Smart PR comment modes (2026-11-22)
+
+The existing owner-only **ChatGPT CI Milestone Dispatcher** is the *single*
+comment-to-run authority; do not introduce competing Actions workflows, tokens,
+PR bots or synthetic successful status checks.
+
+| PR comment | Scope and actual proof | Typical cost |
+| --- | --- | --- |
+| `/arsonmix-ci check <40-char HEAD SHA>` | Read exact-HEAD quick native/UI/release jobs already run automatically. No new build; reject missing, red, canceled, stale or incomplete evidence. | No Windows |
+| `/arsonmix-ci fast <40-char HEAD SHA>` | Preflight **all** relevant quick gates, then **native only** builds the existing **FIELD portable Windows executable** (no full CTest) with exact-source ZIP provenance. GUI-only/doc/CI-only scope just confirms quick status, no paid Windows runner. | Focused app build, not full |
+| `/arsonmix-ci full <40-char HEAD SHA>` | Preflight all relevant fast gates; choose one official full **Chromium** run for GUI and/or one full **Windows MSVC + entire CTest** for native, independently deduplicated. No duplicate Windows build for mixed paths, no installer by default. | Full release candidate qualification |
+| `/arsonmix-ci fat <40-char HEAD SHA>` | Existing complete Windows CTest and independently verified but **UNQUALIFIED** FAT installer/ZIP, physical FAT still required. | Full + installer |
+
+Existing `ui`, `native`, `field` and `fat` remain compatible.
+**FAST is not green FULL**: FIELD uses `BUILD_TESTING=OFF`, is labeled
+`FIELD_PREVIEW_FULL_CTEST_NOT_RUN`, cannot satisfy the required native merge
+status, and does not claim Windows ASIO hardware qualification. Only exact SHA
+owner comments on **open same-repository PRs** are accepted. Every smart mode
+uses the **same file scope source as the trusted protected merge status**;
+unknown/missing PR files and missing/failed quick checks fail closed.
+`FULL` can launch both UI and native from one comment; existing workflow
+run provenance, duplicate and FAT/no-cancel policies remain authoritative.
+
+**Autonomous agent usage:** ordinary incremental commits rely on automatic
+cheap checks. Use `check` when auditing; use `fast` when an executable is
+actually needed for an early field test; use `full` on a meaningful final
+integration candidate, not per small refactor. Use `fat` only for installer
+testing. When a build is already running or qualified for the identical PR
+and SHA, reuse it; do not pay for a duplicate. `fast` must not be described
+as having run CTest or as safe to merge a native product.
+
 **Historical instructions:** `docs/workstreams/MULTI_AGENT_COORDINATION.md`
 was superseded by single-owner integration; old multi-agent admissions,
 required check names, four-lane handoffs and manual Actions instructions do
