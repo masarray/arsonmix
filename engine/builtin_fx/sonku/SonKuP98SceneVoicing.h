@@ -34,6 +34,7 @@ public:
         // and upper-mid masking relief. All coefficients prepared OFF RT.
         bodyCoeff_=bandpass(sampleRate,285.,.72);
         edgeCoeff_=bandpass(sampleRate,3450.,.78);
+        fixedVocalDetailCoeff_=bandpass(sampleRate,1100.,.80);
         bassAlpha_=static_cast<float>(1.-std::exp(-2.*pi*130./sampleRate));
         airAlpha_=static_cast<float>(1.-std::exp(-2.*pi*5200./sampleRate));
         slew_=static_cast<float>(1.-std::exp(-1./(sampleRate*.055)));
@@ -46,6 +47,7 @@ public:
         sidePresence2_={};sideAirLow_=0.f;
         bodyCenter_={};sideEdge_={};earEdge_={};
         warmSource_={};warmGain_=0.f;
+        fixedVocalDetail_={};fixedVocalDetailGain_=0.f;
     }
     static constexpr bool valid(int scene) noexcept {
         return scene>=Neutral && scene<=ImmerSIBImpact;
@@ -58,13 +60,21 @@ public:
             (scene==ImmerSIBDetail || scene==ImmerSIBImpact);
         // The published warm curves attenuate SIDE 2.05/3.45k and boost
         // center 2.05k, which spectrally masks a finished stereo master.
-        // Disable that whole VOICING, not individual notches, in this mode.
+        // Preserve the useful vocal detail with one SMALL stationary 1.1k
+        // articulator on original L/R, instead of reviving the 2k boost.
         const auto target=curves_[stageWarm?Neutral:
                                    (enabled && valid(scene)?scene:Neutral)];
+        // +3dB-ish around 285Hz (requested warm vocal chest), not a LF
+        // shelf. Detail around 1.1k stays far below the painful 2..6k
+        // region and is IDENTICAL for L/R, so pan/phase are preserved.
         const float warmTarget=stageWarm?
-            (scene==ImmerSIBImpact?.16f:.19f):0.f;
+            (scene==ImmerSIBImpact?.42f:.45f):0.f;
+        const float detailTarget=stageWarm?.095f:0.f;
         warmGain_+=slew_*(warmTarget-warmGain_);
+        fixedVocalDetailGain_+=slew_*(detailTarget-fixedVocalDetailGain_);
         if(std::abs(warmGain_-warmTarget)<1.e-6f)warmGain_=warmTarget;
+        if(std::abs(fixedVocalDetailGain_-detailTarget)<1.e-6f)
+            fixedVocalDetailGain_=detailTarget;
         for(unsigned i=0;i<gains_.size();++i){
             gains_[i]+=slew_*(target[i]-gains_[i]);
             if(std::abs(gains_[i]-target[i])<1.e-6f)gains_[i]=target[i];
@@ -88,10 +98,14 @@ public:
         const float edge=sideEdge_.run(edgeCoeff_,side);
         if(gains_[0]==0.f&&gains_[6]==0.f&&gains_[7]==0.f&&
            gains_[8]==0.f&&gains_[9]==0.f) {
-            if(fixedStageWarmth_ && warmGain_!=0.f) {
+            if(fixedStageWarmth_ &&
+               (warmGain_!=0.f || fixedVocalDetailGain_!=0.f)) {
                 const float warmL=warmSource_[0].run(bodyCoeff_,left);
                 const float warmR=warmSource_[1].run(bodyCoeff_,right);
-                return {left+warmGain_*warmL,right+warmGain_*warmR};
+                const float focusL=fixedVocalDetail_[0].run(fixedVocalDetailCoeff_,left);
+                const float focusR=fixedVocalDetail_[1].run(fixedVocalDetailCoeff_,right);
+                return {left+warmGain_*warmL+fixedVocalDetailGain_*focusL,
+                        right+warmGain_*warmR+fixedVocalDetailGain_*focusR};
             }
             return {left,right}; // published profiles remain bit-exact
         }
@@ -100,10 +114,14 @@ public:
         const float maskedSide=gains_[6]*sideBand+gains_[9]*edge;
         const float baseL=left+centerBoost-maskedSide+lateralAir;
         const float baseR=right+centerBoost+maskedSide-lateralAir;
-        if(fixedStageWarmth_ && warmGain_!=0.f) {
+        if(fixedStageWarmth_ &&
+           (warmGain_!=0.f || fixedVocalDetailGain_!=0.f)) {
             const float warmL=warmSource_[0].run(bodyCoeff_,left);
             const float warmR=warmSource_[1].run(bodyCoeff_,right);
-            return {baseL+warmGain_*warmL,baseR+warmGain_*warmR};
+            const float focusL=fixedVocalDetail_[0].run(fixedVocalDetailCoeff_,left);
+            const float focusR=fixedVocalDetail_[1].run(fixedVocalDetailCoeff_,right);
+            return {baseL+warmGain_*warmL+fixedVocalDetailGain_*focusL,
+                    baseR+warmGain_*warmR+fixedVocalDetailGain_*focusR};
         }
         return {baseL,baseR};
     }
@@ -191,7 +209,7 @@ private:
                 static_cast<float>(-2.*std::cos(w)*inv),
                 static_cast<float>((1.-a)*inv)};
     }
-    Coeff punchCoeff_{},voiceCoeff_{},bodyCoeff_{},edgeCoeff_{};
+    Coeff punchCoeff_{},voiceCoeff_{},bodyCoeff_{},edgeCoeff_{},fixedVocalDetailCoeff_{};
     Filter center1_{},center2_{};
     std::array<Filter,2> punch_{};
     std::array<std::array<Filter,2>,2> voice_{};
@@ -199,7 +217,8 @@ private:
     Filter sidePresence1_{},sidePresence2_{},bodyCenter_{},sideEdge_{};
     std::array<Filter,2> earEdge_{};
     std::array<Filter,2> warmSource_{}; // identical fixed L/R transfer
-    float warmGain_=0.f;
+    std::array<Filter,2> fixedVocalDetail_{}; // stationary 1.1k focus, NO SIDE ducking
+    float warmGain_=0.f,fixedVocalDetailGain_=0.f;
     bool fixedStageWarmth_=false; // non-ImmerSIB behavior unchanged
     float sideAirLow_=0.f;
     std::array<float,12> gains_{};
