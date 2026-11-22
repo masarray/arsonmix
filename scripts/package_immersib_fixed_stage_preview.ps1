@@ -66,15 +66,18 @@ Experimental Windows x64 headphone A/B, NOT a release or installer.
 Extract in a NEW directory; back up .smix first. Do not overwrite live software.
 
 This is a regression-repair candidate rebased on published main, not on v7:
-- Static virtual LEFT and RIGHT stage speaker HRIRs at the selected scene
-  spread; MUSIC correlation cannot modulate speaker direct HRTF kernels.
+- The original physical L/R stage speakers and measured KEMAR HRIRs,
+  with ONE fixed 0.58 phantom-center interpolation: vocal stays forward,
+  but MUSIC correlation cannot dynamically change direct HRIR kernels.
 - Disable warm scene P98 MID 2.05k boost, SIDE 2.05k/3.45k subtraction,
   post-ear 3.45k and SIDE air reshaping, rather than stack more notches.
-- Both original source channels get the same broad 285Hz warmth,
-  independently. No hard-left to right-signal leakage.
+- Both original source channels get ~3dB 285Hz chest warmth and small
+  stationary 1.1kHz vocal detail, independently. Hard-left source stays
+  hard-left before the virtual stage.
 - Disable ImmerSIB-only P99 attentional warm/late room processing.
-- Existing KEMAR direct stage HRTF calibration reuses one prepared
-  2.2k bell with a bounded +1.2dB direct-only relief.
+- Existing KEMAR direct HRTF calibration reuses the prepared
+  2.2k bell with bounded +3dB direct-only relief. Existing P98 EAR
+  filter uses a shared stationary 3.45kHz de-harsh (~2dB at band center).
 - Original bass, directional first reflections, late hall, 7 scene
   settings, JUCE GUI /preview/, mixer PCM, ASIO and FX state remain.
 - Alpha.26/release defaults are unchanged; experimental CMake opt-in only.
@@ -89,7 +92,7 @@ $manifest=[ordered]@{
  schema="arsonmix.immersib-unapproved-fixed-stage.v1"
  sourceCommit=$actual
  parentMain="527e0216d226904288c4fe2dd8a76169dfb4417d"
- candidateAudioRevision="fixed-two-speaker-HRIR-no-P90-correlation-no-P98-side-masking-no-ImmerSIB-P99-attention"
+ candidateAudioRevision="fixed-0.58-front-HRIR-warm285-detail1100-fixed-ear3450-no-P98-side-ducking"
  sourceLockRewritten=$false
  status="UNAPPROVED_HEADPHONE_AB_ONLY"
  executable=$name
