@@ -18,8 +18,12 @@ public:
     static constexpr const char* productDisplayName="ImmerSIB";
     ImerSipP92Processor()
         : SonKuSpatialProcessor(imersipP92Factory(2)) {
-#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
-        // Distinct from 8D-SonKu P9.9 opt-in; original session ABI unchanged.
+#if defined(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH) && ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
+        // Different experimental product signal chain: fixed speaker HRIR,
+        // no P99 source/late attention and no P98 SIDE spectral attenuation.
+        optInImmerSIBStageMonitor();
+#elif defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+        // Published product chain is kept verbatim when research is OFF.
         optInImmerSIBVocalRoom();
 #endif
     }
