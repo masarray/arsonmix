@@ -77,17 +77,17 @@ export function focusedHarmonyFileScope(files) {
 export function focusedImmerSIBFileScope(files) {
   if(!Array.isArray(files)||!files.length)return false;
   const owned=[
-    /^engine\\/builtin_fx\\/ImerSipP92(?:Editor|VisualSkin|Processor|Scene)\\.h$/,
-    /^tests\\/imersip(?:_p92_.*|_scene_assets_contract_test)\\.(?:cpp|py)$/,
-    /^tests\\/immersib_.*\\.(?:cpp|py)$/,
-    /^tools\\/immersib_.*\\.cpp$/,
-    /^assets\\/imersip\\//
+    /^engine\/builtin_fx\/ImerSipP92(?:Editor|VisualSkin|Processor|Scene)\.h$/,
+    /^tests\/imersip(?:_p92_.*|_scene_assets_contract_test)\.(?:cpp|py)$/,
+    /^tests\/immersib_.*\.(?:cpp|py)$/,
+    /^tools\/immersib_.*\.cpp$/,
+    /^assets\/imersip\//
   ];
   const allowed=[
     ...owned,
-    /^CMakeLists\\.txt$/,
-    /^\\.github\\/workflows\\/(?:imersip-p92-single-engine|immersib-musical-eq|immersib-focused-native)\\.yml$/,
-    /^docs\\/architecture\\/IMMERSIB_P102_[^/]+\\.md$/
+    /^CMakeLists\.txt$/,
+    /^\.github\/workflows\/(?:imersip-p92-single-engine|immersib-musical-eq|immersib-focused-native)\.yml$/,
+    /^docs\/architecture\/IMMERSIB_P102_[^/]+\.md$/
   ];
   return files.some(f=>typeof f==='string'&&owned.some(re=>re.test(f)))&&
     files.every(f=>typeof f==='string'&&allowed.some(re=>re.test(f)));
