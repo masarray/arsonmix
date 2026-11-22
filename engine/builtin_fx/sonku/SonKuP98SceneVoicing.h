@@ -18,6 +18,11 @@ public:
     // 0..3 retain byte-for-byte matching coefficients and meaning.
     enum : int { Neutral=0, Signature=1, LiveStudio=2, Cinema=3,
                  ImmerSIBDetail=4, ImmerSIBImpact=5 };
+    // Independent LEFT/RIGHT source coloration, no MID/SIDE spectral ducking.
+    // Enabled only for ImmerSIB stage-monitor research, never plain SonKu.
+    void enableFixedStageWarmth(bool enabled) noexcept {
+        fixedStageWarmth_=enabled;
+    }
     bool prepare(double sampleRate) noexcept {
         if (!std::isfinite(sampleRate) ||
             (std::abs(sampleRate-44100.)>.1 && std::abs(sampleRate-48000.)>.1))
@@ -40,6 +45,7 @@ public:
         bass_={};air_={};earlyAir_={};sidePresence1_={};
         sidePresence2_={};sideAirLow_=0.f;
         bodyCenter_={};sideEdge_={};earEdge_={};
+        warmSource_={};warmGain_=0.f;
     }
     static constexpr bool valid(int scene) noexcept {
         return scene>=Neutral && scene<=ImmerSIBImpact;
@@ -48,7 +54,17 @@ public:
     // gains, with no per-sample coefficient recompute, memory allocation or
     // trigonometry. Silent profile defaults never alter P9.7 float order.
     Stereo source(float left,float right,int scene,bool enabled) noexcept {
-        const auto target=curves_[enabled && valid(scene)?scene:Neutral];
+        const bool stageWarm=fixedStageWarmth_ && enabled &&
+            (scene==ImmerSIBDetail || scene==ImmerSIBImpact);
+        // The published warm curves attenuate SIDE 2.05/3.45k and boost
+        // center 2.05k, which spectrally masks a finished stereo master.
+        // Disable that whole VOICING, not individual notches, in this mode.
+        const auto target=curves_[stageWarm?Neutral:
+                                   (enabled && valid(scene)?scene:Neutral)];
+        const float warmTarget=stageWarm?
+            (scene==ImmerSIBImpact?.16f:.19f):0.f;
+        warmGain_+=slew_*(warmTarget-warmGain_);
+        if(std::abs(warmGain_-warmTarget)<1.e-6f)warmGain_=warmTarget;
         for(unsigned i=0;i<gains_.size();++i){
             gains_[i]+=slew_*(target[i]-gains_[i]);
             if(std::abs(gains_[i]-target[i])<1.e-6f)gains_[i]=target[i];
@@ -71,13 +87,25 @@ public:
         const float body=bodyCenter_.run(bodyCoeff_,center);
         const float edge=sideEdge_.run(edgeCoeff_,side);
         if(gains_[0]==0.f&&gains_[6]==0.f&&gains_[7]==0.f&&
-           gains_[8]==0.f&&gains_[9]==0.f)
-            return {left,right}; // profiles 0..3: source stays identical
+           gains_[8]==0.f&&gains_[9]==0.f) {
+            if(fixedStageWarmth_ && warmGain_!=0.f) {
+                const float warmL=warmSource_[0].run(bodyCoeff_,left);
+                const float warmR=warmSource_[1].run(bodyCoeff_,right);
+                return {left+warmGain_*warmL,right+warmGain_*warmR};
+            }
+            return {left,right}; // published profiles remain bit-exact
+        }
         const float centerBoost=gains_[0]*band+gains_[8]*body;
         const float lateralAir=gains_[7]*(side-sideAirLow_);
         const float maskedSide=gains_[6]*sideBand+gains_[9]*edge;
-        return {left+centerBoost-maskedSide+lateralAir,
-                right+centerBoost+maskedSide-lateralAir};
+        const float baseL=left+centerBoost-maskedSide+lateralAir;
+        const float baseR=right+centerBoost+maskedSide-lateralAir;
+        if(fixedStageWarmth_ && warmGain_!=0.f) {
+            const float warmL=warmSource_[0].run(bodyCoeff_,left);
+            const float warmR=warmSource_[1].run(bodyCoeff_,right);
+            return {baseL+warmGain_*warmL,baseR+warmGain_*warmR};
+        }
+        return {baseL,baseR};
     }
     Stereo early(float left,float right) noexcept {
         const std::array<float,2> x{left,right};
@@ -170,6 +198,9 @@ private:
     std::array<float,2> bass_{},air_{},earlyAir_{};
     Filter sidePresence1_{},sidePresence2_{},bodyCenter_{},sideEdge_{};
     std::array<Filter,2> earEdge_{};
+    std::array<Filter,2> warmSource_{}; // identical fixed L/R transfer
+    float warmGain_=0.f;
+    bool fixedStageWarmth_=false; // non-ImmerSIB behavior unchanged
     float sideAirLow_=0.f;
     std::array<float,12> gains_{};
     float bassAlpha_=0.f,airAlpha_=0.f,slew_=0.f;
