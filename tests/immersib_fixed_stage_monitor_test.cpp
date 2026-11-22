@@ -100,10 +100,35 @@ static void panAndSpectralTest(int rate) {
                 const auto e=v.early(s.left,s.right);
                 const auto f=v.finish(e.left,e.right);
                 assert(e.left==s.left && e.right==s.right);
-                assert(f.left==e.left && f.right==e.right);
+                // The NEW static, shared-ear de-harsh is a LINEAR fixed
+                // transfer. Anti-phase symmetry is preserved after P98.
+                // No envelope-following spectral tilt or SIDE ducking.
+                assert(std::isfinite(f.left) && std::isfinite(f.right));
+                assert(std::abs(f.left+f.right)<1.e-6f);
             }
         }
     }
+    // The bounded ear-linked de-harsh is a prepared STATIC frequency
+    // response, shared by both ears and unaffected by source correlation.
+    // It should attenuate upper-mid edge while retaining lower vocal body.
+    auto measureFinish=[rate](float hz)->float {
+        SceneVoicing v;
+        v.enableFixedStageWarmth(true);
+        assert(v.prepare(rate));
+        double xx=0.,xy=0.;
+        for(int i=0;i<rate;++i) {
+            const float x=.06f*std::sin(2.*pi*hz*i/rate);
+            (void)v.source(x,x,SceneVoicing::ImmerSIBDetail,true);
+            const auto y=v.finish(x,x);
+            assert(std::abs(y.left-y.right)<1.e-6f);
+            if(i>rate/2){xx+=double(x)*x;xy+=double(x)*y.left;}
+        }
+        return static_cast<float>(xy/xx);
+    };
+    assert(measureFinish(285.f)>.95f);
+    assert(measureFinish(3450.f)<.86f);
+    assert(measureFinish(3450.f)>.70f);
+    assert(measureFinish(5500.f)<.98f);
     // Other SonKu scene voicings are untouched even if this module is compiled.
     for(int scene:{0,1,2,3}) {
         SceneVoicing original,candidate;
