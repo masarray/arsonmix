@@ -45,6 +45,15 @@ def browser_check(page):
     gallery = page.locator("#fx-gallery .fx-gallery-card")
     assert gallery.count() == 6
     assert page.locator("#fx-gallery img").count() == 6
+    native_hero = page.locator("#fx-native-gallery .fx-gallery-card")
+    native_scenes = page.locator("#fx-native-scenes .fx-gallery-card")
+    assert native_hero.count() == 2
+    assert native_scenes.count() == 5
+    for editor in page.locator("#fx-native-gallery img, #fx-native-scenes img").all():
+        editor.scroll_into_view_if_needed()
+        editor.evaluate("img => img.decode()")
+        assert editor.evaluate("img => img.complete && img.naturalWidth >= 937")
+    assert "DSP OFFLINE" in page.locator("#effects .fx-native-hero").inner_text()
     for editor in page.locator("#fx-gallery img").all():
         editor.scroll_into_view_if_needed()
         editor.evaluate("img => img.decode()")
