@@ -77,9 +77,37 @@ static Render render(int rate,Settings s,bool on,int pattern,int block){
     result.c50=db(first/std::max(tail,1.e-30));
     return result;
 }
+// Live scene edit smoke test under the actual P9 engine; verify that
+// correction remains bounded while warm profiles, Cinema and ROOM OFF
+// switch. Native JUCE separately owns zero-gated topology transitions.
+static void transitionSmoke(int rate){
+    auto dsp=std::make_unique<SonKuSpatialCore>();
+    dsp->optInImmerSIBVocalRoom();dsp->optInImmerSIBLyricPocket();
+    assert(dsp->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch));
+    int frame=0;float l[128]{},r[128]{};
+    for(int id:{2,8,7,5,0,2}){
+        auto s=imersipP92Factory(id==0?2:id);
+        if(id==0)s.spacePreset=0;
+        assert(dsp->setSettings(s));
+        for(int b=0;b<128;++b){
+            for(int i=0;i<128;++i,++frame){
+                const float t=float(2*pi*1100*frame/rate);
+                const float common=.018f*std::sin(t);
+                const float side=.009f*std::sin(.73f*t);
+                l[i]=common+side;r[i]=common-side;
+            }
+            dsp->process(l,r,128);
+            for(int i=0;i<128;++i){
+                assert(std::isfinite(l[i])&&std::isfinite(r[i]));
+                assert(std::abs(l[i])<=.9805f&&std::abs(r[i])<=.9805f);
+            }
+        }
+    }
+}
 int main(){
     for(int rate:{44100,48000}){
         unit(rate);
+        transitionSmoke(rate);
         for(const auto& scene:imersipP92Presets){
             auto s=imersipP92Factory(scene.id);
             for(int pattern=0;pattern<4;++pattern){
