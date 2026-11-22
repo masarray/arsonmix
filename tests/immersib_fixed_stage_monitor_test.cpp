@@ -41,12 +41,19 @@ static void physicalStageKernelTest(int rate) {
         const float l=.12f*std::sin(2*pi*285.*i/rate);
         const float r=(i<rate/2?l:-l);
         stage.observe(l,r); // correlation changes sign halfway through
-        if((i&15)==0)assert(stage.centerBlend()==0.f);
+        if((i&15)==0)assert(stage.centerBlend()==.58f);
     }
     stage.compose(center,left,right);
-    assert(left==originalLeft && right==originalRight); // NO moving kernels
+    for(int ear=0;ear<2;++ear)for(int k=0;k<8;++k){
+        const float mid=.5f*(originalLeft[ear][k]+originalRight[ear][k]);
+        const float correction=.58f*(center[ear][k]-mid);
+        assert(std::abs(left[ear][k]-(originalLeft[ear][k]+correction))<1.e-7f);
+        assert(std::abs(right[ear][k]-(originalRight[ear][k]+correction))<1.e-7f);
+        assert(std::abs((left[ear][k]-right[ear][k])-
+                        (originalLeft[ear][k]-originalRight[ear][k]))<1.e-7f);
+    } // stage MID fixed, differential SIDE unchanged
     stage.reset();
-    assert(stage.centerBlend()==0.f);
+    assert(stage.centerBlend()==.58f);
     // Published SonKu remains the original correlation-based decoder.
     StereoDecoder published;
     assert(published.prepare(rate));
@@ -75,10 +82,12 @@ static void panAndSpectralTest(int rate) {
         const auto voice=sourceSineGain(rate,scene,2050.f);
         const auto edge=sourceSineGain(rate,scene,3450.f);
         const auto treble=sourceSineGain(rate,scene,5500.f);
-        assert(body>1.09f && body<1.25f);
-        assert(voice>.96f && voice<1.06f);
+        assert(body>1.35f && body<1.53f);
+        assert(voice>.98f && voice<1.12f);
         assert(edge>.96f && edge<1.06f);
-        assert(treble>.96f && treble<1.06f);
+        assert(treble>.98f && treble<1.06f);
+        const auto intelligibility=sourceSineGain(rate,scene,1100.f);
+        assert(intelligibility>1.08f && intelligibility<1.30f);
         // The whole voice band is not dynamically ducked to unmask vocals.
         SceneVoicing v;
         v.enableFixedStageWarmth(true);
