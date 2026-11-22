@@ -175,6 +175,19 @@ jobs:
           ctest --test-dir build -C Release --output-on-failure `
             -R '^NativeImmerSIBJucePresetACKStateAndBypass$'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Compile and smoke actual branded P102.3 DSP profile
+        shell: pwsh
+        run: |
+          # The timing figure is INFO, not a CI threshold or physical XRUN.
+          # Build uses the same approved product-local definitions as console.
+          cmake --build build --config Release --parallel 2 --target ARMixImmerSIBP102CpuProfile
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe = 'build/Release/ARMixImmerSIBP102CpuProfile.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+            throw 'IMMERSIB_P102_PROFILE_EXE_MISSING'
+          }
+          & $exe --quick
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload actual JUCE native 100, 125, 150 and 200 percent captures
         uses: actions/upload-artifact@v4
         with:
