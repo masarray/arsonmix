@@ -11,9 +11,10 @@ This document is a code/experiment record, not a claim of musical success.
   in v7 than the released version. Sinus response tables and filter-unit PASS
   did not test this perceptual failure, nor headphone transfer.
 - Main P90's broadband 80ms correlation detector retargets *DIRECT FIR*
-  every 16 samples. Correlation depends on the arrangement/music; therefore
-  its center transfer varies with programme content. The candidate suppresses
-  this modulation rather than inventing a vocal-object detector.
+  every 16 samples. Correlation depends on music. The candidate uses ONE
+  stationary 0.58 measured-center interpolation to retain the clearer
+  front-vocal cue the owner appreciated in v7; it is NOT recomputed from
+  music correlation and does not invent a vocal-stem detector.
 - Main P98 scene 4/5 P98 source `maskedSide` subtracts the S signal in
   narrowish 2050/3450 Hz bands. It also adds a 2050 Hz center boost. As the
   L/R relationship changes, different instruments can be relatively
@@ -29,17 +30,22 @@ This document is a code/experiment record, not a claim of musical success.
 
 ## Candidate audio path
 
-Finished stereo L/R master → unchanged stereo positions of existing **TWO
-virtual stage PA loudspeakers** (current scene spread: 104°–134° total,
-world front) → prepared measured MIT KEMAR HRIR pair per virtual speaker →
+Finished stereo L/R master → existing **TWO virtual stage loudspeaker**
+positions (104°–134° total), with a STATIC 0.58 center-HRIR interpolation
+of their MID component and unchanged original differential SIDE response →
+prepared measured MIT KEMAR HRIR pair per virtual speaker →
 existing directional six-wall first images + late concert FDN + P92 LF →
 original linked peak protection. 7 scenes, .smix identity and /preview/
 are unchanged. There is no fake stem separation, SIDE masking, frequency
 following detector, time-varying HRTF center kernel, extra path, chorus,
 Haas delay or manual chain of EQ notches.
 
-P98 285Hz Q=.72 **single existing bandpass** adds a modest static source
-body to original L and R independently (~0.16/.19 times its band output).
+P98 285Hz Q=.72 **existing bandpass** adds clearly audible but stationary
+source chest/body to original L/R independently (~0.42/0.45 times its
+band output, approximately +3 dB at band center before HRTF/room).
+A prepared 1100Hz/Q=.80 stationary mild detail band (+0.095 times the
+band output) provides some of v7's desirable forward articulation without
+the former 2050Hz center spike, SIDE masking or P99 moving attention.
 An uncorrelated hard-left source remains hard-left *at the input of the
 virtual speakers*. No equal MID signal is injected into the right channel.
 These are signal-domain linear operations only after the scene transition
@@ -48,6 +54,11 @@ slew settles. Source-dependent limiter clamping can still happen at peaks.
 P80 direct HRTF uses only its original preparation-time calibrated 2.2k
 correction, extended by a **maximum extra 1.2dB in the single existing
 filter** for the candidate; this is not a headphone-response measurement.
+**Owner clarification 22 Nov:** v7 had audibly clearer center vocal but
+unbearable upper-mid ringing and insufficient low-mid body. We MUST not
+interpret the rejection as a request to remove that vocal clarity.
+The corrected candidate reintroduces the stable forward center cue and
+source detail while making low-mid warmth more substantial.
 No new 3k/5k filter. The correct band/weight requires actual listening
 and additional ear-domain measurements; treat this as a low-risk ablation
 hypothesis, not proven optimization.
@@ -57,7 +68,8 @@ hypothesis, not proven optimization.
 1. `ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH=OFF` by default; requires explicit
    `ARMIX_IMMERSIB_RELEASE_CANDIDATE=ON`. No release provenance/source-lock
    waiver; no changes to the approved 8D-SonKu product or stable catalog ID.
-2. Standalone source tests check static P90 HRTFs with changing correlation;
+2. Standalone source tests check static P90 center-HRIR interpolation even
+   with changing correlation;
    hard-L, antiphase, matched warm response at 285/2050/3450/5500, and
    unmodified 0–3 voicings at 44.1k/48k.
 3. Full-PCM source test checks all seven ImmerSIB scenes x four stereo
