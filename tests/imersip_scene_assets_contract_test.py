@@ -30,6 +30,22 @@ class ApprovedSceneAssets(unittest.TestCase):
             self.assertIn(flag+":BOOL=OFF",step)
         self.assertIn("PUBLIC_PROFILE_CMAKE_CONFIGURE_FAILED",step)
 
+    def test_p102_attribution_and_reopen_stress_are_audio_source_locked(self):
+        # The profiler must measure real approved EARLY/FDN source, not a
+        # parallel fake implementation, and cannot rewrite the 30 PCM files.
+        profiler=(ROOT/"tools"/"immersib_p102_cpu_profile.cpp").read_text(encoding="utf-8")
+        native=(ROOT/"tests"/"imersip_p92_native_test.cpp").read_text(encoding="utf-8")
+        self.assertIn("IMMERSIB_P102_ROOM_ATTR",profiler)
+        self.assertIn("--attribution",profiler)
+        self.assertIn("SonKuEarlyReflections",profiler)
+        self.assertIn("SonKuMusicalReverb",profiler)
+        self.assertIn("ISOLATED_NOT_ADDITIVE",profiler)
+        self.assertIn("editorReopenStress(44100)",native)
+        self.assertIn("editorReopenStress(48000)",native)
+        self.assertIn("iteration<100",native)
+        self.assertIn("fx->pollCompletion(ack) && ack.applied",native)
+        self.assertIn("fx->getStateInformation(snapshot)",native)
+
     def test_lazy_photo_decode_no_eager_constructor(self):
         skin=(ROOT/"engine/builtin_fx/ImerSipP92VisualSkin.h").read_text(encoding="utf-8")
         self.assertIn("mutable std::array<juce::Image,6> sceneImages_",skin)

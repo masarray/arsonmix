@@ -27,6 +27,31 @@ Configure the existing Windows candidate with ARMIX_IMMERSIB_RELEASE_CANDIDATE=O
 
 Executable path varies by CMake generator. Quick: 48k/256/1 Live Concert ROOM ON. Matrix: 44.1/48k x 64/128/256/512 x 1/2/4 x scenes 2/8 x ROOM on/off. Record exact Git SHA, Windows CPU/RAM, release compiler, power plan, temperature and audio devices.
 
+## M2 evidence added: stage attribution and editor-reopen reliability
+
+The P102.3 CPU profiler now offers `--attribution` using the production
+`SonKuEarlyReflections` six-surface measured HRIR path and
+`SonKuMusicalReverb` eight-line room-aware FDN independently. It records
+p50/p95/p99 on the **same invocation**, 44.1/48 kHz, 128/256 frames and
+two actual scene configurations, with finite PCM/hash readback. **These are
+isolated component costs, not additive percentages of the entire live DSP
+graph**: signal feed, cache and warmup differ. They prioritize the next
+processor optimization, not claim a measured CPU reduction.
+
+The real JUCE native CTest now runs 100 create/destroy/reopen iterations
+against one prepared ImmerSIB processor at **both** supported rates. Every
+tenth reopen applies a real scene and verifies post-audio-callback ACK;
+every 25th reopen round-trips accepted IMRS state; PCM continues to process
+between editors. It does not fake actual HWND or ASIO hardware qualification.
+
+Run additional standalone cost attribution with:
+
+    build/Release/ARMixImmerSIBP102CpuProfile.exe --attribution
+
+No PCM-locked source or user-approved coefficients are changed in M2 evidence.
+Full Windows CI, exact-sha checked benchmarks and low-spec physical listening
+remain gates for any actual DSP optimization.
+
 ## M2 (not implemented): optimize the actual measured DSP bottleneck
 
 - Record matched unmodified P102.3 baseline versus candidate, on the same computer. Use native callback telemetry and attended 120-second real hardware A/B, NOT one offline benchmark alone.

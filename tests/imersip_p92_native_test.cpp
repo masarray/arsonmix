@@ -337,6 +337,61 @@ static void nativeParity(int rate) {
     viaJuce->releaseResources();
     invalid->releaseResources();
 }
+
+static void editorReopenStress(int rate) {
+    // One retained native audio processor, 100 distinct JUCE editor lifetimes.
+    // This approximates OS close/reopen without cloning a PCM instance; the
+    // native HWND lease itself is tested by the separate live host contracts.
+    auto fx=std::make_unique<ImerSipP92Processor>();
+    fx->prepareToPlay(static_cast<double>(rate),128);
+    assert(fx->isReady());
+    juce::AudioBuffer<float> pcm(2,128);
+    juce::MidiBuffer midi;
+    for(int iteration=0;iteration<100;++iteration){
+        std::unique_ptr<juce::AudioProcessorEditor> ui(fx->createEditor());
+        assert(ui && ui->getWidth()==935 && ui->getHeight()==578);
+        auto* preset=dynamic_cast<juce::ComboBox*>(
+            ui->findChildWithID("imersip.preset"));
+        auto* room=ui->findChildWithID("imersip.room");
+        auto* power=ui->findChildWithID("imersip.power");
+        assert(preset && room && power);
+        if(iteration%10==0) {
+            const int sceneId=2+(iteration/10)%7;
+            preset->setSelectedId(sceneId,juce::sendNotificationSync);
+            pcm.clear();
+            fx->processBlock(pcm,midi);
+            SonKuSpatialProcessor::Completion ack{};
+            assert(fx->pollCompletion(ack) && ack.applied &&
+                   ack.requestId!=0);
+            const auto expected=imersipP92Factory(sceneId);
+            const auto installed=fx->acceptedSettings();
+            assert(installed.spacePreset==expected.spacePreset);
+            assert(std::abs(installed.roomAmount-expected.roomAmount)<1.e-6f);
+            assert(std::abs(installed.outputTrim-expected.outputTrim)<1.e-6f);
+        }
+        // Destructor must detach JUCE controls/timer before next open;
+        // continue rendering between closes, keeping a single PCM owner.
+        ui.reset();
+        pcm.clear();
+        fx->processBlock(pcm,midi);
+        assert(fx->isReady() && fx->stateSnapshotQuiescent());
+        if(iteration%25==24){
+            juce::MemoryBlock snapshot;
+            fx->getStateInformation(snapshot);
+            assert(snapshot.getSize()==75);
+            auto restored=std::make_unique<ImerSipP92Processor>();
+            restored->prepareToPlay(static_cast<double>(rate),128);
+            assert(restored->restoreUnpublishedState(
+                snapshot.getData(),static_cast<int>(snapshot.getSize())));
+            assert(restored->acceptedSettings().spacePreset==
+                   fx->acceptedSettings().spacePreset);
+            restored->releaseResources();
+        }
+    }
+    fx->releaseResources();
+    std::printf("IMMERSIB_EDITOR_REOPEN_STRESS,rate=%d,reopens=100,"
+                "PCM_owner=retained,ACK=verified,IMRS=verified\n",rate);
+}
 int main() {
     juce::ScopedJuceInitialiser_GUI gui;
     auto editorFx=std::make_unique<ImerSipP92Processor>();
@@ -863,5 +918,7 @@ int main() {
     sonkuProductIsolation(48000);
     nativeParity(44100);
     nativeParity(48000);
+    editorReopenStress(44100);
+    editorReopenStress(48000);
     std::puts("PASS IMERSIP P92 JUCE: exact P9 PCM, 44.1/48k, native state, legacy IMRS, editor, audio ACK");
 }

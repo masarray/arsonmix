@@ -85,15 +85,103 @@ bool measure(int rate,int frames,int inserts,int scene,bool roomOn,bool quick) {
                 static_cast<long long>(late),static_cast<unsigned long long>(hash));
     return true;
 }
+
+// Root-cause attribution only: real six-surface/140-tap EARLY and eight-line
+// multiband FDN LATE are measured in isolation with their approved source.
+// These numbers are NOT additive percentages of the full branded graph:
+// isolated caches, different feeds and independent warmup states matter.
+// Never change the approved P102 coefficients or mute ROOM to claim a win.
+bool attributeRoom(int rate,int frames,int scene,bool quick) {
+    using namespace armix::sonku;
+    auto er=std::make_unique<SonKuEarlyReflections>();
+    auto fdn=std::make_unique<SonKuMusicalReverb>();
+    if(!er->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch) ||
+       !fdn->prepare(rate))return false;
+    const auto s=armix::builtin_fx::imersipP92Factory(scene);
+    if(s.spacePreset==0)return false;
+    const float width=s.spacePreset==1?7.2f:s.spacePreset==2?14.4f:28.8f;
+    const float height=s.spacePreset==1?3.2f:s.spacePreset==2?4.8f:7.2f;
+    const SonKuRoomGeometry geometry{width,width,s.sourceDistanceMeters,
+                                     height,1.45f,1.45f};
+    const auto preset=s.spacePreset==3?SonKuReverbPreset::LargeRoom:
+        s.spacePreset==2?SonKuReverbPreset::AiryChamber:
+                         SonKuReverbPreset::StudioGlue;
+    if(!er->setRealtimeRoom(geometry,std::min(s.roomAmount,1.f),true)||
+       !fdn->setRealtimeProgram(preset,s.ambience))return false;
+    Block inL{},inR{},outL{},outR{};
+    for(int i=0;i<frames;++i){
+        const double t=double(i)/double(rate);
+        inL[i]=float(.064*std::sin(2.*3.141592653589793*337.*t)+
+                     .048*std::sin(2.*3.141592653589793*2233.*t));
+        inR[i]=float(.062*std::sin(2.*3.141592653589793*599.*t)-
+                     .038*std::sin(2.*3.141592653589793*4100.*t));
+    }
+    const int warmup=quick?64:128,measured=quick?128:320;
+    for(int stage=0;stage<2;++stage) {
+        std::vector<double> times;
+        times.reserve(measured);
+        for(int block=0;block<warmup+measured;++block) {
+            const auto started=Clock::now();
+            for(int i=0;i<frames;++i){
+                if(stage==0){
+                    const auto ears=er->process(inL[i],inR[i],
+                        static_cast<double>(s.startAzimuthDegrees),
+                        s.stereoSpreadDegrees,s.headYawDegrees,false);
+                    outL[i]=ears.left;outR[i]=ears.right;
+                }else{
+                    const auto ears=fdn->process(inL[i],inR[i]);
+                    outL[i]=ears.left;outR[i]=ears.right;
+                }
+            }
+            const auto stopped=Clock::now();
+            if(block>=warmup)times.push_back(
+                std::chrono::duration<double,std::micro>(stopped-started).count());
+        }
+        std::uint64_t hash=14695981039346656037ull;
+        for(int i=0;i<frames;++i)for(float sample:{outL[i],outR[i]}){
+            if(!std::isfinite(sample))return false;
+            hash^=std::bit_cast<std::uint32_t>(sample);
+            hash*=1099511628211ull;
+        }
+        std::sort(times.begin(),times.end());
+        const auto percentile=[&](double p){
+            return times[static_cast<std::size_t>(p*(times.size()-1))];
+        };
+        const double periodUs=1.e6*double(frames)/rate;
+        std::printf("IMMERSIB_P102_ROOM_ATTR,stage=%s,rate=%d,frames=%d,scene=%d,"
+                    "walls=%d,lines=%d,blocks=%d,p50_us=%.2f,p95_us=%.2f,"
+                    "p99_us=%.2f,period_pct=%.2f,pcm_hash=%016llx,"
+                    "note=ISOLATED_NOT_ADDITIVE\n",
+                    stage==0?"early_six_surface":"late_eight_line_fdn",
+                    rate,frames,scene,er->activeWallCount(),
+                    SonKuMusicalReverb::lineCount,measured,
+                    percentile(.50),percentile(.95),percentile(.99),
+                    100.*percentile(.99)/periodUs,
+                    static_cast<unsigned long long>(hash));
+    }
+    return true;
+}
+
 } // namespace
 
 int main(int argc,char** argv) {
     if(argc!=2 || (std::string_view(argv[1])!="--quick" &&
-                   std::string_view(argv[1])!="--matrix")) {
-        std::fprintf(stderr,"Usage: ARMixImmerSIBP102CpuProfile --quick|--matrix\n");
+                   std::string_view(argv[1])!="--matrix" &&
+                   std::string_view(argv[1])!="--attribution")) {
+        std::fprintf(stderr,"Usage: ARMixImmerSIBP102CpuProfile --quick|--matrix|--attribution\n");
         return 2;
     }
-    const bool quick=std::string_view(argv[1])=="--quick";
+    const auto mode=std::string_view(argv[1]);
+    const bool quick=mode=="--quick";
+    if(mode=="--attribution") {
+        std::puts("IMMERSIB_P102_ATTR_SCHEMA,version=1,pcm_source=approved_unchanged,"
+                  "hardware=NOT_MEASURED,scope=isolated_early_late");
+        for(int rate:{44100,48000})
+            for(int frames:{128,256})
+                for(int scene:{2,8})
+                    if(!attributeRoom(rate,frames,scene,true))return 4;
+        return 0;
+    }
     std::puts("IMMERSIB_P102_CPU_SCHEMA,version=1,driver_xrun=NOT_MEASURED,"
               "hardware_fat=NOT_RUN,scope=branded_SonKuSpatialCore_only");
     // Cheap practical-load sampling for Windows CI: a short buffer,
