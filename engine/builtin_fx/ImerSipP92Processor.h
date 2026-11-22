@@ -21,6 +21,9 @@ public:
 #if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
         // Distinct from 8D-SonKu P9.9 opt-in; original session ABI unchanged.
         optInImmerSIBVocalRoom();
+#if defined(ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH) && ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH
+        optInImmerSIBLyricPocket();
+#endif
 #endif
     }
     const juce::String getName() const override {return productDisplayName;}

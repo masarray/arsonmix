@@ -143,6 +143,9 @@ static void nativeParity(int rate) {
     // Sample parity compares two identically opted-in instances of the
     // SAME core. Generic SonKu stays unopted and byte-identical separately.
     native->optInImmerSIBVocalRoom();
+#if defined(ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH) && ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH
+    native->optInImmerSIBLyricPocket();
+#endif
 #endif
     assert(native->prepare(rate,
         armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch));

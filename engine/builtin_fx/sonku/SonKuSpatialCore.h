@@ -35,6 +35,9 @@
 #include "SonKuP98SceneVoicing.h"
 #if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
 #include "SonKuImmerSIBVocalRoom.h"
+#if defined(ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH) && ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH
+#include "SonKuLyricFrontPocket.h"
+#endif
 #endif
 #endif
 #if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
@@ -227,6 +230,10 @@ public:
 #endif
 #if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
     void optInImmerSIBVocalRoom() noexcept {immersibP99Enabled_=true;}
+#if defined(ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH) && ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH
+    // Set only before prepare, never from the audio or GUI thread.
+    void optInImmerSIBLyricPocket() noexcept { lyricPocketEnabled_=true; }
+#endif
 #endif
     bool prepare(double rate, SonKuReflectionProfile profile=
                  SonKuReflectionProfile::Lightweight) noexcept {
@@ -278,6 +285,9 @@ public:
 #endif
 #if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
         if(!immersibP99VocalRoom_.prepare(rate))return false;
+#if defined(ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH) && ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH
+        if(lyricPocketEnabled_ && !lyricPocket_.prepare(rate))return false;
+#endif
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
         if(!p95Presence_.prepare(rate))return false;
@@ -370,6 +380,9 @@ public:
 #endif
 #if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
         immersibP99VocalRoom_.reset();
+#if defined(ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH) && ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH
+        lyricPocket_.reset();
+#endif
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
         p95Presence_.reset();
@@ -442,6 +455,9 @@ public:
 #endif
 #if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
         immersibP99VocalRoom_.reset();
+#if defined(ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH) && ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH
+        lyricPocket_.reset();
+#endif
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
         p95Presence_.reset();
@@ -1164,6 +1180,16 @@ public:
                     late.left=l.left;late.right=l.right;
                 }
 #endif
+#if defined(ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH) && ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH
+                if(lyricPocketEnabled_) {
+                    // Only the existing diffuse FDN return; direct HRIR,
+                    // directional first images and P92 modal bass untouched.
+                    if(vocalRoomOn && reverb_.active()) {
+                        const auto wet=lyricPocket_.process(late.left,late.right);
+                        late.left=wet.left;late.right=wet.right;
+                    } else lyricPocket_.reset();
+                }
+#endif
                 float spatialL=directL+
                     smoothedErPresence_*calibratedEarly*reflection.left+
                     smoothedTailPresence_*late.left;
@@ -1608,6 +1634,10 @@ private:
 #if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
     p99::ImmerSIBVocalRoom immersibP99VocalRoom_{};
     bool immersibP99Enabled_=false;
+#if defined(ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH) && ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH
+    p100::LyricFrontPocket lyricPocket_{};
+    bool lyricPocketEnabled_=false;
+#endif
 #endif
 #if defined(SONKU_P95_MUSICAL_PRESENCE_RESEARCH) && SONKU_P95_MUSICAL_PRESENCE_RESEARCH
     p95::MusicalPresence p95Presence_{};

@@ -461,6 +461,9 @@ protected:
     void optInImmerSIBVocalRoom() noexcept {
         core_.optInImmerSIBVocalRoom();
     }
+#if defined(ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH) && ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH
+    void optInImmerSIBLyricPocket() noexcept {core_.optInImmerSIBLyricPocket();}
+#endif
 #endif
     // Product-specific admission is a CONTROL-thread operation; the audio
     // callback still owns the same core, edit queue and applied ACK.
