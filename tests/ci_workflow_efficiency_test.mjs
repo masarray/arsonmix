@@ -102,7 +102,7 @@ test('global Windows FAT is feature-neutral; scoped development never impersonat
 });
 
 test('generic feature CMake and CTest preflight is before the focused compilation',()=>{
-  const start=native.indexOf('- name: Configure audited Windows feature test graph');
+  const start=native.indexOf('- name: Configure audited feature CTest registry');
   const build=native.indexOf('- name: Feature-scoped Windows MSVC targets (development ONLY)',start);
   assert.ok(start>0&&build>start);
   const section=native.slice(start,build);
