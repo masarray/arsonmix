@@ -53,6 +53,19 @@ class ApprovedSceneAssets(unittest.TestCase):
         self.assertIn("receivedOrphanCompletion",editor)
         self.assertIn('status_="RECONCILED NATIVE AUDIO ACK"',editor)
 
+    def test_idle_editor_timer_and_host_controls_are_change_driven(self):
+        # Audio and the native host remain authoritative. Unchanged 25 Hz
+        # polling must not repeatedly reconfigure JUCE controls or repaint
+        # the footer; a rejected orphan ACK must not be reported as applied.
+        editor=(ROOT/"engine/builtin_fx/ImerSipP92Editor.h").read_text(encoding="utf-8")
+        self.assertIn("hostReadbackCached_ && cachedHasRequest_==hasRequest",editor)
+        self.assertIn("lastHostReadback_.rackBypassed==state.rackBypassed",editor)
+        self.assertIn("lastHostReadback_.globalBypassed==state.globalBypassed",editor)
+        self.assertIn("if(status_!=previousStatus)",editor)
+        self.assertIn("std::optional<bool> orphanApplied",editor)
+        self.assertIn('status_=*orphanApplied?"RECONCILED NATIVE AUDIO ACK":',editor)
+        self.assertIn('"NATIVE AUDIO EDIT REJECTED"',editor)
+
     def test_lazy_photo_decode_no_eager_constructor(self):
         skin=(ROOT/"engine/builtin_fx/ImerSipP92VisualSkin.h").read_text(encoding="utf-8")
         self.assertIn("mutable std::array<juce::Image,6> sceneImages_",skin)
