@@ -27,6 +27,24 @@ def browser_check(page):
     assert page.locator(".os-card").count() == 3
     assert page.locator(".app-shot img").count() == 1
     assert page.locator(".gallery img").count() == 3
+    # Public conversion path: authentic rack image, six described FX, first
+    # sound guide, and one-click feedback, on desktop AND phone.
+    assert page.locator("#effects .fx-list article").count() == 6
+    assert page.locator("#effects .fx-visual img").count() == 1
+    assert page.locator("#effects .fx-visual img").evaluate(
+        "img=>img.complete && img.naturalWidth>0"), "FX rack screenshot broken"
+    assert page.locator("#getting-started .step-grid article").count() == 3
+    assert page.locator("#feedback").count() == 1
+    assert page.locator('a[href="#effects"]').count() >= 2
+    assert page.locator('a[href="#getting-started"]').count() >= 1
+    assert page.locator('a[href="#feedback"]').count() >= 1
+    assert page.locator(
+        'a[href="https://github.com/masarray/arsonmix/issues/new?template=01_bug_report.yml"]'
+    ).count() == 1
+    assert page.locator(
+        'a[href="https://github.com/masarray/arsonmix/issues/new?template=02_feature_request.yml"]'
+    ).count() == 1
+
     assert page.locator("a[href='./preview/']").count() >= 2
     imgs = page.locator(".gallery img,.app-shot img,.brand img,.hero-brand-lockup img")
     assert page.locator(".hero-brand-lockup img").count() == 1
