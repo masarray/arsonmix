@@ -118,6 +118,17 @@ hardware is unavailable, mark physical audio FAT **PENDING**.
 
 ## Smart CI milestones — GitHub connector triggers *selectively*, not repeatedly
 
+**SMART CI 2026-11-22:** The owner-only PR comment dispatcher also accepts
+`/arsonmix-ci check|fast|full <exact HEAD SHA>`. `check` inspects mandatory
+existing quick checks without building; `fast` runs the already-approved
+FIELD portable **without full Windows CTest** only when native product files
+changed; `full` selects the required MSVC/CTest and/or Chromium lane by
+actual changed files, after all relevant quick checks pass. `fat` remains
+the explicit full installer/ZIP gate. Keep unchanged exact-SHA source,
+deduplication, approved sound, protected merge and hardware FAT semantics.
+See `docs/SMART_CI_RUNNER_WORKFLOW.md` for exact commands and limits.
+
+
 **Per-commit development = fast, path-scoped Linux contracts only.**
 No automatic heavy Chromium, Windows MSVC/CTest, or Windows artifact ZIP on
 ordinary PR synchronize, even if a PR is Ready. `main` release qualification
