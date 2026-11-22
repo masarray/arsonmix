@@ -552,6 +552,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install playwright
           python -m playwright install --with-deps chromium
+      - name: Landing public storefront desktop/mobile Chromium and download journey
+        run: python tests/landing_page_browser_smoke.py
       # Fail fast: clipped editor is the actual PR feature gate. Testing it
       # before the full GUI regression avoids 70 unrelated Chromium probes
       # hiding a small local pointer/geometry failure for 6+ minutes.
@@ -883,6 +885,7 @@ jobs:
         with:
           name: arsonmix-gui-current-smoke
           path: |
+            landing-v1-*.png
             pages-wire-main-*.png
             pages-v53-fx-rail-*.png
             pages-v51-portrait-meter-*.png
