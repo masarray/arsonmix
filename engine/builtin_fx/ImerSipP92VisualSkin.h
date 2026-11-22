@@ -14,13 +14,9 @@ public:
     // Fixed pixel master matches the 1100x461 logical stage exactly (2x).
     static constexpr int photoWidth=2200;
     static constexpr int photoHeight=922;
-    ImerSipP92VisualSkin()
-        : sceneLive_(load(BinaryData::scene_live_concert_png,BinaryData::scene_live_concert_pngSize)),
-          sceneRoyal_(load(BinaryData::scene_royal_concert_hall_png,BinaryData::scene_royal_concert_hall_pngSize)),
-          sceneArena_(load(BinaryData::scene_arena_thunder_png,BinaryData::scene_arena_thunder_pngSize)),
-          sceneFront_(load(BinaryData::scene_front_row_power_png,BinaryData::scene_front_row_power_pngSize)),
-          sceneSymphony_(load(BinaryData::scene_symphonic_palace_png,BinaryData::scene_symphonic_palace_pngSize)),
-          sceneCinema_(load(BinaryData::scene_velvet_cinema_png,BinaryData::scene_velvet_cinema_pngSize)) {
+    ImerSipP92VisualSkin() {
+        // Defer photo decode until paint(): first editor only needs one
+        // scene, not six 2200x922 images. Existing ImageCache stays shared.
         setColour(juce::ComboBox::textColourId,juce::Colour(0xffdce8e9));
         setColour(juce::ComboBox::outlineColourId,juce::Colours::transparentBlack);
         setColour(juce::ComboBox::arrowColourId,juce::Colour(0xff55dad0));
@@ -30,26 +26,28 @@ public:
         setColour(juce::TextButton::textColourOffId,juce::Colour(0xffeef3f3));
         setColour(juce::TextButton::textColourOnId,juce::Colour(0xffefffff));
     }
-    bool ready() const noexcept {
-        return allValid({&sceneLive_,&sceneRoyal_,&sceneArena_,
-                         &sceneFront_,&sceneSymphony_,&sceneCinema_});
+    // Explicit native QA can validate all six. Constructor loads none.
+    bool ready() const {
+        return allValid({&sceneImage(0),&sceneImage(1),&sceneImage(2),
+                         &sceneImage(3),&sceneImage(4),&sceneImage(5)});
     }
-    bool hasScenes() const noexcept { return ready(); }
+    bool hasScenes() const { return ready(); }
     void drawScene(juce::Graphics& g,int presetId) const {
-        const juce::Image* art=&sceneLive_;
+        std::size_t sceneIndex=0;
         switch(presetId){
-            case 3: art=&sceneRoyal_; break;
-            case 4: art=&sceneArena_; break;
-            case 5: art=&sceneFront_; break;
-            case 6: art=&sceneSymphony_; break;
-            case 7: art=&sceneCinema_; break;
-            case 8: art=&sceneLive_; break; // Front Row XL reuses approved Live Concert venue
-            default: break; // Custom keeps its last selected venue.
+            case 3: sceneIndex=1; break;
+            case 4: sceneIndex=2; break;
+            case 5: sceneIndex=3; break;
+            case 6: sceneIndex=4; break;
+            case 7: sceneIndex=5; break;
+            case 8: sceneIndex=0; break; // XL shares Live Concert photo
+            default: break; // Custom retains selected photo.
         }
+        const auto& art=sceneImage(sceneIndex);
         // Fail closed on an absent/mismatched scene rather than allowing
         // centered 2:1 art to create black matte on either side.
-        if(art->isNull() || art->getWidth()!=photoWidth ||
-           art->getHeight()!=photoHeight) {
+        if(art.isNull() || art.getWidth()!=photoWidth ||
+           art.getHeight()!=photoHeight) {
             jassertfalse;
             return;
         }
@@ -60,7 +58,7 @@ public:
         g.reduceClipRegion(0,0,1100,461);
         g.setColour(juce::Colour(0xff0e161c));
         g.fillRect(0,0,1100,461);
-        g.drawImageWithin(*art,0,0,1100,461,
+        g.drawImageWithin(art,0,0,1100,461,
                           juce::RectanglePlacement::centred);
     }
     void drawBypassedVenueOverlay(juce::Graphics& g) const {
@@ -234,7 +232,23 @@ private:
     static juce::Image load(const void* bytes,int size) {
         return juce::ImageCache::getFromMemory(bytes,size);
     }
-    const juce::Image sceneLive_,sceneRoyal_,sceneArena_,
-                      sceneFront_,sceneSymphony_,sceneCinema_;
+    // Acquired on JUCE message thread only, never from PCM callback.
+    // Index maps approved seven presets onto six immutable photos.
+    const juce::Image& sceneImage(std::size_t index) const {
+        jassert(index<sceneImages_.size());
+        auto& image=sceneImages_[index];
+        if(!image.isNull())return image;
+        switch(index) {
+            case 0: image=load(BinaryData::scene_live_concert_png,BinaryData::scene_live_concert_pngSize);break;
+            case 1: image=load(BinaryData::scene_royal_concert_hall_png,BinaryData::scene_royal_concert_hall_pngSize);break;
+            case 2: image=load(BinaryData::scene_arena_thunder_png,BinaryData::scene_arena_thunder_pngSize);break;
+            case 3: image=load(BinaryData::scene_front_row_power_png,BinaryData::scene_front_row_power_pngSize);break;
+            case 4: image=load(BinaryData::scene_symphonic_palace_png,BinaryData::scene_symphonic_palace_pngSize);break;
+            case 5: image=load(BinaryData::scene_velvet_cinema_png,BinaryData::scene_velvet_cinema_pngSize);break;
+            default: jassertfalse; break;
+        }
+        return image;
+    }
+    mutable std::array<juce::Image,6> sceneImages_{};
 };
 } // namespace armix::builtin_fx

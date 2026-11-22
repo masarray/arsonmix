@@ -10,6 +10,16 @@ SCENES=("live_concert","royal_concert_hall","arena_thunder",
 ASSET=ROOT/"assets"/"imersip"
 
 class ApprovedSceneAssets(unittest.TestCase):
+    def test_lazy_photo_decode_no_eager_constructor(self):
+        skin=(ROOT/"engine/builtin_fx/ImerSipP92VisualSkin.h").read_text(encoding="utf-8")
+        self.assertIn("mutable std::array<juce::Image,6> sceneImages_",skin)
+        self.assertIn("const auto& art=sceneImage(sceneIndex)",skin)
+        self.assertIn("allValid({&sceneImage(0)",skin)
+        self.assertNotIn(": sceneLive_(load(",skin)
+        self.assertIn("ImageCache::getFromMemory",skin)
+        for index in range(6):
+            self.assertIn(f"case {index}: image=load(BinaryData::scene_",skin)
+
     def test_six_photo_scene_pngs(self):
         expected=sorted(ASSET/"scenes"/f"scene_{name}.png" for name in SCENES)
         self.assertEqual(sorted((ASSET/"scenes").glob("*.png")),expected)
