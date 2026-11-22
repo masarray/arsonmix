@@ -10,6 +10,10 @@ on:
       - 'engine/builtin_fx/ImerSipP92Processor.h'
       - 'tests/immersib_lyric_pocket_test.cpp'
       - 'CMakeLists.txt'
+      - 'src/Main.cpp'
+      - 'web/approved-native-bridge.js'
+      - 'web/approved-device-view-model.js'
+      - 'tests/approved_device_pin_identity_contract.test.cjs'
       - 'scripts/package_immersib_lyric_pocket_preview.ps1'
   workflow_dispatch:
 
@@ -26,6 +30,10 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+      - name: Verify native I/O pin recovery view model
+        run: |
+          node --check web/approved-native-bridge.js
+          node --test tests/approved_device_pin_identity_contract.test.cjs
       - name: Compile actual published-P9-flagset source + research opt-in
         shell: bash
         run: |
