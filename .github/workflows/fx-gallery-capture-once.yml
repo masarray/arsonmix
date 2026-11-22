@@ -1,0 +1,59 @@
+name: One-time approved FX gallery capture (feature branch only)
+
+on:
+  push:
+    branches:
+      - feat/public-fx-screenshots-20261122
+    paths:
+      - scripts/capture_public_fx_gallery.py
+      - .github/workflows/fx-gallery-capture-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    if: ${{ github.repository == 'masarray/arsonmix' && github.ref == 'refs/heads/feat/public-fx-screenshots-20261122' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Chromium capture prerequisites
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Capture original approved native FX windows
+        run: python scripts/capture_public_fx_gallery.py
+      - name: Publish screenshots to this feature branch, never main
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/feat/public-fx-screenshots-20261122"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- site/media/fx-editor-*.jpg site/media/fx-gallery-provenance.json
+          if git diff --cached --quiet; then
+            echo "Gallery already unchanged"
+          else
+            git commit -m "media(fx): capture six approved WebView editor windows"
+            git push origin HEAD:refs/heads/feat/public-fx-screenshots-20261122
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arsonmix-public-fx-editor-source-evidence
+          path: |
+            site/media/fx-editor-*.jpg
+            site/media/fx-gallery-provenance.json
+          if-no-files-found: warn
+          retention-days: 14
