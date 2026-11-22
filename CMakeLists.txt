@@ -609,6 +609,12 @@ if(BUILD_TESTING)
         SONKU_IMMERSIB_PCM_DIAGNOSTICS=1)
     add_test(NAME NativeImmerSIBP99VocalRoomAndVenueGolden
         COMMAND ARMixImmerSIBP99NativeSonicGate)
+    if(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH)
+      add_executable(ARMixImmerSIBMusicalEqTests tests/immersib_fixed_pa_musical_eq_test.cpp)
+      target_compile_features(ARMixImmerSIBMusicalEqTests PRIVATE cxx_std_20)
+      target_compile_definitions(ARMixImmerSIBMusicalEqTests PRIVATE ${IMMERSIB_RC_DEFINES})
+      add_test(NAME NativeImmerSIBFixedPaPlusMusicalEq COMMAND ARMixImmerSIBMusicalEqTests)
+    endif()
     if(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH)
       add_executable(ARMixImmerSIBFixedStageTests
           tests/immersib_fixed_stage_monitor_test.cpp)

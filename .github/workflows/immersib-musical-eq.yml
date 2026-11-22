@@ -133,9 +133,9 @@ jobs:
       - name: Build native regression and real JUCE editor/processor
         shell: pwsh
         run: |
-          cmake --build build --config Release --parallel 2 --target ARMixImmerSIBFixedStageTests ARMixImerSipP92NativeTests
+          cmake --build build --config Release --parallel 2 --target ARMixImmerSIBFixedStageTests ARMixImerSipP92NativeTests ARMixImmerSIBMusicalEqTests
           if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_STAGE_TEST_COMPILE_FAILED' }
-          ctest --test-dir build -C Release --output-on-failure -R "NativeImmerSIBFixedStageNoSpectralMaskingAndFullPCM|NativeImmerSIBJucePresetACKStateAndBypass"
+          ctest --test-dir build -C Release --output-on-failure -R "NativeImmerSIBFixedStageNoSpectralMaskingAndFullPCM|NativeImmerSIBJucePresetACKStateAndBypass|NativeImmerSIBFixedPaPlusMusicalEq"
           if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_STAGE_TEST_FAILED' }
       - name: Build ACTUAL ArSonMix mixer Windows x64 with approved /preview/
         shell: pwsh
