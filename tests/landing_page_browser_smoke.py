@@ -42,6 +42,13 @@ def browser_check(page):
         "() => {const img=document.querySelector('#effects .fx-visual img'); return img && img.complete && img.naturalWidth>0;}",
         timeout=15000,
     )
+    gallery = page.locator("#fx-gallery .fx-gallery-card")
+    assert gallery.count() == 6
+    assert page.locator("#fx-gallery img").count() == 6
+    for editor in page.locator("#fx-gallery img").all():
+        editor.scroll_into_view_if_needed()
+        editor.evaluate("img => img.decode()")
+        assert editor.evaluate("img => img.complete && img.naturalWidth > 300")
     assert page.locator("#getting-started .step-grid article").count() == 3
     assert page.locator("#feedback").count() == 1
     assert page.locator('a[href="#effects"]').count() >= 2

@@ -25,6 +25,9 @@ class LandingReleaseContract(unittest.TestCase):
             self.assertIn("media/console-routing.jpg", html)
             self.assertIn("media/console-faders.jpg", html)
             self.assertIn('id="effects"', html)
+            self.assertIn('id="fx-gallery"', html)
+            for editor in ("8d-sonku","vocal-delay","harmonice","channel-eq","compressor","graphic-eq31"):
+                self.assertIn("media/fx-editor-" + editor + ".jpg", html)
             self.assertIn('id="getting-started"', html)
             self.assertIn('id="feedback"', html)
             self.assertIn("ArSonMix mixer FX rack with WIRE routing", html)
@@ -85,11 +88,23 @@ class LandingReleaseContract(unittest.TestCase):
                          "apple-touch-icon.png", "site.webmanifest", "arsonmix-48.png", "arsonmix-128.png", "brand-512.png",
                          "landing.css", "downloads.js"):
                 self.assertTrue((base / name).is_file(), (str(base), name))
-            for name in ("console-overview.jpg", "console-routing.jpg", "console-faders.jpg"):
+            for name in ("console-overview.jpg", "console-routing.jpg", "console-faders.jpg",
+                         "fx-editor-8d-sonku.jpg", "fx-editor-vocal-delay.jpg",
+                         "fx-editor-harmonice.jpg", "fx-editor-channel-eq.jpg",
+                         "fx-editor-compressor.jpg", "fx-editor-graphic-eq31.jpg"):
                 path = base / "media" / name
                 self.assertTrue(path.is_file(), str(path))
                 self.assertGreater(path.stat().st_size, 12000)
                 self.assertEqual(path.read_bytes()[:3], b"\xff\xd8\xff", str(path))
+            manifest = json.loads((base / "media/fx-gallery-provenance.json").read_text("utf-8"))
+            self.assertEqual(manifest["schemaVersion"], 1)
+            self.assertEqual(len(manifest["images"]), 6)
+            for record in manifest["images"]:
+                self.assertRegex(record["sha256"], r"^[0-9a-f]{64}$")
+                self.assertFalse(record["actualWindowsScreenshot"])
+                self.assertFalse(record["audioOrHardwareVerifiedByImage"])
+                self.assertEqual((base / "media" / record["file"]).stat().st_size,
+                                 record["sizeBytes"])
 
     def test_public_agpl_notice_is_exact_repo_license(self):
         # Legal documentation is delivered on the official Pages domain
@@ -106,6 +121,9 @@ class LandingReleaseContract(unittest.TestCase):
         self.assertIn("site/media/console-routing.jpg", readme)
         self.assertIn("site/media/console-faders.jpg", readme)
         self.assertIn("ImmerSIB", readme)
+        self.assertIn("site/media/fx-editor-harmonice.jpg", readme)
+        self.assertIn("site/media/fx-editor-8d-sonku.jpg", readme)
+        self.assertIn("site/media/fx-editor-vocal-delay.jpg", readme)
         self.assertIn("8D-SonKu P9.9", readme)
         self.assertIn("GitHub account", readme)
         self.assertIn("visual only", readme)
