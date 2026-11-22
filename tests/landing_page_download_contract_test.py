@@ -26,7 +26,9 @@ class LandingReleaseContract(unittest.TestCase):
             self.assertIn("media/console-faders.jpg", html)
             self.assertIn("prefers-reduced-motion", css)
             if base == ROOT / "site":
-                self.assertNotIn("https://github.com", html)  # No source-pinned downloads.
+                # Public feedback is a legitimate GitHub destination; binary
+                # downloads, by contrast, MUST come from verified release data.
+                self.assertNotIn("github.com/masarray/arsonmix/releases/download/", html)
             else:
                 # The deployed HTML has direct asset URLs from the exact same
                 # validated catalog, for offline/JS-blocked progressive download.
@@ -89,23 +91,20 @@ class LandingReleaseContract(unittest.TestCase):
         self.assertTrue(copied.is_file(), str(copied))
         self.assertEqual(copied.read_bytes(), (ROOT / "LICENSE").read_bytes())
 
-    def test_pinned_readme_release_has_local_notes_and_verified_asset_paths(self):
+    def test_readme_uses_evergreen_public_download_and_real_screenshots(self):
         readme = (ROOT / "README.md").read_text("utf-8")
-        match = re.search(r"Latest published Windows alpha as of [^\n]+?:\*\* \[(v\d+\.\d+\.\d+-alpha\.\d+)", readme)
-        self.assertIsNotNone(match, "README must declare its pinned latest public Windows alpha")
-        tag = match.group(1)
-        self.assertTrue((ROOT / "docs" / "releases" / (tag + ".md")).is_file())
-        self.assertIn("docs/releases/" + tag + ".md", readme)
-        for suffix in ("Windows-x64-Setup.zip", "Windows-x64-Portable.zip", "SHA256SUMS.txt"):
-            self.assertIn("releases/download/" + tag + "/", readme)
-            self.assertIn(tag + "-" + suffix if suffix != "SHA256SUMS.txt" else suffix, readme)
+        self.assertIn("https://masarray.github.io/arsonmix/#download", readme)
+        self.assertIn("https://github.com/masarray/arsonmix/releases", readme)
+        self.assertIn("site/media/console-overview.jpg", readme)
+        self.assertIn("site/media/console-routing.jpg", readme)
+        self.assertIn("site/media/console-faders.jpg", readme)
         self.assertIn("ImmerSIB", readme)
         self.assertIn("8D-SonKu P9.9", readme)
-        notes = (ROOT / "docs" / "releases" / (tag + ".md")).read_text("utf-8")
-        self.assertNotRegex(notes, r"This note does not claim .* artifacts already exist",
-                            "Latest published release must not retain prepublication copy")
-        self.assertIn("Published release", notes,
-                      "Latest publicly downloaded tag must have a post-publication release note")
+        self.assertIn("GitHub account", readme)
+        self.assertIn("visual only", readme)
+        self.assertNotIn("Latest published Windows alpha as of", readme)
+        self.assertNotRegex(readme, r"releases/download/v\\d+\\.\\d+\\.\\d+-alpha\\.\\d+/",
+                            "README must not pin a stale binary when the verified landing is dynamic")
 
     def test_release_notes_are_safe_landing_only_changes(self):
         # Changelogs must not silently suppress the Pages update when a
