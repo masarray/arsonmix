@@ -52,14 +52,17 @@ These are signal-domain linear operations only after the scene transition
 slew settles. Source-dependent limiter clamping can still happen at peaks.
 
 P80 direct HRTF uses only its original preparation-time calibrated 2.2k
-correction, extended by a **maximum extra 1.2dB in the single existing
+correction, extended by a **maximum extra 3.0dB in the single existing
 filter** for the candidate; this is not a headphone-response measurement.
 **Owner clarification 22 Nov:** v7 had audibly clearer center vocal but
 unbearable upper-mid ringing and insufficient low-mid body. We MUST not
 interpret the rejection as a request to remove that vocal clarity.
 The corrected candidate reintroduces the stable forward center cue and
 source detail while making low-mid warmth more substantial.
-No new 3k/5k filter. The correct band/weight requires actual listening
+One small fixed, linked-ear 3450Hz/Q=.78 de-harsh uses the
+already-existing P98 filter with coefficient .22, before the linked limiter.
+Its 55ms scene transition is not frequency-following; for a held scene the
+filter is time-invariant. No new dynamic notch/FFT/headphone-dry side path. The correct band/weight requires actual listening
 and additional ear-domain measurements; treat this as a low-risk ablation
 hypothesis, not proven optimization.
 
