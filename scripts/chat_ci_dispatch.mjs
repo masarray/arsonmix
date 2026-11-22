@@ -237,7 +237,7 @@ export async function performMilestone({event,repo,api,waitForQuick=()=>sleep(50
   // Ordinary FAT is for a REQUESTED installer, not editor iteration. The
   // previous ImmerSIB #865 consumed 30m building 113 unrelated CTests.
   // Explicit source-scoped denial makes repeating that mistake impossible.
-  if(target.lane==='fat'&&/imersib|imersip/i.test(target.branch)&&
+  if(target.lane==='fat'&&/immersib|imersib|imersip/i.test(target.branch)&&
      focusedImmerSIBFileScope(await readChangedFiles(api,target.number)))
     throw Error('CI_IMMERSIB_ITERATION_USE_FOCUSED_NOT_FAT');
   if(target.lane==='immersib') {
