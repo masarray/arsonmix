@@ -14,6 +14,9 @@ Owner field report, 22 Nov 2026: latest alpha.32 runs for hours without cracklin
 2. DSP evidence: new CMake target ARMixImmerSIBP102CpuProfile uses the same real P102.3 preprocessor flags as ARMixConsole, and explicitly enables both branded fixed-stage and musical EQ before prepare. Builds outside normal ALL/CTest to avoid unnecessary CI/runtime cost.
 3. Output CSV reports DSP-only p50/p95/p99, budget percentage, late-block counts, scene, 44.1/48 kHz, 64/128/256/512-frame and 1/2/4-instance cases. Input synthesis and buffer preparation are outside the timed region. This does NOT measure JUCE host overhead, DPC, driver XRUN or real hardware sound.
 
+4. Windows CI first measurement (exact prior PR head bfb815a5, **not** a controlled before/after): 48kHz/256 frames, 1 ImmerSIB, Live Concert ROOM ON, p50 1650.10us, p95 2144.60us, p99 2268.00us = **42.53% of 5333us deadline**, zero DSP-only over-budget blocks in 128 measured blocks. Runner performance is not a low-end PC certification. The expanded five-case quick suite follows to capture 128f, 256f, 2/4 inserts and ROOM OFF. Never report a CPU saving without a matched reference.
+5. Windows initial red was at the later **RC->public profile reconfigure**, after JUCE editor/native CTest passed, the P102 quick benchmark compiled/ran and approved 30 PCM source-lock passed. CMake retained cached P102 stage/EQ ON when only parent RC was turned OFF. The focused Windows workflow now explicitly turns both P102 flags OFF **and verifies cache readback**, keeping CMake fail-closed semantics; a Python regression asserts this contract.
+
 ### Windows Release usage
 
 Configure the existing Windows candidate with ARMIX_IMMERSIB_RELEASE_CANDIDATE=ON, use Release configuration, then:

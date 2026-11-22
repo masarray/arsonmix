@@ -96,7 +96,18 @@ int main(int argc,char** argv) {
     const bool quick=std::string_view(argv[1])=="--quick";
     std::puts("IMMERSIB_P102_CPU_SCHEMA,version=1,driver_xrun=NOT_MEASURED,"
               "hardware_fat=NOT_RUN,scope=branded_SonKuSpatialCore_only");
-    if(quick)return measure(48000,256,1,2,true,true)?0:3;
+    // Cheap practical-load sampling for Windows CI: a short buffer,
+    // the current 256-frame reference, two/four simultaneous inserts,
+    // and ROOM off. No hard timing threshold on shared CI runners.
+    if(quick) {
+        for(const auto& cfg:std::array<std::array<int,5>,5>{{
+                {{48000,128,1,2,1}},{{48000,256,1,2,1}},
+                {{48000,256,2,2,1}},{{48000,256,4,2,1}},
+                {{48000,256,1,2,0}}}})
+            if(!measure(cfg[0],cfg[1],cfg[2],cfg[3],cfg[4]!=0,true))
+                return 3;
+        return 0;
+    }
     for(int rate:{44100,48000})
         for(int frames:{64,128,256,512})
             for(int inserts:{1,2,4})

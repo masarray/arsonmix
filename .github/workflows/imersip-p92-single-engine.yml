@@ -244,7 +244,22 @@ jobs:
           $flags = @([regex]::Matches($cmakeText, '(?m)^\s*option\((ARMIX_SONKU_EXPERIMENTAL_[A-Z0-9_]+)') |
               ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
           if ($flags.Count -lt 10) { throw 'PUBLIC_PROFILE_RESEARCH_OPTION_AUDIT_INCOMPLETE' }
-          $args = @('-S','.','-B','build','-DARMIX_IMMERSIB_RELEASE_CANDIDATE=OFF')
+          # CMake option() caches its first value. An RC->non-RC
+          # reconfigure of the SAME build directory must explicitly disable
+          # both branded P102.3 flags; turning only the parent RC OFF leaves
+          # them ON from the previous configure and causes a hard error.
+          # Preserve the intentional fail-closed CMake dependency checks.
+          $brandedFlags = @('ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH',
+                            'ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH')
+          foreach ($flag in $brandedFlags) {
+            if ($cmakeText -notmatch "option\($flag\b") {
+              throw "PUBLIC_PROFILE_BRANDED_OPTION_NOT_DECLARED: $flag"
+            }
+          }
+          $args = @('-S','.','-B','build','-DARMIX_IMMERSIB_RELEASE_CANDIDATE=OFF',
+                    '-DARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH=OFF',
+                    '-DARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH=OFF',
+                    '-DARMIX_SONKU_APPROVED_P99_MAIN=ON')
           foreach ($flag in $flags) { $args += "-D${flag}=OFF" }
           & cmake @args
           if ($LASTEXITCODE -ne 0) { throw 'PUBLIC_PROFILE_CMAKE_CONFIGURE_FAILED' }
@@ -253,6 +268,8 @@ jobs:
           # incorrectly rejected valid OFF/ON cache entries.
           $cacheLines = @(Get-Content -LiteralPath build/CMakeCache.txt -Encoding UTF8)
           $expected = @('ARMIX_IMMERSIB_RELEASE_CANDIDATE:BOOL=OFF',
+                        'ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH:BOOL=OFF',
+                        'ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH:BOOL=OFF',
                         'ARMIX_SONKU_APPROVED_P99_MAIN:BOOL=ON')
           foreach ($entry in $expected) {
             if ($entry -notin $cacheLines) {

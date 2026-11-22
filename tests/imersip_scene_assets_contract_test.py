@@ -10,6 +10,26 @@ SCENES=("live_concert","royal_concert_hall","arena_thunder",
 ASSET=ROOT/"assets"/"imersip"
 
 class ApprovedSceneAssets(unittest.TestCase):
+    def test_public_sonku_profile_reconfigures_both_branded_flags(self):
+        # Regression for the 2026-11-22 exact-SHA Windows red:
+        # CMake option() caches both opt-ins after the RC build. Merely
+        # setting RELEASE_CANDIDATE=OFF is insufficient.
+        cmake=(ROOT/"CMakeLists.txt").read_text(encoding="utf-8")
+        workflow=(ROOT/".github/workflows/imersip-p92-single-engine.yml").read_text(encoding="utf-8")
+        step=workflow.split(
+            "- name: Recompile default public SonKu P9.9 profile with ImmerSIB RC OFF",
+            1)[1].split("      - name:",1)[0]
+        flags=("ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH",
+               "ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH")
+        self.assertIn("-DARMIX_IMMERSIB_RELEASE_CANDIDATE=OFF",step)
+        self.assertIn("-DARMIX_SONKU_APPROVED_P99_MAIN=ON",step)
+        self.assertIn("$cacheLines",step)
+        for flag in flags:
+            self.assertIn("option("+flag,cmake)
+            self.assertIn("-D"+flag+"=OFF",step)
+            self.assertIn(flag+":BOOL=OFF",step)
+        self.assertIn("PUBLIC_PROFILE_CMAKE_CONFIGURE_FAILED",step)
+
     def test_lazy_photo_decode_no_eager_constructor(self):
         skin=(ROOT/"engine/builtin_fx/ImerSipP92VisualSkin.h").read_text(encoding="utf-8")
         self.assertIn("mutable std::array<juce::Image,6> sceneImages_",skin)
