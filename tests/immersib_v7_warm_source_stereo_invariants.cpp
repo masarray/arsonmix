@@ -33,9 +33,10 @@ static void test(int sr,int scene,bool enabled,int pattern){
             continue;
         }
         // An ORIGINAL hard-left input already receives approved P98
-        // MID voicing from both speakers; v7 must add NO MORE to RIGHT.
-        if(pattern==0)assert(a.right==b.right);
-        if(pattern==1)assert(a.left==b.left);
+        // MID voicing from both speakers; v7 source must not add RIGHT.
+        // The final EAR contour intentionally affects both already-rendered ears.
+        if(pattern==0)assert(oa.right==ob.right);
+        if(pattern==1)assert(oa.left==ob.left);
         // True mono vocal must remain exactly symmetric.
         if(pattern==2)assert(b.left==b.right);
         // Anti-phase L/R must remain anti-phase; no new mono leakage.
