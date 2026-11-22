@@ -22,6 +22,9 @@ public:
         // Different experimental product signal chain: fixed speaker HRIR,
         // no P99 source/late attention and no P98 SIDE spectral attenuation.
         optInImmerSIBStageMonitor();
+#if defined(ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH) && ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH
+        optInImmerSIBNaturalBalance();
+#endif
 #elif defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
         // Published product chain is kept verbatim when research is OFF.
         optInImmerSIBVocalRoom();

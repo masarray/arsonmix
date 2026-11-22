@@ -460,6 +460,9 @@ protected:
     void optInImmerSIBStageMonitor() noexcept {
         core_.optInImmerSIBStageMonitor();
     }
+#if defined(ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH) && ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH
+    void optInImmerSIBNaturalBalance() noexcept {core_.optInImmerSIBNaturalBalance();}
+#endif
 #endif
 #if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
     // Distinct from approved 8D-SonKu P9.9; only ImmerSIB constructor opts in.

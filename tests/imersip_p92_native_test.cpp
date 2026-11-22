@@ -144,6 +144,9 @@ static void nativeParity(int rate) {
     // the released P99 room donor. Reference MUST choose the SAME mode.
     // Do not weaken epsilon tolerances or bypass this exact PCM test.
     native->optInImmerSIBStageMonitor();
+#if defined(ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH) && ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH
+    native->optInImmerSIBNaturalBalance();
+#endif
 #elif defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
     // Released alpha.26 reference, unchanged when the research flag is OFF.
     native->optInImmerSIBVocalRoom();

@@ -4,6 +4,9 @@
 #include "SonKuEarlyReflections.h"
 #include "SonKuMusicalReverb.h"
 #include "SonKuStereoIntegrity.h"
+#if defined(ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH) && ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH
+#include "SonKuNaturalBalance.h"
+#endif
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
 #if !defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) || !SONKU_P82_MULTIBAND_ROOM_RESEARCH || \
     !defined(SONKU_P71_DIRECT_XYZ_RESEARCH) || !SONKU_P71_DIRECT_XYZ_RESEARCH
@@ -238,12 +241,18 @@ public:
         p97Stage_.suppressStageMidBoost(true);
     }
 #endif
+#if defined(ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH) && ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH
+    void optInImmerSIBNaturalBalance() noexcept { naturalBalanceEnabled_=stageMonitor_; }
+#endif
     bool prepare(double rate, SonKuReflectionProfile profile=
                  SonKuReflectionProfile::Lightweight) noexcept {
         ready_=false;
         if(!std::isfinite(rate) || (std::abs(rate-44100.)>.1 &&
                                     std::abs(rate-48000.)>.1))return false;
         sampleRate_=rate;
+#if defined(ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH) && ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH
+        if(naturalBalanceEnabled_ && !naturalBalance_.prepare(rate))return false;
+#endif
         bank_=(std::abs(rate-44100.)<=.1)?hrir::normal44100:hrir::normal48000;
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
         float extraDirectReliefDb=0.f;
@@ -331,6 +340,9 @@ public:
         return settings_.spacePreset==0 || applyAcousticSettings(settings_);
     }
     void reset() noexcept {
+#if defined(ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH) && ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH
+        naturalBalance_.reset();
+#endif
         for(auto& channel:history_)channel.fill(0.f);
         for(auto& source:kernels_)for(auto& ear:source)ear.fill(0.f);
         for(auto& source:targets_)for(auto& ear:source)ear.fill(0.f);
@@ -1288,6 +1300,16 @@ public:
                     outL=voiced.left;outR=voiced.right;
                 }
 #endif
+#if defined(ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH) && ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH
+                // Direction-independent common tonal correction AFTER all
+                // spatial contributors, BEFORE the existing linked guard.
+                // Gains come from offline actual Fixed PA PCM measurements.
+                if(naturalBalanceEnabled_) {
+                    if(p90World && settings_.spatialMix>0.f)
+                        naturalBalance_.process(outL,outR,roomEnabled?smoothedMix_:0.f);
+                    else naturalBalance_.reset();
+                }
+#endif
                 // Zero-lookahead *linked* sample-peak safety guard. Quiet
                 // signals are linear; peaks are gently returned below unity
                 // without routing through a second engine or allocating.
@@ -1607,6 +1629,10 @@ private:
     int remaining_=0;
 #if defined(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH) && ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
     bool stageMonitor_=false;
+#if defined(ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH) && ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH
+    p101::NaturalBalance naturalBalance_{};
+    bool naturalBalanceEnabled_=false;
+#endif
 #endif
     bool ready_=false;
     bool haveKernel_=false;

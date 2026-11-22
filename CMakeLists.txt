@@ -11,6 +11,15 @@ option(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
 if(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH AND NOT ARMIX_IMMERSIB_RELEASE_CANDIDATE)
   message(FATAL_ERROR "ImmerSIB stage research requires branded candidate")
 endif()
+option(ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH "Unapproved measured Fixed PA common tonal balance" OFF)
+if(ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH)
+  if(NOT ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH)
+    message(FATAL_ERROR "Natural Balance requires exact Fixed PA mode")
+  endif()
+  if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/engine/builtin_fx/sonku/SonKuNaturalBalanceTable.generated.h")
+    message(FATAL_ERROR "Natural Balance requires measured calibration table; run P101 calibration workflow")
+  endif()
+endif()
 # Experimental P6 native profile: OFF by default in production/installer.
 option(ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT
        "Enable unqualified SonKu full KEMAR directional reflections on the native JUCE callback"
@@ -502,6 +511,9 @@ if(ARMIX_IMMERSIB_RELEASE_CANDIDATE)
   if(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH)
     target_compile_definitions(ARMixConsole PRIVATE
         ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH=1)
+    if(ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH)
+      target_compile_definitions(ARMixConsole PRIVATE ARMIX_IMMERSIB_NATURAL_BALANCE_RESEARCH=1)
+    endif()
   endif()
 endif()
 
