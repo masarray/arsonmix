@@ -38,6 +38,21 @@ isolated component costs, not additive percentages of the entire live DSP
 graph**: signal feed, cache and warmup differ. They prioritize the next
 processor optimization, not claim a measured CPU reduction.
 
+**Windows FAT #45024548709 result (22 Nov):** 112/113 native CTests
+passed, with the new reopening test failing on the first iteration.
+It attempted to reselect initial preset ID 2 (no JUCE onChange), then
+incorrectly demanded an audio ACK. Fixed: assert no-op selection has
+no queue entry, and choose a genuinely different preset for each edit.
+
+**Additional operator-facing reliability bug fixed:** If a real scene edit
+is queued and the user closes the editor BEFORE the audio callback, a newly
+opened editor consumed the old ACK without reconciling the visual preset.
+Its 25 Hz UI timer now updates the accepted scene on an *orphan*
+completion only when the newly opened editor has no pending/deferred local
+user intent. Native regression queues an edit, closes UI, reopens,
+processes the real audio callback and checks the new editor catches up.
+The same trusted PCM processor stays alive; no shadow DSP/extra latency.
+
 The real JUCE native CTest now runs 100 create/destroy/reopen iterations
 against one prepared ImmerSIB processor at **both** supported rates. Every
 tenth reopen applies a real scene and verifies post-audio-callback ACK;

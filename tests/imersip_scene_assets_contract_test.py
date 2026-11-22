@@ -45,6 +45,13 @@ class ApprovedSceneAssets(unittest.TestCase):
         self.assertIn("iteration<100",native)
         self.assertIn("fx->pollCompletion(ack) && ack.applied",native)
         self.assertIn("fx->getStateInformation(snapshot)",native)
+        self.assertIn("sceneId!=previouslySelected",native)
+        self.assertIn("previouslySelected==8?2:previouslySelected+1",native)
+        self.assertIn("pending_close_reopen=verified",native)
+        self.assertIn("juce::Timer::callPendingTimersSynchronously()",native)
+        editor=(ROOT/"engine"/"builtin_fx"/"ImerSipP92Editor.h").read_text(encoding="utf-8")
+        self.assertIn("receivedOrphanCompletion",editor)
+        self.assertIn('status_="RECONCILED NATIVE AUDIO ACK"',editor)
 
     def test_lazy_photo_decode_no_eager_constructor(self):
         skin=(ROOT/"engine/builtin_fx/ImerSipP92VisualSkin.h").read_text(encoding="utf-8")

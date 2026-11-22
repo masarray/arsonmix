@@ -356,7 +356,14 @@ static void editorReopenStress(int rate) {
         auto* power=ui->findChildWithID("imersip.power");
         assert(preset && room && power);
         if(iteration%10==0) {
-            const int sceneId=2+(iteration/10)%7;
+            // JUCE does not emit onChange for the same selected item.
+            // First editor starts with ID 2: a no-op does NOT require ACK.
+            const int previouslySelected=preset->getSelectedId();
+            assert(previouslySelected>=2 && previouslySelected<=8);
+            preset->setSelectedId(previouslySelected,juce::sendNotificationSync);
+            assert(fx->stateSnapshotQuiescent());
+            const int sceneId=previouslySelected==8?2:previouslySelected+1;
+            assert(sceneId!=previouslySelected);
             preset->setSelectedId(sceneId,juce::sendNotificationSync);
             pcm.clear();
             fx->processBlock(pcm,midi);
@@ -388,9 +395,44 @@ static void editorReopenStress(int rate) {
             restored->releaseResources();
         }
     }
+    // A preset queued by the old editor must be accepted by the ONE live
+    // processor even when its UI is closed before the audio callback.
+    int deferredScene=0;
+    {
+        std::unique_ptr<juce::AudioProcessorEditor> closing(fx->createEditor());
+        auto* combo=dynamic_cast<juce::ComboBox*>(
+            closing->findChildWithID("imersip.preset"));
+        assert(combo);
+        const int previous=combo->getSelectedId();
+        assert(previous>=2 && previous<=8 && fx->stateSnapshotQuiescent());
+        deferredScene=previous==8?2:previous+1;
+        combo->setSelectedId(deferredScene,juce::sendNotificationSync);
+        assert(!fx->stateSnapshotQuiescent());
+        closing.reset();
+    }
+    {
+        std::unique_ptr<juce::AudioProcessorEditor> reopened(fx->createEditor());
+        auto* combo=dynamic_cast<juce::ComboBox*>(
+            reopened->findChildWithID("imersip.preset"));
+        assert(combo && combo->getSelectedId()!=deferredScene);
+        pcm.clear();
+        fx->processBlock(pcm,midi);
+        assert(!fx->stateSnapshotQuiescent());
+        // Invoke the actual 25 Hz JUCE editor timer; NEVER forge a PCM ACK.
+        juce::Thread::sleep(65);
+        juce::Timer::callPendingTimersSynchronously();
+        assert(combo->getSelectedId()==deferredScene);
+        assert(fx->stateSnapshotQuiescent());
+        const auto installed=fx->acceptedSettings();
+        const auto expected=imersipP92Factory(deferredScene);
+        assert(installed.spacePreset==expected.spacePreset);
+        assert(std::abs(installed.outputTrim-expected.outputTrim)<1.e-6f);
+        reopened.reset();
+    }
     fx->releaseResources();
     std::printf("IMMERSIB_EDITOR_REOPEN_STRESS,rate=%d,reopens=100,"
-                "PCM_owner=retained,ACK=verified,IMRS=verified\n",rate);
+                "PCM_owner=retained,ACK=verified,IMRS=verified,"
+                "pending_close_reopen=verified\n",rate);
 }
 int main() {
     juce::ScopedJuceInitialiser_GUI gui;

@@ -348,7 +348,18 @@ private:
     }
     void timerCallback() override {
         SonKuSpatialProcessor::Completion done{};
-        while(fx_.pollCompletion(done)){}
+        bool receivedOrphanCompletion=false;
+        // An edit queued before the prior editor was closed may ACK after
+        // this editor is constructed. That request is not pending_ here;
+        // reconcile actual accepted PCM, never invent a second callback.
+        while(fx_.pollCompletion(done)){
+            if(pending_==0 || done.requestId!=pending_)
+                receivedOrphanCompletion=true;
+        }
+        if(pending_==0 && !hasDeferred_ && receivedOrphanCompletion){
+            sync(fx_.acceptedSettings());
+            status_="RECONCILED NATIVE AUDIO ACK";
+        }
         if(pending_!=0 && fx_.lastCompletedRequestId()==pending_){
             const bool ok=fx_.lastCompletionApplied();
             pending_=0;
