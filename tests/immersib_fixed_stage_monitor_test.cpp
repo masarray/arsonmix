@@ -27,7 +27,7 @@ using Stereo=std::array<std::vector<float>,2>;
 
 static void physicalStageKernelTest(int rate) {
     StereoDecoder stage;
-    stage.useUnmodulatedStageKernels(true); // same ordering as JUCE opt-in
+    stage.useFixedFrontStage(true); // same ordering as JUCE opt-in
     assert(stage.prepare(rate));
     std::array<std::array<float,8>,2> center{}, left{}, right{};
     for(int ear=0;ear<2;++ear)
