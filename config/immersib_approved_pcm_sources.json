@@ -1,12 +1,12 @@
 {
   "schema": "arsonmix.approved-spatial-pcm-source-lock.v1",
-  "approvedRelease": "v0.5.0-alpha.26",
-  "approvedSourceSha": "8ec5b8a3e07837c85fb6e06c952cff1621fecc51",
-  "scope": "Core DSP/scene files only; no changes to accepted audio; this is not physical audio verification.",
+  "approvedRelease": "P102.3 Refined Clarity — owner-approved integration (not a public release tag)",
+  "approvedSourceSha": "3095af08b817d59a3e14874dab404bf6e243f38a",
+  "scope": "Exact owner-approved P102.3 acoustic sources; source identity only, not hardware certification.",
   "files": [
     {
       "path": "engine/builtin_fx/ImerSipP92Processor.h",
-      "blob": "bb57cdd189318a9beb5865cf8434c5b2d28fc847"
+      "blob": "5c0f1b18eb6ab11604b4efab1d353ed7cff63edd"
     },
     {
       "path": "engine/builtin_fx/ImerSipP92Scene.h",
@@ -17,8 +17,12 @@
       "blob": "5a6a9b48cfdc60729f130c61110c8d8590b20f35"
     },
     {
+      "path": "engine/builtin_fx/sonku/SonKuFixedPaMusicalEq.h",
+      "blob": "00a7ac4fb54b7f4f2d5fb0be0da87be8371ab31b"
+    },
+    {
       "path": "engine/builtin_fx/sonku/SonKuHrtfTonalCalibration.h",
-      "blob": "233e2b26caf51e88df4ed82babc442f2b341c2d7"
+      "blob": "d59c83af61c4696bf23327de46c5819eb22f4a34"
     },
     {
       "path": "engine/builtin_fx/sonku/SonKuImmerSIBVocalRoom.h",
@@ -58,7 +62,7 @@
     },
     {
       "path": "engine/builtin_fx/sonku/SonKuP90StereoDecoder.h",
-      "blob": "f760c673dec8031f4dfcc76d6f1fee36beffa043"
+      "blob": "4c77267b0e46d79200e523dc26a509625b7a6f7e"
     },
     {
       "path": "engine/builtin_fx/sonku/SonKuP91P92WorldBassFoundation.h",
@@ -66,7 +70,7 @@
     },
     {
       "path": "engine/builtin_fx/sonku/SonKuP94FrontBackDepthCue.h",
-      "blob": "f0f88088c68ef6865d64c240c4c87accaf136070"
+      "blob": "41395d136a5928cd0fda950436d8b4f69ce834a1"
     },
     {
       "path": "engine/builtin_fx/sonku/SonKuP95MusicalPresence.h",
@@ -78,11 +82,11 @@
     },
     {
       "path": "engine/builtin_fx/sonku/SonKuP97StageImpact.h",
-      "blob": "5384fd3cc67c31f0a8038b315856d20933249b5b"
+      "blob": "a183c29a9c4df3122325f8fb8f113605786f7ea9"
     },
     {
       "path": "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h",
-      "blob": "5ec8d135d54e846c3f8d86d80202c29de67b724f"
+      "blob": "b3125950536d9fb9e16d948da2cfe53f92718185"
     },
     {
       "path": "engine/builtin_fx/sonku/SonKuP99DefaultOrbitStage.h",
@@ -106,7 +110,7 @@
     },
     {
       "path": "engine/builtin_fx/sonku/SonKuSpatialCore.h",
-      "blob": "f9fdcdec933bc62710bdb84fa44c0830bdc16868"
+      "blob": "f9a02f3eb7c04b1d84bdbc14d3d270d94f5fec69"
     },
     {
       "path": "engine/builtin_fx/sonku/SonKuStereoIntegrity.h",
@@ -118,7 +122,15 @@
     },
     {
       "path": "engine/builtin_fx/SonKuSpatialProcessor.h",
-      "blob": "6f0bfc3cfe7a68eaa71084bd64ea03fe7c1ba587"
+      "blob": "e55f83d758cb3cb5d2f01999e99e1ff1314293ff"
     }
-  ]
+  ],
+  "approval": {
+    "date": "2026-11-22",
+    "pr": 863,
+    "listeningArtifactId": 14741137781,
+    "qualificationRunId": 44989974839,
+    "status": "owner_approved_for_main_integration",
+    "previousManifest": "config/archive/immersib_approved_pcm_sources_alpha26.json"
+  }
 }

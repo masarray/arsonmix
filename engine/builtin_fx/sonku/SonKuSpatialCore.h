@@ -4,6 +4,9 @@
 #include "SonKuEarlyReflections.h"
 #include "SonKuMusicalReverb.h"
 #include "SonKuStereoIntegrity.h"
+#if defined(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH) && ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH
+#include "SonKuFixedPaMusicalEq.h"
+#endif
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
 #if !defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) || !SONKU_P82_MULTIBAND_ROOM_RESEARCH || \
     !defined(SONKU_P71_DIRECT_XYZ_RESEARCH) || !SONKU_P71_DIRECT_XYZ_RESEARCH
@@ -228,16 +231,36 @@ public:
 #if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
     void optInImmerSIBVocalRoom() noexcept {immersibP99Enabled_=true;}
 #endif
+#if defined(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH) && ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
+    // CONTROL thread before prepare; this is a per-instance product mode,
+    // not a scene setting, a global variable or a new .smix field.
+    void optInImmerSIBStageMonitor() noexcept {
+        stageMonitor_=true;
+        p90Decoder_.useFixedFrontStage(true);
+        p98Voicing_.enableFixedStageWarmth(true);
+        p97Stage_.suppressStageMidBoost(true);
+    }
+#endif
+#if defined(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH) && ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH
+    void optInImmerSIBMusicalEq() noexcept { musicalEqEnabled_=stageMonitor_; }
+#endif
     bool prepare(double rate, SonKuReflectionProfile profile=
                  SonKuReflectionProfile::Lightweight) noexcept {
         ready_=false;
         if(!std::isfinite(rate) || (std::abs(rate-44100.)>.1 &&
                                     std::abs(rate-48000.)>.1))return false;
         sampleRate_=rate;
+#if defined(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH) && ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH
+        if(musicalEqEnabled_ && !musicalEq_.prepare(rate))return false;
+#endif
         bank_=(std::abs(rate-44100.)<=.1)?hrir::normal44100:hrir::normal48000;
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
+        float extraDirectReliefDb=0.f;
+#if defined(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH) && ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
+        if(stageMonitor_)extraDirectReliefDb=3.0f; // fixed DIRECT HRTF pinna relief; no content detector
+#endif
         if(profile==SonKuReflectionProfile::SixSurfaceKemarResearch &&
-           !tonalCalibration_.prepare(rate,bank_))return false;
+           !tonalCalibration_.prepare(rate,bank_,extraDirectReliefDb))return false;
 #endif
         // Prepared control-side: continuous coefficient and gain smoothing
         // without trigonometric/exponential work in the audio callback.
@@ -317,6 +340,9 @@ public:
         return settings_.spacePreset==0 || applyAcousticSettings(settings_);
     }
     void reset() noexcept {
+#if defined(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH) && ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH
+        musicalEq_.reset();
+#endif
         for(auto& channel:history_)channel.fill(0.f);
         for(auto& source:kernels_)for(auto& ear:source)ear.fill(0.f);
         for(auto& source:targets_)for(auto& ear:source)ear.fill(0.f);
@@ -1239,6 +1265,11 @@ public:
                     // Single native PCM graph, no WebAudio or dynamic makeup
                     // at 0% spatial MIX. Explicit user GAIN still applies.
                     if(settings_.spatialMix>0.f){
+#if defined(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH) && ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
+                        // Experiment: no content-dependent automatic makeup.
+                        // Keep original operator trim and existing linked peak guard.
+                        if(!stageMonitor_) {
+#endif
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
                         const float makeup=p95Presence_.process(x0,x1,outL,outR,
                             immersiveWarm?1.10f:1.65f);
@@ -1246,6 +1277,9 @@ public:
                         const float makeup=p95Presence_.process(x0,x1,outL,outR);
 #endif
                         outL*=makeup;outR*=makeup;
+#if defined(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH) && ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
+                        }
+#endif
                     }
                 }
 #endif
@@ -1286,6 +1320,16 @@ public:
 #endif
                 left[i]=outL*limiterGain_;
                 right[i]=outR*limiterGain_;
+#if defined(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH) && ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH
+                // Exact 6399c0f5 renderer and limiter have already finished.
+                // This is the user's external PEQ workflow, inside the insert.
+                // Never feed its result back into stage, room or original limiter.
+                if(musicalEqEnabled_) {
+                    if(p90World && roomEnabled && settings_.spatialMix>0.f)
+                        musicalEq_.process(left[i],right[i],smoothedMix_);
+                    else musicalEq_.reset();
+                }
+#endif
             }
             if(++write_==taps)write_=0;
             if(step!=0.) {
@@ -1486,6 +1530,12 @@ private:
                 p90Decoder_.compose(centerTarget_,targets_[0],targets_[1]);
                 p92Bass_.updateDirections(positions.leftHead,positions.rightHead);
 #if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
+#if defined(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH) && ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
+                if(stageMonitor_) {
+                    p94Depth_.retargetStereo(positions.leftHead,positions.rightHead,
+                        settings_.spacePreset!=0 && settings_.roomAmount>0.f);
+                } else
+#endif
                 p94Depth_.retarget(p83::toHead(static_cast<float>(degrees_),p83HeadYaw_),
                                   settings_.spacePreset!=0 && settings_.roomAmount>0.f);
 #endif
@@ -1577,6 +1627,13 @@ private:
     double degrees_=0.;
     int write_=0;
     int remaining_=0;
+#if defined(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH) && ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
+    bool stageMonitor_=false;
+#if defined(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH) && ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH
+    p102::FixedPaMusicalEq musicalEq_{};
+    bool musicalEqEnabled_=false;
+#endif
+#endif
     bool ready_=false;
     bool haveKernel_=false;
     bool nativeSpaceEverUsed_=false;

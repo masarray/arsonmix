@@ -5,6 +5,22 @@ project(ARMixConsole VERSION 0.5.0 LANGUAGES C CXX)
 # local/research builds default OFF, preserving approved SonKu P9.9 behavior.
 option(ARMIX_IMMERSIB_RELEASE_CANDIDATE
        "Build the integrated ImmerSIB P9.9 audio + JUCE venue UI RC" OFF)
+# Owner-approved 2026-11-22: P102.3 is the branded ImmerSIB profile.
+# Retain historical option names for reproducible builds; ordinary SonKu
+# still has no per-instance opt-in. The release flag selects both together.
+option(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
+       "ImmerSIB approved Fixed PA stage (historical flag name)" ${ARMIX_IMMERSIB_RELEASE_CANDIDATE})
+if(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH AND NOT ARMIX_IMMERSIB_RELEASE_CANDIDATE)
+  message(FATAL_ERROR "ImmerSIB stage research requires branded candidate")
+endif()
+option(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH "ImmerSIB approved P102.3 musical EQ (historical flag name)" ${ARMIX_IMMERSIB_RELEASE_CANDIDATE})
+if(ARMIX_IMMERSIB_RELEASE_CANDIDATE AND
+   (NOT ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH OR NOT ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH))
+  message(FATAL_ERROR "Branded ImmerSIB requires owner-approved P102.3 Fixed PA + Musical EQ; reconfigure both flags ON")
+endif()
+if(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH AND NOT ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH)
+  message(FATAL_ERROR "Musical EQ requires Fixed PA research")
+endif()
 # Experimental P6 native profile: OFF by default in production/installer.
 option(ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT
        "Enable unqualified SonKu full KEMAR directional reflections on the native JUCE callback"
@@ -493,6 +509,13 @@ if(ARMIX_IMMERSIB_RELEASE_CANDIDATE)
   target_compile_definitions(ARMixConsole PRIVATE
       ARMIX_IMMERSIB_RELEASE_CANDIDATE=1
       SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH=1)
+  if(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH)
+    target_compile_definitions(ARMixConsole PRIVATE
+        ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH=1)
+    if(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH)
+      target_compile_definitions(ARMixConsole PRIVATE ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH=1)
+    endif()
+  endif()
 endif()
 
 if(WIN32)
@@ -592,6 +615,21 @@ if(BUILD_TESTING)
         SONKU_IMMERSIB_PCM_DIAGNOSTICS=1)
     add_test(NAME NativeImmerSIBP99VocalRoomAndVenueGolden
         COMMAND ARMixImmerSIBP99NativeSonicGate)
+    if(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH)
+      add_executable(ARMixImmerSIBMusicalEqTests tests/immersib_fixed_pa_musical_eq_test.cpp)
+      target_compile_features(ARMixImmerSIBMusicalEqTests PRIVATE cxx_std_20)
+      target_compile_definitions(ARMixImmerSIBMusicalEqTests PRIVATE ${IMMERSIB_RC_DEFINES})
+      add_test(NAME NativeImmerSIBFixedPaPlusMusicalEq COMMAND ARMixImmerSIBMusicalEqTests)
+    endif()
+    if(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH)
+      add_executable(ARMixImmerSIBFixedStageTests
+          tests/immersib_fixed_stage_monitor_test.cpp)
+      target_compile_features(ARMixImmerSIBFixedStageTests PRIVATE cxx_std_20)
+      target_compile_definitions(ARMixImmerSIBFixedStageTests
+          PRIVATE ${IMMERSIB_RC_DEFINES})
+      add_test(NAME NativeImmerSIBFixedStageNoSpectralMaskingAndFullPCM
+          COMMAND ARMixImmerSIBFixedStageTests)
+    endif()
   endif()
 
   # Native 8D-SonKu non-JUCE measured-HRIR PCM and deterministic orbit fixture.

@@ -52,7 +52,15 @@ class SpatialAuthorityContract(unittest.TestCase):
         # update to make this check green.
         # Immutable historical P9.2 checkpoint is still recorded above;
         # intentional owner-directed forward port pins the P9.8 source blobs.
-        pinned=self.record["immersibP98Integration"]["acousticSourceBlobSha1"]
+        historical=self.record["immersibP98Integration"]["acousticSourceBlobSha1"]
+        self.assertEqual(historical["engine/builtin_fx/sonku/SonKuSpatialCore.h"],
+                         "f9fdcdec933bc62710bdb84fa44c0830bdc16868")
+        accepted=self.record["immersibP1023Integration"]
+        self.assertEqual(accepted["approvedAuditionSha"],"3095af08b817d59a3e14874dab404bf6e243f38a")
+        self.assertEqual(accepted["ownerListeningStatus"],"approved_by_owner_2026-11-22_for_main_integration")
+        pinned=accepted["acousticSourceBlobSha1"]
+        lock=json.loads(read("config/immersib_approved_pcm_sources.json"))
+        self.assertEqual(pinned,{x["path"]:x["blob"] for x in lock["files"]})
         self.assertGreaterEqual(len(pinned),7)
         for path,expected in pinned.items():
             raw=(ROOT/path).read_bytes()
@@ -136,6 +144,10 @@ class SpatialAuthorityContract(unittest.TestCase):
         self.assertIn("ARMIX_IMMERSIB_RELEASE_CANDIDATE",cmake)
         self.assertIn("NativeImmerSIBP99VocalRoomAndVenueGolden",cmake)
         self.assertIn("NativeImmerSIBJucePresetACKStateAndBypass",cmake)
+        self.assertIn("NativeImmerSIBFixedPaPlusMusicalEq",cmake)
+        self.assertIn('Branded ImmerSIB requires owner-approved P102.3',cmake)
+        self.assertGreaterEqual(cmake.count(' ${ARMIX_IMMERSIB_RELEASE_CANDIDATE})'),2)
+        self.assertIn("ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH",cmake)
         self.assertIn("ARMIX_SONKU_APPROVED_P99_MAIN",cmake)
         self.assertIn('"mainP99Preserved": true',
                       read("config/spatial_audio_authority.json"))

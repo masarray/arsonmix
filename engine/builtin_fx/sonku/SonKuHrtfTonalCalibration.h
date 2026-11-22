@@ -17,7 +17,7 @@ namespace armix::sonku {
 class SonKuHrtfTonalCalibration final {
 public:
     using Bank=const std::int16_t (*)[2][hrir::taps];
-    bool prepare(double rate,Bank bank) noexcept {
+    bool prepare(double rate,Bank bank,float extraFrontReliefDb=0.f) noexcept {
         if(!bank || !std::isfinite(rate) || rate<40000. || rate>50000.)return false;
         constexpr double eps=1.e-8;
         // Horizontal geometric mean of measured ear response; NOT a measured
@@ -32,6 +32,10 @@ public:
         // to retain the source-localization HRTF's pinna features.
         presenceDb_=static_cast<float>(std::clamp(
             -20.*std::log10(middle/adjacent),-5.5,0.));
+        // Stage-monitor A/B: reuse the SAME calibrated ear-linked DIRECT
+        // bell (no new notch or time-varying EQ). Keep legacy exact at 0.
+        if(std::isfinite(extraFrontReliefDb) && extraFrontReliefDb>0.f)
+            presenceDb_-=std::clamp(extraFrontReliefDb,0.f,1.2f);
         // Never invert 8k pinna notches fully: modest broad air return.
         airDb_=static_cast<float>(std::clamp(
             .40*20.*std::log10(low/treble),0.,4.));

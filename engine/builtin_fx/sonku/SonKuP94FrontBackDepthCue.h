@@ -44,6 +44,22 @@ public:
         const float frac=d-lo;
         target_=shape_[lo]*(1.f-frac)+shape_[lo+1]*frac;
     }
+    // Two real virtual concert PA sources: calculate EARLY/DIRECT depth
+    // from their ACTUAL head-relative positions, not one imaginary center
+    // speaker. This is the useful v7 spatial geometry correction retained
+    // after rejecting v7's time-changing MID/SIDE masking.
+    // For non-opted-in product paths, retarget() stays byte-for-byte same.
+    // Called at existing 16-sample retarget, table lookups only.
+    void retargetStereo(float leftHead,float rightHead,
+                        bool roomWithEarly) noexcept {
+        if(!std::isfinite(leftHead) || !std::isfinite(rightHead)) {
+            enabled_=false;target_=0.f;return;
+        }
+        retarget(leftHead,roomWithEarly);
+        const float leftTarget=target_;
+        retarget(rightHead,roomWithEarly);
+        target_=.5f*(leftTarget+target_);
+    }
     Gains next() noexcept {
         weight_+=slew_*(target_-weight_);
         if(std::abs(weight_-target_)<1.e-6f)weight_=target_;

@@ -116,7 +116,9 @@ jobs:
           # The official Windows prerelease MUST contain both public FX.
           $cache = @(Get-Content -LiteralPath build/CMakeCache.txt -Encoding UTF8)
           foreach ($entry in @('ARMIX_IMMERSIB_RELEASE_CANDIDATE:BOOL=ON',
-                                'ARMIX_SONKU_APPROVED_P99_MAIN:BOOL=ON')) {
+                                'ARMIX_SONKU_APPROVED_P99_MAIN:BOOL=ON',
+                                'ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH:BOOL=ON',
+                                'ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH:BOOL=ON')) {
             if ($entry -notin $cache) { throw "PUBLIC_SPATIAL_FX_RELEASE_FLAG_MISSING: $entry" }
           }
           node scripts/check_approved_native_gui_release.mjs --source-only --bundle build/approved_gui

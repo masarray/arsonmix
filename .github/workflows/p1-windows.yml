@@ -381,7 +381,9 @@ jobs:
           if ($env:FAT_SPATIAL_PRODUCTS -eq 'true') {
             $cache = @(Get-Content -LiteralPath build/CMakeCache.txt -Encoding UTF8)
             foreach ($flag in @('ARMIX_IMMERSIB_RELEASE_CANDIDATE:BOOL=ON',
-                                'ARMIX_SONKU_APPROVED_P99_MAIN:BOOL=ON')) {
+                                'ARMIX_SONKU_APPROVED_P99_MAIN:BOOL=ON',
+                                'ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH:BOOL=ON',
+                                'ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH:BOOL=ON')) {
               if ($flag -notin $cache) { throw "WINDOWS_FAT_SPATIAL_CONFIG_MISMATCH: $flag" }
             }
             Write-Host 'WINDOWS_FAT_SPATIAL_CONFIG_VERIFIED: SonKu P9.9 + ImmerSIB'

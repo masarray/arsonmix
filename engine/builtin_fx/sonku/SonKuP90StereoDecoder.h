@@ -26,11 +26,20 @@ public:
         reset();
         return true;
     }
+    // ImmerSIB research: one STATIONARY phantom-front interpolation of
+    // measured speaker + center HRIRs. Preserve v7's forward vocal focus,
+    // but NEVER retarget it from a music-dependent correlation detector.
+    // The differential H_L-H_R stereo transfer is unchanged.
+    void useFixedFrontStage(bool enabled) noexcept {
+        staticStage_=enabled;
+        reset();
+    }
     void reset() noexcept {
         energyLeft_=energyRight_=cross_=0.f;
-        centerBlend_=1.f; // safe mono on first transient / cold prepare
+        centerBlend_=staticStage_?stageFrontBlend_:1.f; // published cold start untouched
     }
     void observe(float left,float right) noexcept {
+        if(staticStage_)return; // no signal-dependent spatial EQ / retarget
         const float l=std::clamp(left,-4.f,4.f);
         const float r=std::clamp(right,-4.f,4.f);
         energyLeft_+=evidenceAlpha_*(l*l-energyLeft_);
@@ -38,6 +47,7 @@ public:
         cross_+=evidenceAlpha_*(l*r-cross_);
     }
     float centerBlend() noexcept {
+        if(staticStage_)return stageFrontBlend_; // same at every retarget
         // 1 sqrt per 16-sample FIR retarget, not each PCM sample.
         if(energyLeft_>1.e-8f || energyRight_>1.e-8f) {
             const float den=std::sqrt(std::max(energyLeft_*energyRight_,1.e-14f));
@@ -63,5 +73,7 @@ public:
 private:
     float evidenceAlpha_=0.f,smoothAlpha_=0.f;
     float energyLeft_=0.f,energyRight_=0.f,cross_=0.f,centerBlend_=1.f;
+    bool staticStage_=false; // default OFF, published SonKu bit-exact
+    static constexpr float stageFrontBlend_=0.58f; // fixed and frequency independent
 };
 } // namespace armix::sonku::p90
