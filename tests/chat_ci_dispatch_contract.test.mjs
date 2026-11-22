@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {parseMilestoneCommand,isTrustedOwnerComment,validateMilestone,
   hadEarlierIdenticalRequest,hasPriorDispatch,quickResult,performMilestone,
-  focusedHarmonyFileScope,parseWindowsMilestoneRun,guardWindowsMilestone}
+  focusedHarmonyFileScope,parseWindowsMilestoneRun,guardWindowsMilestone,
+  planSmartMilestone,verifySmartFast,performSmartMilestone}
   from '../scripts/chat_ci_dispatch.mjs';
 
 const sha='a'.repeat(40),repo='masarray/arsonmix';
@@ -19,7 +20,7 @@ const pr=(head=sha)=>({
 });
 
 test('owner command parser requires a single bounded command and lowercase SHA',()=>{
-  for(const lane of ['ui','native','fat','field'])
+  for(const lane of ['check','fast','full','ui','native','fat','field'])
     assert.deepEqual(parseMilestoneCommand('/arsonmix-ci '+lane+' '+sha),{lane,sha});
   for(const bad of ['/arsonmix-ci all '+sha,'/arsonmix-ci fat main',
     '/arsonmix-ci fat '+sha+'; rm -rf .','/arsonmix-ci fat '+sha+'\necho unsafe',
@@ -334,4 +335,145 @@ test('field preview dispatches exact source without cancelling native or another
       [windowsRun(3,lane,418,sha)],duplicate)})).reason,'portable-already-available-or-scheduled');
     assert.equal(duplicate.some(call=>call.method==='POST'),false);
   }
+});
+
+
+test('smart CI respects trusted merge-gate scope and never marks FAST as FULL',()=>{
+  const cases=[
+    {files:['docs/README.md'],fast:[],full:[]},
+    {files:['web/mixer-layout.js'],fast:[],full:['ui']},
+    {files:['engine/builtin_fx/ImerSipP92VisualSkin.h'],fast:['field'],full:['native']},
+    {files:['src/LiveAudioEngine.h','web/mixer-layout.js'],fast:['field'],
+     full:['ui','native']},
+    {files:['installer/ArSonMix.iss'],fast:['field'],full:['native']},
+    {files:['scripts/chat_ci_dispatch.mjs','tests/chat_ci_dispatch_contract.test.mjs'],
+     fast:[],full:[]}
+  ];
+  for(const sample of cases){
+    assert.deepEqual(planSmartMilestone(sample.files,'check').targets,[]);
+    assert.deepEqual(planSmartMilestone(sample.files,'fast').targets,sample.fast);
+    assert.deepEqual(planSmartMilestone(sample.files,'full').targets,sample.full);
+  }
+  assert.throws(()=>planSmartMilestone(['../unsafe'],'full'),/INVALID_PR_FILES/);
+  assert.throws(()=>planSmartMilestone([],'full'),/INVALID_PR_FILES/);
+  assert.throws(()=>planSmartMilestone(['src/Main.cpp'],'overwrite'),/CI_SMART_MODE_INVALID/);
+});
+
+test('smart CHECK verifies exact-SHA fast jobs, never requests paid workflows',async()=>{
+  const calls=[];
+  const request=event('/arsonmix-ci check '+sha);
+  const api=async(path,method,data)=>{
+    calls.push({path,method,data});
+    if(path.startsWith('/pulls/418/files'))return [{filename:'src/Main.cpp'}];
+    if(path.startsWith('/pulls/418'))return pr();
+    if(path.startsWith('/issues/418/comments'))return [];
+    if(path.includes('/actions/workflows/p1-windows.yml/runs?'))return {workflow_runs:[
+      {id:70,head_sha:sha,event:'pull_request',path:'.github/workflows/p1-windows.yml'}
+    ]};
+    if(path==='/actions/runs/70/jobs?per_page=100')return {jobs:[
+      {name:'Fast native contracts (no Windows / JUCE checkout)',conclusion:'success'}
+    ]};
+    if(path.includes('/actions/workflows/release-contracts.yml/runs?'))return {
+      workflow_runs:[{id:71,head_sha:sha,event:'pull_request',
+        path:'.github/workflows/release-contracts.yml'}]
+    };
+    if(path==='/actions/runs/71/jobs?per_page=100')return {jobs:[{
+      name:'No native compiler; owner authorization, catalog integrity and YAML shape',
+      conclusion:'success'
+    }]};
+    throw Error('UNEXPECTED_API '+path);
+  };
+  const got=await performSmartMilestone({event:request,repo,api});
+  assert.equal(got.kind,'checked');
+  assert.equal(got.proof.length,2);
+  assert.equal(calls.some(c=>c.method==='POST'),false);
+});
+
+test('smart FAST uses existing FIELD portable and FULL selects independent native + GUI',async()=>{
+  for(const [mode,expected] of [['fast',['field']],['full',['ui','native']]]){
+    const calls=[];
+    const request=event('/arsonmix-ci '+mode+' '+sha);
+    const api=async(path,method,data)=>{
+      calls.push({path,method:method||'GET',data});
+      if(path.startsWith('/pulls/418/files'))return [
+        {filename:'src/LiveAudioEngine.h'},{filename:'web/mixer-layout.js'}];
+      if(path.startsWith('/pulls/418'))return pr();
+      if(path.startsWith('/issues/418/comments'))return [];
+      if(path.includes('/actions/workflows/p1-windows.yml/runs?event=pull_request'))
+        return {workflow_runs:[{id:101,head_sha:sha,event:'pull_request'}]};
+      if(path.includes('/actions/workflows/ui-smoke.yml/runs?event=pull_request'))
+        return {workflow_runs:[{id:102,head_sha:sha,event:'pull_request'}]};
+      if(path==='/actions/runs/101/jobs?per_page=100')return {jobs:[{
+        name:'Fast native contracts (no Windows / JUCE checkout)',conclusion:'success'
+      }]};
+      if(path==='/actions/runs/102/jobs?per_page=100')return {jobs:[{
+        name:'Fast UI contracts (every relevant PR commit)',conclusion:'success'
+      }]};
+      if(path.includes('event=workflow_dispatch'))return {workflow_runs:[]};
+      if(path.endsWith('/dispatches'))return null;
+      throw Error('UNEXPECTED_API '+path);
+    };
+    const out=await performSmartMilestone({event:request,repo,api});
+    assert.equal(out.kind,'selected');
+    assert.deepEqual(out.results.map(r=>r.lane),expected);
+    const writes=calls.filter(c=>c.method==='POST');
+    assert.equal(writes.length,expected.length);
+    if(mode==='fast'){
+      assert.deepEqual(writes[0].data,{ref:'main',inputs:{
+        expected_sha:sha,package_fat:false,request_pr_number:'418',
+        field_preview:true
+      }});
+    }else{
+      assert.deepEqual(writes.map(x=>x.path),[
+        '/actions/workflows/ui-smoke.yml/dispatches',
+        '/actions/workflows/p1-windows.yml/dispatches'
+      ]);
+      assert.equal(writes[1].data.inputs.package_fat,false);
+    }
+  }
+});
+
+test('smart FAST/FULL never spend Windows on red, missing or stale quick source',async()=>{
+  const request=event('/arsonmix-ci fast '+sha);
+  for(const state of ['missing','failure','stale']){
+    const calls=[];
+    let pulled=0, waits=0;
+    const api=async(path,method,data)=>{
+      calls.push({path,method:method||'GET'});
+      if(path.startsWith('/pulls/418/files'))return [{filename:'src/Main.cpp'}];
+      if(path.startsWith('/pulls/418'))return pr(state==='stale'&&pulled++>0?
+        'b'.repeat(40):sha);
+      if(path.startsWith('/issues/418/comments'))return [];
+      if(path.includes('/actions/workflows/p1-windows.yml/runs?'))return {
+        workflow_runs:state==='missing'?[]:[{
+          id:9,head_sha:sha,event:'pull_request'
+        }]
+      };
+      if(path==='/actions/runs/9/jobs?per_page=100')return {jobs:[{
+        name:'Fast native contracts (no Windows / JUCE checkout)',
+        conclusion:state==='failure'?'failure':null
+      }]};
+      if(path.endsWith('/dispatches'))throw Error('UNEXPECTED_PAID_DISPATCH');
+      return {workflow_runs:[]};
+    };
+    const err=state==='missing'?/CI_SMART_FAST_MISSING/:
+      state==='failure'?/CI_SMART_FAST_FAILED/:/CI_STALE_SHA/;
+    await assert.rejects(performSmartMilestone({
+      event:request,repo,api,waitForQuick:async()=>{waits++;}
+    }),err);
+    assert.equal(calls.some(c=>c.method==='POST'),false);
+    assert.equal(waits,state==='stale'?1:0);
+  }
+});
+
+test('smart owner duplicate command is idempotent, no new expensive work',async()=>{
+  const req=event('/arsonmix-ci full '+sha);
+  const api=async(path)=>{
+    if(path.startsWith('/pulls/418'))return pr();
+    if(path.startsWith('/issues/418/comments'))return [{
+      id:47,body:req.comment.body,author_association:'OWNER',user:{login:'masarray'}
+    }];
+    throw Error('UNEXPECTED_DUPLICATE_API '+path);
+  };
+  assert.equal((await performSmartMilestone({event:req,repo,api})).reason,'duplicate');
 });
