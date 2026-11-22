@@ -59,4 +59,57 @@ for name in (*mixer,*editors):
             raise SystemExit("FX editor screenshot checksum/size mismatch: " + name)
     shutil.copyfile(source,target_media/name)
 shutil.copyfile(provenance_path,target_media / provenance_path.name)
-print("ARSONMIX_LANDING_ASSETS_STAGED",sum(p.stat().st_size for p in target_media.iterdir()))
+# Separate provenance: six Chromium WebView resources above are NOT Windows
+# screenshots. The seven media files below are owner-supplied genuine Windows
+# native JUCE windows, but they do NOT prove a qualified release/DSP signal.
+native_files = (
+    "fx-editor-immersib-front-row-power.jpg",
+    "fx-editor-immersib-symphonic-palace.jpg",
+    "fx-editor-immersib-velvet-cinema.jpg",
+    "fx-editor-immersib-arena-thunder.jpg",
+    "fx-editor-immersib-royal-concert-hall.jpg",
+    "fx-editor-immersib-concert-front-row-xl.jpg",
+    "fx-editor-guitar-rig-clean-studio.jpg",
+)
+native_manifest_file = "native-fx-capture-provenance.json"
+native_manifest_path = source_media / native_manifest_file
+if not native_manifest_path.is_file():
+    raise SystemExit("Missing native Windows screenshot provenance manifest")
+native_manifest = json.loads(native_manifest_path.read_text(encoding="utf-8"))
+if (native_manifest.get("schemaVersion") != 1 or
+        native_manifest.get("captureMode") != "owner-provided-windows-native-juce-screenshots" or
+        native_manifest.get("verifiedReleaseTag") is not None or
+        native_manifest.get("verifiedWindowsBinarySha") is not None):
+    raise SystemExit("Unrecognized or overclaimed native screenshot provenance")
+records = native_manifest.get("images")
+if not isinstance(records, list) or len(records) != len(native_files):
+    raise SystemExit("Native screenshot manifest must contain exactly seven captures")
+native_by_name = {r.get("file"):r for r in records if isinstance(r, dict)}
+if len(native_by_name) != len(native_files) or set(native_by_name) != set(native_files):
+    raise SystemExit("Native Windows screenshot filename list mismatch")
+for name in native_files:
+    original = source_media / name
+    rec = native_by_name[name]
+    expected_size = (1062, 672) if "guitar" in name else (937, 610)
+    if (rec.get("width"), rec.get("height")) != expected_size:
+        raise SystemExit("Native screenshot dimension claim mismatch: " + name)
+    if (rec.get("actualWindowsScreenshot") is not True or
+            rec.get("releasedInstallerVersionVerified") is not False or
+            rec.get("audioOrHardwareVerifiedByImage") is not False):
+        raise SystemExit("Native screenshot must not claim verified release or DSP FAT")
+    if "guitar" in name and "DSP OFFLINE" not in rec.get("capturedUiState", ""):
+        raise SystemExit("Guitar screenshot must report the visible DSP OFFLINE status")
+    source_digest = rec.get("originalSha256")
+    if (not isinstance(source_digest, str) or len(source_digest) != 64 or
+            any(c not in "0123456789abcdef" for c in source_digest)):
+        raise SystemExit("Missing original Windows PNG checksum: " + name)
+    if (not original.is_file() or original.stat().st_size < 50000 or
+            original.read_bytes()[:3] != b"\xff\xd8\xff"):
+        raise SystemExit("Missing/invalid native screenshot JPEG: " + name)
+    if (rec.get("sizeBytes") != original.stat().st_size or
+            rec.get("sha256") != sha256(original.read_bytes()).hexdigest()):
+        raise SystemExit("Native screenshot checksum/size mismatch: " + name)
+    shutil.copyfile(original, target_media / name)
+shutil.copyfile(native_manifest_path, target_media / native_manifest_file)
+print("ARSONMIX_LANDING_ASSETS_STAGED",
+      sum(p.stat().st_size for p in target_media.iterdir()))
