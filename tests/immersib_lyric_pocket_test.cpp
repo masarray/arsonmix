@@ -34,8 +34,11 @@ static void unit(int rate){
         const float x=.125f*float(std::sin(.21*i));
         auto y=p.process(x,-x,true);
         assert(y.left==x && y.right==-x);
-        y=p.process(x,x,false); // exercise both transitions
-        assert(std::isfinite(y.left));
+    }
+    for(int i=0;i<rate;++i){
+        const float x=.125f*float(std::sin(.21*i));
+        const auto y=p.process(x,x,i<rate/2); // exercise transitions independently
+        assert(std::isfinite(y.left) && y.left==y.right);
     }
     p.reset();auto y=p.process(.12f,-.08f,false);
     assert(y.left==.12f && y.right==-.08f);
