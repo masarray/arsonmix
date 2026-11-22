@@ -576,3 +576,22 @@ test("P0 approved Audio I/O latency shows real driver frames, never a fake loopb
                     "hostFxLatencyFrames","latencyClockScope","latencyProvenance"])
     assert.ok(host.includes("setProperty(\""+key+"\""));
 });
+
+test("IO diagnostics: selected Windows capture with zero active pins offers explicit verified pin Apply",()=>{
+ const f=fixture(),a={...f.active,backend:"Windows Audio",captureDevice:"VB-Cable",playbackDevice:"Headphones",inputNames:["Left","Right"],enabledInputs:[]};
+ const inv={active:a,types:[{name:"Windows Audio",separate:true,inputs:["VB-Cable"],outputs:["Headphones"]}]};
+ const draft=vm.setupDraft(inv),before=JSON.stringify(inv);
+ assert.match(vm.signalPathHint(a),/ZERO input pins/);
+ const recovered=vm.captureRecoveryDraft(inv,draft);
+ assert.deepEqual(recovered.inputPins,[0,1]);
+ assert.deepEqual(recovered.outputPins,draft.outputPins);
+ const begun=vm.setupBegin(vm.setupInitial(),{inventory:inv,draft:recovered,requestId:"enable-capture"});
+ assert.deepEqual(begun.request.config.enabledInputs,[0,1]);
+ assert.equal(JSON.stringify(inv),before);
+ assert.equal(vm.captureRecoveryDraft({...inv,active:{...a,inputNames:[]}},draft),null);
+ assert.equal(vm.captureRecoveryDraft({...inv,active:{...a,authorized:false}},draft),null);
+ assert.equal(vm.captureRecoveryDraft(inv,{...draft,capture:""}),null);
+ assert.equal(vm.captureRecoveryDraft(inv,{...draft,inputPins:[1]}),null);
+ assert.equal(vm.captureRecoveryDraft(f.inventory,f.draft),null);
+ assert.match(vm.signalPathHint({...a,inputNames:[]}),/driver reports no input pins/);
+});
