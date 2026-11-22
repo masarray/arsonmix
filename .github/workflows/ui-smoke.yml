@@ -540,6 +540,9 @@ jobs:
       - name: Verify ONLY approved public GUI /preview/ with PNG hardware keys
         run: |
           python scripts/build_pages.py --out dist-pages --sha "${{ github.event_name == 'workflow_dispatch' && inputs.expected_sha != '' && inputs.expected_sha || github.sha }}" --branch main
+          # Match BOTH public Pages builders: the assembler intentionally does
+          # not copy landing CSS, downloads JS or real mixer screenshots.
+          python scripts/build_landing_assets.py dist-pages
           python tests/single_preview_publication_contract_test.py dist-pages
       - name: Validate smart audio architecture handoff contract
         run: node --test tests/smart_audio_ard_contract_test.mjs
@@ -552,6 +555,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install playwright
           python -m playwright install --with-deps chromium
+      - name: Landing public storefront desktop/mobile Chromium and download journey
+        run: python tests/landing_page_browser_smoke.py
       # Fail fast: clipped editor is the actual PR feature gate. Testing it
       # before the full GUI regression avoids 70 unrelated Chromium probes
       # hiding a small local pointer/geometry failure for 6+ minutes.
@@ -883,6 +888,7 @@ jobs:
         with:
           name: arsonmix-gui-current-smoke
           path: |
+            landing-v1-*.png
             pages-wire-main-*.png
             pages-v53-fx-rail-*.png
             pages-v51-portrait-meter-*.png
