@@ -233,7 +233,7 @@ public:
     // not a scene setting, a global variable or a new .smix field.
     void optInImmerSIBStageMonitor() noexcept {
         stageMonitor_=true;
-        p90Decoder_.useUnmodulatedStageKernels(true);
+        p90Decoder_.useFixedFrontStage(true);
         p98Voicing_.enableFixedStageWarmth(true);
         p97Stage_.suppressStageMidBoost(true);
     }
