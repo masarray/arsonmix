@@ -16,7 +16,11 @@ from pathlib import Path
 from threading import Thread
 import json
 import os
+import subprocess
+import sys
 import tempfile
+
+from PIL import Image
 
 from playwright.sync_api import sync_playwright
 
@@ -132,6 +136,32 @@ def capture():
             server.server_close()
             thread.join(timeout=5)
     assert len(records) == len(CASES)
+    # Harmonice's separate HWND shell starts with a control-only fixture;
+    # capture instead from the approved native Harmony browser regression,
+    # after its accepted snapshot paints the complete original editor.
+    subprocess.run(
+        [sys.executable, str(ROOT / "tests/approved_native_harmony_smoke.py")],
+        check=True,
+        cwd=ROOT,
+    )
+    harmonice_png = ROOT / "arsonmix-native-harmony-editor-pitch-tune-on.png"
+    assert harmonice_png.is_file(), "Accepted Harmonice editor capture missing"
+    with Image.open(harmonice_png) as original:
+        assert original.width >= 790 and original.height >= 330
+        original.convert("RGB").save(
+            OUT / "fx-editor-harmonice.jpg", "JPEG", quality=88, optimize=True
+        )
+    for record in records:
+        if record["file"] == "fx-editor-harmonice.jpg":
+            img = OUT / record["file"]
+            record["sizeBytes"] = img.stat().st_size
+            record["sha256"] = sha256(img.read_bytes()).hexdigest()
+            record["source"] = (
+                "approved JUCE WebView2 Harmonice editor rendered with "
+                "accepted emulator readback in Chromium"
+            )
+    for leftover in ROOT.glob("arsonmix-native-harmony-editor-*.png"):
+        leftover.unlink()
     provenance = {
         "schemaVersion": 1,
         "sourceCommit": os.environ.get("GITHUB_SHA", "local"),

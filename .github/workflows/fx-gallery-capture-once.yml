@@ -30,7 +30,7 @@ jobs:
           node-version: '22'
       - name: Install Chromium capture prerequisites
         run: |
-          python -m pip install playwright
+          python -m pip install playwright Pillow
           python -m playwright install --with-deps chromium
       - name: Capture original approved native FX windows
         run: python scripts/capture_public_fx_gallery.py
