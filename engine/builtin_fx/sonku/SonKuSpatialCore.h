@@ -237,10 +237,16 @@ public:
     // available for a controlled full-PCM A/B against v5; branded JUCE
     // calls the default=true v5 behavior. No saved-state/UI ABI change.
     void optInImmerSIBConcertCandidate(bool physicalStageP94=true,
-                                       bool directComfortV6=true) noexcept {
+                                       bool directComfortV6=true,
+                                       bool musicalBalanceV7=true) noexcept {
         immersibConcertCandidate_=true;
         immersibPhysicalStageP94_=physicalStageP94;
         immersibFrontComfortV6_=directComfortV6;
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+        p98Voicing_.enableImmerSIBMusicalBalance(musicalBalanceV7);
+#else
+        (void)musicalBalanceV7;
+#endif
         // The v1 pan-purity gate pushed the musical center too far away.
         // Restore a bounded phantom-front response without changing actual
         // stage geometry, adding a dry HRTF, or touching the bass renderer.

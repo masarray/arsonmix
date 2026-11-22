@@ -53,19 +53,33 @@ try {
 } finally {$stream.Dispose()}
 if(Test-Path -LiteralPath $OutputDir){throw "IMMERSIB_AB_STALE_PACKAGE_DIR"}
 New-Item -ItemType Directory -Path $OutputDir | Out-Null
-$name="ArSonMix-ImmerSIB-V6-Direct-Comfort-Windows-x64.exe"
+$name="ArSonMix-ImmerSIB-V7-Musical-Balance-Windows-x64.exe"
 $dest=Join-Path $OutputDir $name
 Copy-Item -LiteralPath $exe -Destination $dest
 "ARSONMIX_PORTABLE_WORKSPACE_V1" | Set-Content -LiteralPath (Join-Path $OutputDir "portable_mode.txt") -Encoding UTF8
 Copy-Item -LiteralPath "docs/FIRST_SOUND_FAT_QUICKSTART_20261101.md" -Destination (Join-Path $OutputDir "HARDWARE_FAT_GUIDE.md")
 Copy-Item -LiteralPath "installer/ArSonMixStartupDiagnostics.ps1" -Destination $OutputDir
 @'
-# ArSonMix ImmerSIB v6 — direct-HRTF 2k comfort, EXPERIMENTAL A/B
+# ArSonMix ImmerSIB v7 — warm voice + gentle stereo upper-mid, EXPERIMENTAL A/B
 
 Portable Windows x64 KHUSUS uji listening, BUKAN installer/rilis stabil.
 Ekstrak dalam folder baru. Backup .smix dan sesi Studio lebih dahulu.
 Jangan menimpa instalasi ArSonMix produksi.
 
+V7 adalah A/B tonal baru berbasis screenshot EQ owner, bukan versi final:
+- Screenshot user v5: +3.3dB/Q0.64 di 272Hz dan tiga cut sekitar
+  2.2k / 3.5k / 5.5k (nilai cut terakhir tak terbaca tepat).
+- V7 TIDAK menyalin tiga notch sebagai filter baru. Pengaturan
+  opt-in P98 menaikkan kontribusi SOURCE 285Hz center band +0.22
+  dan memperkuat filter EAR 3450Hz yang sudah ada +0.24. Dua
+  parameter PRE-EXISTING ini tetap memakai gain slew 55ms.
+- V6 tetap menjaga DIRECT P80 2.2k correction; P98 ear de-harsh
+  membentuk relief musik 3–6k di output tanpa menambah delay/FFT.
+- 7 preset, P90 posisi depan, real stereo speaker angles, bass/room
+  IR/FDN dan native mixer GUI tetap; output limiter tetap otoritatif.
+- Pembuktian elektronik bukan approval bunyi: uji langsung v6 vs v7
+  di 86/285/2050/3500/5200/5500Hz, room ON/OFF, mono/pan 44.1/48k.
+- DENGARKAN di volume rendah/dipadamkan bila masih tajam.
 Perubahan v6 dibanding v5 (feedback: mid 1–3k masih menusuk):
 - Pengukuran FULL P9 original v5 menghasilkan gain mono-center 2.05kHz
   sekitar +11.7dB pada scene Live Concert/44.1k sementara 285Hz +4.5dB.
@@ -84,7 +98,8 @@ Yang tetap sama dari v5:
 - Pada Live Concert 112 derajat (L=-56, R=+56), pengali P94 EARLY
   kira-kira 1.027 vs 1.280 pada v4, dengan direct lebih mendekati unity.
   Ini bukan EQ 1–3 kHz dan BUKAN pengurangan global semua reverb.
-- P98 dan P99: kembali ke source tonal main/alpha.31 yang disetujui.
+- P99 tetap sama seperti main; P98 mempergunakan filter 285/3450
+  yang sudah ada khusus pada build v7 (bukan update source approval).
   Tidak ada dynamic high-mid EQ/350Hz boost tambahan dari v2/v3.
 - Sudut speaker, bass, 6-surface floor/ceiling, FDN late hall, GUI FUX-1,
   IMRS/.smix, ASIO primary dan satu render PCM tetap sama.
@@ -98,7 +113,7 @@ Cara membandingkan (headphone, kerasnya disamakan):
 6. Bass, ambience akhir, mono/antiphase dan transien tidak boleh regresi.
 Jika timbul rasa menusuk/clicking, hentikan dan kembali ke versi nyaman.
 
-Eksperimen P94/P80 v6 diuji C++/PCM native, tetapi belum disetujui
+Eksperimen P94/P80/P98 v7 diuji C++/PCM native, tetapi belum disetujui
 secara musikal oleh pendengar/hardware. Lihat BUILD_PROVENANCE.json
 untuk commit exact, SHA256 executable dan flag kandidat. PR #857 DRAFT.
 Tidak boleh dianggap versi stable atau diumumkan sebagai installer resmi.
@@ -108,9 +123,9 @@ $manifest=[ordered]@{
  sourceCommit=$actual
  pr=857
  approvedFuxMainCheckpoint="527e0216d226904288c4fe2dd8a76169dfb4417d"
- candidateAudioRevision="v6-direct-HRTF-P80-measured-2k-comfort-plus-v5-P94-and-v4-front"
+ candidateAudioRevision="v7-existing-P98-warm285-EAR3450-plus-v6-direct-P80-v5-P94-v4-front"
  previouslyAuditionedReference="v4-pr857-3fd52a96f6a1e8c7716325342481704fd156f033"
- p98P99TonalSource="IDENTICAL_TO_APPROVED_MAIN"
+ p98P99TonalSource="P99_SAME_MAIN_P98_NEW_OPT_IN_V7_EXISTING_FILTER_WEIGHTS"
  releaseStatus="NOT_STABLE_NOT_AUDIO_APPROVED"
  stableSourceLock="8ec5b8a3e07837c85fb6e06c952cff1621fecc51"
  sourceLockRewritten=$false

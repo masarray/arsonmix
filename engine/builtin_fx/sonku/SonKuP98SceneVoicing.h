@@ -18,6 +18,11 @@ public:
     // 0..3 retain byte-for-byte matching coefficients and meaning.
     enum : int { Neutral=0, Signature=1, LiveStudio=2, Cinema=3,
                  ImmerSIBDetail=4, ImmerSIBImpact=5 };
+    // Opt-in V7, before prepare; old SonKu and published ImmerSIB voicings
+    // remain EXACTLY the old profile at zero. No extra IIR / delay.
+    void enableImmerSIBMusicalBalance(bool enabled) noexcept {
+        musicalBalanceV7_=enabled;
+    }
     bool prepare(double sampleRate) noexcept {
         if (!std::isfinite(sampleRate) ||
             (std::abs(sampleRate-44100.)>.1 && std::abs(sampleRate-48000.)>.1))
@@ -48,7 +53,20 @@ public:
     // gains, with no per-sample coefficient recompute, memory allocation or
     // trigonometry. Silent profile defaults never alter P9.7 float order.
     Stereo source(float left,float right,int scene,bool enabled) noexcept {
-        const auto target=curves_[enabled && valid(scene)?scene:Neutral];
+        auto target=curves_[enabled && valid(scene)?scene:Neutral];
+        // Owner listening v5: broad +3.3dB at 272Hz and distinct cuts
+        // around 2.2/3.5/5.5k made music comfortable. V6 already corrects
+        // the DIRECT HRTF 2.2k bump. V7 uses EXISTING 285Hz pre-HRTF body
+        // and 3.45k linked-EAR de-harsh, instead of another EQ graph.
+        // Their old 55ms slew prevents a sudden filter/gain jump.
+        // Mono-source center boost enters both physical speaker HRIRs;
+        // output EAR subtraction uses equal coefficients per ear and
+        // does not create a dry/side signal or change room geometry.
+        if(musicalBalanceV7_ && enabled &&
+           (scene==ImmerSIBDetail || scene==ImmerSIBImpact)) {
+            target[8]+=.22f;  // warm 285Hz body; <=2dB incremental
+            target[10]+=.24f; // broad 3.45k de-harsh, helps 2.5–6k
+        }
         for(unsigned i=0;i<gains_.size();++i){
             gains_[i]+=slew_*(target[i]-gains_[i]);
             if(std::abs(gains_[i]-target[i])<1.e-6f)gains_[i]=target[i];
@@ -173,5 +191,6 @@ private:
     float sideAirLow_=0.f;
     std::array<float,12> gains_{};
     float bassAlpha_=0.f,airAlpha_=0.f,slew_=0.f;
+    bool musicalBalanceV7_=false; // explicit ImmerSIB-only user A/B
 };
 } // namespace armix::sonku::p98

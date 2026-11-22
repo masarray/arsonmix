@@ -18,10 +18,10 @@ using armix::builtin_fx::imersipP92Factory;
 constexpr double pi=3.141592653589793238462643383279502884;
 struct ProbeResult {double db=0., peak=0., cap=0., makeup=0.;};
 static ProbeResult probe(int sr,int scene,int hz,bool candidate,bool stage,
-                         bool room,bool pan,bool comfort=false) {
+                         bool room,bool pan,bool comfort=false,bool balance=false) {
   auto dsp=std::make_unique<SonKuSpatialCore>();
   dsp->optInImmerSIBVocalRoom();
-  if(candidate)dsp->optInImmerSIBConcertCandidate(stage,comfort);
+  if(candidate)dsp->optInImmerSIBConcertCandidate(stage,comfort,balance);
   assert(dsp->prepare(sr,SonKuReflectionProfile::SixSurfaceKemarResearch));
   auto s=imersipP92Factory(scene);
   if(!room) {s.spacePreset=0;s.roomAmount=0.f;s.ambience=0.f;}
@@ -63,26 +63,43 @@ int main(){
     for(int scene:{2,4}){
       for(bool room:{false,true}){
         for(bool pan:{false,true}){
-          for(int hz:{285,950,1350,1700,1950,2050,2400,2900,4500}){
+          for(int hz:{86,285,950,1350,1700,1950,2050,2400,2900,
+                      3500,4500,5200,5500,6000,8000}){
             const auto neutral=probe(sr,scene,hz,false,true,room,pan);
             const auto v4=probe(sr,scene,hz,true,false,room,pan);
             const auto v5=probe(sr,scene,hz,true,true,room,pan,false);
-            const auto v6=probe(sr,scene,hz,true,true,room,pan,true);
+            const auto v6=probe(sr,scene,hz,true,true,room,pan,true,false);
+            const auto v7=probe(sr,scene,hz,true,true,room,pan,true,true);
             assert(std::isfinite(neutral.db)&&std::isfinite(v4.db)&&
-                   std::isfinite(v5.db)&&std::isfinite(v6.db));
+                   std::isfinite(v5.db)&&std::isfinite(v6.db)&&
+                   std::isfinite(v7.db));
+            if(!room) {
+                // Nothing added after P80 when physical concert hall OFF:
+                // original default direct-only V6 stays bit/DB identical.
+                assert(v7.db==v6.db);
+            } else {
+                // Both selected scenes have the same linked-ear P98 voicing
+                // 4/5. Bound any center-body increase and reject over-EQ.
+                if(hz==285)assert(v7.db > v6.db-.3 && v7.db < v6.db+3.5);
+                if(hz==86)assert(std::abs(v7.db-v6.db)<.40);
+                if(hz==3500 || hz==5200 || hz==5500) {
+                    assert(v7.db < v6.db-.55);
+                    assert(v7.db > v6.db-5.0);
+                }
+            }
             if(hz==2050 || hz==2400) {
                 // Owner's EQ is BEFORE hearing but AFTER ImmerSIB:
                 // prove the direct-binaural target itself is reduced.
                 assert(v6.db < v5.db - 1.9);
             }
             if(hz==285)assert(std::abs(v6.db-v5.db)<.5);
-            std::printf("IMMERSIB_MID_PROBE,sr=%d,scene=%d,room=%d,pan=%d,hz=%d,legacyDb=%.3f,v4Db=%.3f,v5Db=%.3f,v6Db=%.3f,diffV6V5=%.3f,limiter=%.5f,makeup=%.4f\n",
+            std::printf("IMMERSIB_MID_PROBE,sr=%d,scene=%d,room=%d,pan=%d,hz=%d,legacyDb=%.3f,v4Db=%.3f,v5Db=%.3f,v6Db=%.3f,v7Db=%.3f,diffV6V5=%.3f,diffV7V6=%.3f,limiter=%.5f,makeup=%.4f\n",
                sr,scene,int(room),int(pan),hz,neutral.db,v4.db,v5.db,
-               v6.db,v6.db-v5.db,v6.cap,v6.makeup);
+               v6.db,v7.db,v6.db-v5.db,v7.db-v6.db,v7.cap,v7.makeup);
           }
         }
       }
     }
   }
-  std::puts("IMMERSIB_MID_PROBE_PASS: P9 actual chain diagnostic, not acoustic acceptance");
+  std::puts("IMMERSIB_V7_MUSICAL_BALANCE_PROBE_PASS: real P9 chain, no acoustic approval");
 }
