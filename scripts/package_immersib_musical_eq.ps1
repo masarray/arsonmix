@@ -53,30 +53,32 @@ try {
 } finally {$stream.Dispose()}
 if(Test-Path -LiteralPath $OutputDir){throw "IMMERSIB_STAGE_STALE_PACKAGE_DIR"}
 New-Item -ItemType Directory -Path $OutputDir | Out-Null
-$name="ArSonMix-ImmerSIB-P102-Warm-Body-Windows-x64.exe"
+$name="ArSonMix-ImmerSIB-P102-Clarity-Separation-Windows-x64.exe"
 $dest=Join-Path $OutputDir $name
 Copy-Item -LiteralPath $exe -Destination $dest
 "ARSONMIX_PORTABLE_WORKSPACE_V1" | Set-Content -LiteralPath (Join-Path $OutputDir "portable_mode.txt") -Encoding UTF8
 Copy-Item -LiteralPath "docs/FIRST_SOUND_FAT_QUICKSTART_20261101.md" -Destination (Join-Path $OutputDir "HARDWARE_FAT_GUIDE.md")
 Copy-Item -LiteralPath "installer/ArSonMixStartupDiagnostics.ps1" -Destination $OutputDir
 @'
-# Fixed PA + Musical EQ (P102.1 Warm Body)
+# Fixed PA + Musical EQ (P102.2 Clarity & Separation)
 Experimental A/B only. Exact source baseline 6399c0f5, no P100/P101 algorithm.
 Original spatial output and limiter unchanged. Afterward a common PEQ:
 250Hz +5.5 Q .85 (warm-body refinement); 1120Hz +2.3 Q1.2 (unchanged);
-3240Hz high shelf +3.3; 7400Hz -1.8 Q1.1 (estimated).
+3240Hz high shelf +3.3; 7400Hz -1.8 Q1.1 (unchanged).
+Added 300Hz -2.5 Q2.2; 4460Hz +1.8 Q.77; 10000Hz +3 Q2.
+300Hz and 10k settings are graph-inspired estimates; 4460Hz read from screenshot.
 Screenshot-derived musical voicing, not inverse flattening. Extra linked
 peak protection only when the post-EQ sample exceeds .98. No automatic gain pad.
 Extract to separate folder. Compare with original Fixed PA at matched loudness,
-same scene and EQ bypassed on both. Also compare prior P102 f3f2fa7f.
-Avoid double EQ. Match perceived loudness, allow headroom (peak EQ ~+5.6dB).
+same scene and EQ bypassed on both. Compare prior P102.1 9fc749df.
+Avoid double EQ. Match perceived loudness, allow headroom (up to approximately +6dB steady-state EQ).
 Not production ready.
 '@ | Set-Content -LiteralPath (Join-Path $OutputDir "README_LISTENING_TEST.md") -Encoding UTF8
 $manifest=[ordered]@{
  schema="arsonmix.immersib-unapproved-fixed-stage.v1"
  sourceCommit=$actual
  parentMain="527e0216d226904288c4fe2dd8a76169dfb4417d"
- candidateAudioRevision="6399c0f5-exact-fixed-pa-then-musical-eq-v102.1-warm250"
+ candidateAudioRevision="6399c0f5-exact-fixed-pa-then-musical-eq-v102.2-clarity-separation"
  sourceLockRewritten=$false
  status="UNAPPROVED_HEADPHONE_AB_ONLY"
  executable=$name

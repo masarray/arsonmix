@@ -56,6 +56,13 @@ static double oldResponse(int rate,double f){
     return oldBell(rate,f,193,.53,2.8)+oldBell(rate,f,1120,1.2,2.3)+
         hi+oldBell(rate,f,7400,1.1,-1.8);
 }
+static double warmResponse(int rate,double f){
+    return oldResponse(rate,f)-oldBell(rate,f,193,.53,2.8)+oldBell(rate,f,250,.85,5.5);
+}
+static double separationResponse(int rate,double f){
+    return oldBell(rate,f,300,2.2,-2.5)+oldBell(rate,f,4460,.77,1.8)+
+        oldBell(rate,f,10000,2.,3.);
+}
 int main(){
     for(int rate:{44100,48000}){
         for(int scene:{2,3,4,5,6,7,8})for(int mode:{0,1,2}){
@@ -69,21 +76,25 @@ int main(){
             assert(actual==baseline);
         }
         for(int k=0;k<2;++k)assert(render(rate,2,0,false,128,k==0,k==1)==render(rate,2,0,true,128,k==0,k==1));
-        for(int hz:{40,60,86,100,150,193,220,250,300,350,400,500,560,800,1120,2000,3240,7400,10000}){
+        for(int hz:{40,60,86,100,150,193,220,250,300,350,400,500,560,800,1120,2000,3240,4460,5000,6000,7400,10000,12000,16000}){
             p102::FixedPaMusicalEq eq;assert(eq.prepare(rate));double before=0,after=0;
             for(int i=0;i<rate;++i){const float v=float(.04*std::sin(2*pi*hz*i/rate));float l=v,r=-v;eq.process(l,r,1.f);assert(l==-r);if(i>rate/2){before+=double(v)*v;after+=double(l)*l;}}
             const double db=10*std::log10(after/before);
-            const double prior=oldResponse(rate,hz),delta=db-prior;
-            assert(std::isfinite(db)&&db>-.25&&db<6.);
-            if(hz==193)assert(db>4.4 && db<4.8);
-            if(hz==220||hz==250||hz==300||hz==350)assert(delta>2.0&&delta<3.1);
-            if(hz==250)assert(db>5.4&&db<5.8);
-            if(hz<=100)assert(delta>=-.55&&delta<=.1);
-            if(hz==500)assert(delta<1.);
-            if(hz==800)assert(std::abs(delta)<.3);
-            if(hz>=1120)assert(std::abs(delta)<.15);
-            if(hz>=2000)assert(std::abs(delta)<.04);
-            std::printf("P102_WARM_EQ,%d,%d,%.5f,prior=%.5f,delta=%.5f\n",rate,hz,db,prior,delta);
+            const double prior=warmResponse(rate,hz),delta=db-prior;
+            // Compare actual PCM against the independent full cascade response
+            // at both rates, not just the three named centers.
+            assert(std::isfinite(db)&&db>-.25&&db<6.5);
+            assert(std::abs(delta-separationResponse(rate,hz))<.006);
+            if(hz<=100)assert(std::abs(delta)<.08);
+            if(hz==193)assert(db>4.0&&db<4.3);
+            if(hz==250)assert(db>3.9&&db<4.2);
+            if(hz==300)assert(delta< -2.4&&delta> -2.6&&db>2.5);
+            if(hz==500)assert(std::abs(delta)<.40);
+            if(hz==800)assert(std::abs(delta)<.02);
+            if(hz==1120)assert(std::abs(delta)<.17);
+            if(hz==4460||hz==5000)assert(delta>1.8&&delta<2.1);
+            if(hz==10000)assert(delta>3.3&&delta<3.6);
+            std::printf("P102_CLARITY_EQ,%d,%d,%.5f,prior=%.5f,delta=%.5f\n",rate,hz,db,prior,delta);
         }
         p102::FixedPaMusicalEq eq;assert(eq.prepare(rate));
         // Stress the new warmth band's maximum boost, and stereo-linked
@@ -91,7 +102,12 @@ int main(){
         for(int i=0;i<rate;++i){float l=.98f*std::sin(2*pi*250*i/rate),r=l;eq.process(l,r,1.f);assert(l==r&&std::abs(l)<=.981f);}
         eq.reset();
         for(int i=0;i<rate;++i){
-            const float x=static_cast<float>(.6*std::sin(2*pi*250*i/rate)+.3*std::sin(2*pi*1120*i/rate));
+            float l=.98f*std::sin(2*pi*10000*i/rate),r=-l;
+            eq.process(l,r,1.f);assert(l==-r&&std::abs(l)<=.981f);
+        }
+        eq.reset();
+        for(int i=0;i<rate;++i){
+            const float x=static_cast<float>(.35*std::sin(2*pi*250*i/rate)+.2*std::sin(2*pi*1120*i/rate)+.2*std::sin(2*pi*4460*i/rate)+.15*std::sin(2*pi*10000*i/rate));
             float l=x,r=.5f*x;eq.process(l,r,1.f);
             assert(std::isfinite(l)&&std::isfinite(r)&&std::abs(l)<=.981f&&std::abs(r)<=.981f);
             assert(std::abs(r-.5f*l)<1.e-6f);
