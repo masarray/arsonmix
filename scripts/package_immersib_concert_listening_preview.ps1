@@ -70,9 +70,10 @@ V7 adalah A/B tonal baru berbasis screenshot EQ owner, bukan versi final:
 - Screenshot user v5: +3.3dB/Q0.64 di 272Hz dan tiga cut sekitar
   2.2k / 3.5k / 5.5k (nilai cut terakhir tak terbaca tepat).
 - V7 TIDAK menyalin tiga notch sebagai filter baru. Pengaturan
-  opt-in P98 menaikkan kontribusi SOURCE 285Hz center band +0.22
-  dan memperkuat filter EAR 3450Hz yang sudah ada +0.24. Dua
-  parameter PRE-EXISTING ini tetap memakai gain slew 55ms.
+  opt-in P98 menerapkan +0.22 body 285Hz pada sinyal speaker
+  L dan R TERPISAH (koefisien BPF P98 yang sudah ada) sehingga gitar
+  hard-left tidak diberi center phantom tambahan. P98 filter EAR
+  3450Hz yang sudah ada +0.24. Semua gain slew 55ms.
 - V6 tetap menjaga DIRECT P80 2.2k correction; P98 ear de-harsh
   membentuk relief musik 3–6k di output tanpa menambah delay/FFT.
 - 7 preset, P90 posisi depan, real stereo speaker angles, bass/room

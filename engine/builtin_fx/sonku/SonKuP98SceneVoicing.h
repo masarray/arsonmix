@@ -45,6 +45,7 @@ public:
         bass_={};air_={};earlyAir_={};sidePresence1_={};
         sidePresence2_={};sideAirLow_=0.f;
         bodyCenter_={};sideEdge_={};earEdge_={};
+        warmStereo_={};warmStereoGain_=0.f;
     }
     static constexpr bool valid(int scene) noexcept {
         return scene>=Neutral && scene<=ImmerSIBImpact;
@@ -54,19 +55,28 @@ public:
     // trigonometry. Silent profile defaults never alter P9.7 float order.
     Stereo source(float left,float right,int scene,bool enabled) noexcept {
         auto target=curves_[enabled && valid(scene)?scene:Neutral];
-        // Owner listening v5: broad +3.3dB at 272Hz and distinct cuts
+        // Owner listening v5: +3.3dB at 272Hz and distinct cuts
         // around 2.2/3.5/5.5k made music comfortable. V6 already corrects
-        // the DIRECT HRTF 2.2k bump. V7 uses EXISTING 285Hz pre-HRTF body
-        // and 3.45k linked-EAR de-harsh, instead of another EQ graph.
-        // Their old 55ms slew prevents a sudden filter/gain jump.
-        // Mono-source center boost enters both physical speaker HRIRs;
-        // output EAR subtraction uses equal coefficients per ear and
-        // does not create a dry/side signal or change room geometry.
-        if(musicalBalanceV7_ && enabled &&
-           (scene==ImmerSIBDetail || scene==ImmerSIBImpact)) {
-            target[8]+=.22f;  // warm 285Hz body; <=2dB incremental
-            target[10]+=.24f; // broad 3.45k de-harsh, helps 2.5–6k
+        // DIRECT HRTF at 2.2k. V7 uses existing 285Hz BPF coefficients
+        // INDEPENDENTLY on L and R (pan preserving), plus the existing
+        // paired EAR 3.45k de-harsh to avoid another global EQ graph.
+        // Original 55ms slew prevents sudden changes. No dry/side injection.
+        const bool privateBalance=musicalBalanceV7_ && enabled &&
+            (scene==ImmerSIBDetail || scene==ImmerSIBImpact);
+        if(privateBalance) {
+            // Broad 3.45k existing ear contour, helps 2.5..6k without
+            // new global EQ, time-varying detector or directional HRIR.
+            target[10]+=.24f;
         }
+        // Warm body MUST NOT add equally to L and R source MID:
+        // a hard-left guitar would acquire a NEW right speaker channel.
+        // Use two independent states and ONE shared original BPF coeff so
+        // L and R receive exactly the SAME linear warm transfer: panned
+        // instrument position, source L/R phase and anti-phase are kept.
+        const float warmTarget=privateBalance?.22f:0.f;
+        warmStereoGain_+=slew_*(warmTarget-warmStereoGain_);
+        if(std::abs(warmStereoGain_-warmTarget)<1.e-6f)
+            warmStereoGain_=warmTarget;
         for(unsigned i=0;i<gains_.size();++i){
             gains_[i]+=slew_*(target[i]-gains_[i]);
             if(std::abs(gains_[i]-target[i])<1.e-6f)gains_[i]=target[i];
@@ -94,6 +104,16 @@ public:
         const float centerBoost=gains_[0]*band+gains_[8]*body;
         const float lateralAir=gains_[7]*(side-sideAirLow_);
         const float maskedSide=gains_[6]*sideBand+gains_[9]*edge;
+        if(warmStereoGain_!=0.f) {
+            // Already-prepared 285Hz BPF coeff; only two per-source state
+            // variables, no new filter design or new FIR/FX graph.
+            const float warmL=warmStereo_[0].run(bodyCoeff_,left);
+            const float warmR=warmStereo_[1].run(bodyCoeff_,right);
+            return {left+centerBoost-maskedSide+lateralAir+
+                        warmStereoGain_*warmL,
+                    right+centerBoost+maskedSide-lateralAir+
+                        warmStereoGain_*warmR};
+        }
         return {left+centerBoost-maskedSide+lateralAir,
                 right+centerBoost+maskedSide-lateralAir};
     }
@@ -188,9 +208,11 @@ private:
     std::array<float,2> bass_{},air_{},earlyAir_{};
     Filter sidePresence1_{},sidePresence2_{},bodyCenter_{},sideEdge_{};
     std::array<Filter,2> earEdge_{};
+    std::array<Filter,2> warmStereo_{}; // V7 actual L/R source only
     float sideAirLow_=0.f;
     std::array<float,12> gains_{};
     float bassAlpha_=0.f,airAlpha_=0.f,slew_=0.f;
     bool musicalBalanceV7_=false; // explicit ImmerSIB-only user A/B
+    float warmStereoGain_=0.f;      // original 55ms gain slew
 };
 } // namespace armix::sonku::p98
