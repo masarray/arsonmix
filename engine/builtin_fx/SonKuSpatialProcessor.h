@@ -456,6 +456,11 @@ public:
         (void)restoreUnpublishedState(data,size);
     }
 protected:
+#if defined(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH) && ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
+    void optInImmerSIBStageMonitor() noexcept {
+        core_.optInImmerSIBStageMonitor();
+    }
+#endif
 #if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
     // Distinct from approved 8D-SonKu P9.9; only ImmerSIB constructor opts in.
     void optInImmerSIBVocalRoom() noexcept {
