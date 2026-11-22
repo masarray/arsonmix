@@ -345,7 +345,9 @@ int main() {
     assert(editor && editor->findChildWithID("imersip.preset"));
     assert(editor->getWidth()==935 && editor->getHeight()==578);
     auto* visualEditor=dynamic_cast<armix::builtin_fx::ImerSipP92Editor*>(editor.get());
-    assert(visualEditor && visualEditor->areVisualAssetsReady());
+    assert(visualEditor && visualEditor->residentVenueCount()==0);
+    assert(visualEditor->areVisualAssetsReady());
+    assert(visualEditor->residentVenueCount()==6);
 
     // Actual compact native JUCE hit bounds: no overlapping controls,
     // labels/text remain independent from the background PNG scene.

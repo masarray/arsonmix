@@ -167,7 +167,8 @@ class ImerSipP92Contract(unittest.TestCase):
             self.assertTrue((ROOT/"assets/imersip/scenes"/name).exists())
             self.assertIn("BinaryData::scene_"+scene+"_png",skin)
         # Keep scene photo's aspect; do not stretch concert cabinets.
-        self.assertIn("g.drawImageWithin(*art",skin)
+        self.assertIn("g.drawImageWithin(art",skin)
+        self.assertIn("residentVenueCount() const noexcept",skin)
         self.assertNotIn("RectanglePlacement::fillDestination",skin)
         self.assertIn("const int x=252+317*col",ui)
         self.assertIn('button.getComponentID()=="imersip.power"',skin)

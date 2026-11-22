@@ -32,6 +32,11 @@ public:
                          &sceneImage(3),&sceneImage(4),&sceneImage(5)});
     }
     bool hasScenes() const { return ready(); }
+    std::size_t residentVenueCount() const noexcept {
+        return static_cast<std::size_t>(std::count_if(
+            sceneImages_.begin(),sceneImages_.end(),
+            [](const juce::Image& photo){return !photo.isNull();}));
+    }
     void drawScene(juce::Graphics& g,int presetId) const {
         std::size_t sceneIndex=0;
         switch(presetId){

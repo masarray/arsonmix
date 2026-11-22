@@ -142,7 +142,11 @@ public:
         room_.setLookAndFeel(nullptr);
         power_.setLookAndFeel(nullptr);
     }
-    bool areVisualAssetsReady() const noexcept {return skin_.ready();}
+    bool areVisualAssetsReady() const {return skin_.ready();}
+    // Message-thread diagnostic for optional low-spec asset profiling.
+    std::size_t residentVenueCount() const noexcept {
+        return skin_.residentVenueCount();
+    }
     void bindHostPower(std::function<bool(bool)> request,
                        std::function<HostBypassState()> readback) {
         requestBypass_=std::move(request);
