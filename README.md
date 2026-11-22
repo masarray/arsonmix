@@ -40,6 +40,20 @@ Bring your voice, instruments and music together in a single live digital mixer.
 | **ArSon Player + `.smix`** | Keep music close to the console and save or reopen mixer sessions. |
 | **VST3 hosting** | Load supported external VST3 effects where compatible. Commercial plugins are not included. |
 
+### Inside the built-in FX
+
+Click a screenshot to view the complete editor interface. These pictures come from ArSonMix's approved native WebView editor resources, not promotional mockups.
+
+| 8D-SonKu | Vocal Delay |
+|:--:|:--:|
+| [<img src="site/media/fx-editor-8d-sonku.jpg" alt="8D-SonKu spatial editor with binaural map" width="460">](site/media/fx-editor-8d-sonku.jpg) | [<img src="site/media/fx-editor-vocal-delay.jpg" alt="Vocal Delay editor with illuminated throw control" width="460">](site/media/fx-editor-vocal-delay.jpg) |
+| **Harmonice** | **Parametric EQ** |
+| [<img src="site/media/fx-editor-harmonice.jpg" alt="Harmonice vocal harmony editor" width="460">](site/media/fx-editor-harmonice.jpg) | [<img src="site/media/fx-editor-channel-eq.jpg" alt="ArSonMix Parametric EQ editor" width="460">](site/media/fx-editor-channel-eq.jpg) |
+| **Compressor** | **Graphic EQ 31** |
+| [<img src="site/media/fx-editor-compressor.jpg" alt="ArSonMix compressor editor" width="460">](site/media/fx-editor-compressor.jpg) | [<img src="site/media/fx-editor-graphic-eq31.jpg" alt="ArSonMix 31-band Graphic EQ editor" width="460">](site/media/fx-editor-graphic-eq31.jpg) |
+
+ImmerSIB and Guitar FX are also built-in effects; their dedicated native editor images will be added following a Windows capture.
+
 Try the [built-in FX showcase](https://masarray.github.io/arsonmix/#effects) or [explore the console](https://masarray.github.io/arsonmix/preview/). The preview is visual only; native effect editors and audio run in the desktop app.
 
 ## From download to your first mix

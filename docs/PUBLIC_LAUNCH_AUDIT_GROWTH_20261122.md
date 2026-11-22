@@ -55,3 +55,13 @@ Do not install invasive analytics or unconsented telemetry for this marketing mi
 - [ ] Recruit a small, voluntary novice-user test group and act on the first install/audio failure patterns.
 
 Cross-thread coordination: [INT-1 #837](https://github.com/masarray/arsonmix/issues/837). Only a qualified exact-SHA installer is publicly described as released. Other lanes may change release readiness; refresh current main before updating public feature claims.
+
+## FX screenshot follow-up — actual WebView editor UI captures
+
+Six source-proven screenshots now present on the landing and README: 8D-SonKu,
+Vocal Delay, Harmonice, Parametric EQ, Compressor and Graphic EQ 31. Captured
+from the exact native WebView2 GUI resource assembler in a controlled Chromium
+environment. Source SHA and image hashes reside in
+`site/media/fx-gallery-provenance.json`. This does not establish installer
+or hardware test results. ImmerSIB and Guitar FX remain Windows-JUCE-only
+screenshots pending in issue #867.
