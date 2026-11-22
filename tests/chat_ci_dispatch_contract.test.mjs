@@ -502,10 +502,10 @@ test('ImmerSIB iteration has a strict changed-file allowlist and never includes 
   assert.equal(focusedImmerSIBFileScope([]),false);
   const approved=readFileSync('.github/workflows/immersib-focused-native.yml','utf8');
   assert.match(approved,/run-name: "ArSonMix IMMERSIB PR/);
-  assert.match(approved,/ref: \\$\\{\\{ inputs.expected_sha \\}\\}/);
+  assert.match(approved,/ref: \$\{\{ inputs.expected_sha \}\}/);
   assert.match(approved,/ARMixImerSipP92NativeTests ARMixImmerSIBP99NativeSonicGate/);
-  assert.match(approved,/ctest --test-dir build -C Release --output-on-failure -R \\$pattern/);
-  assert.doesNotMatch(approved,/--target ARMixConsole|ctest --test-dir build -C Release --output-on-failure\\s*$/m);
+  assert.match(approved,/ctest --test-dir build -C Release --output-on-failure -R \$pattern/);
+  assert.doesNotMatch(approved,/--target ARMixConsole|ctest --test-dir build -C Release --output-on-failure\s*$/m);
   assert.doesNotMatch(approved,/package_fat|focused_harmony_fat|build_verify_windows_installer/);
 });
 
