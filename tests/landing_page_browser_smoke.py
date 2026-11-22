@@ -33,6 +33,9 @@ def browser_check(page):
     assert page.locator("#effects .fx-visual img").count() == 1
     # The effect image is intentionally lazy-loaded; bring it into the
     # viewport before checking decoded bytes rather than racing Chromium.
+    assert (ROOT / "dist-pages/media/console-routing.jpg").is_file(), (
+        "Stage actual marketing assets before starting Chromium"
+    )
     rack = page.locator("#effects .fx-visual img")
     rack.scroll_into_view_if_needed()
     page.wait_for_function(

@@ -118,6 +118,11 @@ class LandingReleaseContract(unittest.TestCase):
         # landing/readme synchronization also adds the corresponding notes.
         workflow = (ROOT / ".github" / "workflows" / "pages-publish.yml").read_text("utf-8")
         self.assertIn("README.md|docs/releases/*.md|", workflow)
+        # Full Chromium must test the staged public site, not just the
+        # partial /preview/ assembler output (which omits landing media/CSS).
+        ui = (ROOT / ".github" / "workflows" / "ui-smoke.yml").read_text("utf-8")
+        self.assertIn("python scripts/build_landing_assets.py dist-pages", ui)
+        self.assertIn("python tests/landing_page_download_contract_test.py dist-pages", ui)
         self.assertIn("|site/index.html|", workflow)
         self.assertIn("docs/CLOUDFLARE_PAGES_BUILD.md", workflow)
         self.assertIn("NOT LANDING ONLY:", workflow)

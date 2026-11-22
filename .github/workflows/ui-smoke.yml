@@ -540,7 +540,11 @@ jobs:
       - name: Verify ONLY approved public GUI /preview/ with PNG hardware keys
         run: |
           python scripts/build_pages.py --out dist-pages --sha "${{ github.event_name == 'workflow_dispatch' && inputs.expected_sha != '' && inputs.expected_sha || github.sha }}" --branch main
+          # Match BOTH public Pages builders: the assembler intentionally does
+          # not copy landing CSS, downloads JS or real mixer screenshots.
+          python scripts/build_landing_assets.py dist-pages
           python tests/single_preview_publication_contract_test.py dist-pages
+          python tests/landing_page_download_contract_test.py dist-pages
       - name: Validate smart audio architecture handoff contract
         run: node --test tests/smart_audio_ard_contract_test.mjs
       - name: WIRE A canonical graph and v8 GUI-to-native handoff contract
