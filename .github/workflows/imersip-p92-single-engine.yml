@@ -17,6 +17,11 @@ on:
       - 'tests/imersip_p92_native_test.cpp'
       - 'tests/imersip_p92_catalog_contract_test.py'
   workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: "Exact 40-character candidate SHA; never qualify moving main"
+        required: true
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -30,8 +35,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.expected_sha || github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+      - name: Validate pinned manual source (never silently benchmark main)
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "INVALID_EXACT_SHA"; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]] || { echo "WRONG_EXACT_SHA"; exit 1; }
       - name: Gate accepted six real venue PNGs; forbid rejected asset pack
         run: python -m unittest discover -s tests -p 'imersip_scene_assets_contract_test.py' -v
       - name: Source contract and no accidental shadow DSP
@@ -108,17 +122,19 @@ jobs:
   windows:
     name: Actual JUCE ImerSip P9.2 insert + Windows GUI
     needs: source
+    # Fast Linux source/PCM on every PR; Windows native is exact-SHA opt-in.
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: windows-2022
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.expected_sha || github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Verify immutable source commit
         shell: pwsh
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_SHA: ${{ inputs.expected_sha || github.event.pull_request.head.sha || github.sha }}
         run: |
           if ((& git rev-parse HEAD).Trim() -ne $env:EXPECTED_SHA) {
             throw 'IMERSIP_P92_WRONG_SOURCE_SHA'
@@ -187,6 +203,9 @@ jobs:
             throw 'IMMERSIB_P102_PROFILE_EXE_MISSING'
           }
           & $exe --quick
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Isolated EARLY / FDN attribution, not additive and not a CI timing threshold.
+          & $exe --attribution
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload actual JUCE native 100, 125, 150 and 200 percent captures
         uses: actions/upload-artifact@v4

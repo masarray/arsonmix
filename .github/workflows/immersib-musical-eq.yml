@@ -19,6 +19,11 @@ on:
       - 'config/immersib_approved_pcm_sources.json'
       - 'config/spatial_audio_authority.json'
   workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: "Exact 40-character candidate SHA; never qualify moving main"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -31,8 +36,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.expected_sha || github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+      - name: Verify pinned manual source HEAD
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "INVALID_EXACT_SHA"; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]] || { echo "WRONG_EXACT_SHA"; exit 1; }
       - name: Compile actual published-P9-flagset source + research opt-in
         shell: bash
         run: |
@@ -98,13 +112,15 @@ jobs:
   windows-audition:
     name: Windows x64 JUCE mixer + real portable A/B, not public release
     needs: fixed-pa-math
-    if: ${{ github.event_name == 'pull_request' }}
+    # Avoid a second full Windows rebuild for each incremental PCM edit.
+    # The official protected P1 Windows gate remains unchanged.
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: windows-2022
     timeout-minutes: 65
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ inputs.expected_sha || github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
@@ -146,7 +162,7 @@ jobs:
       - name: Verify native binary, brand, legal, canonical GUI and source provenance
         shell: pwsh
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_SHA: ${{ inputs.expected_sha || github.event.pull_request.head.sha || github.sha }}
         run: |
           & ./scripts/package_immersib_musical_eq.ps1 -BuildDir build -OutputDir fixed_stage_AB -ExpectedSha $env:EXPECTED_SHA
           if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_STAGE_PACKAGING_FAILED' }

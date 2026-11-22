@@ -360,7 +360,7 @@ static void editorReopenStress(int rate) {
             preset->setSelectedId(sceneId,juce::sendNotificationSync);
             pcm.clear();
             fx->processBlock(pcm,midi);
-            SonKuSpatialProcessor::Completion ack{};
+            armix::builtin_fx::SonKuSpatialProcessor::Completion ack{};
             assert(fx->pollCompletion(ack) && ack.applied &&
                    ack.requestId!=0);
             const auto expected=imersipP92Factory(sceneId);
