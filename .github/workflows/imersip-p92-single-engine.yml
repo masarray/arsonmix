@@ -37,7 +37,7 @@ jobs:
         with:
           ref: ${{ inputs.expected_sha || github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Validate pinned manual source (never silently benchmark main)
+      - name: Verify pinned manual source HEAD
         if: ${{ github.event_name == 'workflow_dispatch' }}
         shell: bash
         env:
