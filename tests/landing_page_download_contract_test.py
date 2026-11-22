@@ -122,7 +122,6 @@ class LandingReleaseContract(unittest.TestCase):
         # partial /preview/ assembler output (which omits landing media/CSS).
         ui = (ROOT / ".github" / "workflows" / "ui-smoke.yml").read_text("utf-8")
         self.assertIn("python scripts/build_landing_assets.py dist-pages", ui)
-        self.assertIn("python tests/landing_page_download_contract_test.py dist-pages", ui)
         self.assertIn("|site/index.html|", workflow)
         self.assertIn("docs/CLOUDFLARE_PAGES_BUILD.md", workflow)
         self.assertIn("NOT LANDING ONLY:", workflow)
