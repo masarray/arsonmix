@@ -129,6 +129,8 @@ deduplication, approved sound, protected merge and hardware FAT semantics.
 See `docs/SMART_CI_RUNNER_WORKFLOW.md` for exact commands and limits.
 
 
+**23 Nov 2026 CI OWNER CORRECTION — IMMERSIB:** do not use `fat` to validate a JUCE ImmerSIB editor/reopen/PCM fix. It incorrectly consumes the full global `p1-windows.yml` compile, unrelated Vocal Harmony job labels, all native CTests and installer path. Use owner comment `/arsonmix-ci immersib <exact current HEAD SHA>` for a strictly scoped ImmerSIB PR: 4 real JUCE/PCM CTests only, no `ARMixConsole` build, Vocal Harmony, or installer. `fat` is denied by the dispatcher for isolated ImmerSIB source scope. The owner can use `/arsonmix-ci stop <exact current HEAD SHA>` to cancel only matching active CI. **Focused is not full native merge gate**; preserve protected CI/real ASIO qualifications for intentional integration releases. No automatic paid Windows job on PR pushes.
+
 **Per-commit development = fast, path-scoped Linux contracts only.**
 No automatic heavy Chromium, Windows MSVC/CTest, or Windows artifact ZIP on
 ordinary PR synchronize, even if a PR is Ready. `main` release qualification
