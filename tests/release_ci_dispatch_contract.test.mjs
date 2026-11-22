@@ -323,3 +323,21 @@ test('Windows public release ZIP is a verifiable wrapper of the same exact Inno 
   assert.match(publish,/if \(\$assets.Count -ne 7\)/);
   assert.match(publish,/SHA256SUMS\.txt/);
 });
+
+test('verified Windows release refreshes GitHub and optional Cloudflare static catalogs after publication',()=>{
+  const workflow=readFileSync(new URL('../.github/workflows/alpha-preview-publish.yml',import.meta.url),'utf8');
+  const published=workflow.indexOf('Publish verified GitHub prerelease and its Windows binaries');
+  const githubRefresh=workflow.indexOf('Refresh official landing catalog after publishing real verified binaries');
+  const cloudflareRefresh=workflow.indexOf('Refresh Cloudflare Pages after verified public release');
+  assert.ok(published>=0 && githubRefresh>published && cloudflareRefresh>githubRefresh);
+  assert.match(workflow,/gh workflow run pages-publish\.yml/);
+  assert.match(workflow,/secrets\.ARSONMIX_CLOUDFLARE_PAGES_DEPLOY_HOOK/);
+  assert.match(workflow,/Host -ne "api\.cloudflare\.com"/);
+  assert.match(workflow,/\/client\/v4\/pages\/webhooks\/deploy_hooks\//);
+  assert.match(workflow,/CLOUDFLARE_PAGES_REDEPLOY_ACCEPTED/);
+  assert.match(workflow,/CLOUDFLARE_PAGES_DEPLOY_HOOK_NOT_CONFIGURED/);
+  assert.match(workflow,/CLOUDFLARE_PAGES_DEPLOY_HOOK_FAILED/);
+  assert.match(workflow,/if \(\[string\]::IsNullOrWhiteSpace\(\$env:CF_PAGES_DEPLOY_HOOK\)\)/);
+  assert.match(workflow,/Invoke-WebRequest -Method Post -Uri \$uri/);
+  assert.doesNotMatch(workflow,/Write-(?:Host|Warning)\s+\$env:CF_PAGES_DEPLOY_HOOK/);
+});
