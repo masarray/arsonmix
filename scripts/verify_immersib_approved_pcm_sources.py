@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Verify accepted ImmerSIB/SonKu DSP against immutable public alpha.26 blobs.
+"""Verify accepted ImmerSIB/SonKu DSP against owner-approved P102.3 blobs.
 
 The Windows MSVC and GNU C++ runtimes are not guaranteed to return bitwise
 identical sin()/floating DSP samples. For that reason the legacy GNU FNV64
@@ -22,7 +22,8 @@ import re
 import sys
 
 SCHEMA = "arsonmix.approved-spatial-pcm-source-lock.v1"
-APPROVED_SHA = "8ec5b8a3e07837c85fb6e06c952cff1621fecc51"
+APPROVED_SHA = "3095af08b817d59a3e14874dab404bf6e243f38a"
+APPROVED_FILE_COUNT = 30
 REQUIRED_ROOTS = {
     "engine/builtin_fx/ImerSipP92Processor.h",
     "engine/builtin_fx/ImerSipP92Scene.h",
@@ -40,7 +41,7 @@ def validate(root: Path, manifest: dict) -> int:
             manifest.get("approvedSourceSha") != APPROVED_SHA:
         raise ValueError("IMMERSIB_APPROVED_SOURCE_LOCK_INVALID_MANIFEST")
     files = manifest.get("files")
-    if not isinstance(files, list) or len(files) < 29:
+    if not isinstance(files, list) or len(files) != APPROVED_FILE_COUNT:
         raise ValueError("IMMERSIB_APPROVED_SOURCE_LOCK_INCOMPLETE")
     declared: set[str] = set()
     for entry in files:
@@ -95,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print(
         f"IMMERSIB_APPROVED_PCM_SOURCE_PASS source={APPROVED_SHA} "
-        f"frozenDspFiles={total} audioRetuning=NONE"
+        f"frozenDspFiles={total} audioRetuning=NONE_SINCE_P102_3_OWNER_APPROVAL"
     )
     return 0
 

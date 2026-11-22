@@ -61,7 +61,7 @@ Copy-Item -LiteralPath "docs/FIRST_SOUND_FAT_QUICKSTART_20261101.md" -Destinatio
 Copy-Item -LiteralPath "installer/ArSonMixStartupDiagnostics.ps1" -Destination $OutputDir
 @'
 # Fixed PA + Musical EQ (P102.3 Refined Clarity)
-Experimental A/B only. Exact source baseline 6399c0f5, no P100/P101 algorithm.
+Owner-approved P102.3 sound integrated from audition SHA 3095af08. Not a public release. Exact source baseline 6399c0f5, no P100/P101 algorithm.
 Original spatial output and limiter unchanged. Afterward a common PEQ:
 250Hz +5.5 Q .85 (warm-body refinement); 1120Hz +2.3 Q1.2 (unchanged);
 3240Hz high shelf +3.3; 7400Hz -1.8 Q1.1 (unchanged).
@@ -79,8 +79,11 @@ $manifest=[ordered]@{
  sourceCommit=$actual
  parentMain="527e0216d226904288c4fe2dd8a76169dfb4417d"
  candidateAudioRevision="6399c0f5-exact-fixed-pa-then-musical-eq-v102.3-refined-clarity"
- sourceLockRewritten=$false
- status="UNAPPROVED_HEADPHONE_AB_ONLY"
+ sourceLockRewritten=$true
+ sourceLockTransition="Explicit owner-approved new checkpoint; archived alpha.26 manifest preserved"
+ status="OWNER_APPROVED_P102_3_INTEGRATION_NOT_PUBLIC_RELEASE"
+ approvedAuditionSha="3095af08b817d59a3e14874dab404bf6e243f38a"
+ approvedAuditionArtifact=14741137781
  executable=$name
  exeBytes=(Get-Item -LiteralPath $dest).Length
  exeSha256=(Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -94,7 +97,7 @@ $manifest=[ordered]@{
  legalAndBrandVerifier="PASS"
  approvedGuiRoute=$gui.authoritativePagesRoute
  approvedGuiSha256=$gui.canonicalSourceSha256
- headphoneAB="NOT_TESTED"
+ headphoneAB="OWNER_APPROVED_BASELINE_20261122; INTEGRATION_BUILD_NOT_REAUDITIONED"
  ASIOFAT="NOT_TESTED"
 }
 $manifest|ConvertTo-Json -Depth 5|Set-Content -LiteralPath (Join-Path $OutputDir "BUILD_PROVENANCE.json") -Encoding UTF8

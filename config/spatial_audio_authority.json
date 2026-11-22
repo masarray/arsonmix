@@ -285,5 +285,63 @@
       "publicAlphaReleased": true
     },
     "releaseQualificationScope": "Windows public alpha audio/GUI; original research history remains recorded"
+  },
+  "immersibP1023Integration": {
+    "product": "ImmerSIB",
+    "approvedAuditionSha": "3095af08b817d59a3e14874dab404bf6e243f38a",
+    "ownerListeningStatus": "approved_by_owner_2026-11-22_for_main_integration",
+    "approvedPr": 863,
+    "qualificationRun": 44989974839,
+    "artifactId": 14741137781,
+    "baselineFixedPaSha": "6399c0f52dc7b9f72cc5b53462f107578343e0fb",
+    "acousticSourceBlobSha1": {
+      "engine/builtin_fx/ImerSipP92Processor.h": "5c0f1b18eb6ab11604b4efab1d353ed7cff63edd",
+      "engine/builtin_fx/ImerSipP92Scene.h": "15256e2775a66d974b612258f3eb15a665f7519a",
+      "engine/builtin_fx/sonku/SonKuEarlyReflections.h": "5a6a9b48cfdc60729f130c61110c8d8590b20f35",
+      "engine/builtin_fx/sonku/SonKuFixedPaMusicalEq.h": "00a7ac4fb54b7f4f2d5fb0be0da87be8371ab31b",
+      "engine/builtin_fx/sonku/SonKuHrtfTonalCalibration.h": "d59c83af61c4696bf23327de46c5819eb22f4a34",
+      "engine/builtin_fx/sonku/SonKuImmerSIBVocalRoom.h": "0aee9e1154f6052db02a8e8dfdb696ef4462aa10",
+      "engine/builtin_fx/sonku/SonKuMeasuredHrir.h": "0116db498c817e0c60d04bccc052bed8256b997a",
+      "engine/builtin_fx/sonku/SonKuMeasuredHrir3D.h": "816e7255939f0bb262374a5b4c0240438ec1e3a0",
+      "engine/builtin_fx/sonku/SonKuMusicalReverb.h": "c2f273ef7c1ee26c5566b05568416e5cedaef6c4",
+      "engine/builtin_fx/sonku/SonKuP83LowFrequencyTransfer.h": "670fd9cef078d2495e9d31e959cf99566a7b1844",
+      "engine/builtin_fx/sonku/SonKuP83SpeakerScene.h": "2820af40f120cdad7ac699b228eb4e5531b86a95",
+      "engine/builtin_fx/sonku/SonKuP84ClarityAnchor.h": "0008741e4fe14f6d15735f187201777447524b08",
+      "engine/builtin_fx/sonku/SonKuP84FusedMusicHrir.h": "3e8322ede8772b1112e12486a5ad51b4e9217d95",
+      "engine/builtin_fx/sonku/SonKuP87MusicalAirBody.h": "80487b69f757d04e1f301415d4af357a272a1857",
+      "engine/builtin_fx/sonku/SonKuP90StereoDecoder.h": "4c77267b0e46d79200e523dc26a509625b7a6f7e",
+      "engine/builtin_fx/sonku/SonKuP91P92WorldBassFoundation.h": "63551d22e8dff672fe136131c32d28b568bb3170",
+      "engine/builtin_fx/sonku/SonKuP94FrontBackDepthCue.h": "41395d136a5928cd0fda950436d8b4f69ce834a1",
+      "engine/builtin_fx/sonku/SonKuP95MusicalPresence.h": "f458d520c9ca6c75b1b961d220e15abd64b07497",
+      "engine/builtin_fx/sonku/SonKuP96DistanceReinforcement.h": "a32fb6e6fdd431901323d4278c51991607c02d84",
+      "engine/builtin_fx/sonku/SonKuP97StageImpact.h": "a183c29a9c4df3122325f8fb8f113605786f7ea9",
+      "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "b3125950536d9fb9e16d948da2cfe53f92718185",
+      "engine/builtin_fx/sonku/SonKuP99DefaultOrbitStage.h": "c9df250b824011656179298b247fcac78d2ada2a",
+      "engine/builtin_fx/sonku/SonKuP99MusicalVocalDepth.h": "d8542d7aa333d689eea9637fc9f5f122c468277a",
+      "engine/builtin_fx/sonku/SonKuProductAdmission.h": "8401e75980e0898ee4f0a580ecc15fc3e514e55f",
+      "engine/builtin_fx/sonku/SonKuRoomMaterials.h": "99b00bb23b72e64786cf2dd4306ccb1d97c4fb5e",
+      "engine/builtin_fx/sonku/SonKuSourcePlacement3D.h": "9afb959bed292626c3097c2a382208ce8798e90c",
+      "engine/builtin_fx/sonku/SonKuSpatialCore.h": "f9a02f3eb7c04b1d84bdbc14d3d270d94f5fec69",
+      "engine/builtin_fx/sonku/SonKuStereoIntegrity.h": "aa708ffc8834d0981bad63ae854d4b049493f29b",
+      "engine/builtin_fx/sonku/SonKuVerticalImageSource.h": "07eed7cb715d4aabebfffc317aade549c9617a47",
+      "engine/builtin_fx/SonKuSpatialProcessor.h": "e55f83d758cb3cb5d2f01999e99e1ff1314293ff"
+    },
+    "requiredFlags": [
+      "ARMIX_IMMERSIB_RELEASE_CANDIDATE",
+      "ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH",
+      "ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH",
+      "ARMIX_SONKU_APPROVED_P99_MAIN"
+    ],
+    "scope": "Branded ImmerSIB only; generic SonKu legacy golden remains unchanged; no state/FX ID change.",
+    "historicalCheckpointPreserved": true,
+    "publicReleaseStatus": "not_published_by_this_integration",
+    "hardwareFAT": "not_certified",
+    "supersededPrs": [
+      857,
+      858,
+      859,
+      860,
+      862
+    ]
   }
 }

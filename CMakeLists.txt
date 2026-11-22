@@ -5,13 +5,19 @@ project(ARMixConsole VERSION 0.5.0 LANGUAGES C CXX)
 # local/research builds default OFF, preserving approved SonKu P9.9 behavior.
 option(ARMIX_IMMERSIB_RELEASE_CANDIDATE
        "Build the integrated ImmerSIB P9.9 audio + JUCE venue UI RC" OFF)
-# Public alpha.26 and plain SonKu never pick up this unapproved profile.
+# Owner-approved 2026-11-22: P102.3 is the branded ImmerSIB profile.
+# Retain historical option names for reproducible builds; ordinary SonKu
+# still has no per-instance opt-in. The release flag selects both together.
 option(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
-       "UNAPPROVED fixed ImmerSIB speaker stage without adaptive MID/SIDE masking" OFF)
+       "ImmerSIB approved Fixed PA stage (historical flag name)" ${ARMIX_IMMERSIB_RELEASE_CANDIDATE})
 if(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH AND NOT ARMIX_IMMERSIB_RELEASE_CANDIDATE)
   message(FATAL_ERROR "ImmerSIB stage research requires branded candidate")
 endif()
-option(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH "Fixed PA plus screenshot-inspired musical EQ only" OFF)
+option(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH "ImmerSIB approved P102.3 musical EQ (historical flag name)" ${ARMIX_IMMERSIB_RELEASE_CANDIDATE})
+if(ARMIX_IMMERSIB_RELEASE_CANDIDATE AND
+   (NOT ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH OR NOT ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH))
+  message(FATAL_ERROR "Branded ImmerSIB requires owner-approved P102.3 Fixed PA + Musical EQ; reconfigure both flags ON")
+endif()
 if(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH AND NOT ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH)
   message(FATAL_ERROR "Musical EQ requires Fixed PA research")
 endif()

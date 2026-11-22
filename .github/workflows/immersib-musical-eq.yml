@@ -1,4 +1,4 @@
-name: ImmerSIB P102 Fixed PA + Musical EQ
+name: ImmerSIB P102.3 approved integration and Windows regression
 on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
@@ -16,7 +16,8 @@ on:
       - 'engine/builtin_fx/ImerSipP92Processor.h'
       - 'tests/immersib_fixed_stage_monitor_test.cpp'
       - 'CMakeLists.txt'
-      - 'scripts/package_immersib_fixed_stage_preview.ps1'
+      - 'config/immersib_approved_pcm_sources.json'
+      - 'config/spatial_audio_authority.json'
   workflow_dispatch:
 
 permissions:
@@ -36,6 +37,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 scripts/verify_immersib_approved_pcm_sources.py
+          python3 -m unittest discover -s tests -p 'imersip_p92_authority_contract_test.py' -v
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic \
             -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \
             -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 \
@@ -114,7 +117,7 @@ jobs:
         run: |
           nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
           if ($LASTEXITCODE -ne 0) { throw 'WEBVIEW2_SDK_INSTALL_FAILED' }
-      - name: Configure separate UNAPPROVED research candidate
+      - name: Configure normal branded ImmerSIB product profile
         shell: pwsh
         run: |
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
@@ -122,8 +125,6 @@ jobs:
             -DJUCE_WEBVIEW2_PACKAGE_LOCATION="$env:GITHUB_WORKSPACE/.deps" `
             -DARMIX_SONKU_APPROVED_P99_MAIN=ON `
             -DARMIX_IMMERSIB_RELEASE_CANDIDATE=ON `
-            -DARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH=ON `
-            -DARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH=ON `
             -DBUILD_TESTING=ON
           if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_STAGE_CONFIGURE_FAILED' }
           $cache = Get-Content -LiteralPath build/CMakeCache.txt
@@ -149,7 +150,7 @@ jobs:
         run: |
           & ./scripts/package_immersib_musical_eq.ps1 -BuildDir build -OutputDir fixed_stage_AB -ExpectedSha $env:EXPECTED_SHA
           if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_STAGE_PACKAGING_FAILED' }
-      - name: Publish private A/B-only Windows x64 portable, NOT stable installer
+      - name: Publish qualified integration portable, NOT public installer
         uses: actions/upload-artifact@v4
         with:
           name: ArSonMix-ImmerSIB-P102-Refined-Clarity-x64-${{ github.run_id }}
