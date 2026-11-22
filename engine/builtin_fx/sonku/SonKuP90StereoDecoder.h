@@ -30,7 +30,7 @@ public:
     // measured speaker + center HRIRs. Preserve v7's forward vocal focus,
     // but NEVER retarget it from a music-dependent correlation detector.
     // The differential H_L-H_R stereo transfer is unchanged.
-    void useUnmodulatedStageKernels(bool enabled) noexcept {
+    void useFixedFrontStage(bool enabled) noexcept {
         staticStage_=enabled;
         reset();
     }
