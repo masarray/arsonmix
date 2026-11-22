@@ -24,9 +24,21 @@ class LandingReleaseContract(unittest.TestCase):
             self.assertIn("media/console-overview.jpg", html)
             self.assertIn("media/console-routing.jpg", html)
             self.assertIn("media/console-faders.jpg", html)
+            self.assertIn('id="effects"', html)
+            self.assertIn('id="fx-gallery"', html)
+            for editor in ("8d-sonku","vocal-delay","harmonice","channel-eq","compressor","graphic-eq31"):
+                self.assertIn("media/fx-editor-" + editor + ".jpg", html)
+            self.assertIn('id="getting-started"', html)
+            self.assertIn('id="feedback"', html)
+            self.assertIn("ArSonMix mixer FX rack with WIRE routing", html)
+            self.assertIn("Explore the FX rack online", html)
+            self.assertIn("issues/new?template=01_bug_report.yml", html)
+            self.assertIn("issues/new?template=02_feature_request.yml", html)
             self.assertIn("prefers-reduced-motion", css)
             if base == ROOT / "site":
-                self.assertNotIn("https://github.com", html)  # No source-pinned downloads.
+                # Public feedback is a legitimate GitHub destination; binary
+                # downloads, by contrast, MUST come from verified release data.
+                self.assertNotIn("github.com/masarray/arsonmix/releases/download/", html)
             else:
                 # The deployed HTML has direct asset URLs from the exact same
                 # validated catalog, for offline/JS-blocked progressive download.
@@ -76,11 +88,23 @@ class LandingReleaseContract(unittest.TestCase):
                          "apple-touch-icon.png", "site.webmanifest", "arsonmix-48.png", "arsonmix-128.png", "brand-512.png",
                          "landing.css", "downloads.js"):
                 self.assertTrue((base / name).is_file(), (str(base), name))
-            for name in ("console-overview.jpg", "console-routing.jpg", "console-faders.jpg"):
+            for name in ("console-overview.jpg", "console-routing.jpg", "console-faders.jpg",
+                         "fx-editor-8d-sonku.jpg", "fx-editor-vocal-delay.jpg",
+                         "fx-editor-harmonice.jpg", "fx-editor-channel-eq.jpg",
+                         "fx-editor-compressor.jpg", "fx-editor-graphic-eq31.jpg"):
                 path = base / "media" / name
                 self.assertTrue(path.is_file(), str(path))
                 self.assertGreater(path.stat().st_size, 12000)
                 self.assertEqual(path.read_bytes()[:3], b"\xff\xd8\xff", str(path))
+            manifest = json.loads((base / "media/fx-gallery-provenance.json").read_text("utf-8"))
+            self.assertEqual(manifest["schemaVersion"], 1)
+            self.assertEqual(len(manifest["images"]), 6)
+            for record in manifest["images"]:
+                self.assertRegex(record["sha256"], r"^[0-9a-f]{64}$")
+                self.assertFalse(record["actualWindowsScreenshot"])
+                self.assertFalse(record["audioOrHardwareVerifiedByImage"])
+                self.assertEqual((base / "media" / record["file"]).stat().st_size,
+                                 record["sizeBytes"])
 
     def test_public_agpl_notice_is_exact_repo_license(self):
         # Legal documentation is delivered on the official Pages domain
@@ -89,29 +113,33 @@ class LandingReleaseContract(unittest.TestCase):
         self.assertTrue(copied.is_file(), str(copied))
         self.assertEqual(copied.read_bytes(), (ROOT / "LICENSE").read_bytes())
 
-    def test_pinned_readme_release_has_local_notes_and_verified_asset_paths(self):
+    def test_readme_uses_evergreen_public_download_and_real_screenshots(self):
         readme = (ROOT / "README.md").read_text("utf-8")
-        match = re.search(r"Latest published Windows alpha as of [^\n]+?:\*\* \[(v\d+\.\d+\.\d+-alpha\.\d+)", readme)
-        self.assertIsNotNone(match, "README must declare its pinned latest public Windows alpha")
-        tag = match.group(1)
-        self.assertTrue((ROOT / "docs" / "releases" / (tag + ".md")).is_file())
-        self.assertIn("docs/releases/" + tag + ".md", readme)
-        for suffix in ("Windows-x64-Setup.zip", "Windows-x64-Portable.zip", "SHA256SUMS.txt"):
-            self.assertIn("releases/download/" + tag + "/", readme)
-            self.assertIn(tag + "-" + suffix if suffix != "SHA256SUMS.txt" else suffix, readme)
+        self.assertIn("https://masarray.github.io/arsonmix/#download", readme)
+        self.assertIn("https://github.com/masarray/arsonmix/releases", readme)
+        self.assertIn("site/media/console-overview.jpg", readme)
+        self.assertIn("site/media/console-routing.jpg", readme)
+        self.assertIn("site/media/console-faders.jpg", readme)
         self.assertIn("ImmerSIB", readme)
+        self.assertIn("site/media/fx-editor-harmonice.jpg", readme)
+        self.assertIn("site/media/fx-editor-8d-sonku.jpg", readme)
+        self.assertIn("site/media/fx-editor-vocal-delay.jpg", readme)
         self.assertIn("8D-SonKu P9.9", readme)
-        notes = (ROOT / "docs" / "releases" / (tag + ".md")).read_text("utf-8")
-        self.assertNotRegex(notes, r"This note does not claim .* artifacts already exist",
-                            "Latest published release must not retain prepublication copy")
-        self.assertIn("Published release", notes,
-                      "Latest publicly downloaded tag must have a post-publication release note")
+        self.assertIn("GitHub account", readme)
+        self.assertIn("visual only", readme)
+        self.assertNotIn("Latest published Windows alpha as of", readme)
+        self.assertNotRegex(readme, r"releases/download/v\d+\.\d+\.\d+-alpha\.\d+/",
+                            "README must not pin a stale binary when the verified landing is dynamic")
 
     def test_release_notes_are_safe_landing_only_changes(self):
         # Changelogs must not silently suppress the Pages update when a
         # landing/readme synchronization also adds the corresponding notes.
         workflow = (ROOT / ".github" / "workflows" / "pages-publish.yml").read_text("utf-8")
         self.assertIn("README.md|docs/releases/*.md|", workflow)
+        # Full Chromium must test the staged public site, not just the
+        # partial /preview/ assembler output (which omits landing media/CSS).
+        ui = (ROOT / ".github" / "workflows" / "ui-smoke.yml").read_text("utf-8")
+        self.assertIn("python scripts/build_landing_assets.py dist-pages", ui)
         self.assertIn("|site/index.html|", workflow)
         self.assertIn("docs/CLOUDFLARE_PAGES_BUILD.md", workflow)
         self.assertIn("NOT LANDING ONLY:", workflow)

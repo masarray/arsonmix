@@ -1,62 +1,93 @@
 <p align="center">
-  <a href="https://masarray.github.io/arsonmix/"><img src="assets/icon/brand-512.png" width="128" alt="ArSonMix official mixer icon"></a>
+  <a href="https://masarray.github.io/arsonmix/"><img src="assets/icon/brand-512.png" width="112" alt="ArSonMix app icon"></a>
 </p>
-<p align="center"><strong>ArSonMix — Professional Live Mixing Studio</strong></p>
+
+<h1 align="center">ArSonMix</h1>
+<p align="center"><strong>Your live mix, under your control.</strong><br>A free, open-source digital mixing studio for live vocals, karaoke, streaming and instruments.</p>
 <p align="center">
-  <a href="https://masarray.github.io/arsonmix/">Official downloads</a> ·
+  <a href="https://masarray.github.io/arsonmix/#download"><strong>Download ArSonMix</strong></a> ·
   <a href="https://masarray.github.io/arsonmix/preview/">Explore the mixer</a> ·
-  <a href="https://github.com/masarray/arsonmix/issues">Feedback</a>
+  <a href="https://masarray.github.io/arsonmix/#effects">Built-in effects</a> ·
+  <a href="https://masarray.github.io/arsonmix/#feedback">Share feedback</a>
 </p>
 
-# ArSonMix
+<p align="center"><a href="https://masarray.github.io/arsonmix/"><img src="site/media/console-overview.jpg" alt="Actual approved ArSonMix mixer interface with channel faders, meters, FX racks and routing" width="1100"></a></p>
+<p align="center"><sub>The ArSonMix mixing console. Explore this interface online; run audio and built-in effects in the Windows desktop app.</sub></p>
 
-**A native live digital mixer for singers, karaoke, streaming and live sound.** Route audio through channels and WIRE connections, work with FX and music, and keep your settings in a `.smix` session. ArSonMix is a live mixing console, **not** a timeline/recording DAW or a browser-based audio mixer.
+## Your mix, your sound
 
-## Download ArSonMix
+Bring your voice, instruments and music together in a single live digital mixer. Shape your sound, connect channels with **WIRE**, add your favorite effects and save the entire setup as a `.smix` session. Great for karaoke, streaming, live vocals and home studios.
 
-**[Download the latest verified ArSonMix release](https://masarray.github.io/arsonmix/#download)** from the official landing page and choose your operating system. The Windows card always selects the newest verified public Windows installer; on Windows 10/11 x64, click **Download installer ZIP**, extract it, then run Setup. No GitHub account or visit to the GitHub Releases UI is needed.
+**Get started on Windows 10/11 (64-bit).** **[Download ArSonMix](https://masarray.github.io/arsonmix/#download)** or [explore the mixer online](https://masarray.github.io/arsonmix/preview/). Free to download, no sign-up required. The download page always points to the latest published installer.
 
-**Latest published Windows alpha as of 17 November 2026:** [v0.5.0-alpha.26 — Download installer ZIP](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.26/ArSonMix-v0.5.0-alpha.26-Windows-x64-Setup.zip) · [portable ZIP](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.26/ArSonMix-v0.5.0-alpha.26-Windows-x64-Portable.zip) · [SHA-256 checksums](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.26/SHA256SUMS.txt) · [release notes](docs/releases/v0.5.0-alpha.26.md). These are pinned alpha.26 links; the official landing page always selects the newest verified release.
 
-The download cards show the newest verified package available for each platform, including its version and size. Windows previews are published independently of Linux and macOS builds, so their version numbers may differ.
 
-### What is included in the current Windows alpha
+## See the mixer in action
 
-- **8D-SonKu P9.9:** the approved binaural 360° orbit, depth-aware FRONT/REAR perspective and native SPACE controls. The animation is visual feedback; one native JUCE PCM engine renders audio, with SonKu settings isolated from ImmerSIB-only scene tuning.
-- **ImmerSIB:** seven concert/venue scenes, including Live Concert, Velvet Cinema and Concert Front Row XL, in a compact native JUCE editor. Factory scenes, genuine Power/bypass state, audio-applied setting ACK, 1.1–2.5 m source distance and Early Room up to 180% are included in alpha.24.
-- **Vocal Delay:** native phrase-aware delay, formerly displayed as Vocal Throw. Existing `.smix` sessions and presets retain the compatible internal plugin identity.
-- **Harmonice, Guitar FX, EQ & Compressor:** native effects with dedicated GUI controls, alongside supported VST3 parameter hotkeys and built-in user presets.
-- **Live mixer & WIRE:** input channels, MAIN/BUS routing, gain, PRE/POST sends, mute/solo and Save/Open `.smix` sessions. ArSon Player remains part of the console workflow.
+| WIRE routing and FX | Channel levels and faders |
+|:--:|:--:|
+| <img src="site/media/console-routing.jpg" alt="ArSonMix WIRE patch connections and mixer FX slots" width="520"> | <img src="site/media/console-faders.jpg" alt="ArSonMix hardware-style channel faders and level meters" width="520"> |
 
-**Alpha.25 hotfix:** ImmerSIB now opens its real native JUCE concert window; switching to dearVR or other VST3 editor no longer closes the ImmerSIB window, and clicking the same insert refocuses it. False “Effect settings updated” editor-open toast is removed. No spatial DSP/preset changes. Existing alpha.24 features remain. Experimental Guitar FX redesign or unmerged branches are **not** shipped. See the [alpha.25 release notes](docs/releases/v0.5.0-alpha.25.md) and [alpha.24 baseline](docs/releases/v0.5.0-alpha.24.md) for compatibility and limitations.
+## Sound-shaping tools built in
 
-**Alpha.26 licensing:** The native desktop app now includes a compact offline **More > About & Licenses** panel containing full AGPLv3 and bundled third-party notices. Setup and portable folders no longer scatter loose legal files; in-place upgrades clean only exact known old notices while preserving user Studio and `.smix` data. This is a licensing/distribution update, not an audio-engine change. See [alpha.26 release notes](docs/releases/v0.5.0-alpha.26.md).
+| Feature | What it means for you |
+| --- | --- |
+| **Live mixer + WIRE** | Mix channels, manage levels, mute/solo, and route signals to MAIN or BUS. |
+| **ImmerSIB** | Explore concert-inspired space and venue character with built-in listening scenes. |
+| **8D-SonKu P9.9** | Add binaural movement and spatial perspective for headphone listening. |
+| **Harmonice + Vocal Delay** | Shape vocal harmonies/doubling and phrase-aware delay in the mix. |
+| **Guitar FX, EQ + Compressor** | Work with guitar tone, equalization and dynamics without leaving the console. |
+| **ArSon Player + `.smix`** | Keep music close to the console and save or reopen mixer sessions. |
+| **VST3 hosting** | Load supported external VST3 effects where compatible. Commercial plugins are not included. |
 
-## Get started
+### Inside the built-in FX
 
-1. Download the Windows installer ZIP from the [official landing page](https://masarray.github.io/arsonmix/#download), extract it, run Setup, and start ArSonMix. A supported audio driver and Windows WebView2 runtime may be required.
-2. Open the audio setup and choose the actual device/pins for listening. The mixer can be edited without hardware, but it can only output sound through a valid live audio device graph.
-3. Use channel controls, FX and WIRE in the [approved console](https://masarray.github.io/arsonmix/preview/); use the installed Windows app for real 8D-SonKu and ImmerSIB audio. Save/Open `.smix` sessions for your work. Start testing at safe headphone/speaker volume.
-4. Report reproducible driver, WIRE, VST3, session or dropout problems in [GitHub Issues](https://github.com/masarray/arsonmix/issues), with device type, channel graph, sample rate, buffer size and steps.
+Click a screenshot to view the complete editor interface. These pictures come from ArSonMix's approved native WebView editor resources, not promotional mockups.
 
-### Field-test limitations
+| 8D-SonKu | Vocal Delay |
+|:--:|:--:|
+| [<img src="site/media/fx-editor-8d-sonku.jpg" alt="8D-SonKu spatial editor with binaural map" width="460">](site/media/fx-editor-8d-sonku.jpg) | [<img src="site/media/fx-editor-vocal-delay.jpg" alt="Vocal Delay editor with illuminated throw control" width="460">](site/media/fx-editor-vocal-delay.jpg) |
+| **Harmonice** | **Parametric EQ** |
+| [<img src="site/media/fx-editor-harmonice.jpg" alt="Harmonice vocal harmony editor" width="460">](site/media/fx-editor-harmonice.jpg) | [<img src="site/media/fx-editor-channel-eq.jpg" alt="ArSonMix Parametric EQ editor" width="460">](site/media/fx-editor-channel-eq.jpg) |
+| **Compressor** | **Graphic EQ 31** |
+| [<img src="site/media/fx-editor-compressor.jpg" alt="ArSonMix compressor editor" width="460">](site/media/fx-editor-compressor.jpg) | [<img src="site/media/fx-editor-graphic-eq31.jpg" alt="ArSonMix 31-band Graphic EQ editor" width="460">](site/media/fx-editor-graphic-eq31.jpg) |
 
-Windows alpha builds are intended for field testing, not certified low-latency monitoring. Compare ImmerSIB's seven scenes and SonKu P9.9 at matched volume on headphones, then test slot/rack/global FX bypass, `.smix` reopen and device reconnect. Back up older ImmerSIB sessions: saved source distances beyond the new 1.1–2.5 m range are clamped on restore. For 4–8-output ASIO interfaces, report driver version, sample rate, buffer size, routing, mute and device restart results.
+ImmerSIB and Guitar FX are also built-in effects; their dedicated native editor images will be added following a Windows capture.
 
-## Preview vs real audio
+Try the [built-in FX showcase](https://masarray.github.io/arsonmix/#effects) or [explore the console](https://masarray.github.io/arsonmix/preview/). The preview is visual only; native effect editors and audio run in the desktop app.
 
-**The one approved GUI:** [masarray.github.io/arsonmix/preview/](https://masarray.github.io/arsonmix/preview/). It is an interactive **visual preview only** — no browser hardware audio, no real native VST3 processing and no promise that a UI illustration is a supported sound route. Older preview URLs redirect here. The native Windows app uses the approved mixer renderer; changes must not introduce competing skins.
+## From download to your first mix
 
-## License — mixer and native built-in FX
+1. **Get ArSonMix.** [Download the Windows installer ZIP](https://masarray.github.io/arsonmix/#download), extract it and run Setup.
+2. **Set your sound card.** Choose your audio interface and output in Audio Setup. Start with a comfortable monitoring level.
+3. **Mix and create.** Adjust a channel fader, add an effect, route it to MAIN and save your workspace as a `.smix` session.
 
-**AGPL-3.0-only (GNU Affero General Public License version 3 only)** applies to original ArSonMix mixer code, routing and JUCE host, original desktop/web GUI implementation, and ArSonMix-owned **native built-in FX**, including EQ, Compressor, Harmonice, Vocal Delay, 8D-SonKu, Guitar FX and feature-gated ImmerSIB. See the complete [LICENSE](LICENSE) and [LICENSE-NOTICE.txt](LICENSE-NOTICE.txt). In native desktop builds, open **More > About & Licenses** to read the complete AGPL and bundled third-party notices offline; they are embedded inside ArSonMix.exe/the macOS or Linux executable, not scattered across the install directory. The Windows installer also embeds the same source notices without a separate agreement screen. Source code and release tags are available in this repository for recipients of the application.
+<details>
+<summary>Compatibility and release information</summary>
 
-Third-party components are **not automatically relicensed**: JUCE, VST3/ASIO SDKs, MIT-licensed KEMAR/HRIR and Signalsmith materials, Inter font, VB-CABLE, and independently installed/approved FactoryFX VST3 may carry separate terms. Refer to distributed notices and `third_party/`. AGPL does not grant a redistribution licence for commercial VST3 plugins.
+The Windows release is an early-access build for Windows 10/11 x64. A compatible audio driver and Windows WebView2 may be required. Features and device behavior depend on your setup; see [release notes](https://github.com/masarray/arsonmix/releases). Keep a backup of important `.smix` sessions before updating. Current audio routing uses one primary ASIO device; independently synchronized dual-vendor ASIO is not advertised as a released feature.
 
-## Source, builds and contribution
+</details>
 
-Each [published release](https://github.com/masarray/arsonmix/releases) provides its source tag, release notes, and SHA-256 checksums. The version displayed on the landing page identifies the package being downloaded.
+## Help shape the next ArSonMix
 
-Contributors and development agents must read **[AGENTS.md](AGENTS.md)** and the **[Smart CI workflow](docs/SMART_CI_RUNNER_WORKFLOW.md)**, inspect live `main` plus open PRs, preserve one native JUCE PCM callback and native ChannelId/EdgeId authority, and qualify changes using selective exact-SHA tests. Hardware ASIO testing is separate from automated CI. Website deployment uses one `site/` landing and one assembled `/preview/` on GitHub Pages and Cloudflare Pages, with platform downloads resolved from verified GitHub Release assets. See [Pages publishing](docs/GITHUB_PAGES_PREVIEW.md) and [Cloudflare](docs/CLOUDFLARE_PAGES_BUILD.md).
+Tried a mix? We'd love to hear what you created, which FX you enjoyed and what would make the console even easier to use. Suggestions and bug reports both help prioritize the next release.
 
-Respect all source, SDK and VST3 plugin licenses. Third-party commercial VST3 plugins are not redistributed without authorization. Historical architecture and testing records remain in [docs/](docs/) (including the archived [GUI baseline](docs/GUI_BASELINE_LOCK_2026-10-25.md), [Smart Audio Engine ARD](docs/ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md), and [Implementation Blueprint](docs/SMART_AUDIO_ENGINE_IMPLEMENTATION_BLUEPRINT.md)), rather than being presented as current shipping features. Physical crackle and hardware audio FAT evidence is tracked in [issue #15](https://github.com/masarray/arsonmix/issues/15).
+- [Report a reproducible problem](https://github.com/masarray/arsonmix/issues/new?template=01_bug_report.yml) — include the installed version, Windows/audio device and driver, sample rate/buffer if relevant, steps, what you expected, and what happened.
+- [Suggest a feature or workflow improvement](https://github.com/masarray/arsonmix/issues/new?template=02_feature_request.yml) — explain the result you wanted, even if you don't know how to build it.
+- [Browse community issues](https://github.com/masarray/arsonmix/issues) — check existing reports and follow progress.
+
+You can download ArSonMix without a GitHub account. Posting an issue requires GitHub sign-in.
+
+## Free and open source
+
+ArSonMix is open-source software licensed under **AGPL-3.0-only** for its original mixer, GUI and native built-in effects. The app includes a dedicated **More > About & Licenses** section. [View the license](LICENSE), [third-party notices](LICENSE-NOTICE.txt) or [current releases](https://github.com/masarray/arsonmix/releases).
+
+Third-party plugins and audio drivers retain their own license terms.
+
+<details>
+<summary><strong>For developers and contributors</strong></summary>
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md) and the [Smart CI workflow](docs/SMART_CI_RUNNER_WORKFLOW.md). Historical engineering regression references remain in [the archived GUI baseline](docs/GUI_BASELINE_LOCK_2026-10-25.md), [Smart Audio Engine ARD](docs/ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md) and [Implementation Blueprint](docs/SMART_AUDIO_ENGINE_IMPLEMENTATION_BLUEPRINT.md); these are not a list of presently released capabilities. Preserve one approved [`/preview/`](https://masarray.github.io/arsonmix/preview/) GUI, the native JUCE PCM/FX graph, accepted ChannelId/EdgeId graph state and native ACK/readback, and use exact-SHA validation. The Pages and Cloudflare pipeline share the same `site/` landing and compiled GUI; see [publishing](docs/GITHUB_PAGES_PREVIEW.md). Physical ASIO FAT is separate from Chromium and unit-test success. Hardware audio regression and physical crackle field evidence are tracked in [issue #15](https://github.com/masarray/arsonmix/issues/15). Current integration coordination: [INT-1 #837](https://github.com/masarray/arsonmix/issues/837).
+
+</details>

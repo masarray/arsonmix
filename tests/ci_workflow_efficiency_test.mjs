@@ -440,3 +440,25 @@ test('Vocal Harmony DSP workflow is STRICTLY plugin-only, never player/mixer/CMa
   assert.doesNotMatch(quickUi, /python tests\/native_harmony_assembly_test\.py/);
   assert.doesNotMatch(quickUi, /node --check site\/preview-v2\/assets\/mixer-native-harmony\.js/);
 });
+
+test('ImmerSIB P9/P102 automatic CI retains PCM tests but not repeated Windows builds', () => {
+  const specs = [
+    ['.github/workflows/imersip-p92-single-engine.yml', 'windows'],
+    ['.github/workflows/immersib-musical-eq.yml', 'windows-audition']
+  ];
+  for (const [path, job] of specs) {
+    const source = read(path);
+    assert.match(source, /pull_request:\n    types: \[/, path);
+    assert.match(source, /workflow_dispatch:\n    inputs:\n      expected_sha:/, path);
+    assert.match(source, /Verify pinned manual source HEAD/, path);
+    assert.match(source, /INVALID_EXACT_SHA/, path);
+    assert.match(source, /WRONG_EXACT_SHA/, path);
+    const win = source.split('\n  ' + job + ':\n')[1];
+    assert.ok(win, 'Missing Windows diagnostic job in ' + path);
+    assert.match(win, /if: \$\{\{ github\.event_name == 'workflow_dispatch' \}\}/,
+      'Windows CI must not start automatically for every iterative PR');
+    assert.doesNotMatch(win, /if: \$\{\{ github\.event_name == 'pull_request' \}\}/);
+    assert.match(source, /ref: \$\{\{ inputs\.expected_sha \|\| github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
+    assert.match(win, /EXPECTED_SHA: \$\{\{ inputs\.expected_sha \|\| github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
+  }
+});

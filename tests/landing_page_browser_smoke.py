@@ -27,10 +27,50 @@ def browser_check(page):
     assert page.locator(".os-card").count() == 3
     assert page.locator(".app-shot img").count() == 1
     assert page.locator(".gallery img").count() == 3
+    # Public conversion path: authentic rack image, six described FX, first
+    # sound guide, and one-click feedback, on desktop AND phone.
+    assert page.locator("#effects .fx-list article").count() == 6
+    assert page.locator("#effects .fx-visual img").count() == 1
+    # The effect image is intentionally lazy-loaded; bring it into the
+    # viewport before checking decoded bytes rather than racing Chromium.
+    assert (ROOT / "dist-pages/media/console-routing.jpg").is_file(), (
+        "Stage actual marketing assets before starting Chromium"
+    )
+    rack = page.locator("#effects .fx-visual img")
+    rack.scroll_into_view_if_needed()
+    page.wait_for_function(
+        "() => {const img=document.querySelector('#effects .fx-visual img'); return img && img.complete && img.naturalWidth>0;}",
+        timeout=15000,
+    )
+    gallery = page.locator("#fx-gallery .fx-gallery-card")
+    assert gallery.count() == 6
+    assert page.locator("#fx-gallery img").count() == 6
+    for editor in page.locator("#fx-gallery img").all():
+        editor.scroll_into_view_if_needed()
+        editor.evaluate("img => img.decode()")
+        assert editor.evaluate("img => img.complete && img.naturalWidth > 300")
+    assert page.locator("#getting-started .step-grid article").count() == 3
+    assert page.locator("#feedback").count() == 1
+    assert page.locator('a[href="#effects"]').count() >= 2
+    assert page.locator('a[href="#getting-started"]').count() >= 1
+    assert page.locator('a[href="#feedback"]').count() >= 1
+    assert page.locator(
+        'a[href="https://github.com/masarray/arsonmix/issues/new?template=01_bug_report.yml"]'
+    ).count() == 1
+    assert page.locator(
+        'a[href="https://github.com/masarray/arsonmix/issues/new?template=02_feature_request.yml"]'
+    ).count() == 1
+
     assert page.locator("a[href='./preview/']").count() >= 2
     imgs = page.locator(".gallery img,.app-shot img,.brand img,.hero-brand-lockup img")
     assert page.locator(".hero-brand-lockup img").count() == 1
     assert page.locator(".hero-brand-lockup img").evaluate("img=>img.naturalWidth >= 512")
+    # Offscreen gallery images also use loading=lazy. Verify the genuine
+    # assets after visiting their viewport, without disabling lazy loading.
+    for idx in range(imgs.count()):
+        img = imgs.nth(idx)
+        img.scroll_into_view_if_needed()
+        img.evaluate("img => img.decode()")
     assert all(imgs.evaluate_all(
         "nodes=>nodes.map(n=>n.complete && n.naturalWidth>0)")), "Screenshot/brand broken"
     overflow = page.evaluate("document.documentElement.scrollWidth - window.innerWidth")
@@ -81,7 +121,15 @@ def main():
             nojs.goto(site)
             verified = nojs.locator(".os-card[data-release-tag]").count()
             assert verified == nojs.locator(".os-card.is-available").count()
-            assert verified == nojs.locator("a[data-release-link][href]").count()
+            # Unhydrated source HTML intentionally has inert #download
+            # placeholders. Only exact GitHub asset links count as downloads.
+            direct = nojs.locator(
+                'a[data-release-link][href^="https://github.com/masarray/arsonmix/releases/download/"]'
+            )
+            assert verified == direct.count()
+            for link in nojs.locator("a[data-release-link]").all():
+                if link.get_attribute("href") == "#download":
+                    assert link.get_attribute("aria-disabled") == "true"
             assert nojs.locator(".os-state").filter(has_text="NOT PUBLISHED").count() == 0
             nojs.close()
 
