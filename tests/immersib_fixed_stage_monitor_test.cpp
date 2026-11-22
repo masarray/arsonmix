@@ -9,6 +9,7 @@
 #endif
 #include "../engine/builtin_fx/ImerSipP92Scene.h"
 #include "../engine/builtin_fx/sonku/SonKuP90StereoDecoder.h"
+#include "../engine/builtin_fx/sonku/SonKuP94FrontBackDepthCue.h"
 #include "../engine/builtin_fx/sonku/SonKuP98SceneVoicing.h"
 #include <algorithm>
 #include <array>
@@ -24,6 +25,26 @@ using armix::sonku::p90::StereoDecoder;
 using armix::sonku::p98::SceneVoicing;
 constexpr double pi=3.14159265358979323846;
 using Stereo=std::array<std::vector<float>,2>;
+
+static void physicalStereoRoomCueTest(int rate) {
+    armix::sonku::p94::FrontBackDepthCue dual,legacy;
+    assert(dual.prepare(rate) && legacy.prepare(rate));
+    // Live Concert stage = 112deg total: speakers L=-56 / R=+56.
+    // P94 must not treat them as an imaginary source straight ahead.
+    dual.retargetStereo(-56.f,56.f,true);
+    legacy.retarget(0.f,true);
+    for(int i=0;i<rate;++i) { (void)dual.next();(void)legacy.next(); }
+    const auto d=dual.next(),l=legacy.next();
+    const double co=std::cos(56.*pi/180.);
+    const float w=static_cast<float>(co*co*co*co);
+    assert(std::abs(d.early-(1.f+.28f*w))<1.e-5f);
+    assert(std::abs(d.direct-(1.f-.045f*w))<1.e-5f);
+    assert(d.early<l.early-.20f); // v7's genuine two-speaker improvement
+    assert(d.direct>l.direct);
+    dual.retargetStereo(-56.f,56.f,false);
+    const auto off=dual.next();
+    assert(off.direct==1.f && off.early==1.f);
+}
 
 static void physicalStageKernelTest(int rate) {
     StereoDecoder stage;
@@ -197,6 +218,7 @@ static double error(const Stereo& a,const Stereo& b){
 }
 int main() {
     for(int rate:{44100,48000}){
+        physicalStereoRoomCueTest(rate);
         physicalStageKernelTest(rate);
         panAndSpectralTest(rate);
         for(int scene:{2,3,4,5,6,7,8})
