@@ -2,7 +2,7 @@ name: Windows Native VST3 Host
 # Dispatcher uses the reviewed main workflow and checks out the exact PR SHA.
 # The run name is a verifiable deduplication identity (not github.head_sha,
 # which would refer to main for workflow_dispatch on main).
-run-name: "ArSonMix ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat && 'FAT' || github.event_name == 'workflow_dispatch' && inputs.field_preview && 'FIELD' || github.event_name == 'workflow_dispatch' && 'NATIVE' || 'AUTO' }} PR${{ inputs.request_pr_number || '0' }} ${{ inputs.expected_sha || github.sha }}"
+run-name: "ArSonMix ${{ github.event_name == 'workflow_dispatch' && inputs.feature_scope != '' && 'FEATURE' || github.event_name == 'workflow_dispatch' && inputs.package_fat && 'FAT' || github.event_name == 'workflow_dispatch' && inputs.field_preview && 'FIELD' || github.event_name == 'workflow_dispatch' && 'NATIVE' || 'AUTO' }} PR${{ inputs.request_pr_number || '0' }} ${{ inputs.expected_sha || github.sha }}"
 on:
   # Single canonical Windows release producer: main changes to shipped runtime,
   # native C++ or distribution scripts. Historical feature branch pushes are PRs.
@@ -53,6 +53,8 @@ on:
       - 'scripts/tests/test_factoryfx_release_bundle.py'
       - 'scripts/tests/test_windows_spatial_fx_packaging.py'
       - 'scripts/tests/test_immersib_approved_pcm_sources.py'
+      - 'scripts/windows_feature_scope.mjs'
+      - 'tests/windows_feature_scope_contract.test.mjs'
       - '.github/workflows/p1-windows.yml'
   # Direct path scoped native qualification, without a second Windows call
   # from the UI workflow or historical multi-agent coordination.
@@ -101,6 +103,8 @@ on:
       - 'scripts/tests/test_factoryfx_release_bundle.py'
       - 'scripts/tests/test_windows_spatial_fx_packaging.py'
       - 'scripts/tests/test_immersib_approved_pcm_sources.py'
+      - 'scripts/windows_feature_scope.mjs'
+      - 'tests/windows_feature_scope_contract.test.mjs'
       - '.github/workflows/p1-windows.yml'
       - 'tests/live_graph_contract_test.mjs'
       - 'tests/*native*contract*.mjs'
@@ -116,11 +120,11 @@ on:
         type: boolean
         required: false
         default: false
-      focused_harmony_fat:
-        description: "Focused Windows FAT for the built-in vocal harmony plugin: full app, plugin DSP, mixer PCM and ASIO checks"
-        type: boolean
+      feature_scope:
+        description: "Owner-validated feature-only Windows MSVC CTest, never a full release FAT"
+        type: string
         required: false
-        default: false
+        default: ""
       expected_sha:
         description: "Immutable source SHA for ChatGPT milestone"
         type: string
@@ -175,7 +179,7 @@ jobs:
                 required=false
                 for file in "${changed[@]}"; do
                   case "$file" in
-                    .github/workflows/p1-windows.yml|scripts/chat_ci_dispatch.mjs|tests/chat_ci_dispatch_contract.test.mjs|tests/ci_workflow_efficiency_test.mjs|docs/SMART_CI_RUNNER_WORKFLOW.md) ;;
+                    .github/workflows/p1-windows.yml|scripts/chat_ci_dispatch.mjs|scripts/windows_feature_scope.mjs|tests/windows_feature_scope_contract.test.mjs|tests/chat_ci_dispatch_contract.test.mjs|tests/ci_workflow_efficiency_test.mjs|docs/SMART_CI_RUNNER_WORKFLOW.md) ;;
                     *) required=true; break ;;
                   esac
                 done
@@ -208,7 +212,7 @@ jobs:
           g++ -std=c++20 -O2 -Wall -Wextra -Werror tests/first_run_endpoint_policy_test.cpp -o "$RUNNER_TEMP/armix-first-run-policy"
           "$RUNNER_TEMP/armix-first-run-policy"
           node --test tests/native_first_run_bootstrap_contract.test.mjs
-          node --test tests/rc_operator_workflow_contract.test.mjs tests/workstream_coordination_contract.test.mjs tests/ci_workflow_efficiency_test.mjs tests/chat_ci_dispatch_contract.test.mjs tests/approved_native_m2_contract.test.cjs tests/native_artifact_packaging_contract.test.mjs tests/windows_installer_contract_test.mjs tests/live_graph_contract_test.mjs tests/native_caption_wire_geometry_contract.test.cjs
+          node --test tests/rc_operator_workflow_contract.test.mjs tests/workstream_coordination_contract.test.mjs tests/ci_workflow_efficiency_test.mjs tests/chat_ci_dispatch_contract.test.mjs tests/windows_feature_scope_contract.test.mjs tests/approved_native_m2_contract.test.cjs tests/native_artifact_packaging_contract.test.mjs tests/windows_installer_contract_test.mjs tests/live_graph_contract_test.mjs tests/native_caption_wire_geometry_contract.test.cjs
           # Simulate Windows CP1252 before allocating MSVC: the native
           # inspector Python child must explicitly select UTF-8.
           PYTHONIOENCODING=cp1252 node --test --test-name-pattern="WIRE inspector controls PRIMARY BUS" tests/approved_native_m2_contract.test.cjs
@@ -266,7 +270,7 @@ jobs:
           g++ -std=c++20 -O2 -DNDEBUG -fno-fast-math tests/builtin_vocal_throw_test.cpp -o "$RUNNER_TEMP/native-vocal-throw-test"
           "$RUNNER_TEMP/native-vocal-throw-test"
   windows-build:
-    name: Windows MSVC / realtime CTest
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.feature_scope != '' && 'Windows FEATURE scoped native CTest (NOT full)' || 'Windows MSVC / realtime CTest' }}
     needs: quick
     # Draft commits never reserve expensive Windows runners. Non-draft PR
     # synchronizations re-test latest HEAD. Main push and manual always run.
@@ -277,11 +281,10 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 50
     env:
-      # Owner-dispatched FAT on an isolated Harmony-only PR can skip
-      # compiling unrelated CTest executables, never the actual JUCE GUI.
-      # Main/release builds and every generic native milestone remain full.
+      # FEATURE is developer-only. Protected nativeFull stays all-target.
       FIELD_PREVIEW: ${{ github.event_name == 'workflow_dispatch' && inputs.field_preview && !inputs.package_fat }}
-      FOCUSED_HARMONY_FAT: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true && inputs.focused_harmony_fat == true }}
+      FEATURE_SCOPE: ${{ github.event_name == 'workflow_dispatch' && inputs.feature_scope || '' }}
+      CI_PACKAGE_FAT: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat || false }}
     steps:
       - uses: actions/checkout@v4
         with:
