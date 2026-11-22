@@ -2,7 +2,7 @@ name: Windows Native VST3 Host
 # Dispatcher uses the reviewed main workflow and checks out the exact PR SHA.
 # The run name is a verifiable deduplication identity (not github.head_sha,
 # which would refer to main for workflow_dispatch on main).
-run-name: "ArSonMix ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat && 'FAT' || github.event_name == 'workflow_dispatch' && inputs.field_preview && 'FIELD' || github.event_name == 'workflow_dispatch' && 'NATIVE' || 'AUTO' }} PR${{ inputs.request_pr_number || '0' }} ${{ inputs.expected_sha || github.sha }}"
+run-name: "ArSonMix ${{ github.event_name == 'workflow_dispatch' && inputs.feature_scope != '' && 'FEATURE' || github.event_name == 'workflow_dispatch' && inputs.package_fat && 'FAT' || github.event_name == 'workflow_dispatch' && inputs.field_preview && 'FIELD' || github.event_name == 'workflow_dispatch' && 'NATIVE' || 'AUTO' }} PR${{ inputs.request_pr_number || '0' }} ${{ inputs.expected_sha || github.sha }}"
 on:
   # Single canonical Windows release producer: main changes to shipped runtime,
   # native C++ or distribution scripts. Historical feature branch pushes are PRs.
@@ -53,6 +53,8 @@ on:
       - 'scripts/tests/test_factoryfx_release_bundle.py'
       - 'scripts/tests/test_windows_spatial_fx_packaging.py'
       - 'scripts/tests/test_immersib_approved_pcm_sources.py'
+      - 'scripts/windows_feature_scope.mjs'
+      - 'tests/windows_feature_scope_contract.test.mjs'
       - '.github/workflows/p1-windows.yml'
   # Direct path scoped native qualification, without a second Windows call
   # from the UI workflow or historical multi-agent coordination.
@@ -101,6 +103,8 @@ on:
       - 'scripts/tests/test_factoryfx_release_bundle.py'
       - 'scripts/tests/test_windows_spatial_fx_packaging.py'
       - 'scripts/tests/test_immersib_approved_pcm_sources.py'
+      - 'scripts/windows_feature_scope.mjs'
+      - 'tests/windows_feature_scope_contract.test.mjs'
       - '.github/workflows/p1-windows.yml'
       - 'tests/live_graph_contract_test.mjs'
       - 'tests/*native*contract*.mjs'
@@ -116,11 +120,11 @@ on:
         type: boolean
         required: false
         default: false
-      focused_harmony_fat:
-        description: "Focused Windows FAT for the built-in vocal harmony plugin: full app, plugin DSP, mixer PCM and ASIO checks"
-        type: boolean
+      feature_scope:
+        description: "Owner-validated feature-only Windows MSVC CTest, never a full release FAT"
+        type: string
         required: false
-        default: false
+        default: ""
       expected_sha:
         description: "Immutable source SHA for ChatGPT milestone"
         type: string
@@ -175,7 +179,7 @@ jobs:
                 required=false
                 for file in "${changed[@]}"; do
                   case "$file" in
-                    .github/workflows/p1-windows.yml|scripts/chat_ci_dispatch.mjs|tests/chat_ci_dispatch_contract.test.mjs|tests/ci_workflow_efficiency_test.mjs|docs/SMART_CI_RUNNER_WORKFLOW.md) ;;
+                    .github/workflows/p1-windows.yml|scripts/chat_ci_dispatch.mjs|scripts/required_pr_merge_gate.mjs|scripts/windows_feature_scope.mjs|tests/windows_feature_scope_contract.test.mjs|tests/chat_ci_dispatch_contract.test.mjs|tests/ci_workflow_efficiency_test.mjs|docs/SMART_CI_RUNNER_WORKFLOW.md|AGENTS.md) ;;
                     *) required=true; break ;;
                   esac
                 done
@@ -208,7 +212,7 @@ jobs:
           g++ -std=c++20 -O2 -Wall -Wextra -Werror tests/first_run_endpoint_policy_test.cpp -o "$RUNNER_TEMP/armix-first-run-policy"
           "$RUNNER_TEMP/armix-first-run-policy"
           node --test tests/native_first_run_bootstrap_contract.test.mjs
-          node --test tests/rc_operator_workflow_contract.test.mjs tests/workstream_coordination_contract.test.mjs tests/ci_workflow_efficiency_test.mjs tests/chat_ci_dispatch_contract.test.mjs tests/approved_native_m2_contract.test.cjs tests/native_artifact_packaging_contract.test.mjs tests/windows_installer_contract_test.mjs tests/live_graph_contract_test.mjs tests/native_caption_wire_geometry_contract.test.cjs
+          node --test tests/rc_operator_workflow_contract.test.mjs tests/workstream_coordination_contract.test.mjs tests/ci_workflow_efficiency_test.mjs tests/chat_ci_dispatch_contract.test.mjs tests/windows_feature_scope_contract.test.mjs tests/approved_native_m2_contract.test.cjs tests/native_artifact_packaging_contract.test.mjs tests/windows_installer_contract_test.mjs tests/live_graph_contract_test.mjs tests/native_caption_wire_geometry_contract.test.cjs
           # Simulate Windows CP1252 before allocating MSVC: the native
           # inspector Python child must explicitly select UTF-8.
           PYTHONIOENCODING=cp1252 node --test --test-name-pattern="WIRE inspector controls PRIMARY BUS" tests/approved_native_m2_contract.test.cjs
@@ -273,15 +277,11 @@ jobs:
     # A main push containing ONLY CI policy/contract files was already
     # checked by the Linux native gate. Any runtime/native or unknown diff
     # still performs full MSVC/CTest. Owner-dispatched runs always compile.
-    if: ${{ github.event_name != 'pull_request' && (github.event_name != 'push' || needs.quick.outputs.native_required == 'true') }}
+    if: ${{ github.event_name != 'pull_request' && (github.event_name != 'push' || needs.quick.outputs.native_required == 'true') && (github.event_name != 'workflow_dispatch' || inputs.feature_scope == '') }}
     runs-on: windows-2022
     timeout-minutes: 50
     env:
-      # Owner-dispatched FAT on an isolated Harmony-only PR can skip
-      # compiling unrelated CTest executables, never the actual JUCE GUI.
-      # Main/release builds and every generic native milestone remain full.
       FIELD_PREVIEW: ${{ github.event_name == 'workflow_dispatch' && inputs.field_preview && !inputs.package_fat }}
-      FOCUSED_HARMONY_FAT: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true && inputs.focused_harmony_fat == true }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -297,6 +297,7 @@ jobs:
             throw "FAT_SOURCE_HEAD_MISMATCH expected=$env:EXPECTED_SOURCE_SHA actual=$actual"
           }
           Write-Host "FAT_EXACT_PR_HEAD_CHECKOUT=$actual"
+
       - name: Cheap canonical Console v6 puzzle socket gate (no JUCE)
         run: node scripts/check_console_puzzle.mjs
       - name: Stop incomplete integrated product promotion before JUCE checkout
@@ -390,122 +391,15 @@ jobs:
           }
       - name: Verify exact ONE approved /preview/ GUI CMake bundle
         run: node scripts/check_approved_native_gui_release.mjs --source-only --bundle build/approved_gui
-      # Manual FAT scoped to the vocal harmony plugin must compile the actual
-      # app plus DSP/PCM/ASIO boundary probes, not 70+ unrelated fixtures.
-      # The CTest phase took ~8 sec in a full 80-test Windows run while its
-      # full compilation took ~18 min. This is a build cost optimization,
-      # NOT permission to skip the full CTest gate before release.
-      - name: Build JUCE app and focused vocal harmony, mixer and ASIO tests
-        if: ${{ env.FOCUSED_HARMONY_FAT == 'true' }}
-        shell: pwsh
-        run: |
-          $targets = @(
-            'ARMixConsole'
-            'ARMixHarmonyOfflineAb'
-            'ARMixHarmonyPitchSyncTests'
-            'ARMixHarmonySpatialTests'
-            'ARMixHarmonyDspTests'
-            'ARMixHarmonyCpuProfileTests'
-            'ARMixHarmonyMusicGuideTests'
-            'ARMixHarmonyChannelPcmTests'
-            'ARMixHarmonyBypassPcmTests'
-            'ARMixCrackleWindowTests'
-            'ARMixNativeMixerSessionTests'
-            'ARMixLiveChannelFxTests'
-          )
-          # Check exact source first: a long-lived vocal harmony plugin PR can have an
-          # older CMakeLists.txt than the trusted CI YAML from main.
-          # Fail before compiling JUCE if the mandatory test registry drifts.
-          $catalogText = & ctest --test-dir build -C Release --show-only=json-v1
-          if ($LASTEXITCODE -ne 0) { throw 'Focused FAT cannot read source CTest registry' }
-          $catalog = ($catalogText | Out-String | ConvertFrom-Json)
-          $available = @($catalog.tests | ForEach-Object { $_.name })
-          $required = @(
-            'NativeHarmonyOfflineDryAndABRenderHarness'
-            'NativeHarmonyPitchSynchronousFormantCandidateAndBlockParity'
-            'NativeHarmonyBackingStageSpatialDepthAndMonoPDC'
-            'NativeHarmonyMultivoicePitchAndRealtimeFinitePCM'
-            'NativeHarmonySyntheticCallbackCpuProfile'
-            'NativeHarmonyCrossChannelMusicKeyAndManualFallback'
-            'NativeHarmonyMusicFromOtherChannelIdAndStateMigration'
-            'NativeHarmonyWarmBypassRackSlotAndLatencyParity'
-            'ApprovedNativeHarmonyEditorAckAndSingleGui'
-            'P0PreMarkerFiveSecondEvidenceWindow'
-            'P1FPhysicalPortToNativeMasterAndEpochGuard'
-            'P1HRealNativePerChannelFxAndSafeRetirement'
-          )
-          $missing = @($required | Where-Object { $_ -notin $available })
-          if ($missing.Count -gt 0) {
-            throw "FOCUSED_FAT_MISSING_REQUIRED_TESTS=$($missing -join ',')"
-          }
-          # The production render audit exists in newer CMake but not in
-          # older vocal harmony plugin candidates. Run it when source declares it.
-          if ('M3ActualProductionRenderPathAndFailSilentCounters' -in $available) {
-            $targets += 'ARMixProductionRenderAuditTests'
-            Write-Host 'FOCUSED_FAT_PRODUCTION_AUDIT=in-source'
-          } else {
-            Write-Host 'FOCUSED_FAT_PRODUCTION_AUDIT=not-in-source'
-          }
-          $cmakeSource = Get-Content -LiteralPath 'CMakeLists.txt' -Raw
-          foreach ($target in $targets) {
-            $escaped = [regex]::Escape($target)
-            if ($cmakeSource -notmatch "(?m)^\s*(?:add_executable|juce_add_console_app|juce_add_gui_app)\(\s*$escaped\b") {
-              throw "FOCUSED_FAT_UNDECLARED_CMAKE_TARGET=$target"
-            }
-          }
-          & cmake --build build --config Release --parallel 2 --target $targets
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          # github.sha is the trusted workflow ref when dispatched from main,
-          # not the source commit of a long-lived candidate PR.
-          $sourceSha = (& git rev-parse HEAD).Trim()
-          if ($LASTEXITCODE -ne 0 -or $sourceSha -ne '${{ inputs.expected_sha }}') {
-            throw "HARMONY_FAT_SOURCE_SHA_MISMATCH expected=${{ inputs.expected_sha }} actual=$sourceSha"
-          }
-          Write-Host "HARMONY_FAT_NATIVE_TARGETS=$($targets.Count) SOURCE_SHA=$sourceSha"
-
       - name: Build executable and native RT tests
-        if: ${{ env.FOCUSED_HARMONY_FAT != 'true' && env.FIELD_PREVIEW != 'true' }}
+        if: ${{ env.FIELD_PREVIEW != 'true' }}
         # Full build remains mandatory for main, release and native/full requests.
         run: cmake --build build --config Release --parallel 2
-      - name: Run focused vocal harmony DSP, mixer PCM and ASIO checks
-        if: ${{ env.FOCUSED_HARMONY_FAT == 'true' }}
-        shell: pwsh
-        run: |
-          $requiredTests = @(
-            'NativeHarmonyOfflineDryAndABRenderHarness'
-            'NativeHarmonyPitchSynchronousFormantCandidateAndBlockParity'
-            'NativeHarmonyBackingStageSpatialDepthAndMonoPDC'
-            'NativeHarmonyMultivoicePitchAndRealtimeFinitePCM'
-            'NativeHarmonySyntheticCallbackCpuProfile'
-            'NativeHarmonyCrossChannelMusicKeyAndManualFallback'
-            'NativeHarmonyMusicFromOtherChannelIdAndStateMigration'
-            'NativeHarmonyWarmBypassRackSlotAndLatencyParity'
-            'ApprovedNativeHarmonyEditorAckAndSingleGui'
-            'P0PreMarkerFiveSecondEvidenceWindow'
-            'P1FPhysicalPortToNativeMasterAndEpochGuard'
-            'P1HRealNativePerChannelFxAndSafeRetirement'
-          )
-          # GitHub/CTest can exit 0 when -R matches zero tests. Fail closed
-          # if a refactor renamed a test without updating this focused lane.
-          $catalog = (& ctest --test-dir build -C Release --show-only=json-v1 | Out-String | ConvertFrom-Json)
-          if ($LASTEXITCODE -ne 0) { throw 'Unable to read native CTest catalog' }
-          $available = @($catalog.tests | ForEach-Object { $_.name })
-          $missing = @($requiredTests | Where-Object { $_ -notin $available })
-          if ($missing.Count -ne 0) {
-            throw "FOCUSED_FAT_MISSING_REQUIRED_TESTS=$($missing -join ',')"
-          }
-          if ('M3ActualProductionRenderPathAndFailSilentCounters' -in $available) {
-            $requiredTests += 'M3ActualProductionRenderPathAndFailSilentCounters'
-          }
-          $pattern = '^(' + (($requiredTests | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')$'
-          Write-Host "FOCUSED_HARMONY_FAT_CTEST_COUNT=$($requiredTests.Count) FULL_SUITE_NOT_CLAIMED"
-          & ctest --test-dir build -C Release --output-on-failure -R $pattern
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build portable Windows field preview
         if: ${{ env.FIELD_PREVIEW == 'true' }}
         run: cmake --build build --config Release --parallel 2 --target ARMixConsole
-      - name: Test realtime control primitives
-        if: ${{ env.FOCUSED_HARMONY_FAT != 'true' && env.FIELD_PREVIEW != 'true' }}
+      - name: Run full realtime CTest (release or nativeFull)
+        if: ${{ env.FIELD_PREVIEW != 'true' }}
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Package verified JUCE GUI for hardware FAT
         if: ${{ env.FIELD_PREVIEW == 'true' || (github.event_name == 'workflow_dispatch' && inputs.package_fat == true) }}
@@ -624,6 +518,111 @@ jobs:
   # If GitHub returns HTML instead of JSON (observed at 43094957798),
   # retry ONLY this job; the completed build is preserved in the immutable
   # run-unique cache key and all bytes are re-hashed before publish.
+
+
+  windows-feature:
+    # Separate, statically named development job. Never satisfies nativeFull.
+    name: Windows FEATURE scoped native CTest (NOT full)
+    needs: quick
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.feature_scope != '' }}
+    runs-on: windows-2022
+    timeout-minutes: 30
+    env:
+      FEATURE_SCOPE: ${{ inputs.feature_scope }}
+      EXPECTED_SOURCE_SHA: ${{ inputs.expected_sha }}
+      REQUEST_PR: ${{ inputs.request_pr_number }}
+      PACKAGE_FAT_REQUESTED: ${{ inputs.package_fat }}
+      FIELD_PREVIEW_REQUESTED: ${{ inputs.field_preview }}
+    steps:
+      - name: Checkout exact source (not moving main)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.expected_sha }}
+          persist-credentials: false
+      - name: Validate feature scope and CMake targets before JUCE
+        shell: pwsh
+        run: |
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or
+              $env:EXPECTED_SOURCE_SHA -cnotmatch '^[0-9a-f]{40}$' -or
+              $env:REQUEST_PR -notmatch '^[1-9][0-9]*$' -or
+              $actual -cne $env:EXPECTED_SOURCE_SHA) {
+            throw 'FEATURE_EXACT_SOURCE_OR_PR_MISMATCH'
+          }
+          if ($env:PACKAGE_FAT_REQUESTED -eq 'true' -or
+              $env:FIELD_PREVIEW_REQUESTED -eq 'true') {
+            throw 'FEATURE_CANNOT_PACKAGE_OR_PREVIEW'
+          }
+          $planJson = & node scripts/windows_feature_scope.mjs $env:FEATURE_SCOPE
+          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_SCOPE_UNKNOWN' }
+          $plan = $planJson | ConvertFrom-Json
+          if ($plan.id -cne $env:FEATURE_SCOPE -or
+              @($plan.targets).Count -eq 0 -or @($plan.tests).Count -eq 0) {
+            throw 'FEATURE_INVALID_PLAN'
+          }
+          $cmakeSource = Get-Content -LiteralPath CMakeLists.txt -Raw
+          foreach ($target in @($plan.targets)) {
+            $pattern = '(?m)^\s*(?:add_executable|juce_add_console_app|juce_add_gui_app)\(\s*' +
+                       [regex]::Escape($target) + '\b'
+            if ($cmakeSource -notmatch $pattern) {
+              throw "FEATURE_UNDECLARED_CMAKE_TARGET=$target"
+            }
+          }
+          Write-Host "FEATURE_PREFLIGHT=$($plan.id) targets=$(@($plan.targets).Count) tests=$(@($plan.tests).Count) fullGate=false"
+      - name: Checkout pinned JUCE 8
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.15
+          path: third_party/JUCE
+          persist-credentials: false
+      - name: Install WebView2 compile headers
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
+          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_WEBVIEW2_SDK_FAILED' }
+      - name: Configure audited feature CTest registry
+        shell: pwsh
+        run: |
+          $cmakeArgs = @('-S','.','-B','build','-G','Visual Studio 17 2022',
+            '-A','x64',"-DJUCE_ROOT=$env:GITHUB_WORKSPACE/third_party/JUCE",
+            "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$env:GITHUB_WORKSPACE/.deps",
+            '-DBUILD_TESTING=ON')
+          & cmake @cmakeArgs
+          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_CMAKE_CONFIGURE_FAILED' }
+          $catalog = (& ctest --test-dir build -C Release --show-only=json-v1 |
+            Out-String | ConvertFrom-Json)
+          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_CTEST_CATALOG_FAILED' }
+          $planJson = & node scripts/windows_feature_scope.mjs $env:FEATURE_SCOPE
+          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_PLAN_PARSE_FAILED' }
+          $plan = $planJson | ConvertFrom-Json
+          $available = @($catalog.tests | ForEach-Object { $_.name })
+          foreach ($name in @($plan.tests)) {
+            if ($name -notin $available) { throw "FEATURE_MISSING_CTEST=$name" }
+          }
+      - name: Feature-scoped Windows MSVC targets (development ONLY)
+        shell: pwsh
+        run: |
+          $planJson = & node scripts/windows_feature_scope.mjs $env:FEATURE_SCOPE
+          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_PLAN_PARSE_FAILED' }
+          $plan = $planJson | ConvertFrom-Json
+          $targets = @($plan.targets)
+          & cmake --build build --config Release --parallel 2 --target $targets
+          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_BUILD_FAILED' }
+          Write-Host "FEATURE_COMPILED=$($plan.id) targets=$($targets.Count) fullGate=false"
+      - name: Run feature-scoped CTests (development ONLY)
+        shell: pwsh
+        run: |
+          $planJson = & node scripts/windows_feature_scope.mjs $env:FEATURE_SCOPE
+          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_PLAN_PARSE_FAILED' }
+          $plan = $planJson | ConvertFrom-Json
+          $pattern = '^(' + ((@($plan.tests) | ForEach-Object {
+            [regex]::Escape($_)
+          }) -join '|') + ')$'
+          Write-Host "FEATURE_TEST_FILTER=$pattern fullGate=false"
+          & ctest --test-dir build -C Release --output-on-failure -R $pattern
+          if ($LASTEXITCODE -ne 0) { throw 'FEATURE_CTEST_FAILED' }
+
   fat-upload:
     name: Publish verified Windows FAT artifacts (retry without recompiling)
     needs: windows-build

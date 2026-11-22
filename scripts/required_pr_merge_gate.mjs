@@ -36,6 +36,8 @@ export function requiredLanes(files) {
      "config/immersib_approved_pcm_sources.json",
      "web/bridge.js","web/monitor.js","tests/approved_native_m2_contract.test.cjs",
      "tests/live_routing_ui_contract_test.mjs",
+     "scripts/windows_feature_scope.mjs",
+     "tests/windows_feature_scope_contract.test.mjs",
      ".github/workflows/p1-windows.yml"].includes(f));
   const uiFast=any(f=>/^web\/|^site\/preview-v2\/|^site\/preview-buttons\/|^integration\/console-v6\//.test(f)||
     (f.startsWith("tests/")&&f.endsWith(".py")&&
