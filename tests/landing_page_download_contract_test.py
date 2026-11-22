@@ -24,6 +24,13 @@ class LandingReleaseContract(unittest.TestCase):
             self.assertIn("media/console-overview.jpg", html)
             self.assertIn("media/console-routing.jpg", html)
             self.assertIn("media/console-faders.jpg", html)
+            self.assertIn('id="effects"', html)
+            self.assertIn('id="getting-started"', html)
+            self.assertIn('id="feedback"', html)
+            self.assertIn("Actual approved ArSonMix console screenshot", html)
+            self.assertIn("browser preview does not process audio", html)
+            self.assertIn("issues/new?template=01_bug_report.yml", html)
+            self.assertIn("issues/new?template=02_feature_request.yml", html)
             self.assertIn("prefers-reduced-motion", css)
             if base == ROOT / "site":
                 # Public feedback is a legitimate GitHub destination; binary
@@ -103,7 +110,7 @@ class LandingReleaseContract(unittest.TestCase):
         self.assertIn("GitHub account", readme)
         self.assertIn("visual only", readme)
         self.assertNotIn("Latest published Windows alpha as of", readme)
-        self.assertNotRegex(readme, r"releases/download/v\\d+\\.\\d+\\.\\d+-alpha\\.\\d+/",
+        self.assertNotRegex(readme, r"releases/download/v\d+\.\d+\.\d+-alpha\.\d+/",
                             "README must not pin a stale binary when the verified landing is dynamic")
 
     def test_release_notes_are_safe_landing_only_changes(self):
