@@ -756,6 +756,14 @@ int main() {
             return true;
         },hostState);
     assert(power->isEnabled() && power->getToggleState());
+    // Repeated unchanged host readback must never flip the real host gate,
+    // disable controls or change tooltip on an otherwise idle editor.
+    const auto stablePowerTooltip=power->getTooltip();
+    for(int idleTick=0;idleTick<100;++idleTick)
+        actualEditor->synchronizeHostPower();
+    assert(power->isEnabled() && power->getToggleState());
+    assert(power->getTooltip()==stablePowerTooltip);
+    assert(acceptedLocalPower==0);
     // Host-connected native screenshots prove the two actual power glyph
     // states. The earlier DPI snapshots deliberately test disabled/fail-safe
     // before host binding; these frames additionally verify the real bypass
