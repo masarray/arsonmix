@@ -1508,6 +1508,12 @@ private:
                 p90Decoder_.compose(centerTarget_,targets_[0],targets_[1]);
                 p92Bass_.updateDirections(positions.leftHead,positions.rightHead);
 #if defined(SONKU_P94_FRONT_BACK_DEPTH_RESEARCH) && SONKU_P94_FRONT_BACK_DEPTH_RESEARCH
+#if defined(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH) && ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
+                if(stageMonitor_) {
+                    p94Depth_.retargetStereo(positions.leftHead,positions.rightHead,
+                        settings_.spacePreset!=0 && settings_.roomAmount>0.f);
+                } else
+#endif
                 p94Depth_.retarget(p83::toHead(static_cast<float>(degrees_),p83HeadYaw_),
                                   settings_.spacePreset!=0 && settings_.roomAmount>0.f);
 #endif
