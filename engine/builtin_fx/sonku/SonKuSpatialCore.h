@@ -4,6 +4,9 @@
 #include "SonKuEarlyReflections.h"
 #include "SonKuMusicalReverb.h"
 #include "SonKuStereoIntegrity.h"
+#if defined(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH) && ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH
+#include "SonKuFixedPaMusicalEq.h"
+#endif
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
 #if !defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) || !SONKU_P82_MULTIBAND_ROOM_RESEARCH || \
     !defined(SONKU_P71_DIRECT_XYZ_RESEARCH) || !SONKU_P71_DIRECT_XYZ_RESEARCH
@@ -238,12 +241,18 @@ public:
         p97Stage_.suppressStageMidBoost(true);
     }
 #endif
+#if defined(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH) && ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH
+    void optInImmerSIBMusicalEq() noexcept { musicalEqEnabled_=stageMonitor_; }
+#endif
     bool prepare(double rate, SonKuReflectionProfile profile=
                  SonKuReflectionProfile::Lightweight) noexcept {
         ready_=false;
         if(!std::isfinite(rate) || (std::abs(rate-44100.)>.1 &&
                                     std::abs(rate-48000.)>.1))return false;
         sampleRate_=rate;
+#if defined(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH) && ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH
+        if(musicalEqEnabled_ && !musicalEq_.prepare(rate))return false;
+#endif
         bank_=(std::abs(rate-44100.)<=.1)?hrir::normal44100:hrir::normal48000;
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
         float extraDirectReliefDb=0.f;
@@ -331,6 +340,9 @@ public:
         return settings_.spacePreset==0 || applyAcousticSettings(settings_);
     }
     void reset() noexcept {
+#if defined(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH) && ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH
+        musicalEq_.reset();
+#endif
         for(auto& channel:history_)channel.fill(0.f);
         for(auto& source:kernels_)for(auto& ear:source)ear.fill(0.f);
         for(auto& source:targets_)for(auto& ear:source)ear.fill(0.f);
@@ -1308,6 +1320,16 @@ public:
 #endif
                 left[i]=outL*limiterGain_;
                 right[i]=outR*limiterGain_;
+#if defined(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH) && ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH
+                // Exact 6399c0f5 renderer and limiter have already finished.
+                // This is the user's external PEQ workflow, inside the insert.
+                // Never feed its result back into stage, room or original limiter.
+                if(musicalEqEnabled_) {
+                    if(p90World && roomEnabled && settings_.spatialMix>0.f)
+                        musicalEq_.process(left[i],right[i],smoothedMix_);
+                    else musicalEq_.reset();
+                }
+#endif
             }
             if(++write_==taps)write_=0;
             if(step!=0.) {
@@ -1607,6 +1629,10 @@ private:
     int remaining_=0;
 #if defined(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH) && ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
     bool stageMonitor_=false;
+#if defined(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH) && ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH
+    p102::FixedPaMusicalEq musicalEq_{};
+    bool musicalEqEnabled_=false;
+#endif
 #endif
     bool ready_=false;
     bool haveKernel_=false;

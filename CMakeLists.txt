@@ -11,6 +11,10 @@ option(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
 if(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH AND NOT ARMIX_IMMERSIB_RELEASE_CANDIDATE)
   message(FATAL_ERROR "ImmerSIB stage research requires branded candidate")
 endif()
+option(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH "Fixed PA plus screenshot-inspired musical EQ only" OFF)
+if(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH AND NOT ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH)
+  message(FATAL_ERROR "Musical EQ requires Fixed PA research")
+endif()
 # Experimental P6 native profile: OFF by default in production/installer.
 option(ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT
        "Enable unqualified SonKu full KEMAR directional reflections on the native JUCE callback"
@@ -502,6 +506,9 @@ if(ARMIX_IMMERSIB_RELEASE_CANDIDATE)
   if(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH)
     target_compile_definitions(ARMixConsole PRIVATE
         ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH=1)
+    if(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH)
+      target_compile_definitions(ARMixConsole PRIVATE ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH=1)
+    endif()
   endif()
 endif()
 
