@@ -179,7 +179,7 @@ jobs:
                 required=false
                 for file in "${changed[@]}"; do
                   case "$file" in
-                    .github/workflows/p1-windows.yml|scripts/chat_ci_dispatch.mjs|scripts/windows_feature_scope.mjs|tests/windows_feature_scope_contract.test.mjs|tests/chat_ci_dispatch_contract.test.mjs|tests/ci_workflow_efficiency_test.mjs|docs/SMART_CI_RUNNER_WORKFLOW.md) ;;
+                    .github/workflows/p1-windows.yml|scripts/chat_ci_dispatch.mjs|scripts/required_pr_merge_gate.mjs|scripts/windows_feature_scope.mjs|tests/windows_feature_scope_contract.test.mjs|tests/chat_ci_dispatch_contract.test.mjs|tests/ci_workflow_efficiency_test.mjs|docs/SMART_CI_RUNNER_WORKFLOW.md|AGENTS.md) ;;
                     *) required=true; break ;;
                   esac
                 done
