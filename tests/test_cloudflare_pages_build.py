@@ -59,6 +59,24 @@ class CloudflarePagesBuildTest(unittest.TestCase):
             self.assertIsNone(output["platforms"]["linux"])
             self.assertIsNone(output["platforms"]["macos"])
 
+    def test_release_publisher_cloudflare_sync_is_post_publication_and_safe(self):
+        # The released Windows binary must exist before any external deploy
+        # hook may request a static Cloudflare catalog refresh.
+        workflow = (ROOT / ".github/workflows/alpha-preview-publish.yml").read_text("utf-8")
+        published = workflow.index("Publish verified GitHub prerelease and its Windows binaries")
+        github_refresh = workflow.index("Refresh official landing catalog after publishing real verified binaries")
+        cf_refresh = workflow.index("Refresh Cloudflare Pages after verified public release")
+        self.assertLess(published, github_refresh)
+        self.assertLess(github_refresh, cf_refresh)
+        self.assertIn("secrets.ARSONMIX_CLOUDFLARE_PAGES_DEPLOY_HOOK", workflow)
+        self.assertIn('Host -ne "api.cloudflare.com"', workflow)
+        self.assertIn("/client/v4/pages/webhooks/deploy_hooks/", workflow)
+        self.assertIn("CLOUDFLARE_PAGES_REDEPLOY_ACCEPTED", workflow)
+        self.assertIn("CLOUDFLARE_PAGES_DEPLOY_HOOK_NOT_CONFIGURED", workflow)
+        self.assertIn("CLOUDFLARE_PAGES_DEPLOY_HOOK_FAILED", workflow)
+        self.assertIn('if ([string]::IsNullOrWhiteSpace($env:CF_PAGES_DEPLOY_HOOK))', workflow)
+        self.assertIn("gh workflow run pages-publish.yml", workflow)
+
     def test_caching_and_branch_index_policy(self):
         self.assertIn("Cache-Control: no-store", response_headers("main"))
         self.assertNotIn("X-Robots-Tag", response_headers("main"))

@@ -224,3 +224,47 @@ jobs:
           & gh workflow run pages-publish.yml --repo $env:GITHUB_REPOSITORY --ref main
           if ($LASTEXITCODE -ne 0) { throw "Release published but landing sync dispatch failed" }
           Write-Host "ARSONMIX_LANDING_CATALOG_REFRESH_DISPATCHED"
+
+      # GitHub's GITHUB_TOKEN release event does not automatically trigger
+      # Cloudflare's Git-connected Pages build. An optional production Deploy
+      # Hook provides the same no-code-release catalog refresh as GitHub Pages.
+      # No hook secret => no external mutation; browser still checks signed
+      # GitHub Releases without accepting unverified assets.
+      - name: Refresh Cloudflare Pages after verified public release
+        shell: pwsh
+        env:
+          CF_PAGES_DEPLOY_HOOK: ${{ secrets.ARSONMIX_CLOUDFLARE_PAGES_DEPLOY_HOOK }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CF_PAGES_DEPLOY_HOOK)) {
+            Write-Warning "CLOUDFLARE_PAGES_DEPLOY_HOOK_NOT_CONFIGURED; static catalog will update at next verified main push"
+            exit 0
+          }
+          $uri = $null
+          $valid = [System.Uri]::TryCreate(
+            $env:CF_PAGES_DEPLOY_HOOK.Trim(), [System.UriKind]::Absolute, [ref]$uri
+          )
+          if (-not $valid -or $uri.Scheme -ne "https" -or
+              $uri.Host -ne "api.cloudflare.com" -or
+              $uri.AbsolutePath -notmatch '^/client/v4/pages/webhooks/deploy_hooks/[A-Za-z0-9_-]+$' -or
+              $uri.Query -or $uri.Fragment -or $uri.UserInfo) {
+            Write-Warning "CLOUDFLARE_PAGES_DEPLOY_HOOK_INVALID; no request performed"
+            exit 0
+          }
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+              $response = Invoke-WebRequest -Method Post -Uri $uri -TimeoutSec 20 -ErrorAction Stop
+              if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 300) {
+                throw "Non-success HTTP response"
+              }
+              Write-Host "CLOUDFLARE_PAGES_REDEPLOY_ACCEPTED"
+              break
+            } catch {
+              # Never log or echo the secret URL. Publication is already
+              # immutable; a CDN outage must not relabel the release as failed.
+              if ($attempt -eq 3) {
+                Write-Warning "CLOUDFLARE_PAGES_DEPLOY_HOOK_FAILED; keep prior static deploy and use signed live release fallback"
+              } else {
+                Start-Sleep -Seconds (2 * $attempt)
+              }
+            }
+          }
