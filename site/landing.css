@@ -82,3 +82,35 @@ a{color:inherit;text-decoration:none}button,input{font:inherit}img,svg{display:b
 .download-details a{text-decoration:underline;text-underline-offset:2px}
 .closing-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 @media(max-width:760px){.download-details{text-align:left;max-width:100%}.closing-actions{width:100%}.closing-actions .btn{flex:1}}
+
+/* Original built-in FX screenshot gallery; no recreated editor surfaces. */
+.fx-gallery-heading{margin:38px 0 18px;padding-top:24px;border-top:1px solid #26414e}
+.fx-gallery-heading h3{font-size:22px;font-weight:560;letter-spacing:-.035em;margin:10px 0 7px}
+.fx-gallery-heading p{font-size:12px;line-height:1.7;margin:0;max-width:670px}
+.fx-gallery-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px}
+.fx-gallery-card{grid-column:span 4;display:block;min-width:0;overflow:hidden;border:1px solid #294652;border-radius:7px;background:#0b1a24;transition:border-color .18s,transform .18s}
+.fx-gallery-card:hover{border-color:#65cbd8;transform:translateY(-2px)}
+.fx-gallery-card>img{display:block;width:100%;height:215px;object-fit:contain;object-position:center;background:#101e29;padding:10px}
+.fx-gallery-card.fx-gallery-featured{grid-column:span 6}
+.fx-gallery-card.fx-gallery-featured>img{height:284px}
+.fx-gallery-card.fx-gallery-wide{grid-column:span 12}
+.fx-gallery-card.fx-gallery-wide>img{height:240px;max-width:1160px;margin:0 auto}
+.fx-gallery-caption{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 14px;border-top:1px solid #243a45}
+.fx-gallery-caption strong{font-size:12px;line-height:1.4;font-weight:610;color:#d9edf5}
+.fx-gallery-caption small{font-size:9px;letter-spacing:.075em;color:#72aab9;text-align:right}
+.fx-gallery-note{font-size:10px;line-height:1.65;color:#7fa4b3;margin:14px 0 0}
+@media(max-width:760px){
+  .fx-gallery-heading{margin-top:30px}
+  .fx-gallery-card{grid-column:span 6}
+  .fx-gallery-card.fx-gallery-featured>img{height:235px}
+  .fx-gallery-card>img{height:185px;padding:6px}
+  .fx-gallery-card.fx-gallery-wide>img{height:170px}
+  .fx-gallery-caption{padding:9px 10px;align-items:flex-start;flex-direction:column;gap:2px}
+  .fx-gallery-caption small{text-align:left;font-size:8px}
+}
+@media(max-width:450px){
+  .fx-gallery-grid{gap:9px}
+  .fx-gallery-card.fx-gallery-featured{grid-column:span 12}
+  .fx-gallery-card.fx-gallery-featured>img{height:270px}
+  .fx-gallery-card.fx-gallery-wide>img{height:120px}
+}
