@@ -235,6 +235,7 @@ public:
         stageMonitor_=true;
         p90Decoder_.useUnmodulatedStageKernels(true);
         p98Voicing_.enableFixedStageWarmth(true);
+        p97Stage_.suppressStageMidBoost(true);
     }
 #endif
     bool prepare(double rate, SonKuReflectionProfile profile=
@@ -1252,6 +1253,11 @@ public:
                     // Single native PCM graph, no WebAudio or dynamic makeup
                     // at 0% spatial MIX. Explicit user GAIN still applies.
                     if(settings_.spatialMix>0.f){
+#if defined(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH) && ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
+                        // Experiment: no content-dependent automatic makeup.
+                        // Keep original operator trim and existing linked peak guard.
+                        if(!stageMonitor_) {
+#endif
 #if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
                         const float makeup=p95Presence_.process(x0,x1,outL,outR,
                             immersiveWarm?1.10f:1.65f);
@@ -1259,6 +1265,9 @@ public:
                         const float makeup=p95Presence_.process(x0,x1,outL,outR);
 #endif
                         outL*=makeup;outR*=makeup;
+#if defined(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH) && ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
+                        }
+#endif
                     }
                 }
 #endif
