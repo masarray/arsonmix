@@ -48,6 +48,29 @@ Run additional standalone cost attribution with:
 
     build/Release/ARMixImmerSIBP102CpuProfile.exe --attribution
 
+### First actual isolated stage measurement (Linux, exact source `ec5bc8f0879c`)
+
+[Linux source CI run 45024178447](https://github.com/masarray/arsonmix/actions/runs/45024178447)
+compiled the actual P102.3 EARLY/FDN headers under strict C++20, -O2,
+-Wall -Wextra -Werror and ran all 16 attribution cases.
+With 48 kHz / 256 frames / one stage, the **isolated** p99 measurements
+were: Live Concert 6-wall EARLY 675.89 us versus 8-line FDN 11.94 us;
+scene 8 EARLY 627.34 us versus FDN 11.77 us. At 44.1 kHz /
+256 frames, Live Concert was 629.59 us EARLY and 16.13 us FDN.
+Each stage logs sample finiteness and a PCM fingerprint.
+
+Decision: six-surface FIR is the first stage worth profiling at instruction
+level. The FDN is not the first target. **Do not sum these results or
+subtract them from full-engine timing**: different signals, caches and
+independent state mean they are NOT an additive decomposition. No controlled
+before/after optimized candidate exists yet, and a CI runner is not low-end
+Windows/ASIO hardware.
+
+The next ACTUAL speed patch must prove unchanged accepted PCM bitwise across
+44.1/48 kHz, all 7 scenes, mono/anti-phase/stereo and room ON/OFF,
+including restart and live edits. If FIR arithmetic order or voicing changes,
+the approved 30-source lock cannot be silently resealed.
+
 No PCM-locked source or user-approved coefficients are changed in M2 evidence.
 Full Windows CI, exact-sha checked benchmarks and low-spec physical listening
 remain gates for any actual DSP optimization.
