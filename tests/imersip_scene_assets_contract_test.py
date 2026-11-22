@@ -51,7 +51,7 @@ class ApprovedSceneAssets(unittest.TestCase):
         self.assertIn("juce::Timer::callPendingTimersSynchronously()",native)
         editor=(ROOT/"engine"/"builtin_fx"/"ImerSipP92Editor.h").read_text(encoding="utf-8")
         self.assertIn("orphanApplied.has_value()",editor)
-        self.assertIn('status_="RECONCILED NATIVE AUDIO ACK"',editor)
+        self.assertIn('status_=*orphanApplied?"RECONCILED NATIVE AUDIO ACK":',editor)
 
     def test_idle_editor_timer_and_host_controls_are_change_driven(self):
         # Audio and the native host remain authoritative. Unchanged 25 Hz
