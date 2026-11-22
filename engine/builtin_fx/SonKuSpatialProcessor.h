@@ -460,6 +460,9 @@ protected:
     // Distinct from approved 8D-SonKu P9.9; only ImmerSIB constructor opts in.
     void optInImmerSIBVocalRoom() noexcept {
         core_.optInImmerSIBVocalRoom();
+#if defined(ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH) && ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH
+        core_.optInImmerSIBLyricPocket();
+#endif
     }
 #endif
     // Product-specific admission is a CONTROL-thread operation; the audio

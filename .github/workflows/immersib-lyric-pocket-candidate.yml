@@ -1,0 +1,129 @@
+name: ImmerSIB Lyric Front Pocket — isolated headphone A/B
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - '.github/workflows/immersib-lyric-pocket-candidate.yml'
+      - 'engine/builtin_fx/sonku/SonKuLyricFrontPocket.h'
+      - 'engine/builtin_fx/sonku/SonKuP94FrontBackDepthCue.h'
+      - 'engine/builtin_fx/sonku/SonKuP98SceneVoicing.h'
+      - 'engine/builtin_fx/sonku/SonKuHrtfTonalCalibration.h'
+      - 'engine/builtin_fx/sonku/SonKuSpatialCore.h'
+      - 'engine/builtin_fx/SonKuSpatialProcessor.h'
+      - 'engine/builtin_fx/ImerSipP92Processor.h'
+      - 'tests/immersib_lyric_pocket_test.cpp'
+      - 'CMakeLists.txt'
+      - 'scripts/package_immersib_lyric_pocket_preview.ps1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lyric-pocket-math:
+    name: Actual 44.1/48k P100 wet-field isolation and seven-scene PCM (no JUCE)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Compile actual published-P9-flagset source + research opt-in
+        shell: bash
+        run: |
+          set -euo pipefail
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic \
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 \
+            -DSONKU_P72_NATIVE_XYZ_RT=1 \
+            -DSONKU_P75_MUSIC_SAFE_RESEARCH=1 \
+            -DSONKU_P80_TRANSPARENT_BASS_RESEARCH=1 \
+            -DSONKU_P82_MULTIBAND_ROOM_RESEARCH=1 \
+            -DSONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1 \
+            -DSONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1 \
+            -DSONKU_P85_WORLD_COHERENCE_RESEARCH=1 \
+            -DSONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1 \
+            -DSONKU_P87_MUSIC_BODY_RESEARCH=1 \
+            -DSONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1 \
+            -DSONKU_P89_DEPTH_COHERENCE_RESEARCH=1 \
+            -DSONKU_P90_TRUE_EXTERNAL_RESEARCH=1 \
+            -DSONKU_P94_FRONT_BACK_DEPTH_RESEARCH=1 \
+            -DSONKU_P95_MUSICAL_PRESENCE_RESEARCH=1 \
+            -DSONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH=1 \
+            -DSONKU_P97_STAGE_IMPACT_RESEARCH=1 \
+            -DSONKU_P98_SCENE_VOICING_RESEARCH=1 \
+            -DARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING=1 \
+            -DSONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH=1 \
+            -DSONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH=1 \
+            -DARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH=1 \
+            -DSONKU_IMMERSIB_PCM_DIAGNOSTICS=1 \
+            tests/immersib_lyric_pocket_test.cpp \
+            -o /tmp/armix-immersib-lyric-pocket
+          /tmp/armix-immersib-lyric-pocket
+          echo "LYRIC_POCKET_FULL_PCM_SOURCE_GATE=PASS; headphone listening not certified"
+
+  windows-audition:
+    name: Windows x64 JUCE mixer + real portable A/B, not public release
+    needs: lyric-pocket-math
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: windows-2022
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.15
+          path: third_party/JUCE
+          persist-credentials: false
+      - name: Pinned WebView2 SDK
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
+          if ($LASTEXITCODE -ne 0) { throw 'WEBVIEW2_SDK_INSTALL_FAILED' }
+      - name: Configure separate UNAPPROVED research candidate
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DJUCE_ROOT="$env:GITHUB_WORKSPACE/third_party/JUCE" `
+            -DJUCE_WEBVIEW2_PACKAGE_LOCATION="$env:GITHUB_WORKSPACE/.deps" `
+            -DARMIX_SONKU_APPROVED_P99_MAIN=ON `
+            -DARMIX_IMMERSIB_RELEASE_CANDIDATE=ON `
+            -DARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH=ON `
+            -DBUILD_TESTING=ON
+          if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_LYRIC_CONFIGURE_FAILED' }
+          $cache = Get-Content -LiteralPath build/CMakeCache.txt
+          foreach($flag in @('ARMIX_SONKU_APPROVED_P99_MAIN','ARMIX_IMMERSIB_RELEASE_CANDIDATE','ARMIX_IMMERSIB_LYRIC_POCKET_RESEARCH')) {
+            if ("$($flag):BOOL=ON" -notin $cache) { throw "IMMERSIB_LYRIC_FLAG_MISSING:$flag" }
+          }
+      - name: Build native regression and real JUCE editor/processor
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel 2 --target ARMixImmerSIBLyricPocketTests ARMixImerSipP92NativeTests
+          if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_LYRIC_TEST_COMPILE_FAILED' }
+          ctest --test-dir build -C Release --output-on-failure -R "NativeImmerSIBLyricPocketFullPCM|NativeImmerSIBJucePresetACKStateAndBypass"
+          if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_LYRIC_TEST_FAILED' }
+      - name: Build ACTUAL ArSonMix mixer Windows x64 with approved /preview/
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel 2 --target ARMixConsole
+          if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_LYRIC_MIXER_EXE_FAILED' }
+      - name: Verify native binary, brand, legal, canonical GUI and source provenance
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          & ./scripts/package_immersib_lyric_pocket_preview.ps1 -BuildDir build -OutputDir lyric_pocket_AB -ExpectedSha $env:EXPECTED_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_LYRIC_PACKAGING_FAILED' }
+      - name: Publish private A/B-only Windows x64 portable, NOT stable installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-ImmerSIB-Lyric-Pocket-Research-x64-${{ github.run_id }}
+          path: lyric_pocket_AB/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
