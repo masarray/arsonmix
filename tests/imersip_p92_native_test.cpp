@@ -139,9 +139,13 @@ static void nativeParity(int rate) {
     assert(!actual.musicCompatibleLowFrequency);
 
     auto native=std::make_unique<SonKuSpatialCore>();
-#if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
-    // Sample parity compares two identically opted-in instances of the
-    // SAME core. Generic SonKu stays unopted and byte-identical separately.
+#if defined(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH) && ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
+    // JUCE's branded candidate constructor chooses fixed stage instead of
+    // the released P99 room donor. Reference MUST choose the SAME mode.
+    // Do not weaken epsilon tolerances or bypass this exact PCM test.
+    native->optInImmerSIBStageMonitor();
+#elif defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
+    // Released alpha.26 reference, unchanged when the research flag is OFF.
     native->optInImmerSIBVocalRoom();
 #endif
     assert(native->prepare(rate,
