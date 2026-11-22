@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/immersib-fixed-stage-candidate.yml'
       - 'engine/builtin_fx/sonku/SonKuP90StereoDecoder.h'
+      - 'engine/builtin_fx/sonku/SonKuP94FrontBackDepthCue.h'
       - 'engine/builtin_fx/sonku/SonKuP98SceneVoicing.h'
       - 'engine/builtin_fx/sonku/SonKuHrtfTonalCalibration.h'
       - 'engine/builtin_fx/sonku/SonKuSpatialCore.h'
