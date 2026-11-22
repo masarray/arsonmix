@@ -1,39 +1,42 @@
-name: "Bug / reliability"
-description: "Report a reproducible mixer, GUI, native audio, FX or installer failure."
+name: "Report a problem"
+description: "Something went wrong while installing or using ArSonMix? Tell us what you saw."
 title: "[BUG] "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Please use the current released build or name the exact research SHA. Do not upload private license keys, serial numbers or full user sessions. A green CI result is not physical audio verification.
+        Thanks for helping improve ArSonMix. You do not need to know audio engineering or programming to report a problem.
+        Please do not share passwords, license keys, private file paths or unredacted personal information.
+        If this involves loud or unexpected output, lower your monitoring level before trying again.
   - type: input
-    id: version
+    id: build
     attributes:
-      label: "Affected build and environment"
-      description: "Release tag or exact commit, OS, and relevant backend/device/driver."
-      placeholder: "Release tag / Windows 11 / ASIO / interface and driver"
+      label: "ArSonMix version and your computer (if known)"
+      description: "For example: release tag from About, Windows version, audio interface/driver."
+      placeholder: "Windows 11, ArSonMix release tag, interface model (optional if unknown)"
+    validations:
+      required: false
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: "What happened?"
+      description: "Describe the problem in your own words. What were you expecting instead?"
+      placeholder: "I clicked Start Audio, but the microphone level never moved. I expected to hear my voice."
     validations:
       required: true
   - type: textarea
-    id: reproduction
+    id: reproduce
     attributes:
-      label: "Steps to reproduce"
-      description: "Minimal repeatable steps, including .smix/FX/WIRE/device state when relevant."
-      placeholder: "1. Open... 2. Connect... 3. Observe..."
+      label: "How can we reproduce it?"
+      description: "A short step-by-step description helps even if you cannot reproduce it every time."
+      placeholder: "1. Open ArSonMix... 2. Select my device... 3. Click Start..."
     validations:
       required: true
   - type: textarea
-    id: behavior
+    id: technical
     attributes:
-      label: "Actual and expected behavior"
-      description: "Describe what failed and what correct physical/visual result should occur."
-    validations:
-      required: true
-  - type: textarea
-    id: evidence
-    attributes:
-      label: "Evidence and safety scope (optional)"
-      description: "Redacted logs/screenshots, audible vs UI-only evidence, exact native/CI link, and suspected regression range."
+      label: "Optional audio details and evidence"
+      description: "Driver name, sample rate/buffer, input/output routing, FX used, redacted screenshot or error text. Say if this was visual-only or audible on real hardware."
     validations:
       required: false
