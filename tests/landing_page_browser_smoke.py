@@ -114,7 +114,15 @@ def main():
             nojs.goto(site)
             verified = nojs.locator(".os-card[data-release-tag]").count()
             assert verified == nojs.locator(".os-card.is-available").count()
-            assert verified == nojs.locator("a[data-release-link][href]").count()
+            # Unhydrated source HTML intentionally has inert #download
+            # placeholders. Only exact GitHub asset links count as downloads.
+            direct = nojs.locator(
+                'a[data-release-link][href^="https://github.com/masarray/arsonmix/releases/download/"]'
+            )
+            assert verified == direct.count()
+            for link in nojs.locator("a[data-release-link]").all():
+                if link.get_attribute("href") == "#download":
+                    assert link.get_attribute("aria-disabled") == "true"
             assert nojs.locator(".os-state").filter(has_text="NOT PUBLISHED").count() == 0
             nojs.close()
 
