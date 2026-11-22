@@ -605,6 +605,13 @@ if(BUILD_TESTING)
         "^JUCE_(WEB_BROWSER|USE_WIN_WEBVIEW2|USE_WIN_WEBVIEW2_WITH_STATIC_LINKING)(=|$)")
     target_compile_definitions(ARMixImerSipP92NativeTests
         PRIVATE ${IMMERSIB_RC_DEFINES})
+    # Explicit profiling only: not built by default, not a timing CTest.
+    # Reuse approved product-local P102.3 flags; don't benchmark retired P83.
+    add_executable(ARMixImmerSIBP102CpuProfile EXCLUDE_FROM_ALL
+        tools/immersib_p102_cpu_profile.cpp)
+    target_compile_features(ARMixImmerSIBP102CpuProfile PRIVATE cxx_std_20)
+    target_compile_definitions(ARMixImmerSIBP102CpuProfile
+        PRIVATE ${IMMERSIB_RC_DEFINES})
     add_test(NAME NativeImmerSIBJucePresetACKStateAndBypass
         COMMAND ARMixImerSipP92NativeTests)
     add_executable(ARMixImmerSIBP99NativeSonicGate
