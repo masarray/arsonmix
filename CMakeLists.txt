@@ -5,6 +5,12 @@ project(ARMixConsole VERSION 0.5.0 LANGUAGES C CXX)
 # local/research builds default OFF, preserving approved SonKu P9.9 behavior.
 option(ARMIX_IMMERSIB_RELEASE_CANDIDATE
        "Build the integrated ImmerSIB P9.9 audio + JUCE venue UI RC" OFF)
+# Public alpha.26 and plain SonKu never pick up this unapproved profile.
+option(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH
+       "UNAPPROVED fixed ImmerSIB speaker stage without adaptive MID/SIDE masking" OFF)
+if(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH AND NOT ARMIX_IMMERSIB_RELEASE_CANDIDATE)
+  message(FATAL_ERROR "ImmerSIB stage research requires branded candidate")
+endif()
 # Experimental P6 native profile: OFF by default in production/installer.
 option(ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT
        "Enable unqualified SonKu full KEMAR directional reflections on the native JUCE callback"
@@ -493,6 +499,10 @@ if(ARMIX_IMMERSIB_RELEASE_CANDIDATE)
   target_compile_definitions(ARMixConsole PRIVATE
       ARMIX_IMMERSIB_RELEASE_CANDIDATE=1
       SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH=1)
+  if(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH)
+    target_compile_definitions(ARMixConsole PRIVATE
+        ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH=1)
+  endif()
 endif()
 
 if(WIN32)
@@ -592,6 +602,15 @@ if(BUILD_TESTING)
         SONKU_IMMERSIB_PCM_DIAGNOSTICS=1)
     add_test(NAME NativeImmerSIBP99VocalRoomAndVenueGolden
         COMMAND ARMixImmerSIBP99NativeSonicGate)
+    if(ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH)
+      add_executable(ARMixImmerSIBFixedStageTests
+          tests/immersib_fixed_stage_monitor_test.cpp)
+      target_compile_features(ARMixImmerSIBFixedStageTests PRIVATE cxx_std_20)
+      target_compile_definitions(ARMixImmerSIBFixedStageTests
+          PRIVATE ${IMMERSIB_RC_DEFINES})
+      add_test(NAME NativeImmerSIBFixedStageNoSpectralMaskingAndFullPCM
+          COMMAND ARMixImmerSIBFixedStageTests)
+    endif()
   endif()
 
   # Native 8D-SonKu non-JUCE measured-HRIR PCM and deterministic orbit fixture.
