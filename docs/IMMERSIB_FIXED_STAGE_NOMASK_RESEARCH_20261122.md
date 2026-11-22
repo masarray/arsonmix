@@ -22,6 +22,11 @@ This document is a code/experiment record, not a claim of musical success.
 - Main ImmerSIB P99 vocal room adapter uses level/side-dependent attention
   to reshape source, warmth feed and late 1.35–3.8k room content. Candidate
   does NOT opt this adapter in. Plain SonKu P99 remains untouched.
+- P94's legacy stage used a *single* 0° room depth cue despite 104°–134°
+  loudspeaker spread. Retain the useful v7 correction: compute the bounded
+  EARLY/DIRECT ratio from BOTH actual P83 L/R speaker head-angles. For the
+  112° Live Concert this avoids excessive central early reflection energy.
+  No new room IR or listener-following EQ; ROOM OFF remains unity.
 - Stage P97 also adds 1.9k center source/direct presence. Candidate removes
   only that extra mid component; LF punch, stage room air, early images and
   world bass remain. P95 auto makeup is disabled only for candidate to
@@ -75,7 +80,9 @@ hypothesis, not proven optimization.
    with changing correlation;
    hard-L, antiphase, matched warm response at 285/2050/3450/5500, and
    unmodified 0–3 voicings at 44.1k/48k.
-3. Full-PCM source test checks all seven ImmerSIB scenes x four stereo
+3. Test the actual two-speaker P94 reflection geometry with 112° stage,
+   legacy single-center comparison, and ROOM OFF unity. Full-PCM source
+   test checks all seven ImmerSIB scenes x four stereo
    sources x two sample rates, limiter finite bounds, 128/256 frame parity
    and programme-equivalent published-core reference (including old P99).
 4. Windows must compile real JUCE native processor/editor, CTest ACK/state,
