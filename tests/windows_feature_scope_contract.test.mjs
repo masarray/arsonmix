@@ -50,6 +50,10 @@ test('generic FAT contains no plugin-named jobs; scoped test is never full',()=>
  const w=readFileSync('.github/workflows/p1-windows.yml','utf8');
  assert.doesNotMatch(w,/focused_harmony_fat|FOCUSED_HARMONY_FAT|focused vocal harmony/i);
  assert.match(w,/feature_scope:/);
+ assert.match(w,/^    name: Windows MSVC \/ realtime CTest$/m);
+ assert.match(w,/^    name: Windows FEATURE scoped native CTest \(NOT full\)$/m);
+ assert.match(w,/windows-feature:/);
+ assert.match(w,/inputs.feature_scope == ''/);
  assert.match(w,/Windows FEATURE scoped native CTest \(NOT full\)/);
  assert.match(w,/Feature-scoped Windows MSVC targets \(development ONLY\)/);
  assert.match(w,/Run feature-scoped CTests \(development ONLY\)/);
