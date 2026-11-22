@@ -104,7 +104,7 @@ for name in native_files:
             any(c not in "0123456789abcdef" for c in source_digest)):
         raise SystemExit("Missing original Windows PNG checksum: " + name)
     if (not original.is_file() or original.stat().st_size < 50000 or
-            original.read_bytes()[:3] != b"\\xff\\xd8\\xff"):
+            original.read_bytes()[:3] != b"\xff\xd8\xff"):
         raise SystemExit("Missing/invalid native screenshot JPEG: " + name)
     if (rec.get("sizeBytes") != original.stat().st_size or
             rec.get("sha256") != sha256(original.read_bytes()).hexdigest()):
