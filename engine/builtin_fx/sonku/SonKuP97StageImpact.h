@@ -34,6 +34,11 @@ public:
         punch_={};sub_={};earlyAir_={};directAir_={};
         finishLow_={};finishWide_={};stage_=0.f;
     }
+    // Candidate: retain approved physical LF punch and room air, but remove
+    // the additional 1.9k source/direct center band that can ring on KEMAR.
+    void suppressStageMidBoost(bool enabled) noexcept {
+        suppressStageMidBoost_=enabled;
+    }
     bool active() const noexcept {return stage_!=0.f;}
     float strength() const noexcept {return stage_;}
     Stereo source(float left,float right,float meters,bool roomEnabled) noexcept {
@@ -47,7 +52,7 @@ public:
         // >6kHz that a single 1.9kHz BPF would partly phase-cancel.
         const float band=vocalSecond_.run(centerCoeff_,
             vocal_.run(centerCoeff_,center));
-        if(stage_==0.f)return {left,right};
+        if(stage_==0.f || suppressStageMidBoost_)return {left,right};
         // Both virtual speakers receive exactly the same center delta.
         // Their established HRIRs must render it; NEVER send to dry L/R.
         const float delta=.19f*stage_*band;
@@ -66,7 +71,8 @@ public:
             // The second gentle vocal filter is NOT a dry/mono stem.
             result[c]=stage_==0.f?x[c]:
                 x[c]+stage_*(.23f*punch+.085f*sub_[c]+
-                             .085f*voice+.038f*(x[c]-directAir_[c]));
+                             (suppressStageMidBoost_?0.f:.085f)*voice+
+                             .038f*(x[c]-directAir_[c]));
         }
         return {result[0],result[1]};
     }
@@ -133,5 +139,6 @@ private:
     std::array<std::array<Filter,2>,2> vocalDirect_{};
     std::array<float,2> sub_{},earlyAir_{},directAir_{},finishLow_{},finishWide_{};
     float subAlpha_=0.f,airAlpha_=0.f,finalLowAlpha_=0.f,slew_=0.f,stage_=0.f;
+    bool suppressStageMidBoost_=false;
 };
 } // namespace armix::sonku::p97
