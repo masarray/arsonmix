@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import sys
 import unittest
+from xml.etree import ElementTree as ET
 from urllib.parse import urljoin
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,6 +49,21 @@ class PagesPublicOriginTest(unittest.TestCase):
                            "compressor", "graphic-eq31", "immersib", "guitar-fx"):
                     self.assertIn(base + "effects/" + fx + "/", sitemap_xml(base))
                 self.assertIn(base + "sitemap.xml", robots_txt(base))
+                root = ET.fromstring(sitemap_xml(base))
+                ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9",
+                      "image": "http://www.google.com/schemas/sitemap-image/1.1"}
+                pages = root.findall("s:url", ns)
+                self.assertEqual(len(pages), 10)
+                images = {
+                    u.find("s:loc", ns).text: [i.text for i in u.findall(
+                        "image:image/image:loc", ns)] for u in pages
+                }
+                self.assertEqual(len(images[base]), 3)
+                self.assertIn(base + "media/console-overview.jpg", images[base])
+                self.assertEqual(len(images[base + "effects/immersib/"]), 6)
+                self.assertEqual(len(images[base + "effects/guitar-fx/"]), 1)
+                self.assertEqual(images[base + "preview/"], [])
+                self.assertEqual(len(set(images)), len(pages))
 
     def test_actual_distribution(self):
         base = normalize_public_url(os.environ.get("ARSONMIX_PUBLIC_URL"))
