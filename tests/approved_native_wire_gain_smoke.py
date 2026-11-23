@@ -163,7 +163,17 @@ def verify_inspector_rejected_gain(page, out):
     # native coalescer's equality/no-op path emits no redundant intent.
     state["graph"]["edges"][1]["gainLinear"]=10**(-6/20)
     emit(page,"arMixConsoleSnapshot",state)
-    page.locator("#wireMatrixToggle").click()
+    # Operator toolbar deliberately hides legacy #wireMatrixToggle. The
+    # production Matrix entry lives in More > WIRE TOOLS. Exercise the
+    # actual visible menu, not a hidden compatibility trigger.
+    more=page.locator("#moreTools")
+    more.locator("summary").click()
+    assert more.evaluate("(el)=>el.open")
+    menu_matrix=more.locator('[data-wire-open="matrix"]')
+    assert menu_matrix.is_visible(), "More must retain accessible Matrix"
+    menu_matrix.click()
+    assert not more.evaluate("(el)=>el.open"), "Matrix should dismiss More"
+    assert page.locator("#wireWorkspace").is_visible()
     route=page.locator('[data-ws-inspect="1:2"]')
     route.wait_for(state="visible")
     route.click()
