@@ -337,6 +337,109 @@ static void nativeParity(int rate) {
     viaJuce->releaseResources();
     invalid->releaseResources();
 }
+
+static void editorReopenStress(int rate) {
+    // One retained native audio processor, 100 distinct JUCE editor lifetimes.
+    // This approximates OS close/reopen without cloning a PCM instance; the
+    // native HWND lease itself is tested by the separate live host contracts.
+    auto fx=std::make_unique<ImerSipP92Processor>();
+    fx->prepareToPlay(static_cast<double>(rate),128);
+    assert(fx->isReady());
+    juce::AudioBuffer<float> pcm(2,128);
+    juce::MidiBuffer midi;
+    for(int iteration=0;iteration<100;++iteration){
+        std::unique_ptr<juce::AudioProcessorEditor> ui(fx->createEditor());
+        assert(ui && ui->getWidth()==935 && ui->getHeight()==578);
+        auto* preset=dynamic_cast<juce::ComboBox*>(
+            ui->findChildWithID("imersip.preset"));
+        auto* room=ui->findChildWithID("imersip.room");
+        auto* power=ui->findChildWithID("imersip.power");
+        assert(preset && room && power);
+        if(iteration%10==0) {
+            // JUCE does not emit onChange for the same selected item.
+            // First editor starts with ID 2: a no-op does NOT require ACK.
+            const int previouslySelected=preset->getSelectedId();
+            assert(previouslySelected>=2 && previouslySelected<=8);
+            preset->setSelectedId(previouslySelected,juce::sendNotificationSync);
+            assert(fx->stateSnapshotQuiescent());
+            const int sceneId=previouslySelected==8?2:previouslySelected+1;
+            assert(sceneId!=previouslySelected);
+            preset->setSelectedId(sceneId,juce::sendNotificationSync);
+            pcm.clear();
+            fx->processBlock(pcm,midi);
+            armix::builtin_fx::SonKuSpatialProcessor::Completion ack{};
+            assert(fx->pollCompletion(ack) && ack.applied &&
+                   ack.requestId!=0);
+            const auto expected=imersipP92Factory(sceneId);
+            const auto installed=fx->acceptedSettings();
+            assert(installed.spacePreset==expected.spacePreset);
+            assert(std::abs(installed.roomAmount-expected.roomAmount)<1.e-6f);
+            assert(std::abs(installed.outputTrim-expected.outputTrim)<1.e-6f);
+        }
+        // Destructor must detach JUCE controls/timer before next open;
+        // continue rendering between closes, keeping a single PCM owner.
+        ui.reset();
+        pcm.clear();
+        fx->processBlock(pcm,midi);
+        assert(fx->isReady() && fx->stateSnapshotQuiescent());
+        if(iteration%25==24){
+            juce::MemoryBlock snapshot;
+            fx->getStateInformation(snapshot);
+            assert(snapshot.getSize()==75);
+            auto restored=std::make_unique<ImerSipP92Processor>();
+            restored->prepareToPlay(static_cast<double>(rate),128);
+            assert(restored->restoreUnpublishedState(
+                snapshot.getData(),static_cast<int>(snapshot.getSize())));
+            assert(restored->acceptedSettings().spacePreset==
+                   fx->acceptedSettings().spacePreset);
+            restored->releaseResources();
+        }
+    }
+    // A preset queued by the old editor must be accepted by the ONE live
+    // processor even when its UI is closed before the audio callback.
+    int deferredScene=0;
+    {
+        std::unique_ptr<juce::AudioProcessorEditor> closing(fx->createEditor());
+        auto* combo=dynamic_cast<juce::ComboBox*>(
+            closing->findChildWithID("imersip.preset"));
+        assert(combo);
+        const int previous=combo->getSelectedId();
+        assert(previous>=2 && previous<=8 && fx->stateSnapshotQuiescent());
+        deferredScene=previous==8?2:previous+1;
+        combo->setSelectedId(deferredScene,juce::sendNotificationSync);
+        assert(!fx->stateSnapshotQuiescent());
+        closing.reset();
+    }
+    {
+        std::unique_ptr<juce::AudioProcessorEditor> reopened(fx->createEditor());
+        auto* combo=dynamic_cast<juce::ComboBox*>(
+            reopened->findChildWithID("imersip.preset"));
+        assert(combo && combo->getSelectedId()!=deferredScene);
+        // Some scene changes require the approved P83 click-safe 12 ms
+        // fade-out, native mode/HRIR switch, then 12 ms fade-in before
+        // the processor is quiescent. One 128f callback cannot prove ACK.
+        // Keep rendering the actual native graph, without forged receipts.
+        for(int block=0;block<32;++block) {
+            pcm.clear();
+            fx->processBlock(pcm,midi);
+        }
+        assert(!fx->stateSnapshotQuiescent()); // ACK still awaits UI polling
+        // Invoke the actual 25 Hz JUCE editor timer; NEVER forge a PCM ACK.
+        juce::Thread::sleep(65);
+        juce::Timer::callPendingTimersSynchronously();
+        assert(combo->getSelectedId()==deferredScene);
+        assert(fx->stateSnapshotQuiescent());
+        const auto installed=fx->acceptedSettings();
+        const auto expected=imersipP92Factory(deferredScene);
+        assert(installed.spacePreset==expected.spacePreset);
+        assert(std::abs(installed.outputTrim-expected.outputTrim)<1.e-6f);
+        reopened.reset();
+    }
+    fx->releaseResources();
+    std::printf("IMMERSIB_EDITOR_REOPEN_STRESS,rate=%d,reopens=100,"
+                "PCM_owner=retained,ACK=verified,IMRS=verified,"
+                "pending_close_reopen=verified\n",rate);
+}
 int main() {
     juce::ScopedJuceInitialiser_GUI gui;
     auto editorFx=std::make_unique<ImerSipP92Processor>();
@@ -345,7 +448,9 @@ int main() {
     assert(editor && editor->findChildWithID("imersip.preset"));
     assert(editor->getWidth()==935 && editor->getHeight()==578);
     auto* visualEditor=dynamic_cast<armix::builtin_fx::ImerSipP92Editor*>(editor.get());
-    assert(visualEditor && visualEditor->areVisualAssetsReady());
+    assert(visualEditor && visualEditor->residentVenueCount()==0);
+    assert(visualEditor->areVisualAssetsReady());
+    assert(visualEditor->residentVenueCount()==6);
 
     // Actual compact native JUCE hit bounds: no overlapping controls,
     // labels/text remain independent from the background PNG scene.
@@ -657,6 +762,14 @@ int main() {
             return true;
         },hostState);
     assert(power->isEnabled() && power->getToggleState());
+    // Repeated unchanged host readback must never flip the real host gate,
+    // disable controls or change tooltip on an otherwise idle editor.
+    const auto stablePowerTooltip=power->getTooltip();
+    for(int idleTick=0;idleTick<100;++idleTick)
+        actualEditor->synchronizeHostPower();
+    assert(power->isEnabled() && power->getToggleState());
+    assert(power->getTooltip()==stablePowerTooltip);
+    assert(acceptedLocalPower==0);
     // Host-connected native screenshots prove the two actual power glyph
     // states. The earlier DPI snapshots deliberately test disabled/fail-safe
     // before host binding; these frames additionally verify the real bypass
@@ -861,5 +974,7 @@ int main() {
     sonkuProductIsolation(48000);
     nativeParity(44100);
     nativeParity(48000);
+    editorReopenStress(44100);
+    editorReopenStress(48000);
     std::puts("PASS IMERSIP P92 JUCE: exact P9 PCM, 44.1/48k, native state, legacy IMRS, editor, audio ACK");
 }
