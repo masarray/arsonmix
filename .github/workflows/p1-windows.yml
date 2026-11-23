@@ -401,16 +401,6 @@ jobs:
       - name: Run full realtime CTest (release or nativeFull)
         if: ${{ env.FIELD_PREVIEW != 'true' }}
         run: ctest --test-dir build -C Release --output-on-failure
-      # Real JUCE screenshot, captured from native CTest at two DPI scales.
-      # Optional file evidence cannot block protected Windows release lanes.
-      - name: Upload actual native Vocal Reverb JUCE screenshots
-        if: ${{ always() && env.FIELD_PREVIEW != 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: ArSonMix-Vocal-Reverb-JUCE-Images-${{ github.run_id }}
-          path: build/ArSonMix_Vocal_Reverb_Native_*.png
-          if-no-files-found: ignore
-          retention-days: 14
       - name: Package verified JUCE GUI for hardware FAT
         if: ${{ env.FIELD_PREVIEW == 'true' || (github.event_name == 'workflow_dispatch' && inputs.package_fat == true) }}
         shell: pwsh
