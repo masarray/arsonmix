@@ -22,14 +22,15 @@ class QuietSiteHandler(SimpleHTTPRequestHandler):
 
 
 def browser_check(page):
-    assert page.title() == "ArSonMix — Professional Live Mixing Studio"
+    assert page.title() == "ArSonMix — Free Open Source Digital Mixer for Windows"
     assert page.locator("h1").count() == 1
     assert page.locator(".os-card").count() == 3
     assert page.locator(".app-shot img").count() == 1
     assert page.locator(".gallery img").count() == 3
     # Public conversion path: authentic rack image, six described FX, first
     # sound guide, and one-click feedback, on desktop AND phone.
-    assert page.locator("#effects .fx-list article").count() == 6
+    assert page.locator("#effects .fx-list article").count() == 8
+    assert page.locator("#effects .fx-list article a[href^='./effects/']").count() == 8
     assert page.locator("#effects .fx-visual img").count() == 1
     # The effect image is intentionally lazy-loaded; bring it into the
     # viewport before checking decoded bytes rather than racing Chromium.
@@ -46,14 +47,16 @@ def browser_check(page):
     assert gallery.count() == 6
     assert page.locator("#fx-gallery img").count() == 6
     native_hero = page.locator("#fx-native-gallery .fx-gallery-card")
-    native_scenes = page.locator("#fx-native-scenes .fx-gallery-card")
     assert native_hero.count() == 2
-    assert native_scenes.count() == 5
-    for editor in page.locator("#fx-native-gallery img, #fx-native-scenes img").all():
+    assert page.locator("#fx-native-scenes").count() == 0
+    # Only ONE ImmerSIB screenshot is referenced by homepage DOM. Five venue
+    # scene images are moved to the dedicated crawlable detail page.
+    assert page.locator('img[src*="fx-editor-immersib-"]').count() == 1
+    for editor in page.locator("#fx-native-gallery img").all():
         editor.scroll_into_view_if_needed()
         editor.evaluate("img => img.decode()")
         assert editor.evaluate("img => img.complete && img.naturalWidth >= 937")
-    assert "DSP OFFLINE" in page.locator("#effects .fx-native-hero").inner_text()
+    assert "DSP OFFLINE" in page.locator("#effects").inner_text()
     for editor in page.locator("#fx-gallery img").all():
         editor.scroll_into_view_if_needed()
         editor.evaluate("img => img.decode()")
@@ -109,6 +112,26 @@ def main():
                     status=200, content_type="application/json", body="[]"))
                 page.goto(site, wait_until="networkidle")
                 browser_check(page)
+                for slug, scene_count in (("8d-sonku", 0), ("immersib", 6), ("guitar-fx", 0)):
+                    detail = browser.new_page(
+                        viewport={"width": width, "height": height},
+                        reduced_motion="reduce")
+                    response = detail.goto(site + "effects/" + slug + "/", wait_until="networkidle")
+                    assert response.status == 200, (slug, response.status)
+                    assert detail.locator("h1").count() == 1
+                    assert detail.locator("link[rel=canonical]").count() == 1
+                    assert detail.locator('script[type="application/ld+json"]').count() == 1
+                    assert detail.locator(".detail-scene-grid img").count() == scene_count
+                    image = detail.locator(".detail-preview img")
+                    image.evaluate("img => img.decode()")
+                    assert image.evaluate("img => img.naturalWidth > 300")
+                    for scene in detail.locator(".detail-scene-grid img").all():
+                        scene.scroll_into_view_if_needed()
+                        scene.evaluate("img => img.decode()")
+                        assert scene.evaluate("img => img.naturalWidth == 937")
+                    assert detail.evaluate(
+                        "document.documentElement.scrollWidth - innerWidth") <= 2, slug
+                    detail.close()
                 # Both mocked API sources are unavailable; the build-time
                 # verified HTML must retain its approved direct asset links.
                 seeded = page.locator(".os-card[data-release-tag]").count()
