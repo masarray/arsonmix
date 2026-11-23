@@ -1,0 +1,53 @@
+name: ImmerSIB P102 focused MSVC audio parity
+# Real owner-approved P102.3 source vs optimized FIR, MSVC Release.
+# Isolated source and full core. NEVER builds the whole mixer/installer.
+on:
+  push:
+    branches:
+      - perf/immersib-p102-fir-stasis-product-20261123
+    paths:
+      - engine/builtin_fx/sonku/SonKuEarlyReflections.h
+      - tools/immersib_p102_fir_shipping_gate.py
+      - tools/immersib_p102_fullcore_gate.py
+      - tools/immersib_p102_fullcore_ab.cpp
+      - tools/immersib_p102_geometry_cache_probe.cpp
+      - config/immersib_p102_bitexact_optimized_implementation.json
+      - scripts/verify_immersib_approved_pcm_sources.py
+      - scripts/tests/test_immersib_approved_pcm_sources.py
+      - .github/workflows/immersib-p102-msvc-bitexact.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: immersib-p102-msvc-single-candidate
+  cancel-in-progress: true
+jobs:
+  native-parity:
+    name: Exact P102.3 reference-vs-optimized PCM bits under MSVC Release
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify 29 untouched DSP files and one exact optimized source pin
+        shell: pwsh
+        run: |
+          python scripts/verify_immersib_approved_pcm_sources.py
+          if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_SOURCE_LOCK_REJECTED' }
+          python -m unittest scripts/tests/test_immersib_approved_pcm_sources.py
+          if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_SOURCE_LOCK_NEGATIVE_TESTS_FAILED' }
+      - name: MSVC historical-vs-shipping actual FIR and FULL core PCM A/B
+        shell: pwsh
+        run: |
+          $pf86 = [Environment]::GetFolderPath('ProgramFilesX86')
+          $vswhere = Join-Path $pf86 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path -LiteralPath $vswhere)) { throw 'MSVC_VSWHERE_MISSING' }
+          $vsroot = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vsroot) { throw 'MSVC_CPP_TOOLCHAIN_MISSING' }
+          $vcvars = Join-Path $vsroot 'VC\Auxiliary\Build\vcvars64.bat'
+          if (-not (Test-Path -LiteralPath $vcvars)) { throw 'MSVC_VCVARS_MISSING' }
+          $cmdline = 'call "' + $vcvars + '" >nul && python tools/immersib_p102_fir_shipping_gate.py --msvc && python tools/immersib_p102_fullcore_gate.py --msvc'
+          & cmd.exe /D /C $cmdline
+          if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_P102_MSVC_BITEXACT_GATE_FAILED' }
