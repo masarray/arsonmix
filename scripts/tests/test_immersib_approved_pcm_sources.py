@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 from verify_immersib_approved_pcm_sources import (  # noqa: E402
     REQUIRED_ROOTS, SCHEMA, APPROVED_SHA, APPROVED_FILE_COUNT, github_blob_hash, validate,
+    APPROVED_ORIGINAL_BLOB, OPTIMIZED_BLOB, OPTIMIZED_PATH,
+    OPTIMIZED_PROVENANCE_PATH,
 )
 
 
@@ -29,6 +31,14 @@ class ApprovedImmerSIBSourceLockTests(unittest.TestCase):
         self.assertEqual(self.manifest["approval"]["status"], "owner_approved_for_main_integration")
         self.assertIn("engine/builtin_fx/sonku/SonKuFixedPaMusicalEq.h", {x["path"] for x in self.manifest["files"]})
         self.assertEqual(validate(ROOT, self.manifest), APPROVED_FILE_COUNT)
+        historic = next(item for item in self.manifest["files"]
+                      if item["path"] == OPTIMIZED_PATH)
+        self.assertEqual(historic["blob"], APPROVED_ORIGINAL_BLOB)
+        self.assertEqual(
+            github_blob_hash((ROOT / OPTIMIZED_PATH).read_bytes()),
+            OPTIMIZED_BLOB,
+        )
+        self.assertNotEqual(OPTIMIZED_BLOB, APPROVED_ORIGINAL_BLOB)
         self.assertTrue(REQUIRED_ROOTS.issubset(
             {item["path"] for item in self.manifest["files"]}
         ))
@@ -58,6 +68,32 @@ class ApprovedImmerSIBSourceLockTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "LOCK_UNTRUSTED_PATH"):
             validate(ROOT, outsider)
 
+    def test_optimized_source_and_provenance_fail_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temp_root = Path(directory)
+            for item in self.manifest["files"]:
+                p = temp_root / item["path"]
+                p.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / item["path"], p)
+            # A candidate source without explicit pinned provenance is rejected.
+            with self.assertRaisesRegex(ValueError, "PROVENANCE_MISSING"):
+                validate(temp_root, self.manifest)
+            dest = temp_root / OPTIMIZED_PROVENANCE_PATH
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / OPTIMIZED_PROVENANCE_PATH, dest)
+            self.assertEqual(validate(temp_root, self.manifest), APPROVED_FILE_COUNT)
+            document = json.loads(dest.read_text(encoding="utf-8"))
+            document["optimizedImplementationBlob"] = "f" * 40
+            dest.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "PROVENANCE_TAMPERED"):
+                validate(temp_root, self.manifest)
+            shutil.copyfile(ROOT / OPTIMIZED_PROVENANCE_PATH, dest)
+            # No additional or alternate acoustic source revision is allowed.
+            early = temp_root / OPTIMIZED_PATH
+            early.write_bytes(early.read_bytes() + b"\n// unapproved DSP edit\n")
+            with self.assertRaisesRegex(ValueError, "SOURCE_CHANGED"):
+                validate(temp_root, self.manifest)
+
     def test_one_bit_of_dsp_source_mutation_fails_even_if_test_hash_is_unmodified(self):
         with tempfile.TemporaryDirectory() as directory:
             temp_root = Path(directory)
@@ -65,6 +101,11 @@ class ApprovedImmerSIBSourceLockTests(unittest.TestCase):
                 destination = temp_root / item["path"]
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(ROOT / item["path"], destination)
+            # The separately pinned implementation receipt is required when
+            # one historical acoustic source blob is optimized bit-exactly.
+            p = temp_root / OPTIMIZED_PROVENANCE_PATH
+            p.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / OPTIMIZED_PROVENANCE_PATH, p)
             self.assertEqual(validate(temp_root, self.manifest), APPROVED_FILE_COUNT)
             p = temp_root / "engine/builtin_fx/sonku/SonKuSpatialCore.h"
             p.write_bytes(p.read_bytes() + b"\n// attempted unapproved DSP retune\n")
