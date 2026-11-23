@@ -225,7 +225,7 @@ public:
         const auto pale=reverb_ui::rgb(209,224,233);
         const auto cyan=reverb_ui::rgb(107,201,243);
         title_.setText("REVERB-SIS",juce::dontSendNotification);
-        title_.setFont(juce::Font(juce::FontOptions(22.f)));
+        title_.setFont(reverb_ui::uiFont(22.f));
         title_.setColour(juce::Label::textColourId,pale);
         title_.setComponentID("armix.reverb.title");
         addAndMakeVisible(title_);
@@ -329,7 +329,7 @@ public:
                 "MOD RATE","WIDTH","EARLY LEVEL","DUCKER"
             }};
             labels_[i].setText(shortLabels[i],juce::dontSendNotification);
-            labels_[i].setFont(juce::Font(juce::FontOptions(12.f)));
+            labels_[i].setFont(reverb_ui::uiFont(12.f));
             labels_[i].setColour(juce::Label::textColourId,reverb_ui::rgb(195,202,208));
             labels_[i].setJustificationType(juce::Justification::centred);
             addAndMakeVisible(labels_[i]);
