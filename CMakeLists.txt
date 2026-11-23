@@ -216,14 +216,14 @@ target_compile_features(ARMixArVerbCore PUBLIC cxx_std_17)
 # Match the upstream C ABI version contract; NEVER use ArSonMix project version.
 target_compile_definitions(ARMixArVerbCore PRIVATE ARVERB_BUILD_VERSION="1.0.1")
 
-# Genuine Inter UI typeface, committed as one unmodified, OFL-licensed
-# Google Fonts variable TTF. Generated as a UNIQUE JUCE resource namespace:
+# Genuine Inter UI typeface: one byte-for-byte checked-in SIL OFL-licensed
+# static Inter-Regular.ttf subset (Bluesky Social source, documented below). Generated as a UNIQUE JUCE resource namespace:
 # native application never relies on users installing a Windows font, and
 # neither test nor installer fetches a font at build or runtime.
 juce_add_binary_data(ARMixReverbInterFont
     NAMESPACE ARMixReverbInter
     HEADER_NAME ARMixReverbInterBinary.h
-    SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/assets/fx/reverb/Inter-Variable.ttf")
+    SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/assets/fx/reverb/Inter-Regular.ttf")
 
 # Standalone, explicit-only p50/p95/p99 CPU profile across ASIO-like blocks.
 # Synthetic/offline results are informational, NEVER a device FAT gate.
