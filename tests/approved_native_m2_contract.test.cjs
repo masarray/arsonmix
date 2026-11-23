@@ -7011,3 +7011,15 @@ test("P0 native receiver LVL re-admits only after projected device recovery",()=
  assert.match(cold,/\.wire-gain'\)\.is_disabled\(\)/);
  assert.match(cold,/\.wire-gain'\)\.is_enabled\(\)/);
 });
+
+test("P0 routing commands remain usable in More at all desktop widths",()=>{
+ const base=read("site/preview-v2/assets/mixer-chrome-material.css");
+ const ux=read("site/preview-v2/assets/mixer-contextual-buttons.css");
+ const page=read("site/preview-v2/index.html");
+ assert.match(base,/\.more-tools-panel \.wire-overflow\{display:block!important\}/);
+ assert.doesNotMatch(base,/\.more-tools-panel \.wire-overflow\{display:none!important\}/);
+ assert.match(ux,/#wireNavigatorToggle,#wireMatrixToggle/);
+ assert.match(page,/data-wire-open="routes"/);
+ assert.match(page,/data-wire-open="matrix"/);
+ assert.match(page,/data-wire-open="config"/);
+});

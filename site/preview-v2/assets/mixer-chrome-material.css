@@ -1236,10 +1236,12 @@ html :where(.app, .app *),html :where(.app, .app *)::before,html :where(.app, .a
 /* More must paint ABOVE modeless routes/matrix; operator can switch tools
    without dismissing the current dialog or relying on force clicks. */
 .command-bar{z-index:34!important}
-.more-tools-panel .wire-overflow{display:none!important}
+/* The operator topbar intentionally hides duplicate Routes, Matrix and
+   WIRE Setup actions. Their existing More commands remain visible at
+   ALL widths, not only at narrow viewports. Own visibility here. */
+.more-tools-panel .wire-overflow{display:block!important}
 @media(max-width:1250px){
  .command-bar>.wire-command{display:none!important}
- .more-tools-panel .wire-overflow{display:block!important}
 }
 /* V15 original physical patch connectors: filled bronze/silver OUT jack, recessed
    hollow IN socket. Calm console design; route highlight only on actual intent.
