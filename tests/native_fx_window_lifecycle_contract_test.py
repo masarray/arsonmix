@@ -89,11 +89,15 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("shownWindow->present(true); // new HWND",HOST)
         self.assertIn("prepared.window->present(true); // first-open",HOST)
 
-    def test_primary_out_wire_is_truthfully_unity_and_non_editable(self):
+    def test_primary_out_wire_preserves_unity_and_controls_exact_source_fader(self):
         bridge=(ROOT/"web/approved-native-bridge.js").read_text(encoding="utf-8")
+        vm=(ROOT/"web/approved-wire-view-model.js").read_text(encoding="utf-8")
         self.assertIn('const fixed=edge.primaryOutput===true',bridge)
-        self.assertIn('const disabled=fixed || next.retained',bridge)
-        self.assertIn('label.textContent=fixed?"UNITY":"LVL"',bridge)
+        self.assertIn('const disabled=!!next.retained||(fixed&&primary.kind!=="READY")',bridge)
+        self.assertIn('label.textContent=fixed?"CH LVL":"LVL"',bridge)
+        self.assertIn('controller.intent("SET_FADER",primary.source,{valueDb:db})',bridge)
+        self.assertIn('primaryChannelLevelPlan(snapshot,projected,sourceId,edgeId)',vm)
+        self.assertIn('edge.primaryOutput!==true||edge.gainLinear!==1',vm)
         self.assertIn('Parallel SEND level · editable via native EdgeId ACK/readback',bridge)
 
     def test_geq_repeat_rack_click_and_f11_preserve_position(self):
@@ -111,7 +115,9 @@ class NativeFxWindowLifecycle(unittest.TestCase):
 
     def test_f11_uses_reversible_juce_fullscreen(self):
         bridge=(ROOT/"web/approved-native-bridge.js").read_text(encoding="utf-8")
-        self.assertIn('event.key!=="F11"||event.repeat',bridge)
+        self.assertIn('window.addEventListener("keydown",event=>{',bridge)
+        self.assertIn('event.key==="F11"||event.code==="F11"||event.keyCode===122',bridge)
+        self.assertIn('event.repeat||event.altKey||event.ctrlKey',bridge)
         self.assertIn('backend.emitEvent("arMixWindowFullscreen",{operation:"TOGGLE"})',bridge)
         self.assertIn('withEventListener ("arMixWindowFullscreen"',HOST)
         self.assertIn('toggleOperatorFullscreen();',HOST)

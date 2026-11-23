@@ -3389,8 +3389,16 @@ test("P0 FIRST SOUND G0 offers verified input and leaves automatic MAIN to nativ
   "unpatched G0 must not masquerade as ChannelId PCM");
  assert.ok(renderedChoices.length>0,
   "first real JUCE pin readback must refresh the previously empty selector");
- assert.deepEqual(renderedChoices.at(-1),["None","Mono · IN 1 [IN 1]"],
-  "the only offered input is the native enabled physical pin");
+ assert.deepEqual(renderedChoices.at(-1),["None","Mono · IN 1 [IN 1]","Music Player"],
+  "the verified physical pin and virtual Player are discoverable before admission");
+ // Showing a virtual source must not imply that the unadmitted M4 producer
+ // can patch it; no synthetic browser PCM or MAIN arm is permitted.
+ const rejectPlayer=win.__ARMIX_NATIVE_M2__.consumeField({
+  type:"change",target:{dataset:{field:"input"},value:"Music Player",track:tracks[4]}
+ });
+ assert.equal(rejectPlayer,true);
+ assert.equal(sent.some(x=>x.name==="arMixAction"&&
+   x.payload.action==="routingSourceSwitch"),false);
  const choose=(label)=>win.__ARMIX_NATIVE_M2__.consumeField({
   type:"change",target:{dataset:{field:"input"},value:label,track:tracks[4]}
  });
