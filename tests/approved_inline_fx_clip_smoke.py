@@ -153,6 +153,38 @@ def main():
                 page.wait_for_timeout(80)
                 after_wheel=root.bounding_box()
                 assert after_wheel["x"]<moved["x"]-60,(width,moved,after_wheel)
+                # Real native clipped GEQ31 must NOT jump when FX Rack
+                # refocuses the same insert; unlike just reading source,
+                # this exercises the original host.open() path repeatedly.
+                clip_open="""()=>window.__ARMIX_NATIVE_INLINE_FX_CLIP__.openExact(
+                    window.ArSonMixGraphicEq31,'ArSonMixGraphicEq31',
+                    {id:22,name:'TEST CHANNEL',slotBypass:[false]},0,'geq-lease-22')"""
+                assert page.evaluate(clip_open)
+                panel=root.bounding_box()
+                page.evaluate("""()=>window.__ARMIX_NATIVE_INLINE_FX_CLIP__.move(
+                    document.getElementById('mxNativeGeq31'),-35,0)""")
+                placed=root.bounding_box()
+                assert placed["x"]<panel["x"]-20,(width,panel,placed)
+                for _ in range(3):
+                    assert page.evaluate(clip_open)
+                    again=root.bounding_box()
+                    assert abs(again["x"]-placed["x"])<1.5,(width,placed,again)
+                    assert abs(again["y"]-placed["y"])<1.5,(width,placed,again)
+                # S/M/L must resize about this location, not silently center.
+                page.evaluate("""()=>window.ArSonMixGraphicEq31.setSize('S')""")
+                scaled=root.bounding_box()
+                assert abs(scaled["x"]-placed["x"])<1.5,(width,placed,scaled)
+                page.evaluate("""()=>window.ArSonMixGraphicEq31.setSize('L')""")
+                # Plain F11 is emitted to native JUCE. Chromium itself cannot
+                # prove the OS HWND mode, which needs Windows host qualification.
+                prior=page.evaluate("""()=>window.__nativeMessages.filter(
+                    m=>m.name==='arMixWindowFullscreen').length""")
+                page.keyboard.press("F11")
+                page.keyboard.press("F11")
+                sent=page.evaluate("""()=>window.__nativeMessages.filter(
+                    m=>m.name==='arMixWindowFullscreen'&&
+                    m.payload.operation==='TOGGLE').length""")
+                assert sent==prior+2,(width,prior,sent,errors)
                 # Recover/recenter and S/M/L retain original full-sized
                 # artwork with compositor scaling, not CSS width compression.
                 page.evaluate("""()=>window.__ARMIX_NATIVE_INLINE_FX_CLIP__

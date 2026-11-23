@@ -569,7 +569,10 @@ function applySize(mode,{persist=true,center=true}={}){
  if(persist){try{window.localStorage?.setItem(SIZE_STORAGE,mode);}catch{}}
  // Keep the approved popup close to the toolbar after size change. The
  // double-click rescue method below is the only explicit VERTICAL center.
- if(!root.hidden&&center)placeScaledPosition(true,false);
+ // Native JUCE /preview/ has a single viewport position owner. S/M/L must
+ // scale about the operator's chosen origin, never move the panel itself.
+ if(!root.hidden&&center&&!window.__ARMIX_NATIVE_INLINE_FX_CLIP__)
+  placeScaledPosition(true,false);
  return true;
 }
 sizeButtons.forEach(button=>button.addEventListener("click",()=>{
@@ -578,8 +581,11 @@ sizeButtons.forEach(button=>button.addEventListener("click",()=>{
 applySize(sizeMode,{persist:false,center:false});
 function centerEditor(){
  if(root.hidden)return false;
- // Never replace the scale transform with 'none' on rescue: preserve mode
- // chosen in GEQ AND the shared built-in FX Rack recovery handler.
+ // The native clipped viewport already owns the deliberate double-click
+ // recovery. Do not install a second competing CSS left/top authority.
+ if(window.__ARMIX_NATIVE_INLINE_FX_CLIP__)
+  return window.__ARMIX_NATIVE_INLINE_FX_CLIP__.center(root);
+ // Public browser preview retains its original centered placement.
  applySize(sizeMode,{persist:false,center:false});
  placeScaledPosition(true,true);
  return true;
@@ -606,7 +612,10 @@ header.addEventListener("pointerup",e=>{dragHeader=null;try{header.releasePointe
 header.addEventListener("pointercancel",()=>{dragHeader=null;});
 window.addEventListener("keydown",e=>{if(e.key==="Escape"&&!root.hidden&&!e.target.closest?.(".mx-fxp-form"))dismiss();});
 window.addEventListener("resize",()=>{
- if(root.hidden)return;const r=root.getBoundingClientRect();
+ // Native viewport resize (including F11) is clamped once by the shared
+ // FX clip owner; this old rule snapped wide GEQ31 to x=0 every time.
+ if(root.hidden||window.__ARMIX_NATIVE_INLINE_FX_CLIP__)return;
+ const r=root.getBoundingClientRect();
  root.style.left=clamp(r.left,0,Math.max(0,innerWidth-r.width))+"px";
  root.style.top=clamp(r.top,0,Math.max(0,innerHeight-r.height))+"px";
 });
@@ -628,9 +637,11 @@ function open(track,slot){
  channel.textContent=(track.name||"Channel")+" · FX "+(slot+1);
  root.dataset.fxTrackId=String(track.id);root.dataset.fxSlot=String(slot);
  root.hidden=false;
- // A reopened editor must not inherit a hidden/offscreen position, even
- // when the operator last used S or M in a smaller WebView2 viewport.
- placeScaledPosition(true,false);
+ // Native same-instance editor reopens exactly where the operator left it.
+ // The shared FX clip performs first-open center and offscreen recovery.
+ // Public browser preview keeps its existing centered reopen behavior.
+ if(!window.__ARMIX_NATIVE_INLINE_FX_CLIP__)
+  placeScaledPosition(true,false);
  paint();
 }
 window.ArSonMixGraphicEq31=Object.freeze({
