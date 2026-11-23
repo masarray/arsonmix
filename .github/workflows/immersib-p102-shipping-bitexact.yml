@@ -1,0 +1,22 @@
+name: ImmerSIB P102 actual shipping FIR bit-exact gate
+# Only a cheap Linux real-C++ A/B. No mixer/Windows checkout, no installer.
+# Historical source is fetched by commit identity, never from a mutable fixture.
+on:
+  push:
+    branches:
+      - perf/immersib-p102-fir-stasis-product-20261123
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  original-vs-shipping:
+    name: P102.3 original SHA vs optimized shipping six-wall PCM, seven scenes/two rates
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Compile original-approved and actual optimized FIR side by side
+        run: python3 tools/immersib_p102_fir_shipping_gate.py
