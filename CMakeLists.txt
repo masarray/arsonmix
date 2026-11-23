@@ -586,6 +586,20 @@ if(BUILD_TESTING)
   target_link_libraries(ARMixArVerbCoreRegression PRIVATE ARMixArVerbCore)
   target_compile_features(ARMixArVerbCoreRegression PRIVATE cxx_std_17)
   add_test(NAME ArSonVerbPinnedV101CoreRegression COMMAND ARMixArVerbCoreRegression)
+  # Original pinned upstream v1.0.1 sonic/RT tests run as-is, no hand-
+  # rewritten "equivalent" tests and no proprietary DSP/IR dependency.
+  set(ARMIX_ARVERB_UPSTREAM_TESTS
+      test_contract test_audio_regression test_stress test_sonic_structure
+      test_algorithms test_mix_air test_rt60_tail test_preset_transition)
+  foreach(arverb_test IN LISTS ARMIX_ARVERB_UPSTREAM_TESTS)
+    add_executable(ARMixArVerb_${arverb_test}
+        third_party/arsonverb/tests/${arverb_test}.cpp)
+    target_link_libraries(ARMixArVerb_${arverb_test} PRIVATE ARMixArVerbCore)
+    target_compile_features(ARMixArVerb_${arverb_test} PRIVATE cxx_std_17)
+    add_test(NAME ArSonVerbPinned_${arverb_test}
+        COMMAND ARMixArVerb_${arverb_test})
+  endforeach()
+
   # M4: fixture processor goes through the SAME native FX descriptor path.
   # Remains part of the existing Windows native mixer qualification build.
   juce_add_console_app(ARMixNativeFxExtensionTests PRODUCT_NAME "ArSonMix Native FX Host Extension Tests")
