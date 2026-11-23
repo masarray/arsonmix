@@ -52,7 +52,7 @@ class CloudflarePagesBuildTest(unittest.TestCase):
         self.assertNotIn('arsonmix.pages.dev', xml)
         self.assertEqual(robots_txt(base).count('Sitemap: ' + base), 1)
 
-        @staticmethod
+    @staticmethod
     def trusted_snapshot():
         tag = "v0.5.0-alpha.32"
         name = f"ArSonMix-{tag}-Windows-x64-Setup.zip"
