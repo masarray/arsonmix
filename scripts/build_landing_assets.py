@@ -11,7 +11,7 @@ if not (OUT/"index.html").is_file() or not (OUT/"preview/index.html").is_file():
     raise SystemExit("Build approved Pages GUI before staging marketing assets")
 if OUT == ROOT or OUT == ROOT/"site":
     raise SystemExit("Unsafe landing asset output path")
-for name in ("landing.css","downloads.js"):
+for name in ("landing.css","downloads.js","fx-detail.css"):
     source=ROOT/"site"/name
     if not source.is_file(): raise SystemExit("Missing landing asset "+name)
     shutil.copyfile(source,OUT/name)
@@ -26,6 +26,25 @@ source_media=ROOT/"site/media"
 target_media=OUT/"media"
 if target_media.exists(): shutil.rmtree(target_media)
 target_media.mkdir()
+mixer_manifest_path = source_media / "console-capture-provenance.json"
+if not mixer_manifest_path.is_file():
+    raise SystemExit("Missing owner Windows console screenshot manifest")
+mixer_manifest = json.loads(mixer_manifest_path.read_text(encoding="utf-8"))
+if (mixer_manifest.get("schemaVersion") != 1 or
+        mixer_manifest.get("captureMode") != "owner-provided-windows-console" or
+        len(mixer_manifest.get("images", [])) != 2):
+    raise SystemExit("Unrecognized native mixer screenshot provenance")
+mixer_images = {x.get("file"): x for x in mixer_manifest["images"]}
+if set(mixer_images) != {"console-overview.jpg", "console-routing.jpg"}:
+    raise SystemExit("Console screenshot manifest file set mismatch")
+for filename, item in mixer_images.items():
+    original = source_media / filename
+    if (item.get("sha256") != sha256(original.read_bytes()).hexdigest() or
+            item.get("sizeBytes") != original.stat().st_size or
+            not item.get("ownerProvidedNativeWindowsCapture") or
+            item.get("audioHardwareVerifiedByScreenshot") is not False):
+        raise SystemExit("Owner console screenshot provenance mismatch: " + filename)
+shutil.copyfile(mixer_manifest_path, target_media / mixer_manifest_path.name)
 mixer = ("console-overview.jpg","console-routing.jpg","console-faders.jpg")
 editors = ("fx-editor-8d-sonku.jpg","fx-editor-vocal-delay.jpg",
            "fx-editor-harmonice.jpg","fx-editor-channel-eq.jpg",

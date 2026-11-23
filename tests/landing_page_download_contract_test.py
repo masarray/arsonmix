@@ -38,15 +38,25 @@ class LandingReleaseContract(unittest.TestCase):
                 "fx-editor-guitar-rig-clean-studio.jpg",
             )
             self.assertIn('id="fx-native-gallery"', html)
-            self.assertIn('id="fx-native-scenes"', html)
+            self.assertNotIn('id="fx-native-scenes"', html)
             self.assertIn("DSP OFFLINE", html)
-            self.assertIn("fx-native-scenes", css)
+            self.assertEqual(html.count("fx-editor-immersib-concert-front-row-xl.jpg"), 1,
+                             "Homepage must load one and only one ImmerSIB screenshot")
             for filename in native_screens:
-                self.assertIn("media/" + filename, html)
+                if filename == "fx-editor-immersib-concert-front-row-xl.jpg" or "guitar" in filename:
+                    self.assertIn("media/" + filename, html)
+                else:
+                    self.assertNotIn("media/" + filename, html,
+                                     "Full ImmerSIB gallery belongs on detail page, not homepage")
+            fx_slugs = ("8d-sonku", "vocal-delay", "harmonice", "channel-eq",
+                        "compressor", "graphic-eq31", "immersib", "guitar-fx")
+            for slug in fx_slugs:
+                self.assertIn('href="./effects/' + slug + '/"', html)
+            self.assertEqual(html.count('class="fx-kind"'), len(fx_slugs))
             self.assertIn('id="getting-started"', html)
             self.assertIn('id="feedback"', html)
-            self.assertIn("ArSonMix mixer FX rack with WIRE routing", html)
-            self.assertIn("Explore the FX rack online", html)
+            self.assertIn("ArSonMix WIRE routing and input gain close-up", html)
+            self.assertIn("Browse a dedicated explanation for each built-in audio effect", html)
             self.assertIn("issues/new?template=01_bug_report.yml", html)
             self.assertIn("issues/new?template=02_feature_request.yml", html)
             self.assertIn("prefers-reduced-motion", css)
@@ -101,7 +111,7 @@ class LandingReleaseContract(unittest.TestCase):
                              "Landing should not embed a second, independently rendered GUI")
             for name in ("favicon.ico", "favicon-16x16.png", "favicon-32x32.png",
                          "apple-touch-icon.png", "site.webmanifest", "arsonmix-48.png", "arsonmix-128.png", "brand-512.png",
-                         "landing.css", "downloads.js"):
+                         "landing.css", "downloads.js", "fx-detail.css"):
                 self.assertTrue((base / name).is_file(), (str(base), name))
             for name in ("console-overview.jpg", "console-routing.jpg", "console-faders.jpg",
                          "fx-editor-8d-sonku.jpg", "fx-editor-vocal-delay.jpg",
@@ -112,6 +122,17 @@ class LandingReleaseContract(unittest.TestCase):
                 self.assertTrue(path.is_file(), str(path))
                 self.assertGreater(path.stat().st_size, 12000)
                 self.assertEqual(path.read_bytes()[:3], b"\xff\xd8\xff", str(path))
+            console_manifest = json.loads((base / "media/console-capture-provenance.json").read_text("utf-8"))
+            self.assertEqual(console_manifest["captureMode"], "owner-provided-windows-console")
+            self.assertEqual(len(console_manifest["images"]), 2)
+            for entry in console_manifest["images"]:
+                self.assertTrue(entry["ownerProvidedNativeWindowsCapture"])
+                self.assertFalse(entry["audioHardwareVerifiedByScreenshot"])
+                self.assertRegex(entry["originalPngSha256"], r"^[0-9a-f]{64}$")
+                media = base / "media" / entry["file"]
+                self.assertEqual(media.stat().st_size, entry["sizeBytes"])
+                self.assertEqual(__import__("hashlib").sha256(media.read_bytes()).hexdigest(),
+                                 entry["sha256"])
             manifest = json.loads((base / "media/fx-gallery-provenance.json").read_text("utf-8"))
             self.assertEqual(manifest["schemaVersion"], 1)
             self.assertEqual(len(manifest["images"]), 6)
@@ -144,6 +165,36 @@ class LandingReleaseContract(unittest.TestCase):
                 if "guitar" in entry["file"]:
                     self.assertIn("DSP OFFLINE", entry["capturedUiState"])
 
+    def test_indexable_fx_guides_are_unique_and_light(self):
+        slugs = ("8d-sonku", "vocal-delay", "harmonice", "channel-eq",
+                 "compressor", "graphic-eq31", "immersib", "guitar-fx")
+        for slug in slugs:
+            html_path = DIST / "effects" / slug / "index.html"
+            self.assertTrue(html_path.is_file(), str(html_path))
+            page = html_path.read_text("utf-8")
+            self.assertIn("<h1>", page)
+            self.assertIn('rel="canonical"', page)
+            self.assertIn('application/ld+json', page)
+            self.assertIn('href="../../#download"', page)
+            self.assertIn('href="../../preview/"', page)
+            self.assertEqual(page.count('<meta name="description"'), 1)
+            self.assertEqual(page.count("<h1>"), 1)
+            self.assertNotIn("releases/download/", page)
+            self.assertNotIn("<iframe", page)
+            count = page.count('class="detail-scene-grid"')
+            if slug == "immersib":
+                self.assertEqual(count, 1)
+                self.assertEqual(page.count('class="detail-scene-grid"'), 1)
+                for scene in ("front-row-power", "symphonic-palace",
+                              "velvet-cinema", "arena-thunder", "royal-concert-hall",
+                              "concert-front-row-xl"):
+                    self.assertIn("fx-editor-immersib-" + scene + ".jpg", page)
+            else:
+                self.assertEqual(count, 0)
+        self.assertEqual(len(list((DIST / "effects").glob("*/index.html"))), len(slugs))
+        self.assertIn("effects/8d-sonku/", (DIST / "sitemap.xml").read_text("utf-8"))
+        self.assertIn("effects/immersib/", (DIST / "sitemap.xml").read_text("utf-8"))
+
     def test_public_agpl_notice_is_exact_repo_license(self):
         # Legal documentation is delivered on the official Pages domain
         # rather than linking visitors to a GitHub source-code UI.
@@ -166,6 +217,11 @@ class LandingReleaseContract(unittest.TestCase):
         self.assertIn("site/media/fx-editor-guitar-rig-clean-studio.jpg", readme)
         self.assertIn("DSP OFFLINE", readme)
         self.assertIn("8D-SonKu P9.9", readme)
+        for fx in ("8d-sonku", "vocal-delay", "harmonice", "channel-eq",
+                   "compressor", "graphic-eq31", "immersib", "guitar-fx"):
+            self.assertIn("https://masarray.github.io/arsonmix/effects/" + fx + "/", readme)
+        self.assertNotIn("Harmonice + Vocal Delay", readme)
+        self.assertNotIn("Guitar FX, EQ + Compressor", readme)
         self.assertIn("GitHub account", readme)
         self.assertIn("visual only", readme)
         self.assertNotIn("Latest published Windows alpha as of", readme)

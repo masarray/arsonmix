@@ -37,11 +37,16 @@ class PagesPublicOriginTest(unittest.TestCase):
                 compiled = render_landing_metadata(original, base)
                 self.assertIn('<link rel="canonical" href="' + base + '">', compiled)
                 self.assertIn('<meta property="og:url" content="' + base + '">', compiled)
-                self.assertIn('<meta property="og:image" content="' + base + 'brand-512.png">', compiled)
+                self.assertIn('<meta property="og:image" content="' + base + 'media/console-overview.jpg">', compiled)
+                self.assertIn("SoftwareApplication", compiled)
+                self.assertIn("Free Open Source Digital Mixer", compiled)
                 for resource in ("./preview/", "./downloads.js", "./landing.css",
                                  "./release-catalog.json", "./media/console-overview.jpg"):
                     self.assertEqual(urljoin(base, resource), base + resource[2:])
                 self.assertIn(base + "preview/", sitemap_xml(base))
+                for fx in ("8d-sonku", "vocal-delay", "harmonice", "channel-eq",
+                           "compressor", "graphic-eq31", "immersib", "guitar-fx"):
+                    self.assertIn(base + "effects/" + fx + "/", sitemap_xml(base))
                 self.assertIn(base + "sitemap.xml", robots_txt(base))
 
     def test_actual_distribution(self):
@@ -50,10 +55,12 @@ class PagesPublicOriginTest(unittest.TestCase):
         html = (DIST / "index.html").read_text(encoding="utf-8")
         self.assertIn('<link rel="canonical" href="' + base + '">', html)
         self.assertIn('<meta property="og:url" content="' + base + '">', html)
-        self.assertIn('<meta property="og:image" content="' + base + 'brand-512.png">', html)
+        self.assertIn('<meta property="og:image" content="' + base + 'media/console-overview.jpg">', html)
         self.assertEqual((DIST / "sitemap.xml").read_text(encoding="utf-8"), sitemap_xml(base))
         self.assertEqual((DIST / "robots.txt").read_text(encoding="utf-8"), robots_txt(base))
         self.assertTrue((DIST / "preview/index.html").is_file())
+        self.assertTrue((DIST / "effects/immersib/index.html").is_file())
+        self.assertTrue((DIST / "effects/guitar-fx/index.html").is_file())
         for name in ("./preview/", "./downloads.js", "./landing.css"):
             self.assertIn(name, html)
         self.assertNotIn('href="/preview/"', html)
