@@ -99,6 +99,11 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn('primaryChannelLevelPlan(snapshot,projected,sourceId,edgeId)',vm)
         self.assertIn('edge.primaryOutput!==true||edge.gainLinear!==1',vm)
         self.assertIn('Parallel SEND level · editable via native EdgeId ACK/readback',bridge)
+        assembler=(ROOT/"scripts/build_approved_native_gui.py").read_text(encoding="utf-8")
+        self.assertIn("wireDisplayDb=",assembler)
+        self.assertIn("if(edge.kind!='primary')",assembler.replace("!==","!="))
+        self.assertIn("nativePrimaryDb",assembler)
+        self.assertIn("edge.kind==='primary')return; // commit once on change",assembler)
 
     def test_geq_repeat_rack_click_and_f11_preserve_position(self):
         bridge=(ROOT/"web/approved-native-bridge.js").read_text(encoding="utf-8")
