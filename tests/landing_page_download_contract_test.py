@@ -125,6 +125,25 @@ class LandingReleaseContract(unittest.TestCase):
             console_manifest = json.loads((base / "media/console-capture-provenance.json").read_text("utf-8"))
             self.assertEqual(console_manifest["captureMode"], "owner-provided-windows-console")
             self.assertEqual(len(console_manifest["images"]), 2)
+            responsive = {
+                "console-overview-960.jpg": (960, 516),
+                "console-overview-1440.jpg": (1440, 774),
+                "console-routing-640.jpg": (640, 208),
+            }
+            variants = {v["file"]: v for v in console_manifest["responsiveVariants"]}
+            self.assertEqual(set(variants), set(responsive))
+            for filename, dims in responsive.items():
+                variant = variants[filename]
+                self.assertEqual((variant["width"], variant["height"]), dims)
+                self.assertIn(variant["source"], {"console-overview.jpg", "console-routing.jpg"})
+                data = (base / "media" / filename).read_bytes()
+                self.assertEqual(data[:3], b"\xff\xd8\xff")
+                self.assertEqual(len(data), variant["sizeBytes"])
+                self.assertEqual(__import__("hashlib").sha256(data).hexdigest(), variant["sha256"])
+            self.assertIn("console-overview-960.jpg 960w", html)
+            self.assertIn("console-overview-1440.jpg 1440w", html)
+            self.assertIn("console-routing-640.jpg 640w", html)
+
             for entry in console_manifest["images"]:
                 self.assertTrue(entry["ownerProvidedNativeWindowsCapture"])
                 self.assertFalse(entry["audioHardwareVerifiedByScreenshot"])

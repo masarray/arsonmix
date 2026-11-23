@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "captureMode": "owner-provided-windows-console",
   "captureDate": "2026-11-23",
-  "notes": "User-supplied actual ArSonMix Windows UI pixels; overview screenshot visibly reads v0.5.0-alpha.31 and NO VERIFIED AUDIO DEVICE. Image 2 is an owner-supplied WIRE/input-gain crop. JPEG compression only. Image is not a hardware audio verification or proof of compatibility with latest published alpha.",
+  "notes": "User-supplied actual ArSonMix Windows UI pixels; overview screenshot visibly reads v0.5.0-alpha.31 and NO VERIFIED AUDIO DEVICE. Image 2 is an owner-supplied WIRE/input-gain crop. JPEG compression only. Image is not a hardware audio verification or proof of compatibility with latest published alpha. Responsive image variants resize original authentic Windows pixels only; original images remain the full-resolution fallback. SHA-256 and dimensions verified during Pages staging.",
   "images": [
     {
       "file": "console-overview.jpg",
@@ -25,6 +25,32 @@
       "ownerProvidedNativeWindowsCapture": true,
       "visibleApplicationVersion": null,
       "audioHardwareVerifiedByScreenshot": false
+    }
+  ],
+  "responsiveVariants": [
+    {
+      "file": "console-overview-960.jpg",
+      "source": "console-overview.jpg",
+      "width": 960,
+      "height": 516,
+      "sizeBytes": 129847,
+      "sha256": "5e147a5c44beb623b572898455cd0598a4e6a61a7e1cba4fb9e0be88bf0645ab"
+    },
+    {
+      "file": "console-overview-1440.jpg",
+      "source": "console-overview.jpg",
+      "width": 1440,
+      "height": 774,
+      "sizeBytes": 249964,
+      "sha256": "0df3d8b1700c91748ccf0d1efe7a4a74af86596a3a3cf4ca7a49fad4811a4632"
+    },
+    {
+      "file": "console-routing-640.jpg",
+      "source": "console-routing.jpg",
+      "width": 640,
+      "height": 208,
+      "sizeBytes": 29333,
+      "sha256": "787181f4acf8184312f6e91cdced824096d7442db1fea2ad388c73e0e20e4582"
     }
   ]
 }

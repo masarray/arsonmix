@@ -9,6 +9,14 @@ The overview visibly labels the app `v0.5.0-alpha.31` and shows no verified
 audio device; this is **not** evidence of a current installer version, live
 audio or hardware FAT. The WIRE/gain crop is from the same user submission.
 
+Responsive mobile/desktop derivatives (`console-overview-960.jpg`,
+`console-overview-1440.jpg`, `console-routing-640.jpg`) are scaled
+JPEGs of the same owner screenshots, not separate app mockups. They preserve
+original full-resolution links as a `src` fallback. `srcset` lets browsers
+download fewer bytes for smaller screens while retaining visual fidelity.
+The three derivative pixel dimensions, SHA-256 checksums and source links
+are enforced through `console-capture-provenance.json`.
+
 `console-capture-provenance.json` records JPEG SHA-256, original PNG SHA-256,
 dimensions, capture provenance and relevant limits. The existing
 `console-faders.jpg` remains a previously approved /preview/ browser
