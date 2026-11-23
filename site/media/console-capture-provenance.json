@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "captureMode": "owner-provided-windows-console",
+  "captureDate": "2026-11-23",
+  "notes": "User-supplied actual ArSonMix Windows UI pixels; overview screenshot visibly reads v0.5.0-alpha.31 and NO VERIFIED AUDIO DEVICE. Image 2 is an owner-supplied WIRE/input-gain crop. JPEG compression only. Image is not a hardware audio verification or proof of compatibility with latest published alpha.",
+  "images": [
+    {
+      "file": "console-overview.jpg",
+      "width": 1920,
+      "height": 1032,
+      "sizeBytes": 419283,
+      "sha256": "d599391b9e99152ee8b3326c590a0ac60925f32d609bc4e02c3665e331cefe07",
+      "originalPngSha256": "4774582eab0d311f6b57c29d81cbf24900f5073f4b97f4bb047d48ef9f918403",
+      "ownerProvidedNativeWindowsCapture": true,
+      "visibleApplicationVersion": "v0.5.0-alpha.31",
+      "audioHardwareVerifiedByScreenshot": false
+    },
+    {
+      "file": "console-routing.jpg",
+      "width": 1196,
+      "height": 389,
+      "sizeBytes": 86208,
+      "sha256": "360b87657b5f34c1cdc2ef4fc31003af88fcbd5df5b0f5d91b15927a2a18aabc",
+      "originalPngSha256": "cb36e21f392fac52618fdfcc35c5c4e4f8bcf2c0180795ba115707c2dbc2a865",
+      "ownerProvidedNativeWindowsCapture": true,
+      "visibleApplicationVersion": null,
+      "audioHardwareVerifiedByScreenshot": false
+    }
+  ]
+}

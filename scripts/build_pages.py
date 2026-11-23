@@ -2,6 +2,7 @@
 from pathlib import Path
 import argparse,os,json,shutil,subprocess,sys
 from pages_public_origin import normalize_public_url, render_landing_metadata, sitemap_xml, robots_txt
+from public_fx_pages import build_fx_pages
 from compile_approved_css import optimize_assets
 from approved_fx_rack_power import apply_authoritative_fx_power
 from approved_fx_rack_interaction import apply_fx_rack_interaction
@@ -32,6 +33,9 @@ landing=(dst/'index.html')
 landing.write_text(render_landing_metadata(landing.read_text(encoding='utf-8'),public_url),encoding='utf-8')
 (dst/'sitemap.xml').write_text(sitemap_xml(public_url),encoding='utf-8')
 (dst/'robots.txt').write_text(robots_txt(public_url),encoding='utf-8')
+# Eight real, HTML-first effect guide pages: crawlable and separate from the
+# ONE approved interactive /preview/ GUI. Full venue scenes only on detail.
+build_fx_pages(dst, public_url)
 # One logo source, one deterministic build for all web/PWA/favicon resources.
 subprocess.run([sys.executable,str(ROOT/'scripts/generate_brand_icons.py'),
                 '--source',str(ROOT/'assets/icon/brand-source-128.png'),

@@ -11,8 +11,8 @@
   <a href="https://masarray.github.io/arsonmix/#feedback">Share feedback</a>
 </p>
 
-<p align="center"><a href="https://masarray.github.io/arsonmix/"><img src="site/media/console-overview.jpg" alt="Actual approved ArSonMix mixer interface with channel faders, meters, FX racks and routing" width="1100"></a></p>
-<p align="center"><sub>The ArSonMix mixing console. Explore this interface online; run audio and built-in effects in the Windows desktop app.</sub></p>
+<p align="center"><a href="https://masarray.github.io/arsonmix/"><img src="site/media/console-overview.jpg" alt="Native ArSonMix Windows digital mixer screenshot with 10 channels, live input gain knobs and color-coded WIRE routing" width="1100"></a></p>
+<p align="center"><sub>Owner-provided ArSonMix Windows mixer screenshot (visible application version v0.5.0-alpha.31; audio device unavailable at capture). The download page lists the separately verified current installer.</sub></p>
 
 ## Your mix, your sound
 
@@ -24,56 +24,50 @@ Bring your voice, instruments and music together in a single live digital mixer.
 
 ## See the mixer in action
 
-| WIRE routing and FX | Channel levels and faders |
+| WIRE routing and input gain | Channel levels and faders |
 |:--:|:--:|
-| <img src="site/media/console-routing.jpg" alt="ArSonMix WIRE patch connections and mixer FX slots" width="520"> | <img src="site/media/console-faders.jpg" alt="ArSonMix hardware-style channel faders and level meters" width="520"> |
+| <img src="site/media/console-routing.jpg" alt="Close-up of native ArSonMix Windows WIRE routing cables and INPUT GAIN knobs" width="520"> | <img src="site/media/console-faders.jpg" alt="ArSonMix hardware-style channel faders and level meters" width="520"> |
 
-## Sound-shaping tools built in
+## Built-in audio effects — one tool at a time
 
-| Feature | What it means for you |
-| --- | --- |
-| **Live mixer + WIRE** | Mix channels, manage levels, mute/solo, and route signals to MAIN or BUS. |
-| **ImmerSIB** | Explore concert-inspired space and venue character with built-in listening scenes. |
-| **8D-SonKu P9.9** | Add binaural movement and spatial perspective for headphone listening. |
-| **Harmonice + Vocal Delay** | Shape vocal harmonies/doubling and phrase-aware delay in the mix. |
-| **Guitar FX, EQ + Compressor** | Work with guitar tone, equalization and dynamics without leaving the console. |
-| **ArSon Player + `.smix`** | Keep music close to the console and save or reopen mixer sessions. |
-| **VST3 hosting** | Load supported external VST3 effects where compatible. Commercial plugins are not included. |
+ArSonMix is a **free, open-source digital mixer for Windows** with visual WIRE signal routing, live channel controls and built-in vocal, spatial, tone and guitar effects. Each audio effect has its own explanatory page with actual editor visuals.
 
-### Genuine Windows native FX editor screenshots
+| Built-in FX | What it does | Explore |
+| --- | --- | --- |
+| **8D-SonKu P9.9** | Headphone-oriented 8D spatial audio: binaural positioning, movement and a visible orbit map. | [8D audio guide](https://masarray.github.io/arsonmix/effects/8d-sonku/) |
+| **Vocal Delay** | Phrase-aware vocal echoes and creative delay throws using timing and THROW controls. | [Vocal Delay guide](https://masarray.github.io/arsonmix/effects/vocal-delay/) |
+| **Harmonice** | Musical-key-aware harmony and doubling tools for fuller live vocals. | [Harmonice guide](https://masarray.github.io/arsonmix/effects/harmonice/) |
+| **Parametric EQ** | Shape individual channel frequencies while viewing the filter response curve. | [Parametric EQ guide](https://masarray.github.io/arsonmix/effects/channel-eq/) |
+| **Compressor** | Shape dynamic levels using the built-in transfer-curve and compression editor. | [Compressor guide](https://masarray.github.io/arsonmix/effects/compressor/) |
+| **Graphic EQ 31** | Fine-tune tone across thirty-one labeled bands in a hardware-style equalizer. | [Graphic EQ 31 guide](https://masarray.github.io/arsonmix/effects/graphic-eq31/) |
+| **ImmerSIB** | Explore concert halls, arenas and theater listening scenes with stage and room controls. | [Six native venue screenshots](https://masarray.github.io/arsonmix/effects/immersib/) |
+| **Guitar FX Rig** | Explore gate, overdrive, amplifier and cabinet stages, plus guitar tone choices. | [Guitar FX guide](https://masarray.github.io/arsonmix/effects/guitar-fx/) |
 
-Six ImmerSIB listening scenes and Guitar FX Rig were supplied as real
-Windows editor screenshots on 22 November 2026, with no recreated UI.
+Other console tools: **WIRE routing** connects signals visibly; **ArSon Player** keeps playback near the mixer; **.smix sessions** save your setup; **VST3 hosting** loads compatible external effects (commercial VST3 plugins are not included).
 
-| ImmerSIB — Concert Front Row XL | Guitar FX Rig — Clean Studio |
-|:--:|:--:|
-| [<img src="site/media/fx-editor-immersib-concert-front-row-xl.jpg" alt="ImmerSIB native Windows editor showing Concert Front Row XL stage and controls" width="460">](site/media/fx-editor-immersib-concert-front-row-xl.jpg) | [<img src="site/media/fx-editor-guitar-rig-clean-studio.jpg" alt="Guitar FX Rig native Windows amplifier window; DSP OFFLINE shown" width="460">](site/media/fx-editor-guitar-rig-clean-studio.jpg) |
+### Original built-in effect editor interfaces
 
-<details><summary>Explore five additional ImmerSIB listening scenes</summary>
-
-| Front Row Power | Symphonic Palace | Velvet Cinema |
-|:--:|:--:|:--:|
-| [<img src="site/media/fx-editor-immersib-front-row-power.jpg" alt="ImmerSIB Front Row Power native window" width="280">](site/media/fx-editor-immersib-front-row-power.jpg) | [<img src="site/media/fx-editor-immersib-symphonic-palace.jpg" alt="ImmerSIB Symphonic Palace native window" width="280">](site/media/fx-editor-immersib-symphonic-palace.jpg) | [<img src="site/media/fx-editor-immersib-velvet-cinema.jpg" alt="ImmerSIB Velvet Cinema native window" width="280">](site/media/fx-editor-immersib-velvet-cinema.jpg) |
-| **Arena Thunder** | **Royal Concert Hall** | |
-| [<img src="site/media/fx-editor-immersib-arena-thunder.jpg" alt="ImmerSIB Arena Thunder native window" width="280">](site/media/fx-editor-immersib-arena-thunder.jpg) | [<img src="site/media/fx-editor-immersib-royal-concert-hall.jpg" alt="ImmerSIB Royal Concert Hall native window" width="280">](site/media/fx-editor-immersib-royal-concert-hall.jpg) | |
-
-</details>
-
-*The Guitar capture visibly shows DSP OFFLINE. These are genuine editor images, not proof of live audio/hardware operation or of an identified released installer.*
-
-### More built-in FX: original WebView editor resources
-
-Click to view the full interface. These six pictures come from ArSonMix's approved native WebView editor resources rendered in Chromium, not promotional mockups.
+These six screenshots use the original approved JUCE WebView editor HTML/CSS/JS captured through a controlled Chromium test. They are not generated marketing mockups or evidence of live audio.
 
 | 8D-SonKu | Vocal Delay |
 |:--:|:--:|
-| [<img src="site/media/fx-editor-8d-sonku.jpg" alt="8D-SonKu spatial editor with binaural map" width="460">](site/media/fx-editor-8d-sonku.jpg) | [<img src="site/media/fx-editor-vocal-delay.jpg" alt="Vocal Delay editor with illuminated throw control" width="460">](site/media/fx-editor-vocal-delay.jpg) |
+| [<img src="site/media/fx-editor-8d-sonku.jpg" alt="8D-SonKu spatial audio editor with binaural orbit map" width="460">](https://masarray.github.io/arsonmix/effects/8d-sonku/) | [<img src="site/media/fx-editor-vocal-delay.jpg" alt="Vocal Delay editor with THROW and timing controls" width="460">](https://masarray.github.io/arsonmix/effects/vocal-delay/) |
 | **Harmonice** | **Parametric EQ** |
-| [<img src="site/media/fx-editor-harmonice.jpg" alt="Harmonice vocal harmony editor" width="460">](site/media/fx-editor-harmonice.jpg) | [<img src="site/media/fx-editor-channel-eq.jpg" alt="ArSonMix Parametric EQ editor" width="460">](site/media/fx-editor-channel-eq.jpg) |
+| [<img src="site/media/fx-editor-harmonice.jpg" alt="Harmonice vocal harmony editor with key wheel" width="460">](https://masarray.github.io/arsonmix/effects/harmonice/) | [<img src="site/media/fx-editor-channel-eq.jpg" alt="Parametric EQ editor with frequency response curve" width="460">](https://masarray.github.io/arsonmix/effects/channel-eq/) |
 | **Compressor** | **Graphic EQ 31** |
-| [<img src="site/media/fx-editor-compressor.jpg" alt="ArSonMix compressor editor" width="460">](site/media/fx-editor-compressor.jpg) | [<img src="site/media/fx-editor-graphic-eq31.jpg" alt="ArSonMix 31-band Graphic EQ editor" width="460">](site/media/fx-editor-graphic-eq31.jpg) |
+| [<img src="site/media/fx-editor-compressor.jpg" alt="ArSonMix Compressor editor with dynamics curve" width="460">](https://masarray.github.io/arsonmix/effects/compressor/) | [<img src="site/media/fx-editor-graphic-eq31.jpg" alt="ArSonMix Graphic EQ with 31 faders" width="460">](https://masarray.github.io/arsonmix/effects/graphic-eq31/) |
 
-Try the [built-in FX showcase](https://masarray.github.io/arsonmix/#effects) or [explore the console](https://masarray.github.io/arsonmix/preview/). The preview is visual only; native effect editors and audio run in the desktop app.
+### Newer native Windows editor captures
+
+ImmerSIB and Guitar FX Rig are shown **after** the original effects. To keep the main website light, it shows one ImmerSIB image; all six scene captures belong to the dedicated ImmerSIB page.
+
+| ImmerSIB — Concert Front Row XL | Guitar FX Rig — Clean Studio |
+|:--:|:--:|
+| [<img src="site/media/fx-editor-immersib-concert-front-row-xl.jpg" alt="Real Windows ImmerSIB native editor with concert stage and spatial controls" width="460">](https://masarray.github.io/arsonmix/effects/immersib/) | [<img src="site/media/fx-editor-guitar-rig-clean-studio.jpg" alt="Real Windows Guitar FX amplifier editor, Clean Studio, screenshot displays DSP OFFLINE" width="460">](https://masarray.github.io/arsonmix/effects/guitar-fx/) |
+
+These are genuine owner-supplied Windows editor screenshots, not a verified DSP/hardware test. The Guitar FX capture visibly reads **DSP OFFLINE**; the exact installed binary used for those screenshots was not independently identified.
+
+[Explore the built-in FX showcase](https://masarray.github.io/arsonmix/#effects) or [try the official mixer preview](https://masarray.github.io/arsonmix/preview/). The preview is visual only; native audio and effects require a compatible desktop audio setup.
 
 ## From download to your first mix
 

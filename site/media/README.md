@@ -2,9 +2,17 @@
 
 ## Mixer
 
-The mixer screenshots `console-overview.jpg`, `console-routing.jpg` and
-`console-faders.jpg` were captured from the **single approved** /preview/
-with `scripts/capture_landing_screenshots.py`.
+The landing hero `console-overview.jpg` and close-up
+`console-routing.jpg` are **actual Windows ArSonMix UI screenshots supplied
+by the owner on 2026-11-23**, optimized as JPEG without altering the interface.
+The overview visibly labels the app `v0.5.0-alpha.31` and shows no verified
+audio device; this is **not** evidence of a current installer version, live
+audio or hardware FAT. The WIRE/gain crop is from the same user submission.
+
+`console-capture-provenance.json` records JPEG SHA-256, original PNG SHA-256,
+dimensions, capture provenance and relevant limits. The existing
+`console-faders.jpg` remains a previously approved /preview/ browser
+capture made with `scripts/capture_landing_screenshots.py`.
 
 ## Actual native WebView built-in FX editor modules
 
@@ -51,3 +59,13 @@ these captures as approved hardware test results.
 
 Capture again when native editor UI changes and verify the approved GUI build,
 actual pixels, asset checksum, responsive site and README links before publishing.
+
+## Search-friendly effect guides and homepage performance
+
+The homepage contains one native ImmerSIB image and one Guitar FX image,
+after six approved WebView editor images. Five other ImmerSIB scene pictures
+are referenced only on the separately indexable `/effects/immersib/` page.
+All eight FX guides are emitted as crawlable HTML by
+`scripts/public_fx_pages.py` with canonical URLs and structured breadcrumbs.
+They are documentation pages, **not** alternate /preview/ mixer renderers.
+The distinct file lists and checksums are validated in the Pages build.
