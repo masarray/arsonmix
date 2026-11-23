@@ -9,7 +9,7 @@ approved /preview/ UI, never force-click hidden compatibility controls.
 def _choose_wire_menu(page, kind):
     more = page.locator("#moreTools")
     if not more.evaluate("(el) => el.open"):
-        more.locator("summary").click()
+        more.locator(":scope > summary").click()
     choice = more.locator(f'[data-wire-open="{kind}"]')
     assert choice.is_visible(), f"More > WIRE TOOLS > {kind} unavailable"
     choice.click()

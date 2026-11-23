@@ -167,7 +167,7 @@ def verify_inspector_rejected_gain(page, out):
     # production Matrix entry lives in More > WIRE TOOLS. Exercise the
     # actual visible menu, not a hidden compatibility trigger.
     more=page.locator("#moreTools")
-    more.locator("summary").click()
+    more.locator(":scope > summary").click()
     assert more.evaluate("(el)=>el.open")
     menu_matrix=more.locator('[data-wire-open="matrix"]')
     assert menu_matrix.is_visible(), "More must retain accessible Matrix"

@@ -36,7 +36,7 @@ def open_wire(page,kind):
     else:
         more=page.locator("#moreTools")
         if not more.evaluate("e=>e.open"):
-            more.locator("summary").click()
+            more.locator(":scope > summary").click()
         more.locator('[data-wire-open="'+kind+'"]').click()
 
 def run(page,width,height):

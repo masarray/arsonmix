@@ -13,7 +13,7 @@ def launch(page,kind):
     else:
         menu=page.locator("#moreTools")
         if not menu.evaluate("e=>e.open"):
-            menu.locator("summary").click()
+            menu.locator(":scope > summary").click()
         menu.locator('[data-wire-open="'+kind+'"]').click()
 
 def inspect(page,width,height):

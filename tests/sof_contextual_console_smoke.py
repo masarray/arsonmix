@@ -369,11 +369,11 @@ def run() -> None:
                         menu = page.locator("#moreTools")
                         choice = page.locator("#viewFilter")
                         if not choice.is_visible():
-                            menu.locator("summary").click()
+                            menu.locator(":scope > summary").click()
                         assert choice.is_visible(), "More menu must reveal channel filter"
                         choice.select_option(value)
                         if menu.evaluate("el=>el.open"):
-                            menu.locator("summary").click()
+                            menu.locator(":scope > summary").click()
 
                     select_visible_channel_filter("bus")
                     selected_bus = page.locator('#tracks .strip[data-id="' + initial_id + '"]')

@@ -281,9 +281,9 @@ def run():
         click_main(page, control)
         page.locator("#saveScene").click()
         click_main(page, control)
-        page.locator("#moreTools summary").click()
+        page.locator("#moreTools > summary").click()
         page.locator("#sceneSafe").click()
-        page.locator("#moreTools summary").click()
+        page.locator("#moreTools > summary").click()
         page.locator("#sceneSelect").select_option("1")
         page.locator("#recallScene").click()
         assert edge(page,5,"out") is None,"Snapshot SAFE overwrote live MAIN route"
