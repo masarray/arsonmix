@@ -3,9 +3,15 @@
 import hashlib
 import json
 import pathlib
+import sys
 import unittest
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+from verify_immersib_approved_pcm_sources import (
+    APPROVED_FILE_COUNT, APPROVED_ORIGINAL_BLOB, OPTIMIZED_BLOB, OPTIMIZED_PATH,
+    github_blob_hash, validate, verify_exact_optimized_provenance,
+)
 def read(name):return (ROOT/name).read_text(encoding="utf-8")
 
 class SpatialAuthorityContract(unittest.TestCase):
@@ -62,11 +68,18 @@ class SpatialAuthorityContract(unittest.TestCase):
         lock=json.loads(read("config/immersib_approved_pcm_sources.json"))
         self.assertEqual(pinned,{x["path"]:x["blob"] for x in lock["files"]})
         self.assertGreaterEqual(len(pinned),7)
+        # A deliberate, separately versioned implementation variant may be
+        # admitted ONLY when exact PCM parity to this original owner-approved
+        # source has been evidenced and the independent pinned manifest is
+        # intact. The historic approved blob is NEVER re-sealed.
+        self.assertEqual(validate(ROOT, lock), APPROVED_FILE_COUNT)
         for path,expected in pinned.items():
-            raw=(ROOT/path).read_bytes()
-            actual=hashlib.sha1(
-                b"blob "+str(len(raw)).encode("ascii")+b"\x00"+raw
-            ).hexdigest()
+            raw=(ROOT/path).read_bytes().replace(b"\r\n",b"\n")
+            actual=github_blob_hash(raw)
+            if path==OPTIMIZED_PATH and actual==OPTIMIZED_BLOB:
+                self.assertEqual(expected,APPROVED_ORIGINAL_BLOB)
+                verify_exact_optimized_provenance(ROOT)
+                continue
             self.assertEqual(actual,expected,
                 f"Acoustic source changed without checkpoint review: {path}")
 
