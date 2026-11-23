@@ -110,8 +110,10 @@ public:
             return;
         VocalReverbSettings s;
         if(!readAccepted(s)||!validVocalReverbSettings(s))return;
-        engine_.prepare(rate); // CONTROL/host suspended; only place for allocation
+        // P8 upstream primes coefficient targets in prepare(). Stage the
+        // RESTORED audio settings BEFORE prepare, never in the first callback.
         applyToEngine(s);
+        engine_.prepare(rate); // CONTROL/host suspended; only place for allocation
         ready_=true;
     }
     void releaseResources() override {ready_=false;}
