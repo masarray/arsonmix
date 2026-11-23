@@ -415,9 +415,15 @@ static void editorReopenStress(int rate) {
         auto* combo=dynamic_cast<juce::ComboBox*>(
             reopened->findChildWithID("imersip.preset"));
         assert(combo && combo->getSelectedId()!=deferredScene);
-        pcm.clear();
-        fx->processBlock(pcm,midi);
-        assert(!fx->stateSnapshotQuiescent());
+        // Some scene changes require the approved P83 click-safe 12 ms
+        // fade-out, native mode/HRIR switch, then 12 ms fade-in before
+        // the processor is quiescent. One 128f callback cannot prove ACK.
+        // Keep rendering the actual native graph, without forged receipts.
+        for(int block=0;block<32;++block) {
+            pcm.clear();
+            fx->processBlock(pcm,midi);
+        }
+        assert(!fx->stateSnapshotQuiescent()); // ACK still awaits UI polling
         // Invoke the actual 25 Hz JUCE editor timer; NEVER forge a PCM ACK.
         juce::Thread::sleep(65);
         juce::Timer::callPendingTimersSynchronously();
