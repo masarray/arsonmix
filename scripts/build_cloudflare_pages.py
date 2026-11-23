@@ -23,11 +23,14 @@ from pathlib import Path
 from build_release_catalog import (
     REPO, SUFFIXES, TAG, catalog, download_releases, hydrate_landing_file,
 )
-from pages_public_origin import normalize_public_url
+from pages_public_origin import DEFAULT_PUBLIC_URL, normalize_public_url
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "dist-pages"
-DEFAULT_URL = "https://arsonmix.pages.dev/"
+# GitHub Pages is the established primary search URL (README, verified Pages).
+# Cloudflare is a mirror; preserve an explicit ARSONMIX_PUBLIC_URL override for
+# a future coordinated primary-domain migration.
+DEFAULT_URL = DEFAULT_PUBLIC_URL
 GITHUB_PAGES_CATALOG = "https://masarray.github.io/arsonmix/release-catalog.json"
 
 
@@ -48,6 +51,10 @@ def response_headers(branch):
     )
     if branch != "main":
         headers += "/*\n  X-Robots-Tag: noindex\n"
+    else:
+        # The mirror hosts the same interactive mixer preview. Index only the
+        # original approved preview on GitHub Pages; this remains navigable.
+        headers += "/preview/*\n  X-Robots-Tag: noindex\n"
     return headers
 
 
