@@ -44,6 +44,30 @@ for filename, item in mixer_images.items():
             not item.get("ownerProvidedNativeWindowsCapture") or
             item.get("audioHardwareVerifiedByScreenshot") is not False):
         raise SystemExit("Owner console screenshot provenance mismatch: " + filename)
+# Select responsive JPEGs from the same trusted owner Windows screenshot,
+# never browser re-creations. The manifest fails closed on unknown variants.
+variants = mixer_manifest.get("responsiveVariants")
+expected_variants = {
+    "console-overview-960.jpg": ("console-overview.jpg", 960, 516),
+    "console-overview-1440.jpg": ("console-overview.jpg", 1440, 774),
+    "console-routing-640.jpg": ("console-routing.jpg", 640, 208),
+}
+if not isinstance(variants, list) or len(variants) != len(expected_variants):
+    raise SystemExit("Responsive console manifest must list three derived sizes")
+by_file = {r.get("file"): r for r in variants if isinstance(r, dict)}
+if len(by_file) != len(expected_variants) or set(by_file) != set(expected_variants):
+    raise SystemExit("Responsive console variant file set drift")
+for name, (source_name, width, height) in expected_variants.items():
+    record = by_file[name]
+    original = source_media / name
+    if (record.get("source") != source_name or
+            (record.get("width"), record.get("height")) != (width, height) or
+            not original.is_file() or original.stat().st_size < 15000 or
+            original.read_bytes()[:3] != b"\xff\xd8\xff" or
+            record.get("sizeBytes") != original.stat().st_size or
+            record.get("sha256") != sha256(original.read_bytes()).hexdigest()):
+        raise SystemExit("Responsive image integrity/geometry mismatch: " + name)
+    shutil.copyfile(original, target_media / name)
 shutil.copyfile(mixer_manifest_path, target_media / mixer_manifest_path.name)
 mixer = ("console-overview.jpg","console-routing.jpg","console-faders.jpg")
 editors = ("fx-editor-8d-sonku.jpg","fx-editor-vocal-delay.jpg",
