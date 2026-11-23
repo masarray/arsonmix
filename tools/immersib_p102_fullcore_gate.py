@@ -43,7 +43,8 @@ def approved_header() -> bytes:
     return old
 
 
-def build_and_measure(root: pathlib.Path, label: str, original: bytes) -> tuple[bytes, dict]:
+def build_and_measure(root: pathlib.Path, label: str, original: bytes,
+                      msvc: bool) -> tuple[bytes, dict]:
     target = root / label
     audio = target / "engine/builtin_fx"
     audio.mkdir(parents=True)
@@ -58,13 +59,23 @@ def build_and_measure(root: pathlib.Path, label: str, original: bytes) -> tuple[
     elif blob_hash(header.read_bytes()) != CANDIDATE_BLOB:
         raise ValueError("IMMERSIB_P102_OPTIMIZED_SOURCE_DRIFT")
 
-    executable = target / "p102_fullcore"
-    command = [
-        "g++", "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror",
-        "-pedantic", "-ffp-contract=off",
-        *["-D" + macro + "=1" for macro in MACROS],
-        str(tools / SOURCE.name), "-o", str(executable),
-    ]
+    executable = target / ("p102_fullcore.exe" if msvc else "p102_fullcore")
+    if msvc:
+        if shutil.which("cl.exe") is None:
+            raise RuntimeError("IMMERSIB_FULL_CORE_MSVC_ENV_NOT_INITIALIZED")
+        command = [
+            "cl.exe", "/nologo", "/std:c++20", "/O2", "/EHsc",
+            "/fp:precise", "/W3", "/utf-8",
+            *["/D" + macro + "=1" for macro in MACROS],
+            str(tools / SOURCE.name), "/Fe:" + str(executable),
+        ]
+    else:
+        command = [
+            "g++", "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror",
+            "-pedantic", "-ffp-contract=off",
+            *["-D" + macro + "=1" for macro in MACROS],
+            str(tools / SOURCE.name), "-o", str(executable),
+        ]
     subprocess.run(command, check=True, cwd=target, timeout=180)
     output_file = target / "all_scenes_2rates_exact_pcm.f32"
     p = subprocess.run(
@@ -88,6 +99,9 @@ def build_and_measure(root: pathlib.Path, label: str, original: bytes) -> tuple[
 
 
 def main() -> int:
+    msvc=len(sys.argv)==2 and sys.argv[1]=="--msvc"
+    if len(sys.argv)>1 and not msvc:
+        raise ValueError("IMMERSIB_FULL_CORE_INVALID_COMPILER_OPTION")
     subprocess.run(
         [sys.executable, "scripts/verify_immersib_approved_pcm_sources.py"],
         cwd=ROOT, check=True, timeout=30,
@@ -97,8 +111,8 @@ def main() -> int:
         raise ValueError("IMMERSIB_P102_UNEXPECTED_CANDIDATE_BLOB")
     with tempfile.TemporaryDirectory(prefix="imersib-p102-fullcore-ab-") as td:
         root = pathlib.Path(td)
-        approved_bytes, base = build_and_measure(root,"original",original)
-        candidate_bytes, opt = build_and_measure(root,"optimized",original)
+        approved_bytes, base = build_and_measure(root,"original",original,msvc)
+        candidate_bytes, opt = build_and_measure(root,"optimized",original,msvc)
         if approved_bytes != candidate_bytes:
             first = next(i for i,(a,b) in enumerate(zip(approved_bytes,candidate_bytes))
                          if a!=b)
@@ -112,7 +126,7 @@ def main() -> int:
             f"bytes={len(approved_bytes)} samples={len(approved_bytes)//4} "
             "scenes=7 rates=44100_48000 approved_reference=HISTORICAL_SHA "
             "room_off_on=YES yaw_edit=YES inputs=STEREO_ANTIPHASE_SILENCE "
-            "engine=P102_APPROVED_FULL_SONKU"
+            "engine=P102_APPROVED_FULL_SONKU compiler=" + ("MSVC" if msvc else "GCC")
         )
         for key in sorted(base):
             a=base[key];b=opt[key]
