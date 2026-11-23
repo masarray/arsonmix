@@ -30,6 +30,40 @@ REQUIRED_ROOTS = {
     "engine/builtin_fx/SonKuSpatialProcessor.h",
 }
 SONKU_DIRECTORY = Path("engine/builtin_fx/sonku")
+# The P102.3 acoustic approval is NEVER re-sealed. One separately measured
+# implementation variant may be admitted only by this hard-coded exact blob,
+# the separate provenance document, and full regression/PCM parity gates.
+OPTIMIZED_PATH = "engine/builtin_fx/sonku/SonKuEarlyReflections.h"
+APPROVED_ORIGINAL_BLOB = "5a6a9b48cfdc60729f130c61110c8d8590b20f35"
+OPTIMIZED_BLOB = "94b90db3d699d9f26601448a38b2f489f51b5fb7"
+OPTIMIZED_PROVENANCE_PATH = (
+    "config/immersib_p102_bitexact_optimized_implementation.json"
+)
+OPTIMIZED_SCHEMA = "arsonmix.immersib-p102-verified-bitexact-implementation.v1"
+
+
+def verify_exact_optimized_provenance(root: Path) -> None:
+    path = root / OPTIMIZED_PROVENANCE_PATH
+    try:
+        provenance = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            "IMMERSIB_OPTIMIZED_IMPLEMENTATION_PROVENANCE_MISSING_OR_BAD"
+        ) from exc
+    required = {
+        "schema": OPTIMIZED_SCHEMA,
+        "status": "PROVISIONAL_NOT_RELEASED",
+        "approvedSourceSha": APPROVED_SHA,
+        "approvedSourceLock": "config/immersib_approved_pcm_sources.json",
+        "optimizedPath": OPTIMIZED_PATH,
+        "approvedOriginalBlob": APPROVED_ORIGINAL_BLOB,
+        "optimizedImplementationBlob": OPTIMIZED_BLOB,
+    }
+    if not isinstance(provenance, dict) or any(
+        provenance.get(key) != value for key, value in required.items()
+    ):
+        raise ValueError("IMMERSIB_OPTIMIZED_IMPLEMENTATION_PROVENANCE_TAMPERED")
+
 
 
 def github_blob_hash(data: bytes) -> str:
@@ -64,7 +98,19 @@ def validate(root: Path, manifest: dict) -> int:
         data = (root / path).read_bytes().replace(b"\r\n", b"\n")
         actual = github_blob_hash(data)
         if actual != expected:
-            raise ValueError(f"IMMERSIB_APPROVED_PCM_SOURCE_CHANGED:{path}:expected={expected}:actual={actual}")
+            # Owner-approved acoustic baseline remains pinned to the ORIGINAL
+            # thirty blobs in its historical manifest. Do not silently
+            # substitute an arbitrary new hash or allow secondary DSP edits.
+            if not (
+                path == OPTIMIZED_PATH
+                and expected == APPROVED_ORIGINAL_BLOB
+                and actual == OPTIMIZED_BLOB
+            ):
+                raise ValueError(
+                    f"IMMERSIB_APPROVED_PCM_SOURCE_CHANGED:{path}:"
+                    f"expected={expected}:actual={actual}"
+                )
+            verify_exact_optimized_provenance(root)
     actual_files = REQUIRED_ROOTS | {
         p.relative_to(root).as_posix()
         for p in (root / SONKU_DIRECTORY).glob("*.h")
@@ -94,9 +140,16 @@ def main(argv: list[str] | None = None) -> int:
     except (ValueError, OSError, UnicodeError, json.JSONDecodeError) as exc:
         print(f"IMMERSIB_APPROVED_PCM_SOURCE_REJECTED: {exc}", file=sys.stderr)
         return 1
+    optimized = (
+        github_blob_hash(
+            (root / OPTIMIZED_PATH).read_bytes().replace(b"\r\n", b"\n")
+        ) == OPTIMIZED_BLOB
+    )
     print(
         f"IMMERSIB_APPROVED_PCM_SOURCE_PASS source={APPROVED_SHA} "
-        f"frozenDspFiles={total} audioRetuning=NONE_SINCE_P102_3_OWNER_APPROVAL"
+        f"acousticBaselineFiles={total} "
+        f"bitExactImplementationVariant={'PINNED_PROVISIONAL' if optimized else 'NONE'} "
+        f"audioRetuning=NONE_SINCE_P102_3_OWNER_APPROVAL"
     )
     return 0
 

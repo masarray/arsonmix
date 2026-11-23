@@ -119,11 +119,43 @@ jobs:
             -DSONKU_IMMERSIB_PCM_DIAGNOSTICS=1 \
             tests/immersib_p98_native_sonic_gate.cpp -o /tmp/immersib-p98
           /tmp/immersib-p98
+      - name: Profile real P102.3 ROOM components cheaply without JUCE or Windows
+        run: |
+          set -euo pipefail
+          # Same native P7-P99 and branded P102 feature-family gates as
+          # production. Isolated per-component timing is INFO only.
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 \
+            -DSONKU_P72_NATIVE_XYZ_RT=1 \
+            -DSONKU_P75_MUSIC_SAFE_RESEARCH=1 \
+            -DSONKU_P80_TRANSPARENT_BASS_RESEARCH=1 \
+            -DSONKU_P82_MULTIBAND_ROOM_RESEARCH=1 \
+            -DSONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1 \
+            -DSONKU_P84_SINGLE_CORE_FUSION_RESEARCH=1 \
+            -DSONKU_P85_WORLD_COHERENCE_RESEARCH=1 \
+            -DSONKU_P86_HORIZONTAL_FOCUS_RESEARCH=1 \
+            -DSONKU_P87_MUSIC_BODY_RESEARCH=1 \
+            -DSONKU_P88_PERCEPTUAL_ALIGNMENT_RESEARCH=1 \
+            -DSONKU_P89_DEPTH_COHERENCE_RESEARCH=1 \
+            -DSONKU_P90_TRUE_EXTERNAL_RESEARCH=1 \
+            -DSONKU_P94_FRONT_BACK_DEPTH_RESEARCH=1 \
+            -DSONKU_P95_MUSICAL_PRESENCE_RESEARCH=1 \
+            -DSONKU_P96_DISTANCE_REINFORCEMENT_RESEARCH=1 \
+            -DSONKU_P97_STAGE_IMPACT_RESEARCH=1 \
+            -DSONKU_P98_SCENE_VOICING_RESEARCH=1 \
+            -DSONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH=1 \
+            -DSONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH=1 \
+            -DARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING=1 \
+            -DARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH=1 \
+            -DARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH=1 \
+            tools/immersib_p102_cpu_profile.cpp \
+            -o "$RUNNER_TEMP/armix-immersib-room-attr"
+          "$RUNNER_TEMP/armix-immersib-room-attr" --attribution
   windows:
     name: Actual JUCE ImerSip P9.2 insert + Windows GUI
     needs: source
-    # Per-commit PCM source contracts remain automatic; expensive Windows
-    # diagnostic only on a manually pinned SHA (full P1 gate still required).
+    # Fast Linux source/PCM on every PR; Windows native is exact-SHA opt-in.
     if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: windows-2022
     timeout-minutes: 50
@@ -192,6 +224,22 @@ jobs:
           ctest --test-dir build -C Release --output-on-failure `
             -R '^NativeImmerSIBJucePresetACKStateAndBypass$'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Compile and smoke actual branded P102.3 DSP profile
+        shell: pwsh
+        run: |
+          # The timing figure is INFO, not a CI threshold or physical XRUN.
+          # Build uses the same approved product-local definitions as console.
+          cmake --build build --config Release --parallel 2 --target ARMixImmerSIBP102CpuProfile
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe = 'build/Release/ARMixImmerSIBP102CpuProfile.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+            throw 'IMMERSIB_P102_PROFILE_EXE_MISSING'
+          }
+          & $exe --quick
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Isolated EARLY / FDN attribution, not additive and not a CI timing threshold.
+          & $exe --attribution
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload actual JUCE native 100, 125, 150 and 200 percent captures
         uses: actions/upload-artifact@v4
         with:
@@ -248,7 +296,22 @@ jobs:
           $flags = @([regex]::Matches($cmakeText, '(?m)^\s*option\((ARMIX_SONKU_EXPERIMENTAL_[A-Z0-9_]+)') |
               ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
           if ($flags.Count -lt 10) { throw 'PUBLIC_PROFILE_RESEARCH_OPTION_AUDIT_INCOMPLETE' }
-          $args = @('-S','.','-B','build','-DARMIX_IMMERSIB_RELEASE_CANDIDATE=OFF')
+          # CMake option() caches its first value. An RC->non-RC
+          # reconfigure of the SAME build directory must explicitly disable
+          # both branded P102.3 flags; turning only the parent RC OFF leaves
+          # them ON from the previous configure and causes a hard error.
+          # Preserve the intentional fail-closed CMake dependency checks.
+          $brandedFlags = @('ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH',
+                            'ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH')
+          foreach ($flag in $brandedFlags) {
+            if ($cmakeText -notmatch "option\($flag\b") {
+              throw "PUBLIC_PROFILE_BRANDED_OPTION_NOT_DECLARED: $flag"
+            }
+          }
+          $args = @('-S','.','-B','build','-DARMIX_IMMERSIB_RELEASE_CANDIDATE=OFF',
+                    '-DARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH=OFF',
+                    '-DARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH=OFF',
+                    '-DARMIX_SONKU_APPROVED_P99_MAIN=ON')
           foreach ($flag in $flags) { $args += "-D${flag}=OFF" }
           & cmake @args
           if ($LASTEXITCODE -ne 0) { throw 'PUBLIC_PROFILE_CMAKE_CONFIGURE_FAILED' }
@@ -257,6 +320,8 @@ jobs:
           # incorrectly rejected valid OFF/ON cache entries.
           $cacheLines = @(Get-Content -LiteralPath build/CMakeCache.txt -Encoding UTF8)
           $expected = @('ARMIX_IMMERSIB_RELEASE_CANDIDATE:BOOL=OFF',
+                        'ARMIX_IMMERSIB_STAGE_MONITOR_RESEARCH:BOOL=OFF',
+                        'ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH:BOOL=OFF',
                         'ARMIX_SONKU_APPROVED_P99_MAIN:BOOL=ON')
           foreach ($entry in $expected) {
             if ($entry -notin $cacheLines) {

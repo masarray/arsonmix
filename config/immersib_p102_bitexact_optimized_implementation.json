@@ -1,0 +1,22 @@
+{
+  "schema": "arsonmix.immersib-p102-verified-bitexact-implementation.v1",
+  "status": "PROVISIONAL_NOT_RELEASED",
+  "approvedSourceSha": "3095af08b817d59a3e14874dab404bf6e243f38a",
+  "approvedSourceLock": "config/immersib_approved_pcm_sources.json",
+  "optimizedPath": "engine/builtin_fx/sonku/SonKuEarlyReflections.h",
+  "approvedOriginalBlob": "5a6a9b48cfdc60729f130c61110c8d8590b20f35",
+  "optimizedImplementationBlob": "94b90db3d699d9f26601448a38b2f489f51b5fb7",
+  "optimization": "static six-wall geometry target cache plus guarded bitwise-stationary HRIR kernel slew; no coefficient, preset, FIR sample accumulation order or audio graph change",
+  "acceptedAudioPolicy": "PCM_BIT_EXACT_REQUIRED; do not treat updated blob as re-approval or sonic retuning",
+  "provenLinux": {
+    "run": "https://github.com/masarray/arsonmix/actions/runs/45094684247",
+    "pcm": "14/14 original-source versus real candidate tests bitwise equal on 44100/48000; 7 presets; ROOM edits/wrap/input cases",
+    "isolatedStage": "256-frame p50 reference approximately 674-675us vs candidate approximately 395-399us on same runner, four measured configurations; not full mixer CPU"
+  },
+  "notYetQualified": [
+    "Windows MSVC approved source vs candidate PCM",
+    "full-branded ImmerSIB host and native CTest",
+    "protected exact-SHA integration",
+    "owner low-spec ASIO hardware field validation"
+  ]
+}

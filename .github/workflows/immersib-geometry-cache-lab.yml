@@ -1,0 +1,26 @@
+name: ImmerSIB P102 geometry-cache bit-exact lab
+# Research-only: compiles approved real six-wall source and a generated
+# candidate under the same flags. Never builds mixer/Windows, never patches
+# the 30 approved acoustic files or publishes a release.
+on:
+  push:
+    branches:
+      - perf/immersib-p102-geometry-cache-lab-20261123
+    paths:
+      - tools/immersib_p102_geometry_cache_probe.py
+      - tools/immersib_p102_geometry_cache_probe.cpp
+      - .github/workflows/immersib-geometry-cache-lab.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bitexact:
+    name: Actual six-wall P102 bit-exact geometry cache A/B (Linux, no JUCE)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify frozen acoustic source and build actual A/B processor
+        run: python3 tools/immersib_p102_geometry_cache_probe.py

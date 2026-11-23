@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include <algorithm>
+#include <bit>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -54,6 +55,10 @@ public:
     static constexpr int sourceCount=2;
     static constexpr int ringFrames=8192;
     static constexpr int geometryInterval=64;
+    // Diagnostic only: target reuse is never an audio-state authority.
+    std::uint64_t skippedGeometryUpdates() const noexcept {
+        return geometryCacheSkips_;
+    }
     bool prepare(double rate, SonKuReflectionProfile profile=
                  SonKuReflectionProfile::Lightweight) noexcept {
         ready_=false;
@@ -97,7 +102,7 @@ public:
         for(auto& h:history_)h.fill(0.f);
         lowpass_.fill(0.f);
         for(auto& paths:tap_)for(auto& p:paths)p=Tap{};
-        write_=0;untilGeometry_=0;primed_=false;validFrames_=0;
+        write_=0;untilGeometry_=0;geometryCacheValid_=false;primed_=false;validFrames_=0;
         amount_=0.f;
         fuseEligible_=true;
     }
@@ -109,7 +114,7 @@ public:
         directionalHrir_=enabled;
         if(!enabled){fastZeroSpread_=false;fastContiguousHrir_=false;}
         fuseEligible_=true;
-        untilGeometry_=0;primed_=false;
+        untilGeometry_=0;geometryCacheValid_=false;primed_=false;
         return true;
     }
     bool directionalHrirEnabled() const noexcept{return directionalHrir_;}
@@ -150,7 +155,7 @@ public:
         if(active())return false;
         shape_=shape;
         custom_=false; // restores the exact legacy square/rectangle semantics
-        untilGeometry_=0;
+        untilGeometry_=0;geometryCacheValid_=false;
         primed_=false;
         return true;
     }
@@ -175,7 +180,7 @@ public:
         geometry_=g;
         custom_=true;
         shape_=SonKuRoomShape::Square; // consistent 0.70 walls, not rectangle
-        untilGeometry_=0;
+        untilGeometry_=0;geometryCacheValid_=false;
         primed_=false;
         return true;
     }
@@ -215,7 +220,7 @@ public:
         }
         realtimeMode_=true;
         amountTarget_=enabled?amount:0.f;
-        untilGeometry_=0;
+        untilGeometry_=0;geometryCacheValid_=false;
         return true;
     }
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
@@ -243,7 +248,20 @@ public:
                  float headYawDegrees=0.f,bool horizontalFocus=false) noexcept {
         if(!active())return {};
         if(untilGeometry_==0){
-            updateGeometry(azimuth,spread,headYawDegrees);
+            // P102 stationary scenes reuse identical targets without
+            // touching FIR coefficients or changing the audio sum order.
+            if(!geometryCacheValid_ || azimuth!=cachedAzimuth_ ||
+               spread!=cachedSpread_ || headYawDegrees!=cachedYaw_){
+                updateGeometry(azimuth,spread,headYawDegrees);
+                for(auto& source:tap_)for(auto& p:source){
+                    p.kernelStationary=false;
+                    p.stationaryChecks=0;
+                }
+                cachedAzimuth_=azimuth;
+                cachedSpread_=spread;
+                cachedYaw_=headYawDegrees;
+                geometryCacheValid_=true;
+            }else ++geometryCacheSkips_;
             untilGeometry_=geometryInterval;
         }
         const float x[2]{std::isfinite(left)?left:0.f,
@@ -271,9 +289,39 @@ public:
         // FIR(H, xR) = FIR(H, xL+xR). Stereo content need not be mono.
         // Any nonzero spread permanently disarms fusion until reset, so
         // live spread edits cannot reuse stale second-path filter state.
-        if(fastZeroSpread_ && spread!=0.f)fuseEligible_=false;
+        if(fastZeroSpread_ && spread!=0.f && fuseEligible_){
+            fuseEligible_=false;
+            for(auto& source:tap_)for(auto& p:source){
+                p.kernelStationary=false;
+                p.stationaryChecks=0;
+            }
+        }
         const bool fused=directionalHrir_ && fastZeroSpread_ &&
                          fuseEligible_ && spread==0.f;
+        // Every 128 samples, verify convergence with the exact scalar
+        // update on both ears. Skip later coefficient updates ONLY after
+        // two full no-change probes. Geometry edits invalidate immediately.
+        // No approximations, new convolution or audio sample reordering.
+        if(directionalHrir_ && (write_ & 127)==0){
+            for(auto& source:tap_)for(auto& p:source){
+                if(p.kernelStationary)continue;
+                bool stable=true;
+                for(int ear=0;ear<2 && stable;++ear)
+                    for(int k=0;k<hrir::taps;++k){
+                        const float h=p.kernel[ear][k];
+                        const float next=h+kernelSlew_*
+                            (p.targetKernel[ear][k]-h);
+                        if(std::bit_cast<std::uint32_t>(next)!=
+                           std::bit_cast<std::uint32_t>(h)){
+                            stable=false;break;
+                        }
+                    }
+                if(stable){
+                    if(p.stationaryChecks<2)++p.stationaryChecks;
+                    if(p.stationaryChecks>=2)p.kernelStationary=true;
+                }else p.stationaryChecks=0;
+            }
+        }
         Ears output{};
         for(int s=0;s<(fused?1:sourceCount);++s){
             for(int wall=0;wall<activeWallCount();++wall){
@@ -315,8 +363,10 @@ public:
                     const auto advance=[&](int k) noexcept {
                         auto& hL=p.kernel[0][k];
                         auto& hR=p.kernel[1][k];
-                        hL+=kernelSlew_*(p.targetKernel[0][k]-hL);
-                        hR+=kernelSlew_*(p.targetKernel[1][k]-hR);
+                        if(!p.kernelStationary){
+                            hL+=kernelSlew_*(p.targetKernel[0][k]-hL);
+                            hR+=kernelSlew_*(p.targetKernel[1][k]-hR);
+                        }
                         if(fused){
                             tap_[1][wall].kernel[0][k]=hL;
                             tap_[1][wall].kernel[1][k]=hR;
@@ -435,6 +485,8 @@ public:
     }
 private:
     struct Tap {
+        bool kernelStationary=false;
+        std::uint8_t stationaryChecks=0;
         float delayL=1.f,delayR=1.f,gainL=0.f,gainR=0.f;
         float targetDelayL=1.f,targetDelayR=1.f;
         float targetGainL=0.f,targetGainR=0.f;
@@ -628,6 +680,10 @@ private:
     float rate_=0.f,delaySlew_=0.f,gainSlew_=0.f,amountSlew_=0.f,kernelSlew_=0.f;
     float amount_=0.f,amountTarget_=0.f;
     int write_=0,untilGeometry_=0,validFrames_=0;
+    bool geometryCacheValid_=false;
+    double cachedAzimuth_=0.;
+    float cachedSpread_=0.f,cachedYaw_=0.f;
+    std::uint64_t geometryCacheSkips_=0;
     bool realtimeMode_=false;
     SonKuRoomShape shape_=SonKuRoomShape::Rectangular;
     SonKuRoomGeometry geometry_{};

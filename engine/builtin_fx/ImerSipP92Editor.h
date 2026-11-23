@@ -142,7 +142,11 @@ public:
         room_.setLookAndFeel(nullptr);
         power_.setLookAndFeel(nullptr);
     }
-    bool areVisualAssetsReady() const noexcept {return skin_.ready();}
+    bool areVisualAssetsReady() const {return skin_.ready();}
+    // Message-thread diagnostic for optional low-spec asset profiling.
+    std::size_t residentVenueCount() const noexcept {
+        return skin_.residentVenueCount();
+    }
     void bindHostPower(std::function<bool(bool)> request,
                        std::function<HostBypassState()> readback) {
         requestBypass_=std::move(request);
@@ -323,8 +327,20 @@ private:
         const bool bypassed=state.effectiveBypassed();
         const bool enabled=valid && static_cast<bool>(requestBypass_) &&
                            !state.rackBypassed && !state.globalBypassed;
-        // An unbound/offline editor stays inert; avoid a full-scene repaint
-        // 25 times/second when no physical lease exists.
+        // Host gate/readback can stay unchanged across thousands of timer
+        // ticks. Skip redundant JUCE setEnabled, setToggleState and tooltip
+        // String updates; never cache the authoritative host callback itself.
+        const bool hasRequest=static_cast<bool>(requestBypass_);
+        if(hostReadbackCached_ && cachedHasRequest_==hasRequest &&
+           lastHostReadback_.valid==state.valid &&
+           lastHostReadback_.slotBypassed==state.slotBypassed &&
+           lastHostReadback_.rackBypassed==state.rackBypassed &&
+           lastHostReadback_.globalBypassed==state.globalBypassed)
+            return;
+        lastHostReadback_=state;
+        cachedHasRequest_=hasRequest;
+        hostReadbackCached_=true;
+        // Full-scene dimming needs repaint only on actual host state change.
         const bool changed=(valid!=hostBypassed_.has_value()) ||
                            (valid && *hostBypassed_!=bypassed);
         if(valid) {
@@ -343,8 +359,21 @@ private:
         if(changed)repaint();
     }
     void timerCallback() override {
+        const auto previousStatus=status_;
         SonKuSpatialProcessor::Completion done{};
-        while(fx_.pollCompletion(done)){}
+        std::optional<bool> orphanApplied;
+        // An edit queued before the prior editor was closed may ACK after
+        // this editor is constructed. That request is not pending_ here;
+        // reconcile actual accepted PCM, never invent a second callback.
+        while(fx_.pollCompletion(done)){
+            if(pending_==0 || done.requestId!=pending_)
+                orphanApplied=done.applied;
+        }
+        if(pending_==0 && !hasDeferred_ && orphanApplied.has_value()){
+            sync(fx_.acceptedSettings());
+            status_=*orphanApplied?"RECONCILED NATIVE AUDIO ACK":
+                                   "NATIVE AUDIO EDIT REJECTED";
+        }
         if(pending_!=0 && fx_.lastCompletedRequestId()==pending_){
             const bool ok=fx_.lastCompletionApplied();
             pending_=0;
@@ -364,8 +393,12 @@ private:
             }
         }
         refreshHostPower();
-        repaint(juce::Rectangle<int>(0,juce::roundToInt(646*compactScale),
-                                     getWidth(),juce::roundToInt(34*compactScale)));
+        // No animated status text: repainting the footer unconditionally at
+        // 25 Hz wastes GUI cycles on idle low-spec PCs. submit()/sync() and
+        // host state transitions repaint themselves; timer needs only changes.
+        if(status_!=previousStatus)
+            repaint(juce::Rectangle<int>(0,juce::roundToInt(646*compactScale),
+                                         getWidth(),juce::roundToInt(34*compactScale)));
     }
     int visualSceneId_=2; // UI-only scene selection; not IMRS / PCM state.
     bool isCustomIntent_=false;
@@ -380,6 +413,8 @@ private:
     std::function<HostBypassState()> readHostPower_;
     std::optional<bool> hostBypassed_{}; // UI cache of actual host readback only
     bool hostLeaseWasValid_=false; // stale-lease UI only; never audio authority
+    HostBypassState lastHostReadback_{};
+    bool hostReadbackCached_=false,cachedHasRequest_=false;
 
     armix::sonku::Settings deferred_{};
     std::uint64_t pending_=0;
