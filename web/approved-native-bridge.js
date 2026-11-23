@@ -114,7 +114,9 @@
       const identity=String(instanceId);
       // New FX owner gets first-open placement; the same owner keeps its
       // dragged position across rack clicks, hide/show and readback updates.
-      if(identities.get(root)!==identity) {
+      if(identities.get(root)!==identity || root.hidden) {
+        // Closing a wide PEQ while panned to its right edge must not
+        // strand the next opening. Visible GEQ rack refocus never moves.
         offsets.delete(root);
         root.style.removeProperty("translate");
         identities.set(root,identity);
@@ -881,8 +883,15 @@
         const fixed=edge.primaryOutput===true;
         const disabled=fixed || next.retained;
         if(input.disabled!==disabled)input.disabled=disabled;
-        const title="Primary OUT is unity gain · use the destination fader";
-        if(fixed&&input.title!==title)input.title=title;
+        const title=fixed?"PRIMARY OUT · UNITY (0 dB); use source channel fader":
+          next.retained?"WIRE level locked until audio device reconnects":
+          "Parallel SEND level · editable via native EdgeId ACK/readback";
+        if(input.title!==title)input.title=title;
+        const label=input.parentElement?.querySelector(".wire-gain-caption");
+        if(label&&label.textContent!==(fixed?"UNITY":"LVL"))
+          label.textContent=fixed?"UNITY":"LVL";
+        input.parentElement?.classList.toggle("is-primary-unity",fixed);
+        input.setAttribute("aria-label",title);
       }
     }
     if (!scope?.displayMeterDbfs)return;
@@ -995,6 +1004,18 @@
     }
   };
   const inputChoicesFor=()=>deviceVM.inputChoices(hardware);
+  const sourceChoicesFor=()=>{
+    const physical=inputChoicesFor();
+    const live=controller?.state()?.current;
+    const accepted=live?.admitted===true&&live.retained!==true&&
+      live.raw?.mixerSession?.authority==="CHANNEL_ID"&&
+      !logicalView&&deviceReady();
+    // Deck A already lives in the native hardware callback. This option
+    // cannot inject WebAudio or bind a physical ASIO pin; only an exact
+    // native ChannelId transaction may install the internal PCM patch.
+    return accepted?[...physical,
+      {label:"Music Player",mode:"PLAYER",left:-1,right:-1,deckId:"1"}]:physical;
+  };
   const inputLabelFor=row=>deviceVM.inputLabel(hardware,row);
   // ChannelId and the existing M4 use the SAME ten native input ordinals.
   // GUI track reorder must never silently repatch a different physical lane.
@@ -1183,7 +1204,8 @@
     while(queue.size){
       const plan=stripVM.sourceQueueHead({authority,queue,
         active:channelIdOwner?activeNativeSource:nativeUiSourcePending,
-        hardware,native:current,choices:inputChoicesFor(),
+        hardware,native:current,
+        choices:channelIdOwner?sourceChoicesFor():inputChoicesFor(),
         deviceReady:deviceReady()});
       if(plan.kind==="IDLE"||plan.kind==="WAIT")return;
       if(plan.kind==="DROP_ALL"){queue.clear();return;}
@@ -3809,7 +3831,7 @@
     orbitTarget:nativeOrbitTarget,
     orbitAction:nativeOrbitAction,
     inputChoices(t) {
-      return stripVM.inputChoices(t,inputChoicesFor(),
+      return stripVM.inputChoices(t,sourceChoicesFor(),
         controller?.state()?.current?.retained,!(!logicalView),INTERNAL_BUS);
     },
     externalChoices(t) {
@@ -3898,9 +3920,9 @@
         // source, including the very first source in an unpatched session.
         if(event.type!=="change")return true;
         const channel=m4Index(t);
-        const choices=inputChoicesFor();
-        const choice=choices.find(x=>x.label===el.value);
         const nativeOwner=mixerSession()?.authority==="CHANNEL_ID";
+        const choices=nativeOwner?sourceChoicesFor():inputChoicesFor();
+        const choice=choices.find(x=>x.label===el.value);
         const id=nativeOwner?nativeIdFor(t):null;
         if((nativeOwner&&(!id||!controller?.state()?.current?.admitted))||
            (!nativeOwner&&(channel<0||channel>=10))||!deviceReady()){

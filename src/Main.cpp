@@ -6912,6 +6912,8 @@ private:
             const auto rawRev=args.getProperty("graphRevision",{});
             const auto rawRoster=args.getProperty("rosterRevision",{});
             const auto mode=args.getProperty("mode",{}).toString();
+            const auto deck=args.getProperty("deckId","").toString();
+            const bool player=mode=="PLAYER";
             const int left=static_cast<int>(args.getProperty("left",-1));
             const int right=static_cast<int>(args.getProperty("right",-1));
             std::uint64_t id=0,ep=0,rev=0,roster=0;
@@ -6930,9 +6932,11 @@ private:
                 armix::console::approvedNativeId(rawEp,ep)&&
                 armix::console::approvedNativeId(rawRev,rev)&&
                 armix::console::approvedNativeId(rawRoster,roster)&&
-                (mode=="NONE"||mode=="MONO"||mode=="STEREO")&&
+                (mode=="NONE"||mode=="MONO"||mode=="STEREO"||player)&&
                 (mode!="NONE"||(left==-1&&right==-1))&&
-                (mode!="MONO"||right==-1)&&input&&
+                (mode!="MONO"||right==-1)&&
+                (player?(left==-1&&right==-1&&deck=="1"):deck.isEmpty())&&
+                input&&
                 snap.getProperty("device",{}).getProperty("epoch","").toString()==rawEp.toString()&&
                 graph.getProperty("revision","").toString()==rawRev.toString()&&
                 graph.getProperty("rosterRevision","").toString()==rawRoster.toString()&&
@@ -6944,7 +6948,8 @@ private:
                 if(acceptedControlRequests_.size()>512)
                     acceptedControlRequests_.remove(0);
                 result=engine_.patchNativeInputSource(ep,rev,roster,
-                    armix::mixer::ChannelId{id},left,right,mode=="STEREO");
+                    armix::mixer::ChannelId{id},left,right,
+                    mode=="STEREO"||player,player);
             }
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",request);

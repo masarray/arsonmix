@@ -1422,12 +1422,14 @@ public:
         if(!held || !id.value || token.isEmpty() ||
            !channelIdPhysicalPcmActive() || !nativeAccepted_.fxOwners ||
            nativeAccepted_.deviceEpoch!=epoch() || !ready())return out;
-        const auto* live=nativeAccepted_.fxOwners->ownerForControl(id,slot);
-        if(!live || !*live || live->get()!=held.get() ||
-           (*live)->instanceId!=token || !(*live)->processor)return out;
+        // MOVE may change slot or ChannelId while the same editor HWND and
+        // DSP processor remain alive. An old ordinal is NOT a new identity.
+        if(slot>=maxFxPerLane)return out;
+        const auto current=nativeAccepted_.fxOwners->findEditorLocation(held,token);
+        if(!current)return out;
         out.valid=true;
         out.slotBypassed=held->bypassRequested.load(std::memory_order_acquire);
-        out.rackBypassed=nativeAccepted_.fxOwners->rackBypassed(id);
+        out.rackBypassed=nativeAccepted_.fxOwners->rackBypassed(current.channel);
         out.globalBypassed=globalFxBypassed();
         return out;
     }
@@ -1435,8 +1437,10 @@ public:
             const FxGraph::InstanceLease& held,armix::mixer::ChannelId id,
             std::size_t slot,const juce::String& token,bool bypass) noexcept {
         if(!retainedNativeFxPower(held,id,slot,token).valid)return false;
+        const auto current=nativeAccepted_.fxOwners->findEditorLocation(held,token);
+        if(!current)return false; // deleted/replaced HWND must never control a new FX
         return nativeAccepted_.setFxBypass(nativePublisher_,epoch(),
-                 nativeAccepted_.pcmRevision,id,slot,token,bypass);
+                 nativeAccepted_.pcmRevision,current.channel,current.slot,token,bypass);
     }
     RetainedFxPowerState retainedRoutedFxPower(
             const FxGraph::InstanceLease& held,int lane,int slot,
@@ -1448,19 +1452,32 @@ public:
             return out;
         const auto ep=epoch(),rev=revision();
         const auto* current=publisher_.controlPrepared(ep,rev);
-        if(!current || current->leaseInsert(lane,slot,token)!=held)
-            return out;
-        out.valid=true;
-        out.slotBypassed=held->bypassRequested.load(std::memory_order_acquire);
-        out.rackBypassed=current->rackBypassed(lane);
-        out.globalBypassed=globalFxBypassed();
+        if(!current || held->instanceId!=token)return out;
+        // The accepted M4 graph may also move an FX to another lane/slot.
+        // Only the SAME retained processor can remain a valid editor owner.
+        for(int liveLane=0;liveLane<fxSlots;++liveLane)
+            for(int liveSlot=0;liveSlot<current->insertsOn(liveLane);++liveSlot)
+                if(current->leaseInsert(liveLane,liveSlot,token)==held) {
+                    out.valid=true;
+                    out.slotBypassed=held->bypassRequested.load(std::memory_order_acquire);
+                    out.rackBypassed=current->rackBypassed(liveLane);
+                    out.globalBypassed=globalFxBypassed();
+                    return out;
+                }
         return out;
     }
     bool bypassRetainedRoutedFx(
             const FxGraph::InstanceLease& held,int lane,int slot,
             const juce::String& token,bool bypass) noexcept {
         if(!retainedRoutedFxPower(held,lane,slot,token).valid)return false;
-        return setFxBypass(lane,slot,epoch(),revision(),token,bypass);
+        const auto ep=epoch(),rev=revision();
+        const auto* current=publisher_.controlPrepared(ep,rev);
+        if(!current)return false;
+        for(int liveLane=0;liveLane<fxSlots;++liveLane)
+            for(int liveSlot=0;liveSlot<current->insertsOn(liveLane);++liveSlot)
+                if(current->leaseInsert(liveLane,liveSlot,token)==held)
+                    return setFxBypass(liveLane,liveSlot,ep,rev,token,bypass);
+        return false;
     }
     bool bypassNativeInsert(std::uint64_t epochAtEdit,std::uint64_t pcmRevision,
             armix::mixer::ChannelId target,std::size_t slot,
@@ -2000,7 +2017,8 @@ public:
             std::uint64_t expectedPcmRevision,std::uint64_t expectedRosterRevision,
             armix::mixer::ChannelId channel,int physicalLeft,
             int physicalRight,bool stereo,bool outputsDisarmed=false,
-            const std::function<void()>& beforePublish={}) {
+            const std::function<void()>& beforePublish={},
+            bool musicPlayer=false) {
         using namespace armix::mixer;
         NativeBusResult reply{};
         reply.pcmRevision=nativeAccepted_.pcmRevision;
@@ -2016,9 +2034,16 @@ public:
         if(!target||target->role!=ChannelRole::input){
             reply.error="NATIVE_INPUT_ID_UNAVAILABLE";return reply;
         }
-        const bool disconnect=!stereo&&physicalLeft==-1&&physicalRight==-1;
+        // PLAYER A is an internal stereo PCM decoder, NOT a device ordinal.
+        // The one accepted ChannelId source transaction replaces (never
+        // sums with) the physical source on the requested INPUT channel.
+        if(musicPlayer && (physicalLeft!=-1 || physicalRight!=-1 || !stereo)) {
+            reply.error="PLAYER_SOURCE_REQUIRES_INTERNAL_STEREO";return reply;
+        }
+        const bool disconnect=!musicPlayer&&!stereo&&
+            physicalLeft==-1&&physicalRight==-1;
         int l=-1,r=-1;
-        if(!disconnect){
+        if(!disconnect && !musicPlayer){
             for(int i=0;i<portCount_.load(std::memory_order_acquire);++i){
                 const int physical=enabledPorts_[i].load(std::memory_order_relaxed);
                 if(physical==physicalLeft)l=i;
@@ -2033,8 +2058,17 @@ public:
             auto request=nativeAccepted_.graph.request;
             auto& inputs=request.sources;
             inputs.erase(std::remove_if(inputs.begin(),inputs.end(),
-                [channel](const auto& p){return p.id==channel;}),inputs.end());
-            if(!disconnect){
+                [channel,musicPlayer](const auto& p) {
+                    // The decoder is pulled once per audio callback. Never
+                    // leave a second PLAYER A source attached to MUSIC/MAIN.
+                    return p.id==channel ||
+                        (musicPlayer && p.kind==DynamicSourceKind::playerDeck &&
+                         p.deckId==1);
+                }),inputs.end());
+            if(musicPlayer) {
+                inputs.push_back({channel,-1,-1,true,
+                    DynamicSourceKind::playerDeck,1});
+            } else if(!disconnect) {
                 DynamicSourcePatch patch;
                 patch.id=channel;patch.inputL=l;patch.inputR=stereo?r:-1;
                 patch.stereo=stereo;inputs.push_back(patch);
@@ -2831,7 +2865,14 @@ public:
                     const auto right=enabledPorts_[source.inputR].load(std::memory_order_relaxed);
                     physical->setProperty("portIdRight","in:"+juce::String(right));
                 }
-                physical->setProperty("sourceFormat",source.stereo?"STEREO":"MONO");
+                if(source.kind==armix::mixer::DynamicSourceKind::playerDeck) {
+                    // Never mislabel an internal PCM decoder as physical
+                    // STEREO with no pin. The browser must verify deck ID.
+                    physical->setProperty("sourceFormat","PLAYER");
+                    physical->setProperty("playerDeckId",
+                        juce::String(std::to_string(source.deckId)));
+                } else physical->setProperty(
+                    "sourceFormat",source.stereo?"STEREO":"MONO");
                 row->setProperty("source",juce::var(physical.release()));
                 break;
             }

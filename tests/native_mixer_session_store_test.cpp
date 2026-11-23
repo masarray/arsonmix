@@ -823,6 +823,45 @@ static void verifyProductionPlayerFirstSoundWithSourceOnly() {
     assert(reconnect.accepted && mixer.playerDeckHasMainPath());
     render();
     assert(outL.back()>.10f && outR.back()<-.05f);
+
+    // Operator-selectable Music Player INPUT: one decoder follows its new
+    // ChannelId and existing FX/WIRE path without a second direct MAIN sum.
+    const auto selected=mixer.createNativeInputChannel(ep,reconnect.pcmRevision,
+        reconnect.rosterRevision,"MUSIC TARGET",ProcessingFormat::stereo,true);
+    assert(selected.accepted && selected.created!=added.created);
+    const auto moved=mixer.patchNativeInputSource(ep,selected.pcmRevision,
+        selected.rosterRevision,selected.created,-1,-1,true,true,{},true);
+    assert(moved.accepted && mixer.nativePlayerSource()==selected.created);
+    assert(mixer.playerDeckHasMainPath());
+    render();
+    assert(outL.back()>.10f && outL.back()<.44f);
+    assert(outR.back()<-.05f && outR.back()>-.27f);
+    const auto acceptedAfterMove=mixer.nativeBusStatus();
+    const auto* sourceRows=acceptedAfterMove.getProperty("channels",{}).getArray();
+    assert(sourceRows);
+    bool matched=false,oldSourceUnbound=false;
+    for(const auto& row:*sourceRows) {
+        if(row.getProperty("id","").toString()==
+           juce::String(static_cast<juce::int64>(selected.created.value))) {
+            const auto source=row.getProperty("source",{});
+            assert(source.getProperty("sourceFormat","").toString()=="PLAYER");
+            assert(source.getProperty("playerDeckId","").toString()=="1");
+            matched=true;
+        }
+        if(row.getProperty("id","").toString()==
+           juce::String(static_cast<juce::int64>(added.created.value)))
+            oldSourceUnbound=!row.getProperty("source",{}).isObject();
+    }
+    assert(matched && oldSourceUnbound);
+    // Disconnect the selected INPUT: playback must become silent, rather
+    // than silently falling back to the old MUSIC→MAIN edge.
+    const auto disconnected=mixer.patchNativeInputSource(ep,moved.pcmRevision,
+        moved.rosterRevision,selected.created,-1,-1,false,true);
+    assert(disconnected.accepted && !mixer.nativePlayerSource().value);
+    assert(!mixer.playerDeckHasMainPath());
+    render();
+    assert(std::abs(outL.back())<1.e-6f &&
+           std::abs(outR.back())<1.e-6f);
 }
 
 static void verifyOfflineLogicalSessionAndFile() {

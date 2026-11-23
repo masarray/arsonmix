@@ -29,6 +29,51 @@ function gmv20AcceptedGraph() {
  return fixture;
 }
 
+test("P0 Music Player is an explicit ChannelId INPUT source with exact deck PCM ACK/readback",()=>{
+  const player={label:"Music Player",mode:"PLAYER",left:-1,right:-1,deckId:"1"};
+  const options=[{label:"None",mode:"NONE",left:-1,right:-1},player];
+  assert.deepEqual(stripVM.inputChoices({kind:"audio",input:"None"},
+    options,false,false,"Internal BUS"),["None","Music Player"]);
+  assert.equal(stripVM.sourceChoiceMatches(player,options),true);
+  assert.equal(stripVM.sourceChoiceMatches({...player,deckId:"2"},options),false);
+  const chosen=stripVM.sourceQueueSelection({choice:player,choices:options,
+    epoch:"7",acceptedLabel:"None",hardwareConfiguration:"dev-A"});
+  assert.equal(chosen.kind,"QUEUE");
+  const hardware={device:{epoch:"7"},hardwareConfiguration:"dev-A",
+    raw:{mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"7"}}};
+  const native={admitted:true,retained:false,device:{epoch:"7"},
+    hardwareConfiguration:"dev-A",graph:{revision:"10",rosterRevision:"20",
+      channels:[{id:"8",role:"INPUT",source:null}]}};
+  const dispatched=stripVM.sourceDispatchPlan({authority:"CHANNEL_ID",
+    entry:chosen.entry,hardware,native,channelId:"8",choices:options,
+    deviceReady:true});
+  assert.equal(dispatched.kind,"READY");
+  assert.equal(dispatched.action,"routingNativeSourcePatch");
+  assert.deepEqual({mode:dispatched.payload.mode,deckId:dispatched.payload.deckId},
+    {mode:"PLAYER",deckId:"1"});
+  assert.equal(stripVM.sourceDispatchPlan({authority:"M4",entry:chosen.entry,
+    hardware,native,channel:7,choices:options,deviceReady:true}).kind,
+    "UNAVAILABLE","legacy M4 must never receive an invented physical pin");
+  const now={...native,graph:{...native.graph,revision:"11",
+    channels:[{id:"8",role:"INPUT",
+      source:{sourceFormat:"PLAYER",playerDeckId:"1"}}]},
+    raw:{mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"7"}}};
+  const pending={id:"8",epoch:"7",requestId:"source-native-1",
+    choice:chosen.entry.choice,beforeRevision:"10",acked:true,
+    ackRevision:"11",hardwareConfiguration:"dev-A"};
+  assert.equal(stripVM.sourceQueueReadback({authority:"CHANNEL_ID",
+    pending,snapshot:now}),"CONFIRMED");
+  assert.equal(stripVM.sourceQueueReadback({authority:"CHANNEL_ID",
+    pending,snapshot:{...now,graph:{...now.graph,
+      channels:[{id:"8",role:"INPUT",source:{
+        sourceFormat:"STEREO",portId:"in:1",portIdRight:"in:2"}}]}}}),
+    "PENDING","physical PCM must not satisfy a virtual music intent");
+  const label=stripVM.readbackBindings({native:now,
+    channel:now.graph.channels[0],channels:now.graph.channels,
+    targets:[],inputLabel:()=>""});
+  assert.equal(label.input,"Music Player");
+});
+
 test("G-MV25 schema-v6 owner switch cancels no-ACK/ACKed ChannelId without stale PCM repaint",()=>{
  const base=gmv20AcceptedGraph();
  base.mixerSession={authority:"CHANNEL_ID",deviceEpoch:base.device.epoch,

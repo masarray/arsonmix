@@ -27,7 +27,11 @@
     if(track?.kind!=="audio")return ["None"];
     if(retained&&!logical)return [track.input||"None"];
     const labels=Array.isArray(physical)?physical.map(p=>p.label):["None"];
-    // Internal BUS is a readback-only label, never offered as a physical pin.
+    // Keep virtual player separate from the physical pin inventory. It is
+    // offered ONLY when the native ChannelId graph has the real decoder
+    // command; retained/M4 never see an imaginary browser PCM source.
+    if(Array.isArray(physical)&&physical.some(p=>p.mode==="PLAYER")&&
+       !labels.includes("Music Player"))labels.push("Music Player");
     if(track.input===internalBus&&!labels.includes(internalBus))
       labels.push(internalBus);
     return labels;
@@ -67,6 +71,8 @@
       const verified=left&&Number.isSafeInteger(l)&&
         (src.sourceFormat!=="STEREO"||right&&Number.isSafeInteger(r));
       out.input=native?.retained&&src.bindingState==="NEEDS_REMAP"?REMAP:
+        src.sourceFormat==="PLAYER"&&src.playerDeckId==="1"?
+          "Music Player":
         verified?inputLabel({mode:src.sourceFormat==="STEREO"?"STEREO":"MONO",
           left:l,right:r}):"None";
     }
@@ -423,9 +429,12 @@
     if(!choice||typeof choice.label!=="string"||!Array.isArray(options))return false;
     const exact=options.filter(p=>p?.label===choice.label);
     if(exact.length!==1)return false;
-    if(!["NONE","MONO","STEREO"].includes(choice.mode)||
+    if(!["NONE","MONO","STEREO","PLAYER"].includes(choice.mode)||
        exact[0].mode!==choice.mode||
        exact[0].left!==choice.left||exact[0].right!==choice.right)return false;
+    if(choice.mode==="PLAYER")
+      return choice.left===-1&&choice.right===-1&&
+        choice.deckId==="1"&&exact[0].deckId==="1";
     if(choice.mode==="NONE")return choice.left===-1&&choice.right===-1;
     if(!Number.isSafeInteger(choice.left)||choice.left<0)return false;
     if(choice.mode==="MONO")return choice.right===-1;
@@ -450,7 +459,8 @@
     return {kind:"QUEUE",entry:{epoch,
       ...(hardwareConfiguration!==undefined?{hardwareConfiguration}:{}),
       choice:{label:choice.label,mode:choice.mode,
-        left:choice.left,right:choice.right}}};
+        left:choice.left,right:choice.right,
+        ...(choice.mode==="PLAYER"?{deckId:"1"}:{})}}};
   }
   function sourceDispatchPlan({authority,entry,hardware,native,
                                channelId,channel,choices,deviceReady=false}={}) {
@@ -479,9 +489,11 @@
       return {kind:"READY",action:"routingNativeSourcePatch",
         payload:{channelId,deviceEpoch:epoch,
           graphRevision:graph.revision,rosterRevision:graph.rosterRevision,
-          mode:choice.mode,left:choice.left,right:choice.right}};
+          mode:choice.mode,left:choice.left,right:choice.right,
+          ...(choice.mode==="PLAYER"?{deckId:"1"}:{})}};
     }
     if(authority==="M4"){
+      if(choice.mode==="PLAYER")return unavailable;
       if(hardware?.raw?.mixerSession?.authority==="CHANNEL_ID"||
          !positiveCounter(epoch)||
          !Number.isInteger(channel)||channel<0||channel>=10||
@@ -498,9 +510,13 @@
   // correlated ACK/readback settlement and the queue's no-op optimization.
   // No GUI label, ACK payload, or pending request may prove installed PCM.
   function installedSourceMatches(authority,choice,source) {
-    if(!choice||!["NONE","MONO","STEREO"].includes(choice.mode))return false;
+    if(!choice||!["NONE","MONO","STEREO","PLAYER"].includes(choice.mode))
+      return false;
     if(authority==="CHANNEL_ID"){
       if(choice.mode==="NONE")return !source;
+      if(choice.mode==="PLAYER")
+        return source?.bindingState!=="NEEDS_REMAP"&&
+          source?.sourceFormat==="PLAYER"&&source?.playerDeckId==="1";
       if(!source||source.bindingState==="NEEDS_REMAP"||
          source.portId!=="in:"+choice.left)return false;
       if(choice.mode==="MONO")
@@ -1066,7 +1082,7 @@
     primaryChoices,resolvePrimarySelection,readbackBindings,externalPending,
     primaryOutMutation,externalOutputPlan,rosterMutationPlan,
     rosterAckResult,rosterReadbackSettlement,m4ChannelPatchPlan,
-    m4ChannelPatchAckResult,m4ChannelPatchSettlement,sourceQueueSelection,
+    m4ChannelPatchAckResult,m4ChannelPatchSettlement,sourceChoiceMatches,sourceQueueSelection,
     sourceDispatchPlan,sourceQueueHead,sourceQueueAlreadyInstalled,
     sourceQueueRequestLease,
     sourceAckResult,sourceReadbackSettlement,

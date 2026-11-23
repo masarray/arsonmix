@@ -189,6 +189,26 @@ public:
     const Lease* ownerForControl(ChannelId id,std::size_t slot) const noexcept {
         const auto* p=find(id);return p&&slot<p->count?&p->owners[slot]:nullptr;
     }
+    // An editor owns an exact FxInstance, NOT its original rack ordinal.
+    // Resolve the CURRENT accepted location after MOVE, including a transfer
+    // to another ChannelId. No catalog-name or same-slot substitution.
+    // CONTROL/message thread only; never search a graph in the audio callback.
+    struct EditorLocation final {
+        ChannelId channel{};
+        std::size_t slot=0;
+        explicit operator bool() const noexcept { return channel.value!=0; }
+    };
+    EditorLocation findEditorLocation(const Lease& held,
+                                      const juce::String& token) const noexcept {
+        if(!held || !held->processor || token.isEmpty() ||
+           held->instanceId!=token)return {};
+        for(const auto& row:rows_)
+            for(std::size_t index=0;index<row.count;++index)
+                if(row.owners[index].get()==held.get() &&
+                   row.owners[index]->instanceId==token)
+                    return {row.id,index};
+        return {};
+    }
 
     // E2: stable ChannelId VST3 control plane. Requests are serialized by
     // the native CONTROL writer, never the audio callback. A stale epoch,

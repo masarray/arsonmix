@@ -1885,6 +1885,11 @@ public:
         if(!device || !device->isOpen() ||
            liveOutputArmFault(false).isNotEmpty())
             return "Choose a verified MAIN output";
+        // No implicit MUSIC→MAIN routing on Play. Only an explicitly
+        // installed INPUT source binding can authorize playback. This also
+        // prevents duplicate internal MUSIC channels on repeated Play.
+        if(!dryRoutingLab_.nativePlayerSource().value)
+            return "Choose Music Player as INPUT on a routed channel before Play";
         const bool monitoring=isMonitorEnabled();
         bool publishing=false;
         const auto result=dryRoutingLab_.ensureNativePlayerA(
@@ -2371,12 +2376,12 @@ public:
     LiveDryRoutingLab::NativeBusResult patchNativeInputSource(
             std::uint64_t epoch,std::uint64_t pcmRevision,
             std::uint64_t rosterRevision,armix::mixer::ChannelId channel,
-            int left,int right,bool stereo) {
+            int left,int right,bool stereo,bool musicPlayer=false) {
         return editNativeInputTopology(epoch,"NATIVE_SOURCE_DEVICE_UNAVAILABLE",
             "NATIVE_SOURCE_PUBLICATION_EXCEPTION",[&](const auto& beforePublish){
                 return dryRoutingLab_.patchNativeInputSource(
                     epoch,pcmRevision,rosterRevision,channel,left,right,stereo,
-                    true,beforePublish);
+                    true,beforePublish,musicPlayer);
             });
     }
     template<class Edit>

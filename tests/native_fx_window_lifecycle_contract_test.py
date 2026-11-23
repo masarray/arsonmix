@@ -89,6 +89,13 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("shownWindow->present(true); // new HWND",HOST)
         self.assertIn("prepared.window->present(true); // first-open",HOST)
 
+    def test_primary_out_wire_is_truthfully_unity_and_non_editable(self):
+        bridge=(ROOT/"web/approved-native-bridge.js").read_text(encoding="utf-8")
+        self.assertIn('const fixed=edge.primaryOutput===true',bridge)
+        self.assertIn('const disabled=fixed || next.retained',bridge)
+        self.assertIn('label.textContent=fixed?"UNITY":"LVL"',bridge)
+        self.assertIn('Parallel SEND level · editable via native EdgeId ACK/readback',bridge)
+
     def test_geq_repeat_rack_click_and_f11_preserve_position(self):
         bridge=(ROOT/"web/approved-native-bridge.js").read_text(encoding="utf-8")
         self.assertIn("const identities=new WeakMap()",bridge)
