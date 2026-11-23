@@ -44,7 +44,7 @@ def approved_header() -> bytes:
 
 
 def build_and_measure(root: pathlib.Path, label: str, original: bytes,
-                      msvc: bool) -> tuple[bytes, dict]:
+                      msvc: bool, override_bytes: bytes | None = None) -> tuple[bytes, dict]:
     target = root / label
     audio = target / "engine/builtin_fx"
     audio.mkdir(parents=True)
@@ -56,6 +56,8 @@ def build_and_measure(root: pathlib.Path, label: str, original: bytes,
     header = target / PATH
     if label == "original":
         header.write_bytes(original)
+    elif label == "specialized" and override_bytes is not None:
+        header.write_bytes(override_bytes)
     elif blob_hash(header.read_bytes()) != CANDIDATE_BLOB:
         raise ValueError("IMMERSIB_P102_OPTIMIZED_SOURCE_DRIFT")
 
