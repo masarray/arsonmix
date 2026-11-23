@@ -25,17 +25,32 @@ Windows MSVC, VST3 packaging or duplicate GUI.
 The production URLs are `https://arsonmix.pages.dev/` and
 `https://arsonmix.pages.dev/preview/`. Cloudflare rebuilds on changes to
 `main`. Old preview route names redirect to the single actual GUI.
-Production uses `arsonmix.pages.dev` for canonical, OG, sitemap and robots,
-rather than GitHub's `/arsonmix/` subpath. Cloudflare Pages serves `_headers`
-to prevent stale release metadata and to keep non-main previews out of search.
+**SEO domain policy:** The GitHub Pages site
+`https://masarray.github.io/arsonmix/` is the single preferred public search
+URL because the README, FX guides and public download entrypoints already
+reference it. Cloudflare remains a fully usable mirror at
+`https://arsonmix.pages.dev/`; its generated canonical URLs, Open Graph
+identity, image sitemap and robots.txt point at the primary GitHub Pages URL.
+Navigation, screenshot URLs and release metadata are still resolved locally
+from whichever host the visitor is using. A second searchable copy is not
+promoted. The Cloudflare copy of `/preview/` remains usable but sends a
+`noindex` header; non-main branch previews also remain `noindex`.
+
+Submit **only the primary**
+`https://masarray.github.io/arsonmix/sitemap.xml` to Google Search Console.
+Indexing and search rankings still depend on Google's own crawling decisions.
 
 ## If you attach your own domain later
 
 Cloudflare Pages → **arsonmix → Custom domains** → Set up a custom domain.
-Set `ARSONMIX_PUBLIC_URL=https://your-hostname.example/` in the Pages
-production environment variables, then redeploy production once to update
-canonical/OG/sitemap. Otherwise the site still works but SEO metadata points
-at the `pages.dev` address. Do not include a project subpath in the URL.
+First decide whether the custom domain will become the **single primary**
+search address. If it will, coordinate the GitHub Pages custom-domain/redirect
+and its canonical metadata before changing the Cloudflare canonical. Then set
+`ARSONMIX_PUBLIC_URL=https://your-hostname.example/` in the Cloudflare Pages
+production environment variables and deploy. Do not include a project subpath.
+Do **not** set the override on Cloudflare alone while GitHub Pages still claims
+its own URL as primary; that would recreate competing canonicals. Until the
+migration is coordinated, the default remains the existing GitHub Pages URL.
 
 ## Important publishing details
 
