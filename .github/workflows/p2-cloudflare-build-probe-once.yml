@@ -1,0 +1,41 @@
+name: ArSonMix P2 Cloudflare build probe (temporary)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/p2-cloudflare-build-probe-once.yml'
+      - 'scripts/build_pages.py'
+      - 'scripts/build_cloudflare_pages.py'
+      - 'scripts/build_landing_assets.py'
+      - 'scripts/public_fx_pages.py'
+      - 'scripts/pages_public_origin.py'
+      - 'site/**'
+      - 'tests/landing_page_download_contract_test.py'
+      - 'tests/test_pages_public_origin.py'
+jobs:
+  reproduce-cloudflare:
+    name: Reproduce exact Cloudflare static build on GitHub Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Execute real Pages build and all Cloudflare contracts
+        env:
+          ARSONMIX_PUBLIC_URL: https://arsonmix.pages.dev/
+          CF_PAGES_BRANCH: p2-seo-debug
+          CF_PAGES_COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/build_cloudflare_pages.py
+      - name: Verify generated static FX pages
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          root=pathlib.Path("dist-pages")
+          assert len(list((root/"effects").glob("*/index.html")))==8
+          assert (root/"media/console-capture-provenance.json").exists()
+          print("P2_CLOUDFLARE_BUILD_PROBE_SUCCESS")
+          PY
