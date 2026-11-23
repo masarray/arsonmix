@@ -2118,7 +2118,7 @@ test("P0 actual Add BUS reaches the live ChannelId graph",()=>{
  const engine=read("src/LiveAudioEngine.h");
  const lab=read("src/LiveDryRoutingLab.h");
  const projection=read("integration/ApprovedNativeRuntimeSnapshot.h");
- assert.match(bridge,/function requestNativeBusCreate\(track=false\)/);
+ assert.match(bridge,/function requestNativeBusCreate\(track=false,fxBus=false\)/);
  assert.ok(bridge.includes('backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload})'));
  assert.ok(read("web/approved-channel-strip-view-model.js").includes(
    'action:"routingNativeBusCreate"'));

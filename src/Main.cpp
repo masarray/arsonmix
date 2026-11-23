@@ -2426,7 +2426,10 @@ private:
             if(const auto* list=rows.getArray())for(const auto& row:*list) {
                 if(row.getProperty("id",{}).toString()!=juce::String(channel))continue;
                 const auto inserts=row.getProperty("inserts",{});
-                if(const auto* fx=inserts.getArray();fx && slot<fx->size()) {
+                if(const auto* fx=inserts.getArray();fx && slot==fx->size() &&
+                   request.getProperty("instanceId",{}).toString().isEmpty()) {
+                    sameInsert=true; // exact next empty slot, opening editable workspace only
+                } else if(fx && slot<fx->size()) {
                     const auto effect=(*fx)[slot];
                     sameInsert=effect.isObject() &&
                         effect.getProperty("id",{}).toString()==

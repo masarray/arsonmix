@@ -122,6 +122,7 @@
           (!object(ch.controls) ||
             (ch.controls.faderDb !== undefined && !Number.isFinite(ch.controls.faderDb)) ||
             (ch.controls.inputGainDb !== undefined && !Number.isFinite(ch.controls.inputGainDb)) ||
+          (ch.controls.wireSumGainDb !== undefined && (!Number.isFinite(ch.controls.wireSumGainDb)||ch.controls.wireSumGainDb< -60||ch.controls.wireSumGainDb>6.03)) ||
             (ch.controls.pan !== undefined && !Number.isFinite(ch.controls.pan)) ||
             (ch.controls.mute !== undefined && !isBool(ch.controls.mute)) ||
             (ch.controls.solo !== undefined && !isBool(ch.controls.solo)))) return null;

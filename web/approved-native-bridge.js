@@ -2483,6 +2483,13 @@
     },220);
     return true;
   }
+  // Disabled physical inputs cannot emit a change event. Their route field
+  // still offers explicit device repair, without opening a modal on startup.
+  document.addEventListener("pointerdown",event=>{
+    const field=event.target.closest?.(".route-field");
+    if(field?.querySelector('select[data-field="input"]')&&!deviceReady())
+      recommendAudioRepair("INPUT membutuhkan perangkat audio");
+  },true);
   let loopbackSerial=0,loopbackId="",loopbackPending=false;
   const loopbackField=name=>devicePanel?.querySelector("[data-audio-loopback-"+name+"]");
   function closeNativeAudioIO(){
@@ -3473,14 +3480,15 @@
         const held=pendingRetainedEditor;
         const fx=staged.graph.channels.find(ch=>ch.id===held.channelId)
           ?.inserts?.[held.slot];
-        if(fx?.catalogId===held.catalogId) {
+        const row=staged.graph.channels.find(ch=>ch.id===held.channelId);
+        if((held.empty&&row?.inserts?.length===held.slot)||(!held.empty&&fx?.catalogId===held.catalogId)) {
           pendingRetainedEditor=null;
           window.queueMicrotask(()=>{
             if(!logicalView||logicalView.workspaceToken!==staged.workspaceToken)return;
             const uiId=uiByNativeId.get(held.channelId);
             const track=[...(scope?.tracks||[]),scope?.master]
               .find(t=>t&&t.id===uiId);
-            if(track)nativeHooks.consumeAction(track,"openPlugin",{
+            if(track)nativeHooks.consumeAction(track,held.action||"openPlugin",{
               dataset:{slot:String(held.slot),recenter:held.recenter?"true":"false"}
             });
           });
@@ -4326,6 +4334,14 @@
         }
         const slot=Number(btn?.dataset.slot),id=nativeIdFor(t),current=controller?.state()?.current;
         const token=current?.graph?.channels.find(ch=>ch.id===id)?.inserts?.[slot]?.id;
+        if(current?.retained===true){
+          // Reuse exact existing offline workspace handoff, then delete only
+          // after verified document readback; never change the stale PCM rack.
+          nativeHooks.consumeAction(t,"openPlugin",btn);
+          if(pendingRetainedEditor?.channelId===id&&pendingRetainedEditor.slot===slot)
+            pendingRetainedEditor.action="removeFx";
+          return true;
+        }
         editNativeFx(t,slot,null,0,token);return true;
       }
       if(action==="openPlugin"){
@@ -4346,8 +4362,10 @@
           // logical workspace; the UI opens it only after matching readback.
           if(!logicalView&&current?.retained===true){
             const fx=current.graph?.channels?.find(ch=>ch.id===id)?.inserts?.[slot];
+            const row=current.graph?.channels?.find(ch=>ch.id===id);
+            const empty=Array.isArray(row?.inserts)&&slot===row.inserts.length;
             if(!id||!Number.isInteger(slot)||slot<0||slot>=8||
-               !fx?.id||!fx.catalogId){
+               (!empty&&(!fx?.id||!fx.catalogId))){
               nativeToast("Disconnect recovery requires a saved FX insert");
               return true;
             }
@@ -4357,11 +4375,11 @@
             }
             const requestId="retained-editor-"+(++retainedEditorSerial);
             pendingRetainedEditor={requestId,channelId:id,slot,
-              catalogId:fx.catalogId,instanceId:fx.id,
+              catalogId:fx?.catalogId||"",instanceId:fx?.id||"",empty,
               epoch:current.device.epoch,revision:current.graph.revision,
               recenter,acknowledged:false};
             backend.emitEvent("arMixAction",{action:"retainedFxOfflineOpen",
-              requestId,channelId:id,slot,instanceId:fx.id,
+              requestId,channelId:id,slot,instanceId:fx?.id||"",
               deviceEpoch:current.device.epoch,graphRevision:current.graph.revision});
             window.setTimeout(()=>{
               if(pendingRetainedEditor?.requestId!==requestId)return;
@@ -4686,8 +4704,8 @@
            slot<0||slot>=8){
           nativeToast("Choose the next empty FX slot");return true;
         }
-        if(!logicalIntent("ADD_FX_REFERENCE",channelId,{catalogId:id}).ok)
-          nativeToast("FX selection not saved");
+        const result=logicalIntent("ADD_FX_REFERENCE",channelId,{catalogId:id});
+        if(!result.ok)nativeToast("FX belum tersimpan · "+result.error);
         return true;
       }
       if(pendingFxInsert){status("FX INSERT · wait for previous native ACK");return true;}
