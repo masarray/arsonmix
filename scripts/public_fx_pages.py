@@ -10,9 +10,9 @@ import json
 FX_PAGES = (
     dict(slug="8d-sonku", title="8D-SonKu", category="Spatial headphones / 8D audio",
          seo="8D-SonKu 8D Audio Effect | ArSonMix Digital Mixer",
-         description="Explore 8D-SonKu, ArSonMix's built-in headphone spatial audio effect. See its actual editor, orbit controls and live digital mixer workflow.",
+         description="Explore ArSonMix 8D-SonKu, a built-in 8D audio plugin for headphone spatial effects. See original orbit controls and the free Windows digital mixer.",
          headline="Move sound around your headphones.",
-         introduction="8D-SonKu is the built-in spatial audio effect for positioning and moving sound around a headphone listening field. Its editor makes the direction and movement controls visible rather than hiding them inside a preset name.",
+         introduction="8D-SonKu is a built-in 8D audio plugin for positioning and moving sound around a headphone listening field. Its editor makes the direction and movement controls visible rather than hiding them inside a preset name.",
          details=("Explore the binaural map and orbit controls in the editor.", "Use headphones when evaluating spatial placement and movement.", "Adjust levels carefully; spatial effects do not replace routing and output setup."),
          image="fx-editor-8d-sonku.jpg", width=790, height=604, origin="Approved native WebView resource rendered in Chromium; not a hardware test",
          related=("vocal-delay", "immersib")),
