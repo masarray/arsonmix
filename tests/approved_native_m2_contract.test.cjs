@@ -3436,7 +3436,8 @@ test("P0 FIRST SOUND G0 offers verified input and leaves automatic MAIN to nativ
  const none=clone(boot);
  none.device.enabledInputs=[];none.device.inputEndpoints=[];
  listeners.get("arMixConsoleSnapshot")(none);
- assert.deepEqual([...win.__ARMIX_NATIVE_M2__.inputChoices(tracks[0])],["None"]);
+ assert.deepEqual([...win.__ARMIX_NATIVE_M2__.inputChoices(tracks[0])],["None","Music Player"],
+  "Player remains discoverable even when capture pins disappear; admission still rejects it");
  const commandsBefore=sent.filter(x=>x.name==="arMixAction"&&
   x.payload.action==="routingSourceSwitch").length;
  assert.equal(choose("Mono · IN 1 [IN 1]"),true);
