@@ -71,83 +71,47 @@ test('native PCM and device changes always use Windows/CTest, never Chromium by 
   assert.match(native, /ctest --test-dir build -C Release --output-on-failure/);
 });
 
-test('Full native/release qualification retains all CTests; focused vocal harmony FAT compiles only its verified targets', () => {
-  // FIELD preview skips full CTest; production FAT DOES NOT skip.
-  assert.match(native, /\$tests = if \(\$env:FIELD_PREVIEW -eq 'true'\) \{ 'OFF' \} else \{ 'ON' \}/);
-  assert.match(native, /"-DBUILD_TESTING=\$tests"/);
-  // Unlike the old 100/100 OFF build, every distributable FAT must match
-  // the already-public ImmerSIB + approved SonKu P9.9 release switches.
-  assert.match(native, /FAT_SPATIAL_PRODUCTS/);
-  assert.match(native, /-DARMIX_IMMERSIB_RELEASE_CANDIDATE=ON/);
-  assert.match(native, /-DARMIX_SONKU_APPROVED_P99_MAIN=ON/);
-  assert.match(native, /WINDOWS_FAT_SPATIAL_CONFIG_VERIFIED/);
-  assert.match(native, /Build portable Windows field preview[\s\S]*?--target ARMixConsole/);
-  assert.match(native, /FIELD_PREVIEW_FULL_CTEST_NOT_RUN/);
-  assert.match(native, /Upload portable Windows field preview[\s\S]*?name: ArSonMix-Windows-Field-Preview-/);
-  const fullBuild = native.indexOf('run: cmake --build build --config Release --parallel 2');
-  const fullCTest = native.indexOf('run: ctest --test-dir build -C Release --output-on-failure');
-  assert.ok(fullBuild >= 0 && fullCTest > fullBuild,
-    'Full CTest still requires the default all-target CMake build');
-  assert.match(native, /focused_harmony_fat:/);
-  assert.match(native, /FOCUSED_HARMONY_FAT: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.package_fat == true && inputs\.focused_harmony_fat == true \}\}/);
-  assert.match(native, /if: \$\{\{ env\.FOCUSED_HARMONY_FAT != 'true' && env\.FIELD_PREVIEW != 'true' \}\}/);
-  assert.match(native, /if: \$\{\{ env\.FOCUSED_HARMONY_FAT == 'true' \}\}/);
-  assert.match(native, /cmake --build build --config Release --parallel 2 --target \$targets/);
-  assert.match(native, /'ARMixConsole'/);
-  assert.match(native, /'ARMixHarmonyDspTests'/);
-  assert.match(native, /'ARMixHarmonyChannelPcmTests'/);
-  assert.match(native, /'ARMixNativeMixerSessionTests'/);
-  assert.match(native, /'ARMixCrackleWindowTests'/);
-  assert.match(native, /FOCUSED_FAT_MISSING_REQUIRED_TESTS/);
-  assert.match(native, /FULL_SUITE_NOT_CLAIMED/);
-  // An old PR can retain outdated workflow YAML; focused execution must
-  // use a trusted main workflow and still build the exact PR input SHA.
-  assert.match(read('scripts/chat_ci_dispatch.mjs'),
-    /workflowRef=target\.lane==='ui'\?target\.branch:'main'/);
-  assert.match(native, /HARMONY_FAT_SOURCE_SHA_MISMATCH/);
+test('global Windows FAT is feature-neutral; scoped development never impersonates full release',()=>{
+  // Production FAT always compiles full mixer/PCM tests + real installer.
+  assert.match(native,/\$tests = if \(\$env:FIELD_PREVIEW -eq 'true'\) \{ 'OFF' \} else \{ 'ON' \}/);
+  assert.match(native,/"-DBUILD_TESTING=\$tests"/);
+  assert.match(native,/FAT_SPATIAL_PRODUCTS/);
+  assert.match(native,/-DARMIX_IMMERSIB_RELEASE_CANDIDATE=ON/);
+  assert.match(native,/-DARMIX_SONKU_APPROVED_P99_MAIN=ON/);
+  assert.match(native,/WINDOWS_FAT_SPATIAL_CONFIG_VERIFIED/);
+  assert.match(native,/Build portable Windows field preview[\s\S]*?--target ARMixConsole/);
+  assert.match(native,/FIELD_PREVIEW_FULL_CTEST_NOT_RUN/);
+  assert.match(native,/Upload portable Windows field preview[\s\S]*?name: ArSonMix-Windows-Field-Preview-/);
+  const fullBuild=native.indexOf('run: cmake --build build --config Release --parallel 2\n');
+  const fullCTest=native.indexOf('run: ctest --test-dir build -C Release --output-on-failure');
+  assert.ok(fullBuild>=0&&fullCTest>fullBuild);
+  assert.match(native,/Run full realtime CTest \(release or nativeFull\)/);
+  assert.match(native,/Windows MSVC \/ realtime CTest/);
+  assert.match(native,/Windows FEATURE scoped native CTest \(NOT full\)/);
+  assert.match(native,/FEATURE_CANNOT_PACKAGE_OR_PREVIEW/);
+  assert.match(native,/Feature-scoped Windows MSVC targets \(development ONLY\)/);
+  assert.match(native,/Run feature-scoped CTests \(development ONLY\)/);
+  assert.match(native,/--target \$targets/);
+  assert.match(native,/FULL_SUITE_NOT_CLAIMED|FEATURE_COMPILED=/);
+  assert.doesNotMatch(native,/focused_harmony_fat|FOCUSED_HARMONY_FAT|focused vocal harmony/i);
+  const dispatcher=read('scripts/chat_ci_dispatch.mjs');
+  assert.doesNotMatch(dispatcher,/focusedHarmonyFileScope|focused_harmony_fat/);
+  assert.match(dispatcher,/selectWindowsFeatureScope\(files\)/);
+  assert.match(dispatcher,/CI_FEATURE_SCOPE_UNSUPPORTED_OR_MIXED/);
+  assert.match(dispatcher,/workflowRef=target\.lane==='ui'\?target\.branch:'main'/);
 });
 
-test('focused FAT preflights exact candidate CMake before 10-minute JUCE build', () => {
-  const begin = native.indexOf('- name: Build JUCE app and focused vocal harmony, mixer and ASIO tests');
-  const end = native.indexOf('- name: Build executable and native RT tests', begin);
-  assert.ok(begin >= 0 && end > begin, 'focused build section missing');
-  const section = native.slice(begin, end);
-  const source = read('CMakeLists.txt');
-  // Previous failed source commit lacked this newer production audit target.
-  // The main CI workflow must not blindly assume that it exists on a
-  // long-lived candidate source branch.
-  const originalTargets = section.slice(section.indexOf('$targets = @('),
-    section.indexOf(')', section.indexOf('$targets = @(')) + 1);
-  assert.doesNotMatch(originalTargets, /ARMixProductionRenderAuditTests/,
-    'production audit reintroduced as unconditional legacy target');
-  assert.match(section, /if \('M3ActualProductionRenderPathAndFailSilentCounters' -in \$available\)/);
-  assert.match(section, /\$targets \+= 'ARMixProductionRenderAuditTests'/);
-  assert.match(section, /Get-Content -LiteralPath 'CMakeLists\.txt' -Raw/);
-  assert.match(section, /FOCUSED_FAT_UNDECLARED_CMAKE_TARGET/);
-  assert.match(section, /FOCUSED_FAT_MISSING_REQUIRED_TESTS/);
-  assert.ok(section.indexOf('FOCUSED_FAT_UNDECLARED_CMAKE_TARGET') <
-    section.indexOf('cmake --build build'),
-    'missing target should fail *before* the costly build');
-  assert.ok(section.indexOf('FOCUSED_FAT_MISSING_REQUIRED_TESTS') <
-    section.indexOf('cmake --build build'),
-    'missing required CTest must fail during preflight');
-  const requiredTargets = [...originalTargets.matchAll(/'([A-Za-z0-9_]+)'/g)]
-    .map(x => x[1]);
-  assert.ok(requiredTargets.length >= 11);
-  for (const target of requiredTargets) {
-    assert.match(source, new RegExp(
-      '^\\s*(?:add_executable|juce_add_console_app|juce_add_gui_app)\\(\\s*' +
-      target + '\\b', 'm'), 'main CMake missing mandatory '+target);
-  }
-  const testSection = native.slice(
-    native.indexOf('- name: Run focused vocal harmony DSP, mixer PCM and ASIO checks'),
-    native.indexOf('- name: Test realtime control primitives'));
-  const requiredBlock = testSection.slice(testSection.indexOf('$requiredTests = @('),
-    testSection.indexOf(')', testSection.indexOf('$requiredTests = @(')) + 1);
-  assert.doesNotMatch(requiredBlock, /M3ActualProductionRenderPathAndFailSilentCounters/);
-  assert.match(testSection, /if \('M3ActualProductionRenderPathAndFailSilentCounters' -in \$available\)/);
-  assert.match(testSection, /\$requiredTests \+= 'M3ActualProductionRenderPathAndFailSilentCounters'/);
-  assert.match(testSection, /FULL_SUITE_NOT_CLAIMED/);
+test('generic feature CMake and CTest preflight is before the focused compilation',()=>{
+  const start=native.indexOf('- name: Configure audited feature CTest registry');
+  const build=native.indexOf('- name: Feature-scoped Windows MSVC targets (development ONLY)',start);
+  assert.ok(start>0&&build>start);
+  const section=native.slice(start,build);
+  assert.match(section,/FEATURE_MISSING_CTEST/);
+  assert.match(section,/ctest --test-dir build -C Release --show-only=json-v1/);
+  assert.match(section,/FEATURE_CTEST_CATALOG_FAILED/);
+  assert.match(native,/FEATURE_UNDECLARED_CMAKE_TARGET/);
+  assert.match(native,/feature_scope:/);
+  assert.match(native,/scripts\/windows_feature_scope\.mjs/);
 });
 
 test('approved Pages to JUCE build seam is a native gate, never an unrelated CSS-only job', () => {

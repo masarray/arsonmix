@@ -12,17 +12,23 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
+import time
 import urllib.error
+import urllib.request
 from pathlib import Path
 
-from build_release_catalog import catalog, download_releases, hydrate_landing_file
+from build_release_catalog import (
+    REPO, SUFFIXES, TAG, catalog, download_releases, hydrate_landing_file,
+)
 from pages_public_origin import normalize_public_url
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "dist-pages"
 DEFAULT_URL = "https://arsonmix.pages.dev/"
+GITHUB_PAGES_CATALOG = "https://masarray.github.io/arsonmix/release-catalog.json"
 
 
 def public_url(environ):
@@ -45,24 +51,97 @@ def response_headers(branch):
     return headers
 
 
-def write_catalog(path, fetch=download_releases):
-    # A temporary GitHub API outage must NOT redeploy an empty catalog over
-    # the last good Cloudflare production site. Fail the build instead.
-    try:
-        releases = fetch()
-    except (OSError, urllib.error.URLError) as exc:
-        raise RuntimeError(
-            "Release API unavailable: preserve the existing verified Cloudflare deployment"
-        ) from exc
-    verified = catalog(releases)
+def fetch_official_pages_catalog():
+    """Read independently published verified release metadata from GitHub Pages."""
+    req = urllib.request.Request(
+        GITHUB_PAGES_CATALOG,
+        headers={"Accept": "application/json",
+                 "User-Agent": "ArSonMix-Cloudflare-VerifiedCatalog/1",
+                 "Cache-Control": "no-cache"},
+    )
+    with urllib.request.urlopen(req, timeout=15) as response:
+        return json.load(response)
+
+
+def validate_official_pages_catalog(snapshot):
+    """Never promote unverified or forged fallback links."""
+    if (not isinstance(snapshot, dict) or
+            set(snapshot) != {"schemaVersion", "platforms"} or
+            type(snapshot["schemaVersion"]) is not int or
+            snapshot["schemaVersion"] != 1 or
+            not isinstance(snapshot["platforms"], dict) or
+            set(snapshot["platforms"]) != set(SUFFIXES)):
+        raise ValueError("Invalid official Pages catalog schema")
+
+    valid = 0
+    fields = {"tag", "name", "url", "size", "sha256",
+              "prerelease", "publishedAt"}
+    for platform, item in snapshot["platforms"].items():
+        if item is None:
+            continue
+        if not isinstance(item, dict) or set(item) != fields:
+            raise ValueError("Invalid Pages asset fields: " + platform)
+        tag, name = item["tag"], item["name"]
+        if (not isinstance(tag, str) or not TAG.fullmatch(tag) or
+                not isinstance(name, str) or
+                name not in (f"ArSonMix-{tag}-{suffix}"
+                             for suffix in SUFFIXES[platform]) or
+                item["url"] !=
+                f"https://github.com/{REPO}/releases/download/{tag}/{name}" or
+                type(item["size"]) is not int or item["size"] < 2_097_152 or
+                not isinstance(item["sha256"], str) or
+                not re.fullmatch(r"[a-f0-9]{64}", item["sha256"]) or
+                type(item["prerelease"]) is not bool or
+                not isinstance(item["publishedAt"], str) or
+                not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z",
+                                 item["publishedAt"])):
+            raise ValueError("Unverified Pages asset: " + platform)
+        valid += 1
+    if not valid:
+        raise ValueError("No verified assets in official Pages catalog")
+    return snapshot
+
+
+def write_catalog(path, fetch=download_releases,
+                  snapshot_fetch=fetch_official_pages_catalog,
+                  pause=time.sleep):
+    """Prefer live signed releases; fall back only on API transport outages.
+
+    An independently produced, strictly checked GitHub Pages catalog is the
+    emergency read-only source for Cloudflare API throttling. Both unavailable:
+    fail closed and preserve the previous published Cloudflare site.
+    """
+    verified = None
+    network_error = None
+    source = "GitHub Releases API"
+    for attempt in range(3):
+        try:
+            verified = catalog(fetch())
+            break
+        except (OSError, urllib.error.URLError) as exc:
+            network_error = exc
+            if attempt < 2:
+                pause((1, 2)[attempt])
+    if verified is None:
+        try:
+            verified = validate_official_pages_catalog(snapshot_fetch())
+        except (OSError, urllib.error.URLError, ValueError, TypeError) as exc:
+            raise RuntimeError(
+                "Both Release API and official verified Pages catalog unavailable; "
+                "preserve existing Cloudflare deployment"
+            ) from exc
+        source = "verified GitHub Pages catalog (network fallback)"
+        print("ARSONMIX_RELEASE_API_UNAVAILABLE",
+              type(network_error).__name__, flush=True)
     if not any(verified["platforms"].values()):
         raise ValueError("No verified published assets; preserve existing deployment")
-    path.write_text(json.dumps(verified, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(verified, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8")
+    print("ARSONMIX_VERIFIED_RELEASE_SOURCE", source, flush=True)
     print("ARSONMIX_VERIFIED_RELEASES",
           " ".join(k + "=" + (v["tag"] if v else "none")
                    for k, v in verified["platforms"].items()))
     return verified
-
 
 def main():
     env = dict(os.environ)

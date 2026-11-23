@@ -24,6 +24,8 @@ on:
       - 'site/index.html'
       - 'site/downloads.js'
       - 'scripts/build_release_catalog.py'
+      - 'scripts/build_cloudflare_pages.py'
+      - 'tests/test_cloudflare_pages_build.py'
       - 'scripts/verify_release_setup_zip.py'
       - 'tests/test_release_setup_zip.py'
       - 'scripts/release_ci_dispatch.mjs'
@@ -62,6 +64,8 @@ on:
       - 'scripts/build_approved_native_gui.py'
       - 'CMakeLists.txt'
       - 'scripts/build_release_catalog.py'
+      - 'scripts/build_cloudflare_pages.py'
+      - 'tests/test_cloudflare_pages_build.py'
       - 'scripts/verify_release_setup_zip.py'
       - 'tests/test_release_setup_zip.py'
       - 'scripts/release_ci_dispatch.mjs'
@@ -101,8 +105,9 @@ jobs:
           node --check scripts/release_ci_dispatch.mjs
           node --test tests/release_ci_dispatch_contract.test.mjs
           python tests/test_release_catalog.py
+          python tests/test_cloudflare_pages_build.py
           python tests/test_release_setup_zip.py
-          python -m py_compile scripts/build_release_catalog.py scripts/check_platform_portability.py
+          python -m py_compile scripts/build_release_catalog.py scripts/build_cloudflare_pages.py scripts/check_platform_portability.py
           python tests/test_platform_portability.py
           bash -n scripts/package_native_linux.sh scripts/package_native_macos.sh
           ruby -e 'require "yaml"; ARGV.each { |p| YAML.load_file(p) }' .github/workflows/alpha-preview-publish.yml .github/workflows/release-control.yml .github/workflows/crossplatform-native-qualification.yml .github/workflows/pages-publish.yml

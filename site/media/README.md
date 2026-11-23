@@ -26,11 +26,28 @@ The controlled browser bridge simulates **only** native state transport to
 render each original editor. The screenshots show UI, not Windows HWND
 execution, audio DSP/ASIO performance or independent installer qualification.
 
-ImmerSIB and Guitar FX are JUCE-drawn editors and still need authentic native
-Windows screenshots. [Issue #867](https://github.com/masarray/arsonmix/issues/867)
-tracks those specific remaining captures and release comparison. Do not
-substitute a rejected pedal concept, stock asset, second mixer GUI or mocked
-JUCE editor for a native screenshot.
+## Actual native Windows ImmerSIB / Guitar FX windows
+
+These **seven genuine Windows window screenshots** were supplied directly by
+the project owner from ArSonMix on 2026-11-22. They are original JUCE editor
+pixels, **not** browser re-creations, stock photos or generated artwork.
+Only a JPEG quality/size optimization was applied; original PNG checksums,
+JPEG SHA-256 and native image dimensions are in
+`native-fx-capture-provenance.json`.
+
+- ImmerSIB: Front Row Power, Symphonic Palace, Velvet Cinema, Arena Thunder,
+  Royal Concert Hall and Concert Front Row XL (6 original screenshots).
+- Guitar FX Rig: Clean Studio (1 original screenshot).
+
+**Capture state is evidence, not a release qualification:** the ImmerSIB
+captures show `AUDIO / LATEST EDIT QUEUED`. The Guitar screenshot visibly
+shows `DSP OFFLINE` and `PCM OFFLINE · NO FAKE METER`. The user screenshots
+do **not** expose an exact official installer tag or Windows binary SHA,
+so the manifest deliberately records neither and does not claim signal
+processing, ASIO performance, physical FAT or latest-release parity.
+[Issue #867](https://github.com/masarray/arsonmix/issues/867) retains the
+independent release-version/installer comparison task. Never re-label
+these captures as approved hardware test results.
 
 Capture again when native editor UI changes and verify the approved GUI build,
 actual pixels, asset checksum, responsive site and README links before publishing.

@@ -68,6 +68,9 @@ PR bots or synthetic successful status checks.
 | `/arsonmix-ci check <40-char HEAD SHA>` | Read exact-HEAD quick native/UI/release jobs already run automatically. No new build; reject missing, red, canceled, stale or incomplete evidence. | No Windows |
 | `/arsonmix-ci fast <40-char HEAD SHA>` | Preflight **all** relevant quick gates, then **native only** builds the existing **FIELD portable Windows executable** (no full CTest) with exact-source ZIP provenance. GUI-only/doc/CI-only scope just confirms quick status, no paid Windows runner. | Focused app build, not full |
 | `/arsonmix-ci full <40-char HEAD SHA>` | Preflight all relevant fast gates; choose one official full **Chromium** run for GUI and/or one full **Windows MSVC + entire CTest** for native, independently deduplicated. No duplicate Windows build for mixed paths, no installer by default. | Full release candidate qualification |
+| `/arsonmix-ci feature <40-char HEAD SHA>` | **Generic Windows development:** exact PR diff selects one audited feature group (I/O, mixer routing, EQ, compressor, player, VST3, vocal FX, spatial or session). Build only that group's real JUCE/CMake targets and run its exact CTests; no full mixer app, 100+ unrelated tests, ZIP or installer. Unknown/shared/mixed edits fail closed; use `native`/`full` for integration. Focused results **never** satisfy protected `nativeFull`. | Targeted MSVC only |
+| `/arsonmix-ci immersib <40-char HEAD SHA>` | **Iterasi khusus ImmerSIB:** gate semua fast contract, lalu bangun hanya `ARMixImerSipP92NativeTests` dan 3 native PCM fixture di Windows x64. Jalankan empat CTest ImmerSIB **saja**. Tidak membangun mixer `ARMixConsole`, Vocal Harmony, seluruh CTest atau installer; hasil ini **bukan** full native merge gate. | Focused JUCE, no packaging |
+| `/arsonmix-ci stop <40-char HEAD SHA>` | Hentikan hanya workflow Windows yang aktif dengan identitas PR dan SHA yang persis cocok. Tidak pernah memulai build atau membatalkan pekerjaan PR lain. | No build |
 | `/arsonmix-ci fat <40-char HEAD SHA>` | Existing complete Windows CTest and independently verified but **UNQUALIFIED** FAT installer/ZIP, physical FAT still required. | Full + installer |
 
 Existing `ui`, `native`, `field` and `fat` remain compatible.
@@ -79,6 +82,10 @@ uses the **same file scope source as the trusted protected merge status**;
 unknown/missing PR files and missing/failed quick checks fail closed.
 `FULL` can launch both UI and native from one comment; existing workflow
 run provenance, duplicate and FAT/no-cancel policies remain authoritative.
+
+**ImmerSIB CI cost correction (23 Nov 2026):** In [PR #865](https://github.com/masarray/arsonmix/pull/865), sending `fat` for a JUCE reopen/PCM regression accidentally ran the global `p1-windows.yml` app, ~113 CTests, and installer path. The named "focused vocal harmony" step in that job is skipped unless specifically selected, but full MSVC/CTest still takes tens of minutes. During iterative changes that touch ONLY ImmerSIB-owned files and the narrowly permitted CMake/test/workflow/docs files, **always use `immersib`**, never `fat`, `field` or full `native`. The owner dispatcher **rejects generic `fat` on this isolated scope**. It also checks all mandatory fast source gates, de-duplicates already-running or green exact-SHA focused runs, and refuses to overlap a running generic FAT. `stop` may cancel only an exact-PR/SHA active Windows run when the owner wants to stop a mistaken expense. A final intentionally requested installer still uses the full release/integration lane in an appropriately scoped release PR.
+
+Focused ImmerSIB checks are **not** protected nativeFull qualification; shared mixer, CMake/graph-integrity and installer promotion are still subject to unchanged protected full gates at a real integration/release milestone. A quick focused Windows test never creates a ZIP or certifies ASIO hardware. No claim of CPU speedup without controlled before/after or bitwise PCM proof.
 
 **Autonomous agent usage:** ordinary incremental commits rely on automatic
 cheap checks. Use `check` when auditing; use `fast` when an executable is

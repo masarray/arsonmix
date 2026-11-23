@@ -1,0 +1,112 @@
+name: ImmerSIB focused JUCE/PCM validation (no mixer FAT)
+run-name: "ArSonMix IMMERSIB PR${{ inputs.request_pr_number }} ${{ inputs.expected_sha }}"
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: "Exact current PR HEAD SHA (owner dispatcher only)"
+        required: true
+        type: string
+      request_pr_number:
+        description: "Trusted PR number for deduplication"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: immersib-focused-pr-${{ inputs.request_pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  editor:
+    name: Focused ImmerSIB JUCE editor ACK and four PCM checks
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact source (no moving main)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.expected_sha }}
+          persist-credentials: false
+      - name: Verify source identity before expensive JUCE fetch
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          EXPECTED_PR: ${{ inputs.request_pr_number }}
+        run: |
+          if ($env:EXPECTED_SHA -cnotmatch '^[0-9a-f]{40}$' -or
+              $env:EXPECTED_PR -notmatch '^[1-9][0-9]*$') {
+            throw 'IMMERSIB_FOCUSED_INVALID_SOURCE_OR_PR'
+          }
+          if ((& git rev-parse HEAD).Trim() -cne $env:EXPECTED_SHA) {
+            throw 'IMMERSIB_FOCUSED_WRONG_SOURCE_SHA'
+          }
+      - name: Checkout pinned JUCE 8 for native editor only
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.15
+          path: third_party/JUCE
+          persist-credentials: false
+      - name: Obtain pinned WebView2 configure SDK (NOT building browser)
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Configure exact branded P102.3 native test graph
+        shell: pwsh
+        run: |
+          # Same approved feature definitions as existing P9.2 source gate.
+          # No global app build, no Inno, no full CTest, no other FX.
+          $cmakeArgs = @('-S','.','-B','build','-G','Visual Studio 17 2022',
+            '-A','x64',"-DJUCE_ROOT=$env:GITHUB_WORKSPACE/third_party/JUCE",
+            "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$env:GITHUB_WORKSPACE/.deps",
+            '-DARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=ON',
+            '-DARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE=ON',
+            '-DARMIX_SONKU_EXPERIMENTAL_P8_TRANSPARENT_BASS=ON',
+            '-DARMIX_SONKU_EXPERIMENTAL_P82_ROOM=ON',
+            '-DARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT=ON',
+            '-DARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT=ON',
+            '-DARMIX_SONKU_EXPERIMENTAL_P85_NATIVE_RT=ON',
+            '-DARMIX_SONKU_EXPERIMENTAL_P86_NATIVE_RT=ON',
+            '-DARMIX_SONKU_EXPERIMENTAL_P87_NATIVE_RT=ON',
+            '-DARMIX_SONKU_EXPERIMENTAL_P88_NATIVE_RT=ON',
+            '-DARMIX_SONKU_EXPERIMENTAL_P89_NATIVE_RT=ON',
+            '-DARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT=ON',
+            '-DARMIX_SONKU_EXPERIMENTAL_P94_FRONT_BACK_DEPTH=ON',
+            '-DARMIX_SONKU_EXPERIMENTAL_P95_MUSICAL_PRESENCE=ON',
+            '-DARMIX_SONKU_EXPERIMENTAL_P96_DISTANCE_REINFORCEMENT=ON',
+            '-DARMIX_SONKU_EXPERIMENTAL_P97_STAGE_IMPACT=ON',
+            '-DARMIX_SONKU_EXPERIMENTAL_P98_SCENE_VOICING=ON',
+            '-DARMIX_IMMERSIB_RELEASE_CANDIDATE=ON',
+            '-DARMIX_SONKU_APPROVED_P99_MAIN=ON',
+            '-DBUILD_TESTING=ON')
+          & cmake @cmakeArgs
+          if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_FOCUSED_CONFIGURE_FAILED' }
+          $catalog = (& ctest --test-dir build -C Release --show-only=json-v1 |
+            Out-String | ConvertFrom-Json)
+          if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_FOCUSED_CATALOG_FAILED' }
+          $wanted = @(
+            'NativeImmerSIBJucePresetACKStateAndBypass',
+            'NativeImmerSIBP99VocalRoomAndVenueGolden',
+            'NativeImmerSIBFixedPaPlusMusicalEq',
+            'NativeImmerSIBFixedStageNoSpectralMaskingAndFullPCM')
+          $available = @($catalog.tests | ForEach-Object { $_.name })
+          foreach ($name in $wanted) {
+            if ($name -notin $available) {
+              throw "IMMERSIB_FOCUSED_MISSING_TEST: $name"
+            }
+          }
+      - name: Build ONLY actual ImmerSIB editor + three native PCM fixtures
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel 2 --target ARMixImerSipP92NativeTests ARMixImmerSIBP99NativeSonicGate ARMixImmerSIBFixedStageTests ARMixImmerSIBMusicalEqTests
+          if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_FOCUSED_BUILD_FAILED' }
+      - name: Run four real ImmerSIB CTests including 100x reopen and ACK
+        shell: pwsh
+        run: |
+          $pattern = '^NativeImmerSIB(JucePresetACKStateAndBypass|P99VocalRoomAndVenueGolden|FixedPaPlusMusicalEq|FixedStageNoSpectralMaskingAndFullPCM)$'
+          ctest --test-dir build -C Release --output-on-failure -R $pattern
+          if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_FOCUSED_CTEST_FAILED' }

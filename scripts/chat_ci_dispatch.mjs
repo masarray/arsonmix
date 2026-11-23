@@ -3,10 +3,11 @@
 import {readFileSync} from 'node:fs';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {requiredLanes} from './required_pr_merge_gate.mjs';
+import {selectWindowsFeatureScope} from './windows_feature_scope.mjs';
 
 export function parseMilestoneCommand(body) {
   if(typeof body!=='string')return null;
-  const m=/^\/arsonmix-ci (check|fast|full|ui|native|fat|field) ([0-9a-f]{40})$/.exec(body.trim());
+  const m=/^\/arsonmix-ci (check|fast|full|ui|native|fat|field|feature|immersib|stop) ([0-9a-f]{40})$/.exec(body.trim());
   return m?{lane:m[1],sha:m[2]}:null;
 }
 export function isTrustedOwnerComment(event,repo) {
@@ -29,7 +30,8 @@ export function validateMilestone(event,repo,pr) {
     throw Error('CI_PR_INVALID');
   if(pr.head.sha!==cmd.sha)throw Error('CI_STALE_SHA');
   return {...cmd,number:pr.number,branch:pr.head.ref,
-    workflow:cmd.lane==='ui'?'ui-smoke.yml':'p1-windows.yml'};
+    workflow:cmd.lane==='ui'?'ui-smoke.yml':
+      cmd.lane==='immersib'?'immersib-focused-native.yml':'p1-windows.yml'};
 }
 export function hadEarlierIdenticalRequest(comments,event,repo) {
   const cmd=parseMilestoneCommand(event.comment.body);
@@ -40,32 +42,49 @@ export function hadEarlierIdenticalRequest(comments,event,repo) {
       c.author_association==='OWNER' && old?.lane===cmd.lane && old?.sha===cmd.sha;
   });
 }
-// Only isolated Harmony source changes may use the shorter Windows FAT
-// compiler graph. Keep native/full and generic FAT on the complete graph.
-// Failure to fetch a complete changed-file list must fail closed.
-export function focusedHarmonyFileScope(files) {
-  if(!Array.isArray(files)||files.length===0)return false;
-  const pluginOwned=[
-    /^engine\/builtin_fx\/Harmony[^/]*\.h$/,
-    /^engine\/builtin_fx\/ChannelHarmonyProcessor\.h$/,
-    /^tests\/harmony[^/]*\.(cpp|py)$/,
-    /^tests\/native_harmony_assembly_test\.py$/,
-    /^tests\/approved_native_harmony_smoke\.py$/,
-    /^tools\/harmony_offline_ab\.cpp$/,
-    /^site\/preview-v2\/assets\/mixer-native-harmony\.js$/
+/**
+ * A deliberately limited iteration/diagnostic scope, never a merge-gate
+ * replacement. CMake is allowed only to compile real ImmerSIB sources:
+ * the normal protected nativeFull gate STILL requires full Windows MSVC.
+ * Shared mixer/device/ASIO, other FX or installer edits reject this lane.
+ */
+export function focusedImmerSIBFileScope(files) {
+  if(!Array.isArray(files)||!files.length)return false;
+  const owned=[
+    /^engine\/builtin_fx\/ImerSipP92(?:Editor|VisualSkin|Processor|Scene)\.h$/,
+    /^tests\/imersip(?:_p92_.*|_scene_assets_contract_test)\.(?:cpp|py)$/,
+    /^tests\/immersib_.*\.(?:cpp|py)$/,
+    /^tools\/immersib_.*\.cpp$/,
+    /^assets\/imersip\//
   ];
-  // CSS and the workflow can accompany isolated plugin edits, but neither
-  // alone is proof that a PR warrants the focused Vocal Harmony FAT.
-  const permitted=[
-    ...pluginOwned,
-    /^site\/preview-v2\/assets\/mixer-fx-rack\.css$/,
-    /^\.github\/workflows\/harmony-fast-dsp\.yml$/
+  const allowed=[
+    ...owned,
+    /^CMakeLists\.txt$/,
+    /^\.github\/workflows\/(?:imersip-p92-single-engine|immersib-musical-eq|immersib-focused-native)\.yml$/,
+    /^docs\/architecture\/IMMERSIB_P102_[^/]+\.md$/
   ];
-  return files.some(file=>typeof file==='string' &&
-        pluginOwned.some(pattern=>pattern.test(file))) &&
-    files.every(file=>typeof file==='string' &&
-        permitted.some(pattern=>pattern.test(file)));
+  return files.some(f=>typeof f==='string'&&owned.some(re=>re.test(f)))&&
+    files.every(f=>typeof f==='string'&&allowed.some(re=>re.test(f)));
 }
+export function parseImmerSIBFocusedRun(run) {
+  if(run?.event!=='workflow_dispatch')return null;
+  const m=/^ArSonMix IMMERSIB PR([1-9][0-9]*) ([0-9a-f]{40})$/
+    .exec(run.display_title||'');
+  return m?{number:Number(m[1]),sha:m[2]}:null;
+}
+async function recentImmerSIBFocusedRuns(api) {
+  const all=[];
+  for(let page=1;page<=5;page++){
+    const response=await api('/actions/workflows/immersib-focused-native.yml/runs?'+
+      'event=workflow_dispatch&per_page=100&page='+page);
+    if(!Array.isArray(response?.workflow_runs))
+      throw Error('CI_IMMERSIB_RUNS_INVALID');
+    all.push(...response.workflow_runs);
+    if(response.workflow_runs.length<100)return all;
+  }
+  throw Error('CI_IMMERSIB_RUNS_PAGINATION_LIMIT');
+}
+
 async function readChangedFiles(api,number) {
   const result=[];
   for(let page=1;page<=10;page++){
@@ -87,7 +106,7 @@ export function hasPriorDispatch(runs,sha) {
 // Never infer provenance from head_sha or an unstructured display title.
 export function parseWindowsMilestoneRun(run) {
   if(run?.event!=='workflow_dispatch')return null;
-  const m=/^ArSonMix (NATIVE|FAT|FIELD) PR([1-9][0-9]*) ([0-9a-f]{40})$/
+  const m=/^ArSonMix (NATIVE|FAT|FIELD|FEATURE) PR([1-9][0-9]*) ([0-9a-f]{40})$/
     .exec(run.display_title||'');
   return m?{lane:m[1].toLowerCase(),number:Number(m[2]),sha:m[3]}:null;
 }
@@ -112,6 +131,20 @@ export async function guardWindowsMilestone({target,api}) {
     run,identity:parseWindowsMilestoneRun(run)
   })).filter(x=>x.identity?.number===target.number);
   const same=runs.filter(x=>x.identity.sha===target.sha);
+  if(target.lane==='feature') {
+    const activeFull=runs.find(x=>['fat','native'].includes(x.identity.lane) &&
+      isActiveWindowsRun(x.run));
+    if(activeFull)return {kind:'skipped',reason:'full-windows-already-running',target};
+    const existing=same.find(x=>x.identity.lane==='feature');
+    if(existing){
+      if(existing.run.conclusion==='success'||isActiveWindowsRun(existing.run))
+        return {kind:'skipped',reason:'feature-already-qualified-or-scheduled',target};
+      throw Error('CI_FEATURE_FAILED_FIX_SOURCE_BEFORE_REDISPATCH');
+    }
+    const otherFeature=runs.find(x=>x.identity.lane==='feature'&&isActiveWindowsRun(x.run));
+    if(otherFeature)return {kind:'skipped',reason:'older-feature-still-running',target};
+    return null;
+  }
   if(target.lane==='field'){
     const existing=same.find(({run,identity})=>['fat','field'].includes(identity.lane) &&
       (isActiveWindowsRun(run)||run.conclusion==='success'));
@@ -167,6 +200,86 @@ export async function performMilestone({event,repo,api,waitForQuick=()=>sleep(50
   }
   if(hadEarlierIdenticalRequest(older,event,repo))
     return {kind:'skipped',reason:'duplicate',target};
+  // STOP is an owner-authorized safety action. It NEVER dispatches a job
+  // and cancels ONLY this exact PR and immutable HEAD; never another PR.
+  if(target.lane==='stop') {
+    const ordinary=(await recentWindowsMilestones(api)).filter(x=>{
+      const id=parseWindowsMilestoneRun(x);
+      return id?.number===target.number&&id.sha===target.sha&&
+        isActiveWindowsRun(x);
+    });
+    const focused=(await recentImmerSIBFocusedRuns(api)).filter(x=>{
+      const id=parseImmerSIBFocusedRun(x);
+      return id?.number===target.number&&id.sha===target.sha&&
+        isActiveWindowsRun(x);
+    });
+    const cancel=[...ordinary,...focused];
+    for(const run of cancel){
+      if(!Number.isSafeInteger(run.id))throw Error('CI_STOP_RUN_ID_INVALID');
+      await api('/actions/runs/'+run.id+'/cancel','POST');
+    }
+    return {kind:cancel.length?'cancelled':'checked',
+      reason:cancel.length?'stopped-exact-pr-head':'no-matching-active-runs',
+      target,results:cancel.map(x=>({run:x.id}))};
+  }
+  // Generic development feature scope, selected from exact changed PR files.
+  // No branch-name heuristics; unknown/shared/mixed files require full native.
+  if(target.lane==='feature') {
+    const files=await readChangedFiles(api,target.number);
+    const plan=selectWindowsFeatureScope(files);
+    if(!plan)throw Error('CI_FEATURE_SCOPE_UNSUPPORTED_OR_MIXED');
+    const proof=await verifySmartFast({target,scope:requiredLanes(files),api,waitForQuick});
+    validateMilestone(event,repo,await api('/pulls/'+target.number));
+    const guard=await guardWindowsMilestone({target,api});
+    if(guard)return {...guard,proof};
+    validateMilestone(event,repo,await api('/pulls/'+target.number));
+    await api('/actions/workflows/p1-windows.yml/dispatches','POST',{
+      ref:'main',inputs:{expected_sha:target.sha,
+        request_pr_number:String(target.number),package_fat:false,
+        feature_scope:plan.id}
+    });
+    return {kind:'dispatched',target,proof,feature:plan.id};
+  }
+  // Ordinary FAT is for a REQUESTED installer, not editor iteration. The
+  // previous ImmerSIB #865 consumed 30m building 113 unrelated CTests.
+  // Explicit source-scoped denial makes repeating that mistake impossible.
+  if(target.lane==='fat'&&/immersib|imersib|imersip/i.test(target.branch)&&
+     focusedImmerSIBFileScope(await readChangedFiles(api,target.number)))
+    throw Error('CI_IMMERSIB_ITERATION_USE_FOCUSED_NOT_FAT');
+  if(target.lane==='immersib') {
+    const files=await readChangedFiles(api,target.number);
+    if(!focusedImmerSIBFileScope(files))
+      throw Error('CI_IMMERSIB_FOCUSED_SCOPE_REQUIRES_ISOLATED_SOURCE');
+    // Same PR exact-SHA quick preflight as SMART; no Windows on red UI,
+    // native or release source checks and no trust in workflow-ref SHA.
+    const proof=await verifySmartFast({target,scope:requiredLanes(files),
+      api,waitForQuick});
+    validateMilestone(event,repo,await api('/pulls/'+target.number));
+    // Do not overlap a full generic FAT with the focused editor runner.
+    const broad=(await recentWindowsMilestones(api)).filter(x=>{
+      const id=parseWindowsMilestoneRun(x);
+      return id?.number===target.number&&id.lane==='fat'&&
+        isActiveWindowsRun(x);
+    });
+    if(broad.length)return {kind:'skipped',reason:'full-fat-already-running',
+      target,proof};
+    const candidates=(await recentImmerSIBFocusedRuns(api)).map(x=>({
+      run:x,identity:parseImmerSIBFocusedRun(x)
+    })).filter(x=>x.identity?.number===target.number);
+    if(candidates.some(x=>isActiveWindowsRun(x.run)))
+      return {kind:'skipped',reason:'immersib-focused-already-running',
+        target,proof};
+    const prior=candidates.find(x=>x.identity.sha===target.sha);
+    if(prior?.run.conclusion==='success')
+      return {kind:'skipped',reason:'immersib-focused-already-passed',
+        target,proof};
+    if(prior)throw Error('CI_IMMERSIB_FAILED_FIX_SOURCE_BEFORE_REDISPATCH');
+    validateMilestone(event,repo,await api('/pulls/'+target.number));
+    await api('/actions/workflows/immersib-focused-native.yml/dispatches','POST',
+      {ref:'main',inputs:{expected_sha:target.sha,
+        request_pr_number:String(target.number)}});
+    return {kind:'dispatched',target,proof};
+  }
   const qs='/actions/workflows/'+target.workflow+'/runs?event=pull_request&branch='+
     encodeURIComponent(target.branch)+'&per_page=100';
   const prior=(await api(qs)).workflow_runs.filter(r=>r.head_sha===target.sha)
@@ -191,20 +304,11 @@ export async function performMilestone({event,repo,api,waitForQuick=()=>sleep(50
     const gate=await guardWindowsMilestone({target,api});
     if(gate)return gate;
   }
-  // Focused FAT saves compilation of unrelated CTest executables for
-  // audibly-qualified Harmonice-only candidate PRs. A branch name alone
-  // is NOT enough: inspect all PR files and deny on any shared engine,
-  // mixer/ASIO or release workflow edit. Full native CTest stays available.
-  let focusedHarmony=false;
-  if(target.lane==='fat'&&/(^|\/)harmonice[-/]/.test(target.branch)) {
-    focusedHarmony=focusedHarmonyFileScope(
-      await readChangedFiles(api,target.number));
-  }
   const inputs=target.lane==='ui'?{expected_sha:target.sha}:
     {expected_sha:target.sha,package_fat:target.lane==='fat',
      request_pr_number:String(target.number),
      ...(target.lane==='field'?{field_preview:true}:{}),
-     ...(focusedHarmony?{focused_harmony_fat:true}:{})};
+     };
   // Windows always uses the reviewed CI definition from main, and checks
   // out the exact PR source SHA. Run-name also carries the verified PR/SHA
   // so a main-ref workflow_dispatch cannot conceal a duplicate compile.

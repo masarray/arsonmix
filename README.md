@@ -40,9 +40,30 @@ Bring your voice, instruments and music together in a single live digital mixer.
 | **ArSon Player + `.smix`** | Keep music close to the console and save or reopen mixer sessions. |
 | **VST3 hosting** | Load supported external VST3 effects where compatible. Commercial plugins are not included. |
 
-### Inside the built-in FX
+### Genuine Windows native FX editor screenshots
 
-Click a screenshot to view the complete editor interface. These pictures come from ArSonMix's approved native WebView editor resources, not promotional mockups.
+Six ImmerSIB listening scenes and Guitar FX Rig were supplied as real
+Windows editor screenshots on 22 November 2026, with no recreated UI.
+
+| ImmerSIB — Concert Front Row XL | Guitar FX Rig — Clean Studio |
+|:--:|:--:|
+| [<img src="site/media/fx-editor-immersib-concert-front-row-xl.jpg" alt="ImmerSIB native Windows editor showing Concert Front Row XL stage and controls" width="460">](site/media/fx-editor-immersib-concert-front-row-xl.jpg) | [<img src="site/media/fx-editor-guitar-rig-clean-studio.jpg" alt="Guitar FX Rig native Windows amplifier window; DSP OFFLINE shown" width="460">](site/media/fx-editor-guitar-rig-clean-studio.jpg) |
+
+<details><summary>Explore five additional ImmerSIB listening scenes</summary>
+
+| Front Row Power | Symphonic Palace | Velvet Cinema |
+|:--:|:--:|:--:|
+| [<img src="site/media/fx-editor-immersib-front-row-power.jpg" alt="ImmerSIB Front Row Power native window" width="280">](site/media/fx-editor-immersib-front-row-power.jpg) | [<img src="site/media/fx-editor-immersib-symphonic-palace.jpg" alt="ImmerSIB Symphonic Palace native window" width="280">](site/media/fx-editor-immersib-symphonic-palace.jpg) | [<img src="site/media/fx-editor-immersib-velvet-cinema.jpg" alt="ImmerSIB Velvet Cinema native window" width="280">](site/media/fx-editor-immersib-velvet-cinema.jpg) |
+| **Arena Thunder** | **Royal Concert Hall** | |
+| [<img src="site/media/fx-editor-immersib-arena-thunder.jpg" alt="ImmerSIB Arena Thunder native window" width="280">](site/media/fx-editor-immersib-arena-thunder.jpg) | [<img src="site/media/fx-editor-immersib-royal-concert-hall.jpg" alt="ImmerSIB Royal Concert Hall native window" width="280">](site/media/fx-editor-immersib-royal-concert-hall.jpg) | |
+
+</details>
+
+*The Guitar capture visibly shows DSP OFFLINE. These are genuine editor images, not proof of live audio/hardware operation or of an identified released installer.*
+
+### More built-in FX: original WebView editor resources
+
+Click to view the full interface. These six pictures come from ArSonMix's approved native WebView editor resources rendered in Chromium, not promotional mockups.
 
 | 8D-SonKu | Vocal Delay |
 |:--:|:--:|
@@ -51,8 +72,6 @@ Click a screenshot to view the complete editor interface. These pictures come fr
 | [<img src="site/media/fx-editor-harmonice.jpg" alt="Harmonice vocal harmony editor" width="460">](site/media/fx-editor-harmonice.jpg) | [<img src="site/media/fx-editor-channel-eq.jpg" alt="ArSonMix Parametric EQ editor" width="460">](site/media/fx-editor-channel-eq.jpg) |
 | **Compressor** | **Graphic EQ 31** |
 | [<img src="site/media/fx-editor-compressor.jpg" alt="ArSonMix compressor editor" width="460">](site/media/fx-editor-compressor.jpg) | [<img src="site/media/fx-editor-graphic-eq31.jpg" alt="ArSonMix 31-band Graphic EQ editor" width="460">](site/media/fx-editor-graphic-eq31.jpg) |
-
-ImmerSIB and Guitar FX are also built-in effects; their dedicated native editor images will be added following a Windows capture.
 
 Try the [built-in FX showcase](https://masarray.github.io/arsonmix/#effects) or [explore the console](https://masarray.github.io/arsonmix/preview/). The preview is visual only; native effect editors and audio run in the desktop app.
 

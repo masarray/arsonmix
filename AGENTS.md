@@ -129,6 +129,10 @@ deduplication, approved sound, protected merge and hardware FAT semantics.
 See `docs/SMART_CI_RUNNER_WORKFLOW.md` for exact commands and limits.
 
 
+**23 Nov 2026 GENERAL WINDOWS FAT CORRECTION:** The generic `.github/workflows/p1-windows.yml` no longer has a plugin-specific Harmonice FAT switch, compile step or CTest lane. Use `/arsonmix-ci feature <exact HEAD SHA>` for an isolated, reviewed single-feature source diff: auto-select the real feature's declared CMake/CTest targets, without building the entire mixer or installer. Unknown, mixed, core/shared engine and CMake changes cannot silently use selective qualification: use `native`/`full`. Deliberate `fat` still runs the **complete** native+installer qualification (including every active feature), with unchanged source/ZIP/upgrade verification. A scoped feature run is visibly labeled **NOT full**, cannot satisfy the protected MSVC full gate, and proves neither installer nor ASIO hardware. Do not dispatch a costly Windows job merely because CI source files changed.
+
+**23 Nov 2026 CI OWNER CORRECTION — IMMERSIB:** do not use `fat` to validate a JUCE ImmerSIB editor/reopen/PCM fix. It incorrectly consumes the full global `p1-windows.yml` compile, unrelated Vocal Harmony job labels, all native CTests and installer path. Use owner comment `/arsonmix-ci immersib <exact current HEAD SHA>` for a strictly scoped ImmerSIB PR: 4 real JUCE/PCM CTests only, no `ARMixConsole` build, Vocal Harmony, or installer. `fat` is denied by the dispatcher for isolated ImmerSIB source scope. The owner can use `/arsonmix-ci stop <exact current HEAD SHA>` to cancel only matching active CI. **Focused is not full native merge gate**; preserve protected CI/real ASIO qualifications for intentional integration releases. No automatic paid Windows job on PR pushes.
+
 **Per-commit development = fast, path-scoped Linux contracts only.**
 No automatic heavy Chromium, Windows MSVC/CTest, or Windows artifact ZIP on
 ordinary PR synchronize, even if a PR is Ready. `main` release qualification
