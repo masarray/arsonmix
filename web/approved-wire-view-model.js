@@ -88,7 +88,7 @@
        !Array.isArray(graph?.capabilities?.supportedOps)||
        !graph.capabilities.supportedOps.includes("SET_FADER")||
        !Array.isArray(graph.channels)||!Array.isArray(graph.edges)||
-       typeof channelId!=="string"||!/^\\d+$/.test(channelId)||
+       typeof channelId!=="string"||!/^\d+$/.test(channelId)||
        !Number.isFinite(levelDb)||levelDb< -60||levelDb>6)
       return {kind:"UNAVAILABLE"};
     const rows=graph.channels.filter(row=>row.id===channelId);
