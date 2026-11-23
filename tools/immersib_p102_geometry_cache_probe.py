@@ -57,7 +57,8 @@ def replace_exact(text: str, old: str, new: str, count: int = 1) -> str:
     return text.replace(old, new)
 
 
-def build_candidate(source: str, two_pass: bool = False) -> str:
+def build_candidate(source: str, two_pass: bool = False,
+                    stasis: bool = False) -> str:
     start = source.index("class SonKuEarlyReflections final {")
     end = source.rindex("} // namespace armix::sonku")
     clone = source[start:end]
@@ -107,6 +108,71 @@ def build_candidate(source: str, two_pass: bool = False) -> str:
         "    float cachedSpread_=0.f,cachedYaw_=0.f;\n"
         "    std::uint64_t geometryCacheSkips_=0;",
     )
+    if stasis:
+        # Guarded candidate: skip an HRIR slew only if EVERY coefficient's
+        # exact next scalar update is bitwise unchanged for two probes.
+        # Invalidate at genuine geometry changes and fusion transitions.
+        clone = replace_exact(
+            clone, "    struct Tap {\n",
+            "    struct Tap {\n"
+            "        bool kernelStationary=false;\n"
+            "        std::uint8_t stationaryChecks=0;\n",
+        )
+        clone = replace_exact(
+            clone,
+            "                updateGeometry(azimuth,spread,headYawDegrees);\n"
+            "                cachedAzimuth_=azimuth;",
+            "                updateGeometry(azimuth,spread,headYawDegrees);\n"
+            "                for(auto& source:tap_)for(auto& p:source){\n"
+            "                    p.kernelStationary=false;\n"
+            "                    p.stationaryChecks=0;\n"
+            "                }\n"
+            "                cachedAzimuth_=azimuth;",
+        )
+        clone = replace_exact(
+            clone,
+            "        if(fastZeroSpread_ && spread!=0.f)fuseEligible_=false;",
+            "        if(fastZeroSpread_ && spread!=0.f && fuseEligible_){\n"
+            "            fuseEligible_=false;\n"
+            "            for(auto& source:tap_)for(auto& p:source){\n"
+            "                p.kernelStationary=false;\n"
+            "                p.stationaryChecks=0;\n"
+            "            }\n"
+            "        }",
+        )
+        clone = replace_exact(
+            clone, "        Ears output{};",
+            "        if(directionalHrir_ && (write_ & 127)==0){\n"
+            "            for(auto& source:tap_)for(auto& p:source){\n"
+            "                if(p.kernelStationary)continue;\n"
+            "                bool stable=true;\n"
+            "                for(int ear=0;ear<2 && stable;++ear)\n"
+            "                    for(int k=0;k<hrir::taps;++k){\n"
+            "                        const float h=p.kernel[ear][k];\n"
+            "                        const float next=h+kernelSlew_*\n"
+            "                            (p.targetKernel[ear][k]-h);\n"
+            "                        if(std::bit_cast<std::uint32_t>(next)!=\n"
+            "                           std::bit_cast<std::uint32_t>(h)){\n"
+            "                            stable=false;break;\n"
+            "                        }\n"
+            "                    }\n"
+            "                if(stable){\n"
+            "                    if(p.stationaryChecks<2)++p.stationaryChecks;\n"
+            "                    if(p.stationaryChecks>=2)p.kernelStationary=true;\n"
+            "                }else p.stationaryChecks=0;\n"
+            "            }\n"
+            "        }\n"
+            "        Ears output{};",
+        )
+        clone = replace_exact(
+            clone,
+            "                        hL+=kernelSlew_*(p.targetKernel[0][k]-hL);\n"
+            "                        hR+=kernelSlew_*(p.targetKernel[1][k]-hR);",
+            "                        if(!p.kernelStationary){\n"
+            "                            hL+=kernelSlew_*(p.targetKernel[0][k]-hL);\n"
+            "                            hR+=kernelSlew_*(p.targetKernel[1][k]-hR);\n"
+            "                        }",
+        )
     if two_pass:
         # Preserve the exact per-tap coefficient update and sequential
         # l/r accumulation, but separate the kernel-slew pass from the
@@ -139,6 +205,7 @@ def build_candidate(source: str, two_pass: bool = False) -> str:
     return (
         "// GENERATED LAB-ONLY, never checked into product acoustic sources.\n"
         "#pragma once\n"
+        "#include <bit>\n"
         '#include "engine/builtin_fx/sonku/SonKuEarlyReflections.h"\n'
         "namespace armix::sonku {\n" + clone
         + "\n} // namespace armix::sonku\n"
@@ -157,14 +224,15 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="imersib-geometry-bitexact-") as d:
         root_tmp = pathlib.Path(d)
         approved_source = EARLY.read_text(encoding="utf-8")
-        for variant, two_pass in (
-            ("geometry_only", False),
-            ("geometry_plus_two_pass_fir", True),
+        for variant, two_pass, stasis in (
+            ("geometry_only", False, False),
+            ("geometry_plus_two_pass_fir", True, False),
+            ("geometry_plus_kernel_stasis", False, True),
         ):
             tmp = root_tmp / variant
             tmp.mkdir()
             (tmp / "SonKuEarlyReflectionsGeometryCache.h").write_text(
-                build_candidate(approved_source, two_pass=two_pass),
+                build_candidate(approved_source, two_pass=two_pass, stasis=stasis),
                 encoding="utf-8",
             )
             cmd = [
