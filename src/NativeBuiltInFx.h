@@ -6,6 +6,7 @@
 #include "../engine/builtin_fx/GraphicEq31Processor.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
 #include "../engine/builtin_fx/VocalThrowProcessor.h"
+#include "../engine/builtin_fx/VocalReverbProcessor.h"
 #include "../engine/builtin_fx/GuitarRigEditor.h"
 #include "../engine/builtin_fx/SonKuSpatialProcessor.h"
 #if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
@@ -87,6 +88,11 @@ inline constexpr std::array nativeBuiltInFx{
         "NATIVE_THROW_UNSUPPORTED_AUDIO_FORMAT","NATIVE_THROW_PREPARE_REJECTED",
         "NATIVE_THROW_PREPARE_EXCEPTION","Saved native Vocal Delay state rejected; graph unchanged",
         prepareNativeBuiltInFx<VocalThrowProcessor>},
+    NativeBuiltInFx{VocalReverbProcessor::catalogIdentity,"Vocal Reverb","Reverb",true,8000.,192000.,
+        "NATIVE_VREV_HOST_UNAVAILABLE","NATIVE_VREV_DEVICE_CHANGED",
+        "NATIVE_VREV_UNSUPPORTED_AUDIO_FORMAT","NATIVE_VREV_PREPARE_REJECTED",
+        "NATIVE_VREV_PREPARE_EXCEPTION","Saved Vocal Reverb state rejected; graph unchanged",
+        prepareNativeBuiltInFx<VocalReverbProcessor>},
     NativeBuiltInFx{SonKuSpatialProcessor::catalogIdentity,"8D-SonKu","Spatial",true,44100.,48000.,
         "NATIVE_SONKU_HOST_UNAVAILABLE","NATIVE_SONKU_DEVICE_CHANGED",
         "NATIVE_SONKU_UNSUPPORTED_AUDIO_FORMAT","NATIVE_SONKU_PREPARE_REJECTED",
