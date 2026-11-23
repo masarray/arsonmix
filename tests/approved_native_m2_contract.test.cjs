@@ -6991,8 +6991,9 @@ test("P0 receiver SUM WIRE disables on retained epoch, then reenables on accepte
  const vm=read("web/approved-native-bridge.js");
  const asm=read("scripts/build_approved_native_gui.py");
  assert.match(vm,/canWireChannelLevel\(uiChannelId\)/);
- assert.match(vm,/sumKnob\.disabled=!validSum/);
- assert.match(vm,/const validSum=next\.admitted===true&&next\.retained!==true/);
+ assert.match(vm,/function syncReceiverSumLevelAdmission\(next\)/);
+ assert.match(vm,/const ready=Number\.isSafeInteger\(ui\)&&plan\.kind==="READY"/);
+ assert.match(vm,/if\(input\.disabled===ready\)input\.disabled=!ready/);
  assert.match(asm,/wireEditable=window\.__ARMIX_NATIVE_M2__\?\.canWireChannelLevel\?\.\(t\.id\)===true/);
  assert.match(asm,/wireEditable\?'':' disabled'/);
 });
@@ -7003,7 +7004,7 @@ test("P0 native receiver LVL re-admits only after projected device recovery",()=
  const cold=read("tests/approved_native_cold_start_smoke.py");
  assert.match(bridge,/function syncReceiverSumLevelAdmission\(next\)/);
  assert.match(bridge,/flags\.productionCallbackLive=next\.productLive;flags\.acceptedGraphConnected=true;\s*syncReceiverSumLevelAdmission\(next\)/);
- assert.match(bridge,/if\(transientPlan\.discardRetained\)/);
+ assert.match(bridge,/if\s*\(transientPlan\.discardRetained\)/);
  assert.match(bridge,/syncReceiverSumLevelAdmission\(next\);\s*stopDemo\(\)/);
  assert.match(bridge,/channelSumLevelPlan\(next,flags\.acceptedGraphConnected,/);
  assert.match(cold,/['"]CREATE_CHANNEL['"], ['"]SET_FADER['"]/);
