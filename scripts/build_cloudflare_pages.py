@@ -37,7 +37,13 @@ GITHUB_PAGES_CATALOG = "https://masarray.github.io/arsonmix/release-catalog.json
 def public_url(environ):
     # CF_PAGES_URL is a preview deployment on branch builds; don't put that
     # unstable URL in canonical/OG tags. Custom production domains may override.
-    return normalize_public_url(environ.get("ARSONMIX_PUBLIC_URL") or DEFAULT_URL)
+    configured = normalize_public_url(environ.get("ARSONMIX_PUBLIC_URL") or DEFAULT_URL)
+    # Respect intentional custom-domain migrations, but never treat the known
+    # duplicate pages.dev mirror as a competing primary—even if configured in
+    # an older Cloudflare environment variable.
+    if configured == "https://arsonmix.pages.dev/":
+        return DEFAULT_URL
+    return configured
 
 
 def response_headers(branch):
