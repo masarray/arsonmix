@@ -24,7 +24,12 @@ int main() {
     assert(created && created->getName()=="Vocal Reverb" && created->hasEditor());
     // Test the real native JUCE faceplate, not a WebView mock or a fake
     // static rendered image. Dimensions and all param IDs are contract.
-    std::unique_ptr<juce::AudioProcessorEditor> ui(created->createEditor());
+    // This host builds a private AudioProcessor::createEditor() facade.
+    // Reverb's concrete override is public: test the actual native editor,
+    // not the inaccessible base-class method.
+    auto* uiOwner=dynamic_cast<VocalReverbProcessor*>(created.get());
+    assert(uiOwner);
+    std::unique_ptr<juce::AudioProcessorEditor> ui(uiOwner->createEditor());
     assert(ui && ui->getWidth()==1120 && ui->getHeight()==430);
     auto* mainDecay=dynamic_cast<juce::Slider*>(
         ui->findChildWithID("armix.reverb.param.2"));
@@ -152,7 +157,7 @@ int main() {
     drySeedTyped->consumeRealtimeEdits();
     juce::MemoryBlock dryState;
     drySeed->getStateInformation(dryState);
-    auto coldDry=entry->prepare(48000.,64,dryState.get(),
+    auto coldDry=entry->prepare(48000.,64,dryState.getData(),
                                 static_cast<int>(dryState.getSize()));
     assert(coldDry && coldDry->getLatencySamples()==0);
     juce::AudioBuffer<float> dryPcm(2,64);
@@ -181,7 +186,7 @@ int main() {
         seedTyped->consumeRealtimeEdits();
         juce::MemoryBlock wetState;
         seed->getStateInformation(wetState);
-        auto wet=entry->prepare(48000.,64,wetState.get(),
+        auto wet=entry->prepare(48000.,64,wetState.getData(),
                                 static_cast<int>(wetState.getSize()));
         assert(wet && wet->getLatencySamples()==0);
         juce::AudioBuffer<float> p(2,128);
