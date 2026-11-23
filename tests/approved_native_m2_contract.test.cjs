@@ -6976,3 +6976,12 @@ test("P0 real-time gain pointer cancellation compensates native PCM through one 
  assert.match(page,/__ARMIX_NATIVE_GAIN_RESTORE__\?\.\(\)/);
  assert.match(page,/wireChannelLevel','trim','sendLevel'/);
 });
+
+
+test("P0 Audio I/O repair never steals retained offline FX editor recovery",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/if\(field==="input"&&event.type==="change"\)\s*recommendAudioRepair\("INPUT kehilangan perangkat audio"\)/);
+ assert.match(bridge,/controller\?\.state\(\)\?\.current\?\.retained!==true\)\{/);
+ assert.match(bridge,/retainedFxOfflineOpen/);
+ assert.match(bridge,/pendingRetainedEditor=\{/);
+});

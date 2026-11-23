@@ -4012,6 +4012,8 @@
       const t=scope?.findTrack?.(el) || null;
       if (!t)return true;
       if(controller?.state()?.current?.retained&&!logicalView){
+        if(field==="input"&&event.type==="change")
+          recommendAudioRepair("INPUT kehilangan perangkat audio");
         if(field==="output" && t.kind==="master" && event.type==="change")
           openNativeAudioIO();
         if(field==="level" || field==="pan" || field==="input" || field==="output")
@@ -4291,7 +4293,10 @@
         editNativeFx(t,slot,null,0,token);return true;
       }
       if(action==="openPlugin"){
-        if(!logicalView&&!deviceReady()){
+        // Device-disconnected FX may have a saved retained editor lease.
+        // Do not block native offline .smix recovery with a repair modal.
+        if(!logicalView&&!deviceReady()&&
+           controller?.state()?.current?.retained!==true){
           recommendAudioRepair("FX tidak dapat memproses audio");
           return true;
         }
