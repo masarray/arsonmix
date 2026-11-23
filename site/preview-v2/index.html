@@ -2527,13 +2527,13 @@ document.querySelector('.console-body').addEventListener('dblclick',e=>{
   if(!window.__JUCE__?.backend)say(t.name+' digital input gain → unity (0.0 dB)');
   return;
  }
- if(e.target.classList.contains('fader')){
+ if(e.target.closest('.fader-box')||e.target.classList.contains('fader')){
   const send=sofEnabled&&t.kind==='audio';
   if(send&&!getSofEdge(t)){say('NO SEND · patch one WIRE first');return;}
   // Never mutate t.level directly: in SOF the physical fader belongs to
   // the selected EdgeId, not MAIN. Native bridge owns the accepted write.
-  const fader=e.target;
-  if(fader.disabled)return;
+  const fader=e.target.closest('.fader-box')?.querySelector('.fader')||e.target;
+  if(!fader||fader.disabled)return;
   fader.value='0';fader.dispatchEvent(new Event('input',{bubbles:true}));
   fader.dispatchEvent(new Event('change',{bubbles:true}));
   if(!window.__JUCE__?.backend)say(t.name+(send?' SEND':' MAIN')+' fader → 0.0 dB');

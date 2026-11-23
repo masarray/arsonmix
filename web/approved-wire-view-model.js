@@ -78,7 +78,7 @@
     return {kind:"READY",source:sourceId,levelDb:ch.controls.faderDb};
   }
 
-  // An incoming WIRE pot represents the receiver's post-SUM channel fader,
+  // An incoming WIRE pot represents the receiver's independent incoming WIRE sum gain,
   // not a randomly selected sender's EdgeId. One or many incoming routes
   // must behave identically; each send remains separately adjustable in
   // WIRE Inspector / Sends on Faders.
@@ -86,14 +86,14 @@
     const graph=snapshot?.graph;
     if(projected!==true||snapshot?.admitted!==true||snapshot.retained===true||
        !Array.isArray(graph?.capabilities?.supportedOps)||
-       !graph.capabilities.supportedOps.includes("SET_FADER")||
+       !graph.capabilities.supportedOps.includes("SET_WIRE_SUM_GAIN")||
        !Array.isArray(graph.channels)||!Array.isArray(graph.edges)||
        typeof channelId!=="string"||!/^\d+$/.test(channelId)||
        !Number.isFinite(levelDb)||levelDb< -60||levelDb>6)
       return {kind:"UNAVAILABLE"};
     const rows=graph.channels.filter(row=>row.id===channelId);
     if(rows.length!==1||!["INPUT","GROUP","FX_RETURN"].includes(rows[0].role)||
-       !Number.isFinite(rows[0].controls?.faderDb))return {kind:"UNAVAILABLE"};
+       !Number.isFinite(rows[0].controls?.wireSumGainDb))return {kind:"UNAVAILABLE"};
     const inbound=graph.edges.filter(e=>e.to===channelId&&e.enabled===true);
     if(inbound.length<1)return {kind:"UNAVAILABLE"};
     return {kind:"READY",source:channelId,levelDb,wireCount:inbound.length};
@@ -110,7 +110,7 @@
             ch.primaryOutId===e.to);
           if(rows.length!==1||e.gainLinear!==1||
              !Number.isFinite(rows[0].controls?.faderDb))return [];
-          return [{id,pending:false,levelDb:rows[0].controls.faderDb}];
+          return [{id,pending:false,levelDb:0}];
         }
         const levelDb=gainDb(e.gainLinear);
         return levelDb===null?[]:

@@ -474,7 +474,7 @@
     if(!logicalView.graph.capabilities.supportedOps.includes(operation))
       return {ok:false,error:"UNSUPPORTED_LOGICAL_OPERATION"};
     const requestId="logical-"+logicalClientToken+"-"+(++logicalSerial);
-    const value=["SET_FADER","SET_INPUT_GAIN"].includes(operation)?payload.valueDb:
+    const value=["SET_FADER","SET_INPUT_GAIN","SET_WIRE_SUM_GAIN"].includes(operation)?payload.valueDb:
       operation==="SET_PAN"?payload.value:
       ["SET_MUTE","SET_SOLO","SET_FX_RACK_BYPASS"].includes(operation)?
         payload.enabled:undefined;
@@ -543,17 +543,6 @@
     if(!Number.isFinite(db)||db< -60||db>6)return false;
     const current=controller?.state()?.current;
     const edgeId=wireByUiId.get(op.edgeId),source=nativeByUiId.get(op.sourceId);
-    const primary=wireVM.primaryChannelLevelPlan(current,
-      flags.acceptedGraphConnected,source,edgeId);
-    if(primary.kind==="READY"){
-      // The PRIMARY knob controls the same native CH fader; this is a
-      // scalar ACK/readback, not an independent wire level or double MAIN mix.
-      if(controller?.state()?.pending)return false;
-      const result=controller.intent("SET_FADER",primary.source,{valueDb:db});
-      if(!result.ok){status("PRIMARY CH LEVEL rejected · "+result.error);return false;}
-      window.setTimeout(()=>controller?.expire(result.requestId),8000);
-      return true;
-    }
     if(!admittedParallelWire(op.sourceId,op.edgeId,"SET_WIRE_GAIN"))return false;
     // A physical SEND fader floor is -infinity (zero PCM), NOT -60 dB linear.
     pendingWireGains.set(edgeId,{source,gain:db<=-60?0:Math.pow(10,db/20),identity:current.identity});
@@ -567,15 +556,16 @@
   let gainDraftFlushScheduled=false;
   function flushLiveInputGains(){
     if(!controller||controller.state()?.pending||pendingLogical)return;
-    for(const [channelId,edit] of latestInputGainDrafts){
-      latestInputGainDrafts.delete(channelId);
+    for(const [key,edit] of latestInputGainDrafts){
+      latestInputGainDrafts.delete(key);
       if(edit.epoch!==String(hardware?.device?.epoch)||
-         nativeIdFor(edit.track)!==channelId||
-         !edit.track.nativeGainAvailable||!deviceReady()) {
+         nativeIdFor(edit.track)!==edit.id||!deviceReady()||
+         (edit.operation==="SET_INPUT_GAIN"?!edit.track.nativeGainAvailable:
+          wireVM.channelSumLevelPlan(controller.state()?.current,flags.acceptedGraphConnected,edit.id,edit.db).kind!=="READY")) {
         status("GAIN gesture retired · audio owner changed");
         continue;
       }
-      const result=intent("SET_INPUT_GAIN",edit.track,{valueDb:edit.db});
+      const result=intent(edit.operation,edit.track,{valueDb:edit.db});
       if(!result){
         status("GAIN rejected · restoring accepted channel value");
         if(controller.state()?.current)
@@ -599,9 +589,21 @@
     if(logicalView) return intent("SET_INPUT_GAIN",track,{valueDb:db});
     const id=nativeIdFor(track);
     if(!id||!deviceReady())return false;
-    latestInputGainDrafts.set(id,{
-      track,db,epoch:String(hardware?.device?.epoch)});
+    latestInputGainDrafts.set("SET_INPUT_GAIN:"+id,{
+      id,operation:"SET_INPUT_GAIN",track,db,epoch:String(hardware?.device?.epoch)});
     if(final&&!controller.state()?.pending)flushLiveInputGains();
+    else scheduleLiveInputGainFlush();
+    return true;
+  }
+  function requestLiveWireSumGain(track,db,final){
+    if(!track||!Number.isFinite(db)||db< -60||db>6)return false;
+    if(logicalView) return final?intent("SET_WIRE_SUM_GAIN",track,{valueDb:db}):true;
+    const id=nativeIdFor(track);
+    if(!id||!deviceReady()||wireVM.channelSumLevelPlan(controller.state()?.current,
+       flags.acceptedGraphConnected,id,db).kind!=="READY")return false;
+    latestInputGainDrafts.set("SET_WIRE_SUM_GAIN:"+id,{
+      id,operation:"SET_WIRE_SUM_GAIN",track,db,epoch:String(hardware?.device?.epoch)});
+    if(!controller.state()?.pending)flushLiveInputGains();
     else scheduleLiveInputGainFlush();
     return true;
   }
@@ -687,6 +689,7 @@
       if(appearance?.icon)t.icon=appearance.icon;
       t.format=ch.processingFormat.toLowerCase();
       t.level=ch.controls.faderDb;
+      t.wireSumGainDb=Number.isFinite(ch.controls?.wireSumGainDb)?ch.controls.wireSumGainDb:0;
       t.trim=Number.isFinite(ch.controls.inputGainDb)?ch.controls.inputGainDb:0;
       t.nativeGainAvailable=(native.admitted===true||native.logical===true) && kind==="audio" &&
         native.graph.capabilities.supportedOps.includes("SET_INPUT_GAIN") &&
@@ -814,12 +817,12 @@
       const ui=Number(input.dataset.channelId),id=nativeByUiId.get(ui);
       const channel=next?.graph?.channels?.find(ch=>ch.id===id);
       const plan=wireVM.channelSumLevelPlan(next,flags.acceptedGraphConnected,
-        id,channel?.controls?.faderDb);
+        id,channel?.controls?.wireSumGainDb);
       const ready=Number.isSafeInteger(ui)&&plan.kind==="READY";
       if(input.disabled===ready)input.disabled=!ready;
       const title=ready?
-        "CH LVL after SUM · native ChannelId fader / ACK readback":
-        "CH LVL locked · verify native audio device and SET_FADER admission";
+        "WIRE SUM LVL · independent of GAIN and channel fader":
+        "WIRE SUM LVL locked · verify native audio device and scalar admission";
       if(input.title!==title)input.title=title;
     }
   }
@@ -941,16 +944,17 @@
       const visualDb=Number.isFinite(db)?pendingFaderVisualDb(t,db):null;
       const switchChanged=t.mute!==c.mute||t.solo!==c.solo;
       if(faderChanged)t.level=db;
-      // WIRE receiver LVL is the same channel fader after all incoming
-      // routes have SUMmed. Readback must never bind it to a sender EdgeId.
+      // Independent WIRE sum scalar, never a fader or sender EdgeId.
+      const sumDb=c.wireSumGainDb;
+      if(Number.isFinite(sumDb))t.wireSumGainDb=sumDb;
       const sumKnob=document.querySelector(
         '.strip[data-id="'+t.id+'"] input[data-field="wireChannelLevel"]');
       if(sumKnob){
         // This updater paints an accepted scalar, NOT device admission.
         // syncReceiverSumLevelAdmission owns enabling/disabling the pot.
-        if(!scope?.wireGainDragging&&Number.isFinite(db)&&
+        if(!scope?.wireGainDragging&&Number.isFinite(sumDb)&&
            document.activeElement!==sumKnob){
-          sumKnob.value=String(Math.max(-60,Math.min(6,db)));
+          sumKnob.value=String(Math.max(-60,Math.min(6,sumDb)));
           scope?.paintWireKnob?.(sumKnob,Number(sumKnob.value));
         }
       }
@@ -978,18 +982,16 @@
       if(ui===undefined)continue;
       for(const input of document.querySelectorAll?.('.wire-gain[data-wire-id="'+ui+'"]')||[]){
         const fixed=edge.primaryOutput===true;
-        const primary=wireVM.primaryChannelLevelPlan(next,
-          flags.acceptedGraphConnected,edge.from,edge.edgeId);
-        const disabled=!!next.retained||(fixed&&primary.kind!=="READY");
+        const disabled=!!next.retained||fixed;
         if(input.disabled!==disabled)input.disabled=disabled;
         const title=fixed?
-          "PRIMARY CH LEVEL · follows this channel fader; serial WIRE stays UNITY (no extra MAIN sum)":
+          "PRIMARY OUT · fixed unity; receiver WIRE SUM LVL is independent":
           next.retained?"WIRE level locked until audio device reconnects":
           "Parallel SEND level · editable via native EdgeId ACK/readback";
         if(input.title!==title)input.title=title;
         const label=input.parentElement?.querySelector(".wire-gain-caption");
-        if(label&&label.textContent!==(fixed?"CH LVL":"LVL"))
-          label.textContent=fixed?"CH LVL":"LVL";
+        if(label&&label.textContent!==(fixed?"UNITY":"LVL"))
+          label.textContent=fixed?"UNITY":"LVL";
         input.parentElement?.classList.toggle("is-primary-unity",fixed);
         input.setAttribute("aria-label",title);
       }
@@ -1563,9 +1565,10 @@
       status("BUS added · native ChannelId PCM and WIRE readback verified");
     }
   }
-  function requestNativeBusCreate(track=false){
+  function requestNativeBusCreate(track=false,fxBus=false){
     if(logicalView)
-      return logicalIntent(track?"CREATE_CHANNEL":"CREATE_GROUP",null,{}).ok;
+      return logicalIntent(track?"CREATE_CHANNEL":"CREATE_GROUP",null,
+        track?{}:{name:(fxBus?"FX Bus ":"Aux Bus ")+(logicalView.graph.channels.length+1)}).ok;
     const accepted=controller?.state()?.current,operation=
       track?"CREATE_CHANNEL":"CREATE_GROUP";
     const plan=stripVM.rosterMutationPlan(accepted,{
@@ -1577,7 +1580,7 @@
     const requestId=(track?"track-":"bus-")+(++stripRequestSerial);
     pendingBusCreate={requestId,track,...plan.pending};
     syncAddTrack(accepted);
-    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload});
+    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload,purpose:fxBus?"FX":"AUX"});
     const label=track?"Audio Track":"BUS";
     status("Adding "+label+" → MAIN · native PCM pending");
     window.setTimeout(()=>{
@@ -2468,14 +2471,14 @@
     // The user explicitly attempted a live input or FX operation. Avoid
     // disruptive startup popups, silent driver fallback or repeated overlays
     // from the 12 Hz status/readback loop.
-    if(logicalView || deviceBusy())return false;
+    if(deviceBusy()||deviceReady())return false;
     const now=performance.now();
     if(now-lastAudioRepairAt<1600)return true;
     lastAudioRepairAt=now;
     nativeToast(context+" · Audio I/O perlu diperiksa");
     status("AUDIO NOT READY · choose and Apply the correct driver and endpoint");
     window.setTimeout(()=>{
-      if(!logicalView&&!deviceBusy()&&(!devicePanel||devicePanel.hidden))
+      if(!deviceReady()&&!deviceBusy()&&(!devicePanel||devicePanel.hidden))
         openNativeAudioIO(); // explicit repair prompt, no automatic Apply
     },220);
     return true;
@@ -3486,10 +3489,10 @@
           status("Retained FX slot changed before offline editor could open");
         }
       }
-      const addBus=document.getElementById("addBus");
-      if(addBus){
-        addBus.hidden=readModel.kind==="RETAINED_OFFLINE";
-        addBus.disabled=!!pendingLogical||readModel.kind==="RETAINED_OFFLINE";
+      for(const id of ["addBus","addFx"]){
+        const addBus=document.getElementById(id);if(!addBus)continue;
+        addBus.hidden=false;
+        addBus.disabled=!!pendingLogical||staged.readOnly||!staged.graph.capabilities.supportedOps.includes("CREATE_GROUP");
       }
       status(staged.readOnly?
         "Saved mixer recovery required · Open a verified .smix file":
@@ -3545,11 +3548,10 @@
     syncAddTrack(next);
     if(pendingTrackDelete && pendingTrackDelete.epoch!==next?.device?.epoch)
       pendingTrackDelete=null;
-    const addBus=document.getElementById("addBus");
-    if(addBus){
-      addBus.hidden=!nativeAdmitted ||
-        !caps?.supportedOps?.includes("CREATE_GROUP");
-      addBus.disabled=!!pendingBusCreate||!!pendingTrackDelete;
+    for(const id of ["addBus","addFx"]){
+      const addBus=document.getElementById(id);if(!addBus)continue;
+      addBus.hidden=false;
+      addBus.disabled=!nativeAdmitted||!caps?.supportedOps?.includes("CREATE_GROUP")||!!pendingBusCreate||!!pendingTrackDelete;
     }
     if (transientPlan.drainNativeSources &&
          !activeNativeSource && pendingNativeSources.size) {
@@ -4042,6 +4044,9 @@
       if (!field)return false;
       const t=scope?.findTrack?.(el) || null;
       if (!t)return true;
+      if(field==="input"&&event.type==="change"&&!deviceReady()){
+        recommendAudioRepair("INPUT membutuhkan perangkat audio");el.value=String(t.input);return true;
+      }
       if(controller?.state()?.current?.retained&&!logicalView){
         if(field==="input"&&event.type==="change")
           recommendAudioRepair("INPUT kehilangan perangkat audio");
@@ -4103,13 +4108,13 @@
         return true;
       }
       if(field==="wireChannelLevel"){
-        const db=Number(el.value),current=controller?.state()?.current;
-        const plan=wireVM.channelSumLevelPlan(current,
-          flags.acceptedGraphConnected,nativeIdFor(t),db);
-        if(plan.kind!=="READY"||!streamFaderControl("faderDb",t,db,event.type==="change")){
-          if(!deviceReady())recommendAudioRepair("CH LVL belum aktif");
-          status("CH SUM LVL unavailable · verify receiver and Audio I/O");
-          if(event.type==="change")scope?.syncFaderVisual?.(t);
+        const db=Number(el.value);
+        if(!requestLiveWireSumGain(t,db,event.type==="change")){
+          if(!deviceReady())recommendAudioRepair("WIRE SUM LVL belum aktif");
+          status("WIRE SUM LVL unavailable · verify receiver and Audio I/O");
+          if(Number.isFinite(t.wireSumGainDb)){
+            el.value=String(t.wireSumGainDb);scope?.paintWireKnob?.(el,t.wireSumGainDb);
+          }
           return true;
         }
         scope?.paintWireKnob?.(el,db);
@@ -4481,14 +4486,10 @@
       const id=nativeByUiId.get(uiChannelId);
       const row=current?.graph?.channels?.find(ch=>ch.id===id);
       return wireVM.channelSumLevelPlan(current,
-        flags.acceptedGraphConnected,id,Number(row?.controls?.faderDb)).kind==="READY";
+        flags.acceptedGraphConnected,id,Number(row?.controls?.wireSumGainDb)).kind==="READY";
     },
     canWireGain(uiEdgeId,uiSourceId){
-      const primary=wireVM.primaryChannelLevelPlan(
-        controller?.state()?.current,flags.acceptedGraphConnected,
-        nativeByUiId.get(uiSourceId),wireByUiId.get(uiEdgeId));
-      return primary.kind==="READY"||
-        !!admittedParallelWire(uiSourceId,uiEdgeId,"SET_WIRE_GAIN");
+      return !!admittedParallelWire(uiSourceId,uiEdgeId,"SET_WIRE_GAIN");
     },
     canWireTap(uiEdgeId,uiSourceId){
       if(logicalView){
@@ -4740,7 +4741,7 @@
       if (!connected)return false;
       // Reset the parameter the fader CURRENTLY owns. A SOF reset must not
       // write the main channel's SET_FADER or M4 faderDb by accident.
-      if (event.target.classList.contains("fader")){
+      if (event.target.closest?.(".fader-box")||event.target.classList.contains("fader")){
         if(scope?.sofEnabled&&t?.kind==="audio"){
           const edge=selectedNativeSofEdge(t),id=edge&&uiByWireId.get(edge.edgeId);
           if(!edge||id===undefined||
@@ -4748,7 +4749,8 @@
             status("SOF unity reset unavailable · select one admitted SEND");
           return true;
         }
-        dispatchControlCommand("SET_FADER",t,{valueDb:0});
+        if(!streamFaderControl(t.kind==="master"?"masterGain":"faderDb",t,0,true))
+          dispatchControlCommand("SET_FADER",t,{valueDb:0});
       }
       else if(event.target.closest?.(".gain-dial")){
         if(t?.kind!=="audio"||t.nativeGainAvailable!==true)
@@ -4817,8 +4819,8 @@
       status("PLUGIN MANAGER · "+action+" requested from native JUCE");
       return;
     }
-    if(target.id==="addBus"||target.id==="addTrack"){
-      requestNativeBusCreate(target.id==="addTrack");return;
+    if(target.id==="addBus"||target.id==="addTrack"||target.id==="addFx"){
+      requestNativeBusCreate(target.id==="addTrack",target.id==="addFx");return;
     }
     status("NATIVE: "+target.id+" requires admitted engine operation");
   },true);
@@ -4885,10 +4887,13 @@
     paste:"Native channel paste not yet admitted",
     clearCue:"PFL requires dedicated physical monitoring",
     preview:"Demo meters never run inside the native audio host",
-    reset:"Demo reset must not erase a live mixer",
-    addFx:"Use a verified FX insert slot on an admitted channel"
+    reset:"Demo reset must not erase a live mixer"
   });
   function presentNativeOnlyTools(){
+    for(const [id,label] of [["addBus","+ AUX / BUS"],["addFx","+ FX Bus"]]){
+      const el=document.getElementById(id);if(el){el.textContent=label;el.hidden=false;el.disabled=true;
+        el.title="Create a receiving GROUP with independent routing and insert rack";}
+    }
     for(const [id,reason] of Object.entries(nativeReferenceOnly)){
       const el=document.getElementById(id);
       if(!el)continue;

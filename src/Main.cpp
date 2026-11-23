@@ -643,6 +643,7 @@ public:
         setIcon (approvedAppIcon());
         setResizable (true, false);
         setResizeLimits (1100, 650, 3840, 2160);
+        setWantsKeyboardFocus(true);
         setContentNonOwned (&browser_, false);
         // A fixed 1650x930 initial HWND exceeds the *logical* Windows work
         // area on high-DPI laptops. Clamp BEFORE WebView2 first navigation,
@@ -668,6 +669,15 @@ public:
         // an authenticated GUI handshake and initial compositor paint.
         // Defer initial scan until explicitly requested in Plugin Manager.
         // Startup must not spend seconds enumerating third-party VST3 modules.
+    }
+
+    bool keyPressed(const juce::KeyPress& key) override {
+#if JUCE_WINDOWS
+        if(key.getKeyCode()==juce::KeyPress::F11Key && !key.getModifiers().isAnyModifierKeyDown()) {
+            toggleOperatorFullscreen();return true;
+        }
+#endif
+        return juce::DocumentWindow::keyPressed(key);
     }
 
     // Rebind the embedded WebView2 controller whenever its JUCE content
@@ -2532,18 +2542,7 @@ private:
     }
 
     void handleLogicalMixerIntent(const juce::var& request) {
-        if(retainedOfflineFxActive_&&engine_.hasRetainedNativeSession()) {
-            const auto operation=request.getProperty("operation","").toString();
-            if(operation!="SET_FX_SLOT_BYPASS"&&operation!="SET_FX_RACK_BYPASS") {
-                auto ack=std::make_unique<juce::DynamicObject>();
-                ack->setProperty("requestId",request.getProperty("requestId",{}));
-                ack->setProperty("status","REJECTED");
-                ack->setProperty("errorCode","RETAINED_OFFLINE_FX_ONLY");
-                if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
-                    "arMixLogicalAck",juce::var(ack.release()));
-                return;
-            }
-        }
+        // Durable logical workspace edits never grant PCM admission.
         const auto snapshot=approvedNativeSnapshot();
         logicalMixer_.handleIntent(request,{
             deviceApply_.busy() || nativeShowBusy_ || studioBackupBusy_ ||
@@ -2603,15 +2602,7 @@ private:
                 juce::String(retainedOfflineEpoch_));
             offline.getDynamicObject()->setProperty("retainedGraphRevision",
                 juce::String(retainedOfflineRevision_));
-            // Only FX controls can write this pending .smix; never expose
-            // offline WIRE/fader/physical output as a live control operation.
-            auto caps=offline.getProperty("graph",{}).getProperty("capabilities",{});
-            if(auto* mutableCaps=caps.getDynamicObject()) {
-                juce::Array<juce::var> allowed;
-                allowed.add("SET_FX_SLOT_BYPASS");
-                allowed.add("SET_FX_RACK_BYPASS");
-                mutableCaps->setProperty("supportedOps",juce::var(std::move(allowed)));
-            }
+            // Preserve supported offline edits; physical output stays disarmed.
             accepted.getDynamicObject()->setProperty("logicalMixer",std::move(offline));
         } else if(!static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",false)) &&
                   authority!="CHANNEL_ID" && authority!="M4" &&
@@ -7070,7 +7061,7 @@ private:
                     result=engine_.editNativeBus(ep,rev,roster,
                         armix::mixer::ChannelRole::group,
                         std::span<const armix::mixer::ChannelId>{},
-                        "Bus "+std::to_string(count+1),1.f);
+                        (args.getProperty("purpose","").toString()=="FX"?"FX Bus ":"Aux Bus ")+std::to_string(count+1),1.f);
                 }
             }
             auto ack=std::make_unique<juce::DynamicObject>();
@@ -8710,12 +8701,15 @@ private:
     armix::device::AsioRestartRecoveryGate asioRecoveryGate_;
 
     void serviceAsioMixerRestart() {
+        if(retainedOfflineFxActive_)return; // never rebind stale PCM over edited .smix
         const auto epoch=engine_.dryRoutingLabEpoch();
         const bool retained=engine_.hasRetainedNativeSession();
         const bool silent=!mixerSessionRecoveryPending_ &&
             engine_.hasPristineSilentMixerAwaitingAsio();
         auto* current=engine_.devices().getCurrentAudioDevice();
         const bool missingDevice=!current || !current->isOpen();
+        if(retained && missingDevice)return; // explicit repair; no blocking vendor reopen on GUI timer
+
         if((epoch==asioRecoveryEpoch_ && !missingDevice &&
             !directCallbackStalled_ && !engine_.mainInterruptedByDevice()) ||
            (!retained && !silent) ||
@@ -8957,6 +8951,7 @@ private:
     }
 
     void serviceWasapiDeviceContinuity() {
+        if(retainedOfflineFxActive_)return;
         if(!audioEngineStarted_ || !verifiedWasapiSetup_ ||
            engine_.independentClockActive() || deviceApply_.busy() ||
            (audioSetupWindow_ && audioSetupWindow_->isVisible()) ||
@@ -8965,6 +8960,7 @@ private:
            engine_.diagnosticRoute()!=armix::diagnostics::Route::normal)return;
         auto& manager=engine_.devices();
         auto* device=manager.getCurrentAudioDevice();
+        if(engine_.hasRetainedNativeSession()&&(!device||!device->isOpen()))return;
         juce::AudioDeviceManager::AudioDeviceSetup live;
         manager.getAudioDeviceSetup(live);
         const bool expected=device && device->isOpen() &&

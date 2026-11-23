@@ -335,6 +335,10 @@
       return ch.role==="INPUT" && Number.isFinite(payload.valueDb) &&
         Number.isFinite(ch.controls?.inputGainDb) &&
         Math.abs(ch.controls.inputGainDb-payload.valueDb)<=0.12;
+    if (operation === "SET_WIRE_SUM_GAIN")
+      return ["INPUT","GROUP","FX_RETURN"].includes(ch.role) && Number.isFinite(payload.valueDb) &&
+        Number.isFinite(ch.controls?.wireSumGainDb) &&
+        Math.abs(ch.controls.wireSumGainDb-payload.valueDb)<=0.12;
     if (operation === "SET_FADER")
       return Number.isFinite(payload.valueDb) &&
         Math.abs(ch.controls.faderDb-payload.valueDb)<=0.11;
@@ -535,6 +539,10 @@
         return !!row && row.role==="INPUT" && Number.isFinite(v.valueDb) &&
           Number.isFinite(row.controls?.inputGainDb) &&
           Math.abs(row.controls.inputGainDb-v.valueDb)<0.12;
+      case "SET_WIRE_SUM_GAIN":
+        return !!row && ["INPUT","GROUP","FX_RETURN"].includes(row.role) && Number.isFinite(v.valueDb) &&
+          Number.isFinite(row.controls?.wireSumGainDb) &&
+          Math.abs(row.controls.wireSumGainDb-v.valueDb)<0.12;
       case "SET_FADER":
         return !!row && Number.isFinite(v.valueDb) &&
           Number.isFinite(row.controls?.faderDb) &&
