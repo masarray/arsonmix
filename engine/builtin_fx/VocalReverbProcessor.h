@@ -145,7 +145,10 @@ public:
     void processBlock(juce::AudioBuffer<float>& pcm,juce::MidiBuffer&) override {
         juce::ScopedNoDenormals noDenormals;
         if(!ready_||pcm.getNumChannels()<2||pcm.getNumSamples()<=0)return;
-        consumeRealtimeEdits();
+        // The existing FxInstance calls consumeRealtimeEdits() ONCE before
+        // invoking a fully-bypassed continuous processor. Do not pop another
+        // packet here: that would double RT automation work per callback.
+        if(!fullyBypassed_)consumeRealtimeEdits();
         if(fullyBypassed_ && !draining_)return; // parked tank, minimal CPU
         const auto frames=static_cast<std::size_t>(pcm.getNumSamples());
         auto* left=pcm.getWritePointer(0);

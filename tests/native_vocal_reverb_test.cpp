@@ -159,6 +159,23 @@ int main() {
         created->processBlock(buffer,midi);
     }
     assert(typed->processedBlocks()==parked);
+    // Simulate the SAME FxInstance full-bypass contract: exactly one
+    // mailbox edit is ACKed by the host hook per callback, not a hidden
+    // second pop from the continuous tail-rendering processBlock().
+    auto updateA=vocalReverbFactoryPreset(1),updateB=vocalReverbFactoryPreset(2);
+    const auto idA=typed->queueSettings(updateA);
+    const auto idB=typed->queueSettings(updateB);
+    assert(idA && idB>idA && !typed->stateSnapshotQuiescent());
+    typed->consumeRealtimeEdits();
+    buffer.clear();
+    created->processBlock(buffer,midi);
+    assert(typed->appliedRequestId()==idA);
+    assert(!typed->stateSnapshotQuiescent());
+    typed->consumeRealtimeEdits();
+    buffer.clear();
+    created->processBlock(buffer,midi);
+    assert(typed->appliedRequestId()==idB);
+    assert(typed->stateSnapshotQuiescent());
     typed->onRealtimeBypass(false,false);
     float worstGhost=0.f;
     for(int i=0;i<40;++i) {
