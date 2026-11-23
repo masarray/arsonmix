@@ -5,7 +5,7 @@ Cloudflare-specific credentials. A custom domain uses / instead of /arsonmix/.
 """
 import json
 import re
-from public_fx_pages import FX_SLUGS
+from public_fx_pages import FX_SLUGS, FX_PAGES, SCENES
 from urllib.parse import urlsplit
 from xml.sax.saxutils import escape
 
@@ -69,12 +69,33 @@ def render_landing_metadata(html, public_url):
 
 
 def sitemap_xml(public_url):
-    urls = (public_url, public_url + "preview/",
-            *(public_url + "effects/" + slug + "/" for slug in FX_SLUGS))
-    return ('<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-            + "".join("  <url><loc>" + escape(url) + "</loc></url>\n" for url in urls)
-            + "</urlset>\n")
+    """HTML-first discoverability plus official Google image sitemap extension.
+
+    One URL per page, with its relevant genuine visual assets. The optional
+    image elements never replace crawlable HTML <img src> fallbacks.
+    """
+    details = {page["slug"]: page for page in FX_PAGES}
+    resources = [(public_url, ("console-overview.jpg", "console-routing.jpg",
+                                "console-faders.jpg")),
+                 (public_url + "preview/", ())]
+    for slug in FX_SLUGS:
+        pics = [details[slug]["image"]]
+        if slug == "immersib":
+            pics.extend(filename for _, filename in SCENES)
+        # The lead concert scene also appears in the 6-scene venue gallery.
+        unique_pics = tuple(dict.fromkeys(pics))
+        resources.append((public_url + "effects/" + slug + "/", unique_pics))
+    lines = ['<?xml version="1.0" encoding="UTF-8"?>',
+             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" '
+             'xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">']
+    for page_url, images in resources:
+        lines.append("  <url><loc>" + escape(page_url) + "</loc>")
+        for file in images:
+            lines.append("    <image:image><image:loc>" +
+                         escape(public_url + "media/" + file) +
+                         "</image:loc></image:image>")
+        lines.append("  </url>")
+    return "\n".join(lines + ["</urlset>", ""])
 
 
 def robots_txt(public_url):

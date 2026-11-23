@@ -27,6 +27,13 @@ def browser_check(page):
     assert page.locator(".os-card").count() == 3
     assert page.locator(".app-shot img").count() == 1
     assert page.locator(".gallery img").count() == 3
+    hero_image = page.locator(".app-shot img")
+    assert hero_image.get_attribute("srcset").count(" 960w") == 1
+    assert hero_image.get_attribute("srcset").count(" 1440w") == 1
+    assert page.locator(".gallery-large img").get_attribute("srcset")
+    assert page.locator(".gallery-pair img").first.get_attribute("srcset")
+    hero_image.evaluate("img => img.decode()")
+    assert hero_image.evaluate("img => img.complete && img.naturalWidth >= 960")
     # Public conversion path: authentic rack image, six described FX, first
     # sound guide, and one-click feedback, on desktop AND phone.
     assert page.locator("#effects .fx-list article").count() == 8
