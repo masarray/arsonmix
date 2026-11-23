@@ -33,7 +33,12 @@ def browser_check(page):
     assert page.locator(".gallery-large img").get_attribute("srcset")
     assert page.locator(".gallery-pair img").first.get_attribute("srcset")
     hero_image.evaluate("img => img.decode()")
-    assert hero_image.evaluate("img => img.complete && img.naturalWidth >= 960")
+    # With width-descriptor srcset, naturalWidth is density-corrected CSS px,
+    # not the physical JPEG width; assert actual decode + approved currentSrc.
+    assert hero_image.evaluate("img => img.complete && img.naturalWidth > 300")
+    assert hero_image.evaluate(
+        "img => /\\/media\\/console-overview(?:-(?:960|1440))?\\.jpg$/.test("
+        "new URL(img.currentSrc).pathname)")
     # Public conversion path: authentic rack image, six described FX, first
     # sound guide, and one-click feedback, on desktop AND phone.
     assert page.locator("#effects .fx-list article").count() == 8
