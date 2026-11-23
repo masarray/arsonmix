@@ -7016,8 +7016,9 @@ test("P0 routing commands remain usable in More at all desktop widths",()=>{
  const base=read("site/preview-v2/assets/mixer-chrome-material.css");
  const ux=read("site/preview-v2/assets/mixer-contextual-buttons.css");
  const page=read("site/preview-v2/index.html");
- assert.match(base,/\.more-tools-panel \.wire-overflow\{display:block!important\}/);
- assert.doesNotMatch(base,/\.more-tools-panel \.wire-overflow\{display:none!important\}/);
+ // Immutable hardware baseline is preserved; the UX owner controls the move.
+ assert.match(base,/\.more-tools-panel \.wire-overflow\{display:none!important\}/);
+ assert.match(ux,/\.app \.more-tools-panel \.wire-overflow\{display:block!important\}/);
  assert.match(ux,/#wireNavigatorToggle,#wireMatrixToggle/);
  assert.match(page,/data-wire-open="routes"/);
  assert.match(page,/data-wire-open="matrix"/);
