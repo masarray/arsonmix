@@ -65,3 +65,17 @@ The first structural reconstruction improved correct geometry but was still **no
 **Visual defect corrected:** the Plate algorithm dropdown at (939,120) visually overlapped the Dry/Wet hero label. It now occupies the space under the original AR-VERB label at y95–119; the hero caption begins y125. The native CTest adds a non-overlap invariant. The cramped half-visible text in the 10 px bottom cabinet lip is removed, and editable JUCE Slider numeric values sit directly on the continuous blue LCD rather than seven dark rectangular boxes.
 
 **Functional visual evidence:** the screenshot test renders meters with 16 blocks of authentic, bounded, stereo PCM against a separate native processor instance, then allows the existing 30 Hz UI timer to sample audio-owned float peak atomics. The main DSP/state/ACK test processor remains pristine; screenshot pulses do **not** count as a simulated ASIO hardware test. No fake illuminated LED or extra callback is added. The test asserts bright-vs-dark segments, each real tab's active controls, stable hero controls, 100% and 150% editor snapshots, and DSP parameter text round-trip.
+
+
+## REVERB-SIS brand cleanup and six-page collision gate — 24 Nov 2026
+The owner reviewed the ACTUAL Windows JUCE screenshot from SHA 7d466711 and expressly requested a premium, minimalist faceplate. Retain the curved HD-CART-inspired ORIGINAL vector silhouette, graphite/blue palette, stereo PCM meters, two persistent hero knobs, and six parameter tabs; remove all nonfunctional marketing text.
+
+- Single visible identity: `REVERB-SIS` in an understated 22pt font at x47,y65,width247,height32; no logo glyph or icon.
+- Remove the source strings `BUILT-IN / 8 VOICE PRESETS`, `ARSONMIX / VOCAL REVERB`, `AR-VERB`, and the visual `PCM OK` label entirely, not merely painting over them.
+- DSP PCM-applied ACK and pending edit state remain live; they update the preset selector tooltip only when state changes. No foreground thread status stamp and no native DSP behavioral/serialization/catalog ID alteration.
+- Fix a measured layout defect: five 120-pixel-wide caption boxes had only 115-pixel pitch (5-pixel overlap). New captions are 108 px wide with **7 px clear gutters**, centered on the true knobs; y224 creates separation from tabs ending at y219.
+- Rebalance top-right selector to x934,y78,width139,height28, distinctly above the Dry/Wet heading at y125. Preserve the central preset bay at y17.
+- Real native JUCE test iterates **all six tabs** and asserts exactly 7 visible sliders and captions, all captions inside editor bounds, zero intersecting caption boxes, zero caption collisions with any tab, and persistent hero controls. The test also asserts exact brand and absence of the removed status label.
+- All changes in one owned JUCE native editor, no new render loop, no duplicate WebView/PCM graph, no new DSP or latency, no source-owned branding assets copied.
+
+Screenshots must be rendered again at 100% and 150% native Windows DPI, compared against both the previous Windows artifact and user-supplied HD-CART reference. Do not claim 100% pixel fidelity or installer readiness without full gate and physical ASIO FAT.

@@ -44,6 +44,15 @@ int main() {
     auto* algorithmSelect=dynamic_cast<juce::ComboBox*>(
         ui->findChildWithID("armix.reverb.algorithm"));
     assert(mainDecay&&mainMix&&presetSelect&&algorithmSelect);
+    auto* productTitle=dynamic_cast<juce::Label*>(
+        ui->findChildWithID("armix.reverb.title"));
+    assert(productTitle && productTitle->getText()=="REVERB-SIS");
+    // Visual status is intentionally hidden. PCM-applied ACK remains on the
+    // processor and contextual tooltip, never a permanently printed stamp.
+    assert(ui->findChildWithID("armix.reverb.status")==nullptr);
+    assert(ui->getLocalBounds().contains(productTitle->getBounds()));
+    assert(!productTitle->getBounds().intersects(presetSelect->getBounds()));
+    assert(productTitle->getBottom()<mainDecay->getY());
     // Live LCDs show native-realistic physical units and round-trip text
     // edits to the SAME float parameter. No 8-decimal debug readouts.
     assert(mainDecay->getTextFromValue(2.05)=="2.05 s");
@@ -54,7 +63,11 @@ int main() {
     assert(!mainDecay->getBounds().intersects(mainMix->getBounds()));
     assert(presetSelect->getNumItems()==9 && algorithmSelect->getNumItems()==4);
     const auto* wetLabel=ui->findChildWithID("armix.reverb.label.0");
-    assert(wetLabel && algorithmSelect->getBottom()<=wetLabel->getY());
+    const auto* decayLabel=ui->findChildWithID("armix.reverb.label.2");
+    assert(wetLabel&&decayLabel);
+    assert(algorithmSelect->getBottom()<=wetLabel->getY());
+    assert(!algorithmSelect->getBounds().intersects(wetLabel->getBounds()));
+    assert(!productTitle->getBounds().intersects(decayLabel->getBounds()));
     assert(algorithmSelect->getBounds().getBottom()<mainMix->getY()+40);
     for(int i=0;i<6;++i) {
         auto* tab=dynamic_cast<juce::TextButton*>(
@@ -62,6 +75,48 @@ int main() {
         assert(tab&&tab->isVisible()&&!tab->getBounds().isEmpty());
         assert(ui->getLocalBounds().contains(tab->getBounds()));
     }
+    // Layout-contract QA across ALL six actual JUCE pages, not just the
+    // factory MIX screenshot. Text bounds have 7px gutters in each 115px
+    // column; previous 120px labels overlapped their neighbours by 5px.
+    for(int page=0;page<6;++page) {
+        auto* button=dynamic_cast<juce::TextButton*>(
+            ui->findChildWithID("armix.reverb.tab."+juce::String(page)));
+        assert(button && button->onClick);
+        button->onClick();
+        std::array<juce::Rectangle<int>,7> occupied{};
+        int visibleLabels=0, visibleKnobs=0;
+        for(int i=0;i<13;++i) {
+            auto* label=ui->findChildWithID(
+                "armix.reverb.label."+juce::String(i));
+            auto* slider=ui->findChildWithID(
+                "armix.reverb.param."+juce::String(i));
+            assert(label && slider);
+            if(label->isVisible()) {
+                assert(visibleLabels<7);
+                assert(ui->getLocalBounds().contains(label->getBounds()));
+                for(int j=0;j<visibleLabels;++j)
+                    assert(!occupied[static_cast<std::size_t>(j)].intersects(
+                        label->getBounds()));
+                occupied[static_cast<std::size_t>(visibleLabels++)]=label->getBounds();
+                if(i!=0&&i!=2)
+                    assert(label->getWidth()<=110);
+            }
+            if(slider->isVisible())++visibleKnobs;
+        }
+        assert(visibleLabels==7 && visibleKnobs==7);
+        assert(mainDecay->isVisible()&&mainMix->isVisible());
+        // Tabs cannot sit on top of the small-control captions.
+        for(int i=0;i<6;++i) {
+            auto* tab=ui->findChildWithID(
+                "armix.reverb.tab."+juce::String(i));
+            for(const auto& rect:occupied)
+                assert(!tab->getBounds().intersects(rect));
+        }
+    }
+    auto* restoreMix=dynamic_cast<juce::TextButton*>(
+        ui->findChildWithID("armix.reverb.tab.0"));
+    assert(restoreMix && restoreMix->onClick);
+    restoreMix->onClick();
     auto* firstPage=dynamic_cast<juce::Slider*>(
         ui->findChildWithID("armix.reverb.param.1"));
     auto* motionPage=dynamic_cast<juce::Slider*>(
@@ -121,7 +176,6 @@ int main() {
     assert(motion&&motion->onClick);
     motion->onClick(); // same page handler as a real click, no audio change
     assert(motionPage->isVisible()&&!firstPage->isVisible());
-    assert(mainDecay->isVisible()&&mainMix->isVisible());
     assert(mainDecay->isVisible()&&mainMix->isVisible());
     auto motionImage=ui->createComponentSnapshot(ui->getLocalBounds(),true,1.5f);
     assert(motionImage.isValid()&&motionImage.getWidth()==1680&&

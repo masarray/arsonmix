@@ -170,17 +170,11 @@ public:
         if(!processor_.acceptedSettings(draft_))draft_=vocalReverbFactoryPreset(0);
         const auto pale=reverb_ui::rgb(209,224,233);
         const auto cyan=reverb_ui::rgb(107,201,243);
-        title_.setText("ARSONMIX  /  VOCAL REVERB",juce::dontSendNotification);
-        title_.setFont(juce::Font(juce::FontOptions(17.f)));
+        title_.setText("REVERB-SIS",juce::dontSendNotification);
+        title_.setFont(juce::Font(juce::FontOptions(22.f)));
         title_.setColour(juce::Label::textColourId,pale);
         title_.setComponentID("armix.reverb.title");
         addAndMakeVisible(title_);
-
-        status_.setFont(juce::Font(juce::FontOptions(11.f)));
-        status_.setColour(juce::Label::textColourId,reverb_ui::rgb(139,219,194));
-        status_.setJustificationType(juce::Justification::centredRight);
-        status_.setComponentID("armix.reverb.status");
-        addAndMakeVisible(status_);
 
         for(int i=0;i<8;++i)
             preset_.addItem(vocalReverbPresetNames[static_cast<std::size_t>(i)],i+1);
@@ -361,25 +355,9 @@ public:
         g.drawLine(257.f,155.f,257.f,349.f,.8f);
         g.drawLine(865.f,155.f,865.f,349.f,.8f);
 
-        // Original ArSonMix waveform mark (not LiquidSonics branding).
-        g.setColour(rgb(174,186,191));
-        g.drawRoundedRectangle({45.f,62.f,29.f,29.f},2.f,.9f);
-        juce::Path wave;
-        wave.startNewSubPath(49.f,78.f);
-        wave.lineTo(55.f,71.f);wave.lineTo(60.f,83.f);
-        wave.lineTo(66.f,69.f);wave.lineTo(71.f,75.f);
-        g.setColour(rgb(142,209,229));g.strokePath(wave,juce::PathStrokeType(1.7f));
-        g.setColour(rgb(191,199,206));
-        g.setFont(juce::Font(juce::FontOptions(10.f)));
-        g.drawText("BUILT-IN  /  8 VOICE PRESETS",84,91,226,17,
-                   juce::Justification::centredLeft,false);
-        g.setColour(rgb(202,212,218));
-        g.setFont(juce::Font(juce::FontOptions(23.f)));
-        g.drawText("AR-VERB",938,61,130,32,juce::Justification::centredRight,false);
-        g.setColour(rgb(144,157,166));
-        g.setFont(juce::Font(juce::FontOptions(10.f)));
-        // Algorithm selector occupies this space below AR-VERB so its
-        // native dropdown never overlaps the hero knob caption.
+        // One understated signature, no decorative logo or filler subtitle.
+        g.setColour(rgb(127,159,177).withAlpha(.24f));
+        g.drawLine(47.f,104.f,286.f,104.f,.75f);
 
         // Two rows of TWO true PCM meters (L/R), 1:1 with renderer peaks.
         g.setColour(rgb(171,185,193));
@@ -408,12 +386,11 @@ public:
     }
 
     void resized() override {
-        title_.setBounds(84,65,273,27);
+        title_.setBounds(47,65,247,32);
         preset_.setBounds(421,17,271,34);
         prev_.setBounds(380,17,33,34);
         next_.setBounds(701,17,33,34);
-        algorithm_.setBounds(938,95,132,24);
-        status_.setBounds(899,332,167,20);
+        algorithm_.setBounds(934,78,139,28);
         for(std::size_t i=0;i<tabs_.size();++i)
             tabs_[i].setBounds(288+static_cast<int>(i)*94,183,91,36);
         layoutPage();
@@ -493,7 +470,7 @@ private:
                 pages_[static_cast<std::size_t>(page_)][n]);
             const int x=277+static_cast<int>(n)*115;
             knobs_[idx].setBounds(x,221,106,174);
-            labels_[idx].setBounds(x-7,226,120,21);
+            labels_[idx].setBounds(x-1,224,108,21);
             knobs_[idx].setVisible(true);
             labels_[idx].setVisible(true);
         }
@@ -526,10 +503,20 @@ private:
             }
         }
     }
+    // Preserve DSP ACK/readback as a contextual tooltip rather than
+    // permanently printing transport/debug status on the faceplate.
+    void updateFeedbackTooltip() {
+        const int next=!processor_.isReady()?0:(inFlight_||dirty_?1:2);
+        if(next==feedbackState_)return;
+        feedbackState_=next;
+        preset_.setTooltip(next==0?"Audio engine offline":
+            (next==1?"Changes awaiting audio callback":
+                     "Parameters confirmed by the audio engine"));
+    }
     void timerCallback() override {
         if(inFlight_ && processor_.appliedRequestId()>=inFlightId_)inFlight_=false;
         if(!processor_.isReady()) {
-            status_.setText("OFFLINE",juce::dontSendNotification);
+            updateFeedbackTooltip();
             displayPeaks_.fill(0.f);repaint(juce::Rectangle<int>(388,109,437,57));
             return;
         }
@@ -537,8 +524,7 @@ private:
             const auto id=processor_.queueSettings(draft_);
             if(id){inFlightId_=id;inFlight_=true;dirty_=false;}
         }
-        status_.setText(inFlight_?"APPLYING":(dirty_?"QUEUED":"PCM OK"),
-                        juce::dontSendNotification);
+        updateFeedbackTooltip();
         const auto fresh=processor_.meterPeaks();
         for(std::size_t i=0;i<displayPeaks_.size();++i)
             displayPeaks_[i]=std::max(fresh[i],displayPeaks_[i]*.82f);
@@ -547,7 +533,7 @@ private:
     VocalReverbProcessor& processor_;
     VocalReverbSettings draft_;
     reverb_ui::DialLook dial_;
-    juce::Label title_,status_;
+    juce::Label title_;
     juce::ComboBox preset_,algorithm_;
     juce::TextButton prev_,next_;
     std::array<juce::TextButton,6> tabs_;
@@ -557,6 +543,7 @@ private:
     std::uint64_t inFlightId_=0;
     int page_=0;
     bool inFlight_=false,dirty_=false;
+    int feedbackState_=-1;
 };
 inline juce::AudioProcessorEditor* VocalReverbProcessor::createEditor() {
     return new VocalReverbEditor(*this);
