@@ -11,6 +11,7 @@ Reports matched isolated p50/p99. Does not change or certify product audio.
 from __future__ import annotations
 
 import hashlib
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -56,6 +57,9 @@ def historical_reference() -> str:
 
 
 def main() -> int:
+    msvc = len(sys.argv)==2 and sys.argv[1]=="--msvc"
+    if len(sys.argv)>1 and not msvc:
+        raise ValueError("IMMERSIB_P102_INVALID_COMPILER_OPTION")
     current = (ROOT / PATH).read_bytes()
     actual = blob_hash(current)
     if actual != CANDIDATE_BLOB:
@@ -69,23 +73,35 @@ def main() -> int:
         (target / "SonKuEarlyReflectionsApprovedPCM.h").write_text(
             baseline, encoding="utf-8"
         )
-        compiler = [
-            "g++", "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror",
-            "-pedantic", "-ffp-contract=off", "-I", str(ROOT), "-I", str(target),
-            "-DARMIX_IMMERSIB_SHIPPING_AB=1",
-            *["-D" + macro + "=1" for macro in MACROS],
-            str(TEST), "-o", str(target / "shipping_bitexact"),
-        ]
-        subprocess.run(compiler, check=True, cwd=ROOT, timeout=180)
+        if msvc:
+            if shutil.which("cl.exe") is None:
+                raise RuntimeError("IMMERSIB_P102_MSVC_ENV_NOT_INITIALIZED")
+            compiler = [
+                "cl.exe", "/nologo", "/std:c++20", "/O2", "/EHsc",
+                "/fp:precise", "/W3", "/utf-8",
+                "/I" + str(ROOT), "/I" + str(target),
+                "/DARMIX_IMMERSIB_SHIPPING_AB=1",
+                *["/D" + macro + "=1" for macro in MACROS],
+                str(TEST), "/Fe:" + str(target / "shipping_bitexact.exe"),
+            ]
+        else:
+            compiler = [
+                "g++", "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror",
+                "-pedantic", "-ffp-contract=off", "-I", str(ROOT), "-I", str(target),
+                "-DARMIX_IMMERSIB_SHIPPING_AB=1",
+                *["-D" + macro + "=1" for macro in MACROS],
+                str(TEST), "-o", str(target / "shipping_bitexact"),
+            ]
+        subprocess.run(compiler, check=True, cwd=target, timeout=180)
         subprocess.run(
-            [str(target / "shipping_bitexact")],
+            [str(target / ("shipping_bitexact.exe" if msvc else "shipping_bitexact"))],
             check=True, cwd=ROOT, timeout=180,
         )
     print(
         "IMMERSIB_P102_PRODUCTION_SOURCE_AB_PASS "
         f"original={APPROVED_BLOB} candidate={CANDIDATE_BLOB} "
         "algorithm=GUARDED_KERNEL_STASIS source_lock=REFERENCE_SEPARATELY_PINNED "
-        "hardware=NOT_TESTED"
+        "hardware=NOT_TESTED compiler=" + ("MSVC" if msvc else "GCC")
     )
     return 0
 
