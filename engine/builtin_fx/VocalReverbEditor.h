@@ -18,65 +18,146 @@ constexpr float pi=juce::MathConstants<float>::pi;
 
 class DialLook final : public juce::LookAndFeel_V4 {
 public:
+    // Hardware-inspired controls are drawn vectorially at every DPI.
+    // This is original ArSonMix artwork, not HD-CART proprietary bitmaps.
     void drawRotarySlider(juce::Graphics& g,int x,int y,int width,int height,
                           float value,float start,float end,juce::Slider&) override {
-        const float diameter=static_cast<float>(std::min(width,height));
-        const float cx=x+width*.5f;
-        const float cy=y+height*.5f;
-        const bool hero=diameter>=130.f;
-        const float radius=diameter*(hero?.397f:.348f);
-        const float ringRadius=radius+(hero?13.f:9.f);
-        const float thickness=hero?3.2f:2.7f;
-        const auto angle=start+(end-start)*value;
-        g.setColour(rgb(5,9,14).withAlpha(.77f));
-        g.fillEllipse(cx-radius-7.f,cy-radius-5.f,(radius+7.f)*2.f,(radius+7.f)*2.f);
-        g.setColour(rgb(52,69,82));
-        g.drawEllipse(cx-radius-4.f,cy-radius-4.f,(radius+4.f)*2.f,(radius+4.f)*2.f,1.f);
-        juce::Path track;
-        track.addCentredArc(cx,cy,ringRadius,ringRadius,0.f,start,end,true);
-        g.setColour(rgb(39,57,70));
-        g.strokePath(track,juce::PathStrokeType(thickness,juce::PathStrokeType::curved,
-                                                juce::PathStrokeType::rounded));
-        juce::Path active;
-        active.addCentredArc(cx,cy,ringRadius,ringRadius,0.f,start,angle,true);
-        g.setColour(rgb(56,152,197).withAlpha(.28f));
-        g.strokePath(active,juce::PathStrokeType(thickness+7.f,juce::PathStrokeType::curved,
-                                                 juce::PathStrokeType::rounded));
-        g.setColour(rgb(102,205,246));
-        g.strokePath(active,juce::PathStrokeType(thickness,juce::PathStrokeType::curved,
-                                                 juce::PathStrokeType::rounded));
-        const int tickCount=hero?38:25;
-        for(int i=0;i<=tickCount;++i) {
-            const float p=static_cast<float>(i)/static_cast<float>(tickCount);
-            const float a=start+(end-start)*p;
-            const float dot=hero?2.2f:1.65f;
-            const float tx=cx+std::sin(a)*(ringRadius+3.f);
-            const float ty=cy-std::cos(a)*(ringRadius+3.f);
-            g.setColour(p<=value?rgb(130,217,255):rgb(45,62,77));
-            g.fillEllipse(tx-dot*.5f,ty-dot*.5f,dot,dot);
+        const float size=static_cast<float>(std::min(width,height));
+        const float cx=x+width*.5f, cy=y+height*.5f;
+        const bool hero=size>=138.f;
+        const float faceR=size*(hero?.366f:.338f);
+        const float bezelR=faceR+(hero?8.f:5.f);
+        const float ledR=bezelR+(hero?13.f:9.f);
+        const float a=start+(end-start)*juce::jlimit(0.f,1.f,value);
+        // Cabinet inset; deliberately small, smooth overlapping concentric
+        // layers instead of image textures loaded while the audio is running.
+        g.setColour(rgb(3,6,11).withAlpha(.60f));
+        g.fillEllipse(cx-bezelR-4.f,cy-bezelR-2.f,
+                      2.f*(bezelR+4.f),2.f*(bezelR+4.f));
+        g.setColour(rgb(12,14,19));
+        g.fillEllipse(cx-bezelR,cy-bezelR,2.f*bezelR,2.f*bezelR);
+        g.setColour(rgb(94,104,114).withAlpha(.70f));
+        g.drawEllipse(cx-bezelR+1.f,cy-bezelR+1.f,
+                      (bezelR-1.f)*2.f,(bezelR-1.f)*2.f,1.f);
+        g.setColour(rgb(7,10,15));
+        g.drawEllipse(cx-faceR-2.f,cy-faceR-2.f,
+                      (faceR+2.f)*2.f,(faceR+2.f)*2.f,2.8f);
+
+        // HD-CART-inspired short separated segmented LEDs, not a continuous
+        // generic Slider ring. The active segment count is data-driven.
+        const int steps=hero?42:25;
+        const float inner=ledR-(hero?3.8f:2.5f);
+        const float outer=ledR+(hero?3.8f:2.5f);
+        for(int i=0;i<steps;++i) {
+            const float phase=(static_cast<float>(i)+.5f)/static_cast<float>(steps);
+            const float angle=start+(end-start)*phase;
+            const float s=std::sin(angle),c=std::cos(angle);
+            const bool lit=phase<=value;
+            const auto bright=lit?rgb(122,210,250):rgb(45,62,78);
+            if(lit) {
+                g.setColour(bright.withAlpha(.24f));
+                g.drawLine(cx+s*(inner-2.f),cy-c*(inner-2.f),
+                           cx+s*(outer+2.f),cy-c*(outer+2.f),hero?6.5f:4.f);
+            }
+            g.setColour(bright.withAlpha(lit?.98f:.82f));
+            g.drawLine(cx+s*inner,cy-c*inner,cx+s*outer,cy-c*outer,
+                       hero?3.f:2.f);
         }
-        const auto face=juce::Rectangle<float>(cx-radius,cy-radius,radius*2.f,radius*2.f);
-        g.setGradientFill(juce::ColourGradient(rgb(71,78,85),
-            face.getX(),face.getY(),rgb(27,31,38),
-            face.getRight(),face.getBottom(),false));
+
+        const juce::Rectangle<float> face(cx-faceR,cy-faceR,faceR*2.f,faceR*2.f);
+        g.setGradientFill(juce::ColourGradient(rgb(73,78,85),
+                    face.getX()+8.f,face.getY()+3.f,
+                    rgb(23,25,31),face.getRight(),face.getBottom(),false));
         g.fillEllipse(face);
-        g.setColour(rgb(98,110,118).withAlpha(.75f));
-        g.drawEllipse(face.reduced(1.f),1.f);
-        g.setColour(rgb(8,12,17).withAlpha(.8f));
-        g.drawEllipse(face.reduced(4.f),2.f);
-        g.setColour(rgb(108,128,146).withAlpha(.28f));
-        juce::Path bevel;
-        bevel.addCentredArc(cx,cy,radius*.8f,radius*.8f,0.f,
-                            -2.25f,-.60f,true);
-        g.strokePath(bevel,juce::PathStrokeType(1.2f));
-        const float pointerR=radius*.74f;
-        const float px=cx+std::sin(angle)*pointerR;
-        const float py=cy-std::cos(angle)*pointerR;
-        g.setColour(rgb(210,228,237));
-        g.fillEllipse(px-(hero?3.3f:2.8f),py-(hero?3.3f:2.8f),
-                      hero?6.6f:5.6f,hero?6.6f:5.6f);
-        g.setColour(rgb(7,14,20).withAlpha(.65f));
-        g.drawEllipse(px-2.f,py-2.f,4.f,4.f,1.f);
+        g.setColour(rgb(122,133,143).withAlpha(.62f));
+        g.drawEllipse(face.reduced(.7f),1.f);
+        const auto recessed=face.reduced(hero?4.f:2.8f);
+        g.setGradientFill(juce::ColourGradient(rgb(65,70,76),
+                    recessed.getCentreX()*.92f,recessed.getY(),
+                    rgb(27,30,36),recessed.getRight(),recessed.getBottom(),false));
+        g.fillEllipse(recessed);
+        g.setColour(rgb(18,21,27));
+        g.drawEllipse(recessed.reduced(1.f),2.f);
+        juce::Path light;
+        light.addCentredArc(cx,cy,faceR*.81f,faceR*.81f,0.f,
+                            -2.25f,-.62f,true);
+        g.setColour(rgb(176,189,197).withAlpha(.17f));
+        g.strokePath(light,juce::PathStrokeType(hero?1.6f:1.f));
+        // A real moving index mark, centred on the actual JUCE parameter.
+        const float px=cx+std::sin(a)*faceR*.74f;
+        const float py=cy-std::cos(a)*faceR*.74f;
+        g.setColour(rgb(9,12,16));
+        g.fillEllipse(px-3.8f,py-3.8f,7.6f,7.6f);
+        g.setColour(rgb(226,232,235));
+        const float dot=hero?4.7f:3.8f;
+        g.fillEllipse(px-dot*.5f,py-dot*.5f,dot,dot);
+    }
+
+    void drawComboBox(juce::Graphics& g,int width,int height,bool pressed,
+                      int,int,int,int,juce::ComboBox& box) override {
+        const bool preset=box.getComponentID()=="armix.reverb.preset";
+        if(preset) {
+            g.setColour(rgb(10,31,48).withAlpha(.24f));
+            g.fillRoundedRectangle({0.f,0.f,static_cast<float>(width),
+                                    static_cast<float>(height)},3.f);
+            g.setColour(rgb(94,173,209).withAlpha(.35f));
+            g.drawLine(4.f,static_cast<float>(height)-1.f,
+                       static_cast<float>(width)-4.f,static_cast<float>(height)-1.f,1.f);
+        } else {
+            g.setGradientFill(juce::ColourGradient(rgb(32,39,47),0.f,0.f,
+                    rgb(12,18,26),0.f,static_cast<float>(height),false));
+            g.fillRoundedRectangle({0.f,0.f,static_cast<float>(width),
+                                    static_cast<float>(height)},3.f);
+            g.setColour(rgb(72,97,112));
+            g.drawRoundedRectangle({.5f,.5f,static_cast<float>(width)-1.f,
+                                    static_cast<float>(height)-1.f},3.f,1.f);
+        }
+        const float cx=width-15.f, cy=height*.50f;
+        juce::Path chevron;
+        chevron.startNewSubPath(cx-4.f,cy-2.f);
+        chevron.lineTo(cx,cy+2.f);
+        chevron.lineTo(cx+4.f,cy-2.f);
+        g.setColour(pressed?rgb(228,245,251):rgb(111,193,228));
+        g.strokePath(chevron,juce::PathStrokeType(1.5f));
+    }
+    juce::Font getComboBoxFont(juce::ComboBox& box) override {
+        return juce::Font(juce::FontOptions(
+            box.getComponentID()=="armix.reverb.preset"?16.f:12.f));
+    }
+    void drawButtonBackground(juce::Graphics& g,juce::Button& b,
+                              const juce::Colour&,bool hover,bool down) override {
+        const auto id=b.getComponentID();
+        const auto rect=b.getLocalBounds().toFloat();
+        if(id.startsWith("armix.reverb.tab.")) {
+            if(b.getToggleState()) {
+                g.setColour(rgb(105,195,235));
+                g.fillRect(rect.getX()+13.f,rect.getBottom()-2.f,
+                           rect.getWidth()-26.f,2.f);
+            } else if(hover||down) {
+                g.setColour(rgb(102,162,191).withAlpha(.45f));
+                g.fillRect(rect.getX()+13.f,rect.getBottom()-1.f,
+                           rect.getWidth()-26.f,1.f);
+            }
+        } else if(id.startsWith("armix.reverb.preset.")) {
+            if(hover||down) {
+                g.setColour(rgb(65,120,155).withAlpha(.24f));
+                g.fillRoundedRectangle(rect.reduced(2.f),3.f);
+            }
+        } else {
+            juce::LookAndFeel_V4::drawButtonBackground(g,b,
+                rgb(23,32,43),hover,down);
+        }
+    }
+    void drawButtonText(juce::Graphics& g,juce::TextButton& b,
+                        bool hover,bool down) override {
+        const auto id=b.getComponentID();
+        const bool tab=id.startsWith("armix.reverb.tab.");
+        const auto bright=(tab&&b.getToggleState())||
+                          (!tab&&(hover||down));
+        g.setColour(bright?rgb(142,216,250):rgb(158,166,177));
+        g.setFont(juce::Font(juce::FontOptions(tab?11.f:20.f)));
+        g.drawText(b.getButtonText(),b.getLocalBounds(),
+                   juce::Justification::centred,false);
     }
 };
 } // namespace reverb_ui
@@ -110,6 +191,7 @@ public:
         preset_.setColour(juce::ComboBox::textColourId,pale);
         preset_.setColour(juce::ComboBox::arrowColourId,cyan);
         preset_.setJustificationType(juce::Justification::centred);
+        preset_.setLookAndFeel(&dial_);
         preset_.onChange=[this] {
             const auto i=preset_.getSelectedId();
             if(i>=1&&i<=8) {
@@ -127,6 +209,7 @@ public:
         algorithm_.setColour(juce::ComboBox::outlineColourId,reverb_ui::rgb(48,68,82));
         algorithm_.setColour(juce::ComboBox::textColourId,pale);
         algorithm_.setColour(juce::ComboBox::arrowColourId,cyan);
+        algorithm_.setLookAndFeel(&dial_);
         algorithm_.onChange=[this] {
             const int i=algorithm_.getSelectedId()-1;
             if(i>=0&&i<4){draft_.algorithm=i;markCustom();}
@@ -136,6 +219,7 @@ public:
 
         auto setupArrow=[this,cyan](juce::TextButton& b,int step) {
             b.setButtonText(step<0?"<":">");
+            b.setLookAndFeel(&dial_);
             b.setColour(juce::TextButton::buttonColourId,reverb_ui::rgb(9,29,44));
             b.setColour(juce::TextButton::buttonOnColourId,reverb_ui::rgb(25,56,70));
             b.setColour(juce::TextButton::textColourOffId,cyan);
@@ -146,11 +230,12 @@ public:
         prev_.setComponentID("armix.reverb.preset.previous");
         next_.setComponentID("armix.reverb.preset.next");
 
-        constexpr std::array<const char*,4> tabNames{{
-            "MIX","SPACE","TONE","MOTION"
+        constexpr std::array<const char*,6> tabNames{{
+            "MIX","SHAPE","SPACE","TONE","MOTION","DUCKER"
         }};
         for(std::size_t i=0;i<tabs_.size();++i) {
             auto& button=tabs_[i];
+            button.setLookAndFeel(&dial_);
             button.setComponentID("armix.reverb.tab."+juce::String(static_cast<int>(i)));
             button.setButtonText(tabNames[i]);
             button.setColour(juce::TextButton::buttonColourId,reverb_ui::rgb(27,33,41));
@@ -167,27 +252,42 @@ public:
             const auto& d=arverb::parameterInfo(static_cast<arverb::Parameter>(i));
             knob.setLookAndFeel(&dial_);
             knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-            knob.setTextBoxStyle(juce::Slider::TextBoxBelow,false,84,20);
+            knob.setTextBoxStyle(juce::Slider::TextBoxBelow,false,
+                 (i==0||i==2)?126:103,22);
             knob.setRange(d.minimum,d.maximum,0.);
+            knob.setNumDecimalPlacesToDisplay((i==1||i==5||i==6||i==7)?0:2);
+            // Source-unit exact, human-readable LCD values; editable text
+            // round-trips into the SAME native parameter, never UI state.
+            knob.textFromValueFunction=[i](double v) {
+                return formatParameter(i,v);
+            };
+            knob.valueFromTextFunction=[i](const juce::String& text) {
+                return parseParameter(i,text);
+            };
             knob.setValue(draft_.values[i],juce::dontSendNotification);
             knob.setDoubleClickReturnValue(true,d.defaultValue);
-            knob.setColour(juce::Slider::textBoxTextColourId,reverb_ui::rgb(154,214,247));
-            knob.setColour(juce::Slider::textBoxBackgroundColourId,reverb_ui::rgb(7,21,32));
-            knob.setColour(juce::Slider::textBoxOutlineColourId,reverb_ui::rgb(30,60,76));
+            knob.setColour(juce::Slider::textBoxTextColourId,reverb_ui::rgb(147,215,250));
+            knob.setColour(juce::Slider::textBoxBackgroundColourId,reverb_ui::rgb(8,35,56));
+            knob.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
             knob.onValueChange=[this,i]{
                 draft_.values[i]=static_cast<float>(knobs_[i].getValue());
                 markCustom();
             };
             addAndMakeVisible(knob);
             labels_[i].setComponentID("armix.reverb.label."+juce::String(static_cast<int>(i)));
-            labels_[i].setText(juce::String(d.name).toUpperCase(),juce::dontSendNotification);
-            labels_[i].setFont(juce::Font(juce::FontOptions(11.f)));
+            constexpr std::array<const char*,13> shortLabels{{
+                "MIX","PRE-DELAY","DECAY","SIZE","DIFFUSION",
+                "DAMPING","LOW CUT","HIGH CUT","MOD DEPTH",
+                "MOD RATE","WIDTH","EARLY LEVEL","DUCKER"
+            }};
+            labels_[i].setText(shortLabels[i],juce::dontSendNotification);
+            labels_[i].setFont(juce::Font(juce::FontOptions(12.f)));
             labels_[i].setColour(juce::Label::textColourId,reverb_ui::rgb(195,202,208));
             labels_[i].setJustificationType(juce::Justification::centred);
             addAndMakeVisible(labels_[i]);
         }
-        labels_[0].setText("DRY / WET MIX",juce::dontSendNotification);
-        labels_[2].setText("REVERB TIME",juce::dontSendNotification);
+        labels_[0].setText("Dry/Wet Mix",juce::dontSendNotification);
+        labels_[2].setText("Reverb Time",juce::dontSendNotification);
         setSize(1120,430);
         layoutPage();
         processor_.attachMeterView();
@@ -197,83 +297,165 @@ public:
         stopTimer();
         processor_.detachMeterView();
         for(auto& k:knobs_)k.setLookAndFeel(nullptr);
+        for(auto& b:tabs_)b.setLookAndFeel(nullptr);
+        prev_.setLookAndFeel(nullptr);
+        next_.setLookAndFeel(nullptr);
+        preset_.setLookAndFeel(nullptr);
+        algorithm_.setLookAndFeel(nullptr);
     }
 
     void paint(juce::Graphics& g) override {
         using namespace reverb_ui;
         const float w=static_cast<float>(getWidth());
         const float h=static_cast<float>(getHeight());
-        g.fillAll(rgb(13,13,16));
-        // Dark cabinet bevel with a deeply blue top recess.
-        g.setGradientFill(juce::ColourGradient(rgb(52,56,61),0.f,50.f,
-                                                rgb(18,20,26),w,h,false));
-        g.fillRoundedRectangle({9.f,9.f,w-18.f,h-18.f},7.f);
-        g.setColour(rgb(77,84,89).withAlpha(.6f));
-        g.drawRoundedRectangle({9.f,9.f,w-18.f,h-18.f},7.f,1.f);
-        g.setGradientFill(juce::ColourGradient(rgb(11,37,56),0.f,9.f,
-                                                rgb(5,24,42),0.f,61.f,false));
-        g.fillRoundedRectangle({11.f,11.f,w-22.f,58.f},5.f);
-        g.setColour(rgb(58,117,144).withAlpha(.75f));
-        g.drawLine(11.f,68.f,w-11.f,68.f,1.f);
-        g.setGradientFill(juce::ColourGradient(rgb(43,46,51),0.f,75.f,
-                                                rgb(23,26,33),0.f,355.f,false));
-        g.fillRect(11.f,70.f,w-22.f,285.f);
-        // Quiet lower LCD bar, exactly aligned with real knob readouts.
-        g.setGradientFill(juce::ColourGradient(rgb(11,43,66),0.f,354.f,
-                                                rgb(5,27,47),0.f,407.f,false));
-        g.fillRect(11.f,355.f,w-22.f,52.f);
-        g.setColour(rgb(40,99,128));g.drawLine(11.f,355.f,w-11.f,355.f);
-        g.setColour(rgb(16,20,25));g.fillRect(11.f,408.f,w-22.f,9.f);
-        g.setColour(rgb(75,100,118).withAlpha(.65f));
-        g.drawLine(246.f,152.f,246.f,345.f,.7f);
-        g.drawLine(875.f,152.f,875.f,345.f,.7f);
-        g.setColour(rgb(131,163,178));g.setFont(juce::Font(juce::FontOptions(11.f)));
-        g.drawText("NATIVE  |  ZERO-ADDED LATENCY",33,127,220,16,
+        g.fillAll(rgb(11,10,15));
+        const juce::Rectangle<float> cabinet{9.f,9.f,w-18.f,h-18.f};
+        g.setColour(rgb(2,4,9));g.fillRoundedRectangle(cabinet.expanded(1.f),6.f);
+        g.setGradientFill(juce::ColourGradient(rgb(38,44,50),9.f,9.f,
+                  rgb(10,12,18),w-9.f,h-9.f,false));
+        g.fillRoundedRectangle(cabinet,6.f);
+        g.setColour(rgb(91,102,109).withAlpha(.52f));
+        g.drawRoundedRectangle(cabinet,6.f,1.f);
+
+        // The reference's defining silhouette: high navy shoulders with
+        // a gently lowered centre preset bay. Draw original vector geometry
+        // so 100%, 125%, 150% and 200% render from the same source.
+        g.setGradientFill(juce::ColourGradient(rgb(12,51,77),9.f,9.f,
+                  rgb(3,22,42),9.f,64.f,false));
+        g.fillRect(11.f,11.f,w-22.f,50.f);
+        juce::Path body;
+        body.startNewSubPath(11.f,31.f);
+        body.lineTo(241.f,31.f);
+        body.cubicTo(311.f,31.f,337.f,58.f,424.f,59.f);
+        body.lineTo(699.f,59.f);
+        body.cubicTo(789.f,58.f,811.f,31.f,881.f,31.f);
+        body.lineTo(w-11.f,31.f);
+        body.lineTo(w-11.f,355.f);
+        body.lineTo(11.f,355.f);
+        body.closeSubPath();
+        g.setGradientFill(juce::ColourGradient(rgb(49,51,54),11.f,45.f,
+                                                rgb(22,24,30),w-11.f,348.f,false));
+        g.fillPath(body);
+        g.setColour(rgb(110,124,128).withAlpha(.46f));
+        juce::Path shoulder;
+        shoulder.startNewSubPath(11.f,31.f);
+        shoulder.lineTo(241.f,31.f);
+        shoulder.cubicTo(311.f,31.f,337.f,58.f,424.f,59.f);
+        shoulder.lineTo(699.f,59.f);
+        shoulder.cubicTo(789.f,58.f,811.f,31.f,881.f,31.f);
+        shoulder.lineTo(w-11.f,31.f);
+        g.strokePath(shoulder,juce::PathStrokeType(.8f));
+        g.setColour(rgb(46,99,125).withAlpha(.53f));
+        g.drawLine(11.f,10.f,w-11.f,10.f,.9f);
+
+        // Distinct HD-CART-like bottom LCD ribbon, with actual JUCE Slider
+        // editable numeric text boxes over it, rather than duplicate text.
+        g.setGradientFill(juce::ColourGradient(rgb(13,58,91),11.f,354.f,
+                                               rgb(5,29,52),11.f,407.f,false));
+        g.fillRect(11.f,355.f,w-22.f,53.f);
+        g.setColour(rgb(83,153,177).withAlpha(.52f));
+        g.drawLine(11.f,355.f,w-11.f,355.f,1.f);
+        g.setColour(rgb(5,10,17));g.fillRect(11.f,408.f,w-22.f,10.f);
+        // Thin bounded column rules; do not make the screen a card grid.
+        g.setColour(rgb(79,86,93).withAlpha(.35f));
+        g.drawLine(257.f,155.f,257.f,349.f,.8f);
+        g.drawLine(865.f,155.f,865.f,349.f,.8f);
+
+        // Original ArSonMix waveform mark (not LiquidSonics branding).
+        g.setColour(rgb(174,186,191));
+        g.drawRoundedRectangle({45.f,62.f,29.f,29.f},2.f,.9f);
+        juce::Path wave;
+        wave.startNewSubPath(49.f,78.f);
+        wave.lineTo(55.f,71.f);wave.lineTo(60.f,83.f);
+        wave.lineTo(66.f,69.f);wave.lineTo(71.f,75.f);
+        g.setColour(rgb(142,209,229));g.strokePath(wave,juce::PathStrokeType(1.7f));
+        g.setColour(rgb(191,199,206));
+        g.setFont(juce::Font(juce::FontOptions(10.f)));
+        g.drawText("BUILT-IN  /  8 VOICE PRESETS",84,91,226,17,
                    juce::Justification::centredLeft,false);
+        g.setColour(rgb(202,212,218));
+        g.setFont(juce::Font(juce::FontOptions(23.f)));
+        g.drawText("AR-VERB",938,61,130,32,juce::Justification::centredRight,false);
+        g.setColour(rgb(144,157,166));
         g.setFont(juce::Font(juce::FontOptions(10.f)));
-        g.drawText("INPUT  L / R",365,98,90,16,juce::Justification::centredLeft,false);
-        g.drawText("OUTPUT L / R",365,123,90,16,juce::Justification::centredLeft,false);
-        drawMeters(g);
-        g.setColour(rgb(165,185,195));
-        g.setFont(juce::Font(juce::FontOptions(10.f)));
-        g.drawText("DSP  ·  STEREO  ·  " + juce::String(arverb::algorithmName(
-            static_cast<arverb::Algorithm>(draft_.algorithm))).toUpperCase(),
-            37,370,295,22,juce::Justification::centredLeft,false);
-        g.drawText("SING  /  LIVE  /  RECORD",875,370,198,22,
+        g.drawText("REALTIME  /  VOCAL SPACE",898,94,169,16,
                    juce::Justification::centredRight,false);
-        g.setColour(rgb(93,175,214).withAlpha(.64f));
-        g.drawLine(276.f,205.f,844.f,205.f,1.f);
+
+        // Two rows of TWO true PCM meters (L/R), 1:1 with renderer peaks.
+        g.setColour(rgb(171,185,193));
         g.setFont(juce::Font(juce::FontOptions(11.f)));
-        g.setColour(rgb(107,201,243));
-        g.drawText(pageDescription(),292,337,524,16,juce::Justification::centred,false);
+        g.drawText("INPUTS",313,108,74,18,juce::Justification::centredRight,false);
+        g.drawText("OUTPUTS",313,143,74,18,juce::Justification::centredRight,false);
+        drawMeters(g);
+        g.setColour(rgb(125,137,145));
+        g.setFont(juce::Font(juce::FontOptions(9.f)));
+        for(const int x : {393,621}) {
+            g.drawText("-60",x-1,129,26,11,juce::Justification::centredLeft,false);
+            g.drawText("-24",x+60,129,28,11,juce::Justification::centredLeft,false);
+            g.drawText("-6",x+136,129,24,11,juce::Justification::centredLeft,false);
+            g.drawText("0",x+185,129,20,11,juce::Justification::centredLeft,false);
+        }
+        g.setFont(juce::Font(juce::FontOptions(10.f)));
+        g.setColour(rgb(159,168,173));
+        g.drawText("REVERB",833,108,68,18,juce::Justification::centredLeft,false);
+        g.drawText("REFLECTIONS",833,143,89,18,juce::Justification::centredLeft,false);
+
+        g.setColour(rgb(75,90,99).withAlpha(.67f));
+        g.drawLine(291.f,221.f,851.f,221.f,.8f);
+        g.setColour(rgb(106,187,224).withAlpha(.26f));
+        g.drawLine(291.f,222.f,851.f,222.f,.7f);
+        g.setColour(rgb(144,172,185).withAlpha(.54f));
+        g.setFont(juce::Font(juce::FontOptions(10.f)));
+        g.drawText("ARSONMIX  /  ONE NATIVE PCM ENGINE",37,413,293,11,
+                   juce::Justification::centredLeft,false);
     }
 
     void resized() override {
-        title_.setBounds(37,78,310,34);
-        preset_.setBounds(432,20,256,32);
-        prev_.setBounds(383,18,37,36);
-        next_.setBounds(700,18,37,36);
-        algorithm_.setBounds(910,103,162,30);
-        status_.setBounds(789,368,78,23);
+        title_.setBounds(84,65,273,27);
+        preset_.setBounds(421,17,271,34);
+        prev_.setBounds(380,17,33,34);
+        next_.setBounds(701,17,33,34);
+        algorithm_.setBounds(939,120,129,25);
+        status_.setBounds(920,103,149,17);
         for(std::size_t i=0;i<tabs_.size();++i)
-            tabs_[i].setBounds(299+static_cast<int>(i)*142,168,133,31);
+            tabs_[i].setBounds(288+static_cast<int>(i)*94,183,91,36);
         layoutPage();
     }
 
 private:
-    static constexpr std::array<std::array<int,5>,4> pages_{{
-        {{1,11,10,6,7}},  // vocal live essentials: predelay, early, width, filters
-        {{1,3,4,11,10}},  // geometry, density and stereo field
-        {{5,6,7,11,10}},  // HF decay + wet EQ
-        {{8,9,12,3,4}}   // modulation and automatic vocal clarity
+    static constexpr std::array<std::array<int,5>,6> pages_{{
+        {{1,11,10,6,7}},   // MIX: initial delays, wet body and air
+        {{3,4,11,8,9}},   // SHAPE: size, density, reflection, motion
+        {{1,3,4,10,12}},  // SPACE: perception and field
+        {{5,6,7,10,11}},  // TONE: damp, band limits and wet blend
+        {{8,9,4,3,10}},   // MOTION: controlled gentle animation
+        {{12,1,4,11,10}}  // DUCKER: vocal clarity and early energy
     }};
-    juce::String pageDescription() const {
-        switch(page_) {
-            case 0:return "PRE-DELAY       EARLY ENERGY       STEREO FIELD       BODY       AIR";
-            case 1:return "GEOMETRY       ROOM SIZE       DENSITY       REFLECTIONS       WIDTH";
-            case 2:return "HF DAMPING       LOW CUT       HIGH CUT       EARLY       WIDTH";
-            default:return "MOD DEPTH       MOD SPEED       VOCAL DUCK       SIZE       DIFFUSION";
+    // Defined once: the same formatter covers visible readouts and a
+    // user's typed values. Native DSP always owns the real parameter units.
+    static juce::String formatParameter(std::size_t i,double v) {
+        switch(i) {
+            case 0: case 4: case 10: case 11: case 12:
+                return juce::String(v*100.0,0)+" %";
+            case 1: return juce::String(v,0)+" ms";
+            case 2: return juce::String(v,2)+" s";
+            case 3: return juce::String(v,2)+"x";
+            case 5: case 6: case 7:
+                return v>=1000.0?juce::String(v/1000.0,1)+" kHz":
+                                  juce::String(v,0)+" Hz";
+            case 8: return juce::String(v,2)+" ms";
+            case 9: return juce::String(v,2)+" Hz";
         }
+        return juce::String(v,2);
+    }
+    static double parseParameter(std::size_t i,const juce::String& value) {
+        const double v=value.trim().getDoubleValue();
+        if(!std::isfinite(v))return 0.;
+        if(i==0||i==4||i==10||i==11||i==12)
+            return value.containsChar('%')||v>2.0?v/100.0:v;
+        if((i==5||i==6||i==7)&&value.containsIgnoreCase("khz"))
+            return v*1000.0;
+        return v;
     }
     void selectRelativePreset(int delta) {
         const int current=draft_.preset<0?0:draft_.preset;
@@ -287,7 +469,7 @@ private:
         draft_.preset=-1;
         preset_.setSelectedId(9,juce::dontSendNotification);
         dirty_=true;
-        repaint(juce::Rectangle<int>(29,363,842,34));
+        repaint(juce::Rectangle<int>(30,103,1050,295));
     }
     void syncControls() {
         algorithm_.setSelectedId(draft_.algorithm+1,juce::dontSendNotification);
@@ -296,23 +478,25 @@ private:
         repaint();
     }
     void layoutPage() {
+        // A stable six-tab selector; both hero controls never disappear.
+        // The five small controls are re-used, never duplicated and never
+        // animated at audio rate. Input focus remains on native JUCE widgets.
         for(std::size_t i=0;i<knobs_.size();++i) {
             knobs_[i].setVisible(false);
             labels_[i].setVisible(false);
         }
-        // Two hero controls remain visible across every tab, like HD-CART.
-        knobs_[2].setBounds(48,175,185,180);
-        labels_[2].setBounds(43,151,195,21);
-        knobs_[0].setBounds(889,175,184,180);
-        labels_[0].setBounds(882,151,199,21);
+        knobs_[2].setBounds(48,108,185,290);
+        labels_[2].setBounds(40,125,201,23);
+        knobs_[0].setBounds(886,108,185,290);
+        labels_[0].setBounds(882,125,197,23);
         knobs_[2].setVisible(true);labels_[2].setVisible(true);
         knobs_[0].setVisible(true);labels_[0].setVisible(true);
         for(std::size_t n=0;n<5;++n) {
             const auto idx=static_cast<std::size_t>(
                 pages_[static_cast<std::size_t>(page_)][n]);
-            const int x=278+static_cast<int>(n)*115;
-            knobs_[idx].setBounds(x,227,105,108);
-            labels_[idx].setBounds(x-6,207,118,18);
+            const int x=277+static_cast<int>(n)*115;
+            knobs_[idx].setBounds(x,221,106,174);
+            labels_[idx].setBounds(x-7,226,120,21);
             knobs_[idx].setVisible(true);
             labels_[idx].setVisible(true);
         }
@@ -322,23 +506,25 @@ private:
     }
     void drawMeters(juce::Graphics& g) {
         using namespace reverb_ui;
+        // The single native PCM graph supplies all four channel peaks.
+        // Zero fake animation or audio-loop graphics/heap allocation.
         for(int ch=0;ch<4;++ch) {
             const float peak=displayPeaks_[static_cast<std::size_t>(ch)];
             const float db=peak<=1.e-6f?-60.f:20.f*std::log10(peak);
             const int lit=static_cast<int>(juce::jlimit(0.f,20.f,
                                                        (db+60.f)/66.f*20.f));
-            const int x=462+(ch%2)*244;
-            const int y=102+(ch/2)*26;
-            for(int s=0;s<20;++s) {
-                const bool on=s<lit;
-                const auto bright=s>=17?rgb(241,144,113):
-                    (s>=14?rgb(220,193,113):rgb(109,200,241));
-                g.setColour(on?bright:rgb(24,40,52));
-                g.fillEllipse(static_cast<float>(x+s*10),static_cast<float>(y),6.f,6.f);
+            const int x=390+(ch%2)*227;
+            const int y=113+(ch/2)*35;
+            for(int segment=0;segment<20;++segment) {
+                const bool on=segment<lit;
+                const auto bright=segment>=18?rgb(241,148,116):
+                    (segment>=15?rgb(223,193,119):rgb(112,203,245));
+                const float sx=static_cast<float>(x+segment*10);
+                g.setColour(on?bright:rgb(27,35,44));
+                g.fillEllipse(sx,static_cast<float>(y),6.f,6.f);
                 if(on) {
-                    g.setColour(bright.withAlpha(.24f));
-                    g.drawEllipse(static_cast<float>(x+s*10)-1.f,
-                                  static_cast<float>(y)-1.f,8.f,8.f,1.f);
+                    g.setColour(bright.withAlpha(.25f));
+                    g.drawEllipse(sx-1.f,static_cast<float>(y)-1.f,8.f,8.f,1.f);
                 }
             }
         }
@@ -347,7 +533,7 @@ private:
         if(inFlight_ && processor_.appliedRequestId()>=inFlightId_)inFlight_=false;
         if(!processor_.isReady()) {
             status_.setText("OFFLINE",juce::dontSendNotification);
-            displayPeaks_.fill(0.f);repaint(juce::Rectangle<int>(450,95,465,50));
+            displayPeaks_.fill(0.f);repaint(juce::Rectangle<int>(388,109,437,57));
             return;
         }
         if(dirty_&&!inFlight_) {
@@ -359,7 +545,7 @@ private:
         const auto fresh=processor_.meterPeaks();
         for(std::size_t i=0;i<displayPeaks_.size();++i)
             displayPeaks_[i]=std::max(fresh[i],displayPeaks_[i]*.82f);
-        repaint(juce::Rectangle<int>(450,95,465,52));
+        repaint(juce::Rectangle<int>(388,109,437,57));
     }
     VocalReverbProcessor& processor_;
     VocalReverbSettings draft_;
@@ -367,7 +553,7 @@ private:
     juce::Label title_,status_;
     juce::ComboBox preset_,algorithm_;
     juce::TextButton prev_,next_;
-    std::array<juce::TextButton,4> tabs_;
+    std::array<juce::TextButton,6> tabs_;
     std::array<juce::Slider,arverb::parameterCount> knobs_;
     std::array<juce::Label,arverb::parameterCount> labels_;
     std::array<float,4> displayPeaks_{};

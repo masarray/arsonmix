@@ -40,9 +40,21 @@ int main() {
     auto* algorithmSelect=dynamic_cast<juce::ComboBox*>(
         ui->findChildWithID("armix.reverb.algorithm"));
     assert(mainDecay&&mainMix&&presetSelect&&algorithmSelect);
+    // Live LCDs show native-realistic physical units and round-trip text
+    // edits to the SAME float parameter. No 8-decimal debug readouts.
+    assert(mainDecay->getTextFromValue(2.05)=="2.05 s");
+    assert(mainMix->getTextFromValue(.18)=="18 %");
+    assert(std::fabs(mainMix->getValueFromText("27 %")-.27)<1.e-6);
+    assert(std::fabs(mainDecay->getValueFromText("3.25 s")-3.25)<1.e-6);
     assert(mainDecay->isVisible()&&mainMix->isVisible());
     assert(!mainDecay->getBounds().intersects(mainMix->getBounds()));
     assert(presetSelect->getNumItems()==9 && algorithmSelect->getNumItems()==4);
+    for(int i=0;i<6;++i) {
+        auto* tab=dynamic_cast<juce::TextButton*>(
+            ui->findChildWithID("armix.reverb.tab."+juce::String(i)));
+        assert(tab&&tab->isVisible()&&!tab->getBounds().isEmpty());
+        assert(ui->getLocalBounds().contains(tab->getBounds()));
+    }
     auto* firstPage=dynamic_cast<juce::Slider*>(
         ui->findChildWithID("armix.reverb.param.1"));
     auto* motionPage=dynamic_cast<juce::Slider*>(
@@ -58,6 +70,13 @@ int main() {
     auto snapshot=ui->createComponentSnapshot(ui->getLocalBounds());
     assert(snapshot.isValid()&&snapshot.getWidth()==1120&&snapshot.getHeight()==430);
     assert(snapshot.getPixelAt(16,16)!=snapshot.getPixelAt(568,353));
+    // Native HDR-ish midnight-blue recessed header AND distinct navy
+    // digital-footer band; this fails if a future regression flattens
+    // the HD-CART-inspired silhouette into a generic blank JUCE panel.
+    assert(snapshot.getPixelAt(540,23).getBlue()>
+           snapshot.getPixelAt(540,89).getBlue());
+    assert(snapshot.getPixelAt(540,378).getBlue()>
+           snapshot.getPixelAt(540,320).getBlue());
     // These are snapshots of the ACTUAL JUCE AudioProcessorEditor canvas.
     // No HTML mockup, screenshot reference, or image synthesis involved.
     const auto saveImage=[](const juce::Image& picture,const char* name) {
@@ -71,10 +90,11 @@ int main() {
     };
     saveImage(snapshot,"ArSonMix_Vocal_Reverb_Native_MIX_100.png");
     auto* motion=dynamic_cast<juce::TextButton*>(
-        ui->findChildWithID("armix.reverb.tab.3"));
+        ui->findChildWithID("armix.reverb.tab.4"));
     assert(motion&&motion->onClick);
     motion->onClick(); // same page handler as a real click, no audio change
     assert(motionPage->isVisible()&&!firstPage->isVisible());
+    assert(mainDecay->isVisible()&&mainMix->isVisible());
     assert(mainDecay->isVisible()&&mainMix->isVisible());
     auto motionImage=ui->createComponentSnapshot(ui->getLocalBounds(),true,1.5f);
     assert(motionImage.isValid()&&motionImage.getWidth()==1680&&
