@@ -3,6 +3,7 @@
 The published URL comes from actions/configure-pages, not hard-coded routing or
 Cloudflare-specific credentials. A custom domain uses / instead of /arsonmix/.
 """
+import json
 import re
 from public_fx_pages import FX_SLUGS
 from urllib.parse import urlsplit
@@ -44,7 +45,27 @@ def render_landing_metadata(html, public_url):
         if html.count(old) != 1:
             raise ValueError("Missing/duplicate landing metadata source: " + old)
         html = html.replace(old, new, 1)
-    return html
+    # Public, schema.org-aligned product identity: not star ratings, fake
+    # downloads, installed-build parity or unsupported feature claims.
+    # URLs stay on the configured approved Pages host.
+    software = {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "@id": public_url + "#software",
+        "name": "ArSonMix",
+        "url": public_url,
+        "image": public_url + "media/console-overview.jpg",
+        "description": "Free open-source digital mixer for Windows live vocals, karaoke, streaming and instruments.",
+        "applicationCategory": "MultimediaApplication",
+        "operatingSystem": "Windows 10, Windows 11",
+        "license": public_url + "LICENSE.txt",
+        "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+    }
+    if html.count("</head>") != 1 or "application/ld+json" in html:
+        raise ValueError("Unrecognized/duplicate software metadata source")
+    json_ld = json.dumps(software, ensure_ascii=False).replace("<", "\\u003c")
+    return html.replace("</head>", '  <script type="application/ld+json">'
+                        + json_ld + '</script>\n</head>', 1)
 
 
 def sitemap_xml(public_url):
