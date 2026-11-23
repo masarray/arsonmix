@@ -924,10 +924,16 @@
       // routes have SUMmed. Readback must never bind it to a sender EdgeId.
       const sumKnob=document.querySelector(
         '.strip[data-id="'+t.id+'"] input[data-field="wireChannelLevel"]');
-      if(sumKnob && !scope?.wireGainDragging &&
-         Number.isFinite(db)&&document.activeElement!==sumKnob){
-        sumKnob.value=String(Math.max(-60,Math.min(6,db)));
-        scope?.paintWireKnob?.(sumKnob,Number(sumKnob.value));
+      if(sumKnob){
+        const validSum=next.admitted===true&&next.retained!==true&&
+          next.graph.capabilities.supportedOps.includes("SET_FADER")&&
+          next.graph.edges.some(e=>e.enabled===true&&e.to===ch.id);
+        sumKnob.disabled=!validSum;
+        if(!scope?.wireGainDragging&&Number.isFinite(db)&&
+           document.activeElement!==sumKnob){
+          sumKnob.value=String(Math.max(-60,Math.min(6,db)));
+          scope?.paintWireKnob?.(sumKnob,Number(sumKnob.value));
+        }
       }
       if(Number.isFinite(pan))t.pan=pan;
       t.mute=c.mute;t.solo=c.solo;
@@ -4444,6 +4450,13 @@
         return true;
       }
       status("NATIVE: "+action+" is not an accepted ChannelId operation");return true;
+    },
+    canWireChannelLevel(uiChannelId){
+      const current=controller?.state()?.current;
+      const id=nativeByUiId.get(uiChannelId);
+      const row=current?.graph?.channels?.find(ch=>ch.id===id);
+      return wireVM.channelSumLevelPlan(current,
+        flags.acceptedGraphConnected,id,Number(row?.controls?.faderDb)).kind==="READY";
     },
     canWireGain(uiEdgeId,uiSourceId){
       const primary=wireVM.primaryChannelLevelPlan(

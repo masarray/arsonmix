@@ -6985,3 +6985,14 @@ test("P0 Audio I/O repair never steals retained offline FX editor recovery",()=>
  assert.match(bridge,/retainedFxOfflineOpen/);
  assert.match(bridge,/pendingRetainedEditor=\{/);
 });
+
+
+test("P0 receiver SUM WIRE disables on retained epoch, then reenables on accepted PCM",()=>{
+ const vm=read("web/approved-native-bridge.js");
+ const asm=read("scripts/build_approved_native_gui.py");
+ assert.match(vm,/canWireChannelLevel\(uiChannelId\)/);
+ assert.match(vm,/sumKnob\.disabled=!validSum/);
+ assert.match(vm,/const validSum=next\.admitted===true&&next\.retained!==true/);
+ assert.match(asm,/wireEditable=window\.__ARMIX_NATIVE_M2__\?\.canWireChannelLevel\?\.\(t\.id\)===true/);
+ assert.match(asm,/wireEditable\?'':' disabled'/);
+});
