@@ -24,3 +24,5 @@ jobs:
           python3 -m unittest scripts/tests/test_immersib_approved_pcm_sources.py
       - name: Compile original-approved and actual optimized FIR side by side
         run: python3 tools/immersib_p102_fir_shipping_gate.py
+      - name: Verify byte-identical FULL branded ImmerSIB audio + full-core CPU
+        run: python3 tools/immersib_p102_fullcore_gate.py
