@@ -21,6 +21,8 @@ from public_fx_pages import FX_PAGES, page_html
 class CloudflarePagesBuildTest(unittest.TestCase):
     def test_public_url_never_uses_random_branch_preview(self):
         self.assertEqual(public_url({}), DEFAULT_URL)
+        self.assertEqual(public_url({"ARSONMIX_PUBLIC_URL": "https://arsonmix.pages.dev/"}),
+                         DEFAULT_URL)
         self.assertEqual(public_url({"CF_PAGES_URL": "https://12345.arsonmix.pages.dev/",
                                      "CF_PAGES_BRANCH": "pr-123"}), DEFAULT_URL)
         self.assertEqual(public_url({"ARSONMIX_PUBLIC_URL": "https://mix.example.org",
