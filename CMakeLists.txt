@@ -215,6 +215,16 @@ target_include_directories(ARMixArVerbCore PUBLIC
 target_compile_features(ARMixArVerbCore PUBLIC cxx_std_17)
 # Match the upstream C ABI version contract; NEVER use ArSonMix project version.
 target_compile_definitions(ARMixArVerbCore PRIVATE ARVERB_BUILD_VERSION="1.0.1")
+
+# Genuine Inter UI typeface, committed as one unmodified, OFL-licensed
+# Google Fonts variable TTF. Generated as a UNIQUE JUCE resource namespace:
+# native application never relies on users installing a Windows font, and
+# neither test nor installer fetches a font at build or runtime.
+juce_add_binary_data(ARMixReverbInterFont
+    NAMESPACE ARMixReverbInter
+    HEADER_NAME ARMixReverbInterBinary.h
+    SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/assets/fx/reverb/Inter-Variable.ttf")
+
 # Standalone, explicit-only p50/p95/p99 CPU profile across ASIO-like blocks.
 # Synthetic/offline results are informational, NEVER a device FAT gate.
 add_executable(ARMixVocalReverbCpuProfile EXCLUDE_FROM_ALL
@@ -390,6 +400,8 @@ target_include_directories(ARMixConsole PRIVATE "${ARMIX_APPROVED_GUI_DIR}")
 target_compile_definitions(ARMixConsole PRIVATE ARMIX_GEQ31_VECTOR_ASSET=1)
 
 target_link_libraries(ARMixConsole PRIVATE ARMixArVerbCore)
+target_link_libraries(ARMixConsole PRIVATE ARMixReverbInterFont)
+target_compile_definitions(ARMixConsole PRIVATE ARMIX_REVERB_INTER_EMBEDDED=1)
 target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h engine/builtin_fx/HarmonyDsp.h engine/builtin_fx/HarmonyMusicKey.h engine/builtin_fx/ChannelHarmonyProcessor.h engine/builtin_fx/SonKuSpatialProcessor.h engine/builtin_fx/sonku/SonKuSpatialCore.h engine/builtin_fx/sonku/SonKuMeasuredHrir.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/PreparedNativeMixerSession.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/NativeFxParameterHotkey.h src/NativeHotkeyCommandPlan.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/device/LiveSecondaryCaptureDevice.h engine/device/SecondaryCaptureClockStream.h engine/core/LiveOutputRouteGate.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
 # Explicit UTF-8 source decoding: native channel icons are Unicode, and
 # MSVC's machine-specific ANSI source charset corrupts emoji literals.
@@ -578,6 +590,9 @@ if(BUILD_TESTING)
   target_sources(ARMixNativeVocalReverbTests PRIVATE tests/native_vocal_reverb_test.cpp)
   target_link_libraries(ARMixNativeVocalReverbTests PRIVATE
       ARMixArVerbCore juce::juce_audio_processors juce::juce_recommended_config_flags)
+  target_link_libraries(ARMixNativeVocalReverbTests PRIVATE ARMixReverbInterFont)
+  target_compile_definitions(ARMixNativeVocalReverbTests PRIVATE
+      ARMIX_REVERB_INTER_EMBEDDED=1)
   target_compile_features(ARMixNativeVocalReverbTests PRIVATE cxx_std_20)
   add_test(NAME NativeVocalReverbSourcePCMParameterAckAndState
       COMMAND ARMixNativeVocalReverbTests)

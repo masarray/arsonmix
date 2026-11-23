@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "VocalReverbProcessor.h"
+#if defined(ARMIX_REVERB_INTER_EMBEDDED)
+#include "ARMixReverbInterBinary.h"
+#endif
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <algorithm>
 #include <array>
@@ -15,6 +18,33 @@ inline juce::Colour rgb(int r,int g,int b) {return juce::Colour::fromRGB(
     static_cast<juce::uint8>(r),static_cast<juce::uint8>(g),
     static_cast<juce::uint8>(b));}
 constexpr float pi=juce::MathConstants<float>::pi;
+// Production and Windows QA bundle the unmodified OFL-licensed Inter font.
+// Font objects are constructed exclusively on the JUCE message/UI thread.
+struct MeterLayout final {
+    static constexpr int groupLeft=250, groupRight=870;
+    static constexpr int leftLabelX=250, leftLabelWidth=86;
+    static constexpr int dotsLeftX=348, dotsRightX=562;
+    static constexpr int rightLabelX=770, rightLabelWidth=100;
+    static constexpr int firstDotY=113, secondDotY=148;
+    static constexpr int segments=20, pitch=10, dotSize=6;
+    static constexpr int labelOpticalLift=2, labelHeight=20;
+};
+static_assert(MeterLayout::groupLeft+MeterLayout::groupRight==1120);
+static_assert(MeterLayout::dotsLeftX-
+    (MeterLayout::leftLabelX+MeterLayout::leftLabelWidth)==12);
+static_assert(MeterLayout::rightLabelX-
+    (MeterLayout::dotsRightX+19*MeterLayout::pitch+MeterLayout::dotSize)==12);
+inline juce::Font uiFont(float size) {
+#if defined(ARMIX_REVERB_INTER_EMBEDDED)
+    static juce::Typeface::Ptr inter=juce::Typeface::createSystemTypefaceFor(
+        ARMixReverbInter::Inter_Variable_ttf,
+        static_cast<std::size_t>(ARMixReverbInter::Inter_Variable_ttfSize));
+    if(inter!=nullptr)
+        return juce::Font(juce::FontOptions(size).withTypeface(inter));
+#endif
+    return juce::Font(juce::FontOptions(size).withName("Inter"));
+}
+
 
 class DialLook final : public juce::LookAndFeel_V4 {
 public:
@@ -121,8 +151,18 @@ public:
         g.strokePath(chevron,juce::PathStrokeType(1.5f));
     }
     juce::Font getComboBoxFont(juce::ComboBox& box) override {
-        return juce::Font(juce::FontOptions(
-            box.getComponentID()=="armix.reverb.preset"?16.f:12.f));
+        return uiFont(box.getComponentID()=="armix.reverb.preset"?14.f:12.f);
+    }
+    juce::Font getLabelFont(juce::Label& label) override {
+        return uiFont(juce::jlimit(10.f,25.f,label.getFont().getHeight()));
+    }
+    juce::Font getPopupMenuFont() override {return uiFont(12.f);}
+    void positionComboBoxText(juce::ComboBox& box,juce::Label& text) override {
+        // Text and chevron share the exact vertical centre and safe padding.
+        text.setBounds(9,0,juce::jmax(24,box.getWidth()-40),box.getHeight());
+        text.setFont(getComboBoxFont(box));
+        text.setJustificationType(box.getComponentID()=="armix.reverb.preset"?
+            juce::Justification::centred:juce::Justification::centredLeft);
     }
     void drawButtonBackground(juce::Graphics& g,juce::Button& b,
                               const juce::Colour&,bool hover,bool down) override {
@@ -138,11 +178,23 @@ public:
                 g.fillRect(rect.getX()+13.f,rect.getBottom()-1.f,
                            rect.getWidth()-26.f,1.f);
             }
-        } else if(id.startsWith("armix.reverb.preset.")) {
+        } else if(id=="armix.reverb.preset.previous"||
+                  id=="armix.reverb.preset.next") {
+            // Lucide chevron-left/right, canonical 24x24 polyline,
+            // recentered for native 33px buttons; no '<'/'>' type glyphs.
             if(hover||down) {
-                g.setColour(rgb(65,120,155).withAlpha(.24f));
-                g.fillRoundedRectangle(rect.reduced(2.f),3.f);
+                g.setColour(rgb(65,120,155).withAlpha(.22f));
+                g.fillRoundedRectangle(rect.reduced(3.f),4.f);
             }
+            const float cx=rect.getCentreX(),cy=rect.getCentreY();
+            const float sign=id.endsWith("next")?1.f:-1.f;
+            juce::Path chevron;
+            chevron.startNewSubPath(cx-sign*3.5f,cy-5.5f);
+            chevron.lineTo(cx+sign*2.f,cy);
+            chevron.lineTo(cx-sign*3.5f,cy+5.5f);
+            g.setColour(hover||down?rgb(174,227,253):rgb(121,196,234));
+            g.strokePath(chevron,juce::PathStrokeType(1.8f,
+                juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
         } else {
             juce::LookAndFeel_V4::drawButtonBackground(g,b,
                 rgb(23,32,43),hover,down);
@@ -151,11 +203,13 @@ public:
     void drawButtonText(juce::Graphics& g,juce::TextButton& b,
                         bool hover,bool down) override {
         const auto id=b.getComponentID();
+        if(id=="armix.reverb.preset.previous"||
+           id=="armix.reverb.preset.next")return;
         const bool tab=id.startsWith("armix.reverb.tab.");
         const auto bright=(tab&&b.getToggleState())||
                           (!tab&&(hover||down));
         g.setColour(bright?rgb(142,216,250):rgb(158,166,177));
-        g.setFont(juce::Font(juce::FontOptions(tab?11.f:20.f)));
+        g.setFont(uiFont(tab?11.f:14.f));
         g.drawText(b.getButtonText(),b.getLocalBounds(),
                    juce::Justification::centred,false);
     }
@@ -212,7 +266,7 @@ public:
         addAndMakeVisible(algorithm_);
 
         auto setupArrow=[this,cyan](juce::TextButton& b,int step) {
-            b.setButtonText(step<0?"<":">");
+            b.setButtonText(""); // icon is native Lucide chevron, not text
             b.setLookAndFeel(&dial_);
             b.setColour(juce::TextButton::buttonColourId,reverb_ui::rgb(9,29,44));
             b.setColour(juce::TextButton::buttonOnColourId,reverb_ui::rgb(25,56,70));
@@ -324,8 +378,8 @@ public:
         body.lineTo(699.f,59.f);
         body.cubicTo(789.f,58.f,811.f,31.f,881.f,31.f);
         body.lineTo(w-11.f,31.f);
-        body.lineTo(w-11.f,355.f);
-        body.lineTo(11.f,355.f);
+        body.lineTo(w-11.f,374.f);
+        body.lineTo(11.f,374.f);
         body.closeSubPath();
         g.setGradientFill(juce::ColourGradient(rgb(68,69,72),11.f,45.f,
                                                 rgb(39,41,46),w-11.f,348.f,false));
@@ -344,39 +398,45 @@ public:
 
         // Distinct HD-CART-like bottom LCD ribbon, with actual JUCE Slider
         // editable numeric text boxes over it, rather than duplicate text.
-        g.setGradientFill(juce::ColourGradient(rgb(27,85,122),11.f,354.f,
+        constexpr float lcdTop=374.f;
+        g.setGradientFill(juce::ColourGradient(rgb(27,85,122),11.f,lcdTop,
                                                rgb(17,49,83),11.f,407.f,false));
-        g.fillRect(11.f,355.f,w-22.f,53.f);
-        g.setColour(rgb(83,153,177).withAlpha(.52f));
-        g.drawLine(11.f,355.f,w-11.f,355.f,1.f);
+        g.fillRect(11.f,lcdTop,w-22.f,34.f);
+        g.setColour(rgb(83,153,177).withAlpha(.50f));
+        g.drawLine(11.f,lcdTop,w-11.f,lcdTop,1.f);
         g.setColour(rgb(5,10,17));g.fillRect(11.f,408.f,w-22.f,10.f);
         // Thin bounded column rules; do not make the screen a card grid.
         g.setColour(rgb(79,86,93).withAlpha(.35f));
-        g.drawLine(257.f,155.f,257.f,349.f,.8f);
-        g.drawLine(865.f,155.f,865.f,349.f,.8f);
+        g.drawLine(257.f,155.f,257.f,367.f,.8f);
+        g.drawLine(865.f,155.f,865.f,367.f,.8f);
 
-        // One understated signature, no decorative logo or filler subtitle.
-        g.setColour(rgb(127,159,177).withAlpha(.24f));
-        g.drawLine(47.f,104.f,286.f,104.f,.75f);
-
-        // Two rows of TWO true PCM meters (L/R), 1:1 with renderer peaks.
-        g.setColour(rgb(171,185,193));
-        g.setFont(juce::Font(juce::FontOptions(11.f)));
-        g.drawText("INPUTS",313,108,74,18,juce::Justification::centredRight,false);
-        g.drawText("OUTPUTS",313,143,74,18,juce::Justification::centredRight,false);
-        drawMeters(g);
-        g.setColour(rgb(125,137,145));
-        g.setFont(juce::Font(juce::FontOptions(9.f)));
-        for(const int x : {393,621}) {
-            g.drawText("-60",x-1,129,26,11,juce::Justification::centredLeft,false);
-            g.drawText("-24",x+60,129,28,11,juce::Justification::centredLeft,false);
-            g.drawText("-6",x+136,129,24,11,juce::Justification::centredLeft,false);
-            g.drawText("0",x+185,129,20,11,juce::Justification::centredLeft,false);
+        // Optical centring compensates for cap-height against circle centres.
+        // Symmetric group: x250–870, midpoint exactly x560 of the panel.
+        using M=reverb_ui::MeterLayout;
+        constexpr std::array<const char*,2> leftLabels{{"INPUTS","OUTPUTS"}};
+        constexpr std::array<const char*,2> rightLabels{{"REVERB","REFLECTIONS"}};
+        g.setFont(reverb_ui::uiFont(11.f));
+        for(int row=0;row<2;++row) {
+            const int dotY=row==0?M::firstDotY:M::secondDotY;
+            const int textY=dotY+M::dotSize/2-M::labelHeight/2-
+                            M::labelOpticalLift;
+            g.setColour(rgb(180,189,198));
+            g.drawText(leftLabels[static_cast<std::size_t>(row)],
+                M::leftLabelX,textY,M::leftLabelWidth,M::labelHeight,
+                juce::Justification::centredRight,false);
+            g.drawText(rightLabels[static_cast<std::size_t>(row)],
+                M::rightLabelX,textY,M::rightLabelWidth,M::labelHeight,
+                juce::Justification::centredLeft,false);
         }
-        g.setFont(juce::Font(juce::FontOptions(10.f)));
-        g.setColour(rgb(159,168,173));
-        g.drawText("REVERB",833,108,68,18,juce::Justification::centredLeft,false);
-        g.drawText("REFLECTIONS",833,143,89,18,juce::Justification::centredLeft,false);
+        drawMeters(g);
+        g.setColour(rgb(139,151,161));
+        g.setFont(reverb_ui::uiFont(9.f));
+        for(const int x : {M::dotsLeftX,M::dotsRightX}) {
+            g.drawText("-60",x-1,128,25,11,juce::Justification::centredLeft,false);
+            g.drawText("-24",x+59,128,27,11,juce::Justification::centredLeft,false);
+            g.drawText("-6",x+133,128,23,11,juce::Justification::centredLeft,false);
+            g.drawText("0",x+184,128,13,11,juce::Justification::centredLeft,false);
+        }
 
         g.setColour(rgb(75,90,99).withAlpha(.67f));
         g.drawLine(291.f,221.f,851.f,221.f,.8f);
@@ -487,13 +547,14 @@ private:
             const float db=peak<=1.e-6f?-60.f:20.f*std::log10(peak);
             const int lit=static_cast<int>(juce::jlimit(0.f,20.f,
                                                        (db+60.f)/66.f*20.f));
-            const int x=390+(ch%2)*227;
-            const int y=113+(ch/2)*35;
+            using M=reverb_ui::MeterLayout;
+            const int x=ch%2==0?M::dotsLeftX:M::dotsRightX;
+            const int y=ch/2==0?M::firstDotY:M::secondDotY;
             for(int segment=0;segment<20;++segment) {
                 const bool on=segment<lit;
                 const auto bright=segment>=18?rgb(241,148,116):
                     (segment>=15?rgb(223,193,119):rgb(112,203,245));
-                const float sx=static_cast<float>(x+segment*10);
+                const float sx=static_cast<float>(x+segment*M::pitch);
                 g.setColour(on?bright:rgb(27,35,44));
                 g.fillEllipse(sx,static_cast<float>(y),6.f,6.f);
                 if(on) {

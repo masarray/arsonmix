@@ -47,6 +47,9 @@ int main() {
     auto* productTitle=dynamic_cast<juce::Label*>(
         ui->findChildWithID("armix.reverb.title"));
     assert(productTitle && productTitle->getText()=="REVERB-SIS");
+    // The same embedded Inter typeface must render Windows screenshots and
+    // release builds; a host-installed substitute is not sufficient.
+    assert(productTitle->getFont().getTypefaceName().containsIgnoreCase("Inter"));
     // Visual status is intentionally hidden. PCM-applied ACK remains on the
     // processor and contextual tooltip, never a permanently printed stamp.
     assert(ui->findChildWithID("armix.reverb.status")==nullptr);
@@ -62,6 +65,28 @@ int main() {
     assert(mainDecay->isVisible()&&mainMix->isVisible());
     assert(!mainDecay->getBounds().intersects(mainMix->getBounds()));
     assert(presetSelect->getNumItems()==9 && algorithmSelect->getNumItems()==4);
+    // Combo label and down-chevron share EXACT row centre. Test both
+    // native ComboBoxes rather than relying on developer screenshot eye.
+    for(auto* combo : {presetSelect,algorithmSelect}) {
+        assert(combo->getNumChildComponents()>0);
+        const auto* text=dynamic_cast<juce::Label*>(combo->getChildComponent(0));
+        assert(text);
+        assert(std::abs(text->getBounds().getCentreY()-
+                        combo->getHeight()/2)<=1);
+        assert(text->getRight()<=combo->getWidth()-24);
+        assert(text->getFont().getTypefaceName().containsIgnoreCase("Inter"));
+    }
+    auto* leftChevron=dynamic_cast<juce::TextButton*>(
+        ui->findChildWithID("armix.reverb.preset.previous"));
+    auto* rightChevron=dynamic_cast<juce::TextButton*>(
+        ui->findChildWithID("armix.reverb.preset.next"));
+    assert(leftChevron&&rightChevron&&
+           leftChevron->getButtonText().isEmpty()&&
+           rightChevron->getButtonText().isEmpty());
+    assert(leftChevron->getBounds().getCentreY()==
+           rightChevron->getBounds().getCentreY());
+    assert(leftChevron->getBounds().getCentreY()==
+           presetSelect->getBounds().getCentreY());
     const auto* wetLabel=ui->findChildWithID("armix.reverb.label.0");
     const auto* decayLabel=ui->findChildWithID("armix.reverb.label.2");
     assert(wetLabel&&decayLabel);
@@ -156,9 +181,20 @@ int main() {
            snapshot.getPixelAt(540,89).getBlue());
     assert(snapshot.getPixelAt(540,378).getBlue()>
            snapshot.getPixelAt(540,320).getBlue());
+    // Compact LCD begins at y374 instead of old y355; no oversized
+    // cobalt block can regress unnoticed.
+    assert(snapshot.getPixelAt(30,359).getBlue()<
+           snapshot.getPixelAt(30,382).getBlue());
+    // Group centred at x560; independent left/right 12px gutters.
+    using M=reverb_ui::MeterLayout;
+    static_assert(M::groupLeft+M::groupRight==1120);
+    static_assert(M::dotsLeftX-M::leftLabelX-M::leftLabelWidth==12);
+    static_assert(M::rightLabelX-M::dotsRightX-19*M::pitch-M::dotSize==12);
     // At least the left input meter has a true bright PCM segment; the
     // far-right dot stays dark because input is safely below 0 dBFS.
-    assert(snapshot.getPixelAt(393,116)!=snapshot.getPixelAt(583,116));
+    assert(snapshot.getPixelAt(M::dotsLeftX+2,M::firstDotY+3)!=
+           snapshot.getPixelAt(M::dotsLeftX+19*M::pitch+2,
+                               M::firstDotY+3));
     // These are snapshots of the ACTUAL JUCE AudioProcessorEditor canvas.
     // No HTML mockup, screenshot reference, or image synthesis involved.
     const auto saveImage=[](const juce::Image& picture,const char* name) {
