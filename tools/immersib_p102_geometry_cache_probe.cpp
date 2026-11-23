@@ -4,6 +4,9 @@
 #include "SonKuEarlyReflectionsGeometryCache.h"
 #include "engine/builtin_fx/ImerSipP92Scene.h"
 #include <algorithm>
+#include <chrono>
+#include <array>
+#include <vector>
 #include <bit>
 #include <cmath>
 #include <cstdint>
@@ -108,6 +111,78 @@ bool runCase(int rate,int presetId) {
     return true;
 }
 
+// Isolated actual room-stage cost only. Same input, same runner and alternating
+// measurement order. Timings are informational; a CI VM is NOT low-end ASIO.
+bool measureActualRoomStage(int rate,int presetId) {
+    using Clock=std::chrono::steady_clock;
+    const auto scene=armix::builtin_fx::imersipP92Factory(presetId);
+    SonKuRoomGeometry geometry{
+        28.8f,28.8f,scene.sourceDistanceMeters,7.2f,1.45f,1.45f
+    };
+    auto ref=std::make_unique<SonKuEarlyReflections>();
+    auto opt=std::make_unique<SonKuEarlyReflectionsGeometryCache>();
+    if(!ref->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch) ||
+       !opt->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch))
+        return false;
+    const float wet=std::min(1.f,scene.roomAmount);
+    if(!ref->setRealtimeRoom(geometry,wet,true) ||
+       !opt->setRealtimeRoom(geometry,wet,true))return false;
+    constexpr int frames=256,warmup=20,measured=128;
+    std::array<float,frames> inL{},inR{},refL{},refR{},optL{},optR{};
+    std::vector<double> baseline,optimized;
+    baseline.reserve(measured);optimized.reserve(measured);
+    for(int block=0;block<warmup+measured;++block) {
+        for(int i=0;i<frames;++i) {
+            const double t=double(block*frames+i)/double(rate);
+            inL[i]=float(.06*std::sin(2.*3.141592653589793*339.*t));
+            inR[i]=float(.05*std::sin(2.*3.141592653589793*599.*t));
+        }
+        const auto render=[&](auto& fx,auto& left,auto& right) {
+            const auto before=Clock::now();
+            for(int i=0;i<frames;++i){
+                const auto ears=fx->process(inL[i],inR[i],0.,
+                                           scene.stereoSpreadDegrees,0.f,false);
+                left[i]=ears.left;right[i]=ears.right;
+            }
+            return std::chrono::duration<double,std::micro>(
+                Clock::now()-before).count();
+        };
+        double a=0.,b=0.;
+        if((block&1)==0) {
+            a=render(ref,refL,refR);b=render(opt,optL,optR);
+        }else {
+            b=render(opt,optL,optR);a=render(ref,refL,refR);
+        }
+        for(int i=0;i<frames;++i)
+            if(!sameBits(refL[i],optL[i])||!sameBits(refR[i],optR[i])) {
+                std::fprintf(stderr,
+                    "IMMERSIB_GEOM_BENCH_PCM_DRIFT rate=%d scene=%d block=%d sample=%d\n",
+                    rate,presetId,block,i);
+                return false;
+            }
+        if(block>=warmup) {
+            baseline.push_back(a);optimized.push_back(b);
+        }
+    }
+    std::sort(baseline.begin(),baseline.end());
+    std::sort(optimized.begin(),optimized.end());
+    const auto percentile=[](const std::vector<double>& sorted,double p) {
+        return sorted[static_cast<std::size_t>(p*(sorted.size()-1))];
+    };
+    const double refMedian=percentile(baseline,.5);
+    const double optMedian=percentile(optimized,.5);
+    std::printf("IMMERSIB_GEOMETRY_CPU_AB rate=%d scene=%d frames=%d "
+                "blocks=%d baseline_p50_us=%.2f optimized_p50_us=%.2f "
+                "baseline_p99_us=%.2f optimized_p99_us=%.2f "
+                "p50_ratio=%.4f skipped_geometry=%llu "
+                "scope=REAL_EARLY_STAGE_SHARED_LINUX_RUNNER_NOT_ASIO\n",
+        rate,presetId,frames,measured,refMedian,optMedian,
+        percentile(baseline,.99),percentile(optimized,.99),
+        optMedian/refMedian,
+        static_cast<unsigned long long>(opt->skippedGeometryUpdates()));
+    return refMedian>0.;
+}
+
 } // namespace
 
 int main() {
@@ -118,6 +193,9 @@ int main() {
             if(!runCase(rate,preset))return 1;
         }
     }
+    for(int rate:{44100,48000})
+        for(int preset:{2,8})
+            if(!measureActualRoomStage(rate,preset))return 2;
     std::puts("IMMERSIB_GEOMETRY_LAB_PASS full_pcm_bits=IDENTICAL "
               "all_7_scenes=YES rates=44100_48000 original_pcm_source=LOCKED "
               "shipping_dsp=UNMODIFIED hardware=NOT_TESTED");
