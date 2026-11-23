@@ -133,12 +133,19 @@ public:
         if(!ready_||!queued_.pop(edit))return;
         applyToEngine(edit.settings);
         storeAccepted(edit.settings,edit.id); // PCM callback is the authority
+        pendingEdits_.fetch_sub(1,std::memory_order_release);
     }
     // Message-thread single producer. Returns zero when no edit was accepted.
     std::uint64_t queueSettings(const VocalReverbSettings& v) noexcept {
         if(!ready_||!validVocalReverbSettings(v))return 0;
         const auto id=nextId_+1;
-        if(!queued_.push({id,v}))return 0;
+        // Include the interval after FIFO pop but before audio-applied ACK.
+        // Without this reservation .smix can capture stale accepted controls.
+        pendingEdits_.fetch_add(1,std::memory_order_acq_rel);
+        if(!queued_.push({id,v})) {
+            pendingEdits_.fetch_sub(1,std::memory_order_release);
+            return 0;
+        }
         nextId_=id;
         return id;
     }
@@ -153,7 +160,9 @@ public:
     }
     void sealForRealtime() noexcept override {published_=true;}
     bool stateSnapshotQuiescent() const noexcept override {
-        return queued_.empty() && !(acceptedSequence_.load(std::memory_order_acquire)&1u);
+        return pendingEdits_.load(std::memory_order_acquire)==0 &&
+               queued_.empty() &&
+               !(acceptedSequence_.load(std::memory_order_acquire)&1u);
     }
     void getStateInformation(juce::MemoryBlock& out) override {
         VocalReverbSettings accepted;
@@ -220,6 +229,7 @@ private:
     std::atomic<int> acceptedAlgorithm_{1},acceptedPreset_{0};
     std::atomic<std::uint32_t> acceptedSequence_{0};
     std::atomic<std::uint64_t> appliedId_{0},processedBlocks_{0};
+    std::atomic<std::uint32_t> pendingEdits_{0};
     std::uint64_t nextId_=0; // single message-thread producer
     bool ready_=false,published_=false;
 };
