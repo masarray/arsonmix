@@ -267,7 +267,7 @@ public:
             knob.setValue(draft_.values[i],juce::dontSendNotification);
             knob.setDoubleClickReturnValue(true,d.defaultValue);
             knob.setColour(juce::Slider::textBoxTextColourId,reverb_ui::rgb(147,215,250));
-            knob.setColour(juce::Slider::textBoxBackgroundColourId,reverb_ui::rgb(8,35,56));
+            knob.setColour(juce::Slider::textBoxBackgroundColourId,juce::Colours::transparentBlack);
             knob.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
             knob.onValueChange=[this,i]{
                 draft_.values[i]=static_cast<float>(knobs_[i].getValue());
@@ -320,8 +320,8 @@ public:
         // The reference's defining silhouette: high navy shoulders with
         // a gently lowered centre preset bay. Draw original vector geometry
         // so 100%, 125%, 150% and 200% render from the same source.
-        g.setGradientFill(juce::ColourGradient(rgb(12,51,77),9.f,9.f,
-                  rgb(3,22,42),9.f,64.f,false));
+        g.setGradientFill(juce::ColourGradient(rgb(28,67,92),9.f,9.f,
+                  rgb(17,44,71),9.f,64.f,false));
         g.fillRect(11.f,11.f,w-22.f,50.f);
         juce::Path body;
         body.startNewSubPath(11.f,31.f);
@@ -333,8 +333,8 @@ public:
         body.lineTo(w-11.f,355.f);
         body.lineTo(11.f,355.f);
         body.closeSubPath();
-        g.setGradientFill(juce::ColourGradient(rgb(49,51,54),11.f,45.f,
-                                                rgb(22,24,30),w-11.f,348.f,false));
+        g.setGradientFill(juce::ColourGradient(rgb(68,69,72),11.f,45.f,
+                                                rgb(39,41,46),w-11.f,348.f,false));
         g.fillPath(body);
         g.setColour(rgb(110,124,128).withAlpha(.46f));
         juce::Path shoulder;
@@ -350,8 +350,8 @@ public:
 
         // Distinct HD-CART-like bottom LCD ribbon, with actual JUCE Slider
         // editable numeric text boxes over it, rather than duplicate text.
-        g.setGradientFill(juce::ColourGradient(rgb(13,58,91),11.f,354.f,
-                                               rgb(5,29,52),11.f,407.f,false));
+        g.setGradientFill(juce::ColourGradient(rgb(27,85,122),11.f,354.f,
+                                               rgb(17,49,83),11.f,407.f,false));
         g.fillRect(11.f,355.f,w-22.f,53.f);
         g.setColour(rgb(83,153,177).withAlpha(.52f));
         g.drawLine(11.f,355.f,w-11.f,355.f,1.f);
@@ -378,8 +378,8 @@ public:
         g.drawText("AR-VERB",938,61,130,32,juce::Justification::centredRight,false);
         g.setColour(rgb(144,157,166));
         g.setFont(juce::Font(juce::FontOptions(10.f)));
-        g.drawText("REALTIME  /  VOCAL SPACE",898,94,169,16,
-                   juce::Justification::centredRight,false);
+        // Algorithm selector occupies this space below AR-VERB so its
+        // native dropdown never overlaps the hero knob caption.
 
         // Two rows of TWO true PCM meters (L/R), 1:1 with renderer peaks.
         g.setColour(rgb(171,185,193));
@@ -404,10 +404,7 @@ public:
         g.drawLine(291.f,221.f,851.f,221.f,.8f);
         g.setColour(rgb(106,187,224).withAlpha(.26f));
         g.drawLine(291.f,222.f,851.f,222.f,.7f);
-        g.setColour(rgb(144,172,185).withAlpha(.54f));
-        g.setFont(juce::Font(juce::FontOptions(10.f)));
-        g.drawText("ARSONMIX  /  ONE NATIVE PCM ENGINE",37,413,293,11,
-                   juce::Justification::centredLeft,false);
+        // Lower 10px cabinet lip is intentionally empty: no clipped footer.
     }
 
     void resized() override {
@@ -415,8 +412,8 @@ public:
         preset_.setBounds(421,17,271,34);
         prev_.setBounds(380,17,33,34);
         next_.setBounds(701,17,33,34);
-        algorithm_.setBounds(939,120,129,25);
-        status_.setBounds(920,103,149,17);
+        algorithm_.setBounds(938,95,132,24);
+        status_.setBounds(899,332,167,20);
         for(std::size_t i=0;i<tabs_.size();++i)
             tabs_[i].setBounds(288+static_cast<int>(i)*94,183,91,36);
         layoutPage();

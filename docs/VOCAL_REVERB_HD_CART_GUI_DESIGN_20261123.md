@@ -49,3 +49,19 @@ This ArSonMix implementation does **not** embed HD-CART art, product names, logo
 - Actual Windows test must show source dimensions 1120×430 and 150% DPI 1680×645, tab visibility/clicks, hero persistence, valid value formatting and parse round-trip, and that header/footer hues differ from the body.
 - **No literal claim of "100% pixel-perfect"**: the vendor's assets and branding are intentionally not copied; owner should assess the screenshot's visual likeness and editability after native JUCE screenshot artifact is produced. The exact-DSP AVRB state format and production FX catalog ID remain unchanged.
 - A targeted Windows native screenshot test is necessary but **not sufficient**: independent native-full/ASIO FAT, release CI, real vocal audition still guard integration into INT-1.
+
+## Calibrated after first REAL 86295ec Windows screenshot (24 Nov 2026)
+The first exact-SHA Windows MSVC compile **passed**, and its actual renderer exported 1120×430 + 1680×645 PNG; the test subsequently failed because a prior MOTION assertion still expected DUCKER control to be on that page. This is a test contract/page mapping bug, not an audio engine crash. Test now checks MOTION has modulation controls, and switching to the distinct DUCKER tab exposes Parameter 12.
+
+Image-derived mean color on matched regions (source image cropped to original 1160×444 housing, ArSonMix 1120×430):
+| Source region | Owner HD-CART RGB | old native RGB | first new native RGB |
+|--|--|--|--|
+| Body center | (59,59,60) | (39,48,56) | (43,46,51) |
+| Bottom LCD | (26,70,104) | (8,34,55) | (12,42,66) |
+| Header/preset bay | (34,60,81) | (22,41,57) | (20,48,70) |
+
+The first structural reconstruction improved correct geometry but was still **noticeably too dark**. The next native revision raises the metal body's tonal values and calibrates the LCD / blue header toward measured source contrast without embedding any source texture or protected branding. The actual Windows screenshot is re-validated, never guessed pixel-perfect.
+
+**Visual defect corrected:** the Plate algorithm dropdown at (939,120) visually overlapped the Dry/Wet hero label. It now occupies the space under the original AR-VERB label at y95–119; the hero caption begins y125. The native CTest adds a non-overlap invariant. The cramped half-visible text in the 10 px bottom cabinet lip is removed, and editable JUCE Slider numeric values sit directly on the continuous blue LCD rather than seven dark rectangular boxes.
+
+**Functional visual evidence:** the screenshot test renders meters with 16 blocks of authentic, bounded, stereo PCM against a separate native processor instance, then allows the existing 30 Hz UI timer to sample audio-owned float peak atomics. The main DSP/state/ACK test processor remains pristine; screenshot pulses do **not** count as a simulated ASIO hardware test. No fake illuminated LED or extra callback is added. The test asserts bright-vs-dark segments, each real tab's active controls, stable hero controls, 100% and 150% editor snapshots, and DSP parameter text round-trip.

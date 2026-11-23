@@ -27,7 +27,11 @@ int main() {
     // This host builds a private AudioProcessor::createEditor() facade.
     // Reverb's concrete override is public: test the actual native editor,
     // not the inaccessible base-class method.
-    auto* uiOwner=dynamic_cast<VocalReverbProcessor*>(created.get());
+    // Use an independent display-only native DSP instance. Exercising
+    // authentic PCM meter input may not perturb the main test's exact
+    // processedBlocks() or session-recovery assertions.
+    auto displayInstance=entry->prepare(48000.,128,nullptr,0);
+    auto* uiOwner=dynamic_cast<VocalReverbProcessor*>(displayInstance.get());
     assert(uiOwner);
     std::unique_ptr<juce::AudioProcessorEditor> ui(uiOwner->createEditor());
     assert(ui && ui->getWidth()==1120 && ui->getHeight()==430);
@@ -49,6 +53,9 @@ int main() {
     assert(mainDecay->isVisible()&&mainMix->isVisible());
     assert(!mainDecay->getBounds().intersects(mainMix->getBounds()));
     assert(presetSelect->getNumItems()==9 && algorithmSelect->getNumItems()==4);
+    const auto* wetLabel=ui->findChildWithID("armix.reverb.label.0");
+    assert(wetLabel && algorithmSelect->getBottom()<=wetLabel->getY());
+    assert(algorithmSelect->getBounds().getBottom()<mainMix->getY()+40);
     for(int i=0;i<6;++i) {
         auto* tab=dynamic_cast<juce::TextButton*>(
             ui->findChildWithID("armix.reverb.tab."+juce::String(i)));
@@ -67,6 +74,23 @@ int main() {
         assert(knob->getSliderStyle()==juce::Slider::RotaryHorizontalVerticalDrag);
         if(knob->isVisible())assert(ui->getLocalBounds().contains(knob->getBounds()));
     }
+    // Real signal, never synthetic animated LED graphics. The separate
+    // native JUCE DSP measures four actual L/R in/out block peaks, and the
+    // 30 Hz editor timer consumes ONLY those atomics.
+    juce::AudioBuffer<float> liveMeterPcm(2,128);
+    juce::MidiBuffer liveMeterMidi;
+    for(int block=0;block<16;++block) {
+        for(int sample=0;sample<128;++sample) {
+            const double phase=(block*128+sample)*0.039f;
+            liveMeterPcm.setSample(0,sample,
+                                  static_cast<float>(.42*std::sin(phase)));
+            liveMeterPcm.setSample(1,sample,
+                                  static_cast<float>(.31*std::sin(phase*.83)));
+        }
+        displayInstance->processBlock(liveMeterPcm,liveMeterMidi);
+    }
+    juce::Thread::sleep(42);
+    juce::Timer::callPendingTimersSynchronously();
     auto snapshot=ui->createComponentSnapshot(ui->getLocalBounds());
     assert(snapshot.isValid()&&snapshot.getWidth()==1120&&snapshot.getHeight()==430);
     assert(snapshot.getPixelAt(16,16)!=snapshot.getPixelAt(568,353));
@@ -77,6 +101,9 @@ int main() {
            snapshot.getPixelAt(540,89).getBlue());
     assert(snapshot.getPixelAt(540,378).getBlue()>
            snapshot.getPixelAt(540,320).getBlue());
+    // At least the left input meter has a true bright PCM segment; the
+    // far-right dot stays dark because input is safely below 0 dBFS.
+    assert(snapshot.getPixelAt(393,116)!=snapshot.getPixelAt(583,116));
     // These are snapshots of the ACTUAL JUCE AudioProcessorEditor canvas.
     // No HTML mockup, screenshot reference, or image synthesis involved.
     const auto saveImage=[](const juce::Image& picture,const char* name) {
@@ -100,7 +127,15 @@ int main() {
     assert(motionImage.isValid()&&motionImage.getWidth()==1680&&
            motionImage.getHeight()==645);
     saveImage(motionImage,"ArSonMix_Vocal_Reverb_Native_MOTION_150.png");
-    assert(!ui->findChildWithID("armix.reverb.param.12")->getBounds().isEmpty());
+    auto* duck=dynamic_cast<juce::Slider*>(
+        ui->findChildWithID("armix.reverb.param.12"));
+    assert(duck && !duck->isVisible()); // MOTION has no duplicate DUCKER
+    auto* duckTab=dynamic_cast<juce::TextButton*>(
+        ui->findChildWithID("armix.reverb.tab.5"));
+    assert(duckTab && duckTab->onClick);
+    duckTab->onClick();
+    assert(duck->isVisible() && !motionPage->isVisible());
+    assert(mainDecay->isVisible() && mainMix->isVisible());
     auto* nextPreset=dynamic_cast<juce::TextButton*>(
         ui->findChildWithID("armix.reverb.preset.next"));
     assert(nextPreset&&nextPreset->onClick);
