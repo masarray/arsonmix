@@ -563,6 +563,48 @@
     return stripVM.outputTargets(channels,nativeIdFor(t),displayNameFor);
   }
   let pendingNativeGainIntent=false;
+  const latestInputGainDrafts=new Map();
+  let gainDraftFlushScheduled=false;
+  function flushLiveInputGains(){
+    if(!controller||controller.state()?.pending||pendingLogical)return;
+    for(const [channelId,edit] of latestInputGainDrafts){
+      latestInputGainDrafts.delete(channelId);
+      if(edit.epoch!==String(hardware?.device?.epoch)||
+         nativeIdFor(edit.track)!==channelId||
+         !edit.track.nativeGainAvailable||!deviceReady()) {
+        status("GAIN gesture retired · audio owner changed");
+        continue;
+      }
+      const result=intent("SET_INPUT_GAIN",edit.track,{valueDb:edit.db});
+      if(!result){
+        status("GAIN rejected · restoring accepted channel value");
+        if(controller.state()?.current)
+          reconcileAcceptedInputGainSnapshot(controller.state().current);
+      }else pendingNativeGainIntent=true;
+      // One owner/ACK at a time; latest other channel intents drain after
+      // installed readback instead of racing an older graph revision.
+      break;
+    }
+  }
+  function scheduleLiveInputGainFlush(){
+    if(gainDraftFlushScheduled)return;
+    gainDraftFlushScheduled=true;
+    window.setTimeout(()=>{
+      gainDraftFlushScheduled=false;
+      flushLiveInputGains();
+    },32);
+  }
+  function requestLiveInputGain(track,db,final){
+    if(!track||!Number.isFinite(db)||db< -24||db>24)return false;
+    if(logicalView) return intent("SET_INPUT_GAIN",track,{valueDb:db});
+    const id=nativeIdFor(track);
+    if(!id||!deviceReady())return false;
+    latestInputGainDrafts.set(id,{
+      track,db,epoch:String(hardware?.device?.epoch)});
+    if(final&&!controller.state()?.pending)flushLiveInputGains();
+    else scheduleLiveInputGainFlush();
+    return true;
+  }
   const intent = (operation,t,payload) => {
     if(logicalView)return logicalIntent(operation,nativeIdFor(t),payload).ok;
     if (!flags.acceptedGraphConnected) {
@@ -808,6 +850,14 @@
     if(state?.current&&!state.pending)
       reconcileAcceptedInputGainSnapshot(state.current);
   };
+  // A canceled pointer is a compensating native scalar, not a fake JS
+  // rollback. It reverts any intermediate realtime gain ACK to the value
+  // at pointer-down; failure still leaves honest accepted readback.
+  window.__ARMIX_NATIVE_GAIN_CANCEL__=(input,original)=>{
+    const t=scope?.findTrack?.(input);
+    if(t?.nativeGainAvailable&&Number.isFinite(original))
+      requestLiveInputGain(t,original,true);
+  };
   function projectNativeGraphWithoutFocusLoss(next) {
     // Only identity, order, processing width, source and edges are structural.
     // Rack/slot bypass is applied in-place from independent readback below.
@@ -870,6 +920,15 @@
       const visualDb=Number.isFinite(db)?pendingFaderVisualDb(t,db):null;
       const switchChanged=t.mute!==c.mute||t.solo!==c.solo;
       if(faderChanged)t.level=db;
+      // WIRE receiver LVL is the same channel fader after all incoming
+      // routes have SUMmed. Readback must never bind it to a sender EdgeId.
+      const sumKnob=document.querySelector(
+        '.strip[data-id="'+t.id+'"] input[data-field="wireChannelLevel"]');
+      if(sumKnob && !scope?.wireGainDragging &&
+         Number.isFinite(db)&&document.activeElement!==sumKnob){
+        sumKnob.value=String(Math.max(-60,Math.min(6,db)));
+        scope?.paintWireKnob?.(sumKnob,Number(sumKnob.value));
+      }
       if(Number.isFinite(pan))t.pan=pan;
       t.mute=c.mute;t.solo=c.solo;
       if(switchChanged && scope.activeFaderId!==t.id){
@@ -3164,6 +3223,7 @@
     pendingBusCreate=null;pendingTrackDelete=null;pendingFxInsert=null;
     pendingFxEditorAck=null; // expire old native HWND on device owner change
     startupWire=null;activeWireAttempt=null;pendingNativeGainIntent=false;
+    latestInputGainDrafts.clear();
     pendingNativeWireRetract=null; // old output/epoch cannot animate a new cable
     pendingWireGains.clear();pendingNativeControl.clear();
     liveFaderVisualTargets.clear();lastNativeControlSent.clear();
@@ -3493,9 +3553,13 @@
         const settledGain=pendingNativeGainIntent&&!state.pending;
         if(settledGain){
           pendingNativeGainIntent=false;
-          if(state.lastError!=="ACCEPTED_READBACK")
+          if(state.lastError!=="ACCEPTED_READBACK"){
+            latestInputGainDrafts.clear(); // invalid lease: do not replay
             reconcileAcceptedInputGainSnapshot(state.current);
+          }
         }
+        if(!state.pending&&state.lastError==="ACCEPTED_READBACK"&&
+           latestInputGainDrafts.size) scheduleLiveInputGainFlush();
         if(state.lastError==="PENDING_NATIVE_ACK"||state.lastError==="PENDING_ACCEPTED_SNAPSHOT")
           status("NATIVE "+state.lastError+" · awaiting authoritative readback");
         if(!state.pending && state.lastError==="ACCEPTED_READBACK" &&
@@ -3882,17 +3946,19 @@
         }
         // Shared reference/native UI detent. Only accepted readback owns PCM.
         const n=window.__ARMIX_GAIN_UNITY_DETENT__?.(el,event)??raw;
-        // Gesture preview stays inside the knob; no browser-local t.trim
-        // audio authority and no phantom native ACK. Commit once on release.
+        // Input gain follows the pointer just like a DAW. Only one bounded
+        // latest-writer scalar may await the native ACK/readback at a time;
+        // the knob preview is never mistaken for confirmed PCM.
         if(event.type!=="change"){
           el.closest(".gain-dial")?.style.setProperty("--gain-rotation",
             (n*5.625).toFixed(2)+"deg");
           const lcd=el.closest(".gain-view-body")?.querySelector(".gain-readout");
           const digits=lcd?.querySelector(".gain-lcd-digits")||lcd;
           if(digits)digits.textContent=(n>=0?"+":"")+n.toFixed(1)+" dB";
+          requestLiveInputGain(t,n,false);
           return true;
         }
-        if(!intent("SET_INPUT_GAIN",t,{valueDb:n})){
+        if(!requestLiveInputGain(t,n,true)){
           const acceptedDb=Number.isFinite(t.trim)?t.trim:0;
           el.value=String(acceptedDb);
           el.closest(".gain-dial")?.style.setProperty("--gain-rotation",
@@ -3902,8 +3968,6 @@
           if(digits)digits.textContent=(acceptedDb>0?"+":"")+acceptedDb.toFixed(1)+" dB";
           status("INPUT GAIN rejected · restoring accepted PCM readback");
           controller?.subscribe?.();
-        }else if(!logicalView){
-          pendingNativeGainIntent=true;
         }
         return true;
       }
@@ -3919,6 +3983,18 @@
         }
         if(!requestWireGain({sourceId:t.id,edgeId:uiId,levelDb:db}))
           status("SEND LEVEL rejected · accepted WIRE identity changed");
+        return true;
+      }
+      if(field==="wireChannelLevel"){
+        const db=Number(el.value),current=controller?.state()?.current;
+        const plan=wireVM.channelSumLevelPlan(current,
+          flags.acceptedGraphConnected,nativeIdFor(t),db);
+        if(plan.kind!=="READY"||!streamFaderControl("faderDb",t,db,event.type==="change")){
+          status("CH SUM LVL unavailable · verify receiver and Audio I/O");
+          if(event.type==="change")scope?.syncFaderVisual?.(t);
+          return true;
+        }
+        scope?.paintWireKnob?.(el,db);
         return true;
       }
       if(field==="wireGain"){

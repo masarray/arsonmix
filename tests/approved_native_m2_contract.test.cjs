@@ -6907,3 +6907,45 @@ test("P0 native player INPUT advertised before pin admission; F11 window command
   assert.match(host,/event=="arMixGlobalFxAck"/);
   assert.match(host,/if\(gate=="rack"\|\|gate=="global"\)/);
 });
+
+
+test("P0 WIRE LVL uses receiver post-SUM fader regardless of selected incoming wire",()=>{
+  const receiver={id:"8",role:"INPUT",controls:{faderDb:-8.1},primaryOutId:"100"};
+  const ch=[receiver,{id:"3",role:"INPUT",controls:{faderDb:-4}},
+    {id:"7",role:"INPUT",controls:{faderDb:-6}}];
+  const e1={edgeId:"301",from:"3",to:"8",enabled:true,primaryOutput:false};
+  const e2={edgeId:"302",from:"7",to:"8",enabled:true,primaryOutput:false};
+  const graph={capabilities:{supportedOps:["SET_FADER","SET_WIRE_GAIN"]},
+    channels:ch,edges:[e1,e2]};
+  const snapshot={admitted:true,retained:false,graph};
+  assert.deepEqual(wireVM.channelSumLevelPlan(snapshot,true,"8",-12),
+    {kind:"READY",source:"8",levelDb:-12,wireCount:2});
+  assert.deepEqual(wireVM.channelSumLevelPlan({
+    ...snapshot,graph:{...graph,edges:[e2]}},true,"8",-12),
+    {kind:"READY",source:"8",levelDb:-12,wireCount:1});
+  for(const bad of [
+    {...snapshot,retained:true},{...snapshot,admitted:false},
+    {...snapshot,graph:{...graph,edges:[]}}
+  ])assert.equal(wireVM.channelSumLevelPlan(bad,true,"8",-12).kind,"UNAVAILABLE");
+  assert.equal(wireVM.channelSumLevelPlan(snapshot,true,"7",3).kind,"UNAVAILABLE");
+  const bridge=read("web/approved-native-bridge.js");
+  assert.match(bridge,/field==="wireChannelLevel"/);
+  assert.match(bridge,/streamFaderControl\("faderDb",t,db,event.type==="change"\)/);
+  const assembled=read("scripts/build_approved_native_gui.py");
+  assert.match(assembled,/if\(!isMain&&connected\)/);
+  assert.match(assembled,/data-field=\\"wireChannelLevel\\"/);
+  assert.match(assembled,/post-SUM channel level/);
+});
+
+test("P0 input GAIN sends bounded latest native intents during pointermove",()=>{
+  const bridge=read("web/approved-native-bridge.js");
+  assert.match(bridge,/latestInputGainDrafts=new Map\(\)/);
+  assert.match(bridge,/requestLiveInputGain\(t,n,false\)/);
+  assert.match(bridge,/requestLiveInputGain\(t,n,true\)/);
+  assert.match(bridge,/controller\.state\(\)\?\.pending\|\|pendingLogical/);
+  assert.match(bridge,/latestInputGainDrafts\.clear\(\)/);
+  assert.match(bridge,/__ARMIX_NATIVE_GAIN_CANCEL__/);
+  const host=read("src/Main.cpp");
+  assert.match(host,/setKioskModeComponent\(this,false\)/);
+  assert.match(host,/setKioskModeComponent\(nullptr,false\)/);
+});

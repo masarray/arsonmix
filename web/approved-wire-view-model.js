@@ -78,6 +78,27 @@
     return {kind:"READY",source:sourceId,levelDb:ch.controls.faderDb};
   }
 
+  // An incoming WIRE pot represents the receiver's post-SUM channel fader,
+  // not a randomly selected sender's EdgeId. One or many incoming routes
+  // must behave identically; each send remains separately adjustable in
+  // WIRE Inspector / Sends on Faders.
+  function channelSumLevelPlan(snapshot,projected,channelId,levelDb) {
+    const graph=snapshot?.graph;
+    if(projected!==true||snapshot?.admitted!==true||snapshot.retained===true||
+       !Array.isArray(graph?.capabilities?.supportedOps)||
+       !graph.capabilities.supportedOps.includes("SET_FADER")||
+       !Array.isArray(graph.channels)||!Array.isArray(graph.edges)||
+       typeof channelId!=="string"||!/^\\d+$/.test(channelId)||
+       !Number.isFinite(levelDb)||levelDb< -60||levelDb>6)
+      return {kind:"UNAVAILABLE"};
+    const rows=graph.channels.filter(row=>row.id===channelId);
+    if(rows.length!==1||!["INPUT","GROUP","FX_RETURN"].includes(rows[0].role)||
+       !Number.isFinite(rows[0].controls?.faderDb))return {kind:"UNAVAILABLE"};
+    const inbound=graph.edges.filter(e=>e.to===channelId&&e.enabled===true);
+    if(inbound.length<1)return {kind:"UNAVAILABLE"};
+    return {kind:"READY",source:channelId,levelDb,wireCount:inbound.length};
+  }
+
   function gainReadback(edges,uiByEdgeId,pendingGains,channels=[]) {
     if(!Array.isArray(edges))return [];
     return edges.filter(e=>e.enabled===true)
@@ -374,7 +395,7 @@
   }
 
   return Object.freeze({gainDb,edgePresentation,parallelEdge,
-    acceptedParallelEdge,primaryChannelLevelPlan,gainReadback,canEditTap,gestureTap,sofAvailable,
+    acceptedParallelEdge,primaryChannelLevelPlan,channelSumLevelPlan,gainReadback,canEditTap,gestureTap,sofAvailable,
     compactSendGesture,nativeSendEdge,nativeTapPlan,sofSendEdge,
     channelTapEdge,nativeSendTogglePlan,primaryMainGesturePlan,nativeTransaction,
     gainDispatchPlan,nativeRecoveryPlan});

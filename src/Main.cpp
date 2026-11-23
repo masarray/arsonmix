@@ -690,8 +690,14 @@ public:
             maximisedBeforeOperatorFullscreen_=isFullScreen();
             setTitleBarHeight(0);
             if(!maximisedBeforeOperatorFullscreen_)setFullScreen(true);
+            // DocumentWindow fullscreen on Windows may use the taskbar's
+            // workArea. JUCE kiosk instead takes the display totalArea and
+            // suppresses taskbar/dock without a second topmost HWND.
+            juce::Desktop::getInstance().setKioskModeComponent(this,false);
         } else {
+            juce::Desktop::getInstance().setKioskModeComponent(nullptr,false);
             if(!maximisedBeforeOperatorFullscreen_)setFullScreen(false);
+            else setFullScreen(true);
             setTitleBarHeight(31);
         }
         operatorFullscreen_=entering;
@@ -723,6 +729,10 @@ public:
 
     ~ConsoleWindow() override
     {
+#if defined(_WIN32)
+        if(operatorFullscreen_&&juce::Desktop::getInstance().getKioskModeComponent()==this)
+            juce::Desktop::getInstance().setKioskModeComponent(nullptr,false);
+#endif
         hotkeys_.detach(); // release global keys before the JUCE HWND disappears
         stopTimer();
 #if defined(_WIN32)
