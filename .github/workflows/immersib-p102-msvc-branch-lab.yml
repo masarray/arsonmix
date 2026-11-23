@@ -1,0 +1,36 @@
+name: ImmerSIB MSVC FIR branch-specialization lab (no global build)
+on:
+  push:
+    branches:
+      - perf/immersib-p102-msvc-fir-specialization-lab-20261123
+    paths:
+      - tools/immersib_p102_branch_specialization_lab.py
+      - .github/workflows/immersib-p102-msvc-branch-lab.yml
+permissions:
+  contents: read
+concurrency:
+  group: immersib-p102-msvc-branch-one-shot
+  cancel-in-progress: true
+jobs:
+  compare:
+    name: Actual P102 full-core MSVC original-vs-hoisted FIR branch A/B
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify compiler and run two MSVC full-core builds, PCM bytes and CPU
+        shell: pwsh
+        run: |
+          $pf86 = [Environment]::GetFolderPath('ProgramFilesX86')
+          $vswhere = Join-Path $pf86 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path -LiteralPath $vswhere)) { throw 'MSVC_VSWHERE_MISSING' }
+          $vsroot = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vsroot) { throw 'MSVC_CPP_TOOLCHAIN_MISSING' }
+          $vcvars = Join-Path $vsroot 'VC\Auxiliary\Build\vcvars64.bat'
+          if (-not (Test-Path -LiteralPath $vcvars)) { throw 'MSVC_VCVARS_MISSING' }
+          $cmdline = 'call "' + $vcvars + '" >nul && python tools/immersib_p102_branch_specialization_lab.py --msvc'
+          & cmd.exe /D /C $cmdline
+          if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_SPECIALIZED_FIR_MSVC_REJECTED' }
