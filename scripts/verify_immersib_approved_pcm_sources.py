@@ -142,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     optimized = (
         github_blob_hash(
-            (root / OPTIMIZED_PATH).read_bytes().replace(b"\\r\\n", b"\\n")
+            (root / OPTIMIZED_PATH).read_bytes().replace(b"\r\n", b"\n")
         ) == OPTIMIZED_BLOB
     )
     print(
