@@ -2020,7 +2020,7 @@ test("P0 MAIN remains enabled through verified STEREO -> NONE -> STEREO edits",(
  assert.doesNotMatch(bridge,/routingSourceSwitch[^;]+monitor\(false\)/);
 });
 
-test("P0 post-BUS native IN routes NONE MONO STEREO via one PCM owner",()=>{
+test("P0 post-BUS native IN routes NONE MONO STEREO and PLAYER through one PCM owner",()=>{
  const bridge=read("web/approved-native-bridge.js");
  const host=read("src/Main.cpp");
  const engine=read("src/LiveAudioEngine.h");
@@ -2033,7 +2033,8 @@ test("P0 post-BUS native IN routes NONE MONO STEREO via one PCM owner",()=>{
  assert.match(bridge,/pendingNativeSources.set\(id,decision.entry\)/);
  assert.match(host,/if\(action=="routingNativeSourcePatch"\)/);
  assert.match(host,/engine_\.patchNativeInputSource\(ep,rev,roster,/);
- assert.match(lab,/const bool disconnect=!stereo&&physicalLeft==-1&&physicalRight==-1/);
+ assert.match(lab,/const bool disconnect=!musicPlayer&&!stereo&&\s*physicalLeft==-1&&physicalRight==-1/);
+ assert.match(lab,/if\(musicPlayer\) \{\s*inputs\.push_back\(\{channel,-1,-1,true,/);
  assert.match(lab,/nativeStructureLive_=true; \/\/ M4 source roster no longer authoritative/);
  assert.match(engine,/NATIVE_SOURCE_PUBLICATION_EXCEPTION/);
 });
