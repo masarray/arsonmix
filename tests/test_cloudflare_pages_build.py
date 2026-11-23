@@ -13,6 +13,9 @@ from build_cloudflare_pages import (
     DEFAULT_URL, GITHUB_PAGES_CATALOG, public_url, response_headers,
     validate_official_pages_catalog, write_catalog,
 )
+from pages_public_origin import (DEFAULT_PUBLIC_URL, render_landing_metadata,
+                                 robots_txt, sitemap_xml)
+from public_fx_pages import FX_PAGES, page_html
 
 
 class CloudflarePagesBuildTest(unittest.TestCase):
@@ -26,7 +29,30 @@ class CloudflarePagesBuildTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             public_url({"ARSONMIX_PUBLIC_URL": "http://example.org/"})
 
-    @staticmethod
+    def test_single_search_canonical_across_cloudflare_mirror(self):
+        # Cloudflare must not create a second indexed copy of eight FX guides.
+        self.assertEqual(DEFAULT_URL, DEFAULT_PUBLIC_URL)
+        base = public_url({"CF_PAGES_URL": "https://pr-878.arsonmix.pages.dev/",
+                           "CF_PAGES_BRANCH": "main"})
+        self.assertEqual(base, "https://masarray.github.io/arsonmix/")
+        home = render_landing_metadata(
+            (ROOT / "site/index.html").read_text(encoding="utf-8"), base)
+        self.assertIn('<link rel="canonical" href="' + base + '">', home)
+        self.assertIn('<meta property="og:url" content="' + base + '">', home)
+        self.assertIn(base + "media/console-overview.jpg", home)
+        for fx in FX_PAGES:
+            with self.subTest(fx=fx["slug"]):
+                detail = page_html(fx, base)
+                self.assertIn('<link rel="canonical" href="' +
+                              base + 'effects/' + fx["slug"] + '/">', detail)
+                self.assertNotIn('arsonmix.pages.dev', detail)
+        xml = sitemap_xml(base)
+        self.assertIn(base + 'effects/guitar-fx/', xml)
+        self.assertIn(base + 'effects/immersib/', xml)
+        self.assertNotIn('arsonmix.pages.dev', xml)
+        self.assertEqual(robots_txt(base).count('Sitemap: ' + base), 1)
+
+        @staticmethod
     def trusted_snapshot():
         tag = "v0.5.0-alpha.32"
         name = f"ArSonMix-{tag}-Windows-x64-Setup.zip"
@@ -141,8 +167,11 @@ class CloudflarePagesBuildTest(unittest.TestCase):
 
     def test_caching_and_branch_index_policy(self):
         self.assertIn("Cache-Control: no-store", response_headers("main"))
-        self.assertNotIn("X-Robots-Tag", response_headers("main"))
-        self.assertIn("X-Robots-Tag: noindex", response_headers("feature"))
+        main_headers = response_headers("main")
+        self.assertIn("/preview/*\n  X-Robots-Tag: noindex\n", main_headers)
+        self.assertNotIn("\n/*\n", "\n" + main_headers)
+        self.assertIn("/*\n  X-Robots-Tag: noindex\n",
+                      response_headers("feature"))
 
 
 if __name__ == "__main__":
