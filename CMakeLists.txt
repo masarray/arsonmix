@@ -208,7 +208,8 @@ endif()
 # network fetch, extra audio callback or duplicate mixer graph.
 add_library(ARMixArVerbCore STATIC
     third_party/arsonverb/src/Reverb.cpp
-    third_party/arsonverb/src/Presets.cpp)
+    third_party/arsonverb/src/Presets.cpp
+    third_party/arsonverb/src/arverb_c.cpp)
 target_include_directories(ARMixArVerbCore PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/arsonverb/include")
 target_compile_features(ARMixArVerbCore PUBLIC cxx_std_17)
