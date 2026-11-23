@@ -131,6 +131,8 @@ public:
     bool requiresContinuousBypassProcessing() const noexcept override {return true;}
     void onRealtimeBypass(bool, bool fully) noexcept override {
         if(fully && !fullyBypassed_) {
+            for(auto* peak:{&meterInputL_,&meterInputR_,&meterOutputL_,&meterOutputR_})
+                peak->store(0.f,std::memory_order_relaxed);
             fullyBypassed_=true;
             draining_=renderedOnAir_;
             drainFrames_=0;
@@ -153,6 +155,10 @@ public:
         const auto frames=static_cast<std::size_t>(pcm.getNumSamples());
         auto* left=pcm.getWritePointer(0);
         auto* right=pcm.getWritePointer(1);
+        if(!fullyBypassed_) {
+            meterInputL_.store(meterPeak(left,frames),std::memory_order_relaxed);
+            meterInputR_.store(meterPeak(right,frames),std::memory_order_relaxed);
+        }
         if(fullyBypassed_) {
             // FxInstance already preserved the exact dry PCM in its RT
             // scratch and will overwrite our output after this call.
@@ -161,6 +167,10 @@ public:
             juce::FloatVectorOperations::clear(right,static_cast<int>(frames));
         }
         engine_.process(left,right,left,right,frames);
+        if(!fullyBypassed_) {
+            meterOutputL_.store(meterPeak(left,frames),std::memory_order_relaxed);
+            meterOutputR_.store(meterPeak(right,frames),std::memory_order_relaxed);
+        }
         processedBlocks_.fetch_add(1,std::memory_order_release);
         if(!fullyBypassed_) {renderedOnAir_=true;return;}
         // Engine::reset() clears all delay rings and is forbidden here:
@@ -212,6 +222,14 @@ public:
     std::uint64_t processedBlocks() const noexcept {
         return processedBlocks_.load(std::memory_order_acquire);
     }
+    // Lock-free visual telemetry only. No UI control or processing decision
+    // reads these; sampling from the GUI timer never blocks ASIO.
+    std::array<float,4> meterPeaks() const noexcept {
+        return {meterInputL_.load(std::memory_order_relaxed),
+                meterInputR_.load(std::memory_order_relaxed),
+                meterOutputL_.load(std::memory_order_relaxed),
+                meterOutputR_.load(std::memory_order_relaxed)};
+    }
     bool acceptedSettings(VocalReverbSettings& v) const noexcept {
         return readAccepted(v);
     }
@@ -250,6 +268,13 @@ public:
         (void)restoreUnpublishedState(data,bytes);
     }
 private:
+    static float meterPeak(const float* samples,std::size_t frames) noexcept {
+        float peak=0.f;
+        for(std::size_t i=0;i<frames;++i)
+            if(std::isfinite(samples[i]))
+                peak=std::max(peak,std::fabs(samples[i]));
+        return std::min(peak,8.f);
+    }
     struct Edit {std::uint64_t id;VocalReverbSettings settings;};
     void applyToEngine(const VocalReverbSettings& settings) noexcept {
         for(std::size_t i=0;i<settings.values.size();++i)
@@ -286,6 +311,8 @@ private:
     std::atomic<int> acceptedAlgorithm_{1},acceptedPreset_{0};
     std::atomic<std::uint32_t> acceptedSequence_{0};
     std::atomic<std::uint64_t> appliedId_{0},processedBlocks_{0};
+    std::atomic<float> meterInputL_{0.f},meterInputR_{0.f};
+    std::atomic<float> meterOutputL_{0.f},meterOutputR_{0.f};
     std::atomic<std::uint32_t> pendingEdits_{0};
     std::uint64_t nextId_=0; // single message-thread producer
     // AUDIO-owned only: no other thread observes or resets live tail state.
