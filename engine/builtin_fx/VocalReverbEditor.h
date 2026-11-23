@@ -37,8 +37,8 @@ static_assert(MeterLayout::rightLabelX-
 inline juce::Font uiFont(float size) {
 #if defined(ARMIX_REVERB_INTER_EMBEDDED)
     static juce::Typeface::Ptr inter=juce::Typeface::createSystemTypefaceFor(
-        ARMixReverbInter::Inter_Variable_ttf,
-        static_cast<std::size_t>(ARMixReverbInter::Inter_Variable_ttfSize));
+        ARMixReverbInter::InterVariable_ttf,
+        static_cast<std::size_t>(ARMixReverbInter::InterVariable_ttfSize));
     if(inter!=nullptr)
         return juce::Font(juce::FontOptions(size).withTypeface(inter));
 #endif
