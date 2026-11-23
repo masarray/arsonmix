@@ -451,7 +451,11 @@ def main():
                 enabledInputs=active['enabledInputs'],enabledOutputs=active['enabledOutputs'],
                 inputEndpoints=g0['device']['inputEndpoints'])
             rebound['graph']['revision']='6'
-            rebound['graph']['capabilities']['supportedOps'].append('CREATE_CHANNEL')
+            rebound['graph']['capabilities']['supportedOps'].extend([
+                'CREATE_CHANNEL', 'SET_FADER'])
+            # The redesigned receiver LVL is the post-SUM ChannelId fader,
+            # not the previous independent WIRE EdgeId gain. A recovered
+            # producer must advertise SET_FADER before it can be enabled.
             rebound['mixerSession'].update(deviceEpoch='93',routeRevision='6')
             monitor_events=page.evaluate('()=>window.__events.filter(e=>e.payload?.action==="monitor").length')
             emit(page,'arMixConsoleSnapshot',rebound)

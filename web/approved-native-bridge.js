@@ -803,6 +803,27 @@
     }
     return true;
   }
+  // Reconcile the live SUM receiver's control availability AFTER a new
+  // native ChannelId roster has been projected and admitted. The native
+  // /preview/ render runs before flags.acceptedGraphConnected flips true,
+  // so its initial fail-closed disabled state must not become permanently
+  // latched after device repair. Never infer authority from HTML alone.
+  function syncReceiverSumLevelAdmission(next){
+    const inputs=document.querySelectorAll?.('input[data-field="wireChannelLevel"]')||[];
+    for(const input of inputs){
+      const ui=Number(input.dataset.channelId),id=nativeByUiId.get(ui);
+      const channel=next?.graph?.channels?.find(ch=>ch.id===id);
+      const plan=wireVM.channelSumLevelPlan(next,flags.acceptedGraphConnected,
+        id,channel?.controls?.faderDb);
+      const ready=Number.isSafeInteger(ui)&&plan.kind==="READY";
+      if(input.disabled===ready)input.disabled=!ready;
+      const title=ready?
+        "CH LVL after SUM · native ChannelId fader / ACK readback":
+        "CH LVL locked · verify native audio device and SET_FADER admission";
+      if(input.title!==title)input.title=title;
+    }
+  }
+
   // One authoritative EdgeId gain projection for normal readback AND failure
   // rollback. No duplicate DSP math or synthetic accepted control state.
   function nativeWireGainReadback(next){
@@ -925,10 +946,8 @@
       const sumKnob=document.querySelector(
         '.strip[data-id="'+t.id+'"] input[data-field="wireChannelLevel"]');
       if(sumKnob){
-        const validSum=next.admitted===true&&next.retained!==true&&
-          next.graph.capabilities.supportedOps.includes("SET_FADER")&&
-          next.graph.edges.some(e=>e.enabled===true&&e.to===ch.id);
-        sumKnob.disabled=!validSum;
+        // This updater paints an accepted scalar, NOT device admission.
+        // syncReceiverSumLevelAdmission owns enabling/disabling the pot.
         if(!scope?.wireGainDragging&&Number.isFinite(db)&&
            document.activeElement!==sumKnob){
           sumKnob.value=String(Math.max(-60,Math.min(6,db)));
@@ -3490,6 +3509,7 @@
     if(readModel.kind==="STALE") {
       flags.acceptedGraphConnected=false;
       flags.productionCallbackLive=false;
+      syncReceiverSumLevelAdmission(next);
       lastPaintedSignature="";
       delete document.documentElement.dataset.armixNativeRoster;
       status("AUDIO CONNECTION CHANGED · OPEN AUDIO I/O");
@@ -3550,6 +3570,7 @@
         lastPaintedSignature=signature;
         document.documentElement.dataset.armixNativeRoster="accepted";
       }
+      syncReceiverSumLevelAdmission(next);
       stopDemo();
       paintNativeMeters(next);
       status(next.raw?.retainedOfflineFxPending?
@@ -3581,6 +3602,9 @@
       ch.id,ch.controls,ch.inserts,ch.fxRackBypassed,ch.primaryOutId]))+"|"+
       JSON.stringify(next.graph.edges)+"|"+appearanceRevision;
     if (signature===lastPaintedSignature) {
+      // A capability/readiness transition may retain the structural
+      // signature. Keep the WIRE receiver admission correct without repaint.
+      syncReceiverSumLevelAdmission(next);
       // Telemetry-only snapshots should not traverse all channels. But an
       // expired/rejected edit with unchanged graph values must not strand its
       // LCD at a speculative value; error status settles that separately.
@@ -3597,6 +3621,7 @@
     }
     document.documentElement.dataset.armixNativeRoster="accepted";
     flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;
+    syncReceiverSumLevelAdmission(next);
     // G-MV30: first accepted ChannelId roster is projected only NOW.
     // The earlier pre-projection syncAddTrack() was fail-closed while the
     // native graph was unmounted; enable the button only after successful

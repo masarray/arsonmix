@@ -6996,3 +6996,17 @@ test("P0 receiver SUM WIRE disables on retained epoch, then reenables on accepte
  assert.match(asm,/wireEditable=window\.__ARMIX_NATIVE_M2__\?\.canWireChannelLevel\?\.\(t\.id\)===true/);
  assert.match(asm,/wireEditable\?'':' disabled'/);
 });
+
+
+test("P0 native receiver LVL re-admits only after projected device recovery",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const cold=read("tests/approved_native_cold_start_smoke.py");
+ assert.match(bridge,/function syncReceiverSumLevelAdmission\(next\)/);
+ assert.match(bridge,/flags\.productionCallbackLive=next\.productLive;flags\.acceptedGraphConnected=true;\s*syncReceiverSumLevelAdmission\(next\)/);
+ assert.match(bridge,/if\(transientPlan\.discardRetained\)/);
+ assert.match(bridge,/syncReceiverSumLevelAdmission\(next\);\s*stopDemo\(\)/);
+ assert.match(bridge,/channelSumLevelPlan\(next,flags\.acceptedGraphConnected,/);
+ assert.match(cold,/['"]CREATE_CHANNEL['"], ['"]SET_FADER['"]/);
+ assert.match(cold,/\.wire-gain'\)\.is_disabled\(\)/);
+ assert.match(cold,/\.wire-gain'\)\.is_enabled\(\)/);
+});
