@@ -53,6 +53,18 @@ int main() {
     auto snapshot=ui->createComponentSnapshot(ui->getLocalBounds());
     assert(snapshot.isValid()&&snapshot.getWidth()==1120&&snapshot.getHeight()==430);
     assert(snapshot.getPixelAt(16,16)!=snapshot.getPixelAt(568,353));
+    // These are snapshots of the ACTUAL JUCE AudioProcessorEditor canvas.
+    // No HTML mockup, screenshot reference, or image synthesis involved.
+    const auto saveImage=[](const juce::Image& picture,const char* name) {
+        const auto file=juce::File::getCurrentWorkingDirectory().getChildFile(name);
+        juce::FileOutputStream out(file);
+        assert(out.openedOk());
+        juce::PNGImageFormat png;
+        assert(png.writeImageToStream(picture,out));
+        out.flush();
+        assert(file.existsAsFile() && file.getSize()>10000);
+    };
+    saveImage(snapshot,"ArSonMix_Vocal_Reverb_Native_MIX_100.png");
     auto* motion=dynamic_cast<juce::TextButton*>(
         ui->findChildWithID("armix.reverb.tab.3"));
     assert(motion&&motion->onClick);
@@ -62,6 +74,7 @@ int main() {
     auto motionImage=ui->createComponentSnapshot(ui->getLocalBounds(),true,1.5f);
     assert(motionImage.isValid()&&motionImage.getWidth()==1680&&
            motionImage.getHeight()==645);
+    saveImage(motionImage,"ArSonMix_Vocal_Reverb_Native_MOTION_150.png");
     assert(!ui->findChildWithID("armix.reverb.param.12")->getBounds().isEmpty());
     auto* nextPreset=dynamic_cast<juce::TextButton*>(
         ui->findChildWithID("armix.reverb.preset.next"));
