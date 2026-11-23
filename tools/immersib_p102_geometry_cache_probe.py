@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Standalone P102.3 actual six-wall geometry-cache A/B lab.
+"""Standalone P102.3 six-wall geometry-cache and two-pass FIR A/B lab.
 
 The owner-approved EARLY FIR header and all 30 PCM sources stay byte-for-byte
 UNCHANGED. A generated candidate is confined to a temporary include directory.
@@ -57,7 +57,7 @@ def replace_exact(text: str, old: str, new: str, count: int = 1) -> str:
     return text.replace(old, new)
 
 
-def build_candidate(source: str) -> str:
+def build_candidate(source: str, two_pass: bool = False) -> str:
     start = source.index("class SonKuEarlyReflections final {")
     end = source.rindex("} // namespace armix::sonku")
     clone = source[start:end]
@@ -107,6 +107,35 @@ def build_candidate(source: str) -> str:
         "    float cachedSpread_=0.f,cachedYaw_=0.f;\n"
         "    std::uint64_t geometryCacheSkips_=0;",
     )
+    if two_pass:
+        # Preserve the exact per-tap coefficient update and sequential
+        # l/r accumulation, but separate the kernel-slew pass from the
+        # audio FIR pass. This allows the compiler to optimize independent
+        # kernel updates without reordering the floating PCM sums.
+        clone = replace_exact(
+            clone,
+            "                    const auto render=[&](auto&& sample) noexcept {\n"
+            "                        for(int k=0;k<freshTaps;++k){\n"
+            "                            const float v=sample(k);\n"
+            "                            const auto h=advance(k);\n"
+            "                            l+=v*h[0];r+=v*h[1];\n"
+            "                        }\n"
+            "                        for(int k=freshTaps;k<hrir::taps;++k)\n"
+            "                            (void)advance(k);\n"
+            "                    };",
+            "                    const auto render=[&](auto&& sample) noexcept {\n"
+            "                        // One independent kernel-slew pass. The\n"
+            "                        // unchanged FIR accumulation still visits\n"
+            "                        // k=0..freshTaps in its original order.\n"
+            "                        for(int k=0;k<hrir::taps;++k)\n"
+            "                            (void)advance(k);\n"
+            "                        for(int k=0;k<freshTaps;++k){\n"
+            "                            const float v=sample(k);\n"
+            "                            l+=v*p.kernel[0][k];\n"
+            "                            r+=v*p.kernel[1][k];\n"
+            "                        }\n"
+            "                    };",
+        )
     return (
         "// GENERATED LAB-ONLY, never checked into product acoustic sources.\n"
         "#pragma once\n"
@@ -126,23 +155,31 @@ def main() -> int:
     if gxx is None:
         raise RuntimeError("FIR_LAB_GXX_NOT_FOUND")
     with tempfile.TemporaryDirectory(prefix="imersib-geometry-bitexact-") as d:
-        tmp = pathlib.Path(d)
-        (tmp / "SonKuEarlyReflectionsGeometryCache.h").write_text(
-            build_candidate(EARLY.read_text(encoding="utf-8")),
-            encoding="utf-8",
-        )
-        cmd = [
-            gxx, "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror",
-            "-pedantic", "-ffp-contract=off", "-I", str(ROOT),
-            "-I", str(tmp),
-            *["-D" + m + "=1" for m in MACROS],
-            str(TEST), "-o", str(tmp / "geometry_bitexact"),
-        ]
-        subprocess.run(cmd, cwd=ROOT, check=True, timeout=210)
-        subprocess.run(
-            [str(tmp / "geometry_bitexact")],
-            cwd=ROOT, check=True, timeout=210,
-        )
+        root_tmp = pathlib.Path(d)
+        approved_source = EARLY.read_text(encoding="utf-8")
+        for variant, two_pass in (
+            ("geometry_only", False),
+            ("geometry_plus_two_pass_fir", True),
+        ):
+            tmp = root_tmp / variant
+            tmp.mkdir()
+            (tmp / "SonKuEarlyReflectionsGeometryCache.h").write_text(
+                build_candidate(approved_source, two_pass=two_pass),
+                encoding="utf-8",
+            )
+            cmd = [
+                gxx, "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror",
+                "-pedantic", "-ffp-contract=off", "-I", str(ROOT),
+                "-I", str(tmp),
+                *["-D" + m + "=1" for m in MACROS],
+                str(TEST), "-o", str(tmp / "geometry_bitexact"),
+            ]
+            print("IMMERSIB_LAB_VARIANT=" + variant, flush=True)
+            subprocess.run(cmd, cwd=ROOT, check=True, timeout=210)
+            subprocess.run(
+                [str(tmp / "geometry_bitexact")],
+                cwd=ROOT, check=True, timeout=210,
+            )
     print("IMMERSIB_GEOMETRY_LAB_COMPLETED source_lock=UNCHANGED "
           "shipping_dsp=UNMODIFIED hardware=NOT_TESTED")
     return 0
