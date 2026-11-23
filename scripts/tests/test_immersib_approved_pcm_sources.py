@@ -35,7 +35,7 @@ class ApprovedImmerSIBSourceLockTests(unittest.TestCase):
                       if item["path"] == OPTIMIZED_PATH)
         self.assertEqual(historic["blob"], APPROVED_ORIGINAL_BLOB)
         self.assertEqual(
-            github_blob_hash((ROOT / OPTIMIZED_PATH).read_bytes()),
+            github_blob_hash((ROOT / OPTIMIZED_PATH).read_bytes().replace(b"\r\n", b"\n")),
             OPTIMIZED_BLOB,
         )
         self.assertNotEqual(OPTIMIZED_BLOB, APPROVED_ORIGINAL_BLOB)
