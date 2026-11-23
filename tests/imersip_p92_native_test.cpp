@@ -424,9 +424,36 @@ static void editorReopenStress(int rate) {
             fx->processBlock(pcm,midi);
         }
         assert(!fx->stateSnapshotQuiescent()); // ACK still awaits UI polling
-        // Invoke the actual 25 Hz JUCE editor timer; NEVER forge a PCM ACK.
-        juce::Thread::sleep(65);
-        juce::Timer::callPendingTimersSynchronously();
+        // Pump the ACTUAL JUCE message loop as the production host does.
+        // A fixed sleep + one callPendingTimersSynchronously() is not a
+        // guaranteed timer dispatch in a headless Windows console runner:
+        // the 25 Hz timer may still be waiting for MessageManager delivery.
+        // Bound the wait, never forge a completion or bypass audio ACK.
+        for(int attempt=0;attempt<20;++attempt){
+#if JUCE_MODAL_LOOPS_PERMITTED
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+#else
+            juce::Thread::sleep(50);
+            juce::Timer::callPendingTimersSynchronously();
+#endif
+            if(combo->getSelectedId()==deferredScene &&
+               fx->stateSnapshotQuiescent())break;
+        }
+        if(combo->getSelectedId()!=deferredScene ||
+           !fx->stateSnapshotQuiescent()){
+            const auto accepted=fx->acceptedSettings();
+            std::fprintf(stderr,
+                "IMMERSIB_REAL_ACK_TIMEOUT expected=%d visible=%d "
+                "lastRequest=%llu applied=%d quiescent=%d "
+                "acceptedPreset=%d acceptedTrim=%.8f\n",
+                deferredScene,combo->getSelectedId(),
+                static_cast<unsigned long long>(
+                    fx->lastCompletedRequestId()),
+                fx->lastCompletionApplied()?1:0,
+                fx->stateSnapshotQuiescent()?1:0,
+                accepted.spacePreset,
+                static_cast<double>(accepted.outputTrim));
+        }
         assert(combo->getSelectedId()==deferredScene);
         assert(fx->stateSnapshotQuiescent());
         const auto installed=fx->acceptedSettings();
