@@ -190,10 +190,12 @@ public:
         labels_[2].setText("REVERB TIME",juce::dontSendNotification);
         setSize(1120,430);
         layoutPage();
+        processor_.attachMeterView();
         startTimerHz(30);
     }
     ~VocalReverbEditor() override {
         stopTimer();
+        processor_.detachMeterView();
         for(auto& k:knobs_)k.setLookAndFeel(nullptr);
     }
 

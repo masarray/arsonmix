@@ -155,7 +155,11 @@ public:
         const auto frames=static_cast<std::size_t>(pcm.getNumSamples());
         auto* left=pcm.getWritePointer(0);
         auto* right=pcm.getWritePointer(1);
-        if(!fullyBypassed_) {
+        // A closed editor must cost ZERO extra PCM peak scans. Subscribers
+        // are independent of processing/state and use one relaxed load.
+        const bool measure = meterSubscribers_.load(std::memory_order_relaxed)>0 &&
+                             !fullyBypassed_;
+        if(measure) {
             meterInputL_.store(meterPeak(left,frames),std::memory_order_relaxed);
             meterInputR_.store(meterPeak(right,frames),std::memory_order_relaxed);
         }
@@ -167,7 +171,7 @@ public:
             juce::FloatVectorOperations::clear(right,static_cast<int>(frames));
         }
         engine_.process(left,right,left,right,frames);
-        if(!fullyBypassed_) {
+        if(measure) {
             meterOutputL_.store(meterPeak(left,frames),std::memory_order_relaxed);
             meterOutputR_.store(meterPeak(right,frames),std::memory_order_relaxed);
         }
@@ -224,6 +228,14 @@ public:
     }
     // Lock-free visual telemetry only. No UI control or processing decision
     // reads these; sampling from the GUI timer never blocks ASIO.
+    void attachMeterView() noexcept {
+        meterSubscribers_.fetch_add(1,std::memory_order_relaxed);
+    }
+    void detachMeterView() noexcept {
+        // Balanced by editor ownership; multiple simultaneously open editors
+        // cannot prematurely suppress the remaining observer's meters.
+        meterSubscribers_.fetch_sub(1,std::memory_order_relaxed);
+    }
     std::array<float,4> meterPeaks() const noexcept {
         return {meterInputL_.load(std::memory_order_relaxed),
                 meterInputR_.load(std::memory_order_relaxed),
@@ -311,6 +323,7 @@ private:
     std::atomic<int> acceptedAlgorithm_{1},acceptedPreset_{0};
     std::atomic<std::uint32_t> acceptedSequence_{0};
     std::atomic<std::uint64_t> appliedId_{0},processedBlocks_{0};
+    std::atomic<std::uint32_t> meterSubscribers_{0};
     std::atomic<float> meterInputL_{0.f},meterInputR_{0.f};
     std::atomic<float> meterOutputL_{0.f},meterOutputR_{0.f};
     std::atomic<std::uint32_t> pendingEdits_{0};
