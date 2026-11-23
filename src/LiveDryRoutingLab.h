@@ -2304,6 +2304,22 @@ public:
         nativeControlDirty_=true;
         return true;
     }
+    bool setNativeWireSumGain(std::uint64_t epochValue,std::uint64_t revision,
+                            armix::mixer::ChannelId id,float gain) noexcept {
+        if(!channelIdPhysicalPcmActive()||
+           nativeAccepted_.deviceEpoch!=epochValue||epochValue!=epoch()||
+           revision!=nativeAccepted_.pcmRevision||
+           !std::isfinite(gain)||gain<0.f||gain>2.f)return false;
+        const auto* channel=nativeAccepted_.graph.roster.find(id);
+        if(!channel||(channel->role!=armix::mixer::ChannelRole::input && channel->role!=armix::mixer::ChannelRole::group && channel->role!=armix::mixer::ChannelRole::fxReturn))return false;
+        if(!nativePublisher_.setChannelWireSumGain(epochValue,revision,id,gain))return false;
+        if(!nativeAccepted_.graph.roster.rememberLiveWireSumGain(id,gain)) {
+            topologyFault_.store(true,std::memory_order_release);
+            return false;
+        }
+        nativeControlDirty_=true;
+        return true;
+    }
     bool setNativeInputMuteSolo(std::uint64_t epochValue,std::uint64_t revision,
                                 armix::mixer::ChannelId id,
                                 bool mute,bool solo) noexcept {
@@ -2779,6 +2795,7 @@ public:
                              "NATIVE_SET_PROCESSING_FORMAT",
                              "NATIVE_SET_CHANNEL_MIX",
                              "NATIVE_SET_INPUT_GAIN",
+                             "NATIVE_SET_WIRE_SUM_GAIN",
                              "NATIVE_SET_CHANNEL_MUTE_SOLO",
                              "NATIVE_SET_BUS_MUTE_SOLO",
                              "NATIVE_LOAD_INSERT","NATIVE_REMOVE_INSERT","NATIVE_MOVE_INSERT",
@@ -2812,6 +2829,7 @@ public:
             if(const auto* accepted=nativeAccepted_.graph.roster.find(ch.id)) {
                 row->setProperty("fader",static_cast<double>(accepted->faderLinear));
                 row->setProperty("inputGain",static_cast<double>(accepted->inputGainLinear));
+                row->setProperty("wireSumGain",static_cast<double>(accepted->wireSumGainLinear));
                 row->setProperty("pan",static_cast<double>(accepted->pan));
                 row->setProperty("mute",accepted->mute);
                 row->setProperty("solo",accepted->solo);

@@ -173,6 +173,16 @@ public:
             edit.kind=ChannelEdit::Kind::setInputGain;
             edit.value=static_cast<float>(std::pow(10.,n/20.));
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
+        } else if(operation=="SET_WIRE_SUM_GAIN") {
+            if(!(number.isDouble() || number.isInt() || number.isInt64()))
+                return bad("INVALID_WIRE_SUM_GAIN");
+            const auto n=static_cast<double>(number);
+            const auto* owner=editor_.roster().find(id);
+            if(!owner || (owner->role!=Role::input && owner->role!=Role::group && owner->role!=Role::fxReturn) || !std::isfinite(n) ||
+               n< -60. || n>6.)return bad("INVALID_WIRE_SUM_GAIN");
+            edit.kind=ChannelEdit::Kind::setWireSumGain;
+            edit.value=static_cast<float>(n<=-60.?0.:std::pow(10.,n/20.));
+            result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="SET_FADER" || operation=="SET_PAN") {
             if(!(number.isDouble() || number.isInt() || number.isInt64()))
                 return bad("INVALID_CONTROL_VALUE");
@@ -378,7 +388,7 @@ public:
         set(cap,"callbackOwnsChannelIds",false);
         juce::Array<juce::var> operations;
         for(const char* op:{"CREATE_CHANNEL","DELETE_CHANNEL","CREATE_GROUP",
-            "REMOVE_BUS","RENAME_CHANNEL","SET_FADER","SET_INPUT_GAIN","SET_PAN","SET_MUTE",
+            "REMOVE_BUS","RENAME_CHANNEL","SET_FADER","SET_INPUT_GAIN","SET_WIRE_SUM_GAIN","SET_PAN","SET_MUTE",
             "SET_SOLO","SET_PROCESSING_FORMAT","WIRE_TRANSACTION",
             "SET_SEND_ENABLED","SET_SEND_TAP",
             "ADD_FX_REFERENCE","REMOVE_FX_REFERENCE",
@@ -400,6 +410,8 @@ public:
                 "STEREO":"MONO");
             if(row.role==Role::input)set(controls,"inputGainDb",row.inputGainLinear>0.f?
                 20.*std::log10(static_cast<double>(row.inputGainLinear)):-144.);
+            if(!(row.role!=Role::input && row.role!=Role::group && row.role!=Role::fxReturn))set(controls,"wireSumGainDb",row.wireSumGainLinear>0.f?
+                std::max(-60.,20.*std::log10(static_cast<double>(row.wireSumGainLinear))):-60.);
             set(controls,"faderDb",row.faderLinear>0.f?
                 std::max(-60.,20.*std::log10(static_cast<double>(row.faderLinear))):-60.);
             set(controls,"pan",static_cast<double>(row.pan));

@@ -98,8 +98,9 @@ class DynamicPreparedMixerBlock final {
     }
     struct ChannelTarget final {
         std::atomic<std::uint64_t> state{Word::encode(1.f,1.f,false,false)};
-        armix::dsp::RealtimeSlew64 appliedL{},appliedR{},gate{},inputApplied{}; // AUDIO only
+        armix::dsp::RealtimeSlew64 appliedL{},appliedR{},gate{},inputApplied{},wireSumApplied{}; // AUDIO only
         std::atomic<float> inputGain{1.f}; // CONTROL writes, AUDIO reads
+        std::atomic<float> wireSumGain{1.f};
     };
     // CONTROL only packs already verified callback-ordinal physical pin pairs.
     // 0xFFFF means missing right input for mono, never an active physical pin.
@@ -182,6 +183,14 @@ public:
         if(found==controlIndex_.end() || lanes_[found->second].role!=ChannelRole::input)
             return false;
         channelTargets_[found->second].inputGain.store(gain,std::memory_order_release);
+        return true;
+    }
+    bool setChannelWireSumGain(ChannelId id,float gain) noexcept {
+        if(!id.value || !std::isfinite(gain) || gain<0.f || gain>2.f)return false;
+        const auto found=controlIndex_.find(id.value);
+        if(found==controlIndex_.end() || (lanes_[found->second].role!=ChannelRole::input && lanes_[found->second].role!=ChannelRole::group && lanes_[found->second].role!=ChannelRole::fxReturn))
+            return false;
+        channelTargets_[found->second].wireSumGain.store(gain,std::memory_order_release);
         return true;
     }
     // Canonical physical-pin validation shared by structural preflight and
@@ -421,6 +430,8 @@ public:
                !std::isfinite(row.inputGainLinear) || row.inputGainLinear<0.f ||
                row.inputGainLinear>16.f ||
                (row.role!=ChannelRole::input && row.inputGainLinear!=1.f) ||
+               !std::isfinite(row.wireSumGainLinear) || row.wireSumGainLinear<0.f || row.wireSumGainLinear>2.f ||
+               ((row.role!=ChannelRole::input && row.role!=ChannelRole::group && row.role!=ChannelRole::fxReturn) && row.wireSumGainLinear!=1.f) ||
                !std::isfinite(row.pan) || row.pan< -1.f || row.pan>1.f ||
                (row.format!=ProcessingFormat::mono &&
                 row.format!=ProcessingFormat::stereo) ||
@@ -631,6 +642,8 @@ public:
             target.gate.reset(next.initialAudible_[i]?1.f:0.f);
             target.inputGain.store(rows[i].inputGainLinear,std::memory_order_relaxed);
             target.inputApplied.reset(rows[i].inputGainLinear);
+            target.wireSumGain.store(rows[i].wireSumGainLinear,std::memory_order_relaxed);
+            target.wireSumApplied.reset(rows[i].wireSumGainLinear);
         }
         next.externalTargets_=std::make_unique<std::atomic<std::uint32_t>[]>(rows.size());
         next.externalAppliedTargets_=std::make_unique<std::atomic<std::uint32_t>[]>(rows.size());
@@ -741,6 +754,14 @@ public:
             const auto& lane=lanes_[i];
             float* const l=scratch_.data()+lane.slot*2*block;
             float* const r=l+block;
+            // The scratch buffers contain only accumulated incoming WIREs here.
+            // Scale their sum before adding any local physical/player input.
+            auto& sum=channelTargets_[i];
+            sum.wireSumApplied.retarget(sum.wireSumGain.load(std::memory_order_acquire));
+            if(sum.wireSumApplied.remaining!=0 || sum.wireSumApplied.current!=1.f)
+                for(int f=0;f<frames;++f) {
+                    const float g=sum.wireSumApplied.next(); l[f]*=g; r[f]*=g;
+                }
             if(lane.inputL>=0 && physical) {
                 auto& fade=sourceFades_[i];
                 const auto desired=sourceTargets_[i].load(std::memory_order_acquire);
