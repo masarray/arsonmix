@@ -92,11 +92,13 @@ public:
         title_.setText("ARSONMIX  /  VOCAL REVERB",juce::dontSendNotification);
         title_.setFont(juce::Font(juce::FontOptions(17.f)));
         title_.setColour(juce::Label::textColourId,pale);
+        title_.setComponentID("armix.reverb.title");
         addAndMakeVisible(title_);
 
         status_.setFont(juce::Font(juce::FontOptions(11.f)));
         status_.setColour(juce::Label::textColourId,reverb_ui::rgb(139,219,194));
         status_.setJustificationType(juce::Justification::centredRight);
+        status_.setComponentID("armix.reverb.status");
         addAndMakeVisible(status_);
 
         for(int i=0;i<8;++i)
@@ -116,6 +118,7 @@ public:
                 dirty_=true;
             }
         };
+        preset_.setComponentID("armix.reverb.preset");
         addAndMakeVisible(preset_);
         for(int i=0;i<4;++i)
             algorithm_.addItem(arverb::algorithmName(static_cast<arverb::Algorithm>(i)),i+1);
@@ -128,6 +131,7 @@ public:
             const int i=algorithm_.getSelectedId()-1;
             if(i>=0&&i<4){draft_.algorithm=i;markCustom();}
         };
+        algorithm_.setComponentID("armix.reverb.algorithm");
         addAndMakeVisible(algorithm_);
 
         auto setupArrow=[this,cyan](juce::TextButton& b,int step) {
@@ -139,12 +143,15 @@ public:
             addAndMakeVisible(b);
         };
         setupArrow(prev_,-1);setupArrow(next_,1);
+        prev_.setComponentID("armix.reverb.preset.previous");
+        next_.setComponentID("armix.reverb.preset.next");
 
         constexpr std::array<const char*,4> tabNames{{
             "MIX","SPACE","TONE","MOTION"
         }};
         for(std::size_t i=0;i<tabs_.size();++i) {
             auto& button=tabs_[i];
+            button.setComponentID("armix.reverb.tab."+juce::String(static_cast<int>(i)));
             button.setButtonText(tabNames[i]);
             button.setColour(juce::TextButton::buttonColourId,reverb_ui::rgb(27,33,41));
             button.setColour(juce::TextButton::buttonOnColourId,reverb_ui::rgb(17,48,65));
@@ -156,6 +163,7 @@ public:
         }
         for(std::size_t i=0;i<knobs_.size();++i) {
             auto& knob=knobs_[i];
+            knob.setComponentID("armix.reverb.param."+juce::String(static_cast<int>(i)));
             const auto& d=arverb::parameterInfo(static_cast<arverb::Parameter>(i));
             knob.setLookAndFeel(&dial_);
             knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -171,6 +179,7 @@ public:
                 markCustom();
             };
             addAndMakeVisible(knob);
+            labels_[i].setComponentID("armix.reverb.label."+juce::String(static_cast<int>(i)));
             labels_[i].setText(juce::String(d.name).toUpperCase(),juce::dontSendNotification);
             labels_[i].setFont(juce::Font(juce::FontOptions(11.f)));
             labels_[i].setColour(juce::Label::textColourId,reverb_ui::rgb(195,202,208));

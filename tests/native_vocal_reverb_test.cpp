@@ -11,6 +11,7 @@
 #include <vector>
 
 int main() {
+    juce::ScopedJuceInitialiser_GUI gui;
     using namespace armix::builtin_fx;
     static_assert(VocalReverbProcessor::stateBytes==68);
     for(int i=0;i<8;++i)assert(validVocalReverbSettings(vocalReverbFactoryPreset(i)));
@@ -21,6 +22,54 @@ int main() {
     assert(!entry->prepare(48000.,4,nullptr,0));
     auto created=entry->prepare(48000.,128,nullptr,0);
     assert(created && created->getName()=="Vocal Reverb" && created->hasEditor());
+    // Test the real native JUCE faceplate, not a WebView mock or a fake
+    // static rendered image. Dimensions and all param IDs are contract.
+    std::unique_ptr<juce::AudioProcessorEditor> ui(created->createEditor());
+    assert(ui && ui->getWidth()==1120 && ui->getHeight()==430);
+    auto* mainDecay=dynamic_cast<juce::Slider*>(
+        ui->findChildWithID("armix.reverb.param.2"));
+    auto* mainMix=dynamic_cast<juce::Slider*>(
+        ui->findChildWithID("armix.reverb.param.0"));
+    auto* presetSelect=dynamic_cast<juce::ComboBox*>(
+        ui->findChildWithID("armix.reverb.preset"));
+    auto* algorithmSelect=dynamic_cast<juce::ComboBox*>(
+        ui->findChildWithID("armix.reverb.algorithm"));
+    assert(mainDecay&&mainMix&&presetSelect&&algorithmSelect);
+    assert(mainDecay->isVisible()&&mainMix->isVisible());
+    assert(!mainDecay->getBounds().intersects(mainMix->getBounds()));
+    assert(presetSelect->getNumItems()==9 && algorithmSelect->getNumItems()==4);
+    auto* firstPage=dynamic_cast<juce::Slider*>(
+        ui->findChildWithID("armix.reverb.param.1"));
+    auto* motionPage=dynamic_cast<juce::Slider*>(
+        ui->findChildWithID("armix.reverb.param.8"));
+    assert(firstPage&&firstPage->isVisible()&&motionPage&&!motionPage->isVisible());
+    for(int id=0;id<13;++id) {
+        auto* knob=dynamic_cast<juce::Slider*>(
+            ui->findChildWithID("armix.reverb.param."+juce::String(id)));
+        assert(knob);
+        assert(knob->getSliderStyle()==juce::Slider::RotaryHorizontalVerticalDrag);
+        if(knob->isVisible())assert(ui->getLocalBounds().contains(knob->getBounds()));
+    }
+    auto snapshot=ui->createComponentSnapshot(ui->getLocalBounds());
+    assert(snapshot.isValid()&&snapshot.getWidth()==1120&&snapshot.getHeight()==430);
+    assert(snapshot.getPixelAt(16,16)!=snapshot.getPixelAt(568,353));
+    auto* motion=dynamic_cast<juce::TextButton*>(
+        ui->findChildWithID("armix.reverb.tab.3"));
+    assert(motion&&motion->onClick);
+    motion->onClick(); // same page handler as a real click, no audio change
+    assert(motionPage->isVisible()&&!firstPage->isVisible());
+    assert(mainDecay->isVisible()&&mainMix->isVisible());
+    auto motionImage=ui->createComponentSnapshot(ui->getLocalBounds(),true,1.5f);
+    assert(motionImage.isValid()&&motionImage.getWidth()==1680&&
+           motionImage.getHeight()==645);
+    assert(!ui->findChildWithID("armix.reverb.param.12")->getBounds().isEmpty());
+    auto* nextPreset=dynamic_cast<juce::TextButton*>(
+        ui->findChildWithID("armix.reverb.preset.next"));
+    assert(nextPreset&&nextPreset->onClick);
+    nextPreset->onClick(); // control-side draft update, not an ASIO ACK
+    assert(presetSelect->getSelectedId()==2);
+    ui.reset(); // owns and releases all knob look-and-feel references
+
     assert(created->getLatencySamples()==0);
     auto* typed=dynamic_cast<VocalReverbProcessor*>(created.get());
     assert(typed&&typed->isReady());
