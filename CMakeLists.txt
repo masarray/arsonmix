@@ -213,6 +213,8 @@ add_library(ARMixArVerbCore STATIC
 target_include_directories(ARMixArVerbCore PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/arsonverb/include")
 target_compile_features(ARMixArVerbCore PUBLIC cxx_std_17)
+# Match the upstream C ABI version contract; NEVER use ArSonMix project version.
+target_compile_definitions(ARMixArVerbCore PRIVATE ARVERB_BUILD_VERSION="1.0.1")
 
 juce_add_gui_app(ARMixConsole
     PRODUCT_NAME "AR MIX Studio"
