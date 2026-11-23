@@ -518,3 +518,29 @@ body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power):f
    Only raise the toolbar while the menu is open; native modal overlays retain
    their own higher blocking layer. No persistent topbar reordering. */
 .app .command-bar:has(.more-tools[open]){z-index:1200!important}
+
+/* UX-P0: prioritize frequently used live controls. Routes, Matrix and WIRE
+   Setup remain fully available in the existing More menu (same handlers). */
+.app .command-bar > :is(#wireNavigatorToggle,#wireMatrixToggle,
+  #wireConfigToggle,#mixContext){display:none!important}
+.app .command-bar:not(:has(#sofToggle[aria-pressed="true"])) #sofTarget{
+  display:none!important
+}
+/* Invisible forgiving click envelopes, not large visual controls: preserve
+   the 17px approved PNG sprite and 24px rack-row geometry. No delegation
+   from entire row (which would accidentally power/delete another insert). */
+.app .console-body .strip .fxslot-row button.mx-util-key
+  :is([data-util-kind="fx-slot"],[data-util-kind="fx-remove"]){position:relative}
+.app .console-body .strip .fxslot-row
+  button.mx-util-key:is([data-util-kind="fx-slot"],[data-util-kind="fx-remove"]){
+    isolation:isolate;z-index:2;touch-action:manipulation
+}
+.app .console-body .strip .fxslot-row
+  button.mx-util-key:is([data-util-kind="fx-slot"],[data-util-kind="fx-remove"])::before{
+    display:block!important;content:""!important;position:absolute;
+    inset:-3px;pointer-events:auto;background:transparent;border:0
+}
+.app .console-body .strip .fxslot-row
+  button.mx-util-key:is([data-util-kind="fx-slot"],[data-util-kind="fx-remove"]):focus-visible{
+    outline:2px solid #95d8ea!important;outline-offset:1px!important
+}

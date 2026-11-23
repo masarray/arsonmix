@@ -2223,14 +2223,17 @@
     const view=devicePanel?.querySelector?.("[data-audio-output-matrix]");
     if(!view || devicePanel.hidden)return;
     const patches=protocol.physicalOutputOverview(next);
-    const signature=JSON.stringify(patches);
+    const signature=JSON.stringify([patches,String(next?.device?.backend||"")]);
     if(devicePanel.dataset.outputSignature===signature)return;
     devicePanel.dataset.outputSignature=signature;
     const summary=devicePanel.querySelector("[data-audio-output-overview] .armix-output-heading");
     if(summary)summary.textContent="OUTPUTS · "+patches.length+" physical patches";
     view.replaceChildren();
     if(!patches.length){
-      view.textContent="No verified ASIO output pins · choose an ASIO device.";
+      const backendName=String(next?.device?.backend||"");
+      view.textContent=/ASIO/i.test(backendName)?
+        "No assignable ASIO pins. Verify the interface output-pair mapping in Audio Device.":
+        "Windows Audio uses the selected stereo playback endpoint. Per-pin output routing is available with a verified multichannel ASIO interface.";
       return;
     }
     for(const patch of patches){
@@ -2435,6 +2438,23 @@
     window.clearTimeout(toastTimer);
     toastTimer=window.setTimeout(()=>{element.hidden=true;},3400);
   }
+  let lastAudioRepairAt=-Infinity;
+  function recommendAudioRepair(context) {
+    // The user explicitly attempted a live input or FX operation. Avoid
+    // disruptive startup popups, silent driver fallback or repeated overlays
+    // from the 12 Hz status/readback loop.
+    if(logicalView || deviceBusy())return false;
+    const now=performance.now();
+    if(now-lastAudioRepairAt<1600)return true;
+    lastAudioRepairAt=now;
+    nativeToast(context+" · Audio I/O perlu diperiksa");
+    status("AUDIO NOT READY · choose and Apply the correct driver and endpoint");
+    window.setTimeout(()=>{
+      if(!logicalView&&!deviceBusy()&&(!devicePanel||devicePanel.hidden))
+        openNativeAudioIO(); // explicit repair prompt, no automatic Apply
+    },220);
+    return true;
+  }
   let loopbackSerial=0,loopbackId="",loopbackPending=false;
   const loopbackField=name=>devicePanel?.querySelector("[data-audio-loopback-"+name+"]");
   function closeNativeAudioIO(){
@@ -2535,22 +2555,75 @@
         .armix-audio-pins{display:grid;grid-template-columns:1fr 1fr;gap:8px;
           max-height:135px;overflow:auto;padding:5px 0}
         .armix-audio-pins label{display:flex;align-items:center;gap:5px;font-size:11px}
+        /* Audio setup uses one clearly separated Device / Output Routing
+           workspace like a DAW preferences panel; no independent audio owner. */
+        .armix-audio-dialog{width:min(672px,96vw);padding:0;gap:0;
+          background:#1a252d;border-color:#506778;border-radius:8px}
+        .armix-audio-top{padding:13px 18px;border-bottom:1px solid #344b59;
+          background:#23323d;min-height:44px}
+        .armix-audio-dialog h2{font-size:14px;font-weight:550}
+        .armix-audio-tabs{display:flex;gap:2px;padding:0 14px;
+          border-bottom:1px solid #405866;background:#1b303b}
+        .armix-audio-dialog .armix-audio-tab{background:transparent;border:0;
+          border-bottom:2px solid transparent;border-radius:0;color:#a6c1cc;
+          min-height:35px;padding:7px 15px;font-size:12px;font-weight:500}
+        .armix-audio-dialog .armix-audio-tab[aria-selected="true"]{
+          background:#335b73;border-color:#79c3e6;color:#f2fcff}
+        .armix-endpoint-fields{display:grid;gap:10px;padding:18px 20px 12px}
+        .armix-endpoint-fields label{display:grid;align-items:center;
+          grid-template-columns:minmax(110px,155px) minmax(0,1fr);
+          gap:12px;color:#d0e0e6;min-height:30px}
+        .armix-endpoint-fields select{min-width:0;min-height:33px}
+        .armix-endpoint-fields .armix-device-note{padding:9px 12px;
+          border:1px solid #3c5765;background:#10232e;border-radius:4px}
+        .armix-audio-dialog [data-audio-latency]{font-variant-numeric:tabular-nums;
+          color:#b8d5e2;line-height:1.55}
+        .armix-audio-dialog details{margin:0 20px;padding:11px 0;
+          border-top:1px solid #354b59}
+        .armix-audio-dialog .armix-output-overview{border:0;padding:15px 20px}
+        .armix-output-heading{font-size:12px;color:#d2e9ef;margin-bottom:7px}
+        .armix-output-matrix{max-height:min(46vh,360px);gap:4px}
+        .armix-output-row{grid-template-columns:92px minmax(0,1fr) auto;
+          min-height:34px;padding:8px 10px}
+        .armix-audio-dialog[data-audio-tab="device"] .armix-output-overview,
+        .armix-audio-dialog[data-audio-tab="routing"] .armix-endpoint-fields,
+        .armix-audio-dialog[data-audio-tab="routing"] details{display:none}
+        .armix-audio-dialog .armix-device-actions{padding:12px 20px;
+          border-top:1px solid #344b59;background:#192a33}
+        .armix-audio-dialog .armix-device-actions button[data-audio-apply]{
+          background:#326881;border-color:#669ab2;min-width:112px}
+        .armix-audio-dialog .armix-device-progress{margin:10px 20px}
+        @media(max-width:620px){
+          .armix-endpoint-fields{padding:14px}
+          .armix-endpoint-fields label{grid-template-columns:1fr;gap:4px}
+          .armix-audio-dialog .armix-output-overview{padding:12px}
+          .armix-output-row{grid-template-columns:75px minmax(0,1fr)}
+          .armix-output-status{grid-column:2}
+        }
       `;
       document.head.appendChild(style);
       devicePanel=document.createElement("div");
       devicePanel.className="armix-audio-shade";
       devicePanel.innerHTML=`<section class="armix-audio-dialog" role="dialog"
-        aria-modal="true" aria-label="Audio hardware setup">
-        <header class="armix-audio-top"><h2>Audio I/O</h2><button class="armix-floating-close" type="button"
+        aria-modal="true" aria-label="Audio hardware setup" data-audio-tab="device">
+        <header class="armix-audio-top"><h2>Audio I/O Setup</h2><button class="armix-floating-close" type="button"
           data-audio-close aria-label="Close Audio I/O" title="Close"><svg xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path
           d="M6.4,19L5,17.6L10.6,12L5,6.4L6.4,5L12,10.6L17.6,5L19,6.4L13.4,12L19,17.6L17.6,19L12,13.4L6.4,19Z"/></svg></button></header>
-        <label>Driver<select data-audio-field="backend"></select></label>
-        <label>Input device<select data-audio-field="capture"></select></label>
-        <label>Output / monitor device<select data-audio-field="playback"></select></label>
-        <div class="armix-device-note" data-audio-active>Reading current audio device…</div>
-        <div class="armix-device-note" data-audio-latency aria-label="Driver-reported audio latency">
-          Latency · waiting for native device readback
+        <nav class="armix-audio-tabs" aria-label="Audio setup pages" role="tablist">
+          <button type="button" class="armix-audio-tab" data-audio-tab="device"
+            role="tab" aria-selected="true">Audio Device</button>
+          <button type="button" class="armix-audio-tab" data-audio-tab="routing"
+            role="tab" aria-selected="false">Output Routing</button>
+        </nav>
+        <div class="armix-endpoint-fields">
+          <label>Audio driver<select data-audio-field="backend"></select></label>
+          <label>Recording / input<select data-audio-field="capture"></select></label>
+          <label>Playback / monitor<select data-audio-field="playback"></select></label>
+          <div class="armix-device-note" data-audio-active>Reading current audio device…</div>
+          <div class="armix-device-note" data-audio-latency aria-label="Driver-reported audio latency">
+            Latency · waiting for native device readback
+          </div>
         </div>
         <details data-audio-loopback-details hidden>
           <summary>Wired round-trip calibration · ASIO</summary>
@@ -2606,7 +2679,13 @@
         </div></section>`;
       devicePanel.querySelector("[data-audio-close]").onclick=closeNativeAudioIO;
       devicePanel.addEventListener("click",e=>{
-        if(e.target===devicePanel)closeNativeAudioIO();
+        if(e.target===devicePanel){closeNativeAudioIO();return;}
+        const tab=e.target?.closest?.("button[data-audio-tab]");
+        const dialog=devicePanel.querySelector(".armix-audio-dialog");
+        if(!tab||!dialog||deviceBusy())return;
+        dialog.dataset.audioTab=tab.dataset.audioTab;
+        for(const item of devicePanel.querySelectorAll("button[data-audio-tab]"))
+          item.setAttribute("aria-selected",String(item===tab));
       });
       loopbackField("start").onclick=()=>requestLoopback(true);
       loopbackField("confirmed").onchange=e=>{
@@ -2648,6 +2727,10 @@
       document.body.appendChild(devicePanel);
     }
     devicePanel.hidden=false;
+    const dialog=devicePanel.querySelector(".armix-audio-dialog");
+    if(dialog)dialog.dataset.audioTab="device";
+    for(const item of devicePanel.querySelectorAll("button[data-audio-tab]"))
+      item.setAttribute("aria-selected",String(item.dataset.audioTab==="device"));
     paintPhysicalOutputs(hardware);
     if(deviceBusy())return;
     const active=devicePanel.querySelector("[data-audio-active]");
@@ -3941,6 +4024,7 @@
         const raw=Number(el.value);
         if(!accepted||!Number.isFinite(raw)||raw< -24||raw>24){
           el.value=String(Number.isFinite(t.trim)?t.trim:0);
+          if(!logicalView&&!deviceReady())recommendAudioRepair("GAIN belum aktif");
           status("INPUT GAIN unavailable · native PCM admission required");
           return true;
         }
@@ -3990,6 +4074,7 @@
         const plan=wireVM.channelSumLevelPlan(current,
           flags.acceptedGraphConnected,nativeIdFor(t),db);
         if(plan.kind!=="READY"||!streamFaderControl("faderDb",t,db,event.type==="change")){
+          if(!deviceReady())recommendAudioRepair("CH LVL belum aktif");
           status("CH SUM LVL unavailable · verify receiver and Audio I/O");
           if(event.type==="change")scope?.syncFaderVisual?.(t);
           return true;
@@ -4020,6 +4105,7 @@
         const id=nativeOwner?nativeIdFor(t):null;
         if((nativeOwner&&(!id||!controller?.state()?.current?.admitted))||
            (!nativeOwner&&(channel<0||channel>=10))||!deviceReady()){
+          if(!deviceReady())recommendAudioRepair("INPUT belum siap");
           status("INPUT REJECTED · verify native channel and hardware pins");
           el.value=t.input;return true;
         }
@@ -4205,6 +4291,10 @@
         editNativeFx(t,slot,null,0,token);return true;
       }
       if(action==="openPlugin"){
+        if(!logicalView&&!deviceReady()){
+          recommendAudioRepair("FX tidak dapat memproses audio");
+          return true;
+        }
         const slot=Number(btn?.dataset.slot),current=activeView();
         // Position only; no parameter write or PCM change.
         const recenter=btn?.dataset.recenter==="true";
@@ -4291,6 +4381,10 @@
         return true;
       }
       if(action==="slotPower"){
+        if(!logicalView&&!deviceReady()){
+          recommendAudioRepair("FX Power belum siap");
+          return true;
+        }
         if(logicalView){
           const id=nativeIdFor(t),row=logicalView.graph.channels.find(ch=>ch.id===id);
           const slot=Number(btn?.dataset.slot),insert=row?.inserts?.[slot];
@@ -4309,6 +4403,10 @@
         return true;
       }
       if(action==="fxOn"){
+        if(!logicalView&&!deviceReady()){
+          recommendAudioRepair("FX Rack belum siap");
+          return true;
+        }
         if(logicalView){
           const channelId=nativeIdFor(t);
           const row=logicalView.graph.channels.find(ch=>ch.id===channelId);

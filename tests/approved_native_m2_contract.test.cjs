@@ -6949,3 +6949,22 @@ test("P0 input GAIN sends bounded latest native intents during pointermove",()=>
   assert.match(host,/setKioskModeComponent\(this,false\)/);
   assert.match(host,/setKioskModeComponent\(nullptr,false\)/);
 });
+
+
+test("P0 Audio I/O help reacts to explicit failed operator intent without auto-ARM",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/function recommendAudioRepair\(context\)/);
+ assert.match(bridge,/if\(!deviceReady\(\)\)recommendAudioRepair\("INPUT belum siap"\)/);
+ assert.match(bridge,/recommendAudioRepair\("FX tidak dapat memproses audio"\)/);
+ assert.match(bridge,/window\.setTimeout\(\(\)=>\{/);
+ assert.match(bridge,/openNativeAudioIO\(\); \/\/ explicit repair prompt/);
+ assert.match(bridge,/if\(now-lastAudioRepairAt<1600\)return true/);
+ assert.match(bridge,/data-audio-tab="routing"/);
+ assert.match(bridge,/dialog\.dataset\.audioTab=tab\.dataset\.audioTab/);
+ assert.match(bridge,/Windows Audio uses the selected stereo playback endpoint/);
+ assert.doesNotMatch(bridge,/recommendAudioRepair\([^)]*\)\s*;\s*backend\.emitEvent\("arMixAction",\{action:"monitor"/);
+ const css=read("site/preview-v2/assets/mixer-contextual-buttons.css");
+ assert.match(css,/#wireNavigatorToggle,#wireMatrixToggle/);
+ assert.match(css,/#mixContext/);
+ assert.match(css,/inset:-3px;pointer-events:auto/);
+});
