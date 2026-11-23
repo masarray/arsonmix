@@ -4,6 +4,7 @@
 #include "FxSpsc.h"
 #include "../core/RealtimeNativeFxControl.h"
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -114,18 +115,71 @@ public:
         // RESTORED audio settings BEFORE prepare, never in the first callback.
         applyToEngine(s);
         engine_.prepare(rate); // CONTROL/host suspended; only place for allocation
+        rate_=rate;
+        renderedOnAir_=false;
+        fullyBypassed_=false;
+        draining_=false;
+        drainFrames_=0;
+        quietFrames_=0;
         ready_=true;
     }
     void releaseResources() override {ready_=false;}
     bool isReady() const noexcept{return ready_;}
+    // A time-dependent FX must never freeze an audible tail inside the
+    // native rack's fully-bypassed fast path. The already existing host
+    // callback remains the only DSP owner; no additional latency or worker.
+    bool requiresContinuousBypassProcessing() const noexcept override {return true;}
+    void onRealtimeBypass(bool, bool fully) noexcept override {
+        if(fully && !fullyBypassed_) {
+            fullyBypassed_=true;
+            draining_=renderedOnAir_;
+            drainFrames_=0;
+            quietFrames_=0;
+        } else if(!fully && fullyBypassed_) {
+            fullyBypassed_=false;
+            draining_=false;
+            drainFrames_=0;
+            quietFrames_=0;
+        }
+    }
     void processBlock(juce::AudioBuffer<float>& pcm,juce::MidiBuffer&) override {
         juce::ScopedNoDenormals noDenormals;
         if(!ready_||pcm.getNumChannels()<2||pcm.getNumSamples()<=0)return;
         consumeRealtimeEdits();
+        if(fullyBypassed_ && !draining_)return; // parked tank, minimal CPU
+        const auto frames=static_cast<std::size_t>(pcm.getNumSamples());
         auto* left=pcm.getWritePointer(0);
         auto* right=pcm.getWritePointer(1);
-        engine_.process(left,right,left,right,static_cast<std::size_t>(pcm.getNumSamples()));
+        if(fullyBypassed_) {
+            // FxInstance already preserved the exact dry PCM in its RT
+            // scratch and will overwrite our output after this call.
+            // Feed silence to dissipate, not new speech into a muted tail.
+            juce::FloatVectorOperations::clear(left,static_cast<int>(frames));
+            juce::FloatVectorOperations::clear(right,static_cast<int>(frames));
+        }
+        engine_.process(left,right,left,right,frames);
         processedBlocks_.fetch_add(1,std::memory_order_release);
+        if(!fullyBypassed_) {renderedOnAir_=true;return;}
+        // Engine::reset() clears all delay rings and is forbidden here:
+        // one-shot memory clearing in ASIO would create a deadline spike.
+        float peak=0.f;
+        for(std::size_t i=0;i<frames;++i)
+            peak=std::max(peak,std::max(std::fabs(left[i]),std::fabs(right[i])));
+        quietFrames_=peak<1.e-6f ? quietFrames_+frames : 0u;
+        drainFrames_+=frames;
+        // Allow the longest 250ms pre-delay and 132ms early reflections
+        // to traverse the network before assuming sustained silence.
+        const auto minFrames=static_cast<std::uint64_t>(rate_ * 0.70);
+        const auto sustainedQuiet=static_cast<std::uint64_t>(rate_ * 0.40);
+        const float decay=acceptedValues_[static_cast<std::size_t>(
+            arverb::Parameter::DecaySeconds)].load(std::memory_order_relaxed);
+        const auto maxFrames=static_cast<std::uint64_t>(
+            rate_ * (0.7+2.5*static_cast<double>(decay)));
+        if((drainFrames_>=minFrames && quietFrames_>=sustainedQuiet)||
+           drainFrames_>=maxFrames) {
+            draining_=false;
+            renderedOnAir_=false;
+        }
     }
     void processBlock(juce::AudioBuffer<double>&,juce::MidiBuffer&) override {}
     void consumeRealtimeEdits() noexcept override {
@@ -231,119 +285,15 @@ private:
     std::atomic<std::uint64_t> appliedId_{0},processedBlocks_{0};
     std::atomic<std::uint32_t> pendingEdits_{0};
     std::uint64_t nextId_=0; // single message-thread producer
+    // AUDIO-owned only: no other thread observes or resets live tail state.
+    double rate_=0.;
+    std::uint64_t drainFrames_=0,quietFrames_=0;
+    bool renderedOnAir_=false,fullyBypassed_=false,draining_=false;
     bool ready_=false,published_=false;
 };
 
-class VocalReverbEditor final : public juce::AudioProcessorEditor,private juce::Timer {
-public:
-    explicit VocalReverbEditor(VocalReverbProcessor& p)
-        :juce::AudioProcessorEditor(p),processor_(p) {
-        setOpaque(true);
-        if(!processor_.acceptedSettings(draft_))draft_=vocalReverbFactoryPreset(0);
-        title_.setText("ArSonMix  /  VOCAL REVERB",juce::dontSendNotification);
-        title_.setColour(juce::Label::textColourId,juce::Colour::fromRGB(226,234,244));
-        title_.setFont(juce::Font(juce::FontOptions(16.f)));
-        addAndMakeVisible(title_);
-        status_.setJustificationType(juce::Justification::centredRight);
-        status_.setColour(juce::Label::textColourId,juce::Colour::fromRGB(119,188,162));
-        addAndMakeVisible(status_);
-        for(int i=0;i<8;++i)preset_.addItem(vocalReverbPresetNames[static_cast<std::size_t>(i)],i+1);
-        preset_.addItem("Custom / saved",9);
-        preset_.setSelectedId(draft_.preset>=0?draft_.preset+1:9,juce::dontSendNotification);
-        preset_.onChange=[this] {
-            const auto id=preset_.getSelectedId();
-            if(id>=1&&id<=8){draft_=vocalReverbFactoryPreset(id-1);syncControls();}
-            dirty_=true;
-        };
-        addAndMakeVisible(preset_);
-        for(int i=0;i<4;++i)algorithm_.addItem(arverb::algorithmName(static_cast<arverb::Algorithm>(i)),i+1);
-        algorithm_.setSelectedId(draft_.algorithm+1,juce::dontSendNotification);
-        algorithm_.onChange=[this] {
-            draft_.algorithm=algorithm_.getSelectedId()-1;
-            markCustom();
-        };
-        addAndMakeVisible(algorithm_);
-        for(std::size_t i=0;i<knobs_.size();++i) {
-            auto& knob=knobs_[i];
-            const auto& spec=arverb::parameterInfo(static_cast<arverb::Parameter>(i));
-            knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-            knob.setTextBoxStyle(juce::Slider::TextBoxBelow,false,58,17);
-            knob.setRange(spec.minimum,spec.maximum,0);
-            knob.setValue(draft_.values[i],juce::dontSendNotification);
-            knob.setColour(juce::Slider::rotarySliderFillColourId,juce::Colour::fromRGB(96,194,191));
-            knob.setColour(juce::Slider::rotarySliderOutlineColourId,juce::Colour::fromRGB(51,65,81));
-            knob.setColour(juce::Slider::thumbColourId,juce::Colour::fromRGB(209,221,232));
-            knob.setColour(juce::Slider::textBoxTextColourId,juce::Colour::fromRGB(224,236,244));
-            knob.setColour(juce::Slider::textBoxBackgroundColourId,juce::Colour::fromRGB(26,34,46));
-            knob.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
-            knob.onValueChange=[this,i] {
-                draft_.values[i]=static_cast<float>(knobs_[i].getValue());
-                markCustom();
-            };
-            addAndMakeVisible(knob);
-            labels_[i].setText(juce::String(spec.name),juce::dontSendNotification);
-            labels_[i].setJustificationType(juce::Justification::centred);
-            labels_[i].setColour(juce::Label::textColourId,juce::Colour::fromRGB(162,178,195));
-            labels_[i].setFont(juce::Font(juce::FontOptions(11.f)));
-            addAndMakeVisible(labels_[i]);
-        }
-        setSize(816,346);
-        startTimerHz(30);
-    }
-    ~VocalReverbEditor() override {stopTimer();}
-    void paint(juce::Graphics& g) override {
-        g.fillAll(juce::Colour::fromRGB(19,25,34));
-        g.setColour(juce::Colour::fromRGB(35,47,61));
-        g.drawLine(16.f,58.f,static_cast<float>(getWidth()-16),58.f);
-        g.drawLine(16.f,200.f,static_cast<float>(getWidth()-16),200.f);
-    }
-    void resized() override {
-        title_.setBounds(18,10,290,27);
-        preset_.setBounds(309,12,204,28);
-        algorithm_.setBounds(525,12,115,28);
-        status_.setBounds(656,12,143,28);
-        constexpr int column=111,begin=18;
-        for(int i=0;i<13;++i) {
-            const int row=i<7?0:1;
-            const int item=row==0?i:i-7;
-            const int offset=row==0?begin:begin+54;
-            const int x=offset+item*column;
-            const int y=row==0?67:209;
-            knobs_[static_cast<std::size_t>(i)].setBounds(x,y,92,92);
-            labels_[static_cast<std::size_t>(i)].setBounds(x-6,y+90,104,19);
-        }
-    }
-private:
-    void markCustom() {
-        draft_.preset=-1;
-        preset_.setSelectedId(9,juce::dontSendNotification);
-        dirty_=true;
-    }
-    void syncControls() {
-        algorithm_.setSelectedId(draft_.algorithm+1,juce::dontSendNotification);
-        for(std::size_t i=0;i<knobs_.size();++i)
-            knobs_[i].setValue(draft_.values[i],juce::dontSendNotification);
-    }
-    void timerCallback() override {
-        if(inFlight_&&processor_.appliedRequestId()>=inFlightId_)inFlight_=false;
-        if(!processor_.isReady()){status_.setText("OFFLINE",juce::dontSendNotification);return;}
-        if(dirty_&&!inFlight_) {
-            const auto id=processor_.queueSettings(draft_);
-            if(id){inFlight_=true;inFlightId_=id;dirty_=false;}
-        }
-        status_.setText(inFlight_?"APPLYING":(dirty_?"QUEUED":"PCM APPLIED"),
-                        juce::dontSendNotification);
-    }
-    VocalReverbProcessor& processor_;
-    VocalReverbSettings draft_;
-    juce::Label title_,status_;
-    juce::ComboBox preset_,algorithm_;
-    std::array<juce::Slider,arverb::parameterCount> knobs_{};
-    std::array<juce::Label,arverb::parameterCount> labels_{};
-    std::uint64_t inFlightId_=0;
-    bool inFlight_=false,dirty_=false;
-};
-inline juce::AudioProcessorEditor* VocalReverbProcessor::createEditor() {
-    return new VocalReverbEditor(*this);
-}
 } // namespace armix::builtin_fx
+
+// The message-thread-only GUI lives in its own header; DSP, mailbox and
+// session state above remain independent of any editor implementation.
+#include "VocalReverbEditor.h"

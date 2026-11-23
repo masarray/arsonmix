@@ -4,6 +4,7 @@
 #endif
 #include "../engine/builtin_fx/VocalReverbProcessor.h"
 #include "../src/NativeBuiltInFx.h"
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <limits>
@@ -77,5 +78,124 @@ int main() {
     // old session bytes while published.
     typed->sealForRealtime();
     assert(!typed->restoreUnpublishedState(state.getData(),static_cast<int>(state.getSize())));
+    // Zero added sample latency is distinct from intentionally delayed WET
+    // reflections: 0% Mix must pass the very first dry sample unchanged.
+    auto zeroMix=vocalReverbFactoryPreset(0);
+    zeroMix.values[static_cast<std::size_t>(arverb::Parameter::Mix)]=0.f;
+    zeroMix.preset=-1;
+    auto drySeed=entry->prepare(48000.,64,nullptr,0);
+    auto* drySeedTyped=dynamic_cast<VocalReverbProcessor*>(drySeed.get());
+    assert(drySeedTyped);
+    assert(drySeedTyped->queueSettings(zeroMix)>0);
+    drySeedTyped->consumeRealtimeEdits();
+    juce::MemoryBlock dryState;
+    drySeed->getStateInformation(dryState);
+    auto coldDry=entry->prepare(48000.,64,dryState.get(),
+                                static_cast<int>(dryState.getSize()));
+    assert(coldDry && coldDry->getLatencySamples()==0);
+    juce::AudioBuffer<float> dryPcm(2,64);
+    dryPcm.clear();
+    dryPcm.setSample(0,0,.7f);
+    dryPcm.setSample(1,0,-.5f);
+    coldDry->processBlock(dryPcm,midi);
+    assert(std::fabs(dryPcm.getSample(0,0)-.7f)<2.e-6f);
+    assert(std::fabs(dryPcm.getSample(1,0)+.5f)<2.e-6f);
+    for(int i=1;i<64;++i) {
+        assert(std::fabs(dryPcm.getSample(0,i))<1.e-6f);
+        assert(std::fabs(dryPcm.getSample(1,i))<1.e-6f);
+    }
+
+    // Each singing preset must be an ACTUAL native C++ stereo wet tail.
+    // Stage the preset BEFORE prepare() so its first ASIO callback does not
+    // need to regenerate expensive reverb coefficients.
+    for(int program=0;program<8;++program) {
+        auto seed=entry->prepare(48000.,64,nullptr,0);
+        auto* seedTyped=dynamic_cast<VocalReverbProcessor*>(seed.get());
+        assert(seedTyped);
+        auto preset=vocalReverbFactoryPreset(program);
+        preset.values[static_cast<std::size_t>(arverb::Parameter::Mix)]=1.f;
+        preset.preset=-1;
+        assert(seedTyped->queueSettings(preset)>0);
+        seedTyped->consumeRealtimeEdits();
+        juce::MemoryBlock wetState;
+        seed->getStateInformation(wetState);
+        auto wet=entry->prepare(48000.,64,wetState.get(),
+                                static_cast<int>(wetState.getSize()));
+        assert(wet && wet->getLatencySamples()==0);
+        juce::AudioBuffer<float> p(2,128);
+        double eLeft=0.,eRight=0.,eFold=0.;
+        for(int block=0;block<256;++block) {
+            p.clear();
+            if(block==0) {p.setSample(0,0,.8f);p.setSample(1,0,.8f);}
+            wet->processBlock(p,midi);
+            if(block==0) {
+                // 100% wet with nonzero pre-delay: no dry first-sample leak.
+                assert(std::fabs(p.getSample(0,0))<1.e-6f);
+                assert(std::fabs(p.getSample(1,0))<1.e-6f);
+            }
+            for(int j=0;j<128;++j) {
+                const double a=p.getSample(0,j),b=p.getSample(1,j);
+                assert(std::isfinite(a)&&std::isfinite(b));
+                assert(std::fabs(a)<12. && std::fabs(b)<12.);
+                if(block>32) {eLeft+=a*a;eRight+=b*b;eFold+=(a+b)*(a+b)*.25;}
+            }
+        }
+        assert(eLeft>1.e-10 && eRight>1.e-10 && eFold>1.e-11);
+    }
+
+    // Native rack bypass must NOT freeze an audible room tail. Drain only
+    // after the fade finishes, feeding silence into the same FDN, then idle
+    // with zero DSP work. No ring-buffer reset spike in the PCM callback.
+    const auto beforeDrain=typed->processedBlocks();
+    typed->onRealtimeBypass(true,true);
+    for(int i=0;i<4000;++i) {
+        buffer.clear();
+        created->processBlock(buffer,midi);
+    }
+    const auto parked=typed->processedBlocks();
+    assert(parked>beforeDrain);
+    for(int i=0;i<20;++i) {
+        buffer.clear();
+        created->processBlock(buffer,midi);
+    }
+    assert(typed->processedBlocks()==parked);
+    typed->onRealtimeBypass(false,false);
+    float worstGhost=0.f;
+    for(int i=0;i<40;++i) {
+        buffer.clear();
+        created->processBlock(buffer,midi);
+        for(int sample=0;sample<128;++sample)
+            worstGhost=std::max(worstGhost,
+                std::max(std::fabs(buffer.getSample(0,sample)),
+                         std::fabs(buffer.getSample(1,sample))));
+    }
+    assert(worstGhost<1.e-3f);
+
+    // True zero-cost bypass before first audio render: initial BYPASS does
+    // not start a needless empty 8-line delay network on a live mixer.
+    auto coldBypass=entry->prepare(48000.,64,nullptr,0);
+    auto* coldTyped=dynamic_cast<VocalReverbProcessor*>(coldBypass.get());
+    assert(coldTyped);
+    coldTyped->onRealtimeBypass(true,true);
+    dryPcm.clear();
+    coldBypass->processBlock(dryPcm,midi);
+    assert(coldTyped->processedBlocks()==0);
+    coldTyped->onRealtimeBypass(false,false);
+
+    // Prepare/automation smoke across common monitoring sample rates;
+    // the native FX cannot secretly add a plugin delay or create a second
+    // PCM processing pipeline.
+    for(const double rate : {44100.,48000.,96000.,192000.}) {
+        auto instance=entry->prepare(rate,32,nullptr,0);
+        assert(instance && instance->getLatencySamples()==0);
+        juce::AudioBuffer<float> small(2,32);
+        for(int block=0;block<32;++block) {
+            small.clear();
+            if(block==0)small.setSample(0,0,.5f);
+            instance->processBlock(small,midi);
+            for(int ch=0;ch<2;++ch)for(int j=0;j<32;++j)
+                assert(std::isfinite(small.getSample(ch,j)));
+        }
+    }
     return 0;
 }

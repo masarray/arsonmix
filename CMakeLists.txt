@@ -215,6 +215,13 @@ target_include_directories(ARMixArVerbCore PUBLIC
 target_compile_features(ARMixArVerbCore PUBLIC cxx_std_17)
 # Match the upstream C ABI version contract; NEVER use ArSonMix project version.
 target_compile_definitions(ARMixArVerbCore PRIVATE ARVERB_BUILD_VERSION="1.0.1")
+# Standalone, explicit-only p50/p95/p99 CPU profile across ASIO-like blocks.
+# Synthetic/offline results are informational, NEVER a device FAT gate.
+add_executable(ARMixVocalReverbCpuProfile EXCLUDE_FROM_ALL
+    tools/native_vocal_reverb_cpu_profile.cpp)
+target_link_libraries(ARMixVocalReverbCpuProfile PRIVATE ARMixArVerbCore)
+target_compile_features(ARMixVocalReverbCpuProfile PRIVATE cxx_std_17)
+
 
 juce_add_gui_app(ARMixConsole
     PRODUCT_NAME "AR MIX Studio"
