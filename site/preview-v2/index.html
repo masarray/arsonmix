@@ -2397,8 +2397,11 @@ function finishGainDialGesture(event,cancel=false){
    // Exact restore, bypass detent; native audio remains unchanged.
    handleField({target:g.input,type:'input',shiftKey:true});
   }
-  // Cancel never emits SET_INPUT_GAIN. If a native ACK timed out while
-  // capturing, repaint from its accepted ChannelId scalar after release.
+  // Cancellation must compensate any real-time native gain changes that
+  // already reached accepted PCM; only JUCE ACK/readback can confirm undo.
+  // Browser reference never emits a native operation.
+  if(window.__JUCE__?.backend)
+   window.__ARMIX_NATIVE_GAIN_CANCEL__?.(g.input,g.start);
   window.__ARMIX_NATIVE_GAIN_RESTORE__?.();
  }else if(g.active&&Number(g.input.value)!==g.start){
   // One physical release -> one accepted native intent, no click-only write.
@@ -2715,7 +2718,7 @@ document.querySelector('.console-body').addEventListener('wheel',e=>{
  if(!target)return;
  const input=target.matches?.('input[type="range"]')?target:
   target.querySelector?.('input[type="range"]');
- const allowed=new Set(['level','pan','wireGain','trim','sendLevel','sendPan']);
+ const allowed=new Set(['level','pan','wireGain','wireChannelLevel','trim','sendLevel','sendPan']);
  if(!input||input.disabled||!allowed.has(input.dataset.field))return;
  const min=Number(input.min),max=Number(input.max),prev=Number(input.value);
  if(![min,max,prev].every(Number.isFinite))return;

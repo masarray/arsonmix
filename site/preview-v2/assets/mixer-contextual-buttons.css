@@ -529,8 +529,6 @@ body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power):f
 /* Invisible forgiving click envelopes, not large visual controls: preserve
    the 17px approved PNG sprite and 24px rack-row geometry. No delegation
    from entire row (which would accidentally power/delete another insert). */
-.app .console-body .strip .fxslot-row button.mx-util-key
-  :is([data-util-kind="fx-slot"],[data-util-kind="fx-remove"]){position:relative}
 .app .console-body .strip .fxslot-row
   button.mx-util-key:is([data-util-kind="fx-slot"],[data-util-kind="fx-remove"]){
     isolation:isolate;z-index:2;touch-action:manipulation

@@ -6968,3 +6968,11 @@ test("P0 Audio I/O help reacts to explicit failed operator intent without auto-A
  assert.match(css,/#mixContext/);
  assert.match(css,/inset:-3px;pointer-events:auto/);
 });
+
+
+test("P0 real-time gain pointer cancellation compensates native PCM through one owner",()=>{
+ const page=read("site/preview-v2/index.html");
+ assert.match(page,/__ARMIX_NATIVE_GAIN_CANCEL__\?\.\(g\.input,g\.start\)/);
+ assert.match(page,/__ARMIX_NATIVE_GAIN_RESTORE__\?\.\(\)/);
+ assert.match(page,/wireChannelLevel','trim','sendLevel'/);
+});
