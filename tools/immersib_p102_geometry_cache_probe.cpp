@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Bit-exact P102.3 original 6-wall EARLY vs generated geometry-cache candidate.
-// The approved SonKuEarlyReflections.h is included UNMODIFIED.
+// Bit-exact P102.3 original 6-wall EARLY vs generated or shipping candidate.
+// Shipping AB: approved original restored from historical SHA; optimized real header.
+// Lab AB: approved original vs a generated throwaway in temp directory.
+#if defined(ARMIX_IMMERSIB_SHIPPING_AB) && ARMIX_IMMERSIB_SHIPPING_AB
+#include "SonKuEarlyReflectionsApprovedPCM.h"
+#else
 #include "SonKuEarlyReflectionsGeometryCache.h"
+#endif
 #include "engine/builtin_fx/ImerSipP92Scene.h"
 #include <algorithm>
 #include <chrono>
@@ -14,8 +19,13 @@
 #include <memory>
 
 namespace {
-using armix::sonku::SonKuEarlyReflections;
-using armix::sonku::SonKuEarlyReflectionsGeometryCache;
+#if defined(ARMIX_IMMERSIB_SHIPPING_AB) && ARMIX_IMMERSIB_SHIPPING_AB
+using Baseline=armix::sonku::SonKuEarlyReflectionsApprovedPCM;
+using Candidate=armix::sonku::SonKuEarlyReflections;
+#else
+using Baseline=armix::sonku::SonKuEarlyReflections;
+using Candidate=armix::sonku::SonKuEarlyReflectionsGeometryCache;
+#endif
 using armix::sonku::SonKuReflectionProfile;
 using armix::sonku::SonKuRoomGeometry;
 
@@ -29,8 +39,8 @@ bool sameBits(float a,float b) {
 }
 
 bool runCase(int rate,int presetId) {
-    auto reference=std::make_unique<SonKuEarlyReflections>();
-    auto candidate=std::make_unique<SonKuEarlyReflectionsGeometryCache>();
+    auto reference=std::make_unique<Baseline>();
+    auto candidate=std::make_unique<Candidate>();
     if(!reference->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch)
        || !candidate->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch))
         return false;
@@ -119,8 +129,8 @@ bool measureActualRoomStage(int rate,int presetId) {
     SonKuRoomGeometry geometry{
         28.8f,28.8f,scene.sourceDistanceMeters,7.2f,1.45f,1.45f
     };
-    auto ref=std::make_unique<SonKuEarlyReflections>();
-    auto opt=std::make_unique<SonKuEarlyReflectionsGeometryCache>();
+    auto ref=std::make_unique<Baseline>();
+    auto opt=std::make_unique<Candidate>();
     if(!ref->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch) ||
        !opt->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch))
         return false;
