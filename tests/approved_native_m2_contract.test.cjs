@@ -2124,7 +2124,7 @@ test("P0 actual Add BUS reaches the live ChannelId graph",()=>{
    'action:"routingNativeBusCreate"'));
  assert.match(bridge,/target.id==="addBus"/);
  assert.match(bridge,/arMixNativeBusAck/);
- assert.match(bridge,/addBus.hidden=!nativeAdmitted/);
+ assert.match(bridge,/addBus.disabled=!nativeAdmitted/);
  assert.match(host,/if\(action=="routingNativeBusCreate" \|\| action=="routingNativeTrackCreate"\)/);
  assert.match(host,/engine_\.editNativeBus\(ep,rev,roster,/);
  assert.match(engine,/topologyPublicationMute_\.store\(/);
@@ -6858,7 +6858,7 @@ test("UX-1 calm status colors use genuine app/process and callback budget eviden
 });
 
 
-test("P0 CH8 PRIMARY WIRE level is one real ChannelId fader, never duplicate EdgeId gain",()=>{
+test("P0 PRIMARY WIRE remains unity, never aliases channel fader",()=>{
   const primary={edgeId:"92",from:"8",to:"100",enabled:true,
     primaryOutput:true,gainLinear:1};
   const parallel={edgeId:"93",from:"8",to:"100",enabled:true,
@@ -6882,13 +6882,13 @@ test("P0 CH8 PRIMARY WIRE level is one real ChannelId fader, never duplicate Edg
     },true,"8","92"),{kind:"UNAVAILABLE"},"native PRIMARY must stay unity");
   const readback=wireVM.gainReadback(accepted.graph.edges,
     new Map([["92",8],["93",9]]),new Map(),accepted.graph.channels);
-  assert.deepEqual(readback,[{id:8,pending:false,levelDb:-11.5},
+  assert.deepEqual(readback,[{id:8,pending:false,levelDb:0},
     {id:9,pending:false,levelDb:-6}],
-    "PRIMARY knob follows the accepted source fader, SEND has its own gain");
+    "PRIMARY stays unity, SEND has independent gain");
   const bridge=read("web/approved-native-bridge.js");
-  assert.match(bridge,/primaryChannelLevelPlan\(current,/);
-  assert.match(bridge,/controller.intent\("SET_FADER",primary.source,/);
-  assert.match(bridge,/PRIMARY CH LEVEL/);
+  assert.doesNotMatch(bridge,/primaryChannelLevelPlan\(current,/);
+  assert.doesNotMatch(bridge,/controller.intent\("SET_FADER",primary.source,/);
+  assert.match(bridge,/PRIMARY OUT · fixed unity/);
 });
 test("P0 native player INPUT advertised before pin admission; F11 window command survives VM boot",()=>{
   const bridge=read("web/approved-native-bridge.js");
@@ -6909,13 +6909,13 @@ test("P0 native player INPUT advertised before pin admission; F11 window command
 });
 
 
-test("P0 WIRE LVL uses receiver post-SUM fader regardless of selected incoming wire",()=>{
-  const receiver={id:"8",role:"INPUT",controls:{faderDb:-8.1},primaryOutId:"100"};
+test("P0 WIRE LVL uses independent incoming sum scalar regardless of selected wire",()=>{
+  const receiver={id:"8",role:"INPUT",controls:{faderDb:-8.1,wireSumGainDb:0},primaryOutId:"100"};
   const ch=[receiver,{id:"3",role:"INPUT",controls:{faderDb:-4}},
     {id:"7",role:"INPUT",controls:{faderDb:-6}}];
   const e1={edgeId:"301",from:"3",to:"8",enabled:true,primaryOutput:false};
   const e2={edgeId:"302",from:"7",to:"8",enabled:true,primaryOutput:false};
-  const graph={capabilities:{supportedOps:["SET_FADER","SET_WIRE_GAIN"]},
+  const graph={capabilities:{supportedOps:["SET_FADER","SET_WIRE_GAIN","SET_WIRE_SUM_GAIN"]},
     channels:ch,edges:[e1,e2]};
   const snapshot={admitted:true,retained:false,graph};
   assert.deepEqual(wireVM.channelSumLevelPlan(snapshot,true,"8",-12),
@@ -6930,11 +6930,11 @@ test("P0 WIRE LVL uses receiver post-SUM fader regardless of selected incoming w
   assert.equal(wireVM.channelSumLevelPlan(snapshot,true,"7",3).kind,"UNAVAILABLE");
   const bridge=read("web/approved-native-bridge.js");
   assert.match(bridge,/field==="wireChannelLevel"/);
-  assert.match(bridge,/streamFaderControl\("faderDb",t,db,event.type==="change"\)/);
+  assert.match(bridge,/requestLiveWireSumGain\(t,db,event.type==="change"\)/);
   const assembled=read("scripts/build_approved_native_gui.py");
   assert.match(assembled,/if\(!isMain&&connected\)/);
   assert.match(assembled,/data-field=\\"wireChannelLevel\\"/);
-  assert.match(assembled,/post-SUM channel level/);
+  assert.match(assembled,/incoming WIRE sum level/);
 });
 
 test("P0 input GAIN sends bounded latest native intents during pointermove",()=>{
@@ -7007,7 +7007,7 @@ test("P0 native receiver LVL re-admits only after projected device recovery",()=
  assert.match(bridge,/if\s*\(transientPlan\.discardRetained\)/);
  assert.match(bridge,/syncReceiverSumLevelAdmission\(next\);\s*stopDemo\(\)/);
  assert.match(bridge,/channelSumLevelPlan\(next,flags\.acceptedGraphConnected,/);
- assert.match(cold,/['"]CREATE_CHANNEL['"], ['"]SET_FADER['"]/);
+ assert.match(cold,/['"]CREATE_CHANNEL['"], ['"]SET_FADER['"], ['"]SET_WIRE_SUM_GAIN['"]/);
  assert.match(cold,/\.wire-gain'\)\.is_disabled\(\)/);
  assert.match(cold,/\.wire-gain'\)\.is_enabled\(\)/);
 });

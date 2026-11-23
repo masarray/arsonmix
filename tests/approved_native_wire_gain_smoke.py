@@ -23,7 +23,7 @@ def snapshot():
         supportedOps=["SET_WIRE_GAIN", "APPLY_WIRE_TRANSACTION"])
     g["channels"] = [
         {"id": ident, "name": name, "role": role, "processingFormat": "STEREO",
-         "controls": {"faderDb": 0, "pan": 0, "mute": False, "solo": False},
+         "controls": {"faderDb": 0, "wireSumGainDb": 0, "pan": 0, "mute": False, "solo": False},
          "inserts": [], "sends": []}
         for ident, name, role in [(SOURCE, "CH03", "INPUT"),
                                    (RECEIVER, "CH04", "INPUT"), (MAIN, "MAIN", "MAIN")]]
@@ -358,9 +358,9 @@ def main():
                 page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
                 state = snapshot()
                 # The receiving WIRE LVL is now the receiver's post-SUM
-                # SET_FADER, not the selected incoming EdgeId's SEND GAIN.
+                # SET_WIRE_SUM_GAIN, not the selected incoming EdgeId's SEND GAIN.
                 # Exact SEND gain still has separate inspector regression.
-                state["graph"]["capabilities"]["supportedOps"].append("SET_FADER")
+                state["graph"]["capabilities"]["supportedOps"].append("SET_WIRE_SUM_GAIN")
                 emit(page, "arMixConsoleSnapshot", state)
                 page.wait_for_selector('#tracks .strip[data-id="2"]')
                 if "collapsed-send" in (page.locator(".console-body").get_attribute("class") or ""):
@@ -370,17 +370,17 @@ def main():
                 knob.wait_for(state="visible")
                 page.evaluate("""()=>{window.__heldWireInput=document.querySelector('#tracks .strip[data-id="2"] .wire-gain');
                     window.__heldStrip=document.querySelector('#tracks .strip[data-id="2"]');}""")
-                # Keyboard gesture: one native ChannelId SET_FADER at a time.
+                # Keyboard gesture: one native ChannelId SET_WIRE_SUM_GAIN at a time.
                 # When the first is in flight, the latest (Home) queues
                 # behind its independent native ACK and published scalar.
                 knob.focus()
                 assert knob.get_attribute("data-field")=="wireChannelLevel"
-                assert knob.is_enabled(), "accepted receiver SET_FADER unavailable"
+                assert knob.is_enabled(), "accepted receiver SET_WIRE_SUM_GAIN unavailable"
                 knob.press("End")
                 page.wait_for_function(
-                    "()=>window.__nativeIntents.filter(x=>x.operation==='SET_FADER').length===1")
+                    "()=>window.__nativeIntents.filter(x=>x.operation==='SET_WIRE_SUM_GAIN').length===1")
                 first = page.evaluate(
-                    "()=>window.__nativeIntents.filter(x=>x.operation==='SET_FADER').at(-1)")
+                    "()=>window.__nativeIntents.filter(x=>x.operation==='SET_WIRE_SUM_GAIN').at(-1)")
                 assert first["targetChannelId"] == RECEIVER, first
                 assert first["payload"]["valueDb"] == 6, first
                 assert page.evaluate(
@@ -388,9 +388,9 @@ def main():
                 knob.press("Home")
                 page.wait_for_timeout(70)
                 assert page.evaluate("()=>window.__nativeIntents.length") == 1, (
-                    "pending receiver fader should coalesce behind native ACK")
-                state["graph"]["channels"][1]["controls"]["faderDb"] = first["payload"]["valueDb"]
-                state["mixerSession"]["channels"][1]["controls"]["faderDb"] = first["payload"]["valueDb"]
+                    "pending receiver SUM gain should coalesce behind native ACK")
+                state["graph"]["channels"][1]["controls"]["wireSumGainDb"] = first["payload"]["valueDb"]
+                state["mixerSession"]["channels"][1]["controls"]["wireSumGainDb"] = first["payload"]["valueDb"]
                 ack(page, state, first)
                 emit(page, "arMixConsoleSnapshot", state)
                 page.wait_for_function("()=>window.__nativeIntents.length===2")
@@ -399,10 +399,10 @@ def main():
                     "'#tracks .strip[data-id=\\\"2\\\"] .wire-gain')"), (
                     "ACK detached held post-SUM receiver knob")
                 second = page.evaluate("()=>window.__nativeIntents.at(-1)")
-                assert second["operation"]=="SET_FADER" and second["targetChannelId"]==RECEIVER
+                assert second["operation"]=="SET_WIRE_SUM_GAIN" and second["targetChannelId"]==RECEIVER
                 assert second["payload"]["valueDb"]==-60, second
-                state["graph"]["channels"][1]["controls"]["faderDb"] = -60
-                state["mixerSession"]["channels"][1]["controls"]["faderDb"] = -60
+                state["graph"]["channels"][1]["controls"]["wireSumGainDb"] = -60
+                state["mixerSession"]["channels"][1]["controls"]["wireSumGainDb"] = -60
                 ack(page, state, second)
                 emit(page, "arMixConsoleSnapshot", state)
                 knob.press("Tab")
@@ -412,6 +412,7 @@ def main():
                     "'#tracks .strip[data-id=\\\"2\\\"]')"), (
                     "post-SUM scalar edit rebuilt the strip")
                 assert float(knob.input_value())==-60
+                assert float(page.locator('#tracks .strip[data-id="2"] .fader').input_value())==0, "SUM must not move channel fader"
                 # Changing receiver volume cannot ever mutate the source
                 # SEND gain, even if multiple incoming wires share this SUM.
                 assert state["graph"]["edges"][1]["gainLinear"]==.5
@@ -427,25 +428,25 @@ def main():
                 page.mouse.move(x,y-32,steps=5)
                 page.wait_for_function("()=>window.__nativeIntents.length===3")
                 coarse = page.evaluate("()=>window.__nativeIntents.at(-1)")
-                assert coarse["operation"]=="SET_FADER", coarse
+                assert coarse["operation"]=="SET_WIRE_SUM_GAIN", coarse
                 assert coarse["targetChannelId"]==RECEIVER, coarse
                 assert float(knob.input_value())==-56
                 page.keyboard.down("Shift")
                 page.mouse.move(x,y-56,steps=4)
                 page.keyboard.up("Shift")
                 assert float(knob.input_value())==-55.5
-                state["graph"]["channels"][1]["controls"]["faderDb"] = coarse["payload"]["valueDb"]
-                state["mixerSession"]["channels"][1]["controls"]["faderDb"] = coarse["payload"]["valueDb"]
+                state["graph"]["channels"][1]["controls"]["wireSumGainDb"] = coarse["payload"]["valueDb"]
+                state["mixerSession"]["channels"][1]["controls"]["wireSumGainDb"] = coarse["payload"]["valueDb"]
                 ack(page,state,coarse)
                 emit(page,"arMixConsoleSnapshot",state)
                 assert float(knob.input_value())==-55.5, "mid-drag ACK moved knob backwards"
                 page.mouse.up()
                 page.wait_for_function("()=>window.__nativeIntents.length===4")
                 final = page.evaluate("()=>window.__nativeIntents.at(-1)")
-                assert final["operation"]=="SET_FADER" and final["targetChannelId"]==RECEIVER
+                assert final["operation"]=="SET_WIRE_SUM_GAIN" and final["targetChannelId"]==RECEIVER
                 assert abs(final["payload"]["valueDb"] - (-55.5))<1e-7, final
-                state["graph"]["channels"][1]["controls"]["faderDb"] = final["payload"]["valueDb"]
-                state["mixerSession"]["channels"][1]["controls"]["faderDb"] = final["payload"]["valueDb"]
+                state["graph"]["channels"][1]["controls"]["wireSumGainDb"] = final["payload"]["valueDb"]
+                state["mixerSession"]["channels"][1]["controls"]["wireSumGainDb"] = final["payload"]["valueDb"]
                 ack(page,state,final)
                 emit(page,"arMixConsoleSnapshot",state)
                 assert state["graph"]["edges"][1]["gainLinear"]==.5, (
@@ -473,7 +474,7 @@ def main():
                 assert abs(float(receiver_pot.input_value())-(-55.5))<.11
                 assert state["graph"]["edges"][0]["primaryOutput"] is True
                 assert state["graph"]["edges"][0]["gainLinear"]==1, (
-                    "PRIMARY WIRE must remain UNITY; receiver fader is separate")
+                    "PRIMARY WIRE must remain UNITY; receiver SUM gain is separate")
                 assert not errors, errors
                 page.screenshot(path=f"native-wire-gain-{width}.png")
                 page.close()

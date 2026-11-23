@@ -4482,6 +4482,10 @@
       status("NATIVE: "+action+" is not an accepted ChannelId operation");return true;
     },
     canWireChannelLevel(uiChannelId){
+      if(logicalView&&!logicalView.readOnly){
+        const id=nativeByUiId.get(uiChannelId),g=logicalView.graph;
+        return g.capabilities.supportedOps.includes("SET_WIRE_SUM_GAIN")&&g.edges.some(e=>e.to===id&&e.enabled===true);
+      }
       const current=controller?.state()?.current;
       const id=nativeByUiId.get(uiChannelId);
       const row=current?.graph?.channels?.find(ch=>ch.id===id);

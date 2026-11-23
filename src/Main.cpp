@@ -9042,7 +9042,7 @@ private:
         // the last verified audio-devices.xml selection.
         // The retention gate closes only on an actual epoch/owner change.
         diagnostics_.record ("DEVICE_CHANGE", "Device manager event");
-        if((audioSetupWindow_==nullptr || !audioSetupWindow_->isVisible()) &&
+        if(!retainedOfflineFxActive_ && (audioSetupWindow_==nullptr || !audioSetupWindow_->isVisible()) &&
            engine_.recoverSameWasapiMixer()) {
             mixerSessionStatus_="RESTORED_MUTED";
             mixerSessionError_.clear();

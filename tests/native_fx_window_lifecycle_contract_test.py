@@ -89,13 +89,13 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("shownWindow->present(true); // new HWND",HOST)
         self.assertIn("prepared.window->present(true); // first-open",HOST)
 
-    def test_primary_out_wire_preserves_unity_and_controls_exact_source_fader(self):
+    def test_primary_out_wire_preserves_unity_and_independent_sum(self):
         bridge=(ROOT/"web/approved-native-bridge.js").read_text(encoding="utf-8")
         vm=(ROOT/"web/approved-wire-view-model.js").read_text(encoding="utf-8")
         self.assertIn('const fixed=edge.primaryOutput===true',bridge)
-        self.assertIn('const disabled=!!next.retained||(fixed&&primary.kind!=="READY")',bridge)
-        self.assertIn('label.textContent=fixed?"CH LVL":"LVL"',bridge)
-        self.assertIn('controller.intent("SET_FADER",primary.source,{valueDb:db})',bridge)
+        self.assertIn('const disabled=!!next.retained||fixed',bridge)
+        self.assertIn('label.textContent=fixed?"UNITY":"LVL"',bridge)
+        self.assertNotIn('controller.intent("SET_FADER",primary.source,{valueDb:db})',bridge)
         self.assertIn('primaryChannelLevelPlan(snapshot,projected,sourceId,edgeId)',vm)
         self.assertIn('edge.primaryOutput!==true||edge.gainLinear!==1',vm)
         self.assertIn('Parallel SEND level · editable via native EdgeId ACK/readback',bridge)
