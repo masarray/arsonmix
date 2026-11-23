@@ -266,19 +266,23 @@ public:
         (void) armix::ui::attachOwnedFloatingWindow (*this, mixer);
         setVisible (true);
         (void) armix::ui::attachOwnedFloatingWindow (*this, mixer);
-        present();
+        present(true); // centre first presentation near the mixer, only once
     }
     void present (bool centreOnMixer=false)
     {
         if (isMinimised()) setMinimised (false);
-        // Retain reachable user placement; rescue a window stranded on an unplugged display.
-        armix::ui::placeFloatingEditor (*this, mixer_, centreOnMixer);
+        // Repeated rack clicks raise the same HWND without moving it; only
+        // an off-monitor window is recovered by the common placement policy.
+        armix::ui::placeFloatingEditor (*this, mixer_,
+                                        centreOnMixer && !everPresented_);
+        everPresented_=true;
         if (!isVisible()) setVisible (true);
         toFront (true);
     }
     void closeButtonPressed() override { setVisible (false); }
 private:
     juce::Component& mixer_; // ConsoleWindow outlives all editor windows.
+    bool everPresented_=false;
 };
 
 // A real Windows/macOS owned desktop window. The sole /preview/ asset pack
@@ -365,7 +369,9 @@ public:
             startTimer(1800); // fail-open if asset/JS fails to mount
             return;
         }
-        armix::ui::placeFloatingEditor(*this,mixer_,recenter);
+        // A measured built-in GEQ31 window belongs at the user's position;
+        // reopen only raises it, or recovers an off-monitor window.
+        armix::ui::placeFloatingEditor(*this,mixer_,false);
         if(!isVisible())setVisible(true);
         toFront(true);
     }
@@ -554,6 +560,11 @@ public:
               .withEventListener ("arMixHotkeyIntent", [this] (juce::var args) {
                   handleNativeHotkeyIntent(args);
               })
+              .withEventListener ("arMixWindowFullscreen", [this] (juce::var args) {
+                  // WebView2 forwards plain F11; JUCE owns native geometry.
+                  if(args.getProperty("operation","").toString()=="TOGGLE")
+                      toggleOperatorFullscreen();
+              })
               .withEventListener ("arMixHotkeyCapture", [this] (juce::var args) {
                   hotkeys_.setCaptureMode(args.getProperty("enabled",false)==juce::var(true));
               })
@@ -668,6 +679,29 @@ public:
             browser_.resized();
     }
 
+    // Reversible native F11. Restore the exact pre-entry maximize/normal
+    // mode, without touching audio, plugins or the approved WebView2 GUI.
+    void toggleOperatorFullscreen()
+    {
+#if defined(_WIN32)
+        const bool entering=!operatorFullscreen_;
+        if(entering) {
+            maximisedBeforeOperatorFullscreen_=isFullScreen();
+            setTitleBarHeight(0);
+            if(!maximisedBeforeOperatorFullscreen_)setFullScreen(true);
+        } else {
+            if(!maximisedBeforeOperatorFullscreen_)setFullScreen(false);
+            setTitleBarHeight(31);
+        }
+        operatorFullscreen_=entering;
+        if(browser_.isShowing())browser_.resized();
+        auto reply=std::make_unique<juce::DynamicObject>();
+        reply->setProperty("active",operatorFullscreen_);
+        browser_.emitEventIfBrowserIsVisible("arMixWindowFullscreenState",
+                                             juce::var(reply.release()));
+#endif
+    }
+
     void activeWindowStatusChanged() override
     {
         juce::DocumentWindow::activeWindowStatusChanged();
@@ -741,6 +775,8 @@ public:
 
 private:
     armix::ui::MixerCaptionLookAndFeel mixerCaption_;
+    bool operatorFullscreen_=false;
+    bool maximisedBeforeOperatorFullscreen_=false;
     LiveAudioEngine engine_;
     VstOrbitController orbit_;
     // The exact native ChannelId/insert identity retains its VST3 owner

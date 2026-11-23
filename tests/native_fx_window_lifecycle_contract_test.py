@@ -54,7 +54,7 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertNotIn('closeAllPluginEditors();',opened)
 
     def test_native_recenter_and_unplugged_monitor_recovery(self):
-        self.assertIn("placeFloatingEditor (*this, mixer_, centreOnMixer)",HOST)
+        self.assertIn("centreOnMixer && !everPresented_",HOST)
         self.assertIn('args.getProperty("recenter",false)',HOST)
         self.assertIn('request.getProperty("recenter",false)',HOST)
         self.assertIn("getDisplayForRect(current)",OWNER)
@@ -88,6 +88,33 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn('FX slot or stored state changed:',HOST)
         self.assertIn("shownWindow->present(true); // new HWND",HOST)
         self.assertIn("prepared.window->present(true); // first-open",HOST)
+
+    def test_geq_repeat_rack_click_and_f11_preserve_position(self):
+        bridge=(ROOT/"web/approved-native-bridge.js").read_text(encoding="utf-8")
+        self.assertIn("const identities=new WeakMap()",bridge)
+        self.assertIn("identities.get(root)!==identity",bridge)
+        self.assertIn("host,surface.windowKey,t,slot,editor.instanceId",bridge)
+        self.assertIn("if(!offsets.has(root))center(root)",bridge)
+        self.assertIn("else keepReachable(root)",bridge)
+        self.assertIn("requestAnimationFrame(()=>keepReachable(root))",bridge)
+        self.assertNotIn("if(recenter||!offsets.has(root))center(root)",bridge)
+        self.assertIn("bool everPresented_=false",HOST)
+        self.assertIn("centreOnMixer && !everPresented_",HOST)
+        self.assertIn("placeFloatingEditor(*this,mixer_,false)",HOST)
+
+    def test_f11_uses_reversible_juce_fullscreen(self):
+        bridge=(ROOT/"web/approved-native-bridge.js").read_text(encoding="utf-8")
+        self.assertIn('event.key!=="F11"||event.repeat',bridge)
+        self.assertIn('backend.emitEvent("arMixWindowFullscreen",{operation:"TOGGLE"})',bridge)
+        self.assertIn('withEventListener ("arMixWindowFullscreen"',HOST)
+        self.assertIn('toggleOperatorFullscreen();',HOST)
+        self.assertIn('maximisedBeforeOperatorFullscreen_=isFullScreen()',HOST)
+        self.assertIn('setTitleBarHeight(0);',HOST)
+        self.assertIn('setFullScreen(true);',HOST)
+        self.assertIn('setFullScreen(false);',HOST)
+        self.assertIn('setTitleBarHeight(31);',HOST)
+        self.assertIn('browser_.resized();',HOST)
+        self.assertNotIn('requestFullscreen(',bridge)
 
     def test_multiple_exact_native_vendor_windows_and_retired_lease_cleanup(self):
         self.assertIn("struct AdditionalFxEditor final",HOST)
@@ -250,7 +277,7 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("getResourceProviderRoot()+",HOST)
         self.assertIn('"fx-window.html"',HOST)
         self.assertIn("attachOwnedFloatingWindow(*this,mixer_)",HOST)
-        self.assertIn("placeFloatingEditor(*this,mixer_,recenter)",HOST)
+        self.assertIn("placeFloatingEditor(*this,mixer_,false)",HOST)
         self.assertIn("std::make_unique<BuiltinFxDesktopWindow>",HOST)
         self.assertIn("maxSimultaneousBuiltinWindows=16",HOST)
         self.assertIn("floatingBuiltinFx_.clear();",HOST)

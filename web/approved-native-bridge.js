@@ -13,6 +13,21 @@
   const scope = window.__ARMIX_NATIVE_SCOPE__ || null;
   const connected = Boolean(backend?.emitEvent && backend?.addEventListener &&
     protocol && deviceVM && stripVM && fxRackVM && wireVM);
+  // F11 belongs to the mixer HWND, not the child WebView2 document.
+  // Keep modified F11 available to existing native hotkey capture.
+  if(connected) {
+    document.addEventListener("keydown",event=>{
+      if(event.key!=="F11"||event.repeat||event.altKey||event.ctrlKey||
+         event.metaKey||event.shiftKey)return;
+      event.preventDefault();event.stopImmediatePropagation();
+      backend.emitEvent("arMixWindowFullscreen",{operation:"TOGGLE"});
+    },true);
+    backend.addEventListener("arMixWindowFullscreenState",state=>{
+      if(typeof state?.active==="boolean")
+        document.documentElement.dataset.operatorFullscreen=
+          state.active?"true":"false";
+    });
+  }
   // Public browser preview keeps its header; the native JUCE caption replaces it.
   if (backend?.emitEvent && backend?.addEventListener)
     document.documentElement?.classList?.add?.("armix-native-desktop");
@@ -52,6 +67,7 @@
     style.textContent+="\n"+"html.armix-native-desktop #mxNativePeq .mx-peq-body{grid-template-columns:minmax(0,1fr) 143px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-title{height:36px!important;flex-basis:36px!important;gap:11px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-brand{font-size:11px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-brand::after{content:none!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-bands{gap:3px!important;padding:7px 8px 6px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-band{flex-direction:row!important;gap:4px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-select{flex-direction:row!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-band-power{height:26px!important;width:19px!important;flex:0 0 19px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-dial{width:62px!important;height:62px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-knob{min-height:84px!important}\nhtml.armix-native-desktop #mxNativeComp .mx-comp-controls{grid-template-columns:130px minmax(0,410px) minmax(0,1fr)!important;grid-template-rows:auto!important;gap:0!important;min-height:327px!important}\nhtml.armix-native-desktop #mxNativeComp .mx-comp-visual{grid-column:auto!important;grid-row:auto!important;width:auto!important}\nhtml.armix-native-desktop #mxNativeComp .mx-comp-left,#mxNativeComp .mx-comp-right{grid-column:auto!important;grid-row:auto!important}\nhtml.armix-native-desktop #mxNativeComp .mx-comp-dial{width:47px!important;height:47px!important}\nhtml.armix-native-desktop #mxNativeHarmony .mx-harm-body{grid-template-columns:150px minmax(0,1fr) 234px!important;min-height:232px!important}\nhtml.armix-native-desktop #mxNativeHarmony .mx-harm-left,#mxNativeHarmony .mx-harm-control-deck,#mxNativeHarmony .mx-harm-center{grid-column:auto!important;grid-row:auto!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-instrument{display:grid!important;grid-template-columns:minmax(0,1fr) 212px minmax(0,1fr)!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-center{order:initial!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-content{grid-template-columns:minmax(0,1.42fr) minmax(270px,1fr)!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-stage{border-right:1px solid #395565!important;border-bottom:0!important}";
     style.textContent+="\n"+"html.armix-native-desktop #mxNativeVocalThrow #vtEncodersLeft,html.armix-native-desktop #mxNativeVocalThrow #vtEncodersRight{order:initial!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-throw-button{width:212px!important;height:212px!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-performance{grid-template-columns:88px minmax(0,1fr) 302px!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-rotary-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;min-height:190px!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-dial{width:62px!important;height:62px!important}\nhtml.armix-native-desktop #mxNativeHarmony .mx-harm-center{border-top:0!important;padding:8px 12px!important}";
     const offsets=new WeakMap();
+    const identities=new WeakMap(); // exact FX owner, not its slot
     let drag=null,layer=16000;
     const limit=(value,low,high)=>Math.max(low,Math.min(high,value));
     const grip=()=>Math.min(130,Math.max(56,Math.floor(innerWidth*.22)));
@@ -81,16 +97,32 @@
       move(root,left-r.left,top-r.top);
       return true;
     }
-    function openExact(host,key,track,slot,recenter=true) {
+    // Only rescue a panel that can no longer be reached after F11 or a
+    // display/work-area resize. Never recenter manually positioned GEQ31.
+    function keepReachable(root) {
+      if(!root||root.hidden)return;
+      const r=root.getBoundingClientRect(),handle=grip();
+      const x=limit(r.left,handle-r.width,innerWidth-handle);
+      const y=limit(r.top,Math.min(8,innerHeight-r.height+48),
+        Math.max(8,innerHeight-38));
+      if(Math.abs(x-r.left)>.5||Math.abs(y-r.top)>.5)
+        move(root,x-r.left,y-r.top);
+    }
+    function openExact(host,key,track,slot,instanceId) {
       const selector=selectors[key],root=document.querySelector(selector||"#__none__");
-      if(!root||typeof host?.open!=="function")return false;
-      if(root.hidden){
+      if(!root||typeof host?.open!=="function"||!instanceId)return false;
+      const identity=String(instanceId);
+      // New FX owner gets first-open placement; the same owner keeps its
+      // dragged position across rack clicks, hide/show and readback updates.
+      if(identities.get(root)!==identity) {
         offsets.delete(root);
         root.style.removeProperty("translate");
+        identities.set(root,identity);
       }
       host.open(track,slot);
       root.style.zIndex=String(++layer);
-      if(recenter||!offsets.has(root))center(root);
+      if(!offsets.has(root))center(root);
+      else keepReachable(root);
       return true;
     }
     function visibleRoot(target) {
@@ -150,12 +182,12 @@
       if(!event.target.closest?.("#mxNativeGeq31 .mx-geq31-size"))return;
       requestAnimationFrame(()=>{
         const root=document.getElementById("mxNativeGeq31");
-        if(root&&!root.hidden)center(root);
+        if(root&&!root.hidden)keepReachable(root);
       });
     });
     window.addEventListener("resize",()=>{
       for(const root of document.querySelectorAll(roots))
-        if(!root.hidden)requestAnimationFrame(()=>center(root));
+        if(!root.hidden)requestAnimationFrame(()=>keepReachable(root));
     });
     return Object.freeze({openExact,center,move});
   })():null;
@@ -4111,7 +4143,7 @@
                 hardwareConfiguration:protocol.nativeHardwareConfiguration(view?.device)});
               const host=window[surface.windowKey];
               if(!safe||!inlineFxClip?.openExact(
-                 host,surface.windowKey,t,slot,recenter))
+                 host,surface.windowKey,t,slot,editor.instanceId))
                 nativeToast("Built-in FX changed · reopen current FX Rack");
             }else if(surface.kind==="LOGICAL_VENDOR"){
               backend.emitEvent("arMixAction",{action:"logicalVendorFxEditor",
