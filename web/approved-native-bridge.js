@@ -15,10 +15,12 @@
     protocol && deviceVM && stripVM && fxRackVM && wireVM);
   // F11 belongs to the mixer HWND, not the child WebView2 document.
   // Keep modified F11 available to existing native hotkey capture.
-  if(connected) {
-    document.addEventListener("keydown",event=>{
-      if(event.key!=="F11"||event.repeat||event.altKey||event.ctrlKey||
-         event.metaKey||event.shiftKey)return;
+  if(backend?.emitEvent && backend?.addEventListener) {
+    // WebView2 starts before the five native ViewModels finish admission.
+    // A window command must not silently disappear during that bootstrap.
+    window.addEventListener("keydown",event=>{
+      if(!(event.key==="F11"||event.code==="F11"||event.keyCode===122)||
+         event.repeat||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey)return;
       event.preventDefault();event.stopImmediatePropagation();
       backend.emitEvent("arMixWindowFullscreen",{operation:"TOGGLE"});
     },true);
@@ -538,10 +540,21 @@
   }
   function requestWireGain(op){
     const db=Number(op.levelDb);
-    if(!Number.isFinite(db)||db< -60||db>6||
-       !admittedParallelWire(op.sourceId,op.edgeId,"SET_WIRE_GAIN"))return false;
-    const current=controller.state().current;
+    if(!Number.isFinite(db)||db< -60||db>6)return false;
+    const current=controller?.state()?.current;
     const edgeId=wireByUiId.get(op.edgeId),source=nativeByUiId.get(op.sourceId);
+    const primary=wireVM.primaryChannelLevelPlan(current,
+      flags.acceptedGraphConnected,source,edgeId);
+    if(primary.kind==="READY"){
+      // The PRIMARY knob controls the same native CH fader; this is a
+      // scalar ACK/readback, not an independent wire level or double MAIN mix.
+      if(controller?.state()?.pending)return false;
+      const result=controller.intent("SET_FADER",primary.source,{valueDb:db});
+      if(!result.ok){status("PRIMARY CH LEVEL rejected · "+result.error);return false;}
+      window.setTimeout(()=>controller?.expire(result.requestId),8000);
+      return true;
+    }
+    if(!admittedParallelWire(op.sourceId,op.edgeId,"SET_WIRE_GAIN"))return false;
     // A physical SEND fader floor is -infinity (zero PCM), NOT -60 dB linear.
     pendingWireGains.set(edgeId,{source,gain:db<=-60?0:Math.pow(10,db/20),identity:current.identity});
     queueWireGainFlush();return true;
@@ -752,7 +765,7 @@
   // rollback. No duplicate DSP math or synthetic accepted control state.
   function nativeWireGainReadback(next){
     return wireVM.gainReadback(next?.graph?.edges||[],
-      uiByWireId,pendingWireGains);
+      uiByWireId,pendingWireGains,next?.graph?.channels||[]);
   }
   // Paint ONLY an independently accepted ChannelId input scalar. Comparing
   // the actual DOM as well as the model also repairs a rejected/expired gain
@@ -881,15 +894,18 @@
       if(ui===undefined)continue;
       for(const input of document.querySelectorAll?.('.wire-gain[data-wire-id="'+ui+'"]')||[]){
         const fixed=edge.primaryOutput===true;
-        const disabled=fixed || next.retained;
+        const primary=wireVM.primaryChannelLevelPlan(next,
+          flags.acceptedGraphConnected,edge.from,edge.edgeId);
+        const disabled=!!next.retained||(fixed&&primary.kind!=="READY");
         if(input.disabled!==disabled)input.disabled=disabled;
-        const title=fixed?"PRIMARY OUT · UNITY (0 dB); use source channel fader":
+        const title=fixed?
+          "PRIMARY CH LEVEL · follows this channel fader; serial WIRE stays UNITY (no extra MAIN sum)":
           next.retained?"WIRE level locked until audio device reconnects":
           "Parallel SEND level · editable via native EdgeId ACK/readback";
         if(input.title!==title)input.title=title;
         const label=input.parentElement?.querySelector(".wire-gain-caption");
-        if(label&&label.textContent!==(fixed?"UNITY":"LVL"))
-          label.textContent=fixed?"UNITY":"LVL";
+        if(label&&label.textContent!==(fixed?"CH LVL":"LVL"))
+          label.textContent=fixed?"CH LVL":"LVL";
         input.parentElement?.classList.toggle("is-primary-unity",fixed);
         input.setAttribute("aria-label",title);
       }
@@ -1006,15 +1022,13 @@
   const inputChoicesFor=()=>deviceVM.inputChoices(hardware);
   const sourceChoicesFor=()=>{
     const physical=inputChoicesFor();
-    const live=controller?.state()?.current;
-    const accepted=live?.admitted===true&&live.retained!==true&&
-      live.raw?.mixerSession?.authority==="CHANNEL_ID"&&
-      !logicalView&&deviceReady();
-    // Deck A already lives in the native hardware callback. This option
-    // cannot inject WebAudio or bind a physical ASIO pin; only an exact
-    // native ChannelId transaction may install the internal PCM patch.
-    return accepted?[...physical,
-      {label:"Music Player",mode:"PLAYER",left:-1,right:-1,deckId:"1"}]:physical;
+    // The PLAYER source must be DISCOVERABLE on every native audio strip,
+    // including startup with zero physical capture pins. Capability is not
+    // admission: M4/offline/retained modes still fail closed on selection.
+    // Previously a transient logicalView/admission gate removed the option
+    // altogether, which looked like the product never implemented it.
+    return physical.some(p=>p?.mode==="PLAYER")?physical:[...physical,
+      {label:"Music Player",mode:"PLAYER",left:-1,right:-1,deckId:"1"}];
   };
   const inputLabelFor=row=>deviceVM.inputLabel(hardware,row);
   // ChannelId and the existing M4 use the SAME ten native input ordinals.
@@ -3923,6 +3937,10 @@
         const nativeOwner=mixerSession()?.authority==="CHANNEL_ID";
         const choices=nativeOwner?sourceChoicesFor():inputChoicesFor();
         const choice=choices.find(x=>x.label===el.value);
+        if(choice?.mode==="PLAYER"&&!nativeOwner){
+          status("Music Player INPUT requires a live admitted ChannelId mixer; no WebAudio/ASIO-pin fallback");
+          el.value=t.input;return true;
+        }
         const id=nativeOwner?nativeIdFor(t):null;
         if((nativeOwner&&(!id||!controller?.state()?.current?.admitted))||
            (!nativeOwner&&(channel<0||channel>=10))||!deviceReady()){
@@ -4249,7 +4267,11 @@
       status("NATIVE: "+action+" is not an accepted ChannelId operation");return true;
     },
     canWireGain(uiEdgeId,uiSourceId){
-      return !!admittedParallelWire(uiSourceId,uiEdgeId,"SET_WIRE_GAIN");
+      const primary=wireVM.primaryChannelLevelPlan(
+        controller?.state()?.current,flags.acceptedGraphConnected,
+        nativeByUiId.get(uiSourceId),wireByUiId.get(uiEdgeId));
+      return primary.kind==="READY"||
+        !!admittedParallelWire(uiSourceId,uiEdgeId,"SET_WIRE_GAIN");
     },
     canWireTap(uiEdgeId,uiSourceId){
       if(logicalView){

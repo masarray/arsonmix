@@ -6847,3 +6847,54 @@ test("UX-1 calm status colors use genuine app/process and callback budget eviden
     "site/preview-v2/assets/mixer-chrome-material.css","utf8");
   assert.match(geometry,/\.status-bar\{height:20px!important;min-height:20px!important/);
 });
+
+
+test("P0 CH8 PRIMARY WIRE level is one real ChannelId fader, never duplicate EdgeId gain",()=>{
+  const primary={edgeId:"92",from:"8",to:"100",enabled:true,
+    primaryOutput:true,gainLinear:1};
+  const parallel={edgeId:"93",from:"8",to:"100",enabled:true,
+    primaryOutput:false,gainLinear:0.5};
+  const channel={id:"8",role:"INPUT",primaryOutId:"100",
+    controls:{faderDb:-11.5}};
+  const accepted={admitted:true,retained:false,graph:{
+    capabilities:{supportedOps:["SET_FADER","SET_WIRE_GAIN"]},
+    channels:[channel],edges:[primary,parallel]}};
+  const plan=wireVM.primaryChannelLevelPlan(accepted,true,"8","92");
+  assert.deepEqual(plan,{kind:"READY",source:"8",levelDb:-11.5});
+  assert.deepEqual(wireVM.primaryChannelLevelPlan(accepted,true,"8","93"),
+    {kind:"UNAVAILABLE"},"parallel send cannot become a channel fader");
+  assert.deepEqual(wireVM.primaryChannelLevelPlan(accepted,false,"8","92"),
+    {kind:"UNAVAILABLE"},"unprojected graph cannot authorize PRIMARY control");
+  assert.deepEqual(wireVM.primaryChannelLevelPlan({...accepted,retained:true},
+    true,"8","92"),{kind:"UNAVAILABLE"});
+  assert.deepEqual(wireVM.primaryChannelLevelPlan({
+    ...accepted,graph:{...accepted.graph,
+      edges:[{...primary,gainLinear:.5},parallel]}
+    },true,"8","92"),{kind:"UNAVAILABLE"},"native PRIMARY must stay unity");
+  const readback=wireVM.gainReadback(accepted.graph.edges,
+    new Map([["92",8],["93",9]]),new Map(),accepted.graph.channels);
+  assert.deepEqual(readback,[{id:8,pending:false,levelDb:-11.5},
+    {id:9,pending:false,levelDb:-6}],
+    "PRIMARY knob follows the accepted source fader, SEND has its own gain");
+  const bridge=read("web/approved-native-bridge.js");
+  assert.match(bridge,/primaryChannelLevelPlan\(current,/);
+  assert.match(bridge,/controller.intent\("SET_FADER",primary.source,/);
+  assert.match(bridge,/PRIMARY CH LEVEL/);
+});
+test("P0 native player INPUT advertised before pin admission; F11 window command survives VM boot",()=>{
+  const bridge=read("web/approved-native-bridge.js");
+  assert.match(bridge,/return physical.some\(p=>p\?\.mode==="PLAYER"\)\?physical:/);
+  assert.match(bridge,/if\(choice\?\.mode==="PLAYER"&&!nativeOwner\)/);
+  assert.match(bridge,/window.addEventListener\("keydown"/);
+  assert.match(bridge,/backend.emitEvent\("arMixWindowFullscreen",\{operation:"TOGGLE"\}\)/);
+  const popup=read("web/approved-floating-fx-bridge.js");
+  assert.match(popup,/gate==="rack"/);
+  assert.match(popup,/gate==="global"/);
+  assert.doesNotMatch(popup,/crypto.randomUUID\(/);
+  const geq=read("site/preview-v2/assets/mixer-native-geq31.js");
+  assert.match(geq,/GLOBAL FX BYPASSED/);
+  assert.match(geq,/ENABLE FX RACK/);
+  const host=read("src/Main.cpp");
+  assert.match(host,/event=="arMixGlobalFxAck"/);
+  assert.match(host,/if\(gate=="rack"\|\|gate=="global"\)/);
+});

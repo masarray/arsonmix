@@ -21,6 +21,7 @@
       ["mixer-native-sonku.js","ArSonMixNativeSonKu","#mxNativeSonKu"]
   });
   let current=null,identity=null,busyLoad=null,pending=null;
+  let powerSequence=0,pendingPower=null;
   const banner=document.getElementById("fxWindowStatus");
   const inform=message=>{
     if(banner){banner.textContent=message;banner.hidden=false;}
@@ -75,21 +76,39 @@
     nativeIdFor:track=>track && identity &&
       same(track.nativeId,identity.channelId)?identity.channelId:null,
     consumeAction(track,action,btn) {
-      if(action!=="slotPower"||!identity||!current)return false;
+      if(!["slotPower","fxOn","globalFxOn"].includes(action)||
+         !identity||!current)return false;
       const slot=Number(btn?.dataset?.slot);
       if(!Number.isInteger(slot)||slot!==identity.slot ||
          !track||!same(track.nativeId,identity.channelId))return true;
       const verified=project(current.view.raw,identity);
       if(!verified)return true;
-      const requestId="fx-window-"+crypto.randomUUID();
+      const gate=action==="fxOn"?"rack":action==="globalFxOn"?"global":"slot";
+      // Rack/global buttons explicitly clear only an accepted upstream gate.
+      // Never silently enable every processor when an operator toggles a slot.
+      if(gate!=="slot"&&(verified.kind!=="CHANNEL_ID"||
+         (gate==="rack"&&verified.channel.fxRackBypassed!==true)||
+         (gate==="global"&&verified.view.raw?.globalFxBypassed!==true)))
+        return true;
+      if(pendingPower&&Date.now()-pendingPower.sentAt<8000)return true;
+      // No crypto.randomUUID dependency: JUCE WebView2 origins can restrict
+      // Web Crypto. Native still verifies exact channel/slot/instance/epoch.
+      const requestId="fx-window-"+Date.now().toString(36)+"-"+(++powerSequence);
+      pendingPower={id:requestId,gate,sentAt:Date.now()};
       backend.emitEvent("arMixFloatingPower",{
         requestId,channelId:identity.channelId,slot:identity.slot,
-        instanceId:identity.instanceId,catalogId:identity.catalogId,
+        instanceId:identity.instanceId,catalogId:identity.catalogId,gate,
         deviceEpoch:verified.view.device.epoch,
         graphRevision:verified.view.graph.revision,
         workspaceToken:verified.view.workspaceToken||"",
-        value:!verified.insert.bypassed,logical:verified.kind!=="CHANNEL_ID"
+        value:gate==="slot"?!verified.insert.bypassed:false,
+        logical:verified.kind!=="CHANNEL_ID"
       });
+      window.setTimeout(()=>{
+        if(pendingPower?.id!==requestId)return;
+        pendingPower=null;
+        inform("FX Power timed out · check native FX Rack readback");
+      },8000);
       return true;
     },
     insertPlugin:()=>false
@@ -206,8 +225,18 @@
     current=next;
     if(!next)inform("FX disconnected · waiting for a matching saved editor");
   });
-  backend.addEventListener("arMixNativeFxPowerAck",ack=>{
-    if(ack?.ok!==true)inform("FX power unchanged · refresh native FX Rack");
-  });
+  const powerReceipt=ack=>{
+    if(!pendingPower||!ack)return;
+    const matches=ack.requestId===pendingPower.id||
+      (pendingPower.gate==="global"&&
+       ack.requestId==="global-fx-"+pendingPower.id);
+    if(!matches)return; // another editor's ACK is not this window's ACK
+    pendingPower=null;
+    if(ack.ok!==true)inform("FX power rejected · refresh accepted native FX Rack");
+    // Successful ACK is not a claim of PCM state: the later native
+    // arMixConsoleSnapshot repaints the editor from accepted readback.
+  };
+  backend.addEventListener("arMixNativeFxPowerAck",powerReceipt);
+  backend.addEventListener("arMixGlobalFxAck",powerReceipt);
   backend.emitEvent("arMixFloatingReady",{gui:"APPROVED_PAGES_NATIVE_FX_WINDOW_V1"});
 })();

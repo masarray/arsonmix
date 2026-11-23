@@ -611,7 +611,8 @@ public:
         browser_.onNativeEvent=[this](const juce::String& event,
                                       const juce::var& payload) {
             const bool response=event.startsWith("arMixBuiltin") ||
-                event=="arMixNativeFxPowerAck" || event=="arMixLogicalAck";
+                event=="arMixNativeFxPowerAck" || event=="arMixGlobalFxAck" ||
+                event=="arMixLogicalAck";
             const bool snapshot=event=="arMixConsoleSnapshot";
             if(!response&&!snapshot)return;
             if(snapshot && ++floatingFxRelayTick_%4!=0)return; // <=3 Hz
@@ -1623,6 +1624,24 @@ private:
             outgoing->setProperty("channelId",ref->channelId);
             outgoing->setProperty("slot",ref->slot);
             outgoing->setProperty("value",request.getProperty("value",{}));
+            const auto gate=request.getProperty("gate","slot").toString();
+            if(gate=="rack"||gate=="global") {
+                // Explicit GEQ popup controls may clear a verified upstream
+                // bypass, never silently toggle global/rack along with slot.
+                // Existing native CONTROL handlers still enforce epoch/revision.
+                if(logical||request.getProperty("value",{})!=juce::var(false)||
+                   ref->catalogId!="armix.builtin.graphic-eq31.v1")return;
+                outgoing->setProperty("requestId",
+                    gate=="global"?"global-fx-"+id:id);
+                outgoing->setProperty("action",gate=="global"?
+                    "routingGlobalFxBypass":"routingNativeFxRackBypass");
+                outgoing->setProperty("deviceEpoch",
+                    request.getProperty("deviceEpoch",{}));
+                outgoing->setProperty("revision",expectedRevision);
+                safe->onAction(juce::var(outgoing.release()));
+                return;
+            }
+            if(gate!="slot")return;
             if(logical) {
                 if(request.getProperty("workspaceToken","").toString()!=ref->workspaceToken ||
                    ref->workspaceToken.isEmpty())return;

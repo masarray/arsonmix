@@ -71,6 +71,9 @@ save.type="button";save.title="Save the accepted native FX settings as a user pr
 const flat=el("button","mx-geq31-flat","Flat");flat.type="button";
 const power=el("button","mx-geq31-power armix-builtin-fx-power","⏻");
 power.type="button";power.disabled=true;power.dataset.fxState="unknown";
+const gateButton=el("button","mx-geq31-enable-gate","ENABLE FX RACK");
+gateButton.type="button";gateButton.hidden=true;
+gateButton.style.cssText="padding:3px 7px;font-size:10px;white-space:nowrap;";
 power.setAttribute("aria-pressed","false");
 power.setAttribute("aria-label","Graphic EQ power");
 const close=el("button","mx-geq31-close armix-builtin-fx-close","×");
@@ -95,7 +98,7 @@ const sizeButtons=Object.keys(SIZE_MODES).map(mode=>{
  button.setAttribute("aria-label","Graphic EQ size "+Math.round(SIZE_MODES[mode]*100)+"%");
  sizeControls.append(button);return button;
 });
-header.append(title,meta,channel,preset,save,flat,sizeControls,power,close);
+header.append(title,meta,channel,preset,save,flat,sizeControls,gateButton,power,close);
 // Exact v13 author geometry: each fader is a cropped 40 x 229 original SVG,
  // not a CSS-imitation rail/THUMB. DSP ownership remains in native C++.
 const body=el("div","mx-geq31-body");
@@ -337,13 +340,25 @@ function updatePower(){
  const slotOff=demo?Boolean(active.track.slotBypass[active.slot]):
    Boolean(ins?.bypassed);
  const rackOff=!demo&&Boolean(ch?.fxRackBypassed);
- power.disabled=!usable;
- power.dataset.fxState=!usable?"unknown":rackOff?"rack-off":slotOff?"off":"on";
- power.setAttribute("aria-pressed",String(usable&&!slotOff&&!rackOff));
+ const globalOff=!demo&&Boolean(s?.raw?.globalFxBypassed);
+ const blocked=globalOff||rackOff;
+ power.disabled=!usable||blocked;
+ power.dataset.fxState=!usable?"unknown":globalOff?"global-off":
+   rackOff?"rack-off":slotOff?"off":"on";
+ power.setAttribute("aria-pressed",String(usable&&!slotOff&&!blocked));
  power.title=!usable?"DSP instance not accepted":
+   globalOff?"Global FX bypass active · use ENABLE GLOBAL FX first":
+   rackOff?"FX Rack bypass active · use ENABLE FX RACK first":
    (slotOff?"Enable Graphic EQ":"Bypass Graphic EQ")+
    (demo?" · PREVIEW ONLY (no audio engine)":"");
- const bypassed=usable&&(slotOff||rackOff);
+ gateButton.hidden=!native()||!usable||!blocked;
+ gateButton.textContent=globalOff?"ENABLE GLOBAL FX":"ENABLE FX RACK";
+ gateButton.title=globalOff?
+   "Explicitly re-enable Global FX (affects ALL channels)":
+   "Explicitly re-enable this channel's FX Rack";
+ const bypassed=usable&&(slotOff||blocked);
+ bypassShade.textContent=globalOff?"GLOBAL FX BYPASSED":
+   rackOff?"FX RACK BYPASSED":"BYPASSED";
  bypassShade.classList.toggle("is-on",bypassed);
 }
 function paintChannelMeter(view){
@@ -538,6 +553,15 @@ save.addEventListener("click",()=>{
 power.addEventListener("click",()=>{
  if(native()&&context())window.__ARMIX_NATIVE_M2__?.consumeAction?.(active.track,"slotPower",{dataset:{slot:String(active.slot)}});
  else if(!native()&&active){active.track.slotBypass[active.slot]=!active.track.slotBypass[active.slot];paint();}
+});
+gateButton.addEventListener("click",()=>{
+ if(!native()||!context()||!active)return;
+ const view=state(),channelId=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(active.track);
+ const row=view?.graph?.channels?.find(ch=>ch.id===channelId);
+ const action=view?.raw?.globalFxBypassed===true?"globalFxOn":
+   row?.fxRackBypassed===true?"fxOn":null;
+ if(action)window.__ARMIX_NATIVE_M2__?.consumeAction?.(
+   active.track,action,{dataset:{slot:String(active.slot)}});
 });
 function dismiss(){
  root.hidden=true;active=null;pending=null;queued.clear();readId="";
