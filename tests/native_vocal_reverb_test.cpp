@@ -234,6 +234,38 @@ int main() {
         assert(file.existsAsFile() && file.getSize()>10000);
     };
     saveImage(snapshot,"ArSonMix_Vocal_Reverb_Native_MIX_100.png");
+    // The actual editor must show all three accepted host gates, not a
+    // local toggle. A missing lease is never reported as BYPASSED.
+    auto* reverbEditor=dynamic_cast<VocalReverbEditor*>(ui.get());
+    assert(reverbEditor);
+    using Overlay=VocalReverbEditor::HostOverlay;
+    assert(reverbEditor->hostOverlay()==Overlay::none);
+    VocalReverbEditor::HostBypassState host{true,false,false,false};
+    reverbEditor->bindHostBypassReadback([&]{return host;});
+    const auto amberPixels=[](const juce::Image& image) {
+        int count=0;
+        for(int y=164;y<286;++y)for(int x=300;x<820;++x) {
+            const auto c=image.getPixelAt(x,y);
+            if(c.getRed()>150&&c.getGreen()>60&&
+               c.getRed()>c.getGreen()+30&&c.getGreen()>c.getBlue()+35)++count;
+        }
+        return count;
+    };
+    for(int gate=0;gate<3;++gate) {
+        host={true,gate==0,gate==1,gate==2};
+        reverbEditor->synchronizeHostBypass();
+        assert(reverbEditor->hostOverlay()==Overlay::bypassed);
+        assert(mainMix->isEnabled()); // valid bypassed FX remains editable
+        const auto picture=ui->createComponentSnapshot(ui->getLocalBounds());
+        assert(amberPixels(picture)>amberPixels(snapshot)+200);
+        if(gate==0)saveImage(picture,"ArSonMix_Vocal_Reverb_Native_BYPASSED_100.png");
+    }
+    host={false,true,true,true};
+    reverbEditor->synchronizeHostBypass();
+    assert(reverbEditor->hostOverlay()==Overlay::unavailable&&!mainMix->isEnabled());
+    host={true,false,false,false};
+    reverbEditor->synchronizeHostBypass();
+    assert(reverbEditor->hostOverlay()==Overlay::none&&mainMix->isEnabled());
     auto* motion=dynamic_cast<juce::TextButton*>(
         ui->findChildWithID("armix.reverb.tab.4"));
     assert(motion&&motion->onClick);
@@ -299,6 +331,88 @@ int main() {
     assert(uiOwner->acceptedSettings(reopenedAccepted)&&
            reopenedAccepted.values[0]==offline.values[0]);
 
+    // Real JUCE Slider pointer down/drag/up handlers, all 13 controls.
+    // Each intermediate value must reach the live PCM before mouse-up.
+    // Test the shipping editor/adapter at typical low ASIO block sizes.
+    for(const auto rate : {44100.,48000.,96000.}) {
+        const int frames=rate==44100.?32:rate==48000.?64:128;
+        auto gestureInstance=entry->prepare(rate,frames,nullptr,0);
+        auto* gestureProcessor=dynamic_cast<VocalReverbProcessor*>(gestureInstance.get());
+        assert(gestureProcessor);
+        std::unique_ptr<juce::AudioProcessorEditor> gestureUi(gestureProcessor->createEditor());
+        juce::AudioBuffer<float> audio(2,frames);
+        juce::MidiBuffer gestureMidi;
+        std::uint64_t sampleIndex=0;
+        std::array<float,2> previous{};
+        float worstStep=0.f;
+        const auto render=[&](int blocks) {
+            for(int b=0;b<blocks;++b) {
+                for(int j=0;j<frames;++j,++sampleIndex) {
+                    const double phase=6.283185307179586*static_cast<double>(sampleIndex)/rate;
+                    audio.setSample(0,j,static_cast<float>(.12*std::sin(220.*phase)+.035*std::sin(997.*phase)));
+                    audio.setSample(1,j,static_cast<float>(.11*std::sin(224.*phase)+.03*std::sin(883.*phase)));
+                }
+                gestureInstance->processBlock(audio,gestureMidi);
+                for(int ch=0;ch<2;++ch)for(int j=0;j<frames;++j) {
+                    const auto y=audio.getSample(ch,j);
+                    assert(std::isfinite(y)&&std::abs(y)<1.f);
+                    worstStep=std::max(worstStep,std::abs(y-previous[static_cast<std::size_t>(ch)]));
+                    previous[static_cast<std::size_t>(ch)]=y;
+                }
+            }
+        };
+        render(static_cast<int>(rate*.5/frames)); // warm audible wet history
+        constexpr std::array<int,13> pageFor{{0,0,0,1,1,3,0,0,4,4,0,0,5}};
+        for(int index=0;index<13;++index) {
+            auto* tab=dynamic_cast<juce::TextButton*>(gestureUi->findChildWithID(
+                "armix.reverb.tab."+juce::String(pageFor[static_cast<std::size_t>(index)])));
+            assert(tab&&tab->onClick);tab->onClick();
+            auto* knob=dynamic_cast<juce::Slider*>(gestureUi->findChildWithID(
+                "armix.reverb.param."+juce::String(index)));
+            assert(knob&&knob->isVisible()&&knob->isEnabled());
+            assert(knob->getMouseDragSensitivity()==280);
+            const auto origin=juce::Point<float>(knob->getWidth()*.5f,knob->getHeight()*.45f);
+            const auto local=origin.roundToInt()+knob->getPosition();
+            const auto* hit=gestureUi->getComponentAt(local);
+            assert(hit&&(hit==knob||knob->isParentOf(hit)));
+            const auto downTime=juce::Time::getCurrentTime();
+            const auto source=juce::Desktop::getInstance().getMainMouseSource();
+            const auto event=[&](juce::Point<float> pos,bool held,bool moved) {
+                return juce::MouseEvent(source,pos,
+                    juce::ModifierKeys(held?juce::ModifierKeys::leftButtonModifier:0),
+                    1.f,0.f,0.f,0.f,0.f,knob,knob,juce::Time::getCurrentTime(),
+                    origin,downTime,1,moved);
+            };
+            const auto before=knob->getValue();
+            const auto normalized=knob->valueToProportionOfLength(before);
+            const float direction=normalized<.5?1.f:-1.f;
+            const auto beforeId=gestureProcessor->appliedRequestId();
+            knob->mouseDown(event(origin,true,false));
+            assert(std::abs(knob->getValue()-before)<1.e-5);
+            std::uint64_t ack=beforeId;
+            for(int step=1;step<=8;++step) {
+                const auto pos=origin.translated(0.f,-direction*step*5.f);
+                knob->mouseDrag(event(pos,true,true));
+                assert(gestureProcessor->settingsPending());
+                render(1);
+                assert(gestureProcessor->appliedRequestId()>ack);
+                ack=gestureProcessor->appliedRequestId();
+                VocalReverbSettings readback{};
+                assert(gestureProcessor->acceptedSettings(readback));
+                assert(std::abs(readback.values[static_cast<std::size_t>(index)]-
+                                static_cast<float>(knob->getValue()))<1.e-5f);
+                render(3);
+            }
+            knob->mouseUp(event(origin.translated(0.f,-direction*40.f),false,true));
+            assert(gestureProcessor->appliedRequestId()==ack);
+            assert(!gestureProcessor->settingsPending());
+            assert(std::abs(knob->getValue()-before)>1.e-5);
+        }
+        // A bounded low-level band-limited source plus wet history should
+        // not yield gross discontinuities. This is objective regression,
+        // not a subjective "inaudible on all hardware" certification.
+        assert(worstStep<.15f);
+    }
     // Concurrent single-producer/PCM-consumer stress: every accepted
     // packet must be a coherent complete factory snapshot, never torn.
     auto concurrent=entry->prepare(48000.,32,nullptr,0);

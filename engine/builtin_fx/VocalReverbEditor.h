@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <functional>
+#include <utility>
 
 // An original ArSonMix instrument faceplate, geometry inspired by the
 // user's compact HD-CART reference. No LiquidSonics art, trademarks, logos,
@@ -70,6 +72,16 @@ inline juce::Font uiFont(float size) {
 }
 
 
+// JUCE calls valueChanged synchronously even when its listener notification
+// is async (wheel, typed value, keyboard). The processor must own the final
+// intent BEFORE the window can close. Silent preset sync never calls this.
+class LiveReverbKnob final : public juce::Slider {
+public:
+    std::function<void()> publishValue;
+    void valueChanged() override {
+        if(publishValue)publishValue();
+    }
+};
 class DialLook final : public juce::LookAndFeel_V4 {
 public:
     // Hardware-inspired controls are drawn vectorially at every DPI.
@@ -242,6 +254,37 @@ public:
 
 class VocalReverbEditor final:public juce::AudioProcessorEditor,private juce::Timer {
 public:
+    struct HostBypassState {
+        bool valid=false;
+        bool slotBypassed=false;
+        bool rackBypassed=false;
+        bool globalBypassed=false;
+        bool effectiveBypassed() const noexcept {
+            return valid&&(slotBypassed||rackBypassed||globalBypassed);
+        }
+    };
+    enum class HostOverlay {none,bypassed,unavailable};
+    // Read-only: the existing host/rack remains the only bypass authority.
+    void bindHostBypassReadback(std::function<HostBypassState()> readback) {
+        readHostBypass_=std::move(readback);
+        synchronizeHostBypass();
+    }
+    HostOverlay hostOverlay() const noexcept {return hostOverlay_;}
+    void synchronizeHostBypass() {
+        const auto state=readHostBypass_?readHostBypass_():HostBypassState{};
+        const auto next=!readHostBypass_?HostOverlay::none:
+            !state.valid?HostOverlay::unavailable:
+            state.effectiveBypassed()?HostOverlay::bypassed:HostOverlay::none;
+        if(next==hostOverlay_)return;
+        hostOverlay_=next;
+        // Allow editing a valid bypassed insert; a removed/replaced lease
+        // is unavailable, not bypassed and not a new target.
+        const bool available=next!=HostOverlay::unavailable;
+        for(auto& knob:knobs_)knob.setEnabled(available);
+        preset_.setEnabled(available);algorithm_.setEnabled(available);
+        prev_.setEnabled(available);next_.setEnabled(available);
+        repaint();
+    }
     explicit VocalReverbEditor(VocalReverbProcessor& processor)
         :juce::AudioProcessorEditor(processor),processor_(processor) {
         setOpaque(true);
@@ -324,9 +367,29 @@ public:
             const auto& d=arverb::parameterInfo(static_cast<arverb::Parameter>(i));
             knob.setLookAndFeel(&dial_);
             knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+            // Relative drag, no click-to-jump or release-only control.
+            // A full normalized sweep takes a deliberate 280 logical px;
+            // use the native Slider's same path for mouse, wheel and keys.
+            knob.setChangeNotificationOnlyOnRelease(false);
+            knob.setMouseDragSensitivity(280);
+            knob.setVelocityBasedMode(false);
+            knob.setScrollWheelEnabled(true);
+            knob.setRotaryParameters(juce::MathConstants<float>::pi*1.25f,
+                                     juce::MathConstants<float>::pi*2.75f,true);
             knob.setTextBoxStyle(juce::Slider::TextBoxBelow,false,
                  (i==0||i==2)?126:103,22);
             knob.setRange(d.minimum,d.maximum,0.);
+            // More resolution where singers normally work; endpoints stay
+            // the actual DSP bounds, with no hidden quantisation.
+            switch(static_cast<arverb::Parameter>(i)) {
+                case arverb::Parameter::PreDelayMs: knob.setSkewFactorFromMidPoint(55.0);break;
+                case arverb::Parameter::DecaySeconds: knob.setSkewFactorFromMidPoint(2.5);break;
+                case arverb::Parameter::DampingHz: knob.setSkewFactorFromMidPoint(5000.0);break;
+                case arverb::Parameter::LowCutHz: knob.setSkewFactorFromMidPoint(220.0);break;
+                case arverb::Parameter::HighCutHz: knob.setSkewFactorFromMidPoint(7000.0);break;
+                case arverb::Parameter::ModRateHz: knob.setSkewFactorFromMidPoint(.35);break;
+                default: break;
+            }
             knob.setNumDecimalPlacesToDisplay((i==1||i==5||i==6||i==7)?0:2);
             // Source-unit exact, human-readable LCD values; editable text
             // round-trips into the SAME native parameter, never UI state.
@@ -341,8 +404,10 @@ public:
             knob.setColour(juce::Slider::textBoxTextColourId,reverb_ui::rgb(147,215,250));
             knob.setColour(juce::Slider::textBoxBackgroundColourId,juce::Colours::transparentBlack);
             knob.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
-            knob.onValueChange=[this,i]{
-                draft_.values[i]=static_cast<float>(knobs_[i].getValue());
+            knob.publishValue=[this,i]{
+                const float value=static_cast<float>(knobs_[i].getValue());
+                if(draft_.values[i]==value)return;
+                draft_.values[i]=value;
                 markCustom();
             };
             addAndMakeVisible(knob);
@@ -369,7 +434,10 @@ public:
     ~VocalReverbEditor() override {
         stopTimer();
         processor_.detachMeterView();
-        for(auto& k:knobs_)k.setLookAndFeel(nullptr);
+        for(auto& k:knobs_){
+            k.publishValue={};
+            k.setLookAndFeel(nullptr);
+        }
         for(auto& b:tabs_)b.setLookAndFeel(nullptr);
         prev_.setLookAndFeel(nullptr);
         next_.setLookAndFeel(nullptr);
@@ -471,6 +539,24 @@ public:
         // Lower 10px cabinet lip is intentionally empty: no clipped footer.
     }
 
+    void paintOverChildren(juce::Graphics& g) override {
+        if(hostOverlay_==HostOverlay::none)return;
+        // GEQ31 / ImmerSIB visual language: actual children are dimmed,
+        // amber status and shadow; native window chrome remains untouched.
+        const bool bypassed=hostOverlay_==HostOverlay::bypassed;
+        juce::Graphics::ScopedSaveState saved(g);
+        g.setColour(juce::Colour(0xb803060a));
+        g.fillRect(11,60,getWidth()-22,getHeight()-82);
+        auto font=reverb_ui::uiFont(bypassed?45.f:34.f);
+        font.setExtraKerningFactor(.055f);
+        g.setFont(font);
+        const juce::Rectangle<int> label(0,164,getWidth(),122);
+        const auto text=bypassed?"BYPASSED":"FX UNAVAILABLE";
+        g.setColour(juce::Colour(0xb8000307));
+        g.drawText(text,label.translated(0,3),juce::Justification::centred,false);
+        g.setColour(bypassed?juce::Colour(0xeeffa53c):juce::Colour(0xffd0dce1));
+        g.drawText(text,label,juce::Justification::centred,false);
+    }
     void resized() override {
         title_.setBounds(47,65,247,32);
         preset_.setBounds(424,17,272,34);
@@ -605,6 +691,7 @@ private:
                      "Parameters confirmed by the audio engine"));
     }
     void timerCallback() override {
+        synchronizeHostBypass();
         updateFeedbackTooltip();
         const bool ready=processor_.isReady();
         const auto generation=processor_.meterGeneration();
@@ -629,13 +716,15 @@ private:
     juce::ComboBox preset_,algorithm_;
     juce::TextButton prev_,next_;
     std::array<juce::TextButton,6> tabs_;
-    std::array<juce::Slider,arverb::parameterCount> knobs_;
+    std::array<reverb_ui::LiveReverbKnob,arverb::parameterCount> knobs_;
     std::array<juce::Label,arverb::parameterCount> labels_;
     std::array<float,4> displayPeaks_{};
     std::array<int,4> displaySegments_{};
     std::uint64_t lastMeterGeneration_=0;
     int page_=0;
     int feedbackState_=-1;
+    std::function<HostBypassState()> readHostBypass_;
+    HostOverlay hostOverlay_=HostOverlay::none;
 };
 inline juce::AudioProcessorEditor* VocalReverbProcessor::createEditor() {
     return new VocalReverbEditor(*this);
