@@ -15,6 +15,7 @@
 #include "HarmonyPeriodContinuity.h"
 #include "HarmonyLeadTune.h"
 #include "HarmonyVoicePlanner.h"
+#include "HarmonyBackingHeadroom.h"
 
 // Deterministic, allocation-free vocal harmony DSP. No JUCE or GUI dependency.
 // Grain shifting is a functioning prototype, not formant-accurate synthesis.
@@ -303,6 +304,7 @@ public:
         resonanceReferenceEnabled_=true;articulationReferenceEnabled_=true;
         fastCorrelation_=true;lowerFocusReferenceEnabled_=true;
         articulation_.prepare(rate);
+        headroom_.prepare(rate);headroomEnabled_=true;
         // Both renderer choice and missing-epoch recovery are time-domain
         // crossfades. Never hard-switch their independent source phases.
         pitchSyncAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.030)));
@@ -525,6 +527,11 @@ public:
     }
     // H22 experimental offline candidate: do not change the field
     // build's timbre until matched human-vocal listening qualifies it.
+    bool setHeadroomForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        headroomEnabled_=enabled;return true;
+    }
+    const BackingHeadroom& headroomForOfflineTests()const noexcept{return headroom_;}
     bool setCubicForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
         cubicReferenceEnabled_=enabled;return true;
@@ -808,8 +815,14 @@ public:
             outL+=room.left*roomReturn;outR+=room.right*roomReturn;
             // Compensate direct + early + late together, retaining DRR and
             // the original room excitation; lead remains independent.
-            l[i]=std::clamp((leadL+outL*backingGain_)*gain_,-4.f,4.f);
-            r[i]=std::clamp((leadR+outR*backingGain_)*gain_,-4.f,4.f);
+            float protection=1.f;
+            if(headroomEnabled_)
+                protection=headroom_.process(inputL,inputR,leadL*gain_,leadR*gain_,
+                    outL*backingGain_*gain_,outR*backingGain_*gain_,gain_,wet_);
+            // Keep the previous multiply/add order when protection is unity.
+            const float backing=backingGain_*protection;
+            l[i]=std::clamp((leadL+outL*backing)*gain_,-4.f,4.f);
+            r[i]=std::clamp((leadR+outR*backing)*gain_,-4.f,4.f);
             // Expression follows stable notes; confidence hysteresis is
             // handled by the tracker, not by vibrato resetting on one hop.
             ensemble_.advance(voiced_&&noteHold_>=2,voiced_);
@@ -1200,6 +1213,8 @@ private:
     bool expressionReferenceEnabled_=true,identityReferenceEnabled_=true;
     bool resonanceReferenceEnabled_=true,articulationReferenceEnabled_=true;
     BackingArticulation articulation_{};
+    BackingHeadroom headroom_{};
+    bool headroomEnabled_=true;
     std::array<BackingRenderSeam,maxVoices> backingSeams_{};
     bool continuityReferenceEnabled_=true,supportReferenceEnabled_=true;
     bool naturalReferenceEnabled_=true,carrierReferenceEnabled_=true,slopeReferenceEnabled_=true;

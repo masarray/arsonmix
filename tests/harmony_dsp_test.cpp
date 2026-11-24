@@ -1259,7 +1259,8 @@ static void testBackingContinuity(){
     }
   }
 }
-// Field audit: no runtime modifications. A peak sweep at unity output
+// H24A matched headroom audit: legacy reference and protected live path.
+// A peak sweep at unity output
 // gain, full wet, two Space settings and five modes. Float samples above
 // unity are headroom violations at a fixed-point sink, not proof of clipping
 // inside the float engine. Do not gate old behavior on the investigation.
@@ -1279,13 +1280,13 @@ static void auditFieldHeadroom(){
             .19*std::sin(2*phase+.3)+.08*std::sin(3*phase+.7)+.04*std::sin(5*phase+.2)));
         src.left[i]=src.right[i]=v;sourcePeak=std::max(sourcePeak,double(std::abs(v)));
     }
-    for(float inputPeak:{.25f,.5f,.8f})for(float space:{0.f,1.f})for(int mode=1;mode<=5;++mode){
+    for(bool protectedPath:{false,true})for(float inputPeak:{.25f,.5f,.8f})for(float space:{0.f,1.f})for(int mode=1;mode<=5;++mode){
         Settings s;s.voiceMode=mode==1?1:0;s.voices=std::max(2,mode);
         s.wet=1.f;s.space=space;s.color=.78f;s.gainDb=0.f;s.correction=false;
         auto x=src;
         for(int i=0;i<n;++i)x.left[i]=x.right[i]=static_cast<float>(src.left[i]*inputPeak/sourcePeak);
         auto e=std::make_unique<Engine>();
-        need(e->prepare(rate)&&e->setSettings(s)&&e->setRendererTraceForOfflineTests(true),"field audit setup");
+        need(e->prepare(rate)&&e->setHeadroomForOfflineReference(protectedPath)&&e->setSettings(s)&&e->setRendererTraceForOfflineTests(true),"field audit setup");
         for(int at=0;at<n;at+=64)e->process(x.left.data()+at,x.right.data()+at,std::min(64,n-at));
         double peakL=0.,peakR=0.;int aboveL=0,aboveR=0,internalClamp=0;std::uint64_t calls=0,losses=0;
         for(int i=0;i<n;++i){
@@ -1300,10 +1301,35 @@ static void auditFieldHeadroom(){
             losses+=e->seamCountsForOfflineTests(v).losses;
         }
         if(mode==1)need(calls==0,"stable Doubler must not call pitch renderer");
-        std::cout<<"FIELD_HEADROOM mode="<<mode<<" input_peak="<<inputPeak<<" space="<<space
+        if(protectedPath){
+            need(peakL<=.980001&&peakR<=.980001&&aboveL==0&&aboveR==0,"H24A sample ceiling");
+            if(inputPeak==.25f)need(e->headroomForOfflineTests().limited()==0,"H24A low-level transparency");
+        }
+        std::cout<<"FIELD_HEADROOM protected="<<protectedPath<<" mode="<<mode<<" input_peak="<<inputPeak<<" space="<<space
                  <<" peakL="<<peakL<<" peakR="<<peakR<<" aboveL="<<aboveL<<" aboveR="<<aboveR
                  <<" internalClamp="<<internalClamp<<" shifted_calls="<<calls
-                 <<" pitch_analyses="<<e->completedPitchAnalyses()<<" losses="<<losses<<std::endl;
+                 <<" pitch_analyses="<<e->completedPitchAnalyses()<<" losses="<<losses
+                 <<" limited="<<e->headroomForOfflineTests().limited()<<" emergency="<<e->headroomForOfflineTests().emergency()
+                 <<" min_gain="<<e->headroomForOfflineTests().minimum()<<std::endl;
+    }
+}
+static void testHeadroomContract(){
+    for(int rate:{32000,48000,96000,192000}){
+        BackingHeadroom h;h.prepare(rate);
+        for(int i=0;i<rate/10;++i){
+            const float g=h.process(.2f,-.2f,.2f,-.2f,.3f,-.3f,1.f,1.f);
+            need(g==1.f,"H24A nominal gain altered");
+        }
+        // Asymmetric polarity, signed constraint and stereo-linked gain.
+        for(int i=0;i<rate/10;++i){
+            const float g=h.process(.8f,.4f,.8f,-.4f,.9f,-1.2f,1.f,1.f);
+            need(g>=0.f&&g<=1.f&&std::abs(.8f+.9f*g)<=.980001f&&
+                std::abs(-.4f-1.2f*g)<=.980001f,"H24A linked safety");
+        }
+        const float g=h.process(1.2f,-1.1f,1.2f,-1.1f,.5f,-.6f,1.f,1.f);
+        need(g==0.f,"H24A preserve over-unity dry, do not worsen");
+        const float recovering=h.process(.1f,.1f,.1f,.1f,.1f,.1f,1.f,1.f);
+        need(recovering>=0.f&&recovering<.01f,"H24A no sudden release");
     }
 }
 static void testContinuousDoubler(){
@@ -1776,6 +1802,7 @@ int main(){
   testUnvoicedGapPreservesWetTail();
   testBackingContinuity();
   testLowerPresenceAndPresets();
+  testHeadroomContract();
   auditFieldHeadroom();
   testContinuousDoubler();
   testUnisonDoubler();
