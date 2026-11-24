@@ -3,6 +3,7 @@
 // Synthesized self-test is only a build and integrity gate, not an ear-test.
 #include "../engine/builtin_fx/HarmonyDsp.h"
 #include "../engine/builtin_fx/HarmonyMusicKey.h"
+#include "../engine/builtin_fx/HarmonySpectralEnvelope.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -492,6 +493,76 @@ static EarEvidence earEvidence(const std::vector<float>& x,std::size_t start,std
     e.stepRms=std::sqrt(stepEnergy/std::max<std::size_t>(1,end-start-(start==0?1:0)));
     return e;
 }
+// Separate OFFLINE audition; all existing live/native role stems remain
+// unmodified. The role includes early/room energy, so this is not an
+// exact direct-voice formant correction. Nominal HIGH lookback 24+12ms.
+static void envelopeReport(const Wave& input,const Wave& high,const fs::path& folder){
+    using Envelope=armix::harmony::offline::SpectralEnvelope;
+    const int delay=static_cast<int>(std::lround(input.rate*.036));
+    const auto corrected=Envelope::correct(input.left,input.right,high.left,high.right,input.rate,delay);
+    writeWave(folder/"h25_high_lpc_candidate.wav",{high.rate,corrected.left,corrected.right});
+    std::ofstream csv(folder/"h25_high_lpc_frames.csv",std::ios::trunc);
+    if(!csv)throw std::runtime_error("LPC report open");
+    csv<<"output_time_s,nominal_source_time_s,accepted,source_periodicity,wet_periodicity,max_correction_db\n";
+    for(const auto& f:corrected.frames)
+        csv<<double(f.center)/input.rate<<','<<(double(f.center)-delay)/input.rate<<','
+           <<f.accepted<<','<<f.sourcePeriodicity<<','<<f.wetPeriodicity<<','<<f.maxDb<<'\n';
+    if(!csv)throw std::runtime_error("LPC report write");
+}
+static void testSpectralEnvelope(){
+    using Envelope=armix::harmony::offline::SpectralEnvelope;
+    constexpr int rate=48000,n=rate;
+    // Known stationary resonators, impulse-train F0 120 -> 180 Hz.
+    // The oracle keeps the original resonator frequencies at target F0.
+    auto vowel=[](double hz,double f1,double f2){
+        std::vector<float> v(n);double phase=0.,a1=0.,a2=0.,b1=0.,b2=0.;
+        const double r1=std::exp(-Envelope::pi*110./rate),r2=std::exp(-Envelope::pi*150./rate);
+        const double c1=2.*r1*std::cos(2.*Envelope::pi*f1/rate),c2=2.*r2*std::cos(2.*Envelope::pi*f2/rate);
+        double peak=0.;
+        for(int i=0;i<n;++i){
+            phase+=hz/rate;double excitation=0.;
+            if(phase>=1.){phase-=1.;excitation=1.;}
+            const double a=excitation+c1*a1-r1*r1*a2;a2=a1;a1=a;
+            const double b=a+c2*b1-r2*r2*b2;b2=b1;b1=b;
+            v[i]=static_cast<float>(b);peak=std::max(peak,std::abs(b));
+        }
+        for(auto& x:v)x=static_cast<float>(x*.2/peak);
+        return v;
+    };
+    const auto source=vowel(120.,700.,1400.),shifted=vowel(180.,1050.,2100.),oracle=vowel(180.,700.,1400.);
+    const auto out=Envelope::correct(source,source,shifted,shifted,rate,0);
+    const auto disabled=Envelope::correct(source,source,shifted,shifted,rate,0,0.);
+    if(disabled.left!=shifted||disabled.right!=shifted||out.left!=out.right)
+        throw std::runtime_error("H25C exact disabled/stereo contract");
+    std::size_t accepted=0;double maxDb=0.;
+    for(const auto& f:out.frames){accepted+=f.accepted;maxDb=std::max(maxDb,f.maxDb);}
+    if(accepted<out.frames.size()/2||maxDb>4.80001)throw std::runtime_error("H25C fit/gain guard");
+    // Independent harmonic amplitudes (not the LPC objective itself).
+    auto harmonic=[](const std::vector<float>& v,double hz){
+        double a=0.,b=0.;
+        for(int i=rate/4;i<3*rate/4;++i){
+            const double phase=2.*Envelope::pi*hz*i/rate;
+            a+=v[i]*std::cos(phase);b+=v[i]*std::sin(phase);
+        }
+        return 20.*std::log10(std::max(1.e-10,std::hypot(a,b)));
+    };
+    auto error=[&](const auto& v){
+        std::array<double,24> errors{};double mean=0.;
+        for(int k=0;k<24;++k){errors[k]=harmonic(v,180.*(k+2))-harmonic(oracle,180.*(k+2));mean+=errors[k];}
+        mean/=errors.size();double acc=0.;for(double x:errors)acc+=(x-mean)*(x-mean);
+        return std::sqrt(acc/errors.size());
+    };
+    const double old=error(shifted),now=error(out.left);
+    std::cout<<"H25C_LPC oracle_error_before_db="<<old<<" after_db="<<now
+             <<" accepted="<<accepted<<" total="<<out.frames.size()<<" max_db="<<maxDb<<std::endl;
+    if(!(now<old))throw std::runtime_error("H25C known-vowel spectral error regression");
+    std::vector<float> silent(n);
+    const auto rejected=Envelope::correct(silent,silent,shifted,shifted,rate,0);
+    if(std::any_of(rejected.frames.begin(),rejected.frames.end(),[](const auto& f){return f.accepted;}))
+        throw std::runtime_error("H25C silence accepted");
+    for(int i=0;i<n;++i)
+        if(std::abs(rejected.left[i]-shifted[i])>1.e-7f)throw std::runtime_error("H25C rejected frame parity");
+}
 static void continuityReport(const Wave& input,const fs::path& folder,Settings s,const GuideTimeline* guide=nullptr,int guideBlock=0){
     if(input.left.size()>static_cast<std::size_t>(input.rate)*30)
         throw std::runtime_error("continuity audition: use <=30s");
@@ -560,11 +631,13 @@ static void continuityReport(const Wave& input,const fs::path& folder,Settings s
     for(int version:{14,15,16,17,18,20,22,24,25})for(int role=0;role<Engine::maxVoices;++role)
         writeWave(folder/("h"+std::to_string(version)+"_role_"+std::to_string(role)+".wav"),
                   roleStem(input,s,role,dry,version>=15,version>=16,version>=17,version>=18,version>=20,version==22,guide,version==25?2:version==24?1:0));
+    if(s.voices>=3)envelopeReport(input,readWave(folder/"h25_role_2.wav"),folder);
     if(!csv||!events||!traceCsv)throw std::runtime_error("continuity report write failed");
 }
 int main(int argc,char** argv){
     try{
         if(argc==2&&std::string(argv[1])=="--self-test"){
+            testSpectralEnvelope();
             Wave v;v.rate=48000;v.left.resize(18000);v.right.resize(18000);
             for(int i=0;i<18000;++i){
                 const double ph=6.283185307179586*220.*i/48000.;
@@ -666,7 +739,9 @@ int main(int argc,char** argv){
             std::string line;int rows=0;
             while(std::getline(ev,line))++rows;
             if(rows!=1+11*Engine::maxVoices)return 17;
-            if(!fs::exists(folder/"h18_role_2.wav"))return 18;
+            if(!fs::exists(folder/"h18_role_2.wav")||!fs::exists(folder/"h25_high_lpc_frames.csv"))return 18;
+            const auto lpc=readWave(folder/"h25_high_lpc_candidate.wav");
+            if(lpc.rate!=v.rate||lpc.left.size()!=v.left.size())return 20;
             std::ifstream tr(folder/"renderer_trace_10ms.csv");int traceRows=0;
             while(std::getline(tr,line))++traceRows;
             const auto windows=(v.left.size()+v.rate/100-1)/(v.rate/100);
