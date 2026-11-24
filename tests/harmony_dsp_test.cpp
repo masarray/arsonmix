@@ -883,11 +883,12 @@ static void testBackingContinuity(){
          +.065*std::sin(3*phase+1.1)+.026*std::sin(5*phase+.6);
       src.left[i]=src.right[i]=static_cast<float>(gap?.08*noise:x);
     }
-    auto run=[&](bool modern,bool wet,int block){
+    auto run=[&](bool modern,bool wet,int block,bool support=true){
       auto e=std::make_unique<Engine>();Settings s;
       s.voices=voices;s.wet=wet?1.f:0.f;s.color=.78f;s.space=1.f;
       s.guideMode=1;s.guideChannelId=2;
-      need(e->prepare(rate)&&e->setContinuityForOfflineReference(modern)&&e->setSettings(s),
+      need(e->prepare(rate)&&e->setContinuityForOfflineReference(modern)&&
+           e->setSupportForOfflineReference(support)&&e->setSettings(s),
            "H13 setup");
       auto out=src;
       for(int at=0;at<n;){
@@ -902,23 +903,41 @@ static void testBackingContinuity(){
       return out;
     };
     const auto old=run(false,true,127),now=run(true,true,127);
+    const auto h13=run(true,true,127,false);
     const auto dry=run(true,false,127),split=run(true,true,64);
     need(now.left==split.left&&now.right==split.right,"H13 block parity");
     need(dry.left==run(false,false,64).left,"H13 dry changed");
     for(int ch=0;ch<2;++ch){
       const auto& a=ch?old.right:old.left;const auto& b=ch?now.right:now.left;
       const auto& lead=ch?dry.right:dry.left;
-      double ea=0.,eb=0.,maxA=0.,maxB=0.;std::vector<double> da,db;
+      const auto& ref=ch?h13.right:h13.left;
+      double ea=0.,eb=0.,ec=0.,maxA=0.,maxB=0.,maxC=0.;
+      std::vector<double> da,db,dc;
       for(int i=rate/2;i<n;++i){
         const double x=a[i]-lead[i],y=b[i]-lead[i];
         const double u=std::abs(x-(a[i-1]-lead[i-1]));
         const double v=std::abs(y-(b[i-1]-lead[i-1]));
+        const double z=ref[i]-lead[i];
+        const double w=std::abs(z-(ref[i-1]-lead[i-1]));
         need(std::isfinite(y),"H13 nonfinite");
-        ea+=x*x;eb+=y*y;maxA=std::max(maxA,u);maxB=std::max(maxB,v);
-        da.push_back(u);db.push_back(v);
+        ea+=x*x;eb+=y*y;ec+=z*z;
+        maxA=std::max(maxA,u);maxB=std::max(maxB,v);maxC=std::max(maxC,w);
+        da.push_back(u);db.push_back(v);dc.push_back(w);
       }
-      std::sort(da.begin(),da.end());std::sort(db.begin(),db.end());
+      std::sort(da.begin(),da.end());std::sort(db.begin(),db.end());std::sort(dc.begin(),dc.end());
       const double pa=da[da.size()*999/1000],pb=db[db.size()*999/1000];
+      const double pc=dc[dc.size()*999/1000];
+      const double relative=std::sqrt(ec/eb);
+      const double normalizedP=pb*relative/pc,normalizedMax=maxB*relative/maxC;
+      const double h14Gain=10.*std::log10(eb/ec);
+      std::cout<<"H14_PCM rate="<<rate<<" voices="<<voices<<" ch="<<ch
+               <<" h13_max="<<maxC<<" h14_max="<<maxB
+               <<" h13_p999="<<pc<<" h14_p999="<<pb
+               <<" level_matched_p999_ratio="<<normalizedP
+               <<" level_matched_max_ratio="<<normalizedMax
+               <<" wet_dB="<<h14Gain<<std::endl;
+      need(ec>1.&&std::abs(h14Gain)<.5&&normalizedP<1.10&&normalizedMax<1.15,
+           "H14 level-matched stereo continuity regression");
       const double gain=10.*std::log10(eb/ea);
       std::cout<<"H13_PCM rate="<<rate<<" voices="<<voices<<" ch="<<ch
                <<" old_max="<<maxA<<" new_max="<<maxB

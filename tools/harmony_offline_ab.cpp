@@ -396,13 +396,13 @@ static EarEvidence earEvidence(const std::vector<float>& x,std::size_t start,std
         if(!std::isfinite(v))throw std::runtime_error("nonfinite audition PCM");
         energy+=v*v;e.peak=std::max(e.peak,std::abs(v));
         if(std::abs(v)>=1.)++e.overload;
-        if(i>start){
+        if(i>0){
             const double step=v-x[i-1];stepEnergy+=step*step;
             e.maxStep=std::max(e.maxStep,std::abs(step));
         }
     }
     e.rms=std::sqrt(energy/(end-start));
-    e.stepRms=std::sqrt(stepEnergy/std::max<std::size_t>(1,end-start-1));
+    e.stepRms=std::sqrt(stepEnergy/std::max<std::size_t>(1,end-start-(start==0?1:0)));
     return e;
 }
 static void continuityReport(const Wave& input,const fs::path& folder,Settings s){
@@ -454,7 +454,9 @@ int main(int argc,char** argv){
                    .13*std::sin(ph)+.06*std::sin(2*ph)+.03*std::sin(3*ph));
             }
             const auto quiet=earEvidence(v.right,6000,6480);
-            auto spike=v.left;spike[6120]=1.2f;
+            // Put the impulse at the exact analysis window boundary:
+            // the report must not silently miss a callback-aligned click.
+            auto spike=v.left;spike[6000]=1.2f;
             const auto noisy=earEvidence(spike,6000,6480);
             if(quiet.overload||noisy.overload!=1||noisy.maxStep<=quiet.maxStep*4.)return 14;
             Settings s;s.wet=.45f;
