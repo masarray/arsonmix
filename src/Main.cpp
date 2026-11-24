@@ -864,7 +864,7 @@ private:
     std::uint64_t retainedOfflineLastActivityMs_=0;
     std::uint64_t offlineReturnEpoch_=0,offlineReturnSinceMs_=0;
     std::uint64_t offlineReturnCallback_=0,offlineReturnProgressMs_=0;
-    std::uint64_t offlineAutoAttemptEpoch_=0,offlineAutoAttemptRevision_=0;
+    std::uint64_t offlineAutoAttemptEpoch_=0,offlineAutoAttemptRevision_=0,offlineAutoNextVerifyMs_=0;
     juce::String offlineAutoAttemptWorkspace_;
     std::unique_ptr<armix::startup::Vst3RestoreCrashGuard> startupFxGuard_;
     juce::uint32 startupFxGuardTick_=0;
@@ -8861,6 +8861,7 @@ private:
         if(offlineReturnEpoch_!=epoch) {
             offlineReturnEpoch_=epoch;offlineReturnSinceMs_=now;
             offlineReturnCallback_=callbacks;offlineReturnProgressMs_=0;
+            offlineAutoNextVerifyMs_=0;
             return;
         }
         if(callbacks!=offlineReturnCallback_) {
@@ -8884,6 +8885,8 @@ private:
         auto applying=deviceApply_.tryBegin(
             armix::device::NativeDeviceApplyCoordinator::Purpose::asioRecovery);
         if(!applying)return;
+        if(now<offlineAutoNextVerifyMs_)return;
+        offlineAutoNextVerifyMs_=now+750;
         auto mode=MixerBindingMode::exact;
         if(device->getTypeName()=="ASIO") {
             if(!engine_.authorizeRetainedAsioRestart() || engine_.asioRestartPinCorrection())return;
@@ -8950,7 +8953,8 @@ private:
         if(!device || !device->isOpen() || directCallbackStalled_ ||
            device->getActiveOutputChannels().countNumberOfSetBits()<2) {
             // A missing, closed or output-less ASIO device requires a vendor call.
-            // Never reopen it repeatedly on each UI timer tick.
+            // Never reopen an authored mixer from the UI timer, even if the driver reports open with no outputs.
+            if(retained) {asioRecoveryGate_.waitForReadback(now);return;}
             if(!asioRecoveryGate_.mayChangeDriver()) {
                 asioRecoveryGate_.waitForReadback(now);
                 return;
