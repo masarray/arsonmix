@@ -29,6 +29,7 @@ int main() {
     assert(!entry->prepare(48000.,4,nullptr,0));
     auto created=entry->prepare(48000.,128,nullptr,0);
     assert(created && created->getName()=="Reverb-Sis" && created->hasEditor());
+    assert(created->getSampleRate()==48000. && created->getBlockSize()==128);
     // Detached logical editor has NO callback. Save the newest knob/preset
     // packet on CONTROL, prove exact state restore, reject a published lease.
     {
@@ -103,6 +104,29 @@ int main() {
     assert(presetSelect->getItemText(12)=="Master Ceremony");
     assert(presetSelect->getItemId(12)==13);
     assert(presetSelect->getItemText(13)=="Custom / saved");
+    // Actual native ComboBox user-preset recall uses the same settings mailbox.
+    {
+        auto instance=entry->prepare(48000.,128,nullptr,0);
+        auto* owner=dynamic_cast<VocalReverbProcessor*>(instance.get());
+        std::unique_ptr<juce::AudioProcessorEditor> view(owner->createEditor());
+        auto* editor=dynamic_cast<VocalReverbEditor*>(view.get());
+        auto* list=dynamic_cast<juce::ComboBox*>(view->findChildWithID("armix.reverb.preset"));
+        auto* save=dynamic_cast<juce::TextButton*>(view->findChildWithID("armix.reverb.preset.save"));
+        assert(editor&&list&&save&&!save->isEnabled());
+        auto custom=vocalReverbFactoryPreset(0);custom.preset=-1;custom.values[0]=.137f;
+        editor->bindUserPresetService([]{
+            return std::vector<VocalReverbEditor::UserPresetEntry>{{"test-id","My Vocal"}};
+        },[](const juce::String&){return juce::String{};},
+        [&](const juce::String& id){return id=="test-id"&&owner->queueSettings(custom)>0;});
+        assert(save->isEnabled()&&list->getItemText(14)=="My Vocal");
+        list->setSelectedId(1000,juce::sendNotificationSync);
+        assert(owner->settingsPending()&&owner->desiredSettings().values==custom.values);
+        owner->consumeRealtimeEdits();
+        VocalReverbSettings accepted{};
+        assert(owner->acceptedSettings(accepted)&&accepted.values==custom.values);
+        editor->bindHostBypassReadback([]{return VocalReverbEditor::HostBypassState{};});
+        assert(!save->isEnabled());
+    }
     // Test actual selection and detached state round-trip independently
     // of the main faceplate/meter fixture.
     {
@@ -272,6 +296,8 @@ int main() {
     }
     juce::Thread::sleep(42);
     juce::Timer::callPendingTimersSynchronously();
+    static_assert(reverb_ui::FaceplateLayout::tabRuleY==196);
+    static_assert(reverb_ui::FaceplateLayout::smallCaptionY==214);
     auto snapshot=ui->createComponentSnapshot(ui->getLocalBounds());
     assert(snapshot.isValid()&&snapshot.getWidth()==1120&&snapshot.getHeight()==430);
     assert(snapshot.getPixelAt(16,16)!=snapshot.getPixelAt(568,353));

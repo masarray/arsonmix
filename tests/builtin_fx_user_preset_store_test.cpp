@@ -45,6 +45,13 @@ static BuiltInFxUserPreset graphicEq31() {
     return {{}, "armix.builtin.graphic-eq31.v1","Voice Curve","My Presets",
         object({{"bands",bands},{"levelDb",-4.5}})};
 }
+static BuiltInFxUserPreset reverb() {
+    juce::var values(juce::Array<juce::var>{});
+    for(double v:{.137,32.,2.45,.89,.94,10400.,150.,15500.,.2,.28,1.15,.36,.18})
+        values.append(v);
+    return {{},"armix.builtin.vocal-reverb.v1","My Vocal Space","My Presets",
+        object({{"algorithm",1},{"values",values}})};
+}
 static BuiltInFxUserPreset eq() {
     auto bands=juce::var(juce::Array<juce::var>{});
     for(int i=0;i<8;++i)
@@ -61,7 +68,7 @@ int main() {
     REQUIRE(!testRoot.exists());
     struct Cleanup { juce::File folder;~Cleanup(){folder.deleteRecursively();} } cleanup{testRoot};
     BuiltInFxUserPresetStore store(testRoot);
-    auto items=std::array{comp(),harmony(),throwSettings(),eq(),graphicEq31()};
+    auto items=std::array{comp(),harmony(),throwSettings(),eq(),graphicEq31(),reverb()};
     for(auto& item:items) {
         REQUIRE(BuiltInFxUserPresetStore::validateSettings(item.catalogId,item.settings));
         REQUIRE(store.saveNew(item).isEmpty());
@@ -126,6 +133,13 @@ int main() {
     REQUIRE(store.saveNew(bad).isNotEmpty());
     bad=eq();bad.settings.getDynamicObject()->setProperty("liveInput",2);
     REQUIRE(store.saveNew(bad).isNotEmpty());
+    auto badReverb=reverb();
+    badReverb.settings.getProperty("values",{}).getArray()->set(0,1.5);
+    REQUIRE(!BuiltInFxUserPresetStore::validateSettings(badReverb.catalogId,badReverb.settings));
+    badReverb=reverb();badReverb.settings.getProperty("values",{}).getArray()->removeLast();
+    REQUIRE(!BuiltInFxUserPresetStore::validateSettings(badReverb.catalogId,badReverb.settings));
+    badReverb=reverb();badReverb.settings.getDynamicObject()->setProperty("algorithm",4);
+    REQUIRE(!BuiltInFxUserPresetStore::validateSettings(badReverb.catalogId,badReverb.settings));
     // 31-band portable schema: exact width, strict bounds, no hidden gain,
     // no NaN and no cross-effect injection. File remains persistent after
     // a cold library reopen and has the shared checksummed .armixfx schema.

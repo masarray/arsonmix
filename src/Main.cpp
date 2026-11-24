@@ -2011,6 +2011,87 @@ private:
               current->uid==fx.insert.uid && current->path==fx.insert.path));
     }
 
+    // Shared host-owned library, for both exact retained live inserts and
+    // CONTROL-owned logical editors. No disk/JSON inside audio callbacks.
+    void bindReverbUserPresets(armix::builtin_fx::VocalReverbEditor& editor,
+        std::function<armix::builtin_fx::VocalReverbProcessor*()> current,
+        bool detached) {
+        using R=armix::builtin_fx::VocalReverbProcessor;
+        using S=armix::builtin_fx::VocalReverbSettings;
+        using Store=armix::storage::BuiltInFxUserPresetStore;
+        constexpr auto catalog=R::catalogIdentity;
+        editor.bindUserPresetService(
+            [this,current,catalog] {
+                std::vector<armix::builtin_fx::VocalReverbEditor::UserPresetEntry> result;
+                if(current())for(const auto& item:builtinFxUserPresets_.enumerate(catalog))
+                    result.push_back({item.id,item.name});
+                return result;
+            },
+            [this,current,detached,catalog](const juce::String& name) {
+                auto* fx=current();
+                if(!fx||!fx->isReady()||!Store::safeText(name,80)) {
+                    emitNotice("Reverb-Sis preset name or FX lease invalid",true);
+                    return juce::String{};
+                }
+                juce::MemoryBlock bytes;
+                if(detached) {
+                    if(!fx->captureDetachedState(bytes)) {
+                        emitNotice("Reverb-Sis settings not ready to save",true);
+                        return juce::String{};
+                    }
+                } else fx->getStateInformation(bytes);
+                if(bytes.getSize()!=static_cast<std::size_t>(R::stateBytes)) {
+                    emitNotice("Reverb-Sis: changes awaiting audio confirmation; try Save again",true);
+                    return juce::String{};
+                }
+                juce::MemoryInputStream in(bytes,false);
+                if(in.readInt()!=0x41565242||in.readInt()!=1)return juce::String{};
+                S snapshot;
+                snapshot.preset=in.readInt();snapshot.algorithm=in.readInt();
+                for(auto& x:snapshot.values)x=in.readFloat();
+                if(!armix::builtin_fx::validVocalReverbSettings(snapshot)||!in.isExhausted())
+                    return juce::String{};
+                juce::var settings(new juce::DynamicObject());
+                juce::var values(juce::Array<juce::var>{});
+                for(float x:snapshot.values)values.append(static_cast<double>(x));
+                settings.getDynamicObject()->setProperty("algorithm",snapshot.algorithm);
+                settings.getDynamicObject()->setProperty("values",values);
+                armix::storage::BuiltInFxUserPreset entry;
+                entry.catalogId=catalog;entry.category="My Presets";entry.name=name;
+                entry.settings=std::move(settings);
+                const auto error=builtinFxUserPresets_.saveNew(entry);
+                if(error.isNotEmpty()) {
+                    emitNotice("Reverb-Sis preset not saved: "+error,true);
+                    return juce::String{};
+                }
+                emitNotice("Reverb-Sis preset saved: "+name);
+                return entry.id;
+            },
+            [this,current,detached,catalog](const juce::String& id) {
+                auto* fx=current();
+                if(!fx||!fx->isReady()||!Store::safeId(id))return false;
+                armix::storage::BuiltInFxUserPreset entry;
+                const auto error=builtinFxUserPresets_.read(catalog,id,entry);
+                if(error.isNotEmpty()||!Store::validateSettings(catalog,entry.settings)) {
+                    emitNotice("Reverb-Sis preset rejected: "+error,true);
+                    return false;
+                }
+                S next;next.preset=-1;
+                next.algorithm=static_cast<int>(entry.settings.getProperty("algorithm",{}));
+                const auto values=entry.settings.getProperty("values",{});
+                for(std::size_t i=0;i<next.values.size();++i)
+                    next.values[i]=static_cast<float>(static_cast<double>((*values.getArray())[static_cast<int>(i)]));
+                if(!armix::builtin_fx::validVocalReverbSettings(next)||!fx->queueSettings(next))return false;
+                if(detached) {
+                    juce::MemoryBlock accepted;
+                    return fx->captureDetachedState(accepted);
+                }
+                // Pending intent only: the editor's existing tooltip reports
+                // actual callback ACK, never a synthetic success notification.
+                return true;
+            });
+    }
+
     void openLogicalVendorEditor(const juce::var& request) {
         std::uint64_t channel=0;
         std::size_t slot=0;
@@ -2053,6 +2134,16 @@ private:
                     prepared.workspaceToken=logicalMixer_.workspace().workspaceToken();
                     prepared.instanceId=requestedInstance;
                     logicalVendorEditor_=std::move(prepared);
+                    if(auto* reverb=dynamic_cast<armix::builtin_fx::VocalReverbEditor*>(editor)) {
+                        auto* identity=logicalVendorEditor_->processor.get();
+                        bindReverbUserPresets(*reverb,[this,identity]() -> armix::builtin_fx::VocalReverbProcessor* {
+                            if(!logicalVendorEditor_||logicalVendorEditor_->processor.get()!=identity||
+                               mixerSessionWorker_.busy()||logicalMixer_.readOnly()||
+                               studioBackupBusy_||nativeShowBusy_||
+                               !logicalVendorSourceCurrent(*logicalVendorEditor_))return nullptr;
+                            return dynamic_cast<armix::builtin_fx::VocalReverbProcessor*>(identity);
+                        },true);
+                    }
                     return;
                 }
                 error="This FX does not provide a vendor editor";
@@ -7722,6 +7813,20 @@ private:
                                             current.valid,current.slotBypassed,
                                             current.rackBypassed,current.globalBypassed};
                                     });
+                            }
+                            if(auto* reverb=dynamic_cast<armix::builtin_fx::VocalReverbEditor*>(editor)) {
+                                auto held=owner;
+                                bindReverbUserPresets(*reverb,[this,held,nativeTarget,nativeChannel,lane,slot,token]()
+                                    -> armix::builtin_fx::VocalReverbProcessor* {
+                                    if(nativeShowBusy_||studioBackupBusy_||engine_.independentClockActive()||
+                                       !held||!held->processor)return nullptr;
+                                    const auto state=nativeTarget?
+                                        engine_.retainedNativeFxPower(held,armix::mixer::ChannelId{nativeChannel},
+                                            static_cast<std::size_t>(slot),token):
+                                        engine_.retainedRoutedFxPower(held,lane,slot,token);
+                                    return state.valid?dynamic_cast<armix::builtin_fx::VocalReverbProcessor*>(
+                                        held->processor.get()):nullptr;
+                                },false);
                             }
                             // Graphic EQ uses the same EXACT retained mixer
                             // FX bypass authority/readback as ImmerSIB.
