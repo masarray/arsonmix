@@ -62,7 +62,7 @@ public:
     }
     void reset() noexcept {
         run_=0;position_=ramp_;active_=false;
-        lastL_=lastR_=startL_=startR_=0.f;
+        lastMid_=lastSide_=startMid_=startSide_=0.f;
     }
     void process(float& dryL,float& dryR,float tunedL,float tunedR,
                  bool ready,float mix) noexcept {
@@ -70,24 +70,30 @@ public:
         else run_=0;
         const bool valid=run_>=prewarm_;
         if(valid!=active_){
-            startL_=lastL_;startR_=lastR_;
+            startMid_=lastMid_;startSide_=lastSide_;
             position_=0;active_=valid;
         }
-        const float targetL=active_?(tunedL-dryL)*mix:0.f;
-        const float targetR=active_?(tunedR-dryR)*mix:0.f;
+        // A shared correction basis preserves exact mono symmetry across
+        // recovery; no independently accumulated L/R transition envelopes.
+        // Dry L/R stay original, including genuine stereo and polarity.
+        const float targetMid=active_?.5f*mix*
+            ((tunedL+tunedR)-(dryL+dryR)):0.f;
+        const float targetSide=active_?.5f*mix*
+            ((tunedL-tunedR)-(dryL-dryR)):0.f;
         if(position_<ramp_){
             const float u=static_cast<float>(position_++)/ramp_;
             const float w=u*u*(3.f-2.f*u);
-            lastL_=startL_*(1.f-w)+targetL*w;
-            lastR_=startR_*(1.f-w)+targetR*w;
+            lastMid_=startMid_*(1.f-w)+targetMid*w;
+            lastSide_=startSide_*(1.f-w)+targetSide*w;
         }else{
-            lastL_=targetL;lastR_=targetR;
+            lastMid_=targetMid;lastSide_=targetSide;
         }
-        dryL+=lastL_;dryR+=lastR_;
+        dryL+=lastMid_+lastSide_;
+        dryR+=lastMid_-lastSide_;
     }
 private:
     int ramp_=1,prewarm_=1,run_=0,position_=1;
     bool active_=false;
-    float lastL_=0.f,lastR_=0.f,startL_=0.f,startR_=0.f;
+    float lastMid_=0.f,lastSide_=0.f,startMid_=0.f,startSide_=0.f;
 };
 } // namespace armix::harmony

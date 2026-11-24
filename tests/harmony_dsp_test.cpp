@@ -99,6 +99,16 @@ static void testLeadTune(){
     auto mono=leadFixture(rate,220.,-35.f,0.f);
     mono.right=mono.left;
     const auto on=tune(mono,rate,true);
+    if(on.left!=on.right){
+      float peak=0.f;int first=-1;
+      for(int i=0;i<2*rate;++i){
+        const float delta=std::abs(on.left[i]-on.right[i]);
+        if(on.left[i]!=on.right[i]&&first<0)first=i;
+        peak=std::max(peak,delta);
+      }
+      std::cerr<<"H1_MONO rate="<<rate<<" first="<<first
+               <<" maxSideDelta="<<peak<<'\n';
+    }
     need(on.left==on.right,"mono lead acquired a stereo discrepancy");
     const auto dry=tune(mono,rate,false);
     const auto disabled=tune(mono,rate,true,127,.5f,rate);
@@ -409,6 +419,13 @@ static void testLeadRendererSeam(){
     need(tick(true)==before,"stable renderer failed to recover");
     seam.reset();
     need(tick(false)==last,"renderer reset leaked correction");
+    for(int i=0;i<rate/20;++i){
+      const float source=.15f*std::sin(.03f*i);
+      float l=source,r=source;
+      const float corrected=.14f*std::sin(.031f*i);
+      seam.process(l,r,corrected,corrected,i%(rate/100)<rate/125,.7f);
+      need(l==r,"mono seam introduced side energy");
+    }
   }
 }
 
