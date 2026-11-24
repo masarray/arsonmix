@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - staging/p0-arsonmix-reliability-20261124
+      - feat/reverb-sis-signature-20261125
     paths:
       - 'src/**'
       - 'engine/**'
