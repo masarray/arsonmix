@@ -668,7 +668,8 @@ test("Final single-ASIO: initial driver Apply stays in inventory workflow only a
   const same=f.begin("same");
   assert.equal(vm.setupReadback(vm.setupAck(same.state,f.ack("same")),f.readback).inspectNewAsio,undefined);
   const bridge=readFileSync("web/approved-native-bridge.js","utf8");
-  assert.match(bridge,/if\(deviceState\.inspectNewAsio\)/);
+  assert.match(bridge,/if\(deviceState\.phase==="ACCEPTED"\)/);
+  assert.match(bridge,/devicePanel\.dataset\.openPinsAfterInventory="true"/);
   assert.match(bridge,/deviceInventory=null;[\s\S]*?Waiting for the new driver inventory/);
 });
 
@@ -702,4 +703,25 @@ test("Studio workflow: pin pages only unlock on an observed matching driver and 
   assert.equal(vm.setupRoutingReady(inventory,draft,{...state,phase:"RECOVERY_REQUIRED"}),false);
   assert.equal(vm.setupRoutingReady({...inventory,active:{...inventory.active,open:false}},draft,state),false);
   assert.equal(vm.setupRoutingReady({...inventory,active:{...inventory.active,enabledInputs:[99]}},draft,state),false);
+});
+
+test("Native patch matrix projects enabled physical pins and exact accepted ChannelId crosspoints",()=>{
+ const snapshot={admitted:true,hardwareConfiguration:"exact",device:{epoch:"40",backend:"ASIO",
+   enabledInputs:[0,2,3],enabledOutputs:[0,1,2,3],
+   inputEndpoints:[0,1,2,3].map(port=>({port,label:"Input "+(port+1),active:true})),
+   outputEndpoints:[0,1,2,3].map(port=>({port,label:"Out "+(port+1),active:true}))},
+   raw:{mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"40"},physicalMainOutputs:[0,1],
+   externalOutputs:[{channelId:"7",physicalLeft:2,physicalRight:3,status:"LIVE"}]},
+   graph:{channels:[{id:"7",name:"Voice",role:"INPUT",processingFormat:"STEREO",
+     source:{sourceFormat:"STEREO",portId:"in:2",portIdRight:"in:3"}},
+     {id:"8",name:"Player",role:"INPUT",source:{sourceFormat:"PLAYER",playerDeckId:"1"}}]}};
+ const input=vm.patchMatrix(snapshot,"input"),out=vm.patchMatrix(snapshot,"output");
+ assert.deepEqual(input.pins.map(p=>p.port),[0,2,3]);
+ assert.deepEqual(input.rows[0].cells,["","L","R"]);
+ assert.equal(input.rows[1].state,"Music Player");
+ assert.equal(out.rows[0].editable,false);
+ assert.deepEqual(out.rows[1].cells,["","","L","R"]);
+ assert.equal(out.choices.some(c=>c.left===0),false);
+ assert.equal(vm.patchMatrix({...snapshot,retained:true},"input").rows.length,0);
+ assert.equal(vm.patchMatrix({...snapshot,hardwareConfiguration:""},"input").live,false);
 });

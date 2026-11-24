@@ -2365,7 +2365,137 @@
   }
   // Output patching is rendered from physical native readback, never a
   // second routing state. Repainting only on changes avoids 12 Hz DOM churn.
+  function requestExternalOutput(t,label,el=null){
+        const previous=t.externalOutput||"None";
+        const id=nativeIdFor(t);
+        // One pure Channel Strip preflight for ASIO port identity and
+        // shared-output confirmation; only this bridge dispatches native.
+        const plan=stripVM.externalOutputPlan({
+          native:controller?.state()?.current,hardware,channelId:id,
+          selectedLabel:label,currentLabel:previous,
+          choices:hardwareOutputPairs(),pending:pendingExternal.has(id),
+          channelName:t.name
+        });
+        if(plan.kind==="UNAVAILABLE"){
+          if(el)el.value=previous;
+          nativeToast("EXTERNAL OUT unavailable · check ASIO, graph and pins");
+          return true;
+        }
+        if(plan.kind==="NO_CHANGE"){if(el)el.value=previous;return true;}
+        const {left,right,epoch,revision}=plan;
+        const confirmed=!plan.requiresConfirmation || window.confirm(
+          plan.confirmation);
+        if(!confirmed){if(el)el.value=previous;return true;}
+        const requestId="out-o-"+(++externalSerial);
+        pendingExternal.set(id,{requestId,channelId:id,left,right,
+          epoch,revision,acked:false});
+        if(el)el.value=previous;el?.setAttribute("aria-busy","true");
+        backend.emitEvent("arMixAction",{action:"routingExternalOutput",
+          requestId,channelId:id,deviceEpoch:epoch,revision,
+          left,right,confirmed:true});
+        window.setTimeout(()=>{
+          if(pendingExternal.get(id)?.requestId!==requestId)return;
+          pendingExternal.delete(id);el?.removeAttribute("aria-busy");
+          nativeToast("EXTERNAL OUT timed out · last PCM retained");
+          controller?.subscribe();
+        },8000);
+        status("EXTERNAL OUT pending · native validation and readback");
+        return true;
+  }
+  // Matrix edits use the same queue/lease and native dispatcher as strips.
+  // No synthetic PCM, no independent routing graph or optimistic crosspoint.
+  function applyMatrixRow(side,id,label){
+    const current=controller?.state()?.current;
+    const view=deviceVM.patchMatrix(hardware,side);
+    const row=view.rows.find(x=>x.id===id&&x.editable);
+    if(!row||!view.live||!deviceReady()||deviceBusy()||
+       activeNativeSource||pendingNativeSources.size||pendingExternal.size)return;
+    if(side==="input"){
+      const choices=sourceChoicesFor(),choice=choices.find(x=>x.label===label);
+      if(!choice||choice.mode==="PLAYER")return;
+      const decision=stripVM.sourceQueueSelection({choice,choices,
+        epoch:hardware.device.epoch,acceptedLabel:row.selected,
+        hardwareConfiguration:hardware.hardwareConfiguration});
+      if(decision.kind!=="QUEUE")return;
+      pendingNativeSources.set(id,decision.entry);
+      dispatchNativeSource();
+    }else{
+      const track=scope?.tracks?.find(t=>nativeIdFor(t)===id);
+      if(!track||!current?.admitted)return;
+      requestExternalOutput(track,label);
+    }
+    paintPhysicalOutputs(hardware);
+  }
+  function paintRouteMatrix(next,side){
+    const host=devicePanel?.querySelector("[data-audio-"+side+"-grid]");
+    if(!host)return;
+    const model=deviceVM.patchMatrix(next,side);
+    const busy=Boolean(deviceBusy()||activeNativeSource||pendingNativeSources.size||pendingExternal.size);
+    const signature=JSON.stringify([model,busy,next?.hardwareConfiguration]);
+    if(host.dataset.signature===signature)return;
+    host.dataset.signature=signature;
+    host.replaceChildren();
+    if(!model.live||!model.pins.length){
+      host.textContent="Open a verified live mixer with enabled "+side+" pins.";
+      return;
+    }
+    const table=document.createElement("table");table.className="armix-patch-grid";
+    const head=table.createTHead().insertRow();
+    const th=label=>{const e=document.createElement("th");e.textContent=label;head.append(e);};
+    th(side==="input"?"Mixer input":"Mixer output");
+    for(const pin of model.pins)th((pin.port+1)+" · "+pin.label);
+    th("Assignment");th("");
+    const body=table.createTBody();
+    for(const row of model.rows){
+      const tr=body.insertRow();const name=tr.insertCell();
+      name.textContent=row.name;name.title=row.state||row.name;
+      const controls=[];
+      const select=document.createElement("select");
+      select.setAttribute("aria-label",row.name+" assignment");
+      const candidates=model.choices;
+      if(row.selected===null){const op=new Option(row.state||"Current source", "");op.disabled=true;select.append(op);}
+      for(const choice of candidates)select.append(new Option(choice.label,choice.label));
+      select.value=row.selected??"";
+      const apply=document.createElement("button");apply.type="button";apply.textContent="Apply";
+      const update=()=>{
+        const choice=candidates.find(x=>x.label===select.value);
+        apply.disabled=busy||!row.editable||!choice||choice.label===row.selected;
+        controls.forEach(({button,pin,index})=>{
+          const mark=choice?(pin.port===choice.left?(choice.mode==="MONO"?"M":"L"):pin.port===choice.right?"R":""):row.cells[index];
+          button.textContent=mark||"·";
+          button.dataset.mark=mark||"";
+          button.dataset.draft=String(Boolean(mark&&mark!==row.cells[index]));
+        });
+      };
+      for(const [index,pin] of model.pins.entries()){
+        const cell=tr.insertCell(),button=document.createElement("button");
+        button.type="button";button.className="armix-patch-cell";
+        button.setAttribute("aria-label",row.name+" / "+pin.label);
+        button.disabled=busy||!row.editable;
+        button.onclick=()=>{
+          const current=candidates.find(x=>x.label===select.value);
+          const stereo=side==="output"||current?.mode==="STEREO"||
+            (current?.mode==="NONE"&&row.format==="STEREO");
+          const choice=candidates.find(x=>(side==="output"||x.mode===(stereo?"STEREO":"MONO"))&&
+            (x.left===pin.port||(stereo&&x.right===pin.port)));
+          if(choice){select.value=choice.label;update();}
+        };
+        cell.append(button);controls.push({button,pin,index});
+      }
+      const pick=tr.insertCell(),action=tr.insertCell();
+      if(row.editable){
+        select.disabled=busy;select.onchange=update;pick.append(select);
+        apply.onclick=()=>applyMatrixRow(side,row.id,select.value);
+        action.append(apply);
+      }else pick.textContent=row.state||"Read-only";
+      update();
+    }
+    host.append(table);
+  }
   function paintPhysicalOutputs(next) {
+    if(devicePanel&&!devicePanel.hidden){
+      paintRouteMatrix(next,"input");paintRouteMatrix(next,"output");
+    }
     const view=devicePanel?.querySelector?.("[data-audio-output-matrix]");
     if(!view || devicePanel.hidden)return;
     const patches=protocol.physicalOutputOverview(next);
@@ -2664,7 +2794,8 @@
     for(const item of devicePanel.querySelectorAll("button[data-audio-tab]"))
       item.setAttribute("aria-selected",String(item.dataset.audioTab===page));
     const apply=devicePanel.querySelector("[data-audio-apply]");
-    apply.hidden=page==="routing"||page==="diagnostics";
+    apply.hidden=page==="routing"||page==="inputs"||page==="diagnostics";
+    if(page==="inputs"||page==="routing")paintPhysicalOutputs(hardware);
     if(!deviceBusy())apply.textContent=page==="pins"?"Apply pins":"Apply device";
   }
   function openNativeAudioIO(){
@@ -2748,6 +2879,18 @@
         .armix-output-matrix{max-height:min(46vh,360px);gap:4px}
         .armix-output-row{grid-template-columns:92px minmax(0,1fr) auto;
           min-height:34px;padding:8px 10px}
+        .armix-audio-dialog[data-audio-tab="inputs"],
+        .armix-audio-dialog[data-audio-tab="routing"]{width:min(1050px,96vw)}
+        .armix-input-overview{padding:15px 20px}
+        .armix-crosspoint-scroll{overflow:auto;max-height:52vh}
+        .armix-patch-grid{border-collapse:separate;border-spacing:2px;font-size:11px;width:max-content;min-width:100%}
+        .armix-patch-grid th{font-weight:500;max-width:72px;min-width:42px;vertical-align:bottom;overflow-wrap:anywhere}
+        .armix-patch-grid th:first-child,.armix-patch-grid td:first-child{position:sticky;left:0;z-index:1;background:#26343d;min-width:95px;max-width:150px;padding:5px}
+        .armix-audio-dialog .armix-patch-cell{width:100%;min-width:32px;min-height:26px;padding:2px;border-radius:1px;background:#29343d;color:#8ba2af}
+        .armix-audio-dialog .armix-patch-cell[data-mark]:not([data-mark=""]){background:#326b8a;color:#fff}
+        .armix-audio-dialog .armix-patch-cell[data-draft="true"]{background:#90672e;color:#fff}
+        .armix-patch-grid select{max-width:210px;font-size:11px}
+        .armix-audio-dialog:not([data-audio-tab="inputs"]) .armix-input-overview,
         .armix-audio-dialog:not([data-audio-tab="routing"]) .armix-output-overview,
         .armix-audio-dialog:not([data-audio-tab="device"]) .armix-endpoint-fields,
         .armix-audio-dialog:not([data-audio-tab="diagnostics"]) .armix-audio-diagnostics,
@@ -2789,8 +2932,10 @@
             role="tab" aria-selected="true">Audio Device</button>
           <button type="button" class="armix-audio-tab" data-audio-tab="pins"
             role="tab" aria-selected="false" disabled>Hardware Pins</button>
+          <button type="button" class="armix-audio-tab" data-audio-tab="inputs"
+            role="tab" aria-selected="false" disabled>Inputs</button>
           <button type="button" class="armix-audio-tab" data-audio-tab="routing"
-            role="tab" aria-selected="false" disabled>Output Routing</button>
+            role="tab" aria-selected="false" disabled>Outputs</button>
           <button type="button" class="armix-audio-tab" data-audio-tab="diagnostics"
             role="tab" aria-selected="false">Diagnostics</button>
         </nav>
@@ -2848,7 +2993,14 @@
           <div><strong>Applying audio device…</strong>
           <span>Waiting for driver and mixer verification.</span></div>
         </div>
+        <section class="armix-input-overview">
+          <div class="armix-output-heading">INPUTS · hardware to mixer</div>
+          <div class="armix-crosspoint-scroll" data-audio-input-grid></div>
+          <div class="armix-device-note">Choose Mono or Stereo, then Apply on the row. Blue = installed; amber = draft.</div>
+        </section>
         <section class="armix-output-overview" data-audio-output-overview>
+          <div class="armix-crosspoint-scroll" data-audio-output-grid></div>
+          <div class="armix-device-note">External stereo outputs are editable. MAIN / MONITOR are existing fixed bus assignments.</div>
           <div class="armix-output-heading">OUTPUTS · physical routing</div>
           <div class="armix-output-matrix" data-audio-output-matrix role="list"></div>
           <div class="armix-device-note">Native callback/readback only · speaker listening not verified</div>
@@ -2933,7 +3085,7 @@
     devicePanel.hidden=false;
     const dialog=devicePanel.querySelector(".armix-audio-dialog");
     if(dialog)selectAudioSetupPage("device");
-    for(const item of devicePanel.querySelectorAll('button[data-audio-tab="pins"],button[data-audio-tab="routing"]'))
+    for(const item of devicePanel.querySelectorAll('button[data-audio-tab="pins"],button[data-audio-tab="inputs"],button[data-audio-tab="routing"]'))
       item.disabled=true;
     paintPhysicalOutputs(hardware);
     if(deviceBusy())return;
@@ -2964,10 +3116,10 @@
     // The bridge only paints the existing approved /preview/ DOM.
     const view=deviceVM.setupPresentation(deviceInventory,deviceChoice,deviceState);
     const routingReady=deviceVM.setupRoutingReady(deviceInventory,deviceChoice,deviceState);
-    for(const item of devicePanel.querySelectorAll('button[data-audio-tab="pins"],button[data-audio-tab="routing"]'))
+    for(const item of devicePanel.querySelectorAll('button[data-audio-tab="pins"],button[data-audio-tab="inputs"],button[data-audio-tab="routing"]'))
       item.disabled=!routingReady;
     const page=devicePanel.querySelector(".armix-audio-dialog").dataset.audioTab;
-    if(!routingReady&&!deviceBusy()&&(page==="pins"||page==="routing"))
+    if(!routingReady&&!deviceBusy()&&(page==="pins"||page==="inputs"||page==="routing"))
       selectAudioSetupPage("device");
     const hint=devicePanel.querySelector("[data-audio-asio4all-hint]");
     if(hint)hint.hidden=!view.asio4allHint;
@@ -4455,41 +4607,7 @@
       }
       if(field==="external"){
         if(event.type!=="change")return true;
-        const previous=t.externalOutput||"None";
-        const id=nativeIdFor(t);
-        // One pure Channel Strip preflight for ASIO port identity and
-        // shared-output confirmation; only this bridge dispatches native.
-        const plan=stripVM.externalOutputPlan({
-          native:controller?.state()?.current,hardware,channelId:id,
-          selectedLabel:el.value,currentLabel:previous,
-          choices:hardwareOutputPairs(),pending:pendingExternal.has(id),
-          channelName:t.name
-        });
-        if(plan.kind==="UNAVAILABLE"){
-          el.value=previous;
-          nativeToast("EXTERNAL OUT unavailable · check ASIO, graph and pins");
-          return true;
-        }
-        if(plan.kind==="NO_CHANGE"){el.value=previous;return true;}
-        const {left,right,epoch,revision}=plan;
-        const confirmed=!plan.requiresConfirmation || window.confirm(
-          plan.confirmation);
-        if(!confirmed){el.value=previous;return true;}
-        const requestId="out-o-"+(++externalSerial);
-        pendingExternal.set(id,{requestId,channelId:id,left,right,
-          epoch,revision,acked:false});
-        el.value=previous;el.setAttribute("aria-busy","true");
-        backend.emitEvent("arMixAction",{action:"routingExternalOutput",
-          requestId,channelId:id,deviceEpoch:epoch,revision,
-          left,right,confirmed:true});
-        window.setTimeout(()=>{
-          if(pendingExternal.get(id)?.requestId!==requestId)return;
-          pendingExternal.delete(id);el.removeAttribute("aria-busy");
-          nativeToast("EXTERNAL OUT timed out · last PCM retained");
-          controller?.subscribe();
-        },8000);
-        status("EXTERNAL OUT pending · native validation and readback");
-        return true;
+        return requestExternalOutput(t,el.value,el);
       }
       if(field==="output"){
         if(event.type!=="change")return true;

@@ -54,6 +54,50 @@
         }
     return entries;
   }
+  // Physical crosspoints are a projection of installed ChannelId PCM only.
+  // The existing source and external-output planners remain command authority.
+  function patchMatrix(snapshot,side) {
+    const input=side==="input", d=snapshot?.device;
+    const names=input?d?.inputEndpoints:d?.outputEndpoints;
+    const enabled=input?d?.enabledInputs:d?.enabledOutputs;
+    const pins=Array.isArray(names)&&validPinMask(enabled)?
+      names.filter(p=>p?.active===true&&enabled.includes(p.port))
+        .map(p=>({port:p.port,label:String(p.label||"")})).sort((a,b)=>a.port-b.port):[];
+    const live=snapshot?.admitted===true&&snapshot?.retained!==true&&
+      snapshot?.raw?.mixerSession?.authority==="CHANNEL_ID"&&
+      snapshot.raw.mixerSession.deviceEpoch===d?.epoch&&
+      typeof snapshot.hardwareConfiguration==="string"&&!!snapshot.hardwareConfiguration;
+    const choices=input?inputChoices(snapshot):outputChoices(snapshot);
+    const rows=[];
+    const map=(left,right,mono=false)=>pins.map(p=>p.port===left?(mono?"M":"L"):p.port===right?"R":"");
+    if(!input)for(const [key,name] of [["physicalMainOutputs","MAIN"],["physicalMonitorOutputs","MONITOR"]]){
+      const pair=snapshot?.raw?.[key];
+      if(Array.isArray(pair)&&pair.length===2)
+        rows.push({id:key,name,editable:false,cells:map(pair[0],pair[1]),
+          selected:"",state:pair.every(p=>pins.some(q=>q.port===p))?"Fixed bus":"Needs remap"});
+    }
+    for(const ch of live&&Array.isArray(snapshot.graph?.channels)?snapshot.graph.channels:[]){
+      if(input?ch.role!=="INPUT":!["INPUT","GROUP","FX_RETURN"].includes(ch.role))continue;
+      if(input){
+        const src=ch.source;
+        const choice=!src?choices[0]:src.bindingState==="NEEDS_REMAP"?null:
+          choices.find(x=>x.mode===src.sourceFormat&&src.portId==="in:"+x.left&&
+            (x.mode==="MONO"?src.portIdRight===undefined:src.portIdRight==="in:"+x.right));
+        const state=src?.bindingState==="NEEDS_REMAP"?"Needs remap":
+          src?.sourceFormat==="PLAYER"?"Music Player":choice?"":"Other source";
+        rows.push({id:ch.id,name:ch.name,editable:true,
+          format:ch.processingFormat,selected:choice?.label||null,
+          cells:choice?map(choice.left,choice.right,choice.mode==="MONO"):map(-1,-1),state});
+      }else{
+        const src=snapshot.raw.externalOutputs?.find?.(p=>p.channelId===ch.id);
+        const choice=src?choices.find(x=>x.left===src.physicalLeft&&x.right===src.physicalRight):choices[0];
+        rows.push({id:ch.id,name:ch.name,editable:d.backend==="ASIO",
+          selected:choice?.label||null,cells:choice?map(choice.left,choice.right):map(-1,-1),
+          state:src&&!choice?"Needs remap":src?.status||""});
+      }
+    }
+    return {live,pins,rows,choices};
+  }
   function inputLabel(snapshot,row) {
     if(!row||row.mode==="NONE")return "None";
     if(row.mode==="BUS")return INTERNAL_BUS;
@@ -530,7 +574,7 @@
       return Object.freeze({kind:"AUTHORITY_CHANGED",expirePending:true});
     return Object.freeze({kind:"SAME",expirePending:false});
   }
-  return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,
+  return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,patchMatrix,
     externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,setupRoutingReady,
     pinInventory,setupSelectAllPins,setupBufferPeriod,setupHealthReadback,
     setupInitial,setupBegin,setupAck,setupReadback,
