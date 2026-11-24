@@ -36,10 +36,12 @@ int main() {
     std::array<float,2048> inL{}, inR{}, outL{}, outR{};
     uint32_t seed = 0x537a9b21u;
     Engine core;
+    for (bool musical : {false,true})
     for (double fs : {8000.0, 44100.0, 48000.0, 96000.0, 192000.0}) {
-        core.prepare(fs);
+        core.prepare(fs,musical);
         for (int iter = 0; iter < 300; ++iter) {
             const std::size_t n = sizes[iter % static_cast<int>(sizes.size())];
+            core.setAlgorithm(static_cast<Algorithm>(iter%4));
             for (std::size_t p = 0; p < parameterCount; ++p) {
                 const auto param = static_cast<Parameter>(p);
                 const auto& info = parameterInfo(param);
@@ -88,5 +90,5 @@ int main() {
     const unsigned liveAfter = allocations.load(std::memory_order_relaxed) -
                                releases.load(std::memory_order_relaxed);
     require(liveAfter == liveBefore, "repeated prepare/reset/destruction leaked live heap blocks");
-    std::puts("PASS P8: 5 sample rates, 1500 randomized automation blocks, no callback heap and no lifecycle net leaks");
+    std::puts("PASS P8: both profiles, 5 sample rates, 3000 randomized automation blocks, no callback heap and no lifecycle net leaks");
 }

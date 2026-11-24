@@ -83,6 +83,11 @@ struct Delay {
         const std::size_t b = (a - 1) & mask;
         return data[a] + (data[b] - data[a]) * fraction;
     }
+    // Fixed, prepare-validated tap: no clamp, float conversion or
+    // interpolation needed for a stationary early reflection.
+    float readFixed(std::size_t samples) const noexcept {
+        return data[(write - samples) & mask];
+    }
     void push(float x) noexcept {
         data[write] = x;
         write = (write + 1) & mask;

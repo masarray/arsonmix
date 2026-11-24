@@ -52,24 +52,27 @@ inline VocalReverbSettings vocalReverbFactoryPreset(int index) {
     // Wet return is separately calibrated in Engine::prepare(rate,true).
     switch(index) {
         case 0: // bright, present singing plate
-            put(Param::Mix,.28f);put(Param::PreDelayMs,34.f);
-            put(Param::DecaySeconds,2.25f);put(Param::Diffusion,.88f);
+            put(Param::Mix,.34f);put(Param::PreDelayMs,32.f);
+            put(Param::DecaySeconds,2.45f);put(Param::Diffusion,.94f);
             put(Param::DampingHz,10400.f);put(Param::LowCutHz,150.f);
             put(Param::HighCutHz,15500.f);put(Param::Width,1.15f);
-            put(Param::EarlyLevel,.28f);put(Param::DuckAmount,.22f);break;
+            put(Param::EarlyLevel,.36f);put(Param::ModDepthMs,.20f);
+            put(Param::DuckAmount,.18f);break;
         case 1:
-            put(Param::Mix,.26f);put(Param::PreDelayMs,29.f);
-            put(Param::DecaySeconds,1.85f);put(Param::LowCutHz,155.f);
-            put(Param::HighCutHz,12400.f);put(Param::EarlyLevel,.30f);
-            put(Param::DuckAmount,.24f);break;
+            put(Param::Mix,.31f);put(Param::PreDelayMs,29.f);
+            put(Param::DecaySeconds,2.05f);put(Param::Diffusion,.88f);
+            put(Param::LowCutHz,155.f);
+            put(Param::HighCutHz,12400.f);put(Param::EarlyLevel,.38f);
+            put(Param::DuckAmount,.18f);break;
         case 2:
             put(Param::Mix,.25f);put(Param::PreDelayMs,28.f);
             put(Param::DecaySeconds,1.65f);put(Param::Diffusion,.9f);
             put(Param::LowCutHz,170.f);put(Param::HighCutHz,14500.f);
             put(Param::EarlyLevel,.30f);put(Param::DuckAmount,.24f);break;
         case 3:
-            put(Param::Mix,.33f);put(Param::PreDelayMs,48.f);
-            put(Param::DecaySeconds,3.2f);put(Param::LowCutHz,160.f);
+            put(Param::Mix,.38f);put(Param::PreDelayMs,48.f);
+            put(Param::DecaySeconds,3.5f);put(Param::Diffusion,.91f);
+            put(Param::LowCutHz,160.f);
             put(Param::HighCutHz,12000.f);put(Param::EarlyLevel,.25f);
             put(Param::DuckAmount,.22f);break;
         case 4:
@@ -77,8 +80,9 @@ inline VocalReverbSettings vocalReverbFactoryPreset(int index) {
             put(Param::DecaySeconds,1.05f);put(Param::LowCutHz,135.f);
             put(Param::EarlyLevel,.48f);put(Param::DuckAmount,.20f);break;
         case 5:
-            put(Param::Mix,.30f);put(Param::PreDelayMs,43.f);
-            put(Param::DecaySeconds,2.8f);put(Param::LowCutHz,170.f);
+            put(Param::Mix,.36f);put(Param::PreDelayMs,43.f);
+            put(Param::DecaySeconds,3.05f);put(Param::Diffusion,.92f);
+            put(Param::LowCutHz,145.f);
             put(Param::HighCutHz,15200.f);put(Param::Width,1.25f);
             put(Param::EarlyLevel,.24f);put(Param::DuckAmount,.22f);break;
         case 6:

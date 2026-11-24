@@ -102,6 +102,9 @@ static double bodyTone(int mode,double fs,float cutoff,bool musical) {
     engine.loadPreset(arverb::Preset::VocalPlate);
     engine.setAlgorithm(static_cast<arverb::Algorithm>(mode));
     engine.setParameter(arverb::Parameter::LowCutHz,cutoff);
+    // Isolate filter transfer: at <=.62 both profiles use identical
+    // diffusion/injection; high-density texture has its own PCM test.
+    engine.setParameter(arverb::Parameter::Diffusion,.62f);
     engine.setParameter(arverb::Parameter::Mix,1.f);
     engine.setParameter(arverb::Parameter::DuckAmount,0.f);
     engine.setParameter(arverb::Parameter::ModDepthMs,0.f);
@@ -192,8 +195,9 @@ int main() {
         }
     }
     // Musical profile: actual mono-fold output, with nonzero ducking.
-    // Full-wet profile retains the 3x gain law and now has calibrated
-    // low-cut response; cross-profile RMS is no longer a pure scalar.
+    // Full-wet profile retains the 3x gain law, calibrated low-cut
+    // and independent high-diffusion texture. Cross-profile RMS is not
+    // a pure scalar; preserve the measured level floor and headroom.
     // The exact live Mix sum is still independently tested below.
     for(int mode=0;mode<4;++mode) {
         const double oldWet=render(mode,1.f,true,false,0.f);

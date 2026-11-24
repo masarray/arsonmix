@@ -109,6 +109,12 @@ constexpr float kDiffuseMs[2][4] = {
 };
 constexpr float kEarlyMs[6] = {14.9f, 23.3f, 37.7f, 55.1f, 83.3f, 126.1f};
 constexpr float kEarlyGain[6] = {0.34f, 0.29f, 0.23f, 0.18f, 0.14f, 0.12f};
+// Original non-uniform feed-forward reflections, interleaved with the
+// existing six. All fit in the existing 132ms early buffer. They fill
+// the sparse onset without another recirculating comb/allpass network.
+constexpr std::size_t kTextureTaps = 4;
+constexpr float kTextureMs[kTextureTaps] = {8.3f, 31.1f, 67.9f, 104.7f};
+constexpr float kTextureGain[kTextureTaps] = {0.23f, 0.18f, 0.14f, 0.10f};
 
 // P7: derive the representative tank traversal from the ORIGINAL FDN
 // geometry. All four matrices share these 8 delay lengths; this must not
@@ -190,6 +196,7 @@ struct Engine::State {
     // in the sample loop without introducing per-parameter cache invalidation.
     float earlySampleL[6]{};
     float earlySampleR[6]{};
+    std::size_t textureL[kTextureTaps]{}, textureR[kTextureTaps]{};
     float fdnBaseSamples[kLines]{};
     float millisecondsToSamples = 0.0f;
     Oscillator lfo[kLines];
@@ -290,6 +297,12 @@ void Engine::prepare(double sampleRate, bool musicalReturn) {
     for (int t = 0; t < 6; ++t) {
         s.earlySampleL[t] = kEarlyMs[t] * s.millisecondsToSamples;
         s.earlySampleR[t] = s.earlySampleL[t] * (1.0f + 0.019f * (t % 3));
+    }
+    for (std::size_t i=0;i<kTextureTaps;++i) {
+        s.textureL[i] = static_cast<std::size_t>(std::lround(
+            kTextureMs[i]*s.millisecondsToSamples));
+        s.textureR[i] = static_cast<std::size_t>(std::lround(
+            (kTextureMs[i]+(i%2==0?0.79f:1.37f))*s.millisecondsToSamples));
     }
     for (std::size_t i = 0; i < kLines; ++i)
         s.fdnBaseSamples[i] = kDelayMs[i] * s.millisecondsToSamples;
@@ -533,7 +546,13 @@ void Engine::process(const float* inputLeft, const float* inputRight,
         const float width = s.smooth[idx(Parameter::Width)];
         const float earlyAmount = s.smooth[idx(Parameter::EarlyLevel)];
         const float duckAmount = s.smooth[idx(Parameter::DuckAmount)];
-        const float g = 0.15f + diffusion * 0.60f;
+        // More echo density need not mean more short allpass ringing.
+        // At high Diffusion trade a portion of the allpass coefficient
+        // for independent feed-forward early texture. Smooth input
+        // parameter drives both; low Diffusion / legacy remains exact.
+        const float density = clamp((diffusion - 0.62f) / 0.38f, 0.0f, 1.0f);
+        const float texture = s.musicalReturn ? density : 0.0f;
+        const float g = 0.15f + diffusion * 0.60f - 0.13f*texture;
         s.hfFeedbackCoeff += s.smoother * (s.targetHF - s.hfFeedbackCoeff);
         s.wetLowCoeff += s.smoother * (s.targetLow - s.wetLowCoeff);
         s.wetHighCoeff += s.smoother * (s.targetHigh - s.wetHighCoeff);
@@ -580,7 +599,6 @@ void Engine::process(const float* inputLeft, const float* inputRight,
         // crossfeed and feed its already-computed energy into the diffuser
         // at high Diffusion. Six existing taps only, zero extra Delay::read.
         // Diffusion <=0.62 preserves the original early stereo/coupling.
-        const float density = clamp((diffusion - 0.62f) / 0.38f, 0.0f, 1.0f);
         const float earlyCrossfeed = 0.10f + density * 0.08f;
         float earlyL = 0.0f, earlyR = 0.0f;
         for (int t = 0; t < 6; ++t) {
@@ -588,6 +606,17 @@ void Engine::process(const float* inputLeft, const float* inputRight,
             const float b = s.early[1].read(s.earlySampleR[t]);
             earlyL += kEarlyGain[t] * (a + earlyCrossfeed * b);
             earlyR += kEarlyGain[t] * (b + earlyCrossfeed * a);
+        }
+        if (texture > 0.0f) {
+            float extraL=0.0f,extraR=0.0f;
+            for (std::size_t t=0;t<kTextureTaps;++t) {
+                extraL += kTextureGain[t]*s.early[0].readFixed(s.textureL[t]);
+                extraR += kTextureGain[t]*s.early[1].readFixed(s.textureR[t]);
+            }
+            // Linked, symmetric crossfeed; never inject an inverted mono
+            // copy. No new delay storage or feedback gain.
+            earlyL += texture*(extraL+0.14f*extraR);
+            earlyR += texture*(extraR+0.14f*extraL);
         }
         s.early[0].push(preL);
         s.early[1].push(preR);
