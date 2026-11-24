@@ -1459,6 +1459,104 @@ static void testDoublerMonoCompatibility(){
         need(minNew>minOld&&wetNew>.10*wetOld,"H24B mono floor or audible backing");
     }
 }
+static void testCausalEnvelopeCandidate(){
+    using Clock=std::chrono::steady_clock;
+    for(int rate:{32000,48000,96000,192000}){
+        const int n=rate*2;
+        auto vowel=[&](double hz,double f1,double f2){
+            std::vector<float> v(n);double phase=0.,a1=0.,a2=0.,b1=0.,b2=0.;
+            constexpr double pi=3.14159265358979323846;
+            const double r1=std::exp(-pi*110./rate),r2=std::exp(-pi*150./rate);
+            const double c1=2.*r1*std::cos(2.*pi*f1/rate),c2=2.*r2*std::cos(2.*pi*f2/rate);
+            double peak=0.;
+            for(int i=0;i<n;++i){
+                phase+=hz/rate;double ex=0.;
+                if(phase>=1.){phase-=1.;ex=1.;}
+                const double a=ex+c1*a1-r1*r1*a2;a2=a1;a1=a;
+                const double b=a+c2*b1-r2*r2*b2;b2=b1;b1=b;
+                v[i]=static_cast<float>(b);peak=std::max(peak,std::abs(b));
+            }
+            for(auto& x:v)x=static_cast<float>(x*.2/peak);
+            return v;
+        };
+        const auto source=vowel(120.,700.,1400.),shift=vowel(180.,1050.,2100.),oracle=vowel(180.,700.,1400.);
+        auto out=shift;
+        CausalEnvelope env;env.prepare(rate);
+        double peak=0.;
+        for(int i=0;i<n;++i){
+            out[i]=env.process(source[i],shift[i],true);
+            need(std::isfinite(out[i]),"H26 finite LPC");
+            peak=std::max(peak,double(std::abs(out[i])));
+        }
+        auto harmonic=[&](const auto& v,double hz){
+            double a=0.,b=0.;
+            for(int i=rate;i<n;++i){
+                const double p=6.283185307179586*hz*i/rate;
+                a+=v[i]*std::cos(p);b+=v[i]*std::sin(p);
+            }
+            return 20.*std::log10(std::max(1.e-10,std::hypot(a,b)));
+        };
+        auto error=[&](const auto& v){
+            std::array<double,24> e{};double mean=0.,acc=0.;
+            for(int k=0;k<24;++k){e[k]=harmonic(v,180.*(k+2))-harmonic(oracle,180.*(k+2));mean+=e[k];}
+            mean/=e.size();for(double x:e)acc+=(x-mean)*(x-mean);
+            return std::sqrt(acc/e.size());
+        };
+        const double a=error(shift),b=error(out);
+        need(b<a&&peak<.8&&env.accepted()>100&&env.maxDb()<=3.2001f,"H26 resonator oracle/gain");
+        std::cout<<"H26_ORACLE rate="<<rate<<" old_db="<<a<<" new_db="<<b
+                 <<" peak="<<peak<<" updates="<<env.accepted()<<" cap_db="<<env.maxDb()<<std::endl;
+        const auto updates=env.accepted();
+        for(int i=0;i<rate;++i){
+            const float y=env.process(0.f,0.f,false);
+            need(std::isfinite(y)&&std::abs(y)<.8f,"H26 release finite");
+            if(i>rate/2)need(std::abs(y)<1.e-5f,"H26 stale tail");
+        }
+        need(env.accepted()==updates,"H26 untrusted analysis accepted");
+        env.prepare(rate);
+        for(int i=0;i<n/4;++i)need(env.process(0.f,shift[i],false)==shift[i],"H26 neutral exact");
+    }
+    // Native HIGH candidate, not just an external stem filter.
+    for(int rate:{48000,96000}){
+        const int n=rate*2;
+        LeadFixture src{std::vector<float>(n),std::vector<float>(n)};
+        double phase=0.;
+        for(int i=0;i<n;++i){
+            phase+=6.283185307179586*(i<rate?220.:330.)/rate;
+            const double e=i>rate*3/2&&i<rate*8/5?0.:1.;
+            src.left[i]=src.right[i]=static_cast<float>(e*(.10*std::sin(phase)+.035*std::sin(2*phase+.3)+.02*std::sin(3*phase+.6)));
+        }
+        auto render=[&](bool enabled,float wet,int mode,int voices,int block){
+            auto e=std::make_unique<Engine>();Settings s;s.voiceMode=mode;s.voices=voices;s.wet=wet;s.space=1.f;s.color=.78f;
+            need(e->prepare(rate)&&e->setSettings(s)&&e->setCausalEnvelopeForOfflineReference(enabled),"H26 engine setup");
+            auto x=src;std::vector<double> us;us.reserve(n/block+1);
+            for(int i=0;i<n;i+=block){
+                const int count=std::min(block,n-i);
+                const auto start=Clock::now();e->process(x.left.data()+i,x.right.data()+i,count);
+                if(i>=rate/4&&count==block)us.push_back(std::chrono::duration<double,std::micro>(Clock::now()-start).count());
+            }
+            std::sort(us.begin(),us.end());
+            const auto updates=e->causalEnvelopeUpdatesForOfflineTests();
+            if(wet==1.f&&mode==0&&voices==5&&block==64)
+                std::cout<<"H26_CPU rate="<<rate<<" enabled="<<enabled<<" updates="<<updates
+                         <<" p50_us="<<us[us.size()/2]<<" p99_us="<<us[(us.size()-1)*99/100]
+                         <<" max_us="<<us.back()<<" deadline_us="<<1.e6*block/rate<<std::endl;
+            if(enabled&&wet==1.f&&mode==0&&voices==5)need(updates>0,"H26 live candidate never engaged");
+            need(e->latencySamples()==int(std::lround(rate*.024)),"H26 PDC");
+            return x;
+        };
+        const auto a=render(false,1.f,0,5,64),b=render(true,1.f,0,5,64),c=render(true,1.f,0,5,127);
+        need(b.left==c.left&&b.right==c.right&&a.right!=b.right,"H26 candidate partition/use");
+        for(int i=0;i<n;++i)need(std::isfinite(b.left[i])&&std::isfinite(b.right[i])&&
+            std::abs(b.left[i])<=.980001f&&std::abs(b.right[i])<=.980001f,"H26 headroom");
+        for(int mode:{0,1}){
+            const auto x=render(false,1.f,mode,2,64),y=render(true,1.f,mode,2,127);
+            need(x.left==y.left&&x.right==y.right,"H26 Duo/Doubler unchanged");
+        }
+        const auto x=render(false,0.f,0,5,64),y=render(true,0.f,0,5,127);
+        need(x.left==y.left&&x.right==y.right,"H26 Wet0 dry unchanged");
+    }
+}
 static void testInactiveStageFastPath(){
     using Clock=std::chrono::steady_clock;
     for(int rate:{48000,96000,192000})for(int mode:{1,2,5}){
@@ -2045,6 +2143,7 @@ int main(){
   testDoublerMonoCompatibility();
   testDoublerFastPath();
   testInactiveStageFastPath();
+  testCausalEnvelopeCandidate();
   testContinuousDoubler();
   testUnisonDoubler();
   testPeriodContinuityOnLoudOctaveErrors();

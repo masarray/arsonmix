@@ -18,6 +18,7 @@
 #include "HarmonyBackingHeadroom.h"
 #include "HarmonyDoublerMonoGuard.h"
 #include "HarmonySourcePitchTimeline.h"
+#include "HarmonyCausalEnvelope.h"
 
 // Deterministic, allocation-free vocal harmony DSP. No JUCE or GUI dependency.
 // Grain shifting is a functioning prototype, not formant-accurate synthesis.
@@ -308,6 +309,7 @@ public:
         articulation_.prepare(rate);
         headroom_.prepare(rate);headroomEnabled_=true;
         doublerMono_.prepare(rate);doublerMonoEnabled_=true;
+        causalEnvelope_.prepare(rate);causalEnvelopeEnabled_=false;
         sourceTimeline_.reset();sourceAlignedEnabled_=true;sourceConfirmationEnabled_=true;sourceCacheEnabled_=true;
         sourceCursors_={};pitchWindowNewest_=0;alignedCalls_.fill(0);
         // Both renderer choice and missing-epoch recovery are time-domain
@@ -539,6 +541,11 @@ public:
         headroomEnabled_=enabled;return true;
     }
     const BackingHeadroom& headroomForOfflineTests()const noexcept{return headroom_;}
+    bool setCausalEnvelopeForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        causalEnvelopeEnabled_=enabled;return true;
+    }
+    std::uint64_t causalEnvelopeUpdatesForOfflineTests()const noexcept{return causalEnvelope_.accepted();}
     bool setInactiveStageForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
         stage_.setInactiveFastForOfflineTests(enabled);return true;
@@ -831,6 +838,13 @@ public:
                         1.f-pitchSyncBlend_[ix]*pitchSyncValid_[ix]);
                 else
                     ensemble_.shapeSinger(v,0.f,0.f,1.f,0.f);
+                // H26 audition only: correct the dry HIGH role before
+                // spatialization, not its reflections or the original lead.
+                if(causalEnvelopeEnabled_&&v==2){
+                    const bool trusted=audible&&settings_.voiceMode==0&&settings_.voices>=3&&
+                        voiced_&&pitchSyncStable_&&sourceConfidence_>=.86f&&pitchSyncValid_[ix]>.75f;
+                    voice=causalEnvelope_.process(tap(mono_,latency_+ensemble_.arrivalSamples(v)),voice,trusted);
+                }
                 voice=ensemble_.shadeBacking(v,voice*articulation,space_);
                 const float reflection=ensemble_.exchangeReflection(v,voice);
                 const float second=ensemble_.secondReflection(v);
@@ -1303,6 +1317,8 @@ private:
     BackingHeadroom headroom_{};
     bool headroomEnabled_=true,doublerMonoEnabled_=true;
     DoublerMonoGuard doublerMono_{};
+    CausalEnvelope causalEnvelope_{};
+    bool causalEnvelopeEnabled_=false;
     bool sourceAlignedEnabled_=true,sourceConfirmationEnabled_=true,sourceCacheEnabled_=true;
     SourcePitchTimeline sourceTimeline_{};
     std::array<SourcePitchTimeline::Cursor,maxVoices> sourceCursors_{};
