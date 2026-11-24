@@ -5,6 +5,8 @@ on:
       - staging/p0-arsonmix-reliability-20261124
       - feature/io-studio-workflow-20261125
       - feature/io-atomic-output-20261125
+      - feat/reverb-sis-signature-20261125
+      - staging/io-reverb-integrated-20261125
     paths:
       - 'src/**'
       - 'engine/**'
@@ -60,7 +62,7 @@ jobs:
           # Test the actual JUCE disk store with assertions enabled before
           # compiling the production translation unit. This is not FAT or a
           # protected nativeFull gate and does not publish an executable.
-          if ($env:GITHUB_REF_NAME -in @('feature/io-studio-workflow-20261125','feature/io-atomic-output-20261125')) {
+          if ($env:GITHUB_REF_NAME -in @('feature/io-studio-workflow-20261125','feature/io-atomic-output-20261125','staging/io-reverb-integrated-20261125')) {
             cmake --build build --parallel 2 --target ARMixChannelAppearanceTests
             if ($LASTEXITCODE -ne 0) { throw 'AUDIO_IO_NATIVE_STORE_COMPILE_FAILED' }
             $catalog = (& ctest --test-dir build --show-only=json-v1 | Out-String | ConvertFrom-Json)

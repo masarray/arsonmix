@@ -4,6 +4,7 @@
 // Sound quality still needs real user listening and host validation.
 #include <arverb/Reverb.hpp>
 #include "../src/dsp/Primitives.hpp"
+#include "../../../engine/builtin_fx/ReverbSisFactoryPrograms.h"
 #include <array>
 #include <algorithm>
 #include <cmath>
@@ -191,7 +192,216 @@ static double selectiveGain(float fs,float frequency,bool musical) {
     }
     return std::sqrt(output/input);
 }
+static double albumToneGain(float fs,float frequency,float detector,float duck,float signature=0.f) {
+    arverb::detail::AlbumLateTone tone;tone.prepare(fs);
+    double input=0,output=0;
+    for(int i=0;i<int(fs*.5f);++i) {
+        const float x=.2f*std::sin(2.f*arverb::detail::kPi*frequency*i/fs);
+        const float dry=.5f*std::sin(2.f*arverb::detail::kPi*detector*i/fs);
+        float l=x,r=x;tone.process(dry,-dry,l,r,duck,1.f,signature);
+        check(std::isfinite(l)&&l==r,"Album linked tone finite");
+        if(i>fs*.25f){input+=double(x)*x;output+=double(l)*l;}
+    }
+    return std::sqrt(output/input);
+}
+static void albumEngineProbe(double fs,int mode) {
+    arverb::Engine e;e.loadPreset(arverb::Preset::VocalPlateClean);
+    e.setAlgorithm(static_cast<arverb::Algorithm>(mode));
+    e.setAlbumReady(true);e.setParameter(arverb::Parameter::Mix,0.f);e.prepare(fs,true);
+    std::array<float,128> l{},r{},a{},b{};
+    for(int block=0;block<800;++block) {
+        if(block==20)e.setParameter(arverb::Parameter::Mix,1.f);
+        if(block==180)e.setAlbumReady(false);
+        if(block==210)e.setAlbumReady(true);
+        if(block==250)e.setVoicing(2);
+        if(block==380)e.setVoicing(1);
+        if(block==410)e.setVoicing(2);
+        for(int i=0;i<128;++i) {
+            const double t=(block*128+i)/fs;
+            l[i]=r[i]=block<350?float(.16*std::sin(691.15*t)+.06*std::sin(16022.1*t)):0.f;
+        }
+        e.process(l.data(),r.data(),a.data(),b.data(),128);
+        for(int i=0;i<128;++i) {
+            check(std::isfinite(a[i])&&std::isfinite(b[i])&&std::abs(a[i])<2.f&&std::abs(b[i])<2.f,
+                  "Album live profile morph bounded");
+            if(block<20)check(std::abs(a[i]-l[i])<1.e-6f&&std::abs(b[i]-r[i])<1.e-6f,"Album dry endpoint");
+        }
+    }
+}
+// Retargeting mid-morph must be equivalent to letting the original
+// morph finish and then applying only the latest request. A 1-frame host
+// makes the transition endpoint independently observable. Compare full PCM,
+// not just bounded peaks (a click may be finite and still audible).
+static void signatureRetargetProbe(int fs,unsigned initial) {
+    using P=arverb::Parameter;
+    arverb::Engine burst,serial;
+    for(auto* e:{&burst,&serial}) {
+        e->loadPreset(arverb::Preset::VocalPlateClean);
+        e->setAlgorithm(static_cast<arverb::Algorithm>(initial));
+        e->setVoicing(2);
+        e->setParameter(P::Mix,.65f);
+        e->prepare(fs,true);
+    }
+    const unsigned first=(initial+1)%4,discarded=(initial+2)%4,last=(initial+3)%4;
+    const float step=1.f/std::max(1.f,float(fs)*.100f);
+    float blend=0.f;
+    int duration=0;
+    while(blend<1.f){blend=std::min(1.f,blend+step);++duration;}
+    const int start=fs/5;
+    double signalEnergy=0.;
+    for(int i=0;i<start+2*duration+fs/20;++i) {
+        if(i==start)for(auto* e:{&burst,&serial})e->setAlgorithm(static_cast<arverb::Algorithm>(first));
+        if(i==start+duration/4)burst.setAlgorithm(static_cast<arverb::Algorithm>(discarded));
+        if(i==start+duration/2)burst.setAlgorithm(static_cast<arverb::Algorithm>(last));
+        if(i==start+duration)serial.setAlgorithm(static_cast<arverb::Algorithm>(last));
+        const float l=float(.22*std::sin(2.*3.141592653589793*233.*i/fs)+.09*std::sin(2.*3.141592653589793*1700.*i/fs));
+        const float r=float(.18*std::sin(2.*3.141592653589793*311.*i/fs));
+        float a,b,c,d;
+        burst.process(&l,&r,&a,&b,1);serial.process(&l,&r,&c,&d,1);
+        check(std::isfinite(a)&&std::isfinite(b)&&a==c&&b==d,
+              "Signature interrupted matrix morph equals serialized latest-target reference");
+        signalEnergy+=double(a)*a+double(b)*b;
+    }
+    check(signalEnergy>1.,"Signature retarget exercised non-silent PCM");
+}
+static void vocalAnchorQualification() {
+    using P=arverb::Parameter;
+    using namespace armix::builtin_fx;
+    constexpr int n=128;
+    for(int fs:{44100,48000,96000})for(std::size_t program=0;program<reverbSisFactoryPrograms.size();++program) {
+        const auto& preset=reverbSisFactoryPrograms[program];
+        for(std::size_t i=0;i<preset.values.size();++i) {
+            const auto& info=arverb::parameterInfo(static_cast<P>(i));
+            check(preset.values[i]>=info.minimum&&preset.values[i]<=info.maximum,"valid factory program");
+        }
+        check(preset.values[0]<=.28f&&preset.values[10]<=1.20f,"intentional factory mix and width bounds");
+        for(float mix:{0.f,.25f,.35f,.50f,.75f,1.f}) {
+            arverb::Engine old,anchor;
+            for(auto* e:{&old,&anchor}) {
+                for(std::size_t i=0;i<preset.values.size();++i)e->setParameter(static_cast<P>(i),preset.values[i]);
+                e->setAlgorithm(static_cast<arverb::Algorithm>(preset.algorithm));
+                e->setParameter(P::Mix,mix);
+                e->setVoicing(e==&old?2u:3u);e->prepare(fs,true);
+            }
+            const double expected=1.-double(mix)*mix*mix-std::cos(1.5707963267948966*mix);
+            std::array<float,n> l{},r{},a{},b{},c{},d{};
+            double inEnergy=0.,oldEnergy=0.,newEnergy=0.,wetEnergy=0.;
+            float peak=0.f;
+            const int blocks=fs/n;
+            for(int block=0;block<blocks;++block) {
+                for(int i=0;i<n;++i) {
+                    const double t=double(block*n+i)/fs;
+                    const double env=.65+.35*std::sin(6.283185307179586*3.*t);
+                    l[i]=r[i]=float(env*(.18*std::sin(6.283185307179586*173.*t)+.07*std::sin(6.283185307179586*519.*t)+.035*std::sin(6.283185307179586*1903.*t)));
+                }
+                old.process(l.data(),r.data(),a.data(),b.data(),n);
+                anchor.process(l.data(),r.data(),c.data(),d.data(),n);
+                for(int i=0;i<n;++i) {
+                    check(std::isfinite(c[i])&&std::isfinite(d[i]),"Anchor finite");
+                    check(std::abs((c[i]-a[i])-expected*l[i])<2.e-6&&std::abs((d[i]-b[i])-expected*r[i])<2.e-6,"Anchor difference is direct only");
+                    if(mix==0.f||mix==1.f)check(a[i]==c[i]&&b[i]==d[i],"Anchor exact endpoint PCM");
+                    peak=std::max(peak,std::max(std::abs(c[i]),std::abs(d[i])));
+                    if(block>blocks/2) {
+                        const double x=l[i],y=.5*(a[i]+b[i]),z=.5*(c[i]+d[i]);
+                        inEnergy+=x*x;oldEnergy+=y*y;newEnergy+=z*z;
+                        const double wet=z-(1.-double(mix)*mix*mix)*x;wetEnergy+=wet*wet;
+                    }
+                }
+            }
+            check(peak<1.f,"Anchor nominal voiced proxy headroom");
+            if(mix>.25f&&mix<.76f)check(newEnergy>oldEnergy,"Anchor improves measured mono voiced energy");
+            if(mix==1.f)check(wetEnergy>1.e-8,"factory pure wet is not silent");
+            if(fs==48000&&mix==.5f)std::printf("Anchor factory %zu mix50 oldRMS=%.4f newRMS=%.4f peak=%.4f\n",program,std::sqrt(oldEnergy/inEnergy),std::sqrt(newEnergy/inEnergy),peak);
+        }
+    }
+    // Profile changes at unchanged Mix must still update target with 25ms
+    // smoothing; use long predelay to independently observe dry-only onset.
+    arverb::Engine e;e.setVoicing(2);e.setParameter(P::Mix,.5f);
+    e.setParameter(P::PreDelayMs,250.f);e.prepare(48000.,true);
+    float in=.2f,l=0,r=0;e.process(&in,&in,&l,&r,1);
+    const float before=l;e.setVoicing(3);e.process(&in,&in,&l,&r,1);
+    check(l>before&&l-before<.001f,"Anchor recall is smoothed at unchanged Mix");
+    for(int i=0;i<8000;++i)e.process(&in,&in,&l,&r,1);
+    check(std::abs(l-.175f)<.0001f,"Anchor recall reaches new dry target");
+    std::puts("PASS Vocal Anchor: 288 factory/rate/mix PCM cases, exact wet endpoints, smoothed profile recall");
+}
+// Full actual wet PCM, not just a detached EQ response. Compare identical
+// factory values, same tank and input, including early reflections.
+static void studioFinishQualification() {
+    using P=arverb::Parameter;
+    using namespace armix::builtin_fx;
+    constexpr int n=128;
+    for(int fs:{44100,48000,96000})for(std::size_t program=0;program<reverbSisFactoryPrograms.size();++program) {
+        const auto& preset=reverbSisFactoryPrograms[program];
+        // All 16 actual presets at 48k; four representative sources at other rates.
+        if(fs!=48000&&program!=0&&program!=4&&program!=7&&program!=8)continue;
+        for(float hz:{180.f,400.f,950.f,2500.f,9000.f}) {
+            arverb::Engine old,finish;
+            for(auto* e:{&old,&finish}) {
+                for(std::size_t i=0;i<preset.values.size();++i)e->setParameter(static_cast<P>(i),preset.values[i]);
+                e->setAlgorithm(static_cast<arverb::Algorithm>(preset.algorithm));
+                e->setParameter(P::Mix,1.f);
+                e->setVoicing(e==&old?3u:4u);e->prepare(fs,true);
+            }
+            std::array<float,n> l{},r{},a{},b{},c{},d{};
+            double before=0.,after=0.,fold=0.;
+            const int blocks=int(1.5*fs/n);
+            for(int block=0;block<blocks;++block) {
+                for(int i=0;i<n;++i)l[i]=r[i]=float(.18*std::sin(6.283185307179586*hz*(block*n+i)/fs));
+                old.process(l.data(),r.data(),a.data(),b.data(),n);
+                finish.process(l.data(),r.data(),c.data(),d.data(),n);
+                for(int i=0;i<n;++i) {
+                    check(std::isfinite(c[i])&&std::isfinite(d[i])&&std::abs(c[i])<2.f&&std::abs(d[i])<2.f,"Studio Finish bounded PCM");
+                    if(block>blocks*2/3) {
+                        before+=double(a[i])*a[i]+double(b[i])*b[i];
+                        after+=double(c[i])*c[i]+double(d[i])*d[i];
+                        const double m=.5*(c[i]+d[i]);fold+=m*m;
+                    }
+                }
+            }
+            check(before>1.e-9&&after>1.e-9&&fold>1.e-10,"Studio Finish wet stereo and mono measurable");
+            const double db=10.*std::log10(after/before);
+            if(hz==180.f)check(db>.35&&db<1.5,"Studio Finish body lift");
+            if(hz==950.f)check(db<-1.0&&db>-2.4,"Studio Finish nasal mid relief");
+            if(hz==9000.f)check(std::abs(db)<.35,"Studio Finish air is not overboosted");
+            std::printf("Studio Finish program=%zu rate=%d hz=%.0f deltaDb=%.3f\n",program,fs,hz,db);
+        }
+    }
+    // Dry endpoint remains exactly the previous Anchor at every sample.
+    arverb::Engine old,finish;
+    for(auto* e:{&old,&finish}) {
+        e->setParameter(P::Mix,0.f);e->setVoicing(e==&old?3u:4u);e->prepare(48000.,true);
+    }
+    for(int i=0;i<48000;++i) {
+        const float x=.3f*std::sin(i*.037f);float a,b,c,d;
+        old.process(&x,&x,&a,&b,1);finish.process(&x,&x,&c,&d,1);
+        check(a==c&&b==d,"Studio Finish exact dry endpoint");
+    }
+    std::puts("PASS Studio Finish: 120 actual factory/rate/wet band PCM cases and dry endpoint");
+}
 int main() {
+    studioFinishQualification();
+    vocalAnchorQualification();
+    for(int fs:{44100,48000,96000})for(unsigned mode=0;mode<4;++mode)signatureRetargetProbe(fs,mode);
+    std::puts("PASS Signature latest-target matrix continuity: 12 exact PCM comparisons");
+    for(float fs:{44100.f,48000.f,96000.f}) {
+        const double body=albumToneGain(fs,150.f,2500.f,0.f);
+        const double mud=albumToneGain(fs,380.f,2500.f,0.f);
+        const double mid=albumToneGain(fs,1450.f,2500.f,0.f);
+        const double air=albumToneGain(fs,10000.f,2500.f,0.f);
+        const double ess=albumToneGain(fs,7000.f,7000.f,1.f)/albumToneGain(fs,7000.f,7000.f,0.f);
+        std::printf("Reverb-Sis album fs=%.0f body=%.3f mud=%.3f mid=%.3f air=%.3f ess=%.3f\n",fs,body,mud,mid,air,ess);
+        check(body>.90&&mud<.80&&mid<.80&&air>.96,"Album static contour preserves body and air");
+        check(ess<.93&&ess>.50,"Album sibilance detector attenuates wet band");
+        const double signatureBody=albumToneGain(fs,170.f,2500.f,0.f,1.f)/albumToneGain(fs,170.f,2500.f,0.f);
+        const double signatureMud=albumToneGain(fs,380.f,2500.f,0.f,1.f)/mud;
+        const double signatureEss=albumToneGain(fs,7000.f,7000.f,1.f,1.f)/albumToneGain(fs,7000.f,7000.f,0.f,1.f);
+        std::printf("Signature filter fs=%.0f bodyDelta=%.3f mudDelta=%.3f ess=%.3f\n",fs,signatureBody,signatureMud,signatureEss);
+        check(signatureBody>1.17&&signatureBody<1.21&&signatureMud<1.06&&signatureEss<.93,
+              "Signature broad body lift preserves mud and de-ess");
+        for(int mode=0;mode<4;++mode)albumEngineProbe(fs,mode);
+    }
+    std::puts("PASS Reverb-Sis Album Ready contour, de-ess and live profile morph");
     // Exact fractional tap output vs independent original implementation,
     // including ring wrap, fractional values and both clamp boundaries.
     for(float fs:{8000.f,44100.f,48000.f,96000.f,192000.f}) {

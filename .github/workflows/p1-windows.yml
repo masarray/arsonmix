@@ -253,7 +253,7 @@ jobs:
         shell: bash
         run: |
           if [[ -f scripts/benchmark_reverb_sis_ab.py ]]; then
-            python scripts/benchmark_reverb_sis_ab.py --reference b835e87d5cfee74614e70db36b8b4efc6443d56b --verify-pcm
+            python scripts/benchmark_reverb_sis_ab.py --reference 980a546e3857d9bf012c69bb218db4f08ed18246 --verify-pcm --signature --preserve-signature --anchor --studio
           fi
       - name: WaveShell JUCE 8 class-index regression (source-aware)
         shell: bash

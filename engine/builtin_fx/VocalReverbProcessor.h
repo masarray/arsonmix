@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
-#include "../../third_party/arsonverb/include/arverb/Reverb.hpp"
+#include "ReverbSisFactoryPrograms.h"
 #include "../core/RealtimeNativeFxControl.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <algorithm>
@@ -11,15 +11,14 @@
 #include <memory>
 
 namespace armix::builtin_fx {
-inline constexpr int reverbSisPresetCount=13;
-inline constexpr int reverbSisCustomItem=reverbSisPresetCount+1;
 struct VocalReverbSettings {
     std::array<float, arverb::parameterCount> values{};
     int algorithm=1; // Plate
     int preset=0;    // -1 means edited
+    int voicing=4; // all new instances and factory presets
 };
 inline bool validVocalReverbSettings(const VocalReverbSettings& v) noexcept {
-    if(v.algorithm<0||v.algorithm>=static_cast<int>(arverb::algorithmCount)||
+    if(v.voicing<0||v.voicing>4||v.algorithm<0||v.algorithm>=static_cast<int>(arverb::algorithmCount)||
        v.preset < -1 || v.preset >= reverbSisPresetCount) return false;
     for(std::size_t i=0;i<v.values.size();++i) {
         const auto& d=arverb::parameterInfo(static_cast<arverb::Parameter>(i));
@@ -28,97 +27,13 @@ inline bool validVocalReverbSettings(const VocalReverbSettings& v) noexcept {
     }
     return true;
 }
-inline constexpr std::array<const char*,reverbSisPresetCount> vocalReverbPresetNames{{
-    "Krenyess Vocal", "Sweet Karaoke", "Crisp Pop Plate", "Silky Ballad",
-    "Tight Live Chamber", "Air Vocal Hall", "Warm Vintage Plate", "Large Stage Hall",
-    "Acoustic Guitar Room", "Piano Concert Hall", "Drum Studio Room", "Keys Dream Hall",
-    "Master Ceremony"
-}};
 inline VocalReverbSettings vocalReverbFactoryPreset(int index) {
-    using P=arverb::Preset;
-    constexpr std::array<P,reverbSisPresetCount> origins{{
-        P::VocalPlateClean,P::VocalPlate,P::VocalPlateClean,P::AiryBallad,
-        P::VocalChamberTight,P::VocalWideAir,P::VocalPlateWarm,P::VocalHallBallad,
-        P::GuitarShortSpace,P::PianoHallWarm,P::DrumRoomTight,P::KeysStereoWash,
-        P::VocalSpaceShort
-    }};
-    if(index<0||index>=static_cast<int>(origins.size()))index=0;
+    if(index<0||index>=reverbSisPresetCount)index=0;
+    const auto& factory=reverbSisFactoryPrograms[static_cast<std::size_t>(index)];
     VocalReverbSettings result;
-    result.values=arverb::presetValues(origins[static_cast<std::size_t>(index)]);
-    result.algorithm=static_cast<int>(arverb::presetAlgorithm(origins[static_cast<std::size_t>(index)]));
     result.preset=index;
-    using Param=arverb::Parameter;
-    auto put=[&](Param key,float value) {result.values[static_cast<std::size_t>(key)]=value;};
-    // Keep stable factory indices and serialized parameter IDs. Retune only
-    // factory values; custom/previously saved numeric settings remain exact.
-    // Wet return is separately calibrated in Engine::prepare(rate,true).
-    switch(index) {
-        case 0: // bright, present singing plate
-            put(Param::Mix,.34f);put(Param::PreDelayMs,32.f);
-            put(Param::DecaySeconds,2.45f);put(Param::Diffusion,.94f);
-            put(Param::DampingHz,10400.f);put(Param::LowCutHz,150.f);
-            put(Param::HighCutHz,15500.f);put(Param::Width,1.15f);
-            put(Param::EarlyLevel,.36f);put(Param::ModDepthMs,.20f);
-            put(Param::DuckAmount,.18f);break;
-        case 1:
-            put(Param::Mix,.31f);put(Param::PreDelayMs,29.f);
-            put(Param::DecaySeconds,2.05f);put(Param::Diffusion,.88f);
-            put(Param::LowCutHz,155.f);
-            put(Param::HighCutHz,12400.f);put(Param::EarlyLevel,.38f);
-            put(Param::DuckAmount,.18f);break;
-        case 2:
-            put(Param::Mix,.25f);put(Param::PreDelayMs,28.f);
-            put(Param::DecaySeconds,1.65f);put(Param::Diffusion,.9f);
-            put(Param::LowCutHz,170.f);put(Param::HighCutHz,14500.f);
-            put(Param::EarlyLevel,.30f);put(Param::DuckAmount,.24f);break;
-        case 3:
-            put(Param::Mix,.38f);put(Param::PreDelayMs,48.f);
-            put(Param::DecaySeconds,3.5f);put(Param::Diffusion,.91f);
-            put(Param::LowCutHz,160.f);
-            put(Param::HighCutHz,12000.f);put(Param::EarlyLevel,.25f);
-            put(Param::DuckAmount,.22f);break;
-        case 4:
-            put(Param::Mix,.22f);put(Param::PreDelayMs,14.f);
-            put(Param::DecaySeconds,1.05f);put(Param::LowCutHz,135.f);
-            put(Param::EarlyLevel,.48f);put(Param::DuckAmount,.20f);break;
-        case 5:
-            put(Param::Mix,.36f);put(Param::PreDelayMs,43.f);
-            put(Param::DecaySeconds,3.05f);put(Param::Diffusion,.92f);
-            put(Param::LowCutHz,145.f);
-            put(Param::HighCutHz,15200.f);put(Param::Width,1.25f);
-            put(Param::EarlyLevel,.24f);put(Param::DuckAmount,.22f);break;
-        case 6:
-            put(Param::Mix,.29f);put(Param::LowCutHz,140.f);
-            put(Param::HighCutHz,8500.f);put(Param::DampingHz,5300.f);
-            put(Param::EarlyLevel,.30f);put(Param::DuckAmount,.18f);break;
-        case 7:
-            put(Param::Mix,.32f);put(Param::PreDelayMs,55.f);
-            put(Param::DecaySeconds,4.1f);put(Param::LowCutHz,165.f);
-            put(Param::EarlyLevel,.24f);put(Param::DuckAmount,.24f);break;
-        case 8:
-            put(Param::Mix,.24f);put(Param::PreDelayMs,16.f);
-            put(Param::LowCutHz,110.f);put(Param::EarlyLevel,.42f);
-            put(Param::DuckAmount,.08f);break;
-        case 9:
-            put(Param::Mix,.28f);put(Param::LowCutHz,95.f);
-            put(Param::EarlyLevel,.32f);put(Param::DuckAmount,.08f);break;
-        case 10:
-            put(Param::Mix,.22f);put(Param::LowCutHz,100.f);
-            put(Param::EarlyLevel,.62f);put(Param::DuckAmount,.06f);break;
-        case 11:
-            put(Param::Mix,.32f);put(Param::LowCutHz,140.f);
-            put(Param::Width,1.25f);put(Param::DuckAmount,.08f);break;
-        case 12: // Master Ceremony: intimate, clear speech with tasteful space.
-            // Append only: old saved preset indices and all numeric IDs stay stable.
-            result.algorithm=static_cast<int>(arverb::Algorithm::Chamber);
-            put(Param::Mix,.14f);put(Param::PreDelayMs,27.f);
-            put(Param::DecaySeconds,.78f);put(Param::Size,.80f);
-            put(Param::Diffusion,.78f);put(Param::DampingHz,8300.f);
-            put(Param::LowCutHz,215.f);put(Param::HighCutHz,12800.f);
-            put(Param::ModDepthMs,.045f);put(Param::ModRateHz,.22f);
-            put(Param::Width,1.02f);put(Param::EarlyLevel,.33f);
-            put(Param::DuckAmount,.42f);break;
-    }
+    result.algorithm=factory.algorithm;
+    result.values=factory.values;
     return result;
 }
 
@@ -127,6 +42,21 @@ class VocalReverbProcessor final : public juce::AudioProcessor,
 public:
     static constexpr const char* catalogIdentity="armix.builtin.vocal-reverb.v1";
     static constexpr int stateBytes=16+static_cast<int>(arverb::parameterCount)*4;
+    static constexpr int albumStateBytes=stateBytes+4;
+    // v1 original, v2 historical Album, v3 Signature, v4 Vocal Anchor, v5 Studio Finish.
+    static bool decodeState(const void* data,int bytes,VocalReverbSettings& s) {
+        if(!data||(bytes!=stateBytes&&bytes!=albumStateBytes))return false;
+        juce::MemoryInputStream in(data,static_cast<std::size_t>(bytes),false);
+        if(in.readInt()!=0x41565242)return false;
+        const int version=in.readInt();
+        if((version!=1||bytes!=stateBytes)&&((version!=2&&version!=3&&version!=4&&version!=5)||bytes!=albumStateBytes))return false;
+        s.preset=in.readInt();s.algorithm=in.readInt();
+        for(auto& x:s.values)x=in.readFloat();
+        const int flag=version==1?0:in.readInt();
+        s.voicing=flag;
+        return ((version==1&&flag==0)||(version==2&&(flag==0||flag==1))||
+                (version==3&&flag==2)||(version==4&&flag==3)||(version==5&&flag==4))&&in.isExhausted()&&validVocalReverbSettings(s);
+    }
     VocalReverbProcessor():juce::AudioProcessor(BusesProperties()
         .withInput("Input",juce::AudioChannelSet::stereo(),true)
         .withOutput("Output",juce::AudioChannelSet::stereo(),true)) {
@@ -253,6 +183,7 @@ public:
             edit.values[i]=requestedValues_[i].load(std::memory_order_seq_cst);
         edit.algorithm=requestedAlgorithm_.load(std::memory_order_seq_cst);
         edit.preset=requestedPreset_.load(std::memory_order_seq_cst);
+        edit.voicing=requestedVoicing_.load(std::memory_order_seq_cst);
         const auto capturedId=requestedId_.load(std::memory_order_seq_cst);
         if(before!=requestedSequence_.load(std::memory_order_seq_cst)||
            capturedId<=appliedRequestId())return; // bounded retry next block
@@ -277,6 +208,7 @@ public:
             requestedValues_[i].store(v.values[i],std::memory_order_seq_cst);
         requestedAlgorithm_.store(v.algorithm,std::memory_order_seq_cst);
         requestedPreset_.store(v.preset,std::memory_order_seq_cst);
+        requestedVoicing_.store(v.voicing,std::memory_order_seq_cst);
         requestedId_.store(id,std::memory_order_seq_cst);
         requestedSequence_.fetch_add(1,std::memory_order_seq_cst);
         return id;
@@ -331,10 +263,11 @@ public:
         }
         juce::MemoryOutputStream writer(out,false);
         writer.writeInt(0x41565242); // AVRB, distinct from factory VST3
-        writer.writeInt(1);
+        writer.writeInt(accepted.voicing+1);
         writer.writeInt(accepted.preset);
         writer.writeInt(accepted.algorithm);
         for(const auto v:accepted.values)writer.writeFloat(v);
+        if(accepted.voicing)writer.writeInt(accepted.voicing);
         writer.flush();
     }
     // Detached logical editor is CONTROL-owned, never installed in PCM.
@@ -346,19 +279,16 @@ public:
         consumeRealtimeEdits();
         if(!stateSnapshotQuiescent())return false;
         getStateInformation(out);
-        if(out.getSize()!=static_cast<std::size_t>(stateBytes)){
+        if(out.getSize()!=static_cast<std::size_t>(stateBytes)&&
+           out.getSize()!=static_cast<std::size_t>(albumStateBytes)){
             out.reset();return false;
         }
         return true;
     }
     bool restoreUnpublishedState(const void* data,int bytes) {
-        if(published_||!data||bytes!=stateBytes||settingsPending())return false;
-        juce::MemoryInputStream reader(data,static_cast<std::size_t>(bytes),false);
-        if(reader.readInt()!=0x41565242||reader.readInt()!=1)return false;
+        if(published_||settingsPending())return false;
         VocalReverbSettings s;
-        s.preset=reader.readInt();s.algorithm=reader.readInt();
-        for(auto& v:s.values)v=reader.readFloat();
-        if(!reader.isExhausted()||!validVocalReverbSettings(s))return false;
+        if(!decodeState(data,bytes,s))return false;
         // Only unpublished, detached/restoring instances may stage state.
         desired_=s;
         storeAccepted(s,appliedRequestId());
@@ -389,6 +319,7 @@ private:
         for(std::size_t i=0;i<settings.values.size();++i)
             engine_.setParameter(static_cast<arverb::Parameter>(i),settings.values[i]);
         engine_.setAlgorithm(static_cast<arverb::Algorithm>(settings.algorithm));
+        engine_.setVoicing(static_cast<unsigned>(settings.voicing));
     }
     // All fields atomic: the GUI/save thread cannot race audio callback writes.
     // An odd sequence denotes a partial packet, even means complete.
@@ -398,6 +329,7 @@ private:
             acceptedValues_[i].store(s.values[i],std::memory_order_seq_cst);
         acceptedAlgorithm_.store(s.algorithm,std::memory_order_seq_cst);
         acceptedPreset_.store(s.preset,std::memory_order_seq_cst);
+        acceptedVoicing_.store(s.voicing,std::memory_order_seq_cst);
         acceptedSequence_.fetch_add(1,std::memory_order_seq_cst);
         appliedId_.store(id,std::memory_order_release);
     }
@@ -409,6 +341,7 @@ private:
                 v.values[i]=acceptedValues_[i].load(std::memory_order_seq_cst);
             v.algorithm=acceptedAlgorithm_.load(std::memory_order_seq_cst);
             v.preset=acceptedPreset_.load(std::memory_order_seq_cst);
+            v.voicing=acceptedVoicing_.load(std::memory_order_seq_cst);
             const auto after=acceptedSequence_.load(std::memory_order_seq_cst);
             if(before==after)return true;
         }
@@ -418,12 +351,14 @@ private:
     VocalReverbSettings desired_{}; // message-thread only
     std::array<std::atomic<float>,arverb::parameterCount> requestedValues_{};
     std::atomic<int> requestedAlgorithm_{1},requestedPreset_{0};
+    std::atomic<int> requestedVoicing_{4};
     std::atomic<std::uint32_t> requestedSequence_{0};
     std::atomic<std::uint64_t> requestedId_{0};
     static_assert(std::atomic<float>::is_always_lock_free);
     static_assert(std::atomic<std::uint64_t>::is_always_lock_free);
     std::array<std::atomic<float>,arverb::parameterCount> acceptedValues_{};
     std::atomic<int> acceptedAlgorithm_{1},acceptedPreset_{0};
+    std::atomic<int> acceptedVoicing_{4};
     std::atomic<std::uint32_t> acceptedSequence_{0};
     std::atomic<std::uint64_t> appliedId_{0},processedBlocks_{0};
     std::atomic<std::uint32_t> meterSubscribers_{0};

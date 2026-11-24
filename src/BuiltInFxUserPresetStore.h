@@ -80,8 +80,10 @@ public:
         if(catalog=="armix.builtin.vocal-reverb.v1") {
             // Stable v1 portable parameter order; do not persist factory
             // index, mixer identity, bypass or a vendor-specific blob.
-            if(!containsOnly(settings,{"algorithm","values"})||
-               !integer(settings,"algorithm",0,3))return false;
+            if(!containsOnly(settings,{"algorithm","values","voicing"})||
+               !integer(settings,"algorithm",0,3)||
+               (settings.getDynamicObject()->hasProperty("voicing")&&
+                !integer(settings,"voicing",0,4)))return false;
             const auto values=settings.getProperty("values",{});
             constexpr std::array<float,13> lo{{0,0,.15f,.65f,0,800,30,1000,0,.05f,0,0,0}};
             constexpr std::array<float,13> hi{{1,250,12,2,1,18000,1200,20000,1.2f,2,1.6f,1,1}};
