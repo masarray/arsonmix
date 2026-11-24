@@ -133,6 +133,10 @@ int main() {
     REQUIRE(store.saveNew(bad).isNotEmpty());
     bad=eq();bad.settings.getDynamicObject()->setProperty("liveInput",2);
     REQUIRE(store.saveNew(bad).isNotEmpty());
+    auto album=reverb();album.settings.getDynamicObject()->setProperty("voicing",1);
+    REQUIRE(BuiltInFxUserPresetStore::validateSettings(album.catalogId,album.settings));
+    album.settings.getDynamicObject()->setProperty("voicing",2);
+    REQUIRE(!BuiltInFxUserPresetStore::validateSettings(album.catalogId,album.settings));
     auto badReverb=reverb();
     badReverb.settings.getProperty("values",{}).getArray()->set(0,1.5);
     REQUIRE(!BuiltInFxUserPresetStore::validateSettings(badReverb.catalogId,badReverb.settings));

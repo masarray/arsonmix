@@ -16,7 +16,8 @@ int main() {
     using namespace armix::builtin_fx;
     static_assert(VocalReverbProcessor::stateBytes==68);
     for(int i=0;i<reverbSisPresetCount;++i)assert(validVocalReverbSettings(vocalReverbFactoryPreset(i)));
-    static_assert(reverbSisPresetCount==13 && reverbSisCustomItem==14);
+    static_assert(reverbSisPresetCount==16 && reverbSisCustomItem==17);
+    for(int i=0;i<16;++i)assert(vocalReverbFactoryPreset(i).albumReady==(i>=13));
     const auto mc=vocalReverbFactoryPreset(12);
     assert(juce::String(vocalReverbPresetNames[12])=="Master Ceremony");
     assert(mc.preset==12&&mc.algorithm==static_cast<int>(arverb::Algorithm::Chamber));
@@ -103,7 +104,8 @@ int main() {
     assert(presetSelect->getNumItems()==reverbSisCustomItem && algorithmSelect->getNumItems()==4);
     assert(presetSelect->getItemText(12)=="Master Ceremony");
     assert(presetSelect->getItemId(12)==13);
-    assert(presetSelect->getItemText(13)=="Custom / saved");
+    assert(presetSelect->getItemText(13)=="Album Ready Vocal");
+    assert(presetSelect->getItemText(16)=="Custom / saved");
     // Actual native ComboBox user-preset recall uses the same settings mailbox.
     {
         auto instance=entry->prepare(48000.,128,nullptr,0);
@@ -113,17 +115,28 @@ int main() {
         auto* list=dynamic_cast<juce::ComboBox*>(view->findChildWithID("armix.reverb.preset"));
         auto* save=dynamic_cast<juce::TextButton*>(view->findChildWithID("armix.reverb.preset.save"));
         assert(editor&&list&&save&&!save->isEnabled());
-        auto custom=vocalReverbFactoryPreset(0);custom.preset=-1;custom.values[0]=.137f;
+        auto custom=vocalReverbFactoryPreset(13);custom.preset=-1;custom.values[0]=.137f;
         editor->bindUserPresetService([]{
             return std::vector<VocalReverbEditor::UserPresetEntry>{{"test-id","My Vocal"}};
         },[](const juce::String&){return juce::String{};},
         [&](const juce::String& id){return id=="test-id"&&owner->queueSettings(custom)>0;});
-        assert(save->isEnabled()&&list->getItemText(14)=="My Vocal");
+        assert(save->isEnabled()&&list->getItemText(17)=="My Vocal");
         list->setSelectedId(1000,juce::sendNotificationSync);
         assert(owner->settingsPending()&&owner->desiredSettings().values==custom.values);
         owner->consumeRealtimeEdits();
         VocalReverbSettings accepted{};
-        assert(owner->acceptedSettings(accepted)&&accepted.values==custom.values);
+        assert(owner->acceptedSettings(accepted)&&accepted.values==custom.values&&accepted.albumReady);
+        auto* album=dynamic_cast<juce::TextButton*>(view->findChildWithID("armix.reverb.album-ready"));
+        assert(album&&album->getToggleState());
+        juce::MemoryBlock albumBytes;assert(owner->captureDetachedState(albumBytes));
+        assert(albumBytes.getSize()==VocalReverbProcessor::albumStateBytes);
+        auto restored=entry->prepare(48000.,128,albumBytes.getData(),static_cast<int>(albumBytes.getSize()));
+        auto* restoredOwner=dynamic_cast<VocalReverbProcessor*>(restored.get());
+        VocalReverbSettings decoded{};
+        assert(restoredOwner&&restoredOwner->acceptedSettings(decoded)&&decoded.albumReady&&decoded.values==custom.values);
+        album->setToggleState(false,juce::dontSendNotification);album->onClick();
+        owner->consumeRealtimeEdits();assert(owner->acceptedSettings(decoded)&&!decoded.albumReady);
+        assert(owner->captureDetachedState(albumBytes)&&albumBytes.getSize()==VocalReverbProcessor::stateBytes);
         editor->bindHostBypassReadback([]{return VocalReverbEditor::HostBypassState{};});
         assert(!save->isEnabled());
     }
