@@ -99,9 +99,162 @@ def qualify_guide(renderer, out, name, sha):
     print(f"H28_GUIDE_COMPLETE clip={name} callbacks={len(timeline)} chord_roots={sorted(roots)} synthetic_guide=true dry_exact=true",flush=True)
     return [{"clip":name,"blob_sha":sha,**row} for row in rows]
 
+# H29: validate structured evidence independently of the renderer, then
+# publish only explicit non-audio files. No source/derived PCM or listener key.
+VARIANTS = {"live_baseline", "H26", "H27", "H28_epoch", "H28_local"}
+TRACED = {"live_baseline", "H28_epoch", "H28_local"}
+GUIDED = ("f1_long_straight_a.wav", "m2_long_straight_i.wav")
+
+def require(condition, message):
+    if not condition:
+        raise RuntimeError("H29 evidence: " + message)
+
+def read_rows(path):
+    with path.open(newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    require(bool(rows) and all(None not in r and None not in r.values() for r in rows),
+            "empty or malformed CSV: " + path.name)
+    return rows
+
+def count(row, key):
+    value = int(row[key])
+    require(value >= 0, "negative count: " + key)
+    return value
+
+def validate_trace(summary, reasons, admissions):
+    expected = {(v, i) for v in TRACED for i in range(5)}
+    for rows in (reasons, admissions):
+        keys = [(r["variant"], count(r, "role")) for r in rows]
+        require(len(keys) == len(expected) and set(keys) == expected,
+                "missing or duplicate trace role")
+    for v in TRACED:
+        rs = [r for r in reasons if r["variant"] == v]
+        q = summary[v]
+        require(sum(count(r, "losses") for r in rs) == count(q, "total_losses"),
+                "total loss mismatch: " + v)
+        require(count(next(r for r in rs if count(r, "role") == 2), "losses")
+                == count(q, "high_losses"), "HIGH loss mismatch: " + v)
+        for r in rs:
+            require(count(r, "losses") == sum(count(r, k) for k in
+                    ("loss_no_clock", "loss_causal", "loss_safe_unready")),
+                    "loss reason mismatch: " + v)
+    for r in admissions:
+        require(count(r, "attempts") == sum(count(r, k) for k in
+                ("missing_peak", "pool_blocked", "support_rejected", "admitted")),
+                "admission conservation mismatch")
+        require(count(r, "adaptive_accepted") <= count(r, "adaptive_attempts") and
+                count(r, "local_accepted") <= count(r, "local_checks"),
+                "recovery accounting mismatch")
+
+def validate_timeline(rows, frames, block):
+    require(len(rows) == (frames + block - 1) // block, "guide callback count")
+    for i, row in enumerate(rows):
+        require(count(row, "callback_start_sample") == i * block and
+                count(row, "callback_end_sample") == min((i + 1) * block, frames),
+                "guide timeline gap, overlap or reordered callback")
+    roots = {int(r["chord_root"]) for r in rows}
+    require(len(roots & {0, 5, 7}) >= 2, "expected guide roots absent")
+
+def export_evidence(out, source_sha):
+    import json
+    import re
+    import shutil
+    require(re.fullmatch(r"[0-9a-f]{40}", source_sha) is not None, "invalid source SHA")
+    cases = []
+    # Validate all inputs before creating the export directory.
+    for name in CLIPS:
+        for mode in ("Manual", "Music") if name in GUIDED else ("Manual",):
+            stem = pathlib.Path(name).stem + ("_music" if mode == "Music" else "")
+            folder = out / stem
+            rows = read_rows(folder / "qualification.csv")
+            summary = {r["variant"]: r for r in rows}
+            require(len(rows) == len(VARIANTS) and set(summary) == VARIANTS,
+                    "variant coverage: " + stem)
+            with wave.open(str(out / name), "rb") as src:
+                frames, rate = src.getnframes(), src.getframerate()
+            for r in rows:
+                require(r["mode"] == mode and count(r, "rate") == rate and
+                        count(r, "frames") == frames and count(r, "voices") == 5 and
+                        count(r, "block") == 64, "fixture metadata mismatch: " + stem)
+                for k in ("mix_rms", "mix_peak", "backing_rms", "right_step_over_rms",
+                          "p50_us", "p99_us", "max_us", "deadline_us"):
+                    x = float(r[k])
+                    require(math.isfinite(x) and x >= 0, "invalid metric: " + k)
+                require(0 <= float(r["p50_us"]) <= float(r["p99_us"]) <= float(r["max_us"])
+                        and count(r, "measured_blocks") > 0 and
+                        count(r, "over_budget") <= count(r, "measured_blocks") and
+                        abs(float(r["deadline_us"]) - 1e6 * 64 / rate) < .001,
+                        "invalid callback timing evidence")
+                require(count(r, "high_losses") <= count(r, "total_losses"),
+                        "invalid HIGH loss count")
+                count(r, "over_unity")
+            names = ["qualification.csv", "renderer_loss_reasons.csv", "renderer_admission.csv"]
+            validate_trace(summary, read_rows(folder / names[1]), read_rows(folder / names[2]))
+            if mode == "Music":
+                names.append("guide_timeline.csv")
+                validate_timeline(read_rows(folder / names[-1]), frames, 64)
+            cases.append((stem, name, mode, frames, rate, names))
+    evidence = out / "evidence"
+    evidence.mkdir(exist_ok=False)
+    files = {}
+    def copy(src, rel):
+        target = evidence / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, target)
+        files[rel] = hashlib.sha256(target.read_bytes()).hexdigest()
+    copy(out / "ATTRIBUTION.txt", "ATTRIBUTION.txt")
+    for stem, name, mode, frames, rate, names in cases:
+        for file in names:
+            copy(out / stem / file, stem + "/" + file)
+    manifest = {"schema": 1, "source_sha": source_sha, "dataset_revision": REV,
+                "human_listening": "not_performed", "hardware_asio": "not_performed",
+                "timing": "isolated_engine_non_gating", "audio_included": False,
+                "cases": [{"id": stem, "source_blob_sha": CLIPS[name][0],
+                           "mode": mode, "frames": frames, "rate": rate}
+                          for stem, name, mode, frames, rate, _ in cases],
+                "sha256": files}
+    (evidence / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n",
+                                            encoding="utf-8")
+    print(f"H29_EVIDENCE_COMPLETE source_sha={source_sha} cases={len(cases)} files={len(files)} audio=false", flush=True)
+
+def self_test():
+    from copy import deepcopy
+    timeline = [{"callback_start_sample": "0", "callback_end_sample": "64", "chord_root": "0"},
+                {"callback_start_sample": "64", "callback_end_sample": "100", "chord_root": "5"}]
+    validate_timeline(timeline, 100, 64)
+    summary = {v: {"total_losses": "5", "high_losses": "1"} for v in TRACED}
+    reasons = [{"variant": v, "role": str(i), "losses": "1", "loss_no_clock": "0",
+                "loss_causal": "0", "loss_safe_unready": "1"}
+               for v in TRACED for i in range(5)]
+    admissions = [{"variant": v, "role": str(i), "attempts": "2", "missing_peak": "1",
+                   "pool_blocked": "0", "support_rejected": "0", "admitted": "1",
+                   "adaptive_accepted": "0", "adaptive_attempts": "0",
+                   "local_accepted": "0", "local_checks": "0"}
+                  for v in TRACED for i in range(5)]
+    validate_trace(summary, reasons, admissions)
+    def rejects(fn):
+        try:
+            fn()
+        except RuntimeError:
+            return
+        raise AssertionError("corrupt evidence accepted")
+    bad = deepcopy(timeline); bad[1]["callback_start_sample"] = "63"
+    rejects(lambda: validate_timeline(bad, 100, 64))
+    rejects(lambda: validate_trace(summary, reasons[:-1] + reasons[:1], admissions))
+    bad = deepcopy(admissions); bad[0]["admitted"] = "2"
+    rejects(lambda: validate_trace(summary, reasons, bad))
+    bad = deepcopy(reasons); bad[0]["loss_safe_unready"] = "0"
+    rejects(lambda: validate_trace(summary, bad, admissions))
+    bad = deepcopy(summary); bad["H28_local"]["high_losses"] = "0"
+    rejects(lambda: validate_trace(bad, reasons, admissions))
+    print("H29_EVIDENCE_SELF_TEST PASS (five malformed-evidence controls)")
+
 def main():
-    if len(sys.argv) != 3:
-        raise SystemExit("usage: harmony_vocalset_qualification.py renderer output_dir")
+    if sys.argv[1:] == ["--self-test"]:
+        self_test()
+        return
+    if len(sys.argv) not in (3, 4):
+        raise SystemExit("usage: harmony_vocalset_qualification.py renderer output_dir [source_sha]")
     renderer, out = str(pathlib.Path(sys.argv[1]).resolve()), pathlib.Path(sys.argv[2])
     out.mkdir(parents=True, exist_ok=True)
     (out/"ATTRIBUTION.txt").write_text(ATTRIBUTION, encoding="utf-8")
@@ -144,6 +297,8 @@ def main():
         writer=csv.DictWriter(f,fieldnames=list(guided[0]))
         writer.writeheader();writer.writerows(guided)
     print(f"H28_GUIDED_COMPLETE clips=2 variants={len(guided)} no_human_rating=true",flush=True)
+    if len(sys.argv) == 4:
+        export_evidence(out, sys.argv[3])
 
 if __name__ == "__main__":
     main()
