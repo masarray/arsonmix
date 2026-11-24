@@ -330,6 +330,8 @@ public:
                                   device->getCurrentBufferSizeSamples());
     }
     juce::String armSecondaryOutput(bool wanted) {
+        if(wanted&&dryRoutingLab_.nativeBusPatchAwaitingCallback())
+            return "Wait for native bus mapping callback readback before arming STREAM";
         if(wanted && (independent_.active() || !directFence_.permitted() ||
            !dryRoutingLab_.hasExplicitRoute() ||
            routeReconfiguring_.load(std::memory_order_acquire) ||
@@ -1545,6 +1547,8 @@ public:
     juce::String setPhysicalExternalOutput(armix::mixer::ChannelId channel,
             std::uint64_t expectedEpoch,std::uint64_t expectedRevision,
             int physicalLeft,int physicalRight,bool confirmed) {
+        if(dryRoutingLab_.nativeBusPatchAwaitingCallback())
+            return "EXTERNAL OUT: wait for native bus mapping callback readback";
         if(independent_.active() || !directFence_.permitted() ||
            routeReconfiguring_.load(std::memory_order_acquire) ||
            handoff_.busy() || savedDirectSetup_ || savedLiveSetup_ ||

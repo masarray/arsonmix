@@ -2380,6 +2380,10 @@
   // second routing state. Repainting only on changes avoids 12 Hz DOM churn.
   function requestExternalOutput(t,label,el=null){
         const previous=t.externalOutput||"None";
+        if(busOutputPending){
+          if(el)el.value=previous;
+          nativeToast("Wait for bus mapping readback");return true;
+        }
         if(typeof label==="string"&&label.startsWith("Preset · ")){
           const alias=stripNamedChoices("output").find(p=>p.label===label);
           if(!alias){if(el)el.value=previous;nativeToast("I/O preset unavailable");return true;}

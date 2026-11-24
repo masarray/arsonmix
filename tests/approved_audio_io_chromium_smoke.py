@@ -119,6 +119,68 @@ def verify_custom_input(page,out):
     assert second["requestId"]!=req["requestId"] and (second["left"],second["right"])==(3,0),second
     assert not errors,errors
 
+def verify_bus_remap(page,out):
+    errors=[]
+    page.on("pageerror",lambda e:errors.append(str(e)))
+    page.add_init_script("""window.__nativeListeners=new Map();window.__actions=[];
+      window.confirm=()=>true;
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
+        addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+      }};""")
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+    state=snapshot()
+    state["productionCallbackLive"]=True
+    state["device"].update(backend="ASIO",captureDevice="Test ASIO",playbackDevice="Test ASIO",
+        outputArmed=True,enabledOutputs=list(range(8)),
+        outputEndpoints=[{"id":"out:"+str(n),"port":n,"callback":n,
+                          "label":"ASIO "+str(n+1),"active":True} for n in range(8)])
+    state.update(physicalMainOutputs=[0,1],physicalMonitorOutputs=[2,3],
+        externalOutputs=[{"channelId":SOURCE,"physicalLeft":6,"physicalRight":7,"status":"LIVE"}],
+        externalRevision="2",physicalBusPatchSupported=True,physicalBusOutputObserved=True,
+        physicalBusSecondaryArmed=False,operatorOutputMuted=False)
+    emit(page,"arMixConsoleSnapshot",state)
+    open_verified_audio_io(page,state,"routing")
+    rows=page.locator("[data-audio-output-grid] tbody tr")
+    main=rows.nth(0);monitor=rows.nth(1)
+    assert main.get_by_label("MAIN assignment",exact=True).count()==0
+    assert main.locator(".armix-patch-cell").nth(0).get_attribute("data-mark")=="L"
+    state["device"]["outputArmed"]=False
+    state["operatorOutputMuted"]=True
+    emit(page,"arMixConsoleSnapshot",state)
+    select=main.get_by_label("MAIN assignment",exact=True)
+    choices=select.locator("option").all_text_contents()
+    assert len(choices)==2 and any(x.startswith("OUT 5/6") for x in choices),choices
+    assert not any(x.startswith(("OUT 3/4","OUT 7/8")) for x in choices),choices
+    select.select_option(label=next(x for x in choices if x.startswith("OUT 5/6")))
+    assert main.locator('[data-draft="true"]').count()==4
+    main.get_by_role("button",name="Apply",exact=True).click()
+    req=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingPhysicalBusOutput').at(-1)")
+    assert req and req["bus"]=="MAIN" and req["confirmed"] is True,req
+    assert (req["previousLeft"],req["previousRight"],req["left"],req["right"])==(0,1,4,5),req
+    assert (req["leftName"],req["rightName"])==("ASIO 5","ASIO 6")
+    emit(page,"arMixPhysicalBusOutputAck",{"requestId":req["requestId"],"ok":True})
+    assert main.locator(".armix-patch-cell").nth(0).get_attribute("data-mark")=="L"
+    state["physicalMainOutputs"]=[4,5]
+    state["physicalBusOutputObserved"]=False
+    emit(page,"arMixConsoleSnapshot",state)
+    assert main.locator('[data-draft="true"]').count()==2
+    assert main.get_by_label("MAIN assignment",exact=True).count()==0
+    state["physicalBusOutputObserved"]=True
+    emit(page,"arMixConsoleSnapshot",state)
+    assert main.locator('[data-draft="true"]').count()==0
+    assert main.locator(".armix-patch-cell").nth(4).get_attribute("data-mark")=="L"
+    assert monitor.locator(".armix-patch-cell").nth(2).get_attribute("data-mark")=="L"
+    assert state["device"]["enabledOutputs"]==list(range(8))
+    # Freed previous MAIN pair becomes a candidate for existing MONITOR.
+    select=monitor.get_by_label("MONITOR assignment",exact=True)
+    choices=select.locator("option").all_text_contents()
+    assert any(x.startswith("OUT 1/2") for x in choices),choices
+    assert not any(x.startswith(("OUT 5/6","OUT 7/8")) for x in choices),choices
+    assert not page.evaluate("()=>window.__actions.some(x=>x.action==='audioDeviceApply')")
+    assert not errors,errors
+
 def main():
     with tempfile.TemporaryDirectory(prefix="armix-audio-io-") as tmp,sync_playwright() as p:
         out=Path(tmp)
@@ -131,7 +193,10 @@ def main():
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_external_output(page,out)
         page.close()
+        page=browser.new_page(viewport={"width":1366,"height":900})
+        verify_bus_remap(page,out)
+        page.close()
         browser.close()
-    print("PASS compiled Audio I/O pin discovery, stereo draft/ACK/readback and external output")
+    print("PASS compiled Audio I/O pin discovery, stereo draft/ACK/readback, external output and muted bus remap")
 
 if __name__=="__main__":main()
