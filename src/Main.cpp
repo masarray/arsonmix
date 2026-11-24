@@ -3110,6 +3110,13 @@ private:
         const auto live=engine_.status();
         o->setProperty("deviceGeneration",live.getProperty("deviceGeneration",0));
         o->setProperty("mainOutputs",live.getProperty("dryRoutingLab",{}).getProperty("mainOutputs",{}));
+        // Read-only snapshot on explicit Audio I/O request. These counters
+        // already exist in the engine; do not add RT work or a polling driver.
+        for(const char* key: {"callbackCount","overBudgetCount","callbackGapCount",
+             "backendXrunCount","backendXrunMeaning","callbackBudgetSamples",
+             "callbackP99BudgetUpperPct","callbackP99BeyondDeadline"})
+            o->setProperty(juce::Identifier(key),live.getProperty(juce::Identifier(key),{}));
+        o->setProperty("bitDepth",device&&device->isOpen()?device->getCurrentBitDepth():0);
         // DAW-style AUDIO SETUP telemetry: JUCE's driver-provided input/output
         // latency hints in SAMPLES, plus the host's current admitted DSP delay.
         // The WebView must never present an untrusted draft as measured audio.
@@ -3417,6 +3424,9 @@ private:
                             // Refresh native physical port inventory after the user
                             // finishes device selection; never require a restart.
                             safe->emitApprovedNativeSnapshot();
+                            // Refresh the cached capabilities after the actual
+                            // JUCE/vendor control panel transaction closes.
+                            safe->emitDeviceInventory(false);
                             // The operator already pressed Play AND chose a
                             // physical output. Finish that exact pending Play
                             // once; never autoplay on ordinary device setup.
@@ -3436,6 +3446,7 @@ private:
                                     ? "Playback unavailable. Mixer and plugin settings are saved."
                                     : "Choose a working stereo output in Audio I/O. Input hardware is optional.", true);
                             safe->emitApprovedNativeSnapshot();
+                            safe->emitDeviceInventory(false);
                         }
                     }, *safe);
             safe->audioSetupWindow_->setVisible (true);

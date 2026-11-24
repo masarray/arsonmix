@@ -2425,6 +2425,15 @@
         <div class="armix-device-note" data-audio-latency aria-label="Driver-reported audio latency">
           Latency · waiting for native device readback
         </div>
+        <label>Sample rate<select data-audio-field="rate"></select></label>
+        <label>Buffer size<select data-audio-field="buffer"></select></label>
+        <div class="armix-device-note" data-audio-period></div>
+        <div class="armix-device-actions">
+          <button type="button" data-audio-driver-panel hidden>ASIO control panel / recovery</button>
+          <button type="button" data-audio-read-health>Refresh audio status</button>
+        </div>
+        <div class="armix-device-note" data-audio-health role="status"></div>
+        <div class="armix-device-note">Start with 48 kHz and 128 or 256 samples if supported. Lower only if monitoring is stable. Driver and FX latency are additional considerations.</div>
         <details data-audio-loopback-details hidden>
           <summary>Wired round-trip calibration · ASIO</summary>
           <div class="armix-loopback-pins">
@@ -2471,18 +2480,29 @@
           <button type="button" data-audio-main-pins hidden>Apply two selected playback pins as MAIN</button>
           <div class="armix-device-note">Select pins, then Apply. Additional pins are not automatically patched to mixer channels or outputs.</div>
         </section>
-        <details><summary>Advanced · rate and buffer</summary>
-          <div class="armix-device-note" data-audio-asio4all-hint hidden>
-            Check ASIO4ALL WDM inputs/outputs before Apply. Different device clocks may drift.
-          </div>
-          <label>Sample rate<select data-audio-field="rate"></select></label>
-          <label>Buffer<select data-audio-field="buffer"></select></label>
-        </details>
+        <div class="armix-device-note" data-audio-asio4all-hint hidden>
+          Check ASIO4ALL WDM inputs/outputs before Apply. Different device clocks may drift.
+        </div>
         <div class="armix-device-actions">
           <button type="button" data-audio-apply>Apply device</button>
           <button type="button" data-audio-remap hidden>Use same pins on this device</button>
         </div></section>`;
       devicePanel.querySelector("[data-audio-close]").onclick=closeNativeAudioIO;
+      // Reuse the serialized JUCE recovery selector (including the vendor's
+      // native ASIO control-panel button), not a second driver instance.
+      devicePanel.querySelector("[data-audio-driver-panel]").onclick=()=>{
+        if(deviceBusy()||!deviceVM.setupPresentation(deviceInventory,deviceChoice,deviceState).driverPanelAvailable)return;
+        deviceChoice=null;
+        closeNativeAudioIO();
+        backend.emitEvent("arMixAction",{action:"audioSetup"});
+      };
+      const readHealth=devicePanel.querySelector("[data-audio-read-health]");
+      readHealth.title="Read current driver and cumulative timing counters; discard unapplied edits. No driver rescan.";
+      readHealth.onclick=()=>{
+        if(deviceBusy())return;
+        deviceState=deviceVM.setupClearResult(deviceState);
+        backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+      };
       devicePanel.addEventListener("click",e=>{
         if(e.target===devicePanel)closeNativeAudioIO();
       });
@@ -2564,13 +2584,39 @@
     const rateSelect=devicePanel.querySelector('[data-audio-field="rate"]');
     const bufferSelect=devicePanel.querySelector('[data-audio-field="buffer"]');
     if(rateSelect){
-      rateSelect.options[0].textContent="Driver default";
+      rateSelect.options[0].textContent="Driver default (AUTO)";
+      for(const option of Array.from(rateSelect.options).slice(1))
+        option.textContent=option.value+" Hz"+(Number(option.value)===active.rate?" · current":"");
       rateSelect.disabled=!view.same||deviceBusy();
     }
     if(bufferSelect){
-      bufferSelect.options[0].textContent="Driver default";
+      bufferSelect.options[0].textContent="Driver default (AUTO)";
+      for(const option of Array.from(bufferSelect.options).slice(1)){
+        const ms=deviceVM.setupBufferPeriod(deviceChoice.rate,Number(option.value));
+        option.textContent=option.value+" samples"+(ms===null?"":" · "+ms.toFixed(2)+" ms")+
+          (Number(option.value)===active.buffer?" · current":"");
+      }
       bufferSelect.disabled=!view.same||deviceBusy();
     }
+    const period=devicePanel.querySelector("[data-audio-period]");
+    if(period)period.textContent=view.draftPeriodMs===null?
+      "Requested period: driver negotiation required":
+      "Requested callback period "+view.draftPeriodMs.toFixed(2)+" ms · not round-trip latency";
+    const panel=devicePanel.querySelector("[data-audio-driver-panel]");
+    if(panel){panel.hidden=!view.driverPanelAvailable;panel.disabled=deviceBusy();}
+    const readHealth=devicePanel.querySelector("[data-audio-read-health]");
+    if(readHealth)readHealth.disabled=deviceBusy();
+    const health=devicePanel.querySelector("[data-audio-health]");
+    const h=deviceVM.setupHealthReadback(active);
+    const metric=v=>v===null?"N/A":String(v);
+    if(health)health.textContent=h?
+      (active.bitDepth>0?active.bitDepth+"-bit · ":"")+
+      "Cumulative timing snapshot · P99 budget "+h.budget+
+      " · deadline misses "+metric(h.overBudget)+" · callback gaps "+metric(h.gaps)+
+      " · driver XRUN "+metric(h.xruns)+
+      (h.discontinuities===null?"":" · capture discontinuities "+h.discontinuities)+
+      " · not a crackle-free guarantee":
+      "Audio health unavailable until a driver is verified.";
     const pinSummary=devicePanel.querySelector("[data-audio-pin-summary]");
     if(pinSummary){
       const a=view.inputInventory,b=view.outputInventory;
@@ -2618,7 +2664,8 @@
             control.checked=selected.includes(index);
             control.disabled=deviceBusy();
             label.append(control,document.createTextNode(
-              (side==="input"?"IN ":"OUT ")+(index+1)+" · "+String(name)));
+              (side==="input"?"IN ":"OUT ")+(index+1)+" · "+
+              (String(name).trim()?String(name):"Unnamed by driver")));
             group.appendChild(label);
           });
           container.appendChild(group);

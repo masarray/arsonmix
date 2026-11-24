@@ -614,3 +614,39 @@ test("Single ASIO SOURCE names preserve driver VC and loopback identity; inactiv
   assert.ok(!options.some(x=>x.mode==="STEREO"&&x.left===4));
   assert.ok(!options.some(x=>x.left===1));
 });
+
+test("Professional I/O pin-only edits preserve negotiated rate and buffer, including omitted advertised values",()=>{
+  const f=fixture(),active={...f.active,rates:[96000,48000,48000,0,NaN],
+    buffers:[128,512,128,0,65536],hasControlPanel:true};
+  const inv={...f.inventory,active},draft=vm.setupDraft(inv);
+  assert.equal(draft.rate,48000);
+  assert.equal(draft.buffer,256);
+  const view=vm.setupPresentation(inv,draft);
+  assert.deepEqual(view.rateOptions,["0","48000","96000"]);
+  assert.deepEqual(view.bufferOptions,["0","128","256","512"]);
+  assert.equal(view.driverPanelAvailable,true);
+  const edited=vm.setupEditDraft(draft,inv,{side:"input",index:2,checked:true});
+  const req=vm.setupBegin(vm.setupInitial(),{inventory:inv,draft:edited,requestId:"pin-only"}).request;
+  assert.equal(req.config.sampleRate,48000);
+  assert.equal(req.config.bufferSize,256);
+  assert.equal(vm.setupBufferPeriod(48000,128),128/48);
+  assert.equal(vm.setupBufferPeriod(0,128),null);
+  assert.equal(vm.setupBegin(vm.setupInitial(),{inventory:inv,draft:{...draft,buffer:999},requestId:"bad"}),null);
+  const auto=vm.setupEditDraft(draft,inv,{field:"buffer",value:"0"});
+  assert.equal(vm.setupBegin(vm.setupInitial(),{inventory:inv,draft:auto,requestId:"auto"}).request.config.bufferSize,0);
+});
+
+test("Professional I/O health evidence never fabricates zero XRUNs or a current P99",()=>{
+  const active={open:true,authorized:true,callbackBudgetSamples:200,
+    callbackP99BudgetUpperPct:75,overBudgetCount:3,callbackGapCount:2,
+    backendXrunMeaning:"UNAVAILABLE",backendXrunCount:null};
+  assert.deepEqual(vm.setupHealthReadback(active),{budget:"≤75%",overBudget:3,
+    gaps:2,xruns:null,discontinuities:null,samples:200});
+  assert.equal(vm.setupHealthReadback({...active,callbackBudgetSamples:0}).budget,"N/A");
+  assert.equal(vm.setupHealthReadback({...active,callbackP99BeyondDeadline:true}).budget,"over deadline");
+  assert.equal(vm.setupHealthReadback({...active,backendXrunMeaning:"DRIVER_DEFINED",backendXrunCount:0}).xruns,0);
+  const wasapi=vm.setupHealthReadback({...active,backendXrunMeaning:"WASAPI_CAPTURE_DISCONTINUITIES_ONLY",backendXrunCount:7});
+  assert.equal(wasapi.xruns,null);
+  assert.equal(wasapi.discontinuities,7);
+  assert.equal(vm.setupHealthReadback({...active,authorized:false}),null);
+});

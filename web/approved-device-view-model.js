@@ -128,7 +128,34 @@
         (type?.separate?type?.outputs?.[0]:capture)||"",
       inputPins:Array.isArray(active.enabledInputs)?active.enabledInputs.slice():null,
       outputPins:Array.isArray(active.enabledOutputs)?active.enabledOutputs.slice():null,
-      rate:0,buffer:0};
+      rate:active.open&&validRate(active.rate)?active.rate:0,
+      buffer:active.open&&validBuffer(active.buffer)?active.buffer:0};
+  }
+  const validRate=v=>Number.isFinite(v)&&v>=8000&&v<=384000;
+  const validBuffer=v=>Number.isSafeInteger(v)&&v>=16&&v<=8192;
+  function formatOptions(reported,current,valid) {
+    // Current negotiated value may be absent from advertised alternatives.
+    const values=Array.isArray(reported)?reported.filter(valid):[];
+    if(valid(current))values.push(current);
+    return ["0",...[...new Set(values)].sort((a,b)=>a-b).map(String)];
+  }
+  function setupBufferPeriod(rate,buffer) {
+    return validRate(rate)&&validBuffer(buffer)?1000*buffer/rate:null;
+  }
+  function setupHealthReadback(active) {
+    if(active?.open!==true||active.authorized!==true)return null;
+    const count=v=>Number.isSafeInteger(v)&&v>=0?v:null;
+    const samples=count(active.callbackBudgetSamples);
+    const p99=Number.isFinite(active.callbackP99BudgetUpperPct)&&
+      active.callbackP99BudgetUpperPct>=0?active.callbackP99BudgetUpperPct:null;
+    const budget=samples>0?(active.callbackP99BeyondDeadline===true?
+      "over deadline":p99===null?"N/A":"≤"+p99.toFixed(0)+"%"):"N/A";
+    const xruns=active.backendXrunMeaning==="DRIVER_DEFINED"?
+      count(active.backendXrunCount):null;
+    const discontinuities=active.backendXrunMeaning==="WASAPI_CAPTURE_DISCONTINUITIES_ONLY"?
+      count(active.backendXrunCount):null;
+    return {budget,overBudget:count(active.overBudgetCount),
+      gaps:count(active.callbackGapCount),xruns,discontinuities,samples};
   }
   // DAW-style read-only latency from the ACTUAL active JUCE device.
   // Driver input/output hints are not an electrical loopback measurement.
@@ -188,8 +215,10 @@
     const same=setupSameEndpoint(active,draft);
     const inputOptions=type?.separate?["",...(type.inputs||[])]:type?.inputs||[];
     const outputOptions=type?.outputs||[];
-    const rates=same?active.rates||[]:[];
-    const buffers=same?active.buffers||[]:[];
+    const rateOptions=same?formatOptions(active.rates,active.rate,validRate):["0"];
+    const bufferOptions=same?formatOptions(active.buffers,active.buffer,validBuffer):["0"];
+    const rateValid=rateOptions.includes(String(draft?.rate??0));
+    const bufferValid=bufferOptions.includes(String(draft?.buffer??0));
     const mainPins=Array.isArray(active.mainOutputs)?active.mainOutputs
       .map(pin=>active.outputNames?.[pin]).filter(Boolean):[];
     const noInput=type?.separate===true&&draft?.capture==="";
@@ -206,12 +235,13 @@
        (!noInput||selectedInputPins.length===0));
     const canApply=Boolean(type && draft?.backend && inputValid&&outputValid&&
       (type.separate===true||draft.capture===draft.playback)&&
-      validSelection);
+      validSelection&&rateValid&&bufferValid);
     const selectedPins=(key,enabled)=>Array.isArray(draft?.[key])?
       draft[key]:Array.isArray(enabled)?enabled:[];
     return {type,same,backendOptions:types.map(t=>t.name),
-      inputOptions,outputOptions,rateOptions:["0",...rates.map(String)],
-      bufferOptions:["0",...buffers.map(String)],
+      inputOptions,outputOptions,rateOptions,bufferOptions,
+      draftPeriodMs:same?setupBufferPeriod(draft.rate,draft.buffer):null,
+      driverPanelAvailable:same&&active.backend==="ASIO"&&active.hasControlPanel===true,
       inputPins:selectedPins("inputPins",active.enabledInputs),
       outputPins:selectedPins("outputPins",active.enabledOutputs),
       inputInventory:same?pinInventory(active,"input"):null,
@@ -484,7 +514,7 @@
   }
   return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,
     externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,
-    pinInventory,setupSelectAllPins,
+    pinInventory,setupSelectAllPins,setupBufferPeriod,setupHealthReadback,
     setupInitial,setupBegin,setupAck,setupReadback,
     setupTimeout,setupClearResult,nativeLifecycleLease,nativeLifecycleDecision,
     nativeTransientReadbackPolicy});
