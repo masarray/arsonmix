@@ -268,6 +268,89 @@ def verify_bus_remap(page,out):
     assert not page.evaluate("()=>window.__actions.some(x=>x.action==='audioDeviceApply')")
     assert not errors,errors
 
+def verify_logical_outputs(page,out):
+    errors=[]
+    page.on("pageerror",lambda e:errors.append(str(e)))
+    page.add_init_script("""window.__nativeListeners=new Map();window.__actions=[];
+      window.confirm=()=>true;
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
+        addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+      }};""")
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+    state=snapshot()
+    state["productionCallbackLive"]=True
+    state["device"].update(backend="ASIO",captureDevice="Test ASIO",playbackDevice="Test ASIO",
+        outputArmed=True,enabledOutputs=list(range(6)),
+        outputEndpoints=[{"id":"out:"+str(n),"port":n,"callback":n,
+            "label":"ASIO "+str(n+1),"active":True} for n in range(6)])
+    state.update(physicalMainOutputs=[0,1],physicalMonitorOutputs=[],
+        externalOutputs=[],externalRevision="2",physicalBusPatchSupported=True,
+        physicalBusOutputObserved=True,physicalBusSecondaryArmed=False,operatorOutputMuted=False,
+        logicalOutputRegistry={"revision":"1","ports":[],"references":[]})
+    emit(page,"arMixConsoleSnapshot",state)
+    open_verified_audio_io(page,state,"routing")
+    page.get_by_text("Session logical outputs",exact=True).click()
+    name=page.get_by_label("Logical output name",exact=True)
+    assert name.is_disabled()
+    state["device"]["outputArmed"]=False
+    state["operatorOutputMuted"]=True
+    emit(page,"arMixConsoleSnapshot",state)
+    name.fill("Stage Amp")
+    page.get_by_role("button",name="Add port",exact=True).click()
+    req=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingLogicalOutputEdit').at(-1)")
+    assert req["operation"]=="ADD" and req["logicalRevision"]=="1"
+    portid="9007199254740999"
+    rev=state["graph"]["revision"]
+    emit(page,"arMixLogicalOutputAck",{"requestId":req["requestId"],"ok":True,
+        "logicalRevision":"2","graphRevision":rev})
+    select=page.get_by_label("Logical output port",exact=True)
+    assert select.locator("option[value='"+portid+"']").count()==0
+    port={"id":portid,"name":"Stage Amp","format":"STEREO","bound":False}
+    state["logicalOutputRegistry"]={"revision":"2","ports":[port],"references":[]}
+    emit(page,"arMixConsoleSnapshot",state)
+    select.select_option(portid)
+    page.get_by_label("Logical output stereo pair",exact=True).select_option("4")
+    page.get_by_role("button",name="Apply output pair",exact=True).click()
+    bind=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingLogicalOutputEdit').at(-1)")
+    assert bind["operation"]=="BIND" and bind["confirmed"] is True
+    assert (bind["left"],bind["right"],bind["leftName"],bind["rightName"])==(4,5,"ASIO 5","ASIO 6")
+    emit(page,"arMixLogicalOutputAck",{"requestId":bind["requestId"],"ok":True,
+        "logicalRevision":"3","graphRevision":rev})
+    port.update(bound=True,left=4,right=5,leftName="ASIO 5",rightName="ASIO 6",
+        backend="ASIO",playback="Test ASIO")
+    state["logicalOutputRegistry"]={"revision":"3","ports":[port],"references":[]}
+    emit(page,"arMixConsoleSnapshot",state)
+    channel=page.get_by_label("Logical output channel",exact=True)
+    channel.select_option(SOURCE)
+    page.get_by_role("button",name="Assign to channel",exact=True).click()
+    assign=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingLogicalOutputEdit').at(-1)")
+    assert assign["operation"]=="ASSIGN" and assign["channelId"]==SOURCE and assign["portId"]==portid
+    emit(page,"arMixLogicalOutputAck",{"requestId":assign["requestId"],"ok":False,"error":"fixture reject"})
+    assert channel.is_enabled()
+    assert "Stage Amp" not in channel.locator("option[value='"+SOURCE+"']").inner_text()
+    page.get_by_role("button",name="Assign to channel",exact=True).click()
+    assign=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingLogicalOutputEdit').at(-1)")
+    new_rev=str(int(rev)+1)
+    emit(page,"arMixLogicalOutputAck",{"requestId":assign["requestId"],"ok":True,
+        "logicalRevision":"4","graphRevision":new_rev})
+    assert "Stage Amp" not in channel.locator("option[value='"+SOURCE+"']").inner_text()
+    state["graph"]["revision"]=new_rev
+    state["mixerSession"]["routeRevision"]=new_rev
+    state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
+    state["logicalOutputRegistry"]={"revision":"4","ports":[port],
+        "references":[{"channelId":SOURCE,"portId":portid,"role":"EXTERNAL","state":"PENDING"}]}
+    state["externalOutputs"]=[{"channelId":SOURCE,"physicalLeft":4,"physicalRight":5,"status":"PENDING"}]
+    state["externalRevision"]=new_rev
+    emit(page,"arMixConsoleSnapshot",state)
+    assert "Stage Amp" in channel.locator("option[value='"+SOURCE+"']").inner_text()
+    row=page.locator("[data-audio-output-grid] tbody tr").filter(has_text="CH03")
+    assert row.get_by_label("CH03 assignment",exact=True).count()==0
+    assert row.locator(".armix-patch-cell").nth(4).get_attribute("data-mark")=="L"
+    assert not page.evaluate("()=>window.__actions.some(x=>x.action==='routingPhysicalExternalOutput')")
+    assert not errors,errors
+
 def main():
     with tempfile.TemporaryDirectory(prefix="armix-audio-io-") as tmp,sync_playwright() as p:
         out=Path(tmp)
@@ -285,6 +368,9 @@ def main():
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_logical_inputs(page,out)
+        page.close()
+        page=browser.new_page(viewport={"width":1366,"height":900})
+        verify_logical_outputs(page,out)
         page.close()
         browser.close()
     print("PASS compiled Audio I/O pin discovery, stereo draft/ACK/readback, external output and muted bus remap")
