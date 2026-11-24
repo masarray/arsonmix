@@ -107,28 +107,56 @@ private:
 // No held absolute vocal sample, extra PCM history or output delay.
 class BackingRenderSeam final {
 public:
+    struct Counts {std::uint64_t losses=0,acquisitions=0;};
     void prepare(double rate) noexcept {
         ramp_=std::max(1,static_cast<int>(std::lround(rate*.003)));
         warm_=std::max(1,static_cast<int>(std::lround(rate*.001)));
-        reset();
+        tangentSamples_=std::max(4,static_cast<int>(std::lround(rate*.0005)));
+        const float first=1.f-1.f/tangentSamples_;
+        tangentNorm_=1.f/(first*first);
+        peakDecay_=static_cast<float>(std::exp(-1./(rate*.010)));
+        counts_={};reset();
     }
-    void reset() noexcept {run_=0;pos_=ramp_;active_=false;last_=start_=0.f;}
-    float process(float carrier,float candidate,bool ready,float blend) noexcept {
+    // Preserve diagnostic counts across ordinary phrase resets.
+    void reset() noexcept {
+        run_=0;pos_=ramp_;active_=false;
+        last_=start_=previous_=peak_=tangent_=0.f;
+    }
+    Counts countsForOfflineTests() const noexcept {return counts_;}
+    float process(float carrier,float candidate,bool ready,float blend,
+                  bool slopeAware=true) noexcept {
         if(ready){if(run_<warm_)++run_;}else run_=0;
         const bool active=run_>=warm_;
-        if(active!=active_){start_=last_;pos_=0;active_=active;}
+        if(active!=active_){
+            start_=last_;pos_=0;active_=active;
+            if(active)++counts_.acquisitions;else ++counts_.losses;
+            // Match outgoing residual slope with a compact 0.5ms tangent.
+            // Bound excursion by the recent envelope, not a global limiter.
+            const float bound=peak_/(.20f*tangentSamples_);
+            tangent_=slopeAware?std::clamp(last_-previous_,-bound,bound):0.f;
+        }
         const float target=active_?blend*(candidate-carrier):0.f;
+        previous_=last_;
         if(pos_<ramp_){
-            const float u=static_cast<float>(pos_++)/ramp_;
+            const int n=pos_++;
+            const float u=static_cast<float>(n)/ramp_;
             const float w=u*u*(3.f-2.f*u);
             last_=start_*(1.f-w)+target*w;
+            if(slopeAware&&n+1<tangentSamples_&&tangent_!=0.f){
+                const float k=static_cast<float>(n+1);
+                const float z=1.f-k/tangentSamples_;
+                last_+=tangent_*k*z*z*tangentNorm_;
+            }
         }else last_=target;
+        if(slopeAware)peak_=std::max(std::abs(last_),peak_*peakDecay_);
         return carrier+last_;
     }
 private:
-    int ramp_=1,warm_=1,run_=0,pos_=1;
+    int ramp_=1,warm_=1,run_=0,pos_=1,tangentSamples_=4;
     bool active_=false;
-    float last_=0.f,start_=0.f;
+    float last_=0.f,start_=0.f,previous_=0.f,peak_=0.f,tangent_=0.f;
+    float tangentNorm_=1.f,peakDecay_=0.f;
+    Counts counts_{};
 };
 // Two independent fractional delay heads. Integrate delay velocity instead
 // of multiplying a moving pitch ratio by grain age (which adds a spurious
@@ -250,7 +278,8 @@ public:
         for(auto& seam:backingSeams_)seam.prepare(rate);
         continuityReferenceEnabled_=true;supportReferenceEnabled_=true;
         naturalReferenceEnabled_=true;backingContour_.prepare(detectEvery_/rate);
-        carrierReferenceEnabled_=true;for(auto& carrier:carriers_)carrier.reset();
+        carrierReferenceEnabled_=true;slopeReferenceEnabled_=true;
+        for(auto& carrier:carriers_)carrier.reset();
         periodContinuity_.reset();
         sourcePeriodSamples_=0.f;sourceConfidence_=0.f;sampleClock_=0;
         uncertainPitchHops_=0;weakSyncHops_=0;pitchSyncStable_=false;
@@ -475,6 +504,15 @@ public:
     }
     // Exact H14 reference for matched acoustic regression only.
     // Exact H15 carrier reference; offline before the first PCM only.
+    bool setSlopeForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        slopeReferenceEnabled_=enabled;return true;
+    }
+    BackingRenderSeam::Counts seamCountsForOfflineTests(int voice) const noexcept {
+        return voice>=0&&voice<maxVoices?
+            backingSeams_[static_cast<std::size_t>(voice)].countsForOfflineTests():
+            BackingRenderSeam::Counts{};
+    }
     bool setCarrierForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
         carrierReferenceEnabled_=enabled;return true;
@@ -849,7 +887,7 @@ private:
         blend+=pitchSyncAlpha_*((confident?1.f:0.f)-blend);
         const float windowedSync=colorState*valid+f*(1.f-valid);
         y=continuityReferenceEnabled_?backingSeams_[ix].process(f,colorState,sync.ready,
-            blend*(supportReferenceEnabled_?sync.coverage:1.f)):
+            blend*(supportReferenceEnabled_?sync.coverage:1.f),slopeReferenceEnabled_):
             f*(1.f-blend)+windowedSync*blend;
         phase_[ix]+=1.f/static_cast<float>(grain_);
         if(phase_[ix]>=1.f)phase_[ix]-=1.f;
@@ -1111,7 +1149,7 @@ private:
     BackingArticulation articulation_{};
     std::array<BackingRenderSeam,maxVoices> backingSeams_{};
     bool continuityReferenceEnabled_=true,supportReferenceEnabled_=true;
-    bool naturalReferenceEnabled_=true,carrierReferenceEnabled_=true;
+    bool naturalReferenceEnabled_=true,carrierReferenceEnabled_=true,slopeReferenceEnabled_=true;
     BackingPitchContour backingContour_{};
     std::array<PhaseCoherentCarrier,maxVoices> carriers_{};
     std::array<float,maxVoices> pitchSyncBlend_{},pitchSyncFiltered_{},pitchSyncValid_{};

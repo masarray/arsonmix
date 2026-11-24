@@ -88,7 +88,7 @@ static void writeWave(const fs::path& path,const Wave& wave){
 }
 static Wave process(const Wave& input,Settings settings,bool synchronous,int block=127,
                     bool enhancedDepth=true,bool focus=true,bool presence=true,
-                    bool articulation=true,bool continuity=true,bool support=true,bool natural=true,bool carrier=true){
+                    bool articulation=true,bool continuity=true,bool support=true,bool natural=true,bool carrier=true,bool slope=true){
     auto e=std::make_unique<Engine>();
     if(!e->prepare(input.rate)||!e->setSettings(settings))
         throw std::runtime_error("native Harmony configuration invalid");
@@ -96,7 +96,8 @@ static Wave process(const Wave& input,Settings settings,bool synchronous,int blo
         throw std::runtime_error("H9 reference rejected");
     if(!e->setContinuityForOfflineReference(continuity)||
        !e->setSupportForOfflineReference(support)||
-       !e->setNaturalForOfflineReference(natural)||!e->setCarrierForOfflineReference(carrier))
+       !e->setNaturalForOfflineReference(natural)||!e->setCarrierForOfflineReference(carrier)||
+       !e->setSlopeForOfflineReference(slope))
         throw std::runtime_error("continuity reference rejected");
     e->setPitchSynchronousCandidateForOfflineReference(synchronous);
     e->setStageDepthForOfflineReference(enhancedDepth);
@@ -127,12 +128,12 @@ static Wave subtract(const Wave& x,const Wave& y){
 // and the identical dry lead, then set only that role's prepared output gains
 // to zero for every other singer. No browser masks or in-place muting.
 static Wave roleStem(const Wave& input,Settings settings,
-                     int singerIndex,const Wave& dry,bool natural=true,bool carrier=true){
+                     int singerIndex,const Wave& dry,bool natural=true,bool carrier=true,bool slope=true){
     if(singerIndex<0||singerIndex>=Engine::maxVoices)
         throw std::runtime_error("invalid solo Harmony role");
     auto e=std::make_unique<Engine>();
     Engine::PreparedSettings prepared{};
-    if(!e->prepare(input.rate)||!e->setNaturalForOfflineReference(natural)||!e->setCarrierForOfflineReference(carrier)||
+    if(!e->prepare(input.rate)||!e->setNaturalForOfflineReference(natural)||!e->setCarrierForOfflineReference(carrier)||!e->setSlopeForOfflineReference(slope)||
        !Engine::prepareSettings(settings,prepared))
         throw std::runtime_error("cannot prepare singer solo");
     for(int i=0;i<Engine::maxVoices;++i)
@@ -420,9 +421,9 @@ static void continuityReport(const Wave& input,const fs::path& folder,Settings s
           "wet_max_step,wet_step_rms,wet_step_over_rms,mix_peak,mix_overload_samples\n";
     const auto window=std::max<std::size_t>(1,input.rate/100);
     const double delay=std::lround(input.rate*.024)/double(input.rate);
-    for(int version:{12,13,14,15,16}){
+    for(int version:{12,13,14,15,16,17}){
         const auto mix=process(input,s,true,127,true,true,true,true,
-                               version>=13,version>=14,version>=15,version>=16);
+                               version>=13,version>=14,version>=15,version>=16,version>=17);
         const auto backing=subtract(mix,dry);
         const auto tag="h"+std::to_string(version);
         writeWave(folder/(tag+"_mix.wav"),mix);
@@ -441,9 +442,9 @@ static void continuityReport(const Wave& input,const fs::path& folder,Settings s
             }
         }
     }
-    for(int version:{14,15,16})for(int role=0;role<Engine::maxVoices;++role)
+    for(int version:{14,15,16,17})for(int role=0;role<Engine::maxVoices;++role)
         writeWave(folder/("h"+std::to_string(version)+"_role_"+std::to_string(role)+".wav"),
-                  roleStem(input,s,role,dry,version>=15,version>=16));
+                  roleStem(input,s,role,dry,version>=15,version>=16,version>=17));
     if(!csv)throw std::runtime_error("continuity report write failed");
 }
 int main(int argc,char** argv){
@@ -538,7 +539,7 @@ int main(int argc,char** argv){
             Settings s;s.key=std::stoi(argv[4]);s.scale=std::stoi(argv[5]);
             s.voices=std::stoi(argv[6]);s.wet=1.f;s.space=1.f;s.color=.78f;
             continuityReport(readWave(argv[2]),argv[3],s);
-            std::cout<<"H12/H13/H14/H15/H16 matched manual-key WAV and per-ear CSV written; no acoustic qualification implied.\n";
+            std::cout<<"H12/H13/H14/H15/H16/H17 matched manual-key WAV and per-ear CSV written; no acoustic qualification implied.\n";
             return 0;
         }
         if(argc==6&&std::string(argv[1])=="--lead-tune"){

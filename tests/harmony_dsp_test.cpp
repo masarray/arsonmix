@@ -843,6 +843,55 @@ static void testLowerPresenceAndPresets(){
     need(after>before+3.&&after>-12.&&after<2.,"H12 preset audibility");
   }
 }
+// Force loss at eight phase positions and measure the immediate slope
+// discontinuity, not the ordinary derivative of a sung waveform.
+static void testSlopeAwareSeam(){
+    constexpr double tau=6.283185307179586;
+    for(int rate:{32000,48000,96000,192000}){
+      double oldError=0.,newError=0.,worstPeak=0.;int cases=0;
+      for(int hz:{220,440,880})for(int phase=0;phase<8;++phase){
+        BackingRenderSeam old{},now{};old.prepare(rate);now.prepare(rate);
+        float prev=0.f,last=0.f;
+        for(int i=0;i<rate/20;++i){
+          const float x=.2f*static_cast<float>(std::sin(tau*hz*i/rate+tau*phase/8));
+          prev=last;last=old.process(0.f,x,true,1.f,false);
+          need(last==now.process(0.f,x,true,1.f,true)||i<rate/100,
+               "H17 settled PCM changed");
+        }
+        const float a=old.process(0.f,0.f,false,1.f,false);
+        const float b=now.process(0.f,0.f,false,1.f,true);
+        oldError+=std::abs(a-2.f*last+prev);
+        newError+=std::abs(b-2.f*last+prev);
+        worstPeak=std::max(worstPeak,double(std::abs(b)));
+        for(int i=0;i<rate/100;++i){
+          const float y=now.process(0.f,0.f,false,1.f,true);
+          need(std::isfinite(y)&&std::abs(y)<.41f,"H17 tangent overshoot");
+          worstPeak=std::max(worstPeak,double(std::abs(y)));
+        }
+        need(now.process(.1f,0.f,false,1.f,true)==.1f,"H17 fallback endpoint");
+        for(int i=0;i<rate/100;++i)now.process(.1f,-.2f,true,1.f,true);
+        need(std::abs(now.process(.1f,-.2f,true,1.f,true)+.2f)<1.e-6f,
+             "H17 reacquisition endpoint");
+        const auto c=now.countsForOfflineTests();
+        need(c.losses==1&&c.acquisitions==2,"H17 event count");
+        now.reset();
+        need(now.process(.1f,0.f,false,1.f,true)==.1f&&
+             now.countsForOfflineTests().losses==1,"H17 phrase reset");
+        ++cases;
+      }
+      BackingRenderSeam chatter;chatter.prepare(rate);
+      for(int i=0;i<rate/4;++i){
+        const float c=.25f*static_cast<float>(std::sin(tau*220*i/rate));
+        const bool ready=i%(rate/200)<rate/300;
+        const float y=chatter.process(c,-c,ready,1.f,true);
+        need(std::isfinite(y)&&std::abs(y)<1.f,"H17 chatter bound");
+      }
+      std::cout<<"H17_SEAM rate="<<rate<<" cases="<<cases
+               <<" old_slope_error="<<oldError<<" new_slope_error="<<newError
+               <<" peak="<<worstPeak<<std::endl;
+      need(oldError>.001&&newError<oldError*.10,"H17 boundary slope not improved");
+    }
+}
 static void testBackingContinuity(){
   constexpr double tau=6.283185307179586;
   // Isolate readiness loss/re-entry without the detector obscuring it.
@@ -883,13 +932,14 @@ static void testBackingContinuity(){
          +.065*std::sin(3*phase+1.1)+.026*std::sin(5*phase+.6);
       src.left[i]=src.right[i]=static_cast<float>(gap?.08*noise:x);
     }
-    auto run=[&](bool modern,bool wet,int block,bool support=true,bool natural=false,bool carrier=false){
+    auto run=[&](bool modern,bool wet,int block,bool support=true,bool natural=false,bool carrier=false,bool slope=false){
       auto e=std::make_unique<Engine>();Settings s;
       s.voices=voices;s.wet=wet?1.f:0.f;s.color=.78f;s.space=1.f;
       s.guideMode=1;s.guideChannelId=2;
       need(e->prepare(rate)&&e->setContinuityForOfflineReference(modern)&&
            e->setSupportForOfflineReference(support)&&e->setNaturalForOfflineReference(natural)&&
-           e->setCarrierForOfflineReference(carrier)&&e->setSettings(s),"H13 setup");
+           e->setCarrierForOfflineReference(carrier)&&e->setSlopeForOfflineReference(slope)&&
+           e->setSettings(s),"H13 setup");
       auto out=src;
       for(int at=0;at<n;){
         // Split at control events; callback partition must not move them.
@@ -899,6 +949,15 @@ static void testBackingContinuity(){
         const int boundary=at<2*rate?2*rate:at<3*rate?3*rate:n;
         const int count=std::min(block,boundary-at);
         e->process(out.left.data()+at,out.right.data()+at,count);at+=count;
+      }
+      if(slope&&wet&&block==127){
+        std::uint64_t losses=0,acquisitions=0;
+        for(int v=0;v<Engine::maxVoices;++v){
+          const auto c=e->seamCountsForOfflineTests(v);
+          losses+=c.losses;acquisitions+=c.acquisitions;
+        }
+        std::cout<<"H17_EVENTS rate="<<rate<<" voices="<<voices
+                 <<" losses="<<losses<<" acquisitions="<<acquisitions<<std::endl;
       }
       return out;
     };
@@ -915,6 +974,33 @@ static void testBackingContinuity(){
     need(h16.left==h16Split.left&&h16.right==h16Split.right,"H16 block parity");
     const auto dry16=run(true,false,127,true,true,true);
     need(dry16.left==dry.left&&dry16.right==dry.right,"H16 dry changed");
+    const auto h17=run(true,true,127,true,true,true,true);
+    const auto h17Split=run(true,true,64,true,true,true,true);
+    need(h17.left==h17Split.left&&h17.right==h17Split.right,"H17 block parity");
+    const auto dry17=run(true,false,127,true,true,true,true);
+    need(dry17.left==dry.left&&dry17.right==dry.right,"H17 dry changed");
+    for(int ch:{0,1}){
+      const auto& a=ch?h16.right:h16.left;const auto& b=ch?h17.right:h17.left;
+      const auto& d=ch?dry.right:dry.left;
+      double ea=0.,eb=0.,ma=0.,mb=0.;
+      std::vector<double> sa,sb;
+      for(int i=rate/2;i<n;++i){
+        const double x=a[i]-d[i],y=b[i]-d[i];
+        need(std::isfinite(y),"H17 nonfinite backing");ea+=x*x;eb+=y*y;
+        const double da=std::abs(x-(a[i-1]-d[i-1])),db=std::abs(y-(b[i-1]-d[i-1]));
+        ma=std::max(ma,da);mb=std::max(mb,db);sa.push_back(da);sb.push_back(db);
+      }
+      const auto k=static_cast<std::size_t>(.999*(sa.size()-1));
+      std::nth_element(sa.begin(),sa.begin()+k,sa.end());
+      std::nth_element(sb.begin(),sb.begin()+k,sb.end());
+      const double gain=10.*std::log10(eb/ea),norm=std::sqrt(ea/eb);
+      const double maxRatio=mb/ma*norm,pRatio=sb[k]/sa[k]*norm;
+      std::cout<<"H17_PCM rate="<<rate<<" voices="<<voices<<" ch="<<ch
+               <<" wet_dB="<<gain<<" normalized_max_ratio="<<maxRatio
+               <<" normalized_p999_ratio="<<pRatio<<std::endl;
+      need(ea>1.&&eb>1.&&std::abs(gain)<.5&&maxRatio<1.15&&pRatio<1.10,
+           "H17 backing continuity regression");
+    }
     for(int ch:{0,1}){
       const auto& a=ch?h15.right:h15.left;const auto& b=ch?h16.right:h16.left;
       const auto& d=ch?dry.right:dry.left;
@@ -1442,6 +1528,7 @@ static void testBackingPitchContour(){
     }
 }
 int main(){
+    testSlopeAwareSeam();
     testPhaseCoherentCarrier();
     testBackingPitchContour();
   testCorrelationPerformance();
