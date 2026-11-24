@@ -37,6 +37,7 @@ public:
         ready_=dsp_.prepare(rate)&&guide_.prepare(rate)&&dsp_.setSettings(accepted_);
         guideSource_.store(accepted_.guideMode==1?accepted_.guideChannelId:0,
                            std::memory_order_release);
+        observedNote_.store(-1,std::memory_order_relaxed);
         guideAge_=0;guideObservedKey_.store(-1,std::memory_order_relaxed);
         guideObservedScale_.store(-1,std::memory_order_relaxed);
         guideConfidence_.store(0.f,std::memory_order_relaxed);
@@ -194,7 +195,13 @@ public:
         juce::MemoryInputStream stream(bytes,static_cast<std::size_t>(len),false);
         if(stream.readInt()!=0x41484d31)return false;
         const int version=stream.readInt();
+        // JUCE stream reads can return zero on EOF. Position==length alone
+        // is insufficient: a truncated final float/int could become valid 0.
+        // AHM1 is fixed-width little-endian with a single byte bool.
         if(version!=1&&version!=2&&version!=3)return false;
+        const int expectedBytes=version==1?37:version==2?49:53;
+        if(len!=expectedBytes || static_cast<const unsigned char*>(bytes)[20]>1)
+            return false;
         armix::harmony::Settings incoming{};
         incoming.key=stream.readInt();incoming.scale=stream.readInt();
         incoming.voices=stream.readInt();incoming.correction=stream.readBool();
