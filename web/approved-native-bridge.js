@@ -1135,6 +1135,7 @@
     const assignments=Array.isArray(next?.raw?.externalOutputs)?
       next.raw.externalOutputs:[];
     const choices=hardwareOutputPairs();
+    const named=stripNamedChoices("output").map(p=>p.label);
     for(const t of scope?.tracks||[]) {
       const id=nativeIdFor(t);
       const row=assignments.find(p=>p.channelId===id);
@@ -1145,7 +1146,7 @@
       const select=document.querySelector('.strip[data-id="'+t.id+
         '"] select[data-field="external"]');
       if(!select?.dataset)continue; // headless contract mocks may omit DOM dataset
-      const labels=choices.map(p=>p.label);
+      const labels=[...choices.map(p=>p.label),...named];
       if(!labels.includes(value))labels.push(value);
       const signature=labels.join("|");
       if(select.dataset.choices!==signature){
@@ -1443,6 +1444,7 @@
       nativeUiSourcePending=null;
       status("CH "+(pending.channel+1)+" INPUT timeout · native state preserved");
     }
+    paintPhysicalOutputs(hardware);
     controller?.subscribe(); // next source waits for authoritative callback
   }
   // MV-15: one UI settlement owner after strict per-authority native PCM
@@ -1469,6 +1471,7 @@
       if(verdict==="CONFIRMED"&&pendingSourceQueue.size)
         window.queueMicrotask(dispatchQueuedSource);
     }
+    paintPhysicalOutputs(hardware);
     return verdict;
   }
   // MV-16: one lease owner handles both SOURCE ACK formats, but neither
@@ -1493,6 +1496,7 @@
     }else{
       status("NATIVE INPUT REJECTED · "+(ack?.error||"stale routing"));
     }
+    paintPhysicalOutputs(hardware);
     controller?.subscribe();
     return true;
   }
@@ -2376,6 +2380,11 @@
   // second routing state. Repainting only on changes avoids 12 Hz DOM churn.
   function requestExternalOutput(t,label,el=null){
         const previous=t.externalOutput||"None";
+        if(typeof label==="string"&&label.startsWith("Preset · ")){
+          const alias=stripNamedChoices("output").find(p=>p.label===label);
+          if(!alias){if(el)el.value=previous;nativeToast("I/O preset unavailable");return true;}
+          label=alias.choice.label;
+        }
         const id=nativeIdFor(t);
         // One pure Channel Strip preflight for ASIO port identity and
         // shared-output confirmation; only this bridge dispatches native.
@@ -2405,6 +2414,7 @@
         window.setTimeout(()=>{
           if(pendingExternal.get(id)?.requestId!==requestId)return;
           pendingExternal.delete(id);el?.removeAttribute("aria-busy");
+          paintPhysicalOutputs(hardware);
           nativeToast("EXTERNAL OUT timed out · last PCM retained");
           controller?.subscribe();
         },8000);
@@ -2460,15 +2470,39 @@
   }
   let namedPatchSerial=0,namedPatchPending=null;
   function namedPatchChoices(side,model,next){
-    const entries=deviceInventory?.namedPatches?.entries;
-    if(!Array.isArray(entries)||!matrixReady(next))return [];
-    return entries.filter(p=>p?.side===side&&p.available===true&&typeof p.id==="string"&&
-        model.pins.some(pin=>pin.port===p.left&&pin.label===p.leftName)&&
-        (p.right===-1||model.pins.some(pin=>pin.port===p.right&&pin.label===p.rightName)))
-      .map(p=>({id:p.id,name:p.name,choice:side==="input"?
-        deviceVM.physicalInputChoice(next,p.mode,p.left,p.right):
-        model.choices.find(x=>x.left===p.left&&x.right===p.right)}))
-      .filter(p=>p.choice);
+    return matrixReady(next)?deviceVM.namedPatchChoices(deviceInventory,next,side):[];
+  }
+  function stripNamedChoices(side){
+    if(namedPatchPending||deviceBusy()||hardware?.retained||logicalView)return [];
+    return deviceVM.namedPatchChoices(deviceInventory,hardware,side);
+  }
+  // Update only options on mounted inputs. NativeHooks covers strips that
+  // are mounted later by bank/roster projection. Never replace a fader or
+  // an active select; stale selection still fails exact admission on change.
+  function syncNamedInputOptions(){
+    const labels=stripNamedChoices("input").map(p=>p.label);
+    for(const t of scope?.tracks||[]){
+      if(t.kind!=="audio")continue;
+      const el=document.querySelector('.strip[data-id="'+t.id+'"] select[data-field="input"]');
+      if(!el?.options||document.activeElement===el)continue;
+      const current=[...el.options].filter(o=>o.value.startsWith("Preset · "));
+      if(current.length===labels.length&&current.every((o,i)=>o.value===labels[i]))continue;
+      for(const o of current)o.remove();
+      for(const label of labels)el.append(new Option(label,label));
+    }
+  }
+  let namedInventoryLease="";
+  function requestNamedInventory(next){
+    // One cached inventory request per installed device lease, not a scan
+    // and never a polling operation. Open dialog owns its own inventory.
+    if(!connected||next?.retained||!next?.hardwareConfiguration||
+       !next.device?.epoch||(!next.admitted&&next.raw?.legacyM4?.active!==true)||
+       (devicePanel&&!devicePanel.hidden)||deviceBusy())return;
+    const lease=next.hardwareConfiguration+"|"+next.device.epoch;
+    if(namedInventoryLease===lease)return;
+    namedInventoryLease=lease;
+    if(!deviceVM.setupMatrixDeviceMatches(deviceInventory,next))
+      backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
   }
   function renderNamedPatchEditor(host,side,model,next,busy){
     const data=deviceInventory?.namedPatches;
@@ -2521,20 +2555,21 @@
       const a=deviceInventory.active,c=choice();
       if(operation==="SAVE"&&!c)return;
       const requestId="io-preset-"+(++namedPatchSerial);
-      namedPatchPending={requestId,phase:"APPLYING",revision:data.revision};
-      backend.emitEvent("arMixAction",{action:"audioNamedPatchEdit",requestId,operation,
-        revision:data.revision,deviceGeneration:a.deviceGeneration,backend:a.backend,
-        captureDevice:a.captureDevice,playbackDevice:a.playbackDevice,
+      const payload={operation,revision:data.revision,deviceGeneration:a.deviceGeneration,
+        backend:a.backend,captureDevice:a.captureDevice,playbackDevice:a.playbackDevice,
         id:existing.value,side,name:name.value.trim(),mode:mode.value,
         left:c?.left??-1,right:c?.right??-1,
         leftName:model.pins.find(p=>p.port===c?.left)?.label||"",
-        rightName:model.pins.find(p=>p.port===c?.right)?.label||""});
+        rightName:model.pins.find(p=>p.port===c?.right)?.label||""};
+      namedPatchPending={requestId,phase:"APPLYING",revision:data.revision,payload};
+      backend.emitEvent("arMixAction",{action:"audioNamedPatchEdit",requestId,...payload});
       paintPhysicalOutputs(hardware);
       window.setTimeout(()=>{
         if(namedPatchPending?.requestId!==requestId)return;
         namedPatchPending=null;
         // Do not continue to offer stale choices after uncertain disk commit.
         if(deviceInventory)deviceInventory={...deviceInventory,namedPatches:null};
+        syncNamedInputOptions();paintExternalReadback(hardware);
         nativeToast("I/O preset confirmation timed out · reopen Audio I/O");
         paintPhysicalOutputs(hardware);
       },5000);
@@ -2906,6 +2941,7 @@
     loopbackField("confirmed").checked=false;
     for(const side of ["input","output"])loopbackField(side).disabled=false;
     devicePanel.hidden=true;
+    syncNamedInputOptions();paintExternalReadback(hardware);
     for(const host of devicePanel.querySelectorAll("[data-audio-input-grid],[data-audio-output-grid]"))
       delete host.dataset.signature;
   }
@@ -3475,12 +3511,18 @@
       const a=deviceInventory?.active,b=message.active,data=message.namedPatches;
       const same=a&&b&&["backend","captureDevice","playbackDevice","deviceGeneration","rate","buffer"]
         .every(k=>a[k]===b[k])&&deviceVM.setupMatrixDeviceMatches({active:b},hardware);
-      if(!same||!Number.isSafeInteger(data?.revision)||data.revision<=namedPatchPending.revision||
+      if(!same||data?.revision!==namedPatchPending.revision+1||
          !Array.isArray(data.entries))return;
+      const wanted=namedPatchPending.payload;
+      const proved=wanted.operation==="REMOVE"?!data.entries.some(p=>p.id===wanted.id):
+        data.entries.some(p=>(!wanted.id||p.id===wanted.id)&&
+          ["side","name","mode","left","right","leftName","rightName"].every(k=>p[k]===wanted[k]));
+      if(!proved)return;
       namedPatchPending=null;
       // Refresh only this independent metadata, not the current device draft.
       deviceInventory={...deviceInventory,namedPatches:data};
       nativeToast("I/O preset saved");
+      syncNamedInputOptions();paintExternalReadback(hardware);
       paintPhysicalOutputs(hardware);
     });
   }
@@ -3526,6 +3568,7 @@
       deviceInventory=inventory;
       deviceChoice=null;
       renderDevicePanel();
+      syncNamedInputOptions();paintExternalReadback(hardware);
       paintPhysicalOutputs(hardware);
       if(devicePanel&&!devicePanel.hidden&&devicePanel.dataset.openPinsAfterInventory==="true"){
         delete devicePanel.dataset.openPinsAfterInventory;
@@ -3814,6 +3857,7 @@
         const select=track&&document.querySelector('.strip[data-id="'+track.id+
           '"] select[data-field="external"]');
         select?.removeAttribute("aria-busy");
+        paintPhysicalOutputs(hardware);
         nativeToast(error);status(error);controller?.subscribe();return;
       }
       transaction.acked=true;
@@ -3999,6 +4043,11 @@
     appearanceFromNative(next);
     settleSourceReadback("CHANNEL_ID",next);
     settleSourceReadback("M4",next);
+    // Reconcile pending leases before the final matrix paint. The graph
+    // can be installed while the prior paint still sees a busy SOURCE.
+    paintPhysicalOutputs(next);
+    requestNamedInventory(next);
+    syncNamedInputOptions();
     if(readModel.kind==="LOGICAL_ONLY"||readModel.kind==="RETAINED_OFFLINE") {
       const staged=readModel.view;
       let revealCreatedId=null,wireImpact=null;
@@ -4651,11 +4700,13 @@
     orbitTarget:nativeOrbitTarget,
     orbitAction:nativeOrbitAction,
     inputChoices(t) {
-      return stripVM.inputChoices(t,sourceChoicesFor(),
+      const labels=stripVM.inputChoices(t,sourceChoicesFor(),
         controller?.state()?.current?.retained,!(!logicalView),INTERNAL_BUS);
+      return t?.kind==="audio"?[...labels,...stripNamedChoices("input").map(p=>p.label)]:labels;
     },
     externalChoices(t) {
-      return stripVM.externalChoices(t,hardwareOutputPairs());
+      const labels=stripVM.externalChoices(t,hardwareOutputPairs());
+      return t?.kind!=="master"?[...labels,...stripNamedChoices("output").map(p=>p.label)]:labels;
     },
     outputChoices(t) {
       return stripVM.primaryChoices({track:t,logical:Boolean(logicalView),
@@ -4760,8 +4811,10 @@
         if(event.type!=="change")return true;
         const channel=m4Index(t);
         const nativeOwner=mixerSession()?.authority==="CHANNEL_ID";
-        const choices=nativeOwner?sourceChoicesFor():inputChoicesFor();
-        const choice=choices.find(x=>x.label===el.value);
+        const alias=stripNamedChoices("input").find(p=>p.label===el.value);
+        const choices=verifiedMatrixSourceChoices(
+          nativeOwner?sourceChoicesFor():inputChoicesFor(),alias?.choice,hardware);
+        const choice=choices.find(x=>x.label===(alias?.choice.label||el.value));
         if(choice?.mode==="PLAYER"&&!nativeOwner){
           status("Music Player INPUT requires a live admitted ChannelId mixer; no WebAudio/ASIO-pin fallback");
           el.value=t.input;return true;

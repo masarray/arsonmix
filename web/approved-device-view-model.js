@@ -650,7 +650,34 @@
       return Object.freeze({kind:"AUTHORITY_CHANGED",expirePending:true});
     return Object.freeze({kind:"SAME",expirePending:false});
   }
-  return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,patchMatrix,physicalInputChoice,
+  // Named shortcuts are presentation of native disk inventory, not source
+  // bindings. Resolve the current exact physical choice before dispatch.
+  function namedPatchChoices(inventory,snapshot,side){
+    const data=inventory?.namedPatches;
+    if(!Array.isArray(data?.entries)||data.readOnly===true||
+       !Number.isSafeInteger(data.revision)||data.revision<0||
+       !setupMatrixDeviceMatches(inventory,snapshot)||
+       (side!=="input"&&side!=="output"))return [];
+    const d=snapshot.device;
+    const pins=side==="input"?activeInputPins(snapshot):
+      d.outputEndpoints.filter(p=>p.active===true&&d.enabledOutputs.includes(p.port));
+    const physical=side==="output"?outputChoices(snapshot):[];
+    const pinMatches=(port,label)=>typeof label==="string"&&label.length>0&&
+      pins.some(p=>p.port===port&&p.label===label);
+    const result=[];
+    for(const p of data.entries){
+      if(!p||p.side!==side||p.available!==true||typeof p.id!=="string"||!p.id||
+         typeof p.name!=="string"||!p.name.trim()||
+         !pinMatches(p.left,p.leftName)||
+         (p.right!==-1&&!pinMatches(p.right,p.rightName)))continue;
+      const choice=side==="input"?physicalInputChoice(snapshot,p.mode,p.left,p.right):
+        p.mode==="STEREO"?physical.find(x=>x.left===p.left&&x.right===p.right):null;
+      if(!choice||choice.left<0)continue;
+      result.push({id:p.id,name:p.name,choice,label:"Preset · "+p.name+" · "+choice.label});
+    }
+    return result.filter(p=>result.filter(q=>q.id===p.id||q.label===p.label).length===1);
+  }
+  return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,patchMatrix,physicalInputChoice,namedPatchChoices,
     externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,setupRoutingReady,setupPinsApplied,setupMatrixDeviceMatches,
     pinInventory,setupSelectAllPins,setupBufferPeriod,setupHealthReadback,
     setupInitial,setupBegin,setupAck,setupReadback,

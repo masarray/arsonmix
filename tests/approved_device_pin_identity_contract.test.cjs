@@ -771,3 +771,21 @@ test("Custom stereo supports sparse/reversed physical pins, rejects duplicate or
  assert.equal(strip.sourceChoiceMatches(choice,[choice]),true);
  assert.equal(strip.sourceChoiceMatches({...choice,right:3},[{...choice,right:3}]),false);
 });
+
+test("Named patch projection rejects renamed pins, wrong device, disabled pins and reserved outputs",()=>{
+ const {inventory}=fixture(),a=inventory.active;
+ const d={epoch:"41",backend:a.backend,captureDevice:a.captureDevice,playbackDevice:a.playbackDevice,
+   sampleRate:a.rate,bufferFrames:a.buffer,enabledInputs:a.enabledInputs,enabledOutputs:a.enabledOutputs,
+   inputEndpoints:a.inputNames.map((label,port)=>({label,port,active:a.enabledInputs.includes(port)})),
+   outputEndpoints:a.outputNames.map((label,port)=>({label,port,active:a.enabledOutputs.includes(port)}))};
+ const entry={id:"preset-1",name:"Vocal",side:"input",mode:"MONO",left:0,right:-1,leftName:"Mic 1",rightName:"",available:true};
+ const data={...inventory,namedPatches:{revision:1,readOnly:false,entries:[entry]}};
+ const snap={device:d,raw:{physicalMainOutputs:[0,1]}};
+ assert.equal(vm.namedPatchChoices(data,snap,"input")[0].choice.left,0);
+ assert.match(vm.namedPatchChoices(data,snap,"input")[0].label,/Preset · Vocal/);
+ assert.deepEqual(vm.namedPatchChoices(data,{...snap,retained:true},"input"),[]);
+ assert.deepEqual(vm.namedPatchChoices(data,{...snap,device:{...d,captureDevice:"Other"}},"input"),[]);
+ assert.deepEqual(vm.namedPatchChoices({...data,namedPatches:{...data.namedPatches,entries:[{...entry,leftName:"Old Mic"}]}},snap,"input"),[]);
+ const out={...entry,id:"out",side:"output",mode:"STEREO",left:0,right:1,leftName:"Main L",rightName:"Main R"};
+ assert.deepEqual(vm.namedPatchChoices({...data,namedPatches:{...data.namedPatches,entries:[out]}},snap,"output"),[]);
+});

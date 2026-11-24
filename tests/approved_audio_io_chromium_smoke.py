@@ -90,6 +90,9 @@ def verify_custom_input(page,out):
     assert row.locator('.armix-patch-cell').nth(0).get_attribute("data-mark")=="R"
     assert row.locator('.armix-patch-cell').nth(2).get_attribute("data-mark")=="L"
     assert row.locator('[data-draft="true"]').count()==0
+    # After installed readback the pending lock must clear without another
+    # telemetry snapshot (real regression: old render preceded settlement).
+    assert page.get_by_label("Saved input preset",exact=True).is_enabled()
     # Rename is metadata-only; no additional SOURCE operation.
     page.get_by_label("Saved input preset",exact=True).select_option("fixture-1")
     page.get_by_label("Preset name",exact=True).fill("Studio Vocal")
@@ -105,6 +108,15 @@ def verify_custom_input(page,out):
     assert page.evaluate("()=>window.__actions.filter(x=>x.action==='routingNativeSourcePatch').length")==1
     assert row.locator('[data-mark="L"]').count()==1
     page.screenshot(path="audio-io-custom-stereo.png")
+    # Preset appears on another input strip without creating a new graph
+    # authority. Choose it directly; actual wire payload remains physical.
+    page.locator("[data-audio-close]").click()
+    direct=page.locator('.strip select[data-field="input"]').filter(has=page.locator('option',has_text="Preset · Studio Vocal")).last
+    direct.wait_for(state="visible")
+    label=direct.locator('option',has_text="Preset · Studio Vocal").first.get_attribute("value")
+    direct.select_option(label)
+    second=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingNativeSourcePatch').at(-1)")
+    assert second["requestId"]!=req["requestId"] and (second["left"],second["right"])==(3,0),second
     assert not errors,errors
 
 def main():
