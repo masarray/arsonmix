@@ -5087,6 +5087,8 @@ test("MV-9B Global FX ignores rejected post-ACK snapshot after a pre-ACK value r
    {window:win,document:doc,performance:{now:()=>0},console},{timeout:1500});
  const initial=acceptedFixture();
  initial.globalFxBypassed=false;
+ initial.graph.channels[0].inserts=[{id:"geq-live",catalogId:"armix.builtin.graphic-eq31.v1",
+   name:"Graphic EQ 31",bypassed:false}];
  initial.mixerSession={authority:"CHANNEL_ID",deviceEpoch:initial.device.epoch,
    routeRevision:initial.graph.revision,rosterRevision:initial.graph.rosterRevision,
    channels:initial.graph.channels,main:{db:0,mute:false}};
@@ -5114,6 +5116,27 @@ test("MV-9B Global FX ignores rejected post-ACK snapshot after a pre-ACK value r
  assert.equal(button.getAttribute("aria-busy"),"false");
  assert.equal(button.disabled,false);
  assert.ok(viewCalls>beforeInvalid);
+ // Embedded GEQ recovery uses the exact same global transaction, with no
+ // local slot/rack mutation, and cannot invert an already enabled global gate.
+ const hooks=win.__ARMIX_NATIVE_M2__,track=scope.tracks[0];
+ const action={dataset:{slot:"0"}};
+ const requests=()=>sent.filter(x=>x.payload?.action==="routingGlobalFxBypass");
+ assert.equal(hooks.consumeAction(track,"globalFxOn",{dataset:{slot:"7"}}),true);
+ assert.equal(requests().length,1);
+ assert.equal(hooks.consumeAction(track,"globalFxOn",action),true);
+ assert.equal(requests().length,2);
+ const enable=requests().at(-1).payload;
+ assert.equal(enable.value,false);
+ assert.equal(enable.deviceEpoch,initial.device.epoch);
+ assert.equal(enable.revision,initial.graph.revision);
+ hooks.consumeAction(track,"globalFxOn",action);
+ assert.equal(requests().length,2,"duplicate click cannot race pending global ACK");
+ listeners.get("arMixGlobalFxAck")({requestId:enable.requestId,ok:true,bypassed:false});
+ assert.equal(button.getAttribute("aria-busy"),"true");
+ listeners.get("arMixConsoleSnapshot")(clone(initial));
+ assert.equal(button.getAttribute("aria-busy"),"false");
+ hooks.consumeAction(track,"globalFxOn",action);
+ assert.equal(requests().length,2,"stale enable click must not bypass FX again");
 });
 
 test("MV-11 channel appearance projection rejects partial, stale and forged identities",()=>{
@@ -7035,4 +7058,76 @@ test("P0 offline picker is presentation-only until selection and Apply restores 
  assert.match(native,/engine_\.finishManualAudioSetup\(false,true\)/);
  assert.match(native,/OFFLINE_MIXER_REBIND_ACCEPTED/);
  assert.match(engine,/if\(deferRetainedRebind\)return true/);
+});
+
+
+test("P2 offline GAIN coalesces released values until durable ACK and exact readback",()=>{
+ const vm=require("node:vm"),sent=[],listeners=new Map(),microtasks=[];
+ let nextId=100,nextEdgeId=200;
+ const scope={tracks:[],master:{id:1,name:"Master"},colors:["#568ead"],
+   wireGraph:{validateCandidateGraph:()=>({ok:true})},
+   make:(name,kind,color)=>({id:nextId++,name,kind,color}),
+   render(){},findTrack(){return this.tracks[0];},displayMeterDbfs(){},
+   allocateWireId:()=>nextEdgeId++,installGraph(tracks,master,edges){
+     this.tracks=tracks;this.master=master;this.edges=edges;
+   },stopDemo(){}};
+ const backend={emitEvent:(name,payload)=>sent.push({name,payload}),
+   addEventListener:(name,fn)=>listeners.set(name,fn)};
+ const doc={readyState:"complete",documentElement:{dataset:{}},
+   getElementById:()=>null,querySelector:()=>null,addEventListener(){}};
+ const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,
+   ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,
+   ArSonApprovedFxRackViewModel:fxRackVM,ArSonApprovedWireViewModel:wireVM,
+   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},setTimeout(){return 0;},
+   clearTimeout(){},queueMicrotask(fn){microtasks.push(fn);}};
+ vm.runInNewContext(read("web/approved-native-bridge.js"),{window:win,document:doc,
+   performance:{now:()=>0},console},{timeout:1500});
+ const graph=acceptedFixture().graph;
+ graph.capabilities.callbackOwnsChannelIds=false;
+ graph.capabilities.supportedOps=["SET_INPUT_GAIN","SET_FADER"];
+ graph.channels[0].controls.inputGainDb=0;
+ graph.edges[0].primaryOutput=true;
+ const snapshot=(revision,db,workspaceToken="offline-gain")=>{
+   const s=clone(fixtures.g0),g=clone(graph);
+   g.revision=revision;g.rosterRevision=revision;g.channels[0].controls.inputGainDb=db;
+   s.mixerSession={authority:"NONE",deviceEpoch:s.device.epoch};
+   s.logicalMixer={schema:"arsonmix.native.logical-mixer.v1",authority:"LOGICAL_ONLY",
+     workspaceToken,readOnly:false,revision,physicalOutputAdmitted:false,outputArmed:false,graph:g};
+   return s;
+ };
+ const emit=(name,payload)=>{listeners.get(name)(payload);while(microtasks.length)microtasks.shift()();};
+ const commands=()=>sent.filter(x=>x.name==="arMixLogicalIntent").map(x=>x.payload);
+ const gain=(db,type)=>win.__ARMIX_NATIVE_M2__.consumeField({type,target:{
+   dataset:{field:"trim"},value:String(db),closest:()=>null}});
+ const ack=(cmd,revision)=>emit("arMixLogicalAck",{requestId:cmd.requestId,
+   status:"ACCEPTED",errorCode:"NONE",revision});
+ emit("arMixConsoleSnapshot",snapshot("10",0));
+ assert.equal(scope.tracks[0].nativeGainAvailable,true);
+ for(const value of [1,2,3])gain(value,"input");
+ assert.equal(commands().length,0,"no disk writes while offline dragging");
+ gain(3,"change");
+ const first=commands()[0];assert.equal(first.payload.valueDb,3);
+ for(const value of [4,5,6])gain(value,"input");
+ gain(6,"change");gain(9,"change");
+ assert.equal(commands().length,1);
+ ack(first,"11");
+ assert.equal(commands().length,1,"ACK without independent readback cannot drain");
+ emit("arMixConsoleSnapshot",snapshot("11",3));
+ assert.equal(commands().length,2);
+ const last=commands()[1];
+ assert.equal(last.baseRevision,"11");assert.equal(last.payload.valueDb,9);
+ assert.equal(scope.tracks[0].nativeGainAvailable,true,"offline readback keeps knob usable");
+ assert.equal(scope.tracks[0].trim,3,"pending target never commits model optimistically");
+ // Cancel while a prior released edit is pending: restore the pointer-down value.
+ win.__ARMIX_NATIVE_GAIN_CANCEL__({},3);
+ ack(last,"12");emit("arMixConsoleSnapshot",snapshot("12",9));
+ assert.equal(commands().length,3);const cancel=commands()[2];
+ assert.equal(cancel.payload.valueDb,3);assert.equal(cancel.baseRevision,"12");
+ ack(cancel,"13");emit("arMixConsoleSnapshot",snapshot("13",3));
+ assert.equal(scope.tracks[0].trim,3);
+ gain(7,"change");const old=commands().at(-1);gain(10,"change");
+ emit("arMixConsoleSnapshot",snapshot("1",0,"another-workspace"));
+ ack(old,"14");
+ assert.equal(commands().length,4,"queued GAIN must never follow replacement workspace");
+ assert.equal(scope.tracks[0].trim,0);
 });

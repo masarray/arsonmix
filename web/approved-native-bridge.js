@@ -405,6 +405,9 @@
   const pendingM4RackPowers=new Map();
   let controller = null;
   let logicalView=null,pendingLogical=null,logicalSerial=0,logicalRenameId=null;
+  // Disk-backed offline edits are release-only; retain one newest released
+  // value per ChannelId while the single durable logical transaction is busy.
+  const latestLogicalInputGains=new Map();
   // Retained requests prepare a control-only .smix FX editor after ACK, never
   // authorize PCM or silently rebind disconnected hardware.
   let pendingRetainedEditor=null,retainedEditorSerial=0;
@@ -498,7 +501,9 @@
     window.setTimeout(()=>{
       if(pendingLogical?.requestId!==requestId)return;
       pendingLogical=null;
-      status("Mixer edit not confirmed · previous saved settings retained");
+      latestLogicalInputGains.clear(); // unknown commit outcome: never blindly replay
+      lastPaintedSignature="";lastNativeTopologySignature="";
+      status("Mixer edit not confirmed · refreshing saved settings");
       controller?.subscribe();
     },8000);
     return {ok:true,requestId};
@@ -584,9 +589,43 @@
       flushLiveInputGains();
     },32);
   }
+  function logicalGainRow(view,id){
+    if(!view||view.readOnly||!id||
+       !view.graph.capabilities.supportedOps.includes("SET_INPUT_GAIN"))return null;
+    const row=view.graph.channels.find(ch=>ch.id===id);
+    return row?.role==="INPUT"&&Number.isFinite(row.controls?.inputGainDb)?row:null;
+  }
+  function flushLogicalInputGains(){
+    if(!logicalView||pendingLogical)return;
+    for(const [id,edit] of latestLogicalInputGains){
+      latestLogicalInputGains.delete(id);
+      const row=logicalGainRow(logicalView,id);
+      if(!row||edit.workspaceToken!==logicalView.workspaceToken)continue;
+      // Cancellation / release to the already saved value needs no disk write.
+      if(Math.abs(row.controls.inputGainDb-edit.db)<.001){
+        const t=scope?.tracks?.find(t=>nativeIdFor(t)===id);
+        if(t)paintAcceptedInputGain(t,row.controls.inputGainDb);
+        continue;
+      }
+      const result=logicalIntent("SET_INPUT_GAIN",id,{valueDb:edit.db});
+      if(result.ok)return; // one durable ACK + independent readback at a time
+      latestLogicalInputGains.clear();
+      lastPaintedSignature="";lastNativeTopologySignature="";
+      status("Offline GAIN not saved · refreshing accepted settings");
+      controller?.subscribe();
+      return;
+    }
+  }
   function requestLiveInputGain(track,db,final){
     if(!track||!Number.isFinite(db)||db< -24||db>24)return false;
-    if(logicalView) return intent("SET_INPUT_GAIN",track,{valueDb:db});
+    if(logicalView){
+      const id=nativeIdFor(track);
+      if(!logicalGainRow(logicalView,id))return false;
+      if(!final)return true; // visual preview only; no intermediate .smix writes
+      latestLogicalInputGains.set(id,{db,workspaceToken:logicalView.workspaceToken});
+      flushLogicalInputGains();
+      return true;
+    }
     const id=nativeIdFor(track);
     if(!id||!deviceReady())return false;
     latestInputGainDrafts.set("SET_INPUT_GAIN:"+id,{
@@ -934,7 +973,8 @@
         return true;
       }
       const c=ch.controls;
-      const gainAdmitted=next.admitted===true&&ch.role==="INPUT"&&
+      const gainAdmitted=(next.admitted===true||next.logical===true)&&
+        ch.role==="INPUT"&&
         next.graph.capabilities.supportedOps.includes("SET_INPUT_GAIN")&&
         Number.isFinite(c.inputGainDb);
       t.nativeGainAvailable=gainAdmitted;
@@ -1823,8 +1863,11 @@
       if(!context)button.title="Global FX requires admitted physical audio";
     }
   }
-  function toggleGlobalFx(){
+  function toggleGlobalFx(enableOnly=false){
     const current=controller?.state()?.current,ctx=globalFxContext();
+    // Editor recovery is an explicit ENABLE, never an accidental toggle
+    // back to bypass if accepted global state changed since its last paint.
+    if(enableOnly===true&&current?.raw?.globalFxBypassed!==true)return false;
     const plan=fxRackVM.globalPowerPlan(current,ctx,!!pendingGlobalFx);
     if(plan.kind!=="READY")return false;
     const requestId="global-fx-"+(++globalFxSerial);
@@ -3443,7 +3486,7 @@
     pendingBusCreate=null;pendingTrackDelete=null;pendingFxInsert=null;
     pendingFxEditorAck=null; // expire old native HWND on device owner change
     startupWire=null;activeWireAttempt=null;pendingNativeGainIntent=false;
-    latestInputGainDrafts.clear();
+    latestInputGainDrafts.clear();latestLogicalInputGains.clear();
     pendingNativeWireRetract=null; // old output/epoch cannot animate a new cable
     pendingWireGains.clear();pendingNativeControl.clear();
     liveFaderVisualTargets.clear();lastNativeControlSent.clear();
@@ -3515,6 +3558,8 @@
     if(readModel.kind==="LOGICAL_ONLY"||readModel.kind==="RETAINED_OFFLINE") {
       const staged=readModel.view;
       let revealCreatedId=null,wireImpact=null;
+      if(logicalView&&logicalView.workspaceToken!==offline.workspaceToken)
+        latestLogicalInputGains.clear();
       if(pendingLogical && pendingLogical.workspaceToken!==offline.workspaceToken)
         pendingLogical=null;
       let justInsertedLogicalFx=null;
@@ -3525,6 +3570,8 @@
         // A later unrelated revision cannot prove THIS request's exact edit.
         if(!protocol.logicalReadbackProves(p,offline.graph)){
           pendingLogical=null;
+          latestLogicalInputGains.clear();
+          lastPaintedSignature="";lastNativeTopologySignature="";
           status("Mixer change not verified · refreshing saved session");
           controller?.subscribe();
           return;
@@ -3543,7 +3590,6 @@
           scope?.closeChannelIdentity?.();
         }
         status("Mixer changes saved · audio device not connected");
-        window.queueMicrotask(flushLiveScalars);
       }
       logicalView=staged;
       const signature="logical|"+offline.workspaceToken+"|"+offline.revision+"|"+JSON.stringify(
@@ -3551,7 +3597,7 @@
         "|"+JSON.stringify(offline.graph.edges);
       if(signature!==lastPaintedSignature) {
         if(!projectNativeGraphWithoutFocusLoss(staged)){
-          logicalView=null;
+          logicalView=null;latestLogicalInputGains.clear();
           status("Saved logical mixer readback invalid · controls unchanged");
           return;
         }
@@ -3611,9 +3657,15 @@
         readModel.kind==="RETAINED_OFFLINE"?
         "FX OFFLINE · saved edits · reconnect and Apply Audio I/O":
         "Mixer ready to edit · connect Audio I/O to enable sound");
+      // Drain only AFTER projection of the independently verified revision.
+      // Never use the prior revision from the just-settled transaction.
+      if(!pendingLogical){
+        flushLogicalInputGains();
+        window.queueMicrotask(flushLiveScalars);
+      }
       return;
     }
-    logicalView=null;
+    logicalView=null;latestLogicalInputGains.clear();
     if(pendingRetainedEditor && readModel.kind!=="NEEDS_REMAP"){
       pendingRetainedEditor=null; // never follow a newly admitted PCM owner
     }
@@ -3887,6 +3939,8 @@
          protocol.decimal(ack.revision)===null ||
          BigInt(ack.revision)<=BigInt(pending.beforeRevision)){
         pendingLogical=null;
+        latestLogicalInputGains.clear();
+        lastPaintedSignature="";lastNativeTopologySignature="";
         status("Mixer edit rejected · previous saved settings retained");
         controller?.subscribe();
         return;
@@ -4548,6 +4602,17 @@
           scope?.openFastPicker?.(t,slot,btn);
         }else nativeToast("VST3 editor · refresh native device and FX instance");
         return true;
+      }
+      if(action==="globalFxOn"){
+        const current=controller?.state()?.current;
+        const row=current?.graph?.channels?.find(ch=>ch.id===nativeIdFor(t));
+        const slot=Number(btn?.dataset?.slot);
+        // Same native Global FX transaction as the toolbar; validate that
+        // the requesting embedded editor is still an admitted GEQ31 insert.
+        if(!logicalView&&row&&Number.isInteger(slot)&&slot>=0&&
+           row.inserts?.[slot]?.catalogId==="armix.builtin.graphic-eq31.v1"&&
+           current.raw?.globalFxBypassed===true)toggleGlobalFx(true);
+        return true; // never fall through to demo or unsupported action
       }
       if(action==="slotPower"){
         if(!logicalView&&!deviceReady()){
