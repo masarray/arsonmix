@@ -81,6 +81,7 @@ static void lateReturnReference(double fs,unsigned mode,float decay) {
         e->setParameter(arverb::Parameter::DecaySeconds,decay);
         e->setParameter(arverb::Parameter::Diffusion,.62f);
         e->setParameter(arverb::Parameter::LowCutHz,e==&legacy?equivalent:cutoff);
+        e->setParameter(arverb::Parameter::HighCutHz,5500.f); // isolate late gain from musical air
         e->setParameter(arverb::Parameter::EarlyLevel,0.f);
         e->setParameter(arverb::Parameter::DuckAmount,0.f);
         e->setParameter(arverb::Parameter::ModDepthMs,0.f);

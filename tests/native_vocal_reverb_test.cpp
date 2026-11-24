@@ -16,6 +16,12 @@ int main() {
     using namespace armix::builtin_fx;
     static_assert(VocalReverbProcessor::stateBytes==68);
     for(int i=0;i<reverbSisPresetCount;++i)assert(validVocalReverbSettings(vocalReverbFactoryPreset(i)));
+    static_assert(reverbSisPresetCount==13 && reverbSisCustomItem==14);
+    const auto mc=vocalReverbFactoryPreset(12);
+    assert(juce::String(vocalReverbPresetNames[12])=="Master Ceremony");
+    assert(mc.preset==12&&mc.algorithm==static_cast<int>(arverb::Algorithm::Chamber));
+    assert(mc.values[static_cast<unsigned>(arverb::Parameter::Mix)]==.14f);
+    assert(mc.values[static_cast<unsigned>(arverb::Parameter::DecaySeconds)]==.78f);
     const auto* entry=findNativeBuiltInFx(VocalReverbProcessor::catalogIdentity);
     assert(entry&&entry->showInPicker);
     assert(juce::String(entry->category)=="Reverb");
@@ -94,6 +100,27 @@ int main() {
     assert(mainDecay->isVisible()&&mainMix->isVisible());
     assert(!mainDecay->getBounds().intersects(mainMix->getBounds()));
     assert(presetSelect->getNumItems()==reverbSisCustomItem && algorithmSelect->getNumItems()==4);
+    assert(presetSelect->getItemText(12)=="Master Ceremony");
+    assert(presetSelect->getItemId(12)==13);
+    assert(presetSelect->getItemText(13)=="Custom / saved");
+    // Test actual selection and detached state round-trip independently
+    // of the main faceplate/meter fixture.
+    {
+        auto speech=entry->prepare(48000.,128,nullptr,0);
+        auto* owner=dynamic_cast<VocalReverbProcessor*>(speech.get());
+        assert(owner);
+        std::unique_ptr<juce::AudioProcessorEditor> editor(owner->createEditor());
+        auto* select=dynamic_cast<juce::ComboBox*>(editor->findChildWithID("armix.reverb.preset"));
+        assert(select);
+        select->setSelectedId(13,juce::sendNotificationSync);
+        juce::MemoryBlock saved;
+        assert(owner->captureDetachedState(saved));
+        auto restored=entry->prepare(48000.,128,saved.getData(),static_cast<int>(saved.getSize()));
+        auto* decoded=dynamic_cast<VocalReverbProcessor*>(restored.get());
+        VocalReverbSettings accepted{};
+        assert(decoded&&decoded->acceptedSettings(accepted)&&accepted.preset==12&&
+               accepted.values==mc.values&&accepted.algorithm==mc.algorithm);
+    }
     // Combo label and down-chevron share EXACT row centre. Test both
     // native ComboBoxes rather than relying on developer screenshot eye.
     for(auto* combo : {presetSelect,algorithmSelect}) {
@@ -259,6 +286,16 @@ int main() {
     // cobalt block can regress unnoticed.
     assert(snapshot.getPixelAt(30,359).getBlue()<
            snapshot.getPixelAt(30,382).getBlue());
+    // Native rendered pixels, including the previously black bottom 10px.
+    // Keep only the same thin cabinet inset used at the top.
+    for(float scale:{1.f,1.5f,2.f}) {
+        const auto face=ui->createComponentSnapshot(ui->getLocalBounds(),true,scale);
+        for(int x:{30,560,1090})for(int y:{409,414,416}) {
+            const auto c=face.getPixelAt(static_cast<int>(x*scale),static_cast<int>(y*scale));
+            assert(c.getBlue()>=65 && c.getBlue()>c.getRed()+35 &&
+                   c.getGreen()>c.getRed()+15);
+        }
+    }
     // Group centred at x560; independent left/right 12px gutters.
     using M=reverb_ui::MeterLayout;
     static_assert(M::firstDotY==97 && M::secondDotY==132 && M::tickY==112);

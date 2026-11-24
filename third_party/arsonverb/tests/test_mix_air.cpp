@@ -63,7 +63,8 @@ static double render(int mode,float mix,bool mono,bool musical=false,float duck=
 }
 // P8 real-engine tone probes: gate the final wet spectrum, not only a
 // disconnected shelf primitive. Measurements are RMS, not listening scores.
-static double wetTone(int mode, float hz, float highCut) {
+static double wetTone(int mode, float hz, float highCut,
+                      bool musical=false,bool matchTone=false) {
     arverb::Engine e;
     e.setAlgorithm(static_cast<arverb::Algorithm>(mode));
     e.setParameter(arverb::Parameter::Mix, 1.0f);
@@ -73,7 +74,13 @@ static double wetTone(int mode, float hz, float highCut) {
     e.setParameter(arverb::Parameter::HighCutHz, highCut);
     e.setParameter(arverb::Parameter::DuckAmount, 0.0f);
     e.setParameter(arverb::Parameter::ModDepthMs, 0.0f);
-    e.prepare(48000.0);
+    if(matchTone) {
+        const float coeff=arverb::detail::musicalWetLowCutCoeff(150.f,48000.f);
+        const float equivalent=-std::log1p(-coeff)*48000.f/(2.f*arverb::detail::kPi);
+        e.setParameter(arverb::Parameter::LowCutHz,musical?150.f:equivalent);
+        e.setParameter(arverb::Parameter::Diffusion,.62f);
+    }
+    e.prepare(48000.0,musical);
     std::array<float,128> l{},r{},a{},b{};
     double energy=0.0;
     for(int block=0;block<360;++block) {
@@ -105,6 +112,7 @@ static double bodyTone(int mode,double fs,float cutoff,bool musical) {
     // Isolate filter transfer: at <=.62 both profiles use identical
     // diffusion/injection; high-density texture has its own PCM test.
     engine.setParameter(arverb::Parameter::Diffusion,.62f);
+    engine.setParameter(arverb::Parameter::HighCutHz,5500.f); // isolate HP knee, no air shelf
     engine.setParameter(arverb::Parameter::Mix,1.f);
     engine.setParameter(arverb::Parameter::DuckAmount,0.f);
     engine.setParameter(arverb::Parameter::ModDepthMs,0.f);
@@ -184,6 +192,43 @@ static double selectiveGain(float fs,float frequency,bool musical) {
     return std::sqrt(output/input);
 }
 int main() {
+    // Exact fractional tap output vs independent original implementation,
+    // including ring wrap, fractional values and both clamp boundaries.
+    for(float fs:{8000.f,44100.f,48000.f,96000.f,192000.f}) {
+        arverb::detail::Delay ring;
+        ring.prepare(static_cast<std::size_t>(.132f*fs)+8);
+        const std::array<float,6> delays{{0.f,1.f,4.73f*.001f*fs,
+            14.9f*.001f*fs,126.1f*.001f*fs,1.e9f}};
+        std::array<arverb::detail::Delay::FractionalTap,6> taps{};
+        for(std::size_t k=0;k<taps.size();++k)taps[k]=ring.prepareTap(delays[k]);
+        for(std::size_t i=0;i<ring.data.size()*2+17;++i) {
+            for(std::size_t k=0;k<taps.size();++k) {
+                const float s=std::clamp(delays[k],1.f,static_cast<float>(ring.data.size()-4));
+                const auto integer=static_cast<std::size_t>(s);
+                const float fraction=s-static_cast<float>(integer);
+                const auto a=(ring.write-integer)&ring.mask,b=(a-1)&ring.mask;
+                const float expected=ring.data[a]+(ring.data[b]-ring.data[a])*fraction;
+                check(ring.readPrepared(taps[k])==expected,"prepared tap preserves fractional PCM");
+            }
+            ring.push(.2f*std::sin(static_cast<float>(i)*.071f));
+        }
+    }
+    std::puts("PASS Reverb-Sis prepared stationary fractional taps (5 rates, ring wrap)");
+    // Matched wet HP and unchanged tank for non-Classic modes. Normalize
+    // 3x full-wet gain: only the musical shelf differs at open High Cut.
+    for(int mode:{1,2,3}) {
+        const double dark=wetTone(mode,9800.f,4000.f,true,true)/
+                         (3.0*wetTone(mode,9800.f,4000.f,false,true));
+        const double body=wetTone(mode,500.f,14500.f,true,true)/
+                         (3.0*wetTone(mode,500.f,14500.f,false,true));
+        const double air=wetTone(mode,9800.f,14500.f,true,true)/
+                        (3.0*wetTone(mode,9800.f,14500.f,false,true));
+        std::printf("Reverb-Sis fresh air mode=%d dark=%.4f body=%.4f air=%.4f\n",mode,dark,body,air);
+        check(std::abs(dark-1.0)<.015&&std::abs(body-1.0)<.015,
+              "dark and body remain calibrated");
+        check(air>body*1.035&&air<1.20,"open high-cut adds bounded sparkle");
+    }
+    std::puts("PASS Reverb-Sis fresh air selective wet PCM");
     for(float fs:{44100.f,48000.f,96000.f}) {
         const double body=selectiveGain(fs,180.f,true);
         const double presence=selectiveGain(fs,2500.f,true);

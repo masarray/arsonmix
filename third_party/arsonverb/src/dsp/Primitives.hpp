@@ -89,14 +89,24 @@ struct Delay {
         std::fill(data.begin(), data.end(), 0.0f);
         write = 0;
     }
-    float read(float samples) const noexcept {
-        // read-before-push: delay 1.0 means previous sample; min requested >=1.
+    struct FractionalTap {
+        std::size_t integer=1;
+        float fraction=0.f;
+    };
+    FractionalTap prepareTap(float samples) const noexcept {
+        // Valid only after prepare(), same clamp and rounding as read().
         samples = clamp(samples, 1.0f, static_cast<float>(data.size() - 4));
         const auto integer = static_cast<std::size_t>(samples);
-        const float fraction = samples - static_cast<float>(integer);
-        const std::size_t a = (write - integer) & mask;
+        return {integer,samples-static_cast<float>(integer)};
+    }
+    float readPrepared(FractionalTap tap) const noexcept {
+        const std::size_t a = (write - tap.integer) & mask;
         const std::size_t b = (a - 1) & mask;
-        return data[a] + (data[b] - data[a]) * fraction;
+        return data[a] + (data[b] - data[a]) * tap.fraction;
+    }
+    float read(float samples) const noexcept {
+        // Moving taps retain exactly the original fractional interpolation.
+        return readPrepared(prepareTap(samples));
     }
     // Fixed, prepare-validated tap: no clamp, float conversion or
     // interpolation needed for a stationary early reflection.
@@ -111,14 +121,15 @@ struct Delay {
 
 struct Allpass {
     Delay delay;
-    float samples = 1.0f;
+    Delay::FractionalTap tap{};
     void prepare(float ms, float rate) {
-        samples = std::max(1.0f, ms * 0.001f * rate);
+        const float samples = std::max(1.0f, ms * 0.001f * rate);
         delay.prepare(static_cast<std::size_t>(samples) + 2);
+        tap=delay.prepareTap(samples);
     }
     void reset() noexcept { delay.reset(); }
     float process(float x, float g) noexcept {
-        const float d = delay.read(samples);
+        const float d = delay.readPrepared(tap);
         const float y = d - g * x;
         delay.push(killDenormal(x + g * y));
         return y;
@@ -196,6 +207,14 @@ struct PresenceDucker {
 // One-pole wet high shelf; air is a *spectral tilt*, not a wideband
 // gain boost, pitch shift, noise generator or extra source of sibilance.
 // Caller determines bounded lift from high-cut and existing wet color.
+// The user High Cut remains authoritative. A slightly stronger wet-only
+// shelf at open settings adds sparkle; closed/dark settings stay unchanged.
+inline float wetAirLift(float highCutHz,float dampingHz,bool musical) noexcept {
+    const float openness=clamp((highCutHz-5500.f)/8000.f,0.f,1.f);
+    const float bright=clamp((dampingHz-800.f)/17200.f,0.f,1.f);
+    return (musical?.90f:.72f)*openness*(.72f+.28f*bright);
+}
+
 struct AirShelf {
     LowPass low;
     void reset() noexcept { low.reset(); }

@@ -145,11 +145,6 @@ inline float calibratedHFLoss(float decaySeconds, float roomSize,
 // Top-air is a bounded wet-only spectral tilt, never a noise generator.
 // A closed high-cut gate remains dark; an open high-cut and low HF absorption
 // permit more sheen without raising the dry path, tail feedback or output trim.
-inline float musicalAirLift(float highCutHz, float dampingHz) noexcept {
-    const float openness = detail::clamp((highCutHz - 5500.0f) / 8000.0f, 0.0f, 1.0f);
-    const float bright = detail::clamp((dampingHz - 800.0f) / 17200.0f, 0.0f, 1.0f);
-    return 0.72f * openness * (0.72f + 0.28f * bright);
-}
 
 // Additional low-amplitude, irregularly spaced *early energy* taps. This is
 // one original density layer, not a ray-traced room model or Valhalla code.
@@ -194,8 +189,7 @@ struct Engine::State {
     Delay lines[kLines];
     // Immutable with respect to each prepare() call: avoid invariant arithmetic
     // in the sample loop without introducing per-parameter cache invalidation.
-    float earlySampleL[6]{};
-    float earlySampleR[6]{};
+    Delay::FractionalTap earlyTapL[6]{},earlyTapR[6]{};
     std::size_t textureL[kTextureTaps]{}, textureR[kTextureTaps]{};
     float fdnBaseSamples[kLines]{};
     float millisecondsToSamples = 0.0f;
@@ -297,10 +291,6 @@ void Engine::prepare(double sampleRate, bool musicalReturn) {
     s.presenceDuckScale = musicalReturn ? 1.50f : 1.0f;
     const float fs = s.sampleRate;
     s.millisecondsToSamples = fs * 0.001f;
-    for (int t = 0; t < 6; ++t) {
-        s.earlySampleL[t] = kEarlyMs[t] * s.millisecondsToSamples;
-        s.earlySampleR[t] = s.earlySampleL[t] * (1.0f + 0.019f * (t % 3));
-    }
     for (std::size_t i=0;i<kTextureTaps;++i) {
         s.textureL[i] = static_cast<std::size_t>(std::lround(
             kTextureMs[i]*s.millisecondsToSamples));
@@ -314,6 +304,11 @@ void Engine::prepare(double sampleRate, bool musicalReturn) {
     };
     for (auto& p : s.pre) p.prepare(forMs(252.0f));
     for (auto& e : s.early) e.prepare(forMs(132.0f));
+    for(int t=0;t<6;++t) {
+        const float left=kEarlyMs[t]*s.millisecondsToSamples;
+        s.earlyTapL[t]=s.early[0].prepareTap(left);
+        s.earlyTapR[t]=s.early[1].prepareTap(left*(1.0f+0.019f*(t%3)));
+    }
     for (int ch = 0; ch < 2; ++ch) {
         for (int i = 0; i < 4; ++i)
             s.diffuser[ch][i].prepare(kDiffuseMs[ch][i], fs);
@@ -374,7 +369,7 @@ void Engine::prepare(double sampleRate, bool musicalReturn) {
     s.wetHighSlope = s.targetHighSlope =
         clamp((highCut - 5500.0f) / 5500.0f, 0.0f, 1.0f);
     const float dampingCut = s.cachedDamping;
-    s.airLift = s.targetAirLift = musicalAirLift(highCut, dampingCut);
+    s.airLift = s.targetAirLift = detail::wetAirLift(highCut,dampingCut,musicalReturn);
     s.hfDampingBlend = s.targetHFDampingBlend = calibratedHFLoss(
         decay, size, dampingCut);
     const float initialLowCut = s.cachedLowCut;
@@ -504,7 +499,7 @@ void Engine::process(const float* inputLeft, const float* inputRight,
             anyCoefficientChanged = true;
         }
         if (highCutChanged || dampingChanged)
-            s.targetAirLift = musicalAirLift(s.cachedHighCut, s.cachedDamping);
+            s.targetAirLift = detail::wetAirLift(s.cachedHighCut,s.cachedDamping,s.musicalReturn);
         if (anyCoefficientChanged)
             s.coefficientCooldownSamples = kControlQuantumSamples;
     }
@@ -611,8 +606,8 @@ void Engine::process(const float* inputLeft, const float* inputRight,
         const float earlyCrossfeed = 0.10f + density * 0.08f;
         float earlyL = 0.0f, earlyR = 0.0f;
         for (int t = 0; t < 6; ++t) {
-            const float a = s.early[0].read(s.earlySampleL[t]);
-            const float b = s.early[1].read(s.earlySampleR[t]);
+            const float a = s.early[0].readPrepared(s.earlyTapL[t]);
+            const float b = s.early[1].readPrepared(s.earlyTapR[t]);
             earlyL += kEarlyGain[t] * (a + earlyCrossfeed * b);
             earlyR += kEarlyGain[t] * (b + earlyCrossfeed * a);
         }

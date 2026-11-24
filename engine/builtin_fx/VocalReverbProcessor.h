@@ -11,7 +11,7 @@
 #include <memory>
 
 namespace armix::builtin_fx {
-inline constexpr int reverbSisPresetCount=12;
+inline constexpr int reverbSisPresetCount=13;
 inline constexpr int reverbSisCustomItem=reverbSisPresetCount+1;
 struct VocalReverbSettings {
     std::array<float, arverb::parameterCount> values{};
@@ -31,14 +31,16 @@ inline bool validVocalReverbSettings(const VocalReverbSettings& v) noexcept {
 inline constexpr std::array<const char*,reverbSisPresetCount> vocalReverbPresetNames{{
     "Krenyess Vocal", "Sweet Karaoke", "Crisp Pop Plate", "Silky Ballad",
     "Tight Live Chamber", "Air Vocal Hall", "Warm Vintage Plate", "Large Stage Hall",
-    "Acoustic Guitar Room", "Piano Concert Hall", "Drum Studio Room", "Keys Dream Hall"
+    "Acoustic Guitar Room", "Piano Concert Hall", "Drum Studio Room", "Keys Dream Hall",
+    "Master Ceremony"
 }};
 inline VocalReverbSettings vocalReverbFactoryPreset(int index) {
     using P=arverb::Preset;
     constexpr std::array<P,reverbSisPresetCount> origins{{
         P::VocalPlateClean,P::VocalPlate,P::VocalPlateClean,P::AiryBallad,
         P::VocalChamberTight,P::VocalWideAir,P::VocalPlateWarm,P::VocalHallBallad,
-        P::GuitarShortSpace,P::PianoHallWarm,P::DrumRoomTight,P::KeysStereoWash
+        P::GuitarShortSpace,P::PianoHallWarm,P::DrumRoomTight,P::KeysStereoWash,
+        P::VocalSpaceShort
     }};
     if(index<0||index>=static_cast<int>(origins.size()))index=0;
     VocalReverbSettings result;
@@ -106,6 +108,16 @@ inline VocalReverbSettings vocalReverbFactoryPreset(int index) {
         case 11:
             put(Param::Mix,.32f);put(Param::LowCutHz,140.f);
             put(Param::Width,1.25f);put(Param::DuckAmount,.08f);break;
+        case 12: // Master Ceremony: intimate, clear speech with tasteful space.
+            // Append only: old saved preset indices and all numeric IDs stay stable.
+            result.algorithm=static_cast<int>(arverb::Algorithm::Chamber);
+            put(Param::Mix,.14f);put(Param::PreDelayMs,27.f);
+            put(Param::DecaySeconds,.78f);put(Param::Size,.80f);
+            put(Param::Diffusion,.78f);put(Param::DampingHz,8300.f);
+            put(Param::LowCutHz,215.f);put(Param::HighCutHz,12800.f);
+            put(Param::ModDepthMs,.045f);put(Param::ModRateHz,.22f);
+            put(Param::Width,1.02f);put(Param::EarlyLevel,.33f);
+            put(Param::DuckAmount,.42f);break;
     }
     return result;
 }

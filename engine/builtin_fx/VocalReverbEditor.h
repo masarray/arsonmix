@@ -26,7 +26,7 @@ constexpr float pi=juce::MathConstants<float>::pi;
 // separate geometry: changing the LCD never moves or rescales a dial.
 struct FaceplateLayout final {
     static constexpr int width=1120,height=430, shoulderY=47;
-    static constexpr int headerCentreY=34, chromeCentreY=29, lcdTop=374,lcdBottom=408;
+    static constexpr int headerCentreY=34, chromeCentreY=29, lcdTop=374,lcdBottom=height-12;
     static constexpr int smallCaptionY=211,algorithmWidth=139,algorithmCentreX=980;
     static constexpr int lcdCentreY=393,lcdHeight=26;
     static constexpr int heroTop=124,heroCentreY=250,heroDial=184,heroWidth=202;
@@ -658,11 +658,12 @@ public:
         // editable numeric text boxes over it, rather than duplicate text.
         constexpr float lcdTop=static_cast<float>(F::lcdTop);
         g.setGradientFill(juce::ColourGradient(rgb(27,85,122),11.f,lcdTop,
-                                               rgb(17,49,83),11.f,407.f,false));
-        g.fillRect(11.f,lcdTop,w-22.f,34.f);
+                                               rgb(17,49,83),11.f,static_cast<float>(F::lcdBottom-1),false));
+        // Fill the entire inner faceplate to the cabinet inset; no black
+        // spacer below the LCD. Preserve numeric control positions.
+        g.fillRect(11.f,lcdTop,w-22.f,static_cast<float>(F::lcdBottom-F::lcdTop));
         g.setColour(rgb(83,153,177).withAlpha(.50f));
         g.drawLine(11.f,lcdTop,w-11.f,lcdTop,1.f);
-        g.setColour(rgb(5,10,17));g.fillRect(11.f,408.f,w-22.f,10.f);
         // Thin bounded column rules; do not make the screen a card grid.
         g.setColour(rgb(79,86,93).withAlpha(.35f));
         g.drawLine(257.f,155.f,257.f,367.f,.8f);
