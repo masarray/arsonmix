@@ -517,15 +517,23 @@ static void verifyImmerSIBIdleLease(int rate,int frames) {
     assert(slept && a.dspSleepBlocks.load()>0);
     // Continue silent while the other instance runs independently.
     const auto calls=a.dspProcessedBlocks.load();
+    const auto processedFrames=a.dspProcessedFrames.load();
+    const auto sleepingFrames=a.dspSleepFrames.load();
+    const auto totalUs=a.dspTotalUs.load();
     for(int k=0;k<8;++k) {
         silent.clear();ref.clear();render(a,silent);reference->processBlock(ref,midi);
         assert(a.dspSleeping.load());
     }
     assert(a.dspProcessedBlocks.load()==calls);
+    assert(a.dspProcessedFrames.load()==processedFrames);
+    assert(a.dspSleepFrames.load()==sleepingFrames+8u*static_cast<unsigned>(frames));
+    assert(a.dspTotalUs.load()==totalUs);
     // Wake on the very first nonzero sample, even a tiny onset.
     silent.clear();silent.setSample(0,0,1.e-12f);silent.setSample(1,1,.1f);
     ref.makeCopyOf(silent,true);render(a,silent);reference->processBlock(ref,midi);
     assert(!a.dspSleeping.load() && a.dspProcessedBlocks.load()==calls+1);
+    assert(a.dspProcessedFrames.load()==processedFrames+static_cast<unsigned>(frames));
+    assert(a.dspTotalUs.load()>=totalUs && a.dspTotalUs.load()>=a.dspLastUs.load());
     for(int ch=0;ch<2;++ch)for(int i=0;i<frames;++i)
         assert(std::abs(silent.getSample(ch,i)-ref.getSample(ch,i))<=2.e-6f);
     // Explicit parameter request must be processed and acknowledged even
