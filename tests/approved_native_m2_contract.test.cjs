@@ -1682,7 +1682,13 @@ test("First Sound evidence maps sparse physical pins to actual callback ordinals
   // A mistaken output claim never becomes a loudspeaker certification.
   g0.device.outputArmed=false;
   const muted=protocol.diagnoseFirstSound(protocol.normalizeSnapshot(g0),2);
-  assert.match(muted.nextAction,/ARM output/);
+  assert.match(muted.nextAction,/Output recovering automatically/);
+  assert.doesNotMatch(muted.nextAction,/ARM output|Resume after emergency stop/);
+  g0.operatorOutputMuted=true;
+  const panic=protocol.diagnoseFirstSound(protocol.normalizeSnapshot(g0),2);
+  assert.match(panic.nextAction,/Emergency stop active; use More > Resume after emergency stop/);
+  assert.doesNotMatch(panic.nextAction,/recovering automatically/);
+  g0.operatorOutputMuted=false;
   g0.device.outputArmed=true;
   g0.legacyM4.routeAccepted=false;
   const unpatched=protocol.diagnoseFirstSound(protocol.normalizeSnapshot(g0),2);

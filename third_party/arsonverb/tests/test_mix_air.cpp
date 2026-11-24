@@ -25,12 +25,13 @@ static double shelfGain(float hz,float air,float fs) {
     return std::sqrt(after/before);
 }
 static double render(int mode,float mix,bool mono,bool musical=false,float duck=0.f,
-                     bool broadband=false) {
+                     bool broadband=false,float width=-1.f) {
     arverb::Engine e;
     e.loadPreset(arverb::Preset::VocalPlate);
     e.setAlgorithm(static_cast<arverb::Algorithm>(mode));
     e.setParameter(arverb::Parameter::Mix,mix);
     e.setParameter(arverb::Parameter::DuckAmount,duck);
+    if(width>=0.f) e.setParameter(arverb::Parameter::Width,width);
     e.prepare(48000.0,musical);
     std::array<float,128> l{},r{},a{},b{};
     double sum=0.0;
@@ -143,8 +144,19 @@ int main() {
         std::printf("Reverb-Sis mode=%d harmonic RMS wet/dry=%.3f new/old=%.3f\n",
                     mode,voiceWet/voiceDry,voiceWet/voiceLegacy);
         check(voiceWet>voiceLegacy*1.7,"harmonic sustained source improves versus old ducked return");
-        check(voiceWet>voiceDry*.12 && voiceWet<voiceDry*3.4,
-              "harmonic sustained source stays audible in mono");
+        // Absolute floor derived from the verified 583098e5 baseline:
+        // Classic .362, Plate .588, Chamber .302, Hall .226 wet/dry.
+        // This is a regression floor (-14 dB), NOT a loudness-match target.
+        check(voiceWet>voiceDry*.20 && voiceWet<voiceDry*3.4,
+              "harmonic sustained source must preserve measured wet energy in mono");
+        // Width must change the side component only; neither mono playback
+        // nor a stereo-to-mono downstream sink may lose the mid return.
+        const double narrow=render(mode,1.f,true,true,.22f,true,0.f);
+        const double wide=render(mode,1.f,true,true,.22f,true,1.6f);
+        std::printf("Reverb-Sis mode=%d mono width0=%.6f width1.6=%.6f\n",
+                    mode,narrow,wide);
+        check(narrow>voiceDry*.20 && std::abs(wide-narrow)<voiceDry*1e-5,
+              "width must preserve actual mono wet RMS at both endpoints");
         for(float mix:{.25f,.5f,.75f,1.f}) {
             const double rms=render(mode,mix,true,true,.22f);
             check(rms>dry*.12 && rms<dry*3.4,"musical Mix no severe sustained level collapse");
