@@ -149,10 +149,13 @@ public:
     float expressionForOfflineTests(int v) const noexcept {
         return personalExpression_[static_cast<std::size_t>(v)];
     }
-    void advance(bool voiced) noexcept {
+    void advance(bool voiced) noexcept {advance(voiced,voiced);}
+    void advance(bool stableLegacyNote,bool voicedPhrase) noexcept {
         cursor_=(cursor_+1)&(reflectionCapacity-1);
-        ++phraseClock_;phraseVoiced_=voiced;
-        if(!voiced)age_=0;
+        // A pending lead-note candidate is not a phrase release. Keep
+        // held singers expressive while the detector confirms a new note.
+        ++phraseClock_;phraseVoiced_=voicedPhrase;
+        if(!stableLegacyNote)age_=0;
         else if(age_<100000000)++age_;
         const float mature=std::clamp((age_-ageStart_)*ageRamp_,0.f,1.f);
         expression_+=expressionAlpha_*(mature-expression_);

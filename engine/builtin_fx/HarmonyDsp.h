@@ -356,6 +356,12 @@ public:
         if(processed_)return false;
         expressionReferenceEnabled_=enabled;return true;
     }
+    int singerTargetForOfflineTests(int v) const noexcept {
+        return voicePlanner_.target(static_cast<std::size_t>(v));
+    }
+    std::uint64_t singerAgeForOfflineTests(int v) const noexcept {
+        return ensemble_.noteAgeForOfflineTests(v);
+    }
     int observedMidiNote() const noexcept{return currentNote_;}
     bool voiced() const noexcept{return voiced_;}
     int peakPitchLagWork() const noexcept{return peakPitchLagWork_;}
@@ -508,7 +514,7 @@ public:
             r[i]=std::clamp((leadR+outR*backingGain_)*gain_,-4.f,4.f);
             // Expression follows stable notes; confidence hysteresis is
             // handled by the tracker, not by vibrato resetting on one hop.
-            ensemble_.advance(voiced_&&noteHold_>=2);
+            ensemble_.advance(voiced_&&noteHold_>=2,voiced_);
             stage_.advance();
             write_=(write_+1)%capacity;
             ++sampleClock_;

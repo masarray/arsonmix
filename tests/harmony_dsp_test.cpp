@@ -166,8 +166,16 @@ static void testIndependentSingerExpression(){
     const auto heldAge=e->noteAgeForOfflineTests(0);
     need(e->expressionForOfflineTests(0)>.99f&&
          e->expressionForOfflineTests(2)>.99f,"H4 sustain failed to bloom");
+    // Unconfirmed melody candidate must not deflate a held backing note.
+    for(int i=0;i<rate/100;++i){
+      for(int v=0;v<5;++v)e->pitchRatio(v,1.f);
+      e->advance(false,true);
+    }
+    need(e->expressionForOfflineTests(0)>.99f,"H4 pending note killed common tone");
+    const auto ageAfterCandidate=e->noteAgeForOfflineTests(0);
+    need(ageAfterCandidate>heldAge,"H4 common tone clock paused");
     e->beginNote(1u<<2);
-    need(e->noteAgeForOfflineTests(0)==heldAge&&
+    need(e->noteAgeForOfflineTests(0)==ageAfterCandidate&&
          e->noteAgeForOfflineTests(2)==0,"H4 common tone reset");
     need(e->ratioSmoothing(0,oldAlpha,1.f)==oldAlpha&&
          e->ratioSmoothing(2,oldAlpha,1.f)>oldAlpha*(48000.f/rate),
@@ -184,6 +192,59 @@ static void testIndependentSingerExpression(){
     }
     need(e->expressionForOfflineTests(0)<.001f&&
          e->expressionForOfflineTests(2)<.001f,"H4 expression retained through release");
+  }
+}
+// Exercise the real F0 -> accepted note -> chord planner -> singer mask
+// path, not merely manually calling the expression helper.
+static void testCommonToneEngineTransition(){
+  constexpr int first=57;
+  int second=-1,held=-1,moved=-1;
+  for(int candidate:{55,59,60,62,64}){
+    VoicePlanner plan;plan.plan(first,0,major,5);
+    std::array<int,5> before{};
+    for(int v=0;v<5;++v)before[v]=plan.target(v);
+    plan.plan(candidate,0,major,5);
+    int h=-1,m=-1;
+    for(int v=0;v<5;++v){
+      if(plan.target(v)==before[v])h=v;
+      else m=v;
+    }
+    if(h>=0&&m>=0){second=candidate;held=h;moved=m;break;}
+  }
+  need(second>=0,"H4 common-tone fixture unavailable");
+  for(int rate:{48000,96000}){
+    auto e=std::make_unique<Engine>();
+    Settings s;s.voices=5;s.wet=.8f;
+    need(e->prepare(rate)&&e->setSettings(s),"H4 phrase engine prepare");
+    double phase=0.;
+    auto note=[&](int midi,int frames){
+      const double step=6.283185307179586*440.*std::exp2((midi-69)/12.)/rate;
+      std::array<float,127> l{},r{};
+      for(int pos=0;pos<frames;pos+=127){
+        const int n=std::min(127,frames-pos);
+        for(int i=0;i<n;++i){
+          l[i]=r[i]=static_cast<float>(.16*std::sin(phase)+.04*std::sin(2.*phase+.2));
+          phase+=step;
+        }
+        e->process(l.data(),r.data(),n);
+      }
+    };
+    note(first,rate/2);
+    need(e->observedMidiNote()==first,"H4 first phrase note not accepted");
+    const int heldNote=e->singerTargetForOfflineTests(held);
+    const int movedNote=e->singerTargetForOfflineTests(moved);
+    const auto oldAge=e->singerAgeForOfflineTests(held);
+    note(second,rate/4);
+    need(e->observedMidiNote()==second,"H4 second phrase note not accepted");
+    need(e->singerTargetForOfflineTests(held)==heldNote&&
+         e->singerTargetForOfflineTests(moved)!=movedNote,
+         "H4 actual planner did not retain intended common tone");
+    need(e->singerAgeForOfflineTests(held)==oldAge+static_cast<std::uint64_t>(rate/4)&&
+         e->singerAgeForOfflineTests(moved)<static_cast<std::uint64_t>(rate/4),
+         "H4 actual singer ages restarted together");
+    std::cout<<"H4_PHRASE rate="<<rate<<" held="<<held
+             <<" moved="<<moved<<" heldAge="<<e->singerAgeForOfflineTests(held)
+             <<" movedAge="<<e->singerAgeForOfflineTests(moved)<<std::endl;
   }
 }
 // Audit chord membership across every key, both scale families and
@@ -641,6 +702,7 @@ static void testBackingUnity(){
 }
 int main(){
   testIndependentSingerExpression();
+  testCommonToneEngineTransition();
   testMusicalEnsemblePlanner();
   const bool highPass=testMusicalHighStem();
   testLeadRendererSeam();
