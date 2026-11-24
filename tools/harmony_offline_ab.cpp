@@ -93,7 +93,7 @@ struct TraceRow {std::size_t at=0;std::array<Engine::RendererTrace,Engine::maxVo
 static Wave process(const Wave& input,Settings settings,bool synchronous,int block=127,
                     bool enhancedDepth=true,bool focus=true,bool presence=true,
                     bool articulation=true,bool continuity=true,bool support=true,bool natural=true,bool carrier=true,bool slope=true,
-                    bool drain=true,SeamCounts* counts=nullptr,std::vector<TraceRow>* trace=nullptr){
+                    bool drain=true,SeamCounts* counts=nullptr,std::vector<TraceRow>* trace=nullptr,bool recovery=true){
     auto e=std::make_unique<Engine>();
     if(!e->prepare(input.rate)||!e->setSettings(settings))
         throw std::runtime_error("native Harmony configuration invalid");
@@ -102,7 +102,8 @@ static Wave process(const Wave& input,Settings settings,bool synchronous,int blo
     if(!e->setContinuityForOfflineReference(continuity)||
        !e->setSupportForOfflineReference(support)||
        !e->setNaturalForOfflineReference(natural)||!e->setCarrierForOfflineReference(carrier)||
-       !e->setSlopeForOfflineReference(slope)||!e->setDrainForOfflineReference(drain))
+       !e->setSlopeForOfflineReference(slope)||!e->setDrainForOfflineReference(drain)||
+       !e->setEpochRecoveryForOfflineReference(recovery))
         throw std::runtime_error("continuity reference rejected");
     e->setPitchSynchronousCandidateForOfflineReference(synchronous);
     e->setStageDepthForOfflineReference(enhancedDepth);
@@ -152,12 +153,12 @@ static Wave subtract(const Wave& x,const Wave& y){
 // and the identical dry lead, then set only that role's prepared output gains
 // to zero for every other singer. No browser masks or in-place muting.
 static Wave roleStem(const Wave& input,Settings settings,
-                     int singerIndex,const Wave& dry,bool natural=true,bool carrier=true,bool slope=true,bool drain=true){
+                     int singerIndex,const Wave& dry,bool natural=true,bool carrier=true,bool slope=true,bool drain=true,bool recovery=true){
     if(singerIndex<0||singerIndex>=Engine::maxVoices)
         throw std::runtime_error("invalid solo Harmony role");
     auto e=std::make_unique<Engine>();
     Engine::PreparedSettings prepared{};
-    if(!e->prepare(input.rate)||!e->setNaturalForOfflineReference(natural)||!e->setCarrierForOfflineReference(carrier)||!e->setSlopeForOfflineReference(slope)||!e->setDrainForOfflineReference(drain)||
+    if(!e->prepare(input.rate)||!e->setNaturalForOfflineReference(natural)||!e->setCarrierForOfflineReference(carrier)||!e->setSlopeForOfflineReference(slope)||!e->setDrainForOfflineReference(drain)||!e->setEpochRecoveryForOfflineReference(recovery)||
        !Engine::prepareSettings(settings,prepared))
         throw std::runtime_error("cannot prepare singer solo");
     for(int i=0;i<Engine::maxVoices;++i)
@@ -450,11 +451,11 @@ static void continuityReport(const Wave& input,const fs::path& folder,Settings s
     events<<"variant,role,losses,acquisitions\n";
     std::ofstream traceCsv(folder/"renderer_trace_10ms.csv",std::ios::trunc);
     if(!traceCsv)throw std::runtime_error("renderer trace open failed");
-    traceCsv<<"variant,role,output_time_s,source_time_s,calls,no_clock,causal_blocked,drained,safe_unready,ready,partial,weak_confidence,losses,acquisitions\n";
-    for(int version:{12,13,14,15,16,17,18}){
+    traceCsv<<"variant,role,output_time_s,source_time_s,calls,no_clock,causal_blocked,drained,safe_unready,ready,partial,weak_confidence,epoch_recovered,losses,acquisitions\n";
+    for(int version:{12,13,14,15,16,17,18,20}){
         SeamCounts counts{};std::vector<TraceRow> trace;
         const auto mix=process(input,s,true,127,true,true,true,true,
-                               version>=13,version>=14,version>=15,version>=16,version>=17,version>=18,&counts,&trace);
+                               version>=13,version>=14,version>=15,version>=16,version>=17,version>=18,&counts,&trace,version>=20);
         const auto backing=subtract(mix,dry);
         const auto tag="h"+std::to_string(version);
         for(int v=0;v<Engine::maxVoices;++v)
@@ -481,9 +482,9 @@ static void continuityReport(const Wave& input,const fs::path& folder,Settings s
             }
         }
     }
-    for(int version:{14,15,16,17,18})for(int role=0;role<Engine::maxVoices;++role)
+    for(int version:{14,15,16,17,18,20})for(int role=0;role<Engine::maxVoices;++role)
         writeWave(folder/("h"+std::to_string(version)+"_role_"+std::to_string(role)+".wav"),
-                  roleStem(input,s,role,dry,version>=15,version>=16,version>=17,version>=18));
+                  roleStem(input,s,role,dry,version>=15,version>=16,version>=17,version>=18,version>=20));
     if(!csv||!events||!traceCsv)throw std::runtime_error("continuity report write failed");
 }
 int main(int argc,char** argv){
@@ -579,7 +580,7 @@ int main(int argc,char** argv){
             Settings reportSettings;reportSettings.voices=3;reportSettings.wet=1.f;
             reportSettings.space=1.f;reportSettings.color=.78f;
             continuityReport(v,folder,reportSettings);
-            for(int version:{12,13,14,15,16,17,18}){
+            for(int version:{12,13,14,15,16,17,18,20}){
                 const auto tag="h"+std::to_string(version);
                 const auto mix=readWave(folder/(tag+"_mix.wav"));
                 const auto backing=readWave(folder/(tag+"_backing.wav"));
@@ -589,14 +590,14 @@ int main(int argc,char** argv){
             std::ifstream ev(folder/"seam_events.csv");
             std::string line;int rows=0;
             while(std::getline(ev,line))++rows;
-            if(rows!=1+7*Engine::maxVoices)return 17;
+            if(rows!=1+8*Engine::maxVoices)return 17;
             if(!fs::exists(folder/"h18_role_2.wav"))return 18;
             std::ifstream tr(folder/"renderer_trace_10ms.csv");int traceRows=0;
             while(std::getline(tr,line))++traceRows;
             const auto windows=(v.left.size()+v.rate/100-1)/(v.rate/100);
-            if(static_cast<std::size_t>(traceRows)!=1+7*Engine::maxVoices*windows)return 19;
+            if(static_cast<std::size_t>(traceRows)!=1+8*Engine::maxVoices*windows)return 19;
             std::cout<<"H19_TRACE_EXPORT rows="<<traceRows-1<<std::endl;
-            std::cout<<"H18_EXPORT variants=7 event_rows="<<rows-1<<" WAV readback PASS\n";
+            std::cout<<"H20_EXPORT variants=8 event_rows="<<rows-1<<" WAV readback PASS\n";
             std::cout<<"Offline native A/B test passed (synthetic only)\n";
             return 0;
         }
@@ -604,7 +605,7 @@ int main(int argc,char** argv){
             Settings s;s.key=std::stoi(argv[4]);s.scale=std::stoi(argv[5]);
             s.voices=std::stoi(argv[6]);s.wet=1.f;s.space=1.f;s.color=.78f;
             continuityReport(readWave(argv[2]),argv[3],s);
-            std::cout<<"H12/H13/H14/H15/H16/H17/H18 matched manual-key WAV and per-ear CSV written; no acoustic qualification implied.\n";
+            std::cout<<"H12/H13/H14/H15/H16/H17/H18/H20 matched manual-key WAV and per-ear CSV written; no acoustic qualification implied.\n";
             return 0;
         }
         if(argc==6&&std::string(argv[1])=="--lead-tune"){

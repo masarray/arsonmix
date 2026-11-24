@@ -18,8 +18,8 @@ class PitchSynchronousVoice final {
     static_assert(Capacity >= 4096 && (Capacity & (Capacity-1)) == 0);
     static_assert(Voices > 0 && Voices <= 8);
 public:
-    struct Output { float sample=0.f; bool ready=false; float coverage=0.f; };
-    struct StereoOutput { float left=0.f,right=0.f; bool ready=false; float coverage=0.f; };
+    struct Output { float sample=0.f; bool ready=false; float coverage=0.f; bool recovered=false; };
+    struct StereoOutput { float left=0.f,right=0.f; bool ready=false; float coverage=0.f; bool recovered=false; };
     // At scheduling time the desired epoch is width-delay samples in
     // the past. Reserve the full +/- .46-period search plus rounding and
     // fractional refinement margin. This is a sufficient causal bound,
@@ -66,10 +66,10 @@ public:
                    const std::array<float,Capacity>& input,
                    float sourcePeriod,float ratio,float fixedDelay,
                    float resonanceScale=1.f,bool continuous=true,bool supportAware=true,
-                   bool phaseAware=true,bool admitNew=true) noexcept {
+                   bool phaseAware=true,bool admitNew=true,bool recoverEpoch=false) noexcept {
         const auto out=render<false>(v,time,writeIndex,input,input,input,
-                                     sourcePeriod,ratio,fixedDelay,resonanceScale,continuous,supportAware,phaseAware,admitNew);
-        return {out.left,out.ready,out.coverage};
+                                     sourcePeriod,ratio,fixedDelay,resonanceScale,continuous,supportAware,phaseAware,admitNew,recoverEpoch);
+        return {out.left,out.ready,out.coverage,out.recovered};
     }
 
     // The detector selects one set of epochs. Both stereo channels use the
@@ -80,7 +80,7 @@ public:
                    const std::array<float,Capacity>& right,
                    float sourcePeriod,float ratio,float fixedDelay) noexcept {
         return render<true>(v,time,writeIndex,epochs,left,right,
-                            sourcePeriod,ratio,fixedDelay,1.f,false,false,false,true);
+                            sourcePeriod,ratio,fixedDelay,1.f,false,false,false,true,false);
     }
 private:
     template <bool Stereo>
@@ -89,7 +89,7 @@ private:
                    const std::array<float,Capacity>& left,
                    const std::array<float,Capacity>& right,
                    float sourcePeriod,float ratio,float fixedDelay,
-                   float resonanceScale,bool continuous,bool supportAware,bool phaseAware,bool admitNew) noexcept {
+                   float resonanceScale,bool continuous,bool supportAware,bool phaseAware,bool admitNew,bool recoverEpoch) noexcept {
         if(v<0||v>=Voices||!std::isfinite(sourcePeriod)||
            !std::isfinite(ratio)||!std::isfinite(fixedDelay)||
            sourcePeriod<8.f||sourcePeriod>3200.f||
@@ -121,6 +121,7 @@ private:
                 state.nextCenter=refineEpoch(epochs,time,writeIndex,peak,
                     state.epochPolarity)+fixedDelay;
         }
+        bool recovered=false;
         // Advance at most two grains per sample, even on hostile period jumps.
         // Normal supported periods place >=4 samples between target marks.
         for(int scheduled=0;scheduled<2 &&
@@ -147,6 +148,24 @@ private:
                 else
                     peak=findStableEpoch(epochs,time,writeIndex,desired,period,
                                          state.epochPolarity);
+            }
+            // The accepted F0 and delayed source waveform can temporarily
+            // disagree during a note leap. A normal +/- .56P scan may
+            // contain no same-polarity maximum. Only on such a miss, try
+            // a bounded nearest-phase search; require a real local maximum
+            // and the unchanged full-window safety proof below.
+            bool rescue=false;
+            if(peak<0&&recoverEpoch&&continuous&&supportAware&&state.haveEpoch&&
+               state.epochPolarity!=0){
+                // Bound the displacement to 1.5 periods AND 12ms of the
+                // prepared lookback (half the nominal 24ms is not assumed:
+                // fixedDelay includes each singer's arrival).
+                const double radius=std::min(1.5*period,.40*fixedDelay);
+                if(radius>.56*period){
+                    peak=findLocalEpoch(epochs,time,writeIndex,desired,radius,
+                                        state.epochPolarity,true);
+                    rescue=peak>=0;
+                }
             }
             if(peak>=0) {
                 auto& grain=state.grains[state.nextSlot];
@@ -185,6 +204,7 @@ private:
                 grain={state.nextCenter,epoch,width,true,scale,gain,
                        static_cast<double>(time),fade>0.?1./fade:0.,supportAware&&continuous};
                 state.nextSlot=(state.nextSlot+1)%state.grains.size();
+                recovered|=rescue;
             }
             state.nextCenter+=spacing;
         }
@@ -229,7 +249,7 @@ private:
         // Once all validated grains finish, discard the stale epoch clock.
         // The next safe sample starts a fresh phase search; no hidden tail.
         if(!admitNew&&!remaining){state={};return {};}
-        if(weight<.05f)return {};
+        if(weight<.05f)return {0.f,0.f,false,0.f,recovered};
         const float l=sumL/weight;
         if constexpr(Stereo){
             // Difference interpolated BEFORE accumulation: dual-mono
@@ -237,7 +257,7 @@ private:
             const float r=sumDifference==0.f?l:l+sumDifference/weight;
             return {l,r,true};
         }
-        return {l,0.f,true,supportAware&&continuous?overlapCoverage(weight):1.f};
+        return {l,0.f,true,supportAware&&continuous?overlapCoverage(weight):1.f,recovered};
     }
     struct Grain {
         double center=0.,source=0.,width=1.;bool active=false;

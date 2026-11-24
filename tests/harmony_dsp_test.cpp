@@ -861,11 +861,12 @@ static void testCausalAdmissionEngine(){
                 .17*std::sin(phase)+.055*std::sin(2*phase+.3)+.03*std::sin(3*phase+.6));
         }
         struct Result {LeadFixture pcm;std::uint64_t losses=0,acquisitions=0;Engine::RendererTrace trace{};};
-        auto run=[&](bool drain,int block,bool wet,bool trace=true){
+        auto run=[&](bool drain,int block,bool wet,bool trace=true,bool recover=false){
             auto e=std::make_unique<Engine>();Settings s;s.voices=5;
             s.wet=wet?1.f:0.f;s.color=.78f;s.space=.6f;
             need(e->prepare(rate)&&e->setDrainForOfflineReference(drain)&&
-                 e->setRendererTraceForOfflineTests(trace)&&e->setSettings(s),"H18 engine setup");
+                 e->setRendererTraceForOfflineTests(trace)&&e->setEpochRecoveryForOfflineReference(recover)&&
+                 e->setSettings(s),"H18 engine setup");
             Result out{src};
             for(int i=0;i<n;i+=block)e->process(out.pcm.left.data()+i,out.pcm.right.data()+i,std::min(block,n-i));
             for(int v=0;v<Engine::maxVoices;++v){
@@ -879,6 +880,34 @@ static void testCausalAdmissionEngine(){
         };
         const auto old=run(false,127,true),now=run(true,127,true),split=run(true,64,true);
         const auto dry=run(true,127,false),oldDry=run(false,64,false);
+        const auto h20=run(true,127,true,true,true),h20Split=run(true,64,true,true,true);
+        const auto h20Dry=run(true,64,false,true,true);
+        need(h20.pcm.left==h20Split.pcm.left&&h20.pcm.right==h20Split.pcm.right&&
+             h20.trace.values==h20Split.trace.values,"H20 block parity");
+        need(h20Dry.pcm.left==dry.pcm.left&&h20Dry.pcm.right==dry.pcm.right,"H20 dry changed");
+        using Trace=Engine::RendererTrace;
+        const auto& x=h20.trace.values;
+        std::cout<<"H20_ENGINE rate="<<rate<<" old_losses="<<now.losses<<" new_losses="<<h20.losses
+                 <<" old_unready="<<now.trace.values[Trace::safeUnready]<<" new_unready="<<x[Trace::safeUnready]
+                 <<" old_partial="<<now.trace.values[Trace::partial]<<" new_partial="<<x[Trace::partial]
+                 <<" recovered="<<x[Trace::epochRecovered]<<std::endl;
+        need(x[Trace::ready]>0&&h20.losses<=now.losses&&x[Trace::safeUnready]<=now.trace.values[Trace::safeUnready],
+             "H20 engine readiness regression");
+        for(int ch:{0,1}){
+            const auto& a=ch?now.pcm.right:now.pcm.left;const auto& b=ch?h20.pcm.right:h20.pcm.left;
+            const auto& d=ch?dry.pcm.right:dry.pcm.left;
+            double ea=0.,eb=0.,ma=0.,mb=0.;
+            for(int i=rate/2;i<n;++i){
+                const double u=a[i]-d[i],v=b[i]-d[i];
+                need(std::isfinite(v),"H20 nonfinite backing");ea+=u*u;eb+=v*v;
+                ma=std::max(ma,std::abs(u-(a[i-1]-d[i-1])));
+                mb=std::max(mb,std::abs(v-(b[i-1]-d[i-1])));
+            }
+            const double gain=10.*std::log10(eb/ea),edge=mb/ma*std::sqrt(ea/eb);
+            std::cout<<"H20_PCM rate="<<rate<<" ch="<<ch<<" wet_dB="<<gain
+                     <<" normalized_max_ratio="<<edge<<std::endl;
+            need(ea>1.&&eb>1.&&std::abs(gain)<.5&&edge<1.15,"H20 PCM regression");
+        }
         const auto untraced=run(true,127,true,false);
         need(now.pcm.left==untraced.pcm.left&&now.pcm.right==untraced.pcm.right,
              "H19 trace affected PCM");
@@ -1014,7 +1043,7 @@ static void testBackingContinuity(){
       need(e->prepare(rate)&&e->setContinuityForOfflineReference(modern)&&
            e->setSupportForOfflineReference(support)&&e->setNaturalForOfflineReference(natural)&&
            e->setCarrierForOfflineReference(carrier)&&e->setSlopeForOfflineReference(slope)&&
-           e->setDrainForOfflineReference(drain)&&e->setSettings(s),"H13 setup");
+           e->setDrainForOfflineReference(drain)&&e->setEpochRecoveryForOfflineReference(false)&&e->setSettings(s),"H13 setup");
       auto out=src;
       for(int at=0;at<n;){
         // Split at control events; callback partition must not move them.

@@ -225,7 +225,47 @@ static void testCausalAdmissionDrain(){
         need(briefReady>brief/2&&tailReady>0&&tailSilent>0,"H18 did not preserve existing grains");
     }
 }
+// A detector that briefly reports the previous note while the delayed
+// source has a different period. Isolate this from F0 estimation and mix.
+static void testDelayedEpochRecovery(){
+    constexpr double tau=6.283185307179586;
+    for(int rate:{32000,48000,96000,192000}){
+        Shifter old{},now{};std::array<float,16384> ring{};
+        int aMissing=0,bMissing=0,aPartial=0,bPartial=0,rescues=0;
+        double phase=0.,peak=0.;
+        for(int i=0;i<rate/2;++i){
+            const double t=double(i)/rate;
+            const double hz=t<.15?330.:t<.32?110.:330.;
+            phase+=tau*hz/rate;
+            ring[i&16383]=static_cast<float>(.18*std::sin(phase)+.035*std::sin(2*phase+.3));
+            // Deliberately stale F0 in the 110Hz passage; source history
+            // stays genuine and no synthetic silence is inserted.
+            const float period=rate/(t<.24?330.f:t<.36?110.f:330.f);
+            const auto a=old.process(0,i,i&16383,ring,period,1.3f,rate*.032f,1.f,true,true,true,true,false);
+            const auto b=now.process(0,i,i&16383,ring,period,1.3f,rate*.032f,1.f,true,true,true,true,true);
+            need(std::isfinite(b.sample)&&std::abs(b.sample)<.4f,"H20 bounded epoch recovery");
+            if(i>rate/10){
+                aMissing+=!a.ready;bMissing+=!b.ready;
+                aPartial+=a.ready&&a.coverage<1.f;bPartial+=b.ready&&b.coverage<1.f;
+                rescues+=b.recovered;
+            }
+            peak=std::max(peak,double(std::abs(b.sample)));
+        }
+        std::cout<<"H20_RECOVERY rate="<<rate<<" old_missing="<<aMissing<<" new_missing="<<bMissing
+                 <<" old_partial="<<aPartial<<" new_partial="<<bPartial<<" rescues="<<rescues
+                 <<" peak="<<peak<<std::endl;
+        need(aMissing>0&&rescues>0&&bMissing<aMissing&&bPartial+bMissing<aPartial+aMissing,
+             "H20 delayed epoch recovery did not reduce unsupported samples");
+    }
+    // Recovery cannot fabricate epochs in silent source.
+    Shifter silence{};std::array<float,16384> zero{};
+    for(int i=0;i<4800;++i){
+        const auto y=silence.process(0,i,i&16383,zero,200.f,1.3f,1536.f,1.f,true,true,true,true,true);
+        need(!y.ready&&!y.recovered,"H20 fabricated silent epoch");
+    }
+}
 int main(){
+    testDelayedEpochRecovery();
     testCausalAdmissionDrain();
     testEpochPhaseContinuity();
     testFullSupport();

@@ -233,7 +233,7 @@ public:
     // Opt-in offline evidence only. All fields count sample calls, except
     // seam transitions which are recorded separately by BackingRenderSeam.
     struct RendererTrace {
-        enum Field {calls,notCarrying,causalBlocked,drained,safeUnready,ready,partial,weakConfidence,size};
+        enum Field {calls,notCarrying,causalBlocked,drained,safeUnready,ready,partial,weakConfidence,epochRecovered,size};
         std::array<std::uint64_t,size> values{};
         RendererTrace delta(const RendererTrace& previous) const noexcept {
             RendererTrace out;
@@ -289,7 +289,7 @@ public:
         for(auto& seam:backingSeams_)seam.prepare(rate);
         continuityReferenceEnabled_=true;supportReferenceEnabled_=true;
         naturalReferenceEnabled_=true;backingContour_.prepare(detectEvery_/rate);
-        carrierReferenceEnabled_=true;slopeReferenceEnabled_=true;drainReferenceEnabled_=true;
+        carrierReferenceEnabled_=true;slopeReferenceEnabled_=true;drainReferenceEnabled_=true;epochRecoveryEnabled_=true;
         traceEnabled_=false;rendererTrace_={};
         for(auto& carrier:carriers_)carrier.reset();
         periodContinuity_.reset();
@@ -522,6 +522,10 @@ public:
     }
     RendererTrace rendererTraceForOfflineTests(int voice) const noexcept {
         return voice>=0&&voice<maxVoices?rendererTrace_[static_cast<std::size_t>(voice)]:RendererTrace{};
+    }
+    bool setEpochRecoveryForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        epochRecoveryEnabled_=enabled;return true;
     }
     bool setDrainForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
@@ -900,7 +904,7 @@ private:
             sync=pitchSync_.process(voice,sampleClock_,write_,mono_,
                 sourcePeriodSamples_,effectiveRatio,
                 static_cast<float>(latency_)+arrival,scale,continuityReferenceEnabled_,
-                supportReferenceEnabled_,naturalReferenceEnabled_,windowSafe);
+                supportReferenceEnabled_,naturalReferenceEnabled_,windowSafe,epochRecoveryEnabled_);
         if(traceEnabled_){
             auto& v=rendererTrace_[ix].values;
             ++v[RendererTrace::calls];
@@ -914,6 +918,7 @@ private:
                 if(sync.coverage<1.f)++v[RendererTrace::partial];
             }
             if(carryEpochs&&!confident)++v[RendererTrace::weakConfidence];
+            if(sync.recovered)++v[RendererTrace::epochRecovered];
         }
         float& colorState=pitchSyncFiltered_[ix];
         // Invalid PSOLA epochs must never inject zero into the high-voice
@@ -1191,7 +1196,7 @@ private:
     std::array<BackingRenderSeam,maxVoices> backingSeams_{};
     bool continuityReferenceEnabled_=true,supportReferenceEnabled_=true;
     bool naturalReferenceEnabled_=true,carrierReferenceEnabled_=true,slopeReferenceEnabled_=true;
-    bool drainReferenceEnabled_=true,traceEnabled_=false;
+    bool drainReferenceEnabled_=true,traceEnabled_=false,epochRecoveryEnabled_=true;
     std::array<RendererTrace,maxVoices> rendererTrace_{};
     BackingPitchContour backingContour_{};
     std::array<PhaseCoherentCarrier,maxVoices> carriers_{};
