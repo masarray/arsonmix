@@ -2479,17 +2479,21 @@
   // Update only options on mounted inputs. NativeHooks covers strips that
   // are mounted later by bank/roster projection. Never replace a fader or
   // an active select; stale selection still fails exact admission on change.
-  function syncNamedInputOptions(){
-    const labels=stripNamedChoices("input").map(p=>p.label);
+  function syncNamedStripOptions(side){
+    const labels=stripNamedChoices(side).map(p=>p.label);
     for(const t of scope?.tracks||[]){
-      if(t.kind!=="audio")continue;
-      const el=document.querySelector('.strip[data-id="'+t.id+'"] select[data-field="input"]');
+      if(side==="input"?t.kind!=="audio":t.kind==="master")continue;
+      const field=side==="input"?"input":"external";
+      const el=document.querySelector('.strip[data-id="'+t.id+'"] select[data-field="'+field+'"]');
       if(!el?.options||document.activeElement===el)continue;
       const current=[...el.options].filter(o=>o.value.startsWith("Preset · "));
       if(current.length===labels.length&&current.every((o,i)=>o.value===labels[i]))continue;
       for(const o of current)o.remove();
       for(const label of labels)el.append(new Option(label,label));
     }
+  }
+  function syncNamedOptions(){
+    syncNamedStripOptions("input");syncNamedStripOptions("output");
   }
   let namedInventoryLease="";
   function requestNamedInventory(next){
@@ -2569,7 +2573,7 @@
         namedPatchPending=null;
         // Do not continue to offer stale choices after uncertain disk commit.
         if(deviceInventory)deviceInventory={...deviceInventory,namedPatches:null};
-        syncNamedInputOptions();paintExternalReadback(hardware);
+        syncNamedOptions();
         nativeToast("I/O preset confirmation timed out · reopen Audio I/O");
         paintPhysicalOutputs(hardware);
       },5000);
@@ -2941,7 +2945,7 @@
     loopbackField("confirmed").checked=false;
     for(const side of ["input","output"])loopbackField(side).disabled=false;
     devicePanel.hidden=true;
-    syncNamedInputOptions();paintExternalReadback(hardware);
+    syncNamedOptions();
     for(const host of devicePanel.querySelectorAll("[data-audio-input-grid],[data-audio-output-grid]"))
       delete host.dataset.signature;
   }
@@ -3522,7 +3526,7 @@
       // Refresh only this independent metadata, not the current device draft.
       deviceInventory={...deviceInventory,namedPatches:data};
       nativeToast("I/O preset saved");
-      syncNamedInputOptions();paintExternalReadback(hardware);
+      syncNamedOptions();
       paintPhysicalOutputs(hardware);
     });
   }
@@ -3568,7 +3572,7 @@
       deviceInventory=inventory;
       deviceChoice=null;
       renderDevicePanel();
-      syncNamedInputOptions();paintExternalReadback(hardware);
+      syncNamedOptions();
       paintPhysicalOutputs(hardware);
       if(devicePanel&&!devicePanel.hidden&&devicePanel.dataset.openPinsAfterInventory==="true"){
         delete devicePanel.dataset.openPinsAfterInventory;
@@ -4047,7 +4051,7 @@
     // can be installed while the prior paint still sees a busy SOURCE.
     paintPhysicalOutputs(next);
     requestNamedInventory(next);
-    syncNamedInputOptions();
+    syncNamedStripOptions("input");
     if(readModel.kind==="LOGICAL_ONLY"||readModel.kind==="RETAINED_OFFLINE") {
       const staged=readModel.view;
       let revealCreatedId=null,wireImpact=null;

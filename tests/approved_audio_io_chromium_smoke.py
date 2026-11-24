@@ -111,7 +111,7 @@ def verify_custom_input(page,out):
     # Preset appears on another input strip without creating a new graph
     # authority. Choose it directly; actual wire payload remains physical.
     page.locator("[data-audio-close]").click()
-    direct=page.locator('.strip select[data-field="input"]').filter(has=page.locator('option',has_text="Preset · Studio Vocal")).last
+    direct=page.locator('#tracks .strip[data-id="2"] select[data-field="input"]')
     direct.wait_for(state="visible")
     label=direct.locator('option',has_text="Preset · Studio Vocal").first.get_attribute("value")
     direct.select_option(label)

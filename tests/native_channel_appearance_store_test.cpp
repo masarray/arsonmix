@@ -82,6 +82,29 @@ static void namedPatchRegression(){
         set(req,"revision",2);assert(store.apply(req,active).isNotEmpty());
         set(req,"operation","REMOVE");assert(store.apply(req,active).isEmpty());
         assert(store.snapshot(active).getProperty("entries",{}).getArray()->isEmpty());
+        // Output preset persists a selection only; even/odd ASIO policy,
+        // device isolation and side identity are independently validated.
+        juce::Array<juce::var> outputNames,outputPins;
+        for(int i=0;i<6;++i){outputNames.add("Out "+juce::String(i+1));outputPins.add(i);}
+        set(active,"outputNames",juce::var(outputNames));set(active,"enabledOutputs",juce::var(outputPins));
+        set(req,"revision",3);set(req,"id","");set(req,"operation","SAVE");set(req,"side","output");
+        set(req,"name","Streaming");set(req,"mode","STEREO");set(req,"left",3);set(req,"right",4);
+        set(req,"leftName","Out 4");set(req,"rightName","Out 5");
+        assert(store.apply(req,active).isNotEmpty());
+        set(req,"left",4);set(req,"right",5);set(req,"leftName","Out 5");set(req,"rightName","Out 6");
+        assert(store.apply(req,active).isEmpty());
+        rows=store.snapshot(active).getProperty("entries",{});
+        assert(rows.getArray()->size()==1);
+        const auto outputId=rows[0].getProperty("id","").toString();
+        set(req,"revision",4);set(req,"name","streaming");
+        assert(store.apply(req,active).isNotEmpty());
+        set(active,"playbackDevice","Other ASIO");
+        assert(store.snapshot(active).getProperty("entries",{}).getArray()->isEmpty());
+        assert(store.apply(req,active).isNotEmpty());
+        set(active,"playbackDevice","Test ASIO");
+        set(req,"id",outputId);set(req,"operation","REMOVE");set(req,"side","input");
+        assert(store.apply(req,active).isNotEmpty());
+        set(req,"side","output");assert(store.apply(req,active).isEmpty());
     }
     const auto file=dir.getChildFile("named-io-patches.v1.json");
     assert(file.replaceWithText("broken"));

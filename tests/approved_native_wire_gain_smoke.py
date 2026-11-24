@@ -284,7 +284,13 @@ def verify_external_output(page, out):
     state["externalOutputs"]=[]
     emit(page,"arMixConsoleSnapshot",state)
     page.wait_for_selector('#tracks .strip[data-id="2"] select[data-field="external"]',state="attached")
-    open_verified_audio_io(page,state,"routing")
+    inventory=open_verified_audio_io(page,state,"routing")
+    inventory["namedPatches"]={"revision":1,"readOnly":False,"entries":[
+        {"id":"stream-pair","name":"Streaming","side":"output","mode":"STEREO",
+         "left":4,"right":5,"leftName":"ASIO 5","rightName":"ASIO 6","available":True},
+        {"id":"reserved-pair","name":"Reserved","side":"output","mode":"STEREO",
+         "left":0,"right":1,"leftName":"ASIO 1","rightName":"ASIO 2","available":True}]}
+    emit(page,"arMixAudioDeviceInventory",inventory)
     matrix=page.locator("[data-audio-output-matrix] .armix-output-row")
     assert matrix.count()==4,[x.inner_text() for x in matrix.all()]
     assert "MAIN" in matrix.nth(0).inner_text()
@@ -295,7 +301,9 @@ def verify_external_output(page, out):
     second=page.locator('#tracks .strip[data-id="2"] select[data-field="external"]')
     choices=first.locator("option").all_text_contents()
     choice=next(x for x in choices if x.startswith("OUT 5/6"))
-    first.select_option(label=choice)
+    preset=next(x for x in choices if x.startswith("Preset · Streaming"))
+    assert not any(x.startswith("Preset · Reserved") for x in choices)
+    first.select_option(label=preset)
     actions=page.evaluate("()=>window.__outActions.filter(x=>x.action==='routingExternalOutput')")
     assert len(actions)==1,actions
     requested=actions[0]

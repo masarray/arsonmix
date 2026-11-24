@@ -675,7 +675,11 @@
       if(!choice||choice.left<0)continue;
       result.push({id:p.id,name:p.name,choice,label:"Preset · "+p.name+" · "+choice.label});
     }
-    return result.filter(p=>result.filter(q=>q.id===p.id||q.label===p.label).length===1);
+    const ids=new Map(),labels=new Map();
+    for(const p of result){
+      ids.set(p.id,(ids.get(p.id)||0)+1);labels.set(p.label,(labels.get(p.label)||0)+1);
+    }
+    return result.filter(p=>ids.get(p.id)===1&&labels.get(p.label)===1);
   }
   return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,patchMatrix,physicalInputChoice,namedPatchChoices,
     externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,setupRoutingReady,setupPinsApplied,setupMatrixDeviceMatches,

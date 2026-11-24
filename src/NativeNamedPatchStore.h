@@ -40,6 +40,9 @@ public:
         if(revision_>=2147483646)return "I/O preset revision exhausted";
         const auto op=request.getProperty("operation","").toString();
         const auto id=request.getProperty("id","").toString();
+        if(!request.getProperty("id",{}).isString()||
+           !request.getProperty("operation",{}).isString())
+            return "Invalid I/O preset operation or ID";
         auto candidate=entries_;
         int found=-1;
         for(int i=0;i<candidate.size();++i)
@@ -47,7 +50,8 @@ public:
         if(!id.isEmpty()&&(found<0||!sameDevice(candidate[found],active)))
             return "I/O preset not found on current device";
         if(op=="REMOVE") {
-            if(found<0)return "I/O preset not found";
+            if(found<0||candidate[found].getProperty("side",{})!=request.getProperty("side",{}))
+                return "I/O preset not found on requested side";
             candidate.remove(found);
         }else if(op=="SAVE"){
             auto entry=object();
@@ -55,8 +59,9 @@ public:
             for(const char* key:{"backend","captureDevice","playbackDevice","side",
                 "name","mode","left","right","leftName","rightName"})
                 put(entry,key,request.getProperty(key,{}));
-            if(!valid(entry)||!verified(entry,active))
-                return "I/O preset: select exact enabled hardware pins";
+            if(!valid(entry)||!verified(entry,active)||
+               (found>=0&&candidate[found].getProperty("side",{})!=entry.getProperty("side",{})))
+                return "I/O preset: select exact enabled hardware pins and side";
             for(int i=0;i<candidate.size();++i)
                 if(i!=found&&sameDevice(candidate[i],entry)&&
                    candidate[i].getProperty("side","")==entry.getProperty("side","")&&
