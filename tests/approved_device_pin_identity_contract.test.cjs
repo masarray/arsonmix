@@ -725,3 +725,32 @@ test("Native patch matrix projects enabled physical pins and exact accepted Chan
  assert.equal(vm.patchMatrix({...snapshot,retained:true},"input").rows.length,0);
  assert.equal(vm.patchMatrix({...snapshot,hardwareConfiguration:""},"input").live,false);
 });
+
+test("Matrix admits M4 bootstrap and accepted routes without pretending ChannelId",()=>{
+ const d={epoch:"40",backend:"ASIO",enabledInputs:[0,1],
+   inputEndpoints:[0,1].map(port=>({port,label:"Mic "+port,active:true}))};
+ const base={admitted:false,hardwareConfiguration:"exact",device:d,
+   raw:{mixerSession:{authority:"NONE"},legacyM4:{active:true,routeAccepted:false,routingRevision:"1"}}};
+ const initial=vm.patchMatrix(base,"input");
+ assert.equal(initial.authority,"M4");assert.equal(initial.rows.length,10);
+ assert.equal(initial.rows[0].selected,"None");
+ assert.equal(vm.patchMatrix(base,"output").live,false);
+ const rows=Array.from({length:10},()=>({role:"INPUT",source:{mode:"MONO",left:1,right:-1}}));
+ const installed={...base,raw:{mixerSession:{authority:"M4",deviceEpoch:"40",routeRevision:"2",channels:rows},
+   legacyM4:{active:true,routeAccepted:true,routingRevision:"2"}}};
+ assert.deepEqual(vm.patchMatrix(installed,"input").rows[0].cells,["","M"]);
+ assert.equal(vm.patchMatrix({...installed,retained:true},"input").live,false);
+ assert.equal(vm.patchMatrix({...installed,raw:{...installed.raw,mixerSession:{...installed.raw.mixerSession,routeRevision:"1"}}},"input").live,false);
+});
+test("Matrix requires independent device readback matching inventory names, masks and format",()=>{
+ const {inventory}=fixture(),a=inventory.active;
+ const snapshot={device:{epoch:"41",backend:a.backend,captureDevice:a.captureDevice,
+   playbackDevice:a.playbackDevice,sampleRate:a.rate,bufferFrames:a.buffer,
+   enabledInputs:a.enabledInputs,enabledOutputs:a.enabledOutputs,
+   inputEndpoints:a.inputNames.map((label,port)=>({label,port,active:a.enabledInputs.includes(port)})),
+   outputEndpoints:a.outputNames.map((label,port)=>({label,port,active:a.enabledOutputs.includes(port)}))}};
+ assert.equal(vm.setupMatrixDeviceMatches(inventory,snapshot),true);
+ assert.equal(vm.setupMatrixDeviceMatches(inventory,{device:{...snapshot.device,epoch:"39"}}),false);
+ assert.equal(vm.setupMatrixDeviceMatches(inventory,{device:{...snapshot.device,bufferFrames:512}}),false);
+ assert.equal(vm.setupMatrixDeviceMatches(inventory,{device:{...snapshot.device,inputEndpoints:[{port:0,label:"Other",active:true}]}}),false);
+});

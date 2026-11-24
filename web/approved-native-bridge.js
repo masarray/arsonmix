@@ -2404,23 +2404,42 @@
   }
   // Matrix edits use the same queue/lease and native dispatcher as strips.
   // No synthetic PCM, no independent routing graph or optimistic crosspoint.
-  function applyMatrixRow(side,id,label){
+  const matrixBusy=()=>Boolean(deviceBusy()||activeNativeSource||pendingNativeSources.size||
+    nativeUiSourcePending||pendingSourceQueue.size||pendingExternal.size);
+  function matrixReady(snapshot){
+    return deviceVM.setupRoutingReady(deviceInventory,deviceChoice,deviceState)&&
+      deviceVM.setupPinsApplied(deviceInventory,deviceChoice)&&
+      deviceVM.setupMatrixDeviceMatches(deviceInventory,snapshot);
+  }
+  function applyMatrixRow(side,id,label,lease){
     const current=controller?.state()?.current;
     const view=deviceVM.patchMatrix(hardware,side);
     const row=view.rows.find(x=>x.id===id&&x.editable);
-    if(!row||!view.live||!deviceReady()||deviceBusy()||
-       !deviceVM.setupRoutingReady(deviceInventory,deviceChoice,deviceState)||
-       !deviceVM.setupPinsApplied(deviceInventory,deviceChoice)||
-       activeNativeSource||pendingNativeSources.size||pendingExternal.size)return;
+    if(!row||!view.live||!deviceReady()||!matrixReady(hardware)||matrixBusy()||
+       !lease||lease.config!==hardware.hardwareConfiguration||
+       lease.authority!==view.authority||lease.revision!==view.revision||
+       lease.roster!==view.roster){
+      nativeToast("Routing changed · review current matrix before applying");
+      paintPhysicalOutputs(hardware);return;
+    }
     if(side==="input"){
-      const choices=sourceChoicesFor(),choice=choices.find(x=>x.label===label);
+      const nativeOwner=view.authority==="CHANNEL_ID";
+      const choices=nativeOwner?sourceChoicesFor():inputChoicesFor();
+      const choice=choices.find(x=>x.label===label);
       if(!choice||choice.mode==="PLAYER")return;
       const decision=stripVM.sourceQueueSelection({choice,choices,
         epoch:hardware.device.epoch,acceptedLabel:row.selected,
         hardwareConfiguration:hardware.hardwareConfiguration});
       if(decision.kind!=="QUEUE")return;
-      pendingNativeSources.set(id,decision.entry);
-      dispatchNativeSource();
+      if(nativeOwner){
+        pendingNativeSources.set(id,decision.entry);
+        dispatchNativeSource();
+      }else{
+        const channel=Number(id.slice(3));
+        if(!Number.isInteger(channel)||channel<0||channel>=10)return;
+        pendingSourceQueue.set(channel,decision.entry);
+        dispatchQueuedSource();
+      }
     }else{
       const track=scope?.tracks?.find(t=>nativeIdFor(t)===id);
       if(!track||!current?.admitted)return;
@@ -2432,13 +2451,16 @@
     const host=devicePanel?.querySelector("[data-audio-"+side+"-grid]");
     if(!host)return;
     const model=deviceVM.patchMatrix(next,side);
-    const busy=Boolean(deviceBusy()||activeNativeSource||pendingNativeSources.size||pendingExternal.size);
-    const signature=JSON.stringify([model,busy,next?.hardwareConfiguration]);
+    const ready=matrixReady(next),busy=matrixBusy();
+    const signature=JSON.stringify([model,busy,ready,next?.hardwareConfiguration]);
+    const lease={config:next?.hardwareConfiguration,authority:model.authority,
+      revision:model.revision,roster:model.roster};
     if(host.dataset.signature===signature)return;
     host.dataset.signature=signature;
     host.replaceChildren();
-    if(!model.live||!model.pins.length){
-      host.textContent="Open a verified live mixer with enabled "+side+" pins.";
+    if(!ready||!model.live||!model.pins.length){
+      host.textContent=!ready?"Apply device and pin changes first.":
+        "Open a verified mixer with enabled "+side+" pins.";
       return;
     }
     const table=document.createElement("table");table.className="armix-patch-grid";
@@ -2446,7 +2468,7 @@
     const th=label=>{const e=document.createElement("th");e.textContent=label;head.append(e);};
     th(side==="input"?"Mixer input":"Mixer output");
     for(const pin of model.pins)th((pin.port+1)+" · "+pin.label);
-    th("Assignment");th("");
+    th("Assignment");th(busy?"Pending":"");
     const body=table.createTBody();
     for(const row of model.rows){
       const tr=body.insertRow();const name=tr.insertCell();
@@ -2488,8 +2510,7 @@
       if(row.editable){
         select.disabled=busy;select.onchange=update;pick.append(select);
         apply.onclick=()=>{
-          if(hardware?.hardwareConfiguration!==next?.hardwareConfiguration)return;
-          applyMatrixRow(side,row.id,select.value);
+          applyMatrixRow(side,row.id,select.value,lease);
         };
         action.append(apply);
       }else pick.textContent=row.state||"Read-only";
@@ -2499,10 +2520,13 @@
   }
   function paintPhysicalOutputs(next) {
     if(devicePanel&&!devicePanel.hidden){
-      paintRouteMatrix(next,"input");paintRouteMatrix(next,"output");
+      const page=devicePanel.querySelector(".armix-audio-dialog")?.dataset.audioTab;
+      if(page==="inputs")paintRouteMatrix(next,"input");
+      if(page==="routing")paintRouteMatrix(next,"output");
     }
     const view=devicePanel?.querySelector?.("[data-audio-output-matrix]");
-    if(!view || devicePanel.hidden)return;
+    if(!view || devicePanel.hidden||
+       devicePanel.querySelector(".armix-audio-dialog")?.dataset.audioTab!=="routing")return;
     const patches=protocol.physicalOutputOverview(next);
     const signature=JSON.stringify([patches,String(next?.device?.backend||"")]);
     if(devicePanel.dataset.outputSignature===signature)return;
@@ -2753,6 +2777,8 @@
     loopbackField("confirmed").checked=false;
     for(const side of ["input","output"])loopbackField(side).disabled=false;
     devicePanel.hidden=true;
+    for(const host of devicePanel.querySelectorAll("[data-audio-input-grid],[data-audio-output-grid]"))
+      delete host.dataset.signature;
   }
   function requestLoopback(measure){
     const scope=deviceInventory?.active?.physicalLoopback;
@@ -3125,8 +3151,9 @@
     for(const item of devicePanel.querySelectorAll('button[data-audio-tab="pins"],button[data-audio-tab="inputs"],button[data-audio-tab="routing"]'))
       item.disabled=item.dataset.audioTab==="pins"?!routingReady:!masksMatch;
     const page=devicePanel.querySelector(".armix-audio-dialog").dataset.audioTab;
-    if(!routingReady&&!deviceBusy()&&(page==="pins"||page==="inputs"||page==="routing"))
-      selectAudioSetupPage("device");
+    if(!deviceBusy()&&(!routingReady&&page==="pins"||
+       !masksMatch&&(page==="inputs"||page==="routing")))
+      selectAudioSetupPage(routingReady?"pins":"device");
     const hint=devicePanel.querySelector("[data-audio-asio4all-hint]");
     if(hint)hint.hidden=!view.asio4allHint;
     fillAudioSelect("backend",view.backendOptions,deviceChoice.backend);

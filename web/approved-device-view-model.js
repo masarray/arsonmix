@@ -67,6 +67,16 @@
       snapshot?.raw?.mixerSession?.authority==="CHANNEL_ID"&&
       snapshot.raw.mixerSession.deviceEpoch===d?.epoch&&
       typeof snapshot.hardwareConfiguration==="string"&&!!snapshot.hardwareConfiguration;
+    const session=snapshot?.raw?.mixerSession,m4=snapshot?.raw?.legacyM4;
+    const legacy=input&&snapshot?.admitted===false&&snapshot?.retained!==true&&
+      !!snapshot.hardwareConfiguration&&typeof d?.epoch==="string"&&
+      /^[1-9][0-9]*$/.test(d.epoch)&&Number.isSafeInteger(Number(d.epoch))&&
+      m4?.active===true&&Number.isSafeInteger(Number(m4.routingRevision))&&
+      Number(m4.routingRevision)>0&&
+      ((session?.authority==="NONE"&&m4.routeAccepted===false)||
+       (session?.authority==="M4"&&session.deviceEpoch===d.epoch&&
+        m4.routeAccepted===true&&session.routeRevision===m4.routingRevision&&
+        Array.isArray(session.channels)&&session.channels.length===10));
     const choices=input?inputChoices(snapshot):outputChoices(snapshot);
     const rows=[];
     const map=(left,right,mono=false)=>pins.map(p=>p.port===left?(mono?"M":"L"):p.port===right?"R":"");
@@ -96,7 +106,22 @@
           state:src&&!choice?"Needs remap":src?.status||""});
       }
     }
-    return {live,pins,rows,choices};
+    if(legacy)for(let index=0;index<10;++index){
+      const ch=session.authority==="M4"?session.channels[index]:null;
+      if(ch&&ch.role!=="INPUT")continue;
+      const src=ch?.source;
+      const choice=!src?choices[0]:choices.find(x=>x.mode===src.mode&&
+        x.left===src.left&&x.right===src.right);
+      rows.push({id:"m4:"+index,name:ch?.name||"CH "+(index+1),
+        editable:true,format:src?.channelFormat||"MONO",
+        selected:choice?.label||null,
+        cells:choice?map(choice.left,choice.right,choice.mode==="MONO"):map(-1,-1),
+        state:choice?"":"Needs remap"});
+    }
+    return {live:live||legacy,authority:live?"CHANNEL_ID":legacy?"M4":"NONE",
+      revision:live?snapshot.graph?.revision:legacy?String(m4.routingRevision):"",
+      roster:live?snapshot.graph?.rosterRevision:"",
+      pins,rows,choices};
   }
   function inputLabel(snapshot,row) {
     if(!row||row.mode==="NONE")return "None";
@@ -168,6 +193,26 @@
       setupSameEndpoint(a,draft) &&
       draft.rate===a.rate && draft.buffer===a.buffer &&
       pinInventory(a,"input")!==null && pinInventory(a,"output")!==null;
+  }
+  // Compare fresh JUCE inventory with independent installed device snapshot.
+  // Generation and route epoch need not be identical (STOP/START advances epoch).
+  function setupMatrixDeviceMatches(inventory,snapshot){
+    const a=inventory?.active,d=snapshot?.device;
+    return a?.open===true&&a.authorized===true&&snapshot?.retained!==true&&
+      Number.isSafeInteger(a.deviceGeneration)&&a.deviceGeneration>=0&&
+      typeof d?.epoch==="string"&&/^[1-9][0-9]*$/.test(d.epoch)&&
+      BigInt(d.epoch)>=BigInt(a.deviceGeneration)&&
+      d.backend===a.backend&&d.captureDevice===a.captureDevice&&
+      d.playbackDevice===a.playbackDevice&&d.sampleRate===a.rate&&
+      d.bufferFrames===a.buffer&&samePinMask(d.enabledInputs,a.enabledInputs)&&
+      samePinMask(d.enabledOutputs,a.enabledOutputs)&&
+      ["input","output"].every(side=>{
+        const input=side==="input",names=a[input?"inputNames":"outputNames"],
+          enabled=d[input?"enabledInputs":"enabledOutputs"],
+          endpoints=d[input?"inputEndpoints":"outputEndpoints"];
+        return Array.isArray(names)&&Array.isArray(endpoints)&&enabled.every(port=>
+          endpoints.some(p=>p.port===port&&p.active===true&&p.label===names[port]));
+      });
   }
   function setupPinsApplied(inventory,draft){
     const a=inventory?.active;
@@ -580,7 +625,7 @@
     return Object.freeze({kind:"SAME",expirePending:false});
   }
   return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,patchMatrix,
-    externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,setupRoutingReady,setupPinsApplied,
+    externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,setupRoutingReady,setupPinsApplied,setupMatrixDeviceMatches,
     pinInventory,setupSelectAllPins,setupBufferPeriod,setupHealthReadback,
     setupInitial,setupBegin,setupAck,setupReadback,
     setupTimeout,setupClearResult,nativeLifecycleLease,nativeLifecycleDecision,
