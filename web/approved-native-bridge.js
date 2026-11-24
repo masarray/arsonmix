@@ -1703,6 +1703,8 @@
       vendor:"ArSonMix",category:"EQ",format:"Native",source:"builtin"}),
     Object.freeze({id:"armix.builtin.channel-compressor.v1",name:"Compressor",
       vendor:"ArSonMix",category:"Dynamics",format:"Native",source:"builtin"}),
+    Object.freeze({id:"armix.builtin.vocal-reverb.v1",name:"Vocal Reverb",
+      vendor:"ArSonMix",category:"Reverb",format:"Native",source:"builtin"}),
     Object.freeze({id:"armix.builtin.arson-harmony.v1",name:"Harmonice",
       vendor:"ArSonMix",category:"Utility",format:"Native",source:"builtin"}),
     // Native GuitarRigProcessor is compiled and installed: no WebAudio mock.

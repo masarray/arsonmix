@@ -204,6 +204,35 @@ if (NOT ARMIX_BRAND_STATUS EQUAL 0)
     message(FATAL_ERROR "ArSonMix branding resource generation failed")
 endif()
 
+# Original ArSonVerb v1.0.1 AGPL C++ DSP only: NO second JUCE/VST runtime,
+# network fetch, extra audio callback or duplicate mixer graph.
+add_library(ARMixArVerbCore STATIC
+    third_party/arsonverb/src/Reverb.cpp
+    third_party/arsonverb/src/Presets.cpp
+    third_party/arsonverb/src/arverb_c.cpp)
+target_include_directories(ARMixArVerbCore PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/arsonverb/include")
+target_compile_features(ARMixArVerbCore PUBLIC cxx_std_17)
+# Match the upstream C ABI version contract; NEVER use ArSonMix project version.
+target_compile_definitions(ARMixArVerbCore PRIVATE ARVERB_BUILD_VERSION="1.0.1")
+
+# Genuine Inter UI typeface: one byte-for-byte checked-in SIL OFL-licensed
+# static Inter-Regular.ttf subset (Bluesky Social source, documented below). Generated as a UNIQUE JUCE resource namespace:
+# native application never relies on users installing a Windows font, and
+# neither test nor installer fetches a font at build or runtime.
+juce_add_binary_data(ARMixReverbInterFont
+    NAMESPACE ARMixReverbInter
+    HEADER_NAME ARMixReverbInterBinary.h
+    SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/assets/fx/reverb/Inter-Regular.ttf")
+
+# Standalone, explicit-only p50/p95/p99 CPU profile across ASIO-like blocks.
+# Synthetic/offline results are informational, NEVER a device FAT gate.
+add_executable(ARMixVocalReverbCpuProfile EXCLUDE_FROM_ALL
+    tools/native_vocal_reverb_cpu_profile.cpp)
+target_link_libraries(ARMixVocalReverbCpuProfile PRIVATE ARMixArVerbCore)
+target_compile_features(ARMixVocalReverbCpuProfile PRIVATE cxx_std_17)
+
+
 juce_add_gui_app(ARMixConsole
     PRODUCT_NAME "AR MIX Studio"
     ICON_BIG "${ARMIX_BRAND_DIR}/arsonmix-256.png"
@@ -370,6 +399,9 @@ target_include_directories(ARMixConsole PRIVATE "${ARMIX_APPROVED_GUI_DIR}")
 # FX tests use the procedural fallback without depending on BinaryData.
 target_compile_definitions(ARMixConsole PRIVATE ARMIX_GEQ31_VECTOR_ASSET=1)
 
+target_link_libraries(ARMixConsole PRIVATE ARMixArVerbCore)
+target_link_libraries(ARMixConsole PRIVATE ARMixReverbInterFont)
+target_compile_definitions(ARMixConsole PRIVATE ARMIX_REVERB_INTER_EMBEDDED=1)
 target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h engine/builtin_fx/HarmonyDsp.h engine/builtin_fx/HarmonyMusicKey.h engine/builtin_fx/ChannelHarmonyProcessor.h engine/builtin_fx/SonKuSpatialProcessor.h engine/builtin_fx/sonku/SonKuSpatialCore.h engine/builtin_fx/sonku/SonKuMeasuredHrir.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/PreparedNativeMixerSession.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/NativeFxParameterHotkey.h src/NativeHotkeyCommandPlan.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/device/LiveSecondaryCaptureDevice.h engine/device/SecondaryCaptureClockStream.h engine/core/LiveOutputRouteGate.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
 # Explicit UTF-8 source decoding: native channel icons are Unicode, and
 # MSVC's machine-specific ANSI source charset corrupts emoji literals.
@@ -552,6 +584,37 @@ if(BUILD_TESTING)
   target_link_libraries(ARMixFactoryFxRegistryTests PRIVATE juce::juce_core juce::juce_cryptography juce::juce_recommended_config_flags)
   target_compile_features(ARMixFactoryFxRegistryTests PRIVATE cxx_std_20)
   add_test(NAME FactoryFxVerifiedManifestAndNegativePathGate COMMAND ARMixFactoryFxRegistryTests)
+  # Real native reverb/ArSonVerb core: JUCE host, PCM ACK, state/negative restore.
+  juce_add_console_app(ARMixNativeVocalReverbTests PRODUCT_NAME
+      "ArSonMix Vocal Reverb Native DSP and Session Tests")
+  target_sources(ARMixNativeVocalReverbTests PRIVATE tests/native_vocal_reverb_test.cpp)
+  target_link_libraries(ARMixNativeVocalReverbTests PRIVATE
+      ARMixArVerbCore juce::juce_audio_processors juce::juce_recommended_config_flags)
+  target_link_libraries(ARMixNativeVocalReverbTests PRIVATE ARMixReverbInterFont)
+  target_compile_definitions(ARMixNativeVocalReverbTests PRIVATE
+      ARMIX_REVERB_INTER_EMBEDDED=1)
+  target_compile_features(ARMixNativeVocalReverbTests PRIVATE cxx_std_20)
+  add_test(NAME NativeVocalReverbSourcePCMParameterAckAndState
+      COMMAND ARMixNativeVocalReverbTests)
+  # Pinned upstream regression, no JUCE dependency.
+  add_executable(ARMixArVerbCoreRegression third_party/arsonverb/tests/test_reverb.cpp)
+  target_link_libraries(ARMixArVerbCoreRegression PRIVATE ARMixArVerbCore)
+  target_compile_features(ARMixArVerbCoreRegression PRIVATE cxx_std_17)
+  add_test(NAME ArSonVerbPinnedV101CoreRegression COMMAND ARMixArVerbCoreRegression)
+  # Original pinned upstream v1.0.1 sonic/RT tests run as-is, no hand-
+  # rewritten "equivalent" tests and no proprietary DSP/IR dependency.
+  set(ARMIX_ARVERB_UPSTREAM_TESTS
+      test_contract test_audio_regression test_stress test_sonic_structure
+      test_algorithms test_mix_air test_rt60_tail test_preset_transition)
+  foreach(arverb_test IN LISTS ARMIX_ARVERB_UPSTREAM_TESTS)
+    add_executable(ARMixArVerb_${arverb_test}
+        third_party/arsonverb/tests/${arverb_test}.cpp)
+    target_link_libraries(ARMixArVerb_${arverb_test} PRIVATE ARMixArVerbCore)
+    target_compile_features(ARMixArVerb_${arverb_test} PRIVATE cxx_std_17)
+    add_test(NAME ArSonVerbPinned_${arverb_test}
+        COMMAND ARMixArVerb_${arverb_test})
+  endforeach()
+
   # M4: fixture processor goes through the SAME native FX descriptor path.
   # Remains part of the existing Windows native mixer qualification build.
   juce_add_console_app(ARMixNativeFxExtensionTests PRODUCT_NAME "ArSonMix Native FX Host Extension Tests")
@@ -559,6 +622,7 @@ if(BUILD_TESTING)
       tests/native_fx_registry_extension_test.cpp src/NativeBuiltInFx.h)
   target_link_libraries(ARMixNativeFxExtensionTests PRIVATE
       juce::juce_audio_processors juce::juce_recommended_config_flags)
+  target_link_libraries(ARMixNativeFxExtensionTests PRIVATE ARMixArVerbCore)
   target_compile_features(ARMixNativeFxExtensionTests PRIVATE cxx_std_20)
   add_test(NAME M4NativeFxCatalogExtensionAndStatePreparation
       COMMAND ARMixNativeFxExtensionTests)
@@ -1631,7 +1695,7 @@ if(BUILD_TESTING)
   target_sources(ARMixDurableMixerSessionTests PRIVATE tests/native_mixer_session_store_test.cpp
       src/NativeMixerSessionDocument.h src/NativeMixerSessionStore.h)
   target_link_libraries(ARMixDurableMixerSessionTests PRIVATE
-      juce::juce_audio_devices juce::juce_audio_processors juce::juce_cryptography juce::juce_recommended_config_flags)
+      ARMixArVerbCore juce::juce_audio_devices juce::juce_audio_processors juce::juce_cryptography juce::juce_recommended_config_flags)
   target_compile_features(ARMixDurableMixerSessionTests PRIVATE cxx_std_20)
   target_compile_definitions(ARMixDurableMixerSessionTests PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
   add_test(NAME P0DynamicMixerSessionDocumentAndCrashSafeRecovery COMMAND ARMixDurableMixerSessionTests)

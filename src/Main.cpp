@@ -7635,6 +7635,24 @@ private:
                                     },readPower);
                             }
 #endif
+                            // REVERB-SIS uses the same retained lease readback
+                            // as GEQ31. The indicator never owns another gate.
+                            if(auto* reverb=dynamic_cast<
+                                armix::builtin_fx::VocalReverbEditor*>(editor)) {
+                                auto held=owner;
+                                reverb->bindHostBypassReadback(
+                                    [this,held,nativeTarget,nativeChannel,lane,slot,token] {
+                                        const auto current=nativeTarget?
+                                            engine_.retainedNativeFxPower(
+                                                held,armix::mixer::ChannelId{nativeChannel},
+                                                static_cast<std::size_t>(slot),token):
+                                            engine_.retainedRoutedFxPower(
+                                                held,lane,slot,token);
+                                        return armix::builtin_fx::VocalReverbEditor::HostBypassState{
+                                            current.valid,current.slotBypassed,
+                                            current.rackBypassed,current.globalBypassed};
+                                    });
+                            }
                             // Graphic EQ uses the same EXACT retained mixer
                             // FX bypass authority/readback as ImmerSIB.
                             // No GUI-local toggle can mutate a second graph.
