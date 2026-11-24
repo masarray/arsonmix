@@ -5,6 +5,8 @@ on:
       - perf/immersib-p0-active-fir-20261124
     paths:
       - tools/immersib_p0_legacy_scope_gate.py
+      - tools/immersib_p0_active_fir_gate.py
+      - tools/immersib_p0_product_pcm.cpp
       - .github/workflows/immersib-p0-legacy-scope.yml
 permissions:
   contents: read
@@ -22,6 +24,8 @@ jobs:
           persist-credentials: false
       - name: Same legacy golden and four-way branded PCM
         run: python tools/immersib_p0_legacy_scope_gate.py
+      - name: Scoped candidate exact active CPU and stream parity
+        run: python tools/immersib_p0_active_fir_gate.py --scoped
   branded-msvc:
     runs-on: windows-2022
     timeout-minutes: 15
@@ -38,6 +42,6 @@ jobs:
           $vsroot = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
           if (-not $vsroot) { throw 'MSVC_CPP_TOOLCHAIN_MISSING' }
           $vcvars = Join-Path $vsroot 'VC\Auxiliary\Build\vcvars64.bat'
-          $cmdline = 'call "' + $vcvars + '" >nul && python tools/immersib_p0_legacy_scope_gate.py --msvc'
+          $cmdline = 'call "' + $vcvars + '" >nul && python tools/immersib_p0_legacy_scope_gate.py --msvc && python tools/immersib_p0_active_fir_gate.py --msvc --scoped'
           & cmd.exe /D /C $cmdline
           if ($LASTEXITCODE -ne 0) { throw 'P0_SCOPED_BRANDED_MSVC_FAILED' }

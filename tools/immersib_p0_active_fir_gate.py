@@ -53,7 +53,7 @@ def run(args, cwd, timeout=180):
                           capture_output=True, timeout=timeout).stdout
 
 
-def build(root, label, header, msvc, benchmark):
+def build(root, label, header, msvc, benchmark, *, contract_off=True, product_probe=False):
     dst = root / label
     audio = dst / "engine/builtin_fx"
     audio.mkdir(parents=True)
@@ -66,6 +66,8 @@ def build(root, label, header, msvc, benchmark):
     names = ["immersib_p102_fullcore_ab.cpp"]
     if benchmark:
         names.append("immersib_p102_cpu_profile.cpp")
+    if product_probe:
+        names.append("immersib_p0_product_pcm.cpp")
     outputs = []
     for name in names:
         src = tools / name
@@ -77,7 +79,7 @@ def build(root, label, header, msvc, benchmark):
                    *["/D"+x+"=1" for x in MACROS], str(src), "/Fe:"+str(out)]
         else:
             cmd = ["g++","-std=c++20","-O2","-Wall","-Wextra","-Werror",
-                   "-pedantic","-ffp-contract=off",
+                   "-pedantic", *(["-ffp-contract=off"] if contract_off else []),
                    *["-D"+x+"=1" for x in MACROS], str(src), "-o",str(out)]
         subprocess.run(cmd,cwd=dst,check=True,timeout=240)
         outputs.append(out)
@@ -112,6 +114,7 @@ def case(dst, exe, cfg):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--msvc", action="store_true")
+    parser.add_argument("--scoped", action="store_true", help="benchmark exact branded-only candidate")
     args=parser.parse_args()
     subprocess.run([sys.executable,"scripts/verify_immersib_approved_pcm_sources.py"],
                    cwd=ROOT,check=True,timeout=30)
@@ -121,6 +124,9 @@ def main():
         raise ValueError("P0_ORIGINAL_SOURCE_PIN_MISMATCH")
     current=(ROOT/PATH).read_bytes().replace(b"\r\n",b"\n")
     proposed=candidate(current)
+    if args.scoped:
+        from immersib_p0_legacy_scope_gate import scoped_candidate
+        proposed=scoped_candidate(current)
     print(f"P0_FIR_CANDIDATE_BLOB={blob_hash(proposed)} base={CANDIDATE_BLOB}",flush=True)
     with tempfile.TemporaryDirectory(prefix="immersib-p0-active-") as tmp:
         root=Path(tmp)
