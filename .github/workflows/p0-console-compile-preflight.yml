@@ -4,12 +4,14 @@ on:
     branches:
       - staging/p0-arsonmix-reliability-20261124
       - feature/io-studio-workflow-20261125
+      - feature/io-atomic-output-20261125
     paths:
       - 'src/**'
       - 'engine/**'
       - 'CMakeLists.txt'
       - 'tests/native_channel_appearance_store_test.cpp'
       - 'tests/native_mixer_session_store_test.cpp'
+      - 'tests/physical_external_output_pcm_test.cpp'
       - '.github/workflows/p0-console-compile-preflight.yml'
 permissions:
   contents: read
@@ -58,7 +60,7 @@ jobs:
           # Test the actual JUCE disk store with assertions enabled before
           # compiling the production translation unit. This is not FAT or a
           # protected nativeFull gate and does not publish an executable.
-          if ($env:GITHUB_REF_NAME -eq 'feature/io-studio-workflow-20261125') {
+          if ($env:GITHUB_REF_NAME -in @('feature/io-studio-workflow-20261125','feature/io-atomic-output-20261125')) {
             cmake --build build --parallel 2 --target ARMixChannelAppearanceTests
             if ($LASTEXITCODE -ne 0) { throw 'AUDIO_IO_NATIVE_STORE_COMPILE_FAILED' }
             $catalog = (& ctest --test-dir build --show-only=json-v1 | Out-String | ConvertFrom-Json)
@@ -76,6 +78,14 @@ jobs:
             ctest --test-dir build --output-on-failure -R '^P0DynamicMixerSessionDocumentAndCrashSafeRecovery$'
             if ($LASTEXITCODE -ne 0) { throw 'AUDIO_IO_SESSION_CTEST_FAILED' }
             Write-Host "AUDIO_IO_SESSION_CTEST_PASS exact=$actual"
+            cmake --build build --parallel 2 --target ARMixPhysicalExternalOutputTests
+            if ($LASTEXITCODE -ne 0) { throw 'AUDIO_IO_EXTERNAL_PCM_COMPILE_FAILED' }
+            if (!($catalog.tests | Where-Object { $_.name -eq 'O1PhysicalExternalOutputNativePcmAndFailClosedRouting' })) {
+              throw 'AUDIO_IO_EXTERNAL_PCM_CTEST_MISSING'
+            }
+            ctest --test-dir build --output-on-failure -R '^O1PhysicalExternalOutputNativePcmAndFailClosedRouting$'
+            if ($LASTEXITCODE -ne 0) { throw 'AUDIO_IO_EXTERNAL_PCM_CTEST_FAILED' }
+            Write-Host "AUDIO_IO_EXTERNAL_PCM_CTEST_PASS exact=$actual"
           }
           # Ninja builds real generated header dependencies, not the full app,
           # all JUCE objects, full CTest, linking, or Inno packaging.

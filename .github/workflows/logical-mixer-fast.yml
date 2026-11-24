@@ -1,5 +1,12 @@
 name: Logical Mixer (fast C++20)
 on:
+  push:
+    branches:
+      - feature/io-atomic-output-20261125
+    paths:
+      - 'engine/core/**'
+      - 'tests/physical_external_output_pcm_test.cpp'
+      - '.github/workflows/logical-mixer-fast.yml'
   pull_request:
     paths:
       - 'engine/core/DeviceIndependentMixerSession.h'
