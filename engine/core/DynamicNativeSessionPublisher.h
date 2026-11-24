@@ -8,6 +8,9 @@
 #include "RealtimeRoutePublisher.h"
 #include "RealtimeRenderPermit.h"
 #include <algorithm>
+#include <array>
+#include <bitset>
+#include <set>
 #include <atomic>
 #include <cstdint>
 #include <limits>
@@ -37,6 +40,15 @@ public:
                    (owner&&context==owner.get()&&render&&
                     deviceEpoch>0&&graphRevision>0);
         }
+    };
+    // CONTROL-only complete external destination set for an unpublished
+    // graph. Caller attests physical identity and exclusive MAIN/MONITOR
+    // ownership. These values are callback ordinals, never saved pin IDs.
+    struct InitialExternalTarget final {ChannelId channel{};int left=-1,right=-1;};
+    struct InitialExternalPlan final {
+        int outputCount=0;
+        std::span<const int> reserved; // MAIN/MONITOR callback ordinals
+        std::span<const InitialExternalTarget> targets;
     };
 private:
     struct Prepared final {
@@ -77,7 +89,8 @@ public:
                         bool allOutputsDisarmed,
                         FxPlan fx={nullptr,nullptr,nullptr,0,0,nullptr},bool verifiedInternalWireOnly=false,
                         bool verifiedInternalFxOnly=false,
-                        const armix::device::MultiDeviceInputPlan* qualifiedInputMap=nullptr) {
+                        const armix::device::MultiDeviceInputPlan* qualifiedInputMap=nullptr,
+                        const InitialExternalPlan* initialExternal=nullptr) {
         CommitResult report;report.revision=publisher_.lastRevision();
         if(!fx.valid() ||
            (fx.owner && (fx.deviceEpoch!=proposedDeviceEpoch ||
@@ -146,6 +159,48 @@ public:
                return fx.latency?fx.latency(fx.context,id):0;
            },request.maxScratchBytes,report.graphError)) {
             report.fault=Fault::invalidGraph;return report;
+        }
+        // Install all eligible external targets on the UNPUBLISHED graph.
+        // An invalid member discards the entire candidate. No new callback
+        // locks, buffers or generation reads; the existing publisher is
+        // the only atomic publication boundary.
+        if(initialExternal){
+            if(!allOutputsDisarmed||initialExternal->outputCount<2||
+               initialExternal->outputCount>256||
+               initialExternal->targets.size()>512){
+                report.fault=Fault::invalidCandidate;return report;
+            }
+            std::bitset<256> reserved;
+            for(const int pin:initialExternal->reserved){
+                if(pin<0||pin>=initialExternal->outputCount||reserved[static_cast<std::size_t>(pin)]){
+                    report.fault=Fault::invalidCandidate;return report;
+                }
+                reserved.set(static_cast<std::size_t>(pin));
+            }
+            std::array<int,256> pairByPin;pairByPin.fill(-1);
+            std::set<std::uint64_t> seen;
+            for(const auto& target:initialExternal->targets){
+                const int l=target.left,r=target.right;
+                const auto* row=roster.find(target.channel);
+                if(!row||(row->role!=ChannelRole::input&&row->role!=ChannelRole::group&&
+                          row->role!=ChannelRole::fxReturn)||
+                   !seen.insert(target.channel.value).second||
+                   l<0||r<0||l==r||l>=initialExternal->outputCount||r>=initialExternal->outputCount||
+                   reserved[static_cast<std::size_t>(l)]||reserved[static_cast<std::size_t>(r)]){
+                    report.fault=Fault::invalidCandidate;return report;
+                }
+                const int pair=l*256+r;
+                if((pairByPin[l]>=0&&pairByPin[l]!=pair)||(pairByPin[r]>=0&&pairByPin[r]!=pair)){
+                    report.fault=Fault::invalidCandidate;return report;
+                }
+                pairByPin[l]=pairByPin[r]=pair; // exact ordered sharing only
+                // An intentionally unpatched lane has no render scratch.
+                // Its durable intent stays pending in the CONTROL owner.
+                if(prepared->graph.channelScheduled(target.channel)&&
+                   !prepared->graph.setExternalOutput(target.channel,l,r,initialExternal->outputCount)){
+                    report.fault=Fault::invalidCandidate;return report;
+                }
+            }
         }
         // The Console data and PCM schedule must originate from one and the
         // same accepted roster. No browser-side inferred BUS assignments.

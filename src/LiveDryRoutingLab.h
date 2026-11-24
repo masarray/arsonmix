@@ -2970,9 +2970,34 @@ public:
             fx.latency=+[](void* p,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(p)->latencySamples(id);
             };
+            // Resolve durable external intentions before publishing the new
+            // graph. No per-channel post-publication target updates on restore.
+            std::vector<DynamicNativeSessionPublisher::InitialExternalTarget> externalTargets;
+            std::vector<std::uint64_t> verifiedExternal;
+            std::array<int,4> reserved{document.outputs.mainL,document.outputs.mainR,
+                document.outputs.monitorL,document.outputs.monitorR};
+            if(pins.typeName=="ASIO"&&pins.deviceName==document.binding.playback){
+                const std::span<const int> callbackPins(pins.outputByCallback.data(),
+                    static_cast<std::size_t>(pins.outputCount));
+                externalTargets.reserve(document.externalOutputs.size());
+                verifiedExternal.reserve(document.externalOutputs.size());
+                for(const auto& patch:document.externalOutputs){
+                    if(!armix::session::MixerDeviceBindingPolicy::canRestoreExternalOutput(
+                        patch,pins.deviceName,callbackPins,pins.outputNames,document.outputs))continue;
+                    int left=-1,right=-1;
+                    for(int i=0;i<pins.outputCount;++i){
+                        if(pins.outputPhysicalPort(i)==patch.left)left=i;
+                        if(pins.outputPhysicalPort(i)==patch.right)right=i;
+                    }
+                    externalTargets.push_back({patch.channel,left,right});
+                    verifiedExternal.push_back(patch.channel.value);
+                }
+            }
+            const DynamicNativeSessionPublisher::InitialExternalPlan externalPlan{
+                pins.outputCount,{reserved.data(),document.outputs.monitorEnabled?4U:2U},externalTargets};
             const auto published=nativePublisher_.commit(
                 document.roster,document.request,previous,generation,epoch(),
-                true,std::move(fx));
+                true,std::move(fx),false,false,nullptr,&externalPlan);
             if(!published.ok())
                 return "Native ChannelId PCM rejected persisted topology: "+
                     juce::String(static_cast<int>(published.fault));
@@ -2987,28 +3012,11 @@ public:
             // Restored physical intentions are inert until exact ASIO identity,
             // both labeled pins and current MAIN/MONITOR ownership match.
             externalOutputAssignments_=std::move(document.externalOutputs);
-            externalOutputVerified_.clear();
-            externalOutputEpoch_=0;
-            if(pins.typeName=="ASIO" && pins.deviceName==document.binding.playback) {
-                // Safety is per ChannelId, not all-or-nothing: one absent
-                // amplifier remains disarmed/NEEDS_REMAP while another exact
-                // original-driver pair can resume on this verified epoch.
-                const std::span<const int> callbackPins(
-                    pins.outputByCallback.data(),
-                    static_cast<std::size_t>(pins.outputCount));
-                externalOutputVerified_.reserve(externalOutputAssignments_.size());
-                for(const auto& patch:externalOutputAssignments_)
-                    if(armix::session::MixerDeviceBindingPolicy::
-                       canRestoreExternalOutput(patch,pins.deviceName,
-                           callbackPins,pins.outputNames,nativeAccepted_.hardware))
-                        externalOutputVerified_.push_back(patch.channel.value);
-                if(!externalOutputVerified_.empty())
-                    externalOutputEpoch_=generation;
-            }
+            externalOutputVerified_=std::move(verifiedExternal);
+            externalOutputEpoch_=externalOutputVerified_.empty()?0:generation;
             nativeAccepted_.fxOwners=std::move(bank);
             nativeAccepted_.deviceEpoch=generation;
             nativeAccepted_.pcmRevision=published.revision;
-            reapplyExternalOutputsSameEpoch();
             nativeStructureLive_=true;
             nativeControlDirty_=true;
             publishedEpoch_.store(0,std::memory_order_release);
@@ -3018,7 +3026,6 @@ public:
             // disarmed until the user independently enables monitoring.
             installNativeHardware(generation,nativeAccepted_.hardware,
                                   nativeAccepted_.graph.request.maxFrames);
-            reapplyExternalOutputsSameEpoch();
             return channelIdPhysicalPcmActive()?juce::String{}:
                 juce::String("NEEDS_REMAP: device changed during native publication");
         }catch(...) {return "Native session restore exception";}
