@@ -13,15 +13,15 @@ SOURCES = ("src/Reverb.cpp", "src/Presets.cpp", "src/dsp/Primitives.hpp", "inclu
 def git(*args):
     return subprocess.check_output(["git", *args], cwd=ROOT)
 
-def compile_core(base, binary):
+def compile_core(base, binary, album=False):
     subprocess.run(["g++", "-std=c++17", "-O2", "-fno-fast-math",
                     "-I" + str(base / "include"), str(base / "src/Reverb.cpp"),
                     str(base / "src/Presets.cpp"), str(ROOT / CORE / "tests/benchmark_live.cpp"),
-                    "-o", str(binary)], check=True)
+                    "-o", str(binary)] + (["-DARVERB_ALBUM_BENCHMARK"] if album else []), check=True)
 
-def run(binary):
+def run(binary, *args):
     rows = {}
-    for line in subprocess.check_output([str(binary)], text=True).splitlines():
+    for line in subprocess.check_output([str(binary), *args], text=True).splitlines():
         fs, block, mode, count, median, p99 = line.split(",")
         rows[tuple(map(int, (fs, block, mode, count)))] = (float(median), float(p99))
     if len(rows) != 32:
@@ -32,6 +32,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--reference", required=True)
     parser.add_argument("--verify-pcm", action="store_true")
+    parser.add_argument("--album", action="store_true")
     args = parser.parse_args()
     if len(args.reference) != 40 or any(c not in "0123456789abcdef" for c in args.reference):
         parser.error("reference must be full SHA")
@@ -48,7 +49,7 @@ def main():
             p.write_bytes(git("show", args.reference + ":" + str(CORE / name)))
         ref, new = work / "ref", work / "new"
         compile_core(old, ref)
-        compile_core(ROOT / CORE, new)
+        compile_core(ROOT / CORE, new, args.album)
         # Exact sound-preservation gate on a separate, untimed render.
         # Only enable for topology-equivalent optimization references.
         if args.verify_pcm:
@@ -77,5 +78,19 @@ def main():
                   f"newP99={p99:.2f} callbackBudgetPct={100*p99/budget:.2f}")
         print(f"Reverb-Sis perf median speedup={statistics.median(speedups):.3f} "
               "(portable core only; not whole mixer/physical ASIO)")
+        if args.album:
+            # Same candidate binary/settings, change only the new profile.
+            on1, off1, off2, on2 = run(new, "--album"), run(new), run(new), run(new, "--album")
+            overheads = []
+            for key in sorted(on1):
+                fs, block, mode, count = key
+                off = statistics.mean([off1[key][0], off2[key][0]])
+                on = statistics.mean([on1[key][0], on2[key][0]])
+                p99 = max(on1[key][1], on2[key][1])
+                overheads.append(on / off)
+                print(f"Reverb-Sis album perf fs={fs} block={block} mode={mode} instances={count} "
+                      f"offP50={off:.2f} onP50={on:.2f} ratio={on/off:.3f} "
+                      f"onP99={p99:.2f} callbackBudgetPct={100*p99/(block/fs*1e6):.2f}")
+            print(f"Reverb-Sis album perf median cost ratio={statistics.median(overheads):.3f}")
 if __name__ == "__main__":
     main()

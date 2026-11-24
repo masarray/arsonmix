@@ -79,7 +79,11 @@ int main(int argc,char** argv) {
                 x.setParameter(P::DampingHz,10400.f);x.setParameter(P::LowCutHz,150.f);
                 x.setParameter(P::HighCutHz,15500.f);x.setParameter(P::Width,1.15f);
                 x.setParameter(P::EarlyLevel,.36f);x.setParameter(P::ModDepthMs,.20f);
-                x.setParameter(P::DuckAmount,.18f);x.prepare(fs,true);
+                x.setParameter(P::DuckAmount,.18f);
+#ifdef ARVERB_ALBUM_BENCHMARK
+                x.setAlbumReady(argc==2&&std::strcmp(argv[1],"--album")==0);
+#endif
+                x.prepare(fs,true);
             }
             std::array<float,256> l{},r{},a{},b{};
             std::vector<double> times;times.reserve(count);

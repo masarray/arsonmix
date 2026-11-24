@@ -629,7 +629,7 @@ int main() {
                 assert(received.preset>=0 && received.preset<reverbSisPresetCount);
                 const auto expected=vocalReverbFactoryPreset(received.preset);
                 assert(received.values==expected.values &&
-                       received.algorithm==expected.algorithm);
+                       received.algorithm==expected.algorithm&&received.albumReady==expected.albumReady);
             }
             if(producerDone.load(std::memory_order_acquire)&&
                !concurrentReverb->settingsPending())return;
