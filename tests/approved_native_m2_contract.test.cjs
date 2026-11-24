@@ -6954,8 +6954,8 @@ test("P0 input GAIN sends bounded latest native intents during pointermove",()=>
 test("P0 Audio I/O help reacts to explicit failed operator intent without auto-ARM",()=>{
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/function recommendAudioRepair\(context\)/);
- assert.match(bridge,/if\(!deviceReady\(\)\)recommendAudioRepair\("INPUT belum siap"\)/);
- assert.match(bridge,/recommendAudioRepair\("FX tidak dapat memproses audio"\)/);
+ assert.match(bridge,/if\(!deviceReady\(\)\)recommendAudioRepair\("INPUT unavailable"\)/);
+ assert.match(bridge,/recommendAudioRepair\("FX audio processing unavailable"\)/);
  assert.match(bridge,/window\.setTimeout\(\(\)=>\{/);
  assert.match(bridge,/openNativeAudioIO\(\); \/\/ explicit repair prompt/);
  assert.match(bridge,/if\(now-lastAudioRepairAt<1600\)return true/);
