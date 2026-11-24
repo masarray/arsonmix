@@ -123,16 +123,28 @@ static void verifyInactiveStageHistory(){
         BackingStageSpatial old,now;
         need(old.prepare(rate)&&now.prepare(rate),"H25D stage prepare");
         old.setInactiveFastForOfflineTests(false);
+        // Use the same compiled function for both policies. Comparing two
+        // separately specialized inline call sites can conflate arithmetic
+        // contraction/constant propagation with the history contract.
+        // No epsilon relaxation: both branches still require exact samples.
+        auto volatile place=&BackingStageSpatial::place;
         int skipped=0;
         for(int i=0;i<static_cast<int>(rate*.12);++i){
             const float x=static_cast<float>(.3*std::sin(.017*i));
             const bool active=(i/(static_cast<int>(rate*.02)))%2;
             const float l=active?.2f:0.f,r=active?.7f:0.f;
-            const auto a=old.place(2,x,.4f*x,-.3f*x,l,r,.8f);
-            const auto b=now.place(2,x,.4f*x,-.3f*x,l,r,.8f);
-            need(a.directL==b.directL&&a.directR==b.directR&&a.earlyL==b.earlyL&&
-                 a.earlyR==b.earlyR&&a.roomL==b.roomL&&a.roomR==b.roomR,
-                 "H25D inactive/reentry stage PCM");
+            const auto a=(old.*place)(2,x,.4f*x,-.3f*x,l,r,.8f);
+            const auto b=(now.*place)(2,x,.4f*x,-.3f*x,l,r,.8f);
+            const bool equal=a.directL==b.directL&&a.directR==b.directR&&a.earlyL==b.earlyL&&
+                 a.earlyR==b.earlyR&&a.roomL==b.roomL&&a.roomR==b.roomR;
+            if(!equal)std::cerr<<"H25D_DIFF rate="<<rate<<" sample="<<i<<" active="<<active
+                <<std::hexfloat<<" directL="<<a.directL<<'/'<<b.directL
+                <<" directR="<<a.directR<<'/'<<b.directR<<" earlyL="<<a.earlyL<<'/'<<b.earlyL
+                <<" earlyR="<<a.earlyR<<'/'<<b.earlyR<<" roomL="<<a.roomL<<'/'<<b.roomL
+                <<" roomR="<<a.roomR<<'/'<<b.roomR<<std::defaultfloat<<'\n';
+            need(equal,"H25D inactive/reentry stage PCM");
+            if(!active)need(b.directL==0.f&&b.directR==0.f&&b.earlyL==0.f&&b.earlyR==0.f&&
+                b.roomL==0.f&&b.roomR==0.f,"H25D inactive stage not silent");
             skipped+=!active;old.advance();now.advance();
         }
         std::cout<<"H25D_STAGE rate="<<rate<<" inactive_samples="<<skipped<<" exact history parity\n";
