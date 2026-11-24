@@ -433,8 +433,8 @@ int main(int argc,char** argv){
             const auto dry=process(v,drySettings,true);
             const double beforeRms=rms(subtract(baseline,dry));
             const double afterRms=rms(subtract(boosted,dry));
-            if(!(beforeRms>.0001&&afterRms>beforeRms*1.50&&
-                 afterRms<beforeRms*1.90))return 5;
+            if(!(beforeRms>.0001&&afterRms>beforeRms*1.50*Engine::backingUnityGain(s.wet,s.space,s.voiceMode)&&
+                 afterRms<beforeRms*1.90*Engine::backingUnityGain(s.wet,s.space,s.voiceMode)))return 5;
             s.wet=0.f;
             if(!same(process(v,s,false),process(v,s,true))||
                !same(process(v,s,true,127,true,true,false),

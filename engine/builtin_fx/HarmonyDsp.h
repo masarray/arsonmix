@@ -111,7 +111,7 @@ public:
         leadShifter_.reset();
         leadTune_.prepare(detectEvery_/rate);
         leadRatio_=1.f;leadBlend_=0.f;leadPeriod_=0.f;
-        leadRendering_=false;voicePlanner_.reset();
+        leadRendering_=false;leadSeam_.prepare(rate);voicePlanner_.reset();
         pitchSyncBlend_.fill(0.f);pitchSyncFiltered_.fill(0.f);
         pitchSyncValid_.fill(0.f);
         periodContinuity_.reset();
@@ -120,7 +120,7 @@ public:
         pitchSyncReferenceEnabled_=true;
         stageDepthReferenceEnabled_=true;
         roomFocusReferenceEnabled_=true;
-        presenceReferenceEnabled_=true;
+        presenceReferenceEnabled_=true;unityReferenceEnabled_=true;
         // Both renderer choice and missing-epoch recovery are time-domain
         // crossfades. Never hard-switch their independent source phases.
         pitchSyncAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.030)));
@@ -154,7 +154,7 @@ public:
     // the existing SPSC; applying it on the callback needs only fixed copies.
     struct PreparedSettings {
         Settings settings{};
-        float gain=1.f;
+        float gain=1.f,backingGain=1.f;
         float mixL[maxVoices]{},mixR[maxVoices]{};
     };
     // Wet-only musical presence, prepared OFF the audio callback.
@@ -166,12 +166,26 @@ public:
         const float presence=enhanced?(.77f+.38f*w):.65f;
         return w*presence/std::sqrt(static_cast<float>(voices));
     }
+    // Whole-stem compensation, not a lead duck or per-voice AGC. The
+    // initial static curve compensates stereo pan energy and depth loss;
+    // offline stem measurements qualify/refine these bounded anchors.
+    // Leave ordinary factory Wet=.45 and below exactly on the old curve.
+    static float backingUnityGain(float wet,float space,int mode) noexcept {
+        const float w=std::clamp((wet-.45f)/.55f,0.f,1.f);
+        const float blend=w*w*(3.f-2.f*w);
+        const float s=std::clamp(space,0.f,1.f);
+        const float full=mode==1?1.70f+.80f*s:1.35f+1.15f*s;
+        return 1.f+blend*(full-1.f);
+    }
     static bool prepareSettings(const Settings& next,PreparedSettings& out,
-                                bool enhancedPresence=true) noexcept {
+                                bool enhancedPresence=true,
+                                bool unityPresence=true) noexcept {
         if(!valid(next))return false;
         PreparedSettings prepared;
         prepared.settings=next;
         prepared.gain=std::pow(10.f,next.gainDb/20.f);
+        prepared.backingGain=enhancedPresence&&unityPresence?
+            backingUnityGain(next.wet,next.space,next.voiceMode):1.f;
         constexpr float pi=3.14159265358979323846f;
         if(next.voiceMode==1){
             // Real unison double, NOT 2 pitched harmony voices. One
@@ -235,7 +249,7 @@ public:
         settings_=next.settings;
         targetWet_=next.settings.wet;targetColor_=next.settings.color;
         targetSpace_=next.settings.space;
-        targetGain_=next.gain;
+        targetGain_=next.gain;targetBackingGain_=next.backingGain;
         targetCorrection_=next.settings.correction?1.f:0.f;
         for(int v=0;v<maxVoices;++v){
             targetMixL_[static_cast<std::size_t>(v)]=next.mixL[v];
@@ -243,7 +257,7 @@ public:
         }
         if(!processed_){
             wet_=targetWet_;color_=targetColor_;space_=targetSpace_;
-            gain_=targetGain_;
+            gain_=targetGain_;backingGain_=targetBackingGain_;
             mixL_=targetMixL_;mixR_=targetMixR_;
         }
         return true;
@@ -252,7 +266,7 @@ public:
     // FX mailbox invokes applyPreparedSettings(), never this trig/pow path.
     bool setSettings(const Settings& next) noexcept {
         PreparedSettings prepared;
-        return prepareSettings(next,prepared,presenceReferenceEnabled_)&&
+        return prepareSettings(next,prepared,presenceReferenceEnabled_,unityReferenceEnabled_)&&
                applyPreparedSettings(prepared);
     }
     // Called only on the existing audio callback from a separately selected
@@ -298,6 +312,13 @@ public:
         presenceReferenceEnabled_=enabled;
         return setSettings(settings_);
     }
+    // Offline-only: exact previous presence curve, independent of legacy
+    // pre-presence reference and the spatial/pitch A/B switches.
+    bool setBackingUnityForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        unityReferenceEnabled_=enabled;
+        return setSettings(settings_);
+    }
     int observedMidiNote() const noexcept{return currentNote_;}
     bool voiced() const noexcept{return voiced_;}
     int peakPitchLagWork() const noexcept{return peakPitchLagWork_;}
@@ -326,6 +347,7 @@ public:
             color_+=a*(targetColor_-color_);
             space_+=a*(targetSpace_-space_);
             gain_+=a*(targetGain_-gain_);
+            backingGain_+=a*(targetBackingGain_-backingGain_);
             for(int v=0;v<maxVoices;++v){
                 const auto ix=static_cast<std::size_t>(v);
                 mixL_[ix]+=a*(targetMixL_[ix]-mixL_[ix]);
@@ -378,8 +400,9 @@ public:
             // active sample, not once for each backing shifter.
             const float filterCoef=voicedGain_>0.00001f?
                 toneColor_.coefficient(color_):0.f;
-            float outL=dryL,outR=dryR;
-            renderLead(outL,outR);
+            float leadL=dryL,leadR=dryR;
+            renderLead(leadL,leadR);
+            float outL=0.f,outR=0.f;
             // Direct sound and reflections from backing singers only.
             // Preserve the exact previous spatial gains in offline reference.
             const auto stageGain=BackingStageSpatial::gains(space_);
@@ -435,8 +458,10 @@ public:
             const float focus=roomFocus_.returnGain(dryL,dryR,space_);
             const float roomReturn=lateReturn*(roomFocusReferenceEnabled_?focus:1.f);
             outL+=room.left*roomReturn;outR+=room.right*roomReturn;
-            l[i]=std::clamp(outL*gain_,-4.f,4.f);
-            r[i]=std::clamp(outR*gain_,-4.f,4.f);
+            // Compensate direct + early + late together, retaining DRR and
+            // the original room excitation; lead remains independent.
+            l[i]=std::clamp((leadL+outL*backingGain_)*gain_,-4.f,4.f);
+            r[i]=std::clamp((leadR+outR*backingGain_)*gain_,-4.f,4.f);
             // Expression follows stable notes; confidence hysteresis is
             // handled by the tracker, not by vibrato resetting on one hop.
             ensemble_.advance(voiced_&&noteHold_>=2);
@@ -450,7 +475,7 @@ private:
         const float target=leadTune_.ratio();
         const bool tuning=targetCorrection_>0.f&&std::abs(target-1.f)>.00015f;
         if(!tuning&&leadBlend_<.00001f){
-            if(leadRendering_)leadShifter_.reset();
+            if(leadRendering_){leadShifter_.reset();leadSeam_.reset();}
             leadRendering_=false;leadBlend_=0.f;leadRatio_=1.f;
             return;
         }
@@ -459,10 +484,10 @@ private:
         const auto tuned=leadShifter_.processStereo(0,sampleClock_,write_,mono_,
             left_,right_,leadPeriod_,leadRatio_,static_cast<float>(latency_));
         leadBlend_+=smoothingAlpha_*((tuning&&tuned.ready?1.f:0.f)-leadBlend_);
-        if(tuned.ready){
-            left=leadPath(left,tuned.left,leadBlend_);
-            right=leadPath(right,tuned.right,leadBlend_);
-        }
+        // Do not bypass the blend on a missing epoch. The seam bridges
+        // only the correction residual; the live dry waveform continues.
+        leadSeam_.process(left,right,tuned.left,tuned.right,
+                          tuned.ready,leadBlend_);
     }
     float tap(const std::array<float,capacity>& a,float delay) const noexcept {
         const float d=std::clamp(delay,1.f,static_cast<float>(capacity-3));
@@ -604,6 +629,9 @@ private:
     void uncertainPitchEvidence() noexcept {
         if(voiced_&&noteHold_>=2&&uncertainPitchHops_<5){
             ++uncertainPitchHops_;
+            // Harmony tolerates brief ambiguous vowels, but lead tuning
+            // must not apply stale correction through a consonant.
+            if(uncertainPitchHops_>=2)leadTune_.release();
             return;
         }
         releasePitch();
@@ -670,15 +698,11 @@ private:
         const int requiredNoteHops=currentNote_>=0&&
             std::abs(note-currentNote_)>=9?4:2;
         if(noteHold_<requiredNoteHops){
-            if(!voiced_)leadTune_.release();
+            if(!voiced_||note!=currentNote_)leadTune_.release();
             return;
         }
         const float newPeriod=static_cast<float>(rate_/hz);
-        if(settings_.correction){
-            leadPeriod_=newPeriod;
-            leadTune_.observe(midi,note,confidence);
-        }
-        if(note!=currentNote_||tonalTransitionPending_){
+         if(note!=currentNote_||tonalTransitionPending_){
             if(settings_.voiceMode==0)
                 voicePlanner_.plan(note,activeKey,activeScale==0?major:minor);
             else voicePlanner_.reset();
@@ -690,6 +714,15 @@ private:
         // reset all five backing renderers and create a micro-dropout.
         sourcePeriodSamples_=periodContinuity_.observe(newPeriod);
         sourceConfidence_=confidence;
+        if(settings_.correction){
+            // Reuse the accepted F0 continuity policy, not an independent
+            // raw-lag tracker. Keep the old valid period during release.
+            leadPeriod_=sourcePeriodSamples_;
+            if(periodContinuity_.transitioning()||
+               std::abs(newPeriod-leadPeriod_)>.20f*leadPeriod_)
+                leadTune_.release();
+            else leadTune_.observe(midi,note,confidence);
+        }
         // Hysteresis prevents marginal correlation confidence causing
         // rapid PSOLA/granular alternation. Silence disables it immediately.
         if(confidence>=.86f){
@@ -739,10 +772,11 @@ private:
     std::uint64_t sampleClock_=0;
     bool pitchSyncReferenceEnabled_=true,stageDepthReferenceEnabled_=true;
     bool roomFocusReferenceEnabled_=true;
-    bool presenceReferenceEnabled_=true;
+    bool presenceReferenceEnabled_=true,unityReferenceEnabled_=true;
     std::array<float,maxVoices> pitchSyncBlend_{},pitchSyncFiltered_{},pitchSyncValid_{};
     float space_=0.f,targetSpace_=0.f;
     float gain_=1.f,targetGain_=1.f,targetCorrection_=0.f;
+    float backingGain_=1.f,targetBackingGain_=1.f;
     std::array<float,maxVoices> mixL_{},mixR_{},targetMixL_{},targetMixR_{};
     float decimationLowpass_=0.f,decimationAlpha_=0.f;
     StereoPhaseSafeFold vocalFold_{};
@@ -756,6 +790,7 @@ private:
     PitchSynchronousVoice<capacity,maxVoices> pitchSync_{};
     PitchSynchronousVoice<capacity,1> leadShifter_{};
     LeadTune leadTune_{};
+    LeadRenderSeam leadSeam_{};
     VoicePlanner voicePlanner_{};
     bool leadRendering_=false;
     float leadRatio_=1.f,leadBlend_=0.f,leadPeriod_=0.f;

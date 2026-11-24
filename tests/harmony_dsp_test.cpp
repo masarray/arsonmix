@@ -382,7 +382,92 @@ static void testLoudVibratoContinuity(){
        "long-vibrato ensemble produced an unbounded sample discontinuity");
 }
 
+// Forced renderer readiness dropouts, independent of the F0 detector.
+// Constant residual makes the exact edge continuity directly falsifiable.
+static void testLeadRendererSeam(){
+  for(int rate:{32000,48000,96000,192000}){
+    LeadRenderSeam seam;seam.prepare(rate);
+    auto tick=[&](bool ready,float dl=.2f,float dr=-.1f){
+      seam.process(dl,dr,.6f,-.4f,ready,1.f);
+      return std::pair{dl,dr};
+    };
+    for(int i=0;i<rate/50;++i)tick(true);
+    const auto before=tick(true);
+    const auto missing=tick(false);
+    need(before==missing,"lead readiness loss hard-switched PCM");
+    auto last=missing;
+    for(int i=0;i<rate/100;++i){
+      auto x=tick(false);
+      need(std::abs(x.first-last.first)<.02f&&
+           std::abs(x.second-last.second)<.02f,"lead residual release stepped");
+      last=x;
+    }
+    need(last==std::pair{.2f,-.1f},"lead residual never returned to exact dry");
+    for(int i=0;i<rate/100;++i)
+      need(tick(i%2==0)==last,"flickering renderer entered without prewarm");
+    for(int i=0;i<rate/50;++i)tick(true);
+    need(tick(true)==before,"stable renderer failed to recover");
+    seam.reset();
+    need(tick(false)==last,"renderer reset leaked correction");
+  }
+}
+
+// Matched dry subtraction, actual Engine PCM, not a prepared scalar proxy.
+// Report old and new absolute stem dB for every case before enforcing the
+// provisional gate. Synthetic voiced fixture is not a human loudness test.
+static void testBackingUnity(){
+  bool within=true;
+  for(int rate:{44100,48000,96000}){
+    auto input=leadFixture(rate,220.,0.f,0.f);
+    input.right=input.left; // ordinary dual-mono mic
+    auto render=[&](Settings s,bool unity,int block){
+      auto e=std::make_unique<Engine>();
+      need(e->prepare(rate)&&e->setBackingUnityForOfflineReference(unity)&&
+           e->setSettings(s),"unity PCM fixture prepare");
+      auto out=input;
+      for(int i=0;i<2*rate;i+=block)
+        e->process(out.left.data()+i,out.right.data()+i,std::min(block,2*rate-i));
+      return out;
+    };
+    Settings s;s.color=1.f;s.correction=false;s.wet=0.f;
+    const auto dry=render(s,true,127);
+    auto level=[&](const LeadFixture& out){
+      double wet=0.,lead=0.;
+      for(int i=rate;i<2*rate;++i){
+        need(std::abs(out.left[i])<1.f&&std::abs(out.right[i])<1.f,
+             "unity fixture clipped nominal PCM");
+        const double l=out.left[i]-dry.left[i],r=out.right[i]-dry.right[i];
+        wet+=l*l+r*r;lead+=dry.left[i]*dry.left[i]+dry.right[i]*dry.right[i];
+      }
+      return 10.*std::log10(wet/lead);
+    };
+    for(int mode=0;mode<=1;++mode){
+      s.voiceMode=mode;
+      for(int voices=2;voices<=(mode==1?2:5);++voices){
+        s.voices=voices;
+        for(float space:{0.f,.6f,1.f}){
+          s.space=space;s.wet=1.f;
+          const auto prior=render(s,false,127),now=render(s,true,127);
+          const double oldDb=level(prior),db=level(now);
+          std::cout<<"H1_STEM rate="<<rate<<" mode="<<mode
+                   <<" voices="<<voices<<" space="<<space
+                   <<" old_dB="<<oldDb<<" new_dB="<<db<<std::endl;
+          within=within&&std::isfinite(db)&&std::abs(db)<=2.;
+          need(db>oldDb,"unity calibration failed to lift backing");
+          s.wet=.45f;
+          const auto factory=render(s,true,64),factoryOld=render(s,false,257);
+          need(factory.left==factoryOld.left&&factory.right==factoryOld.right,
+               "ordinary Wet preset or block invariance changed");
+          need(level(factory)<db,"full Wet failed to exceed factory Wet");
+        }
+      }
+    }
+  }
+  need(within,"H1 full-Wet aggregate stem outside +/-2dB target; inspect H1_STEM rows");
+}
 int main(){
+  testLeadRendererSeam();
+  testBackingUnity();
   testUnvoicedGapPreservesWetTail();
   testUnisonDoubler();
   testPeriodContinuityOnLoudOctaveErrors();
@@ -954,6 +1039,17 @@ int main(){
   // Field feedback: full Wet, 4 voices, Space 60% still sounded thin.
   // Presence curve must lift BACKING only, with sqrt voice count normalization
   // and exact Wet0 silence; all scalar math is prepared on control thread.
+  for(int mode:{0,1}){
+    for(float space:{0.f,.6f,1.f}){
+      float previous=1.f;
+      for(float w:{0.f,.25f,.45f,.5f,.75f,1.f}){
+        const float gain=Engine::backingUnityGain(w,space,mode);
+        need(gain>=previous&&gain<=2.5f&&(w>.45f||gain==1.f),
+             "backing bus calibration unbounded or changed factory Wet");
+        previous=gain;
+      }
+    }
+  }
   for(int voices=2;voices<=Engine::maxVoices;++voices){
     float previous=0.f;
     for(float wet:{0.f,.15f,.45f,.60f,.85f,1.f}){
