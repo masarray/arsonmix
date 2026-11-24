@@ -1326,6 +1326,21 @@ static void testSourceAlignedCandidate(){
     need(!timeline.publish({1800.,100.f,.95f})&&!timeline.publish({2000.,100.f,.7f}),
          "H24C rejected nonmonotonic/weak evidence");
     timeline.reset();need(timeline.nearest(1900,100).period==0.f,"H24C reset");
+    timeline.observe({100.,100.f,.95f},150.);
+    timeline.observe({200.,100.f,.95f},150.);
+    need(timeline.nearest(100,100).period==0.f,"H24C2 premature initial evidence");
+    timeline.observe({300.,100.f,.95f},150.);
+    need(timeline.nearest(100,10).period==100.f,"H24C2 backdated initial evidence");
+    timeline.observe({400.,200.f,.95f},150.);
+    timeline.observe({500.,200.f,.95f},150.);
+    timeline.interrupt();
+    timeline.observe({600.,100.f,.95f},150.);
+    need(timeline.nearest(400,20).period==0.f,"H24C2 rejected isolated octave");
+    timeline.observe({700.,200.f,.95f},150.);
+    timeline.observe({800.,201.f,.95f},150.);
+    timeline.observe({900.,199.f,.95f},150.);
+    need(timeline.nearest(700,10).period==200.f&&timeline.nearest(800,10).period==201.f,
+         "H24C2 confirmed source transition");
     constexpr double tau=6.283185307179586;
     for(int rate:{48000,96000})for(int voices:{3,5}){
         const int n=rate*3;LeadFixture src{std::vector<float>(n),std::vector<float>(n)};
@@ -1339,33 +1354,40 @@ static void testSourceAlignedCandidate(){
                 .045*std::sin(2*phase+.3)+.02*std::sin(3*phase+.7));
         }
         struct Result{LeadFixture pcm;std::uint64_t losses=0,high=0,used=0;};
-        auto render=[&](bool aligned,float wet,int block){
+        auto render=[&](int aligned,float wet,int block){
             auto e=std::make_unique<Engine>();Settings s;s.voices=voices;s.wet=wet;s.space=1.f;s.color=.78f;
-            need(e->prepare(rate)&&e->setSourceAlignedForOfflineReference(aligned)&&
-                e->setSettings(s)&&e->setRendererTraceForOfflineTests(true),"H24C setup");
+            need(e->prepare(rate)&&e->setSourceAlignedForOfflineReference(aligned!=0)&&
+                e->setSourceConfirmationForOfflineReference(aligned==2)&&e->setSettings(s)&&e->setRendererTraceForOfflineTests(true),"H24C setup");
             Result x{src};
             for(int at=0;at<n;at+=block)e->process(x.pcm.left.data()+at,x.pcm.right.data()+at,std::min(block,n-at));
             for(int v=0;v<Engine::maxVoices;++v)x.losses+=e->seamCountsForOfflineTests(v).losses;
             x.high=e->seamCountsForOfflineTests(2).losses;x.used=e->alignedCallsForOfflineTests(2);
             return x;
         };
-        const auto old=render(false,1.f,127),now=render(true,1.f,127),split=render(true,1.f,64);
-        const auto dry=render(false,0.f,64),newDry=render(true,0.f,127);
+        const auto old=render(0,1.f,127),now=render(1,1.f,127),split=render(1,1.f,64);
+        const auto confirmed=render(2,1.f,127),confirmedSplit=render(2,1.f,64);
+        const auto dry=render(0,0.f,64),newDry=render(1,0.f,127),confirmedDry=render(2,0.f,127);
+        need(confirmed.pcm.left==confirmedSplit.pcm.left&&confirmed.pcm.right==confirmedSplit.pcm.right&&
+             confirmed.used==confirmedSplit.used&&confirmed.used>0&&confirmed.losses==confirmedSplit.losses&&
+             dry.pcm.left==confirmedDry.pcm.left&&dry.pcm.right==confirmedDry.pcm.right,"H24C2 block/dry parity");
         need(now.pcm.left==split.pcm.left&&now.pcm.right==split.pcm.right&&
              now.losses==split.losses&&now.used==split.used&&now.used>0&&
              dry.pcm.left==newDry.pcm.left&&dry.pcm.right==newDry.pcm.right,"H24C block/dry/use contract");
+        for(int variant:{1,2}){
+        const auto& candidate=variant==1?now:confirmed;
         double ea=0.,eb=0.,ma=0.,mb=0.,prevA=0.,prevB=0.;
         for(int i=rate/2;i<n;++i){
-            const double a=old.pcm.right[i]-dry.pcm.right[i],b=now.pcm.right[i]-dry.pcm.right[i];
+            const double a=old.pcm.right[i]-dry.pcm.right[i],b=candidate.pcm.right[i]-dry.pcm.right[i];
             need(std::isfinite(b),"H24C finite");
             ea+=a*a;eb+=b*b;if(i>rate/2){ma=std::max(ma,std::abs(a-prevA));mb=std::max(mb,std::abs(b-prevB));}
             prevA=a;prevB=b;
         }
         need(ea>1.&&eb>1.,"H24C audible backing");
-        std::cout<<"H24C_ALIGNED rate="<<rate<<" voices="<<voices<<" old_loss="<<old.losses
-                 <<" new_loss="<<now.losses<<" old_high="<<old.high<<" new_high="<<now.high
-                 <<" high_used="<<now.used<<" wet_dB="<<10.*std::log10(eb/ea)
+        std::cout<<"H24C_ALIGNED variant="<<variant<<" rate="<<rate<<" voices="<<voices<<" old_loss="<<old.losses
+                 <<" new_loss="<<candidate.losses<<" old_high="<<old.high<<" new_high="<<candidate.high
+                 <<" high_used="<<candidate.used<<" wet_dB="<<10.*std::log10(eb/ea)
                  <<" normalized_edge_ratio="<<mb/ma*std::sqrt(ea/eb)<<std::endl;
+        }
     }
 }
 static void testHeadroomContract(){

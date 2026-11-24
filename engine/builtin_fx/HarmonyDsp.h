@@ -308,7 +308,7 @@ public:
         articulation_.prepare(rate);
         headroom_.prepare(rate);headroomEnabled_=true;
         doublerMono_.prepare(rate);doublerMonoEnabled_=true;
-        sourceTimeline_.reset();sourceAlignedEnabled_=false;pitchWindowNewest_=0;alignedCalls_.fill(0);
+        sourceTimeline_.reset();sourceAlignedEnabled_=false;sourceConfirmationEnabled_=false;pitchWindowNewest_=0;alignedCalls_.fill(0);
         // Both renderer choice and missing-epoch recovery are time-domain
         // crossfades. Never hard-switch their independent source phases.
         pitchSyncAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.030)));
@@ -539,6 +539,10 @@ public:
     bool setSourceAlignedForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
         sourceAlignedEnabled_=enabled;return true;
+    }
+    bool setSourceConfirmationForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        sourceConfirmationEnabled_=enabled;return true;
     }
     std::uint64_t alignedCallsForOfflineTests(int v)const noexcept {
         return v>=0&&v<maxVoices?alignedCalls_[static_cast<std::size_t>(v)]:0;
@@ -1064,6 +1068,7 @@ private:
         }
     }
     void releasePitch() noexcept {
+        if(sourceConfirmationEnabled_)sourceTimeline_.interrupt();
         sourceConfidence_=0.f;voiced_=false;noteHold_=0;
         candidateNote_=-1;currentNote_=-1;
         uncertainPitchHops_=0;weakSyncHops_=0;pitchSyncStable_=false;
@@ -1078,6 +1083,7 @@ private:
     // releases. Avoid ~150Hz note-gating during loud vowels and long vibrato.
     // Six inconclusive windows still release, never an indefinite noise hold.
     void uncertainPitchEvidence() noexcept {
+        if(sourceConfirmationEnabled_)sourceTimeline_.interrupt();
         if(voiced_&&noteHold_>=2&&uncertainPitchHops_<5){
             ++uncertainPitchHops_;
             // Harmony tolerates brief ambiguous vowels, but lead tuning
@@ -1146,13 +1152,16 @@ private:
         // do not generate provisional harmony on a single noisy transient.
         const float confidence=std::clamp(
             correlations[static_cast<std::size_t>(bestLag)],0.f,1.f);
+        const float newPeriod=static_cast<float>(rate_/hz);
+        if(sourceAlignedEnabled_&&sourceConfirmationEnabled_)
+            sourceTimeline_.observe({SourcePitchTimeline::sourceCenter(pitchWindowNewest_,decimation_,lag),
+                newPeriod,confidence},2.*detectEvery_);
         const int requiredNoteHops=currentNote_>=0&&
             std::abs(note-currentNote_)>=9?4:2;
         if(noteHold_<requiredNoteHops){
             if(!voiced_||note!=currentNote_)leadTune_.release();
             return;
         }
-        const float newPeriod=static_cast<float>(rate_/hz);
         if(note!=currentNote_||tonalTransitionPending_||chordTransitionPending_){
             std::array<int,maxVoices> old{};
             for(std::size_t v=0;v<old.size();++v)old[v]=voicePlanner_.target(v);
@@ -1175,7 +1184,7 @@ private:
         sourceConfidence_=confidence;
         // Publish only accepted, non-transitioning F0 evidence. Raw lag
         // is more local than the smoothed period, but reject octave outliers.
-        if(sourceAlignedEnabled_&&!periodContinuity_.transitioning()&&
+        if(sourceAlignedEnabled_&&!sourceConfirmationEnabled_&&!periodContinuity_.transitioning()&&
            std::abs(newPeriod-sourcePeriodSamples_)<=.20f*sourcePeriodSamples_)
             sourceTimeline_.publish({SourcePitchTimeline::sourceCenter(pitchWindowNewest_,
                 decimation_,lag),newPeriod,confidence});
@@ -1252,7 +1261,7 @@ private:
     BackingHeadroom headroom_{};
     bool headroomEnabled_=true,doublerMonoEnabled_=true;
     DoublerMonoGuard doublerMono_{};
-    bool sourceAlignedEnabled_=false;
+    bool sourceAlignedEnabled_=false,sourceConfirmationEnabled_=false;
     SourcePitchTimeline sourceTimeline_{};
     std::uint64_t pitchWindowNewest_=0;
     std::array<std::uint64_t,maxVoices> alignedCalls_{};
