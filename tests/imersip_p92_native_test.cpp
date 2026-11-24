@@ -610,7 +610,7 @@ static void verifyIdlePolicyEdges() {
 }
 #if defined(_WIN32)
 static void verifyOwnedImmerSIBPresentation() {
-    // Actual JUCE createEditorIfNeeded lifecycle, not a mock editor or PCM.
+    // Actual JUCE registered-editor lifecycle, not a mock editor or PCM.
     // Second real processor models another independent editor owner (not a
     // third-party VST3 binary). Both remain alive and prepared.
     auto a=std::make_unique<ImerSipP92Processor>();
@@ -620,10 +620,13 @@ static void verifyOwnedImmerSIBPresentation() {
     mixer.centreWithSize(1100,720);mixer.setVisible(true);
     juce::DocumentWindow primary("ImmerSIB",juce::Colours::black,0);
     juce::DocumentWindow other("Other FX owner",juce::Colours::black,0);
-    auto* first=a->createEditorIfNeeded();
-    auto* second=b->createEditorIfNeeded();
+    auto firstOwner=armix::ui::createHostedAudioEditor(*a);
+    auto secondOwner=armix::ui::createHostedAudioEditor(*b);
+    auto* first=firstOwner.get();
+    auto* second=secondOwner.get();
     assert(first&&second&&first!=second);
-    primary.setContentOwned(first,true);other.setContentOwned(second,true);
+    assert(!armix::ui::createHostedAudioEditor(*a)); // no duplicate active editor
+    primary.setContentNonOwned(first,true);other.setContentNonOwned(second,true);
     primary.centreWithSize(first->getWidth(),first->getHeight());
     other.centreWithSize(second->getWidth(),second->getHeight());
     for(int i=0;i<100;++i){
@@ -637,9 +640,27 @@ static void verifyOwnedImmerSIBPresentation() {
         assert(primary.getContentComponent()==first&&other.getContentComponent()==second);
     }
     primary.clearContentComponent();other.clearContentComponent();
+    firstOwner.reset();secondOwner.reset();
+    assert(a->getActiveEditor()==nullptr&&b->getActiveEditor()==nullptr);
+    // Reproduce the real failure mode: retire one editor but KEEP processor
+    // and another editor alive. JUCE must allow creating it again.
+    for(int i=0;i<10;++i){
+        auto survivor=armix::ui::createHostedAudioEditor(*b);
+        assert(survivor&&b->getActiveEditor()==survivor.get());
+        {
+            auto fresh=armix::ui::createHostedAudioEditor(*a);
+            assert(fresh&&a->getActiveEditor()==fresh.get());
+            primary.setContentNonOwned(fresh.get(),true);
+            primary.setVisible(true);
+            assert(armix::ui::verifyOwnedFloatingPresentation(primary,mixer));
+            primary.clearContentComponent();
+        }
+        assert(a->getActiveEditor()==nullptr);
+        assert(b->getActiveEditor()==survivor.get());
+    }
     assert(a->getActiveEditor()==nullptr&&b->getActiveEditor()==nullptr);
     a->releaseResources();b->releaseResources();
-    std::puts("P0_IMMERSIB_ACTUAL_JUCE_OWNED_REOPEN_PASS cycles=100 owners=2");
+    std::puts("P0_IMMERSIB_ACTUAL_JUCE_OWNED_REOPEN_PASS cycles=100 owners=2 recreated=10");
 }
 #endif
 int main() {

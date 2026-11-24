@@ -8,6 +8,18 @@ OWNER=(ROOT/"src/NativeOwnedFloatingWindow.h").read_text(encoding="utf-8")
 WIN32=(ROOT/"src/NativeFxWin32Owner.h").read_text(encoding="utf-8")
 
 class NativeFxWindowLifecycle(unittest.TestCase):
+    def test_juce_active_editor_registration_released_before_deletion(self):
+        self.assertIn("editor->processor.editorBeingDeleted(editor);",OWNER)
+        self.assertLess(OWNER.index("editor->processor.editorBeingDeleted(editor);"),
+                        OWNER.index("delete editor;"))
+        self.assertIn("processor.createEditorAndMakeActive()",OWNER)
+        self.assertIn("if(processor.getActiveEditor()!=nullptr)return {};",OWNER)
+        self.assertEqual(HOST.count("armix::ui::createHostedAudioEditor("),3)
+        self.assertNotIn("createEditorIfNeeded()",HOST)
+        self.assertIn("setContentNonOwned (editor, true);",HOST)
+        self.assertIn("ownedEditor_.reset();",HOST)
+        self.assertIn("std::move(ownedEditor),*this",HOST)
+
     def test_mixer_owned_not_global_topmost(self):
         self.assertIn("attachOwnedFloatingWindow (*this, mixer)",HOST)
         self.assertIn("attachOwnedFloatingWindow",OWNER)
@@ -357,3 +369,4 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("std::make_unique<AudioSetupWindow>",HOST)
         self.assertIn("}, *safe);",HOST)
 if __name__=="__main__":unittest.main()
+

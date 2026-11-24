@@ -1,9 +1,29 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_audio_processors/juce_audio_processors.h>
+#include <memory>
 #include "NativeFxWin32Owner.h"
 
 namespace armix::ui {
+// A host must clear JUCE's active-editor registration BEFORE deleting the
+// component. JUCE 8.0.15 AudioProcessorEditor::~AudioProcessorEditor asserts
+// this contract; DocumentWindow content ownership alone cannot satisfy it.
+// Message-thread only; processor lease must outlive this unique owner.
+struct HostedAudioEditorDeleter final {
+    void operator()(juce::AudioProcessorEditor* editor) const noexcept {
+        if(!editor)return;
+        editor->processor.editorBeingDeleted(editor);
+        delete editor;
+    }
+};
+using HostedAudioEditor=std::unique_ptr<juce::AudioProcessorEditor,HostedAudioEditorDeleter>;
+inline HostedAudioEditor createHostedAudioEditor(juce::AudioProcessor& processor) {
+    // Never steal an existing editor from another host/window.
+    if(processor.getActiveEditor()!=nullptr)return {};
+    return HostedAudioEditor(processor.createEditorAndMakeActive());
+}
+
 // UI/message-thread only. An HWND owner keeps plugin windows above the mixer
 // without making them system-wide topmost or child components of WebView2.
 inline bool attachOwnedFloatingWindow(juce::Component& floating,
