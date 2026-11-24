@@ -32,6 +32,9 @@ static int pcmFingerprint(unsigned profile=0) {
         if(profile==2)e.setVoicing(2);
 #ifdef ARVERB_ANCHOR_BENCHMARK
         if(profile==3)e.setVoicing(3);
+#ifdef ARVERB_STUDIO_BENCHMARK
+        if(profile==4)e.setVoicing(4);
+#endif
 #endif
 #endif
         e.prepare(fs,musical);
@@ -84,6 +87,7 @@ int main(int argc,char** argv) {
     if(argc==2&&std::strcmp(argv[1],"--pcm-album")==0)return pcmFingerprint(1);
     if(argc==2&&std::strcmp(argv[1],"--pcm-signature")==0)return pcmFingerprint(2);
     if(argc==2&&std::strcmp(argv[1],"--pcm-anchor")==0)return pcmFingerprint(3);
+    if(argc==2&&std::strcmp(argv[1],"--pcm-studio")==0)return pcmFingerprint(4);
     using Clock=std::chrono::steady_clock;
     using P=arverb::Parameter;
     constexpr int count=2048;
@@ -111,6 +115,9 @@ int main(int argc,char** argv) {
                 if(argc==2&&std::strcmp(argv[1],"--anchor")==0)x.setVoicing(3);
 #ifdef ARVERB_STUDIO_BENCHMARK
                 if(argc==2&&std::strcmp(argv[1],"--studio")==0)x.setVoicing(4);
+#ifdef ARVERB_SINGER_BENCHMARK
+                if(argc==2&&std::strcmp(argv[1],"--singer")==0)x.setVoicing(5);
+#endif
 #endif
 #endif
 #endif

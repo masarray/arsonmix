@@ -13,11 +13,11 @@ SOURCES = ("src/Reverb.cpp", "src/Presets.cpp", "src/dsp/Primitives.hpp", "inclu
 def git(*args):
     return subprocess.check_output(["git", *args], cwd=ROOT)
 
-def compile_core(base, binary, album=False, signature=False, anchor=False, studio=False):
+def compile_core(base, binary, album=False, signature=False, anchor=False, studio=False, singer=False):
     subprocess.run(["g++", "-std=c++17", "-O2", "-fno-fast-math",
                     "-I" + str(base / "include"), str(base / "src/Reverb.cpp"),
                     str(base / "src/Presets.cpp"), str(ROOT / CORE / "tests/benchmark_live.cpp"),
-                    "-o", str(binary)] + (["-DARVERB_ALBUM_BENCHMARK"] if album else []) + (["-DARVERB_SIGNATURE_BENCHMARK"] if signature else []) + (["-DARVERB_ANCHOR_BENCHMARK"] if anchor else []) + (["-DARVERB_STUDIO_BENCHMARK"] if studio else []), check=True)
+                    "-o", str(binary)] + (["-DARVERB_ALBUM_BENCHMARK"] if album else []) + (["-DARVERB_SIGNATURE_BENCHMARK"] if signature else []) + (["-DARVERB_ANCHOR_BENCHMARK"] if anchor else []) + (["-DARVERB_STUDIO_BENCHMARK"] if studio else []) + (["-DARVERB_SINGER_BENCHMARK"] if singer else []), check=True)
 
 def run(binary, *args):
     rows = {}
@@ -37,7 +37,10 @@ def main():
     parser.add_argument("--preserve-signature", action="store_true", help="reference already has Signature; compare identical steady algorithms")
     parser.add_argument("--anchor", action="store_true")
     parser.add_argument("--studio", action="store_true")
+    parser.add_argument("--singer", action="store_true")
     args = parser.parse_args()
+    if args.singer and not args.studio:
+        parser.error('--singer requires --studio')
     if args.studio and not args.anchor:
         parser.error('--studio requires --anchor')
     if args.anchor and not args.preserve_signature:
@@ -58,8 +61,8 @@ def main():
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_bytes(git("show", args.reference + ":" + str(CORE / name)))
         ref, new = work / "ref", work / "new"
-        compile_core(old, ref, args.signature, args.preserve_signature, args.studio)
-        compile_core(ROOT / CORE, new, args.album or args.signature, args.signature, args.anchor, args.studio)
+        compile_core(old, ref, args.signature, args.preserve_signature, args.studio, args.singer)
+        compile_core(ROOT / CORE, new, args.album or args.signature, args.signature, args.anchor, args.studio, args.singer)
         # Exact sound-preservation gate on a separate, untimed render.
         # Only enable for topology-equivalent optimization references.
         if args.verify_pcm:
@@ -93,6 +96,12 @@ def main():
                 if len(a.splitlines())!=20 or a!=b:
                     raise RuntimeError('Vocal Anchor PCM fingerprint mismatch')
                 print('PASS Vocal Anchor PCM fingerprints: 20 cases including algorithm retarget')
+            if args.singer:
+                a=subprocess.check_output([str(ref),'--pcm-studio'],text=True)
+                b=subprocess.check_output([str(new),'--pcm-studio'],text=True)
+                if len(a.splitlines())!=20 or a!=b:
+                    raise RuntimeError('Studio Finish PCM fingerprint mismatch')
+                print('PASS Studio Finish PCM fingerprints: 20 cases')
         # Counterbalance run order to reduce thermal / scheduling bias.
         a1, b1, b2, a2 = run(ref), run(new), run(new), run(ref)
         print("Reverb-Sis same-runner core benchmark (microseconds; p99 wall time, non-gating)")
@@ -146,5 +155,9 @@ def main():
             a1,b1,b2,a2=run(new,"--anchor"),run(new,"--studio"),run(new,"--studio"),run(new,"--anchor")
             ratios=[(b1[key][0]+b2[key][0])/(a1[key][0]+a2[key][0]) for key in a1]
             print(f"Studio Finish median cost ratio vs Vocal Anchor={statistics.median(ratios):.3f} (48 cases)")
+        if args.singer:
+            a1,b1,b2,a2=run(new,"--studio"),run(new,"--singer"),run(new,"--singer"),run(new,"--studio")
+            ratios=[(b1[key][0]+b2[key][0])/(a1[key][0]+a2[key][0]) for key in a1]
+            print(f"Singer Feel median cost ratio vs Studio Finish={statistics.median(ratios):.3f} (48 cases)")
 if __name__ == "__main__":
     main()

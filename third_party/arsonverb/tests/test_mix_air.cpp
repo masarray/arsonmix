@@ -323,7 +323,7 @@ static void vocalAnchorQualification() {
     check(l>before&&l-before<.001f,"Anchor recall is smoothed at unchanged Mix");
     for(int i=0;i<8000;++i)e.process(&in,&in,&l,&r,1);
     check(std::abs(l-.175f)<.0001f,"Anchor recall reaches new dry target");
-    std::puts("PASS Vocal Anchor: 288 factory/rate/mix PCM cases, exact wet endpoints, smoothed profile recall");
+    std::puts("PASS Vocal Anchor: 342 factory/rate/mix PCM cases, exact wet endpoints, smoothed profile recall");
 }
 // Full actual wet PCM, not just a detached EQ response. Compare identical
 // factory values, same tank and input, including early reflections.
@@ -377,9 +377,88 @@ static void studioFinishQualification() {
         old.process(&x,&x,&a,&b,1);finish.process(&x,&x,&c,&d,1);
         check(a==c&&b==d,"Studio Finish exact dry endpoint");
     }
-    std::puts("PASS Studio Finish: 120 actual factory/rate/wet band PCM cases and dry endpoint");
+    std::puts("PASS Studio Finish: 135 actual factory/rate/wet band PCM cases and dry endpoint");
+}
+// Test the real complete DSP at fixed settings, not synthetic tap math.
+static void singerFeelQualification() {
+    using P=arverb::Parameter;
+    using namespace armix::builtin_fx;
+    constexpr int n=128;
+    for(int fs:{44100,48000,96000})for(int program:{16,17,18}) {
+        const auto& preset=reverbSisFactoryPrograms[program];
+        // Deliberately long predelay exposes independent early reflection.
+        for(float predelay:{60.f,150.f}) {
+            arverb::Engine studio,singer;
+            for(auto* e:{&studio,&singer}) {
+                for(std::size_t i=0;i<preset.values.size();++i)e->setParameter(static_cast<P>(i),preset.values[i]);
+                e->setAlgorithm(static_cast<arverb::Algorithm>(preset.algorithm));
+                e->setParameter(P::Mix,1.f);e->setParameter(P::PreDelayMs,predelay);
+                e->setVoicing(e==&studio?4u:5u);e->prepare(fs,true);
+            }
+            double earlyOld=0.,earlyNew=0.,mono=0.,total=0.;
+            int onset=-1;
+            for(int i=0;i<fs/3;++i) {
+                float x=i==0?.5f:0.f,a,b,c,d;
+                studio.process(&x,&x,&a,&b,1);singer.process(&x,&x,&c,&d,1);
+                check(std::isfinite(c)&&std::isfinite(d),"Singer impulse finite");
+                if(onset<0&&std::max(std::abs(c),std::abs(d))>1.e-6f)onset=i;
+                if(i<fs*0.025) {
+                    earlyOld+=double(a)*a+double(b)*b;earlyNew+=double(c)*c+double(d)*d;
+                    mono+=.25*double(c+d)*(c+d);
+                }
+                total+=double(c)*c+double(d)*d;
+            }
+            check(onset>=int(fs*.007)&&onset<=int(fs*.008),"Singer onset 7-8ms independent of predelay");
+            check(earlyOld<1.e-12&&earlyNew>1.e-6&&mono>.15*earlyNew,"Singer early support and mono energy");
+            check(total>earlyNew,"Singer retains late space");
+            std::printf("Singer Feel onset program=%d rate=%d predelay=%.0f onsetMs=%.3f earlyEnergy=%.8f\n",program,fs,predelay,1000.*onset/fs,earlyNew);
+        }
+        // Disable all early output to isolate adaptive tail attenuation.
+        // Same input, same tank and same complete-wet filters. Duck=0
+        // must preserve exact tail; Duck>0 reduces active-phrase energy.
+        for(float duck:{0.f,.75f}) {
+            arverb::Engine studio,singer;
+            for(auto* e:{&studio,&singer}) {
+                for(std::size_t i=0;i<preset.values.size();++i)e->setParameter(static_cast<P>(i),preset.values[i]);
+                e->setAlgorithm(static_cast<arverb::Algorithm>(preset.algorithm));
+                e->setParameter(P::Mix,1.f);e->setParameter(P::EarlyLevel,0.f);
+                e->setParameter(P::DuckAmount,duck);
+                e->setVoicing(e==&studio?4u:5u);e->prepare(fs,true);
+            }
+            std::array<float,n> x{},a{},b{},c{},d{};
+            double oldActive=0.,newActive=0.,oldGap=0.,newGap=0.;
+            for(int block=0;block<3*fs/n;++block) {
+                for(int i=0;i<n;++i) {
+                    const int t=block*n+i;
+                    x[i]=t<2*fs?float(.25*std::sin(6.283185307179586*173.*t/fs)+.09*std::sin(6.283185307179586*519.*t/fs)):0.f;
+                }
+                studio.process(x.data(),x.data(),a.data(),b.data(),n);
+                singer.process(x.data(),x.data(),c.data(),d.data(),n);
+                for(int i=0;i<n;++i) {
+                    check(std::isfinite(c[i])&&std::isfinite(d[i]),"Singer phrase finite");
+                    if(duck==0.f)check(std::abs(a[i]-c[i])<2.e-6f&&std::abs(b[i]-d[i])<2.e-6f,"Singer Duck/Early off tail unchanged");
+                    const int t=block*n+i;
+                    if(t>fs&&t<2*fs) {oldActive+=double(a[i])*a[i]+double(b[i])*b[i];newActive+=double(c[i])*c[i]+double(d[i])*d[i];}
+                    if(t>int(2.55*fs)&&t<int(2.85*fs)) {oldGap+=double(a[i])*a[i]+double(b[i])*b[i];newGap+=double(c[i])*c[i]+double(d[i])*d[i];}
+                }
+            }
+            if(duck>0.f) {
+                check(oldActive>1.e-8&&oldGap>1.e-12,"Singer measurable tail");
+                const double activeDb=10.*std::log10(newActive/oldActive),gapDb=10.*std::log10(newGap/oldGap);
+                check(activeDb<-2.5&&activeDb>-8.f,"Singer active tail reduction");
+                check(gapDb>activeDb+1.5,"Singer natural phrase bloom");
+                std::printf("Singer Feel phrase program=%d rate=%d activeDb=%.3f gapDb=%.3f\n",program,fs,activeDb,gapDb);
+            }
+        }
+        // Mix=0 must preserve exact dry samples.
+        arverb::Engine studio,singer;
+        for(auto* e:{&studio,&singer}) {e->setParameter(P::Mix,0.f);e->setVoicing(e==&studio?4u:5u);e->prepare(fs,true);}
+        for(int i=0;i<fs/10;++i) {float x=.2f*std::sin(i*.043f),a,b,c,d;studio.process(&x,&x,&a,&b,1);singer.process(&x,&x,&c,&d,1);check(a==c&&b==d,"Singer zero dry latency");}
+    }
+    std::puts("PASS Singer Feel: 18 independent-onset, 18 phrase/duck, 9 exact dry cases");
 }
 int main() {
+    singerFeelQualification();
     studioFinishQualification();
     vocalAnchorQualification();
     for(int fs:{44100,48000,96000})for(unsigned mode=0;mode<4;++mode)signatureRetargetProbe(fs,mode);

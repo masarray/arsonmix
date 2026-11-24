@@ -42,7 +42,7 @@ int main() {
         for (int iter = 0; iter < 300; ++iter) {
             const std::size_t n = sizes[iter % static_cast<int>(sizes.size())];
             core.setAlgorithm(static_cast<Algorithm>(iter%4));
-            core.setVoicing(musical?static_cast<unsigned>((iter/13)%5):0u);
+            core.setVoicing(musical?static_cast<unsigned>((iter/13)%6):0u);
             for (std::size_t p = 0; p < parameterCount; ++p) {
                 const auto param = static_cast<Parameter>(p);
                 const auto& info = parameterInfo(param);
