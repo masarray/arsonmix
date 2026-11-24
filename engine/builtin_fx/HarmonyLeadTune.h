@@ -88,8 +88,13 @@ public:
         }else{
             lastMid_=targetMid;lastSide_=targetSide;
         }
-        dryL+=lastMid_+lastSide_;
-        dryR+=lastMid_-lastSide_;
+        if(lastSide_==0.f&&dryL==dryR){
+            dryL+=lastMid_;
+            dryR=dryL;
+        }else{
+            dryL+=lastMid_+lastSide_;
+            dryR+=lastMid_-lastSide_;
+        }
     }
 private:
     int ramp_=1,prewarm_=1,run_=0,position_=1;

@@ -91,7 +91,7 @@ private:
         }
         if(state.nextCenter+width<static_cast<double>(time))
             state.nextCenter=static_cast<double>(time)+width;
-        float sumL=0.f,sumR=0.f,weight=0.f;
+        float sumL=0.f,sumDifference=0.f,weight=0.f;
         for(auto& grain:state.grains) {
             if(!grain.active)continue;
             const double offset=static_cast<double>(time)-grain.center;
@@ -100,13 +100,25 @@ private:
             if(u<=-1.)continue;
             // Raised compact zero-slope window, avoiding per-sample trig.
             const float w=static_cast<float>((1.-u*u)*(1.-u*u));
-            sumL+=readAt(left,time,writeIndex,grain.source+offset)*w;
-            if constexpr(Stereo)
-                sumR+=readAt(right,time,writeIndex,grain.source+offset)*w;
+            if constexpr(Stereo){
+                const auto pair=readStereoAt(left,right,time,writeIndex,
+                                             grain.source+offset);
+                sumL+=pair.left*w;
+                sumDifference+=pair.right*w;
+            }else{
+                sumL+=readAt(left,time,writeIndex,grain.source+offset)*w;
+            }
             weight+=w;
         }
         if(weight<.05f)return {};
-        return {sumL/weight,sumR/weight,true};
+        const float l=sumL/weight;
+        if constexpr(Stereo){
+            // Difference interpolated BEFORE accumulation: dual-mono
+            // history is exactly zero side, irrespective of compiler FMA.
+            const float r=sumDifference==0.f?l:l+sumDifference/weight;
+            return {l,r,true};
+        }
+        return {l,0.f,true};
     }
     struct Grain {double center=0.,source=0.,width=1.;bool active=false;};
     struct State {
@@ -179,6 +191,22 @@ private:
         const auto index=(writeIndex+Capacity-whole)&(Capacity-1);
         return input[index]*(1.f-fractional)+
                input[(index+Capacity-1)&(Capacity-1)]*fractional;
+    }
+    struct StereoTap {float left=0.f,right=0.f;}; // right stores R-L
+    static StereoTap readStereoAt(const std::array<float,Capacity>& left,
+          const std::array<float,Capacity>& right,std::uint64_t time,
+          std::size_t writeIndex,double position) noexcept {
+        if(time<2||position<0.||position>static_cast<double>(time-1)||
+           position<static_cast<double>(
+               time>=Capacity-3?time-(Capacity-3):0))return {};
+        const double age=static_cast<double>(time)-position;
+        const auto whole=static_cast<std::size_t>(age);
+        const float f=static_cast<float>(age-static_cast<double>(whole));
+        const auto a=(writeIndex+Capacity-whole)&(Capacity-1);
+        const auto b=(a+Capacity-1)&(Capacity-1);
+        const float la=left[a],lb=left[b];
+        return {la*(1.f-f)+lb*f,
+                (right[a]-la)*(1.f-f)+(right[b]-lb)*f};
     }
     std::array<State,Voices> states_{};
 };
