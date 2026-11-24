@@ -345,6 +345,76 @@ static void testResonanceEngine(){
   need(a>1.&&b>1.&&std::abs(10.*std::log10(b/a))<1.5&&delta/a>1.e-5,
        "H8 actual engine resonance absent or excessive");
 }
+static void testArticulation(){
+  constexpr double tau=6.283185307179586;
+  for(int rate:{32000,48000,96000,192000}){
+    BackingArticulation guard;guard.prepare(rate);
+    auto feed=[&](double hz,int ms,bool harmonics){
+      float gain=1.f;
+      for(int i=0;i<rate*ms/1000;++i){
+        const double p=tau*hz*i/rate;
+        const float x=static_cast<float>(.15*(std::sin(p)+
+            (harmonics?.25*std::sin(2*p)+.17*std::sin(3*p):0.)));
+        gain=guard.process(x);
+        need(gain>=.5499f&&gain<=1.f,"H9 articulation bound");
+      }
+      return gain;
+    };
+    const float vowel=feed(880.,150,true),sibilant=feed(7000.,35,false);
+    const float recovered=feed(440.,120,true);
+    std::cout<<"H9_GUARD rate="<<rate<<" vowel="<<vowel
+             <<" sibilant="<<sibilant<<" recovered="<<recovered<<std::endl;
+    need(vowel>.995f&&sibilant<.68f&&recovered>.995f,"H9 articulation response");
+  }
+  for(int rate:{48000,96000}){
+    // Voiced vowel -> high-frequency noisy consonant -> voiced vowel -> silence.
+    const int n=rate*2;
+    LeadFixture input{std::vector<float>(n),std::vector<float>(n)};
+    unsigned rng=19;float previous=0.f;
+    for(int i=0;i<n;++i){
+      rng=1664525u*rng+1013904223u;
+      const float noise=static_cast<float>((rng>>8)/16777216.0-.5);
+      const double time=double(i)/rate,p=tau*220.*time;
+      float x=0.f;
+      if(time<.60|| (time>=.69&&time<1.4))
+        x=static_cast<float>(.14*std::sin(p)+.04*std::sin(2*p));
+      if(time>=.60&&time<.69)x=.23f*(noise-previous);
+      previous=noise;input.left[i]=input.right[i]=x;
+    }
+    auto run=[&](bool enabled,bool wet,int voices,int block){
+      auto e=std::make_unique<Engine>();Settings s;
+      s.voices=voices;s.wet=wet?1.f:0.f;s.color=1.f;s.space=0.f;
+      need(e->prepare(rate)&&e->setArticulationForOfflineReference(enabled)&&
+           e->setSettings(s),"H9 engine setup");
+      auto out=input;
+      for(int i=0;i<n;i+=block)e->process(out.left.data()+i,out.right.data()+i,std::min(block,n-i));
+      return out;
+    };
+    const auto old=run(false,true,5,127),now=run(true,true,5,127);
+    const auto dry=run(true,false,5,127),split=run(true,true,5,64);
+    need(now.left==split.left&&now.right==split.right,"H9 block parity");
+    need(dry.left==run(false,false,5,64).left,"H9 dry changed");
+    need(run(false,true,2,127).left==run(true,true,2,64).left,"H9 Duo changed");
+    auto energy=[&](const LeadFixture& x,double begin,double end){
+      double sum=0.;
+      for(int i=static_cast<int>(rate*begin);i<static_cast<int>(rate*end);++i){
+        const double l=x.left[i]-dry.left[i],r=x.right[i]-dry.right[i];
+        need(std::isfinite(l)&&std::isfinite(r),"H9 nonfinite PCM");
+        sum+=l*l+r*r;
+      }
+      return sum;
+    };
+    const double before=energy(old,.25,.55),after=energy(now,.25,.55);
+    const double oldNoise=energy(old,.638,.69),newNoise=energy(now,.638,.69);
+    const double recovery=10.*std::log10(energy(now,1.,1.3)/energy(old,1.,1.3));
+    const double change=10.*std::log10(newNoise/oldNoise);
+    std::cout<<"H9_PCM rate="<<rate<<" consonant_dB="<<change
+             <<" recovered_dB="<<recovery<<std::endl;
+    need(before>1.&&std::abs(10.*std::log10(after/before))<.05&&
+         oldNoise>1.e-6&&change<-.8&&change>-8.&&std::abs(recovery)<.05,
+         "H9 consonant suppression or vowel preservation");
+  }
+}
 static void testSingerSpectralIdentity(){
   auto response=[](int rate,int role,double hz,float share){
     auto e=std::make_unique<EnsembleSpace>();
@@ -947,6 +1017,7 @@ static void testBackingUnity(){
   need(within,"H1 full-Wet aggregate stem outside +/-2dB target; inspect H1_STEM rows");
 }
 int main(){
+  testArticulation();
   testResonanceEngine();
   testReducedLatency();
   testChordAwareGuide();

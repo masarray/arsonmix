@@ -17,9 +17,10 @@ using Clock=std::chrono::steady_clock;
 constexpr int warmup=256;
 constexpr int measured=512;
 void profile(double rate,int block,int voices,bool musicGuide=false,
-             bool busyHighVibrato=false){
+             bool busyHighVibrato=false,bool articulation=true){
     auto engine=std::make_unique<armix::harmony::Engine>();
     if(!engine->prepare(rate)){std::cerr<<"Harmony prepare failed\n";std::exit(2);}
+    if(!engine->setArticulationForOfflineReference(articulation))std::exit(2);
     armix::harmony::Settings settings;
     settings.voices=voices;settings.wet=0.75f;
     // Compare former maximal lead-correction mode and real operator default
@@ -101,6 +102,7 @@ void profile(double rate,int block,int voices,bool musicGuide=false,
              <<" guide="<<(musicGuide?"Music ChannelId":"Manual")
              <<" scene="<<(busyHighVibrato?"HIGH_880Hz_72c_5.2Hz_busy_chorus":
                                           "STEADY_220Hz")
+             <<" articulation="<<(articulation?"H9":"H8_REFERENCE")
              <<" pitch_tune="<<(settings.correction?"ON":"OFF")
              <<" p50_us="<<elapsed[measured/2]
              <<" p95_us="<<elapsed[(measured*95)/100]
@@ -129,5 +131,5 @@ int main(){
     // from ASIO hardware / full mix latency qualification.
     for(double rate:{48000.,96000.})
       for(int block:{64,128})
-        profile(rate,block,5,false,true);
+        {profile(rate,block,5,false,true,false);profile(rate,block,5,false,true,true);}
 }

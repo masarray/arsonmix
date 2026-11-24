@@ -70,6 +70,38 @@ inline float smoothGrainBlend(float phase) noexcept {
     const float u=1.f-std::abs(2.f*phase-1.f);
     return u*u*(3.f-2.f*u);
 }
+// Shared, delayed-source articulation guard. A broadband/high-band
+// energy cue is NOT a phoneme classifier. It only attenuates new backing
+// excitation during strong high-frequency consonant-like evidence.
+// The lead, pitch tracker, epoch clocks and existing room tails stay intact.
+class BackingArticulation final {
+public:
+    void prepare(double rate) noexcept {
+        const double pole=std::exp(-2.*3.141592653589793*2200./rate);
+        lowAlpha_=static_cast<float>(1.-pole);
+        highNorm_=static_cast<float>((1.+pole)/(2.*pole));
+        energyAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.003)));
+        attack_=static_cast<float>(1.-std::exp(-1./(rate*.002)));
+        release_=static_cast<float>(1.-std::exp(-1./(rate*.018)));
+        low_=total_=high_=attenuation_=0.f;
+    }
+    float process(float x) noexcept {
+        low_+=lowAlpha_*(x-low_);
+        const float h=(x-low_)*highNorm_;
+        total_+=energyAlpha_*(x*x-total_);
+        high_+=energyAlpha_*(h*h-high_);
+        // Avoid a division on normal vowels and silence. A high-frequency
+        // dominant region receives up to 45% less NEW wet excitation.
+        const float excess=high_-.42f*total_;
+        const float target=total_>1.e-5f&&excess>0.f?
+            .45f*std::min(1.f,excess/(.23f*total_)):0.f;
+        attenuation_+=(target-attenuation_)*(target>attenuation_?attack_:release_);
+        return 1.f-attenuation_;
+    }
+private:
+    float lowAlpha_=0.f,highNorm_=1.f,energyAlpha_=0.f,attack_=0.f,release_=0.f;
+    float low_=0.f,total_=0.f,high_=0.f,attenuation_=0.f;
+};
 class Engine final {
 public:
     static constexpr int maxVoices=5;
@@ -125,7 +157,8 @@ public:
         roomFocusReferenceEnabled_=true;
         presenceReferenceEnabled_=true;unityReferenceEnabled_=true;
         expressionReferenceEnabled_=true;identityReferenceEnabled_=true;
-        resonanceReferenceEnabled_=true;
+        resonanceReferenceEnabled_=true;articulationReferenceEnabled_=true;
+        articulation_.prepare(rate);
         // Both renderer choice and missing-epoch recovery are time-domain
         // crossfades. Never hard-switch their independent source phases.
         pitchSyncAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.030)));
@@ -336,6 +369,10 @@ public:
         if(processed_)return false;
         resonanceReferenceEnabled_=enabled;return true;
     }
+    bool setArticulationForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        articulationReferenceEnabled_=enabled;return true;
+    }
     int effectiveKey() const noexcept {
         return settings_.guideMode==1&&guideKey_>=0?guideKey_:settings_.key;
     }
@@ -487,6 +524,13 @@ public:
                 stageGain.early:.28f*space_;
             const float independent=expressionReferenceEnabled_?ensembleFocus_:0.f;
             const float identity=identityReferenceEnabled_?ensembleFocus_:0.f;
+            // Observe the same delayed source timeline as dry lead, not
+            // the undelayed microphone (which would duck early by 24ms).
+            // One detector for the ensemble; never modify dry or existing tails.
+            const float articulation=articulationReferenceEnabled_?
+                1.f+ensembleFocus_*(articulation_.process(
+                    mono_[(write_+capacity-static_cast<std::size_t>(latency_))%capacity])-1.f):
+                1.f;
             float roomSendL=0.f,roomSendR=0.f;
             for(int v=0;v<maxVoices;++v){
                 const auto ix=static_cast<std::size_t>(v);
@@ -507,7 +551,7 @@ public:
                         1.f-pitchSyncBlend_[ix]*pitchSyncValid_[ix]);
                 else
                     ensemble_.shapeSinger(v,0.f,0.f,1.f,0.f);
-                voice=ensemble_.shadeBacking(v,voice,space_);
+                voice=ensemble_.shadeBacking(v,voice*articulation,space_);
                 const float reflection=ensemble_.exchangeReflection(v,voice);
                 const float second=ensemble_.secondReflection(v);
                 const float directL=voice*mixL_[ix],directR=voice*mixR_[ix];
@@ -889,7 +933,8 @@ private:
     bool roomFocusReferenceEnabled_=true;
     bool presenceReferenceEnabled_=true,unityReferenceEnabled_=true;
     bool expressionReferenceEnabled_=true,identityReferenceEnabled_=true;
-    bool resonanceReferenceEnabled_=true;
+    bool resonanceReferenceEnabled_=true,articulationReferenceEnabled_=true;
+    BackingArticulation articulation_{};
     std::array<float,maxVoices> pitchSyncBlend_{},pitchSyncFiltered_{},pitchSyncValid_{};
     float space_=0.f,targetSpace_=0.f;
     float gain_=1.f,targetGain_=1.f,targetCorrection_=0.f;

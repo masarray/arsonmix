@@ -87,10 +87,13 @@ static void writeWave(const fs::path& path,const Wave& wave){
     if(!out)throw std::runtime_error("WAV output write failed");
 }
 static Wave process(const Wave& input,Settings settings,bool synchronous,int block=127,
-                    bool enhancedDepth=true,bool focus=true,bool presence=true){
+                    bool enhancedDepth=true,bool focus=true,bool presence=true,
+                    bool articulation=true){
     auto e=std::make_unique<Engine>();
     if(!e->prepare(input.rate)||!e->setSettings(settings))
         throw std::runtime_error("native Harmony configuration invalid");
+    if(!e->setArticulationForOfflineReference(articulation))
+        throw std::runtime_error("H9 reference rejected");
     e->setPitchSynchronousCandidateForOfflineReference(synchronous);
     e->setStageDepthForOfflineReference(enhancedDepth);
     e->setRoomFocusForOfflineReference(focus);
@@ -355,9 +358,24 @@ static void renderAb(const Wave& input,const fs::path& folder){
     writeWave(folder/"11_room_focus_off_backing_only.wav",subtract(previousRoomFocus,dry));
     writeWave(folder/"12_presence_old_space_060.wav",previousPresence);
     writeWave(folder/"13_presence_old_backing_only.wav",subtract(previousPresence,dry));
+    // H9 matched five-singer audition: no normalization, identical
+    // input, settings and declared delay, only articulation differs.
+    auto five=settings;five.voices=5;five.wet=1.f;
+    const auto beforeH9=process(input,five,true,127,true,true,true,false);
+    const auto afterH9=process(input,five,true);
+    writeWave(folder/"21_h8_five_mix.wav",beforeH9);
+    writeWave(folder/"22_h9_five_mix.wav",afterH9);
+    writeWave(folder/"23_h8_five_backing.wav",subtract(beforeH9,dry));
+    writeWave(folder/"24_h9_five_backing.wav",subtract(afterH9,dry));
+    for(int role=0;role<5;++role)
+        writeWave(folder/("h9_role_"+std::to_string(role)+".wav"),
+                  roleStem(input,five,role,dry));
+    // Temporal evidence must compare source at the output's declared
+    // timeline. The old M7 analysis compared undelayed input.
+    const auto delayedSource=process(input,drySettings,true);
     settings.space=0.f;writeWave(folder/"06_new_space_000.wav",process(input,settings,true));
     settings.space=1.f;writeWave(folder/"07_new_space_100.wav",process(input,settings,true));
-    writeQualityEvidence(folder,input,lowStem,midStem,highStem,
+    writeQualityEvidence(folder,delayedSource,lowStem,midStem,highStem,
                          modern,partition64,partition257);
     generateReport(folder,input,dry,old,modern,backing,previousDepth,
                    previousPresence,lowStem,midStem,highStem);
