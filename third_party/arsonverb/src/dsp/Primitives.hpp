@@ -58,6 +58,21 @@ inline float musicalWetLowCutCoeff(float cutoff, float sampleRate) noexcept {
     return y/(1.0f+y);
 }
 
+// Partial energy compensation for late reverb only. A short exponential
+// decay has less integrated energy than a long one at equal excitation.
+// Preserve the expressive 1.7..3.5s singing range exactly; recover up to
+// +3.52dB for short spaces and gently trim very long washes by <=1.01dB.
+// This is not automatic loudness matching, compression or feedback gain.
+// Evaluated only on prepare / coalesced decay changes.
+inline float musicalLateReturnScale(float decaySeconds) noexcept {
+    const float decay = clamp(decaySeconds, .15f, 12.f);
+    if (decay < 1.7f)
+        return std::min(1.5f, std::sqrt(1.7f / decay));
+    if (decay > 3.5f)
+        return std::max(.89f, std::sqrt(3.5f / decay));
+    return 1.f;
+}
+
 struct Delay {
     std::vector<float> data;
     std::size_t mask = 0;

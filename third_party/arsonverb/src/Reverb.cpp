@@ -216,6 +216,9 @@ struct Engine::State {
     // lookup or interpolation per sample.
     float currentDryGain=1.0f, currentWetGain=0.0f;
     float targetDryGain=1.0f, targetWetGain=0.0f;
+    // Fold late-space calibration into the existing output multiplier.
+    // Separate from early level, feedback gain and dry/wet Mix.
+    float lateReturn=.34f, targetLateReturn=.34f;
     float cachedMix=-1.0f;
     detail::PresenceDucker presence;
     std::array<float, parameterCount> smooth{};
@@ -342,6 +345,8 @@ void Engine::prepare(double sampleRate, bool musicalReturn) {
 
     const float decay = s.smooth[static_cast<unsigned>(Parameter::DecaySeconds)];
     const float size = s.smooth[static_cast<unsigned>(Parameter::Size)];
+    s.lateReturn = s.targetLateReturn = .34f *
+        (musicalReturn ? detail::musicalLateReturnScale(decay) : 1.f);
     for (std::size_t i = 0; i < kLines; ++i) {
         const float lengthSeconds = kDelayMs[i] * 0.001f * size;
         s.gains[i] = detail::fastExpNeg(kLn001 * lengthSeconds / decay);
@@ -455,7 +460,10 @@ void Engine::process(const float* inputLeft, const float* inputRight,
                                  target[idx(Parameter::DecaySeconds)] != s.cachedDecay;
         if (roomChanged) {
             s.cachedSize = target[idx(Parameter::Size)];
-            s.cachedDecay = target[idx(Parameter::DecaySeconds)];
+            const float nextDecay = target[idx(Parameter::DecaySeconds)];
+            if (nextDecay != s.cachedDecay && s.musicalReturn)
+                s.targetLateReturn = .34f * detail::musicalLateReturnScale(nextDecay);
+            s.cachedDecay = nextDecay;
             for (std::size_t i = 0; i < kLines; ++i) {
                 const float delaySec = kDelayMs[i] * s.cachedSize * 0.001f;
                 s.targetGains[i] = detail::fastExpNeg(
@@ -537,6 +545,7 @@ void Engine::process(const float* inputLeft, const float* inputRight,
             s.smooth[p] += s.smoother * (target[p] - s.smooth[p]);
         s.currentDryGain += s.smoother*(s.targetDryGain-s.currentDryGain);
         s.currentWetGain += s.smoother*(s.targetWetGain-s.currentWetGain);
+        s.lateReturn += s.smoother*(s.targetLateReturn-s.lateReturn);
         const float dryGain=s.currentDryGain;
         const float wetGain=s.currentWetGain;
         const float preSamples = s.preTapCurrent;
@@ -690,8 +699,8 @@ void Engine::process(const float* inputLeft, const float* inputRight,
 
         // Recover audible late-space level without brightening the dry
         // channel or altering the feedback loop's internal stability.
-        float wetL = (tailL * 0.34f) + earlyL * (0.42f * earlyAmount);
-        float wetR = (tailR * 0.34f) + earlyR * (0.42f * earlyAmount);
+        float wetL = tailL * s.lateReturn + earlyL * (0.42f * earlyAmount);
+        float wetR = tailR * s.lateReturn + earlyR * (0.42f * earlyAmount);
         wetL = s.wetHP[0][1].process(s.wetHP[0][0].process(wetL, s.wetLowCoeff), s.wetLowCoeff);
         wetR = s.wetHP[1][1].process(s.wetHP[1][0].process(wetR, s.wetLowCoeff), s.wetLowCoeff);
         const float lpL1 = s.wetLP[0][0].process(wetL, s.wetHighCoeff);

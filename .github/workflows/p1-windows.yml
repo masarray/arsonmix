@@ -241,7 +241,7 @@ jobs:
             "$RUNNER_TEMP/armix-reverb-mix-air"
             # Run density/phrase and both-profile RT stress in the same
             # cheap portable job; CTest remains the full Windows authority.
-            for test in test_sonic_structure test_audio_regression test_stress; do
+            for test in test_sonic_structure test_audio_regression test_stress test_rt60_tail; do
               g++ -std=c++17 -O2 -fno-fast-math -Ithird_party/arsonverb/include \
                 third_party/arsonverb/src/Reverb.cpp third_party/arsonverb/src/Presets.cpp \
                 "third_party/arsonverb/tests/${test}.cpp" -o "$RUNNER_TEMP/armix-${test}"
