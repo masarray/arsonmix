@@ -61,3 +61,6 @@ Independent logical port add/rename/remove/bind/unbind/assign/clear via a candid
 
 ### Delivery 5C GUI connection
 The verified Inputs tab exposes a compact collapsed Session logical inputs editor, distinct from machine-local named shortcuts. Add/Rename/Remove, bind/unbind exact labeled physical pins, Assign/Clear for stable ChannelId, used count and NEEDS_REMAP state. GUI request carries exact device/graph/roster/logical revisions; no optimistic updates, ACK must be followed by accepted registry readback proving operation. Browser test covers create, bind, assignment rejection and no publication at ACK alone. User-visible input workflow is now wired to native transaction; exact MSVC/Chromium qualification and hardware tests pending. No full output registry or Make Default yet.
+
+### Delivery 5C actual PCM acceptance fixture
+Extended existing durable-session CTest with real LiveDryRoutingLab restore/render, two stable ChannelIds sharing a logical mono port, stale revision rejection, metadata-only rename (no native publication), remap from positive to negative PCM with one publisher commit, native capture and v2 codec roundtrip, unbind to silence with retained NEEDS_REMAP references. This is deterministic native callback qualification, not physical soundcard FAT. Exact result pending. No DSP changes.

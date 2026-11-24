@@ -1686,8 +1686,94 @@ static void checkLogicalInputSession(){
     assert(Codec::encode(decoded)==encoded&&states.empty());
     assert(dir.deleteRecursively());
 }
+// Exercise the actual accepted JUCE/ChannelId renderer, not only a JSON
+// or planner simulation. No physical interface is opened by this fixture.
+static void verifyLogicalInputNativePcm(){
+    using R=armix::device::LogicalInputRegistry;
+    using P=LogicalInputProjection;
+    FixtureDevice device;
+    LiveDryRoutingLab mixer;
+    mixer.prepareDevice(&device);
+    armix::device::JuceActivePortSnapshot pins;
+    armix::device::JuceActivePortSnapshot::Fault fault{};
+    assert(armix::device::JuceActivePortSnapshot::capture(&device,mixer.epoch(),pins,fault));
+    auto d=makeSession();
+    d.binding={"Windows Audio","Fixture Capture","Verified WASAPI fixture","3","3",48000.,480,
+        device.getInputChannelNames(),device.getOutputChannelNames()};
+    d.request.maxFrames=480;d.request.sources.clear();d.rackBypassed.clear();
+    const R::Device identity{"Windows Audio","Fixture Capture","Verified WASAPI fixture"};
+    const std::array<R::Pin,2> inputPins{{{0,0,"Capture L"},{1,1,"Capture R"}}};
+    const R::Inventory live{identity,pins.epoch,inputPins,true};
+    const std::uint64_t port=9007199254740993ULL;
+    assert(d.logicalInputs.add(port,"Vocal",R::Format::mono));
+    assert(d.logicalInputs.bind(port,{identity,0,-1,"Capture L",""},live,pins.epoch));
+    assert(d.logicalInputs.assign(1,port)&&d.logicalInputs.assign(2,port));
+    MixerSessionDocument decoded;
+    assert(Codec::decode(Codec::encode(d),decoded));
+    juce::AudioPluginFormatManager formats;
+    std::shared_ptr<DynamicChannelFxLeaseBank> bank;
+    assert(NativeMixerSessionFxRestore::prepare(decoded,{},formats,48000.,480,pins.epoch,
+        mixer.nativeGraphRevisionForRestore(),bank).isEmpty());
+    assert(mixer.restoreNativeMixerSession(decoded,std::move(bank),pins,true).isEmpty());
+    assert(mixer.hasVerifiedNativeSources());
+    std::array<float,480> inputL,inputR,outL{},outR{};
+    inputL.fill(.15f);inputR.fill(-.15f);
+    const float* in[]={inputL.data(),inputR.data()};
+    float* out[]={outL.data(),outR.data()};
+    auto render=[&](){
+        for(int i=0;i<2;++i)assert(mixer.process(in,2,out,2,480,1.f,false,
+            nullptr,nullptr,false,nullptr,nullptr,true));
+    };
+    render();
+    assert(outL.back()>.01f&&outR.back()>.01f);
+    auto state=mixer.nativeBusStatus();
+    std::uint64_t revision=0,roster=0;
+    assert(parseDecimal(state.getProperty("graphRevision",{}),revision));
+    assert(parseDecimal(state.getProperty("rosterRevision",{}),roster));
+    int publications=0;
+    const auto publish=[&]{++publications;};
+    P::Edit edit;edit.port=port;edit.operation=P::Operation::rename;edit.name="Studio Vocal";
+    const auto logical=mixer.logicalInputRevision();
+    auto changed=mixer.editNativeLogicalInput(pins.epoch,revision,roster,logical,edit,d.binding,pins,publish);
+    assert(changed.accepted&&changed.pcmRevision==revision&&publications==0);
+    assert(mixer.logicalInputRevision()==logical+1);
+    edit.operation=P::Operation::bind;edit.binding={identity,1,-1,"Capture R",""};
+    assert(!mixer.editNativeLogicalInput(pins.epoch,revision,roster,logical,edit,d.binding,pins,publish).accepted);
+    assert(publications==0);
+    changed=mixer.editNativeLogicalInput(pins.epoch,revision,roster,logical+1,edit,d.binding,pins,publish);
+    assert(changed.accepted&&changed.pcmRevision==revision+1&&publications==1);
+    render();
+    assert(outL.back()<-.01f&&outR.back()<-.01f);
+    state=mixer.nativeBusStatus();
+    const auto data=state.getProperty("logicalInputRegistry",{});
+    const auto refs=data.getProperty("references",{});
+    assert(refs.getArray()->size()==2);
+    for(const auto& ref:*refs.getArray()){
+        assert(ref.getProperty("portId","").toString()==decimal(port));
+        assert(ref.getProperty("state","").toString()=="RESOLVED");
+    }
+    MixerSessionDocument captured;std::vector<BinaryState> blobs;
+    assert(mixer.captureNativeMixerSession(captured,blobs).isEmpty());
+    captured.id=d.id;captured.savedMs=d.savedMs;captured.binding=d.binding;
+    assert(Codec::decode(Codec::encode(captured),decoded));
+    assert(decoded.request.sources.empty()&&decoded.logicalInputs.assignedPort(1)==port&&
+           decoded.logicalInputs.assignedPort(2)==port);
+    const auto* saved=decoded.logicalInputs.find(port);
+    assert(saved&&saved->name=="Studio Vocal"&&saved->binding&&saved->binding->left==1);
+    edit.operation=P::Operation::unbind;
+    changed=mixer.editNativeLogicalInput(pins.epoch,changed.pcmRevision,roster,
+        mixer.logicalInputRevision(),edit,d.binding,pins,publish);
+    assert(changed.accepted&&publications==2&&!mixer.hasVerifiedNativeSources());
+    render();
+    assert(std::abs(outL.back())<1.e-6f&&std::abs(outR.back())<1.e-6f);
+    state=mixer.nativeBusStatus();
+    const auto missing=state.getProperty("logicalInputRegistry",{}).getProperty("references",{});
+    assert(missing.getArray()->size()==2);
+    for(const auto& ref:*missing.getArray())assert(ref.getProperty("state","").toString()=="NEEDS_REMAP");
+}
 int main(){
     checkLogicalInputSession();
+    verifyLogicalInputNativePcm();
     verifyChannelInputGainSessionRoundtrip();
     verifyDurableNativeFxPowerIdentity();
     verifyHotkeyDocumentIdentityAndMigration();
