@@ -2629,7 +2629,10 @@
           min-height:34px;padding:8px 10px}
         .armix-audio-dialog[data-audio-tab="device"] .armix-output-overview,
         .armix-audio-dialog[data-audio-tab="routing"] .armix-endpoint-fields,
-        .armix-audio-dialog[data-audio-tab="routing"] details{display:none}
+        .armix-audio-dialog[data-audio-tab="routing"] details,
+        .armix-audio-dialog[data-audio-tab="routing"] .armix-driver-inventory{display:none}
+        .armix-driver-inventory{padding:12px 20px;border-top:1px solid #354b59}
+        .armix-endpoint-fields .armix-device-actions{padding:0;border:0;background:transparent}
         .armix-audio-dialog .armix-device-actions{padding:12px 20px;
           border-top:1px solid #344b59;background:#192a33}
         .armix-audio-dialog .armix-device-actions button[data-audio-apply]{
@@ -2666,6 +2669,15 @@
           <div class="armix-device-note" data-audio-latency aria-label="Driver-reported audio latency">
             Latency · waiting for native device readback
           </div>
+          <label>Sample rate<select data-audio-field="rate"></select></label>
+          <label>Buffer size<select data-audio-field="buffer"></select></label>
+          <div class="armix-device-note" data-audio-period></div>
+          <div class="armix-device-actions">
+            <button type="button" data-audio-driver-panel hidden>ASIO control panel / recovery</button>
+            <button type="button" data-audio-read-health>Refresh audio status</button>
+          </div>
+          <div class="armix-device-note" data-audio-health role="status"></div>
+          <div class="armix-device-note">Start with 48 kHz and 128 or 256 samples if supported. Lower only if monitoring is stable. Driver and FX latency are additional considerations.</div>
         </div>
         <details data-audio-loopback-details hidden>
           <summary>Wired round-trip calibration · ASIO</summary>
@@ -2706,20 +2718,37 @@
           <div class="armix-output-matrix" data-audio-output-matrix role="list"></div>
           <div class="armix-device-note">Native callback/readback only · speaker listening not verified</div>
         </section>
-        <details><summary>Advanced · rate, buffer and channel pins</summary>
+        <section class="armix-driver-inventory" aria-label="Driver channel inventory">
+          <div class="armix-output-heading">DRIVER CHANNELS · available / enabled</div>
+          <div class="armix-device-note" data-audio-pin-summary></div>
           <div class="armix-device-note" data-audio-asio4all-hint hidden>
             Check ASIO4ALL WDM inputs/outputs before Apply. Different device clocks may drift.
           </div>
-          <label>Sample rate<select data-audio-field="rate"></select></label>
-          <label>Buffer<select data-audio-field="buffer"></select></label>
           <div class="armix-device-pins" data-audio-pins></div>
           <button type="button" data-audio-main-pins hidden>Apply two selected playback pins as MAIN</button>
-        </details>
+          <div class="armix-device-note">Select pins, then Apply. Additional pins are not automatically patched to mixer channels or outputs.</div>
+        </section>
         <div class="armix-device-actions">
           <button type="button" data-audio-apply>Apply device</button>
           <button type="button" data-audio-remap hidden>Use same pins on this device</button>
         </div></section>`;
       devicePanel.querySelector("[data-audio-close]").onclick=closeNativeAudioIO;
+      // Reuse the serialized JUCE recovery selector (including the vendor's
+      // native ASIO control-panel button), not a second driver instance.
+      devicePanel.querySelector("[data-audio-driver-panel]").onclick=()=>{
+        if(deviceBusy()||!deviceInventory||!deviceChoice||
+           !deviceVM.setupPresentation(deviceInventory,deviceChoice,deviceState).driverPanelAvailable)return;
+        deviceChoice=null;
+        closeNativeAudioIO();
+        backend.emitEvent("arMixAction",{action:"audioSetup"});
+      };
+      const readHealth=devicePanel.querySelector("[data-audio-read-health]");
+      readHealth.title="Read current driver and cumulative timing counters; discard unapplied edits. No driver rescan.";
+      readHealth.onclick=()=>{
+        if(deviceBusy())return;
+        deviceState=deviceVM.setupClearResult(deviceState);
+        backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+      };
       devicePanel.addEventListener("click",e=>{
         if(e.target===devicePanel){closeNativeAudioIO();return;}
         const tab=e.target?.closest?.("button[data-audio-tab]");
@@ -2811,12 +2840,48 @@
     const rateSelect=devicePanel.querySelector('[data-audio-field="rate"]');
     const bufferSelect=devicePanel.querySelector('[data-audio-field="buffer"]');
     if(rateSelect){
-      rateSelect.options[0].textContent="Driver default";
+      rateSelect.options[0].textContent="Driver default (AUTO)";
+      for(const option of Array.from(rateSelect.options).slice(1))
+        option.textContent=option.value+" Hz"+(Number(option.value)===active.rate?" · current":"");
       rateSelect.disabled=!view.same||deviceBusy();
     }
     if(bufferSelect){
-      bufferSelect.options[0].textContent="Driver default";
+      bufferSelect.options[0].textContent="Driver default (AUTO)";
+      for(const option of Array.from(bufferSelect.options).slice(1)){
+        const ms=deviceVM.setupBufferPeriod(deviceChoice.rate,Number(option.value));
+        option.textContent=option.value+" samples"+(ms===null?"":" · "+ms.toFixed(2)+" ms")+
+          (Number(option.value)===active.buffer?" · current":"");
+      }
       bufferSelect.disabled=!view.same||deviceBusy();
+    }
+    const period=devicePanel.querySelector("[data-audio-period]");
+    if(period)period.textContent=view.draftPeriodMs===null?
+      "Requested period: driver negotiation required":
+      "Requested callback period "+view.draftPeriodMs.toFixed(2)+" ms · not round-trip latency";
+    const panel=devicePanel.querySelector("[data-audio-driver-panel]");
+    if(panel){panel.hidden=!view.driverPanelAvailable;panel.disabled=deviceBusy();}
+    const readHealth=devicePanel.querySelector("[data-audio-read-health]");
+    if(readHealth)readHealth.disabled=deviceBusy();
+    const health=devicePanel.querySelector("[data-audio-health]");
+    const h=deviceVM.setupHealthReadback(active);
+    const metric=v=>v===null?"N/A":String(v);
+    if(health)health.textContent=h?
+      (active.bitDepth>0?active.bitDepth+"-bit · ":"")+
+      "Cumulative timing snapshot · P99 budget "+h.budget+
+      " · deadline misses "+metric(h.overBudget)+" · callback gaps "+metric(h.gaps)+
+      " · driver XRUN "+metric(h.xruns)+
+      (h.discontinuities===null?"":" · capture discontinuities "+h.discontinuities)+
+      " · not a crackle-free guarantee":
+      "Audio health unavailable until a driver is verified.";
+    const pinSummary=devicePanel.querySelector("[data-audio-pin-summary]");
+    if(pinSummary){
+      const a=view.inputInventory,b=view.outputInventory;
+      pinSummary.textContent=a&&b?
+        "IN "+a.active+"/"+a.total+" enabled · OUT "+b.active+"/"+b.total+" enabled"+
+          (!a.complete||!b.complete?" · Apply supports up to 64 pins per direction":"")+
+          (active.backend==="ASIO"&&a.total===2&&b.total===2?
+            " · ASIO driver currently reports 2 × 2; separate Windows endpoints are not ASIO pins.":""):
+        "Apply the selected driver first to read its reported channels.";
     }
     const pins=devicePanel.querySelector("[data-audio-pins]");
     if(pins){
@@ -2831,6 +2896,21 @@
           const title=document.createElement("strong");
           title.textContent=side==="input"?"Capture pins":"Playback pins";
           group.appendChild(title);
+          const inventory=side==="input"?view.inputInventory:view.outputInventory;
+          if(active.backend==="ASIO"&&inventory?.complete&&
+             inventory.selectable>=(side==="input"?1:2)){
+            const all=document.createElement("button");
+            all.type="button";
+            all.textContent="Select all "+inventory.selectable;
+            all.disabled=deviceBusy()||selected.length===inventory.selectable;
+            all.onclick=()=>{
+              if(deviceBusy())return;
+              deviceChoice=deviceVM.setupSelectAllPins(deviceChoice,deviceInventory,side);
+              deviceState=deviceVM.setupClearResult(deviceState);
+              renderDevicePanel();
+            };
+            group.appendChild(all);
+          }
           (names||[]).forEach((name,index)=>{
             const label=document.createElement("label");
             const control=document.createElement("input");
@@ -2839,13 +2919,15 @@
             control.dataset.pinIndex=String(index);
             control.checked=selected.includes(index);
             control.disabled=deviceBusy();
-            label.append(control,document.createTextNode(String(name)));
+            label.append(control,document.createTextNode(
+              (side==="input"?"IN ":"OUT ")+(index+1)+" · "+
+              (String(name).trim()?String(name):"Unnamed by driver")));
             group.appendChild(label);
           });
           container.appendChild(group);
         }
         pins.appendChild(container);
-      }else pins.textContent="Apply this device first to inspect its real enabled pins.";
+      }else pins.textContent="Apply this device first to inspect all reported and enabled pins.";
     }
     const activeText=devicePanel.querySelector("[data-audio-active]");
     if(activeText&&!deviceBusy())activeText.textContent=view.activeText;
@@ -2921,7 +3003,19 @@
     showDeviceApplyProgress(false);
     if(deviceState.phase==="ACCEPTED"){
       deviceChoice=null;
-      devicePanel.hidden=true;
+      if(deviceState.inspectNewAsio){
+        // A newly opened ASIO driver initially negotiates default pins.
+        // Keep Audio I/O open for the authoritative inventory requested by
+        // onNativeReadback, not a misleading return to a 2x2 mixer.
+        deviceInventory=null;
+        devicePanel.querySelector("[data-audio-active]").textContent=
+          "Driver opened · reading available ASIO channels";
+        devicePanel.querySelector("[data-audio-pin-summary]").textContent=
+          "Waiting for the new driver inventory…";
+        devicePanel.querySelector("[data-audio-pins]").textContent="";
+        for(const field of devicePanel.querySelectorAll("select, [data-audio-apply], [data-audio-main-pins], [data-audio-remap], [data-audio-driver-panel]"))
+          field.disabled=true;
+      }else devicePanel.hidden=true;
       // The confirmed schema-v6 readback, not the preceding Apply ACK,
       // is the only source for the device-ready status shown to operators.
       const active=verifiedSnapshot?.device;

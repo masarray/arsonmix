@@ -155,8 +155,11 @@ def main():
             io_inventory['active']=out_active
             emit(page,'arMixAudioDeviceInventory',io_inventory)
             assert capture_select.input_value()=='' # reopening does not auto-patch a mic
-            page.locator('.armix-audio-dialog summary',
-                has_text='Advanced · rate, buffer and channel pins').click()
+            # Inventory is now visible by default on the Audio Device tab.
+            assert page.get_by_role('region',name='Driver channel inventory').is_visible()
+            assert page.locator('[data-audio-pin-summary]').is_visible()
+            assert page.locator('[data-audio-field="rate"]').is_visible()
+            assert page.locator('[data-audio-field="buffer"]').is_visible()
             assign_main=page.locator('[data-audio-main-pins]')
             def playback_pin(index):
                 return page.locator(f'[data-audio-pin="output"][data-pin-index="{index}"]')

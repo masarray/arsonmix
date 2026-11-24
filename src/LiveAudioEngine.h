@@ -1784,15 +1784,32 @@ public:
         armix::device::JuceActivePortSnapshot::Fault pinFault{};
         if(inputMask!=setup.inputChannels || outputMask!=setup.outputChannels ||
            rate!=setup.sampleRate || frames!=setup.bufferSize ||
-           !armix::device::JuceActivePortSnapshot::fromMasks(
-                candidate.epoch,inputMask,outputMask,candidate.pins,pinFault) ||
+           // Restore needs the full verified device identity and physical
+           // output names as well as callback ordinals. A mask-only snapshot
+           // cannot attest saved external ASIO destinations (e.g. VC OUT).
+           !armix::device::JuceActivePortSnapshot::capture(
+                device,candidate.epoch,candidate.pins,pinFault) ||
            !dryRoutingLab_.matchesSessionDevice(candidate.pins))
             return "NEEDS_REMAP: audio device pin readback does not match callback";
         candidate.live={
             deviceManager_.getCurrentAudioDeviceType(),
             setup.inputDeviceName,setup.outputDeviceName,
             inputMask.toString(16),outputMask.toString(16),rate,frames,
-            device->getInputChannelNames(),device->getOutputChannelNames()};
+            device->getInputChannelNames(),candidate.pins.outputNames};
+        // Reject a concurrent driver reset or changed topology before the
+        // prepared FX/session can acquire this physical binding.
+        if(deviceManager_.getCurrentAudioDevice()!=device ||
+           !device->isOpen() ||
+           inputMask!=device->getActiveInputChannels() ||
+           outputMask!=device->getActiveOutputChannels() ||
+           rate!=device->getCurrentSampleRate() ||
+           frames!=device->getCurrentBufferSizeSamples() ||
+           candidate.live.inputNames!=device->getInputChannelNames() ||
+           candidate.live.outputNames!=device->getOutputChannelNames() ||
+           (candidate.live.backend=="ASIO" &&
+            (candidate.pins.typeName!="ASIO" ||
+             candidate.pins.deviceName!=candidate.live.playback)))
+            return "NEEDS_REMAP: driver changed during named pin inspection";
         candidate.callbackInputs=candidate.pins.inputs.enabledCount;
         candidate.outputs=armix::session::MixerDeviceBindingPolicy::proposedOutputs(
             saved,candidate.live,candidate.pins.outputCount,mode);

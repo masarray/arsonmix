@@ -43,9 +43,15 @@
     // callback ordinals or guess unavailable driver pins.
     for(let i=0;i+1<pins.length;++i)
       if(pins[i+1].port===pins[i].port+1)
-        entries.push({label:"Stereo · IN "+(pins[i].port+1)+
-          " + "+(pins[i+1].port+1),mode:"STEREO",
-          left:pins[i].port,right:pins[i+1].port});
+        {
+          const a=pins[i],b=pins[i+1];
+          const generic=p=>new RegExp("^\\s*(?:in|input)\\s*"+(p.port+1)+"\\s*$","i")
+            .test(String(p.label||""));
+          const pair="Stereo · IN "+(a.port+1)+" + "+(b.port+1);
+          entries.push({label:generic(a)&&generic(b)?pair:
+            pair+" · "+a.label+" / "+b.label,mode:"STEREO",
+            left:a.port,right:b.port});
+        }
     return entries;
   }
   function inputLabel(snapshot,row) {
@@ -122,7 +128,34 @@
         (type?.separate?type?.outputs?.[0]:capture)||"",
       inputPins:Array.isArray(active.enabledInputs)?active.enabledInputs.slice():null,
       outputPins:Array.isArray(active.enabledOutputs)?active.enabledOutputs.slice():null,
-      rate:0,buffer:0};
+      rate:active.open&&validRate(active.rate)?active.rate:0,
+      buffer:active.open&&validBuffer(active.buffer)?active.buffer:0};
+  }
+  const validRate=v=>Number.isFinite(v)&&v>=8000&&v<=384000;
+  const validBuffer=v=>Number.isSafeInteger(v)&&v>=16&&v<=8192;
+  function formatOptions(reported,current,valid) {
+    // Current negotiated value may be absent from advertised alternatives.
+    const values=Array.isArray(reported)?reported.filter(valid):[];
+    if(valid(current))values.push(current);
+    return ["0",...[...new Set(values)].sort((a,b)=>a-b).map(String)];
+  }
+  function setupBufferPeriod(rate,buffer) {
+    return validRate(rate)&&validBuffer(buffer)?1000*buffer/rate:null;
+  }
+  function setupHealthReadback(active) {
+    if(active?.open!==true||active.authorized!==true)return null;
+    const count=v=>Number.isSafeInteger(v)&&v>=0?v:null;
+    const samples=count(active.callbackBudgetSamples);
+    const p99=Number.isFinite(active.callbackP99BudgetUpperPct)&&
+      active.callbackP99BudgetUpperPct>=0?active.callbackP99BudgetUpperPct:null;
+    const budget=samples>0?(active.callbackP99BeyondDeadline===true?
+      "over deadline":p99===null?"N/A":"≤"+p99.toFixed(0)+"%"):"N/A";
+    const xruns=active.backendXrunMeaning==="DRIVER_DEFINED"?
+      count(active.backendXrunCount):null;
+    const discontinuities=active.backendXrunMeaning==="WASAPI_CAPTURE_DISCONTINUITIES_ONLY"?
+      count(active.backendXrunCount):null;
+    return {budget,overBudget:count(active.overBudgetCount),
+      gaps:count(active.callbackGapCount),xruns,discontinuities,samples};
   }
   // DAW-style read-only latency from the ACTUAL active JUCE device.
   // Driver input/output hints are not an electrical loopback measurement.
@@ -152,14 +185,40 @@
       provenance:active.latencyProvenance||"UNKNOWN"
     });
   }
+  // Capability inventory is a driver observation, not installed PCM.
+  // Never synthesize pins from a product name, Windows endpoint or count.
+  function pinInventory(active,side) {
+    const input=side==="input";
+    const names=active?.[input?"inputNames":"outputNames"];
+    const enabled=active?.[input?"enabledInputs":"enabledOutputs"];
+    const count=active?.[input?"reportedInputCount":"reportedOutputCount"];
+    if(active?.open!==true||!Array.isArray(names)||!validPinMask(enabled,names))
+      return null;
+    const total=count===undefined?names.length:count;
+    if(!Number.isSafeInteger(total)||total<names.length||names.length>64||
+       !names.every(n=>typeof n==="string"))return null;
+    return {total,active:enabled.length,selectable:names.length,
+      complete:total===names.length,
+      all:names.map((_,i)=>i)};
+  }
+  function setupSelectAllPins(draft,inventory,side) {
+    if(!["input","output"].includes(side)||
+       !setupSameEndpoint(inventory?.active,draft)||draft.backend!=="ASIO")return draft;
+    const pins=pinInventory(inventory.active,side);
+    if(!pins?.complete||!pins.all.length||side==="output"&&pins.all.length<2)
+      return draft;
+    return {...draft,[side==="input"?"inputPins":"outputPins"]:pins.all};
+  }
   function setupPresentation(inventory,draft,state=setupInitial()) {
     const active=inventory?.active||{},types=inventory?.types||[];
     const type=types.find(t=>t?.name===draft?.backend);
     const same=setupSameEndpoint(active,draft);
     const inputOptions=type?.separate?["",...(type.inputs||[])]:type?.inputs||[];
     const outputOptions=type?.outputs||[];
-    const rates=same?active.rates||[]:[];
-    const buffers=same?active.buffers||[]:[];
+    const rateOptions=same?formatOptions(active.rates,active.rate,validRate):["0"];
+    const bufferOptions=same?formatOptions(active.buffers,active.buffer,validBuffer):["0"];
+    const rateValid=rateOptions.includes(String(draft?.rate??0));
+    const bufferValid=bufferOptions.includes(String(draft?.buffer??0));
     const mainPins=Array.isArray(active.mainOutputs)?active.mainOutputs
       .map(pin=>active.outputNames?.[pin]).filter(Boolean):[];
     const noInput=type?.separate===true&&draft?.capture==="";
@@ -176,14 +235,17 @@
        (!noInput||selectedInputPins.length===0));
     const canApply=Boolean(type && draft?.backend && inputValid&&outputValid&&
       (type.separate===true||draft.capture===draft.playback)&&
-      validSelection);
+      validSelection&&rateValid&&bufferValid);
     const selectedPins=(key,enabled)=>Array.isArray(draft?.[key])?
       draft[key]:Array.isArray(enabled)?enabled:[];
     return {type,same,backendOptions:types.map(t=>t.name),
-      inputOptions,outputOptions,rateOptions:["0",...rates.map(String)],
-      bufferOptions:["0",...buffers.map(String)],
+      inputOptions,outputOptions,rateOptions,bufferOptions,
+      draftPeriodMs:same?setupBufferPeriod(draft.rate,draft.buffer):null,
+      driverPanelAvailable:same&&active.backend==="ASIO"&&active.hasControlPanel===true,
       inputPins:selectedPins("inputPins",active.enabledInputs),
       outputPins:selectedPins("outputPins",active.enabledOutputs),
+      inputInventory:same?pinInventory(active,"input"):null,
+      outputInventory:same?pinInventory(active,"output"):null,
       canApply,canAssignMain:same&&validSelection&&
         selectedOutputPins.length===2,
       canReusePins:same&&state.remapGeneration===active.deviceGeneration,
@@ -212,18 +274,22 @@
     const {field,value}=change;
     if(typeof value!=="string")return draft;
     if(field==="backend") {
+      if(value===draft.backend)return draft;
       const type=inventory.types?.find(t=>t.name===value);
       if(!type)return draft;
       const capture=type.inputs?.[0]||"";
-      return {...draft,backend:value,capture,
+      const next={...draft,backend:value,capture,
         playback:type.separate?type.outputs?.[0]||"":capture,
         inputPins:null,outputPins:null,rate:0,buffer:0};
+      return setupSameEndpoint(inventory.active,next)?setupDraft(inventory):next;
     }
     if(field==="capture") {
       if(!view.inputOptions.includes(value))return draft;
-      return {...draft,capture:value,
+      if(value===draft.capture)return draft;
+      const next={...draft,capture:value,
         playback:view.type?.separate?draft.playback:value,
         inputPins:null,outputPins:null,rate:0,buffer:0};
+      return setupSameEndpoint(inventory.active,next)?setupDraft(inventory):next;
     }
     if(field==="playback") {
       if(!view.outputOptions.includes(value)||
@@ -231,9 +297,11 @@
         return draft;
       // A JUCE non-separate backend has one duplex endpoint identity.
       // Never present an input/output mismatch that native must reject.
-      return {...draft,playback:value,
+      if(value===draft.playback)return draft;
+      const next={...draft,playback:value,
         capture:view.type?.separate?draft.capture:value,
         inputPins:null,outputPins:null,rate:0,buffer:0};
+      return setupSameEndpoint(inventory.active,next)?setupDraft(inventory):next;
     }
     if(field==="rate"||field==="buffer") {
       const options=field==="rate"?view.rateOptions:view.bufferOptions;
@@ -374,7 +442,10 @@
     const live=state.pending.ack.outputMuted===false&&
       snapshot.admitted===true&&snapshot.productLive===true&&
       d.outputArmed===true;
+    const inspectNewAsio=expected.backend==="ASIO"&&
+      state.pending.expected.requestedPins===null;
     return {phase:"ACCEPTED",pending:null,remapGeneration:null,
+      ...(inspectNewAsio?{inspectNewAsio:true}:{}),
       message:live?"Mixer ready · Output live":
         mixerVerified?"Mixer ready · Output muted":
           "Audio device ready · Mixer route not yet verified"};
@@ -452,6 +523,7 @@
   }
   return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,
     externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,
+    pinInventory,setupSelectAllPins,setupBufferPeriod,setupHealthReadback,
     setupInitial,setupBegin,setupAck,setupReadback,
     setupTimeout,setupClearResult,nativeLifecycleLease,nativeLifecycleDecision,
     nativeTransientReadbackPolicy});

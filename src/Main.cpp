@@ -3243,6 +3243,13 @@ private:
         const auto live=engine_.status();
         o->setProperty("deviceGeneration",live.getProperty("deviceGeneration",0));
         o->setProperty("mainOutputs",live.getProperty("dryRoutingLab",{}).getProperty("mainOutputs",{}));
+        // Read-only snapshot on explicit Audio I/O request. These counters
+        // already exist in the engine; do not add RT work or a polling driver.
+        for(const char* key: {"callbackCount","overBudgetCount","callbackGapCount",
+             "backendXrunCount","backendXrunMeaning","callbackBudgetSamples",
+             "callbackP99BudgetUpperPct","callbackP99BeyondDeadline"})
+            o->setProperty(juce::Identifier(key),live.getProperty(juce::Identifier(key),{}));
+        o->setProperty("bitDepth",device&&device->isOpen()?device->getCurrentBitDepth():0);
         // DAW-style AUDIO SETUP telemetry: JUCE's driver-provided input/output
         // latency hints in SAMPLES, plus the host's current admitted DSP delay.
         // The WebView must never present an untrusted draft as measured audio.
@@ -3261,11 +3268,16 @@ private:
         o->setProperty("latencyProvenance",
             "JUCE_DRIVER_REPORTED_NOT_MEASURED_LOOPBACK_OR_ASIO_RTL");
         juce::Array<juce::var> inputNames,outputNames,inputPins,outputPins,rates,buffers;
+        // Driver capability is distinct from the enabled callback mask. Keep
+        // total counts even beyond the current 64-pin device Apply contract.
+        int reportedInputs=0,reportedOutputs=0;
         if(device!=nullptr&&device->isOpen()) {
             const auto inputs=device->getInputChannelNames();
             const auto outputs=device->getOutputChannelNames();
             const auto inputMask=device->getActiveInputChannels();
             const auto outputMask=device->getActiveOutputChannels();
+            reportedInputs=inputs.size();
+            reportedOutputs=outputs.size();
             for(int i=0;i<juce::jmin(64,inputs.size());++i) {
                 inputNames.add(inputs[i]);
                 if(inputMask[i])inputPins.add(i);
@@ -3278,6 +3290,8 @@ private:
             for(const auto value:device->getAvailableBufferSizes()) buffers.add(value);
             o->setProperty("hasControlPanel",device->hasControlPanel());
         }else o->setProperty("hasControlPanel",false);
+        o->setProperty("reportedInputCount",reportedInputs);
+        o->setProperty("reportedOutputCount",reportedOutputs);
         o->setProperty("inputNames",juce::var(inputNames));
         o->setProperty("outputNames",juce::var(outputNames));
         o->setProperty("enabledInputs",juce::var(inputPins));
@@ -3550,6 +3564,9 @@ private:
                             // Refresh native physical port inventory after the user
                             // finishes device selection; never require a restart.
                             safe->emitApprovedNativeSnapshot();
+                            // Refresh the cached capabilities after the actual
+                            // JUCE/vendor control panel transaction closes.
+                            safe->emitDeviceInventory(false);
                             // The operator already pressed Play AND chose a
                             // physical output. Finish that exact pending Play
                             // once; never autoplay on ordinary device setup.
@@ -3569,6 +3586,7 @@ private:
                                     ? "Playback unavailable. Mixer and plugin settings are saved."
                                     : "Choose a working stereo output in Audio I/O. Input hardware is optional.", true);
                             safe->emitApprovedNativeSnapshot();
+                            safe->emitDeviceInventory(false);
                         }
                     }, *safe);
             safe->audioSetupWindow_->setVisible (true);
@@ -3745,6 +3763,21 @@ private:
             result << "Capture backend device: "
                    << (capture ? capture->getName() : juce::String ("Unavailable"))
                    << " | Render backend device: " << device->getName() << "\n";
+            // Explicit report: full driver names, not just active callback
+            // buffers or the bounded GUI Apply list. Never open another driver.
+            const auto describePins=[&](juce::AudioIODevice* endpoint,bool input) {
+                if(!endpoint || !endpoint->isOpen())return;
+                const auto names=input?endpoint->getInputChannelNames():endpoint->getOutputChannelNames();
+                const auto mask=input?endpoint->getActiveInputChannels():endpoint->getActiveOutputChannels();
+                result << (input?"Capture":"Playback") << " pins: "
+                       << mask.countNumberOfSetBits() << " active / " << names.size()
+                       << " driver-reported\n";
+                for(int i=0;i<names.size();++i)
+                    result << "  " << (input?"IN ":"OUT ") << (i+1) << " | "
+                           << names[i] << " | " << (mask[i]?"ENABLED":"DISABLED") << "\n";
+            };
+            describePins(capture,true);
+            describePins(device,false);
             result << "Reported render sample rates: ";
             for (auto v : device->getAvailableSampleRates()) result << v << " ";
             const auto reportedBuffers = device->getAvailableBufferSizes();

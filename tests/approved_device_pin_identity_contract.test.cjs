@@ -576,3 +576,117 @@ test("P0 approved Audio I/O latency shows real driver frames, never a fake loopb
                     "hostFxLatencyFrames","latencyClockScope","latencyProvenance"])
     assert.ok(host.includes("setProperty(\""+key+"\""));
 });
+
+test("Single ASIO full inventory: 8 reported pins remain visible independently of 2 active",()=>{
+  const f=fixture(), names=["MIC 1","MIC 2","VC 1","VC 2","VC 3","VC 4","Loopback 1","Loopback 2"];
+  const active={...f.active,inputNames:names,outputNames:names,
+    reportedInputCount:8,reportedOutputCount:8};
+  const inv={...f.inventory,active},draft=vm.setupDraft(inv);
+  const original=JSON.stringify(inv);
+  const v=vm.setupPresentation(inv,draft);
+  assert.equal(v.inputInventory.total,8);
+  assert.equal(v.inputInventory.active,2);
+  assert.equal(v.outputInventory.total,8);
+  const allIn=vm.setupSelectAllPins(draft,inv,"input");
+  assert.deepEqual(allIn.inputPins,[0,1,2,3,4,5,6,7]);
+  assert.deepEqual(allIn.outputPins,[0,1]);
+  const all=vm.setupSelectAllPins(allIn,inv,"output");
+  const begun=vm.setupBegin(vm.setupInitial(),{inventory:inv,draft:all,requestId:"full"});
+  assert.deepEqual(begun.request.config.enabledInputs,[0,1,2,3,4,5,6,7]);
+  assert.deepEqual(begun.request.config.enabledOutputs,[0,1,2,3,4,5,6,7]);
+  assert.equal(begun.request.config.assignSelectedPlaybackPinsToMain,undefined);
+  assert.equal(JSON.stringify(inv),original);
+  assert.equal(vm.setupSelectAllPins({...draft,capture:"Other ASIO"},inv,"input").inputPins,draft.inputPins);
+  const truncated={...inv,active:{...active,reportedInputCount:80}};
+  assert.equal(vm.pinInventory(truncated.active,"input").complete,false);
+  assert.equal(vm.setupSelectAllPins(draft,truncated,"input"),draft);
+  const malformed={...active,reportedInputCount:2};
+  assert.equal(vm.pinInventory(malformed,"input"),null);
+});
+
+test("Single ASIO SOURCE names preserve driver VC and loopback identity; inactive pairs are not offered",()=>{
+  const names=["MIC 1","MIC 2","VC 1","VC 2","VC 3","VC 4","Loopback 1","Loopback 2"];
+  const snapshot={device:{backend:"ASIO",enabledInputs:[0,2,3,6,7],
+    inputEndpoints:names.map((label,port)=>({label,port,active:true}))}};
+  const options=vm.inputChoices(snapshot);
+  assert.ok(options.some(x=>x.mode==="STEREO"&&x.left===2&&x.right===3&&x.label.includes("VC 1 / VC 2")));
+  assert.ok(options.some(x=>x.mode==="STEREO"&&x.left===6&&x.right===7&&x.label.includes("Loopback 1 / Loopback 2")));
+  assert.ok(!options.some(x=>x.mode==="STEREO"&&x.left===4));
+  assert.ok(!options.some(x=>x.left===1));
+});
+
+test("Professional I/O pin-only edits preserve negotiated rate and buffer, including omitted advertised values",()=>{
+  const f=fixture(),active={...f.active,rates:[96000,48000,48000,0,NaN],
+    buffers:[128,512,128,0,65536],hasControlPanel:true};
+  const inv={...f.inventory,active},draft=vm.setupDraft(inv);
+  assert.equal(draft.rate,48000);
+  assert.equal(draft.buffer,256);
+  const view=vm.setupPresentation(inv,draft);
+  assert.deepEqual(view.rateOptions,["0","48000","96000"]);
+  assert.deepEqual(view.bufferOptions,["0","128","256","512"]);
+  assert.equal(view.driverPanelAvailable,true);
+  const edited=vm.setupEditDraft(draft,inv,{side:"input",index:2,checked:true});
+  const req=vm.setupBegin(vm.setupInitial(),{inventory:inv,draft:edited,requestId:"pin-only"}).request;
+  assert.equal(req.config.sampleRate,48000);
+  assert.equal(req.config.bufferSize,256);
+  assert.equal(vm.setupBufferPeriod(48000,128),128/48);
+  assert.equal(vm.setupBufferPeriod(0,128),null);
+  assert.equal(vm.setupBegin(vm.setupInitial(),{inventory:inv,draft:{...draft,buffer:999},requestId:"bad"}),null);
+  const auto=vm.setupEditDraft(draft,inv,{field:"buffer",value:"0"});
+  assert.equal(vm.setupBegin(vm.setupInitial(),{inventory:inv,draft:auto,requestId:"auto"}).request.config.bufferSize,0);
+});
+
+test("Professional I/O health evidence never fabricates zero XRUNs or a current P99",()=>{
+  const active={open:true,authorized:true,callbackBudgetSamples:200,
+    callbackP99BudgetUpperPct:75,overBudgetCount:3,callbackGapCount:2,
+    backendXrunMeaning:"UNAVAILABLE",backendXrunCount:null};
+  assert.deepEqual(vm.setupHealthReadback(active),{budget:"≤75%",overBudget:3,
+    gaps:2,xruns:null,discontinuities:null,samples:200});
+  assert.equal(vm.setupHealthReadback({...active,callbackBudgetSamples:0}).budget,"N/A");
+  assert.equal(vm.setupHealthReadback({...active,callbackP99BeyondDeadline:true}).budget,"over deadline");
+  assert.equal(vm.setupHealthReadback({...active,backendXrunMeaning:"DRIVER_DEFINED",backendXrunCount:0}).xruns,0);
+  const wasapi=vm.setupHealthReadback({...active,backendXrunMeaning:"WASAPI_CAPTURE_DISCONTINUITIES_ONLY",backendXrunCount:7});
+  assert.equal(wasapi.xruns,null);
+  assert.equal(wasapi.discontinuities,7);
+  assert.equal(vm.setupHealthReadback({...active,authorized:false}),null);
+});
+
+test("Final single-ASIO: initial driver Apply stays in inventory workflow only after installed readback",()=>{
+  const f=fixture(),draft=vm.setupEditDraft(vm.setupDraft(f.inventory),f.inventory,
+    {field:"playback",value:"Other ASIO"});
+  const begun=f.begin("discover",draft);
+  assert.equal(begun.state.pending.expected.requestedPins,null);
+  const active={...f.active,deviceGeneration:41,captureDevice:"Other ASIO",
+    playbackDevice:"Other ASIO",enabledInputs:[0,1],enabledOutputs:[0,1]};
+  const verifying=vm.setupAck(begun.state,f.ack("discover",{active}));
+  assert.equal(verifying.phase,"VERIFYING");
+  assert.equal(verifying.inspectNewAsio,undefined);
+  const installed={...f.readback,device:{...f.readback.device,
+    captureDevice:"Other ASIO",playbackDevice:"Other ASIO",
+    enabledInputs:[0,1],enabledOutputs:[0,1]}};
+  assert.equal(vm.setupReadback(verifying,installed).inspectNewAsio,true);
+  const same=f.begin("same");
+  assert.equal(vm.setupReadback(vm.setupAck(same.state,f.ack("same")),f.readback).inspectNewAsio,undefined);
+  const bridge=readFileSync("web/approved-native-bridge.js","utf8");
+  assert.match(bridge,/if\(deviceState\.inspectNewAsio\)/);
+  assert.match(bridge,/deviceInventory=null;[\s\S]*?Waiting for the new driver inventory/);
+});
+
+test("Final single-ASIO: reselecting or returning to installed endpoint never silently resets format",()=>{
+  const f=fixture(),draft=vm.setupDraft(f.inventory);
+  for(const [field,value] of [["backend","ASIO"],["capture","Studio ASIO"],["playback","Studio ASIO"]])
+    assert.strictEqual(vm.setupEditDraft(draft,f.inventory,{field,value}),draft);
+  const away=vm.setupEditDraft(draft,f.inventory,{field:"playback",value:"Other ASIO"});
+  const back=vm.setupEditDraft(away,f.inventory,{field:"playback",value:"Studio ASIO"});
+  assert.deepEqual(back,draft);
+});
+
+test("Final single-ASIO restore passes named live device snapshot to external output admission",()=>{
+  const source=readFileSync("src/LiveAudioEngine.h","utf8");
+  const region=source.slice(source.indexOf("juce::String inspectNativeMixerSessionBinding("),
+    source.indexOf("juce::String prepareUnboundMixerFx("));
+  assert.match(region,/JuceActivePortSnapshot::capture\(\s*device,candidate\.epoch,candidate\.pins,pinFault\)/);
+  assert.match(region,/candidate\.pins\.outputNames/);
+  assert.match(region,/candidate\.pins\.deviceName!=candidate\.live\.playback/);
+  assert.doesNotMatch(region,/JuceActivePortSnapshot::fromMasks/);
+});
