@@ -233,6 +233,30 @@ def verify_inspector_rejected_gain(page, out):
     assert slider.evaluate("el=>document.activeElement===el")
     assert not errors,errors
 
+def open_verified_audio_io(page, state, tab):
+    """Driver inventory is independent of installed native graph readback."""
+    d=state["device"]
+    page.locator("[data-native-io]").click()
+    assert page.locator('button[data-audio-tab="inputs"]').is_disabled()
+    assert page.locator('[data-audio-pins]').is_hidden()
+    def names(side):
+        ports=d[side+"Endpoints"]
+        result=[""]*(max((p["port"] for p in ports),default=-1)+1)
+        for p in ports: result[p["port"]]=p["label"]
+        return result
+    inventory={"active":{"open":True,"authorized":True,
+        "backend":d["backend"],"captureDevice":d["captureDevice"],
+        "playbackDevice":d["playbackDevice"],"deviceGeneration":int(d["epoch"]),
+        "rate":d["sampleRate"],"buffer":d["bufferFrames"],
+        "inputNames":names("input"),"outputNames":names("output"),
+        "enabledInputs":d["enabledInputs"],"enabledOutputs":d["enabledOutputs"],
+        "mainOutputs":state.get("physicalMainOutputs",[])},
+        "types":[{"name":d["backend"],"separate":True,
+            "inputs":[d["captureDevice"]],"outputs":[d["playbackDevice"]]}]}
+    emit(page,"arMixAudioDeviceInventory",inventory)
+    page.locator('button[data-audio-tab="'+tab+'"]').click()
+    return inventory
+
 def verify_external_output(page, out):
     """Actual /preview/ native WebView: select -> native ACK -> callback readback.
 
@@ -260,7 +284,7 @@ def verify_external_output(page, out):
     state["externalOutputs"]=[]
     emit(page,"arMixConsoleSnapshot",state)
     page.wait_for_selector('#tracks .strip[data-id="2"] select[data-field="external"]',state="attached")
-    page.locator("[data-native-io]").click()
+    open_verified_audio_io(page,state,"routing")
     matrix=page.locator("[data-audio-output-matrix] .armix-output-row")
     assert matrix.count()==4,[x.inner_text() for x in matrix.all()]
     assert "MAIN" in matrix.nth(0).inner_text()
@@ -310,7 +334,7 @@ def verify_external_output(page, out):
     emit(page,"arMixConsoleSnapshot",state)
     assert second.get_attribute("data-status")=="LIVE"
     assert "SHARED 2 SOURCES" in first.input_value(),first.input_value()
-    page.locator("[data-native-io]").click()
+    open_verified_audio_io(page,state,"routing")
     row=page.locator("[data-audio-output-matrix] .armix-output-row").filter(has_text="OUT 5/6")
     assert "SHARED 2" in row.inner_text(),row.inner_text()
     assert "CH03" in row.inner_text() and "CH04" in row.inner_text()

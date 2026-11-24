@@ -373,6 +373,33 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  studio-audio-io:
+    name: Studio Audio I/O real Chromium routing interaction
+    needs: quick
+    if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/io-studio-workflow-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Chromium
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Verify compiled Audio I/O interaction with native transport fixture
+        run: python tests/approved_audio_io_chromium_smoke.py
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: ArSonMix-Audio-IO-${{ github.run_id }}
+          path: |
+            audio-io-custom-stereo.png
+            native-external-output-matrix.png
+          if-no-files-found: ignore
+          retention-days: 7
+
   operator-ux-fat:
     name: Operator UX real Chromium / native-assembled GUI (5 viewports)
     needs: quick

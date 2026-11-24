@@ -18,3 +18,6 @@ Input matrix now supports the prepared M4 first-source workflow and accepted M4 
 
 ## Delivery 2C — explicit stereo L/R
 Native ChannelId and M4 both already accept two distinct enabled capture pins (NativeVerifiedSourcePatch and LiveDryRoutingLab). GUI now exposes explicit custom stereo L/R, including sparse/reversed pairs, using the same verified choice and source queue. Only adjacent defaults, current installed pairs and the single requested custom candidate are materialized (no N² option explosion). Keep source width independent of strip processing width. Lease includes device epoch. Still no independent logical alias registry or editable MAIN/MONITOR.
+
+## Delivery 2D — scoped real Chromium qualification
+Fast UI contract workflow success alone did not execute a browser job on this feature branch. Added real assembled /preview/ Chromium test for actual dialog/tab visibility, independent inventory, custom L/R draft, duplicate rejection, emitted native source payload, ACK-only nonpublication and installed crosspoints; reuses external output interaction regression updated to visit the Outputs tab. Runs at 1366×768 and 1024×576 for input, 1366×900 for output. Backend fixture does not prove physical PCM; no gate waiver.
