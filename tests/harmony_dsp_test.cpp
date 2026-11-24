@@ -249,6 +249,84 @@ static void testCommonToneEngineTransition(){
              <<" movedAge="<<e->singerAgeForOfflineTests(moved)<<std::endl;
   }
 }
+// H5: measurable broad spectral identity and fallback-only guard.
+// Do not confuse this with true vowel/formant reconstruction.
+static void testSingerSpectralIdentity(){
+  auto response=[](int rate,int role,double hz,float share){
+    auto e=std::make_unique<EnsembleSpace>();
+    need(e->prepare(rate),"H5 identity prepare");
+    double in=0.,out=0.;
+    for(int i=0;i<rate/5;++i){
+      const float x=static_cast<float>(.2*std::sin(6.283185307179586*hz*i/rate));
+      const float y=e->shapeSinger(role,x,1.f,1.7f,share);
+      need(std::isfinite(y)&&std::abs(y)<.35f,"H5 identity unbounded");
+      if(i>rate/10){in+=x*x;out+=y*y;}
+    }
+    return 10.*std::log10(out/in);
+  };
+  for(int rate:{32000,48000,96000,192000}){
+    const double highBody=response(rate,2,440.,0.f);
+    const double highPresence=response(rate,2,1800.,0.f);
+    const double highAir=response(rate,2,6500.,0.f);
+    const double fallbackAir=response(rate,2,6500.,1.f);
+    const double lowAir=response(rate,0,6500.,0.f);
+    const double midAir=response(rate,1,6500.,0.f);
+    need(std::abs(highBody)<.7&&highPresence>highBody&&
+         highPresence>highAir,"H5 HIGH lost body/presence contrast");
+    need(fallbackAir<highAir-.45&&fallbackAir>-4.,
+         "H5 fallback guard not bounded or ineffective");
+    need(midAir>lowAir+.6,"H5 singers lack independent spectrum");
+    std::cout<<"H5_IDENTITY rate="<<rate<<" body_dB="<<highBody
+             <<" presence_dB="<<highPresence<<" air_dB="<<highAir
+             <<" fallback_air_dB="<<fallbackAir<<std::endl;
+  }
+}
+// Exercise the real native solo stem with a harmonic-rich vowel proxy.
+// Compare H4/H5 at matched dry and prepared voice gain, same renderer.
+static void testSingerIdentityPcm(){
+  constexpr int rate=48000;
+  LeadFixture input{std::vector<float>(2*rate),std::vector<float>(2*rate)};
+  for(int i=0;i<2*rate;++i){
+    const double p=6.283185307179586*220.*i/rate;
+    double x=0.;
+    for(int h=1;h<=18;++h){
+      const double f=220.*h;
+      const double vowel=.12+.8*std::exp(-std::pow((f-800.)/450.,2.))+
+                         .55*std::exp(-std::pow((f-2300.)/700.,2.));
+      x+=.17*vowel*std::sin(h*p+.13*h)/std::sqrt(static_cast<double>(h));
+    }
+    input.left[i]=input.right[i]=static_cast<float>(x);
+  }
+  auto render=[&](int role,int voices,bool identity,int block){
+    auto e=std::make_unique<Engine>();Settings s;
+    s.voices=voices;s.wet=.85f;s.space=0.f;s.color=1.f;
+    Engine::PreparedSettings prep{};
+    need(e->prepare(rate)&&e->setSingerIdentityForOfflineReference(identity)&&
+         Engine::prepareSettings(s,prep),"H5 actual PCM setup");
+    for(int v=0;v<5;++v)if(v!=role)prep.mixL[v]=prep.mixR[v]=0.f;
+    need(e->applyPreparedSettings(prep),"H5 actual solo setup");
+    auto out=input;
+    for(int i=0;i<2*rate;i+=block)
+      e->process(out.left.data()+i,out.right.data()+i,std::min(block,2*rate-i));
+    return out;
+  };
+  const auto dry=render(-1,5,true,127),old=render(2,5,false,127);
+  const auto now=render(2,5,true,127),split=render(2,5,true,64);
+  need(now.left==split.left&&now.right==split.right,"H5 block parity");
+  need(dry.left==render(-1,5,false,64).left,"H5 dry changed");
+  need(render(2,2,false,127).left==render(2,2,true,64).left,"H5 Duo changed");
+  double oldE=0.,newE=0.,difference=0.;
+  for(int i=rate;i<2*rate;++i){
+    const double a=old.left[i]-dry.left[i],b=now.left[i]-dry.left[i];
+    oldE+=a*a;newE+=b*b;difference+=(a-b)*(a-b);
+    need(std::isfinite(b),"H5 nonfinite vowel");
+  }
+  const double gain=10.*std::log10(newE/oldE);
+  const double change=10.*std::log10(difference/oldE);
+  std::cout<<"H5_PCM gain_dB="<<gain<<" residual_dB="<<change<<std::endl;
+  need(std::abs(gain)<1.2&&change>-45.&&change<-12.,
+       "H5 vowel change excessive or absent");
+}
 // Audit chord membership across every key, both scale families and
 // ascending/descending note history. Require actual register separation;
 // a collection of independently diatonic pitches is insufficient.
@@ -703,6 +781,8 @@ static void testBackingUnity(){
   need(within,"H1 full-Wet aggregate stem outside +/-2dB target; inspect H1_STEM rows");
 }
 int main(){
+  testSingerSpectralIdentity();
+  testSingerIdentityPcm();
   testIndependentSingerExpression();
   testCommonToneEngineTransition();
   testMusicalEnsemblePlanner();

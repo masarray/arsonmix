@@ -61,6 +61,15 @@ public:
         shadingAlpha_=static_cast<float>(
             1.-std::exp(-2.*3.141592653589793*4400./rate));
         distanceLowpass_.fill(0.f);
+        // Two complementary broad spectral regions, not a formant
+        // estimator. Poles are prepared in physical Hz at device start.
+        identityBodyAlpha_=static_cast<float>(
+            1.-std::exp(-2.*3.141592653589793*850./rate));
+        identityAirAlpha_=static_cast<float>(
+            1.-std::exp(-2.*3.141592653589793*2900./rate));
+        identityBody_.fill(0.f);identityAir_.fill(0.f);
+        identityGuard_.fill(0.f);
+        identityGuardAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.012)));
         ageStart_=static_cast<int>(rate*.065);
         ageRamp_=static_cast<float>(1./(rate*.165));
         expressionAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.018)));
@@ -72,6 +81,34 @@ public:
         distanceLowpass_[i]+=shadingAlpha_*(sample-distanceLowpass_[i]);
         const float blend=.52f*std::clamp(space,0.f,1.f);
         return sample*(1.f-blend)+distanceLowpass_[i]*blend;
+    }
+    // Role-specific broad spectral identity applied AFTER synthesis and
+    // BEFORE stage/room, so all copies of a singer keep the same timbre.
+    // A pitch-up granular fallback scales formants with pitch; use a mild
+    // extra upper-band guard proportional to that actual renderer blend.
+    // No vowel estimation, formant relocation, added delay or AGC.
+    float shapeSinger(int v,float sample,float amount,float ratio,
+                      float granularShare) noexcept {
+        const auto i=static_cast<std::size_t>(v);
+        if(amount<=0.f){
+            // Exact H4 reference; discard old filter memory before
+            // re-entry after a completely disabled identity path.
+            identityBody_[i]=identityAir_[i]=identityGuard_[i]=0.f;
+            return sample;
+        }
+        constexpr std::array<float,voices> body{{.035f,-.025f,-.015f,.065f,-.02f}};
+        constexpr std::array<float,voices> presence{{-.065f,-.11f,.18f,-.12f,.085f}};
+        constexpr std::array<float,voices> air{{-.10f,.09f,-.17f,-.18f,-.045f}};
+        float& lo=identityBody_[i];float& hi=identityAir_[i];
+        lo+=identityBodyAlpha_*(sample-lo);
+        hi+=identityAirAlpha_*(sample-hi);
+        const float up=std::clamp((ratio-1.f)*1.5f,0.f,1.f);
+        const float guardTarget=.16f*up*std::clamp(granularShare,0.f,1.f);
+        float& guard=identityGuard_[i];
+        guard+=identityGuardAlpha_*(guardTarget-guard);
+        const float shaped=body[i]*lo+presence[i]*(hi-lo)+
+                           (air[i]-guard)*(sample-hi);
+        return sample+amount*shaped;
     }
     float arrivalSamples(int v) const noexcept {
         return offset_[static_cast<std::size_t>(v)];
@@ -170,6 +207,8 @@ private:
     std::array<std::uint64_t,voices> noteStart_{},settleSamples_{};
     std::uint64_t phraseClock_=0;
     bool phraseVoiced_=false;
+    std::array<float,voices> identityBody_{},identityAir_{},identityGuard_{};
+    float identityBodyAlpha_=0.f,identityAirAlpha_=0.f,identityGuardAlpha_=0.f;
     float shadingAlpha_=0.f;
     std::array<int,voices> reflectionDelay_{},secondDelay_{};
     std::size_t cursor_=0;

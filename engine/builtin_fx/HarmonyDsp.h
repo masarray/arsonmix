@@ -121,7 +121,7 @@ public:
         stageDepthReferenceEnabled_=true;
         roomFocusReferenceEnabled_=true;
         presenceReferenceEnabled_=true;unityReferenceEnabled_=true;
-        expressionReferenceEnabled_=true;
+        expressionReferenceEnabled_=true;identityReferenceEnabled_=true;
         // Both renderer choice and missing-epoch recovery are time-domain
         // crossfades. Never hard-switch their independent source phases.
         pitchSyncAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.030)));
@@ -356,6 +356,11 @@ public:
         if(processed_)return false;
         expressionReferenceEnabled_=enabled;return true;
     }
+    // H4 exact-reference switch, test harness only (before PCM).
+    bool setSingerIdentityForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        identityReferenceEnabled_=enabled;return true;
+    }
     int singerTargetForOfflineTests(int v) const noexcept {
         return voicePlanner_.target(static_cast<std::size_t>(v));
     }
@@ -460,6 +465,7 @@ public:
             const float earlyReturn=stageDepthReferenceEnabled_?
                 stageGain.early:.28f*space_;
             const float independent=expressionReferenceEnabled_?ensembleFocus_:0.f;
+            const float identity=identityReferenceEnabled_?ensembleFocus_:0.f;
             float roomSendL=0.f,roomSendR=0.f;
             for(int v=0;v<maxVoices;++v){
                 const auto ix=static_cast<std::size_t>(v);
@@ -471,6 +477,15 @@ public:
                                   ensemble_.arrivalSamples(v),
                                   ensemble_.pitchRatio(v,independent),independent)*voicedGain_;
                 }
+                // Keep accepted Duo/Doubler exact; H5 only affects the
+                // larger ensemble. Renderer readiness controls the guard,
+                // not detector confidence alone. Process zero input too
+                // so a released role cannot retain stale filter state.
+                if(identity>0.f)
+                    voice=ensemble_.shapeSinger(v,voice,identity,ratio_[ix],
+                        1.f-pitchSyncBlend_[ix]*pitchSyncValid_[ix]);
+                else
+                    ensemble_.shapeSinger(v,0.f,0.f,1.f,0.f);
                 voice=ensemble_.shadeBacking(v,voice,space_);
                 const float reflection=ensemble_.exchangeReflection(v,voice);
                 const float second=ensemble_.secondReflection(v);
@@ -829,7 +844,7 @@ private:
     bool pitchSyncReferenceEnabled_=true,stageDepthReferenceEnabled_=true;
     bool roomFocusReferenceEnabled_=true;
     bool presenceReferenceEnabled_=true,unityReferenceEnabled_=true;
-    bool expressionReferenceEnabled_=true;
+    bool expressionReferenceEnabled_=true,identityReferenceEnabled_=true;
     std::array<float,maxVoices> pitchSyncBlend_{},pitchSyncFiltered_{},pitchSyncValid_{};
     float space_=0.f,targetSpace_=0.f;
     float gain_=1.f,targetGain_=1.f,targetCorrection_=0.f;
