@@ -73,10 +73,6 @@ private:
         // the intra-grain read rate controls local spectral structure.
         // Freeze the rate per grain, never sweep a running source tap.
         // A stereo lead is always unity and remains bit-exact.
-        const float requested=std::isfinite(resonanceScale)?
-            std::clamp(resonanceScale,minResonanceScale,maxResonanceScale):1.f;
-        const bool fullWindow=completeEpochWindow(sourcePeriod,ratio,fixedDelay);
-        const float scale=fullWindow?requested:1.f;
         auto& state=states_[static_cast<std::size_t>(v)];
         const double period=static_cast<double>(sourcePeriod);
         const double spacing=period/static_cast<double>(ratio);
@@ -104,7 +100,19 @@ private:
                 auto& grain=state.grains[state.nextSlot];
                 const double epoch=refineEpoch(
                     epochs,time,writeIndex,peak,state.epochPolarity);
-                grain={state.nextCenter,epoch,width,true,scale};
+                // Only at grain admission, reuse the already-computed
+                // width; no duplicate per-sample division or scale check.
+                float scale=1.f,gain=1.f;
+                if constexpr(!Stereo){
+                    if(std::isfinite(resonanceScale)&&
+                       fixedDelay>=width+.46*period+3.)
+                        scale=std::clamp(resonanceScale,minResonanceScale,maxResonanceScale);
+                    // Slow local read reduces HIGH coherent overlap
+                    // amplitude. Bounded static compensation, frozen per
+                    // grain and weighted by its smooth overlap window.
+                    gain=1.f+1.5f*std::max(0.f,1.f-scale);
+                }
+                grain={state.nextCenter,epoch,width,true,scale,gain};
                 state.nextSlot=(state.nextSlot+1)%state.grains.size();
             }
             state.nextCenter+=spacing;
@@ -134,7 +142,7 @@ private:
                    (time<2||position<0.||position>static_cast<double>(time-1)||
                     position<static_cast<double>(time>=Capacity-3?time-(Capacity-3):0)))
                     continue;
-                sumL+=readAt(left,time,writeIndex,position)*w;
+                sumL+=readAt(left,time,writeIndex,position)*(w*grain.resonanceGain);
             }
             weight+=w;
         }
@@ -150,7 +158,7 @@ private:
     }
     struct Grain {
         double center=0.,source=0.,width=1.;bool active=false;
-        float resonanceScale=1.f;
+        float resonanceScale=1.f,resonanceGain=1.f;
     };
     struct State {
         std::array<Grain,8> grains{};
