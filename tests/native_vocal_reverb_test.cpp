@@ -126,6 +126,13 @@ int main() {
     assert(!algorithmSelect->getBounds().intersects(wetLabel->getBounds()));
     assert(!productTitle->getBounds().intersects(decayLabel->getBounds()));
     assert(algorithmSelect->getBounds().getBottom()<mainMix->getY()+40);
+    assert(mainMix->getY()==124 && mainDecay->getY()==124);
+    auto* power=dynamic_cast<juce::TextButton*>(ui->findChildWithID("armix.reverb.power"));
+    auto* close=dynamic_cast<juce::TextButton*>(ui->findChildWithID("armix.reverb.close"));
+    assert(power&&close&&power->isVisible()&&close->isVisible()&&!power->isEnabled());
+    assert(power->getBottom()<=60&&close->getBottom()<=60);
+    assert(!power->getBounds().intersects(presetSelect->getBounds()));
+    assert(!close->getBounds().intersects(presetSelect->getBounds()));
     for(int i=0;i<6;++i) {
         auto* tab=dynamic_cast<juce::TextButton*>(
             ui->findChildWithID("armix.reverb.tab."+juce::String(i)));
@@ -157,8 +164,10 @@ int main() {
                     assert(!occupied[static_cast<std::size_t>(j)].intersects(
                         label->getBounds()));
                 occupied[static_cast<std::size_t>(visibleLabels++)]=label->getBounds();
-                if(i!=0&&i!=2)
+                if(i!=0&&i!=2) {
                     assert(label->getWidth()<=110);
+                    assert(label->getY()==205 && slider->getY()==221);
+                }
             }
             if(slider->isVisible())++visibleKnobs;
         }
@@ -221,6 +230,7 @@ int main() {
            snapshot.getPixelAt(30,382).getBlue());
     // Group centred at x560; independent left/right 12px gutters.
     using M=reverb_ui::MeterLayout;
+    static_assert(M::firstDotY==97 && M::secondDotY==132 && M::tickY==112);
     static_assert(M::groupLeft+M::groupRight==1120);
     static_assert(M::dotsLeftX-M::leftLabelX-M::leftLabelWidth==12);
     static_assert(M::rightLabelX-M::dotsRightX-19*M::pitch-M::dotSize==12);
@@ -269,7 +279,22 @@ int main() {
     using Overlay=VocalReverbEditor::HostOverlay;
     assert(reverbEditor->hostOverlay()==Overlay::none);
     VocalReverbEditor::HostBypassState host{true,false,false,false};
-    reverbEditor->bindHostBypassReadback([&]{return host;});
+    int powerRequests=0;
+    bool rejectPower=false;
+    reverbEditor->bindHostPower([&](bool bypass){
+        ++powerRequests;
+        if(rejectPower)return false;
+        host.slotBypassed=bypass;return true;
+    },[&]{return host;});
+    assert(power->isEnabled()&&power->getToggleState());
+    power->onClick();
+    assert(powerRequests==1 && host.slotBypassed && !power->getToggleState());
+    power->onClick();
+    assert(powerRequests==2 && !host.slotBypassed && power->getToggleState());
+    rejectPower=true;
+    power->onClick();
+    assert(powerRequests==3 && !host.slotBypassed && power->getToggleState());
+    rejectPower=false;
     const auto amberPixels=[](const juce::Image& image) {
         int count=0;
         for(int y=164;y<286;++y)for(int x=300;x<820;++x) {
@@ -284,6 +309,13 @@ int main() {
         reverbEditor->synchronizeHostBypass();
         assert(reverbEditor->hostOverlay()==Overlay::bypassed);
         assert(mainMix->isEnabled()); // valid bypassed FX remains editable
+        assert(close->isEnabled()&&!power->getToggleState());
+        assert(power->isEnabled()==(gate==0));
+        if(gate!=0) {
+            const int before=powerRequests;
+            power->onClick();
+            assert(powerRequests==before);
+        }
         const auto picture=ui->createComponentSnapshot(ui->getLocalBounds());
         assert(amberPixels(picture)>amberPixels(snapshot)+200);
         if(gate==0)saveImage(picture,"ArSonMix_Vocal_Reverb_Native_BYPASSED_100.png");
@@ -291,6 +323,7 @@ int main() {
     host={false,true,true,true};
     reverbEditor->synchronizeHostBypass();
     assert(reverbEditor->hostOverlay()==Overlay::unavailable&&!mainMix->isEnabled());
+    assert(!power->isEnabled()&&close->isEnabled());
     host={true,false,false,false};
     reverbEditor->synchronizeHostBypass();
     assert(reverbEditor->hostOverlay()==Overlay::none&&mainMix->isEnabled());

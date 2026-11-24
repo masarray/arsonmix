@@ -27,7 +27,7 @@ struct MeterLayout final {
     static constexpr int leftLabelX=250, leftLabelWidth=93;
     static constexpr int dotsLeftX=355, dotsRightX=569;
     static constexpr int rightLabelX=777, rightLabelWidth=93;
-    static constexpr int firstDotY=113, secondDotY=148;
+    static constexpr int firstDotY=97, secondDotY=132, tickY=112;
     static constexpr int segments=20, pitch=10, dotSize=6;
     static constexpr int labelOpticalLift=2, labelHeight=20;
     static constexpr int bankWidth=(segments-1)*pitch+dotSize;
@@ -214,6 +214,13 @@ public:
                 g.fillRect(rect.getX()+13.f,rect.getBottom()-1.f,
                            rect.getWidth()-26.f,1.f);
             }
+        } else if(id=="armix.reverb.power"||id=="armix.reverb.close") {
+            const bool active=id.endsWith("power")&&b.getToggleState();
+            const auto fill=active?rgb(20,76,72):rgb(17,43,61);
+            g.setColour((hover||down)?fill.brighter(.20f):fill);
+            g.fillRoundedRectangle(rect.reduced(1.f),3.f);
+            g.setColour(active?rgb(86,190,151):rgb(68,119,146));
+            g.drawRoundedRectangle(rect.reduced(1.5f),3.f,1.f);
         } else if(id=="armix.reverb.preset.previous"||
                   id=="armix.reverb.preset.next") {
             // Lucide chevron-left/right, canonical 24x24 polyline,
@@ -241,6 +248,15 @@ public:
         const auto id=b.getComponentID();
         if(id=="armix.reverb.preset.previous"||
            id=="armix.reverb.preset.next")return;
+        if(id=="armix.reverb.power"||id=="armix.reverb.close") {
+            const bool active=id.endsWith("power")&&b.getToggleState();
+            g.setColour(!b.isEnabled()?rgb(105,133,148):
+                active?rgb(145,231,186):rgb(205,223,235));
+            g.setFont(uiFont(12.f));
+            g.drawText(b.getButtonText(),b.getLocalBounds(),
+                       juce::Justification::centred,false);
+            return;
+        }
         const bool tab=id.startsWith("armix.reverb.tab.");
         const auto bright=(tab&&b.getToggleState())||
                           (!tab&&(hover||down));
@@ -264,7 +280,12 @@ public:
         }
     };
     enum class HostOverlay {none,bypassed,unavailable};
-    // Read-only: the existing host/rack remains the only bypass authority.
+    // The retained host is the only Power authority; no local DSP bypass.
+    void bindHostPower(std::function<bool(bool)> request,
+                       std::function<HostBypassState()> readback) {
+        requestBypass_=std::move(request);
+        bindHostBypassReadback(std::move(readback));
+    }
     void bindHostBypassReadback(std::function<HostBypassState()> readback) {
         readHostBypass_=std::move(readback);
         synchronizeHostBypass();
@@ -275,6 +296,16 @@ public:
         const auto next=!readHostBypass_?HostOverlay::none:
             !state.valid?HostOverlay::unavailable:
             state.effectiveBypassed()?HostOverlay::bypassed:HostOverlay::none;
+        const bool canToggle=state.valid&&requestBypass_&&
+                             !state.rackBypassed&&!state.globalBypassed;
+        const bool active=state.valid&&!state.effectiveBypassed();
+        power_.setEnabled(canToggle);
+        power_.setToggleState(active,juce::dontSendNotification);
+        const juce::String tooltip=!state.valid?"FX Power unavailable; use FX Rack":
+            state.globalBypassed?"Enable global FX in mixer":
+            state.rackBypassed?"Enable FX Rack in mixer":
+            state.slotBypassed?"Enable Reverb-Sis":"Bypass Reverb-Sis";
+        if(power_.getTooltip()!=tooltip)power_.setTooltip(tooltip);
         if(next==hostOverlay_)return;
         hostOverlay_=next;
         // Allow editing a valid bypassed insert; a removed/replaced lease
@@ -296,6 +327,29 @@ public:
         title_.setColour(juce::Label::textColourId,pale);
         title_.setComponentID("armix.reverb.title");
         addAndMakeVisible(title_);
+        power_.setComponentID("armix.reverb.power");
+        power_.setButtonText("FX POWER");
+        power_.setLookAndFeel(&dial_);
+        power_.setClickingTogglesState(false);
+        power_.setEnabled(false);
+        power_.setTooltip("FX Power unavailable; use FX Rack");
+        power_.onClick=[this] {
+            if(!requestBypass_||!readHostBypass_)return;
+            const auto before=readHostBypass_();
+            if(before.valid&&!before.rackBypassed&&!before.globalBypassed)
+                (void)requestBypass_(!before.slotBypassed);
+            synchronizeHostBypass();
+        };
+        addAndMakeVisible(power_);
+        close_.setComponentID("armix.reverb.close");
+        close_.setButtonText("CLOSE");
+        close_.setLookAndFeel(&dial_);
+        close_.setTooltip("Close Reverb-Sis");
+        close_.onClick=[this] {
+            if(auto* window=findParentComponentOfClass<juce::DocumentWindow>())
+                window->closeButtonPressed();
+        };
+        addAndMakeVisible(close_);
 
         for(int i=0;i<reverbSisPresetCount;++i)
             preset_.addItem(vocalReverbPresetNames[static_cast<std::size_t>(i)],i+1);
@@ -377,7 +431,7 @@ public:
             knob.setRotaryParameters(juce::MathConstants<float>::pi*1.25f,
                                      juce::MathConstants<float>::pi*2.75f,true);
             knob.setTextBoxStyle(juce::Slider::TextBoxBelow,false,
-                 (i==0||i==2)?126:103,22);
+                 (i==0||i==2)?126:103,26);
             knob.setRange(d.minimum,d.maximum,0.);
             // More resolution where singers normally work; endpoints stay
             // the actual DSP bounds, with no hidden quantisation.
@@ -443,6 +497,8 @@ public:
         next_.setLookAndFeel(nullptr);
         preset_.setLookAndFeel(nullptr);
         algorithm_.setLookAndFeel(nullptr);
+        power_.setLookAndFeel(nullptr);
+        close_.setLookAndFeel(nullptr);
     }
 
     void paint(juce::Graphics& g) override {
@@ -527,27 +583,28 @@ public:
         for(const int x : {M::dotsLeftX,M::dotsRightX}) {
             for(const int db : {-60,-24,-6,0}) {
                 const int center=x+M::tickOffset(db);
-                g.drawText(juce::String(db),center-11,128,22,11,
+                g.drawText(juce::String(db),center-11,M::tickY,22,11,
                            juce::Justification::centred,false);
             }
         }
 
         g.setColour(rgb(75,90,99).withAlpha(.67f));
-        g.drawLine(291.f,221.f,w-291.f,221.f,.8f);
+        g.drawLine(291.f,200.f,w-291.f,200.f,.8f);
         g.setColour(rgb(106,187,224).withAlpha(.26f));
-        g.drawLine(291.f,222.f,w-291.f,222.f,.7f);
+        g.drawLine(291.f,201.f,w-291.f,201.f,.7f);
         // Lower 10px cabinet lip is intentionally empty: no clipped footer.
     }
 
     void paintOverChildren(juce::Graphics& g) override {
         if(hostOverlay_==HostOverlay::none)return;
         // GEQ31 / ImmerSIB visual language: actual children are dimmed,
-        // amber status and shadow; native window chrome remains untouched.
+        // amber bold status and shadow; header controls stay undimmed.
         const bool bypassed=hostOverlay_==HostOverlay::bypassed;
         juce::Graphics::ScopedSaveState saved(g);
         g.setColour(juce::Colour(0xb803060a));
         g.fillRect(11,60,getWidth()-22,getHeight()-82);
-        auto font=reverb_ui::uiFont(bypassed?45.f:34.f);
+        auto font=juce::Font(juce::FontOptions(
+            bypassed?51.f:34.f,juce::Font::bold));
         font.setExtraKerningFactor(.055f);
         g.setFont(font);
         const juce::Rectangle<int> label(0,164,getWidth(),122);
@@ -559,14 +616,28 @@ public:
     }
     void resized() override {
         title_.setBounds(47,65,247,32);
+        power_.setBounds(25,12,104,20);
+        close_.setBounds(getWidth()-25-76,12,76,20);
         preset_.setBounds(424,17,272,34);
         prev_.setBounds(383,17,33,34);
         next_.setBounds(getWidth()-383-33,17,33,34);
         algorithm_.setBounds(934,78,139,28);
         for(std::size_t i=0;i<tabs_.size();++i)
-            tabs_[i].setBounds((getWidth()-(5*94+92))/2+static_cast<int>(i)*94,183,92,36);
+            tabs_[i].setBounds((getWidth()-(5*94+92))/2+static_cast<int>(i)*94,164,92,34);
         layoutPage();
     }
+    // Drag only bare faceplate header, never sliders, dropdowns or buttons.
+    void mouseDown(const juce::MouseEvent& event) override {
+        draggingWindow_=event.y<60&&event.mods.isLeftButtonDown()&&
+                        findParentComponentOfClass<juce::DocumentWindow>()!=nullptr;
+        if(draggingWindow_)
+            windowDragger_.startDraggingComponent(getTopLevelComponent(),event);
+    }
+    void mouseDrag(const juce::MouseEvent& event) override {
+        if(draggingWindow_)
+            windowDragger_.dragComponent(getTopLevelComponent(),event,nullptr);
+    }
+    void mouseUp(const juce::MouseEvent&) override {draggingWindow_=false;}
 
 private:
     static constexpr std::array<std::array<int,5>,6> pages_{{
@@ -631,9 +702,9 @@ private:
             knobs_[i].setVisible(false);
             labels_[i].setVisible(false);
         }
-        knobs_[2].setBounds(48,108,185,290);
+        knobs_[2].setBounds(48,124,185,278);
         labels_[2].setBounds(40,125,201,23);
-        knobs_[0].setBounds(getWidth()-48-185,108,185,290);
+        knobs_[0].setBounds(getWidth()-48-185,124,185,278);
         labels_[0].setBounds(getWidth()-40-201,125,201,23);
         knobs_[2].setVisible(true);labels_[2].setVisible(true);
         knobs_[0].setVisible(true);labels_[0].setVisible(true);
@@ -641,8 +712,8 @@ private:
             const auto idx=static_cast<std::size_t>(
                 pages_[static_cast<std::size_t>(page_)][n]);
             const int x=277+static_cast<int>(n)*115;
-            knobs_[idx].setBounds(x,221,106,174);
-            labels_[idx].setBounds(x-1,224,108,21);
+            knobs_[idx].setBounds(x,221,106,178);
+            labels_[idx].setBounds(x-1,205,108,21);
             knobs_[idx].setVisible(true);
             labels_[idx].setVisible(true);
         }
@@ -714,7 +785,9 @@ private:
     reverb_ui::DialLook dial_;
     juce::Label title_;
     juce::ComboBox preset_,algorithm_;
-    juce::TextButton prev_,next_;
+    juce::TextButton prev_,next_,power_,close_;
+    juce::ComponentDragger windowDragger_;
+    bool draggingWindow_=false;
     std::array<juce::TextButton,6> tabs_;
     std::array<reverb_ui::LiveReverbKnob,arverb::parameterCount> knobs_;
     std::array<juce::Label,arverb::parameterCount> labels_;
@@ -724,6 +797,7 @@ private:
     int page_=0;
     int feedbackState_=-1;
     std::function<HostBypassState()> readHostBypass_;
+    std::function<bool(bool)> requestBypass_;
     HostOverlay hostOverlay_=HostOverlay::none;
 };
 inline juce::AudioProcessorEditor* VocalReverbProcessor::createEditor() {

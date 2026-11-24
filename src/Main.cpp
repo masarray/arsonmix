@@ -255,12 +255,20 @@ public:
         : DocumentWindow (title, juce::Colour (0xff14212a), allButtons),
           mixer_ (mixer)
     {
-        setUsingNativeTitleBar (true);
+        // Reverb-Sis retains its existing native editor/lease but owns
+        // its own compact faceplate chrome, like other built-in FX.
+        const bool reverbFaceplate=dynamic_cast<armix::builtin_fx::VocalReverbEditor*>(editor)!=nullptr;
+        if(reverbFaceplate) {
+            setUsingNativeTitleBar(false);
+            setTitleBarButtonsRequired(0,false);
+            setTitleBarHeight(0);
+        } else setUsingNativeTitleBar (true);
         setIcon (approvedAppIcon());
         setContentOwned (editor, true);
         // Do not offer false host resizing for fixed-geometry built-in FX.
         setResizable (editor->isResizable(), false);
-        centreWithSize (juce::jmax (380, editor->getWidth()), juce::jmax (300, editor->getHeight()));
+        if(reverbFaceplate)centreWithSize(getWidth(),getHeight());
+        else centreWithSize (juce::jmax (380, editor->getWidth()), juce::jmax (300, editor->getHeight()));
         // A Win32-owned floating editor stays above THIS mixer, not every app.
         // Attach after bounds are set (JUCE 8 native owned-popup coordinates).
         (void) armix::ui::attachOwnedFloatingWindow (*this, mixer);
@@ -7696,7 +7704,18 @@ private:
                             if(auto* reverb=dynamic_cast<
                                 armix::builtin_fx::VocalReverbEditor*>(editor)) {
                                 auto held=owner;
-                                reverb->bindHostBypassReadback(
+                                reverb->bindHostPower(
+                                    [this,held,nativeTarget,nativeChannel,lane,slot,token](bool bypass) {
+                                        const bool ok=nativeTarget?
+                                            engine_.bypassRetainedNativeFx(
+                                                held,armix::mixer::ChannelId{nativeChannel},
+                                                static_cast<std::size_t>(slot),token,bypass):
+                                            engine_.bypassRetainedRoutedFx(
+                                                held,lane,slot,token,bypass);
+                                        if(ok)emitApprovedNativeSnapshot();
+                                        else emitNotice("Reverb-Sis Power rejected: FX lease changed",true);
+                                        return ok;
+                                    },
                                     [this,held,nativeTarget,nativeChannel,lane,slot,token] {
                                         const auto current=nativeTarget?
                                             engine_.retainedNativeFxPower(
