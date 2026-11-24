@@ -544,8 +544,46 @@ static void verifyImmerSIBIdleLease(int rate,int frames) {
         rate,frames,static_cast<unsigned long long>(a.dspSleepBlocks.load()),
         static_cast<unsigned long long>(b.dspProcessedBlocks.load()));
 }
+static void verifyIdlePolicyEdges() {
+    using P=armix::dsp::ImmerSIBIdlePolicy;
+    P p;
+    std::array<float,480> l{},r{};
+    const auto drain=[&] {
+        for(unsigned i=0;i<P::drainFrames/480;++i) {
+            assert(!p.shouldSleep(l.data(),r.data(),480,true));
+            p.rendered(l.data(),r.data(),480,true);
+        }
+        assert(p.shouldSleep(l.data(),r.data(),480,true));
+    };
+    drain();
+    assert(!p.shouldSleep(l.data(),r.data(),480,false));
+    drain();
+    r[0]=std::bit_cast<float>(1u);
+    {
+        juce::ScopedNoDenormals noDenormals;
+        assert(!p.shouldSleep(l.data(),r.data(),480,true));
+    }
+    r[0]=-0.f;
+    drain();
+    l[479]=std::numeric_limits<float>::quiet_NaN();
+    assert(!p.shouldSleep(l.data(),r.data(),480,true));
+    l[479]=0.f;
+    for(unsigned i=0;i<P::drainFrames/480;++i) {
+        assert(!p.shouldSleep(l.data(),r.data(),480,true));
+        l[1]=.0001f;
+        p.rendered(l.data(),r.data(),480,true);
+        l[1]=0.f;
+    }
+    assert(!p.eligible());
+    for(unsigned i=0;i<P::quietFrames/480;++i) {
+        assert(!p.shouldSleep(l.data(),r.data(),480,true));
+        p.rendered(l.data(),r.data(),480,true);
+    }
+    assert(p.eligible());
+}
 int main() {
     juce::ScopedJuceInitialiser_GUI gui;
+    verifyIdlePolicyEdges();
     verifyImmerSIBIdleLease(48000,480);
     verifyImmerSIBIdleLease(44100,128);
     auto editorFx=std::make_unique<ImerSipP92Processor>();

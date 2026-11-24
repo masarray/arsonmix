@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstdint>
 
@@ -19,7 +20,7 @@ public:
     bool shouldSleep(const float* l,const float* r,int n,bool stable) noexcept {
         if(!stable || !l || !r || n<=0) { reset(); return false; }
         for(int i=0;i<n;++i)
-            if(l[i]!=0.f || r[i]!=0.f) { reset(); return false; }
+            if(!exactZero(l[i]) || !exactZero(r[i])) { reset(); return false; }
         zeroInput_=true;
         return sleeping_;
     }
@@ -37,6 +38,10 @@ public:
     void reset() noexcept {silent_=quiet_=0;zeroInput_=sleeping_=false;}
     bool eligible() const noexcept {return sleeping_;}
 private:
+    static bool exactZero(float v) noexcept {
+        // Bit-level test independent of FTZ/DAZ; both signed zeros qualify.
+        return (std::bit_cast<std::uint32_t>(v)&0x7fffffffu)==0;
+    }
     static std::uint32_t advance(std::uint32_t value,std::uint32_t n,
                                  std::uint32_t limit) noexcept {
         return value+std::min(n,limit-value);
