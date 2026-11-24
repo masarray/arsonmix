@@ -17,7 +17,7 @@ int main() {
     static_assert(VocalReverbProcessor::stateBytes==68);
     for(int i=0;i<reverbSisPresetCount;++i)assert(validVocalReverbSettings(vocalReverbFactoryPreset(i)));
     static_assert(reverbSisPresetCount==16 && reverbSisCustomItem==17);
-    for(int i=0;i<16;++i)assert(vocalReverbFactoryPreset(i).albumReady==(i>=13));
+    for(int i=0;i<16;++i)assert(vocalReverbFactoryPreset(i).voicing==2);
     const auto mc=vocalReverbFactoryPreset(12);
     assert(juce::String(vocalReverbPresetNames[12])=="Master Ceremony");
     assert(mc.preset==12&&mc.algorithm==static_cast<int>(arverb::Algorithm::Chamber));
@@ -47,7 +47,7 @@ int main() {
         assert(bytes.isEmpty()); // ordinary published capture refuses pending packet
         assert(owner->captureDetachedState(bytes));
         assert(owner->processedBlocks()==0&&owner->appliedRequestId()==final);
-        assert(bytes.getSize()==VocalReverbProcessor::stateBytes);
+        assert(bytes.getSize()==VocalReverbProcessor::albumStateBytes);
         auto restored=entry->prepare(48000.,256,bytes.getData(),
                                      static_cast<int>(bytes.getSize()));
         auto* accepted=dynamic_cast<VocalReverbProcessor*>(restored.get());
@@ -125,18 +125,28 @@ int main() {
         assert(owner->settingsPending()&&owner->desiredSettings().values==custom.values);
         owner->consumeRealtimeEdits();
         VocalReverbSettings accepted{};
-        assert(owner->acceptedSettings(accepted)&&accepted.values==custom.values&&accepted.albumReady);
-        auto* album=dynamic_cast<juce::TextButton*>(view->findChildWithID("armix.reverb.album-ready"));
-        assert(album&&album->getToggleState());
+        assert(owner->acceptedSettings(accepted)&&accepted.values==custom.values&&accepted.voicing==2);
+        assert(view->findChildWithID("armix.reverb.album-ready")==nullptr);
         juce::MemoryBlock albumBytes;assert(owner->captureDetachedState(albumBytes));
         assert(albumBytes.getSize()==VocalReverbProcessor::albumStateBytes);
         auto restored=entry->prepare(48000.,128,albumBytes.getData(),static_cast<int>(albumBytes.getSize()));
         auto* restoredOwner=dynamic_cast<VocalReverbProcessor*>(restored.get());
         VocalReverbSettings decoded{};
-        assert(restoredOwner&&restoredOwner->acceptedSettings(decoded)&&decoded.albumReady&&decoded.values==custom.values);
-        album->setToggleState(false,juce::dontSendNotification);album->onClick();
-        owner->consumeRealtimeEdits();assert(owner->acceptedSettings(decoded)&&!decoded.albumReady);
-        assert(owner->captureDetachedState(albumBytes)&&albumBytes.getSize()==VocalReverbProcessor::stateBytes);
+        assert(restoredOwner&&restoredOwner->acceptedSettings(decoded)&&decoded.voicing==2&&decoded.values==custom.values);
+        for(int profile:{0,1}) {
+            auto legacy=custom;legacy.voicing=profile;
+            assert(owner->queueSettings(legacy)>0);
+            assert(owner->captureDetachedState(albumBytes));
+            assert(albumBytes.getSize()==(profile?VocalReverbProcessor::albumStateBytes:VocalReverbProcessor::stateBytes));
+            auto copy=entry->prepare(48000.,128,albumBytes.getData(),static_cast<int>(albumBytes.getSize()));
+            auto* legacyOwner=dynamic_cast<VocalReverbProcessor*>(copy.get());
+            assert(legacyOwner&&legacyOwner->acceptedSettings(decoded)&&decoded.voicing==profile&&decoded.values==legacy.values);
+        }
+        auto invalidProfile=custom;invalidProfile.voicing=3;
+        assert(owner->queueSettings(invalidProfile)==0);
+        list->setSelectedId(1,juce::sendNotificationSync);
+        assert(owner->captureDetachedState(albumBytes));
+        assert(owner->acceptedSettings(decoded)&&decoded.voicing==2);
         editor->bindHostBypassReadback([]{return VocalReverbEditor::HostBypassState{};});
         assert(!save->isEnabled());
     }
@@ -629,7 +639,7 @@ int main() {
                 assert(received.preset>=0 && received.preset<reverbSisPresetCount);
                 const auto expected=vocalReverbFactoryPreset(received.preset);
                 assert(received.values==expected.values &&
-                       received.algorithm==expected.algorithm&&received.albumReady==expected.albumReady);
+                       received.algorithm==expected.algorithm&&received.voicing==expected.voicing);
             }
             if(producerDone.load(std::memory_order_acquire)&&
                !concurrentReverb->settingsPending())return;
@@ -655,7 +665,7 @@ int main() {
     assert(typed&&typed->isReady());
     juce::MemoryBlock state;
     created->getStateInformation(state);
-    assert(static_cast<int>(state.getSize())==VocalReverbProcessor::stateBytes);
+    assert(static_cast<int>(state.getSize())==VocalReverbProcessor::albumStateBytes);
     auto restored=entry->prepare(44100.,64,state.getData(),static_cast<int>(state.getSize()));
     assert(restored);
     auto invalid=state;

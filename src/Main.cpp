@@ -2049,7 +2049,7 @@ private:
                 juce::var values(juce::Array<juce::var>{});
                 for(float x:snapshot.values)values.append(static_cast<double>(x));
                 settings.getDynamicObject()->setProperty("algorithm",snapshot.algorithm);
-                if(snapshot.albumReady)settings.getDynamicObject()->setProperty("voicing",1);
+                if(snapshot.voicing)settings.getDynamicObject()->setProperty("voicing",snapshot.voicing);
                 settings.getDynamicObject()->setProperty("values",values);
                 armix::storage::BuiltInFxUserPreset entry;
                 entry.catalogId=catalog;entry.category="My Presets";entry.name=name;
@@ -2073,7 +2073,7 @@ private:
                 }
                 S next;next.preset=-1;
                 next.algorithm=static_cast<int>(entry.settings.getProperty("algorithm",{}));
-                next.albumReady=static_cast<int>(entry.settings.getProperty("voicing",0))==1;
+                next.voicing=static_cast<int>(entry.settings.getProperty("voicing",0));
                 const auto values=entry.settings.getProperty("values",{});
                 for(std::size_t i=0;i<next.values.size();++i)
                     next.values[i]=static_cast<float>(static_cast<double>((*values.getArray())[static_cast<int>(i)]));

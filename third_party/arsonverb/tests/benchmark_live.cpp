@@ -13,7 +13,7 @@
 // compiler/flags and input stream, both profiles and all algorithms.
 // Include sub-sample/zero/max delay, repeated morph retargeting, reset,
 // modulation, parameter automation, and irregular callback sizes.
-static int pcmFingerprint() {
+static int pcmFingerprint(bool album=false) {
     using P=arverb::Parameter;
     constexpr std::array<int,7> blocks{{1,17,32,64,127,256,255}};
     constexpr std::array<float,6> delays{{0.f,.008f,.021f,27.f,110.f,250.f}};
@@ -24,6 +24,11 @@ static int pcmFingerprint() {
         e.loadPreset(arverb::Preset::VocalPlateClean);
         e.setAlgorithm(static_cast<arverb::Algorithm>(mode));
         e.setParameter(P::Mix,.34f);
+        #ifdef ARVERB_ALBUM_BENCHMARK
+        if(album)e.setAlbumReady(true);
+#else
+        (void)album;
+#endif
         e.prepare(fs,musical);
         std::array<float,256> l{},r{},a{},b{};
         std::uint64_t hash=14695981039346656037ull;
@@ -61,6 +66,7 @@ static int pcmFingerprint() {
 }
 int main(int argc,char** argv) {
     if(argc==2&&std::strcmp(argv[1],"--pcm")==0)return pcmFingerprint();
+    if(argc==2&&std::strcmp(argv[1],"--pcm-album")==0)return pcmFingerprint(true);
     using Clock=std::chrono::steady_clock;
     using P=arverb::Parameter;
     constexpr int count=600;
@@ -82,6 +88,9 @@ int main(int argc,char** argv) {
                 x.setParameter(P::DuckAmount,.18f);
 #ifdef ARVERB_ALBUM_BENCHMARK
                 x.setAlbumReady(argc==2&&std::strcmp(argv[1],"--album")==0);
+#ifdef ARVERB_SIGNATURE_BENCHMARK
+                if(argc==2&&std::strcmp(argv[1],"--signature")==0)x.setVoicing(2);
+#endif
 #endif
                 x.prepare(fs,true);
             }

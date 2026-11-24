@@ -179,13 +179,14 @@ struct AlbumBell {
 // Late-only tone: early reflections and dry bypass this contour.
 // Linked detector is polarity-independent; Duck=0 disables de-essing.
 struct AlbumLateTone {
-    AlbumBell mud,mid;
-    AlbumBell::Memory mudState[2],midState[2];
+    AlbumBell mud,mid,body;
+    AlbumBell::Memory mudState[2],midState[2],bodyState[2];
     LowPass dryEssLow[2],dryEssHigh[2],wetEssLow[2],wetEssHigh[2];
     float lo=0.f,hi=0.f,attack=0.f,release=0.f,env=0.f;
     void prepare(float fs) noexcept {
         mud.prepare(fs,380.f,.8f,-2.5f);
         mid.prepare(fs,1450.f,.65f,-2.4f);
+        body.prepare(fs,170.f,1.05f,1.5f); // wet body, not sub-bass or feedback boost
         lo=lowPassCoeff(5000.f,fs);hi=lowPassCoeff(10500.f,fs);
         attack=1.f-std::exp(-1.f/(.004f*fs));
         release=1.f-std::exp(-1.f/(.075f*fs));
@@ -193,13 +194,13 @@ struct AlbumLateTone {
     }
     void reset() noexcept {
         for(int c=0;c<2;++c) {
-            mudState[c]={};midState[c]={};
+            mudState[c]={};midState[c]={};bodyState[c]={};
             dryEssLow[c].reset();dryEssHigh[c].reset();
             wetEssLow[c].reset();wetEssHigh[c].reset();
         }
         env=0.f;
     }
-    void process(float inL,float inR,float& l,float& r,float duck,float blend) noexcept {
+    void process(float inL,float inR,float& l,float& r,float duck,float blend,float signature=0.f) noexcept {
         const float dl=dryEssHigh[0].process(inL,hi)-dryEssLow[0].process(inL,lo);
         const float dr=dryEssHigh[1].process(inR,hi)-dryEssLow[1].process(inR,lo);
         const float peak=std::max(std::fabs(dl),std::fabs(dr));
@@ -209,6 +210,10 @@ struct AlbumLateTone {
         for(int c=0;c<2;++c) {
             const float x=*out[c];
             float y=midState[c].process(mudState[c].process(x,mud),mid);
+            if(signature>0.f) {
+                const float full=bodyState[c].process(y,body);
+                y+=signature*(full-y);
+            }
             const float band=wetEssHigh[c].process(y,hi)-wetEssLow[c].process(y,lo);
             y-=depth*band;
             *out[c]=x+blend*(y-x);

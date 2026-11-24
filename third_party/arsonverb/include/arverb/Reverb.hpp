@@ -118,6 +118,8 @@ public:
     Algorithm getAlgorithm() const noexcept;
     // Native opt-in voicing; independent of the stable 13 parameter IDs.
     void setAlbumReady(bool enabled) noexcept;
+    // 0 original, 1 historical Album, 2 Signature.
+    void setVoicing(unsigned profile) noexcept;
 
     // Planar stereo f32. In-place per channel supported. Avoid cross-channel buffer aliases.
     // All input/output pointers must be valid when frames > 0. No allocation, locks or I/O.
@@ -129,7 +131,7 @@ private:
     std::unique_ptr<State> state_;
     std::array<std::atomic<float>, parameterCount> parameters_;
     std::atomic<std::uint32_t> algorithm_ {0};
-    std::atomic<bool> albumReady_{false};
+    std::atomic<unsigned> voicing_{0};
 };
 
 }  // namespace arverb

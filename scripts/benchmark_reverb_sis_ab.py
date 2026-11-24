@@ -13,11 +13,11 @@ SOURCES = ("src/Reverb.cpp", "src/Presets.cpp", "src/dsp/Primitives.hpp", "inclu
 def git(*args):
     return subprocess.check_output(["git", *args], cwd=ROOT)
 
-def compile_core(base, binary, album=False):
+def compile_core(base, binary, album=False, signature=False):
     subprocess.run(["g++", "-std=c++17", "-O2", "-fno-fast-math",
                     "-I" + str(base / "include"), str(base / "src/Reverb.cpp"),
                     str(base / "src/Presets.cpp"), str(ROOT / CORE / "tests/benchmark_live.cpp"),
-                    "-o", str(binary)] + (["-DARVERB_ALBUM_BENCHMARK"] if album else []), check=True)
+                    "-o", str(binary)] + (["-DARVERB_ALBUM_BENCHMARK"] if album else []) + (["-DARVERB_SIGNATURE_BENCHMARK"] if signature else []), check=True)
 
 def run(binary, *args):
     rows = {}
@@ -33,6 +33,7 @@ def main():
     parser.add_argument("--reference", required=True)
     parser.add_argument("--verify-pcm", action="store_true")
     parser.add_argument("--album", action="store_true")
+    parser.add_argument("--signature", action="store_true")
     args = parser.parse_args()
     if len(args.reference) != 40 or any(c not in "0123456789abcdef" for c in args.reference):
         parser.error("reference must be full SHA")
@@ -48,8 +49,8 @@ def main():
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_bytes(git("show", args.reference + ":" + str(CORE / name)))
         ref, new = work / "ref", work / "new"
-        compile_core(old, ref)
-        compile_core(ROOT / CORE, new, args.album)
+        compile_core(old, ref, args.signature)
+        compile_core(ROOT / CORE, new, args.album or args.signature, args.signature)
         # Exact sound-preservation gate on a separate, untimed render.
         # Only enable for topology-equivalent optimization references.
         if args.verify_pcm:
@@ -62,6 +63,12 @@ def main():
                         print(f"PCM mismatch reference={old} candidate={new_row}", flush=True)
                 raise RuntimeError("cross-build PCM fingerprint mismatch")
             print("PASS Reverb-Sis cross-build PCM fingerprints: 40 profile/rate/mode cases")
+            if args.signature:
+                a = subprocess.check_output([str(ref), "--pcm-album"], text=True)
+                b = subprocess.check_output([str(new), "--pcm-album"], text=True)
+                if len(a.splitlines()) != 40 or a != b:
+                    raise RuntimeError("historical Album PCM fingerprint mismatch")
+                print("PASS historical Album PCM fingerprints: 40 profile/rate/mode cases")
         # Counterbalance run order to reduce thermal / scheduling bias.
         a1, b1, b2, a2 = run(ref), run(new), run(new), run(ref)
         print("Reverb-Sis same-runner core benchmark (microseconds; p99 wall time, non-gating)")
@@ -92,5 +99,16 @@ def main():
                       f"offP50={off:.2f} onP50={on:.2f} ratio={on/off:.3f} "
                       f"onP99={p99:.2f} callbackBudgetPct={100*p99/(block/fs*1e6):.2f}")
             print(f"Reverb-Sis album perf median cost ratio={statistics.median(overheads):.3f}")
+        if args.signature:
+            a1, b1, b2, a2 = run(ref, "--album"), run(new, "--signature"), run(new, "--signature"), run(ref, "--album")
+            ratios = []
+            for key in sorted(a1):
+                fs, block, mode, count = key
+                a = statistics.mean([a1[key][0], a2[key][0]])
+                b = statistics.mean([b1[key][0], b2[key][0]])
+                ratios.append(b/a)
+                p99 = max(b1[key][1], b2[key][1])
+                print(f"Signature perf fs={fs} block={block} mode={mode} instances={count} albumP50={a:.2f} signatureP50={b:.2f} ratio={b/a:.3f} signatureP99={p99:.2f} budgetPct={100*p99/(block/fs*1e6):.2f}")
+            print(f"Signature median cost ratio vs historical Album={statistics.median(ratios):.3f}")
 if __name__ == "__main__":
     main()

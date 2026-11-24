@@ -431,7 +431,6 @@ public:
         preset_.setEnabled(available);algorithm_.setEnabled(available);
         prev_.setEnabled(available);next_.setEnabled(available);
         save_.setEnabled(available&&static_cast<bool>(saveUserPreset_));
-        album_.setEnabled(available);
         repaint();
     }
     explicit VocalReverbEditor(VocalReverbProcessor& processor)
@@ -510,15 +509,6 @@ public:
         save_.setEnabled(false);
         save_.onClick=[this]{promptSavePreset();};
         addAndMakeVisible(save_);
-        album_.setComponentID("armix.reverb.album-ready");
-        album_.setButtonText("ALBUM READY");
-        album_.setTitle("Album Ready vocal voicing");
-        album_.setTooltip("Shape late mids, vocal clarity and sibilance; off restores original voicing");
-        album_.setClickingTogglesState(true);
-        album_.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff243c4d));
-        album_.setColour(juce::TextButton::buttonOnColourId,juce::Colour(0xff295e66));
-        album_.setToggleState(draft_.albumReady,juce::dontSendNotification);
-        album_.onClick=[this]{draft_.albumReady=album_.getToggleState();markCustom();};
         addAndMakeVisible(album_);
         for(int i=0;i<4;++i)
             algorithm_.addItem(arverb::algorithmName(static_cast<arverb::Algorithm>(i)),i+1);
@@ -779,7 +769,6 @@ public:
         prev_.setBounds(383,17,33,34);
         next_.setBounds(getWidth()-383-33,17,33,34);
         save_.setBounds(next_.getRight()+8,F::chromeCentreY-12,54,24);
-        album_.setBounds(save_.getRight()+8,F::chromeCentreY-12,108,24);
         algorithm_.setBounds(F::algorithmCentreX-F::algorithmWidth/2,78,F::algorithmWidth,28);
         for(std::size_t i=0;i<tabs_.size();++i)
             tabs_[i].setBounds(F::tabLeft+static_cast<int>(i)*F::tabPitch,
@@ -887,7 +876,6 @@ private:
         // Native slider and ComboBox already invalidate their own pixels.
     }
     void syncControls() {
-        album_.setToggleState(draft_.albumReady,juce::dontSendNotification);
         algorithm_.setSelectedId(draft_.algorithm+1,juce::dontSendNotification);
         for(std::size_t i=0;i<knobs_.size();++i)
             knobs_[i].setValue(draft_.values[i],juce::dontSendNotification);
@@ -985,7 +973,7 @@ private:
     reverb_ui::DialLook dial_;
     juce::Label title_;
     juce::ComboBox preset_,algorithm_;
-    juce::TextButton prev_,next_,power_,close_,save_,album_;
+    juce::TextButton prev_,next_,power_,close_,save_;
     std::vector<UserPresetEntry> userPresets_;
     juce::String selectedUserId_;
     std::function<std::vector<UserPresetEntry>()> listUserPresets_;

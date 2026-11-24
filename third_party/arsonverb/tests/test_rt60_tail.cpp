@@ -150,7 +150,86 @@ static double estimateT20(double fs,unsigned mode,float decay,float size) {
     check(a5>=0&&a25>a5,"valid energy decay crossings");
     return 3.0*(a25-a5);
 }
+// Independent RBJ bandpass + backward energy integration. Offline only.
+struct SignatureBand {
+    double b0,b2,a1,a2,z1[2]{},z2[2]{};
+    SignatureBand(double fs,double hz) {
+        const double w=2.0*3.14159265358979323846*hz/fs;
+        const double a=std::sin(w)/(2.0*1.41421356237);
+        b0=a/(1+a);b2=-b0;a1=-2*std::cos(w)/(1+a);a2=(1-a)/(1+a);
+    }
+    double add(float l,float r) {
+        const double x[2]{l,r};double energy=0;
+        for(int c=0;c<2;++c) {
+            const double y=b0*x[c]+z1[c];
+            z1[c]=-a1*y+z2[c];z2[c]=b2*x[c]-a2*y;
+            energy+=y*y;
+        }
+        return energy;
+    }
+};
+struct SignatureMeasurement {double energy,t60;};
+static std::array<SignatureMeasurement,6> measureSignature(double fs,unsigned mode,unsigned profile) {
+    using P=arverb::Parameter;
+    arverb::Engine e;e.loadPreset(arverb::Preset::VocalPlateClean);
+    e.setAlgorithm(static_cast<arverb::Algorithm>(mode));e.setVoicing(profile);
+    e.setParameter(P::Mix,1.f);e.setParameter(P::EarlyLevel,0.f);
+    e.setParameter(P::PreDelayMs,0.f);e.setParameter(P::DuckAmount,0.f);
+    e.setParameter(P::Size,.95f);e.setParameter(P::DecaySeconds,2.45f);
+    e.setParameter(P::LowCutHz,150.f);e.setParameter(P::HighCutHz,15500.f);
+    e.setParameter(P::DampingHz,10400.f);e.setParameter(P::Diffusion,.94f);
+    e.prepare(fs,true);
+    const int total=static_cast<int>(fs*7.);
+    std::array<SignatureBand,6> bands{{{fs,125},{fs,250},{fs,500},{fs,1000},{fs,4000},{fs,10000}}};
+    std::array<std::vector<double>,6> energy;
+    for(auto& x:energy)x.resize(total);
+    std::array<float,257> l{},r{},a{},b{};
+    for(int pos=0;pos<total;pos+=257) {
+        l.fill(0);r.fill(0);if(pos==0){l[0]=.4f;r[0]=.3f;}
+        const int n=std::min(257,total-pos);
+        e.process(l.data(),r.data(),a.data(),b.data(),n);
+        for(int i=0;i<n;++i) {
+            check(std::isfinite(a[i])&&std::isfinite(b[i]),"Signature finite PCM");
+            for(std::size_t k=0;k<bands.size();++k)energy[k][pos+i]=bands[k].add(a[i],b[i]);
+        }
+    }
+    std::array<SignatureMeasurement,6> result{};
+    for(std::size_t k=0;k<energy.size();++k) {
+        auto& x=energy[k];
+        for(int i=total-2;i>=0;--i)x[i]+=x[i+1];
+        check(x[0]>1.e-14,"Signature measurable band");
+        const auto cross=[&](double db) {
+            const double limit=x[0]*std::pow(10.,db/10.);
+            for(int i=0;i<total;++i)if(x[i]<=limit)return i;
+            return -1;
+        };
+        const int lo=cross(-5),hi=cross(-25);
+        check(lo>=0&&hi>lo,"Signature valid band T20");
+        result[k]={x[0],3.*(hi-lo)/fs};
+    }
+    return result;
+}
+static void signatureSpectralQualification() {
+    constexpr int frequencies[]{125,250,500,1000,4000,10000};
+    for(double fs:{44100.,48000.,96000.}) {
+        double bodyDb=0.,airDb=0.;
+        for(unsigned mode=0;mode<4;++mode) {
+            const auto before=measureSignature(fs,mode,1),after=measureSignature(fs,mode,2);
+            for(std::size_t k=0;k<before.size();++k) {
+                const double db=10.*std::log10(after[k].energy/before[k].energy);
+                std::printf("Signature EDC fs=%.0f mode=%u band=%d deltaDb=%.3f albumT20x3=%.3f signatureT20x3=%.3f\n",fs,mode,frequencies[k],db,before[k].t60,after[k].t60);
+                check(std::isfinite(db)&&std::abs(db)<6.&&after[k].t60>.05&&after[k].t60<6.,"Signature bounded energy/decay");
+                if(k<2)bodyDb+=db;
+                if(k==5)airDb+=db;
+            }
+        }
+        check(bodyDb/8.>.35&&bodyDb/8.<4.,"Signature mean low energy increase");
+        check(airDb/4.>0.&&airDb/4.<1.5,"Signature subtle mean air increase");
+    }
+    std::puts("PASS Signature actual six-band wet impulse response / T20 qualification");
+}
 int main() {
+    signatureSpectralQualification();
     check(std::abs(arverb::detail::musicalLateReturnScale(.15f)-1.5f)<1.e-6f &&
           arverb::detail::musicalLateReturnScale(1.7f)==1.f &&
           arverb::detail::musicalLateReturnScale(3.5f)==1.f &&

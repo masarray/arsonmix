@@ -17,10 +17,10 @@ struct VocalReverbSettings {
     std::array<float, arverb::parameterCount> values{};
     int algorithm=1; // Plate
     int preset=0;    // -1 means edited
-    bool albumReady=false;
+    int voicing=2; // all new instances and factory presets
 };
 inline bool validVocalReverbSettings(const VocalReverbSettings& v) noexcept {
-    if(v.algorithm<0||v.algorithm>=static_cast<int>(arverb::algorithmCount)||
+    if(v.voicing<0||v.voicing>2||v.algorithm<0||v.algorithm>=static_cast<int>(arverb::algorithmCount)||
        v.preset < -1 || v.preset >= reverbSisPresetCount) return false;
     for(std::size_t i=0;i<v.values.size();++i) {
         const auto& d=arverb::parameterInfo(static_cast<arverb::Parameter>(i));
@@ -121,7 +121,7 @@ inline VocalReverbSettings vocalReverbFactoryPreset(int index) {
             put(Param::DuckAmount,.42f);break;
         case 13: case 14: case 15: {
             const bool ballad=index==14,pop=index==15;
-            result.albumReady=true;result.algorithm=ballad?3:1;
+            result.algorithm=ballad?3:1;
             put(Param::Mix,ballad?.25f:pop?.17f:.19f);
             put(Param::PreDelayMs,ballad?60.f:pop?35.f:42.f);
             put(Param::DecaySeconds,ballad?3.2f:pop?1.85f:2.45f);
@@ -146,18 +146,19 @@ public:
     static constexpr const char* catalogIdentity="armix.builtin.vocal-reverb.v1";
     static constexpr int stateBytes=16+static_cast<int>(arverb::parameterCount)*4;
     static constexpr int albumStateBytes=stateBytes+4;
-    // v1 remains byte-identical; v2 adds explicit profile flag.
+    // v1 original, v2 historical Album, v3 Signature. Old sound preserved.
     static bool decodeState(const void* data,int bytes,VocalReverbSettings& s) {
         if(!data||(bytes!=stateBytes&&bytes!=albumStateBytes))return false;
         juce::MemoryInputStream in(data,static_cast<std::size_t>(bytes),false);
         if(in.readInt()!=0x41565242)return false;
         const int version=in.readInt();
-        if((version!=1||bytes!=stateBytes)&&(version!=2||bytes!=albumStateBytes))return false;
+        if((version!=1||bytes!=stateBytes)&&((version!=2&&version!=3)||bytes!=albumStateBytes))return false;
         s.preset=in.readInt();s.algorithm=in.readInt();
         for(auto& x:s.values)x=in.readFloat();
-        const int flag=version==2?in.readInt():0;
-        s.albumReady=flag==1;
-        return (flag==0||flag==1)&&in.isExhausted()&&validVocalReverbSettings(s);
+        const int flag=version==1?0:in.readInt();
+        s.voicing=flag;
+        return ((version==1&&flag==0)||(version==2&&(flag==0||flag==1))||
+                (version==3&&flag==2))&&in.isExhausted()&&validVocalReverbSettings(s);
     }
     VocalReverbProcessor():juce::AudioProcessor(BusesProperties()
         .withInput("Input",juce::AudioChannelSet::stereo(),true)
@@ -285,7 +286,7 @@ public:
             edit.values[i]=requestedValues_[i].load(std::memory_order_seq_cst);
         edit.algorithm=requestedAlgorithm_.load(std::memory_order_seq_cst);
         edit.preset=requestedPreset_.load(std::memory_order_seq_cst);
-        edit.albumReady=requestedAlbum_.load(std::memory_order_seq_cst);
+        edit.voicing=requestedVoicing_.load(std::memory_order_seq_cst);
         const auto capturedId=requestedId_.load(std::memory_order_seq_cst);
         if(before!=requestedSequence_.load(std::memory_order_seq_cst)||
            capturedId<=appliedRequestId())return; // bounded retry next block
@@ -310,7 +311,7 @@ public:
             requestedValues_[i].store(v.values[i],std::memory_order_seq_cst);
         requestedAlgorithm_.store(v.algorithm,std::memory_order_seq_cst);
         requestedPreset_.store(v.preset,std::memory_order_seq_cst);
-        requestedAlbum_.store(v.albumReady,std::memory_order_seq_cst);
+        requestedVoicing_.store(v.voicing,std::memory_order_seq_cst);
         requestedId_.store(id,std::memory_order_seq_cst);
         requestedSequence_.fetch_add(1,std::memory_order_seq_cst);
         return id;
@@ -365,11 +366,11 @@ public:
         }
         juce::MemoryOutputStream writer(out,false);
         writer.writeInt(0x41565242); // AVRB, distinct from factory VST3
-        writer.writeInt(accepted.albumReady?2:1);
+        writer.writeInt(accepted.voicing+1);
         writer.writeInt(accepted.preset);
         writer.writeInt(accepted.algorithm);
         for(const auto v:accepted.values)writer.writeFloat(v);
-        if(accepted.albumReady)writer.writeInt(1);
+        if(accepted.voicing)writer.writeInt(accepted.voicing);
         writer.flush();
     }
     // Detached logical editor is CONTROL-owned, never installed in PCM.
@@ -421,7 +422,7 @@ private:
         for(std::size_t i=0;i<settings.values.size();++i)
             engine_.setParameter(static_cast<arverb::Parameter>(i),settings.values[i]);
         engine_.setAlgorithm(static_cast<arverb::Algorithm>(settings.algorithm));
-        engine_.setAlbumReady(settings.albumReady);
+        engine_.setVoicing(static_cast<unsigned>(settings.voicing));
     }
     // All fields atomic: the GUI/save thread cannot race audio callback writes.
     // An odd sequence denotes a partial packet, even means complete.
@@ -431,7 +432,7 @@ private:
             acceptedValues_[i].store(s.values[i],std::memory_order_seq_cst);
         acceptedAlgorithm_.store(s.algorithm,std::memory_order_seq_cst);
         acceptedPreset_.store(s.preset,std::memory_order_seq_cst);
-        acceptedAlbum_.store(s.albumReady,std::memory_order_seq_cst);
+        acceptedVoicing_.store(s.voicing,std::memory_order_seq_cst);
         acceptedSequence_.fetch_add(1,std::memory_order_seq_cst);
         appliedId_.store(id,std::memory_order_release);
     }
@@ -443,7 +444,7 @@ private:
                 v.values[i]=acceptedValues_[i].load(std::memory_order_seq_cst);
             v.algorithm=acceptedAlgorithm_.load(std::memory_order_seq_cst);
             v.preset=acceptedPreset_.load(std::memory_order_seq_cst);
-            v.albumReady=acceptedAlbum_.load(std::memory_order_seq_cst);
+            v.voicing=acceptedVoicing_.load(std::memory_order_seq_cst);
             const auto after=acceptedSequence_.load(std::memory_order_seq_cst);
             if(before==after)return true;
         }
@@ -453,14 +454,14 @@ private:
     VocalReverbSettings desired_{}; // message-thread only
     std::array<std::atomic<float>,arverb::parameterCount> requestedValues_{};
     std::atomic<int> requestedAlgorithm_{1},requestedPreset_{0};
-    std::atomic<bool> requestedAlbum_{false};
+    std::atomic<int> requestedVoicing_{2};
     std::atomic<std::uint32_t> requestedSequence_{0};
     std::atomic<std::uint64_t> requestedId_{0};
     static_assert(std::atomic<float>::is_always_lock_free);
     static_assert(std::atomic<std::uint64_t>::is_always_lock_free);
     std::array<std::atomic<float>,arverb::parameterCount> acceptedValues_{};
     std::atomic<int> acceptedAlgorithm_{1},acceptedPreset_{0};
-    std::atomic<bool> acceptedAlbum_{false};
+    std::atomic<int> acceptedVoicing_{2};
     std::atomic<std::uint32_t> acceptedSequence_{0};
     std::atomic<std::uint64_t> appliedId_{0},processedBlocks_{0};
     std::atomic<std::uint32_t> meterSubscribers_{0};
