@@ -1920,6 +1920,40 @@ static void verifyChannelIdGroupPreservesHostedFx() {
     live.unpublish();live.pollRetirement();
 }
 
+static void verifyZeroLatencyFxFastPath() {
+    auto p=std::make_unique<GainFx>(2.f);p->prepareToPlay(48000,64);
+    LiveChannelFxGraph::FxInstance fx(std::move(p),"zero","zero delay",64);
+    std::array<float,64> l{},r{};
+    // Sentinel verifies a steady zero-delay wet block never writes scratch.
+    fx.dryLeft.assign(64,-99.f);fx.dryRight.assign(64,-88.f);
+    l.fill(.125f);r.fill(-.25f);
+    const auto before=heapCalls.load();
+    fx.render(l.data(),r.data(),64);
+    assert(heapCalls.load()==before);
+    for(int i=0;i<64;++i){
+        assert(l[i]==.25f&&r[i]==-.5f);
+        assert(fx.dryLeft[i]==-99.f&&fx.dryRight[i]==-88.f);
+    }
+    // Rack/insert transition uses the original envelope, copies the
+    // current source (never sentinel), and reaches exact dry endpoints.
+    armix::dsp::FxBypassEnvelope reference;reference.prepare(false,48000.,0);
+    for(int block=0;block<24;++block){
+        const bool bypass=block<12;
+        fx.bypassRequested.store(bypass);
+        reference.request(bypass);
+        l.fill(.125f);r.fill(-.25f);
+        fx.render(l.data(),r.data(),64);
+        for(int i=0;i<64;++i){
+            const auto g=reference.next();
+            assert(near(l[i],.25f*g.wet+.125f*g.dry));
+            assert(near(r[i],-.5f*g.wet-.25f*g.dry));
+        }
+    }
+    fx.processor->setLatencySamples(8);
+    assert(fx.latencyChanged.load());
+    l.fill(.125f);r.fill(-.25f);fx.render(l.data(),r.data(),64);
+    for(int i=0;i<64;++i)assert(l[i]==.125f&&r[i]==-.25f);
+}
 static void verifyLatencyAlignedBypass() {
     // Real JUCE processing (not merely reporting a latency value): an impulse
     // remains at sample 7 through wet, individual bypass and rack bypass.
@@ -2604,6 +2638,7 @@ int main(int argc,char** argv) {
     verifyFirstSoundOnePinNativeSourceDraft();
     verifyNativePuzzleV8FixtureAndWire();
     verifyChannelIdGroupPreservesHostedFx();
+    verifyZeroLatencyFxFastPath();
     verifyLatencyAlignedBypass();
     verifyNativeFxRackTransactions();
     verifyNativeBuiltinEqOrderedPcmAndBypassAck();
