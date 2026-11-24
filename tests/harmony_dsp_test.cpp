@@ -1286,7 +1286,7 @@ static void auditFieldHeadroom(){
         auto x=src;
         for(int i=0;i<n;++i)x.left[i]=x.right[i]=static_cast<float>(src.left[i]*inputPeak/sourcePeak);
         auto e=std::make_unique<Engine>();
-        need(e->prepare(rate)&&e->setHeadroomForOfflineReference(protectedPath)&&e->setSettings(s)&&e->setRendererTraceForOfflineTests(true),"field audit setup");
+        need(e->prepare(rate)&&e->setDoublerMonoForOfflineReference(false)&&e->setHeadroomForOfflineReference(protectedPath)&&e->setSettings(s)&&e->setRendererTraceForOfflineTests(true),"field audit setup");
         for(int at=0;at<n;at+=64)e->process(x.left.data()+at,x.right.data()+at,std::min(64,n-at));
         double peakL=0.,peakR=0.;int aboveL=0,aboveR=0,internalClamp=0;std::uint64_t calls=0,losses=0;
         for(int i=0;i<n;++i){
@@ -1330,6 +1330,40 @@ static void testHeadroomContract(){
         need(g==0.f,"H24A preserve over-unity dry, do not worsen");
         const float recovering=h.process(.1f,.1f,.1f,.1f,.1f,.1f,1.f,1.f);
         need(recovering>=0.f&&recovering<.01f,"H24A no sudden release");
+    }
+}
+static void testDoublerMonoCompatibility(){
+    constexpr double tau=6.283185307179586;
+    for(int rate:{48000,96000})for(double hz:{100.,300.}){
+        const int n=rate*3;LeadFixture src{std::vector<float>(n),std::vector<float>(n)};
+        for(int i=0;i<n;++i)src.left[i]=src.right[i]=static_cast<float>(.12*std::sin(tau*hz*i/rate));
+        auto render=[&](bool guard,float space,float wet,int block){
+            auto e=std::make_unique<Engine>();Settings s;s.voiceMode=1;s.voices=2;
+            s.wet=wet;s.space=space;s.color=.78f;
+            need(e->prepare(rate)&&e->setSettings(s)&&e->setDoublerMonoForOfflineReference(guard),"H24B setup");
+            auto out=src;
+            for(int at=0;at<n;at+=block)e->process(out.left.data()+at,out.right.data()+at,std::min(block,n-at));
+            return out;
+        };
+        const auto old=render(false,0.f,1.f,64),now=render(true,0.f,1.f,127),
+                   split=render(true,0.f,1.f,64),dry=render(true,0.f,0.f,64);
+        need(now.left==split.left&&now.right==split.right,"H24B block parity");
+        const auto wideOld=render(false,1.f,1.f,64),wide=render(true,1.f,1.f,127);
+        need(wideOld.left==wide.left&&wideOld.right==wide.right,"H24B wide exact parity");
+        double minOld=1.e9,minNew=1.e9,wetOld=0.,wetNew=0.;
+        for(int at=rate;at+rate/50<=n;at+=rate/50){
+            double a=0.,b=0.,base=0.;
+            for(int i=at;i<at+rate/50;++i){
+                a+=old.left[i]*old.left[i];b+=now.left[i]*now.left[i];
+                base+=dry.left[i]*dry.left[i];
+                const double x=old.left[i]-dry.left[i],y=now.left[i]-dry.left[i];
+                wetOld+=x*x;wetNew+=y*y;
+            }
+            minOld=std::min(minOld,a/base);minNew=std::min(minNew,b/base);
+        }
+        std::cout<<"H24B_MONO rate="<<rate<<" hz="<<hz<<" old_floor="<<10.*std::log10(minOld)
+                 <<" new_floor="<<10.*std::log10(minNew)<<" wet_ratio="<<wetNew/wetOld<<std::endl;
+        need(minNew>minOld&&wetNew>.10*wetOld,"H24B mono floor or audible backing");
     }
 }
 static void testContinuousDoubler(){
@@ -1667,7 +1701,7 @@ static void testBackingUnity(){
     input.right=input.left; // ordinary dual-mono mic
     auto render=[&](Settings s,bool unity,int block){
       auto e=std::make_unique<Engine>();
-      need(e->prepare(rate)&&e->setBackingUnityForOfflineReference(unity)&&
+      need(e->prepare(rate)&&e->setDoublerMonoForOfflineReference(false)&&e->setBackingUnityForOfflineReference(unity)&&
            e->setSettings(s),"unity PCM fixture prepare");
       auto out=input;
       for(int i=0;i<2*rate;i+=block)
@@ -1804,6 +1838,7 @@ int main(){
   testLowerPresenceAndPresets();
   testHeadroomContract();
   auditFieldHeadroom();
+  testDoublerMonoCompatibility();
   testContinuousDoubler();
   testUnisonDoubler();
   testPeriodContinuityOnLoudOctaveErrors();

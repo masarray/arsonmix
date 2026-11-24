@@ -16,6 +16,7 @@
 #include "HarmonyLeadTune.h"
 #include "HarmonyVoicePlanner.h"
 #include "HarmonyBackingHeadroom.h"
+#include "HarmonyDoublerMonoGuard.h"
 
 // Deterministic, allocation-free vocal harmony DSP. No JUCE or GUI dependency.
 // Grain shifting is a functioning prototype, not formant-accurate synthesis.
@@ -305,6 +306,7 @@ public:
         fastCorrelation_=true;lowerFocusReferenceEnabled_=true;
         articulation_.prepare(rate);
         headroom_.prepare(rate);headroomEnabled_=true;
+        doublerMono_.prepare(rate);doublerMonoEnabled_=true;
         // Both renderer choice and missing-epoch recovery are time-domain
         // crossfades. Never hard-switch their independent source phases.
         pitchSyncAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.030)));
@@ -532,6 +534,10 @@ public:
         headroomEnabled_=enabled;return true;
     }
     const BackingHeadroom& headroomForOfflineTests()const noexcept{return headroom_;}
+    bool setDoublerMonoForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        doublerMonoEnabled_=enabled;return true;
+    }
     bool setCubicForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
         cubicReferenceEnabled_=enabled;return true;
@@ -815,12 +821,17 @@ public:
             outL+=room.left*roomReturn;outR+=room.right*roomReturn;
             // Compensate direct + early + late together, retaining DRR and
             // the original room excitation; lead remains independent.
+            float doubleProtection=1.f;
+            if(doublerMonoEnabled_&&doublerBlend_>0.00001f)
+                doubleProtection=doublerMono_.process(.5f*(leadL+leadR),
+                    .5f*(outL+outR)*backingGain_,space_,doublerBlend_);
+            const float musicalBacking=backingGain_*doubleProtection;
             float protection=1.f;
             if(headroomEnabled_)
                 protection=headroom_.process(inputL,inputR,leadL*gain_,leadR*gain_,
-                    outL*backingGain_*gain_,outR*backingGain_*gain_,gain_,wet_);
+                    outL*musicalBacking*gain_,outR*musicalBacking*gain_,gain_,wet_);
             // Keep the previous multiply/add order when protection is unity.
-            const float backing=backingGain_*protection;
+            const float backing=musicalBacking*protection;
             l[i]=std::clamp((leadL+outL*backing)*gain_,-4.f,4.f);
             r[i]=std::clamp((leadR+outR*backing)*gain_,-4.f,4.f);
             // Expression follows stable notes; confidence hysteresis is
@@ -1214,7 +1225,8 @@ private:
     bool resonanceReferenceEnabled_=true,articulationReferenceEnabled_=true;
     BackingArticulation articulation_{};
     BackingHeadroom headroom_{};
-    bool headroomEnabled_=true;
+    bool headroomEnabled_=true,doublerMonoEnabled_=true;
+    DoublerMonoGuard doublerMono_{};
     std::array<BackingRenderSeam,maxVoices> backingSeams_{};
     bool continuityReferenceEnabled_=true,supportReferenceEnabled_=true;
     bool naturalReferenceEnabled_=true,carrierReferenceEnabled_=true,slopeReferenceEnabled_=true;
