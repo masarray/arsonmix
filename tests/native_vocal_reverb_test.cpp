@@ -137,8 +137,9 @@ int main() {
     assert(power->getY()==close->getY()&&close->getRight()==ui->getWidth()-25);
     assert(power->getButtonText().isEmpty()&&close->getButtonText().isEmpty());
     assert(power->getProperties().getWithDefault("armixFxState","").toString()=="unknown");
-    assert(power->getBounds().getCentreY()==presetSelect->getBounds().getCentreY());
-    assert(close->getBounds().getCentreY()==presetSelect->getBounds().getCentreY());
+    assert(power->getBounds().getCentreY()==presetSelect->getBounds().getCentreY()-5);
+    assert(close->getBounds().getCentreY()==power->getBounds().getCentreY());
+    assert(std::abs(algorithmSelect->getBounds().getCentreX()-mainMix->getBounds().getCentreX())<=1);
     assert(close->getBottom()<reverb_ui::FaceplateLayout::shoulderY);
     assert(!power->getBounds().intersects(presetSelect->getBounds()));
     assert(!close->getBounds().intersects(presetSelect->getBounds()));
@@ -175,7 +176,7 @@ int main() {
                 occupied[static_cast<std::size_t>(visibleLabels++)]=label->getBounds();
                 if(i!=0&&i!=2) {
                     assert(label->getWidth()<=110);
-                    assert(label->getY()==205 && slider->getY()==221);
+                    assert(label->getY()==reverb_ui::FaceplateLayout::smallCaptionY && slider->getY()==221);
                 }
             }
             if(slider->isVisible()) {

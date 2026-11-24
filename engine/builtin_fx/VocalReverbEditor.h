@@ -26,7 +26,8 @@ constexpr float pi=juce::MathConstants<float>::pi;
 // separate geometry: changing the LCD never moves or rescales a dial.
 struct FaceplateLayout final {
     static constexpr int width=1120,height=430, shoulderY=47;
-    static constexpr int headerCentreY=34, lcdTop=374,lcdBottom=408;
+    static constexpr int headerCentreY=34, chromeCentreY=29, lcdTop=374,lcdBottom=408;
+    static constexpr int smallCaptionY=211,algorithmWidth=139,algorithmCentreX=980;
     static constexpr int lcdCentreY=393,lcdHeight=26;
     static constexpr int heroTop=124,heroCentreY=250,heroDial=184,heroWidth=202;
     static constexpr int smallTop=221,smallCentreY=297,smallDial=106,smallWidth=114;
@@ -35,7 +36,7 @@ struct FaceplateLayout final {
     static constexpr int tabY=164,tabHeight=34,tabPitch=94,tabWidth=92;
     static constexpr int tabLeft=(width-(5*tabPitch+tabWidth))/2;
     static_assert(controlBottom<=lcdBottom && lcdCentreY-lcdHeight/2>=lcdTop);
-    static_assert(headerCentreY+12<shoulderY);
+    static_assert(chromeCentreY-12>=11 && chromeCentreY+12<shoulderY);
     static_assert(smallWidth<smallPitch);
     static juce::Rectangle<int> heroBounds(int centreX) {
         return {centreX-heroWidth/2,heroTop,heroWidth,controlBottom-heroTop};
@@ -726,13 +727,14 @@ public:
         using F=reverb_ui::FaceplateLayout;
         title_.setBounds(47,65,247,32);
         // Same right-side cluster as PEQ, Compressor and Harmonice;
-        // align optical centres with preset row, entirely on blue shoulder.
-        close_.setBounds(getWidth()-25-24,F::headerCentreY-12,24,24);
-        power_.setBounds(close_.getX()-8-26,F::headerCentreY-12,26,24);
+        // Owner optical correction: lift the compact chrome five pixels
+        // off the preset centre; keep the entire cluster on blue shoulder.
+        close_.setBounds(getWidth()-25-24,F::chromeCentreY-12,24,24);
+        power_.setBounds(close_.getX()-8-26,F::chromeCentreY-12,26,24);
         preset_.setBounds(424,17,272,34);
         prev_.setBounds(383,17,33,34);
         next_.setBounds(getWidth()-383-33,17,33,34);
-        algorithm_.setBounds(934,78,139,28);
+        algorithm_.setBounds(F::algorithmCentreX-F::algorithmWidth/2,78,F::algorithmWidth,28);
         for(std::size_t i=0;i<tabs_.size();++i)
             tabs_[i].setBounds(F::tabLeft+static_cast<int>(i)*F::tabPitch,
                                F::tabY,F::tabWidth,F::tabHeight);
@@ -826,7 +828,7 @@ private:
                 pages_[static_cast<std::size_t>(page_)][n]);
             const int centre=F::smallFirstCentre+static_cast<int>(n)*F::smallPitch;
             knobs_[idx].setBounds(F::smallBounds(centre));
-            labels_[idx].setBounds(centre-54,205,108,21);
+            labels_[idx].setBounds(centre-54,F::smallCaptionY,108,21);
             knobs_[idx].setVisible(true);
             labels_[idx].setVisible(true);
         }

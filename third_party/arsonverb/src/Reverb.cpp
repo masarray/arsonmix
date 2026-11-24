@@ -28,6 +28,18 @@ inline float sineQuarterWave(float normalized) noexcept {
             - x2 / 39916800.0f)))));
 }
 
+// Reverb-Sis insert/send level: keep the established <=50% musical
+// balance, then smoothly recover up to +3.52 dB at the pure-wet endpoint.
+// This is a deterministic gain law, NOT a feedback boost, AGC, limiter,
+// dry leak, or stereo-dependent correction. Called only on Mix targets.
+inline float wetMixTarget(float mix, bool musicalReturn) noexcept {
+    const float base = sineQuarterWave(mix);
+    if (!musicalReturn) return base;
+    const float x = detail::clamp(2.0f * mix - 1.0f, 0.0f, 1.0f);
+    const float curve = x*x*(3.0f-2.0f*x);
+    return base * (1.0f + 0.5f*curve);
+}
+
 inline void algorithmMatrix (unsigned mode, const float* input, float* output) noexcept {
     // All three *new* feedback families are orthogonal and do not add delay
     // buffers. Plate: eight-line 3-stage normalized Hadamard, O(N log N).
@@ -305,7 +317,7 @@ void Engine::prepare(double sampleRate, bool musicalReturn) {
         s.smooth[i] = parameters_[i].load(std::memory_order_relaxed);
     s.cachedMix = s.smooth[static_cast<unsigned>(Parameter::Mix)];
     s.currentDryGain = s.targetDryGain = sineQuarterWave(1.0f - s.cachedMix);
-    s.currentWetGain = s.targetWetGain = sineQuarterWave(s.cachedMix);
+    s.currentWetGain = s.targetWetGain = wetMixTarget(s.cachedMix, s.musicalReturn);
     // Freeze initial taps at the host's actual restored preset.
     s.preTapCurrent = s.preTapNext = s.preTapTarget =
         s.smooth[static_cast<unsigned>(Parameter::PreDelayMs)]
@@ -407,7 +419,7 @@ void Engine::process(const float* inputLeft, const float* inputRight,
     if (requestedMix != s.cachedMix) {
         s.cachedMix = requestedMix;
         s.targetDryGain = sineQuarterWave(1.0f - requestedMix);
-        s.targetWetGain = sineQuarterWave(requestedMix);
+        s.targetWetGain = wetMixTarget(requestedMix, s.musicalReturn);
     }
     const unsigned requested = algorithm_.load(std::memory_order_relaxed);
     if (requested != s.toAlgorithm) {
@@ -676,9 +688,10 @@ void Engine::process(const float* inputLeft, const float* inputRight,
             ? 1.0f - 0.5f * duckAmount * (s.duckEnvelope / (0.12f + s.duckEnvelope))
             : 1.0f / (1.0f + 6.0f * duckAmount * s.duckEnvelope);
         const float returnGain = wetGain * s.wetReturnTrim * duckGain;
-        // Exact sine/cos gain law at stable settings. No sample-loop
-        // trigonometry, LUT, indirection or branch; both gains are smoothed.
-        // 50% retains ~-3dB of direct signal; 100% is pure wet/send.
+        // Exact sine/cos dry and base wet law at stable settings, plus
+        // bounded musical high-Mix compensation folded into the existing
+        // wet gain target. No new sample-loop operation or feedback change.
+        // 50% retains ~-3dB direct signal; 100% is still pure wet/send.
         outputLeft[frame] = dryGain * inL + returnGain * (mid + side);
         outputRight[frame] = dryGain * inR + returnGain * (mid - side);
         if (s.preTapBlend < 1.0f) {

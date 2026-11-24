@@ -127,7 +127,8 @@ int main() {
         }
     }
     // Musical profile: actual mono-fold output, with nonzero ducking.
-    // No feedback changes; doubling the return at Duck=0 must be exact.
+    // No feedback changes; full-wet profile = 2x base trim * 1.5x
+    // high-Mix compensation at Duck=0. Exact measured PCM scaling.
     for(int mode=0;mode<4;++mode) {
         const double oldWet=render(mode,1.f,true,false,0.f);
         const double newWet=render(mode,1.f,true,true,0.f);
@@ -135,7 +136,7 @@ int main() {
         const double dry=render(mode,0.f,true,true,0.f);
         std::printf("Reverb-Sis mode=%d dry=%.6f oldWet=%.6f wet=%.6f ducked=%.6f\n",
                     mode,dry,oldWet,newWet,sung);
-        check(std::abs(newWet/oldWet-2.0)<.001,"calibrated +6 dB wet return");
+        check(std::abs(newWet/oldWet-3.0)<.001,"calibrated +9.54 dB full-wet return");
         check(sung>newWet*.65,"normal duck cannot erase the wet return");
         check(sung>dry*.12,"audible wet-heavy mono fold with real duck");
         const double voiceDry=render(mode,0.f,true,true,.22f,true);
@@ -144,10 +145,10 @@ int main() {
         std::printf("Reverb-Sis mode=%d harmonic RMS wet/dry=%.3f new/old=%.3f\n",
                     mode,voiceWet/voiceDry,voiceWet/voiceLegacy);
         check(voiceWet>voiceLegacy*1.7,"harmonic sustained source improves versus old ducked return");
-        // Absolute floor derived from the verified 583098e5 baseline:
-        // Classic .362, Plate .588, Chamber .302, Hall .226 wet/dry.
-        // This is a regression floor (-14 dB), NOT a loudness-match target.
-        check(voiceWet>voiceDry*.20 && voiceWet<voiceDry*3.4,
+        // Verified 43525a78 baseline: .362/.588/.302/.226. At full
+        // Mix the exact scalar is now 1.5x; weakest expected .339.
+        // .30 is a fixture regression floor, NOT universal loudness match.
+        check(voiceWet>voiceDry*.30 && voiceWet<voiceDry*3.4,
               "harmonic sustained source must preserve measured wet energy in mono");
         // Width must change the side component only; neither mono playback
         // nor a stereo-to-mono downstream sink may lose the mid return.
@@ -155,13 +156,69 @@ int main() {
         const double wide=render(mode,1.f,true,true,.22f,true,1.6f);
         std::printf("Reverb-Sis mode=%d mono width0=%.6f width1.6=%.6f\n",
                     mode,narrow,wide);
-        check(narrow>voiceDry*.20 && std::abs(wide-narrow)<voiceDry*1e-5,
+        check(narrow>voiceDry*.30 && std::abs(wide-narrow)<voiceDry*1e-5,
               "width must preserve actual mono wet RMS at both endpoints");
         for(float mix:{.25f,.5f,.75f,1.f}) {
             const double rms=render(mode,mix,true,true,.22f);
             check(rms>dry*.12 && rms<dry*3.4,"musical Mix no severe sustained level collapse");
         }
     }
+    // Exercise actual PCM during live Mix changes, not only freshly
+    // prepared steady states. Independent legacy pure-wet tank is the
+    // reference; same excitation/algorithm/parameters and Duck=0. This
+    // verifies the whole dry/wet sum, including no hidden dry at 100%.
+    for(const double fs : {44100.0,48000.0,96000.0}) {
+        for(int mode=0;mode<4;++mode) {
+            arverb::Engine reference, musical;
+            for(auto* engine : {&reference,&musical}) {
+                engine->loadPreset(arverb::Preset::VocalPlate);
+                engine->setAlgorithm(static_cast<arverb::Algorithm>(mode));
+                engine->setParameter(arverb::Parameter::DuckAmount,0.f);
+                engine->setParameter(arverb::Parameter::Mix,engine==&reference?1.f:.28f);
+            }
+            reference.prepare(fs,false);
+            musical.prepare(fs,true);
+            constexpr int n=128;
+            std::array<float,n> l{},r{},a{},b{},c{},d{};
+            const auto gain=[](float mix) {
+                const double x=std::clamp(2.0*mix-1.0,0.0,1.0);
+                return std::sin(1.5707963267948966*mix)*(1.0+0.5*x*x*(3.0-2.0*x));
+            };
+            const double alpha=1.0-std::exp(-1.0/(.025*fs));
+            double dryGain=std::cos(1.5707963267948966*.28f),wetGain=gain(.28f);
+            double dryTarget=dryGain,wetTarget=wetGain;
+            const int stage=static_cast<int>(fs*.6/n);
+            for(int block=0;block<4*stage;++block) {
+                if(block%stage==0) {
+                    const float mix=block==0?.28f:block==stage?.75f:block==2*stage?1.f:0.f;
+                    musical.setParameter(arverb::Parameter::Mix,mix);
+                    dryTarget=std::cos(1.5707963267948966*mix);
+                    wetTarget=gain(mix);
+                }
+                for(int i=0;i<n;++i) {
+                    const double time=(block*n+i)/fs;
+                    // Independent stereo harmonic inputs with a common body.
+                    l[i]=static_cast<float>(.16*std::sin(691.15*time)+.07*std::sin(2073.45*time));
+                    r[i]=static_cast<float>(.14*std::sin(691.15*time)+.06*std::sin(2638.94*time+.7));
+                }
+                reference.process(l.data(),r.data(),a.data(),b.data(),n);
+                musical.process(l.data(),r.data(),c.data(),d.data(),n);
+                for(int i=0;i<n;++i) {
+                    dryGain+=alpha*(dryTarget-dryGain);
+                    wetGain+=alpha*(wetTarget-wetGain);
+                    check(std::isfinite(c[i])&&std::isfinite(d[i]),"live Mix finite");
+                    check(std::abs(c[i]-(dryGain*l[i]+2.0*wetGain*a[i]))<.0004 &&
+                          std::abs(d[i]-(dryGain*r[i]+2.0*wetGain*b[i]))<.0004,
+                          "live Mix gain law, no phase inversion or hidden dry");
+                    if(block>=3*stage-4&&block<3*stage)
+                        check(std::abs(c[i]-3.f*a[i])<.0004 &&
+                              std::abs(d[i]-3.f*b[i])<.0004,
+                              "settled full wet contains only calibrated wet");
+                }
+            }
+        }
+    }
+    std::puts("PASS Reverb-Sis live Mix: all algorithms at 44.1/48/96 kHz");
     // P8: prepare() must prime coefficients, not defer expensive
     // initialization to the very first small buffer; with static targets,
     // samplewise and large-block engines must generate the same output.
