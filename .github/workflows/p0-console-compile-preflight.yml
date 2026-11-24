@@ -7,14 +7,8 @@ on:
       - feature/io-atomic-output-20261125
       - feat/reverb-sis-signature-20261125
       - staging/io-reverb-integrated-20261125
-    paths:
-      - 'src/**'
-      - 'engine/**'
-      - 'CMakeLists.txt'
-      - 'tests/native_channel_appearance_store_test.cpp'
-      - 'tests/native_mixer_session_store_test.cpp'
-      - 'tests/physical_external_output_pcm_test.cpp'
-      - '.github/workflows/p0-console-compile-preflight.yml'
+    # These are explicit qualification branches, not general development.
+    # Every new HEAD needs its own evidence, even a UI/workflow-only commit.
 permissions:
   contents: read
 concurrency:

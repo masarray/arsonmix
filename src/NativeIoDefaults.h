@@ -89,7 +89,11 @@ public:
         if(!file_.getParentDirectory().createDirectory().wasOk())return "Cannot create I/O settings folder";
         juce::TemporaryFile temporary(file_);
         auto stream=temporary.getFile().createOutputStream();
-        if(!stream||!stream->writeText(json,false,false,"\n"))return "Cannot write I/O default";
+        // Canonical JSON is compared byte-for-byte on readback. JUCE's
+        // multiline formatter emits CRLF; writeText(..., "\n") would
+        // silently rewrite those bytes and reject every valid save.
+        if(!stream||!stream->write(json.toRawUTF8(),json.getNumBytesAsUTF8()))
+            return "Cannot write I/O default";
         stream->flush();if(stream->getStatus().failed())return "Cannot flush I/O default";
         stream.reset();
         IoPortLayout reread;std::uint64_t rereadRevision=0;

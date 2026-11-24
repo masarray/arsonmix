@@ -1910,7 +1910,23 @@ static void verifyIoDefaults(){
     assert(layout.definitionsOnly()&&layout.inputs.find(id)&&layout.outputs.find(20));
     NativeIoDefaults store(dir);
     assert(store.revision()==0&&!store.readOnly()&&store.layout().empty());
-    assert(store.save(0,layout).isEmpty()&&store.revision()==1);
+    const auto saveError=store.save(0,layout);
+    if(saveError.isNotEmpty())std::cerr<<"I/O defaults first save: "<<saveError.toStdString()<<'\n';
+    assert(saveError.isEmpty()&&store.revision()==1);
+    const auto file=dir.getChildFile("io-defaults.v1.json");
+    const auto canonical=file.loadFileAsString();
+    const auto parsed=juce::JSON::parse(canonical);
+    assert(parsed.isObject()&&juce::JSON::toString(parsed,false)==canonical);
+    assert(!store.save(1,IoPortLayout{inputs,outputs}).isEmpty());
+    assert(store.revision()==1&&file.loadFileAsString()==canonical);
+    // Canonical unknown fields cannot smuggle routing or ARM into a default.
+    auto tampered=juce::JSON::parse(canonical);
+    tampered.getDynamicObject()->setProperty("armed",true);
+    assert(file.replaceWithText(juce::JSON::toString(tampered,false),false,false,nullptr));
+    NativeIoDefaults rejected(dir);
+    assert(rejected.readOnly()&&rejected.save(0,layout).isNotEmpty());
+    assert(file.loadFileAsString()==juce::JSON::toString(tampered,false));
+    assert(file.replaceWithText(canonical,false,false,nullptr));
     assert(store.save(0,{}).isNotEmpty()&&store.revision()==1);
     NativeIoDefaults reopened(dir);
     assert(!reopened.readOnly()&&reopened.revision()==1&&reopened.layout().inputs.find(id));
@@ -1938,7 +1954,6 @@ static void verifyIoDefaults(){
     assert(status.getProperty("logicalInputRegistry",{}).getProperty("references",{}).getArray()->isEmpty());
     assert(status.getProperty("logicalOutputRegistry",{}).getProperty("references",{}).getArray()->isEmpty());
     assert(reopened.save(1,{}).isEmpty()&&reopened.revision()==2);
-    const auto file=dir.getChildFile("io-defaults.v1.json");
     assert(file.appendText("damaged"));
     NativeIoDefaults damaged(dir);
     assert(damaged.readOnly()&&damaged.save(0,layout).isNotEmpty());
