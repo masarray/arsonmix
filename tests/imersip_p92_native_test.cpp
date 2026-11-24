@@ -540,6 +540,24 @@ static void verifyImmerSIBIdleLease(int rate,int frames) {
     armix::builtin_fx::SonKuSpatialProcessor::Completion ack{};
     assert(idleProcessor->pollCompletion(ack) && ack.applied && ack.requestId==9001);
     assert(!a.bypassRequested.load() && !b.bypassRequested.load());
+    // Exercise the same optimized host path: settle the ordinary 8 ms
+    // crossfade, then prove zero-latency bypass publishes exact fresh PCM
+    // without calling the plugin or copying stale scratch.
+    a.bypassRequested.store(true);
+    for(int k=0;k<8;++k) {
+        silent.clear();render(a,silent);
+    }
+    const auto bypassCalls=a.dspProcessedBlocks.load();
+    for(int k=0;k<4;++k) {
+        for(int i=0;i<frames;++i) {
+            const float x=.02f*float(i+1)/float(frames);
+            silent.setSample(0,i,x);silent.setSample(1,i,-x);
+        }
+        ref.makeCopyOf(silent,true);render(a,silent);
+        for(int ch=0;ch<2;++ch)for(int i=0;i<frames;++i)
+            assert(silent.getSample(ch,i)==ref.getSample(ch,i));
+    }
+    assert(a.dspProcessedBlocks.load()==bypassCalls);
     std::printf("IMMERSIB_IDLE_LEASE rate=%d frames=%d sleepBlocks=%llu activeBlocks=%llu wake=verified ACK=verified\\n",
         rate,frames,static_cast<unsigned long long>(a.dspSleepBlocks.load()),
         static_cast<unsigned long long>(b.dspProcessedBlocks.load()));

@@ -776,7 +776,7 @@ public:
             mainTestWasArmed_=isMonitorEnabled();
             mainTestPeak_.store(0.f,std::memory_order_relaxed);
             diagnosticRoute_.store(wanted,std::memory_order_release);
-            setMonitorEnabled(true); // the operator explicitly requested this isolated tone
+            setOutputMuted(false); // temporary tone gate only; never grant MAIN continuation
             return {};
         }
         if(currentRoute==Route::mainOutputTone) {

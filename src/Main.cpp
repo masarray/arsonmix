@@ -3339,21 +3339,14 @@ private:
     void serviceAutomaticMain() {
         if(pendingRetainedFxCapture_ || retainedOfflineFxActive_)return; // never arm stale retained PCM
         if(operatorOutputMuted_){autoMainEpoch_=0;return;} // explicit emergency stop
-        // Recover the already authorized, still-bound MAIN after a transient
-        // gate even if an earlier one-shot was consumed. Never authorize a
-        // different driver or invent a route. CONTROL timer only.
+        // Only an explicit, verified CONTROL transaction may schedule MAIN
+        // recovery. A generic desired flag cannot prove output-pair continuity.
         if(deviceApply_.busy() || (audioSetupWindow_ && audioSetupWindow_->isVisible()) ||
            nativeShowBusy_ || studioBackupBusy_ || mixerSessionWorker_.busy() ||
            directCallbackStalled_ || engine_.hasPendingDirectRestore() ||
            engine_.diagnosticRoute()!=armix::diagnostics::Route::normal)return;
-        if(autoMainEpoch_==0) {
-            if(!engine_.wantsMainContinuation() || engine_.isMonitorEnabled() ||
-               !engine_.directRouteAuthorized() || !engine_.hasBoundMixerRoute() ||
-               engine_.hasRetainedUnboundMixer() || engine_.isGraphSwitchPending())return;
-            autoMainEpoch_=engine_.dryRoutingLabEpoch();
-            autoMainRequiresInput_=false; // continuation, not first-time arm
-            autoMainCheckedRevision_.reset();
-        }
+        if(autoMainEpoch_==0)return; // no unscheduled rearm
+        if(!engine_.directRouteAuthorized() || engine_.hasRetainedUnboundMixer())return;
         if(autoMainEpoch_!=engine_.dryRoutingLabEpoch() ||
            engine_.isMonitorEnabled()) {
             autoMainEpoch_=0;
@@ -4892,6 +4885,8 @@ private:
                 bool sameOutputs=false;
                 const bool monitoring=engine.isMonitorEnabled();
                 error=engine.restoreNativeMixerSession(std::move(doc),states,true,&sameOutputs);
+                if(error.isEmpty()&&!sameOutputs)
+                    engine.setMonitorEnabled(false); // revoke stale physical authorization
                 if(monitoring&&sameOutputs&&error.isEmpty()&&
                    chosenEpoch==engine.dryRoutingLabEpoch()&&engine.liveOutputArmFault(false).isEmpty())
                     engine.setMonitorEnabled(true);
@@ -8244,6 +8239,7 @@ private:
                         if(error.isEmpty()) {
                             // Only AFTER native graph publication, and while
                             // physical output remains muted. Never auto-unmute.
+                            safe->engine_.setMonitorEnabled(false);
                             safe->engine_.setMasterGainLinear(
                                 static_cast<float>(result.loaded.masterGain));
                             safe->engine_.setMasterMuted(result.loaded.masterMute);

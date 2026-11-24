@@ -179,27 +179,36 @@ public:
             // would strand pending GUI commands until users turned them ON.
             if(nativeControl && bypassFade.fullyBypassed())
                 nativeControl->consumeRealtimeEdits();
-            // Keep bypass at the SAME declared latency as wet, including
-            // rack bypass and disabled slots. PDC never changes on a scalar.
-            for(int i=0;i<samples;++i) {
-                float l=left[i],r=right[i];dryDelay.process(l,r);
-                dryLeft[static_cast<std::size_t>(i)]=l;
-                dryRight[static_cast<std::size_t>(i)]=r;
-            }
             const bool fullyBypassed=bypassFade.fullyBypassed();
-            if((fullyBypassed&&!continuousBypassProcessing)||
-               latencyChanged.load(std::memory_order_acquire)) {
+            const bool fading=bypassFade.transitioning();
+            const bool latencyFault=latencyChanged.load(std::memory_order_acquire);
+            // Latent inserts must advance their dry delay every block, even
+            // when fully wet. Zero-latency inserts need dry scratch ONLY
+            // while mixing a fade or continuously processing a dry bypass.
+            // Stable wet and ordinary zero-latency bypass need no copy.
+            if(latencySamples!=0) {
+                for(int i=0;i<samples;++i) {
+                    float l=left[i],r=right[i];dryDelay.process(l,r);
+                    dryLeft[static_cast<std::size_t>(i)]=l;
+                    dryRight[static_cast<std::size_t>(i)]=r;
+                }
+            } else if(!latencyFault && (fading || (fullyBypassed&&continuousBypassProcessing))) {
+                juce::FloatVectorOperations::copy(dryLeft.data(),left,samples);
+                juce::FloatVectorOperations::copy(dryRight.data(),right,samples);
+            }
+            if((fullyBypassed&&!continuousBypassProcessing)||latencyFault) {
                 immerseIdle.reset();
                 dspSleeping.store(false,std::memory_order_relaxed);
                 dspLastUs.store(0,std::memory_order_relaxed);
-                juce::FloatVectorOperations::copy(left,dryLeft.data(),samples);
-                juce::FloatVectorOperations::copy(right,dryRight.data(),samples);
+                if(latencySamples!=0) {
+                    juce::FloatVectorOperations::copy(left,dryLeft.data(),samples);
+                    juce::FloatVectorOperations::copy(right,dryRight.data(),samples);
+                }
                 processing.clear(std::memory_order_release);return;
             }
             // Harmony alone remains timeline-warm while fully bypassed.
             // The host consumes real PCM, but publishes the exact PDC dry path:
             // no stale pitch history or room tail can leak on reactivation.
-            const bool fading=bypassFade.transitioning();
             // Only sleep with exact input silence, fully settled bypass and
             // no pending parameter/mode transaction. A queued edit is handled
             // by the regular real processBlock on the very next callback.
