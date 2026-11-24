@@ -3457,6 +3457,33 @@
       backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
     },12000);
   }
+  if(connected){
+    backend.addEventListener("arMixNamedPatchAck",ack=>{
+      if(namedPatchPending?.phase!=="APPLYING"||
+         ack?.requestId!==namedPatchPending.requestId)return;
+      if(ack.ok!==true){
+        namedPatchPending=null;
+        nativeToast(ack.error||"I/O preset rejected");
+        paintPhysicalOutputs(hardware);return;
+      }
+      namedPatchPending={...namedPatchPending,phase:"VERIFYING"};
+      backend.emitEvent("arMixAction",{action:"audioNamedPatchRead",requestId:ack.requestId});
+    });
+    backend.addEventListener("arMixNamedPatchReadback",message=>{
+      if(namedPatchPending?.phase!=="VERIFYING"||
+         message?.requestId!==namedPatchPending.requestId)return;
+      const a=deviceInventory?.active,b=message.active,data=message.namedPatches;
+      const same=a&&b&&["backend","captureDevice","playbackDevice","deviceGeneration","rate","buffer"]
+        .every(k=>a[k]===b[k])&&deviceVM.setupMatrixDeviceMatches({active:b},hardware);
+      if(!same||!Number.isSafeInteger(data?.revision)||data.revision<=namedPatchPending.revision||
+         !Array.isArray(data.entries))return;
+      namedPatchPending=null;
+      // Refresh only this independent metadata, not the current device draft.
+      deviceInventory={...deviceInventory,namedPatches:data};
+      nativeToast("I/O preset saved");
+      paintPhysicalOutputs(hardware);
+    });
+  }
   function finishDeviceApplyUi(verifiedSnapshot=null){
     window.clearTimeout(deviceApplyTimer);
     deviceApplyTimer=0;
@@ -3493,31 +3520,6 @@
     }
   }
   if(connected){
-    backend.addEventListener("arMixNamedPatchAck",ack=>{
-      if(namedPatchPending?.phase!=="APPLYING"||
-         ack?.requestId!==namedPatchPending.requestId)return;
-      if(ack.ok!==true){
-        namedPatchPending=null;
-        nativeToast(ack.error||"I/O preset rejected");
-        paintPhysicalOutputs(hardware);return;
-      }
-      namedPatchPending={...namedPatchPending,phase:"VERIFYING"};
-      backend.emitEvent("arMixAction",{action:"audioNamedPatchRead",requestId:ack.requestId});
-    });
-    backend.addEventListener("arMixNamedPatchReadback",message=>{
-      if(namedPatchPending?.phase!=="VERIFYING"||
-         message?.requestId!==namedPatchPending.requestId)return;
-      const a=deviceInventory?.active,b=message.active,data=message.namedPatches;
-      const same=a&&b&&["backend","captureDevice","playbackDevice","deviceGeneration","rate","buffer"]
-        .every(k=>a[k]===b[k])&&deviceVM.setupMatrixDeviceMatches({active:b},hardware);
-      if(!same||!Number.isSafeInteger(data?.revision)||data.revision<=namedPatchPending.revision||
-         !Array.isArray(data.entries))return;
-      namedPatchPending=null;
-      // Refresh only this independent metadata, not the current device draft.
-      deviceInventory={...deviceInventory,namedPatches:data};
-      nativeToast("I/O preset saved");
-      paintPhysicalOutputs(hardware);
-    });
     backend.addEventListener("arMixAudioDeviceInventory",inventory=>{
       if(!inventory||!Array.isArray(inventory.types)||deviceBusy())return;
       // Inventory is a native observation, not accepted Apply proof.
