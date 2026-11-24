@@ -87,15 +87,28 @@ static void namedPatchRegression(){
         juce::Array<juce::var> outputNames,outputPins;
         for(int i=0;i<6;++i){outputNames.add("Out "+juce::String(i+1));outputPins.add(i);}
         set(active,"outputNames",juce::var(outputNames));set(active,"enabledOutputs",juce::var(outputPins));
+        set(active,"mainOutputs",juce::var(juce::Array<juce::var>{0,1}));
+        set(active,"monitorOutputs",juce::var(juce::Array<juce::var>{2,3}));
         set(req,"revision",3);set(req,"id","");set(req,"operation","SAVE");set(req,"side","output");
         set(req,"name","Streaming");set(req,"mode","STEREO");set(req,"left",3);set(req,"right",4);
         set(req,"leftName","Out 4");set(req,"rightName","Out 5");
         assert(store.apply(req,active).isNotEmpty());
+        set(req,"left",0);set(req,"right",1);set(req,"leftName","Out 1");set(req,"rightName","Out 2");
+        assert(store.apply(req,active).isNotEmpty()); // reserved MAIN
+        set(req,"left",2);set(req,"right",3);set(req,"leftName","Out 3");set(req,"rightName","Out 4");
+        assert(store.apply(req,active).isNotEmpty()); // reserved MONITOR
         set(req,"left",4);set(req,"right",5);set(req,"leftName","Out 5");set(req,"rightName","Out 6");
+        set(active,"monitorOutputs",juce::var());
+        assert(store.apply(req,active).isNotEmpty()); // unknown reservation
+        set(active,"monitorOutputs",juce::var(juce::Array<juce::var>{2,3}));
         assert(store.apply(req,active).isEmpty());
         rows=store.snapshot(active).getProperty("entries",{});
         assert(rows.getArray()->size()==1);
         const auto outputId=rows[0].getProperty("id","").toString();
+        set(active,"monitorOutputs",juce::var(juce::Array<juce::var>{4,5}));
+        assert(store.snapshot(active).getProperty("entries",{} )[0].getProperty("available",{})==juce::var(false));
+        set(active,"monitorOutputs",juce::var(juce::Array<juce::var>{2,3}));
+        assert(store.snapshot(active).getProperty("entries",{} )[0].getProperty("available",{})==juce::var(true));
         set(req,"revision",4);set(req,"name","streaming");
         assert(store.apply(req,active).isNotEmpty());
         set(active,"playbackDevice","Other ASIO");

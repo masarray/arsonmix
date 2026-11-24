@@ -152,7 +152,29 @@ private:
                 enabled.getArray()->contains(juce::var(pin));
         };
         const int l=static_cast<int>(e.getProperty("left",{})),r=static_cast<int>(e.getProperty("right",{}));
-        return matches(l,"leftName")&&(r==-1||matches(r,"rightName"));
+        if(!matches(l,"leftName")||(r!=-1&&!matches(r,"rightName")))return false;
+        if(input)return true;
+        // External presets never authorize a MAIN or MONITOR destination.
+        // Both reservations must be known from the installed native graph,
+        // not inferred from enabled pins or a browser-provided suggestion.
+        const auto main=a.getProperty("mainOutputs",{});
+        const auto monitor=a.getProperty("monitorOutputs",{});
+        const auto validPair=[&](const juce::var& value,bool optional){
+            const auto* p=value.getArray();
+            if(!p)return false;
+            if(optional&&p->isEmpty())return true;
+            return p->size()==2&&(*p)[0].isInt()&&(*p)[1].isInt()&&
+                (*p)[0]!=(*p)[1]&&enabled.getArray()->contains((*p)[0])&&
+                enabled.getArray()->contains((*p)[1]);
+        };
+        if(!validPair(main,false)||!validPair(monitor,true))return false;
+        const auto contains=[&](const juce::var& pair,int pin){
+            return pair.getArray()->contains(juce::var(pin));
+        };
+        for(const auto& pin:*monitor.getArray())
+            if(contains(main,static_cast<int>(pin)))return false;
+        return !contains(main,l)&&!contains(main,r)&&
+               !contains(monitor,l)&&!contains(monitor,r);
     }
     void load(){
         if(!file_.exists())return;

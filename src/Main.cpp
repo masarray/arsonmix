@@ -3387,6 +3387,7 @@ private:
         const auto live=engine_.status();
         o->setProperty("deviceGeneration",live.getProperty("deviceGeneration",0));
         o->setProperty("mainOutputs",live.getProperty("dryRoutingLab",{}).getProperty("mainOutputs",{}));
+        o->setProperty("monitorOutputs",live.getProperty("dryRoutingLab",{}).getProperty("monitorOutputs",{}));
         // Read-only snapshot on explicit Audio I/O request. These counters
         // already exist in the engine; do not add RT work or a polling driver.
         for(const char* key: {"callbackCount","overBudgetCount","callbackGapCount",
