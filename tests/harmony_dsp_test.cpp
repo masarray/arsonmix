@@ -1039,11 +1039,11 @@ int main(){
   // Field feedback: full Wet, 4 voices, Space 60% still sounded thin.
   // Presence curve must lift BACKING only, with sqrt voice count normalization
   // and exact Wet0 silence; all scalar math is prepared on control thread.
-  for(int mode:{0,1}){
+  for(int mode:{0,1})for(int voices=2;voices<=Engine::maxVoices;++voices){
     for(float space:{0.f,.6f,1.f}){
       float previous=1.f;
       for(float w:{0.f,.25f,.45f,.5f,.75f,1.f}){
-        const float gain=Engine::backingUnityGain(w,space,mode);
+        const float gain=Engine::backingUnityGain(w,space,mode,voices);
         need(gain>=previous&&gain<=2.5f&&(w>.45f||gain==1.f),
              "backing bus calibration unbounded or changed factory Wet");
         previous=gain;

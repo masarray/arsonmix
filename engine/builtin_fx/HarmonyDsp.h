@@ -167,14 +167,26 @@ public:
         return w*presence/std::sqrt(static_cast<float>(voices));
     }
     // Whole-stem compensation, not a lead duck or per-voice AGC. The
-    // initial static curve compensates stereo pan energy and depth loss;
-    // offline stem measurements qualify/refine these bounded anchors.
-    // Leave ordinary factory Wet=.45 and below exactly on the old curve.
-    static float backingUnityGain(float wet,float space,int mode) noexcept {
+    // Static anchors fitted to matched dry-subtracted native PCM from
+    // H1 CI run 45343447827 (44.1/48/96k, 220Hz dual-mono vowel fixture).
+    // Cap at 2.5 (+7.96dB) instead of chasing exact RMS at deep Space.
+    // Interpolate monotonically; do not boost quiet/consonant frames via AGC.
+    // Leave factory Wet=.45 and below on the previous presence curve.
+    static float backingUnityGain(float wet,float space,int mode,int voices) noexcept {
+        constexpr std::array<std::array<float,3>,5> anchors{{
+            {{1.83f,2.35f,2.49f}}, // Duo
+            {{1.70f,2.20f,2.40f}},
+            {{1.72f,2.33f,2.50f}},
+            {{1.90f,2.50f,2.50f}},
+            {{1.66f,2.50f,2.50f}}  // Doubler
+        }};
+        const auto& v=anchors[static_cast<std::size_t>(
+            mode==1?4:std::clamp(voices,2,maxVoices)-2)];
         const float w=std::clamp((wet-.45f)/.55f,0.f,1.f);
         const float blend=w*w*(3.f-2.f*w);
         const float s=std::clamp(space,0.f,1.f);
-        const float full=mode==1?1.70f+.80f*s:1.35f+1.15f*s;
+        const float full=s<=.6f?v[0]+(v[1]-v[0])*(s/.6f):
+                                  v[1]+(v[2]-v[1])*((s-.6f)/.4f);
         return 1.f+blend*(full-1.f);
     }
     static bool prepareSettings(const Settings& next,PreparedSettings& out,
@@ -185,7 +197,7 @@ public:
         prepared.settings=next;
         prepared.gain=std::pow(10.f,next.gainDb/20.f);
         prepared.backingGain=enhancedPresence&&unityPresence?
-            backingUnityGain(next.wet,next.space,next.voiceMode):1.f;
+            backingUnityGain(next.wet,next.space,next.voiceMode,next.voices):1.f;
         constexpr float pi=3.14159265358979323846f;
         if(next.voiceMode==1){
             // Real unison double, NOT 2 pitched harmony voices. One
@@ -702,7 +714,7 @@ private:
             return;
         }
         const float newPeriod=static_cast<float>(rate_/hz);
-         if(note!=currentNote_||tonalTransitionPending_){
+        if(note!=currentNote_||tonalTransitionPending_){
             if(settings_.voiceMode==0)
                 voicePlanner_.plan(note,activeKey,activeScale==0?major:minor);
             else voicePlanner_.reset();
