@@ -3661,7 +3661,7 @@
       // Never use the prior revision from the just-settled transaction.
       if(!pendingLogical){
         flushLogicalInputGains();
-        window.queueMicrotask(flushLiveScalars);
+        if(pendingNativeControl.size)window.queueMicrotask(flushLiveScalars);
       }
       return;
     }
