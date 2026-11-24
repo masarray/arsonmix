@@ -253,11 +253,13 @@ static void checkSessionControlPlans() {
 
 class FixtureDevice final : public juce::AudioIODevice {
 public:
-    FixtureDevice():AudioIODevice("Verified WASAPI fixture","Windows Audio") {
+    FixtureDevice(bool asio=false):AudioIODevice(asio?"Verified ASIO":"Verified WASAPI fixture",asio?"ASIO":"Windows Audio") {
         inputMask.setRange(0,2,true);
-        outputMask.setRange(0,2,true);
+        outputMask.setRange(0,asio?6:2,true);
+        outputNames=asio?juce::StringArray{"Main L","Main R","Amp L","Amp R","Spare L","Spare R"}:juce::StringArray{"Main L","Main R"};
     }
-    juce::StringArray getOutputChannelNames() override {return {"Main L","Main R"};}
+    juce::StringArray getOutputChannelNames() override {return outputNames;}
+    juce::StringArray outputNames;
     juce::StringArray getInputChannelNames() override {return {"Capture L","Capture R"};}
     juce::Array<double> getAvailableSampleRates() override {return {48000.,44100.};}
     juce::Array<int> getAvailableBufferSizes() override {return {480,512};}
@@ -1836,8 +1838,64 @@ static void checkLogicalOutputSession(){
     assert(Codec::encode(loaded)==encoded&&states.empty());
     assert(dir.deleteRecursively());
 }
+static void verifyLogicalOutputNativePcm(){
+    using R=armix::device::LogicalOutputRegistry;
+    using P=LogicalOutputProjection;
+    FixtureDevice device(true);
+    LiveDryRoutingLab mixer;mixer.prepareDevice(&device);
+    armix::device::JuceActivePortSnapshot pins;
+    armix::device::JuceActivePortSnapshot::Fault fault{};
+    assert(armix::device::JuceActivePortSnapshot::capture(&device,mixer.epoch(),pins,fault));
+    auto d=makeSession();
+    d.binding={"ASIO","Verified ASIO","Verified ASIO","3","3f",48000.,480,
+        device.getInputChannelNames(),device.getOutputChannelNames()};
+    d.outputs={6,0,1,-1,-1,false};d.request.maxFrames=480;d.rackBypassed.clear();
+    const std::uint64_t port=9007199254740993ULL;
+    assert(d.logicalOutputs.add(port,"Stage amp"));
+    assert(d.logicalOutputs.restoreIntent(port,{{"ASIO","Verified ASIO"},2,3,"Amp L","Amp R"}));
+    assert(d.logicalOutputs.assign(16,port,R::Role::external));
+    MixerSessionDocument decoded;assert(Codec::decode(Codec::encode(d),decoded));
+    juce::AudioPluginFormatManager formats;std::shared_ptr<DynamicChannelFxLeaseBank> bank;
+    assert(NativeMixerSessionFxRestore::prepare(decoded,{},formats,48000.,480,pins.epoch,
+        mixer.nativeGraphRevisionForRestore(),bank).isEmpty());
+    assert(mixer.restoreNativeMixerSession(decoded,std::move(bank),pins,true).isEmpty());
+    std::array<float,480> inputL{},inputR{};inputL.fill(.15f);
+    const float* in[]={inputL.data(),inputR.data()};
+    std::array<std::array<float,480>,6> buffers{};std::array<float*,6> out{};
+    for(std::size_t i=0;i<out.size();++i)out[i]=buffers[i].data();
+    auto render=[&](){for(int i=0;i<2;++i)assert(mixer.process(in,2,out.data(),6,480,1.f,false,
+        nullptr,nullptr,false,nullptr,nullptr,true));};
+    render();assert(buffers[2].back()>.01f&&buffers[3].back()>.01f);
+    auto state=mixer.nativeBusStatus();std::uint64_t revision=0,roster=0;
+    assert(parseDecimal(state.getProperty("graphRevision",{}),revision));
+    assert(parseDecimal(state.getProperty("rosterRevision",{}),roster));
+    const auto logical=mixer.logicalOutputRevision();
+    P::Edit e;e.port=port;e.operation=P::Operation::bind;e.confirmed=true;
+    e.binding={{"ASIO","Verified ASIO"},4,5,"Spare L","Spare R"};
+    assert(!mixer.editNativeLogicalOutput(pins.epoch,revision,roster,logical,e,pins,false).accepted);
+    auto changed=mixer.editNativeLogicalOutput(pins.epoch,revision,roster,logical,e,pins,true);
+    assert(changed.accepted&&changed.pcmRevision==revision+1);
+    render();
+    assert(std::abs(buffers[2].back())<1.e-6f&&std::abs(buffers[3].back())<1.e-6f);
+    assert(buffers[4].back()>.01f&&buffers[5].back()>.01f);
+    assert(!mixer.editNativeLogicalOutput(pins.epoch,changed.pcmRevision,roster,logical,e,pins,true).accepted);
+    MixerSessionDocument saved;std::vector<BinaryState> blobs;
+    assert(mixer.captureNativeMixerSession(saved,blobs).isEmpty());
+    saved.id=d.id;saved.savedMs=d.savedMs;saved.binding=d.binding;
+    assert(Codec::decode(Codec::encode(saved),decoded)&&decoded.externalOutputs.empty());
+    assert(decoded.logicalOutputs.find(port)->binding->left==4);
+    e.operation=P::Operation::unbind;
+    changed=mixer.editNativeLogicalOutput(pins.epoch,changed.pcmRevision,roster,
+        mixer.logicalOutputRevision(),e,pins,true);
+    assert(changed.accepted);render();
+    assert(std::abs(buffers[4].back())<1.e-6f&&std::abs(buffers[5].back())<1.e-6f);
+    state=mixer.nativeBusStatus();
+    const auto refs=state.getProperty("logicalOutputRegistry",{}).getProperty("references",{});
+    assert(refs.getArray()->size()==1&&(*refs.getArray())[0].getProperty("state","").toString()=="NEEDS_REMAP");
+}
 int main(){
     checkLogicalOutputSession();
+    verifyLogicalOutputNativePcm();
     checkLogicalInputSession();
     verifyLogicalInputNativePcm();
     verifyChannelInputGainSessionRoundtrip();

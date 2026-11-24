@@ -227,6 +227,71 @@ struct LogicalOutputProjection final {
         doc.externalOutputs=std::move(physical);
         return true;
     }
+    enum class Operation {add,rename,remove,bind,unbind,assign,clear};
+    struct Edit {
+        Operation operation=Operation::add;
+        R::PortId port=0;R::ChannelId channel=0;
+        std::string name;R::Binding binding;
+        bool confirmed=false;
+    };
+    // Stage a complete candidate. MAIN/MONITOR aliases describe only the
+    // verified physical pair; changing that pair is a separate muted operation.
+    static bool edit(MixerSessionDocument& doc,const Edit& e,const R::Inventory& live,bool& graphChanged){
+        if(doc.logicalOnly||!live.authorized||!live.epoch||live.device.backend!="ASIO")return false;
+        auto candidate=doc;auto& reg=candidate.logicalOutputs;
+        const bool used=std::any_of(reg.references().begin(),reg.references().end(),
+            [&](const auto& ref){return ref.port==e.port;});
+        bool rebuild=false,check=false;
+        switch(e.operation){
+            case Operation::add:if(!reg.add(e.port,e.name))return false;break;
+            case Operation::rename:if(!reg.rename(e.port,e.name))return false;break;
+            case Operation::remove:if(!reg.erase(e.port))return false;break;
+            case Operation::bind:{
+                if(!e.confirmed)return false;
+                std::vector<int> reserved(live.reserved.begin(),live.reserved.end());
+                for(const auto& p:candidate.externalOutputs)
+                    if(!reg.assignedPort(p.channel.value)&&p.playbackDevice.toStdString()==live.device.playback){
+                        reserved.push_back(p.left);reserved.push_back(p.right);
+                    }
+                auto inventory=live;inventory.reserved=reserved;
+                if(!reg.bind(e.port,e.binding,inventory,live.epoch,true))return false;
+                check=used;rebuild=used;break;
+            }
+            case Operation::unbind:
+                if(!e.confirmed||!reg.unbind(e.port))return false;
+                check=used;rebuild=used;break;
+            case Operation::assign:
+            case Operation::clear:{
+                if(!e.confirmed)return false;
+                const auto* row=candidate.roster.find({e.channel});
+                if(!row)return false;
+                const auto role=row->role==ChannelRole::main?R::Role::main:
+                    row->role==ChannelRole::monitor?R::Role::monitor:R::Role::external;
+                if(!matchesRole(candidate,{e.channel,e.port,role}))return false;
+                if(e.operation==Operation::assign){
+                    if(!e.port||!reg.assign(e.channel,e.port,role))return false;
+                }else if(!reg.clear(e.channel))return false;
+                std::erase_if(candidate.externalOutputs,[&](const auto& p){return p.channel.value==e.channel;});
+                check=true;rebuild=role==R::Role::external;break;
+            }
+            default:return false;
+        }
+        if(check){
+            strip(candidate);
+            if(!prepare(candidate,live))return false;
+            // Explicit bound external edits cannot succeed if a reservation
+            // prevented their projection. Unbound ports intentionally silence.
+            if(e.operation==Operation::bind||e.operation==Operation::assign)
+                for(const auto& ref:reg.references()){
+                    if(ref.role!=R::Role::external||ref.port!=e.port)continue;
+                    const auto* port=reg.find(ref.port);
+                    if(port&&port->binding&&port->binding->device==live.device&&
+                       std::none_of(candidate.externalOutputs.begin(),candidate.externalOutputs.end(),
+                           [&](const auto& p){return p.channel.value==ref.channel;}))return false;
+                }
+        }
+        doc=std::move(candidate);graphChanged=rebuild;return true;
+    }
 };
 // Logical topology never authorizes a different physical endpoint. An
 // operator-confirmed rebind changes only verified hardware metadata; it

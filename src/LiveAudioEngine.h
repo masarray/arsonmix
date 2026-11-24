@@ -2472,6 +2472,27 @@ public:
             });
     }
     std::uint64_t logicalInputRevision() const noexcept {return dryRoutingLab_.logicalInputRevision();}
+    std::uint64_t logicalOutputRevision() const noexcept {return dryRoutingLab_.logicalOutputRevision();}
+    LiveDryRoutingLab::NativeBusResult editNativeLogicalOutput(std::uint64_t ep,std::uint64_t rev,
+            std::uint64_t roster,std::uint64_t logical,armix::session::LogicalOutputProjection::Edit edit){
+        LiveDryRoutingLab::NativeBusResult fail;fail.error="LOGICAL_OUTPUT_MUTE_MAIN_AND_STREAM";
+        if(!allOutputsDisarmed()||wantsMainContinuation()||independent_.active()||!attached_||
+           !directFence_.permitted()||handoff_.busy()||savedDirectSetup_||savedLiveSetup_||
+           routeReconfiguring_.load(std::memory_order_acquire)||fxMovePhase_.load(std::memory_order_acquire)!=0||
+           diagnosticRoute()!=armix::diagnostics::Route::normal||deviceManager_.getCurrentAudioDeviceType()!="ASIO")return fail;
+        try{
+            auto* device=deviceManager_.getCurrentAudioDevice();
+            armix::device::JuceActivePortSnapshot pins;
+            armix::device::JuceActivePortSnapshot::Fault fault{};
+            if(!device||!device->isOpen()||!acceptedMixerBinding_||
+               !armix::device::JuceActivePortSnapshot::capture(device,ep,pins,fault))return fail;
+            const auto live=readMixerBinding(*device);
+            if(!armix::session::MixerDeviceBindingPolicy::sameBinding(*acceptedMixerBinding_,live)||
+               acceptedMixerBinding_->outputNames!=live.outputNames||deviceManager_.getCurrentAudioDevice()!=device||
+               !dryRoutingLab_.matchesSessionDevice(pins)||!allOutputsDisarmed())return fail;
+            return dryRoutingLab_.editNativeLogicalOutput(ep,rev,roster,logical,std::move(edit),pins,true);
+        }catch(...){fail.error="LOGICAL_OUTPUT_PUBLICATION_EXCEPTION";return fail;}
+    }
     LiveDryRoutingLab::NativeBusResult editNativeLogicalInput(std::uint64_t ep,std::uint64_t rev,
             std::uint64_t roster,std::uint64_t logical,
             armix::session::LogicalInputProjection::Edit edit) {

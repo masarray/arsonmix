@@ -132,14 +132,17 @@
       const pair=snapshot?.raw?.[key];
       if(Array.isArray(pair)&&pair.length===2){
         const busChoices=busOutputChoices(snapshot,key);
-        const editable=busChoices.length>1&&snapshot.raw.operatorOutputMuted===true&&
+        const logical=snapshot.raw?.logicalOutputRegistry;
+        const ref=logical?.references?.find?.(r=>r.role===name);
+        const port=logical?.ports?.find?.(p=>p.id===ref?.portId);
+        const editable=!port&&busChoices.length>1&&snapshot.raw.operatorOutputMuted===true&&
           snapshot.device.outputArmed===false&&snapshot.raw.physicalBusSecondaryArmed===false&&
           snapshot.raw.physicalBusOutputObserved===true;
         const pending=snapshot.raw.physicalBusPatchSupported===true&&
           snapshot.raw.physicalBusOutputObserved!==true;
         rows.push({id:key,name,bus:true,editable,pending,choices:busChoices,
           pair:pair.slice(),cells:map(pair[0],pair[1]),selected:busChoices[0]?.label||"",
-          state:pending?"Awaiting callback":editable?"Muted · remap available":
+          state:port?port.name+" · Logical output":pending?"Awaiting callback":editable?"Muted · remap available":
             !pair.every(p=>pins.some(q=>q.port===p))?"Needs remap":
             busChoices.length>1?"Mute MAIN and STREAM to remap":"Fixed bus"});
       }
@@ -163,9 +166,12 @@
       }else{
         const src=snapshot.raw.externalOutputs?.find?.(p=>p.channelId===ch.id);
         const choice=src?choices.find(x=>x.left===src.physicalLeft&&x.right===src.physicalRight):choices[0];
-        rows.push({id:ch.id,name:ch.name,editable:d.backend==="ASIO",
+        const logical=snapshot.raw?.logicalOutputRegistry;
+        const ref=logical?.references?.find?.(r=>r.channelId===ch.id);
+        const port=logical?.ports?.find?.(p=>p.id===ref?.portId);
+        rows.push({id:ch.id,name:ch.name,editable:d.backend==="ASIO"&&!port,
           selected:choice?.label||null,cells:choice?map(choice.left,choice.right):map(-1,-1),
-          state:src&&!choice?"Needs remap":src?.status||""});
+          state:port?port.name+(ref.state==="NEEDS_REMAP"?" · Needs remap":ref.state==="PENDING"?" · Pending":""):src&&!choice?"Needs remap":src?.status||""});
       }
     }
     if(legacy)for(let index=0;index<10;++index){

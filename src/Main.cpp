@@ -2848,6 +2848,9 @@ private:
             obj->setProperty("logicalInputRegistry",
                 live.getProperty("dryRoutingLab",{}).getProperty("nativeBus",{})
                     .getProperty("logicalInputRegistry",{}));
+            obj->setProperty("logicalOutputRegistry",
+                live.getProperty("dryRoutingLab",{}).getProperty("nativeBus",{})
+                    .getProperty("logicalOutputRegistry",{}));
             obj->setProperty("physicalBusPatchSupported",true);
             obj->setProperty("physicalBusOutputObserved",
                 live.getProperty("dryRoutingLab",{}).getProperty("busOutputObserved",false));
@@ -7377,6 +7380,65 @@ private:
             ack->setProperty("logicalRevision",juce::String(std::to_string(engine_.logicalInputRevision())));
             ack->setProperty("graphRevision",juce::String(std::to_string(result.pcmRevision)));
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixLogicalInputAck",juce::var(ack.release()));
+            return;
+        }
+        if(action=="routingLogicalOutputEdit"){
+            using P=armix::session::LogicalOutputProjection;
+            const auto request=args.getProperty("requestId",{}).toString();
+            const auto op=args.getProperty("operation",{}).toString();
+            P::Edit edit;
+            std::uint64_t ep=0,rev=0,roster=0,logical=0;
+            bool operation=true;
+            if(op=="ADD")edit.operation=P::Operation::add;
+            else if(op=="RENAME")edit.operation=P::Operation::rename;
+            else if(op=="REMOVE")edit.operation=P::Operation::remove;
+            else if(op=="BIND")edit.operation=P::Operation::bind;
+            else if(op=="UNBIND")edit.operation=P::Operation::unbind;
+            else if(op=="ASSIGN")edit.operation=P::Operation::assign;
+            else if(op=="CLEAR")edit.operation=P::Operation::clear;
+            else operation=false;
+            const auto name=args.getProperty("name",{});
+            bool fields=true;
+            if(op=="ADD"||op=="RENAME"){
+                fields=name.isString();edit.name=name.toString().toStdString();
+            }
+            if(op!="ADD"&&op!="CLEAR")
+                fields=fields&&armix::session::parseDecimal(args.getProperty("portId",{}),edit.port);
+            if(op=="ASSIGN"||op=="CLEAR")
+                fields=fields&&armix::session::parseDecimal(args.getProperty("channelId",{}),edit.channel);
+            if(op=="BIND"){
+                const auto l=args.getProperty("left",{}),r=args.getProperty("right",{});
+                const auto ln=args.getProperty("leftName",{}),rn=args.getProperty("rightName",{});
+                fields=fields&&l.isInt()&&r.isInt()&&ln.isString()&&rn.isString();
+                edit.binding.left=static_cast<int>(l);edit.binding.right=static_cast<int>(r);
+                edit.binding.leftName=ln.toString().toStdString();edit.binding.rightName=rn.toString().toStdString();
+            }
+            edit.confirmed=args.getProperty("confirmed",{})==juce::var(true);
+            const auto snap=approvedNativeSnapshot();
+            const auto graph=snap.getProperty("graph",{});
+            const bool valid=operation&&fields&&request.startsWith("logical-io-")&&request.length()<=64&&
+                !acceptedControlRequests_.contains(request)&&!nativeShowBusy_&&!studioBackupBusy_&&
+                !mixerSessionWorker_.busy()&&
+                armix::session::parseDecimal(args.getProperty("deviceEpoch",{}),ep)&&
+                armix::session::parseDecimal(args.getProperty("graphRevision",{}),rev)&&
+                armix::session::parseDecimal(args.getProperty("rosterRevision",{}),roster)&&
+                armix::session::parseDecimal(args.getProperty("logicalRevision",{}),logical)&&
+                snap.getProperty("device",{}).getProperty("epoch",{}).toString()==args.getProperty("deviceEpoch",{}).toString()&&
+                graph.getProperty("revision",{}).toString()==args.getProperty("graphRevision",{}).toString()&&
+                graph.getProperty("rosterRevision",{}).toString()==args.getProperty("rosterRevision",{}).toString()&&
+                snap.getProperty("mixerSession",{}).getProperty("authority",{}).toString()=="CHANNEL_ID";
+            LiveDryRoutingLab::NativeBusResult result;result.error="LOGICAL_OUTPUT_NOT_ADMITTED";
+            if(valid){
+                acceptedControlRequests_.add(request);
+                if(acceptedControlRequests_.size()>512)acceptedControlRequests_.remove(0);
+                result=engine_.editNativeLogicalOutput(ep,rev,roster,logical,std::move(edit));
+            }
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request);ack->setProperty("ok",valid&&result.accepted);
+            ack->setProperty("error",result.error?result.error:"LOGICAL_OUTPUT_UNKNOWN");
+            ack->setProperty("logicalRevision",juce::String(std::to_string(engine_.logicalOutputRevision())));
+            ack->setProperty("graphRevision",juce::String(std::to_string(result.pcmRevision)));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixLogicalOutputAck",juce::var(ack.release()));
             return;
         }
         if(action=="routingNativeSourcePatch"){
