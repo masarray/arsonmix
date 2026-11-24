@@ -6642,7 +6642,7 @@ test("G-MV36 one correlated native editor transport and JUCE echo, no duplicate 
    main=read("src/Main.cpp"),viewmodel=read("web/approved-fx-rack-view-model.js");
  assert.match(main,/if \(action == "routingFxEditor"\) \{/);
  assert.match(main,/ack->setProperty\("requestId",args\.getProperty\("requestId",juce::var\(\)\)\);/);
- assert.match(main,/ack->setProperty\("instanceId",token\);/);
+ assert.match(main,/ack->setProperty\("instanceId",args\.getProperty\("instanceId",\{\}\)\);/);
  assert.match(bridge,/function dispatchPhysicalFxEditor\(plan,lease,authority,retried=false\)/);
  assert.match(bridge,/backend\.emitEvent\("arMixAction",\{action:plan\.action,requestId,\.\.\.plan\.payload\}\);/);
  assert.match(bridge,/dispatchPhysicalFxEditor\(plan,lease,"M4"\)/);
@@ -7011,7 +7011,7 @@ test("P0 Audio I/O help reacts to explicit failed operator intent without auto-A
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/function recommendAudioRepair\(context\)/);
  assert.match(bridge,/if\(!deviceReady\(\)\)recommendAudioRepair\("INPUT unavailable"\)/);
- assert.match(bridge,/recommendAudioRepair\("FX audio processing unavailable"\)/);
+ assert.match(bridge,/recommendAudioRepair\("FX editor unavailable · audio processing unavailable"\)/);
  assert.match(bridge,/window\.setTimeout\(\(\)=>\{/);
  assert.match(bridge,/openNativeAudioIO\(\); \/\/ explicit repair prompt/);
  assert.match(bridge,/if\(now-lastAudioRepairAt<1600\)return true/);
@@ -7037,7 +7037,7 @@ test("P0 real-time gain pointer cancellation compensates native PCM through one 
 test("P0 Audio I/O repair never steals retained offline FX editor recovery",()=>{
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/if\(field==="input"&&event.type==="change"\)\s*recommendAudioRepair\("INPUT audio device disconnected"\)/);
- assert.match(bridge,/controller\?\.state\(\)\?\.current\?\.retained!==true\)\{/);
+ assert.match(bridge,/editorView\?\.admitted!==true&&\s*editorView\?\.retained!==true\)\{/);
  assert.match(bridge,/retainedFxOfflineOpen/);
  assert.match(bridge,/pendingRetainedEditor=\{/);
 });
