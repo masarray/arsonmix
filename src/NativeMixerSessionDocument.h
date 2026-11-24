@@ -7,6 +7,7 @@
 #include "../engine/device/DeviceSessionTransitionPolicy.h"
 #include "../engine/device/NamedDevicePins.h"
 #include "../engine/device/LogicalInputRegistry.h"
+#include "../engine/device/LogicalOutputRegistry.h"
 #include "NativeShowStore.h"
 #include "NativeHotkeyRegistry.h"
 #include <charconv>
@@ -71,6 +72,7 @@ struct MixerSessionDocument final {
     HardwareBinding binding{};
     std::vector<WaitingAsioInput> waitingAsioInputs;
     armix::device::LogicalInputRegistry logicalInputs;
+    armix::device::LogicalOutputRegistry logicalOutputs;
     std::vector<StoredExternalOutput> externalOutputs;
     std::vector<StoredInsert> inserts;
     std::vector<ChannelId> rackBypassed;
@@ -167,6 +169,63 @@ struct LogicalInputProjection final {
         std::erase_if(doc.request.sources,[&](const auto& p){
             return p.kind==DynamicSourceKind::physical&&doc.logicalInputs.assignedPort(p.id.value)!=0;
         });
+    }
+};
+// CONTROL-only logical output projection. MAIN/MONITOR must match the
+// already verified hardware pair; no default speaker fallback. Missing
+// external destinations remain inert with durable references intact.
+struct LogicalOutputProjection final {
+    using R=armix::device::LogicalOutputRegistry;
+    static bool matchesRole(const MixerSessionDocument& doc,const R::Reference& ref){
+        const auto* row=doc.roster.find({ref.channel});
+        if(!row)return false;
+        switch(ref.role){
+            case R::Role::main:return row->role==ChannelRole::main&&doc.legacyIds.main.value==ref.channel;
+            case R::Role::monitor:return row->role==ChannelRole::monitor&&doc.legacyIds.monitor.value==ref.channel;
+            case R::Role::external:return row->role==ChannelRole::input||row->role==ChannelRole::group||row->role==ChannelRole::fxReturn;
+        }
+        return false;
+    }
+    static void strip(MixerSessionDocument& doc){
+        std::erase_if(doc.externalOutputs,[&](const auto& p){return doc.logicalOutputs.assignedPort(p.channel.value)!=0;});
+    }
+    static bool prepare(MixerSessionDocument& doc,const R::Inventory& live){
+        if(doc.logicalOutputs.empty())return true;
+        if(doc.logicalOnly||!live.authorized||!live.epoch||
+           doc.outputs.activeOutputChannels!=static_cast<int>(live.pins.size())||!doc.outputs.valid())return false;
+        auto physical=doc.externalOutputs;
+        for(const auto& ref:doc.logicalOutputs.references())
+            if(!matchesRole(doc,ref)||std::any_of(physical.begin(),physical.end(),
+                [&](const auto& p){return p.channel.value==ref.channel;}))return false;
+        // Direct assignments on this endpoint reserve physical pins even
+        // while disconnected. MAIN/MONITOR are checked per resolved role.
+        std::vector<int> reserved(live.reserved.begin(),live.reserved.end());
+        for(const auto& p:physical)if(p.playbackDevice.toStdString()==live.device.playback){
+            reserved.push_back(p.left);reserved.push_back(p.right);
+        }
+        auto inventory=live;inventory.reserved=reserved;
+        const auto plan=doc.logicalOutputs.prepare(inventory);
+        const auto& hw=doc.outputs;
+        for(const auto& d:plan.destinations){
+            const auto& ref=d.reference;
+            if(ref.role==R::Role::main||ref.role==R::Role::monitor){
+                const bool main=ref.role==R::Role::main;
+                if(d.state!=R::State::resolved||(!main&&!hw.monitorEnabled)||
+                   d.callback!=R::Pair{main?hw.mainL:hw.monitorL,main?hw.mainR:hw.monitorR})return false;
+                continue;
+            }
+            if(d.state!=R::State::resolved)continue;
+            const auto collision=[&](int pin){return pin==hw.mainL||pin==hw.mainR||
+                (hw.monitorEnabled&&(pin==hw.monitorL||pin==hw.monitorR));};
+            if(collision(d.callback[0])||collision(d.callback[1]))continue;
+            const auto* port=doc.logicalOutputs.find(ref.port);
+            if(!port||!port->binding)return false;
+            const auto& b=*port->binding;
+            physical.push_back({{ref.channel},b.left,b.right,juce::String(b.leftName),
+                juce::String(b.rightName),juce::String(b.device.playback)});
+        }
+        doc.externalOutputs=std::move(physical);
+        return true;
     }
 };
 // Logical topology never authorizes a different physical endpoint. An
@@ -547,7 +606,33 @@ public:
     static juce::String encode(const MixerSessionDocument& d) {
         auto root=object();
         const bool hasLogicalInputs=!d.logicalInputs.empty();
-        set(root,"schema",hasLogicalInputs?"arsonmix.mixer-session.v2":"arsonmix.mixer-session.v1");
+        const bool hasLogicalOutputs=!d.logicalOutputs.empty();
+        set(root,"schema",hasLogicalOutputs?"arsonmix.mixer-session.v3":
+            hasLogicalInputs?"arsonmix.mixer-session.v2":"arsonmix.mixer-session.v1");
+        if(hasLogicalOutputs){
+            using R=armix::device::LogicalOutputRegistry;
+            auto logical=object();juce::Array<juce::var> ports,refs;
+            for(const auto& p:d.logicalOutputs.ports()){
+                auto row=object();set(row,"id",decimal(p.id));set(row,"name",juce::String(p.name));
+                if(p.binding){
+                    const auto& b=*p.binding;auto binding=object();
+                    set(binding,"backend",juce::String(b.device.backend));
+                    set(binding,"playback",juce::String(b.device.playback));
+                    set(binding,"left",b.left);set(binding,"right",b.right);
+                    set(binding,"leftName",juce::String(b.leftName));
+                    set(binding,"rightName",juce::String(b.rightName));
+                    set(row,"binding",binding);
+                }
+                ports.add(row);
+            }
+            for(const auto& ref:d.logicalOutputs.references()){
+                auto row=object();set(row,"channelId",decimal(ref.channel));set(row,"portId",decimal(ref.port));
+                set(row,"role",ref.role==R::Role::main?"MAIN":ref.role==R::Role::monitor?"MONITOR":"EXTERNAL");
+                refs.add(row);
+            }
+            set(logical,"ports",juce::var(ports));set(logical,"references",juce::var(refs));
+            set(root,"logicalOutputs",logical);
+        }
         if(hasLogicalInputs){
             using R=armix::device::LogicalInputRegistry;
             auto logical=object();
@@ -618,6 +703,7 @@ public:
         if(!d.externalOutputs.empty()) {
             juce::Array<juce::var> assignments;
             for(const auto& patch:d.externalOutputs) {
+                if(d.logicalOutputs.assignedPort(patch.channel.value))continue;
                 auto row=object();
                 set(row,"channelId",decimal(patch.channel.value));
                 set(row,"left",patch.left);set(row,"right",patch.right);
@@ -627,7 +713,7 @@ public:
                     set(row,"playbackDevice",patch.playbackDevice);
                 assignments.add(row);
             }
-            set(root,"externalOutputs",juce::var(assignments));
+            if(!assignments.isEmpty())set(root,"externalOutputs",juce::var(assignments));
         }
         auto master=object();
         set(master,"gain",d.masterGain);set(master,"mute",d.masterMute);
@@ -714,9 +800,12 @@ public:
         auto root=juce::JSON::parse(json);
         if(!root.isObject())return false;
         const auto schema=get(root,"schema").toString();
+        const bool logicalV3=schema=="arsonmix.mixer-session.v3";
         const bool logicalV2=schema=="arsonmix.mixer-session.v2";
-        if((!logicalV2&&schema!="arsonmix.mixer-session.v1")||
-           logicalV2!=root.getDynamicObject()->hasProperty("logicalInputs"))return false;
+        const bool hasLogicalInputs=root.getDynamicObject()->hasProperty("logicalInputs");
+        if((!logicalV3&&!logicalV2&&schema!="arsonmix.mixer-session.v1")||
+           (!logicalV3&&logicalV2!=hasLogicalInputs)||
+           logicalV3!=root.getDynamicObject()->hasProperty("logicalOutputs"))return false;
         MixerSessionDocument doc;
         const auto logicalFlag=get(root,"logicalOnly");
         if(!logicalFlag.isVoid()) {
@@ -963,7 +1052,7 @@ public:
                 doc.waitingAsioInputs.push_back(std::move(pin));
             }
         }
-        if(logicalV2){
+        if(hasLogicalInputs){
             using R=armix::device::LogicalInputRegistry;
             const auto logical=get(root,"logicalInputs");
             const auto ports=get(logical,"ports"),refs=get(logical,"references");
@@ -1000,6 +1089,41 @@ public:
                 if(!parseDecimal(get(row,"channelId"),channel)||!parseDecimal(get(row,"portId"),port)||
                    !seek({channel},ChannelRole::input)||!seenSources.insert(channel).second||
                    !doc.logicalInputs.assign(channel,port))return false;
+            }
+        }
+        if(logicalV3){
+            using R=armix::device::LogicalOutputRegistry;
+            const auto logical=get(root,"logicalOutputs");
+            const auto ports=get(logical,"ports"),refs=get(logical,"references");
+            if(!logical.isObject()||!ports.isArray()||!refs.isArray()||ports.getArray()->isEmpty()||
+               ports.getArray()->size()>static_cast<int>(R::maxPorts)||
+               refs.getArray()->size()>static_cast<int>(R::maxReferences))return false;
+            for(const auto& row:*ports.getArray()){
+                std::uint64_t id=0;juce::String name;
+                if(!row.isObject()||!parseDecimal(get(row,"id"),id)||!textField(get(row,"name"),name,192)||
+                   !doc.logicalOutputs.add(id,name.toStdString()))return false;
+                if(row.getDynamicObject()->hasProperty("binding")){
+                    const auto b=get(row,"binding");R::Binding intent;
+                    juce::String backend,playback,l,r;
+                    if(doc.logicalOnly||!b.isObject()||!textField(get(b,"backend"),backend,128)||
+                       !textField(get(b,"playback"),playback,256)||
+                       !integral(get(b,"left"),intent.left,0,255)||!integral(get(b,"right"),intent.right,0,255)||
+                       !textField(get(b,"leftName"),l,256)||!textField(get(b,"rightName"),r,256))return false;
+                    intent.device={backend.toStdString(),playback.toStdString()};
+                    intent.leftName=l.toStdString();intent.rightName=r.toStdString();
+                    if(!doc.logicalOutputs.restoreIntent(id,intent))return false;
+                }
+            }
+            std::set<std::uint64_t> seen;
+            for(const auto& p:doc.externalOutputs)seen.insert(p.channel.value);
+            for(const auto& row:*refs.getArray()){
+                std::uint64_t channel=0,port=0;
+                const auto role=get(row,"role").toString();
+                if(!row.isObject()||!parseDecimal(get(row,"channelId"),channel)||!parseDecimal(get(row,"portId"),port)||
+                   (role!="MAIN"&&role!="MONITOR"&&role!="EXTERNAL")||!seen.insert(channel).second)return false;
+                const auto kind=role=="MAIN"?R::Role::main:role=="MONITOR"?R::Role::monitor:R::Role::external;
+                if(!LogicalOutputProjection::matchesRole(doc,{channel,port,kind})||
+                   !doc.logicalOutputs.assign(channel,port,kind))return false;
             }
         }
         const auto fxVar=get(root,"inserts"),racksVar=get(root,"rackBypassed");

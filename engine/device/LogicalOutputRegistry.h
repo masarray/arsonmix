@@ -46,6 +46,14 @@ public:
     static constexpr std::size_t maxPorts=128,maxReferences=512;
     const auto& ports() const noexcept{return ports_;}
     const auto& references() const noexcept{return refs_;}
+    bool empty() const noexcept{return ports_.empty();}
+    PortId assignedPort(ChannelId channel) const noexcept{
+        const auto it=std::find_if(refs_.begin(),refs_.end(),[&](const auto& ref){return ref.channel==channel;});
+        return it==refs_.end()?0:it->port;
+    }
+    bool clear(ChannelId channel) noexcept{
+        return std::erase_if(refs_,[&](const auto& ref){return ref.channel==channel;})!=0;
+    }
     const Port* find(PortId id) const noexcept {
         const auto it=std::find_if(ports_.begin(),ports_.end(),[&](const auto& p){return p.id==id;});
         return it==ports_.end()?nullptr:&*it;

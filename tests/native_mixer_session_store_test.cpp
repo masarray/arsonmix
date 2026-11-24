@@ -1778,7 +1778,66 @@ static void verifyLogicalInputNativePcm(){
     assert(missing.getArray()->size()==2);
     for(const auto& ref:*missing.getArray())assert(ref.getProperty("state","").toString()=="NEEDS_REMAP");
 }
+static void checkLogicalOutputSession(){
+    using R=armix::device::LogicalOutputRegistry;
+    auto d=makeSession();d.binding.outputMask="ff";
+    d.binding.outputNames={"Main L","Main R","Amp L","Amp R","Spare L","Spare R","Direct L","Direct R"};
+    d.outputs={8,0,1,-1,-1,false};
+    const R::Device device{"ASIO","Verified ASIO"};
+    const std::array<R::Pin,8> pins{{{0,0,"Main L"},{1,1,"Main R"},{2,2,"Amp L"},{3,3,"Amp R"},
+        {4,4,"Spare L"},{5,5,"Spare R"},{6,6,"Direct L"},{7,7,"Direct R"}}};
+    const R::Inventory live{device,7,pins,{},true};
+    const std::uint64_t port=9007199254740993ULL;
+    assert(d.logicalOutputs.add(port,"Stage amp")&&d.logicalOutputs.add(20,"Studio main"));
+    assert(d.logicalOutputs.bind(port,{device,2,3,"Amp L","Amp R"},live,7,true));
+    assert(d.logicalOutputs.bind(20,{device,0,1,"Main L","Main R"},live,7,true));
+    assert(d.logicalOutputs.assign(16,port,R::Role::external)&&d.logicalOutputs.assign(12,port,R::Role::external));
+    assert(d.logicalOutputs.assign(15,20,R::Role::main));
+    d.externalOutputs.push_back({{11},6,7,"Direct L","Direct R","Verified ASIO"});
+    const auto encoded=Codec::encode(d);
+    MixerSessionDocument loaded;
+    assert(encoded.contains("arsonmix.mixer-session.v3")&&Codec::decode(encoded,loaded));
+    assert(loaded.logicalOutputs.assignedPort(16)==port&&loaded.externalOutputs.size()==1);
+    assert(Codec::encode(loaded)==encoded);
+    assert(LogicalOutputProjection::prepare(loaded,live)&&loaded.externalOutputs.size()==3);
+    assert(loaded.externalOutputs[1].left==2&&loaded.externalOutputs[2].left==2);
+    assert(Codec::encode(loaded)==encoded);
+    LogicalOutputProjection::strip(loaded);
+    auto other=live;other.device.playback="Other";
+    assert(!LogicalOutputProjection::prepare(loaded,other)&&loaded.externalOutputs.size()==1);
+    assert(loaded.logicalOutputs.clear(15));
+    assert(LogicalOutputProjection::prepare(loaded,other)&&loaded.externalOutputs.size()==1);
+    assert(loaded.logicalOutputs.assignedPort(16)==port);
+    auto missing=pins;missing[2].name="Renamed";
+    auto unavailable=live;unavailable.pins=missing;
+    assert(LogicalOutputProjection::prepare(loaded,unavailable)&&loaded.externalOutputs.size()==1);
+    auto bad=juce::JSON::parse(encoded);
+    bad.getDynamicObject()->setProperty("schema","arsonmix.mixer-session.v2");
+    assert(!Codec::decode(juce::JSON::toString(bad,false),loaded));
+    bad=juce::JSON::parse(encoded);
+    auto refs=bad.getProperty("logicalOutputs",{}).getProperty("references",{});
+    refs.getArray()->add((*refs.getArray())[0]);
+    assert(!Codec::decode(juce::JSON::toString(bad,false),loaded));
+    bad=juce::JSON::parse(encoded);
+    refs=bad.getProperty("logicalOutputs",{}).getProperty("references",{});
+    (*refs.getArray())[0].getDynamicObject()->setProperty("role","MAIN");
+    assert(!Codec::decode(juce::JSON::toString(bad,false),loaded));
+    bad=juce::JSON::parse(encoded);
+    refs=bad.getProperty("logicalOutputs",{}).getProperty("references",{});
+    (*refs.getArray())[0].getDynamicObject()->setProperty("channelId","11");
+    assert(!Codec::decode(juce::JSON::toString(bad,false),loaded));
+    const auto dir=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("ArSonMixLogicalOutputSession","",false);
+    assert(dir.createDirectory().wasOk());
+    const auto file=dir.getChildFile("output.smix");
+    assert(NativeMixerSessionStore::writeFile(file,d,{}).isEmpty());
+    std::vector<BinaryState> states;
+    assert(NativeMixerSessionStore::readFile(file,loaded,states).isEmpty());
+    assert(Codec::encode(loaded)==encoded&&states.empty());
+    assert(dir.deleteRecursively());
+}
 int main(){
+    checkLogicalOutputSession();
     checkLogicalInputSession();
     verifyLogicalInputNativePcm();
     verifyChannelInputGainSessionRoundtrip();

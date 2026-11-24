@@ -2569,6 +2569,7 @@ public:
             doc.request=nativeAccepted_.graph.request;
             doc.waitingAsioInputs=waitingAsioInputs_;
             doc.logicalInputs=logicalInputs_;
+            doc.logicalOutputs=logicalOutputs_;
             doc.externalOutputs=externalOutputAssignments_;
             for(const auto& channel:doc.roster.channels()) {
                 if(c.owners->insertCount(channel.id)>static_cast<std::size_t>(FxGraph::maxInsertsPerStrip))
@@ -2658,6 +2659,7 @@ public:
             draft.request=nativeAccepted_.graph.request;
             draft.waitingAsioInputs=waitingAsioInputs_;
             draft.logicalInputs=logicalInputs_;
+            draft.logicalOutputs=logicalOutputs_;
             draft.externalOutputs=externalOutputAssignments_;
             std::vector<armix::shows::BinaryState> staged;
             std::set<juce::String> hashes;
@@ -2722,6 +2724,8 @@ public:
                     row->role!=ChannelRole::group &&
                     row->role!=ChannelRole::fxReturn))
             return "EXTERNAL OUT: select a live INPUT, GROUP or FX RETURN";
+        if(logicalOutputs_.assignedPort(channel.value))
+            return "EXTERNAL OUT: channel owns a logical output; edit its logical reference";
         const bool none=physicalLeft==-1 && physicalRight==-1;
         int left=-1,right=-1;
         armix::session::StoredExternalOutput candidate;
@@ -2748,6 +2752,8 @@ public:
                 return "EXTERNAL OUT: this stereo pair belongs to MONITOR";
             // New amplifier pins must be confirmed by the operator, even
             // when a UI dropdown was populated from a real device snapshot.
+            if(logicalOutputPairReserved(pins.deviceName,physicalLeft,physicalRight))
+                return "EXTERNAL OUT: physical pair reserved by logical output";
             if(!confirmed)return "EXTERNAL OUT: confirm the exact physical pair";
             candidate.left=physicalLeft;candidate.right=physicalRight;
             candidate.leftName=pins.outputNames[physicalLeft];
@@ -2778,6 +2784,11 @@ public:
     // verified epoch. Reinstall only existing known pins: never auto-arm
     // stale destinations after a device restart or a different ASIO device.
     void reapplyExternalOutputsSameEpoch() noexcept {
+        // Prune orphan references without erasing the named output port.
+        for(std::size_t i=logicalOutputs_.references().size();i>0;--i){
+            const auto id=logicalOutputs_.references()[i-1].channel;
+            if(!nativeAccepted_.graph.roster.find({id}))logicalOutputs_.clear(id);
+        }
         // Remove deleted ChannelIds BEFORE saving an updated .smix.
         std::erase_if(externalOutputAssignments_,[&](const auto& p){
             return nativeAccepted_.graph.roster.find(p.channel)==nullptr;
@@ -2825,6 +2836,11 @@ public:
            armix::device::uniqueNamedPin(pins.outputNames,leftName)!=wanted[0]||
            armix::device::uniqueNamedPin(pins.outputNames,rightName)!=wanted[1])
             return "BUS OUTPUT: physical pin identity changed";
+        const auto owner=monitor?nativeAccepted_.graph.ids.monitor:nativeAccepted_.graph.ids.main;
+        if(logicalOutputs_.assignedPort(owner.value))
+            return "BUS OUTPUT: bus owns a logical output; edit its logical reference";
+        if(logicalOutputPairReserved(pins.deviceName,wanted[0],wanted[1]))
+            return "BUS OUTPUT: pair reserved by logical output";
         const auto& hw=nativeAccepted_.hardware;
         if(!hw.valid()||hw.activeOutputChannels!=pins.outputCount)
             return "BUS OUTPUT: installed hardware unavailable";
@@ -2882,6 +2898,8 @@ public:
         document.logicalInputs=logicalInputs_;
         armix::session::LogicalInputProjection::strip(document);
         document.externalOutputs=externalOutputAssignments_;
+        document.logicalOutputs=logicalOutputs_;
+        armix::session::LogicalOutputProjection::strip(document);
         return true;
     }
 
@@ -2957,6 +2975,21 @@ public:
                 if(!armix::session::LogicalInputProjection::prepare(document,live))
                     return "NEEDS_REMAP: conflicting logical input references";
             }
+            if(!document.logicalOutputs.empty()){
+                using R=armix::device::LogicalOutputRegistry;
+                std::vector<R::Pin> outputPins;
+                outputPins.reserve(static_cast<std::size_t>(pins.outputCount));
+                for(int i=0;i<pins.outputCount;++i){
+                    const int physical=pins.outputPhysicalPort(i);
+                    auto name=pins.outputNames[physical];
+                    if(armix::device::uniqueNamedPin(pins.outputNames,name)!=physical)name.clear();
+                    outputPins.push_back({physical,i,name.toStdString()});
+                }
+                const R::Inventory live{{pins.typeName.toStdString(),pins.deviceName.toStdString()},
+                    generation,outputPins,{},true};
+                if(!armix::session::LogicalOutputProjection::prepare(document,live))
+                    return "NEEDS_REMAP: logical MAIN/MONITOR or conflicting output references";
+            }
             document.request.maxScratchBytes=32U*1024U*1024U;
             const auto previous=nativePublisher_.acceptedRevision();
             bank->bindGlobalRackOverride(&globalFxBypassed_);
@@ -3006,6 +3039,7 @@ public:
             nativeAccepted_.graph.ids=document.legacyIds;
             waitingAsioInputs_=std::move(document.waitingAsioInputs);
             logicalInputs_=std::move(document.logicalInputs);
+            logicalOutputs_=std::move(document.logicalOutputs);
             ++logicalInputRevision_;
             nativeAccepted_.graph.revision=nativeAccepted_.graph.roster.revision();
             nativeAccepted_.hardware=document.outputs;
@@ -3308,6 +3342,10 @@ public:
         nativeAccepted_=armix::mixer::UnifiedLegacyAccepted{};
         waitingAsioInputs_.clear();
         logicalInputs_={};
+        logicalOutputs_={};
+        externalOutputAssignments_.clear();
+        externalOutputVerified_.clear();
+        externalOutputEpoch_=0;
         logicalInputRevision_=1;
         userPatched_.store(false,std::memory_order_release);
         enabled_.store(false,std::memory_order_release);
@@ -3994,6 +4032,14 @@ private:
     std::atomic<bool> globalFxBypassed_{false};
     std::vector<armix::session::WaitingAsioInput> waitingAsioInputs_;
     armix::device::LogicalInputRegistry logicalInputs_; // CONTROL only
+    armix::device::LogicalOutputRegistry logicalOutputs_; // CONTROL only
+    bool logicalOutputPairReserved(const juce::String& playback,int left,int right) const{
+        for(const auto& p:logicalOutputs_.ports()){
+            if(!p.binding||p.binding->device.playback!=playback.toStdString())continue;
+            if(p.binding->left==left||p.binding->left==right||p.binding->right==left||p.binding->right==right)return true;
+        }
+        return false;
+    }
     std::uint64_t logicalInputRevision_=1;
     std::vector<armix::session::StoredExternalOutput> externalOutputAssignments_;
     std::vector<std::uint64_t> externalOutputVerified_; // per amplifier, CONTROL only

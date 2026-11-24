@@ -356,6 +356,8 @@ public:
             std::erase_if(document_.request.sources,
                 [&](const auto& source){return source.id==id;});
             (void)document_.logicalInputs.assign(id.value,0);
+            (void)document_.logicalOutputs.clear(id.value);
+            std::erase_if(document_.externalOutputs,[&](const auto& patch){return patch.channel==id;});
             std::erase_if(document_.waitingAsioInputs,
                 [&](const auto& source){return source.id==id;});
             document_.inserts.erase(std::remove_if(
