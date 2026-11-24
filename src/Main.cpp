@@ -3657,6 +3657,12 @@ private:
         result << "\n=== WINDOWS NATIVE WASAPI CAPABILITY PROBE (NOT LIVE LATENCY) ===\n";
         result << armix::device::WasapiCapabilityProbe::report() << "\n";
 #endif
+        result << "\n=== NATIVE INSERT TIMING (SAMPLED WALL TIME, NOT HARDWARE XRUN) ===\n";
+        result << "NativeBus insert fields processTiming*: one actual processor invocation every 24-40 calls; "
+                  "lifetime of the current FX lease, approximate atomic snapshot. Includes wrapper/processor region "
+                  "and OS preemption; excludes skipped bypass, dry PDC and music guide observation. "
+                  "Max is sampled only, mean is not normalized to callback size, -1 means no sample. "
+                  "Contention/exception counts are lifetime host events, not confirmed hardware underruns.\n";
         result << "\n=== STATUS SNAPSHOT (measured / source-labeled) ===\n";
         result << juce::JSON::toString (status, true) << "\n";
         result << "\n=== RECENT EVENTS (latest 48, capture on control thread) ===\n";

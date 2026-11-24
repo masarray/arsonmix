@@ -4,6 +4,8 @@
 #include "FxBypassEnvelope.h"
 #include "StereoLatencyDelay.h"
 #include "RealtimeNativeFxControl.h"
+#include "FxTimingSampler.h"
+#include <chrono>
 #include <stdexcept>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <algorithm>
@@ -52,6 +54,7 @@ public:
         std::atomic_flag processing=ATOMIC_FLAG_INIT;
         std::atomic<unsigned> contention{0};
         std::atomic<unsigned> exceptions{0};
+        armix::rt::FxTimingSampler processTiming;
 
         FxInstance(std::unique_ptr<Processor> p,juce::String id,juce::String label,
                    int maxSamples,juce::String restoredInstance={})
@@ -82,6 +85,7 @@ public:
             }
             if(!dryDelay.prepare(latencySamples))throw std::invalid_argument("VST3 latency exceeds prepared delay budget");
             midi.ensureSize(1024);
+            processTiming.seed(static_cast<std::uint32_t>(instanceId.hashCode()));
             bypassFade.prepare(false,processor?processor->getSampleRate():48000.0,0);
             if(processor){
                 nativeControl=dynamic_cast<RealtimeNativeFxControl*>(processor.get());
@@ -198,6 +202,11 @@ public:
             // Harmony alone remains timeline-warm while fully bypassed.
             // The host consumes real PCM, but publishes the exact PDC dry path:
             // no stale pitch history or room tail can leak on reactivation.
+            // Sample only actual processBlock calls. Staggered per-lease
+            // intervals keep clock-query cost low and preserve fast bypass.
+            using Clock=std::chrono::steady_clock;
+            const bool measured=processTiming.shouldSample();
+            const auto started=measured?Clock::now():Clock::time_point{};
             try {
                 float* planar[]{left,right};
                 juce::AudioBuffer<float> buffer(planar,2,samples);
@@ -208,6 +217,11 @@ public:
                 exceptions.fetch_add(1,std::memory_order_relaxed);
                 juce::FloatVectorOperations::clear(left,samples);
                 juce::FloatVectorOperations::clear(right,samples);
+            }
+            if(measured){
+                const auto ns=std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now()-started).count();
+                processTiming.record(static_cast<std::uint64_t>(std::max<std::int64_t>(0,ns)),
+                    static_cast<unsigned>(samples),fullyBypassed);
             }
             if(fullyBypassed){
                 juce::FloatVectorOperations::copy(left,dryLeft.data(),samples);

@@ -2796,6 +2796,15 @@ public:
                 item->setProperty("name",(*lease)->name);
                 item->setProperty("latencySamples",(*lease)->latencySamples);
                 item->setProperty("latencyChanged",(*lease)->latencyChanged.load(std::memory_order_acquire));
+                const auto timing=(*lease)->processTiming.snapshot();
+                item->setProperty("processTimingSamples",static_cast<juce::int64>(timing.samples));
+                item->setProperty("processTimingFrames",static_cast<juce::int64>(timing.frames));
+                item->setProperty("processTimingMeanUs",timing.samples?double(timing.totalNs)/timing.samples/1000.:-1.);
+                item->setProperty("processTimingMaxUs",timing.samples?double(timing.maxNs)/1000.:-1.);
+                item->setProperty("processTimingLastUs",timing.samples?double(timing.lastNs)/1000.:-1.);
+                item->setProperty("processTimingFullyBypassedSamples",static_cast<juce::int64>(timing.fullyBypassed));
+                item->setProperty("processContentionCount",static_cast<juce::int64>((*lease)->contention.load(std::memory_order_relaxed)));
+                item->setProperty("processExceptionCount",static_cast<juce::int64>((*lease)->exceptions.load(std::memory_order_relaxed)));
                 item->setProperty("bypassed",(*lease)->bypassRequested.load(
                     std::memory_order_relaxed));
                 liveInserts.add(juce::var(item.release()));
