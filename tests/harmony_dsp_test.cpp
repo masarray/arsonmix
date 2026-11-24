@@ -197,9 +197,11 @@ static void testIndependentSingerExpression(){
 // Exercise the real F0 -> accepted note -> chord planner -> singer mask
 // path, not merely manually calling the expression helper.
 static void testCommonToneEngineTransition(){
-  constexpr int first=57;
+  // G3 -> F3 has actual held LOW/HIGH under the H3 chord planner.
+  // A3 -> its nearby notes does not guarantee any retained role.
+  constexpr int first=55;
   int second=-1,held=-1,moved=-1;
-  for(int candidate:{55,59,60,62,64}){
+  for(int candidate:{53,52,57,59,60}){
     VoicePlanner plan;plan.plan(first,0,major,5);
     std::array<int,5> before{};
     for(int v=0;v<5;++v)before[v]=plan.target(v);
