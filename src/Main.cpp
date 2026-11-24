@@ -837,6 +837,7 @@ private:
     DiagnosticsRecorder diagnostics_;
     armix::appearance::Store channelAppearance_{settingsDirectory()};
     armix::io::NamedPatchStore namedPatches_{machineSettingsDirectory()};
+    armix::session::NativeIoDefaults ioDefaults_{machineSettingsDirectory()};
     std::unique_ptr<juce::FileChooser> namedIoFileChooser_;
     armix::storage::NativePresetArchive presets_;
     armix::storage::BuiltInFxUserPresetStore builtinFxUserPresets_{settingsDirectory()};
@@ -2781,6 +2782,15 @@ private:
         });
     }
 
+    bool canInstallIoDefaults() const {
+        const auto session=settingsDirectory().getChildFile("MixerSession");
+        // Never replace a checkpoint, including a damaged HEAD or orphaned
+        // PREVIOUS. No default application during Open/recovery/device reset.
+        return !session.getChildFile("HEAD").exists()&&!session.getChildFile("PREVIOUS").exists()&&
+            !mixerSessionRecoveryPending_&&!mixerSessionWorker_.busy()&&!nativeShowBusy_&&!studioBackupBusy_&&
+            !retainedOfflineFxActive_&&!deviceApply_.busy()&&engine_.hasPristineStartupMixer()&&engine_.allOutputsDisarmed();
+    }
+
     juce::var approvedNativeSnapshot (const juce::var& live)
     {
         auto accepted=armix::native_console_m2::snapshot (
@@ -2851,6 +2861,7 @@ private:
             obj->setProperty("logicalOutputRegistry",
                 live.getProperty("dryRoutingLab",{}).getProperty("nativeBus",{})
                     .getProperty("logicalOutputRegistry",{}));
+            obj->setProperty("ioDefaults",ioDefaults_.snapshot(canInstallIoDefaults()));
             obj->setProperty("physicalBusPatchSupported",true);
             obj->setProperty("physicalBusOutputObserved",
                 live.getProperty("dryRoutingLab",{}).getProperty("busOutputObserved",false));
@@ -7318,6 +7329,52 @@ private:
         // owner; no browser-only track or legacy M4 shadow is created.
         // Normal GUI physical IN remains available after a native BUS/WIRE
         // publication. The ChannelId producer, not stale M4, owns the patch.
+        if(action=="audioIoDefaults"){
+            const auto request=args.getProperty("requestId",{}).toString();
+            const auto op=args.getProperty("operation",{}).toString();
+            std::uint64_t ep=0,rev=0,roster=0,inRev=0,outRev=0,storeRev=0;
+            bool confirmed=false;
+            const auto snap=approvedNativeSnapshot();
+            juce::String error="I/O default request stale or unavailable";
+            if(request.startsWith("io-default-")&&request.length()<=64&&
+               !acceptedControlRequests_.contains(request)&&!nativeShowBusy_&&!studioBackupBusy_&&
+               !mixerSessionWorker_.busy()&&!deviceApply_.busy()&&!mixerSessionRecoveryPending_&&
+               armix::session::strictBool(args.getProperty("confirmed",{}),confirmed)&&confirmed&&
+               armix::session::parseDecimal(args.getProperty("revision",{}),storeRev,true)&&storeRev==ioDefaults_.revision()&&
+               armix::session::parseDecimal(args.getProperty("deviceEpoch",{}),ep)&&
+               armix::session::parseDecimal(args.getProperty("graphRevision",{}),rev)&&
+               armix::session::parseDecimal(args.getProperty("rosterRevision",{}),roster)&&
+               armix::session::parseDecimal(args.getProperty("inputRevision",{}),inRev)&&
+               armix::session::parseDecimal(args.getProperty("outputRevision",{}),outRev)&&
+               snap.getProperty("device",{}).getProperty("epoch",{}).toString()==armix::session::decimal(ep)&&
+               snap.getProperty("graph",{}).getProperty("revision",{}).toString()==armix::session::decimal(rev)&&
+               snap.getProperty("graph",{}).getProperty("rosterRevision",{}).toString()==armix::session::decimal(roster)&&
+               engine_.logicalInputRevision()==inRev&&engine_.logicalOutputRevision()==outRev&&
+               snap.getProperty("mixerSession",{}).getProperty("authority",{}).toString()=="CHANNEL_ID"){
+                acceptedControlRequests_.add(request);
+                if(acceptedControlRequests_.size()>512)acceptedControlRequests_.remove(0);
+                try{
+                    if(op=="SAVE"){
+                        armix::session::IoPortLayout layout;
+                        if(engine_.captureIoPortLayout(ep,rev,roster,inRev,outRev,layout))error=ioDefaults_.save(storeRev,layout);
+                        else error="Create logical input or output ports first";
+                    }else if(op=="CLEAR")error=ioDefaults_.save(storeRev,{});
+                    else if(op=="LOAD"){
+                        if(!ioDefaults_.readOnly()&&canInstallIoDefaults()&&engine_.installIoPortDefaults(ioDefaults_.layout()))
+                            error.clear();
+                        else error="Default can only load into an empty, muted mixer without a checkpoint";
+                    }
+                }catch(...){error="I/O default transaction failed";}
+            }
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request);ack->setProperty("ok",error.isEmpty());ack->setProperty("error",error);
+            ack->setProperty("revision",armix::session::decimal(ioDefaults_.revision()));
+            ack->setProperty("inputRevision",armix::session::decimal(engine_.logicalInputRevision()));
+            ack->setProperty("outputRevision",armix::session::decimal(engine_.logicalOutputRevision()));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixIoDefaultsAck",juce::var(ack.release()));
+            emitApprovedNativeSnapshot();
+            return;
+        }
         if(action=="routingLogicalInputEdit"){
             using P=armix::session::LogicalInputProjection;
             using R=armix::device::LogicalInputRegistry;
@@ -9928,7 +9985,16 @@ private:
                         deviceSettingsDirty_=true;
                     }
                 }
-            }else if(startupError_.isEmpty())requestAutomaticMain();
+            }else if(startupError_.isEmpty()){
+                if(!ioDefaults_.layout().empty()&&!ioDefaults_.readOnly()&&canInstallIoDefaults()){
+                    try{
+                        if(engine_.installIoPortDefaults(ioDefaults_.layout()))
+                            diagnostics_.record("IO_DEFAULTS_APPLIED","Fresh silent mixer; no channel assignments or output arm");
+                        else diagnostics_.record("IO_DEFAULTS_DEFERRED","No verified pristine device");
+                    }catch(...){diagnostics_.record("IO_DEFAULTS_DEFERRED","Default preparation failed");}
+                }
+                requestAutomaticMain();
+            }
         }
         // Do not clear the marker as soon as constructors return: Waves and
         // other VST3 vendors may crash in their first audio callbacks.

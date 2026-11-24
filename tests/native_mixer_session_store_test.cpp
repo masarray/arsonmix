@@ -1893,7 +1893,60 @@ static void verifyLogicalOutputNativePcm(){
     const auto refs=state.getProperty("logicalOutputRegistry",{}).getProperty("references",{});
     assert(refs.getArray()->size()==1&&(*refs.getArray())[0].getProperty("state","").toString()=="NEEDS_REMAP");
 }
+static void verifyIoDefaults(){
+    using namespace armix::session;
+    using I=IoPortLayout::I;using O=IoPortLayout::O;
+    const auto dir=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("ArSonMixIoDefaults","",false);
+    assert(dir.createDirectory().wasOk());
+    I inputs;O outputs;
+    const std::uint64_t id=9007199254740993ULL;
+    assert(inputs.add(id,"Vocal",I::Format::mono));
+    assert(inputs.restoreIntent(id,{{"ASIO","Verified ASIO","Verified ASIO"},0,-1,"Capture L",""}));
+    assert(inputs.assign(1,id));
+    assert(outputs.add(20,"Stage amp")&&outputs.restoreIntent(20,{{"ASIO","Verified ASIO"},2,3,"Amp L","Amp R"}));
+    assert(outputs.assign(16,20,O::Role::external));
+    auto layout=IoPortLayout::capture(inputs,outputs);
+    assert(layout.definitionsOnly()&&layout.inputs.find(id)&&layout.outputs.find(20));
+    NativeIoDefaults store(dir);
+    assert(store.revision()==0&&!store.readOnly()&&store.layout().empty());
+    assert(store.save(0,layout).isEmpty()&&store.revision()==1);
+    assert(store.save(0,{}).isNotEmpty()&&store.revision()==1);
+    NativeIoDefaults reopened(dir);
+    assert(!reopened.readOnly()&&reopened.revision()==1&&reopened.layout().inputs.find(id));
+    assert(reopened.layout().definitionsOnly());
+    FixtureDevice device(true);LiveDryRoutingLab mixer;mixer.prepareDevice(&device);
+    juce::AudioPluginFormatManager formats;
+    assert(mixer.startUnpatchedSession(true,false,0,formats,48000.,480).isEmpty());
+    assert(mixer.admitChannelIdFromAcceptedM4(0,480,true,{},true));
+    armix::device::JuceActivePortSnapshot pins;
+    armix::device::JuceActivePortSnapshot::Fault fault{};
+    assert(armix::device::JuceActivePortSnapshot::capture(&device,mixer.epoch(),pins,fault));
+    HardwareBinding binding{"ASIO","Verified ASIO","Verified ASIO","3","3f",48000.,480,
+        device.getInputChannelNames(),device.getOutputChannelNames()};
+    auto wrong=binding;wrong.capture="Other capture";
+    auto qualified=layout.qualify(wrong,pins);
+    assert(!qualified.inputs.find(id)->binding&&qualified.outputs.find(20)->binding);
+    auto wrongPins=pins;wrongPins.outputNames.set(2,"Renamed");
+    qualified=layout.qualify(binding,wrongPins);
+    assert(qualified.inputs.find(id)->binding&&!qualified.outputs.find(20)->binding);
+    assert(!mixer.installIoPortDefaults(layout,binding,pins,false));
+    assert(mixer.installIoPortDefaults(layout,binding,pins,true));
+    assert(!mixer.installIoPortDefaults(layout,binding,pins,true));
+    assert(!mixer.hasVerifiedNativeSources());
+    const auto status=mixer.nativeBusStatus();
+    assert(status.getProperty("logicalInputRegistry",{}).getProperty("references",{}).getArray()->isEmpty());
+    assert(status.getProperty("logicalOutputRegistry",{}).getProperty("references",{}).getArray()->isEmpty());
+    assert(reopened.save(1,{}).isEmpty()&&reopened.revision()==2);
+    const auto file=dir.getChildFile("io-defaults.v1.json");
+    assert(file.appendText("damaged"));
+    NativeIoDefaults damaged(dir);
+    assert(damaged.readOnly()&&damaged.save(0,layout).isNotEmpty());
+    assert(file.loadFileAsString().endsWith("damaged"));
+    assert(dir.deleteRecursively());
+}
 int main(){
+    verifyIoDefaults();
     checkLogicalOutputSession();
     verifyLogicalOutputNativePcm();
     checkLogicalInputSession();

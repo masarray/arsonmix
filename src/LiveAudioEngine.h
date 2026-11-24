@@ -2473,6 +2473,26 @@ public:
     }
     std::uint64_t logicalInputRevision() const noexcept {return dryRoutingLab_.logicalInputRevision();}
     std::uint64_t logicalOutputRevision() const noexcept {return dryRoutingLab_.logicalOutputRevision();}
+    bool captureIoPortLayout(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+            std::uint64_t inRev,std::uint64_t outRev,armix::session::IoPortLayout& layout) const {
+        return dryRoutingLab_.captureIoPortLayout(ep,rev,roster,inRev,outRev,layout);
+    }
+    bool installIoPortDefaults(const armix::session::IoPortLayout& layout){
+        if(!allOutputsDisarmed()||wantsMainContinuation()||!attached_||independent_.active()||
+           !directFence_.permitted()||handoff_.busy()||savedDirectSetup_||savedLiveSetup_||
+           routeReconfiguring_.load(std::memory_order_acquire)||fxMovePhase_.load(std::memory_order_acquire)!=0||
+           diagnosticRoute()!=armix::diagnostics::Route::normal||!hasPristineStartupMixer())return false;
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        armix::device::JuceActivePortSnapshot pins;
+        armix::device::JuceActivePortSnapshot::Fault fault{};
+        if(!device||!acceptedMixerBinding_||!armix::device::JuceActivePortSnapshot::capture(
+            device,dryRoutingLab_.epoch(),pins,fault))return false;
+        const auto live=readMixerBinding(*device);
+        if(!armix::session::MixerDeviceBindingPolicy::sameBinding(*acceptedMixerBinding_,live)||
+           acceptedMixerBinding_->inputNames!=live.inputNames||acceptedMixerBinding_->outputNames!=live.outputNames||
+           deviceManager_.getCurrentAudioDevice()!=device||!allOutputsDisarmed())return false;
+        return dryRoutingLab_.installIoPortDefaults(layout,live,pins,true);
+    }
     LiveDryRoutingLab::NativeBusResult editNativeLogicalOutput(std::uint64_t ep,std::uint64_t rev,
             std::uint64_t roster,std::uint64_t logical,armix::session::LogicalOutputProjection::Edit edit){
         LiveDryRoutingLab::NativeBusResult fail;fail.error="LOGICAL_OUTPUT_MUTE_MAIN_AND_STREAM";

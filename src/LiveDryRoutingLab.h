@@ -15,6 +15,7 @@
 #include "NativeOutputBusPatch.h"
 #include "NativeTopologyEditSafety.h"
 #include "NativeMixerSessionDocument.h"
+#include "NativeIoDefaults.h"
 #include "../engine/device/JuceActivePortSnapshot.h"
 #include "../engine/core/RealtimeRoutePublisher.h"
 #include "../engine/core/RealtimeRenderPermit.h"
@@ -2214,6 +2215,29 @@ public:
     }
     std::uint64_t logicalInputRevision() const noexcept {return logicalInputRevision_;}
     std::uint64_t logicalOutputRevision() const noexcept {return logicalOutputRevision_;}
+    bool captureIoPortLayout(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+            std::uint64_t inRev,std::uint64_t outRev,armix::session::IoPortLayout& out) const {
+        if(!channelIdPhysicalPcmActive()||!nativeAccepted_.matches(nativePublisher_,ep,rev)||
+           ep!=epoch()||roster!=nativeAccepted_.graph.roster.revision()||
+           inRev!=logicalInputRevision_||outRev!=logicalOutputRevision_)return false;
+        out=armix::session::IoPortLayout::capture(logicalInputs_,logicalOutputs_);
+        return !out.empty();
+    }
+    bool installIoPortDefaults(const armix::session::IoPortLayout& layout,
+            const armix::session::HardwareBinding& binding,
+            const armix::device::JuceActivePortSnapshot& pins,bool disarmed){
+        if(!disarmed||!canReplacePristineStartupMixer()||!matchesSessionDevice(pins)||
+           !logicalInputs_.empty()||!logicalOutputs_.empty()||layout.empty()||!layout.definitionsOnly())return false;
+        auto qualified=layout.qualify(binding,pins);
+        if(qualified.inputs.ports().size()!=layout.inputs.ports().size()||
+           qualified.outputs.ports().size()!=layout.outputs.ports().size()||
+           !matchesSessionDevice(pins)||!canReplacePristineStartupMixer())return false;
+        logicalInputs_=std::move(qualified.inputs);logicalOutputs_=std::move(qualified.outputs);
+        ++logicalInputRevision_;++logicalOutputRevision_;
+        // Authored metadata is durable, but no graph/FX/ARM state changes.
+        nativeControlDirty_=true;nativeStructureLive_=true;
+        return true;
+    }
     // CONTROL only. The host proves all hardware output gates disarmed.
     NativeBusResult editNativeLogicalOutput(std::uint64_t ep,std::uint64_t rev,
             std::uint64_t rosterRev,std::uint64_t logicalRev,
