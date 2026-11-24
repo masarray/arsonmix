@@ -278,7 +278,7 @@ public:
         for(auto& seam:backingSeams_)seam.prepare(rate);
         continuityReferenceEnabled_=true;supportReferenceEnabled_=true;
         naturalReferenceEnabled_=true;backingContour_.prepare(detectEvery_/rate);
-        carrierReferenceEnabled_=true;slopeReferenceEnabled_=true;
+        carrierReferenceEnabled_=true;slopeReferenceEnabled_=true;drainReferenceEnabled_=true;
         for(auto& carrier:carriers_)carrier.reset();
         periodContinuity_.reset();
         sourcePeriodSamples_=0.f;sourceConfidence_=0.f;sampleClock_=0;
@@ -504,6 +504,10 @@ public:
     }
     // Exact H14 reference for matched acoustic regression only.
     // Exact H15 carrier reference; offline before the first PCM only.
+    bool setDrainForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        drainReferenceEnabled_=enabled;return true;
+    }
     bool setSlopeForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
         slopeReferenceEnabled_=enabled;return true;
@@ -867,13 +871,17 @@ private:
         const float trust=std::clamp((sourceConfidence_-.79f)*10.f,0.f,1.f);
         const float scale=resonanceReferenceEnabled_?
             1.f+(resonance[ix]-1.f)*ensembleFocus_*trust:1.f;
-        if(carryEpochs&&(legacyLatency_||
+        const bool windowSafe=carryEpochs&&(legacyLatency_||
             PitchSynchronousVoice<capacity,maxVoices>::completeEpochWindow(
-                sourcePeriodSamples_,effectiveRatio,static_cast<float>(latency_)+arrival)))
+                sourcePeriodSamples_,effectiveRatio,static_cast<float>(latency_)+arrival));
+        // Admission needs causal lookback. Rendering an already validated
+        // grain does not: its entire source window was proven at admission.
+        const bool drain=drainReferenceEnabled_&&continuityReferenceEnabled_&&supportReferenceEnabled_;
+        if(carryEpochs&&(windowSafe||drain))
             sync=pitchSync_.process(voice,sampleClock_,write_,mono_,
                 sourcePeriodSamples_,effectiveRatio,
                 static_cast<float>(latency_)+arrival,scale,continuityReferenceEnabled_,
-                supportReferenceEnabled_,naturalReferenceEnabled_);
+                supportReferenceEnabled_,naturalReferenceEnabled_,windowSafe);
         float& colorState=pitchSyncFiltered_[ix];
         // Invalid PSOLA epochs must never inject zero into the high-voice
         // output while a crossfade is still active.
@@ -1150,6 +1158,7 @@ private:
     std::array<BackingRenderSeam,maxVoices> backingSeams_{};
     bool continuityReferenceEnabled_=true,supportReferenceEnabled_=true;
     bool naturalReferenceEnabled_=true,carrierReferenceEnabled_=true,slopeReferenceEnabled_=true;
+    bool drainReferenceEnabled_=true;
     BackingPitchContour backingContour_{};
     std::array<PhaseCoherentCarrier,maxVoices> carriers_{};
     std::array<float,maxVoices> pitchSyncBlend_{},pitchSyncFiltered_{},pitchSyncValid_{};

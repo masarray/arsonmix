@@ -66,9 +66,9 @@ public:
                    const std::array<float,Capacity>& input,
                    float sourcePeriod,float ratio,float fixedDelay,
                    float resonanceScale=1.f,bool continuous=true,bool supportAware=true,
-                   bool phaseAware=true) noexcept {
+                   bool phaseAware=true,bool admitNew=true) noexcept {
         const auto out=render<false>(v,time,writeIndex,input,input,input,
-                                     sourcePeriod,ratio,fixedDelay,resonanceScale,continuous,supportAware,phaseAware);
+                                     sourcePeriod,ratio,fixedDelay,resonanceScale,continuous,supportAware,phaseAware,admitNew);
         return {out.left,out.ready,out.coverage};
     }
 
@@ -80,7 +80,7 @@ public:
                    const std::array<float,Capacity>& right,
                    float sourcePeriod,float ratio,float fixedDelay) noexcept {
         return render<true>(v,time,writeIndex,epochs,left,right,
-                            sourcePeriod,ratio,fixedDelay,1.f,false,false,false);
+                            sourcePeriod,ratio,fixedDelay,1.f,false,false,false,true);
     }
 private:
     template <bool Stereo>
@@ -89,11 +89,12 @@ private:
                    const std::array<float,Capacity>& left,
                    const std::array<float,Capacity>& right,
                    float sourcePeriod,float ratio,float fixedDelay,
-                   float resonanceScale,bool continuous,bool supportAware,bool phaseAware) noexcept {
+                   float resonanceScale,bool continuous,bool supportAware,bool phaseAware,bool admitNew) noexcept {
         if(v<0||v>=Voices||!std::isfinite(sourcePeriod)||
            !std::isfinite(ratio)||!std::isfinite(fixedDelay)||
            sourcePeriod<8.f||sourcePeriod>3200.f||
-           ratio<.49f||ratio>2.01f||fixedDelay<sourcePeriod*1.2f)
+           ratio<.49f||ratio>2.01f||(admitNew&&fixedDelay<sourcePeriod*1.2f)||
+           (!admitNew&&(!continuous||!supportAware||Stereo)))
             return {};
         // Epoch-centered waveform dilation: target-center spacing owns F0;
         // the intra-grain read rate controls local spectral structure.
@@ -108,6 +109,7 @@ private:
         const double spacing=period/static_cast<double>(ratio);
         const double width=std::max(period,spacing);
         if(!state.initialized) {
+            if(!admitNew)return {};
             state.initialized=true;
             state.nextCenter=static_cast<double>(time)+width;
             // Align mono backing *and* stereo lead to fractional epochs.
@@ -123,6 +125,9 @@ private:
         // Normal supported periods place >=4 samples between target marks.
         for(int scheduled=0;scheduled<2 &&
             static_cast<double>(time)+.0001>=state.nextCenter-width;++scheduled) {
+            // A new epoch is not causal, but previously admitted windows
+            // have full support. Keep the target clock and drain them.
+            if(!admitNew){state.nextCenter+=spacing;continue;}
             const double desired=state.nextCenter-static_cast<double>(fixedDelay);
             // Track a source landmark, not merely the largest sample
             // in an arbitrarily truncated search window. A predicted
@@ -186,11 +191,13 @@ private:
         if(state.nextCenter+width<static_cast<double>(time))
             state.nextCenter=static_cast<double>(time)+width;
         float sumL=0.f,sumDifference=0.f,weight=0.f;
+        bool remaining=false;
         for(auto& grain:state.grains) {
             if(!grain.active)continue;
             const double offset=static_cast<double>(time)-grain.center;
             const double u=offset/grain.width;
             if(u>=1.){grain.active=false;continue;}
+            remaining=true;
             if(u<=-1.)continue;
             // Raised compact zero-slope window, avoiding per-sample trig.
             float w=static_cast<float>((1.-u*u)*(1.-u*u));
@@ -219,6 +226,9 @@ private:
             }
             weight+=w;
         }
+        // Once all validated grains finish, discard the stale epoch clock.
+        // The next safe sample starts a fresh phase search; no hidden tail.
+        if(!admitNew&&!remaining){state={};return {};}
         if(weight<.05f)return {};
         const float l=sumL/weight;
         if constexpr(Stereo){

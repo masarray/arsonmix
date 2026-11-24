@@ -3,6 +3,8 @@
 // Synthesized self-test is only a build and integrity gate, not an ear-test.
 #include "../engine/builtin_fx/HarmonyDsp.h"
 #include <algorithm>
+#include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -86,9 +88,11 @@ static void writeWave(const fs::path& path,const Wave& wave){
     }
     if(!out)throw std::runtime_error("WAV output write failed");
 }
+using SeamCounts=std::array<armix::harmony::BackingRenderSeam::Counts,Engine::maxVoices>;
 static Wave process(const Wave& input,Settings settings,bool synchronous,int block=127,
                     bool enhancedDepth=true,bool focus=true,bool presence=true,
-                    bool articulation=true,bool continuity=true,bool support=true,bool natural=true,bool carrier=true,bool slope=true){
+                    bool articulation=true,bool continuity=true,bool support=true,bool natural=true,bool carrier=true,bool slope=true,
+                    bool drain=true,SeamCounts* counts=nullptr){
     auto e=std::make_unique<Engine>();
     if(!e->prepare(input.rate)||!e->setSettings(settings))
         throw std::runtime_error("native Harmony configuration invalid");
@@ -97,7 +101,7 @@ static Wave process(const Wave& input,Settings settings,bool synchronous,int blo
     if(!e->setContinuityForOfflineReference(continuity)||
        !e->setSupportForOfflineReference(support)||
        !e->setNaturalForOfflineReference(natural)||!e->setCarrierForOfflineReference(carrier)||
-       !e->setSlopeForOfflineReference(slope))
+       !e->setSlopeForOfflineReference(slope)||!e->setDrainForOfflineReference(drain))
         throw std::runtime_error("continuity reference rejected");
     e->setPitchSynchronousCandidateForOfflineReference(synchronous);
     e->setStageDepthForOfflineReference(enhancedDepth);
@@ -108,6 +112,7 @@ static Wave process(const Wave& input,Settings settings,bool synchronous,int blo
     for(std::size_t pos=0;pos<out.left.size();pos+=static_cast<std::size_t>(block))
         e->process(out.left.data()+pos,out.right.data()+pos,
                    static_cast<int>(std::min(static_cast<std::size_t>(block),out.left.size()-pos)));
+    if(counts)for(int v=0;v<Engine::maxVoices;++v)(*counts)[v]=e->seamCountsForOfflineTests(v);
     return out;
 }
 static double rms(const Wave& x){
@@ -128,12 +133,12 @@ static Wave subtract(const Wave& x,const Wave& y){
 // and the identical dry lead, then set only that role's prepared output gains
 // to zero for every other singer. No browser masks or in-place muting.
 static Wave roleStem(const Wave& input,Settings settings,
-                     int singerIndex,const Wave& dry,bool natural=true,bool carrier=true,bool slope=true){
+                     int singerIndex,const Wave& dry,bool natural=true,bool carrier=true,bool slope=true,bool drain=true){
     if(singerIndex<0||singerIndex>=Engine::maxVoices)
         throw std::runtime_error("invalid solo Harmony role");
     auto e=std::make_unique<Engine>();
     Engine::PreparedSettings prepared{};
-    if(!e->prepare(input.rate)||!e->setNaturalForOfflineReference(natural)||!e->setCarrierForOfflineReference(carrier)||!e->setSlopeForOfflineReference(slope)||
+    if(!e->prepare(input.rate)||!e->setNaturalForOfflineReference(natural)||!e->setCarrierForOfflineReference(carrier)||!e->setSlopeForOfflineReference(slope)||!e->setDrainForOfflineReference(drain)||
        !Engine::prepareSettings(settings,prepared))
         throw std::runtime_error("cannot prepare singer solo");
     for(int i=0;i<Engine::maxVoices;++i)
@@ -421,11 +426,17 @@ static void continuityReport(const Wave& input,const fs::path& folder,Settings s
           "wet_max_step,wet_step_rms,wet_step_over_rms,mix_peak,mix_overload_samples\n";
     const auto window=std::max<std::size_t>(1,input.rate/100);
     const double delay=std::lround(input.rate*.024)/double(input.rate);
-    for(int version:{12,13,14,15,16,17}){
+    std::ofstream events(folder/"seam_events.csv",std::ios::trunc);
+    if(!events)throw std::runtime_error("seam event report open failed");
+    events<<"variant,role,losses,acquisitions\n";
+    for(int version:{12,13,14,15,16,17,18}){
+        SeamCounts counts{};
         const auto mix=process(input,s,true,127,true,true,true,true,
-                               version>=13,version>=14,version>=15,version>=16,version>=17);
+                               version>=13,version>=14,version>=15,version>=16,version>=17,version>=18,&counts);
         const auto backing=subtract(mix,dry);
         const auto tag="h"+std::to_string(version);
+        for(int v=0;v<Engine::maxVoices;++v)
+            events<<tag<<','<<v<<','<<counts[v].losses<<','<<counts[v].acquisitions<<'\n';
         writeWave(folder/(tag+"_mix.wav"),mix);
         writeWave(folder/(tag+"_backing.wav"),backing);
         for(int channel:{0,1}){
@@ -442,10 +453,10 @@ static void continuityReport(const Wave& input,const fs::path& folder,Settings s
             }
         }
     }
-    for(int version:{14,15,16,17})for(int role=0;role<Engine::maxVoices;++role)
+    for(int version:{14,15,16,17,18})for(int role=0;role<Engine::maxVoices;++role)
         writeWave(folder/("h"+std::to_string(version)+"_role_"+std::to_string(role)+".wav"),
-                  roleStem(input,s,role,dry,version>=15,version>=16,version>=17));
-    if(!csv)throw std::runtime_error("continuity report write failed");
+                  roleStem(input,s,role,dry,version>=15,version>=16,version>=17,version>=18));
+    if(!csv||!events)throw std::runtime_error("continuity report write failed");
 }
 int main(int argc,char** argv){
     try{
@@ -532,6 +543,27 @@ int main(int argc,char** argv){
                      process(v,s,true,127,true,true,true)))return 3;
             if(!same(process(v,s,true,127,false),
                      process(v,s,true,127,true)))return 4;
+            // Exercise the actual file-export path, not just its metrics.
+            const auto folder=fs::temp_directory_path()/("armix-harmony-ab-"+
+                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+            if(!fs::create_directory(folder))return 15;
+            struct Cleanup{fs::path path;~Cleanup(){std::error_code ec;fs::remove_all(path,ec);}} cleanup{folder};
+            Settings reportSettings;reportSettings.voices=3;reportSettings.wet=1.f;
+            reportSettings.space=1.f;reportSettings.color=.78f;
+            continuityReport(v,folder,reportSettings);
+            for(int version:{12,13,14,15,16,17,18}){
+                const auto tag="h"+std::to_string(version);
+                const auto mix=readWave(folder/(tag+"_mix.wav"));
+                const auto backing=readWave(folder/(tag+"_backing.wav"));
+                if(mix.rate!=v.rate||mix.left.size()!=v.left.size()||
+                   backing.left.size()!=v.left.size()||rms(backing)<.001)return 16;
+            }
+            std::ifstream ev(folder/"seam_events.csv");
+            std::string line;int rows=0;
+            while(std::getline(ev,line))++rows;
+            if(rows!=1+7*Engine::maxVoices)return 17;
+            if(!fs::exists(folder/"h18_role_2.wav"))return 18;
+            std::cout<<"H18_EXPORT variants=7 event_rows="<<rows-1<<" WAV readback PASS\n";
             std::cout<<"Offline native A/B test passed (synthetic only)\n";
             return 0;
         }
@@ -539,7 +571,7 @@ int main(int argc,char** argv){
             Settings s;s.key=std::stoi(argv[4]);s.scale=std::stoi(argv[5]);
             s.voices=std::stoi(argv[6]);s.wet=1.f;s.space=1.f;s.color=.78f;
             continuityReport(readWave(argv[2]),argv[3],s);
-            std::cout<<"H12/H13/H14/H15/H16/H17 matched manual-key WAV and per-ear CSV written; no acoustic qualification implied.\n";
+            std::cout<<"H12/H13/H14/H15/H16/H17/H18 matched manual-key WAV and per-ear CSV written; no acoustic qualification implied.\n";
             return 0;
         }
         if(argc==6&&std::string(argv[1])=="--lead-tune"){

@@ -845,6 +845,62 @@ static void testLowerPresenceAndPresets(){
 }
 // Force loss at eight phase positions and measure the immediate slope
 // discontinuity, not the ordinary derivative of a sung waveform.
+// Exercise the production caller's hard causal eligibility boundary:
+// low bass and downward harmony need more than 24ms source lookback.
+static void testCausalAdmissionEngine(){
+    constexpr double tau=6.283185307179586;
+    for(int rate:{48000,96000}){
+        const int n=rate*4;
+        LeadFixture src{std::vector<float>(n),std::vector<float>(n)};
+        double phase=0.;
+        for(int i=0;i<n;++i){
+            const double sec=double(i)/rate;
+            const double hz=sec<1.?220.:sec<2.?82.40689:sec<3.?220.:110.;
+            phase+=tau*hz*std::exp2(35.*std::sin(tau*5.*sec)/1200.)/rate;
+            src.left[i]=src.right[i]=static_cast<float>(
+                .17*std::sin(phase)+.055*std::sin(2*phase+.3)+.03*std::sin(3*phase+.6));
+        }
+        struct Result {LeadFixture pcm;std::uint64_t losses=0,acquisitions=0;};
+        auto run=[&](bool drain,int block,bool wet){
+            auto e=std::make_unique<Engine>();Settings s;s.voices=5;
+            s.wet=wet?1.f:0.f;s.color=.78f;s.space=.6f;
+            need(e->prepare(rate)&&e->setDrainForOfflineReference(drain)&&e->setSettings(s),
+                 "H18 engine setup");
+            Result out{src};
+            for(int i=0;i<n;i+=block)e->process(out.pcm.left.data()+i,out.pcm.right.data()+i,std::min(block,n-i));
+            for(int v=0;v<Engine::maxVoices;++v){
+                const auto c=e->seamCountsForOfflineTests(v);
+                out.losses+=c.losses;out.acquisitions+=c.acquisitions;
+            }
+            return out;
+        };
+        const auto old=run(false,127,true),now=run(true,127,true),split=run(true,64,true);
+        const auto dry=run(true,127,false),oldDry=run(false,64,false);
+        need(now.pcm.left==split.pcm.left&&now.pcm.right==split.pcm.right&&
+             now.losses==split.losses&&now.acquisitions==split.acquisitions,"H18 block parity");
+        need(dry.pcm.left==oldDry.pcm.left&&dry.pcm.right==oldDry.pcm.right,"H18 dry changed");
+        std::cout<<"H18_ENGINE rate="<<rate<<" old_losses="<<old.losses
+                 <<" new_losses="<<now.losses<<" old_acquisitions="<<old.acquisitions
+                 <<" new_acquisitions="<<now.acquisitions<<std::endl;
+        need(old.losses>0&&old.acquisitions>5&&now.losses>0&&now.acquisitions>5,
+             "H18 engine fixture did not exercise causal loss and recovery");
+        for(int ch:{0,1}){
+            const auto& a=ch?old.pcm.right:old.pcm.left;const auto& b=ch?now.pcm.right:now.pcm.left;
+            const auto& d=ch?dry.pcm.right:dry.pcm.left;
+            double ea=0.,eb=0.,ma=0.,mb=0.;
+            for(int i=rate/2;i<n;++i){
+                const double x=a[i]-d[i],y=b[i]-d[i];
+                need(std::isfinite(y),"H18 nonfinite backing");ea+=x*x;eb+=y*y;
+                ma=std::max(ma,std::abs(x-(a[i-1]-d[i-1])));
+                mb=std::max(mb,std::abs(y-(b[i-1]-d[i-1])));
+            }
+            const double gain=10.*std::log10(eb/ea),edge=mb/ma*std::sqrt(ea/eb);
+            std::cout<<"H18_PCM rate="<<rate<<" ch="<<ch<<" wet_dB="<<gain
+                     <<" normalized_max_ratio="<<edge<<std::endl;
+            need(ea>1.&&eb>1.&&std::abs(gain)<1.&&edge<1.25,"H18 backing regression");
+        }
+    }
+}
 static void testSlopeAwareSeam(){
     constexpr double tau=6.283185307179586;
     for(int rate:{32000,48000,96000,192000}){
@@ -932,14 +988,14 @@ static void testBackingContinuity(){
          +.065*std::sin(3*phase+1.1)+.026*std::sin(5*phase+.6);
       src.left[i]=src.right[i]=static_cast<float>(gap?.08*noise:x);
     }
-    auto run=[&](bool modern,bool wet,int block,bool support=true,bool natural=false,bool carrier=false,bool slope=false){
+    auto run=[&](bool modern,bool wet,int block,bool support=true,bool natural=false,bool carrier=false,bool slope=false,bool drain=false){
       auto e=std::make_unique<Engine>();Settings s;
       s.voices=voices;s.wet=wet?1.f:0.f;s.color=.78f;s.space=1.f;
       s.guideMode=1;s.guideChannelId=2;
       need(e->prepare(rate)&&e->setContinuityForOfflineReference(modern)&&
            e->setSupportForOfflineReference(support)&&e->setNaturalForOfflineReference(natural)&&
            e->setCarrierForOfflineReference(carrier)&&e->setSlopeForOfflineReference(slope)&&
-           e->setSettings(s),"H13 setup");
+           e->setDrainForOfflineReference(drain)&&e->setSettings(s),"H13 setup");
       auto out=src;
       for(int at=0;at<n;){
         // Split at control events; callback partition must not move them.
@@ -1528,6 +1584,7 @@ static void testBackingPitchContour(){
     }
 }
 int main(){
+    testCausalAdmissionEngine();
     testSlopeAwareSeam();
     testPhaseCoherentCarrier();
     testBackingPitchContour();

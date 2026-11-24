@@ -193,7 +193,40 @@ static void testEpochPhaseContinuity(){
     std::cout<<"H15_EPOCH old_jumps="<<jumpsOld<<" new_jumps="<<jumpsNow<<std::endl;
     need(jumpsOld>0&&jumpsNow<jumpsOld,"H15 predicted landmark did not improve continuity");
 }
+// A short loss of admission permission must not erase safe grains.
+// A long loss drains to zero and subsequently matches a fresh schedule.
+static void testCausalAdmissionDrain(){
+    constexpr double tau=6.283185307179586;
+    for(int rate:{32000,48000,96000,192000}){
+        Shifter live{},fresh{};std::array<float,16384> ring{};
+        const int first=rate/10,brief=std::max(1,rate/1000),second=rate/5;
+        const int resume=second+rate/25,end=resume+rate/10;
+        int briefReady=0,tailReady=0,tailSilent=0;
+        for(int i=0;i<end;++i){
+            ring[i&16383]=static_cast<float>(.2*std::sin(tau*220.*i/rate));
+            const bool admit=!(i>=first&&i<first+brief)&&!(i>=second&&i<resume);
+            const auto x=live.process(0,i,i&16383,ring,rate/220.f,1.4f,rate*.024f,
+                                      1.f,true,true,true,admit);
+            need(std::isfinite(x.sample)&&std::abs(x.sample)<.5f,"H18 invalid grain drain");
+            if(i>=first&&i<first+brief&&x.ready)++briefReady;
+            if(i>=second&&i<resume){
+                if(x.ready)++tailReady;
+                if(i>second+rate/50&&!x.ready)++tailSilent;
+                if(i>second+rate/50)need(!x.ready,"H18 unbounded old grain tail");
+            }
+            if(i>=resume){
+                const auto y=fresh.process(0,i,i&16383,ring,rate/220.f,1.4f,rate*.024f);
+                need(x.ready==y.ready&&x.sample==y.sample&&x.coverage==y.coverage,
+                     "H18 stale schedule after drain");
+            }
+        }
+        std::cout<<"H18_DRAIN rate="<<rate<<" brief_ready="<<briefReady<<"/"<<brief
+                 <<" tail_ready="<<tailReady<<" tail_silent="<<tailSilent<<std::endl;
+        need(briefReady>brief/2&&tailReady>0&&tailSilent>0,"H18 did not preserve existing grains");
+    }
+}
 int main(){
+    testCausalAdmissionDrain();
     testEpochPhaseContinuity();
     testFullSupport();
     testResumeAfterGap();
