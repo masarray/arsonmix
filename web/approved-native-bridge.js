@@ -650,7 +650,7 @@
     const admitted=wireVM.sofAvailable(next,!!scope?.toggleSof);
     const toggle=document.getElementById("sofToggle"),target=document.getElementById("sofTarget");
     for(const el of [toggle,target])if(el){
-      el.style?.setProperty?.("display",admitted?"":"none","important");
+      el.style?.setProperty?.("display",el===toggle||admitted?"":"none","important");
       el.disabled=!admitted;
       el.title=admitted?"Flip channel faders to selected SEND levels":
         "Sends on Faders requires installed PCM WIRE gain, enable and tap ACK";
@@ -2237,7 +2237,12 @@
   function syncMonitorButton(d) {
     const monitorButton=document.querySelector?.("[data-native-monitor]");
     if(monitorButton){
-      monitorButton.textContent=d?.outputArmed?"Mute Output":"Unmute Output";
+      // Automatic device safety mute is not an operator control. Only
+      // expose manual resume after an explicit PANIC/MUTE intent.
+      const manual=hardware?.raw?.operatorOutputMuted===true;
+      monitorButton.textContent=d?.outputArmed?"Mute Output":"Resume Output";
+      monitorButton.hidden=!d?.outputArmed&&!manual;
+      monitorButton.style?.setProperty?.("display",monitorButton.hidden?"none":"","important");
       monitorButton.setAttribute("aria-pressed",String(!!d?.outputArmed));
       monitorButton.title=d?.outputArmed?
         "Mute actual MAIN output immediately":"Listen through verified MAIN hardware output";
@@ -2475,7 +2480,7 @@
     const now=performance.now();
     if(now-lastAudioRepairAt<1600)return true;
     lastAudioRepairAt=now;
-    nativeToast(context+" · Audio I/O perlu diperiksa");
+    nativeToast(context+" · Check Audio I/O");
     status("AUDIO NOT READY · choose and Apply the correct driver and endpoint");
     window.setTimeout(()=>{
       if(!deviceReady()&&!deviceBusy()&&(!devicePanel||devicePanel.hidden))
@@ -2488,7 +2493,7 @@
   document.addEventListener("pointerdown",event=>{
     const field=event.target.closest?.(".route-field");
     if(field?.querySelector('select[data-field="input"]')&&!deviceReady())
-      recommendAudioRepair("INPUT membutuhkan perangkat audio");
+      recommendAudioRepair("INPUT requires an audio device");
   },true);
   let loopbackSerial=0,loopbackId="",loopbackPending=false;
   const loopbackField=name=>devicePanel?.querySelector("[data-audio-loopback-"+name+"]");
@@ -3255,7 +3260,8 @@
         toolbar.insertBefore(addTrack,io);
       }
       syncAddTrack();
-      const monitor=item("button","tool","Unmute Output");
+      const monitor=item("button","tool","Resume Output");
+      monitor.hidden=true;
       monitor.dataset.nativeMonitor="true";
       monitor.addEventListener("click",()=>{
         const armed=hardware?.device?.outputArmed===true;
@@ -4053,11 +4059,11 @@
       const t=scope?.findTrack?.(el) || null;
       if (!t)return true;
       if(field==="input"&&event.type==="change"&&!deviceReady()){
-        recommendAudioRepair("INPUT membutuhkan perangkat audio");el.value=String(t.input);return true;
+        recommendAudioRepair("INPUT requires an audio device");el.value=String(t.input);return true;
       }
       if(controller?.state()?.current?.retained&&!logicalView){
         if(field==="input"&&event.type==="change")
-          recommendAudioRepair("INPUT kehilangan perangkat audio");
+          recommendAudioRepair("INPUT audio device disconnected");
         if(field==="output" && t.kind==="master" && event.type==="change")
           openNativeAudioIO();
         if(field==="level" || field==="pan" || field==="input" || field==="output")
@@ -4349,7 +4355,7 @@
         // Do not block native offline .smix recovery with a repair modal.
         if(!logicalView&&!deviceReady()&&
            controller?.state()?.current?.retained!==true){
-          recommendAudioRepair("FX tidak dapat memproses audio");
+          recommendAudioRepair("FX audio processing unavailable");
           return true;
         }
         const slot=Number(btn?.dataset.slot),current=activeView();

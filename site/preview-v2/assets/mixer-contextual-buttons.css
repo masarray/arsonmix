@@ -391,6 +391,8 @@ body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power):f
 #arsonPlayer .ap-showtools{display:flex;align-items:center;gap:8px;
  min-height:30px;padding:4px 12px;background:#172830;
  border-bottom:1px solid #2a4148;font-size:10px;color:#92b5b5}
+#arsonPlayer .ap-volume input{flex:1;min-width:48px;max-width:160px;accent-color:#83d7c4}
+#arsonPlayer .ap-volume output{min-width:54px;text-align:right;font-variant-numeric:tabular-nums;color:#cbebdf}
 #arsonPlayer .ap-showtools select{max-width:138px;padding:4px 6px;
  background:#1c353e;border:1px solid #3d5c64;border-radius:5px;
  font-size:10px;color:#cbebdf}

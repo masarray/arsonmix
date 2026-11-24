@@ -698,14 +698,18 @@ public:
         const bool entering=!operatorFullscreen_;
         if(entering) {
             maximisedBeforeOperatorFullscreen_=isFullScreen();
+            topmostBeforeOperatorFullscreen_=isAlwaysOnTop();
             setTitleBarHeight(0);
             if(!maximisedBeforeOperatorFullscreen_)setFullScreen(true);
             // DocumentWindow fullscreen on Windows may use the taskbar's
             // workArea. JUCE kiosk instead takes the display totalArea and
             // suppresses taskbar/dock without a second topmost HWND.
             juce::Desktop::getInstance().setKioskModeComponent(this,false);
+            // Fullscreen only: retain shell coverage during owned FX focus.
+            setAlwaysOnTop(true);
         } else {
             juce::Desktop::getInstance().setKioskModeComponent(nullptr,false);
+            setAlwaysOnTop(topmostBeforeOperatorFullscreen_);
             if(!maximisedBeforeOperatorFullscreen_)setFullScreen(false);
             else setFullScreen(true);
             setTitleBarHeight(31);
@@ -798,6 +802,7 @@ private:
     armix::ui::MixerCaptionLookAndFeel mixerCaption_;
     bool operatorFullscreen_=false;
     bool maximisedBeforeOperatorFullscreen_=false;
+    bool topmostBeforeOperatorFullscreen_=false;
     LiveAudioEngine engine_;
     VstOrbitController orbit_;
     // The exact native ChannelId/insert identity retains its VST3 owner
@@ -2453,18 +2458,21 @@ private:
         } else {
             // Disconnected FX editing is always output-disarmed. A still-armed
             // secondary output is not silently stopped or reconfigured.
-            operatorOutputMuted_=true;
+            // Physical safety fence is NOT explicit operator mute.
+            const bool resumeMain=engine_.wantsMainContinuation() && !operatorOutputMuted_;
             engine_.setOutputMuted(true);
             if(!engine_.allOutputsDisarmed())
                 error="Disarm secondary output before editing retained FX";
             else {
                 armix::session::MixerSessionDocument document;
                 std::vector<armix::shows::BinaryState> states;
+                const auto captureStarted=monotonicMilliseconds();
                 error=engine_.captureNativeMixerSession(document,states,true);
+                diagnostics_.record("OFFLINE_FX_CAPTURE_MS",juce::String(static_cast<juce::int64>(monotonicMilliseconds()-captureStarted)));
                 if(error.isEmpty()) {
                     document.id=mixerSessionId_.isNotEmpty()?mixerSessionId_:
                         logicalMixer_.workspace().document().id;
-                    document.resumeMain=false;
+                    document.resumeMain=resumeMain;
                     document.savedMs=juce::Time::currentTimeMillis();
                     error=resolveMixerSessionCatalog(document,true);
                     if(error.isEmpty()&&
@@ -2617,6 +2625,7 @@ private:
             // PCM-authoritative global A/B readback; not a mirrored button state.
             obj->setProperty("globalFxBypassed",engine_.globalFxBypassed());
             obj->setProperty("retainedOfflineFxPending",retainedOfflineFxActive_);
+            obj->setProperty("operatorOutputMuted",operatorOutputMuted_);
             obj->setProperty("channelAppearance",channelAppearance_.snapshot(accepted.getProperty("graph",{})));
             obj->setProperty("waitingAsioInputs",live.getProperty("waitingAsioInputs",0));
             obj->setProperty("externalOutputs",
@@ -5405,6 +5414,11 @@ private:
             action="audioSetup";
         }
         if(action=="playerSubscribe")return emitPlayerState(true);
+        if(action=="playerVolume") {
+            if(value.isInt() || value.isDouble())
+                engine_.setPlayerVolume(static_cast<double>(value));
+            return emitPlayerState();
+        }
         if(action=="playerNewSetlist" || action=="playerSelectSetlist" ||
            action=="playerDeleteSetlist" || action=="playerRenameSetlist" ||
            action=="playerMoveSong" || action=="playerRemoveSong" ||

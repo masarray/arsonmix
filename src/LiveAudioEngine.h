@@ -12,6 +12,7 @@
 #include "NativeTopologyEditSafety.h"
 #include "../engine/dsp/NativeMasterLoudness.h"
 #include "../engine/player/NativePlayerShowDeck.h"
+#include "../engine/player/PlayerOutputTrim.h"
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
 #include "../engine/builtin_fx/ChannelCompressorProcessor.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
@@ -2002,6 +2003,7 @@ public:
         return playerFile_!=juce::File{} &&
                playerDeck_.seekSeconds(seconds);
     }
+    void setPlayerVolume(double percent) noexcept { playerTrim_.setPercent(percent); }
     juce::var playerStatus() const {
         const auto status=playerDeck_.snapshot();
         const auto* state="EMPTY";
@@ -2018,6 +2020,7 @@ public:
         }
         auto data=std::make_unique<juce::DynamicObject>();
         data->setProperty("state",state);
+        data->setProperty("volumePercent",playerTrim_.percent());
         data->setProperty("transitionPending",playerDeck_.transitionPending());
         data->setProperty("crossfading",playerDeck_.transitionActive());
         data->setProperty("title",status.title);
@@ -3158,6 +3161,7 @@ private:
     bool attached_ = false;
     juce::AudioBuffer<float> scratch_;
     armix::player::NativePlayerShowDeck playerDeck_; // A/B workers, ONE mixer PCM source
+    armix::player::PlayerOutputTrim playerTrim_; // after A/B fade, before channel FX
     armix::mixer::ChannelId playerChannelId_{}; // CONTROL only, native identity
     juce::File playerFile_; // CONTROL only, last active song
     juce::File playerPendingFile_; // CONTROL only, next decoded song
@@ -3600,6 +3604,7 @@ private:
                dryRoutingLab_.channelIdPhysicalPcmActive()) {
                 playerDeck_.pull(playerScratch_[0].data(),
                                  playerScratch_[1].data(),samples);
+                playerTrim_.process(playerScratch_[0].data(),playerScratch_[1].data(),samples);
                 deckBlocks[0]={1,playerScratch_[0].data(),
                                 playerScratch_[1].data()};
                 deckCount=1;
