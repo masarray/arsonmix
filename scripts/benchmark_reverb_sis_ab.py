@@ -31,6 +31,7 @@ def run(binary):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--reference", required=True)
+    parser.add_argument("--verify-pcm", action="store_true")
     args = parser.parse_args()
     if len(args.reference) != 40 or any(c not in "0123456789abcdef" for c in args.reference):
         parser.error("reference must be full SHA")
@@ -48,6 +49,14 @@ def main():
         ref, new = work / "ref", work / "new"
         compile_core(old, ref)
         compile_core(ROOT / CORE, new)
+        # Exact sound-preservation gate on a separate, untimed render.
+        # Only enable for topology-equivalent optimization references.
+        if args.verify_pcm:
+            a = subprocess.check_output([str(ref), "--pcm"], text=True)
+            b = subprocess.check_output([str(new), "--pcm"], text=True)
+            if len(a.splitlines()) != 40 or a != b:
+                raise RuntimeError("cross-build PCM fingerprint mismatch")
+            print("PASS Reverb-Sis cross-build PCM fingerprints: 40 profile/rate/mode cases")
         # Counterbalance run order to reduce thermal / scheduling bias.
         a1, b1, b2, a2 = run(ref), run(new), run(new), run(ref)
         print("Reverb-Sis same-runner core benchmark (microseconds; p99 wall time, non-gating)")

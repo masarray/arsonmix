@@ -5,9 +5,62 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <vector>
-int main() {
+// Cross-build audio fingerprint. Runs only offline; not timed. Same
+// compiler/flags and input stream, both profiles and all algorithms.
+// Include sub-sample/zero/max delay, repeated morph retargeting, reset,
+// modulation, parameter automation, and irregular callback sizes.
+static int pcmFingerprint() {
+    using P=arverb::Parameter;
+    constexpr std::array<int,7> blocks{{1,17,32,64,127,256,255}};
+    constexpr std::array<float,6> delays{{0.f,.008f,.021f,27.f,110.f,250.f}};
+    constexpr std::array<float,5> sizes{{.65f,2.f,1.08f,.82f,1.65f}};
+    for(bool musical:{false,true})for(int fs:{8000,44100,48000,96000,192000})
+    for(int mode=0;mode<4;++mode) {
+        arverb::Engine e;
+        e.loadPreset(arverb::Preset::VocalPlateClean);
+        e.setAlgorithm(static_cast<arverb::Algorithm>(mode));
+        e.setParameter(P::Mix,.34f);
+        e.prepare(fs,musical);
+        std::array<float,256> l{},r{},a{},b{};
+        std::uint64_t hash=14695981039346656037ull;
+        int pos=0;
+        for(int block=0;block<1600;++block) {
+            if(block%37==0) {
+                const int k=block/37;
+                e.setParameter(P::PreDelayMs,delays[k%delays.size()]);
+                e.setParameter(P::Size,sizes[k%sizes.size()]);
+                e.setParameter(P::ModDepthMs,(k%4)*.30f);
+                e.setParameter(P::Mix,(k%5)*.25f);
+                e.setParameter(P::DuckAmount,(k%3)*.40f);
+                e.setAlgorithm(static_cast<arverb::Algorithm>((mode+k)%4));
+            }
+            if(block==800)e.reset();
+            const int n=blocks[block%blocks.size()];
+            for(int i=0;i<n;++i) {
+                const double t=(pos+i)/double(fs);
+                l[i]=static_cast<float>(.13*std::sin(1382.3*t)+.07*std::sin(6283.2*t));
+                r[i]=static_cast<float>(.12*std::sin(1382.3*t+.3)+.05*std::sin(3958.4*t));
+            }
+            e.process(l.data(),r.data(),a.data(),b.data(),n);
+            for(int i=0;i<n;++i)for(float v:{a[i],b[i]}) {
+                if(!std::isfinite(v))return 1;
+                std::uint32_t bits=0;
+                std::memcpy(&bits,&v,sizeof(bits));
+                hash=(hash^bits)*1099511628211ull;
+            }
+            pos+=n;
+        }
+        std::printf("%d,%d,%d,%016llx\n",int(musical),fs,mode,
+                    static_cast<unsigned long long>(hash));
+    }
+    return 0;
+}
+int main(int argc,char** argv) {
+    if(argc==2&&std::strcmp(argv[1],"--pcm")==0)return pcmFingerprint();
     using Clock=std::chrono::steady_clock;
     using P=arverb::Parameter;
     constexpr int count=600;
