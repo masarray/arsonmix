@@ -308,7 +308,8 @@ public:
         articulation_.prepare(rate);
         headroom_.prepare(rate);headroomEnabled_=true;
         doublerMono_.prepare(rate);doublerMonoEnabled_=true;
-        sourceTimeline_.reset();sourceAlignedEnabled_=false;sourceConfirmationEnabled_=false;pitchWindowNewest_=0;alignedCalls_.fill(0);
+        sourceTimeline_.reset();sourceAlignedEnabled_=true;sourceConfirmationEnabled_=true;sourceCacheEnabled_=true;
+        sourceCursors_={};pitchWindowNewest_=0;alignedCalls_.fill(0);
         // Both renderer choice and missing-epoch recovery are time-domain
         // crossfades. Never hard-switch their independent source phases.
         pitchSyncAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.030)));
@@ -543,6 +544,13 @@ public:
     bool setSourceConfirmationForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
         sourceConfirmationEnabled_=enabled;return true;
+    }
+    bool setSourceCacheForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        sourceCacheEnabled_=enabled;return true;
+    }
+    std::uint64_t sourceRefreshesForOfflineTests(int v)const noexcept {
+        return v>=0&&v<maxVoices?sourceCursors_[static_cast<std::size_t>(v)].refreshes:0;
     }
     std::uint64_t alignedCallsForOfflineTests(int v)const noexcept {
         return v>=0&&v<maxVoices?alignedCalls_[static_cast<std::size_t>(v)]:0;
@@ -939,12 +947,14 @@ private:
         const float scale=resonanceReferenceEnabled_?
             1.f+(resonance[ix]-1.f)*ensembleFocus_*trust:1.f;
         float renderPeriod=sourcePeriodSamples_;
-        // H24C audition only. Compare source-local epoch geometry without
-        // moving the accepted note, expression, pitch ratio or lead Tune.
-        if(sourceAlignedEnabled_&&carryEpochs){
-            const auto obs=sourceTimeline_.nearest(static_cast<double>(sampleClock_)-
-                (static_cast<double>(latency_)+arrival),2.*detectEvery_);
-            if(obs.period>=8.f){renderPeriod=obs.period;++alignedCalls_[ix];}
+        // H24C2 preview: source-local PSOLA geometry for the larger
+        // ensembles only. Preserve accepted Duo, Doubler and lead Tune.
+        // No additional PCM delay or per-sample binary search in steady state.
+        if(sourceAlignedEnabled_&&carryEpochs&&settings_.voiceMode==0&&settings_.voices>=3){
+            const double at=static_cast<double>(sampleClock_)-(static_cast<double>(latency_)+arrival);
+            const auto obs=sourceCacheEnabled_?sourceTimeline_.nearestCached(at,2.*detectEvery_,sourceCursors_[ix]):
+                sourceTimeline_.nearest(at,2.*detectEvery_);
+            if(obs.period>=8.f){renderPeriod=obs.period;if(traceEnabled_)++alignedCalls_[ix];}
         }
         const bool windowSafe=carryEpochs&&(legacyLatency_||
             PitchSynchronousVoice<capacity,maxVoices>::completeEpochWindow(
@@ -1261,8 +1271,9 @@ private:
     BackingHeadroom headroom_{};
     bool headroomEnabled_=true,doublerMonoEnabled_=true;
     DoublerMonoGuard doublerMono_{};
-    bool sourceAlignedEnabled_=false,sourceConfirmationEnabled_=false;
+    bool sourceAlignedEnabled_=true,sourceConfirmationEnabled_=true,sourceCacheEnabled_=true;
     SourcePitchTimeline sourceTimeline_{};
+    std::array<SourcePitchTimeline::Cursor,maxVoices> sourceCursors_{};
     std::uint64_t pitchWindowNewest_=0;
     std::array<std::uint64_t,maxVoices> alignedCalls_{};
     std::array<BackingRenderSeam,maxVoices> backingSeams_{};

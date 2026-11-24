@@ -866,6 +866,7 @@ static void testEpochRecoveryPerformance(){
         auto old=std::make_unique<Engine>(),now=std::make_unique<Engine>();
         Settings s;s.voices=5;s.wet=1.f;s.color=.78f;s.space=1.f;
         need(old->prepare(rate)&&now->prepare(rate)&&
+             old->setSourceAlignedForOfflineReference(false)&&now->setSourceAlignedForOfflineReference(false)&&
              old->setEpochRecoveryForOfflineReference(false)&&old->setSettings(s)&&now->setSettings(s),
              "H21 CPU fixture setup");
         std::vector<double> before,after;
@@ -919,7 +920,7 @@ static void testCausalAdmissionEngine(){
             s.wet=wet?1.f:0.f;s.color=.78f;s.space=.6f;
             need(e->prepare(rate)&&e->setDrainForOfflineReference(drain)&&
                  e->setRendererTraceForOfflineTests(trace)&&e->setEpochRecoveryForOfflineReference(recover)&&
-                 e->setCubicForOfflineReference(cubic)&&
+                 e->setCubicForOfflineReference(cubic)&&e->setSourceAlignedForOfflineReference(false)&&
                  e->setSettings(s),"H18 engine setup");
             Result out{src};
             for(int i=0;i<n;i+=block)e->process(out.pcm.left.data()+i,out.pcm.right.data()+i,std::min(block,n-i));
@@ -1286,7 +1287,7 @@ static void auditFieldHeadroom(){
         auto x=src;
         for(int i=0;i<n;++i)x.left[i]=x.right[i]=static_cast<float>(src.left[i]*inputPeak/sourcePeak);
         auto e=std::make_unique<Engine>();
-        need(e->prepare(rate)&&e->setDoublerMonoForOfflineReference(false)&&e->setHeadroomForOfflineReference(protectedPath)&&e->setSettings(s)&&e->setRendererTraceForOfflineTests(true),"field audit setup");
+        need(e->prepare(rate)&&e->setDoublerMonoForOfflineReference(false)&&e->setSourceAlignedForOfflineReference(false)&&e->setHeadroomForOfflineReference(protectedPath)&&e->setSettings(s)&&e->setRendererTraceForOfflineTests(true),"field audit setup");
         for(int at=0;at<n;at+=64)e->process(x.left.data()+at,x.right.data()+at,std::min(64,n-at));
         double peakL=0.,peakR=0.;int aboveL=0,aboveR=0,internalClamp=0;std::uint64_t calls=0,losses=0;
         for(int i=0;i<n;++i){
@@ -1341,6 +1342,15 @@ static void testSourceAlignedCandidate(){
     timeline.observe({900.,199.f,.95f},150.);
     need(timeline.nearest(700,10).period==200.f&&timeline.nearest(800,10).period==201.f,
          "H24C2 confirmed source transition");
+    SourcePitchTimeline::Cursor cursor;
+    for(int i=0;i<2500;++i){
+        const double at=(i*137)%1001;
+        const auto a=timeline.nearest(at,80.),b=timeline.nearestCached(at,80.,cursor);
+        need(a.at==b.at&&a.period==b.period&&a.confidence==b.confidence,"H24C3 cache exact arbitrary lookup");
+    }
+    timeline.reset();need(timeline.nearestCached(700,80.,cursor).period==0.f,"H24C3 cache reset");
+    need(timeline.publish({700.,180.f,.94f}),"H24C3 new generation");
+    need(timeline.nearestCached(700,80.,cursor).period==180.f,"H24C3 cache invalidation");
     constexpr double tau=6.283185307179586;
     for(int rate:{48000,96000})for(int voices:{3,5}){
         const int n=rate*3;LeadFixture src{std::vector<float>(n),std::vector<float>(n)};
@@ -1353,19 +1363,25 @@ static void testSourceAlignedCandidate(){
             src.left[i]=src.right[i]=static_cast<float>(.13*std::sin(phase)+
                 .045*std::sin(2*phase+.3)+.02*std::sin(3*phase+.7));
         }
-        struct Result{LeadFixture pcm;std::uint64_t losses=0,high=0,used=0;};
-        auto render=[&](int aligned,float wet,int block){
+        struct Result{LeadFixture pcm;std::uint64_t losses=0,high=0,used=0,refreshes=0;};
+        auto render=[&](int aligned,float wet,int block,bool cache=true){
             auto e=std::make_unique<Engine>();Settings s;s.voices=voices;s.wet=wet;s.space=1.f;s.color=.78f;
             need(e->prepare(rate)&&e->setSourceAlignedForOfflineReference(aligned!=0)&&
-                e->setSourceConfirmationForOfflineReference(aligned==2)&&e->setSettings(s)&&e->setRendererTraceForOfflineTests(true),"H24C setup");
+                e->setSourceConfirmationForOfflineReference(aligned==2)&&e->setSourceCacheForOfflineReference(cache)&&e->setSettings(s)&&e->setRendererTraceForOfflineTests(true),"H24C setup");
             Result x{src};
             for(int at=0;at<n;at+=block)e->process(x.pcm.left.data()+at,x.pcm.right.data()+at,std::min(block,n-at));
             for(int v=0;v<Engine::maxVoices;++v)x.losses+=e->seamCountsForOfflineTests(v).losses;
-            x.high=e->seamCountsForOfflineTests(2).losses;x.used=e->alignedCallsForOfflineTests(2);
+            x.high=e->seamCountsForOfflineTests(2).losses;x.used=e->alignedCallsForOfflineTests(2);x.refreshes=e->sourceRefreshesForOfflineTests(2);
             return x;
         };
         const auto old=render(0,1.f,127),now=render(1,1.f,127),split=render(1,1.f,64);
-        const auto confirmed=render(2,1.f,127),confirmedSplit=render(2,1.f,64);
+        const auto confirmed=render(2,1.f,127),confirmedSplit=render(2,1.f,64),uncached=render(2,1.f,127,false);
+        need(confirmed.pcm.left==uncached.pcm.left&&confirmed.pcm.right==uncached.pcm.right&&
+             confirmed.losses==uncached.losses&&confirmed.used==uncached.used&&
+             confirmed.refreshes>0&&confirmed.refreshes*10<confirmed.used,"H24C3 cache exact and bounded refresh");
+        need(confirmed.high<old.high&&confirmed.losses<old.losses,"H24C3 confirmed transition regression");
+        std::cout<<"H24C3_CACHE rate="<<rate<<" voices="<<voices<<" used="<<confirmed.used
+                 <<" refreshes="<<confirmed.refreshes<<std::endl;
         const auto dry=render(0,0.f,64),newDry=render(1,0.f,127),confirmedDry=render(2,0.f,127);
         need(confirmed.pcm.left==confirmedSplit.pcm.left&&confirmed.pcm.right==confirmedSplit.pcm.right&&
              confirmed.used==confirmedSplit.used&&confirmed.used>0&&confirmed.losses==confirmedSplit.losses&&
