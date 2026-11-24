@@ -221,6 +221,30 @@ struct AlbumLateTone {
     }
 };
 
+// Studio Finish: gently shape the COMPLETE wet return, including early
+// reflections, without changing the tank, decay, dry vocal or user cutoffs.
+// Two shared coefficients, independent stereo states; no dynamic detector.
+struct StudioWetTone {
+    AlbumBell body,mid;
+    AlbumBell::Memory bodyState[2],midState[2];
+    void prepare(float fs) noexcept {
+        body.prepare(fs,180.f,1.0f,1.0f);
+        mid.prepare(fs,950.f,.8f,-1.8f);
+        reset();
+    }
+    void reset() noexcept {
+        for(int c=0;c<2;++c){bodyState[c]={};midState[c]={};}
+    }
+    void process(float& l,float& r,float blend) noexcept {
+        float* out[2]{&l,&r};
+        for(int c=0;c<2;++c) {
+            const float x=*out[c];
+            const float y=midState[c].process(bodyState[c].process(x,body),mid);
+            *out[c]=blend>=1.f?y:x+blend*(y-x);
+        }
+    }
+};
+
 struct PresenceDucker {
     LowPass dryLow[2], dryHigh[2], wetLow[2], wetHigh[2];
     float lowCoeff = 0.0f, highCoeff = 0.0f;

@@ -325,7 +325,62 @@ static void vocalAnchorQualification() {
     check(std::abs(l-.175f)<.0001f,"Anchor recall reaches new dry target");
     std::puts("PASS Vocal Anchor: 288 factory/rate/mix PCM cases, exact wet endpoints, smoothed profile recall");
 }
+// Full actual wet PCM, not just a detached EQ response. Compare identical
+// factory values, same tank and input, including early reflections.
+static void studioFinishQualification() {
+    using P=arverb::Parameter;
+    using namespace armix::builtin_fx;
+    constexpr int n=128;
+    for(int fs:{44100,48000,96000})for(std::size_t program=0;program<reverbSisFactoryPrograms.size();++program) {
+        const auto& preset=reverbSisFactoryPrograms[program];
+        // All 16 actual presets at 48k; four representative sources at other rates.
+        if(fs!=48000&&program!=0&&program!=4&&program!=7&&program!=8)continue;
+        for(float hz:{180.f,400.f,950.f,2500.f,9000.f}) {
+            arverb::Engine old,finish;
+            for(auto* e:{&old,&finish}) {
+                for(std::size_t i=0;i<preset.values.size();++i)e->setParameter(static_cast<P>(i),preset.values[i]);
+                e->setAlgorithm(static_cast<arverb::Algorithm>(preset.algorithm));
+                e->setParameter(P::Mix,1.f);
+                e->setVoicing(e==&old?3u:4u);e->prepare(fs,true);
+            }
+            std::array<float,n> l{},r{},a{},b{},c{},d{};
+            double before=0.,after=0.,fold=0.;
+            const int blocks=int(1.5*fs/n);
+            for(int block=0;block<blocks;++block) {
+                for(int i=0;i<n;++i)l[i]=r[i]=float(.18*std::sin(6.283185307179586*hz*(block*n+i)/fs));
+                old.process(l.data(),r.data(),a.data(),b.data(),n);
+                finish.process(l.data(),r.data(),c.data(),d.data(),n);
+                for(int i=0;i<n;++i) {
+                    check(std::isfinite(c[i])&&std::isfinite(d[i])&&std::abs(c[i])<2.f&&std::abs(d[i])<2.f,"Studio Finish bounded PCM");
+                    if(block>blocks*2/3) {
+                        before+=double(a[i])*a[i]+double(b[i])*b[i];
+                        after+=double(c[i])*c[i]+double(d[i])*d[i];
+                        const double m=.5*(c[i]+d[i]);fold+=m*m;
+                    }
+                }
+            }
+            check(before>1.e-9&&after>1.e-9&&fold>1.e-10,"Studio Finish wet stereo and mono measurable");
+            const double db=10.*std::log10(after/before);
+            if(hz==180.f)check(db>.35&&db<1.5,"Studio Finish body lift");
+            if(hz==950.f)check(db<-1.0&&db>-2.4,"Studio Finish nasal mid relief");
+            if(hz==9000.f)check(std::abs(db)<.35,"Studio Finish air is not overboosted");
+            std::printf("Studio Finish program=%zu rate=%d hz=%.0f deltaDb=%.3f\n",program,fs,hz,db);
+        }
+    }
+    // Dry endpoint remains exactly the previous Anchor at every sample.
+    arverb::Engine old,finish;
+    for(auto* e:{&old,&finish}) {
+        e->setParameter(P::Mix,0.f);e->setVoicing(e==&old?3u:4u);e->prepare(48000.,true);
+    }
+    for(int i=0;i<48000;++i) {
+        const float x=.3f*std::sin(i*.037f);float a,b,c,d;
+        old.process(&x,&x,&a,&b,1);finish.process(&x,&x,&c,&d,1);
+        check(a==c&&b==d,"Studio Finish exact dry endpoint");
+    }
+    std::puts("PASS Studio Finish: 120 actual factory/rate/wet band PCM cases and dry endpoint");
+}
 int main() {
+    studioFinishQualification();
     vocalAnchorQualification();
     for(int fs:{44100,48000,96000})for(unsigned mode=0;mode<4;++mode)signatureRetargetProbe(fs,mode);
     std::puts("PASS Signature latest-target matrix continuity: 12 exact PCM comparisons");

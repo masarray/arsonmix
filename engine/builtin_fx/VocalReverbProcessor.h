@@ -15,10 +15,10 @@ struct VocalReverbSettings {
     std::array<float, arverb::parameterCount> values{};
     int algorithm=1; // Plate
     int preset=0;    // -1 means edited
-    int voicing=3; // all new instances and factory presets
+    int voicing=4; // all new instances and factory presets
 };
 inline bool validVocalReverbSettings(const VocalReverbSettings& v) noexcept {
-    if(v.voicing<0||v.voicing>3||v.algorithm<0||v.algorithm>=static_cast<int>(arverb::algorithmCount)||
+    if(v.voicing<0||v.voicing>4||v.algorithm<0||v.algorithm>=static_cast<int>(arverb::algorithmCount)||
        v.preset < -1 || v.preset >= reverbSisPresetCount) return false;
     for(std::size_t i=0;i<v.values.size();++i) {
         const auto& d=arverb::parameterInfo(static_cast<arverb::Parameter>(i));
@@ -43,19 +43,19 @@ public:
     static constexpr const char* catalogIdentity="armix.builtin.vocal-reverb.v1";
     static constexpr int stateBytes=16+static_cast<int>(arverb::parameterCount)*4;
     static constexpr int albumStateBytes=stateBytes+4;
-    // v1 original, v2 historical Album, v3 Signature, v4 Vocal Anchor.
+    // v1 original, v2 historical Album, v3 Signature, v4 Vocal Anchor, v5 Studio Finish.
     static bool decodeState(const void* data,int bytes,VocalReverbSettings& s) {
         if(!data||(bytes!=stateBytes&&bytes!=albumStateBytes))return false;
         juce::MemoryInputStream in(data,static_cast<std::size_t>(bytes),false);
         if(in.readInt()!=0x41565242)return false;
         const int version=in.readInt();
-        if((version!=1||bytes!=stateBytes)&&((version!=2&&version!=3&&version!=4)||bytes!=albumStateBytes))return false;
+        if((version!=1||bytes!=stateBytes)&&((version!=2&&version!=3&&version!=4&&version!=5)||bytes!=albumStateBytes))return false;
         s.preset=in.readInt();s.algorithm=in.readInt();
         for(auto& x:s.values)x=in.readFloat();
         const int flag=version==1?0:in.readInt();
         s.voicing=flag;
         return ((version==1&&flag==0)||(version==2&&(flag==0||flag==1))||
-                (version==3&&flag==2)||(version==4&&flag==3))&&in.isExhausted()&&validVocalReverbSettings(s);
+                (version==3&&flag==2)||(version==4&&flag==3)||(version==5&&flag==4))&&in.isExhausted()&&validVocalReverbSettings(s);
     }
     VocalReverbProcessor():juce::AudioProcessor(BusesProperties()
         .withInput("Input",juce::AudioChannelSet::stereo(),true)
@@ -351,14 +351,14 @@ private:
     VocalReverbSettings desired_{}; // message-thread only
     std::array<std::atomic<float>,arverb::parameterCount> requestedValues_{};
     std::atomic<int> requestedAlgorithm_{1},requestedPreset_{0};
-    std::atomic<int> requestedVoicing_{3};
+    std::atomic<int> requestedVoicing_{4};
     std::atomic<std::uint32_t> requestedSequence_{0};
     std::atomic<std::uint64_t> requestedId_{0};
     static_assert(std::atomic<float>::is_always_lock_free);
     static_assert(std::atomic<std::uint64_t>::is_always_lock_free);
     std::array<std::atomic<float>,arverb::parameterCount> acceptedValues_{};
     std::atomic<int> acceptedAlgorithm_{1},acceptedPreset_{0};
-    std::atomic<int> acceptedVoicing_{3};
+    std::atomic<int> acceptedVoicing_{4};
     std::atomic<std::uint32_t> acceptedSequence_{0};
     std::atomic<std::uint64_t> appliedId_{0},processedBlocks_{0};
     std::atomic<std::uint32_t> meterSubscribers_{0};

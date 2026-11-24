@@ -224,6 +224,8 @@ struct Engine::State {
     bool cachedAnchor=false;
     detail::PresenceDucker presence;
     detail::AlbumLateTone albumTone;
+    detail::StudioWetTone studioTone;
+    float studioBlend=0.f;
     LowPass albumBass[kLines];
     float albumBlend=0.f,signatureBlend=0.f,albumStep=0.f,albumBassCoeff=0.f;
     float albumLoss=0.f,targetAlbumLoss=0.f;
@@ -273,6 +275,7 @@ struct Engine::State {
         for (auto& f : airShelf) f.reset();
         presence.reset();
         albumTone.reset();
+        studioTone.reset();
         for(auto& f:albumBass)f.reset();
         for (std::size_t i = 0; i < kLines; ++i) {
             lfo[i].reset(static_cast<float>(i) * 1.7718f + 0.39f);
@@ -335,6 +338,7 @@ void Engine::prepare(double sampleRate, bool musicalReturn) {
     s.envelopeRelease = 1.0f - std::exp(-1.0f / ((musicalReturn ? 0.16f : 0.34f) * fs));
     s.presence.prepare(fs,musicalReturn);
     s.albumTone.prepare(fs);
+    s.studioTone.prepare(fs);
     s.albumStep=1.f/(.045f*fs);
     s.albumBassCoeff=lowPassCoeff(300.f,fs);
     s.airCoeff = lowPassCoeff(7800.0f, fs);
@@ -344,7 +348,7 @@ void Engine::prepare(double sampleRate, bool musicalReturn) {
     for (std::size_t i = 0; i < parameterCount; ++i)
         s.smooth[i] = parameters_[i].load(std::memory_order_relaxed);
     s.cachedMix = s.smooth[static_cast<unsigned>(Parameter::Mix)];
-    s.cachedAnchor=musicalReturn&&voicing_.load(std::memory_order_relaxed)==3u;
+    s.cachedAnchor=musicalReturn&&voicing_.load(std::memory_order_relaxed)>=3u;
     s.currentDryGain = s.targetDryGain = dryMixTarget(s.cachedMix,s.cachedAnchor);
     s.currentWetGain = s.targetWetGain = wetMixTarget(s.cachedMix, s.musicalReturn);
     // Freeze initial taps at the host's actual restored preset.
@@ -406,6 +410,7 @@ void Engine::reset() noexcept {
     const auto profile=s.musicalReturn?voicing_.load(std::memory_order_relaxed):0u;
     s.albumBlend=profile!=0u?1.f:0.f;
     s.signatureBlend=profile>=2u?1.f:0.f;
+    s.studioBlend=profile==4u?1.f:0.f;
     s.coefficientCooldownSamples=0;
     // Transport resets must not re-open an old half-finished tap transition.
     s.preTapCurrent = s.preTapNext;
@@ -417,7 +422,7 @@ void Engine::setAlbumReady(bool enabled) noexcept {
     setVoicing(enabled?1u:0u);
 }
 void Engine::setVoicing(unsigned profile) noexcept {
-    if(profile<=3u)voicing_.store(profile,std::memory_order_relaxed);
+    if(profile<=4u)voicing_.store(profile,std::memory_order_relaxed);
 }
 void Engine::setAlgorithm(Algorithm value) noexcept {
     const auto v=static_cast<unsigned>(value);
@@ -461,7 +466,7 @@ void Engine::process(const float* inputLeft, const float* inputRight,
     // transition uses the SAME tank; no two-engine tail CPU/memory cost.
     const float requestedMix = target[idx(Parameter::Mix)];
     const auto profile=s.musicalReturn?voicing_.load(std::memory_order_relaxed):0u;
-    const bool anchor=profile==3u;
+    const bool anchor=profile>=3u;
     if (requestedMix != s.cachedMix || anchor!=s.cachedAnchor) {
         s.cachedMix = requestedMix;
         s.cachedAnchor=anchor;
@@ -470,7 +475,8 @@ void Engine::process(const float* inputLeft, const float* inputRight,
     }
     const float albumTarget=profile!=0u?1.f:0.f;
     const float signatureTarget=profile>=2u?1.f:0.f;
-    bool profileMoving=s.albumBlend!=albumTarget||s.signatureBlend!=signatureTarget;
+    const float studioTarget=profile==4u?1.f:0.f;
+    bool profileMoving=s.albumBlend!=albumTarget||s.signatureBlend!=signatureTarget||s.studioBlend!=studioTarget;
     const unsigned requested = algorithm_.load(std::memory_order_relaxed);
     if (requested != s.toAlgorithm && (profile<2u || s.algorithmBlend>=1.f)) {
         s.fromAlgorithm = (s.algorithmBlend < 0.5f)
@@ -602,12 +608,15 @@ void Engine::process(const float* inputLeft, const float* inputRight,
             const float previousAlbum=s.albumBlend,previousSignature=s.signatureBlend;
             s.albumBlend=step(s.albumBlend,albumTarget);
             s.signatureBlend=step(s.signatureBlend,signatureTarget);
+            const float previousStudio=s.studioBlend;
+            s.studioBlend=step(s.studioBlend,studioTarget);
+            if(previousStudio>0.f&&s.studioBlend==0.f)s.studioTone.reset();
             if(previousAlbum>0.f&&s.albumBlend==0.f) {
                 s.albumTone.reset();for(auto& f:s.albumBass)f.reset();
             } else if(previousSignature>0.f&&s.signatureBlend==0.f) {
                 for(auto& memory:s.albumTone.bodyState)memory={};
             }
-            profileMoving=s.albumBlend!=albumTarget||s.signatureBlend!=signatureTarget;
+            profileMoving=s.albumBlend!=albumTarget||s.signatureBlend!=signatureTarget||s.studioBlend!=studioTarget;
         }
         const float album=s.albumBlend,signature=s.signatureBlend;
         if(album>0.f)s.albumLoss+=s.smoother*(s.targetAlbumLoss-s.albumLoss);
@@ -793,6 +802,9 @@ void Engine::process(const float* inputLeft, const float* inputRight,
             s.presence.process(inL,inR,wetL,wetR,duckAmount*(s.presenceDuckScale+.65f*album));
         else s.presence.process(inL, inR, wetL, wetR, duckAmount * s.presenceDuckScale);
 
+        // Final full-wet musical contour (early + late); leave the existing
+        // wet filters/ducking authoritative and all historical profiles exact.
+        if(s.studioBlend>0.f)s.studioTone.process(wetL,wetR,s.studioBlend);
         const float mid = 0.5f * (wetL + wetR);
         const float side = 0.5f * (wetL - wetR) * width;
         const float loudness = std::max(std::fabs(inL), std::fabs(inR));

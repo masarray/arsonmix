@@ -20,7 +20,7 @@ static int pcmFingerprint(unsigned profile=0) {
     constexpr std::array<float,5> sizes{{.65f,2.f,1.08f,.82f,1.65f}};
     for(bool musical:{false,true})for(int fs:{8000,44100,48000,96000,192000})
     for(int mode=0;mode<4;++mode) {
-        if(profile==2&&!musical)continue;
+        if(profile>=2&&!musical)continue;
         arverb::Engine e;
         e.loadPreset(arverb::Preset::VocalPlateClean);
         e.setAlgorithm(static_cast<arverb::Algorithm>(mode));
@@ -30,6 +30,9 @@ static int pcmFingerprint(unsigned profile=0) {
 #endif
 #ifdef ARVERB_SIGNATURE_BENCHMARK
         if(profile==2)e.setVoicing(2);
+#ifdef ARVERB_ANCHOR_BENCHMARK
+        if(profile==3)e.setVoicing(3);
+#endif
 #endif
         e.prepare(fs,musical);
         std::array<float,256> l{},r{},a{},b{};
@@ -80,6 +83,7 @@ int main(int argc,char** argv) {
     if(argc==2&&std::strcmp(argv[1],"--pcm")==0)return pcmFingerprint();
     if(argc==2&&std::strcmp(argv[1],"--pcm-album")==0)return pcmFingerprint(1);
     if(argc==2&&std::strcmp(argv[1],"--pcm-signature")==0)return pcmFingerprint(2);
+    if(argc==2&&std::strcmp(argv[1],"--pcm-anchor")==0)return pcmFingerprint(3);
     using Clock=std::chrono::steady_clock;
     using P=arverb::Parameter;
     constexpr int count=2048;
@@ -105,6 +109,9 @@ int main(int argc,char** argv) {
                 if(argc==2&&std::strcmp(argv[1],"--signature")==0)x.setVoicing(2);
 #ifdef ARVERB_ANCHOR_BENCHMARK
                 if(argc==2&&std::strcmp(argv[1],"--anchor")==0)x.setVoicing(3);
+#ifdef ARVERB_STUDIO_BENCHMARK
+                if(argc==2&&std::strcmp(argv[1],"--studio")==0)x.setVoicing(4);
+#endif
 #endif
 #endif
 #endif
