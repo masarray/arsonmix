@@ -660,13 +660,18 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
        input.left.size()>std::size_t(input.rate)*30||block<16||block>2048||
        s.voices<3||s.voices>5)throw std::runtime_error("qualification requires <=30s, Trio-Five, block 16..2048");
     fs::create_directories(folder);
-    struct Run {Wave pcm;std::vector<double> us;std::uint64_t updates=0,losses=0,highLoss=0;};
-    auto render=[&](int variant,float wet){
+    struct Run {
+        Wave pcm;std::vector<double> us;std::uint64_t updates=0,losses=0,highLoss=0;
+        std::array<Engine::RendererTrace,Engine::maxVoices> trace{};
+        std::array<Engine::LossReasons,Engine::maxVoices> reasons{};
+        SeamCounts seams{};
+    };
+    auto render=[&](int variant,float wet,bool trace=false){
         auto e=std::make_unique<Engine>();
         auto settings=s;settings.wet=wet;
         if(!e->prepare(input.rate)||!e->setSettings(settings)||
             !e->setCausalEnvelopeForOfflineReference(variant!=0)||
-            !e->setAdaptiveEnvelopeForOfflineReference(variant==2))
+            !e->setAdaptiveEnvelopeForOfflineReference(variant==2)||!e->setRendererTraceForOfflineTests(trace))
             throw std::runtime_error("qualification engine setup");
         Run x;x.pcm=input;x.us.reserve(input.left.size()/block+2);
         std::size_t gi=0;
@@ -682,10 +687,13 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
             e->process(x.pcm.left.data()+at,x.pcm.right.data()+at,int(n));
             const auto elapsed=std::chrono::duration<double,std::micro>(
                 std::chrono::steady_clock::now()-start).count();
-            if(at>=input.rate/4&&n==std::size_t(block))x.us.push_back(elapsed);
+            if(!trace&&at>=input.rate/4&&n==std::size_t(block))x.us.push_back(elapsed);
             at+=n;if(guide&&at==guide->at(gi).end)++gi;
         }
-        for(int v=0;v<Engine::maxVoices;++v)x.losses+=e->seamCountsForOfflineTests(v).losses;
+        for(int v=0;v<Engine::maxVoices;++v){
+            x.seams[v]=e->seamCountsForOfflineTests(v);x.losses+=x.seams[v].losses;
+            if(trace){x.trace[v]=e->rendererTraceForOfflineTests(v);x.reasons[v]=e->lossReasonsForOfflineTests(v);}
+        }
         x.highLoss=e->seamCountsForOfflineTests(2).losses;
         x.updates=e->causalEnvelopeUpdatesForOfflineTests();
         std::sort(x.us.begin(),x.us.end());
@@ -721,6 +729,21 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
         writeWave(folder/(std::string(names[v])+"_raw_mix.wav"),x.pcm);
         writeWave(folder/(std::string(names[v])+"_raw_backing.wav"),backing);
     }
+    // Exact native replay with trace enabled, never contaminate timing.
+    const auto traced=render(0,1.f,true);
+    if(!same(traced.pcm,runs[0].pcm)||traced.losses!=runs[0].losses)
+        throw std::runtime_error("H27C trace changed PCM/counts");
+    std::ofstream reasons(folder/"renderer_loss_reasons.csv",std::ios::trunc);
+    if(!reasons)throw std::runtime_error("H27C loss reasons open");
+    reasons<<"role,losses,acquisitions,loss_no_clock,loss_causal,loss_safe_unready,calls,no_clock,causal_blocked,drained,safe_unready,ready,partial,weak_confidence,epoch_recovered,recovery_sites\n";
+    for(int v=0;v<Engine::maxVoices;++v){
+        const auto& x=traced.reasons[v];const auto& c=traced.seams[v];
+        if(x.total()!=c.losses)throw std::runtime_error("H27C loss attribution mismatch");
+        reasons<<v<<','<<c.losses<<','<<c.acquisitions<<','<<x.noClock<<','<<x.causal<<','<<x.safeUnready;
+        for(auto value:traced.trace[v].values)reasons<<','<<value;
+        reasons<<'\n';
+    }
+    if(!reasons)throw std::runtime_error("H27C loss reasons write");
     // RMS-matched audition copies only: no gain added to raw evidence.
     // Equalize down to the quietest mix and apply a common peak safety
     // scale. This is not BS.1770 loudness or true-peak normalization.

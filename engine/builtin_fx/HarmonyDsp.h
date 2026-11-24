@@ -245,6 +245,12 @@ public:
             return out;
         }
     };
+    // Event attribution at the exact ready->unready seam transition.
+    // Separate from existing per-sample historical trace schema.
+    struct LossReasons {
+        std::uint64_t noClock=0,causal=0,safeUnready=0;
+        std::uint64_t total()const noexcept{return noClock+causal+safeUnready;}
+    };
     static_assert(singers.size()==maxVoices);
     static constexpr int maxPitchLagsPerSlice=8; // fewer burst MACs per sample
     // Maximum 192 kHz grain is 3072 frames: 2*grain latency + 3*grain
@@ -294,7 +300,7 @@ public:
         continuityReferenceEnabled_=true;supportReferenceEnabled_=true;
         naturalReferenceEnabled_=true;backingContour_.prepare(detectEvery_/rate);
         carrierReferenceEnabled_=true;slopeReferenceEnabled_=true;drainReferenceEnabled_=true;epochRecoveryEnabled_=true;cubicReferenceEnabled_=false;
-        traceEnabled_=false;rendererTrace_={};
+        traceEnabled_=false;rendererTrace_={};lossReasons_={};
         for(auto& carrier:carriers_)carrier.reset();
         periodContinuity_.reset();
         sourcePeriodSamples_=0.f;sourceConfidence_=0.f;sampleClock_=0;
@@ -529,7 +535,10 @@ public:
     // Exact H15 carrier reference; offline before the first PCM only.
     bool setRendererTraceForOfflineTests(bool enabled) noexcept {
         if(processed_)return false;
-        traceEnabled_=enabled;rendererTrace_={};return true;
+        traceEnabled_=enabled;rendererTrace_={};lossReasons_={};return true;
+    }
+    LossReasons lossReasonsForOfflineTests(int voice)const noexcept {
+        return voice>=0&&voice<maxVoices?lossReasons_[static_cast<std::size_t>(voice)]:LossReasons{};
     }
     RendererTrace rendererTraceForOfflineTests(int voice) const noexcept {
         return voice>=0&&voice<maxVoices?rendererTrace_[static_cast<std::size_t>(voice)]:RendererTrace{};
@@ -1048,9 +1057,16 @@ private:
         float& blend=pitchSyncBlend_[ix];
         blend+=pitchSyncAlpha_*((confident?1.f:0.f)-blend);
         const float windowedSync=colorState*valid+f*(1.f-valid);
+        const auto previousLosses=traceEnabled_?backingSeams_[ix].countsForOfflineTests().losses:0;
         y=continuityReferenceEnabled_?backingSeams_[ix].process(f,colorState,sync.ready,
             blend*(supportReferenceEnabled_?sync.coverage:1.f),slopeReferenceEnabled_):
             f*(1.f-blend)+windowedSync*blend;
+        if(traceEnabled_&&backingSeams_[ix].countsForOfflineTests().losses!=previousLosses){
+            auto& reasons=lossReasons_[ix];
+            if(!carryEpochs)++reasons.noClock;
+            else if(!windowSafe)++reasons.causal;
+            else ++reasons.safeUnready;
+        }
         phase_[ix]+=1.f/static_cast<float>(grain_);
         if(phase_[ix]>=1.f)phase_[ix]-=1.f;
         return y;
@@ -1338,6 +1354,7 @@ private:
     bool naturalReferenceEnabled_=true,carrierReferenceEnabled_=true,slopeReferenceEnabled_=true;
     bool drainReferenceEnabled_=true,traceEnabled_=false,epochRecoveryEnabled_=true,cubicReferenceEnabled_=false;
     std::array<RendererTrace,maxVoices> rendererTrace_{};
+    std::array<LossReasons,maxVoices> lossReasons_{};
     BackingPitchContour backingContour_{};
     std::array<PhaseCoherentCarrier,maxVoices> carriers_{};
     std::array<float,maxVoices> pitchSyncBlend_{},pitchSyncFiltered_{},pitchSyncValid_{};

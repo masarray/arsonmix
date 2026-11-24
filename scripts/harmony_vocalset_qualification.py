@@ -67,6 +67,12 @@ def main():
             row = {"clip":name,"blob_sha":sha,**row}
             rows.append(row)
             print("H27_REAL " + " ".join(f"{k}={v}" for k,v in row.items()),flush=True)
+        with (folder/"renderer_loss_reasons.csv").open(newline="") as f:
+            reasons = list(csv.DictReader(f))
+        if len(reasons) != 5 or sum(int(x["losses"]) for x in reasons) != int(data[0]["total_losses"]):
+            raise RuntimeError("incomplete renderer loss attribution")
+        for row in reasons:
+            print("H27_LOSS_REASON clip="+name+" "+" ".join(f"{k}={v}" for k,v in row.items()),flush=True)
         # Do not redistribute source or derivative PCM in CI artifacts.
         # Keep local WAVs available for explicit operator listening.
     with (out/"real_vocal_summary.csv").open("w",newline="") as f:
