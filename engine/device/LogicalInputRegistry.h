@@ -91,6 +91,27 @@ public:
         if(refs_.size()>=maxReferences)return false;
         refs_.push_back({channel,port});return true;
     }
+    bool empty() const noexcept {return ports_.empty();}
+    PortId assignedPort(ChannelId channel) const noexcept {
+        const auto it=std::find_if(refs_.begin(),refs_.end(),[&](const auto& r){return r.channel==channel;});
+        return it==refs_.end()?0:it->port;
+    }
+    // Decode durable intent only. Does not attest a device or permit PCM.
+    bool restoreIntent(PortId id,const Binding& binding) {
+        auto* p=edit(id);
+        const auto validText=[](const std::string& v,std::size_t max){
+            return !v.empty()&&v.size()<=max&&std::none_of(v.begin(),v.end(),
+                [](unsigned char c){return c<32||c==127;});
+        };
+        if(!p||!validText(binding.device.backend,128)||
+           !validText(binding.device.capture,256)||!validText(binding.device.playback,256)||
+           binding.left<0||binding.left>255||!validText(binding.leftName,256))return false;
+        if(p->format==Format::mono){
+            if(binding.right!=-1||!binding.rightName.empty())return false;
+        }else if(binding.right<0||binding.right>255||binding.right==binding.left||
+                 !validText(binding.rightName,256)||binding.rightName==binding.leftName)return false;
+        p->binding=binding;return true;
+    }
     bool unbind(PortId id) {
         auto* p=edit(id);if(!p)return false;
         p->binding.reset();return true;

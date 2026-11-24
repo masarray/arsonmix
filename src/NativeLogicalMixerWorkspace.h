@@ -355,6 +355,7 @@ public:
         if(operation=="DELETE_CHANNEL" || operation=="REMOVE_BUS") {
             std::erase_if(document_.request.sources,
                 [&](const auto& source){return source.id==id;});
+            (void)document_.logicalInputs.assign(id.value,0);
             std::erase_if(document_.waitingAsioInputs,
                 [&](const auto& source){return source.id==id;});
             document_.inserts.erase(std::remove_if(

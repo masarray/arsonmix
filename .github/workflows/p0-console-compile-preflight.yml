@@ -9,6 +9,7 @@ on:
       - 'engine/**'
       - 'CMakeLists.txt'
       - 'tests/native_channel_appearance_store_test.cpp'
+      - 'tests/native_mixer_session_store_test.cpp'
       - '.github/workflows/p0-console-compile-preflight.yml'
 permissions:
   contents: read
@@ -67,6 +68,21 @@ jobs:
             ctest --test-dir build --output-on-failure -R '^NativeChannelIdentityDiskAckAndExactId$'
             if ($LASTEXITCODE -ne 0) { throw 'AUDIO_IO_NATIVE_STORE_CTEST_FAILED' }
             Write-Host "AUDIO_IO_NATIVE_STORE_CTEST_PASS exact=$actual"
+            cmake --build build --parallel 2 --target ARMixDurableMixerSessionTests
+            if ($LASTEXITCODE -ne 0) { throw 'AUDIO_IO_SESSION_COMPILE_FAILED' }
+            if (!($catalog.tests | Where-Object { $_.name -eq 'P0DynamicMixerSessionDocumentAndCrashSafeRecovery' })) {
+              throw 'AUDIO_IO_SESSION_CTEST_MISSING'
+            }
+            ctest --test-dir build --output-on-failure -R '^P0DynamicMixerSessionDocumentAndCrashSafeRecovery
+          }
+          # Ninja builds real generated header dependencies, not the full app,
+          # all JUCE objects, full CTest, linking, or Inno packaging.
+          cmake --build build --parallel 2 --target $objects
+          if ($LASTEXITCODE -ne 0) { throw 'P0_PRODUCTION_TRANSLATION_UNIT_FAILED' }
+          Write-Host "P0_PRODUCTION_MAIN_COMPILE_PASS exact=$actual (object only, NOT full FAT)"
+
+            if ($LASTEXITCODE -ne 0) { throw 'AUDIO_IO_SESSION_CTEST_FAILED' }
+            Write-Host "AUDIO_IO_SESSION_CTEST_PASS exact=$actual"
           }
           # Ninja builds real generated header dependencies, not the full app,
           # all JUCE objects, full CTest, linking, or Inno packaging.

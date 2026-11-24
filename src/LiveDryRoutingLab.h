@@ -667,6 +667,7 @@ public:
                 if(found!=patches.end()) {
                     found->inputL=callbackLeft;
                     found->inputR=mode=="STEREO"?callbackRight:-1;
+                    (void)logicalInputs_.assign(id.value,0);
                 }
             }
         }
@@ -2000,6 +2001,7 @@ public:
             nativeAccepted_.pcmRevision=published.revision;
             reapplyExternalOutputsSameEpoch();
             std::erase_if(waitingAsioInputs_,[id](const auto& pin){return pin.id==id;});
+            (void)logicalInputs_.assign(id.value,0);
             nativeStructureLive_=true;
             nativeMeterEpoch_.store(0,std::memory_order_release);
             reply.accepted=true;reply.error="";
@@ -2106,6 +2108,9 @@ public:
             nativeAccepted_.pcmRevision=published.revision;
             reapplyExternalOutputsSameEpoch();
             std::erase_if(waitingAsioInputs_,[channel](const auto& pin){return pin.id==channel;});
+            // Explicit direct or PLAYER source replaces this channel's
+            // logical reference only after the native publication succeeds.
+            (void)logicalInputs_.assign(channel.value,0);
             nativeStructureLive_=true; // M4 source roster no longer authoritative
             nativeMeterEpoch_.store(0,std::memory_order_release);
             reply.accepted=true;reply.error="";
@@ -2471,6 +2476,7 @@ public:
             doc.outputs=nativeAccepted_.hardware;
             doc.request=nativeAccepted_.graph.request;
             doc.waitingAsioInputs=waitingAsioInputs_;
+            doc.logicalInputs=logicalInputs_;
             doc.externalOutputs=externalOutputAssignments_;
             for(const auto& channel:doc.roster.channels()) {
                 if(c.owners->insertCount(channel.id)>static_cast<std::size_t>(FxGraph::maxInsertsPerStrip))
@@ -2559,6 +2565,7 @@ public:
             draft.outputs=nativeAccepted_.hardware;
             draft.request=nativeAccepted_.graph.request;
             draft.waitingAsioInputs=waitingAsioInputs_;
+            draft.logicalInputs=logicalInputs_;
             draft.externalOutputs=externalOutputAssignments_;
             std::vector<armix::shows::BinaryState> staged;
             std::set<juce::String> hashes;
@@ -2779,6 +2786,8 @@ public:
         document.legacyIds=nativeAccepted_.graph.ids;
         document.outputs=nativeAccepted_.hardware;
         document.waitingAsioInputs=waitingAsioInputs_;
+        document.logicalInputs=logicalInputs_;
+        armix::session::LogicalInputProjection::strip(document);
         document.externalOutputs=externalOutputAssignments_;
         return true;
     }
@@ -2836,6 +2845,25 @@ public:
         if(document.request.maxFrames<32 || document.request.maxFrames>Block::hardFrameLimit)
             return "Invalid native mixer quantum";
         try {
+            // The outer device binding policy and native snapshot attest
+            // the exact current layout. Resolve logical inputs before the
+            // single existing native graph publication, never on AUDIO.
+            if(!document.logicalInputs.empty()){
+                using R=armix::device::LogicalInputRegistry;
+                std::vector<R::Pin> inputPins;
+                inputPins.reserve(static_cast<std::size_t>(pins.inputs.enabledCount));
+                for(int i=0;i<pins.inputs.enabledCount;++i){
+                    const auto physical=pins.inputs.physicalIndex(i);
+                    auto name=document.binding.inputNames[physical];
+                    if(armix::device::uniqueNamedPin(document.binding.inputNames,name)!=physical)name.clear();
+                    inputPins.push_back({physical,i,name.toStdString()});
+                }
+                const R::Inventory live{{document.binding.backend.toStdString(),
+                    document.binding.capture.toStdString(),document.binding.playback.toStdString()},
+                    generation,inputPins,true};
+                if(!armix::session::LogicalInputProjection::prepare(document,live))
+                    return "NEEDS_REMAP: conflicting logical input references";
+            }
             document.request.maxScratchBytes=32U*1024U*1024U;
             const auto previous=nativePublisher_.acceptedRevision();
             bank->bindGlobalRackOverride(&globalFxBypassed_);
@@ -2859,6 +2887,7 @@ public:
             nativeAccepted_.graph.request=std::move(document.request);
             nativeAccepted_.graph.ids=document.legacyIds;
             waitingAsioInputs_=std::move(document.waitingAsioInputs);
+            logicalInputs_=std::move(document.logicalInputs);
             nativeAccepted_.graph.revision=nativeAccepted_.graph.roster.revision();
             nativeAccepted_.hardware=document.outputs;
             // Restored physical intentions are inert until exact ASIO identity,
@@ -3052,6 +3081,14 @@ public:
                 row->setProperty("source",juce::var(physical.release()));
                 break;
             }
+            if(const auto port=logicalInputs_.assignedPort(ch.id.value)){
+                row->setProperty("logicalInputPortId",juce::String(std::to_string(port)));
+                const auto* logical=logicalInputs_.find(port);
+                if(logical)row->setProperty("logicalInputName",juce::String(logical->name));
+                const bool installed=!retained&&std::any_of(nativeAccepted_.graph.request.sources.begin(),
+                    nativeAccepted_.graph.request.sources.end(),[&](const auto& p){return p.id==ch.id;});
+                row->setProperty("logicalInputState",installed?"RESOLVED":"NEEDS_REMAP");
+            }
             juce::Array<juce::var> sends;
             for(const auto& send:ch.parallelSends) {
                 auto edge=std::make_unique<juce::DynamicObject>();
@@ -3137,6 +3174,7 @@ public:
         nativePublisher_.unpublish(); // CONTROL-only; audio lease retires safely
         nativeAccepted_=armix::mixer::UnifiedLegacyAccepted{};
         waitingAsioInputs_.clear();
+        logicalInputs_={};
         userPatched_.store(false,std::memory_order_release);
         enabled_.store(false,std::memory_order_release);
         publishedEpoch_.store(0,std::memory_order_release);
@@ -3821,6 +3859,7 @@ private:
     // scalar. OFF means bypass all FX, while per-rack/slot states are untouched.
     std::atomic<bool> globalFxBypassed_{false};
     std::vector<armix::session::WaitingAsioInput> waitingAsioInputs_;
+    armix::device::LogicalInputRegistry logicalInputs_; // CONTROL only
     std::vector<armix::session::StoredExternalOutput> externalOutputAssignments_;
     std::vector<std::uint64_t> externalOutputVerified_; // per amplifier, CONTROL only
     std::uint64_t externalOutputEpoch_=0; // CONTROL only, never callback state

@@ -1618,7 +1618,60 @@ static void verifyChannelInputGainSessionRoundtrip() {
     assert(!Codec::decode(juce::JSON::toString(invalid,false),restored));
 }
 
+static void checkLogicalInputSession(){
+    using R=armix::device::LogicalInputRegistry;
+    auto d=makeSession();
+    const auto old=Codec::encode(d);
+    MixerSessionDocument decoded;
+    assert(Codec::decode(old,decoded)&&decoded.logicalInputs.empty());
+    assert(Codec::encode(decoded)==old);
+    const std::uint64_t port=9007199254740993ULL;
+    assert(d.logicalInputs.add(port,"Lead Vocal",R::Format::mono));
+    assert(d.logicalInputs.assign(1,port)&&d.logicalInputs.assign(2,port));
+    d.binding.inputNames={"Mic 1","Mic 2"};
+    const R::Device device{"ASIO","Verified ASIO","Verified ASIO"};
+    const std::array<R::Pin,2> pins{{{0,0,"Mic 1"},{1,1,"Mic 2"}}};
+    const R::Inventory live{device,7,pins,true};
+    assert(d.logicalInputs.bind(port,{device,0,-1,"Mic 1",""},live,7));
+    const auto encoded=Codec::encode(d);
+    assert(encoded.contains("arsonmix.mixer-session.v2"));
+    assert(Codec::decode(encoded,decoded));
+    assert(decoded.request.sources.empty()); // no persisted callback projection
+    assert(decoded.logicalInputs.assignedPort(1)==port&&decoded.logicalInputs.assignedPort(2)==port);
+    assert(Codec::encode(decoded)==encoded);
+    assert(LogicalInputProjection::prepare(decoded,live));
+    assert(decoded.request.sources.size()==2&&decoded.request.sources[0].inputL==0&&decoded.request.sources[1].inputL==0);
+    assert(Codec::encode(decoded)==encoded);
+    LogicalInputProjection::strip(decoded);
+    auto other=live;other.device.capture="Different interface";
+    assert(LogicalInputProjection::prepare(decoded,other)&&decoded.request.sources.empty());
+    assert(decoded.logicalInputs.assignedPort(1)==port);
+    assert(LogicalInputProjection::prepare(decoded,live)&&decoded.request.sources.size()==2);
+    auto bad=juce::JSON::parse(encoded);
+    bad.getDynamicObject()->setProperty("schema","arsonmix.mixer-session.v1");
+    assert(!Codec::decode(juce::JSON::toString(bad,false),decoded));
+    bad=juce::JSON::parse(encoded);
+    auto logical=bad.getProperty("logicalInputs",{});
+    auto refs=logical.getProperty("references",{});
+    refs.getArray()->add((*refs.getArray())[0]);
+    assert(!Codec::decode(juce::JSON::toString(bad,false),decoded));
+    bad=juce::JSON::parse(encoded);
+    logical=bad.getProperty("logicalInputs",{});
+    refs=logical.getProperty("references",{});
+    (*refs.getArray())[0].getDynamicObject()->setProperty("portId","999");
+    assert(!Codec::decode(juce::JSON::toString(bad,false),decoded));
+    const auto dir=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("ArSonMixLogicalInputSession","",false);
+    assert(dir.createDirectory().wasOk());
+    const auto file=dir.getChildFile("logical.smix");
+    assert(NativeMixerSessionStore::writeFile(file,d,{}).isEmpty());
+    std::vector<armix::shows::BinaryState> states;
+    assert(NativeMixerSessionStore::readFile(file,decoded,states).isEmpty());
+    assert(Codec::encode(decoded)==encoded&&states.empty());
+    assert(dir.deleteRecursively());
+}
 int main(){
+    checkLogicalInputSession();
     verifyChannelInputGainSessionRoundtrip();
     verifyDurableNativeFxPowerIdentity();
     verifyHotkeyDocumentIdentityAndMigration();
