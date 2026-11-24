@@ -159,7 +159,7 @@ public:
         presenceReferenceEnabled_=true;unityReferenceEnabled_=true;
         expressionReferenceEnabled_=true;identityReferenceEnabled_=true;
         resonanceReferenceEnabled_=true;articulationReferenceEnabled_=true;
-        fastCorrelation_=true;
+        fastCorrelation_=true;lowerFocusReferenceEnabled_=true;
         articulation_.prepare(rate);
         // Both renderer choice and missing-epoch recovery are time-domain
         // crossfades. Never hard-switch their independent source phases.
@@ -372,6 +372,10 @@ public:
         if(processed_)return false;
         resonanceReferenceEnabled_=enabled;return true;
     }
+    bool setLowerFocusForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        lowerFocusReferenceEnabled_=enabled;return true;
+    }
     bool setArticulationForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
         articulationReferenceEnabled_=enabled;return true;
@@ -579,7 +583,8 @@ public:
                 if(stageDepthReferenceEnabled_){
                     // Preserve HIGH audibility while lifting low register
                     // anchors in the direct field rather than muddying room.
-                    const float roleFocus=(v==0||v==2)?.12f:v==3?.16f:0.f;
+                    const float roleFocus=lowerFocusReferenceEnabled_?
+                        ((v==0||v==2)?.12f:v==3?.16f:0.f):0.f;
                     const float directPresence=BackingStageSpatial::
                         directionalPresence(v,space_)*(1.f+ensembleFocus_*roleFocus);
                     outL+=placed.directL*backingDirect*directPresence+
@@ -949,7 +954,7 @@ private:
     // Fixed 391 doubles, +1564 bytes vs the H9 float snapshot. The
     // decimated input itself is unchanged; no added audio delay.
     std::array<double,160+231> pitchWindow_{};
-    bool fastCorrelation_=true;
+    bool fastCorrelation_=true,lowerFocusReferenceEnabled_=true;
     std::array<float,231> pitchCorrelations_{};
     int currentNote_=-1,candidateNote_=-1,noteHold_=0;
     int guideKey_=-1,guideScale_=-1;

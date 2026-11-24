@@ -751,9 +751,10 @@ static bool testMusicalHighStem(){
 // never interrupt the new unison take. Check actual wet-only PCM, not
 // just pitch detector state. 4s sustained vibrato at 220/880/1320 Hz.
 static void testLowerPresenceAndPresets(){
-  // Actual stem PCM, compare H11 versus H12 prepared normalized mix
-  // weights. Same new renderer in both references; the difference is
-  // isolated to the role-weight change (direct focus is common).
+  // Actual stem PCM, compare H11 normalized mix weights AND direct
+  // field with H12, keeping all pitch/room synthesis otherwise equal.
+  // Four-voice normalization alone can slightly reduce LOW amplitude;
+  // the additional direct focus must deliver the net audible lift.
   constexpr std::array<float,5> prior{{1.20f,.88f,1.85f,.94f,1.30f}};
   for(int count:{4,5})for(double hz:{110.,220.,440.}){
     constexpr int rate=48000;
@@ -761,7 +762,8 @@ static void testLowerPresenceAndPresets(){
     Settings s;s.voices=count;s.wet=1.f;s.color=1.f;s.space=.75f;
     const auto render=[&](int role,bool previous){
       auto e=std::make_unique<Engine>();Engine::PreparedSettings p;
-      need(e->prepare(rate)&&Engine::prepareSettings(s,p),"H12 lower prep");
+      need(e->prepare(rate)&&e->setLowerFocusForOfflineReference(!previous)&&
+           Engine::prepareSettings(s,p),"H12 lower prep");
       if(previous){
         double oldPower=0.,newPower=0.;
         for(int v=0;v<5;++v)if(singerActive(singers[v].role,count)){
@@ -794,7 +796,7 @@ static void testLowerPresenceAndPresets(){
     const double lowLift=10.*std::log10(low/oldLow);
     const double lowerLift=10.*std::log10(lower/oldLower);
     std::cout<<"H12_LOWER voices="<<count<<" hz="<<hz
-             <<" low_weight_dB="<<lowLift<<" lower_weight_dB="<<lowerLift
+             <<" low_lift_dB="<<lowLift<<" lower_lift_dB="<<lowerLift
              <<" lower_vs_low_dB="<<10.*std::log10(lower/low)<<std::endl;
     need(lowLift>0.&&lowerLift>1.2&&lower>1.,"H12 lower register presence");
   }
