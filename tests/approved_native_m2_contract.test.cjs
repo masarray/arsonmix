@@ -1757,7 +1757,8 @@ test("DAW G0 native M4 controls, source clear, OUT & monitoring are real",()=>{
  assert.ok(bridge.includes("stripVM.m4ChannelPatchPlan("));
  assert.ok(read("web/approved-channel-strip-view-model.js").includes('action:"routingChannelPatch"'));
  assert.match(bridge,/const channel=m4Index\(t\)/);
- assert.match(bridge,/data-native-monitor/);
+ assert.doesNotMatch(bridge,/data-native-monitor|dataset\.nativeMonitor/);
+ assert.match(bridge,/dataset\.nativeEmergencyOutput/);
  assert.match(native,/void serviceAutomaticMain\(\)/);
  assert.match(native,/if\(action=="routingM4Control"\)/);
  assert.match(native,/engine_\.setDryRoutingLabParameter\(channel,/);
@@ -5724,7 +5725,7 @@ test("G-MV30 first native ChannelId projection enables Add Track without a secon
  assert.ok(after.includes("syncAddTrack(next);"),
    "native button should re-evaluate only AFTER successful graph projection");
  assert.ok(after.indexOf("syncAddTrack(next);")<
-   after.indexOf("syncMonitorButton(next.device);"));
+   after.indexOf("syncEmergencyOutputControl(next.device);"));
  const before=bridge.indexOf("if (!projectNativeGraphWithoutFocusLoss(next))",success-500);
  assert.ok(before>=0&&before<success,
    "never enable a native Add before the authoritative ChannelId graph projects");
@@ -7134,4 +7135,24 @@ test("P2 offline GAIN coalesces released values until durable ACK and exact read
  ack(old,"14");
  assert.equal(commands().length,4,"queued GAIN must never follow replacement workspace");
  assert.equal(scope.tracks[0].trim,0);
+});
+
+test("P0 automatic MAIN recovery: no header mute toggle, explicit emergency stop is separate",()=>{
+ const bridge=read("web/approved-native-bridge.js"),native=read("src/Main.cpp");
+ assert.doesNotMatch(bridge,/dataset\.nativeMonitor|data-native-monitor|toolbar\.insertBefore\(monitor/);
+ assert.match(bridge,/menu\.append\(caption,setup,muteBtn,hardwareNote/);
+ assert.match(bridge,/Resume after emergency stop/);
+ assert.match(bridge,/EMERGENCY STOP · MORE → RESUME/);
+ const start=native.indexOf("void serviceAutomaticMain()"),end=native.indexOf("void requestAutomaticMain",start);
+ const control=native.slice(start,end);
+ assert.match(control,/if\(operatorOutputMuted_\)\{autoMainEpoch_=0;return;\}/);
+ assert.match(control,/deviceApply_\.busy\(\)/);
+ assert.match(control,/directCallbackStalled_/);
+ assert.match(control,/!engine_\.wantsMainContinuation\(\)/);
+ assert.match(control,/!engine_\.directRouteAuthorized\(\)/);
+ assert.match(control,/!engine_\.hasBoundMixerRoute\(\)/);
+ assert.match(control,/engine_\.hasRetainedUnboundMixer\(\)/);
+ assert.match(control,/engine_\.liveOutputArmFault\(requireInput\)/);
+ assert.match(control,/autoMainRequiresInput_=false/);
+ assert.doesNotMatch(control,/setMasterMuted\(false\)|openSelectedAudioDevice|setAudioDeviceSetup/);
 });

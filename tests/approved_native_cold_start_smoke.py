@@ -400,7 +400,8 @@ def main():
             emit(page,'arMixConsoleSnapshot',retained)
             page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__.state().current?.retained')
             assert page.locator('.status-bar .warning').inner_text().startswith('PLAYBACK UNAVAILABLE')
-            assert page.locator('[data-native-monitor]').is_disabled()
+            assert page.locator('.command-bar [data-native-monitor]').count()==0
+            assert page.locator('[data-native-emergency-output]').is_disabled()
             assert add_track.is_disabled()
             assert page.locator('#tracks .strip').count()==4
             assert 'Output disconnected' in page.locator('#transport').inner_text()
@@ -465,8 +466,9 @@ def main():
             assert page.locator('.armix-audio-shade').is_hidden(), (
                 'correlated installed PCM readback must settle device apply')
             page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__.state().current?.admitted')
-            assert page.locator('[data-native-monitor]').is_enabled()
-            assert page.locator('[data-native-monitor]').get_attribute('data-armed')=='true'
+            assert page.locator('.command-bar [data-native-monitor]').count()==0
+            assert page.locator('[data-native-emergency-output]').is_enabled()
+            assert page.evaluate('()=>window.__ARMIX_NATIVE_M2__.state().current?.device?.outputArmed') is True
             assert page.locator('#tracks .strip').count()==4
             assert strip.locator('.fx-section [data-action="openPlugin"]').first.inner_text()=='Latency VST'
             assert strip.locator('select[data-field="input"]').is_enabled()
@@ -527,7 +529,7 @@ def main():
             selected=page.locator('#tracks .strip.selected')
             assert 'Track 11' in selected.inner_text()
             assert selected.locator('select[data-field="input"]').is_enabled()
-            assert page.locator('[data-native-monitor]').get_attribute('data-armed')=='true'
+            assert page.evaluate('()=>window.__ARMIX_NATIVE_M2__.state().current?.device?.outputArmed') is True
             assert not errors, errors
             page.screenshot(path=f'native-cold-start-{width}.png')
             page.close()

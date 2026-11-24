@@ -3329,9 +3329,23 @@ private:
     bool operatorOutputMuted_=false;
     std::optional<std::uint64_t> autoMainCheckedRevision_;
     void serviceAutomaticMain() {
-        if(autoMainEpoch_==0)return;
         if(pendingRetainedFxCapture_ || retainedOfflineFxActive_)return; // never arm stale retained PCM
-        if(operatorOutputMuted_){autoMainEpoch_=0;return;}
+        if(operatorOutputMuted_){autoMainEpoch_=0;return;} // explicit emergency stop
+        // Recover the already authorized, still-bound MAIN after a transient
+        // gate even if an earlier one-shot was consumed. Never authorize a
+        // different driver or invent a route. CONTROL timer only.
+        if(deviceApply_.busy() || (audioSetupWindow_ && audioSetupWindow_->isVisible()) ||
+           nativeShowBusy_ || studioBackupBusy_ || mixerSessionWorker_.busy() ||
+           directCallbackStalled_ || engine_.hasPendingDirectRestore() ||
+           engine_.diagnosticRoute()!=armix::diagnostics::Route::normal)return;
+        if(autoMainEpoch_==0) {
+            if(!engine_.wantsMainContinuation() || engine_.isMonitorEnabled() ||
+               !engine_.directRouteAuthorized() || !engine_.hasBoundMixerRoute() ||
+               engine_.hasRetainedUnboundMixer() || engine_.isGraphSwitchPending())return;
+            autoMainEpoch_=engine_.dryRoutingLabEpoch();
+            autoMainRequiresInput_=false; // continuation, not first-time arm
+            autoMainCheckedRevision_.reset();
+        }
         if(autoMainEpoch_!=engine_.dryRoutingLabEpoch() ||
            engine_.isMonitorEnabled()) {
             autoMainEpoch_=0;

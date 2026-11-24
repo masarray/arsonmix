@@ -2282,21 +2282,15 @@
          mixerSession()?.authority==="NONE") &&
         legacy()?.active===true &&
         safeNativeCounter(legacy()?.routingRevision)!==null));
-  function syncMonitorButton(d) {
-    const monitorButton=document.querySelector?.("[data-native-monitor]");
-    if(monitorButton){
-      // Automatic device safety mute is not an operator control. Only
-      // expose manual resume after an explicit PANIC/MUTE intent.
-      const manual=hardware?.raw?.operatorOutputMuted===true;
-      monitorButton.textContent=d?.outputArmed?"Mute Output":"Resume Output";
-      monitorButton.hidden=!d?.outputArmed&&!manual;
-      monitorButton.style?.setProperty?.("display",monitorButton.hidden?"none":"","important");
-      monitorButton.setAttribute("aria-pressed",String(!!d?.outputArmed));
-      monitorButton.title=d?.outputArmed?
-        "Mute actual MAIN output immediately":"Listen through verified MAIN hardware output";
-      monitorButton.disabled=!d?.outputArmed && !deviceReady();
-      monitorButton.dataset.armed=String(!!d?.outputArmed);
-    }
+  // Emergency stop is a deliberate safety action in More, never an
+  // everyday header toggle. Temporary driver mute is not a panic latch.
+  function syncEmergencyOutputControl(d) {
+    if(!muteBtn)return;
+    const panic=hardware?.raw?.operatorOutputMuted===true;
+    muteBtn.textContent=panic?"Resume after emergency stop":"Emergency stop audio";
+    muteBtn.disabled=panic?!deviceReady():d?.outputArmed!==true;
+    muteBtn.title=panic?"Resume only the verified native route":
+      "Emergency stop · normal device recovery is automatic";
   }
   // Output patching is rendered from physical native readback, never a
   // second routing state. Repainting only on changes avoids 12 Hz DOM churn.
@@ -2419,7 +2413,8 @@
         "CHECK AUDIO CONNECTION"):
       !d.enabledInputs?.length?(next.admitted?"CHOOSE AN INPUT":
         "CHECK AUDIO I/O SETTINGS"):
-      legacy()?.routeAccepted?"NATIVE INPUT ROUTED · MONITOR OFF":
+      next?.raw?.operatorOutputMuted===true?"EMERGENCY STOP · MORE → RESUME":
+      legacy()?.routeAccepted||next?.admitted?"OUTPUT RECOVERING · CHECK AUDIO I/O":
       deviceReady()?"SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK":
       "NO VERIFIED INPUT ROUTE · OPEN AUDIO I/O";
     // A warning (missing input / disconnected / muted) always takes
@@ -2447,7 +2442,7 @@
     const d=next?.device;
     const deviceOpen=Boolean(d?.backend && d.sampleRate>0 &&
       d.enabledOutputs.length>=2);
-    syncMonitorButton(d);
+    syncEmergencyOutputControl(d);
     paintPhysicalOutputs(next);
     // Keep the SAME verified playback device for mixer master projection.
     // Footer display is independent; device identity must never be dropped.
@@ -2484,8 +2479,7 @@
     if(routeBtn && routeBtn.disabled!==routeDisabled)routeBtn.disabled=routeDisabled;
     const armDisabled=!ready || legacy()?.routeAccepted!==true || d.outputArmed;
     if(armBtn && armBtn.disabled!==armDisabled)armBtn.disabled=armDisabled;
-    const muteDisabled=!deviceOpen || !d.outputArmed;
-    if(muteBtn && muteBtn.disabled!==muteDisabled)muteBtn.disabled=muteDisabled;
+    syncEmergencyOutputControl(d);
     if(hardwareNote) {
       const evidence=protocol.diagnoseFirstSound?.(next,inputSelect.value);
       // Human-readable PCM stages from the ORIGINAL native callback only.
@@ -3169,10 +3163,24 @@
         expectedEpoch:epoch,expectedRevision:revision});
       status("NATIVE: output ARM requested; awaiting JUCE ACK.");
     });
-    muteBtn=item("button","tool","Mute output");
+    muteBtn=item("button","tool","Emergency stop audio");
+    muteBtn.dataset.nativeEmergencyOutput="true";
     muteBtn.addEventListener("click",()=>{
-      backend.emitEvent("arMixAction",{action:"monitor",value:false});
-      status("NATIVE: output MUTE requested; awaiting JUCE ACK.");
+      const panic=hardware?.raw?.operatorOutputMuted===true;
+      if(!panic){
+        backend.emitEvent("arMixAction",{action:"monitor",value:false});
+        status("Emergency stop requested");
+        return;
+      }
+      if(!deviceReady()||virtualCableFeedbackPair())return;
+      const ep=safeNativeCounter(hardware?.device?.epoch),
+        rev=safeNativeCounter(mixerSession()?.authority==="CHANNEL_ID"?
+          mixerSession()?.routeRevision:legacy()?.routingRevision);
+      if(ep===null||rev===null)return;
+      backend.emitEvent("arMixAction",{action:"monitor",value:true,
+        requestId:"emergency-resume-"+(++m4RequestSerial),
+        expectedEpoch:ep,expectedRevision:rev});
+      status("Verifying audio route after emergency stop");
     });
     hardwareNote=item("span","more-tools-caption","Device not initialized");
     hardwareNote.style.whiteSpace="normal";
@@ -3402,34 +3410,12 @@
         toolbar.insertBefore(addTrack,io);
       }
       syncAddTrack();
-      const monitor=item("button","tool","Resume Output");
-      monitor.hidden=true;
-      monitor.dataset.nativeMonitor="true";
-      monitor.addEventListener("click",()=>{
-        const armed=hardware?.device?.outputArmed===true;
-        if(!armed && (!deviceReady()||
-            (mixerSession()?.authority!=="CHANNEL_ID"&&legacy()?.routeAccepted!==true)||
-            virtualCableFeedbackPair())){
-          status("MONITOR OFF · select real input and safe playback device");
-          return;
-        }
-        const ep=safeNativeCounter(hardware?.device?.epoch),
-          rev=safeNativeCounter(mixerSession()?.authority==="CHANNEL_ID"?
-            mixerSession()?.routeRevision:legacy()?.routingRevision);
-        if(!armed&&(ep===null||rev===null))return;
-        backend.emitEvent("arMixAction",{action:"monitor",value:!armed,
-          requestId:"manual-monitor-"+(++m4RequestSerial),
-          ...(armed?{}:{expectedEpoch:ep,expectedRevision:rev})});
-        status(armed?"Hardware MUTE requested":"MAIN monitor verifying hardware route");
-      });
-      toolbar.insertBefore(monitor,io);
       // Fixed groups, not extra controls. Placement is DOM-only at startup;
       // no resize listeners, repaint loops or menu reparenting.
       for(const [name,element] of [
         ["files",document.getElementById("pluginsButton")],
         ["routing",document.getElementById("wireNavigatorToggle")],
-        ["channels",addTrack],
-        ["monitor",monitor]
+        ["channels",addTrack]
       ]){
         if(!element || element.parentElement!==toolbar)continue;
         const divider=document.createElement("span");
@@ -3796,7 +3782,7 @@
     // native graph was unmounted; enable the button only after successful
     // projection, without requiring a second telemetry callback/click.
     syncAddTrack(next);
-    syncMonitorButton(next.device);
+    syncEmergencyOutputControl(next.device);
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
     if(confirmed?.operation==="APPLY_WIRE_TRANSACTION")
       playAcceptedWireImpact(confirmed.payload.changes);
