@@ -769,6 +769,7 @@ public:
         audioSetupLease_.reset();
         audioSetupWindow_.reset();
         engine_.devices().removeChangeListener (this);
+        pendingRetainedFxCapture_.reset(); // cancel incomplete CONTROL capture before teardown
         // Drain any earlier file work before the final muted checkpoint.
         // Remember MAIN before the shutdown mute changes the hardware state.
         // A driver STOP may have gated hardware already. Preserve the
@@ -830,8 +831,10 @@ private:
             lastMixerSessionFingerprint_.clear();
             mixerSessionRecoveryPending_=true;
             mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND";
-            if(retainedOfflineFxActive_)
+            if(retainedOfflineFxActive_) {
                 mixerSessionStatus_="RETAINED_OFFLINE_FX_REAPPLY_REQUIRED";
+                retainedOfflineLastActivityMs_=monotonicMilliseconds();
+            }
             mixerSessionError_.clear();
         }};
     struct LogicalVendorEditor {
@@ -858,6 +861,11 @@ private:
         bool resumeMain=false;
     };
     std::optional<PendingRetainedFxCapture> pendingRetainedFxCapture_;
+    std::uint64_t retainedOfflineLastActivityMs_=0;
+    std::uint64_t offlineReturnEpoch_=0,offlineReturnSinceMs_=0;
+    std::uint64_t offlineReturnCallback_=0,offlineReturnProgressMs_=0;
+    std::uint64_t offlineAutoAttemptEpoch_=0,offlineAutoAttemptRevision_=0;
+    juce::String offlineAutoAttemptWorkspace_;
     std::unique_ptr<armix::startup::Vst3RestoreCrashGuard> startupFxGuard_;
     juce::uint32 startupFxGuardTick_=0;
     std::unique_ptr<juce::FileChooser> mixerFileChooser_;
@@ -2434,6 +2442,8 @@ private:
         juce::String error;
         if(monotonicMilliseconds()-pending.startedMs>=8000)
             error="Offline FX capture timed out; retry the rack";
+        else if(mixerSessionWorker_.busy() || nativeShowBusy_ || studioBackupBusy_)
+            error="Mixer transaction changed; retry offline FX";
         else error=engine_.stepRetainedMixerCapture(pending.capture,done);
         if(error.isEmpty()&&!done){scheduleRetainedFxCaptureStep();return;}
         auto requestId=pending.requestId;
@@ -2456,6 +2466,9 @@ private:
                 retainedOfflineEpoch_=pending.epoch;
                 retainedOfflineRevision_=pending.revision;
                 retainedOfflineOwnerEpoch_=pending.ownerEpoch;
+                retainedOfflineLastActivityMs_=monotonicMilliseconds();
+                offlineAutoAttemptEpoch_=offlineAutoAttemptRevision_=0;
+                offlineAutoAttemptWorkspace_.clear();
                 mixerSessionRecoveryPending_=true;
                 mixerSessionStatus_="RETAINED_OFFLINE_FX_REAPPLY_REQUIRED";
             }
@@ -2512,7 +2525,8 @@ private:
         }
         if(!identity||!sameInsert)error="Retained FX instance changed; refresh the rack";
         else if(retainedOfflineFxActive_ &&
-                retainedOfflineOwnerEpoch_!=engine_.retainedNativeEpoch()) {
+                (retainedOfflineOwnerEpoch_!=engine_.retainedNativeEpoch() ||
+                 retainedOfflineEpoch_!=epoch || retainedOfflineRevision_!=revision)) {
             error="A different retained session is pending offline FX recovery";
         } else if(!retainedOfflineFxActive_) {
             const bool resumeMain=engine_.wantsMainContinuation() && !operatorOutputMuted_;
@@ -2532,6 +2546,10 @@ private:
                 pending.resumeMain=resumeMain;
                 pending.startedMs=monotonicMilliseconds();
                 error=engine_.beginRetainedMixerCapture(pending.capture);
+                if(error.isEmpty() &&
+                   (pending.capture.observedEpoch!=epoch ||
+                    pending.capture.ownerEpoch!=pending.ownerEpoch))
+                    error="Audio connection changed; retry offline FX";
                 if(error.isEmpty()) {
                     pendingRetainedFxCapture_.emplace(std::move(pending));
                     scheduleRetainedFxCaptureStep();
@@ -2596,6 +2614,7 @@ private:
     }
 
     void handleLogicalMixerIntent(const juce::var& request) {
+        if(retainedOfflineFxActive_)retainedOfflineLastActivityMs_=monotonicMilliseconds();
         // Durable logical workspace edits never grant PCM admission.
         const auto snapshot=approvedNativeSnapshot();
         logicalMixer_.handleIntent(request,{
@@ -4512,10 +4531,11 @@ private:
         // Device auto-restore must NEVER overwrite newer offline VST/built-in
         // state with the older retained DSP graph. Only the operator's
         // explicit .smix Open may replace this pending durable document.
+        if(pendingRetainedFxCapture_)return "Offline mixer workspace is preparing";
         if(retainedOfflineFxActive_) {
             mixerSessionRecoveryPending_=true;
             mixerSessionStatus_="RETAINED_OFFLINE_FX_REAPPLY_REQUIRED";
-            return "Offline FX edits are pending: Open the saved .smix explicitly";
+            return "Offline FX edits are pending: Apply Audio I/O";
         }
         using Recovery=armix::session::NativeMixerSessionRecovery;
         Recovery::RestoreContext restore;
@@ -4624,6 +4644,7 @@ private:
         // The committed logical FX save is newer than the restored live
         // processor. Auto/shutdown capture MUST NOT replace its binary
         // VST state until an explicit verified session Open adopts it.
+        if(pendingRetainedFxCapture_)return "Offline mixer workspace is preparing";
         if(retainedOfflineFxActive_ && automatic)return {};
         ensureLogicalWorkspace();
         using Recovery=armix::session::NativeMixerSessionRecovery;
@@ -4731,6 +4752,7 @@ private:
     }
 
     void openMixerFile(const juce::File& file) {
+        if(pendingRetainedFxCapture_)return emitMixerSessionAck("OPEN","Offline mixer workspace is preparing");
         autoMainEpoch_=0;
         const auto chosenEpoch=engine_.dryRoutingLabEpoch();
         auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
@@ -8741,7 +8763,8 @@ private:
         }
     }
 
-    bool finishAudioSetupAndRecoverMixer(MixerBindingMode bindingMode=MixerBindingMode::exact) {
+    bool finishAudioSetupAndRecoverMixer(MixerBindingMode bindingMode=MixerBindingMode::exact,
+                                         bool verifiedReturn=false) {
         if(pendingRetainedFxCapture_ || logicalVendorEditor_ || mixerSessionWorker_.busy())return false;
         if(retainedOfflineFxActive_) {
             // Do not first reattach old PCM and then acknowledge Apply. The
@@ -8759,7 +8782,8 @@ private:
             auto states=logicalMixer_.workspace().states();
             const bool resume=doc.resumeMain.value_or(false);
             const auto id=doc.id;
-            if(!engine_.finishManualAudioSetup(false,true)) {
+            if(verifiedReturn ? !engine_.directRouteAuthorized() :
+                               !engine_.finishManualAudioSetup(false,true)) {
                 mixerSessionError_="Audio device verification failed; offline edits retained";
                 return false;
             }
@@ -8810,6 +8834,77 @@ private:
 
     std::uint64_t asioRecoveryEpoch_=0; // last successfully bound generation
     armix::device::AsioRestartRecoveryGate asioRecoveryGate_;
+
+    // Auto-publish the newest *committed* offline document only when an
+    // already-open, positively verified original callback is progressing.
+    // A driver reopen, third-party VST3 creation, or pin correction remains
+    // an explicit Apply operation; never stall a timer on those vendor APIs.
+    void serviceRetainedOfflineRecovery() {
+        if(!retainedOfflineFxActive_ || pendingRetainedFxCapture_ ||
+           !logicalMixer_.loaded() || logicalMixer_.readOnly() ||
+           !engine_.hasRetainedNativeSession() ||
+           engine_.retainedNativeEpoch()!=retainedOfflineOwnerEpoch_ ||
+           !engine_.allOutputsDisarmed() || deviceApply_.busy() ||
+           (audioSetupWindow_ && audioSetupWindow_->isVisible()) ||
+           mixerSessionWorker_.busy() || logicalVendorEditor_ ||
+           nativeShowBusy_ || studioBackupBusy_ || catalog_.busy() ||
+           engine_.isGraphSwitchPending() || engine_.independentClockActive() ||
+           engine_.hasPendingDirectRestore() ||
+           engine_.diagnosticRoute()!=armix::diagnostics::Route::normal)return;
+        if(std::any_of(floatingBuiltinFx_.begin(),floatingBuiltinFx_.end(),[](const auto& held){
+            return held && held->window && held->window->isVisible();
+        }))return; // no interruption of an active offline editor
+        if((immersibEditorWindow_&&immersibEditorWindow_->isVisible()) ||
+           (editorWindow_&&editorWindow_->isVisible()))return;
+        const auto now=monotonicMilliseconds(),epoch=engine_.dryRoutingLabEpoch();
+        const auto callbacks=engine_.directCallbackCount();
+        if(offlineReturnEpoch_!=epoch) {
+            offlineReturnEpoch_=epoch;offlineReturnSinceMs_=now;
+            offlineReturnCallback_=callbacks;offlineReturnProgressMs_=0;
+            return;
+        }
+        if(callbacks!=offlineReturnCallback_) {
+            offlineReturnCallback_=callbacks;offlineReturnProgressMs_=now;
+        }
+        // Observe fresh callback progress, not merely an open driver handle.
+        if(!offlineReturnProgressMs_ || now-offlineReturnProgressMs_>500 ||
+           now-offlineReturnSinceMs_<350 ||
+           now-retainedOfflineLastActivityMs_<1500)return;
+        const auto& workspace=logicalMixer_.workspace();
+        const auto revision=workspace.revision();
+        const auto token=workspace.workspaceToken();
+        if(offlineAutoAttemptEpoch_==epoch && offlineAutoAttemptRevision_==revision &&
+           offlineAutoAttemptWorkspace_==token)return;
+        // Built-ins have host-controlled preparation. An arbitrary vendor
+        // DLL can stall in instantiate/setState and is not a timer action.
+        for(const auto& fx:workspace.document().inserts)
+            if(!armix::builtin_fx::findNativeBuiltInFx(fx.catalogId))return;
+        auto* device=engine_.devices().getCurrentAudioDevice();
+        if(!device || !device->isOpen())return;
+        auto applying=deviceApply_.tryBegin(
+            armix::device::NativeDeviceApplyCoordinator::Purpose::asioRecovery);
+        if(!applying)return;
+        auto mode=MixerBindingMode::exact;
+        if(device->getTypeName()=="ASIO") {
+            if(!engine_.authorizeRetainedAsioRestart() || engine_.asioRestartPinCorrection())return;
+            mode=MixerBindingMode::verifiedAsioRestart;
+        } else if(!engine_.verifiedRetainedWasapiReturn())return;
+        // Consume one attempt per exact epoch/workspace revision, not per tick.
+        offlineAutoAttemptEpoch_=epoch;offlineAutoAttemptRevision_=revision;
+        offlineAutoAttemptWorkspace_=token;
+        const auto started=monotonicMilliseconds();
+        const bool restored=finishAudioSetupAndRecoverMixer(mode,true);
+        diagnostics_.record("OFFLINE_AUTO_REBIND_MS",
+            juce::String(static_cast<juce::int64>(monotonicMilliseconds()-started)));
+        if(restored) {
+            asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
+            wasapiRecovery_.recovered();
+            diagnostics_.record("OFFLINE_AUTO_REBIND_ACCEPTED","Verified original callback; latest mixer restored");
+        } else {
+            diagnostics_.record("OFFLINE_AUTO_REBIND_DEFERRED",mixerSessionError_);
+        }
+        emitApprovedNativeSnapshot();
+    }
 
     void serviceAsioMixerRestart() {
         if(pendingRetainedFxCapture_ || retainedOfflineFxActive_)return; // never rebind stale PCM over edited .smix
@@ -9081,6 +9176,9 @@ private:
         if(engine_.hasRetainedNativeSession()) {
             // OS/JUCE STOP/START may restore the exact endpoint. Reuse leases;
             // no driver reopen or vendor-state reconstruction from this timer.
+            const auto now=monotonicMilliseconds();
+            wasapiRecovery_.fault(now);
+            if(!wasapiRecovery_.due(now))return;
             if(device && device->isOpen() && !directCallbackStalled_ &&
                engine_.directRouteAuthorized() && engine_.recoverSameWasapiMixer()) {
                 wasapiRecovery_.recovered();
@@ -9089,7 +9187,7 @@ private:
                 if(engine_.wantsMainContinuation() && !operatorOutputMuted_)
                     requestAutomaticMain(false);
                 emitApprovedNativeSnapshot();
-            }
+            } else wasapiRecovery_.failed(now);
             return;
         }
         juce::AudioDeviceManager::AudioDeviceSetup live;
@@ -9333,6 +9431,7 @@ private:
                 wasapiRecovery_.endpointReturned(monotonicMilliseconds());
         }
 #endif
+        serviceRetainedOfflineRecovery();
         serviceAsioMixerRestart();
         serviceWasapiDeviceContinuity();
         rememberVerifiedWasapiSetup();

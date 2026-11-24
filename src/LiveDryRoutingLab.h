@@ -2449,6 +2449,7 @@ public:
         return c.owners && hasRetainedNativeSession() && epoch()==c.observedEpoch &&
             nativeAccepted_.deviceEpoch==c.ownerEpoch &&
             nativeAccepted_.pcmRevision==c.revision &&
+            (!c.document.acceptedRevision || nativeAccepted_.graph.roster.revision()==c.document.acceptedRevision) &&
             nativeAccepted_.fxOwners==c.owners &&
             c.owners->epoch()==c.ownerEpoch && c.owners->revision()==c.revision;
     }

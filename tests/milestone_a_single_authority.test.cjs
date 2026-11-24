@@ -268,7 +268,7 @@ test("FUX-1 offline FX remains more recent than restored audio and survives shut
                           host.indexOf("juce::String saveMixerSession("));
  assert.match(restore,/if\(retainedOfflineFxActive_\)/);
  assert.match(restore,/RETAINED_OFFLINE_FX_REAPPLY_REQUIRED/);
- assert.match(restore,/Open the saved \.smix explicitly/);
+ assert.match(restore,/Offline FX edits are pending: Apply Audio I\/O/);
  const save=host.slice(host.indexOf("juce::String saveMixerSession("),
                        host.indexOf("juce::String resolveMixer",host.indexOf("juce::String saveMixerSession("))+1);
  // Older live PCM must not serialize over newer logical vendor binary state
@@ -290,3 +290,15 @@ test("FUX-1 offline FX remains more recent than restored audio and survives shut
  assert.match(host,/pendingRetainedFxCapture_ \|\| retainedOfflineFxActive_\)return; \/\/ never arm/);
  assert.match(host,/retainedCaptureDeviceEpoch/);
  });
+
+test("offline auto recovery requires a live verified original callback and no external vendor restore",()=>{
+ const main=read("src/Main.cpp");
+ const auto=main.slice(main.indexOf("void serviceRetainedOfflineRecovery()"),main.indexOf("void serviceAsioMixerRestart()"));
+ for(const marker of ["engine_.allOutputsDisarmed()","engine_.retainedNativeEpoch()!=retainedOfflineOwnerEpoch_",
+  "mixerSessionWorker_.busy()","logicalVendorEditor_","held->window->isVisible()",
+  "engine_.directCallbackCount()","now-offlineReturnProgressMs_>500",
+  "offlineAutoAttemptWorkspace_==token","findNativeBuiltInFx(fx.catalogId)",
+  "engine_.authorizeRetainedAsioRestart()","engine_.verifiedRetainedWasapiReturn()",
+  "finishAudioSetupAndRecoverMixer(mode,true)"])assert.ok(auto.includes(marker),marker);
+ assert.doesNotMatch(auto,/openSelectedAudioDevice\(|setOutputMuted\(false\)|setMonitorEnabled\(true\)/);
+});

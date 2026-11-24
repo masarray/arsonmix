@@ -7031,7 +7031,7 @@ test("P0 offline picker is presentation-only until selection and Apply restores 
  assert.match(bridge,/if\(empty\)\{\s*scope\?\.openFastPicker\?\.\(t,slot,btn\);\s*return true;/);
  assert.match(bridge,/action:"insertFx",selectedCatalogId:id/);
  assert.match(bridge,/nativeHooks\.insertPlugin\(held\.selectedCatalogId/);
- assert.match(native,/if\(retainedOfflineFxActive_\)return; \/\/ never arm the stale retained graph/);
+ assert.match(native,/if\(pendingRetainedFxCapture_ \|\| retainedOfflineFxActive_\)return; \/\/ never arm stale retained PCM/);
  assert.match(native,/engine_\.finishManualAudioSetup\(false,true\)/);
  assert.match(native,/OFFLINE_MIXER_REBIND_ACCEPTED/);
  assert.match(engine,/if\(deferRetainedRebind\)return true/);

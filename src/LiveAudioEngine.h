@@ -483,6 +483,16 @@ public:
     bool recoverSameWasapiMixer() {
         return hasRetainedUnboundMixer() && rebindRetainedWasapiSession();
     }
+    // Inspect only the already-authorized callback; never open a driver or
+    // approve a different WASAPI endpoint on behalf of the offline editor.
+    bool verifiedRetainedWasapiReturn() {
+        if(!hasRetainedNativeSession() || !allOutputsDisarmed() || !acceptedWasapiBinding_)
+            return false;
+        const auto current=inspectWasapiBinding();
+        return current && acceptedWasapiBinding_->sameEndpoints(*current) &&
+            acceptedWasapiBinding_->samePinLayout(*current) &&
+            acceptedWasapiBinding_->rate==current->rate;
+    }
     // The JUCE ASIO device may restart itself after a control panel change.
     // Reauthorize only the previously approved driver class and session.
     bool sameRetainedAsioDriver() {
