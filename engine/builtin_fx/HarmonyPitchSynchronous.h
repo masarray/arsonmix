@@ -24,6 +24,7 @@ public:
     // the past. Reserve the full +/- .46-period search plus rounding and
     // fractional refinement margin. This is a sufficient causal bound,
     // not a promise of available voiced landmarks at startup.
+    static constexpr float minResonanceScale=.92f,maxResonanceScale=1.08f;
     static bool completeEpochWindow(float period,float ratio,float delay) noexcept {
         return std::isfinite(period)&&std::isfinite(ratio)&&std::isfinite(delay)&&
             period>=8.f&&ratio>=.49f&&ratio<=2.01f&&
@@ -38,9 +39,10 @@ public:
     // arrival delay can be added without moving the original dry PCM.
     Output process(int v,std::uint64_t time,std::size_t writeIndex,
                    const std::array<float,Capacity>& input,
-                   float sourcePeriod,float ratio,float fixedDelay) noexcept {
+                   float sourcePeriod,float ratio,float fixedDelay,
+                   float resonanceScale=1.f) noexcept {
         const auto out=render<false>(v,time,writeIndex,input,input,input,
-                                     sourcePeriod,ratio,fixedDelay);
+                                     sourcePeriod,ratio,fixedDelay,resonanceScale);
         return {out.left,out.ready};
     }
 
@@ -52,7 +54,7 @@ public:
                    const std::array<float,Capacity>& right,
                    float sourcePeriod,float ratio,float fixedDelay) noexcept {
         return render<true>(v,time,writeIndex,epochs,left,right,
-                            sourcePeriod,ratio,fixedDelay);
+                            sourcePeriod,ratio,fixedDelay,1.f);
     }
 private:
     template <bool Stereo>
@@ -60,12 +62,21 @@ private:
                    const std::array<float,Capacity>& epochs,
                    const std::array<float,Capacity>& left,
                    const std::array<float,Capacity>& right,
-                   float sourcePeriod,float ratio,float fixedDelay) noexcept {
+                   float sourcePeriod,float ratio,float fixedDelay,
+                   float resonanceScale) noexcept {
         if(v<0||v>=Voices||!std::isfinite(sourcePeriod)||
            !std::isfinite(ratio)||!std::isfinite(fixedDelay)||
            sourcePeriod<8.f||sourcePeriod>3200.f||
            ratio<.49f||ratio>2.01f||fixedDelay<sourcePeriod*1.2f)
             return {};
+        // Epoch-centered waveform dilation: target-center spacing owns F0;
+        // the intra-grain read rate controls local spectral structure.
+        // Freeze the rate per grain, never sweep a running source tap.
+        // A stereo lead is always unity and remains bit-exact.
+        const float requested=std::isfinite(resonanceScale)?
+            std::clamp(resonanceScale,minResonanceScale,maxResonanceScale):1.f;
+        const bool fullWindow=completeEpochWindow(sourcePeriod,ratio,fixedDelay);
+        const float scale=fullWindow?requested:1.f;
         auto& state=states_[static_cast<std::size_t>(v)];
         const double period=static_cast<double>(sourcePeriod);
         const double spacing=period/static_cast<double>(ratio);
@@ -93,7 +104,7 @@ private:
                 auto& grain=state.grains[state.nextSlot];
                 const double epoch=refineEpoch(
                     epochs,time,writeIndex,peak,state.epochPolarity);
-                grain={state.nextCenter,epoch,width,true};
+                grain={state.nextCenter,epoch,width,true,scale};
                 state.nextSlot=(state.nextSlot+1)%state.grains.size();
             }
             state.nextCenter+=spacing;
@@ -115,7 +126,15 @@ private:
                 sumL+=pair.left*w;
                 sumDifference+=pair.right*w;
             }else{
-                sumL+=readAt(left,time,writeIndex,grain.source+offset)*w;
+                const double position=grain.source+offset*grain.resonanceScale;
+                // An expanded source tap can exceed history at startup or
+                // a hostile pitch jump. Do not count missing PCM as a
+                // valid grain. Unity preserves the existing renderer exactly.
+                if(grain.resonanceScale!=1.f&&
+                   (time<2||position<0.||position>static_cast<double>(time-1)||
+                    position<static_cast<double>(time>=Capacity-3?time-(Capacity-3):0)))
+                    continue;
+                sumL+=readAt(left,time,writeIndex,position)*w;
             }
             weight+=w;
         }
@@ -129,7 +148,10 @@ private:
         }
         return {l,0.f,true};
     }
-    struct Grain {double center=0.,source=0.,width=1.;bool active=false;};
+    struct Grain {
+        double center=0.,source=0.,width=1.;bool active=false;
+        float resonanceScale=1.f;
+    };
     struct State {
         std::array<Grain,8> grains{};
         double nextCenter=0.;

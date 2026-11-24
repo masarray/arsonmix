@@ -52,7 +52,59 @@ static double measuredHz(const std::vector<float>& signal,double rate,double wan
     need(best>.6&&lag>0,"synchronous source lost periodicity");
     return rate/lag;
 }
+// A periodic damped-resonator pulse train with independent fundamental
+// and spectral resonance. Measure harmonic-envelope centroid rather than
+// claiming that a sine-wave pitch test measures formants.
+static std::vector<float> resonanceFixture(double rate,float scale,int block){
+    Shifter p{};
+    std::array<float,16384> ring{};
+    const int n=static_cast<int>(rate*.65);
+    std::vector<float> out(n);
+    const double f0=110.,period=rate/f0;
+    for(int pos=0;pos<n;pos+=block)for(int j=0;j<std::min(block,n-pos);++j){
+        const int at=pos+j;
+        const double age=std::fmod(at,period)/rate;
+        const double phase=6.283185307179586*f0*at/rate;
+        ring[static_cast<std::size_t>(at)&16383]=static_cast<float>(
+            .12*std::cos(phase)+.27*std::exp(-age*750.)*
+            std::cos(6.283185307179586*2200.*age));
+        const auto y=p.process(0,at,static_cast<std::size_t>(at)&16383,ring,
+            static_cast<float>(period),1.5f,static_cast<float>(rate*.029),scale);
+        out[at]=y.sample;
+        need(std::isfinite(y.sample)&&std::abs(y.sample)<1.f,"H8 nonfinite resonance");
+    }
+    return out;
+}
+static double centroid(const std::vector<float>& x,double rate){
+    double weighted=0.,sum=0.;
+    for(int h=8;h<=19;++h){
+        const double f=h*165.;
+        double c=0.,s=0.;
+        for(int i=static_cast<int>(rate*.3);i<static_cast<int>(rate*.6);++i){
+            const double phase=6.283185307179586*f*i/rate;
+            c+=x[i]*std::cos(phase);s+=x[i]*std::sin(phase);
+        }
+        const double e=c*c+s*s;weighted+=f*e;sum+=e;
+    }
+    need(sum>1.,"H8 resonance spectrum absent");return weighted/sum;
+}
+static void testResonanceScaling(){
+    for(double rate:{32000.,48000.,96000.,192000.}){
+        const auto old=resonanceFixture(rate,1.f,127);
+        const auto low=resonanceFixture(rate,.92f,127);
+        const auto high=resonanceFixture(rate,1.08f,127);
+        need(low==resonanceFixture(rate,.92f,64),"H8 grain block parity");
+        const auto a=centroid(low,rate),b=centroid(old,rate),c=centroid(high,rate);
+        std::cout<<"H8_RESONANCE rate="<<rate<<" low="<<a<<" neutral="<<b
+                 <<" high="<<c<<std::endl;
+        need(a<b-40.&&c>b+40.,"H8 resonance failed to move independently");
+        for(const auto* x:{&low,&old,&high})
+            need(std::abs(measuredHz(*x,rate,165.)-165.)<3.96,
+                 "H8 resonance changed fundamental");
+    }
+}
 int main(){
+    testResonanceScaling();
     // Actual source-period pitch shifting, not just a sine-wave finite test.
     // Three original harmonics approximate one voiced source; FFT/formant and
     // actual adult singer evidence are still necessary before quality claims.

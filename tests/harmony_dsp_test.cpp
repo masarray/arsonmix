@@ -315,6 +315,36 @@ static void testReducedLatency(){
     need(a>1.&&b>1.&&std::abs(db)<2.,"H7 backing energy regression");
   }
 }
+static void testResonanceEngine(){
+  constexpr int rate=48000;
+  auto input=leadFixture(rate,220.,0.f,0.f);input.right=input.left;
+  auto render=[&](int voices,bool wet,bool resonance,int block){
+    auto e=std::make_unique<Engine>();Settings s;
+    s.voices=voices;s.wet=wet?1.f:0.f;s.color=1.f;s.space=.6f;
+    need(e->prepare(rate)&&e->setResonanceForOfflineReference(resonance)&&
+         e->setSettings(s),"H8 engine setup");
+    auto out=input;
+    for(int at=0;at<2*rate;at+=block)
+      e->process(out.left.data()+at,out.right.data()+at,std::min(block,2*rate-at));
+    return out;
+  };
+  const auto old=render(5,true,false,127),now=render(5,true,true,127);
+  const auto split=render(5,true,true,64);
+  const auto dry=render(5,false,true,127);
+  need(now.left==split.left&&now.right==split.right,"H8 block parity");
+  need(dry.left==render(5,false,false,64).left,"H8 lead changed");
+  need(render(2,true,false,127).left==render(2,true,true,64).left,"H8 Duo changed");
+  double a=0.,b=0.,delta=0.;
+  for(int i=rate;i<2*rate;++i){
+    const double x=old.left[i]-dry.left[i],y=now.left[i]-dry.left[i];
+    a+=x*x;b+=y*y;delta+=(x-y)*(x-y);
+    need(std::isfinite(y),"H8 engine nonfinite");
+  }
+  std::cout<<"H8_ENGINE gain_dB="<<10.*std::log10(b/a)
+           <<" residual_dB="<<10.*std::log10(delta/a)<<std::endl;
+  need(a>1.&&b>1.&&std::abs(10.*std::log10(b/a))<1.5&&delta/a>1.e-5,
+       "H8 actual engine resonance absent or excessive");
+}
 static void testSingerSpectralIdentity(){
   auto response=[](int rate,int role,double hz,float share){
     auto e=std::make_unique<EnsembleSpace>();
@@ -917,6 +947,7 @@ static void testBackingUnity(){
   need(within,"H1 full-Wet aggregate stem outside +/-2dB target; inspect H1_STEM rows");
 }
 int main(){
+  testResonanceEngine();
   testReducedLatency();
   testChordAwareGuide();
   testSingerSpectralIdentity();

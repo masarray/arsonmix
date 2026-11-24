@@ -125,6 +125,7 @@ public:
         roomFocusReferenceEnabled_=true;
         presenceReferenceEnabled_=true;unityReferenceEnabled_=true;
         expressionReferenceEnabled_=true;identityReferenceEnabled_=true;
+        resonanceReferenceEnabled_=true;
         // Both renderer choice and missing-epoch recovery are time-domain
         // crossfades. Never hard-switch their independent source phases.
         pitchSyncAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.030)));
@@ -331,6 +332,10 @@ public:
             chordTransitionPending_=true;
     }
     bool guidedVoicingForOfflineTests() const noexcept{return guidedVoicing_;}
+    bool setResonanceForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        resonanceReferenceEnabled_=enabled;return true;
+    }
     int effectiveKey() const noexcept {
         return settings_.guideMode==1&&guideKey_>=0?guideKey_:settings_.key;
     }
@@ -619,12 +624,19 @@ private:
         const bool carryEpochs=pitchSyncReferenceEnabled_&&
             sourcePeriodSamples_>=8.f&&(voiced_||voicedGain_>.01f);
         PitchSynchronousVoice<capacity,maxVoices>::Output sync{};
+        // Conservative, independent vocal-tract proxy. Preserve Duo,
+        // Doubler, lead Tune and granular fallback; suppress the shift
+        // during weak periodic evidence and use the existing ensemble ramp.
+        constexpr std::array<float,maxVoices> resonance{{.98f,1.035f,.94f,.95f,1.02f}};
+        const float trust=std::clamp((sourceConfidence_-.79f)*10.f,0.f,1.f);
+        const float scale=resonanceReferenceEnabled_?
+            1.f+(resonance[ix]-1.f)*ensembleFocus_*trust:1.f;
         if(carryEpochs&&(legacyLatency_||
             PitchSynchronousVoice<capacity,maxVoices>::completeEpochWindow(
                 sourcePeriodSamples_,effectiveRatio,static_cast<float>(latency_)+arrival)))
             sync=pitchSync_.process(voice,sampleClock_,write_,mono_,
                 sourcePeriodSamples_,effectiveRatio,
-                static_cast<float>(latency_)+arrival);
+                static_cast<float>(latency_)+arrival,scale);
         float& colorState=pitchSyncFiltered_[ix];
         // Invalid PSOLA epochs must never inject zero into the high-voice
         // output while a crossfade is still active.
@@ -877,6 +889,7 @@ private:
     bool roomFocusReferenceEnabled_=true;
     bool presenceReferenceEnabled_=true,unityReferenceEnabled_=true;
     bool expressionReferenceEnabled_=true,identityReferenceEnabled_=true;
+    bool resonanceReferenceEnabled_=true;
     std::array<float,maxVoices> pitchSyncBlend_{},pitchSyncFiltered_{},pitchSyncValid_{};
     float space_=0.f,targetSpace_=0.f;
     float gain_=1.f,targetGain_=1.f,targetCorrection_=0.f;
