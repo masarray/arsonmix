@@ -1,8 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #if defined(_WIN32)
+// Do not leak Win32 min/max or obsolete segmented-pointer macros into
+// JUCE/DSP headers included after this adapter.
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <dwmapi.h>
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
+#ifdef near
+#undef near
+#endif
+#ifdef far
+#undef far
+#endif
 
 namespace armix::ui::win32 {
 // Native Windows caption colour is OS-owned. Prefer its supported dark
