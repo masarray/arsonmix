@@ -233,7 +233,7 @@ public:
     // Opt-in offline evidence only. All fields count sample calls, except
     // seam transitions which are recorded separately by BackingRenderSeam.
     struct RendererTrace {
-        enum Field {calls,notCarrying,causalBlocked,drained,safeUnready,ready,partial,weakConfidence,epochRecovered,size};
+        enum Field {calls,notCarrying,causalBlocked,drained,safeUnready,ready,partial,weakConfidence,epochRecovered,recoverySites,size};
         std::array<std::uint64_t,size> values{};
         RendererTrace delta(const RendererTrace& previous) const noexcept {
             RendererTrace out;
@@ -919,6 +919,7 @@ private:
             }
             if(carryEpochs&&!confident)++v[RendererTrace::weakConfidence];
             if(sync.recovered)++v[RendererTrace::epochRecovered];
+            v[RendererTrace::recoverySites]+=sync.recoverySites;
         }
         float& colorState=pitchSyncFiltered_[ix];
         // Invalid PSOLA epochs must never inject zero into the high-voice

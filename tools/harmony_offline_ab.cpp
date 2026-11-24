@@ -451,7 +451,7 @@ static void continuityReport(const Wave& input,const fs::path& folder,Settings s
     events<<"variant,role,losses,acquisitions\n";
     std::ofstream traceCsv(folder/"renderer_trace_10ms.csv",std::ios::trunc);
     if(!traceCsv)throw std::runtime_error("renderer trace open failed");
-    traceCsv<<"variant,role,output_time_s,source_time_s,calls,no_clock,causal_blocked,drained,safe_unready,ready,partial,weak_confidence,epoch_recovered,losses,acquisitions\n";
+    traceCsv<<"variant,role,output_time_s,source_time_s,calls,no_clock,causal_blocked,drained,safe_unready,ready,partial,weak_confidence,epoch_recovered,recovery_candidate_sites,losses,acquisitions\n";
     for(int version:{12,13,14,15,16,17,18,20}){
         SeamCounts counts{};std::vector<TraceRow> trace;
         const auto mix=process(input,s,true,127,true,true,true,true,

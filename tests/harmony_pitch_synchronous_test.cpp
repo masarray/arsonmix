@@ -230,8 +230,9 @@ static void testCausalAdmissionDrain(){
 static void testDelayedEpochRecovery(){
     constexpr double tau=6.283185307179586;
     for(int rate:{32000,48000,96000,192000}){
-        Shifter old{},now{};std::array<float,16384> ring{};
+        Shifter old{},now{},reference{};std::array<float,16384> ring{};
         int aMissing=0,bMissing=0,aPartial=0,bPartial=0,rescues=0;
+        std::uint64_t oldSites=0,newSites=0;
         double phase=0.,peak=0.;
         for(int i=0;i<rate/2;++i){
             const double t=double(i)/rate;
@@ -243,6 +244,11 @@ static void testDelayedEpochRecovery(){
             const float period=rate/(t<.24?330.f:t<.36?110.f:330.f);
             const auto a=old.process(0,i,i&16383,ring,period,1.3f,rate*.032f,1.f,true,true,true,true,false);
             const auto b=now.process(0,i,i&16383,ring,period,1.3f,rate*.032f,1.f,true,true,true,true,true);
+            const auto c=reference.process(0,i,i&16383,ring,period,1.3f,rate*.032f,1.f,true,true,true,true,true,false);
+            need(b.sample==c.sample&&b.ready==c.ready&&b.coverage==c.coverage&&
+                 b.recovered==c.recovered&&now.lastEpochForOfflineTests(0)==reference.lastEpochForOfflineTests(0),
+                 "H21 recovery search changed PCM/epoch");
+            oldSites+=c.recoverySites;newSites+=b.recoverySites;
             need(std::isfinite(b.sample)&&std::abs(b.sample)<.4f,"H20 bounded epoch recovery");
             if(i>rate/10){
                 aMissing+=!a.ready;bMissing+=!b.ready;
@@ -256,6 +262,8 @@ static void testDelayedEpochRecovery(){
                  <<" peak="<<peak<<std::endl;
         need(aMissing>0&&rescues>0&&bMissing<aMissing&&bPartial+bMissing<aPartial+aMissing,
              "H20 delayed epoch recovery did not reduce unsupported samples");
+        std::cout<<"H21_SCAN rate="<<rate<<" old_sites="<<oldSites<<" new_sites="<<newSites<<std::endl;
+        need(oldSites>0&&newSites<oldSites*3/4,"H21 redundant search not eliminated");
     }
     // Recovery cannot fabricate epochs in silent source.
     Shifter silence{};std::array<float,16384> zero{};

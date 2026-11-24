@@ -847,6 +847,59 @@ static void testLowerPresenceAndPresets(){
 // discontinuity, not the ordinary derivative of a sung waveform.
 // Exercise real renderer loss/recovery on a bass/high phrase. Do not
 // infer that the losses are causal-boundary events without trace evidence.
+// Non-gating callback timing: interleave exact H19 and optimized H20+
+ // on a changing bass/high voice. Source generation and trace are untimed.
+static void testEpochRecoveryPerformance(){
+    using Clock=std::chrono::steady_clock;
+    constexpr double tau=6.283185307179586;
+    for(int rate:{48000,96000,192000})for(int block:{64,128}){
+        LeadFixture src{std::vector<float>(2*rate),std::vector<float>(2*rate)};
+        double phase=0.;
+        for(int i=0;i<2*rate;++i){
+            const double sec=double(i)/rate;
+            const double hz=(i/(rate/3))%2?82.40689:330.;
+            phase+=tau*hz*std::exp2(35.*std::sin(tau*5.*sec)/1200.)/rate;
+            src.left[i]=src.right[i]=static_cast<float>(
+                .17*std::sin(phase)+.055*std::sin(2*phase+.3)+.03*std::sin(3*phase+.6));
+        }
+        auto a=src,b=src;
+        auto old=std::make_unique<Engine>(),now=std::make_unique<Engine>();
+        Settings s;s.voices=5;s.wet=1.f;s.color=.78f;s.space=1.f;
+        need(old->prepare(rate)&&now->prepare(rate)&&
+             old->setEpochRecoveryForOfflineReference(false)&&old->setSettings(s)&&now->setSettings(s),
+             "H21 CPU fixture setup");
+        std::vector<double> before,after;
+        before.reserve(2*rate/block+1);after.reserve(2*rate/block+1);
+        for(int at=0;at<2*rate;at+=block){
+            const int n=std::min(block,2*rate-at);
+            const auto measure=[&](Engine& e,LeadFixture& z){
+                const auto start=Clock::now();
+                e.process(z.left.data()+at,z.right.data()+at,n);
+                return std::chrono::duration<double,std::micro>(Clock::now()-start).count();
+            };
+            double x,y;
+            if((at/block)&1){y=measure(*now,b);x=measure(*old,a);}
+            else{x=measure(*old,a);y=measure(*now,b);}
+            if(at>=rate/4&&n==block){before.push_back(x);after.push_back(y);}
+        }
+        double peak=0.;std::size_t overload=0;
+        for(int i=0;i<2*rate;++i){
+            need(std::isfinite(b.left[i])&&std::isfinite(b.right[i]),"H21 nonfinite PCM");
+            peak=std::max({peak,double(std::abs(b.left[i])),double(std::abs(b.right[i]))});
+            overload+=(std::abs(b.left[i])>1.f)+(std::abs(b.right[i])>1.f);
+        }
+        std::sort(before.begin(),before.end());std::sort(after.begin(),after.end());
+        const double deadline=1.e6*block/rate;
+        const auto p=[](const auto& v,int n){return v[(v.size()-1)*n/100];};
+        const auto misses=[&](const auto& v){return std::count_if(v.begin(),v.end(),[&](double x){return x>deadline;});};
+        std::cout<<"H21_CPU rate="<<rate<<" block="<<block<<" callbacks="<<before.size()
+                 <<" old_p50_us="<<p(before,50)<<" new_p50_us="<<p(after,50)
+                 <<" old_p99_us="<<p(before,99)<<" new_p99_us="<<p(after,99)
+                 <<" old_max_us="<<before.back()<<" new_max_us="<<after.back()
+                 <<" deadline_us="<<deadline<<" old_misses="<<misses(before)
+                 <<" new_misses="<<misses(after)<<" peak="<<peak<<" overload="<<overload<<std::endl;
+    }
+}
 static void testCausalAdmissionEngine(){
     constexpr double tau=6.283185307179586;
     for(int rate:{48000,96000}){
@@ -890,7 +943,7 @@ static void testCausalAdmissionEngine(){
         std::cout<<"H20_ENGINE rate="<<rate<<" old_losses="<<now.losses<<" new_losses="<<h20.losses
                  <<" old_unready="<<now.trace.values[Trace::safeUnready]<<" new_unready="<<x[Trace::safeUnready]
                  <<" old_partial="<<now.trace.values[Trace::partial]<<" new_partial="<<x[Trace::partial]
-                 <<" recovered="<<x[Trace::epochRecovered]<<std::endl;
+                 <<" recovered="<<x[Trace::epochRecovered]<<" rescue_sites="<<x[Trace::recoverySites]<<std::endl;
         need(x[Trace::ready]>0&&h20.losses<=now.losses&&x[Trace::safeUnready]<=now.trace.values[Trace::safeUnready],
              "H20 engine readiness regression");
         for(int ch:{0,1}){
@@ -1632,6 +1685,7 @@ static void testBackingPitchContour(){
     }
 }
 int main(){
+    testEpochRecoveryPerformance();
     testCausalAdmissionEngine();
     testSlopeAwareSeam();
     testPhaseCoherentCarrier();
