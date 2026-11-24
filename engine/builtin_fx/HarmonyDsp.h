@@ -158,6 +158,7 @@ public:
         presenceReferenceEnabled_=true;unityReferenceEnabled_=true;
         expressionReferenceEnabled_=true;identityReferenceEnabled_=true;
         resonanceReferenceEnabled_=true;articulationReferenceEnabled_=true;
+        fastCorrelation_=true;
         articulation_.prepare(rate);
         // Both renderer choice and missing-epoch recovery are time-domain
         // crossfades. Never hard-switch their independent source phases.
@@ -372,6 +373,11 @@ public:
     bool setArticulationForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
         articulationReferenceEnabled_=enabled;return true;
+    }
+    // Test-only matched H9 accumulation order; not a persisted mode.
+    bool setFastCorrelationForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        fastCorrelation_=enabled;return true;
     }
     int effectiveKey() const noexcept {
         return settings_.guideMode==1&&guideKey_>=0?guideKey_:settings_.key;
@@ -742,11 +748,23 @@ private:
                 const double entering=pitchWindow_[static_cast<std::size_t>(span+lag-1)];
                 pitchLagEnergy_+=entering*entering-leaving*leaving;
             }
+            // Convert frozen PCM to double only once per analysis window.
+            // Independent accumulators break the serial FP dependency and
+            // permit packed multiply/add without fast-math or ISA dispatch.
+            // Same full 160 samples, lag coverage, normalization and budget.
+            const double* x=pitchWindow_.data();
+            const double* y=x+lag;
             double xy=0.;
-            for(int j=0;j<span;++j){
-                const double x=pitchWindow_[static_cast<std::size_t>(j)];
-                const double y=pitchWindow_[static_cast<std::size_t>(j+lag)];
-                xy+=x*y;
+            if(fastCorrelation_){
+                double s0=0.,s1=0.,s2=0.,s3=0.;
+                static_assert(span%4==0);
+                for(int j=0;j<span;j+=4){
+                    s0+=x[j]*y[j];s1+=x[j+1]*y[j+1];
+                    s2+=x[j+2]*y[j+2];s3+=x[j+3]*y[j+3];
+                }
+                xy=(s0+s1)+(s2+s3);
+            }else{
+                for(int j=0;j<span;++j)xy+=x[j]*y[j];
             }
             const float correlation=static_cast<float>(
                 xy/std::sqrt(pitchEnergy_*std::max(0.,pitchLagEnergy_)+1.e-14));
@@ -912,7 +930,10 @@ private:
     float pitchBest_=-1.f;
     double pitchEnergy_=0.,pitchLagEnergy_=0.;
     // Fixed PCM snapshots; no allocation or variable work on the callback.
-    std::array<float,160+231> pitchWindow_{};
+    // Fixed 391 doubles, +1564 bytes vs the H9 float snapshot. The
+    // decimated input itself is unchanged; no added audio delay.
+    std::array<double,160+231> pitchWindow_{};
+    bool fastCorrelation_=true;
     std::array<float,231> pitchCorrelations_{};
     int currentNote_=-1,candidateNote_=-1,noteHold_=0;
     int guideKey_=-1,guideScale_=-1;

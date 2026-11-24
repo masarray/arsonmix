@@ -9,6 +9,8 @@
 #include <vector>
 #include <memory>
 #include <limits>
+#include <chrono>
+#include <iomanip>
 using namespace armix::harmony;
 static void need(bool value,const char* why){if(!value){std::cerr<<why<<'\n';std::exit(2);}}
 // The fixture has the same fundamental in both channels and different
@@ -344,6 +346,74 @@ static void testResonanceEngine(){
            <<" residual_dB="<<10.*std::log10(delta/a)<<std::endl;
   need(a>1.&&b>1.&&std::abs(10.*std::log10(b/a))<1.5&&delta/a>1.e-5,
        "H8 actual engine resonance absent or excessive");
+}
+// H10: compare both accumulation orders on identical input in the same
+// process. Wall clock is diagnostic, not a machine-dependent pass gate.
+// Interleave reference/candidate blocks and alternate measurement order.
+static void testCorrelationPerformance(){
+  using Clock=std::chrono::steady_clock;
+  for(int rate:{48000,96000,192000})for(int block:{64,128}){
+    const auto input=leadFixture(rate,rate==192000?880.:220.,35.f,55.f);
+    auto x=input,y=input;
+    // Identical deterministic noisy interruptions to exercise low
+    // confidence, release and reacquisition rather than a sine-only loop.
+    unsigned rng=123;
+    for(int i=0;i<2*rate;++i){
+      rng=1664525u*rng+1013904223u;
+      if(i%(rate/4)<rate/100){
+        const float n=.08f*static_cast<float>((rng>>8)/16777216.0-.5);
+        x.left[i]+=n;x.right[i]-=n;
+        y.left[i]=x.left[i];y.right[i]=x.right[i];
+      }
+    }
+    auto old=std::make_unique<Engine>(),now=std::make_unique<Engine>();
+    Settings s;s.voices=5;s.wet=.75f;s.correction=true;
+    need(old->prepare(rate)&&now->prepare(rate)&&
+         old->setFastCorrelationForOfflineReference(false)&&
+         old->setSettings(s)&&now->setSettings(s),"H10 prepare");
+    std::vector<double> before,after;
+    before.reserve(2*rate/block+1);after.reserve(2*rate/block+1);
+    double maxDiff=0.;
+    for(int at=0;at<2*rate;at+=block){
+      const int n=std::min(block,2*rate-at);
+      auto measure=[&](Engine& e,LeadFixture& z){
+        const auto start=Clock::now();
+        e.process(z.left.data()+at,z.right.data()+at,n);
+        return std::chrono::duration<double,std::micro>(Clock::now()-start).count();
+      };
+      double a,b;
+      if((at/block)&1){b=measure(*now,y);a=measure(*old,x);}
+      else{a=measure(*old,x);b=measure(*now,y);}
+      if(at>=rate/3){before.push_back(a);after.push_back(b);}
+      need(old->observedMidiNote()==now->observedMidiNote()&&
+           old->voiced()==now->voiced(),"H10 pitch decision changed");
+      for(int i=at;i<at+n;++i){
+        need(std::isfinite(y.left[i])&&std::isfinite(y.right[i]),"H10 nonfinite");
+        maxDiff=std::max({maxDiff,std::abs(double(x.left[i])-y.left[i]),
+                                 std::abs(double(x.right[i])-y.right[i])});
+      }
+    }
+    need(maxDiff<=1.e-6&&old->completedPitchAnalyses()==now->completedPitchAnalyses()&&
+         old->completedPitchAnalyses()>100&&
+         now->peakPitchLagWork()<=Engine::maxPitchLagsPerSlice&&
+         old->abandonedPitchAnalyses()==now->abandonedPitchAnalyses(),
+         "H10 reference PCM or bounded analysis changed");
+    std::sort(before.begin(),before.end());std::sort(after.begin(),after.end());
+    const auto percentile=[](const auto& v,int p){return v[(v.size()-1)*p/100];};
+    const double deadline=1.e6*block/rate;
+    const auto misses=[&](const auto& v){return std::count_if(v.begin(),v.end(),
+       [&](double a){return a>deadline;});};
+    std::cout<<std::fixed<<std::setprecision(3)
+      <<"H10_CPU rate="<<rate<<" block="<<block<<" count="<<before.size()
+      <<" old_p50_us="<<percentile(before,50)<<" new_p50_us="<<percentile(after,50)
+      <<" old_p95_us="<<percentile(before,95)<<" new_p95_us="<<percentile(after,95)
+      <<" old_p99_us="<<percentile(before,99)<<" new_p99_us="<<percentile(after,99)
+      <<" old_max_us="<<before.back()<<" new_max_us="<<after.back()
+      <<" old_misses="<<misses(before)<<" new_misses="<<misses(after)
+      <<" deadline_us="<<deadline<<" max_pcm_diff="<<maxDiff
+      <<" exact_pcm="<<(maxDiff==0.)<<" analyses="<<now->completedPitchAnalyses()
+      <<std::defaultfloat<<std::setprecision(6)<<std::endl;
+  }
 }
 static void testArticulation(){
   constexpr double tau=6.283185307179586;
@@ -1017,6 +1087,7 @@ static void testBackingUnity(){
   need(within,"H1 full-Wet aggregate stem outside +/-2dB target; inspect H1_STEM rows");
 }
 int main(){
+  testCorrelationPerformance();
   testArticulation();
   testResonanceEngine();
   testReducedLatency();
