@@ -120,7 +120,7 @@ int main() {
             return std::vector<VocalReverbEditor::UserPresetEntry>{{"test-id","My Vocal"}};
         },[](const juce::String&){return juce::String{};},
         [&](const juce::String& id){return id=="test-id"&&owner->queueSettings(custom)>0;});
-        assert(save->isEnabled()&&list->getItemText(17)=="My Vocal");
+        assert(save->isEnabled()&&list->getItemText(reverbSisCustomItem)=="My Vocal");
         list->setSelectedId(1000,juce::sendNotificationSync);
         assert(owner->settingsPending()&&owner->desiredSettings().values==custom.values);
         owner->consumeRealtimeEdits();
