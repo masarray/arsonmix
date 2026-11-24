@@ -5088,11 +5088,15 @@ test("MV-9B Global FX ignores rejected post-ACK snapshot after a pre-ACK value r
  const initial=acceptedFixture();
  initial.globalFxBypassed=false;
  initial.graph.channels[0].inserts=[{id:"geq-live",catalogId:"armix.builtin.graphic-eq31.v1",
-   name:"Graphic EQ 31",bypassed:false}];
+   name:"Graphic EQ 31",bypassed:false},
+   {id:"reverb-legacy",catalogId:"armix.builtin.vocal-reverb.v1",
+    name:"Vocal Reverb",bypassed:false}];
  initial.mixerSession={authority:"CHANNEL_ID",deviceEpoch:initial.device.epoch,
    routeRevision:initial.graph.revision,rosterRevision:initial.graph.rosterRevision,
    channels:initial.graph.channels,main:{db:0,mute:false}};
  listeners.get("arMixConsoleSnapshot")(initial);
+ assert.equal(scope.tracks[0].fx[1],"Reverb-Sis","old saved rack label follows stable catalog identity");
+ assert.equal(scope.tracks[0].fxInsertIds[1].id,"reverb-legacy");
  assert.equal(win.__ARMIX_NATIVE_GLOBAL_FX__.toggle(),true);
  const dispatched=sent.findLast(x=>x.payload?.action==="routingGlobalFxBypass");
  assert.ok(dispatched);

@@ -24,7 +24,8 @@ static double shelfGain(float hz,float air,float fs) {
     }
     return std::sqrt(after/before);
 }
-static double render(int mode,float mix,bool mono,bool musical=false,float duck=0.f) {
+static double render(int mode,float mix,bool mono,bool musical=false,float duck=0.f,
+                     bool broadband=false) {
     arverb::Engine e;
     e.loadPreset(arverb::Preset::VocalPlate);
     e.setAlgorithm(static_cast<arverb::Algorithm>(mode));
@@ -37,6 +38,15 @@ static double render(int mode,float mix,bool mono,bool musical=false,float duck=
         for(int i=0;i<128;++i) {
             float t=static_cast<float>(block*128+i);
             l[i]=0.25f*std::sin(t*0.061f)+0.09f*std::sin(t*0.72f);
+            if(broadband) {
+                // Deterministic harmonic-rich voiced proxy; not a human
+                // listening test, and no external/licensed audio fixture.
+                float voice=0.f;
+                for(int h=1;h<=24;++h)
+                    voice+=(0.23f/static_cast<float>(h))*
+                        std::sin(t*0.0242f*h + 0.37f*h*h);
+                l[i]=voice;
+            }
             r[i]=mono?l[i]:0.22f*std::sin(t*0.041f+0.7f);
         }
         e.process(l.data(),r.data(),a.data(),b.data(),128);
@@ -127,6 +137,14 @@ int main() {
         check(std::abs(newWet/oldWet-2.0)<.001,"calibrated +6 dB wet return");
         check(sung>newWet*.65,"normal duck cannot erase the wet return");
         check(sung>dry*.12,"audible wet-heavy mono fold with real duck");
+        const double voiceDry=render(mode,0.f,true,true,.22f,true);
+        const double voiceWet=render(mode,1.f,true,true,.22f,true);
+        const double voiceLegacy=render(mode,1.f,true,false,.43f,true);
+        std::printf("Reverb-Sis mode=%d harmonic RMS wet/dry=%.3f new/old=%.3f\n",
+                    mode,voiceWet/voiceDry,voiceWet/voiceLegacy);
+        check(voiceWet>voiceLegacy*1.7,"harmonic sustained source improves versus old ducked return");
+        check(voiceWet>voiceDry*.12 && voiceWet<voiceDry*3.4,
+              "harmonic sustained source stays audible in mono");
         for(float mix:{.25f,.5f,.75f,1.f}) {
             const double rms=render(mode,mix,true,true,.22f);
             check(rms>dry*.12 && rms<dry*3.4,"musical Mix no severe sustained level collapse");

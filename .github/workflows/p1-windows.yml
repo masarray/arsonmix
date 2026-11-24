@@ -228,6 +228,18 @@ jobs:
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -Werror tests/mixer_routing_plan_test.cpp -o "$RUNNER_TEMP/armix-native-routing-pcm"
           "$RUNNER_TEMP/armix-native-routing-pcm"
+      - name: Reverb-Sis portable wet return / mono fold regression (no JUCE)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Historical pre-Reverb snapshots have no vendored source. A
+          # current adapter must always carry its corresponding core test.
+          if [[ -f engine/builtin_fx/VocalReverbProcessor.h ]]; then
+            g++ -std=c++17 -O2 -fno-fast-math -Ithird_party/arsonverb/include \
+              third_party/arsonverb/src/Reverb.cpp third_party/arsonverb/src/Presets.cpp \
+              third_party/arsonverb/tests/test_mix_air.cpp -o "$RUNNER_TEMP/armix-reverb-mix-air"
+            "$RUNNER_TEMP/armix-reverb-mix-air"
+          fi
       - name: WaveShell JUCE 8 class-index regression (source-aware)
         shell: bash
         run: |

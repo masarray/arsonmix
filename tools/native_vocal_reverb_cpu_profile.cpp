@@ -29,7 +29,7 @@ int main() {
                 auto& e=*engines[static_cast<std::size_t>(i)];
                 e.setAlgorithm(arverb::Algorithm::Plate);
                 e.loadPreset(arverb::Preset::VocalPlateClean);
-                e.prepare(static_cast<double>(rate));
+                e.prepare(static_cast<double>(rate),true); // actual Reverb-Sis product voicing
             }
             for(int n=0;n<48;++n)for(int i=0;i<count;++i)
                 engines[static_cast<std::size_t>(i)]->process(inL.data(),inR.data(),outL.data(),outR.data(),static_cast<std::size_t>(frames));
