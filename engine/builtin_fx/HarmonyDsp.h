@@ -130,6 +130,54 @@ private:
     bool active_=false;
     float last_=0.f,start_=0.f;
 };
+// Two independent fractional delay heads. Integrate delay velocity instead
+// of multiplying a moving pitch ratio by grain age (which adds a spurious
+// pitch term during a glide). Retarget only a zero-weight head. If F0 is
+// trusted, choose a whole-period offset from the still-audible head to
+// avoid destructive interference in the fallback crossfade.
+// All state is bounded; no audio allocation, lookahead or new PCM history.
+class PhaseCoherentCarrier final {
+public:
+    struct Delays {float a=0.f,b=0.f;};
+    void reset() noexcept {initialized_=false;lastTime_=0;previous_=0.f;delays_={};}
+    Delays process(std::uint64_t time,float phase,float ratio,float base,
+                   int grain,float period,bool trusted,float maxDelay) noexcept {
+        const float velocity=1.f-ratio;
+        const float half=phase<.5f?phase+.5f:phase-.5f;
+        // A full grain at worst permitted ratio cannot leave history.
+        const float lo=2.f+1.01f*grain;
+        const float hi=maxDelay-.51f*grain;
+        const auto nominal=[&](float p){return std::clamp(base+velocity*p*grain,lo,hi);};
+        if(!initialized_||time!=lastTime_+1){
+            delays_={nominal(phase),nominal(half)};
+            initialized_=true;
+            // Align at initial acquisition too. Neither prior head is live.
+            delays_.b=aligned(delays_.b,delays_.a,period,trusted,lo,hi);
+        }else{
+            delays_.a+=velocity;delays_.b+=velocity;
+            // Phase wrap corresponds to the cubic window's zero endpoint.
+            // At most one head resets per sample for all prepared grains.
+            if(phase<previous_)
+                delays_.a=aligned(nominal(phase),delays_.b,period,trusted,lo,hi);
+            else if(previous_<.5f&&phase>=.5f)
+                delays_.b=aligned(nominal(half),delays_.a,period,trusted,lo,hi);
+        }
+        previous_=phase;lastTime_=time;
+        return delays_;
+    }
+private:
+    static float aligned(float nominal,float other,float period,bool trusted,
+                         float lo,float hi) noexcept {
+        if(!trusted||!std::isfinite(period)||period<8.f||period>3200.f)return nominal;
+        const float candidate=other+std::round((nominal-other)/period)*period;
+        // Do not clamp a phase-aligned point into an unrelated phase.
+        return candidate>=lo&&candidate<=hi?candidate:nominal;
+    }
+    bool initialized_=false;
+    std::uint64_t lastTime_=0;
+    float previous_=0.f;
+    Delays delays_{};
+};
 // Slow note center removes sustained tuning error while keeping a bounded
 // fraction of the microphone's faster pitch contour. Updated once per
 // accepted pitch-analysis hop, not per sample. No lookahead or audio buffer.
@@ -202,6 +250,7 @@ public:
         for(auto& seam:backingSeams_)seam.prepare(rate);
         continuityReferenceEnabled_=true;supportReferenceEnabled_=true;
         naturalReferenceEnabled_=true;backingContour_.prepare(detectEvery_/rate);
+        carrierReferenceEnabled_=true;for(auto& carrier:carriers_)carrier.reset();
         periodContinuity_.reset();
         sourcePeriodSamples_=0.f;sourceConfidence_=0.f;sampleClock_=0;
         uncertainPitchHops_=0;weakSyncHops_=0;pitchSyncStable_=false;
@@ -425,6 +474,11 @@ public:
         resonanceReferenceEnabled_=enabled;return true;
     }
     // Exact H14 reference for matched acoustic regression only.
+    // Exact H15 carrier reference; offline before the first PCM only.
+    bool setCarrierForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        carrierReferenceEnabled_=enabled;return true;
+    }
     bool setNaturalForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
         naturalReferenceEnabled_=enabled;return true;
@@ -736,8 +790,15 @@ private:
         const float pB=p<0.5f?p+0.5f:p-0.5f;
         // Retain 16ms grain geometry and singer arrival offsets, but align
         // both the granular and PSOLA paths to the same declared lookback.
-        const float delayA=latency_+arrival+(1.f-effectiveRatio)*p*grain_;
-        const float delayB=latency_+arrival+(1.f-effectiveRatio)*pB*grain_;
+        float delayA=latency_+arrival+(1.f-effectiveRatio)*p*grain_;
+        float delayB=latency_+arrival+(1.f-effectiveRatio)*pB*grain_;
+        if(carrierReferenceEnabled_){
+            const auto heads=carriers_[static_cast<std::size_t>(voice)].process(
+                sampleClock_,p,effectiveRatio,static_cast<float>(latency_)+arrival,grain_,
+                sourcePeriodSamples_,voiced_&&pitchSyncStable_&&sourceConfidence_>=.86f,
+                static_cast<float>(capacity-3));
+            delayA=heads.a;delayB=heads.b;
+        }
         // Cubic smoothstep over the complementary two-grain windows.
         // Unlike the triangular seam, both endpoints have zero slope:
         // reduced grain-edge modulation without sin/cos in audio callback.
@@ -1050,8 +1111,9 @@ private:
     BackingArticulation articulation_{};
     std::array<BackingRenderSeam,maxVoices> backingSeams_{};
     bool continuityReferenceEnabled_=true,supportReferenceEnabled_=true;
-    bool naturalReferenceEnabled_=true;
+    bool naturalReferenceEnabled_=true,carrierReferenceEnabled_=true;
     BackingPitchContour backingContour_{};
+    std::array<PhaseCoherentCarrier,maxVoices> carriers_{};
     std::array<float,maxVoices> pitchSyncBlend_{},pitchSyncFiltered_{},pitchSyncValid_{};
     float space_=0.f,targetSpace_=0.f;
     float gain_=1.f,targetGain_=1.f,targetCorrection_=0.f;

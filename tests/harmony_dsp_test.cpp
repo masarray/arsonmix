@@ -883,13 +883,13 @@ static void testBackingContinuity(){
          +.065*std::sin(3*phase+1.1)+.026*std::sin(5*phase+.6);
       src.left[i]=src.right[i]=static_cast<float>(gap?.08*noise:x);
     }
-    auto run=[&](bool modern,bool wet,int block,bool support=true,bool natural=false){
+    auto run=[&](bool modern,bool wet,int block,bool support=true,bool natural=false,bool carrier=false){
       auto e=std::make_unique<Engine>();Settings s;
       s.voices=voices;s.wet=wet?1.f:0.f;s.color=.78f;s.space=1.f;
       s.guideMode=1;s.guideChannelId=2;
       need(e->prepare(rate)&&e->setContinuityForOfflineReference(modern)&&
            e->setSupportForOfflineReference(support)&&e->setNaturalForOfflineReference(natural)&&
-           e->setSettings(s),"H13 setup");
+           e->setCarrierForOfflineReference(carrier)&&e->setSettings(s),"H13 setup");
       auto out=src;
       for(int at=0;at<n;){
         // Split at control events; callback partition must not move them.
@@ -910,6 +910,32 @@ static void testBackingContinuity(){
     need(h15.left==h15Split.left&&h15.right==h15Split.right,"H15 block parity");
     const auto dry15=run(true,false,127,true,true);
     need(dry.left==dry15.left&&dry.right==dry15.right,"H15 dry changed");
+    const auto h16=run(true,true,127,true,true,true);
+    const auto h16Split=run(true,true,64,true,true,true);
+    need(h16.left==h16Split.left&&h16.right==h16Split.right,"H16 block parity");
+    const auto dry16=run(true,false,127,true,true,true);
+    need(dry16.left==dry.left&&dry16.right==dry.right,"H16 dry changed");
+    for(int ch:{0,1}){
+      const auto& a=ch?h15.right:h15.left;const auto& b=ch?h16.right:h16.left;
+      const auto& d=ch?dry.right:dry.left;
+      double ea=0.,eb=0.,ma=0.,mb=0.;
+      std::vector<double> sa,sb;
+      for(int i=rate/2;i<n;++i){
+        const double x=a[i]-d[i],y=b[i]-d[i];
+        need(std::isfinite(y),"H16 nonfinite backing");ea+=x*x;eb+=y*y;
+        const double da=std::abs(x-(a[i-1]-d[i-1])),db=std::abs(y-(b[i-1]-d[i-1]));
+        ma=std::max(ma,da);mb=std::max(mb,db);sa.push_back(da);sb.push_back(db);
+      }
+      const auto k=static_cast<std::size_t>(.999*(sa.size()-1));
+      std::nth_element(sa.begin(),sa.begin()+k,sa.end());
+      std::nth_element(sb.begin(),sb.begin()+k,sb.end());
+      const double gain=10.*std::log10(eb/ea),norm=std::sqrt(ea/eb);
+      std::cout<<"H16_PCM rate="<<rate<<" voices="<<voices<<" ch="<<ch
+               <<" wet_dB="<<gain<<" normalized_max_ratio="<<mb/ma*norm
+               <<" normalized_p999_ratio="<<sb[k]/sa[k]*norm<<std::endl;
+      need(ea>1.&&eb>1.&&std::abs(gain)<2.&&std::isfinite(mb/ma*norm),
+           "H16 backing level regression");
+    }
     for(int ch=0;ch<2;++ch){
       const auto& a=ch?now.right:now.left;const auto& b=ch?h15.right:h15.left;
       const auto& d=ch?dry.right:dry.left;
@@ -1346,6 +1372,57 @@ static void testBackingUnity(){
   }
   need(within,"H1 full-Wet aggregate stem outside +/-2dB target; inspect H1_STEM rows");
 }
+// Force the old two-head fallback into half-period cancellation, then
+// exercise a varying pitch ratio and verify the new continuous read speed.
+static void testPhaseCoherentCarrier(){
+    constexpr double tau=6.283185307179586;
+    for(int rate:{32000,48000,96000,192000}){
+        const int grain=static_cast<int>(std::lround(rate*.016));
+        const float period=rate/125.f,base=rate*.024f,ratio=1.5f;
+        PhaseCoherentCarrier carrier;
+        float p=0.f;double oldMin=1.,newMin=1.;
+        // Analytic sine eliminates detector errors and isolates the carrier.
+        // At 125Hz and ratio 1.5, the nominal head separation is a half period.
+        double oldSum=0.,newSum=0.,oldTotal=0.,newTotal=0.;int count=0;
+        const int window=std::max(1,rate/500);
+        for(int i=0;i<rate/2;++i){
+            const float q=p<.5f?p+.5f:p-.5f,w=smoothGrainBlend(p);
+            const auto h=carrier.process(i,p,ratio,base,grain,period,true,16381.f);
+            auto tap=[&](float delay){return std::sin(tau*(i-delay)/period);};
+            const double a=w*tap(base+(1.f-ratio)*p*grain)+(1.f-w)*tap(base+(1.f-ratio)*q*grain);
+            const double b=w*tap(h.a)+(1.f-w)*tap(h.b);
+            need(h.a>=1.f&&h.b>=1.f&&h.a<=16381.f&&h.b<=16381.f,"H16 history bounds");
+            if(i>rate/10){
+                oldSum+=a*a;newSum+=b*b;++count;
+                if(count==window){
+                    oldMin=std::min(oldMin,oldSum/count);newMin=std::min(newMin,newSum/count);
+                    oldTotal+=oldSum;newTotal+=newSum;oldSum=newSum=0.;count=0;
+                }
+            }
+            p+=1.f/grain;if(p>=1.f)p-=1.f;
+        }
+        std::cout<<"H16_CARRIER rate="<<rate<<" old_min_power="<<oldMin
+                 <<" new_min_power="<<newMin<<" energy_ratio="<<newTotal/oldTotal<<std::endl;
+        need(newMin>oldMin*3.&&newMin>.08&&newTotal>oldTotal,
+             "H16 phase cancellation not improved");
+        carrier.reset();p=0.f;float prevP=0.f;
+        PhaseCoherentCarrier::Delays prev{};
+        for(int i=0;i<rate/4;++i){
+            const float r=1.2f+.6f*static_cast<float>(std::sin(tau*8.*i/rate));
+            const auto h=carrier.process(i,p,r,base,grain,period,true,16381.f);
+            if(i>0&&p>=prevP)
+                need(std::abs(h.a-prev.a-(1.f-r))<.002f,"H16 head A glide velocity");
+            if(i>0&&!(prevP<.5f&&p>=.5f))
+                need(std::abs(h.b-prev.b-(1.f-r))<.002f,"H16 head B glide velocity");
+            need(h.a>=1.f&&h.b>=1.f&&h.a<=16381.f&&h.b<=16381.f,"H16 glide bounds");
+            prev=h;prevP=p;p+=1.f/grain;if(p>=1.f)p-=1.f;
+        }
+        PhaseCoherentCarrier fresh;
+        const auto resumed=carrier.process(rate,p,ratio,base,grain,period,true,16381.f);
+        const auto initial=fresh.process(rate,p,ratio,base,grain,period,true,16381.f);
+        need(resumed.a==initial.a&&resumed.b==initial.b,"H16 skipped-call state");
+    }
+}
 static void testBackingPitchContour(){
     for(double hop:{1./150.,1./100.}){
         BackingPitchContour c;c.prepare(hop);
@@ -1365,6 +1442,7 @@ static void testBackingPitchContour(){
     }
 }
 int main(){
+    testPhaseCoherentCarrier();
     testBackingPitchContour();
   testCorrelationPerformance();
   testArticulation();
