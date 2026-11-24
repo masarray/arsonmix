@@ -457,7 +457,111 @@ static void singerFeelQualification() {
     }
     std::puts("PASS Singer Feel: 18 independent-onset, 18 phrase/duck, 9 exact dry cases");
 }
+// Performance qualification uses the real insert profile and in-place PCM
+// path used by VocalReverbProcessor, rather than isolated wet-only filters.
+// These are deterministic test signals, not singer listening or a limiter.
+static void singerPerformanceQualification() {
+    using P=arverb::Parameter;
+    using namespace armix::builtin_fx;
+    constexpr int n=128;
+    int insertCases=0, partitionCases=0;
+    for(int fs:{44100,48000,96000}) {
+        for(std::size_t program=0;program<reverbSisFactoryPrograms.size();++program) {
+            const auto& preset=reverbSisFactoryPrograms[program];
+            if(preset.voicing!=5)continue;
+            for(float mix:{preset.values[0],.35f,.50f,.65f}) {
+                arverb::Engine separate,inPlace;
+                for(auto* e:{&separate,&inPlace}) {
+                    for(std::size_t i=0;i<preset.values.size();++i)e->setParameter(static_cast<P>(i),preset.values[i]);
+                    e->setAlgorithm(static_cast<arverb::Algorithm>(preset.algorithm));
+                    e->setParameter(P::Mix,mix);e->setVoicing(5);e->prepare(fs,true);
+                }
+                std::array<float,n> l{},r{},a{},b{},c{},d{};
+                double inputEnergy=0.,monoEnergy=0.,wetEnergy=0.;
+                float peak=0.f,inputPeak=0.f;
+                const float dry=1.f-mix*mix*mix;
+                for(int block=0;block<2*fs/n;++block) {
+                    for(int i=0;i<n;++i) {
+                        const double t=double(block*n+i)/fs;
+                        // Phrase activity, silence and note transitions;
+                        // independently varying stereo content, nominal level.
+                        const double env=.5-.5*std::cos(6.283185307179586*2.*t);
+                        const double voice=.18*std::sin(6.283185307179586*173.*t)+
+                            .07*std::sin(6.283185307179586*519.*t)+.035*std::sin(6.283185307179586*1903.*t);
+                        l[i]=float(env*voice);
+                        r[i]=float(env*(.94*voice+.012*std::sin(6.283185307179586*271.*t)));
+                    }
+                    c=l;d=r;
+                    separate.process(l.data(),r.data(),a.data(),b.data(),n);
+                    inPlace.process(c.data(),d.data(),c.data(),d.data(),n);
+                    for(int i=0;i<n;++i) {
+                        check(a[i]==c[i]&&b[i]==d[i],"Singer in-place equals separate PCM");
+                        check(std::isfinite(c[i])&&std::isfinite(d[i]),"Singer insert finite");
+                        peak=std::max(peak,std::max(std::abs(c[i]),std::abs(d[i])));
+                        inputPeak=std::max(inputPeak,std::max(std::abs(l[i]),std::abs(r[i])));
+                        const double x=.5*(double(l[i])+r[i]),y=.5*(double(c[i])+d[i]);
+                        inputEnergy+=x*x;monoEnergy+=y*y;
+                        wetEnergy+=(y-dry*x)*(y-dry*x);
+                    }
+                }
+                check(inputEnergy>1.e-8&&monoEnergy>1.e-8&&wetEnergy>1.e-8,"Singer insert dry/wet/mono measurable");
+                check(peak<1.f,"Singer nominal input headroom (not full-scale guarantee)");
+                std::printf("Singer insert program=%zu rate=%d mix=%.3f inputPeak=%.6f outputPeak=%.6f monoRmsRatio=%.5f wetToDirectDb=%.3f\n",
+                    program,fs,mix,inputPeak,peak,std::sqrt(monoEnergy/inputEnergy),
+                    10.*std::log10(wetEnergy/(dry*dry*inputEnergy)));
+                ++insertCases;
+            }
+        }
+        // Identical sample-aligned control events. Deliberately vary callback
+        // partitioning, but not coefficient-rate controls: those are explicitly
+        // coalesced at callback boundaries and not promised sample-invariant.
+        // This locks down gain/profile/algorithm/tap transitions and history.
+        for(unsigned mode=0;mode<4;++mode) {
+            arverb::Engine large,small;
+            for(auto* e:{&large,&small}) {
+                const auto& preset=reverbSisFactoryPrograms[17];
+                for(std::size_t i=0;i<preset.values.size();++i)e->setParameter(static_cast<P>(i),preset.values[i]);
+                e->setAlgorithm(static_cast<arverb::Algorithm>(mode));
+                e->setVoicing(5);e->prepare(fs,true);
+            }
+            constexpr int window=2048;
+            std::array<float,window> l{},r{},a{},b{},c{},d{};
+            constexpr std::array<int,7> chunks{{1,17,32,63,128,255,513}};
+            double energy=0.;
+            for(int event=0;event<24;++event) {
+                for(auto* e:{&large,&small}) {
+                    e->setVoicing(event%3==0?4u:5u);
+                    e->setParameter(P::Mix,event%2==0?.23f:.65f);
+                    e->setParameter(P::PreDelayMs,event%2==0?8.f:150.f);
+                    e->setParameter(P::Width,event%2==0?1.f:1.15f);
+                    e->setAlgorithm(static_cast<arverb::Algorithm>((mode+event)%4));
+                }
+                for(int i=0;i<window;++i) {
+                    const double t=double(event*window+i)/fs;
+                    l[i]=float(.16*std::sin(6.283185307179586*173.*t));
+                    r[i]=float(.12*std::sin(6.283185307179586*241.*t));
+                }
+                large.process(l.data(),r.data(),a.data(),b.data(),window);
+                for(int pos=0,k=0;pos<window;++k) {
+                    const int count=std::min(chunks[k%chunks.size()],window-pos);
+                    small.process(l.data()+pos,r.data()+pos,c.data()+pos,d.data()+pos,count);
+                    pos+=count;
+                }
+                for(int i=0;i<window;++i) {
+                    check(std::isfinite(a[i])&&std::isfinite(b[i]),"Singer transition finite");
+                    check(a[i]==c[i]&&b[i]==d[i],"Singer sample-aligned transition partition invariant");
+                    energy+=double(a[i])*a[i]+double(b[i])*b[i];
+                }
+            }
+            check(energy>1.e-8,"Singer partition comparison non-silent");
+            ++partitionCases;
+        }
+    }
+    check(insertCases==168&&partitionCases==12,"Singer performance case coverage");
+    std::printf("PASS Singer Performance: %d insert/in-place/headroom cases, %d exact callback-partition transition cases\n",insertCases,partitionCases);
+}
 int main() {
+    singerPerformanceQualification();
     singerFeelQualification();
     studioFinishQualification();
     vocalAnchorQualification();
