@@ -6622,7 +6622,7 @@ test("G-MV36 one correlated native editor transport and JUCE echo, no duplicate 
  assert.match(main,/if \(action == "routingFxEditor"\) \{/);
  assert.match(main,/ack->setProperty\("requestId",args\.getProperty\("requestId",juce::var\(\)\)\);/);
  assert.match(main,/ack->setProperty\("instanceId",token\);/);
- assert.match(bridge,/function dispatchPhysicalFxEditor\(plan,lease,authority\)/);
+ assert.match(bridge,/function dispatchPhysicalFxEditor\(plan,lease,authority,retried=false\)/);
  assert.match(bridge,/backend\.emitEvent\("arMixAction",\{action:plan\.action,requestId,\.\.\.plan\.payload\}\);/);
  assert.match(bridge,/dispatchPhysicalFxEditor\(plan,lease,"M4"\)/);
  assert.match(bridge,/dispatchPhysicalFxEditor\(plan,lease,"CHANNEL_ID"\)/);
