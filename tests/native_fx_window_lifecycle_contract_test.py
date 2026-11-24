@@ -363,9 +363,9 @@ class NativeFxWindowLifecycle(unittest.TestCase):
 
     def test_all_editor_paths_use_one_host(self):
         self.assertEqual(HOST.count("std::make_unique<PluginEditorWindow>"),4)
-        self.assertIn("prepared.processor->getName(),editor,*this)",HOST)
-        self.assertIn("owner->processor->getName(),editor,*this)",HOST)
-        self.assertIn("processor->getName(), editor, *this",HOST)
+        self.assertIn("prepared.processor->getName(),std::move(editor),*this)",HOST)
+        self.assertIn("owner->processor->getName(),std::move(ownedEditor),*this)",HOST)
+        self.assertIn("processor->getName(), std::move(editor), *this",HOST)
         self.assertIn("std::make_unique<AudioSetupWindow>",HOST)
         self.assertIn("}, *safe);",HOST)
 if __name__=="__main__":unittest.main()
