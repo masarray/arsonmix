@@ -3145,21 +3145,20 @@
     showDeviceApplyProgress(false);
     if(deviceState.phase==="ACCEPTED"){
       deviceChoice=null;
-      if(deviceState.inspectNewAsio){
-        // A newly opened ASIO driver initially negotiates default pins.
-        // Keep Audio I/O open for the authoritative inventory requested by
-        // onNativeReadback, not a misleading return to a 2x2 mixer.
+      {
+        // All successful device/pin transactions stay in setup. Never show
+        // a candidate or pre-Apply inventory as the newly installed device.
         deviceInventory=null;
         devicePanel.dataset.openPinsAfterInventory="true";
         selectAudioSetupPage("device");
         devicePanel.querySelector("[data-audio-active]").textContent=
-          "Driver opened · reading available ASIO channels";
+          "Device applied · reading hardware pins";
         devicePanel.querySelector("[data-audio-pin-summary]").textContent=
           "Waiting for the new driver inventory…";
         devicePanel.querySelector("[data-audio-pins]").textContent="";
         for(const field of devicePanel.querySelectorAll("select, [data-audio-apply], [data-audio-main-pins], [data-audio-remap], [data-audio-driver-panel]"))
           field.disabled=true;
-      }else devicePanel.hidden=true;
+      }
       // The confirmed schema-v6 readback, not the preceding Apply ACK,
       // is the only source for the device-ready status shown to operators.
       const active=verifiedSnapshot?.device;

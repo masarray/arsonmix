@@ -7016,7 +7016,9 @@ test("P0 Audio I/O help reacts to explicit failed operator intent without auto-A
  assert.match(bridge,/openNativeAudioIO\(\); \/\/ explicit repair prompt/);
  assert.match(bridge,/if\(now-lastAudioRepairAt<1600\)return true/);
  assert.match(bridge,/data-audio-tab="routing"/);
- assert.match(bridge,/dialog\.dataset\.audioTab=tab\.dataset\.audioTab/);
+ assert.match(bridge,/selectAudioSetupPage\(tab\.dataset\.audioTab\)/);
+ assert.match(bridge,/if\(!tab\|\|!dialog\|\|deviceBusy\(\)\|\|tab\.disabled\|\|loopbackPending\)return/);
+ assert.match(bridge,/deviceVM\.setupRoutingReady\(deviceInventory,deviceChoice,deviceState\)/);
  assert.match(bridge,/Windows Audio uses the selected stereo playback endpoint/);
  assert.doesNotMatch(bridge,/recommendAudioRepair\([^)]*\)\s*;\s*backend\.emitEvent\("arMixAction",\{action:"monitor"/);
  const css=read("site/preview-v2/assets/mixer-contextual-buttons.css");
