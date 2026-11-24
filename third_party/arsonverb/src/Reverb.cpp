@@ -36,7 +36,8 @@ inline float sineQuarterWave(float normalized) noexcept {
 // Wet return stays calibrated; dry focus is preserved through the working
 // insert range, then rolls to exact zero for 100% aux/send. Targets only.
 inline float dryMixTarget(float mix,bool anchor) noexcept {
-    return anchor?1.f-mix*mix*mix:sineQuarterWave(1.f-mix);
+    // Preserve the historical floating-point endpoints as well as pure wet.
+    return anchor&&mix>0.f&&mix<1.f?1.f-mix*mix*mix:sineQuarterWave(1.f-mix);
 }
 inline float wetMixTarget(float mix, bool musicalReturn) noexcept {
     const float base = sineQuarterWave(mix);
