@@ -74,6 +74,8 @@ public:
         ageRamp_=static_cast<float>(1./(rate*.165));
         expressionAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.018)));
         expression_=0.f;age_=0;cursor_=0;phraseClock_=0;phraseVoiced_=false;
+        doublePhase_=0.f;doubleIncrement_=static_cast<float>(.73/rate);
+        doubleDepth_=static_cast<float>(rate*.00065);
         return true;
     }
     float shadeBacking(int v,float sample,float space) noexcept {
@@ -109,6 +111,19 @@ public:
         const float shaped=body[i]*lo+presence[i]*(hi-lo)+
                            (air[i]-guard)*(sample-hi);
         return sample+amount*shaped;
+    }
+    // Continuous unison delay modulation, independent of F0/epoch/note
+    // evidence. Interpolate the prepared sine table; no grain seam, phase
+    // reset, random noise or trig on the audio callback. +/-0.65ms at
+    // .73Hz is a bounded pitch excursion (~5.2 cents maximum).
+    float doublerOffset() noexcept {
+        const float position=doublePhase_*static_cast<float>(sineCount);
+        const auto index=static_cast<std::size_t>(position)&(sineCount-1);
+        const float fraction=position-static_cast<float>(index);
+        const float wave=sine_[index]+(sine_[(index+1)&(sineCount-1)]-sine_[index])*fraction;
+        doublePhase_+=doubleIncrement_;
+        if(doublePhase_>=1.f)doublePhase_-=1.f;
+        return offset_[0]+doubleDepth_*wave;
     }
     float arrivalSamples(int v) const noexcept {
         return offset_[static_cast<std::size_t>(v)];
@@ -210,6 +225,7 @@ private:
     std::array<float,voices> identityBody_{},identityAir_{},identityGuard_{};
     float identityBodyAlpha_=0.f,identityAirAlpha_=0.f,identityGuardAlpha_=0.f;
     float shadingAlpha_=0.f;
+    float doublePhase_=0.f,doubleIncrement_=0.f,doubleDepth_=0.f;
     std::array<int,voices> reflectionDelay_{},secondDelay_{};
     std::size_t cursor_=0;
     int age_=0,ageStart_=0;

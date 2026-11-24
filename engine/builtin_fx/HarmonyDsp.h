@@ -132,6 +132,7 @@ public:
         if(lowLag_>=highLag_||latency_+3*grain_>=static_cast<int>(capacity))return false;
         left_.fill(0.f);right_.fill(0.f);mono_.fill(0.f);decimated_.fill(0.f);
         filtered_.fill(0.f);phase_.fill(0.f);ratio_.fill(1.f);targetRatio_.fill(1.f);
+        doublerBlend_=targetDoubler_=doubleFiltered_=0.f;
         // Independent grain clocks avoid five identical backing-singer seams.
         for(int v=0;v<maxVoices;++v)
             phase_[static_cast<std::size_t>(v)]=.157f*static_cast<float>(v);
@@ -233,7 +234,7 @@ public:
     // normalized power across five distinct positions; the HIGH singer
     // is a primary part, not another diffuse support layer.
     static float singerPresence(std::size_t v,int voices) noexcept {
-        constexpr std::array<float,5> arranged{{1.20f,.88f,1.85f,.94f,1.30f}};
+        constexpr std::array<float,5> arranged{{1.30f,.80f,2.02f,1.22f,1.22f}};
         return voices<=2?singers[v].presence:arranged[v];
     }
     static float singerPan(std::size_t v,int voices) noexcept {
@@ -322,6 +323,7 @@ public:
         targetGain_=next.gain;targetBackingGain_=next.backingGain;
         targetEnsembleFocus_=next.settings.voiceMode==0&&next.settings.voices>=3?1.f:0.f;
         targetCorrection_=next.settings.correction?1.f:0.f;
+        targetDoubler_=next.settings.voiceMode==1?1.f:0.f;
         for(int v=0;v<maxVoices;++v){
             targetMixL_[static_cast<std::size_t>(v)]=next.mixL[v];
             targetMixR_[static_cast<std::size_t>(v)]=next.mixR[v];
@@ -329,7 +331,7 @@ public:
         if(!processed_){
             wet_=targetWet_;color_=targetColor_;space_=targetSpace_;
             gain_=targetGain_;backingGain_=targetBackingGain_;
-            ensembleFocus_=targetEnsembleFocus_;
+            ensembleFocus_=targetEnsembleFocus_;doublerBlend_=targetDoubler_;
             mixL_=targetMixL_;mixR_=targetMixR_;
         }
         return true;
@@ -461,6 +463,7 @@ public:
             gain_+=a*(targetGain_-gain_);
             backingGain_+=a*(targetBackingGain_-backingGain_);
             ensembleFocus_+=a*(targetEnsembleFocus_-ensembleFocus_);
+            doublerBlend_+=a*(targetDoubler_-doublerBlend_);
             for(int v=0;v<maxVoices;++v){
                 const auto ix=static_cast<std::size_t>(v);
                 mixL_[ix]+=a*(targetMixL_[ix]-mixL_[ix]);
@@ -511,7 +514,7 @@ public:
             }
             // Compute the device-rate-correct filter coefficient once per
             // active sample, not once for each backing shifter.
-            const float filterCoef=voicedGain_>0.00001f?
+            const float filterCoef=(voicedGain_>0.00001f||doublerBlend_>0.00001f)?
                 toneColor_.coefficient(color_):0.f;
             float leadL=dryL,leadR=dryR;
             renderLead(leadL,leadR);
@@ -543,10 +546,19 @@ public:
                 const bool audible=voicedGain_>0.00001f&&
                     std::abs(mixL_[ix])+std::abs(mixR_[ix])>=1.e-5f;
                 float voice=0.f;
-                if(audible){
+                // Unison need not estimate or quantize pitch. Reuse the
+                // same mono history, fixed PDC and singer stage. Fade the
+                // mode boundary; only harmony needs the voiced gate/PSOLA.
+                if(audible&&(v!=0||doublerBlend_<.99999f)){
                     voice=shifted(v,ensemble_.timbreCoefficient(v,filterCoef),
                                   ensemble_.arrivalSamples(v),
                                   ensemble_.pitchRatio(v,independent),independent)*voicedGain_;
+                }
+                if(v==0&&doublerBlend_>0.00001f){
+                    const float sample=tap(mono_,latency_+ensemble_.doublerOffset());
+                    doubleFiltered_+=ensemble_.timbreCoefficient(0,filterCoef)*
+                        (sample-doubleFiltered_);
+                    voice=voice*(1.f-doublerBlend_)+doubleFiltered_*doublerBlend_;
                 }
                 // Keep accepted Duo/Doubler exact; H5 only affects the
                 // larger ensemble. Renderer readiness controls the guard,
@@ -961,6 +973,7 @@ private:
     float gain_=1.f,targetGain_=1.f,targetCorrection_=0.f;
     float backingGain_=1.f,targetBackingGain_=1.f;
     float ensembleFocus_=0.f,targetEnsembleFocus_=0.f;
+    float doublerBlend_=0.f,targetDoubler_=0.f,doubleFiltered_=0.f;
     std::array<float,maxVoices> mixL_{},mixR_{},targetMixL_{},targetMixR_{};
     float decimationLowpass_=0.f,decimationAlpha_=0.f;
     StereoPhaseSafeFold vocalFold_{};

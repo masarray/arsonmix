@@ -747,6 +747,48 @@ static bool testMusicalHighStem(){
 }
 // Duo is two PITCHED wet voices; Doubler is a SINGLE synthetic unison take.
 // This is a native PCM proof, not a certified real-singer naturalness test.
+// Field report: long high notes and ambiguous/unvoiced intervals must
+// never interrupt the new unison take. Check actual wet-only PCM, not
+// just pitch detector state. 4s sustained vibrato at 220/880/1320 Hz.
+static void testContinuousDoubler(){
+  constexpr double tau=6.283185307179586;
+  for(int rate:{48000,96000})for(double hz:{220.,880.,1320.}){
+    const int n=rate*4;
+    LeadFixture src{std::vector<float>(n),std::vector<float>(n)};
+    double phase=0.;
+    for(int i=0;i<n;++i){
+      phase+=tau*hz*std::exp2(65.*std::sin(tau*5.1*i/rate)/1200.)/rate;
+      src.left[i]=src.right[i]=static_cast<float>(
+          .12*std::sin(phase)+.035*std::sin(2*phase+.2));
+    }
+    const auto run=[&](float wet,int block){
+      auto e=std::make_unique<Engine>();Settings s;
+      s.voiceMode=1;s.voices=2;s.wet=wet;s.color=1.f;s.space=.62f;
+      need(e->prepare(rate)&&e->setSettings(s),"H12 double prepare");
+      auto out=src;
+      for(int at=0;at<n;at+=block)e->process(out.left.data()+at,out.right.data()+at,std::min(block,n-at));
+      return out;
+    };
+    const auto out=run(1.f,127),dry=run(0.f,127),split=run(1.f,64);
+    need(out.left==split.left&&out.right==split.right,"H12 double block parity");
+    double minEnergy=1.e9,maxEnergy=0.,sum=0.;
+    int windows=0;
+    for(int at=rate;at+rate/100<=n;at+=rate/100){
+      double energy=0.;
+      for(int i=at;i<at+rate/100;++i){
+        const double l=out.left[i]-dry.left[i],r=out.right[i]-dry.right[i];
+        need(std::isfinite(l)&&std::isfinite(r),"H12 double nonfinite");
+        energy+=l*l+r*r;
+      }
+      minEnergy=std::min(minEnergy,energy);maxEnergy=std::max(maxEnergy,energy);
+      sum+=energy;++windows;
+    }
+    const double floor=10.*std::log10(minEnergy/(sum/windows));
+    std::cout<<"H12_DOUBLER rate="<<rate<<" hz="<<hz<<" min_window_dB="<<floor
+             <<" span_dB="<<10.*std::log10(maxEnergy/minEnergy)<<std::endl;
+    need(floor>-9.&&sum>1.,"H12 doubler sustained backing dropout");
+  }
+}
 static void testUnisonDoubler(){
   for(int rate:{48000,96000}){
     Settings unison;unison.voiceMode=1;unison.voices=2;
@@ -1102,6 +1144,7 @@ int main(){
   testBackingUnity();
   need(highPass,"H3 HIGH presence or isolated fundamental failed; inspect all H3_HIGH rows");
   testUnvoicedGapPreservesWetTail();
+  testContinuousDoubler();
   testUnisonDoubler();
   testPeriodContinuityOnLoudOctaveErrors();
   testLoudVibratoContinuity();
