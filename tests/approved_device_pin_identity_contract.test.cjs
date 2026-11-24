@@ -576,3 +576,41 @@ test("P0 approved Audio I/O latency shows real driver frames, never a fake loopb
                     "hostFxLatencyFrames","latencyClockScope","latencyProvenance"])
     assert.ok(host.includes("setProperty(\""+key+"\""));
 });
+
+test("Single ASIO full inventory: 8 reported pins remain visible independently of 2 active",()=>{
+  const f=fixture(), names=["MIC 1","MIC 2","VC 1","VC 2","VC 3","VC 4","Loopback 1","Loopback 2"];
+  const active={...f.active,inputNames:names,outputNames:names,
+    reportedInputCount:8,reportedOutputCount:8};
+  const inv={...f.inventory,active},draft=vm.setupDraft(inv);
+  const original=JSON.stringify(inv);
+  const v=vm.setupPresentation(inv,draft);
+  assert.equal(v.inputInventory.total,8);
+  assert.equal(v.inputInventory.active,2);
+  assert.equal(v.outputInventory.total,8);
+  const allIn=vm.setupSelectAllPins(draft,inv,"input");
+  assert.deepEqual(allIn.inputPins,[0,1,2,3,4,5,6,7]);
+  assert.deepEqual(allIn.outputPins,[0,1]);
+  const all=vm.setupSelectAllPins(allIn,inv,"output");
+  const begun=vm.setupBegin(vm.setupInitial(),{inventory:inv,draft:all,requestId:"full"});
+  assert.deepEqual(begun.request.config.enabledInputs,[0,1,2,3,4,5,6,7]);
+  assert.deepEqual(begun.request.config.enabledOutputs,[0,1,2,3,4,5,6,7]);
+  assert.equal(begun.request.config.assignSelectedPlaybackPinsToMain,undefined);
+  assert.equal(JSON.stringify(inv),original);
+  assert.equal(vm.setupSelectAllPins({...draft,capture:"Other ASIO"},inv,"input").inputPins,draft.inputPins);
+  const truncated={...inv,active:{...active,reportedInputCount:80}};
+  assert.equal(vm.pinInventory(truncated.active,"input").complete,false);
+  assert.equal(vm.setupSelectAllPins(draft,truncated,"input"),draft);
+  const malformed={...active,reportedInputCount:2};
+  assert.equal(vm.pinInventory(malformed,"input"),null);
+});
+
+test("Single ASIO SOURCE names preserve driver VC and loopback identity; inactive pairs are not offered",()=>{
+  const names=["MIC 1","MIC 2","VC 1","VC 2","VC 3","VC 4","Loopback 1","Loopback 2"];
+  const snapshot={device:{backend:"ASIO",enabledInputs:[0,2,3,6,7],
+    inputEndpoints:names.map((label,port)=>({label,port,active:true}))}};
+  const options=vm.inputChoices(snapshot);
+  assert.ok(options.some(x=>x.mode==="STEREO"&&x.left===2&&x.right===3&&x.label.includes("VC 1 / VC 2")));
+  assert.ok(options.some(x=>x.mode==="STEREO"&&x.left===6&&x.right===7&&x.label.includes("Loopback 1 / Loopback 2")));
+  assert.ok(!options.some(x=>x.mode==="STEREO"&&x.left===4));
+  assert.ok(!options.some(x=>x.left===1));
+});

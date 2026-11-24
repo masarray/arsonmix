@@ -3128,11 +3128,16 @@ private:
         o->setProperty("latencyProvenance",
             "JUCE_DRIVER_REPORTED_NOT_MEASURED_LOOPBACK_OR_ASIO_RTL");
         juce::Array<juce::var> inputNames,outputNames,inputPins,outputPins,rates,buffers;
+        // Driver capability is distinct from the enabled callback mask. Keep
+        // total counts even beyond the current 64-pin device Apply contract.
+        int reportedInputs=0,reportedOutputs=0;
         if(device!=nullptr&&device->isOpen()) {
             const auto inputs=device->getInputChannelNames();
             const auto outputs=device->getOutputChannelNames();
             const auto inputMask=device->getActiveInputChannels();
             const auto outputMask=device->getActiveOutputChannels();
+            reportedInputs=inputs.size();
+            reportedOutputs=outputs.size();
             for(int i=0;i<juce::jmin(64,inputs.size());++i) {
                 inputNames.add(inputs[i]);
                 if(inputMask[i])inputPins.add(i);
@@ -3145,6 +3150,8 @@ private:
             for(const auto value:device->getAvailableBufferSizes()) buffers.add(value);
             o->setProperty("hasControlPanel",device->hasControlPanel());
         }else o->setProperty("hasControlPanel",false);
+        o->setProperty("reportedInputCount",reportedInputs);
+        o->setProperty("reportedOutputCount",reportedOutputs);
         o->setProperty("inputNames",juce::var(inputNames));
         o->setProperty("outputNames",juce::var(outputNames));
         o->setProperty("enabledInputs",juce::var(inputPins));
@@ -3605,6 +3612,21 @@ private:
             result << "Capture backend device: "
                    << (capture ? capture->getName() : juce::String ("Unavailable"))
                    << " | Render backend device: " << device->getName() << "\n";
+            // Explicit report: full driver names, not just active callback
+            // buffers or the bounded GUI Apply list. Never open another driver.
+            const auto describePins=[&](juce::AudioIODevice* endpoint,bool input) {
+                if(!endpoint || !endpoint->isOpen())return;
+                const auto names=input?endpoint->getInputChannelNames():endpoint->getOutputChannelNames();
+                const auto mask=input?endpoint->getActiveInputChannels():endpoint->getActiveOutputChannels();
+                result << (input?"Capture":"Playback") << " pins: "
+                       << mask.countNumberOfSetBits() << " active / " << names.size()
+                       << " driver-reported\n";
+                for(int i=0;i<names.size();++i)
+                    result << "  " << (input?"IN ":"OUT ") << (i+1) << " | "
+                           << names[i] << " | " << (mask[i]?"ENABLED":"DISABLED") << "\n";
+            };
+            describePins(capture,true);
+            describePins(device,false);
             result << "Reported render sample rates: ";
             for (auto v : device->getAvailableSampleRates()) result << v << " ";
             const auto reportedBuffers = device->getAvailableBufferSizes();

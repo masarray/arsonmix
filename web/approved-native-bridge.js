@@ -2464,14 +2464,19 @@
           <div class="armix-output-matrix" data-audio-output-matrix role="list"></div>
           <div class="armix-device-note">Native callback/readback only · speaker listening not verified</div>
         </section>
-        <details><summary>Advanced · rate, buffer and channel pins</summary>
+        <section aria-label="Driver channel inventory">
+          <div class="armix-output-heading">DRIVER CHANNELS · available / enabled</div>
+          <div class="armix-device-note" data-audio-pin-summary></div>
+          <div class="armix-device-pins" data-audio-pins></div>
+          <button type="button" data-audio-main-pins hidden>Apply two selected playback pins as MAIN</button>
+          <div class="armix-device-note">Select pins, then Apply. Additional pins are not automatically patched to mixer channels or outputs.</div>
+        </section>
+        <details><summary>Advanced · rate and buffer</summary>
           <div class="armix-device-note" data-audio-asio4all-hint hidden>
             Check ASIO4ALL WDM inputs/outputs before Apply. Different device clocks may drift.
           </div>
           <label>Sample rate<select data-audio-field="rate"></select></label>
           <label>Buffer<select data-audio-field="buffer"></select></label>
-          <div class="armix-device-pins" data-audio-pins></div>
-          <button type="button" data-audio-main-pins hidden>Apply two selected playback pins as MAIN</button>
         </details>
         <div class="armix-device-actions">
           <button type="button" data-audio-apply>Apply device</button>
@@ -2566,6 +2571,16 @@
       bufferSelect.options[0].textContent="Driver default";
       bufferSelect.disabled=!view.same||deviceBusy();
     }
+    const pinSummary=devicePanel.querySelector("[data-audio-pin-summary]");
+    if(pinSummary){
+      const a=view.inputInventory,b=view.outputInventory;
+      pinSummary.textContent=a&&b?
+        "IN "+a.active+"/"+a.total+" enabled · OUT "+b.active+"/"+b.total+" enabled"+
+          (!a.complete||!b.complete?" · Apply supports up to 64 pins per direction":"")+
+          (active.backend==="ASIO"&&a.total===2&&b.total===2?
+            " · ASIO driver currently reports 2 × 2; separate Windows endpoints are not ASIO pins.":""):
+        "Apply the selected driver first to read its reported channels.";
+    }
     const pins=devicePanel.querySelector("[data-audio-pins]");
     if(pins){
       pins.replaceChildren();
@@ -2579,6 +2594,21 @@
           const title=document.createElement("strong");
           title.textContent=side==="input"?"Capture pins":"Playback pins";
           group.appendChild(title);
+          const inventory=side==="input"?view.inputInventory:view.outputInventory;
+          if(active.backend==="ASIO"&&inventory?.complete&&
+             inventory.selectable>=(side==="input"?1:2)){
+            const all=document.createElement("button");
+            all.type="button";
+            all.textContent="Select all "+inventory.selectable;
+            all.disabled=deviceBusy()||selected.length===inventory.selectable;
+            all.onclick=()=>{
+              if(deviceBusy())return;
+              deviceChoice=deviceVM.setupSelectAllPins(deviceChoice,deviceInventory,side);
+              deviceState=deviceVM.setupClearResult(deviceState);
+              renderDevicePanel();
+            };
+            group.appendChild(all);
+          }
           (names||[]).forEach((name,index)=>{
             const label=document.createElement("label");
             const control=document.createElement("input");
@@ -2587,7 +2617,8 @@
             control.dataset.pinIndex=String(index);
             control.checked=selected.includes(index);
             control.disabled=deviceBusy();
-            label.append(control,document.createTextNode(String(name)));
+            label.append(control,document.createTextNode(
+              (side==="input"?"IN ":"OUT ")+(index+1)+" · "+String(name)));
             group.appendChild(label);
           });
           container.appendChild(group);

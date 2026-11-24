@@ -4024,7 +4024,7 @@ test("MVVM device selector projects only the verified native physical input pins
   assert.equal(deviceVM.inputLabel(hardware,{mode:"MONO",left:3,right:-1}),
     "Mono · Mic 4 [IN 4]");
   assert.equal(deviceVM.inputLabel(hardware,{mode:"STEREO",left:0,right:1}),
-    "Stereo · IN 1 + 2");
+    "Stereo · IN 1 + 2 · Mic 1 / Mic 2");
   assert.equal(deviceVM.inputLabel(hardware,{mode:"STEREO",left:1,right:2}),"None");
   assert.equal(deviceVM.inputLabel(hardware,{mode:"BUS"}),"Internal BUS (read-only)");
   assert.equal(JSON.stringify(hardware),original,"view must not mutate native readback");

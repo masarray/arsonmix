@@ -43,9 +43,15 @@
     // callback ordinals or guess unavailable driver pins.
     for(let i=0;i+1<pins.length;++i)
       if(pins[i+1].port===pins[i].port+1)
-        entries.push({label:"Stereo · IN "+(pins[i].port+1)+
-          " + "+(pins[i+1].port+1),mode:"STEREO",
-          left:pins[i].port,right:pins[i+1].port});
+        {
+          const a=pins[i],b=pins[i+1];
+          const generic=p=>new RegExp("^\\s*(?:in|input)\\s*"+(p.port+1)+"\\s*$","i")
+            .test(String(p.label||""));
+          const pair="Stereo · IN "+(a.port+1)+" + "+(b.port+1);
+          entries.push({label:generic(a)&&generic(b)?pair:
+            pair+" · "+a.label+" / "+b.label,mode:"STEREO",
+            left:a.port,right:b.port});
+        }
     return entries;
   }
   function inputLabel(snapshot,row) {
@@ -152,6 +158,30 @@
       provenance:active.latencyProvenance||"UNKNOWN"
     });
   }
+  // Capability inventory is a driver observation, not installed PCM.
+  // Never synthesize pins from a product name, Windows endpoint or count.
+  function pinInventory(active,side) {
+    const input=side==="input";
+    const names=active?.[input?"inputNames":"outputNames"];
+    const enabled=active?.[input?"enabledInputs":"enabledOutputs"];
+    const count=active?.[input?"reportedInputCount":"reportedOutputCount"];
+    if(active?.open!==true||!Array.isArray(names)||!validPinMask(enabled,names))
+      return null;
+    const total=count===undefined?names.length:count;
+    if(!Number.isSafeInteger(total)||total<names.length||names.length>64||
+       !names.every(n=>typeof n==="string"))return null;
+    return {total,active:enabled.length,selectable:names.length,
+      complete:total===names.length,
+      all:names.map((_,i)=>i)};
+  }
+  function setupSelectAllPins(draft,inventory,side) {
+    if(!["input","output"].includes(side)||
+       !setupSameEndpoint(inventory?.active,draft)||draft.backend!=="ASIO")return draft;
+    const pins=pinInventory(inventory.active,side);
+    if(!pins?.complete||!pins.all.length||side==="output"&&pins.all.length<2)
+      return draft;
+    return {...draft,[side==="input"?"inputPins":"outputPins"]:pins.all};
+  }
   function setupPresentation(inventory,draft,state=setupInitial()) {
     const active=inventory?.active||{},types=inventory?.types||[];
     const type=types.find(t=>t?.name===draft?.backend);
@@ -184,6 +214,8 @@
       bufferOptions:["0",...buffers.map(String)],
       inputPins:selectedPins("inputPins",active.enabledInputs),
       outputPins:selectedPins("outputPins",active.enabledOutputs),
+      inputInventory:same?pinInventory(active,"input"):null,
+      outputInventory:same?pinInventory(active,"output"):null,
       canApply,canAssignMain:same&&validSelection&&
         selectedOutputPins.length===2,
       canReusePins:same&&state.remapGeneration===active.deviceGeneration,
@@ -452,6 +484,7 @@
   }
   return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,
     externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,
+    pinInventory,setupSelectAllPins,
     setupInitial,setupBegin,setupAck,setupReadback,
     setupTimeout,setupClearResult,nativeLifecycleLease,nativeLifecycleDecision,
     nativeTransientReadbackPolicy});
