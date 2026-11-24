@@ -70,6 +70,7 @@ public:
             // at the missing-source boundary, not at every audio callback.
             guide_.reset();
             dsp_.setGuideKey(-1,-1);
+            dsp_.setGuideChord(-1,-1);
             guideObservedKey_.store(-1,std::memory_order_relaxed);
             guideObservedScale_.store(-1,std::memory_order_relaxed);
             guideConfidence_.store(0.f,std::memory_order_relaxed);
@@ -139,6 +140,8 @@ public:
         guideAge_=0;
         guide_.process(left,right,frames);
         const auto estimate=guide_.estimate();
+        const auto chord=guide_.chordEstimate();
+        dsp_.setGuideChord(chord.valid()?chord.root:-1,chord.valid()?chord.quality:-1);
         dsp_.setGuideKey(estimate.valid()?estimate.key:-1,
                          estimate.valid()?estimate.scale:-1);
         guideObservedKey_.store(estimate.valid()?estimate.key:-1,std::memory_order_relaxed);

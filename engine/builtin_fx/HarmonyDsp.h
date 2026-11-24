@@ -134,6 +134,7 @@ public:
         peakPitchLagWork_=0;completedPitchAnalyses_=0;abandonedPitchAnalyses_=0;
         noteHold_=0;currentNote_=-1;candidateNote_=-1;
         guideKey_=-1;guideScale_=-1;tonalTransitionPending_=false;
+        chordRoot_=chordQuality_=-1;chordTransitionPending_=false;guidedVoicing_=false;
         voiced_=false;voicedGain_=0.f;renderersReleased_=true;
         settings_=Settings{};
         smoothingAlpha_=static_cast<float>(1.-std::exp(-1./(rate*0.005))); // 5 ms control ramp
@@ -263,6 +264,7 @@ public:
         if(next.settings.guideMode!=settings_.guideMode||
            next.settings.guideChannelId!=settings_.guideChannelId){
             guideKey_=-1;guideScale_=-1;
+            chordRoot_=chordQuality_=-1;chordTransitionPending_=true;guidedVoicing_=false;
         }
         if(settings_.correction&&!next.settings.correction)
             leadTune_.release();
@@ -315,6 +317,17 @@ public:
             leadTune_.release();
         }
     }
+    void setGuideChord(int root,int quality) noexcept {
+        if(settings_.guideMode!=1||root<0||root>=12||quality<0||quality>1)
+            root=quality=-1;
+        if(root==chordRoot_&&quality==chordQuality_)return;
+        chordRoot_=root;chordQuality_=quality;
+        // Only backing arrangement changes; do not invalidate lead F0,
+        // Tune, voiced gate or common-tone envelopes.
+        if(settings_.voiceMode==0&&settings_.voices>=3)
+            chordTransitionPending_=true;
+    }
+    bool guidedVoicingForOfflineTests() const noexcept{return guidedVoicing_;}
     int effectiveKey() const noexcept {
         return settings_.guideMode==1&&guideKey_>=0?guideKey_:settings_.key;
     }
@@ -768,11 +781,13 @@ private:
             return;
         }
         const float newPeriod=static_cast<float>(rate_/hz);
-        if(note!=currentNote_||tonalTransitionPending_){
+        if(note!=currentNote_||tonalTransitionPending_||chordTransitionPending_){
             std::array<int,maxVoices> old{};
             for(std::size_t v=0;v<old.size();++v)old[v]=voicePlanner_.target(v);
+            guidedVoicing_=false;
             if(settings_.voiceMode==0)
-                voicePlanner_.plan(note,activeKey,activeScale==0?major:minor,settings_.voices);
+                guidedVoicing_=voicePlanner_.planGuided(note,activeKey,
+                    activeScale==0?major:minor,settings_.voices,chordRoot_,chordQuality_);
             else voicePlanner_.reset();
             unsigned changed=0;
             for(std::size_t v=0;v<old.size();++v)
@@ -780,6 +795,7 @@ private:
             ensemble_.beginNote(changed);
         }
         currentNote_=note;voiced_=true;tonalTransitionPending_=false;
+        chordTransitionPending_=false;
         // Retain overlapping grains across even a real musical leap.
         // A brief octave readout caused by a loud second harmonic cannot
         // reset all five backing renderers and create a micro-dropout.
@@ -830,6 +846,8 @@ private:
     std::array<float,231> pitchCorrelations_{};
     int currentNote_=-1,candidateNote_=-1,noteHold_=0;
     int guideKey_=-1,guideScale_=-1;
+    int chordRoot_=-1,chordQuality_=-1;
+    bool chordTransitionPending_=false,guidedVoicing_=false;
     bool tonalTransitionPending_=false; // retune note, never mute voiced singer
     bool voiced_=false;float voicedGain_=0.f;
     bool renderersReleased_=true,processed_=false;

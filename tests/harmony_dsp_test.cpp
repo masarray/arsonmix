@@ -1,4 +1,5 @@
 #include "../engine/builtin_fx/HarmonyDsp.h"
+#include "../engine/builtin_fx/HarmonyMusicKey.h"
 #include <algorithm>
 #include <array>
 #include <utility>
@@ -326,6 +327,78 @@ static void testSingerIdentityPcm(){
   std::cout<<"H5_PCM gain_dB="<<gain<<" residual_dB="<<change<<std::endl;
   need(std::abs(gain)<1.2&&change>-45.&&change<-12.,
        "H5 vowel change excessive or absent");
+}
+// H6 guide is an independent PCM source, not a guess from lead F0.
+static void testChordAwareGuide(){
+  for(int rate:{32000,48000,96000,192000}){
+    MusicKeyDetector guide,split;
+    need(guide.prepare(rate)&&split.prepare(rate),"H6 guide prepare");
+    auto feed=[&](int root,int quality,int ms,bool single=false){
+      const int count=rate*ms/1000;
+      std::vector<float> x(count);
+      for(int i=0;i<count;++i){
+        double y=0.;
+        if(root>=0){
+          for(int interval:{0,quality?3:4,7}){
+            if(single&&interval!=0)continue;
+            const double hz=130.81278265*std::exp2((root+interval)/12.);
+            y+=.12*std::sin(6.283185307179586*hz*i/rate);
+          }
+        }
+        x[i]=static_cast<float>(y);
+      }
+      for(int i=0;i<count;i+=64)
+        guide.process(x.data()+i,x.data()+i,std::min(64,count-i));
+      for(int i=0;i<count;i+=257)
+        split.process(x.data()+i,x.data()+i,std::min(257,count-i));
+      const auto a=guide.chordEstimate(),b=split.chordEstimate();
+      need(a.root==b.root&&a.quality==b.quality&&a.confidence==b.confidence,
+           "H6 guide depends on callback partition");
+      return a;
+    };
+    auto c=feed(0,0,600);
+    need(c.valid()&&c.root==0&&c.quality==0,"H6 C major detection");
+    c=feed(5,0,600);
+    need(c.valid()&&c.root==5&&c.quality==0,"H6 F major transition");
+    c=feed(9,1,600);
+    need(c.valid()&&c.root==9&&c.quality==1,"H6 A minor transition");
+    need(!feed(9,1,700,true).valid(),"H6 monophonic source guessed chord");
+    need(!feed(-1,0,400).valid(),"H6 silent source retained chord");
+    need(guide.peakChordScoresPerSample()<=2,"H6 scoring burst");
+    guide.reset();need(!guide.chordEstimate().valid(),"H6 reset retained chord");
+    std::cout<<"H6_GUIDE rate="<<rate<<" C/F/Am/mono/silence PASS"<<std::endl;
+  }
+  VoicePlanner planner;
+  need(planner.planGuided(60,0,major,5,0,0),"H6 C chord arrangement");
+  const int old=planner.target(2);
+  need(planner.planGuided(60,0,major,5,5,0)&&planner.target(2)!=old,
+       "H6 sustained melody did not follow F chord");
+  for(int v=0;v<5;++v){
+    const int pc=planner.target(v)%12;
+    need(pc==0||pc==5||pc==9,"H6 backing not in actual F triad");
+  }
+  need(!planner.planGuided(62,0,major,5,5,0),"H6 incompatible melody forced chord");
+  auto e=std::make_unique<Engine>();Settings s;s.guideMode=1;s.guideChannelId=99;
+  s.voices=5;s.wet=1.f;
+  need(e->prepare(48000)&&e->setSettings(s),"H6 vocal setup");
+  auto input=leadFixture(48000,261.625565,0.f,0.f);input.right=input.left;
+  e->setGuideChord(0,0);
+  e->process(input.left.data(),input.right.data(),24000);
+  need(e->voiced()&&e->guidedVoicingForOfflineTests(),"H6 native C voicing absent");
+  const int high=e->singerTargetForOfflineTests(2);
+  e->setGuideChord(5,0);
+  e->process(input.left.data()+24000,input.right.data()+24000,24000);
+  need(e->voiced()&&e->observedMidiNote()==60&&
+       e->guidedVoicingForOfflineTests()&&e->singerTargetForOfflineTests(2)!=high,
+       "H6 held lead failed chord-only replan");
+  e->setGuideChord(-1,-1);
+  e->process(input.left.data()+48000,input.right.data()+48000,24000);
+  need(e->voiced()&&!e->guidedVoicingForOfflineTests(),"H6 chord loss failed fallback");
+  s.guideMode=0;s.guideChannelId=0;
+  need(e->setSettings(s),"H6 manual settings");
+  e->setGuideChord(5,0);
+  e->process(input.left.data()+72000,input.right.data()+72000,24000);
+  need(!e->guidedVoicingForOfflineTests(),"H6 manual accepted chord");
 }
 // Audit chord membership across every key, both scale families and
 // ascending/descending note history. Require actual register separation;
@@ -781,6 +854,7 @@ static void testBackingUnity(){
   need(within,"H1 full-Wet aggregate stem outside +/-2dB target; inspect H1_STEM rows");
 }
 int main(){
+  testChordAwareGuide();
   testSingerSpectralIdentity();
   testSingerIdentityPcm();
   testIndependentSingerExpression();

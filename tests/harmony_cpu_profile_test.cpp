@@ -77,6 +77,8 @@ void profile(double rate,int block,int voices,bool musicGuide=false,
             guide.process(musicL.data(),musicR.data(),block);
             const auto key=guide.estimate();
             engine->setGuideKey(key.valid()?key.key:-1,key.valid()?key.scale:-1);
+            const auto chord=guide.chordEstimate();
+            engine->setGuideChord(chord.root,chord.quality);
         }
         engine->process(l.data(),r.data(),block);
         const auto finished=Clock::now();

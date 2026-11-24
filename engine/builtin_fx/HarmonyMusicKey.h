@@ -7,7 +7,8 @@
 #include "HarmonyStereoFold.h"
 
 // Audio-thread-only, bounded chroma guide from a DIFFERENT ChannelId's real
-// pre-fader PCM. Not a chord recognizer and never an audible sidechain.
+// pre-fader PCM. Independent slow key and fast major/minor triad evidence;
+// never an audible sidechain.
 // Conservative confidence/hold; uncertain music falls back to Manual Key.
 // No FFT allocation, locks, async worker, trig or heap in process().
 namespace armix::harmony {
@@ -25,6 +26,11 @@ struct MusicKeyEstimate final {
     float confidence=0.f;
     bool valid() const noexcept {return key>=0&&key<12&&scale>=0&&scale<2;}
 };
+struct MusicChordEstimate final {
+    int root=-1,quality=-1; // 0 major, 1 minor; unknown is explicit
+    float confidence=0.f;
+    bool valid() const noexcept{return root>=0&&root<12&&quality>=0&&quality<2;}
+};
 class MusicKeyDetector final {
 public:
     static constexpr int bins=36; // C3..B5, 3 octaves of music harmonics
@@ -40,6 +46,7 @@ public:
         if(!stereoFold_.prepare(rate))return false;
         const double fs=rate/decimation_;
         sampleAlpha_=static_cast<float>(1.-std::exp(-1./(fs*.18)));
+        chordAlpha_=static_cast<float>(1.-std::exp(-1./(fs*.045)));
         lowpassAlpha_=static_cast<float>(1.-std::exp(-2.*3.141592653589793*1500./rate));
         period_=std::max(128,static_cast<int>(std::round(fs*.10)));
         for(int i=0;i<bins;++i) {
@@ -62,6 +69,10 @@ public:
         framesSeen_=0;candidate_=-1;candidateScale_=-1;candidateHold_=0;
         silentFrames_=0;uncertainFrames_=0;windowEnergy_=0.;filtered_=0.f;
         current_={};
+        chordC_.fill(0.f);chordS_.fill(0.f);chordHist_.fill(0.f);
+        chord_={};chordCandidate_=-1;chordHold_=0;chordUncertain_=0;
+        chordIndex_=24;chordBest_=chordSecond_=-1.f;chordBestCode_=-1;
+        peakChordScores_=0;
     }
     void process(const float* left,const float* right,int count) noexcept {
         if(!left||!right||count<=0||decimation_<=0)return;
@@ -78,6 +89,10 @@ public:
                 // decimated sample, not a large Goertzel burst at a callback.
                 inC_[k]+=(x*oscC_[k]-inC_[k])*sampleAlpha_;
                 inS_[k]+=(x*oscS_[k]-inS_[k])*sampleAlpha_;
+                // Share the existing rotor bank; only two short-envelope
+                // states per bin, no FFT or extra oscillators.
+                chordC_[k]+=(x*oscC_[k]-chordC_[k])*chordAlpha_;
+                chordS_[k]+=(x*oscS_[k]-chordS_[k])*chordAlpha_;
                 const float c=oscC_[k],s=oscS_[k];
                 oscC_[k]=c*rotorC_[k]-s*rotorS_[k];
                 oscS_[k]=s*rotorC_[k]+c*rotorS_[k];
@@ -107,9 +122,12 @@ public:
             // loop. The scoring input is a frozen chroma snapshot, so the
             // answer is independent of host callback partition boundaries.
             continueScoring();
+            continueChordScoring();
         }
     }
     MusicKeyEstimate estimate() const noexcept{return current_;}
+    MusicChordEstimate chordEstimate() const noexcept{return chord_;}
+    int peakChordScoresPerSample() const noexcept{return peakChordScores_;}
 private:
     static constexpr std::array<float,12> majorProfile{{
       6.35f,2.23f,3.48f,2.33f,4.38f,4.09f,2.52f,5.19f,2.39f,3.66f,2.29f,2.88f}};
@@ -131,7 +149,10 @@ private:
     }
     void evaluate(float rms) noexcept {
         scoringActive_=false;
+        chordIndex_=24;
         if(!std::isfinite(rms)||rms<0.002f) {
+            // Chords expire much sooner than global key history.
+            rejectChordEvidence();
             if(++silentFrames_>=10) {
                 current_={};hist_.fill(0.f);
                 framesSeen_=0;candidate_=-1;candidateScale_=-1;candidateHold_=0;
@@ -140,6 +161,7 @@ private:
             return;
         }
         silentFrames_=0;
+        beginChordScoring();
         std::array<float,12> chroma{};
         float sum=0.f;
         for(int i=0;i<bins;++i){
@@ -156,6 +178,57 @@ private:
         scoringHist_=hist_; // fixed-size snapshot; zero allocation
         scoringIndex_=0;scoringBest_=-2.f;scoringSecond_=-2.f;
         scoringRoot_=-1;scoringScale_=-1;scoringActive_=true;
+    }
+    void rejectChordEvidence() noexcept {
+        chordCandidate_=-1;chordHold_=0;
+        if(chordUncertain_<3)++chordUncertain_;
+        if(chordUncertain_>=3)chord_={};
+    }
+    void beginChordScoring() noexcept {
+        chordHist_.fill(0.f);
+        float sum=0.f;
+        for(int i=0;i<bins;++i){
+            const float x=std::sqrt(chordC_[i]*chordC_[i]+chordS_[i]*chordS_[i])*weight_[i];
+            if(!std::isfinite(x)){rejectChordEvidence();return;}
+            chordHist_[i%12]+=x;sum+=x;
+        }
+        if(sum<.0005f){rejectChordEvidence();return;}
+        for(auto& x:chordHist_)x/=sum;
+        chordIndex_=0;chordBest_=chordSecond_=-1.f;chordBestCode_=-1;
+    }
+    void continueChordScoring() noexcept {
+        int scored=0;
+        while(chordIndex_<24&&scored<2){
+            const int code=chordIndex_++,root=code%12,quality=code/12;
+            const float a=chordHist_[root],b=chordHist_[(root+(quality?3:4))%12],
+                        c=chordHist_[(root+7)%12];
+            const float score=a+b+c;
+            if(score>chordBest_){
+                chordSecond_=chordBest_;chordBest_=score;chordBestCode_=code;
+            }else chordSecond_=std::max(chordSecond_,score);
+            ++scored;
+        }
+        peakChordScores_=std::max(peakChordScores_,scored);
+        if(scored==0||chordIndex_<24)return;
+        const int root=chordBestCode_%12,quality=chordBestCode_/12;
+        const float margin=chordBest_-chordSecond_;
+        const float minimum=std::min({chordHist_[root],
+            chordHist_[(root+(quality?3:4))%12],chordHist_[(root+7)%12]});
+        // Reject single notes, open fifths and mixtures with no clear third.
+        // This is deliberately not a seventh/extended chord recognizer.
+        if(chordBest_<.68f||margin<.075f||minimum<.12f){
+            rejectChordEvidence();return;
+        }
+        if(chordCandidate_!=chordBestCode_){
+            chordCandidate_=chordBestCode_;chordHold_=1;
+        }else if(chordHold_<2)++chordHold_;
+        // Do not hold an obsolete chord forever during changing candidates.
+        if(chordHold_>=2){
+            chord_={root,quality,margin};chordUncertain_=0;
+        }else{
+            if(chordUncertain_<3)++chordUncertain_;
+            if(chordUncertain_>=3)chord_={};
+        }
     }
     void continueScoring() noexcept {
         if(!scoringActive_)return;
@@ -205,6 +278,12 @@ private:
     float sampleAlpha_=0.f,lowpassAlpha_=0.f,filtered_=0.f;
     double windowEnergy_=0.;
     MusicKeyEstimate current_{};
+    MusicChordEstimate chord_{};
+    std::array<float,bins> chordC_{},chordS_{};
+    std::array<float,12> chordHist_{};
+    float chordAlpha_=0.f,chordBest_=-1.f,chordSecond_=-1.f;
+    int chordCandidate_=-1,chordHold_=0,chordUncertain_=0,chordIndex_=24;
+    int chordBestCode_=-1,peakChordScores_=0;
     StereoPhaseSafeFold stereoFold_{};
     std::array<float,bins> rotorC_{},rotorS_{},weight_{};
     std::array<float,bins> oscC_{},oscS_{},inC_{},inS_{};

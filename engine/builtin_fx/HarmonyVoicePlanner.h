@@ -65,6 +65,41 @@ public:
         }
     }
 
+    // A confidently observed triad may override key-only inference, but
+    // never force an incompatible melody or violate the approved register
+    // bands. On passing/non-chord tones preserve the established fallback.
+    bool planGuided(int melody,int key,const std::array<int,7>& scale,
+                    int voices,int root,int quality) noexcept {
+        if(voices<3||root<0||root>=12||quality<0||quality>1){
+            plan(melody,key,scale,voices);return false;
+        }
+        const auto previous=targets_;
+        plan(melody,key,scale,voices);
+        const auto fallback=targets_;
+        const std::array<int,3> chord{{root,(root+(quality?3:4))%12,(root+7)%12}};
+        const auto member=[&](int note) noexcept{
+            return std::find(chord.begin(),chord.end(),pc(note,0))!=chord.end();
+        };
+        if(!member(melody))return false;
+        std::array<int,5> selected{};
+        for(std::size_t i=0;i<singers.size();++i){
+            const auto& role=singers[i];
+            int best=10000,chosen=-1;
+            for(int delta=role.minInterval;delta<=role.maxInterval;++delta){
+                const int note=melody+delta;
+                if(!member(note))continue;
+                const int move=previous[i]<0?0:std::min(7,std::abs(note-previous[i]));
+                const int cost=2*std::abs(delta-role.preferred)+2*move+
+                               (note!=fallback[i]?1:0);
+                if(cost<best){best=cost;chosen=note;}
+            }
+            if(chosen<0)return false;
+            selected[i]=chosen;
+        }
+        if(selected[0]-selected[3]<3||selected[2]-selected[1]<3||
+           selected[4]-selected[2]<3)return false;
+        targets_=selected;return true;
+    }
     int target(std::size_t voice) const noexcept { return targets_[voice]; }
 private:
     static int pc(int note,int key) noexcept {return ((note-key)%12+12)%12;}
