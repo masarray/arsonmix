@@ -2580,6 +2580,19 @@
     const remove=document.createElement("button");remove.type="button";remove.textContent="Remove";
     const hint=document.createElement("span");hint.className="armix-device-note";
     hint.textContent=data.readOnly?data.error:"Presets do not change any mixer route until row Apply.";
+    const exchange=document.createElement("details");
+    const summary=document.createElement("summary");summary.textContent="Import / Export presets";
+    const profileText=document.createElement("textarea");
+    profileText.setAttribute("aria-label","I/O profile JSON");profileText.rows=3;
+    profileText.maxLength=262144;profileText.style.width="100%";
+    profileText.placeholder="Paste a compatible I/O profile";
+    const exportProfile=document.createElement("button");exportProfile.type="button";exportProfile.textContent="Export profile";
+    const importProfile=document.createElement("button");importProfile.type="button";importProfile.textContent="Import profile";
+    const exchangeHint=document.createElement("span");exchangeHint.className="armix-device-note";
+    exchangeHint.textContent="Copy or paste JSON. Import adds presets only; duplicate names or unavailable pins reject the entire profile.";
+    exchange.append(summary,exportProfile,importProfile,profileText,exchangeHint);
+    const fields=["name","mode","left","right","leftName","rightName"];
+    const identity=()=>Object.fromEntries(["backend","captureDevice","playbackDevice"].map(k=>[k,deviceInventory.active[k]]));
     const choice=()=>{
       if(left.value===""||(mode.value==="STEREO"&&right.value===""))return null;
       return side==="input"?deviceVM.physicalInputChoice(next,mode.value,Number(left.value),
@@ -2591,6 +2604,16 @@
       right.hidden=mode.value==="MONO";
       save.disabled=locked||!name.value.trim()||!choice();
       remove.disabled=locked||!existing.value;
+      exportProfile.disabled=locked||!entries.length;
+      importProfile.disabled=locked||!profileText.value.trim();
+      profileText.disabled=locked;
+    };
+    profileText.oninput=update;
+    exportProfile.onclick=()=>{
+      if(locked||!matrixReady(hardware))return;
+      profileText.value=JSON.stringify({schema:"arsonmix.io-profile.v1",...identity(),side,
+        entries:entries.map(p=>Object.fromEntries(fields.map(k=>[k,p[k]])))},null,2);
+      profileText.focus();profileText.select();update();
     };
     existing.onchange=()=>{
       const p=entries.find(x=>x.id===existing.value);
@@ -2600,7 +2623,7 @@
     };
     for(const el of [existing,name,mode,left,right])el.disabled=locked;
     name.oninput=mode.onchange=left.onchange=right.onchange=update;
-    const send=operation=>{
+    const send=(operation,profile=null)=>{
       if(locked||namedPatchPending||matrixBusy()||!matrixReady(hardware)||
          hardware.device.epoch!==next.device.epoch||
          hardware.hardwareConfiguration!==next.hardwareConfiguration||
@@ -2614,6 +2637,7 @@
         left:c?.left??-1,right:c?.right??-1,
         leftName:model.pins.find(p=>p.port===c?.left)?.label||"",
         rightName:model.pins.find(p=>p.port===c?.right)?.label||""};
+      if(operation==="IMPORT"){payload.id="";payload.profile=profile;}
       namedPatchPending={requestId,phase:"APPLYING",revision:data.revision,payload};
       backend.emitEvent("arMixAction",{action:"audioNamedPatchEdit",requestId,...payload});
       paintPhysicalOutputs(hardware);
@@ -2629,7 +2653,19 @@
     };
     save.onclick=()=>send("SAVE");
     remove.onclick=()=>{if(existing.value&&window.confirm("Remove this routing preset? Installed routes are unchanged."))send("REMOVE");};
-    section.append(title,existing,name,mode,left,right,save,remove,hint);update();host.append(section);
+    importProfile.onclick=()=>{
+      if(locked)return;
+      let profile;
+      try{profile=JSON.parse(profileText.value);}catch(_){nativeToast("Invalid I/O profile JSON");return;}
+      if(!profile||profile.schema!=="arsonmix.io-profile.v1"||profile.side!==side||
+         !Array.isArray(profile.entries)||!profile.entries.length||profile.entries.length>128||
+         !profile.entries.every(p=>p&&typeof p.name==="string"&&fields.every(k=>Object.hasOwn(p,k)))||
+         !Object.entries(identity()).every(([k,v])=>profile[k]===v)){
+        nativeToast("Incompatible I/O profile");return;
+      }
+      send("IMPORT",profile);
+    };
+    section.append(title,existing,name,mode,left,right,save,remove,hint,exchange);update();host.append(section);
   }
   function paintRouteMatrix(next,side){
     const host=devicePanel?.querySelector("[data-audio-"+side+"-grid]");
@@ -3568,14 +3604,20 @@
       if(!same||data?.revision!==namedPatchPending.revision+1||
          !Array.isArray(data.entries))return;
       const wanted=namedPatchPending.payload;
-      const proved=wanted.operation==="REMOVE"?!data.entries.some(p=>p.id===wanted.id):
-        data.entries.some(p=>(!wanted.id||p.id===wanted.id)&&
-          ["side","name","mode","left","right","leftName","rightName"].every(k=>p[k]===wanted[k]));
+      const fields=["name","mode","left","right","leftName","rightName"];
+      const matches=(p,q)=>p.side===wanted.side&&fields.every(k=>p[k]===q[k]);
+      const previous=deviceInventory?.namedPatches?.entries||[];
+      const proved=wanted.operation==="IMPORT"?
+        data.entries.length===previous.length+wanted.profile.entries.length&&
+        previous.every(old=>data.entries.some(p=>p.id===old.id&&p.side===old.side&&fields.every(k=>p[k]===old[k])))&&
+        wanted.profile.entries.every(row=>data.entries.filter(p=>matches(p,row)&&!previous.some(old=>old.id===p.id)).length===1):
+        wanted.operation==="REMOVE"?!data.entries.some(p=>p.id===wanted.id):
+        data.entries.some(p=>(!wanted.id||p.id===wanted.id)&&matches(p,wanted));
       if(!proved)return;
       namedPatchPending=null;
       // Refresh only this independent metadata, not the current device draft.
       deviceInventory={...deviceInventory,namedPatches:data};
-      nativeToast("I/O preset saved");
+      nativeToast(wanted.operation==="IMPORT"?"I/O profile imported":"I/O preset saved");
       syncNamedOptions();
       paintPhysicalOutputs(hardware);
     });

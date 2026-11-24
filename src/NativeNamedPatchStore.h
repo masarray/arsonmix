@@ -49,7 +49,39 @@ public:
             if(candidate[i].getProperty("id","").toString()==id){found=i;break;}
         if(!id.isEmpty()&&(found<0||!sameDevice(candidate[found],active)))
             return "I/O preset not found on current device";
-        if(op=="REMOVE") {
+        if(op=="IMPORT") {
+            // An interchange profile is desired metadata only. Import is
+            // additive, all-or-nothing, and must match the current device.
+            const auto profile=request.getProperty("profile",{});
+            const auto rows=profile.getProperty("entries",{});
+            const auto side=request.getProperty("side",{});
+            if(!id.isEmpty()||!profile.isObject()||
+               profile.getProperty("schema",{})!=juce::var("arsonmix.io-profile.v1")||
+               (side!=juce::var("input")&&side!=juce::var("output"))||
+               profile.getProperty("side",{})!=side||!sameDevice(profile,active)||
+               !rows.isArray()||rows.getArray()->isEmpty()||
+               rows.getArray()->size()>128-candidate.size()||
+               juce::JSON::toString(profile,false).getNumBytesAsUTF8()>256*1024)
+                return "Invalid or incompatible I/O profile";
+            for(const auto& row:*rows.getArray()){
+                if(!row.isObject())return "Invalid I/O profile entry";
+                auto entry=object();
+                put(entry,"id",juce::Uuid().toDashedString());
+                for(const char* key:{"backend","captureDevice","playbackDevice"})
+                    put(entry,key,profile.getProperty(key,{}));
+                put(entry,"side",side);
+                for(const char* key:{"name","mode","left","right","leftName","rightName"})
+                    put(entry,key,row.getProperty(key,{}));
+                if(!valid(entry)||!verified(entry,active))
+                    return "I/O profile: unavailable or reserved physical pins";
+                for(const auto& old:candidate)
+                    if(sameDevice(old,entry)&&old.getProperty("side",{})==side&&
+                       old.getProperty("name","").toString().equalsIgnoreCase(
+                           entry.getProperty("name","").toString()))
+                        return "I/O profile: duplicate preset name";
+                candidate.add(entry);
+            }
+        }else if(op=="REMOVE") {
             if(found<0||candidate[found].getProperty("side",{})!=request.getProperty("side",{}))
                 return "I/O preset not found on requested side";
             candidate.remove(found);

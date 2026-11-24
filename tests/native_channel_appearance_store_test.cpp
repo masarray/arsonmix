@@ -120,6 +120,37 @@ static void namedPatchRegression(){
         assert(store.apply(req,active).isNotEmpty());
         set(req,"side","output");assert(store.apply(req,active).isEmpty());
     }
+    // Additive interchange is one atomic revision and never changes routes.
+    // A bad second row must not leave the first row committed.
+    {
+        armix::io::NamedPatchStore store(dir);
+        set(req,"revision",5);set(req,"id","");set(req,"operation","IMPORT");set(req,"side","output");
+        auto profile=object(),row=object(),bad=object();
+        set(profile,"schema","arsonmix.io-profile.v1");set(profile,"side","output");
+        for(const char* k:{"backend","captureDevice","playbackDevice"})
+            set(profile,k,active.getProperty(k,{}));
+        set(row,"name","Broadcast");set(row,"mode","STEREO");set(row,"left",4);set(row,"right",5);
+        set(row,"leftName","Out 5");set(row,"rightName","Out 6");
+        bad=juce::JSON::parse(juce::JSON::toString(row));
+        set(bad,"name","Invalid reserved");set(bad,"left",0);set(bad,"right",1);
+        set(bad,"leftName","Out 1");set(bad,"rightName","Out 2");
+        set(profile,"entries",juce::var(juce::Array<juce::var>{row,bad}));set(req,"profile",profile);
+        assert(store.apply(req,active).isNotEmpty());
+        assert(store.snapshot(active).getProperty("revision",{})==juce::var(5));
+        assert(store.snapshot(active).getProperty("entries",{}).getArray()->isEmpty());
+        set(profile,"entries",juce::var(juce::Array<juce::var>{row}));
+        set(profile,"playbackDevice","Wrong driver");
+        assert(store.apply(req,active).isNotEmpty());
+        set(profile,"playbackDevice","Test ASIO");
+        assert(store.apply(req,active).isEmpty());
+        assert(store.snapshot(active).getProperty("revision",{})==juce::var(6));
+        set(req,"revision",6);
+        assert(store.apply(req,active).isNotEmpty()); // duplicate import
+        armix::io::NamedPatchStore reboot(dir);
+        const auto rows=reboot.snapshot(active).getProperty("entries",{});
+        assert(rows.getArray()->size()==1&&rows[0].getProperty("name","")=="Broadcast");
+        assert(rows[0].getProperty("available",{})==juce::var(true));
+    }
     const auto file=dir.getChildFile("named-io-patches.v1.json");
     assert(file.replaceWithText("broken"));
     armix::io::NamedPatchStore damaged(dir);

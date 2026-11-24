@@ -107,6 +107,26 @@ def verify_custom_input(page,out):
         "active":inventory["active"],"namedPatches":inventory["namedPatches"]})
     assert page.evaluate("()=>window.__actions.filter(x=>x.action==='routingNativeSourcePatch').length")==1
     assert row.locator('[data-mark="L"]').count()==1
+    # Interchange uses accepted metadata, not the current route or ARM state.
+    page.get_by_text("Import / Export presets",exact=True).click()
+    page.get_by_role("button",name="Export profile",exact=True).click()
+    import json
+    profile=json.loads(page.get_by_label("I/O profile JSON").input_value())
+    assert profile["schema"]=="arsonmix.io-profile.v1" and profile["entries"][0]["name"]=="Studio Vocal"
+    assert "id" not in profile["entries"][0] and "available" not in profile["entries"][0]
+    profile["entries"][0]["name"]="Imported Vocal"
+    page.get_by_label("I/O profile JSON").fill(json.dumps(profile))
+    page.get_by_role("button",name="Import profile",exact=True).click()
+    imported=page.evaluate("()=>window.__actions.filter(x=>x.action==='audioNamedPatchEdit').at(-1)")
+    assert imported["operation"]=="IMPORT" and imported["revision"]==2 and imported["profile"]==profile
+    emit(page,"arMixNamedPatchAck",{"requestId":imported["requestId"],"ok":True})
+    assert page.locator('option[value="preset:fixture-2"]').count()==0
+    new_entry={**entry,"id":"fixture-2","name":"Imported Vocal"}
+    inventory["namedPatches"]={"revision":3,"readOnly":False,"entries":[entry,new_entry]}
+    emit(page,"arMixNamedPatchReadback",{"requestId":imported["requestId"],
+        "active":inventory["active"],"namedPatches":inventory["namedPatches"]})
+    assert page.locator('option[value="preset:fixture-2"]').count()>0
+    assert page.evaluate("()=>window.__actions.filter(x=>x.action==='routingNativeSourcePatch').length")==1
     page.screenshot(path="audio-io-custom-stereo.png")
     # Preset appears on another input strip without creating a new graph
     # authority. Choose it directly; actual wire payload remains physical.
