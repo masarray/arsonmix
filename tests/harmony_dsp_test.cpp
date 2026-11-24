@@ -845,8 +845,8 @@ static void testLowerPresenceAndPresets(){
 }
 // Force loss at eight phase positions and measure the immediate slope
 // discontinuity, not the ordinary derivative of a sung waveform.
-// Exercise the production caller's hard causal eligibility boundary:
-// low bass and downward harmony need more than 24ms source lookback.
+// Exercise real renderer loss/recovery on a bass/high phrase. Do not
+// infer that the losses are causal-boundary events without trace evidence.
 static void testCausalAdmissionEngine(){
     constexpr double tau=6.283185307179586;
     for(int rate:{48000,96000}){
@@ -860,22 +860,41 @@ static void testCausalAdmissionEngine(){
             src.left[i]=src.right[i]=static_cast<float>(
                 .17*std::sin(phase)+.055*std::sin(2*phase+.3)+.03*std::sin(3*phase+.6));
         }
-        struct Result {LeadFixture pcm;std::uint64_t losses=0,acquisitions=0;};
-        auto run=[&](bool drain,int block,bool wet){
+        struct Result {LeadFixture pcm;std::uint64_t losses=0,acquisitions=0;Engine::RendererTrace trace{};};
+        auto run=[&](bool drain,int block,bool wet,bool trace=true){
             auto e=std::make_unique<Engine>();Settings s;s.voices=5;
             s.wet=wet?1.f:0.f;s.color=.78f;s.space=.6f;
-            need(e->prepare(rate)&&e->setDrainForOfflineReference(drain)&&e->setSettings(s),
-                 "H18 engine setup");
+            need(e->prepare(rate)&&e->setDrainForOfflineReference(drain)&&
+                 e->setRendererTraceForOfflineTests(trace)&&e->setSettings(s),"H18 engine setup");
             Result out{src};
             for(int i=0;i<n;i+=block)e->process(out.pcm.left.data()+i,out.pcm.right.data()+i,std::min(block,n-i));
             for(int v=0;v<Engine::maxVoices;++v){
                 const auto c=e->seamCountsForOfflineTests(v);
                 out.losses+=c.losses;out.acquisitions+=c.acquisitions;
+                const auto q=e->rendererTraceForOfflineTests(v);
+                for(std::size_t k=0;k<q.values.size();++k)out.trace.values[k]+=q.values[k];
             }
+            need(!e->setRendererTraceForOfflineTests(false),"H19 trace changed after PCM");
             return out;
         };
         const auto old=run(false,127,true),now=run(true,127,true),split=run(true,64,true);
         const auto dry=run(true,127,false),oldDry=run(false,64,false);
+        const auto untraced=run(true,127,true,false);
+        need(now.pcm.left==untraced.pcm.left&&now.pcm.right==untraced.pcm.right,
+             "H19 trace affected PCM");
+        need(untraced.trace.values==Engine::RendererTrace{}.values&&
+             now.trace.values==split.trace.values,"H19 trace lifecycle/block parity");
+        using T=Engine::RendererTrace;
+        const auto& q=now.trace.values;
+        need(q[T::calls]>0&&q[T::ready]>0&&q[T::safeUnready]>0&&
+             q[T::drained]<=q[T::causalBlocked]&&q[T::partial]<=q[T::ready]&&
+             q[T::calls]==q[T::notCarrying]+q[T::causalBlocked]+q[T::safeUnready]+q[T::ready]-q[T::drained],
+             "H19 trace accounting");
+        std::cout<<"H19_TRACE rate="<<rate<<" calls="<<q[T::calls]
+                 <<" no_clock="<<q[T::notCarrying]<<" causal_blocked="<<q[T::causalBlocked]
+                 <<" drained="<<q[T::drained]<<" safe_unready="<<q[T::safeUnready]
+                 <<" ready="<<q[T::ready]<<" partial="<<q[T::partial]
+                 <<" weak_confidence="<<q[T::weakConfidence]<<std::endl;
         need(now.pcm.left==split.pcm.left&&now.pcm.right==split.pcm.right&&
              now.losses==split.losses&&now.acquisitions==split.acquisitions,"H18 block parity");
         need(dry.pcm.left==oldDry.pcm.left&&dry.pcm.right==oldDry.pcm.right,"H18 dry changed");
@@ -883,7 +902,7 @@ static void testCausalAdmissionEngine(){
                  <<" new_losses="<<now.losses<<" old_acquisitions="<<old.acquisitions
                  <<" new_acquisitions="<<now.acquisitions<<std::endl;
         need(old.losses>0&&old.acquisitions>5&&now.losses>0&&now.acquisitions>5,
-             "H18 engine fixture did not exercise causal loss and recovery");
+             "H18 engine fixture did not exercise renderer loss and recovery");
         for(int ch:{0,1}){
             const auto& a=ch?old.pcm.right:old.pcm.left;const auto& b=ch?now.pcm.right:now.pcm.left;
             const auto& d=ch?dry.pcm.right:dry.pcm.left;

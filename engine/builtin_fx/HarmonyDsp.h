@@ -230,6 +230,17 @@ private:
 class Engine final {
 public:
     static constexpr int maxVoices=5;
+    // Opt-in offline evidence only. All fields count sample calls, except
+    // seam transitions which are recorded separately by BackingRenderSeam.
+    struct RendererTrace {
+        enum Field {calls,notCarrying,causalBlocked,drained,safeUnready,ready,partial,weakConfidence,size};
+        std::array<std::uint64_t,size> values{};
+        RendererTrace delta(const RendererTrace& previous) const noexcept {
+            RendererTrace out;
+            for(std::size_t i=0;i<values.size();++i)out.values[i]=values[i]-previous.values[i];
+            return out;
+        }
+    };
     static_assert(singers.size()==maxVoices);
     static constexpr int maxPitchLagsPerSlice=8; // fewer burst MACs per sample
     // Maximum 192 kHz grain is 3072 frames: 2*grain latency + 3*grain
@@ -279,6 +290,7 @@ public:
         continuityReferenceEnabled_=true;supportReferenceEnabled_=true;
         naturalReferenceEnabled_=true;backingContour_.prepare(detectEvery_/rate);
         carrierReferenceEnabled_=true;slopeReferenceEnabled_=true;drainReferenceEnabled_=true;
+        traceEnabled_=false;rendererTrace_={};
         for(auto& carrier:carriers_)carrier.reset();
         periodContinuity_.reset();
         sourcePeriodSamples_=0.f;sourceConfidence_=0.f;sampleClock_=0;
@@ -504,6 +516,13 @@ public:
     }
     // Exact H14 reference for matched acoustic regression only.
     // Exact H15 carrier reference; offline before the first PCM only.
+    bool setRendererTraceForOfflineTests(bool enabled) noexcept {
+        if(processed_)return false;
+        traceEnabled_=enabled;rendererTrace_={};return true;
+    }
+    RendererTrace rendererTraceForOfflineTests(int voice) const noexcept {
+        return voice>=0&&voice<maxVoices?rendererTrace_[static_cast<std::size_t>(voice)]:RendererTrace{};
+    }
     bool setDrainForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
         drainReferenceEnabled_=enabled;return true;
@@ -882,6 +901,20 @@ private:
                 sourcePeriodSamples_,effectiveRatio,
                 static_cast<float>(latency_)+arrival,scale,continuityReferenceEnabled_,
                 supportReferenceEnabled_,naturalReferenceEnabled_,windowSafe);
+        if(traceEnabled_){
+            auto& v=rendererTrace_[ix].values;
+            ++v[RendererTrace::calls];
+            if(!carryEpochs)++v[RendererTrace::notCarrying];
+            else if(!windowSafe){
+                ++v[RendererTrace::causalBlocked];
+                if(sync.ready)++v[RendererTrace::drained];
+            }else if(!sync.ready)++v[RendererTrace::safeUnready];
+            if(sync.ready){
+                ++v[RendererTrace::ready];
+                if(sync.coverage<1.f)++v[RendererTrace::partial];
+            }
+            if(carryEpochs&&!confident)++v[RendererTrace::weakConfidence];
+        }
         float& colorState=pitchSyncFiltered_[ix];
         // Invalid PSOLA epochs must never inject zero into the high-voice
         // output while a crossfade is still active.
@@ -1158,7 +1191,8 @@ private:
     std::array<BackingRenderSeam,maxVoices> backingSeams_{};
     bool continuityReferenceEnabled_=true,supportReferenceEnabled_=true;
     bool naturalReferenceEnabled_=true,carrierReferenceEnabled_=true,slopeReferenceEnabled_=true;
-    bool drainReferenceEnabled_=true;
+    bool drainReferenceEnabled_=true,traceEnabled_=false;
+    std::array<RendererTrace,maxVoices> rendererTrace_{};
     BackingPitchContour backingContour_{};
     std::array<PhaseCoherentCarrier,maxVoices> carriers_{};
     std::array<float,maxVoices> pitchSyncBlend_{},pitchSyncFiltered_{},pitchSyncValid_{};

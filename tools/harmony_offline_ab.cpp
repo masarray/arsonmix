@@ -89,10 +89,11 @@ static void writeWave(const fs::path& path,const Wave& wave){
     if(!out)throw std::runtime_error("WAV output write failed");
 }
 using SeamCounts=std::array<armix::harmony::BackingRenderSeam::Counts,Engine::maxVoices>;
+struct TraceRow {std::size_t at=0;std::array<Engine::RendererTrace,Engine::maxVoices> counts{};SeamCounts seams{};};
 static Wave process(const Wave& input,Settings settings,bool synchronous,int block=127,
                     bool enhancedDepth=true,bool focus=true,bool presence=true,
                     bool articulation=true,bool continuity=true,bool support=true,bool natural=true,bool carrier=true,bool slope=true,
-                    bool drain=true,SeamCounts* counts=nullptr){
+                    bool drain=true,SeamCounts* counts=nullptr,std::vector<TraceRow>* trace=nullptr){
     auto e=std::make_unique<Engine>();
     if(!e->prepare(input.rate)||!e->setSettings(settings))
         throw std::runtime_error("native Harmony configuration invalid");
@@ -108,10 +109,28 @@ static Wave process(const Wave& input,Settings settings,bool synchronous,int blo
     e->setRoomFocusForOfflineReference(focus);
     if(!e->setBackingPresenceForOfflineReference(presence))
         throw std::runtime_error("Harmony presence offline reference rejected");
+    if(trace&&!e->setRendererTraceForOfflineTests(true))
+        throw std::runtime_error("renderer trace rejected");
     Wave out=input;
-    for(std::size_t pos=0;pos<out.left.size();pos+=static_cast<std::size_t>(block))
-        e->process(out.left.data()+pos,out.right.data()+pos,
-                   static_cast<int>(std::min(static_cast<std::size_t>(block),out.left.size()-pos)));
+    const std::size_t window=std::max<std::size_t>(1,input.rate/100);
+    TraceRow prev{};std::size_t start=0;
+    for(std::size_t pos=0;pos<out.left.size();){
+        const auto end=trace?std::min(out.left.size(),start+window):out.left.size();
+        const auto n=std::min(static_cast<std::size_t>(block),end-pos);
+        e->process(out.left.data()+pos,out.right.data()+pos,static_cast<int>(n));
+        pos+=n;
+        if(trace&&pos==end){
+            TraceRow row{};row.at=start;
+            for(int v=0;v<Engine::maxVoices;++v){
+                const auto q=e->rendererTraceForOfflineTests(v);
+                const auto c=e->seamCountsForOfflineTests(v);
+                row.counts[v]=q.delta(prev.counts[v]);prev.counts[v]=q;
+                row.seams[v]={c.losses-prev.seams[v].losses,c.acquisitions-prev.seams[v].acquisitions};
+                prev.seams[v]=c;
+            }
+            trace->push_back(row);start=end;
+        }
+    }
     if(counts)for(int v=0;v<Engine::maxVoices;++v)(*counts)[v]=e->seamCountsForOfflineTests(v);
     return out;
 }
@@ -429,14 +448,23 @@ static void continuityReport(const Wave& input,const fs::path& folder,Settings s
     std::ofstream events(folder/"seam_events.csv",std::ios::trunc);
     if(!events)throw std::runtime_error("seam event report open failed");
     events<<"variant,role,losses,acquisitions\n";
+    std::ofstream traceCsv(folder/"renderer_trace_10ms.csv",std::ios::trunc);
+    if(!traceCsv)throw std::runtime_error("renderer trace open failed");
+    traceCsv<<"variant,role,output_time_s,source_time_s,calls,no_clock,causal_blocked,drained,safe_unready,ready,partial,weak_confidence,losses,acquisitions\n";
     for(int version:{12,13,14,15,16,17,18}){
-        SeamCounts counts{};
+        SeamCounts counts{};std::vector<TraceRow> trace;
         const auto mix=process(input,s,true,127,true,true,true,true,
-                               version>=13,version>=14,version>=15,version>=16,version>=17,version>=18,&counts);
+                               version>=13,version>=14,version>=15,version>=16,version>=17,version>=18,&counts,&trace);
         const auto backing=subtract(mix,dry);
         const auto tag="h"+std::to_string(version);
         for(int v=0;v<Engine::maxVoices;++v)
             events<<tag<<','<<v<<','<<counts[v].losses<<','<<counts[v].acquisitions<<'\n';
+        for(const auto& row:trace)for(int v=0;v<Engine::maxVoices;++v){
+            traceCsv<<tag<<','<<v<<','<<double(row.at)/input.rate<<','
+                    <<double(row.at)/input.rate-delay;
+            for(auto q:row.counts[v].values)traceCsv<<','<<q;
+            traceCsv<<','<<row.seams[v].losses<<','<<row.seams[v].acquisitions<<'\n';
+        }
         writeWave(folder/(tag+"_mix.wav"),mix);
         writeWave(folder/(tag+"_backing.wav"),backing);
         for(int channel:{0,1}){
@@ -456,7 +484,7 @@ static void continuityReport(const Wave& input,const fs::path& folder,Settings s
     for(int version:{14,15,16,17,18})for(int role=0;role<Engine::maxVoices;++role)
         writeWave(folder/("h"+std::to_string(version)+"_role_"+std::to_string(role)+".wav"),
                   roleStem(input,s,role,dry,version>=15,version>=16,version>=17,version>=18));
-    if(!csv||!events)throw std::runtime_error("continuity report write failed");
+    if(!csv||!events||!traceCsv)throw std::runtime_error("continuity report write failed");
 }
 int main(int argc,char** argv){
     try{
@@ -563,6 +591,11 @@ int main(int argc,char** argv){
             while(std::getline(ev,line))++rows;
             if(rows!=1+7*Engine::maxVoices)return 17;
             if(!fs::exists(folder/"h18_role_2.wav"))return 18;
+            std::ifstream tr(folder/"renderer_trace_10ms.csv");int traceRows=0;
+            while(std::getline(tr,line))++traceRows;
+            const auto windows=(v.left.size()+v.rate/100-1)/(v.rate/100);
+            if(static_cast<std::size_t>(traceRows)!=1+7*Engine::maxVoices*windows)return 19;
+            std::cout<<"H19_TRACE_EXPORT rows="<<traceRows-1<<std::endl;
             std::cout<<"H18_EXPORT variants=7 event_rows="<<rows-1<<" WAV readback PASS\n";
             std::cout<<"Offline native A/B test passed (synthetic only)\n";
             return 0;
