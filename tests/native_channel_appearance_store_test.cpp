@@ -9,6 +9,7 @@
 #include "../src/NativeChannelAppearanceStore.h"
 #include "../src/NativeNamedPatchStore.h"
 #include "../src/NativeOutputBusPatch.h"
+#include "../engine/device/LogicalInputRegistry.h"
 
 using armix::appearance::Store;
 static juce::var object(){return juce::var(new juce::DynamicObject());}
@@ -190,7 +191,52 @@ static void busOutputPatchRegression(){
     assert(!P::plan(pins,{0,1},{2,3},false,{1,0},{8,9},external));
     assert(!P::plan(pins,{0,1},{-1,-1},true,{-1,-1},{8,9},external));
 }
+static void logicalInputRegistryRegression(){
+    using R=armix::device::LogicalInputRegistry;
+    R registry;
+    const R::Device device{"ASIO","Interface A","Interface A"};
+    const std::array<R::Pin,3> pins{{{0,0,"Mic 1"},{3,1,"Mic 4"},{7,2,"Line 8"}}};
+    const R::Inventory live{device,11,pins,true};
+    assert(registry.add(9007199254740993ULL,"Lead Vocal",R::Format::stereo));
+    const auto port=registry.ports()[0].id;
+    assert(!registry.add(port,"Other",R::Format::mono));
+    assert(!registry.add(2,"lead vocal",R::Format::mono));
+    assert(registry.assign(101,port)&&registry.assign(102,port));
+    assert(!registry.erase(port));
+    assert(registry.resolve(101,live).status==R::Resolution::needsRemap);
+    const R::Binding reverse{device,7,0,"Line 8","Mic 1"};
+    assert(!registry.bind(port,reverse,live,10));
+    assert(registry.bind(port,reverse,live,11));
+    assert(registry.resolve(101,live).left==2&&registry.resolve(102,live).right==0);
+    assert(registry.rename(port,"Vocal L/R"));
+    assert(registry.references().size()==2&&registry.resolve(101,live).port==port);
+    auto other=live;other.device.capture="Interface B";
+    assert(registry.resolve(101,other).status==R::Resolution::needsRemap);
+    other=live;other.authorized=false;
+    assert(registry.resolve(101,other).status==R::Resolution::needsRemap);
+    const std::array<R::Pin,2> sparse{{{0,0,"Mic 1"},{7,1,"Line 8"}}};
+    const R::Inventory fewer{device,12,sparse,true};
+    assert(registry.resolve(101,fewer).left==1); // callback index changed, physical identity intact
+    const std::array<R::Pin,2> missing{{{0,0,"Mic 1"},{3,1,"Mic 4"}}};
+    const R::Inventory lost{device,13,missing,true};
+    assert(registry.resolve(101,lost).status==R::Resolution::needsRemap);
+    assert(registry.resolve(101,live).status==R::Resolution::resolved); // intent preserved
+    const std::array<R::Pin,3> ambiguous{{{0,0,"Mic 1"},{3,1,"Line 8"},{7,2,"Line 8"}}};
+    assert(registry.resolve(101,{device,14,ambiguous,true}).status==R::Resolution::needsRemap);
+    assert(!registry.bind(port,{device,0,0,"Mic 1","Mic 1"},live,11));
+    assert(registry.resolve(101,live).left==2); // rejected mutation leaves prior binding
+    assert(registry.add(3,"Guitar",R::Format::mono));
+    assert(!registry.bind(3,reverse,live,11));
+    assert(registry.bind(3,{device,3,-1,"Mic 4",""},live,11));
+    assert(registry.assign(103,3));
+    assert(registry.resolve(103,live).right==-1);
+    assert(registry.unbind(port));
+    assert(registry.resolve(101,live).status==R::Resolution::needsRemap);
+    assert(registry.assign(101,0)&&registry.assign(102,0)&&registry.erase(port));
+    assert(registry.resolve(101,live).status==R::Resolution::noSource);
+}
 int main(){
+    logicalInputRegistryRegression();
     busOutputPatchRegression();
     namedPatchRegression();
     const auto dir=juce::File::getSpecialLocation(juce::File::tempDirectory)
