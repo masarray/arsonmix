@@ -193,7 +193,7 @@ public:
     // normalized power across five distinct positions; the HIGH singer
     // is a primary part, not another diffuse support layer.
     static float singerPresence(std::size_t v,int voices) noexcept {
-        constexpr std::array<float,5> arranged{{1.20f,.88f,1.52f,.94f,1.30f}};
+        constexpr std::array<float,5> arranged{{1.20f,.88f,1.85f,.94f,1.30f}};
         return voices<=2?singers[v].presence:arranged[v];
     }
     static float singerPan(std::size_t v,int voices) noexcept {

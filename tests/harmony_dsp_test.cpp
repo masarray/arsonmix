@@ -201,7 +201,8 @@ static void testMusicalEnsemblePlanner(){
 }
 // Actual per-role native PCM, not just intended note metadata. Keep
 // the same gain/pan/arrangement and solo one slot through prepared mixing.
-static void testMusicalHighStem(){
+static bool testMusicalHighStem(){
+  bool pass=true;
   constexpr double tau=6.283185307179586;
   for(int rate:{48000,96000})for(double hz:{110.,220.,440.}){
     auto input=leadFixture(rate,hz,0.f,0.f);input.right=input.left;
@@ -252,11 +253,11 @@ static void testMusicalHighStem(){
       std::cout<<"H3_HIGH rate="<<rate<<" hz="<<hz<<" voices="<<count
                <<" expected="<<target<<" found="<<found<<" cents="<<error
                <<" high_vs_low_dB="<<balance<<std::endl;
-      need(std::isfinite(balance)&&balance>=-3.&&balance<=8.,
-           "H3 HIGH energy masked or dominates LOW");
-      need(std::abs(error)<=35.&&best>1.,"H3 isolated HIGH fundamental not at musical target");
+      pass=pass&&std::isfinite(balance)&&balance>=-3.&&balance<=8.&&
+           std::abs(error)<=35.&&best>1.;
     }
   }
+  return pass;
 }
 // Duo is two PITCHED wet voices; Doubler is a SINGLE synthetic unison take.
 // This is a native PCM proof, not a certified real-singer naturalness test.
@@ -595,9 +596,10 @@ static void testBackingUnity(){
 }
 int main(){
   testMusicalEnsemblePlanner();
-  testMusicalHighStem();
+  const bool highPass=testMusicalHighStem();
   testLeadRendererSeam();
   testBackingUnity();
+  need(highPass,"H3 HIGH presence or isolated fundamental failed; inspect all H3_HIGH rows");
   testUnvoicedGapPreservesWetTail();
   testUnisonDoubler();
   testPeriodContinuityOnLoudOctaveErrors();
