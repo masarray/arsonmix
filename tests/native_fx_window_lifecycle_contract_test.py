@@ -5,7 +5,8 @@ import unittest
 ROOT=Path(__file__).resolve().parents[1]
 HOST=(ROOT/"src/Main.cpp").read_text(encoding="utf-8")
 OWNER=(ROOT/"src/NativeOwnedFloatingWindow.h").read_text(encoding="utf-8")
-WIN32=(ROOT/"src/NativeFxWin32Owner.h").read_text(encoding="utf-8")
+WIN32_HEADER=(ROOT/"src/NativeFxWin32Owner.h").read_text(encoding="utf-8")
+WIN32=(ROOT/"src/NativeFxWin32Owner.cpp").read_text(encoding="utf-8")
 
 class NativeFxWindowLifecycle(unittest.TestCase):
     def test_juce_active_editor_registration_released_before_deletion(self):
@@ -19,6 +20,18 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("setContentNonOwned (editor, true);",HOST)
         self.assertIn("ownedEditor_.reset();",HOST)
         self.assertIn("std::move(ownedEditor),*this",HOST)
+
+    def test_win32_sdk_isolation_and_real_build_wiring(self):
+        self.assertNotIn("#include",WIN32_HEADER)
+        self.assertNotIn("#undef",WIN32_HEADER)
+        self.assertNotIn("static_cast<HWND>",OWNER)
+        self.assertIn("#include <windows.h>",WIN32)
+        self.assertNotIn("#undef",WIN32)
+        cmake=(ROOT/"CMakeLists.txt").read_text(encoding="utf-8")
+        self.assertEqual(cmake.count("src/NativeFxWin32Owner.cpp"),2)
+        isolated=(ROOT/"tests/native_fx_window_owner/CMakeLists.txt").read_text(encoding="utf-8")
+        self.assertIn("../../src/NativeFxWin32Owner.cpp",isolated)
+        self.assertIn("../native_fx_win32_sdk_order_test.cpp",isolated)
 
     def test_mixer_owned_not_global_topmost(self):
         self.assertIn("attachOwnedFloatingWindow (*this, mixer)",HOST)

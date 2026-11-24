@@ -7,6 +7,16 @@
 #error This HWND test runs only on Windows
 #endif
 #include "../src/NativeFxWin32Owner.h"
+// Interface-first: do not poison unrelated C++ before loading the SDK.
+#if defined(near) || defined(far) || defined(min) || defined(max) || defined(_WINDOWS_)
+#error Native FX interface leaks Windows SDK macros
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <audioclient.h>
+#include <mmreg.h>
 #include <cassert>
 #include <cstdio>
 

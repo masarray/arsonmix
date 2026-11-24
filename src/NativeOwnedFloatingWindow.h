@@ -32,8 +32,8 @@ inline bool attachOwnedFloatingWindow(juce::Component& floating,
     const auto* popupPeer=floating.getPeer();
     const auto* mixerPeer=mixer.getPeer();
     if(popupPeer==nullptr || mixerPeer==nullptr)return false;
-    const auto child=static_cast<HWND>(popupPeer->getNativeHandle());
-    const auto owner=static_cast<HWND>(mixerPeer->getNativeHandle());
+    const auto child=popupPeer->getNativeHandle();
+    const auto owner=mixerPeer->getNativeHandle();
     const bool attached=win32::attachOwnedPopup(child,owner);
     win32::preferDarkTitleBar(child);
     return attached;
@@ -83,8 +83,8 @@ inline bool verifyOwnedFloatingPresentation(juce::DocumentWindow& editor,
     const auto* peer=editor.getPeer();
     const auto* owner=mixer.getPeer();
     if(!peer||!owner)return false;
-    return win32::ensureOwnedPopupVisible(static_cast<HWND>(peer->getNativeHandle()),
-                                          static_cast<HWND>(owner->getNativeHandle()));
+    return win32::ensureOwnedPopupVisible(peer->getNativeHandle(),
+                                          owner->getNativeHandle());
 #else
     return editor.isShowing();
 #endif
