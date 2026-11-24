@@ -117,7 +117,7 @@ public:
                         }
                     }
                     mean/=std::max(1,bins);
-                    constexpr double cap=6.*std::log(10.)/20.;
+                    constexpr double cap=.6907755278982137; // 6 dB in natural log
                     for(std::size_t k=0;k<=n/2;++k){
                         const double hz=double(k)*rate/n;
                         const double taper=std::clamp((hz-300.)/200.,0.,1.)*

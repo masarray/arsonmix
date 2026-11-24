@@ -318,7 +318,7 @@ public:
         decimationAlpha_=static_cast<float>(1.-std::exp(-2.*3.141592653589793*cutoff/rate));
         write_=0;downWrite_=0;downSeen_=0;downCounter_=0;
         detectCounter_=0;pitchSliceCounter_=0;pitchNextLag_=0;
-        doublerFastEnabled_=true;
+        doublerFastEnabled_=true;unisonCadenceSettled_=false;
         pitchActive_=false;pitchBest_=-1.f;pitchBestLag_=0;
         peakPitchLagWork_=0;completedPitchAnalyses_=0;abandonedPitchAnalyses_=0;
         noteHold_=0;currentNote_=-1;candidateNote_=-1;
@@ -468,6 +468,7 @@ public:
             if(next.settings.voiceMode==1)targetRatio_.fill(1.f);
         }
         settings_=next.settings;
+        unisonCadenceSettled_=false;
         targetWet_=next.settings.wet;targetColor_=next.settings.color;
         targetSpace_=next.settings.space;
         targetGain_=next.gain;targetBackingGain_=next.backingGain;
@@ -538,6 +539,10 @@ public:
         headroomEnabled_=enabled;return true;
     }
     const BackingHeadroom& headroomForOfflineTests()const noexcept{return headroom_;}
+    bool setInactiveStageForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        stage_.setInactiveFastForOfflineTests(enabled);return true;
+    }
     bool setDoublerFastForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
         doublerFastEnabled_=enabled;return true;
@@ -721,15 +726,22 @@ public:
             // a 50Hz note readout; do not spend 150Hz correlation work on
             // a renderer that cannot consume it. A mode/Tune edit restores
             // normal cadence immediately, including an in-flight analysis.
-            bool unisonOnly=doublerFastEnabled_&&settings_.voiceMode==1&&
-                !settings_.correction&&!leadRendering_&&doublerBlend_>=.99999f;
-            if(unisonOnly)for(int v=1;v<maxVoices;++v){
-                const auto ix=static_cast<std::size_t>(v);
-                if(std::abs(mixL_[ix])+std::abs(mixR_[ix])>=1.e-5f){
-                    unisonOnly=false;break;
+            const bool unisonEligible=doublerFastEnabled_&&settings_.voiceMode==1&&
+                !settings_.correction&&!leadRendering_;
+            // Prepared edits invalidate the latch. After the one-pole
+            // ramps settle toward zero, no other role can grow until an
+            // edit. Retest only while entering the steady mode.
+            if(unisonEligible&&!unisonCadenceSettled_&&doublerBlend_>=.99999f){
+                unisonCadenceSettled_=true;
+                for(int v=1;v<maxVoices;++v){
+                    const auto ix=static_cast<std::size_t>(v);
+                    if(std::abs(mixL_[ix])+std::abs(mixR_[ix])>=1.e-5f||
+                       targetMixL_[ix]!=0.f||targetMixR_[ix]!=0.f){
+                        unisonCadenceSettled_=false;break;
+                    }
                 }
             }
-            const int cadence=unisonOnly?3*detectEvery_:detectEvery_;
+            const int cadence=unisonEligible&&unisonCadenceSettled_?3*detectEvery_:detectEvery_;
             if(++detectCounter_>=cadence){
                 detectCounter_=0;beginPitchAnalysis();
             }
@@ -1265,6 +1277,7 @@ private:
     // decimated input itself is unchanged; no added audio delay.
     std::array<double,160+231> pitchWindow_{};
     bool fastCorrelation_=true,lowerFocusReferenceEnabled_=true,doublerFastEnabled_=true;
+    bool unisonCadenceSettled_=false;
     std::array<float,231> pitchCorrelations_{};
     int currentNote_=-1,candidateNote_=-1,noteHold_=0;
     int guideKey_=-1,guideScale_=-1;

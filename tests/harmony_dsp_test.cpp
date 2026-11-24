@@ -1459,6 +1459,53 @@ static void testDoublerMonoCompatibility(){
         need(minNew>minOld&&wetNew>.10*wetOld,"H24B mono floor or audible backing");
     }
 }
+static void testInactiveStageFastPath(){
+    using Clock=std::chrono::steady_clock;
+    for(int rate:{48000,96000,192000})for(int mode:{1,2,5}){
+        constexpr int block=64;
+        const int n=2*rate;
+        LeadFixture src{std::vector<float>(n),std::vector<float>(n)};
+        for(int i=0;i<n;++i){
+            const double ph=6.283185307179586*220.*i/rate;
+            src.left[i]=src.right[i]=static_cast<float>(.12*std::sin(ph)+.04*std::sin(2.*ph+.3));
+        }
+        Settings s;s.voiceMode=mode==1?1:0;s.voices=std::max(2,mode);s.wet=1.f;s.space=1.f;s.color=.78f;
+        auto old=std::make_unique<Engine>(),now=std::make_unique<Engine>();
+        need(old->prepare(rate)&&now->prepare(rate)&&old->setInactiveStageForOfflineReference(false)&&
+             old->setSettings(s)&&now->setSettings(s),"H25D setup");
+        auto a=src,b=src;std::vector<double> before,after;
+        before.reserve(n/block+1);after.reserve(n/block+1);
+        for(int at=0;at<n;at+=block){
+            const int count=std::min(block,n-at);
+            auto measure=[&](Engine& e,LeadFixture& x){
+                const auto start=Clock::now();
+                e.process(x.left.data()+at,x.right.data()+at,count);
+                return std::chrono::duration<double,std::micro>(Clock::now()-start).count();
+            };
+            double x,y;
+            if((at/block)&1){y=measure(*now,b);x=measure(*old,a);}
+            else{x=measure(*old,a);y=measure(*now,b);}
+            if(at>=rate/4&&count==block){before.push_back(x);after.push_back(y);}
+        }
+        need(a.left==b.left&&a.right==b.right,"H25D native PCM changed");
+        std::sort(before.begin(),before.end());std::sort(after.begin(),after.end());
+        std::cout<<"H25D_CPU rate="<<rate<<" mode="<<mode
+                 <<" old_p50_us="<<before[before.size()/2]<<" new_p50_us="<<after[after.size()/2]
+                 <<" old_p99_us="<<before[(before.size()-1)*99/100]
+                 <<" new_p99_us="<<after[(after.size()-1)*99/100]<<std::endl;
+        // Reactivate a previously inactive singer with full retained
+        // stage history. Both modes must remain sample-exact on reentry.
+        s.voiceMode=0;s.voices=mode==5?2:5;
+        need(old->setSettings(s)&&now->setSettings(s),"H25D mode transition");
+        a=src;b=src;
+        for(int at=0;at<rate/2;at+=block){
+            const int count=std::min(block,rate/2-at);
+            old->process(a.left.data()+at,a.right.data()+at,count);
+            now->process(b.left.data()+at,b.right.data()+at,count);
+        }
+        need(a.left==b.left&&a.right==b.right,"H25D stage reentry changed native PCM");
+    }
+}
 static void testDoublerFastPath(){
     using Clock=std::chrono::steady_clock;
     constexpr double tau=6.283185307179586;
@@ -1997,6 +2044,7 @@ int main(){
   auditFieldHeadroom();
   testDoublerMonoCompatibility();
   testDoublerFastPath();
+  testInactiveStageFastPath();
   testContinuousDoubler();
   testUnisonDoubler();
   testPeriodContinuityOnLoudOctaveErrors();

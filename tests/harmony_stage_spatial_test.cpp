@@ -118,7 +118,28 @@ static void focusTest(double rate){
     need(f.filterSend(0.f,0.f).left==0.f&&
          f.returnGain(0.f,0.f,1.f)==1.f,"room restart stale sample");
 }
+static void verifyInactiveStageHistory(){
+    for(double rate:{32000.,48000.,96000.,192000.}){
+        BackingStageSpatial old,now;
+        need(old.prepare(rate)&&now.prepare(rate),"H25D stage prepare");
+        old.setInactiveFastForOfflineTests(false);
+        int skipped=0;
+        for(int i=0;i<static_cast<int>(rate*.12);++i){
+            const float x=static_cast<float>(.3*std::sin(.017*i));
+            const bool active=(i/(static_cast<int>(rate*.02)))%2;
+            const float l=active?.2f:0.f,r=active?.7f:0.f;
+            const auto a=old.place(2,x,.4f*x,-.3f*x,l,r,.8f);
+            const auto b=now.place(2,x,.4f*x,-.3f*x,l,r,.8f);
+            need(a.directL==b.directL&&a.directR==b.directR&&a.earlyL==b.earlyL&&
+                 a.earlyR==b.earlyR&&a.roomL==b.roomL&&a.roomR==b.roomR,
+                 "H25D inactive/reentry stage PCM");
+            skipped+=!active;old.advance();now.advance();
+        }
+        std::cout<<"H25D_STAGE rate="<<rate<<" inactive_samples="<<skipped<<" exact history parity\n";
+    }
+}
 int main(){
+    verifyInactiveStageHistory();
     // Space=0 is unchanged; at wide Space, HIGH retains a small direct
     // spectral/level anchor rather than drowning in the shared late room.
     need(BackingStageSpatial::directionalPresence(2,0.f)==1.f&&
