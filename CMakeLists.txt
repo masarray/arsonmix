@@ -660,6 +660,9 @@ if(BUILD_TESTING)
     target_link_libraries(ARMixImerSipP92NativeTests PRIVATE
         ARMixAssets juce::juce_audio_processors
         juce::juce_recommended_config_flags)
+    if(WIN32)
+      target_link_libraries(ARMixImerSipP92NativeTests PRIVATE dwmapi)
+    endif()
     get_target_property(IMMERSIB_RC_DEFINES ARMixConsole COMPILE_DEFINITIONS)
     # Native editor/state FAT has no WebView2 browser. Propagating the
     # app's GUI browser defines would compile juce_gui_extra WebView2.cpp

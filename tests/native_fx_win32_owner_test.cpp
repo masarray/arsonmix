@@ -42,6 +42,21 @@ int main(){
     assert(!armix::ui::win32::attachOwnedPopup(popup,popup));
     assert(!armix::ui::win32::attachOwnedPopup(nullptr,mixer));
     assert(::GetWindow(popup,GW_OWNER)==mixer);
+    ::ShowWindow(mixer,SW_SHOWNOACTIVATE);
+    assert(armix::ui::win32::attachOwnedPopup(alternate,mixer));
+    for(int i=0;i<100;++i){
+        ::ShowWindow(popup,SW_HIDE);
+        assert(!::IsWindowVisible(popup));
+        assert(armix::ui::win32::ensureOwnedPopupVisible(alternate,mixer));
+        assert(armix::ui::win32::ensureOwnedPopupVisible(popup,mixer));
+        assert(::IsWindowVisible(alternate)&&::IsWindowVisible(popup));
+        assert(::GetWindow(popup,GW_OWNER)==mixer);
+        assert((::GetWindowLongPtrW(popup,GWL_EXSTYLE)&WS_EX_TOPMOST)==0);
+    }
+    ::ShowWindow(mixer,SW_MINIMIZE);
+    assert(!armix::ui::win32::ensureOwnedPopupVisible(popup,mixer));
+    ::ShowWindow(mixer,SW_RESTORE);
+    assert(armix::ui::win32::ensureOwnedPopupVisible(popup,mixer));
     ::DestroyWindow(popup);
     ::DestroyWindow(alternate);
     ::DestroyWindow(mixer);

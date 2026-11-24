@@ -1,8 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #if defined(_WIN32)
+// Do not leak Win32 min/max or obsolete segmented-pointer macros into
+// JUCE/DSP headers included after this adapter.
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <dwmapi.h>
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
+#ifdef near
+#undef near
+#endif
+#ifdef far
+#undef far
+#endif
 
 namespace armix::ui::win32 {
 // Native Windows caption colour is OS-owned. Prefer its supported dark
@@ -31,6 +48,18 @@ inline bool attachOwnedPopup(HWND popup, HWND owner) noexcept {
         popup,GWLP_HWNDPARENT,reinterpret_cast<LONG_PTR>(owner));
     if (previous==0 && ::GetLastError()!=0) return false;
     return ::GetWindow(popup,GW_OWNER)==owner;
+}
+// A JUCE visible flag alone is not a Windows presentation receipt.
+// Recover an OS-hidden owned popup only while its mixer is actually visible.
+// No foreground stealing, TOPMOST, owner change or audio work.
+inline bool ensureOwnedPopupVisible(HWND popup, HWND mixer) noexcept {
+    if(!popup||!mixer||!::IsWindow(popup)||!::IsWindow(mixer)||
+       !::IsWindowVisible(mixer)||::IsIconic(mixer)||
+       !attachOwnedPopup(popup,mixer))return false;
+    if(::IsIconic(popup))::ShowWindow(popup,SW_RESTORE);
+    if(!::IsWindowVisible(popup))::ShowWindow(popup,SW_SHOWNOACTIVATE);
+    return ::IsWindowVisible(popup)&&!::IsIconic(popup)&&
+           ::GetWindow(popup,GW_OWNER)==mixer;
 }
 } // namespace armix::ui::win32
 #endif

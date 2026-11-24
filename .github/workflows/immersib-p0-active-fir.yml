@@ -1,0 +1,22 @@
+name: P0 ImmerSIB active multi-instance candidate (Linux only)
+on:
+  push:
+    branches:
+      - perf/immersib-p0-active-fir-20261124
+permissions:
+  contents: read
+jobs:
+  active-dsp-ab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate current approved acoustic lock
+        run: |
+          python3 scripts/verify_immersib_approved_pcm_sources.py
+          python3 -m unittest scripts/tests/test_immersib_approved_pcm_sources.py
+      - name: Three-way actual PCM and paired active multi-instance A/B
+        run: python3 tools/immersib_p0_active_fir_gate.py

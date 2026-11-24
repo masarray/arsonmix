@@ -53,6 +53,13 @@
       return "Mixer ready";
     }
     const failure=/\b(reject(?:ed|ion)?|fail(?:ed|ure)?|error|timed out|not applied|unavailable|invalid)\b|(?:^|[^A-Z0-9])(FAILED|ERROR|REJECTED|STALE|INVALID|TIMEOUT|MISSING|UNSUPPORTED|UNKNOWN|MISMATCH|CONFLICTING)(?:\b|_)/i.test(raw);
+    // Editor navigation cannot be reported as a successful FX edit.
+    if(/\b(?:FX|VST3|plugin|effect|built-in)\b.*\beditor\b|\beditor\b.*\b(?:FX|VST3|plugin|effect|built-in)\b/i.test(raw)){
+      if(failure||/\b(refresh|changed|expired|retry|close|finish|needs|could not|no native|does not|held|disconnected)\b/i.test(raw))
+        return "FX editor unavailable · Reopen from FX Rack";
+      if(/\b(opened|visible|focused)\b/i.test(raw))return "FX editor opened";
+      return "Opening FX editor…";
+    }
     const internalCode=/\b[A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+)+\b/.test(raw);
     if(internalCode ||
        /\b(FAT|PCM|ACK|readback|admission|admitted|graph|roster|epoch|revision|M[0-9]|JUCE|callback|worker|fixture|reference|mockup|simulated|demo|legacy|native|authoritative)\b/i.test(raw)){

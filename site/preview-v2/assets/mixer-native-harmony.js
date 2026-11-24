@@ -263,7 +263,7 @@ function syncPower(){
    (current?.track?.slotBypass?.[current?.slot]?"off":"on"):
    (!ch||typeof ch.fxRackBypassed!=="boolean"||!insert||
     typeof insert.bypassed!=="boolean"?"unknown":
-    ch.fxRackBypassed?"rack-off":insert.bypassed?"off":"on");
+    (ch.fxRackBypassed||n?.raw?.globalFxBypassed===true)?"rack-off":insert.bypassed?"off":"on");
  const power=el("mxHPower");
  if(power.dataset.fxState===fxState)return;
  power.dataset.fxState=fxState;

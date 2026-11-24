@@ -53,4 +53,20 @@ inline void placeFloatingEditor(juce::Component& editor,
         mixerBounds.getCentreY()-editor.getHeight()/2);
     editor.setTopLeftPosition(x,y);
 }
+// Called only after the existing JUCE present() sequence. Native HWND
+// confirmation makes the success receipt meaningful even after peer recreation.
+inline bool verifyOwnedFloatingPresentation(juce::DocumentWindow& editor,
+                                              juce::Component& mixer) noexcept {
+    if(!editor.isVisible()||editor.isMinimised()||!editor.getContentComponent())
+        return false;
+#if defined(_WIN32)
+    const auto* peer=editor.getPeer();
+    const auto* owner=mixer.getPeer();
+    if(!peer||!owner)return false;
+    return win32::ensureOwnedPopupVisible(static_cast<HWND>(peer->getNativeHandle()),
+                                          static_cast<HWND>(owner->getNativeHandle()));
+#else
+    return editor.isShowing();
+#endif
+}
 } // namespace armix::ui

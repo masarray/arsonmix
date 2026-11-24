@@ -10,6 +10,7 @@
 #include "../integration/ApprovedNativeRuntimeSnapshot.h"
 #include "../integration/ApprovedNativeControlIntent.h"
 #include "LiveAudioEngine.h"
+#include "../engine/builtin_fx/GuitarRigEditor.h"
 #include "NativeSessionToken.h"
 #include "ArSonMixStartupSplash.h"
 #include "ArSonWindowChrome.h"
@@ -286,6 +287,9 @@ public:
         everPresented_=true;
         if (!isVisible()) setVisible (true);
         toFront (true);
+    }
+    bool presentationConfirmed() {
+        return armix::ui::verifyOwnedFloatingPresentation(*this,mixer_);
     }
     void closeButtonPressed() override { setVisible (false); }
 private:
@@ -1424,6 +1428,20 @@ private:
             browser_.emitEventIfBrowserIsVisible ("arMixNotice", juce::var (o.release()));
     }
 
+    void emitRoutingFxEditorReceipt(const juce::var& args,bool opened,
+                                    bool retryable,const juce::String& error) {
+        auto ack=std::make_unique<juce::DynamicObject>();
+        ack->setProperty("ok",opened);
+        ack->setProperty("retryable",!opened&&retryable);
+        ack->setProperty("error",error);
+        ack->setProperty("instanceId",args.getProperty("instanceId",{}));
+        ack->setProperty("requestId",args.getProperty("requestId",juce::var()));
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+            "arMixRoutingFxEditorAck",juce::var(ack.release()));
+        if(!opened&&args.getProperty("requestId",juce::var()).isVoid())
+            emitNotice(error,true);
+    }
+
     void emitCatalog()
     {
         if(!browser_.loaded)return;
@@ -2015,7 +2033,7 @@ private:
         std::uint64_t channel=0;
         std::size_t slot=0;
         if(!logicalFxTarget(request,channel,slot)) {
-            emitNotice("The selected FX slot changed",true);
+            emitNotice("FX editor unavailable: the selected FX slot changed",true);
             return;
         }
         const auto requestedInstance=request.getProperty("instanceId",{}).toString();
@@ -2031,6 +2049,8 @@ private:
                     if(static_cast<bool>(request.getProperty("recenter",false)))
                         existing.window->present(true);
                     else existing.window->present();
+                    if(!existing.window->presentationConfirmed())
+                        emitNotice("FX editor window could not be presented",true);
                 }
                 return; // Exact same logical FX: refocus without losing state.
             }
@@ -2052,7 +2072,9 @@ private:
                         prepared.window->present(true); // first-open must also centre on mixer
                     prepared.workspaceToken=logicalMixer_.workspace().workspaceToken();
                     prepared.instanceId=requestedInstance;
+                    const bool visible=prepared.window->presentationConfirmed();
                     logicalVendorEditor_=std::move(prepared);
+                    if(!visible)emitNotice("FX editor window could not be presented",true);
                     return;
                 }
                 error="This FX does not provide a vendor editor";
@@ -2060,7 +2082,7 @@ private:
                 error="Vendor editor could not be opened";
             }
         }
-        emitNotice(error,true);
+        emitNotice("FX editor unavailable: "+error,true);
     }
 
     void saveClosedLogicalVendorEditor(bool shutdown=false) {
@@ -5530,9 +5552,19 @@ private:
         }
         if (action=="audioLoopbackCancel")
             return cancelPhysicalLoopback();
-        if (action!="audioDeviceInventory" && action!="copyDiagnosticReport")
+        const bool editorNavigation=action=="routingFxEditor"||
+            action=="logicalVendorFxEditor"||action=="retainedFxOfflineOpen"||action=="fxEditor";
+        if (!editorNavigation && action!="audioDeviceInventory" && action!="copyDiagnosticReport")
             cancelPhysicalLoopback();
-        if(deviceApply_.busy() && action!="audioDeviceApply")return;
+        if(deviceApply_.busy() && action!="audioDeviceApply"){
+            // Never silently swallow an operator's correlated editor click.
+            // Admission remains closed while hardware Apply owns the graph.
+            if(action=="routingFxEditor")
+                emitRoutingFxEditorReceipt(args,false,true,"FX editor unavailable: Audio I/O is applying");
+            else if(editorNavigation)
+                emitNotice("FX editor unavailable: Audio I/O is applying",true);
+            return;
+        }
         const auto value = args.getProperty ("value", {});
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
         if(action=="playerChooseOutput") {
@@ -7568,7 +7600,7 @@ private:
                 static_cast<juce::int64>(args.getProperty("deviceEpoch",juce::var(0))));
             const auto revision=static_cast<std::uint64_t>(
                 static_cast<juce::int64>(args.getProperty("revision",juce::var(0))));
-            bool opened=false;
+            bool opened=false,retryable=true;
             juce::String error="FX editor unavailable: device, revision or instance changed";
             if(!nativeShowBusy_&&!studioBackupBusy_&&!engine_.isGraphSwitchPending()) {
                 armix::mixer::LiveChannelFxGraph::InstanceLease owner;
@@ -7591,6 +7623,7 @@ private:
                     }
                 } else owner=engine_.leaseRoutedFxForEditor(lane,slot,epoch,revision,token);
                 if(owner && owner->processor) {
+                    retryable=false; // plugin/window failures are not retryable admission races
 #if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
                     const bool dedicatedImmerSIB=dynamic_cast<
                         armix::builtin_fx::ImerSipP92Processor*>(owner->processor.get())!=nullptr;
@@ -7629,8 +7662,9 @@ private:
                         if(static_cast<bool>(args.getProperty("recenter",false)))
                             shownWindow->present(true);
                         else shownWindow->present();
-                        opened=true;
-                        error.clear();
+                        opened=shownWindow->presentationConfirmed();
+                        if(opened)error.clear();
+                        else error="FX editor window could not be presented";
                     } else if(extra!=additionalFxEditors_.end()) {
                         // Instance owner is re-leased by the current graph;
                         // channel and slot can move, but never clone its UI.
@@ -7640,8 +7674,9 @@ private:
                         (*extra)->instanceId=token;
                         (*extra)->window->present(static_cast<bool>(
                             args.getProperty("recenter",false)));
-                        opened=true;
-                        error.clear();
+                        opened=(*extra)->window->presentationConfirmed();
+                        if(opened)error.clear();
+                        else error="FX editor window could not be presented";
                     } else if(keepOtherVendorWindow &&
                               additionalFxEditors_.size()>=maxSimultaneousVendorEditors) {
                         error="Close an unused VST3 editor before opening another";
@@ -7722,6 +7757,20 @@ private:
                                             current.valid,current.slotBypassed,
                                             current.rackBypassed,current.globalBypassed};
                                     });
+                            }
+                            if(auto* guitar=dynamic_cast<armix::builtin_fx::GuitarRigEditor*>(editor)) {
+                                auto held=owner;
+                                guitar->bindHostBypassReadback([this,held,nativeTarget,nativeChannel,lane,slot,token] {
+                                    const auto current=nativeTarget?
+                                        engine_.retainedNativeFxPower(held,armix::mixer::ChannelId{nativeChannel},
+                                            static_cast<std::size_t>(slot),token):
+                                        engine_.retainedRoutedFxPower(held,lane,slot,token);
+                                    using Overlay=armix::builtin_fx::GuitarRigEditor::HostOverlay;
+                                    return !current.valid?Overlay::unavailable:
+                                        current.globalBypassed?Overlay::global:
+                                        current.rackBypassed?Overlay::rack:
+                                        current.slotBypassed?Overlay::slot:Overlay::none;
+                                });
                             }
                             // Graphic EQ uses the same EXACT retained mixer
                             // FX bypass authority/readback as ImmerSIB.
@@ -7873,6 +7922,7 @@ private:
                                         return true;
                                     });
                             }
+                            PluginEditorWindow* createdWindow=nullptr;
                             if(keepOtherVendorWindow) {
                                 auto entry=std::make_unique<AdditionalFxEditor>();
                                 entry->owner=owner;entry->epoch=retainedEpoch;
@@ -7883,6 +7933,7 @@ private:
                                     owner->processor->getName(),editor,*this);
                                 if(static_cast<bool>(args.getProperty("recenter",false)))
                                     entry->window->present(true);
+                                createdWindow=entry->window.get();
                                 additionalFxEditors_.push_back(std::move(entry));
                             } else {
                                 shownOwner=owner;
@@ -7892,9 +7943,11 @@ private:
                                 if(static_cast<bool>(args.getProperty("recenter",false)))
                                     shownWindow->present(true); // new HWND: centre on mixer too
                                 shownProcessor=owner->processor.get();
+                                createdWindow=shownWindow.get();
                             }
-                            opened=true;
-                            error.clear();
+                            opened=createdWindow&&createdWindow->presentationConfirmed();
+                            if(opened)error.clear();
+                            else error="FX editor window could not be presented";
                         } else error="This VST3 has no native editor";
                     } catch(const std::exception& ex) {
 #if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
@@ -7913,18 +7966,11 @@ private:
                     }
                 }
             }
-            auto ack=std::make_unique<juce::DynamicObject>();
-            ack->setProperty("ok",opened);
-            ack->setProperty("error",error);
-            ack->setProperty("instanceId",token);
-            // G-MV36: correlate the HWND result to its exact GUI click.
-            // The requestId is feedback only; it is not installed PCM proof.
-            ack->setProperty("requestId",args.getProperty("requestId",juce::var()));
-            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
-                "arMixRoutingFxEditorAck",juce::var(ack.release()));
+            // G-MV36: correlated HWND feedback only, never installed PCM proof.
+            emitRoutingFxEditorReceipt(args,opened,retryable,error);
             if(opened)diagnostics_.record("ROUTED_FX_EDITOR_OPENED",
                 "lane="+juce::String(lane)+" slot="+juce::String(slot));
-            else emitNotice(error,true);
+            else diagnostics_.record("ROUTED_FX_EDITOR_REJECTED",error);
             return;
         }
 

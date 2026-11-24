@@ -60,6 +60,14 @@ public:
         std::atomic<bool> dspSleeping{false};
         std::atomic<std::uint64_t> dspProcessedBlocks{0},dspSleepBlocks{0};
         std::atomic<std::uint64_t> dspLastUs{0},dspWorstUs{0};
+        // Monotonic lease counters. CONTROL only reads; the existing
+        // processing gate guarantees a single writer, so avoid locked RMW.
+        std::atomic<std::uint64_t> dspTotalUs{0},dspProcessedFrames{0},dspSleepFrames{0};
+        static void addRealtimeCounter(std::atomic<std::uint64_t>& counter,
+                                       std::uint64_t delta) noexcept {
+            counter.store(counter.load(std::memory_order_relaxed)+delta,
+                          std::memory_order_relaxed);
+        }
 
         FxInstance(std::unique_ptr<Processor> p,juce::String id,juce::String label,
                    int maxSamples,juce::String restoredInstance={})
@@ -219,7 +227,8 @@ public:
                 juce::FloatVectorOperations::clear(right,samples);
                 dspSleeping.store(true,std::memory_order_relaxed);
                 dspLastUs.store(0,std::memory_order_relaxed);
-                dspSleepBlocks.fetch_add(1,std::memory_order_relaxed);
+                addRealtimeCounter(dspSleepFrames,static_cast<std::uint64_t>(samples));
+                addRealtimeCounter(dspSleepBlocks,1);
                 processing.clear(std::memory_order_release);
                 return;
             }
@@ -245,7 +254,9 @@ public:
             // Single AUDIO writer under the existing lease gate; no CAS spin.
             if(us>dspWorstUs.load(std::memory_order_relaxed))
                 dspWorstUs.store(us,std::memory_order_relaxed);
-            dspProcessedBlocks.fetch_add(1,std::memory_order_relaxed);
+            addRealtimeCounter(dspTotalUs,us);
+            addRealtimeCounter(dspProcessedFrames,static_cast<std::uint64_t>(samples));
+            addRealtimeCounter(dspProcessedBlocks,1);
             if(immerseIdleAdmitted)
                 immerseIdle.rendered(left,right,samples,dspOk && idleStable &&
                     nativeControl->stateSnapshotQuiescent());

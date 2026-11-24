@@ -144,7 +144,7 @@ class NativeHarmonyAssemblyTest(unittest.TestCase):
         self.assertIn("syncPower();",self.ui)
         self.assertIn('power.dataset.fxState=fxState;',self.ui)
         self.assertIn('fxState==="unknown"||fxState==="rack-off"',self.ui)
-        self.assertIn('ch.fxRackBypassed?"rack-off":insert.bypassed?"off":"on"',self.ui)
+        self.assertIn('(ch.fxRackBypassed||n?.raw?.globalFxBypassed===true)?"rack-off":insert.bypassed?"off":"on"',self.ui)
         self.assertIn("if(power.dataset.fxState===fxState)return;",self.ui)
         self.assertIn(".mx-peq-close,.mx-comp-close,.mx-harm-close",chrome)
         self.assertIn(".mx-peq-global,.mx-comp-power,.mx-harm-power",chrome)
