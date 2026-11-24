@@ -1287,7 +1287,7 @@ static void auditFieldHeadroom(){
         auto x=src;
         for(int i=0;i<n;++i)x.left[i]=x.right[i]=static_cast<float>(src.left[i]*inputPeak/sourcePeak);
         auto e=std::make_unique<Engine>();
-        need(e->prepare(rate)&&e->setDoublerMonoForOfflineReference(false)&&e->setSourceAlignedForOfflineReference(false)&&e->setHeadroomForOfflineReference(protectedPath)&&e->setSettings(s)&&e->setRendererTraceForOfflineTests(true),"field audit setup");
+        need(e->prepare(rate)&&e->setDoublerFastForOfflineReference(false)&&e->setDoublerMonoForOfflineReference(false)&&e->setSourceAlignedForOfflineReference(false)&&e->setHeadroomForOfflineReference(protectedPath)&&e->setSettings(s)&&e->setRendererTraceForOfflineTests(true),"field audit setup");
         for(int at=0;at<n;at+=64)e->process(x.left.data()+at,x.right.data()+at,std::min(64,n-at));
         double peakL=0.,peakR=0.;int aboveL=0,aboveR=0,internalClamp=0;std::uint64_t calls=0,losses=0;
         for(int i=0;i<n;++i){
@@ -1457,6 +1457,69 @@ static void testDoublerMonoCompatibility(){
         std::cout<<"H24B_MONO rate="<<rate<<" hz="<<hz<<" old_floor="<<10.*std::log10(minOld)
                  <<" new_floor="<<10.*std::log10(minNew)<<" wet_ratio="<<wetNew/wetOld<<std::endl;
         need(minNew>minOld&&wetNew>.10*wetOld,"H24B mono floor or audible backing");
+    }
+}
+static void testDoublerFastPath(){
+    using Clock=std::chrono::steady_clock;
+    constexpr double tau=6.283185307179586;
+    for(int rate:{48000,96000,192000})for(int block:{64,128}){
+        const int n=rate*3;
+        LeadFixture src{std::vector<float>(n),std::vector<float>(n)};
+        double phase=0.;
+        for(int i=0;i<n;++i){
+            const double sec=double(i)/rate;
+            const double hz=sec<1.?220.:sec<2.?440.:330.;
+            phase+=tau*hz/rate;
+            const double envelope=sec>1.4&&sec<1.55?0.:1.;
+            src.left[i]=src.right[i]=static_cast<float>(envelope*(.12*std::sin(phase)+.04*std::sin(2*phase+.3)));
+        }
+        Settings s;s.voiceMode=1;s.voices=2;s.wet=1.f;s.space=.6f;s.color=.78f;s.correction=false;
+        auto old=std::make_unique<Engine>(),now=std::make_unique<Engine>();
+        need(old->prepare(rate)&&now->prepare(rate)&&old->setDoublerFastForOfflineReference(false)&&
+             old->setSettings(s)&&now->setSettings(s),"H25A setup");
+        auto a=src,b=src;std::vector<double> before,after;
+        before.reserve(n/block+1);after.reserve(n/block+1);
+        for(int at=0;at<n;at+=block){
+            const int count=std::min(block,n-at);
+            auto measure=[&](Engine& e,LeadFixture& x){
+                const auto start=Clock::now();
+                e.process(x.left.data()+at,x.right.data()+at,count);
+                return std::chrono::duration<double,std::micro>(Clock::now()-start).count();
+            };
+            double x,y;
+            if((at/block)&1){y=measure(*now,b);x=measure(*old,a);}
+            else{x=measure(*old,a);y=measure(*now,b);}
+            if(at>=rate/4&&count==block){before.push_back(x);after.push_back(y);}
+        }
+        need(a.left==b.left&&a.right==b.right,"H25A settled unison PCM changed");
+        need(now->completedPitchAnalyses()*2<old->completedPitchAnalyses()&&
+             now->completedPitchAnalyses()>0&&now->voiced()&&
+             now->observedMidiNote()==old->observedMidiNote(),"H25A readout/cadence");
+        std::sort(before.begin(),before.end());std::sort(after.begin(),after.end());
+        const double deadline=1.e6*block/rate;
+        const auto misses=[&](const auto& v){return std::count_if(v.begin(),v.end(),[&](double x){return x>deadline;});};
+        const auto p=[](const auto& v,int k){return v[(v.size()-1)*k/100];};
+        std::cout<<"H25A_CPU rate="<<rate<<" block="<<block<<" old_analyses="<<old->completedPitchAnalyses()
+                 <<" new_analyses="<<now->completedPitchAnalyses()<<" old_p50_us="<<p(before,50)
+                 <<" new_p50_us="<<p(after,50)<<" old_p99_us="<<p(before,99)<<" new_p99_us="<<p(after,99)
+                 <<" old_misses="<<misses(before)<<" new_misses="<<misses(after)<<std::endl;
+        // Switch mode on a held note, then enable Tune; the detector must
+        // return to normal cadence without clearing history or changing PDC.
+        const int latency=now->latencySamples();
+        int prior=now->completedPitchAnalyses();s.voiceMode=0;s.voices=3;
+        need(now->setSettings(s),"H25A harmony edit");
+        auto feed=[&](){
+            for(int at=0;at<rate/2;at+=block){
+                const int count=std::min(block,rate/2-at);
+                for(int i=0;i<count;++i)a.left[i]=a.right[i]=static_cast<float>(.12*std::sin(tau*330.*(at+i)/rate));
+                now->process(a.left.data(),a.right.data(),count);
+                for(int i=0;i<count;++i)need(std::isfinite(a.left[i])&&std::isfinite(a.right[i]),"H25A mode edit finite");
+            }
+        };
+        feed();need(now->completedPitchAnalyses()-prior>=70&&now->latencySamples()==latency,"H25A harmony cadence/PDC");
+        s.voiceMode=1;s.voices=2;s.correction=true;prior=now->completedPitchAnalyses();
+        need(now->setSettings(s),"H25A tune edit");feed();
+        need(now->completedPitchAnalyses()-prior>=70&&now->latencySamples()==latency,"H25A Tune cadence/PDC");
     }
 }
 static void testContinuousDoubler(){
@@ -1933,6 +1996,7 @@ int main(){
   testHeadroomContract();
   auditFieldHeadroom();
   testDoublerMonoCompatibility();
+  testDoublerFastPath();
   testContinuousDoubler();
   testUnisonDoubler();
   testPeriodContinuityOnLoudOctaveErrors();

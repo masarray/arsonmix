@@ -137,7 +137,7 @@ static Wave process(const Wave& input,Settings settings,bool synchronous,int blo
                     bool articulation=true,bool continuity=true,bool support=true,bool natural=true,bool carrier=true,bool slope=true,
                     bool drain=true,SeamCounts* counts=nullptr,std::vector<TraceRow>* trace=nullptr,bool recovery=true,bool cubic=false,const GuideTimeline* guide=nullptr,int aligned=0){
     auto e=std::make_unique<Engine>();
-    if(!e->prepare(input.rate)||!e->setHeadroomForOfflineReference(false)||!e->setDoublerMonoForOfflineReference(false)||!e->setSettings(settings))
+    if(!e->prepare(input.rate)||!e->setDoublerFastForOfflineReference(false)||!e->setHeadroomForOfflineReference(false)||!e->setDoublerMonoForOfflineReference(false)||!e->setSettings(settings))
         throw std::runtime_error("native Harmony configuration invalid");
     if(!e->setArticulationForOfflineReference(articulation))
         throw std::runtime_error("H9 reference rejected");
@@ -207,7 +207,7 @@ static Wave roleStem(const Wave& input,Settings settings,
         throw std::runtime_error("invalid solo Harmony role");
     auto e=std::make_unique<Engine>();
     Engine::PreparedSettings prepared{};
-    if(!e->prepare(input.rate)||!e->setHeadroomForOfflineReference(false)||!e->setDoublerMonoForOfflineReference(false)||!e->setNaturalForOfflineReference(natural)||!e->setCarrierForOfflineReference(carrier)||!e->setSlopeForOfflineReference(slope)||!e->setDrainForOfflineReference(drain)||!e->setEpochRecoveryForOfflineReference(recovery)||!e->setCubicForOfflineReference(cubic)||!e->setSourceAlignedForOfflineReference(aligned!=0)||!e->setSourceConfirmationForOfflineReference(aligned==2)||
+    if(!e->prepare(input.rate)||!e->setDoublerFastForOfflineReference(false)||!e->setHeadroomForOfflineReference(false)||!e->setDoublerMonoForOfflineReference(false)||!e->setNaturalForOfflineReference(natural)||!e->setCarrierForOfflineReference(carrier)||!e->setSlopeForOfflineReference(slope)||!e->setDrainForOfflineReference(drain)||!e->setEpochRecoveryForOfflineReference(recovery)||!e->setCubicForOfflineReference(cubic)||!e->setSourceAlignedForOfflineReference(aligned!=0)||!e->setSourceConfirmationForOfflineReference(aligned==2)||
        !Engine::prepareSettings(settings,prepared))
         throw std::runtime_error("cannot prepare singer solo");
     for(int i=0;i<Engine::maxVoices;++i)

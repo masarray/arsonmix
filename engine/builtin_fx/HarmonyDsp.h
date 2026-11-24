@@ -318,6 +318,7 @@ public:
         decimationAlpha_=static_cast<float>(1.-std::exp(-2.*3.141592653589793*cutoff/rate));
         write_=0;downWrite_=0;downSeen_=0;downCounter_=0;
         detectCounter_=0;pitchSliceCounter_=0;pitchNextLag_=0;
+        doublerFastEnabled_=true;
         pitchActive_=false;pitchBest_=-1.f;pitchBestLag_=0;
         peakPitchLagWork_=0;completedPitchAnalyses_=0;abandonedPitchAnalyses_=0;
         noteHold_=0;currentNote_=-1;candidateNote_=-1;
@@ -537,6 +538,10 @@ public:
         headroomEnabled_=enabled;return true;
     }
     const BackingHeadroom& headroomForOfflineTests()const noexcept{return headroom_;}
+    bool setDoublerFastForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        doublerFastEnabled_=enabled;return true;
+    }
     bool setSourceAlignedForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
         sourceAlignedEnabled_=enabled;return true;
@@ -711,7 +716,21 @@ public:
                 downWrite_=(downWrite_+1)%decimated_.size();
                 ++downSeen_;
             }
-            if(++detectCounter_>=detectEvery_){
+            // Settled unison uses the continuously modulated delay, not
+            // pitch synthesis. Retain the full decimated history and
+            // a 50Hz note readout; do not spend 150Hz correlation work on
+            // a renderer that cannot consume it. A mode/Tune edit restores
+            // normal cadence immediately, including an in-flight analysis.
+            bool unisonOnly=doublerFastEnabled_&&settings_.voiceMode==1&&
+                !settings_.correction&&!leadRendering_&&doublerBlend_>=.99999f;
+            if(unisonOnly)for(int v=1;v<maxVoices;++v){
+                const auto ix=static_cast<std::size_t>(v);
+                if(std::abs(mixL_[ix])+std::abs(mixR_[ix])>=1.e-5f){
+                    unisonOnly=false;break;
+                }
+            }
+            const int cadence=unisonOnly?3*detectEvery_:detectEvery_;
+            if(++detectCounter_>=cadence){
                 detectCounter_=0;beginPitchAnalysis();
             }
             // Correlation search is spread across the existing sample
@@ -1245,7 +1264,7 @@ private:
     // Fixed 391 doubles, +1564 bytes vs the H9 float snapshot. The
     // decimated input itself is unchanged; no added audio delay.
     std::array<double,160+231> pitchWindow_{};
-    bool fastCorrelation_=true,lowerFocusReferenceEnabled_=true;
+    bool fastCorrelation_=true,lowerFocusReferenceEnabled_=true,doublerFastEnabled_=true;
     std::array<float,231> pitchCorrelations_{};
     int currentNote_=-1,candidateNote_=-1,noteHold_=0;
     int guideKey_=-1,guideScale_=-1;
