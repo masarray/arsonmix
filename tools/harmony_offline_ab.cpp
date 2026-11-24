@@ -672,7 +672,8 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
         auto settings=s;settings.wet=wet;
         if(!e->prepare(input.rate)||!e->setSettings(settings)||
             !e->setCausalEnvelopeForOfflineReference(variant==1||variant==2)||
-            !e->setAdaptiveEpochForOfflineReference(variant==3)||
+            !e->setAdaptiveEpochForOfflineReference(variant>=3)||
+            !e->setLocalEpochForOfflineReference(variant==4)||
             !e->setAdaptiveEnvelopeForOfflineReference(variant==2)||!e->setRendererTraceForOfflineTests(trace))
             throw std::runtime_error("qualification engine setup");
         Run x;x.pcm=input;x.us.reserve(input.left.size()/block+2);
@@ -703,10 +704,10 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
     };
     const auto dry=render(0,0.f).pcm;
     writeWave(folder/"dry_aligned.wav",dry);
-    constexpr int variants=4;
+    constexpr int variants=5;
     std::array<Run,variants> runs;
     std::array<double,variants> rmsValues{},peaks{};
-    const std::array<const char*,variants> names{{"live_baseline","H26","H27","H28_epoch"}};
+    const std::array<const char*,variants> names{{"live_baseline","H26","H27","H28_epoch","H28_local"}};
     std::ofstream csv(folder/"qualification.csv",std::ios::trunc);
     if(!csv)throw std::runtime_error("qualification report open");
     csv<<"variant,rate,frames,voices,block,mode,updates,total_losses,high_losses,mix_rms,mix_peak,over_unity,backing_rms,right_step_over_rms,measured_blocks,p50_us,p99_us,max_us,deadline_us,over_budget\n";
@@ -735,28 +736,32 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
     // Exact native replay with trace enabled, never contaminate timing.
     const auto traced=render(0,1.f,true);
     const auto traced28=render(3,1.f,true);
+    const auto tracedLocal=render(4,1.f,true);
+    if(!same(tracedLocal.pcm,runs[4].pcm)||tracedLocal.losses!=runs[4].losses)
+        throw std::runtime_error("H28C trace changed PCM/counts");
     if(!same(traced28.pcm,runs[3].pcm)||traced28.losses!=runs[3].losses)
         throw std::runtime_error("H28 trace changed PCM/counts");
     if(!same(traced.pcm,runs[0].pcm)||traced.losses!=runs[0].losses)
         throw std::runtime_error("H27C trace changed PCM/counts");
     std::ofstream reasons(folder/"renderer_loss_reasons.csv",std::ios::trunc);
     if(!reasons)throw std::runtime_error("H27C loss reasons open");
-    reasons<<"role,losses,acquisitions,loss_no_clock,loss_causal,loss_safe_unready,calls,no_clock,causal_blocked,drained,safe_unready,ready,partial,weak_confidence,epoch_recovered,recovery_sites\n";
-    for(int v=0;v<Engine::maxVoices;++v){
-        const auto& x=traced.reasons[v];const auto& c=traced.seams[v];
+    reasons<<"variant,role,losses,acquisitions,loss_no_clock,loss_causal,loss_safe_unready,calls,no_clock,causal_blocked,drained,safe_unready,ready,partial,weak_confidence,epoch_recovered,recovery_sites,safe_quiet,safe_blend_active,max_no_clock_gate,max_safe_gate,max_safe_blend,max_safe_source_rms\n";
+    for(int version:{0,3,4})for(int v=0;v<Engine::maxVoices;++v){
+        const auto& pass=version==0?traced:version==3?traced28:tracedLocal;
+        const auto& x=pass.reasons[v];const auto& c=pass.seams[v];
         if(x.total()!=c.losses)throw std::runtime_error("H27C loss attribution mismatch");
-        reasons<<v<<','<<c.losses<<','<<c.acquisitions<<','<<x.noClock<<','<<x.causal<<','<<x.safeUnready;
-        for(auto value:traced.trace[v].values)reasons<<','<<value;
-        reasons<<'\n';
+        reasons<<names[version]<<','<<v<<','<<c.losses<<','<<c.acquisitions<<','<<x.noClock<<','<<x.causal<<','<<x.safeUnready;
+        for(auto value:pass.trace[v].values)reasons<<','<<value;
+        reasons<<','<<x.safeQuiet<<','<<x.safeBlendActive<<','<<x.maxNoClockGate<<','<<x.maxSafeGate<<','<<x.maxSafeBlend<<','<<x.maxSafeSourceRms<<'\n';
     }
     if(!reasons)throw std::runtime_error("H27C loss reasons write");
     std::ofstream admissions(folder/"renderer_admission.csv",std::ios::trunc);
-    admissions<<"variant,role,attempts,missing_peak,pool_blocked,support_rejected,admitted,clock_resets,adaptive_attempts,adaptive_accepted,adaptive_sites\n";
-    for(int version:{0,3})for(int v=0;v<Engine::maxVoices;++v){
-        const auto& a=(version==0?traced:traced28).admissions[v];
+    admissions<<"variant,role,attempts,missing_peak,pool_blocked,support_rejected,admitted,clock_resets,adaptive_attempts,adaptive_accepted,adaptive_sites,local_checks,local_accepted\n";
+    for(int version:{0,3,4})for(int v=0;v<Engine::maxVoices;++v){
+        const auto& a=(version==0?traced:version==3?traced28:tracedLocal).admissions[v];
         if(a.attempts!=a.missingPeak+a.poolBlocked+a.supportRejected+a.admitted)
             throw std::runtime_error("H28A admission accounting");
-        admissions<<names[version]<<','<<v<<','<<a.attempts<<','<<a.missingPeak<<','<<a.poolBlocked<<','<<a.supportRejected<<','<<a.admitted<<','<<a.clockResets<<','<<a.adaptiveAttempts<<','<<a.adaptiveAccepted<<','<<a.adaptiveSites<<'\n';
+        admissions<<names[version]<<','<<v<<','<<a.attempts<<','<<a.missingPeak<<','<<a.poolBlocked<<','<<a.supportRejected<<','<<a.admitted<<','<<a.clockResets<<','<<a.adaptiveAttempts<<','<<a.adaptiveAccepted<<','<<a.adaptiveSites<<','<<a.localChecks<<','<<a.localAccepted<<'\n';
     }
     if(!admissions)throw std::runtime_error("H28A admission report write");
     // RMS-matched audition copies only: no gain added to raw evidence.
@@ -769,7 +774,7 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
     const double common=largest>.95?.95/largest:1.;
     // Reproducible permutation per input PCM size/rate/key/voice count.
     // Conceal mapping from listener; evaluator retains the key file.
-    std::array<int,variants> order{{0,1,2,3}};
+    std::array<int,variants> order{{0,1,2,3,4}};
     std::mt19937 rng(static_cast<unsigned>(input.left.size())^input.rate^
                      (unsigned(s.key)<<8)^(unsigned(s.voices)<<16));
     std::shuffle(order.begin(),order.end(),rng);

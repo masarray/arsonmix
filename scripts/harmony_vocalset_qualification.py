@@ -61,7 +61,7 @@ def main():
         subprocess.run([renderer,"--qualify",str(src),str(folder),"0","0","5","64"],check=True,timeout=60)
         with (folder/"qualification.csv").open(newline="") as f:
             data = list(csv.DictReader(f))
-        if len(data)!=4 or {x["variant"] for x in data}!={"live_baseline","H26","H27","H28_epoch"}:
+        if len(data)!=5 or {x["variant"] for x in data}!={"live_baseline","H26","H27","H28_epoch","H28_local"}:
             raise RuntimeError("incomplete matched variants")
         for row in data:
             row = {"clip":name,"blob_sha":sha,**row}
@@ -69,13 +69,13 @@ def main():
             print("H27_REAL " + " ".join(f"{k}={v}" for k,v in row.items()),flush=True)
         with (folder/"renderer_loss_reasons.csv").open(newline="") as f:
             reasons = list(csv.DictReader(f))
-        if len(reasons) != 5 or sum(int(x["losses"]) for x in reasons) != int(data[0]["total_losses"]):
+        if len(reasons) != 15 or sum(int(x["losses"]) for x in reasons if x["variant"]=="live_baseline") != int(data[0]["total_losses"]):
             raise RuntimeError("incomplete renderer loss attribution")
         for row in reasons:
             print("H27_LOSS_REASON clip="+name+" "+" ".join(f"{k}={v}" for k,v in row.items()),flush=True)
         with (folder/"renderer_admission.csv").open(newline="") as f:
             admissions = list(csv.DictReader(f))
-        if len(admissions)!=10:
+        if len(admissions)!=15:
             raise RuntimeError("incomplete admission accounting")
         for row in admissions:
             print("H28_ADMISSION clip="+name+" "+" ".join(f"{k}={v}" for k,v in row.items()),flush=True)

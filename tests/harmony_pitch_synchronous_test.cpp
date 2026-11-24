@@ -277,9 +277,9 @@ static void testDelayedEpochRecovery(){
 static void testAdaptiveEpochRescue(){
     constexpr double tau=6.283185307179586;
     for(int rate:{32000,48000,96000,192000}){
-        Shifter old{},now{};Shifter::AdmissionTrace trace{};
+        Shifter old{},now{},local{};Shifter::AdmissionTrace trace{},localTrace{};
         std::array<float,16384> ring{};
-        double phase=0.;int missingOld=0,missingNew=0;
+        double phase=0.;int missingOld=0,missingNew=0,missingLocal=0;
         for(int i=0;i<rate;i++){
             const double sec=double(i)/rate;
             const double hz=sec<.2?440.:sec<.6?82.4:440.;
@@ -289,15 +289,18 @@ static void testAdaptiveEpochRescue(){
             const float period=rate/(sec<.38?440.f:sec<.65?82.4f:440.f);
             const auto a=old.process(0,i,i&16383,ring,period,1.4f,rate*.036f,1.f,true,true,true,true,true);
             const auto b=now.process(0,i,i&16383,ring,period,1.4f,rate*.036f,1.f,true,true,true,true,true,true,false,&trace,true);
-            need(std::isfinite(b.sample)&&std::abs(b.sample)<.4f,"H28B unsafe sample");
-            if(sec>.23&&sec<.4){missingOld+=!a.ready;missingNew+=!b.ready;}
-            if(sec>.95)need(!b.ready&&!b.recovered,"H28B fabricated silent epoch");
+            const auto c=local.process(0,i,i&16383,ring,period,1.4f,rate*.036f,1.f,true,true,true,true,true,true,false,&localTrace,false,true);
+            need(std::isfinite(b.sample)&&std::abs(b.sample)<.4f&&std::isfinite(c.sample)&&std::abs(c.sample)<.4f,"H28B/C unsafe sample");
+            if(sec>.23&&sec<.4){missingOld+=!a.ready;missingNew+=!b.ready;missingLocal+=!c.ready;}
+            if(sec>.95)need(!b.ready&&!b.recovered&&!c.ready&&!c.recovered,"H28B/C fabricated silent epoch");
         }
         need(trace.attempts==trace.admitted+trace.missingPeak+trace.poolBlocked+trace.supportRejected&&
              trace.adaptiveAccepted<=trace.adaptiveAttempts&&trace.adaptiveSites<=trace.adaptiveAttempts*1028,
              "H28B bounded work/accounting");
         std::cout<<"H28B_RESCUE rate="<<rate<<" missing_old="<<missingOld<<" missing_new="<<missingNew
                  <<" attempts="<<trace.adaptiveAttempts<<" accepted="<<trace.adaptiveAccepted<<" sites="<<trace.adaptiveSites<<std::endl;
+        need(localTrace.localAccepted<=localTrace.localChecks&&localTrace.adaptiveSites<=localTrace.adaptiveAttempts*1028,"H28C local recovery accounting");
+        std::cout<<"H28C_LOCAL rate="<<rate<<" missing_old="<<missingOld<<" missing_local="<<missingLocal<<" checks="<<localTrace.localChecks<<" accepted="<<localTrace.localAccepted<<std::endl;
     }
 }
 // Independent analytic fractional-tap reference across vocal harmonics.

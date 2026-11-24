@@ -20,7 +20,7 @@ class PitchSynchronousVoice final {
 public:
     struct AdmissionTrace {
         std::uint64_t attempts=0,missingPeak=0,poolBlocked=0,supportRejected=0,admitted=0,clockResets=0;
-        std::uint64_t adaptiveAttempts=0,adaptiveAccepted=0,adaptiveSites=0;
+        std::uint64_t adaptiveAttempts=0,adaptiveAccepted=0,adaptiveSites=0,localChecks=0,localAccepted=0;
     };
     struct Output { float sample=0.f; bool ready=false; float coverage=0.f; bool recovered=false; std::uint32_t recoverySites=0; };
     struct StereoOutput { float left=0.f,right=0.f; bool ready=false; float coverage=0.f; bool recovered=false; std::uint32_t recoverySites=0; };
@@ -77,9 +77,9 @@ public:
                    const std::array<float,Capacity>& input,
                    float sourcePeriod,float ratio,float fixedDelay,
                    float resonanceScale=1.f,bool continuous=true,bool supportAware=true,
-                   bool phaseAware=true,bool admitNew=true,bool recoverEpoch=false,bool reuseFailedSearch=true,bool cubic=false,AdmissionTrace* trace=nullptr,bool adaptiveRecovery=false) noexcept {
+                   bool phaseAware=true,bool admitNew=true,bool recoverEpoch=false,bool reuseFailedSearch=true,bool cubic=false,AdmissionTrace* trace=nullptr,bool adaptiveRecovery=false,bool localRecovery=false) noexcept {
         const auto out=render<false>(v,time,writeIndex,input,input,input,
-                                     sourcePeriod,ratio,fixedDelay,resonanceScale,continuous,supportAware,phaseAware,admitNew,recoverEpoch,reuseFailedSearch,cubic,trace,adaptiveRecovery);
+                                     sourcePeriod,ratio,fixedDelay,resonanceScale,continuous,supportAware,phaseAware,admitNew,recoverEpoch,reuseFailedSearch,cubic,trace,adaptiveRecovery,localRecovery);
         return {out.left,out.ready,out.coverage,out.recovered,out.recoverySites};
     }
 
@@ -91,7 +91,7 @@ public:
                    const std::array<float,Capacity>& right,
                    float sourcePeriod,float ratio,float fixedDelay) noexcept {
         return render<true>(v,time,writeIndex,epochs,left,right,
-                            sourcePeriod,ratio,fixedDelay,1.f,false,false,false,true,false,true,false,nullptr,false);
+                            sourcePeriod,ratio,fixedDelay,1.f,false,false,false,true,false,true,false,nullptr,false,false);
     }
 private:
     template <bool Stereo>
@@ -100,7 +100,7 @@ private:
                    const std::array<float,Capacity>& left,
                    const std::array<float,Capacity>& right,
                    float sourcePeriod,float ratio,float fixedDelay,
-                   float resonanceScale,bool continuous,bool supportAware,bool phaseAware,bool admitNew,bool recoverEpoch,bool reuseFailedSearch,bool cubic,AdmissionTrace* trace,bool adaptiveRecovery) noexcept {
+                   float resonanceScale,bool continuous,bool supportAware,bool phaseAware,bool admitNew,bool recoverEpoch,bool reuseFailedSearch,bool cubic,AdmissionTrace* trace,bool adaptiveRecovery,bool localRecovery) noexcept {
         if(v<0||v>=Voices||!std::isfinite(sourcePeriod)||
            !std::isfinite(ratio)||!std::isfinite(fixedDelay)||
            sourcePeriod<8.f||sourcePeriod>3200.f||
@@ -166,7 +166,7 @@ private:
             // contain no same-polarity maximum. Only on such a miss, try
             // a bounded nearest-phase search; require a real local maximum
             // and the unchanged full-window safety proof below.
-            bool rescue=false,adaptiveRescue=false;
+            bool rescue=false,adaptiveRescue=false,localRescue=false;
             if(peak<0&&recoverEpoch&&continuous&&supportAware&&state.haveEpoch&&
                state.epochPolarity!=0){
                 // Bound displacement to 1.5 periods and 40% of the
@@ -189,9 +189,12 @@ private:
                 // A real peak, local variation and waveform similarity
                 // to the last admitted epoch are required; no stale
                 // waveform extrapolation through silence.
-                if(peak<0&&adaptiveRecovery&&radius>.56*period){
+                if(peak<0&&(adaptiveRecovery||localRecovery)&&radius>.56*period){
                     const double extended=std::min({2.75*period,.55*fixedDelay,radius+512.});
                     if(extended>radius&&std::abs(desired-state.lastEpoch)<=3.5*period){
+                        bool localOK=adaptiveRecovery;
+                        if(!localOK){if(trace)++trace->localChecks;localOK=localPeriodicity(epochs,time,writeIndex,desired,period);}
+                        if(localOK){
                         if(trace)++trace->adaptiveAttempts;
                         std::uint32_t sites=0;
                         const auto candidate=findLocalEpoch(epochs,time,writeIndex,desired,extended,
@@ -200,7 +203,8 @@ private:
                         recoverySites+=sites;
                         if(candidate>=0&&similarEpoch(epochs,time,writeIndex,state.lastEpoch,
                               static_cast<double>(candidate),desired,period)){
-                            peak=candidate;rescue=true;adaptiveRescue=true;
+                            peak=candidate;rescue=true;adaptiveRescue=true;localRescue=!adaptiveRecovery;
+                        }
                         }
                     }
                 }
@@ -235,7 +239,7 @@ private:
                     state.nextCenter+=spacing;
                     continue;
                 }
-                if(trace){++trace->admitted;if(adaptiveRescue)++trace->adaptiveAccepted;}
+                if(trace){++trace->admitted;if(adaptiveRescue)++trace->adaptiveAccepted;if(localRescue)++trace->localAccepted;}
                 state.lastEpoch=epoch;state.haveEpoch=true;
                 // A larger new width can admit a grain INSIDE its window.
                 // Ramp only these late admissions from zero rather than
@@ -411,6 +415,38 @@ private:
     // All three neighborhoods must be inside history. The nominal
     // neighborhood must contain varying PCM (not simply a DC offset
     // or silence). Twelve equally spaced taps, no heap or trig.
+    // A current microphone confidence loss need not imply the delayed
+    // singer source is unvoiced. For the weak-clock audition path only,
+    // measure six bounded lag hypotheses on the actual delayed waveform.
+    // This is evidence of periodicity, NOT a replacement F0 estimator.
+    static bool localPeriodicity(const std::array<float,Capacity>& input,
+          std::uint64_t time,std::size_t writeIndex,double desired,double period) noexcept {
+        constexpr int n=24;
+        const double half=.8*period;
+        const double oldest=time>=Capacity-3?double(time-(Capacity-3)):0.;
+        const double newest=double(time)-2.;
+        if(desired-half<oldest||desired+half>newest)return false;
+        std::array<double,n> x{};
+        double sx=0.,xx=0.;
+        for(int k=0;k<n;++k){
+            x[k]=readAtKnown(input,time,writeIndex,desired+half*(2.*k/(n-1)-1.));
+            sx+=x[k];xx+=x[k]*x[k];
+        }
+        xx-=sx*sx/n;
+        if(xx<1.e-8)return false;
+        for(double multiple:{.75,1.,1.5,2.,2.5,3.}){
+            const double lag=multiple*period;
+            if(desired-half-lag<oldest)continue;
+            double sy=0.,yy=0.,xy=0.;
+            for(int k=0;k<n;++k){
+                const double y=readAtKnown(input,time,writeIndex,desired-lag+half*(2.*k/(n-1)-1.));
+                sy+=y;yy+=y*y;xy+=x[k]*y;
+            }
+            yy-=sy*sy/n;xy-=sx*sy/n;
+            if(yy>=std::max(1.e-8,xx*.1)&&yy<=10.*xx&&xy>0.&&xy*xy>=.7225*xx*yy)return true;
+        }
+        return false;
+    }
     static bool similarEpoch(const std::array<float,Capacity>& input,
           std::uint64_t time,std::size_t writeIndex,double prior,double candidate,
           double desired,double period) noexcept {

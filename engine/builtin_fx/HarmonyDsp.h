@@ -250,6 +250,8 @@ public:
     using AdmissionTrace=PitchSynchronousVoice<16384,5>::AdmissionTrace;
     struct LossReasons {
         std::uint64_t noClock=0,causal=0,safeUnready=0;
+        std::uint64_t safeQuiet=0,safeBlendActive=0;
+        float maxNoClockGate=0.f,maxSafeGate=0.f,maxSafeBlend=0.f,maxSafeSourceRms=0.f;
         std::uint64_t total()const noexcept{return noClock+causal+safeUnready;}
     };
     static_assert(singers.size()==maxVoices);
@@ -300,7 +302,7 @@ public:
         for(auto& seam:backingSeams_)seam.prepare(rate);
         continuityReferenceEnabled_=true;supportReferenceEnabled_=true;
         naturalReferenceEnabled_=true;backingContour_.prepare(detectEvery_/rate);
-        carrierReferenceEnabled_=true;slopeReferenceEnabled_=true;drainReferenceEnabled_=true;epochRecoveryEnabled_=true;adaptiveEpochRecovery_=false;cubicReferenceEnabled_=false;
+        carrierReferenceEnabled_=true;slopeReferenceEnabled_=true;drainReferenceEnabled_=true;epochRecoveryEnabled_=true;adaptiveEpochRecovery_=false;localEpochRecovery_=false;cubicReferenceEnabled_=false;
         traceEnabled_=false;rendererTrace_={};lossReasons_={};admissionTrace_={};
         for(auto& carrier:carriers_)carrier.reset();
         periodContinuity_.reset();
@@ -596,6 +598,10 @@ public:
     bool setCubicForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
         cubicReferenceEnabled_=enabled;return true;
+    }
+    bool setLocalEpochForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        localEpochRecovery_=enabled;return true;
     }
     bool setAdaptiveEpochForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
@@ -1036,7 +1042,8 @@ private:
             sync=pitchSync_.process(voice,sampleClock_,write_,mono_,
                 renderPeriod,effectiveRatio,
                 static_cast<float>(latency_)+arrival,scale,continuityReferenceEnabled_,
-                supportReferenceEnabled_,naturalReferenceEnabled_,windowSafe,epochRecoveryEnabled_,true,cubicReferenceEnabled_,traceEnabled_?&admissionTrace_[ix]:nullptr,adaptiveEpochRecovery_&&confident&&localEpochEvidence);
+                supportReferenceEnabled_,naturalReferenceEnabled_,windowSafe,epochRecoveryEnabled_,true,cubicReferenceEnabled_,traceEnabled_?&admissionTrace_[ix]:nullptr,adaptiveEpochRecovery_&&confident&&localEpochEvidence,
+                localEpochRecovery_&&settings_.voiceMode==0&&settings_.voices>=3&&voicedGain_>.05f&&pitchSyncBlend_[ix]>.15f);
         if(traceEnabled_){
             auto& v=rendererTrace_[ix].values;
             ++v[RendererTrace::calls];
@@ -1071,9 +1078,26 @@ private:
             f*(1.f-blend)+windowedSync*blend;
         if(traceEnabled_&&backingSeams_[ix].countsForOfflineTests().losses!=previousLosses){
             auto& reasons=lossReasons_[ix];
-            if(!carryEpochs)++reasons.noClock;
-            else if(!windowSafe)++reasons.causal;
-            else ++reasons.safeUnready;
+            if(!carryEpochs){
+                ++reasons.noClock;reasons.maxNoClockGate=std::max(reasons.maxNoClockGate,voicedGain_);
+            }else if(!windowSafe)++reasons.causal;
+            else{
+                ++reasons.safeUnready;
+                // Nominal source RMS at the exact loss transition. This
+                // measures local PCM, not a perceptual loudness threshold.
+                double energy=0.;
+                const float delay=static_cast<float>(latency_)+arrival;
+                for(int k=0;k<16;++k){
+                    const float x=tap(mono_,delay+renderPeriod*(float(k)/15.f-.5f));
+                    energy+=double(x)*x;
+                }
+                const float localRms=static_cast<float>(std::sqrt(energy/16.));
+                reasons.safeQuiet+=localRms<.001f;
+                reasons.safeBlendActive+=blend>.25f;
+                reasons.maxSafeGate=std::max(reasons.maxSafeGate,voicedGain_);
+                reasons.maxSafeBlend=std::max(reasons.maxSafeBlend,blend);
+                reasons.maxSafeSourceRms=std::max(reasons.maxSafeSourceRms,localRms);
+            }
         }
         phase_[ix]+=1.f/static_cast<float>(grain_);
         if(phase_[ix]>=1.f)phase_[ix]-=1.f;
@@ -1360,7 +1384,7 @@ private:
     std::array<BackingRenderSeam,maxVoices> backingSeams_{};
     bool continuityReferenceEnabled_=true,supportReferenceEnabled_=true;
     bool naturalReferenceEnabled_=true,carrierReferenceEnabled_=true,slopeReferenceEnabled_=true;
-    bool drainReferenceEnabled_=true,traceEnabled_=false,epochRecoveryEnabled_=true,adaptiveEpochRecovery_=false,cubicReferenceEnabled_=false;
+    bool drainReferenceEnabled_=true,traceEnabled_=false,epochRecoveryEnabled_=true,adaptiveEpochRecovery_=false,localEpochRecovery_=false,cubicReferenceEnabled_=false;
     std::array<RendererTrace,maxVoices> rendererTrace_{};
     std::array<LossReasons,maxVoices> lossReasons_{};
     std::array<AdmissionTrace,maxVoices> admissionTrace_{};
