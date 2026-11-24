@@ -232,21 +232,8 @@ struct Engine::State {
     // continuous, then use the latest target (last-wins, no RT allocations).
     float preTapCurrent = 0.0f, preTapNext = 0.0f, preTapTarget = 0.0f;
     float preTapBlend = 1.0f;
-    Delay::FractionalTap preCurrentRead{},preNextRead{};
     float sizeTapCurrent = 1.0f, sizeTapNext = 1.0f, sizeTapTarget = 1.0f;
     float sizeTapBlend = 1.0f;
-    std::array<float,kLines> sizeCurrentBase{},sizeNextBase{};
-    void prepareSizeBase(float size,std::array<float,kLines>& result) const noexcept {
-        for(std::size_t i=0;i<kLines;++i)result[i]=fdnBaseSamples[i]*size;
-    }
-    // Both pre rings are prepared with identical capacities. The sub-sample
-    // path retains the exact direct/previous-sample interpolation.
-    float readPre(unsigned channel,float input,float samples,
-                  Delay::FractionalTap tap) const noexcept {
-        if(samples>=1.f)return pre[channel].readPrepared(tap);
-        if(samples>0.f)return input*(1.f-samples)+pre[channel].readPrepared(tap)*samples;
-        return input;
-    }
     float delayMorphStep = 0.0f;
     float targetHF = 0.0f;
     float targetLow = 0.0f;
@@ -349,9 +336,6 @@ void Engine::prepare(double sampleRate, bool musicalReturn) {
     s.sizeTapCurrent = s.sizeTapNext = s.sizeTapTarget =
         s.smooth[static_cast<unsigned>(Parameter::Size)];
     s.preTapBlend = s.sizeTapBlend = 1.0f;
-    s.preCurrentRead=s.preNextRead=s.pre[0].prepareTap(s.preTapCurrent);
-    s.prepareSizeBase(s.sizeTapCurrent,s.sizeCurrentBase);
-    s.sizeNextBase=s.sizeCurrentBase;
     s.delayMorphStep = 1.0f / std::max(1.0f, fs * kDelayMorphSeconds);
 
     const float decay = s.smooth[static_cast<unsigned>(Parameter::DecaySeconds)];
@@ -402,10 +386,8 @@ void Engine::reset() noexcept {
     s.coefficientCooldownSamples=0;
     // Transport resets must not re-open an old half-finished tap transition.
     s.preTapCurrent = s.preTapNext;
-    s.preCurrentRead=s.preNextRead;
     s.preTapBlend = 1.0f;
     s.sizeTapCurrent = s.sizeTapNext;
-    s.sizeCurrentBase=s.sizeNextBase;
     s.sizeTapBlend = 1.0f;
 }
 void Engine::setAlgorithm(Algorithm value) noexcept {
@@ -548,12 +530,10 @@ void Engine::process(const float* inputLeft, const float* inputRight,
     for (std::size_t frame = 0; frame < frames; ++frame) {
         if (s.preTapBlend >= 1.0f && s.preTapCurrent != s.preTapTarget) {
             s.preTapNext = s.preTapTarget;
-            s.preNextRead=s.pre[0].prepareTap(s.preTapNext);
             s.preTapBlend = 0.0f;
         }
         if (s.sizeTapBlend >= 1.0f && s.sizeTapCurrent != s.sizeTapTarget) {
             s.sizeTapNext = s.sizeTapTarget;
-            s.prepareSizeBase(s.sizeTapNext,s.sizeNextBase);
             s.sizeTapBlend = 0.0f;
         }
         for (const unsigned p : kSmoothedAudioControls)
@@ -564,6 +544,7 @@ void Engine::process(const float* inputLeft, const float* inputRight,
         const float dryGain=s.currentDryGain;
         const float wetGain=s.currentWetGain;
         const float preSamples = s.preTapCurrent;
+        const float size = s.sizeTapCurrent;
         const float diffusion = s.smooth[idx(Parameter::Diffusion)];
         const float modDepth = s.smooth[idx(Parameter::ModDepthMs)] * s.millisecondsToSamples;
         const float width = s.smooth[idx(Parameter::Width)];
@@ -592,14 +573,26 @@ void Engine::process(const float* inputLeft, const float* inputRight,
             ? clamp(inputLeft[frame], -32.0f, 32.0f) : 0.0f;
         const float inR = std::isfinite(inputRight[frame])
             ? clamp(inputRight[frame], -32.0f, 32.0f) : 0.0f;
-        // Cache stationary fractional taps on morph start; preserve the
-        // original crossfade and zero/sub-sample cases without moving heads.
-        float preL=s.readPre(0,inL,preSamples,s.preCurrentRead);
-        float preR=s.readPre(1,inR,preSamples,s.preCurrentRead);
+        float preL = inL;
+        float preR = inR;
+        // Zero-delay does not access an unwritten ring slot.
+        if (preSamples >= 1.0f) {
+            preL = s.pre[0].read(preSamples);
+            preR = s.pre[1].read(preSamples);
+        } else if (preSamples > 0.0f) {
+            preL = inL * (1.0f - preSamples) + s.pre[0].read(1.0f) * preSamples;
+            preR = inR * (1.0f - preSamples) + s.pre[1].read(1.0f) * preSamples;
+        }
         if (s.preTapBlend < 1.0f) {
             const float next = s.preTapNext;
-            const float nextL=s.readPre(0,inL,next,s.preNextRead);
-            const float nextR=s.readPre(1,inR,next,s.preNextRead);
+            float nextL = inL, nextR = inR;
+            if (next >= 1.0f) {
+                nextL = s.pre[0].read(next);
+                nextR = s.pre[1].read(next);
+            } else if (next > 0.0f) {
+                nextL = inL * (1.0f - next) + s.pre[0].read(1.0f) * next;
+                nextR = inR * (1.0f - next) + s.pre[1].read(1.0f) * next;
+            }
             preL += s.preTapBlend * (nextL - preL);
             preR += s.preTapBlend * (nextR - preR);
         }
@@ -645,12 +638,12 @@ void Engine::process(const float* inputLeft, const float* inputRight,
         float sumHouseholder = 0.0f;
         float tailL = 0.0f, tailR = 0.0f;
         for (std::size_t i = 0; i < kLines; ++i) {
-            const float base = s.sizeCurrentBase[i];
+            const float base = s.fdnBaseSamples[i] * size;
             const float modulation = modDepth * s.lfo[i].sinPhase;
             taps[i] = s.lines[i].read(base + modulation);
             if (s.sizeTapBlend < 1.0f) {
                 const float nextTap = s.lines[i].read(
-                    s.sizeNextBase[i] + modulation);
+                    s.fdnBaseSamples[i] * s.sizeTapNext + modulation);
                 taps[i] += s.sizeTapBlend * (nextTap - taps[i]);
             }
             sumHouseholder += kReflect[i] * taps[i];
@@ -669,22 +662,23 @@ void Engine::process(const float* inputLeft, const float* inputRight,
             householderProjection, s.bassCoeff, s.bassDepth);
         // Legacy Classic remains exactly the original Householder DSP.
         // Non-Classic modes use real, distinct feedback transform families.
-        float feedback[8];
+        float feedbackA[8], feedbackB[8], feedback[8];
         if (s.fromAlgorithm==0u) {
             for (int i=0;i<8;++i)
-                feedback[i]=taps[i]-bassShapedProjection*kReflect[i];
-        } else algorithmMatrix(s.fromAlgorithm,taps,feedback);
+                feedbackA[i]=taps[i]-bassShapedProjection*kReflect[i];
+        } else algorithmMatrix(s.fromAlgorithm,taps,feedbackA);
         if (s.algorithmBlend<1.0f) {
-            float feedbackB[8];
             if (s.toAlgorithm==0u) {
                 for (int i=0;i<8;++i)
                     feedbackB[i]=taps[i]-bassShapedProjection*kReflect[i];
             } else algorithmMatrix(s.toAlgorithm,taps,feedbackB);
             const float blend=s.algorithmBlend;
             for (int i=0;i<8;++i)
-                feedback[i]=feedback[i]+blend*(feedbackB[i]-feedback[i]);
+                feedback[i]=feedbackA[i]+blend*(feedbackB[i]-feedbackA[i]);
             s.algorithmBlend=std::min(1.0f,blend+s.algorithmStep);
             if (s.algorithmBlend>=1.0f) s.fromAlgorithm=s.toAlgorithm;
+        } else {
+            for (int i=0;i<8;++i) feedback[i]=feedbackA[i];
         }
         for (std::size_t i = 0; i < kLines; ++i) {
             s.gains[i] += s.smoother * (s.targetGains[i] - s.gains[i]);
@@ -740,17 +734,11 @@ void Engine::process(const float* inputLeft, const float* inputRight,
         outputRight[frame] = dryGain * inR + returnGain * (mid - side);
         if (s.preTapBlend < 1.0f) {
             s.preTapBlend = std::min(1.0f, s.preTapBlend + s.delayMorphStep);
-            if (s.preTapBlend >= 1.0f) {
-                s.preTapCurrent=s.preTapNext;
-                s.preCurrentRead=s.preNextRead;
-            }
+            if (s.preTapBlend >= 1.0f) s.preTapCurrent = s.preTapNext;
         }
         if (s.sizeTapBlend < 1.0f) {
             s.sizeTapBlend = std::min(1.0f, s.sizeTapBlend + s.delayMorphStep);
-            if (s.sizeTapBlend >= 1.0f) {
-                s.sizeTapCurrent=s.sizeTapNext;
-                s.sizeCurrentBase=s.sizeNextBase;
-            }
+            if (s.sizeTapBlend >= 1.0f) s.sizeTapCurrent = s.sizeTapNext;
         }
     }
 }

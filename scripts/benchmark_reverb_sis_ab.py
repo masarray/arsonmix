@@ -54,7 +54,11 @@ def main():
         if args.verify_pcm:
             a = subprocess.check_output([str(ref), "--pcm"], text=True)
             b = subprocess.check_output([str(new), "--pcm"], text=True)
-            if len(a.splitlines()) != 40 or a != b:
+            old_rows, new_rows = a.splitlines(), b.splitlines()
+            if len(old_rows) != 40 or len(new_rows) != 40 or a != b:
+                for old, new_row in zip(old_rows, new_rows):
+                    if old != new_row:
+                        print(f"PCM mismatch reference={old} candidate={new_row}", flush=True)
                 raise RuntimeError("cross-build PCM fingerprint mismatch")
             print("PASS Reverb-Sis cross-build PCM fingerprints: 40 profile/rate/mode cases")
         # Counterbalance run order to reduce thermal / scheduling bias.
