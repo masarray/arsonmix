@@ -82,6 +82,28 @@
   }
   // Physical crosspoints are a projection of installed ChannelId PCM only.
   // The existing source and external-output planners remain command authority.
+  function busOutputChoices(snapshot,key){
+    const d=snapshot?.device,raw=snapshot?.raw;
+    if(!snapshot?.admitted||snapshot.retained||d?.backend!=="ASIO"||
+       raw?.physicalBusPatchSupported!==true||
+       !["physicalMainOutputs","physicalMonitorOutputs"].includes(key)||
+       !Array.isArray(raw.physicalMainOutputs)||raw.physicalMainOutputs.length!==2||
+       !Array.isArray(raw.physicalMonitorOutputs)||!Array.isArray(raw.externalOutputs))return [];
+    const own=raw[key],other=raw[key==="physicalMainOutputs"?"physicalMonitorOutputs":"physicalMainOutputs"];
+    if(own.length!==2)return [];
+    const pins=new Map(d.outputEndpoints.filter(p=>p.active===true&&d.enabledOutputs.includes(p.port)&&p.label).map(p=>[p.port,p.label]));
+    const reserved=new Set([...other,...raw.externalOutputs.flatMap(p=>[p.physicalLeft,p.physicalRight])]);
+    const make=(left,right)=>({label:"OUT "+(left+1)+"/"+(right+1)+" · "+pins.get(left)+" + "+pins.get(right),left,right});
+    if(!own.every(p=>pins.has(p))||own[0]===own[1])return [];
+    const result=[make(own[0],own[1])];
+    for(const [left] of pins){
+      const right=left+1;
+      if(left%2||!pins.has(right)||reserved.has(left)||reserved.has(right)||
+         (left===own[0]&&right===own[1]))continue;
+      result.push(make(left,right));
+    }
+    return result;
+  }
   function patchMatrix(snapshot,side) {
     const input=side==="input", d=snapshot?.device;
     const names=input?d?.inputEndpoints:d?.outputEndpoints;
@@ -108,9 +130,19 @@
     const map=(left,right,mono=false)=>pins.map(p=>p.port===left?(mono?"M":"L"):p.port===right?"R":"");
     if(!input)for(const [key,name] of [["physicalMainOutputs","MAIN"],["physicalMonitorOutputs","MONITOR"]]){
       const pair=snapshot?.raw?.[key];
-      if(Array.isArray(pair)&&pair.length===2)
-        rows.push({id:key,name,editable:false,cells:map(pair[0],pair[1]),
-          selected:"",state:pair.every(p=>pins.some(q=>q.port===p))?"Fixed bus":"Needs remap"});
+      if(Array.isArray(pair)&&pair.length===2){
+        const busChoices=busOutputChoices(snapshot,key);
+        const editable=busChoices.length>1&&snapshot.raw.operatorOutputMuted===true&&
+          snapshot.device.outputArmed===false&&snapshot.raw.physicalBusSecondaryArmed===false&&
+          snapshot.raw.physicalBusOutputObserved===true;
+        const pending=snapshot.raw.physicalBusPatchSupported===true&&
+          snapshot.raw.physicalBusOutputObserved!==true;
+        rows.push({id:key,name,bus:true,editable,pending,choices:busChoices,
+          pair:pair.slice(),cells:map(pair[0],pair[1]),selected:busChoices[0]?.label||"",
+          state:pending?"Awaiting callback":editable?"Muted · remap available":
+            !pair.every(p=>pins.some(q=>q.port===p))?"Needs remap":
+            busChoices.length>1?"Mute MAIN and STREAM to remap":"Fixed bus"});
+      }
     }
     for(const ch of live&&Array.isArray(snapshot.graph?.channels)?snapshot.graph.channels:[]){
       if(input?ch.role!=="INPUT":!["INPUT","GROUP","FX_RETURN"].includes(ch.role))continue;
@@ -681,7 +713,7 @@
     }
     return result.filter(p=>ids.get(p.id)===1&&labels.get(p.label)===1);
   }
-  return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,patchMatrix,physicalInputChoice,namedPatchChoices,
+  return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,patchMatrix,physicalInputChoice,namedPatchChoices,busOutputChoices,
     externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,setupRoutingReady,setupPinsApplied,setupMatrixDeviceMatches,
     pinInventory,setupSelectAllPins,setupBufferPeriod,setupHealthReadback,
     setupInitial,setupBegin,setupAck,setupReadback,

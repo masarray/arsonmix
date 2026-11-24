@@ -8,6 +8,7 @@
 #include <vector>
 #include "../src/NativeChannelAppearanceStore.h"
 #include "../src/NativeNamedPatchStore.h"
+#include "../src/NativeOutputBusPatch.h"
 
 using armix::appearance::Store;
 static juce::var object(){return juce::var(new juce::DynamicObject());}
@@ -127,7 +128,22 @@ static void namedPatchRegression(){
     assert(file.loadFileAsString()=="broken");
     assert(dir.deleteRecursively());
 }
+static void busOutputPatchRegression(){
+    using P=armix::io::OutputBusPatch;
+    const std::array<int,8> pins{0,1,4,5,8,9,12,13};
+    const std::array<int,2> external{12,13};
+    const auto changed=P::plan(pins,{0,1},{2,3},false,{0,1},{8,9},external);
+    assert(changed&&changed->main==(P::Pair{4,5})&&changed->monitor==(P::Pair{2,3}));
+    const auto monitor=P::plan(pins,{0,1},{2,3},true,{4,5},{8,9},external);
+    assert(monitor&&monitor->main==(P::Pair{0,1})&&monitor->monitor==(P::Pair{4,5}));
+    assert(!P::plan(pins,{0,1},{2,3},false,{0,1},{4,5},external));
+    assert(!P::plan(pins,{0,1},{2,3},false,{0,1},{12,13},external));
+    assert(!P::plan(pins,{0,1},{2,3},false,{0,1},{2,3},external));
+    assert(!P::plan(pins,{0,1},{2,3},false,{1,0},{8,9},external));
+    assert(!P::plan(pins,{0,1},{-1,-1},true,{-1,-1},{8,9},external));
+}
 int main(){
+    busOutputPatchRegression();
     namedPatchRegression();
     const auto dir=juce::File::getSpecialLocation(juce::File::tempDirectory)
         .getNonexistentChildFile("ArSonMixChannelIdentity","",false);

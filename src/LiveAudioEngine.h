@@ -384,6 +384,8 @@ public:
             return "Apply a real INPUT PATCH and wait for native routing ACK.";
         if (device->getActiveOutputChannels().countNumberOfSetBits()<2)
             return "MAIN needs two verified hardware output pins.";
+        if(dryRoutingLab_.nativeBusPatchAwaitingCallback())
+            return "Wait for native output mapping callback readback before START AUDIO.";
         if(dryRoutingLab_.channelIdPhysicalPcmActive())
             return !requirePhysicalSource || dryRoutingLab_.hasVerifiedNativeSources()
                 ?juce::String{}:juce::String("No physical input assigned. Select a channel IN first.");
@@ -1515,6 +1517,31 @@ public:
     // O1 physical External OUT: solely CONTROL, on the already-approved
     // single ASIO/ChannelId PCM callback. Hardware pin masks and labels
     // are read atomically with the current device lifecycle generation.
+    juce::String patchPhysicalBusOutput(std::uint64_t ep,std::uint64_t rev,
+            bool monitor,std::array<int,2> previous,std::array<int,2> wanted,
+            const juce::String& leftName,const juce::String& rightName) {
+        if(!allOutputsDisarmed()||wantsMainContinuation()||independent_.active()||
+           !attached_||!directFence_.permitted()||handoff_.busy()||
+           savedDirectSetup_||savedLiveSetup_||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           fxMovePhase_.load(std::memory_order_acquire)!=0||
+           diagnosticRoute()!=armix::diagnostics::Route::normal||
+           deviceManager_.getCurrentAudioDeviceType()!="ASIO")
+            return "BUS OUTPUT: explicitly MUTE MAIN and STREAM first";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        armix::device::JuceActivePortSnapshot pins;
+        armix::device::JuceActivePortSnapshot::Fault fault{};
+        if(!device||!device->isOpen()||!acceptedMixerBinding_||
+           !armix::device::JuceActivePortSnapshot::capture(device,ep,pins,fault))
+            return "BUS OUTPUT: device pin inventory unavailable";
+        const auto live=readMixerBinding(*device);
+        if(!armix::session::MixerDeviceBindingPolicy::sameBinding(*acceptedMixerBinding_,live)||
+           acceptedMixerBinding_->outputNames!=live.outputNames||
+           deviceManager_.getCurrentAudioDevice()!=device)
+            return "BUS OUTPUT: verified playback identity changed";
+        return dryRoutingLab_.patchNativeBusOutput(ep,rev,monitor,previous,wanted,leftName,rightName,pins);
+    }
+
     juce::String setPhysicalExternalOutput(armix::mixer::ChannelId channel,
             std::uint64_t expectedEpoch,std::uint64_t expectedRevision,
             int physicalLeft,int physicalRight,bool confirmed) {
@@ -3628,6 +3655,7 @@ private:
         if (renderOwner ==
             armix::mixer::NativeRenderOwner::acceptedM4Session)
         {
+            const auto outputLease=dryRoutingLab_.captureNativeOutputLease();
             const bool nativePcm=dryRoutingLab_.channelIdPhysicalPcmActive();
             const bool mainOnlyMuted=nativePcm &&
                 masterMute_.load(std::memory_order_relaxed);
@@ -3679,7 +3707,7 @@ private:
                      !routeReconfiguring_.load(std::memory_order_acquire) &&
                      !topologyPublicationMute_.load(std::memory_order_acquire),
                      std::span<const armix::mixer::DynamicPlayerPcmBlock>(
-                         deckBlocks.data(),deckCount),mainOnlyMuted);
+                         deckBlocks.data(),deckCount),mainOnlyMuted,&outputLease);
             // Constant-time, callback-local physical PCM tap. Nothing is
             // reconfigured or acquired from another graph generation.
             const auto nativeMain=armix::mixer::NativeOutputPairTap::select(

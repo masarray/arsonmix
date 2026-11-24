@@ -2844,6 +2844,10 @@ private:
                 live.getProperty("dryRoutingLab",{}).getProperty("mainOutputs",{}));
             obj->setProperty("physicalMonitorOutputs",
                 live.getProperty("dryRoutingLab",{}).getProperty("monitorOutputs",{}));
+            obj->setProperty("physicalBusPatchSupported",true);
+            obj->setProperty("physicalBusOutputObserved",
+                live.getProperty("dryRoutingLab",{}).getProperty("busOutputObserved",false));
+            obj->setProperty("physicalBusSecondaryArmed",engine_.secondaryArmed());
         }
         return accepted;
     }
@@ -6846,6 +6850,38 @@ private:
         }
         // O1: native CONTROL intent, exact verified ASIO physical pair.
         // Never reinterpret an external destination as internal WIRE/M4 OUT.
+        if(action=="routingPhysicalBusOutput") {
+            const auto id=args.getProperty("requestId",{}).toString();
+            const auto bus=args.getProperty("bus",{}).toString();
+            const auto ep=args.getProperty("deviceEpoch",{}),rv=args.getProperty("revision",{});
+            const auto left=args.getProperty("left",{}),right=args.getProperty("right",{});
+            const auto oldL=args.getProperty("previousLeft",{}),oldR=args.getProperty("previousRight",{});
+            const auto leftName=args.getProperty("leftName",{}),rightName=args.getProperty("rightName",{});
+            const auto confirmed=args.getProperty("confirmed",{});
+            const auto status=engine_.status().getProperty("dryRoutingLab",{});
+            const auto native=status.getProperty("nativeBus",{});
+            juce::String error="BUS OUTPUT: invalid/stale request or output not explicitly muted";
+            if(id.startsWith("bus-out-")&&id.length()<=64&&(bus=="MAIN"||bus=="MONITOR")&&
+               operatorOutputMuted_&&!deviceApply_.busy()&&!nativeShowBusy_&&!studioBackupBusy_&&
+               confirmed.isBool()&&static_cast<bool>(confirmed)&&
+               left.isInt()&&right.isInt()&&oldL.isInt()&&oldR.isInt()&&
+               leftName.isString()&&rightName.isString()&&
+               armix::console::nativeSessionTokenMatches(ep,status.getProperty("epoch",{}))&&
+               armix::console::nativeSessionTokenMatches(rv,native.getProperty("graphRevision",{})))
+                error=engine_.patchPhysicalBusOutput(
+                    armix::console::nativeSessionTokenValue(ep),armix::console::nativeSessionTokenValue(rv),
+                    bus=="MONITOR",{static_cast<int>(oldL),static_cast<int>(oldR)},
+                    {static_cast<int>(left),static_cast<int>(right)},leftName.toString(),rightName.toString());
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",id);ack->setProperty("ok",error.isEmpty());
+            ack->setProperty("error",error);
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixPhysicalBusOutputAck",juce::var(ack.release()));
+            if(error.isEmpty()){
+                autoMainEpoch_=0;engine_.cancelAsioResetMonitorIntent();
+                emitApprovedNativeSnapshot();
+            }else emitNotice(error,true);
+            return;
+        }
         if(action=="routingExternalOutput") {
             const auto requestId=args.getProperty("requestId",{}).toString();
             const auto channelText=args.getProperty("channelId",{}).toString();

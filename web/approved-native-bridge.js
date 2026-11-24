@@ -2423,7 +2423,8 @@
   }
   // Matrix edits use the same queue/lease and native dispatcher as strips.
   // No synthetic PCM, no independent routing graph or optimistic crosspoint.
-  const matrixBusy=()=>Boolean(deviceBusy()||activeNativeSource||pendingNativeSources.size||
+  let busOutputPending=null,busOutputSerial=0;
+  const matrixBusy=()=>Boolean(busOutputPending||deviceBusy()||activeNativeSource||pendingNativeSources.size||
     nativeUiSourcePending||pendingSourceQueue.size||pendingExternal.size);
   function matrixReady(snapshot){
     return deviceVM.setupRoutingReady(deviceInventory,deviceChoice,deviceState)&&
@@ -2461,6 +2462,24 @@
         pendingSourceQueue.set(channel,decision.entry);
         dispatchQueuedSource();
       }
+    }else if(row.bus){
+      if(!requested||JSON.stringify(row.pair)!==lease.busPairs?.[id])return;
+      const choice=row.choices.find(x=>x.label===label&&x.left===requested.left&&x.right===requested.right);
+      if(!choice||choice.label===row.selected||
+         !window.confirm("Remap "+row.name+" to "+choice.label+"? Outputs stay muted until START AUDIO."))return;
+      const requestId="bus-out-"+(++busOutputSerial);
+      busOutputPending={requestId,id,epoch:lease.epoch,config:lease.config,revision:lease.revision,
+        left:choice.left,right:choice.right,acked:false};
+      backend.emitEvent("arMixAction",{action:"routingPhysicalBusOutput",requestId,
+        deviceEpoch:lease.epoch,revision:lease.revision,bus:row.name,confirmed:true,
+        previousLeft:row.pair[0],previousRight:row.pair[1],left:choice.left,right:choice.right,
+        leftName:view.pins.find(p=>p.port===choice.left)?.label,
+        rightName:view.pins.find(p=>p.port===choice.right)?.label});
+      window.setTimeout(()=>{
+        if(busOutputPending?.requestId!==requestId)return;
+        busOutputPending=null;nativeToast("Bus mapping confirmation timed out · keep output muted and reopen Audio I/O");
+        paintPhysicalOutputs(hardware);
+      },5000);
     }else{
       const track=scope?.tracks?.find(t=>nativeIdFor(t)===id);
       if(!track||!current?.admitted)return;
@@ -2468,6 +2487,32 @@
     }
     paintPhysicalOutputs(hardware);
   }
+  function settleBusOutput(next){
+    const p=busOutputPending;
+    if(!p)return;
+    if(next.device?.epoch!==p.epoch||next.hardwareConfiguration!==p.config||
+       next.graph?.revision!==p.revision||!next.admitted||next.retained){
+      busOutputPending=null;nativeToast("Bus mapping lease expired");return;
+    }
+    const pair=next.raw?.[p.id];
+    if(!p.acked||next.raw?.physicalBusOutputObserved!==true||
+       pair?.[0]!==p.left||pair?.[1]!==p.right)return;
+    busOutputPending=null;nativeToast("Bus mapping verified · output remains muted");
+    backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+  }
+  function pollBusOutput(requestId,attempt=0){
+    if(busOutputPending?.requestId!==requestId||attempt>=20)return;
+    controller?.subscribe();
+    window.setTimeout(()=>pollBusOutput(requestId,attempt+1),150);
+  }
+  if(connected)backend.addEventListener("arMixPhysicalBusOutputAck",ack=>{
+    if(busOutputPending?.requestId!==ack?.requestId)return;
+    if(ack.ok!==true){
+      busOutputPending=null;nativeToast(ack.error||"Bus mapping rejected");paintPhysicalOutputs(hardware);return;
+    }
+    busOutputPending.acked=true;
+    pollBusOutput(ack.requestId);
+  });
   let namedPatchSerial=0,namedPatchPending=null;
   function namedPatchChoices(side,model,next){
     return matrixReady(next)?deviceVM.namedPatchChoices(deviceInventory,next,side):[];
@@ -2590,7 +2635,8 @@
     const signature=JSON.stringify([model,busy,ready,next?.hardwareConfiguration,next?.device?.epoch,
       deviceInventory?.namedPatches,namedPatchPending]);
     const lease={config:next?.hardwareConfiguration,epoch:next?.device?.epoch,authority:model.authority,
-      revision:model.revision,roster:model.roster};
+      revision:model.revision,roster:model.roster,
+      busPairs:Object.fromEntries(model.rows.filter(r=>r.bus).map(r=>[r.id,JSON.stringify(r.pair)]))};
     if(host.dataset.signature===signature)return;
     host.dataset.signature=signature;
     host.replaceChildren();
@@ -2614,7 +2660,7 @@
       const controls=[];
       const select=document.createElement("select");
       select.setAttribute("aria-label",row.name+" assignment");
-      const candidates=model.choices;
+      const candidates=row.bus?row.choices:model.choices;
       const customValue="__custom_stereo__";
       const custom=document.createElement("div");
       custom.className="armix-custom-stereo";custom.hidden=true;
@@ -2628,7 +2674,7 @@
       if(model.pins.length>1)customRight.selectedIndex=1;
       if(row.selected===null){const op=new Option(row.state||"Current source", "");op.disabled=true;select.append(op);}
       for(const choice of candidates)select.append(new Option(choice.label,choice.label));
-      if(row.editable)for(const p of aliases)
+      if(row.editable&&!row.bus)for(const p of aliases)
         select.append(new Option(p.name+" · "+p.choice.label,"preset:"+p.id));
       if(side==="input"&&row.editable&&model.pins.length>1)
         select.append(new Option("Custom stereo L/R…",customValue));
@@ -2646,7 +2692,7 @@
           const mark=row.editable&&choice?(pin.port===choice.left?(choice.mode==="MONO"?"M":"L"):pin.port===choice.right?"R":""):row.cells[index];
           button.textContent=mark||"·";
           button.dataset.mark=mark||"";
-          button.dataset.draft=String(Boolean(row.editable&&mark!==row.cells[index]));
+          button.dataset.draft=String(Boolean(row.pending&&mark||row.editable&&mark!==row.cells[index]));
         });
       };
       for(const [index,pin] of model.pins.entries()){
@@ -3205,7 +3251,7 @@
         </section>
         <section class="armix-output-overview" data-audio-output-overview>
           <div class="armix-crosspoint-scroll" data-audio-output-grid></div>
-          <div class="armix-device-note">External stereo outputs are editable. MAIN / MONITOR are existing fixed bus assignments.</div>
+          <div class="armix-device-note">External stereo outputs are editable. Mute MAIN and STREAM before changing an existing MAIN / MONITOR pair.</div>
           <div class="armix-output-heading">OUTPUTS · physical routing</div>
           <div class="armix-output-matrix" data-audio-output-matrix role="list"></div>
           <div class="armix-device-note">Native callback/readback only · speaker listening not verified</div>
@@ -3987,7 +4033,7 @@
     // A same-epoch driver/endpoint replacement or M4 authority change
     // must not strand EXTERNAL OUT selects or slot-bypass edits behind
     // an old ACK/timer. Never touch persisted PCM/FX state here.
-    pendingExternal.clear();pendingSlotPowers.clear();
+    pendingExternal.clear();pendingSlotPowers.clear();busOutputPending=null;
     // Cosmetic ChannelId edits remain legal while native playback is
     // NEEDS_REMAP. They still require their own native ACK/readback proof.
     // Only physical/authority changes must invalidate those old identities.
@@ -4047,6 +4093,7 @@
     appearanceFromNative(next);
     settleSourceReadback("CHANNEL_ID",next);
     settleSourceReadback("M4",next);
+    settleBusOutput(next);
     // Reconcile pending leases before the final matrix paint. The graph
     // can be installed while the prior paint still sees a busy SOURCE.
     paintPhysicalOutputs(next);

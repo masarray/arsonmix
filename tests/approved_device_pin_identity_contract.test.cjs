@@ -789,3 +789,22 @@ test("Named patch projection rejects renamed pins, wrong device, disabled pins a
  const out={...entry,id:"out",side:"output",mode:"STEREO",left:0,right:1,leftName:"Main L",rightName:"Main R"};
  assert.deepEqual(vm.namedPatchChoices({...data,namedPatches:{...data.namedPatches,entries:[out]}},snap,"output"),[]);
 });
+
+test("Bus remap choices keep active masks, reject external and other bus pins, require explicit mute and callback",()=>{
+ const d={epoch:"41",backend:"ASIO",enabledOutputs:[0,1,4,5,8,9,12,13],
+   outputEndpoints:[0,1,4,5,8,9,12,13].map(port=>({port,active:true,label:"Out "+port})),outputArmed:false};
+ const raw={physicalBusPatchSupported:true,physicalBusOutputObserved:true,
+   physicalBusSecondaryArmed:false,operatorOutputMuted:true,physicalMainOutputs:[0,1],
+   physicalMonitorOutputs:[4,5],externalOutputs:[{physicalLeft:12,physicalRight:13}],
+   mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"41"}};
+ const snap={device:d,raw,admitted:true,hardwareConfiguration:"exact",graph:{channels:[]}};
+ const rows=vm.patchMatrix(snap,"output").rows;
+ assert.deepEqual(rows[0].choices.map(x=>x.left),[0,8]);
+ assert.deepEqual(rows[1].choices.map(x=>x.left),[4,8]);
+ assert.equal(rows[0].editable,true);
+ assert.equal(vm.patchMatrix({...snap,raw:{...raw,operatorOutputMuted:false}},"output").rows[0].editable,false);
+ const pending=vm.patchMatrix({...snap,raw:{...raw,physicalBusOutputObserved:false}},"output").rows[0];
+ assert.equal(pending.editable,false);assert.equal(pending.pending,true);
+ assert.equal(vm.patchMatrix({...snap,raw:{...raw,physicalBusSecondaryArmed:true}},"output").rows[0].editable,false);
+ assert.equal(vm.patchMatrix({...snap,device:{...d,outputArmed:true}},"output").rows[0].editable,false);
+});

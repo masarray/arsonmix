@@ -12,6 +12,7 @@
 #include "VstBusLayout.h"
 #include "../engine/core/NativeDryRouteCommand.h"
 #include "NativeVerifiedSourcePatch.h"
+#include "NativeOutputBusPatch.h"
 #include "NativeTopologyEditSafety.h"
 #include "NativeMixerSessionDocument.h"
 #include "../engine/device/JuceActivePortSnapshot.h"
@@ -2708,6 +2709,67 @@ public:
         }
     }
 
+    // CONTROL only, explicit operator MUTE checked by LiveAudioEngine.
+    // Only the hardware destination changes. Logical MAIN/MONITOR and FX
+    // owners, pin masks, callback quantum and graph revision are unchanged.
+    juce::String patchNativeBusOutput(std::uint64_t ep,std::uint64_t rev,
+            bool monitor,std::array<int,2> expected,std::array<int,2> wanted,
+            const juce::String& leftName,const juce::String& rightName,
+            const armix::device::JuceActivePortSnapshot& pins) {
+        using armix::io::OutputBusPatch;
+        if(!ready()||!nativeAccepted_.matches(nativePublisher_,ep,rev)||
+           !channelIdPhysicalPcmActive()||pins.epoch!=ep||pins.typeName!="ASIO"||
+           !matchesSessionDevice(pins)||!nativeBusOutputObserved())
+            return "BUS OUTPUT: stale or unobserved native mapping";
+        if(wanted[0]<0||wanted[1]<0||wanted[0]>=pins.outputNames.size()||
+           wanted[1]>=pins.outputNames.size()||leftName.isEmpty()||rightName.isEmpty()||
+           pins.outputNames[wanted[0]]!=leftName||pins.outputNames[wanted[1]]!=rightName)
+            return "BUS OUTPUT: physical pin identity changed";
+        const auto& hw=nativeAccepted_.hardware;
+        if(!hw.valid()||hw.activeOutputChannels!=pins.outputCount)
+            return "BUS OUTPUT: installed hardware unavailable";
+        std::vector<int> reserved;
+        reserved.reserve(externalOutputAssignments_.size()*2);
+        // Preserve even saved/disarmed EXTERNAL intentions on the same
+        // driver. No implicit unpatch or amplifier reassignment.
+        for(const auto& p:externalOutputAssignments_){
+            if(p.playbackDevice!=pins.deviceName)continue;
+            reserved.push_back(p.left);reserved.push_back(p.right);
+        }
+        const auto plan=OutputBusPatch::plan(
+            {pins.outputByCallback.data(),static_cast<std::size_t>(pins.outputCount)},
+            {hw.mainL,hw.mainR},{hw.monitorL,hw.monitorR},monitor,expected,wanted,reserved);
+        if(!plan)return "BUS OUTPUT: stale, inactive or reserved stereo pair";
+        auto next=hw;
+        next.mainL=plan->main[0];next.mainR=plan->main[1];
+        next.monitorL=plan->monitor[0];next.monitorR=plan->monitor[1];
+        if(!next.valid()||!matchesSessionDevice(pins))
+            return "BUS OUTPUT: device changed during validation";
+        nativeAccepted_.hardware=next;
+        nativeControlDirty_=true;
+        busPatchEpoch_=ep;
+        installNativeHardware(ep,next,nativeAccepted_.graph.request.maxFrames);
+        return {};
+    }
+    bool nativeBusOutputObserved() const noexcept {
+        return nativeMeterEpoch_.load(std::memory_order_acquire)==epoch()&&
+            nativeHardwareObserved_.load(std::memory_order_acquire)==
+            nativeHardware_.load(std::memory_order_acquire);
+    }
+    bool nativeBusPatchAwaitingCallback() const noexcept {
+        return busPatchEpoch_!=0&&busPatchEpoch_==epoch()&&
+            channelIdPhysicalPcmActive()&&!nativeBusOutputObserved();
+    }
+    // AUDIO: capture the destination before the outer output-arm decision.
+    // A block with an old arm decision must never read a newly assigned pair.
+    struct NativeOutputLease {std::uint64_t epoch=0,packed=0;};
+    NativeOutputLease captureNativeOutputLease() const noexcept {
+        const auto ep=channelIdPcmEpoch_.load(std::memory_order_acquire);
+        const auto packed=nativeHardware_.load(std::memory_order_acquire);
+        return ep!=0&&ep==channelIdPcmEpoch_.load(std::memory_order_acquire)
+            ?NativeOutputLease{ep,packed}:NativeOutputLease{};
+    }
+
     bool describeRetainedAsioSession(armix::session::MixerSessionDocument& document) const {
         if(!hasRetainedNativeSession() ||
            !nativeAccepted_.matches(nativePublisher_,nativeAccepted_.deviceEpoch,
@@ -3261,7 +3323,8 @@ public:
                  std::array<int,2>* actualMonitorPair=nullptr,
                  bool allowMutedMetering=false,
                  std::span<const armix::mixer::DynamicPlayerPcmBlock> playerPcm={},
-                 bool mainOnlyMuted=false) noexcept {
+                 bool mainOnlyMuted=false,
+                 const NativeOutputLease* outputLease=nullptr) noexcept {
         if(actualOutputPair)*actualOutputPair={{-1,-1}};
         if(actualMonitorPair)*actualMonitorPair={{-1,-1}};
         if(!active())return false;
@@ -3333,8 +3396,11 @@ public:
         if(!channelIdRender && (!snapshot || !snapshot->prepared)) {
             silence();return true;
         }
+        if(channelIdRender&&outputLease&&outputLease->epoch!=generation){
+            silence();return true;
+        }
         const auto native=channelIdRender?
-            nativeHardware_.load(std::memory_order_acquire):0;
+            (outputLease?outputLease->packed:nativeHardware_.load(std::memory_order_acquire)):0;
         const int outLeft=channelIdRender?nativePin(native,0):snapshot->prepared->mainOutputLeft();
         const int outRight=channelIdRender?nativePin(native,1):snapshot->prepared->mainOutputRight();
         if(epoch()!=generation || (channelIdRender &&
@@ -3554,6 +3620,8 @@ public:
                 nativeMeterPeaksL_[ch].store(nativeMaxL[ch],std::memory_order_relaxed);
                 nativeMeterPeaksR_[ch].store(nativeMaxR[ch],std::memory_order_relaxed);
             }
+            if(nativeHardwareObserved_.load(std::memory_order_relaxed)!=native)
+                nativeHardwareObserved_.store(native,std::memory_order_release);
             nativeMeterEpoch_.store(generation,std::memory_order_release);
         } else nativeMeterEpoch_.store(0,std::memory_order_release);
         renderAudit_.completed(auditPath);
@@ -3718,6 +3786,7 @@ public:
             for(float gain:mainGraph->monitorGains())liveMonitorSends.add(gain);
         out->setProperty("mainOutputs",juce::var(liveMain));
         out->setProperty("monitorOutputs",juce::var(liveMonitor));
+        out->setProperty("busOutputObserved",nativePcm&&nativeBusOutputObserved());
         out->setProperty("monitorSends",juce::var(liveMonitorSends));
         juce::Array<juce::var> external;
         for(const auto& patch:externalOutputAssignments_) {
@@ -3757,7 +3826,8 @@ private:
     std::uint64_t externalOutputEpoch_=0; // CONTROL only, never callback state
     // Four 9-bit callback indices (0 means absent) and the prepared quantum.
     // One atomic read gives AUDIO a coherent destination/quantum contract.
-    std::atomic<std::uint64_t> nativeHardware_{0};
+    std::atomic<std::uint64_t> nativeHardware_{0},nativeHardwareObserved_{0};
+    std::uint64_t busPatchEpoch_=0; // CONTROL-only, arm awaits exact callback map
     static int nativePin(std::uint64_t hardware,int index) noexcept {
         return static_cast<int>((hardware>>(index*9))&511U)-1;
     }
