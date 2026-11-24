@@ -272,7 +272,51 @@ static void testDelayedEpochRecovery(){
         need(!y.ready&&!y.recovered,"H20 fabricated silent epoch");
     }
 }
+// Independent analytic fractional-tap reference across vocal harmonics.
+static void testFractionalBandwidth(){
+    constexpr double tau=6.283185307179586;
+    for(int rate:{32000,48000,96000,192000}){
+        double linear=0.,cubic=0.;
+        for(double hz:{1500.,3000.,6000.,9000.})for(int n=0;n<1024;++n){
+            const double w=tau*hz/rate,phase=tau*n/1024.;
+            const float a=static_cast<float>(std::sin(phase-w)),b=static_cast<float>(std::sin(phase));
+            const float c=static_cast<float>(std::sin(phase+w)),d=static_cast<float>(std::sin(phase+2*w));
+            for(float f:{.125f,.25f,.5f,.75f,.875f}){
+                const double target=std::sin(phase+w*f);
+                const double l=b*(1.f-f)+c*f-target,q=Shifter::cubicTap(a,b,c,d,f)-target;
+                linear+=l*l;cubic+=q*q;
+            }
+            need(Shifter::cubicTap(a,b,c,d,0.f)==b,"H22 integer tap");
+        }
+        std::cout<<"H22_TAP rate="<<rate<<" linear_sse="<<linear<<" cubic_sse="<<cubic
+                 <<" ratio="<<cubic/linear<<std::endl;
+        need(linear>0.&&cubic<linear*.60,"H22 fractional bandwidth");
+    }
+    // Actual PSOLA grains with fractional epochs, narrowband source
+    // resonances and changing pitch. Compare readiness and scheduler exactly.
+    for(int rate:{32000,48000,96000,192000}){
+        Shifter linear{},cubic{};std::array<float,16384> ring{};
+        double phase=0.,ea=0.,eb=0.,diff=0.;int ready=0;
+        for(int i=0;i<rate/2;++i){
+            const double hz=220.+20.*std::sin(tau*4*i/rate);
+            phase+=tau*hz/rate;
+            ring[i&16383]=static_cast<float>(.13*std::sin(phase)+.06*std::sin(8*phase+.3)+.035*std::sin(19*phase+.7));
+            const float period=static_cast<float>(rate/hz);
+            const auto a=linear.process(0,i,i&16383,ring,period,1.5f,rate*.032f,.94f,true,true,true,true,true,true,false);
+            const auto b=cubic.process(0,i,i&16383,ring,period,1.5f,rate*.032f,.94f,true,true,true,true,true,true,true);
+            need(a.ready==b.ready&&a.coverage==b.coverage&&a.recovered==b.recovered&&
+                 linear.lastEpochForOfflineTests(0)==cubic.lastEpochForOfflineTests(0),"H22 scheduler changed");
+            need(std::isfinite(b.sample)&&std::abs(b.sample)<.4f,"H22 bounded grain");
+            if(i>rate/10&&a.ready){++ready;ea+=a.sample*a.sample;eb+=b.sample*b.sample;
+                const double q=a.sample-b.sample;diff+=q*q;}
+        }
+        std::cout<<"H22_GRAIN rate="<<rate<<" ready="<<ready<<" delta_sse="<<diff
+                 <<" energy_ratio="<<eb/ea<<std::endl;
+        need(ready>rate/4&&diff>0.&&ea>0.&&eb/ea>.8&&eb/ea<1.3,"H22 grain audition candidate");
+    }
+}
 int main(){
+    testFractionalBandwidth();
     testDelayedEpochRecovery();
     testCausalAdmissionDrain();
     testEpochPhaseContinuity();

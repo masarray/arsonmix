@@ -289,7 +289,7 @@ public:
         for(auto& seam:backingSeams_)seam.prepare(rate);
         continuityReferenceEnabled_=true;supportReferenceEnabled_=true;
         naturalReferenceEnabled_=true;backingContour_.prepare(detectEvery_/rate);
-        carrierReferenceEnabled_=true;slopeReferenceEnabled_=true;drainReferenceEnabled_=true;epochRecoveryEnabled_=true;
+        carrierReferenceEnabled_=true;slopeReferenceEnabled_=true;drainReferenceEnabled_=true;epochRecoveryEnabled_=true;cubicReferenceEnabled_=false;
         traceEnabled_=false;rendererTrace_={};
         for(auto& carrier:carriers_)carrier.reset();
         periodContinuity_.reset();
@@ -522,6 +522,12 @@ public:
     }
     RendererTrace rendererTraceForOfflineTests(int voice) const noexcept {
         return voice>=0&&voice<maxVoices?rendererTrace_[static_cast<std::size_t>(voice)]:RendererTrace{};
+    }
+    // H22 experimental offline candidate: do not change the field
+    // build's timbre until matched human-vocal listening qualifies it.
+    bool setCubicForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        cubicReferenceEnabled_=enabled;return true;
     }
     bool setEpochRecoveryForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
@@ -904,7 +910,7 @@ private:
             sync=pitchSync_.process(voice,sampleClock_,write_,mono_,
                 sourcePeriodSamples_,effectiveRatio,
                 static_cast<float>(latency_)+arrival,scale,continuityReferenceEnabled_,
-                supportReferenceEnabled_,naturalReferenceEnabled_,windowSafe,epochRecoveryEnabled_);
+                supportReferenceEnabled_,naturalReferenceEnabled_,windowSafe,epochRecoveryEnabled_,true,cubicReferenceEnabled_);
         if(traceEnabled_){
             auto& v=rendererTrace_[ix].values;
             ++v[RendererTrace::calls];
@@ -1197,7 +1203,7 @@ private:
     std::array<BackingRenderSeam,maxVoices> backingSeams_{};
     bool continuityReferenceEnabled_=true,supportReferenceEnabled_=true;
     bool naturalReferenceEnabled_=true,carrierReferenceEnabled_=true,slopeReferenceEnabled_=true;
-    bool drainReferenceEnabled_=true,traceEnabled_=false,epochRecoveryEnabled_=true;
+    bool drainReferenceEnabled_=true,traceEnabled_=false,epochRecoveryEnabled_=true,cubicReferenceEnabled_=false;
     std::array<RendererTrace,maxVoices> rendererTrace_{};
     BackingPitchContour backingContour_{};
     std::array<PhaseCoherentCarrier,maxVoices> carriers_{};

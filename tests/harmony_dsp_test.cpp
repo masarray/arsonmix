@@ -914,11 +914,12 @@ static void testCausalAdmissionEngine(){
                 .17*std::sin(phase)+.055*std::sin(2*phase+.3)+.03*std::sin(3*phase+.6));
         }
         struct Result {LeadFixture pcm;std::uint64_t losses=0,acquisitions=0;Engine::RendererTrace trace{};};
-        auto run=[&](bool drain,int block,bool wet,bool trace=true,bool recover=false){
+        auto run=[&](bool drain,int block,bool wet,bool trace=true,bool recover=false,bool cubic=false){
             auto e=std::make_unique<Engine>();Settings s;s.voices=5;
             s.wet=wet?1.f:0.f;s.color=.78f;s.space=.6f;
             need(e->prepare(rate)&&e->setDrainForOfflineReference(drain)&&
                  e->setRendererTraceForOfflineTests(trace)&&e->setEpochRecoveryForOfflineReference(recover)&&
+                 e->setCubicForOfflineReference(cubic)&&
                  e->setSettings(s),"H18 engine setup");
             Result out{src};
             for(int i=0;i<n;i+=block)e->process(out.pcm.left.data()+i,out.pcm.right.data()+i,std::min(block,n-i));
@@ -935,6 +936,27 @@ static void testCausalAdmissionEngine(){
         const auto dry=run(true,127,false),oldDry=run(false,64,false);
         const auto h20=run(true,127,true,true,true),h20Split=run(true,64,true,true,true);
         const auto h20Dry=run(true,64,false,true,true);
+        const auto h22=run(true,127,true,true,true,true),h22Split=run(true,64,true,true,true,true);
+        const auto h22Dry=run(true,64,false,true,true,true);
+        need(h22.pcm.left==h22Split.pcm.left&&h22.pcm.right==h22Split.pcm.right&&
+             h22.trace.values==h20.trace.values&&h22.losses==h20.losses&&
+             h22Dry.pcm.left==h20Dry.pcm.left&&h22Dry.pcm.right==h20Dry.pcm.right,
+             "H22 exact scheduler/block/dry parity");
+        for(int ch:{0,1}){
+            const auto& a=ch?h20.pcm.right:h20.pcm.left;const auto& b=ch?h22.pcm.right:h22.pcm.left;
+            const auto& d=ch?dry.pcm.right:dry.pcm.left;
+            double ea=0.,eb=0.,ma=0.,mb=0.;
+            for(int i=rate/2;i<n;++i){
+                const double u=a[i]-d[i],v=b[i]-d[i];
+                need(std::isfinite(v),"H22 nonfinite backing");ea+=u*u;eb+=v*v;
+                ma=std::max(ma,std::abs(u-(a[i-1]-d[i-1])));
+                mb=std::max(mb,std::abs(v-(b[i-1]-d[i-1])));
+            }
+            const double gain=10.*std::log10(eb/ea),edge=mb/ma*std::sqrt(ea/eb);
+            std::cout<<"H22_PCM rate="<<rate<<" ch="<<ch<<" wet_dB="<<gain
+                     <<" normalized_max_ratio="<<edge<<std::endl;
+            need(ea>1.&&eb>1.&&std::abs(gain)<.5&&edge<1.15,"H22 PCM regression");
+        }
         need(h20.pcm.left==h20Split.pcm.left&&h20.pcm.right==h20Split.pcm.right&&
              h20.trace.values==h20Split.trace.values,"H20 block parity");
         need(h20Dry.pcm.left==dry.pcm.left&&h20Dry.pcm.right==dry.pcm.right,"H20 dry changed");

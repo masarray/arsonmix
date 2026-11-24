@@ -50,6 +50,13 @@ public:
         return epoch-width*scale>=0.&&age-spread>=2.&&
                age+spread<=static_cast<double>(Capacity-4);
     }
+    // Four-point cubic fractional interpolation. The central two
+    // samples are b,c and f is the fractional age. Exact integer taps.
+    // This is bandwidth preservation, not a vocal-tract estimator.
+    static float cubicTap(float a,float b,float c,float d,float f) noexcept {
+        return b+.5f*f*((c-a)+f*((2.f*a-5.f*b+4.f*c-d)+
+                              f*(3.f*(b-c)+d-a)));
+    }
     // Offline tests only, read after process; no extra RT telemetry.
     double lastEpochForOfflineTests(int v) const noexcept {
         return v>=0&&v<Voices&&states_[static_cast<std::size_t>(v)].haveEpoch?
@@ -66,9 +73,9 @@ public:
                    const std::array<float,Capacity>& input,
                    float sourcePeriod,float ratio,float fixedDelay,
                    float resonanceScale=1.f,bool continuous=true,bool supportAware=true,
-                   bool phaseAware=true,bool admitNew=true,bool recoverEpoch=false,bool reuseFailedSearch=true) noexcept {
+                   bool phaseAware=true,bool admitNew=true,bool recoverEpoch=false,bool reuseFailedSearch=true,bool cubic=false) noexcept {
         const auto out=render<false>(v,time,writeIndex,input,input,input,
-                                     sourcePeriod,ratio,fixedDelay,resonanceScale,continuous,supportAware,phaseAware,admitNew,recoverEpoch,reuseFailedSearch);
+                                     sourcePeriod,ratio,fixedDelay,resonanceScale,continuous,supportAware,phaseAware,admitNew,recoverEpoch,reuseFailedSearch,cubic);
         return {out.left,out.ready,out.coverage,out.recovered,out.recoverySites};
     }
 
@@ -80,7 +87,7 @@ public:
                    const std::array<float,Capacity>& right,
                    float sourcePeriod,float ratio,float fixedDelay) noexcept {
         return render<true>(v,time,writeIndex,epochs,left,right,
-                            sourcePeriod,ratio,fixedDelay,1.f,false,false,false,true,false,true);
+                            sourcePeriod,ratio,fixedDelay,1.f,false,false,false,true,false,true,false);
     }
 private:
     template <bool Stereo>
@@ -89,7 +96,7 @@ private:
                    const std::array<float,Capacity>& left,
                    const std::array<float,Capacity>& right,
                    float sourcePeriod,float ratio,float fixedDelay,
-                   float resonanceScale,bool continuous,bool supportAware,bool phaseAware,bool admitNew,bool recoverEpoch,bool reuseFailedSearch) noexcept {
+                   float resonanceScale,bool continuous,bool supportAware,bool phaseAware,bool admitNew,bool recoverEpoch,bool reuseFailedSearch,bool cubic) noexcept {
         if(v<0||v>=Voices||!std::isfinite(sourcePeriod)||
            !std::isfinite(ratio)||!std::isfinite(fixedDelay)||
            sourcePeriod<8.f||sourcePeriod>3200.f||
@@ -206,7 +213,8 @@ private:
                 const double late=static_cast<double>(time)-(state.nextCenter-width);
                 const double fade=continuous&&late>1.?std::max(2.,period*.25):0.;
                 grain={state.nextCenter,epoch,width,true,scale,gain,
-                       static_cast<double>(time),fade>0.?1./fade:0.,supportAware&&continuous};
+                       static_cast<double>(time),fade>0.?1./fade:0.,supportAware&&continuous,
+                       !Stereo&&cubic&&supportAware&&continuous&&epoch-width*scale>=1.};
                 state.nextSlot=(state.nextSlot+1)%state.grains.size();
                 recovered|=rescue;
             }
@@ -244,7 +252,8 @@ private:
                    (time<2||position<0.||position>static_cast<double>(time-1)||
                     position<static_cast<double>(time>=Capacity-3?time-(Capacity-3):0)))
                     continue;
-                const float sample=grain.supported?readAtKnown(left,time,writeIndex,position):
+                const float sample=grain.cubic?readAtCubic(left,time,writeIndex,position):
+                    grain.supported?readAtKnown(left,time,writeIndex,position):
                     readAt(left,time,writeIndex,position);
                 sumL+=sample*(w*grain.resonanceGain);
             }
@@ -267,7 +276,7 @@ private:
         double center=0.,source=0.,width=1.;bool active=false;
         float resonanceScale=1.f,resonanceGain=1.f;
         double admitted=0.,admissionInv=0.;
-        bool supported=false;
+        bool supported=false,cubic=false;
     };
     struct State {
         std::array<Grain,8> grains{};
@@ -399,6 +408,18 @@ private:
         const auto index=(writeIndex+Capacity-whole)&(Capacity-1);
         return input[index]*(1.f-fractional)+
                input[(index+Capacity-1)&(Capacity-1)]*fractional;
+    }
+    static float readAtCubic(const std::array<float,Capacity>& input,
+          std::uint64_t time,std::size_t writeIndex,double position) noexcept {
+        // Admission requires age >=2, <= Capacity-4 and position >=1
+        // throughout the grain, proving both additional neighbors.
+        const double age=static_cast<double>(time)-position;
+        const auto whole=static_cast<std::size_t>(age);
+        const float f=static_cast<float>(age-static_cast<double>(whole));
+        const auto i=(writeIndex+Capacity-whole)&(Capacity-1);
+        return cubicTap(input[(i+1)&(Capacity-1)],input[i],
+                        input[(i+Capacity-1)&(Capacity-1)],
+                        input[(i+Capacity-2)&(Capacity-1)],f);
     }
     struct StereoTap {float left=0.f,right=0.f;}; // right stores R-L
     static StereoTap readStereoAt(const std::array<float,Capacity>& left,
