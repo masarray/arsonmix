@@ -251,11 +251,12 @@ public:
 class PluginEditorWindow final : public juce::DocumentWindow
 {
 public:
-    PluginEditorWindow (const juce::String& title, juce::AudioProcessorEditor* editor,
+    PluginEditorWindow (const juce::String& title, armix::ui::HostedAudioEditor editorOwner,
                         juce::Component& mixer)
         : DocumentWindow (title, juce::Colour (0xff14212a), allButtons),
-          mixer_ (mixer)
+          mixer_ (mixer), ownedEditor_(std::move(editorOwner))
     {
+        auto* editor=ownedEditor_.get();
         // Reverb-Sis retains its existing native editor/lease but owns
         // its own compact faceplate chrome, like other built-in FX.
         const bool reverbFaceplate=dynamic_cast<armix::builtin_fx::VocalReverbEditor*>(editor)!=nullptr;
@@ -265,7 +266,9 @@ public:
             setTitleBarHeight(0);
         } else setUsingNativeTitleBar (true);
         setIcon (approvedAppIcon());
-        setContentOwned (editor, true);
+        // The RAII owner notifies the processor before deletion, including
+        // exceptions during construction. JUCE window is presentation only.
+        setContentNonOwned (editor, true);
         // Do not offer false host resizing for fixed-geometry built-in FX.
         setResizable (editor->isResizable(), false);
         if(reverbFaceplate)centreWithSize(getWidth(),getHeight());
@@ -288,12 +291,17 @@ public:
         if (!isVisible()) setVisible (true);
         toFront (true);
     }
+    ~PluginEditorWindow() override {
+        clearContentComponent();
+        ownedEditor_.reset(); // unregister active editor before the lease is released
+    }
     bool presentationConfirmed() {
         return armix::ui::verifyOwnedFloatingPresentation(*this,mixer_);
     }
     void closeButtonPressed() override { setVisible (false); }
 private:
     juce::Component& mixer_; // ConsoleWindow outlives all editor windows.
+    armix::ui::HostedAudioEditor ownedEditor_;
     bool everPresented_=false;
 };
 
@@ -2065,9 +2073,9 @@ private:
         auto error=prepareLogicalFx(logicalMixer_.workspace(),{channel},slot,prepared.insert,prepared.processor);
         if(error.isEmpty()) {
             try {
-                if(auto* editor=prepared.processor->createEditorIfNeeded()) {
+                if(auto editor=armix::ui::createHostedAudioEditor(*prepared.processor)) {
                     prepared.window=std::make_unique<PluginEditorWindow>(
-                        prepared.processor->getName(),editor,*this);
+                        prepared.processor->getName(),std::move(editor),*this);
                     if(static_cast<bool>(request.getProperty("recenter",false)))
                         prepared.window->present(true); // first-open must also centre on mixer
                     prepared.workspaceToken=logicalMixer_.workspace().workspaceToken();
@@ -7686,7 +7694,8 @@ private:
                         else
 #endif
                             if(!keepOtherVendorWindow)closePluginEditor();
-                        if(auto* editor=owner->processor->createEditorIfNeeded()) {
+                        if(auto ownedEditor=armix::ui::createHostedAudioEditor(*owner->processor)) {
+                            auto* editor=ownedEditor.get();
 #if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
                             if(auto* imer=dynamic_cast<
                                 armix::builtin_fx::ImerSipP92Editor*>(editor)) {
@@ -7930,7 +7939,7 @@ private:
                                 entry->slot=slot;entry->instanceId=token;
                                 entry->processor=owner->processor.get();
                                 entry->window=std::make_unique<PluginEditorWindow>(
-                                    owner->processor->getName(),editor,*this);
+                                    owner->processor->getName(),std::move(ownedEditor),*this);
                                 if(static_cast<bool>(args.getProperty("recenter",false)))
                                     entry->window->present(true);
                                 createdWindow=entry->window.get();
@@ -7939,7 +7948,7 @@ private:
                                 shownOwner=owner;
                                 shownEpoch=retainedEpoch;
                                 shownWindow=std::make_unique<PluginEditorWindow>(
-                                    owner->processor->getName(),editor,*this);
+                                    owner->processor->getName(),std::move(ownedEditor),*this);
                                 if(static_cast<bool>(args.getProperty("recenter",false)))
                                     shownWindow->present(true); // new HWND: centre on mixer too
                                 shownProcessor=owner->processor.get();
@@ -8821,10 +8830,10 @@ private:
                 else
                 {
                     closePluginEditor();
-                    if (auto* editor = processor->createEditorIfNeeded())
+                    if (auto editor = armix::ui::createHostedAudioEditor(*processor))
                     {
                         editorWindow_ = std::make_unique<PluginEditorWindow> (
-                            processor->getName(), editor, *this);
+                            processor->getName(), std::move(editor), *this);
                         editorProcessor_=processor;
                     }
                     else
