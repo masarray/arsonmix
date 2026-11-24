@@ -2424,7 +2424,7 @@
     const current=controller?.state()?.current;
     const view=deviceVM.patchMatrix(hardware,side);
     const row=view.rows.find(x=>x.id===id&&x.editable);
-    if(!row||!view.live||!deviceReady()||!matrixReady(hardware)||matrixBusy()||
+    if(!row||!view.live||!deviceReady()||!matrixReady(hardware)||matrixBusy()||namedPatchPending||
        !lease||lease.config!==hardware.hardwareConfiguration||
        lease.epoch!==hardware.device.epoch||
        lease.authority!==view.authority||lease.revision!==view.revision||
@@ -2462,7 +2462,9 @@
   function namedPatchChoices(side,model,next){
     const entries=deviceInventory?.namedPatches?.entries;
     if(!Array.isArray(entries)||!matrixReady(next))return [];
-    return entries.filter(p=>p?.side===side&&p.available===true&&typeof p.id==="string")
+    return entries.filter(p=>p?.side===side&&p.available===true&&typeof p.id==="string"&&
+        model.pins.some(pin=>pin.port===p.left&&pin.label===p.leftName)&&
+        (p.right===-1||model.pins.some(pin=>pin.port===p.right&&pin.label===p.rightName)))
       .map(p=>({id:p.id,name:p.name,choice:side==="input"?
         deviceVM.physicalInputChoice(next,p.mode,p.left,p.right):
         model.choices.find(x=>x.left===p.left&&x.right===p.right)}))
@@ -2491,9 +2493,12 @@
     const remove=document.createElement("button");remove.type="button";remove.textContent="Remove";
     const hint=document.createElement("span");hint.className="armix-device-note";
     hint.textContent=data.readOnly?data.error:"Presets do not change any mixer route until row Apply.";
-    const choice=()=>side==="input"?deviceVM.physicalInputChoice(next,mode.value,Number(left.value),
-      mode.value==="MONO"?-1:Number(right.value)):
-      model.choices.find(x=>x.left===Number(left.value)&&x.right===Number(right.value));
+    const choice=()=>{
+      if(left.value===""||(mode.value==="STEREO"&&right.value===""))return null;
+      return side==="input"?deviceVM.physicalInputChoice(next,mode.value,Number(left.value),
+        mode.value==="MONO"?-1:Number(right.value)):
+        model.choices.find(x=>x.left===Number(left.value)&&x.right===Number(right.value));
+    };
     const locked=busy||!!namedPatchPending||data.readOnly===true;
     const update=()=>{
       right.hidden=mode.value==="MONO";
@@ -2516,7 +2521,7 @@
       const a=deviceInventory.active,c=choice();
       if(operation==="SAVE"&&!c)return;
       const requestId="io-preset-"+(++namedPatchSerial);
-      namedPatchPending=requestId;
+      namedPatchPending={requestId,phase:"APPLYING",revision:data.revision};
       backend.emitEvent("arMixAction",{action:"audioNamedPatchEdit",requestId,operation,
         revision:data.revision,deviceGeneration:a.deviceGeneration,backend:a.backend,
         captureDevice:a.captureDevice,playbackDevice:a.playbackDevice,
@@ -2526,10 +2531,11 @@
         rightName:model.pins.find(p=>p.port===c?.right)?.label||""});
       paintPhysicalOutputs(hardware);
       window.setTimeout(()=>{
-        if(namedPatchPending!==requestId)return;
+        if(namedPatchPending?.requestId!==requestId)return;
         namedPatchPending=null;
-        nativeToast("I/O preset timed out · refreshing saved presets");
-        backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+        // Do not continue to offer stale choices after uncertain disk commit.
+        if(deviceInventory)deviceInventory={...deviceInventory,namedPatches:null};
+        nativeToast("I/O preset confirmation timed out · reopen Audio I/O");
         paintPhysicalOutputs(hardware);
       },5000);
     };
@@ -2541,7 +2547,7 @@
     const host=devicePanel?.querySelector("[data-audio-"+side+"-grid]");
     if(!host)return;
     const model=deviceVM.patchMatrix(next,side);
-    const ready=matrixReady(next),busy=matrixBusy();
+    const ready=matrixReady(next),busy=matrixBusy()||Boolean(namedPatchPending);
     const signature=JSON.stringify([model,busy,ready,next?.hardwareConfiguration,next?.device?.epoch,
       deviceInventory?.namedPatches,namedPatchPending]);
     const lease={config:next?.hardwareConfiguration,epoch:next?.device?.epoch,authority:model.authority,
@@ -3488,12 +3494,28 @@
   }
   if(connected){
     backend.addEventListener("arMixNamedPatchAck",ack=>{
-      if(!namedPatchPending||ack?.requestId!==namedPatchPending)return;
+      if(namedPatchPending?.phase!=="APPLYING"||
+         ack?.requestId!==namedPatchPending.requestId)return;
+      if(ack.ok!==true){
+        namedPatchPending=null;
+        nativeToast(ack.error||"I/O preset rejected");
+        paintPhysicalOutputs(hardware);return;
+      }
+      namedPatchPending={...namedPatchPending,phase:"VERIFYING"};
+      backend.emitEvent("arMixAction",{action:"audioNamedPatchRead",requestId:ack.requestId});
+    });
+    backend.addEventListener("arMixNamedPatchReadback",message=>{
+      if(namedPatchPending?.phase!=="VERIFYING"||
+         message?.requestId!==namedPatchPending.requestId)return;
+      const a=deviceInventory?.active,b=message.active,data=message.namedPatches;
+      const same=a&&b&&["backend","captureDevice","playbackDevice","deviceGeneration","rate","buffer"]
+        .every(k=>a[k]===b[k])&&deviceVM.setupMatrixDeviceMatches({active:b},hardware);
+      if(!same||!Number.isSafeInteger(data?.revision)||data.revision<=namedPatchPending.revision||
+         !Array.isArray(data.entries))return;
       namedPatchPending=null;
-      // Request an independent native inventory. Never treat ACK metadata
-      // as an installed route or overwrite the current hardware draft.
-      nativeToast(ack.ok===true?"I/O preset saved":ack.error||"I/O preset rejected");
-      backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+      // Refresh only this independent metadata, not the current device draft.
+      deviceInventory={...deviceInventory,namedPatches:data};
+      nativeToast("I/O preset saved");
       paintPhysicalOutputs(hardware);
     });
     backend.addEventListener("arMixAudioDeviceInventory",inventory=>{

@@ -1728,7 +1728,8 @@ if(BUILD_TESTING)
   # Presentation-only native identity; no audio-thread access.
   juce_add_console_app(ARMixChannelAppearanceTests PRODUCT_NAME "ArSonMix Channel Appearance Tests")
   target_sources(ARMixChannelAppearanceTests PRIVATE
-      tests/native_channel_appearance_store_test.cpp src/NativeChannelAppearanceStore.h)
+      tests/native_channel_appearance_store_test.cpp src/NativeChannelAppearanceStore.h
+      src/NativeNamedPatchStore.h)
   target_link_libraries(ARMixChannelAppearanceTests PRIVATE
       juce::juce_core juce::juce_recommended_config_flags)
   target_compile_features(ARMixChannelAppearanceTests PRIVATE cxx_std_20)

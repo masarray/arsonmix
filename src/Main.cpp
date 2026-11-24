@@ -8524,6 +8524,18 @@ private:
                 browser_.emitEventIfBrowserIsVisible ("arMixDiagnosticReportCopied", juce::var (response.release()));
             emitNotice ("Audio report copied! Paste it directly into the engineering chat.");
         }
+        else if (action == "audioNamedPatchRead")
+        {
+            const auto request=args.getProperty("requestId",{}).toString();
+            if(request.startsWith("io-preset-")&&request.length()<=64&&browser_.loaded){
+                const auto active=currentDeviceSnapshot();
+                auto data=std::make_unique<juce::DynamicObject>();
+                data->setProperty("requestId",request);
+                data->setProperty("active",active);
+                data->setProperty("namedPatches",namedPatches_.snapshot(active));
+                browser_.emitEventIfBrowserIsVisible("arMixNamedPatchReadback",juce::var(data.release()));
+            }
+        }
         else if (action == "audioNamedPatchEdit")
         {
             const auto request=args.getProperty("requestId",{}).toString();
@@ -8536,7 +8548,6 @@ private:
             ack->setProperty("requestId",request);
             ack->setProperty("ok",error.isEmpty());
             ack->setProperty("error",error);
-            ack->setProperty("namedPatches",namedPatches_.snapshot(active));
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixNamedPatchAck",juce::var(ack.release()));
         }
         else if (action == "audioDeviceInventory")
