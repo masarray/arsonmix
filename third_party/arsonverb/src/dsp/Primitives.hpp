@@ -38,6 +38,26 @@ inline float lowPassCoeff(float cutoff, float sampleRate) noexcept {
     return 1.0f - fastExpNeg(2.0f * kPi * cutoff / sampleRate);
 }
 
+// Two identical one-pole HP stages have a combined -6 dB knee if
+// each stage is set to the displayed cutoff. For the musical profile,
+// solve their actual discrete-time response for combined -3 dB there.
+// HP(z) = pole*(1-z^-1)/(1-pole*z^-1); q=1/pole, y=q-1.
+// With d=4*sin(w/2)^2, |HP|^2=d/(y*y+(1+y)*d).
+// Set |HP|^2=1/sqrt(2) so the two-stage amplitude is 1/sqrt(2).
+// Only prepare or coalesced cutoff automation calls this; no new per-sample
+// work, filter state, allocations or feedback changes.
+inline float musicalWetLowCutCoeff(float cutoff, float sampleRate) noexcept {
+    cutoff = clamp(cutoff, 10.0f, sampleRate * 0.44f);
+    const float x = kPi * cutoff / sampleRate;
+    // Reverb parameter range 30..1200 Hz, fs >= 8 kHz: x <= .472.
+    const float x2 = x*x;
+    const float s = x*(1.0f+x2*(-1.0f/6.0f+x2/120.0f));
+    const float d = 4.0f*s*s;
+    constexpr float k = 0.41421356237309505f; // sqrt(2)-1
+    const float y = (std::sqrt(d*d+4.0f*d*k)-d)*0.5f;
+    return y/(1.0f+y);
+}
+
 struct Delay {
     std::vector<float> data;
     std::size_t mask = 0;

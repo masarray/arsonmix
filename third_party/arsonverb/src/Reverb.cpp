@@ -346,7 +346,9 @@ void Engine::prepare(double sampleRate, bool musicalReturn) {
     s.cachedHighCut = s.smooth[static_cast<unsigned>(Parameter::HighCutHz)];
     s.coefficientCooldownSamples = 0;
     s.hfFeedbackCoeff = s.targetHF = lowPassCoeff(s.cachedDamping, fs);
-    s.wetLowCoeff = s.targetLow = lowPassCoeff(s.cachedLowCut, fs);
+    s.wetLowCoeff = s.targetLow = musicalReturn
+        ? detail::musicalWetLowCutCoeff(s.cachedLowCut, fs)
+        : lowPassCoeff(s.cachedLowCut, fs);
     const float highCut = s.smooth[static_cast<unsigned>(Parameter::HighCutHz)];
     s.wetHighCoeff = s.targetHigh = lowPassCoeff(highCut, fs);
     // Bright settings transition from a 12dB/oct to a gentler 6dB/oct
@@ -465,7 +467,9 @@ void Engine::process(const float* inputLeft, const float* inputRight,
                 s.cachedDecay, s.cachedSize, s.cachedDamping);
         if (target[idx(Parameter::LowCutHz)] != s.cachedLowCut) {
             s.cachedLowCut = target[idx(Parameter::LowCutHz)];
-            s.targetLow = lowPassCoeff(s.cachedLowCut, s.sampleRate);
+            s.targetLow = s.musicalReturn
+                ? detail::musicalWetLowCutCoeff(s.cachedLowCut, s.sampleRate)
+                : lowPassCoeff(s.cachedLowCut, s.sampleRate);
             s.targetBassCoeff = lowPassCoeff(bassDecayCutoff(s.cachedLowCut), s.sampleRate);
             s.targetBassDepth = bassDecayDepth(s.cachedLowCut);
             anyCoefficientChanged = true;

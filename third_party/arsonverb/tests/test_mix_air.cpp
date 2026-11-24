@@ -89,7 +89,69 @@ static double wetTone(int mode, float hz, float highCut) {
     return std::sqrt(energy/(200.0*128.0*2.0));
 }
 
+// Independent complex magnitude formula for the real HP primitive.
+// A pair of equal stages has amplitude equal to the single-stage power.
+static double cascadeAmplitude(double coeff,double hz,double fs) {
+    const double pole=1.0-coeff;
+    const double s=std::sin(3.14159265358979323846*hz/fs);
+    const double d=4.0*s*s;
+    return pole*pole*d/(coeff*coeff+pole*d);
+}
+static double bodyTone(int mode,double fs,float cutoff,bool musical) {
+    arverb::Engine engine;
+    engine.loadPreset(arverb::Preset::VocalPlate);
+    engine.setAlgorithm(static_cast<arverb::Algorithm>(mode));
+    engine.setParameter(arverb::Parameter::LowCutHz,cutoff);
+    engine.setParameter(arverb::Parameter::Mix,1.f);
+    engine.setParameter(arverb::Parameter::DuckAmount,0.f);
+    engine.setParameter(arverb::Parameter::ModDepthMs,0.f);
+    engine.prepare(fs,musical);
+    std::array<float,128> l{},r{},a{},b{};
+    const int blocks=static_cast<int>(3.0*fs/128);
+    double energy=0.0;
+    for(int block=0;block<blocks;++block) {
+        for(int j=0;j<128;++j)
+            l[j]=r[j]=static_cast<float>(.12*std::sin(
+                6.283185307179586*cutoff*(block*128+j)/fs));
+        engine.process(l.data(),r.data(),a.data(),b.data(),128);
+        if(block>=blocks*2/3) for(int j=0;j<128;++j) {
+            check(std::isfinite(a[j])&&std::isfinite(b[j]),"finite body tone");
+            energy+=double(a[j])*a[j]+double(b[j])*b[j];
+        }
+    }
+    return std::sqrt(energy/(2.0*128*(blocks-blocks*2/3)));
+}
 int main() {
+    // Verify the actual discrete-time knee, not an analog approximation.
+    // Preserve sub-cutoff rejection and a monotonic high-pass response.
+    for(float fs:{8000.f,44100.f,48000.f,96000.f,192000.f}) {
+        for(float cutoff:{30.f,150.f,260.f,1200.f}) {
+            const float c=arverb::detail::musicalWetLowCutCoeff(cutoff,fs);
+            const double knee=cascadeAmplitude(c,cutoff,fs);
+            check(c>0.f&&c<1.f&&std::abs(knee-.70710678118)<.0003,
+                  "musical low-cut displayed frequency is actual -3dB knee");
+            check(cascadeAmplitude(c,cutoff*.25,fs)<.18 &&
+                  cascadeAmplitude(c,cutoff*2.0,fs)>knee,
+                  "retain low-frequency rejection and monotonic response");
+        }
+    }
+    // At the cutoff itself, compare real wet engine PCM with independent
+    // legacy profile, removing its known 3x full-wet gain difference.
+    // Identical tank and zero duck/modulation isolate the filter response.
+    for(double fs:{44100.0,48000.0,96000.0}) for(int mode=0;mode<4;++mode) {
+        constexpr float cutoff=150.f;
+        const double legacy=bodyTone(mode,fs,cutoff,false);
+        const double musical=bodyTone(mode,fs,cutoff,true);
+        const double expected=.70710678118/cascadeAmplitude(
+            arverb::detail::lowPassCoeff(cutoff,static_cast<float>(fs)),cutoff,fs);
+        check(legacy>1.e-6&&musical>1.e-6,"measurable vocal body at cutoff");
+        const double ratio=musical/(3.0*legacy);
+        std::printf("Reverb-Sis body fs=%.0f mode=%d normalized=%.3f expected=%.3f\n",
+                    fs,mode,ratio,expected);
+        check(std::abs(ratio/expected-1.0)<.04,
+              "actual musical wet body follows calibrated knee");
+    }
+    std::puts("PASS Reverb-Sis body calibration: discrete knee and actual 4-mode wet PCM");
     // These must use the exact gain law; with 36ms predelay, the first
     // sample after prepare is dry only, not phase-cancelled wet energy.
     for(float mix:{0.f,0.5f,1.f}) {
@@ -127,8 +189,9 @@ int main() {
         }
     }
     // Musical profile: actual mono-fold output, with nonzero ducking.
-    // No feedback changes; full-wet profile = 2x base trim * 1.5x
-    // high-Mix compensation at Duck=0. Exact measured PCM scaling.
+    // Full-wet profile retains the 3x gain law and now has calibrated
+    // low-cut response; cross-profile RMS is no longer a pure scalar.
+    // The exact live Mix sum is still independently tested below.
     for(int mode=0;mode<4;++mode) {
         const double oldWet=render(mode,1.f,true,false,0.f);
         const double newWet=render(mode,1.f,true,true,0.f);
@@ -136,7 +199,8 @@ int main() {
         const double dry=render(mode,0.f,true,true,0.f);
         std::printf("Reverb-Sis mode=%d dry=%.6f oldWet=%.6f wet=%.6f ducked=%.6f\n",
                     mode,dry,oldWet,newWet,sung);
-        check(std::abs(newWet/oldWet-3.0)<.001,"calibrated +9.54 dB full-wet return");
+        check(newWet/oldWet>2.95&&newWet/oldWet<6.0,
+              "full-wet return retains gain improvement and bounded vocal body");
         check(sung>newWet*.65,"normal duck cannot erase the wet return");
         check(sung>dry*.12,"audible wet-heavy mono fold with real duck");
         const double voiceDry=render(mode,0.f,true,true,.22f,true);
@@ -164,8 +228,10 @@ int main() {
         }
     }
     // Exercise actual PCM during live Mix changes, not only freshly
-    // prepared steady states. Independent legacy pure-wet tank is the
-    // reference; same excitation/algorithm/parameters and Duck=0. This
+    // prepared steady states. Independent pure-wet musical tank is the
+    // reference (same calibrated cutoff, excitation, algorithm and Duck=0).
+    // Normalize by its 1.5x endpoint wet gain; the exact dry/wet sum test
+    // remains independent of the tank's spectral color. This
     // verifies the whole dry/wet sum, including no hidden dry at 100%.
     for(const double fs : {44100.0,48000.0,96000.0}) {
         for(int mode=0;mode<4;++mode) {
@@ -176,7 +242,7 @@ int main() {
                 engine->setParameter(arverb::Parameter::DuckAmount,0.f);
                 engine->setParameter(arverb::Parameter::Mix,engine==&reference?1.f:.28f);
             }
-            reference.prepare(fs,false);
+            reference.prepare(fs,true);
             musical.prepare(fs,true);
             constexpr int n=128;
             std::array<float,n> l{},r{},a{},b{},c{},d{};
@@ -207,12 +273,12 @@ int main() {
                     dryGain+=alpha*(dryTarget-dryGain);
                     wetGain+=alpha*(wetTarget-wetGain);
                     check(std::isfinite(c[i])&&std::isfinite(d[i]),"live Mix finite");
-                    check(std::abs(c[i]-(dryGain*l[i]+2.0*wetGain*a[i]))<.0004 &&
-                          std::abs(d[i]-(dryGain*r[i]+2.0*wetGain*b[i]))<.0004,
+                    check(std::abs(c[i]-(dryGain*l[i]+wetGain*a[i]/1.5))<.0004 &&
+                          std::abs(d[i]-(dryGain*r[i]+wetGain*b[i]/1.5))<.0004,
                           "live Mix gain law, no phase inversion or hidden dry");
                     if(block>=3*stage-4&&block<3*stage)
-                        check(std::abs(c[i]-3.f*a[i])<.0004 &&
-                              std::abs(d[i]-3.f*b[i])<.0004,
+                        check(std::abs(c[i]-a[i])<.0004 &&
+                              std::abs(d[i]-b[i])<.0004,
                               "settled full wet contains only calibrated wet");
                 }
             }
