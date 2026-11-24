@@ -351,6 +351,69 @@ def verify_logical_outputs(page,out):
     assert not page.evaluate("()=>window.__actions.some(x=>x.action==='routingPhysicalExternalOutput')")
     assert not errors,errors
 
+def verify_io_defaults(page,out):
+    errors=[]
+    page.on("pageerror",lambda e:errors.append(str(e)))
+    page.add_init_script("""window.__nativeListeners=new Map();window.__actions=[];
+      window.confirm=()=>true;
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
+        addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+      }};""")
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+    state=snapshot()
+    state["productionCallbackLive"]=True
+    state["device"].update(backend="ASIO",captureDevice="Test ASIO",playbackDevice="Test ASIO",
+        outputArmed=False,enabledOutputs=list(range(6)),
+        outputEndpoints=[{"id":"out:"+str(n),"port":n,"callback":n,
+            "label":"ASIO "+str(n+1),"active":True} for n in range(6)])
+    port={"id":"9007199254740999","name":"Stage Amp","format":"STEREO","bound":False}
+    state.update(physicalMainOutputs=[0,1],physicalMonitorOutputs=[],externalOutputs=[],
+        externalRevision="2",physicalBusPatchSupported=True,physicalBusOutputObserved=True,
+        physicalBusSecondaryArmed=False,operatorOutputMuted=True,
+        logicalInputRegistry={"revision":"1","ports":[],"references":[]},
+        logicalOutputRegistry={"revision":"2","ports":[port],"references":[]},
+        ioDefaults={"revision":"0","readOnly":False,"canLoad":False,"inputs":0,"outputs":0})
+    emit(page,"arMixConsoleSnapshot",state)
+    open_verified_audio_io(page,state,"routing")
+    save=page.get_by_role("button",name="Make Default",exact=True)
+    load=page.get_by_role("button",name="Load Default",exact=True)
+    clear=page.get_by_role("button",name="Clear Default",exact=True)
+    assert save.is_enabled() and load.is_disabled() and clear.is_disabled()
+    save.click()
+    req=page.evaluate("()=>window.__actions.filter(x=>x.action==='audioIoDefaults').at(-1)")
+    assert req["operation"]=="SAVE" and req["revision"]=="0" and req["outputRevision"]=="2"
+    assert req["confirmed"] is True and "ports" not in req
+    emit(page,"arMixIoDefaultsAck",{"requestId":req["requestId"],"ok":True,"revision":"1",
+        "inputRevision":"1","outputRevision":"2"})
+    assert save.is_disabled() and clear.is_disabled()
+    state["ioDefaults"]={"revision":"1","readOnly":False,"canLoad":False,"inputs":0,"outputs":1}
+    emit(page,"arMixConsoleSnapshot",state)
+    assert save.is_enabled() and clear.is_enabled() and load.is_disabled()
+    # Native authority reports a pristine empty mixer; no browser inference.
+    state["logicalOutputRegistry"]={"revision":"3","ports":[],"references":[]}
+    state["ioDefaults"]["canLoad"]=True
+    emit(page,"arMixConsoleSnapshot",state)
+    assert save.is_disabled() and load.is_enabled()
+    load.click()
+    req=page.evaluate("()=>window.__actions.filter(x=>x.action==='audioIoDefaults').at(-1)")
+    assert req["operation"]=="LOAD" and req["revision"]=="1" and req["outputRevision"]=="3"
+    emit(page,"arMixIoDefaultsAck",{"requestId":req["requestId"],"ok":True,"revision":"1",
+        "inputRevision":"2","outputRevision":"4"})
+    assert load.is_disabled() and save.is_disabled()
+    state["logicalInputRegistry"]["revision"]="2"
+    state["logicalOutputRegistry"]={"revision":"4","ports":[port],"references":[]}
+    state["ioDefaults"]["canLoad"]=False
+    emit(page,"arMixConsoleSnapshot",state)
+    assert save.is_enabled() and load.is_disabled()
+    clear.click()
+    req=page.evaluate("()=>window.__actions.filter(x=>x.action==='audioIoDefaults').at(-1)")
+    emit(page,"arMixIoDefaultsAck",{"requestId":req["requestId"],"ok":False,"error":"fixture reject"})
+    assert clear.is_enabled()
+    assert not page.evaluate("()=>window.__actions.some(x=>x.action==='routingLogicalOutputEdit')")
+    assert not errors,errors
+
 def main():
     with tempfile.TemporaryDirectory(prefix="armix-audio-io-") as tmp,sync_playwright() as p:
         out=Path(tmp)
@@ -371,6 +434,9 @@ def main():
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_logical_outputs(page,out)
+        page.close()
+        page=browser.new_page(viewport={"width":1366,"height":900})
+        verify_io_defaults(page,out)
         page.close()
         browser.close()
     print("PASS compiled Audio I/O pin discovery, stereo draft/ACK/readback, external output and muted bus remap")
