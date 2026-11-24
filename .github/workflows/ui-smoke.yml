@@ -376,7 +376,7 @@ jobs:
   studio-audio-io:
     name: Studio Audio I/O real Chromium routing interaction
     needs: quick
-    if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/io-studio-workflow-') }}
+    if: ${{ github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feature/io-studio-workflow-') || startsWith(github.head_ref, 'feature/io-atomic-output-') || startsWith(github.head_ref, 'staging/io-reverb-integrated-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
