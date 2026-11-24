@@ -5,18 +5,38 @@
   "approvedSourceLock": "config/immersib_approved_pcm_sources.json",
   "optimizedPath": "engine/builtin_fx/sonku/SonKuEarlyReflections.h",
   "approvedOriginalBlob": "5a6a9b48cfdc60729f130c61110c8d8590b20f35",
-  "optimizedImplementationBlob": "94b90db3d699d9f26601448a38b2f489f51b5fb7",
-  "optimization": "static six-wall geometry target cache plus guarded bitwise-stationary HRIR kernel slew; no coefficient, preset, FIR sample accumulation order or audio graph change",
+  "optimizedImplementationBlob": "80dd873b130cf808c302b4e4b4309a605c2a986a",
+  "optimization": "static six-wall geometry target cache plus guarded bitwise-stationary HRIR kernel slew; no coefficient, preset, FIR sample accumulation order or audio graph change plus stationary non-fused contiguous FIR dispatch hoisted out of the ordered tap loop",
   "acceptedAudioPolicy": "PCM_BIT_EXACT_REQUIRED; do not treat updated blob as re-approval or sonic retuning",
   "provenLinux": {
-    "run": "https://github.com/masarray/arsonmix/actions/runs/45094684247",
-    "pcm": "14/14 original-source versus real candidate tests bitwise equal on 44100/48000; 7 presets; ROOM edits/wrap/input cases",
-    "isolatedStage": "256-frame p50 reference approximately 674-675us vs candidate approximately 395-399us on same runner, four measured configurations; not full mixer CPU"
+    "run": "https://github.com/masarray/arsonmix/actions/runs/45365991378",
+    "pcm": "1720320 bytes identical, three-way, seven scenes/two rates; 24 paired stream fingerprints match",
+    "p50": "14.7–15.3% lower than previous implementation"
   },
   "notYetQualified": [
-    "Windows MSVC approved source vs candidate PCM",
-    "full-branded ImmerSIB host and native CTest",
+    "exact production-header promotion requalification under Linux and MSVC",
+    "full-branded native JUCE CTest, integrated mixer and installer",
     "protected exact-SHA integration",
     "owner low-spec ASIO hardware field validation"
-  ]
+  ],
+  "previousImplementation": {
+    "blob": "94b90db3d699d9f26601448a38b2f489f51b5fb7",
+    "optimization": "static six-wall geometry target cache plus guarded bitwise-stationary HRIR kernel slew; no coefficient, preset, FIR sample accumulation order or audio graph change",
+    "provenLinux": {
+      "run": "https://github.com/masarray/arsonmix/actions/runs/45094684247",
+      "pcm": "14/14 original-source versus real candidate tests bitwise equal on 44100/48000; 7 presets; ROOM edits/wrap/input cases",
+      "isolatedStage": "256-frame p50 reference approximately 674-675us vs candidate approximately 395-399us on same runner, four measured configurations; not full mixer CPU"
+    },
+    "provenWindows": {
+      "run": "https://github.com/masarray/arsonmix/actions/runs/45095335509",
+      "pcm": "1720320 bytes equal",
+      "p50": "approximately 1.5% lower at 48k/256"
+    }
+  },
+  "provenWindows": {
+    "run": "https://github.com/masarray/arsonmix/actions/runs/45380667060",
+    "pcm": "1720320 bytes identical, three-way, seven scenes/two rates; 24 paired stream fingerprints match; SHA256 27a72ceb61b25208eee0b1cd0ad87cb225ea07ad9e8e8ccbf7086bfba31c7cf8",
+    "p50": "51.8–52.1% lower than previous implementation; isolated DSP only",
+    "p99": "26.9–51.1% lower; candidate zero over-budget blocks"
+  }
 }
