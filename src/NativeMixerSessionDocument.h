@@ -112,6 +112,54 @@ struct LogicalInputProjection final {
         doc.request.sources=std::move(sources);
         return true;
     }
+    enum class Operation { add,rename,remove,bind,unbind,assign,clear };
+    struct Edit final {
+        Operation operation=Operation::add;
+        Registry::PortId port=0;
+        Registry::ChannelId channel=0;
+        std::string name;
+        Registry::Format format=Registry::Format::mono;
+        Registry::Binding binding;
+    };
+    // Prepare a complete candidate without changing the accepted document.
+    static bool edit(MixerSessionDocument& doc,const Edit& e,
+                     const Registry::Inventory& live,bool& graphChanged) {
+        if(doc.logicalOnly||!live.authorized||!live.epoch)return false;
+        auto candidate=doc;
+        auto& registry=candidate.logicalInputs;
+        const auto used=std::any_of(registry.references().begin(),registry.references().end(),
+            [&](const auto& r){return r.port==e.port;});
+        bool rebuild=false;
+        switch(e.operation){
+            case Operation::add: if(!registry.add(e.port,e.name,e.format))return false;break;
+            case Operation::rename: if(!registry.rename(e.port,e.name))return false;break;
+            case Operation::remove: if(!registry.erase(e.port))return false;break;
+            case Operation::bind:
+                if(!registry.bind(e.port,e.binding,live,live.epoch))return false;
+                rebuild=used;break;
+            case Operation::unbind:
+                if(!registry.unbind(e.port))return false;
+                rebuild=used;break;
+            case Operation::assign:
+            case Operation::clear:{
+                const auto* row=candidate.roster.find({e.channel});
+                if(!row||row->role!=ChannelRole::input||
+                   (e.operation==Operation::assign&&!e.port)||
+                   (e.operation==Operation::clear&&!registry.assignedPort(e.channel)))return false;
+                if(!registry.assign(e.channel,e.operation==Operation::clear?0:e.port))return false;
+                // Explicit source replacement only for this ChannelId.
+                std::erase_if(candidate.request.sources,[&](const auto& p){return p.id.value==e.channel;});
+                std::erase_if(candidate.waitingAsioInputs,[&](const auto& p){return p.id.value==e.channel;});
+                rebuild=true;break;
+            }
+            default:return false;
+        }
+        if(rebuild){
+            strip(candidate);
+            if(!prepare(candidate,live))return false;
+        }
+        doc=std::move(candidate);graphChanged=rebuild;return true;
+    }
     // Captures/retained rebind must not retain an old callback projection
     // as an independent direct source. The logical identity is authoritative.
     static void strip(MixerSessionDocument& doc) {

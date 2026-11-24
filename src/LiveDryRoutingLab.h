@@ -667,7 +667,9 @@ public:
                 if(found!=patches.end()) {
                     found->inputL=callbackLeft;
                     found->inputR=mode=="STEREO"?callbackRight:-1;
-                    (void)logicalInputs_.assign(id.value,0);
+                    if(logicalInputs_.assignedPort(id.value)){
+                        (void)logicalInputs_.assign(id.value,0);++logicalInputRevision_;
+                    }
                 }
             }
         }
@@ -2001,7 +2003,9 @@ public:
             nativeAccepted_.pcmRevision=published.revision;
             reapplyExternalOutputsSameEpoch();
             std::erase_if(waitingAsioInputs_,[id](const auto& pin){return pin.id==id;});
-            (void)logicalInputs_.assign(id.value,0);
+            if(logicalInputs_.assignedPort(id.value)){
+                (void)logicalInputs_.assign(id.value,0);++logicalInputRevision_;
+            }
             nativeStructureLive_=true;
             nativeMeterEpoch_.store(0,std::memory_order_release);
             reply.accepted=true;reply.error="";
@@ -2110,7 +2114,9 @@ public:
             std::erase_if(waitingAsioInputs_,[channel](const auto& pin){return pin.id==channel;});
             // Explicit direct or PLAYER source replaces this channel's
             // logical reference only after the native publication succeeds.
-            (void)logicalInputs_.assign(channel.value,0);
+            if(logicalInputs_.assignedPort(channel.value)){
+                (void)logicalInputs_.assign(channel.value,0);++logicalInputRevision_;
+            }
             nativeStructureLive_=true; // M4 source roster no longer authoritative
             nativeMeterEpoch_.store(0,std::memory_order_release);
             reply.accepted=true;reply.error="";
@@ -2121,6 +2127,92 @@ public:
             reply.error="NATIVE_SOURCE_PREPARE_FAILED";return reply;
         }
     }
+    // Metadata-only edits do not rebuild PCM. A used port remap prepares
+    // all ChannelId references and publishes through the existing owner once.
+    NativeBusResult editNativeLogicalInput(std::uint64_t ep,std::uint64_t rev,
+            std::uint64_t rosterRev,std::uint64_t logicalRev,
+            armix::session::LogicalInputProjection::Edit edit,
+            const armix::session::HardwareBinding& binding,
+            const armix::device::JuceActivePortSnapshot& pins,
+            const std::function<void()>& beforePublish={}) {
+        using namespace armix::mixer;
+        using P=armix::session::LogicalInputProjection;
+        using R=armix::device::LogicalInputRegistry;
+        NativeBusResult reply;
+        reply.pcmRevision=nativeAccepted_.pcmRevision;
+        reply.rosterRevision=nativeAccepted_.graph.roster.revision();
+        reply.error="LOGICAL_INPUT_STALE_OR_UNAVAILABLE";
+        if(!channelIdPhysicalPcmActive()||!ready()||!nativeAccepted_.fxOwners||
+           ep!=epoch()||pins.epoch!=ep||!matchesSessionDevice(pins)||
+           !nativeAccepted_.matches(nativePublisher_,ep,rev)||
+           rosterRev!=reply.rosterRevision||logicalRev!=logicalInputRevision_||
+           logicalInputRevision_==std::numeric_limits<std::uint64_t>::max())return reply;
+        try{
+            if(edit.operation==P::Operation::add){
+                if(edit.port)return reply;
+                for(int i=0;i<8&&!edit.port;++i){
+                    const auto id=static_cast<std::uint64_t>(juce::Random::getSystemRandom().nextInt64());
+                    if(id&&!logicalInputs_.find(id))edit.port=id;
+                }
+                if(!edit.port)return reply;
+            }
+            std::vector<R::Pin> inputPins;
+            inputPins.reserve(static_cast<std::size_t>(pins.inputs.enabledCount));
+            for(int i=0;i<pins.inputs.enabledCount;++i){
+                const auto physical=pins.inputs.physicalIndex(i);
+                auto name=binding.inputNames[physical];
+                if(armix::device::uniqueNamedPin(binding.inputNames,name)!=physical)name.clear();
+                inputPins.push_back({physical,i,name.toStdString()});
+            }
+            const R::Inventory live{{binding.backend.toStdString(),binding.capture.toStdString(),
+                binding.playback.toStdString()},ep,inputPins,true};
+            edit.binding.device=live.device;
+            armix::session::MixerSessionDocument candidate;
+            candidate.roster=nativeAccepted_.graph.roster;
+            candidate.request=nativeAccepted_.graph.request;
+            candidate.logicalInputs=logicalInputs_;
+            candidate.waitingAsioInputs=waitingAsioInputs_;
+            bool graphChanged=false;
+            if(!P::edit(candidate,edit,live,graphChanged)){
+                reply.error="LOGICAL_INPUT_EDIT_REJECTED";return reply;
+            }
+            if(!matchesSessionDevice(pins))return reply;
+            if(graphChanged){
+                DynamicChannelFxLeaseBank bank;
+                if(DynamicChannelFxLeaseBank::reuseRevision(ep,rev+1,*nativeAccepted_.fxOwners,bank)
+                   !=DynamicChannelFxLeaseBank::Fault::none){
+                    reply.error="NATIVE_FX_LEASE_REJECTED";return reply;
+                }
+                auto owner=std::make_shared<DynamicChannelFxLeaseBank>(std::move(bank));
+                owner->bindGlobalRackOverride(&globalFxBypassed_);
+                DynamicNativeSessionPublisher::FxPlan fx;
+                fx.owner=owner;fx.context=owner.get();fx.deviceEpoch=ep;fx.graphRevision=rev+1;
+                fx.render=+[](void* ctx,ChannelId id,float* l,float* r,int n) noexcept{
+                    (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,l,r,n);
+                };
+                fx.latency=+[](void* ctx,ChannelId id) noexcept{
+                    return (*static_cast<DynamicChannelFxLeaseBank*>(ctx))->latencySamples(id);
+                };
+                if(beforePublish)beforePublish();
+                const auto published=nativePublisher_.commit(nativeAccepted_.graph.roster,candidate.request,
+                    rev,ep,epoch(),true,std::move(fx));
+                if(!published.ok()){reply.error="LOGICAL_INPUT_PCM_COMMIT_REJECTED";return reply;}
+                nativeAccepted_.graph.request=std::move(candidate.request);
+                waitingAsioInputs_=std::move(candidate.waitingAsioInputs);
+                nativeAccepted_.fxOwners=std::move(owner);
+                nativeAccepted_.pcmRevision=published.revision;
+                nativeMeterEpoch_.store(0,std::memory_order_release);
+                reapplyExternalOutputsSameEpoch();
+            }
+            logicalInputs_=std::move(candidate.logicalInputs);
+            ++logicalInputRevision_;
+            nativeControlDirty_=true;nativeStructureLive_=true;
+            reply.accepted=true;reply.error="";
+            reply.pcmRevision=nativeAccepted_.pcmRevision;
+            return reply;
+        }catch(...){reply.error="LOGICAL_INPUT_PREPARE_FAILED";return reply;}
+    }
+    std::uint64_t logicalInputRevision() const noexcept {return logicalInputRevision_;}
     // CONTROL-only primary OUT/WIRE transaction: stable ChannelId routing,
     // native graph DAG validation and immutable PCM publication.
     NativeBusResult setNativePrimaryOutput(std::uint64_t ep,
@@ -2888,6 +2980,7 @@ public:
             nativeAccepted_.graph.ids=document.legacyIds;
             waitingAsioInputs_=std::move(document.waitingAsioInputs);
             logicalInputs_=std::move(document.logicalInputs);
+            ++logicalInputRevision_;
             nativeAccepted_.graph.revision=nativeAccepted_.graph.roster.revision();
             nativeAccepted_.hardware=document.outputs;
             // Restored physical intentions are inert until exact ASIO identity,
@@ -2977,6 +3070,38 @@ public:
                              "NATIVE_OPEN_INSERT_EDITOR"})
             allowed.add(juce::var(juce::String(op)));
         state->setProperty("supportedOps",juce::var(allowed));
+        if(!retained){
+            auto logical=std::make_unique<juce::DynamicObject>();
+            logical->setProperty("revision",juce::String(std::to_string(logicalInputRevision_)));
+            juce::Array<juce::var> ports,refs;
+            for(const auto& p:logicalInputs_.ports()){
+                auto row=std::make_unique<juce::DynamicObject>();
+                row->setProperty("id",juce::String(std::to_string(p.id)));
+                row->setProperty("name",juce::String(p.name));
+                row->setProperty("format",p.format==armix::device::LogicalInputRegistry::Format::mono?"MONO":"STEREO");
+                row->setProperty("bound",p.binding.has_value());
+                if(p.binding){
+                    row->setProperty("left",p.binding->left);row->setProperty("right",p.binding->right);
+                    row->setProperty("leftName",juce::String(p.binding->leftName));
+                    row->setProperty("rightName",juce::String(p.binding->rightName));
+                    row->setProperty("capture",juce::String(p.binding->device.capture));
+                    row->setProperty("backend",juce::String(p.binding->device.backend));
+                    row->setProperty("playback",juce::String(p.binding->device.playback));
+                }
+                ports.add(juce::var(row.release()));
+            }
+            for(const auto& ref:logicalInputs_.references()){
+                auto row=std::make_unique<juce::DynamicObject>();
+                row->setProperty("channelId",juce::String(std::to_string(ref.channel)));
+                row->setProperty("portId",juce::String(std::to_string(ref.port)));
+                const bool installed=std::any_of(nativeAccepted_.graph.request.sources.begin(),
+                    nativeAccepted_.graph.request.sources.end(),[&](const auto& p){return p.id.value==ref.channel;});
+                row->setProperty("state",installed?"RESOLVED":"NEEDS_REMAP");
+                refs.add(juce::var(row.release()));
+            }
+            logical->setProperty("ports",juce::var(ports));logical->setProperty("references",juce::var(refs));
+            state->setProperty("logicalInputRegistry",juce::var(logical.release()));
+        }
         juce::Array<juce::var> rows;
         // Meter taps come from the SAME realtime ChannelId renderer, in
         // accepted roster order. No JS guesses or second DSP render.
@@ -3175,6 +3300,7 @@ public:
         nativeAccepted_=armix::mixer::UnifiedLegacyAccepted{};
         waitingAsioInputs_.clear();
         logicalInputs_={};
+        logicalInputRevision_=1;
         userPatched_.store(false,std::memory_order_release);
         enabled_.store(false,std::memory_order_release);
         publishedEpoch_.store(0,std::memory_order_release);
@@ -3860,6 +3986,7 @@ private:
     std::atomic<bool> globalFxBypassed_{false};
     std::vector<armix::session::WaitingAsioInput> waitingAsioInputs_;
     armix::device::LogicalInputRegistry logicalInputs_; // CONTROL only
+    std::uint64_t logicalInputRevision_=1;
     std::vector<armix::session::StoredExternalOutput> externalOutputAssignments_;
     std::vector<std::uint64_t> externalOutputVerified_; // per amplifier, CONTROL only
     std::uint64_t externalOutputEpoch_=0; // CONTROL only, never callback state

@@ -2471,6 +2471,29 @@ public:
                     true,beforePublish,musicPlayer);
             });
     }
+    std::uint64_t logicalInputRevision() const noexcept {return dryRoutingLab_.logicalInputRevision();}
+    LiveDryRoutingLab::NativeBusResult editNativeLogicalInput(std::uint64_t ep,std::uint64_t rev,
+            std::uint64_t roster,std::uint64_t logical,
+            armix::session::LogicalInputProjection::Edit edit) {
+        return editNativeInputTopology(ep,"LOGICAL_INPUT_DEVICE_UNAVAILABLE",
+            "LOGICAL_INPUT_PUBLICATION_EXCEPTION",[&](const auto& beforePublish){
+                LiveDryRoutingLab::NativeBusResult fail;fail.error="LOGICAL_INPUT_DEVICE_CHANGED";
+                auto* device=deviceManager_.getCurrentAudioDevice();
+                armix::device::JuceActivePortSnapshot pins;
+                armix::device::JuceActivePortSnapshot::Fault fault{};
+                if(!device||!acceptedMixerBinding_||
+                   !armix::device::JuceActivePortSnapshot::capture(device,ep,pins,fault))return fail;
+                const auto live=readMixerBinding(*device);
+                if(!armix::session::MixerDeviceBindingPolicy::sameBinding(*acceptedMixerBinding_,live)||
+                   acceptedMixerBinding_->inputNames!=live.inputNames||
+                   acceptedMixerBinding_->outputNames!=live.outputNames||
+                   deviceManager_.getCurrentAudioDevice()!=device||
+                   device->getInputChannelNames()!=live.inputNames||
+                   !dryRoutingLab_.matchesSessionDevice(pins))return fail;
+                return dryRoutingLab_.editNativeLogicalInput(ep,rev,roster,logical,
+                    std::move(edit),live,pins,beforePublish);
+            });
+    }
     template<class Edit>
     LiveDryRoutingLab::NativeBusResult editNativeInputTopology(
             std::uint64_t epoch,const char* unavailable,const char* exception,

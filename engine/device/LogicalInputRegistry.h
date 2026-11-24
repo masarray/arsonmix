@@ -123,7 +123,7 @@ public:
         auto* p=edit(id);
         if(!p||!expectedEpoch||expectedEpoch!=live.epoch||
            !resolveBinding(p->format,proposed,live))return false;
-        p->binding=proposed;return true;
+        return restoreIntent(id,proposed);
     }
     Resolved resolve(ChannelId channel,const Inventory& live) const noexcept {
         const auto it=std::find_if(refs_.begin(),refs_.end(),[&](const auto& r){return r.channel==channel;});
