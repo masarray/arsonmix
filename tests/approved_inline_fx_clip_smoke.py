@@ -99,6 +99,54 @@ def main():
                     if expected>width:
                         assert root.bounding_box()["x"]>=0,(width,host)
                     assert not any("TypeError" in e for e in errors),errors
+                    if host!="ArSonMixGraphicEq31":
+                        # Exercise the production shared overlay with a deterministic
+                        # accepted view fixture; no claim of native PCM/ASIO.
+                        result=page.evaluate("""({host,selector})=>{
+                          const device={epoch:"51",sampleRate:48000,bufferFrames:256,
+                            enabledInputs:[0,1],enabledOutputs:[0,1]};
+                          const id="9007199254740993",catalogId=window[host].id;
+                          const lease={authority:"CHANNEL_ID",channelId:id,slot:0,
+                            instanceId:"exact-owner",catalogId,graphRevision:"46",
+                            rosterRevision:"19",workspaceToken:null,deviceEpoch:"51",
+                            hardwareConfiguration:JSON.stringify([48000,256,[0,1],[0,1]])};
+                          const insert={id:"exact-owner",catalogId,bypassed:false};
+                          const row={id,role:"INPUT",fxRackBypassed:false,inserts:[insert]};
+                          const view={admitted:true,retained:false,device,raw:{
+                            globalFxBypassed:false,mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"51"}},
+                            graph:{revision:"46",rosterRevision:"19",
+                              capabilities:{callbackOwnsChannelIds:true},channels:[row]}};
+                          const clip=window.__ARMIX_NATIVE_INLINE_FX_CLIP__;
+                          if(!clip.openExact(window[host],host,
+                            {id:22,name:"TEST CHANNEL",slotBypass:[false]},0,"exact-owner",lease))
+                            return {error:"not-opened"};
+                          const root=document.querySelector(selector),results=[];
+                          const inspect=()=>{clip.syncBypass(view);
+                            const shades=root.querySelectorAll(".armix-native-fx-bypass");
+                            const s=shades[0];
+                            results.push([shades.length,s.textContent,
+                              getComputedStyle(s).display,getComputedStyle(s).pointerEvents]);};
+                          inspect();insert.bypassed=true;inspect();
+                          row.fxRackBypassed=true;inspect();
+                          view.raw.globalFxBypassed=true;inspect();
+                          view.raw.globalFxBypassed=false;inspect();
+                          row.fxRackBypassed=false;inspect();
+                          insert.bypassed=false;inspect();
+                          view.graph.revision="47";inspect();
+                          insert.id="replacement";inspect();
+                          return {results};
+                        }""",{"host":host,"selector":selector})
+                        assert result.get("results")==[
+                            [1,"BYPASSED","none","none"],
+                            [1,"BYPASSED","flex","none"],
+                            [1,"FX RACK BYPASSED","flex","none"],
+                            [1,"GLOBAL FX BYPASSED","flex","none"],
+                            [1,"FX RACK BYPASSED","flex","none"],
+                            [1,"BYPASSED","flex","none"],
+                            [1,"BYPASSED","none","none"],
+                            [1,"BYPASSED","none","none"],
+                            [1,"FX UNAVAILABLE","flex","auto"],
+                        ],(host,width,result)
                     page.evaluate("""name=>window[name].close()""",host)
                 root=page.locator("#mxNativeGeq31")
                 page.evaluate("""()=>window.ArSonMixGraphicEq31.open(

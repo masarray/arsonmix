@@ -259,7 +259,7 @@ function syncPower(){
  const n=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
  const lane=n?.graph?.channels?.find(x=>x.id===id);
  const insert=lane?.inserts?.[current.slot];
- const globalOff=document.querySelector(".console-body")?.classList.contains("global-fx-bypassed")===true;
+ const globalOff=n?.raw?.globalFxBypassed===true;
  const state=!native()?
   (current.track?.slotBypass?.[current.slot]?"off":"on"):
   (!lane||typeof lane.fxRackBypassed!=="boolean"||

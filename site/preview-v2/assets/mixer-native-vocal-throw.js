@@ -129,7 +129,7 @@ function renderMusicStatus(tempo){
 function syncPower(){
  const state=snapshot(),id=current&&window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
  const lane=state?.graph?.channels?.find(ch=>ch.id===id),fx=lane?.inserts?.[current?.slot];
- const value=!context()?"unknown":lane.fxRackBypassed?"rack-off":fx.bypassed?"off":"on";
+ const value=!context()?"unknown":(lane.fxRackBypassed||state?.raw?.globalFxBypassed===true)?"rack-off":fx.bypassed?"off":"on";
  panel.dataset.fxState=value;
  const btn=$("vtPower");btn.dataset.fxState=value;
  btn.disabled=value==="unknown"||value==="rack-off";

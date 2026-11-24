@@ -1,0 +1,26 @@
+name: P0 FX editor and bypass focused Chromium
+on:
+  push:
+    branches:
+      - fix/p0-fx-editor-recovery-bypass-20261124
+permissions:
+  contents: read
+concurrency:
+  group: p0-fx-editor-chromium
+  cancel-in-progress: true
+jobs:
+  fx-editor-bypass:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Pure editor lifecycle and bypass regression
+        run: node --test tests/approved_native_m2_contract.test.cjs
+      - name: Install scoped Chromium
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Actual native assembled editor faces and all bypass gates
+        run: python tests/approved_inline_fx_clip_smoke.py

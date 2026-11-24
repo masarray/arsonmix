@@ -35,7 +35,7 @@ SONKU_DIRECTORY = Path("engine/builtin_fx/sonku")
 # the separate provenance document, and full regression/PCM parity gates.
 OPTIMIZED_PATH = "engine/builtin_fx/sonku/SonKuEarlyReflections.h"
 APPROVED_ORIGINAL_BLOB = "5a6a9b48cfdc60729f130c61110c8d8590b20f35"
-OPTIMIZED_BLOB = "94b90db3d699d9f26601448a38b2f489f51b5fb7"
+OPTIMIZED_BLOB = "c92a1fc88cf129e606a6e7c1ba4df1e32269fc65"
 OPTIMIZED_PROVENANCE_PATH = (
     "config/immersib_p102_bitexact_optimized_implementation.json"
 )

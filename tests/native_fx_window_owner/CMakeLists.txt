@@ -4,7 +4,10 @@ if(NOT WIN32)
   message(FATAL_ERROR "This isolated HWND FAT is Windows-only")
 endif()
 enable_testing()
-add_executable(ArSonMixOwnedFxWindowTest ../native_fx_win32_owner_test.cpp)
+add_executable(ArSonMixOwnedFxWindowTest
+    ../native_fx_win32_owner_test.cpp
+    ../native_fx_win32_sdk_order_test.cpp
+    ../../src/NativeFxWin32Owner.cpp)
 target_compile_features(ArSonMixOwnedFxWindowTest PRIVATE cxx_std_20)
 target_link_libraries(ArSonMixOwnedFxWindowTest PRIVATE user32 dwmapi)
 if(MSVC)

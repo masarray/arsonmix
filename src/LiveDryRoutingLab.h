@@ -2940,6 +2940,10 @@ public:
                 item->setProperty("dspWorstUs",static_cast<double>((*lease)->dspWorstUs.load(std::memory_order_relaxed)));
                 item->setProperty("dspProcessedBlocks",static_cast<double>((*lease)->dspProcessedBlocks.load(std::memory_order_relaxed)));
                 item->setProperty("dspSleepBlocks",static_cast<double>((*lease)->dspSleepBlocks.load(std::memory_order_relaxed)));
+                // Independently sampled lifetime totals, not an atomic snapshot.
+                item->setProperty("dspTotalUs",static_cast<double>((*lease)->dspTotalUs.load(std::memory_order_relaxed)));
+                item->setProperty("dspProcessedFrames",static_cast<double>((*lease)->dspProcessedFrames.load(std::memory_order_relaxed)));
+                item->setProperty("dspSleepFrames",static_cast<double>((*lease)->dspSleepFrames.load(std::memory_order_relaxed)));
                 item->setProperty("bypassed",(*lease)->bypassRequested.load(
                     std::memory_order_relaxed));
                 liveInserts.add(juce::var(item.release()));

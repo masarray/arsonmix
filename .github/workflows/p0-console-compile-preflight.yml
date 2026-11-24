@@ -1,0 +1,58 @@
+name: P0 production Main.cpp MSVC compile preflight
+on:
+  push:
+    branches:
+      - staging/p0-arsonmix-reliability-20261124
+    paths:
+      - 'src/**'
+      - 'engine/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/p0-console-compile-preflight.yml'
+permissions:
+  contents: read
+concurrency:
+  group: p0-console-compile-preflight-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  actual-console-translation-unit:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.15
+          path: third_party/JUCE
+          persist-credentials: false
+      - name: Pinned WebView2 SDK
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Compile actual production Main.cpp and SDK adapter with branded FAT flags
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
+          if (!$vs) { throw 'MSVC_NOT_FOUND' }
+          Import-Module (Join-Path $vs 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($actual -ne $env:GITHUB_SHA) { throw 'P0_PREFLIGHT_SOURCE_MISMATCH' }
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DJUCE_ROOT=$env:GITHUB_WORKSPACE/third_party/JUCE" "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$env:GITHUB_WORKSPACE/.deps" -DBUILD_TESTING=ON -DARMIX_IMMERSIB_RELEASE_CANDIDATE=ON -DARMIX_SONKU_APPROVED_P99_MAIN=ON
+          if ($LASTEXITCODE -ne 0) { throw 'P0_PREFLIGHT_CONFIGURE_FAILED' }
+          $targets = (& ninja -C build -t targets all)
+          if ($LASTEXITCODE -ne 0) { throw 'P0_PREFLIGHT_TARGETS_FAILED' }
+          $objects = @('CMakeFiles/ARMixConsole.dir/src/Main.cpp.obj','CMakeFiles/ARMixConsole.dir/src/NativeFxWin32Owner.cpp.obj')
+          foreach ($object in $objects) {
+            if (!($targets | Where-Object { $_.StartsWith("${object}:") })) { throw "P0_PREFLIGHT_MISSING_OBJECT: $object" }
+          }
+          # Ninja builds real generated header dependencies, not the full app,
+          # all JUCE objects, full CTest, linking, or Inno packaging.
+          cmake --build build --parallel 2 --target $objects
+          if ($LASTEXITCODE -ne 0) { throw 'P0_PRODUCTION_TRANSLATION_UNIT_FAILED' }
+          Write-Host "P0_PRODUCTION_MAIN_COMPILE_PASS exact=$actual (object only, NOT full FAT)"

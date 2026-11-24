@@ -5,18 +5,32 @@
   "approvedSourceLock": "config/immersib_approved_pcm_sources.json",
   "optimizedPath": "engine/builtin_fx/sonku/SonKuEarlyReflections.h",
   "approvedOriginalBlob": "5a6a9b48cfdc60729f130c61110c8d8590b20f35",
-  "optimizedImplementationBlob": "94b90db3d699d9f26601448a38b2f489f51b5fb7",
-  "optimization": "static six-wall geometry target cache plus guarded bitwise-stationary HRIR kernel slew; no coefficient, preset, FIR sample accumulation order or audio graph change",
+  "optimizedImplementationBlob": "c92a1fc88cf129e606a6e7c1ba4df1e32269fc65",
+  "optimization": "static six-wall geometry target cache plus guarded bitwise-stationary HRIR kernel slew; no coefficient, preset, FIR sample accumulation order or audio graph change plus MSVC-only branded stationary non-fused contiguous FIR dispatch hoist; reference fallback on GCC/Clang, no fast-math flags",
   "acceptedAudioPolicy": "PCM_BIT_EXACT_REQUIRED; do not treat updated blob as re-approval or sonic retuning",
   "provenLinux": {
-    "run": "https://github.com/masarray/arsonmix/actions/runs/45094684247",
-    "pcm": "14/14 original-source versus real candidate tests bitwise equal on 44100/48000; 7 presets; ROOM edits/wrap/input cases",
-    "isolatedStage": "256-frame p50 reference approximately 674-675us vs candidate approximately 395-399us on same runner, four measured configurations; not full mixer CPU"
+    "run": "https://github.com/masarray/arsonmix/actions/runs/45392403389/job/138439263753",
+    "pcm": "original/current/candidate exact under GCC default and no contraction, legacy default golden unchanged; mixed product 1179648 bytes identical; fallback no speedup claimed"
   },
   "notYetQualified": [
-    "Windows MSVC approved source vs candidate PCM",
-    "full-branded ImmerSIB host and native CTest",
+    "exact checked-out promoted source repeat",
+    "actual JUCE native FAT and integrated Windows product",
     "protected exact-SHA integration",
-    "owner low-spec ASIO hardware field validation"
-  ]
+    "owner low-spec physical ASIO validation"
+  ],
+  "previousImplementation": {
+    "blob": "94b90db3d699d9f26601448a38b2f489f51b5fb7",
+    "optimization": "static six-wall geometry target cache plus guarded bitwise-stationary HRIR kernel slew; no coefficient, preset, FIR sample accumulation order or audio graph change",
+    "provenLinux": {
+      "run": "https://github.com/masarray/arsonmix/actions/runs/45094684247",
+      "pcm": "14/14 original-source versus real candidate tests bitwise equal on 44100/48000; 7 presets; ROOM edits/wrap/input cases",
+      "isolatedStage": "256-frame p50 reference approximately 674-675us vs candidate approximately 395-399us on same runner, four measured configurations; not full mixer CPU"
+    }
+  },
+  "provenWindows": {
+    "run": "https://github.com/masarray/arsonmix/actions/runs/45392403389/job/138439262879",
+    "pcm": "1720320 full branded bytes plus 1179648 mixed product bytes exact; 12 cases x2 stream hashes matched",
+    "p50": "62.28–62.56% lower than previous source in isolated same-runner test",
+    "p99": "50.22–57.39% lower; 1 candidate over-budget block across 24 measured runs; no hardware claim"
+  }
 }

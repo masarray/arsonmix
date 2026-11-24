@@ -3712,7 +3712,7 @@ test("native vendor editor retention follows current PCM ownership, not inactive
    'same FX instance must be focused instead of recreated');
  const fresh=editor.slice(editor.indexOf('} else try {'));
  assert.ok(fresh.includes('closePluginEditor();') &&
-   fresh.indexOf('closePluginEditor();')<fresh.indexOf('createEditorIfNeeded()'),
+   fresh.indexOf('closePluginEditor();')<fresh.indexOf('createHostedAudioEditor(*owner->processor)'),
    'DIFFERENT instance must destroy old window before asking for new editor');
  const change=main.slice(main.indexOf('void changeListenerCallback'),main.indexOf('void timerCallback()',main.indexOf('void changeListenerCallback')));
  assert.doesNotMatch(change,/if\(routedEditorOwner_\)closePluginEditor/);
@@ -5050,7 +5050,8 @@ test("MV-9B bridge uses only accepted native snapshots for global FX, fences M4 
  assert.match(bridge,/const current=controller\?\.state\(\)\?\.current;\s*const button=document\.getElementById\?\.\("globalFxToggle"\)/);
  assert.match(bridge,/onAccepted:\(next,confirmed\)=>\{\s*onNativeReadback\(next,confirmed\);/);
  assert.match(bridge,/fxRackVM\.nativeEditorAckResult\(pendingFxEditorAck,null,accepted,/);
- assert.match(bridge,/pendingFxEditorAck=null;\s*syncGlobalFxReadback\(\);/);
+ assert.match(bridge,/if\(fresh\)p\.lease=fresh;/);
+ assert.match(bridge,/pendingFxEditorAck=null;\s*nativeToast\("FX editor unavailable · accepted instance changed"\);/);
  assert.match(bridge,/const apply=\(\)=>controller\.onSnapshot\(snapshot\);/);
  assert.doesNotMatch(bridge,/controller\.onSnapshot\(snapshot\);syncGlobalFxReadback/);
  assert.doesNotMatch(bridge,/const actual=snapshot\?\.globalFxBypassed;/);
@@ -5097,13 +5098,34 @@ test("MV-9B Global FX ignores rejected post-ACK snapshot after a pre-ACK value r
  initial.graph.channels[0].inserts=[{id:"geq-live",catalogId:"armix.builtin.graphic-eq31.v1",
    name:"Graphic EQ 31",bypassed:false},
    {id:"reverb-legacy",catalogId:"armix.builtin.vocal-reverb.v1",
-    name:"Vocal Reverb",bypassed:false}];
+    name:"Vocal Reverb",bypassed:false},
+   {id:"imersib-exact",catalogId:"armix.builtin.imersip.v1",
+    name:"ImmerSIB",bypassed:true}];
  initial.mixerSession={authority:"CHANNEL_ID",deviceEpoch:initial.device.epoch,
    routeRevision:initial.graph.revision,rosterRevision:initial.graph.rosterRevision,
    channels:initial.graph.channels,main:{db:0,mute:false}};
  listeners.get("arMixConsoleSnapshot")(initial);
  assert.equal(scope.tracks[0].fx[1],"Reverb-Sis","old saved rack label follows stable catalog identity");
  assert.equal(scope.tracks[0].fxInsertIds[1].id,"reverb-legacy");
+ // Real bridge consumeAction: a BYPASSED ImmerSIB is navigation, not a mutation.
+ const editorRequests=()=>sent.filter(x=>x.payload?.action==="routingFxEditor");
+ assert.equal(win.__ARMIX_NATIVE_M2__.consumeAction(scope.tracks[0],"openPlugin",
+   {dataset:{slot:"2"}}),true);
+ assert.equal(editorRequests().length,1);
+ const opened=editorRequests()[0].payload;
+ assert.equal(opened.instanceId,"imersib-exact");
+ assert.equal(opened.channelId,initial.graph.channels[0].id);
+ assert.equal(opened.slot,2);
+ listeners.get("arMixRoutingFxEditorAck")({requestId:opened.requestId,
+   instanceId:opened.instanceId,ok:true});
+ assert.equal(win.__ARMIX_NATIVE_M2__.consumeAction(scope.tracks[0],"openPlugin",
+   {dataset:{slot:"2"}}),true);
+ assert.equal(editorRequests().length,2);
+ const reopened=editorRequests()[1].payload;
+ assert.equal(reopened.instanceId,opened.instanceId);
+ assert.notEqual(reopened.requestId,opened.requestId);
+ listeners.get("arMixRoutingFxEditorAck")({requestId:reopened.requestId,
+   instanceId:reopened.instanceId,ok:true});
  assert.equal(win.__ARMIX_NATIVE_GLOBAL_FX__.toggle(),true);
  const dispatched=sent.findLast(x=>x.payload?.action==="routingGlobalFxBypass");
  assert.ok(dispatched);
@@ -6620,8 +6642,8 @@ test("G-MV36 one correlated native editor transport and JUCE echo, no duplicate 
    main=read("src/Main.cpp"),viewmodel=read("web/approved-fx-rack-view-model.js");
  assert.match(main,/if \(action == "routingFxEditor"\) \{/);
  assert.match(main,/ack->setProperty\("requestId",args\.getProperty\("requestId",juce::var\(\)\)\);/);
- assert.match(main,/ack->setProperty\("instanceId",token\);/);
- assert.match(bridge,/function dispatchPhysicalFxEditor\(plan,lease,authority\)/);
+ assert.match(main,/ack->setProperty\("instanceId",args\.getProperty\("instanceId",\{\}\)\);/);
+ assert.match(bridge,/function dispatchPhysicalFxEditor\(plan,lease,authority,retried=false\)/);
  assert.match(bridge,/backend\.emitEvent\("arMixAction",\{action:plan\.action,requestId,\.\.\.plan\.payload\}\);/);
  assert.match(bridge,/dispatchPhysicalFxEditor\(plan,lease,"M4"\)/);
  assert.match(bridge,/dispatchPhysicalFxEditor\(plan,lease,"CHANNEL_ID"\)/);
@@ -6989,7 +7011,7 @@ test("P0 Audio I/O help reacts to explicit failed operator intent without auto-A
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/function recommendAudioRepair\(context\)/);
  assert.match(bridge,/if\(!deviceReady\(\)\)recommendAudioRepair\("INPUT unavailable"\)/);
- assert.match(bridge,/recommendAudioRepair\("FX audio processing unavailable"\)/);
+ assert.match(bridge,/recommendAudioRepair\("FX editor unavailable · audio processing unavailable"\)/);
  assert.match(bridge,/window\.setTimeout\(\(\)=>\{/);
  assert.match(bridge,/openNativeAudioIO\(\); \/\/ explicit repair prompt/);
  assert.match(bridge,/if\(now-lastAudioRepairAt<1600\)return true/);
@@ -7015,7 +7037,7 @@ test("P0 real-time gain pointer cancellation compensates native PCM through one 
 test("P0 Audio I/O repair never steals retained offline FX editor recovery",()=>{
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/if\(field==="input"&&event.type==="change"\)\s*recommendAudioRepair\("INPUT audio device disconnected"\)/);
- assert.match(bridge,/controller\?\.state\(\)\?\.current\?\.retained!==true\)\{/);
+ assert.match(bridge,/editorView\?\.admitted!==true&&\s*editorView\?\.retained!==true\)\{/);
  assert.match(bridge,/retainedFxOfflineOpen/);
  assert.match(bridge,/pendingRetainedEditor=\{/);
 });
@@ -7168,4 +7190,55 @@ test("P0 automatic MAIN recovery: no header mute toggle, explicit emergency stop
  assert.match(tone,/setOutputMuted\(false\)/);
  assert.doesNotMatch(tone,/setMonitorEnabled\(true\)/);
  assert.doesNotMatch(control,/setMasterMuted\(false\)|openSelectedAudioDevice|setAudioDeviceSetup/);
+});
+
+// P0: navigation cannot be mistaken for a parameter ACK; overlay is accepted-state only.
+test("P0 editor refresh and bypass projection preserve exact owner and gate hierarchy",()=>{
+ const id="9007199254740993",device={epoch:"51",sampleRate:48000,bufferFrames:256,
+  enabledInputs:[0,1],enabledOutputs:[0,1]};
+ const hardwareConfiguration=protocol.nativeHardwareConfiguration(device);
+ const view={admitted:true,retained:false,device,raw:{globalFxBypassed:false,
+  mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"51"}},graph:{
+   revision:"46",rosterRevision:"19",capabilities:{callbackOwnsChannelIds:true},
+   channels:[{id,role:"INPUT",fxRackBypassed:false,inserts:[
+    {id:"fx-one",catalogId:"armix.builtin.8d-sonku.v1",bypassed:false}]}]}};
+ const options={hardwareConfiguration};
+ const lease=fxRackVM.editorNavigationPlan(view,{channelId:id,slot:0,...options}).lease;
+ const state=()=>fxRackVM.editorBypassPresentation(view,lease,options);
+ assert.equal(state(),"ON");
+ view.graph.revision="47";
+ assert.equal(fxRackVM.refreshEditorNavigationLease(view,lease,options).graphRevision,"47");
+ view.graph.channels[0].inserts[0].bypassed=true;assert.equal(state(),"SLOT");
+ view.graph.channels[0].fxRackBypassed=true;assert.equal(state(),"RACK");
+ view.raw.globalFxBypassed=true;assert.equal(state(),"GLOBAL");
+ view.raw.globalFxBypassed=false;assert.equal(state(),"RACK");
+ view.graph.channels[0].fxRackBypassed=false;assert.equal(state(),"SLOT");
+ view.graph.channels[0].inserts[0].id="replacement";assert.equal(state(),"UNAVAILABLE");
+ assert.equal(fxRackVM.refreshEditorNavigationLease(view,lease,options),null);
+ assert.equal(protocol.operatorMessage("VST3 editor · refresh native device and FX instance"),
+  "FX editor unavailable · Reopen from FX Rack");
+ assert.equal(protocol.operatorMessage("Native FX editor opened"),"FX editor opened");
+ assert.notEqual(protocol.operatorMessage("Native FX editor pending"),"Effect settings updated");
+});
+
+test("P0 bounded editor retry stays on same owner and native failure class",()=>{
+ const b=read("web/approved-native-bridge.js"),m=read("src/Main.cpp");
+ assert.match(b,/pending\.retried\|\|pending\.retryScheduled/);
+ assert.match(b,/if\(pendingFxEditorAck!==pending\)return/);
+ assert.match(b,/ack\?\.retryable===true&&retryPhysicalFxEditor\(pending\)/);
+ assert.match(b,/fresh,"CHANNEL_ID",true\);/);
+ assert.match(m,/retryable=false; \/\/ plugin\/window failures/);
+ assert.match(m,/ack->setProperty\("retryable",!opened&&retryable\)/);
+});
+
+test("P0 native busy guard and all physical presentations produce explicit receipts",()=>{
+ const m=read("src/Main.cpp"),w=read("src/NativeOwnedFloatingWindow.h");
+ assert.match(m,/if\(deviceApply_\.busy\(\) && action!="audioDeviceApply"\)\{/);
+ assert.match(m,/emitRoutingFxEditorReceipt\(args,false,true,"FX editor unavailable: Audio I\/O is applying"\)/);
+ assert.match(m,/opened=shownWindow->presentationConfirmed\(\)/);
+ assert.match(m,/opened=\(\*extra\)->window->presentationConfirmed\(\)/);
+ assert.match(m,/opened=createdWindow&&createdWindow->presentationConfirmed\(\)/);
+ assert.match(w,/win32::ensureOwnedPopupVisible/);
+ assert.equal(protocol.operatorMessage("This VST3 has no native editor"),
+  "FX editor unavailable · Reopen from FX Rack");
 });

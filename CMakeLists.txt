@@ -559,7 +559,8 @@ if(WIN32)
       JUCE_ASIO=1 JUCE_WASAPI=1 JUCE_DIRECTSOUND=1)
   # Dedicated INITGUID TU supplies PKEY_AudioEndpoint_FormFactor and
   # PKEY_AudioEngine_DeviceFormat to the Windows MMDevice discovery path.
-  target_sources(ARMixConsole PRIVATE engine/device/WindowsAudioPropertyKeys.cpp)
+  target_sources(ARMixConsole PRIVATE engine/device/WindowsAudioPropertyKeys.cpp
+      src/NativeFxWin32Owner.cpp)
   target_link_libraries(ARMixConsole PRIVATE ole32 uuid advapi32 dwmapi)
 endif()
 
@@ -660,6 +661,10 @@ if(BUILD_TESTING)
     target_link_libraries(ARMixImerSipP92NativeTests PRIVATE
         ARMixAssets juce::juce_audio_processors
         juce::juce_recommended_config_flags)
+    if(WIN32)
+      target_sources(ARMixImerSipP92NativeTests PRIVATE src/NativeFxWin32Owner.cpp)
+      target_link_libraries(ARMixImerSipP92NativeTests PRIVATE dwmapi)
+    endif()
     get_target_property(IMMERSIB_RC_DEFINES ARMixConsole COMPILE_DEFINITIONS)
     # Native editor/state FAT has no WebView2 browser. Propagating the
     # app's GUI browser defines would compile juce_gui_extra WebView2.cpp
