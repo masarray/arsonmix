@@ -135,7 +135,7 @@ struct TraceRow {std::size_t at=0;std::array<Engine::RendererTrace,Engine::maxVo
 static Wave process(const Wave& input,Settings settings,bool synchronous,int block=127,
                     bool enhancedDepth=true,bool focus=true,bool presence=true,
                     bool articulation=true,bool continuity=true,bool support=true,bool natural=true,bool carrier=true,bool slope=true,
-                    bool drain=true,SeamCounts* counts=nullptr,std::vector<TraceRow>* trace=nullptr,bool recovery=true,bool cubic=false,const GuideTimeline* guide=nullptr){
+                    bool drain=true,SeamCounts* counts=nullptr,std::vector<TraceRow>* trace=nullptr,bool recovery=true,bool cubic=false,const GuideTimeline* guide=nullptr,bool aligned=false){
     auto e=std::make_unique<Engine>();
     if(!e->prepare(input.rate)||!e->setHeadroomForOfflineReference(false)||!e->setDoublerMonoForOfflineReference(false)||!e->setSettings(settings))
         throw std::runtime_error("native Harmony configuration invalid");
@@ -145,7 +145,7 @@ static Wave process(const Wave& input,Settings settings,bool synchronous,int blo
        !e->setSupportForOfflineReference(support)||
        !e->setNaturalForOfflineReference(natural)||!e->setCarrierForOfflineReference(carrier)||
        !e->setSlopeForOfflineReference(slope)||!e->setDrainForOfflineReference(drain)||
-       !e->setEpochRecoveryForOfflineReference(recovery)||!e->setCubicForOfflineReference(cubic))
+       !e->setEpochRecoveryForOfflineReference(recovery)||!e->setCubicForOfflineReference(cubic)||!e->setSourceAlignedForOfflineReference(aligned))
         throw std::runtime_error("continuity reference rejected");
     e->setPitchSynchronousCandidateForOfflineReference(synchronous);
     e->setStageDepthForOfflineReference(enhancedDepth);
@@ -202,12 +202,12 @@ static Wave subtract(const Wave& x,const Wave& y){
 // and the identical dry lead, then set only that role's prepared output gains
 // to zero for every other singer. No browser masks or in-place muting.
 static Wave roleStem(const Wave& input,Settings settings,
-                     int singerIndex,const Wave& dry,bool natural=true,bool carrier=true,bool slope=true,bool drain=true,bool recovery=true,bool cubic=false,const GuideTimeline* guide=nullptr){
+                     int singerIndex,const Wave& dry,bool natural=true,bool carrier=true,bool slope=true,bool drain=true,bool recovery=true,bool cubic=false,const GuideTimeline* guide=nullptr,bool aligned=false){
     if(singerIndex<0||singerIndex>=Engine::maxVoices)
         throw std::runtime_error("invalid solo Harmony role");
     auto e=std::make_unique<Engine>();
     Engine::PreparedSettings prepared{};
-    if(!e->prepare(input.rate)||!e->setHeadroomForOfflineReference(false)||!e->setDoublerMonoForOfflineReference(false)||!e->setNaturalForOfflineReference(natural)||!e->setCarrierForOfflineReference(carrier)||!e->setSlopeForOfflineReference(slope)||!e->setDrainForOfflineReference(drain)||!e->setEpochRecoveryForOfflineReference(recovery)||!e->setCubicForOfflineReference(cubic)||
+    if(!e->prepare(input.rate)||!e->setHeadroomForOfflineReference(false)||!e->setDoublerMonoForOfflineReference(false)||!e->setNaturalForOfflineReference(natural)||!e->setCarrierForOfflineReference(carrier)||!e->setSlopeForOfflineReference(slope)||!e->setDrainForOfflineReference(drain)||!e->setEpochRecoveryForOfflineReference(recovery)||!e->setCubicForOfflineReference(cubic)||!e->setSourceAlignedForOfflineReference(aligned)||
        !Engine::prepareSettings(settings,prepared))
         throw std::runtime_error("cannot prepare singer solo");
     for(int i=0;i<Engine::maxVoices;++i)
@@ -512,7 +512,7 @@ static void continuityReport(const Wave& input,const fs::path& folder,Settings s
             <<"\ntune="<<s.correction<<"\nmanual_key="<<s.key<<"\nmanual_scale="<<s.scale
             <<"\nlatency_samples="<<std::lround(input.rate*.024)
             <<"\nguide_callback_frames="<<guideBlock
-            <<"\nH20_H21_PCM_same=true\nH22_offline_candidate=true\n";
+            <<"\nH20_H21_reference_uses_optimized_search=true\nH22_offline_candidate=true\nH24C_offline_candidate=true\nH24A_B_guards_disabled_for_renderer_comparison=true\n";
     if(!manifest)throw std::runtime_error("replay manifest write failed");
     writeWave(folder/"dry_aligned.wav",dry);
     std::ofstream csv(folder/"continuity_10ms.csv",std::ios::trunc);
@@ -527,10 +527,10 @@ static void continuityReport(const Wave& input,const fs::path& folder,Settings s
     std::ofstream traceCsv(folder/"renderer_trace_10ms.csv",std::ios::trunc);
     if(!traceCsv)throw std::runtime_error("renderer trace open failed");
     traceCsv<<"variant,role,output_time_s,source_time_s,calls,no_clock,causal_blocked,drained,safe_unready,ready,partial,weak_confidence,epoch_recovered,recovery_candidate_sites,losses,acquisitions\n";
-    for(int version:{12,13,14,15,16,17,18,20,22}){
+    for(int version:{12,13,14,15,16,17,18,20,22,24}){
         SeamCounts counts{};std::vector<TraceRow> trace;
         const auto mix=process(input,s,true,127,true,true,true,true,
-                               version>=13,version>=14,version>=15,version>=16,version>=17,version>=18,&counts,&trace,version>=20,version>=22,guide);
+                               version>=13,version>=14,version>=15,version>=16,version>=17,version>=18,&counts,&trace,version>=20,version==22,guide,version==24);
         const auto backing=subtract(mix,dry);
         const auto tag="h"+std::to_string(version);
         for(int v=0;v<Engine::maxVoices;++v)
@@ -557,9 +557,9 @@ static void continuityReport(const Wave& input,const fs::path& folder,Settings s
             }
         }
     }
-    for(int version:{14,15,16,17,18,20,22})for(int role=0;role<Engine::maxVoices;++role)
+    for(int version:{14,15,16,17,18,20,22,24})for(int role=0;role<Engine::maxVoices;++role)
         writeWave(folder/("h"+std::to_string(version)+"_role_"+std::to_string(role)+".wav"),
-                  roleStem(input,s,role,dry,version>=15,version>=16,version>=17,version>=18,version>=20,version>=22,guide));
+                  roleStem(input,s,role,dry,version>=15,version>=16,version>=17,version>=18,version>=20,version==22,guide,version==24));
     if(!csv||!events||!traceCsv)throw std::runtime_error("continuity report write failed");
 }
 int main(int argc,char** argv){
@@ -655,7 +655,7 @@ int main(int argc,char** argv){
             Settings reportSettings;reportSettings.voices=3;reportSettings.wet=1.f;
             reportSettings.space=1.f;reportSettings.color=.78f;
             continuityReport(v,folder,reportSettings);
-            for(int version:{12,13,14,15,16,17,18,20,22}){
+            for(int version:{12,13,14,15,16,17,18,20,22,24}){
                 const auto tag="h"+std::to_string(version);
                 const auto mix=readWave(folder/(tag+"_mix.wav"));
                 const auto backing=readWave(folder/(tag+"_backing.wav"));
@@ -665,14 +665,14 @@ int main(int argc,char** argv){
             std::ifstream ev(folder/"seam_events.csv");
             std::string line;int rows=0;
             while(std::getline(ev,line))++rows;
-            if(rows!=1+9*Engine::maxVoices)return 17;
+            if(rows!=1+10*Engine::maxVoices)return 17;
             if(!fs::exists(folder/"h18_role_2.wav"))return 18;
             std::ifstream tr(folder/"renderer_trace_10ms.csv");int traceRows=0;
             while(std::getline(tr,line))++traceRows;
             const auto windows=(v.left.size()+v.rate/100-1)/(v.rate/100);
-            if(static_cast<std::size_t>(traceRows)!=1+9*Engine::maxVoices*windows)return 19;
+            if(static_cast<std::size_t>(traceRows)!=1+10*Engine::maxVoices*windows)return 19;
             std::cout<<"H19_TRACE_EXPORT rows="<<traceRows-1<<std::endl;
-            std::cout<<"H22_EXPORT variants=9 event_rows="<<rows-1<<" WAV readback PASS\n";
+            std::cout<<"H24C_EXPORT variants=10 event_rows="<<rows-1<<" WAV readback PASS\n";
             // True native music detector, independent stereo WAV, two
             // chords, fixed 64-frame guide cadence. Trace window splits
             // and renderer block partitions must not move tonal events.

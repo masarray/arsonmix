@@ -17,6 +17,7 @@
 #include "HarmonyVoicePlanner.h"
 #include "HarmonyBackingHeadroom.h"
 #include "HarmonyDoublerMonoGuard.h"
+#include "HarmonySourcePitchTimeline.h"
 
 // Deterministic, allocation-free vocal harmony DSP. No JUCE or GUI dependency.
 // Grain shifting is a functioning prototype, not formant-accurate synthesis.
@@ -307,6 +308,7 @@ public:
         articulation_.prepare(rate);
         headroom_.prepare(rate);headroomEnabled_=true;
         doublerMono_.prepare(rate);doublerMonoEnabled_=true;
+        sourceTimeline_.reset();sourceAlignedEnabled_=false;pitchWindowNewest_=0;alignedCalls_.fill(0);
         // Both renderer choice and missing-epoch recovery are time-domain
         // crossfades. Never hard-switch their independent source phases.
         pitchSyncAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.030)));
@@ -534,6 +536,13 @@ public:
         headroomEnabled_=enabled;return true;
     }
     const BackingHeadroom& headroomForOfflineTests()const noexcept{return headroom_;}
+    bool setSourceAlignedForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        sourceAlignedEnabled_=enabled;return true;
+    }
+    std::uint64_t alignedCallsForOfflineTests(int v)const noexcept {
+        return v>=0&&v<maxVoices?alignedCalls_[static_cast<std::size_t>(v)]:0;
+    }
     bool setDoublerMonoForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
         doublerMonoEnabled_=enabled;return true;
@@ -716,6 +725,7 @@ public:
                 pitchSyncFiltered_.fill(0.f);
                 for(auto& seam:backingSeams_)seam.reset();
                 periodContinuity_.reset();
+                sourceTimeline_.reset();
                 sourcePeriodSamples_=0.f;
                 sourceConfidence_=0.f;
                 renderersReleased_=true;
@@ -924,15 +934,23 @@ private:
         const float trust=std::clamp((sourceConfidence_-.79f)*10.f,0.f,1.f);
         const float scale=resonanceReferenceEnabled_?
             1.f+(resonance[ix]-1.f)*ensembleFocus_*trust:1.f;
+        float renderPeriod=sourcePeriodSamples_;
+        // H24C audition only. Compare source-local epoch geometry without
+        // moving the accepted note, expression, pitch ratio or lead Tune.
+        if(sourceAlignedEnabled_&&carryEpochs){
+            const auto obs=sourceTimeline_.nearest(static_cast<double>(sampleClock_)-
+                (static_cast<double>(latency_)+arrival),2.*detectEvery_);
+            if(obs.period>=8.f){renderPeriod=obs.period;++alignedCalls_[ix];}
+        }
         const bool windowSafe=carryEpochs&&(legacyLatency_||
             PitchSynchronousVoice<capacity,maxVoices>::completeEpochWindow(
-                sourcePeriodSamples_,effectiveRatio,static_cast<float>(latency_)+arrival));
+                renderPeriod,effectiveRatio,static_cast<float>(latency_)+arrival));
         // Admission needs causal lookback. Rendering an already validated
         // grain does not: its entire source window was proven at admission.
         const bool drain=drainReferenceEnabled_&&continuityReferenceEnabled_&&supportReferenceEnabled_;
         if(carryEpochs&&(windowSafe||drain))
             sync=pitchSync_.process(voice,sampleClock_,write_,mono_,
-                sourcePeriodSamples_,effectiveRatio,
+                renderPeriod,effectiveRatio,
                 static_cast<float>(latency_)+arrival,scale,continuityReferenceEnabled_,
                 supportReferenceEnabled_,naturalReferenceEnabled_,windowSafe,epochRecoveryEnabled_,true,cubicReferenceEnabled_);
         if(traceEnabled_){
@@ -978,6 +996,7 @@ private:
         pitchActive_=false;
         if(downSeen_<static_cast<std::size_t>(highLag_+170))return;
         constexpr int span=160;
+        if(sourceAlignedEnabled_)pitchWindowNewest_=sampleClock_-static_cast<std::uint64_t>(downCounter_);
         auto ix=(downWrite_+decimated_.size()-1)%decimated_.size();
         for(int j=0;j<span+highLag_;++j){
             pitchWindow_[static_cast<std::size_t>(j)]=decimated_[ix];
@@ -1154,6 +1173,12 @@ private:
         // reset all five backing renderers and create a micro-dropout.
         sourcePeriodSamples_=periodContinuity_.observe(newPeriod);
         sourceConfidence_=confidence;
+        // Publish only accepted, non-transitioning F0 evidence. Raw lag
+        // is more local than the smoothed period, but reject octave outliers.
+        if(sourceAlignedEnabled_&&!periodContinuity_.transitioning()&&
+           std::abs(newPeriod-sourcePeriodSamples_)<=.20f*sourcePeriodSamples_)
+            sourceTimeline_.publish({SourcePitchTimeline::sourceCenter(pitchWindowNewest_,
+                decimation_,lag),newPeriod,confidence});
         if(settings_.correction){
             // Reuse the accepted F0 continuity policy, not an independent
             // raw-lag tracker. Keep the old valid period during release.
@@ -1227,6 +1252,10 @@ private:
     BackingHeadroom headroom_{};
     bool headroomEnabled_=true,doublerMonoEnabled_=true;
     DoublerMonoGuard doublerMono_{};
+    bool sourceAlignedEnabled_=false;
+    SourcePitchTimeline sourceTimeline_{};
+    std::uint64_t pitchWindowNewest_=0;
+    std::array<std::uint64_t,maxVoices> alignedCalls_{};
     std::array<BackingRenderSeam,maxVoices> backingSeams_{};
     bool continuityReferenceEnabled_=true,supportReferenceEnabled_=true;
     bool naturalReferenceEnabled_=true,carrierReferenceEnabled_=true,slopeReferenceEnabled_=true;

@@ -1313,6 +1313,61 @@ static void auditFieldHeadroom(){
                  <<" min_gain="<<e->headroomForOfflineTests().minimum()<<std::endl;
     }
 }
+static void testSourceAlignedCandidate(){
+    SourcePitchTimeline timeline;
+    need(SourcePitchTimeline::sourceCenter(1000,4,41.f)==600.,"H24C timestamp");
+    need(timeline.nearest(100,20).period==0.f,"H24C empty");
+    for(int i=0;i<20;++i)
+        need(timeline.publish({double(i*100),float(100+i),.94f}),"H24C ring publish");
+    need(timeline.nearest(450,100).period==104.f&&
+         timeline.nearest(1890,100).period==119.f&&
+         timeline.nearest(100,100).period==0.f&&
+         timeline.nearest(2200,100).period==0.f,"H24C wrapped nearest/stale");
+    need(!timeline.publish({1800.,100.f,.95f})&&!timeline.publish({2000.,100.f,.7f}),
+         "H24C rejected nonmonotonic/weak evidence");
+    timeline.reset();need(timeline.nearest(1900,100).period==0.f,"H24C reset");
+    constexpr double tau=6.283185307179586;
+    for(int rate:{48000,96000})for(int voices:{3,5}){
+        const int n=rate*3;LeadFixture src{std::vector<float>(n),std::vector<float>(n)};
+        double phase=0.;
+        for(int i=0;i<n;++i){
+            const double sec=double(i)/rate;
+            const double hz=(sec<.6?220.:sec<1.2?440.:sec<1.8?880.:sec<2.4?110.:220.)*
+                std::exp2(45.*std::sin(tau*5.1*sec)/1200.);
+            phase+=tau*hz/rate;
+            src.left[i]=src.right[i]=static_cast<float>(.13*std::sin(phase)+
+                .045*std::sin(2*phase+.3)+.02*std::sin(3*phase+.7));
+        }
+        struct Result{LeadFixture pcm;std::uint64_t losses=0,high=0,used=0;};
+        auto render=[&](bool aligned,float wet,int block){
+            auto e=std::make_unique<Engine>();Settings s;s.voices=voices;s.wet=wet;s.space=1.f;s.color=.78f;
+            need(e->prepare(rate)&&e->setSourceAlignedForOfflineReference(aligned)&&
+                e->setSettings(s)&&e->setRendererTraceForOfflineTests(true),"H24C setup");
+            Result x{src};
+            for(int at=0;at<n;at+=block)e->process(x.pcm.left.data()+at,x.pcm.right.data()+at,std::min(block,n-at));
+            for(int v=0;v<Engine::maxVoices;++v)x.losses+=e->seamCountsForOfflineTests(v).losses;
+            x.high=e->seamCountsForOfflineTests(2).losses;x.used=e->alignedCallsForOfflineTests(2);
+            return x;
+        };
+        const auto old=render(false,1.f,127),now=render(true,1.f,127),split=render(true,1.f,64);
+        const auto dry=render(false,0.f,64),newDry=render(true,0.f,127);
+        need(now.pcm.left==split.pcm.left&&now.pcm.right==split.pcm.right&&
+             now.losses==split.losses&&now.used==split.used&&now.used>0&&
+             dry.pcm.left==newDry.pcm.left&&dry.pcm.right==newDry.pcm.right,"H24C block/dry/use contract");
+        double ea=0.,eb=0.,ma=0.,mb=0.,prevA=0.,prevB=0.;
+        for(int i=rate/2;i<n;++i){
+            const double a=old.pcm.right[i]-dry.pcm.right[i],b=now.pcm.right[i]-dry.pcm.right[i];
+            need(std::isfinite(b),"H24C finite");
+            ea+=a*a;eb+=b*b;if(i>rate/2){ma=std::max(ma,std::abs(a-prevA));mb=std::max(mb,std::abs(b-prevB));}
+            prevA=a;prevB=b;
+        }
+        need(ea>1.&&eb>1.,"H24C audible backing");
+        std::cout<<"H24C_ALIGNED rate="<<rate<<" voices="<<voices<<" old_loss="<<old.losses
+                 <<" new_loss="<<now.losses<<" old_high="<<old.high<<" new_high="<<now.high
+                 <<" high_used="<<now.used<<" wet_dB="<<10.*std::log10(eb/ea)
+                 <<" normalized_edge_ratio="<<mb/ma*std::sqrt(ea/eb)<<std::endl;
+    }
+}
 static void testHeadroomContract(){
     for(int rate:{32000,48000,96000,192000}){
         BackingHeadroom h;h.prepare(rate);
@@ -1836,6 +1891,7 @@ int main(){
   testUnvoicedGapPreservesWetTail();
   testBackingContinuity();
   testLowerPresenceAndPresets();
+  testSourceAlignedCandidate();
   testHeadroomContract();
   auditFieldHeadroom();
   testDoublerMonoCompatibility();
