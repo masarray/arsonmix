@@ -175,9 +175,9 @@ public:
     static float backingUnityGain(float wet,float space,int mode,int voices) noexcept {
         constexpr std::array<std::array<float,3>,5> anchors{{
             {{1.83f,2.35f,2.49f}}, // Duo
-            {{1.70f,2.20f,2.40f}},
-            {{1.72f,2.33f,2.50f}},
-            {{1.90f,2.50f,2.50f}},
+            {{1.95f,2.38f,2.40f}},
+            {{1.85f,2.42f,2.50f}},
+            {{2.04f,2.50f,2.50f}},
             {{1.66f,2.50f,2.50f}}  // Doubler
         }};
         const auto& v=anchors[static_cast<std::size_t>(
@@ -279,6 +279,7 @@ public:
         targetWet_=next.settings.wet;targetColor_=next.settings.color;
         targetSpace_=next.settings.space;
         targetGain_=next.gain;targetBackingGain_=next.backingGain;
+        targetEnsembleFocus_=next.settings.voiceMode==0&&next.settings.voices>=3?1.f:0.f;
         targetCorrection_=next.settings.correction?1.f:0.f;
         for(int v=0;v<maxVoices;++v){
             targetMixL_[static_cast<std::size_t>(v)]=next.mixL[v];
@@ -287,6 +288,7 @@ public:
         if(!processed_){
             wet_=targetWet_;color_=targetColor_;space_=targetSpace_;
             gain_=targetGain_;backingGain_=targetBackingGain_;
+            ensembleFocus_=targetEnsembleFocus_;
             mixL_=targetMixL_;mixR_=targetMixR_;
         }
         return true;
@@ -377,6 +379,7 @@ public:
             space_+=a*(targetSpace_-space_);
             gain_+=a*(targetGain_-gain_);
             backingGain_+=a*(targetBackingGain_-backingGain_);
+            ensembleFocus_+=a*(targetEnsembleFocus_-ensembleFocus_);
             for(int v=0;v<maxVoices;++v){
                 const auto ix=static_cast<std::size_t>(v);
                 mixL_[ix]+=a*(targetMixL_[ix]-mixL_[ix]);
@@ -435,8 +438,13 @@ public:
             // Direct sound and reflections from backing singers only.
             // Preserve the exact previous spatial gains in offline reference.
             const auto stageGain=BackingStageSpatial::gains(space_);
+            // Wider ensembles need a little more direct-to-room ratio:
+            // the full-Wet five-voice stem fell just below the H1 gate at
+            // deep Space despite the bounded 2.5 bus gain. Restore up to
+            // +1.58dB direct (not diffuse tail) without raising that cap.
+            // Smooth the arranger boundary, and keep Duo/Doubler exact.
             const float backingDirect=stageDepthReferenceEnabled_?
-                stageGain.direct:1.f-.38f*space_;
+                stageGain.direct*(1.f+.20f*space_*ensembleFocus_):1.f-.38f*space_;
             const float earlyReturn=stageDepthReferenceEnabled_?
                 stageGain.early:.28f*space_;
             float roomSendL=0.f,roomSendR=0.f;
@@ -806,6 +814,7 @@ private:
     float space_=0.f,targetSpace_=0.f;
     float gain_=1.f,targetGain_=1.f,targetCorrection_=0.f;
     float backingGain_=1.f,targetBackingGain_=1.f;
+    float ensembleFocus_=0.f,targetEnsembleFocus_=0.f;
     std::array<float,maxVoices> mixL_{},mixR_{},targetMixL_{},targetMixR_{};
     float decimationLowpass_=0.f,decimationAlpha_=0.f;
     StereoPhaseSafeFold vocalFold_{};
