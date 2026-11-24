@@ -146,6 +146,23 @@ private:
         const auto start=std::max(oldest,center-half);
         const auto end=std::min(newest,center+half);
         if(end<start)return -1;
+        // Once a singer's epoch polarity is established, only that signed
+        // landmark can win. The old scan still computed both extrema on
+        // every grain. A sign-specific scan returns the identical first
+        // winning sample (strict > tie rule), with one comparison per tap.
+        constexpr float silenceFloor=1.e-5f;
+        if(polarity!=0){
+            float maximum=0.f;
+            std::int64_t selected=-1;
+            const float sign=polarity>0?1.f:-1.f;
+            for(auto t=start;t<=end;++t){
+                const auto age=static_cast<std::size_t>(
+                    static_cast<std::int64_t>(time)-t);
+                const float value=sign*input[(writeIndex+Capacity-age)&(Capacity-1)];
+                if(value>maximum){maximum=value;selected=t;}
+            }
+            return maximum>=silenceFloor?selected:-1;
+        }
         std::int64_t positive=-1,negative=-1;
         float maxPositive=0.f,maxNegative=0.f;
         for(auto t=start;t<=end;++t) {
@@ -155,11 +172,8 @@ private:
             if(value>maxPositive){maxPositive=value;positive=t;}
             if(-value>maxNegative){maxNegative=-value;negative=t;}
         }
-        constexpr float silenceFloor=1.e-5f;
-        if(polarity==0) {
-            if(std::max(maxPositive,maxNegative)<silenceFloor)return -1;
-            polarity=maxPositive>=maxNegative?1:-1;
-        }
+        if(std::max(maxPositive,maxNegative)<silenceFloor)return -1;
+        polarity=maxPositive>=maxNegative?1:-1;
         return polarity>0?
             (maxPositive>=silenceFloor?positive:-1):
             (maxNegative>=silenceFloor?negative:-1);

@@ -121,6 +121,7 @@ public:
         stageDepthReferenceEnabled_=true;
         roomFocusReferenceEnabled_=true;
         presenceReferenceEnabled_=true;unityReferenceEnabled_=true;
+        expressionReferenceEnabled_=true;
         // Both renderer choice and missing-epoch recovery are time-domain
         // crossfades. Never hard-switch their independent source phases.
         pitchSyncAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.030)));
@@ -350,6 +351,11 @@ public:
         unityReferenceEnabled_=enabled;
         return setSettings(settings_);
     }
+    // Exact H3 expression baseline; only before any PCM, never a GUI setting.
+    bool setIndependentExpressionForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        expressionReferenceEnabled_=enabled;return true;
+    }
     int observedMidiNote() const noexcept{return currentNote_;}
     bool voiced() const noexcept{return voiced_;}
     int peakPitchLagWork() const noexcept{return peakPitchLagWork_;}
@@ -447,6 +453,7 @@ public:
                 stageGain.direct*(1.f+.20f*space_*ensembleFocus_):1.f-.38f*space_;
             const float earlyReturn=stageDepthReferenceEnabled_?
                 stageGain.early:.28f*space_;
+            const float independent=expressionReferenceEnabled_?ensembleFocus_:0.f;
             float roomSendL=0.f,roomSendR=0.f;
             for(int v=0;v<maxVoices;++v){
                 const auto ix=static_cast<std::size_t>(v);
@@ -456,7 +463,7 @@ public:
                 if(audible){
                     voice=shifted(v,ensemble_.timbreCoefficient(v,filterCoef),
                                   ensemble_.arrivalSamples(v),
-                                  ensemble_.pitchRatio(v))*voicedGain_;
+                                  ensemble_.pitchRatio(v,independent),independent)*voicedGain_;
                 }
                 voice=ensemble_.shadeBacking(v,voice,space_);
                 const float reflection=ensemble_.exchangeReflection(v,voice);
@@ -535,9 +542,10 @@ private:
         return a[a0]*(1.f-f)+a[a1]*f;
     }
     float shifted(int voice,float filterCoef,float arrival=0.f,
-                  float fineRatio=1.f) noexcept {
+                  float fineRatio=1.f,float independent=0.f) noexcept {
         float& currentRatio=ratio_[static_cast<std::size_t>(voice)];
-        currentRatio+=(targetRatio_[static_cast<std::size_t>(voice)]-currentRatio)*ratioAlpha_;
+        currentRatio+=(targetRatio_[static_cast<std::size_t>(voice)]-currentRatio)*
+            ensemble_.ratioSmoothing(voice,ratioAlpha_,independent);
         const float effectiveRatio=std::clamp(currentRatio*fineRatio,.49f,2.01f);
         const float p=phase_[static_cast<std::size_t>(voice)];
         const float pB=p<0.5f?p+0.5f:p-0.5f;
@@ -740,10 +748,15 @@ private:
         }
         const float newPeriod=static_cast<float>(rate_/hz);
         if(note!=currentNote_||tonalTransitionPending_){
+            std::array<int,maxVoices> old{};
+            for(std::size_t v=0;v<old.size();++v)old[v]=voicePlanner_.target(v);
             if(settings_.voiceMode==0)
                 voicePlanner_.plan(note,activeKey,activeScale==0?major:minor,settings_.voices);
             else voicePlanner_.reset();
-            ensemble_.beginNote();
+            unsigned changed=0;
+            for(std::size_t v=0;v<old.size();++v)
+                if(!voiced_||old[v]!=voicePlanner_.target(v))changed|=1u<<v;
+            ensemble_.beginNote(changed);
         }
         currentNote_=note;voiced_=true;tonalTransitionPending_=false;
         // Retain overlapping grains across even a real musical leap.
@@ -810,6 +823,7 @@ private:
     bool pitchSyncReferenceEnabled_=true,stageDepthReferenceEnabled_=true;
     bool roomFocusReferenceEnabled_=true;
     bool presenceReferenceEnabled_=true,unityReferenceEnabled_=true;
+    bool expressionReferenceEnabled_=true;
     std::array<float,maxVoices> pitchSyncBlend_{},pitchSyncFiltered_{},pitchSyncValid_{};
     float space_=0.f,targetSpace_=0.f;
     float gain_=1.f,targetGain_=1.f,targetCorrection_=0.f;

@@ -147,6 +147,45 @@ static void testVoicePlanner(){
   planner.plan(67,0,major);
   need(planner.target(2)!=high,"reset retained previous phrase voicing");
 }
+// H4 independent expression is sample-clock owned, not callback-block
+// owned. Common tones keep their individual vibrato age during a lead
+// note change; only moved singers start a new settle/bloom.
+static void testIndependentSingerExpression(){
+  for(int rate:{32000,48000,96000,192000}){
+    auto e=std::make_unique<EnsembleSpace>();
+    need(e->prepare(rate),"H4 singer prepare");
+    e->beginNote();
+    const float oldAlpha=.00045f;
+    for(int i=0;i<rate/2;++i){
+      for(int v=0;v<5;++v){
+        const float ratio=e->pitchRatio(v,1.f);
+        need(ratio>.993f&&ratio<1.007f,"H4 expression out of cents bound");
+      }
+      e->advance(true);
+    }
+    const auto heldAge=e->noteAgeForOfflineTests(0);
+    need(e->expressionForOfflineTests(0)>.99f&&
+         e->expressionForOfflineTests(2)>.99f,"H4 sustain failed to bloom");
+    e->beginNote(1u<<2);
+    need(e->noteAgeForOfflineTests(0)==heldAge&&
+         e->noteAgeForOfflineTests(2)==0,"H4 common tone reset");
+    need(e->ratioSmoothing(0,oldAlpha,1.f)==oldAlpha&&
+         e->ratioSmoothing(2,oldAlpha,1.f)>oldAlpha*(48000.f/rate),
+         "H4 pitch settle not role-specific");
+    for(int i=0;i<rate/20;++i){
+      for(int v=0;v<5;++v)e->pitchRatio(v,1.f);
+      e->advance(true);
+    }
+    need(e->expressionForOfflineTests(0)>.99f&&
+         e->expressionForOfflineTests(2)<.25f,"H4 moved and held voices bloom together");
+    for(int i=0;i<rate/6;++i){
+      for(int v=0;v<5;++v)e->pitchRatio(v,1.f);
+      e->advance(false);
+    }
+    need(e->expressionForOfflineTests(0)<.001f&&
+         e->expressionForOfflineTests(2)<.001f,"H4 expression retained through release");
+  }
+}
 // Audit chord membership across every key, both scale families and
 // ascending/descending note history. Require actual register separation;
 // a collection of independently diatonic pitches is insufficient.
@@ -456,13 +495,14 @@ static void testLoudVibratoContinuity(){
       level*(.85*std::sin(phase+.12)+.31*std::sin(3.*phase+.4))+
       noise*.85);
   }
-  auto process=[&](int block,int voices,bool wet){
+  auto process=[&](int block,int voices,bool wet,bool independent=true){
     auto dsp=std::make_unique<Engine>();
     need(dsp->prepare(rate)&&dsp->latencySamples()==1536,
          "vibrato engine PDC changed");
     Settings settings;settings.voices=voices;settings.wet=wet?.75f:0.f;
     settings.space=.82f;
-    need(dsp->setSettings(settings),"vibrato DSP settings rejected");
+    need(dsp->setIndependentExpressionForOfflineReference(independent)&&
+         dsp->setSettings(settings),"vibrato DSP settings rejected");
     auto l=inL,r=inR;
     int audibleTicks=0,checkedTicks=0;
     for(int pos=0;pos<frames;pos+=block){
@@ -482,6 +522,11 @@ static void testLoudVibratoContinuity(){
   need(five64==five257,
        "heavy five-voice vibrato output depends on ASIO callback partition");
   const auto dry=process(257,5,false);
+  const auto h3=process(64,5,true,false);
+  need(h3!=five64,"H4 expression did not affect actual ensemble PCM");
+  need(process(64,2,true,false)==process(64,2,true,true),
+       "H4 changed accepted Duo");
+  need(process(64,5,false,false)==dry,"H4 changed dry lead");
   double harmonyE=0.,outE=0.,monoE=0.;
   float largestStep=0.f;
   for(int i=rate/2;i<frames;++i){
@@ -595,6 +640,7 @@ static void testBackingUnity(){
   need(within,"H1 full-Wet aggregate stem outside +/-2dB target; inspect H1_STEM rows");
 }
 int main(){
+  testIndependentSingerExpression();
   testMusicalEnsemblePlanner();
   const bool highPass=testMusicalHighStem();
   testLeadRendererSeam();
