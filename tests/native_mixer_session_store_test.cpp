@@ -1711,6 +1711,32 @@ int main(){
     assert(!MixerDeviceBindingPolicy::proposedOutputs(main34,newOutputs,4,
         BindingMode::verifiedDeviceApply).valid());
 
+    // Dedicated single-ASIO 2x2 -> 8x8: expanding enabled channels
+    // preserves the microphone and MAIN, then VC can be patched independently.
+    // This is synthetic vendor-neutral evidence, not a PS22 hardware claim.
+    auto expanded=d;
+    expanded.binding.inputNames={"MIC 1","MIC 2","VC 1","VC 2",
+        "VC 3","VC 4","Loopback 1","Loopback 2"};
+    expanded.binding.outputNames={"HP 1","HP 2","VC OUT 1","VC OUT 2",
+        "VC OUT 3","VC OUT 4","Other 1","Other 2"};
+    auto full=expanded.binding;
+    full.inputMask="ff";full.outputMask="ff";
+    const auto fullPair=MixerDeviceBindingPolicy::proposedOutputs(
+        expanded,full,8,BindingMode::verifiedDeviceApply);
+    assert(fullPair.valid() && fullPair.mainL==0 && fullPair.mainR==1);
+    assert(MixerDeviceBindingPolicy::apply(expanded,full,fullPair,8,
+        BindingMode::verifiedDeviceApply).isEmpty());
+    assert(expanded.request.physicalInputs==8);
+    assert(expanded.request.sources.front().inputL==0);
+    assert(expanded.roster.revision()==d.roster.revision());
+    assert(expanded.binding.inputMask=="ff" && expanded.binding.outputMask=="ff");
+    const std::array<int,8> fullPins{{0,1,2,3,4,5,6,7}};
+    StoredExternalOutput vc{{16},2,3,"VC OUT 1","VC OUT 2",full.playback};
+    assert(MixerDeviceBindingPolicy::canRestoreExternalOutput(
+        vc,full.playback,fullPins,full.outputNames,fullPair));
+    assert(!MixerDeviceBindingPolicy::canRestoreExternalOutput(
+        vc,full.playback,fullPins,juce::StringArray{},fullPair));
+
     auto reordered=d;
     reordered.binding.inputNames={"In 1","In 2"};
     auto reorderedPins=reordered.binding;

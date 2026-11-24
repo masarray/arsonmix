@@ -274,18 +274,22 @@
     const {field,value}=change;
     if(typeof value!=="string")return draft;
     if(field==="backend") {
+      if(value===draft.backend)return draft;
       const type=inventory.types?.find(t=>t.name===value);
       if(!type)return draft;
       const capture=type.inputs?.[0]||"";
-      return {...draft,backend:value,capture,
+      const next={...draft,backend:value,capture,
         playback:type.separate?type.outputs?.[0]||"":capture,
         inputPins:null,outputPins:null,rate:0,buffer:0};
+      return setupSameEndpoint(inventory.active,next)?setupDraft(inventory):next;
     }
     if(field==="capture") {
       if(!view.inputOptions.includes(value))return draft;
-      return {...draft,capture:value,
+      if(value===draft.capture)return draft;
+      const next={...draft,capture:value,
         playback:view.type?.separate?draft.playback:value,
         inputPins:null,outputPins:null,rate:0,buffer:0};
+      return setupSameEndpoint(inventory.active,next)?setupDraft(inventory):next;
     }
     if(field==="playback") {
       if(!view.outputOptions.includes(value)||
@@ -293,9 +297,11 @@
         return draft;
       // A JUCE non-separate backend has one duplex endpoint identity.
       // Never present an input/output mismatch that native must reject.
-      return {...draft,playback:value,
+      if(value===draft.playback)return draft;
+      const next={...draft,playback:value,
         capture:view.type?.separate?draft.capture:value,
         inputPins:null,outputPins:null,rate:0,buffer:0};
+      return setupSameEndpoint(inventory.active,next)?setupDraft(inventory):next;
     }
     if(field==="rate"||field==="buffer") {
       const options=field==="rate"?view.rateOptions:view.bufferOptions;
@@ -436,7 +442,10 @@
     const live=state.pending.ack.outputMuted===false&&
       snapshot.admitted===true&&snapshot.productLive===true&&
       d.outputArmed===true;
+    const inspectNewAsio=expected.backend==="ASIO"&&
+      state.pending.expected.requestedPins===null;
     return {phase:"ACCEPTED",pending:null,remapGeneration:null,
+      ...(inspectNewAsio?{inspectNewAsio:true}:{}),
       message:live?"Mixer ready · Output live":
         mixerVerified?"Mixer ready · Output muted":
           "Audio device ready · Mixer route not yet verified"};

@@ -2491,7 +2491,8 @@
       // Reuse the serialized JUCE recovery selector (including the vendor's
       // native ASIO control-panel button), not a second driver instance.
       devicePanel.querySelector("[data-audio-driver-panel]").onclick=()=>{
-        if(deviceBusy()||!deviceVM.setupPresentation(deviceInventory,deviceChoice,deviceState).driverPanelAvailable)return;
+        if(deviceBusy()||!deviceInventory||!deviceChoice||
+           !deviceVM.setupPresentation(deviceInventory,deviceChoice,deviceState).driverPanelAvailable)return;
         deviceChoice=null;
         closeNativeAudioIO();
         backend.emitEvent("arMixAction",{action:"audioSetup"});
@@ -2671,7 +2672,7 @@
           container.appendChild(group);
         }
         pins.appendChild(container);
-      }else pins.textContent="Apply this device first to inspect its real enabled pins.";
+      }else pins.textContent="Apply this device first to inspect all reported and enabled pins.";
     }
     const activeText=devicePanel.querySelector("[data-audio-active]");
     if(activeText&&!deviceBusy())activeText.textContent=view.activeText;
@@ -2747,7 +2748,19 @@
     showDeviceApplyProgress(false);
     if(deviceState.phase==="ACCEPTED"){
       deviceChoice=null;
-      devicePanel.hidden=true;
+      if(deviceState.inspectNewAsio){
+        // A newly opened ASIO driver initially negotiates default pins.
+        // Keep Audio I/O open for the authoritative inventory requested by
+        // onNativeReadback, not a misleading return to a 2x2 mixer.
+        deviceInventory=null;
+        devicePanel.querySelector("[data-audio-active]").textContent=
+          "Driver opened · reading available ASIO channels";
+        devicePanel.querySelector("[data-audio-pin-summary]").textContent=
+          "Waiting for the new driver inventory…";
+        devicePanel.querySelector("[data-audio-pins]").textContent="";
+        for(const field of devicePanel.querySelectorAll("select, [data-audio-apply], [data-audio-main-pins], [data-audio-remap], [data-audio-driver-panel]"))
+          field.disabled=true;
+      }else devicePanel.hidden=true;
       // The confirmed schema-v6 readback, not the preceding Apply ACK,
       // is the only source for the device-ready status shown to operators.
       const active=verifiedSnapshot?.device;

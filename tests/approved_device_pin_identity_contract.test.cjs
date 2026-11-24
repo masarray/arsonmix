@@ -650,3 +650,43 @@ test("Professional I/O health evidence never fabricates zero XRUNs or a current 
   assert.equal(wasapi.discontinuities,7);
   assert.equal(vm.setupHealthReadback({...active,authorized:false}),null);
 });
+
+test("Final single-ASIO: initial driver Apply stays in inventory workflow only after installed readback",()=>{
+  const f=fixture(),draft=vm.setupEditDraft(vm.setupDraft(f.inventory),f.inventory,
+    {field:"playback",value:"Other ASIO"});
+  const begun=f.begin("discover",draft);
+  assert.equal(begun.state.pending.expected.requestedPins,null);
+  const active={...f.active,deviceGeneration:41,captureDevice:"Other ASIO",
+    playbackDevice:"Other ASIO",enabledInputs:[0,1],enabledOutputs:[0,1]};
+  const verifying=vm.setupAck(begun.state,f.ack("discover",{active}));
+  assert.equal(verifying.phase,"VERIFYING");
+  assert.equal(verifying.inspectNewAsio,undefined);
+  const installed={...f.readback,device:{...f.readback.device,
+    captureDevice:"Other ASIO",playbackDevice:"Other ASIO",
+    enabledInputs:[0,1],enabledOutputs:[0,1]}};
+  assert.equal(vm.setupReadback(verifying,installed).inspectNewAsio,true);
+  const same=f.begin("same");
+  assert.equal(vm.setupReadback(vm.setupAck(same.state,f.ack("same")),f.readback).inspectNewAsio,undefined);
+  const bridge=readFileSync("web/approved-native-bridge.js","utf8");
+  assert.match(bridge,/if\(deviceState\.inspectNewAsio\)/);
+  assert.match(bridge,/deviceInventory=null;[\s\S]*?Waiting for the new driver inventory/);
+});
+
+test("Final single-ASIO: reselecting or returning to installed endpoint never silently resets format",()=>{
+  const f=fixture(),draft=vm.setupDraft(f.inventory);
+  for(const [field,value] of [["backend","ASIO"],["capture","Studio ASIO"],["playback","Studio ASIO"]])
+    assert.strictEqual(vm.setupEditDraft(draft,f.inventory,{field,value}),draft);
+  const away=vm.setupEditDraft(draft,f.inventory,{field:"playback",value:"Other ASIO"});
+  const back=vm.setupEditDraft(away,f.inventory,{field:"playback",value:"Studio ASIO"});
+  assert.deepEqual(back,draft);
+});
+
+test("Final single-ASIO restore passes named live device snapshot to external output admission",()=>{
+  const source=readFileSync("src/LiveAudioEngine.h","utf8");
+  const region=source.slice(source.indexOf("juce::String inspectNativeMixerSessionBinding("),
+    source.indexOf("juce::String prepareUnboundMixerFx("));
+  assert.match(region,/JuceActivePortSnapshot::capture\(\s*device,candidate\.epoch,candidate\.pins,pinFault\)/);
+  assert.match(region,/candidate\.pins\.outputNames/);
+  assert.match(region,/candidate\.pins\.deviceName!=candidate\.live\.playback/);
+  assert.doesNotMatch(region,/JuceActivePortSnapshot::fromMasks/);
+});
