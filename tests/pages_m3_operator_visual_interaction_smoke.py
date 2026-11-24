@@ -2,6 +2,7 @@
 """M3 operator console: geometry, overlays, FX, clip and multi-wire browser contract."""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from operator_wire_menu import open_wire_config
 
 ROOT=Path(__file__).resolve().parents[1]
 HTML=ROOT/"site/preview-v2/index.html"
@@ -50,7 +51,7 @@ def interactions(page):
     assert abs(title.bounding_box()["height"]-27)<=2,("V50 status title height",page.viewport_size)
     assert page.locator("#mixerTitleToggle").count()==0
     config_button=page.locator("#wireConfigToggle")
-    config_button.click()
+    open_wire_config(page)
     config=page.locator("#wireConfigWindow")
     assert config.is_visible() and config_button.get_attribute("aria-expanded")=="true"
     assert config.locator("#wireMode").count()==1

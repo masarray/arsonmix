@@ -2,6 +2,7 @@
 """Real Chromium smoke of approved modeless workspace gestures; no audio device."""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from operator_wire_menu import open_wire_tool
 
 ROOT=Path(__file__).resolve().parents[1]
 HTML=ROOT/"site"/"preview-v2"/"index.html"
@@ -29,15 +30,7 @@ def move_panel(page,panel,header,dx=-110,dy=70):
     return after
 
 def open_wire(page,kind):
-    names={"routes":"wireNavigatorToggle","matrix":"wireMatrixToggle","config":"wireConfigToggle"}
-    button=page.locator("#"+names[kind])
-    if button.is_visible():
-        button.click()
-    else:
-        more=page.locator("#moreTools")
-        if not more.evaluate("e=>e.open"):
-            more.locator(":scope > summary").click()
-        more.locator('[data-wire-open="'+kind+'"]').click()
+    open_wire_tool(page, kind)
 
 def run(page,width,height):
     errors=[]

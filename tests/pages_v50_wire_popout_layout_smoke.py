@@ -2,19 +2,12 @@
 """V50 operator-first routing popouts and compact meter scale (browser reference only)."""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from operator_wire_menu import open_wire_tool
 
 HTML=Path(__file__).resolve().parents[1]/"site/preview-v2/index.html"
 
 def launch(page,kind):
-    ids={"routes":"wireNavigatorToggle","matrix":"wireMatrixToggle","config":"wireConfigToggle"}
-    button=page.locator("#"+ids[kind])
-    if button.is_visible():
-        button.click()
-    else:
-        menu=page.locator("#moreTools")
-        if not menu.evaluate("e=>e.open"):
-            menu.locator(":scope > summary").click()
-        menu.locator('[data-wire-open="'+kind+'"]').click()
+    open_wire_tool(page, kind)
 
 def inspect(page,width,height):
     page.goto(HTML.as_uri())

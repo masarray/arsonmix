@@ -16,13 +16,24 @@ def _choose_wire_menu(page, kind):
     assert not more.evaluate("(el) => el.open"), "Wire command did not dismiss More"
 
 
+def open_wire_tool(page, kind):
+    """Open the approved operator command; never click a hidden legacy ID."""
+    assert kind in ("config", "routes", "matrix"), kind
+    panel = page.locator("#wireConfigWindow" if kind == "config" else "#wireWorkspace")
+    if panel.is_visible():
+        if kind == "config":
+            return
+        if panel.evaluate("e=>e.classList.contains('is-matrix')") == (kind == "matrix"):
+            return
+    _choose_wire_menu(page, kind)
+    assert panel.is_visible(), f"WIRE {kind} did not open from More"
+    if kind != "config":
+        assert panel.evaluate("e=>e.classList.contains('is-matrix')") == (kind == "matrix")
+
+
 def open_wire_config(page):
     """Expose modeless Wire Setup without toggling a currently open editor off."""
-    panel = page.locator("#wireConfigWindow")
-    if panel.is_visible():
-        return
-    _choose_wire_menu(page, "config")
-    assert panel.is_visible(), "WIRE Setup did not open from More"
+    open_wire_tool(page, "config")
 
 
 def toggle_wire_routes(page):
