@@ -7569,7 +7569,7 @@ private:
                 static_cast<juce::int64>(args.getProperty("deviceEpoch",juce::var(0))));
             const auto revision=static_cast<std::uint64_t>(
                 static_cast<juce::int64>(args.getProperty("revision",juce::var(0))));
-            bool opened=false;
+            bool opened=false,retryable=true;
             juce::String error="FX editor unavailable: device, revision or instance changed";
             if(!nativeShowBusy_&&!studioBackupBusy_&&!engine_.isGraphSwitchPending()) {
                 armix::mixer::LiveChannelFxGraph::InstanceLease owner;
@@ -7592,6 +7592,7 @@ private:
                     }
                 } else owner=engine_.leaseRoutedFxForEditor(lane,slot,epoch,revision,token);
                 if(owner && owner->processor) {
+                    retryable=false; // plugin/window failures are not retryable admission races
 #if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
                     const bool dedicatedImmerSIB=dynamic_cast<
                         armix::builtin_fx::ImerSipP92Processor*>(owner->processor.get())!=nullptr;
@@ -7931,6 +7932,7 @@ private:
             }
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("ok",opened);
+            ack->setProperty("retryable",!opened&&retryable);
             ack->setProperty("error",error);
             ack->setProperty("instanceId",token);
             // G-MV36: correlate the HWND result to its exact GUI click.

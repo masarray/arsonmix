@@ -70,7 +70,7 @@
     style.textContent+="\n"+"html.armix-native-desktop #mxNativeVocalThrow #vtEncodersLeft,html.armix-native-desktop #mxNativeVocalThrow #vtEncodersRight{order:initial!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-throw-button{width:212px!important;height:212px!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-performance{grid-template-columns:88px minmax(0,1fr) 302px!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-rotary-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;min-height:190px!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-dial{width:62px!important;height:62px!important}\nhtml.armix-native-desktop #mxNativeHarmony .mx-harm-center{border-top:0!important;padding:8px 12px!important}";
     const offsets=new WeakMap();
     const identities=new WeakMap(); // exact FX owner, not its slot
-    const bypassOwners=new WeakMap(); // navigation lease, never a DSP gate
+    const bypassOwners=new Map(); // max five mounted roots, navigation lease only
     let drag=null,layer=16000;
     const limit=(value,low,high)=>Math.max(low,Math.min(high,value));
     const grip=()=>Math.min(130,Math.max(56,Math.floor(innerWidth*.22)));
@@ -113,11 +113,9 @@
     }
     function syncBypass(view){
       const hardwareConfiguration=protocol.nativeHardwareConfiguration(view?.device);
-      for(const [key,selector] of Object.entries(selectors)){
-        if(key==="ArSonMixGraphicEq31")continue; // original reference implementation
-        const root=document.querySelector(selector);
-        const lease=root&&bypassOwners.get(root);
-        if(!root||root.hidden||!lease)continue;
+      for(const [root,lease] of bypassOwners){
+        if(!root.isConnected){bypassOwners.delete(root);continue;}
+        if(root.hidden)continue;
         const value=fxRackVM.editorBypassPresentation(view,lease,{hardwareConfiguration});
         let shade=root.querySelector(".armix-native-fx-bypass");
         if(!shade){
@@ -151,7 +149,7 @@
       }
       host.open(track,slot);
       if(root.hidden)return false; // a no-op open is not a successful editor
-      if(lease)bypassOwners.set(root,lease);
+      if(lease&&key!=="ArSonMixGraphicEq31")bypassOwners.set(root,lease);
       root.style.zIndex=String(++layer);
       if(!offsets.has(root))center(root);
       else keepReachable(root);
@@ -1690,15 +1688,43 @@
 
   // One original native editor transport for M4 and ChannelId vendor FX.
   // The publisher's accepted lease is checked again BEFORE calling this.
-  function dispatchPhysicalFxEditor(plan,lease,authority){
+  function dispatchPhysicalFxEditor(plan,lease,authority,retried=false){
     const requestId="fx-editor-"+(++fxEditorSerial);
-    pendingFxEditorAck={requestId,authority,lease};
+    pendingFxEditorAck={requestId,authority,lease,retried,
+      recenter:plan.payload.recenter===true};
     backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload});
     window.setTimeout(()=>{
       if(pendingFxEditorAck?.requestId!==requestId)return;
+      if(retryPhysicalFxEditor(pendingFxEditorAck))return;
       pendingFxEditorAck=null;
       nativeToast("FX editor unavailable · request timed out");
     },8000);
+  }
+  function retryPhysicalFxEditor(pending){
+    if(!pending||pending.authority!=="CHANNEL_ID"||pending.retried||pending.retryScheduled)
+      return false;
+    const accepted=controller?.state()?.current;
+    if(logicalView||!fxRackVM.refreshEditorNavigationLease(accepted,pending.lease,{
+      hardwareConfiguration:protocol.nativeHardwareConfiguration(accepted?.device)}))
+      return false;
+    pending.retryScheduled=true;
+    controller?.subscribe(); // only independent accepted readback may refresh this click
+    window.setTimeout(()=>{
+      if(pendingFxEditorAck!==pending)return; // newer click wins
+      const current=controller?.state()?.current;
+      const fresh=!logicalView&&fxRackVM.refreshEditorNavigationLease(current,pending.lease,{
+        hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
+      const plan=fresh&&fxRackVM.nativeEditorDispatchPlan(current,fresh,{
+        hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
+      if(plan?.kind==="READY"){
+        dispatchPhysicalFxEditor({...plan,payload:{...plan.payload,recenter:pending.recenter}},
+          fresh,"CHANNEL_ID",true);
+      }else{
+        pendingFxEditorAck=null;
+        nativeToast("FX editor unavailable · accepted instance changed");
+      }
+    },160);
+    return true;
   }
   function openChannelIdFxEditor(lease,recenter=false){
     if(lease?.authority!=="CHANNEL_ID"||logicalView)return false;
@@ -3857,8 +3883,17 @@
         const accepted=controller?.state()?.current;
         if(fxRackVM.nativeEditorAckResult(pendingFxEditorAck,null,accepted,{
           verifiedM4:m4Verified(accepted),offline:!!logicalView,
-          hardwareConfiguration:protocol.nativeHardwareConfiguration(accepted?.device)})==="STALE")
-          pendingFxEditorAck=null;
+          hardwareConfiguration:protocol.nativeHardwareConfiguration(accepted?.device)})==="STALE"){
+          const p=pendingFxEditorAck;
+          const fresh=p?.authority==="CHANNEL_ID"&&!logicalView&&
+            fxRackVM.refreshEditorNavigationLease(accepted,p.lease,{
+              hardwareConfiguration:protocol.nativeHardwareConfiguration(accepted?.device)});
+          if(fresh)p.lease=fresh; // same owner only; HWND feedback is not PCM proof
+          else{
+            pendingFxEditorAck=null;
+            nativeToast("FX editor unavailable · accepted instance changed");
+          }
+        }
         syncGlobalFxReadback();
         inlineFxClip?.syncBypass(activeView());
       },
@@ -4119,7 +4154,10 @@
         verifiedM4:m4Verified(accepted),offline:!!logicalView,
         hardwareConfiguration:protocol.nativeHardwareConfiguration(accepted?.device)});
       if(verdict==="IGNORE")return; // obsolete, duplicate or unrelated ACK
-      if(ack?.requestId!==pendingFxEditorAck?.requestId)return;
+      const pending=pendingFxEditorAck;
+      if(!pending||ack?.requestId!==pending.requestId||pending.retryScheduled)return;
+      if(verdict==="REJECTED"&&ack?.instanceId===pending.lease.instanceId&&
+         ack?.retryable===true&&retryPhysicalFxEditor(pending))return;
       pendingFxEditorAck=null; // first ACK wins; no accepted PCM mutation
       if(verdict!=="ACKED"){
         const message="FX editor unavailable · "+String(ack?.error||"accepted instance changed");

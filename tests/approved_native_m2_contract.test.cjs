@@ -5050,7 +5050,8 @@ test("MV-9B bridge uses only accepted native snapshots for global FX, fences M4 
  assert.match(bridge,/const current=controller\?\.state\(\)\?\.current;\s*const button=document\.getElementById\?\.\("globalFxToggle"\)/);
  assert.match(bridge,/onAccepted:\(next,confirmed\)=>\{\s*onNativeReadback\(next,confirmed\);/);
  assert.match(bridge,/fxRackVM\.nativeEditorAckResult\(pendingFxEditorAck,null,accepted,/);
- assert.match(bridge,/pendingFxEditorAck=null;\s*syncGlobalFxReadback\(\);/);
+ assert.match(bridge,/if\(fresh\)p\.lease=fresh;/);
+ assert.match(bridge,/pendingFxEditorAck=null;\s*nativeToast\("FX editor unavailable · accepted instance changed"\);/);
  assert.match(bridge,/const apply=\(\)=>controller\.onSnapshot\(snapshot\);/);
  assert.doesNotMatch(bridge,/controller\.onSnapshot\(snapshot\);syncGlobalFxReadback/);
  assert.doesNotMatch(bridge,/const actual=snapshot\?\.globalFxBypassed;/);
@@ -7197,4 +7198,14 @@ test("P0 editor refresh and bypass projection preserve exact owner and gate hier
   "FX editor unavailable · Reopen from FX Rack");
  assert.equal(protocol.operatorMessage("Native FX editor opened"),"FX editor opened");
  assert.notEqual(protocol.operatorMessage("Native FX editor pending"),"Effect settings updated");
+});
+
+test("P0 bounded editor retry stays on same owner and native failure class",()=>{
+ const b=read("web/approved-native-bridge.js"),m=read("src/Main.cpp");
+ assert.match(b,/pending\.retried\|\|pending\.retryScheduled/);
+ assert.match(b,/if\(pendingFxEditorAck!==pending\)return/);
+ assert.match(b,/ack\?\.retryable===true&&retryPhysicalFxEditor\(pending\)/);
+ assert.match(b,/fresh,"CHANNEL_ID",true\);/);
+ assert.match(m,/retryable=false; \/\/ plugin\/window failures/);
+ assert.match(m,/ack->setProperty\("retryable",!opened&&retryable\)/);
 });
