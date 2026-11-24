@@ -166,7 +166,35 @@ static void testFullSupport(){
              "H14 support hole fixture");
     }
 }
+// Two nearby source peaks exchange dominance during a held note.
+ // An amplitude-only selector can jump between them despite correct F0.
+static void testEpochPhaseContinuity(){
+    constexpr double period=200.,tau=6.283185307179586;
+    Shifter old{},now{};std::array<float,16384> ring{};
+    double lastOld=-1.,lastNow=-1.;int jumpsOld=0,jumpsNow=0;
+    for(int i=0;i<48000;++i){
+        const double p=std::remainder(i/period,1.);
+        const double q=std::remainder(p-.20,1.);
+        const double secondary=.22+.10*std::sin(tau*3.*i/48000.);
+        ring[i&16383]=static_cast<float>(.22*std::exp(-p*p/.0016)+
+            secondary*std::exp(-q*q/.0016)-.03);
+        const auto a=old.process(0,i,i&16383,ring,period,1.5f,1536.f,1.f,true,true,false);
+        const auto b=now.process(0,i,i&16383,ring,period,1.5f,1536.f,1.f,true,true,true);
+        need(std::isfinite(a.sample)&&std::isfinite(b.sample),"H15 finite PCM");
+        auto count=[&](double epoch,double& prev,int& jumps){
+            if(epoch<0.||epoch==prev)return;
+            if(i>4800&&prev>=0.&&std::abs(std::remainder(epoch-prev,period))>period*.10)
+                ++jumps;
+            prev=epoch;
+        };
+        count(old.lastEpochForOfflineTests(0),lastOld,jumpsOld);
+        count(now.lastEpochForOfflineTests(0),lastNow,jumpsNow);
+    }
+    std::cout<<"H15_EPOCH old_jumps="<<jumpsOld<<" new_jumps="<<jumpsNow<<std::endl;
+    need(jumpsOld>0&&jumpsNow<jumpsOld,"H15 predicted landmark did not improve continuity");
+}
 int main(){
+    testEpochPhaseContinuity();
     testFullSupport();
     testResumeAfterGap();
     testResonanceScaling();

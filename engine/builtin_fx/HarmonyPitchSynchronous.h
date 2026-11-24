@@ -50,6 +50,11 @@ public:
         return epoch-width*scale>=0.&&age-spread>=2.&&
                age+spread<=static_cast<double>(Capacity-4);
     }
+    // Offline tests only, read after process; no extra RT telemetry.
+    double lastEpochForOfflineTests(int v) const noexcept {
+        return v>=0&&v<Voices&&states_[static_cast<std::size_t>(v)].haveEpoch?
+            states_[static_cast<std::size_t>(v)].lastEpoch:-1.;
+    }
     void reset() noexcept { states_={}; }
     void resetVoice(int v) noexcept {
         if(v>=0&&v<Voices)states_[static_cast<std::size_t>(v)]={};
@@ -60,9 +65,10 @@ public:
     Output process(int v,std::uint64_t time,std::size_t writeIndex,
                    const std::array<float,Capacity>& input,
                    float sourcePeriod,float ratio,float fixedDelay,
-                   float resonanceScale=1.f,bool continuous=true,bool supportAware=true) noexcept {
+                   float resonanceScale=1.f,bool continuous=true,bool supportAware=true,
+                   bool phaseAware=true) noexcept {
         const auto out=render<false>(v,time,writeIndex,input,input,input,
-                                     sourcePeriod,ratio,fixedDelay,resonanceScale,continuous,supportAware);
+                                     sourcePeriod,ratio,fixedDelay,resonanceScale,continuous,supportAware,phaseAware);
         return {out.left,out.ready,out.coverage};
     }
 
@@ -74,7 +80,7 @@ public:
                    const std::array<float,Capacity>& right,
                    float sourcePeriod,float ratio,float fixedDelay) noexcept {
         return render<true>(v,time,writeIndex,epochs,left,right,
-                            sourcePeriod,ratio,fixedDelay,1.f,false,false);
+                            sourcePeriod,ratio,fixedDelay,1.f,false,false,false);
     }
 private:
     template <bool Stereo>
@@ -83,7 +89,7 @@ private:
                    const std::array<float,Capacity>& left,
                    const std::array<float,Capacity>& right,
                    float sourcePeriod,float ratio,float fixedDelay,
-                   float resonanceScale,bool continuous,bool supportAware) noexcept {
+                   float resonanceScale,bool continuous,bool supportAware,bool phaseAware) noexcept {
         if(v<0||v>=Voices||!std::isfinite(sourcePeriod)||
            !std::isfinite(ratio)||!std::isfinite(fixedDelay)||
            sourcePeriod<8.f||sourcePeriod>3200.f||
@@ -127,7 +133,7 @@ private:
                     std::round((desired-state.lastEpoch)/period)*period;
                 if(std::abs(predicted-desired)<=.55*period)
                     peak=findLocalEpoch(epochs,time,writeIndex,predicted,
-                                        .24*period,state.epochPolarity);
+                                        .24*period,state.epochPolarity,phaseAware);
             }
             if(peak<0){
                 if(continuous&&state.epochPolarity!=0)
@@ -292,7 +298,7 @@ private:
     // only if their actual adjacent samples establish a local maximum.
     static std::int64_t findLocalEpoch(const std::array<float,Capacity>& input,
           std::uint64_t time,std::size_t writeIndex,double desired,
-          double radius,int polarity) noexcept {
+          double radius,int polarity,bool phaseAware=false) noexcept {
         if(time<3||polarity==0)return -1;
         const auto oldest=static_cast<std::int64_t>(time>=Capacity-3?time-(Capacity-3):0);
         const auto newest=static_cast<std::int64_t>(time)-2;
@@ -304,11 +310,20 @@ private:
         auto ix=(writeIndex+Capacity-static_cast<std::size_t>(
             static_cast<std::int64_t>(time)-start))&(Capacity-1);
         float prev=sign*input[(ix+Capacity-1)&(Capacity-1)],cur=sign*input[ix];
-        float best=1.e-5f;std::int64_t result=-1;
+        float best=0.f;std::int64_t result=-1;
+        const double invRadius=1./std::max(1.,radius);
         for(auto t=start;t<=end;++t){
             ix=(ix+1)&(Capacity-1);
             const float next=sign*input[ix];
-            if(cur>=prev&&cur>next&&cur>best){best=cur;result=t;}
+            if(cur>=prev&&cur>next&&cur>1.e-5f){
+                // A competing harmonic peak may become taller during a vowel.
+                // Prefer phase continuity inside the predicted neighborhood,
+                // but allow a genuinely stronger landmark to win. The wide
+                // reacquisition scan remains amplitude-driven.
+                const float score=phaseAware?cur*static_cast<float>(1.-.75*
+                    std::min(1.,std::abs(static_cast<double>(t)-desired)*invRadius)):cur;
+                if(score>best){best=score;result=t;}
+            }
             prev=cur;cur=next;
         }
         return result;

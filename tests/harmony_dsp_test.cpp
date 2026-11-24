@@ -883,13 +883,13 @@ static void testBackingContinuity(){
          +.065*std::sin(3*phase+1.1)+.026*std::sin(5*phase+.6);
       src.left[i]=src.right[i]=static_cast<float>(gap?.08*noise:x);
     }
-    auto run=[&](bool modern,bool wet,int block,bool support=true){
+    auto run=[&](bool modern,bool wet,int block,bool support=true,bool natural=false){
       auto e=std::make_unique<Engine>();Settings s;
       s.voices=voices;s.wet=wet?1.f:0.f;s.color=.78f;s.space=1.f;
       s.guideMode=1;s.guideChannelId=2;
       need(e->prepare(rate)&&e->setContinuityForOfflineReference(modern)&&
-           e->setSupportForOfflineReference(support)&&e->setSettings(s),
-           "H13 setup");
+           e->setSupportForOfflineReference(support)&&e->setNaturalForOfflineReference(natural)&&
+           e->setSettings(s),"H13 setup");
       auto out=src;
       for(int at=0;at<n;){
         // Split at control events; callback partition must not move them.
@@ -906,6 +906,25 @@ static void testBackingContinuity(){
     const auto h13=run(true,true,127,false);
     const auto dry=run(true,false,127),split=run(true,true,64);
     need(now.left==split.left&&now.right==split.right,"H13 block parity");
+    const auto h15=run(true,true,127,true,true),h15Split=run(true,true,64,true,true);
+    need(h15.left==h15Split.left&&h15.right==h15Split.right,"H15 block parity");
+    const auto dry15=run(true,false,127,true,true);
+    need(dry.left==dry15.left&&dry.right==dry15.right,"H15 dry changed");
+    for(int ch=0;ch<2;++ch){
+      const auto& a=ch?now.right:now.left;const auto& b=ch?h15.right:h15.left;
+      const auto& d=ch?dry.right:dry.left;
+      double ea=0.,eb=0.,da=0.,db=0.;
+      for(int i=rate/2;i<n;++i){
+        const double x=a[i]-d[i],y=b[i]-d[i];
+        need(std::isfinite(y),"H15 nonfinite backing");ea+=x*x;eb+=y*y;
+        da=std::max(da,std::abs(x-(a[i-1]-d[i-1])));
+        db=std::max(db,std::abs(y-(b[i-1]-d[i-1])));
+      }
+      const double gain=10.*std::log10(eb/ea),edge=db/da*std::sqrt(ea/eb);
+      std::cout<<"H15_PCM rate="<<rate<<" voices="<<voices<<" ch="<<ch
+               <<" wet_dB="<<gain<<" normalized_max_edge_ratio="<<edge<<std::endl;
+      need(ea>1.&&eb>1.&&std::abs(gain)<2.&&std::isfinite(edge),"H15 backing regression");
+    }
     need(dry.left==run(false,false,64).left,"H13 dry changed");
     for(int ch=0;ch<2;++ch){
       const auto& a=ch?old.right:old.left;const auto& b=ch?now.right:now.left;
@@ -1327,7 +1346,26 @@ static void testBackingUnity(){
   }
   need(within,"H1 full-Wet aggregate stem outside +/-2dB target; inspect H1_STEM rows");
 }
+static void testBackingPitchContour(){
+    for(double hop:{1./150.,1./100.}){
+        BackingPitchContour c;c.prepare(hop);
+        double retained=0.,input=0.;int n=static_cast<int>(2./hop);
+        for(int i=0;i<n;++i){
+            const float midi=60.f+.50f*std::sin(6.283185307179586*5.*i*hop);
+            const float correction=c.correctionMidi(60,midi);
+            if(i>n/2){retained+=(midi-correction)*(midi-correction);input+=(midi-60.f)*(midi-60.f);}
+        }
+        const double fraction=std::sqrt(retained/input);
+        std::cout<<"H15_CONTOUR hop="<<hop<<" retained="<<fraction<<std::endl;
+        need(fraction>.45&&fraction<.75,"H15 vibrato contour retention");
+        for(int i=0;i<n;++i)c.correctionMidi(60,60.3f);
+        need(std::abs(c.correctionMidi(60,60.3f)-60.3f)<.001f,"H15 static tuning drift");
+        need(c.correctionMidi(64,64.2f)==64.2f,"H15 note transition stale center");
+        c.reset();need(c.correctionMidi(64,63.8f)==63.8f,"H15 phrase reset");
+    }
+}
 int main(){
+    testBackingPitchContour();
   testCorrelationPerformance();
   testArticulation();
   testResonanceEngine();

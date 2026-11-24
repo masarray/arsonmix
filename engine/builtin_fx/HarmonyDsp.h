@@ -130,6 +130,27 @@ private:
     bool active_=false;
     float last_=0.f,start_=0.f;
 };
+// Slow note center removes sustained tuning error while keeping a bounded
+// fraction of the microphone's faster pitch contour. Updated once per
+// accepted pitch-analysis hop, not per sample. No lookahead or audio buffer.
+class BackingPitchContour final {
+public:
+    void prepare(double hopSeconds) noexcept {
+        alpha_=static_cast<float>(1.-std::exp(-hopSeconds/.120));
+        reset();
+    }
+    void reset() noexcept {note_=-1;center_=0.f;}
+    float correctionMidi(int note,float midi) noexcept {
+        if(note_!=note){note_=note;center_=midi;}
+        else center_+=alpha_*(midi-center_);
+        // 65% of the fast excursion, max 35 cents. Static tuning and
+        // accepted note changes retain the established target center.
+        return midi-std::clamp(.65f*(midi-center_),-.35f,.35f);
+    }
+private:
+    int note_=-1;
+    float center_=0.f,alpha_=1.f;
+};
 class Engine final {
 public:
     static constexpr int maxVoices=5;
@@ -180,6 +201,7 @@ public:
         pitchSyncValid_.fill(0.f);
         for(auto& seam:backingSeams_)seam.prepare(rate);
         continuityReferenceEnabled_=true;supportReferenceEnabled_=true;
+        naturalReferenceEnabled_=true;backingContour_.prepare(detectEvery_/rate);
         periodContinuity_.reset();
         sourcePeriodSamples_=0.f;sourceConfidence_=0.f;sampleClock_=0;
         uncertainPitchHops_=0;weakSyncHops_=0;pitchSyncStable_=false;
@@ -401,6 +423,11 @@ public:
     bool setResonanceForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
         resonanceReferenceEnabled_=enabled;return true;
+    }
+    // Exact H14 reference for matched acoustic regression only.
+    bool setNaturalForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        naturalReferenceEnabled_=enabled;return true;
     }
     bool setSupportForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
@@ -747,7 +774,7 @@ private:
             sync=pitchSync_.process(voice,sampleClock_,write_,mono_,
                 sourcePeriodSamples_,effectiveRatio,
                 static_cast<float>(latency_)+arrival,scale,continuityReferenceEnabled_,
-                supportReferenceEnabled_);
+                supportReferenceEnabled_,naturalReferenceEnabled_);
         float& colorState=pitchSyncFiltered_[ix];
         // Invalid PSOLA epochs must never inject zero into the high-voice
         // output while a crossfade is still active.
@@ -849,7 +876,7 @@ private:
         // render tail retains sourcePeriodSamples_ and live overlap-add
         // grains until its wet envelope crosses the silent threshold.
         // A new note arriving during the release can reuse valid epochs.
-        leadTune_.release();voicePlanner_.reset();
+        leadTune_.release();voicePlanner_.reset();backingContour_.reset();
     }
     // Keep the last known voiced note through at most five energetic but
     // ambiguous analysis windows (~33ms at 48k); true silence immediately
@@ -974,7 +1001,9 @@ private:
             // small individual cents/vibrato, no scale transposition.
             targetRatio_.fill(1.f);
         }else{
-            const float baseRatio=std::exp2((note-midi)/12.f);
+            const float contourMidi=backingContour_.correctionMidi(note,midi);
+            const float baseRatio=std::exp2((note-(naturalReferenceEnabled_&&
+                settings_.voices>=3?contourMidi:midi))/12.f);
             for(std::size_t v=0;v<singers.size();++v){
                 const int target=voicePlanner_.target(v);
                 targetRatio_[v]=target<0?1.f:std::clamp(
@@ -1021,6 +1050,8 @@ private:
     BackingArticulation articulation_{};
     std::array<BackingRenderSeam,maxVoices> backingSeams_{};
     bool continuityReferenceEnabled_=true,supportReferenceEnabled_=true;
+    bool naturalReferenceEnabled_=true;
+    BackingPitchContour backingContour_{};
     std::array<float,maxVoices> pitchSyncBlend_{},pitchSyncFiltered_{},pitchSyncValid_{};
     float space_=0.f,targetSpace_=0.f;
     float gain_=1.f,targetGain_=1.f,targetCorrection_=0.f;
