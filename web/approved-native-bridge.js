@@ -2458,12 +2458,92 @@
     }
     paintPhysicalOutputs(hardware);
   }
+  let namedPatchSerial=0,namedPatchPending=null;
+  function namedPatchChoices(side,model,next){
+    const entries=deviceInventory?.namedPatches?.entries;
+    if(!Array.isArray(entries)||!matrixReady(next))return [];
+    return entries.filter(p=>p?.side===side&&p.available===true&&typeof p.id==="string")
+      .map(p=>({id:p.id,name:p.name,choice:side==="input"?
+        deviceVM.physicalInputChoice(next,p.mode,p.left,p.right):
+        model.choices.find(x=>x.left===p.left&&x.right===p.right)}))
+      .filter(p=>p.choice);
+  }
+  function renderNamedPatchEditor(host,side,model,next,busy){
+    const data=deviceInventory?.namedPatches;
+    if(!data||!Array.isArray(data.entries))return; // older host, no fake storage
+    const entries=data.entries.filter(p=>p.side===side);
+    const section=document.createElement("div");section.className="armix-named-patches";
+    const title=document.createElement("strong");title.textContent="Named "+side+" presets";
+    const existing=document.createElement("select");existing.setAttribute("aria-label","Saved "+side+" preset");
+    existing.append(new Option("New preset",""));
+    for(const p of entries)existing.append(new Option(p.name+(p.available?"":" · Needs remap"),p.id));
+    const name=document.createElement("input");name.type="text";name.maxLength=48;name.placeholder="Preset name";name.setAttribute("aria-label","Preset name");
+    const mode=document.createElement("select");mode.setAttribute("aria-label","Preset format");
+    if(side==="input")mode.append(new Option("Mono","MONO"));
+    mode.append(new Option("Stereo","STEREO"));
+    const pin=(label)=>{
+      const el=document.createElement("select");el.setAttribute("aria-label","Preset "+label+" pin");
+      for(const p of model.pins)el.append(new Option(label+" · "+(p.port+1)+" "+p.label,String(p.port)));
+      return el;
+    };
+    const left=pin("L"),right=pin("R");if(model.pins.length>1)right.selectedIndex=1;
+    const save=document.createElement("button");save.type="button";save.textContent="Save preset";
+    const remove=document.createElement("button");remove.type="button";remove.textContent="Remove";
+    const hint=document.createElement("span");hint.className="armix-device-note";
+    hint.textContent=data.readOnly?data.error:"Presets do not change any mixer route until row Apply.";
+    const choice=()=>side==="input"?deviceVM.physicalInputChoice(next,mode.value,Number(left.value),
+      mode.value==="MONO"?-1:Number(right.value)):
+      model.choices.find(x=>x.left===Number(left.value)&&x.right===Number(right.value));
+    const locked=busy||!!namedPatchPending||data.readOnly===true;
+    const update=()=>{
+      right.hidden=mode.value==="MONO";
+      save.disabled=locked||!name.value.trim()||!choice();
+      remove.disabled=locked||!existing.value;
+    };
+    existing.onchange=()=>{
+      const p=entries.find(x=>x.id===existing.value);
+      name.value=p?.name||"";
+      if(p){mode.value=p.mode;left.value=String(p.left);right.value=String(p.right);}
+      update();
+    };
+    for(const el of [existing,name,mode,left,right])el.disabled=locked;
+    name.oninput=mode.onchange=left.onchange=right.onchange=update;
+    const send=operation=>{
+      if(locked||namedPatchPending||matrixBusy()||!matrixReady(hardware)||
+         hardware.device.epoch!==next.device.epoch||
+         hardware.hardwareConfiguration!==next.hardwareConfiguration||
+         deviceInventory?.namedPatches?.revision!==data.revision)return;
+      const a=deviceInventory.active,c=choice();
+      if(operation==="SAVE"&&!c)return;
+      const requestId="io-preset-"+(++namedPatchSerial);
+      namedPatchPending=requestId;
+      backend.emitEvent("arMixAction",{action:"audioNamedPatchEdit",requestId,operation,
+        revision:data.revision,deviceGeneration:a.deviceGeneration,backend:a.backend,
+        captureDevice:a.captureDevice,playbackDevice:a.playbackDevice,
+        id:existing.value,side,name:name.value.trim(),mode:mode.value,
+        left:c?.left??-1,right:c?.right??-1,
+        leftName:model.pins.find(p=>p.port===c?.left)?.label||"",
+        rightName:model.pins.find(p=>p.port===c?.right)?.label||""});
+      paintPhysicalOutputs(hardware);
+      window.setTimeout(()=>{
+        if(namedPatchPending!==requestId)return;
+        namedPatchPending=null;
+        nativeToast("I/O preset timed out · refreshing saved presets");
+        backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+        paintPhysicalOutputs(hardware);
+      },5000);
+    };
+    save.onclick=()=>send("SAVE");
+    remove.onclick=()=>{if(existing.value&&window.confirm("Remove this routing preset? Installed routes are unchanged."))send("REMOVE");};
+    section.append(title,existing,name,mode,left,right,save,remove,hint);update();host.append(section);
+  }
   function paintRouteMatrix(next,side){
     const host=devicePanel?.querySelector("[data-audio-"+side+"-grid]");
     if(!host)return;
     const model=deviceVM.patchMatrix(next,side);
     const ready=matrixReady(next),busy=matrixBusy();
-    const signature=JSON.stringify([model,busy,ready,next?.hardwareConfiguration,next?.device?.epoch]);
+    const signature=JSON.stringify([model,busy,ready,next?.hardwareConfiguration,next?.device?.epoch,
+      deviceInventory?.namedPatches,namedPatchPending]);
     const lease={config:next?.hardwareConfiguration,epoch:next?.device?.epoch,authority:model.authority,
       revision:model.revision,roster:model.roster};
     if(host.dataset.signature===signature)return;
@@ -2474,6 +2554,8 @@
         "Open a verified mixer with enabled "+side+" pins.";
       return;
     }
+    renderNamedPatchEditor(host,side,model,next,busy);
+    const aliases=namedPatchChoices(side,model,next);
     const table=document.createElement("table");table.className="armix-patch-grid";
     const head=table.createTHead().insertRow();
     const th=label=>{const e=document.createElement("th");e.textContent=label;head.append(e);};
@@ -2501,11 +2583,14 @@
       if(model.pins.length>1)customRight.selectedIndex=1;
       if(row.selected===null){const op=new Option(row.state||"Current source", "");op.disabled=true;select.append(op);}
       for(const choice of candidates)select.append(new Option(choice.label,choice.label));
+      if(row.editable)for(const p of aliases)
+        select.append(new Option(p.name+" · "+p.choice.label,"preset:"+p.id));
       if(side==="input"&&row.editable&&model.pins.length>1)
         select.append(new Option("Custom stereo L/R…",customValue));
       select.value=row.selected??"";
       const selectedChoice=()=>select.value===customValue?
         deviceVM.physicalInputChoice(next,"STEREO",Number(customLeft.value),Number(customRight.value)):
+        select.value.startsWith("preset:")?aliases.find(p=>"preset:"+p.id===select.value)?.choice:
         candidates.find(x=>x.label===select.value);
       const apply=document.createElement("button");apply.type="button";apply.textContent="Apply";
       const update=()=>{
@@ -2961,6 +3046,9 @@
         .armix-patch-grid select{max-width:210px;font-size:11px}
         .armix-custom-stereo{display:grid;gap:3px;margin-top:4px}
         .armix-custom-stereo[hidden]{display:none!important}
+        .armix-named-patches{display:flex;flex-wrap:wrap;align-items:center;gap:5px;padding:6px 0 12px}
+        .armix-named-patches select,.armix-named-patches input{width:auto;max-width:180px;min-width:72px;font:11px system-ui;color:#e9f8ff;background:#09202c;border:1px solid #476778;border-radius:3px;padding:5px}
+        .armix-named-patches .armix-device-note{flex-basis:100%}
         .armix-audio-dialog:not([data-audio-tab="inputs"]) .armix-input-overview,
         .armix-audio-dialog:not([data-audio-tab="routing"]) .armix-output-overview,
         .armix-audio-dialog:not([data-audio-tab="device"]) .armix-endpoint-fields,
@@ -3399,12 +3487,22 @@
     }
   }
   if(connected){
+    backend.addEventListener("arMixNamedPatchAck",ack=>{
+      if(!namedPatchPending||ack?.requestId!==namedPatchPending)return;
+      namedPatchPending=null;
+      // Request an independent native inventory. Never treat ACK metadata
+      // as an installed route or overwrite the current hardware draft.
+      nativeToast(ack.ok===true?"I/O preset saved":ack.error||"I/O preset rejected");
+      backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+      paintPhysicalOutputs(hardware);
+    });
     backend.addEventListener("arMixAudioDeviceInventory",inventory=>{
       if(!inventory||!Array.isArray(inventory.types)||deviceBusy())return;
       // Inventory is a native observation, not accepted Apply proof.
       deviceInventory=inventory;
       deviceChoice=null;
       renderDevicePanel();
+      paintPhysicalOutputs(hardware);
       if(devicePanel&&!devicePanel.hidden&&devicePanel.dataset.openPinsAfterInventory==="true"){
         delete devicePanel.dataset.openPinsAfterInventory;
         if(deviceVM.setupRoutingReady(deviceInventory,deviceChoice,deviceState))

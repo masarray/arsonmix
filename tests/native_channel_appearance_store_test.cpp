@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 #include "../src/NativeChannelAppearanceStore.h"
+#include "../src/NativeNamedPatchStore.h"
 
 using armix::appearance::Store;
 static juce::var object(){return juce::var(new juce::DynamicObject());}
@@ -39,7 +40,59 @@ static juce::var edit(const juce::String& id,const juce::String& name,
     set(v,"rosterRevision","11");set(v,"appearanceRevision","0");
     return v;
 }
+static void namedPatchRegression(){
+    const auto dir=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("ArSonMixNamedIO","",false);
+    assert(dir.createDirectory().wasOk());
+    auto active=object();
+    set(active,"backend","ASIO");set(active,"captureDevice","Test ASIO");set(active,"playbackDevice","Test ASIO");
+    set(active,"open",true);set(active,"authorized",true);set(active,"deviceGeneration",7);
+    juce::Array<juce::var> names;names.add("Mic 1");names.add("Mic 2");names.add("VC 1");
+    juce::Array<juce::var> enabled;enabled.add(0);enabled.add(2);
+    set(active,"inputNames",juce::var(names));set(active,"enabledInputs",juce::var(enabled));
+    auto req=object();
+    for(const char* k:{"backend","captureDevice","playbackDevice","deviceGeneration"})
+        set(req,k,active.getProperty(k,{}));
+    set(req,"revision",0);set(req,"id","");set(req,"operation","SAVE");
+    set(req,"side","input");set(req,"name","Vocal Stereo");set(req,"mode","STEREO");
+    set(req,"left",2);set(req,"right",0);set(req,"leftName","VC 1");set(req,"rightName","Mic 1");
+    juce::String id;
+    {
+        armix::io::NamedPatchStore store(dir);
+        set(req,"right",1);set(req,"rightName","Mic 2");
+        assert(store.apply(req,active).isNotEmpty());
+        set(req,"right",0);set(req,"rightName","Mic 1");
+        assert(store.apply(req,active).isEmpty());
+        const auto rows=store.snapshot(active).getProperty("entries",{});
+        assert(rows.isArray()&&rows.getArray()->size()==1);
+        id=rows[0].getProperty("id","").toString();
+        assert(rows[0].getProperty("available",{})==juce::var(true));
+        assert(store.apply(req,active).isNotEmpty());
+    }
+    {
+        armix::io::NamedPatchStore store(dir);
+        auto rows=store.snapshot(active).getProperty("entries",{});
+        assert(rows.isArray()&&rows.getArray()->size()==1);
+        assert(rows[0].getProperty("id","").toString()==id);
+        set(req,"id",id);set(req,"revision",1);set(req,"name","Vocal LR");
+        assert(store.apply(req,active).isEmpty());
+        set(active,"inputNames",juce::var(juce::Array<juce::var>{"Other","Mic 2","VC 1"}));
+        rows=store.snapshot(active).getProperty("entries",{});
+        assert(rows[0].getProperty("available",{})==juce::var(false));
+        set(req,"revision",2);assert(store.apply(req,active).isNotEmpty());
+        set(req,"operation","REMOVE");assert(store.apply(req,active).isEmpty());
+        assert(store.snapshot(active).getProperty("entries",{}).getArray()->isEmpty());
+    }
+    const auto file=dir.getChildFile("named-io-patches.v1.json");
+    assert(file.replaceWithText("broken"));
+    armix::io::NamedPatchStore damaged(dir);
+    assert(damaged.snapshot(active).getProperty("readOnly",{})==juce::var(true));
+    assert(damaged.apply(req,active).isNotEmpty());
+    assert(file.loadFileAsString()=="broken");
+    assert(dir.deleteRecursively());
+}
 int main(){
+    namedPatchRegression();
     const auto dir=juce::File::getSpecialLocation(juce::File::tempDirectory)
         .getNonexistentChildFile("ArSonMixChannelIdentity","",false);
     assert(dir.createDirectory().wasOk());

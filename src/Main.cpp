@@ -44,6 +44,7 @@
 #include "NativeDryShowRecall.h"
 #include "NativeShowSaveWorker.h"
 #include "NativeChannelAppearanceStore.h"
+#include "NativeNamedPatchStore.h"
 #include "NativeMixerSessionSaveWorker.h"
 #include "NativeMixerSessionRecovery.h"
 #include "NativeLogicalMixerControl.h"
@@ -835,6 +836,7 @@ private:
     PluginCatalog catalog_;
     DiagnosticsRecorder diagnostics_;
     armix::appearance::Store channelAppearance_{settingsDirectory()};
+    armix::io::NamedPatchStore namedPatches_{machineSettingsDirectory()};
     armix::storage::NativePresetArchive presets_;
     armix::storage::BuiltInFxUserPresetStore builtinFxUserPresets_{settingsDirectory()};
     std::function<void(int)> onStartupStage_;
@@ -3076,7 +3078,9 @@ private:
         const auto elapsed=monotonicMilliseconds()-started;
         inventory->setProperty("types",juce::var(types));
         inventory->setProperty("currentType",manager.getCurrentAudioDeviceType());
-        inventory->setProperty("active",currentDeviceSnapshot());
+        const auto active=currentDeviceSnapshot();
+        inventory->setProperty("active",active);
+        inventory->setProperty("namedPatches",namedPatches_.snapshot(active));
         inventory->setProperty("scanState",scanState);
         inventory->setProperty("scanDurationMs",static_cast<double>(elapsed));
         if(explicitRescan)
@@ -8519,6 +8523,21 @@ private:
             if (browser_.loaded)
                 browser_.emitEventIfBrowserIsVisible ("arMixDiagnosticReportCopied", juce::var (response.release()));
             emitNotice ("Audio report copied! Paste it directly into the engineering chat.");
+        }
+        else if (action == "audioNamedPatchEdit")
+        {
+            const auto request=args.getProperty("requestId",{}).toString();
+            const auto active=currentDeviceSnapshot();
+            const auto error=(request.startsWith("io-preset-")&&request.length()<=64&&
+                !nativeShowBusy_&&!studioBackupBusy_&&!engine_.independentClockActive()&&
+                !engine_.hasTemporaryDiagnosticDevice())
+                ?namedPatches_.apply(args,active):juce::String("I/O preset edit unavailable");
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request);
+            ack->setProperty("ok",error.isEmpty());
+            ack->setProperty("error",error);
+            ack->setProperty("namedPatches",namedPatches_.snapshot(active));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixNamedPatchAck",juce::var(ack.release()));
         }
         else if (action == "audioDeviceInventory")
         {
