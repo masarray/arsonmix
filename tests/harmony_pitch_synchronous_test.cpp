@@ -294,6 +294,8 @@ static void testAdaptiveEpochRescue(){
             if(sec>.23&&sec<.4){missingOld+=!a.ready;missingNew+=!b.ready;missingLocal+=!c.ready;}
             if(sec>.95)need(!b.ready&&!b.recovered&&!c.ready&&!c.recovered,"H28B/C fabricated silent epoch");
         }
+        need(missingOld>0&&missingNew==0&&trace.adaptiveAccepted>0,"H28B stale-period regression");
+        need(missingLocal<missingOld&&localTrace.localAccepted>0,"H28C delayed-local rescue regression");
         need(trace.attempts==trace.admitted+trace.missingPeak+trace.poolBlocked+trace.supportRejected&&
              trace.adaptiveAccepted<=trace.adaptiveAttempts&&trace.adaptiveSites<=trace.adaptiveAttempts*1028,
              "H28B bounded work/accounting");

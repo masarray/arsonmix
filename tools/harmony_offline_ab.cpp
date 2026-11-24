@@ -667,7 +667,8 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
         SeamCounts seams{};
         std::array<Engine::AdmissionTrace,Engine::maxVoices> admissions{};
     };
-    auto render=[&](int variant,float wet,bool trace=false){
+    auto render=[&](int variant,float wet,bool trace=false,int partition=0){
+        const int renderBlock=partition?partition:block;
         auto e=std::make_unique<Engine>();
         auto settings=s;settings.wet=wet;
         if(!e->prepare(input.rate)||!e->setSettings(settings)||
@@ -685,12 +686,12 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
                 if(at==f.at)applyGuide(*e,f);
                 end=f.end;
             }
-            const auto n=std::min(std::size_t(block),end-at);
+            const auto n=std::min(std::size_t(renderBlock),end-at);
             const auto start=std::chrono::steady_clock::now();
             e->process(x.pcm.left.data()+at,x.pcm.right.data()+at,int(n));
             const auto elapsed=std::chrono::duration<double,std::micro>(
                 std::chrono::steady_clock::now()-start).count();
-            if(!trace&&at>=input.rate/4&&n==std::size_t(block))x.us.push_back(elapsed);
+            if(!trace&&!partition&&at>=input.rate/4&&n==std::size_t(block))x.us.push_back(elapsed);
             at+=n;if(guide&&at==guide->at(gi).end)++gi;
         }
         for(int v=0;v<Engine::maxVoices;++v){
@@ -732,6 +733,15 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
            <<pct(100)<<','<<deadline<<','<<misses<<'\n';
         writeWave(folder/(std::string(names[v])+"_raw_mix.wav"),x.pcm);
         writeWave(folder/(std::string(names[v])+"_raw_backing.wav"),backing);
+    }
+    // Replay the actual guide events at the same sample boundaries,
+    // but split PCM calls differently. No measurements from this pass.
+    for(int version:{3,4}){
+        const auto split=render(version,1.f,false,block==31?127:31);
+        if(!same(split.pcm,runs[version].pcm)||split.losses!=runs[version].losses)
+            throw std::runtime_error("H28D candidate partition mismatch");
+        if(!same(render(version,0.f,false,31).pcm,dry))
+            throw std::runtime_error("H28D candidate altered aligned dry");
     }
     // Exact native replay with trace enabled, never contaminate timing.
     const auto traced=render(0,1.f,true);
@@ -797,6 +807,7 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
              <<" frames="<<input.left.size()<<" voices="<<s.voices<<" block="<<block
              <<" H26_updates="<<runs[1].updates<<" H27_updates="<<runs[2].updates
              <<" RMS-matched audition PASS (no subjective verdict)\n";
+    std::cout<<"H28D_PARTITION mode="<<(guide?"Music":"Manual")<<" frames="<<input.left.size()<<" candidates=2 exact_pcm_and_dry=true\n";
 }
 int main(int argc,char** argv){
     try{
