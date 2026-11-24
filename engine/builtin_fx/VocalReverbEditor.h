@@ -509,7 +509,6 @@ public:
         save_.setEnabled(false);
         save_.onClick=[this]{promptSavePreset();};
         addAndMakeVisible(save_);
-        addAndMakeVisible(album_);
         for(int i=0;i<4;++i)
             algorithm_.addItem(arverb::algorithmName(static_cast<arverb::Algorithm>(i)),i+1);
         algorithm_.setSelectedId(draft_.algorithm+1,juce::dontSendNotification);
