@@ -1259,6 +1259,53 @@ static void testBackingContinuity(){
     }
   }
 }
+// Field audit: no runtime modifications. A peak sweep at unity output
+// gain, full wet, two Space settings and five modes. Float samples above
+// unity are headroom violations at a fixed-point sink, not proof of clipping
+// inside the float engine. Do not gate old behavior on the investigation.
+static void auditFieldHeadroom(){
+    constexpr int rate=48000,n=rate*2;
+    constexpr double tau=6.283185307179586;
+    LeadFixture src{std::vector<float>(n),std::vector<float>(n)};
+    double phase=0.,sourcePeak=0.;
+    for(int i=0;i<n;++i){
+        const double t=double(i)/rate;
+        const double hz=(t<.55?220.:t<1.05?440.:t<1.55?880.:220.)*
+            std::exp2(45.*std::sin(tau*5.1*t)/1200.);
+        phase+=tau*hz/rate;
+        const double env=std::min({1.,t/.025,(2.-t)/.025})*
+            (.78+.22*std::sin(tau*2.3*t));
+        const float v=static_cast<float>(env*(.69*std::sin(phase)+
+            .19*std::sin(2*phase+.3)+.08*std::sin(3*phase+.7)+.04*std::sin(5*phase+.2)));
+        src.left[i]=src.right[i]=v;sourcePeak=std::max(sourcePeak,double(std::abs(v)));
+    }
+    for(float inputPeak:{.25f,.5f,.8f})for(float space:{0.f,1.f})for(int mode=1;mode<=5;++mode){
+        Settings s;s.voiceMode=mode==1?1:0;s.voices=std::max(2,mode);
+        s.wet=1.f;s.space=space;s.color=.78f;s.gainDb=0.f;s.correction=false;
+        auto x=src;
+        for(int i=0;i<n;++i)x.left[i]=x.right[i]=static_cast<float>(src.left[i]*inputPeak/sourcePeak);
+        auto e=std::make_unique<Engine>();
+        need(e->prepare(rate)&&e->setSettings(s)&&e->setRendererTraceForOfflineTests(true),"field audit setup");
+        for(int at=0;at<n;at+=64)e->process(x.left.data()+at,x.right.data()+at,std::min(64,n-at));
+        double peakL=0.,peakR=0.;int aboveL=0,aboveR=0,internalClamp=0;std::uint64_t calls=0,losses=0;
+        for(int i=0;i<n;++i){
+            need(std::isfinite(x.left[i])&&std::isfinite(x.right[i]),"field audit nonfinite");
+            peakL=std::max(peakL,double(std::abs(x.left[i])));
+            peakR=std::max(peakR,double(std::abs(x.right[i])));
+            aboveL+=std::abs(x.left[i])>1.f;aboveR+=std::abs(x.right[i])>1.f;
+            internalClamp+=(std::abs(x.left[i])>=4.f)+(std::abs(x.right[i])>=4.f);
+        }
+        for(int v=0;v<Engine::maxVoices;++v){
+            calls+=e->rendererTraceForOfflineTests(v).values[Engine::RendererTrace::calls];
+            losses+=e->seamCountsForOfflineTests(v).losses;
+        }
+        if(mode==1)need(calls==0,"stable Doubler must not call pitch renderer");
+        std::cout<<"FIELD_HEADROOM mode="<<mode<<" input_peak="<<inputPeak<<" space="<<space
+                 <<" peakL="<<peakL<<" peakR="<<peakR<<" aboveL="<<aboveL<<" aboveR="<<aboveR
+                 <<" internalClamp="<<internalClamp<<" shifted_calls="<<calls
+                 <<" pitch_analyses="<<e->completedPitchAnalyses()<<" losses="<<losses<<std::endl;
+    }
+}
 static void testContinuousDoubler(){
   constexpr double tau=6.283185307179586;
   for(int rate:{48000,96000})for(double hz:{220.,880.,1320.}){
@@ -1729,6 +1776,7 @@ int main(){
   testUnvoicedGapPreservesWetTail();
   testBackingContinuity();
   testLowerPresenceAndPresets();
+  auditFieldHeadroom();
   testContinuousDoubler();
   testUnisonDoubler();
   testPeriodContinuityOnLoudOctaveErrors();
