@@ -147,6 +147,117 @@ static void testVoicePlanner(){
   planner.plan(67,0,major);
   need(planner.target(2)!=high,"reset retained previous phrase voicing");
 }
+// Audit chord membership across every key, both scale families and
+// ascending/descending note history. Require actual register separation;
+// a collection of independently diatonic pitches is insufficient.
+static void testMusicalEnsemblePlanner(){
+  int checked=0;
+  for(const auto& scale:{major,minor})for(int key=0;key<12;++key){
+    VoicePlanner planner;
+    for(int direction:{1,-1}){
+      planner.reset();
+      for(int step=0;step<=48;++step){
+        const int melody=direction>0?36+step:84-step;
+        const int pc=((melody-key)%12+12)%12;
+        if(std::find(scale.begin(),scale.end(),pc)==scale.end())continue;
+        planner.plan(melody,key,scale,5);
+        const std::array<int,6> notes{{planner.target(3),planner.target(0),
+          melody,planner.target(1),planner.target(2),planner.target(4)}};
+        for(std::size_t i=1;i<notes.size();++i)
+          need(notes[i]-notes[i-1]>=3,"H3 singers packed closer than a third");
+        bool triad=false;
+        for(int root=0;root<7;++root){
+          const std::array<int,3> chord{{scale[root],scale[(root+2)%7],scale[(root+4)%7]}};
+          if((chord[2]-chord[0]+12)%12!=7)continue;
+          bool all=true;
+          for(int n:notes){
+            const int c=((n-key)%12+12)%12;
+            all=all&&std::find(chord.begin(),chord.end(),c)!=chord.end();
+          }
+          triad=triad||all;
+        }
+        need(triad,"H3 ensemble does not share a consonant diatonic triad");
+        for(std::size_t i=0;i<singers.size();++i)
+          need(planner.target(i)-melody>=singers[i].minInterval&&
+               planner.target(i)-melody<=singers[i].maxInterval,
+               "H3 singer escaped realtime pitch-ratio register");
+        ++checked;
+      }
+    }
+  }
+  std::cout<<"H3_VOICING checked="<<checked<<std::endl;
+  for(int n:{3,4,5}){
+    Settings s;s.voices=n;s.space=.6f;
+    Engine::PreparedSettings p{};
+    need(Engine::prepareSettings(s,p),"H3 stage prepare");
+    double prev=-2.;
+    for(int i:{0,3,1,4,2}){
+      if(!singerActive(singers[i].role,n))continue;
+      const double pan=(p.mixR[i]-p.mixL[i])/(p.mixR[i]+p.mixL[i]);
+      need(pan-prev>.12,"H3 active positions too close");
+      prev=pan;
+    }
+  }
+}
+// Actual per-role native PCM, not just intended note metadata. Keep
+// the same gain/pan/arrangement and solo one slot through prepared mixing.
+static void testMusicalHighStem(){
+  constexpr double tau=6.283185307179586;
+  for(int rate:{48000,96000})for(double hz:{110.,220.,440.}){
+    auto input=leadFixture(rate,hz,0.f,0.f);input.right=input.left;
+    for(int count:{3,5}){
+      Settings s;s.voices=count;s.wet=1.f;s.color=1.f;s.space=.6f;
+      auto render=[&](int role,int block){
+        auto e=std::make_unique<Engine>();Engine::PreparedSettings prep{};
+        need(e->prepare(rate)&&Engine::prepareSettings(s,prep),"H3 PCM setup");
+        for(int i=0;i<5;++i)if(i!=role)prep.mixL[i]=prep.mixR[i]=0.f;
+        need(e->applyPreparedSettings(prep),"H3 PCM prepared solo");
+        auto out=input;
+        for(int i=0;i<2*rate;i+=block)
+          e->process(out.left.data()+i,out.right.data()+i,std::min(block,2*rate-i));
+        return out;
+      };
+      const auto dry=render(-1,127);
+      auto energy=[&](const LeadFixture& o){
+        double e=0.;
+        for(int i=rate;i<2*rate;++i){
+          const double l=o.left[i]-dry.left[i],r=o.right[i]-dry.right[i];
+          e+=l*l+r*r;
+        }
+        return e;
+      };
+      const auto low=render(0,127),high=render(2,127);
+      const auto high64=render(2,64);
+      need(high.left==high64.left&&high.right==high64.right,"H3 high block parity");
+      const double balance=10.*std::log10(energy(high)/energy(low));
+      VoicePlanner planner;const int melody=69+static_cast<int>(std::lround(12.*std::log2(hz/440.)));
+      planner.plan(melody,0,major,count);
+      const double target=440.*std::exp2((planner.target(2)-69)/12.);
+      // Search a local band of the isolated right-side HIGH fundamental.
+      auto power=[&](double f){
+        double a=0.,b=0.;
+        for(int i=rate;i<rate+rate/2;i+=2){
+          const double sample=high.right[i]-dry.right[i];
+          a+=sample*std::cos(tau*f*i/rate);b+=sample*std::sin(tau*f*i/rate);
+        }
+        return a*a+b*b;
+      };
+      double best=0.,found=0.;
+      for(int cents=-150;cents<=150;cents+=5){
+        const double f=target*std::exp2(cents/1200.);
+        const double powerAt=power(f);
+        if(powerAt>best){best=powerAt;found=f;}
+      }
+      const double error=1200.*std::log2(found/target);
+      std::cout<<"H3_HIGH rate="<<rate<<" hz="<<hz<<" voices="<<count
+               <<" expected="<<target<<" found="<<found<<" cents="<<error
+               <<" high_vs_low_dB="<<balance<<std::endl;
+      need(std::isfinite(balance)&&balance>=-3.&&balance<=8.,
+           "H3 HIGH energy masked or dominates LOW");
+      need(std::abs(error)<=35.&&best>1.,"H3 isolated HIGH fundamental not at musical target");
+    }
+  }
+}
 // Duo is two PITCHED wet voices; Doubler is a SINGLE synthetic unison take.
 // This is a native PCM proof, not a certified real-singer naturalness test.
 static void testUnisonDoubler(){
@@ -483,6 +594,8 @@ static void testBackingUnity(){
   need(within,"H1 full-Wet aggregate stem outside +/-2dB target; inspect H1_STEM rows");
 }
 int main(){
+  testMusicalEnsemblePlanner();
+  testMusicalHighStem();
   testLeadRendererSeam();
   testBackingUnity();
   testUnvoicedGapPreservesWetTail();

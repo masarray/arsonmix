@@ -189,6 +189,17 @@ public:
                                   v[1]+(v[2]-v[1])*((s-.6f)/.4f);
         return 1.f+blend*(full-1.f);
     }
+    // Preserve Duo's exact gains. Larger ensembles distribute the same
+    // normalized power across five distinct positions; the HIGH singer
+    // is a primary part, not another diffuse support layer.
+    static float singerPresence(std::size_t v,int voices) noexcept {
+        constexpr std::array<float,5> arranged{{1.20f,.88f,1.52f,.94f,1.30f}};
+        return voices<=2?singers[v].presence:arranged[v];
+    }
+    static float singerPan(std::size_t v,int voices) noexcept {
+        constexpr std::array<float,5> arranged{{-.94f,-.17f,.95f,-.49f,.43f}};
+        return voices<=2?singers[v].pan:arranged[v];
+    }
     static bool prepareSettings(const Settings& next,PreparedSettings& out,
                                 bool enhancedPresence=true,
                                 bool unityPresence=true) noexcept {
@@ -213,9 +224,11 @@ public:
             return true;
         }
         float profileEnergy=0.f;
-        for(const auto& singer:singers)
-            if(singerActive(singer.role,next.voices))
-                profileEnergy+=singer.presence*singer.presence;
+        for(std::size_t v=0;v<singers.size();++v)
+            if(singerActive(singers[v].role,next.voices)){
+                const float presence=singerPresence(v,next.voices);
+                profileEnergy+=presence*presence;
+            }
         const float amplitude=normalizedBackingWetAmplitude(
             next.wet,next.voices,enhancedPresence)*
             std::sqrt(static_cast<float>(next.voices)/profileEnergy);
@@ -227,8 +240,8 @@ public:
             // The sqrt curve and constant-power gains are CONTROL-only;
             // Space=0 remains a single mono backing center.
             const float stageWidth=std::sqrt(next.space);
-            const float angle=(singer.pan*stageWidth+1.f)*pi*0.25f;
-            const float level=amplitude*singer.presence;
+            const float angle=(singerPan(v,next.voices)*stageWidth+1.f)*pi*0.25f;
+            const float level=amplitude*singerPresence(v,next.voices);
             prepared.mixL[v]=level*std::cos(angle);
             prepared.mixR[v]=level*std::sin(angle);
         }
@@ -252,6 +265,10 @@ public:
         }
         if(settings_.correction&&!next.settings.correction)
             leadTune_.release();
+        if((next.settings.voices>=3)!=(settings_.voices>=3)){
+            // Mode boundary changes the arranger, even on a held note.
+            tonalTransitionPending_=true;
+        }
         if(next.settings.voiceMode!=settings_.voiceMode){
             // Re-evaluate note targets on the next accepted analysis,
             // without stopping the dry singer or reinitializing the room.
@@ -716,7 +733,7 @@ private:
         const float newPeriod=static_cast<float>(rate_/hz);
         if(note!=currentNote_||tonalTransitionPending_){
             if(settings_.voiceMode==0)
-                voicePlanner_.plan(note,activeKey,activeScale==0?major:minor);
+                voicePlanner_.plan(note,activeKey,activeScale==0?major:minor,settings_.voices);
             else voicePlanner_.reset();
             ensemble_.beginNote();
         }
