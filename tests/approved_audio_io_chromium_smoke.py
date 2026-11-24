@@ -152,6 +152,60 @@ def verify_custom_input(page,out):
     assert second["requestId"]!=req["requestId"] and (second["left"],second["right"])==(3,0),second
     assert not errors,errors
 
+def verify_logical_inputs(page,out):
+    errors=[]
+    page.on("pageerror",lambda e:errors.append(str(e)))
+    page.add_init_script("""window.__nativeListeners=new Map();window.__actions=[];
+      window.confirm=()=>true;
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
+        addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+      }};""")
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+    state=snapshot()
+    state["productionCallbackLive"]=True
+    state["device"].update(backend="ASIO",captureDevice="Test ASIO",playbackDevice="Test ASIO",
+        enabledInputs=[0,2,3],inputEndpoints=[
+            {"id":"in:"+str(port),"port":port,"callback":index,
+             "label":"Mic "+str(port+1),"active":True}
+            for index,port in enumerate([0,2,3])])
+    state["logicalInputRegistry"]={"revision":"1","ports":[],"references":[]}
+    emit(page,"arMixConsoleSnapshot",state)
+    open_verified_audio_io(page,state,"inputs")
+    page.get_by_text("Session logical inputs",exact=True).click()
+    page.get_by_label("Logical input name",exact=True).fill("Live Vocal")
+    page.get_by_role("button",name="Add port",exact=True).click()
+    req=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingLogicalInputEdit').at(-1)")
+    assert req["operation"]=="ADD" and req["logicalRevision"]=="1"
+    portid="9007199254740999"
+    emit(page,"arMixLogicalInputAck",{"requestId":req["requestId"],"ok":True,
+        "logicalRevision":"2","graphRevision":state["graph"]["revision"]})
+    select=page.get_by_label("Logical input port",exact=True)
+    assert select.locator("option[value='"+portid+"']").count()==0
+    port={"id":portid,"name":"Live Vocal","format":"MONO","bound":False}
+    state["logicalInputRegistry"]={"revision":"2","ports":[port],"references":[]}
+    emit(page,"arMixConsoleSnapshot",state)
+    select.select_option(portid)
+    page.get_by_label("Logical L pin",exact=True).select_option("0")
+    page.get_by_role("button",name="Apply pin binding",exact=True).click()
+    bind=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingLogicalInputEdit').at(-1)")
+    assert bind["operation"]=="BIND" and bind["portId"]==portid and bind["leftName"]=="Mic 1"
+    emit(page,"arMixLogicalInputAck",{"requestId":bind["requestId"],"ok":True,
+        "logicalRevision":"3","graphRevision":state["graph"]["revision"]})
+    port.update(bound=True,left=0,right=-1,leftName="Mic 1",rightName="",
+        backend="ASIO",capture="Test ASIO",playback="Test ASIO")
+    state["logicalInputRegistry"]={"revision":"3","ports":[port],"references":[]}
+    emit(page,"arMixConsoleSnapshot",state)
+    page.get_by_label("Logical input channel",exact=True).select_option(SOURCE)
+    page.get_by_role("button",name="Assign to channel",exact=True).click()
+    assign=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingLogicalInputEdit').at(-1)")
+    assert assign["operation"]=="ASSIGN" and assign["channelId"]==SOURCE and assign["portId"]==portid
+    emit(page,"arMixLogicalInputAck",{"requestId":assign["requestId"],"ok":False,"error":"fixture reject"})
+    assert page.get_by_label("Logical input port",exact=True).is_enabled()
+    assert page.get_by_label("Logical input channel",exact=True).locator("option[value='"+SOURCE+"']").inner_text().find("Live Vocal")==-1
+    assert not errors,errors
+
 def verify_bus_remap(page,out):
     errors=[]
     page.on("pageerror",lambda e:errors.append(str(e)))
@@ -228,6 +282,9 @@ def main():
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_bus_remap(page,out)
+        page.close()
+        page=browser.new_page(viewport={"width":1366,"height":900})
+        verify_logical_inputs(page,out)
         page.close()
         browser.close()
     print("PASS compiled Audio I/O pin discovery, stereo draft/ACK/readback, external output and muted bus remap")

@@ -151,7 +151,11 @@
         const choice=!src?choices[0]:src.bindingState==="NEEDS_REMAP"?null:
           choices.find(x=>x.mode===src.sourceFormat&&src.portId==="in:"+x.left&&
             (x.mode==="MONO"?src.portIdRight===undefined:src.portIdRight==="in:"+x.right));
-        const state=src?.bindingState==="NEEDS_REMAP"?"Needs remap":
+        const logical=snapshot.raw?.logicalInputRegistry;
+        const ref=logical?.references?.find?.(r=>r.channelId===ch.id);
+        const port=logical?.ports?.find?.(p=>p.id===ref?.portId);
+        const state=port?port.name+(ref.state==="NEEDS_REMAP"?" · Needs remap":""):
+          src?.bindingState==="NEEDS_REMAP"?"Needs remap":
           src?.sourceFormat==="PLAYER"?"Music Player":choice?"":"Other source";
         rows.push({id:ch.id,name:ch.name,editable:true,
           format:ch.processingFormat,selected:choice?.label||null,

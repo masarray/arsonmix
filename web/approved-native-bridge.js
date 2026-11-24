@@ -2428,7 +2428,9 @@
   // Matrix edits use the same queue/lease and native dispatcher as strips.
   // No synthetic PCM, no independent routing graph or optimistic crosspoint.
   let busOutputPending=null,busOutputSerial=0;
-  const matrixBusy=()=>Boolean(busOutputPending||deviceBusy()||activeNativeSource||pendingNativeSources.size||
+  let logicalIoPending=null,logicalIoSerial=0,logicalIoEditorOpen=false;
+  let logicalIoPort="",logicalIoChannel="";
+  const matrixBusy=()=>Boolean(logicalIoPending||busOutputPending||deviceBusy()||activeNativeSource||pendingNativeSources.size||
     nativeUiSourcePending||pendingSourceQueue.size||pendingExternal.size);
   function matrixReady(snapshot){
     return deviceVM.setupRoutingReady(deviceInventory,deviceChoice,deviceState)&&
@@ -2715,13 +2717,136 @@
     };
     section.append(title,existing,name,mode,left,right,save,remove,hint,exchange);update();host.append(section);
   }
+  function settleLogicalIo(next){
+    const p=logicalIoPending;
+    if(!p)return;
+    if(next?.device?.epoch!==p.epoch||next.hardwareConfiguration!==p.config){
+      logicalIoPending=null;logicalIoPort="";logicalIoChannel="";
+      nativeToast("Logical I/O device changed");return;
+    }
+    const data=next.raw?.logicalInputRegistry;
+    if(!p.acked||data?.revision!==p.logicalRevision||next.graph?.revision!==p.graphRevision||
+       !Array.isArray(data.ports)||!Array.isArray(data.references))return;
+    const q=p.payload,port=data.ports.find(x=>x.id===q.portId);
+    let proved=false;
+    if(q.operation==="ADD"){
+      const created=data.ports.filter(x=>!p.previousIds.includes(x.id)&&x.name===q.name&&x.format===q.format);
+      proved=created.length===1;
+      if(proved)logicalIoPort=created[0].id;
+    }else if(q.operation==="RENAME")proved=port?.name===q.name;
+    else if(q.operation==="REMOVE"){proved=!port;if(proved)logicalIoPort="";}
+    else if(q.operation==="BIND")proved=port?.bound===true&&
+      ["left","right","leftName","rightName"].every(k=>port[k]===q[k]);
+    else if(q.operation==="UNBIND")proved=port?.bound===false;
+    else if(q.operation==="ASSIGN")proved=data.references.some(x=>x.channelId===q.channelId&&x.portId===q.portId);
+    else if(q.operation==="CLEAR")proved=!data.references.some(x=>x.channelId===q.channelId);
+    if(proved){logicalIoPending=null;nativeToast("Logical I/O updated");}
+  }
+  function renderLogicalInputs(host,model,next,busy){
+    const data=next.raw?.logicalInputRegistry;
+    if(model.authority!=="CHANNEL_ID"||!Array.isArray(data?.ports)||
+       !Array.isArray(data.references)||typeof data.revision!=="string")return;
+    const section=document.createElement("details");section.className="armix-named-patches";
+    section.open=logicalIoEditorOpen;section.ontoggle=()=>{logicalIoEditorOpen=section.open;};
+    const summary=document.createElement("summary");summary.textContent="Session logical inputs";
+    const hint=document.createElement("span");hint.className="armix-device-note";
+    hint.textContent="Ports saved in .smix. Remapping a port updates every assigned channel.";
+    const port=document.createElement("select");port.setAttribute("aria-label","Logical input port");
+    port.append(new Option("New logical input",""));
+    for(const p of data.ports){
+      const refs=data.references.filter(r=>r.portId===p.id);
+      port.append(new Option(p.name+" · "+p.format+" · "+refs.length+" used"+
+        (refs.some(r=>r.state==="NEEDS_REMAP")?" · Needs remap":""),p.id));
+    }
+    port.value=data.ports.some(p=>p.id===logicalIoPort)?logicalIoPort:"";
+    const name=document.createElement("input");name.maxLength=48;name.placeholder="Logical input name";
+    name.setAttribute("aria-label","Logical input name");
+    const format=document.createElement("select");format.setAttribute("aria-label","Logical input format");
+    format.append(new Option("Mono","MONO"),new Option("Stereo","STEREO"));
+    const makePin=label=>{
+      const el=document.createElement("select");el.setAttribute("aria-label","Logical "+label+" pin");
+      el.append(new Option("Unselected",""));
+      for(const p of model.pins)el.append(new Option((p.port+1)+" · "+p.label,String(p.port)));
+      return el;
+    };
+    const left=makePin("L"),right=makePin("R");
+    const channel=document.createElement("select");channel.setAttribute("aria-label","Logical input channel");
+    channel.append(new Option("Choose mixer channel",""));
+    for(const row of model.rows){
+      const ref=data.references.find(r=>r.channelId===row.id);
+      const assigned=data.ports.find(p=>p.id===ref?.portId);
+      channel.append(new Option(row.name+(assigned?" · "+assigned.name:""),row.id));
+    }
+    channel.value=model.rows.some(row=>row.id===logicalIoChannel)?logicalIoChannel:"";
+    const buttons={};
+    for(const [key,label] of [["ADD","Add port"],["RENAME","Rename port"],["REMOVE","Remove port"],
+      ["BIND","Apply pin binding"],["UNBIND","Unbind port"],["ASSIGN","Assign to channel"],["CLEAR","Clear logical assignment"]]){
+      const b=document.createElement("button");b.type="button";b.textContent=label;buttons[key]=b;
+    }
+    const selected=()=>data.ports.find(p=>p.id===port.value);
+    const used=()=>data.references.some(r=>r.portId===port.value);
+    const currentPin=el=>model.pins.find(p=>String(p.port)===el.value);
+    const update=()=>{
+      const p=selected(),locked=busy||!!logicalIoPending;
+      for(const el of [port,name,format,left,right,channel])el.disabled=locked;
+      format.disabled=locked||!!p;right.hidden=format.value==="MONO";
+      buttons.ADD.disabled=locked||!!p||!name.value.trim();
+      buttons.RENAME.disabled=locked||!p||!name.value.trim();
+      buttons.REMOVE.disabled=locked||!p||used();
+      buttons.BIND.disabled=locked||!p||!currentPin(left)||
+        (format.value==="STEREO"&&(!currentPin(right)||left.value===right.value));
+      buttons.UNBIND.disabled=locked||!p||!p.bound;
+      buttons.ASSIGN.disabled=locked||!p||!channel.value;
+      buttons.CLEAR.disabled=locked||!data.references.some(r=>r.channelId===channel.value);
+    };
+    const loadPort=()=>{
+      const p=selected();logicalIoPort=port.value;
+      name.value=p?.name||"";format.value=p?.format||"MONO";
+      const d=next.device;
+      const same=p?.bound&&p.backend===d.backend&&p.capture===d.captureDevice&&p.playback===d.playbackDevice;
+      left.value=same&&model.pins.some(x=>x.port===p.left&&x.label===p.leftName)?String(p.left):"";
+      right.value=same&&model.pins.some(x=>x.port===p.right&&x.label===p.rightName)?String(p.right):"";
+      update();
+    };
+    port.onchange=loadPort;
+    name.oninput=format.onchange=left.onchange=right.onchange=update;
+    channel.onchange=()=>{logicalIoChannel=channel.value;update();};
+    const send=operation=>{
+      if(buttons[operation].disabled||busy||logicalIoPending||matrixBusy()||namedPatchPending||!matrixReady(hardware)||
+         hardware.device.epoch!==next.device.epoch||hardware.hardwareConfiguration!==next.hardwareConfiguration||
+         hardware.graph?.revision!==model.revision||hardware.graph?.rosterRevision!==model.roster||
+         hardware.raw?.logicalInputRegistry?.revision!==data.revision)return;
+      if((operation==="BIND"||operation==="UNBIND")&&used()&&
+         !window.confirm("Update every mixer channel using this logical input?"))return;
+      const l=currentPin(left),r=format.value==="STEREO"?currentPin(right):null;
+      const requestId="logical-io-"+(++logicalIoSerial);
+      const payload={action:"routingLogicalInputEdit",requestId,operation,
+        deviceEpoch:next.device.epoch,graphRevision:model.revision,rosterRevision:model.roster,
+        logicalRevision:data.revision,portId:port.value,channelId:channel.value,
+        name:name.value.trim(),format:format.value,left:l?.port??-1,right:r?.port??-1,
+        leftName:l?.label||"",rightName:r?.label||""};
+      logicalIoPending={requestId,epoch:next.device.epoch,config:next.hardwareConfiguration,
+        payload,previousIds:data.ports.map(x=>x.id),acked:false};
+      backend.emitEvent("arMixAction",payload);
+      paintPhysicalOutputs(hardware);
+      window.setTimeout(()=>{
+        if(logicalIoPending?.requestId!==requestId)return;
+        logicalIoPending=null;paintPhysicalOutputs(hardware);controller?.subscribe();
+        nativeToast("Logical I/O confirmation timed out · verify current routing");
+      },8000);
+    };
+    for(const [key,b] of Object.entries(buttons))b.onclick=()=>send(key);
+    section.append(summary,hint,port,name,format,buttons.ADD,buttons.RENAME,buttons.REMOVE,
+      left,right,buttons.BIND,buttons.UNBIND,channel,buttons.ASSIGN,buttons.CLEAR);
+    loadPort();host.append(section);
+  }
   function paintRouteMatrix(next,side){
     const host=devicePanel?.querySelector("[data-audio-"+side+"-grid]");
     if(!host)return;
     const model=deviceVM.patchMatrix(next,side);
     const ready=matrixReady(next),busy=matrixBusy()||Boolean(namedPatchPending);
     const signature=JSON.stringify([model,busy,ready,next?.hardwareConfiguration,next?.device?.epoch,
-      deviceInventory?.namedPatches,namedPatchPending]);
+      deviceInventory?.namedPatches,namedPatchPending,side==="input"?next?.raw?.logicalInputRegistry:null]);
     const lease={config:next?.hardwareConfiguration,epoch:next?.device?.epoch,authority:model.authority,
       revision:model.revision,roster:model.roster,
       busPairs:Object.fromEntries(model.rows.filter(r=>r.bus).map(r=>[r.id,JSON.stringify(r.pair)]))};
@@ -2733,6 +2858,7 @@
         "Open a verified mixer with enabled "+side+" pins.";
       return;
     }
+    if(side==="input")renderLogicalInputs(host,model,next,busy);
     renderNamedPatchEditor(host,side,model,next,busy);
     const aliases=namedPatchChoices(side,model,next);
     const table=document.createElement("table");table.className="armix-patch-grid";
@@ -3632,6 +3758,17 @@
     },12000);
   }
   if(connected){
+    backend.addEventListener("arMixLogicalInputAck",ack=>{
+      const p=logicalIoPending;
+      if(!p||ack?.requestId!==p.requestId)return;
+      let expected="";
+      try{expected=String(BigInt(p.payload.logicalRevision)+1n);}catch(_){}
+      if(ack.ok!==true||!expected||ack.logicalRevision!==expected){
+        logicalIoPending=null;nativeToast(ack.error||"Logical I/O rejected");paintPhysicalOutputs(hardware);return;
+      }
+      logicalIoPending={...p,acked:true,logicalRevision:ack.logicalRevision,graphRevision:ack.graphRevision};
+      controller?.subscribe();
+    });
     backend.addEventListener("arMixNamedProfileFileResult",message=>{
       const pending=namedProfileFilePending;
       if(!pending||message?.requestId!==pending.requestId||message.operation!==pending.operation)return;
@@ -4195,6 +4332,7 @@
     settleSourceReadback("CHANNEL_ID",next);
     settleSourceReadback("M4",next);
     settleBusOutput(next);
+    settleLogicalIo(next);
     // Reconcile pending leases before the final matrix paint. The graph
     // can be installed while the prior paint still sees a busy SOURCE.
     paintPhysicalOutputs(next);
