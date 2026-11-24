@@ -2191,7 +2191,7 @@ public:
                     (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,l,r,n);
                 };
                 fx.latency=+[](void* ctx,ChannelId id) noexcept{
-                    return (*static_cast<DynamicChannelFxLeaseBank*>(ctx))->latencySamples(id);
+                    return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
                 };
                 if(beforePublish)beforePublish();
                 const auto published=nativePublisher_.commit(nativeAccepted_.graph.roster,candidate.request,
