@@ -4,6 +4,8 @@
 #include "FxBypassEnvelope.h"
 #include "StereoLatencyDelay.h"
 #include "RealtimeNativeFxControl.h"
+#include "ImmerSIBIdlePolicy.h"
+#include <chrono>
 #include <stdexcept>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <algorithm>
@@ -52,6 +54,12 @@ public:
         std::atomic_flag processing=ATOMIC_FLAG_INIT;
         std::atomic<unsigned> contention{0};
         std::atomic<unsigned> exceptions{0};
+        // Lease-local: survives MOVE and accepted graph revisions, not a new DSP owner.
+        bool immerseIdleAdmitted=false; // CONTROL only, exact trusted native identity
+        armix::dsp::ImmerSIBIdlePolicy immerseIdle;
+        std::atomic<bool> dspSleeping{false};
+        std::atomic<std::uint64_t> dspProcessedBlocks{0},dspSleepBlocks{0};
+        std::atomic<std::uint64_t> dspLastUs{0},dspWorstUs{0};
 
         FxInstance(std::unique_ptr<Processor> p,juce::String id,juce::String label,
                    int maxSamples,juce::String restoredInstance={})
@@ -89,6 +97,11 @@ public:
                     continuousBypassProcessing=
                         nativeControl->requiresContinuousBypassProcessing();
                     nativeControl->sealForRealtime();
+                    // Only the fixed, non-moving native ImmerSIB scene contract.
+                    // Never infer support for arbitrary VST3, generators or Harmony.
+                    immerseIdleAdmitted=catalogId=="armix.builtin.imersip.v1" &&
+                        processor->getName()=="ImmerSIB" && latencySamples==0 &&
+                        !continuousBypassProcessing;
                 }
                 processor->addListener(this);
             }
@@ -176,6 +189,9 @@ public:
             const bool fullyBypassed=bypassFade.fullyBypassed();
             if((fullyBypassed&&!continuousBypassProcessing)||
                latencyChanged.load(std::memory_order_acquire)) {
+                immerseIdle.reset();
+                dspSleeping.store(false,std::memory_order_relaxed);
+                dspLastUs.store(0,std::memory_order_relaxed);
                 juce::FloatVectorOperations::copy(left,dryLeft.data(),samples);
                 juce::FloatVectorOperations::copy(right,dryRight.data(),samples);
                 processing.clear(std::memory_order_release);return;
@@ -184,6 +200,23 @@ public:
             // The host consumes real PCM, but publishes the exact PDC dry path:
             // no stale pitch history or room tail can leak on reactivation.
             const bool fading=bypassFade.transitioning();
+            // Only sleep with exact input silence, fully settled bypass and
+            // no pending parameter/mode transaction. A queued edit is handled
+            // by the regular real processBlock on the very next callback.
+            const bool idleStable=immerseIdleAdmitted && !requestedBypass &&
+                !fullyBypassed && !fading && nativeControl->stateSnapshotQuiescent();
+            if(immerseIdleAdmitted && immerseIdle.shouldSleep(left,right,samples,idleStable)) {
+                juce::FloatVectorOperations::clear(left,samples);
+                juce::FloatVectorOperations::clear(right,samples);
+                dspSleeping.store(true,std::memory_order_relaxed);
+                dspLastUs.store(0,std::memory_order_relaxed);
+                dspSleepBlocks.fetch_add(1,std::memory_order_relaxed);
+                processing.clear(std::memory_order_release);
+                return;
+            }
+            dspSleeping.store(false,std::memory_order_relaxed);
+            const auto dspStart=std::chrono::steady_clock::now();
+            bool dspOk=true;
             try {
                 float* planar[]{left,right};
                 juce::AudioBuffer<float> buffer(planar,2,samples);
@@ -192,9 +225,21 @@ public:
             } catch(...) {
                 // Vendor exceptions must never unwind through the callback.
                 exceptions.fetch_add(1,std::memory_order_relaxed);
+                dspOk=false;
                 juce::FloatVectorOperations::clear(left,samples);
                 juce::FloatVectorOperations::clear(right,samples);
             }
+            const auto elapsed=std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now()-dspStart).count();
+            const auto us=static_cast<std::uint64_t>(std::max<std::int64_t>(0,elapsed));
+            dspLastUs.store(us,std::memory_order_relaxed);
+            // Single AUDIO writer under the existing lease gate; no CAS spin.
+            if(us>dspWorstUs.load(std::memory_order_relaxed))
+                dspWorstUs.store(us,std::memory_order_relaxed);
+            dspProcessedBlocks.fetch_add(1,std::memory_order_relaxed);
+            if(immerseIdleAdmitted)
+                immerseIdle.rendered(left,right,samples,dspOk && idleStable &&
+                    nativeControl->stateSnapshotQuiescent());
             if(fullyBypassed){
                 juce::FloatVectorOperations::copy(left,dryLeft.data(),samples);
                 juce::FloatVectorOperations::copy(right,dryRight.data(),samples);

@@ -2692,7 +2692,7 @@ public:
         // Count installed/effectively processing inserts from the already
         // generated CONTROL readback. No extra render/FX scan on RT.
         const bool globalFxBypassed = dryRoutingLab_.globalFxBypassed();
-        int installedNativeFx = 0, processingNativeFx = 0;
+        int installedNativeFx = 0, processingNativeFx = 0, sleepingNativeFx = 0;
         const auto accountInserts = [&] (const juce::var& inserts,
                                          bool rackBypassed)
         {
@@ -2702,8 +2702,11 @@ public:
                     {
                         ++installedNativeFx;
                         if (!globalFxBypassed && !rackBypassed &&
-                            !bool (insert.getProperty ("bypassed", false)))
-                            ++processingNativeFx;
+                            !bool (insert.getProperty ("bypassed", false))) {
+                            ++processingNativeFx; // historical effective-enabled count
+                            if (bool(insert.getProperty("dspSleeping",false)))
+                                ++sleepingNativeFx;
+                        }
                     }
         };
         const auto bus = nativeRoutingStatus.getProperty ("nativeBus", {});
@@ -2771,6 +2774,9 @@ public:
         o->setProperty ("nativeGlobalFxBypassed", globalFxBypassed);
         o->setProperty ("nativeFxInstalledCount", installedNativeFx);
         o->setProperty ("nativeFxProcessingCount", processingNativeFx);
+        o->setProperty ("nativeFxSleepingCount", sleepingNativeFx);
+        o->setProperty ("nativeFxIdleProvenance",
+            "CHANNELID_INSERT_LEASE_CALLBACK_SLEEP_OBSERVATION_NOT_USER_BYPASS");
         o->setProperty ("nativeFxCountProvenance",
             "ACCEPTED_CHANNELID_PLUS_LEASED_EXTERNAL_CH1_SLOT_RACK_GLOBAL_BYPASS_NOT_dryTest");
         o->setProperty ("nativeFxGraphRevision",
