@@ -413,16 +413,6 @@ jobs:
       - name: Run full realtime CTest (release or nativeFull)
         if: ${{ env.FIELD_PREVIEW != 'true' }}
         run: ctest --test-dir build -C Release --output-on-failure
-      # Reuse the real CTest render; never start a second Windows build
-      # solely for the Reverb-Sis editor evidence.
-      - name: Upload Reverb-Sis native editor screenshots from full CTest
-        if: ${{ env.FIELD_PREVIEW != 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: Reverb-Sis-native-editor-${{ inputs.expected_sha || github.sha }}
-          path: build/ArSonMix_Vocal_Reverb_Native_*.png
-          if-no-files-found: ignore
-          retention-days: 14
       - name: Package verified JUCE GUI for hardware FAT
         if: ${{ env.FIELD_PREVIEW == 'true' || (github.event_name == 'workflow_dispatch' && inputs.package_fat == true) }}
         shell: pwsh
@@ -512,6 +502,22 @@ jobs:
              -not (Test-Path -LiteralPath $setup -PathType Leaf) -or
              (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() -ne $provenance.exeSha256){
             throw 'FAT_HANDOFF_PROVENANCE_INVALID'
+          }
+          # Real CTest editor PNGs are QA evidence, not runtime package bytes.
+          # Include them in the existing retryable installer artifact, AFTER
+          # installer verification and BEFORE sealing the file/hash receipt.
+          if(Test-Path -LiteralPath 'tests/native_vocal_reverb_test.cpp') {
+            $qa=New-Item -ItemType Directory -Force -Path 'installer-output/qa/reverb-sis'
+            foreach($name in @('ArSonMix_Vocal_Reverb_Native_MIX_100.png',
+                              'ArSonMix_Vocal_Reverb_Native_BYPASSED_100.png',
+                              'ArSonMix_Vocal_Reverb_Native_MOTION_150.png')) {
+              $png=Join-Path 'build' $name
+              if(!(Test-Path -LiteralPath $png -PathType Leaf) -or
+                 (Get-Item -LiteralPath $png).Length -lt 10000) {
+                throw "REVERB_NATIVE_PNG_MISSING_OR_INVALID: $name"
+              }
+              Copy-Item -LiteralPath $png -Destination $qa.FullName
+            }
           }
           $root=(Resolve-Path '.').Path
           $files=@(Get-ChildItem -LiteralPath 'dist','installer-output' -Recurse -File |
