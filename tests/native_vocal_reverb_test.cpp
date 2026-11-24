@@ -87,6 +87,9 @@ int main() {
            rightChevron->getBounds().getCentreY());
     assert(leftChevron->getBounds().getCentreY()==
            presetSelect->getBounds().getCentreY());
+    assert(presetSelect->getBounds().getCentreX()==ui->getWidth()/2);
+    assert(leftChevron->getX()+rightChevron->getRight()==ui->getWidth());
+    assert(mainDecay->getX()+mainMix->getRight()==ui->getWidth());
     const auto* wetLabel=ui->findChildWithID("armix.reverb.label.0");
     const auto* decayLabel=ui->findChildWithID("armix.reverb.label.2");
     assert(wetLabel&&decayLabel);
@@ -100,6 +103,8 @@ int main() {
         assert(tab&&tab->isVisible()&&!tab->getBounds().isEmpty());
         assert(ui->getLocalBounds().contains(tab->getBounds()));
     }
+    assert(ui->findChildWithID("armix.reverb.tab.0")->getX()+
+           ui->findChildWithID("armix.reverb.tab.5")->getRight()==ui->getWidth());
     // Layout-contract QA across ALL six actual JUCE pages, not just the
     // factory MIX screenshot. Text bounds have 7px gutters in each 115px
     // column; previous 120px labels overlapped their neighbours by 5px.
@@ -190,6 +195,27 @@ int main() {
     static_assert(M::groupLeft+M::groupRight==1120);
     static_assert(M::dotsLeftX-M::leftLabelX-M::leftLabelWidth==12);
     static_assert(M::rightLabelX-M::dotsRightX-19*M::pitch-M::dotSize==12);
+    static_assert(M::dotsLeftX+M::dotsRightX+M::bankWidth==1120);
+    static_assert(M::leftLabelWidth==M::rightLabelWidth);
+    static_assert(M::tickOffset(-60)==3 && M::tickOffset(-24)==113 &&
+                  M::tickOffset(-6)==173 && M::tickOffset(0)==193);
+    assert(M::litCount(-80.f)==0 && M::litCount(-60.f)==0);
+    assert(M::litCount(-24.f)==12 && M::litCount(-6.f)==18);
+    assert(M::litCount(0.f)==20 && M::litCount(6.f)==20);
+    assert(juce::String(M::leftLabels[0])=="INPUT L");
+    assert(juce::String(M::rightLabels[0])=="INPUT R");
+    assert(juce::String(M::leftLabels[1])=="OUTPUT L");
+    assert(juce::String(M::rightLabels[1])=="OUTPUT R");
+    // Guard incremental live paint: every segment and its glow, not only
+    // the pixels that happen to be visible in a full component snapshot.
+    for(int x : {M::dotsLeftX,M::dotsRightX})
+        for(int y : {M::firstDotY,M::secondDotY})
+            for(int segment=0;segment<M::segments;++segment) {
+                const juce::Rectangle<int> led(x+segment*M::pitch,y,
+                                                M::dotSize,M::dotSize);
+                assert(M::dirtyBounds().contains(led.expanded(M::glowMargin)));
+            }
+    assert(ui->getLocalBounds().contains(M::dirtyBounds()));
     // At least the left input meter has a true bright PCM segment; the
     // far-right dot stays dark because input is safely below 0 dBFS.
     assert(snapshot.getPixelAt(M::dotsLeftX+2,M::firstDotY+3)!=

@@ -22,14 +22,38 @@ constexpr float pi=juce::MathConstants<float>::pi;
 // Font objects are constructed exclusively on the JUCE message/UI thread.
 struct MeterLayout final {
     static constexpr int groupLeft=250, groupRight=870;
-    static constexpr int leftLabelX=250, leftLabelWidth=86;
-    static constexpr int dotsLeftX=348, dotsRightX=562;
-    static constexpr int rightLabelX=770, rightLabelWidth=100;
+    static constexpr int leftLabelX=250, leftLabelWidth=93;
+    static constexpr int dotsLeftX=355, dotsRightX=569;
+    static constexpr int rightLabelX=777, rightLabelWidth=93;
     static constexpr int firstDotY=113, secondDotY=148;
     static constexpr int segments=20, pitch=10, dotSize=6;
     static constexpr int labelOpticalLift=2, labelHeight=20;
+    static constexpr int bankWidth=(segments-1)*pitch+dotSize;
+    static constexpr int floorDb=-60, ceilingDb=0;
+    static constexpr int glowMargin=2;
+    static constexpr std::array<const char*,2> leftLabels{{"INPUT L","OUTPUT L"}};
+    static constexpr std::array<const char*,2> rightLabels{{"INPUT R","OUTPUT R"}};
+
+    // One geometry authority for both paint and timer invalidation.
+    static juce::Rectangle<int> dirtyBounds() noexcept {
+        return {dotsLeftX-glowMargin,firstDotY-glowMargin,
+                dotsRightX+bankWidth-dotsLeftX+2*glowMargin,
+                secondDotY+dotSize-firstDotY+2*glowMargin};
+    }
+    static int litCount(float db) noexcept {
+        return static_cast<int>(juce::jlimit(0.f,static_cast<float>(segments),
+            (db-floorDb)*segments/static_cast<float>(ceilingDb-floorDb)));
+    }
+    // Each LED represents the upper threshold of its 3 dB cell.
+    static constexpr int tickOffset(int db) noexcept {
+        const int index=(db-floorDb)*segments/(ceilingDb-floorDb)-1;
+        return (index<0?0:(index>=segments?segments-1:index))*pitch+dotSize/2;
+    }
 };
 static_assert(MeterLayout::groupLeft+MeterLayout::groupRight==1120);
+static_assert(MeterLayout::dotsLeftX+MeterLayout::dotsRightX+
+              MeterLayout::bankWidth==1120);
+static_assert(MeterLayout::leftLabelWidth==MeterLayout::rightLabelWidth);
 static_assert(MeterLayout::dotsLeftX-
     (MeterLayout::leftLabelX+MeterLayout::leftLabelWidth)==12);
 static_assert(MeterLayout::rightLabelX-
@@ -189,9 +213,9 @@ public:
             const float cx=rect.getCentreX(),cy=rect.getCentreY();
             const float sign=id.endsWith("next")?1.f:-1.f;
             juce::Path chevron;
-            chevron.startNewSubPath(cx-sign*3.5f,cy-5.5f);
-            chevron.lineTo(cx+sign*2.f,cy);
-            chevron.lineTo(cx-sign*3.5f,cy+5.5f);
+            chevron.startNewSubPath(cx-sign*2.75f,cy-5.5f);
+            chevron.lineTo(cx+sign*2.75f,cy);
+            chevron.lineTo(cx-sign*2.75f,cy+5.5f);
             g.setColour(hover||down?rgb(174,227,253):rgb(121,196,234));
             g.strokePath(chevron,juce::PathStrokeType(1.8f,
                 juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
@@ -375,8 +399,8 @@ public:
         body.startNewSubPath(11.f,31.f);
         body.lineTo(241.f,31.f);
         body.cubicTo(311.f,31.f,337.f,58.f,424.f,59.f);
-        body.lineTo(699.f,59.f);
-        body.cubicTo(789.f,58.f,811.f,31.f,881.f,31.f);
+        body.lineTo(w-424.f,59.f);
+        body.cubicTo(w-337.f,58.f,w-311.f,31.f,w-241.f,31.f);
         body.lineTo(w-11.f,31.f);
         body.lineTo(w-11.f,374.f);
         body.lineTo(11.f,374.f);
@@ -389,8 +413,8 @@ public:
         shoulder.startNewSubPath(11.f,31.f);
         shoulder.lineTo(241.f,31.f);
         shoulder.cubicTo(311.f,31.f,337.f,58.f,424.f,59.f);
-        shoulder.lineTo(699.f,59.f);
-        shoulder.cubicTo(789.f,58.f,811.f,31.f,881.f,31.f);
+        shoulder.lineTo(w-424.f,59.f);
+        shoulder.cubicTo(w-337.f,58.f,w-311.f,31.f,w-241.f,31.f);
         shoulder.lineTo(w-11.f,31.f);
         g.strokePath(shoulder,juce::PathStrokeType(.8f));
         g.setColour(rgb(46,99,125).withAlpha(.53f));
@@ -408,23 +432,23 @@ public:
         // Thin bounded column rules; do not make the screen a card grid.
         g.setColour(rgb(79,86,93).withAlpha(.35f));
         g.drawLine(257.f,155.f,257.f,367.f,.8f);
-        g.drawLine(865.f,155.f,865.f,367.f,.8f);
+        g.drawLine(w-257.f,155.f,w-257.f,367.f,.8f);
 
         // Optical centring compensates for cap-height against circle centres.
         // Symmetric group: x250–870, midpoint exactly x560 of the panel.
         using M=reverb_ui::MeterLayout;
-        constexpr std::array<const char*,2> leftLabels{{"INPUTS","OUTPUTS"}};
-        constexpr std::array<const char*,2> rightLabels{{"REVERB","REFLECTIONS"}};
+        // Actual processor telemetry is IN L/R and OUT L/R, not
+        // independent wet/early reflection energy. Keep the labels truthful.
         g.setFont(reverb_ui::uiFont(11.f));
         for(int row=0;row<2;++row) {
             const int dotY=row==0?M::firstDotY:M::secondDotY;
             const int textY=dotY+M::dotSize/2-M::labelHeight/2-
                             M::labelOpticalLift;
             g.setColour(rgb(180,189,198));
-            g.drawText(leftLabels[static_cast<std::size_t>(row)],
+            g.drawText(M::leftLabels[static_cast<std::size_t>(row)],
                 M::leftLabelX,textY,M::leftLabelWidth,M::labelHeight,
                 juce::Justification::centredRight,false);
-            g.drawText(rightLabels[static_cast<std::size_t>(row)],
+            g.drawText(M::rightLabels[static_cast<std::size_t>(row)],
                 M::rightLabelX,textY,M::rightLabelWidth,M::labelHeight,
                 juce::Justification::centredLeft,false);
         }
@@ -432,27 +456,28 @@ public:
         g.setColour(rgb(139,151,161));
         g.setFont(reverb_ui::uiFont(9.f));
         for(const int x : {M::dotsLeftX,M::dotsRightX}) {
-            g.drawText("-60",x-1,128,25,11,juce::Justification::centredLeft,false);
-            g.drawText("-24",x+59,128,27,11,juce::Justification::centredLeft,false);
-            g.drawText("-6",x+133,128,23,11,juce::Justification::centredLeft,false);
-            g.drawText("0",x+184,128,13,11,juce::Justification::centredLeft,false);
+            for(const int db : {-60,-24,-6,0}) {
+                const int center=x+M::tickOffset(db);
+                g.drawText(juce::String(db),center-11,128,22,11,
+                           juce::Justification::centred,false);
+            }
         }
 
         g.setColour(rgb(75,90,99).withAlpha(.67f));
-        g.drawLine(291.f,221.f,851.f,221.f,.8f);
+        g.drawLine(291.f,221.f,w-291.f,221.f,.8f);
         g.setColour(rgb(106,187,224).withAlpha(.26f));
-        g.drawLine(291.f,222.f,851.f,222.f,.7f);
+        g.drawLine(291.f,222.f,w-291.f,222.f,.7f);
         // Lower 10px cabinet lip is intentionally empty: no clipped footer.
     }
 
     void resized() override {
         title_.setBounds(47,65,247,32);
-        preset_.setBounds(421,17,271,34);
-        prev_.setBounds(380,17,33,34);
-        next_.setBounds(701,17,33,34);
+        preset_.setBounds(424,17,272,34);
+        prev_.setBounds(383,17,33,34);
+        next_.setBounds(getWidth()-383-33,17,33,34);
         algorithm_.setBounds(934,78,139,28);
         for(std::size_t i=0;i<tabs_.size();++i)
-            tabs_[i].setBounds(288+static_cast<int>(i)*94,183,91,36);
+            tabs_[i].setBounds(280+static_cast<int>(i)*94,183,92,36);
         layoutPage();
     }
 
@@ -521,8 +546,8 @@ private:
         }
         knobs_[2].setBounds(48,108,185,290);
         labels_[2].setBounds(40,125,201,23);
-        knobs_[0].setBounds(886,108,185,290);
-        labels_[0].setBounds(882,125,197,23);
+        knobs_[0].setBounds(getWidth()-48-185,108,185,290);
+        labels_[0].setBounds(getWidth()-40-201,125,201,23);
         knobs_[2].setVisible(true);labels_[2].setVisible(true);
         knobs_[0].setVisible(true);labels_[0].setVisible(true);
         for(std::size_t n=0;n<5;++n) {
@@ -544,22 +569,25 @@ private:
         // Zero fake animation or audio-loop graphics/heap allocation.
         for(int ch=0;ch<4;++ch) {
             const float peak=displayPeaks_[static_cast<std::size_t>(ch)];
-            const float db=peak<=1.e-6f?-60.f:20.f*std::log10(peak);
-            const int lit=static_cast<int>(juce::jlimit(0.f,20.f,
-                                                       (db+60.f)/66.f*20.f));
             using M=reverb_ui::MeterLayout;
+            const float db=peak<=1.e-6f?static_cast<float>(M::floorDb):
+                20.f*std::log10(peak);
+            const int lit=M::litCount(db);
             const int x=ch%2==0?M::dotsLeftX:M::dotsRightX;
             const int y=ch/2==0?M::firstDotY:M::secondDotY;
-            for(int segment=0;segment<20;++segment) {
+            for(int segment=0;segment<M::segments;++segment) {
                 const bool on=segment<lit;
                 const auto bright=segment>=18?rgb(241,148,116):
                     (segment>=15?rgb(223,193,119):rgb(112,203,245));
                 const float sx=static_cast<float>(x+segment*M::pitch);
                 g.setColour(on?bright:rgb(27,35,44));
-                g.fillEllipse(sx,static_cast<float>(y),6.f,6.f);
+                g.fillEllipse(sx,static_cast<float>(y),
+                              static_cast<float>(M::dotSize),static_cast<float>(M::dotSize));
                 if(on) {
                     g.setColour(bright.withAlpha(.25f));
-                    g.drawEllipse(sx-1.f,static_cast<float>(y)-1.f,8.f,8.f,1.f);
+                    g.drawEllipse(sx-1.f,static_cast<float>(y)-1.f,
+                                  static_cast<float>(M::dotSize+2),
+                                  static_cast<float>(M::dotSize+2),1.f);
                 }
             }
         }
@@ -578,7 +606,7 @@ private:
         if(inFlight_ && processor_.appliedRequestId()>=inFlightId_)inFlight_=false;
         if(!processor_.isReady()) {
             updateFeedbackTooltip();
-            displayPeaks_.fill(0.f);repaint(juce::Rectangle<int>(388,109,437,57));
+            displayPeaks_.fill(0.f);repaint(reverb_ui::MeterLayout::dirtyBounds());
             return;
         }
         if(dirty_&&!inFlight_) {
@@ -589,7 +617,7 @@ private:
         const auto fresh=processor_.meterPeaks();
         for(std::size_t i=0;i<displayPeaks_.size();++i)
             displayPeaks_[i]=std::max(fresh[i],displayPeaks_[i]*.82f);
-        repaint(juce::Rectangle<int>(388,109,437,57));
+        repaint(reverb_ui::MeterLayout::dirtyBounds());
     }
     VocalReverbProcessor& processor_;
     VocalReverbSettings draft_;
