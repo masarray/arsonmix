@@ -340,7 +340,12 @@ int main() {
         auto* gestureProcessor=dynamic_cast<VocalReverbProcessor*>(gestureInstance.get());
         assert(gestureProcessor);
         std::unique_ptr<juce::AudioProcessorEditor> gestureUi(gestureProcessor->createEditor());
-        juce::AudioBuffer<float> audio(2,frames);
+        gestureUi->setVisible(true); // real component hit-testing needs visible root
+        auto reference=entry->prepare(rate,frames,nullptr,0);
+        assert(reference);
+        juce::AudioBuffer<float> audio(2,frames),referenceAudio(2,frames);
+        bool compareMix=true;
+        double mixDifference=0.;
         juce::MidiBuffer gestureMidi;
         std::uint64_t sampleIndex=0;
         std::array<float,2> previous{};
@@ -352,7 +357,17 @@ int main() {
                     audio.setSample(0,j,static_cast<float>(.12*std::sin(220.*phase)+.035*std::sin(997.*phase)));
                     audio.setSample(1,j,static_cast<float>(.11*std::sin(224.*phase)+.03*std::sin(883.*phase)));
                 }
+                if(compareMix)
+                    for(int ch=0;ch<2;++ch)
+                        referenceAudio.copyFrom(ch,0,audio,ch,0,frames);
                 gestureInstance->processBlock(audio,gestureMidi);
+                if(compareMix) {
+                    reference->processBlock(referenceAudio,gestureMidi);
+                    for(int ch=0;ch<2;++ch)for(int j=0;j<frames;++j) {
+                        const double delta=audio.getSample(ch,j)-referenceAudio.getSample(ch,j);
+                        mixDifference+=delta*delta;
+                    }
+                }
                 for(int ch=0;ch<2;++ch)for(int j=0;j<frames;++j) {
                     const auto y=audio.getSample(ch,j);
                     assert(std::isfinite(y)&&std::abs(y)<1.f);
@@ -362,6 +377,7 @@ int main() {
             }
         };
         render(static_cast<int>(rate*.5/frames)); // warm audible wet history
+        assert(mixDifference<1.e-12); // identical control and initial PCM
         constexpr std::array<int,13> pageFor{{0,0,0,1,1,3,0,0,4,4,0,0,5}};
         for(int index=0;index<13;++index) {
             auto* tab=dynamic_cast<juce::TextButton*>(gestureUi->findChildWithID(
@@ -402,6 +418,12 @@ int main() {
                 assert(std::abs(readback.values[static_cast<std::size_t>(index)]-
                                 static_cast<float>(knob->getValue()))<1.e-5f);
                 render(3);
+            }
+            if(index==0) {
+                // Real rendered audio must diverge from a fixed-control
+                // reference while the mouse is STILL down, not just ACK.
+                assert(mixDifference>1.e-8);
+                compareMix=false;
             }
             knob->mouseUp(event(origin.translated(0.f,-direction*40.f),false,true));
             assert(gestureProcessor->appliedRequestId()==ack);
