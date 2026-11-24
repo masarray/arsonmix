@@ -20,6 +20,15 @@ class PitchSynchronousVoice final {
 public:
     struct Output { float sample=0.f; bool ready=false; };
     struct StereoOutput { float left=0.f,right=0.f; bool ready=false; };
+    // At scheduling time the desired epoch is width-delay samples in
+    // the past. Reserve the full +/- .46-period search plus rounding and
+    // fractional refinement margin. This is a sufficient causal bound,
+    // not a promise of available voiced landmarks at startup.
+    static bool completeEpochWindow(float period,float ratio,float delay) noexcept {
+        return std::isfinite(period)&&std::isfinite(ratio)&&std::isfinite(delay)&&
+            period>=8.f&&ratio>=.49f&&ratio<=2.01f&&
+            delay>=std::max(period,period/ratio)+.46f*period+3.f;
+    }
     void reset() noexcept { states_={}; }
     void resetVoice(int v) noexcept {
         if(v>=0&&v<Voices)states_[static_cast<std::size_t>(v)]={};

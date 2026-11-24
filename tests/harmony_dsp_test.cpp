@@ -29,7 +29,7 @@ static LeadFixture leadFixture(int rate,double noteHz,float cents,float vibrato)
 static LeadFixture tune(LeadFixture signal,int rate,bool correction,
                         int block=127,float color=.5f,int releaseAt=-1){
   auto engine=std::make_unique<Engine>();
-  need(engine->prepare(rate)&&engine->latencySamples()==2*std::lround(.016*rate),
+  need(engine->prepare(rate)&&engine->latencySamples()==std::lround(.024*rate),
        "Pitch Tune changed PDC");
   Settings s;s.wet=0.f;s.correction=correction;s.color=color;
   need(engine->setSettings(s),"lead-only settings rejected");
@@ -252,6 +252,69 @@ static void testCommonToneEngineTransition(){
 }
 // H5: measurable broad spectral identity and fallback-only guard.
 // Do not confuse this with true vowel/formant reconstruction.
+static void testReducedLatency(){
+  using Renderer=PitchSynchronousVoice<16384,5>;
+  for(int rate:{32000,44100,48000,96000,192000}){
+    const float period=static_cast<float>(rate/65.);
+    const float live=static_cast<float>(std::lround(rate*.024));
+    need(Renderer::completeEpochWindow(period,1.f,live),
+         "H7 legal bass lead causal bound");
+    need(!Renderer::completeEpochWindow(period,.5f,live),
+         "H7 insufficient epoch lookback accepted");
+    need(Renderer::completeEpochWindow(period,.59f,live+rate*.015f),
+         "H7 bass support full epoch bound");
+    auto previous=std::make_unique<Engine>(),candidate=std::make_unique<Engine>();
+    need(previous->prepare(rate,true)&&candidate->prepare(rate),"H7 prepare");
+    need(previous->latencySamples()==2*std::lround(rate*.016)&&
+         candidate->latencySamples()==std::lround(rate*.024),"H7 declared delays");
+    Settings settings;settings.wet=0.f;
+    need(previous->setSettings(settings)&&candidate->setSettings(settings),"H7 dry settings");
+    const int count=previous->latencySamples()+256;
+    std::vector<float> l(count,0.f),r(count,0.f),oldL,oldR;
+    l[0]=.6f;r[0]=-.25f;oldL=l;oldR=r;
+    for(int at=0;at<count;at+=127){
+      const int n=std::min(127,count-at);
+      previous->process(oldL.data()+at,oldR.data()+at,n);
+      candidate->process(l.data()+at,r.data()+at,n);
+    }
+    for(int i=0;i<count;++i){
+      const bool hit=i==candidate->latencySamples(),oldHit=i==previous->latencySamples();
+      need(l[i]==(hit?.6f:0.f)&&r[i]==(hit?-.25f:0.f)&&
+           oldL[i]==(oldHit?.6f:0.f)&&oldR[i]==(oldHit?-.25f:0.f),
+           "H7 exact dry impulse offset");
+    }
+    std::cout<<"H7_LATENCY rate="<<rate<<" old="<<previous->latencySamples()
+             <<" live="<<candidate->latencySamples()<<std::endl;
+  }
+  // Compare aligned backing-only energy with the original 32ms renderer
+  // on low bass through soprano harmonic-rich sustained notes.
+  for(int rate:{48000,96000})for(double hz:{82.406889,220.,440.,880.}){
+    const auto input=leadFixture(rate,hz,0.f,0.f);
+    auto run=[&](bool legacy,bool wet,int block){
+      auto e=std::make_unique<Engine>();Settings s;s.voices=5;s.wet=wet?1.f:0.f;
+      s.color=1.f;s.space=.6f;
+      need(e->prepare(rate,legacy)&&e->setSettings(s),"H7 A/B setup");
+      auto out=input;
+      for(int i=0;i<2*rate;i+=block)
+        e->process(out.left.data()+i,out.right.data()+i,std::min(block,2*rate-i));
+      return out;
+    };
+    const auto old=run(true,true,127),oldDry=run(true,false,127);
+    const auto now=run(false,true,127),dry=run(false,false,127);
+    const auto split=run(false,true,64);
+    need(now.left==split.left&&now.right==split.right,"H7 block parity");
+    double a=0.,b=0.;
+    for(int i=rate;i<2*rate;++i){
+      const double ol=old.left[i]-oldDry.left[i],orr=old.right[i]-oldDry.right[i];
+      const double nl=now.left[i]-dry.left[i],nr=now.right[i]-dry.right[i];
+      need(std::isfinite(nl)&&std::isfinite(nr),"H7 nonfinite PCM");
+      a+=ol*ol+orr*orr;b+=nl*nl+nr*nr;
+    }
+    const double db=10.*std::log10(b/a);
+    std::cout<<"H7_AB rate="<<rate<<" hz="<<hz<<" backing_dB="<<db<<std::endl;
+    need(a>1.&&b>1.&&std::abs(db)<2.,"H7 backing energy regression");
+  }
+}
 static void testSingerSpectralIdentity(){
   auto response=[](int rate,int role,double hz,float share){
     auto e=std::make_unique<EnsembleSpace>();
@@ -553,7 +616,7 @@ static void testUnisonDoubler(){
       const float x=a[static_cast<std::size_t>(i)];
       const float y=pitched[static_cast<std::size_t>(i)];
       need(std::isfinite(x)&&std::isfinite(y),"Doubler non-finite PCM");
-      const int t=i-2*static_cast<int>(std::lround(.016*rate));
+      const int t=i-static_cast<int>(std::lround(.024*rate));
       const double phase=6.283185307179586*220.*t/rate;
       const float delayedDry=static_cast<float>(
         .16*std::sin(phase)+.041*std::sin(2*phase+.2));
@@ -635,7 +698,7 @@ static void testUnvoicedGapPreservesWetTail(){
   const auto render=[&](int block){
     auto e=std::make_unique<Engine>();
     need(e->prepare(rate)&&
-         e->latencySamples()==2*std::lround(.016*rate),
+         e->latencySamples()==std::lround(.024*rate),
          "wet-tail engine PDC changed");
     Settings wet;wet.voices=5;wet.wet=.74f;wet.space=.82f;
     need(e->setSettings(wet),"wet-tail test settings invalid");
@@ -711,7 +774,7 @@ static void testLoudVibratoContinuity(){
   }
   auto process=[&](int block,int voices,bool wet,bool independent=true){
     auto dsp=std::make_unique<Engine>();
-    need(dsp->prepare(rate)&&dsp->latencySamples()==1536,
+    need(dsp->prepare(rate)&&dsp->latencySamples()==1152,
          "vibrato engine PDC changed");
     Settings settings;settings.voices=voices;settings.wet=wet?.75f:0.f;
     settings.space=.82f;
@@ -854,6 +917,7 @@ static void testBackingUnity(){
   need(within,"H1 full-Wet aggregate stem outside +/-2dB target; inspect H1_STEM rows");
 }
 int main(){
+  testReducedLatency();
   testChordAwareGuide();
   testSingerSpectralIdentity();
   testSingerIdentityPcm();
@@ -1557,7 +1621,7 @@ int main(){
     if(depth==0.f)need(std::abs(outputEnergy-inputEnergy)<1.e-6,
                        "Space zero failed to preserve direct backing");
   }
-  // Declared 48k wet/dry sample PDC must remain 2*16ms even after slicing.
-  need(e->latencySamples()==1536,"P0 changed live session PDC without proof");
+  // H7 fixed declared 24ms delay; exact impulse and dry parity above.
+  need(e->latencySamples()==1152,"P0 changed live session PDC without proof");
   std::cout<<"Native Harmony DSP: deterministic PCM, 2-5 voices, octave/scale, stereo, silence and 32-192k PASS\n";
 }

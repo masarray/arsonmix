@@ -60,7 +60,7 @@ static std::vector<float> render(int block,float space,bool wet){
     }
     for(int i=0;i<n;i+=block)e->process(l.data()+i,r.data()+i,std::min(block,n-i));
     for(float value:l)need(std::isfinite(value),"render nonfinite");
-    need(e->latencySamples()==1536,"native PDC changed");
+    need(e->latencySamples()==1152,"native PDC changed");
     return l;
 }
 

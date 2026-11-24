@@ -79,11 +79,14 @@ public:
     // history = 15360, so 16384 frames retain the full rate/ratio budget.
     // Halves the three large audio rings per instance without RT allocation.
     static constexpr std::size_t capacity=16384;
-    bool prepare(double rate) noexcept {
+    // The legacy option is for offline A/B only; the native processor always
+    // prepares a fixed live latency, immutable for its published graph lease.
+    bool prepare(double rate,bool legacyLatencyForOfflineTests=false) noexcept {
         if(!std::isfinite(rate)||rate<32000.||rate>192000.)return false;
         rate_=rate;
         grain_=std::clamp(static_cast<int>(std::round(rate*0.016)),256,3072);
-        latency_=2*grain_;
+        legacyLatency_=legacyLatencyForOfflineTests;
+        latency_=legacyLatency_?2*grain_:static_cast<int>(std::lround(rate*.024));
         decimation_=std::max(1,static_cast<int>(std::round(rate/12000.)));
         detectEvery_=std::max(128,static_cast<int>(rate/150.));
         // 32 fixed time slices per analysis hop, but only 8 lags/slice.
@@ -559,8 +562,14 @@ private:
         }
         leadRendering_=true;
         leadRatio_+=ratioAlpha_*(target-leadRatio_);
-        const auto tuned=leadShifter_.processStereo(0,sampleClock_,write_,mono_,
-            left_,right_,leadPeriod_,leadRatio_,static_cast<float>(latency_));
+        PitchSynchronousVoice<capacity,1>::StereoOutput tuned{};
+        // At deep bass or a transient ratio, a short lookback must never
+        // search a truncated future-side epoch. The existing residual seam
+        // returns to the aligned dry lead; no dynamic host latency change.
+        if(legacyLatency_||PitchSynchronousVoice<capacity,1>::completeEpochWindow(
+                leadPeriod_,leadRatio_,static_cast<float>(latency_)))
+            tuned=leadShifter_.processStereo(0,sampleClock_,write_,mono_,
+                left_,right_,leadPeriod_,leadRatio_,static_cast<float>(latency_));
         leadBlend_+=smoothingAlpha_*((tuning&&tuned.ready?1.f:0.f)-leadBlend_);
         // Do not bypass the blend on a missing epoch. The seam bridges
         // only the correction residual; the live dry waveform continues.
@@ -583,8 +592,10 @@ private:
         const float effectiveRatio=std::clamp(currentRatio*fineRatio,.49f,2.01f);
         const float p=phase_[static_cast<std::size_t>(voice)];
         const float pB=p<0.5f?p+0.5f:p-0.5f;
-        const float delayA=2.f*grain_+arrival+(1.f-effectiveRatio)*p*grain_;
-        const float delayB=2.f*grain_+arrival+(1.f-effectiveRatio)*pB*grain_;
+        // Retain 16ms grain geometry and singer arrival offsets, but align
+        // both the granular and PSOLA paths to the same declared lookback.
+        const float delayA=latency_+arrival+(1.f-effectiveRatio)*p*grain_;
+        const float delayB=latency_+arrival+(1.f-effectiveRatio)*pB*grain_;
         // Cubic smoothstep over the complementary two-grain windows.
         // Unlike the triangular seam, both endpoints have zero slope:
         // reduced grain-edge modulation without sin/cos in audio callback.
@@ -608,7 +619,9 @@ private:
         const bool carryEpochs=pitchSyncReferenceEnabled_&&
             sourcePeriodSamples_>=8.f&&(voiced_||voicedGain_>.01f);
         PitchSynchronousVoice<capacity,maxVoices>::Output sync{};
-        if(carryEpochs)
+        if(carryEpochs&&(legacyLatency_||
+            PitchSynchronousVoice<capacity,maxVoices>::completeEpochWindow(
+                sourcePeriodSamples_,effectiveRatio,static_cast<float>(latency_)+arrival)))
             sync=pitchSync_.process(voice,sampleClock_,write_,mono_,
                 sourcePeriodSamples_,effectiveRatio,
                 static_cast<float>(latency_)+arrival);
@@ -832,6 +845,7 @@ private:
             }
         }
     }
+    bool legacyLatency_=false;
     double rate_=0.; int grain_=0,latency_=0,decimation_=4,detectEvery_=320;
     int lowLag_=12,highLag_=144;std::size_t write_=0,downWrite_=0,downSeen_=0;
     int downCounter_=0,detectCounter_=0;
