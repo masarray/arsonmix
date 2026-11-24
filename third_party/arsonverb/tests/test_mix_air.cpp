@@ -4,6 +4,7 @@
 // Sound quality still needs real user listening and host validation.
 #include <arverb/Reverb.hpp>
 #include "../src/dsp/Primitives.hpp"
+#include "../../../engine/builtin_fx/ReverbSisFactoryPrograms.h"
 #include <array>
 #include <algorithm>
 #include <cmath>
@@ -263,7 +264,69 @@ static void signatureRetargetProbe(int fs,unsigned initial) {
     }
     check(signalEnergy>1.,"Signature retarget exercised non-silent PCM");
 }
+static void vocalAnchorQualification() {
+    using P=arverb::Parameter;
+    using namespace armix::builtin_fx;
+    constexpr int n=128;
+    for(int fs:{44100,48000,96000})for(std::size_t program=0;program<reverbSisFactoryPrograms.size();++program) {
+        const auto& preset=reverbSisFactoryPrograms[program];
+        for(std::size_t i=0;i<preset.values.size();++i) {
+            const auto& info=arverb::parameterInfo(static_cast<P>(i));
+            check(preset.values[i]>=info.minimum&&preset.values[i]<=info.maximum,"valid factory program");
+        }
+        check(preset.values[0]<=.28f&&preset.values[10]<=1.20f,"intentional factory mix and width bounds");
+        for(float mix:{0.f,.25f,.35f,.50f,.75f,1.f}) {
+            arverb::Engine old,anchor;
+            for(auto* e:{&old,&anchor}) {
+                for(std::size_t i=0;i<preset.values.size();++i)e->setParameter(static_cast<P>(i),preset.values[i]);
+                e->setAlgorithm(static_cast<arverb::Algorithm>(preset.algorithm));
+                e->setParameter(P::Mix,mix);
+                e->setVoicing(e==&old?2u:3u);e->prepare(fs,true);
+            }
+            const double expected=1.-double(mix)*mix*mix-std::cos(1.5707963267948966*mix);
+            std::array<float,n> l{},r{},a{},b{},c{},d{};
+            double inEnergy=0.,oldEnergy=0.,newEnergy=0.,wetEnergy=0.;
+            float peak=0.f;
+            const int blocks=fs/n;
+            for(int block=0;block<blocks;++block) {
+                for(int i=0;i<n;++i) {
+                    const double t=double(block*n+i)/fs;
+                    const double env=.65+.35*std::sin(6.283185307179586*3.*t);
+                    l[i]=r[i]=float(env*(.18*std::sin(6.283185307179586*173.*t)+.07*std::sin(6.283185307179586*519.*t)+.035*std::sin(6.283185307179586*1903.*t)));
+                }
+                old.process(l.data(),r.data(),a.data(),b.data(),n);
+                anchor.process(l.data(),r.data(),c.data(),d.data(),n);
+                for(int i=0;i<n;++i) {
+                    check(std::isfinite(c[i])&&std::isfinite(d[i]),"Anchor finite");
+                    check(std::abs((c[i]-a[i])-expected*l[i])<2.e-6&&std::abs((d[i]-b[i])-expected*r[i])<2.e-6,"Anchor difference is direct only");
+                    if(mix==0.f||mix==1.f)check(a[i]==c[i]&&b[i]==d[i],"Anchor exact endpoint PCM");
+                    peak=std::max(peak,std::max(std::abs(c[i]),std::abs(d[i])));
+                    if(block>blocks/2) {
+                        const double x=l[i],y=.5*(a[i]+b[i]),z=.5*(c[i]+d[i]);
+                        inEnergy+=x*x;oldEnergy+=y*y;newEnergy+=z*z;
+                        const double wet=z-(1.-double(mix)*mix*mix)*x;wetEnergy+=wet*wet;
+                    }
+                }
+            }
+            check(peak<1.f,"Anchor nominal voiced proxy headroom");
+            if(mix>.25f&&mix<.76f)check(newEnergy>oldEnergy,"Anchor improves measured mono voiced energy");
+            if(mix==1.f)check(wetEnergy>1.e-8,"factory pure wet is not silent");
+            if(fs==48000&&mix==.5f)std::printf("Anchor factory %zu mix50 oldRMS=%.4f newRMS=%.4f peak=%.4f\n",program,std::sqrt(oldEnergy/inEnergy),std::sqrt(newEnergy/inEnergy),peak);
+        }
+    }
+    // Profile changes at unchanged Mix must still update target with 25ms
+    // smoothing; use long predelay to independently observe dry-only onset.
+    arverb::Engine e;e.setVoicing(2);e.setParameter(P::Mix,.5f);
+    e.setParameter(P::PreDelayMs,250.f);e.prepare(48000.,true);
+    float in=.2f,l=0,r=0;e.process(&in,&in,&l,&r,1);
+    const float before=l;e.setVoicing(3);e.process(&in,&in,&l,&r,1);
+    check(l>before&&l-before<.001f,"Anchor recall is smoothed at unchanged Mix");
+    for(int i=0;i<8000;++i)e.process(&in,&in,&l,&r,1);
+    check(std::abs(l-.175f)<.0001f,"Anchor recall reaches new dry target");
+    std::puts("PASS Vocal Anchor: 288 factory/rate/mix PCM cases, exact wet endpoints, smoothed profile recall");
+}
 int main() {
+    vocalAnchorQualification();
     for(int fs:{44100,48000,96000})for(unsigned mode=0;mode<4;++mode)signatureRetargetProbe(fs,mode);
     std::puts("PASS Signature latest-target matrix continuity: 12 exact PCM comparisons");
     for(float fs:{44100.f,48000.f,96000.f}) {

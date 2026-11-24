@@ -138,11 +138,13 @@ int main() {
     album.settings.getDynamicObject()->setProperty("voicing",2);
     REQUIRE(BuiltInFxUserPresetStore::validateSettings(album.catalogId,album.settings));
     album.settings.getDynamicObject()->setProperty("voicing",3);
+    REQUIRE(BuiltInFxUserPresetStore::validateSettings(album.catalogId,album.settings));
+    album.settings.getDynamicObject()->setProperty("voicing",4);
     REQUIRE(!BuiltInFxUserPresetStore::validateSettings(album.catalogId,album.settings));
-    // Cold disk roundtrip: preserve the three versioned musical identities.
+    // Cold disk roundtrip: preserve the four versioned musical identities.
     // The old file has no field (original), explicit 1 is historical Album,
-    // and 2 is Signature. Readback uses the same store as live/detached editor.
-    for(int profile:{0,1,2}) {
+    // 2 is Signature, and 3 is Vocal Anchor. Readback uses the same store as live/detached editor.
+    for(int profile:{0,1,2,3}) {
         auto saved=reverb();
         saved.name="Versioned Reverb "+juce::String(profile);
         if(profile!=0)saved.settings.getDynamicObject()->setProperty("voicing",profile);
@@ -153,7 +155,7 @@ int main() {
         REQUIRE(juce::JSON::toString(restored.settings,false)==juce::JSON::toString(saved.settings,false));
         REQUIRE(store.remove(saved.catalogId,saved.id).isEmpty());
     }
-    for(const auto& invalid:std::array<juce::var,4>{juce::var(-1),juce::var(3),juce::var("2"),juce::var(1.5)}) {
+    for(const auto& invalid:std::array<juce::var,4>{juce::var(-1),juce::var(4),juce::var("2"),juce::var(1.5)}) {
         auto badProfile=reverb();
         badProfile.settings.getDynamicObject()->setProperty("voicing",invalid);
         REQUIRE(!BuiltInFxUserPresetStore::validateSettings(badProfile.catalogId,badProfile.settings));

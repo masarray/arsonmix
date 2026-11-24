@@ -32,6 +32,12 @@ inline float sineQuarterWave(float normalized) noexcept {
 // balance, then smoothly recover up to +3.52 dB at the pure-wet endpoint.
 // This is a deterministic gain law, NOT a feedback boost, AGC, limiter,
 // dry leak, or stereo-dependent correction. Called only on Mix targets.
+// Vocal Anchor is intentionally NOT a normalized constant-power crossfade.
+// Wet return stays calibrated; dry focus is preserved through the working
+// insert range, then rolls to exact zero for 100% aux/send. Targets only.
+inline float dryMixTarget(float mix,bool anchor) noexcept {
+    return anchor?1.f-mix*mix*mix:sineQuarterWave(1.f-mix);
+}
 inline float wetMixTarget(float mix, bool musicalReturn) noexcept {
     const float base = sineQuarterWave(mix);
     if (!musicalReturn) return base;
@@ -214,6 +220,7 @@ struct Engine::State {
     // Separate from early level, feedback gain and dry/wet Mix.
     float lateReturn=.34f, targetLateReturn=.34f;
     float cachedMix=-1.0f;
+    bool cachedAnchor=false;
     detail::PresenceDucker presence;
     detail::AlbumLateTone albumTone;
     LowPass albumBass[kLines];
@@ -336,7 +343,8 @@ void Engine::prepare(double sampleRate, bool musicalReturn) {
     for (std::size_t i = 0; i < parameterCount; ++i)
         s.smooth[i] = parameters_[i].load(std::memory_order_relaxed);
     s.cachedMix = s.smooth[static_cast<unsigned>(Parameter::Mix)];
-    s.currentDryGain = s.targetDryGain = sineQuarterWave(1.0f - s.cachedMix);
+    s.cachedAnchor=musicalReturn&&voicing_.load(std::memory_order_relaxed)==3u;
+    s.currentDryGain = s.targetDryGain = dryMixTarget(s.cachedMix,s.cachedAnchor);
     s.currentWetGain = s.targetWetGain = wetMixTarget(s.cachedMix, s.musicalReturn);
     // Freeze initial taps at the host's actual restored preset.
     s.preTapCurrent = s.preTapNext = s.preTapTarget =
@@ -396,7 +404,7 @@ void Engine::reset() noexcept {
     s.algorithmBlend=1.0f;
     const auto profile=s.musicalReturn?voicing_.load(std::memory_order_relaxed):0u;
     s.albumBlend=profile!=0u?1.f:0.f;
-    s.signatureBlend=profile==2u?1.f:0.f;
+    s.signatureBlend=profile>=2u?1.f:0.f;
     s.coefficientCooldownSamples=0;
     // Transport resets must not re-open an old half-finished tap transition.
     s.preTapCurrent = s.preTapNext;
@@ -408,7 +416,7 @@ void Engine::setAlbumReady(bool enabled) noexcept {
     setVoicing(enabled?1u:0u);
 }
 void Engine::setVoicing(unsigned profile) noexcept {
-    if(profile<=2u)voicing_.store(profile,std::memory_order_relaxed);
+    if(profile<=3u)voicing_.store(profile,std::memory_order_relaxed);
 }
 void Engine::setAlgorithm(Algorithm value) noexcept {
     const auto v=static_cast<unsigned>(value);
@@ -451,17 +459,19 @@ void Engine::process(const float* inputLeft, const float* inputRight,
     // Atomic host target captured once per block. The entire 100ms
     // transition uses the SAME tank; no two-engine tail CPU/memory cost.
     const float requestedMix = target[idx(Parameter::Mix)];
-    if (requestedMix != s.cachedMix) {
+    const auto profile=s.musicalReturn?voicing_.load(std::memory_order_relaxed):0u;
+    const bool anchor=profile==3u;
+    if (requestedMix != s.cachedMix || anchor!=s.cachedAnchor) {
         s.cachedMix = requestedMix;
-        s.targetDryGain = sineQuarterWave(1.0f - requestedMix);
+        s.cachedAnchor=anchor;
+        s.targetDryGain = dryMixTarget(requestedMix,anchor);
         s.targetWetGain = wetMixTarget(requestedMix, s.musicalReturn);
     }
-    const auto profile=s.musicalReturn?voicing_.load(std::memory_order_relaxed):0u;
     const float albumTarget=profile!=0u?1.f:0.f;
-    const float signatureTarget=profile==2u?1.f:0.f;
+    const float signatureTarget=profile>=2u?1.f:0.f;
     bool profileMoving=s.albumBlend!=albumTarget||s.signatureBlend!=signatureTarget;
     const unsigned requested = algorithm_.load(std::memory_order_relaxed);
-    if (requested != s.toAlgorithm && (profile!=2u || s.algorithmBlend>=1.f)) {
+    if (requested != s.toAlgorithm && (profile<2u || s.algorithmBlend>=1.f)) {
         s.fromAlgorithm = (s.algorithmBlend < 0.5f)
             ? s.fromAlgorithm : s.toAlgorithm;
         s.toAlgorithm = requested;
@@ -469,7 +479,7 @@ void Engine::process(const float* inputLeft, const float* inputRight,
     }
     // Signature: do not snap a partially blended FDN matrix to an endpoint.
     // Finish the current 100ms morph; latest host target wins, no FIFO.
-    bool algorithmPending=profile==2u&&requested!=s.toAlgorithm;
+    bool algorithmPending=profile>=2u&&requested!=s.toAlgorithm;
 
     // Coalesce fast automation to one coefficient update per 128 processed
     // samples. Mix + topology still receive every block; the seven continuous
@@ -800,7 +810,8 @@ void Engine::process(const float* inputLeft, const float* inputRight,
         // Exact sine/cos dry and base wet law at stable settings, plus
         // bounded musical high-Mix compensation folded into the existing
         // wet gain target. No new sample-loop operation or feedback change.
-        // 50% retains ~-3dB direct signal; 100% is still pure wet/send.
+        // Historical 50% retains -3dB direct; Anchor retains -1.16dB.
+        // Both 100% endpoints remain pure wet/send. No hidden limiter.
         outputLeft[frame] = dryGain * inL + returnGain * (mid + side);
         outputRight[frame] = dryGain * inR + returnGain * (mid - side);
         if (s.preTapBlend < 1.0f) {

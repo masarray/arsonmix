@@ -118,7 +118,7 @@ public:
     Algorithm getAlgorithm() const noexcept;
     // Native opt-in voicing; independent of the stable 13 parameter IDs.
     void setAlbumReady(bool enabled) noexcept;
-    // 0 original, 1 historical Album, 2 Signature.
+    // 0 original, 1 historical Album, 2 Signature, 3 Vocal Anchor.
     void setVoicing(unsigned profile) noexcept;
 
     // Planar stereo f32. In-place per channel supported. Avoid cross-channel buffer aliases.

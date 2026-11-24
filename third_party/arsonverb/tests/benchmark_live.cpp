@@ -103,6 +103,9 @@ int main(int argc,char** argv) {
                 x.setAlbumReady(argc==2&&std::strcmp(argv[1],"--album")==0);
 #ifdef ARVERB_SIGNATURE_BENCHMARK
                 if(argc==2&&std::strcmp(argv[1],"--signature")==0)x.setVoicing(2);
+#ifdef ARVERB_ANCHOR_BENCHMARK
+                if(argc==2&&std::strcmp(argv[1],"--anchor")==0)x.setVoicing(3);
+#endif
 #endif
 #endif
                 x.prepare(fs,true);
