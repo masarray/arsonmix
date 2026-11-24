@@ -166,9 +166,13 @@ def main():
     bus=page.locator('#tracks .strip[data-id="11"] .wire-node-out')
     assert bus.is_visible(),"Bus A source must be on next bank"
     bus.click()
-    # V50: same real cross-bank selector, now inside Config.
+    assert "wire-intent" in (body.get_attribute("class") or ""), "OUT did not arm"
+    # Opening More must preserve the pinned OUT; only an unrelated action
+    # may clear it. Exercise the actual operator path, not a hidden toggle.
     open_wire_config(page)
+    assert "wire-intent" in (body.get_attribute("class") or ""), "More cancelled the armed OUT"
     picker=page.locator('#wireConfigWindow #wireLegend [data-wire-destination]')
+    assert picker.is_visible(), "Cross-bank destination selector disappeared"
     picker.select_option("3")
     page.locator('#wireConfigClose').click()
     page.locator("#bankPrev").click()

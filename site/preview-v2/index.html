@@ -2790,10 +2790,12 @@ consoleBody.addEventListener('click',e=>{
  selectWireSource(source);
 });
 // A click elsewhere releases the source; bank navigation, WIRE workspace
-// and route-choice remain in the active routing workflow.
+// and route-choice remain in the active routing workflow. Opening the More
+// disclosure is navigation, not a decision to cancel the pinned OUT. Actual
+// unrelated menu commands still follow the ordinary click-away policy.
 document.addEventListener('click',e=>{
  if(!armedWireSource()||wireGesture||pendingBusRoute)return;
- if(e.target.closest?.('.wire-node-out,.wire-node-in,.wire-pot,.wire-disconnect,#wireWorkspace,#wireConfigWindow,#wireNavigatorToggle,#wireMatrixToggle,#wireConfigToggle,[data-wire-open],#routeChoice,#bankPrev,#bankNext,#bankSelect,#viewFilter,#wireMaster,[data-wire-destination],[data-wire-jump-source],.wire-offbank-source,.wire-v34-tool'))return;
+ if(e.target.closest?.('.wire-node-out,.wire-node-in,.wire-pot,.wire-disconnect,#wireWorkspace,#wireConfigWindow,#wireNavigatorToggle,#wireMatrixToggle,#wireConfigToggle,#moreTools > summary,[data-wire-open],#routeChoice,#bankPrev,#bankNext,#bankSelect,#viewFilter,#wireMaster,[data-wire-destination],[data-wire-jump-source],.wire-offbank-source,.wire-v34-tool'))return;
  clearWireIntent();
 });
 window.addEventListener('blur',()=>{
