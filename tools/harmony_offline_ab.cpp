@@ -2,6 +2,7 @@
 // Offline native Harmony A/B: genuine adult vocal WAVs, no live callback IO.
 // Synthesized self-test is only a build and integrity gate, not an ear-test.
 #include "../engine/builtin_fx/HarmonyDsp.h"
+#include "../engine/builtin_fx/HarmonyMusicKey.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -88,12 +89,53 @@ static void writeWave(const fs::path& path,const Wave& wave){
     }
     if(!out)throw std::runtime_error("WAV output write failed");
 }
+// Precompute the *native* detector at a declared callback cadence.
+// Every A/B variant and solo receives exactly the same tonal events.
+// This is a synchronous source replay, not a JUCE graph/driver simulation.
+struct GuideFrame {
+    std::size_t at=0,end=0;
+    armix::harmony::MusicKeyEstimate key{};
+    armix::harmony::MusicChordEstimate chord{};
+};
+using GuideTimeline=std::vector<GuideFrame>;
+static GuideTimeline guideTimeline(const Wave& vocal,const Wave& music,int block){
+    if(vocal.rate!=music.rate||vocal.left.size()!=music.left.size()||
+       music.left.size()!=music.right.size()||vocal.left.empty()||
+       block<16||block>2048)
+        throw std::runtime_error("Music guide requires aligned same-rate/same-length WAVs and block 16..2048");
+    if(vocal.left.size()>static_cast<std::size_t>(vocal.rate)*30)
+        throw std::runtime_error("Music guide audition: use <=30s");
+    armix::harmony::MusicKeyDetector detector;
+    if(!detector.prepare(music.rate))throw std::runtime_error("Music guide prepare failed");
+    GuideTimeline out;out.reserve((music.left.size()+block-1)/block);
+    for(std::size_t at=0;at<music.left.size();at+=static_cast<std::size_t>(block)){
+        const auto end=std::min(music.left.size(),at+static_cast<std::size_t>(block));
+        detector.process(music.left.data()+at,music.right.data()+at,static_cast<int>(end-at));
+        out.push_back({at,end,detector.estimate(),detector.chordEstimate()});
+    }
+    return out;
+}
+static void applyGuide(Engine& e,const GuideFrame& f){
+    // Match ChannelHarmonyProcessor's order and explicit unknown values.
+    e.setGuideChord(f.chord.valid()?f.chord.root:-1,f.chord.valid()?f.chord.quality:-1);
+    e.setGuideKey(f.key.valid()?f.key.key:-1,f.key.valid()?f.key.scale:-1);
+}
+static void writeGuideTimeline(const fs::path& file,const GuideTimeline& guide,unsigned rate){
+    std::ofstream out(file,std::ios::trunc);
+    if(!out)throw std::runtime_error("Music guide report open failed");
+    out<<"callback_start_sample,callback_end_sample,callback_start_s,key,scale,key_confidence,chord_root,chord_quality,chord_confidence\n";
+    for(const auto& f:guide)
+        out<<f.at<<','<<f.end<<','<<double(f.at)/rate<<','<<f.key.key<<','
+           <<f.key.scale<<','<<f.key.confidence<<','<<f.chord.root<<','
+           <<f.chord.quality<<','<<f.chord.confidence<<'\n';
+    if(!out)throw std::runtime_error("Music guide report write failed");
+}
 using SeamCounts=std::array<armix::harmony::BackingRenderSeam::Counts,Engine::maxVoices>;
 struct TraceRow {std::size_t at=0;std::array<Engine::RendererTrace,Engine::maxVoices> counts{};SeamCounts seams{};};
 static Wave process(const Wave& input,Settings settings,bool synchronous,int block=127,
                     bool enhancedDepth=true,bool focus=true,bool presence=true,
                     bool articulation=true,bool continuity=true,bool support=true,bool natural=true,bool carrier=true,bool slope=true,
-                    bool drain=true,SeamCounts* counts=nullptr,std::vector<TraceRow>* trace=nullptr,bool recovery=true,bool cubic=false){
+                    bool drain=true,SeamCounts* counts=nullptr,std::vector<TraceRow>* trace=nullptr,bool recovery=true,bool cubic=false,const GuideTimeline* guide=nullptr){
     auto e=std::make_unique<Engine>();
     if(!e->prepare(input.rate)||!e->setSettings(settings))
         throw std::runtime_error("native Harmony configuration invalid");
@@ -114,12 +156,19 @@ static Wave process(const Wave& input,Settings settings,bool synchronous,int blo
         throw std::runtime_error("renderer trace rejected");
     Wave out=input;
     const std::size_t window=std::max<std::size_t>(1,input.rate/100);
-    TraceRow prev{};std::size_t start=0;
+    TraceRow prev{};std::size_t start=0,guideIndex=0;
     for(std::size_t pos=0;pos<out.left.size();){
         const auto end=trace?std::min(out.left.size(),start+window):out.left.size();
-        const auto n=std::min(static_cast<std::size_t>(block),end-pos);
+        auto limit=end;
+        if(guide){
+            const auto& f=guide->at(guideIndex);
+            if(pos==f.at)applyGuide(*e,f);
+            limit=std::min(limit,f.end);
+        }
+        const auto n=std::min(static_cast<std::size_t>(block),limit-pos);
         e->process(out.left.data()+pos,out.right.data()+pos,static_cast<int>(n));
         pos+=n;
+        if(guide&&pos==guide->at(guideIndex).end)++guideIndex;
         if(trace&&pos==end){
             TraceRow row{};row.at=start;
             for(int v=0;v<Engine::maxVoices;++v){
@@ -153,7 +202,7 @@ static Wave subtract(const Wave& x,const Wave& y){
 // and the identical dry lead, then set only that role's prepared output gains
 // to zero for every other singer. No browser masks or in-place muting.
 static Wave roleStem(const Wave& input,Settings settings,
-                     int singerIndex,const Wave& dry,bool natural=true,bool carrier=true,bool slope=true,bool drain=true,bool recovery=true,bool cubic=false){
+                     int singerIndex,const Wave& dry,bool natural=true,bool carrier=true,bool slope=true,bool drain=true,bool recovery=true,bool cubic=false,const GuideTimeline* guide=nullptr){
     if(singerIndex<0||singerIndex>=Engine::maxVoices)
         throw std::runtime_error("invalid solo Harmony role");
     auto e=std::make_unique<Engine>();
@@ -166,9 +215,19 @@ static Wave roleStem(const Wave& input,Settings settings,
     if(!e->applyPreparedSettings(prepared))
         throw std::runtime_error("cannot apply singer solo");
     Wave out=input;
-    for(std::size_t pos=0;pos<out.left.size();pos+=127)
-        e->process(out.left.data()+pos,out.right.data()+pos,
-                   static_cast<int>(std::min(std::size_t(127),out.left.size()-pos)));
+    std::size_t guideIndex=0;
+    for(std::size_t pos=0;pos<out.left.size();){
+        auto end=out.left.size();
+        if(guide){
+            const auto& f=guide->at(guideIndex);
+            if(pos==f.at)applyGuide(*e,f);
+            end=f.end;
+        }
+        const auto n=std::min(std::size_t(127),end-pos);
+        e->process(out.left.data()+pos,out.right.data()+pos,static_cast<int>(n));
+        pos+=n;
+        if(guide&&pos==guide->at(guideIndex).end)++guideIndex;
+    }
     return subtract(out,dry);
 }
 static bool same(const Wave& x,const Wave& y){
@@ -433,12 +492,28 @@ static EarEvidence earEvidence(const std::vector<float>& x,std::size_t start,std
     e.stepRms=std::sqrt(stepEnergy/std::max<std::size_t>(1,end-start-(start==0?1:0)));
     return e;
 }
-static void continuityReport(const Wave& input,const fs::path& folder,Settings s){
+static void continuityReport(const Wave& input,const fs::path& folder,Settings s,const GuideTimeline* guide=nullptr,int guideBlock=0){
     if(input.left.size()>static_cast<std::size_t>(input.rate)*30)
         throw std::runtime_error("continuity audition: use <=30s");
     fs::create_directories(folder);
     auto ds=s;ds.wet=0.f;
-    const auto dry=process(input,ds,true);
+    if(guide){
+        if(s.guideMode!=1||s.guideChannelId==0)throw std::runtime_error("Music guide settings mismatch");
+        writeGuideTimeline(folder/"guide_timeline.csv",*guide,input.rate);
+    }
+    // Tune OFF in this report; guide influences backing only. Render dry
+    // with the identical timeline anyway to detect any future regression.
+    const auto dry=process(input,ds,true,127,true,true,true,true,true,true,true,true,true,true,nullptr,nullptr,true,false,guide);
+    std::ofstream manifest(folder/"replay_manifest.txt",std::ios::trunc);
+    if(!manifest)throw std::runtime_error("replay manifest open failed");
+    manifest<<"mode="<<(guide?"Music":"Manual")<<"\nrate="<<input.rate
+            <<"\nframes="<<input.left.size()<<"\nvoices="<<s.voices
+            <<"\nwet="<<s.wet<<"\nspace="<<s.space<<"\ncolor="<<s.color
+            <<"\ntune="<<s.correction<<"\nmanual_key="<<s.key<<"\nmanual_scale="<<s.scale
+            <<"\nlatency_samples="<<std::lround(input.rate*.024)
+            <<"\nguide_callback_frames="<<guideBlock
+            <<"\nH20_H21_PCM_same=true\nH22_offline_candidate=true\n";
+    if(!manifest)throw std::runtime_error("replay manifest write failed");
     writeWave(folder/"dry_aligned.wav",dry);
     std::ofstream csv(folder/"continuity_10ms.csv",std::ios::trunc);
     if(!csv)throw std::runtime_error("continuity report open failed");
@@ -455,7 +530,7 @@ static void continuityReport(const Wave& input,const fs::path& folder,Settings s
     for(int version:{12,13,14,15,16,17,18,20,22}){
         SeamCounts counts{};std::vector<TraceRow> trace;
         const auto mix=process(input,s,true,127,true,true,true,true,
-                               version>=13,version>=14,version>=15,version>=16,version>=17,version>=18,&counts,&trace,version>=20,version>=22);
+                               version>=13,version>=14,version>=15,version>=16,version>=17,version>=18,&counts,&trace,version>=20,version>=22,guide);
         const auto backing=subtract(mix,dry);
         const auto tag="h"+std::to_string(version);
         for(int v=0;v<Engine::maxVoices;++v)
@@ -484,7 +559,7 @@ static void continuityReport(const Wave& input,const fs::path& folder,Settings s
     }
     for(int version:{14,15,16,17,18,20,22})for(int role=0;role<Engine::maxVoices;++role)
         writeWave(folder/("h"+std::to_string(version)+"_role_"+std::to_string(role)+".wav"),
-                  roleStem(input,s,role,dry,version>=15,version>=16,version>=17,version>=18,version>=20,version>=22));
+                  roleStem(input,s,role,dry,version>=15,version>=16,version>=17,version>=18,version>=20,version>=22,guide));
     if(!csv||!events||!traceCsv)throw std::runtime_error("continuity report write failed");
 }
 int main(int argc,char** argv){
@@ -598,7 +673,59 @@ int main(int argc,char** argv){
             if(static_cast<std::size_t>(traceRows)!=1+9*Engine::maxVoices*windows)return 19;
             std::cout<<"H19_TRACE_EXPORT rows="<<traceRows-1<<std::endl;
             std::cout<<"H22_EXPORT variants=9 event_rows="<<rows-1<<" WAV readback PASS\n";
+            // True native music detector, independent stereo WAV, two
+            // chords, fixed 64-frame guide cadence. Trace window splits
+            // and renderer block partitions must not move tonal events.
+            Wave vocal,music;vocal.rate=music.rate=48000;
+            vocal.left.resize(2*48000);vocal.right.resize(vocal.left.size());
+            music.left.resize(vocal.left.size());music.right.resize(vocal.left.size());
+            constexpr double tau=6.283185307179586;
+            for(std::size_t i=0;i<vocal.left.size();++i){
+                const double sec=double(i)/vocal.rate;
+                vocal.left[i]=vocal.right[i]=static_cast<float>(.14*std::sin(tau*220.*sec)+.04*std::sin(tau*440.*sec));
+                const std::array<double,3> hz=i<48000?std::array<double,3>{261.625565,329.627557,391.995436}:
+                    std::array<double,3>{349.228231,440.,523.251131};
+                double q=0.;for(auto f:hz)q+=.08*std::sin(tau*f*sec);
+                music.left[i]=music.right[i]=static_cast<float>(q);
+            }
+            const auto timeline=guideTimeline(vocal,music,64);
+            bool cMajor=false,fMajor=false;
+            for(const auto& f:timeline){
+                cMajor|=f.chord.valid()&&f.chord.root==0&&f.chord.quality==0;
+                fMajor|=f.chord.valid()&&f.chord.root==5&&f.chord.quality==0;
+            }
+            if(!cMajor||!fMajor||timeline.size()!=1500)return 20;
+            Settings gs=reportSettings;gs.guideMode=1;gs.guideChannelId=2;
+            auto guided=[&](Settings settings,int block,std::vector<TraceRow>* trace,const GuideTimeline* g){
+                return process(vocal,settings,true,block,true,true,true,true,true,true,true,true,true,true,nullptr,trace,true,false,g);
+            };
+            std::vector<TraceRow> gt;
+            const auto m=guided(gs,127,&gt,&timeline),m64=guided(gs,64,nullptr,&timeline);
+            const auto manual=guided(gs,127,nullptr,nullptr);
+            if(!same(m,m64)||same(m,manual))return 21;
+            gs.wet=0.f;
+            if(!same(guided(gs,127,nullptr,&timeline),guided(gs,64,nullptr,nullptr)))return 22;
+            writeGuideTimeline(folder/"guide_timeline.csv",timeline,vocal.rate);
+            std::ifstream gc(folder/"guide_timeline.csv");int guideRows=0;
+            while(std::getline(gc,line))++guideRows;
+            if(guideRows!=1501)return 23;
+            bool rejected=false;
+            try{auto bad=music;bad.rate=96000;(void)guideTimeline(vocal,bad,64);}
+            catch(const std::runtime_error&){rejected=true;}
+            if(!rejected)return 24;
+            std::cout<<"H23_MUSIC_REPLAY callbacks="<<timeline.size()<<" C/F major PASS, exact PCM partition and dry parity, independent guide\n";
             std::cout<<"Offline native A/B test passed (synthetic only)\n";
+            return 0;
+        }
+        if(argc==9&&std::string(argv[1])=="--continuity-music"){
+            const auto vocal=readWave(argv[2]),music=readWave(argv[3]);
+            Settings s;s.key=std::stoi(argv[5]);s.scale=std::stoi(argv[6]);
+            s.voices=std::stoi(argv[7]);s.wet=1.f;s.space=1.f;s.color=.78f;
+            s.guideMode=1;s.guideChannelId=2;
+            const int block=std::stoi(argv[8]);
+            const auto timeline=guideTimeline(vocal,music,block);
+            continuityReport(vocal,argv[4],s,&timeline,block);
+            std::cout<<"Matched Music-guide WAV, PCM and detector timeline written; no hardware or acoustic qualification implied.\n";
             return 0;
         }
         if(argc==7&&std::string(argv[1])=="--continuity"){
@@ -628,7 +755,8 @@ int main(int argc,char** argv){
         if(argc!=3){
             std::cerr<<"usage: harmony_offline_ab input.wav output_directory\n"
                      <<"       harmony_offline_ab --lead-tune input.wav output_directory key scale\n"
-                     <<"       harmony_offline_ab --continuity input.wav output_directory key scale voices\n";
+                     <<"       harmony_offline_ab --continuity input.wav output_directory key scale voices\n"
+                     <<"       harmony_offline_ab --continuity-music vocal.wav music.wav output_directory key scale voices callback_frames\n";
             return 1;
         }
         renderAb(readWave(argv[1]),argv[2]);
