@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include <algorithm>
+#include <bitset>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -138,10 +139,12 @@ private:
            live.pins.empty()||live.pins.size()>256)return {};
         // Reject malformed/ambiguous enabled inventory even if the selected
         // pin itself looks valid. No fallback by ordinal or generic label.
+        std::bitset<256> seen;
         for(std::size_t i=0;i<live.pins.size();++i){
             const auto& p=live.pins[i];
-            if(p.physical<0||p.physical>255||p.callback!=static_cast<int>(i))return {};
-            for(std::size_t j=0;j<i;++j)if(live.pins[j].physical==p.physical)return {};
+            if(p.physical<0||p.physical>255||p.callback!=static_cast<int>(i)||
+               seen[static_cast<std::size_t>(p.physical)])return {};
+            seen.set(static_cast<std::size_t>(p.physical));
         }
         const auto pin=[&](int physical,const std::string& name){
             if(physical<0||name.empty())return -1;
@@ -153,8 +156,10 @@ private:
         };
         const int left=pin(b.left,b.leftName);
         if(left<0)return {};
-        if(format==Format::mono)
-            return b.right==-1&&b.rightName.empty()?std::optional<std::pair<int,int>>{{left,-1}}:std::nullopt;
+        if(format==Format::mono){
+            if(b.right!=-1||!b.rightName.empty())return {};
+            return std::pair<int,int>{left,-1};
+        }
         const int right=pin(b.right,b.rightName);
         if(right<0||left==right)return {};
         return std::pair<int,int>{left,right};

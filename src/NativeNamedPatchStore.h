@@ -76,7 +76,7 @@ public:
     }
     // Read only a bounded document; actual import always goes through apply.
     static juce::String readProfileFile(const juce::File& file,juce::var& result) {
-        result={};
+        result=juce::var();
         if(!file.hasFileExtension(".ario")||!file.existsAsFile()||
            file.getSize()<1||file.getSize()>256*1024)return "Invalid or oversized .ario profile";
         juce::FileInputStream stream(file);

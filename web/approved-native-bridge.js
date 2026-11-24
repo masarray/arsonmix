@@ -2606,13 +2606,14 @@
     const locked=busy||!!namedPatchPending||data.readOnly===true;
     const update=()=>{
       right.hidden=mode.value==="MONO";
-      save.disabled=locked||!name.value.trim()||!choice();
-      remove.disabled=locked||!existing.value;
-      exportProfile.disabled=locked||!entries.length;
-      importProfile.disabled=locked||!profileText.value.trim();
-      profileText.disabled=locked;
-      openFile.disabled=locked||!!namedProfileFilePending;
-      saveFile.disabled=locked||!!namedProfileFilePending||!entries.length;
+      const editingLocked=locked||!!namedProfileFilePending;
+      for(const el of [existing,name,mode,left,right,profileText])el.disabled=editingLocked;
+      save.disabled=editingLocked||!name.value.trim()||!choice();
+      remove.disabled=editingLocked||!existing.value;
+      exportProfile.disabled=editingLocked||!entries.length;
+      importProfile.disabled=editingLocked||!profileText.value.trim();
+      openFile.disabled=editingLocked;
+      saveFile.disabled=editingLocked||!entries.length;
     };
     profileText.oninput=update;
     const chooseFile=operation=>{
@@ -2622,8 +2623,16 @@
          hardware.hardwareConfiguration!==next.hardwareConfiguration)return;
       const requestId="io-file-"+(++namedProfileFileSerial);
       const lease={...identity(),side,revision:data.revision,deviceGeneration:deviceInventory.active.deviceGeneration};
-      namedProfileFilePending={requestId,operation,finish:message=>{
+      const unlockEditor=()=>{
         update();
+        if(!profileText.isConnected){
+          for(const grid of devicePanel?.querySelectorAll("[data-audio-input-grid],[data-audio-output-grid]")||[])
+            delete grid.dataset.signature;
+          paintPhysicalOutputs(hardware);
+        }
+      };
+      namedProfileFilePending={requestId,operation,finish:message=>{
+        unlockEditor();
         if(message.cancelled)return;
         if(message.ok!==true){nativeToast(message.error||"I/O profile file operation failed");return;}
         if(operation==="EXPORT"){nativeToast("I/O profile file saved");return;}
@@ -2642,7 +2651,7 @@
       backend.emitEvent("arMixAction",{action:"audioNamedProfileFile",requestId,operation,...lease});
       window.setTimeout(()=>{
         if(namedProfileFilePending?.requestId!==requestId)return;
-        namedProfileFilePending=null;update();paintPhysicalOutputs(hardware);
+        namedProfileFilePending=null;unlockEditor();
         nativeToast("I/O file dialog confirmation expired");
       },120000);
     };
