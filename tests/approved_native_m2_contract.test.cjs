@@ -7169,3 +7169,32 @@ test("P0 automatic MAIN recovery: no header mute toggle, explicit emergency stop
  assert.doesNotMatch(tone,/setMonitorEnabled\(true\)/);
  assert.doesNotMatch(control,/setMasterMuted\(false\)|openSelectedAudioDevice|setAudioDeviceSetup/);
 });
+
+// P0: navigation cannot be mistaken for a parameter ACK; overlay is accepted-state only.
+test("P0 editor refresh and bypass projection preserve exact owner and gate hierarchy",()=>{
+ const id="9007199254740993",device={epoch:"51",sampleRate:48000,bufferFrames:256,
+  enabledInputs:[0,1],enabledOutputs:[0,1]};
+ const hardwareConfiguration=protocol.nativeHardwareConfiguration(device);
+ const view={admitted:true,retained:false,device,raw:{globalFxBypassed:false,
+  mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"51"}},graph:{
+   revision:"46",rosterRevision:"19",capabilities:{callbackOwnsChannelIds:true},
+   channels:[{id,role:"INPUT",fxRackBypassed:false,inserts:[
+    {id:"fx-one",catalogId:"armix.builtin.8d-sonku.v1",bypassed:false}]}]}};
+ const options={hardwareConfiguration};
+ const lease=fxRackVM.editorNavigationPlan(view,{channelId:id,slot:0,...options}).lease;
+ const state=()=>fxRackVM.editorBypassPresentation(view,lease,options);
+ assert.equal(state(),"ON");
+ view.graph.revision="47";
+ assert.equal(fxRackVM.refreshEditorNavigationLease(view,lease,options).graphRevision,"47");
+ view.graph.channels[0].inserts[0].bypassed=true;assert.equal(state(),"SLOT");
+ view.graph.channels[0].fxRackBypassed=true;assert.equal(state(),"RACK");
+ view.raw.globalFxBypassed=true;assert.equal(state(),"GLOBAL");
+ view.raw.globalFxBypassed=false;assert.equal(state(),"RACK");
+ view.graph.channels[0].fxRackBypassed=false;assert.equal(state(),"SLOT");
+ view.graph.channels[0].inserts[0].id="replacement";assert.equal(state(),"UNAVAILABLE");
+ assert.equal(fxRackVM.refreshEditorNavigationLease(view,lease,options),null);
+ assert.equal(protocol.operatorMessage("VST3 editor · refresh native device and FX instance"),
+  "FX editor unavailable · Reopen from FX Rack");
+ assert.equal(protocol.operatorMessage("Native FX editor opened"),"FX editor opened");
+ assert.notEqual(protocol.operatorMessage("Native FX editor pending"),"Effect settings updated");
+});

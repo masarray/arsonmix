@@ -10,6 +10,7 @@
 #include "../integration/ApprovedNativeRuntimeSnapshot.h"
 #include "../integration/ApprovedNativeControlIntent.h"
 #include "LiveAudioEngine.h"
+#include "../engine/builtin_fx/GuitarRigEditor.h"
 #include "NativeSessionToken.h"
 #include "ArSonMixStartupSplash.h"
 #include "ArSonWindowChrome.h"
@@ -7629,8 +7630,9 @@ private:
                         if(static_cast<bool>(args.getProperty("recenter",false)))
                             shownWindow->present(true);
                         else shownWindow->present();
-                        opened=true;
-                        error.clear();
+                        opened=shownWindow->isVisible()&&!shownWindow->isMinimised();
+                        if(opened)error.clear();
+                        else error="FX editor window could not be presented";
                     } else if(extra!=additionalFxEditors_.end()) {
                         // Instance owner is re-leased by the current graph;
                         // channel and slot can move, but never clone its UI.
@@ -7722,6 +7724,20 @@ private:
                                             current.valid,current.slotBypassed,
                                             current.rackBypassed,current.globalBypassed};
                                     });
+                            }
+                            if(auto* guitar=dynamic_cast<armix::builtin_fx::GuitarRigEditor*>(editor)) {
+                                auto held=owner;
+                                guitar->bindHostBypassReadback([this,held,nativeTarget,nativeChannel,lane,slot,token] {
+                                    const auto current=nativeTarget?
+                                        engine_.retainedNativeFxPower(held,armix::mixer::ChannelId{nativeChannel},
+                                            static_cast<std::size_t>(slot),token):
+                                        engine_.retainedRoutedFxPower(held,lane,slot,token);
+                                    using Overlay=armix::builtin_fx::GuitarRigEditor::HostOverlay;
+                                    return !current.valid?Overlay::unavailable:
+                                        current.globalBypassed?Overlay::global:
+                                        current.rackBypassed?Overlay::rack:
+                                        current.slotBypassed?Overlay::slot:Overlay::none;
+                                });
                             }
                             // Graphic EQ uses the same EXACT retained mixer
                             // FX bypass authority/readback as ImmerSIB.
@@ -7924,7 +7940,12 @@ private:
                 "arMixRoutingFxEditorAck",juce::var(ack.release()));
             if(opened)diagnostics_.record("ROUTED_FX_EDITOR_OPENED",
                 "lane="+juce::String(lane)+" slot="+juce::String(slot));
-            else emitNotice(error,true);
+            else {
+                diagnostics_.record("ROUTED_FX_EDITOR_REJECTED",error);
+                // Correlated request owns its single failure notification.
+                // Keep the old notice only for uncorrelated legacy callers.
+                if(args.getProperty("requestId",juce::var()).isVoid())emitNotice(error,true);
+            }
             return;
         }
 

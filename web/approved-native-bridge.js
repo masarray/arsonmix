@@ -70,6 +70,7 @@
     style.textContent+="\n"+"html.armix-native-desktop #mxNativeVocalThrow #vtEncodersLeft,html.armix-native-desktop #mxNativeVocalThrow #vtEncodersRight{order:initial!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-throw-button{width:212px!important;height:212px!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-performance{grid-template-columns:88px minmax(0,1fr) 302px!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-rotary-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;min-height:190px!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-dial{width:62px!important;height:62px!important}\nhtml.armix-native-desktop #mxNativeHarmony .mx-harm-center{border-top:0!important;padding:8px 12px!important}";
     const offsets=new WeakMap();
     const identities=new WeakMap(); // exact FX owner, not its slot
+    const bypassOwners=new WeakMap(); // navigation lease, never a DSP gate
     let drag=null,layer=16000;
     const limit=(value,low,high)=>Math.max(low,Math.min(high,value));
     const grip=()=>Math.min(130,Math.max(56,Math.floor(innerWidth*.22)));
@@ -110,7 +111,32 @@
       if(Math.abs(x-r.left)>.5||Math.abs(y-r.top)>.5)
         move(root,x-r.left,y-r.top);
     }
-    function openExact(host,key,track,slot,instanceId) {
+    function syncBypass(view){
+      const hardwareConfiguration=protocol.nativeHardwareConfiguration(view?.device);
+      for(const [key,selector] of Object.entries(selectors)){
+        if(key==="ArSonMixGraphicEq31")continue; // original reference implementation
+        const root=document.querySelector(selector);
+        const lease=root&&bypassOwners.get(root);
+        if(!root||root.hidden||!lease)continue;
+        const value=fxRackVM.editorBypassPresentation(view,lease,{hardwareConfiguration});
+        let shade=root.querySelector(".armix-native-fx-bypass");
+        if(!shade){
+          shade=document.createElement("div");
+          shade.className="mx-geq31-bypass-overlay armix-native-fx-bypass";
+          shade.setAttribute("aria-hidden","true");
+          const header=root.querySelector(headers);
+          if(header)shade.style.top=header.offsetHeight+"px";
+          root.appendChild(shade);
+        }
+        const label={GLOBAL:"GLOBAL FX BYPASSED",RACK:"FX RACK BYPASSED",
+          SLOT:"BYPASSED",UNAVAILABLE:"FX UNAVAILABLE",ON:"BYPASSED"}[value];
+        if(shade.textContent!==label)shade.textContent=label;
+        shade.classList.toggle("is-on",value!=="ON");
+        const pointer=value==="UNAVAILABLE"?"auto":"none";
+        if(shade.style.pointerEvents!==pointer)shade.style.pointerEvents=pointer;
+      }
+    }
+    function openExact(host,key,track,slot,instanceId,lease=null) {
       const selector=selectors[key],root=document.querySelector(selector||"#__none__");
       if(!root||typeof host?.open!=="function"||!instanceId)return false;
       const identity=String(instanceId);
@@ -124,6 +150,8 @@
         identities.set(root,identity);
       }
       host.open(track,slot);
+      if(root.hidden)return false; // a no-op open is not a successful editor
+      if(lease)bypassOwners.set(root,lease);
       root.style.zIndex=String(++layer);
       if(!offsets.has(root))center(root);
       else keepReachable(root);
@@ -193,7 +221,7 @@
       for(const root of document.querySelectorAll(roots))
         if(!root.hidden)requestAnimationFrame(()=>keepReachable(root));
     });
-    return Object.freeze({openExact,center,move});
+    return Object.freeze({openExact,center,move,syncBypass});
   })():null;
   if(inlineFxClip)window.__ARMIX_NATIVE_INLINE_FX_CLIP__=inlineFxClip;
 
@@ -1667,7 +1695,9 @@
     pendingFxEditorAck={requestId,authority,lease};
     backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload});
     window.setTimeout(()=>{
-      if(pendingFxEditorAck?.requestId===requestId)pendingFxEditorAck=null;
+      if(pendingFxEditorAck?.requestId!==requestId)return;
+      pendingFxEditorAck=null;
+      nativeToast("FX editor unavailable · request timed out");
     },8000);
   }
   function openChannelIdFxEditor(lease,recenter=false){
@@ -1681,8 +1711,21 @@
       const current=controller?.state()?.current;
       if(logicalView||fxRackVM.nativeEditorDispatchPlan(current,lease,{
         hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device),
-        offline:!!logicalView}).kind!=="READY")
-        return; // same-epoch hardware/FX replacement or offline .smix switch
+        offline:!!logicalView}).kind!=="READY"){
+        const fresh=!logicalView&&fxRackVM.refreshEditorNavigationLease(current,lease,{
+          hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
+        if(fresh){
+          const refreshed=fxRackVM.nativeEditorDispatchPlan(current,fresh,{
+            hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
+          if(refreshed.kind==="READY"){
+            dispatchPhysicalFxEditor({...refreshed,payload:{...refreshed.payload,recenter}},
+              fresh,"CHANNEL_ID");
+            return;
+          }
+        }
+        nativeToast("FX editor unavailable · accepted instance changed");
+        return;
+      }
       if(recenter)dispatchPhysicalFxEditor({
         ...plan,payload:{...plan.payload,recenter:true}
       },lease,"CHANNEL_ID");
@@ -3817,6 +3860,7 @@
           hardwareConfiguration:protocol.nativeHardwareConfiguration(accepted?.device)})==="STALE")
           pendingFxEditorAck=null;
         syncGlobalFxReadback();
+        inlineFxClip?.syncBypass(activeView());
       },
       onStatus:state=>{
         const settledGain=pendingNativeGainIntent&&!state.pending;
@@ -4075,11 +4119,14 @@
         verifiedM4:m4Verified(accepted),offline:!!logicalView,
         hardwareConfiguration:protocol.nativeHardwareConfiguration(accepted?.device)});
       if(verdict==="IGNORE")return; // obsolete, duplicate or unrelated ACK
+      if(ack?.requestId!==pendingFxEditorAck?.requestId)return;
       pendingFxEditorAck=null; // first ACK wins; no accepted PCM mutation
-      if(verdict==="REJECTED")
-        status("FX editor rejected · "+String(ack?.error||"native editor unavailable"));
-      // Original JUCE emitNotice reports errors. Its HWND controls success.
-      // Never show the misleading generic "Effect settings updated" toast.
+      if(verdict!=="ACKED"){
+        const message="FX editor unavailable · "+String(ack?.error||"accepted instance changed");
+        nativeToast(message);
+        status(message);
+      }
+      // Success is HWND presentation, never a parameter edit.
     });
     backend.addEventListener("arMixRoutingFxInsertAck",ack=>{
       const verdict=fxRackVM.m4InsertAckResult(pendingFxInsert,ack);
@@ -4561,8 +4608,9 @@
                 hardwareConfiguration:protocol.nativeHardwareConfiguration(view?.device)});
               const host=window[surface.windowKey];
               if(!safe||!inlineFxClip?.openExact(
-                 host,surface.windowKey,t,slot,editor.instanceId))
-                nativeToast("Built-in FX changed · reopen current FX Rack");
+                 host,surface.windowKey,t,slot,editor.instanceId,editor))
+                nativeToast("Built-in FX editor unavailable · reopen current FX Rack");
+              else inlineFxClip.syncBypass(view);
             }else if(surface.kind==="LOGICAL_VENDOR"){
               backend.emitEvent("arMixAction",{action:"logicalVendorFxEditor",
                 channelId:editor.channelId,slot:editor.slot,instanceId:editor.instanceId,

@@ -306,7 +306,7 @@ function syncPower(){
    current.track.slotBypass?.[current.slot]?"off":"on"):
   (!lane||typeof lane.fxRackBypassed!=="boolean"||!insert||
    typeof insert.bypassed!=="boolean"?"unknown":
-   lane.fxRackBypassed?"rack-off":insert.bypassed?"off":"on");
+   (lane.fxRackBypassed||snapshot()?.raw?.globalFxBypassed===true)?"rack-off":insert.bypassed?"off":"on");
  power.dataset.fxState=fxState;
  power.disabled=fxState==="unknown"||fxState==="rack-off";
  power.setAttribute("aria-pressed",String(fxState==="on"));
