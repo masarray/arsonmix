@@ -1,0 +1,11 @@
+# Studio-style Audio I/O workflow — 25 Nov 2026
+
+Owner screenshots: ArSonMix device screen has pins before device Apply, overloaded diagnostic copy, no input matrix, output overview not a routing matrix. Reference Studio One device setup and separate software I/O matrix (https://support.presonus.com/hc/en-us/articles/210050363-Studio-One-3-Audio-Device-Setup and https://support.presonus.com/hc/en-us/articles/4410361485837-Studio-24c-Setup-an-Audio-Track-in-Studio-One).
+
+## Delivery 1: source change
+Approved /preview/ bridge only. Device page: driver, recording, playback, rate, buffer, estimated round-trip (driver + FX/PDC), vendor control panel. Hardware Pins page only for matching observed endpoint and negotiated format, not pending/recovery. Newly opened ASIO moves to pins only after accepted ACK + installed readback + inventory. Existing pin mask Apply, explicit MAIN mapping and remap remain native-authorized. Diagnostics moved away from daily workflow. No PCM or latency change.
+
+## Delivery 2: NOT IMPLEMENTED in this commit
+Actual Inputs / Outputs crosspoint editor: columns native physical pins; rows persistent named software ports (Mono, Stereo L/R), not arbitrary new mixer strips. Add Mono / Add Stereo / Rename / Remove / Apply / Cancel. Used indicator from accepted ChannelId references. Logical port registry per device with stable IDs, typed format, native epoch, exact pin identity, independent session persistence and migration. Bind mixer INPUT selector to source IDs; do not alter source processing width silently. MAIN / MONITOR / external output mappings use the same sole native graph and supported pair semantics. Do not make output rows clickable until their commit path can update installed PCM and verify ACK. No competing device manager, automatic rearm, extra buffers, WebAudio or legacy mixer-io revival. Preserve Player as a separate nonphysical source. Fail closed on stale generation, unavailable pins, incompatible output sharing or topology edits. Verify real native CTest + Chromium interaction + physical Maono ASIO L/R, restart/session and buffer timing before release.
+
+Output overview is still an overview, not an implemented matrix. This branch must not be merged independently ahead of P0 or marketed as full Studio One workflow. 

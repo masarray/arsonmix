@@ -2657,6 +2657,16 @@
     loopbackField("start").disabled=deviceBusy()||loopbackPending||
       !loopbackField("confirmed").checked;
   }
+  function selectAudioSetupPage(page){
+    if(!devicePanel)return;
+    const dialog=devicePanel.querySelector(".armix-audio-dialog");
+    dialog.dataset.audioTab=page;
+    for(const item of devicePanel.querySelectorAll("button[data-audio-tab]"))
+      item.setAttribute("aria-selected",String(item.dataset.audioTab===page));
+    const apply=devicePanel.querySelector("[data-audio-apply]");
+    apply.hidden=page==="routing"||page==="diagnostics";
+    if(!deviceBusy())apply.textContent=page==="pins"?"Apply pins":"Apply device";
+  }
   function openNativeAudioIO(){
     if(!devicePanel){
       const style=document.createElement("style");
@@ -2738,10 +2748,18 @@
         .armix-output-matrix{max-height:min(46vh,360px);gap:4px}
         .armix-output-row{grid-template-columns:92px minmax(0,1fr) auto;
           min-height:34px;padding:8px 10px}
-        .armix-audio-dialog[data-audio-tab="device"] .armix-output-overview,
-        .armix-audio-dialog[data-audio-tab="routing"] .armix-endpoint-fields,
-        .armix-audio-dialog[data-audio-tab="routing"] details,
-        .armix-audio-dialog[data-audio-tab="routing"] .armix-driver-inventory{display:none}
+        .armix-audio-dialog:not([data-audio-tab="routing"]) .armix-output-overview,
+        .armix-audio-dialog:not([data-audio-tab="device"]) .armix-endpoint-fields,
+        .armix-audio-dialog:not([data-audio-tab="diagnostics"]) .armix-audio-diagnostics,
+        .armix-audio-dialog:not([data-audio-tab="pins"]) .armix-driver-inventory,
+        .armix-audio-dialog:not([data-audio-tab="device"]) [data-audio-remap],
+        .armix-audio-dialog [hidden]{display:none!important}
+        .armix-audio-diagnostics{padding:12px 20px}
+        .armix-audio-dialog .armix-endpoint-fields .armix-device-note{border:0;background:transparent;padding:3px 0}
+        .armix-audio-dialog [data-audio-latency]{padding:8px 0!important;border-top:1px solid #354b59!important}
+        .armix-audio-dialog .armix-audio-pins{max-height:min(44vh,340px);gap:16px}
+        .armix-audio-dialog .armix-audio-pins label{min-height:24px}
+        .armix-audio-dialog [data-audio-tab="diagnostics"]{margin-left:auto}
         .armix-driver-inventory{padding:12px 20px;border-top:1px solid #354b59}
         .armix-endpoint-fields .armix-device-actions{padding:0;border:0;background:transparent}
         .armix-audio-dialog .armix-device-actions{padding:12px 20px;
@@ -2769,8 +2787,12 @@
         <nav class="armix-audio-tabs" aria-label="Audio setup pages" role="tablist">
           <button type="button" class="armix-audio-tab" data-audio-tab="device"
             role="tab" aria-selected="true">Audio Device</button>
+          <button type="button" class="armix-audio-tab" data-audio-tab="pins"
+            role="tab" aria-selected="false" disabled>Hardware Pins</button>
           <button type="button" class="armix-audio-tab" data-audio-tab="routing"
-            role="tab" aria-selected="false">Output Routing</button>
+            role="tab" aria-selected="false" disabled>Output Routing</button>
+          <button type="button" class="armix-audio-tab" data-audio-tab="diagnostics"
+            role="tab" aria-selected="false">Diagnostics</button>
         </nav>
         <div class="armix-endpoint-fields">
           <label>Audio driver<select data-audio-field="backend"></select></label>
@@ -2782,14 +2804,15 @@
           </div>
           <label>Sample rate<select data-audio-field="rate"></select></label>
           <label>Buffer size<select data-audio-field="buffer"></select></label>
-          <div class="armix-device-note" data-audio-period></div>
           <div class="armix-device-actions">
-            <button type="button" data-audio-driver-panel hidden>ASIO control panel / recovery</button>
-            <button type="button" data-audio-read-health>Refresh audio status</button>
+            <button type="button" data-audio-driver-panel hidden>ASIO Control Panel</button>
           </div>
-          <div class="armix-device-note" data-audio-health role="status"></div>
-          <div class="armix-device-note">Start with 48 kHz and 128 or 256 samples if supported. Lower only if monitoring is stable. Driver and FX latency are additional considerations.</div>
+          <div class="armix-device-note">Apply device to discover its hardware pins.</div>
         </div>
+        <section class="armix-audio-diagnostics">
+          <div class="armix-device-note" data-audio-period></div>
+          <div class="armix-device-note" data-audio-health role="status"></div>
+          <button type="button" data-audio-read-health>Refresh audio status</button>
         <details data-audio-loopback-details hidden>
           <summary>Wired round-trip calibration · ASIO</summary>
           <div class="armix-loopback-pins">
@@ -2803,6 +2826,7 @@
           <button type="button" data-audio-loopback-start disabled>Measure round-trip latency</button>
           <div class="armix-loopback-result armix-device-note" data-audio-loopback-result role="status"></div>
         </details>
+        </section>
         <div class="armix-device-progress" data-audio-progress role="status" aria-live="polite" hidden>
           <!--By Sam Herbert (@sherb), for everyone. More @ http://goo.gl/7AJzbL-->
           <svg viewBox="0 0 55 80" xmlns="http://www.w3.org/2000/svg" fill="currentColor" aria-hidden="true" focusable="false">
@@ -2864,10 +2888,8 @@
         if(e.target===devicePanel){closeNativeAudioIO();return;}
         const tab=e.target?.closest?.("button[data-audio-tab]");
         const dialog=devicePanel.querySelector(".armix-audio-dialog");
-        if(!tab||!dialog||deviceBusy())return;
-        dialog.dataset.audioTab=tab.dataset.audioTab;
-        for(const item of devicePanel.querySelectorAll("button[data-audio-tab]"))
-          item.setAttribute("aria-selected",String(item===tab));
+        if(!tab||!dialog||deviceBusy()||tab.disabled||loopbackPending)return;
+        selectAudioSetupPage(tab.dataset.audioTab);
       });
       loopbackField("start").onclick=()=>requestLoopback(true);
       loopbackField("confirmed").onchange=e=>{
@@ -2910,9 +2932,9 @@
     }
     devicePanel.hidden=false;
     const dialog=devicePanel.querySelector(".armix-audio-dialog");
-    if(dialog)dialog.dataset.audioTab="device";
-    for(const item of devicePanel.querySelectorAll("button[data-audio-tab]"))
-      item.setAttribute("aria-selected",String(item.dataset.audioTab==="device"));
+    if(dialog)selectAudioSetupPage("device");
+    for(const item of devicePanel.querySelectorAll('button[data-audio-tab="pins"],button[data-audio-tab="routing"]'))
+      item.disabled=true;
     paintPhysicalOutputs(hardware);
     if(deviceBusy())return;
     const active=devicePanel.querySelector("[data-audio-active]");
@@ -2941,6 +2963,12 @@
     // All draft, selection and eligibility rules live in the ONE pure VM.
     // The bridge only paints the existing approved /preview/ DOM.
     const view=deviceVM.setupPresentation(deviceInventory,deviceChoice,deviceState);
+    const routingReady=deviceVM.setupRoutingReady(deviceInventory,deviceChoice,deviceState);
+    for(const item of devicePanel.querySelectorAll('button[data-audio-tab="pins"],button[data-audio-tab="routing"]'))
+      item.disabled=!routingReady;
+    const page=devicePanel.querySelector(".armix-audio-dialog").dataset.audioTab;
+    if(!routingReady&&!deviceBusy()&&(page==="pins"||page==="routing"))
+      selectAudioSetupPage("device");
     const hint=devicePanel.querySelector("[data-audio-asio4all-hint]");
     if(hint)hint.hidden=!view.asio4allHint;
     fillAudioSelect("backend",view.backendOptions,deviceChoice.backend);
@@ -2997,7 +3025,7 @@
     const pins=devicePanel.querySelector("[data-audio-pins]");
     if(pins){
       pins.replaceChildren();
-      if(view.same){
+      if(routingReady){
         const container=document.createElement("div");
         container.className="armix-audio-pins";
         for(const [side,names,selected] of [
@@ -3045,9 +3073,11 @@
     const latencyText=devicePanel.querySelector("[data-audio-latency]");
     if(latencyText){
       const latency=deviceVM.setupLatencyReadback(active);
-      latencyText.textContent=latency.ready?
-        latency.line+" · "+latency.note:
-        "AUDIO LATENCY · select an active device to read driver estimates";
+      const ms=n=>n===null?"—":n.toFixed(2)+" ms";
+      latencyText.textContent=latency.ready&&view.same?
+        "Round-trip (estimated) "+ms(latency.estimatedTotalMs)+
+        " · Device "+ms(latency.driverIoHintMs)+" · FX/PDC "+ms(latency.fxMs):
+        "Round-trip latency — Apply device first";
       latencyText.title="Input and output are driver-reported. Buffer period is shown separately. Electrical round-trip requires physical loopback calibration.";
     }
     renderLoopbackPins(active);
@@ -3068,7 +3098,8 @@
     devicePanel.querySelector("[data-audio-active]").hidden=pending;
     devicePanel.querySelector("[data-audio-close]").disabled=pending;
     const apply=devicePanel.querySelector("[data-audio-apply]");
-    apply.textContent=pending?"Applying…":"Apply device";
+    apply.textContent=pending?"Applying…":
+      devicePanel.querySelector(".armix-audio-dialog").dataset.audioTab==="pins"?"Apply pins":"Apply device";
     apply.setAttribute("aria-busy",String(pending));
     if(pending&&!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches){
       svg.setCurrentTime?.(0);
@@ -3119,6 +3150,8 @@
         // Keep Audio I/O open for the authoritative inventory requested by
         // onNativeReadback, not a misleading return to a 2x2 mixer.
         deviceInventory=null;
+        devicePanel.dataset.openPinsAfterInventory="true";
+        selectAudioSetupPage("device");
         devicePanel.querySelector("[data-audio-active]").textContent=
           "Driver opened · reading available ASIO channels";
         devicePanel.querySelector("[data-audio-pin-summary]").textContent=
@@ -3148,6 +3181,11 @@
       deviceInventory=inventory;
       deviceChoice=null;
       renderDevicePanel();
+      if(devicePanel&&!devicePanel.hidden&&devicePanel.dataset.openPinsAfterInventory==="true"){
+        delete devicePanel.dataset.openPinsAfterInventory;
+        if(deviceVM.setupRoutingReady(deviceInventory,deviceChoice,deviceState))
+          selectAudioSetupPage("pins");
+      }
       if(devicePanel&&!devicePanel.hidden&&!loopbackPending)requestLoopback(false);
     });
     backend.addEventListener("arMixPhysicalLoopback",message=>{

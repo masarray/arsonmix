@@ -116,6 +116,15 @@
     return active?.open===true&&active.backend===draft?.backend&&
       active.captureDevice===draft.capture&&active.playbackDevice===draft.playback;
   }
+  // Pin discovery belongs to the accepted driver, never a candidate endpoint.
+  // A new rate/buffer also needs driver negotiation before routing.
+  function setupRoutingReady(inventory,draft,state=setupInitial()) {
+    const a=inventory?.active;
+    return !state.pending && !["RECOVERY_REQUIRED","STALE"].includes(state.phase) &&
+      setupSameEndpoint(a,draft) &&
+      draft.rate===a.rate && draft.buffer===a.buffer &&
+      pinInventory(a,"input")!==null && pinInventory(a,"output")!==null;
+  }
   function setupDraft(inventory) {
     if(!inventory?.active||!Array.isArray(inventory.types))return null;
     const active=inventory.active,types=inventory.types;
@@ -522,7 +531,7 @@
     return Object.freeze({kind:"SAME",expirePending:false});
   }
   return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,
-    externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,
+    externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,setupRoutingReady,
     pinInventory,setupSelectAllPins,setupBufferPeriod,setupHealthReadback,
     setupInitial,setupBegin,setupAck,setupReadback,
     setupTimeout,setupClearResult,nativeLifecycleLease,nativeLifecycleDecision,

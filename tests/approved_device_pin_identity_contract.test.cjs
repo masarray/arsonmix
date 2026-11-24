@@ -690,3 +690,16 @@ test("Final single-ASIO restore passes named live device snapshot to external ou
   assert.match(region,/candidate\.pins\.deviceName!=candidate\.live\.playback/);
   assert.doesNotMatch(region,/JuceActivePortSnapshot::fromMasks/);
 });
+
+test("Studio workflow: pin pages only unlock on an observed matching driver and negotiated format",()=>{
+  const {inventory}=fixture();
+  const draft=vm.setupDraft(inventory),state=vm.setupInitial();
+  assert.equal(vm.setupRoutingReady(inventory,draft,state),true);
+  assert.equal(vm.setupRoutingReady(inventory,{...draft,capture:"Other ASIO"},state),false);
+  assert.equal(vm.setupRoutingReady(inventory,{...draft,rate:44100},state),false);
+  assert.equal(vm.setupRoutingReady(inventory,{...draft,buffer:512},state),false);
+  assert.equal(vm.setupRoutingReady(inventory,draft,{...state,pending:{}}),false);
+  assert.equal(vm.setupRoutingReady(inventory,draft,{...state,phase:"RECOVERY_REQUIRED"}),false);
+  assert.equal(vm.setupRoutingReady({...inventory,active:{...inventory.active,open:false}},draft,state),false);
+  assert.equal(vm.setupRoutingReady({...inventory,active:{...inventory.active,enabledInputs:[99]}},draft,state),false);
+});
