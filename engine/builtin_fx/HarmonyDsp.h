@@ -528,7 +528,8 @@ public:
             // +1.58dB direct (not diffuse tail) without raising that cap.
             // Smooth the arranger boundary, and keep Duo/Doubler exact.
             const float backingDirect=stageDepthReferenceEnabled_?
-                stageGain.direct*(1.f+.20f*space_*ensembleFocus_):1.f-.38f*space_;
+                stageGain.direct*(1.f+.20f*space_*ensembleFocus_+
+                                  .28f*space_*doublerBlend_):1.f-.38f*space_;
             const float earlyReturn=stageDepthReferenceEnabled_?
                 stageGain.early:.28f*space_;
             const float independent=expressionReferenceEnabled_?ensembleFocus_:0.f;
@@ -576,8 +577,11 @@ public:
                 const auto placed=stage_.place(v,voice,reflection,second,
                                                mixL_[ix],mixR_[ix],space_);
                 if(stageDepthReferenceEnabled_){
+                    // Preserve HIGH audibility while lifting low register
+                    // anchors in the direct field rather than muddying room.
+                    const float roleFocus=(v==0||v==2)?.12f:v==3?.16f:0.f;
                     const float directPresence=BackingStageSpatial::
-                        directionalPresence(v,space_);
+                        directionalPresence(v,space_)*(1.f+ensembleFocus_*roleFocus);
                     outL+=placed.directL*backingDirect*directPresence+
                           placed.earlyL*earlyReturn;
                     outR+=placed.directR*backingDirect*directPresence+

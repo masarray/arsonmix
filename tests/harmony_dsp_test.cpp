@@ -750,6 +750,97 @@ static bool testMusicalHighStem(){
 // Field report: long high notes and ambiguous/unvoiced intervals must
 // never interrupt the new unison take. Check actual wet-only PCM, not
 // just pitch detector state. 4s sustained vibrato at 220/880/1320 Hz.
+static void testLowerPresenceAndPresets(){
+  // Actual stem PCM, compare H11 versus H12 prepared normalized mix
+  // weights. Same new renderer in both references; the difference is
+  // isolated to the role-weight change (direct focus is common).
+  constexpr std::array<float,5> prior{{1.20f,.88f,1.85f,.94f,1.30f}};
+  for(int count:{4,5})for(double hz:{110.,220.,440.}){
+    constexpr int rate=48000;
+    auto input=leadFixture(rate,hz,0.f,0.f);input.right=input.left;
+    Settings s;s.voices=count;s.wet=1.f;s.color=1.f;s.space=.75f;
+    const auto render=[&](int role,bool previous){
+      auto e=std::make_unique<Engine>();Engine::PreparedSettings p;
+      need(e->prepare(rate)&&Engine::prepareSettings(s,p),"H12 lower prep");
+      if(previous){
+        double oldPower=0.,newPower=0.;
+        for(int v=0;v<5;++v)if(singerActive(singers[v].role,count)){
+          oldPower+=prior[v]*prior[v];
+          const float w=Engine::singerPresence(v,count);newPower+=w*w;
+        }
+        for(int v=0;v<5;++v){
+          const float k=static_cast<float>(std::sqrt(newPower/oldPower))*
+              prior[v]/Engine::singerPresence(v,count);
+          p.mixL[v]*=k;p.mixR[v]*=k;
+        }
+      }
+      for(int v=0;v<5;++v)if(v!=role)p.mixL[v]=p.mixR[v]=0.f;
+      need(e->applyPreparedSettings(p),"H12 lower apply");
+      auto out=input;
+      for(int i=0;i<2*rate;i+=127)
+        e->process(out.left.data()+i,out.right.data()+i,std::min(127,2*rate-i));
+      return out;
+    };
+    const auto dry=render(-1,false);
+    const auto energy=[&](const LeadFixture& x){
+      double e=0.;
+      for(int i=rate;i<2*rate;++i){
+        const double l=x.left[i]-dry.left[i],r=x.right[i]-dry.right[i];e+=l*l+r*r;
+      }
+      return e;
+    };
+    const auto low=energy(render(0,false)),lower=energy(render(3,false));
+    const auto oldLow=energy(render(0,true)),oldLower=energy(render(3,true));
+    const double lowLift=10.*std::log10(low/oldLow);
+    const double lowerLift=10.*std::log10(lower/oldLower);
+    std::cout<<"H12_LOWER voices="<<count<<" hz="<<hz
+             <<" low_weight_dB="<<lowLift<<" lower_weight_dB="<<lowerLift
+             <<" lower_vs_low_dB="<<10.*std::log10(lower/low)<<std::endl;
+    need(lowLift>0.&&lowerLift>1.2&&lower>1.,"H12 lower register presence");
+  }
+  // Exact factory preset pairs; the UI contract independently verifies
+  // values. Remove output gain from stem comparison, then verify actual
+  // nominal output headroom with the selected gain.
+  struct Pair{const char* name;int mode,voices;float ow,os,oc,og,w,s,c,g;};
+  constexpr Pair pairs[]{
+    {"doubleLight",1,2,.38f,.35f,.57f,0.f,.68f,.58f,.78f,0.f},
+    {"doubleWide",1,2,.52f,.82f,.48f,-1.f,.86f,.88f,.86f,0.f},
+    {"duo",0,2,.31f,.35f,.45f,0.f,.76f,.72f,.78f,0.f},
+    {"trio",0,3,.40f,.56f,.50f,0.f,.82f,.78f,.82f,0.f},
+    {"quartet",0,4,.52f,.95f,.66f,-2.f,.88f,.94f,.88f,-1.f},
+    {"quintet",0,5,.45f,.88f,.61f,-3.f,.90f,.94f,.90f,-1.f},
+    {"choir",0,4,.58f,.30f,.24f,-3.f,.88f,.70f,.68f,-1.f}};
+  constexpr int rate=48000;
+  auto src=leadFixture(rate,220.,0.f,0.f);src.right=src.left;
+  auto render=[&](Settings s){
+    auto e=std::make_unique<Engine>();
+    need(e->prepare(rate)&&e->setSettings(s),"H12 preset prep");
+    auto out=src;
+    for(int i=0;i<2*rate;i+=127)
+      e->process(out.left.data()+i,out.right.data()+i,std::min(127,2*rate-i));
+    return out;
+  };
+  Settings s;s.wet=0.f;const auto dry=render(s);
+  for(const auto& p:pairs){
+    s.voiceMode=p.mode;s.voices=p.voices;s.wet=p.ow;s.space=p.os;s.color=p.oc;s.gainDb=p.og;
+    const auto old=render(s);
+    s.wet=p.w;s.space=p.s;s.color=p.c;s.gainDb=p.g;
+    const auto now=render(s);
+    const auto level=[&](const LeadFixture& out,float gain){
+      double wet=0.,lead=0.;const double g=std::pow(10.,gain/20.);
+      for(int i=rate;i<2*rate;++i){
+        need(std::abs(out.left[i])<1.f&&std::abs(out.right[i])<1.f,"H12 preset nominal clipping");
+        const double l=out.left[i]/g-dry.left[i],r=out.right[i]/g-dry.right[i];
+        wet+=l*l+r*r;lead+=dry.left[i]*dry.left[i]+dry.right[i]*dry.right[i];
+      }
+      return 10.*std::log10(wet/lead);
+    };
+    const double before=level(old,p.og),after=level(now,p.g);
+    std::cout<<"H12_PRESET "<<p.name<<" prior_settings_dB="<<before
+             <<" new_settings_dB="<<after<<" lift_dB="<<after-before<<std::endl;
+    need(after>before+3.&&after>-12.&&after<2.,"H12 preset audibility");
+  }
+}
 static void testContinuousDoubler(){
   constexpr double tau=6.283185307179586;
   for(int rate:{48000,96000})for(double hz:{220.,880.,1320.}){
@@ -1144,6 +1235,7 @@ int main(){
   testBackingUnity();
   need(highPass,"H3 HIGH presence or isolated fundamental failed; inspect all H3_HIGH rows");
   testUnvoicedGapPreservesWetTail();
+  testLowerPresenceAndPresets();
   testContinuousDoubler();
   testUnisonDoubler();
   testPeriodContinuityOnLoudOctaveErrors();
