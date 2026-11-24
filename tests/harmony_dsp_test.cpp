@@ -1502,7 +1502,36 @@ static void testCausalEnvelopeCandidate(){
             mean/=e.size();for(double x:e)acc+=(x-mean)*(x-mean);
             return std::sqrt(acc/e.size());
         };
-        const double a=error(shift),b=error(out);
+        CausalEnvelope adaptive;adaptive.prepare(rate,true);
+        auto corrected=shift;
+        for(int i=0;i<n;++i)corrected[i]=adaptive.process(source[i],shift[i],true,120.f,180.f,1.f);
+        const double a=error(shift),b=error(out),c=error(corrected);
+        need(std::isfinite(c)&&adaptive.accepted()>100&&adaptive.maxDb()<=3.2001f,"H27 oracle contract");
+        std::cout<<"H27_ORACLE rate="<<rate<<" uncorrected_db="<<a<<" H26_db="<<b<<" H27_db="<<c
+                 <<" updates="<<adaptive.accepted()<<" support550="<<adaptive.lastSupport()<<std::endl;
+        // Fixed poles remain stable under alternating confidence, vowel
+        // and F0, including sparse HIGH harmonics and trust loss.
+        std::uint32_t rng=1234567u;double phase=0.;double peak27=0.;
+        for(int i=0;i<rate*3;++i){
+            rng^=rng<<13;rng^=rng>>17;rng^=rng<<5;
+            const bool trust=(i/(rate/11))%4!=3;
+            const float f0=(i/(rate/7))%2?880.f:120.f;
+            phase+=6.283185307179586*f0/rate;
+            const float x=.16f*std::sin(phase)+.04f*std::sin(2*phase);
+            const float y=adaptive.process(x,trust?.16f*std::sin(phase*1.5):.15f*float(int(rng%2001)-1000)/1000.f,
+                                            trust,f0,f0*1.5f,.9f);
+            need(std::isfinite(y)&&std::abs(y)<1.f,"H27 modulated fixed-pole stability");
+            peak27=std::max(peak27,double(std::abs(y)));
+        }
+        need(adaptive.releases()>0,"H27 trust release");
+        const auto accepted27=adaptive.accepted();
+        for(int i=0;i<rate;++i)adaptive.process(0.f,0.f,false,0.f,0.f,0.f);
+        need(adaptive.accepted()==accepted27,"H27 rejected frame");
+        adaptive.prepare(rate,true);
+        for(int i=0;i<n/4;++i)need(adaptive.process(source[i],shift[i],true,0.f,180.f,1.f)==shift[i],"H27 invalid F0 dry");
+        need(CausalEnvelope::harmonicSupport(550.f,880.f)==0.f&&
+             CausalEnvelope::harmonicSupport(4300.f,180.f)==1.f,"H27 harmonic support");
+        std::cout<<"H27_STRESS rate="<<rate<<" peak="<<peak27<<std::endl;
         need(b<a&&peak<.8&&env.accepted()>100&&env.maxDb()<=3.2001f,"H26 resonator oracle/gain");
         std::cout<<"H26_ORACLE rate="<<rate<<" old_db="<<a<<" new_db="<<b
                  <<" peak="<<peak<<" updates="<<env.accepted()<<" cap_db="<<env.maxDb()<<std::endl;
@@ -1526,9 +1555,9 @@ static void testCausalEnvelopeCandidate(){
             const double e=i>rate*3/2&&i<rate*8/5?0.:1.;
             src.left[i]=src.right[i]=static_cast<float>(e*(.10*std::sin(phase)+.035*std::sin(2*phase+.3)+.02*std::sin(3*phase+.6)));
         }
-        auto render=[&](bool enabled,float wet,int mode,int voices,int block){
+        auto render=[&](int enabled,float wet,int mode,int voices,int block){
             auto e=std::make_unique<Engine>();Settings s;s.voiceMode=mode;s.voices=voices;s.wet=wet;s.space=1.f;s.color=.78f;
-            need(e->prepare(rate)&&e->setSettings(s)&&e->setCausalEnvelopeForOfflineReference(enabled),"H26 engine setup");
+            need(e->prepare(rate)&&e->setSettings(s)&&e->setCausalEnvelopeForOfflineReference(enabled!=0)&&e->setAdaptiveEnvelopeForOfflineReference(enabled==2),"H26/H27 engine setup");
             auto x=src;std::vector<double> us;us.reserve(n/block+1);
             for(int i=0;i<n;i+=block){
                 const int count=std::min(block,n-i);
@@ -1545,16 +1574,21 @@ static void testCausalEnvelopeCandidate(){
             need(e->latencySamples()==int(std::lround(rate*.024)),"H26 PDC");
             return x;
         };
-        const auto a=render(false,1.f,0,5,64),b=render(true,1.f,0,5,64),c=render(true,1.f,0,5,127);
+        const auto a=render(0,1.f,0,5,64),b=render(1,1.f,0,5,64),c=render(1,1.f,0,5,127);
+        const auto h27=render(2,1.f,0,5,64),h27Split=render(2,1.f,0,5,127);
+        need(h27.left==h27Split.left&&h27.right==h27Split.right&&a.right!=h27.right,"H27 partition/use");
         need(b.left==c.left&&b.right==c.right&&a.right!=b.right,"H26 candidate partition/use");
         for(int i=0;i<n;++i)need(std::isfinite(b.left[i])&&std::isfinite(b.right[i])&&
-            std::abs(b.left[i])<=.980001f&&std::abs(b.right[i])<=.980001f,"H26 headroom");
+            std::abs(b.left[i])<=.980001f&&std::abs(b.right[i])<=.980001f&&
+            std::isfinite(h27.left[i])&&std::isfinite(h27.right[i])&&std::abs(h27.left[i])<=.980001f&&std::abs(h27.right[i])<=.980001f,"H26/H27 headroom");
         for(int mode:{0,1}){
             const auto x=render(false,1.f,mode,2,64),y=render(true,1.f,mode,2,127);
-            need(x.left==y.left&&x.right==y.right,"H26 Duo/Doubler unchanged");
+            const auto z=render(2,1.f,mode,2,127);
+            need(x.left==y.left&&x.right==y.right&&x.left==z.left&&x.right==z.right,"H26/H27 Duo/Doubler unchanged");
         }
         const auto x=render(false,0.f,0,5,64),y=render(true,0.f,0,5,127);
-        need(x.left==y.left&&x.right==y.right,"H26 Wet0 dry unchanged");
+        const auto z=render(2,0.f,0,5,127);
+        need(x.left==y.left&&x.right==y.right&&x.left==z.left&&x.right==z.right,"H26/H27 Wet0 dry unchanged");
     }
 }
 static void testInactiveStageFastPath(){

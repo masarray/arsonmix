@@ -136,7 +136,7 @@ struct TraceRow {std::size_t at=0;std::array<Engine::RendererTrace,Engine::maxVo
 static Wave process(const Wave& input,Settings settings,bool synchronous,int block=127,
                     bool enhancedDepth=true,bool focus=true,bool presence=true,
                     bool articulation=true,bool continuity=true,bool support=true,bool natural=true,bool carrier=true,bool slope=true,
-                    bool drain=true,SeamCounts* counts=nullptr,std::vector<TraceRow>* trace=nullptr,bool recovery=true,bool cubic=false,const GuideTimeline* guide=nullptr,int aligned=0,bool causal=false){
+                    bool drain=true,SeamCounts* counts=nullptr,std::vector<TraceRow>* trace=nullptr,bool recovery=true,bool cubic=false,const GuideTimeline* guide=nullptr,int aligned=0,int causal=0){
     auto e=std::make_unique<Engine>();
     if(!e->prepare(input.rate)||!e->setDoublerFastForOfflineReference(false)||!e->setHeadroomForOfflineReference(false)||!e->setDoublerMonoForOfflineReference(false)||!e->setSettings(settings))
         throw std::runtime_error("native Harmony configuration invalid");
@@ -146,7 +146,7 @@ static Wave process(const Wave& input,Settings settings,bool synchronous,int blo
        !e->setSupportForOfflineReference(support)||
        !e->setNaturalForOfflineReference(natural)||!e->setCarrierForOfflineReference(carrier)||
        !e->setSlopeForOfflineReference(slope)||!e->setDrainForOfflineReference(drain)||
-       !e->setEpochRecoveryForOfflineReference(recovery)||!e->setCubicForOfflineReference(cubic)||!e->setSourceAlignedForOfflineReference(aligned!=0)||!e->setSourceConfirmationForOfflineReference(aligned==2)||!e->setCausalEnvelopeForOfflineReference(causal))
+       !e->setEpochRecoveryForOfflineReference(recovery)||!e->setCubicForOfflineReference(cubic)||!e->setSourceAlignedForOfflineReference(aligned!=0)||!e->setSourceConfirmationForOfflineReference(aligned==2)||!e->setCausalEnvelopeForOfflineReference(causal!=0)||!e->setAdaptiveEnvelopeForOfflineReference(causal==2))
         throw std::runtime_error("continuity reference rejected");
     e->setPitchSynchronousCandidateForOfflineReference(synchronous);
     e->setStageDepthForOfflineReference(enhancedDepth);
@@ -203,12 +203,12 @@ static Wave subtract(const Wave& x,const Wave& y){
 // and the identical dry lead, then set only that role's prepared output gains
 // to zero for every other singer. No browser masks or in-place muting.
 static Wave roleStem(const Wave& input,Settings settings,
-                     int singerIndex,const Wave& dry,bool natural=true,bool carrier=true,bool slope=true,bool drain=true,bool recovery=true,bool cubic=false,const GuideTimeline* guide=nullptr,int aligned=0,bool causal=false){
+                     int singerIndex,const Wave& dry,bool natural=true,bool carrier=true,bool slope=true,bool drain=true,bool recovery=true,bool cubic=false,const GuideTimeline* guide=nullptr,int aligned=0,int causal=0){
     if(singerIndex<0||singerIndex>=Engine::maxVoices)
         throw std::runtime_error("invalid solo Harmony role");
     auto e=std::make_unique<Engine>();
     Engine::PreparedSettings prepared{};
-    if(!e->prepare(input.rate)||!e->setDoublerFastForOfflineReference(false)||!e->setHeadroomForOfflineReference(false)||!e->setDoublerMonoForOfflineReference(false)||!e->setNaturalForOfflineReference(natural)||!e->setCarrierForOfflineReference(carrier)||!e->setSlopeForOfflineReference(slope)||!e->setDrainForOfflineReference(drain)||!e->setEpochRecoveryForOfflineReference(recovery)||!e->setCubicForOfflineReference(cubic)||!e->setSourceAlignedForOfflineReference(aligned!=0)||!e->setSourceConfirmationForOfflineReference(aligned==2)||!e->setCausalEnvelopeForOfflineReference(causal)||
+    if(!e->prepare(input.rate)||!e->setDoublerFastForOfflineReference(false)||!e->setHeadroomForOfflineReference(false)||!e->setDoublerMonoForOfflineReference(false)||!e->setNaturalForOfflineReference(natural)||!e->setCarrierForOfflineReference(carrier)||!e->setSlopeForOfflineReference(slope)||!e->setDrainForOfflineReference(drain)||!e->setEpochRecoveryForOfflineReference(recovery)||!e->setCubicForOfflineReference(cubic)||!e->setSourceAlignedForOfflineReference(aligned!=0)||!e->setSourceConfirmationForOfflineReference(aligned==2)||!e->setCausalEnvelopeForOfflineReference(causal!=0)||!e->setAdaptiveEnvelopeForOfflineReference(causal==2)||
        !Engine::prepareSettings(settings,prepared))
         throw std::runtime_error("cannot prepare singer solo");
     for(int i=0;i<Engine::maxVoices;++i)
@@ -583,7 +583,7 @@ static void continuityReport(const Wave& input,const fs::path& folder,Settings s
             <<"\ntune="<<s.correction<<"\nmanual_key="<<s.key<<"\nmanual_scale="<<s.scale
             <<"\nlatency_samples="<<std::lround(input.rate*.024)
             <<"\nguide_callback_frames="<<guideBlock
-            <<"\nH20_H21_reference_uses_optimized_search=true\nH22_offline_candidate=true\nH24C_offline_candidate=true\nH25_source_confirmation_offline_candidate=true\nH26_causal_LPC_offline_candidate=true\nH24A_B_guards_disabled_for_renderer_comparison=true\n";
+            <<"\nH20_H21_reference_uses_optimized_search=true\nH22_offline_candidate=true\nH24C_offline_candidate=true\nH25_source_confirmation_offline_candidate=true\nH26_causal_LPC_offline_candidate=true\nH27_fixed_pole_LPC_offline_candidate=true\nH24A_B_guards_disabled_for_renderer_comparison=true\n";
     if(!manifest)throw std::runtime_error("replay manifest write failed");
     writeWave(folder/"dry_aligned.wav",dry);
     std::ofstream csv(folder/"continuity_10ms.csv",std::ios::trunc);
@@ -639,6 +639,12 @@ static void continuityReport(const Wave& input,const fs::path& folder,Settings s
             nullptr,nullptr,true,false,guide,2,true);
         writeWave(folder/"h26_causal_mix.wav",candidate);
         writeWave(folder/"h26_causal_backing.wav",subtract(candidate,dry));
+        writeWave(folder/"h27_high_adaptive_candidate.wav",
+            roleStem(input,s,2,dry,true,true,true,true,true,false,guide,2,2));
+        const auto adaptive=process(input,s,true,127,true,true,true,true,true,true,true,true,true,true,
+            nullptr,nullptr,true,false,guide,2,2);
+        writeWave(folder/"h27_adaptive_mix.wav",adaptive);
+        writeWave(folder/"h27_adaptive_backing.wav",subtract(adaptive,dry));
     }
     if(!csv||!events||!traceCsv)throw std::runtime_error("continuity report write failed");
 }
@@ -752,6 +758,8 @@ int main(int argc,char** argv){
             if(lpc.rate!=v.rate||lpc.left.size()!=v.left.size())return 20;
             const auto causal=readWave(folder/"h26_high_causal_candidate.wav");
             if(causal.rate!=v.rate||causal.left.size()!=v.left.size()||!fs::exists(folder/"h26_causal_mix.wav"))return 21;
+            const auto adaptive=readWave(folder/"h27_high_adaptive_candidate.wav");
+            if(adaptive.rate!=v.rate||adaptive.left.size()!=v.left.size()||!fs::exists(folder/"h27_adaptive_mix.wav"))return 25;
             std::ifstream tr(folder/"renderer_trace_10ms.csv");int traceRows=0;
             while(std::getline(tr,line))++traceRows;
             const auto windows=(v.left.size()+v.rate/100-1)/(v.rate/100);
