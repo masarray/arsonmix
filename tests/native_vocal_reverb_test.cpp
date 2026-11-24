@@ -130,6 +130,12 @@ int main() {
     auto* power=dynamic_cast<juce::TextButton*>(ui->findChildWithID("armix.reverb.power"));
     auto* close=dynamic_cast<juce::TextButton*>(ui->findChildWithID("armix.reverb.close"));
     assert(power&&close&&power->isVisible()&&close->isVisible()&&!power->isEnabled());
+    assert(power->getWidth()==26&&power->getHeight()==24);
+    assert(close->getWidth()==24&&close->getHeight()==24);
+    assert(power->getRight()+8==close->getX());
+    assert(power->getY()==close->getY()&&close->getRight()==ui->getWidth()-25);
+    assert(power->getButtonText().isEmpty()&&close->getButtonText().isEmpty());
+    assert(power->getProperties().getWithDefault("armixFxState","").toString()=="unknown");
     assert(power->getBottom()<=60&&close->getBottom()<=60);
     assert(!power->getBounds().intersects(presetSelect->getBounds()));
     assert(!close->getBounds().intersects(presetSelect->getBounds()));
@@ -289,8 +295,10 @@ int main() {
     assert(power->isEnabled()&&power->getToggleState());
     power->onClick();
     assert(powerRequests==1 && host.slotBypassed && !power->getToggleState());
+    assert(power->getProperties().getWithDefault("armixFxState","").toString()=="off");
     power->onClick();
     assert(powerRequests==2 && !host.slotBypassed && power->getToggleState());
+    assert(power->getProperties().getWithDefault("armixFxState","").toString()=="on");
     rejectPower=true;
     power->onClick();
     assert(powerRequests==3 && !host.slotBypassed && power->getToggleState());
@@ -311,6 +319,8 @@ int main() {
         assert(mainMix->isEnabled()); // valid bypassed FX remains editable
         assert(close->isEnabled()&&!power->getToggleState());
         assert(power->isEnabled()==(gate==0));
+        assert(power->getProperties().getWithDefault("armixFxState","").toString()==
+               (gate==0?"off":"rack-off"));
         if(gate!=0) {
             const int before=powerRequests;
             power->onClick();
@@ -324,6 +334,7 @@ int main() {
     reverbEditor->synchronizeHostBypass();
     assert(reverbEditor->hostOverlay()==Overlay::unavailable&&!mainMix->isEnabled());
     assert(!power->isEnabled()&&close->isEnabled());
+    assert(power->getProperties().getWithDefault("armixFxState","").toString()=="unknown");
     host={true,false,false,false};
     reverbEditor->synchronizeHostBypass();
     assert(reverbEditor->hostOverlay()==Overlay::none&&mainMix->isEnabled());

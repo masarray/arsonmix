@@ -215,12 +215,33 @@ public:
                            rect.getWidth()-26.f,1.f);
             }
         } else if(id=="armix.reverb.power"||id=="armix.reverb.close") {
-            const bool active=id.endsWith("power")&&b.getToggleState();
-            const auto fill=active?rgb(20,76,72):rgb(17,43,61);
-            g.setColour((hover||down)?fill.brighter(.20f):fill);
-            g.fillRoundedRectangle(rect.reduced(1.f),3.f);
-            g.setColour(active?rgb(86,190,151):rgb(68,119,146));
-            g.drawRoundedRectangle(rect.reduced(1.5f),3.f,1.f);
+            // Match the authoritative /preview/ mixer-contextual-buttons.css
+            // .armix-builtin-fx-power / -close, not a Reverb-specific theme.
+            const auto r=rect.reduced(.6f);
+            const auto state=b.getProperties().getWithDefault("armixFxState","unknown").toString();
+            juce::uint32 top=0xff3a4751,bottom=0xff2b3941,border=0xff4b5d66;
+            if(id.endsWith("close")) {
+                top=down?0xffef3e50: hover?0xff633840:0xff3e5866;
+                bottom=down?0xffc52d40: hover?0xff48292f:0xff293e4b;
+                border=down?0xffee8b93: hover?0xffb27078:0xff607d8c;
+            } else if(state=="on") {
+                top=0xff335c51;bottom=0xff204539;border=0xff428969;
+            } else if(state=="off") {
+                top=0xff533b42;bottom=0xff3a3039;border=0xff83525a;
+            } else if(state=="rack-off") {
+                top=0xff544737;bottom=0xff41382d;border=0xff846948;
+            }
+            g.setGradientFill(juce::ColourGradient(juce::Colour(top),0.f,r.getY(),
+                juce::Colour(bottom),0.f,r.getBottom(),false));
+            g.fillRoundedRectangle(r,4.f);
+            g.setColour(juce::Colour(border));
+            g.drawRoundedRectangle(r,4.f,1.f);
+            g.setColour(juce::Colour(0x20ffffff));
+            g.drawHorizontalLine(2,4.f,r.getRight()-4.f);
+            if(b.hasKeyboardFocus(false)) {
+                g.setColour(juce::Colour(0xff9cdbe7));
+                g.drawRoundedRectangle(r.reduced(1.f),3.f,1.f);
+            }
         } else if(id=="armix.reverb.preset.previous"||
                   id=="armix.reverb.preset.next") {
             // Lucide chevron-left/right, canonical 24x24 polyline,
@@ -248,13 +269,41 @@ public:
         const auto id=b.getComponentID();
         if(id=="armix.reverb.preset.previous"||
            id=="armix.reverb.preset.next")return;
-        if(id=="armix.reverb.power"||id=="armix.reverb.close") {
-            const bool active=id.endsWith("power")&&b.getToggleState();
-            g.setColour(!b.isEnabled()?rgb(105,133,148):
-                active?rgb(145,231,186):rgb(205,223,235));
-            g.setFont(uiFont(12.f));
-            g.drawText(b.getButtonText(),b.getLocalBounds(),
-                       juce::Justification::centred,false);
+        if(id=="armix.reverb.close") {
+            // Exact CSS / GEQ31 Close SVG, rendered at the approved 22px.
+            juce::Path x;
+            x.startNewSubPath(6.4f,19.f);
+            x.lineTo(5.f,17.6f);x.lineTo(10.6f,12.f);
+            x.lineTo(5.f,6.4f);x.lineTo(6.4f,5.f);
+            x.lineTo(12.f,10.6f);x.lineTo(17.6f,5.f);
+            x.lineTo(19.f,6.4f);x.lineTo(13.4f,12.f);
+            x.lineTo(19.f,17.6f);x.lineTo(17.6f,19.f);
+            x.lineTo(12.f,13.4f);x.closeSubPath();
+            g.setColour(juce::Colour(0xfff4f8fa));
+            g.fillPath(x,juce::AffineTransform::scale(22.f/24.f)
+                .translated((b.getWidth()-22.f)*.5f,(b.getHeight()-22.f)*.5f));
+            return;
+        }
+        if(id=="armix.reverb.power") {
+            // IEC power ring, same 18px visual scale as native PEQ/Compressor
+            // web chrome; vector avoids font-dependent U+23FB rendering.
+            const auto state=b.getProperties().getWithDefault("armixFxState","unknown").toString();
+            const auto ink=juce::Colour(state=="on"?0xff76f0b9:
+                state=="off"?0xffe99b9f:state=="rack-off"?0xfff0c483:0xff8498a4);
+            const float cx=b.getWidth()*.5f,cy=b.getHeight()*.5f+1.f,radius=6.f;
+            juce::Path ring;
+            ring.addCentredArc(cx,cy,radius,radius,0.f,.63f,
+                juce::MathConstants<float>::twoPi-.63f,true);
+            juce::Path stem;
+            stem.startNewSubPath(cx,cy-9.f);stem.lineTo(cx,cy-1.f);
+            const auto stroke=juce::PathStrokeType(1.65f,
+                juce::PathStrokeType::curved,juce::PathStrokeType::rounded);
+            if(state=="on") {
+                g.setColour(ink.withAlpha(.18f));
+                g.strokePath(ring,juce::PathStrokeType(3.6f));
+                g.strokePath(stem,juce::PathStrokeType(3.6f));
+            }
+            g.setColour(ink);g.strokePath(ring,stroke);g.strokePath(stem,stroke);
             return;
         }
         const bool tab=id.startsWith("armix.reverb.tab.");
@@ -299,6 +348,13 @@ public:
         const bool canToggle=state.valid&&requestBypass_&&
                              !state.rackBypassed&&!state.globalBypassed;
         const bool active=state.valid&&!state.effectiveBypassed();
+        const juce::String visual=!state.valid?"unknown":
+            (state.rackBypassed||state.globalBypassed)?"rack-off":
+            state.slotBypassed?"off":"on";
+        if(power_.getProperties().getWithDefault("armixFxState","unknown").toString()!=visual) {
+            power_.getProperties().set("armixFxState",visual);
+            power_.repaint();
+        }
         power_.setEnabled(canToggle);
         power_.setToggleState(active,juce::dontSendNotification);
         const juce::String tooltip=!state.valid?"FX Power unavailable; use FX Rack":
@@ -328,7 +384,9 @@ public:
         title_.setComponentID("armix.reverb.title");
         addAndMakeVisible(title_);
         power_.setComponentID("armix.reverb.power");
-        power_.setButtonText("FX POWER");
+        power_.setButtonText({});
+        power_.setTitle("FX Power");
+        power_.getProperties().set("armixFxState","unknown");
         power_.setLookAndFeel(&dial_);
         power_.setClickingTogglesState(false);
         power_.setEnabled(false);
@@ -342,7 +400,8 @@ public:
         };
         addAndMakeVisible(power_);
         close_.setComponentID("armix.reverb.close");
-        close_.setButtonText("CLOSE");
+        close_.setButtonText({});
+        close_.setTitle("Close Reverb-Sis");
         close_.setLookAndFeel(&dial_);
         close_.setTooltip("Close Reverb-Sis");
         close_.onClick=[this] {
@@ -616,8 +675,9 @@ public:
     }
     void resized() override {
         title_.setBounds(47,65,247,32);
-        power_.setBounds(25,12,104,20);
-        close_.setBounds(getWidth()-25-76,12,76,20);
+        // Same right-side cluster as PEQ, Compressor and Harmonice.
+        close_.setBounds(getWidth()-25-24,13,24,24);
+        power_.setBounds(close_.getX()-8-26,13,26,24);
         preset_.setBounds(424,17,272,34);
         prev_.setBounds(383,17,33,34);
         next_.setBounds(getWidth()-383-33,17,33,34);
