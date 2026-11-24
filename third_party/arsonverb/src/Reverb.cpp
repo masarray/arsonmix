@@ -291,7 +291,7 @@ void Engine::prepare(double sampleRate, bool musicalReturn) {
     s.musicalReturn = musicalReturn;
     // +6.02 dB wet return only. Feedback/injection/RT60 remain unchanged.
     s.wetReturnTrim = musicalReturn ? 2.0f : 1.0f;
-    s.presenceDuckScale = musicalReturn ? 0.60f : 1.0f;
+    s.presenceDuckScale = musicalReturn ? 1.50f : 1.0f;
     const float fs = s.sampleRate;
     s.millisecondsToSamples = fs * 0.001f;
     for (int t = 0; t < 6; ++t) {
@@ -319,9 +319,9 @@ void Engine::prepare(double sampleRate, bool musicalReturn) {
         s.lines[i].prepare(forMs(kDelayMs[i] * 2.0f + 3.0f));
 
     s.smoother = 1.0f - std::exp(-1.0f / (0.025f * fs));
-    s.envelopeAttack = 1.0f - std::exp(-1.0f / (0.012f * fs));
-    s.envelopeRelease = 1.0f - std::exp(-1.0f / (0.34f * fs));
-    s.presence.prepare(fs);
+    s.envelopeAttack = 1.0f - std::exp(-1.0f / ((musicalReturn ? 0.008f : 0.012f) * fs));
+    s.envelopeRelease = 1.0f - std::exp(-1.0f / ((musicalReturn ? 0.16f : 0.34f) * fs));
+    s.presence.prepare(fs,musicalReturn);
     s.airCoeff = lowPassCoeff(7800.0f, fs);
     s.algorithmStep = 1.0f / std::max(1.0f, fs * 0.100f); // 100ms morph
     s.fromAlgorithm = s.toAlgorithm = algorithm_.load(std::memory_order_relaxed);
@@ -714,11 +714,12 @@ void Engine::process(const float* inputLeft, const float* inputRight,
         const float loudness = std::max(std::fabs(inL), std::fabs(inR));
         const float envCoef = loudness > s.duckEnvelope ? s.envelopeAttack : s.envelopeRelease;
         s.duckEnvelope += envCoef * (loudness - s.duckEnvelope);
-        // Reverb-Sis: bounded musical ducking, max -6 dB at full depth,
-        // with a smooth knee and no dependence on arbitrary input gain.
-        // Keep the send useful at 100% wet even during sustained singing.
+        // Reverb-Sis: let the frequency-selective presence shaper create
+        // articulation space. Broadband ducking is lighter (max -3.74dB)
+        // so warmth/air survive; the faster release blooms between phrases.
+        // The smooth knee is level-dependent, never a gate or hidden dry.
         const float duckGain = s.musicalReturn
-            ? 1.0f - 0.5f * duckAmount * (s.duckEnvelope / (0.12f + s.duckEnvelope))
+            ? 1.0f - 0.35f * duckAmount * (s.duckEnvelope / (0.12f + s.duckEnvelope))
             : 1.0f / (1.0f + 6.0f * duckAmount * s.duckEnvelope);
         const float returnGain = wetGain * s.wetReturnTrim * duckGain;
         // Exact sine/cos dry and base wet law at stable settings, plus

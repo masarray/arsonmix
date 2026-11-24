@@ -135,11 +135,13 @@ struct PresenceDucker {
     float lowCoeff = 0.0f, highCoeff = 0.0f;
     float attack = 0.0f, release = 0.0f, envelope = 0.0f;
 
-    void prepare(float fs) noexcept {
+    void prepare(float fs, bool musical = false) noexcept {
         lowCoeff = lowPassCoeff(1250.0f, fs);
         highCoeff = lowPassCoeff(4200.0f, fs);
-        attack = 1.0f - std::exp(-1.0f / (0.010f * fs));
-        release = 1.0f - std::exp(-1.0f / (0.180f * fs));
+        // Fast articulation clearance, followed by a natural phrase bloom.
+        // Legacy profile retains its original envelope exactly.
+        attack = 1.0f - std::exp(-1.0f / ((musical ? 0.006f : 0.010f) * fs));
+        release = 1.0f - std::exp(-1.0f / ((musical ? 0.090f : 0.180f) * fs));
         reset();
     }
     void reset() noexcept {
@@ -164,7 +166,9 @@ struct PresenceDucker {
                              - wetLow[0].process(wetL, lowCoeff);
         const float wetBandR = wetHigh[1].process(wetR, highCoeff)
                              - wetLow[1].process(wetR, lowCoeff);
-        // Bounded, smooth saturating subtraction; 0% Duck = exact bypass.
+        // Caller scales the musical profile to prioritize selective
+        // clearance over broadband suppression (effective max 1.5).
+        // Depth remains <= .84; 0% Duck = exact bypass.
         const float depth = 0.56f * duckAmount * envelope / (0.085f + envelope);
         wetL -= depth * wetBandL;
         wetR -= depth * wetBandR;

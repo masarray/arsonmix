@@ -124,7 +124,77 @@ static double bodyTone(int mode,double fs,float cutoff,bool musical) {
     }
     return std::sqrt(energy/(2.0*128*(blocks-blocks*2/3)));
 }
+// Compare two identical musical tanks with only Duck changed. The
+// reference runs in parallel, so decay and modulation cannot masquerade
+// as recovery. Voice-presence excitation ends at 1.2s; measure the same
+// wet tail during the pause, not a normalized synthetic gain envelope.
+static void phraseDucking(double fs,int mode) {
+    arverb::Engine raw, duck;
+    for(auto* e:{&raw,&duck}) {
+        e->loadPreset(arverb::Preset::VocalPlateClean);
+        e->setAlgorithm(static_cast<arverb::Algorithm>(mode));
+        e->setParameter(arverb::Parameter::Mix,1.f);
+        e->setParameter(arverb::Parameter::DecaySeconds,3.f);
+        e->setParameter(arverb::Parameter::DuckAmount,e==&raw?0.f:1.f);
+        e->prepare(fs,true);
+    }
+    constexpr int n=128;
+    std::array<float,n> l{},r{},a{},b{},c{},d{};
+    double rawActive=0,duckActive=0,rawGap=0,duckGap=0;
+    const int blocks=static_cast<int>(fs*1.9/n);
+    for(int block=0;block<blocks;++block) {
+        for(int i=0;i<n;++i) {
+            const double time=(block*n+i)/fs;
+            const double gate=std::clamp((1.2-time)*100.0,0.0,1.0);
+            l[i]=r[i]=static_cast<float>(gate*(.28*std::sin(6.283185307179586*2500*time)
+                +.10*std::sin(6.283185307179586*180*time)));
+        }
+        raw.process(l.data(),r.data(),a.data(),b.data(),n);
+        duck.process(l.data(),r.data(),c.data(),d.data(),n);
+        for(int i=0;i<n;++i) {
+            const double time=(block*n+i)/fs;
+            check(std::isfinite(c[i])&&std::isfinite(d[i]),"finite dynamic wet");
+            const double x=double(a[i])*a[i]+double(b[i])*b[i];
+            const double y=double(c[i])*c[i]+double(d[i])*d[i];
+            if(time>.7&&time<1.15){rawActive+=x;duckActive+=y;}
+            if(time>1.65&&time<1.85){rawGap+=x;duckGap+=y;}
+        }
+    }
+    check(rawActive>1.e-6&&rawGap>1.e-8,"reference phrase and tail measurable");
+    const double active=std::sqrt(duckActive/rawActive),gap=std::sqrt(duckGap/rawGap);
+    std::printf("Reverb-Sis dynamics fs=%.0f mode=%d active=%.3f gap=%.3f\n",fs,mode,active,gap);
+    check(active>.35&&active<.90,"full Duck creates clearance without erasing wet");
+    check(gap>.90&&gap<1.05&&gap>active+.08,"tail blooms back after phrase");
+}
+
+// Direct test of the existing wet shaper, with constant detector source
+// and independent wet probes: selective presence vs body preservation.
+static double selectiveGain(float fs,float frequency,bool musical) {
+    arverb::detail::PresenceDucker shaper;
+    shaper.prepare(fs,musical);
+    double input=0,output=0;
+    for(int i=0;i<static_cast<int>(fs*.6f);++i) {
+        const float dry=.35f*std::sin(2.0f*arverb::detail::kPi*2500.f*i/fs);
+        const float tone=.2f*std::sin(2.0f*arverb::detail::kPi*frequency*i/fs);
+        float l=tone,r=tone;
+        shaper.process(dry,dry,l,r,musical?1.5f:.6f);
+        check(l==r&&std::isfinite(l),"selective stereo linked");
+        if(i>fs*.3f){input+=double(tone)*tone;output+=double(l)*l;}
+    }
+    return std::sqrt(output/input);
+}
 int main() {
+    for(float fs:{44100.f,48000.f,96000.f}) {
+        const double body=selectiveGain(fs,180.f,true);
+        const double presence=selectiveGain(fs,2500.f,true);
+        const double previous=selectiveGain(fs,2500.f,false);
+        std::printf("Reverb-Sis de-mask fs=%.0f body=%.3f presence=%.3f old=%.3f\n",
+                    fs,body,presence,previous);
+        check(body>.96&&presence<previous-.05&&presence<body-.10,
+              "stronger selective clearance preserves vocal body");
+        for(int mode=0;mode<4;++mode)phraseDucking(fs,mode);
+    }
+    std::puts("PASS Reverb-Sis selective vocal dynamics and phrase bloom");
     // Verify the actual discrete-time knee, not an analog approximation.
     // Preserve sub-cutoff rejection and a monotonic high-pass response.
     for(float fs:{8000.f,44100.f,48000.f,96000.f,192000.f}) {
