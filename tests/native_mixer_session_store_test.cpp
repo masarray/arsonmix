@@ -1493,6 +1493,13 @@ static void verifyIndependentAsioExternalRestoreProvenance() {
     };
     assert(same(loaded.externalOutputs[0]));
     assert(same(loaded.externalOutputs[1]));
+    auto ambiguous=doc.binding.outputNames;
+    ambiguous.set(7,ambiguous[2]);
+    assert(!MixerDeviceBindingPolicy::canRestoreExternalOutput(
+        loaded.externalOutputs[0],"Verified ASIO",full,ambiguous,doc.outputs));
+    const std::array<int,8> repeated{{0,1,2,3,4,5,6,6}};
+    assert(!MixerDeviceBindingPolicy::canRestoreExternalOutput(
+        loaded.externalOutputs[0],"Verified ASIO",repeated,doc.binding.outputNames,doc.outputs));
     // A new ASIO device uses identical generic labels. A verified device
     // APPLY must not silently transfer saved amp ownership to the new DAC.
     auto newDevice=doc.binding;

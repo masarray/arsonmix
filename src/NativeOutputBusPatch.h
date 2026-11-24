@@ -4,6 +4,7 @@
 #include <span>
 #include <optional>
 #include <algorithm>
+#include <bitset>
 
 namespace armix::io {
 // CONTROL only: physical port IDs are not callback ordinals.
@@ -15,6 +16,11 @@ struct OutputBusPatch final {
         Pair main,Pair monitor,bool editMonitor,Pair expected,Pair wanted,
         std::span<const int> external) noexcept {
         if(physical.size()<2||physical.size()>256)return {};
+        std::bitset<256> seen;
+        for(const auto pin:physical){
+            if(pin<0||pin>255||seen[static_cast<std::size_t>(pin)])return {};
+            seen.set(static_cast<std::size_t>(pin));
+        }
         const auto valid=[&](Pair pair){
             return pair[0]>=0&&pair[1]>=0&&pair[0]!=pair[1]&&
                 pair[0]<static_cast<int>(physical.size())&&

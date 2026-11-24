@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include <algorithm>
+#include <bitset>
 #include <optional>
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
 #include "../engine/device/DeviceSessionTransitionPolicy.h"
@@ -203,8 +204,13 @@ struct MixerDeviceBindingPolicy final {
            patch.left<0 || patch.left%2!=0 || patch.right!=patch.left+1 ||
            patch.right>=physicalNames.size() ||
            patch.leftName.isEmpty() || patch.rightName.isEmpty() ||
-           physicalNames[patch.left]!=patch.leftName ||
-           physicalNames[patch.right]!=patch.rightName)return false;
+           armix::device::uniqueNamedPin(physicalNames,patch.leftName)!=patch.left ||
+           armix::device::uniqueNamedPin(physicalNames,patch.rightName)!=patch.right)return false;
+        std::bitset<256> seen;
+        for(const auto pin:physicalByCallback){
+            if(pin<0||pin>255||seen[static_cast<std::size_t>(pin)])return false;
+            seen.set(static_cast<std::size_t>(pin));
+        }
         int left=-1,right=-1;
         for(std::size_t i=0;i<physicalByCallback.size();++i) {
             if(physicalByCallback[i]==patch.left)left=static_cast<int>(i);
@@ -308,9 +314,13 @@ struct MixerDeviceBindingPolicy final {
         const bool knownOutputChanged=!saved.outputNames.isEmpty()&&saved.outputNames!=live.outputNames;
         const bool exact=sameBinding(saved,live)&&sameOutputs(document.outputs,outputs)&&
                          !knownInputChanged&&!knownOutputChanged;
-        if(mode==Mode::exact)
-            return exact?juce::String{}:juce::String(
-                "NEEDS_REMAP: select the saved audio device and pin layout in Audio I/O");
+        if(mode==Mode::exact){
+            if(!exact)return "NEEDS_REMAP: select the saved audio device and pin layout in Audio I/O";
+            // Project logical sources using freshly verified labels, even
+            // when historical optional inventory metadata is absent.
+            if(!document.logicalInputs.empty())document.binding=live;
+            return {};
+        }
 
         if(mode==Mode::verifiedMainPinApply || mode==Mode::verifiedAsioRestart ||
            (saved.backend==live.backend && saved.playback==live.playback)) {

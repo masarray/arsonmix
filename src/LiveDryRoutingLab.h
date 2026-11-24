@@ -2730,8 +2730,8 @@ public:
             if(physicalLeft<0 || physicalLeft%2!=0 ||
                physicalRight!=physicalLeft+1 ||
                physicalRight>=pins.outputNames.size() ||
-               pins.outputNames[physicalLeft].isEmpty() ||
-               pins.outputNames[physicalRight].isEmpty())
+               armix::device::uniqueNamedPin(pins.outputNames,pins.outputNames[physicalLeft])!=physicalLeft ||
+               armix::device::uniqueNamedPin(pins.outputNames,pins.outputNames[physicalRight])!=physicalRight)
                 return "EXTERNAL OUT: invalid or unnamed stereo physical pins";
             for(int i=0;i<pins.outputCount;++i) {
                 if(pins.outputPhysicalPort(i)==physicalLeft)left=i;
@@ -2822,7 +2822,8 @@ public:
             return "BUS OUTPUT: stale or unobserved native mapping";
         if(wanted[0]<0||wanted[1]<0||wanted[0]>=pins.outputNames.size()||
            wanted[1]>=pins.outputNames.size()||leftName.isEmpty()||rightName.isEmpty()||
-           pins.outputNames[wanted[0]]!=leftName||pins.outputNames[wanted[1]]!=rightName)
+           armix::device::uniqueNamedPin(pins.outputNames,leftName)!=wanted[0]||
+           armix::device::uniqueNamedPin(pins.outputNames,rightName)!=wanted[1])
             return "BUS OUTPUT: physical pin identity changed";
         const auto& hw=nativeAccepted_.hardware;
         if(!hw.valid()||hw.activeOutputChannels!=pins.outputCount)

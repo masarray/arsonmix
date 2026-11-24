@@ -10,6 +10,7 @@
 #include "../src/NativeNamedPatchStore.h"
 #include "../src/NativeOutputBusPatch.h"
 #include "../engine/device/LogicalInputRegistry.h"
+#include "../engine/device/LogicalOutputRegistry.h"
 
 using armix::appearance::Store;
 static juce::var object(){return juce::var(new juce::DynamicObject());}
@@ -190,6 +191,8 @@ static void busOutputPatchRegression(){
     assert(!P::plan(pins,{0,1},{2,3},false,{0,1},{2,3},external));
     assert(!P::plan(pins,{0,1},{2,3},false,{1,0},{8,9},external));
     assert(!P::plan(pins,{0,1},{-1,-1},true,{-1,-1},{8,9},external));
+    const std::array<int,8> malformed{0,1,4,5,8,9,12,12};
+    assert(!P::plan(malformed,{0,1},{2,3},false,{0,1},{8,9},external));
 }
 static void logicalInputRegistryRegression(){
     using R=armix::device::LogicalInputRegistry;
@@ -235,7 +238,56 @@ static void logicalInputRegistryRegression(){
     assert(registry.assign(101,0)&&registry.assign(102,0)&&registry.erase(port));
     assert(registry.resolve(101,live).status==R::Resolution::noSource);
 }
+static void logicalOutputRegistryRegression(){
+    using R=armix::device::LogicalOutputRegistry;
+    R registry;
+    const R::Device device{"ASIO","Studio interface"};
+    const std::array<R::Pin,8> pins{{{0,0,"Main L"},{1,1,"Main R"},
+        {4,2,"Cue L"},{5,3,"Cue R"},{8,4,"Amp L"},{9,5,"Amp R"},
+        {12,6,"Spare L"},{13,7,"Spare R"}}};
+    const R::Inventory live{device,7,pins,{},true};
+    const R::Binding main{device,0,1,"Main L","Main R"},cue{device,4,5,"Cue L","Cue R"},
+        amp{device,8,9,"Amp L","Amp R"},spare{device,12,13,"Spare L","Spare R"};
+    const std::uint64_t id=9007199254740993ULL;
+    assert(registry.add(id,"Main")&&registry.add(2,"Headphones")&&registry.add(3,"Amp"));
+    assert(!registry.add(4,"headphones"));
+    assert(!registry.bind(id,main,live,6,true)&&!registry.bind(id,main,live,7,false));
+    assert(registry.bind(id,main,live,7,true)&&!registry.bind(2,main,live,7,true));
+    assert(registry.bind(2,cue,live,7,true)&&registry.bind(3,amp,live,7,true));
+    assert(registry.assign(101,id,R::Role::main));
+    assert(!registry.assign(102,id,R::Role::external)&&!registry.assign(102,3,R::Role::main));
+    assert(registry.assign(102,2,R::Role::monitor));
+    assert(registry.assign(103,3,R::Role::external)&&registry.assign(104,3,R::Role::external));
+    assert(!registry.erase(3)&&!registry.assign(104,2,R::Role::external));
+    const auto before=registry.prepare(live);
+    assert(before.complete()&&before.destinations.size()==4);
+    assert(before.destinations[2].callback==(R::Pair{4,5})&&before.destinations[3].callback==(R::Pair{4,5}));
+    const std::array<int,2> reserved{12,13};
+    auto occupied=live;occupied.reserved=reserved;
+    assert(!registry.bind(3,spare,occupied,7,true));
+    assert(registry.prepare(live).destinations[2].callback==(R::Pair{4,5}));
+    assert(registry.bind(3,spare,live,7,true));
+    assert(registry.prepare(live).destinations[2].callback==(R::Pair{6,7}));
+    const auto blocked=registry.prepare(occupied);
+    assert(!blocked.complete()&&blocked.destinations[2].state==R::State::reserved&&
+        blocked.destinations[3].callback==(R::Pair{-1,-1}));
+    auto changed=live;changed.device.playback="Other interface";
+    assert(!registry.prepare(changed).complete());
+    const std::array<R::Pin,4> sparse{{{0,0,"Main L"},{1,1,"Main R"},{12,2,"Spare L"},{13,3,"Spare R"}}};
+    const R::Inventory fewer{device,8,sparse,{},true};
+    const auto partial=registry.prepare(fewer);
+    assert(!partial.complete()&&partial.destinations[1].state==R::State::needsRemap&&
+        partial.destinations[2].callback==(R::Pair{2,3}));
+    auto invalid=pins;invalid[7].physical=12;
+    assert(!registry.prepare({device,9,invalid,{},true}).inventoryVerified);
+    invalid=pins;invalid[7].name="Main L";
+    assert(registry.prepare({device,9,invalid,{},true}).destinations[0].state==R::State::needsRemap);
+    assert(registry.rename(3,"Stage amplifier")&&registry.references().size()==4);
+    assert(registry.unbind(3)&&registry.prepare(live).destinations[2].state==R::State::needsRemap);
+    assert(registry.assign(103,0,R::Role::external)&&registry.assign(104,0,R::Role::external)&&registry.erase(3));
+}
 int main(){
+    logicalOutputRegistryRegression();
     logicalInputRegistryRegression();
     busOutputPatchRegression();
     namedPatchRegression();
