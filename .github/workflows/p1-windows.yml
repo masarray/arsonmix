@@ -248,6 +248,13 @@ jobs:
               "$RUNNER_TEMP/armix-${test}"
             done
           fi
+      - name: Reverb-Sis same-runner core CPU A/B (non-gating timing)
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: bash
+        run: |
+          if [[ -f scripts/benchmark_reverb_sis_ab.py ]]; then
+            python scripts/benchmark_reverb_sis_ab.py --reference 673b4d04a7ce697edb14775b73392127486949d7
+          fi
       - name: WaveShell JUCE 8 class-index regression (source-aware)
         shell: bash
         run: |
