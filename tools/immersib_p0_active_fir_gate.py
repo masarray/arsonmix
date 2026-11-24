@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Three-way PCM and active A/B using exact historical and proposed shipping blobs."""
+"""Actual full-core active FIR A/B, temporary candidate only, no shipping pin change."""
 from __future__ import annotations
 import argparse
 import hashlib
@@ -16,8 +16,6 @@ from immersib_p102_fir_shipping_gate import (
     APPROVED_BLOB, APPROVED_SOURCE_SHA, CANDIDATE_BLOB, PATH, blob_hash,
 )
 
-PREVIOUS_SOURCE_SHA = "2253001926e6ef318eb00c9673417dc1177df4d6"
-PREVIOUS_BLOB = "94b90db3d699d9f26601448a38b2f489f51b5fb7"
 ANCHOR = "                    if(fastContiguousHrir_ && idx>=hrir::taps){"
 FAST_PATH = """#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
                     // Stationary, non-fused, contiguous FIR: hoist dispatch
@@ -42,7 +40,7 @@ CASES = [(44100,128,1,2),(44100,128,2,8),(44100,256,2,2),
 
 
 def candidate(source: bytes) -> bytes:
-    if blob_hash(source) != PREVIOUS_BLOB:
+    if blob_hash(source) != CANDIDATE_BLOB:
         raise ValueError("P0_CURRENT_SOURCE_PIN_MISMATCH")
     text = source.decode("utf-8")
     if text.count(ANCHOR) != 1:
@@ -121,12 +119,9 @@ def main():
                             cwd=ROOT,check=True,capture_output=True,timeout=30).stdout
     if blob_hash(original)!=APPROVED_BLOB:
         raise ValueError("P0_ORIGINAL_SOURCE_PIN_MISMATCH")
-    current=subprocess.run(["git","show",f"{PREVIOUS_SOURCE_SHA}:{PATH}"],
-                           cwd=ROOT,check=True,capture_output=True,timeout=30).stdout
-    proposed=(ROOT/PATH).read_bytes().replace(b"\r\n",b"\n")
-    if blob_hash(proposed)!=CANDIDATE_BLOB or proposed!=candidate(current):
-        raise ValueError("P0_PROMOTED_SOURCE_NOT_EXACT_PROVEN_CANDIDATE")
-    print(f"P0_FIR_CANDIDATE_BLOB={blob_hash(proposed)} base={PREVIOUS_BLOB}",flush=True)
+    current=(ROOT/PATH).read_bytes().replace(b"\r\n",b"\n")
+    proposed=candidate(current)
+    print(f"P0_FIR_CANDIDATE_BLOB={blob_hash(proposed)} base={CANDIDATE_BLOB}",flush=True)
     with tempfile.TemporaryDirectory(prefix="immersib-p0-active-") as tmp:
         root=Path(tmp)
         variants=[build(root,"approved",original,args.msvc,False),
@@ -153,7 +148,7 @@ def main():
                  "p50_ratio":sum(ratios)/2,"p99_ratio":sum(ratios99)/2,"runs":pair}
             print("P0_ACTIVE_AB "+json.dumps(row,separators=(",",":")),flush=True)
         print("P0_ACTIVE_QUALIFICATION_COMPLETE cases="+str(len(CASES))+
-              " repeats=2 source=PROVISIONAL hardware=NOT_RUN",flush=True)
+              " repeats=2 shipping=NO hardware=NOT_RUN",flush=True)
     subprocess.run([sys.executable,"scripts/verify_immersib_approved_pcm_sources.py"],
                    cwd=ROOT,check=True,timeout=30)
     return 0
