@@ -1694,7 +1694,7 @@
       recenter:plan.payload.recenter===true};
     backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload});
     window.setTimeout(()=>{
-      if(pendingFxEditorAck?.requestId!==requestId)return;
+      if(pendingFxEditorAck?.requestId!==requestId||pendingFxEditorAck.retryScheduled)return;
       if(retryPhysicalFxEditor(pendingFxEditorAck))return;
       pendingFxEditorAck=null;
       nativeToast("FX editor unavailable · request timed out");
@@ -1774,8 +1774,10 @@
       const current=controller?.state()?.current;
       if(!fxRackVM.m4EditorDispatchLeaseMatches(current,lease,{
         verifiedM4:m4Verified(current),offline:!!logicalView,
-        hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)}))
+        hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)})){
+        nativeToast("FX editor unavailable · accepted instance changed");
         return;
+      }
       if(recenter)dispatchPhysicalFxEditor({
         ...plan,payload:{...plan.payload,recenter:true}
       },lease,"M4");
@@ -4161,7 +4163,7 @@
       pendingFxEditorAck=null; // first ACK wins; no accepted PCM mutation
       if(verdict!=="ACKED"){
         const message="FX editor unavailable · "+String(ack?.error||"accepted instance changed");
-        nativeToast(message);
+        nativeToast("FX editor unavailable · Reopen from FX Rack");
         status(message);
       }
       // Success is HWND presentation, never a parameter edit.
@@ -4579,9 +4581,12 @@
       if(action==="openPlugin"){
         // Device-disconnected FX may have a saved retained editor lease.
         // Do not block native offline .smix recovery with a repair modal.
-        if(!logicalView&&!deviceReady()&&
-           controller?.state()?.current?.retained!==true){
-          recommendAudioRepair("FX audio processing unavailable");
+        const editorView=controller?.state()?.current;
+        // Navigation uses the accepted owner, not transient UI meter/route
+        // projection readiness. The native dispatcher still fences busy I/O.
+        if(!logicalView&&!deviceReady()&&editorView?.admitted!==true&&
+           editorView?.retained!==true){
+          recommendAudioRepair("FX editor unavailable · audio processing unavailable");
           return true;
         }
         const slot=Number(btn?.dataset.slot),current=activeView();
@@ -4662,17 +4667,18 @@
               if(!opened)
                 nativeToast("FX editor unavailable · native instance changed");
             }else nativeToast("FX editor unavailable · accepted FX identity changed");
-          }else nativeToast("This FX is held with the disconnected audio session");
+          }else nativeToast("FX editor unavailable · disconnected audio session");
           return true;
         }
         const plan=fxRackVM.m4EditorPlan(current,{
           channel:m4Index(t),slot,verifiedM4:m4Verified(),offline:!!logicalView,
           hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
-        if(plan.kind==="OPEN")
-          openRoutedFxEditor(plan.channel,plan.slot,plan.instanceId,
+        if(plan.kind==="OPEN"){
+          if(!openRoutedFxEditor(plan.channel,plan.slot,plan.instanceId,
             plan.deviceEpoch,plan.revision,
-            protocol.nativeHardwareConfiguration(current?.device),recenter);
-        else if(plan.kind==="PICKER"){
+            protocol.nativeHardwareConfiguration(current?.device),recenter))
+            nativeToast("FX editor unavailable · accepted instance changed");
+        }else if(plan.kind==="PICKER"){
           discoverFxOnFirstPickerOpen();
           scope?.openFastPicker?.(t,slot,btn);
         }else nativeToast("VST3 editor · refresh native device and FX instance");

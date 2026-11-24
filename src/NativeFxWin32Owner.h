@@ -32,5 +32,17 @@ inline bool attachOwnedPopup(HWND popup, HWND owner) noexcept {
     if (previous==0 && ::GetLastError()!=0) return false;
     return ::GetWindow(popup,GW_OWNER)==owner;
 }
+// A JUCE visible flag alone is not a Windows presentation receipt.
+// Recover an OS-hidden owned popup only while its mixer is actually visible.
+// No foreground stealing, TOPMOST, owner change or audio work.
+inline bool ensureOwnedPopupVisible(HWND popup, HWND mixer) noexcept {
+    if(!popup||!mixer||!::IsWindow(popup)||!::IsWindow(mixer)||
+       !::IsWindowVisible(mixer)||::IsIconic(mixer)||
+       !attachOwnedPopup(popup,mixer))return false;
+    if(::IsIconic(popup))::ShowWindow(popup,SW_RESTORE);
+    if(!::IsWindowVisible(popup))::ShowWindow(popup,SW_SHOWNOACTIVATE);
+    return ::IsWindowVisible(popup)&&!::IsIconic(popup)&&
+           ::GetWindow(popup,GW_OWNER)==mixer;
+}
 } // namespace armix::ui::win32
 #endif

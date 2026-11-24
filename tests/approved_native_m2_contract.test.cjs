@@ -5098,13 +5098,34 @@ test("MV-9B Global FX ignores rejected post-ACK snapshot after a pre-ACK value r
  initial.graph.channels[0].inserts=[{id:"geq-live",catalogId:"armix.builtin.graphic-eq31.v1",
    name:"Graphic EQ 31",bypassed:false},
    {id:"reverb-legacy",catalogId:"armix.builtin.vocal-reverb.v1",
-    name:"Vocal Reverb",bypassed:false}];
+    name:"Vocal Reverb",bypassed:false},
+   {id:"imersib-exact",catalogId:"armix.builtin.imersip.v1",
+    name:"ImmerSIB",bypassed:true}];
  initial.mixerSession={authority:"CHANNEL_ID",deviceEpoch:initial.device.epoch,
    routeRevision:initial.graph.revision,rosterRevision:initial.graph.rosterRevision,
    channels:initial.graph.channels,main:{db:0,mute:false}};
  listeners.get("arMixConsoleSnapshot")(initial);
  assert.equal(scope.tracks[0].fx[1],"Reverb-Sis","old saved rack label follows stable catalog identity");
  assert.equal(scope.tracks[0].fxInsertIds[1].id,"reverb-legacy");
+ // Real bridge consumeAction: a BYPASSED ImmerSIB is navigation, not a mutation.
+ const editorRequests=()=>sent.filter(x=>x.payload?.action==="routingFxEditor");
+ assert.equal(win.__ARMIX_NATIVE_M2__.consumeAction(scope.tracks[0],"openPlugin",
+   {dataset:{slot:"2"}}),true);
+ assert.equal(editorRequests().length,1);
+ const opened=editorRequests()[0].payload;
+ assert.equal(opened.instanceId,"imersib-exact");
+ assert.equal(opened.channelId,initial.graph.channels[0].id);
+ assert.equal(opened.slot,2);
+ listeners.get("arMixRoutingFxEditorAck")({requestId:opened.requestId,
+   instanceId:opened.instanceId,ok:true});
+ assert.equal(win.__ARMIX_NATIVE_M2__.consumeAction(scope.tracks[0],"openPlugin",
+   {dataset:{slot:"2"}}),true);
+ assert.equal(editorRequests().length,2);
+ const reopened=editorRequests()[1].payload;
+ assert.equal(reopened.instanceId,opened.instanceId);
+ assert.notEqual(reopened.requestId,opened.requestId);
+ listeners.get("arMixRoutingFxEditorAck")({requestId:reopened.requestId,
+   instanceId:reopened.instanceId,ok:true});
  assert.equal(win.__ARMIX_NATIVE_GLOBAL_FX__.toggle(),true);
  const dispatched=sent.findLast(x=>x.payload?.action==="routingGlobalFxBypass");
  assert.ok(dispatched);
@@ -7208,4 +7229,16 @@ test("P0 bounded editor retry stays on same owner and native failure class",()=>
  assert.match(b,/fresh,"CHANNEL_ID",true\);/);
  assert.match(m,/retryable=false; \/\/ plugin\/window failures/);
  assert.match(m,/ack->setProperty\("retryable",!opened&&retryable\)/);
+});
+
+test("P0 native busy guard and all physical presentations produce explicit receipts",()=>{
+ const m=read("src/Main.cpp"),w=read("src/NativeOwnedFloatingWindow.h");
+ assert.match(m,/if\(deviceApply_\.busy\(\) && action!="audioDeviceApply"\)\{/);
+ assert.match(m,/emitRoutingFxEditorReceipt\(args,false,true,"FX editor unavailable: Audio I\/O is applying"\)/);
+ assert.match(m,/opened=shownWindow->presentationConfirmed\(\)/);
+ assert.match(m,/opened=\(\*extra\)->window->presentationConfirmed\(\)/);
+ assert.match(m,/opened=createdWindow&&createdWindow->presentationConfirmed\(\)/);
+ assert.match(w,/win32::ensureOwnedPopupVisible/);
+ assert.equal(protocol.operatorMessage("This VST3 has no native editor"),
+  "FX editor unavailable · Reopen from FX Rack");
 });

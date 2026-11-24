@@ -7,6 +7,7 @@
 #endif
 #include "../engine/builtin_fx/ImerSipP92Processor.h"
 #include "../src/SonKuNativeBridgeContract.h"
+#include "../src/NativeOwnedFloatingWindow.h"
 #include "../engine/core/LiveChannelFxGraph.h"
 #include <cassert>
 #include <limits>
@@ -599,8 +600,45 @@ static void verifyIdlePolicyEdges() {
     }
     assert(p.eligible());
 }
+#if defined(_WIN32)
+static void verifyOwnedImmerSIBPresentation() {
+    // Actual JUCE createEditorIfNeeded lifecycle, not a mock editor or PCM.
+    // Second real processor models another independent editor owner (not a
+    // third-party VST3 binary). Both remain alive and prepared.
+    auto a=std::make_unique<ImerSipP92Processor>();
+    auto b=std::make_unique<ImerSipP92Processor>();
+    a->prepareToPlay(48000.,128);b->prepareToPlay(48000.,128);
+    juce::DocumentWindow mixer("P0 mixer",juce::Colours::black,0);
+    mixer.centreWithSize(1100,720);mixer.setVisible(true);
+    juce::DocumentWindow primary("ImmerSIB",juce::Colours::black,0);
+    juce::DocumentWindow other("Other FX owner",juce::Colours::black,0);
+    auto* first=a->createEditorIfNeeded();
+    auto* second=b->createEditorIfNeeded();
+    assert(first&&second&&first!=second);
+    primary.setContentOwned(first,true);other.setContentOwned(second,true);
+    primary.centreWithSize(first->getWidth(),first->getHeight());
+    other.centreWithSize(second->getWidth(),second->getHeight());
+    for(int i=0;i<100;++i){
+        primary.setVisible(false);
+        other.setVisible(true);
+        assert(armix::ui::verifyOwnedFloatingPresentation(other,mixer));
+        primary.setVisible(true);
+        primary.toFront(true);
+        assert(armix::ui::verifyOwnedFloatingPresentation(primary,mixer));
+        assert(a->getActiveEditor()==first&&b->getActiveEditor()==second);
+        assert(primary.getContentComponent()==first&&other.getContentComponent()==second);
+    }
+    primary.clearContentComponent();other.clearContentComponent();
+    assert(a->getActiveEditor()==nullptr&&b->getActiveEditor()==nullptr);
+    a->releaseResources();b->releaseResources();
+    std::puts("P0_IMMERSIB_ACTUAL_JUCE_OWNED_REOPEN_PASS cycles=100 owners=2");
+}
+#endif
 int main() {
     juce::ScopedJuceInitialiser_GUI gui;
+#if defined(_WIN32)
+    verifyOwnedImmerSIBPresentation();
+#endif
     verifyIdlePolicyEdges();
     verifyImmerSIBIdleLease(48000,480);
     verifyImmerSIBIdleLease(44100,128);
