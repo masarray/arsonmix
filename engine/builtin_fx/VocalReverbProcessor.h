@@ -177,6 +177,7 @@ public:
         if(measure) {
             meterOutputL_.store(meterPeak(left,frames),std::memory_order_relaxed);
             meterOutputR_.store(meterPeak(right,frames),std::memory_order_relaxed);
+            meterGeneration_.fetch_add(1,std::memory_order_release);
         }
         processedBlocks_.fetch_add(1,std::memory_order_release);
         if(!fullyBypassed_) {renderedOnAir_=true;return;}
@@ -256,6 +257,9 @@ public:
         // cannot prematurely suppress the remaining observer's meters.
         meterSubscribers_.fetch_sub(1,std::memory_order_relaxed);
     }
+    std::uint64_t meterGeneration() const noexcept {
+        return meterGeneration_.load(std::memory_order_acquire);
+    }
     std::array<float,4> meterPeaks() const noexcept {
         return {meterInputL_.load(std::memory_order_relaxed),
                 meterInputR_.load(std::memory_order_relaxed),
@@ -272,8 +276,10 @@ public:
     }
     void getStateInformation(juce::MemoryBlock& out) override {
         VocalReverbSettings accepted;
+        const auto snapshotId=appliedRequestId();
         if(!stateSnapshotQuiescent()||!readAccepted(accepted)||
-           !validVocalReverbSettings(accepted)||!stateSnapshotQuiescent()){
+           !validVocalReverbSettings(accepted)||!stateSnapshotQuiescent()||
+           snapshotId!=appliedRequestId()){
             out.reset();return;
         }
         juce::MemoryOutputStream writer(out,false);
@@ -360,6 +366,7 @@ private:
     std::atomic<std::uint32_t> acceptedSequence_{0};
     std::atomic<std::uint64_t> appliedId_{0},processedBlocks_{0};
     std::atomic<std::uint32_t> meterSubscribers_{0};
+    std::atomic<std::uint64_t> meterGeneration_{0};
     std::atomic<float> meterInputL_{0.f},meterInputR_{0.f};
     std::atomic<float> meterOutputL_{0.f},meterOutputR_{0.f};
     std::uint64_t nextId_=0; // single message-thread producer

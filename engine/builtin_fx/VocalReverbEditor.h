@@ -362,6 +362,7 @@ public:
         labels_[2].setText("Reverb Time",juce::dontSendNotification);
         setSize(1120,430);
         layoutPage();
+        lastMeterGeneration_=processor_.meterGeneration();
         processor_.attachMeterView();
         startTimerHz(30);
     }
@@ -606,7 +607,10 @@ private:
     void timerCallback() override {
         updateFeedbackTooltip();
         const bool ready=processor_.isReady();
-        const auto fresh=ready?processor_.meterPeaks():std::array<float,4>{};
+        const auto generation=processor_.meterGeneration();
+        const auto fresh=ready&&generation!=lastMeterGeneration_?
+            processor_.meterPeaks():std::array<float,4>{};
+        lastMeterGeneration_=generation;
         bool changed=false;
         for(std::size_t i=0;i<displayPeaks_.size();++i) {
             displayPeaks_[i]=ready?std::max(fresh[i],displayPeaks_[i]*.82f):0.f;
@@ -629,6 +633,7 @@ private:
     std::array<juce::Label,arverb::parameterCount> labels_;
     std::array<float,4> displayPeaks_{};
     std::array<int,4> displaySegments_{};
+    std::uint64_t lastMeterGeneration_=0;
     int page_=0;
     int feedbackState_=-1;
 };

@@ -9,6 +9,7 @@
 #include <cmath>
 #include <limits>
 #include <vector>
+#include <thread>
 
 int main() {
     juce::ScopedJuceInitialiser_GUI gui;
@@ -297,6 +298,48 @@ int main() {
     assert(uiOwner->appliedRequestId()==last&&uiOwner->stateSnapshotQuiescent());
     assert(uiOwner->acceptedSettings(reopenedAccepted)&&
            reopenedAccepted.values[0]==offline.values[0]);
+
+    // Concurrent single-producer/PCM-consumer stress: every accepted
+    // packet must be a coherent complete factory snapshot, never torn.
+    auto concurrent=entry->prepare(48000.,32,nullptr,0);
+    auto* concurrentReverb=dynamic_cast<VocalReverbProcessor*>(concurrent.get());
+    assert(concurrentReverb);
+    std::atomic<bool> producerDone{false};
+    std::thread pcmConsumer([&] {
+        juce::AudioBuffer<float> pcm(2,32);
+        juce::MidiBuffer midi;
+        std::uint64_t previous=0;
+        for(int block=0;block<200000;++block) {
+            pcm.clear();
+            concurrent->processBlock(pcm,midi);
+            const auto id=concurrentReverb->appliedRequestId();
+            assert(id>=previous);
+            previous=id;
+            VocalReverbSettings received{};
+            if(concurrentReverb->acceptedSettings(received)) {
+                assert(received.preset>=0 && received.preset<8);
+                const auto expected=vocalReverbFactoryPreset(received.preset);
+                assert(received.values==expected.values &&
+                       received.algorithm==expected.algorithm);
+            }
+            if(producerDone.load(std::memory_order_acquire)&&
+               !concurrentReverb->settingsPending())return;
+            if((block&31)==0)std::this_thread::yield();
+        }
+        assert(false && "latest intent failed to converge");
+    });
+    std::uint64_t concurrentLast=0;
+    for(int i=0;i<5000;++i) {
+        concurrentLast=concurrentReverb->queueSettings(vocalReverbFactoryPreset(i%8));
+        assert(concurrentLast>0);
+        if((i&31)==0)std::this_thread::yield();
+    }
+    producerDone.store(true,std::memory_order_release);
+    pcmConsumer.join();
+    assert(concurrentReverb->appliedRequestId()==concurrentLast);
+    VocalReverbSettings concurrentAccepted{};
+    assert(concurrentReverb->acceptedSettings(concurrentAccepted)&&
+           concurrentAccepted.preset==7);
 
     assert(created->getLatencySamples()==0);
     auto* typed=dynamic_cast<VocalReverbProcessor*>(created.get());
