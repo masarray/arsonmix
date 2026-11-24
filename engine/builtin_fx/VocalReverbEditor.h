@@ -477,7 +477,7 @@ public:
         next_.setBounds(getWidth()-383-33,17,33,34);
         algorithm_.setBounds(934,78,139,28);
         for(std::size_t i=0;i<tabs_.size();++i)
-            tabs_[i].setBounds(280+static_cast<int>(i)*94,183,92,36);
+            tabs_[i].setBounds((getWidth()-(5*94+92))/2+static_cast<int>(i)*94,183,92,36);
         layoutPage();
     }
 
