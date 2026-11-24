@@ -18,6 +18,9 @@ class PitchSynchronousVoice final {
     static_assert(Capacity >= 4096 && (Capacity & (Capacity-1)) == 0);
     static_assert(Voices > 0 && Voices <= 8);
 public:
+    struct AdmissionTrace {
+        std::uint64_t attempts=0,missingPeak=0,poolBlocked=0,supportRejected=0,admitted=0,clockResets=0;
+    };
     struct Output { float sample=0.f; bool ready=false; float coverage=0.f; bool recovered=false; std::uint32_t recoverySites=0; };
     struct StereoOutput { float left=0.f,right=0.f; bool ready=false; float coverage=0.f; bool recovered=false; std::uint32_t recoverySites=0; };
     // At scheduling time the desired epoch is width-delay samples in
@@ -73,9 +76,9 @@ public:
                    const std::array<float,Capacity>& input,
                    float sourcePeriod,float ratio,float fixedDelay,
                    float resonanceScale=1.f,bool continuous=true,bool supportAware=true,
-                   bool phaseAware=true,bool admitNew=true,bool recoverEpoch=false,bool reuseFailedSearch=true,bool cubic=false) noexcept {
+                   bool phaseAware=true,bool admitNew=true,bool recoverEpoch=false,bool reuseFailedSearch=true,bool cubic=false,AdmissionTrace* trace=nullptr) noexcept {
         const auto out=render<false>(v,time,writeIndex,input,input,input,
-                                     sourcePeriod,ratio,fixedDelay,resonanceScale,continuous,supportAware,phaseAware,admitNew,recoverEpoch,reuseFailedSearch,cubic);
+                                     sourcePeriod,ratio,fixedDelay,resonanceScale,continuous,supportAware,phaseAware,admitNew,recoverEpoch,reuseFailedSearch,cubic,trace);
         return {out.left,out.ready,out.coverage,out.recovered,out.recoverySites};
     }
 
@@ -87,7 +90,7 @@ public:
                    const std::array<float,Capacity>& right,
                    float sourcePeriod,float ratio,float fixedDelay) noexcept {
         return render<true>(v,time,writeIndex,epochs,left,right,
-                            sourcePeriod,ratio,fixedDelay,1.f,false,false,false,true,false,true,false);
+                            sourcePeriod,ratio,fixedDelay,1.f,false,false,false,true,false,true,false,nullptr);
     }
 private:
     template <bool Stereo>
@@ -96,7 +99,7 @@ private:
                    const std::array<float,Capacity>& left,
                    const std::array<float,Capacity>& right,
                    float sourcePeriod,float ratio,float fixedDelay,
-                   float resonanceScale,bool continuous,bool supportAware,bool phaseAware,bool admitNew,bool recoverEpoch,bool reuseFailedSearch,bool cubic) noexcept {
+                   float resonanceScale,bool continuous,bool supportAware,bool phaseAware,bool admitNew,bool recoverEpoch,bool reuseFailedSearch,bool cubic,AdmissionTrace* trace) noexcept {
         if(v<0||v>=Voices||!std::isfinite(sourcePeriod)||
            !std::isfinite(ratio)||!std::isfinite(fixedDelay)||
            sourcePeriod<8.f||sourcePeriod>3200.f||
@@ -110,7 +113,7 @@ private:
         auto& state=states_[static_cast<std::size_t>(v)];
         // A role can stop being called when disabled or the causal
         // lookback is insufficient. Never resume an abandoned schedule.
-        if(continuous&&state.initialized&&time!=state.lastTime+1)state={};
+        if(continuous&&state.initialized&&time!=state.lastTime+1){if(trace)++trace->clockResets;state={};}
         state.lastTime=time;
         const double period=static_cast<double>(sourcePeriod);
         const double spacing=period/static_cast<double>(ratio);
@@ -136,6 +139,7 @@ private:
             // A new epoch is not causal, but previously admitted windows
             // have full support. Keep the target clock and drain them.
             if(!admitNew){state.nextCenter+=spacing;continue;}
+            if(trace)++trace->attempts;
             const double desired=state.nextCenter-static_cast<double>(fixedDelay);
             // Track a source landmark, not merely the largest sample
             // in an arbitrarily truncated search window. A predicted
@@ -184,6 +188,7 @@ private:
                 // Advance target time even if the bounded pool is full.
                 if(continuous&&grain.active&&
                    std::abs(static_cast<double>(time)-grain.center)<grain.width){
+                    if(trace)++trace->poolBlocked;
                     state.nextCenter+=spacing;
                     continue;
                 }
@@ -203,9 +208,11 @@ private:
                 }
                 if(supportAware&&continuous&&
                    !fullGrainSupported(state.nextCenter,epoch,width,scale)){
+                    if(trace)++trace->supportRejected;
                     state.nextCenter+=spacing;
                     continue;
                 }
+                if(trace)++trace->admitted;
                 state.lastEpoch=epoch;state.haveEpoch=true;
                 // A larger new width can admit a grain INSIDE its window.
                 // Ramp only these late admissions from zero rather than
@@ -217,7 +224,7 @@ private:
                        !Stereo&&cubic&&supportAware&&continuous&&epoch-width*scale>=1.};
                 state.nextSlot=(state.nextSlot+1)%state.grains.size();
                 recovered|=rescue;
-            }
+            }else if(trace)++trace->missingPeak;
             state.nextCenter+=spacing;
         }
         if(state.nextCenter+width<static_cast<double>(time))

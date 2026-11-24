@@ -665,6 +665,7 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
         std::array<Engine::RendererTrace,Engine::maxVoices> trace{};
         std::array<Engine::LossReasons,Engine::maxVoices> reasons{};
         SeamCounts seams{};
+        std::array<Engine::AdmissionTrace,Engine::maxVoices> admissions{};
     };
     auto render=[&](int variant,float wet,bool trace=false){
         auto e=std::make_unique<Engine>();
@@ -692,7 +693,7 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
         }
         for(int v=0;v<Engine::maxVoices;++v){
             x.seams[v]=e->seamCountsForOfflineTests(v);x.losses+=x.seams[v].losses;
-            if(trace){x.trace[v]=e->rendererTraceForOfflineTests(v);x.reasons[v]=e->lossReasonsForOfflineTests(v);}
+            if(trace){x.trace[v]=e->rendererTraceForOfflineTests(v);x.reasons[v]=e->lossReasonsForOfflineTests(v);x.admissions[v]=e->admissionForOfflineTests(v);}
         }
         x.highLoss=e->seamCountsForOfflineTests(2).losses;
         x.updates=e->causalEnvelopeUpdatesForOfflineTests();
@@ -744,6 +745,15 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
         reasons<<'\n';
     }
     if(!reasons)throw std::runtime_error("H27C loss reasons write");
+    std::ofstream admissions(folder/"renderer_admission.csv",std::ios::trunc);
+    admissions<<"role,attempts,missing_peak,pool_blocked,support_rejected,admitted,clock_resets\n";
+    for(int v=0;v<Engine::maxVoices;++v){
+        const auto& a=traced.admissions[v];
+        if(a.attempts!=a.missingPeak+a.poolBlocked+a.supportRejected+a.admitted)
+            throw std::runtime_error("H28A admission accounting");
+        admissions<<v<<','<<a.attempts<<','<<a.missingPeak<<','<<a.poolBlocked<<','<<a.supportRejected<<','<<a.admitted<<','<<a.clockResets<<'\n';
+    }
+    if(!admissions)throw std::runtime_error("H28A admission report write");
     // RMS-matched audition copies only: no gain added to raw evidence.
     // Equalize down to the quietest mix and apply a common peak safety
     // scale. This is not BS.1770 loudness or true-peak normalization.

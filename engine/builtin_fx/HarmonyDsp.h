@@ -247,6 +247,7 @@ public:
     };
     // Event attribution at the exact ready->unready seam transition.
     // Separate from existing per-sample historical trace schema.
+    using AdmissionTrace=PitchSynchronousVoice<16384,5>::AdmissionTrace;
     struct LossReasons {
         std::uint64_t noClock=0,causal=0,safeUnready=0;
         std::uint64_t total()const noexcept{return noClock+causal+safeUnready;}
@@ -300,7 +301,7 @@ public:
         continuityReferenceEnabled_=true;supportReferenceEnabled_=true;
         naturalReferenceEnabled_=true;backingContour_.prepare(detectEvery_/rate);
         carrierReferenceEnabled_=true;slopeReferenceEnabled_=true;drainReferenceEnabled_=true;epochRecoveryEnabled_=true;cubicReferenceEnabled_=false;
-        traceEnabled_=false;rendererTrace_={};lossReasons_={};
+        traceEnabled_=false;rendererTrace_={};lossReasons_={};admissionTrace_={};
         for(auto& carrier:carriers_)carrier.reset();
         periodContinuity_.reset();
         sourcePeriodSamples_=0.f;sourceConfidence_=0.f;sampleClock_=0;
@@ -535,7 +536,10 @@ public:
     // Exact H15 carrier reference; offline before the first PCM only.
     bool setRendererTraceForOfflineTests(bool enabled) noexcept {
         if(processed_)return false;
-        traceEnabled_=enabled;rendererTrace_={};lossReasons_={};return true;
+        traceEnabled_=enabled;rendererTrace_={};lossReasons_={};admissionTrace_={};return true;
+    }
+    AdmissionTrace admissionForOfflineTests(int voice)const noexcept {
+        return voice>=0&&voice<maxVoices?admissionTrace_[static_cast<std::size_t>(voice)]:AdmissionTrace{};
     }
     LossReasons lossReasonsForOfflineTests(int voice)const noexcept {
         return voice>=0&&voice<maxVoices?lossReasons_[static_cast<std::size_t>(voice)]:LossReasons{};
@@ -1028,7 +1032,7 @@ private:
             sync=pitchSync_.process(voice,sampleClock_,write_,mono_,
                 renderPeriod,effectiveRatio,
                 static_cast<float>(latency_)+arrival,scale,continuityReferenceEnabled_,
-                supportReferenceEnabled_,naturalReferenceEnabled_,windowSafe,epochRecoveryEnabled_,true,cubicReferenceEnabled_);
+                supportReferenceEnabled_,naturalReferenceEnabled_,windowSafe,epochRecoveryEnabled_,true,cubicReferenceEnabled_,traceEnabled_?&admissionTrace_[ix]:nullptr);
         if(traceEnabled_){
             auto& v=rendererTrace_[ix].values;
             ++v[RendererTrace::calls];
@@ -1355,6 +1359,7 @@ private:
     bool drainReferenceEnabled_=true,traceEnabled_=false,epochRecoveryEnabled_=true,cubicReferenceEnabled_=false;
     std::array<RendererTrace,maxVoices> rendererTrace_{};
     std::array<LossReasons,maxVoices> lossReasons_{};
+    std::array<AdmissionTrace,maxVoices> admissionTrace_{};
     BackingPitchContour backingContour_{};
     std::array<PhaseCoherentCarrier,maxVoices> carriers_{};
     std::array<float,maxVoices> pitchSyncBlend_{},pitchSyncFiltered_{},pitchSyncValid_{};

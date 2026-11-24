@@ -73,6 +73,12 @@ def main():
             raise RuntimeError("incomplete renderer loss attribution")
         for row in reasons:
             print("H27_LOSS_REASON clip="+name+" "+" ".join(f"{k}={v}" for k,v in row.items()),flush=True)
+        with (folder/"renderer_admission.csv").open(newline="") as f:
+            admissions = list(csv.DictReader(f))
+        if len(admissions)!=5:
+            raise RuntimeError("incomplete admission accounting")
+        for row in admissions:
+            print("H28_ADMISSION clip="+name+" "+" ".join(f"{k}={v}" for k,v in row.items()),flush=True)
         # Do not redistribute source or derivative PCM in CI artifacts.
         # Keep local WAVs available for explicit operator listening.
     with (out/"real_vocal_summary.csv").open("w",newline="") as f:
