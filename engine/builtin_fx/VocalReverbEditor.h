@@ -245,7 +245,7 @@ public:
     explicit VocalReverbEditor(VocalReverbProcessor& processor)
         :juce::AudioProcessorEditor(processor),processor_(processor) {
         setOpaque(true);
-        if(!processor_.acceptedSettings(draft_))draft_=vocalReverbFactoryPreset(0);
+        draft_=processor_.desiredSettings();
         const auto pale=reverb_ui::rgb(209,224,233);
         const auto cyan=reverb_ui::rgb(107,201,243);
         title_.setText("REVERB-SIS",juce::dontSendNotification);
@@ -269,7 +269,7 @@ public:
             if(i>=1&&i<=8) {
                 draft_=vocalReverbFactoryPreset(i-1);
                 syncControls();
-                dirty_=true;
+                submitDraft();
             }
         };
         preset_.setComponentID("armix.reverb.preset");
@@ -522,13 +522,13 @@ private:
         draft_=vocalReverbFactoryPreset(index);
         preset_.setSelectedId(index+1,juce::dontSendNotification);
         syncControls();
-        dirty_=true;
+        submitDraft();
     }
     void markCustom() {
         draft_.preset=-1;
         preset_.setSelectedId(9,juce::dontSendNotification);
-        dirty_=true;
-        repaint(juce::Rectangle<int>(30,103,1050,295));
+        submitDraft();
+        // Native slider and ComboBox already invalidate their own pixels.
     }
     void syncControls() {
         algorithm_.setSelectedId(draft_.algorithm+1,juce::dontSendNotification);
@@ -568,11 +568,8 @@ private:
         // The single native PCM graph supplies all four channel peaks.
         // Zero fake animation or audio-loop graphics/heap allocation.
         for(int ch=0;ch<4;++ch) {
-            const float peak=displayPeaks_[static_cast<std::size_t>(ch)];
             using M=reverb_ui::MeterLayout;
-            const float db=peak<=1.e-6f?static_cast<float>(M::floorDb):
-                20.f*std::log10(peak);
-            const int lit=M::litCount(db);
+            const int lit=displaySegments_[static_cast<std::size_t>(ch)];
             const int x=ch%2==0?M::dotsLeftX:M::dotsRightX;
             const int y=ch/2==0?M::firstDotY:M::secondDotY;
             for(int segment=0;segment<M::segments;++segment) {
@@ -592,10 +589,14 @@ private:
             }
         }
     }
+    void submitDraft() {
+        (void)processor_.queueSettings(draft_);
+        updateFeedbackTooltip();
+    }
     // Preserve DSP ACK/readback as a contextual tooltip rather than
     // permanently printing transport/debug status on the faceplate.
     void updateFeedbackTooltip() {
-        const int next=!processor_.isReady()?0:(inFlight_||dirty_?1:2);
+        const int next=!processor_.isReady()?0:(processor_.settingsPending()?1:2);
         if(next==feedbackState_)return;
         feedbackState_=next;
         preset_.setTooltip(next==0?"Audio engine offline":
@@ -603,21 +604,19 @@ private:
                      "Parameters confirmed by the audio engine"));
     }
     void timerCallback() override {
-        if(inFlight_ && processor_.appliedRequestId()>=inFlightId_)inFlight_=false;
-        if(!processor_.isReady()) {
-            updateFeedbackTooltip();
-            displayPeaks_.fill(0.f);repaint(reverb_ui::MeterLayout::dirtyBounds());
-            return;
-        }
-        if(dirty_&&!inFlight_) {
-            const auto id=processor_.queueSettings(draft_);
-            if(id){inFlightId_=id;inFlight_=true;dirty_=false;}
-        }
         updateFeedbackTooltip();
-        const auto fresh=processor_.meterPeaks();
-        for(std::size_t i=0;i<displayPeaks_.size();++i)
-            displayPeaks_[i]=std::max(fresh[i],displayPeaks_[i]*.82f);
-        repaint(reverb_ui::MeterLayout::dirtyBounds());
+        const bool ready=processor_.isReady();
+        const auto fresh=ready?processor_.meterPeaks():std::array<float,4>{};
+        bool changed=false;
+        for(std::size_t i=0;i<displayPeaks_.size();++i) {
+            displayPeaks_[i]=ready?std::max(fresh[i],displayPeaks_[i]*.82f):0.f;
+            const auto peak=displayPeaks_[i];
+            const int lit=reverb_ui::MeterLayout::litCount(
+                peak<=1.e-6f?-60.f:20.f*std::log10(peak));
+            changed|=lit!=displaySegments_[i];
+            displaySegments_[i]=lit;
+        }
+        if(changed)repaint(reverb_ui::MeterLayout::dirtyBounds());
     }
     VocalReverbProcessor& processor_;
     VocalReverbSettings draft_;
@@ -629,9 +628,8 @@ private:
     std::array<juce::Slider,arverb::parameterCount> knobs_;
     std::array<juce::Label,arverb::parameterCount> labels_;
     std::array<float,4> displayPeaks_{};
-    std::uint64_t inFlightId_=0;
+    std::array<int,4> displaySegments_{};
     int page_=0;
-    bool inFlight_=false,dirty_=false;
     int feedbackState_=-1;
 };
 inline juce::AudioProcessorEditor* VocalReverbProcessor::createEditor() {

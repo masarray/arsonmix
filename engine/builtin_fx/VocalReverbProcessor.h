@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "../../third_party/arsonverb/include/arverb/Reverb.hpp"
-#include "FxSpsc.h"
 #include "../core/RealtimeNativeFxControl.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <algorithm>
@@ -87,7 +86,8 @@ public:
     VocalReverbProcessor():juce::AudioProcessor(BusesProperties()
         .withInput("Input",juce::AudioChannelSet::stereo(),true)
         .withOutput("Output",juce::AudioChannelSet::stereo(),true)) {
-        storeAccepted(vocalReverbFactoryPreset(0),0);
+        desired_=vocalReverbFactoryPreset(0);
+        storeAccepted(desired_,0);
     }
     const juce::String getName() const override {return "Vocal Reverb";}
     bool acceptsMidi() const override {return false;}
@@ -120,33 +120,36 @@ public:
         fullyBypassed_=false;
         draining_=false;
         drainFrames_=0;
-        quietFrames_=0;
-        ready_=true;
+        drainLimitFrames_=0;
+        clearMeters();
+        ready_.store(true,std::memory_order_release);
     }
-    void releaseResources() override {ready_=false;}
-    bool isReady() const noexcept{return ready_;}
+    void releaseResources() override {
+        ready_.store(false,std::memory_order_release);
+        clearMeters();
+    }
+    bool isReady() const noexcept{return ready_.load(std::memory_order_acquire);}
     // A time-dependent FX must never freeze an audible tail inside the
     // native rack's fully-bypassed fast path. The already existing host
     // callback remains the only DSP owner; no additional latency or worker.
     bool requiresContinuousBypassProcessing() const noexcept override {return true;}
     void onRealtimeBypass(bool, bool fully) noexcept override {
         if(fully && !fullyBypassed_) {
-            for(auto* peak:{&meterInputL_,&meterInputR_,&meterOutputL_,&meterOutputR_})
-                peak->store(0.f,std::memory_order_relaxed);
+            clearMeters();
             fullyBypassed_=true;
             draining_=renderedOnAir_;
             drainFrames_=0;
-            quietFrames_=0;
+            drainLimitFrames_=drainWindowFrames_=tailDrainLimit();
         } else if(!fully && fullyBypassed_) {
             fullyBypassed_=false;
             draining_=false;
             drainFrames_=0;
-            quietFrames_=0;
+            drainLimitFrames_=0;
         }
     }
     void processBlock(juce::AudioBuffer<float>& pcm,juce::MidiBuffer&) override {
         juce::ScopedNoDenormals noDenormals;
-        if(!ready_||pcm.getNumChannels()<2||pcm.getNumSamples()<=0)return;
+        if(!isReady()||pcm.getNumChannels()<2||pcm.getNumSamples()<=0)return;
         // The existing FxInstance calls consumeRealtimeEdits() ONCE before
         // invoking a fully-bypassed continuous processor. Do not pop another
         // packet here: that would double RT automation work per callback.
@@ -179,46 +182,63 @@ public:
         if(!fullyBypassed_) {renderedOnAir_=true;return;}
         // Engine::reset() clears all delay rings and is forbidden here:
         // one-shot memory clearing in ASIO would create a deadline spike.
-        float peak=0.f;
-        for(std::size_t i=0;i<frames;++i)
-            peak=std::max(peak,std::max(std::fabs(left[i]),std::fabs(right[i])));
-        quietFrames_=peak<1.e-6f ? quietFrames_+frames : 0u;
+        // Post-mix silence does NOT prove an empty wet tank (e.g. Mix=0).
+        // Drain the bounded decay window even if the audible output is zero.
+        // If decay is extended during bypass, extend the remaining window.
         drainFrames_+=frames;
-        // Allow the longest 250ms pre-delay and 132ms early reflections
-        // to traverse the network before assuming sustained silence.
-        const auto minFrames=static_cast<std::uint64_t>(rate_ * 0.70);
-        const auto sustainedQuiet=static_cast<std::uint64_t>(rate_ * 0.40);
-        const float decay=acceptedValues_[static_cast<std::size_t>(
-            arverb::Parameter::DecaySeconds)].load(std::memory_order_relaxed);
-        const auto maxFrames=static_cast<std::uint64_t>(
-            rate_ * (0.7+2.5*static_cast<double>(decay)));
-        if((drainFrames_>=minFrames && quietFrames_>=sustainedQuiet)||
-           drainFrames_>=maxFrames) {
+        if(drainFrames_>=drainLimitFrames_) {
             draining_=false;
             renderedOnAir_=false;
         }
     }
     void processBlock(juce::AudioBuffer<double>&,juce::MidiBuffer&) override {}
     void consumeRealtimeEdits() noexcept override {
-        Edit edit{};
-        if(!ready_||!queued_.pop(edit))return;
-        applyToEngine(edit.settings);
-        storeAccepted(edit.settings,edit.id); // PCM callback is the authority
-        pendingEdits_.fetch_sub(1,std::memory_order_release);
-    }
-    // Message-thread single producer. Returns zero when no edit was accepted.
-    std::uint64_t queueSettings(const VocalReverbSettings& v) noexcept {
-        if(!ready_||!validVocalReverbSettings(v))return 0;
-        const auto id=nextId_+1;
-        // Include the interval after FIFO pop but before audio-applied ACK.
-        // Without this reservation .smix can capture stale accepted controls.
-        pendingEdits_.fetch_add(1,std::memory_order_acq_rel);
-        if(!queued_.push({id,v})) {
-            pendingEdits_.fetch_sub(1,std::memory_order_release);
-            return 0;
+        if(!isReady())return;
+        // Single latest-intent mailbox: a complete settings packet supersedes
+        // older unrendered packets. No FIFO backlog during fast knob drags.
+        const auto id=requestedId_.load(std::memory_order_seq_cst);
+        if(id<=appliedRequestId())return;
+        VocalReverbSettings edit;
+        const auto before=requestedSequence_.load(std::memory_order_seq_cst);
+        if(before&1u)return;
+        for(std::size_t i=0;i<edit.values.size();++i)
+            edit.values[i]=requestedValues_[i].load(std::memory_order_seq_cst);
+        edit.algorithm=requestedAlgorithm_.load(std::memory_order_seq_cst);
+        edit.preset=requestedPreset_.load(std::memory_order_seq_cst);
+        const auto capturedId=requestedId_.load(std::memory_order_seq_cst);
+        if(before!=requestedSequence_.load(std::memory_order_seq_cst)||
+           capturedId<=appliedRequestId())return; // bounded retry next block
+        applyToEngine(edit);
+        storeAccepted(edit,capturedId); // PCM callback is the sole ACK authority
+        if(fullyBypassed_&&draining_) {
+            const auto limit=tailDrainLimit();
+            if(limit>drainWindowFrames_) {
+                drainWindowFrames_=limit;
+                drainLimitFrames_=std::max(drainLimitFrames_,drainFrames_+limit);
+            }
         }
-        nextId_=id;
+    }
+    // Message-thread single producer. Valid intent survives editor close and
+    // audio stop; it is not an ACK until the next actual PCM callback.
+    std::uint64_t queueSettings(const VocalReverbSettings& v) noexcept {
+        if(!validVocalReverbSettings(v))return 0;
+        const auto id=++nextId_;
+        desired_=v;
+        requestedSequence_.fetch_add(1,std::memory_order_seq_cst);
+        for(std::size_t i=0;i<v.values.size();++i)
+            requestedValues_[i].store(v.values[i],std::memory_order_seq_cst);
+        requestedAlgorithm_.store(v.algorithm,std::memory_order_seq_cst);
+        requestedPreset_.store(v.preset,std::memory_order_seq_cst);
+        requestedId_.store(id,std::memory_order_seq_cst);
+        requestedSequence_.fetch_add(1,std::memory_order_seq_cst);
         return id;
+    }
+    // Message-thread only: opening a new editor must show the last intent,
+    // not roll back a value while waiting for the device/callback.
+    VocalReverbSettings desiredSettings() const noexcept {return desired_;}
+    bool settingsPending() const noexcept {
+        return (requestedSequence_.load(std::memory_order_seq_cst)&1u)||
+               requestedId_.load(std::memory_order_seq_cst)!=appliedRequestId();
     }
     std::uint64_t appliedRequestId() const noexcept {
         return appliedId_.load(std::memory_order_acquire);
@@ -247,14 +267,15 @@ public:
     }
     void sealForRealtime() noexcept override {published_=true;}
     bool stateSnapshotQuiescent() const noexcept override {
-        return pendingEdits_.load(std::memory_order_acquire)==0 &&
-               queued_.empty() &&
-               !(acceptedSequence_.load(std::memory_order_acquire)&1u);
+        return !settingsPending() &&
+               !(acceptedSequence_.load(std::memory_order_seq_cst)&1u);
     }
     void getStateInformation(juce::MemoryBlock& out) override {
         VocalReverbSettings accepted;
         if(!stateSnapshotQuiescent()||!readAccepted(accepted)||
-           !validVocalReverbSettings(accepted)){out.reset();return;}
+           !validVocalReverbSettings(accepted)||!stateSnapshotQuiescent()){
+            out.reset();return;
+        }
         juce::MemoryOutputStream writer(out,false);
         writer.writeInt(0x41565242); // AVRB, distinct from factory VST3
         writer.writeInt(1);
@@ -264,7 +285,7 @@ public:
         writer.flush();
     }
     bool restoreUnpublishedState(const void* data,int bytes) {
-        if(published_||!data||bytes!=stateBytes||!queued_.empty())return false;
+        if(published_||!data||bytes!=stateBytes||settingsPending())return false;
         juce::MemoryInputStream reader(data,static_cast<std::size_t>(bytes),false);
         if(reader.readInt()!=0x41565242||reader.readInt()!=1)return false;
         VocalReverbSettings s;
@@ -272,8 +293,9 @@ public:
         for(auto& v:s.values)v=reader.readFloat();
         if(!reader.isExhausted()||!validVocalReverbSettings(s))return false;
         // Only unpublished, detached/restoring instances may stage state.
+        desired_=s;
         storeAccepted(s,appliedRequestId());
-        if(ready_)applyToEngine(s);
+        if(isReady())applyToEngine(s);
         return true;
     }
     void setStateInformation(const void* data,int bytes) override {
@@ -287,7 +309,15 @@ private:
                 peak=std::max(peak,std::fabs(samples[i]));
         return std::min(peak,8.f);
     }
-    struct Edit {std::uint64_t id;VocalReverbSettings settings;};
+    void clearMeters() noexcept {
+        for(auto* peak:{&meterInputL_,&meterInputR_,&meterOutputL_,&meterOutputR_})
+            peak->store(0.f,std::memory_order_relaxed);
+    }
+    std::uint64_t tailDrainLimit() const noexcept {
+        const float decay=acceptedValues_[static_cast<std::size_t>(
+            arverb::Parameter::DecaySeconds)].load(std::memory_order_relaxed);
+        return static_cast<std::uint64_t>(rate_*(0.7+2.5*static_cast<double>(decay)));
+    }
     void applyToEngine(const VocalReverbSettings& settings) noexcept {
         for(std::size_t i=0;i<settings.values.size();++i)
             engine_.setParameter(static_cast<arverb::Parameter>(i),settings.values[i]);
@@ -296,29 +326,35 @@ private:
     // All fields atomic: the GUI/save thread cannot race audio callback writes.
     // An odd sequence denotes a partial packet, even means complete.
     void storeAccepted(const VocalReverbSettings& s,std::uint64_t id) noexcept {
-        acceptedSequence_.fetch_add(1,std::memory_order_acq_rel);
+        acceptedSequence_.fetch_add(1,std::memory_order_seq_cst);
         for(std::size_t i=0;i<s.values.size();++i)
-            acceptedValues_[i].store(s.values[i],std::memory_order_relaxed);
-        acceptedAlgorithm_.store(s.algorithm,std::memory_order_relaxed);
-        acceptedPreset_.store(s.preset,std::memory_order_relaxed);
-        appliedId_.store(id,std::memory_order_relaxed);
-        acceptedSequence_.fetch_add(1,std::memory_order_release);
+            acceptedValues_[i].store(s.values[i],std::memory_order_seq_cst);
+        acceptedAlgorithm_.store(s.algorithm,std::memory_order_seq_cst);
+        acceptedPreset_.store(s.preset,std::memory_order_seq_cst);
+        acceptedSequence_.fetch_add(1,std::memory_order_seq_cst);
+        appliedId_.store(id,std::memory_order_release);
     }
     bool readAccepted(VocalReverbSettings& v) const noexcept {
         for(int attempt=0;attempt<8;++attempt) {
-            const auto before=acceptedSequence_.load(std::memory_order_acquire);
+            const auto before=acceptedSequence_.load(std::memory_order_seq_cst);
             if(before&1u)continue;
             for(std::size_t i=0;i<v.values.size();++i)
-                v.values[i]=acceptedValues_[i].load(std::memory_order_relaxed);
-            v.algorithm=acceptedAlgorithm_.load(std::memory_order_relaxed);
-            v.preset=acceptedPreset_.load(std::memory_order_relaxed);
-            const auto after=acceptedSequence_.load(std::memory_order_acquire);
+                v.values[i]=acceptedValues_[i].load(std::memory_order_seq_cst);
+            v.algorithm=acceptedAlgorithm_.load(std::memory_order_seq_cst);
+            v.preset=acceptedPreset_.load(std::memory_order_seq_cst);
+            const auto after=acceptedSequence_.load(std::memory_order_seq_cst);
             if(before==after)return true;
         }
         return false;
     }
     arverb::Engine engine_;
-    FxSpsc<Edit,32> queued_{};
+    VocalReverbSettings desired_{}; // message-thread only
+    std::array<std::atomic<float>,arverb::parameterCount> requestedValues_{};
+    std::atomic<int> requestedAlgorithm_{1},requestedPreset_{0};
+    std::atomic<std::uint32_t> requestedSequence_{0};
+    std::atomic<std::uint64_t> requestedId_{0};
+    static_assert(std::atomic<float>::is_always_lock_free);
+    static_assert(std::atomic<std::uint64_t>::is_always_lock_free);
     std::array<std::atomic<float>,arverb::parameterCount> acceptedValues_{};
     std::atomic<int> acceptedAlgorithm_{1},acceptedPreset_{0};
     std::atomic<std::uint32_t> acceptedSequence_{0};
@@ -326,13 +362,13 @@ private:
     std::atomic<std::uint32_t> meterSubscribers_{0};
     std::atomic<float> meterInputL_{0.f},meterInputR_{0.f};
     std::atomic<float> meterOutputL_{0.f},meterOutputR_{0.f};
-    std::atomic<std::uint32_t> pendingEdits_{0};
     std::uint64_t nextId_=0; // single message-thread producer
     // AUDIO-owned only: no other thread observes or resets live tail state.
     double rate_=0.;
-    std::uint64_t drainFrames_=0,quietFrames_=0;
+    std::uint64_t drainFrames_=0,drainLimitFrames_=0,drainWindowFrames_=0;
     bool renderedOnAir_=false,fullyBypassed_=false,draining_=false;
-    bool ready_=false,published_=false;
+    std::atomic<bool> ready_{false};
+    bool published_=false;
 };
 
 } // namespace armix::builtin_fx

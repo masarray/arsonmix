@@ -257,7 +257,46 @@ int main() {
     assert(nextPreset&&nextPreset->onClick);
     nextPreset->onClick(); // control-side draft update, not an ASIO ACK
     assert(presetSelect->getSelectedId()==2);
-    ui.reset(); // owns and releases all knob look-and-feel references
+    // Close immediately, without a timer tick or PCM ACK. Reopen must show
+    // pending intent and the next PCM callback must apply it even when closed.
+    assert(uiOwner->settingsPending());
+    const auto beforeCloseAck=uiOwner->appliedRequestId();
+    ui.reset();
+    ui.reset(uiOwner->createEditor());
+    auto* reopenedPreset=dynamic_cast<juce::ComboBox*>(
+        ui->findChildWithID("armix.reverb.preset"));
+    assert(reopenedPreset&&reopenedPreset->getSelectedId()==2);
+    ui.reset();
+    assert(uiOwner->appliedRequestId()==beforeCloseAck);
+    liveMeterPcm.clear();
+    displayInstance->processBlock(liveMeterPcm,liveMeterMidi);
+    assert(!uiOwner->settingsPending());
+    VocalReverbSettings reopenedAccepted{};
+    assert(uiOwner->acceptedSettings(reopenedAccepted)&&reopenedAccepted.preset==1);
+    // Offline editing and 1000 fast intents: no backlog, no premature ACK,
+    // no lost final setting; prepare/restart does not discard the mailbox.
+    uiOwner->releaseResources();
+    auto offline=vocalReverbFactoryPreset(0);
+    offline.preset=-1;
+    const auto beforeOffline=uiOwner->appliedRequestId();
+    std::uint64_t last=0;
+    for(int i=0;i<1000;++i) {
+        offline.values[0]=static_cast<float>(i%100)/100.f;
+        last=uiOwner->queueSettings(offline);
+        assert(last>beforeOffline);
+    }
+    assert(uiOwner->settingsPending()&&!uiOwner->stateSnapshotQuiescent());
+    juce::MemoryBlock blocked;
+    uiOwner->getStateInformation(blocked);
+    assert(blocked.getSize()==0);
+    assert(uiOwner->appliedRequestId()==beforeOffline);
+    uiOwner->prepareToPlay(48000.,128);
+    assert(uiOwner->isReady()&&uiOwner->settingsPending());
+    liveMeterPcm.clear();
+    displayInstance->processBlock(liveMeterPcm,liveMeterMidi);
+    assert(uiOwner->appliedRequestId()==last&&uiOwner->stateSnapshotQuiescent());
+    assert(uiOwner->acceptedSettings(reopenedAccepted)&&
+           reopenedAccepted.values[0]==offline.values[0]);
 
     assert(created->getLatencySamples()==0);
     auto* typed=dynamic_cast<VocalReverbProcessor*>(created.get());
@@ -407,8 +446,9 @@ int main() {
     typed->consumeRealtimeEdits();
     buffer.clear();
     created->processBlock(buffer,midi);
-    assert(typed->appliedRequestId()==idA);
-    assert(!typed->stateSnapshotQuiescent());
+    // Latest complete intent wins. No stale preset A is rendered first.
+    assert(typed->appliedRequestId()==idB);
+    assert(typed->stateSnapshotQuiescent());
     typed->consumeRealtimeEdits();
     buffer.clear();
     created->processBlock(buffer,midi);
@@ -425,6 +465,35 @@ int main() {
                          std::fabs(buffer.getSample(1,sample))));
     }
     assert(worstGhost<1.e-3f);
+
+    // Hidden tank regression: dry-only output while bypassed is silent,
+    // but the wet network may still contain the last phrase. Do not park
+    // just because the post-mix measurement is zero.
+    auto* hidden=dynamic_cast<VocalReverbProcessor*>(coldDry.get());
+    assert(hidden);
+    for(int i=0;i<64;++i) {
+        dryPcm.clear();
+        dryPcm.setSample(0,0,.6f);
+        dryPcm.setSample(1,0,.6f);
+        coldDry->processBlock(dryPcm,midi);
+    }
+    hidden->onRealtimeBypass(true,true);
+    for(int i=0;i<800;++i) {
+        dryPcm.clear();
+        coldDry->processBlock(dryPcm,midi);
+    }
+    const auto hiddenDraining=hidden->processedBlocks();
+    dryPcm.clear();
+    coldDry->processBlock(dryPcm,midi);
+    assert(hidden->processedBlocks()==hiddenDraining+1); // >1s, still draining
+    for(int i=0;i<5000;++i) {
+        dryPcm.clear();
+        coldDry->processBlock(dryPcm,midi);
+    }
+    const auto hiddenParked=hidden->processedBlocks();
+    dryPcm.clear();
+    coldDry->processBlock(dryPcm,midi);
+    assert(hidden->processedBlocks()==hiddenParked);
 
     // True zero-cost bypass before first audio render: initial BYPASS does
     // not start a needless empty 8-line delay network on a live mixer.
