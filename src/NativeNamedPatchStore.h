@@ -14,6 +14,7 @@ public:
     juce::var snapshot(const juce::var& active) const {
         auto root=object();
         put(root,"revision",revision_);
+        put(root,"fileExchange",true);
         put(root,"readOnly",error_.isNotEmpty());
         put(root,"error",error_);
         juce::Array<juce::var> rows;
@@ -25,6 +26,73 @@ public:
         }
         put(root,"entries",juce::var(rows));
         return root;
+    }
+    // File dialog requests carry the same device/revision lease as edits.
+    // Export is a projection of native accepted metadata, never browser JSON.
+    bool fileLease(const juce::var& request,const juce::var& active) const {
+        const auto rev=request.getProperty("revision",{});
+        const auto gen=request.getProperty("deviceGeneration",{});
+        const auto actual=active.getProperty("deviceGeneration",{});
+        const auto side=request.getProperty("side",{});
+        return error_.isEmpty()&&rev.isInt()&&static_cast<int>(rev)==revision_&&
+            (gen.isInt()||gen.isInt64())&&(actual.isInt()||actual.isInt64())&&
+            static_cast<juce::int64>(gen)==static_cast<juce::int64>(actual)&&
+            active.getProperty("open",{})==juce::var(true)&&
+            active.getProperty("authorized",{})==juce::var(true)&&
+            sameDevice(request,active)&&(side==juce::var("input")||side==juce::var("output"));
+    }
+    juce::var exportProfile(const juce::var& request,const juce::var& active) const {
+        if(!fileLease(request,active))return {};
+        auto root=object();
+        put(root,"schema","arsonmix.io-profile.v1");
+        for(const char* key:{"backend","captureDevice","playbackDevice","side"})
+            put(root,key,request.getProperty(key,{}));
+        juce::Array<juce::var> rows;
+        for(const auto& entry:entries_){
+            if(!sameDevice(entry,active)||entry.getProperty("side",{})!=request.getProperty("side",{}))continue;
+            auto row=object();
+            for(const char* key:{"name","mode","left","right","leftName","rightName"})
+                put(row,key,entry.getProperty(key,{}));
+            rows.add(row);
+        }
+        if(rows.isEmpty())return {};
+        put(root,"entries",juce::var(rows));
+        return root;
+    }
+    static juce::String writeProfileFile(const juce::File& file,const juce::var& profile) {
+        if(!file.hasFileExtension(".ario")||!profile.isObject()||
+           profile.getProperty("schema",{})!=juce::var("arsonmix.io-profile.v1"))
+            return "Invalid .ario profile";
+        const auto json=juce::JSON::toString(profile,false);
+        if(json.getNumBytesAsUTF8()>256*1024)return "I/O profile file too large";
+        juce::TemporaryFile temp(file);
+        auto stream=temp.getFile().createOutputStream();
+        if(!stream||!stream->writeText(json,false,false,"\n"))return "Cannot write I/O profile";
+        stream->flush();
+        if(stream->getStatus().failed())return "Cannot flush I/O profile";
+        stream.reset();
+        if(!temp.overwriteTargetFileWithTemporary())return "Cannot commit I/O profile file";
+        return {};
+    }
+    // Read only a bounded document; actual import always goes through apply.
+    static juce::String readProfileFile(const juce::File& file,juce::var& result) {
+        result={};
+        if(!file.hasFileExtension(".ario")||!file.existsAsFile()||
+           file.getSize()<1||file.getSize()>256*1024)return "Invalid or oversized .ario profile";
+        juce::FileInputStream stream(file);
+        if(!stream.openedOk())return "Cannot open I/O profile";
+        juce::MemoryBlock bytes;
+        stream.readIntoMemoryBlock(bytes,256*1024+1);
+        if(bytes.getSize()==0||bytes.getSize()>256*1024||stream.getStatus().failed())
+            return "Cannot read bounded I/O profile";
+        const auto profile=juce::JSON::parse(juce::String::fromUTF8(
+            static_cast<const char*>(bytes.getData()),static_cast<int>(bytes.getSize())));
+        const auto rows=profile.getProperty("entries",{});
+        if(!profile.isObject()||profile.getProperty("schema",{})!=juce::var("arsonmix.io-profile.v1")||
+           !rows.isArray()||rows.getArray()->isEmpty()||rows.getArray()->size()>128)
+            return "Invalid I/O profile document";
+        result=profile;
+        return {};
     }
     juce::String apply(const juce::var& request,const juce::var& active) {
         if(error_.isNotEmpty())return error_;

@@ -2518,6 +2518,7 @@
     pollBusOutput(ack.requestId);
   });
   let namedPatchSerial=0,namedPatchPending=null;
+  let namedProfileFileSerial=0,namedProfileFilePending=null;
   function namedPatchChoices(side,model,next){
     return matrixReady(next)?deviceVM.namedPatchChoices(deviceInventory,next,side):[];
   }
@@ -2590,7 +2591,10 @@
     const importProfile=document.createElement("button");importProfile.type="button";importProfile.textContent="Import profile";
     const exchangeHint=document.createElement("span");exchangeHint.className="armix-device-note";
     exchangeHint.textContent="Copy or paste JSON. Import adds presets only; duplicate names or unavailable pins reject the entire profile.";
-    exchange.append(summary,exportProfile,importProfile,profileText,exchangeHint);
+    const openFile=document.createElement("button");openFile.type="button";openFile.textContent="Open .ario file";
+    const saveFile=document.createElement("button");saveFile.type="button";saveFile.textContent="Save .ario file";
+    if(data.fileExchange===true)exchange.append(summary,openFile,saveFile,exportProfile,importProfile,profileText,exchangeHint);
+    else exchange.append(summary,exportProfile,importProfile,profileText,exchangeHint);
     const fields=["name","mode","left","right","leftName","rightName"];
     const identity=()=>Object.fromEntries(["backend","captureDevice","playbackDevice"].map(k=>[k,deviceInventory.active[k]]));
     const choice=()=>{
@@ -2607,8 +2611,43 @@
       exportProfile.disabled=locked||!entries.length;
       importProfile.disabled=locked||!profileText.value.trim();
       profileText.disabled=locked;
+      openFile.disabled=locked||!!namedProfileFilePending;
+      saveFile.disabled=locked||!!namedProfileFilePending||!entries.length;
     };
     profileText.oninput=update;
+    const chooseFile=operation=>{
+      if(locked||namedProfileFilePending||namedPatchPending||matrixBusy()||!matrixReady(hardware)||
+         deviceInventory?.namedPatches?.revision!==data.revision||
+         hardware.device.epoch!==next.device.epoch||
+         hardware.hardwareConfiguration!==next.hardwareConfiguration)return;
+      const requestId="io-file-"+(++namedProfileFileSerial);
+      const lease={...identity(),side,revision:data.revision,deviceGeneration:deviceInventory.active.deviceGeneration};
+      namedProfileFilePending={requestId,operation,finish:message=>{
+        update();
+        if(message.cancelled)return;
+        if(message.ok!==true){nativeToast(message.error||"I/O profile file operation failed");return;}
+        if(operation==="EXPORT"){nativeToast("I/O profile file saved");return;}
+        if(!profileText.isConnected||!matrixReady(hardware)||deviceInventory?.namedPatches?.revision!==lease.revision||
+           hardware.device.epoch!==next.device.epoch||hardware.hardwareConfiguration!==next.hardwareConfiguration||
+           !Object.entries(identity()).every(([k,v])=>v===lease[k])||
+           !message.profile||message.profile.side!==side||
+           !Object.entries(identity()).every(([k,v])=>message.profile[k]===v)){
+          nativeToast("I/O profile draft expired · reopen file");return;
+        }
+        profileText.value=JSON.stringify(message.profile,null,2);
+        update();
+        nativeToast("I/O profile loaded · review and Import profile");
+      }};
+      update();
+      backend.emitEvent("arMixAction",{action:"audioNamedProfileFile",requestId,operation,...lease});
+      window.setTimeout(()=>{
+        if(namedProfileFilePending?.requestId!==requestId)return;
+        namedProfileFilePending=null;update();paintPhysicalOutputs(hardware);
+        nativeToast("I/O file dialog confirmation expired");
+      },120000);
+    };
+    openFile.onclick=()=>chooseFile("OPEN");
+    saveFile.onclick=()=>chooseFile("EXPORT");
     exportProfile.onclick=()=>{
       if(locked||!matrixReady(hardware))return;
       profileText.value=JSON.stringify({schema:"arsonmix.io-profile.v1",...identity(),side,
@@ -2624,7 +2663,7 @@
     for(const el of [existing,name,mode,left,right])el.disabled=locked;
     name.oninput=mode.onchange=left.onchange=right.onchange=update;
     const send=(operation,profile=null)=>{
-      if(locked||namedPatchPending||matrixBusy()||!matrixReady(hardware)||
+      if(locked||namedPatchPending||namedProfileFilePending||matrixBusy()||!matrixReady(hardware)||
          hardware.device.epoch!==next.device.epoch||
          hardware.hardwareConfiguration!==next.hardwareConfiguration||
          deviceInventory?.namedPatches?.revision!==data.revision)return;
@@ -3584,6 +3623,13 @@
     },12000);
   }
   if(connected){
+    backend.addEventListener("arMixNamedProfileFileResult",message=>{
+      const pending=namedProfileFilePending;
+      if(!pending||message?.requestId!==pending.requestId||message.operation!==pending.operation)return;
+      namedProfileFilePending=null;
+      pending.finish(message);
+      // Do not repaint the editor and discard a successfully loaded draft.
+    });
     backend.addEventListener("arMixNamedPatchAck",ack=>{
       if(namedPatchPending?.phase!=="APPLYING"||
          ack?.requestId!==namedPatchPending.requestId)return;

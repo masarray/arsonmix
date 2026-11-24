@@ -837,6 +837,7 @@ private:
     DiagnosticsRecorder diagnostics_;
     armix::appearance::Store channelAppearance_{settingsDirectory()};
     armix::io::NamedPatchStore namedPatches_{machineSettingsDirectory()};
+    std::unique_ptr<juce::FileChooser> namedIoFileChooser_;
     armix::storage::NativePresetArchive presets_;
     armix::storage::BuiltInFxUserPresetStore builtinFxUserPresets_{settingsDirectory()};
     std::function<void(int)> onStartupStage_;
@@ -5054,6 +5055,67 @@ private:
         }))emitMixerSessionAck("OPEN","Mixer file operation already in progress");
     }
 
+    void chooseNamedIoProfile(const juce::var& args) {
+        const auto request=args.getProperty("requestId",{}).toString();
+        const auto op=args.getProperty("operation",{}).toString();
+        if(!request.startsWith("io-file-")||request.length()>64)return;
+        const bool save=op=="EXPORT";
+        const auto emit=[this,&request,&op](const juce::String& error){
+            auto result=std::make_unique<juce::DynamicObject>();
+            result->setProperty("requestId",request);result->setProperty("operation",op);
+            result->setProperty("ok",false);result->setProperty("error",error);
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixNamedProfileFileResult",juce::var(result.release()));
+        };
+        if((!save&&op!="OPEN")||namedIoFileChooser_||mixerFileDialogOpen_||
+           nativeShowBusy_||studioBackupBusy_||mixerSessionWorker_.busy()||
+           engine_.independentClockActive()||engine_.hasTemporaryDiagnosticDevice()||
+           !namedPatches_.fileLease(args,currentDeviceSnapshot())){
+            emit("I/O profile file operation unavailable or stale");return;
+        }
+        auto start=juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+        if(save)start=start.getChildFile(args.getProperty("side",{}).toString()+"-io.ario");
+        namedIoFileChooser_=std::make_unique<juce::FileChooser>(
+            save?"Export I/O presets":"Open I/O preset profile",start,"*.ario",true);
+        using Flags=juce::FileBrowserComponent;
+        namedIoFileChooser_->launchAsync(Flags::canSelectFiles |
+            (save?(Flags::saveMode|Flags::warnAboutOverwriting):Flags::openMode),
+            [safe=juce::Component::SafePointer<ConsoleWindow>(this),args,request,op,save]
+            (const juce::FileChooser& picker){
+                if(!safe)return;
+                const auto file=picker.getResult();
+                auto result=std::make_unique<juce::DynamicObject>();
+                result->setProperty("requestId",request);result->setProperty("operation",op);
+                result->setProperty("cancelled",file==juce::File{});
+                juce::String error;
+                if(file!=juce::File{}){
+                    const auto active=safe->currentDeviceSnapshot();
+                    if(safe->nativeShowBusy_||safe->studioBackupBusy_||safe->mixerSessionWorker_.busy()||
+                       safe->engine_.independentClockActive()||safe->engine_.hasTemporaryDiagnosticDevice()||
+                       !safe->namedPatches_.fileLease(args,active))
+                        error="I/O profile device or revision changed";
+                    else if(save){
+                        const auto profile=safe->namedPatches_.exportProfile(args,active);
+                        error=profile.isObject()?armix::io::NamedPatchStore::writeProfileFile(file,profile):
+                            juce::String("No accepted presets to export");
+                    }else{
+                        juce::var profile;
+                        error=armix::io::NamedPatchStore::readProfileFile(file,profile);
+                        if(error.isEmpty()){
+                            for(const char* key:{"backend","captureDevice","playbackDevice","side"})
+                                if(profile.getProperty(key,{})!=args.getProperty(key,{}))
+                                    error="I/O profile belongs to a different device or side";
+                            if(error.isEmpty())result->setProperty("profile",profile);
+                        }
+                    }
+                }
+                result->setProperty("ok",error.isEmpty());result->setProperty("error",error);
+                if(safe->browser_.loaded)safe->browser_.emitEventIfBrowserIsVisible(
+                    "arMixNamedProfileFileResult",juce::var(result.release()));
+                // Do not destroy the native chooser from its own callback.
+                juce::MessageManager::callAsync([safe]{if(safe)safe->namedIoFileChooser_.reset();});
+            });
+    }
+
     void chooseMixerFile(bool save) {
         if(logicalVendorEditor_)return emitMixerSessionAck(save?"SAVE":"OPEN",
             "Close the vendor FX editor to save its settings first");
@@ -8560,6 +8622,10 @@ private:
             if (browser_.loaded)
                 browser_.emitEventIfBrowserIsVisible ("arMixDiagnosticReportCopied", juce::var (response.release()));
             emitNotice ("Audio report copied! Paste it directly into the engineering chat.");
+        }
+        else if (action == "audioNamedProfileFile")
+        {
+            chooseNamedIoProfile(args);
         }
         else if (action == "audioNamedPatchRead")
         {

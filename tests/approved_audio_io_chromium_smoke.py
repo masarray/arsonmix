@@ -102,7 +102,7 @@ def verify_custom_input(page,out):
     assert rename["name"]=="Studio Vocal"
     emit(page,"arMixNamedPatchAck",{"requestId":rename["requestId"],"ok":True})
     entry["name"]="Studio Vocal"
-    inventory["namedPatches"]={"revision":2,"readOnly":False,"entries":[entry]}
+    inventory["namedPatches"]={"revision":2,"readOnly":False,"fileExchange":True,"entries":[entry]}
     emit(page,"arMixNamedPatchReadback",{"requestId":rename["requestId"],
         "active":inventory["active"],"namedPatches":inventory["namedPatches"]})
     assert page.evaluate("()=>window.__actions.filter(x=>x.action==='routingNativeSourcePatch').length")==1
@@ -114,8 +114,21 @@ def verify_custom_input(page,out):
     profile=json.loads(page.get_by_label("I/O profile JSON").input_value())
     assert profile["schema"]=="arsonmix.io-profile.v1" and profile["entries"][0]["name"]=="Studio Vocal"
     assert "id" not in profile["entries"][0] and "available" not in profile["entries"][0]
+    # Native save/open transport is separate from mutation. File response
+    # is a reviewable draft; only explicit Import submits an edit.
+    page.get_by_role("button",name="Save .ario file",exact=True).click()
+    file_save=page.evaluate("()=>window.__actions.filter(x=>x.action==='audioNamedProfileFile').at(-1)")
+    assert file_save["operation"]=="EXPORT" and file_save["revision"]==2 and "profile" not in file_save
+    emit(page,"arMixNamedProfileFileResult",{"requestId":file_save["requestId"],"operation":"EXPORT","ok":True})
+    page.get_by_role("button",name="Open .ario file",exact=True).click()
+    file_open=page.evaluate("()=>window.__actions.filter(x=>x.action==='audioNamedProfileFile').at(-1)")
+    assert file_open["operation"]=="OPEN" and file_open["requestId"]!=file_save["requestId"]
     profile["entries"][0]["name"]="Imported Vocal"
-    page.get_by_label("I/O profile JSON").fill(json.dumps(profile))
+    emit(page,"arMixNamedProfileFileResult",{"requestId":file_save["requestId"],"operation":"OPEN","ok":True,"profile":profile})
+    assert json.loads(page.get_by_label("I/O profile JSON").input_value())["entries"][0]["name"]=="Studio Vocal"
+    emit(page,"arMixNamedProfileFileResult",{"requestId":file_open["requestId"],"operation":"OPEN","ok":True,"profile":profile})
+    assert json.loads(page.get_by_label("I/O profile JSON").input_value())==profile
+    assert page.evaluate("()=>window.__actions.filter(x=>x.action==='audioNamedPatchEdit').length")==2
     page.get_by_role("button",name="Import profile",exact=True).click()
     imported=page.evaluate("()=>window.__actions.filter(x=>x.action==='audioNamedPatchEdit').at(-1)")
     assert imported["operation"]=="IMPORT" and imported["revision"]==2 and imported["profile"]==profile

@@ -146,6 +146,23 @@ static void namedPatchRegression(){
         assert(store.snapshot(active).getProperty("revision",{})==juce::var(6));
         set(req,"revision",6);
         assert(store.apply(req,active).isNotEmpty()); // duplicate import
+        const auto exported=store.exportProfile(req,active);
+        assert(exported.isObject());
+        const auto exportedRows=exported.getProperty("entries",{});
+        assert(exportedRows.getArray()->size()==1);
+        assert(exportedRows[0].getProperty("id",{}).isVoid());
+        assert(exportedRows[0].getProperty("available",{}).isVoid());
+        const auto file=dir.getChildFile("backup.ario");
+        assert(armix::io::NamedPatchStore::writeProfileFile(file,exported).isEmpty());
+        juce::var decoded;
+        assert(armix::io::NamedPatchStore::readProfileFile(file,decoded).isEmpty());
+        assert(juce::JSON::toString(decoded)==juce::JSON::toString(exported));
+        assert(armix::io::NamedPatchStore::readProfileFile(dir.getChildFile("missing.ario"),decoded).isNotEmpty());
+        assert(decoded.isVoid());
+        assert(file.replaceWithText("{invalid"));
+        assert(armix::io::NamedPatchStore::readProfileFile(file,decoded).isNotEmpty());
+        set(req,"revision",5);assert(store.exportProfile(req,active).isVoid());
+        set(req,"revision",6);
         armix::io::NamedPatchStore reboot(dir);
         const auto rows=reboot.snapshot(active).getProperty("entries",{});
         assert(rows.getArray()->size()==1&&rows[0].getProperty("name","")=="Broadcast");
