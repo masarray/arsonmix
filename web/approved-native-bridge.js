@@ -2745,13 +2745,25 @@
     else if(q.operation==="CLEAR")proved=!data.references.some(x=>x.channelId===q.channelId);
     if(proved){logicalIoPending=null;nativeToast("Logical I/O updated");}
   }
+  // Native snapshots may replace the editor in the same task as an
+  // activation. Do not use the deferred/coalesced details toggle event:
+  // a detached old element could overwrite the operator's current choice.
+  function bindLogicalDisclosure(section,summary,open,remember){
+    section.open=open;
+    summary.onclick=event=>{
+      if(event.defaultPrevented)return;
+      event.preventDefault();
+      section.open=!section.open;
+      remember(section.open);
+    };
+  }
   function renderLogicalInputs(host,model,next,busy){
     const data=next.raw?.logicalInputRegistry;
     if(model.authority!=="CHANNEL_ID"||!Array.isArray(data?.ports)||
        !Array.isArray(data.references)||typeof data.revision!=="string")return;
     const section=document.createElement("details");section.className="armix-named-patches";
-    section.open=logicalIoEditorOpen;section.ontoggle=()=>{logicalIoEditorOpen=section.open;};
     const summary=document.createElement("summary");summary.textContent="Session logical inputs";
+    bindLogicalDisclosure(section,summary,logicalIoEditorOpen,open=>{logicalIoEditorOpen=open;});
     const hint=document.createElement("span");hint.className="armix-device-note";
     hint.textContent="Ports saved in .smix. Remapping a port updates every assigned channel.";
     const port=document.createElement("select");port.setAttribute("aria-label","Logical input port");
@@ -2848,8 +2860,8 @@
     if(model.authority!=="CHANNEL_ID"||next.device?.backend!=="ASIO"||
        !Array.isArray(data?.ports)||!Array.isArray(data.references)||typeof data.revision!=="string")return;
     const section=document.createElement("details");section.className="armix-named-patches";
-    section.open=logicalOutEditorOpen;section.ontoggle=()=>{logicalOutEditorOpen=section.open;};
     const summary=document.createElement("summary");summary.textContent="Session logical outputs";
+    bindLogicalDisclosure(section,summary,logicalOutEditorOpen,open=>{logicalOutEditorOpen=open;});
     const hint=document.createElement("span");hint.className="armix-device-note";
     hint.textContent="Mute MAIN and STREAM first. MAIN/MONITOR aliases must match their verified physical pair. External remap updates all assigned channels.";
     const port=document.createElement("select");port.setAttribute("aria-label","Logical output port");

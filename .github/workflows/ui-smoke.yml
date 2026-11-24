@@ -381,6 +381,9 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -389,7 +392,12 @@ jobs:
           python -m pip install playwright
           python -m playwright install --with-deps chromium
       - name: Verify compiled Audio I/O interaction with native transport fixture
-        run: python tests/approved_audio_io_chromium_smoke.py
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          echo "AUDIO_IO_CHROMIUM_EXACT_HEAD=$EXPECTED_SOURCE_SHA"
+          python tests/approved_audio_io_chromium_smoke.py
       - uses: actions/upload-artifact@v4
         if: ${{ always() }}
         with:

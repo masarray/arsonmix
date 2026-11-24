@@ -17,7 +17,7 @@ concurrency:
 jobs:
   actual-console-translation-unit:
     runs-on: windows-2022
-    timeout-minutes: 25
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
         with:
@@ -83,8 +83,34 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'AUDIO_IO_EXTERNAL_PCM_CTEST_FAILED' }
             Write-Host "AUDIO_IO_EXTERNAL_PCM_CTEST_PASS exact=$actual"
           }
-          # Ninja builds real generated header dependencies, not the full app,
-          # all JUCE objects, full CTest, linking, or Inno packaging.
+          # Fast object gate remains common to all qualification branches.
+          # Only the integrated candidate proceeds to full product build below.
           cmake --build build --parallel 2 --target $objects
           if ($LASTEXITCODE -ne 0) { throw 'P0_PRODUCTION_TRANSLATION_UNIT_FAILED' }
           Write-Host "P0_PRODUCTION_MAIN_COMPILE_PASS exact=$actual (object only, NOT full FAT)"
+      - name: Integrated product link and full native CTest (no packaging)
+        if: github.ref_name == 'staging/io-reverb-integrated-20261125'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
+          if (!$vs) { throw 'MSVC_NOT_FOUND' }
+          Import-Module (Join-Path $vs 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $env:GITHUB_SHA) { throw 'INTEGRATED_SOURCE_MISMATCH' }
+          cmake --build build --parallel 2 --target ARMixConsole
+          if ($LASTEXITCODE -ne 0) { throw 'INTEGRATED_CONSOLE_LINK_FAILED' }
+          Write-Host "INTEGRATED_CONSOLE_LINK_PASS exact=$actual"
+          cmake --build build --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'INTEGRATED_FULL_BUILD_FAILED' }
+          ctest --test-dir build --output-on-failure --no-tests=error --output-junit integrated-ctest.xml
+          if ($LASTEXITCODE -ne 0) { throw 'INTEGRATED_FULL_CTEST_FAILED' }
+          Write-Host "INTEGRATED_FULL_CTEST_PASS exact=$actual (no hardware or installer FAT)"
+      - uses: actions/upload-artifact@v4
+        if: always() && github.ref_name == 'staging/io-reverb-integrated-20261125'
+        with:
+          name: integrated-native-ctest-${{ github.sha }}
+          path: build/integrated-ctest.xml
+          if-no-files-found: ignore
+          retention-days: 7

@@ -152,6 +152,16 @@ def verify_custom_input(page,out):
     assert second["requestId"]!=req["requestId"] and (second["left"],second["right"])==(3,0),second
     assert not errors,errors
 
+def toggle_then_snapshot(page, title, state):
+    # Same JS task: exercise disclosure activation immediately followed by
+    # native reconciliation, before a deferred details toggle event can run.
+    page.evaluate("""([title,state])=>{
+        const summary=[...document.querySelectorAll('summary')].find(s=>s.textContent===title);
+        if(!summary)throw Error('Missing logical disclosure: '+title);
+        summary.click();
+        window.__nativeListeners.get('arMixConsoleSnapshot')(state);
+    }""",[title,state])
+
 def verify_logical_inputs(page,out):
     errors=[]
     page.on("pageerror",lambda e:errors.append(str(e)))
@@ -173,18 +183,30 @@ def verify_logical_inputs(page,out):
     state["logicalInputRegistry"]={"revision":"1","ports":[],"references":[]}
     emit(page,"arMixConsoleSnapshot",state)
     open_verified_audio_io(page,state,"inputs")
-    page.get_by_text("Session logical inputs",exact=True).click()
-    page.get_by_label("Logical input name",exact=True).fill("Live Vocal")
+    title="Session logical inputs"
+    summary=page.get_by_text(title,exact=True)
+    summary.press("Enter")
+    name=page.get_by_label("Logical input name",exact=True)
+    assert name.is_visible()
+    # Change only a registry revision so native reconciliation rebuilds the
+    # editor; closing/opening must survive an immediate snapshot in both directions.
+    state["logicalInputRegistry"]["revision"]="2"
+    toggle_then_snapshot(page,title,state)
+    assert not name.is_visible()
+    state["logicalInputRegistry"]["revision"]="3"
+    toggle_then_snapshot(page,title,state)
+    assert name.is_visible()
+    name.fill("Live Vocal")
     page.get_by_role("button",name="Add port",exact=True).click()
     req=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingLogicalInputEdit').at(-1)")
-    assert req["operation"]=="ADD" and req["logicalRevision"]=="1"
+    assert req["operation"]=="ADD" and req["logicalRevision"]=="3"
     portid="9007199254740999"
     emit(page,"arMixLogicalInputAck",{"requestId":req["requestId"],"ok":True,
-        "logicalRevision":"2","graphRevision":state["graph"]["revision"]})
+        "logicalRevision":"4","graphRevision":state["graph"]["revision"]})
     select=page.get_by_label("Logical input port",exact=True)
     assert select.locator("option[value='"+portid+"']").count()==0
     port={"id":portid,"name":"Live Vocal","format":"MONO","bound":False}
-    state["logicalInputRegistry"]={"revision":"2","ports":[port],"references":[]}
+    state["logicalInputRegistry"]={"revision":"4","ports":[port],"references":[]}
     emit(page,"arMixConsoleSnapshot",state)
     select.select_option(portid)
     page.get_by_label("Logical L pin",exact=True).select_option("0")
@@ -192,10 +214,10 @@ def verify_logical_inputs(page,out):
     bind=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingLogicalInputEdit').at(-1)")
     assert bind["operation"]=="BIND" and bind["portId"]==portid and bind["leftName"]=="Mic 1"
     emit(page,"arMixLogicalInputAck",{"requestId":bind["requestId"],"ok":True,
-        "logicalRevision":"3","graphRevision":state["graph"]["revision"]})
+        "logicalRevision":"5","graphRevision":state["graph"]["revision"]})
     port.update(bound=True,left=0,right=-1,leftName="Mic 1",rightName="",
         backend="ASIO",capture="Test ASIO",playback="Test ASIO")
-    state["logicalInputRegistry"]={"revision":"3","ports":[port],"references":[]}
+    state["logicalInputRegistry"]={"revision":"5","ports":[port],"references":[]}
     emit(page,"arMixConsoleSnapshot",state)
     page.get_by_label("Logical input channel",exact=True).select_option(SOURCE)
     page.get_by_role("button",name="Assign to channel",exact=True).click()
@@ -291,12 +313,18 @@ def verify_logical_outputs(page,out):
         logicalOutputRegistry={"revision":"1","ports":[],"references":[]})
     emit(page,"arMixConsoleSnapshot",state)
     open_verified_audio_io(page,state,"routing")
-    page.get_by_text("Session logical outputs",exact=True).click()
+    title="Session logical outputs"
+    page.get_by_text(title,exact=True).click()
     name=page.get_by_label("Logical output name",exact=True)
-    assert name.is_disabled()
+    assert name.is_visible() and name.is_disabled()
+    # Close with a real mouse click, then reopen in the same task as the
+    # native mute readback that previously made the editor disappear.
+    page.get_by_text(title,exact=True).click()
+    assert not name.is_visible()
     state["device"]["outputArmed"]=False
     state["operatorOutputMuted"]=True
-    emit(page,"arMixConsoleSnapshot",state)
+    toggle_then_snapshot(page,title,state)
+    assert name.is_visible() and name.is_enabled()
     name.fill("Stage Amp")
     page.get_by_role("button",name="Add port",exact=True).click()
     req=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingLogicalOutputEdit').at(-1)")
@@ -439,6 +467,6 @@ def main():
         verify_io_defaults(page,out)
         page.close()
         browser.close()
-    print("PASS compiled Audio I/O pin discovery, stereo draft/ACK/readback, external output and muted bus remap")
+    print("PASS compiled Audio I/O pin discovery, stereo draft/ACK/readback, external output, muted bus remap, logical disclosure race and defaults")
 
 if __name__=="__main__":main()
