@@ -300,7 +300,7 @@ public:
         for(auto& seam:backingSeams_)seam.prepare(rate);
         continuityReferenceEnabled_=true;supportReferenceEnabled_=true;
         naturalReferenceEnabled_=true;backingContour_.prepare(detectEvery_/rate);
-        carrierReferenceEnabled_=true;slopeReferenceEnabled_=true;drainReferenceEnabled_=true;epochRecoveryEnabled_=true;cubicReferenceEnabled_=false;
+        carrierReferenceEnabled_=true;slopeReferenceEnabled_=true;drainReferenceEnabled_=true;epochRecoveryEnabled_=true;adaptiveEpochRecovery_=false;cubicReferenceEnabled_=false;
         traceEnabled_=false;rendererTrace_={};lossReasons_={};admissionTrace_={};
         for(auto& carrier:carriers_)carrier.reset();
         periodContinuity_.reset();
@@ -596,6 +596,10 @@ public:
     bool setCubicForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
         cubicReferenceEnabled_=enabled;return true;
+    }
+    bool setAdaptiveEpochForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        adaptiveEpochRecovery_=enabled;return true;
     }
     bool setEpochRecoveryForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
@@ -1011,7 +1015,7 @@ private:
         const float trust=std::clamp((sourceConfidence_-.79f)*10.f,0.f,1.f);
         const float scale=resonanceReferenceEnabled_?
             1.f+(resonance[ix]-1.f)*ensembleFocus_*trust:1.f;
-        float renderPeriod=sourcePeriodSamples_;
+        float renderPeriod=sourcePeriodSamples_;bool localEpochEvidence=false;
         // H24C2 preview: source-local PSOLA geometry for the larger
         // ensembles only. Preserve accepted Duo, Doubler and lead Tune.
         // No additional PCM delay or per-sample binary search in steady state.
@@ -1019,7 +1023,7 @@ private:
             const double at=static_cast<double>(sampleClock_)-(static_cast<double>(latency_)+arrival);
             const auto obs=sourceCacheEnabled_?sourceTimeline_.nearestCached(at,2.*detectEvery_,sourceCursors_[ix]):
                 sourceTimeline_.nearest(at,2.*detectEvery_);
-            if(obs.period>=8.f){renderPeriod=obs.period;if(traceEnabled_)++alignedCalls_[ix];}
+            if(obs.period>=8.f){renderPeriod=obs.period;localEpochEvidence=true;if(traceEnabled_)++alignedCalls_[ix];}
         }
         if(causalEnvelopeEnabled_&&voice==2)causalSourcePeriod_=renderPeriod;
         const bool windowSafe=carryEpochs&&(legacyLatency_||
@@ -1032,7 +1036,7 @@ private:
             sync=pitchSync_.process(voice,sampleClock_,write_,mono_,
                 renderPeriod,effectiveRatio,
                 static_cast<float>(latency_)+arrival,scale,continuityReferenceEnabled_,
-                supportReferenceEnabled_,naturalReferenceEnabled_,windowSafe,epochRecoveryEnabled_,true,cubicReferenceEnabled_,traceEnabled_?&admissionTrace_[ix]:nullptr);
+                supportReferenceEnabled_,naturalReferenceEnabled_,windowSafe,epochRecoveryEnabled_,true,cubicReferenceEnabled_,traceEnabled_?&admissionTrace_[ix]:nullptr,adaptiveEpochRecovery_&&confident&&localEpochEvidence);
         if(traceEnabled_){
             auto& v=rendererTrace_[ix].values;
             ++v[RendererTrace::calls];
@@ -1356,7 +1360,7 @@ private:
     std::array<BackingRenderSeam,maxVoices> backingSeams_{};
     bool continuityReferenceEnabled_=true,supportReferenceEnabled_=true;
     bool naturalReferenceEnabled_=true,carrierReferenceEnabled_=true,slopeReferenceEnabled_=true;
-    bool drainReferenceEnabled_=true,traceEnabled_=false,epochRecoveryEnabled_=true,cubicReferenceEnabled_=false;
+    bool drainReferenceEnabled_=true,traceEnabled_=false,epochRecoveryEnabled_=true,adaptiveEpochRecovery_=false,cubicReferenceEnabled_=false;
     std::array<RendererTrace,maxVoices> rendererTrace_{};
     std::array<LossReasons,maxVoices> lossReasons_{};
     std::array<AdmissionTrace,maxVoices> admissionTrace_{};

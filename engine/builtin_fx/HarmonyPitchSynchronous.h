@@ -20,6 +20,7 @@ class PitchSynchronousVoice final {
 public:
     struct AdmissionTrace {
         std::uint64_t attempts=0,missingPeak=0,poolBlocked=0,supportRejected=0,admitted=0,clockResets=0;
+        std::uint64_t adaptiveAttempts=0,adaptiveAccepted=0,adaptiveSites=0;
     };
     struct Output { float sample=0.f; bool ready=false; float coverage=0.f; bool recovered=false; std::uint32_t recoverySites=0; };
     struct StereoOutput { float left=0.f,right=0.f; bool ready=false; float coverage=0.f; bool recovered=false; std::uint32_t recoverySites=0; };
@@ -76,9 +77,9 @@ public:
                    const std::array<float,Capacity>& input,
                    float sourcePeriod,float ratio,float fixedDelay,
                    float resonanceScale=1.f,bool continuous=true,bool supportAware=true,
-                   bool phaseAware=true,bool admitNew=true,bool recoverEpoch=false,bool reuseFailedSearch=true,bool cubic=false,AdmissionTrace* trace=nullptr) noexcept {
+                   bool phaseAware=true,bool admitNew=true,bool recoverEpoch=false,bool reuseFailedSearch=true,bool cubic=false,AdmissionTrace* trace=nullptr,bool adaptiveRecovery=false) noexcept {
         const auto out=render<false>(v,time,writeIndex,input,input,input,
-                                     sourcePeriod,ratio,fixedDelay,resonanceScale,continuous,supportAware,phaseAware,admitNew,recoverEpoch,reuseFailedSearch,cubic,trace);
+                                     sourcePeriod,ratio,fixedDelay,resonanceScale,continuous,supportAware,phaseAware,admitNew,recoverEpoch,reuseFailedSearch,cubic,trace,adaptiveRecovery);
         return {out.left,out.ready,out.coverage,out.recovered,out.recoverySites};
     }
 
@@ -90,7 +91,7 @@ public:
                    const std::array<float,Capacity>& right,
                    float sourcePeriod,float ratio,float fixedDelay) noexcept {
         return render<true>(v,time,writeIndex,epochs,left,right,
-                            sourcePeriod,ratio,fixedDelay,1.f,false,false,false,true,false,true,false,nullptr);
+                            sourcePeriod,ratio,fixedDelay,1.f,false,false,false,true,false,true,false,nullptr,false);
     }
 private:
     template <bool Stereo>
@@ -99,7 +100,7 @@ private:
                    const std::array<float,Capacity>& left,
                    const std::array<float,Capacity>& right,
                    float sourcePeriod,float ratio,float fixedDelay,
-                   float resonanceScale,bool continuous,bool supportAware,bool phaseAware,bool admitNew,bool recoverEpoch,bool reuseFailedSearch,bool cubic,AdmissionTrace* trace) noexcept {
+                   float resonanceScale,bool continuous,bool supportAware,bool phaseAware,bool admitNew,bool recoverEpoch,bool reuseFailedSearch,bool cubic,AdmissionTrace* trace,bool adaptiveRecovery) noexcept {
         if(v<0||v>=Voices||!std::isfinite(sourcePeriod)||
            !std::isfinite(ratio)||!std::isfinite(fixedDelay)||
            sourcePeriod<8.f||sourcePeriod>3200.f||
@@ -165,7 +166,7 @@ private:
             // contain no same-polarity maximum. Only on such a miss, try
             // a bounded nearest-phase search; require a real local maximum
             // and the unchanged full-window safety proof below.
-            bool rescue=false;
+            bool rescue=false,adaptiveRescue=false;
             if(peak<0&&recoverEpoch&&continuous&&supportAware&&state.haveEpoch&&
                state.epochPolarity!=0){
                 // Bound displacement to 1.5 periods and 40% of the
@@ -180,6 +181,28 @@ private:
                                         state.epochPolarity,true,
                                         reuseFailedSearch?.56*period:0.,&recoverySites);
                     rescue=peak>=0;
+                }
+                // H28B: the nominal and expanded neighborhoods both
+                // failed. A gross F0 underestimate of period can leave
+                // the true landmark just outside the previous radius.
+                // Only extend the already-failed search, never redo it.
+                // A real peak, local variation and waveform similarity
+                // to the last admitted epoch are required; no stale
+                // waveform extrapolation through silence.
+                if(peak<0&&adaptiveRecovery&&radius>.56*period){
+                    const double extended=std::min({2.75*period,.55*fixedDelay,radius+512.});
+                    if(extended>radius&&std::abs(desired-state.lastEpoch)<=3.5*period){
+                        if(trace)++trace->adaptiveAttempts;
+                        std::uint32_t sites=0;
+                        const auto candidate=findLocalEpoch(epochs,time,writeIndex,desired,extended,
+                            state.epochPolarity,true,radius,&sites);
+                        if(trace)trace->adaptiveSites+=sites;
+                        recoverySites+=sites;
+                        if(candidate>=0&&similarEpoch(epochs,time,writeIndex,state.lastEpoch,
+                              static_cast<double>(candidate),desired,period)){
+                            peak=candidate;rescue=true;adaptiveRescue=true;
+                        }
+                    }
                 }
             }
             if(peak>=0) {
@@ -212,7 +235,7 @@ private:
                     state.nextCenter+=spacing;
                     continue;
                 }
-                if(trace)++trace->admitted;
+                if(trace){++trace->admitted;if(adaptiveRescue)++trace->adaptiveAccepted;}
                 state.lastEpoch=epoch;state.haveEpoch=true;
                 // A larger new width can admit a grain INSIDE its window.
                 // Ramp only these late admissions from zero rather than
@@ -383,6 +406,31 @@ private:
             scan(std::max(start,center+inner+1),end);
         }else scan(start,end);
         return result;
+    }
+    // Bounded, DC-invariant similarity of local source landmarks.
+    // All three neighborhoods must be inside history. The nominal
+    // neighborhood must contain varying PCM (not simply a DC offset
+    // or silence). Twelve equally spaced taps, no heap or trig.
+    static bool similarEpoch(const std::array<float,Capacity>& input,
+          std::uint64_t time,std::size_t writeIndex,double prior,double candidate,
+          double desired,double period) noexcept {
+        constexpr int n=12;
+        const double radius=.36*period;
+        const double oldest=time>=Capacity-3?double(time-(Capacity-3)):0.;
+        const double newest=double(time)-2.;
+        if(std::min({prior,candidate,desired})-radius<oldest||
+           std::max({prior,candidate,desired})+radius>newest)return false;
+        double sx=0.,sy=0.,sz=0.,xx=0.,yy=0.,zz=0.,xy=0.;
+        for(int k=0;k<n;++k){
+            const double offset=radius*(2.*k/(n-1)-1.);
+            const double x=readAtKnown(input,time,writeIndex,prior+offset);
+            const double y=readAtKnown(input,time,writeIndex,candidate+offset);
+            const double z=readAtKnown(input,time,writeIndex,desired+offset);
+            sx+=x;sy+=y;sz+=z;xx+=x*x;yy+=y*y;zz+=z*z;xy+=x*y;
+        }
+        xx-=sx*sx/n;yy-=sy*sy/n;zz-=sz*sz/n;xy-=sx*sy/n;
+        if(xx<1.e-9||yy<std::max(1.e-9,xx*.0025)||zz<std::max(1.e-9,xx*.0025))return false;
+        return xy>0.&&xy*xy>=.64*xx*yy;
     }
     static double refineEpoch(const std::array<float,Capacity>& input,
           std::uint64_t time,std::size_t writeIndex,std::int64_t peak,

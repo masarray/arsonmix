@@ -671,7 +671,8 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
         auto e=std::make_unique<Engine>();
         auto settings=s;settings.wet=wet;
         if(!e->prepare(input.rate)||!e->setSettings(settings)||
-            !e->setCausalEnvelopeForOfflineReference(variant!=0)||
+            !e->setCausalEnvelopeForOfflineReference(variant==1||variant==2)||
+            !e->setAdaptiveEpochForOfflineReference(variant==3)||
             !e->setAdaptiveEnvelopeForOfflineReference(variant==2)||!e->setRendererTraceForOfflineTests(trace))
             throw std::runtime_error("qualification engine setup");
         Run x;x.pcm=input;x.us.reserve(input.left.size()/block+2);
@@ -702,15 +703,16 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
     };
     const auto dry=render(0,0.f).pcm;
     writeWave(folder/"dry_aligned.wav",dry);
-    std::array<Run,3> runs;
-    std::array<double,3> rmsValues{},peaks{};
-    const std::array<const char*,3> names{{"live_baseline","H26","H27"}};
+    constexpr int variants=4;
+    std::array<Run,variants> runs;
+    std::array<double,variants> rmsValues{},peaks{};
+    const std::array<const char*,variants> names{{"live_baseline","H26","H27","H28_epoch"}};
     std::ofstream csv(folder/"qualification.csv",std::ios::trunc);
     if(!csv)throw std::runtime_error("qualification report open");
     csv<<"variant,rate,frames,voices,block,mode,updates,total_losses,high_losses,mix_rms,mix_peak,over_unity,backing_rms,right_step_over_rms,measured_blocks,p50_us,p99_us,max_us,deadline_us,over_budget\n";
     csv<<std::setprecision(10);
     const double deadline=1.e6*block/input.rate;
-    for(int v=0;v<3;++v){
+    for(int v=0;v<variants;++v){
         auto& x=runs[v];x=render(v,1.f);
         const auto backing=subtract(x.pcm,dry);
         const auto a=earEvidence(x.pcm.left,0,x.pcm.left.size());
@@ -732,6 +734,9 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
     }
     // Exact native replay with trace enabled, never contaminate timing.
     const auto traced=render(0,1.f,true);
+    const auto traced28=render(3,1.f,true);
+    if(!same(traced28.pcm,runs[3].pcm)||traced28.losses!=runs[3].losses)
+        throw std::runtime_error("H28 trace changed PCM/counts");
     if(!same(traced.pcm,runs[0].pcm)||traced.losses!=runs[0].losses)
         throw std::runtime_error("H27C trace changed PCM/counts");
     std::ofstream reasons(folder/"renderer_loss_reasons.csv",std::ios::trunc);
@@ -746,12 +751,12 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
     }
     if(!reasons)throw std::runtime_error("H27C loss reasons write");
     std::ofstream admissions(folder/"renderer_admission.csv",std::ios::trunc);
-    admissions<<"role,attempts,missing_peak,pool_blocked,support_rejected,admitted,clock_resets\n";
-    for(int v=0;v<Engine::maxVoices;++v){
-        const auto& a=traced.admissions[v];
+    admissions<<"variant,role,attempts,missing_peak,pool_blocked,support_rejected,admitted,clock_resets,adaptive_attempts,adaptive_accepted,adaptive_sites\n";
+    for(int version:{0,3})for(int v=0;v<Engine::maxVoices;++v){
+        const auto& a=(version==0?traced:traced28).admissions[v];
         if(a.attempts!=a.missingPeak+a.poolBlocked+a.supportRejected+a.admitted)
             throw std::runtime_error("H28A admission accounting");
-        admissions<<v<<','<<a.attempts<<','<<a.missingPeak<<','<<a.poolBlocked<<','<<a.supportRejected<<','<<a.admitted<<','<<a.clockResets<<'\n';
+        admissions<<names[version]<<','<<v<<','<<a.attempts<<','<<a.missingPeak<<','<<a.poolBlocked<<','<<a.supportRejected<<','<<a.admitted<<','<<a.clockResets<<','<<a.adaptiveAttempts<<','<<a.adaptiveAccepted<<','<<a.adaptiveSites<<'\n';
     }
     if(!admissions)throw std::runtime_error("H28A admission report write");
     // RMS-matched audition copies only: no gain added to raw evidence.
@@ -759,12 +764,12 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
     // scale. This is not BS.1770 loudness or true-peak normalization.
     const double target=*std::min_element(rmsValues.begin(),rmsValues.end());
     if(target<1.e-7)throw std::runtime_error("qualification silent input");
-    std::array<double,3> gain{};double largest=0.;
-    for(int v=0;v<3;++v){gain[v]=target/rmsValues[v];largest=std::max(largest,peaks[v]*gain[v]);}
+    std::array<double,variants> gain{};double largest=0.;
+    for(int v=0;v<variants;++v){gain[v]=target/rmsValues[v];largest=std::max(largest,peaks[v]*gain[v]);}
     const double common=largest>.95?.95/largest:1.;
     // Reproducible permutation per input PCM size/rate/key/voice count.
     // Conceal mapping from listener; evaluator retains the key file.
-    std::array<int,3> order{{0,1,2}};
+    std::array<int,variants> order{{0,1,2,3}};
     std::mt19937 rng(static_cast<unsigned>(input.left.size())^input.rate^
                      (unsigned(s.key)<<8)^(unsigned(s.voices)<<16));
     std::shuffle(order.begin(),order.end(),rng);
@@ -772,7 +777,7 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
     std::ofstream score(folder/"listener_scores.csv",std::ios::trunc);
     if(!key||!score)throw std::runtime_error("qualification score open");
     key<<"sample,variant,linear_gain\n";score<<"sample,naturalness_0_100,crackle_free_0_100,blend_0_100,notes\n";
-    for(int i=0;i<3;++i){
+    for(int i=0;i<variants;++i){
         const int v=order[i];auto x=runs[v].pcm;
         const float g=static_cast<float>(gain[v]*common);
         for(auto* c:{&x.left,&x.right})for(auto& sample:*c)sample*=g;

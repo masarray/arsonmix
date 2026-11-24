@@ -61,7 +61,7 @@ def main():
         subprocess.run([renderer,"--qualify",str(src),str(folder),"0","0","5","64"],check=True,timeout=60)
         with (folder/"qualification.csv").open(newline="") as f:
             data = list(csv.DictReader(f))
-        if len(data)!=3 or {x["variant"] for x in data}!={"live_baseline","H26","H27"}:
+        if len(data)!=4 or {x["variant"] for x in data}!={"live_baseline","H26","H27","H28_epoch"}:
             raise RuntimeError("incomplete matched variants")
         for row in data:
             row = {"clip":name,"blob_sha":sha,**row}
@@ -75,7 +75,7 @@ def main():
             print("H27_LOSS_REASON clip="+name+" "+" ".join(f"{k}={v}" for k,v in row.items()),flush=True)
         with (folder/"renderer_admission.csv").open(newline="") as f:
             admissions = list(csv.DictReader(f))
-        if len(admissions)!=5:
+        if len(admissions)!=10:
             raise RuntimeError("incomplete admission accounting")
         for row in admissions:
             print("H28_ADMISSION clip="+name+" "+" ".join(f"{k}={v}" for k,v in row.items()),flush=True)
