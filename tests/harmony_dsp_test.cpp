@@ -843,6 +843,93 @@ static void testLowerPresenceAndPresets(){
     need(after>before+3.&&after>-12.&&after<2.,"H12 preset audibility");
   }
 }
+static void testBackingContinuity(){
+  constexpr double tau=6.283185307179586;
+  // Isolate readiness loss/re-entry without the detector obscuring it.
+  for(int rate:{32000,48000,96000,192000}){
+    BackingRenderSeam seam;seam.prepare(rate);
+    for(int i=0;i<rate/50;++i)seam.process(.15f,.45f,true,1.f);
+    const float last=seam.process(.15f,.45f,true,1.f);
+    need(seam.process(.16f,-.7f,false,1.f)-last<.011f,"H13 loss step");
+    float previous=seam.process(.15f,-.7f,false,1.f);
+    for(int i=0;i<rate/100;++i){
+      const float now=seam.process(.15f,-.7f,false,1.f);
+      need(std::abs(now-previous)<.015f,"H13 loss bridge discontinuity");
+      previous=now;
+    }
+    need(std::abs(previous-.15f)<1.e-6f,"H13 carrier did not recover");
+    for(int i=0;i<rate/100;++i){
+      const float now=seam.process(.15f,-.45f,true,1.f);
+      need(std::abs(now-previous)<.016f,"H13 reacquire bridge discontinuity");
+      previous=now;
+    }
+    need(std::abs(previous+.45f)<1.e-6f,"H13 candidate did not recover");
+  }
+  // Strong shifting harmonics, long high phrase, vibrato and brief
+  // unvoiced segments, with actual Music-guide key/chord transitions.
+  for(int rate:{48000,96000})for(int voices:{3,5}){
+    const int n=rate*4;
+    LeadFixture src{std::vector<float>(n),std::vector<float>(n)};
+    double phase=0.;unsigned rng=17;
+    for(int i=0;i<n;++i){
+      const double time=double(i)/rate;
+      const double hz=time<1.4?329.6276:time<2.7?659.2551:440.;
+      phase+=tau*hz*std::exp2(65.*std::sin(tau*5.4*time)/1200.)/rate;
+      const double vowel=.35+.25*std::sin(tau*1.7*time);
+      rng=1664525u*rng+1013904223u;
+      const double noise=double(rng>>8)/16777216.-.5;
+      const bool gap=i%(rate/3)<rate/100;
+      const double x=.12*std::sin(phase)+vowel*.16*std::sin(2*phase+.3)
+         +.065*std::sin(3*phase+1.1)+.026*std::sin(5*phase+.6);
+      src.left[i]=src.right[i]=static_cast<float>(gap?.08*noise:x);
+    }
+    auto run=[&](bool modern,bool wet,int block){
+      auto e=std::make_unique<Engine>();Settings s;
+      s.voices=voices;s.wet=wet?1.f:0.f;s.color=.78f;s.space=1.f;
+      s.guideMode=1;
+      need(e->prepare(rate)&&e->setContinuityForOfflineReference(modern)&&e->setSettings(s),
+           "H13 setup");
+      auto out=src;
+      for(int at=0;at<n;){
+        // Split at control events; callback partition must not move them.
+        if(at==rate*2)e->setGuideChord(5,0);
+        if(at==rate*3)e->setGuideChord(0,0);
+        if(at==0)e->setGuideChord(0,0);
+        const int boundary=at<2*rate?2*rate:at<3*rate?3*rate:n;
+        const int count=std::min(block,boundary-at);
+        e->process(out.left.data()+at,out.right.data()+at,count);at+=count;
+      }
+      return out;
+    };
+    const auto old=run(false,true,127),now=run(true,true,127);
+    const auto dry=run(true,false,127),split=run(true,true,64);
+    need(now.left==split.left&&now.right==split.right,"H13 block parity");
+    need(dry.left==run(false,false,64).left,"H13 dry changed");
+    for(int ch=0;ch<2;++ch){
+      const auto& a=ch?old.right:old.left;const auto& b=ch?now.right:now.left;
+      const auto& lead=ch?dry.right:dry.left;
+      double ea=0.,eb=0.,maxA=0.,maxB=0.;std::vector<double> da,db;
+      for(int i=rate/2;i<n;++i){
+        const double x=a[i]-lead[i],y=b[i]-lead[i];
+        const double u=std::abs(x-(a[i-1]-lead[i-1]));
+        const double v=std::abs(y-(b[i-1]-lead[i-1]));
+        need(std::isfinite(y),"H13 nonfinite");
+        ea+=x*x;eb+=y*y;maxA=std::max(maxA,u);maxB=std::max(maxB,v);
+        da.push_back(u);db.push_back(v);
+      }
+      std::sort(da.begin(),da.end());std::sort(db.begin(),db.end());
+      const double pa=da[da.size()*999/1000],pb=db[db.size()*999/1000];
+      const double gain=10.*std::log10(eb/ea);
+      std::cout<<"H13_PCM rate="<<rate<<" voices="<<voices<<" ch="<<ch
+               <<" old_max="<<maxA<<" new_max="<<maxB
+               <<" old_p999="<<pa<<" new_p999="<<pb<<" wet_dB="<<gain<<std::endl;
+      // Edge metrics are proxies, not a click classifier: retain energy
+      // and prevent large regression while recording both stereo tails.
+      need(ea>1.&&eb>1.&&std::abs(gain)<2.&&maxB<.30&&pb<pa*1.15,
+           "H13 stereo continuity or level regression");
+    }
+  }
+}
 static void testContinuousDoubler(){
   constexpr double tau=6.283185307179586;
   for(int rate:{48000,96000})for(double hz:{220.,880.,1320.}){
@@ -1237,6 +1324,7 @@ int main(){
   testBackingUnity();
   need(highPass,"H3 HIGH presence or isolated fundamental failed; inspect all H3_HIGH rows");
   testUnvoicedGapPreservesWetTail();
+  testBackingContinuity();
   testLowerPresenceAndPresets();
   testContinuousDoubler();
   testUnisonDoubler();

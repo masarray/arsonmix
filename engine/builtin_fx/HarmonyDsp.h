@@ -102,6 +102,34 @@ private:
     float lowAlpha_=0.f,highNorm_=1.f,energyAlpha_=0.f,attack_=0.f,release_=0.f;
     float low_=0.f,total_=0.f,high_=0.f,attenuation_=0.f;
 };
+// Bridge a discontinuous PSOLA residual to an always-advancing
+// granular carrier. A short valid run is required before re-entry.
+// No held absolute vocal sample, extra PCM history or output delay.
+class BackingRenderSeam final {
+public:
+    void prepare(double rate) noexcept {
+        ramp_=std::max(1,static_cast<int>(std::lround(rate*.003)));
+        warm_=std::max(1,static_cast<int>(std::lround(rate*.001)));
+        reset();
+    }
+    void reset() noexcept {run_=0;pos_=ramp_;active_=false;last_=start_=0.f;}
+    float process(float carrier,float candidate,bool ready,float blend) noexcept {
+        if(ready){if(run_<warm_)++run_;}else run_=0;
+        const bool active=run_>=warm_;
+        if(active!=active_){start_=last_;pos_=0;active_=active;}
+        const float target=active_?blend*(candidate-carrier):0.f;
+        if(pos_<ramp_){
+            const float u=static_cast<float>(pos_++)/ramp_;
+            const float w=u*u*(3.f-2.f*u);
+            last_=start_*(1.f-w)+target*w;
+        }else last_=target;
+        return carrier+last_;
+    }
+private:
+    int ramp_=1,warm_=1,run_=0,pos_=1;
+    bool active_=false;
+    float last_=0.f,start_=0.f;
+};
 class Engine final {
 public:
     static constexpr int maxVoices=5;
@@ -150,6 +178,8 @@ public:
         leadRendering_=false;leadSeam_.prepare(rate);voicePlanner_.reset();
         pitchSyncBlend_.fill(0.f);pitchSyncFiltered_.fill(0.f);
         pitchSyncValid_.fill(0.f);
+        for(auto& seam:backingSeams_)seam.prepare(rate);
+        continuityReferenceEnabled_=true;
         periodContinuity_.reset();
         sourcePeriodSamples_=0.f;sourceConfidence_=0.f;sampleClock_=0;
         uncertainPitchHops_=0;weakSyncHops_=0;pitchSyncStable_=false;
@@ -372,6 +402,10 @@ public:
         if(processed_)return false;
         resonanceReferenceEnabled_=enabled;return true;
     }
+    bool setContinuityForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        continuityReferenceEnabled_=enabled;return true;
+    }
     bool setLowerFocusForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
         lowerFocusReferenceEnabled_=enabled;return true;
@@ -511,6 +545,7 @@ public:
                 pitchSyncBlend_.fill(0.f);
                 pitchSyncValid_.fill(0.f);
                 pitchSyncFiltered_.fill(0.f);
+                for(auto& seam:backingSeams_)seam.reset();
                 periodContinuity_.reset();
                 sourcePeriodSamples_=0.f;
                 sourceConfidence_=0.f;
@@ -707,7 +742,7 @@ private:
                 sourcePeriodSamples_,effectiveRatio,static_cast<float>(latency_)+arrival)))
             sync=pitchSync_.process(voice,sampleClock_,write_,mono_,
                 sourcePeriodSamples_,effectiveRatio,
-                static_cast<float>(latency_)+arrival,scale);
+                static_cast<float>(latency_)+arrival,scale,continuityReferenceEnabled_);
         float& colorState=pitchSyncFiltered_[ix];
         // Invalid PSOLA epochs must never inject zero into the high-voice
         // output while a crossfade is still active.
@@ -720,7 +755,8 @@ private:
         float& blend=pitchSyncBlend_[ix];
         blend+=pitchSyncAlpha_*((confident?1.f:0.f)-blend);
         const float windowedSync=colorState*valid+f*(1.f-valid);
-        y=f*(1.f-blend)+windowedSync*blend;
+        y=continuityReferenceEnabled_?backingSeams_[ix].process(f,colorState,sync.ready,blend):
+            f*(1.f-blend)+windowedSync*blend;
         phase_[ix]+=1.f/static_cast<float>(grain_);
         if(phase_[ix]>=1.f)phase_[ix]-=1.f;
         return y;
@@ -977,6 +1013,8 @@ private:
     bool expressionReferenceEnabled_=true,identityReferenceEnabled_=true;
     bool resonanceReferenceEnabled_=true,articulationReferenceEnabled_=true;
     BackingArticulation articulation_{};
+    std::array<BackingRenderSeam,maxVoices> backingSeams_{};
+    bool continuityReferenceEnabled_=true;
     std::array<float,maxVoices> pitchSyncBlend_{},pitchSyncFiltered_{},pitchSyncValid_{};
     float space_=0.f,targetSpace_=0.f;
     float gain_=1.f,targetGain_=1.f,targetCorrection_=0.f;

@@ -103,7 +103,27 @@ static void testResonanceScaling(){
                  "H8 resonance changed fundamental");
     }
 }
+static void testResumeAfterGap(){
+    for(int rate:{48000,96000}){
+        Shifter retained{},fresh{};
+        std::array<float,16384> ring{};
+        const int start=rate/10,resume=start+rate/40,end=resume+rate/10;
+        for(int i=0;i<end;++i){
+            ring[static_cast<std::size_t>(i)&16383]=static_cast<float>(
+                .18*std::sin(6.283185307179586*440.*i/rate));
+            if(i>=start&&i<resume)continue;
+            const auto x=retained.process(0,i,static_cast<std::size_t>(i)&16383,
+                ring,static_cast<float>(rate/440.),1.6f,rate*.036f);
+            if(i>=resume){
+                const auto y=fresh.process(0,i,static_cast<std::size_t>(i)&16383,
+                    ring,static_cast<float>(rate/440.),1.6f,rate*.036f);
+                need(x.ready==y.ready&&x.sample==y.sample,"H13 stale epoch after skipped calls");
+            }
+        }
+    }
+}
 int main(){
+    testResumeAfterGap();
     testResonanceScaling();
     // Actual source-period pitch shifting, not just a sine-wave finite test.
     // Three original harmonics approximate one voiced source; FFT/formant and
