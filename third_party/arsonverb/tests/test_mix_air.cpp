@@ -24,13 +24,13 @@ static double shelfGain(float hz,float air,float fs) {
     }
     return std::sqrt(after/before);
 }
-static double render(int mode,float mix,bool mono) {
+static double render(int mode,float mix,bool mono,bool musical=false,float duck=0.f) {
     arverb::Engine e;
     e.loadPreset(arverb::Preset::VocalPlate);
     e.setAlgorithm(static_cast<arverb::Algorithm>(mode));
     e.setParameter(arverb::Parameter::Mix,mix);
-    e.setParameter(arverb::Parameter::DuckAmount,0.0f);
-    e.prepare(48000.0);
+    e.setParameter(arverb::Parameter::DuckAmount,duck);
+    e.prepare(48000.0,musical);
     std::array<float,128> l{},r{},a{},b{};
     double sum=0.0;
     for(int block=0;block<600;++block) {
@@ -113,6 +113,23 @@ int main() {
             check(std::fabs(rms-prev)<dry*1.5,
                   "Mix sweep no extreme abrupt level jump");
             prev=rms;
+        }
+    }
+    // Musical profile: actual mono-fold output, with nonzero ducking.
+    // No feedback changes; doubling the return at Duck=0 must be exact.
+    for(int mode=0;mode<4;++mode) {
+        const double oldWet=render(mode,1.f,true,false,0.f);
+        const double newWet=render(mode,1.f,true,true,0.f);
+        const double sung=render(mode,1.f,true,true,.22f);
+        const double dry=render(mode,0.f,true,true,0.f);
+        std::printf("Reverb-Sis mode=%d dry=%.6f oldWet=%.6f wet=%.6f ducked=%.6f\n",
+                    mode,dry,oldWet,newWet,sung);
+        check(std::abs(newWet/oldWet-2.0)<.001,"calibrated +6 dB wet return");
+        check(sung>newWet*.65,"normal duck cannot erase the wet return");
+        check(sung>dry*.12,"audible wet-heavy mono fold with real duck");
+        for(float mix:{.25f,.5f,.75f,1.f}) {
+            const double rms=render(mode,mix,true,true,.22f);
+            check(rms>dry*.12 && rms<dry*3.4,"musical Mix no severe sustained level collapse");
         }
     }
     // P8: prepare() must prime coefficients, not defer expensive

@@ -297,10 +297,10 @@ public:
         title_.setComponentID("armix.reverb.title");
         addAndMakeVisible(title_);
 
-        for(int i=0;i<8;++i)
+        for(int i=0;i<reverbSisPresetCount;++i)
             preset_.addItem(vocalReverbPresetNames[static_cast<std::size_t>(i)],i+1);
-        preset_.addItem("Custom / saved",9);
-        preset_.setSelectedId(draft_.preset>=0?draft_.preset+1:9,juce::dontSendNotification);
+        preset_.addItem("Custom / saved",reverbSisCustomItem);
+        preset_.setSelectedId(draft_.preset>=0?draft_.preset+1:reverbSisCustomItem,juce::dontSendNotification);
         preset_.setColour(juce::ComboBox::backgroundColourId,reverb_ui::rgb(12,29,44));
         preset_.setColour(juce::ComboBox::outlineColourId,reverb_ui::rgb(41,85,108));
         preset_.setColour(juce::ComboBox::textColourId,pale);
@@ -309,7 +309,7 @@ public:
         preset_.setLookAndFeel(&dial_);
         preset_.onChange=[this] {
             const auto i=preset_.getSelectedId();
-            if(i>=1&&i<=8) {
+            if(i>=1&&i<=reverbSisPresetCount) {
                 draft_=vocalReverbFactoryPreset(i-1);
                 syncControls();
                 submitDraft();
@@ -605,7 +605,7 @@ private:
     }
     void selectRelativePreset(int delta) {
         const int current=draft_.preset<0?0:draft_.preset;
-        const int index=(current+delta+8)%8;
+        const int index=(current+delta+reverbSisPresetCount)%reverbSisPresetCount;
         draft_=vocalReverbFactoryPreset(index);
         preset_.setSelectedId(index+1,juce::dontSendNotification);
         syncControls();
@@ -613,7 +613,7 @@ private:
     }
     void markCustom() {
         draft_.preset=-1;
-        preset_.setSelectedId(9,juce::dontSendNotification);
+        preset_.setSelectedId(reverbSisCustomItem,juce::dontSendNotification);
         submitDraft();
         // Native slider and ComboBox already invalidate their own pixels.
     }

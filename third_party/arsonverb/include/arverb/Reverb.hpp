@@ -104,6 +104,9 @@ public:
     // Allocation and configuration ONLY here, never inside process().
     // Supported sample rates: 8 kHz - 192 kHz. Throws std::invalid_argument for invalid rates.
     void prepare(double sampleRate);
+    // Host-selected voicing, immutable during processing. Existing core/C ABI
+    // keeps original behavior; Reverb-Sis selects the calibrated musical return.
+    void prepare(double sampleRate, bool musicalReturn);
     void reset() noexcept;
     bool prepared() const noexcept;
 

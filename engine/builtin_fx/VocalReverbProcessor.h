@@ -11,6 +11,8 @@
 #include <memory>
 
 namespace armix::builtin_fx {
+inline constexpr int reverbSisPresetCount=12;
+inline constexpr int reverbSisCustomItem=reverbSisPresetCount+1;
 struct VocalReverbSettings {
     std::array<float, arverb::parameterCount> values{};
     int algorithm=1; // Plate
@@ -18,7 +20,7 @@ struct VocalReverbSettings {
 };
 inline bool validVocalReverbSettings(const VocalReverbSettings& v) noexcept {
     if(v.algorithm<0||v.algorithm>=static_cast<int>(arverb::algorithmCount)||
-       v.preset < -1 || v.preset >= 8) return false;
+       v.preset < -1 || v.preset >= reverbSisPresetCount) return false;
     for(std::size_t i=0;i<v.values.size();++i) {
         const auto& d=arverb::parameterInfo(static_cast<arverb::Parameter>(i));
         if(!std::isfinite(v.values[i]) || v.values[i]<d.minimum ||
@@ -26,15 +28,17 @@ inline bool validVocalReverbSettings(const VocalReverbSettings& v) noexcept {
     }
     return true;
 }
-inline constexpr std::array<const char*,8> vocalReverbPresetNames{{
+inline constexpr std::array<const char*,reverbSisPresetCount> vocalReverbPresetNames{{
     "Krenyess Vocal", "Sweet Karaoke", "Crisp Pop Plate", "Silky Ballad",
-    "Tight Live Chamber", "Air Vocal Hall", "Warm Vintage Plate", "Large Stage Hall"
+    "Tight Live Chamber", "Air Vocal Hall", "Warm Vintage Plate", "Large Stage Hall",
+    "Acoustic Guitar Room", "Piano Concert Hall", "Drum Studio Room", "Keys Dream Hall"
 }};
 inline VocalReverbSettings vocalReverbFactoryPreset(int index) {
     using P=arverb::Preset;
-    constexpr std::array<P,8> origins{{
+    constexpr std::array<P,reverbSisPresetCount> origins{{
         P::VocalPlateClean,P::VocalPlate,P::VocalPlateClean,P::AiryBallad,
-        P::VocalChamberTight,P::VocalWideAir,P::VocalPlateWarm,P::VocalHallBallad
+        P::VocalChamberTight,P::VocalWideAir,P::VocalPlateWarm,P::VocalHallBallad,
+        P::GuitarShortSpace,P::PianoHallWarm,P::DrumRoomTight,P::KeysStereoWash
     }};
     if(index<0||index>=static_cast<int>(origins.size()))index=0;
     VocalReverbSettings result;
@@ -43,37 +47,61 @@ inline VocalReverbSettings vocalReverbFactoryPreset(int index) {
     result.preset=index;
     using Param=arverb::Parameter;
     auto put=[&](Param key,float value) {result.values[static_cast<std::size_t>(key)]=value;};
+    // Keep stable factory indices and serialized parameter IDs. Retune only
+    // factory values; custom/previously saved numeric settings remain exact.
+    // Wet return is separately calibrated in Engine::prepare(rate,true).
     switch(index) {
-        case 0: // clear bright vocal sheen; preserve intelligibility
-            put(Param::Mix,.18f);put(Param::PreDelayMs,52.f);
-            put(Param::DecaySeconds,2.05f);put(Param::Diffusion,.89f);
-            put(Param::DampingHz,8900.f);put(Param::LowCutHz,300.f);
-            put(Param::HighCutHz,14200.f);put(Param::Width,1.24f);
-            put(Param::EarlyLevel,.16f);put(Param::DuckAmount,.43f);break;
+        case 0: // bright, present singing plate
+            put(Param::Mix,.28f);put(Param::PreDelayMs,34.f);
+            put(Param::DecaySeconds,2.25f);put(Param::Diffusion,.88f);
+            put(Param::DampingHz,10400.f);put(Param::LowCutHz,150.f);
+            put(Param::HighCutHz,15500.f);put(Param::Width,1.15f);
+            put(Param::EarlyLevel,.28f);put(Param::DuckAmount,.22f);break;
         case 1:
-            put(Param::Mix,.17f);put(Param::PreDelayMs,44.f);
-            put(Param::DecaySeconds,1.7f);put(Param::LowCutHz,240.f);
-            put(Param::HighCutHz,11200.f);put(Param::DuckAmount,.43f);break;
+            put(Param::Mix,.26f);put(Param::PreDelayMs,29.f);
+            put(Param::DecaySeconds,1.85f);put(Param::LowCutHz,155.f);
+            put(Param::HighCutHz,12400.f);put(Param::EarlyLevel,.30f);
+            put(Param::DuckAmount,.24f);break;
         case 2:
-            put(Param::Mix,.18f);put(Param::PreDelayMs,38.f);
-            put(Param::DecaySeconds,1.55f);put(Param::Diffusion,.94f);
-            put(Param::HighCutHz,12700.f);put(Param::DuckAmount,.52f);break;
+            put(Param::Mix,.25f);put(Param::PreDelayMs,28.f);
+            put(Param::DecaySeconds,1.65f);put(Param::Diffusion,.9f);
+            put(Param::LowCutHz,170.f);put(Param::HighCutHz,14500.f);
+            put(Param::EarlyLevel,.30f);put(Param::DuckAmount,.24f);break;
         case 3:
-            put(Param::Mix,.22f);put(Param::PreDelayMs,67.f);
-            put(Param::DecaySeconds,3.1f);put(Param::HighCutHz,10400.f);break;
+            put(Param::Mix,.33f);put(Param::PreDelayMs,48.f);
+            put(Param::DecaySeconds,3.2f);put(Param::LowCutHz,160.f);
+            put(Param::HighCutHz,12000.f);put(Param::EarlyLevel,.25f);
+            put(Param::DuckAmount,.22f);break;
         case 4:
-            put(Param::Mix,.13f);put(Param::PreDelayMs,22.f);
-            put(Param::DecaySeconds,.95f);put(Param::DuckAmount,.49f);break;
+            put(Param::Mix,.22f);put(Param::PreDelayMs,14.f);
+            put(Param::DecaySeconds,1.05f);put(Param::LowCutHz,135.f);
+            put(Param::EarlyLevel,.48f);put(Param::DuckAmount,.20f);break;
         case 5:
-            put(Param::Mix,.17f);put(Param::PreDelayMs,62.f);
-            put(Param::DecaySeconds,2.65f);put(Param::LowCutHz,340.f);
-            put(Param::HighCutHz,13000.f);put(Param::DuckAmount,.51f);break;
+            put(Param::Mix,.30f);put(Param::PreDelayMs,43.f);
+            put(Param::DecaySeconds,2.8f);put(Param::LowCutHz,170.f);
+            put(Param::HighCutHz,15200.f);put(Param::Width,1.25f);
+            put(Param::EarlyLevel,.24f);put(Param::DuckAmount,.22f);break;
         case 6:
-            put(Param::Mix,.19f);put(Param::HighCutHz,7300.f);
-            put(Param::DampingHz,5300.f);break;
+            put(Param::Mix,.29f);put(Param::LowCutHz,140.f);
+            put(Param::HighCutHz,8500.f);put(Param::DampingHz,5300.f);
+            put(Param::EarlyLevel,.30f);put(Param::DuckAmount,.18f);break;
         case 7:
-            put(Param::Mix,.21f);put(Param::PreDelayMs,76.f);
-            put(Param::DecaySeconds,4.1f);put(Param::DuckAmount,.62f);break;
+            put(Param::Mix,.32f);put(Param::PreDelayMs,55.f);
+            put(Param::DecaySeconds,4.1f);put(Param::LowCutHz,165.f);
+            put(Param::EarlyLevel,.24f);put(Param::DuckAmount,.24f);break;
+        case 8:
+            put(Param::Mix,.24f);put(Param::PreDelayMs,16.f);
+            put(Param::LowCutHz,110.f);put(Param::EarlyLevel,.42f);
+            put(Param::DuckAmount,.08f);break;
+        case 9:
+            put(Param::Mix,.28f);put(Param::LowCutHz,95.f);
+            put(Param::EarlyLevel,.32f);put(Param::DuckAmount,.08f);break;
+        case 10:
+            put(Param::Mix,.22f);put(Param::LowCutHz,100.f);
+            put(Param::EarlyLevel,.62f);put(Param::DuckAmount,.06f);break;
+        case 11:
+            put(Param::Mix,.32f);put(Param::LowCutHz,140.f);
+            put(Param::Width,1.25f);put(Param::DuckAmount,.08f);break;
     }
     return result;
 }
@@ -89,7 +117,7 @@ public:
         desired_=vocalReverbFactoryPreset(0);
         storeAccepted(desired_,0);
     }
-    const juce::String getName() const override {return "Vocal Reverb";}
+    const juce::String getName() const override {return "Reverb-Sis";}
     bool acceptsMidi() const override {return false;}
     bool producesMidi() const override {return false;}
     bool isMidiEffect() const override {return false;}
@@ -114,7 +142,7 @@ public:
         // P8 upstream primes coefficient targets in prepare(). Stage the
         // RESTORED audio settings BEFORE prepare, never in the first callback.
         applyToEngine(s);
-        engine_.prepare(rate); // CONTROL/host suspended; only place for allocation
+        engine_.prepare(rate,true); // CONTROL/host suspended; only place for allocation
         rate_=rate;
         renderedOnAir_=false;
         fullyBypassed_=false;

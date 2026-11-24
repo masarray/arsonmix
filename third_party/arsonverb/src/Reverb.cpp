@@ -164,6 +164,9 @@ const ParameterInfo& parameterInfo(Parameter parameter) noexcept {
 
 struct Engine::State {
     float sampleRate = 0.0f;
+    bool musicalReturn = false;
+    float wetReturnTrim = 1.0f;
+    float presenceDuckScale = 1.0f;
     float smoother = 0.0f;
     float envelopeAttack = 0.0f;
     float envelopeRelease = 0.0f;
@@ -257,13 +260,19 @@ Engine::~Engine() = default;
 
 bool Engine::prepared() const noexcept { return state_->sampleRate > 0.0f; }
 
-void Engine::prepare(double sampleRate) {
+void Engine::prepare(double sampleRate) { prepare(sampleRate,false); }
+
+void Engine::prepare(double sampleRate, bool musicalReturn) {
     if (!std::isfinite(sampleRate) || sampleRate < 8000.0 || sampleRate > 192000.0)
         throw std::invalid_argument("arverb sample rate must be 8000..192000 Hz");
 
     State& s = *state_;
     // Allocation is allowed here only, when the host has suspended processing.
     s.sampleRate = static_cast<float>(sampleRate);
+    s.musicalReturn = musicalReturn;
+    // +6.02 dB wet return only. Feedback/injection/RT60 remain unchanged.
+    s.wetReturnTrim = musicalReturn ? 2.0f : 1.0f;
+    s.presenceDuckScale = musicalReturn ? 0.60f : 1.0f;
     const float fs = s.sampleRate;
     s.millisecondsToSamples = fs * 0.001f;
     for (int t = 0; t < 6; ++t) {
@@ -653,19 +662,25 @@ void Engine::process(const float* inputLeft, const float* inputRight,
 
         // Presence shaping is a wet-only complement to existing broadband
         // ducking; no lookahead, new parameter, or FDN topology change.
-        s.presence.process(inL, inR, wetL, wetR, duckAmount);
+        s.presence.process(inL, inR, wetL, wetR, duckAmount * s.presenceDuckScale);
 
         const float mid = 0.5f * (wetL + wetR);
         const float side = 0.5f * (wetL - wetR) * width;
         const float loudness = std::max(std::fabs(inL), std::fabs(inR));
         const float envCoef = loudness > s.duckEnvelope ? s.envelopeAttack : s.envelopeRelease;
         s.duckEnvelope += envCoef * (loudness - s.duckEnvelope);
-        const float duckGain = 1.0f / (1.0f + 6.0f * duckAmount * s.duckEnvelope);
+        // Reverb-Sis: bounded musical ducking, max -6 dB at full depth,
+        // with a smooth knee and no dependence on arbitrary input gain.
+        // Keep the send useful at 100% wet even during sustained singing.
+        const float duckGain = s.musicalReturn
+            ? 1.0f - 0.5f * duckAmount * (s.duckEnvelope / (0.12f + s.duckEnvelope))
+            : 1.0f / (1.0f + 6.0f * duckAmount * s.duckEnvelope);
+        const float returnGain = wetGain * s.wetReturnTrim * duckGain;
         // Exact sine/cos gain law at stable settings. No sample-loop
         // trigonometry, LUT, indirection or branch; both gains are smoothed.
         // 50% retains ~-3dB of direct signal; 100% is pure wet/send.
-        outputLeft[frame] = dryGain * inL + wetGain * duckGain * (mid + side);
-        outputRight[frame] = dryGain * inR + wetGain * duckGain * (mid - side);
+        outputLeft[frame] = dryGain * inL + returnGain * (mid + side);
+        outputRight[frame] = dryGain * inR + returnGain * (mid - side);
         if (s.preTapBlend < 1.0f) {
             s.preTapBlend = std::min(1.0f, s.preTapBlend + s.delayMorphStep);
             if (s.preTapBlend >= 1.0f) s.preTapCurrent = s.preTapNext;

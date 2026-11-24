@@ -15,14 +15,14 @@ int main() {
     juce::ScopedJuceInitialiser_GUI gui;
     using namespace armix::builtin_fx;
     static_assert(VocalReverbProcessor::stateBytes==68);
-    for(int i=0;i<8;++i)assert(validVocalReverbSettings(vocalReverbFactoryPreset(i)));
+    for(int i=0;i<reverbSisPresetCount;++i)assert(validVocalReverbSettings(vocalReverbFactoryPreset(i)));
     const auto* entry=findNativeBuiltInFx(VocalReverbProcessor::catalogIdentity);
     assert(entry&&entry->showInPicker);
     assert(juce::String(entry->category)=="Reverb");
     assert(!entry->prepare(384000.,128,nullptr,0)); // pinned DSP max=192k
     assert(!entry->prepare(48000.,4,nullptr,0));
     auto created=entry->prepare(48000.,128,nullptr,0);
-    assert(created && created->getName()=="Vocal Reverb" && created->hasEditor());
+    assert(created && created->getName()=="Reverb-Sis" && created->hasEditor());
     // Test the real native JUCE faceplate, not a WebView mock or a fake
     // static rendered image. Dimensions and all param IDs are contract.
     // This host builds a private AudioProcessor::createEditor() facade.
@@ -65,7 +65,7 @@ int main() {
     assert(std::fabs(mainDecay->getValueFromText("3.25 s")-3.25)<1.e-6);
     assert(mainDecay->isVisible()&&mainMix->isVisible());
     assert(!mainDecay->getBounds().intersects(mainMix->getBounds()));
-    assert(presetSelect->getNumItems()==9 && algorithmSelect->getNumItems()==4);
+    assert(presetSelect->getNumItems()==reverbSisCustomItem && algorithmSelect->getNumItems()==4);
     // Combo label and down-chevron share EXACT row centre. Test both
     // native ComboBoxes rather than relying on developer screenshot eye.
     for(auto* combo : {presetSelect,algorithmSelect}) {
@@ -453,7 +453,7 @@ int main() {
             previous=id;
             VocalReverbSettings received{};
             if(concurrentReverb->acceptedSettings(received)) {
-                assert(received.preset>=0 && received.preset<8);
+                assert(received.preset>=0 && received.preset<reverbSisPresetCount);
                 const auto expected=vocalReverbFactoryPreset(received.preset);
                 assert(received.values==expected.values &&
                        received.algorithm==expected.algorithm);
@@ -466,7 +466,7 @@ int main() {
     });
     std::uint64_t concurrentLast=0;
     for(int i=0;i<5000;++i) {
-        concurrentLast=concurrentReverb->queueSettings(vocalReverbFactoryPreset(i%8));
+        concurrentLast=concurrentReverb->queueSettings(vocalReverbFactoryPreset(i%reverbSisPresetCount));
         assert(concurrentLast>0);
         if((i&31)==0)std::this_thread::yield();
     }
@@ -564,7 +564,7 @@ int main() {
     // Each singing preset must be an ACTUAL native C++ stereo wet tail.
     // Stage the preset BEFORE prepare() so its first ASIO callback does not
     // need to regenerate expensive reverb coefficients.
-    for(int program=0;program<8;++program) {
+    for(int program=0;program<reverbSisPresetCount;++program) {
         auto seed=entry->prepare(48000.,64,nullptr,0);
         auto* seedTyped=dynamic_cast<VocalReverbProcessor*>(seed.get());
         assert(seedTyped);
@@ -596,7 +596,8 @@ int main() {
                 if(block>32) {eLeft+=a*a;eRight+=b*b;eFold+=(a+b)*(a+b)*.25;}
             }
         }
-        assert(eLeft>1.e-10 && eRight>1.e-10 && eFold>1.e-11);
+        assert(eLeft>1.e-8 && eRight>1.e-8 && eFold>1.e-9);
+        assert(eFold>.08*.5*(eLeft+eRight)); // no predominantly antiphase tail
     }
 
     // Native rack bypass must NOT freeze an audible room tail. Drain only

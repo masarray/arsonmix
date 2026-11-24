@@ -758,10 +758,13 @@
       t.selected=previous.get(t.id)?.selected || false;
       if(typeof ch.fxRackBypassed==="boolean")t.fxOn=!ch.fxRackBypassed;
       if (Array.isArray(ch.inserts)) {
-        t.fx=Array.from({length:8},(_,i)=>ch.inserts[i]?.name||"None");
+        // Stable catalog identity, including restored sessions carrying the old name.
+        const displayFxName=fx=>fx?.catalogId==="armix.builtin.vocal-reverb.v1"?
+          "Reverb-Sis":fx?.name||"None";
+        t.fx=Array.from({length:8},(_,i)=>displayFxName(ch.inserts[i]));
         t.slotBypass=Array.from({length:8},(_,i)=>Boolean(ch.inserts[i]?.bypassed));
         t.fxInsertIds=Array.from({length:8},(_,i)=>ch.inserts[i]?
-          {name:ch.inserts[i].name,id:ch.inserts[i].id}:null);
+          {name:displayFxName(ch.inserts[i]),id:ch.inserts[i].id}:null);
       }
       if (ch.role==="MAIN") nextMaster=t;
       else nextTracks.push(t);
@@ -1743,7 +1746,7 @@
       vendor:"ArSonMix",category:"EQ",format:"Native",source:"builtin"}),
     Object.freeze({id:"armix.builtin.channel-compressor.v1",name:"Compressor",
       vendor:"ArSonMix",category:"Dynamics",format:"Native",source:"builtin"}),
-    Object.freeze({id:"armix.builtin.vocal-reverb.v1",name:"Vocal Reverb",
+    Object.freeze({id:"armix.builtin.vocal-reverb.v1",name:"Reverb-Sis",
       vendor:"ArSonMix",category:"Reverb",format:"Native",source:"builtin"}),
     Object.freeze({id:"armix.builtin.arson-harmony.v1",name:"Harmonice",
       vendor:"ArSonMix",category:"Utility",format:"Native",source:"builtin"}),
