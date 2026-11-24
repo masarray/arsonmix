@@ -3481,8 +3481,8 @@
       stopDemo();syncAddTrack(staged);
       if(pendingRetainedEditor?.acknowledged===true&&
          readModel.kind==="RETAINED_OFFLINE"&&
-         pendingRetainedEditor.epoch===offline.retainedDeviceEpoch&&
-         pendingRetainedEditor.revision===offline.retainedGraphRevision) {
+         pendingRetainedEditor.epoch===(offline.retainedCaptureDeviceEpoch??offline.retainedDeviceEpoch)&&
+         pendingRetainedEditor.revision===(offline.retainedCaptureGraphRevision??offline.retainedGraphRevision)) {
         const held=pendingRetainedEditor;
         const fx=staged.graph.channels.find(ch=>ch.id===held.channelId)
           ?.inserts?.[held.slot];

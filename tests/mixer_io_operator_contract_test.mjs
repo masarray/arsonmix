@@ -629,7 +629,9 @@ test('ASIO4ALL automatic rebind has bounded retries, succeeds only after verifie
   assert.match(service,/asioRecoveryGate_\.carryInternalEpoch\(engine_\.dryRoutingLabEpoch\(\)\)/);
   assert.match(service,/asioRecoveryGate_\.bindFailed\(now\)/);
   assert.match(service,/audioSetupWindow_->isVisible\(\)/);
-  assert.match(service,/restoreSavedMixerSession\(false,MixerBindingMode::verifiedAsioRestart\)/);
+  assert.doesNotMatch(service,/restoreSavedMixerSession\(false,MixerBindingMode::verifiedAsioRestart\)/);
+  assert.match(service,/engine_\.reattachRetainedAsioMixer\(\)/);
+  assert.match(service,/if\(retained && \(missingDevice \|\| directCallbackStalled_\)\)return/);
   assert.match(service,/asioRecoveryEpoch_=engine_\.dryRoutingLabEpoch\(\)/);
   assert.match(service,/setup\.useDefaultInputChannels=refreshWdm && !setup\.inputChannels\.isZero\(\)/);
   const apply=src.slice(src.indexOf('void applyCustomAudioDevice('),src.indexOf('void showDeviceSetup()'));

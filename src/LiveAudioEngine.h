@@ -1686,6 +1686,29 @@ public:
         return dryRoutingLab_.captureRoutedFxStates(epoch,revision,states);
     }
 
+    bool retainedCaptureAllowed() noexcept {
+        return allOutputsDisarmed() && !independent_.active() &&
+            dryRoutingLab_.hasRetainedNativeSession() && static_cast<bool>(acceptedMixerBinding_) &&
+            !routeReconfiguring_.load(std::memory_order_acquire) && !handoff_.busy() &&
+            fxMovePhase_.load(std::memory_order_acquire)==0 &&
+            diagnosticRoute_.load(std::memory_order_acquire)==armix::diagnostics::Route::normal;
+    }
+    juce::String beginRetainedMixerCapture(LiveDryRoutingLab::RetainedMixerCapture& capture) {
+        // Read accepted binding data, never query an absent driver.
+        if(!retainedCaptureAllowed())return "Retained mixer is not safely detached";
+        auto error=dryRoutingLab_.beginRetainedMixerCapture(capture);
+        if(error.isNotEmpty())return error;
+        capture.document.binding=*acceptedMixerBinding_;
+        capture.document.masterGain=masterGain_.load(std::memory_order_acquire);
+        capture.document.masterMute=masterMute_.load(std::memory_order_acquire);
+        capture.document.masterMono=masterMono_.load(std::memory_order_acquire);
+        return {};
+    }
+    juce::String stepRetainedMixerCapture(LiveDryRoutingLab::RetainedMixerCapture& capture,bool& done) {
+        if(!retainedCaptureAllowed())return "Retained mixer changed during capture";
+        return dryRoutingLab_.stepRetainedMixerCapture(capture,done);
+    }
+
     // Native session serialization is CONTROL-owned; all vendor binary reads
     // require MUTED MAIN/STREAM, with zero I/O in the physical audio callback.
     juce::String captureNativeMixerSession(

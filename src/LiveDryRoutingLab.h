@@ -30,6 +30,7 @@
 #include <functional>
 #include <memory>
 #include <span>
+#include <set>
 #include <vector>
 
 // P1E — user-opt-in, *DRY / NO VST3* physical multichannel routing laboratory.
@@ -2431,6 +2432,87 @@ public:
     }
     // CONTROL snapshot: genuine stable ChannelIds from the SAME publisher
     // as physical PCM. No guessed IDs, synthetic UI routes or JS DSP.
+
+    // Cooperative CONTROL capture of the exact detached FX bank. VST3 state
+    // calls retain their message-thread affinity; each turn captures at most
+    // one processor, without a wait/sleep loop or physical driver query.
+    struct RetainedMixerCapture final {
+        armix::session::MixerSessionDocument document;
+        std::vector<armix::shows::BinaryState> states;
+        std::shared_ptr<armix::mixer::DynamicChannelFxLeaseBank> owners;
+        std::set<juce::String> hashes;
+        std::uint64_t observedEpoch=0,ownerEpoch=0,revision=0;
+        std::size_t channel=0,slot=0;
+        juce::int64 total=0;
+    };
+    bool retainedCaptureCurrent(const RetainedMixerCapture& c) const noexcept {
+        return c.owners && hasRetainedNativeSession() && epoch()==c.observedEpoch &&
+            nativeAccepted_.deviceEpoch==c.ownerEpoch &&
+            nativeAccepted_.pcmRevision==c.revision &&
+            nativeAccepted_.fxOwners==c.owners &&
+            c.owners->epoch()==c.ownerEpoch && c.owners->revision()==c.revision;
+    }
+    juce::String beginRetainedMixerCapture(RetainedMixerCapture& capture) {
+        try {
+            RetainedMixerCapture c;
+            c.observedEpoch=epoch();
+            c.ownerEpoch=nativeAccepted_.deviceEpoch;
+            c.revision=nativeAccepted_.pcmRevision;
+            c.owners=nativeAccepted_.fxOwners;
+            if(!retainedCaptureCurrent(c))return "No authoritative retained native mixer";
+            if(c.owners->externalChannel().value)
+                return "External CH1 FX owner cannot yet be serialized independently";
+            auto& doc=c.document;
+            doc.roster=nativeAccepted_.graph.roster;
+            doc.acceptedRevision=doc.roster.revision();
+            doc.legacyIds=nativeAccepted_.graph.ids;
+            doc.outputs=nativeAccepted_.hardware;
+            doc.request=nativeAccepted_.graph.request;
+            doc.waitingAsioInputs=waitingAsioInputs_;
+            doc.externalOutputs=externalOutputAssignments_;
+            for(const auto& channel:doc.roster.channels()) {
+                if(c.owners->insertCount(channel.id)>static_cast<std::size_t>(FxGraph::maxInsertsPerStrip))
+                    return "Native FX count exceeded per-channel rack";
+                if(c.owners->rackBypassed(channel.id))doc.rackBypassed.push_back(channel.id);
+            }
+            capture=std::move(c);
+            return {};
+        } catch(...) {return "Retained mixer capture initialization failed";}
+    }
+    juce::String stepRetainedMixerCapture(RetainedMixerCapture& c,bool& done) {
+        done=false;
+        if(!retainedCaptureCurrent(c))return "Audio connection changed; retry offline FX";
+        try {
+            const auto& rows=c.document.roster.channels();
+            while(c.channel<rows.size() && c.slot>=c.owners->insertCount(rows[c.channel].id)) {
+                ++c.channel;c.slot=0;
+            }
+            if(c.channel==rows.size()){done=true;return {};}
+            armix::rt::RealtimeRenderPermit permit(rendering_);
+            if(!permit)return {}; // next CONTROL turn, never sleep
+            const auto id=rows[c.channel].id;
+            const auto* owner=c.owners->ownerForControl(id,c.slot);
+            if(!owner||!*owner||!(*owner)->processor||(*owner)->catalogId.isEmpty())
+                return "Native FX lease missing during capture";
+            juce::MemoryBlock bytes;
+            if(!(*owner)->tryCaptureState(bytes))
+                return "VST3 state not quiescent: "+(*owner)->catalogId;
+            if(!retainedCaptureCurrent(c))return "Audio connection changed; retry offline FX";
+            c.total+=static_cast<juce::int64>(bytes.getSize());
+            if(c.total>128LL*1024LL*1024LL)return "Native mixer vendor-state budget exceeded";
+            const auto hash=juce::SHA256(bytes).toHexString();
+            c.document.inserts.push_back({id,c.slot,(*owner)->catalogId,
+                {},hash,(*owner)->name,0,
+                (*owner)->bypassRequested.load(std::memory_order_acquire),(*owner)->instanceId});
+            if(c.hashes.insert(hash).second) {
+                armix::shows::BinaryState state;
+                state.sha256=hash;state.bytes=std::move(bytes);
+                c.states.push_back(std::move(state));
+            }
+            ++c.slot; // exactly one vendor read per CONTROL turn
+            return {};
+        } catch(...) {return "Retained FX state capture failed";}
+    }
 
     // CONTROL-only capture of the currently INSTALLED ChannelId PCM graph.
     // Fail closed if any vendor cannot supply a quiescent binary state.
