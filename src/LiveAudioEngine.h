@@ -439,8 +439,11 @@ public:
         // device-binding operation, not an implicit CLEAR MIXER command.
         // The JUCE selector may change the driver before its window closes.
     }
-    bool finishManualAudioSetup(bool reuseAsioBinding=true) {
+    bool finishManualAudioSetup(bool reuseAsioBinding=true,bool deferRetainedRebind=false) {
         if(!approveDirectRoute())return false;
+        // Pending offline edits own the document. Verify the physical edge
+        // only; the caller must publish that exact newer graph before MAIN.
+        if(deferRetainedRebind)return true;
         using Decision=armix::device::DeviceSessionDecision;
         switch(armix::device::decideDeviceSession(
                    true,dryRoutingLab_.ready(),

@@ -3242,6 +3242,7 @@ private:
     std::optional<std::uint64_t> autoMainCheckedRevision_;
     void serviceAutomaticMain() {
         if(autoMainEpoch_==0)return;
+        if(retainedOfflineFxActive_)return; // never arm the stale retained graph
         if(operatorOutputMuted_){autoMainEpoch_=0;return;}
         if(autoMainEpoch_!=engine_.dryRoutingLabEpoch() ||
            engine_.isMonitorEnabled()) {
@@ -3346,6 +3347,8 @@ private:
 
         const auto& typeName=prepared.requested.backend;
         if(prepared.requested.confirmRetainedPinMapping) {
+            if(retainedOfflineFxActive_)return send(false,"NEEDS_REMAP",
+                "Offline mixer edits pending. Apply the original verified audio device first.");
             if(!prepared.canConfirmRetainedPins || !engine_.confirmRetainedWasapiPortMapping())
                 return send(false,"NEEDS_REMAP",
                     "Cannot reuse mixer pins. Endpoint, pin layout or FX format is incompatible.");
@@ -8638,6 +8641,8 @@ private:
                 fault="Finish Show/backup work before arming hardware OUTPUT.";
             const auto expectedEpoch=args.getProperty("expectedEpoch",juce::var());
             const auto expectedRevision=args.getProperty("expectedRevision",juce::var());
+            if(arm && retainedOfflineFxActive_ && fault.isEmpty())
+                fault="Apply Audio I/O to restore the edited offline mixer before enabling output";
             if (arm && fault.isEmpty() && !expectedEpoch.isVoid() &&
                 static_cast<std::uint64_t>(static_cast<juce::int64>(expectedEpoch))
                     !=engine_.dryRoutingLabEpoch())
@@ -8688,6 +8693,45 @@ private:
 
     bool finishAudioSetupAndRecoverMixer(MixerBindingMode bindingMode=MixerBindingMode::exact) {
         if(logicalVendorEditor_ || mixerSessionWorker_.busy())return false;
+        if(retainedOfflineFxActive_) {
+            // Do not first reattach old PCM and then acknowledge Apply. The
+            // offline workspace is the newer authoritative edit document.
+            if(!logicalMixer_.loaded() || logicalMixer_.readOnly() ||
+               !engine_.hasRetainedNativeSession() ||
+               engine_.retainedNativeEpoch()!=retainedOfflineOwnerEpoch_ ||
+               !engine_.allOutputsDisarmed()) {
+                mixerSessionError_="Offline mixer owner changed; saved edits retained";
+                return false;
+            }
+            if(bindingMode==MixerBindingMode::exact && engine_.sameRetainedAsioDriver())
+                bindingMode=MixerBindingMode::verifiedAsioRestart;
+            auto doc=logicalMixer_.workspace().document();
+            auto states=logicalMixer_.workspace().states();
+            const bool resume=doc.resumeMain.value_or(false);
+            const auto id=doc.id;
+            if(!engine_.finishManualAudioSetup(false,true)) {
+                mixerSessionError_="Audio device verification failed; offline edits retained";
+                return false;
+            }
+            auto error=resolveMixerSessionCatalog(doc,false);
+            if(error.isEmpty())error=engine_.restoreNativeMixerSession(std::move(doc),states,false,nullptr,bindingMode);
+            if(error.isNotEmpty()) {
+                mixerSessionError_=error;
+                diagnostics_.record("OFFLINE_MIXER_REBIND_REJECTED",error);
+                return false;
+            }
+            retainedOfflineFxActive_=false;
+            retainedOfflineEpoch_=retainedOfflineOwnerEpoch_=retainedOfflineRevision_=0;
+            mixerSessionRecoveryPending_=false;
+            mixerSessionId_=id;
+            lastMixerSessionFingerprint_.clear();
+            mixerSessionError_.clear();
+            mixerSessionStatus_="RESTORED_MUTED";
+            closeAllPluginEditors();
+            diagnostics_.record("OFFLINE_MIXER_REBIND_ACCEPTED","Edited workspace published to verified PCM");
+            if(resume && !operatorOutputMuted_)requestAutomaticMain(false);
+            return true;
+        }
         const bool bound=engine_.finishManualAudioSetup(bindingMode!=MixerBindingMode::verifiedMainPinApply);
         const auto lab=engine_.status().getProperty("dryRoutingLab",{});
         const bool checkpoint=armix::session::NativeMixerSessionStore(settingsDirectory()).exists();

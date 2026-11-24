@@ -6980,7 +6980,7 @@ test("P0 real-time gain pointer cancellation compensates native PCM through one 
 
 test("P0 Audio I/O repair never steals retained offline FX editor recovery",()=>{
  const bridge=read("web/approved-native-bridge.js");
- assert.match(bridge,/if\(field==="input"&&event.type==="change"\)\s*recommendAudioRepair\("INPUT kehilangan perangkat audio"\)/);
+ assert.match(bridge,/if\(field==="input"&&event.type==="change"\)\s*recommendAudioRepair\("INPUT audio device disconnected"\)/);
  assert.match(bridge,/controller\?\.state\(\)\?\.current\?\.retained!==true\)\{/);
  assert.match(bridge,/retainedFxOfflineOpen/);
  assert.match(bridge,/pendingRetainedEditor=\{/);
@@ -7023,4 +7023,16 @@ test("P0 routing commands remain usable in More at all desktop widths",()=>{
  assert.match(page,/data-wire-open="routes"/);
  assert.match(page,/data-wire-open="matrix"/);
  assert.match(page,/data-wire-open="config"/);
+});
+
+
+test("P0 offline picker is presentation-only until selection and Apply restores edited graph before MAIN",()=>{
+ const bridge=read("web/approved-native-bridge.js"),native=read("src/Main.cpp"),engine=read("src/LiveAudioEngine.h");
+ assert.match(bridge,/if\(empty\)\{\s*scope\?\.openFastPicker\?\.\(t,slot,btn\);\s*return true;/);
+ assert.match(bridge,/action:"insertFx",selectedCatalogId:id/);
+ assert.match(bridge,/nativeHooks\.insertPlugin\(held\.selectedCatalogId/);
+ assert.match(native,/if\(retainedOfflineFxActive_\)return; \/\/ never arm the stale retained graph/);
+ assert.match(native,/engine_\.finishManualAudioSetup\(false,true\)/);
+ assert.match(native,/OFFLINE_MIXER_REBIND_ACCEPTED/);
+ assert.match(engine,/if\(deferRetainedRebind\)return true/);
 });

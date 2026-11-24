@@ -3494,7 +3494,9 @@
             const uiId=uiByNativeId.get(held.channelId);
             const track=[...(scope?.tracks||[]),scope?.master]
               .find(t=>t&&t.id===uiId);
-            if(track)nativeHooks.consumeAction(track,held.action||"openPlugin",{
+            if(track&&held.action==="insertFx")
+              nativeHooks.insertPlugin(held.selectedCatalogId,{channelId:track.id,slot:held.slot});
+            else if(track)nativeHooks.consumeAction(track,held.action||"openPlugin",{
               dataset:{slot:String(held.slot),recenter:held.recenter?"true":"false"}
             });
           });
@@ -3511,7 +3513,7 @@
       status(staged.readOnly?
         "Saved mixer recovery required · Open a verified .smix file":
         readModel.kind==="RETAINED_OFFLINE"?
-        "FX OFFLINE · output muted · saved changes require explicit .smix Open after reconnect":
+        "FX OFFLINE · saved edits · reconnect and Apply Audio I/O":
         "Mixer ready to edit · connect Audio I/O to enable sound");
       return;
     }
@@ -3590,7 +3592,7 @@
       stopDemo();
       paintNativeMeters(next);
       status(next.raw?.retainedOfflineFxPending?
-        "FX offline edits saved · reconnect audio, then Open saved .smix to apply":
+        "FX offline edits saved · reconnect and Apply Audio I/O":
         "Playback unavailable · waiting for the audio device");
       return;
     }
@@ -3664,7 +3666,7 @@
       pendingNativeFxPower=null;
     if(startupWire)window.queueMicrotask(flushStartupWire);
     if(next.raw?.retainedOfflineFxPending)
-      status("Saved offline FX changes pending · Open .smix before enabling output");
+      status("Saved offline FX changes pending · Apply Audio I/O before output");
     else status("Mixer settings updated");
   }
   if (connected) {
@@ -4076,7 +4078,7 @@
         const raw=Number(el.value);
         if(!accepted||!Number.isFinite(raw)||raw< -24||raw>24){
           el.value=String(Number.isFinite(t.trim)?t.trim:0);
-          if(!logicalView&&!deviceReady())recommendAudioRepair("GAIN belum aktif");
+          if(!logicalView&&!deviceReady())recommendAudioRepair("GAIN unavailable");
           status("INPUT GAIN unavailable · native PCM admission required");
           return true;
         }
@@ -4124,7 +4126,7 @@
       if(field==="wireChannelLevel"){
         const db=Number(el.value);
         if(!requestLiveWireSumGain(t,db,event.type==="change")){
-          if(!deviceReady())recommendAudioRepair("WIRE SUM LVL belum aktif");
+          if(!deviceReady())recommendAudioRepair("WIRE SUM LVL unavailable");
           status("WIRE SUM LVL unavailable · verify receiver and Audio I/O");
           if(Number.isFinite(t.wireSumGainDb)){
             el.value=String(t.wireSumGainDb);scope?.paintWireKnob?.(el,t.wireSumGainDb);
@@ -4157,7 +4159,7 @@
         const id=nativeOwner?nativeIdFor(t):null;
         if((nativeOwner&&(!id||!controller?.state()?.current?.admitted))||
            (!nativeOwner&&(channel<0||channel>=10))||!deviceReady()){
-          if(!deviceReady())recommendAudioRepair("INPUT belum siap");
+          if(!deviceReady())recommendAudioRepair("INPUT unavailable");
           status("INPUT REJECTED · verify native channel and hardware pins");
           el.value=t.input;return true;
         }
@@ -4375,6 +4377,12 @@
               nativeToast("Disconnect recovery requires a saved FX insert");
               return true;
             }
+            // Empty slot browsing is UI-only; no driver or VST state calls.
+            // Capture the retained workspace only when a choice is made.
+            if(empty){
+              scope?.openFastPicker?.(t,slot,btn);
+              return true;
+            }
             if(pendingRetainedEditor){
               status("Finishing the previous offline editor request");
               return true;
@@ -4447,7 +4455,7 @@
       }
       if(action==="slotPower"){
         if(!logicalView&&!deviceReady()){
-          recommendAudioRepair("FX Power belum siap");
+          recommendAudioRepair("FX Power unavailable");
           return true;
         }
         if(logicalView){
@@ -4469,7 +4477,7 @@
       }
       if(action==="fxOn"){
         if(!logicalView&&!deviceReady()){
-          recommendAudioRepair("FX Rack belum siap");
+          recommendAudioRepair("FX Rack unavailable");
           return true;
         }
         if(logicalView){
@@ -4711,7 +4719,7 @@
           nativeToast("Choose the next empty FX slot");return true;
         }
         const result=logicalIntent("ADD_FX_REFERENCE",channelId,{catalogId:id});
-        if(!result.ok)nativeToast("FX belum tersimpan · "+result.error);
+        if(!result.ok)nativeToast("FX settings not saved · "+result.error);
         return true;
       }
       if(pendingFxInsert){status("FX INSERT · wait for previous native ACK");return true;}
@@ -4721,6 +4729,26 @@
       const channel=m4Index(track),slot=Number(target?.slot);
       const accepted=controller?.state().current;
       const nativeId=nativeIdFor(track);
+      if(accepted?.retained===true){
+        const row=accepted.graph?.channels?.find(ch=>ch.id===nativeId);
+        if(!plugin||!row||!Number.isInteger(slot)||slot<0||slot>=8||slot!==row.inserts?.length){
+          nativeToast("Choose the next empty FX slot");return true;
+        }
+        if(pendingRetainedEditor){status("Finishing the previous offline editor request");return true;}
+        const requestId="retained-editor-"+(++retainedEditorSerial);
+        pendingRetainedEditor={requestId,channelId:nativeId,slot,empty:true,
+          epoch:accepted.device.epoch,revision:accepted.graph.revision,
+          acknowledged:false,action:"insertFx",selectedCatalogId:id};
+        status("Preparing saved mixer workspace · audio output remains safe");
+        backend.emitEvent("arMixAction",{action:"retainedFxOfflineOpen",requestId,
+          channelId:nativeId,slot,instanceId:"",deviceEpoch:accepted.device.epoch,
+          graphRevision:accepted.graph.revision});
+        window.setTimeout(()=>{
+          if(pendingRetainedEditor?.requestId!==requestId)return;
+          pendingRetainedEditor=null;status("Offline FX recovery expired · refresh native mixer");
+        },10000);
+        return true;
+      }
       if(accepted?.admitted || mixerSession()?.authority==="CHANNEL_ID") {
         const hardwareConfiguration=protocol.nativeHardwareConfiguration(accepted?.device);
         const plan=fxRackVM.nativeInsertPlan(accepted,{
