@@ -160,6 +160,9 @@ public:
         applyToEngine(s);
         engine_.prepare(rate,true); // CONTROL/host suspended; only place for allocation
         rate_=rate;
+        // FxInstance uses AudioProcessor rate metadata for its 8ms bypass
+        // transition. Native direct prepare must publish the real rate too.
+        setRateAndBufferSizeDetails(rate,maxBlock);
         renderedOnAir_=false;
         fullyBypassed_=false;
         draining_=false;

@@ -10,6 +10,7 @@
 #include <cmath>
 #include <functional>
 #include <utility>
+#include <vector>
 
 // An original ArSonMix instrument faceplate, geometry inspired by the
 // user's compact HD-CART reference. No LiquidSonics art, trademarks, logos,
@@ -27,7 +28,7 @@ constexpr float pi=juce::MathConstants<float>::pi;
 struct FaceplateLayout final {
     static constexpr int width=1120,height=430, shoulderY=47;
     static constexpr int headerCentreY=34, chromeCentreY=29, lcdTop=374,lcdBottom=height-12;
-    static constexpr int smallCaptionY=211,algorithmWidth=139,algorithmCentreX=980;
+    static constexpr int smallCaptionY=214,algorithmWidth=139,algorithmCentreX=980;
     static constexpr int lcdCentreY=393,lcdHeight=26;
     static constexpr int heroTop=124,heroCentreY=250,heroDial=184,heroWidth=202;
     static constexpr int smallTop=221,smallCentreY=297,smallDial=106,smallWidth=114;
@@ -35,6 +36,7 @@ struct FaceplateLayout final {
     static constexpr int controlBottom=lcdCentreY+lcdHeight/2;
     static constexpr int tabY=164,tabHeight=34,tabPitch=94,tabWidth=92;
     static constexpr int tabLeft=(width-(5*tabPitch+tabWidth))/2;
+    static constexpr int tabRuleY=tabY+tabHeight-2;
     static_assert(controlBottom<=lcdBottom && lcdCentreY-lcdHeight/2>=lcdTop);
     static_assert(chromeCentreY-12>=11 && chromeCentreY+12<shoulderY);
     static_assert(smallWidth<smallPitch);
@@ -376,6 +378,17 @@ public:
         }
     };
     enum class HostOverlay {none,bypassed,unavailable};
+    struct UserPresetEntry {juce::String id,name;};
+    void bindUserPresetService(
+        std::function<std::vector<UserPresetEntry>()> enumerate,
+        std::function<juce::String(const juce::String&)> save,
+        std::function<bool(const juce::String&)> recall) {
+        listUserPresets_=std::move(enumerate);
+        saveUserPreset_=std::move(save);
+        recallUserPreset_=std::move(recall);
+        refreshPresetList();
+        save_.setEnabled(static_cast<bool>(saveUserPreset_)&&hostOverlay_!=HostOverlay::unavailable);
+    }
     // The retained host is the only Power authority; no local DSP bypass.
     void bindHostPower(std::function<bool(bool)> request,
                        std::function<HostBypassState()> readback) {
@@ -417,6 +430,7 @@ public:
         for(auto& knob:knobs_)knob.setEnabled(available);
         preset_.setEnabled(available);algorithm_.setEnabled(available);
         prev_.setEnabled(available);next_.setEnabled(available);
+        save_.setEnabled(available&&static_cast<bool>(saveUserPreset_));
         repaint();
     }
     explicit VocalReverbEditor(VocalReverbProcessor& processor)
@@ -468,15 +482,33 @@ public:
         preset_.setJustificationType(juce::Justification::centred);
         preset_.setLookAndFeel(&dial_);
         preset_.onChange=[this] {
-            const auto i=preset_.getSelectedId();
+            const int i=preset_.getSelectedId();
             if(i>=1&&i<=reverbSisPresetCount) {
+                selectedUserId_.clear();
                 draft_=vocalReverbFactoryPreset(i-1);
                 syncControls();
                 submitDraft();
-            }
+            } else if(i>=userPresetFirstId) {
+                const auto index=static_cast<std::size_t>(i-userPresetFirstId);
+                if(index<userPresets_.size()&&recallUserPreset_&&
+                   recallUserPreset_(userPresets_[index].id)) {
+                    selectedUserId_=userPresets_[index].id;
+                    draft_=processor_.desiredSettings();
+                    syncControls();
+                    updateFeedbackTooltip();
+                } else selectCurrentPreset();
+            } else selectCurrentPreset();
         };
         preset_.setComponentID("armix.reverb.preset");
         addAndMakeVisible(preset_);
+        save_.setComponentID("armix.reverb.preset.save");
+        save_.setButtonText("SAVE");
+        save_.setTitle("Save Reverb-Sis user preset");
+        save_.setTooltip("Save current confirmed settings to My Presets");
+        save_.setLookAndFeel(&dial_);
+        save_.setEnabled(false);
+        save_.onClick=[this]{promptSavePreset();};
+        addAndMakeVisible(save_);
         for(int i=0;i<4;++i)
             algorithm_.addItem(arverb::algorithmName(static_cast<arverb::Algorithm>(i)),i+1);
         algorithm_.setSelectedId(draft_.algorithm+1,juce::dontSendNotification);
@@ -606,6 +638,7 @@ public:
         algorithm_.setLookAndFeel(nullptr);
         power_.setLookAndFeel(nullptr);
         close_.setLookAndFeel(nullptr);
+        save_.setLookAndFeel(nullptr);
     }
 
     void paint(juce::Graphics& g) override {
@@ -698,10 +731,9 @@ public:
             }
         }
 
+        // The active tab underline and quiet baseline share one pixel band.
         g.setColour(rgb(75,90,99).withAlpha(.67f));
-        g.drawLine(static_cast<float>(F::tabLeft),200.f,w-F::tabLeft,200.f,.8f);
-        g.setColour(rgb(106,187,224).withAlpha(.26f));
-        g.drawLine(static_cast<float>(F::tabLeft),201.f,w-F::tabLeft,201.f,.7f);
+        g.fillRect(F::tabLeft,F::tabRuleY,F::width-2*F::tabLeft,2);
         // Lower 10px cabinet lip is intentionally empty: no clipped footer.
     }
 
@@ -712,7 +744,7 @@ public:
         const bool bypassed=hostOverlay_==HostOverlay::bypassed;
         juce::Graphics::ScopedSaveState saved(g);
         g.setColour(juce::Colour(0xb803060a));
-        g.fillRect(11,60,getWidth()-22,getHeight()-82);
+        g.fillRect(11,60,getWidth()-22,reverb_ui::FaceplateLayout::lcdBottom-60);
         auto font=juce::Font(juce::FontOptions(
             bypassed?51.f:34.f,juce::Font::bold));
         font.setExtraKerningFactor(.055f);
@@ -735,6 +767,7 @@ public:
         preset_.setBounds(424,17,272,34);
         prev_.setBounds(383,17,33,34);
         next_.setBounds(getWidth()-383-33,17,33,34);
+        save_.setBounds(next_.getRight()+8,F::chromeCentreY-12,54,24);
         algorithm_.setBounds(F::algorithmCentreX-F::algorithmWidth/2,78,F::algorithmWidth,28);
         for(std::size_t i=0;i<tabs_.size();++i)
             tabs_[i].setBounds(F::tabLeft+static_cast<int>(i)*F::tabPitch,
@@ -789,15 +822,53 @@ private:
             return v*1000.0;
         return v;
     }
+    static constexpr int userPresetFirstId=1000;
+    void selectCurrentPreset() {
+        int choice=draft_.preset>=0?draft_.preset+1:reverbSisCustomItem;
+        for(std::size_t i=0;i<userPresets_.size();++i)
+            if(userPresets_[i].id==selectedUserId_)choice=userPresetFirstId+static_cast<int>(i);
+        preset_.setSelectedId(choice,juce::dontSendNotification);
+    }
+    void refreshPresetList() {
+        userPresets_=listUserPresets_?listUserPresets_():std::vector<UserPresetEntry>{};
+        preset_.clear(juce::dontSendNotification);
+        for(int i=0;i<reverbSisPresetCount;++i)
+            preset_.addItem(vocalReverbPresetNames[static_cast<std::size_t>(i)],i+1);
+        preset_.addItem("Custom / saved",reverbSisCustomItem);
+        if(!userPresets_.empty())preset_.addSectionHeading("My Presets");
+        for(std::size_t i=0;i<userPresets_.size();++i)
+            preset_.addItem(userPresets_[i].name,userPresetFirstId+static_cast<int>(i));
+        selectCurrentPreset();
+    }
+    void promptSavePreset() {
+        if(!saveUserPreset_||hostOverlay_==HostOverlay::unavailable)return;
+        auto* dialog=new juce::AlertWindow("Save Reverb-Sis preset",
+            "Save your current reverb settings to My Presets",
+            juce::MessageBoxIconType::NoIcon,this);
+        dialog->addTextEditor("presetName","","Preset name:");
+        dialog->addButton("Save",1,juce::KeyPress(juce::KeyPress::returnKey));
+        dialog->addButton("Cancel",0,juce::KeyPress(juce::KeyPress::escapeKey));
+        const juce::Component::SafePointer<VocalReverbEditor> weak(this);
+        dialog->enterModalState(true,juce::ModalCallbackFunction::create(
+            [weak,dialog](int result) {
+                if(result!=1||weak==nullptr||!weak->saveUserPreset_)return;
+                const auto id=weak->saveUserPreset_(dialog->getTextEditorContents("presetName").trim());
+                if(id.isEmpty())return;
+                weak->selectedUserId_=id;
+                weak->refreshPresetList();
+            }),true);
+    }
     void selectRelativePreset(int delta) {
         const int current=draft_.preset<0?0:draft_.preset;
         const int index=(current+delta+reverbSisPresetCount)%reverbSisPresetCount;
+        selectedUserId_.clear();
         draft_=vocalReverbFactoryPreset(index);
         preset_.setSelectedId(index+1,juce::dontSendNotification);
         syncControls();
         submitDraft();
     }
     void markCustom() {
+        selectedUserId_.clear();
         draft_.preset=-1;
         preset_.setSelectedId(reverbSisCustomItem,juce::dontSendNotification);
         submitDraft();
@@ -901,7 +972,12 @@ private:
     reverb_ui::DialLook dial_;
     juce::Label title_;
     juce::ComboBox preset_,algorithm_;
-    juce::TextButton prev_,next_,power_,close_;
+    juce::TextButton prev_,next_,power_,close_,save_;
+    std::vector<UserPresetEntry> userPresets_;
+    juce::String selectedUserId_;
+    std::function<std::vector<UserPresetEntry>()> listUserPresets_;
+    std::function<juce::String(const juce::String&)> saveUserPreset_;
+    std::function<bool(const juce::String&)> recallUserPreset_;
     juce::ComponentDragger windowDragger_;
     bool draggingWindow_=false;
     std::array<juce::TextButton,6> tabs_;
