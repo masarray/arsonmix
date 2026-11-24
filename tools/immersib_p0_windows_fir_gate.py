@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 from immersib_p0_active_fir_gate import (
     ROOT, PATH, APPROVED_SOURCE_SHA, APPROVED_BLOB, CANDIDATE_BLOB,
-    CASES, FAST_PATH, blob_hash, build, case, pcm,
+    CASES, FAST_PATH, blob_hash, build, case, pcm, previous_header,
 )
 from immersib_p0_legacy_scope_gate import BRANDED, GUARD, scoped_candidate, legacy
 
@@ -30,11 +30,11 @@ def main():
     args=parser.parse_args()
     subprocess.run([sys.executable,"scripts/verify_immersib_approved_pcm_sources.py"],
                    cwd=ROOT,check=True,timeout=30)
-    current=(ROOT/PATH).read_bytes().replace(b"\r\n",b"\n")
-    if blob_hash(current)!=CANDIDATE_BLOB:
-        raise ValueError("P0_WINDOWS_QUALIFIED_SOURCE_DRIFT")
-    proposed=windows_candidate(current)
-    print(f"P0_WINDOWS_CANDIDATE_BLOB={blob_hash(proposed)} shipping=NO",flush=True)
+    current=previous_header()
+    proposed=(ROOT/PATH).read_bytes().replace(b"\r\n",b"\n")
+    if blob_hash(proposed)!=CANDIDATE_BLOB or proposed!=windows_candidate(current):
+        raise ValueError("P0_WINDOWS_PRODUCTION_SOURCE_NOT_EXACT_CANDIDATE")
+    print(f"P0_WINDOWS_CANDIDATE_BLOB={blob_hash(proposed)} source=PROVISIONAL",flush=True)
     approved=subprocess.run(["git","show",f"{APPROVED_SOURCE_SHA}:{PATH}"],cwd=ROOT,
                             check=True,capture_output=True,timeout=30).stdout
     if blob_hash(approved)!=APPROVED_BLOB:

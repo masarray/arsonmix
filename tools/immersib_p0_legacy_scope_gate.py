@@ -13,7 +13,7 @@ from pathlib import Path
 
 from immersib_p0_active_fir_gate import (
     ROOT, PATH, APPROVED_BLOB, APPROVED_SOURCE_SHA, CANDIDATE_BLOB,
-    MACROS, FAST_PATH, candidate, blob_hash, build, pcm,
+    MACROS, FAST_PATH, candidate, blob_hash, build, pcm, previous_header,
 )
 
 # Exact macros in the existing P9.8 fast PCM workflow. Do not replace the
@@ -76,9 +76,7 @@ def main():
     args=p.parse_args()
     subprocess.run([sys.executable,"scripts/verify_immersib_approved_pcm_sources.py"],
                    cwd=ROOT,check=True,timeout=30)
-    current=(ROOT/PATH).read_bytes().replace(b"\r\n",b"\n")
-    if blob_hash(current)!=CANDIDATE_BLOB:
-        raise ValueError("P0_QUALIFIED_SOURCE_CHANGED")
+    current=previous_header()
     previous=candidate(current)
     scoped=scoped_candidate(current)
     print(f"P0_SCOPED_CANDIDATE_BLOB={blob_hash(scoped)} prior={blob_hash(previous)} shipping=NO",flush=True)
@@ -98,7 +96,10 @@ def main():
                 if guarded!=baseline:
                     raise ValueError("P0_SCOPED_LEGACY_GOLDEN_CHANGED")
                 print(f"P0_LEGACY_SCOPE_RESULT contractOff={strict} baseline={baseline} unscoped={raw} scoped={guarded}",flush=True)
-        for strict in ((True,) if args.msvc else (True,False)):
+        # Historical branded-only hypothesis was rejected on default GCC
+        # (45391978792). Windows-only production gate independently checks
+        # both FP policies; this retained lab repeats the strict hypothesis.
+        for strict in (True,):
             family=root/("branded-strict" if strict else "branded-default")
             variants=[build(family,label,header,args.msvc,False,
                             contract_off=strict,product_probe=True)
