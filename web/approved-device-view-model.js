@@ -169,6 +169,11 @@
       draft.rate===a.rate && draft.buffer===a.buffer &&
       pinInventory(a,"input")!==null && pinInventory(a,"output")!==null;
   }
+  function setupPinsApplied(inventory,draft){
+    const a=inventory?.active;
+    return setupSameEndpoint(a,draft)&&samePinMask(a.enabledInputs,draft.inputPins)&&
+      samePinMask(a.enabledOutputs,draft.outputPins);
+  }
   function setupDraft(inventory) {
     if(!inventory?.active||!Array.isArray(inventory.types))return null;
     const active=inventory.active,types=inventory.types;
@@ -575,7 +580,7 @@
     return Object.freeze({kind:"SAME",expirePending:false});
   }
   return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,patchMatrix,
-    externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,setupRoutingReady,
+    externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,setupRoutingReady,setupPinsApplied,
     pinInventory,setupSelectAllPins,setupBufferPeriod,setupHealthReadback,
     setupInitial,setupBegin,setupAck,setupReadback,
     setupTimeout,setupClearResult,nativeLifecycleLease,nativeLifecycleDecision,

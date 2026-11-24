@@ -2409,6 +2409,8 @@
     const view=deviceVM.patchMatrix(hardware,side);
     const row=view.rows.find(x=>x.id===id&&x.editable);
     if(!row||!view.live||!deviceReady()||deviceBusy()||
+       !deviceVM.setupRoutingReady(deviceInventory,deviceChoice,deviceState)||
+       !deviceVM.setupPinsApplied(deviceInventory,deviceChoice)||
        activeNativeSource||pendingNativeSources.size||pendingExternal.size)return;
     if(side==="input"){
       const choices=sourceChoicesFor(),choice=choices.find(x=>x.label===label);
@@ -2461,10 +2463,10 @@
         const choice=candidates.find(x=>x.label===select.value);
         apply.disabled=busy||!row.editable||!choice||choice.label===row.selected;
         controls.forEach(({button,pin,index})=>{
-          const mark=choice?(pin.port===choice.left?(choice.mode==="MONO"?"M":"L"):pin.port===choice.right?"R":""):row.cells[index];
+          const mark=row.editable&&choice?(pin.port===choice.left?(choice.mode==="MONO"?"M":"L"):pin.port===choice.right?"R":""):row.cells[index];
           button.textContent=mark||"·";
           button.dataset.mark=mark||"";
-          button.dataset.draft=String(Boolean(mark&&mark!==row.cells[index]));
+          button.dataset.draft=String(Boolean(row.editable&&mark!==row.cells[index]));
         });
       };
       for(const [index,pin] of model.pins.entries()){
@@ -2485,7 +2487,10 @@
       const pick=tr.insertCell(),action=tr.insertCell();
       if(row.editable){
         select.disabled=busy;select.onchange=update;pick.append(select);
-        apply.onclick=()=>applyMatrixRow(side,row.id,select.value);
+        apply.onclick=()=>{
+          if(hardware?.hardwareConfiguration!==next?.hardwareConfiguration)return;
+          applyMatrixRow(side,row.id,select.value);
+        };
         action.append(apply);
       }else pick.textContent=row.state||"Read-only";
       update();
@@ -3116,8 +3121,9 @@
     // The bridge only paints the existing approved /preview/ DOM.
     const view=deviceVM.setupPresentation(deviceInventory,deviceChoice,deviceState);
     const routingReady=deviceVM.setupRoutingReady(deviceInventory,deviceChoice,deviceState);
+    const masksMatch=routingReady&&deviceVM.setupPinsApplied(deviceInventory,deviceChoice);
     for(const item of devicePanel.querySelectorAll('button[data-audio-tab="pins"],button[data-audio-tab="inputs"],button[data-audio-tab="routing"]'))
-      item.disabled=!routingReady;
+      item.disabled=item.dataset.audioTab==="pins"?!routingReady:!masksMatch;
     const page=devicePanel.querySelector(".armix-audio-dialog").dataset.audioTab;
     if(!routingReady&&!deviceBusy()&&(page==="pins"||page==="inputs"||page==="routing"))
       selectAudioSetupPage("device");
