@@ -88,12 +88,15 @@ static void writeWave(const fs::path& path,const Wave& wave){
 }
 static Wave process(const Wave& input,Settings settings,bool synchronous,int block=127,
                     bool enhancedDepth=true,bool focus=true,bool presence=true,
-                    bool articulation=true){
+                    bool articulation=true,bool continuity=true,bool support=true){
     auto e=std::make_unique<Engine>();
     if(!e->prepare(input.rate)||!e->setSettings(settings))
         throw std::runtime_error("native Harmony configuration invalid");
     if(!e->setArticulationForOfflineReference(articulation))
         throw std::runtime_error("H9 reference rejected");
+    if(!e->setContinuityForOfflineReference(continuity)||
+       !e->setSupportForOfflineReference(support))
+        throw std::runtime_error("continuity reference rejected");
     e->setPitchSynchronousCandidateForOfflineReference(synchronous);
     e->setStageDepthForOfflineReference(enhancedDepth);
     e->setRoomFocusForOfflineReference(focus);
@@ -380,6 +383,67 @@ static void renderAb(const Wave& input,const fs::path& folder){
     generateReport(folder,input,dry,old,modern,backing,previousDepth,
                    previousPresence,lowStem,midStem,highStem);
 }
+// Per-ear metrics keep amplitude, discontinuity proxy and full-scale
+// overload separate. No normalization of audition WAVs. A normalized
+// maximum derivative is a diagnostic, not a validated crackle detector.
+struct EarEvidence {double rms=0.,peak=0.,maxStep=0.,stepRms=0.;std::size_t overload=0;};
+static EarEvidence earEvidence(const std::vector<float>& x,std::size_t start,std::size_t end){
+    EarEvidence e;
+    if(start>=end||end>x.size())return e;
+    double energy=0.,stepEnergy=0.;
+    for(std::size_t i=start;i<end;++i){
+        const double v=x[i];
+        if(!std::isfinite(v))throw std::runtime_error("nonfinite audition PCM");
+        energy+=v*v;e.peak=std::max(e.peak,std::abs(v));
+        if(std::abs(v)>=1.)++e.overload;
+        if(i>start){
+            const double step=v-x[i-1];stepEnergy+=step*step;
+            e.maxStep=std::max(e.maxStep,std::abs(step));
+        }
+    }
+    e.rms=std::sqrt(energy/(end-start));
+    e.stepRms=std::sqrt(stepEnergy/std::max<std::size_t>(1,end-start-1));
+    return e;
+}
+static void continuityReport(const Wave& input,const fs::path& folder,Settings s){
+    if(input.left.size()>static_cast<std::size_t>(input.rate)*30)
+        throw std::runtime_error("continuity audition: use <=30s");
+    fs::create_directories(folder);
+    auto ds=s;ds.wet=0.f;
+    const auto dry=process(input,ds,true);
+    writeWave(folder/"dry_aligned.wav",dry);
+    std::ofstream csv(folder/"continuity_10ms.csv",std::ios::trunc);
+    if(!csv)throw std::runtime_error("continuity report open failed");
+    csv<<"variant,channel,output_time_s,source_time_s,dry_rms,wet_rms,wet_peak,"
+          "wet_max_step,wet_step_rms,wet_step_over_rms,mix_peak,mix_overload_samples\n";
+    const auto window=std::max<std::size_t>(1,input.rate/100);
+    const double delay=std::lround(input.rate*.024)/double(input.rate);
+    for(int version:{12,13,14}){
+        const auto mix=process(input,s,true,127,true,true,true,true,
+                               version>=13,version>=14);
+        const auto backing=subtract(mix,dry);
+        const auto tag="h"+std::to_string(version);
+        writeWave(folder/(tag+"_mix.wav"),mix);
+        writeWave(folder/(tag+"_backing.wav"),backing);
+        for(int channel:{0,1}){
+            const auto& a=channel?dry.right:dry.left;
+            const auto& b=channel?backing.right:backing.left;
+            const auto& c=channel?mix.right:mix.left;
+            for(std::size_t at=0;at<a.size();at+=window){
+                const auto end=std::min(a.size(),at+window);
+                const auto x=earEvidence(a,at,end),y=earEvidence(b,at,end),z=earEvidence(c,at,end);
+                csv<<tag<<','<<(channel?"R":"L")<<','<<double(at)/input.rate<<','
+                   <<double(at)/input.rate-delay<<','<<x.rms<<','<<y.rms<<','<<y.peak<<','
+                   <<y.maxStep<<','<<y.stepRms<<','<<(y.rms>1.e-8?y.maxStep/y.rms:0.)<<','
+                   <<z.peak<<','<<z.overload<<'\n';
+            }
+        }
+    }
+    for(int role=0;role<Engine::maxVoices;++role)
+        writeWave(folder/("h14_role_"+std::to_string(role)+".wav"),
+                  roleStem(input,s,role,dry));
+    if(!csv)throw std::runtime_error("continuity report write failed");
+}
 int main(int argc,char** argv){
     try{
         if(argc==2&&std::string(argv[1])=="--self-test"){
@@ -389,6 +453,10 @@ int main(int argc,char** argv){
                 v.left[i]=v.right[i]=static_cast<float>(
                    .13*std::sin(ph)+.06*std::sin(2*ph)+.03*std::sin(3*ph));
             }
+            const auto quiet=earEvidence(v.right,6000,6480);
+            auto spike=v.left;spike[6120]=1.2f;
+            const auto noisy=earEvidence(spike,6000,6480);
+            if(quiet.overload||noisy.overload!=1||noisy.maxStep<=quiet.maxStep*4.)return 14;
             Settings s;s.wet=.45f;
             auto before=process(v,s,false);
             auto after=process(v,s,true);
@@ -462,6 +530,13 @@ int main(int argc,char** argv){
             std::cout<<"Offline native A/B test passed (synthetic only)\n";
             return 0;
         }
+        if(argc==7&&std::string(argv[1])=="--continuity"){
+            Settings s;s.key=std::stoi(argv[4]);s.scale=std::stoi(argv[5]);
+            s.voices=std::stoi(argv[6]);s.wet=1.f;s.space=1.f;s.color=.78f;
+            continuityReport(readWave(argv[2]),argv[3],s);
+            std::cout<<"H12/H13/H14 matched manual-key WAV and per-ear CSV written; no acoustic qualification implied.\n";
+            return 0;
+        }
         if(argc==6&&std::string(argv[1])=="--lead-tune"){
             const auto input=readWave(argv[2]);
             const fs::path folder=argv[3];
@@ -481,7 +556,8 @@ int main(int argc,char** argv){
         }
         if(argc!=3){
             std::cerr<<"usage: harmony_offline_ab input.wav output_directory\n"
-                     <<"       harmony_offline_ab --lead-tune input.wav output_directory key scale\n";
+                     <<"       harmony_offline_ab --lead-tune input.wav output_directory key scale\n"
+                     <<"       harmony_offline_ab --continuity input.wav output_directory key scale voices\n";
             return 1;
         }
         renderAb(readWave(argv[1]),argv[2]);

@@ -179,7 +179,7 @@ public:
         pitchSyncBlend_.fill(0.f);pitchSyncFiltered_.fill(0.f);
         pitchSyncValid_.fill(0.f);
         for(auto& seam:backingSeams_)seam.prepare(rate);
-        continuityReferenceEnabled_=true;
+        continuityReferenceEnabled_=true;supportReferenceEnabled_=true;
         periodContinuity_.reset();
         sourcePeriodSamples_=0.f;sourceConfidence_=0.f;sampleClock_=0;
         uncertainPitchHops_=0;weakSyncHops_=0;pitchSyncStable_=false;
@@ -401,6 +401,10 @@ public:
     bool setResonanceForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
         resonanceReferenceEnabled_=enabled;return true;
+    }
+    bool setSupportForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        supportReferenceEnabled_=enabled;return true;
     }
     bool setContinuityForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
@@ -742,7 +746,8 @@ private:
                 sourcePeriodSamples_,effectiveRatio,static_cast<float>(latency_)+arrival)))
             sync=pitchSync_.process(voice,sampleClock_,write_,mono_,
                 sourcePeriodSamples_,effectiveRatio,
-                static_cast<float>(latency_)+arrival,scale,continuityReferenceEnabled_);
+                static_cast<float>(latency_)+arrival,scale,continuityReferenceEnabled_,
+                supportReferenceEnabled_);
         float& colorState=pitchSyncFiltered_[ix];
         // Invalid PSOLA epochs must never inject zero into the high-voice
         // output while a crossfade is still active.
@@ -755,7 +760,8 @@ private:
         float& blend=pitchSyncBlend_[ix];
         blend+=pitchSyncAlpha_*((confident?1.f:0.f)-blend);
         const float windowedSync=colorState*valid+f*(1.f-valid);
-        y=continuityReferenceEnabled_?backingSeams_[ix].process(f,colorState,sync.ready,blend):
+        y=continuityReferenceEnabled_?backingSeams_[ix].process(f,colorState,sync.ready,
+            blend*(supportReferenceEnabled_?sync.coverage:1.f)):
             f*(1.f-blend)+windowedSync*blend;
         phase_[ix]+=1.f/static_cast<float>(grain_);
         if(phase_[ix]>=1.f)phase_[ix]-=1.f;
@@ -1014,7 +1020,7 @@ private:
     bool resonanceReferenceEnabled_=true,articulationReferenceEnabled_=true;
     BackingArticulation articulation_{};
     std::array<BackingRenderSeam,maxVoices> backingSeams_{};
-    bool continuityReferenceEnabled_=true;
+    bool continuityReferenceEnabled_=true,supportReferenceEnabled_=true;
     std::array<float,maxVoices> pitchSyncBlend_{},pitchSyncFiltered_{},pitchSyncValid_{};
     float space_=0.f,targetSpace_=0.f;
     float gain_=1.f,targetGain_=1.f,targetCorrection_=0.f;

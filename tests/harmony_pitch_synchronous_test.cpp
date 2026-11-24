@@ -122,7 +122,52 @@ static void testResumeAfterGap(){
         }
     }
 }
+static void testFullSupport(){
+    need(Shifter::overlapCoverage(.05f)==0.f&&
+         Shifter::overlapCoverage(.55f)==1.f&&
+         std::abs(Shifter::overlapCoverage(.30f)-.5f)<1.e-6f,
+         "H14 coverage endpoints");
+    float prev=0.f;
+    for(int i=0;i<=1000;++i){
+        const float q=Shifter::overlapCoverage(i*.001f);
+        need(q>=prev&&q<=1.f,"H14 nonmonotonic coverage");
+        prev=q;
+    }
+    need(Shifter::fullGrainSupported(4000.,3000.,500.,1.08f)&&
+         !Shifter::fullGrainSupported(4000.,3990.,500.,1.08f)&&
+         !Shifter::fullGrainSupported(4000.,200.,500.,.92f)&&
+         !Shifter::fullGrainSupported(20000.,1000.,500.,.92f),
+         "H14 full source bounds");
+    for(int rate:{48000,96000}){
+        Shifter a{},b{};std::array<float,16384> ring{};
+        int partial=0,ready=0;double energy=0.,worst=0.;
+        for(int i=0;i<rate/2;++i){
+            const double ph=6.283185307179586*440.*i/rate;
+            // True source holes plus changing period/ratio exercise
+            // support loss, partial coverage and a fresh overlap.
+            ring[i&16383]=i>rate/5&&i<rate/5+rate/100?0.f:
+                static_cast<float>(.2*std::sin(ph)+.04*std::sin(2*ph));
+            const float ratio=i<rate/4?1.6f:.75f;
+            const auto x=a.process(0,i,i&16383,ring,rate/440.f,ratio,
+                                  rate*.036f,.94f,true,true);
+            const auto y=b.process(0,i,i&16383,ring,rate/440.f,ratio,
+                                  rate*.036f,.94f,true,true);
+            need(x.sample==y.sample&&x.coverage==y.coverage&&x.ready==y.ready,
+                 "H14 deterministic support");
+            need(x.coverage>=0.f&&x.coverage<=1.f&&
+                 (!x.ready?x.coverage==0.f:true)&&std::isfinite(x.sample),
+                 "H14 invalid support");
+            if(x.ready){++ready;if(x.coverage<1.f)++partial;
+                energy+=x.sample*x.sample;worst=std::max(worst,double(std::abs(x.sample)));}
+        }
+        std::cout<<"H14_SUPPORT rate="<<rate<<" ready="<<ready<<" partial="<<partial
+                 <<" peak="<<worst<<std::endl;
+        need(ready>rate/4&&partial>0&&energy>1.&&worst<.5,
+             "H14 support hole fixture");
+    }
+}
 int main(){
+    testFullSupport();
     testResumeAfterGap();
     testResonanceScaling();
     // Actual source-period pitch shifting, not just a sine-wave finite test.
