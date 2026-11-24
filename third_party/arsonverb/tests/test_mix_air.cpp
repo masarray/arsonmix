@@ -227,7 +227,45 @@ static void albumEngineProbe(double fs,int mode) {
         }
     }
 }
+// Retargeting mid-morph must be equivalent to letting the original
+// morph finish and then applying only the latest request. A 1-frame host
+// makes the transition endpoint independently observable. Compare full PCM,
+// not just bounded peaks (a click may be finite and still audible).
+static void signatureRetargetProbe(int fs,unsigned initial) {
+    using P=arverb::Parameter;
+    arverb::Engine burst,serial;
+    for(auto* e:{&burst,&serial}) {
+        e->loadPreset(arverb::Preset::VocalPlateClean);
+        e->setAlgorithm(static_cast<arverb::Algorithm>(initial));
+        e->setVoicing(2);
+        e->setParameter(P::Mix,.65f);
+        e->prepare(fs,true);
+    }
+    const unsigned first=(initial+1)%4,discarded=(initial+2)%4,last=(initial+3)%4;
+    const float step=1.f/std::max(1.f,float(fs)*.100f);
+    float blend=0.f;
+    int duration=0;
+    while(blend<1.f){blend=std::min(1.f,blend+step);++duration;}
+    const int start=fs/5;
+    double signalEnergy=0.;
+    for(int i=0;i<start+2*duration+fs/20;++i) {
+        if(i==start)for(auto* e:{&burst,&serial})e->setAlgorithm(static_cast<arverb::Algorithm>(first));
+        if(i==start+duration/4)burst.setAlgorithm(static_cast<arverb::Algorithm>(discarded));
+        if(i==start+duration/2)burst.setAlgorithm(static_cast<arverb::Algorithm>(last));
+        if(i==start+duration)serial.setAlgorithm(static_cast<arverb::Algorithm>(last));
+        const float l=float(.22*std::sin(2.*3.141592653589793*233.*i/fs)+.09*std::sin(2.*3.141592653589793*1700.*i/fs));
+        const float r=float(.18*std::sin(2.*3.141592653589793*311.*i/fs));
+        float a,b,c,d;
+        burst.process(&l,&r,&a,&b,1);serial.process(&l,&r,&c,&d,1);
+        check(std::isfinite(a)&&std::isfinite(b)&&a==c&&b==d,
+              "Signature interrupted matrix morph equals serialized latest-target reference");
+        signalEnergy+=double(a)*a+double(b)*b;
+    }
+    check(signalEnergy>1.,"Signature retarget exercised non-silent PCM");
+}
 int main() {
+    for(int fs:{44100,48000,96000})for(unsigned mode=0;mode<4;++mode)signatureRetargetProbe(fs,mode);
+    std::puts("PASS Signature latest-target matrix continuity: 12 exact PCM comparisons");
     for(float fs:{44100.f,48000.f,96000.f}) {
         const double body=albumToneGain(fs,150.f,2500.f,0.f);
         const double mud=albumToneGain(fs,380.f,2500.f,0.f);

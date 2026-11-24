@@ -461,12 +461,15 @@ void Engine::process(const float* inputLeft, const float* inputRight,
     const float signatureTarget=profile==2u?1.f:0.f;
     bool profileMoving=s.albumBlend!=albumTarget||s.signatureBlend!=signatureTarget;
     const unsigned requested = algorithm_.load(std::memory_order_relaxed);
-    if (requested != s.toAlgorithm) {
+    if (requested != s.toAlgorithm && (profile!=2u || s.algorithmBlend>=1.f)) {
         s.fromAlgorithm = (s.algorithmBlend < 0.5f)
             ? s.fromAlgorithm : s.toAlgorithm;
         s.toAlgorithm = requested;
         s.algorithmBlend = s.fromAlgorithm == s.toAlgorithm ? 1.0f : 0.0f;
     }
+    // Signature: do not snap a partially blended FDN matrix to an endpoint.
+    // Finish the current 100ms morph; latest host target wins, no FIFO.
+    bool algorithmPending=profile==2u&&requested!=s.toAlgorithm;
 
     // Coalesce fast automation to one coefficient update per 128 processed
     // samples. Mix + topology still receive every block; the seven continuous
@@ -553,9 +556,21 @@ void Engine::process(const float* inputLeft, const float* inputRight,
     // interrupting an in-flight morph and introducing discontinuities.
     s.preTapTarget = target[idx(Parameter::PreDelayMs)] * s.millisecondsToSamples;
     s.sizeTapTarget = target[idx(Parameter::Size)];
+    // Block-local prepared taps: re-prime from authoritative state every
+    // callback, including after transport reset and sample-rate changes.
+    // Identical stereo ring capacities; original interpolation arithmetic.
+    auto preCurrentRead=s.pre[0].prepareTap(s.preTapCurrent);
+    auto preNextRead=s.pre[0].prepareTap(s.preTapNext);
     for (std::size_t frame = 0; frame < frames; ++frame) {
+        if(algorithmPending&&s.algorithmBlend>=1.f) {
+            s.fromAlgorithm=s.toAlgorithm;
+            s.toAlgorithm=requested;
+            s.algorithmBlend=0.f;
+            algorithmPending=false;
+        }
         if (s.preTapBlend >= 1.0f && s.preTapCurrent != s.preTapTarget) {
             s.preTapNext = s.preTapTarget;
+            preNextRead=s.pre[0].prepareTap(s.preTapNext);
             s.preTapBlend = 0.0f;
         }
         if (s.sizeTapBlend >= 1.0f && s.sizeTapCurrent != s.sizeTapTarget) {
@@ -625,8 +640,8 @@ void Engine::process(const float* inputLeft, const float* inputRight,
         float preR = inR;
         // Zero-delay does not access an unwritten ring slot.
         if (preSamples >= 1.0f) {
-            preL = s.pre[0].read(preSamples);
-            preR = s.pre[1].read(preSamples);
+            preL = s.pre[0].readPrepared(preCurrentRead);
+            preR = s.pre[1].readPrepared(preCurrentRead);
         } else if (preSamples > 0.0f) {
             preL = inL * (1.0f - preSamples) + s.pre[0].read(1.0f) * preSamples;
             preR = inR * (1.0f - preSamples) + s.pre[1].read(1.0f) * preSamples;
@@ -635,8 +650,8 @@ void Engine::process(const float* inputLeft, const float* inputRight,
             const float next = s.preTapNext;
             float nextL = inL, nextR = inR;
             if (next >= 1.0f) {
-                nextL = s.pre[0].read(next);
-                nextR = s.pre[1].read(next);
+                nextL = s.pre[0].readPrepared(preNextRead);
+                nextR = s.pre[1].readPrepared(preNextRead);
             } else if (next > 0.0f) {
                 nextL = inL * (1.0f - next) + s.pre[0].read(1.0f) * next;
                 nextR = inR * (1.0f - next) + s.pre[1].read(1.0f) * next;
@@ -710,7 +725,8 @@ void Engine::process(const float* inputLeft, const float* inputRight,
             householderProjection, s.bassCoeff, s.bassDepth);
         // Legacy Classic remains exactly the original Householder DSP.
         // Non-Classic modes use real, distinct feedback transform families.
-        float feedbackA[8], feedbackB[8], feedback[8];
+        float feedbackA[8], feedbackB[8], blendedFeedback[8];
+        const float* feedback=feedbackA;
         if (s.fromAlgorithm==0u) {
             for (int i=0;i<8;++i)
                 feedbackA[i]=taps[i]-bassShapedProjection*kReflect[i];
@@ -722,11 +738,10 @@ void Engine::process(const float* inputLeft, const float* inputRight,
             } else algorithmMatrix(s.toAlgorithm,taps,feedbackB);
             const float blend=s.algorithmBlend;
             for (int i=0;i<8;++i)
-                feedback[i]=feedbackA[i]+blend*(feedbackB[i]-feedbackA[i]);
+                blendedFeedback[i]=feedbackA[i]+blend*(feedbackB[i]-feedbackA[i]);
+            feedback=blendedFeedback;
             s.algorithmBlend=std::min(1.0f,blend+s.algorithmStep);
             if (s.algorithmBlend>=1.0f) s.fromAlgorithm=s.toAlgorithm;
-        } else {
-            for (int i=0;i<8;++i) feedback[i]=feedbackA[i];
         }
         for (std::size_t i = 0; i < kLines; ++i) {
             s.gains[i] += s.smoother * (s.targetGains[i] - s.gains[i]);
@@ -790,7 +805,10 @@ void Engine::process(const float* inputLeft, const float* inputRight,
         outputRight[frame] = dryGain * inR + returnGain * (mid - side);
         if (s.preTapBlend < 1.0f) {
             s.preTapBlend = std::min(1.0f, s.preTapBlend + s.delayMorphStep);
-            if (s.preTapBlend >= 1.0f) s.preTapCurrent = s.preTapNext;
+            if (s.preTapBlend >= 1.0f) {
+                s.preTapCurrent=s.preTapNext;
+                preCurrentRead=preNextRead;
+            }
         }
         if (s.sizeTapBlend < 1.0f) {
             s.sizeTapBlend = std::min(1.0f, s.sizeTapBlend + s.delayMorphStep);

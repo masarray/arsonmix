@@ -22,9 +22,9 @@ def compile_core(base, binary, album=False, signature=False):
 def run(binary, *args):
     rows = {}
     for line in subprocess.check_output([str(binary), *args], text=True).splitlines():
-        fs, block, mode, count, median, p99 = line.split(",")
-        rows[tuple(map(int, (fs, block, mode, count)))] = (float(median), float(p99))
-    if len(rows) != 32:
+        fs, block, mode, count, median, p99, p999, worst = line.split(",")
+        rows[tuple(map(int, (fs, block, mode, count)))] = tuple(map(float, (median,p99,p999,worst)))
+    if len(rows) != 48:
         raise RuntimeError("incomplete benchmark")
     return rows
 
@@ -34,7 +34,10 @@ def main():
     parser.add_argument("--verify-pcm", action="store_true")
     parser.add_argument("--album", action="store_true")
     parser.add_argument("--signature", action="store_true")
+    parser.add_argument("--preserve-signature", action="store_true", help="reference already has Signature; compare identical steady algorithms")
     args = parser.parse_args()
+    if args.preserve_signature and not (args.signature and args.verify_pcm):
+        parser.error('--preserve-signature requires --signature and --verify-pcm')
     if len(args.reference) != 40 or any(c not in "0123456789abcdef" for c in args.reference):
         parser.error("reference must be full SHA")
     try:
@@ -49,7 +52,7 @@ def main():
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_bytes(git("show", args.reference + ":" + str(CORE / name)))
         ref, new = work / "ref", work / "new"
-        compile_core(old, ref, args.signature)
+        compile_core(old, ref, args.signature, args.preserve_signature)
         compile_core(ROOT / CORE, new, args.album or args.signature, args.signature)
         # Exact sound-preservation gate on a separate, untimed render.
         # Only enable for topology-equivalent optimization references.
@@ -69,6 +72,15 @@ def main():
                 if len(a.splitlines()) != 40 or a != b:
                     raise RuntimeError("historical Album PCM fingerprint mismatch")
                 print("PASS historical Album PCM fingerprints: 40 profile/rate/mode cases")
+            if args.preserve_signature:
+                a = subprocess.check_output([str(ref), "--pcm-signature"], text=True)
+                b = subprocess.check_output([str(new), "--pcm-signature"], text=True)
+                if len(a.splitlines()) != 20 or a != b:
+                    for old_row, new_row in zip(a.splitlines(), b.splitlines()):
+                        if old_row != new_row:
+                            print(f"Signature PCM mismatch reference={old_row} candidate={new_row}", flush=True)
+                    raise RuntimeError("Signature steady-algorithm PCM fingerprint mismatch")
+                print("PASS Signature steady-algorithm PCM fingerprints: 20 rate/mode cases, all 13 controls automated")
         # Counterbalance run order to reduce thermal / scheduling bias.
         a1, b1, b2, a2 = run(ref), run(new), run(new), run(ref)
         print("Reverb-Sis same-runner core benchmark (microseconds; p99 wall time, non-gating)")
@@ -100,7 +112,8 @@ def main():
                       f"onP99={p99:.2f} callbackBudgetPct={100*p99/(block/fs*1e6):.2f}")
             print(f"Reverb-Sis album perf median cost ratio={statistics.median(overheads):.3f}")
         if args.signature:
-            a1, b1, b2, a2 = run(ref, "--album"), run(new, "--signature"), run(new, "--signature"), run(ref, "--album")
+            reference_mode = "--signature" if args.preserve_signature else "--album"
+            a1, b1, b2, a2 = run(ref, reference_mode), run(new, "--signature"), run(new, "--signature"), run(ref, reference_mode)
             ratios = []
             for key in sorted(a1):
                 fs, block, mode, count = key
@@ -108,7 +121,10 @@ def main():
                 b = statistics.mean([b1[key][0], b2[key][0]])
                 ratios.append(b/a)
                 p99 = max(b1[key][1], b2[key][1])
-                print(f"Signature perf fs={fs} block={block} mode={mode} instances={count} albumP50={a:.2f} signatureP50={b:.2f} ratio={b/a:.3f} signatureP99={p99:.2f} budgetPct={100*p99/(block/fs*1e6):.2f}")
-            print(f"Signature median cost ratio vs historical Album={statistics.median(ratios):.3f}")
+                p999 = max(b1[key][2], b2[key][2])
+                worst = max(b1[key][3], b2[key][3])
+                print(f"Signature perf fs={fs} block={block} mode={mode} instances={count} refP50={a:.2f} signatureP50={b:.2f} ratio={b/a:.3f} signatureP99={p99:.2f} signatureP999={p999:.2f} worst={worst:.2f} budgetPct={100*p99/(block/fs*1e6):.2f} p999BudgetPct={100*p999/(block/fs*1e6):.2f}")
+            label = "previous Signature" if args.preserve_signature else "historical Album"
+            print(f"Signature median cost ratio vs {label}={statistics.median(ratios):.3f} (48 configurations, 2048 measured blocks per run; wall-clock non-gating)")
 if __name__ == "__main__":
     main()
