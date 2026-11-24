@@ -156,6 +156,66 @@ struct HighPass {
 // Stereo-linked, input-conditioned wet presence attenuation. This is an
 // economical perceptual starting point, not speech/AI analysis or a new mode.
 // The FDN feedback and all dry samples remain completely untouched.
+// Fixed peaking coefficients computed at prepare, shared between channels.
+struct AlbumBell {
+    float b0=1.f,b1=0.f,b2=0.f,a1=0.f,a2=0.f;
+    void prepare(float fs,float hz,float q,float db) noexcept {
+        const double w=2.0*3.14159265358979323846*std::min(hz,fs*.4f)/fs;
+        const double a=std::pow(10.0,db/40.0),alpha=std::sin(w)/(2.0*q);
+        const double norm=1.0/(1.0+alpha/a);
+        b0=float((1.0+alpha*a)*norm);b1=float(-2.0*std::cos(w)*norm);
+        b2=float((1.0-alpha*a)*norm);a1=b1;a2=float((1.0-alpha/a)*norm);
+    }
+    struct Memory {
+        float z1=0.f,z2=0.f;
+        float process(float x,const AlbumBell& c) noexcept {
+            const float y=c.b0*x+z1;
+            z1=killDenormal(c.b1*x-c.a1*y+z2);
+            z2=killDenormal(c.b2*x-c.a2*y);
+            return y;
+        }
+    };
+};
+// Late-only tone: early reflections and dry bypass this contour.
+// Linked detector is polarity-independent; Duck=0 disables de-essing.
+struct AlbumLateTone {
+    AlbumBell mud,mid;
+    AlbumBell::Memory mudState[2],midState[2];
+    LowPass dryEssLow[2],dryEssHigh[2],wetEssLow[2],wetEssHigh[2];
+    float lo=0.f,hi=0.f,attack=0.f,release=0.f,env=0.f;
+    void prepare(float fs) noexcept {
+        mud.prepare(fs,380.f,.8f,-2.5f);
+        mid.prepare(fs,1450.f,.65f,-2.4f);
+        lo=lowPassCoeff(5000.f,fs);hi=lowPassCoeff(10500.f,fs);
+        attack=1.f-std::exp(-1.f/(.004f*fs));
+        release=1.f-std::exp(-1.f/(.075f*fs));
+        reset();
+    }
+    void reset() noexcept {
+        for(int c=0;c<2;++c) {
+            mudState[c]={};midState[c]={};
+            dryEssLow[c].reset();dryEssHigh[c].reset();
+            wetEssLow[c].reset();wetEssHigh[c].reset();
+        }
+        env=0.f;
+    }
+    void process(float inL,float inR,float& l,float& r,float duck,float blend) noexcept {
+        const float dl=dryEssHigh[0].process(inL,hi)-dryEssLow[0].process(inL,lo);
+        const float dr=dryEssHigh[1].process(inR,hi)-dryEssLow[1].process(inR,lo);
+        const float peak=std::max(std::fabs(dl),std::fabs(dr));
+        env=killDenormal(env+(peak>env?attack:release)*(peak-env));
+        const float depth=.85f*duck*env/(.035f+env);
+        float* out[2]{&l,&r};
+        for(int c=0;c<2;++c) {
+            const float x=*out[c];
+            float y=midState[c].process(mudState[c].process(x,mud),mid);
+            const float band=wetEssHigh[c].process(y,hi)-wetEssLow[c].process(y,lo);
+            y-=depth*band;
+            *out[c]=x+blend*(y-x);
+        }
+    }
+};
+
 struct PresenceDucker {
     LowPass dryLow[2], dryHigh[2], wetLow[2], wetHigh[2];
     float lowCoeff = 0.0f, highCoeff = 0.0f;

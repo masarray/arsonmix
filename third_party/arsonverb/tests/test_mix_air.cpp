@@ -191,7 +191,52 @@ static double selectiveGain(float fs,float frequency,bool musical) {
     }
     return std::sqrt(output/input);
 }
+static double albumToneGain(float fs,float frequency,float detector,float duck) {
+    arverb::detail::AlbumLateTone tone;tone.prepare(fs);
+    double input=0,output=0;
+    for(int i=0;i<int(fs*.5f);++i) {
+        const float x=.2f*std::sin(2.f*arverb::detail::kPi*frequency*i/fs);
+        const float dry=.5f*std::sin(2.f*arverb::detail::kPi*detector*i/fs);
+        float l=x,r=x;tone.process(dry,-dry,l,r,duck,1.f);
+        check(std::isfinite(l)&&l==r,"Album linked tone finite");
+        if(i>fs*.25f){input+=double(x)*x;output+=double(l)*l;}
+    }
+    return std::sqrt(output/input);
+}
+static void albumEngineProbe(double fs,int mode) {
+    arverb::Engine e;e.loadPreset(arverb::Preset::VocalPlateClean);
+    e.setAlgorithm(static_cast<arverb::Algorithm>(mode));
+    e.setAlbumReady(true);e.setParameter(arverb::Parameter::Mix,0.f);e.prepare(fs,true);
+    std::array<float,128> l{},r{},a{},b{};
+    for(int block=0;block<800;++block) {
+        if(block==20)e.setParameter(arverb::Parameter::Mix,1.f);
+        if(block==180)e.setAlbumReady(false);
+        if(block==210)e.setAlbumReady(true);
+        for(int i=0;i<128;++i) {
+            const double t=(block*128+i)/fs;
+            l[i]=r[i]=block<350?float(.16*std::sin(691.15*t)+.06*std::sin(16022.1*t)):0.f;
+        }
+        e.process(l.data(),r.data(),a.data(),b.data(),128);
+        for(int i=0;i<128;++i) {
+            check(std::isfinite(a[i])&&std::isfinite(b[i])&&std::abs(a[i])<2.f&&std::abs(b[i])<2.f,
+                  "Album live profile morph bounded");
+            if(block<20)check(std::abs(a[i]-l[i])<1.e-6f&&std::abs(b[i]-r[i])<1.e-6f,"Album dry endpoint");
+        }
+    }
+}
 int main() {
+    for(float fs:{44100.f,48000.f,96000.f}) {
+        const double body=albumToneGain(fs,150.f,2500.f,0.f);
+        const double mud=albumToneGain(fs,380.f,2500.f,0.f);
+        const double mid=albumToneGain(fs,1450.f,2500.f,0.f);
+        const double air=albumToneGain(fs,10000.f,2500.f,0.f);
+        const double ess=albumToneGain(fs,7000.f,7000.f,1.f)/albumToneGain(fs,7000.f,7000.f,0.f);
+        std::printf("Reverb-Sis album fs=%.0f body=%.3f mud=%.3f mid=%.3f air=%.3f ess=%.3f\n",fs,body,mud,mid,air,ess);
+        check(body>.90&&mud<.80&&mid<.80&&air>.96,"Album static contour preserves body and air");
+        check(ess<.93&&ess>.50,"Album sibilance detector attenuates wet band");
+        for(int mode=0;mode<4;++mode)albumEngineProbe(fs,mode);
+    }
+    std::puts("PASS Reverb-Sis Album Ready contour, de-ess and live profile morph");
     // Exact fractional tap output vs independent original implementation,
     // including ring wrap, fractional values and both clamp boundaries.
     for(float fs:{8000.f,44100.f,48000.f,96000.f,192000.f}) {

@@ -215,6 +215,10 @@ struct Engine::State {
     float lateReturn=.34f, targetLateReturn=.34f;
     float cachedMix=-1.0f;
     detail::PresenceDucker presence;
+    detail::AlbumLateTone albumTone;
+    LowPass albumBass[kLines];
+    float albumBlend=0.f,albumStep=0.f,albumBassCoeff=0.f;
+    float albumLoss=0.f,targetAlbumLoss=0.f;
     std::array<float, parameterCount> smooth{};
     float gains[kLines]{};
     float targetGains[kLines]{};
@@ -260,6 +264,8 @@ struct Engine::State {
         for (auto& ch : wetLP) for (auto& f : ch) f.reset();
         for (auto& f : airShelf) f.reset();
         presence.reset();
+        albumTone.reset();
+        for(auto& f:albumBass)f.reset();
         for (std::size_t i = 0; i < kLines; ++i) {
             lfo[i].reset(static_cast<float>(i) * 1.7718f + 0.39f);
         }
@@ -320,6 +326,9 @@ void Engine::prepare(double sampleRate, bool musicalReturn) {
     s.envelopeAttack = 1.0f - std::exp(-1.0f / ((musicalReturn ? 0.008f : 0.012f) * fs));
     s.envelopeRelease = 1.0f - std::exp(-1.0f / ((musicalReturn ? 0.16f : 0.34f) * fs));
     s.presence.prepare(fs,musicalReturn);
+    s.albumTone.prepare(fs);
+    s.albumStep=1.f/(.045f*fs);
+    s.albumBassCoeff=lowPassCoeff(300.f,fs);
     s.airCoeff = lowPassCoeff(7800.0f, fs);
     s.algorithmStep = 1.0f / std::max(1.0f, fs * 0.100f); // 100ms morph
     s.fromAlgorithm = s.toAlgorithm = algorithm_.load(std::memory_order_relaxed);
@@ -349,6 +358,8 @@ void Engine::prepare(double sampleRate, bool musicalReturn) {
     }
     // P8: all invariant/exp/trig work belongs in prepare(), not the first
     // time-critical processBlock after the host starts its ASIO stream.
+    s.albumLoss=s.targetAlbumLoss=clamp(1.f-detail::fastExpNeg(
+        kLn001*representativeDelayMs()*.001f*size/decay*.55f),0.f,.30f);
     s.cachedDecay = decay;
     s.cachedSize = size;
     s.cachedRate = s.smooth[static_cast<unsigned>(Parameter::ModRateHz)];
@@ -383,12 +394,16 @@ void Engine::reset() noexcept {
     State& s=*state_;
     s.fromAlgorithm=s.toAlgorithm=algorithm_.load(std::memory_order_relaxed);
     s.algorithmBlend=1.0f;
+    s.albumBlend=s.musicalReturn&&albumReady_.load(std::memory_order_relaxed)?1.f:0.f;
     s.coefficientCooldownSamples=0;
     // Transport resets must not re-open an old half-finished tap transition.
     s.preTapCurrent = s.preTapNext;
     s.preTapBlend = 1.0f;
     s.sizeTapCurrent = s.sizeTapNext;
     s.sizeTapBlend = 1.0f;
+}
+void Engine::setAlbumReady(bool enabled) noexcept {
+    albumReady_.store(enabled,std::memory_order_relaxed);
 }
 void Engine::setAlgorithm(Algorithm value) noexcept {
     const auto v=static_cast<unsigned>(value);
@@ -436,6 +451,7 @@ void Engine::process(const float* inputLeft, const float* inputRight,
         s.targetDryGain = sineQuarterWave(1.0f - requestedMix);
         s.targetWetGain = wetMixTarget(requestedMix, s.musicalReturn);
     }
+    const float albumTarget=s.musicalReturn&&albumReady_.load(std::memory_order_relaxed)?1.f:0.f;
     const unsigned requested = algorithm_.load(std::memory_order_relaxed);
     if (requested != s.toAlgorithm) {
         s.fromAlgorithm = (s.algorithmBlend < 0.5f)
@@ -459,6 +475,8 @@ void Engine::process(const float* inputLeft, const float* inputRight,
             if (nextDecay != s.cachedDecay && s.musicalReturn)
                 s.targetLateReturn = .34f * detail::musicalLateReturnScale(nextDecay);
             s.cachedDecay = nextDecay;
+            s.targetAlbumLoss=clamp(1.f-detail::fastExpNeg(kLn001*representativeDelayMs()*.001f*
+                s.cachedSize/s.cachedDecay*.55f),0.f,.30f);
             for (std::size_t i = 0; i < kLines; ++i) {
                 const float delaySec = kDelayMs[i] * s.cachedSize * 0.001f;
                 s.targetGains[i] = detail::fastExpNeg(
@@ -541,6 +559,15 @@ void Engine::process(const float* inputLeft, const float* inputRight,
         s.currentDryGain += s.smoother*(s.targetDryGain-s.currentDryGain);
         s.currentWetGain += s.smoother*(s.targetWetGain-s.currentWetGain);
         s.lateReturn += s.smoother*(s.targetLateReturn-s.lateReturn);
+        if(s.albumBlend!=albumTarget) {
+            s.albumBlend=albumTarget>s.albumBlend?std::min(1.f,s.albumBlend+s.albumStep):
+                std::max(0.f,s.albumBlend-s.albumStep);
+            if(s.albumBlend==0.f) {
+                s.albumTone.reset();for(auto& f:s.albumBass)f.reset();
+            }
+        }
+        const float album=s.albumBlend;
+        if(album>0.f)s.albumLoss+=s.smoother*(s.targetAlbumLoss-s.albumLoss);
         const float dryGain=s.currentDryGain;
         const float wetGain=s.currentWetGain;
         const float preSamples = s.preTapCurrent;
@@ -687,13 +714,17 @@ void Engine::process(const float* inputLeft, const float* inputRight,
             // P7 calibrated, smoothed, convex high-frequency absorption.
             // Stable 0..1 loss, preserving midband FDN decay gain and all
             // orthogonal algorithm matrices without new DSP primitives.
-            const float damped = mixed + s.hfDampingBlend * (filtered - mixed);
+            float damped = mixed + s.hfDampingBlend * (filtered - mixed);
+            // Convex blend of identity and one-pole HP: bounded loss,
+            // no positive feedback boost. Original path unchanged when off.
+            if(album>0.f)damped-=album*s.albumLoss*s.albumBass[i].process(damped,s.albumBassCoeff);
             const float injected = 0.30f * (kInjectL[i] * diffL + kInjectR[i] * diffR);
             s.lines[i].push(killDenormal(s.gains[i] * damped + injected));
         }
 
         // Recover audible late-space level without brightening the dry
         // channel or altering the feedback loop's internal stability.
+        if(album>0.f)s.albumTone.process(inL,inR,tailL,tailR,duckAmount,album);
         float wetL = tailL * s.lateReturn + earlyL * (0.42f * earlyAmount);
         float wetR = tailR * s.lateReturn + earlyR * (0.42f * earlyAmount);
         wetL = s.wetHP[0][1].process(s.wetHP[0][0].process(wetL, s.wetLowCoeff), s.wetLowCoeff);
@@ -711,7 +742,9 @@ void Engine::process(const float* inputLeft, const float* inputRight,
 
         // Presence shaping is a wet-only complement to existing broadband
         // ducking; no lookahead, new parameter, or FDN topology change.
-        s.presence.process(inL, inR, wetL, wetR, duckAmount * s.presenceDuckScale);
+        if(album>0.f)
+            s.presence.process(inL,inR,wetL,wetR,duckAmount*(s.presenceDuckScale+.65f*album));
+        else s.presence.process(inL, inR, wetL, wetR, duckAmount * s.presenceDuckScale);
 
         const float mid = 0.5f * (wetL + wetR);
         const float side = 0.5f * (wetL - wetR) * width;
@@ -725,7 +758,8 @@ void Engine::process(const float* inputLeft, const float* inputRight,
         const float duckGain = s.musicalReturn
             ? 1.0f - 0.35f * duckAmount * (s.duckEnvelope / (0.12f + s.duckEnvelope))
             : 1.0f / (1.0f + 6.0f * duckAmount * s.duckEnvelope);
-        const float returnGain = wetGain * s.wetReturnTrim * duckGain;
+        const float returnGain = wetGain * s.wetReturnTrim * (album>0.f?
+            duckGain+.10f*album*duckAmount*(s.duckEnvelope/(.12f+s.duckEnvelope)):duckGain);
         // Exact sine/cos dry and base wet law at stable settings, plus
         // bounded musical high-Mix compensation folded into the existing
         // wet gain target. No new sample-loop operation or feedback change.
