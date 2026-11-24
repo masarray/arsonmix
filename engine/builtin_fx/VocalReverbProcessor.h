@@ -318,6 +318,20 @@ public:
         for(const auto v:accepted.values)writer.writeFloat(v);
         writer.flush();
     }
+    // Detached logical editor is CONTROL-owned, never installed in PCM.
+    // Consume its latest packet explicitly before durable state capture.
+    // A published owner must only be acknowledged by its audio callback.
+    bool captureDetachedState(juce::MemoryBlock& out) {
+        out.reset();
+        if(published_||!isReady())return false;
+        consumeRealtimeEdits();
+        if(!stateSnapshotQuiescent())return false;
+        getStateInformation(out);
+        if(out.getSize()!=static_cast<std::size_t>(stateBytes)){
+            out.reset();return false;
+        }
+        return true;
+    }
     bool restoreUnpublishedState(const void* data,int bytes) {
         if(published_||!data||bytes!=stateBytes||settingsPending())return false;
         juce::MemoryInputStream reader(data,static_cast<std::size_t>(bytes),false);

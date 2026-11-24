@@ -23,6 +23,34 @@ int main() {
     assert(!entry->prepare(48000.,4,nullptr,0));
     auto created=entry->prepare(48000.,128,nullptr,0);
     assert(created && created->getName()=="Reverb-Sis" && created->hasEditor());
+    // Detached logical editor has NO callback. Save the newest knob/preset
+    // packet on CONTROL, prove exact state restore, reject a published lease.
+    {
+        auto detached=entry->prepare(48000.,256,nullptr,0);
+        auto* owner=dynamic_cast<VocalReverbProcessor*>(detached.get());
+        assert(owner);
+        auto edited=vocalReverbFactoryPreset(11);
+        edited.preset=-1;edited.values[0]=.73f;
+        assert(owner->queueSettings(vocalReverbFactoryPreset(8))>0);
+        const auto final=owner->queueSettings(edited);
+        assert(final>0&&owner->settingsPending());
+        juce::MemoryBlock bytes;
+        detached->getStateInformation(bytes);
+        assert(bytes.isEmpty()); // ordinary published capture refuses pending packet
+        assert(owner->captureDetachedState(bytes));
+        assert(owner->processedBlocks()==0&&owner->appliedRequestId()==final);
+        assert(bytes.getSize()==VocalReverbProcessor::stateBytes);
+        auto restored=entry->prepare(48000.,256,bytes.getData(),
+                                     static_cast<int>(bytes.getSize()));
+        auto* accepted=dynamic_cast<VocalReverbProcessor*>(restored.get());
+        VocalReverbSettings saved{};
+        assert(accepted&&accepted->acceptedSettings(saved)&&
+               saved.values==edited.values&&saved.algorithm==edited.algorithm&&saved.preset==-1);
+        owner->sealForRealtime();
+        assert(owner->queueSettings(vocalReverbFactoryPreset(9))>0);
+        assert(!owner->captureDetachedState(bytes)&&bytes.isEmpty());
+        assert(owner->settingsPending()&&owner->appliedRequestId()==final);
+    }
     // Test the real native JUCE faceplate, not a WebView mock or a fake
     // static rendered image. Dimensions and all param IDs are contract.
     // This host builds a private AudioProcessor::createEditor() facade.

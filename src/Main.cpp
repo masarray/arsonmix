@@ -2073,7 +2073,16 @@ private:
         }
         juce::MemoryBlock bytes;
         try {
-            fx.processor->getStateInformation(bytes);
+            if(auto* reverb=dynamic_cast<armix::builtin_fx::VocalReverbProcessor*>(
+                    fx.processor.get())) {
+                // Logical-only processor is not a PCM owner. Never persist
+                // an empty Reverb-Sis blob; restore requires a valid packet.
+                if(!reverb->captureDetachedState(bytes)) {
+                    emitNotice("Reverb-Sis settings not captured; previous saved state retained",true);
+                    if(!shutdown)fx.window->setVisible(true);
+                    return;
+                }
+            } else fx.processor->getStateInformation(bytes);
         } catch(...) {
             emitNotice("Vendor FX could not provide its settings",true);
             if(!shutdown)fx.window->setVisible(true);
