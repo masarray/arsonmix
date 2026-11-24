@@ -15,3 +15,6 @@ Implemented ChannelId Inputs and Outputs crosspoints backed by the actual accept
 
 ## Delivery 2B — matrix bootstrap and stale lease protection
 Input matrix now supports the prepared M4 first-source workflow and accepted M4 routes through the existing serialized M4 source dispatcher. Independently verify hardware epoch, endpoint names, pin masks and format against fresh JUCE inventory; reject stale graph/roster revision, hardware fingerprint and pending changes. Only visible matrix is rendered; close discards unsubmitted row draft. ChannelId external output remains unchanged. No native graph, buffer, DSP or latency change. Independent named I/O profiles and editable MAIN/MONITOR remain open.
+
+## Delivery 2C — explicit stereo L/R
+Native ChannelId and M4 both already accept two distinct enabled capture pins (NativeVerifiedSourcePatch and LiveDryRoutingLab). GUI now exposes explicit custom stereo L/R, including sparse/reversed pairs, using the same verified choice and source queue. Only adjacent defaults, current installed pairs and the single requested custom candidate are materialized (no N² option explosion). Keep source width independent of strip processing width. Lease includes device epoch. Still no independent logical alias registry or editable MAIN/MONITOR.

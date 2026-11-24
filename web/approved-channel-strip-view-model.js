@@ -438,8 +438,8 @@
     if(choice.mode==="NONE")return choice.left===-1&&choice.right===-1;
     if(!Number.isSafeInteger(choice.left)||choice.left<0)return false;
     if(choice.mode==="MONO")return choice.right===-1;
-    return Number.isSafeInteger(choice.right)&&
-      choice.right===choice.left+1;
+    return Number.isSafeInteger(choice.right)&&choice.right>=0&&
+      choice.right!==choice.left;
   }
   function sourceQueueSelection({choice,choices,epoch,acceptedLabel,
                                  activeSameChannel=false,

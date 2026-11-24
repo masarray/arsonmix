@@ -1365,6 +1365,13 @@
   const pendingNativeSources=new Map();
   let activeNativeSource=null,nativeSourceSerial=0;
   // MV-14: one INPUT dispatch owner; ChannelId/M4 keep separate identity Maps.
+  function verifiedMatrixSourceChoices(choices,requested,snapshot){
+    if(!requested||requested.mode!=="STEREO")return choices;
+    const candidate=deviceVM.physicalInputChoice(snapshot,requested.mode,requested.left,requested.right);
+    if(!candidate||candidate.label!==requested.label||choices.some(x=>x.label===candidate.label))
+      return choices;
+    return [...choices,candidate];
+  }
   function dispatchSourceQueue(authority){
     const channelIdOwner=authority==="CHANNEL_ID";
     const queue=channelIdOwner?pendingNativeSources:pendingSourceQueue;
@@ -1374,7 +1381,9 @@
       const plan=stripVM.sourceQueueHead({authority,queue,
         active:channelIdOwner?activeNativeSource:nativeUiSourcePending,
         hardware,native:current,
-        choices:channelIdOwner?sourceChoicesFor():inputChoicesFor(),
+        choices:verifiedMatrixSourceChoices(
+          channelIdOwner?sourceChoicesFor():inputChoicesFor(),
+          queue.values().next().value?.choice,hardware),
         deviceReady:deviceReady()});
       if(plan.kind==="IDLE"||plan.kind==="WAIT")return;
       if(plan.kind==="DROP_ALL"){queue.clear();return;}
@@ -2411,12 +2420,13 @@
       deviceVM.setupPinsApplied(deviceInventory,deviceChoice)&&
       deviceVM.setupMatrixDeviceMatches(deviceInventory,snapshot);
   }
-  function applyMatrixRow(side,id,label,lease){
+  function applyMatrixRow(side,id,label,lease,requested=null){
     const current=controller?.state()?.current;
     const view=deviceVM.patchMatrix(hardware,side);
     const row=view.rows.find(x=>x.id===id&&x.editable);
     if(!row||!view.live||!deviceReady()||!matrixReady(hardware)||matrixBusy()||
        !lease||lease.config!==hardware.hardwareConfiguration||
+       lease.epoch!==hardware.device.epoch||
        lease.authority!==view.authority||lease.revision!==view.revision||
        lease.roster!==view.roster){
       nativeToast("Routing changed · review current matrix before applying");
@@ -2424,7 +2434,8 @@
     }
     if(side==="input"){
       const nativeOwner=view.authority==="CHANNEL_ID";
-      const choices=nativeOwner?sourceChoicesFor():inputChoicesFor();
+      const choices=verifiedMatrixSourceChoices(
+        nativeOwner?sourceChoicesFor():inputChoicesFor(),requested,hardware);
       const choice=choices.find(x=>x.label===label);
       if(!choice||choice.mode==="PLAYER")return;
       const decision=stripVM.sourceQueueSelection({choice,choices,
@@ -2452,8 +2463,8 @@
     if(!host)return;
     const model=deviceVM.patchMatrix(next,side);
     const ready=matrixReady(next),busy=matrixBusy();
-    const signature=JSON.stringify([model,busy,ready,next?.hardwareConfiguration]);
-    const lease={config:next?.hardwareConfiguration,authority:model.authority,
+    const signature=JSON.stringify([model,busy,ready,next?.hardwareConfiguration,next?.device?.epoch]);
+    const lease={config:next?.hardwareConfiguration,epoch:next?.device?.epoch,authority:model.authority,
       revision:model.revision,roster:model.roster};
     if(host.dataset.signature===signature)return;
     host.dataset.signature=signature;
@@ -2477,12 +2488,29 @@
       const select=document.createElement("select");
       select.setAttribute("aria-label",row.name+" assignment");
       const candidates=model.choices;
+      const customValue="__custom_stereo__";
+      const custom=document.createElement("div");
+      custom.className="armix-custom-stereo";custom.hidden=true;
+      const customSelect=sideName=>{
+        const control=document.createElement("select");
+        control.setAttribute("aria-label",row.name+" "+sideName+" pin");
+        for(const p of model.pins)control.append(new Option(sideName+" · "+(p.port+1)+" "+p.label,String(p.port)));
+        control.disabled=busy;custom.append(control);return control;
+      };
+      const customLeft=customSelect("L"),customRight=customSelect("R");
+      if(model.pins.length>1)customRight.selectedIndex=1;
       if(row.selected===null){const op=new Option(row.state||"Current source", "");op.disabled=true;select.append(op);}
       for(const choice of candidates)select.append(new Option(choice.label,choice.label));
+      if(side==="input"&&row.editable&&model.pins.length>1)
+        select.append(new Option("Custom stereo L/R…",customValue));
       select.value=row.selected??"";
+      const selectedChoice=()=>select.value===customValue?
+        deviceVM.physicalInputChoice(next,"STEREO",Number(customLeft.value),Number(customRight.value)):
+        candidates.find(x=>x.label===select.value);
       const apply=document.createElement("button");apply.type="button";apply.textContent="Apply";
       const update=()=>{
-        const choice=candidates.find(x=>x.label===select.value);
+        const choice=selectedChoice();
+        custom.hidden=select.value!==customValue;
         apply.disabled=busy||!row.editable||!choice||choice.label===row.selected;
         controls.forEach(({button,pin,index})=>{
           const mark=row.editable&&choice?(pin.port===choice.left?(choice.mode==="MONO"?"M":"L"):pin.port===choice.right?"R":""):row.cells[index];
@@ -2497,6 +2525,11 @@
         button.setAttribute("aria-label",row.name+" / "+pin.label);
         button.disabled=busy||!row.editable;
         button.onclick=()=>{
+          if(select.value===customValue){
+            const pinValue=String(pin.port);
+            if(customLeft.value===pinValue)return;
+            customRight.value=pinValue;update();return;
+          }
           const current=candidates.find(x=>x.label===select.value);
           const stereo=side==="output"||current?.mode==="STEREO"||
             (current?.mode==="NONE"&&row.format==="STEREO");
@@ -2509,8 +2542,13 @@
       const pick=tr.insertCell(),action=tr.insertCell();
       if(row.editable){
         select.disabled=busy;select.onchange=update;pick.append(select);
+        if(side==="input"){
+          customLeft.onchange=customRight.onchange=update;
+          pick.append(custom);
+        }
         apply.onclick=()=>{
-          applyMatrixRow(side,row.id,select.value,lease);
+          const choice=selectedChoice();
+          if(choice)applyMatrixRow(side,row.id,choice.label,lease,choice);
         };
         action.append(apply);
       }else pick.textContent=row.state||"Read-only";
@@ -2921,6 +2959,8 @@
         .armix-audio-dialog .armix-patch-cell[data-mark]:not([data-mark=""]){background:#326b8a;color:#fff}
         .armix-audio-dialog .armix-patch-cell[data-draft="true"]{background:#90672e;color:#fff}
         .armix-patch-grid select{max-width:210px;font-size:11px}
+        .armix-custom-stereo{display:grid;gap:3px;margin-top:4px}
+        .armix-custom-stereo[hidden]{display:none!important}
         .armix-audio-dialog:not([data-audio-tab="inputs"]) .armix-input-overview,
         .armix-audio-dialog:not([data-audio-tab="routing"]) .armix-output-overview,
         .armix-audio-dialog:not([data-audio-tab="device"]) .armix-endpoint-fields,

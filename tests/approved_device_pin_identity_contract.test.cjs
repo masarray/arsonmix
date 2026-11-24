@@ -754,3 +754,20 @@ test("Matrix requires independent device readback matching inventory names, mask
  assert.equal(vm.setupMatrixDeviceMatches(inventory,{device:{...snapshot.device,bufferFrames:512}}),false);
  assert.equal(vm.setupMatrixDeviceMatches(inventory,{device:{...snapshot.device,inputEndpoints:[{port:0,label:"Other",active:true}]}}),false);
 });
+
+test("Custom stereo supports sparse/reversed physical pins, rejects duplicate or disabled pins, and stays O(N+installed pairs)",()=>{
+ const device={enabledInputs:[0,2,3],inputEndpoints:[0,1,2,3].map(port=>({port,label:"Mic "+port,active:true}))};
+ const snap={admitted:true,device,graph:{channels:[{source:{sourceFormat:"STEREO",portId:"in:3",portIdRight:"in:0"}}]}};
+ const choice=vm.physicalInputChoice(snap,"STEREO",3,0);
+ assert.ok(choice);assert.equal(choice.left,3);assert.equal(choice.right,0);
+ assert.equal(vm.physicalInputChoice(snap,"STEREO",0,0),null);
+ assert.equal(vm.physicalInputChoice(snap,"STEREO",0,1),null);
+ assert.ok(vm.inputChoices(snap).some(x=>x.label===choice.label));
+ assert.equal(vm.inputLabel(snap,{mode:"STEREO",left:3,right:0}),choice.label);
+ const big={device:{enabledInputs:Array.from({length:64},(_,port)=>port),
+ inputEndpoints:Array.from({length:64},(_,port)=>({port,label:"Input "+(port+1),active:true}))}};
+ assert.equal(vm.inputChoices(big).length,128);
+ const strip=require("../web/approved-channel-strip-view-model.js");
+ assert.equal(strip.sourceChoiceMatches(choice,[choice]),true);
+ assert.equal(strip.sourceChoiceMatches({...choice,right:3},[{...choice,right:3}]),false);
+});

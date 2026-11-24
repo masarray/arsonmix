@@ -33,25 +33,51 @@
     return d.inputEndpoints.filter(p=>p?.active===true &&
       Number.isInteger(p.port) && d.enabledInputs.includes(p.port));
   }
+  // Canonical single physical selection; never materialize all N*(N-1)
+  // stereo permutations. The custom editor and installed source projection
+  // both use this helper; actual native epoch and PCM authority stay separate.
+  function physicalInputChoice(snapshot,mode,left,right){
+    if(mode==="NONE"&&left===-1&&right===-1)return {label:"None",mode,left,right};
+    if(!Number.isInteger(left)||!Number.isInteger(right))return null;
+    const pins=activeInputPins(snapshot),a=pins.find(p=>p.port===left),
+      b=pins.find(p=>p.port===right);
+    if(!a)return null;
+    if(mode==="MONO"&&right===-1)return {
+      label:"Mono · "+a.label+" [IN "+(left+1)+"]",mode,left,right};
+    if(mode!=="STEREO"||!b||left===right)return null;
+    const generic=p=>new RegExp("^\\s*(?:in|input)\\s*"+(p.port+1)+"\\s*$","i")
+      .test(String(p.label||""));
+    const pair="Stereo · IN "+(left+1)+" + "+(right+1);
+    return {label:generic(a)&&generic(b)?pair:pair+" · "+a.label+" / "+b.label,
+      mode,left,right};
+  }
   function inputChoices(snapshot) {
-    const pins=activeInputPins(snapshot);
+    const pins=activeInputPins(snapshot).slice().sort((a,b)=>a.port-b.port);
     const entries=[{label:"None",mode:"NONE",left:-1,right:-1}];
-    for(const p of pins)entries.push({
-      label:"Mono · "+p.label+" [IN "+(p.port+1)+"]",
-      mode:"MONO",left:p.port,right:-1});
-    // Preserve existing physical adjacency semantics, never pair packed
-    // callback ordinals or guess unavailable driver pins.
+    const keys=new Set(["NONE:-1:-1"]);
+    const add=(mode,left,right)=>{
+      const key=mode+":"+left+":"+right;
+      if(keys.has(key))return;
+      const choice=physicalInputChoice(snapshot,mode,left,right);
+      if(choice){entries.push(choice);keys.add(key);}
+    };
+    for(const p of pins)add("MONO",p.port,-1);
     for(let i=0;i+1<pins.length;++i)
-      if(pins[i+1].port===pins[i].port+1)
-        {
-          const a=pins[i],b=pins[i+1];
-          const generic=p=>new RegExp("^\\s*(?:in|input)\\s*"+(p.port+1)+"\\s*$","i")
-            .test(String(p.label||""));
-          const pair="Stereo · IN "+(a.port+1)+" + "+(b.port+1);
-          entries.push({label:generic(a)&&generic(b)?pair:
-            pair+" · "+a.label+" / "+b.label,mode:"STEREO",
-            left:a.port,right:b.port});
-        }
+      if(pins[i+1].port===pins[i].port+1)add("STEREO",pins[i].port,pins[i+1].port);
+    // Keep custom installed pairs selectable and correctly labelled after
+    // ACK, restart or mixer projection; no phantom option on missing pins.
+    if(snapshot?.retained!==true&&snapshot?.admitted===true)
+      for(const ch of snapshot.graph?.channels||[]){
+        const src=ch.source;
+        if(src?.sourceFormat!=="STEREO"||src.bindingState==="NEEDS_REMAP")continue;
+        const l=/^in:(\d+)$/.exec(src.portId||""),r=/^in:(\d+)$/.exec(src.portIdRight||"");
+        if(l&&r)add("STEREO",Number(l[1]),Number(r[1]));
+      }
+    if(snapshot?.retained!==true&&snapshot?.raw?.mixerSession?.authority==="M4")
+      for(const ch of snapshot.raw.mixerSession.channels||[]){
+        const src=ch.source;
+        if(src?.mode==="STEREO")add("STEREO",src.left,src.right);
+      }
     return entries;
   }
   // Physical crosspoints are a projection of installed ChannelId PCM only.
@@ -624,7 +650,7 @@
       return Object.freeze({kind:"AUTHORITY_CHANGED",expirePending:true});
     return Object.freeze({kind:"SAME",expirePending:false});
   }
-  return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,patchMatrix,
+  return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,patchMatrix,physicalInputChoice,
     externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,setupRoutingReady,setupPinsApplied,setupMatrixDeviceMatches,
     pinInventory,setupSelectAllPins,setupBufferPeriod,setupHealthReadback,
     setupInitial,setupBegin,setupAck,setupReadback,
