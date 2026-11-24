@@ -117,6 +117,7 @@ int main() {
     assert(leftChevron->getBounds().getCentreY()==
            presetSelect->getBounds().getCentreY());
     assert(presetSelect->getBounds().getCentreX()==ui->getWidth()/2);
+    assert(presetSelect->getChildComponent(0)->getBounds().getCentreX()==presetSelect->getWidth()/2);
     assert(leftChevron->getX()+rightChevron->getRight()==ui->getWidth());
     assert(mainDecay->getX()+mainMix->getRight()==ui->getWidth());
     const auto* wetLabel=ui->findChildWithID("armix.reverb.label.0");
@@ -136,7 +137,9 @@ int main() {
     assert(power->getY()==close->getY()&&close->getRight()==ui->getWidth()-25);
     assert(power->getButtonText().isEmpty()&&close->getButtonText().isEmpty());
     assert(power->getProperties().getWithDefault("armixFxState","").toString()=="unknown");
-    assert(power->getBottom()<=60&&close->getBottom()<=60);
+    assert(power->getBounds().getCentreY()==presetSelect->getBounds().getCentreY());
+    assert(close->getBounds().getCentreY()==presetSelect->getBounds().getCentreY());
+    assert(close->getBottom()<reverb_ui::FaceplateLayout::shoulderY);
     assert(!power->getBounds().intersects(presetSelect->getBounds()));
     assert(!close->getBounds().intersects(presetSelect->getBounds()));
     for(int i=0;i<6;++i) {
@@ -160,8 +163,8 @@ int main() {
         for(int i=0;i<13;++i) {
             auto* label=ui->findChildWithID(
                 "armix.reverb.label."+juce::String(i));
-            auto* slider=ui->findChildWithID(
-                "armix.reverb.param."+juce::String(i));
+            auto* slider=dynamic_cast<juce::Slider*>(ui->findChildWithID(
+                "armix.reverb.param."+juce::String(i)));
             assert(label && slider);
             if(label->isVisible()) {
                 assert(visibleLabels<7);
@@ -175,7 +178,28 @@ int main() {
                     assert(label->getY()==205 && slider->getY()==221);
                 }
             }
-            if(slider->isVisible())++visibleKnobs;
+            if(slider->isVisible()) {
+                ++visibleKnobs;
+                using F=reverb_ui::FaceplateLayout;
+                const bool hero=i==0||i==2;
+                const auto layout=slider->getLookAndFeel().getSliderLayout(*slider);
+                const auto dial=layout.sliderBounds.translated(slider->getX(),slider->getY());
+                const auto lcd=layout.textBoxBounds.translated(slider->getX(),slider->getY());
+                assert(dial.getCentreX()==label->getBounds().getCentreX());
+                assert(dial.getCentreY()==(hero?F::heroCentreY:F::smallCentreY));
+                assert(dial.getWidth()==(hero?F::heroDial:F::smallDial));
+                assert(lcd.getCentreX()==dial.getCentreX()&&lcd.getCentreY()==F::lcdCentreY);
+                assert(lcd.getY()>=F::lcdTop&&lcd.getBottom()<=F::lcdBottom);
+                // Include LED glow/stroke beyond nominal rotary draw rectangle.
+                const float radius=dial.getWidth()*(hero?.366f:.338f)+
+                    (hero?8.f+13.f+3.8f+2.f+3.25f:5.f+9.f+2.5f+2.f+2.f);
+                assert(radius<slider->getWidth()*.5f);
+                assert(dial.getCentreY()-radius>label->getBottom());
+                assert(dial.getCentreY()+radius<lcd.getY());
+                bool labelClicks=true,childClicks=true;
+                label->getInterceptsMouseClicks(labelClicks,childClicks);
+                assert(!labelClicks&&!childClicks);
+            }
         }
         assert(visibleLabels==7 && visibleKnobs==7);
         assert(mainDecay->isVisible()&&mainMix->isVisible());

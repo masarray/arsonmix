@@ -22,6 +22,39 @@ inline juce::Colour rgb(int r,int g,int b) {return juce::Colour::fromRGB(
 constexpr float pi=juce::MathConstants<float>::pi;
 // Production and Windows QA bundle the unmodified OFL-licensed Inter font.
 // Font objects are constructed exclusively on the JUCE message/UI thread.
+// Fixed compact faceplate. Dial artwork, hit regions and editable LCDs have
+// separate geometry: changing the LCD never moves or rescales a dial.
+struct FaceplateLayout final {
+    static constexpr int width=1120,height=430, shoulderY=47;
+    static constexpr int headerCentreY=34, lcdTop=374,lcdBottom=408;
+    static constexpr int lcdCentreY=393,lcdHeight=26;
+    static constexpr int heroTop=124,heroCentreY=250,heroDial=184,heroWidth=202;
+    static constexpr int smallTop=221,smallCentreY=297,smallDial=106,smallWidth=114;
+    static constexpr int smallFirstCentre=330,smallPitch=115;
+    static constexpr int controlBottom=lcdCentreY+lcdHeight/2;
+    static constexpr int tabY=164,tabHeight=34,tabPitch=94,tabWidth=92;
+    static constexpr int tabLeft=(width-(5*tabPitch+tabWidth))/2;
+    static_assert(controlBottom<=lcdBottom && lcdCentreY-lcdHeight/2>=lcdTop);
+    static_assert(headerCentreY+12<shoulderY);
+    static_assert(smallWidth<smallPitch);
+    static juce::Rectangle<int> heroBounds(int centreX) {
+        return {centreX-heroWidth/2,heroTop,heroWidth,controlBottom-heroTop};
+    }
+    static juce::Rectangle<int> smallBounds(int centreX) {
+        return {centreX-smallWidth/2,smallTop,smallWidth,controlBottom-smallTop};
+    }
+    static juce::Slider::SliderLayout sliderLayout(juce::Slider& slider,bool hero) {
+        const int top=hero?heroTop:smallTop;
+        const int size=hero?heroDial:smallDial;
+        const int centre=hero?heroCentreY:smallCentreY;
+        const int textWidth=hero?126:102;
+        juce::Slider::SliderLayout layout;
+        layout.sliderBounds={(slider.getWidth()-size)/2,centre-top-size/2,size,size};
+        layout.textBoxBounds={(slider.getWidth()-textWidth)/2,
+                              lcdCentreY-top-lcdHeight/2,textWidth,lcdHeight};
+        return layout;
+    }
+};
 struct MeterLayout final {
     static constexpr int groupLeft=250, groupRight=870;
     static constexpr int leftLabelX=250, leftLabelWidth=93;
@@ -84,6 +117,17 @@ public:
 };
 class DialLook final : public juce::LookAndFeel_V4 {
 public:
+    juce::Slider::SliderLayout getSliderLayout(juce::Slider& slider) override {
+        using F=FaceplateLayout;
+        const auto id=slider.getComponentID();
+        const bool hero=id=="armix.reverb.param.0"||id=="armix.reverb.param.2";
+        const auto width=hero?F::heroWidth:F::smallWidth;
+        const auto top=hero?F::heroTop:F::smallTop;
+        if(id.startsWith("armix.reverb.param.")&&slider.getWidth()==width&&
+           slider.getHeight()==F::controlBottom-top)
+            return F::sliderLayout(slider,hero);
+        return juce::LookAndFeel_V4::getSliderLayout(slider);
+    }
     // Hardware-inspired controls are drawn vectorially at every DPI.
     // This is original ArSonMix artwork, not HD-CART proprietary bitmaps.
     void drawRotarySlider(juce::Graphics& g,int x,int y,int width,int height,
@@ -195,7 +239,9 @@ public:
     juce::Font getPopupMenuFont() override {return uiFont(12.f);}
     void positionComboBoxText(juce::ComboBox& box,juce::Label& text) override {
         // Text and chevron share the exact vertical centre and safe padding.
-        text.setBounds(9,0,juce::jmax(24,box.getWidth()-40),box.getHeight());
+        const bool preset=box.getComponentID()=="armix.reverb.preset";
+        const int left=preset?30:9;
+        text.setBounds(left,0,juce::jmax(24,box.getWidth()-(preset?60:40)),box.getHeight());
         text.setFont(getComboBoxFont(box));
         text.setJustificationType(box.getComponentID()=="armix.reverb.preset"?
             juce::Justification::centred:juce::Justification::centredLeft);
@@ -534,11 +580,12 @@ public:
             labels_[i].setFont(reverb_ui::uiFont(12.f));
             labels_[i].setColour(juce::Label::textColourId,reverb_ui::rgb(195,202,208));
             labels_[i].setJustificationType(juce::Justification::centred);
+            labels_[i].setInterceptsMouseClicks(false,false);
             addAndMakeVisible(labels_[i]);
         }
         labels_[0].setText("Dry/Wet Mix",juce::dontSendNotification);
         labels_[2].setText("Reverb Time",juce::dontSendNotification);
-        setSize(1120,430);
+        setSize(reverb_ui::FaceplateLayout::width,reverb_ui::FaceplateLayout::height);
         layoutPage();
         lastMeterGeneration_=processor_.meterGeneration();
         processor_.attachMeterView();
@@ -562,6 +609,8 @@ public:
 
     void paint(juce::Graphics& g) override {
         using namespace reverb_ui;
+        using F=FaceplateLayout;
+        constexpr float shoulderY=static_cast<float>(F::shoulderY);
         const float w=static_cast<float>(getWidth());
         const float h=static_cast<float>(getHeight());
         g.fillAll(rgb(11,10,15));
@@ -580,12 +629,12 @@ public:
                   rgb(17,44,71),9.f,64.f,false));
         g.fillRect(11.f,11.f,w-22.f,50.f);
         juce::Path body;
-        body.startNewSubPath(11.f,31.f);
-        body.lineTo(241.f,31.f);
-        body.cubicTo(311.f,31.f,337.f,58.f,424.f,59.f);
+        body.startNewSubPath(11.f,shoulderY);
+        body.lineTo(241.f,shoulderY);
+        body.cubicTo(311.f,shoulderY,337.f,58.f,424.f,59.f);
         body.lineTo(w-424.f,59.f);
-        body.cubicTo(w-337.f,58.f,w-311.f,31.f,w-241.f,31.f);
-        body.lineTo(w-11.f,31.f);
+        body.cubicTo(w-337.f,58.f,w-311.f,shoulderY,w-241.f,shoulderY);
+        body.lineTo(w-11.f,shoulderY);
         body.lineTo(w-11.f,374.f);
         body.lineTo(11.f,374.f);
         body.closeSubPath();
@@ -594,19 +643,19 @@ public:
         g.fillPath(body);
         g.setColour(rgb(110,124,128).withAlpha(.46f));
         juce::Path shoulder;
-        shoulder.startNewSubPath(11.f,31.f);
-        shoulder.lineTo(241.f,31.f);
-        shoulder.cubicTo(311.f,31.f,337.f,58.f,424.f,59.f);
+        shoulder.startNewSubPath(11.f,shoulderY);
+        shoulder.lineTo(241.f,shoulderY);
+        shoulder.cubicTo(311.f,shoulderY,337.f,58.f,424.f,59.f);
         shoulder.lineTo(w-424.f,59.f);
-        shoulder.cubicTo(w-337.f,58.f,w-311.f,31.f,w-241.f,31.f);
-        shoulder.lineTo(w-11.f,31.f);
+        shoulder.cubicTo(w-337.f,58.f,w-311.f,shoulderY,w-241.f,shoulderY);
+        shoulder.lineTo(w-11.f,shoulderY);
         g.strokePath(shoulder,juce::PathStrokeType(.8f));
         g.setColour(rgb(46,99,125).withAlpha(.53f));
         g.drawLine(11.f,10.f,w-11.f,10.f,.9f);
 
         // Distinct HD-CART-like bottom LCD ribbon, with actual JUCE Slider
         // editable numeric text boxes over it, rather than duplicate text.
-        constexpr float lcdTop=374.f;
+        constexpr float lcdTop=static_cast<float>(F::lcdTop);
         g.setGradientFill(juce::ColourGradient(rgb(27,85,122),11.f,lcdTop,
                                                rgb(17,49,83),11.f,407.f,false));
         g.fillRect(11.f,lcdTop,w-22.f,34.f);
@@ -648,9 +697,9 @@ public:
         }
 
         g.setColour(rgb(75,90,99).withAlpha(.67f));
-        g.drawLine(291.f,200.f,w-291.f,200.f,.8f);
+        g.drawLine(static_cast<float>(F::tabLeft),200.f,w-F::tabLeft,200.f,.8f);
         g.setColour(rgb(106,187,224).withAlpha(.26f));
-        g.drawLine(291.f,201.f,w-291.f,201.f,.7f);
+        g.drawLine(static_cast<float>(F::tabLeft),201.f,w-F::tabLeft,201.f,.7f);
         // Lower 10px cabinet lip is intentionally empty: no clipped footer.
     }
 
@@ -674,16 +723,19 @@ public:
         g.drawText(text,label,juce::Justification::centred,false);
     }
     void resized() override {
+        using F=reverb_ui::FaceplateLayout;
         title_.setBounds(47,65,247,32);
-        // Same right-side cluster as PEQ, Compressor and Harmonice.
-        close_.setBounds(getWidth()-25-24,13,24,24);
-        power_.setBounds(close_.getX()-8-26,13,26,24);
+        // Same right-side cluster as PEQ, Compressor and Harmonice;
+        // align optical centres with preset row, entirely on blue shoulder.
+        close_.setBounds(getWidth()-25-24,F::headerCentreY-12,24,24);
+        power_.setBounds(close_.getX()-8-26,F::headerCentreY-12,26,24);
         preset_.setBounds(424,17,272,34);
         prev_.setBounds(383,17,33,34);
         next_.setBounds(getWidth()-383-33,17,33,34);
         algorithm_.setBounds(934,78,139,28);
         for(std::size_t i=0;i<tabs_.size();++i)
-            tabs_[i].setBounds((getWidth()-(5*94+92))/2+static_cast<int>(i)*94,164,92,34);
+            tabs_[i].setBounds(F::tabLeft+static_cast<int>(i)*F::tabPitch,
+                               F::tabY,F::tabWidth,F::tabHeight);
         layoutPage();
     }
     // Drag only bare faceplate header, never sliders, dropdowns or buttons.
@@ -762,18 +814,19 @@ private:
             knobs_[i].setVisible(false);
             labels_[i].setVisible(false);
         }
-        knobs_[2].setBounds(48,124,185,278);
-        labels_[2].setBounds(40,125,201,23);
-        knobs_[0].setBounds(getWidth()-48-185,124,185,278);
-        labels_[0].setBounds(getWidth()-40-201,125,201,23);
+        using F=reverb_ui::FaceplateLayout;
+        knobs_[2].setBounds(F::heroBounds(140));
+        labels_[2].setBounds(40,125,200,23);
+        knobs_[0].setBounds(F::heroBounds(getWidth()-140));
+        labels_[0].setBounds(getWidth()-240,125,200,23);
         knobs_[2].setVisible(true);labels_[2].setVisible(true);
         knobs_[0].setVisible(true);labels_[0].setVisible(true);
         for(std::size_t n=0;n<5;++n) {
             const auto idx=static_cast<std::size_t>(
                 pages_[static_cast<std::size_t>(page_)][n]);
-            const int x=277+static_cast<int>(n)*115;
-            knobs_[idx].setBounds(x,221,106,178);
-            labels_[idx].setBounds(x-1,205,108,21);
+            const int centre=F::smallFirstCentre+static_cast<int>(n)*F::smallPitch;
+            knobs_[idx].setBounds(F::smallBounds(centre));
+            labels_[idx].setBounds(centre-54,205,108,21);
             knobs_[idx].setVisible(true);
             labels_[idx].setVisible(true);
         }
