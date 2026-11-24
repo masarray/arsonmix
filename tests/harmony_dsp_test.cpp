@@ -850,7 +850,7 @@ static void testBackingContinuity(){
     BackingRenderSeam seam;seam.prepare(rate);
     for(int i=0;i<rate/50;++i)seam.process(.15f,.45f,true,1.f);
     const float last=seam.process(.15f,.45f,true,1.f);
-    need(seam.process(.16f,-.7f,false,1.f)-last<.011f,"H13 loss step");
+    need(std::abs(seam.process(.16f,-.7f,false,1.f)-last)<.011f,"H13 loss step");
     float previous=seam.process(.15f,-.7f,false,1.f);
     for(int i=0;i<rate/100;++i){
       const float now=seam.process(.15f,-.7f,false,1.f);
@@ -886,7 +886,7 @@ static void testBackingContinuity(){
     auto run=[&](bool modern,bool wet,int block){
       auto e=std::make_unique<Engine>();Settings s;
       s.voices=voices;s.wet=wet?1.f:0.f;s.color=.78f;s.space=1.f;
-      s.guideMode=1;
+      s.guideMode=1;s.guideChannelId=2;
       need(e->prepare(rate)&&e->setContinuityForOfflineReference(modern)&&e->setSettings(s),
            "H13 setup");
       auto out=src;
