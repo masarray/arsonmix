@@ -15,6 +15,8 @@
 #include <iostream>
 #include <iterator>
 #include <memory>
+#include <random>
+#include <iomanip>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -648,6 +650,111 @@ static void continuityReport(const Wave& input,const fs::path& folder,Settings s
     }
     if(!csv||!events||!traceCsv)throw std::runtime_error("continuity report write failed");
 }
+// H27 qualification is separate from historical isolated-stem comparisons:
+// the shipped P0/P1 guards and source-confirmation defaults remain enabled.
+// Identical callback partition and guide evidence; timing excludes fixture
+// IO and precomputed guide detection. Not a hardware/whole mixer benchmark.
+static void qualify(const Wave& input,const fs::path& folder,Settings s,int block,
+                    const GuideTimeline* guide=nullptr){
+    if(input.left.empty()||input.left.size()!=input.right.size()||
+       input.left.size()>std::size_t(input.rate)*30||block<16||block>2048||
+       s.voices<3||s.voices>5)throw std::runtime_error("qualification requires <=30s, Trio-Five, block 16..2048");
+    fs::create_directories(folder);
+    struct Run {Wave pcm;std::vector<double> us;std::uint64_t updates=0,losses=0,highLoss=0;};
+    auto render=[&](int variant,float wet){
+        auto e=std::make_unique<Engine>();
+        auto settings=s;settings.wet=wet;
+        if(!e->prepare(input.rate)||!e->setSettings(settings)||
+            !e->setCausalEnvelopeForOfflineReference(variant!=0)||
+            !e->setAdaptiveEnvelopeForOfflineReference(variant==2))
+            throw std::runtime_error("qualification engine setup");
+        Run x;x.pcm=input;x.us.reserve(input.left.size()/block+2);
+        std::size_t gi=0;
+        for(std::size_t at=0;at<input.left.size();){
+            auto end=input.left.size();
+            if(guide){
+                const auto& f=guide->at(gi);
+                if(at==f.at)applyGuide(*e,f);
+                end=f.end;
+            }
+            const auto n=std::min(std::size_t(block),end-at);
+            const auto start=std::chrono::steady_clock::now();
+            e->process(x.pcm.left.data()+at,x.pcm.right.data()+at,int(n));
+            const auto elapsed=std::chrono::duration<double,std::micro>(
+                std::chrono::steady_clock::now()-start).count();
+            if(at>=input.rate/4&&n==std::size_t(block))x.us.push_back(elapsed);
+            at+=n;if(guide&&at==guide->at(gi).end)++gi;
+        }
+        for(int v=0;v<Engine::maxVoices;++v)x.losses+=e->seamCountsForOfflineTests(v).losses;
+        x.highLoss=e->seamCountsForOfflineTests(2).losses;
+        x.updates=e->causalEnvelopeUpdatesForOfflineTests();
+        std::sort(x.us.begin(),x.us.end());
+        return x;
+    };
+    const auto dry=render(0,0.f).pcm;
+    writeWave(folder/"dry_aligned.wav",dry);
+    std::array<Run,3> runs;
+    std::array<double,3> rmsValues{},peaks{};
+    const std::array<const char*,3> names{{"live_baseline","H26","H27"}};
+    std::ofstream csv(folder/"qualification.csv",std::ios::trunc);
+    if(!csv)throw std::runtime_error("qualification report open");
+    csv<<"variant,rate,frames,voices,block,mode,updates,total_losses,high_losses,mix_rms,mix_peak,over_unity,backing_rms,right_step_over_rms,measured_blocks,p50_us,p99_us,max_us,deadline_us,over_budget\n";
+    csv<<std::setprecision(10);
+    const double deadline=1.e6*block/input.rate;
+    for(int v=0;v<3;++v){
+        auto& x=runs[v];x=render(v,1.f);
+        const auto backing=subtract(x.pcm,dry);
+        const auto a=earEvidence(x.pcm.left,0,x.pcm.left.size());
+        const auto b=earEvidence(x.pcm.right,0,x.pcm.right.size());
+        const auto br=earEvidence(backing.right,0,backing.right.size());
+        rmsValues[v]=rms(x.pcm);peaks[v]=std::max(a.peak,b.peak);
+        for(std::size_t i=0;i<x.pcm.left.size();++i)
+            if(!std::isfinite(x.pcm.left[i])||!std::isfinite(x.pcm.right[i]))
+                throw std::runtime_error("qualification nonfinite PCM");
+        const auto pct=[&](int p){return x.us.empty()?-1.:x.us[(x.us.size()-1)*p/100];};
+        const auto misses=std::count_if(x.us.begin(),x.us.end(),[&](double q){return q>deadline;});
+        csv<<names[v]<<','<<input.rate<<','<<input.left.size()<<','<<s.voices<<','<<block<<','
+           <<(guide?"Music":"Manual")<<','<<x.updates<<','<<x.losses<<','<<x.highLoss<<','
+           <<rmsValues[v]<<','<<peaks[v]<<','<<a.overload+b.overload<<','<<rms(backing)<<','
+           <<(br.rms>1.e-8?br.maxStep/br.rms:0.)<<','<<x.us.size()<<','<<pct(50)<<','<<pct(99)<<','
+           <<pct(100)<<','<<deadline<<','<<misses<<'\n';
+        writeWave(folder/(std::string(names[v])+"_raw_mix.wav"),x.pcm);
+        writeWave(folder/(std::string(names[v])+"_raw_backing.wav"),backing);
+    }
+    // RMS-matched audition copies only: no gain added to raw evidence.
+    // Equalize down to the quietest mix and apply a common peak safety
+    // scale. This is not BS.1770 loudness or true-peak normalization.
+    const double target=*std::min_element(rmsValues.begin(),rmsValues.end());
+    if(target<1.e-7)throw std::runtime_error("qualification silent input");
+    std::array<double,3> gain{};double largest=0.;
+    for(int v=0;v<3;++v){gain[v]=target/rmsValues[v];largest=std::max(largest,peaks[v]*gain[v]);}
+    const double common=largest>.95?.95/largest:1.;
+    // Reproducible permutation per input PCM size/rate/key/voice count.
+    // Conceal mapping from listener; evaluator retains the key file.
+    std::array<int,3> order{{0,1,2}};
+    std::mt19937 rng(static_cast<unsigned>(input.left.size())^input.rate^
+                     (unsigned(s.key)<<8)^(unsigned(s.voices)<<16));
+    std::shuffle(order.begin(),order.end(),rng);
+    std::ofstream key(folder/"evaluator_key.csv",std::ios::trunc);
+    std::ofstream score(folder/"listener_scores.csv",std::ios::trunc);
+    if(!key||!score)throw std::runtime_error("qualification score open");
+    key<<"sample,variant,linear_gain\n";score<<"sample,naturalness_0_100,crackle_free_0_100,blend_0_100,notes\n";
+    for(int i=0;i<3;++i){
+        const int v=order[i];auto x=runs[v].pcm;
+        const float g=static_cast<float>(gain[v]*common);
+        for(auto* c:{&x.left,&x.right})for(auto& sample:*c)sample*=g;
+        const std::string name=std::string("listen_")+char('A'+i)+".wav";
+        writeWave(folder/name,x);key<<name<<','<<names[v]<<','<<g<<'\n';
+        score<<name<<",,,,\n";
+        if(std::abs(rms(x)-target*common)>1.e-6)throw std::runtime_error("qualification RMS match");
+    }
+    if(guide)writeGuideTimeline(folder/"guide_timeline.csv",*guide,input.rate);
+    if(!csv||!key||!score)throw std::runtime_error("qualification write");
+    std::cout<<"H27_QUALIFICATION mode="<<(guide?"Music":"Manual")<<" rate="<<input.rate
+             <<" frames="<<input.left.size()<<" voices="<<s.voices<<" block="<<block
+             <<" H26_updates="<<runs[1].updates<<" H27_updates="<<runs[2].updates
+             <<" RMS-matched audition PASS (no subjective verdict)\n";
+}
 int main(int argc,char** argv){
     try{
         if(argc==2&&std::string(argv[1])=="--self-test"){
@@ -758,6 +865,8 @@ int main(int argc,char** argv){
             if(lpc.rate!=v.rate||lpc.left.size()!=v.left.size())return 20;
             const auto causal=readWave(folder/"h26_high_causal_candidate.wav");
             if(causal.rate!=v.rate||causal.left.size()!=v.left.size()||!fs::exists(folder/"h26_causal_mix.wav"))return 21;
+            qualify(v,folder/"qualification",s,64);
+            if(!fs::exists(folder/"qualification/listener_scores.csv"))return 26;
             const auto adaptive=readWave(folder/"h27_high_adaptive_candidate.wav");
             if(adaptive.rate!=v.rate||adaptive.left.size()!=v.left.size()||!fs::exists(folder/"h27_adaptive_mix.wav"))return 25;
             std::ifstream tr(folder/"renderer_trace_10ms.csv");int traceRows=0;
@@ -810,6 +919,20 @@ int main(int argc,char** argv){
             std::cout<<"Offline native A/B test passed (synthetic only)\n";
             return 0;
         }
+        if((argc==8&&std::string(argv[1])=="--qualify")||
+           (argc==9&&std::string(argv[1])=="--qualify-music")){
+            const bool music=argc==9;const int offset=music?1:0;
+            const auto vocal=readWave(argv[2]);Settings s;
+            s.key=std::stoi(argv[4+offset]);s.scale=std::stoi(argv[5+offset]);
+            s.voices=std::stoi(argv[6+offset]);s.wet=1.f;s.space=1.f;s.color=.78f;
+            const int block=std::stoi(argv[7+offset]);
+            if(music){
+                s.guideMode=1;s.guideChannelId=2;
+                const auto timeline=guideTimeline(vocal,readWave(argv[3]),block);
+                qualify(vocal,argv[3+offset],s,block,&timeline);
+            }else qualify(vocal,argv[3],s,block);
+            return 0;
+        }
         if(argc==9&&std::string(argv[1])=="--continuity-music"){
             const auto vocal=readWave(argv[2]),music=readWave(argv[3]);
             Settings s;s.key=std::stoi(argv[5]);s.scale=std::stoi(argv[6]);
@@ -849,7 +972,9 @@ int main(int argc,char** argv){
             std::cerr<<"usage: harmony_offline_ab input.wav output_directory\n"
                      <<"       harmony_offline_ab --lead-tune input.wav output_directory key scale\n"
                      <<"       harmony_offline_ab --continuity input.wav output_directory key scale voices\n"
-                     <<"       harmony_offline_ab --continuity-music vocal.wav music.wav output_directory key scale voices callback_frames\n";
+                     <<"       harmony_offline_ab --continuity-music vocal.wav music.wav output_directory key scale voices callback_frames\n"
+                     <<"       harmony_offline_ab --qualify vocal.wav output_directory key scale voices callback_frames\n"
+                     <<"       harmony_offline_ab --qualify-music vocal.wav music.wav output_directory key scale voices callback_frames\n";
             return 1;
         }
         renderAb(readWave(argv[1]),argv[2]);

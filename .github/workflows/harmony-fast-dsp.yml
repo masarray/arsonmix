@@ -90,6 +90,9 @@ jobs:
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra tools/harmony_offline_ab.cpp -o /tmp/arson-harmony-ab
           /tmp/arson-harmony-ab --self-test
+      - name: Pinned real-singer qualification (VocalSet sustained vowels)
+        run: |
+          python3 scripts/harmony_vocalset_qualification.py /tmp/arson-harmony-ab "$RUNNER_TEMP/harmony-vocalset"
   harmony-ui:
     name: Vocal Harmony editor syntax and approved UI contract (no Chromium)
     needs: scope
