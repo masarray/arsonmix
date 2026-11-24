@@ -69,10 +69,7 @@ public:
         framesSeen_=0;candidate_=-1;candidateScale_=-1;candidateHold_=0;
         silentFrames_=0;uncertainFrames_=0;windowEnergy_=0.;filtered_=0.f;
         current_={};
-        chordC_.fill(0.f);chordS_.fill(0.f);chordHist_.fill(0.f);
-        chord_={};chordCandidate_=-1;chordHold_=0;chordUncertain_=0;
-        chordIndex_=24;chordBest_=chordSecond_=-1.f;chordBestCode_=-1;
-        peakChordScores_=0;
+        resetChordEvidence();peakChordScores_=0;
     }
     void process(const float* left,const float* right,int count) noexcept {
         if(!left||!right||count<=0||decimation_<=0)return;
@@ -127,6 +124,11 @@ public:
     }
     MusicKeyEstimate estimate() const noexcept{return current_;}
     MusicChordEstimate chordEstimate() const noexcept{return chord_;}
+    void resetChordEvidence() noexcept {
+        chordC_.fill(0.f);chordS_.fill(0.f);chordHist_.fill(0.f);
+        chord_={};chordCandidate_=-1;chordHold_=0;chordUncertain_=0;
+        chordIndex_=24;chordBest_=chordSecond_=-1.f;chordBestCode_=-1;
+    }
     int peakChordScoresPerSample() const noexcept{return peakChordScores_;}
 private:
     static constexpr std::array<float,12> majorProfile{{
@@ -188,11 +190,14 @@ private:
         chordHist_.fill(0.f);
         float sum=0.f;
         for(int i=0;i<bins;++i){
-            const float x=std::sqrt(chordC_[i]*chordC_[i]+chordS_[i]*chordS_[i])*weight_[i];
+            // Power chroma suppresses off-bin leakage in this short
+            // resonator envelope, and avoids 36 extra square roots.
+            const float x=(chordC_[i]*chordC_[i]+chordS_[i]*chordS_[i])*
+                          weight_[i]*weight_[i];
             if(!std::isfinite(x)){rejectChordEvidence();return;}
             chordHist_[i%12]+=x;sum+=x;
         }
-        if(sum<.0005f){rejectChordEvidence();return;}
+        if(sum<1.e-7f){rejectChordEvidence();return;}
         for(auto& x:chordHist_)x/=sum;
         chordIndex_=0;chordBest_=chordSecond_=-1.f;chordBestCode_=-1;
     }

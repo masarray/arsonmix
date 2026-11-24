@@ -61,8 +61,16 @@ public:
         // tonal estimate running indefinitely. Manual Key is the fallback.
         const int guideTimeout=static_cast<int>(sampleRate_*2.);
         const bool guideWasFresh=guideAge_<=guideTimeout;
+        const int chordTimeout=static_cast<int>(sampleRate_*.30);
+        const bool chordWasFresh=guideAge_<=chordTimeout;
         guideAge_=std::min(guideAge_+samples.getNumSamples(),
                             static_cast<int>(sampleRate_*3.));
+        if(chordWasFresh&&guideAge_>chordTimeout){
+            // Missing source must not keep a local chord through the
+            // longer global-key timeout. Re-entry needs fresh evidence.
+            guide_.resetChordEvidence();
+            dsp_.setGuideChord(-1,-1);
+        }
         if(guideWasFresh&&guideAge_>guideTimeout){
             // The guide source went missing. A detector that still retains
             // old chroma would publish the old key on the FIRST resumed
