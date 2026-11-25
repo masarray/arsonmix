@@ -134,6 +134,7 @@ jobs:
           path: .anti-noiz-control-reference
           persist-credentials: false
       - name: Build matched drivers and common-object adapter pair
+        id: build_matched
         run: |
           set -euo pipefail
           cd tools/anti-noiz
@@ -154,10 +155,10 @@ jobs:
       - name: Capture actual benchmark input and output
         run: python3 tools/anti-noiz/diagnose_rt.py "$RUNNER_TEMP/rt-old" "$RUNNER_TEMP/rt-new" "$RUNNER_TEMP/rt-capture-compare"
       - name: Capture same common-object driver linked against both revisions
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.build_matched.outcome == 'success' }}
         run: python3 tools/anti-noiz/diagnose_rt.py "$RUNNER_TEMP/rt-bridge-old" "$RUNNER_TEMP/rt-bridge-new" "$RUNNER_TEMP/rt-capture-compare"
       - name: Strict common-object PCM and timing gate
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.build_matched.outcome == 'success' }}
         run: python3 tools/anti-noiz/compare_rt.py "$RUNNER_TEMP/rt-bridge-old" "$RUNNER_TEMP/rt-bridge-new"
 
   web-contract:

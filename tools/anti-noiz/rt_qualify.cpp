@@ -28,6 +28,7 @@ using namespace armix::builtin_fx::anti_noiz;
 #endif
 namespace {
 using Clock=std::chrono::steady_clock;
+struct FileCloser { void operator()(std::FILE* f) const noexcept {if(f)std::fclose(f);} };
 void require(bool condition,const char* message){if(!condition)throw std::runtime_error(message);}
 void probeSelfTest(){
 #ifdef ANTI_NOIZ_ALLOC_PROBE
@@ -144,7 +145,7 @@ void benchmark(const char* prefix=nullptr){
     for(unsigned rate:{44100u,48000u,88200u,96000u})for(int block:{32,64,128,256,1024})for(int scenario=0;scenario<3;++scenario){
         Fixture f;
         const auto name=scenario==0?"weak-auto":scenario==1?"coherent":"spectral";
-        std::unique_ptr<std::FILE,decltype(&std::fclose)> capture(nullptr,&std::fclose);
+        std::unique_ptr<std::FILE,FileCloser> capture;
         if(prefix){
             const std::string path=std::string(prefix)+"-"+std::to_string(rate)+"-"+std::to_string(block)+"-"+name+".f32";
             capture.reset(std::fopen(path.c_str(),"wb"));require(bool(capture),"PCM capture open");
