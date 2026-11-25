@@ -12,7 +12,21 @@ with sync_playwright() as pw:
     page.set_default_timeout(5000)
     errors = []
     page.on('pageerror', lambda e: errors.append(str(e)))
-    page.set_content('<body style="background:#151718"></body>')
+    # Real existing PNG/JPG, served from the same relative /assets/ path as the
+    # assembled native bundle. No data URI, substitute image or network dependency.
+    allowed = {'mixer-gain-knob-brushed-steel.png', 'geq31-brushed-metal.jpg'}
+    loaded = set()
+    def serve(route):
+        name = route.request.url.rsplit('/', 1)[-1]
+        if route.request.url == 'https://fixture.invalid/':
+            route.fulfill(content_type='text/html', body='<body style="background:#151718"></body>')
+        elif name in allowed:
+            loaded.add(name)
+            route.fulfill(path=str(assets / name))
+        else:
+            route.abort()
+    page.route('https://fixture.invalid/**', serve)
+    page.goto('https://fixture.invalid/')
     page.evaluate('''()=>{
       window.listeners={};window.events=[];window.crypto.randomUUID ||= ()=>String(Math.random()).slice(2);
       window.view={admitted:true,device:{epoch:'12'},graph:{revision:'4',channels:[{id:'42',inserts:[{id:'fx-a',catalogId:'armix.builtin.de-ezzer.v1'}]}]}};
@@ -35,19 +49,31 @@ with sync_playwright() as pw:
     page.evaluate('''()=>{window.s={id:{instance:'9',epoch:'3'},appliedSequence:'0',frames:'0',settings:{...ArSonMixNativeDeEzzer.defaults,enabled:false},audition:'Normal',gainReductionDb:2.5,lowerWeight:.7};ArSonMixNativeDeEzzer.open({nativeId:'42'},0);const r=events.find(p=>p.action==='nativeDeEzzerSnapshot');listeners.arMixBuiltinDeEzzerSnapshot({...r,ok:true,snapshot:s});}''')
     dial = page.locator('.dial').first
     output = page.locator('.knobs output').first
-    # Production faceplate geometry and no external asset dependency.
-    assert page.locator('.dial-art').count() == 3
-    assert page.locator('.dial-art line').count() == 57
-    assert page.locator('.dial-art defs [id]').count() == 6
-    assert page.locator('.dial-art defs [id]').evaluate_all('(nodes)=>new Set(nodes.map(n=>n.id)).size') == 6
-    assert dial.bounding_box()['width'] == 82
-    assert page.locator('.knobs output').first.evaluate('(e)=>getComputedStyle(e).backgroundColor') == 'rgb(17, 27, 27)'
+    # The production editor uses the original assets, decoded in Chromium.
+    assert page.locator('.dial-face img').count() == 3
+    assert page.locator('.dial-well').count() == 3
+    assert page.locator('.dial-arc').count() == 3
+    assert page.locator('.dial-art').count() == 0
+    page.wait_for_function("Array.from(document.querySelectorAll('.dial-face img')).every(i=>i.complete&&i.naturalWidth>0)")
+    page.wait_for_function("getComputedStyle(document.querySelector('#mxNativeDeEzzer')).backgroundImage.includes('geq31-brushed-metal.jpg')")
+    assert page.evaluate("""async () => {
+      const im=new Image();im.src='assets/geq31-brushed-metal.jpg';await im.decode();
+      return im.naturalWidth>0&&im.naturalHeight>0;
+    }""")
+    assert loaded == allowed, loaded
+    assert dial.bounding_box()['width'] == 80
+    assert page.locator('.dial-face').first.evaluate('(e)=>getComputedStyle(e).transform') == 'none'
+    assert page.locator('.dial-face').first.evaluate('(e)=>getComputedStyle(e).boxShadow') != 'none'
+    assert page.locator('.display').evaluate('(e)=>getComputedStyle(e,"::after").pointerEvents') == 'none'
+    assert 'gradient' in page.locator('.display').evaluate('(e)=>getComputedStyle(e,"::after").backgroundImage')
+    assert page.locator('.knobs output').first.evaluate('(e)=>getComputedStyle(e,"::after").pointerEvents') == 'none'
     box = dial.bounding_box(); x=box['x']+box['width']/2; y=box['y']+box['height']/2
     page.mouse.move(x,y);page.mouse.down();page.mouse.move(x,y-32)
     assert page.evaluate('commands().length') == 1 # must apply before mouseup
     assert output.inner_text() == '70%' # requested display; accepted separately
     assert page.locator('.draft').first.inner_text() == 'Applied 50%'
     assert dial.locator('.draft-pointer').is_visible()
+    assert dial.locator('.dial-face').evaluate('(e)=>getComputedStyle(e).transform') == 'none'
     assert dial.evaluate('(e)=>getComputedStyle(e).getPropertyValue("--accepted-angle").trim()') == '0deg'
     assert page.locator('input[type=range]').count()==0
     assert page.locator('[data-power-label]').inner_text()=='OFF'
@@ -95,10 +121,11 @@ with sync_playwright() as pw:
     assert page.locator('#mxNativeDeEzzer').bounding_box()['height'] <= 600
     panel = page.locator('#mxNativeDeEzzer')
     assert panel.evaluate('(e)=>e.scrollWidth<=e.clientWidth+1')
-    assert panel.evaluate('(e)=>e.scrollHeight<=e.clientHeight+1')
+    assert panel.evaluate('(e)=>e.scrollHeight<=e.clientHeight+1'), panel.evaluate('(e)=>[e.scrollHeight,e.clientHeight]')
     page.set_viewport_size({'width': 400, 'height': 640})
     assert panel.evaluate('(e)=>e.scrollWidth<=e.clientWidth+1')
     assert page.locator('.dial').count()==3
+    assert panel.evaluate('(e)=>e.scrollHeight<=e.clientHeight+1'), panel.evaluate('(e)=>[e.scrollHeight,e.clientHeight]')
     page.set_viewport_size({'width': 800, 'height': 600})
     page.locator('[data-cue="Ess"]').click()
     page.evaluate('''()=>{let req=events.filter(p=>p.action==='nativeDeEzzerCue').at(-1);listeners.arMixBuiltinDeEzzerCue({...req,ok:true,cue:{available:true,requested:'Ess',applied:'Mix'}});}''')
@@ -115,6 +142,26 @@ with sync_playwright() as pw:
     assert page.locator('[data-ess]').inner_text()=='—'
     assert page.locator('[data-history] i').last.evaluate('(e)=>parseFloat(e.style.height)===0')
     page.locator('[data-close]').click();assert page.locator('#mxNativeDeEzzerHost').is_hidden()
+    # Reopen with the real shared preset library (not only the ACK test stub).
+    page.add_script_tag(path=str(assets/'mixer-builtin-fx-preset-bar.js'))
+    page.evaluate('''()=>{view.graph.revision="6";window.autoSnapshot=false;
+      s={...s,id:{instance:'10',epoch:'4'},frames:'0',appliedSequence:'0'};
+      ArSonMixNativeDeEzzer.open({nativeId:'42'},0);
+      const req=events.filter(p=>p.action==='nativeDeEzzerSnapshot').at(-1);
+      listeners.arMixBuiltinDeEzzerSnapshot({...req,ok:true,snapshot:s});
+      window.autoSnapshot=true;
+    }''')
+    assert page.locator('.mx-fxp-save-as').is_visible()
+    assert page.locator('.mx-fxp-manage').is_visible()
+    assert panel.evaluate('(e)=>e.scrollHeight<=e.clientHeight+1'), panel.evaluate('(e)=>[e.scrollHeight,e.clientHeight]')
+    assert panel.evaluate('(e)=>e.scrollWidth<=e.clientWidth+1')
+    page.set_viewport_size({'width':400,'height':640})
+    assert panel.evaluate('(e)=>e.scrollWidth<=e.clientWidth+1')
+    page.set_viewport_size({'width':800,'height':600})
+    if os.environ.get('DE_EZZER_SCREENSHOT'):
+        panel.screenshot(path=os.environ['DE_EZZER_SCREENSHOT'])
+    page.locator('[data-close]').click()
+    assert page.locator('#mxNativeDeEzzerHost').is_hidden()
     assert not errors,errors
     print('PASS: live coalesced drag, fine adjustment, cancellation, reset, keyboard, preset ACK/identity, disconnect/close')
     browser.close()
