@@ -14,6 +14,7 @@ public:
     static constexpr std::array<float,count> frequencies{50.f,60.f,100.f,120.f,150.f,180.f};
     void prepare(double rate,int channels) noexcept {
         channels_=channels;
+        mixAlpha_=1.-std::exp(-1./(.01*rate));
         stride_=std::max(1,int(std::lround(rate/2000.)));
         const double reduced=rate/stride_;
         window_=std::max(1,int(std::lround(.2*reduced)));
@@ -74,7 +75,7 @@ public:
     void apply(float& l,float& r,float amount) noexcept {
         if(selected_<0)return;
         const double target=.292893218*std::clamp(double(amount),0.,1.);
-        mix_+=.002*(target-mix_);
+        mix_+=mixAlpha_*(target-mix_);
         l=filterSample(l,0);
         if(channels_==2)r=filterSample(r,1);
     }
@@ -89,7 +90,7 @@ private:
     }
     void clearWindow() noexcept {frames_=0;energy_={};go_={};}
     int channels_=1,stride_=24,window_=400,frames_=0,phase_=0,windows_=0,selected_=-1;
-    double mix_=0.;
+    double mix_=0.,mixAlpha_=0.;
     std::array<std::array<double,3>,count> coef_{};
     std::array<Coeff,count> filter_{};
     std::array<State,2> states_{};

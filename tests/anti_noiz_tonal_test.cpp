@@ -6,7 +6,7 @@ using namespace armix::builtin_fx::anti_noiz;
 int main(){try{
     for(unsigned rate:{44100u,48000u,88200u,96000u}){
         TonalNoise t;t.prepare(rate,2);
-        const auto tone=[&](unsigned i,float f){return .05f*std::sin(2.*std::numbers::pi*f*i/rate);};
+        const auto tone=[&](unsigned i,float f){return float(.05*std::sin(2.*std::numbers::pi*f*i/rate));};
         for(unsigned i=0;i<2*rate;++i)t.observe(tone(i,60),tone(i,60));
         t.commit();offline::require(t.frequency()==60.f,"stable line qualification");
         double before=0.,after=0.,otherBefore=0.,otherAfter=0.;

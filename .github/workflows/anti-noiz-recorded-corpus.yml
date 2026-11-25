@@ -6,6 +6,8 @@ on:
       - 'tools/anti-noiz/recorded_environment.py'
       - 'tools/anti-noiz/corpus_qualifier.cpp'
       - 'tools/anti-noiz/compare_environment.py'
+      - 'tools/anti-noiz/tonal_benchmark.cpp'
+      - 'tools/anti-noiz/compare_tonal.py'
       - 'tools/anti-noiz/spectral_diagnostics.py'
       - 'engine/builtin_fx/anti_noiz/**'
       - '.github/workflows/anti-noiz-recorded-corpus.yml'
@@ -44,6 +46,15 @@ jobs:
           python3 tools/anti-noiz/recorded_environment.py "$RUNNER_TEMP/an07-base/anti_noiz_qualify" "$RUNNER_TEMP/an07-base-evidence"
       - name: Compare paired quality metrics without weakening original gates
         run: python3 tools/anti-noiz/compare_environment.py "$RUNNER_TEMP/an07-base-evidence/report.json" "$RUNNER_TEMP/an07-evidence/report.json" "$RUNNER_TEMP/an07-comparison.json"
+      - name: Matched synthetic tonal separation against exact E
+        if: ${{ always() && hashFiles('an07-baseline/tools/anti-noiz/OfflineAudio.h') != '' }}
+        run: |
+          cp tools/anti-noiz/tonal_benchmark.cpp an07-baseline/tools/anti-noiz/tonal_benchmark.cpp
+          g++ -std=c++20 -O3 -Wall -Wextra -Werror tools/anti-noiz/tonal_benchmark.cpp -o "$RUNNER_TEMP/an08a-candidate"
+          g++ -std=c++20 -O3 -Wall -Wextra -Werror an07-baseline/tools/anti-noiz/tonal_benchmark.cpp -o "$RUNNER_TEMP/an08a-baseline"
+          "$RUNNER_TEMP/an08a-candidate" > "$RUNNER_TEMP/an08a-candidate.csv"
+          "$RUNNER_TEMP/an08a-baseline" > "$RUNNER_TEMP/an08a-baseline.csv"
+          python3 tools/anti-noiz/compare_tonal.py "$RUNNER_TEMP/an08a-baseline.csv" "$RUNNER_TEMP/an08a-candidate.csv" "$RUNNER_TEMP/an08a-tonal.json"
       - name: Preserve machine-readable evidence only
         if: always()
         uses: actions/upload-artifact@v4
@@ -53,6 +64,9 @@ jobs:
             ${{ runner.temp }}/an07-evidence/report.json
             ${{ runner.temp }}/an07-base-evidence/report.json
             ${{ runner.temp }}/an07-comparison.json
+            ${{ runner.temp }}/an08a-baseline.csv
+            ${{ runner.temp }}/an08a-candidate.csv
+            ${{ runner.temp }}/an08a-tonal.json
             ${{ runner.temp }}/an07-evidence/*/provenance.tsv
             ${{ runner.temp }}/an07-evidence/*/segments.tsv
           if-no-files-found: warn
