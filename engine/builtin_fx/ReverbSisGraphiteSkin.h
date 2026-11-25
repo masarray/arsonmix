@@ -111,7 +111,7 @@ inline juce::Image makeKnob() {
         const double ao=.72+.28*clamp(h/.19), grazing=std::pow(1.-ndv,3)*6.;
         const double grain=(noise(px,py)-.5)*(face?3.5:2.2);
         const double micro=face?std::sin(r*410.+noise(px,py)*1.1)*.45:std::cos(phi*112.)*1.5;
-        const double b=((face?39.:bevel?16.:9.)+(face?36.:bevel?44.:23.)*ndl+
+        const double b=((face?45.:bevel?19.:9.)+(face?36.:bevel?44.:23.)*ndl+
             spec+grazing)*ao+grain+micro+(face?(-wy*.9-wx*.6)*10.:0.);
         pixels.setPixelColour(px,py,juce::Colour::fromRGB(channel(b*.96),channel(b),channel(b*1.055)));
     }
@@ -131,64 +131,69 @@ inline void drawMetal(juce::Graphics& g,const juce::Path& path,int width,int hei
     g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
     g.drawImage(assets().metal,juce::Rectangle<float>(0.f,0.f,float(width),float(height)));
 }
-// Single geometry authority for approved V6 tangential ring and QA.
-// Canvas units; actual dial hit region is intentionally separate.
+// V6.1: physical artwork scales with dial, luminous hardware does not.
+// All LED/pointer dimensions below are logical screen pixels (DPI scales
+// both kinds identically). Compact ring has fewer seats, not smaller LEDs.
 struct DialGeometry {
     bool hero;
-    constexpr int count() const noexcept { return hero?23:21; }
+    constexpr int count() const noexcept { return hero?23:15; }
     constexpr float scale() const noexcept { return (hero?326.f:134.f)/480.f; }
-    constexpr float length() const noexcept { return hero?18.6f:20.f; }
-    constexpr float height() const noexcept { return hero?7.4f:9.8f; }
-    constexpr float inset() const noexcept { return hero?1.15f:1.35f; }
-    constexpr float ring() const noexcept { return .925f*float(radius)+height()*.5f+1.4f+(hero?7.4f:7.6f); }
-    constexpr float bezelGap() const noexcept { return (ring()-.925f*float(radius)-height()*.5f-1.4f)*scale(); }
-    float chordGap() const noexcept { return (2.f*ring()*std::sin(juce::MathConstants<float>::pi*1.5f/(2.f*(count()-1)))-(length()+3.f))*scale(); }
-    float extent() const noexcept { return (ring()+height()*.5f+1.4f+5.f)*scale(); }
+    constexpr float length() const noexcept { return 9.f; }
+    constexpr float height() const noexcept { return 4.f; }
+    constexpr float inset() const noexcept { return .65f; }
+    constexpr float pointerRadius() const noexcept { return 4.1f; }
+    constexpr float pointerOrbit() const noexcept { return .60f*float(radius)*scale(); }
+    constexpr float bezelGap() const noexcept { return hero?5.f:2.1f; }
+    constexpr float ring() const noexcept {
+        return .925f*float(radius)*scale()+height()*.5f+1.f+bezelGap();
+    }
+    float chordGap() const noexcept {
+        return 2.f*ring()*std::sin(juce::MathConstants<float>::pi*1.5f/(2.f*(count()-1)))-(length()+2.f);
+    }
+    float extent() const noexcept {
+        return std::hypot(ring()+height()*.5f+1.f,length()*.5f+1.f)+3.f;
+    }
     static juce::AffineTransform tickTransform(float a,float x,float y) noexcept {
-        // Long axis = (cos a,sin a). At twelve o'clock (2pi) horizontal;
-        // at three o'clock (pi/2) vertical. No erroneous extra quarter turn.
         return juce::AffineTransform::rotation(a).translated(x,y);
     }
 };
 inline void drawKnob(juce::Graphics& g,float x,float y,bool hero,float value,float start,float end) {
     const DialGeometry d{hero};
     const float v=juce::jlimit(0.f,1.f,value);
-    juce::Graphics::ScopedSaveState save(g);
-    g.addTransform(juce::AffineTransform::translation(-float(cx),-float(cy)).scaled(d.scale()).translated(x,y));
-    g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
-    g.drawImageAt(assets().knob,0,0);
-    constexpr float X=float(cx),Y=float(cy),R=float(radius);
+    {
+        juce::Graphics::ScopedSaveState bodyState(g);
+        g.addTransform(juce::AffineTransform::translation(-float(cx),-float(cy)).scaled(d.scale()).translated(x,y));
+        g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
+        g.drawImageAt(assets().knob,0,0);
+    }
     const float l=d.length(),h=d.height(),in=d.inset();
     for(int i=0;i<d.count();++i) {
         const float phase=float(i)/float(d.count()-1), a=start+(end-start)*phase;
-        const float xx=X+std::sin(a)*d.ring(), yy=Y-std::cos(a)*d.ring();
+        const float xx=x+std::sin(a)*d.ring(), yy=y-std::cos(a)*d.ring();
         const bool lit=v>0.f&&phase<=v+1.e-7f;
         juce::Graphics::ScopedSaveState tickState(g);
         g.addTransform(DialGeometry::tickTransform(a,xx,yy));
         const juce::Rectangle<float> led(-l*.5f,-h*.5f,l,h);
-        g.setColour(colour(0x0a1116));g.fillRoundedRectangle(led.expanded(1.5f,1.4f),1.5f);
-        if(lit) {
-            // Bounded soft halo, no runtime blur or unbounded dirty region.
-            for(int halo=5;halo>=1;--halo) {
-                g.setColour(colour(0x34d9ff).withAlpha(.025f+.012f*(5-halo)));
-                g.fillRoundedRectangle(led.expanded(float(halo)),1.2f+halo);
-            }
+        g.setColour(colour(0x0a1116));g.fillRoundedRectangle(led.expanded(1.f),1.3f);
+        if(lit)for(int halo=3;halo>=1;--halo) {
+            g.setColour(colour(0x34d9ff).withAlpha(.035f+.015f*(3-halo)));
+            g.fillRoundedRectangle(led.expanded(float(halo)),1.f+halo);
         }
-        g.setColour(colour(lit?0x54dfff:0x30434e));g.fillRoundedRectangle(led,1.2f);
+        g.setColour(colour(lit?0x54dfff:0x30434e));g.fillRoundedRectangle(led,1.f);
         juce::ColourGradient core(colour(lit?0xd7fbff:0x48616e),0.f,-h*.5f,
                                   colour(lit?0x59cfff:0x263640),0.f,h*.5f,false);
         core.addColour(.45,colour(lit?0xa1edff:0x30434d));
-        g.setGradientFill(core);g.fillRoundedRectangle(led.reduced(in),.8f);
+        g.setGradientFill(core);g.fillRoundedRectangle(led.reduced(in),.6f);
     }
-    const float a=start+(end-start)*v, px=X+std::sin(a)*.665f*R,py=Y-std::cos(a)*.665f*R;
+    const float a=start+(end-start)*v, px=x+std::sin(a)*d.pointerOrbit(),py=y-std::cos(a)*d.pointerOrbit();
     juce::ColourGradient glow(colour(0x2fd6ff).withAlpha(.34f),px,py,
-        colour(0x2fd6ff).withAlpha(0.f),px+12.f,py,true);
-    g.setGradientFill(glow);g.fillEllipse(disc(px,py,12.f));
-    g.setColour(colour(0x122a32));g.fillEllipse(disc(px,py,6.8f));
-    juce::ColourGradient dotGradient(colour(0xefffff),px-1.8f,py-2.2f,
-                                    colour(0x159cc4),px+6.2f,py,true);
+        colour(0x2fd6ff).withAlpha(0.f),px+8.f,py,true);
+    g.setGradientFill(glow);g.fillEllipse(disc(px,py,8.f));
+    g.setColour(colour(0x122a32));g.fillEllipse(disc(px,py,5.1f));
+    juce::ColourGradient dotGradient(colour(0xefffff),px-1.4f,py-1.6f,
+                                    colour(0x159cc4),px+4.6f,py,true);
     dotGradient.addColour(.26,colour(0xc7fbff));
     dotGradient.addColour(.72,colour(0x51dcff));
-    g.setGradientFill(dotGradient);g.fillEllipse(disc(px,py-.12f,5.f));
+    g.setGradientFill(dotGradient);g.fillEllipse(disc(px,py,d.pointerRadius()));
 }
 } // namespace armix::builtin_fx::reverb_ui::graphite

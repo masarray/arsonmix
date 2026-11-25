@@ -30,7 +30,7 @@ struct FaceplateLayout final {
     static constexpr int width=1120,height=430, shoulderY=24;
     static constexpr int headerCentreY=29, chromeCentreY=27, lcdTop=347,lcdBottom=404;
     static constexpr int chromeSize=26,chromeGap=8,chromeRight=25;
-    static constexpr int smallCaptionY=224,algorithmWidth=130,algorithmCentreX=1005;
+    static constexpr int smallCaptionY=224,algorithmWidth=166,algorithmCentreX=983;
     static constexpr int lcdCentreY=376,lcdHeight=26;
     static constexpr int heroTop=129,heroCentreY=236,heroDial=212,heroWidth=220;
     static constexpr int smallTop=243,smallCentreY=293,smallDial=98,smallWidth=116;
@@ -62,9 +62,9 @@ struct FaceplateLayout final {
 };
 struct MeterLayout final {
     static constexpr int groupLeft=250, groupRight=870;
-    static constexpr int leftLabelX=250, leftLabelWidth=93;
+    static constexpr int leftLabelX=250, leftLabelWidth=85;
     static constexpr int dotsLeftX=355, dotsRightX=569;
-    static constexpr int rightLabelX=777, rightLabelWidth=93;
+    static constexpr int rightLabelX=785, rightLabelWidth=85;
     static constexpr int firstDotY=97, secondDotY=126, tickY=108;
     static constexpr int segments=20, pitch=10, dotSize=6;
     static constexpr int labelOpticalLift=2, labelHeight=20;
@@ -84,10 +84,17 @@ struct MeterLayout final {
         return static_cast<int>(juce::jlimit(0.f,static_cast<float>(segments),
             (db-floorDb)*segments/static_cast<float>(ceilingDb-floorDb)));
     }
-    // Each LED represents the upper threshold of its 3 dB cell.
+    // Fill away from the centre on both sides; 0 signal at the origin,
+    // 0 dBFS at full scale (outer end). Each cell spans 3 dB.
     static constexpr int tickOffset(int db) noexcept {
         const int index=(db-floorDb)*segments/(ceilingDb-floorDb)-1;
         return (index<0?0:(index>=segments?segments-1:index))*pitch+dotSize/2;
+    }
+    static constexpr int segmentX(bool right,int segment) noexcept {
+        return right?dotsRightX+segment*pitch:dotsLeftX+(segments-1-segment)*pitch;
+    }
+    static constexpr int scaleX(bool right,int db) noexcept {
+        return right?dotsRightX+tickOffset(db):dotsLeftX+bankWidth-tickOffset(db);
     }
 };
 static_assert(MeterLayout::groupLeft+MeterLayout::groupRight==1120);
@@ -95,9 +102,9 @@ static_assert(MeterLayout::dotsLeftX+MeterLayout::dotsRightX+
               MeterLayout::bankWidth==1120);
 static_assert(MeterLayout::leftLabelWidth==MeterLayout::rightLabelWidth);
 static_assert(MeterLayout::dotsLeftX-
-    (MeterLayout::leftLabelX+MeterLayout::leftLabelWidth)==12);
+    (MeterLayout::leftLabelX+MeterLayout::leftLabelWidth)==20);
 static_assert(MeterLayout::rightLabelX-
-    (MeterLayout::dotsRightX+19*MeterLayout::pitch+MeterLayout::dotSize)==12);
+    (MeterLayout::dotsRightX+19*MeterLayout::pitch+MeterLayout::dotSize)==20);
 inline juce::Font uiFont(float size) {
 #if defined(ARMIX_REVERB_INTER_EMBEDDED)
     static juce::Typeface::Ptr inter=juce::Typeface::createSystemTypefaceFor(
@@ -205,8 +212,8 @@ public:
             // implies a persistent on/off state. Disabled is visibly muted.
             const bool enabled=b.isEnabled();
             const auto r=rect.reduced(.6f);
-            const auto top=enabled?(down?0x1c303b:hover?0x40535f:0x333d45):0x262c31;
-            const auto bottom=enabled?(down?0x17242c:hover?0x293941:0x252d34):0x20252a;
+            const auto top=enabled?(down?0x1c303b:hover?0x40535f:0x3a4751):0x262c31;
+            const auto bottom=enabled?(down?0x17242c:hover?0x293941:0x2b3941):0x20252a;
             const auto border=enabled?(down?0x8bc2db:hover?0x7399ac:0x53636c):0x3e494f;
             g.setGradientFill(juce::ColourGradient(graphite::colour(top),0.f,r.getY(),
                 graphite::colour(bottom),0.f,r.getBottom(),false));
@@ -276,7 +283,7 @@ public:
            id=="armix.reverb.preset.next")return;
         if(id=="armix.reverb.preset.save") {
             // Lucide Save, 24x24 viewBox, 2px rounded outline. Render at
-            // 18 logical px like the existing Power glyph; no font/SVG loader.
+            // 20px viewBox, optically balanced with Power and Close; no font/SVG loader.
             // https://lucide.dev/icons/save
             juce::Path icon;
             icon.startNewSubPath(19.f,21.f);
@@ -296,12 +303,12 @@ public:
             icon.startNewSubPath(7.f,3.f);
             icon.lineTo(7.f,8.f);
             icon.lineTo(15.f,8.f);
-            const auto ink=!b.isEnabled()?0x75828a:down?0xe7f8ff:hover?0xb1e6ff:0xc2d5e0;
+            const auto ink=!b.isEnabled()?0x75828a:down?0xe7f8ff:hover?0xb1e6ff:0xe0edf3;
             g.setColour(graphite::colour(ink));
             g.strokePath(icon,juce::PathStrokeType(2.f,
                 juce::PathStrokeType::curved,juce::PathStrokeType::rounded),
-                juce::AffineTransform::scale(18.f/24.f)
-                    .translated((b.getWidth()-18.f)*.5f,(b.getHeight()-18.f)*.5f));
+                juce::AffineTransform::scale(20.f/24.f)
+                    .translated((b.getWidth()-20.f)*.5f,(b.getHeight()-20.f)*.5f));
             return;
         }
         if(id=="armix.reverb.close") {
@@ -689,13 +696,15 @@ public:
         drawMeters(g);
         g.setColour(rgb(183,200,211));
         g.setFont(reverb_ui::uiFont(9.f));
-        for(const int x : {M::dotsLeftX,M::dotsRightX}) {
-            for(const int db : {-60,-24,-6,0}) {
-                const int center=x+M::tickOffset(db);
-                g.drawText(juce::String(db),center-11,M::tickY,22,11,
-                           juce::Justification::centred,false);
+        for(bool right:{false,true}) {
+            for(const int db : {-24,-6,0}) {
+                const int center=M::scaleX(right,db);
+                g.drawText(db==0?juce::String("0 dBFS"):juce::String(db),
+                           center-20,M::tickY,40,11,juce::Justification::centred,false);
             }
         }
+        // Central 0 is explicitly an amplitude origin, not 0 dBFS.
+        g.drawText("0",F::width/2-8,M::tickY,16,11,juce::Justification::centred,false);
 
         // The active tab underline and quiet baseline share one pixel band.
         g.setColour(rgb(116,121,123).withAlpha(.42f));
@@ -879,13 +888,13 @@ private:
         for(int ch=0;ch<4;++ch) {
             using M=reverb_ui::MeterLayout;
             const int lit=displaySegments_[static_cast<std::size_t>(ch)];
-            const int x=ch%2==0?M::dotsLeftX:M::dotsRightX;
+            const bool right=ch%2!=0;
             const int y=ch/2==0?M::firstDotY:M::secondDotY;
             for(int segment=0;segment<M::segments;++segment) {
                 const bool on=segment<lit;
                 const auto bright=segment>=18?rgb(241,148,116):
                     (segment>=15?rgb(217,164,65):rgb(159,228,255));
-                const float sx=static_cast<float>(x+segment*M::pitch);
+                const float sx=static_cast<float>(M::segmentX(right,segment));
                 g.setColour(on?bright:rgb(48,55,58));
                 g.fillEllipse(sx,static_cast<float>(y),
                               static_cast<float>(M::dotSize),static_cast<float>(M::dotSize));

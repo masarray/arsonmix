@@ -249,7 +249,7 @@ int main() {
     assert(power->getProperties().getWithDefault("armixFxState","").toString()=="unknown");
     assert(power->getBounds().getCentreY()==presetSelect->getBounds().getCentreY()-2);
     assert(close->getBounds().getCentreY()==power->getBounds().getCentreY());
-    assert(algorithmSelect->getBounds().getCentreX()==reverb_ui::FaceplateLayout::algorithmCentreX);
+    assert(algorithmSelect->getBounds().getCentreX()==983 && algorithmSelect->getWidth()==166);
     assert(close->getBottom()<60);
     assert(!power->getBounds().intersects(presetSelect->getBounds()));
     assert(!close->getBounds().intersects(presetSelect->getBounds()));
@@ -364,8 +364,8 @@ int main() {
     }
     juce::Thread::sleep(42);
     juce::Timer::callPendingTimersSynchronously();
-    static_assert(reverb_ui::FaceplateLayout::tabRuleY==196);
-    static_assert(reverb_ui::FaceplateLayout::smallCaptionY==214);
+    static_assert(reverb_ui::FaceplateLayout::tabRuleY==203);
+    static_assert(reverb_ui::FaceplateLayout::smallCaptionY==224);
     auto snapshot=ui->createComponentSnapshot(ui->getLocalBounds());
     assert(snapshot.isValid()&&snapshot.getWidth()==1120&&snapshot.getHeight()==430);
     assert(snapshot.getPixelAt(16,16)!=snapshot.getPixelAt(568,353));
@@ -393,10 +393,12 @@ int main() {
     assert(sum(skin.metal.getPixelAt(1120,160))>sum(skin.metal.getPixelAt(40,650))+45);
     assert(sum(skin.knob.getPixelAt(240,229))>sum(skin.knob.getPixelAt(240,349))+60);
     using G=reverb_ui::graphite::DialGeometry;
+    std::array<int,2> tickWidths{},tickHeights{},pointerWidths{},pointerHeights{};
     for(bool hero:{true,false}) {
         const G d{hero};
-        assert(d.count()==(hero?23:21));
-        assert(std::abs(d.bezelGap()-(hero?5.0258f:2.1217f))<.05f);
+        assert(d.count()==(hero?23:15));
+        assert(d.length()==9.f&&d.height()==4.f&&d.pointerRadius()==4.1f);
+        assert(std::abs(d.bezelGap()-(hero?5.f:2.1f))<.05f);
         assert(d.chordGap()>(hero?4.9f:2.4f));
         const auto horizontal=juce::Point<float>(1.f,0.f).transformedBy(G::tickTransform(0.f,0.f,0.f));
         const auto vertical=juce::Point<float>(1.f,0.f).transformedBy(G::tickTransform(juce::MathConstants<float>::halfPi,0.f,0.f));
@@ -419,9 +421,9 @@ int main() {
             if(blue(max.getPixelAt(x,y)))++after;
         }
         assert(after>before+60);
-        const int topY=int(std::lround(240.f-2.f*d.ring()*d.scale()));
+        const int topY=int(std::lround(240.f-2.f*d.ring()));
         int minX=480,maxX=-1,minY=480,maxY=-1;
-        const int halfWindow=hero?16:7;
+        const int halfWindow=11;
         for(int yy=topY-halfWindow;yy<=topY+halfWindow;++yy)
             for(int xx=240-halfWindow;xx<=240+halfWindow;++xx)
                 if(blue(max.getPixelAt(xx,yy))) {
@@ -429,17 +431,39 @@ int main() {
                     minY=std::min(minY,yy);maxY=std::max(maxY,yy);
                 }
         assert(maxX>=minX&&maxY>=minY&&maxX-minX>maxY-minY);
+        const int k=hero?0:1;
+        tickWidths[k]=maxX-minX+1;tickHeights[k]=maxY-minY+1;
+        const auto midpoint=knobImage(.5f);
+        const int pointerY=int(std::lround(240.f-2.f*d.pointerOrbit()));
+        minX=480;maxX=-1;minY=480;maxY=-1;
+        for(int yy=pointerY-11;yy<=pointerY+11;++yy)
+            for(int xx=229;xx<=251;++xx)
+                if(blue(midpoint.getPixelAt(xx,yy))) {
+                    minX=std::min(minX,xx);maxX=std::max(maxX,xx);
+                    minY=std::min(minY,yy);maxY=std::max(maxY,yy);
+                }
+        assert(maxX>=minX&&maxY>=minY);
+        pointerWidths[k]=maxX-minX+1;pointerHeights[k]=maxY-minY+1;
     }
-    // Group centred at x560; independent left/right 12px gutters.
+    assert(std::abs(tickWidths[0]-tickWidths[1])<=2);
+    assert(std::abs(tickHeights[0]-tickHeights[1])<=2);
+    assert(std::abs(pointerWidths[0]-pointerWidths[1])<=2);
+    assert(std::abs(pointerHeights[0]-pointerHeights[1])<=2);
+    // Group centred at x560; independent left/right 20px gutters.
     using M=reverb_ui::MeterLayout;
     static_assert(M::firstDotY==97 && M::secondDotY==126 && M::tickY==108);
     static_assert(M::groupLeft+M::groupRight==1120);
-    static_assert(M::dotsLeftX-M::leftLabelX-M::leftLabelWidth==12);
-    static_assert(M::rightLabelX-M::dotsRightX-19*M::pitch-M::dotSize==12);
+    static_assert(M::dotsLeftX-M::leftLabelX-M::leftLabelWidth==20);
+    static_assert(M::rightLabelX-M::dotsRightX-19*M::pitch-M::dotSize==20);
     static_assert(M::dotsLeftX+M::dotsRightX+M::bankWidth==1120);
     static_assert(M::leftLabelWidth==M::rightLabelWidth);
     static_assert(M::tickOffset(-60)==3 && M::tickOffset(-24)==113 &&
                   M::tickOffset(-6)==173 && M::tickOffset(0)==193);
+    static_assert(M::segmentX(false,0)>M::segmentX(false,19));
+    static_assert(M::segmentX(true,0)<M::segmentX(true,19));
+    static_assert(M::segmentX(false,0)+M::segmentX(true,0)+M::dotSize==1120);
+    static_assert(M::scaleX(false,0)<M::scaleX(false,-24));
+    static_assert(M::scaleX(true,0)>M::scaleX(true,-24));
     assert(M::litCount(-80.f)==0 && M::litCount(-60.f)==0);
     assert(M::litCount(-24.f)==12 && M::litCount(-6.f)==18);
     assert(M::litCount(0.f)==20 && M::litCount(6.f)==20);
@@ -458,10 +482,12 @@ int main() {
             }
     assert(ui->getLocalBounds().contains(M::dirtyBounds()));
     // At least the left input meter has a true bright PCM segment; the
-    // far-right dot stays dark because input is safely below 0 dBFS.
-    assert(snapshot.getPixelAt(M::dotsLeftX+2,M::firstDotY+3)!=
-           snapshot.getPixelAt(M::dotsLeftX+19*M::pitch+2,
-                               M::firstDotY+3));
+    // outermost dot stays dark because input is safely below 0 dBFS.
+    for(bool right:{false,true}) {
+        const auto inner=snapshot.getPixelAt(M::segmentX(right,0)+2,M::firstDotY+3);
+        const auto outer=snapshot.getPixelAt(M::segmentX(right,19)+2,M::firstDotY+3);
+        assert(inner.getBlue()>outer.getBlue()+40);
+    }
     // These are snapshots of the ACTUAL JUCE AudioProcessorEditor canvas.
     // No HTML mockup, screenshot reference, or image synthesis involved.
     const auto saveImage=[](const juce::Image& picture,const char* name) {
