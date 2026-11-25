@@ -83,6 +83,7 @@ with sync_playwright() as pw:
     assert page.locator('[data-cue="Ess"]').is_disabled()
     page.wait_for_timeout(70)
     page.evaluate('''()=>{let req=events.filter(p=>p.action==='nativeDeEzzerSnapshot').at(-1);s={...s,frames:String(BigInt(s.frames)+2400n),cue:{available:true,requested:'Mix',applied:'Mix'}};listeners.arMixBuiltinDeEzzerSnapshot({...req,ok:true,snapshot:s});}''')
+    assert page.locator('#mxNativeDeEzzer').bounding_box()['height'] <= 600
     page.locator('[data-cue="Ess"]').click()
     page.evaluate('''()=>{let req=events.filter(p=>p.action==='nativeDeEzzerCue').at(-1);listeners.arMixBuiltinDeEzzerCue({...req,ok:true,cue:{available:true,requested:'Ess',applied:'Mix'}});}''')
     assert page.locator('[data-cue="Ess"]').get_attribute('data-pending')=='true'
