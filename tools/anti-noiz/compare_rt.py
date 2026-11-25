@@ -31,6 +31,18 @@ def main():
         order = ((baseline, a), (candidate, b)) if i % 2 == 0 else ((candidate, b), (baseline, a))
         for binary, dest in order:
             dest.append(run(binary))
+        # Fail immediately after a matched pair, with per-case diagnostics.
+        # Never spend another two repeats on an already-invalid comparison.
+        mismatches = []
+        for key in sorted(a[-1]):
+            old, new = a[-1][key], b[-1][key]
+            if old[0] != new[0] or old[11] != new[11]:
+                mismatches.append(key)
+                print(f"PCM_MISMATCH,{key},old_hash={old[11]},new_hash={new[11]},old_atten={old[12]},new_atten={new[12]}", flush=True)
+            if any(old[7:11]) or any(new[7:11]):
+                raise RuntimeError(f"RT allocation {key}")
+        if mismatches:
+            raise RuntimeError(f"PCM hash gate failed: {len(mismatches)}/60 cases")
     print("MATCHED,rate,block,workload,callbacks,old_p50_us,new_p50_us,old_p99_us,new_p99_us,old_p999_us,new_p999_us,old_max_us,new_max_us,budget_us,old_misses,new_misses,old_atten_db,new_atten_db,pcm_hash")
     changes = []
     regressions = []

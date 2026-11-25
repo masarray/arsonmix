@@ -48,7 +48,7 @@ jobs:
       - name: Compile and run regression
         run: |
           cmake --build "$RUNNER_TEMP/anti-noiz" --parallel 2
-          ctest --test-dir "$RUNNER_TEMP/anti-noiz" --output-on-failure
+          ctest --test-dir "$RUNNER_TEMP/anti-noiz" --output-on-failure --verbose
       - name: Record exploratory throughput (not a performance gate)
         if: matrix.benchmark == 'ON'
         run: '"$RUNNER_TEMP/anti-noiz/anti_noiz_bench"'

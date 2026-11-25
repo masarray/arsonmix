@@ -135,7 +135,12 @@ public:
 private:
     using Complex=std::complex<float>;
     static constexpr float eps=1e-16f;
-    static float gainDb(float db) noexcept {return std::pow(10.f,-db/20.f);}
+    static float gainDb(float db) noexcept {
+        // Match runtime libm evaluation of the pre-packet path even when the
+        // producer's settings happen to be compile-time constants. Off RT.
+        const volatile float exponent=-db/20.f;
+        return std::pow(10.f,exponent);
+    }
     void prepareTiming() noexcept {
         // Preserve the 48 kHz reference behavior, not hop-count-dependent timing.
         const double hops=double(hop_)*48000./(rate_*128.);
