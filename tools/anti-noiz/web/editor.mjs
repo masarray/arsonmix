@@ -100,7 +100,7 @@ export function mount(root,transport,options={}){
   options.onState?.(view);
  });
  for(const c of controls){
-  const quantize=v=>Math.max(0,Math.min(c.max,Math.round(v/c.step)*c.step));
+  const quantize=v=>Math.max(0,Math.min(c.max,Number((Math.round(v/c.step)*c.step).toFixed(2))));
   const flush=()=>{clearTimeout(c.timer);c.timer=null;if(c.draft===null)return;const value=c.draft;if(!model.adjust(c.key,value)){cancel(c);if(lastView&&current){c.input.value=current[c.key];paintDial(c,current[c.key]);}}};
   const preview=v=>{c.draft=quantize(v);c.input.value=c.draft;paintDial(c,c.draft);if(c.timer===null)c.timer=setTimeout(flush,40);};
   c.input.addEventListener('pointerdown',e=>{

@@ -166,8 +166,14 @@ def main():
         desired=float(knob.input_value())
         assert desired>first["settings"]["cleanDb"]
         expect(knob).to_be_enabled()
-        readback(page,accepted,{**OBS,"serial":"5","effectiveMode":"Voice","profile":True})
+        # Require a new snapshot request, rather than silently responding
+        # to the previously consumed request.
+        page.wait_for_timeout(210)
+        stale=last_action(page,"nativeAntiNoizSnapshot")
+        respond(page,stale,"arMixBuiltinAntiNoizSnapshot",status="ACCEPTED",
+                settings=accepted,observation={**OBS,"serial":"5","effectiveMode":"Voice","profile":True})
         assert float(knob.input_value())==desired
+        assert page.evaluate("()=>window.__actions.filter(x=>x.action==='nativeAntiNoizSet').at(-1).requestId")==first["requestId"]
         page.mouse.up()
         assert float(knob.input_value())==desired
         respond(page,first,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=first["settings"])
@@ -186,7 +192,15 @@ def main():
         accepted=key["settings"]
         readback(page,accepted,{**OBS,"serial":"7","effectiveMode":"Voice","profile":True})
         # Capture actual approved UI, not an illustrative mockup.
-        page.screenshot(path=str(bundle.parent/"anti-noiz-operator-1366.png"))
+        root.screenshot(path=str(bundle.parent/"anti-noiz-operator-1366.png"))
+        # Narrow viewport: exercise actual responsive layout, not a mockup.
+        page.set_viewport_size({"width":360,"height":720})
+        panel=root.locator(".an-panel")
+        box=panel.bounding_box()
+        assert box and box["width"]<=360
+        assert panel.evaluate("(el)=>el.scrollWidth<=el.clientWidth+2")
+        root.screenshot(path=str(bundle.parent/"anti-noiz-operator-360.png"))
+        page.set_viewport_size({"width":1366,"height":768})
         # Show-store/preset plumbing is not mocked as disk success: verify
         # actual UI intent is for the same accepted instance and receipt.
         root.locator(".mx-fxp-save-as").click()

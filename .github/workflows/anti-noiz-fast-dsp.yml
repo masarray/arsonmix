@@ -206,4 +206,11 @@ jobs:
           python3 -m playwright install --with-deps chromium
       - name: Actual approved inline editor interaction gate (mock native IPC only)
         run: python3 tests/anti_noiz_approved_chromium_test.py "$RUNNER_TEMP/anti-noiz-approved"
+      - name: Actual editor screenshot evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: anti-noiz-operator-ui-screenshots
+          path: ${{ runner.temp }}/anti-noiz-operator-*.png
+          if-no-files-found: warn
 
