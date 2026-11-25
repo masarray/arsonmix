@@ -4,7 +4,7 @@
 #include <array>
 #include <cmath>
 #include <numbers>
-#include "AntiNoizDrift.h"
+#include "AntiNoizTonalDrift.h"
 namespace armix::builtin_fx::anti_noiz {
 // Past-only Learn search, fixed grid, up to three related linked lines. The fine grid is
 // oversampled relative to the 200ms analysis resolution, not super-resolution.
