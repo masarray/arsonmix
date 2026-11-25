@@ -53,6 +53,10 @@ jobs:
         if: matrix.benchmark == 'ON'
         run: '"$RUNNER_TEMP/anti-noiz/anti_noiz_bench"'
 
+      - name: Opt-in recorded audio smoke (local WAVs, no upload)
+        if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
+        run: python3 tools/anti-noiz/recorded_smoke.py "$RUNNER_TEMP/anti-noiz/anti_noiz_qualify" "$RUNNER_TEMP/anti-noiz-recorded-smoke"
+
   web-contract:
     name: Anti Noiz Web UX contract (Node, no Windows)
     runs-on: ubuntu-latest
