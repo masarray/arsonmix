@@ -768,6 +768,7 @@ public:
         if(operatorFullscreen_&&juce::Desktop::getInstance().getKioskModeComponent()==this)
             juce::Desktop::getInstance().setKioskModeComponent(nullptr,false);
 #endif
+        sessionLifecycleShuttingDown_=true;
         hotkeys_.detach(); // release global keys before the JUCE HWND disappears
         stopTimer();
 #if defined(_WIN32)
@@ -872,6 +873,7 @@ private:
     juce::String mixerSessionId_,mixerSessionStatus_="NO_SAVED_SESSION";
     juce::String mixerSessionError_,lastMixerSessionFingerprint_;
     bool mixerSessionStartupInspected_=false;
+    bool sessionLifecycleShuttingDown_=false;
     bool mixerSessionRecoveryPending_=false;
     // Isolated read/write FX workspace captured explicitly from a disconnected
     // retained graph. It edits persisted .smix data, NEVER the original lease.
@@ -2785,6 +2787,8 @@ private:
             !engine_.wantsMainContinuation() && !engine_.hasRetainedNativeSession() &&
             !engine_.hasBoundMixerRoute() && !engine_.isGraphSwitchPending() &&
             !engine_.independentClockActive() && !engine_.hasTemporaryDiagnosticDevice() &&
+            !engine_.hasPendingDirectRestore() && !sessionLifecycleShuttingDown_ &&
+            !(audioSetupWindow_ && audioSetupWindow_->isVisible()) &&
             !pendingRetainedFxCapture_ && !retainedOfflineFxActive_ &&
             !logicalVendorEditor_ && !logicalMixer_.readOnly() &&
             !mixerSessionWorker_.busy() && !deviceApply_.busy() && !nativeShowBusy_ &&
@@ -2807,7 +2811,7 @@ private:
             return emitMixerSessionAck(operation,"No valid saved I/O defaults");
         auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
         auto complete=[safe,reset,operation](juce::String error){
-            if(safe==nullptr)return;
+            if(safe==nullptr || safe->sessionLifecycleShuttingDown_)return;
             if(error.isEmpty()){
                 safe->autoMainEpoch_=0;
                 safe->operatorOutputMuted_=true;
@@ -5057,7 +5061,7 @@ private:
                 // just to inspect and edit a saved mixer.
                 if(!safe->logicalMixer_.open(std::move(doc),std::move(states),
                         [safe,file,importedHotkeys,importedId,archived](juce::String openError){
-                    if(safe==nullptr)return;
+                    if(safe==nullptr || safe->sessionLifecycleShuttingDown_)return;
                     if(openError.isEmpty()) {
                         // Explicit saved-session Open supersedes the previous
                         // offline FX document only after durable commit.

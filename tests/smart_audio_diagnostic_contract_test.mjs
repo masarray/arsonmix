@@ -447,3 +447,18 @@ test("P11 resource summaries preserve unknowns, provenance and sampled peaks",()
   assert.equal(analyzeHealthLog(int1bLine(0,{})).segments[0].processCpuAllCorePct.mean,null);
   assert.match(markdownReport(report),/CPU mean \/ peak/);
 });
+
+test("P11 driver lifecycle or callback clock regression invalidates a measured window",()=>{
+  for(const key of ["deviceStartCount","deviceStopCount","callbackCadenceClockRegressions"]){
+    const log=Array.from({length:41},(_,s)=>{
+      const sample=int1bSample(s,{});
+      sample.callbackTimingScope="RENDER_THROUGH_FINAL_OUTPUT_PUBLICATION_V2";
+      if(s>=20)sample[key]+=1;
+      return new Date(Date.UTC(2026,10,20,8,0,s)).toISOString()+" | AUDIO_HEALTH | "+JSON.stringify(sample);
+    }).join("\n");
+    const result=analyzeHealthLog(log);
+    assert.equal(result.segments.length,1);
+    assert.equal(result.segments[0].stableLifecycle,false);
+    assert.equal(result.segments[0].comparable,false);
+  }
+});

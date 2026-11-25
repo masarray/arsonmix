@@ -1384,6 +1384,20 @@ static void verifyLogicalControlTransactions() {
         if(copy.id==beforeArchiveId)backupFound=true;
     }
     assert(backupFound);
+    // Close immediately after a confirmed New: the worker may have
+    // committed HEAD but its queued message-thread callback has not run.
+    const auto beforeShutdown=control.workspace().document().id;
+    bool shutdownAdopted=false;
+    assert(control.newSession(control.workspace().workspaceToken(),control.workspace().revision(),
+        nullptr,[&](juce::String error){assert(error.isEmpty());shutdownAdopted=true;}));
+    worker.finishForShutdown();
+    assert(shutdownAdopted&&!worker.busy());
+    assert(control.workspace().document().id!=beforeShutdown);
+    MixerSessionDocument shutdownDoc;std::vector<BinaryState> shutdownStates;
+    assert(NativeMixerSessionStore(folder).load(shutdownDoc,shutdownStates).isEmpty());
+    assert(shutdownDoc.id==control.workspace().document().id);
+    assert(shutdownStates.empty());
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
     assert(folder.deleteRecursively());
 }
 

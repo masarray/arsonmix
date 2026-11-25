@@ -30,7 +30,11 @@ public:
         busy_.store(false,std::memory_order_release);
         auto completion=std::move(done_);
         done_={};readDone_={};states_.clear();
-        if(applySaveCompletion&&completion)completion(saveResult_);
+        // Archive lifecycle commits may have published HEAD just before
+        // shutdown. Never discard their authoritative workspace adoption.
+        if((applySaveCompletion||archiveMode_!=NativeMixerSessionStore::ArchiveMode::none)&&completion)
+            completion(saveResult_);
+        archiveMode_=NativeMixerSessionStore::ArchiveMode::none;
     }
     bool save(juce::File studio,MixerSessionDocument document,
               std::vector<armix::shows::BinaryState> binary,
@@ -46,6 +50,7 @@ public:
     }
     bool load(juce::File file,ReadCompletion completion) {
         if(busy_.exchange(true,std::memory_order_acq_rel))return false;
+        archiveMode_=NativeMixerSessionStore::ArchiveMode::none;
         exportFile_=std::move(file);
         readDone_=std::move(completion);
         return start();
@@ -97,6 +102,7 @@ private:
         done_={};
         auto readCallback=std::move(readDone_);
         readDone_={};
+        archiveMode_=NativeMixerSessionStore::ArchiveMode::none;
         if(readCallback)readCallback(std::move(error),std::move(doc_),std::move(states_));
         else if(callback)callback(std::move(error));
     }

@@ -149,6 +149,10 @@ function describeSegment(segment){
   const completeCoverage=scope!=="RENDER_THROUGH_FINAL_OUTPUT_PUBLICATION_V2" ||
     (callbacks>0&&Math.abs(p.samples-callbacks)<=Math.max(2,callbacks*0.01));
   const missing=segment.intervals===0||p.samples===0||!completeCoverage;
+  // A driver restart or regressed monotonic callback clock invalidates
+  // comparison even when a driver reuses its nominal device generation.
+  const stableLifecycle=segment.delta.deviceStartCount===0&&
+    segment.delta.deviceStopCount===0&&segment.delta.callbackCadenceClockRegressions===0;
   const over=segment.delta.overBudgetCount,late=segment.delta.lateCallbackIntervals;
   const gap=segment.delta.callbackGapCount;
   let diagnosis="INSUFFICIENT_EVIDENCE";
@@ -209,7 +213,8 @@ function describeSegment(segment){
     backendXrunDelta:nondecreasing(first,last,"backendXrunCount")?
       last.backendXrunCount-first.backendXrunCount:null,
     renderHardwareXrun:"UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE",
-    diagnosis,comparable:!missing&&durationSeconds>=30&&callbacks>0&&
+    stableLifecycle,
+    diagnosis,comparable:!missing&&stableLifecycle&&durationSeconds>=30&&callbacks>0&&
       s.connected===true&&
       s.productionRoutingState==="NATIVE_ROUTE_ACCEPTED"&&
       s.directRouteAuthorized===true,

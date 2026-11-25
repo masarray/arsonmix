@@ -8,6 +8,7 @@ on:
       - feat/reverb-sis-signature-20261125
       - staging/io-reverb-integrated-20261125
       - staging/io-reverb-integrated-p10-p11-20261125
+      - staging/io-reverb-integrated-p12-20261125
     # These are explicit qualification branches, not general development.
     # Every new HEAD needs its own evidence, even a UI/workflow-only commit.
 permissions:
@@ -18,7 +19,7 @@ concurrency:
 jobs:
   actual-console-translation-unit:
     runs-on: windows-2022
-    timeout-minutes: 55
+    timeout-minutes: 85
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,7 +32,7 @@ jobs:
           path: third_party/JUCE
           persist-credentials: false
       - name: P11 offline reliability profile and timing contracts
-        if: github.ref_name == 'staging/io-reverb-integrated-p10-p11-20261125'
+        if: github.ref_name == 'staging/io-reverb-integrated-p10-p11-20261125' || github.ref_name == 'staging/io-reverb-integrated-p12-20261125'
         run: node --test tests/smart_audio_diagnostic_contract_test.mjs
       - name: Pinned WebView2 SDK
         shell: pwsh
@@ -60,7 +61,7 @@ jobs:
           # Test the actual JUCE disk store with assertions enabled before
           # compiling the production translation unit. This is not FAT or a
           # protected nativeFull gate and does not publish an executable.
-          if ($env:GITHUB_REF_NAME -in @('feature/io-studio-workflow-20261125','feature/io-atomic-output-20261125','staging/io-reverb-integrated-20261125','staging/io-reverb-integrated-p10-p11-20261125')) {
+          if ($env:GITHUB_REF_NAME -in @('feature/io-studio-workflow-20261125','feature/io-atomic-output-20261125','staging/io-reverb-integrated-20261125','staging/io-reverb-integrated-p10-p11-20261125','staging/io-reverb-integrated-p12-20261125')) {
             cmake --build build --parallel 2 --target ARMixChannelAppearanceTests
             if ($LASTEXITCODE -ne 0) { throw 'AUDIO_IO_NATIVE_STORE_COMPILE_FAILED' }
             $catalog = (& ctest --test-dir build --show-only=json-v1 | Out-String | ConvertFrom-Json)
@@ -118,3 +119,62 @@ jobs:
           path: build/integrated-ctest.xml
           if-no-files-found: ignore
           retention-days: 7
+      # P12 is an explicitly named, internal test branch. No release,
+      # Pages, tag, protected nativeFull or main-only FAT dispatcher changes.
+      # The previous full build must succeed; never package an object-only run.
+      - name: P12 exact-source Windows installer qualification
+        if: github.ref_name == 'staging/io-reverb-integrated-p12-20261125'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(& git rev-parse HEAD).Trim()
+          if($LASTEXITCODE -ne 0 -or $actual -ne $env:GITHUB_SHA){throw 'P12_SOURCE_MISMATCH'}
+          [xml]$results=Get-Content -LiteralPath 'build/integrated-ctest.xml' -Raw
+          $cases=@($results.SelectNodes('//testcase'))
+          if($cases.Count -lt 123 -or $results.SelectNodes('//failure|//error|//skipped').Count -ne 0){
+            throw 'P12_NATIVE_TEST_EVIDENCE_INCOMPLETE'
+          }
+          node scripts/check_approved_native_gui_release.mjs --source-only --bundle build/approved_gui
+          if($LASTEXITCODE -ne 0){throw 'P12_APPROVED_GUI_FAILED'}
+          & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
+          if($LASTEXITCODE -ne 0){throw 'P12_PACKAGE_FAILED'}
+          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist --best-effort
+          if($LASTEXITCODE -ne 0){throw 'P12_FACTORY_FX_FAILED'}
+          & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
+          if($LASTEXITCODE -ne 0){throw 'P12_DISTRIBUTION_FAILED'}
+          if(-not (Get-Command ISCC.exe -ErrorAction SilentlyContinue) -and
+             -not (Test-Path -LiteralPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe')){
+            choco install innosetup --yes --no-progress --limit-output
+            if($LASTEXITCODE -ne 0){throw 'P12_INNO_COMPILER_FAILED'}
+          }
+          & ./scripts/build_verify_windows_installer.ps1 -OutputDir dist -InstallerOutput installer-output
+          if($LASTEXITCODE -ne 0){throw 'P12_INSTALLER_FAT_FAILED'}
+          $setup='installer-output/ArSonMix-Windows-x64-Setup-Preview.exe'
+          $manifest=Get-Content -LiteralPath 'dist/BUILD_PROVENANCE.json' -Raw | ConvertFrom-Json
+          if($manifest.sourceCommit -ne $actual -or $manifest.fatStatus -ne 'SOFTWARE_VERIFIED_PREVIEW_CANDIDATE' -or
+             -not (Test-Path -LiteralPath $setup -PathType Leaf)){
+            throw 'P12_INSTALLER_PROVENANCE_FAILED'
+          }
+          $out=New-Item -ItemType Directory -Force -Path 'p12-internal'
+          Copy-Item -LiteralPath $setup,'dist/BUILD_PROVENANCE.json','build/integrated-ctest.xml','scripts/audio_reliability_profile.mjs','docs/INT1B_AUDIO_RELIABILITY_PROFILING_20261120.md','docs/P12_INTERNAL_ACCEPTANCE_20261125.md' -Destination $out.FullName
+          $qa=New-Item -ItemType Directory -Force -Path 'p12-internal/reverb-qa'
+          foreach($name in @('ArSonMix_Vocal_Reverb_Native_MIX_100.png','ArSonMix_Vocal_Reverb_Native_BYPASSED_100.png','ArSonMix_Vocal_Reverb_Native_MOTION_150.png')){
+            $png=Join-Path 'build' $name
+            if(!(Test-Path -LiteralPath $png -PathType Leaf) -or (Get-Item -LiteralPath $png).Length -lt 10000){throw "P12_REVERB_QA_INVALID: $name"}
+            Copy-Item -LiteralPath $png -Destination $qa.FullName
+          }
+          $files=@(Get-ChildItem -LiteralPath $out.FullName -Recurse -File | Sort-Object FullName | ForEach-Object {
+            [ordered]@{path=$_.FullName.Substring($out.FullName.Length+1).Replace('\','/');bytes=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
+          })
+          [ordered]@{schema='arsonmix.p12.internal-qualification.v1';sourceSha=$actual;nativeTests=$cases.Count;installerSoftwareFat='PASS';physicalAsioFat='NOT_RUN';publicRelease='NOT_AUTHORIZED';files=$files} |
+            ConvertTo-Json -Depth 5 | Set-Content -LiteralPath 'p12-internal/P12_QUALIFICATION.json' -Encoding utf8
+          Write-Host "P12_INTERNAL_INSTALLER_SOFTWARE_FAT_PASS exact=$actual"
+      - name: Upload exact-SHA internal installer (never a public release)
+        if: github.ref_name == 'staging/io-reverb-integrated-p12-20261125'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-P12-Internal-Installer-${{ github.sha }}
+          path: p12-internal/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
