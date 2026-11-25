@@ -48,7 +48,7 @@ public:
         smart_.onClick=[this]{offer(smartVoicing(processor_.singerDisplay()));};
         attack_.onValueChange=[this]{auto p=processor_.singerDisplay();p.duckAttackMs=float(attack_.getValue());offer(p);};
         release_.onValueChange=[this]{auto p=processor_.singerDisplay();p.duckReleaseMs=float(release_.getValue());offer(p);};
-        power_.onClick=[this]{auto p=processor_.singerDisplay();p.enabled=!p.enabled;offer(p);};
+        power_.onClick=[this]{auto p=processor_.singerDisplay();p.enabled=!p.enabled;if(p.enabled)p.hit=false;offer(p);};
         preset_.onChange=[this]{const int id=preset_.getSelectedId();if(id>0&&id<=int(singerPresets.size())){
             taps_.reset();tempoNotice_.clear();
             offer(presetSettings(std::size_t(id-1),processor_.singerDisplay().enabled));}};

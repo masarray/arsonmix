@@ -64,6 +64,9 @@ int main(){
         bpm->setValue(100,juce::sendNotificationSync);CHECK(p.singerDisplay().bpmQuarter==400&&p.singerDisplay().timeMs==600);
         const auto base=p.singerDisplay();hit->onClick();CHECK(p.singerDisplay().hit&&p.singerDisplay().echo==base.echo);
         hit->onClick();CHECK(sameParameters(base,p.singerDisplay()));
+        auto* power=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.power"));CHECK(power);
+        hit->onClick();power->onClick();CHECK(!p.singerDisplay().enabled);
+        power->onClick();CHECK(sameParameters(base,p.singerDisplay()));
         tail->onClick();CHECK(!p.singerDisplay().spillover);tail->onClick();CHECK(p.singerDisplay().spillover);
         focus->onClick();CHECK(!p.singerDisplay().adaptiveFocus);focus->onClick();CHECK(p.singerDisplay().adaptiveFocus);
         p.serviceSingerControl();

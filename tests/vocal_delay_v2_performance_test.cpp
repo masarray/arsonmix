@@ -39,7 +39,8 @@ int main(){
             if(spill)CHECK(std::abs(l[2*n]-.128f)<1.e-5f);
             p.spillover=false;edit(c,p,rate);
             l.assign(n,0);r=l;process(c,l.data(),r.data(),n);
-            p.enabled=true;edit(c,p,rate);process(c,l.data(),r.data(),n);
+            // Feed fresh silence, not the previous block's tail output.
+            l.assign(n,0);r=l;p.enabled=true;edit(c,p,rate);process(c,l.data(),r.data(),n);
             for(float x:l)CHECK(x==0.f);
         }
         p.enabled=true;p.spillover=false;p.hit=false;
