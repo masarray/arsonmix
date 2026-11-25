@@ -56,6 +56,21 @@ jobs:
       - name: Opt-in active callback profile (exploratory)
         if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
         run: '"$RUNNER_TEMP/anti-noiz/anti_noiz_rt_profile"'
+      - name: Checkout exact pre-drift reference (opt-in)
+        if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
+        uses: actions/checkout@v4
+        with:
+          ref: 49e49c47c9e6b291feb74c5593806ffb296ba843
+          path: .anti-noiz-drift-reference
+          persist-credentials: false
+      - name: Matched synthetic drift baseline and candidate (opt-in)
+        if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
+        run: |
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -I .anti-noiz-drift-reference/tools/anti-noiz tests/anti_noiz_drift_pcm_test.cpp -o "$RUNNER_TEMP/anti-noiz-drift-baseline"
+          echo "Baseline 49e49c47:"
+          "$RUNNER_TEMP/anti-noiz-drift-baseline" --report-only
+          echo "Candidate:"
+          "$RUNNER_TEMP/anti-noiz/anti_noiz_drift_pcm_test" --report-only
       - name: Opt-in recorded audio smoke (local WAVs, no upload)
         if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
         run: python3 tools/anti-noiz/recorded_smoke.py "$RUNNER_TEMP/anti-noiz/anti_noiz_qualify" "$RUNNER_TEMP/anti-noiz-recorded-smoke" --compare-an03f

@@ -62,3 +62,8 @@ set_tests_properties(AntiNoizAutoPCM PROPERTIES TIMEOUT 60)
 anti_noiz_target(anti_noiz_qualify tools/anti-noiz/corpus_qualifier.cpp)
 add_test(NAME AntiNoizCorpusMetrics COMMAND anti_noiz_qualify --self-test)
 set_tests_properties(AntiNoizCorpusMetrics PROPERTIES TIMEOUT 60)
+
+anti_noiz_target(anti_noiz_drift_pcm_test tests/anti_noiz_drift_pcm_test.cpp)
+target_include_directories(anti_noiz_drift_pcm_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
+add_test(NAME AntiNoizDriftPCM COMMAND anti_noiz_drift_pcm_test)
+set_tests_properties(AntiNoizDriftPCM PROPERTIES TIMEOUT 60)

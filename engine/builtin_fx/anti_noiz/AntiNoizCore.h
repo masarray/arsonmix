@@ -142,7 +142,10 @@ private:
         if(result!=NoiseProfile<maxBins>::LearnResult::waiting){context_.reset();voiceGain_.reset();}
         const bool protect=profile_.learning()||!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music;
         const bool idle=context_.update(power_,profile_.anchor(),channels_,bins,!protect);
-        profile_.track(power_,idle);
+        // Only explicit Voice or source-aware SpeechMic permits independently
+        // qualified coherent drift. Unknown/Mixed and musical policies keep
+        // the original confirmed-idle tracking; anchor-based guards unchanged.
+        profile_.track(power_,idle,!protect&&effectiveMode_==Mode::Voice,context_.broadbandRatio());
         const bool selective=!protect&&!idle&&effectiveMode_==Mode::AutoProtect;
         const bool activeVoice=!protect&&!idle&&effectiveMode_==Mode::Voice;
         const float ratio=context_.broadbandRatio();

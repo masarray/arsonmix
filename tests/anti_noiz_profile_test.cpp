@@ -34,6 +34,37 @@ int main(){
         Profile::Powers zero{};for(int i=0;i<int(20*rate/hop);++i)p.track(zero,true);
         check(p.powers()[1][30]>=.7f*anchor[1][30],"lower anchor bound");
         check(p.begin(),"cancel transaction");p.cancel();check(p.valid()&&p.anchor()==anchor,"cancel preserves anchor");
+        // Fresh learn, then independent coherent-drift path (not an idle label).
+        check(p.begin(),"fresh learn");
+        for(int i=0;i<frames+2;++i)p.observe(noise);
+        const auto fresh=p.anchor();
+        auto twice=noise;for(auto& c:twice)for(float& v:c)v*=2.f;
+        const int window=int(std::ceil(.25*rate/hop));
+        for(int i=0;i<4*window-1;++i)p.track(twice,false,true,2.f);
+        check(p.powers()==fresh,"no drift before four coherent windows");
+        for(int i=0;i<24*window;++i)p.track(twice,false,true,2.f);
+        const float raised=p.powers()[1][30]/fresh[1][30];
+        check(raised>1.85f&&raised<=2.2f&&p.anchor()==fresh,"coherent drift convergence and immutable anchor");
+        const auto extended=p.powers();
+        // Equal broadband power, but a narrow peak in the quiet channel.
+        auto tonal=twice;tonal[1].fill(.0001f);tonal[1][30]=.013f;
+        for(int i=0;i<8*window;++i)p.track(tonal,false,true,2.f);
+        check(p.powers()==extended,"reject localized quiet-channel foreground");
+        for(int i=0;i<8*window;++i)p.track(twice,false,true,6.f);
+        check(p.powers()==extended,"strong foreground veto");
+        for(int i=0;i<8*window;++i)p.track(twice,false);
+        check(p.powers()==extended,"policy freeze");
+        // No accumulation across interrupted qualification windows.
+        for(int i=0;i<3*window;++i)p.track(twice,false,true,2.f);
+        p.track(twice,false,false);
+        for(int i=0;i<3*window;++i)p.track(twice,false,true,2.f);
+        check(p.powers()==extended,"interrupted drift candidate must restart");
+        for(int i=0;i<hold;++i)p.track(noise,true);
+        p.track(noise,true);
+        check(p.powers()[1][30]>1.8f*fresh[1][30],"return from drift is gradual");
+        for(int i=0;i<int(12*rate/hop);++i)p.track(noise,true);
+        check(p.powers()[1][30]<1.02f*fresh[1][30],"return to original noise");
+        std::cout<<rate<<" Hz: coherent upward PSD ratio "<<raised<<", narrow/strong foreground freeze, gradual recovery PASS\n";
         p.prepare(rate,hop,1,129);check(!p.valid()&&!p.learning(),"new format invalidates profile");
         std::cout<<rate<<" Hz: drift ratio "<<ratio<<", rollback, freeze and bounds PASS\n";
     }

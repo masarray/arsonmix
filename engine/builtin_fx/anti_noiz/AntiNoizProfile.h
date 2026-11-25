@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include "AntiNoizDrift.h"
 namespace armix::builtin_fx::anti_noiz {
 // Single audio owner. Candidate, trusted anchor and bounded working estimate
 // are distinct: a rejected learning transaction never replaces trusted noise.
@@ -15,13 +16,14 @@ public:
         target_=int(std::ceil(2.*rate/hop));
         trackHold_=int(std::ceil(.5*rate/hop));
         alpha_=float(1.-std::exp(-double(hop)/(rate*2.)));
+        drift_.prepare(rate,hop,channels,bins);
         valid_=false;anchor_={};working_={};cancel();
     }
     bool begin() noexcept {
         if(learning_)return false;
-        candidate_={};energy_={};count_=0;warmup_=2;learning_=true;idle_=0;return true;
+        candidate_={};energy_={};count_=0;warmup_=2;learning_=true;idle_=0;drift_.reset();return true;
     }
-    void cancel() noexcept {learning_=false;idle_=0;}
+    void cancel() noexcept {learning_=false;idle_=0;drift_.reset();}
     bool learning() const noexcept {return learning_;}
     bool valid() const noexcept {return valid_;}
     const Powers& powers() const noexcept {return working_;}
@@ -51,19 +53,39 @@ public:
             anchor_[c][k]=working_[c][k]=candidate_[c][k]*inv;
         valid_=true;return LearnResult::accepted;
     }
-    // Adapt only after sustained confirmed idle. Bound every bin around the
-    // explicit anchor; large drift needs a new deliberate Learn transaction.
-    void track(const Powers& power,bool idle) noexcept {
-        if(!valid_||learning_||!idle){idle_=0;return;}
+    // Ordinary confirmed-idle tracking retains the original 70-130% bounds.
+    // An independently qualified coherent upward drift may extend working PSD,
+    // but never the immutable anchor or the caller's idle/foreground decision.
+    void track(const Powers& power,bool idle,bool allowCoherent=false,float broadband=0.f) noexcept {
+        if(!valid_||learning_){idle_=0;drift_.reset();return;}
+        if(!idle){
+            idle_=0;
+            if(!allowCoherent){drift_.reset();return;}
+            typename NoiseDriftGuard<MaxBins>::Scales scale{};
+            if(drift_.observe(power,anchor_,broadband,scale)){
+                for(int c=0;c<channels_;++c)if(scale[c]>0.f)
+                    for(int k=0;k<bins_;++k){
+                        const float anchor=anchor_[c][k];auto& v=working_[c][k];
+                        const float target=anchor*scale[c];
+                        v=std::clamp(v+drift_.alpha()*(target-v),.7f*anchor,
+                                     NoiseDriftGuard<MaxBins>::maxScale*anchor);
+                    }
+            }
+            return;
+        }
+        drift_.reset();
         if(idle_<trackHold_){++idle_;return;}
         for(int c=0;c<channels_;++c)for(int k=0;k<bins_;++k){
             const float anchor=anchor_[c][k];auto& v=working_[c][k];
             const float observed=std::min(power[c][k],8.f*anchor);
-            v=std::clamp(v+alpha_*(observed-v),.7f*anchor,1.3f*anchor);
+            // When returning from coherent drift, slew back rather than
+            // instantly clamping an extended working estimate to 1.3x.
+            v=std::clamp(v+alpha_*(observed-v),.7f*anchor,std::max(1.3f*anchor,v));
         }
     }
 private:
     Powers anchor_{},working_{},candidate_{};
+    NoiseDriftGuard<MaxBins> drift_{};
     std::array<float,2> energy_{};
     int channels_=0,bins_=0,target_=1,trackHold_=1,count_=0,warmup_=0,idle_=0;
     float alpha_=0;
