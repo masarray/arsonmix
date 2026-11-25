@@ -7,6 +7,7 @@
 #include <complex>
 #include <numbers>
 #include "AntiNoizFft.h"
+#include "AntiNoizContext.h"
 
 namespace armix::builtin_fx::anti_noiz {
 // Independent bounded WOLA reference, not a trained context classifier.
@@ -31,11 +32,12 @@ public:
         }
         fft_.prepare(n_);
         prepareTiming();
+        context_.prepare(rate_,hop_);
         for(auto& a:in_)a.fill(0);
         for(auto& a:out_)a.fill(0);
         for(auto& a:profile_)a.fill(0);
         for(auto& a:candidate_)a.fill(0);
-        mask_.fill(1); pos_=ticks_=frames_=quiet_=learnCount_=learnTarget_=0;
+        mask_.fill(1); pos_=ticks_=frames_=learnCount_=learnTarget_=0;
         candidateEnergy_=0; learning_=valid_=false; expansion_=1;
         prepareGains();
         ready_=true; return true;
@@ -51,15 +53,15 @@ public:
         for(auto& a:candidate_)a.fill(0);
         candidateEnergy_=0; learnCount_=0; learning_=true;
         learnTarget_=static_cast<int>(std::ceil(2.*rate_/hop_));
-        quiet_=0; return true;
+        context_.reset(); return true;
     }
     // Quiescent/offline owner only: restart the signal timeline, keep trusted PSD.
     void resetStreamKeepProfile() noexcept {
         for(auto& a:in_)a.fill(0);
         for(auto& a:out_)a.fill(0);
         mask_.fill(1); expansion_=1;
-        pos_=ticks_=frames_=quiet_=learnCount_=learnTarget_=0;
-        candidateEnergy_=0; learning_=false;
+        pos_=ticks_=frames_=learnCount_=learnTarget_=0;
+        candidateEnergy_=0; learning_=false; context_.reset();
     }
     Settings settings() const noexcept {return settings_;}
     float spectralGain() const noexcept {return *std::min_element(mask_.begin(),mask_.begin()+hop_+1);}
@@ -91,7 +93,6 @@ private:
         const double hops=double(hop_)*48000./(rate_*128.);
         maskClose_=float(1.-std::pow(1.-0.18,hops));
         expandClose_=float(1.-std::pow(1.-0.035,hops));
-        hold_=static_cast<int>(std::ceil(0.18*rate_/hop_));
     }
     void prepareGains() noexcept {
         cleanFloor_=gainDb(settings_.cleanDb);
@@ -104,7 +105,7 @@ private:
             const int j=(pos_+i)%n_;
             out_[c][j]+=in_[c][j]*win_[i]*win_[i];
         }
-        mask_.fill(1); expansion_=1; quiet_=0;
+        mask_.fill(1); expansion_=1; context_.reset();
     }
     void frame() noexcept {
         if(frames_<2)++frames_;
@@ -113,15 +114,15 @@ private:
         }
         const int bins=hop_+1;
         float energy=0;
-        std::array<float,2> total{},noise{};
         for(int c=0;c<channels_;++c) {
+            float total=0;
             for(int i=0;i<n_;++i)work_[c][i]={in_[c][(pos_+i)%n_]*win_[i],0};
             fft_.transform(work_[c],false);
             for(int k=0;k<bins;++k) {
                 power_[c][k]=std::norm(work_[c][k]);
-                total[c]+=power_[c][k];noise[c]+=profile_[c][k];
+                total+=power_[c][k];
             }
-            energy+=total[c];
+            energy+=total;
         }
         // Transactional manual learn. Reject gross energy jumps; previous
         // profile remains valid. Stationary music cannot be ruled out here.
@@ -139,29 +140,12 @@ private:
                         valid_=true;
                     }
                     learning_=false;
-                    quiet_=0;
+                    context_.reset();
                 }
             }
         }
-        // No active classification claim: only conservative noise-like pause
-        // detection. Any channel with excess energy protects both channels.
-        float ratio=0,peakRatio=0;
-        for(int c=0;c<channels_;++c) {
-            ratio=std::max(ratio,total[c]/std::max(noise[c],eps));
-            // Aggregate groups to avoid triggering on random single FFT bins.
-            for(int k=0;k<bins;) {
-                const int end=std::min(k+8,bins);
-                const int stop=bins-end<4?bins:end;
-                float p=0,q=0;
-                for(int j=k;j<stop;++j){p+=power_[c][j];q+=profile_[c][j];}
-                k=stop;
-                peakRatio=std::max(peakRatio,p/std::max(q,eps));
-            }
-        }
         const bool protect=learning_||!valid_||!settings_.enabled||settings_.mode==Mode::Music;
-        const bool noiseLike=!protect&&ratio<1.65f&&peakRatio<5.f;
-        quiet_=noiseLike?std::min(quiet_+1,hold_):0;
-        const bool idle=quiet_>=hold_;
+        const bool idle=context_.update(power_,profile_,channels_,bins,!protect);
         const float floor=protect?1.f:idle||settings_.mode==Mode::Voice?cleanFloor_:
             settings_.mode==Mode::Singing?singingFloor_:1.f;
         for(int k=0;k<bins;++k) {
@@ -191,12 +175,12 @@ private:
     }
     Settings settings_{};
     double rate_=48000.;
-    int channels_=0,n_=256,hop_=128,pos_=0,ticks_=0,frames_=0,quiet_=0,learnCount_=0,learnTarget_=0;
+    int channels_=0,n_=256,hop_=128,pos_=0,ticks_=0,frames_=0,learnCount_=0,learnTarget_=0;
     bool ready_=false,valid_=false,learning_=false;
     float candidateEnergy_=0,expansion_=1;
     std::array<float,maxN> win_{};
     FftPlan fft_{};
-    int hold_=1;
+    ContextGuard<maxBins> context_{};
     float maskClose_=0.18f,expandClose_=0.035f;
     float cleanFloor_=1,singingFloor_=1,silenceFloor_=1;
     std::array<std::array<float,maxN>,2> in_{},out_{};
