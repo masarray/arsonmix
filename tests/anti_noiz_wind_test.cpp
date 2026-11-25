@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-#include "../tools/anti-noiz/OfflineAudio.h"
+#include "OfflineAudio.h"
+#include <string_view>
 #include <iostream>
 #include <random>
 using namespace armix::builtin_fx::anti_noiz;
-int main(){try{
+int main(int argc,char** argv){try{
+    const bool baseline=argc==2&&std::string_view(argv[1])=="--baseline";
+    offline::require(argc==1||baseline,"invalid arguments");
+    unsigned windFailures=0;
     for(unsigned rate:{44100u,48000u,88200u,96000u})for(unsigned channels:{1u,2u}){
         std::mt19937 gen(4902);std::uniform_real_distribution<float> rng(-1.f,1.f);
         offline::Audio learn{rate,channels,std::vector<float>(3*rate*channels)};
@@ -35,7 +39,9 @@ int main(){try{
         }
         const double cut=10*std::log10(raw/out),extra=10*std::log10(base/out),retain=projection/ref,onset=onsetProj/onsetRef;
         std::cout<<rate<<" Hz "<<channels<<"ch wind cut "<<cut<<" dB residual "<<extra<<" dB foreground "<<retain<<" onset "<<onset<<std::endl;
-        offline::require(cut>=12.&&extra>=3.,"wind pause audible attenuation and residual contribution");
+        if(cut<12.||extra<3.)++windFailures;
+        if(!baseline)offline::require(cut>=12.&&extra>=3.,"wind pause audible attenuation and residual contribution");
         offline::require(retain>.90&&retain<1.10&&onset>.75&&onset<1.25,"foreground/onset retention");
     }
+    if(baseline)offline::require(windFailures>0,"old baseline unexpectedly passed every field proxy gate");
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}return 0;}

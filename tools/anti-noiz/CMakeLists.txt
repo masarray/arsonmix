@@ -128,5 +128,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 
 anti_noiz_target(anti_noiz_wind_test tests/anti_noiz_wind_test.cpp)
+target_include_directories(anti_noiz_wind_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
 add_test(NAME AntiNoizWindFieldProxy COMMAND anti_noiz_wind_test)
 set_tests_properties(AntiNoizWindFieldProxy PROPERTIES TIMEOUT 90)

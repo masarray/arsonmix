@@ -52,6 +52,18 @@ jobs:
         run: |
           cmake --build "$RUNNER_TEMP/anti-noiz" --parallel 2
           ctest --test-dir "$RUNNER_TEMP/anti-noiz" --output-on-failure --verbose
+      - name: Checkout field-rejected exact source (wind gate, GCC only)
+        if: matrix.benchmark == 'ON'
+        uses: actions/checkout@v4
+        with:
+          ref: b2800799cffe85c9ec7d2e1addad3dce22627c6a
+          path: .anti-noiz-field-reference
+          persist-credentials: false
+      - name: Prove old field build fails the new wind PCM gate
+        if: matrix.benchmark == 'ON'
+        run: |
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -I .anti-noiz-field-reference/tools/anti-noiz tests/anti_noiz_wind_test.cpp -o "$RUNNER_TEMP/anti-noiz-field-old"
+          "$RUNNER_TEMP/anti-noiz-field-old" --baseline
       - name: Record exploratory throughput (not a performance gate)
         if: matrix.benchmark == 'ON'
         run: '"$RUNNER_TEMP/anti-noiz/anti_noiz_bench"'
