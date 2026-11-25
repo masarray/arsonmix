@@ -3233,7 +3233,7 @@
       next?.raw?.waitingAsioInputs>0?"INPUT TEMPORARILY UNAVAILABLE · AUTO-RECONNECT":
       d.outputArmed?(next.admitted?"OUTPUT ENABLED":
         "CHECK AUDIO CONNECTION"):
-      !d.enabledInputs?.length?(next.admitted?"CHOOSE AN INPUT":
+      !d.enabledInputs?.length?(next.admitted?"NO ACTIVE CAPTURE PINS · AUDIO I/O":
         "CHECK AUDIO I/O SETTINGS"):
       next?.raw?.operatorOutputMuted===true?"EMERGENCY STOP · MORE → RESUME":
       legacy()?.routeAccepted||next?.admitted?"OUTPUT RECOVERING · CHECK AUDIO I/O":
@@ -3573,6 +3573,11 @@
           <label>Recording / input<select data-audio-field="capture"></select></label>
           <label>Playback / monitor<select data-audio-field="playback"></select></label>
           <div class="armix-device-note" data-audio-active>Reading current audio device…</div>
+          <div class="armix-device-note" data-audio-signal-path role="status"></div>
+          <div class="armix-device-actions">
+            <button type="button" data-audio-copy-report>Copy Audio Report</button>
+            <button type="button" data-audio-review-capture hidden>Review capture pins</button>
+          </div>
           <div class="armix-device-note" data-audio-latency aria-label="Driver-reported audio latency">
             Latency · waiting for native device readback
           </div>
@@ -3699,6 +3704,18 @@
         deviceState=deviceVM.setupClearResult(deviceState);
         renderDevicePanel();
       });
+      devicePanel.querySelector("[data-audio-copy-report]").onclick=()=>{
+        backend.emitEvent("arMixAction",{action:"copyDiagnosticReport"});
+      };
+      devicePanel.querySelector("[data-audio-review-capture]").onclick=()=>{
+        if(deviceBusy())return;
+        const draft=deviceVM.captureRecoveryDraft(deviceInventory,deviceChoice,deviceState);
+        if(!draft)return;
+        deviceChoice=draft;
+        deviceState=deviceVM.setupClearResult(deviceState);
+        selectAudioSetupPage("pins");
+        renderDevicePanel(); // separate explicit Apply required
+      };
       devicePanel.querySelector("[data-audio-apply]").onclick=()=>{
         if(!deviceBusy())sendDeviceApply();
       };
@@ -3862,6 +3879,15 @@
         " · Device "+ms(latency.driverIoHintMs)+" · FX/PDC "+ms(latency.fxMs):
         "Round-trip latency — Apply device first";
       latencyText.title="Input and output are driver-reported. Buffer period is shown separately. Electrical round-trip requires physical loopback calibration.";
+    }
+    const pathHint=devicePanel.querySelector("[data-audio-signal-path]");
+    if(pathHint)pathHint.textContent=deviceVM.signalPathHint(active);
+    const recovery=deviceVM.captureRecoveryDraft(deviceInventory,deviceChoice,deviceState);
+    const review=devicePanel.querySelector("[data-audio-review-capture]");
+    if(review){
+      review.hidden=!recovery;
+      review.disabled=deviceBusy();
+      if(recovery)review.textContent="Review capture IN "+recovery.inputPins.map(p=>p+1).join(" + ");
     }
     renderLoopbackPins(active);
     devicePanel.querySelector("[data-audio-apply]").disabled=

@@ -1,6 +1,6 @@
 # Anti Noiz — Architecture & Technical Requirements v1
 ## Boundaries
-Independent implementation, no private source transfer. One ordinary ChannelId rack insert, existing native PCM render owner, existing FX graph latency and bypass compensation. No new device owner, WebAudio, or fixed global pre-FX bank. Keep public picker unchanged until genuine processor/editor/ACK/state/PCM support.
+Initial baseline was independently implemented. Owner now authorizes selective ASKP-VST DSP reuse; see [engineering contract](ENGINEERING-CONTRACT.md). Preserve provenance and check third-party rights; no licensing, keys, checkout, updater, or unrelated private source transfer. Do not introduce a private sibling checkout dependency. One ordinary ChannelId rack insert, existing native PCM render owner, existing FX graph latency and bypass compensation. No new device owner, WebAudio, or fixed global pre-FX bank. Keep public picker unchanged until genuine processor/editor/ACK/state/PCM support.
 Stable proposed ID armix.builtin.anti-noiz.v1. Existing extension seam: src/NativeBuiltInFx.h, engine/builtin_fx/FxSpsc.h, RealtimeNativeFxControl, Native preset/Show and approved editor. Use exact FX instance identity, audio-applied ACK and accepted readback. CONTROL prepares/restores/retire; AUDIO owns histories; UI consumes bounded meter snapshots. No concurrent mutation of core from UI. Validate state transactionally; version and rate/device bind learned profile, invalidate on input change. Never serialize raw microphone audio.
 
 ## Data flow

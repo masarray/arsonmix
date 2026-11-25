@@ -808,3 +808,23 @@ test("Bus remap choices keep active masks, reject external and other bus pins, r
  assert.equal(vm.patchMatrix({...snap,raw:{...raw,physicalBusSecondaryArmed:true}},"output").rows[0].editable,false);
  assert.equal(vm.patchMatrix({...snap,device:{...d,outputArmed:true}},"output").rows[0].editable,false);
 });
+
+// #861 successor: proposed Windows capture pins are not installed pins.
+test("capture recovery preserves exact endpoint, rate, output mask and explicit Apply",()=>{
+  const f=fixture(),a={...f.active,backend:"Windows Audio",captureDevice:"Microphone",playbackDevice:"Speakers",enabledInputs:[],inputNames:["Left","Right"]};
+  const inv={...f.inventory,active:a},d=vm.setupDraft(inv),before=JSON.stringify(inv);
+  const next=vm.captureRecoveryDraft(inv,d);
+  assert.deepEqual(next,{...d,inputPins:[0,1]});
+  assert.deepEqual(vm.setupBegin(vm.setupInitial(),{inventory:inv,draft:next,requestId:"recover",baselineEpoch:"40"}).request.config.enabledInputs,[0,1]);
+  assert.equal(JSON.stringify(inv),before);
+  for(const change of [{authorized:false},{open:false},{inputNames:[]},{backend:"ASIO"},{enabledInputs:[0]}])
+    assert.equal(vm.captureRecoveryDraft({...inv,active:{...a,...change}},d),null);
+  for(const change of [{capture:""},{inputPins:[1]},{rate:96000},{buffer:64},{outputPins:[2,3]}])
+    assert.equal(vm.captureRecoveryDraft(inv,{...d,...change}),null);
+  assert.equal(vm.captureRecoveryDraft(inv,d,{...vm.setupInitial(),phase:"RECOVERY_REQUIRED"}),null);
+  assert.match(vm.signalPathHint(a),/ZERO input pins/);
+  assert.match(vm.signalPathHint({...a,inputNames:[]}),/driver reports no input pins/);
+  const bridge=readFileSync("web/approved-native-bridge.js","utf8");
+  const action=bridge.slice(bridge.indexOf('querySelector("[data-audio-review-capture]").onclick'),bridge.indexOf('querySelector("[data-audio-apply]").onclick'));
+  assert.match(action,/captureRecoveryDraft/);assert.doesNotMatch(action,/sendDeviceApply\(/);
+});

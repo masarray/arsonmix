@@ -426,6 +426,36 @@
         (mainPins.length===2?" · MAIN "+mainPins.join(" / "):""):
         "No verified audio device. Select a supported input and output.")};
   }
+  // P0: propose verified Windows capture pins, never installed PCM.
+  function captureRecoveryDraft(inventory,draft,state=setupInitial()) {
+    const a=inventory?.active;
+    if(!a||a.authorized!==true||!setupRoutingReady(inventory,draft,state)||
+       !String(a.backend).startsWith("Windows Audio")||!a.captureDevice||
+       !inventory.types?.some(t=>t.name===a.backend&&t.separate===true)||
+       !Array.isArray(a.enabledInputs)||a.enabledInputs.length!==0||
+       !Array.isArray(a.inputNames)||!a.inputNames.length||
+       !Array.isArray(draft.inputPins)||draft.inputPins.length!==0||
+       !Array.isArray(a.outputNames)||!validPinMask(draft.outputPins,a.outputNames)||
+       draft.outputPins.length<2||!samePinMask(draft.outputPins,a.enabledOutputs))
+      return null;
+    const proposed={...draft,inputPins:a.inputNames.slice(0,2).map((_,i)=>i)};
+    return setupPresentation(inventory,proposed,state).canApply?proposed:null;
+  }
+  function signalPathHint(a) {
+    if(!a?.open)return "No open audio device.";
+    if(a.authorized!==true)return "Device route not authorized. Copy Audio Report.";
+    if(a.captureDevice&&Array.isArray(a.enabledInputs)&&!a.enabledInputs.length)
+      return a.inputNames?.length?
+        "Capture selected, but ZERO input pins enabled. Review capture pins.":
+        "Capture selected, but driver reports no input pins. Copy Audio Report.";
+    return ({NATIVE_ROUTE_UNBOUND:"Mixer route not bound. Check routing or copy report.",
+      OUTPUT_PINS_MISSING:"Playback pins unavailable. Copy Audio Report.",
+      OPERATOR_OUTPUT_MUTED:"Output explicitly muted.",
+      OUTPUT_NOT_ARMED:"Output not armed. Check channel input and route.",
+      MASTER_MUTED:"Master mute is active.",
+      CAPTURE_CALLBACK_NO_INPUT:"Driver pins exist, callback reports no input. Copy Audio Report."
+    })[a.audioPathCode]||"Device readback only; actual audio is not certified.";
+  }
   function setupEditDraft(draft,inventory,change) {
     if(!draft||!inventory?.active||!change||
        typeof change!=="object")return draft;
@@ -725,7 +755,7 @@
   }
   return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,patchMatrix,physicalInputChoice,namedPatchChoices,busOutputChoices,
     externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,setupRoutingReady,setupPinsApplied,setupMatrixDeviceMatches,
-    pinInventory,setupSelectAllPins,setupBufferPeriod,setupHealthReadback,
+    pinInventory,setupSelectAllPins,setupBufferPeriod,setupHealthReadback,captureRecoveryDraft,signalPathHint,
     setupInitial,setupBegin,setupAck,setupReadback,
     setupTimeout,setupClearResult,nativeLifecycleLease,nativeLifecycleDecision,
     nativeTransientReadbackPolicy});
