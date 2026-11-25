@@ -22,9 +22,9 @@ export function nativeTransport(backend,context,clock=()=>Date.now()){
  }
  attach('arMixBuiltinAntiNoizSnapshot',m=>{
   if(closed||!matches(m,reading))return;
-  reading=null;
+  const readContext=reading.context;reading=null;
   if(m.status!=='ACCEPTED'||!valid(m.settings)){unavailable(m.errorCode);return;}
-  lastGoodAt=clock();lastContext=reading?.context||identity();
+  lastGoodAt=clock();lastContext=readContext;
   const o=m.observation;
   let observation=null;
   if(o&&typeof o.serial==='string'&&/^\d+$/.test(o.serial)&&

@@ -153,6 +153,40 @@ def main():
         readback(page,accepted,{**OBS,"serial":"4","effectiveMode":"Voice","profile":True,"learnStatus":"Accepted"})
         expect(root.locator('[data-observation]')).to_contain_text("Profile ready")
         expect(root.locator('[data-learn]')).to_be_enabled()
+        # Actual rotary drag with delayed ACK, stale readback and coalescing.
+        knob=root.locator('input[aria-label="Clean"]')
+        bounds=knob.bounding_box()
+        assert bounds and bounds["width"]>=54
+        x,y=bounds["x"]+bounds["width"]/2,bounds["y"]+bounds["height"]/2
+        page.mouse.move(x,y);page.mouse.down();page.mouse.move(x,y-30,steps=6)
+        page.wait_for_timeout(70)
+        first=last_action(page,"nativeAntiNoizSet")
+        assert first["settings"]["cleanDb"]>accepted["cleanDb"]
+        page.mouse.move(x,y-65,steps=7);page.wait_for_timeout(70)
+        desired=float(knob.input_value())
+        assert desired>first["settings"]["cleanDb"]
+        expect(knob).to_be_enabled()
+        readback(page,accepted,{**OBS,"serial":"5","effectiveMode":"Voice","profile":True})
+        assert float(knob.input_value())==desired
+        page.mouse.up()
+        assert float(knob.input_value())==desired
+        respond(page,first,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=first["settings"])
+        second=last_action(page,"nativeAntiNoizSet")
+        assert second["requestId"]!=first["requestId"] and second["settings"]["cleanDb"]==desired
+        assert float(knob.input_value())==desired
+        respond(page,second,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=second["settings"])
+        accepted=second["settings"]
+        readback(page,accepted,{**OBS,"serial":"6","effectiveMode":"Voice","profile":True})
+        assert float(knob.input_value())==desired
+        # Keyboard still uses accessible native range semantics.
+        knob.focus();page.keyboard.press("ArrowLeft")
+        key=last_action(page,"nativeAntiNoizSet")
+        assert key["settings"]["cleanDb"]==desired-.5
+        respond(page,key,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=key["settings"])
+        accepted=key["settings"]
+        readback(page,accepted,{**OBS,"serial":"7","effectiveMode":"Voice","profile":True})
+        # Capture actual approved UI, not an illustrative mockup.
+        page.screenshot(path=str(bundle.parent/"anti-noiz-operator-1366.png"))
         # Show-store/preset plumbing is not mocked as disk success: verify
         # actual UI intent is for the same accepted instance and receipt.
         root.locator(".mx-fxp-save-as").click()

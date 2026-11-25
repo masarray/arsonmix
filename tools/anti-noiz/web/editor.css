@@ -12,3 +12,18 @@
 .an-meter{margin:8px 0}.an-meter label{display:flex;justify-content:space-between;font-size:11px;color:#bdc7cc}
 .an-meter-track{height:5px;margin-top:4px;border-radius:3px;background:#29323a;overflow:hidden}
 .an-meter-track i{display:block;height:100%;width:0;background:var(--mint)}
+
+/* Compact rotary control: native range semantics, custom relative drag. */
+.an-panel{width:100%;max-width:430px;padding:12px;--mint:#70cbb9}
+#mxNativeAntiNoiz{width:min(430px,calc(100vw - 16px))}
+.an-panel h1{font-size:17px;letter-spacing:.2px}.an-panel small{letter-spacing:1.1px;font-size:9px}
+.an-head-actions [data-power][aria-pressed=true]{color:#9af0d8;background:#235044;border-color:#6ac5b5;box-shadow:inset 0 0 0 1px #70cbb933}
+.an-head-actions [data-power][aria-pressed=false]{color:#9ba6b0;background:#23272d;border-color:#414950}
+.an-control{gap:4px;user-select:none}.an-dial{width:64px;height:64px;border:2px solid #454e57;background:radial-gradient(circle at 42% 30%,#535b62 0%,#333b42 44%,#22282e 65%,#12171b 68%);box-shadow:inset 0 1px 2px #ffffff20,0 2px 4px #0005;cursor:ns-resize}
+.an-dial i{inset:4px}.an-dial i:before{height:11px;width:3px;left:calc(50% - 1.5px);background:#8bd8c7}
+.an-dial input{position:absolute;inset:0;margin:0;width:100%;height:100%;opacity:0;cursor:ns-resize;touch-action:none}
+.an-dial:focus-within{outline:2px solid var(--mint);outline-offset:3px}.an-dial:has(input:disabled){opacity:.45;cursor:default}
+.an-control output{font-size:12px;min-width:66px;text-align:center;letter-spacing:.15px}
+.an-meter-track i{width:100%;transform:scaleX(0);transform-origin:left;transition:transform 90ms linear}
+@media(prefers-reduced-motion:reduce){.an-meter-track i{transition:none}}
+@media(max-width:360px){.an-panel{padding:9px}.an-knobs{gap:4px}.an-dial{width:54px;height:54px}.an-modes button{padding:6px 3px}}
