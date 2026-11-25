@@ -31,6 +31,7 @@ public:
         if(catalog=="armix.builtin.channel-eq.v1")return "eq";
         if(catalog=="armix.builtin.graphic-eq31.v1")return "graphic-eq31";
         if(catalog=="armix.builtin.channel-compressor.v1")return "compressor";
+        if(catalog=="armix.builtin.anti-noiz.v1")return "anti-noiz";
         if(catalog=="armix.builtin.arson-harmony.v1")return "harmonice";
         if(catalog=="armix.builtin.vocal-throw.v1")return "vocal-throw";
         if(catalog=="armix.builtin.de-ezzer.v1")return "de-ezzer";
@@ -107,6 +108,14 @@ public:
                 number(settings,"rangeDb",0,18)&&mode.isString()&&shape.isString()&&
                 (mode==juce::var("Auto")||mode==juce::var("Voice"))&&
                 (shape==juce::var("Shelf")||shape==juce::var("Focused"));
+        }
+        if(catalog=="armix.builtin.anti-noiz.v1"){
+            const auto mode=settings.getProperty("mode",{});
+            return containsOnly(settings,{"mode","cleanDb","silenceDb","musicProtect","enabled"})&&
+                mode.isString()&&(mode=="Auto"||mode=="Voice"||mode=="Singing"||mode=="Music")&&
+                settings.getProperty("enabled",{}).isBool()&&
+                number(settings,"cleanDb",0,24)&&number(settings,"silenceDb",0,48)&&
+                number(settings,"musicProtect",0,1);
         }
         if(catalog=="armix.builtin.channel-compressor.v1"){
             if(!containsOnly(settings,{"thresholdDb","ratio","attackMs","releaseMs",

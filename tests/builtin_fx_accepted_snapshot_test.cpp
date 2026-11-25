@@ -26,22 +26,23 @@ int main(){
   ChannelHarmonyProcessor harmony;
   VocalThrowProcessor vthrow;
   DeEzzerProcessor dez;
-  juce::AudioProcessor* processors[]={&eq,&geq,&comp,&harmony,&vthrow,&dez};
+  AntiNoizProcessor an;
+  juce::AudioProcessor* processors[]={&eq,&geq,&comp,&harmony,&vthrow,&dez,&an};
   const char* catalogs[]={ChannelEqProcessor::catalogIdentity,
       GraphicEq31Processor::catalogIdentity,
       ChannelCompressorProcessor::catalogIdentity,
       ChannelHarmonyProcessor::catalogIdentity,
-      VocalThrowProcessor::catalogIdentity,DeEzzerProcessor::catalogIdentity};
+      VocalThrowProcessor::catalogIdentity,DeEzzerProcessor::catalogIdentity,AntiNoizProcessor::catalogIdentity};
   for(auto* p:processors) {
     REQUIRE(!BuiltInFxAcceptedSnapshot::acceptedSettings(p,
          "armix.builtin.arson-harmony.v1").isObject());
     p->prepareToPlay(48000.,128);
   }
-  for(int i=0;i<6;++i) {
+  for(int i=0;i<7;++i) {
     auto* p=processors[i];
     const juce::String catalog(catalogs[i]);
     REQUIRE(BuiltInFxAcceptedSnapshot::matchesReady(p,catalog));
-    for(int j=0;j<6;++j)
+    for(int j=0;j<7;++j)
       if(i!=j)REQUIRE(!BuiltInFxAcceptedSnapshot::matchesReady(p,catalogs[j]));
     const auto captured=BuiltInFxAcceptedSnapshot::acceptedSettings(p,catalog);
     REQUIRE(BuiltInFxUserPresetStore::validateSettings(catalog,captured));
@@ -56,7 +57,7 @@ int main(){
     REQUIRE(BuiltInFxUserPresetStore(root).read(catalog,first.id,second).isEmpty());
     REQUIRE(juce::JSON::toString(second.settings,false)==
             juce::JSON::toString(captured,false));
-    for(int j=0;j<6;++j)if(i!=j) {
+    for(int j=0;j<7;++j)if(i!=j) {
       BuiltInFxUserPreset wrong;
       REQUIRE(store.read(catalogs[j],first.id,wrong).isNotEmpty());
     }
@@ -183,10 +184,44 @@ int main(){
     REQUIRE(static_cast<float>(static_cast<double>(accepted.getProperty("amount",{})))==settings.amount);
     REQUIRE(!accepted.hasProperty("enabled")&&!accepted.hasProperty("audition"));
   }
+  // Real accepted DSP -> portable preset, not a submitted GUI draft.
+  auto settings=an.acceptedSettings();
+  settings.mode=AntiNoizProcessor::Core::Mode::Singing;
+  settings.cleanDb=9.5f;settings.silenceDb=21.f;settings.musicProtect=.75f;
+  REQUIRE(an.queueSettings(settings,1));
+  REQUIRE(!an.stateSnapshotQuiescent());
+  const auto before=BuiltInFxAcceptedSnapshot::acceptedSettings(&an,catalogs[6]);
+  REQUIRE(before.getProperty("mode",{}).toString()=="Auto");
+  an.consumeRealtimeEdits(); // detached fixture has no callback publisher
+  AntiNoizProcessor::Completion completed{};
+  REQUIRE(an.pollCompletion(completed)&&completed.id==1&&completed.applied);
+  REQUIRE(an.stateSnapshotQuiescent());
+  const auto after=BuiltInFxAcceptedSnapshot::acceptedSettings(&an,catalogs[6]);
+  REQUIRE(after.getProperty("mode",{}).toString()=="Singing");
+  REQUIRE(static_cast<double>(after.getProperty("cleanDb",{}))==9.5);
+  REQUIRE(!after.hasProperty("profile")&&!after.hasProperty("sourceRole")&&
+          !after.hasProperty("deviceEpoch"));
+  BuiltInFxUserPreset savedAn{{},catalogs[6],"Singing Live","My Presets",after};
+  REQUIRE(store.saveNew(savedAn).isEmpty());
+  BuiltInFxUserPreset coldAn;
+  REQUIRE(BuiltInFxUserPresetStore(root).read(catalogs[6],savedAn.id,coldAn).isEmpty());
+  AntiNoizProcessor::Core::Settings decoded{};
+  REQUIRE(AntiNoizNativeBinding::parseSettings(coldAn.settings,decoded));
+  REQUIRE(decoded.mode==settings.mode&&decoded.cleanDb==settings.cleanDb&&
+          decoded.silenceDb==settings.silenceDb&&decoded.musicProtect==settings.musicProtect);
+  // Saved mixer state is settings-only and is restored before publication.
+  juce::MemoryBlock state;
+  an.getStateInformation(state);
+  AntiNoizProcessor restored;
+  restored.prepareToPlay(96000.,128);
+  REQUIRE(restored.restoreUnpublishedState(state.getData(),static_cast<int>(state.getSize())));
+  REQUIRE(restored.getLatencySamples()==512&&restored.acceptedSettings().mode==settings.mode);
+  REQUIRE(!restored.readObservation().profile);
+  restored.releaseResources();
   for(auto* p:processors)p->releaseResources();
-  for(int i=0;i<6;++i)
+  for(int i=0;i<7;++i)
     REQUIRE(!BuiltInFxAcceptedSnapshot::matchesReady(processors[i],catalogs[i]));
-  std::cout<<"Six built-in FX: accepted DSP snapshot -> typed .armixfx -> "
+  std::cout<<"Seven built-in FX: accepted DSP snapshot -> typed .armixfx -> "
            <<"cold reopen, wrong-catalog and source exclusion PASS\n";
   return 0;
  }catch(const std::exception& e) {

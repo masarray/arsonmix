@@ -259,6 +259,10 @@ list(APPEND ARMIX_APPROVED_GUI_SOURCE_INPUTS
     "${CMAKE_CURRENT_SOURCE_DIR}/web/approved-floating-fx-bridge.js"
     "${CMAKE_CURRENT_SOURCE_DIR}/web/approved-native-context-menu.js"
     "${CMAKE_CURRENT_SOURCE_DIR}/web/approved-native-legal.js"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/anti-noiz/web/editor.mjs"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/anti-noiz/web/editor.css"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/anti-noiz/web/native_transport.mjs"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/anti-noiz/web/native_entry.mjs"
     "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_approved_native_gui.py"
     "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_pages.py"
     "${CMAKE_CURRENT_SOURCE_DIR}/scripts/compose_native_peq.py")

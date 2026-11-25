@@ -215,7 +215,7 @@ function create(adapter){
  // Dynamic editor owners may supply one lifetime-fenced native event relay.
  const subscribeResult=adapter.subscribeResult||
     (callback=>backend()?.addEventListener?.("arMixBuiltinFxPresetResult",callback));
- subscribeResult(reply=>{
+ const subscription=subscribeResult(reply=>{
   if(!task||reply?.requestId!==task.requestId||
      reply.operation!==task.op||reply.catalogId!==catalogId)return;
   const c=bound();
@@ -281,8 +281,14 @@ function create(adapter){
    recall=null;notice("MY PRESET DSP ACK TIMEOUT");paint();
   }
  }
+ function dispose(){
+  task=null;recall=null;verified=false;closeAll();
+  if(typeof subscription==='function')subscription();
+  else if(!adapter.subscribeResult&&subscription!==undefined&&subscription!==null)
+   backend()?.removeEventListener?.(subscription);
+ }
  return Object.freeze({reset,paint,refresh,selectUser,factoryIntent,
-                       onAccepted,rejectRecall,tick,close:closeAll});
+                       onAccepted,rejectRecall,tick,close:closeAll,dispose});
 }
 window.ArSonMixBuiltinFxPresetBar=Object.freeze({create});
 })();

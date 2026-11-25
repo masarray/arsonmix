@@ -57,6 +57,11 @@ static BuiltInFxUserPreset deEzzer() {
         object({{"amount",.42},{"sensitivity",.5},{"rangeDb",8.0},
             {"mode","Voice"},{"shape","Focused"}})};
 }
+static BuiltInFxUserPreset antiNoiz() {
+    return {{},"armix.builtin.anti-noiz.v1","Musical Clean","My Presets",
+        object({{"mode","Singing"},{"cleanDb",9.5},{"silenceDb",21.0},
+                {"musicProtect",.75},{"enabled",true}})};
+}
 static BuiltInFxUserPreset eq() {
     auto bands=juce::var(juce::Array<juce::var>{});
     for(int i=0;i<8;++i)
@@ -73,7 +78,7 @@ int main() {
     REQUIRE(!testRoot.exists());
     struct Cleanup { juce::File folder;~Cleanup(){folder.deleteRecursively();} } cleanup{testRoot};
     BuiltInFxUserPresetStore store(testRoot);
-    auto items=std::array{comp(),harmony(),throwSettings(),eq(),graphicEq31(),reverb(),deEzzer()};
+    auto items=std::array{comp(),harmony(),throwSettings(),eq(),graphicEq31(),reverb(),deEzzer(),antiNoiz()};
     for(auto& item:items) {
         REQUIRE(BuiltInFxUserPresetStore::validateSettings(item.catalogId,item.settings));
         REQUIRE(store.saveNew(item).isEmpty());
@@ -138,6 +143,16 @@ int main() {
     REQUIRE(store.saveNew(bad).isNotEmpty());
     bad=eq();bad.settings.getDynamicObject()->setProperty("liveInput",2);
     REQUIRE(store.saveNew(bad).isNotEmpty());
+    for(const auto& invalid:std::array<std::pair<const char*,juce::var>,7>{{
+        {"mode",juce::var("NoiseOnly")},{"cleanDb",juce::var(24.1)},
+        {"silenceDb",juce::var(-1)},{"musicProtect",juce::var("1")},
+        {"enabled",juce::var(1)},{"profile",juce::var(true)},
+        {"deviceEpoch",juce::var("12")}}}) {
+        auto rejected=antiNoiz();
+        rejected.settings.getDynamicObject()->setProperty(invalid.first,invalid.second);
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(rejected.catalogId,rejected.settings));
+        REQUIRE(store.saveNew(rejected).isNotEmpty());
+    }
     auto album=reverb();album.settings.getDynamicObject()->setProperty("voicing",1);
     REQUIRE(BuiltInFxUserPresetStore::validateSettings(album.catalogId,album.settings));
     album.settings.getDynamicObject()->setProperty("voicing",2);

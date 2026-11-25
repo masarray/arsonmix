@@ -27,5 +27,29 @@ int main(){
     for(int i=0;i<100;++i)c.process(pcm,nullptr,64);
     check(c.pollTelemetry(meter));check(c.pollTelemetry(meter));check(!c.pollTelemetry(meter));
     check(c.prepare(96000,2));check(c.snapshot().latency==512);
-    std::cout<<"Control ACK, rejection, queue backpressure and telemetry PASS\n";
+    // Sample-clock telemetry: 20 Hz regardless of irregular partitions,
+    // with immediate first snapshot and no catch-up burst.
+    Control cadence;check(cadence.prepare(48000,1));float block[1024]{};
+    int snapshots=0;
+    for(int pos=0;pos<48000;){
+        const int n=std::min(127,48000-pos);
+        cadence.process(block,nullptr,n);pos+=n;
+        while(cadence.pollTelemetry(meter))++snapshots;
+    }
+    check(snapshots==20);
+    // A pending Learn is cancelled before its 2s qualification completes.
+    Control life;check(life.prepare(48000,1));
+    s={};s.mode=Core::Mode::Voice;
+    check(life.submit({1,Control::Kind::settings,s}));life.consume();check(life.poll(ack)&&ack.applied);
+    check(life.submit({2,Control::Kind::learn,{}}));life.process(block,nullptr,64);
+    check(life.poll(ack)&&ack.applied&&ack.state.learning);
+    check(life.submit({3,Control::Kind::learn,{}}));life.consume();
+    check(life.poll(ack)&&!ack.applied&&ack.state.learning);
+    s.enabled=false;check(life.submit({4,Control::Kind::settings,s}));life.consume();
+    check(life.poll(ack)&&ack.applied&&!ack.state.learning&&!ack.state.profile);
+    check(life.submit({5,Control::Kind::learn,{}}));life.consume();check(life.poll(ack)&&!ack.applied);
+    s.enabled=true;s.mode=Core::Mode::Music;
+    check(life.submit({6,Control::Kind::settings,s}));life.consume();check(life.poll(ack)&&ack.applied);
+    check(life.submit({7,Control::Kind::learn,{}}));life.consume();check(life.poll(ack)&&!ack.applied);
+    std::cout<<"Control ACK, rejection, queue backpressure, 20Hz sample cadence and Learn cancellation PASS\n";
 }

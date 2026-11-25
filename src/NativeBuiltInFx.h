@@ -3,6 +3,7 @@
 
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
 #include "../engine/builtin_fx/ChannelCompressorProcessor.h"
+#include "../engine/builtin_fx/AntiNoizProcessor.h"
 #include "../engine/builtin_fx/GraphicEq31Processor.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
 #include "../engine/builtin_fx/VocalThrowProcessor.h"
@@ -96,6 +97,11 @@ inline constexpr std::array nativeBuiltInFx{
         "NATIVE_COMP_UNSUPPORTED_AUDIO_FORMAT","NATIVE_COMP_PREPARE_REJECTED",
         "NATIVE_COMP_PREPARE_EXCEPTION","Saved native Compressor state rejected; graph unchanged",
         prepareNativeBuiltInFx<ChannelCompressorProcessor>},
+    NativeBuiltInFx{AntiNoizProcessor::catalogIdentity,"Anti Noiz","Dynamics",true,44100.,96000.,
+        "NATIVE_AN_HOST_UNAVAILABLE","NATIVE_AN_DEVICE_CHANGED",
+        "NATIVE_AN_UNSUPPORTED_AUDIO_FORMAT","NATIVE_AN_PREPARE_OR_PDC_REJECTED",
+        "NATIVE_AN_PREPARE_EXCEPTION","Saved Anti Noiz state rejected; graph unchanged",
+        prepareNativeBuiltInFx<AntiNoizProcessor>},
     NativeBuiltInFx{ChannelHarmonyProcessor::catalogIdentity,"Harmonice","Utility",true,32000.,192000.,
         "NATIVE_HARMONY_HOST_UNAVAILABLE","NATIVE_HARMONY_DEVICE_CHANGED",
         "NATIVE_HARMONY_UNSUPPORTED_AUDIO_FORMAT","NATIVE_HARMONY_PREPARE_OR_PDC_REJECTED",

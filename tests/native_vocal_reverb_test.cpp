@@ -378,9 +378,12 @@ int main() {
     assert(lcdPixel.getBlue()>lcdPixel.getRed()+20);
     for(float scale:{1.f,1.25f,1.5f,2.f}) {
         const auto face=ui->createComponentSnapshot(ui->getLocalBounds(),true,scale);
-        assert(face.getWidth()==int(1120*scale)&&face.getHeight()==int(430*scale));
+        // JUCE 8.0.15 rounds snapshot dimensions and maps to the actual raster.
+        assert(face.getWidth()==juce::roundToInt(1120.f*scale)&&
+               face.getHeight()==juce::roundToInt(430.f*scale));
+        const float sx=face.getWidth()/1120.f,sy=face.getHeight()/430.f;
         for(int x:{30,560,1090})for(int y:{409,414,416}) {
-            const auto c=face.getPixelAt(int(x*scale),int(y*scale));
+            const auto c=face.getPixelAt(int(x*sx),int(y*sy));
             assert(c.getRed()==23&&c.getGreen()==26&&c.getBlue()==29);
         }
     }

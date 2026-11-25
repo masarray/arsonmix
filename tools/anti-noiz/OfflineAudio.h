@@ -56,8 +56,8 @@ inline void write(const std::filesystem::path& path,const Audio& a){
     o.close();require(bool(o),"WAV write failed");
 }
 struct Result { Audio processed,delta; double inputRms=0,outputRms=0,deltaRms=0; int latency=0; };
-inline Result render(const Audio& input,const Audio* noise,Core::Settings settings,int block=128){
-    Core core;require(core.prepare(input.rate,static_cast<int>(input.channels))&&core.setSettings(settings),"invalid DSP format/settings");
+inline Result render(const Audio& input,const Audio* noise,Core::Settings settings,int block=128,Core::SourceRole source=Core::SourceRole::Unknown){
+    Core core;require(core.prepare(input.rate,static_cast<int>(input.channels),source)&&core.setSettings(settings),"invalid DSP format/settings");
     require(!input.samples.empty()&&input.samples.size()%input.channels==0&&block>=1&&block<=1024,"invalid input/block");
     std::array<float,1024> l{},r{};
     auto fill=[&](const Audio& a,std::size_t start,int n){for(int i=0;i<n;++i){auto j=(start+std::size_t(i))*a.channels;l[i]=j<a.samples.size()?a.samples[j]:0;r[i]=a.channels==2&&j+1<a.samples.size()?a.samples[j+1]:0;}};
@@ -67,7 +67,7 @@ inline Result render(const Audio& input,const Audio* noise,Core::Settings settin
         const auto frames=noise->samples.size()/noise->channels;
         for(std::size_t p=0;p<frames&&core.learning();){int n=static_cast<int>(std::min<std::size_t>(block,frames-p));fill(*noise,p,n);core.process(l.data(),r.data(),n);p+=std::size_t(n);}
         require(core.hasProfile()&&!core.learning(),"noise learning incomplete or rejected; provide >2s noise only");
-    }else require(settings.mode==Core::Mode::Music||!settings.enabled,"noise reference required for active modes");
+    }else require(core.effectiveMode()==Core::Mode::Music||!settings.enabled,"noise reference required for active modes");
     core.resetStreamKeepProfile();
     Result out;out.latency=core.latencySamples();out.processed={input.rate,input.channels,std::vector<float>(input.samples.size())};out.delta=out.processed;
     const auto frames=input.samples.size()/input.channels, delay=std::size_t(out.latency);
