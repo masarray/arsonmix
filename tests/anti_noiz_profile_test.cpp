@@ -71,6 +71,31 @@ int main(){
         for(int i=0;i<int(12*rate/hop);++i)p.track(noise,true);
         check(p.powers()[1][30]<1.02f*fresh[1][30],"return to original noise");
         std::cout<<rate<<" Hz: coherent upward PSD ratio "<<raised<<", narrow/strong foreground freeze, gradual recovery PASS\n";
+        // A spectrally tilted, broad noise change is not a global level change.
+        check(p.begin(),"spectral learn");for(int i=0;i<frames+2;++i)p.observe(noise);
+        const auto spectralAnchor=p.anchor();
+        auto tilted=noise;
+        for(int k=0;k<129;++k)tilted[1][k]*=.8f+1.8f*float(k)/128.f;
+        for(int i=0;i<4*window-1;++i)p.track(tilted,false,true,1.7f,2.6f);
+        check(p.powers()==spectralAnchor,"spectral qualification hold");
+        for(int i=0;i<24*window+1;++i)p.track(tilted,false,true,1.7f,2.6f);
+        const float low=p.powers()[1][4]/spectralAnchor[1][4];
+        const float high=p.powers()[1][120]/spectralAnchor[1][120];
+        check(low<.98f&&low>.7f&&high>2.05f&&high<=2.2f,"selective broad spectral convergence");
+        check(p.powers()[0]==spectralAnchor[0]&&p.anchor()==spectralAnchor,"neutral channel and anchor unchanged");
+        const auto spectral=p.powers();
+        // A narrow excess and alternating opposite spectral shapes cannot
+        // qualify; both channels still veto as a transaction.
+        p.track(tonal,false,true,2.f,17.125f);
+        for(int i=0;i<8*window;++i)p.track(tonal,false,true,2.f,2.f);
+        check(p.powers()==spectral,"spectral contamination rejection");
+        auto reverse=tilted;
+        for(int k=0;k<129;++k)reverse[1][k]=tilted[1][128-k];
+        p.track(tilted,false,false);
+        for(int n=0;n<8;++n)for(int i=0;i<window;++i)
+            p.track(n%2?tilted:reverse,false,true,1.7f,2.6f);
+        check(p.powers()==spectral,"intermittent unstable shape freeze");
+        std::cout<<rate<<" Hz: spectral low/high ratios "<<low<<"/"<<high<<", stereo contamination and intermittent freeze PASS\n";
         p.prepare(rate,hop,1,129);check(!p.valid()&&!p.learning(),"new format invalidates profile");
         std::cout<<rate<<" Hz: drift ratio "<<ratio<<", rollback, freeze and bounds PASS\n";
     }

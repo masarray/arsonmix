@@ -61,12 +61,11 @@ public:
         if(!idle){
             idle_=0;
             if(!allowCoherent){drift_.reset();return;}
-            typename NoiseDriftGuard<MaxBins>::Scales scale{};
-            if(drift_.observe(power,anchor_,broadband,subbandPeak,scale)){
-                for(int c=0;c<channels_;++c)if(scale[c]>0.f)
+            if(drift_.observe(power,anchor_,broadband,subbandPeak)){
+                for(int c=0;c<channels_;++c)if(drift_.channelEligible(c))
                     for(int k=0;k<bins_;++k){
                         const float anchor=anchor_[c][k];auto& v=working_[c][k];
-                        const float target=anchor*scale[c];
+                        const float target=anchor*drift_.targetScale(c,k);
                         v=std::clamp(v+drift_.alpha()*(target-v),.7f*anchor,
                                      NoiseDriftGuard<MaxBins>::maxScale*anchor);
                     }

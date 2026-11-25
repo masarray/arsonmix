@@ -67,3 +67,8 @@ anti_noiz_target(anti_noiz_drift_pcm_test tests/anti_noiz_drift_pcm_test.cpp)
 target_include_directories(anti_noiz_drift_pcm_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
 add_test(NAME AntiNoizDriftPCM COMMAND anti_noiz_drift_pcm_test)
 set_tests_properties(AntiNoizDriftPCM PROPERTIES TIMEOUT 60)
+
+anti_noiz_target(anti_noiz_spectral_pcm_test tests/anti_noiz_spectral_pcm_test.cpp)
+target_include_directories(anti_noiz_spectral_pcm_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
+add_test(NAME AntiNoizSpectralPCM COMMAND anti_noiz_spectral_pcm_test)
+set_tests_properties(AntiNoizSpectralPCM PROPERTIES TIMEOUT 60)
