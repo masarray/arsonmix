@@ -40,7 +40,11 @@ int main(){
         check(fx->pollCompletion(ack)&&ack.applied&&ack.state.learning,"native learning");
         for(int i=0;i<16;++i)lease.render(l.data(),r.data(),128,true);
         check(fx->queueLearn(3),"native bypass command");lease.render(l.data(),r.data(),128,true);
-        check(fx->pollCompletion(ack)&&!ack.applied&&ack.state.learnStatus==Core::LearnStatus::Cancelled,"bypass learn cancelled");
+        check(fx->pollCompletion(ack)&&!ack.applied&&!ack.state.learning,"bypass learn rejected");
+        AntiNoizProcessor::Snapshot meter,last;
+        while(fx->pollTelemetry(meter))last=meter;
+        for(int i=0;i<static_cast<int>(rate/1280.)+1;++i){lease.render(l.data(),r.data(),128,true);while(fx->pollTelemetry(meter))last=meter;}
+        check(last.rackBypassed&&last.learnStatus==AntiNoizProcessor::LearnStatus::Cancelled,"bypass cancellation telemetry");
         for(int pos=0;pos<=latency;pos+=128){
             if(!pos){l[0]=.125f;r[0]=-.25f;}
             lease.render(l.data(),r.data(),128,true);

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 cmake_minimum_required(VERSION 3.22)
-project(AntiNoizNativeQualification LANGUAGES C CXX)
+project(AntiNoizNativeQualification VERSION 1.0.0 LANGUAGES C CXX)
 include(CTest)
 if(NOT DEFINED JUCE_ROOT)
   message(FATAL_ERROR "Pass pinned JUCE_ROOT")

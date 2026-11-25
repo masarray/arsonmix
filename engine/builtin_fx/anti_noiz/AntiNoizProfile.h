@@ -31,6 +31,12 @@ public:
             working_[c][k]=std::clamp(working_[c][k],.7f*anchor_[c][k],1.3f*anchor_[c][k]);
         idle_=0;drift_.reset();
     }
+    // Native lifecycle readback, only queried on the AUDIO owner after a
+    // running attempt stops. Uses the existing Learn transaction evidence.
+    bool lastAttemptQualified() const noexcept {
+        return !learning_&&count_>=target_&&
+            (energy_[0]+energy_[1])/float(count_)>1e-9f;
+    }
     bool learning() const noexcept {return learning_;}
     bool valid() const noexcept {return valid_;}
     const Powers& powers() const noexcept {return working_;}

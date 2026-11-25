@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <limits>
 namespace armix::builtin_fx::anti_noiz {
 // Durable parameters only. The learned PSD is input/epoch specific and is
 // deliberately not persisted until the host can prove physical source identity.

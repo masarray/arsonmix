@@ -17,22 +17,13 @@ public:
         int latency=0;
         Core::SourceRole sourceRole=Core::SourceRole::Unknown;
         Core::Mode effectiveMode=Core::Mode::AutoProtect;
-        Core::LearnStatus learnStatus=Core::LearnStatus::Idle;
-        bool rackBypassed=false;
     };
     struct Completion { std::uint64_t id=0; bool applied=false; Snapshot state{}; };
     bool prepare(double rate,int channels,Core::SourceRole role=Core::SourceRole::Unknown) noexcept {
         // A new graph epoch requires a fresh Control instance or drained queues.
         if(!commands_.empty()||!done_.empty()||!telemetry_.empty())return false;
         if(!core_.prepare(rate,channels,role))return false;
-        telemetryInterval_=static_cast<int>(rate/20.);remaining_=1;rackBypassed_=false;return true;
-    }
-    // Unpublished/quiescent only; no ACK or live control mutation.
-    bool stageUnpublished(Core::Settings s) noexcept {
-        return core_.ready()&&commands_.empty()&&done_.empty()&&telemetry_.empty()&&core_.setSettings(s);
-    }
-    void setHostBypass(bool bypass) noexcept {
-        rackBypassed_=bypass;core_.setHostBypass(bypass);
+        telemetryInterval_=static_cast<int>(rate/20.);remaining_=1;return true;
     }
     bool submit(Command c) noexcept {
         if(c.id==0||!commands_.canPush())return false;
@@ -48,16 +39,12 @@ public:
         if(!core_.ready()||!done_.canPush()||!commands_.pop(c))return;
         bool ok=false;
         if(c.kind==Kind::settings)ok=core_.applySettings(c.prepared);
-        if(c.kind==Kind::learn&&!rackBypassed_&&core_.settings().enabled&&core_.effectiveMode()!=Core::Mode::Music)
+        if(c.kind==Kind::learn&&core_.settings().enabled&&core_.effectiveMode()!=Core::Mode::Music)
             ok=core_.beginLearn();
         (void)done_.push({c.id,ok,snapshot()});
     }
     void process(float* l,float* r,int n) noexcept {
-        consume();processAudio(l,r,n);
-    }
-    // Host graph may already have consumed the bounded edit in its bypass hook.
-    void processAudio(float* l,float* r,int n) noexcept {
-        core_.process(l,r,n);
+        consume();core_.process(l,r,n);
         if(n<=0||!core_.ready())return;
         if(n>=remaining_){
             // Carry overshoot; do not accumulate block-size-dependent drift.
@@ -68,7 +55,26 @@ public:
     }
     // AUDIO owner or unpublished/quiescent only. No UI thread access.
     Snapshot snapshot() const noexcept {
-        return {core_.settings(),core_.hasProfile(),core_.learning(),core_.spectralGain(),core_.residualGain(),core_.latencySamples(),core_.sourceRole(),core_.effectiveMode(),core_.learnStatus(),rackBypassed_};
+        return {core_.settings(),core_.hasProfile(),core_.learning(),core_.spectralGain(),core_.residualGain(),core_.latencySamples(),core_.sourceRole(),core_.effectiveMode()};
+    }
+    // Native-only seams. Do not change the qualified standalone process,
+    // command packet, Snapshot layout or steady-state DSP.
+    bool stageUnpublished(Core::Settings s) noexcept {
+        return core_.ready()&&commands_.empty()&&done_.empty()&&telemetry_.empty()&&core_.setSettings(s);
+    }
+    bool learning() const noexcept {return core_.learning();}
+    bool lastNativeLearnQualified() const noexcept {return core_.lastNativeLearnQualified();}
+    void cancelNativeLearn() noexcept {core_.cancelNativeLearn();}
+    void consumeWhileRackBypassed() noexcept {
+        Packet c;
+        if(!core_.ready()||!done_.canPush()||!commands_.pop(c))return;
+        // Same ordered ACK and prepared settings as consume(); only Learn
+        // authority differs. No mutation of the user's durable Power.
+        const bool ok=c.kind==Kind::settings&&core_.applySettings(c.prepared);
+        (void)done_.push({c.id,ok,snapshot()});
+    }
+    void processNativeAudio(float* l,float* r,int n,bool dry) noexcept {
+        if(dry)core_.processNativeDry(l,r,n);else core_.process(l,r,n);
     }
 private:
     struct Packet {
@@ -78,7 +84,6 @@ private:
     static_assert(std::atomic<std::uint32_t>::is_always_lock_free,
                   "Anti Noiz audio queues require lock-free indices");
     int telemetryInterval_=2400,remaining_=1;
-    bool rackBypassed_=false;
     Core core_{};
     FxSpsc<Packet,16> commands_{};
     FxSpsc<Completion,16> done_{};

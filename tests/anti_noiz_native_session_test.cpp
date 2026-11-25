@@ -25,8 +25,8 @@ int main(){
         check(native.acceptedSettings().cleanDb==18,"cold accepted");
         native.seal();check(!native.restore(bytes)&&!native.prepare(rate,channels),"sealed lifetime");
         std::array<float,128> l{},r{};rtprobe::Counts alloc{};
-        auto process=[&]{rtprobe::begin();native.process(l.data(),channels==2?r.data():nullptr,128);alloc+=rtprobe::end();};
-        Control::Completion ack;Control::Snapshot meter,last;
+        Control::Completion ack;NativeSession::Snapshot meter,last;
+        auto process=[&]{rtprobe::begin();native.process(l.data(),channels==2?r.data():nullptr,128);alloc+=rtprobe::end();while(native.pollTelemetry(meter))last=meter;};
         s.cleanDb=14;
         check(native.submit({1,Control::Kind::settings,s})&&!native.quiescent(),"queue");
         check(!native.submit({2,Control::Kind::learn,{}})&&!native.poll(ack),"single pending");
@@ -38,7 +38,9 @@ int main(){
         native.onBypass(true,true);native.consume();process();
         check(native.submit({3,Control::Kind::learn,{}}),"bypass request");
         native.onBypass(true,true);native.consume();process();
-        check(native.poll(ack)&&!ack.applied&&!ack.state.learning&&ack.state.rackBypassed&&ack.state.learnStatus==Core::LearnStatus::Cancelled,"rack cancel/reject");
+        check(native.poll(ack)&&!ack.applied&&!ack.state.learning,"rack reject ACK");
+        for(unsigned pos=0;pos<rate/10;pos+=128){native.onBypass(true,true);native.consume();process();}
+        check(last.rackBypassed&&last.learnStatus==NativeSession::LearnStatus::Cancelled,"rack cancel telemetry");
         check(native.acceptedSettings().enabled,"rack bypass does not alter durable power");
         native.onBypass(false,false);
         check(native.submit({4,Control::Kind::learn,{}}),"resume learn");
@@ -48,19 +50,19 @@ int main(){
             process();while(native.pollTelemetry(meter))last=meter;
             if(!pos)check(native.poll(ack)&&ack.applied,"resume ACK");
         }
-        check(last.profile&&!last.learning&&last.learnStatus==Core::LearnStatus::Accepted,"learn qualified");
+        check(last.profile&&!last.learning&&last.learnStatus==NativeSession::LearnStatus::Accepted,"learn qualified");
         // Rejected relearn must remain distinguishable from the trusted profile.
         check(native.submit({5,Control::Kind::learn,{}}),"relearn");
         for(unsigned pos=0;pos<3*rate;pos+=128){
             l.fill(0);r.fill(0);process();while(native.pollTelemetry(meter))last=meter;
             if(!pos)check(native.poll(ack)&&ack.applied,"relearn ACK");
         }
-        check(last.profile&&!last.learning&&last.learnStatus==Core::LearnStatus::Rejected,"relearn rejection retains profile");
+        check(last.profile&&!last.learning&&last.learnStatus==NativeSession::LearnStatus::Rejected,"relearn rejection retains profile");
         check(rtprobe::empty(alloc),"native callback allocation");
         const auto saved=NativeState::encode(native.acceptedSettings());
         native.release();check(!native.ready()&&!native.prepare(rate,channels),"published retirement");
         NativeSession fresh;check(fresh.restore(saved)&&fresh.prepare(rate,channels),"fresh epoch");
-        check(!fresh.observed().profile&&fresh.observed().learnStatus==Core::LearnStatus::Idle,"epoch invalidates PSD");
+        check(!fresh.observed().profile&&fresh.observed().learnStatus==NativeSession::LearnStatus::Idle,"epoch invalidates PSD");
         std::cout<<"NATIVE_SESSION,"<<rate<<','<<channels<<",PDC="<<fresh.latency()<<",ACK/state/bypass/Learn/epoch PASS\n";
     }
     NativeSession invalid;check(!invalid.prepare(32000,2)&&!invalid.prepare(48000,3),"unsupported layout/rate");

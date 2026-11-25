@@ -8,13 +8,21 @@ namespace armix::builtin_fx::anti_noiz {
 // ChannelId/instance/epoch; a published session is never re-prepared in place.
 class NativeSession final {
 public:
+    enum class LearnStatus { Idle, Learning, Accepted, Rejected, Cancelled };
+    struct Snapshot : Control::Snapshot {
+        LearnStatus learnStatus=LearnStatus::Idle;
+        bool rackBypassed=false;
+    };
     bool prepare(double rate,int channels,Core::SourceRole role=Core::SourceRole::Unknown) {
         if(sealed_||pending_)return false;
         ready_=false;
         auto next=std::make_unique<Control>();
         if(!next->prepare(rate,channels,role)||!next->stageUnpublished(accepted_))return false;
-        observed_=next->snapshot();fx_=std::move(next);
-        rate_=rate;channels_=channels;ready_=true;return true;
+        Snapshot stale;while(telemetry_.pop(stale)){}
+        fx_=std::move(next);rate_=rate;channels_=channels;
+        status_=LearnStatus::Idle;rackBypassed_=fully_=preConsumed_=false;
+        interval_=static_cast<int>(rate/20.);remaining_=1;
+        observed_=nativeSnapshot();ready_=true;return true;
     }
     void release() noexcept {ready_=false;}
     bool ready() const noexcept {return ready_;}
@@ -29,7 +37,7 @@ public:
         Core::Settings s;
         if(!NativeState::decode(bytes,s))return false;
         if(ready_&&!fx_->stageUnpublished(s))return false;
-        accepted_=s;if(ready_)observed_=fx_->snapshot();return true;
+        accepted_=s;if(ready_)observed_=nativeSnapshot();return true;
     }
     bool submit(Control::Command c) noexcept {
         if(!ready_||pending_||!c.id||!fx_->submit(c))return false;
@@ -40,30 +48,56 @@ public:
         if(ack.id==pending_){if(ack.applied)accepted_=ack.state.settings;pending_=0;}
         return true;
     }
-    bool pollTelemetry(Control::Snapshot& s) noexcept {
-        if(!fx_||!fx_->pollTelemetry(s))return false;
+    bool pollTelemetry(Snapshot& s) noexcept {
+        if(!telemetry_.pop(s))return false;
         observed_=s;return true;
     }
     // CONTROL-only last observation; ACK is the durable parameter authority.
-    Control::Snapshot observed() const noexcept {return observed_;}
+    Snapshot observed() const noexcept {return observed_;}
     void onBypass(bool requested,bool fully) noexcept {
         if(!ready_)return;
-        fx_->setHostBypass(requested);preConsumed_=fully;
+        if(requested&&!rackBypassed_&&fx_->learning()){
+            fx_->cancelNativeLearn();status_=LearnStatus::Cancelled;
+        }
+        rackBypassed_=requested;fully_=fully;preConsumed_=fully;
     }
-    void consume() noexcept {if(ready_)fx_->consume();}
-    void process(float* l,float* r,int n) noexcept {
+    void consume() noexcept {
         if(!ready_)return;
+        const bool before=fx_->learning();
+        if(rackBypassed_)fx_->consumeWhileRackBypassed();else fx_->consume();
+        const bool after=fx_->learning();
+        if(!before&&after)status_=LearnStatus::Learning;
+        if(before&&!after)status_=LearnStatus::Cancelled;
+    }
+    void process(float* l,float* r,int n) noexcept {
+        if(!ready_||n<=0)return;
         const bool consumed=preConsumed_;preConsumed_=false;
-        if(!consumed)fx_->consume();
-        fx_->processAudio(l,r,n);
+        if(!consumed)consume();
+        const bool before=fx_->learning();
+        // Fully bypassed: reuse the existing delayed-unity WOLA fast path.
+        // During the host fade, keep normal wet DSP; the host owns crossfade.
+        fx_->processNativeAudio(l,r,n,fully_);
+        if(before&&!fx_->learning())
+            status_=fx_->lastNativeLearnQualified()?LearnStatus::Accepted:LearnStatus::Rejected;
+        if(n>=remaining_){
+            remaining_=interval_-(n-remaining_)%interval_;
+            if(telemetry_.canPush())(void)telemetry_.push(nativeSnapshot());
+        }else remaining_-=n;
     }
 private:
+    Snapshot nativeSnapshot() const noexcept {
+        return {fx_->snapshot(),status_,rackBypassed_};
+    }
     std::unique_ptr<Control> fx_;
     Core::Settings accepted_{};
-    Control::Snapshot observed_{};
+    Snapshot observed_{};
+    // Native path uses this extended telemetry queue instead of Control's
+    // standalone queue; no duplicate publication or readback authority.
+    FxSpsc<Snapshot,2> telemetry_{};
     std::uint64_t pending_=0;
     double rate_=0.;
-    int channels_=0;
-    bool ready_=false,sealed_=false,preConsumed_=false; // lifecycle quiescent; flag AUDIO only after publication
+    int channels_=0,interval_=2400,remaining_=1;
+    LearnStatus status_=LearnStatus::Idle;
+    bool ready_=false,sealed_=false,preConsumed_=false,rackBypassed_=false,fully_=false;
 };
 }

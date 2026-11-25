@@ -12,6 +12,8 @@ public:
     static constexpr const char* catalogIdentity="armix.builtin.anti-noiz.v1";
     using Core=anti_noiz::Core;
     using Control=anti_noiz::Control;
+    using Snapshot=anti_noiz::NativeSession::Snapshot;
+    using LearnStatus=anti_noiz::NativeSession::LearnStatus;
     AntiNoizProcessor():juce::AudioProcessor(BusesProperties()
         .withInput("Input",juce::AudioChannelSet::stereo(),true)
         .withOutput("Output",juce::AudioChannelSet::stereo(),true)){}
@@ -32,7 +34,9 @@ public:
         return in==b.getMainOutputChannelSet()&&(in==juce::AudioChannelSet::mono()||in==juce::AudioChannelSet::stereo());
     }
     void prepareToPlay(double rate,int frames) override {
-        if(frames<=0||!session_.prepare(rate,getTotalNumInputChannels(),sourceRole_))return;
+        if(sealed_)return; // published graph leases are replaced, not re-prepared
+        if(frames<=0){session_.release();return;}
+        if(!session_.prepare(rate,getTotalNumInputChannels(),sourceRole_))return;
         setRateAndBufferSizeDetails(rate,frames);setLatencySamples(session_.latency());
     }
     void releaseResources() override {session_.release();}
@@ -56,7 +60,7 @@ public:
     bool queueSettings(Core::Settings s,std::uint64_t id) noexcept {return session_.submit({id,Control::Kind::settings,s});}
     bool queueLearn(std::uint64_t id) noexcept {return session_.submit({id,Control::Kind::learn,{}});}
     bool pollCompletion(Control::Completion& c) noexcept {return session_.poll(c);}
-    bool pollTelemetry(Control::Snapshot& s) noexcept {return session_.pollTelemetry(s);}
+    bool pollTelemetry(Snapshot& s) noexcept {return session_.pollTelemetry(s);}
     void getStateInformation(juce::MemoryBlock& out) override {
         out.reset();if(!session_.quiescent())return;
         const auto bytes=anti_noiz::NativeState::encode(session_.acceptedSettings());
