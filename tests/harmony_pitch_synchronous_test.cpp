@@ -348,7 +348,41 @@ static void testFractionalBandwidth(){
         need(ready>rate/4&&diff>0.&&ea>0.&&eb/ea>.8&&eb/ea<1.3,"H22 grain audition candidate");
     }
 }
+// H30A: hostile detector-period contraction can leave a long live
+// window at the cursor while shorter windows have already expired.
+// Compare the old cursor-only allocator against bounded free-slot reuse.
+static void testGrainPoolRecovery(){
+    Shifter old{},live{};
+    Shifter::AdmissionTrace before{},after{};
+    std::array<float,16384> ring{};
+    constexpr double tau=6.283185307179586;
+    for(int i=0;i<30000;++i){
+        ring[i&16383]=static_cast<float>(.16*std::cos(tau*i/80.)+
+                                        .02*std::cos(tau*i/40.));
+        if(i<5000)continue;
+        const float period=(i<10000||(i>=13000&&i<18000))?1000.f:80.f;
+        const auto a=old.process(0,i,i&16383,ring,period,1.8f,3000.f,
+                    1.f,true,true,true,true,true,true,false,&before,false,false,false);
+        const auto b=live.process(0,i,i&16383,ring,period,1.8f,3000.f,
+                    1.f,true,true,true,true,true,true,false,&after,false,false,true);
+        need(std::isfinite(a.sample)&&std::isfinite(b.sample)&&
+             std::abs(b.sample)<.4f&&b.coverage>=0.f&&b.coverage<=1.f,
+             "H30A unsafe pool output");
+        if(i<10000)need(a.sample==b.sample&&a.ready==b.ready&&a.coverage==b.coverage,
+                       "H30A unchanged steady pool parity");
+    }
+    for(const auto* q:{&before,&after})
+        need(q->attempts==q->admitted+q->missingPeak+q->poolBlocked+q->supportRejected,
+             "H30A admission conservation");
+    std::cout<<"H30A_POOL before_blocked="<<before.poolBlocked
+             <<" after_blocked="<<after.poolBlocked
+             <<" before_admitted="<<before.admitted
+             <<" after_admitted="<<after.admitted<<std::endl;
+    need(before.poolBlocked>after.poolBlocked&&after.admitted>before.admitted,
+         "H30A free-slot reuse did not improve hostile contraction");
+}
 int main(){
+    testGrainPoolRecovery();
     testFractionalBandwidth();
     testDelayedEpochRecovery();
     testAdaptiveEpochRescue();

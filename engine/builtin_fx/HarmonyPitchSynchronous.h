@@ -77,9 +77,9 @@ public:
                    const std::array<float,Capacity>& input,
                    float sourcePeriod,float ratio,float fixedDelay,
                    float resonanceScale=1.f,bool continuous=true,bool supportAware=true,
-                   bool phaseAware=true,bool admitNew=true,bool recoverEpoch=false,bool reuseFailedSearch=true,bool cubic=false,AdmissionTrace* trace=nullptr,bool adaptiveRecovery=false,bool localRecovery=false) noexcept {
+                   bool phaseAware=true,bool admitNew=true,bool recoverEpoch=false,bool reuseFailedSearch=true,bool cubic=false,AdmissionTrace* trace=nullptr,bool adaptiveRecovery=false,bool localRecovery=false,bool reuseFreeSlot=true) noexcept {
         const auto out=render<false>(v,time,writeIndex,input,input,input,
-                                     sourcePeriod,ratio,fixedDelay,resonanceScale,continuous,supportAware,phaseAware,admitNew,recoverEpoch,reuseFailedSearch,cubic,trace,adaptiveRecovery,localRecovery);
+                                     sourcePeriod,ratio,fixedDelay,resonanceScale,continuous,supportAware,phaseAware,admitNew,recoverEpoch,reuseFailedSearch,cubic,trace,adaptiveRecovery,localRecovery,reuseFreeSlot);
         return {out.left,out.ready,out.coverage,out.recovered,out.recoverySites};
     }
 
@@ -91,7 +91,7 @@ public:
                    const std::array<float,Capacity>& right,
                    float sourcePeriod,float ratio,float fixedDelay) noexcept {
         return render<true>(v,time,writeIndex,epochs,left,right,
-                            sourcePeriod,ratio,fixedDelay,1.f,false,false,false,true,false,true,false,nullptr,false,false);
+                            sourcePeriod,ratio,fixedDelay,1.f,false,false,false,true,false,true,false,nullptr,false,false,false);
     }
 private:
     template <bool Stereo>
@@ -100,7 +100,7 @@ private:
                    const std::array<float,Capacity>& left,
                    const std::array<float,Capacity>& right,
                    float sourcePeriod,float ratio,float fixedDelay,
-                   float resonanceScale,bool continuous,bool supportAware,bool phaseAware,bool admitNew,bool recoverEpoch,bool reuseFailedSearch,bool cubic,AdmissionTrace* trace,bool adaptiveRecovery,bool localRecovery) noexcept {
+                   float resonanceScale,bool continuous,bool supportAware,bool phaseAware,bool admitNew,bool recoverEpoch,bool reuseFailedSearch,bool cubic,AdmissionTrace* trace,bool adaptiveRecovery,bool localRecovery,bool reuseFreeSlot) noexcept {
         if(v<0||v>=Voices||!std::isfinite(sourcePeriod)||
            !std::isfinite(ratio)||!std::isfinite(fixedDelay)||
            sourcePeriod<8.f||sourcePeriod>3200.f||
@@ -210,15 +210,30 @@ private:
                 }
             }
             if(peak>=0) {
-                auto& grain=state.grains[state.nextSlot];
-                // Never evict an audible grain on a sudden period jump.
-                // Advance target time even if the bounded pool is full.
-                if(continuous&&grain.active&&
-                   std::abs(static_cast<double>(time)-grain.center)<grain.width){
-                    if(trace)++trace->poolBlocked;
-                    state.nextCenter+=spacing;
-                    continue;
+                // Preserve the common path and summation order. On a
+                // period contraction, an older wide grain can occupy the
+                // circular cursor while a newer narrow grain has expired.
+                // Scan only on collision, at most seven additional slots;
+                // never overwrite an active or not-yet-started window.
+                auto slot=state.nextSlot;
+                const auto occupied=[&](std::size_t i) noexcept {
+                    const auto& g=state.grains[i];
+                    return g.active&&static_cast<double>(time)<g.center+g.width;
+                };
+                if(continuous&&occupied(slot)){
+                    if(reuseFreeSlot){
+                        for(std::size_t n=1;n<state.grains.size();++n){
+                            const auto candidate=(slot+n)%state.grains.size();
+                            if(!occupied(candidate)){slot=candidate;break;}
+                        }
+                    }
+                    if(occupied(slot)){
+                        if(trace)++trace->poolBlocked;
+                        state.nextCenter+=spacing;
+                        continue;
+                    }
                 }
+                auto& grain=state.grains[slot];
                 const double epoch=refineEpoch(
                     epochs,time,writeIndex,peak,state.epochPolarity);
                 // Only at grain admission, reuse the already-computed
@@ -249,7 +264,7 @@ private:
                 grain={state.nextCenter,epoch,width,true,scale,gain,
                        static_cast<double>(time),fade>0.?1./fade:0.,supportAware&&continuous,
                        !Stereo&&cubic&&supportAware&&continuous&&epoch-width*scale>=1.};
-                state.nextSlot=(state.nextSlot+1)%state.grains.size();
+                state.nextSlot=(slot+1)%state.grains.size();
                 recovered|=rescue;
             }else if(trace)++trace->missingPeak;
             state.nextCenter+=spacing;

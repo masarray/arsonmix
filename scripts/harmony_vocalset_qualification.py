@@ -30,6 +30,9 @@ License: CC BY 4.0 https://creativecommons.org/licenses/by/4.0/
 Redistribution: https://github.com/mblackman/vocalset-vowel-voicebanks/tree/c48ab544e94e9788fec11be52b365026bb4a017c/source/vocalset
 Source WAVs unchanged; output WAVs are Harmonice processing and RMS-matched
 audition derivatives. These are sustained vowels, not conversational singing.
+H29D controlled dynamic derivatives use the same pinned source recordings,
+with deterministic local time-warp, gain envelopes and inserted silence.
+They are stress fixtures, not additional natural singing performances.
 No listening scores or ground-truth formant values are asserted.
 """
 def download(name, sha, size, dst):
@@ -104,6 +107,44 @@ def qualify_guide(renderer, out, name, sha):
 VARIANTS = {"live_baseline", "H26", "H27", "H28_epoch", "H28_local"}
 TRACED = {"live_baseline", "H28_epoch", "H28_local"}
 GUIDED = ("f1_long_straight_a.wav", "m2_long_straight_i.wav")
+DYNAMIC = {"f1_controlled_dynamic.wav": GUIDED[0],
+           "m2_controlled_dynamic.wav": GUIDED[1]}
+
+def make_dynamic(source, destination):
+    """Deterministic real-source stress: variable rate, attacks and silence.
+    No claim of authentic vibrato or lyrics; no normalization of source."""
+    with wave.open(str(source), "rb") as src:
+        rate, channels, frames = src.getframerate(), src.getnchannels(), src.getnframes()
+        require(src.getsampwidth() == 2 and channels == 1 and frames >= 5 * rate,
+                "unexpected pinned dynamic source PCM")
+        samples = array.array("h", src.readframes(frames))
+    if sys.byteorder != "little":
+        samples.byteswap()
+    out = array.array("h")
+    # Three 1.25s phrases with different pitch contours and 200ms gaps;
+    # choose source interior and keep each warp strictly inside the WAV.
+    for phrase, speed in enumerate((.78, 1.0, 1.24)):
+        at = rate * (1.0 + .75 * phrase)
+        for i in range(5 * rate // 4):
+            sec = i / rate
+            ratio = speed * 2 ** ((.65 * math.sin(2 * math.pi * 5.2 * sec)
+                                   + .9 * (2 * sec / 1.25 - 1)) / 12)
+            j = int(at)
+            require(j + 1 < frames, "dynamic source exhausted")
+            frac = at - j
+            gain = min(1., i / (.018 * rate), (5 * rate // 4 - 1 - i) / (.025 * rate))
+            out.append(round((samples[j] * (1 - frac) + samples[j + 1] * frac)
+                             * gain * (1.0 - .2 * phrase)))
+            at += ratio
+        out.extend([0] * (rate // 5))
+    if sys.byteorder != "little":
+        out.byteswap()
+    with wave.open(str(destination), "wb") as dst:
+        dst.setnchannels(1)
+        dst.setsampwidth(2)
+        dst.setframerate(rate)
+        dst.writeframes(out.tobytes())
+
 
 def require(condition, message):
     if not condition:
@@ -201,7 +242,7 @@ def export_evidence(out, source_sha):
     require(re.fullmatch(r"[0-9a-f]{40}", source_sha) is not None, "invalid source SHA")
     cases = []
     # Validate all inputs before creating the export directory.
-    for name in CLIPS:
+    for name in (*CLIPS, *DYNAMIC):
         for mode in ("Manual", "Music") if name in GUIDED else ("Manual",):
             stem = pathlib.Path(name).stem + ("_music" if mode == "Music" else "")
             folder = out / stem
@@ -251,7 +292,10 @@ def export_evidence(out, source_sha):
                 "human_listening": "not_performed", "hardware_asio": "not_performed",
                 "timing": "isolated_engine_non_gating", "audio_included": False,
                 "events": "sparse_callback_intervals_not_click_detections",
-                "cases": [{"id": stem, "source_blob_sha": CLIPS[name][0],
+                "release_qualified": False,
+                "cases": [{"id": stem, "source_blob_sha": CLIPS[DYNAMIC.get(name, name)][0],
+                           "source_kind": "controlled_dynamic_derivative" if name in DYNAMIC else "original_vocalset",
+                           "fixture_sha256": hashlib.sha256((out / name).read_bytes()).hexdigest(),
                            "mode": mode, "frames": frames, "rate": rate}
                           for stem, name, mode, frames, rate, _ in cases],
                 "sha256": files}
@@ -339,6 +383,16 @@ def main():
         writer=csv.DictWriter(f,fieldnames=list(guided[0]))
         writer.writeheader();writer.writerows(guided)
     print(f"H28_GUIDED_COMPLETE clips=2 variants={len(guided)} no_human_rating=true",flush=True)
+    for name, parent in DYNAMIC.items():
+        target = out / name
+        make_dynamic(out / parent, target)
+        folder = out / target.stem
+        subprocess.run([renderer, "--qualify", str(target), str(folder), "0", "0", "5", "64"],
+                       check=True, timeout=60)
+        for row in read_rows(folder / "qualification.csv"):
+            print("H29D_DYNAMIC clip=" + name + " parent_blob=" + CLIPS[parent][0] +
+                  " " + " ".join(f"{k}={v}" for k, v in row.items()), flush=True)
+    print(f"H29D_DYNAMIC_COMPLETE clips={len(DYNAMIC)} controlled_derivatives=true", flush=True)
     if len(sys.argv) == 4:
         export_evidence(out, sys.argv[3])
 
