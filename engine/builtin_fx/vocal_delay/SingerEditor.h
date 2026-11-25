@@ -32,6 +32,14 @@ public:
         setupButton(power_,"vd.power");setupButton(tap_,"vd.tap");tap_.setButtonText("TAP");
         setupButton(expert_,"vd.expert");expert_.setButtonText("Expert");
         setupButton(smart_,"vd.smart");smart_.setButtonText("Smart voicing");
+        setupButton(hit_,"vd.hit");hit_.setTooltip("Chorus highlight: more wet echo and repeats. Click again to return to base sound.");
+        hit_.onClick=[this]{auto p=processor_.singerDisplay();p.hit=!p.hit;offer(p);};
+        setupButton(tail_,"vd.tail");tail_.setTooltip("Keep existing echo tails when effect power is switched off. Rack bypass remains immediate.");
+        tail_.onClick=[this]{auto p=processor_.singerDisplay();p.spillover=!p.spillover;offer(p);};
+        bpm_.setComponentID("vd.bpm");bpm_.setTitle("Manual BPM");bpm_.setSliderStyle(juce::Slider::IncDecButtons);
+        bpm_.setTextBoxStyle(juce::Slider::TextBoxLeft,false,68,21);bpm_.setRange(40,240,.25);
+        bpm_.setTextValueSuffix(" BPM");bpm_.setLookAndFeel(&look_);addAndMakeVisible(bpm_);
+        bpm_.onValueChange=[this]{applyTempo(bpm_.getValue());};
         setupButton(focus_,"vd.focus");focus_.setTooltip("Adaptive wet echo reduction follows vocal activity. Off restores the classic detector.");
         focus_.onClick=[this]{auto p=processor_.singerDisplay();p.adaptiveFocus=!p.adaptiveFocus;offer(p);};
         smart_.setTooltip("Balance echo tone and ducking for your current time, repeats and level. Dry vocal stays unchanged.");
@@ -42,12 +50,12 @@ public:
         release_.onValueChange=[this]{auto p=processor_.singerDisplay();p.duckReleaseMs=float(release_.getValue());offer(p);};
         power_.onClick=[this]{auto p=processor_.singerDisplay();p.enabled=!p.enabled;offer(p);};
         preset_.onChange=[this]{const int id=preset_.getSelectedId();if(id>0&&id<=int(singerPresets.size())){
-            bpm_=0;taps_.reset();tempoStatus_="FREE TIME";
+            taps_.reset();tempoNotice_.clear();
             offer(presetSettings(std::size_t(id-1),processor_.singerDisplay().enabled));}};
         mode_.onChange=[this]{const int id=mode_.getSelectedId();if(id>=1&&id<=3){auto p=processor_.singerDisplay();p.mode=static_cast<StereoMode>(id-1);offer(p);}};
-        division_.onChange=[this]{applyTempo();};
-        tap_.onClick=[this]{double bpm=0;if(taps_.tap(juce::Time::getMillisecondCounterHiRes(),bpm)){bpm_=bpm;applyTempo();}else tempoStatus_="TAP 3+ beats";repaint();};
-        time_.onValueChange=[this]{auto p=processor_.singerDisplay();p.timeMs=float(time_.getValue());tempoStatus_="FREE TIME";bpm_=0;offer(p);};
+        division_.onChange=[this]{const auto p=processor_.singerDisplay();applyTempo(p.bpmQuarter?double(p.bpmQuarter)*.25:120.);};
+        tap_.onClick=[this]{double bpm=0;if(taps_.tap(juce::Time::getMillisecondCounterHiRes(),bpm)){applyTempo(bpm);}else{tempoNotice_="TAP 3+ BEATS";noticeUntil_=juce::Time::getMillisecondCounterHiRes()+1500.;repaint();}};
+        time_.onValueChange=[this]{auto p=processor_.singerDisplay();freeTime(p,float(time_.getValue()));taps_.reset();tempoNotice_.clear();offer(p);};
         feedback_.onValueChange=[this]{auto p=processor_.singerDisplay();p.feedback=float(feedback_.getValue())*.01f;offer(p);};
         echo_.onValueChange=[this]{auto p=processor_.singerDisplay();p.echo=float(echo_.getValue())*.01f;offer(p);};
         duck_.onValueChange=[this]{auto p=processor_.singerDisplay();p.duck=float(duck_.getValue())*.01f;offer(p);};
@@ -57,9 +65,9 @@ public:
     }
     ~SingerEditor() override{
         stopTimer();if(admitted_)processor_.endSingerEditor();
-        for(auto* d:dials())d->setLookAndFeel(nullptr);
+        for(auto* d:dials())d->setLookAndFeel(nullptr);bpm_.setLookAndFeel(nullptr);
         for(auto* c:{&preset_,&mode_,&division_,&algorithm_})c->setLookAndFeel(nullptr);
-        for(auto* b:{&power_,&tap_,&expert_,&smart_,&focus_})b->setLookAndFeel(nullptr);
+        for(auto* b:{&power_,&tap_,&expert_,&smart_,&focus_,&hit_,&tail_})b->setLookAndFeel(nullptr);
     }
     void paint(juce::Graphics& g) override{
         hardware::chassis(g,getWidth(),getHeight());
@@ -84,7 +92,9 @@ public:
             g.setColour(hardware::col(0x91aaa3));g.setFont(hardware::font(9.f));
             g.drawText(meterFresh_?"LIVE BLOCK PEAK":"NO LIVE PCM",438,161,148,12,juce::Justification::centredLeft);
         }
-        g.setColour(juce::Colour(0xff829ca4));g.drawText(tempoStatus_,24,266,220,18,juce::Justification::centredLeft);
+        const auto p=processor_.singerDisplay();
+        const auto tempo=tempoNotice_.isNotEmpty()?tempoNotice_:(p.bpmQuarter?"SYNCED / MANUAL-TAP":"FREE TIME");
+        g.setColour(juce::Colour(0xff829ca4));g.drawText(tempo,180,266,195,18,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff5fd7c3));g.drawText(!admitted_?"OFFLINE":processor_.singerFault()?"REOPEN REQUIRED":processor_.singerPending()?"APPLYING":"DSP READY",375,266,221,18,juce::Justification::centredRight);
     }
     void resized() override{
@@ -99,6 +109,7 @@ public:
         }
         smart_.setVisible(!expertMode_);smart_.setBounds(440,177,144,27);
         tap_.setBounds(24,235,74,25);division_.setBounds(108,235,130,25);
+        hit_.setBounds(484,235,52,25);tail_.setBounds(542,235,54,25);bpm_.setBounds(24,265,148,22);
     }
     void refresh(){
         const bool available=admitted_&&processor_.isReady()&&!processor_.singerFault();
@@ -109,6 +120,12 @@ public:
         const auto style=styleIndex(p);
         preset_.setSelectedId(style<0?99:style+1,juce::dontSendNotification);
         smart_.setEnabled(available);
+        hit_.setEnabled(available&&p.enabled);hit_.setButtonText(p.hit?"HIT ON":"HIT");
+        hit_.setColour(juce::TextButton::buttonColourId,hardware::col(p.hit?0x88652d:0x41494d));
+        tail_.setEnabled(available);tail_.setButtonText(p.spillover?"TAIL ON":"TAIL");
+        tail_.setColour(juce::TextButton::buttonColourId,hardware::col(p.spillover?0x27695c:0x41494d));
+        bpm_.setEnabled(available);setDial(bpm_,p.bpmQuarter?double(p.bpmQuarter)*.25:120.);
+        division_.setSelectedId(int(p.division)+1,juce::dontSendNotification);
         focus_.setEnabled(available);focus_.setButtonText(p.adaptiveFocus?"Focus ON":"Focus OFF");
         focus_.setColour(juce::TextButton::buttonColourId,hardware::col(p.adaptiveFocus?0x27695c:0x41494d));
         mode_.setSelectedId(int(p.mode)+1,juce::dontSendNotification);
@@ -131,11 +148,13 @@ private:
     void setupButton(juce::TextButton& b,const char* id){b.setComponentID(id);b.setTitle(id);b.setLookAndFeel(&look_);b.setColour(juce::TextButton::buttonColourId,hardware::col(0x41494d));addAndMakeVisible(b);}
     static void setDial(juce::Slider& d,double v){if(!d.isMouseButtonDown(true)&&!(d.hasKeyboardFocus(true)&&!d.hasKeyboardFocus(false)))d.setValue(v,juce::dontSendNotification);}
     void offer(const Parameters& p){if(processor_.offerSinger(p))refresh();}
-    void applyTempo(){
-        if(bpm_<=0)return;
-        float ms=0;const int d=division_.getSelectedId();
-        if(d<=0||!beatTime(bpm_,std::size_t(d-1),ms)){tempoStatus_="TIME OUT OF RANGE";repaint();return;}
-        auto p=processor_.singerDisplay();p.timeMs=ms;tempoStatus_=juce::String(bpm_,1)+" BPM";offer(p);
+    void applyTempo(double bpm){
+        auto p=processor_.singerDisplay();
+        const int d=division_.getSelectedId();
+        if(d<=0||!setTempo(p,bpm,std::size_t(d-1))){
+            tempoNotice_="TIME OUT OF RANGE";noticeUntil_=juce::Time::getMillisecondCounterHiRes()+1500.;refresh();return;
+        }
+        tempoNotice_.clear();offer(p);
     }
     void drawMeter(juce::Graphics& g,const char* name,float value,int y){
         g.setFont(hardware::font(9.f));g.setColour(hardware::col(0xa9bcb5));g.drawText(name,438,y,38,12,juce::Justification::centredLeft);
@@ -147,15 +166,16 @@ private:
     }
     void timerCallback() override{
         const auto now=juce::Time::getMillisecondCounterHiRes();
+        if(now>=noticeUntil_)tempoNotice_.clear();
         const auto observed=processor_.meter();
         if(observed.sequence!=meter_.sequence){meter_=observed;lastMeterMs_=now;}
         meterFresh_=processor_.isReady()&&lastMeterMs_>=0&&now-lastMeterMs_<250.;
         refresh();
     }
     JuceVocalDelayProcessor& processor_;hardware::Look look_;
-    juce::Slider time_,feedback_,echo_,duck_,hp_,lp_,attack_,release_;juce::ComboBox preset_,mode_,division_,algorithm_;
-    juce::TextButton power_,tap_,expert_,smart_,focus_;
-    ContinuousDelayCore::Meter meter_{};double lastMeterMs_=-1.;bool meterFresh_=false;TapTempo taps_;double bpm_=0;juce::String tempoStatus_="FREE TIME";bool admitted_=false,expertMode_=false;
+    juce::Slider time_,feedback_,echo_,duck_,hp_,lp_,attack_,release_,bpm_;juce::ComboBox preset_,mode_,division_,algorithm_;
+    juce::TextButton power_,tap_,expert_,smart_,focus_,hit_,tail_;
+    ContinuousDelayCore::Meter meter_{};double lastMeterMs_=-1.;bool meterFresh_=false;TapTempo taps_;double noticeUntil_=0;juce::String tempoNotice_;bool admitted_=false,expertMode_=false;
 };
 inline juce::AudioProcessorEditor* JuceVocalDelayProcessor::createEditor(){return new SingerEditor(*this);}
 } // namespace armix::builtin_fx::vocal_delay

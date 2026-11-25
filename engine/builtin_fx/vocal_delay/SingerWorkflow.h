@@ -24,13 +24,14 @@ inline constexpr std::array<SingerPreset,13> singerPresets{{
 inline Parameters presetSettings(std::size_t index,bool enabled=true) noexcept{
     Parameters p{};p.enabled=enabled;if(index>=singerPresets.size())return p;
     const auto& v=singerPresets[index];p.timeMs=v.time;p.feedback=v.feedback;
-    p.echo=v.echo;p.duck=v.duck;p.highPassHz=v.hp;p.lowPassHz=v.lp;p.mode=v.mode;p.style=v.style;p.adaptiveFocus=true;return p;
+    p.echo=v.echo;p.duck=v.duck;p.highPassHz=v.hp;p.lowPassHz=v.lp;p.mode=v.mode;p.style=v.style;p.adaptiveFocus=true;p.spillover=true;return p;
 }
 inline bool sameParameters(const Parameters& a,const Parameters& b) noexcept{
     return a.timeMs==b.timeMs&&a.feedback==b.feedback&&a.echo==b.echo&&
        a.highPassHz==b.highPassHz&&a.lowPassHz==b.lowPassHz&&a.duck==b.duck&&
        a.duckAttackMs==b.duckAttackMs&&a.duckReleaseMs==b.duckReleaseMs&&
-       a.mode==b.mode&&a.enabled==b.enabled&&a.style==b.style&&a.adaptiveFocus==b.adaptiveFocus;
+       a.mode==b.mode&&a.enabled==b.enabled&&a.style==b.style&&a.adaptiveFocus==b.adaptiveFocus&&a.spillover==b.spillover&&
+       a.hit==b.hit&&a.bpmQuarter==b.bpmQuarter&&a.division==b.division;
 }
 // A style describes voicing, not the user's three performance knobs.
 // Exact expert edits make the style Custom; editing Time/Repeats/Level
@@ -61,13 +62,6 @@ inline Parameters smartVoicing(const Parameters& p) noexcept{
     q.duckReleaseMs=100.f+180.f*load;
     q.adaptiveFocus=true;
     return q;
-}
-inline constexpr std::array<double,7> beatMultipliers{{.25,.5,.75,1,1.5,2,4}};
-inline bool beatTime(double bpm,std::size_t division,float& ms) noexcept{
-    if(!std::isfinite(bpm)||bpm<40||bpm>240||division>=beatMultipliers.size())return false;
-    const auto t=60000.*beatMultipliers[division]/bpm;
-    if(t<20||t>4000)return false; // do not silently truncate musical value
-    ms=float(t);return true;
 }
 class TapTempo final{
 public:

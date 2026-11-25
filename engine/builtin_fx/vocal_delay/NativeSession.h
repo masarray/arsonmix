@@ -37,7 +37,7 @@ public:
     // Old unconsumed edits are discarded, never replayed on the next epoch.
     bool restartStopped(double rate,Lease lease){
         if(!ready_||!newerLease(lease))return false;
-        State s{};s.continuous=audioAccepted_;
+        State s{};s.continuous=audioAccepted_;s.continuous.hit=false; // no unexpected performance boost after restart
         return prepareStopped(rate,lease,s);
     }
     // CONTROL only. One in-flight edit; UI/controller coalesces latest desired.

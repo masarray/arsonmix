@@ -45,6 +45,10 @@ int main(){
         auto* echo=dynamic_cast<juce::Slider*>(editor->findChildWithID("vd.echo"));
         auto* preset=dynamic_cast<juce::ComboBox*>(editor->findChildWithID("vd.preset"));
         CHECK(time&&echo&&preset&&time->isEnabled());
+        auto* hit=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.hit"));
+        auto* tail=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.tail"));
+        auto* bpm=dynamic_cast<juce::Slider*>(editor->findChildWithID("vd.bpm"));
+        CHECK(hit&&tail&&bpm&&hit->isVisible()&&tail->isVisible()&&bpm->isVisible());
         auto* focus=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.focus"));CHECK(focus&&focus->isVisible()&&focus->getButtonText()=="Focus OFF");
         auto* expert=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.expert"));
         auto* duck=dynamic_cast<juce::Slider*>(editor->findChildWithID("vd.duck"));
@@ -56,12 +60,16 @@ int main(){
         CHECK(editor->findChildWithID("vd.algorithm")->isVisible());capture("vocal-delay-expert.png");
         expert->onClick();CHECK(!duck->isVisible()&&smart->isVisible());
         CHECK(sameParameters(before,p.singerDisplay())&&!p.singerPending()&&p.acceptedSnapshot().revision==rev);
-        preset->setSelectedId(4,juce::sendNotificationSync);CHECK(p.singerDisplay().adaptiveFocus);
+        preset->setSelectedId(4,juce::sendNotificationSync);CHECK(p.singerDisplay().adaptiveFocus&&p.singerDisplay().spillover);
+        bpm->setValue(100,juce::sendNotificationSync);CHECK(p.singerDisplay().bpmQuarter==400&&p.singerDisplay().timeMs==600);
+        const auto base=p.singerDisplay();hit->onClick();CHECK(p.singerDisplay().hit&&p.singerDisplay().echo==base.echo);
+        hit->onClick();CHECK(sameParameters(base,p.singerDisplay()));
+        tail->onClick();CHECK(!p.singerDisplay().spillover);tail->onClick();CHECK(p.singerDisplay().spillover);
         focus->onClick();CHECK(!p.singerDisplay().adaptiveFocus);focus->onClick();CHECK(p.singerDisplay().adaptiveFocus);
         p.serviceSingerControl();
         time->setValue(850,juce::sendNotificationSync);
         echo->setValue(33,juce::sendNotificationSync);
-        CHECK(p.singerDisplay().timeMs==850&&p.singerPending());
+        CHECK(p.singerDisplay().timeMs==850&&p.singerPending()&&p.singerDisplay().bpmQuarter==0);
         pcm.clear();p.processBlock(pcm,midi);p.serviceSingerControl();
         CHECK(p.singerDisplay().timeMs==850);
         editor.reset(); // final desired values survive closing

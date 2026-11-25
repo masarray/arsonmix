@@ -22,7 +22,7 @@ public:
         Taps taps_{};
         float feedback_=0,echo_=0,hp_=0,lp_=1,duckDepth_=0;
         float attack_=0,release_=0,mono_=0,cross_=0;
-        bool enabled_=true,adaptiveFocus_=false;
+        bool enabled_=true,adaptiveFocus_=false,spillover_=false;
     public:
         Prepared()=default;
     };
@@ -36,7 +36,8 @@ public:
         const double samples=rate*double(p.timeMs)*.001;
         const auto makeTap=[](double n){const auto whole=static_cast<std::size_t>(n);return DelayLine::Tap{whole,float(n-double(whole))};};
         q.taps_={makeTap(samples),makeTap(samples*.5),makeTap(samples*.75),p.style};
-        q.feedback_=p.feedback;q.echo_=p.echo;
+        const auto performance=performanceSettings(p);
+        q.feedback_=performance.feedback;q.echo_=performance.echo;
         const auto pole=[rate](float hz) {
             return float(-std::expm1(-6.283185307179586*std::min(double(hz),rate*.45)/rate));
         };
@@ -47,7 +48,7 @@ public:
         q.release_=timeCoefficient(rate,p.duckReleaseMs);
         q.mono_=p.mode==StereoMode::mono?1.f:0.f;
         q.cross_=p.mode==StereoMode::pingPong?1.f:0.f;
-        q.enabled_=p.enabled;q.adaptiveFocus_=p.adaptiveFocus;
+        q.enabled_=p.enabled;q.adaptiveFocus_=p.adaptiveFocus;q.spillover_=p.spillover;
         out=q;return true;
     }
     bool prepare(double rate,const Parameters& p=Parameters{}) {
@@ -66,16 +67,20 @@ public:
         wetTone_=q.taps_.style==EchoStyle::classic?0.f:1.f;
         tape_=q.taps_.style==EchoStyle::tape?1.f:0.f;
         focus_.prepare(rate);focusBlend_=q.adaptiveFocus_?1.f:0.f;
-        power_=q.enabled_?1.f:0.f;ready_=true;
+        power_=q.enabled_?1.f:0.f;tailLimit_=static_cast<std::uint32_t>(std::ceil(rate*30.));ready_=true;
         invalidate();return true;
     }
     bool applyPrepared(const Prepared& q) noexcept {
         if(!ready_||q.rate_!=rate_)return false;
+        // Only an actual ON->OFF transition may arm a tail. Repeated edits
+        // while OFF cannot extend it, nor resurrect cleared history.
+        if(target_.enabled_&&!q.enabled_&&q.spillover_&&power_>0.f)tailRemaining_=tailLimit_;
+        if(q.enabled_||!q.spillover_)tailRemaining_=0;
         target_=q;return true; // latest target; no unbounded edit queue in DSP
     }
     // AUDIO only, or CONTROL on an unpublished instance.
     void invalidate() noexcept {
-        left_.invalidate();right_.invalidate();
+        left_.invalidate();right_.invalidate();tailRemaining_=0;
         toneL_={};toneR_={};wetL_={};wetR_={};env_=0.f;focus_.reset();publishMeter(0,0);
         active_=next_=target_.taps_;fadePosition_=fadeLength_;
     }
@@ -103,7 +108,9 @@ public:
             move(hp_,target_.hp_);move(lp_,target_.lp_);
             move(mono_,target_.mono_);move(cross_,target_.cross_);
             move(depth_,target_.duckDepth_);
-            power_=target_.enabled_?std::min(1.f,power_+powerStep_):std::max(0.f,power_-powerStep_);
+            const bool spilling=!target_.enabled_&&tailRemaining_>0;
+            if(spilling)--tailRemaining_;
+            else power_=target_.enabled_?std::min(1.f,power_+powerStep_):std::max(0.f,power_-powerStep_);
             if(power_==0.f&&!target_.enabled_) {
                 invalidate();l[i]=dryL;if(!monoBuffer)r[i]=dryR;continue;
             }
@@ -214,7 +221,7 @@ private:
     Prepared target_{};
     Taps active_{},next_{};
     double rate_=0.;
-    std::uint32_t fadeLength_=1,fadePosition_=1;
+    std::uint32_t fadeLength_=1,fadePosition_=1,tailLimit_=0,tailRemaining_=0;
     float slew_=0,powerStep_=0,power_=0;
     float feedback_=0,echo_=0,hp_=0,lp_=1,mono_=0,cross_=0,depth_=0,env_=0;
     float wetTone_=0.f,tape_=0.f,focusBlend_=0.f;

@@ -43,6 +43,8 @@ jobs:
           /tmp/vdstyles
           ${{ matrix.cxx }} -std=c++17 -Wall -Wextra -Werror ${{ matrix.flags }} tests/vocal_delay_v2_focus_test.cpp tests/vocal_delay_v2_heap_probe.cpp -o /tmp/vdfocus
           /tmp/vdfocus
+          ${{ matrix.cxx }} -std=c++17 -Wall -Wextra -Werror ${{ matrix.flags }} tests/vocal_delay_v2_performance_test.cpp tests/vocal_delay_v2_heap_probe.cpp -o /tmp/vdperformance
+          /tmp/vdperformance
       - name: Report synthetic callback profile (not ASIO FAT)
         if: matrix.cxx == 'g++'
         run: |
