@@ -8,6 +8,7 @@
 #include <numbers>
 #include "AntiNoizFft.h"
 #include "AntiNoizContext.h"
+#include "AntiNoizGain.h"
 
 namespace armix::builtin_fx::anti_noiz {
 // Independent bounded WOLA reference, not a trained context classifier.
@@ -33,6 +34,7 @@ public:
         fft_.prepare(n_);
         prepareTiming();
         context_.prepare(rate_,hop_);
+        voiceGain_.prepare(rate_,hop_);
         for(auto& a:in_)a.fill(0);
         for(auto& a:out_)a.fill(0);
         for(auto& a:profile_)a.fill(0);
@@ -46,6 +48,7 @@ public:
         if(!std::isfinite(s.cleanDb)||!std::isfinite(s.silenceDb)||s.cleanDb<0||s.cleanDb>24||
            s.silenceDb<0||s.silenceDb>48||!std::isfinite(s.musicProtect)||s.musicProtect<0||s.musicProtect>1||static_cast<unsigned>(s.mode)>3U)return false;
         if(!s.enabled||s.mode==Mode::Music)learning_=false;
+        if(s.mode!=settings_.mode||s.enabled!=settings_.enabled)voiceGain_.reset();
         settings_=s; prepareGains(); return true;
     }
     bool beginLearn() noexcept {
@@ -53,7 +56,7 @@ public:
         for(auto& a:candidate_)a.fill(0);
         candidateEnergy_=0; learnCount_=0; learning_=true;
         learnTarget_=static_cast<int>(std::ceil(2.*rate_/hop_));
-        context_.reset(); return true;
+        context_.reset(); voiceGain_.reset(); return true;
     }
     // Quiescent/offline owner only: restart the signal timeline, keep trusted PSD.
     void resetStreamKeepProfile() noexcept {
@@ -61,7 +64,7 @@ public:
         for(auto& a:out_)a.fill(0);
         mask_.fill(1); expansion_=1;
         pos_=ticks_=frames_=learnCount_=learnTarget_=0;
-        candidateEnergy_=0; learning_=false; context_.reset();
+        candidateEnergy_=0; learning_=false; context_.reset(); voiceGain_.reset();
     }
     Settings settings() const noexcept {return settings_;}
     float spectralGain() const noexcept {return *std::min_element(mask_.begin(),mask_.begin()+hop_+1);}
@@ -140,7 +143,7 @@ private:
                         valid_=true;
                     }
                     learning_=false;
-                    context_.reset();
+                    context_.reset(); voiceGain_.reset();
                 }
             }
         }
@@ -148,12 +151,15 @@ private:
         const bool idle=context_.update(power_,profile_,channels_,bins,!protect);
         const float floor=protect?1.f:idle||settings_.mode==Mode::Voice?cleanFloor_:
             settings_.mode==Mode::Singing?singingFloor_:1.f;
+        if(protect||idle)voiceGain_.reset();
         for(int k=0;k<bins;++k) {
             float evidence=0;
             for(int c=0;c<channels_;++c)
                 evidence=std::max(evidence,power_[c][k]/std::max(profile_[c][k],eps));
-            // Conservative magnitude Wiener baseline (not decision-directed yet).
-            target_[k]=std::max(floor,std::sqrt(std::max(0.f,1.f-1.f/std::max(1.f,evidence))));
+            // Only explicit Voice opts into the stronger causal estimator.
+            const float gain=!protect&&!idle&&settings_.mode==Mode::Voice?voiceGain_.estimate(k,evidence):
+                std::sqrt(std::max(0.f,1.f-1.f/std::max(1.f,evidence)));
+            target_[k]=std::max(floor,gain);
         }
         for(int k=0;k<bins;++k) {
             const float smooth=0.25f*target_[std::max(0,k-1)]+0.5f*target_[k]+0.25f*target_[std::min(bins-1,k+1)];
@@ -181,6 +187,7 @@ private:
     std::array<float,maxN> win_{};
     FftPlan fft_{};
     ContextGuard<maxBins> context_{};
+    VoiceGain<maxBins> voiceGain_{};
     float maskClose_=0.18f,expandClose_=0.035f;
     float cleanFloor_=1,singingFloor_=1,silenceFloor_=1;
     std::array<std::array<float,maxN>,2> in_{},out_{};
