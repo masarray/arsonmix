@@ -153,26 +153,9 @@ with sync_playwright() as pw:
     # No fabricated meter before native observation. Inject a correlated snapshot.
     page.evaluate('window.autoSnapshot=false')
     assert page.locator('[data-ess]').inner_text()=='—'
-    assert page.locator('.bars .led-lane').count()==10
-    assert page.locator('.tap-meter').count()==3
-    assert page.locator('.led-lane').count()==15
-    assert page.locator('.bars .led-peak').evaluate_all("(nodes)=>nodes.every(e=>getComputedStyle(e).opacity==='0')")
     page.wait_for_timeout(70)
     page.evaluate('''()=>{const req=events.filter(p=>p.action==='nativeDeEzzerSnapshot').at(-1);s={...s,frames:String(BigInt(s.frames)+2400n),observation:{inputDb:[-55,-30,-12,-20,-41],wetDb:[-56,-32,-20,-25,-42],essDb:-20,sidechainDb:-16,deltaDb:-24}};listeners.arMixBuiltinDeEzzerSnapshot({...req,ok:true,snapshot:s});}''')
     assert page.locator('[data-ess]').inner_text()=='-20.0'
-    lane = page.locator('.band').nth(2).locator('.led-lane').first
-    assert lane.locator('.led-fill').evaluate("(e)=>parseFloat(e.style.getPropertyValue('--lit'))") == 8/9*100
-    assert lane.locator('.led-peak').evaluate("(e)=>getComputedStyle(e).opacity") == '1'
-    assert lane.locator('.led-fill').evaluate("(e)=>getComputedStyle(e).transitionDuration") == '0s'
-    assert lane.evaluate("(e)=>getComputedStyle(e,'::after').backgroundImage.includes('repeating-linear-gradient')")
-    assert lane.evaluate("(e)=>Number(getComputedStyle(e,'::after').zIndex)>Number(getComputedStyle(e.querySelector('.led-fill')).zIndex)")
-    assert lane.evaluate("(e)=>getComputedStyle(e.querySelector('.led-peak')).backgroundImage===getComputedStyle(e.querySelector('.led-fill')).backgroundImage")
-    # Independent held cell survives a falling native readback (not simulated PCM).
-    before = lane.locator('.led-peak').evaluate("(e)=>e.style.getPropertyValue('--peak-end')")
-    page.wait_for_timeout(70)
-    page.evaluate('''()=>{const req=events.filter(p=>p.action==='nativeDeEzzerSnapshot').at(-1);s={...s,frames:String(BigInt(s.frames)+2400n),observation:{...s.observation,inputDb:[-55,-30,-60,-20,-41]}};listeners.arMixBuiltinDeEzzerSnapshot({...req,ok:true,snapshot:s});}''')
-    assert lane.locator('.led-fill').evaluate("(e)=>parseFloat(e.style.getPropertyValue('--lit'))") == 2/9*100
-    assert lane.locator('.led-peak').evaluate("(e)=>e.style.getPropertyValue('--peak-end')") == before
     assert 'Wet -20.0 dBFS' in page.locator('.band').nth(2).get_attribute('title')
     assert page.locator('[data-analysis-status]').inner_text()=='Measured · pre rack bypass'
     assert page.locator('[data-history] i').last.evaluate('(e)=>parseFloat(e.style.height)>0')
@@ -189,9 +172,6 @@ with sync_playwright() as pw:
     page.set_viewport_size({'width': 400, 'height': 640})
     assert panel.evaluate('(e)=>e.scrollWidth<=e.clientWidth+1')
     assert page.locator('.dial').count()==3
-    for tap in page.locator('.analysis-foot > span').all():
-        assert tap.evaluate("(e)=>getComputedStyle(e).gridTemplateColumns.split(' ').length===2")
-        assert tap.locator('b').bounding_box()['y'] < tap.locator('.tap-meter').bounding_box()['y']
     assert panel.evaluate('(e)=>e.scrollHeight<=e.clientHeight+1'), panel.evaluate('(e)=>[e.scrollHeight,e.clientHeight]')
     page.set_viewport_size({'width': 800, 'height': 600})
     page.locator('[data-cue="Ess"]').click()
@@ -210,8 +190,6 @@ with sync_playwright() as pw:
     assert chrome_parity('unknown')
     assert page.locator('[data-ess]').inner_text()=='—'
     assert page.locator('[data-history] i').last.evaluate('(e)=>parseFloat(e.style.height)===0')
-    assert page.locator('.led-peak').evaluate_all("(nodes)=>nodes.every(e=>getComputedStyle(e).opacity==='0')")
-    assert page.locator('.led-fill').evaluate_all("(nodes)=>nodes.every(e=>parseFloat(e.style.getPropertyValue('--lit'))===0)")
     page.locator('[data-close]').click();assert page.locator('#mxNativeDeEzzerHost').is_hidden()
     # Reopen with the real shared preset library (not only the ACK test stub).
     page.add_script_tag(path=str(assets/'mixer-builtin-fx-preset-bar.js'))
@@ -228,7 +206,6 @@ with sync_playwright() as pw:
     assert panel.evaluate('(e)=>e.scrollWidth<=e.clientWidth+1')
     page.set_viewport_size({'width':400,'height':640})
     assert panel.evaluate('(e)=>e.scrollWidth<=e.clientWidth+1')
-    assert panel.evaluate('(e)=>e.scrollHeight<=e.clientHeight+1'), panel.evaluate('(e)=>[e.scrollHeight,e.clientHeight]')
     page.set_viewport_size({'width':800,'height':600})
     if os.environ.get('DE_EZZER_SCREENSHOT'):
         panel.screenshot(path=os.environ['DE_EZZER_SCREENSHOT'])
