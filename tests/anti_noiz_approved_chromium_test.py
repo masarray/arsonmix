@@ -97,6 +97,30 @@ def assert_full_composition(root):
     assert max(x["y"] for x in g["legend"])-min(x["y"] for x in g["legend"])<=1,g
     assert g["status"]["h"]==24 and not g["overflow"],g
 
+def lcd_geometry(root):
+    return root.evaluate("""el=>{
+      const rect=e=>{const r=e.getBoundingClientRect();return [r.x,r.y,r.width,r.height];};
+      return [rect(el),...['.an-panel','.an-display','.an-top','.an-lcd-content','.an-legend','.an-knobs','.an-source','footer'].map(s=>rect(el.querySelector(s)))];
+    }""")
+
+def assert_lcd_fixed(root,baseline):
+    current=lcd_geometry(root)
+    assert all(abs(a-b)<=.5 for before,after in zip(baseline,current) for a,b in zip(before,after)), (baseline,current)
+    assert root.evaluate("""el=>{
+      const lcd=el.querySelector('.an-display'),slot=el.querySelector('.an-lcd-content');
+      const page=slot.querySelector(':scope > :not([hidden])');
+      const r=slot.getBoundingClientRect(),p=page.getBoundingClientRect();
+      const fits=(a,b)=>a.left>=b.left-.5&&a.top>=b.top-.5&&a.right<=b.right+.5&&a.bottom<=b.bottom+.5;
+      if(getComputedStyle(lcd).backgroundColor!=='rgb(0, 0, 0)'||Math.abs(r.height-94)>.5||!fits(p,r))return false;
+      if(!page.matches('.an-spectrum-view'))return true;
+      const plot=page.querySelector('.an-spectrum-plot'),svg=plot.querySelector('svg');
+      const axis=page.querySelector('.an-db-axis'),freq=page.querySelector('.an-freq-axis');
+      return [plot,svg,axis,freq,page.querySelector('.an-spectrum-key')].every(e=>fits(e.getBoundingClientRect(),r))&&
+        plot.clientHeight>=48&&plot.clientWidth>=100&&axis.getBoundingClientRect().left>=plot.getBoundingClientRect().right&&
+        Math.abs(freq.getBoundingClientRect().width-plot.getBoundingClientRect().width)<=1&&
+        page.scrollWidth<=page.clientWidth+1&&page.scrollHeight<=page.clientHeight+1;
+    }"""),"fixed black LCD content and contained spectrum"
+
 def main():
     bundle=Path(sys.argv[1]).resolve()
     with sync_playwright() as pw:
@@ -184,9 +208,12 @@ def main():
         }"""),"gloss and full-screen hit target"
         writes=lambda:page.evaluate("()=>window.__actions.filter(x=>['nativeAntiNoizSet','nativeAntiNoizLearn'].includes(x.action)).length")
         before=writes()
+        gr_baseline=lcd_geometry(root)
+        assert_lcd_fixed(root,gr_baseline)
         switch.click(position={"x":12,"y":12})
         expect(root.locator(".an-spectrum-view")).to_be_visible()
         expect(root.locator('[data-spectrum-empty]')).to_be_visible()
+        assert_lcd_fixed(root,gr_baseline)
         expect(switch).to_have_attribute("aria-pressed","true")
         expect(root.locator('[data-lcd-hint]')).to_have_text("Tap for GR")
         switch.focus();page.keyboard.press("Space")
@@ -195,9 +222,10 @@ def main():
         expect(root.locator(".an-spectrum-view")).to_be_visible()
         page.keyboard.press("Enter")
         expect(root.locator(".an-meter-view")).to_be_visible()
+        assert_lcd_fixed(root,gr_baseline)
         assert writes()==before,"LCD view must not write DSP"
         switch.evaluate("(e)=>e.blur()")
-        normal_height=root.locator(".an-display").bounding_box()["height"]
+        assert_lcd_fixed(root,gr_baseline)
         assert "is-on" not in (root.locator(".armix-native-fx-bypass").get_attribute("class") or "").split()
         # Current host power overrides stale DSP telemetry without mutating
         # settings, even between two 20 Hz native observations.
@@ -257,10 +285,11 @@ def main():
         bounds=lcd.bounding_box()
         page.mouse.click(bounds["x"]+bounds["width"]/2,bounds["y"]+bounds["height"]/2)
         expect(root.locator(".an-spectrum-view")).to_be_visible()
-        assert abs(root.locator(".an-display").bounding_box()["height"]-normal_height)<=1
+        assert_lcd_fixed(root,gr_baseline)
         expect(root.locator('[data-progress]')).to_have_text("50%")
         assert root.locator('[data-input-curve]').get_attribute("d").startswith("M")
         assert root.locator('[data-noise-curve]').get_attribute("d").startswith("M")
+        assert root.locator('[data-noise-fill]').get_attribute("d").endswith("Z")
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-learning-1366.png"))
         page.wait_for_timeout(210)
         readback(page,accepted,{**OBS,"serial":"4","effectiveMode":"Voice","profile":True,"learnStatus":"Accepted","spectrum":{**SPECTRUM,"candidate":False,"progress":0}})
@@ -270,11 +299,13 @@ def main():
         expect(root.locator('[data-latency]')).to_have_text("256 samples")
         expect(root.locator('[data-curve-label]')).to_have_text("Trusted noise")
         expect(root.locator(".an-spectrum-view")).to_be_visible()
+        assert_lcd_fixed(root,gr_baseline)
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-profile-1366.png"))
         expect(switch).to_be_enabled()
         switch.click()
         expect(root.locator(".an-meter-view")).to_be_visible()
         expect(root.locator('[data-display-title]')).to_have_text("GAIN REDUCTION")
+        assert_lcd_fixed(root,gr_baseline)
         expect(root.locator('[data-learn]')).to_be_enabled()
         # Actual rotary drag with delayed ACK, stale readback and coalescing.
         # Original approved artwork must actually load in the native bundle;
@@ -342,10 +373,15 @@ def main():
         assert root.evaluate("""el=>[...el.querySelectorAll('.an-dial input,[data-power],[data-close],[data-learn],[data-mode],[data-lcd-switch]')].every(c=>{
           const r=c.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
           return hit===c||c.contains(hit);})"""),"narrow editor hit targets occluded"
+        compact_baseline=lcd_geometry(root)
+        assert_lcd_fixed(root,compact_baseline)
         switch.tap()
         expect(root.locator(".an-spectrum-view")).to_be_visible()
+        assert_lcd_fixed(root,compact_baseline)
+        root.screenshot(path=str(bundle.parent/"anti-noiz-operator-spectrum-360.png"))
         switch.tap()
         expect(root.locator(".an-meter-view")).to_be_visible()
+        assert_lcd_fixed(root,compact_baseline)
         switch.evaluate("(e)=>e.blur()")
         assert_p1_geometry(root)
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-360.png"))

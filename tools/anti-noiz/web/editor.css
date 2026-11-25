@@ -43,20 +43,20 @@
 .an-presets .mx-fxp-save-as{min-width:64px}
 .an-presets select{flex:1;min-width:0;background:var(--an-recess);color:#cfdadc;border:1px solid var(--an-edge);border-bottom-color:var(--an-recess-edge);border-radius:var(--an-radius);min-height:var(--an-control-height);padding:4px 8px;font:inherit;box-shadow:var(--an-recess-shadow)}
 .an-display{position:relative;isolation:isolate;overflow:hidden;margin:0;padding:8px 12px;border-radius:var(--an-radius);border:1px solid #6c8189;border-top-color:#b9c5c8;border-bottom-color:#81979e;
- background:linear-gradient(175deg,#15272d 0%,#09151a 38%,#081419 85%,#102329);
+ background:#000;
  box-shadow:0 2px 3px #0009,0 0 0 1px #0b1115,inset 0 1px 4px #000b}
  /* Optical reference: supplied silver glass EPS. Rebuild ONLY the glass
     (not its printed checkerboard), scaled to the actual LCD. Static,
     transparent surface above data; no bitmap, filter or animation. */
 .an-display::before,.an-display::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:2}
-.an-display::before{background:linear-gradient(118deg,#e9f7ff17 0%,#d3e4ea08 34%,#d3e4ea00 34.2%,transparent 100%),linear-gradient(180deg,#ecfaff0d,transparent 22%,transparent 88%,#b4dbe207)}
+.an-display::before{background:linear-gradient(118deg,#e9f7ff0b 0%,#d3e4ea04 34%,#d3e4ea00 34.2%,transparent 100%),linear-gradient(180deg,#ecfaff07,transparent 22%,transparent 88%,#b4dbe204)}
 .an-display::after{box-shadow:inset 0 1px #edf9ff73,inset 1px 0 #d4e6ed3d,inset -1px 0 #bbd1dd36,inset 0 -1px #d6e6ec55,inset 0 0 6px #c8e3ef1c;
  background:radial-gradient(ellipse 36px 1px at 12% 0%,#f2fbffb0,transparent),radial-gradient(ellipse 28px 1px at 88% 100%,#ecf8ff80,transparent)}
 .an-panel .an-lcd-hit{position:absolute;inset:0;z-index:3;display:block;width:100%;height:100%;min-height:0;margin:0;padding:0;border:0;border-radius:inherit;background:transparent;box-shadow:none;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 .an-panel .an-lcd-hit:disabled{opacity:1;cursor:default}
 .an-panel .an-lcd-hit:focus-visible{outline:1px solid #a7efdc;outline-offset:-3px}
 .an-display:has(.an-lcd-hit:hover:not(:disabled)) .an-lcd-cue{color:#c1e6df}
-.an-top{font-size:10px;color:#9fbbc1;min-height:32px;align-items:center}
+.an-top{font-size:10px;color:#9fbbc1;height:32px;min-height:32px;align-items:center;overflow:hidden}
 .an-display-heading{display:grid;gap:2px;min-width:0;line-height:14px}
 .an-display-heading [data-state]{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .an-lcd-cue{display:grid;justify-items:end;align-content:center;gap:4px;flex:none;color:#99b6b9;font-size:10px;line-height:14px;white-space:nowrap;pointer-events:none}
@@ -64,37 +64,42 @@
 .an-lcd-pages i{width:9px;height:3px;border-radius:2px;background:#52666b}
 .an-display[data-lcd-mode=gr] .an-lcd-pages i:first-child,.an-display[data-lcd-mode=spectrum] .an-lcd-pages i:last-child{background:#a8f3e0}
 .an-display[data-learning=true] .an-lcd-cue{color:#e0c28d}
-.an-display-title{font-weight:600;letter-spacing:1.15px;color:#c0e2df}
+.an-display-title{font-weight:600;letter-spacing:1.15px;color:#c0e2df;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .an-display-title b{font-weight:400;font-size:9px;color:#829ea4;margin-left:3px}
 .an-top [data-state]{color:#90c9bd;text-align:left;font-size:10px;min-width:0}
-.an-meter-view,.an-spectrum-view{height:94px;min-width:0}
+/* GR's approved 94px content slot is the sole geometry authority.
+   Both pages are out of flow; SVG intrinsic sizing, legends and axes
+   can never resize the LCD, the editor or any control below it. */
+.an-lcd-content{position:relative;height:94px;min-height:94px;min-width:0;overflow:hidden;contain:layout size}
+.an-meter-view,.an-spectrum-view{position:absolute;inset:0;min-width:0;min-height:0;overflow:hidden}
 .an-meter-view{display:flow-root}
-.an-spectrum-view{position:relative;display:grid;grid-template-rows:14px minmax(0,1fr) 12px;gap:2px;padding:4px 0 0}
-.an-spectrum-key{display:flex;align-items:center;gap:12px;font-size:10px;color:#aabdc0}
+.an-spectrum-view{display:grid;grid-template-columns:minmax(0,1fr) 26px;grid-template-rows:14px minmax(0,1fr) 12px;gap:2px 5px;padding:4px 0 0}
+.an-spectrum-key{grid-column:1/-1;display:flex;align-items:center;gap:12px;min-width:0;overflow:hidden;white-space:nowrap;font-size:10px;line-height:14px;color:#aabdc0}
 .an-spectrum-key span::before{content:"";display:inline-block;width:8px;height:2px;margin-right:4px;vertical-align:middle;background:currentColor}
-.an-spectrum-key .an-input-key{color:#bfd4d8}.an-spectrum-key .an-noise-key{color:#77e5cf}
-.an-spectrum-key [data-progress]{margin-left:auto;color:#c2d6a8;font:10px var(--an-mono)}
+.an-spectrum-key .an-input-key{color:#bec9ce}.an-spectrum-key .an-noise-key{color:#77e5cf}
+.an-spectrum-key [data-progress]{margin-left:auto;color:#c2d6a8;font:10px/14px var(--an-mono)}
 .an-spectrum-key [data-progress]::before{display:none}
-.an-spectrum{display:block;width:100%;height:100%;overflow:hidden;background:#081419;border:1px solid #2c4146}
+.an-spectrum-plot{grid-column:1;grid-row:2;position:relative;min-width:0;min-height:0;overflow:hidden;border-bottom:1px solid #263236;border-left:1px solid #263236}
+.an-spectrum{position:absolute;inset:0;display:block;width:100%;height:100%;overflow:hidden;background:transparent}
 .an-spectrum path{fill:none;vector-effect:non-scaling-stroke;stroke-linejoin:round}
-.an-spectrum-grid{stroke:#263c42;stroke-width:1}
-.an-input-curve{stroke:#b9cdd3;stroke-width:1.1}
-.an-noise-curve{stroke:#77e5cf;stroke-width:1.5}
-.an-freq-axis{position:relative;height:12px;color:#8ba7ad;font:9px var(--an-mono)}
+.an-spectrum .an-noise-fill{fill:#77e5cf;fill-opacity:.12;stroke:none}
+.an-spectrum-grid{stroke:#1c282b;stroke-width:.7}
+.an-input-curve{stroke:#bac6ca;stroke-width:1.1}
+.an-noise-curve{stroke:#77e5cf;stroke-width:1.35}
+.an-freq-axis{grid-column:1;grid-row:3;position:relative;min-width:0;height:12px;color:#8c9d9f;font:9px/12px var(--an-mono);overflow:hidden}
 .an-freq-axis span{position:absolute;transform:translateX(-50%);white-space:nowrap}
 .an-freq-axis span:first-child{transform:none}
-.an-db-axis{position:absolute;right:4px;top:20px;bottom:16px;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-end;color:#91a4a9;font:8px var(--an-mono);pointer-events:none}
-.an-db-axis span{background:#081419c9;padding-left:2px}
-.an-spectrum-empty{position:absolute;top:45%;left:0;right:0;text-align:center;font-size:10px;color:#a0b7bb;pointer-events:none}
+.an-db-axis{grid-column:2;grid-row:2;min-height:0;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-end;color:#8c9d9f;font:8px/9px var(--an-mono);pointer-events:none}
+.an-spectrum-empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;font-size:10px;color:#a0b7bb;pointer-events:none}
 .an-meter{margin:7px 0 4px}
 .an-meter label{display:flex;justify-content:space-between;align-items:baseline;gap:8px;color:#a6bdc4;font-size:11px}
 .an-meter output{color:#b5ffeb;font:500 12px var(--an-mono);font-variant-numeric:tabular-nums}
 .an-meter-track{position:relative;height:9px;margin-top:4px;border-radius:1px;background:#182e32;overflow:hidden;box-shadow:inset 0 1px 2px #0009}
 .an-meter-track i{display:block;width:100%;height:100%;background:linear-gradient(90deg,#319889,#65d7b7 45%,#b4d5a0 75%,#e3b66b);
  transform:scaleX(0);transform-origin:left;transition:transform 90ms linear}
-.an-meter-track::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(90deg,transparent 0 calc(100% / 24 - 2px),#0b171b 0 calc(100% / 24))}
+.an-meter-track::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(90deg,transparent 0 calc(100% / 24 - 2px),#080b0c 0 calc(100% / 24))}
 .an-meter-scale{display:flex;justify-content:space-between;color:#8ba7ad;font:9px var(--an-mono);margin-top:4px}
-.an-legend{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) auto;align-items:center;gap:4px;border-top:1px solid #2a4044;margin-top:8px;padding-top:4px;color:#a0b7bb;font-size:10px;line-height:16px;min-height:21px}
+.an-legend{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) auto;align-items:center;gap:4px;border-top:1px solid #2a4044;margin-top:8px;padding-top:4px;color:#a0b7bb;font-size:10px;line-height:16px;height:21px;min-height:21px;overflow:hidden}
 .an-legend span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .an-legend [data-learn-state]{text-align:center}
 .an-legend [data-latency]{text-align:right;font:10px/16px var(--an-mono);color:#93a9ae}
