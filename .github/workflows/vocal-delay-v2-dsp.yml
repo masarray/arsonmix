@@ -1,0 +1,42 @@
+name: Vocal Delay V2 isolated DSP
+on:
+  pull_request:
+    paths:
+      - 'engine/builtin_fx/vocal_delay/**'
+      - 'tests/vocal_delay_v2_core_test.cpp'
+      - '.github/workflows/vocal-delay-v2-dsp.yml'
+  push:
+    branches: ['research/vocal-delay-v2-*']
+    paths:
+      - 'engine/builtin_fx/vocal_delay/**'
+      - 'tests/vocal_delay_v2_core_test.cpp'
+      - '.github/workflows/vocal-delay-v2-dsp.yml'
+permissions:
+  contents: read
+concurrency:
+  group: vocal-delay-v2-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+jobs:
+  isolated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cxx: g++
+            flags: '-O2'
+          - cxx: clang++
+            flags: '-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Compile real core and legacy baseline
+        run: |
+          git rev-parse HEAD
+          ${{ matrix.cxx }} -std=c++17 -Wall -Wextra -Werror ${{ matrix.flags }} tests/vocal_delay_v2_core_test.cpp -o /tmp/vd2
+          /tmp/vd2
+          ${{ matrix.cxx }} -std=c++17 ${{ matrix.flags }} tests/builtin_vocal_throw_test.cpp -o /tmp/vd1
+          /tmp/vd1
