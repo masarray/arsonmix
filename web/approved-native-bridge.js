@@ -4333,24 +4333,29 @@
     });
     backend.addEventListener("arMixNativeSessionAck",ack=>{
       const save=ack?.operation==="SAVE";
-      if(!save&&ack?.operation!=="OPEN"&&ack?.operation!=="NEW")return;
+      if(!save&&ack?.operation!=="OPEN"&&ack?.operation!=="NEW"&&ack?.operation!=="RESET_IO")return;
       if(ack.ok!==true){
         const error=String(ack.error||"Mixer file operation failed");
         status(error);nativeToast(error);
         return;
       }
-      const message=save?"Mixer saved as .smix":ack.operation==="NEW"?"New offline mixer saved · output remains muted":"Mixer opened";
+      const message=save?"Mixer saved as .smix":ack.operation==="NEW"?"New offline mixer saved · output remains muted":ack.operation==="RESET_IO"?"I/O defaults restored · mixer and FX retained":"Mixer opened";
       status(message);nativeToast(message);
       if(!save)controller?.subscribe();
     });
-    const newSessionButtons=[["New empty session","EMPTY"],["New from I/O defaults","DEFAULT"]].map(([label,mode])=>{
+    const newSessionButtons=[["New empty session","EMPTY"],["New from I/O defaults","DEFAULT"],["Reset I/O to defaults","RESET_IO"]].map(([label,mode])=>{
       const button=item("button","tool",label);
       button.title="Offline only · previous checkpoint archived in Studio/SessionArchive";
       button.addEventListener("click",()=>{
         if(!logicalView||pendingLogical||hardware?.raw?.offlineNewSessionAvailable!==true){
           nativeToast("Disconnect audio and finish mixer operations before New Session");return;
         }
-        if(!window.confirm("Create a new offline mixer? The current saved session is archived. No audio output will be armed."))return;
+        if(mode==="RESET_IO"&&hardware?.raw?.offlineResetIoAvailable!==true){
+          nativeToast("Reset requires a saved offline session with no logical port assignments");return;
+        }
+        if(!window.confirm(mode==="RESET_IO"?
+          "Replace only logical I/O port definitions? Mixer, FX and shortcuts are retained; a backup is archived.":
+          "Create a new offline mixer? The current saved session is archived. No audio output will be armed."))return;
         backend.emitEvent("arMixAction",{action:"nativeMixerNewOffline",mode,confirmed:true,
           workspaceToken:logicalView.workspaceToken,baseRevision:logicalView.revision});
       });

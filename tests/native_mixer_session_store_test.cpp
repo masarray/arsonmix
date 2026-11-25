@@ -1309,6 +1309,25 @@ static void verifyLogicalControlTransactions() {
     assert(control.workspace().document().roster.find(trackId));
     assert(control.workspace().document().roster.find(busId));
     const auto priorId=control.workspace().document().id;
+    IoPortLayout resetDefaults;
+    assert(resetDefaults.inputs.add(300,"Reset Vocal",IoPortLayout::I::Format::mono));
+    assert(resetDefaults.outputs.add(400,"Reset Stage"));
+    auto beforeReset=control.workspace().document();
+    const auto oldToken=control.workspace().workspaceToken();
+    const auto oldStateCount=control.workspace().states().size();
+    assert(control.resetIo(oldToken,control.workspace().revision(),resetDefaults,
+        [](juce::String error){if(error.isNotEmpty())std::cerr<<error.toStdString()<<'\n';assert(error.isEmpty());}));
+    assert(worker.busy()&&control.workspace().workspaceToken()==oldToken);
+    waitForIO();
+    auto afterReset=control.workspace().document();
+    assert(afterReset.id==priorId&&control.workspace().workspaceToken()!=oldToken);
+    assert(afterReset.logicalInputs.find(300)&&afterReset.logicalOutputs.find(400));
+    assert(control.workspace().states().size()==oldStateCount);
+    afterReset.logicalInputs={};afterReset.logicalOutputs={};
+    beforeReset.logicalInputs={};beforeReset.logicalOutputs={};
+    assert(Codec::encode(beforeReset)==Codec::encode(afterReset));
+    auto archivesAfterReset=folder.getChildFile("SessionArchive").findChildFiles(juce::File::findFiles,false,"*.smix");
+    assert(archivesAfterReset.size()==1);
     const auto priorToken=control.workspace().workspaceToken();
     const auto priorRevision=control.workspace().revision();
     const auto beforeNew=juce::JSON::toString(control.readback(),true);
@@ -1336,9 +1355,9 @@ static void verifyLogicalControlTransactions() {
     assert(fresh.logicalOutputs.find(200)&&!fresh.logicalOutputs.find(200)->binding);
     assert(fresh.logicalInputs.references().empty()&&fresh.logicalOutputs.references().empty());
     auto archived=folder.getChildFile("SessionArchive").findChildFiles(juce::File::findFiles,false,"*.smix");
-    assert(archived.size()==1);
+    assert(archived.size()==2);
     MixerSessionDocument recoveredArchive;std::vector<BinaryState> archiveStates;
-    assert(NativeMixerSessionStore::readFile(archived[0],recoveredArchive,archiveStates).isEmpty());
+    assert(NativeMixerSessionStore::readFile(archivesAfterReset[0],recoveredArchive,archiveStates).isEmpty());
     assert(recoveredArchive.id==priorId&&recoveredArchive.inserts.size()==saved.inserts.size());
     assert(archiveStates.size()==states.size());
     // A later generation must not remove the separately archived old show.

@@ -92,19 +92,32 @@ public:
     // Explicit NEW replaces HEAD only after archiving the independently
     // verified previous checkpoint. PREVIOUS alone is not enough: the next
     // normal edit rotates it. All IO stays on the existing session worker.
+    enum class ArchiveMode { none, newSession, resetIo };
     juce::String commitNewSession(const MixerSessionDocument& doc,
-                        const std::vector<armix::shows::BinaryState>& states) const {
-        if(!doc.logicalOnly || doc.resumeMain.value_or(false) || !states.empty() ||
-           !doc.inserts.empty() || !doc.hotkeys.empty() || !doc.request.sources.empty() ||
-           !doc.logicalInputs.references().empty() || !doc.logicalOutputs.references().empty())
-            return "New session must be an unbound clean workspace";
+                        const std::vector<armix::shows::BinaryState>& states,
+                        ArchiveMode mode=ArchiveMode::newSession) const {
+        const bool reset=mode==ArchiveMode::resetIo;
+        if(mode==ArchiveMode::none || !doc.logicalOnly || doc.resumeMain.value_or(false) ||
+           !doc.logicalInputs.references().empty() || !doc.logicalOutputs.references().empty() ||
+           (!reset && (!states.empty() || !doc.inserts.empty() || !doc.hotkeys.empty() ||
+                       !doc.request.sources.empty())))
+            return "New/reset session must be an unbound workspace";
         const auto head=root_.getChildFile("HEAD");
         if(head.exists()) {
             MixerSessionDocument old,checked;
             std::vector<armix::shows::BinaryState> oldStates,checkedStates;
             auto error=load(old,oldStates);
             if(error.isNotEmpty())return error;
-            if(old.id==doc.id)return "New session identity must differ";
+            if(reset){
+                if(old.id!=doc.id || !old.logicalOnly ||
+                   !old.logicalInputs.references().empty() || !old.logicalOutputs.references().empty())
+                    return "Reset requires the same unassigned offline session";
+                auto before=old,after=doc;
+                before.logicalInputs={};before.logicalOutputs={};
+                after.logicalInputs={};after.logicalOutputs={};
+                if(Codec::encode(before)!=Codec::encode(after))
+                    return "Reset would change mixer state outside I/O definitions";
+            }else if(old.id==doc.id)return "New session identity must differ";
             const auto archive=root_.getSiblingFile("SessionArchive");
             if(archive.createDirectory().failed())return "Cannot create session archive";
             const auto file=archive.getNonexistentChildFile(old.id+"-"+juce::Uuid().toDashedString(),".smix",false);
@@ -116,6 +129,7 @@ public:
                 return "Previous session archive readback failed";
         }else if(root_.getChildFile("PREVIOUS").exists())
             return "Previous checkpoint requires explicit recovery";
+        else if(reset)return "Save an offline session before resetting its I/O";
         return commit(doc,states);
     }
 

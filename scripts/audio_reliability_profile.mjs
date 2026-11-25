@@ -103,7 +103,7 @@ const STABLE_SCOPE_KEYS=[
   "activeInputMaskHex","activeOutputMaskHex","nativeFxGraphRevision",
   "nativeFxInstalledCount","nativeExternalCh1Leased","nativeExternalCh1InstalledCount",
   "connected","diagnosticRoute","productionRoutingState","directRouteAuthorized",
-  "backendXrunMeaning"
+  "backendXrunMeaning","callbackTimingScope"
 ];
 const MODE_KEYS=[
   "nativeFxProcessingCount","nativeGlobalFxBypassed",
@@ -166,6 +166,10 @@ function describeSegment(segment){
     directRouteAuthorized:s.directRouteAuthorized===true,
     durationSeconds,intervals:segment.intervals,callbackCount:callbacks,
     windowHistogramSamples:p.samples,
+    callbackTimingScope:s.callbackTimingScope??"LEGACY_RENDER_TIMING",
+    // Cumulative readback atomics are not a transactional snapshot; a
+    // callback at either endpoint can contribute one sample of skew.
+    histogramCoveragePct:percent(p.samples,callbacks),
     p95BudgetUpperPct:p.p95,p99BudgetUpperPct:p.p99,
     overBudgetCallbacks:over,overBudgetPer1000:callbacks?Math.round(100000*over/callbacks)/100:null,
     slowCallbacks:segment.delta.slowCallbackCount,
@@ -195,7 +199,7 @@ function describeSegment(segment){
 export function analyzeHealthLog(log) {
   const {samples,warnings,rejectedLines}=parseHealthLog(log);
   const groups=[];
-  let segment=null;
+  let segment=null,rejectedIndex=0;
   const start=(s,invalidBefore=false)=>({start:s,last:s,intervals:0,durationMs:0,
     delta:Object.fromEntries(COUNTERS.map(k=>[k,0])),
     histogram:Array(13).fill(0),invalidBefore});
@@ -204,7 +208,11 @@ export function analyzeHealthLog(log) {
     // Rejected telemetry is an absolute comparison barrier, including a
     // failed opaque vendor lease. Only an uninterrupted *accepted* global
     // bypass ON -> OFF transition may connect a DRY/FX pair.
-    const missingBetween=rejectedLines.some(line=>line>segment.last.line&&line<current.line);
+    // Rejections and samples are in source order. Visit each rejected
+    // line once instead of rescanning the whole log on every interval.
+    while(rejectedIndex<rejectedLines.length&&rejectedLines[rejectedIndex]<=segment.last.line)
+      rejectedIndex++;
+    const missingBetween=rejectedIndex<rejectedLines.length&&rejectedLines[rejectedIndex]<current.line;
     if(missingBetween || !validInterval(segment.last,current)){
       const acceptedPower=!missingBetween &&
         acceptedGlobalPowerTransition(segment.last,current);

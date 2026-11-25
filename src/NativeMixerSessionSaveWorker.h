@@ -34,11 +34,11 @@ public:
     }
     bool save(juce::File studio,MixerSessionDocument document,
               std::vector<armix::shows::BinaryState> binary,
-              Completion completion,juce::File exportFile={},bool newSession=false) {
+              Completion completion,juce::File exportFile={},NativeMixerSessionStore::ArchiveMode archiveMode=NativeMixerSessionStore::ArchiveMode::none) {
         if(busy_.exchange(true,std::memory_order_acq_rel))return false;
         studio_=std::move(studio);
         exportFile_=std::move(exportFile);
-        newSession_=newSession;
+        archiveMode_=archiveMode;
         doc_=std::move(document);
         states_=std::move(binary);
         done_=std::move(completion);
@@ -65,7 +65,8 @@ private:
         try {
             NativeMixerSessionStore store(studio_);
             if(readDone_)error=NativeMixerSessionStore::readFile(exportFile_,doc_,states_);
-            else error=newSession_?store.commitNewSession(doc_,states_):
+            else error=archiveMode_!=NativeMixerSessionStore::ArchiveMode::none?
+                store.commitNewSession(doc_,states_,archiveMode_):
                 exportFile_==juce::File{}?store.commit(doc_,states_):
                 NativeMixerSessionStore::writeFile(exportFile_,doc_,states_);
         }catch(...) {error="Mixer session IO worker exception";}
@@ -105,7 +106,7 @@ private:
     juce::String saveResult_;
     Completion done_;
     ReadCompletion readDone_;
-    bool newSession_=false;
+    NativeMixerSessionStore::ArchiveMode archiveMode_=NativeMixerSessionStore::ArchiveMode::none;
     unsigned serial_=0;
     std::atomic<bool> busy_{false};
     std::shared_ptr<std::atomic<bool>> alive_=

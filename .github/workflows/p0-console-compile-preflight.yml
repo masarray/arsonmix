@@ -7,6 +7,7 @@ on:
       - feature/io-atomic-output-20261125
       - feat/reverb-sis-signature-20261125
       - staging/io-reverb-integrated-20261125
+      - staging/io-reverb-integrated-p10-p11-20261125
     # These are explicit qualification branches, not general development.
     # Every new HEAD needs its own evidence, even a UI/workflow-only commit.
 permissions:
@@ -56,7 +57,7 @@ jobs:
           # Test the actual JUCE disk store with assertions enabled before
           # compiling the production translation unit. This is not FAT or a
           # protected nativeFull gate and does not publish an executable.
-          if ($env:GITHUB_REF_NAME -in @('feature/io-studio-workflow-20261125','feature/io-atomic-output-20261125','staging/io-reverb-integrated-20261125')) {
+          if ($env:GITHUB_REF_NAME -in @('feature/io-studio-workflow-20261125','feature/io-atomic-output-20261125','staging/io-reverb-integrated-20261125','staging/io-reverb-integrated-p10-p11-20261125')) {
             cmake --build build --parallel 2 --target ARMixChannelAppearanceTests
             if ($LASTEXITCODE -ne 0) { throw 'AUDIO_IO_NATIVE_STORE_COMPILE_FAILED' }
             $catalog = (& ctest --test-dir build --show-only=json-v1 | Out-String | ConvertFrom-Json)
@@ -89,7 +90,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'P0_PRODUCTION_TRANSLATION_UNIT_FAILED' }
           Write-Host "P0_PRODUCTION_MAIN_COMPILE_PASS exact=$actual (object only, NOT full FAT)"
       - name: Integrated product link and full native CTest (no packaging)
-        if: github.ref_name == 'staging/io-reverb-integrated-20261125'
+        if: startsWith(github.ref_name, 'staging/io-reverb-integrated-')
         shell: pwsh
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -108,7 +109,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'INTEGRATED_FULL_CTEST_FAILED' }
           Write-Host "INTEGRATED_FULL_CTEST_PASS exact=$actual (no hardware or installer FAT)"
       - uses: actions/upload-artifact@v4
-        if: always() && github.ref_name == 'staging/io-reverb-integrated-20261125'
+        if: always() && startsWith(github.ref_name, 'staging/io-reverb-integrated-')
         with:
           name: integrated-native-ctest-${{ github.sha }}
           path: build/integrated-ctest.xml

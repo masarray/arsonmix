@@ -1309,7 +1309,7 @@ private:
                  "nativeExternalCh1Leased", "nativeExternalCh1InstalledCount",
                  "nativeExternalCh1ProcessingCount",
                  "nativeFxActivityComplete",
-                 "callbackCount", "callbackBudgetBuckets",
+                 "callbackCount", "callbackTimingScope", "callbackBudgetBuckets",
                  "callbackBudgetBucketProvenance", "callbackBudgetSamples",
                  "callbackP95BudgetUpperPct", "callbackP99BudgetUpperPct",
                  "slowCallbackCount", "overBudgetCount", "callbackGapCount",
@@ -2795,30 +2795,37 @@ private:
         bool confirmed=false;
         std::uint64_t revision=0;
         const auto mode=args.getProperty("mode","").toString();
+        const bool reset=mode=="RESET_IO";
+        const juce::String operation=reset?"RESET_IO":"NEW";
         const auto token=args.getProperty("workspaceToken","").toString();
         if(!armix::session::strictBool(args.getProperty("confirmed",{}),confirmed)||!confirmed||
            !armix::session::parseDecimal(args.getProperty("baseRevision",{}),revision,true)||
-           (mode!="EMPTY"&&mode!="DEFAULT")||!canCreateOfflineSession())
-            return emitMixerSessionAck("NEW","Disconnect audio and finish current mixer operations before New Session");
-        if(mode=="DEFAULT"&&(ioDefaults_.readOnly()||ioDefaults_.layout().empty()))
-            return emitMixerSessionAck("NEW","No valid saved I/O defaults");
+           (mode!="EMPTY"&&mode!="DEFAULT"&&!reset)||!canCreateOfflineSession())
+            return emitMixerSessionAck(operation,"Disconnect audio and finish current mixer operations first");
+        if(mode!="EMPTY"&&(ioDefaults_.readOnly()||ioDefaults_.layout().empty()))
+            return emitMixerSessionAck(operation,"No valid saved I/O defaults");
         auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
-        if(!logicalMixer_.newSession(token,revision,mode=="DEFAULT"?&ioDefaults_.layout():nullptr,
-                [safe](juce::String error){
+        auto complete=[safe,reset,operation](juce::String error){
             if(safe==nullptr)return;
             if(error.isEmpty()){
                 safe->autoMainEpoch_=0;
                 safe->operatorOutputMuted_=true;
-                safe->lastMixerFile_=juce::File{};
                 safe->closeAllPluginEditors();
                 safe->stopOrbit();
-                const auto keyError=safe->hotkeys_.activateSession(safe->logicalMixer_.workspace().document().id);
-                if(keyError.isNotEmpty())safe->emitNotice("Hotkey activation: "+keyError,true);
-                safe->mixerSessionStatus_="NEW_LOGICAL_SESSION_MUTED";
+                if(!reset){
+                    safe->lastMixerFile_=juce::File{};
+                    const auto keyError=safe->hotkeys_.activateSession(safe->logicalMixer_.workspace().document().id);
+                    if(keyError.isNotEmpty())safe->emitNotice("Hotkey activation: "+keyError,true);
+                }
+                safe->mixerSessionStatus_=reset?"OFFLINE_IO_RESET_MUTED":"NEW_LOGICAL_SESSION_MUTED";
                 safe->emitApprovedNativeSnapshot();
             }
-            safe->emitMixerSessionAck("NEW",error);
-        }))emitMixerSessionAck("NEW","Mixer session IO worker unavailable");
+            safe->emitMixerSessionAck(operation,error);
+        };
+        const bool queued=reset?
+            logicalMixer_.resetIo(token,revision,ioDefaults_.layout(),std::move(complete)):
+            logicalMixer_.newSession(token,revision,mode=="DEFAULT"?&ioDefaults_.layout():nullptr,std::move(complete));
+        if(!queued)emitMixerSessionAck(operation,"Mixer session IO worker unavailable");
     }
 
     bool canInstallIoDefaults() const {
@@ -2901,7 +2908,10 @@ private:
                 live.getProperty("dryRoutingLab",{}).getProperty("nativeBus",{})
                     .getProperty("logicalOutputRegistry",{}));
             obj->setProperty("ioDefaults",ioDefaults_.snapshot(canInstallIoDefaults()));
-            obj->setProperty("offlineNewSessionAvailable",canCreateOfflineSession());
+            const bool offlineSessionAvailable=canCreateOfflineSession();
+            obj->setProperty("offlineNewSessionAvailable",offlineSessionAvailable);
+            obj->setProperty("offlineResetIoAvailable",offlineSessionAvailable&&logicalMixer_.canResetIo()&&
+                !ioDefaults_.readOnly()&&!ioDefaults_.layout().empty());
             obj->setProperty("physicalBusPatchSupported",true);
             obj->setProperty("physicalBusOutputObserved",
                 live.getProperty("dryRoutingLab",{}).getProperty("busOutputObserved",false));

@@ -3026,6 +3026,7 @@ public:
         o->setProperty ("callbackP95BeyondDeadline", histogram.p95Ceiling < 0);
         o->setProperty ("callbackP99BeyondDeadline", histogram.p99Ceiling < 0);
         o->setProperty ("callbackBudgetSamples", static_cast<double> (histogram.total));
+        o->setProperty ("callbackTimingScope","RENDER_THROUGH_FINAL_OUTPUT_PUBLICATION_V2");
         // INT-1B: cumulative buckets enable true 1 Hz interval percentiles
         // without resetting/replacing RT atomics at ASIO device transitions.
         // The message thread alone allocates this 13-value readback array.
@@ -3853,14 +3854,6 @@ private:
             outputPeak_.store(juce::jmin(1.f,juce::jmax(audibleLeft,audibleRight)),std::memory_order_relaxed);
             // ADD/REMOVE still need the R0B prepared shared-owner lifecycle;
             // only CH1 MOVE is now safe inside the routed render callback.
-            const auto elapsed=clockMicros()-beginUs;
-            lastCallbackUs_.store(elapsed,std::memory_order_relaxed);
-            publishMax(worstCallbackUs_,elapsed);
-            realtimeHistogram_.observe(elapsed,periodUs);
-            if(static_cast<double>(elapsed)>periodUs*0.80)
-                slowCallbacks_.fetch_add(1,std::memory_order_relaxed);
-            if(static_cast<double>(elapsed)>periodUs)
-                overBudgetCallbacks_.fetch_add(1,std::memory_order_relaxed);
             // Secondary PCM is already copied; preserve logical MAIN meter
             // evidence before disarming the physical MAIN/MONITOR pins.
             if(!outputGate.hardware)
@@ -3870,6 +3863,7 @@ private:
             // Reuse the exact post-DSP/fade peaks rather than re-scanning PCM.
             const bool wroteMain=outputGate.hardware&&routed&&nativeMain[0]&&nativeMain[1];
             publishDriverBufferPeaks(wroteMain?audibleLeft:0.f,wroteMain?audibleRight:0.f);
+            recordRenderTiming(beginUs,periodUs);
             return;
         }
         // The only remaining stereo renderer is DIAGNOSTIC. It may emit
@@ -4034,6 +4028,12 @@ private:
                 totalLatency_.store (switched->latency, std::memory_order_relaxed);
             }
         }
+        recordRenderTiming(beginUs,periodUs);
+    }
+
+    // Same two timestamps and atomic updates, but account for the final
+    // physical clearing and meter publication in every measured render.
+    void recordRenderTiming(std::uint64_t beginUs,double periodUs) noexcept {
         const auto elapsedUs = clockMicros() - beginUs;
         lastCallbackUs_.store (elapsedUs, std::memory_order_relaxed);
         publishMax (worstCallbackUs_, elapsedUs);
