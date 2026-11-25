@@ -1574,6 +1574,18 @@ public:
             pcmRevision,target,slot,token);
     }
 
+    // CONTROL: same accepted device/graph and callback-observed exclusive
+    // MONITOR pair. The native publisher validates them again on AUDIO.
+    std::uint64_t deEzzerCueRoute(std::uint64_t ep,std::uint64_t rev,armix::mixer::ChannelId channel) const noexcept {
+        if(!ready()||!channelIdPhysicalPcmActive()||
+           !nativeAccepted_.matches(nativePublisher_,ep,rev)||!nativeBusOutputObserved()||
+           !nativeAccepted_.fxOwners||globalFxBypassed()||nativeAccepted_.fxOwners->rackBypassed(channel))return 0;
+        const auto p=nativeHardware_.load(std::memory_order_acquire);
+        const int ml=nativePin(p,2),mr=nativePin(p,3),l=nativePin(p,0),r=nativePin(p,1);
+        return ml>=0&&mr>=0&&l>=0&&r>=0&&ml!=mr&&ml!=l&&ml!=r&&mr!=l&&mr!=r&&
+            (p>>36)<=armix::mixer::NativeFxCueBus::capacity?p:0;
+    }
+    armix::mixer::NativeFxCueBus& deEzzerCueControl() noexcept {return nativePublisher_.cueControl();}
     NativeBusResult editNativeBus(std::uint64_t expectedEpoch,
                   std::uint64_t expectedPcmRevision,
                   std::uint64_t expectedRosterRevision,
@@ -3696,7 +3708,7 @@ public:
                  bool allowMutedMetering=false,
                  std::span<const armix::mixer::DynamicPlayerPcmBlock> playerPcm={},
                  bool mainOnlyMuted=false,
-                 const NativeOutputLease* outputLease=nullptr) noexcept {
+                 const NativeOutputLease* outputLease=nullptr,bool privateCueAllowed=false) noexcept {
         if(actualOutputPair)*actualOutputPair={{-1,-1}};
         if(actualMonitorPair)*actualMonitorPair={{-1,-1}};
         if(!active())return false;
@@ -3891,7 +3903,8 @@ public:
                     std::span<const armix::mixer::DynamicPlayerPcmBlock>(
                         slice.data(),playerPcm.size()),
                      meterOnly?nullptr:outputSlices.data(),
-                     meterOnly?0:outputCount);
+                     meterOnly?0:outputCount,{},
+                     privateCueAllowed&&!masterMuted&&monitorL&&monitorR?native:0);
                 if(processed) {
                     for(std::size_t ch=0;ch<nativeMeterCapacity;++ch) {
                         nativeMaxL[ch]=std::max(nativeMaxL[ch],tapsL[ch]);
@@ -4215,6 +4228,7 @@ private:
     }
     void installNativeHardware(std::uint64_t generation,
             const armix::mixer::VerifiedNativeOutputs& hw,int frames) noexcept {
+        nativePublisher_.cueControl().cancel(false); // never retain audition across output rebinding
         nativeHardware_.store((static_cast<std::uint64_t>(frames)<<36) |
             (static_cast<std::uint64_t>(hw.monitorR+1)<<27) |
             (static_cast<std::uint64_t>(hw.monitorL+1)<<18) |

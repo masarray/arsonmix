@@ -5,6 +5,7 @@
 #include "DynamicConsoleRoutingView.h"
 #include "NativeMusicTempoMonitor.h"
 #include "NativeBeatFrameContext.h"
+#include "NativeFxCueBus.h"
 #include "RealtimeRoutePublisher.h"
 #include "RealtimeRenderPermit.h"
 #include <algorithm>
@@ -221,6 +222,7 @@ public:
                                              expectedRevision,activeDeviceEpoch);
         switch(status) {
             case Publisher::Result::applied: {
+                cueBus_.cancel(false); // new graph revision requires a new explicit listen request
                 const auto source=musicTempo_.selectedSource();
                 if(source.value) {
                     const auto* published=publisher_.controlPrepared(
@@ -264,7 +266,7 @@ public:
                 float* const* hardwareOutputs=nullptr,
                 int hardwareOutputCount=0,
                 std::span<const armix::device::MultiDeviceInputPlan::CaptureBlock>
-                    qualifiedCaptureBlocks={}) noexcept {
+                    qualifiedCaptureBlocks={},std::uint64_t cueRoute=0) noexcept {
         static_assert(std::is_nothrow_invocable_v<Fx,ChannelId,float*,float*,int>,
                       "Realtime VST dispatch must be noexcept");
         const auto clearOutputs=[&]() noexcept {
@@ -339,6 +341,9 @@ public:
         // no second transport thread, allocation or callback is introduced.
         const auto startFrame=musicTempo_.beginAudioBlock(deviceEpoch,frames);
         NativeBeatFrameScope frameScope{deviceEpoch,snap->graphRevision,startFrame};
+        auto* cueFrame=cueBus_.begin(deviceEpoch,snap->graphRevision,
+            snap->prepared->monitor&&monitorL&&monitorR?cueRoute:0,frames);
+        FxCueScope cueScope{cueFrame};
         // Prepared FX takes precedence over the legacy external callback.
         // NEVER invoke both: that would double-compress or double-reverb.
         // Snapshot ownership pins the M4 instance throughout this callback;
@@ -357,6 +362,7 @@ public:
              physical,physicalCount,mainL,mainR,frames,
              dispatch,monitorL,monitorR,channelPeaksL,channelPeaksR,playerPcm,
               hardwareOutputs,hardwareOutputCount);
+        cueBus_.finish(ok,monitorL,monitorR,frames);
         if(!ok) {
             // A rejected physical callback (including aliased independent
             // amplifier buffers) emits silence, not a stale LIVE snapshot.
@@ -537,7 +543,8 @@ public:
         const auto* p=publisher_.controlPrepared(epoch,revision);
         return p?p->graph.latencySamples():0;
     }
-    void unpublish() noexcept {publisher_.unpublish();}
+    NativeFxCueBus& cueControl() noexcept {return cueBus_;} // CONTROL only
+    void unpublish() noexcept {cueBus_.cancel(false);publisher_.unpublish();}
     void pollRetirement() noexcept {publisher_.pollRetirement();}
     std::uint64_t acceptedRevision() const noexcept {
         return publisher_.lastRevision(); // CONTROL only
@@ -548,6 +555,7 @@ public:
 private:
     Publisher publisher_;
     NativeMusicTempoMonitor musicTempo_{};
+    NativeFxCueBus cueBus_{};
     std::atomic_flag rendering_=ATOMIC_FLAG_INIT;
 };
 } // namespace armix::mixer

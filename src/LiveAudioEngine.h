@@ -2441,6 +2441,17 @@ public:
             epoch,revision,id,slot,token);
     }
 
+    bool privateDeEzzerCueAllowed() const noexcept {
+        return isMonitorEnabled()&&directFence_.permitted()&&!independent_.active()&&
+            !masterMute_.load(std::memory_order_acquire)&&!routeReconfiguring_.load(std::memory_order_acquire)&&
+            !topologyPublicationMute_.load(std::memory_order_acquire)&&
+            diagnosticRoute_.load(std::memory_order_acquire)==armix::diagnostics::Route::normal;
+    }
+    std::uint64_t deEzzerCueRoute(std::uint64_t ep,std::uint64_t rev,armix::mixer::ChannelId channel) const noexcept {
+        return privateDeEzzerCueAllowed()?dryRoutingLab_.deEzzerCueRoute(ep,rev,channel):0;
+    }
+    armix::mixer::NativeFxCueBus& deEzzerCueControl() noexcept {return dryRoutingLab_.deEzzerCueControl();}
+
     LiveDryRoutingLab::NativeBusResult createNativeInputChannel(
             std::uint64_t epoch,std::uint64_t pcmRevision,
             std::uint64_t rosterRevision,const std::string& name,
@@ -3776,7 +3787,9 @@ private:
                      !routeReconfiguring_.load(std::memory_order_acquire) &&
                      !topologyPublicationMute_.load(std::memory_order_acquire),
                      std::span<const armix::mixer::DynamicPlayerPcmBlock>(
-                         deckBlocks.data(),deckCount),mainOnlyMuted,&outputLease);
+                         deckBlocks.data(),deckCount),mainOnlyMuted,&outputLease,
+                     outputGate.hardware&&!mainOnlyMuted&&!cycle.fadeOut&&!cycle.fadeIn&&
+                     fxMovePhase_.load(std::memory_order_acquire)==0&&privateDeEzzerCueAllowed());
             // Constant-time, callback-local physical PCM tap. Nothing is
             // reconfigured or acquired from another graph generation.
             const auto nativeMain=armix::mixer::NativeOutputPairTap::select(

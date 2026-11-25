@@ -69,7 +69,7 @@ public:
     // Future graph-authorized operator destination. Caller must supply separate
     // PCM buffers, and must not call processAudio a second time on this block.
     bool processAudioWithCue(float* l,float* r,int n,CueMode mode,float* cueL,float* cueR) noexcept {
-        if(!channels_||!cueL||audition_!=Audition::Normal||deltaMix_!=0||detectMix_!=0)return false;
+        if(!channels_||!cueL||!core_.settings().enabled||audition_!=Audition::Normal||deltaMix_!=0||detectMix_!=0)return false;
         if(analysisRemaining_<=0){observer_.reset();core_.resetEssTap();}
         if(!observer_.render(core_,l,channels_==2?r:nullptr,n,mode,cueL,cueR))return false;
         analysisRemaining_=analysisLease_;finishBlock(n);return true;

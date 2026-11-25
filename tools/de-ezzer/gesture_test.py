@@ -70,6 +70,17 @@ with sync_playwright() as pw:
     assert 'Wet -20.0 dBFS' in page.locator('.band').nth(2).get_attribute('title')
     assert page.locator('[data-analysis-status]').inner_text()=='Measured · pre rack bypass'
     assert page.locator('[data-history] i').last.evaluate('(e)=>parseFloat(e.style.height)>0')
+    assert page.locator('[data-cue="Ess"]').is_disabled()
+    page.wait_for_timeout(70)
+    page.evaluate('''()=>{let req=events.filter(p=>p.action==='nativeDeEzzerSnapshot').at(-1);s={...s,frames:String(BigInt(s.frames)+2400n),cue:{available:true,requested:'Mix',applied:'Mix'}};listeners.arMixBuiltinDeEzzerSnapshot({...req,ok:true,snapshot:s});}''')
+    page.locator('[data-cue="Ess"]').click()
+    page.evaluate('''()=>{let req=events.filter(p=>p.action==='nativeDeEzzerCue').at(-1);listeners.arMixBuiltinDeEzzerCue({...req,ok:true,cue:{available:true,requested:'Ess',applied:'Mix'}});}''')
+    assert page.locator('[data-cue="Ess"]').get_attribute('data-pending')=='true'
+    page.wait_for_timeout(70)
+    page.evaluate('''()=>{let req=events.filter(p=>p.action==='nativeDeEzzerSnapshot').at(-1);s={...s,frames:String(BigInt(s.frames)+2400n),cue:{available:true,requested:'Ess',applied:'Ess'}};listeners.arMixBuiltinDeEzzerSnapshot({...req,ok:true,snapshot:s});}''')
+    assert page.locator('[data-cue="Ess"]').get_attribute('aria-pressed')=='true'
+    page.locator('[data-cue="Mix"]').click()
+    assert page.evaluate("events.filter(p=>p.action==='nativeDeEzzerCue').at(-1).mode")=='Mix'
     page.evaluate('view.graph.revision="5"');page.wait_for_timeout(160)
     assert page.locator('[data-status]').inner_text()=='Disconnected'
     assert page.locator('[data-ess]').inner_text()=='—'
