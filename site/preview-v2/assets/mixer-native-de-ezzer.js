@@ -18,6 +18,7 @@ function createModel({send,now=()=>performance.now(),monitorSafe=false,onChange=
  function ingest(s){if(!snapshot(s)||!same(id,s.id)||!actual||BigInt(s.frames)<BigInt(actual.frames)||BigInt(s.appliedSequence)<BigInt(actual.appliedSequence))return false;
   // A telemetry frame is not an ACK. Never infer completion from it.
   if(pending&&BigInt(s.appliedSequence)>=BigInt(pending.sequence))return false;
+  if(BigInt(s.frames)===BigInt(actual.frames)&&s.appliedSequence===actual.appliedSequence)return false;
   actual={...s,id:{...s.id},settings:copy(s.settings)};next=next>BigInt(s.appliedSequence)?next:BigInt(s.appliedSequence);last=now();publish();return true;}
  function request(patch={},mode="Normal"){
   if(!view().editable||!aud.includes(mode)||(mode!=="Normal"&&!monitorSafe))return false;

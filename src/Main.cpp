@@ -56,6 +56,8 @@
 #include "NativeFxParameterHotkey.h"
 #include "NativeFxControlRequest.h"
 #include "SonKuNativeBridgeContract.h"
+#include "DeEzzerNativeBridgeContract.h"
+#include "../engine/builtin_fx/DeEzzerProcessor.h"
 #include "NativeDeviceApplyCoordinator.h"
 #if defined(_WIN32)
 #include "../engine/device/WindowsFirstRunEndpointDiscovery.h"
@@ -863,6 +865,13 @@ private:
     } pendingNativeComp_;
     juce::String lastNativeCompRequest_,lastNativeCompInstance_;
     juce::String lastNativeCompEpoch_,lastNativeCompRevision_;
+    struct PendingNativeDeEzzer {
+        armix::mixer::LiveChannelFxGraph::InstanceLease owner;
+        armix::builtin_fx::NativeFxControlRequest request;
+        armix::builtin_fx::de_ezzer::Identity id{};
+        std::uint64_t sequence=0;
+        juce::uint32 started=0;
+    } pendingNativeDeEzzer_;
     struct PendingNativeHarmony {
         armix::mixer::LiveChannelFxGraph::InstanceLease owner;
         juce::String request,channelId,deviceEpoch,revision,instanceId;
@@ -3821,6 +3830,38 @@ private:
             "arMixBuiltinGeqAck",juce::var(ack.release()));
     }
 
+    // de-Ezzer uses the existing exact graph/slot/instance lease and PCM owner.
+    auto deEzzerLease(const armix::builtin_fx::NativeFxControlRequest& r) {
+        return r.valid&&!r.unbound?engine_.leaseNativeVst3Editor(r.epoch,r.revision,
+            armix::mixer::ChannelId{r.channel},static_cast<std::size_t>(r.slot),
+            r.rawInstance.toString()):armix::mixer::LiveChannelFxGraph::InstanceLease{};
+    }
+    void emitDeEzzerReply(const char* event,const armix::builtin_fx::NativeFxControlRequest& r,
+                         bool ok,const char* key=nullptr,juce::var payload={}) {
+        auto o=std::make_unique<juce::DynamicObject>();
+        o->setProperty("requestId",r.request);o->setProperty("channelId",r.rawChannel.toString());
+        o->setProperty("deviceEpoch",r.rawEpoch.toString());o->setProperty("graphRevision",r.rawRevision.toString());
+        o->setProperty("instanceId",r.rawInstance.toString());o->setProperty("slot",r.slot);
+        o->setProperty("ok",ok);if(key)o->setProperty(key,payload);
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(event,juce::var(o.release()));
+    }
+    void servicePendingNativeDeEzzer() {
+        auto& p=pendingNativeDeEzzer_;
+        if(!p.owner)return;
+        auto* proc=dynamic_cast<armix::builtin_fx::DeEzzerProcessor*>(p.owner->processor.get());
+        armix::builtin_fx::de_ezzer::Ack ack{};
+        const bool completed=proc&&proc->pollAck(ack);
+        if(!completed&&proc&&proc->identity()==p.id) {
+            // Retain a live outstanding lease rather than pretending a timeout
+            // cancelled audio. A removed graph may abandon the old lease.
+            if(juce::Time::getMillisecondCounter()-p.started<3000u||deEzzerLease(p.request)==p.owner)return;
+        }
+        const bool matched=completed&&ack.requested==p.id&&ack.sequence==p.sequence&&
+            deEzzerLease(p.request)==p.owner;
+        emitDeEzzerReply("arMixBuiltinDeEzzerAck",p.request,matched,
+            matched?"ack":nullptr,matched?armix::builtin_fx::de_ezzer::bridge::encode(ack):juce::var{});
+        p={};
+    }
     // Native compressor readback is CONTROL-thread-only for accepted settings.
     // The gain-reduction meter is one atomic block summary from AUDIO.
     void emitNativeCompSnapshot(const juce::String& request,
@@ -6098,6 +6139,32 @@ private:
                 pendingNativeGeq_.owner?"GEQ_CONTROL_BUSY":"STALE_OR_INVALID_GEQ");
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
                 "arMixBuiltinGeqQueue",juce::var(receipt.release()));
+            return;
+        }
+
+        if(action=="nativeDeEzzerSnapshot"||action=="nativeDeEzzerSet") {
+            const auto request=armix::builtin_fx::NativeFxControlRequest::parse(
+                args,LiveDryRoutingLab::maxFxPerLane);
+            auto owner=deEzzerLease(request);
+            auto* proc=owner?dynamic_cast<armix::builtin_fx::DeEzzerProcessor*>(owner->processor.get()):nullptr;
+            if(proc&&!proc->isReady())proc=nullptr;
+            if(proc&&pendingNativeDeEzzer_.owner!=owner) {
+                // Drain a bounded orphan completion after graph replacement;
+                // never let an old UI request prevent future accepted capture.
+                armix::builtin_fx::de_ezzer::Ack abandoned;
+                for(int i=0;i<armix::builtin_fx::de_ezzer::Control::ackCapacity&&proc->pollAck(abandoned);++i){}
+            }
+            if(action=="nativeDeEzzerSnapshot") {
+                emitDeEzzerReply("arMixBuiltinDeEzzerSnapshot",request,proc!=nullptr,
+                    proc?"snapshot":nullptr,proc?armix::builtin_fx::de_ezzer::bridge::encode(proc->readback()):juce::var{});
+                return;
+            }
+            armix::builtin_fx::de_ezzer::Command command{};
+            const bool queued=proc&&!pendingNativeDeEzzer_.owner&&!nativeShowBusy_&&!studioBackupBusy_&&
+                !engine_.independentClockActive()&&proc->stateSnapshotQuiescent()&&
+                armix::builtin_fx::de_ezzer::bridge::decode(args.getProperty("command",{}),command)&&proc->queue(command);
+            if(queued)pendingNativeDeEzzer_={owner,request,command.id,command.sequence,juce::Time::getMillisecondCounter()};
+            emitDeEzzerReply("arMixBuiltinDeEzzerQueue",request,queued);
             return;
         }
 
@@ -9016,6 +9083,7 @@ private:
         servicePendingNativeEq();
         servicePendingNativeGeq();
         servicePendingNativeComp();
+        servicePendingNativeDeEzzer();
         servicePendingNativeSonKu();
         servicePendingNativeHarmony();
         servicePendingNativeThrow();

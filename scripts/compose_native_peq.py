@@ -10,6 +10,8 @@ THROW_SCRIPT='<script defer src="assets/mixer-native-vocal-throw.js?v=throw-2-fx
 SONKU_SCRIPT='<script defer src="assets/mixer-native-sonku.js?v=sonku-2-fx-recovery"></script>'
 GEQ_SCRIPT='<script defer src="assets/mixer-native-geq31.js?v=geq-v14h-centered-output"></script>'
 PRESET_SCRIPT='<script defer src="assets/mixer-builtin-fx-preset-bar.js?v=preset-shared-m4"></script>'
+DEZ_SCRIPT='<script defer src="assets/mixer-native-de-ezzer.js?v=dez-native-v1"></script>'
+DEZ_HOST_SCRIPT='<script defer src="assets/mixer-native-de-ezzer-host.js?v=dez-native-v1"></script>'
 
 PICKER_HEAD="function renderFastPicker(){"
 PICKER_FN="""function insertChosenNativeGeq(){
@@ -219,5 +221,5 @@ def apply_native_peq(html: str)->str:
         if html.count(before)!=1:
             raise ValueError('Ambiguous approved picker/editor anchor: '+before[:90])
         html=html.replace(before,after,1)
-    html=html.replace('</body>',PRESET_SCRIPT+'\n'+SCRIPT+'\n'+COMP_SCRIPT+'\n'+HARMONY_SCRIPT+'\n'+THROW_SCRIPT+'\n'+SONKU_SCRIPT+'\n'+GEQ_SCRIPT+'\n</body>',1)
+    html=html.replace('</body>',PRESET_SCRIPT+'\n'+SCRIPT+'\n'+COMP_SCRIPT+'\n'+HARMONY_SCRIPT+'\n'+THROW_SCRIPT+'\n'+SONKU_SCRIPT+'\n'+GEQ_SCRIPT+'\n'+DEZ_SCRIPT+'\n'+DEZ_HOST_SCRIPT+'\n</body>',1)
     return html

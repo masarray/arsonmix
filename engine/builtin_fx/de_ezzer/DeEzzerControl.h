@@ -39,11 +39,20 @@ public:
     bool pollTelemetry(Snapshot& snap) noexcept {return telemetry_.pop(snap);}
     bool process(float* l,float* r,int n) noexcept {
         if(!channels_||!l||n<=0||n>maxFrames||(channels_==2&&(!r||l==r)))return false;
+        consumeRealtimeEdits();
+        return processAudio(l,r,n);
+    }
+    // Existing mixer hook invokes this once before its rack bypass fast path.
+    void consumeRealtimeEdits() noexcept {
+        if(!channels_)return;
         // Reserve ACK capacity BEFORE consuming a command; never silently lose ACKs.
         for(int i=0;i<maxCommandsPerBlock&&acks_.canPush();++i){
             Command cmd;if(!commands_.pop(cmd))break;
             const auto code=apply(cmd);(void)acks_.push({cmd.id,cmd.sequence,code,snapshot()});
         }
+    }
+    bool processAudio(float* l,float* r,int n) noexcept {
+        if(!channels_||!l||n<=0||n>maxFrames||(channels_==2&&(!r||l==r)))return false;
         if(audition_==Audition::Normal&&deltaMix_==0&&detectMix_==0)core_.process(l,r,n);
         else monitor(l,r,n);
         frames_+=static_cast<unsigned>(n);
@@ -55,6 +64,8 @@ public:
         }
         return true;
     }
+    // Both owners stopped: only for host prepare/restart, never UI polling.
+    Snapshot quiescentSnapshot() const noexcept {return snapshot();}
 private:
     AckCode apply(const Command& cmd) noexcept {
         if(cmd.id!=id_)return AckCode::WrongIdentity;

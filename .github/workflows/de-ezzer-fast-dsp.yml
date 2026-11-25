@@ -5,6 +5,7 @@ on:
       - 'engine/builtin_fx/de_ezzer/**'
       - 'tools/de-ezzer/**'
       - 'site/preview-v2/assets/mixer-native-de-ezzer.js'
+      - 'site/preview-v2/assets/mixer-native-de-ezzer-host.js'
       - '.github/workflows/de-ezzer-fast-dsp.yml'
 permissions:
   contents: read
@@ -39,4 +40,6 @@ jobs:
 
       - name: Editor control regression
         if: matrix.compiler == 'g++'
-        run: node tools/de-ezzer/ui_test.cjs
+        run: |
+          node tools/de-ezzer/ui_test.cjs
+          node tools/de-ezzer/host_test.cjs

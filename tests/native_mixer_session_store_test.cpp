@@ -1188,11 +1188,12 @@ static void verifyLogicalControlTransactions() {
     assert(control.readback().getProperty("revision",{})==beforeWireMismatch);
     accept(command("logical-rename","RENAME_CHANNEL",channel,
         juce::JSON::parse(R"({"name":"Lead Vox"})")));
+    std::size_t registeredFx=0;
     for(const auto& fx:armix::builtin_fx::nativeBuiltInFx) {
         auto payload=std::make_unique<juce::DynamicObject>();
         payload->setProperty("catalogId",fx.id);
         accept(command((juce::String("logical-fx-")+fx.id).toRawUTF8(),
-            "ADD_FX_REFERENCE",bus,juce::var(payload.release())));
+            "ADD_FX_REFERENCE",registeredFx++<8?bus:channel,juce::var(payload.release())));
     }
     accept(command("logical-bypass","SET_FX_SLOT_BYPASS",bus,
         juce::JSON::parse(R"({"slot":1,"enabled":true})")));
@@ -1209,7 +1210,8 @@ static void verifyLogicalControlTransactions() {
     assert(saved.roster.find(trackId)->name=="Lead Vox");
     assert(saved.roster.find(trackId)->sends.front().destination==busId);
     assert(saved.inserts.size()==armix::builtin_fx::nativeBuiltInFx.size());
-    assert(saved.inserts[1].bypass && saved.rackBypassed.front()==busId);
+    const auto bypassed=std::find_if(saved.inserts.begin(),saved.inserts.end(),[&](const auto& f){return f.channel==busId&&f.slot==1;});
+    assert(bypassed!=saved.inserts.end()&&bypassed->bypass&&saved.rackBypassed.front()==busId);
     juce::AudioPluginFormatManager formats;
     for(const auto& insert:saved.inserts) {
         const auto state=std::find_if(states.begin(),states.end(),[&](const auto& blob){

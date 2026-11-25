@@ -350,12 +350,14 @@
     "armix.builtin.channel-compressor.v1":"ArSonMixNativeCompressor",
     "armix.builtin.arson-harmony.v1":"ArSonMixNativeHarmony",
     "armix.builtin.vocal-throw.v1":"ArSonMixNativeVocalThrow",
-    "armix.builtin.8d-sonku.v1":"ArSonMixNativeSonKu"
+    "armix.builtin.8d-sonku.v1":"ArSonMixNativeSonKu",
+    "armix.builtin.de-ezzer.v1":"ArSonMixNativeDeEzzer"
   });
   function editorSurfacePlan(snapshot,lease,{hardwareConfiguration}={}){
     if(!editorNavigationLeaseMatches(snapshot,lease,{hardwareConfiguration}))
       return {kind:"UNAVAILABLE"};
     const key=lease.catalogId;
+    if(key==="armix.builtin.de-ezzer.v1"&&lease.authority!=="CHANNEL_ID")return {kind:"UNAVAILABLE"};
     if(Object.prototype.hasOwnProperty.call(BROWSER_EDITOR_HANDLES,key))
       return {kind:"BROWSER",windowKey:BROWSER_EDITOR_HANDLES[key]};
     if(lease.authority==="LOGICAL")return {kind:"LOGICAL_VENDOR"};

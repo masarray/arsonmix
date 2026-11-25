@@ -8,6 +8,7 @@
 #include "../engine/builtin_fx/VocalThrowProcessor.h"
 #include "../engine/builtin_fx/GuitarRigEditor.h"
 #include "../engine/builtin_fx/SonKuSpatialProcessor.h"
+#include "../engine/builtin_fx/DeEzzerProcessor.h"
 #if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
 #include "../engine/builtin_fx/ImerSipP92Processor.h"
 #endif
@@ -105,7 +106,12 @@ inline constexpr std::array nativeBuiltInFx{
         "NATIVE_GFX_HOST_UNAVAILABLE","NATIVE_GFX_DEVICE_CHANGED",
         "NATIVE_GFX_UNSUPPORTED_AUDIO_FORMAT","NATIVE_GFX_PREPARE_REJECTED",
         "NATIVE_GFX_PREPARE_EXCEPTION","Saved Guitar FX Rig state rejected; graph unchanged",
-        prepareNativeBuiltInFx<GuitarRigProcessor>}
+        prepareNativeBuiltInFx<GuitarRigProcessor>},
+    NativeBuiltInFx{DeEzzerProcessor::catalogIdentity,"de-Ezzer","Dynamics",true,44100.,96000.,
+        "NATIVE_DEZ_HOST_UNAVAILABLE","NATIVE_DEZ_DEVICE_CHANGED",
+        "NATIVE_DEZ_UNSUPPORTED_AUDIO_FORMAT","NATIVE_DEZ_PREPARE_REJECTED",
+        "NATIVE_DEZ_PREPARE_EXCEPTION","Saved de-Ezzer state rejected; graph unchanged",
+        prepareNativeBuiltInFx<DeEzzerProcessor>}
 };
 
 // Compile-time registration contract: one stable catalog identity per FX,
