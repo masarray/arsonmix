@@ -38,6 +38,19 @@ jobs:
       - name: Regression
         run: ctest --test-dir /tmp/de-ezzer-build --output-on-failure
 
+      - name: Release callback profile (informational, not ASIO FAT)
+        if: matrix.compiler == 'g++'
+        run: |
+          cmake -S tools/de-ezzer -B /tmp/de-ezzer-build -DDE_EZZER_BENCHMARK=ON
+          cmake --build /tmp/de-ezzer-build --target de_ezzer_rt_profile
+          /tmp/de-ezzer-build/de_ezzer_rt_profile | tee /tmp/de-ezzer-profile.txt
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        if: matrix.compiler == 'g++' && success()
+        with:
+          name: de-ezzer-release-callback-profile
+          path: /tmp/de-ezzer-profile.txt
+          retention-days: 7
       - name: Editor control regression
         if: matrix.compiler == 'g++'
         run: |
