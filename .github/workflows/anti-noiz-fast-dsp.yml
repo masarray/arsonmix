@@ -86,6 +86,18 @@ jobs:
           "$RUNNER_TEMP/anti-noiz-spectral-baseline" --report-only
           echo "Spectral candidate:"
           "$RUNNER_TEMP/anti-noiz/anti_noiz_spectral_pcm_test" --report-only
+      - name: Checkout exact pre-RT-optimization reference (opt-in)
+        if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
+        uses: actions/checkout@v4
+        with:
+          ref: 5e70bb38662370e4e6644d075ac61b1bea95289d
+          path: .anti-noiz-rt-reference
+          persist-credentials: false
+      - name: Matched allocation, PCM parity and callback timing (opt-in)
+        if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
+        run: |
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -DANTI_NOIZ_ALLOC_PROBE=1 -I .anti-noiz-rt-reference/engine/builtin_fx/anti_noiz tools/anti-noiz/rt_qualify.cpp -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free,--wrap=aligned_alloc,--wrap=posix_memalign -o "$RUNNER_TEMP/anti-noiz-rt-baseline"
+          python3 tools/anti-noiz/compare_rt.py "$RUNNER_TEMP/anti-noiz-rt-baseline" "$RUNNER_TEMP/anti-noiz/anti_noiz_rt_qualify"
       - name: Opt-in recorded audio smoke (local WAVs, no upload)
         if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
         run: python3 tools/anti-noiz/recorded_smoke.py "$RUNNER_TEMP/anti-noiz/anti_noiz_qualify" "$RUNNER_TEMP/anti-noiz-recorded-smoke" --compare-an03f

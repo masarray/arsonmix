@@ -72,3 +72,17 @@ anti_noiz_target(anti_noiz_spectral_pcm_test tests/anti_noiz_spectral_pcm_test.c
 target_include_directories(anti_noiz_spectral_pcm_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
 add_test(NAME AntiNoizSpectralPCM COMMAND anti_noiz_spectral_pcm_test)
 set_tests_properties(AntiNoizSpectralPCM PROPERTIES TIMEOUT 60)
+
+# Linux-only standalone allocation instrumentation, never part of native FX.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  anti_noiz_target(anti_noiz_rt_qualify tools/anti-noiz/rt_qualify.cpp)
+  target_include_directories(anti_noiz_rt_qualify PRIVATE "${ROOT}/engine/builtin_fx/anti_noiz")
+  if(NOT ANTI_NOIZ_SANITIZERS)
+    target_compile_definitions(anti_noiz_rt_qualify PRIVATE ANTI_NOIZ_ALLOC_PROBE=1)
+    foreach(symbol malloc calloc realloc free aligned_alloc posix_memalign)
+      target_link_options(anti_noiz_rt_qualify PRIVATE "-Wl,--wrap=${symbol}")
+    endforeach()
+  endif()
+  add_test(NAME AntiNoizRTStress COMMAND anti_noiz_rt_qualify --stress)
+  set_tests_properties(AntiNoizRTStress PROPERTIES TIMEOUT 60)
+endif()

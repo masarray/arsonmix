@@ -46,6 +46,9 @@ public:
         if(!std::isfinite(rate)||rate<44100.||rate>96000.||channels<1||channels>2||static_cast<unsigned>(role)>4U) return false;
         sourceRole_=role;effectiveMode_=resolveMode(settings_.mode,sourceRole_);
         rate_=rate; channels_=channels; n_=rate>48000.?512:256; hop_=n_/2;
+        // Both supported FFT sizes are powers of two. The same ring index
+        // can be formed without integer division in each WOLA sample loop.
+        ringMask_=n_-1;
         for(int i=0;i<n_;++i) {
             win_[i]=std::sqrt(0.5f-0.5f*std::cos(2.f*std::numbers::pi_v<float>*float(i)/float(n_)));
         }
@@ -121,7 +124,7 @@ private:
     void renderUnity() noexcept {
         // Algebraically equivalent unity WOLA, with the same delay and overlap.
         for(int c=0;c<channels_;++c)for(int i=0;i<n_;++i) {
-            const int j=(pos_+i)%n_;
+            const int j=(pos_+i)&ringMask_;
             out_[c][j]+=in_[c][j]*win_[i]*win_[i];
         }
         mask_.fill(1); expansion_=1;
@@ -132,7 +135,7 @@ private:
         }
         const int bins=hop_+1;
         for(int c=0;c<channels_;++c) {
-            for(int i=0;i<n_;++i)work_[c][i]={in_[c][(pos_+i)%n_]*win_[i],0};
+            for(int i=0;i<n_;++i)work_[c][i]={in_[c][(pos_+i)&ringMask_]*win_[i],0};
             fft_.transform(work_[c],false);
             for(int k=0;k<bins;++k) {
                 power_[c][k]=std::norm(work_[c][k]);
@@ -188,14 +191,14 @@ private:
                 if(k>0&&k<hop_)work_[c][n_-k]*=g;
             }
             fft_.transform(work_[c],true);
-            for(int i=0;i<n_;++i)out_[c][(pos_+i)%n_]+=work_[c][i].real()*win_[i];
+            for(int i=0;i<n_;++i)out_[c][(pos_+i)&ringMask_]+=work_[c][i].real()*win_[i];
         }
     }
     Settings settings_{};
     SourceRole sourceRole_=SourceRole::Unknown;
     Mode effectiveMode_=Mode::AutoProtect;
     double rate_=48000.;
-    int channels_=0,n_=256,hop_=128,pos_=0,ticks_=0;
+    int channels_=0,n_=256,hop_=128,ringMask_=255,pos_=0,ticks_=0;
     bool ready_=false;
     float expansion_=1;
     std::array<float,maxN> win_{};
