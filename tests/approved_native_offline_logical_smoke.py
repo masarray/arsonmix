@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import tempfile
 from playwright.sync_api import sync_playwright
+from native_event_fixture import NATIVE_EVENTS
 from approved_floating_fx_component_harness import project_approved_editor_for_component_smoke
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -107,10 +108,10 @@ def main():
         page=browser.new_page(viewport={"width":1366,"height":768})
         errors=[]
         page.on("pageerror",lambda error:errors.append(str(error)))
-        page.add_init_script("""window.__nativeListeners=new Map();window.__events=[];
+        page.add_init_script(NATIVE_EVENTS + """window.__events=[];
           window.__JUCE__={backend:{
              emitEvent(name,payload){window.__events.push({name,payload});},
-             addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+             ...window.__nativeListenerMethods
           }};""")
         page.goto((out/"index.html").as_uri())
         page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
@@ -309,10 +310,10 @@ def main():
         # of the saved-document SET_SEND_TAP. Test the actual compiled GUI.
         page=browser.new_page(viewport={"width":1366,"height":768})
         page.on("pageerror",lambda error:errors.append(str(error)))
-        page.add_init_script("""window.__nativeListeners=new Map();window.__events=[];
+        page.add_init_script(NATIVE_EVENTS + """window.__events=[];
           window.__JUCE__={backend:{
              emitEvent(name,payload){window.__events.push({name,payload});},
-             addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+             ...window.__nativeListenerMethods
           }};""")
         page.goto((out/"index.html").as_uri())
         page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
@@ -381,10 +382,10 @@ def main():
         # authorize editing an outdated disk mirror or report PCM admitted.
         page=browser.new_page(viewport={"width":1366,"height":768})
         page.on("pageerror",lambda error:errors.append(str(error)))
-        page.add_init_script("""window.__nativeListeners=new Map();window.__events=[];
+        page.add_init_script(NATIVE_EVENTS + """window.__events=[];
           window.__JUCE__={backend:{
              emitEvent(name,payload){window.__events.push({name,payload});},
-             addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+             ...window.__nativeListenerMethods
           }};""")
         page.goto((out/"index.html").as_uri())
         page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")

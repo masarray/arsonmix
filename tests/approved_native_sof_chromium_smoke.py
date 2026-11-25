@@ -14,6 +14,7 @@ from pathlib import Path
 import tempfile
 
 from playwright.sync_api import sync_playwright
+from native_event_fixture import NATIVE_EVENTS
 from approved_native_wire_gain_smoke import MAIN, RECEIVER, SEND, SOURCE, ack, emit, snapshot
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,12 +61,12 @@ def exercise(browser, out, width, height):
     page = browser.new_page(viewport={"width":width, "height":height})
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
-    page.add_init_script("""window.__nativeListeners=new Map();window.__nativeIntents=[];
+    page.add_init_script(NATIVE_EVENTS + """window.__nativeIntents=[];
       window.__JUCE__={backend:{
         emitEvent(name,payload){
           if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);
         },
-        addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+        ...window.__nativeListenerMethods
       }};""")
     page.goto((out/"index.html").as_uri())
     page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled", timeout=15000)

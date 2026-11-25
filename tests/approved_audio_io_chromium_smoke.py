@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 from playwright.sync_api import sync_playwright
+from native_event_fixture import NATIVE_EVENTS
 from approved_native_wire_gain_smoke import snapshot, emit, SOURCE, open_verified_audio_io, verify_external_output
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -15,13 +16,15 @@ import build_approved_native_gui as bundle
 def verify_custom_input(page,out):
     errors=[]
     page.on("pageerror",lambda e:errors.append(str(e)))
-    page.add_init_script("""window.__nativeListeners=new Map();window.__actions=[];
+    page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
       window.__JUCE__={backend:{
         emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
-        addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+        ...window.__nativeListenerMethods
       }};""")
     page.goto((out/"index.html").as_uri())
     page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+    # Mixer + Anti Noiz may subscribe to the same real JUCE event.
+    assert page.evaluate("()=>window.__nativeListenerCount('arMixConsoleSnapshot')") >= 2
     state=snapshot()
     state["productionCallbackLive"]=True
     state["device"].update(backend="ASIO",captureDevice="Test ASIO",playbackDevice="Test ASIO",
@@ -165,11 +168,11 @@ def toggle_then_snapshot(page, title, state):
 def verify_logical_inputs(page,out):
     errors=[]
     page.on("pageerror",lambda e:errors.append(str(e)))
-    page.add_init_script("""window.__nativeListeners=new Map();window.__actions=[];
+    page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
       window.confirm=()=>true;
       window.__JUCE__={backend:{
         emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
-        addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+        ...window.__nativeListenerMethods
       }};""")
     page.goto((out/"index.html").as_uri())
     page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
@@ -231,11 +234,11 @@ def verify_logical_inputs(page,out):
 def verify_bus_remap(page,out):
     errors=[]
     page.on("pageerror",lambda e:errors.append(str(e)))
-    page.add_init_script("""window.__nativeListeners=new Map();window.__actions=[];
+    page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
       window.confirm=()=>true;
       window.__JUCE__={backend:{
         emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
-        addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+        ...window.__nativeListenerMethods
       }};""")
     page.goto((out/"index.html").as_uri())
     page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
@@ -293,11 +296,11 @@ def verify_bus_remap(page,out):
 def verify_logical_outputs(page,out):
     errors=[]
     page.on("pageerror",lambda e:errors.append(str(e)))
-    page.add_init_script("""window.__nativeListeners=new Map();window.__actions=[];
+    page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
       window.confirm=()=>true;
       window.__JUCE__={backend:{
         emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
-        addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+        ...window.__nativeListenerMethods
       }};""")
     page.goto((out/"index.html").as_uri())
     page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
@@ -382,11 +385,11 @@ def verify_logical_outputs(page,out):
 def verify_io_defaults(page,out):
     errors=[]
     page.on("pageerror",lambda e:errors.append(str(e)))
-    page.add_init_script("""window.__nativeListeners=new Map();window.__actions=[];
+    page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
       window.confirm=()=>true;
       window.__JUCE__={backend:{
         emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
-        addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+        ...window.__nativeListenerMethods
       }};""")
     page.goto((out/"index.html").as_uri())
     page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")

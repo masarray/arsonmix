@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+from native_event_fixture import NATIVE_EVENTS
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -26,10 +27,10 @@ def main():
             page = browser.new_page(viewport={"width": width, "height": height})
             errors = []
             page.on("pageerror", lambda err: errors.append(str(err)))
-            page.add_init_script("""window.__nativeListeners=new Map();window.__events=[];
+            page.add_init_script(NATIVE_EVENTS + """window.__events=[];
                 window.__JUCE__={backend:{
                     emitEvent(name,payload){window.__events.push({name,payload});},
-                    addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+                    ...window.__nativeListenerMethods
                 }};""")
             page.goto((dst / "index.html").as_uri())
             page.wait_for_function("""()=>document.documentElement.classList.contains('armix-native-desktop') &&
