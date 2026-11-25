@@ -9683,8 +9683,11 @@ private:
         if(std::any_of(floatingBuiltinFx_.begin(),floatingBuiltinFx_.end(),[](const auto& held){
             return held && held->window && held->window->isVisible();
         }))return; // no interruption of an active offline editor
-        if((immersibEditorWindow_&&immersibEditorWindow_->isVisible()) ||
-           (editorWindow_&&editorWindow_->isVisible()))return;
+        // Keep ordinary VST editor recovery protection in every build.
+        if(editorWindow_&&editorWindow_->isVisible())return;
+#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
+        if(immersibEditorWindow_&&immersibEditorWindow_->isVisible())return;
+#endif
         const auto now=monotonicMilliseconds(),epoch=engine_.dryRoutingLabEpoch();
         const auto callbacks=engine_.directCallbackCount();
         if(offlineReturnEpoch_!=epoch) {

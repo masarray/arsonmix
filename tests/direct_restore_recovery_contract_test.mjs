@@ -136,3 +136,14 @@ test('ASIO/WASAPI DIRECT authorizes the exact active input/output channel map',(
   assert.ok(!callback.includes('fingerprint(') && !callback.includes('toString (16)'));
   assert.ok(cmake.includes('P0AsioLiveDirectRouteFence'));
 });
+
+test('offline recovery editor guard compiles with ImmerSIB feature disabled',()=>{
+  const start=main.indexOf('void serviceRetainedOfflineRecovery()');
+  const end=main.indexOf('const auto now=monotonicMilliseconds()',start);
+  assert.ok(start>=0 && end>start);
+  const guard=main.slice(start,end);
+  assert.match(guard,/if\(editorWindow_&&editorWindow_->isVisible\(\)\)return;/);
+  const feature=/#if defined\(ARMIX_IMMERSIB_RELEASE_CANDIDATE\) && ARMIX_IMMERSIB_RELEASE_CANDIDATE\s*if\(immersibEditorWindow_&&immersibEditorWindow_->isVisible\(\)\)return;\s*#endif/;
+  assert.match(guard,feature);
+  assert.doesNotMatch(guard.replace(feature,''),/immersibEditorWindow_/);
+});
