@@ -488,8 +488,11 @@ test('acknowledged one-click upgrade is deferred until the exact candidate is ap
 
 test('GUI-only updater probe does not strand pre-window WebView2 startup failures', () => {
   const native = read('src/Main.cpp');
-  const startup = native.slice(native.indexOf('void initialise (const juce::String&) override'),
-                               native.indexOf('void shutdown() override', native.indexOf('void initialise (const juce::String&) override')));
+  const app=native.indexOf('class ConsoleApp final');
+  const init=native.indexOf('void initialise (const juce::String& commandLine) override',app);
+  const shutdown=native.indexOf('void shutdown() override',init);
+  assert.ok(app>=0&&init>app&&shutdown>init);
+  const startup=native.slice(init,shutdown);
   const failures = [
     'Cannot create the browser-cache folder:',
     'The native browser backend could not be initialized on this machine.'
@@ -513,7 +516,7 @@ test('silent post-install GUI probe cannot automatically arm ASIO or save a user
   assert.match(main.slice(guard,engine), /return;\s*\}\s*auto saved/);
   assert.match(main, /if \(!updaterProbeMode_ &&\s*\(static_cast<bool>\(lab\.getProperty/);
   assert.match(main, /if \(!isAutoUpdateHealthProbe\(\)\)\s*launchSmartUpdater \(false\)/);
-  assert.match(main, /if \(!innoIsClosing && !isAutoUpdateHealthProbe\(\) &&/);
+  assert.match(main, /if \(!recoveryOnly_ && !innoIsClosing && !isAutoUpdateHealthProbe\(\) &&/);
   assert.match(main, /updateProbeCompleteTick_ >= 3500u/);
   assert.match(updater, /GUI_READY_NO_AUDIO/);
   assert.match(updater, /PREVIOUS_EXE_RETAINED_FOR_NEXT_MANUAL_LAUNCH/);
@@ -568,4 +571,24 @@ test('P0 Windows 10 fresh install needs no VC redistributable and reports missin
   assert.match(pe,/vcruntime/);
   assert.match(pe,/msvcp/);
   assert.match(pe,/WEBVIEW2_RUNTIME_REQUIRED_SEPARATELY_NOT_PROVEN/);
+});
+
+
+test("cold-start mixer archive requires confirmation and bypasses normal startup and updater",()=>{
+  const main=read("src/Main.cpp"),store=read("src/NativeMixerSessionStore.h"),iss=read("installer/ArSonMix.iss");
+  const at=main.indexOf('if(commandLine.trim()=="--archive-mixer-session" && !isAutoUpdateHealthProbe())');
+  const end=main.indexOf('// Paint the approved dark native splash',at);
+  assert.ok(at>0&&end>at);
+  const recovery=main.slice(at,end);
+  assert.match(recovery,/recoveryOnly_=true/);
+  assert.match(recovery,/\.withButton\("Cancel"\)\.withButton\("Archive session"\)/);
+  assert.match(recovery,/if\(choice!=1\)\{systemRequestedQuit\(\);return;\}/);
+  assert.match(recovery,/quarantineForStartupRecovery\(archived\)/);
+  assert.match(recovery,/\}\);\s*return;\s*\}/);
+  assert.doesNotMatch(recovery,/engine_\.start|startTimer|make_unique<ConsoleWindow>|launchSmartUpdater/);
+  const method=store.slice(store.indexOf("juce::String quarantineForStartupRecovery"),store.indexOf("static constexpr juce::int64 maxJson"));
+  assert.match(method,/root_\.getSiblingFile\("MixerSession-Recovery-"\+id\)/);
+  assert.match(method,/!root_\.moveFileTo\(target\)/);
+  assert.doesNotMatch(method,/deleteRecursively|deleteFile|commit\(/);
+  assert.match(iss,/Parameters: "--archive-mixer-session"/);
 });
