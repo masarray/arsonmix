@@ -7268,3 +7268,17 @@ test("RTR closes affected inline FX editors before rack mutation",()=>{
  assert.match(b,/affected\.has\(String\(owner\.lease\.channelId\)\)/);
  assert.match(b,/bypassOwners\.delete\(root\)/);
 });
+
+
+test("RTR live New Project requires verified archive before native replacement",()=>{
+ const m=read("src/Main.cpp"),w=read("src/NativeMixerSessionSaveWorker.h"),b=read("web/approved-native-bridge.js");
+ const reset=m.slice(m.indexOf("void createLiveSession("),m.indexOf("void createOfflineSession("));
+ assert.match(reset,/liveNewSessionLeaseMatches\(args\)/);
+ assert.ok(reset.indexOf("mixerSessionWorker_.save(")<reset.indexOf("restoreNativeMixerSession("));
+ assert.match(reset,/Codec::encode\(current\)!=expected/);
+ assert.match(reset,/setMonitorEnabled\(false\)/);
+ assert.doesNotMatch(reset,/setMonitorEnabled\(true\)/);
+ assert.match(w,/verifyExportArchive_/);
+ assert.match(w,/Session archive readback mismatch/);
+ assert.match(b,/action:"nativeMixerNewLive",confirmed:true/);
+});

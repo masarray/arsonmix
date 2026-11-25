@@ -38,11 +38,13 @@ public:
     }
     bool save(juce::File studio,MixerSessionDocument document,
               std::vector<armix::shows::BinaryState> binary,
-              Completion completion,juce::File exportFile={},NativeMixerSessionStore::ArchiveMode archiveMode=NativeMixerSessionStore::ArchiveMode::none) {
+              Completion completion,juce::File exportFile={},NativeMixerSessionStore::ArchiveMode archiveMode=NativeMixerSessionStore::ArchiveMode::none,
+              bool verifyExportArchive=false) {
         if(busy_.exchange(true,std::memory_order_acq_rel))return false;
         studio_=std::move(studio);
         exportFile_=std::move(exportFile);
         archiveMode_=archiveMode;
+        verifyExportArchive_=verifyExportArchive;
         doc_=std::move(document);
         states_=std::move(binary);
         done_=std::move(completion);
@@ -51,6 +53,7 @@ public:
     bool load(juce::File file,ReadCompletion completion) {
         if(busy_.exchange(true,std::memory_order_acq_rel))return false;
         archiveMode_=NativeMixerSessionStore::ArchiveMode::none;
+        verifyExportArchive_=false;
         exportFile_=std::move(file);
         readDone_=std::move(completion);
         return start();
@@ -70,6 +73,22 @@ private:
         try {
             NativeMixerSessionStore store(studio_);
             if(readDone_)error=NativeMixerSessionStore::readFile(exportFile_,doc_,states_);
+            else if(verifyExportArchive_) {
+                if(exportFile_==juce::File{} || exportFile_.exists() ||
+                   exportFile_.getParentDirectory().createDirectory().failed())
+                    error="Cannot create a unique session archive";
+                else {
+                    error=NativeMixerSessionStore::writeFile(exportFile_,doc_,states_);
+                    if(error.isEmpty()) {
+                        MixerSessionDocument verified;
+                        std::vector<armix::shows::BinaryState> verifiedStates;
+                        error=NativeMixerSessionStore::readFile(exportFile_,verified,verifiedStates);
+                        doc_.resumeMain.reset();
+                        if(error.isEmpty() && Codec::encode(doc_)!=Codec::encode(verified))
+                            error="Session archive readback mismatch";
+                    }
+                }
+            }
             else error=archiveMode_!=NativeMixerSessionStore::ArchiveMode::none?
                 store.commitNewSession(doc_,states_,archiveMode_):
                 exportFile_==juce::File{}?store.commit(doc_,states_):
@@ -113,6 +132,7 @@ private:
     Completion done_;
     ReadCompletion readDone_;
     NativeMixerSessionStore::ArchiveMode archiveMode_=NativeMixerSessionStore::ArchiveMode::none;
+    bool verifyExportArchive_=false;
     unsigned serial_=0;
     std::atomic<bool> busy_{false};
     std::shared_ptr<std::atomic<bool>> alive_=

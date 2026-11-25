@@ -4435,20 +4435,33 @@
     });
     backend.addEventListener("arMixNativeSessionAck",ack=>{
       const save=ack?.operation==="SAVE";
-      if(!save&&ack?.operation!=="OPEN"&&ack?.operation!=="NEW"&&ack?.operation!=="RESET_IO"&&ack?.operation!=="ARCHIVE")return;
+      if(!save&&ack?.operation!=="OPEN"&&ack?.operation!=="NEW"&&ack?.operation!=="NEW_LIVE"&&ack?.operation!=="RESET_IO"&&ack?.operation!=="ARCHIVE")return;
       if(ack.ok!==true){
         const error=String(ack.error||"Mixer file operation failed");
         status(error);nativeToast(error);
         return;
       }
-      const message=save?"Mixer saved as .smix":ack.operation==="NEW"?"New offline mixer saved · output remains muted":ack.operation==="RESET_IO"?"I/O defaults restored · mixer and FX retained":ack.operation==="ARCHIVE"?"Archived mixer opened · output remains muted":"Mixer opened";
+      const message=save?"Mixer saved as .smix":ack.operation==="NEW_LIVE"?"New mixer active · previous project archived · output muted":ack.operation==="NEW"?"New offline mixer saved · output remains muted":ack.operation==="RESET_IO"?"I/O defaults restored · mixer and FX retained":ack.operation==="ARCHIVE"?"Archived mixer opened · output remains muted":"Mixer opened";
       status(message);nativeToast(message);
       if(!save)controller?.subscribe();
     });
     const newSessionButtons=[["New Project · empty mixer","EMPTY"],["New from I/O defaults","DEFAULT"],["Reset I/O to defaults","RESET_IO"]].map(([label,mode])=>{
       const button=item("button","tool",label);
-      button.title="Offline only · previous checkpoint archived in Studio/SessionArchive";
+      button.title=mode==="EMPTY"?"Start fresh · previous mixer archived, output muted":"Offline only · previous checkpoint archived in Studio/SessionArchive";
       button.addEventListener("click",()=>{
+        const current=controller?.state()?.current;
+        if(mode==="EMPTY"&&!logicalView&&current?.admitted){
+          if(current.raw?.liveNewSessionAvailable!==true){
+            nativeToast("Finish current operations before New Project");return;
+          }
+          if(!window.confirm("Start a new mixer? The current project is archived first. Output will remain muted."))return;
+          inlineFxClip?.closeRackEditors();
+          backend.emitEvent("arMixAction",{action:"nativeMixerNewLive",confirmed:true,
+            deviceEpoch:current.device.epoch,graphRevision:current.graph.revision,
+            rosterRevision:current.graph.rosterRevision});
+          status("Archiving current mixer · preparing New Project");
+          return;
+        }
         if(!logicalView||pendingLogical||hardware?.raw?.offlineNewSessionAvailable!==true){
           nativeToast("Disconnect audio and finish mixer operations before New Session");return;
         }

@@ -18,3 +18,7 @@ Owner requests: Apply Pins closes, direct Delete Track, close moved FX editor, c
 Research: https://www.image-line.com/fl-studio-learning/fl-studio-online-manual/html/mixer_iorouting.htm ; https://support.presonus.com/hc/en-us/articles/4411297438733-Revelator-io24-Livestream-with-Studio-One-on-Windows ; https://support.presonus.com/hc/en-us/articles/210041503-Studio-One-Creating-a-song-from-an-Empty-Template-Part-1 ; https://steinbergmedia.github.io/vst3_dev_portal/pages/FAQ/Processing.html . 
 
 Validation: focused source contracts updated; actual Node/Windows/FAT not run by author. Keep canonical #899 untouched during qualification. Reconcile exact common-base hunks and run relevant tests before merge.
+
+## Follow-up implementation
+- Inline built-in editor ownership now includes GEQ and closes the affected source/destination racks before native MOVE/REMOVE intent.
+- New Project now also has a live native path for admitted direct devices: stop/mute, capture current project, create and verify unique archive on the existing IO worker, recheck device/graph/roster and exact mixer/plugin state, restore the existing fresh logical workspace through native binding, request normal durable checkpoint. No auto-arm. A failed archive or changed state rejects replacement; old project remains. A checkpoint start failure after successful replacement is reported, with old archive preserved. Requires Windows build, UI and hardware qualification. No claim of tested live reset.
