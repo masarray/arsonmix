@@ -60,14 +60,17 @@ public:
     }
 
     bool open(MixerSessionDocument doc,std::vector<shows::BinaryState> states,
-              Completion completion) {
+              Completion completion,bool archiveCurrent=false) {
         if(worker_.busy())return false;
+        if(archiveCurrent && readOnly_){completion("Recover the damaged checkpoint first");return true;}
+        if(archiveCurrent)doc.resumeMain.reset();
         auto candidate=std::make_shared<Workspace>();
         if(!candidate->load(std::move(doc),std::move(states))) {
             completion("Saved logical routing is invalid or cyclic");
             return true;
         }
-        return commit(std::move(candidate),std::move(completion));
+        return commit(std::move(candidate),std::move(completion),archiveCurrent?
+            NativeMixerSessionStore::ArchiveMode::reopenArchive:NativeMixerSessionStore::ArchiveMode::none);
     }
 
     // A new offline session uses a fresh roster, workspace token and ID.

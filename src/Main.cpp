@@ -1310,6 +1310,7 @@ private:
                  "nativeExternalCh1ProcessingCount",
                  "nativeFxActivityComplete",
                  "callbackCount", "callbackTimingScope", "callbackBudgetBuckets",
+                 "footerProcessCpuPercent", "footerCpuProvenance",
                  "callbackBudgetBucketProvenance", "callbackBudgetSamples",
                  "callbackP95BudgetUpperPct", "callbackP99BudgetUpperPct",
                  "slowCallbackCount", "overBudgetCount", "callbackGapCount",
@@ -5008,12 +5009,17 @@ private:
         return {};
     }
 
-    void openMixerFile(const juce::File& file) {
+    void openMixerFile(const juce::File& file,bool archived=false,
+                       juce::String archiveToken={},std::uint64_t archiveRevision=0) {
+        if(archived && (!canCreateOfflineSession() ||
+            logicalMixer_.workspace().workspaceToken()!=archiveToken ||
+            logicalMixer_.workspace().revision()!=archiveRevision))
+            return emitMixerSessionAck("ARCHIVE","Offline session changed; select the archive again");
         if(pendingRetainedFxCapture_)return emitMixerSessionAck("OPEN","Offline mixer workspace is preparing");
         autoMainEpoch_=0;
         const auto chosenEpoch=engine_.dryRoutingLabEpoch();
         auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
-        if(!mixerSessionWorker_.load(file,[safe,chosenEpoch,file](juce::String error,
+        if(!mixerSessionWorker_.load(file,[safe,chosenEpoch,file,archived,archiveToken,archiveRevision](juce::String error,
                 armix::session::MixerSessionDocument doc,
                 std::vector<armix::shows::BinaryState> states) {
             if(safe==nullptr)return;
@@ -5037,6 +5043,12 @@ private:
             const auto decision=Recovery::planOpen(opening);
             if(error.isEmpty() && decision.action==Recovery::OpenAction::reject)
                 error=decision.error;
+            if(archived && (!safe->canCreateOfflineSession() ||
+                safe->logicalMixer_.workspace().workspaceToken()!=archiveToken ||
+                safe->logicalMixer_.workspace().revision()!=archiveRevision ||
+                decision.action!=Recovery::OpenAction::openLogical))
+                error="Offline session changed; select the archive again";
+            if(archived && error.isNotEmpty())return safe->emitMixerSessionAck("ARCHIVE",error);
             const auto importedHotkeys=doc.hotkeys;
             const auto importedId=doc.id;
             if(error.isEmpty() && decision.action==Recovery::OpenAction::openLogical) {
@@ -5044,7 +5056,7 @@ private:
                 // document. Never demand audio hardware or instantiate VST3
                 // just to inspect and edit a saved mixer.
                 if(!safe->logicalMixer_.open(std::move(doc),std::move(states),
-                        [safe,file,importedHotkeys,importedId](juce::String openError){
+                        [safe,file,importedHotkeys,importedId,archived](juce::String openError){
                     if(safe==nullptr)return;
                     if(openError.isEmpty()) {
                         // Explicit saved-session Open supersedes the previous
@@ -5057,11 +5069,17 @@ private:
                         const auto keyError=safe->hotkeys_.activateSession(importedId,&importedHotkeys);
                         if(keyError.isNotEmpty())safe->emitNotice("Hotkey import: "+keyError,true);
                         safe->mixerSessionStatus_="LOGICAL_SESSION_OPENED_UNBOUND";
-                        safe->lastMixerFile_=file;
+                        safe->lastMixerFile_=archived?juce::File{}:file;
+                        if(archived){
+                            safe->operatorOutputMuted_=true;
+                            safe->engine_.setMonitorEnabled(false);
+                            safe->closeAllPluginEditors();
+                            safe->stopOrbit();
+                        }
                     }
-                    safe->emitMixerSessionAck("OPEN",openError);
+                    safe->emitMixerSessionAck(archived?"ARCHIVE":"OPEN",openError);
                     if(openError.isEmpty())safe->emitApprovedNativeSnapshot();
-                }))safe->emitMixerSessionAck("OPEN","Mixer session IO worker unavailable");
+                },archived))safe->emitMixerSessionAck(archived?"ARCHIVE":"OPEN","Mixer session IO worker unavailable");
                 return;
             }
             // Physical Open may construct vendor DLLs inside the logical FX
@@ -5119,7 +5137,7 @@ private:
             if(error.isNotEmpty()&&explicitRecovery&&!hadPreviousCrashEvidence)
                 (void)explicitRecovery->complete();
             safe->emitMixerSessionAck("OPEN",error);
-        }))emitMixerSessionAck("OPEN","Mixer file operation already in progress");
+        }))emitMixerSessionAck(archived?"ARCHIVE":"OPEN","Mixer file operation already in progress");
     }
 
     void chooseNamedIoProfile(const juce::var& args) {
@@ -5183,31 +5201,36 @@ private:
             });
     }
 
-    void chooseMixerFile(bool save) {
+    void chooseMixerFile(bool save,bool archived=false) {
+        if(archived && (!canCreateOfflineSession() ||
+            !armix::session::NativeMixerSessionStore(settingsDirectory()).archiveDirectory().isDirectory()))
+            return emitMixerSessionAck("ARCHIVE","No offline session archive available");
+        const auto archiveToken=logicalMixer_.workspace().workspaceToken();
+        const auto archiveRevision=logicalMixer_.workspace().revision();
         if(logicalVendorEditor_)return emitMixerSessionAck(save?"SAVE":"OPEN",
             "Close the vendor FX editor to save its settings first");
         if(mixerFileDialogOpen_)return;
         const auto operation=save?"SAVE":"OPEN";
         if(mixerSessionWorker_.busy()||nativeShowBusy_||studioBackupBusy_)
             return emitMixerSessionAck(operation,"Mixer file operation already in progress");
-        auto start=lastMixerFile_;
+        auto start=archived?armix::session::NativeMixerSessionStore(settingsDirectory()).archiveDirectory():lastMixerFile_;
         if(start==juce::File{}) {
             start=juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
             if(save)start=start.getChildFile("Mixer.smix");
         }
         mixerFileDialogOpen_=true;
         mixerFileChooser_=std::make_unique<juce::FileChooser>(
-            save?"Save mixer":"Open mixer",start,"*.smix",true);
+            archived?"Open archived mixer":save?"Save mixer":"Open mixer",start,"*.smix",true);
         using BrowserFlags=juce::FileBrowserComponent;
         mixerFileChooser_->launchAsync(BrowserFlags::canSelectFiles |
             (save?(BrowserFlags::saveMode|BrowserFlags::warnAboutOverwriting):BrowserFlags::openMode),
-            [safe=juce::Component::SafePointer<ConsoleWindow>(this),save,operation]
+            [safe=juce::Component::SafePointer<ConsoleWindow>(this),save,operation,archived,archiveToken,archiveRevision]
             (const juce::FileChooser& picker) {
                 if(safe==nullptr)return;
                 safe->mixerFileDialogOpen_=false;
                 auto file=picker.getResult();
                 if(file==juce::File{})return;
-                if(!save)return safe->openMixerFile(file);
+                if(!save)return safe->openMixerFile(file,archived,archiveToken,archiveRevision);
                 if(!file.hasFileExtension(".smix"))
                     return safe->emitMixerSessionAck(operation,"Use the .smix file extension");
                 safe->lastMixerFile_=file;
@@ -8429,6 +8452,10 @@ private:
             return;
         }
 
+        if(action=="nativeMixerOpenArchive") {
+            chooseMixerFile(false,true);
+            return;
+        }
         if(action=="nativeMixerNewOffline") {
             createOfflineSession(args);
             return;
@@ -10148,7 +10175,13 @@ private:
         // no duplicate engine_.status() and NO second 1 Hz GUI snapshot.
         if (timerTicks_ % 12 == 0 && !browser_.loaded)
         {
-            const auto health = engine_.status();
+            auto health = engine_.status();
+            const auto cpu=sampleFooterHostCpuPercent();
+            if(!cpu.isVoid()){
+                health.getDynamicObject()->setProperty("footerProcessCpuPercent",cpu);
+                health.getDynamicObject()->setProperty("footerCpuProvenance",
+                    "WINDOWS_PROCESS_CPU_ALL_LOGICAL_CORES_1HZ_NOT_AUDIO_CALLBACK_OR_SYSTEM_TOTAL");
+            }
             const auto evidence=makeEvidenceSample (health);
             crackleEvidence_.push (evidence);
             diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (makeAudioHealthRecord (health,evidence.memory), true));
@@ -10348,7 +10381,6 @@ private:
         {
             const auto evidence=makeEvidenceSample (state);
             crackleEvidence_.push (evidence);
-            diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (makeAudioHealthRecord (state,evidence.memory), true));
             // UX-1: reuse THIS 1 Hz native status and memory sample, with no
             // extra timer, audio-thread probe or separate browser event.
             // Fields exist ONLY on this one 12 Hz arMixStatus snapshot each
@@ -10366,6 +10398,7 @@ private:
                 "WINDOWS_PROCESS_CPU_ALL_LOGICAL_CORES_1HZ_NOT_AUDIO_CALLBACK_OR_SYSTEM_TOTAL");
             health->setProperty ("footerRamProvenance",
                 "WINDOWS_PROCESS_WORKING_SET_NOT_AUDIO_BUFFER_ALLOCATION");
+            diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (makeAudioHealthRecord (state,evidence.memory), true));
         }
         // Guard borrowed VST parameter pointers when a native graph edit,
         // device epoch change or Show recall retires the instance.

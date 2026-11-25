@@ -1368,6 +1368,22 @@ static void verifyLogicalControlTransactions() {
     assert(control.workspace().document().logicalInputs.empty());
     assert(control.workspace().document().logicalOutputs.empty());
     assert(archived[0].existsAsFile());
+    const auto beforeArchiveId=control.workspace().document().id;
+    assert(control.open(std::move(recoveredArchive),std::move(archiveStates),
+        [](juce::String error){assert(error.isEmpty());},true));
+    waitForIO();
+    assert(control.workspace().document().id==priorId);
+    assert(control.workspace().document().roster.find(trackId));
+    assert(control.workspace().states().size()==states.size());
+    auto allArchives=folder.getChildFile("SessionArchive").findChildFiles(juce::File::findFiles,false,"*.smix");
+    assert(allArchives.size()==4);
+    bool backupFound=false;
+    for(const auto& archive:allArchives){
+        MixerSessionDocument copy;std::vector<BinaryState> blobs;
+        assert(NativeMixerSessionStore::readFile(archive,copy,blobs).isEmpty());
+        if(copy.id==beforeArchiveId)backupFound=true;
+    }
+    assert(backupFound);
     assert(folder.deleteRecursively());
 }
 
@@ -2431,6 +2447,16 @@ int main(){
            rejectedStates.size()==1 && rejectedStates[0].bytes==binary.bytes);
     const auto head=studio.getChildFile("MixerSession").getChildFile("HEAD");
     const auto secondId=head.loadFileAsString().trim();
+    // Missing HEAD must not be mistaken for a fresh mixer or overwrite
+    // PREVIOUS. Verify actual recovery and recreate the second checkpoint.
+    assert(head.deleteFile());
+    assert(store.exists());
+    assert(store.commit(d,{binary}).isNotEmpty());
+    assert(!head.exists());
+    checkpoint=Recovery::read(store,false,loaded,readback,failedRetainedRead);
+    assert(checkpoint.source==Recovery::Source::previous&&checkpoint.error.isEmpty());
+    assert(head.loadFileAsString().trim()==firstId);
+    assert(head.replaceWithText(secondId+"\n")); // restore original test pointer
     const auto vendor=studio.getChildFile("MixerSession").getChildFile("versions")
         .getChildFile(secondId).getChildFile("blobs")
         .getChildFile(binary.sha256+".bin");

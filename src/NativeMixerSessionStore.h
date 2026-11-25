@@ -22,6 +22,11 @@ public:
 
     juce::String commit(const MixerSessionDocument& doc,
                         const std::vector<armix::shows::BinaryState>& states) const {
+        const auto head=root_.getChildFile("HEAD");
+        // A missing HEAD with PREVIOUS is recovery evidence, not a new
+        // workspace. A directory or invalid pointer is likewise not fresh.
+        if(!head.existsAsFile() && (head.exists()||root_.getChildFile("PREVIOUS").exists()))
+            return "Mixer checkpoint requires recovery before saving";
         if(!armix::shows::detail::uuid(doc.id)||states.size()>maxStates)
             return "Mixer session ID/state count invalid";
         const auto json=Codec::encode(doc);
@@ -74,7 +79,6 @@ public:
         const auto committed=versions.getChildFile(id);
         if(committed.exists()||!stage.moveFileTo(committed))
             return "Cannot publish immutable mixer generation";
-        const auto head=root_.getChildFile("HEAD");
         if(head.existsAsFile()) {
             const auto previous=readPointer(head);
             if(previous.isEmpty())return "Current mixer HEAD invalid; recover explicitly";
@@ -92,15 +96,18 @@ public:
     // Explicit NEW replaces HEAD only after archiving the independently
     // verified previous checkpoint. PREVIOUS alone is not enough: the next
     // normal edit rotates it. All IO stays on the existing session worker.
-    enum class ArchiveMode { none, newSession, resetIo };
+    enum class ArchiveMode { none, newSession, resetIo, reopenArchive };
+    juce::File archiveDirectory() const {return root_.getSiblingFile("SessionArchive");}
     juce::String commitNewSession(const MixerSessionDocument& doc,
                         const std::vector<armix::shows::BinaryState>& states,
                         ArchiveMode mode=ArchiveMode::newSession) const {
         const bool reset=mode==ArchiveMode::resetIo;
-        if(mode==ArchiveMode::none || !doc.logicalOnly || doc.resumeMain.value_or(false) ||
-           !doc.logicalInputs.references().empty() || !doc.logicalOutputs.references().empty() ||
-           (!reset && (!states.empty() || !doc.inserts.empty() || !doc.hotkeys.empty() ||
-                       !doc.request.sources.empty())))
+        const bool reopen=mode==ArchiveMode::reopenArchive;
+        if(mode==ArchiveMode::none || doc.resumeMain.value_or(false) ||
+           (!reopen && (!doc.logicalOnly ||
+             !doc.logicalInputs.references().empty() || !doc.logicalOutputs.references().empty() ||
+             (!reset && (!states.empty() || !doc.inserts.empty() || !doc.hotkeys.empty() ||
+                         !doc.request.sources.empty())))))
             return "New/reset session must be an unbound workspace";
         const auto head=root_.getChildFile("HEAD");
         if(head.exists()) {
@@ -117,8 +124,8 @@ public:
                 after.logicalInputs={};after.logicalOutputs={};
                 if(Codec::encode(before)!=Codec::encode(after))
                     return "Reset would change mixer state outside I/O definitions";
-            }else if(old.id==doc.id)return "New session identity must differ";
-            const auto archive=root_.getSiblingFile("SessionArchive");
+            }else if(!reopen&&old.id==doc.id)return "New session identity must differ";
+            const auto archive=archiveDirectory();
             if(archive.createDirectory().failed())return "Cannot create session archive";
             const auto file=archive.getNonexistentChildFile(old.id+"-"+juce::Uuid().toDashedString(),".smix",false);
             error=writeFile(file,old,oldStates);
@@ -224,7 +231,10 @@ public:
         out=std::move(doc);states=std::move(binary);
         return {};
     }
-    bool exists() const noexcept {return root_.getChildFile("HEAD").existsAsFile();}
+    // Presence is distinct from validity; callers must load/recover.
+    bool exists() const noexcept {
+        return root_.getChildFile("HEAD").exists()||root_.getChildFile("PREVIOUS").exists();
+    }
     // Recovery does NOT arm output or publish a graph. Valid HEAD wins.
     juce::String recoverPrevious() const {
         MixerSessionDocument recovered;

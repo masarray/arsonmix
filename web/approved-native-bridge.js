@@ -4333,7 +4333,7 @@
     });
     backend.addEventListener("arMixNativeSessionAck",ack=>{
       const save=ack?.operation==="SAVE";
-      if(!save&&ack?.operation!=="OPEN"&&ack?.operation!=="NEW"&&ack?.operation!=="RESET_IO")return;
+      if(!save&&ack?.operation!=="OPEN"&&ack?.operation!=="NEW"&&ack?.operation!=="RESET_IO"&&ack?.operation!=="ARCHIVE")return;
       if(ack.ok!==true){
         const error=String(ack.error||"Mixer file operation failed");
         status(error);nativeToast(error);
@@ -4361,7 +4361,16 @@
       });
       return button;
     });
-    menu.append(caption,setup,muteBtn,hardwareNote,...newSessionButtons,
+    const archiveButton=item("button","tool","Open session archive");
+    archiveButton.title="Open an archived mixer offline; current checkpoint is backed up first";
+    archiveButton.addEventListener("click",()=>{
+      if(!logicalView||pendingLogical||hardware?.raw?.offlineNewSessionAvailable!==true){
+        nativeToast("Disconnect audio and finish mixer operations before opening an archive");return;
+      }
+      if(window.confirm("Open an archived session? Current saved mixer is archived first; output remains muted."))
+        backend.emitEvent("arMixAction",{action:"nativeMixerOpenArchive"});
+    });
+    menu.append(caption,setup,muteBtn,hardwareNote,...newSessionButtons,archiveButton,
       healthTitle,tone,mark,report,advanced,
       showHeading,showSave,showBrowse,showSelect,showUpdate,showRecall,showRecover,showNote);
     // Single discoverable AUDIO I/O button next to ordinary mixer tools.

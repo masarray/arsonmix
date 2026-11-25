@@ -121,6 +121,21 @@ const acceptedGlobalPowerTransition=(a,b)=>continuousEvidence(a,b) &&
   a.nativeGlobalFxBypassed===true && b.nativeGlobalFxBypassed===false &&
   a.nativeFxProcessingCount===0 && b.nativeFxProcessingCount>0;
 
+const CPU_SCOPE="WINDOWS_PROCESS_CPU_ALL_LOGICAL_CORES_1HZ_NOT_AUDIO_CALLBACK_OR_SYSTEM_TOTAL";
+const resourceValue=(s,key)=>typeof s[key]==="number"&&Number.isFinite(s[key])&&s[key]>=0?s[key]:null;
+const cpuValue=s=>s.footerCpuProvenance===CPU_SCOPE&&resourceValue(s,"footerProcessCpuPercent")<=100
+  ?resourceValue(s,"footerProcessCpuPercent"):null;
+function recordResources(segment,s){
+  for(const [name,value] of [["cpu",cpuValue(s)],["workingSet",resourceValue(s,"processWorkingSetMiB")],
+    ["privateCommit",resourceValue(s,"processPrivateCommitMiB")]]){
+    if(value===null)continue;
+    const r=segment.resources[name];
+    if(r.count===0)r.first=value;
+    r.last=value;r.peak=r.count?Math.max(r.peak,value):value;r.sum+=value;r.count++;
+  }
+}
+const resourceSummary=r=>({samples:r.count,mean:r.count?Math.round(r.sum/r.count*100)/100:null,
+  peak:r.peak,delta:r.count>=2?Math.round((r.last-r.first)*100)/100:null});
 function describeSegment(segment){
   const s=segment.start, first=segment.start, last=segment.last;
   const p=p95p99FromDelta(segment.histogram);
@@ -185,6 +200,9 @@ function describeSegment(segment){
     pluginWorstUsCumulative:last.worstPluginUs??null,
     processWorkingSetMiB:last.processWorkingSetMiB??null,
     processPrivateCommitMiB:last.processPrivateCommitMiB??null,
+    processCpuAllCorePct:resourceSummary(segment.resources.cpu),
+    workingSetMiB:resourceSummary(segment.resources.workingSet),
+    privateCommitMiB:resourceSummary(segment.resources.privateCommit),
     backendXrunMeaning:s.backendXrunMeaning??"UNAVAILABLE",
     backendXrunDelta:nondecreasing(first,last,"backendXrunCount")?
       last.backendXrunCount-first.backendXrunCount:null,
@@ -206,9 +224,13 @@ export function analyzeHealthLog(log) {
   const {samples,warnings,rejectedLines}=parseHealthLog(log);
   const groups=[];
   let segment=null,rejectedIndex=0;
-  const start=(s,invalidBefore=false)=>({start:s,last:s,intervals:0,durationMs:0,
-    delta:Object.fromEntries(COUNTERS.map(k=>[k,0])),
-    histogram:Array(13).fill(0),invalidBefore});
+  const start=(s,invalidBefore=false)=>{
+    const segment={start:s,last:s,intervals:0,durationMs:0,
+      delta:Object.fromEntries(COUNTERS.map(k=>[k,0])),
+      histogram:Array(13).fill(0),invalidBefore,
+      resources:Object.fromEntries(["cpu","workingSet","privateCommit"].map(k=>[k,{count:0,first:null,last:null,peak:null,sum:0}]))};
+    recordResources(segment,s);return segment;
+  };
   for(const current of samples){
     if(!segment){segment=start(current);continue;}
     // Rejected telemetry is an absolute comparison barrier, including a
@@ -238,6 +260,7 @@ export function analyzeHealthLog(log) {
     segment.durationMs+=current.atMs-previous.atMs;
     segment.intervals++;
     segment.last=current;
+    recordResources(segment,current);
   }
   if(segment)groups.push(describeSegment(segment));
   return {schema:"arsonmix.int1b.profile-report.v1",
@@ -247,12 +270,12 @@ export function analyzeHealthLog(log) {
 }
 
 export function compareDryFx(analysis){
-  const ready=analysis.segments.filter(s=>s.comparable&&
-    s.diagnosticRoute==="NORMAL"&&s.renderHardwareXrun==="UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE");
+  const ready=s=>s.comparable&&
+    s.diagnosticRoute==="NORMAL"&&s.renderHardwareXrun==="UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE";
   // Pair only an immediately preceding accepted DRY window with the next
   // accepted FX window. Never compare an earlier app session, an unrelated
   // third run, or a hours-old source recording with today's loaded inserts.
-  const fxIndex=analysis.segments.findLastIndex(s=>ready.includes(s) &&
+  const fxIndex=analysis.segments.findLastIndex(s=>ready(s) &&
     s.mode==="FX" && s.nativeFxInstalledCount>0 && s.nativeFxProcessingCount>0);
   const fx=fxIndex>=0?analysis.segments[fxIndex]:null;
   const dry=fxIndex>0?analysis.segments[fxIndex-1]:null;
@@ -282,7 +305,7 @@ export function compareDryFx(analysis){
 export function markdownReport(analysis){
   const cmp=compareDryFx(analysis);
   const lines=["# ArSonMix INT-1B — Audio Reliability Profile","",
-    "This is native host timing, not physical render-XRUN, GPU, ASIO round-trip or CPU profiling.",
+    "This is native host timing and optional process resource sampling, not physical render-XRUN, GPU or ASIO round-trip.",
     "Real hardware FAT and operator listening remain separately required.","",
     "| Mode | Driver | Rate/Frames | Seconds | p95/p99 budget ceiling | Over-budget/1000 | Late callback | RAM working set / private MiB | Observation |",
     "|---|---|---|---:|---:|---:|---:|---|"];
@@ -294,7 +317,15 @@ export function markdownReport(analysis){
       " | "+(s.processWorkingSetMiB??"N/A")+" / "+(s.processPrivateCommitMiB??"N/A")+
       " | "+s.diagnosis+" |");
   }
-  lines.push("",cmp.comparable?
+  lines.push("","## Process resources (sampled, not realtime callback CPU)","",
+    "| Mode | CPU mean / peak (all cores %) | CPU samples | RAM peak MiB | Private commit peak / change MiB |",
+    "|---|---:|---:|---:|---:|");
+  const fmt=x=>x===null||x===undefined?"N/A":String(x);
+  for(const s of analysis.segments)
+    lines.push("| "+s.mode+" | "+fmt(s.processCpuAllCorePct.mean)+" / "+fmt(s.processCpuAllCorePct.peak)+
+      " | "+s.processCpuAllCorePct.samples+" | "+fmt(s.workingSetMiB.peak)+" | "+
+      fmt(s.privateCommitMiB.peak)+" / "+fmt(s.privateCommitMiB.delta)+" |");
+  lines.push("","Memory change is an observation, not proof of a leak.","",cmp.comparable?
     "**Matched actual native dry→FX comparison:** Δ over-budget per 1000 callbacks = "+cmp.deltaOverBudgetPer1000+
       "; **NOT** a hardware XRUN or causal DSP proof.":
     "**No valid matched dry/FX comparison:** "+cmp.reason);

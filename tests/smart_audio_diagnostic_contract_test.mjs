@@ -425,3 +425,25 @@ test("P11 render timing covers final output publication and flags incomplete sam
   assert.equal(broken.segments.length,2);
   assert.equal(broken.segments[1].invalidBefore,true);
 });
+
+test("P11 resource summaries preserve unknowns, provenance and sampled peaks",()=>{
+  const lines=Array.from({length:41},(_,s)=>{
+    const sample=int1bSample(s,{});
+    if(s>0){
+      sample.footerProcessCpuPercent=s===20?18:4;
+      sample.footerCpuProvenance="WINDOWS_PROCESS_CPU_ALL_LOGICAL_CORES_1HZ_NOT_AUDIO_CALLBACK_OR_SYSTEM_TOTAL";
+      sample.processWorkingSetMiB=s===20?180:100+s;
+      sample.processPrivateCommitMiB=200+s;
+    }
+    if(s===10)sample.footerCpuProvenance="UNKNOWN";
+    return new Date(Date.UTC(2026,10,20,8,0,s)).toISOString()+" | AUDIO_HEALTH | "+JSON.stringify(sample);
+  });
+  const report=analyzeHealthLog(lines.join("\n"));
+  const s=report.segments[0];
+  assert.equal(s.processCpuAllCorePct.samples,39);
+  assert.equal(s.processCpuAllCorePct.peak,18);
+  assert.equal(s.workingSetMiB.peak,180);
+  assert.equal(s.privateCommitMiB.delta,39);
+  assert.equal(analyzeHealthLog(int1bLine(0,{})).segments[0].processCpuAllCorePct.mean,null);
+  assert.match(markdownReport(report),/CPU mean \/ peak/);
+});
