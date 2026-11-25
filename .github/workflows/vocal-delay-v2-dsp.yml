@@ -4,12 +4,7 @@ on:
     paths:
       - 'engine/builtin_fx/vocal_delay/**'
       - 'tests/vocal_delay_v2_*.cpp'
-      - '.github/workflows/vocal-delay-v2-dsp.yml'
-  push:
-    branches: ['research/vocal-delay-v2-*']
-    paths:
-      - 'engine/builtin_fx/vocal_delay/**'
-      - 'tests/vocal_delay_v2_*.cpp'
+      - 'tools/vocal-delay/**'
       - '.github/workflows/vocal-delay-v2-dsp.yml'
 permissions:
   contents: read
@@ -40,3 +35,14 @@ jobs:
           /tmp/vd2
           ${{ matrix.cxx }} -std=c++17 ${{ matrix.flags }} tests/builtin_vocal_throw_test.cpp -o /tmp/vd1
           /tmp/vd1
+          ${{ matrix.cxx }} -std=c++17 -Wall -Wextra -Werror -pthread ${{ matrix.flags }} tests/vocal_delay_v2_session_test.cpp tests/vocal_delay_v2_heap_probe.cpp -o /tmp/vd2session
+          /tmp/vd2session
+  ui-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - run: node tools/vocal-delay/parameter-sync.test.mjs
