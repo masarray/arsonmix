@@ -7,6 +7,7 @@
 #include "../engine/builtin_fx/GraphicEq31Processor.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
 #include "../engine/builtin_fx/VocalThrowProcessor.h"
+#include "../engine/builtin_fx/vocal_delay/JuceVocalDelayProcessor.h"
 #include "../engine/builtin_fx/VocalReverbProcessor.h"
 #include "../engine/builtin_fx/GuitarRigEditor.h"
 #include "../engine/builtin_fx/SonKuSpatialProcessor.h"
@@ -81,6 +82,20 @@ inline std::unique_ptr<juce::AudioProcessor> prepareNativeVocalReverb(
     return p;
 }
 
+// Continuous delay is a distinct catalog identity; old Vocal Throw remains
+// hidden and restores its original AVTH v1 semantics without any type cast.
+inline std::unique_ptr<juce::AudioProcessor> prepareNativeVocalDelay(
+        double rate,int frames,const void* state,int bytes) {
+    if(!vocal_delay::validRate(rate)||frames<16||
+       frames>armix::mixer::PreparedMixerBlock::hardFrameLimit||
+       (state==nullptr?bytes!=0:bytes!=48))return {};
+    auto p=std::make_unique<vocal_delay::JuceVocalDelayProcessor>();
+    if(!p->useHostLocalMailbox()||(state&&!p->restoreUnpublishedState(state,bytes)))return {};
+    p->prepareToPlay(rate,frames);
+    if(!p->isReady())return {};
+    return p;
+}
+
 inline constexpr std::array nativeBuiltInFx{
     NativeBuiltInFx{ChannelEqProcessor::catalogIdentity,"Parametric EQ","EQ",true,8000.,384000.,
         "NATIVE_EQ_HOST_UNAVAILABLE","NATIVE_EQ_DEVICE_CHANGED",
@@ -112,6 +127,11 @@ inline constexpr std::array nativeBuiltInFx{
         "NATIVE_THROW_UNSUPPORTED_AUDIO_FORMAT","NATIVE_THROW_PREPARE_REJECTED",
         "NATIVE_THROW_PREPARE_EXCEPTION","Saved native Vocal Delay state rejected; graph unchanged",
         prepareNativeBuiltInFx<VocalThrowProcessor>},
+    NativeBuiltInFx{vocal_delay::JuceVocalDelayProcessor::catalogIdentity,"Vocal Delay","Utility",true,8000.,192000.,
+        "NATIVE_VD_HOST_UNAVAILABLE","NATIVE_VD_DEVICE_CHANGED",
+        "NATIVE_VD_UNSUPPORTED_AUDIO_FORMAT","NATIVE_VD_PREPARE_REJECTED",
+        "NATIVE_VD_PREPARE_EXCEPTION","Saved continuous Vocal Delay state rejected; graph unchanged",
+        prepareNativeVocalDelay},
     NativeBuiltInFx{VocalReverbProcessor::catalogIdentity,"Reverb-Sis","Reverb",true,8000.,192000.,
         "NATIVE_VREV_HOST_UNAVAILABLE","NATIVE_VREV_DEVICE_CHANGED",
         "NATIVE_VREV_UNSUPPORTED_AUDIO_FORMAT","NATIVE_VREV_PREPARE_REJECTED",

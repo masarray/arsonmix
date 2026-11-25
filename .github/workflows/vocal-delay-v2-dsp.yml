@@ -1,0 +1,108 @@
+name: Vocal Delay V2 DSP and scoped production admission
+on:
+  pull_request:
+    paths:
+      - 'engine/builtin_fx/vocal_delay/**'
+      - 'tests/vocal_delay_v2_*.cpp'
+      - 'tools/vocal-delay/**'
+      - '.github/workflows/vocal-delay-v2-dsp.yml'
+permissions:
+  contents: read
+concurrency:
+  group: vocal-delay-v2-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+jobs:
+  isolated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cxx: g++
+            flags: '-O2'
+          - cxx: clang++
+            flags: '-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Compile real core and legacy baseline
+        run: |
+          git rev-parse HEAD
+          ${{ matrix.cxx }} -std=c++17 -Wall -Wextra -Werror ${{ matrix.flags }} tests/vocal_delay_v2_core_test.cpp tests/vocal_delay_v2_heap_probe.cpp -o /tmp/vd2
+          /tmp/vd2
+          ${{ matrix.cxx }} -std=c++17 ${{ matrix.flags }} tests/builtin_vocal_throw_test.cpp -o /tmp/vd1
+          /tmp/vd1
+          ${{ matrix.cxx }} -std=c++17 -Wall -Wextra -Werror -pthread ${{ matrix.flags }} tests/vocal_delay_v2_session_test.cpp tests/vocal_delay_v2_heap_probe.cpp -o /tmp/vd2session
+          /tmp/vd2session
+          ${{ matrix.cxx }} -std=c++17 -Wall -Wextra -Werror ${{ matrix.flags }} tests/vocal_delay_v2_singer_test.cpp -o /tmp/vd2singer
+          /tmp/vd2singer
+          ${{ matrix.cxx }} -std=c++17 -Wall -Wextra -Werror ${{ matrix.flags }} tests/vocal_delay_v2_styles_test.cpp tests/vocal_delay_v2_heap_probe.cpp -o /tmp/vdstyles
+          /tmp/vdstyles
+          ${{ matrix.cxx }} -std=c++17 -Wall -Wextra -Werror ${{ matrix.flags }} tests/vocal_delay_v2_focus_test.cpp tests/vocal_delay_v2_heap_probe.cpp -o /tmp/vdfocus
+          /tmp/vdfocus
+          ${{ matrix.cxx }} -std=c++17 -Wall -Wextra -Werror ${{ matrix.flags }} tests/vocal_delay_v2_performance_test.cpp tests/vocal_delay_v2_heap_probe.cpp -o /tmp/vdperformance
+          /tmp/vdperformance
+      - name: Report synthetic callback profile (not ASIO FAT)
+        if: matrix.cxx == 'g++'
+        run: |
+          g++ -std=c++17 -O3 tools/vocal-delay/rt-profile.cpp -o /tmp/vdprofile
+          /tmp/vdprofile
+  ui-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - run: node tools/vocal-delay/parameter-sync.test.mjs
+  native-juce-candidate:
+    # Canonical integration push already runs full product link, all CTests
+    # and installer FAT. Do not duplicate its scoped MSVC build.
+    if: github.head_ref != 'staging/io-reverb-integrated-global-20261125'
+    runs-on: windows-2022
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.15
+          path: third_party/JUCE
+          persist-credentials: false
+      - name: Pinned WebView2 SDK
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Real production registry, JUCE editor and Main.cpp object (not full FAT)
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
+          if (!$vs) { throw 'MSVC_NOT_FOUND' }
+          Import-Module (Join-Path $vs 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          if ((& git rev-parse HEAD).Trim() -ne $env:EXPECTED_SHA) { throw 'VD_SOURCE_MISMATCH' }
+          cmake -S . -B vd-build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DJUCE_ROOT=$env:GITHUB_WORKSPACE/third_party/JUCE" "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$env:GITHUB_WORKSPACE/.deps" -DBUILD_TESTING=ON -DARMIX_IMMERSIB_RELEASE_CANDIDATE=ON -DARMIX_SONKU_APPROVED_P99_MAIN=ON
+          if ($LASTEXITCODE -ne 0) { throw 'VD_ROOT_CONFIGURE_FAILED' }
+          cmake --build vd-build --parallel 2 --target ARMixNativeFxExtensionTests ARMixNativeVocalDelayTests ARMixBuiltInFxPresetStoreTests
+          if ($LASTEXITCODE -ne 0) { throw 'VD_NATIVE_TARGET_BUILD_FAILED' }
+          ctest --test-dir vd-build --output-on-failure --no-tests=error -R '^(M4NativeFxCatalogExtensionAndStatePreparation|VocalDelayV2RealJuceAdapter|BuiltInFxUserPresetNativePortableSaveAndRecovery)$'
+          if ($LASTEXITCODE -ne 0) { throw 'VD_NATIVE_CTEST_FAILED' }
+          cmake --build vd-build --parallel 2 --target CMakeFiles/ARMixConsole.dir/src/Main.cpp.obj
+          if ($LASTEXITCODE -ne 0) { throw 'VD_PRODUCTION_MAIN_COMPILE_FAILED' }
+          Write-Host "VD5_SCOPED_PRODUCTION_PASS exact=$env:EXPECTED_SHA (not full FAT)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vocal-delay-native-faceplate
+          path: vd-build/**/vocal-delay-*.png
+          if-no-files-found: error

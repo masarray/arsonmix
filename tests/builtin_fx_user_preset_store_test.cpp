@@ -62,6 +62,12 @@ static BuiltInFxUserPreset antiNoiz() {
         object({{"mode","Singing"},{"cleanDb",9.5},{"silenceDb",21.0},
                 {"musicProtect",.75},{"enabled",true}})};
 }
+static BuiltInFxUserPreset delay(){
+    namespace vd=armix::builtin_fx::vocal_delay;
+    vd::Parameters p{};p.style=vd::EchoStyle::multitap;p.adaptiveFocus=true;p.spillover=true;
+    REQUIRE(vd::setTempo(p,120,2));p.enabled=false;p.hit=true;
+    return {{},"armix.builtin.vocal-delay.v2","Dream Pop","My Presets",vd::PortablePreset::encode(p)};
+}
 static BuiltInFxUserPreset eq() {
     auto bands=juce::var(juce::Array<juce::var>{});
     for(int i=0;i<8;++i)
@@ -78,7 +84,7 @@ int main() {
     REQUIRE(!testRoot.exists());
     struct Cleanup { juce::File folder;~Cleanup(){folder.deleteRecursively();} } cleanup{testRoot};
     BuiltInFxUserPresetStore store(testRoot);
-    auto items=std::array{comp(),harmony(),throwSettings(),eq(),graphicEq31(),reverb(),deEzzer(),antiNoiz()};
+    auto items=std::array{comp(),harmony(),throwSettings(),eq(),graphicEq31(),reverb(),deEzzer(),antiNoiz(),delay()};
     for(auto& item:items) {
         REQUIRE(BuiltInFxUserPresetStore::validateSettings(item.catalogId,item.settings));
         REQUIRE(store.saveNew(item).isEmpty());
@@ -99,6 +105,22 @@ int main() {
              BuiltInFxUserPreset wrong;
              REQUIRE(reopened.read(other.catalogId,item.id,wrong).isNotEmpty());
           }
+    }
+    {
+        namespace vd=armix::builtin_fx::vocal_delay;
+        const auto good=delay();
+        vd::Parameters p{};p.enabled=false;p.hit=true;
+        REQUIRE(vd::PortablePreset::decode(good.settings,p)&&!p.enabled&&!p.hit&&p.bpmQuarter==480&&p.timeMs==375.f);
+        for(const char* key:{"enabled","hit","sourceChannelId","rackBypassed"}){
+            auto bad=delay();bad.settings.getDynamicObject()->setProperty(key,true);
+            REQUIRE(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));
+        }
+        auto bad=delay();bad.settings.getDynamicObject()->setProperty("timeMs",380.);
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));
+        bad=delay();bad.settings.getDynamicObject()->setProperty("style",9);
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));
+        bad=delay();bad.settings.getDynamicObject()->setProperty("echo",std::numeric_limits<double>::quiet_NaN());
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));
     }
     // Factory and user data must remain conceptually distinct; disk-only
     // user presets cannot silently be replaced by same category/name.

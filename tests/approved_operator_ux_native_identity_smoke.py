@@ -9,6 +9,7 @@ import tempfile
 import sys
 import copy
 from playwright.sync_api import sync_playwright
+from native_event_fixture import NATIVE_EVENTS
 from approved_native_wire_gain_smoke import snapshot, emit, SOURCE, RECEIVER
 from approved_operator_ux_chromium_fat import IDENTITY_GEOMETRY, assert_still
 
@@ -26,11 +27,11 @@ def main():
         def open_page():
             page=context.new_page()
             page.on("pageerror",lambda e:errors.append(str(e)))
-            page.add_init_script("""window.__nativeListeners=new Map();window.__nativeIntents=[];window.__nativeEvents=[];
+            page.add_init_script(NATIVE_EVENTS + """window.__nativeIntents=[];window.__nativeEvents=[];
               window.__JUCE__={backend:{
                 emitEvent(name,payload){window.__nativeEvents.push({name,payload});
                   if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);},
-                addEventListener(name,callback){window.__nativeListeners.set(name,callback);}}};""")
+                ...window.__nativeListenerMethods}};""")
             page.goto((out/"index.html").as_uri())
             page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
             return page

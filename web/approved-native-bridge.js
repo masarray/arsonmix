@@ -107,8 +107,14 @@
     function keepReachable(root) {
       if(!root||root.hidden)return;
       const r=root.getBoundingClientRect(),handle=grip();
-      const x=limit(r.left,handle-r.width,innerWidth-handle);
-      const y=limit(r.top,Math.min(8,innerHeight-r.height+48),
+      // Anti Noiz is responsive and fits the viewport. Rescue the whole
+      // face after a resize, not just a draggable edge. Wide hardware
+      // editors retain their established partial-pan policy.
+      const compact=root.id==="mxNativeAntiNoiz";
+      const x=compact&&r.width<=innerWidth?
+        limit(r.left,0,innerWidth-r.width):limit(r.left,handle-r.width,innerWidth-handle);
+      const y=compact&&r.height<=innerHeight?
+        limit(r.top,0,innerHeight-r.height):limit(r.top,Math.min(8,innerHeight-r.height+48),
         Math.max(8,innerHeight-38));
       if(Math.abs(x-r.left)>.5||Math.abs(y-r.top)>.5)
         move(root,x-r.left,y-r.top);
@@ -1863,6 +1869,8 @@
     // Native GuitarRigProcessor is compiled and installed: no WebAudio mock.
     Object.freeze({id:"armix.builtin.guitar-rig.v1",name:"Guitar FX Rig",
       vendor:"ArSonMix",category:"Guitar",format:"Native",source:"builtin"}),
+    Object.freeze({id:"armix.builtin.vocal-delay.v2",name:"Vocal Delay",
+      vendor:"ArSonMix",category:"Utility",format:"Native",source:"builtin"}),
     Object.freeze({id:"armix.builtin.vocal-throw.v1",name:"Vocal Delay",
       vendor:"ArSonMix",category:"Utility",format:"Native",source:"builtin",showInPicker:false}),
     Object.freeze({id:"armix.builtin.8d-sonku.v1",name:"8D-SonKu",

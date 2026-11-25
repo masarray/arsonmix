@@ -66,6 +66,26 @@ struct AntiNoizNativeBinding final {
         // Minimum spectral gain is not broadband reduction. Label it
         // explicitly; residual gain is the linked expander gain.
         p->setProperty("spectralGain",s.spectralGain);p->setProperty("residualGain",s.residualGain);
+        // CONTROL thread: logarithms and JSON allocation never reach audio.
+        const auto& spec=s.spectrum;
+        if(spec.bins==129||spec.bins==257){
+            auto graph=std::make_unique<juce::DynamicObject>();
+            graph->setProperty("binHz",spec.binHz);graph->setProperty("bins",spec.bins);
+            graph->setProperty("candidate",spec.candidate);graph->setProperty("progress",spec.progress);
+            auto curve=[&](const auto& data,bool valid){
+                juce::Array<juce::var> points;
+                if(valid){points.ensureStorageAllocated(spec.bins);
+                    for(int k=0;k<spec.bins;++k){
+                        const float db=std::isfinite(data[k])?10.f*std::log10(std::max(1.e-12f,data[k])):-120.f;
+                        points.add(juce::var(double(std::clamp(db,-120.f,48.f))));
+                    }
+                }
+                return juce::var(points);
+            };
+            graph->setProperty("input",curve(spec.input,s.serial!=0&&spec.inputValid&&!s.rackBypassed));
+            graph->setProperty("noise",curve(spec.noise,s.serial!=0&&spec.noiseValid));
+            p->setProperty("spectrum",juce::var(graph.release()));
+        }
         return juce::var(p.release());
     }
 };

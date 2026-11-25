@@ -608,7 +608,57 @@ static void verifyDeEzzerNativeInsert() {
     }
 }
 
+static void verifyVocalDelayNativeInsert() {
+    namespace vd=armix::builtin_fx::vocal_delay;
+    using armix::builtin_fx::findNativeBuiltInFx;
+    const auto* descriptor=findNativeBuiltInFx(vd::JuceVocalDelayProcessor::catalogIdentity);
+    const auto* legacy=findNativeBuiltInFx(armix::builtin_fx::VocalThrowProcessor::catalogIdentity);
+    assert(descriptor&&descriptor->showInPicker&&legacy&&!legacy->showInPicker);
+    assert(!descriptor->prepare(384000.,128,nullptr,0));
+    assert(!descriptor->prepare(48000.,15,nullptr,0));
+    vd::State old{};old.kind=vd::State::Kind::legacyThrow;
+    vd::StateCodec::Bytes oldBytes{};assert(vd::StateCodec::encode(old,oldBytes));
+    assert(legacy->prepare(48000.,128,oldBytes.data(),48));
+    assert(!descriptor->prepare(48000.,128,oldBytes.data(),48));
+    vd::State state{};auto& p=state.continuous;p.timeMs=20;p.feedback=0;
+    p.echo=.5f;p.duck=0;p.highPassHz=p.lowPassHz=0;
+    vd::StateCodec::Bytes bytes{};assert(vd::StateCodec::encode(state,bytes));
+    assert(!legacy->prepare(48000.,128,bytes.data(),48));
+    auto processor=descriptor->prepare(48000.,128,bytes.data(),48);
+    auto* typed=dynamic_cast<vd::JuceVocalDelayProcessor*>(processor.get());
+    assert(typed&&typed->isReady()&&typed->getSampleRate()==48000.&&typed->isDetached());
+    armix::mixer::LiveChannelFxGraph::FxInstance fx(std::move(processor),descriptor->id,descriptor->name,128);
+    assert(fx.nativeControl&&!typed->isDetached()&&fx.latencySamples==0);
+    juce::MemoryBlock captured;assert(fx.tryCaptureState(captured)&&captured.getSize()==48);
+    std::array<float,128> l{},r{};float echo=0;
+    for(int block=0;block<9;++block){
+        l.fill(0);r.fill(0);if(block==0)l[0]=r[0]=.8f;
+        fx.render(l.data(),r.data(),128);
+        if(block==0)assert(l[0]==.8f&&r[0]==.8f);
+        if(block==7)echo=l[64];
+    }
+    assert(std::abs(echo-.4f)<1.e-6f);
+    assert(typed->beginSingerEditor());auto next=typed->singerDisplay();next.echo=.33f;
+    assert(typed->offerSinger(next));typed->serviceSingerControl();
+    assert(!fx.tryCaptureState(captured));
+    fx.bypassFade.prepare(true,48000.,0);fx.bypassRequested.store(true);
+    l.fill(.1f);r.fill(-.1f);fx.render(l.data(),r.data(),128);
+    assert(l[0]==.1f&&r[0]==-.1f&&!fx.tryCaptureState(captured));
+    typed->serviceSingerControl();typed->endSingerEditor();
+    assert(fx.tryCaptureState(captured)&&captured.getSize()==48);
+    auto detached=descriptor->prepare(48000.,128,captured.getData(),48);
+    auto* editorOwner=dynamic_cast<vd::JuceVocalDelayProcessor*>(detached.get());
+    assert(editorOwner&&editorOwner->isDetached()&&editorOwner->beginSingerEditor());
+    auto offline=editorOwner->singerDisplay();offline.echo=.21f;
+    assert(editorOwner->offerSinger(offline)&&!editorOwner->singerPending());
+    editorOwner->endSingerEditor();juce::MemoryBlock offlineBytes;
+    detached->getStateInformation(offlineBytes);vd::State restored{};
+    assert(vd::StateCodec::decode(offlineBytes.getData(),offlineBytes.getSize(),restored)&&restored.continuous.echo==.21f);
+}
+
 int main() {
+    juce::ScopedJuceInitialiser_GUI init;
+    verifyVocalDelayNativeInsert();
     verifyDeEzzerNativeInsert();
     verifyGraphicEq31Processor();
     verifySharedNativeFxControlRequest(); 

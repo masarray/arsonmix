@@ -3,6 +3,14 @@ import {valid} from './editor.mjs';
 const fields=['channelId','deviceEpoch','graphRevision','instanceId','slot'];
 export const sameIdentity=(a,b)=>!!a&&!!b&&fields.every(k=>a[k]===b[k])&&
  (a.workspaceToken||'')===(b.workspaceToken||'');
+// Optional native telemetry extension. Malformed/old payloads never draw.
+export function validSpectrum(s,latency){
+ const bins=latency/2+1;
+ if(!s||s.bins!==bins||![129,257].includes(bins)||!Number.isFinite(s.binHz)||
+    s.binHz<170||s.binHz>190||typeof s.candidate!=='boolean'||!Number.isFinite(s.progress)||s.progress<0||s.progress>1)return null;
+ const validCurve=a=>Array.isArray(a)&&(a.length===0||a.length===bins)&&a.every(v=>Number.isFinite(v)&&v>=-120&&v<=48);
+ return validCurve(s.input)&&validCurve(s.noise)?s:null;
+}
 let globalSequence=0;
 const nextRequest=()=>String(globalSequence=Math.max(globalSequence+1,Date.now()*1000));
 // One transport per open panel. The caller supplies the CURRENT accepted
@@ -22,9 +30,9 @@ export function nativeTransport(backend,context,clock=()=>Date.now()){
  }
  attach('arMixBuiltinAntiNoizSnapshot',m=>{
   if(closed||!matches(m,reading))return;
-  reading=null;
+  const readContext=reading.context;reading=null;
   if(m.status!=='ACCEPTED'||!valid(m.settings)){unavailable(m.errorCode);return;}
-  lastGoodAt=clock();lastContext=reading?.context||identity();
+  lastGoodAt=clock();lastContext=readContext;
   const o=m.observation;
   let observation=null;
   if(o&&typeof o.serial==='string'&&/^\d+$/.test(o.serial)&&
@@ -33,7 +41,7 @@ export function nativeTransport(backend,context,clock=()=>Date.now()){
     ['Auto','Voice','Singing','Music'].includes(o.effectiveMode)&&
     [256,512].includes(o.latency)&&[o.spectralGain,o.residualGain].every(x=>Number.isFinite(x)&&x>=0&&x<=1)){
    if(o.serial!=='0'&&o.serial!==lastSerial){lastSerial=o.serial;seenAt=clock();}
-   observation={...o,live:o.serial!=='0'&&clock()-seenAt<650};
+   observation={...o,spectrum:validSpectrum(o.spectrum,o.latency),live:o.serial!=='0'&&clock()-seenAt<650};
   }
   if(receipt&&writing){const accepted=receipt;receipt=null;finish({...m,errorCode:accepted.errorCode},accepted.status==='APPLIED');}
   listener({kind:'snapshot',settings:m.settings,observation});

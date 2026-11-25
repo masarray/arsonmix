@@ -4,102 +4,210 @@
 export const defaults=Object.freeze({mode:'Auto',cleanDb:14,silenceDb:32,musicProtect:1,enabled:true});
 export function valid(s){return !!s&&['Auto','Voice','Singing','Music'].includes(s.mode)&&typeof s.enabled==='boolean'&&[['cleanDb',24],['silenceDb',48],['musicProtect',1]].every(([k,max])=>Number.isFinite(s[k])&&s[k]>=0&&s[k]<=max);}
 export function controller(transport,render){
- let accepted=null,pending=null,seq=0,closed=false,error='Waiting for DSP',observation=null,appliedId='';
- const state=()=>({accepted,pending:!!pending,error,observation,appliedId});
+ let accepted=null,pending=null,queued=null,seq=0,closed=false,error='Waiting for DSP',observation=null,appliedId='';
+ const state=()=>({accepted,pending:!!pending,adjusting:!!pending?.continuous,desired:pending?.continuous?{...pending.settings,...queued}:null,error,observation,appliedId});
  const draw=()=>render(state());
  function receive(m){
   if(closed||!m)return;
   appliedId='';
   if(m.kind==='unavailable'){
-   accepted=null;pending=null;observation=null;error=m.error||'Native instance unavailable';draw();return;
+   accepted=null;pending=null;queued=null;observation=null;error=m.error||'Native instance unavailable';draw();return;
   }
   if(m.kind==='failure'&&pending&&m.id===pending.id){
-   pending=null;error=m.error||'DSP request failed';draw();return;
+   pending=null;queued=null;error=m.error||'DSP request failed';draw();return;
   }
   if(!valid(m.settings))return;
   if(m.kind==='snapshot'){
    observation=m.observation||null;
    if(!pending){if(!accepted)error='';accepted={...m.settings};}
   }else if(m.kind==='ack'&&pending&&m.id===pending.id&&typeof m.applied==='boolean'){
-   accepted={...m.settings};pending=null;error=m.applied?'':(m.error||'DSP rejected request');
+   const next=queued;queued=null;accepted={...m.settings};pending=null;error=m.applied?'':(m.error||'DSP rejected request');
+   if(m.applied&&next&&Object.keys(next).some(k=>next[k]!==accepted[k])){
+    submit('settings',next,true);return;
+   }
    if(m.applied)appliedId=m.requestId||'';
   }else return;
   draw();
  }
  const unsubscribe=transport.subscribe(receive);
- function submit(kind,patch={}){
+ function submit(kind,patch={},continuous=false){
   if(closed||pending||!accepted||!['settings','learn'].includes(kind))return false;
   const settings={...accepted,...patch};if(!valid(settings))return false;
-  pending={kind,id:++seq,settings};error='';draw();
-  try{transport.send(pending);}catch{pending=null;error='Transport unavailable';draw();return false;}
+  pending={kind,id:++seq,settings,continuous};error='';draw();
+  try{transport.send(pending);}catch{pending=null;queued=null;error='Transport unavailable';draw();return false;}
   return true;
  }
  draw();transport.read();
- return {submit,state,dispose(){closed=true;unsubscribe();},refresh(){if(!closed)transport.read();}};
+ function adjust(key,value){
+  if(closed||!accepted||!['cleanDb','silenceDb','musicProtect'].includes(key)||!valid({...accepted,[key]:value}))return false;
+  if(pending){
+   if(!pending.continuous)return false;
+   queued={...queued,[key]:value};draw();return true;
+  }
+  return accepted[key]===value||submit('settings',{[key]:value},true);
+ }
+ return {submit:(kind,patch)=>submit(kind,patch),adjust,state,dispose(){closed=true;queued=null;unsubscribe();},refresh(){if(!closed)transport.read();}};
 }
 export function mount(root,transport,options={}){
- root.innerHTML=`<section class="an-panel" aria-label="Anti Noiz"><header class="an-head"><div><h1>Anti Noiz</h1><small>INTELLIGENT MUSICAL DENOISER</small></div><div class="an-head-actions"><button data-power aria-label="DSP Power" aria-pressed="false">⏻</button><button data-close aria-label="Close Anti Noiz">×</button></div></header><div class="an-presets" hidden><select data-preset aria-label="Anti Noiz preset"><option value="CUSTOM">Custom</option><option value="DEFAULT">Default</option></select></div><div class="an-display"><div class="an-top"><span>NOISE CONTROL</span><span data-state>Waiting for DSP</span></div><div class="an-meter"><label>Deepest spectral cut <output data-spectral>—</output></label><div class="an-meter-track"><i data-spectral-bar></i></div></div><div class="an-meter"><label>Residual expander <output data-residual>—</output></label><div class="an-meter-track"><i data-residual-bar></i></div></div><div class="an-legend" data-observation>Waiting for native telemetry</div></div><div class="an-knobs"></div><div class="an-modes" role="group" aria-label="Source mode"></div><footer><button data-learn>Learn noise</button><span data-status role="status"></span><span>STEREO LINK</span></footer></section>`;
+ const assetBase=options.nativeAssets?'assets/':'../../../site/preview-v2/assets/';
+ root.innerHTML=`<section class="an-panel" aria-label="Anti Noiz">
+ <header class="an-head"><div class="an-identity"><h1>ANTI<span> NOIZ</span></h1><small>ARSONMIX <span class="an-brand-divider">/</span> ADAPTIVE DENOISER</small></div><div class="an-head-actions"><button class="armix-builtin-fx-power" data-power data-fx-state="unknown" type="button" aria-label="FX state unavailable" aria-pressed="false" disabled>⏻</button><button class="armix-builtin-fx-close" data-close type="button" aria-label="Close Anti Noiz" title="Close Anti Noiz"></button></div></header>
+ <div class="an-presets" hidden><span class="an-engraved">PROGRAM</span><select data-preset aria-label="Anti Noiz preset"><option value="CUSTOM">Custom</option><option value="DEFAULT">Default</option></select></div>
+ <div class="an-display" data-lcd-mode="gr"><div class="an-top"><div class="an-display-heading"><span class="an-display-title"><span data-display-title>GAIN REDUCTION</span><b data-display-unit>dB</b></span><span data-state>Waiting for DSP</span></div><div class="an-lcd-cue" aria-hidden="true"><span data-lcd-hint>Tap for spectrum</span><span class="an-lcd-pages"><i></i><i></i></span></div></div><div class="an-lcd-content"><div class="an-meter-view"><div class="an-meter"><label>Deepest spectral cut <output data-spectral>—</output></label><div class="an-meter-track"><i data-spectral-bar></i></div></div><div class="an-meter"><label>Residual expander <output data-residual>—</output></label><div class="an-meter-track"><i data-residual-bar></i></div></div><div class="an-meter-scale" aria-hidden="true"><span>0</span><span>12</span><span>24</span><span>36</span><span>48</span></div></div><div class="an-spectrum-view" hidden><div class="an-spectrum-key"><span class="an-input-key">Input</span><span class="an-noise-key" data-curve-label>Captured noise</span><span data-progress></span></div><div class="an-spectrum-plot"><svg class="an-spectrum" viewBox="0 0 480 88" preserveAspectRatio="none" role="img" aria-label="Input spectrum and learned noise power per FFT bin"><path class="an-spectrum-grid" data-grid/><path class="an-noise-fill" data-noise-fill/><path class="an-input-curve" data-input-curve/><path class="an-noise-curve" data-noise-curve/></svg><span class="an-spectrum-empty" data-spectrum-empty>No spectrum available</span></div><div class="an-freq-axis" aria-hidden="true"><span>200 Hz</span><span>1k</span><span>5k</span><span>20k</span></div><div class="an-db-axis" aria-hidden="true"><span>0</span><span>−60</span><span>−120</span></div></div></div><div class="an-legend" data-observation><span data-profile>No live telemetry</span><span data-learn-state>Learn —</span><span data-latency>Latency —</span></div><button class="an-lcd-hit" data-lcd-switch type="button" aria-label="Noise spectrum display" aria-pressed="false" title="Click or tap LCD for noise spectrum"></button></div>
+ <div class="an-knobs"></div><div class="an-source"><span class="an-engraved">SOURCE</span><div class="an-modes" role="group" aria-label="Source mode"></div></div>
+ <footer><button data-learn data-learning="false">Learn noise</button><span data-status role="status"></span><span class="an-stereo" title="Stereo processing is linked; not a toggle">STEREO<span>LINK</span></span></footer></section>`;
  const $=s=>root.querySelector(s), controls=[];
  const defs=[['cleanDb','Clean',24,.5,'dB'],['silenceDb','Silence',48,.5,'dB'],['musicProtect','Music Protect',1,.01,'%']];
- for(const [key,label,max,step,unit] of defs){const el=document.createElement('label');el.className='an-control';el.innerHTML=`<span class="an-dial" aria-hidden="true"><i></i></span><output>—</output><span>${label}</span><input type="range" min="0" max="${max}" step="${step}" aria-label="${label}">`;$('.an-knobs').append(el);controls.push({key,max,unit,el,input:el.querySelector('input'),out:el.querySelector('output')});}
+ // Tangential dashed LED arc: every segment has the SAME radius.
+ // Stationary metallic PNG, independent shadow and rotating pointer.
+ const arcPoint=deg=>{const t=deg*Math.PI/180;return `${(50+45.5*Math.sin(t)).toFixed(2)} ${(50-45.5*Math.cos(t)).toFixed(2)}`;};
+ const ledSegments=Array.from({length:27},(_,i)=>{const a=-135+3.2+i*(270-6.4)/26;return `M${arcPoint(a-3.2)}A45.5 45.5 0 0 1 ${arcPoint(a+3.2)}`;});
+ const ledRing=ledSegments.join('');
+ for(const [key,label,max,step,unit] of defs){const el=document.createElement('label');el.className='an-control';el.dataset.control=key;el.innerHTML=`<span class="an-dial"><svg viewBox="0 0 100 100" class="an-scale-ring" aria-hidden="true"><path class="an-led-off" d="${ledRing}"/><path class="an-led-on"/></svg><span class="an-knob-shadow" aria-hidden="true"></span><img class="an-knob-art" src="${assetBase}mixer-gain-knob-brushed-steel.png" alt="" draggable="false"><i aria-hidden="true"></i><input type="range" min="0" max="${max}" step="${step}" aria-label="${label}" title="Drag up/down · Shift for fine control · Double-click to reset"></span><span class="an-readout"><output>—</output></span><span class="an-control-name">${label}</span><span class="an-range-label" aria-hidden="true"><span>0</span><span>${unit==='%'?'100%':max+' dB'}</span></span>`;$('.an-knobs').append(el);controls.push({key,max,step,unit,el,input:el.querySelector('input'),out:el.querySelector('output'),led:el.querySelector('.an-led-on'),lit:-1,value:null,gesture:null,timer:null,draft:null});}
  for(const mode of ['Auto','Voice','Singing','Music']){const b=document.createElement('button');b.textContent=mode;b.dataset.mode=mode;b.setAttribute('aria-pressed','false');$('.an-modes').append(b);}
  let current=null;const buttons=[...root.querySelectorAll('button:not([data-close])')];
- const dragging=new Set();
- const paintDial=(c,v)=>{c.out.textContent=c.unit==='%'?Math.round(v*100)+'%':v.toFixed(1)+' dB';c.el.style.setProperty('--angle',(-135+270*v/c.max)+'deg');};
+ const setText=(el,value)=>{if(el.textContent!==value)el.textContent=value;};
+ const setPressed=(el,value)=>{const v=String(value);if(el.getAttribute('aria-pressed')!==v)el.setAttribute('aria-pressed',v);};
+ const paintDial=(c,v)=>{if(c.value===v)return;c.value=v;setText(c.out,c.unit==='%'?Math.round(v*100)+'%':v.toFixed(1)+' dB');c.el.style.setProperty('--angle',(-135+270*v/c.max)+'deg');const lit=v>0?Math.min(27,1+Math.floor(26*v/c.max)):0;if(lit!==c.lit){c.lit=lit;c.led.setAttribute('d',ledSegments.slice(0,lit).join(''));}};
+ const cancel=c=>{clearTimeout(c.timer);c.timer=null;c.draft=null;const g=c.gesture;c.gesture=null;if(g&&c.input.hasPointerCapture(g.id))c.input.releasePointerCapture(g.id);};
+ const meterEls=new Map();
  function meter(name,gain,live){
   const db=live&&Number.isFinite(gain)?Math.max(0,Math.min(48,-20*Math.log10(Math.max(1e-8,gain)))):null;
-  $(name).textContent=db===null?'—':db.toFixed(1)+' dB';
-  $(name.slice(0,-1)+'-bar]').style.width=db===null?'0%':(db/48*100)+'%';
+  let els=meterEls.get(name);if(!els){els={out:$(name),bar:$(name.slice(0,-1)+'-bar]'),value:undefined};meterEls.set(name,els);}
+  const v=db===null?null:Math.round(db*10)/10;if(els.value===v)return;els.value=v;
+  setText(els.out,v===null?'—':v.toFixed(1)+' dB');
+  els.bar.style.transform='scaleX('+(v===null?0:v/48)+')';
  }
+ // Render only native spectra on the existing host polling cadence (~5.6 Hz).
+ // Fixed SVG grid, two paths, no canvas animation or extra PCM processing.
+ const lcd=$('.an-display'),lcdSwitch=$('[data-lcd-switch]'),lcdHint=$('[data-lcd-hint]'),meterView=$('.an-meter-view'),spectrumView=$('.an-spectrum-view');
+ const inputPath=$('[data-input-curve]'),noisePath=$('[data-noise-curve]'),noiseFill=$('[data-noise-fill]');
+ let profileView=false,lastSpectrumKey='';
+ let chartNyquist=0;
+ const freqAxis=$('.an-freq-axis'),logX=f=>480*Math.log(Math.max(170,f)/170)/Math.log(Math.max(22050,chartNyquist)/170);
+ function chartGrid(nyquist){
+  if(chartNyquist===nyquist)return;chartNyquist=nyquist;
+  const frequencies=[200,1000,5000,20000];
+  $('[data-grid]').setAttribute('d',frequencies.map(f=>`M${logX(f).toFixed(1)} 0V88`).join('')+[0,22,44,66,88].map(y=>`M0 ${y}H480`).join(''));
+  for(const [i,f] of frequencies.entries())freqAxis.children[i].style.left=(logX(f)/4.8)+'%';
+ }
+ chartGrid(24000);
+ function showProfile(show){if(profileView===show)return;profileView=show;meterView.hidden=show;spectrumView.hidden=!show;lcd.dataset.lcdMode=show?'spectrum':'gr';setPressed(lcdSwitch,show);setText($('[data-display-title]'),show?'NOISE SPECTRUM':'GAIN REDUCTION');setText($('[data-display-unit]'),show?'dBFS/bin':'dB');lastSpectrumKey='';}
+ function paintLcdCue(learning){
+  if(lcdSwitch.disabled!==learning)lcdSwitch.disabled=learning;
+  const locked=String(learning);
+  if(lcd.dataset.learning!==locked)lcd.dataset.learning=locked;
+  setText(lcdHint,learning?'Capturing…':profileView?'Tap for GR':'Tap for spectrum');
+  const title=learning?'Spectrum locked during noise capture':profileView?'Click or tap LCD for gain reduction':'Click or tap LCD for noise spectrum';
+  if(lcdSwitch.title!==title)lcdSwitch.title=title;
+ }
+ function curvePath(a,binHz){
+  if(!a?.length)return '';
+  let d='';for(let k=1;k<a.length;++k){
+   const x=logX(k*binHz),y=88*(1-Math.max(0,Math.min(120,a[k]+120))/120);
+   d+=(k===1?'M':'L')+x.toFixed(1)+' '+y.toFixed(1);
+  }return d;
+ }
+ function paintSpectrum(observation,live,hostOff){
+  const phase=live?observation.learnStatus:'';
+  // Default GR on each open. Only actual ongoing Learn forces Spectrum;
+  // historical Accepted telemetry on reopen must not steal the selected view.
+  const learning=phase==='Learning'&&observation.learning===true&&!hostOff;
+  if(learning)showProfile(true);
+  paintLcdCue(learning);
+  if(!profileView)return;
+  const spec=live&&!hostOff?observation.spectrum:null;
+  const key=spec?observation.serial+':'+phase:'none';
+  if(key===lastSpectrumKey)return;lastSpectrumKey=key;
+  if(spec)chartGrid((spec.bins-1)*spec.binHz);
+  inputPath.setAttribute('d',curvePath(spec?.input,spec?.binHz));
+  const noise=curvePath(spec?.noise,spec?.binHz);
+  noisePath.setAttribute('d',noise);
+  noiseFill.setAttribute('d',noise?noise+'L480 88L'+logX(spec.binHz).toFixed(1)+' 88Z':'');
+  setText($('[data-curve-label]'),spec?.candidate?'Captured noise':'Trusted noise');
+  setText($('[data-progress]'),spec?.candidate?Math.round(spec.progress*100)+'%':phase==='Rejected'?'Rejected':phase==='Cancelled'?'Cancelled':'');
+  $('[data-spectrum-empty]').hidden=!!(spec?.input.length||spec?.noise.length);
+ }
+ // A single native button covers the glass; mouse, touch, Enter and Space
+ // share one click handler. View switching never submits an audio command.
+ lcdSwitch.onclick=()=>{if(!lcdSwitch.disabled){showProfile(!profileView);if(lastView)paintHost(lastView);}};
  let lastView=null;
  function paintHost(view){
-  const {accepted,pending,observation}=view;
+  const {accepted,pending,adjusting,observation}=view;
   const power=options.hostPower?.()||'ON';
   const live=observation?.live===true;
   const hostOff=power!=='ON'||observation?.rackBypassed===true;
   const unavailable=power==='UNAVAILABLE';
   $('[data-learn]').disabled=!accepted||pending||!accepted.enabled||accepted.mode==='Music'||!live||hostOff||observation?.learning===true||observation?.effectiveMode==='Music';
   const label={GLOBAL:'Global FX bypassed',RACK:'Rack bypassed',SLOT:'Slot bypassed',LOGICAL:'Offline settings',UNAVAILABLE:'FX unavailable'}[power];
-  $('[data-state]').textContent=label||(accepted?(observation?.rackBypassed?'Rack bypassed':accepted.enabled?(live?observation.effectiveMode:accepted.mode)+' policy':'DSP bypassed'):'Offline');
+  setText($('[data-state]'),label||(accepted?(observation?.rackBypassed?'Rack bypassed':accepted.enabled?(live?observation.effectiveMode+' · Live':accepted.mode+' · Offline'):'DSP bypassed'):'Offline'));
   meter('[data-spectral]',observation?.spectralGain,live&&!hostOff&&accepted?.enabled);
   meter('[data-residual]',observation?.residualGain,live&&!hostOff&&accepted?.enabled);
-  $('[data-observation]').textContent=live&&!unavailable?`${observation.profile?'Profile ready':'No learned profile'} · ${observation.learnStatus} · ${observation.latency} samples`:'No live telemetry · Learn requires active PCM';
-  for(const b of buttons)if(!b.hasAttribute('data-learn'))b.disabled=!accepted||pending||unavailable;
-  for(const c of controls)c.input.disabled=!accepted||pending||unavailable;
+  const observed=live&&!unavailable;
+  const learning=observed&&observation.learning===true&&!hostOff&&accepted?.enabled===true;
+  const learn=$('[data-learn]'), learningValue=String(learning);
+  if(learn.dataset.learning!==learningValue)learn.dataset.learning=learningValue;
+  setText($('[data-profile]'),observed?(observation.profile?'Profile ready':'No profile'):'No live telemetry');
+  setText($('[data-learn-state]'),observed?(observation.learning?'Learning':observation.learnStatus==='Idle'?'Learn idle':observation.learnStatus):'Learn —');
+  setText($('[data-latency]'),observed?observation.latency+' samples':'Latency —');
+  paintSpectrum(observation,observed,hostOff||!accepted?.enabled);
+  const profile=$('[data-profile]'), ready=String(observed&&observation.profile===true);
+  if(profile.dataset.ready!==ready)profile.dataset.ready=ready;
+  // Same semantic FX chrome states as PEQ. Accepted DSP and host bypass
+  // remain separate authorities; never repaint from a submitted draft.
+  const powerButton=$('[data-power]');
+  const fxState=unavailable||!accepted?'unknown':power==='GLOBAL'||power==='RACK'||(observation?.rackBypassed&&power!=='SLOT')?'rack-off':power==='SLOT'||!accepted.enabled?'off':'on';
+  if(powerButton.dataset.fxState!==fxState)powerButton.dataset.fxState=fxState;
+  setPressed(powerButton,fxState==='on');
+  const powerTitle=fxState==='unknown'?'FX state unavailable':fxState==='rack-off'?'FX rack/global bypassed · enable upstream first':power==='SLOT'?'FX slot bypassed · click to enable slot':fxState==='on'?'DSP on · click to bypass':'DSP bypassed · click to enable';
+  if(powerButton.title!==powerTitle){powerButton.title=powerTitle;powerButton.setAttribute('aria-label',powerTitle);}
+  powerButton.disabled=pending||fxState==='unknown'||fxState==='rack-off'||(power==='SLOT'&&!options.enableSlot);
+  for(const b of buttons)if(!b.hasAttribute('data-learn')&&!b.hasAttribute('data-lcd-switch')&&!b.hasAttribute('data-power'))b.disabled=!accepted||pending||unavailable;
+  for(const c of controls){c.input.disabled=!accepted||(pending&&!adjusting)||unavailable;if(c.input.disabled){cancel(c);if(accepted){c.input.value=accepted[c.key];paintDial(c,accepted[c.key]);}}}
  }
  const model=controller(transport,view=>{
   lastView=view;
-  const {accepted,pending,error}=view;current=accepted;
-  for(const b of buttons)b.disabled=!accepted||pending;
+  const {accepted,pending,desired,error}=view;current=accepted;
   for(const c of controls){
-   c.input.disabled=!accepted||pending;
-   if(accepted&&!dragging.has(c.key)){const v=accepted[c.key];c.input.value=v;paintDial(c,v);}
-   else if(!accepted){dragging.delete(c.key);c.out.textContent='—';}
+   if(!accepted||error){cancel(c);}
+   if(accepted){
+    const v=c.draft??desired?.[c.key]??accepted[c.key];
+    if(Number(c.input.value)!==v)c.input.value=v;paintDial(c,v);
+   }else{c.value=null;c.lit=-1;c.led.setAttribute('d','');setText(c.out,'—');}
   }
-  if(!accepted){$('[data-power]').setAttribute('aria-pressed','false');for(const b of root.querySelectorAll('[data-mode]'))b.setAttribute('aria-pressed','false');}
-  if(accepted){$('[data-power]').setAttribute('aria-pressed',String(accepted.enabled));for(const b of root.querySelectorAll('[data-mode]'))b.setAttribute('aria-pressed',String(b.dataset.mode===accepted.mode));}
+   for(const b of root.querySelectorAll('[data-mode]'))setPressed(b,b.dataset.mode===accepted?.mode);
   paintHost(view);
-  $('[data-status]').textContent=pending?'Applying…':error;
+  setText($('[data-status]'),pending?'Applying…':error);
   options.onState?.(view);
  });
  for(const c of controls){
-  c.input.addEventListener('pointerdown',()=>dragging.add(c.key));
-  c.input.addEventListener('input',()=>{if(dragging.has(c.key))paintDial(c,Number(c.input.value));});
-  const release=()=>{dragging.delete(c.key);if(current){c.input.value=current[c.key];paintDial(c,current[c.key]);}};
-  c.input.addEventListener('pointercancel',release);
-  c.input.addEventListener('blur',release);
-  c.input.addEventListener('change',()=>{
-   const value=Number(c.input.value);dragging.delete(c.key);
-   model.submit('settings',{[c.key]:value});
-   if(current){c.input.value=current[c.key];paintDial(c,current[c.key]);}
+  const quantize=v=>Math.max(0,Math.min(c.max,Number((Math.round(v/c.step)*c.step).toFixed(2))));
+  const flush=()=>{clearTimeout(c.timer);c.timer=null;if(c.draft===null)return;const value=c.draft;if(!model.adjust(c.key,value)){cancel(c);if(lastView&&current){c.input.value=current[c.key];paintDial(c,current[c.key]);}}};
+  const preview=v=>{c.draft=quantize(v);c.input.value=c.draft;paintDial(c,c.draft);if(c.timer===null)c.timer=setTimeout(flush,40);};
+  c.input.addEventListener('pointerdown',e=>{
+   if(c.input.disabled||e.button!==0||c.gesture)return;
+   e.preventDefault();c.input.focus({preventScroll:true});c.input.setPointerCapture(e.pointerId);
+   c.gesture={id:e.pointerId,y:e.clientY,x:e.clientX,raw:Number(c.input.value)};
   });
-  // No-motion release may not emit change. Delay until after the browser's
-  // native change event so its accepted request retains the selected value.
-  c.input.addEventListener('pointerup',()=>queueMicrotask(()=>{if(dragging.has(c.key))release();}));
+  c.input.addEventListener('pointermove',e=>{
+   const g=c.gesture;if(!g||e.pointerId!==g.id)return;
+   const delta=(g.y-e.clientY)+(e.clientX-g.x)*.5;g.x=e.clientX;g.y=e.clientY;
+   g.raw=Math.max(0,Math.min(c.max,g.raw+delta*c.max/(e.shiftKey?900:180)));preview(g.raw);
+  });
+  const release=e=>{
+   const g=c.gesture;if(!g||e.pointerId!==g.id)return;
+   c.gesture=null;flush();c.draft=null;if(c.input.hasPointerCapture(e.pointerId))c.input.releasePointerCapture(e.pointerId);
+   if(lastView&&current){const v=lastView.desired?.[c.key]??current[c.key];c.input.value=v;paintDial(c,v);}
+  };
+  c.input.addEventListener('pointerup',release);
+  c.input.addEventListener('pointercancel',release);
+  c.input.addEventListener('lostpointercapture',release);
+  c.input.addEventListener('input',()=>{if(!c.gesture){const v=Number(c.input.value);preview(v);flush();c.draft=null;}});
+  c.input.addEventListener('dblclick',e=>{e.preventDefault();if(!c.input.disabled){preview(defaults[c.key]);flush();c.draft=null;}});
  }
  for(const b of root.querySelectorAll('[data-mode]'))b.onclick=()=>model.submit('settings',{mode:b.dataset.mode});
- $('[data-power]').onclick=()=>current&&model.submit('settings',{enabled:!current.enabled});$('[data-learn]').onclick=()=>{if((!options.hostPower||options.hostPower()==='ON')&&!$('[data-learn]').disabled)model.submit('learn');};
+ $('[data-power]').onclick=()=>{if(!current||$('[data-power]').disabled)return;if(options.hostPower?.()==='SLOT')options.enableSlot?.();else model.submit('settings',{enabled:!current.enabled});};$('[data-learn]').onclick=()=>{if((!options.hostPower||options.hostPower()==='ON')&&!$('[data-learn]').disabled)model.submit('learn');};
  $('[data-close]').onclick=()=>options.onClose?.();
  $('[data-close]').hidden=!options.onClose;
- return {model,refreshHostPower(){if(lastView)paintHost(lastView);},dispose(){model.dispose();root.replaceChildren();}};
+ return {model,refreshHostPower(){if(lastView)paintHost(lastView);},dispose(){for(const c of controls)cancel(c);model.dispose();root.replaceChildren();}};
 }

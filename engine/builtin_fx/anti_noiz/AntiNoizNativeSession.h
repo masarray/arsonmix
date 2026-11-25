@@ -13,6 +13,7 @@ public:
         LearnStatus learnStatus=LearnStatus::Idle;
         bool rackBypassed=false;
         std::uint64_t serial=0;
+        Core::Spectrum spectrum{};
     };
     bool prepare(double rate,int channels,Core::SourceRole role=Core::SourceRole::Unknown) {
         if(sealed_||pending_)return false;
@@ -88,7 +89,7 @@ public:
     }
 private:
     Snapshot nativeSnapshot() const noexcept {
-        return {fx_->snapshot(),status_,rackBypassed_,serial_};
+        return {fx_->snapshot(),status_,rackBypassed_,serial_,fx_->spectrum()};
     }
     std::unique_ptr<Control> fx_;
     Core::Settings accepted_{};

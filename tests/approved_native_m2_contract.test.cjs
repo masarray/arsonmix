@@ -6780,7 +6780,7 @@ test("G-MV38 editor surface routing has one allowlisted browser owner; future FX
     assert.deepEqual(result,{kind:"BROWSER",windowKey});
   }
   for(const id of ["vendor.vst3",
-                   "armix.builtin.immersib.v1","__proto__"]){
+                   "armix.builtin.immersib.v1","armix.builtin.vocal-delay.v2","__proto__"]){
     assert.deepEqual(project(id).result,{kind:"NATIVE_HOST"},
       "non-allowlisted catalogs cannot choose an arbitrary browser host");
   }
@@ -6798,6 +6798,10 @@ test("G-MV38 editor surface routing has one allowlisted browser owner; future FX
     channelId,slot:0}).lease;
   assert.deepEqual(fxRackVM.editorSurfacePlan(offline,logicalLease),
     {kind:"LOGICAL_VENDOR"});
+  offline.graph.channels[0].inserts[0].catalogId="armix.builtin.vocal-delay.v2";
+  const delayLogical=fxRackVM.editorNavigationPlan(offline,{channelId,slot:0}).lease;
+  assert.deepEqual(fxRackVM.editorSurfacePlan(offline,delayLogical),{kind:"LOGICAL_VENDOR"});
+  assert.equal(fxRackVM.nativeEditorDispatchPlan(offline,delayLogical,{offline:true}).kind,"UNAVAILABLE");
   offline.graph.channels[0].inserts[0].catalogId="armix.builtin.arson-harmony.v1";
   const builtInLogical=fxRackVM.editorNavigationPlan(offline,{
     channelId,slot:0}).lease;
