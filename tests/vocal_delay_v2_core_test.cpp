@@ -11,13 +11,7 @@
 #include <vector>
 using namespace armix::builtin_fx::vocal_delay;
 #define CHECK(x) do {if(!(x)){std::fprintf(stderr,"FAIL:%d %s\n",__LINE__,#x);std::abort();}}while(false)
-static std::atomic<bool> noHeap{false};
-void* operator new(std::size_t n){if(noHeap.load())std::abort();if(auto p=std::malloc(n?n:1))return p;throw std::bad_alloc();}
-void* operator new[](std::size_t n){return ::operator new(n);}
-void operator delete(void* p) noexcept{std::free(p);}
-void operator delete[](void* p) noexcept{std::free(p);}
-void operator delete(void* p,std::size_t) noexcept{std::free(p);}
-void operator delete[](void* p,std::size_t) noexcept{std::free(p);}
+extern std::atomic<bool> noHeap;
 static bool near(float a,float b,float e=1.e-6f){return std::abs(a-b)<=e;}
 static Parameters transparent(){Parameters p;p.timeMs=100;p.feedback=.5f;p.echo=.5f;p.highPassHz=0;p.lowPassHz=0;p.duck=0;return p;}
 static void process(ContinuousDelayCore& c,float* l,float* r,std::size_t n){
