@@ -1321,8 +1321,13 @@ if(BUILD_TESTING)
   target_compile_features(ARMixHarmonyBypassPcmTests PRIVATE cxx_std_20)
   add_test(NAME NativeHarmonyWarmBypassRackSlotAndLatencyParity COMMAND ARMixHarmonyBypassPcmTests)
   add_test(NAME ApprovedNativeHarmonyEditorAckAndSingleGui COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/native_harmony_assembly_test.py")
+  # AN-01 research-only foundation. Compile and test, never register a live FX.
+  add_executable(ARMixAntiNoizCoreTests tests/anti_noiz_core_test.cpp)
+  target_compile_features(ARMixAntiNoizCoreTests PRIVATE cxx_std_20)
+  add_test(NAME AntiNoizAN01StandaloneResearchCorePCM COMMAND ARMixAntiNoizCoreTests)
   add_executable(ARMixMixerRoutingTests tests/mixer_routing_plan_test.cpp)
   target_compile_features(ARMixMixerRoutingTests PRIVATE cxx_std_20)
+  add_dependencies(ARMixMixerRoutingTests ARMixAntiNoizCoreTests)
   add_dependencies(ARMixMixerRoutingTests ARMixHarmonyDspTests ARMixHarmonyMusicGuideTests ARMixHarmonyChannelPcmTests ARMixHarmonyBypassPcmTests ARMixHarmonyCpuProfileTests)
   add_test(NAME TenStripStaticRoutingAndMaster COMMAND ARMixMixerRoutingTests)
   # M3D atomic native Session: the accepted Console roster cannot advance
