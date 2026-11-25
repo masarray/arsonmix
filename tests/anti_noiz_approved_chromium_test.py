@@ -290,6 +290,11 @@ def main():
         assert root.locator('[data-input-curve]').get_attribute("d").startswith("M")
         assert root.locator('[data-noise-curve]').get_attribute("d").startswith("M")
         assert root.locator('[data-noise-fill]').get_attribute("d").endswith("Z")
+        # One line segment per actual non-DC bin, no interpolated extra peaks.
+        assert root.locator('[data-input-curve]').get_attribute("d").count("L")==127
+        assert root.locator('[data-input-curve]').get_attribute("d").startswith("M0.0 ")
+        assert root.locator('[data-noise-curve]').evaluate("el=>getComputedStyle(el).stroke")=="rgb(227, 182, 108)"
+        captured_noise_path=root.locator('[data-noise-curve]').get_attribute("d")
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-learning-1366.png"))
         page.wait_for_timeout(210)
         readback(page,accepted,{**OBS,"serial":"4","effectiveMode":"Voice","profile":True,"learnStatus":"Accepted","spectrum":{**SPECTRUM,"candidate":False,"progress":0}})
@@ -298,6 +303,7 @@ def main():
         expect(root.locator('[data-profile]')).to_have_attribute("data-ready","true")
         expect(root.locator('[data-latency]')).to_have_text("256 samples")
         expect(root.locator('[data-curve-label]')).to_have_text("Trusted noise")
+        assert root.locator('[data-noise-curve]').get_attribute("d")==captured_noise_path
         expect(root.locator(".an-spectrum-view")).to_be_visible()
         assert_lcd_fixed(root,gr_baseline)
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-profile-1366.png"))

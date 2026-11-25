@@ -48,6 +48,59 @@ export function controller(transport,render){
  }
  return {submit:(kind,patch)=>submit(kind,patch),adjust,state,dispose(){closed=true;queued=null;unsubscribe();},refresh(){if(!closed)transport.read();}};
 }
+// Presentation-only: one value per measured non-DC FFT bin. Never infer
+// sub-bin detail or insert synthetic points. Work in linear mean-square power.
+export function antiNoizSpectrumPresentation(){
+ let previous=null,stamp=0,gridKey='',x=[],noiseRaw=null,noisePath='';
+ const same=(a,b)=>a!==null&&a.length===b.length&&b.every((v,i)=>v===a[i]);
+ const smooth=a=>{
+  const power=a.map(v=>10**(v/10));
+  // Mild 3-bin convex filter; preserve endpoints and limit peak loss /
+  // adjacent-bin lift so narrow tonal noise is not visually smeared.
+  return power.map((v,i)=>i===0||i===power.length-1?v:
+   Math.max(v*0.7943282347,Math.min(v*1.995262315,
+    (power[i-1]+14*v+power[i+1])/16)));
+ };
+ const path=power=>{
+  let d='';
+  for(let i=1;i<power.length;i++){
+   const db=10*Math.log10(Math.max(1e-12,power[i]));
+   const y=88*(1-Math.max(0,Math.min(120,db+120))/120);
+   d+=(i===1?'M':'L')+x[i]+' '+y.toFixed(1);
+  }
+  return d;
+ };
+ function reset(){previous=null;stamp=0;gridKey='';x=[];noiseRaw=null;noisePath='';}
+ function update(spec,now){
+  if(!spec){reset();return {input:'',noise:'',fill:''};}
+  const key=spec.bins+':'+spec.binHz;
+  if(key!==gridKey){
+   reset();gridKey=key;
+   // First resolvable non-DC frequency through actual Nyquist.
+   const span=Math.log(spec.bins-1);
+   x=Array.from({length:spec.bins},(_,i)=>i===0?'0':(480*Math.log(i)/span).toFixed(1));
+  }
+  let input='';
+  if(spec.input.length){
+   const target=smooth(spec.input);
+   if(previous&&now>=stamp&&now-stamp<=650){
+    const dt=now-stamp,attack=1-Math.exp(-dt/40),release=1-Math.exp(-dt/200);
+    for(let i=1;i<target.length;i++){
+     const old=previous[i],v=target[i];
+     target[i]=old+(v-old)*(v>=old?attack:release);
+    }
+   }
+   previous=target;stamp=now;input=path(target);
+  }else{previous=null;stamp=0;}
+  // Trusted/learning noise is never animated; repaint only on changed
+  // native values. A new Learn checkpoint may legitimately change it.
+  if(!same(noiseRaw,spec.noise)){
+   noiseRaw=spec.noise.slice();noisePath=path(smooth(spec.noise));
+  }
+  return {input,noise:noisePath,fill:noisePath?noisePath+'L480 88L0 88Z':''};
+ }
+ return {update,reset};
+}
 export function mount(root,transport,options={}){
  const assetBase=options.nativeAssets?'assets/':'../../../site/preview-v2/assets/';
  root.innerHTML=`<section class="an-panel" aria-label="Anti Noiz">
@@ -78,21 +131,25 @@ export function mount(root,transport,options={}){
   setText(els.out,v===null?'—':v.toFixed(1)+' dB');
   els.bar.style.transform='scaleX('+(v===null?0:v/48)+')';
  }
- // Render only native spectra on the existing host polling cadence (~5.6 Hz).
- // Fixed SVG grid, two paths, no canvas animation or extra PCM processing.
+ // Existing host polling cadence (~5.6 Hz). No extra IPC, FFT, timer,
+ // animation loop or PCM processing; smooth only newly observed frames.
  const lcd=$('.an-display'),lcdSwitch=$('[data-lcd-switch]'),lcdHint=$('[data-lcd-hint]'),meterView=$('.an-meter-view'),spectrumView=$('.an-spectrum-view');
  const inputPath=$('[data-input-curve]'),noisePath=$('[data-noise-curve]'),noiseFill=$('[data-noise-fill]');
  let profileView=false,lastSpectrumKey='';
- let chartNyquist=0;
- const freqAxis=$('.an-freq-axis'),logX=f=>480*Math.log(Math.max(170,f)/170)/Math.log(Math.max(22050,chartNyquist)/170);
- function chartGrid(nyquist){
-  if(chartNyquist===nyquist)return;chartNyquist=nyquist;
-  const frequencies=[200,1000,5000,20000];
-  $('[data-grid]').setAttribute('d',frequencies.map(f=>`M${logX(f).toFixed(1)} 0V88`).join('')+[0,22,44,66,88].map(y=>`M0 ${y}H480`).join(''));
-  for(const [i,f] of frequencies.entries())freqAxis.children[i].style.left=(logX(f)/4.8)+'%';
+ const spectrumPresentation=antiNoizSpectrumPresentation();
+ const freqAxis=$('.an-freq-axis');
+ let chartKey='';
+ function chartGrid(binHz,bins){
+  const key=bins+':'+binHz;if(chartKey===key)return;chartKey=key;
+  const nyquist=(bins-1)*binHz;
+  const logX=f=>480*Math.log(f/binHz)/Math.log(nyquist/binHz);
+  const labels=[200,1000,5000,20000],ticks=[200,500,1000,2000,5000,10000,20000];
+  $('[data-grid]').setAttribute('d',ticks.filter(f=>f>=binHz&&f<=nyquist).map(f=>`M${logX(f).toFixed(1)} 0V88`).join('')+[0,22,44,66,88].map(y=>`M0 ${y}H480`).join(''));
+  for(const [i,f] of labels.entries())freqAxis.children[i].style.left=(logX(f)/4.8)+'%';
  }
- chartGrid(24000);
- function showProfile(show){if(profileView===show)return;profileView=show;meterView.hidden=show;spectrumView.hidden=!show;lcd.dataset.lcdMode=show?'spectrum':'gr';setPressed(lcdSwitch,show);setText($('[data-display-title]'),show?'NOISE SPECTRUM':'GAIN REDUCTION');setText($('[data-display-unit]'),show?'dBFS/bin':'dB');lastSpectrumKey='';}
+ chartGrid(187.5,129);
+ const setPath=(el,d)=>{if(el.getAttribute('d')!==d)el.setAttribute('d',d);};
+ function showProfile(show){if(profileView===show)return;profileView=show;meterView.hidden=show;spectrumView.hidden=!show;lcd.dataset.lcdMode=show?'spectrum':'gr';setPressed(lcdSwitch,show);setText($('[data-display-title]'),show?'NOISE SPECTRUM':'GAIN REDUCTION');setText($('[data-display-unit]'),show?'dBFS/bin':'dB');lastSpectrumKey='';spectrumPresentation.reset();}
  function paintLcdCue(learning){
   if(lcdSwitch.disabled!==learning)lcdSwitch.disabled=learning;
   const locked=String(learning);
@@ -100,13 +157,6 @@ export function mount(root,transport,options={}){
   setText(lcdHint,learning?'Capturing…':profileView?'Tap for GR':'Tap for spectrum');
   const title=learning?'Spectrum locked during noise capture':profileView?'Click or tap LCD for gain reduction':'Click or tap LCD for noise spectrum';
   if(lcdSwitch.title!==title)lcdSwitch.title=title;
- }
- function curvePath(a,binHz){
-  if(!a?.length)return '';
-  let d='';for(let k=1;k<a.length;++k){
-   const x=logX(k*binHz),y=88*(1-Math.max(0,Math.min(120,a[k]+120))/120);
-   d+=(k===1?'M':'L')+x.toFixed(1)+' '+y.toFixed(1);
-  }return d;
  }
  function paintSpectrum(observation,live,hostOff){
   const phase=live?observation.learnStatus:'';
@@ -117,13 +167,13 @@ export function mount(root,transport,options={}){
   paintLcdCue(learning);
   if(!profileView)return;
   const spec=live&&!hostOff?observation.spectrum:null;
-  const key=spec?observation.serial+':'+phase:'none';
+  const key=spec?observation.serial+':'+phase+':'+spec.bins+':'+spec.binHz:'none';
   if(key===lastSpectrumKey)return;lastSpectrumKey=key;
-  if(spec)chartGrid((spec.bins-1)*spec.binHz);
-  inputPath.setAttribute('d',curvePath(spec?.input,spec?.binHz));
-  const noise=curvePath(spec?.noise,spec?.binHz);
-  noisePath.setAttribute('d',noise);
-  noiseFill.setAttribute('d',noise?noise+'L480 88L'+logX(spec.binHz).toFixed(1)+' 88Z':'');
+  if(spec)chartGrid(spec.binHz,spec.bins);
+  const curves=spectrumPresentation.update(spec,performance.now());
+  setPath(inputPath,curves.input);
+  setPath(noisePath,curves.noise);
+  setPath(noiseFill,curves.fill);
   setText($('[data-curve-label]'),spec?.candidate?'Captured noise':'Trusted noise');
   setText($('[data-progress]'),spec?.candidate?Math.round(spec.progress*100)+'%':phase==='Rejected'?'Rejected':phase==='Cancelled'?'Cancelled':'');
   $('[data-spectrum-empty]').hidden=!!(spec?.input.length||spec?.noise.length);

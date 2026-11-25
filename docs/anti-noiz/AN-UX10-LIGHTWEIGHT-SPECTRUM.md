@@ -1,0 +1,8 @@
+# AN-UX10 — Lightweight professional spectrum
+
+Base: UX9 121bb30bdd36818813168b871f2536ea4ebf824f (canonical candidate #925). Separate presentation-only candidate; do not supersede an in-flight global FAT or promote before exact checks.
+
+- Reuse native one-sided window-energy normalized mean-square FFT bins, converted to dB in CONTROL. Omit DC on logarithmic axis; left endpoint is first resolvable bin, right endpoint actual Nyquist. No sub-bin or fabricated points. The graph clips at the existing -120 to 0 dBFS/bin display range.
+- Mild three-bin linear-power weights 1/16, 14/16, 1/16, bounded to -1/+3 dB relative to measured bin; first/last endpoints preserved. Temporal input smoothing in linear power, 40 ms attack / 200 ms release, elapsed between new observations. No extrapolation or animation; reset after loss, >650 ms gap, grid change, or leaving spectrum. Noise uses spatial smoothing only, never temporal animation; cache raw values and reuse SVG path for unchanged noise.
+- Existing native polling 180 ms (~5.6 Hz) deliberately retained: no extra IPC, timers, threads, FFT, audio callback work, native buffer, transport or dependency. Only changed SVG attributes written, grid cached by bin spacing/count. Pure black fixed 94 px LCD and UX9 geometry unchanged. Silver input, amber noise, restrained grid.
+- Unit fixtures are synthetic presentation checks, not measured audio or quality claims. Focused approved Chromium checks source geometry, colors and actual vertex count using explicit mock native IPC. Native/PCM/P99 and physical ASIO not rerun for this source-only candidate; no claim of measured latency or CPU improvement. Native source is unchanged by construction; verify exact diff and qualified combined release separately.
