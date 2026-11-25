@@ -1,0 +1,40 @@
+name: Anti Noiz recorded environment baseline (AN-07A)
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - 'tools/anti-noiz/recorded_environment.py'
+      - 'tools/anti-noiz/corpus_qualifier.cpp'
+      - '.github/workflows/anti-noiz-recorded-corpus.yml'
+permissions:
+  contents: read
+concurrency:
+  group: anti-noiz-real-corpus-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  corpus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Build existing offline native Core qualifier
+        run: |
+          cmake -S tools/anti-noiz -B "$RUNNER_TEMP/an07" -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/an07" --parallel 2 --target anti_noiz_qualify
+          "$RUNNER_TEMP/an07/anti_noiz_qualify" --self-test
+          python3 tools/anti-noiz/recorded_environment.py --self-test
+      - name: Pinned real recorded environments (not listening approval)
+        run: python3 tools/anti-noiz/recorded_environment.py "$RUNNER_TEMP/an07/anti_noiz_qualify" "$RUNNER_TEMP/an07-evidence"
+      - name: Preserve machine-readable evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: anti-noiz-an07-recorded-environment-report
+          path: |
+            ${{ runner.temp }}/an07-evidence/report.json
+            ${{ runner.temp }}/an07-evidence/*/provenance.tsv
+            ${{ runner.temp }}/an07-evidence/*/segments.tsv
+          if-no-files-found: warn
