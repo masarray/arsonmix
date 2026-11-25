@@ -134,9 +134,25 @@ def main():
             cmd = [str(binary), *[str(case / f) for f in
                    ("clean.wav", "noise.wav", "learn.wav", "segments.tsv", "provenance.tsv")],
                    str(case / tag), mode, str(clean), str(protect)]
-            run = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=60)
+            run = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            if run.returncode:
+                raise RuntimeError(f"{name}/{tag}: qualifier exit {run.returncode}: {run.stderr}")
             (case / (tag + ".csv")).write_text(run.stdout)
-            for row in csv.DictReader(run.stdout.splitlines()):
+            reader = csv.DictReader(run.stdout.splitlines())
+            expected = ("label", "kind", "channel_minus1_all", "begin_frame", "end_frame",
+                        "error_improvement_db", "desired_projection", "removed_projection",
+                        "clean_only_error_db_relative", "idle_attenuation_db")
+            if tuple(reader.fieldnames or ()) != expected:
+                raise ValueError(f"invalid qualifier CSV schema: {reader.fieldnames}")
+            rows = list(reader)
+            for row in rows:
+                if None in row or any(value is None for value in row.values()):
+                    raise ValueError(f"invalid qualifier CSV row: {row}")
+            required = {"recorded_clip", "idle_end"}
+            present = {row["label"] for row in rows if row["channel_minus1_all"] == "-1"}
+            if not required <= present:
+                raise ValueError(f"missing required aggregate segments: {required-present}")
+            for row in rows:
                 if row["channel_minus1_all"] == "-1":
                     print(name, tag, row["label"], "error_dB=" + row["error_improvement_db"],
                           "projection=" + row["desired_projection"], "removed=" + row["removed_projection"],

@@ -98,15 +98,16 @@ Audio mix(const Audio& clean,const Audio& noise) {
     }
     return input;
 }
-void report(const Metrics& m,const Segment& s,int channel) {
-    std::cout<<s.label<<','<<(s.idle?"idle":"active")<<','<<channel<<','<<s.begin<<','<<s.end<<',';
+constexpr std::string_view csvHeader="label,kind,channel_minus1_all,begin_frame,end_frame,error_improvement_db,desired_projection,removed_projection,clean_only_error_db_relative,idle_attenuation_db";
+void report(std::ostream& out,const Metrics& m,const Segment& s,int channel) {
+    out<<s.label<<','<<(s.idle?"idle":"active")<<','<<channel<<','<<s.begin<<','<<s.end<<',';
     // For idle labels require actual near-silence of the clean reference.
     if(s.idle) {
         require(m.clean<=1e-10*double(m.count),"idle label contains desired signal");
-        std::cout<<",,,,"<<db(m.input,m.output)<<'\n';
+        out<<",,,,"<<db(m.input,m.output)<<'\n';
     } else {
         require(m.clean>1e-12*double(m.count),"active label has no measurable reference");
-        std::cout<<db(m.inputError,m.outputError)<<','<<m.projection/m.clean<<','
+        out<<db(m.inputError,m.outputError)<<','<<m.projection/m.clean<<','
                  <<m.removedProjection/m.clean<<','<<db(m.cleanOnlyError,m.clean)<<",\n";
     }
 }
@@ -117,6 +118,15 @@ void selfTest() {
     const auto m=measure(c,x,y,c,{"analytic",0,4,false},-1);
     require(std::abs(db(m.inputError,m.outputError)-6.020599913)<1e-8&&
             m.projection/m.clean==1&&m.removedProjection==0&&m.cleanOnlyError==0,"analytic metric failure");
+    // Wire-format regression: exact column names and ten fields in both row types.
+    require(csvHeader=="label,kind,channel_minus1_all,begin_frame,end_frame,error_improvement_db,desired_projection,removed_projection,clean_only_error_db_relative,idle_attenuation_db","CSV schema changed");
+    std::ostringstream csv;report(csv,m,{"analytic",0,4,false},-1);
+    const auto activeRow=csv.str();
+    require(std::count(activeRow.begin(),activeRow.end(),',')==9&&activeRow.starts_with("analytic,active,-1,0,4,")&&activeRow.ends_with(",\n"),"active CSV row malformed");
+    Metrics idle{};idle.count=4;idle.input=4;idle.output=1;
+    std::ostringstream idleCsv;report(idleCsv,idle,{"pause",0,4,true},-1);
+    const auto idleRow=idleCsv.str();
+    require(std::count(idleRow.begin(),idleRow.end(),',')==9&&idleRow.starts_with("pause,idle,-1,0,4,,,,,"),"idle CSV row malformed");
     Audio c2{48000,2,{.25f,0.f,-.25f,0.f}},zero=c2;zero.samples.assign(4,0);
     const auto a=measure(c2,c2,zero,c2,{"left",0,2,false},0);
     require(a.clean==.125&&a.projection==0&&a.removedProjection==.125,"channel or signal-loss metric failure");
@@ -159,14 +169,14 @@ int main(int argc,char** argv) {
         for(const auto& p:paths)require(!std::filesystem::exists(p),"output already exists");
         const auto result=offline::render(input,transparent?nullptr:&learn,s,128,role);
         const auto cleanOnly=offline::render(clean,transparent?nullptr:&learn,s,128,role);
-        std::cout<<std::setprecision(12)<<"label,kind,channel_minus1_all,begin_frame,end_frame,error_improvement_db,desired_projection,removed_projection,clean_only_error_db_relative, idle_attenuation_db\n";
+        std::cout<<std::setprecision(12)<<csvHeader<<'\n';
         for(const auto& label:labels) {
-            report(measure(clean,input,result.processed,cleanOnly.processed,label,-1),label,-1);
+            report(std::cout,measure(clean,input,result.processed,cleanOnly.processed,label,-1),label,-1);
             for(unsigned c=0;c<clean.channels;++c) {
                 const auto m=measure(clean,input,result.processed,cleanOnly.processed,label,int(c));
                 // An active stereo label may contain an intentionally silent channel.
                 if(!label.idle&&m.clean<=1e-12*double(m.count))continue;
-                report(m,label,int(c));
+                report(std::cout,m,label,int(c));
             }
         }
         offline::write(paths[0],input);offline::write(paths[1],result.processed);
