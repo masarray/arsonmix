@@ -69,7 +69,7 @@ public:
         if(!std::isfinite(rate)||rate<44100||rate>96000||channels<1||channels>2)return false;
         channels_=channels;warmupSamples_=static_cast<int>(rate*.001);
         auto coeff=[rate](double ms){return -std::expm1(-1000/(rate*ms));};
-        focusSmooth_=coeff(8);envelope_=coeff(1.2);attack_=coeff(.65);release_=coeff(45);lowPass_=coeff(1000/(2*std::numbers::pi*3200));
+        focusSmooth_=coeff(8);targetSmooth_=coeff(2);envelope_=coeff(1.2);attack_=coeff(.65);release_=coeff(45);lowPass_=coeff(1000/(2*std::numbers::pi*3200));
         controlPeriod_=std::max(1,static_cast<int>(std::round(rate/6000.)));
         memoryDecay_=std::exp(-controlPeriod_/(rate*.085));
         adapt_= -std::expm1(-controlPeriod_/(rate*.12));
@@ -100,6 +100,7 @@ public:
             if(phase_==0&&warmup_==0){
                 double excess=0;
                 const bool trackFocus=settings_.shape==Shape::Focused||focus_>0;
+                double totalEvidence=0,weightedLower=0;
                 for(int c=0;c<channels_;++c){
                     auto& a=ch_[c];const double hf=std::max(a.eLower,a.eUpper);
                     double channelExcess=a.context.excess(a.eBody,hf,a.eWitness,thresholdRatio_,memoryDecay_,adapt_);
@@ -109,15 +110,16 @@ public:
                         const double ratio=hf/(a.eBody+1e-10);
                         if(authority>0&&ratio>limit)channelExcess=std::max(channelExcess,authority*std::min(12.,10*std::log10(ratio/limit)));
                     }
-                    if(channelExcess>excess){
-                        excess=channelExcess;
-                        if(trackFocus){
-                            const double w=a.eLower/(a.eLower+a.eUpper+1e-25);
-                            const double lo=w*w,hi=(1-w)*(1-w);
-                            weightTarget_=lo/(lo+hi);
-                        }
+                    excess=std::max(excess,channelExcess);
+                    if(trackFocus&&channelExcess>0){
+                        const double w=a.eLower/(a.eLower+a.eUpper+1e-25);
+                        const double lo=w*w,hi=(1-w)*(1-w);
+                        const double weight=lo/(lo+hi);
+                        weightedLower+=channelExcess*weight;
+                        totalEvidence+=channelExcess;
                     }
                 }
+                if(totalEvidence>0)weightTarget_=std::clamp(weightedLower/totalEvidence,0.,1.);
                 const double db=settings_.enabled?std::min<double>(settings_.rangeDb,1.35*settings_.amount*excess):0;
                 target_=db>0?std::pow(10.,-db/20):1.;
             }
@@ -126,7 +128,7 @@ public:
             if(std::abs(target_-gain_)<1e-7)gain_=target_;
             const double shapeTarget=settings_.shape==Shape::Focused?1.:0.;
             if(focus_!=shapeTarget){focus_+=focusSmooth_*(shapeTarget-focus_);if(std::abs(shapeTarget-focus_)<1e-7)focus_=shapeTarget;}
-            if(focus_>0&&weight_!=weightTarget_){weight_+=focusSmooth_*(weightTarget_-weight_);if(std::abs(weightTarget_-weight_)<1e-7)weight_=weightTarget_;}
+            if(focus_>0&&weight_!=weightTarget_){weight_+=targetSmooth_*(weightTarget_-weight_);if(std::abs(weightTarget_-weight_)<1e-7)weight_=weightTarget_;}
             l[i]=output(x[0],ch_[0]);if(channels_==2)r[i]=output(x[1],ch_[1]);
         }
     }
@@ -145,7 +147,7 @@ private:
     Settings settings_{};
     std::array<detail::Channel,2> ch_{};
     int channels_=0,phase_=0,controlPeriod_=8,warmup_=0,warmupSamples_=0;
-    double focusSmooth_=0,focus_=0,weight_=.5,weightTarget_=.5;
+    double focusSmooth_=0,targetSmooth_=0,focus_=0,weight_=.5,weightTarget_=.5;
     double memoryDecay_=0,adapt_=0,envelope_=0,attack_=0,release_=0,lowPass_=0,thresholdRatio_=.3981071705534972,gain_=1,target_=1;
 };
 } // namespace armix::builtin_fx::de_ezzer
