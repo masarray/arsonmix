@@ -74,6 +74,28 @@ int main(){try{
         }
         t.begin();for(unsigned i=0;i<2*rate;++i){const float x=tone(i,50)+.7f*tone(i,137.5f);t.observe(x,x);}
         t.commit();offline::require(t.lineCount()==1&&t.frequency()==50.f,"unrelated peak veto");
+        t.begin();for(unsigned i=0;i<2*rate;++i)t.observe(tone(i,60),tone(i,60));
+        t.commit();offline::require(t.frequency()==60.f,"drift anchor");
+        const auto follow=[&](float f,unsigned seconds,bool eligible,float rightF,float gain=1.f){
+            for(unsigned i=0;i<seconds*rate;++i){
+                float l=gain*tone(i,f),r=gain*tone(i,rightF);
+                t.track(l,r,eligible);t.apply(l,r,1.f);
+                offline::require(std::isfinite(l)&&std::isfinite(r),"finite drift output");
+            }
+        };
+        follow(65,2,false,65);offline::require(t.frequency()==60.f,"foreground veto");
+        follow(65,2,true,60);offline::require(t.frequency()==60.f,"stereo disagreement veto");
+        follow(65,2,true,65,2.f);offline::require(t.frequency()==60.f,"strong line veto");
+        follow(65,2,true,65);offline::require(t.frequency()==65.f,"bounded idle drift");
+        double driftIn=0.,driftOut=0.;
+        for(unsigned i=0;i<rate;++i){
+            float l=tone(i,65),r=l;const float x=l;t.track(l,r,true);t.apply(l,r,1.f);
+            if(i>=rate/2){driftIn+=x*x;driftOut+=l*l;}
+        }
+        offline::require(10*std::log10(driftIn/driftOut)>2.8,"retuned line attenuation");
+        follow(70,2,true,70);offline::require(t.frequency()==65.f,"immutable anchor bound");
+        follow(60,2,true,60);offline::require(t.frequency()==60.f,"return to learned anchor");
+        t.resetSignal();offline::require(t.frequency()==60.f,"stream reset anchor");
         offline::Audio noise{rate,1,std::vector<float>(rate*3)},input=noise;
         for(unsigned i=0;i<3*rate;++i){noise.samples[i]=tone(i,60);input.samples[i]=tone(i,60)+tone(i,230);}
         Core::Settings s;s.mode=Core::Mode::Voice;s.cleanDb=14;s.silenceDb=0;
