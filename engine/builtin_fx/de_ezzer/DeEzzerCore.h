@@ -93,14 +93,23 @@ public:
         if(!channels_||!l||n<=0||(channels_==2&&(!r||r==l)))return;
         // Dispatch once per block; no runtime mode/channel branch inside the sample loop.
         if(settings_.mode==Mode::Voice){
-            if(channels_==2)processBlock<true,2>(l,r,n);else processBlock<true,1>(l,r,n);
+            if(channels_==2)processBlock<true,2,false>(l,r,n,nullptr,nullptr);else processBlock<true,1,false>(l,r,n,nullptr,nullptr);
         }else{
-            if(channels_==2)processBlock<false,2>(l,r,n);else processBlock<false,1>(l,r,n);
+            if(channels_==2)processBlock<false,2,false>(l,r,n,nullptr,nullptr);else processBlock<false,1,false>(l,r,n,nullptr,nullptr);
+        }
+    }
+    // Nonaliasing caller-owned audition buffers; same detector and wet PCM pass.
+    void processWithDetect(float* l,float* r,int n,float* dl,float* dr) noexcept {
+        if(!channels_||!l||!dl||n<=0||(channels_==2&&(!r||!dr||r==l)))return;
+        if(settings_.mode==Mode::Voice){
+            if(channels_==2)processBlock<true,2,true>(l,r,n,dl,dr);else processBlock<true,1,true>(l,r,n,dl,nullptr);
+        }else{
+            if(channels_==2)processBlock<false,2,true>(l,r,n,dl,dr);else processBlock<false,1,true>(l,r,n,dl,nullptr);
         }
     }
 private:
-    template<bool Voice,int Channels>
-    void processBlock(float* l,float* r,int n) noexcept {
+    template<bool Voice,int Channels,bool Tap>
+    void processBlock(float* l,float* r,int n,float* dl,float* dr) noexcept {
         const double shapeTarget=settings_.shape==Shape::Focused?1.:0.;
         const double voiceLimit=std::max(1.,thresholdRatio_);
         for(int i=0;i<n;++i){
@@ -144,8 +153,15 @@ private:
             if(std::abs(target_-gain_)<1e-7)gain_=target_;
             if(focus_!=shapeTarget){focus_+=focusSmooth_*(shapeTarget-focus_);if(std::abs(shapeTarget-focus_)<1e-7)focus_=shapeTarget;}
             if(focus_>0&&weight_!=weightTarget_){weight_+=targetSmooth_*(weightTarget_-weight_);if(std::abs(weightTarget_-weight_)<1e-7)weight_=weightTarget_;}
+            if constexpr(Tap){
+                dl[i]=detect(ch_[0]);if constexpr(Channels==2)dr[i]=detect(ch_[1]);
+            }
             l[i]=output(x[0],ch_[0]);if constexpr(Channels==2)r[i]=output(x[1],ch_[1]);
         }
+    }
+    static float detect(const detail::Channel& c) noexcept {
+        // Audible composite of actual detector bandpass outputs, not classifier isolation.
+        return static_cast<float>(std::clamp(.5*(c.lowerSample+c.upperSample),-static_cast<double>(3.402823466e38f),static_cast<double>(3.402823466e38f)));
     }
     static double sanitize(float x) noexcept {return std::isfinite(x)?static_cast<double>(x):0.;}
     float output(double x,const detail::Channel& c) const noexcept {
