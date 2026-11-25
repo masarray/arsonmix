@@ -39,6 +39,8 @@ jobs:
           /tmp/vd2session
           ${{ matrix.cxx }} -std=c++17 -Wall -Wextra -Werror ${{ matrix.flags }} tests/vocal_delay_v2_singer_test.cpp -o /tmp/vd2singer
           /tmp/vd2singer
+          ${{ matrix.cxx }} -std=c++17 -Wall -Wextra -Werror ${{ matrix.flags }} tests/vocal_delay_v2_styles_test.cpp tests/vocal_delay_v2_heap_probe.cpp -o /tmp/vdstyles
+          /tmp/vdstyles
       - name: Report synthetic callback profile (not ASIO FAT)
         if: matrix.cxx == 'g++'
         run: |
@@ -75,3 +77,8 @@ jobs:
           cmake --build vd-build --config Release --parallel 2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ctest --test-dir vd-build -C Release --output-on-failure --no-tests=error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vocal-delay-native-faceplate
+          path: vd-build/**/vocal-delay-*.png
+          if-no-files-found: error

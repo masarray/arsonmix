@@ -10,12 +10,14 @@ namespace armix::builtin_fx::vocal_delay {
 // No JUCE, bridge, device, or shared graph dependency. Prepare on CONTROL
 // before publication; apply/process/invalidate only on AUDIO once published.
 class ContinuousDelayCore final {
+private:
+    struct Taps {DelayLine::Tap main{},half{},threeQuarter{};EchoStyle style=EchoStyle::classic;};
 public:
     static constexpr int addedLatencySamples=0;
     class Prepared final {
         friend class ContinuousDelayCore;
         double rate_=0.;
-        DelayLine::Tap tap_{};
+        Taps taps_{};
         float feedback_=0,echo_=0,hp_=0,lp_=1,duckDepth_=0;
         float attack_=0,release_=0,mono_=0,cross_=0;
         bool enabled_=true;
@@ -30,8 +32,8 @@ public:
         Prepared q;
         q.rate_=rate;
         const double samples=rate*double(p.timeMs)*.001;
-        q.tap_.whole=static_cast<std::size_t>(samples);
-        q.tap_.fraction=float(samples-double(q.tap_.whole));
+        const auto makeTap=[](double n){const auto whole=static_cast<std::size_t>(n);return DelayLine::Tap{whole,float(n-double(whole))};};
+        q.taps_={makeTap(samples),makeTap(samples*.5),makeTap(samples*.75),p.style};
         q.feedback_=p.feedback;q.echo_=p.echo;
         const auto pole=[rate](float hz) {
             return float(-std::expm1(-6.283185307179586*std::min(double(hz),rate*.45)/rate));
@@ -52,13 +54,15 @@ public:
         ready_=false;
         const auto capacity=static_cast<std::size_t>(std::ceil(rate*4.))+2;
         left_.prepare(capacity);right_.prepare(capacity);
-        rate_=rate;target_=q;active_=next_=q.tap_;
+        rate_=rate;target_=q;active_=next_=q.taps_;
         fadeLength_=static_cast<std::uint32_t>(std::ceil(rate*.03));
         fadePosition_=fadeLength_;
         slew_=timeCoefficient(rate,15.f);
         powerStep_=float(1./std::ceil(rate*.01));
         feedback_=q.feedback_;echo_=q.echo_;hp_=q.hp_;lp_=q.lp_;
         mono_=q.mono_;cross_=q.cross_;depth_=q.duckDepth_;
+        wetTone_=q.taps_.style==EchoStyle::classic?0.f:1.f;
+        tape_=q.taps_.style==EchoStyle::tape?1.f:0.f;
         power_=q.enabled_?1.f:0.f;ready_=true;
         invalidate();return true;
     }
@@ -69,8 +73,8 @@ public:
     // AUDIO only, or CONTROL on an unpublished instance.
     void invalidate() noexcept {
         left_.invalidate();right_.invalidate();
-        toneL_={};toneR_={};env_=0.f;
-        active_=next_=target_.tap_;fadePosition_=fadeLength_;
+        toneL_={};toneR_={};wetL_={};wetR_={};env_=0.f;
+        active_=next_=target_.taps_;fadePosition_=fadeLength_;
     }
     std::size_t ringBytes() const noexcept {
         return (left_.capacity()+right_.capacity())*sizeof(float);
@@ -92,15 +96,29 @@ public:
             if(power_==0.f&&!target_.enabled_) {
                 invalidate();l[i]=dryL;if(!monoBuffer)r[i]=dryR;continue;
             }
-            if(fadePosition_==fadeLength_&&!same(active_,target_.tap_)) {
-                next_=target_.tap_;fadePosition_=0;
+            if(fadePosition_==fadeLength_&&!same(active_,target_.taps_)) {
+                next_=target_.taps_;fadePosition_=0;
             }
-            float dL=left_.read(active_),dR=right_.read(active_);
+            auto a=read(active_);
             if(fadePosition_<fadeLength_) {
+                const auto b=read(next_);
                 const float mix=float(++fadePosition_)/float(fadeLength_);
-                dL+=(left_.read(next_)-dL)*mix;
-                dR+=(right_.read(next_)-dR)*mix;
+                a.l+=(b.l-a.l)*mix;a.r+=(b.r-a.r)*mix;
+                a.wl+=(b.wl-a.wl)*mix;a.wr+=(b.wr-a.wr)*mix;
                 if(fadePosition_==fadeLength_)active_=next_;
+            }
+            const float dL=a.l,dR=a.r;
+            move(wetTone_,target_.taps_.style==EchoStyle::classic?0.f:1.f);
+            move(tape_,target_.taps_.style==EchoStyle::tape?1.f:0.f);
+            float wL=a.wl,wR=a.wr;
+            if(wetTone_!=0.f){
+                const float tL=wetL_.tick(wL,hp_,lp_),tR=wetR_.tick(wR,hp_,lp_);
+                wL+=(tL-wL)*wetTone_;wR+=(tR-wR)*wetTone_;
+            }
+            if(tape_!=0.f){
+                // Bounded soft saturation of wet only, no oversampled path.
+                wL+=(wL/(1.f+.45f*std::abs(wL))-wL)*tape_;
+                wR+=(wR/(1.f+.45f*std::abs(wR))-wR)*tape_;
             }
             // Convex cross-feedback; wet safety bound, not a dry limiter.
             // Mono input/return folds with an average, never +6 dB summation.
@@ -118,12 +136,12 @@ public:
             // Soft activity ramp: full duck at ~-18 dBFS, never hard-gate echo.
             const float activity=std::clamp((env_-.015f)/.11f,0.f,1.f);
             const float gain=echo_*power_*(1.f-depth_*activity);
-            const float mid=.5f*(dL+dR);
+            const float mid=.5f*(wL+wR);
             if(gain==0.f) { l[i]=dryL;if(!monoBuffer)r[i]=dryR; }
             else if(monoBuffer)l[i]=dryL+gain*mid;
             else {
-                l[i]=dryL+gain*(dL+(mid-dL)*mono_);
-                r[i]=dryR+gain*(dR+(mid-dR)*mono_);
+                l[i]=dryL+gain*(wL+(mid-wL)*mono_);
+                r[i]=dryR+gain*(wR+(mid-wR)*mono_);
             }
         }
     }
@@ -136,6 +154,18 @@ private:
     }
     static bool same(DelayLine::Tap a,DelayLine::Tap b) noexcept {
         return a.whole==b.whole&&a.fraction==b.fraction;
+    }
+    static bool same(const Taps& a,const Taps& b) noexcept{return same(a.main,b.main)&&a.style==b.style;}
+    struct Reads {float l,r,wl,wr;};
+    Reads read(const Taps& t) const noexcept{
+        const float l=left_.read(t.main),r=right_.read(t.main);
+        // Secondary heads are wet-only, no feedback gain multiplication.
+        // Weights sum to one. Dual is asymmetric wet timing, not two engines.
+        if(t.style==EchoStyle::dual)return {l,r,l,right_.read(t.threeQuarter)};
+        if(t.style==EchoStyle::multitap)return {l,r,
+            .65f*l+.25f*left_.read(t.half)+.10f*left_.read(t.threeQuarter),
+            .65f*r+.25f*right_.read(t.half)+.10f*right_.read(t.threeQuarter)};
+        return {l,r,l,r};
     }
     void move(float& v,float target) const noexcept {
         v+=slew_*(target-v);
@@ -153,13 +183,14 @@ private:
         }
     };
     DelayLine left_,right_;
-    Tone toneL_,toneR_;
+    Tone toneL_,toneR_,wetL_,wetR_;
     Prepared target_{};
-    DelayLine::Tap active_{},next_{};
+    Taps active_{},next_{};
     double rate_=0.;
     std::uint32_t fadeLength_=1,fadePosition_=1;
     float slew_=0,powerStep_=0,power_=0;
     float feedback_=0,echo_=0,hp_=0,lp_=1,mono_=0,cross_=0,depth_=0,env_=0;
+    float wetTone_=0.f,tape_=0.f;
     bool ready_=false;
 };
 } // namespace armix::builtin_fx::vocal_delay

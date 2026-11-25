@@ -1,29 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "JuceVocalDelayProcessor.h"
+#include "VocalDelayHardwareSkin.h"
 namespace armix::builtin_fx::vocal_delay {
-class SingerDialLook final:public juce::LookAndFeel_V4{
-public:
-    void drawRotarySlider(juce::Graphics& g,int x,int y,int w,int h,float pos,
-                         float start,float end,juce::Slider& s) override{
-        const float size=float(juce::jmin(w,h))-12.f;
-        if(size<=4)return;
-        const float cx=float(x)+float(w)*.5f,cy=float(y)+float(h)*.5f,r=size*.5f;
-        const auto face=juce::Rectangle<float>(cx-r+7,cy-r+7,size-14,size-14);
-        juce::Path rail;rail.addCentredArc(cx,cy,r,r,0,start,end,true);
-        g.setColour(juce::Colour(0xff36424a));g.strokePath(rail,juce::PathStrokeType(2.6f));
-        juce::Path arc;const float angle=start+pos*(end-start);
-        arc.addCentredArc(cx,cy,r,r,0,start,angle,true);
-        g.setColour(juce::Colour(s.isEnabled()?0xff5fd7c3:0xff52636a));
-        g.strokePath(arc,juce::PathStrokeType(3.f,juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
-        g.setGradientFill(juce::ColourGradient(juce::Colour(0xff46525a),cx,cy-r,
-                              juce::Colour(0xff202930),cx,cy+r,false));
-        g.fillEllipse(face);g.setColour(juce::Colour(0xff64747d));g.drawEllipse(face,1.f);
-        juce::Path mark;mark.addRoundedRectangle(-1.5f,-r+13.f,3.f,12.f,1.f);
-        mark.applyTransform(juce::AffineTransform::rotation(angle).translated(cx,cy));
-        g.setColour(juce::Colour(0xffe6f4f0));g.fillPath(mark);
-    }
-};
 class SingerEditor final:public juce::AudioProcessorEditor,private juce::Timer{
 public:
     explicit SingerEditor(JuceVocalDelayProcessor& p):AudioProcessorEditor(p),processor_(p){
@@ -32,6 +11,9 @@ public:
         look_.setColour(juce::Slider::textBoxBackgroundColourId,juce::Colour(0xff141d23));
         look_.setColour(juce::Slider::textBoxOutlineColourId,juce::Colour(0xff34444d));
         setupCombo(preset_,"vd.preset");setupCombo(mode_,"vd.mode");setupCombo(division_,"vd.division");
+        setupCombo(algorithm_,"vd.algorithm");
+        for(const auto* n:{"Classic","Voiced","Dual","Multitap","Tape"})algorithm_.addItem(n,algorithm_.getNumItems()+1);
+        algorithm_.onChange=[this]{const int id=algorithm_.getSelectedId();if(id>=1&&id<=5){auto p=processor_.singerDisplay();p.style=static_cast<EchoStyle>(id-1);offer(p);}};
         preset_.addItem("Custom",99);
         for(std::size_t i=0;i<singerPresets.size();++i)preset_.addItem(singerPresets[i].name,int(i+1));
         mode_.addItem("Mono",1);mode_.addItem("Stereo",2);mode_.addItem("Ping Pong",3);
@@ -74,28 +56,38 @@ public:
     ~SingerEditor() override{
         stopTimer();if(admitted_)processor_.endSingerEditor();
         for(auto* d:dials())d->setLookAndFeel(nullptr);
+        for(auto* c:{&preset_,&mode_,&division_,&algorithm_})c->setLookAndFeel(nullptr);
+        for(auto* b:{&power_,&tap_,&expert_,&smart_})b->setLookAndFeel(nullptr);
     }
     void paint(juce::Graphics& g) override{
-        g.fillAll(juce::Colour(0xff141c22));
-        g.setColour(juce::Colour(0xff202c33));g.fillRoundedRectangle(12,10,float(getWidth()-24),50,7);
-        g.setColour(juce::Colour(0xffdbe9e7));g.setFont(17.f);g.drawText("Vocal Delay",24,17,160,22,juce::Justification::centredLeft);
-        g.setColour(juce::Colour(0xff829ca4));g.setFont(10.f);g.drawText("CONTINUOUS  /  LIVE",24,39,155,13,juce::Justification::centredLeft);
-        g.setColour(juce::Colour(0xff243139));g.fillRoundedRectangle(12,70,float(getWidth()-24),157,7);
-        g.setFont(11.f);g.setColour(juce::Colour(0xffb5c8cb));
+        hardware::chassis(g,getWidth(),getHeight());
+        hardware::inset(g,{174,15,424,39},5);
+        g.setColour(hardware::col(0xdde2e3));g.setFont(hardware::font(20.f));g.drawText("Vocal Delay",23,15,148,24,juce::Justification::centredLeft);
+        g.setColour(hardware::col(0xa1afb1));g.setFont(hardware::font(10.f));g.drawText("ARSONMIX   /   LIVE SERIES",24,40,150,13,juce::Justification::centredLeft);
+        g.setColour(hardware::col(0x101416));g.drawLine(17,65,603,65,1.2f);
+        g.setColour(hardware::col(0x555b5e));g.drawLine(17,66,603,66,1.f);
+        g.setFont(hardware::font(11.f));g.setColour(hardware::col(0xc5cccd));
         if(expertMode_){
             const std::array<const char*,8> names{{"TIME","REPEATS","ECHO","DUCK","LOW CUT","HIGH CUT","ATTACK","RELEASE"}};
             for(int i=0;i<8;++i)g.drawText(names[std::size_t(i)],14+i*74,78,74,18,juce::Justification::centred);
         }else{
             const std::array<const char*,3> names{{"TIME","REPEATS","ECHO LEVEL"}};
             for(int i=0;i<3;++i)g.drawText(names[std::size_t(i)],24+i*132,78,122,18,juce::Justification::centred);
-            g.setColour(juce::Colour(0xff172127));g.fillRoundedRectangle(428,79,168,138,6);
-            g.setColour(juce::Colour(0xff6ad5c0));g.setFont(12.f);
-            g.drawText("YOUR SOUND",440,91,144,18,juce::Justification::centredLeft);
-            const auto i=styleIndex(processor_.singerDisplay());
-            g.setColour(juce::Colour(0xffc6d9d9));g.setFont(11.f);
-            const juce::String description=i<0?"Your own voicing":singerPresets[std::size_t(i)].description;
-            g.drawFittedText(description,440,112,144,36,juce::Justification::topLeft,2);
-            g.setColour(juce::Colour(0xff829ca4));g.drawText("Keep your lead clear",440,153,144,16,juce::Justification::centredLeft);
+            // Instrument LCD, not a decorative card or fake signal meter.
+            hardware::inset(g,{426,79,172,138},5);
+            g.setColour(hardware::col(0x9be7cf));g.setFont(hardware::font(11.f));
+            g.drawText("ECHO RESPONSE",438,88,148,16,juce::Justification::centredLeft);
+            const auto p=processor_.singerDisplay();
+            g.setColour(hardware::col(0x39544f));g.drawHorizontalLine(154,439,585);
+            float level=p.echo;
+            for(int i=0;i<8;++i){
+                const float height=(i==0?1.f:level)*34.f;
+                g.setColour(hardware::col(i==0?0xadb8b4:0x7adbbd));
+                g.fillRoundedRectangle(440.f+float(i)*19.f,154.f-height,6.f,height,1.5f);
+                if(i>0)level*=p.feedback;
+            }
+            g.setColour(hardware::col(0x91aaa3));g.setFont(hardware::font(9.f));
+            g.drawText("PREDICTED REPEATS",438,158,148,13,juce::Justification::centredLeft);
         }
         g.setColour(juce::Colour(0xff829ca4));g.drawText(tempoStatus_,24,266,220,18,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff5fd7c3));g.drawText(!admitted_?"OFFLINE":processor_.singerFault()?"REOPEN REQUIRED":processor_.singerPending()?"APPLYING":"DSP READY",375,266,221,18,juce::Justification::centredRight);
@@ -103,7 +95,7 @@ public:
     void resized() override{
         preset_.setBounds(180,19,178,31);mode_.setBounds(366,19,92,31);
         expert_.setBounds(466,19,67,31);power_.setBounds(541,19,53,31);
-        mode_.setVisible(expertMode_);expert_.setButtonText(expertMode_?"Singer":"Expert");
+        mode_.setVisible(expertMode_);algorithm_.setVisible(expertMode_);algorithm_.setBounds(250,235,110,25);expert_.setButtonText(expertMode_?"Singer":"Expert");
         auto ds=dials();
         for(std::size_t i=0;i<ds.size();++i){
             ds[i]->setVisible(expertMode_||i<3);
@@ -123,6 +115,7 @@ public:
         preset_.setSelectedId(style<0?99:style+1,juce::dontSendNotification);
         smart_.setEnabled(available);
         mode_.setSelectedId(int(p.mode)+1,juce::dontSendNotification);
+        algorithm_.setSelectedId(int(p.style)+1,juce::dontSendNotification);algorithm_.setEnabled(available);
         power_.setButtonText(p.enabled?"ON":"OFF");
         power_.setColour(juce::TextButton::buttonColourId,juce::Colour(p.enabled?0xff27695c:0xff3a444a));
         for(auto* d:dials())d->setEnabled(available);
@@ -137,8 +130,8 @@ private:
         s.setTextValueSuffix(unit);s.setRotaryParameters(juce::MathConstants<float>::pi*1.28f,juce::MathConstants<float>::pi*2.72f,true);
         s.setMouseDragSensitivity(220);s.setLookAndFeel(&look_);addAndMakeVisible(s);
     }
-    void setupCombo(juce::ComboBox& c,const char* id){c.setComponentID(id);c.setTitle(id);addAndMakeVisible(c);}
-    void setupButton(juce::TextButton& b,const char* id){b.setComponentID(id);b.setTitle(id);addAndMakeVisible(b);}
+    void setupCombo(juce::ComboBox& c,const char* id){c.setComponentID(id);c.setTitle(id);c.setLookAndFeel(&look_);c.setColour(juce::ComboBox::textColourId,hardware::col(0xb2e7d3));addAndMakeVisible(c);}
+    void setupButton(juce::TextButton& b,const char* id){b.setComponentID(id);b.setTitle(id);b.setLookAndFeel(&look_);b.setColour(juce::TextButton::buttonColourId,hardware::col(0x41494d));addAndMakeVisible(b);}
     static void setDial(juce::Slider& d,double v){if(!d.isMouseButtonDown(true)&&!(d.hasKeyboardFocus(true)&&!d.hasKeyboardFocus(false)))d.setValue(v,juce::dontSendNotification);}
     void offer(const Parameters& p){if(processor_.offerSinger(p))refresh();}
     void applyTempo(){
@@ -148,8 +141,8 @@ private:
         auto p=processor_.singerDisplay();p.timeMs=ms;tempoStatus_=juce::String(bpm_,1)+" BPM";offer(p);
     }
     void timerCallback() override{refresh();}
-    JuceVocalDelayProcessor& processor_;SingerDialLook look_;
-    juce::Slider time_,feedback_,echo_,duck_,hp_,lp_,attack_,release_;juce::ComboBox preset_,mode_,division_;
+    JuceVocalDelayProcessor& processor_;hardware::Look look_;
+    juce::Slider time_,feedback_,echo_,duck_,hp_,lp_,attack_,release_;juce::ComboBox preset_,mode_,division_,algorithm_;
     juce::TextButton power_,tap_,expert_,smart_;TapTempo taps_;double bpm_=0;juce::String tempoStatus_="FREE TIME";bool admitted_=false,expertMode_=false;
 };
 inline juce::AudioProcessorEditor* JuceVocalDelayProcessor::createEditor(){return new SingerEditor(*this);}

@@ -10,7 +10,7 @@ using namespace armix::builtin_fx::vocal_delay;
 int main(){
     using Clock=std::chrono::steady_clock;
     for(double rate:{44100.,48000.,96000.})for(std::size_t frames:{64u,128u}){
-        ContinuousDelayCore c;Parameters p{};p.feedback=.65f;p.echo=.28f;
+        ContinuousDelayCore c;Parameters p{};p.feedback=.65f;p.echo=.28f;p.style=EchoStyle::multitap;
         if(!c.prepare(rate,p))return 1;
         std::array<float,128> l{},r{};std::vector<double> us;us.reserve(8000);
         double phase=0;float peak=0;

@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 using namespace armix::builtin_fx::vocal_delay;
 #define CHECK(x) do{if(!(x)){std::fprintf(stderr,"FAIL:%d %s\n",__LINE__,#x);std::abort();}}while(false)
 int main(){
@@ -31,6 +32,15 @@ int main(){
     {
         std::unique_ptr<juce::AudioProcessorEditor> editor(p.createEditor());
         CHECK(editor&&editor->getWidth()==620&&editor->getHeight()==300);
+        CHECK(hardware::knob().isValid());
+        auto capture=[&](const char* name){
+            const auto im=editor->createComponentSnapshot(editor->getLocalBounds(),true,2.f);
+            CHECK(im.isValid()&&im.getWidth()==1240&&im.getHeight()==600);
+            auto file=juce::File::getCurrentWorkingDirectory().getChildFile(name);
+            if(file.existsAsFile())CHECK(file.deleteFile());
+            auto stream=file.createOutputStream();CHECK(stream&&juce::PNGImageFormat().writeImageToStream(im,*stream));
+        };
+        capture("vocal-delay-singer.png");
         auto* time=dynamic_cast<juce::Slider*>(editor->findChildWithID("vd.time"));
         auto* echo=dynamic_cast<juce::Slider*>(editor->findChildWithID("vd.echo"));
         auto* preset=dynamic_cast<juce::ComboBox*>(editor->findChildWithID("vd.preset"));
@@ -42,6 +52,7 @@ int main(){
         CHECK(expert&&duck&&attack&&smart&&!duck->isVisible()&&!attack->isVisible()&&smart->isVisible());
         const auto before=p.singerDisplay();const auto rev=p.acceptedSnapshot().revision;
         expert->onClick();CHECK(duck->isVisible()&&attack->isVisible()&&!smart->isVisible());
+        CHECK(editor->findChildWithID("vd.algorithm")->isVisible());capture("vocal-delay-expert.png");
         expert->onClick();CHECK(!duck->isVisible()&&smart->isVisible());
         CHECK(sameParameters(before,p.singerDisplay())&&!p.singerPending()&&p.acceptedSnapshot().revision==rev);
         preset->setSelectedId(4,juce::sendNotificationSync);

@@ -5,8 +5,8 @@
 #include <algorithm>
 #include <limits>
 namespace armix::builtin_fx::vocal_delay {
-struct SingerPreset {const char* name;float time,feedback,echo,duck,hp,lp;StereoMode mode;const char* description;};
-inline constexpr std::array<SingerPreset,10> singerPresets{{
+struct SingerPreset {const char* name;float time,feedback,echo,duck,hp,lp;StereoMode mode;const char* description;EchoStyle style=EchoStyle::classic;};
+inline constexpr std::array<SingerPreset,13> singerPresets{{
  {"Live Vocal",320,.30f,.22f,.20f,150,5500,StereoMode::stereo,"An easy everyday echo"},
  {"Classic Slap",100,0,.20f,.10f,120,6500,StereoMode::mono,"Short and thick"},
  {"Pop Echo",280,.35f,.22f,.25f,150,6000,StereoMode::stereo,"Bright rhythmic repeats"},
@@ -15,26 +15,29 @@ inline constexpr std::array<SingerPreset,10> singerPresets{{
  {"Long Echo",850,.60f,.22f,.40f,200,4500,StereoMode::stereo,"Longer trailing phrases"},
  {"Ping Pong",380,.40f,.24f,.25f,150,6000,StereoMode::pingPong,"Alternating left and right"},
  {"Dreamy",1100,.65f,.28f,.45f,220,4200,StereoMode::stereo,"Soft and atmospheric"},
- {"Studio Clean",240,.24f,.18f,.16f,90,11000,StereoMode::stereo,"Clear, bright echoes"},
- {"Warm Vocal",360,.34f,.23f,.28f,180,4000,StereoMode::stereo,"Mellow, rounded repeats"}
+ {"Studio Clean",240,.24f,.18f,.16f,90,11000,StereoMode::stereo,"Clear, bright echoes",EchoStyle::voiced},
+ {"Warm Vocal",360,.34f,.23f,.28f,180,4000,StereoMode::stereo,"Mellow, rounded repeats",EchoStyle::voiced},
+ {"Vintage Tape",420,.42f,.22f,.30f,170,4300,StereoMode::stereo,"Soft saturated repeats",EchoStyle::tape},
+ {"Wide Duet",480,.35f,.24f,.28f,150,6200,StereoMode::stereo,"Offset left and right echoes",EchoStyle::dual},
+ {"Rhythm Trio",480,.32f,.26f,.32f,180,6500,StereoMode::stereo,"Three rhythmic echo taps",EchoStyle::multitap}
 }};
 inline Parameters presetSettings(std::size_t index,bool enabled=true) noexcept{
     Parameters p{};p.enabled=enabled;if(index>=singerPresets.size())return p;
     const auto& v=singerPresets[index];p.timeMs=v.time;p.feedback=v.feedback;
-    p.echo=v.echo;p.duck=v.duck;p.highPassHz=v.hp;p.lowPassHz=v.lp;p.mode=v.mode;return p;
+    p.echo=v.echo;p.duck=v.duck;p.highPassHz=v.hp;p.lowPassHz=v.lp;p.mode=v.mode;p.style=v.style;return p;
 }
 inline bool sameParameters(const Parameters& a,const Parameters& b) noexcept{
     return a.timeMs==b.timeMs&&a.feedback==b.feedback&&a.echo==b.echo&&
        a.highPassHz==b.highPassHz&&a.lowPassHz==b.lowPassHz&&a.duck==b.duck&&
        a.duckAttackMs==b.duckAttackMs&&a.duckReleaseMs==b.duckReleaseMs&&
-       a.mode==b.mode&&a.enabled==b.enabled;
+       a.mode==b.mode&&a.enabled==b.enabled&&a.style==b.style;
 }
 // A style describes voicing, not the user's three performance knobs.
 // Exact expert edits make the style Custom; editing Time/Repeats/Level
 // keeps the selected style identifiable even after state restore.
 inline bool sameVoicing(const Parameters& a,const Parameters& b) noexcept{
     return a.highPassHz==b.highPassHz&&a.lowPassHz==b.lowPassHz&&a.duck==b.duck&&
-        a.duckAttackMs==b.duckAttackMs&&a.duckReleaseMs==b.duckReleaseMs&&a.mode==b.mode;
+        a.duckAttackMs==b.duckAttackMs&&a.duckReleaseMs==b.duckReleaseMs&&a.mode==b.mode&&a.style==b.style;
 }
 inline int styleIndex(const Parameters& p) noexcept{
     for(std::size_t i=0;i<singerPresets.size();++i)
