@@ -6,7 +6,10 @@
 #include "AntiNoizControl.h"
 #endif
 #include "RtAllocationProbe.h"
+#include <algorithm>
 #include <array>
+#include <cmath>
+#include <numbers>
 #include <bit>
 #include <chrono>
 #include <cstdio>
