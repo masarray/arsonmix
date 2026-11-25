@@ -45,12 +45,20 @@ int main(){
         native.onBypass(false,false);
         check(native.submit({4,Control::Kind::learn,{}}),"resume learn");
         std::mt19937 gen(9);std::uniform_real_distribution<float> noise(-.003f,.003f);
+        bool sawCandidate=false;
         for(unsigned pos=0;pos<3*rate;pos+=128){
             for(int i=0;i<128;++i){l[i]=noise(gen);r[i]=noise(gen);}
             process();while(native.pollTelemetry(meter))last=meter;
             if(!pos)check(native.poll(ack)&&ack.applied,"resume ACK");
+            if(last.spectrum.candidate&&last.spectrum.noiseValid){sawCandidate=true;check(last.learning&&last.spectrum.progress>0&&last.spectrum.progress<=1,"checkpoint progress");}
         }
         check(last.profile&&!last.learning&&last.learnStatus==NativeSession::LearnStatus::Accepted,"learn qualified");
+        check(sawCandidate,"capture preview observed");
+        const auto trusted=last.spectrum;
+        check(trusted.inputValid&&trusted.noiseValid&&!trusted.candidate&&trusted.bins==native.latency()/2+1,"trusted spectrum");
+        check(std::abs(trusted.binHz-float(rate)/native.latency())<.01f,"frequency mapping");
+        float sum=0.f;for(int k=0;k<trusted.bins;++k){check(std::isfinite(trusted.noise[k])&&trusted.noise[k]>=0.f,"finite noise PSD");sum+=trusted.noise[k];}
+        check(sum>1.e-6f&&sum<5.e-6f,"window-normalized noise power");
         // Rejected relearn must remain distinguishable from the trusted profile.
         check(native.submit({5,Control::Kind::learn,{}}),"relearn");
         for(unsigned pos=0;pos<3*rate;pos+=128){
@@ -58,11 +66,13 @@ int main(){
             if(!pos)check(native.poll(ack)&&ack.applied,"relearn ACK");
         }
         check(last.profile&&!last.learning&&last.learnStatus==NativeSession::LearnStatus::Rejected,"relearn rejection retains profile");
+        check(last.spectrum.noiseValid&&!last.spectrum.candidate&&last.spectrum.noise==trusted.noise,"rejected candidate cannot replace trusted spectrum");
         check(rtprobe::empty(alloc),"native callback allocation");
         const auto saved=NativeState::encode(native.acceptedSettings());
         native.release();check(!native.ready()&&!native.prepare(rate,channels),"published retirement");
         NativeSession fresh;check(fresh.restore(saved)&&fresh.prepare(rate,channels),"fresh epoch");
         check(!fresh.observed().profile&&fresh.observed().learnStatus==NativeSession::LearnStatus::Idle,"epoch invalidates PSD");
+        check(!fresh.observed().spectrum.noiseValid&&!fresh.observed().spectrum.inputValid,"fresh epoch clears graph");
         std::cout<<"NATIVE_SESSION,"<<rate<<','<<channels<<",PDC="<<fresh.latency()<<",ACK/state/bypass/Learn/epoch PASS\n";
     }
     NativeSession invalid;check(!invalid.prepare(32000,2)&&!invalid.prepare(48000,3),"unsupported layout/rate");

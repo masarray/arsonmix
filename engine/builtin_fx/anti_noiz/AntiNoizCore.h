@@ -49,6 +49,34 @@ public:
         p.valid_=true;return p;
     }
     static constexpr int maxN=FftPlan::maxN, maxBins=maxN/2+1;
+    // Native observation only; fixed-size power bins, no PCM/FFT allocation.
+    // Linear mean-square (one-sided window-energy normalized) per FFT bin.
+    struct Spectrum {
+        std::array<float,maxBins> input{},noise{};
+        int bins=0;
+        float binHz=0.f,progress=0.f;
+        bool inputValid=false,noiseValid=false,candidate=false;
+    };
+    Spectrum spectrum() const noexcept {
+        Spectrum out{};
+        if(!ready_)return out;
+        out.bins=hop_+1;out.binHz=float(rate_/n_);
+        out.inputValid=powerValid_;
+        const bool capturing=profile_.learning();
+        const int captured=profile_.capturedFrames();
+        out.candidate=capturing;
+        out.noiseValid=capturing?captured>0:profile_.valid();
+        if(capturing)out.progress=std::clamp(float(profile_.observedFrames())/float(std::max(1,profile_.targetFrames())),0.f,1.f);
+        const auto& noise=capturing?profile_.captured():profile_.anchor();
+        const float normal=4.f/(float(n_)*float(n_)*float(channels_));
+        const float average=capturing&&captured>0?1.f/float(captured):1.f;
+        for(int k=0;k<out.bins;++k){
+            const float scale=(k==0||k==hop_)?normal*.5f:normal;
+            if(out.inputValid)out.input[k]=(power_[0][k]+(channels_==2?power_[1][k]:0.f))*scale;
+            if(out.noiseValid)out.noise[k]=(noise[0][k]+(channels_==2?noise[1][k]:0.f))*scale*average;
+        }
+        return out;
+    }
     static Mode resolveMode(Mode requested,SourceRole source) noexcept {
         if(requested!=Mode::AutoProtect)return requested;
         switch(source){
@@ -81,7 +109,7 @@ public:
         for(auto& a:in_)a.fill(0);
         for(auto& a:out_)a.fill(0);
         profile_.prepare(rate_,hop_,channels_,hop_+1);
-        mask_.fill(1); pos_=ticks_=0; expansion_=1;
+        mask_.fill(1); pos_=ticks_=0; expansion_=1;powerValid_=false;
         applyGains(prepareSettings(settings_));
         ready_=true; return true;
     }
@@ -104,14 +132,14 @@ public:
     }
     bool beginLearn() noexcept {
         if(!ready_||!profile_.begin())return false;
-        context_.reset(); voiceGain_.reset(); tonal_.begin();tonalIdle_=false; return true;
+        context_.reset(); voiceGain_.reset(); tonal_.begin();tonalIdle_=false;powerValid_=false; return true;
     }
     // Quiescent/offline owner only: restart the signal timeline, keep trusted PSD.
     void resetStreamKeepProfile() noexcept {
         for(auto& a:in_)a.fill(0);
         for(auto& a:out_)a.fill(0);
         mask_.fill(1); expansion_=1;
-        pos_=ticks_=0;
+        pos_=ticks_=0;powerValid_=false;
         profile_.cancel(); context_.reset(); voiceGain_.reset(); tonal_.resetSignal();tonalIdle_=false;
     }
     Settings settings() const noexcept {return settings_;}
@@ -181,7 +209,7 @@ private:
     }
     void frame() noexcept {
         if(!profile_.learning()&&(!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music)) {
-            context_.reset();tonalIdle_=false;profile_.track(power_,false);renderUnity(); return;
+            powerValid_=false;context_.reset();tonalIdle_=false;profile_.track(power_,false);renderUnity(); return;
         }
         const int bins=hop_+1;
         for(int c=0;c<channels_;++c) {
@@ -191,6 +219,7 @@ private:
                 power_[c][k]=std::norm(work_[c][k]);
             }
         }
+        powerValid_=true;
         const auto result=profile_.observe(power_);
         if(result==NoiseProfile<maxBins>::LearnResult::accepted)tonal_.commit();
         if(result!=NoiseProfile<maxBins>::LearnResult::waiting){context_.reset();voiceGain_.reset();}
@@ -286,6 +315,7 @@ private:
     std::array<std::array<Complex,maxN>,2> work_{};
     NoiseProfile<maxBins> profile_{};
     std::array<std::array<float,maxBins>,2> power_{};
+    bool powerValid_=false;
     std::array<float,maxBins> mask_{},target_{};
 };
 } // namespace armix::builtin_fx::anti_noiz

@@ -47,6 +47,12 @@ public:
     bool valid() const noexcept {return valid_;}
     const Powers& powers() const noexcept {return working_;}
     const Powers& anchor() const noexcept {return anchor_;}
+    // Visualization may read only the committed 50 ms checkpoint, never
+    // an unqualified current window or a rejected transaction.
+    const Powers& captured() const noexcept {return checkpoint_;}
+    int capturedFrames() const noexcept {return learning_?checkpointCount_:0;}
+    int observedFrames() const noexcept {return learning_?observed_:0;}
+    int targetFrames() const noexcept {return target_;}
     // Coefficient of variation of accepted FFT-frame broadband power.
     // Trusted only on successful Learn; rejected windows and attempts cannot replace it.
     const std::array<float,2>& variability() const noexcept {return variability_;}
