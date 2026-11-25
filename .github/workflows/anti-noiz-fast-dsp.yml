@@ -93,13 +93,29 @@ jobs:
           ref: 5e70bb38662370e4e6644d075ac61b1bea95289d
           path: .anti-noiz-rt-reference
           persist-credentials: false
+      - name: Checkout immediate pre-control reference (opt-in)
+        if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
+        uses: actions/checkout@v4
+        with:
+          ref: 8adec89d7e9270f46ff25fba54f5431167b55668
+          path: .anti-noiz-control-reference
+          persist-credentials: false
+      - name: Diagnose sample-level PCM differences (opt-in)
+        if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
+        run: |
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -I .anti-noiz-control-reference/engine/builtin_fx/anti_noiz tools/anti-noiz/pcm_diff_probe.cpp -o "$RUNNER_TEMP/anti-noiz-pcm-old"
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -I engine/builtin_fx/anti_noiz tools/anti-noiz/pcm_diff_probe.cpp -o "$RUNNER_TEMP/anti-noiz-pcm-new"
+          "$RUNNER_TEMP/anti-noiz-pcm-old" "$RUNNER_TEMP/anti-noiz-old"
+          "$RUNNER_TEMP/anti-noiz-pcm-new" "$RUNNER_TEMP/anti-noiz-new"
+          python3 tools/anti-noiz/compare_pcm.py "$RUNNER_TEMP/anti-noiz-old" "$RUNNER_TEMP/anti-noiz-new"
+          rm -f "$RUNNER_TEMP"/anti-noiz-{old,new}-*.f32
       - name: Matched allocation, PCM parity and callback timing (opt-in)
         if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
         run: |
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -DANTI_NOIZ_ALLOC_PROBE=1 -I .anti-noiz-rt-reference/engine/builtin_fx/anti_noiz tools/anti-noiz/rt_qualify.cpp -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free,--wrap=aligned_alloc,--wrap=posix_memalign -o "$RUNNER_TEMP/anti-noiz-rt-baseline"
           python3 tools/anti-noiz/compare_rt.py "$RUNNER_TEMP/anti-noiz-rt-baseline" "$RUNNER_TEMP/anti-noiz/anti_noiz_rt_qualify"
       - name: Opt-in recorded audio smoke (local WAVs, no upload)
-        if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
+        if: ${{ !cancelled() && matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke') }}
         run: python3 tools/anti-noiz/recorded_smoke.py "$RUNNER_TEMP/anti-noiz/anti_noiz_qualify" "$RUNNER_TEMP/anti-noiz-recorded-smoke" --compare-an03f
 
   web-contract:
