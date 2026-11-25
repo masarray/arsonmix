@@ -43,6 +43,9 @@ int main(){
         pcm.clear();p.processBlock(pcm,midi);p.serviceSingerControl();
         CHECK(p.singerDisplay().timeMs==850);
         editor.reset(); // final desired values survive closing
+        editor.reset(p.createEditor()); // own pending edit cannot block reopen
+        CHECK(editor->findChildWithID("vd.time")->isEnabled());
+        editor.reset();
         pcm.clear();p.processBlock(pcm,midi);p.serviceSingerControl();
         CHECK(p.stateSnapshotQuiescent()&&p.acceptedSnapshot().accepted.timeMs==850);
         CHECK(std::abs(p.acceptedSnapshot().accepted.echo-.33f)<1.e-6f);

@@ -106,7 +106,7 @@ private:
     }
     void setupCombo(juce::ComboBox& c,const char* id){c.setComponentID(id);c.setTitle(id);addAndMakeVisible(c);}
     void setupButton(juce::TextButton& b,const char* id){b.setComponentID(id);b.setTitle(id);addAndMakeVisible(b);}
-    static void setDial(juce::Slider& d,double v){if(!d.isMouseButtonDown(true)&&!d.hasKeyboardFocus(true))d.setValue(v,juce::dontSendNotification);}
+    static void setDial(juce::Slider& d,double v){if(!d.isMouseButtonDown(true)&&!(d.hasKeyboardFocus(true)&&!d.hasKeyboardFocus(false)))d.setValue(v,juce::dontSendNotification);}
     void offer(const Parameters& p){if(processor_.offerSinger(p))refresh();}
     void applyTempo(){
         if(bpm_<=0)return;

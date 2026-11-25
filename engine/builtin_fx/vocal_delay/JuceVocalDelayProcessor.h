@@ -64,7 +64,7 @@ public:
     bool poll(Receipt& receipt) noexcept{return active_&&!singer_.pending()&&session_.poll(receipt);}
     // All editor calls and timer callbacks share the JUCE message thread.
     bool beginSingerEditor(){
-        if(editorOpen_||!active_||!session_.quiescent()||!singer_.attach(session_.acceptedSnapshot()))return false;
+        if(editorOpen_||!active_||singer_.fault()||(!session_.quiescent()&&!singer_.pending())||!singer_.attach(session_.acceptedSnapshot()))return false;
         editorOpen_=true;startTimerHz(30);return true;
     }
     void endSingerEditor() noexcept{editorOpen_=false;serviceSingerControl();}

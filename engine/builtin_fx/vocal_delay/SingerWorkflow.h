@@ -45,7 +45,14 @@ public:
         if(count_<=4){intervals_[count_-1]=dt;++count_;}
         else{for(std::size_t i=1;i<4;++i)intervals_[i-1]=intervals_[i];intervals_[3]=dt;}
         if(count_<3)return false;
-        auto ordered=intervals_;const auto n=count_-1;std::sort(ordered.begin(),ordered.begin()+n);
+        auto ordered=intervals_;const auto n=std::min<std::size_t>(count_-1,ordered.size());
+        // Four taps maximum; explicit bounded insertion sort avoids generic
+        // std::sort's GCC 15 threshold warning on a four-element array.
+        for(std::size_t i=1;i<n;++i){
+            const auto value=ordered[i];auto j=i;
+            while(j>0&&ordered[j-1]>value){ordered[j]=ordered[j-1];--j;}
+            ordered[j]=value;
+        }
         const double median=n%2?ordered[n/2]:(ordered[n/2-1]+ordered[n/2])*.5;
         if(ordered[n-1]-ordered[0]>median*.20)return false;
         bpm=60000./median;return true;
