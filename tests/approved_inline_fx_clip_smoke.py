@@ -120,12 +120,20 @@ def main():
                           if(!clip.openExact(window[host],host,
                             {id:22,name:"TEST CHANNEL",slotBypass:[false]},0,"exact-owner",lease))
                             return {error:"not-opened"};
-                          const root=document.querySelector(selector),results=[];
+                          const root=document.querySelector(selector),results=[],centering=[];
                           const inspect=()=>{clip.syncBypass(view);
                             const shades=root.querySelectorAll(".armix-native-fx-bypass");
                             const s=shades[0];
                             results.push([shades.length,s.textContent,
-                              getComputedStyle(s).display,getComputedStyle(s).pointerEvents]);};
+                              getComputedStyle(s).display,getComputedStyle(s).pointerEvents]);
+                            if(host==="ArSonMixNativeHarmony"&&s.classList.contains("is-on")){
+                              const range=document.createRange();range.selectNodeContents(s);
+                              const a=range.getBoundingClientRect(),b=root.getBoundingClientRect();
+                              const h=root.querySelector(".mx-harm-head").getBoundingClientRect();
+                              centering.push([Math.abs((a.left+a.right-b.left-b.right)/2),
+                                Math.abs((a.top+a.bottom-b.top-b.bottom)/2),
+                                Math.abs(s.getBoundingClientRect().top-h.bottom)]);
+                            }};
                           inspect();insert.bypassed=true;inspect();
                           row.fxRackBypassed=true;inspect();
                           view.raw.globalFxBypassed=true;inspect();
@@ -134,7 +142,7 @@ def main():
                           insert.bypassed=false;inspect();
                           view.graph.revision="47";inspect();
                           insert.id="replacement";inspect();
-                          return {results};
+                          return {results,centering};
                         }""",{"host":host,"selector":selector})
                         assert result.get("results")==[
                             [1,"BYPASSED","none","none"],
@@ -147,6 +155,10 @@ def main():
                             [1,"BYPASSED","none","none"],
                             [1,"FX UNAVAILABLE","flex","auto"],
                         ],(host,width,result)
+                        if host=="ArSonMixNativeHarmony":
+                            assert len(result["centering"])==6,(width,result)
+                            assert all(x<=2 and y<=3 and header<=2
+                                       for x,y,header in result["centering"]),(width,result)
                     page.evaluate("""name=>window[name].close()""",host)
                 root=page.locator("#mxNativeGeq31")
                 page.evaluate("""()=>window.ArSonMixGraphicEq31.open(

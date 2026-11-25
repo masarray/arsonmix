@@ -116,14 +116,38 @@
       for(const [root,lease] of bypassOwners){
         if(!root.isConnected){bypassOwners.delete(root);continue;}
         if(root.hidden)continue;
-        const value=fxRackVM.editorBypassPresentation(view,lease,{hardwareConfiguration});
+        let presentationLease=lease;
+        // Harmonice already has an explicit same-channel successor/MOVE
+        // recovery contract. Reuse its accepted graph location; never
+        // relax the generic deferred-navigation lease for other editors.
+        if(root.id==="mxNativeHarmony"){
+          const binding=window.ArSonMixNativeHarmony?.bypassBinding?.();
+          if(binding&&binding.channelId===lease.channelId&&
+             binding.graphRevision===view?.graph?.revision){
+            const plan=fxRackVM.editorNavigationPlan(view,{
+              channelId:binding.channelId,slot:binding.slot,hardwareConfiguration});
+            if(plan.kind==="OPEN"&&plan.lease.catalogId===lease.catalogId&&
+               plan.lease.instanceId===binding.instanceId&&
+               (plan.lease.authority==="LOGICAL"?
+                 binding.workspaceToken===plan.lease.workspaceToken&&binding.deviceEpoch==="0":
+                 binding.deviceEpoch===plan.lease.deviceEpoch)){
+              presentationLease=plan.lease;
+              bypassOwners.set(root,presentationLease);
+            }
+          }
+        }
+        const value=fxRackVM.editorBypassPresentation(view,presentationLease,{hardwareConfiguration});
         let shade=root.querySelector(".armix-native-fx-bypass");
         if(!shade){
           shade=document.createElement("div");
           shade.className="mx-geq31-bypass-overlay armix-native-fx-bypass";
           shade.setAttribute("aria-hidden","true");
           const header=root.querySelector(headers);
-          if(header)shade.style.top=header.offsetHeight+"px";
+          if(header){
+            const height=header.offsetHeight+"px";
+            shade.style.top=height;
+            shade.style.setProperty("--armix-fx-bypass-header",height);
+          }
           root.appendChild(shade);
         }
         const label={GLOBAL:"GLOBAL FX BYPASSED",RACK:"FX RACK BYPASSED",

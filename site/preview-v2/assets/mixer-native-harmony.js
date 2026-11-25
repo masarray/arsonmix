@@ -22,6 +22,8 @@ root.innerHTML=`
     <option value="doubleLight">Double Light</option><option value="doubleWide">Double Wide</option>
     <option value="duo">Natural Duo</option><option value="trio">Soft Trio</option>
     <option value="quartet">Wide Quartet</option><option value="quintet">Lush Five</option><option value="choir">Tight Choir</option>
+    <option value="closeBlend">Close Blend</option><option value="warmBallad">Warm Ballad</option>
+    <option value="popChorus">Pop Chorus</option><option value="gospelEnsemble">Gospel Ensemble</option>
    </select>
    <button type="button" id="mxHSaveAs" class="mx-harm-preset-tool"
      title="Save As · My Presets" aria-label="Save As user preset" disabled>＋ Save As</button>
@@ -119,14 +121,21 @@ for(const [key,label,min,max,step] of sliderDefs){
 const fresh=()=>({key:0,scale:0,voices:3,voiceMode:0,correction:false,
                    guideMode:0,guideChannelId:"0",
                    color:0.5,space:0.6,wet:0.45,gainDb:0});
+// H32: lead-first factory voicings. Wet is additive backing level, not a
+// dry/wet crossfade. Soft Trio is the owner's field-selected reference.
+// Key/scale, guide binding and Pitch Tune remain explicit operator choices.
 const presets={
- doubleLight:{voiceMode:1,space:.58,color:.78,wet:.68,gainDb:0},
- doubleWide:{voiceMode:1,space:.88,color:.86,wet:.86,gainDb:0},
- duo:{voiceMode:0,voices:2,color:.78,space:.72,wet:.76,gainDb:0},
- trio:{voiceMode:0,voices:3,color:.82,space:.78,wet:.82,gainDb:0},
- quartet:{voiceMode:0,voices:4,color:.88,space:.94,wet:.88,gainDb:-1},
- quintet:{voiceMode:0,voices:5,color:.90,space:.94,wet:.90,gainDb:-1},
- choir:{voiceMode:0,voices:4,color:.68,space:.70,wet:.88,gainDb:-1}
+ doubleLight:{voiceMode:1,space:.48,color:.74,wet:.36,gainDb:0},
+ doubleWide:{voiceMode:1,space:.82,color:.8,wet:.52,gainDb:0},
+ duo:{voiceMode:0,voices:2,color:.75,space:.68,wet:.52,gainDb:0},
+ trio:{voiceMode:0,voices:3,color:.75,space:.77,wet:.65,gainDb:.6},
+ quartet:{voiceMode:0,voices:4,color:.78,space:.85,wet:.6,gainDb:-.5},
+ quintet:{voiceMode:0,voices:5,color:.76,space:.88,wet:.66,gainDb:-1},
+ choir:{voiceMode:0,voices:4,color:.68,space:.58,wet:.56,gainDb:-.5},
+ closeBlend:{voiceMode:0,voices:2,color:.68,space:.44,wet:.34,gainDb:0},
+ warmBallad:{voiceMode:0,voices:3,color:.66,space:.68,wet:.48,gainDb:0},
+ popChorus:{voiceMode:0,voices:3,color:.82,space:.85,wet:.58,gainDb:0},
+ gospelEnsemble:{voiceMode:0,voices:5,color:.73,space:.88,wet:.69,gainDb:-1}
 };
 const native=()=>Boolean(window.__JUCE__?.backend?.emitEvent);
 const backend=()=>window.__JUCE__?.backend;
@@ -658,6 +667,9 @@ if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",
 else mount();
 window.ArSonMixNativeHarmony=Object.freeze({
  id:ID,
+ // Shared bypass renderer may follow the exact same accepted channel/slot
+ // binding as this editor. This is read-only graph identity, not DSP ACK.
+ bypassBinding(){return root.hidden?null:acceptedLocation();},
  insert(target){return Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target));},
  open(track,slot){
   pending=null;latest=null;heldPatch=null;verified=false;
