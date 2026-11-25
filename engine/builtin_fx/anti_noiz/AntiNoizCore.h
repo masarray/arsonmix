@@ -145,7 +145,8 @@ private:
         // Only explicit Voice or source-aware SpeechMic permits independently
         // qualified coherent drift. Unknown/Mixed and musical policies keep
         // the original confirmed-idle tracking; anchor-based guards unchanged.
-        profile_.track(power_,idle,!protect&&effectiveMode_==Mode::Voice,context_.broadbandRatio());
+        profile_.track(power_,idle,!protect&&effectiveMode_==Mode::Voice,
+                       context_.broadbandRatio(),context_.subbandPeakRatio());
         const bool selective=!protect&&!idle&&effectiveMode_==Mode::AutoProtect;
         const bool activeVoice=!protect&&!idle&&effectiveMode_==Mode::Voice;
         const float ratio=context_.broadbandRatio();

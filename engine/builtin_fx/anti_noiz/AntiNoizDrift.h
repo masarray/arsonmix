@@ -25,9 +25,12 @@ public:
     // Caller supplies already computed max-channel broadband ratio.
     // Strong foreground cancels the window immediately. Moderate contamination
     // is checked by the independent window shape and cross-window consistency.
-    bool observe(const Powers& power,const Powers& anchor,float broadband,
+    bool observe(const Powers& power,const Powers& anchor,float broadband,float subbandPeak,
                  Scales& accepted) noexcept {
-        if(!std::isfinite(broadband)||broadband>4.5f){reset();return false;}
+        // An abrupt local excess must veto even the last frame of a window;
+        // otherwise the preceding 249 ms can dilute the contamination.
+        if(!std::isfinite(broadband)||!std::isfinite(subbandPeak)||broadband>4.5f||
+           subbandPeak>6.f*std::max(1.f,broadband)){reset();return false;}
         for(int c=0;c<channels_;++c)for(int k=0;k<bins_;++k)
             sum_[c][k]+=power[c][k];
         if(++count_<frames_)return false;

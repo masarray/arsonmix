@@ -48,7 +48,13 @@ int main(){
         const auto extended=p.powers();
         // Equal broadband power, but a narrow peak in the quiet channel.
         auto tonal=twice;tonal[1].fill(.0001f);tonal[1][30]=.013f;
-        for(int i=0;i<8*window;++i)p.track(tonal,false,true,2.f);
+        // A single abrupt peak on the last frame must invalidate a qualified
+        // window before commit, not just fail the next averaged shape check.
+        p.track(tonal,false,true,2.f,17.125f);
+        check(p.powers()==extended,"last-frame localized foreground veto");
+        // Independently exercise the averaged-shape rejection even when the
+        // instantaneous guard has no peak evidence.
+        for(int i=0;i<8*window;++i)p.track(tonal,false,true,2.f,2.f);
         check(p.powers()==extended,"reject localized quiet-channel foreground");
         for(int i=0;i<8*window;++i)p.track(twice,false,true,6.f);
         check(p.powers()==extended,"strong foreground veto");

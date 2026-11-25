@@ -56,13 +56,13 @@ public:
     // Ordinary confirmed-idle tracking retains the original 70-130% bounds.
     // An independently qualified coherent upward drift may extend working PSD,
     // but never the immutable anchor or the caller's idle/foreground decision.
-    void track(const Powers& power,bool idle,bool allowCoherent=false,float broadband=0.f) noexcept {
+    void track(const Powers& power,bool idle,bool allowCoherent=false,float broadband=0.f,float subbandPeak=0.f) noexcept {
         if(!valid_||learning_){idle_=0;drift_.reset();return;}
         if(!idle){
             idle_=0;
             if(!allowCoherent){drift_.reset();return;}
             typename NoiseDriftGuard<MaxBins>::Scales scale{};
-            if(drift_.observe(power,anchor_,broadband,scale)){
+            if(drift_.observe(power,anchor_,broadband,subbandPeak,scale)){
                 for(int c=0;c<channels_;++c)if(scale[c]>0.f)
                     for(int k=0;k<bins_;++k){
                         const float anchor=anchor_[c][k];auto& v=working_[c][k];
