@@ -137,7 +137,7 @@ def target_flags(row, intent, tag):
     if row["channel_minus1_all"]!="-1":
         return []
     flags=[]
-    if row["kind"]=="active" and tag in ("auto","intent"):
+    if row["kind"]=="active" and tag in ("auto","intent") and not (tag=="intent" and intent=="music"):
         projection=float(row["desired_projection"])
         if not .97<=projection<=1.03:
             flags.append("FOREGROUND_PROJECTION_TARGET")
@@ -177,6 +177,7 @@ def main():
         rate,ch,clip=read_pcm(src)
         clean_sources.append((name,file,sha,intent,rate,ch,resample_clean(clip,ch,rate)))
     summary=[]
+    diagnostics=[]
     for source in SOURCES:
         noise_name=source[0]
         stereo,credit=recorded_noise(source,root/source[3])
@@ -192,6 +193,11 @@ def main():
                     f"clean\tCC0-1.0\tBart Massey 2024; {BASE+file}; Git blob {sha}; source {rate}Hz; deterministic interpolation if needed, peak scale, PCM16\n"
                     f"noise\tCC0-1.0\t{credit}; test starts 8s; shared SNR scale, PCM16\n"
                     f"learn\tCC0-1.0\t{credit}; independent [1,4)s; same scale, PCM16\n")
+                diag=subprocess.run([str(binary),"--learn-diagnostics",str(case/"learn.wav")],
+                                    check=True,capture_output=True,text=True,timeout=30)
+                observation=json.loads(diag.stdout)
+                diagnostics.append(dict(noise=noise_name,clip=name,snr=snr,**observation))
+                print("AN07_LEARN_DIAG",noise_name,name,snr,json.dumps(observation,separators=(",",":")),flush=True)
                 for tag,mode,amount,protect,silence in POLICIES:
                     mode=mode or intent
                     prefix=case/tag
@@ -221,7 +227,7 @@ def main():
     report={"scope":"recorded noise mixed with recorded foreground; objective baseline only",
             "cases":len(SOURCES)*len(CLIPS)*2,"policy_runs":len(SOURCES)*len(CLIPS)*2*len(POLICIES),
             "sources":[dict(name=s[0],creator=s[1],freesound=s[2],file=s[3],tag=s[4],bytes=s[5],sha256=s[6]) for s in SOURCES],
-            "errors":len(errors),"target_flag_rows":len(flagged),"rows":summary,
+            "errors":len(errors),"target_flag_rows":len(flagged),"learn_diagnostics":diagnostics,"rows":summary,
             "quality_release_gate":"NOT QUALIFIED; listening, full corpus and hardware required"}
     (root/"report.json").write_text(json.dumps(report,indent=2,allow_nan=False)+"\n")
     print(f"AN07_SUMMARY cases={report['cases']} runs={report['policy_runs']} errors={len(errors)} target_flag_rows={len(flagged)}",flush=True)

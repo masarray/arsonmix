@@ -111,6 +111,63 @@ void report(std::ostream& out,const Metrics& m,const Segment& s,int channel) {
                  <<m.removedProjection/m.clean<<','<<db(m.cleanOnlyError,m.clean)<<",\n";
     }
 }
+// Offline diagnosis reproduces the current Learn WOLA analysis, including
+// two discarded warm-up frames, but continues measuring after the first
+// rejected frame. It never alters the production NoiseProfile.
+void learnDiagnostics(const Audio& a) {
+    const int n=a.rate>48000?512:256,hop=n/2,bins=hop+1;
+    const int target=int(std::ceil(2.*a.rate/hop));
+    require(a.samples.size()/a.channels>=std::size_t(target+2)*hop,"diagnostic Learn too short");
+    FftPlan fft;fft.prepare(n);
+    std::array<float,FftPlan::maxN> window{};
+    for(int i=0;i<n;++i)window[i]=std::sqrt(.5f-.5f*std::cos(2.f*std::numbers::pi_v<float>*float(i)/float(n)));
+    std::array<std::array<float,FftPlan::maxN/2+1>,2> power{};
+    std::array<FftPlan::Complex,FftPlan::maxN> work{};
+    std::array<float,2> running{},windowEnergy{},runningWindow{};
+    std::array<int,2> high{},low{},windowHigh{},windowLow{};
+    std::array<float,2> minRatio{1.f,1.f},maxRatio{1.f,1.f},minWindow{1.f,1.f},maxWindow{1.f,1.f};
+    int first=-1,firstChannel=-1,firstDirection=0,windows=0;
+    float firstRatio=0;
+    const int windowFrames=int(std::ceil(.05*a.rate/hop));
+    for(int frame=0;frame<target;++frame) {
+        const auto begin=std::size_t(frame+1)*hop;
+        for(unsigned c=0;c<a.channels;++c) {
+            for(int i=0;i<n;++i)work[i]={a.samples[(begin+std::size_t(i))*a.channels+c]*window[i],0};
+            fft.transform(work,false);
+            float total=0;
+            for(int k=0;k<bins;++k){power[c][k]=std::norm(work[k]);total+=power[c][k];}
+            if(frame>=8){
+                const float mean=running[c]/float(frame);
+                const float ratio=total/std::max(mean,1e-12f);
+                minRatio[c]=std::min(minRatio[c],ratio);maxRatio[c]=std::max(maxRatio[c],ratio);
+                const bool hi=total>4.f*std::max(mean,1e-12f),lo=total<.1f*mean;
+                high[c]+=hi;low[c]+=lo;
+                if(first<0&&(hi||lo)){first=frame;firstChannel=int(c);firstDirection=hi?1:-1;firstRatio=ratio;}
+            }
+            running[c]+=total;windowEnergy[c]+=total;
+            if((frame+1)%windowFrames==0){
+                if(windows>0){
+                    const float ratio=windowEnergy[c]/std::max(runningWindow[c]/float(windows),1e-12f);
+                    minWindow[c]=std::min(minWindow[c],ratio);maxWindow[c]=std::max(maxWindow[c],ratio);
+                    windowHigh[c]+=ratio>4.f;windowLow[c]+=ratio<.1f;
+                }
+                runningWindow[c]+=windowEnergy[c];windowEnergy[c]=0;
+            }
+        }
+        if((frame+1)%windowFrames==0)++windows;
+    }
+    std::cout<<std::setprecision(9)<<"{\"frames\":"<<target<<",\"window_frames\":"<<windowFrames
+             <<",\"first_frame\":"<<first<<",\"first_channel\":"<<firstChannel
+             <<",\"first_direction\":"<<firstDirection<<",\"first_ratio\":"<<firstRatio<<",\"channels\":[";
+    for(unsigned c=0;c<a.channels;++c) {
+        if(c)std::cout<<',';
+        std::cout<<"{\"high_frames\":"<<high[c]<<",\"low_frames\":"<<low[c]
+                 <<",\"min_ratio\":"<<minRatio[c]<<",\"max_ratio\":"<<maxRatio[c]
+                 <<",\"high_windows\":"<<windowHigh[c]<<",\"low_windows\":"<<windowLow[c]
+                 <<",\"min_window_ratio\":"<<minWindow[c]<<",\"max_window_ratio\":"<<maxWindow[c]<<'}';
+    }
+    std::cout<<"]}\n";
+}
 void selfTest() {
     Audio c{48000,1,{.25f,-.25f,.25f,-.25f}},n{48000,1,{.125f,.125f,-.125f,-.125f}};
     const auto x=mix(c,n);Audio y=c;
@@ -156,6 +213,7 @@ void selfTest() {
 int main(int argc,char** argv) {
     try {
         if(argc==2&&std::string_view(argv[1])=="--self-test"){selfTest();return 0;}
+        if(argc==3&&std::string_view(argv[1])=="--learn-diagnostics"){learnDiagnostics(offline::read(argv[2]));return 0;}
         if(argc!=10&&argc!=11){std::cerr<<"Usage: anti_noiz_qualify clean.wav noise.wav learn.wav segments.tsv provenance.tsv output-prefix mode cleanDb musicProtect(0..1) [silenceDb]\n";return 2;}
         provenance(argv[5]);const auto clean=offline::read(argv[1]),noise=offline::read(argv[2]),learn=offline::read(argv[3]);
         sameFormat(clean,learn);
