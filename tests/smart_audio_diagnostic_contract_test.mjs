@@ -400,3 +400,28 @@ test('INT-1B rejects missed/unknown data rather than counting missing as zero',(
   assert.equal(p.samples.length,0);
   assert.match(p.warnings[0],/missing\/invalid 13/);
 });
+
+test("P11 render timing covers final output publication and flags incomplete sampling",()=>{
+  assert.match(engine,/publishDriverBufferPeaks\(wroteMain\?audibleLeft:0\.f,wroteMain\?audibleRight:0\.f\);\s*recordRenderTiming\(beginUs,periodUs\);\s*return;/);
+  assert.equal((engine.match(/realtimeHistogram_\.observe \(elapsedUs, periodUs\)/g)||[]).length,1);
+  assert.match(host,/"callbackTimingScope"/);
+  const v2=(second,props={},partial=false)=>{
+    const sample=int1bSample(second,props);
+    sample.callbackTimingScope="RENDER_THROUGH_FINAL_OUTPUT_PUBLICATION_V2";
+    if(partial)sample.callbackBudgetBuckets[3]=Math.floor(sample.callbackBudgetBuckets[3]/2);
+    return new Date(Date.UTC(2026,10,20,8,0,second)).toISOString()+
+      " | AUDIO_HEALTH | "+JSON.stringify(sample);
+  };
+  const full=analyzeHealthLog(Array.from({length:41},(_,s)=>v2(s)).join("\n"));
+  assert.equal(full.segments[0].histogramCoveragePct,100);
+  assert.equal(full.segments[0].comparable,true);
+  const partial=analyzeHealthLog(Array.from({length:41},(_,s)=>v2(s,{},true)).join("\n"));
+  assert.equal(partial.segments[0].histogramCoveragePct,50);
+  assert.equal(partial.segments[0].comparable,false);
+  assert.equal(partial.segments[0].diagnosis,"INSUFFICIENT_EVIDENCE");
+  const mixed=analyzeHealthLog([int1bLine(0,{}),v2(1),v2(2)].join("\n"));
+  assert.equal(mixed.segments.length,2);
+  const broken=analyzeHealthLog([v2(0),"2026-11-20T08:00:00.500Z | AUDIO_HEALTH | {",v2(1),v2(2)].join("\n"));
+  assert.equal(broken.segments.length,2);
+  assert.equal(broken.segments[1].invalidBefore,true);
+});

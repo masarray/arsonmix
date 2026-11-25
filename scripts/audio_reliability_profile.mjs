@@ -126,7 +126,12 @@ function describeSegment(segment){
   const p=p95p99FromDelta(segment.histogram);
   const callbacks=segment.delta.callbackCount, period=1000000*s.buffer/s.rate;
   const durationSeconds=Math.round(segment.durationMs/100)/10;
-  const missing=segment.intervals===0||p.samples===0;
+  const scope=s.callbackTimingScope??"LEGACY_RENDER_TIMING";
+  // For V2, require nearly complete sampled callback coverage. Independent
+  // atomics can skew by a callback at the endpoints, so allow a small margin.
+  const completeCoverage=scope!=="RENDER_THROUGH_FINAL_OUTPUT_PUBLICATION_V2" ||
+    (callbacks>0&&Math.abs(p.samples-callbacks)<=Math.max(2,callbacks*0.01));
+  const missing=segment.intervals===0||p.samples===0||!completeCoverage;
   const over=segment.delta.overBudgetCount,late=segment.delta.lateCallbackIntervals;
   const gap=segment.delta.callbackGapCount;
   let diagnosis="INSUFFICIENT_EVIDENCE";
@@ -166,7 +171,8 @@ function describeSegment(segment){
     directRouteAuthorized:s.directRouteAuthorized===true,
     durationSeconds,intervals:segment.intervals,callbackCount:callbacks,
     windowHistogramSamples:p.samples,
-    callbackTimingScope:s.callbackTimingScope??"LEGACY_RENDER_TIMING",
+    callbackTimingScope:scope,
+    completeHistogramCoverage:completeCoverage,
     // Cumulative readback atomics are not a transactional snapshot; a
     // callback at either endpoint can contribute one sample of skew.
     histogramCoveragePct:percent(p.samples,callbacks),
@@ -260,7 +266,7 @@ export function compareDryFx(analysis){
   for(const key of ["backend","device","inputDevice","outputDevice",
                      "sessionId","deviceGeneration","nativeFxGraphRevision",
                      "inputMask","outputMask","inputChannels","outputChannels",
-                     "sampleRate","bufferFrames"]){
+                     "sampleRate","bufferFrames","callbackTimingScope"]){
     if(dry[key]!==fx[key])return {comparable:false,reason:"Mismatched "+key+": do not compare unlike hardware profiles."};
   }
   return {comparable:true,baseline:"DRY",candidate:"FX",

@@ -30,6 +30,9 @@ jobs:
           ref: 8.0.15
           path: third_party/JUCE
           persist-credentials: false
+      - name: P11 offline reliability profile and timing contracts
+        if: github.ref_name == 'staging/io-reverb-integrated-p10-p11-20261125'
+        run: node --test tests/smart_audio_diagnostic_contract_test.mjs
       - name: Pinned WebView2 SDK
         shell: pwsh
         run: |
