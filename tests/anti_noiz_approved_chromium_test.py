@@ -50,6 +50,34 @@ def readback(page, settings, observation=OBS):
     respond(page,request,"arMixBuiltinAntiNoizSnapshot",status="ACCEPTED",
             settings=settings,observation=observation,sampleRate=48000,addedLatencySamples=256)
 
+def assert_p1_geometry(root):
+    # Verify composition, not merely element visibility. All three controls
+    # share the same vertical baselines and their widths agree to 1px.
+    geometry=root.evaluate("""el=>{
+      const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height};};
+      const cs=[...el.querySelectorAll('.an-control')];
+      const selectors=['.an-dial','.an-readout','.an-control-name','.an-range-label'];
+      const modes=[...el.querySelectorAll('.an-modes button')];
+      const tokens=getComputedStyle(el.querySelector('.an-panel'));
+      return {cols:cs.map(c=>selectors.map(s=>rect(c.querySelector(s)))),
+        modes:modes.map(rect),pressed:modes.filter(b=>b.getAttribute('aria-pressed')==='true').length,
+        radii:['.an-display','.an-readout','[data-power]','[data-close]','[data-learn]','.an-presets select','.an-modes'].map(s=>getComputedStyle(el.querySelector(s)).borderTopLeftRadius),
+        radius:tokens.getPropertyValue('--an-radius').trim()};
+    }""")
+    assert len(geometry["cols"])==3
+    for i in range(4):
+        row=[c[i] for c in geometry["cols"]]
+        assert max(r["y"] for r in row)-min(r["y"] for r in row)<=1,geometry
+        assert max(r["h"] for r in row)-min(r["h"] for r in row)<=1,geometry
+    for c in geometry["cols"]:
+        assert all(c[i]["y"]+c[i]["h"]<=c[i+1]["y"]+1 for i in range(3)),geometry
+    modes=geometry["modes"]
+    assert len(modes)==4 and geometry["pressed"]==1
+    assert max(m["w"] for m in modes)-min(m["w"] for m in modes)<=1,geometry
+    assert max(m["h"] for m in modes)-min(m["h"] for m in modes)<=1,geometry
+    assert all(abs(modes[i]["x"]+modes[i]["w"]-modes[i+1]["x"])<=1 for i in range(3)),geometry
+    assert all(r==geometry["radius"] for r in geometry["radii"]),geometry
+
 def main():
     bundle=Path(sys.argv[1]).resolve()
     with sync_playwright() as pw:
@@ -198,6 +226,7 @@ def main():
         accepted=key["settings"]
         readback(page,accepted,{**OBS,"serial":"7","effectiveMode":"Voice","profile":True})
         # Capture actual approved UI, not an illustrative mockup.
+        assert_p1_geometry(root)
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-1366.png"))
         # Narrow viewport: exercise actual responsive layout, not a mockup.
         page.set_viewport_size({"width":360,"height":720})
@@ -211,6 +240,7 @@ def main():
         assert root.evaluate("""el=>[...el.querySelectorAll('.an-dial input,[data-power],[data-close],[data-learn],[data-mode]')].every(c=>{
           const r=c.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
           return hit===c||c.contains(hit);})"""),"narrow editor hit targets occluded"
+        assert_p1_geometry(root)
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-360.png"))
         page.set_viewport_size({"width":1366,"height":768})
         # Show-store/preset plumbing is not mocked as disk success: verify
