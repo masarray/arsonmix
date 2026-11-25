@@ -314,6 +314,7 @@ int main() {
                 // Include LED glow/stroke beyond nominal rotary draw rectangle.
                 const float radius=reverb_ui::graphite::DialGeometry{hero}.extent();
                 assert(radius<slider->getWidth()*.5f);
+                assert(radius<dial.getWidth()*.5f);
                 assert(dial.getCentreY()-radius>label->getBottom());
                 assert(dial.getCentreY()+radius<lcd.getY());
                 bool labelClicks=true,childClicks=true;
@@ -396,10 +397,26 @@ int main() {
     std::array<int,2> tickWidths{},tickHeights{},pointerWidths{},pointerHeights{};
     for(bool hero:{true,false}) {
         const G d{hero};
-        assert(d.count()==(hero?23:15));
+        assert(d.count()==(hero?23:11));
         assert(d.length()==9.f&&d.height()==4.f&&d.pointerRadius()==4.1f);
-        assert(std::abs(d.bezelGap()-(hero?5.f:2.1f))<.05f);
-        assert(d.chordGap()>(hero?4.9f:2.4f));
+        assert(std::abs(d.bezelGap()-(hero?5.f:5.86546f))<.05f);
+        assert(std::abs(d.chordGap()-8.80097f)<.01f);
+        assert(std::abs(d.chordGap()-G{true}.chordGap())<.001f);
+        // Identical clearance across all adjacent seats, including the
+        // full-scale endpoints. A projected rotated seat envelope proves
+        // the chord calculation independently of the ring formula.
+        const float angle=d.halfStep();
+        const auto rightmost=[&](float a) {
+            float result=-1000.f;
+            for(float u:{-d.seatWidth()*.5f,d.seatWidth()*.5f})
+                for(float v:{-d.seatHeight()*.5f,d.seatHeight()*.5f}) {
+                    const auto p=juce::Point<float>(u,v).transformedBy(
+                        G::tickTransform(a,d.ring()*std::sin(a),-d.ring()*std::cos(a)));
+                    result=std::max(result,p.x);
+                }
+            return result;
+        };
+        assert(std::abs(-2.f*rightmost(-angle)-d.chordGap())<.001f);
         const auto horizontal=juce::Point<float>(1.f,0.f).transformedBy(G::tickTransform(0.f,0.f,0.f));
         const auto vertical=juce::Point<float>(1.f,0.f).transformedBy(G::tickTransform(juce::MathConstants<float>::halfPi,0.f,0.f));
         assert(std::abs(horizontal.y)<.001f&&std::abs(horizontal.x-1.f)<.001f);

@@ -131,27 +131,48 @@ inline void drawMetal(juce::Graphics& g,const juce::Path& path,int width,int hei
     g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
     g.drawImage(assets().metal,juce::Rectangle<float>(0.f,0.f,float(width),float(height)));
 }
-// V6.1: physical artwork scales with dial, luminous hardware does not.
+// V6.2: physical artwork scales with dial; luminous hardware and seat spacing do not.
 // All LED/pointer dimensions below are logical screen pixels (DPI scales
 // both kinds identically). Compact ring has fewer seats, not smaller LEDs.
 struct DialGeometry {
     bool hero;
-    constexpr int count() const noexcept { return hero?23:15; }
+    constexpr int count() const noexcept { return hero?23:11; }
     constexpr float scale() const noexcept { return (hero?326.f:134.f)/480.f; }
     constexpr float length() const noexcept { return 9.f; }
     constexpr float height() const noexcept { return 4.f; }
     constexpr float inset() const noexcept { return .65f; }
     constexpr float pointerRadius() const noexcept { return 4.1f; }
     constexpr float pointerOrbit() const noexcept { return .60f*float(radius)*scale(); }
-    constexpr float bezelGap() const noexcept { return hero?5.f:2.1f; }
-    constexpr float ring() const noexcept {
-        return .925f*float(radius)*scale()+height()*.5f+1.f+bezelGap();
+    constexpr float seatWidth() const noexcept { return length()+2.f; }
+    constexpr float seatHeight() const noexcept { return height()+2.f; }
+    static constexpr float heroRing() noexcept {
+        return .925f*float(radius)*(326.f/480.f)+3.f+5.f;
+    }
+    float halfStep() const noexcept {
+        return juce::MathConstants<float>::pi*1.5f/(2.f*(count()-1));
+    }
+    // Adjacent tangential rectangular seats face each other across the
+    // angular bisector. Project both half-widths and half-heights onto
+    // the chord: this is the conservative edge clearance, not arc length
+    // or just centre-to-centre distance. Rounded corners add clearance.
+    static float edgeGap(float r,float halfAngle,float w,float h) noexcept {
+        return (2.f*r-h)*std::sin(halfAngle)-w*std::cos(halfAngle);
+    }
+    float ring() const noexcept {
+        if(hero)return heroRing();
+        const float target=edgeGap(heroRing(),DialGeometry{true}.halfStep(),
+                                   seatWidth(),seatHeight());
+        const float a=halfStep();
+        return .5f*((target+seatWidth()*std::cos(a))/std::sin(a)+seatHeight());
+    }
+    float bezelGap() const noexcept {
+        return ring()-.925f*float(radius)*scale()-seatHeight()*.5f;
     }
     float chordGap() const noexcept {
-        return 2.f*ring()*std::sin(juce::MathConstants<float>::pi*1.5f/(2.f*(count()-1)))-(length()+2.f);
+        return edgeGap(ring(),halfStep(),seatWidth(),seatHeight());
     }
     float extent() const noexcept {
-        return std::hypot(ring()+height()*.5f+1.f,length()*.5f+1.f)+3.f;
+        return std::hypot(ring()+seatHeight()*.5f,seatWidth()*.5f)+3.f;
     }
     static juce::AffineTransform tickTransform(float a,float x,float y) noexcept {
         return juce::AffineTransform::rotation(a).translated(x,y);

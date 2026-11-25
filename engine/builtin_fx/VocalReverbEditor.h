@@ -33,7 +33,7 @@ struct FaceplateLayout final {
     static constexpr int smallCaptionY=224,algorithmWidth=166,algorithmCentreX=983;
     static constexpr int lcdCentreY=376,lcdHeight=26;
     static constexpr int heroTop=129,heroCentreY=236,heroDial=212,heroWidth=220;
-    static constexpr int smallTop=243,smallCentreY=293,smallDial=98,smallWidth=116;
+    static constexpr int smallTop=243,smallCentreY=295,smallDial=104,smallWidth=116;
     static constexpr int heroCentreX=145,smallFirstCentre=316,smallPitch=122;
     static constexpr int controlBottom=lcdCentreY+lcdHeight/2;
     static constexpr int tabY=170,tabHeight=35,tabPitch=98,tabWidth=96;
