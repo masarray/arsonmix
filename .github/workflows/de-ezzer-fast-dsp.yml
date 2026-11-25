@@ -43,3 +43,25 @@ jobs:
         run: |
           node tools/de-ezzer/ui_test.cjs
           node tools/de-ezzer/host_test.cjs
+  chromium:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Install browser test dependency
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Actual editor gesture and audition transport fixture
+        env:
+          DE_EZZER_SCREENSHOT: /tmp/de-ezzer-v2-editor.png
+        run: python tools/de-ezzer/gesture_test.py
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: de-ezzer-v2-editor-fixture
+          path: /tmp/de-ezzer-v2-editor.png
+          retention-days: 7

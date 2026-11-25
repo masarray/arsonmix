@@ -5,9 +5,10 @@
 #include <iostream>
 using namespace armix::mixer;
 namespace dz=armix::builtin_fx::de_ezzer;
+static constexpr std::uint64_t route=123;
 static void require(bool v,const char* why){if(!v){std::cerr<<why<<'\n';std::exit(1);}}
 int main(){
-    constexpr int n=480;constexpr std::uint64_t ep=19,rev=1,route=123,instance=42,instanceEpoch=3;
+    constexpr int n=480;constexpr std::uint64_t ep=19,rev=1,instance=42,instanceEpoch=3;
     DynamicChannelRoster roster;
     std::array<ChannelEdit,3> rows{};
     const std::array<ChannelRole,3> roles{ChannelRole::input,ChannelRole::main,ChannelRole::monitor};

@@ -2,11 +2,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Optional Chromium fixture: real editor and host JS, injected backend (not PCM)."""
 from pathlib import Path
+import os
 from playwright.sync_api import sync_playwright
 
 assets = Path(__file__).resolve().parents[2] / 'site/preview-v2/assets'
 with sync_playwright() as pw:
-    browser = pw.chromium.launch(executable_path='/usr/bin/chromium', args=['--no-sandbox'])
+    browser = pw.chromium.launch(executable_path='/usr/bin/chromium' if Path('/usr/bin/chromium').is_file() else None, args=['--no-sandbox'])
     page = browser.new_page(viewport={'width': 800, 'height': 600})
     errors = []
     page.on('pageerror', lambda e: errors.append(str(e)))
@@ -79,6 +80,8 @@ with sync_playwright() as pw:
     page.wait_for_timeout(70)
     page.evaluate('''()=>{let req=events.filter(p=>p.action==='nativeDeEzzerSnapshot').at(-1);s={...s,frames:String(BigInt(s.frames)+2400n),cue:{available:true,requested:'Ess',applied:'Ess'}};listeners.arMixBuiltinDeEzzerSnapshot({...req,ok:true,snapshot:s});}''')
     assert page.locator('[data-cue="Ess"]').get_attribute('aria-pressed')=='true'
+    if os.environ.get('DE_EZZER_SCREENSHOT'):
+        page.locator('#mxNativeDeEzzer').screenshot(path=os.environ['DE_EZZER_SCREENSHOT'])
     page.locator('[data-cue="Mix"]').click()
     assert page.evaluate("events.filter(p=>p.action==='nativeDeEzzerCue').at(-1).mode")=='Mix'
     page.evaluate('view.graph.revision="5"');page.wait_for_timeout(160)
