@@ -4454,11 +4454,28 @@
         button.addEventListener("click",()=>backend.emitEvent("arMixAction",{action}));
         toolbar.insertBefore(button,firstTool);
       }
+      // Reuse the authoritative offline new-session transaction, not a JS reset.
+      const newProject=item("button","tool mixer-file-tool","New Project");
+      newProject.type="button";
+      newProject.dataset.nativeNewProject="true";
+      newProject.title="Start an empty mixer · disconnect audio first · saved session is archived";
+      newProject.addEventListener("click",()=>newSessionButtons[0].click());
+      toolbar.insertBefore(newProject,firstTool);
       const io=item("button","tool","Audio I/O");
       io.dataset.nativeIo="true";
       io.title="Select ASIO/WASAPI driver and capture/playback device";
       io.addEventListener("click",openNativeAudioIO);
       toolbar.insertBefore(io,document.getElementById("moreTools"));
+      const outputs=item("button","tool","Outputs");
+      outputs.type="button";
+      outputs.dataset.nativeOutputs="true";
+      outputs.title="Open the verified audio output routing matrix";
+      outputs.addEventListener("click",()=>{
+        openNativeAudioIO();
+        const tab=devicePanel?.querySelector('button[data-audio-tab="routing"]');
+        if(tab&&!tab.disabled)selectAudioSetupPage("routing");
+      });
+      toolbar.insertBefore(outputs,document.getElementById("moreTools"));
       const addTrack=document.getElementById("addTrack");
       if(addTrack){
         addTrack.textContent="+ Audio Track";

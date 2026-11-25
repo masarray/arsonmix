@@ -3155,6 +3155,12 @@ private:
                     if(!applied)nativeError=result.error;
                 }
             } else {
+                // A MOVE can invalidate slot identities of both racks, including
+                // stationary neighbours. Close editor windows on CONTROL before
+                // the validated native transaction publishes a changed graph.
+                // Processor leases and DSP state remain owned by the mixer.
+                if(command.getProperty("operation","").toString()=="NATIVE_MOVE_INSERT")
+                    closeAllPluginEditors();
                 applied=armix::console::executeApprovedNativeControl(engine_,command,&nativeError);
             }
         }

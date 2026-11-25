@@ -2059,7 +2059,14 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(menu,/e\.preventDefault\(\)/);
  assert.match(menu,/\.strip-identity-top/);
  assert.match(menu,/\.fxslot-row:not\(\.is-empty\)/);
- assert.match(menu,/Confirm Delete Track/);
+ assert.doesNotMatch(menu,/Confirm Delete Track/);
+ assert.match(menu,/kindName==="Track"\?"Delete Track"/);
+ const deleteAction=menu.split('if(action==="delete"){')[1].split('dismissMenu();\n      if(action==="rename")')[0];
+ assert.match(deleteAction,/if\(track\?\.kind==="audio"\)\{\s*dismissMenu\(\);\s*hooks\.requestDeleteTrack\(track\);/);
+ assert.match(deleteAction,/confirmation=true/); // retain explicit BUS/AUX confirmation
+ assert.match(bridge,/newProject\.addEventListener\("click",\(\)=>newSessionButtons\[0\]\.click\(\)\)/);
+ assert.match(bridge,/if\(tab&&!tab\.disabled\)selectAudioSetupPage\("routing"\)/);
+ assert.match(host,/if\(command\.getProperty\("operation",""\)\.toString\(\)=="NATIVE_MOVE_INSERT"\)\s*closeAllPluginEditors\(\);\s*applied=armix::console::executeApprovedNativeControl/);
  assert.match(menu,/requestDeleteTrack\(track\)/);
  assert.match(menu,/hooks\.orbitTarget\(track,slot\)/);
  assert.ok(bridge.includes('stripVM.rosterMutationPlan('));
