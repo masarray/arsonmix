@@ -78,3 +78,45 @@ jobs:
           name: de-ezzer-v2-editor-fixture
           path: /tmp/de-ezzer-v2-editor.png
           retention-days: 7
+
+  recorded:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: c6f02c05358526ccb16c2e02b0113c4da18903de
+          path: baseline-p2e
+          sparse-checkout: |
+            engine/builtin_fx/de_ezzer
+            tools/de-ezzer
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build actual candidate and approved baseline renderers
+        run: |
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror tools/de-ezzer/render.cpp -o /tmp/dez-current
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror baseline-p2e/tools/de-ezzer/render.cpp -o /tmp/dez-baseline
+          python -m pip install numpy==2.2.6 scipy==1.15.3
+          python tools/de-ezzer/qualify_test.py /tmp/dez-current
+      - name: Pinned recorded-source paired protection screen
+        run: python tools/de-ezzer/recorded_qualification.py --renderer /tmp/dez-current --baseline-renderer /tmp/dez-baseline --source-sha ${{ github.event.pull_request.head.sha }} --output /tmp/dez-recorded
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: de-ezzer-recorded-evidence
+          path: /tmp/dez-recorded/evidence/
+          if-no-files-found: warn
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: de-ezzer-blind-listening
+          path: /tmp/dez-recorded/blind/
+          if-no-files-found: warn
+          retention-days: 7
