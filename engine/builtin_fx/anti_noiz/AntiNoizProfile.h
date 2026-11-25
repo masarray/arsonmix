@@ -24,6 +24,13 @@ public:
         candidate_={};energy_={};count_=0;warmup_=2;learning_=true;idle_=0;drift_.reset();return true;
     }
     void cancel() noexcept {learning_=false;idle_=0;drift_.reset();}
+    // Revoke the extra Voice authority at a policy boundary, not on each
+    // foreground frame. No Learn invalidation or new profile transaction.
+    void limitToIdleBounds() noexcept {
+        if(valid_)for(int c=0;c<channels_;++c)for(int k=0;k<bins_;++k)
+            working_[c][k]=std::clamp(working_[c][k],.7f*anchor_[c][k],1.3f*anchor_[c][k]);
+        idle_=0;drift_.reset();
+    }
     bool learning() const noexcept {return learning_;}
     bool valid() const noexcept {return valid_;}
     const Powers& powers() const noexcept {return working_;}

@@ -27,6 +27,26 @@ public:
         float musicProtect=1.f;
         bool enabled=true;
     };
+    // Opaque validated packet: only Core can construct usable coefficients.
+    // The control producer prepares it; the audio owner applies it atomically
+    // at the existing command boundary without transcendental math.
+    class PreparedSettings {
+        friend class Core;
+        Settings settings_{};
+        float clean_=1,singing_=1,silence_=1,auto_=1;
+        bool valid_=false;
+    };
+    static PreparedSettings prepareSettings(Settings s) noexcept {
+        PreparedSettings p;
+        if(!std::isfinite(s.cleanDb)||!std::isfinite(s.silenceDb)||s.cleanDb<0||s.cleanDb>24||
+           s.silenceDb<0||s.silenceDb>48||!std::isfinite(s.musicProtect)||s.musicProtect<0||s.musicProtect>1||static_cast<unsigned>(s.mode)>3U)return p;
+        p.settings_=s;
+        p.clean_=gainDb(s.cleanDb);
+        p.singing_=gainDb(std::min(12.f-6.f*s.musicProtect,s.cleanDb));
+        p.silence_=gainDb(s.silenceDb);
+        p.auto_=gainDb(std::min(12.f-4.f*s.musicProtect,s.cleanDb));
+        p.valid_=true;return p;
+    }
     static constexpr int maxN=FftPlan::maxN, maxBins=maxN/2+1;
     static Mode resolveMode(Mode requested,SourceRole source) noexcept {
         if(requested!=Mode::AutoProtect)return requested;
@@ -60,17 +80,24 @@ public:
         for(auto& a:out_)a.fill(0);
         profile_.prepare(rate_,hop_,channels_,hop_+1);
         mask_.fill(1); pos_=ticks_=0; expansion_=1;
-        prepareGains();
+        applyGains(prepareSettings(settings_));
         ready_=true; return true;
     }
-    bool setSettings(Settings s) noexcept {
-        if(!std::isfinite(s.cleanDb)||!std::isfinite(s.silenceDb)||s.cleanDb<0||s.cleanDb>24||
-           s.silenceDb<0||s.silenceDb>48||!std::isfinite(s.musicProtect)||s.musicProtect<0||s.musicProtect>1||static_cast<unsigned>(s.mode)>3U)return false;
+    // Offline/direct-owner convenience API. Live Control uses prepared packets.
+    bool setSettings(Settings s) noexcept {return applySettings(prepareSettings(s));}
+    bool applySettings(const PreparedSettings& p) noexcept {
+        if(!p.valid_)return false;
+        const auto s=p.settings_;
         const auto next=resolveMode(s.mode,sourceRole_);
         if(!s.enabled||next==Mode::Music)profile_.cancel();
+        // Extended Voice-only PSD authority must not leak into musical modes
+        // or survive an explicit disable. Keep the learned anchor and modest
+        // idle tracking. Existing overlap and gain smoothing remain intact.
+        if(effectiveMode_==Mode::Voice&&(next!=Mode::Voice||(!s.enabled&&settings_.enabled)))
+            profile_.limitToIdleBounds();
         if(next!=effectiveMode_||s.enabled!=settings_.enabled){voiceGain_.reset();context_.reset();profile_.track(power_,false);}
         effectiveMode_=next;
-        settings_=s; prepareGains(); return true;
+        settings_=s; applyGains(p); return true;
     }
     bool beginLearn() noexcept {
         if(!ready_||!profile_.begin())return false;
@@ -115,11 +142,9 @@ private:
         maskClose_=float(1.-std::pow(1.-0.18,hops));
         expandClose_=float(1.-std::pow(1.-0.035,hops));
     }
-    void prepareGains() noexcept {
-        cleanFloor_=gainDb(settings_.cleanDb);
-        singingFloor_=gainDb(std::min(12.f-6.f*settings_.musicProtect,settings_.cleanDb));
-        silenceFloor_=gainDb(settings_.silenceDb);
-        autoFloor_=gainDb(std::min(12.f-4.f*settings_.musicProtect,settings_.cleanDb));
+    void applyGains(const PreparedSettings& p) noexcept {
+        cleanFloor_=p.clean_;singingFloor_=p.singing_;
+        silenceFloor_=p.silence_;autoFloor_=p.auto_;
     }
     void renderUnity() noexcept {
         // Algebraically equivalent unity WOLA, with the same delay and overlap.

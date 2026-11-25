@@ -95,7 +95,12 @@ int main(){
         for(int n=0;n<8;++n)for(int i=0;i<window;++i)
             p.track(n%2?tilted:reverse,false,true,1.7f,2.6f);
         check(p.powers()==spectral,"intermittent unstable shape freeze");
-        std::cout<<rate<<" Hz: spectral low/high ratios "<<low<<"/"<<high<<", stereo contamination and intermittent freeze PASS\n";
+        p.limitToIdleBounds();
+        check(p.anchor()==spectralAnchor&&p.valid(),"policy transition preserves trusted profile");
+        for(int c=0;c<2;++c)for(int k=0;k<129;++k)
+            check(p.powers()[c][k]>=.7f*spectralAnchor[c][k]&&p.powers()[c][k]<=1.3f*spectralAnchor[c][k],"policy transition removes extended authority");
+        check(p.powers()[1][4]==spectral[1][4]&&p.powers()[0]==spectral[0],"unaffected PSD unchanged");
+        std::cout<<rate<<" Hz: spectral low/high ratios "<<low<<"/"<<high<<", stereo contamination and intermittent freeze, policy isolation PASS\n";
         p.prepare(rate,hop,1,129);check(!p.valid()&&!p.learning(),"new format invalidates profile");
         std::cout<<rate<<" Hz: drift ratio "<<ratio<<", rollback, freeze and bounds PASS\n";
     }
