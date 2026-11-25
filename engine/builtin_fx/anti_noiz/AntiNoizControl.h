@@ -62,6 +62,7 @@ public:
     bool stageUnpublished(Core::Settings s) noexcept {
         return core_.ready()&&commands_.empty()&&done_.empty()&&telemetry_.empty()&&core_.setSettings(s);
     }
+    Core::Spectrum spectrum() const noexcept {return core_.spectrum();}
     bool learning() const noexcept {return core_.learning();}
     bool lastNativeLearnQualified() const noexcept {return core_.lastNativeLearnQualified();}
     void cancelNativeLearn() noexcept {core_.cancelNativeLearn();}

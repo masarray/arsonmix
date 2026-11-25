@@ -4,6 +4,16 @@
 #include <random>
 using namespace armix::builtin_fx::anti_noiz;
 int main(){try{
+    using G=VoiceGain<Core::maxBins>;
+    offline::require(G::restore(.3f,3.f,3.f,4.f,12.f)>.44f,"corroborated overlap restoration");
+    offline::require(G::restore(.3f,3.f,3.f,4.f,1.f)==.3f,"isolated noise peak");
+    offline::require(G::restore(.3f,3.f,.5f,4.f,12.f)==.3f,"quiet band unchanged");
+    offline::require(G::restore(.3f,3.f,3.f,1.f,12.f)==.3f,"no persistent local evidence");
+    offline::require(G::restore(.3f,1.f,3.f,4.f,12.f)==.3f,"no local excess");
+    for(float g:{0.f,.1f,.4f,.9f,1.f}){
+        const float v=G::restore(g,100.f,100.f,100.f,100.f);
+        offline::require(v>=g&&v<=1.f&&v-g<=.150001f,"bounded restoration");
+    }
     constexpr unsigned rate=48000;
     std::mt19937 gen(2026);std::uniform_real_distribution<float> noiseDist(-.003f,.003f),unit(-1.f,1.f);
     offline::Audio learn{rate,2,std::vector<float>(rate*6)},input=learn,clean=learn;

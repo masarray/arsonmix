@@ -80,6 +80,21 @@ int main(){
             }
             l.fill(0);r.fill(0);
         }
+        // Actual native processor → typed bridge observation, not JS fixture.
+        for(int i=0;i<16;++i){l.fill(0);r.fill(0);lease.render(l.data(),r.data(),128);}
+        check(fx->queueLearn(4),"capture real spectrum");
+        for(int pos=0;pos<static_cast<int>(3*rate);pos+=128){
+            for(int i=0;i<128;++i){l[i]=.03f*float(std::sin(2.*std::numbers::pi_v<double>*8.*double(pos+i)/latency));r[i]=-l[i];}
+            lease.render(l.data(),r.data(),128);
+            if(!pos)check(fx->pollCompletion(ack)&&ack.applied,"capture ACK");
+            while(fx->pollTelemetry(meter))last=meter;
+        }
+        check(last.profile&&last.spectrum.noiseValid&&last.spectrum.inputValid,"actual native spectral profile");
+        const auto observation=Binding::observation(last);
+        const auto spectrum=observation.getProperty("spectrum",{});
+        const auto noise=spectrum.getProperty("noise",{}),input=spectrum.getProperty("input",{});
+        check(noise.isArray()&&input.isArray()&&noise.getArray()->size()==latency/2+1&&input.getArray()->size()==latency/2+1,"typed native spectral arrays");
+        check(static_cast<double>((*noise.getArray())[8])>static_cast<double>((*noise.getArray())[16]),"typed spectral peak");
         auto restored=std::make_unique<AntiNoizProcessor>();
         check(restored->restoreUnpublishedState(saved.getData(),28),"cold reopen");
         restored->prepareToPlay(rate,128);
