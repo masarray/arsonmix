@@ -24,7 +24,7 @@ int main(){
     check(c.submit({100,Control::Kind::settings,s}));c.consume();
     for(unsigned i=0;i<16;++i)check(c.poll(ack)&&ack.id==10+i);
     c.consume();check(c.poll(ack)&&ack.id==100);
-    for(int i=0;i<10;++i)c.process(pcm,nullptr,64);
+    for(int i=0;i<100;++i)c.process(pcm,nullptr,64);
     check(c.pollTelemetry(meter));check(c.pollTelemetry(meter));check(!c.pollTelemetry(meter));
     check(c.prepare(96000,2));check(c.snapshot().latency==512);
     std::cout<<"Control ACK, rejection, queue backpressure and telemetry PASS\n";

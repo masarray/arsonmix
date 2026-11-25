@@ -20,7 +20,8 @@ public:
     bool prepare(double rate,int channels) noexcept {
         // A new graph epoch requires a fresh Control instance or drained queues.
         if(!commands_.empty()||!done_.empty()||!telemetry_.empty())return false;
-        return core_.prepare(rate,channels);
+        if(!core_.prepare(rate,channels))return false;
+        telemetryInterval_=static_cast<int>(rate/20.);remaining_=0;return true;
     }
     bool submit(Command c) noexcept {return c.id!=0&&commands_.push(c);}
     bool poll(Completion& c) noexcept {return done_.pop(c);}
@@ -36,13 +37,18 @@ public:
     }
     void process(float* l,float* r,int n) noexcept {
         consume();core_.process(l,r,n);
-        if(n>0&&core_.ready()&&telemetry_.canPush())(void)telemetry_.push(snapshot());
+        if(n<=0||!core_.ready())return;
+        if(n>=remaining_){
+            remaining_=telemetryInterval_;
+            if(telemetry_.canPush())(void)telemetry_.push(snapshot());
+        }else remaining_-=n;
     }
     // AUDIO owner or unpublished/quiescent only. No UI thread access.
     Snapshot snapshot() const noexcept {
         return {core_.settings(),core_.hasProfile(),core_.learning(),core_.spectralGain(),core_.residualGain(),core_.latencySamples()};
     }
 private:
+    int telemetryInterval_=2400,remaining_=0;
     Core core_{};
     FxSpsc<Command,16> commands_{};
     FxSpsc<Completion,16> done_{};

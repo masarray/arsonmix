@@ -6,6 +6,7 @@ on:
       - 'engine/builtin_fx/anti_noiz/**'
       - 'tests/anti_noiz_*.cpp'
       - 'tools/anti-noiz/**'
+      - 'site/preview-v2/assets/anti-noiz/**'
       - '.github/workflows/anti-noiz-fast-dsp.yml'
 
 permissions:
@@ -52,3 +53,14 @@ jobs:
       - name: Record exploratory throughput (not a performance gate)
         if: matrix.benchmark == 'ON'
         run: '"$RUNNER_TEMP/anti-noiz/anti_noiz_bench"'
+
+  web-contract:
+    name: Anti Noiz Web UX contract (Node, no Windows)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - run: node tools/anti-noiz/web/contract.test.mjs

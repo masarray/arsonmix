@@ -43,6 +43,7 @@ public:
     bool setSettings(Settings s) noexcept {
         if(!std::isfinite(s.cleanDb)||!std::isfinite(s.silenceDb)||s.cleanDb<0||s.cleanDb>24||
            s.silenceDb<0||s.silenceDb>48||!std::isfinite(s.musicProtect)||s.musicProtect<0||s.musicProtect>1||static_cast<unsigned>(s.mode)>3U)return false;
+        if(!s.enabled||s.mode==Mode::Music)learning_=false;
         settings_=s; prepareGains(); return true;
     }
     bool beginLearn() noexcept {
