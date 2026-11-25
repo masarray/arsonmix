@@ -5,16 +5,18 @@
 #include <algorithm>
 #include <limits>
 namespace armix::builtin_fx::vocal_delay {
-struct SingerPreset {const char* name;float time,feedback,echo,duck,hp,lp;StereoMode mode;};
-inline constexpr std::array<SingerPreset,8> singerPresets{{
- {"Live Vocal",320,.30f,.22f,.20f,150,5500,StereoMode::stereo},
- {"Classic Slap",100,0,.20f,.10f,120,6500,StereoMode::mono},
- {"Pop Echo",280,.35f,.22f,.25f,150,6000,StereoMode::stereo},
- {"Ballad",520,.45f,.25f,.30f,170,5000,StereoMode::stereo},
- {"Concert",650,.50f,.25f,.35f,180,5000,StereoMode::stereo},
- {"Long Echo",850,.60f,.22f,.40f,200,4500,StereoMode::stereo},
- {"Ping Pong",380,.40f,.24f,.25f,150,6000,StereoMode::pingPong},
- {"Dreamy",1100,.65f,.28f,.45f,220,4200,StereoMode::stereo}
+struct SingerPreset {const char* name;float time,feedback,echo,duck,hp,lp;StereoMode mode;const char* description;};
+inline constexpr std::array<SingerPreset,10> singerPresets{{
+ {"Live Vocal",320,.30f,.22f,.20f,150,5500,StereoMode::stereo,"An easy everyday echo"},
+ {"Classic Slap",100,0,.20f,.10f,120,6500,StereoMode::mono,"Short and thick"},
+ {"Pop Echo",280,.35f,.22f,.25f,150,6000,StereoMode::stereo,"Bright rhythmic repeats"},
+ {"Ballad",520,.45f,.25f,.30f,170,5000,StereoMode::stereo,"Soft, spacious repeats"},
+ {"Concert",650,.50f,.25f,.35f,180,5000,StereoMode::stereo,"Longer stage-style echo"},
+ {"Long Echo",850,.60f,.22f,.40f,200,4500,StereoMode::stereo,"Longer trailing phrases"},
+ {"Ping Pong",380,.40f,.24f,.25f,150,6000,StereoMode::pingPong,"Alternating left and right"},
+ {"Dreamy",1100,.65f,.28f,.45f,220,4200,StereoMode::stereo,"Soft and atmospheric"},
+ {"Studio Clean",240,.24f,.18f,.16f,90,11000,StereoMode::stereo,"Clear, bright echoes"},
+ {"Warm Vocal",360,.34f,.23f,.28f,180,4000,StereoMode::stereo,"Mellow, rounded repeats"}
 }};
 inline Parameters presetSettings(std::size_t index,bool enabled=true) noexcept{
     Parameters p{};p.enabled=enabled;if(index>=singerPresets.size())return p;
@@ -26,6 +28,35 @@ inline bool sameParameters(const Parameters& a,const Parameters& b) noexcept{
        a.highPassHz==b.highPassHz&&a.lowPassHz==b.lowPassHz&&a.duck==b.duck&&
        a.duckAttackMs==b.duckAttackMs&&a.duckReleaseMs==b.duckReleaseMs&&
        a.mode==b.mode&&a.enabled==b.enabled;
+}
+// A style describes voicing, not the user's three performance knobs.
+// Exact expert edits make the style Custom; editing Time/Repeats/Level
+// keeps the selected style identifiable even after state restore.
+inline bool sameVoicing(const Parameters& a,const Parameters& b) noexcept{
+    return a.highPassHz==b.highPassHz&&a.lowPassHz==b.lowPassHz&&a.duck==b.duck&&
+        a.duckAttackMs==b.duckAttackMs&&a.duckReleaseMs==b.duckReleaseMs&&a.mode==b.mode;
+}
+inline int styleIndex(const Parameters& p) noexcept{
+    for(std::size_t i=0;i<singerPresets.size();++i)
+        if(sameVoicing(p,presetSettings(i,p.enabled)))return int(i);
+    return -1;
+}
+// Explicit one-touch CONTROL-only voicing. No microphone analysis claim,
+// no gain boost to dry, no modification of user's rhythmic/level intent.
+// Longer/more intense echoes get more low-end cleanup and ducking;
+// short low-feedback echoes stay open and articulate. Expert can undo
+// every mapped field. Deterministic and idempotent.
+inline Parameters smartVoicing(const Parameters& p) noexcept{
+    if(!valid(p))return p;
+    auto q=p;
+    const float load=std::clamp(.45f*(p.feedback/.9f)+.35f*p.echo+
+        .20f*std::min(p.timeMs/1200.f,1.f),0.f,1.f);
+    q.highPassHz=std::round(100.f+140.f*load);
+    q.lowPassHz=std::round(8500.f-4500.f*load);
+    q.duck=.12f+.55f*load;
+    q.duckAttackMs=8.f+7.f*load;
+    q.duckReleaseMs=100.f+180.f*load;
+    return q;
 }
 inline constexpr std::array<double,7> beatMultipliers{{.25,.5,.75,1,1.5,2,4}};
 inline bool beatTime(double bpm,std::size_t division,float& ms) noexcept{

@@ -45,10 +45,21 @@ public:
         configure(hp_,"vd.hp","LOW CUT",0,1000,1," Hz");
         configure(lp_,"vd.lp","HIGH CUT",0,20000,1," Hz");
         time_.setSkewFactorFromMidPoint(400);hp_.setSkewFactorFromMidPoint(200);lp_.setSkewFactorFromMidPoint(5000);
+        configure(attack_,"vd.attack","DUCK ATTACK",2,100,1," ms");
+        configure(release_,"vd.release","DUCK RELEASE",40,1000,1," ms");
         setupButton(power_,"vd.power");setupButton(tap_,"vd.tap");tap_.setButtonText("TAP");
+        setupButton(expert_,"vd.expert");expert_.setButtonText("Expert");
+        setupButton(smart_,"vd.smart");smart_.setButtonText("Smart voicing");
+        smart_.setTooltip("Balance echo tone and ducking for your current time, repeats and level. Dry vocal stays unchanged.");
+        expert_.setTooltip("Show precise controls without changing your sound.");
+        expert_.onClick=[this]{expertMode_=!expertMode_;resized();refresh();};
+        smart_.onClick=[this]{offer(smartVoicing(processor_.singerDisplay()));};
+        attack_.onValueChange=[this]{auto p=processor_.singerDisplay();p.duckAttackMs=float(attack_.getValue());offer(p);};
+        release_.onValueChange=[this]{auto p=processor_.singerDisplay();p.duckReleaseMs=float(release_.getValue());offer(p);};
         power_.onClick=[this]{auto p=processor_.singerDisplay();p.enabled=!p.enabled;offer(p);};
-        preset_.onChange=[this]{const int id=preset_.getSelectedId();if(id>0&&id<=int(singerPresets.size()))
-            offer(presetSettings(std::size_t(id-1),processor_.singerDisplay().enabled));};
+        preset_.onChange=[this]{const int id=preset_.getSelectedId();if(id>0&&id<=int(singerPresets.size())){
+            bpm_=0;taps_.reset();tempoStatus_="FREE TIME";
+            offer(presetSettings(std::size_t(id-1),processor_.singerDisplay().enabled));}};
         mode_.onChange=[this]{const int id=mode_.getSelectedId();if(id>=1&&id<=3){auto p=processor_.singerDisplay();p.mode=static_cast<StereoMode>(id-1);offer(p);}};
         division_.onChange=[this]{applyTempo();};
         tap_.onClick=[this]{double bpm=0;if(taps_.tap(juce::Time::getMillisecondCounterHiRes(),bpm)){bpm_=bpm;applyTempo();}else tempoStatus_="TAP 3+ beats";repaint();};
@@ -58,7 +69,7 @@ public:
         duck_.onValueChange=[this]{auto p=processor_.singerDisplay();p.duck=float(duck_.getValue())*.01f;offer(p);};
         hp_.onValueChange=[this]{auto p=processor_.singerDisplay();const auto v=float(hp_.getValue());p.highPassHz=v<20?0.f:std::max(40.f,v);offer(p);};
         lp_.onValueChange=[this]{auto p=processor_.singerDisplay();const auto v=float(lp_.getValue());p.lowPassHz=v<500?0.f:std::max(1000.f,v);offer(p);};
-        admitted_=processor_.beginSingerEditor();refresh();startTimerHz(30);
+        admitted_=processor_.beginSingerEditor();resized();refresh();startTimerHz(30);
     }
     ~SingerEditor() override{
         stopTimer();if(admitted_)processor_.endSingerEditor();
@@ -70,15 +81,36 @@ public:
         g.setColour(juce::Colour(0xffdbe9e7));g.setFont(17.f);g.drawText("Vocal Delay",24,17,160,22,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff829ca4));g.setFont(10.f);g.drawText("CONTINUOUS  /  LIVE",24,39,155,13,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff243139));g.fillRoundedRectangle(12,70,float(getWidth()-24),157,7);
-        const std::array<const char*,6> names{{"TIME","FEEDBACK","ECHO","DUCK","LOW CUT","HIGH CUT"}};
         g.setFont(11.f);g.setColour(juce::Colour(0xffb5c8cb));
-        for(int i=0;i<6;++i)g.drawText(names[std::size_t(i)],18+i*98,78,94,18,juce::Justification::centred);
+        if(expertMode_){
+            const std::array<const char*,8> names{{"TIME","REPEATS","ECHO","DUCK","LOW CUT","HIGH CUT","ATTACK","RELEASE"}};
+            for(int i=0;i<8;++i)g.drawText(names[std::size_t(i)],14+i*74,78,74,18,juce::Justification::centred);
+        }else{
+            const std::array<const char*,3> names{{"TIME","REPEATS","ECHO LEVEL"}};
+            for(int i=0;i<3;++i)g.drawText(names[std::size_t(i)],24+i*132,78,122,18,juce::Justification::centred);
+            g.setColour(juce::Colour(0xff172127));g.fillRoundedRectangle(428,79,168,138,6);
+            g.setColour(juce::Colour(0xff6ad5c0));g.setFont(12.f);
+            g.drawText("YOUR SOUND",440,91,144,18,juce::Justification::centredLeft);
+            const auto i=styleIndex(processor_.singerDisplay());
+            g.setColour(juce::Colour(0xffc6d9d9));g.setFont(11.f);
+            const juce::String description=i<0?"Your own voicing":singerPresets[std::size_t(i)].description;
+            g.drawFittedText(description,440,112,144,36,juce::Justification::topLeft,2);
+            g.setColour(juce::Colour(0xff829ca4));g.drawText("Keep your lead clear",440,153,144,16,juce::Justification::centredLeft);
+        }
         g.setColour(juce::Colour(0xff829ca4));g.drawText(tempoStatus_,24,266,220,18,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff5fd7c3));g.drawText(!admitted_?"OFFLINE":processor_.singerFault()?"REOPEN REQUIRED":processor_.singerPending()?"APPLYING":"DSP READY",375,266,221,18,juce::Justification::centredRight);
     }
     void resized() override{
-        preset_.setBounds(190,19,190,31);mode_.setBounds(392,19,110,31);power_.setBounds(514,19,80,31);
-        auto ds=dials();for(int i=0;i<6;++i)ds[std::size_t(i)]->setBounds(18+i*98,98,94,120);
+        preset_.setBounds(180,19,178,31);mode_.setBounds(366,19,92,31);
+        expert_.setBounds(466,19,67,31);power_.setBounds(541,19,53,31);
+        mode_.setVisible(expertMode_);expert_.setButtonText(expertMode_?"Singer":"Expert");
+        auto ds=dials();
+        for(std::size_t i=0;i<ds.size();++i){
+            ds[i]->setVisible(expertMode_||i<3);
+            if(expertMode_){ds[i]->setBounds(14+int(i)*74,98,74,120);ds[i]->setTextBoxStyle(juce::Slider::TextBoxBelow,false,68,23);}
+            else if(i<3){ds[i]->setBounds(24+int(i)*132,98,122,120);ds[i]->setTextBoxStyle(juce::Slider::TextBoxBelow,false,94,23);}
+        }
+        smart_.setVisible(!expertMode_);smart_.setBounds(440,177,144,27);
         tap_.setBounds(24,235,74,25);division_.setBounds(108,235,130,25);
     }
     void refresh(){
@@ -86,9 +118,10 @@ public:
         const auto p=processor_.singerDisplay();
         setDial(time_,p.timeMs);setDial(feedback_,p.feedback*100);setDial(echo_,p.echo*100);
         setDial(duck_,p.duck*100);setDial(hp_,p.highPassHz);setDial(lp_,p.lowPassHz);
-        int id=99;for(std::size_t i=0;i<singerPresets.size();++i)
-            if(sameParameters(p,presetSettings(i,p.enabled)))id=int(i+1);
-        preset_.setSelectedId(id,juce::dontSendNotification);
+        setDial(attack_,p.duckAttackMs);setDial(release_,p.duckReleaseMs);
+        const auto style=styleIndex(p);
+        preset_.setSelectedId(style<0?99:style+1,juce::dontSendNotification);
+        smart_.setEnabled(available);
         mode_.setSelectedId(int(p.mode)+1,juce::dontSendNotification);
         power_.setButtonText(p.enabled?"ON":"OFF");
         power_.setColour(juce::TextButton::buttonColourId,juce::Colour(p.enabled?0xff27695c:0xff3a444a));
@@ -97,7 +130,7 @@ public:
         repaint();
     }
 private:
-    std::array<juce::Slider*,6> dials(){return {{&time_,&feedback_,&echo_,&duck_,&hp_,&lp_}};}
+    std::array<juce::Slider*,8> dials(){return {{&time_,&feedback_,&echo_,&duck_,&hp_,&lp_,&attack_,&release_}};}
     void configure(juce::Slider& s,const char* id,const char* name,double min,double max,double step,const char* unit){
         s.setComponentID(id);s.setName(name);s.setTitle(name);s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         s.setTextBoxStyle(juce::Slider::TextBoxBelow,false,82,23);s.setRange(min,max,step);
@@ -116,8 +149,8 @@ private:
     }
     void timerCallback() override{refresh();}
     JuceVocalDelayProcessor& processor_;SingerDialLook look_;
-    juce::Slider time_,feedback_,echo_,duck_,hp_,lp_;juce::ComboBox preset_,mode_,division_;
-    juce::TextButton power_,tap_;TapTempo taps_;double bpm_=0;juce::String tempoStatus_="FREE TIME";bool admitted_=false;
+    juce::Slider time_,feedback_,echo_,duck_,hp_,lp_,attack_,release_;juce::ComboBox preset_,mode_,division_;
+    juce::TextButton power_,tap_,expert_,smart_;TapTempo taps_;double bpm_=0;juce::String tempoStatus_="FREE TIME";bool admitted_=false,expertMode_=false;
 };
 inline juce::AudioProcessorEditor* JuceVocalDelayProcessor::createEditor(){return new SingerEditor(*this);}
 } // namespace armix::builtin_fx::vocal_delay

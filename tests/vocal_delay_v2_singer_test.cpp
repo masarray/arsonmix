@@ -6,7 +6,19 @@
 using namespace armix::builtin_fx::vocal_delay;
 #define CHECK(x) do{if(!(x)){std::fprintf(stderr,"FAIL:%d %s\n",__LINE__,#x);std::abort();}}while(false)
 int main(){
-    for(std::size_t i=0;i<singerPresets.size();++i){auto p=presetSettings(i,false);CHECK(valid(p)&&!p.enabled);}
+    for(std::size_t i=0;i<singerPresets.size();++i){
+        auto p=presetSettings(i,false);CHECK(valid(p)&&!p.enabled&&styleIndex(p)==int(i));
+        p.timeMs=875;p.echo=.42f;p.feedback=.45f;CHECK(styleIndex(p)==int(i));
+        auto q=smartVoicing(p);CHECK(valid(q)&&!q.enabled&&q.timeMs==p.timeMs&&q.echo==p.echo&&q.feedback==p.feedback&&q.mode==p.mode);
+        CHECK(sameParameters(q,smartVoicing(q)));
+        p.duck=.99f;CHECK(styleIndex(p)==-1);
+    }
+    auto quiet=presetSettings(1),heavy=quiet;heavy.echo=.9f;heavy.feedback=.9f;heavy.timeMs=4000;
+    auto soft=smartVoicing(quiet),strong=smartVoicing(heavy);
+    CHECK(strong.duck>soft.duck&&strong.highPassHz>soft.highPassHz&&strong.lowPassHz<soft.lowPassHz);
+    CHECK(strong.duckReleaseMs>soft.duckReleaseMs);
+    State voiced{};voiced.continuous=strong;StateCodec::Bytes saved{};State round{};
+    CHECK(StateCodec::encode(voiced,saved)&&StateCodec::decode(saved.data(),saved.size(),round)&&sameParameters(strong,round.continuous));
     float time=0;CHECK(beatTime(120,3,time)&&time==500);
     CHECK(beatTime(120,2,time)&&time==375);CHECK(!beatTime(40,6,time));CHECK(!beatTime(0,3,time));
     TapTempo tap;double bpm=0;CHECK(!tap.tap(0,bpm));CHECK(!tap.tap(500,bpm));CHECK(tap.tap(1000,bpm)&&bpm==120);

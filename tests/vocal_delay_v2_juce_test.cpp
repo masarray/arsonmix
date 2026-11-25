@@ -35,6 +35,15 @@ int main(){
         auto* echo=dynamic_cast<juce::Slider*>(editor->findChildWithID("vd.echo"));
         auto* preset=dynamic_cast<juce::ComboBox*>(editor->findChildWithID("vd.preset"));
         CHECK(time&&echo&&preset&&time->isEnabled());
+        auto* expert=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.expert"));
+        auto* duck=dynamic_cast<juce::Slider*>(editor->findChildWithID("vd.duck"));
+        auto* attack=dynamic_cast<juce::Slider*>(editor->findChildWithID("vd.attack"));
+        auto* smart=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.smart"));
+        CHECK(expert&&duck&&attack&&smart&&!duck->isVisible()&&!attack->isVisible()&&smart->isVisible());
+        const auto before=p.singerDisplay();const auto rev=p.acceptedSnapshot().revision;
+        expert->onClick();CHECK(duck->isVisible()&&attack->isVisible()&&!smart->isVisible());
+        expert->onClick();CHECK(!duck->isVisible()&&smart->isVisible());
+        CHECK(sameParameters(before,p.singerDisplay())&&!p.singerPending()&&p.acceptedSnapshot().revision==rev);
         preset->setSelectedId(4,juce::sendNotificationSync);
         p.serviceSingerControl();
         time->setValue(850,juce::sendNotificationSync);
@@ -49,6 +58,12 @@ int main(){
         pcm.clear();p.processBlock(pcm,midi);p.serviceSingerControl();
         CHECK(p.stateSnapshotQuiescent()&&p.acceptedSnapshot().accepted.timeMs==850);
         CHECK(std::abs(p.acceptedSnapshot().accepted.echo-.33f)<1.e-6f);
+        editor.reset(p.createEditor());
+        smart=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.smart"));CHECK(smart&&smart->isVisible());
+        const auto musical=p.singerDisplay();smart->onClick();
+        CHECK(sameParameters(p.singerDisplay(),smartVoicing(musical)));
+        editor.reset();pcm.clear();p.processBlock(pcm,midi);p.serviceSingerControl();
+        CHECK(p.stateSnapshotQuiescent()&&sameParameters(p.acceptedSnapshot().accepted,smartVoicing(musical)));
     }
     std::puts("PASS real JUCE continuous PCM, state ACK, bypass, restart, stale lease and native singer editor");
 }
