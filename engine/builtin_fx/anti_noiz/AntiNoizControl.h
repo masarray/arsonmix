@@ -15,12 +15,14 @@ public:
         bool profile=false, learning=false;
         float spectralGain=1, residualGain=1;
         int latency=0;
+        Core::SourceRole sourceRole=Core::SourceRole::Unknown;
+        Core::Mode effectiveMode=Core::Mode::AutoProtect;
     };
     struct Completion { std::uint64_t id=0; bool applied=false; Snapshot state{}; };
-    bool prepare(double rate,int channels) noexcept {
+    bool prepare(double rate,int channels,Core::SourceRole role=Core::SourceRole::Unknown) noexcept {
         // A new graph epoch requires a fresh Control instance or drained queues.
         if(!commands_.empty()||!done_.empty()||!telemetry_.empty())return false;
-        if(!core_.prepare(rate,channels))return false;
+        if(!core_.prepare(rate,channels,role))return false;
         telemetryInterval_=static_cast<int>(rate/20.);remaining_=0;return true;
     }
     bool submit(Command c) noexcept {return c.id!=0&&commands_.push(c);}
@@ -31,7 +33,7 @@ public:
         if(!core_.ready()||!done_.canPush()||!commands_.pop(c))return;
         bool ok=false;
         if(c.kind==Kind::settings)ok=core_.setSettings(c.settings);
-        if(c.kind==Kind::learn&&core_.settings().enabled&&core_.settings().mode!=Core::Mode::Music)
+        if(c.kind==Kind::learn&&core_.settings().enabled&&core_.effectiveMode()!=Core::Mode::Music)
             ok=core_.beginLearn();
         (void)done_.push({c.id,ok,snapshot()});
     }
@@ -45,7 +47,7 @@ public:
     }
     // AUDIO owner or unpublished/quiescent only. No UI thread access.
     Snapshot snapshot() const noexcept {
-        return {core_.settings(),core_.hasProfile(),core_.learning(),core_.spectralGain(),core_.residualGain(),core_.latencySamples()};
+        return {core_.settings(),core_.hasProfile(),core_.learning(),core_.spectralGain(),core_.residualGain(),core_.latencySamples(),core_.sourceRole(),core_.effectiveMode()};
     }
 private:
     int telemetryInterval_=2400,remaining_=0;

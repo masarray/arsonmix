@@ -17,6 +17,8 @@ namespace armix::builtin_fx::anti_noiz {
 class Core {
 public:
     enum class Mode { AutoProtect, Voice, Singing, Music };
+    // Host-provided source intent, not inferred from hardware or classified PCM.
+    enum class SourceRole { Unknown, SpeechMic, SingingMic, Music, Mixed };
     struct Settings {
         Mode mode=Mode::AutoProtect;
         float cleanDb=14.f;
@@ -25,9 +27,23 @@ public:
         bool enabled=true;
     };
     static constexpr int maxN=FftPlan::maxN, maxBins=maxN/2+1;
-    bool prepare(double rate,int channels) noexcept {
+    static Mode resolveMode(Mode requested,SourceRole source) noexcept {
+        if(requested!=Mode::AutoProtect)return requested;
+        switch(source){
+            case SourceRole::SpeechMic:return Mode::Voice;
+            case SourceRole::SingingMic:return Mode::Singing;
+            case SourceRole::Music:return Mode::Music;
+            default:return Mode::AutoProtect;
+        }
+    }
+    Mode effectiveMode() const noexcept {return effectiveMode_;}
+    SourceRole sourceRole() const noexcept {return sourceRole_;}
+    // Source identity/intent is bound to the graph epoch; reprepare off RT
+    // invalidates the noise profile. Never infer intent from a device name.
+    bool prepare(double rate,int channels,SourceRole role=SourceRole::Unknown) noexcept {
         ready_=false;
-        if(!std::isfinite(rate)||rate<44100.||rate>96000.||channels<1||channels>2) return false;
+        if(!std::isfinite(rate)||rate<44100.||rate>96000.||channels<1||channels>2||static_cast<unsigned>(role)>4U) return false;
+        sourceRole_=role;effectiveMode_=resolveMode(settings_.mode,sourceRole_);
         rate_=rate; channels_=channels; n_=rate>48000.?512:256; hop_=n_/2;
         for(int i=0;i<n_;++i) {
             win_[i]=std::sqrt(0.5f-0.5f*std::cos(2.f*std::numbers::pi_v<float>*float(i)/float(n_)));
@@ -46,8 +62,10 @@ public:
     bool setSettings(Settings s) noexcept {
         if(!std::isfinite(s.cleanDb)||!std::isfinite(s.silenceDb)||s.cleanDb<0||s.cleanDb>24||
            s.silenceDb<0||s.silenceDb>48||!std::isfinite(s.musicProtect)||s.musicProtect<0||s.musicProtect>1||static_cast<unsigned>(s.mode)>3U)return false;
-        if(!s.enabled||s.mode==Mode::Music)profile_.cancel();
-        if(s.mode!=settings_.mode||s.enabled!=settings_.enabled)voiceGain_.reset();
+        const auto next=resolveMode(s.mode,sourceRole_);
+        if(!s.enabled||next==Mode::Music)profile_.cancel();
+        if(next!=effectiveMode_||s.enabled!=settings_.enabled){voiceGain_.reset();context_.reset();profile_.track(power_,false);}
+        effectiveMode_=next;
         settings_=s; prepareGains(); return true;
     }
     bool beginLearn() noexcept {
@@ -107,7 +125,7 @@ private:
         mask_.fill(1); expansion_=1;
     }
     void frame() noexcept {
-        if(!profile_.learning()&&(!profile_.valid()||!settings_.enabled||settings_.mode==Mode::Music)) {
+        if(!profile_.learning()&&(!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music)) {
             context_.reset();profile_.track(power_,false);renderUnity(); return;
         }
         const int bins=hop_+1;
@@ -120,11 +138,11 @@ private:
         }
         const auto result=profile_.observe(power_);
         if(result!=NoiseProfile<maxBins>::LearnResult::waiting){context_.reset();voiceGain_.reset();}
-        const bool protect=profile_.learning()||!profile_.valid()||!settings_.enabled||settings_.mode==Mode::Music;
+        const bool protect=profile_.learning()||!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music;
         const bool idle=context_.update(power_,profile_.anchor(),channels_,bins,!protect);
         profile_.track(power_,idle);
-        const float floor=protect?1.f:idle||settings_.mode==Mode::Voice?cleanFloor_:
-            settings_.mode==Mode::Singing?singingFloor_:1.f;
+        const float floor=protect?1.f:idle||effectiveMode_==Mode::Voice?cleanFloor_:
+            effectiveMode_==Mode::Singing?singingFloor_:1.f;
         if(protect||idle)voiceGain_.reset();
         // Analysis remains live, but when both gains are exactly unity no
         // inverse FFT is needed. Preserve the context and profile histories.
@@ -134,7 +152,7 @@ private:
             for(int c=0;c<channels_;++c)
                 evidence=std::max(evidence,power_[c][k]/std::max(profile_.powers()[c][k],eps));
             // Only explicit Voice opts into the stronger causal estimator.
-            const float gain=!protect&&!idle&&settings_.mode==Mode::Voice?voiceGain_.estimate(k,evidence):
+            const float gain=!protect&&!idle&&effectiveMode_==Mode::Voice?voiceGain_.estimate(k,evidence):
                 std::sqrt(std::max(0.f,1.f-1.f/std::max(1.f,evidence)));
             target_[k]=std::max(floor,gain);
         }
@@ -157,6 +175,8 @@ private:
         }
     }
     Settings settings_{};
+    SourceRole sourceRole_=SourceRole::Unknown;
+    Mode effectiveMode_=Mode::AutoProtect;
     double rate_=48000.;
     int channels_=0,n_=256,hop_=128,pos_=0,ticks_=0;
     bool ready_=false;
