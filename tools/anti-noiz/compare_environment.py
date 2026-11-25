@@ -76,7 +76,7 @@ def compare(base, candidate):
         for field in ("error_db","projection","clean_only_error_db"):
             d[field+"_delta"] = metric(new,field)-metric(old,field)
         band_changes.append(d)
-    idle_voice=[x["idle_delta_db"] for x in changes if x["kind"]=="idle" and x["policy"]=="intent-idle" and x["mode"] in ("voice","auto-mic") and x["clip"]=="speech" and x["channel_minus1_all"]==-1]
+    idle_voice=[x["idle_delta_db"] for x in changes if x["kind"]=="idle" and x["policy"]=="intent-idle" and x["mode"] in ("voice","auto-mic") and x["clip"]=="speech" and int(x["channel_minus1_all"])==-1]
     if len(idle_voice)!=4: raise ValueError(f"expected four speech idle pairs, got {len(idle_voice)}")
     improvement=sum(idle_voice)/len(idle_voice)
     benefit=improvement>=.25 and candidate["target_flag_rows"]<=base["target_flag_rows"]
