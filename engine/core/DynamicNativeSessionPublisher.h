@@ -270,6 +270,7 @@ public:
         static_assert(std::is_nothrow_invocable_v<Fx,ChannelId,float*,float*,int>,
                       "Realtime VST dispatch must be noexcept");
         const auto clearOutputs=[&]() noexcept {
+            cueBus_.revokePublished(); // failed/muted callback may not rearm a previous cue
             // A rejected/stale/muted native render must silence *every*
             // ASIO destination, not only MAIN/MONITOR. Otherwise a previous
             // external tap can remain in a driver-provided output buffer.

@@ -78,6 +78,11 @@ int main(){
     require(bus.start(key,FxCueMode::Ess,48000,500),"wall expiry");bus.expire(1000);render();require(a[2]==b[2],"expired no audio");
     require(bus.start(key,FxCueMode::Ess,48000,1100),"sample expiry");for(int i=0;i<51;++i)render();
     require(a[2]==b[2]&&!bus.renew(key,1101),"sample expiry cannot rearm");
+    require(bus.start(key,FxCueMode::Ess,48000,1150),"mute gate");
+    render();bus.revokePublished();render();require(a[2]==b[2]&&!bus.renew(key,1151),"asynchronous mute revokes");
+    require(bus.start(key,FxCueMode::Ess,48000,1160),"failed callback");
+    require(!live.render(ep,in,2,pb[0],pb[1],n,true,effect,pb[2],pb[3],{},{},{},pb.data(),6,{},route),"muted callback");
+    render();require(a[2]==b[2]&&!bus.renew(key,1161),"muted callback cannot rearm");
     require(bus.start(key,FxCueMode::Ess,48000,1200),"graph replacement");
     require(live.commit(roster,request,rev,ep,ep,true,{nullptr,nullptr,nullptr,0,0,nullptr},false,false,nullptr,&ext).ok(),"new graph");
     require(bus.state(key).requested==FxCueMode::Mix,"graph invalidates selection");

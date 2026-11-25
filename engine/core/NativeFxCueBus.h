@@ -55,16 +55,21 @@ public:
     }
     bool renew(FxCueKey key,std::uint32_t now) noexcept {
         if(control_.mode==FxCueMode::Mix||control_.key!=key)return false;
-        if(expired(now)||revoked_.load()==control_.ticket||
+        if(expired(now)||revoked_.load()>=control_.ticket||
            control_.heartbeat==std::numeric_limits<std::uint64_t>::max()){
             cancel(false);return false;
         }
         ++control_.heartbeat;lastRenew_=now;publish();return true;
     }
     void expire(std::uint32_t now) noexcept {
-        if(control_.mode!=FxCueMode::Mix&&
-           (expired(now)||revoked_.load()==control_.ticket))cancel(false);
+        if(!control_.ticket)return;
+        if(revoked_.load()>=control_.ticket||
+           (control_.mode!=FxCueMode::Mix&&expired(now))||
+           (control_.mode==FxCueMode::Mix&&finished_.load()==control_.ticket))cancel(false);
     }
+    // A device/mute gate may invalidate from a non-CONTROL thread.
+    // Atomic only; no scratch, request publication or ownership mutation.
+    void revokePublished() noexcept {markRevoked(published_.load(std::memory_order_acquire));}
     void cancel(bool graceful) noexcept {
         if(control_.mode==FxCueMode::Mix){
             if(!graceful&&control_.ticket){control_={};publish();}
@@ -76,7 +81,7 @@ public:
     }
     State state(FxCueKey key) const noexcept {
         if(control_.key!=key||control_.mode==FxCueMode::Mix||
-           revoked_.load()==control_.ticket)return {};
+           revoked_.load()>=control_.ticket)return {};
         return {control_.mode,applied_.load()==control_.ticket?control_.mode:FxCueMode::Mix};
     }
     // Called only under the publisher's existing exclusive render permit.
@@ -91,13 +96,13 @@ public:
         if(!route||!matches(req,epoch,revision,route)||frames<1||frames>capacity){
             revoke(req);return nullptr;
         }
+        if(revoked_.load()>=req.ticket){hardReset();return nullptr;}
         if(req.mode==FxCueMode::Mix){
             // Explicit stop on the same verified route: finish() may fade
             // from the last bounded cue sample back to the real monitor.
             if(lastKey_!=req.key||lastTicket_!=req.ticket)hardReset();
             return nullptr;
         }
-        if(revoked_.load()==req.ticket){hardReset();return nullptr;}
         if(lastKey_!=req.key){hardReset();lastKey_=req.key;}
         if(lastTicket_!=req.ticket||heartbeat_!=req.heartbeat){
             lastTicket_=req.ticket;heartbeat_=req.heartbeat;remaining_=req.leaseFrames;
@@ -112,21 +117,21 @@ public:
     void finish(bool ok,float* monitorL,float* monitorR,int frames) noexcept {
         if(!block_.ticket)return;
         Request latest;
-        if(!ok||!monitorL||!monitorR||monitorL==monitorR||!read(latest)||
-           latest.ticket!=block_.ticket||latest.key!=block_.key||
-           latest.mode!=block_.mode||!block_.ticket){
+        if(!ok||!monitorL||!monitorR||monitorL==monitorR){revoke(block_);return;}
+        if(!read(latest)||latest.ticket!=block_.ticket||latest.key!=block_.key||
+           latest.mode!=block_.mode||revoked_.load()>=block_.ticket){
             hardReset();return;
         }
         if(block_.mode==FxCueMode::Mix){
             applied_.store(0);
-            if(lastKey_!=block_.key||lastTicket_!=block_.ticket){hardReset();return;}
+            if(lastKey_!=block_.key||lastTicket_!=block_.ticket){finished_.store(block_.ticket);hardReset();return;}
             const float step=1.f/static_cast<float>(std::max(1,block_.fadeFrames));
             for(int i=0;i<frames&&mix_>0;++i){
                 mix_=std::max(0.f,mix_-step);
                 monitorL[i]=(1-mix_)*monitorL[i]+mix_*lastL_;
                 monitorR[i]=(1-mix_)*monitorR[i]+mix_*lastR_;
             }
-            if(mix_==0)hardReset();
+            if(mix_==0){finished_.store(block_.ticket);hardReset();}
             return;
         }
         if(!frame_.written||frame_.frames!=frames){revoke(block_);return;}
@@ -180,13 +185,17 @@ private:
     void hardReset() noexcept {
         mix_=lastL_=lastR_=0;lastKey_={};lastTicket_=heartbeat_=0;remaining_=0;applied_.store(0);
     }
-    void revoke(const Request& r) noexcept {
-        if(r.ticket)revoked_.store(r.ticket);
-        hardReset();
+    void markRevoked(std::uint64_t ticket) noexcept {
+        // Usually one writer (audio), with a possible device gate race.
+        // Never roll the invalidation floor backward. No unbounded CAS loop.
+        auto old=revoked_.load();
+        for(int attempt=0;attempt<2&&old<ticket;++attempt)
+            if(revoked_.compare_exchange_strong(old,ticket))break;
     }
+    void revoke(const Request& r) noexcept {markRevoked(r.ticket);hardReset();}
     static_assert(std::atomic<std::uint64_t>::is_always_lock_free);
     Request control_{};std::uint64_t nextTicket_=0;std::uint32_t lastRenew_=0;
-    std::atomic<std::uint64_t> sequence_{0},applied_{0},revoked_{0},published_{0};
+    std::atomic<std::uint64_t> sequence_{0},applied_{0},revoked_{0},published_{0},finished_{0};
     std::array<std::atomic<std::uint64_t>,10> words_{};
     Request block_{};FxCueFrame frame_{};
     FxCueKey lastKey_{};std::uint64_t lastTicket_=0,heartbeat_=0;
