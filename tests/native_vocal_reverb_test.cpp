@@ -105,7 +105,12 @@ int main() {
     assert(presetSelect->getItemText(12)=="Master Ceremony");
     assert(presetSelect->getItemId(12)==13);
     assert(presetSelect->getItemText(13)=="Album Ready Vocal");
-    assert(presetSelect->getItemText(19)=="Custom / saved");
+    // Validate every factory identity including appended presets.
+    for(int i=0;i<reverbSisPresetCount;++i) {
+        assert(presetSelect->getItemId(i)==i+1);
+        assert(presetSelect->getItemText(i)==juce::String(vocalReverbPresetNames[static_cast<std::size_t>(i)]));
+    }
+    assert(presetSelect->getItemText(reverbSisPresetCount)=="Custom / saved");
     // Actual native ComboBox user-preset recall uses the same settings mailbox.
     {
         auto instance=entry->prepare(48000.,128,nullptr,0);
@@ -648,8 +653,10 @@ int main() {
         assert(false && "latest intent failed to converge");
     });
     std::uint64_t concurrentLast=0;
+    VocalReverbSettings lastSubmitted{};
     for(int i=0;i<5000;++i) {
-        concurrentLast=concurrentReverb->queueSettings(vocalReverbFactoryPreset(i%reverbSisPresetCount));
+        lastSubmitted=vocalReverbFactoryPreset(i%reverbSisPresetCount);
+        concurrentLast=concurrentReverb->queueSettings(lastSubmitted);
         assert(concurrentLast>0);
         if((i&31)==0)std::this_thread::yield();
     }
@@ -657,8 +664,14 @@ int main() {
     pcmConsumer.join();
     assert(concurrentReverb->appliedRequestId()==concurrentLast);
     VocalReverbSettings concurrentAccepted{};
+    // Compare the actual submitted intent, independent of catalogue size.
     assert(concurrentReverb->acceptedSettings(concurrentAccepted)&&
-           concurrentAccepted.preset==7);
+           concurrentAccepted.preset==lastSubmitted.preset&&
+           concurrentAccepted.algorithm==lastSubmitted.algorithm&&
+           concurrentAccepted.voicing==lastSubmitted.voicing&&
+           concurrentAccepted.values==lastSubmitted.values);
+    assert(!concurrentReverb->settingsPending());
+    assert(concurrentReverb->stateSnapshotQuiescent());
 
     assert(created->getLatencySamples()==0);
     auto* typed=dynamic_cast<VocalReverbProcessor*>(created.get());
