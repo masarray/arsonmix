@@ -15,15 +15,18 @@ int main(){
     check(AutoGain::target(floor,3.f,1.f)==1.f);
     check(AutoGain::target(floor,1.f,8.f)==1.f);
     check(AutoGain::target(1.f,1.f,1.f)==1.f);
-    check(AutoGain::detailFloor(floor,4.f,.75f)==floor);
-    check(std::abs(AutoGain::detailFloor(floor,1.f,.75f)-.85f)<1e-6f);
-    check(AutoGain::detailFloor(1.f,0.f,.75f)==1.f);
+    check(AutoGain::detailReserve(4.f,.75f)==0.f);
+    check(AutoGain::detailReserve(1.f,.75f)==.75f);
+    check(std::abs(AutoGain::detailFloor(floor,.75f,0.f)-.85f)<1e-6f);
+    check(AutoGain::detailFloor(floor,.75f,1.f)==floor);
+    check(AutoGain::detailFloor(1.f,.75f,0.f)==1.f);
     for(int a=0;a<=100;++a)for(int b=0;b<=100;++b){
         const float base=float(a)*.01f,ratio=float(b)*.1f;
-        const float value=AutoGain::detailFloor(base,ratio,.75f);
+        const float reserve=AutoGain::detailReserve(ratio,.75f);
+        const float value=AutoGain::detailFloor(base,reserve,ratio);
         check(std::isfinite(value)&&value>=base-1e-6f&&value<=1.f);
-        check(value>=AutoGain::detailFloor(base,ratio+.1f,.75f)-1e-6f);
-        check(value>=AutoGain::detailFloor(base,ratio,.5f)-1e-6f);
+        check(value>=AutoGain::detailFloor(base,reserve,ratio+.1f)-1e-6f);
+        check(value>=AutoGain::detailFloor(base,reserve*.5f,ratio)-1e-6f);
     }
     check(AutoGain::activeFloor(floor,2.f,5.f)==1.f);
     check(AutoGain::activeFloor(floor,2.f,20.f)<=floor+1e-6f);
@@ -46,6 +49,11 @@ int main(){
     for(int k=0;k<8;++k)observed[1][k]=20.f;
     check(!context.update(observed,learned,2,129,true));
     check(context.broadbandRatio()<4.f&&context.subbandPeakRatio()==20.f);
+    check(context.relativeNoise(learned,2,0)==1.f);
+    learned[0][0]=.1f;
+    context.update(observed,learned,2,129,true);
+    check(context.relativeNoise(learned,2,0)<.11f);
+    learned[0][0]=1.f;
     check(AutoGain::activeFloor(floor,context.broadbandRatio())==1.f);
     check(AutoGain::activeFloor(floor,context.broadbandRatio(),context.subbandPeakRatio())<=floor+1e-6f);
     observed=learned;

@@ -14,9 +14,15 @@ public:
         hold_=std::max(1,int(std::ceil(.18*rate/hop)));
         reset();
     }
-    void reset() noexcept {quiet_=0;initialized_=false;broadband_=0;subbandPeak_=0;}
+    void reset() noexcept {quiet_=0;initialized_=false;broadband_=0;subbandPeak_=0;inverseMean_.fill(0);}
     float broadbandRatio() const noexcept {return broadband_;}
     float subbandPeakRatio() const noexcept {return subbandPeak_;}
+    // Stereo union: a quiet band in either channel deserves protection.
+    float relativeNoise(const Powers& profile,int channels,int bin) const noexcept {
+        float relative=profile[0][bin]*inverseMean_[0];
+        if(channels==2)relative=std::min(relative,profile[1][bin]*inverseMean_[1]);
+        return relative;
+    }
     float temporalRatio(const Powers& profile,int channels,int bins,int bin) const noexcept {
         float ratio=0;
         for(int c=0;c<channels;++c){
@@ -39,7 +45,9 @@ public:
                 const float bounded=std::min(p,8.f*std::max(profile[c][k],eps));
                 auto& a=average_[c][k];a=initialized_?a+alpha_*(bounded-a):profile[c][k];
             }
-            const float ratio=total/std::max(noise,eps);
+            const float denominator=std::max(noise,eps);
+            inverseMean_[c]=float(bins)/denominator;
+            const float ratio=total/denominator;
             broadband_=std::max(broadband_,ratio);
             foreground|=total>=1.65f*std::max(noise,eps);
             // Existing broadband onset guard. Merge short terminal group.
@@ -66,6 +74,7 @@ public:
 private:
     static constexpr float eps=1e-16f;
     Powers average_{};
+    std::array<float,2> inverseMean_{};
     int quiet_=0,hold_=1;
     float alpha_=1,broadband_=0,subbandPeak_=0;
     bool initialized_=false;

@@ -146,12 +146,12 @@ private:
         const bool selective=!protect&&!idle&&effectiveMode_==Mode::AutoProtect;
         const bool activeVoice=!protect&&!idle&&effectiveMode_==Mode::Voice;
         const float ratio=context_.broadbandRatio();
-        const float baseFloor=protect?1.f:idle||effectiveMode_==Mode::Voice?cleanFloor_:
+        const float floor=protect?1.f:idle||effectiveMode_==Mode::Voice?cleanFloor_:
             effectiveMode_==Mode::Singing?singingFloor_:AutoGain::activeFloor(autoFloor_,ratio,context_.subbandPeakRatio());
-        // Reserve desired detail only when foreground evidence is uncertain.
-        // High-evidence active benefit, true-idle suppression and Music are unchanged.
-        const float floor=activeVoice?AutoGain::detailFloor(baseFloor,ratio,.75f):
-            selective?AutoGain::detailFloor(baseFloor,ratio,.25f+.35f*settings_.musicProtect):baseFloor;
+        // Uncertainty reserve is prepared once per frame. The band-local
+        // budget avoids giving dominant learned noise a global dry path.
+        const float reserve=activeVoice?AutoGain::detailReserve(ratio,.75f):
+            selective?AutoGain::detailReserve(ratio,.25f+.35f*settings_.musicProtect):0.f;
         if(protect||idle)voiceGain_.reset();
         // Analysis remains live, but when both gains are exactly unity no
         // inverse FFT is needed. Preserve the context and profile histories.
@@ -164,11 +164,14 @@ private:
             const float gain=selective?AutoGain::target(floor,context_.temporalRatio(profile_.anchor(),channels_,bins,k),evidence):
                 activeVoice?voiceGain_.estimate(k,evidence):
                 std::sqrt(std::max(0.f,1.f-1.f/std::max(1.f,evidence)));
-            target_[k]=std::max(floor,gain);
+            const float localFloor=reserve>0.f?AutoGain::detailFloor(floor,reserve,
+                context_.relativeNoise(profile_.anchor(),channels_,k)):floor;
+            target_[k]=std::max(localFloor,gain);
         }
         for(int k=0;k<bins;++k) {
             const float smooth=0.25f*target_[std::max(0,k-1)]+0.5f*target_[k]+0.25f*target_[std::min(bins-1,k+1)];
-            const float g=std::max(selective?target_[k]:floor,smooth);
+            // A protected band must not be pulled down by neighboring bins.
+            const float g=std::max(selective||reserve>0.f?target_[k]:floor,smooth);
             mask_[k]=g>=mask_[k]?g:mask_[k]+maskClose_*(g-mask_[k]);
         }
         const float expTarget=idle?silenceFloor_:1.f;
