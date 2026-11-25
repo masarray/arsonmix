@@ -53,6 +53,14 @@ public:
         learnTarget_=static_cast<int>(std::ceil(2.*rate_/hop_));
         quiet_=0; return true;
     }
+    // Quiescent/offline owner only: restart the signal timeline, keep trusted PSD.
+    void resetStreamKeepProfile() noexcept {
+        for(auto& a:in_)a.fill(0);
+        for(auto& a:out_)a.fill(0);
+        mask_.fill(1); expansion_=1;
+        pos_=ticks_=frames_=quiet_=learnCount_=learnTarget_=0;
+        candidateEnergy_=0; learning_=false;
+    }
     Settings settings() const noexcept {return settings_;}
     float spectralGain() const noexcept {return *std::min_element(mask_.begin(),mask_.begin()+hop_+1);}
     float residualGain() const noexcept {return expansion_;}
