@@ -33,6 +33,7 @@ audition derivatives. These are sustained vowels, not conversational singing.
 H29D controlled dynamic derivatives use the same pinned source recordings,
 with deterministic local time-warp, gain envelopes and inserted silence.
 They are stress fixtures, not additional natural singing performances.
+H30 level derivatives calibrate source sample peak to 0.75, not loudness.
 No listening scores or ground-truth formant values are asserted.
 """
 def download(name, sha, size, dst):
@@ -95,7 +96,7 @@ def qualify_guide(renderer, out, name, sha):
         raise RuntimeError("H28D guide altered dry PCM")
     with (folder/"qualification.csv").open(newline="") as f:
         rows=list(csv.DictReader(f))
-    if len(rows)!=5 or {x["variant"] for x in rows}!={"live_baseline","H26","H27","H28_epoch","H28_local"} or any(x["mode"]!="Music" for x in rows):
+    if len(rows)!=len(VARIANTS) or {x["variant"] for x in rows}!=VARIANTS or any(x["mode"]!="Music" for x in rows):
         raise RuntimeError("H28D guided qualification missing variants")
     for row in rows:
         print("H28_GUIDED clip="+name+" blob_sha="+sha+" "+" ".join(f"{k}={v}" for k,v in row.items()),flush=True)
@@ -104,11 +105,32 @@ def qualify_guide(renderer, out, name, sha):
 
 # H29: validate structured evidence independently of the renderer, then
 # publish only explicit non-audio files. No source/derived PCM or listener key.
-VARIANTS = {"live_baseline", "H26", "H27", "H28_epoch", "H28_local"}
-TRACED = {"live_baseline", "H28_epoch", "H28_local"}
+VARIANTS = {"live_baseline", "H26", "H27", "H28_epoch", "H28_local", "H30_high_cubic"}
+TRACED = {"live_baseline", "H28_epoch", "H28_local", "H30_high_cubic"}
 GUIDED = ("f1_long_straight_a.wav", "m2_long_straight_i.wav")
 DYNAMIC = {"f1_controlled_dynamic.wav": GUIDED[0],
            "m2_controlled_dynamic.wav": GUIDED[1]}
+LEVEL = {"f1_level_stress.wav": GUIDED[0], "m2_level_stress.wav": GUIDED[1]}
+DERIVATIVES = {**DYNAMIC, **LEVEL}
+
+def make_level(source, destination):
+    """Peak-calibrated real source stress at -2.5 dBFS (0.75 approx)."""
+    with wave.open(str(source), "rb") as src:
+        params = src.getparams()
+        require(params.sampwidth == 2 and params.nchannels == 1, "level fixture PCM format")
+        samples = array.array("h", src.readframes(params.nframes))
+    if sys.byteorder != "little":
+        samples.byteswap()
+    peak = max(abs(x) for x in samples)
+    require(peak > 0, "silent level fixture")
+    gain = .75 * 32767 / peak
+    scaled = array.array("h", (round(x * gain) for x in samples))
+    if sys.byteorder != "little":
+        scaled.byteswap()
+    with wave.open(str(destination), "wb") as dst:
+        dst.setparams(params)
+        dst.writeframes(scaled.tobytes())
+
 
 def make_dynamic(source, destination):
     """Deterministic real-source stress: variable rate, attacks and silence.
@@ -242,7 +264,7 @@ def export_evidence(out, source_sha):
     require(re.fullmatch(r"[0-9a-f]{40}", source_sha) is not None, "invalid source SHA")
     cases = []
     # Validate all inputs before creating the export directory.
-    for name in (*CLIPS, *DYNAMIC):
+    for name in (*CLIPS, *DERIVATIVES):
         for mode in ("Manual", "Music") if name in GUIDED else ("Manual",):
             stem = pathlib.Path(name).stem + ("_music" if mode == "Music" else "")
             folder = out / stem
@@ -293,8 +315,9 @@ def export_evidence(out, source_sha):
                 "timing": "isolated_engine_non_gating", "audio_included": False,
                 "events": "sparse_callback_intervals_not_click_detections",
                 "release_qualified": False,
-                "cases": [{"id": stem, "source_blob_sha": CLIPS[DYNAMIC.get(name, name)][0],
-                           "source_kind": "controlled_dynamic_derivative" if name in DYNAMIC else "original_vocalset",
+                "cases": [{"id": stem, "source_blob_sha": CLIPS[DERIVATIVES.get(name, name)][0],
+                           "source_kind": ("controlled_dynamic_derivative" if name in DYNAMIC else
+                                           "peak_calibrated_derivative" if name in LEVEL else "original_vocalset"),
                            "fixture_sha256": hashlib.sha256((out / name).read_bytes()).hexdigest(),
                            "mode": mode, "frames": frames, "rate": rate}
                           for stem, name, mode, frames, rate, _ in cases],
@@ -352,7 +375,7 @@ def main():
         subprocess.run([renderer,"--qualify",str(src),str(folder),"0","0","5","64"],check=True,timeout=60)
         with (folder/"qualification.csv").open(newline="") as f:
             data = list(csv.DictReader(f))
-        if len(data)!=5 or {x["variant"] for x in data}!={"live_baseline","H26","H27","H28_epoch","H28_local"}:
+        if len(data)!=len(VARIANTS) or {x["variant"] for x in data}!=VARIANTS:
             raise RuntimeError("incomplete matched variants")
         for row in data:
             row = {"clip":name,"blob_sha":sha,**row}
@@ -360,13 +383,13 @@ def main():
             print("H27_REAL " + " ".join(f"{k}={v}" for k,v in row.items()),flush=True)
         with (folder/"renderer_loss_reasons.csv").open(newline="") as f:
             reasons = list(csv.DictReader(f))
-        if len(reasons) != 15 or sum(int(x["losses"]) for x in reasons if x["variant"]=="live_baseline") != int(data[0]["total_losses"]):
+        if len(reasons) != 5 * len(TRACED) or sum(int(x["losses"]) for x in reasons if x["variant"]=="live_baseline") != int(data[0]["total_losses"]):
             raise RuntimeError("incomplete renderer loss attribution")
         for row in reasons:
             print("H27_LOSS_REASON clip="+name+" "+" ".join(f"{k}={v}" for k,v in row.items()),flush=True)
         with (folder/"renderer_admission.csv").open(newline="") as f:
             admissions = list(csv.DictReader(f))
-        if len(admissions)!=15:
+        if len(admissions)!=5 * len(TRACED):
             raise RuntimeError("incomplete admission accounting")
         for row in admissions:
             print("H28_ADMISSION clip="+name+" "+" ".join(f"{k}={v}" for k,v in row.items()),flush=True)
@@ -393,6 +416,15 @@ def main():
             print("H29D_DYNAMIC clip=" + name + " parent_blob=" + CLIPS[parent][0] +
                   " " + " ".join(f"{k}={v}" for k, v in row.items()), flush=True)
     print(f"H29D_DYNAMIC_COMPLETE clips={len(DYNAMIC)} controlled_derivatives=true", flush=True)
+    for name, parent in LEVEL.items():
+        target = out / name
+        make_level(out / parent, target)
+        folder = out / target.stem
+        subprocess.run([renderer, "--qualify", str(target), str(folder), "0", "0", "5", "64"],
+                       check=True, timeout=90)
+        for row in read_rows(folder / "qualification.csv"):
+            print("H30_LEVEL clip=" + name + " parent_blob=" + CLIPS[parent][0] +
+                  " " + " ".join(f"{k}={v}" for k,v in row.items()), flush=True)
     if len(sys.argv) == 4:
         export_evidence(out, sys.argv[3])
 

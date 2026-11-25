@@ -302,7 +302,7 @@ public:
         for(auto& seam:backingSeams_)seam.prepare(rate);
         continuityReferenceEnabled_=true;supportReferenceEnabled_=true;
         naturalReferenceEnabled_=true;backingContour_.prepare(detectEvery_/rate);
-        carrierReferenceEnabled_=true;slopeReferenceEnabled_=true;drainReferenceEnabled_=true;epochRecoveryEnabled_=true;adaptiveEpochRecovery_=false;localEpochRecovery_=false;cubicReferenceEnabled_=false;
+        carrierReferenceEnabled_=true;slopeReferenceEnabled_=true;drainReferenceEnabled_=true;epochRecoveryEnabled_=true;adaptiveEpochRecovery_=false;localEpochRecovery_=false;cubicReferenceEnabled_=false;highCubicReferenceEnabled_=false;
         traceEnabled_=false;rendererTrace_={};lossReasons_={};admissionTrace_={};
         for(auto& carrier:carriers_)carrier.reset();
         periodContinuity_.reset();
@@ -598,6 +598,12 @@ public:
     bool setCubicForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
         cubicReferenceEnabled_=enabled;return true;
+    }
+    // H30B isolated HIGH-role fractional bandwidth audition. No lead,
+    // other backing roles, Duo/Doubler or production-default changes.
+    bool setHighCubicForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        highCubicReferenceEnabled_=enabled;return true;
     }
     bool setLocalEpochForOfflineReference(bool enabled) noexcept {
         if(processed_)return false;
@@ -1042,7 +1048,7 @@ private:
             sync=pitchSync_.process(voice,sampleClock_,write_,mono_,
                 renderPeriod,effectiveRatio,
                 static_cast<float>(latency_)+arrival,scale,continuityReferenceEnabled_,
-                supportReferenceEnabled_,naturalReferenceEnabled_,windowSafe,epochRecoveryEnabled_,true,cubicReferenceEnabled_,traceEnabled_?&admissionTrace_[ix]:nullptr,adaptiveEpochRecovery_&&confident&&localEpochEvidence,
+                supportReferenceEnabled_,naturalReferenceEnabled_,windowSafe,epochRecoveryEnabled_,true,cubicReferenceEnabled_||(highCubicReferenceEnabled_&&voice==2&&settings_.voiceMode==0&&settings_.voices>=3),traceEnabled_?&admissionTrace_[ix]:nullptr,adaptiveEpochRecovery_&&confident&&localEpochEvidence,
                 localEpochRecovery_&&settings_.voiceMode==0&&settings_.voices>=3&&voicedGain_>.05f&&pitchSyncBlend_[ix]>.15f);
         if(traceEnabled_){
             auto& v=rendererTrace_[ix].values;
@@ -1384,7 +1390,7 @@ private:
     std::array<BackingRenderSeam,maxVoices> backingSeams_{};
     bool continuityReferenceEnabled_=true,supportReferenceEnabled_=true;
     bool naturalReferenceEnabled_=true,carrierReferenceEnabled_=true,slopeReferenceEnabled_=true;
-    bool drainReferenceEnabled_=true,traceEnabled_=false,epochRecoveryEnabled_=true,adaptiveEpochRecovery_=false,localEpochRecovery_=false,cubicReferenceEnabled_=false;
+    bool drainReferenceEnabled_=true,traceEnabled_=false,epochRecoveryEnabled_=true,adaptiveEpochRecovery_=false,localEpochRecovery_=false,cubicReferenceEnabled_=false,highCubicReferenceEnabled_=false;
     std::array<RendererTrace,maxVoices> rendererTrace_{};
     std::array<LossReasons,maxVoices> lossReasons_{};
     std::array<AdmissionTrace,maxVoices> admissionTrace_{};
