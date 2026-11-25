@@ -27,19 +27,20 @@ constexpr float pi=juce::MathConstants<float>::pi;
 // Fixed compact faceplate. Dial artwork, hit regions and editable LCDs have
 // separate geometry: changing the LCD never moves or rescales a dial.
 struct FaceplateLayout final {
-    static constexpr int width=1120,height=430, shoulderY=47;
-    static constexpr int headerCentreY=34, chromeCentreY=29, lcdTop=374,lcdBottom=height-12;
-    static constexpr int smallCaptionY=214,algorithmWidth=139,algorithmCentreX=980;
-    static constexpr int lcdCentreY=393,lcdHeight=26;
-    static constexpr int heroTop=124,heroCentreY=250,heroDial=184,heroWidth=202;
-    static constexpr int smallTop=221,smallCentreY=297,smallDial=106,smallWidth=114;
-    static constexpr int smallFirstCentre=330,smallPitch=115;
+    static constexpr int width=1120,height=430, shoulderY=24;
+    static constexpr int headerCentreY=29, chromeCentreY=27, lcdTop=347,lcdBottom=404;
+    static constexpr int chromeSize=26,chromeGap=8,chromeRight=25;
+    static constexpr int smallCaptionY=224,algorithmWidth=130,algorithmCentreX=1005;
+    static constexpr int lcdCentreY=376,lcdHeight=26;
+    static constexpr int heroTop=129,heroCentreY=236,heroDial=212,heroWidth=220;
+    static constexpr int smallTop=243,smallCentreY=293,smallDial=98,smallWidth=116;
+    static constexpr int heroCentreX=145,smallFirstCentre=316,smallPitch=122;
     static constexpr int controlBottom=lcdCentreY+lcdHeight/2;
-    static constexpr int tabY=164,tabHeight=34,tabPitch=94,tabWidth=92;
+    static constexpr int tabY=170,tabHeight=35,tabPitch=98,tabWidth=96;
     static constexpr int tabLeft=(width-(5*tabPitch+tabWidth))/2;
     static constexpr int tabRuleY=tabY+tabHeight-2;
     static_assert(controlBottom<=lcdBottom && lcdCentreY-lcdHeight/2>=lcdTop);
-    static_assert(chromeCentreY-12>=11 && chromeCentreY+12<shoulderY);
+    static_assert(chromeCentreY-chromeSize/2>=0 && chromeCentreY+chromeSize/2<60);
     static_assert(smallWidth<smallPitch);
     static juce::Rectangle<int> heroBounds(int centreX) {
         return {centreX-heroWidth/2,heroTop,heroWidth,controlBottom-heroTop};
@@ -64,7 +65,7 @@ struct MeterLayout final {
     static constexpr int leftLabelX=250, leftLabelWidth=93;
     static constexpr int dotsLeftX=355, dotsRightX=569;
     static constexpr int rightLabelX=777, rightLabelWidth=93;
-    static constexpr int firstDotY=97, secondDotY=132, tickY=112;
+    static constexpr int firstDotY=97, secondDotY=126, tickY=108;
     static constexpr int segments=20, pitch=10, dotSize=6;
     static constexpr int labelOpticalLift=2, labelHeight=20;
     static constexpr int bankWidth=(segments-1)*pitch+dotSize;
@@ -135,22 +136,22 @@ public:
     // Shared procedural surface; native JUCE Slider still owns gesture,
     // skew, accessibility, text editing and callback ACK.
     void drawRotarySlider(juce::Graphics& g,int x,int y,int width,int height,
-                          float value,float start,float end,juce::Slider&) override {
+                          float value,float start,float end,juce::Slider& slider) override {
+        const auto id=slider.getComponentID();
         graphite::drawKnob(g,x+width*.5f,y+height*.5f,
-            static_cast<float>(std::min(width,height)),value,start,end);
+            id=="armix.reverb.param.0"||id=="armix.reverb.param.2",value,start,end);
     }
 
     void drawComboBox(juce::Graphics& g,int width,int height,bool pressed,
                       int,int,int,int,juce::ComboBox& box) override {
         const bool preset=box.getComponentID()=="armix.reverb.preset";
         if(preset) {
-            g.setGradientFill(juce::ColourGradient(rgb(17,25,31),0.f,0.f,
-                    rgb(32,42,51),0.f,static_cast<float>(height),false));
-            g.fillRoundedRectangle({0.f,0.f,static_cast<float>(width),
-                                    static_cast<float>(height)},3.f);
-            g.setColour(rgb(83,99,110).withAlpha(.65f));
-            g.drawLine(4.f,static_cast<float>(height)-1.f,
-                       static_cast<float>(width)-4.f,static_cast<float>(height)-1.f,1.f);
+            // Open luminous preset bay, as in V6. Keep native dropdown
+            // arrow and keyboard focus rather than removing affordance.
+            if(pressed||box.hasKeyboardFocus(true)) {
+                g.setColour(rgb(119,209,245).withAlpha(.12f));
+                g.fillRoundedRectangle({0.f,0.f,float(width),float(height)},3.f);
+            }
         } else {
             g.setGradientFill(juce::ColourGradient(rgb(32,38,43),0.f,0.f,
                     rgb(21,26,30),0.f,static_cast<float>(height),false));
@@ -165,11 +166,11 @@ public:
         chevron.startNewSubPath(cx-4.f,cy-2.f);
         chevron.lineTo(cx,cy+2.f);
         chevron.lineTo(cx+4.f,cy-2.f);
-        g.setColour(pressed?rgb(228,245,251):rgb(111,193,228));
+        g.setColour(pressed?rgb(228,245,251):rgb(185,238,255));
         g.strokePath(chevron,juce::PathStrokeType(1.5f));
     }
     juce::Font getComboBoxFont(juce::ComboBox& box) override {
-        return uiFont(box.getComponentID()=="armix.reverb.preset"?14.f:12.f);
+        return uiFont(box.getComponentID()=="armix.reverb.preset"?16.f:13.f);
     }
     juce::Font getLabelFont(juce::Label& label) override {
         return uiFont(juce::jlimit(10.f,25.f,label.getFont().getHeight()));
@@ -190,9 +191,10 @@ public:
         const auto rect=b.getLocalBounds().toFloat();
         if(id.startsWith("armix.reverb.tab.")) {
             if(b.getToggleState()) {
-                g.setColour(rgb(105,195,235));
-                g.fillRect(rect.getX()+13.f,rect.getBottom()-2.f,
-                           rect.getWidth()-26.f,2.f);
+                g.setColour(juce::Colours::white.withAlpha(.035f));
+                g.fillRect(rect);
+                g.setColour(rgb(184,241,255).withAlpha(.75f));
+                g.fillRect(rect.getX()+13.f,rect.getBottom()-1.f,rect.getWidth()-26.f,1.f);
             } else if(hover||down) {
                 g.setColour(rgb(102,162,191).withAlpha(.45f));
                 g.fillRect(rect.getX()+13.f,rect.getBottom()-1.f,
@@ -259,7 +261,7 @@ public:
             chevron.startNewSubPath(cx-sign*2.75f,cy-5.5f);
             chevron.lineTo(cx+sign*2.75f,cy);
             chevron.lineTo(cx-sign*2.75f,cy+5.5f);
-            g.setColour(hover||down?rgb(174,227,253):rgb(121,196,234));
+            g.setColour(hover||down?rgb(174,227,253):rgb(185,238,255));
             g.strokePath(chevron,juce::PathStrokeType(1.8f,
                 juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
         } else {
@@ -342,7 +344,7 @@ public:
         const bool tab=id.startsWith("armix.reverb.tab.");
         const auto bright=(tab&&b.getToggleState())||
                           (!tab&&(hover||down));
-        g.setColour(bright?rgb(142,216,250):rgb(199,213,223));
+        g.setColour(bright?rgb(184,241,255):rgb(169,174,176));
         g.setFont(uiFont(tab?11.f:14.f));
         g.drawText(b.getButtonText(),b.getLocalBounds(),
                    juce::Justification::centred,false);
@@ -421,11 +423,11 @@ public:
         :juce::AudioProcessorEditor(processor),processor_(processor) {
         setOpaque(true);
         draft_=processor_.desiredSettings();
-        const auto pale=reverb_ui::rgb(209,224,233);
+        const auto pale=reverb_ui::rgb(200,242,255);
         const auto cyan=reverb_ui::rgb(107,201,243);
         title_.setText("REVERB-SIS",juce::dontSendNotification);
         title_.setFont(reverb_ui::uiFont(22.f));
-        title_.setColour(juce::Label::textColourId,pale);
+        title_.setColour(juce::Label::textColourId,reverb_ui::rgb(241,245,247));
         title_.setComponentID("armix.reverb.title");
         addAndMakeVisible(title_);
         power_.setComponentID("armix.reverb.power");
@@ -577,7 +579,7 @@ public:
             };
             knob.setValue(draft_.values[i],juce::dontSendNotification);
             knob.setDoubleClickReturnValue(true,d.defaultValue);
-            knob.setColour(juce::Slider::textBoxTextColourId,reverb_ui::rgb(180,229,255));
+            knob.setColour(juce::Slider::textBoxTextColourId,reverb_ui::rgb(188,239,255));
             knob.setColour(juce::Slider::textBoxBackgroundColourId,juce::Colours::transparentBlack);
             knob.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
             knob.publishValue=[this,i]{
@@ -589,13 +591,13 @@ public:
             addAndMakeVisible(knob);
             labels_[i].setComponentID("armix.reverb.label."+juce::String(static_cast<int>(i)));
             constexpr std::array<const char*,13> shortLabels{{
-                "MIX","PRE-DELAY","DECAY","SIZE","DIFFUSION",
-                "DAMPING","LOW CUT","HIGH CUT","MOD DEPTH",
-                "MOD RATE","WIDTH","EARLY LEVEL","DUCKER"
+                "Mix","Pre-delay","Decay","Size","Diffusion",
+                "Damping","Low Cut","High Cut","Mod Depth",
+                "Mod Rate","Width","Early Level","Ducker"
             }};
             labels_[i].setText(shortLabels[i],juce::dontSendNotification);
             labels_[i].setFont(reverb_ui::uiFont(12.f));
-            labels_[i].setColour(juce::Label::textColourId,reverb_ui::rgb(220,231,238));
+            labels_[i].setColour(juce::Label::textColourId,reverb_ui::rgb(231,240,244));
             labels_[i].setJustificationType(juce::Justification::centred);
             labels_[i].setInterceptsMouseClicks(false,false);
             addAndMakeVisible(labels_[i]);
@@ -628,64 +630,44 @@ public:
     void paint(juce::Graphics& g) override {
         using namespace reverb_ui;
         using F=FaceplateLayout;
-        constexpr float shoulderY=static_cast<float>(F::shoulderY);
-        const float w=static_cast<float>(getWidth());
-        const float h=static_cast<float>(getHeight());
-        g.fillAll(rgb(17,26,33));
-        const juce::Rectangle<float> cabinet{9.f,9.f,w-18.f,h-18.f};
-        g.setColour(rgb(13,21,27));g.fillRoundedRectangle(cabinet.expanded(1.f),6.f);
-        g.setGradientFill(juce::ColourGradient(rgb(98,120,132),9.f,9.f,
-                  rgb(24,36,44),w-9.f,h-9.f,false));
-        g.fillRoundedRectangle(cabinet,6.f);
-        g.setColour(rgb(122,145,157).withAlpha(.48f));
-        g.drawRoundedRectangle(cabinet,6.f,1.f);
-
-        // The reference's defining silhouette: satin blue-titanium shoulders with
-        // a gently lowered centre preset bay. Draw original vector geometry
-        // so 100%, 125%, 150% and 200% render from the same source.
-        g.setGradientFill(juce::ColourGradient(rgb(44,63,75),9.f,9.f,
-                  rgb(21,34,43),9.f,64.f,false));
-        g.fillRect(11.f,11.f,w-22.f,50.f);
+        const float w=static_cast<float>(getWidth()),h=static_cast<float>(getHeight());
+        g.fillAll(rgb(23,26,29));
+        const juce::Rectangle<float> cabinet{0.f,0.f,w,h};
+        juce::Graphics::ScopedSaveState clip(g);
+        juce::Path perimeter;perimeter.addRoundedRectangle(cabinet,5.f);
+        g.reduceClipRegion(perimeter);
+        juce::ColourGradient header(graphite::colour(0x0c1c28),0.f,0.f,
+                                    graphite::colour(0x0c1b25),w,0.f,false);
+        header.addColour(.5,graphite::colour(0x183c51));
+        g.setGradientFill(header);g.fillRect(0.f,0.f,w,72.f);
         juce::Path body;
-        body.startNewSubPath(11.f,shoulderY);
-        body.lineTo(241.f,shoulderY);
-        body.cubicTo(311.f,shoulderY,337.f,58.f,424.f,59.f);
-        body.lineTo(w-424.f,59.f);
-        body.cubicTo(w-337.f,58.f,w-311.f,shoulderY,w-241.f,shoulderY);
-        body.lineTo(w-11.f,shoulderY);
-        body.lineTo(w-11.f,374.f);
-        body.lineTo(11.f,374.f);
-        body.closeSubPath();
+        body.startNewSubPath(0.f,float(F::shoulderY));body.lineTo(190.f,float(F::shoulderY));
+        body.cubicTo(290.f,24.f,320.f,60.f,425.f,60.f);body.lineTo(695.f,60.f);
+        body.cubicTo(800.f,60.f,830.f,24.f,930.f,24.f);body.lineTo(w,24.f);
+        body.lineTo(w,float(F::lcdTop));body.lineTo(0.f,float(F::lcdTop));body.closeSubPath();
         graphite::drawMetal(g,body,getWidth(),getHeight());
-        g.setColour(rgb(151,178,191).withAlpha(.42f));
-        juce::Path shoulder;
-        shoulder.startNewSubPath(11.f,shoulderY);
-        shoulder.lineTo(241.f,shoulderY);
-        shoulder.cubicTo(311.f,shoulderY,337.f,58.f,424.f,59.f);
-        shoulder.lineTo(w-424.f,59.f);
-        shoulder.cubicTo(w-337.f,58.f,w-311.f,shoulderY,w-241.f,shoulderY);
-        shoulder.lineTo(w-11.f,shoulderY);
-        g.strokePath(shoulder,juce::PathStrokeType(.8f));
-        g.setColour(rgb(166,190,202).withAlpha(.36f));
-        g.drawLine(11.f,10.f,w-11.f,10.f,.9f);
-
-        // Distinct smoked-glass bottom LCD ribbon, with actual JUCE Slider
-        // editable numeric text boxes over it, rather than duplicate text.
-        constexpr float lcdTop=static_cast<float>(F::lcdTop);
-        g.setGradientFill(juce::ColourGradient(rgb(27,46,59),11.f,lcdTop,
-                                               rgb(14,26,35),11.f,static_cast<float>(F::lcdBottom-1),false));
-        // Fill the entire inner faceplate to the cabinet inset; no black
-        // spacer below the LCD. Preserve numeric control positions.
-        g.fillRect(11.f,lcdTop,w-22.f,static_cast<float>(F::lcdBottom-F::lcdTop));
-        g.setColour(rgb(132,166,185).withAlpha(.62f));
-        g.drawLine(11.f,lcdTop,w-11.f,lcdTop,1.f);
-        g.setColour(rgb(10,22,30).withAlpha(.8f));
-        g.drawLine(11.f,lcdTop+1.f,w-11.f,lcdTop+1.f,.6f);
-        // Thin bounded column rules; do not make the screen a card grid.
-        g.setColour(rgb(146,171,185).withAlpha(.22f));
-        g.drawLine(257.f,155.f,257.f,367.f,.8f);
-        g.drawLine(w-257.f,155.f,w-257.f,367.f,.8f);
-
+        g.setColour(graphite::colour(0x929a9b).withAlpha(.28f));
+        g.strokePath(body,juce::PathStrokeType(.7f));
+        const float lcdTop=float(F::lcdTop),lcdHeight=float(F::lcdBottom-F::lcdTop);
+        juce::ColourGradient lcd(graphite::colour(0x0b1d2c),0.f,lcdTop,
+                                 graphite::colour(0x103246),0.f,float(F::lcdBottom),false);
+        lcd.addColour(.48,graphite::colour(0x164864));
+        g.setGradientFill(lcd);g.fillRect(0.f,lcdTop,w,lcdHeight);
+        juce::ColourGradient sheen(juce::Colours::black.withAlpha(.26f),0.f,0.f,
+                                   juce::Colours::black.withAlpha(.26f),w,0.f,false);
+        sheen.addColour(.38,juce::Colours::white.withAlpha(.02f));
+        sheen.addColour(.60,juce::Colours::white.withAlpha(.02f));
+        g.setGradientFill(sheen);g.fillRect(0.f,lcdTop,w,lcdHeight);
+        g.setColour(graphite::colour(0x040b11));g.drawHorizontalLine(F::lcdTop,0.f,w);
+        g.setColour(graphite::colour(0x4d87a1).withAlpha(.32f));g.drawHorizontalLine(F::lcdBottom-1,0.f,w);
+        // Single perimeter; no additional inset cabinet, right strip or footer artifact.
+        g.setColour(graphite::colour(0x66717a));g.drawRoundedRectangle(cabinet.reduced(.5f),5.f,1.f);
+        g.setColour(graphite::colour(0xb5c4cc));g.setFont(uiFont(10.f));
+        g.drawText("S T U D I O  R E V E R B",49,83,200,15,juce::Justification::centredLeft,false);
+        juce::ColourGradient tabFace(graphite::colour(0x1f2123),0.f,float(F::tabY),
+             graphite::colour(0x242729),0.f,float(F::tabY+F::tabHeight),false);
+        g.setGradientFill(tabFace);g.fillRoundedRectangle(float(F::tabLeft),float(F::tabY),
+             float(F::width-2*F::tabLeft),float(F::tabHeight),5.f);
         // Optical centring compensates for cap-height against circle centres.
         // Symmetric group: x250–870, midpoint exactly x560 of the panel.
         using M=reverb_ui::MeterLayout;
@@ -716,9 +698,9 @@ public:
         }
 
         // The active tab underline and quiet baseline share one pixel band.
-        g.setColour(rgb(125,151,166).withAlpha(.57f));
+        g.setColour(rgb(116,121,123).withAlpha(.42f));
         g.fillRect(F::tabLeft,F::tabRuleY,F::width-2*F::tabLeft,2);
-        // Lower 10px cabinet lip is intentionally empty: no clipped footer.
+        // V6 cabinet lip below the LCD remains a clean solid surface.
     }
 
     void paintOverChildren(juce::Graphics& g) override {
@@ -742,17 +724,15 @@ public:
     }
     void resized() override {
         using F=reverb_ui::FaceplateLayout;
-        title_.setBounds(47,65,247,32);
-        // Same right-side cluster as PEQ, Compressor and Harmonice;
-        // Owner optical correction: lift the compact chrome five pixels
-        // off the preset centre; keep the entire cluster on blue shoulder.
-        close_.setBounds(getWidth()-25-24,F::chromeCentreY-12,24,24);
-        power_.setBounds(close_.getX()-8-26,F::chromeCentreY-12,26,24);
-        preset_.setBounds(424,17,272,34);
-        prev_.setBounds(383,17,33,34);
-        next_.setBounds(getWidth()-383-33,17,33,34);
-        save_.setBounds(next_.getRight()+8,F::chromeCentreY-12,26,24);
-        algorithm_.setBounds(F::algorithmCentreX-F::algorithmWidth/2,78,F::algorithmWidth,28);
+        title_.setBounds(47,57,247,25);
+        const int top=F::chromeCentreY-F::chromeSize/2;
+        close_.setBounds(getWidth()-F::chromeRight-F::chromeSize,top,F::chromeSize,F::chromeSize);
+        power_.setBounds(close_.getX()-F::chromeGap-F::chromeSize,top,F::chromeSize,F::chromeSize);
+        save_.setBounds(power_.getX()-F::chromeGap-F::chromeSize,top,F::chromeSize,F::chromeSize);
+        preset_.setBounds(424,13,272,32);
+        prev_.setBounds(383,15,28,28);
+        next_.setBounds(getWidth()-383-28,15,28,28);
+        algorithm_.setBounds(F::algorithmCentreX-F::algorithmWidth/2,68,F::algorithmWidth,29);
         for(std::size_t i=0;i<tabs_.size();++i)
             tabs_[i].setBounds(F::tabLeft+static_cast<int>(i)*F::tabPitch,
                                F::tabY,F::tabWidth,F::tabHeight);
@@ -873,10 +853,10 @@ private:
             labels_[i].setVisible(false);
         }
         using F=reverb_ui::FaceplateLayout;
-        knobs_[2].setBounds(F::heroBounds(140));
-        labels_[2].setBounds(40,125,200,23);
-        knobs_[0].setBounds(F::heroBounds(getWidth()-140));
-        labels_[0].setBounds(getWidth()-240,125,200,23);
+        knobs_[2].setBounds(F::heroBounds(F::heroCentreX));
+        labels_[2].setBounds(F::heroCentreX-100,109,200,19);
+        knobs_[0].setBounds(F::heroBounds(getWidth()-F::heroCentreX));
+        labels_[0].setBounds(getWidth()-F::heroCentreX-100,109,200,19);
         knobs_[2].setVisible(true);labels_[2].setVisible(true);
         knobs_[0].setVisible(true);labels_[0].setVisible(true);
         for(std::size_t n=0;n<5;++n) {
@@ -884,7 +864,7 @@ private:
                 pages_[static_cast<std::size_t>(page_)][n]);
             const int centre=F::smallFirstCentre+static_cast<int>(n)*F::smallPitch;
             knobs_[idx].setBounds(F::smallBounds(centre));
-            labels_[idx].setBounds(centre-54,F::smallCaptionY,108,21);
+            labels_[idx].setBounds(centre-54,F::smallCaptionY,108,19);
             knobs_[idx].setVisible(true);
             labels_[idx].setVisible(true);
         }
@@ -904,9 +884,9 @@ private:
             for(int segment=0;segment<M::segments;++segment) {
                 const bool on=segment<lit;
                 const auto bright=segment>=18?rgb(241,148,116):
-                    (segment>=15?rgb(217,164,65):rgb(120,190,205));
+                    (segment>=15?rgb(217,164,65):rgb(159,228,255));
                 const float sx=static_cast<float>(x+segment*M::pitch);
-                g.setColour(on?bright:rgb(23,29,32));
+                g.setColour(on?bright:rgb(48,55,58));
                 g.fillEllipse(sx,static_cast<float>(y),
                               static_cast<float>(M::dotSize),static_cast<float>(M::dotSize));
                 if(on) {

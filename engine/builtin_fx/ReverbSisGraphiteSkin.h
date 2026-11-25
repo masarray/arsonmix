@@ -6,7 +6,7 @@
 #include <cmath>
 #include <cstdint>
 
-// Port of the owner-approved Graphite Ice Blue isolated C++ trial.
+// Native port of the owner-approved Studio Rack V6 Canvas prototype.
 // Only called by the JUCE message thread; immutable shared raster assets,
 // independent of processor state, display scale and parameter automation.
 namespace armix::builtin_fx::reverb_ui::graphite {
@@ -25,40 +25,7 @@ inline double dot(Vec a,Vec b) { return a.x*b.x+a.y*b.y+a.z*b.z; }
 inline juce::uint8 channel(double x) {
     return static_cast<juce::uint8>(std::lround(clamp(x,0.,255.)));
 }
-inline std::uint32_t hash32(std::uint32_t v) {
-    v^=v>>16; v*=0x7feb352du; v^=v>>15; v*=0x846ca68bu; return v^(v>>16);
-}
-inline double rand01(std::uint32_t v) { return double(hash32(v)&0xffffffu)/16777215.; }
-// Finite, staggered horizontal micro-grain; no global random row offset.
-// Two decorrelated bands model short abrasive tracks, not scan lines.
-inline double brushNoise(int x,int y,int span,std::uint32_t salt) {
-    const int shifted=x+int(hash32(std::uint32_t(y)+salt)%std::uint32_t(span));
-    const int k=shifted/span;
-    double t=double(shifted%span)/span; t=t*t*(3.-2.*t);
-    const auto a=rand01(std::uint32_t(y)*92821u+std::uint32_t(k)*137631u+salt);
-    const auto b=rand01(std::uint32_t(y)*92821u+std::uint32_t(k+1)*137631u+salt);
-    return a+(b-a)*t;
-}
-// Shared pure material equations: deterministic satin-anodised metal with
-// cool reflected light. Diffuse base, broad off-axis specular lobe and
-// bounded micro-grain are separate, so the texture never creates banding.
-inline double metalSheen(int x,int y) {
-    const double u=x/double(metalW-1),v=y/double(metalH-1);
-    const double axis=u-.26-.24*(v-.40);
-    return 17.*std::exp(-axis*axis/(.32*.32))*
-           std::exp(-(v-.20)*(v-.20)/(.65*.65))+
-           5.*std::exp(-(u-.86)*(u-.86)/(.27*.27));
-}
-inline double metalGrain(int x,int y) {
-    return (brushNoise(x,y,64,0x351b9u)-.5)*3.2+
-           (brushNoise(x,y,19,0x731d1u)-.5)*2.0+
-           (rand01(std::uint32_t(x)*713u+std::uint32_t(y)*16091u)-.5)*.7;
-}
-inline juce::Colour metalPixel(int x,int y,double sheen) {
-    const double v=y/double(metalH-1);
-    const double base=51.-9.*v+sheen+metalGrain(x,y);
-    return juce::Colour::fromRGB(channel(base-3.),channel(base+10.),channel(base+19.));
-}
+// Studio Rack V6 uses a clean satin faceplate, not row-correlated noise.
 inline double noise(int x,int y) {
     const auto n=std::sin(x*127.1+y*311.7)*43758.5453;
     return n-std::floor(n);
@@ -66,29 +33,26 @@ inline double noise(int x,int y) {
 inline juce::Image makeMetal() {
     juce::Image im(juce::Image::RGB,metalW,metalH,false);
     juce::Image::BitmapData pixels(im,juce::Image::BitmapData::writeOnly);
-    // Broad reflection is separable per row: precompute the secondary
-    // column lobe, evaluate the shifted main lobe on a coarse 8px lattice
-    // and interpolate. Fine grain stays at native cache resolution.
-    std::array<double,metalW> secondary{};
-    for(int x=0;x<metalW;++x) {
-        const double u=x/double(metalW-1);
-        secondary[static_cast<std::size_t>(x)]=5.*std::exp(-(u-.86)*(u-.86)/(.27*.27));
-    }
-    constexpr int pitch=8;
-    std::array<double,(metalW-1)/pitch+2> mainLobe{};
+    // V6 two-circle radial gradient: (560,75,25) to (560,100,620).
+    // Solve |point - centre(t)| = radius(t); then interpolate RGB stops.
+    constexpr double dr=595.,dy=25.,a=dr*dr-dy*dy;
+    const auto blend=[](double u,double v,double f){return u+(v-u)*f;};
     for(int y=0;y<metalH;++y) {
-        const double v=y/double(metalH-1), amplitude=17.*std::exp(-(v-.20)*(v-.20)/(.65*.65));
-        for(std::size_t i=0;i<mainLobe.size();++i) {
-            const double u=double(i*pitch)/double(metalW-1);
-            const double axis=u-.26-.24*(v-.40);
-            mainLobe[i]=amplitude*std::exp(-axis*axis/(.32*.32));
-        }
+        const double yy=(y+.5)*.5,py=yy-75.;
+        const double b=2.*(25.*dr+py*dy);
+        const double dark=.188235294*clamp((yy-187.5)/159.5);
         for(int x=0;x<metalW;++x) {
-            const auto i=static_cast<std::size_t>(x/pitch);
-            const double mix=double(x%pitch)/pitch;
-            const double sheen=mainLobe[i]+(mainLobe[i+1]-mainLobe[i])*mix+
-                secondary[static_cast<std::size_t>(x)];
-            pixels.setPixelColour(x,y,metalPixel(x,y,sheen));
+            const double xx=(x+.5)*.5,px=xx-560.;
+            const double c=625.-px*px-py*py;
+            const double q=clamp((-b+std::sqrt(std::max(0.,b*b-4.*a*c)))/(2.*a));
+            const double pos=q<.44?q/.44:q<.76?(q-.44)/.32:(q-.76)/.24;
+            const int first=q<.44?0:q<.76?1:2;
+            constexpr int stops[4][3]={{68,70,70},{54,56,57},{41,43,45},{29,32,35}};
+            const double lightPos=clamp((xx*1120.+(yy-26.)*304.)/(1120.*1120.+304.*304.));
+            const double white=(5./255.)*(1.-clamp(lightPos/.22));
+            const double black=(7./255.)*clamp((lightPos-.78)/.22);
+            const auto ch=[&](int k){return channel((blend(stops[first][k],stops[first+1][k],pos)*(1.-dark)*(1.-white)+255.*white)*(1.-black));};
+            pixels.setPixelColour(x,y,juce::Colour::fromRGB(ch(0),ch(1),ch(2)));
         }
     }
     return im;
@@ -142,13 +106,13 @@ inline juce::Image makeKnob() {
         const Vec n=unit({nx-ny*t,ny+nx*t,-hit[1]});
         const double ndl=std::max(0.,dot(n,light)),ndh=std::max(0.,dot(n,half)),ndv=std::max(0.,n.z);
         const bool face=h>.335, bevel=h>.27&&!face;
-        const double rough=face?.53:bevel?.30:.62;
-        const double spec=std::pow(ndh,2./(rough*rough))*(face?9.:bevel?38.:10.);
+        const double rough=face?.48:bevel?.32:.62;
+        const double spec=std::pow(ndh,2./(rough*rough))*(face?13.:bevel?43.:10.);
         const double ao=.72+.28*clamp(h/.19), grazing=std::pow(1.-ndv,3)*6.;
         const double grain=(noise(px,py)-.5)*(face?3.5:2.2);
         const double micro=face?std::sin(r*410.+noise(px,py)*1.1)*.45:std::cos(phi*112.)*1.5;
-        const double b=((face?15.:bevel?11.:9.)+(face?20.:bevel?32.:23.)*ndl+
-            spec+grazing)*ao+grain+micro+(face?(-wy*.9-wx*.6)*4.:0.);
+        const double b=((face?39.:bevel?16.:9.)+(face?36.:bevel?44.:23.)*ndl+
+            spec+grazing)*ao+grain+micro+(face?(-wy*.9-wx*.6)*10.:0.);
         pixels.setPixelColour(px,py,juce::Colour::fromRGB(channel(b*.96),channel(b),channel(b*1.055)));
     }
     return im;
@@ -167,39 +131,64 @@ inline void drawMetal(juce::Graphics& g,const juce::Path& path,int width,int hei
     g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
     g.drawImage(assets().metal,juce::Rectangle<float>(0.f,0.f,float(width),float(height)));
 }
-inline void stroke(juce::Graphics& g,float x,float y,float x2,float y2,float w,juce::Colour c) {
-    juce::Path p; p.startNewSubPath(x,y);p.lineTo(x2,y2);
-    g.setColour(c);g.strokePath(p,juce::PathStrokeType(w,juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
-}
-inline void drawKnob(juce::Graphics& g,float x,float y,float size,float value,float start,float end) {
-    const float s=size/static_cast<float>(referenceDial), v=juce::jlimit(0.f,1.f,value);
+// Single geometry authority for approved V6 tangential ring and QA.
+// Canvas units; actual dial hit region is intentionally separate.
+struct DialGeometry {
+    bool hero;
+    constexpr int count() const noexcept { return hero?23:21; }
+    constexpr float scale() const noexcept { return (hero?326.f:134.f)/480.f; }
+    constexpr float length() const noexcept { return hero?18.6f:20.f; }
+    constexpr float height() const noexcept { return hero?7.4f:9.8f; }
+    constexpr float inset() const noexcept { return hero?1.15f:1.35f; }
+    constexpr float ring() const noexcept { return .925f*float(radius)+height()*.5f+1.4f+(hero?7.4f:7.6f); }
+    constexpr float bezelGap() const noexcept { return (ring()-.925f*float(radius)-height()*.5f-1.4f)*scale(); }
+    float chordGap() const noexcept { return (2.f*ring()*std::sin(juce::MathConstants<float>::pi*1.5f/(2.f*(count()-1)))-(length()+3.f))*scale(); }
+    float extent() const noexcept { return (ring()+height()*.5f+1.4f+5.f)*scale(); }
+    static juce::AffineTransform tickTransform(float a,float x,float y) noexcept {
+        // Long axis = (cos a,sin a). At twelve o'clock (2pi) horizontal;
+        // at three o'clock (pi/2) vertical. No erroneous extra quarter turn.
+        return juce::AffineTransform::rotation(a).translated(x,y);
+    }
+};
+inline void drawKnob(juce::Graphics& g,float x,float y,bool hero,float value,float start,float end) {
+    const DialGeometry d{hero};
+    const float v=juce::jlimit(0.f,1.f,value);
     juce::Graphics::ScopedSaveState save(g);
-    g.addTransform(juce::AffineTransform::translation(-float(cx),-float(cy)).scaled(s).translated(x,y));
+    g.addTransform(juce::AffineTransform::translation(-float(cx),-float(cy)).scaled(d.scale()).translated(x,y));
     g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
     g.drawImageAt(assets().knob,0,0);
     constexpr float X=float(cx),Y=float(cy),R=float(radius);
-    for(int i=0;i<27;++i) {
-        const float phase=i/26.f, a=start+(end-start)*phase;
-        const float sn=std::sin(a), cs=-std::cos(a), xx=X+sn*1.10f*R,yy=Y+cs*1.10f*R;
+    const float l=d.length(),h=d.height(),in=d.inset();
+    for(int i=0;i<d.count();++i) {
+        const float phase=float(i)/float(d.count()-1), a=start+(end-start)*phase;
+        const float xx=X+std::sin(a)*d.ring(), yy=Y-std::cos(a)*d.ring();
         const bool lit=v>0.f&&phase<=v+1.e-7f;
-        const auto tick=[&](float w,juce::Colour c) {
-            stroke(g,xx-sn*3.5f,yy-cs*3.5f,xx+sn*3.5f,yy+cs*3.5f,w,c);
-        };
-        tick(5.5f,colour(0x090b0d));
-        if(lit)for(int j=9;j>=3;j-=2)tick(float(j),colour(0x40aef7).withAlpha(.035f+(9-j)*.008f));
-        tick(2.3f,colour(lit?0xb1e6ff:0x454b50));
+        juce::Graphics::ScopedSaveState tickState(g);
+        g.addTransform(DialGeometry::tickTransform(a,xx,yy));
+        const juce::Rectangle<float> led(-l*.5f,-h*.5f,l,h);
+        g.setColour(colour(0x0a1116));g.fillRoundedRectangle(led.expanded(1.5f,1.4f),1.5f);
+        if(lit) {
+            // Bounded soft halo, no runtime blur or unbounded dirty region.
+            for(int halo=5;halo>=1;--halo) {
+                g.setColour(colour(0x34d9ff).withAlpha(.025f+.012f*(5-halo)));
+                g.fillRoundedRectangle(led.expanded(float(halo)),1.2f+halo);
+            }
+        }
+        g.setColour(colour(lit?0x54dfff:0x30434e));g.fillRoundedRectangle(led,1.2f);
+        juce::ColourGradient core(colour(lit?0xd7fbff:0x48616e),0.f,-h*.5f,
+                                  colour(lit?0x59cfff:0x263640),0.f,h*.5f,false);
+        core.addColour(.45,colour(lit?0xa1edff:0x30434d));
+        g.setGradientFill(core);g.fillRoundedRectangle(led.reduced(in),.8f);
     }
-    const float a=start+(end-start)*v, px=X+std::sin(a)*.59f*R,py=Y-std::cos(a)*.59f*R;
-    g.setColour(colour(0x080a0b));g.fillEllipse(disc(px,py,7.3f));
-    g.setGradientFill(juce::ColourGradient(colour(0x141719),px,py-6.f,
-        colour(0x5d6265),px,py+6.f,false));g.fillEllipse(disc(px,py,6.2f));
-    juce::ColourGradient glow(colour(0x43bfff).withAlpha(.5f),px,py,
-        colour(0x43bfff).withAlpha(0.f),px+13.f,py,true);
-    glow.addColour(2./13.,colour(0x43bfff).withAlpha(.5f));
-    g.setGradientFill(glow);g.fillEllipse(disc(px,py,13.f));
-    juce::ColourGradient led(colour(0xe7f8ff),px-1.3f,py-1.5f,
-        colour(0x59a8d9),px+4.1f,py,true);
-    led.addColour(.6,colour(0xb5e7ff));
-    g.setGradientFill(led);g.fillEllipse(disc(px,py-.25f,4.1f));
+    const float a=start+(end-start)*v, px=X+std::sin(a)*.665f*R,py=Y-std::cos(a)*.665f*R;
+    juce::ColourGradient glow(colour(0x2fd6ff).withAlpha(.34f),px,py,
+        colour(0x2fd6ff).withAlpha(0.f),px+12.f,py,true);
+    g.setGradientFill(glow);g.fillEllipse(disc(px,py,12.f));
+    g.setColour(colour(0x122a32));g.fillEllipse(disc(px,py,6.8f));
+    juce::ColourGradient dotGradient(colour(0xefffff),px-1.8f,py-2.2f,
+                                    colour(0x159cc4),px+6.2f,py,true);
+    dotGradient.addColour(.26,colour(0xc7fbff));
+    dotGradient.addColour(.72,colour(0x51dcff));
+    g.setGradientFill(dotGradient);g.fillEllipse(disc(px,py-.12f,5.f));
 }
 } // namespace armix::builtin_fx::reverb_ui::graphite

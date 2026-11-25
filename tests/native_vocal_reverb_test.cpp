@@ -127,7 +127,7 @@ int main() {
         // Test the actual LookAndFeel path for enabled/disabled/hover/press,
         // without opening a modal dialog or modifying user preset storage.
         const auto saveIconImage=[&](bool hover,bool down) {
-            juce::Image im(juce::Image::RGB,26,24,true);
+            juce::Image im(juce::Image::RGB,26,26,true);
             juce::Graphics g(im);
             auto& look=save->getLookAndFeel();
             look.drawButtonBackground(g,*save,juce::Colours::black,hover,down);
@@ -237,30 +237,30 @@ int main() {
     assert(!algorithmSelect->getBounds().intersects(wetLabel->getBounds()));
     assert(!productTitle->getBounds().intersects(decayLabel->getBounds()));
     assert(algorithmSelect->getBounds().getBottom()<mainMix->getY()+40);
-    assert(mainMix->getY()==124 && mainDecay->getY()==124);
+    assert(mainMix->getY()==reverb_ui::FaceplateLayout::heroTop && mainDecay->getY()==reverb_ui::FaceplateLayout::heroTop);
     auto* power=dynamic_cast<juce::TextButton*>(ui->findChildWithID("armix.reverb.power"));
     auto* close=dynamic_cast<juce::TextButton*>(ui->findChildWithID("armix.reverb.close"));
     assert(power&&close&&power->isVisible()&&close->isVisible()&&!power->isEnabled());
-    assert(power->getWidth()==26&&power->getHeight()==24);
-    assert(close->getWidth()==24&&close->getHeight()==24);
+    assert(power->getWidth()==26&&power->getHeight()==26);
+    assert(close->getWidth()==26&&close->getHeight()==26);
     assert(power->getRight()+8==close->getX());
     assert(power->getY()==close->getY()&&close->getRight()==ui->getWidth()-25);
     assert(power->getButtonText().isEmpty()&&close->getButtonText().isEmpty());
     assert(power->getProperties().getWithDefault("armixFxState","").toString()=="unknown");
-    assert(power->getBounds().getCentreY()==presetSelect->getBounds().getCentreY()-5);
+    assert(power->getBounds().getCentreY()==presetSelect->getBounds().getCentreY()-2);
     assert(close->getBounds().getCentreY()==power->getBounds().getCentreY());
-    assert(std::abs(algorithmSelect->getBounds().getCentreX()-mainMix->getBounds().getCentreX())<=1);
-    assert(close->getBottom()<reverb_ui::FaceplateLayout::shoulderY);
+    assert(algorithmSelect->getBounds().getCentreX()==reverb_ui::FaceplateLayout::algorithmCentreX);
+    assert(close->getBottom()<60);
     assert(!power->getBounds().intersects(presetSelect->getBounds()));
     assert(!close->getBounds().intersects(presetSelect->getBounds()));
     const auto* saveChrome=dynamic_cast<juce::TextButton*>(
         ui->findChildWithID("armix.reverb.preset.save"));
     assert(saveChrome&&saveChrome->isVisible()&&saveChrome->getButtonText().isEmpty());
-    assert(saveChrome->getWidth()==26&&saveChrome->getHeight()==24);
+    assert(saveChrome->getWidth()==26&&saveChrome->getHeight()==26);
     assert(saveChrome->getBounds().getCentreY()==power->getBounds().getCentreY());
-    assert(saveChrome->getX()==rightChevron->getRight()+8);
-    assert(saveChrome->getRight()+8<=power->getX());
-    assert(saveChrome->getBottom()<reverb_ui::FaceplateLayout::shoulderY);
+    assert(saveChrome->getX()>rightChevron->getRight()+8);
+    assert(saveChrome->getRight()+8==power->getX());
+    assert(saveChrome->getBottom()<60);
     assert(!saveChrome->getBounds().intersects(presetSelect->getBounds()));
     assert(!saveChrome->getBounds().intersects(rightChevron->getBounds()));
     for(int i=0;i<6;++i) {
@@ -296,7 +296,7 @@ int main() {
                 occupied[static_cast<std::size_t>(visibleLabels++)]=label->getBounds();
                 if(i!=0&&i!=2) {
                     assert(label->getWidth()<=110);
-                    assert(label->getY()==reverb_ui::FaceplateLayout::smallCaptionY && slider->getY()==221);
+                    assert(label->getY()==reverb_ui::FaceplateLayout::smallCaptionY && slider->getY()==reverb_ui::FaceplateLayout::smallTop);
                 }
             }
             if(slider->isVisible()) {
@@ -312,8 +312,7 @@ int main() {
                 assert(lcd.getCentreX()==dial.getCentreX()&&lcd.getCentreY()==F::lcdCentreY);
                 assert(lcd.getY()>=F::lcdTop&&lcd.getBottom()<=F::lcdBottom);
                 // Include LED glow/stroke beyond nominal rotary draw rectangle.
-                const float radius=dial.getWidth()*(hero?.366f:.338f)+
-                    (hero?8.f+13.f+3.8f+2.f+3.25f:5.f+9.f+2.5f+2.f+2.f);
+                const float radius=reverb_ui::graphite::DialGeometry{hero}.extent();
                 assert(radius<slider->getWidth()*.5f);
                 assert(dial.getCentreY()-radius>label->getBottom());
                 assert(dial.getCentreY()+radius<lcd.getY());
@@ -370,26 +369,20 @@ int main() {
     auto snapshot=ui->createComponentSnapshot(ui->getLocalBounds());
     assert(snapshot.isValid()&&snapshot.getWidth()==1120&&snapshot.getHeight()==430);
     assert(snapshot.getPixelAt(16,16)!=snapshot.getPixelAt(568,353));
-    // V3 contextual satin blue-titanium: verify actual painted material,
-    // dark smoked LCD, intact cabinet geometry and bounded fine grain.
-    const auto lightness=[](juce::Colour c) { return int(c.getRed())+int(c.getGreen())+int(c.getBlue()); };
-    const auto metalPixel=snapshot.getPixelAt(30,359);
-    const auto lcdPixel=snapshot.getPixelAt(30,382);
-    assert(lightness(metalPixel)>lightness(lcdPixel)+12);
-    assert(metalPixel.getBlue()-metalPixel.getRed()>=17 &&
-           metalPixel.getBlue()-metalPixel.getRed()<=26);
-    assert(metalPixel.getGreen()>metalPixel.getRed()+8);
-    assert(lightness(metalPixel)>150 && lightness(metalPixel)<260);
+    // V6 clean graphite, broad central light and luminous blue LCD.
+    const auto sum=[](juce::Colour c){return int(c.getRed())+int(c.getGreen())+int(c.getBlue());};
+    const auto metalPixel=snapshot.getPixelAt(30,300);
+    const auto lcdPixel=snapshot.getPixelAt(30,376);
+    assert(std::abs(int(metalPixel.getBlue())-int(metalPixel.getRed()))<12);
+    assert(lcdPixel.getBlue()>lcdPixel.getRed()+20);
     for(float scale:{1.f,1.25f,1.5f,2.f}) {
         const auto face=ui->createComponentSnapshot(ui->getLocalBounds(),true,scale);
+        assert(face.getWidth()==int(1120*scale)&&face.getHeight()==int(430*scale));
         for(int x:{30,560,1090})for(int y:{409,414,416}) {
-            const auto c=face.getPixelAt(static_cast<int>(x*scale),static_cast<int>(y*scale));
-            assert(c.getBlue()>c.getRed()+12 && c.getBlue()<65 &&
-                   c.getGreen()>c.getRed()+7 && c.getRed()>=10);
+            const auto c=face.getPixelAt(int(x*scale),int(y*scale));
+            assert(c.getRed()==23&&c.getGreen()==26&&c.getBlue()==29);
         }
     }
-    // Same cached procedural materials serve every editor/dial. Profile is
-    // concentric in top view, with a real illuminated bevel and subtle grain.
     const auto& skin=reverb_ui::graphite::assets();
     assert(skin.knob.isValid()&&skin.metal.isValid());
     assert(skin.knob.getWidth()==480&&skin.knob.getHeight()==444);
@@ -397,56 +390,49 @@ int main() {
     assert(&skin==&reverb_ui::graphite::assets());
     assert(skin.knob.getPixelAt(0,0).getAlpha()==0);
     assert(skin.knob.getPixelAt(240,229).getAlpha()==255);
-    int lo=255,hi=0;
-    for(int y=300;y<340;++y) {
-        const int g=skin.metal.getPixelAt(500,y).getGreen();
-        lo=std::min(lo,g);hi=std::max(hi,g);
-    }
-    assert(hi-lo>=2 && hi-lo<=9);
-    // Reject flat paint, coarse noise and full-width scan stripes. Compare
-    // the cached raster against the independent continuous sheen equation;
-    // interpolation error is <1 code value and grain is bounded to ±3.
-    for(int y=80;y<740;y+=31)for(int x=40;x<2200;x+=37) {
-        const auto expected=reverb_ui::graphite::metalPixel(x,y,
-            reverb_ui::graphite::metalSheen(x,y));
-        const auto actual=skin.metal.getPixelAt(x,y);
-        assert(std::abs(int(expected.getGreen())-int(actual.getGreen()))<=1);
-        assert(actual.getBlue()-actual.getRed()==22);
-    }
-    // Macro reflection remains visible at normal zoom, but independent
-    // local grain cannot become one coherent stripe across the panel.
-    const auto peak=skin.metal.getPixelAt(580,160);
-    const auto edge=skin.metal.getPixelAt(1920,680);
-    assert(peak.getGreen()>edge.getGreen()+10);
-    double cross=0.,left2=0.,right2=0.;
-    for(int y=200;y<500;++y) {
-        const double l=reverb_ui::graphite::metalGrain(300,y);
-        const double r=reverb_ui::graphite::metalGrain(1800,y);
-        cross+=l*r;left2+=l*l;right2+=r*r;
-    }
-    assert(left2>0. && right2>0. && std::abs(cross/std::sqrt(left2*right2))<.2);
-    // Exercise both extreme normalized values with the real JUCE paint path
-    // without touching the processor or altering the live test's settings.
-    const auto knobImage=[](float value) {
-        juce::Image im(juce::Image::ARGB,184,184,true);
-        juce::Graphics graphics(im);
-        reverb_ui::graphite::drawKnob(graphics,92.f,92.f,184.f,value,
-            juce::MathConstants<float>::pi*1.25f,juce::MathConstants<float>::pi*2.75f);
-        return im;
-    };
-    const auto minimum=knobImage(0.f),maximum=knobImage(1.f);
-    const auto bluePixels=[](const juce::Image& im) {
-        int n=0;
-        for(int y=0;y<im.getHeight();++y)for(int x=0;x<im.getWidth();++x) {
-            const auto c=im.getPixelAt(x,y);
-            if(c.getAlpha()>180&&c.getBlue()>150&&c.getBlue()>c.getRed()+30)++n;
+    assert(sum(skin.metal.getPixelAt(1120,160))>sum(skin.metal.getPixelAt(40,650))+45);
+    assert(sum(skin.knob.getPixelAt(240,229))>sum(skin.knob.getPixelAt(240,349))+60);
+    using G=reverb_ui::graphite::DialGeometry;
+    for(bool hero:{true,false}) {
+        const G d{hero};
+        assert(d.count()==(hero?23:21));
+        assert(std::abs(d.bezelGap()-(hero?5.0258f:2.1217f))<.05f);
+        assert(d.chordGap()>(hero?4.9f:2.4f));
+        const auto horizontal=juce::Point<float>(1.f,0.f).transformedBy(G::tickTransform(0.f,0.f,0.f));
+        const auto vertical=juce::Point<float>(1.f,0.f).transformedBy(G::tickTransform(juce::MathConstants<float>::halfPi,0.f,0.f));
+        assert(std::abs(horizontal.y)<.001f&&std::abs(horizontal.x-1.f)<.001f);
+        assert(std::abs(vertical.x)<.001f&&std::abs(vertical.y-1.f)<.001f);
+        // Render the production path at 2x; count actual bright LEDs at
+        // both endpoints, and measure orientation of the top centre LED.
+        const auto knobImage=[&](float value){
+            juce::Image im(juce::Image::ARGB,480,480,true);
+            juce::Graphics g(im);g.addTransform(juce::AffineTransform::scale(2.f));
+            reverb_ui::graphite::drawKnob(g,120.f,120.f,hero,value,
+                juce::MathConstants<float>::pi*1.25f,juce::MathConstants<float>::pi*2.75f);
+            return im;
+        };
+        const auto min=knobImage(0.f),max=knobImage(1.f);
+        const auto blue=[](juce::Colour c){return c.getAlpha()>180&&c.getBlue()>150&&c.getBlue()>c.getRed()+30;};
+        int before=0,after=0;
+        for(int y=0;y<480;++y)for(int x=0;x<480;++x) {
+            if(blue(min.getPixelAt(x,y)))++before;
+            if(blue(max.getPixelAt(x,y)))++after;
         }
-        return n;
-    };
-    assert(bluePixels(maximum)>bluePixels(minimum)+60);
+        assert(after>before+60);
+        const int topY=int(std::lround(240.f-2.f*d.ring()*d.scale()));
+        int minX=480,maxX=-1,minY=480,maxY=-1;
+        const int halfWindow=hero?16:7;
+        for(int yy=topY-halfWindow;yy<=topY+halfWindow;++yy)
+            for(int xx=240-halfWindow;xx<=240+halfWindow;++xx)
+                if(blue(max.getPixelAt(xx,yy))) {
+                    minX=std::min(minX,xx);maxX=std::max(maxX,xx);
+                    minY=std::min(minY,yy);maxY=std::max(maxY,yy);
+                }
+        assert(maxX>=minX&&maxY>=minY&&maxX-minX>maxY-minY);
+    }
     // Group centred at x560; independent left/right 12px gutters.
     using M=reverb_ui::MeterLayout;
-    static_assert(M::firstDotY==97 && M::secondDotY==132 && M::tickY==112);
+    static_assert(M::firstDotY==97 && M::secondDotY==126 && M::tickY==108);
     static_assert(M::groupLeft+M::groupRight==1120);
     static_assert(M::dotsLeftX-M::leftLabelX-M::leftLabelWidth==12);
     static_assert(M::rightLabelX-M::dotsRightX-19*M::pitch-M::dotSize==12);
