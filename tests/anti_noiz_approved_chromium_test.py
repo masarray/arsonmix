@@ -196,9 +196,15 @@ def main():
         # Narrow viewport: exercise actual responsive layout, not a mockup.
         page.set_viewport_size({"width":360,"height":720})
         panel=root.locator(".an-panel")
-        box=panel.bounding_box()
-        assert box and box["width"]<=360
+        # Width alone missed a panel stranded offscreen after resizing.
+        # Require the actual visible rectangle AND unoccluded hit targets.
+        page.wait_for_function("""()=>{const p=document.querySelector('#mxNativeAntiNoiz .an-panel');
+          const r=p.getBoundingClientRect();return r.left>=-1&&r.top>=-1&&
+            r.right<=innerWidth+1&&r.bottom<=innerHeight+1;}""")
         assert panel.evaluate("(el)=>el.scrollWidth<=el.clientWidth+2")
+        assert root.evaluate("""el=>[...el.querySelectorAll('.an-dial input,[data-power],[data-close],[data-learn],[data-mode]')].every(c=>{
+          const r=c.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
+          return hit===c||c.contains(hit);})"""),"narrow editor hit targets occluded"
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-360.png"))
         page.set_viewport_size({"width":1366,"height":768})
         # Show-store/preset plumbing is not mocked as disk success: verify
