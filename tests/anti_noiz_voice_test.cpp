@@ -14,6 +14,32 @@ int main(){try{
         const float v=G::restore(g,100.f,100.f,100.f,100.f);
         offline::require(v>=g&&v<=1.f&&v-g<=.150001f,"bounded restoration");
     }
+    using D=SpeechDetail<32>;
+    D detail;
+    D::Powers anchor{},power{};
+    for(int c=0;c<2;++c)for(int k=0;k<32;++k){
+        anchor[c][k]=k<8?4.f:.1f;power[c][k]=2.f*anchor[c][k];
+    }
+    const std::array<float,2> variable{1.f,1.f};
+    detail.analyze(power,anchor,2,32,variable);
+    offline::require(detail.support(2,32,7)==0.f,"common mode not speech detail");
+    power[0][8]=4.f;
+    detail.analyze(power,anchor,2,32,variable);
+    offline::require(detail.support(2,32,7)==0.f,"isolated peak veto");
+    power[1][9]=4.f;
+    detail.analyze(power,anchor,2,32,variable);
+    offline::require(detail.support(2,32,7)==0.f,"cross-channel fake corroboration veto");
+    power[0][9]=4.f;
+    detail.analyze(power,anchor,2,32,variable);
+    const float corroborated=detail.support(2,32,7);
+    offline::require(corroborated>.5f,"same channel independent local evidence");
+    const float restored=D::restore(.3f,3.f,2.f,3.f,corroborated,.2f);
+    offline::require(restored>.35f&&restored<=.396001f,"bounded speech restoration");
+    offline::require(D::restore(.3f,1.f,2.f,3.f,corroborated,.2f)==.3f,"local evidence veto");
+    offline::require(D::restore(.3f,3.f,1.f,3.f,corroborated,.2f)==.3f,"temporal veto");
+    offline::require(D::restore(.3f,3.f,2.f,3.f,corroborated,1.f)==.3f,"Clean0 veto");
+    detail.analyze(power,anchor,2,32,{0.f,0.f});
+    offline::require(!detail.eligible()&&detail.support(2,32,7)==0.f,"stationary profile parity");
     constexpr unsigned rate=48000;
     std::mt19937 gen(2026);std::uniform_real_distribution<float> noiseDist(-.003f,.003f),unit(-1.f,1.f);
     offline::Audio learn{rate,2,std::vector<float>(rate*6)},input=learn,clean=learn;
