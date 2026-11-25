@@ -19,3 +19,26 @@ assert.equal(observationOf({observation:{...o,essDb:NaN}}),null);
 assert.equal(observationOf({observation:{...o,wetDb:[0,0,0,0,121]}}),null);
 assert.equal(observationOf({}),null);
 console.log('PASS: measured observation schema and unavailable-data handling');
+
+// Compare against the actual approved mixer source, not a second guessed timing curve.
+const {meterSteps,advanceMeterPeak,meterMarkerRow}=require(process.argv[2]||'../../site/preview-v2/assets/mixer-native-de-ezzer.js');
+const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const mixer=fs.readFileSync(path.join(__dirname,'../../site/preview-v2/index.html'),'utf8');
+const start=mixer.indexOf('const METER_STEP_PX='),end=mixer.indexOf('/* Safe read-only calibration probe',start);
+assert(start>=0&&end>start);
+const sandbox={};
+vm.runInNewContext('function meterDbfsPercent(v){return Math.max(0,Math.min(100,(v+60)/60*100));}\n'+mixer.slice(start,end)+'\nthis.paint=displayMeterDbfs;',sandbox);
+const styles={},marker={style:{setProperty:(k,v)=>styles[k]=v}},lane={clientHeight:126,querySelector:()=>marker},fill={parentElement:lane,style:{setProperty:(k,v)=>styles[k]=v}};
+let peak=null;
+for(const [ts,db] of [[0,-60],[20,-6],[50,-42],[869,-42],[870,-42],[989,-42],[990,-42],[1110,-42],[1600,-42],[1700,-3],[1800,-60],[2550,-60],[2700,-60],[4000,-60],[4100,6]]){
+ const steps=meterSteps(db,-60,0,9);peak=advanceMeterPeak(peak,steps,ts);sandbox.paint(fill,db,ts,'test');
+ assert(Math.abs(parseFloat(styles['--lit'])-steps/9*100)<1e-9);
+ assert.equal(marker.style.opacity,peak.steps>0?'1':'0');
+ assert.equal(parseFloat(styles['--peak-extent']),(meterMarkerRow(peak.steps,9)+1)*14-2);
+}
+assert.equal(meterSteps(NaN,-72,0,9),0);
+assert.equal(meterSteps(-100,-72,0,9),0);
+assert.equal(meterSteps(6,-72,0,9),9);
+assert.equal(meterSteps(7.49,0,18,18),7);
+assert.equal(meterSteps(7.5,0,18,18),8);
+console.log('PASS: exact mixer peak-hold/release trace, stepped LCD normalization and bounds');
