@@ -27,6 +27,7 @@ with sync_playwright() as pw:
             route.abort()
     page.route('https://fixture.invalid/**', serve)
     page.goto('https://fixture.invalid/')
+    page.add_style_tag(path=str(assets/'mixer-contextual-buttons.css'))
     page.evaluate('''()=>{
       window.listeners={};window.events=[];window.crypto.randomUUID ||= ()=>String(Math.random()).slice(2);
       window.view={admitted:true,device:{epoch:'12'},graph:{revision:'4',channels:[{id:'42',inserts:[{id:'fx-a',catalogId:'armix.builtin.de-ezzer.v1'}]}]}};
@@ -64,8 +65,29 @@ with sync_playwright() as pw:
     assert dial.bounding_box()['width'] == 80
     assert page.locator('.dial-face').first.evaluate('(e)=>getComputedStyle(e).transform') == 'none'
     assert page.locator('.dial-face').first.evaluate('(e)=>getComputedStyle(e).boxShadow') != 'none'
-    assert page.locator('.display').evaluate('(e)=>getComputedStyle(e,"::after").pointerEvents') == 'none'
-    assert 'gradient' in page.locator('.display').evaluate('(e)=>getComputedStyle(e,"::after").backgroundImage')
+    assert page.locator('.lcd-glass').evaluate('(e)=>getComputedStyle(e).pointerEvents') == 'none'
+    assert page.locator('.lcd-glass').evaluate('(e)=>getComputedStyle(e,"::before").clipPath').startswith('polygon(')
+    assert page.locator('.lcd-glass').evaluate('(e)=>getComputedStyle(e,"::before").backgroundColor') == 'rgba(255, 255, 255, 0.085)'
+    # Worst-case contrast after the real white overlay is composited on the LCD.
+    assert page.evaluate("""() => {
+      const l=c=>{let v=c.match(/[0-9.]+/g).slice(0,3).map(Number).map(n=>n/255).map(n=>n<=.04045?n/12.92:((n+.055)/1.055)**2.4);return .2126*v[0]+.7152*v[1]+.0722*v[2]};
+      const bg=l('rgb(33,43,46)');
+      return ['.lcd-title','.lcd-subtitle','.analysis-foot b','.gr','.axis'].every(sel=>(l(getComputedStyle(document.querySelector(sel)).color)+.05)/(bg+.05)>=4.5)
+    }""")
+    # Same computed chrome as other built-ins using the shared style, not local copies.
+    def chrome_parity(state):
+        return page.evaluate("""state=>{
+          const peer=document.createElement('div');peer.style.cssText='position:fixed;left:-1000px;top:0;display:flex';
+          peer.innerHTML='<button class="armix-builtin-fx-power" data-fx-state="'+state+'">⏻</button><button class="armix-builtin-fx-close">×</button>';document.body.append(peer);
+          const props=['width','height','fontSize','borderColor','borderRadius','backgroundImage','color','boxShadow','textShadow'];
+          const get=e=>Object.fromEntries(props.map(k=>[k,getComputedStyle(e)[k]]));
+          const p=document.querySelector('[data-power]'),c=document.querySelector('[data-close]');
+          const result=JSON.stringify(get(p))===JSON.stringify(get(peer.children[0]))&&JSON.stringify(get(c))===JSON.stringify(get(peer.children[1]))&&getComputedStyle(c,'::after').backgroundImage===getComputedStyle(peer.children[1],'::after').backgroundImage;
+          peer.remove();return result;
+        }""", state)
+    assert chrome_parity('off')
+    assert page.locator('[data-power]').bounding_box()['width'] == 26
+    assert page.locator('[data-close]').bounding_box()['width'] == 24
     assert page.locator('.knobs output').first.evaluate('(e)=>getComputedStyle(e,"::after").pointerEvents') == 'none'
     box = dial.bounding_box(); x=box['x']+box['width']/2; y=box['y']+box['height']/2
     page.mouse.move(x,y);page.mouse.down();page.mouse.move(x,y-32)
@@ -76,7 +98,7 @@ with sync_playwright() as pw:
     assert dial.locator('.dial-face').evaluate('(e)=>getComputedStyle(e).transform') == 'none'
     assert dial.evaluate('(e)=>getComputedStyle(e).getPropertyValue("--accepted-angle").trim()') == '0deg'
     assert page.locator('input[type=range]').count()==0
-    assert page.locator('[data-power-label]').inner_text()=='OFF'
+    assert page.locator('[data-power]').get_attribute('data-fx-state')=='off'
     page.mouse.move(x,y-64);page.mouse.move(x,y-80)
     assert page.evaluate('commands().length') == 1 # held behind ACK
     page.evaluate('ack()');page.wait_for_timeout(70)
@@ -101,9 +123,11 @@ with sync_playwright() as pw:
     assert isinstance(result,str) and page.evaluate('commands().at(-1).command.sequence')==result
     page.evaluate('ack()');assert output.inner_text()=='42%'
     assert page.evaluate('presetCalls.at(-1)[2]')==result
-    page.locator('[data-power]').click();page.evaluate('ack()')
-    assert page.locator('[data-power-label]').inner_text()=='ON'
-    assert page.locator('[data-power]').get_attribute('data-powered')=='true'
+    page.locator('[data-power]').click()
+    assert page.locator('[data-power]').get_attribute('data-fx-state')=='off' # accepted state only
+    page.evaluate('ack()')
+    assert page.locator('[data-power]').get_attribute('data-fx-state')=='on'
+    assert chrome_parity('on')
     page.evaluate('''()=>{let p={...adapter.context(),requestId:'fxpres-1'};delete p.slot;listeners.arMixBuiltinFxPresetResult({...p,instanceId:'other'});listeners.arMixBuiltinFxPresetResult(p);}''')
     assert page.evaluate('presetCalls.filter(x=>x[0]==="reply").length')==1
     # No fabricated meter before native observation. Inject a correlated snapshot.
@@ -111,7 +135,7 @@ with sync_playwright() as pw:
     assert page.locator('[data-ess]').inner_text()=='—'
     page.wait_for_timeout(70)
     page.evaluate('''()=>{const req=events.filter(p=>p.action==='nativeDeEzzerSnapshot').at(-1);s={...s,frames:String(BigInt(s.frames)+2400n),observation:{inputDb:[-55,-30,-12,-20,-41],wetDb:[-56,-32,-20,-25,-42],essDb:-20,sidechainDb:-16,deltaDb:-24}};listeners.arMixBuiltinDeEzzerSnapshot({...req,ok:true,snapshot:s});}''')
-    assert page.locator('[data-ess]').inner_text()=='-20.0 dBFS'
+    assert page.locator('[data-ess]').inner_text()=='-20.0'
     assert 'Wet -20.0 dBFS' in page.locator('.band').nth(2).get_attribute('title')
     assert page.locator('[data-analysis-status]').inner_text()=='Measured · pre rack bypass'
     assert page.locator('[data-history] i').last.evaluate('(e)=>parseFloat(e.style.height)>0')
@@ -122,6 +146,9 @@ with sync_playwright() as pw:
     panel = page.locator('#mxNativeDeEzzer')
     assert panel.evaluate('(e)=>e.scrollWidth<=e.clientWidth+1')
     assert panel.evaluate('(e)=>e.scrollHeight<=e.clientHeight+1'), panel.evaluate('(e)=>[e.scrollHeight,e.clientHeight]')
+    assert page.locator('.lcd-main').bounding_box()['x'] < page.locator('.lcd-analysis').bounding_box()['x']
+    for selector in ('.analysis-foot b','.analysis-head','.lcd-title','.lcd-subtitle','.gr'):
+        assert page.locator(selector).evaluate_all('(nodes)=>nodes.every(e=>e.scrollWidth<=e.clientWidth+1 || getComputedStyle(e).display==="inline")'), selector
     page.set_viewport_size({'width': 400, 'height': 640})
     assert panel.evaluate('(e)=>e.scrollWidth<=e.clientWidth+1')
     assert page.locator('.dial').count()==3
@@ -139,6 +166,8 @@ with sync_playwright() as pw:
     assert page.evaluate("events.filter(p=>p.action==='nativeDeEzzerCue').at(-1).mode")=='Mix'
     page.evaluate('view.graph.revision="5"');page.wait_for_timeout(160)
     assert page.locator('[data-status]').inner_text()=='Disconnected'
+    assert page.locator('[data-power]').get_attribute('data-fx-state')=='unknown'
+    assert chrome_parity('unknown')
     assert page.locator('[data-ess]').inner_text()=='—'
     assert page.locator('[data-history] i').last.evaluate('(e)=>parseFloat(e.style.height)===0')
     page.locator('[data-close]').click();assert page.locator('#mxNativeDeEzzerHost').is_hidden()
