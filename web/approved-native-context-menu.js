@@ -148,8 +148,7 @@
         const kindName=menuTrack?.kind==="audio"?"Track":
           menuTrack?.kind==="fx"?"AUX":"BUS";
         if(confirmation){
-          const confirmLabel=kindName==="Track"?"Confirm Delete Track":
-            kindName==="AUX"?"Confirm Delete AUX":"Confirm Delete BUS";
+          const confirmLabel=kindName==="AUX"?"Confirm Delete AUX":"Confirm Delete BUS";
           menu.innerHTML='<div class="detail">Delete this '+kindName+
             ' and disconnect its FX/WIRE? Other channels are preserved.</div>'+
             '<button role="menuitem" class="danger" data-menu="confirm">'+confirmLabel+'</button>'+
@@ -158,7 +157,7 @@
           const canDelete=menuTrack?.kind!=="master" && hooks.canDeleteStrip?.(menuTrack);
           menu.innerHTML='<button role="menuitem" data-menu="rename">Rename…</button>'+
             '<button role="menuitem" class="danger" data-menu="delete" '+
-            (canDelete?'':'disabled')+'>Delete…</button>'+
+            (canDelete?'':'disabled')+'>'+(menuTrack?.kind==="audio"?"Delete Track":"Delete…")+'</button>'+
             (canDelete?'':'<div class="detail">Delete unavailable for this native strip</div>')+
             (eligibleHotkey(menuTrack,"SET_MUTE")?
               '<button role="menuitem" data-menu="hotkey-mute">Mute · Assign Hotkey…</button>'+
@@ -726,6 +725,11 @@
       }
       if(action==="delete"){
         if(!hooks.canDeleteStrip?.(track))return;
+        // An explicit right-click Delete Track is the user's confirmation.
+        // Keep the existing exact ChannelId / ACK gate; never remove optimistically.
+        if(track?.kind==="audio"){
+          dismissMenu();hooks.requestDeleteTrack(track);return;
+        }
         confirmation=true;showMenu(menu.offsetLeft,menu.offsetTop,"strip");return;
       }
       dismissMenu();
@@ -734,8 +738,7 @@
         hooks.renameStrip?.(track,anchor);return;
       }
       if(action==="confirm"){
-        if(track?.kind==="audio")hooks.requestDeleteTrack(track);
-        else hooks.requestDeleteStrip?.(track);
+        if(track?.kind==="bus"||track?.kind==="fx")hooks.requestDeleteStrip?.(track);
         return;
       }
       if(action!=="orbit")return;

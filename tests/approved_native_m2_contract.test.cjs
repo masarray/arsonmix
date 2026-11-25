@@ -2059,7 +2059,12 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(menu,/e\.preventDefault\(\)/);
  assert.match(menu,/\.strip-identity-top/);
  assert.match(menu,/\.fxslot-row:not\(\.is-empty\)/);
- assert.match(menu,/Confirm Delete Track/);
+ assert.doesNotMatch(menu,/Confirm Delete Track/);
+ assert.match(menu,/if\(track\?\.kind==="audio"\)\{\s*dismissMenu\(\);hooks\.requestDeleteTrack\(track\);return;/);
+ assert.match(menu,/Confirm Delete AUX/);
+ assert.match(bridge,/newProject\.addEventListener\("click",\(\)=>newSessionButtons\[0\]\.click\(\)\)/);
+ assert.match(bridge,/extraOutput\.addEventListener\("click",\(\)=>window\.__arMixOpenAdditionalOutput\?\.\(\)\)/);
+ assert.match(read("web/monitor.js"),/window\.__arMixOpenAdditionalOutput=\(\)=>\{\s*openRoutingLab\(\);\s*selectPatchTab\("output"\);/);
  assert.match(menu,/requestDeleteTrack\(track\)/);
  assert.match(menu,/hooks\.orbitTarget\(track,slot\)/);
  assert.ok(bridge.includes('stripVM.rosterMutationPlan('));
@@ -2075,6 +2080,10 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(host,/engine_\.leaseNativeVst3Editor\(/);
  assert.match(host,/nativeOrbitLease_/);
  assert.match(host,/arMixNativeOrbitState/);
+ assert.match(host,/if\(!replay&&translated\.ok\(\)\)[\s\S]*?closeEditorsForNativeRackEdit\(command\);\s*applied=armix::console::executeApprovedNativeControl/);
+ assert.match(host,/op!="NATIVE_MOVE_INSERT" && op!="NATIVE_REMOVE_INSERT"/);
+ assert.match(host,/item->channelId==from/);
+ assert.match(host,/routedEditorOwner_->instanceId==token/);
  assert.match(lab,/removeNativeInputChannel/);
  assert.match(lab,/request\.sources/);
  assert.match(roster,/removeInputAndDisconnect/);

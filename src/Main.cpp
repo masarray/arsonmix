@@ -1552,6 +1552,32 @@ private:
         additionalFxEditors_.clear();
     }
 
+    // Close affected floating editors BEFORE a validated rack topology edit.
+    // Slot-relative WebView leases become stale even for shifted neighbours.
+    // Vendor editors are matched by their immutable instance token, not slot.
+    void closeEditorsForNativeRackEdit(const juce::var& command) {
+        const auto op=command.getProperty("operation",{}).toString();
+        if(op!="NATIVE_MOVE_INSERT" && op!="NATIVE_REMOVE_INSERT")return;
+        const auto payload=command.getProperty("payload",{});
+        const auto token=payload.getProperty("instanceId",{}).toString();
+        const auto from=command.getProperty("targetChannelId",{}).toString();
+        const auto to=payload.getProperty("toChannelId",{}).toString();
+        if(token.isEmpty()||from.isEmpty())return;
+        std::erase_if(floatingBuiltinFx_,[&](const auto& item){
+            return item && (item->channelId==from ||
+                (to.isNotEmpty()&&item->channelId==to));
+        });
+        if(routedEditorOwner_ && routedEditorOwner_->instanceId==token)
+            closePluginEditor();
+#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
+        if(immersibEditorOwner_ && immersibEditorOwner_->instanceId==token)
+            closeImmerSIBEditor();
+#endif
+        std::erase_if(additionalFxEditors_,[&](const auto& item){
+            return item && item->owner && item->owner->instanceId==token;
+        });
+    }
+
     // FUX-1: only exact native published ChannelId/slot/instance can create
     // a separate WEBVIEW editor HWND. The six FX asset modules are the same
     // original /preview/ modules, not a second mixer or a JS DSP implementation.
@@ -3155,6 +3181,7 @@ private:
                     if(!applied)nativeError=result.error;
                 }
             } else {
+                closeEditorsForNativeRackEdit(command);
                 applied=armix::console::executeApprovedNativeControl(engine_,command,&nativeError);
             }
         }

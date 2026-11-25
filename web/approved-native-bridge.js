@@ -3351,6 +3351,8 @@
   // replaces the 740x590 default JUCE dialog for normal operator setup.
   let devicePanel=null,deviceInventory=null,deviceChoice=null,deviceRequest=0,
       deviceState=deviceVM.setupInitial(),deviceApplyTimer=0;
+  // Snapshot the actual initiating action; never infer it from a later tab.
+  let closeAfterVerifiedPinApply=false;
   const deviceBusy=()=>Boolean(deviceState.pending);
   let toastTimer=0;
   function nativeToast(message){
@@ -3668,7 +3670,9 @@
         </section>
         <section class="armix-output-overview" data-audio-output-overview>
           <div class="armix-crosspoint-scroll" data-audio-output-grid></div>
-          <div class="armix-device-note">External stereo outputs are editable. Mute MAIN and STREAM before changing an existing MAIN / MONITOR pair.</div>
+          <div class="armix-device-note">Assign mixer channels and buses to verified hardware pins below. To duplicate MAIN to OBS, a virtual cable or another Windows device, use Additional Output.</div>
+          <button type="button" data-audio-extra-output>Additional Output · OBS / Virtual Cable</button>
+          <div class="armix-device-note">Mute MAIN and STREAM before changing an existing MAIN / MONITOR pair.</div>
           <div class="armix-output-heading">OUTPUTS · physical routing</div>
           <div class="armix-output-matrix" data-audio-output-matrix role="list"></div>
           <div class="armix-device-note">Native callback/readback only · speaker listening not verified</div>
@@ -3759,6 +3763,11 @@
       devicePanel.querySelector("[data-audio-remap]").onclick=()=>{
         if(!deviceBusy() && deviceState.remapGeneration!==null)
           sendDeviceApply(true);
+      };
+      devicePanel.querySelector("[data-audio-extra-output]").onclick=()=>{
+        if(deviceBusy()||typeof window.__arMixOpenAdditionalOutput!=="function")return;
+        closeNativeAudioIO();
+        window.__arMixOpenAdditionalOutput();
       };
       document.body.appendChild(devicePanel);
     }
@@ -3958,6 +3967,9 @@
       confirmRetainedPinMapping,assignMain});
     if(!begun)return;
     deviceState=begun.state;
+    closeAfterVerifiedPinApply=!confirmRetainedPinMapping &&
+      devicePanel.querySelector(".armix-audio-dialog")?.dataset.audioTab==="pins" &&
+      begun.state.pending.expected.requestedPins!==null;
     showDeviceApplyProgress(true);
     renderDevicePanel();
     // Reuse the ONLY native arMixAction dispatcher. UI state cannot touch PCM.
@@ -4059,11 +4071,19 @@
     deviceApplyTimer=0;
     if(!devicePanel)return;
     showDeviceApplyProgress(false);
+    const closePins=closeAfterVerifiedPinApply && deviceState.phase==="ACCEPTED" &&
+      !!verifiedSnapshot?.device && deviceState.inspectNewAsio!==true;
+    closeAfterVerifiedPinApply=false;
     if(deviceState.phase==="ACCEPTED"){
       deviceChoice=null;
-      {
-        // All successful device/pin transactions stay in setup. Never show
-        // a candidate or pre-Apply inventory as the newly installed device.
+      if(closePins){
+        // Close only after independent installed readback, never on ACK alone.
+        delete devicePanel.dataset.openPinsAfterInventory;
+        deviceInventory=null;
+        closeNativeAudioIO();
+      }else{
+        // Device discovery stays in setup to expose the new hardware pins.
+        // Never show a candidate or pre-Apply inventory as installed hardware.
         deviceInventory=null;
         devicePanel.dataset.openPinsAfterInventory="true";
         selectAudioSetupPage("device");
@@ -4403,7 +4423,7 @@
       status(message);nativeToast(message);
       if(!save)controller?.subscribe();
     });
-    const newSessionButtons=[["New empty session","EMPTY"],["New from I/O defaults","DEFAULT"],["Reset I/O to defaults","RESET_IO"]].map(([label,mode])=>{
+    const newSessionButtons=[["New Project · empty mixer","EMPTY"],["New from I/O defaults","DEFAULT"],["Reset I/O to defaults","RESET_IO"]].map(([label,mode])=>{
       const button=item("button","tool",label);
       button.title="Offline only · previous checkpoint archived in Studio/SessionArchive";
       button.addEventListener("click",()=>{
@@ -4454,6 +4474,20 @@
         button.addEventListener("click",()=>backend.emitEvent("arMixAction",{action}));
         toolbar.insertBefore(button,firstTool);
       }
+      // Prominent New Project entry invokes the existing durable offline transaction.
+      // Never implement reset by wiping UI state or removing a saved checkpoint.
+      const newProject=item("button","tool","New Project");
+      newProject.type="button";
+      newProject.title="Create a fresh offline mixer; archive the previous session";
+      newProject.dataset.nativeNewProject="true";
+      newProject.addEventListener("click",()=>newSessionButtons[0].click());
+      toolbar.insertBefore(newProject,firstTool);
+      const extraOutput=item("button","tool","Output");
+      extraOutput.type="button";
+      extraOutput.title="Send MAIN to OBS, virtual cable or another Windows playback device";
+      extraOutput.dataset.nativeExtraOutput="true";
+      extraOutput.addEventListener("click",()=>window.__arMixOpenAdditionalOutput?.());
+      toolbar.insertBefore(extraOutput,document.getElementById("moreTools"));
       const io=item("button","tool","Audio I/O");
       io.dataset.nativeIo="true";
       io.title="Select ASIO/WASAPI driver and capture/playback device";
