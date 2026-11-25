@@ -75,5 +75,35 @@ int main(){
         check(!fresh.observed().spectrum.noiseValid&&!fresh.observed().spectrum.inputValid,"fresh epoch clears graph");
         std::cout<<"NATIVE_SESSION,"<<rate<<','<<channels<<",PDC="<<fresh.latency()<<",ACK/state/bypass/Learn/epoch PASS\n";
     }
+    // Known-bin stereo tone: a drained versus a saturated telemetry queue.
+    for(unsigned rate:{44100u,48000u,88200u,96000u}){
+        NativeSession polled,blocked;
+        for(auto* f:{&polled,&blocked}){
+            check(f->prepare(rate,2),"tone prepare");
+            check(f->submit({1,Control::Kind::learn,{}}),"tone learn");
+        }
+        const int n=polled.latency(),bin=8;
+        std::array<float,128> l{},r{},otherL{},otherR{};
+        NativeSession::Snapshot last,meter;
+        Control::Completion a,b;rtprobe::Counts allocations{};
+        for(unsigned pos=0;pos<3*rate;pos+=128){
+            for(int i=0;i<128;++i){
+                l[i]=.03f*float(std::sin(2.*std::numbers::pi_v<double>*bin*double(pos+i)/n));
+                r[i]=-l[i];
+            }
+            otherL=l;otherR=r;
+            rtprobe::begin();polled.process(l.data(),r.data(),128);blocked.process(otherL.data(),otherR.data(),128);allocations+=rtprobe::end();
+            check(l==otherL&&r==otherR,"spectral polling exact PCM parity");
+            if(!pos)check(polled.poll(a)&&blocked.poll(b)&&a.applied&&b.applied,"tone ACK");
+            while(polled.pollTelemetry(meter))last=meter;
+        }
+        check(last.profile&&last.spectrum.noiseValid&&!last.spectrum.candidate,"tone profile accepted");
+        const auto& x=last.spectrum.noise;
+        check(std::max_element(x.begin(),x.begin()+last.spectrum.bins)-x.begin()==bin,"known FFT bin peak");
+        float sum=0;for(int k=0;k<last.spectrum.bins;++k)sum+=x[k];
+        check(std::abs(sum-.00045f)<.000015f,"known tone mean-square normalization");
+        check(rtprobe::empty(allocations),"spectrum parity callback allocations");
+        std::cout<<"SPECTRUM_NATIVE,"<<rate<<",bin="<<bin<<",power="<<sum<<",PCM_exact=PASS,observed_alloc_free=0\n";
+    }
     NativeSession invalid;check(!invalid.prepare(32000,2)&&!invalid.prepare(48000,3),"unsupported layout/rate");
 }

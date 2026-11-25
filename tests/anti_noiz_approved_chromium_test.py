@@ -156,6 +156,7 @@ def main():
         expect(root.locator('[data-spectral]')).to_have_text("6.0 dB")
         expect(root.locator('[data-residual]')).to_have_text("12.0 dB")
         expect(root.locator('[data-learn]')).to_be_enabled()
+        normal_height=root.locator(".an-display").bounding_box()["height"]
         assert "is-on" not in (root.locator(".armix-native-fx-bypass").get_attribute("class") or "").split()
         # Current host power overrides stale DSP telemetry without mutating
         # settings, even between two 20 Hz native observations.
@@ -205,6 +206,8 @@ def main():
         expect(root.locator('[data-learn]')).to_have_attribute("data-learning","true")
         expect(root.locator(".an-spectrum-view")).to_be_visible()
         expect(root.locator(".an-meter-view")).to_be_hidden()
+        expect(root.locator('[data-display-title]')).to_have_text("NOISE SPECTRUM")
+        assert abs(root.locator(".an-display").bounding_box()["height"]-normal_height)<=1
         expect(root.locator('[data-progress]')).to_have_text("50%")
         assert root.locator('[data-input-curve]').get_attribute("d").startswith("M")
         assert root.locator('[data-noise-curve]').get_attribute("d").startswith("M")
@@ -220,6 +223,7 @@ def main():
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-profile-1366.png"))
         root.locator('[data-view]').click()
         expect(root.locator(".an-meter-view")).to_be_visible()
+        expect(root.locator('[data-display-title]')).to_have_text("GAIN REDUCTION")
         expect(root.locator('[data-learn]')).to_be_enabled()
         # Actual rotary drag with delayed ACK, stale readback and coalescing.
         # Original approved artwork must actually load in the native bundle;
@@ -271,6 +275,7 @@ def main():
         readback(page,accepted,{**OBS,"serial":"7","effectiveMode":"Voice","profile":True})
         # Capture actual approved UI, not an illustrative mockup.
         assert_p1_geometry(root)
+        knob.evaluate("(e)=>e.blur()")
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-1366.png"))
         assert_full_composition(root)
         # Narrow viewport: exercise actual responsive layout, not a mockup.

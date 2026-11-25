@@ -67,6 +67,7 @@ public:
         out.candidate=capturing;
         out.noiseValid=capturing?captured>0:profile_.valid();
         if(capturing)out.progress=std::clamp(float(profile_.observedFrames())/float(std::max(1,profile_.targetFrames())),0.f,1.f);
+        if(!out.inputValid&&!out.noiseValid)return out;
         const auto& noise=capturing?profile_.captured():profile_.anchor();
         const float normal=4.f/(float(n_)*float(n_)*float(channels_));
         const float average=capturing&&captured>0?1.f/float(captured):1.f;
@@ -171,7 +172,7 @@ public:
         }
     }
     // Native host lifecycle only. Keep the qualified stationary DSP path,
-    // coefficient preparation and all Core layout unchanged.
+    // coefficient preparation and signal arithmetic unchanged.
     void cancelNativeLearn() noexcept {
         if(profile_.learning()){profile_.cancel();context_.reset();voiceGain_.reset();tonal_.resetSignal();tonalIdle_=false;}
     }

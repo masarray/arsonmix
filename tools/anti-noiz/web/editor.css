@@ -55,6 +55,7 @@
 .an-panel .an-view-switch{height:22px;min-height:22px;padding:0 8px;font-size:10px;white-space:nowrap}
 .an-panel .an-view-switch[aria-pressed=true]{color:#c4f5e5;background:var(--an-selected)}
 .an-meter-view,.an-spectrum-view{height:94px;min-width:0}
+.an-meter-view{display:flow-root}
 .an-spectrum-view{position:relative;display:grid;grid-template-rows:14px minmax(0,1fr) 12px;gap:2px;padding:4px 0 0}
 .an-spectrum-key{display:flex;align-items:center;gap:12px;font-size:10px;color:#aabdc0}
 .an-spectrum-key span::before{content:"";display:inline-block;width:8px;height:2px;margin-right:4px;vertical-align:middle;background:currentColor}
@@ -69,7 +70,8 @@
 .an-freq-axis{position:relative;height:12px;color:#8ba7ad;font:9px var(--an-mono)}
 .an-freq-axis span{position:absolute;transform:translateX(-50%);white-space:nowrap}
 .an-freq-axis span:first-child{transform:none}
-.an-db-axis{position:absolute;right:4px;top:20px;color:#91a4a9;font:8px var(--an-mono);pointer-events:none}
+.an-db-axis{position:absolute;right:4px;top:20px;bottom:16px;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-end;color:#91a4a9;font:8px var(--an-mono);pointer-events:none}
+.an-db-axis span{background:#081419c9;padding-left:2px}
 .an-spectrum-empty{position:absolute;top:45%;left:0;right:0;text-align:center;font-size:10px;color:#a0b7bb;pointer-events:none}
 .an-meter{margin:7px 0 4px}
 .an-meter label{display:flex;justify-content:space-between;align-items:baseline;gap:8px;color:#a6bdc4;font-size:11px}
