@@ -118,5 +118,30 @@ int main(){
         hosted.sealForRealtime();CHECK(!hosted.isDetached());hosted.releaseResources();
         hosted.prepareToPlay(96000,128);CHECK(hosted.isReady()&&std::abs(hosted.singerDisplay().echo-.27f)<1.e-6f);
     }
-    std::puts("PASS real JUCE continuous PCM, state ACK, bypass, restart, stale lease, detached native editor and retained access guard");
+    {
+        JuceVocalDelayProcessor live;CHECK(live.useHostLocalMailbox());
+        live.prepareToPlay(48000,128);live.sealForRealtime();
+        std::unique_ptr<juce::AudioProcessorEditor> editor(live.createEditor());
+        auto* singer=dynamic_cast<SingerEditor*>(editor.get());CHECK(singer);
+        auto* hit=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.hit"));CHECK(hit);
+        auto bypass=SingerEditor::HostBypass::global;
+        singer->bindHostBypass([&]{return bypass;});CHECK(!hit->isEnabled());
+        bypass=SingerEditor::HostBypass::none;singer->refresh();CHECK(hit->isEnabled());
+        CHECK(live.setMusicFollow(true));MusicObservation o{7,1,2,100,120,.8f,true};
+        live.publishMusicObservation(o,9,0);o.frame=200;live.publishMusicObservation(o,9,500);
+        CHECK(live.singerPending());pcm.clear();live.processBlock(pcm,midi);live.serviceSingerControl();
+        CHECK(live.acceptedSnapshot().accepted.timeMs==500);
+        editor.reset();o.bpm=100;o.frame=300;live.publishMusicObservation(o,9,1000);
+        o.frame=400;live.publishMusicObservation(o,9,1500);
+        pcm.clear();live.processBlock(pcm,midi);live.serviceSingerControl();
+        CHECK(live.stateSnapshotQuiescent()&&live.acceptedSnapshot().accepted.timeMs==600);
+        o.locked=false;live.publishMusicObservation(o,9,2000);
+        CHECK(live.musicStatus()==MusicFollow::Status::holding&&live.acceptedSnapshot().accepted.timeMs==600);
+        editor.reset(live.createEditor());auto* bpm=dynamic_cast<juce::Slider*>(editor->findChildWithID("vd.bpm"));
+        CHECK(bpm);bpm->setValue(110,juce::sendNotificationSync);CHECK(!live.musicFollowing());
+        editor.reset();pcm.clear();live.processBlock(pcm,midi);live.serviceSingerControl();
+        CHECK(live.stateSnapshotQuiescent()&&live.acceptedSnapshot().accepted.bpmQuarter==440);
+        live.releaseResources();live.prepareToPlay(96000,128);CHECK(!live.musicFollowing());
+    }
+    std::puts("PASS real JUCE continuous PCM, state ACK, bypass, restart, stale lease, detached native editor, retained access guard and music follow");
 }

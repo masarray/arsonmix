@@ -2,6 +2,7 @@
 #pragma once
 #include "NativeSession.h"
 #include "SingerWorkflow.h"
+#include "MusicFollow.h"
 #include "../../core/RealtimeNativeFxControl.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 namespace armix::builtin_fx::vocal_delay {
@@ -58,7 +59,7 @@ public:
     }
     // Host retires/stops PCM before release. Discard unconsumed UI intent;
     // restartStopped preserves audio-applied state, even if ACK was unpolled.
-    void releaseResources() override{stopTimer();active_=false;singer_.reset();editorOpen_=false;}
+    void releaseResources() override{stopTimer();active_=false;singer_.reset();follow_.enable(false);editorOpen_=false;}
     void processBlock(juce::AudioBuffer<float>& pcm,juce::MidiBuffer&) override{
         juce::ScopedNoDenormals noDenormals;
         if(active_&&pcm.getNumChannels()==2&&pcm.getNumSamples()>0)
@@ -89,6 +90,22 @@ public:
         if(isDetached())return session_.applyDetached(p);
         return singer_.offer(session_.acceptedSnapshot(),p);
     }
+    // Runtime opt-in. A saved Show or portable preset restores the last
+    // confirmed numeric tempo, not an armed source or performance mode.
+    bool setMusicFollow(bool enabled) noexcept{
+        if(!active_||!published_||!localMailbox_||!editorOpen_||singer_.fault())return false;
+        follow_.enable(enabled);return true;
+    }
+    bool musicFollowing() const noexcept{return follow_.enabled();}
+    MusicFollow::Status musicStatus() const noexcept{return follow_.status();}
+    // Only called by the installed native graph's CONTROL traversal.
+    void publishMusicObservation(const MusicObservation& o,std::uint64_t own,double now) noexcept{
+        if(!active_||!published_||!localMailbox_||!follow_.enabled()||singer_.fault())return;
+        const auto base=singerDisplay();Parameters next{};
+        if(follow_.update(o,own,now,base,next)&&singer_.offer(session_.acceptedSnapshot(),next)){
+            startTimerHz(30);serviceSingerControl();
+        }
+    }
     Parameters singerDisplay() const noexcept{return singer_.display(session_.acceptedSnapshot());}
     bool isDetached() const noexcept{return localMailbox_&&!published_;}
     bool singerPending() const noexcept{return singer_.pending();}
@@ -116,6 +133,7 @@ private:
     void timerCallback() override{serviceSingerControl();}
     NativeSession session_{};
     SingerControl singer_{};
+    MusicFollow follow_{};
     bool editorOpen_=false;
     State initial_{};
     Lease next_{};

@@ -33,6 +33,8 @@ public:
         configure(attack_,"vd.attack","DUCK ATTACK",2,100,1," ms");
         configure(release_,"vd.release","DUCK RELEASE",40,1000,1," ms");
         setupButton(power_,"vd.power");setupButton(tap_,"vd.tap");tap_.setButtonText("TAP");
+        setupButton(music_,"vd.music");music_.setButtonText("MUSIC");music_.setTooltip("Choose shared backing music source or return to manual timing. Never selects automatically.");
+        music_.onClick=[this]{chooseMusicSource();};
         setupButton(save_,"vd.save");save_.setButtonText("SAVE");save_.setTooltip("Save the accepted sound to My Presets");
         save_.onClick=[this]{promptSavePreset();};
         setupButton(expert_,"vd.expert");expert_.setButtonText("Expert");
@@ -44,7 +46,7 @@ public:
         bpm_.setComponentID("vd.bpm");bpm_.setTitle("Manual BPM");bpm_.setSliderStyle(juce::Slider::IncDecButtons);
         bpm_.setTextBoxStyle(juce::Slider::TextBoxLeft,false,68,21);bpm_.setRange(40,240,.25);
         bpm_.setTextValueSuffix(" BPM");bpm_.setLookAndFeel(&look_);addAndMakeVisible(bpm_);
-        bpm_.onValueChange=[this]{applyTempo(bpm_.getValue());};
+        bpm_.onValueChange=[this]{if(hostAvailable())processor_.setMusicFollow(false);applyTempo(bpm_.getValue());};
         setupButton(focus_,"vd.focus");focus_.setTooltip("Adaptive wet echo reduction follows vocal activity. Off restores the classic detector.");
         focus_.onClick=[this]{auto p=processor_.singerDisplay();p.adaptiveFocus=!p.adaptiveFocus;offer(p);};
         smart_.setTooltip("Balance echo tone and ducking for your current time, repeats and level. Dry vocal stays unchanged.");
@@ -58,11 +60,12 @@ public:
             if(!hostAvailable())return;
             const int id=preset_.getSelectedId();
             if(id>0&&id<=int(singerPresets.size())){
-                selectedUserId_.clear();taps_.reset();tempoNotice_.clear();
+                processor_.setMusicFollow(false);selectedUserId_.clear();taps_.reset();tempoNotice_.clear();
                 offer(presetSettings(std::size_t(id-1),processor_.singerDisplay().enabled));
             }else if(id>=1000&&std::size_t(id-1000)<userPresets_.size()&&recallUserPreset_){
                 const auto entry=userPresets_[std::size_t(id-1000)];
                 if(const auto p=recallUserPreset_(entry.id);p&&processor_.offerSinger(*p)){
+                    processor_.setMusicFollow(false);
                     selectedUserId_=entry.id;selectedUserSound_=*p;taps_.reset();tempoNotice_.clear();
                 }
                 refresh();
@@ -70,8 +73,8 @@ public:
         };
         mode_.onChange=[this]{const int id=mode_.getSelectedId();if(id>=1&&id<=3){auto p=processor_.singerDisplay();p.mode=static_cast<StereoMode>(id-1);offer(p);}};
         division_.onChange=[this]{const auto p=processor_.singerDisplay();applyTempo(p.bpmQuarter?double(p.bpmQuarter)*.25:120.);};
-        tap_.onClick=[this]{double bpm=0;if(taps_.tap(juce::Time::getMillisecondCounterHiRes(),bpm)){applyTempo(bpm);}else{tempoNotice_="TAP 3+ BEATS";noticeUntil_=juce::Time::getMillisecondCounterHiRes()+1500.;repaint();}};
-        time_.onValueChange=[this]{auto p=processor_.singerDisplay();freeTime(p,float(time_.getValue()));taps_.reset();tempoNotice_.clear();offer(p);};
+        tap_.onClick=[this]{if(!hostAvailable())return;processor_.setMusicFollow(false);double bpm=0;if(taps_.tap(juce::Time::getMillisecondCounterHiRes(),bpm)){applyTempo(bpm);}else{tempoNotice_="TAP 3+ BEATS";noticeUntil_=juce::Time::getMillisecondCounterHiRes()+1500.;repaint();}};
+        time_.onValueChange=[this]{if(!hostAvailable())return;processor_.setMusicFollow(false);auto p=processor_.singerDisplay();freeTime(p,float(time_.getValue()));taps_.reset();tempoNotice_.clear();offer(p);};
         feedback_.onValueChange=[this]{auto p=processor_.singerDisplay();p.feedback=float(feedback_.getValue())*.01f;offer(p);};
         echo_.onValueChange=[this]{auto p=processor_.singerDisplay();p.echo=float(echo_.getValue())*.01f;offer(p);};
         duck_.onValueChange=[this]{auto p=processor_.singerDisplay();p.duck=float(duck_.getValue())*.01f;offer(p);};
@@ -83,11 +86,18 @@ public:
         stopTimer();if(admitted_)processor_.endSingerEditor();
         for(auto* d:dials())d->setLookAndFeel(nullptr);bpm_.setLookAndFeel(nullptr);
         for(auto* c:{&preset_,&mode_,&division_,&algorithm_})c->setLookAndFeel(nullptr);
-        for(auto* b:{&power_,&tap_,&expert_,&smart_,&focus_,&hit_,&tail_,&save_})b->setLookAndFeel(nullptr);
+        for(auto* b:{&power_,&tap_,&expert_,&smart_,&focus_,&hit_,&tail_,&save_,&music_})b->setLookAndFeel(nullptr);
     }
     // Host owns the exact retained FxInstance/workspace guard. No captured
     // slot ordinal is trusted after MOVE. UI may not edit a retired owner.
     void bindHostAccess(std::function<bool()> guard){hostAccess_=std::move(guard);refresh();}
+    enum class HostBypass {none,slot,rack,global,unavailable};
+    void bindHostBypass(std::function<HostBypass()> read){readBypass_=std::move(read);refresh();}
+    struct MusicSource {std::uint64_t id=0,epoch=0,revision=0;juce::String name;};
+    void bindMusicSources(std::function<std::vector<MusicSource>()> list,
+                          std::function<bool(const MusicSource&)> select){
+        listMusic_=std::move(list);selectMusic_=std::move(select);refresh();
+    }
     struct UserPresetEntry {juce::String id,name;};
     void bindUserPresetService(std::function<std::vector<UserPresetEntry>()> list,
             std::function<juce::String(const juce::String&)> save,
@@ -119,12 +129,12 @@ public:
             g.drawText(meterFresh_?"LIVE BLOCK PEAK":"NO LIVE PCM",438,161,148,12,juce::Justification::centredLeft);
         }
         const auto p=processor_.singerDisplay();
-        const auto tempo=tempoNotice_.isNotEmpty()?tempoNotice_:(p.bpmQuarter?"SYNCED / MANUAL-TAP":"FREE TIME");
-        g.setColour(juce::Colour(0xff829ca4));g.drawText(tempo,180,266,195,18,juce::Justification::centredLeft);
-        g.setColour(juce::Colour(0xff5fd7c3));g.drawText(!admitted_||!hostAvailable()?"UNAVAILABLE":processor_.isDetached()?"OFFLINE EDIT":processor_.singerFault()?"REOPEN REQUIRED":processor_.singerPending()?"APPLYING":"DSP READY",375,266,221,18,juce::Justification::centredRight);
+        const auto tempo=tempoNotice_.isNotEmpty()?tempoNotice_:tempoLabel(p);
+        g.setColour(juce::Colour(0xff829ca4));g.drawText(tempo,254,266,145,18,juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xff5fd7c3));g.drawText(statusLabel(),401,266,195,18,juce::Justification::centredRight);
     }
     void resized() override{
-        preset_.setBounds(180,19,136,31);save_.setBounds(322,19,36,31);mode_.setBounds(366,19,92,31);
+        preset_.setBounds(180,19,expertMode_?136:228,31);save_.setBounds(expertMode_?322:414,19,36,31);mode_.setBounds(366,19,92,31);
         expert_.setBounds(466,19,67,31);power_.setBounds(541,19,53,31);
         mode_.setVisible(expertMode_);focus_.setBounds(expertMode_?366:250,235,110,25);algorithm_.setVisible(expertMode_);algorithm_.setBounds(250,235,110,25);expert_.setButtonText(expertMode_?"Singer":"Expert");
         auto ds=dials();
@@ -135,7 +145,7 @@ public:
         }
         smart_.setVisible(!expertMode_);smart_.setBounds(440,177,144,27);
         tap_.setBounds(24,235,74,25);division_.setBounds(108,235,130,25);
-        hit_.setBounds(484,235,52,25);tail_.setBounds(542,235,54,25);bpm_.setBounds(24,265,148,22);
+        hit_.setBounds(484,235,52,25);tail_.setBounds(542,235,54,25);bpm_.setBounds(24,265,148,22);music_.setBounds(180,265,68,22);
     }
     void refresh(){
         const bool available=admitted_&&hostAvailable()&&processor_.isReady()&&!processor_.singerFault();
@@ -151,7 +161,7 @@ public:
         preset_.setSelectedId(presetId,juce::dontSendNotification);
         save_.setEnabled(available&&processor_.stateSnapshotQuiescent()&&bool(saveUserPreset_));
         smart_.setEnabled(available);
-        hit_.setEnabled(available&&p.enabled&&!processor_.isDetached());hit_.setButtonText(p.hit?"HIT ON":"HIT");
+        hit_.setEnabled(available&&p.enabled&&!processor_.isDetached()&&hostBypass()==HostBypass::none);hit_.setButtonText(p.hit?"HIT ON":"HIT");
         hit_.setColour(juce::TextButton::buttonColourId,hardware::col(p.hit?0x88652d:0x41494d));
         tail_.setEnabled(available);tail_.setButtonText(p.spillover?"TAIL ON":"TAIL");
         tail_.setColour(juce::TextButton::buttonColourId,hardware::col(p.spillover?0x27695c:0x41494d));
@@ -161,13 +171,57 @@ public:
         focus_.setColour(juce::TextButton::buttonColourId,hardware::col(p.adaptiveFocus?0x27695c:0x41494d));
         mode_.setSelectedId(int(p.mode)+1,juce::dontSendNotification);
         algorithm_.setSelectedId(int(p.style)+1,juce::dontSendNotification);algorithm_.setEnabled(available);
-        power_.setButtonText(p.enabled?"ON":"OFF");
+        power_.setButtonText(p.enabled?"WET ON":"WET OFF");
+        power_.setTooltip("Internal echo power. TAIL may continue; mixer rack bypass is separate.");
+        music_.setEnabled(available&&!processor_.isDetached()&&bool(listMusic_)&&bool(selectMusic_));
+        music_.setButtonText(processor_.musicFollowing()?"AUTO":"MUSIC");
+        music_.setColour(juce::TextButton::buttonColourId,hardware::col(processor_.musicFollowing()?0x27695c:0x41494d));
         power_.setColour(juce::TextButton::buttonColourId,juce::Colour(p.enabled?0xff27695c:0xff3a444a));
         for(auto* d:dials())d->setEnabled(available);
         preset_.setEnabled(available);mode_.setEnabled(available);power_.setEnabled(available);tap_.setEnabled(available);division_.setEnabled(available);
         repaint();
     }
 private:
+    HostBypass hostBypass() const{return readBypass_?readBypass_():HostBypass::none;}
+    juce::String statusLabel() const{
+        if(!admitted_||!hostAvailable())return "UNAVAILABLE";
+        if(processor_.isDetached())return "OFFLINE EDIT";
+        switch(hostBypass()){
+            case HostBypass::slot:return "SLOT BYPASSED";
+            case HostBypass::rack:return "RACK BYPASSED";
+            case HostBypass::global:return "GLOBAL FX OFF";
+            case HostBypass::unavailable:return "UNAVAILABLE";
+            default:break;
+        }
+        return processor_.singerFault()?"REOPEN REQUIRED":processor_.singerPending()?"APPLYING":meterFresh_?"DSP READY":"NO LIVE PCM";
+    }
+    juce::String tempoLabel(const Parameters& p) const{
+        using Status=MusicFollow::Status;
+        switch(processor_.musicStatus()){
+            case Status::listening:return "LISTENING / HOLD";
+            case Status::holding:return "TEMPO HOLD";
+            case Status::range:return "DIVISION LIMIT";
+            case Status::locked:return processor_.singerPending()?"AUTO APPLYING":"AUTO LOCK";
+            default:return p.bpmQuarter?"MANUAL / TAP":"FREE TIME";
+        }
+    }
+    void chooseMusicSource(){
+        if(!hostAvailable()||!listMusic_||!selectMusic_||processor_.isDetached())return;
+        const auto sources=listMusic_();
+        juce::PopupMenu menu;
+        menu.addItem(1,"Manual / TAP (keep current time)");
+        menu.addSectionHeader("Shared backing music source");
+        for(std::size_t i=0;i<sources.size();++i)menu.addItem(int(i)+2,sources[i].name);
+        const juce::Component::SafePointer<SingerEditor> weak(this);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&music_),[weak,sources](int id){
+            if(!weak||!weak->hostAvailable())return;
+            if(id==1)weak->processor_.setMusicFollow(false);
+            else if(id>=2&&std::size_t(id-2)<sources.size()&&weak->selectMusic_&&
+                    weak->selectMusic_(sources[std::size_t(id-2)]))
+                weak->processor_.setMusicFollow(true);
+            weak->refresh();
+        });
+    }
     static bool sameSound(Parameters a,Parameters b) noexcept{
         a.hit=b.hit=false;a.enabled=b.enabled=true;return sameParameters(a,b);
     }
@@ -232,7 +286,10 @@ private:
     }
     JuceVocalDelayProcessor& processor_;hardware::Look look_;std::function<bool()> hostAccess_;
     juce::Slider time_,feedback_,echo_,duck_,hp_,lp_,attack_,release_,bpm_;juce::ComboBox preset_,mode_,division_,algorithm_;
-    juce::TextButton power_,tap_,expert_,smart_,focus_,hit_,tail_,save_;
+    juce::TextButton power_,tap_,expert_,smart_,focus_,hit_,tail_,save_,music_;
+    std::function<HostBypass()> readBypass_;
+    std::function<std::vector<MusicSource>()> listMusic_;
+    std::function<bool(const MusicSource&)> selectMusic_;
     std::vector<UserPresetEntry> userPresets_;juce::String selectedUserId_;Parameters selectedUserSound_{};
     std::function<std::vector<UserPresetEntry>()> listUserPresets_;
     std::function<juce::String(const juce::String&)> saveUserPreset_;
