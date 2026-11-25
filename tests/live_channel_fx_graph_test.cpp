@@ -45,7 +45,12 @@ public:
         .withOutput("Main",juce::AudioChannelSet::stereo(),true)),gain_(gain),offset_(offset),delaySamples_(delay){++living;setLatencySamples(delay);}
     ~GainFx() override{--living;}
     const juce::String getName()const override{return "In-memory gain effect";}
-    void prepareToPlay(double,int)override{++prepared;assert(delay_.prepare(delaySamples_));}
+    void prepareToPlay(double rate,int frames)override{
+        // Direct in-memory fixture (not JUCE's plugin host): publish the
+        // same metadata the real host supplies before preparing playback.
+        setRateAndBufferSizeDetails(rate,frames);
+        ++prepared;assert(delay_.prepare(delaySamples_));
+    }
     void releaseResources()override{++released;}
     void processBlock(juce::AudioBuffer<float>& buffer,juce::MidiBuffer&)override{
         for(int c=0;c<buffer.getNumChannels();++c)
@@ -1943,38 +1948,58 @@ static void verifyFxTimingSampled() {
     assert(heapCalls.load()==heap);
 }
 static void verifyZeroLatencyFxFastPath() {
-    auto p=std::make_unique<GainFx>(2.f);p->prepareToPlay(48000,64);
-    LiveChannelFxGraph::FxInstance fx(std::move(p),"zero","zero delay",64);
-    std::array<float,64> l{},r{};
-    // Sentinel verifies a steady zero-delay wet block never writes scratch.
-    fx.dryLeft.assign(64,-99.f);fx.dryRight.assign(64,-88.f);
-    l.fill(.125f);r.fill(-.25f);
-    const auto before=heapCalls.load();
-    fx.render(l.data(),r.data(),64);
-    assert(heapCalls.load()==before);
-    for(int i=0;i<64;++i){
-        assert(l[i]==.25f&&r[i]==-.5f);
-        assert(fx.dryLeft[i]==-99.f&&fx.dryRight[i]==-88.f);
-    }
-    // Rack/insert transition uses the original envelope, copies the
-    // current source (never sentinel), and reaches exact dry endpoints.
-    armix::dsp::FxBypassEnvelope reference;reference.prepare(false,48000.,0);
-    for(int block=0;block<24;++block){
-        const bool bypass=block<12;
-        fx.bypassRequested.store(bypass);
-        reference.request(bypass);
+    // Exercise real JUCE FxInstance at device rates and irregular callback
+    // lengths; reference remains the original sample-wise envelope.
+    for(double rate:{32000.,44100.,48000.,96000.,192000.}){
+        auto p=std::make_unique<GainFx>(2.f);p->prepareToPlay(rate,64);
+        assert(p->getSampleRate()==rate&&p->getBlockSize()==64);
+        LiveChannelFxGraph::FxInstance fx(std::move(p),"zero","zero delay",64);
+        std::array<float,64> l{},r{};
+        fx.dryLeft.assign(64,-99.f);fx.dryRight.assign(64,-88.f);
         l.fill(.125f);r.fill(-.25f);
+        const auto before=heapCalls.load();
         fx.render(l.data(),r.data(),64);
+        assert(heapCalls.load()==before);
         for(int i=0;i<64;++i){
-            const auto g=reference.next();
-            assert(near(l[i],.25f*g.wet+.125f*g.dry));
-            assert(near(r[i],-.5f*g.wet-.25f*g.dry));
+            assert(l[i]==.25f&&r[i]==-.5f);
+            assert(fx.dryLeft[i]==-99.f&&fx.dryRight[i]==-88.f);
         }
+        armix::dsp::FxBypassEnvelope reference;reference.prepare(false,rate,0);
+        const auto block=[&](bool insert,bool rack,int n){
+            fx.bypassRequested.store(insert);
+            reference.request(insert||rack);
+            // Nonconstant source catches stale scratch and copy-length errors.
+            for(int i=0;i<n;++i){l[i]=.125f+i*.0005f;r[i]=-.25f+i*.0007f;}
+            fx.render(l.data(),r.data(),n,rack);
+            for(int i=0;i<n;++i){
+                const auto g=reference.next();
+                const float x=.125f+i*.0005f,y=-.25f+i*.0007f;
+                assert(near(l[i],2.f*x*g.wet+x*g.dry));
+                assert(near(r[i],2.f*y*g.wet+y*g.dry));
+            }
+            assert(heapCalls.load()==before);
+        };
+        // Reverse a fade before completion, then exercise both bypass
+        // sources independently and their OR, with exact dry/wet endpoints.
+        block(true,false,31);block(false,false,17);
+        for(const auto flags: {1,3,2,0}){
+            for(int i=0;i<80;++i)block((flags&1)!=0,(flags&2)!=0,i%2?31:64);
+            assert(!reference.transitioning());
+            assert(reference.fullyBypassed()==(flags!=0));
+            assert(fx.bypassFade.fullyBypassed()==(flags!=0));
+            l.fill(.125f);r.fill(-.25f);
+            fx.render(l.data(),r.data(),64,(flags&2)!=0);
+            for(int i=0;i<64;++i){
+                assert(l[i]==(flags?.125f:.25f)&&r[i]==(flags?-.25f:-.5f));
+            }
+            assert(heapCalls.load()==before);
+        }
+        fx.processor->setLatencySamples(8);
+        assert(fx.latencyChanged.load());
+        l.fill(.125f);r.fill(-.25f);fx.render(l.data(),r.data(),64);
+        for(int i=0;i<64;++i)assert(l[i]==.125f&&r[i]==-.25f);
+        assert(heapCalls.load()==before);
     }
-    fx.processor->setLatencySamples(8);
-    assert(fx.latencyChanged.load());
-    l.fill(.125f);r.fill(-.25f);fx.render(l.data(),r.data(),64);
-    for(int i=0;i<64;++i)assert(l[i]==.125f&&r[i]==-.25f);
 }
 static void verifyLatencyAlignedBypass() {
     // Real JUCE processing (not merely reporting a latency value): an impulse
