@@ -5,6 +5,35 @@
 using namespace armix::builtin_fx::anti_noiz;
 int main(){try{
     for(unsigned rate:{44100u,48000u,88200u,96000u}){
+        // Deterministic PSD policy test: colored noise dominates one band,
+        // while a quiet stereo leg and unrelated bands retain veto power.
+        ContextGuard<129> guard;const int hop=rate>48000?256:128;
+        guard.prepare(rate,hop);
+        ContextGuard<129>::Powers profile{};
+        for(auto& ch:profile)ch.fill(.001f);
+        for(int k=0;k<8;++k)profile[0][k]=1.f;
+        const std::array<float,2> cv{2.f,0.f};
+        const int frames=int(std::ceil(.5*rate/hop));
+        auto varying=profile;
+        for(int k=0;k<8;++k)varying[0][k]*=3.f;
+        for(int i=0;i<frames;++i){
+            const bool strict=guard.update(varying,profile,2,129,true,&cv);
+            offline::require(!strict,"strict tracking authority unchanged");
+        }
+        offline::require(guard.adaptiveIdle(),"variable noise residual hold");
+        auto onset=varying;onset[1][32]=.1f;
+        guard.update(onset,profile,2,129,true,&cv);
+        offline::require(!guard.adaptiveIdle(),"quiet stereo leg immediate veto");
+        for(int i=0;i<frames;++i)guard.update(varying,profile,2,129,true,&cv);
+        onset=varying;onset[0][40]=.1f;
+        guard.update(onset,profile,2,129,true,&cv);
+        offline::require(!guard.adaptiveIdle(),"unrelated band immediate veto");
+        for(int i=0;i<frames;++i)guard.update(varying,profile,2,129,true,&cv);
+        guard.update(varying,profile,2,129,true);
+        offline::require(!guard.adaptiveIdle(),"policy removal clears residual authority");
+        guard.reset();const std::array<float,2> stationary{.2f,.2f};
+        for(int i=0;i<frames;++i)guard.update(varying,profile,2,129,true,&stationary);
+        offline::require(!guard.adaptiveIdle(),"stationary profile not eligible");
         std::mt19937 gen(318);std::uniform_real_distribution<float> random(-.003f,.003f);
         offline::Audio learn{rate,2,std::vector<float>(std::size_t(rate)*6)};
         for(auto& x:learn.samples)x=random(gen);
