@@ -126,3 +126,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   add_test(NAME AntiNoizTonalRT COMMAND anti_noiz_tonal_rt_qualify)
   set_tests_properties(AntiNoizTonalRT PROPERTIES TIMEOUT 60)
 endif()
+
+anti_noiz_target(anti_noiz_wind_test tests/anti_noiz_wind_test.cpp)
+add_test(NAME AntiNoizWindFieldProxy COMMAND anti_noiz_wind_test)
+set_tests_properties(AntiNoizWindFieldProxy PROPERTIES TIMEOUT 90)
