@@ -2011,7 +2011,7 @@ private:
         auto reply=[safe,args,event](juce::String error){
             if(safe==nullptr)return;
             auto ack=std::make_unique<juce::DynamicObject>();
-            for(const auto* key:{"requestId","channelId","deviceEpoch","graphRevision","instanceId"})
+            for(const auto* key:{"requestId","channelId","deviceEpoch","graphRevision","instanceId","slot","workspaceToken"})
                 ack->setProperty(key,args.getProperty(key,{}));
             if(error.isEmpty()) {
                 safe->lastLogicalFxRequest_=args.getProperty("requestId",{}).toString();
@@ -5738,7 +5738,9 @@ private:
            action=="nativeBuiltinFxUserPreset") {
             const bool harmonyLegacy=action=="nativeHarmonyUserPreset";
             const auto fxRequest=armix::builtin_fx::NativeFxControlRequest::parse(
-                args,LiveDryRoutingLab::maxFxPerLane);
+                args,LiveDryRoutingLab::maxFxPerLane,
+                args.getProperty("catalogId",{}).toString()==
+                    armix::builtin_fx::AntiNoizProcessor::catalogIdentity);
             const auto& request=fxRequest.request;
             const auto operation=args.getProperty("operation",{}).toString();
             const auto& rawChannel=fxRequest.rawChannel;
@@ -6179,7 +6181,7 @@ private:
             using P=armix::builtin_fx::AntiNoizProcessor;
             using Binding=armix::builtin_fx::AntiNoizNativeBinding;
             const auto request=armix::builtin_fx::NativeFxControlRequest::parse(
-                args,LiveDryRoutingLab::maxFxPerLane);
+                args,LiveDryRoutingLab::maxFxPerLane,true);
             armix::session::StoredInsert stored;
             auto offline=request.valid&&request.unbound?
                 openLogicalBuiltinFx(args,stored,P::catalogIdentity):nullptr;

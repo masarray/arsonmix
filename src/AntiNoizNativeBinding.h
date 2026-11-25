@@ -26,7 +26,7 @@ struct AntiNoizNativeBinding final {
             default:return "Idle";
         }
     }
-    static bool parseSettings(const juce::var& v,Core::Settings& out) noexcept {
+    static bool parseSettings(const juce::var& v,Core::Settings& out) {
         if(!v.isObject()||v.getDynamicObject()->getProperties().size()!=5)return false;
         const auto mode=v.getProperty("mode",{}),enabled=v.getProperty("enabled",{});
         if(!mode.isString()||!enabled.isBool())return false;

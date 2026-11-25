@@ -212,7 +212,7 @@ function create(adapter){
   }else if(selectedId&&saved)dirty=!sameSettings(accepted,saved);
   paint();refresh();
  }
- backend()?.addEventListener?.("arMixBuiltinFxPresetResult",reply=>{
+ const subscription=backend()?.addEventListener?.("arMixBuiltinFxPresetResult",reply=>{
   if(!task||reply?.requestId!==task.requestId||
      reply.operation!==task.op||reply.catalogId!==catalogId)return;
   const c=bound();
@@ -278,8 +278,13 @@ function create(adapter){
    recall=null;notice("MY PRESET DSP ACK TIMEOUT");paint();
   }
  }
+ function dispose(){
+  task=null;recall=null;verified=false;closeAll();
+  if(subscription!==undefined&&subscription!==null)
+   backend()?.removeEventListener?.(subscription);
+ }
  return Object.freeze({reset,paint,refresh,selectUser,factoryIntent,
-                       onAccepted,rejectRecall,tick,close:closeAll});
+                       onAccepted,rejectRecall,tick,close:closeAll,dispose});
 }
 window.ArSonMixBuiltinFxPresetBar=Object.freeze({create});
 })();

@@ -4,11 +4,11 @@ const fields=['channelId','deviceEpoch','graphRevision','instanceId','slot'];
 export const sameIdentity=(a,b)=>!!a&&!!b&&fields.every(k=>a[k]===b[k])&&
  (a.workspaceToken||'')===(b.workspaceToken||'');
 let globalSequence=0;
-const nextRequest=()=>String(Date.now()*1000+(++globalSequence%1000));
+const nextRequest=()=>String(globalSequence=Math.max(globalSequence+1,Date.now()*1000));
 // One transport per open panel. The caller supplies the CURRENT accepted
 // graph identity; responses must match both it and the request's identity.
 export function nativeTransport(backend,context,clock=()=>Date.now()){
- let listener=()=>{},reading=null,writing=null,closed=false,lastId='',lastSerial='',seenAt=0,receipt=null;
+ let listener=()=>{},reading=null,writing=null,closed=false,lastId='',lastSerial='',seenAt=0,receipt=null,lastGoodAt=null,lastContext=null;
  const off=[];
  function attach(event,fn){const token=backend.addEventListener(event,fn);off.push(()=>backend.removeEventListener?.(token));}
  function unavailable(message){reading=null;writing=null;receipt=null;listener({kind:'unavailable',error:message});}
@@ -24,6 +24,7 @@ export function nativeTransport(backend,context,clock=()=>Date.now()){
   if(closed||!matches(m,reading))return;
   reading=null;
   if(m.status!=='ACCEPTED'||!valid(m.settings)){unavailable(m.errorCode);return;}
+  lastGoodAt=clock();lastContext=reading?.context||identity();
   const o=m.observation;
   let observation=null;
   if(o&&typeof o.serial==='string'&&/^\d+$/.test(o.serial)&&
@@ -52,8 +53,15 @@ export function nativeTransport(backend,context,clock=()=>Date.now()){
   if(closed)return;
   const c=identity();
   if(!c){unavailable('Native FX identity changed · reopen FX Rack');return;}
+  if(lastContext&&!sameIdentity(lastContext,c)&&!writing){
+   lastSerial='';lastGoodAt=null;lastContext=null;
+   unavailable('Native identity updated · reading DSP');
+  }
   if(writing&&!sameIdentity(c,writing.context)){unavailable('Native FX identity changed · reopen FX Rack');return;}
   const now=clock();
+  if(lastGoodAt!==null&&now-lastGoodAt>1500&&!writing){
+   lastGoodAt=null;unavailable('Native DSP readback unavailable');
+  }
   if(writing&&now-writing.started>4500){const job=writing;writing=null;receipt=null;listener({kind:'failure',id:job.id,error:'DSP ACK timeout · outcome unknown'});}
   if(reading&&sameIdentity(c,reading.context)&&now-reading.started<750)return;
   reading={requestId:'ansnap-'+nextRequest(),context:c,started:now};

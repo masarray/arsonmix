@@ -428,8 +428,8 @@ def stage(out: Path) -> dict:
                          for part in parts)
         style = json.dumps((an / "editor.css").read_text("utf-8"))
         (out / "assets" / "anti-noiz-native.js").write_text(
-            "(()=>{\\n'use strict';\\nconst antiNoizStyle=" + style +
-            ";\\n" + code + "\\n})();\\n", encoding="utf-8")
+            "(()=>{\n'use strict';\nconst antiNoizStyle=" + style +
+            ";\n" + code + "\n})();\n", encoding="utf-8")
         native = native_html(approved.decode("utf-8")).encode("utf-8")
         (out / "index.html").write_bytes(native)
         (out / "fx-window.html").write_text(floating_fx_html(),encoding="utf-8")

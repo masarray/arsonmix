@@ -15,7 +15,8 @@ struct NativeFxControlRequest final {
     std::uint64_t channel=0,epoch=0,revision=0;
     bool valid=false,unbound=false;
 
-    static NativeFxControlRequest parse(const juce::var& args,int maximumSlots) {
+    static NativeFxControlRequest parse(const juce::var& args,int maximumSlots,
+                                        bool allowLogicalZeroEpoch=false) {
         NativeFxControlRequest result;
         result.rawChannel=args.getProperty("channelId",{});
         result.rawEpoch=args.getProperty("deviceEpoch",{});
@@ -36,7 +37,9 @@ struct NativeFxControlRequest final {
         result.valid=args.isObject() && rawRequest.isString() && rawSlot.isInt() &&
             workspaceTyped && maximumSlots>0 &&
             armix::console::approvedNativeId(result.rawChannel,result.channel) &&
-            armix::console::approvedNativeId(result.rawEpoch,result.epoch) &&
+            (armix::console::approvedNativeId(result.rawEpoch,result.epoch) ||
+             (allowLogicalZeroEpoch&&result.unbound&&result.rawEpoch.isString()&&
+              result.rawEpoch.toString()=="0")) &&
             armix::console::approvedNativeId(result.rawRevision,result.revision) &&
             result.rawInstance.isString() &&
             result.rawInstance.toString().isNotEmpty() &&

@@ -21,7 +21,7 @@ import {nativeTransport} from './native_transport.mjs';
    instanceId:insert.id,slot:current.slot,...(n.logical?{workspaceToken:n.workspaceToken}:{})};
  }
  function close(){
-  clearInterval(timer);timer=null;presets?.close();presets?.reset();presets=null;
+  clearInterval(timer);timer=null;presets?.dispose();presets=null;
   view?.dispose();view=null;transport=null;current=null;latest=null;root.hidden=true;
  }
  function open(track,slot){

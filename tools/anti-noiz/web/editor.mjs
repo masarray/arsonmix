@@ -19,7 +19,7 @@ export function controller(transport,render){
   if(!valid(m.settings))return;
   if(m.kind==='snapshot'){
    observation=m.observation||null;
-   if(!pending){accepted={...m.settings};error='';}
+   if(!pending){if(!accepted)error='';accepted={...m.settings};}
   }else if(m.kind==='ack'&&pending&&m.id===pending.id&&typeof m.applied==='boolean'){
    accepted={...m.settings};pending=null;error=m.applied?'':(m.error||'DSP rejected request');
    if(m.applied)appliedId=m.requestId||'';
@@ -44,6 +44,8 @@ export function mount(root,transport,options={}){
  for(const [key,label,max,step,unit] of defs){const el=document.createElement('label');el.className='an-control';el.innerHTML=`<span class="an-dial" aria-hidden="true"><i></i></span><output>—</output><span>${label}</span><input type="range" min="0" max="${max}" step="${step}" aria-label="${label}">`;$('.an-knobs').append(el);controls.push({key,max,unit,el,input:el.querySelector('input'),out:el.querySelector('output')});}
  for(const mode of ['Auto','Voice','Singing','Music']){const b=document.createElement('button');b.textContent=mode;b.dataset.mode=mode;b.setAttribute('aria-pressed','false');$('.an-modes').append(b);}
  let current=null;const buttons=[...root.querySelectorAll('button:not([data-close])')];
+ const dragging=new Set();
+ const paintDial=(c,v)=>{c.out.textContent=c.unit==='%'?Math.round(v*100)+'%':v.toFixed(1)+' dB';c.el.style.setProperty('--angle',(-135+270*v/c.max)+'deg');};
  function meter(name,gain,live){
   const db=live&&Number.isFinite(gain)?Math.max(0,Math.min(48,-20*Math.log10(Math.max(1e-8,gain)))):null;
   $(name).textContent=db===null?'—':db.toFixed(1)+' dB';
@@ -52,8 +54,13 @@ export function mount(root,transport,options={}){
  const model=controller(transport,view=>{
   const {accepted,pending,error,observation}=view;current=accepted;
   for(const b of buttons)b.disabled=!accepted||pending;
-  for(const c of controls){c.input.disabled=!accepted||pending;if(accepted){const v=accepted[c.key];c.input.value=v;c.out.textContent=c.unit==='%'?Math.round(v*100)+'%':v.toFixed(1)+' dB';c.el.style.setProperty('--angle',(-135+270*v/c.max)+'deg');}else c.out.textContent='—';}
+  for(const c of controls){
+   c.input.disabled=!accepted||pending;
+   if(accepted&&!dragging.has(c.key)){const v=accepted[c.key];c.input.value=v;paintDial(c,v);}
+   else if(!accepted){dragging.delete(c.key);c.out.textContent='—';}
+  }
   const live=observation?.live===true, rack=observation?.rackBypassed===true;
+  if(!accepted){$('[data-power]').setAttribute('aria-pressed','false');for(const b of root.querySelectorAll('[data-mode]'))b.setAttribute('aria-pressed','false');}
   if(accepted){$('[data-power]').setAttribute('aria-pressed',String(accepted.enabled));$('[data-learn]').disabled=pending||!accepted.enabled||accepted.mode==='Music'||!live||rack||observation?.learning===true||observation?.effectiveMode==='Music';for(const b of root.querySelectorAll('[data-mode]'))b.setAttribute('aria-pressed',String(b.dataset.mode===accepted.mode));}
   $('[data-state]').textContent=accepted?(rack?'Rack bypassed':accepted.enabled?(live?observation.effectiveMode:accepted.mode)+' policy':'DSP bypassed'):'Offline';
   meter('[data-spectral]',observation?.spectralGain,live&&!rack&&accepted?.enabled);
@@ -62,7 +69,21 @@ export function mount(root,transport,options={}){
   $('[data-status]').textContent=pending?'Applying…':error;
   options.onState?.(view);
  });
- for(const c of controls)c.input.addEventListener('change',()=>{if(!model.submit('settings',{[c.key]:Number(c.input.value)})&&current)c.input.value=current[c.key];});
+ for(const c of controls){
+  c.input.addEventListener('pointerdown',()=>dragging.add(c.key));
+  c.input.addEventListener('input',()=>{if(dragging.has(c.key))paintDial(c,Number(c.input.value));});
+  const release=()=>{dragging.delete(c.key);if(current){c.input.value=current[c.key];paintDial(c,current[c.key]);}};
+  c.input.addEventListener('pointercancel',release);
+  c.input.addEventListener('blur',release);
+  c.input.addEventListener('change',()=>{
+   const value=Number(c.input.value);dragging.delete(c.key);
+   model.submit('settings',{[c.key]:value});
+   if(current){c.input.value=current[c.key];paintDial(c,current[c.key]);}
+  });
+  // No-motion release may not emit change. Delay until after the browser's
+  // native change event so its accepted request retains the selected value.
+  c.input.addEventListener('pointerup',()=>queueMicrotask(()=>{if(dragging.has(c.key))release();}));
+ }
  for(const b of root.querySelectorAll('[data-mode]'))b.onclick=()=>model.submit('settings',{mode:b.dataset.mode});
  $('[data-power]').onclick=()=>current&&model.submit('settings',{enabled:!current.enabled});$('[data-learn]').onclick=()=>model.submit('learn');
  $('[data-close]').onclick=()=>options.onClose?.();

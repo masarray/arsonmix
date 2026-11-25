@@ -24,6 +24,19 @@ int main(){
     check(!Binding::parseSettings(v,typed),"reject coerced parameter");
     v=Binding::settings(typed);v.getDynamicObject()->setProperty("mode","Unknown");
     check(!Binding::parseSettings(v,typed),"reject unknown mode");
+    auto envelope=std::make_unique<juce::DynamicObject>();
+    envelope->setProperty("channelId","9007199254740993");
+    envelope->setProperty("graphRevision","12");envelope->setProperty("deviceEpoch","0");
+    envelope->setProperty("instanceId","logical-fixture");
+    envelope->setProperty("slot",1);envelope->setProperty("requestId","an-5");
+    envelope->setProperty("workspaceToken","saved-mixer");
+    const juce::var request(envelope.release());
+    using Request=armix::builtin_fx::NativeFxControlRequest;
+    check(!Request::parse(request,8).valid,"existing strict epoch contract unchanged");
+    const auto logical=Request::parse(request,8,true);
+    check(logical.valid&&logical.unbound&&logical.epoch==0&&logical.sequence("an-")==5,"logical AN typed envelope");
+    request.getDynamicObject()->setProperty("workspaceToken","");
+    check(!Request::parse(request,8,true).valid,"epoch zero never live");
     for(double rate:{44100.,48000.,88200.,96000.}){
         auto p=entry->prepare(rate,128,nullptr,0);
         auto* fx=dynamic_cast<AntiNoizProcessor*>(p.get());
