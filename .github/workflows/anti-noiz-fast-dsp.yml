@@ -186,9 +186,9 @@ jobs:
         run: ctest --test-dir build-an-native -C Release --output-on-failure --verbose --no-tests=error
 
   web-contract:
-    name: Anti Noiz Web UX contract (Node, no Windows)
+    name: Anti Noiz Web UX contract (Node and focused Chromium)
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 7
     steps:
       - uses: actions/checkout@v4
         with:
@@ -200,3 +200,10 @@ jobs:
         run: |
           python3 scripts/build_approved_native_gui.py --out "$RUNNER_TEMP/anti-noiz-approved"
           node --check "$RUNNER_TEMP/anti-noiz-approved/assets/anti-noiz-native.js"
+      - name: Install focused browser fixture dependencies
+        run: |
+          python3 -m pip install playwright
+          python3 -m playwright install --with-deps chromium
+      - name: Actual approved inline editor interaction gate (mock native IPC only)
+        run: python3 tests/anti_noiz_approved_chromium_test.py "$RUNNER_TEMP/anti-noiz-approved"
+

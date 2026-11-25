@@ -4,3 +4,6 @@ Control: exact ChannelId/slot/instance/device epoch/graph revision/workspace, st
 
 ## First integration CI correction
 Initial cbb1a45 Node transport and original contract PASS; approved bundle generation PASS, generated JS syntax failed because literal backslash-n was emitted at wrapper boundary. Corrected wrapper newline encoding, added epoch-zero logical-only opt-in while preserving default live parser and checking actual workspace target, echo slot/workspace in detached-save receipt. Dispose shared preset bar subscriptions on Anti Noiz close (backward-compatible), avoid overwriting active range drag from meter polling, fail closed on lost readback, keep error until subsequent user intent. No DSP algorithm change. Test on new exact head; original first candidate not qualified.
+
+## Focused operator fixture
+Add a real Chromium test of the generated approved native bundle with a deterministic native IPC stub, not browser PCM or hardware proof. Verify host-catalog picker admission, ACK-before-insert prohibition, actual inline overlay, accepted-state/foreign ACK, real telemetry projection, Learn start and terminal result, shared preset save intent, repeated close/reopen subscription cleanup. The existing Windows FxInstance fixture separately qualifies actual JUCE state/PCM. This is test/workflow-only on top of d3dca24.
