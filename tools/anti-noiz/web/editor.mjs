@@ -51,21 +51,34 @@ export function mount(root,transport,options={}){
   $(name).textContent=db===null?'—':db.toFixed(1)+' dB';
   $(name.slice(0,-1)+'-bar]').style.width=db===null?'0%':(db/48*100)+'%';
  }
+ let lastView=null;
+ function paintHost(view){
+  const {accepted,pending,observation}=view;
+  const power=options.hostPower?.()||'ON';
+  const live=observation?.live===true;
+  const hostOff=power!=='ON'||observation?.rackBypassed===true;
+  const unavailable=power==='UNAVAILABLE';
+  $('[data-learn]').disabled=!accepted||pending||!accepted.enabled||accepted.mode==='Music'||!live||hostOff||observation?.learning===true||observation?.effectiveMode==='Music';
+  const label={GLOBAL:'Global FX bypassed',RACK:'Rack bypassed',SLOT:'Slot bypassed',LOGICAL:'Offline settings',UNAVAILABLE:'FX unavailable'}[power];
+  $('[data-state]').textContent=label||(accepted?(observation?.rackBypassed?'Rack bypassed':accepted.enabled?(live?observation.effectiveMode:accepted.mode)+' policy':'DSP bypassed'):'Offline');
+  meter('[data-spectral]',observation?.spectralGain,live&&!hostOff&&accepted?.enabled);
+  meter('[data-residual]',observation?.residualGain,live&&!hostOff&&accepted?.enabled);
+  $('[data-observation]').textContent=live&&!unavailable?`${observation.profile?'Profile ready':'No learned profile'} · ${observation.learnStatus} · ${observation.latency} samples`:'No live telemetry · Learn requires active PCM';
+  for(const b of buttons)if(!b.hasAttribute('data-learn'))b.disabled=!accepted||pending||unavailable;
+  for(const c of controls)c.input.disabled=!accepted||pending||unavailable;
+ }
  const model=controller(transport,view=>{
-  const {accepted,pending,error,observation}=view;current=accepted;
+  lastView=view;
+  const {accepted,pending,error}=view;current=accepted;
   for(const b of buttons)b.disabled=!accepted||pending;
   for(const c of controls){
    c.input.disabled=!accepted||pending;
    if(accepted&&!dragging.has(c.key)){const v=accepted[c.key];c.input.value=v;paintDial(c,v);}
    else if(!accepted){dragging.delete(c.key);c.out.textContent='—';}
   }
-  const live=observation?.live===true, rack=observation?.rackBypassed===true;
   if(!accepted){$('[data-power]').setAttribute('aria-pressed','false');for(const b of root.querySelectorAll('[data-mode]'))b.setAttribute('aria-pressed','false');}
-  if(accepted){$('[data-power]').setAttribute('aria-pressed',String(accepted.enabled));$('[data-learn]').disabled=pending||!accepted.enabled||accepted.mode==='Music'||!live||rack||observation?.learning===true||observation?.effectiveMode==='Music';for(const b of root.querySelectorAll('[data-mode]'))b.setAttribute('aria-pressed',String(b.dataset.mode===accepted.mode));}
-  $('[data-state]').textContent=accepted?(rack?'Rack bypassed':accepted.enabled?(live?observation.effectiveMode:accepted.mode)+' policy':'DSP bypassed'):'Offline';
-  meter('[data-spectral]',observation?.spectralGain,live&&!rack&&accepted?.enabled);
-  meter('[data-residual]',observation?.residualGain,live&&!rack&&accepted?.enabled);
-  $('[data-observation]').textContent=live?`${observation.profile?'Profile ready':'No learned profile'} · ${observation.learnStatus} · ${observation.latency} samples`:'No live telemetry · Learn requires active PCM';
+  if(accepted){$('[data-power]').setAttribute('aria-pressed',String(accepted.enabled));for(const b of root.querySelectorAll('[data-mode]'))b.setAttribute('aria-pressed',String(b.dataset.mode===accepted.mode));}
+  paintHost(view);
   $('[data-status]').textContent=pending?'Applying…':error;
   options.onState?.(view);
  });
@@ -85,8 +98,8 @@ export function mount(root,transport,options={}){
   c.input.addEventListener('pointerup',()=>queueMicrotask(()=>{if(dragging.has(c.key))release();}));
  }
  for(const b of root.querySelectorAll('[data-mode]'))b.onclick=()=>model.submit('settings',{mode:b.dataset.mode});
- $('[data-power]').onclick=()=>current&&model.submit('settings',{enabled:!current.enabled});$('[data-learn]').onclick=()=>model.submit('learn');
+ $('[data-power]').onclick=()=>current&&model.submit('settings',{enabled:!current.enabled});$('[data-learn]').onclick=()=>{if((!options.hostPower||options.hostPower()==='ON')&&!$('[data-learn]').disabled)model.submit('learn');};
  $('[data-close]').onclick=()=>options.onClose?.();
  $('[data-close]').hidden=!options.onClose;
- return {model,dispose(){model.dispose();root.replaceChildren();}};
+ return {model,refreshHostPower(){if(lastView)paintHost(lastView);},dispose(){model.dispose();root.replaceChildren();}};
 }

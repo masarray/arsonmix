@@ -67,6 +67,9 @@ def main():
         preset_event="arMixBuiltinFxPresetResult"
         baseline_preset_count=count(preset_event)
         state=snapshot()
+        # Global staging requires an explicit host master power readback.
+        # Missing is UNAVAILABLE, never inferred as false.
+        state["globalFxBypassed"]=False
         state["graph"]["capabilities"]["supportedOps"]+=["LOAD_INSERT","MOVE_INSERT","REMOVE_INSERT"]
         emit(page,"arMixConsoleSnapshot",state)
         # Anti Noiz only appears from actual native catalog projection.
@@ -100,6 +103,27 @@ def main():
         expect(root.locator('[data-spectral]')).to_have_text("6.0 dB")
         expect(root.locator('[data-residual]')).to_have_text("12.0 dB")
         expect(root.locator('[data-learn]')).to_be_enabled()
+        assert "is-on" not in (root.locator(".armix-native-fx-bypass").get_attribute("class") or "").split()
+        # Current host power overrides stale DSP telemetry without mutating
+        # settings, even between two 20 Hz native observations.
+        for kind,label in (("GLOBAL","Global FX bypassed"),("RACK","Rack bypassed"),("SLOT","Slot bypassed")):
+            if kind=="GLOBAL": state["globalFxBypassed"]=True
+            elif kind=="RACK": channel["fxRackBypassed"]=True
+            else: channel["inserts"][0]["bypassed"]=True
+            state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
+            emit(page,"arMixConsoleSnapshot",state)
+            expect(root.locator('[data-state]')).to_have_text(label)
+            expect(root.locator('[data-learn]')).to_be_disabled()
+            expect(root.locator('[data-spectral]')).to_have_text("—")
+            expect(root.locator('[data-residual]')).to_have_text("—")
+            state["globalFxBypassed"]=False
+            channel["fxRackBypassed"]=False
+            channel["inserts"][0]["bypassed"]=False
+            state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
+            emit(page,"arMixConsoleSnapshot",state)
+            page.wait_for_timeout(210)
+            readback(page,DEFAULTS,{**OBS,"serial":str(100+len(label))})
+            expect(root.locator('[data-learn]')).to_be_enabled()
         listing=last_action(page,"nativeBuiltinFxUserPreset")
         assert listing["operation"]=="list" and listing["catalogId"]==ID
         respond(page,listing,preset_event,status="OK",operation="list",catalogId=ID,items=[])
