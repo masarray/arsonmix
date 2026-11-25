@@ -40,9 +40,10 @@ public:
         if(!(farEarLowpassAlpha_>0.f&&farEarLowpassAlpha_<1.f))return false;
         farEarLowpassState_.fill(0.f);
         for(auto& ring:farEarHistory_)ring.fill(0.f);
-        cursor_=0;
+        cursor_=0;fastInactive_=true;
         return true;
     }
+    void setInactiveFastForOfflineTests(bool enabled) noexcept {fastInactive_=enabled;}
     Output place(int singer,float source,float firstReflection,
                  float secondReflection,float mixL,float mixR,
                  float space) noexcept {
@@ -55,6 +56,10 @@ public:
         // original pitch-synchronous PCM unchanged. Reuse the old fixed ring:
         // no extra audio buffer, allocation or reported latency.
         ring[cursor_]=filtered;
+        // Preserve the exact filter and ring even for inactive roles.
+        // Zero gain makes every direct, early and room output zero;
+        // no division, pan geometry or history read is needed.
+        if(fastInactive_&&mixL==0.f&&mixR==0.f)return {};
         const float delayed=ring[(cursor_+earCapacity-farEarDelay_)&(earCapacity-1)];
         const float sum=std::abs(mixL)+std::abs(mixR);
         const float direction=sum>1.e-9f?(mixR-mixL)/sum:0.f;
@@ -89,5 +94,6 @@ private:
     std::array<float,voices> farEarLowpassState_{};
     float farEarLowpassAlpha_=0.f;
     std::size_t cursor_=0,farEarDelay_=0;
+    bool fastInactive_=true;
 };
 } // namespace armix::harmony

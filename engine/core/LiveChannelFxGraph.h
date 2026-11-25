@@ -5,6 +5,7 @@
 #include "StereoLatencyDelay.h"
 #include "RealtimeNativeFxControl.h"
 #include "ImmerSIBIdlePolicy.h"
+#include "FxTimingSampler.h"
 #include <chrono>
 #include <stdexcept>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -54,6 +55,7 @@ public:
         std::atomic_flag processing=ATOMIC_FLAG_INIT;
         std::atomic<unsigned> contention{0};
         std::atomic<unsigned> exceptions{0};
+        armix::rt::FxTimingSampler processTiming;
         // Lease-local: survives MOVE and accepted graph revisions, not a new DSP owner.
         bool immerseIdleAdmitted=false; // CONTROL only, exact trusted native identity
         armix::dsp::ImmerSIBIdlePolicy immerseIdle;
@@ -98,6 +100,7 @@ public:
             }
             if(!dryDelay.prepare(latencySamples))throw std::invalid_argument("VST3 latency exceeds prepared delay budget");
             midi.ensureSize(1024);
+            processTiming.seed(static_cast<std::uint32_t>(instanceId.hashCode()));
             bypassFade.prepare(false,processor?processor->getSampleRate():48000.0,0);
             if(processor){
                 nativeControl=dynamic_cast<RealtimeNativeFxControl*>(processor.get());
@@ -233,6 +236,7 @@ public:
                 return;
             }
             dspSleeping.store(false,std::memory_order_relaxed);
+            const bool sampled=processTiming.shouldSample();
             const auto dspStart=std::chrono::steady_clock::now();
             bool dspOk=true;
             try {
@@ -247,8 +251,15 @@ public:
                 juce::FloatVectorOperations::clear(left,samples);
                 juce::FloatVectorOperations::clear(right,samples);
             }
-            const auto elapsed=std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now()-dspStart).count();
+            // Reuse the existing two clock reads for both counters; no
+            // extra clock query and no change to ImmerSIB idle admission.
+            const auto duration=std::chrono::steady_clock::now()-dspStart;
+            const auto elapsed=std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
+            if(sampled){
+                const auto ns=std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
+                processTiming.record(static_cast<std::uint64_t>(std::max<std::int64_t>(0,ns)),
+                    static_cast<unsigned>(samples),fullyBypassed);
+            }
             const auto us=static_cast<std::uint64_t>(std::max<std::int64_t>(0,elapsed));
             dspLastUs.store(us,std::memory_order_relaxed);
             // Single AUDIO writer under the existing lease gate; no CAS spin.

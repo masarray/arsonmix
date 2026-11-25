@@ -1103,30 +1103,96 @@ static void verifyOfflineLogicalSessionAndFile() {
 }
 
 static void verifyLegacyHarmoniceSessionName(){
+    using Harmony=armix::builtin_fx::ChannelHarmonyProcessor;
     auto saved=makeSession();
-    const juce::String id=
-        armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity;
+    const juce::String id=Harmony::catalogIdentity;
     auto rows=saved.roster.channels();
     rows.front().insertCatalogIds.push_back(id.toStdString());
     assert(saved.roster.restoreExact(saved.acceptedRevision,rows));
-    armix::builtin_fx::ChannelHarmonyProcessor processor;
-    processor.prepareToPlay(48000.,256);
-    assert(processor.isReady());
-    BinaryState state;
-    processor.getStateInformation(state.bytes);
-    state.sha256=juce::SHA256(state.bytes).toHexString();
-    saved.inserts.push_back({{1},0,id,{},state.sha256,
-                             "ArSon Harmony",0,false});
-    juce::AudioPluginFormatManager formats;
-    std::shared_ptr<DynamicChannelFxLeaseBank> restored;
-    const auto error=NativeMixerSessionFxRestore::prepare(
-        saved,std::vector<BinaryState>{state},formats,48000.,256,1,1,restored);
-    assert(error.isEmpty() && restored);
-    const auto* lease=restored->ownerForControl({1},0);
-    assert(lease && *lease && (*lease)->name=="Harmonice");
-    assert((*lease)->catalogId==id);
-    assert(saved.inserts.front().name=="ArSon Harmony");
-    assert((*lease)->processor->getLatencySamples()==1536);
+    // Create the actual historic wire layouts, not merely today's
+    // state under yesterday's label. Latency belongs to the new device
+    // lease, never to saved AHM1 bytes or a hard-coded 48k old delay.
+    for(int version:{1,2,3}){
+        BinaryState state;
+        {
+            juce::MemoryOutputStream stream(state.bytes,false);
+            stream.writeInt(0x41484d31);stream.writeInt(version);
+            stream.writeInt(7);stream.writeInt(1);
+            stream.writeInt(version==3?2:5);stream.writeBool(false);
+            stream.writeFloat(0.f);stream.writeFloat(.6f);
+            stream.writeFloat(.75f);stream.writeFloat(0.f);
+            if(version>=2){stream.writeInt(1);stream.writeInt64(2);}
+            if(version==3)stream.writeInt(1);
+        }
+        const int bytes=version==1?37:version==2?49:53;
+        assert(state.bytes.getSize()==static_cast<std::size_t>(bytes));
+        state.sha256=juce::SHA256(state.bytes).toHexString();
+        saved.inserts.clear();
+        saved.inserts.push_back({{1},0,id,{},state.sha256,
+                                 "ArSon Harmony",0,false});
+        // Reject every truncated prefix and trailing byte transactionally,
+        // before publication. Noncanonical bool bytes are corrupt too.
+        {
+            auto validator=std::make_unique<Harmony>();
+            validator->prepareToPlay(48000.,64);
+            assert(validator->restoreUnpublishedState(state.bytes.getData(),bytes));
+            juce::MemoryBlock accepted;validator->getStateInformation(accepted);
+            for(int n=1;n<bytes;++n)
+                assert(!validator->restoreUnpublishedState(state.bytes.getData(),n));
+            auto extra=state.bytes;const char zero=0;
+            extra.append(&zero,1);
+            assert(!validator->restoreUnpublishedState(extra.getData(),bytes+1));
+            auto badBool=state.bytes;
+            static_cast<unsigned char*>(badBool.getData())[20]=2;
+            assert(!validator->restoreUnpublishedState(badBool.getData(),bytes));
+            juce::MemoryBlock after;validator->getStateInformation(after);
+            assert(accepted==after);
+        }
+        juce::AudioPluginFormatManager formats;
+        for(double rate:{32000.,44100.,48000.,96000.,192000.}){
+            constexpr int quantum=64;
+            const int latency=static_cast<int>(std::lround(rate*.024));
+            std::shared_ptr<DynamicChannelFxLeaseBank> restored;
+            const auto error=NativeMixerSessionFxRestore::prepare(
+                saved,std::vector<BinaryState>{state},formats,rate,quantum,
+                1,1,restored);
+            assert(error.isEmpty()&&restored);
+            const auto* lease=restored->ownerForControl({1},0);
+            assert(lease&&*lease&&(*lease)->name=="Harmonice");
+            assert((*lease)->catalogId==id);
+            assert(saved.inserts.front().name=="ArSon Harmony");
+            auto* p=dynamic_cast<Harmony*>((*lease)->processor.get());
+            assert(p&&p->isReady()&&p->getSampleRate()==rate);
+            assert(p->getLatencySamples()==latency&&(*lease)->latencySamples==latency);
+            assert((*lease)->continuousBypassProcessing);
+            const auto s=p->acceptedSettings();
+            assert(s.key==7&&s.scale==1&&s.voices==(version==3?2:5));
+            assert(s.voiceMode==(version==3?1:0)&&s.wet==0.f&&!s.correction);
+            assert(p->musicSourceChannel()==(version>=2?2u:0u));
+            assert(p->effectiveKeyCode()==19);
+            assert(!p->restoreUnpublishedState(state.bytes.getData(),bytes));
+            // Exercise the actual JUCE lease at Wet=0: both enabled and
+            // rack-bypassed paths must emit exactly the new delayed impulse.
+            // The two impulses are separated by enough time to drain rings.
+            for(bool bypass:{false,true}){
+                const int length=latency+quantum*2;
+                for(int at=0;at<length;at+=quantum){
+                    std::array<float,quantum> l{},r{};
+                    const int count=std::min(quantum,length-at);
+                    if(at==0){l[0]=.5f;r[0]=-.25f;}
+                    (*lease)->render(l.data(),r.data(),count,bypass);
+                    for(int i=0;i<count;++i){
+                        const bool hit=at+i==latency;
+                        assert(std::abs(l[i]-(hit?.5f:0.f))<1.e-6f);
+                        assert(std::abs(r[i]-(hit?-.25f:0.f))<1.e-6f);
+                    }
+                }
+            }
+            assert(!(*lease)->latencyChanged.load(std::memory_order_acquire));
+            std::cout<<"H11_RESTORE version="<<version<<" rate="<<rate
+                     <<" latency="<<latency<<" enabled/bypass PCM PASS\n";
+        }
+    }
 }
 static void verifyLogicalControlTransactions() {
     juce::ScopedJuceInitialiser_GUI juce;

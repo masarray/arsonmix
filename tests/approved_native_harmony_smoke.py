@@ -33,7 +33,7 @@ def readback(page,state,values,key,scale,detected=(-1,-1),applied=None,
         "channelId":SOURCE,"instanceId":instance,"status":"ACCEPTED",
         "deviceEpoch":state["device"]["epoch"],
         "graphRevision":state["graph"]["revision"],
-        "schemaVersion":3,"sampleRate":48000,"latencySamples":1536,
+        "schemaVersion":3,"sampleRate":48000,"latencySamples":1152,
         "settings":copy.deepcopy(values),"observedNote":observed,
         "guideDetectedKey":detected[0],"guideDetectedScale":detected[1],
         "guideConfidence":0.75 if detected[0]>=0 else 0.0,
@@ -449,6 +449,26 @@ def main():
                 assert abs(arc2["sweep"]-202.5)<.0001,arc2
                 assert abs(arc2["turn"]-67.5)<.0001,arc2
                 assert page.locator("#mxHKeyReadout").inner_text()=="G"
+                # Relative drag: press at the knob center must not jump,
+                # move smoothly, release flushes newest intent even with ACK pending.
+                bounds=dial.bounding_box()
+                x=bounds["x"]+bounds["width"]/2
+                y=bounds["y"]+bounds["height"]/2
+                page.mouse.move(x,y)
+                page.mouse.down()
+                assert abs(dial_visual()["sweep"]-202.5)<.001
+                page.mouse.move(x,y-18,steps=6)
+                page.mouse.up()
+                drag_edit=last_action(page,"nativeHarmonySetSettings")
+                # First frame may be in flight; latest draft is rendered immediately.
+                assert abs(dial_visual()["sweep"]-229.5)<.5
+                first_drag=drag_edit["settings"]
+                apply_edit(page,state,first_drag,7,0)
+                final_drag=last_action(page,"nativeHarmonySetSettings")["settings"]
+                if first_drag!=final_drag:
+                    apply_edit(page,state,final_drag,7,0)
+                assert abs(final_drag["wet"]-.85)<.002,final_drag
+                changed=final_drag
                 # Tactile Major/Minor: active versus idle surfaces must occupy
                 # exactly the same box and have the same outer shadow offset.
                 major=page.locator('.mx-harm-scale [data-scale="0"]')

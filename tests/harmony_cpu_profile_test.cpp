@@ -17,9 +17,11 @@ using Clock=std::chrono::steady_clock;
 constexpr int warmup=256;
 constexpr int measured=512;
 void profile(double rate,int block,int voices,bool musicGuide=false,
-             bool busyHighVibrato=false){
+             bool busyHighVibrato=false,bool articulation=true,bool fastCorrelation=true){
     auto engine=std::make_unique<armix::harmony::Engine>();
     if(!engine->prepare(rate)){std::cerr<<"Harmony prepare failed\n";std::exit(2);}
+    if(!engine->setArticulationForOfflineReference(articulation)||
+       !engine->setFastCorrelationForOfflineReference(fastCorrelation))std::exit(2);
     armix::harmony::Settings settings;
     settings.voices=voices;settings.wet=0.75f;
     // Compare former maximal lead-correction mode and real operator default
@@ -77,6 +79,8 @@ void profile(double rate,int block,int voices,bool musicGuide=false,
             guide.process(musicL.data(),musicR.data(),block);
             const auto key=guide.estimate();
             engine->setGuideKey(key.valid()?key.key:-1,key.valid()?key.scale:-1);
+            const auto chord=guide.chordEstimate();
+            engine->setGuideChord(chord.root,chord.quality);
         }
         engine->process(l.data(),r.data(),block);
         const auto finished=Clock::now();
@@ -99,6 +103,8 @@ void profile(double rate,int block,int voices,bool musicGuide=false,
              <<" guide="<<(musicGuide?"Music ChannelId":"Manual")
              <<" scene="<<(busyHighVibrato?"HIGH_880Hz_72c_5.2Hz_busy_chorus":
                                           "STEADY_220Hz")
+             <<" articulation="<<(articulation?"H9":"H8_REFERENCE")
+             <<" correlation="<<(fastCorrelation?"H10":"H9_ORDER")
              <<" pitch_tune="<<(settings.correction?"ON":"OFF")
              <<" p50_us="<<elapsed[measured/2]
              <<" p95_us="<<elapsed[(measured*95)/100]
@@ -127,5 +133,7 @@ int main(){
     // from ASIO hardware / full mix latency qualification.
     for(double rate:{48000.,96000.})
       for(int block:{64,128})
-        profile(rate,block,5,false,true);
+        {profile(rate,block,5,false,true,false,false);
+         profile(rate,block,5,false,true,true,false);
+         profile(rate,block,5,false,true,true,true);}
 }

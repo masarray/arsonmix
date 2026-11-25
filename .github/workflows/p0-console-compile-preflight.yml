@@ -9,6 +9,7 @@ on:
       - staging/io-reverb-integrated-20261125
       - staging/io-reverb-integrated-p10-p11-20261125
       - staging/io-reverb-integrated-p12-20261125
+      - staging/io-reverb-integrated-global-20261125
     # These are explicit qualification branches, not general development.
     # Every new HEAD needs its own evidence, even a UI/workflow-only commit.
 permissions:
@@ -32,7 +33,7 @@ jobs:
           path: third_party/JUCE
           persist-credentials: false
       - name: P11 offline reliability profile and timing contracts
-        if: github.ref_name == 'staging/io-reverb-integrated-p10-p11-20261125' || github.ref_name == 'staging/io-reverb-integrated-p12-20261125'
+        if: github.ref_name == 'staging/io-reverb-integrated-p10-p11-20261125' || (github.ref_name == 'staging/io-reverb-integrated-p12-20261125' || github.ref_name == 'staging/io-reverb-integrated-global-20261125')
         run: node --test tests/smart_audio_diagnostic_contract_test.mjs
       - name: Pinned WebView2 SDK
         shell: pwsh
@@ -61,7 +62,7 @@ jobs:
           # Test the actual JUCE disk store with assertions enabled before
           # compiling the production translation unit. This is not FAT or a
           # protected nativeFull gate and does not publish an executable.
-          if ($env:GITHUB_REF_NAME -in @('feature/io-studio-workflow-20261125','feature/io-atomic-output-20261125','staging/io-reverb-integrated-20261125','staging/io-reverb-integrated-p10-p11-20261125','staging/io-reverb-integrated-p12-20261125')) {
+          if ($env:GITHUB_REF_NAME -in @('feature/io-studio-workflow-20261125','feature/io-atomic-output-20261125','staging/io-reverb-integrated-20261125','staging/io-reverb-integrated-p10-p11-20261125','staging/io-reverb-integrated-p12-20261125','staging/io-reverb-integrated-global-20261125')) {
             cmake --build build --parallel 2 --target ARMixChannelAppearanceTests
             if ($LASTEXITCODE -ne 0) { throw 'AUDIO_IO_NATIVE_STORE_COMPILE_FAILED' }
             $catalog = (& ctest --test-dir build --show-only=json-v1 | Out-String | ConvertFrom-Json)
@@ -123,7 +124,7 @@ jobs:
       # Pages, tag, protected nativeFull or main-only FAT dispatcher changes.
       # The previous full build must succeed; never package an object-only run.
       - name: P12 exact-source Windows installer qualification
-        if: github.ref_name == 'staging/io-reverb-integrated-p12-20261125'
+        if: (github.ref_name == 'staging/io-reverb-integrated-p12-20261125' || github.ref_name == 'staging/io-reverb-integrated-global-20261125')
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -170,7 +171,7 @@ jobs:
             ConvertTo-Json -Depth 5 | Set-Content -LiteralPath 'p12-internal/P12_QUALIFICATION.json' -Encoding utf8
           Write-Host "P12_INTERNAL_INSTALLER_SOFTWARE_FAT_PASS exact=$actual"
       - name: Upload exact-SHA internal installer (never a public release)
-        if: github.ref_name == 'staging/io-reverb-integrated-p12-20261125'
+        if: (github.ref_name == 'staging/io-reverb-integrated-p12-20261125' || github.ref_name == 'staging/io-reverb-integrated-global-20261125')
         uses: actions/upload-artifact@v4
         with:
           name: ArSonMix-P12-Internal-Installer-${{ github.sha }}

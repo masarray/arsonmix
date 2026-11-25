@@ -10,6 +10,9 @@ on:
       - 'engine/builtin_fx/ChannelHarmonyProcessor.h'
       - 'tests/harmony*.cpp'
       - 'tools/harmony_offline_ab.cpp'
+      - 'scripts/harmony_vocalset_qualification.py'
+      - 'scripts/vocal_harmony_ci_scope.mjs'
+      - '.github/workflows/harmony-fast-dsp.yml'
       - 'site/preview-v2/assets/mixer-native-harmony.js'
       - 'tests/native_harmony_assembly_test.py'
       - 'tests/approved_native_harmony_smoke.py'
@@ -90,6 +93,18 @@ jobs:
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra tools/harmony_offline_ab.cpp -o /tmp/arson-harmony-ab
           /tmp/arson-harmony-ab --self-test
+      - name: Pinned real-singer qualification (VocalSet sustained vowels)
+        run: |
+          python3 scripts/harmony_vocalset_qualification.py --self-test
+          node --input-type=module -e 'import assert from "node:assert/strict"; import {classifyVocalHarmonyChanges as c} from "./scripts/vocal_harmony_ci_scope.mjs"; for(const p of ["scripts/harmony_vocalset_qualification.py","scripts/vocal_harmony_ci_scope.mjs",".github/workflows/harmony-fast-dsp.yml"]) assert.deepEqual(c([p]),{dsp:true,ui:true}); assert.deepEqual(c(["CMakeLists.txt","src/Main.cpp"]),{dsp:false,ui:false});'
+          python3 scripts/harmony_vocalset_qualification.py /tmp/arson-harmony-ab "$RUNNER_TEMP/harmony-vocalset" "$(git rev-parse HEAD)"
+      - name: Publish exact-source qualification evidence (no PCM)
+        uses: actions/upload-artifact@v4
+        with:
+          name: harmonice-qualification-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/harmony-vocalset/evidence/
+          if-no-files-found: error
+          retention-days: 30
   harmony-ui:
     name: Vocal Harmony editor syntax and approved UI contract (no Chromium)
     needs: scope

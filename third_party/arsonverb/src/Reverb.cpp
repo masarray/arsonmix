@@ -225,7 +225,8 @@ struct Engine::State {
     detail::PresenceDucker presence;
     detail::AlbumLateTone albumTone;
     detail::StudioWetTone studioTone;
-    float studioBlend=0.f;
+    float studioBlend=0.f,singerBlend=0.f;
+    std::size_t nearL[3]{},nearR[3]{};
     LowPass albumBass[kLines];
     float albumBlend=0.f,signatureBlend=0.f,albumStep=0.f,albumBassCoeff=0.f;
     float albumLoss=0.f,targetAlbumLoss=0.f;
@@ -320,6 +321,13 @@ void Engine::prepare(double sampleRate, bool musicalReturn) {
         return static_cast<std::size_t>(std::ceil(ms * 0.001f * fs)) + 8;
     };
     for (auto& p : s.pre) p.prepare(forMs(252.0f));
+    // Independent, deliberately quiet near support from existing RAW input
+    // history. Fixed integer taps prepared on CONTROL; no second tank.
+    constexpr float nearMs[3]{7.3f,13.1f,21.7f};
+    for(int t=0;t<3;++t) {
+        s.nearL[t]=static_cast<std::size_t>(std::lround(nearMs[t]*s.millisecondsToSamples));
+        s.nearR[t]=static_cast<std::size_t>(std::lround((nearMs[t]+.35f+.17f*t)*s.millisecondsToSamples));
+    }
     for (auto& e : s.early) e.prepare(forMs(132.0f));
     for(int t=0;t<6;++t) {
         const float left=kEarlyMs[t]*s.millisecondsToSamples;
@@ -410,7 +418,8 @@ void Engine::reset() noexcept {
     const auto profile=s.musicalReturn?voicing_.load(std::memory_order_relaxed):0u;
     s.albumBlend=profile!=0u?1.f:0.f;
     s.signatureBlend=profile>=2u?1.f:0.f;
-    s.studioBlend=profile==4u?1.f:0.f;
+    s.studioBlend=profile>=4u?1.f:0.f;
+    s.singerBlend=profile==5u?1.f:0.f;
     s.coefficientCooldownSamples=0;
     // Transport resets must not re-open an old half-finished tap transition.
     s.preTapCurrent = s.preTapNext;
@@ -422,7 +431,7 @@ void Engine::setAlbumReady(bool enabled) noexcept {
     setVoicing(enabled?1u:0u);
 }
 void Engine::setVoicing(unsigned profile) noexcept {
-    if(profile<=4u)voicing_.store(profile,std::memory_order_relaxed);
+    if(profile<=5u)voicing_.store(profile,std::memory_order_relaxed);
 }
 void Engine::setAlgorithm(Algorithm value) noexcept {
     const auto v=static_cast<unsigned>(value);
@@ -475,8 +484,9 @@ void Engine::process(const float* inputLeft, const float* inputRight,
     }
     const float albumTarget=profile!=0u?1.f:0.f;
     const float signatureTarget=profile>=2u?1.f:0.f;
-    const float studioTarget=profile==4u?1.f:0.f;
-    bool profileMoving=s.albumBlend!=albumTarget||s.signatureBlend!=signatureTarget||s.studioBlend!=studioTarget;
+    const float studioTarget=profile>=4u?1.f:0.f;
+    const float singerTarget=profile==5u?1.f:0.f;
+    bool profileMoving=s.albumBlend!=albumTarget||s.signatureBlend!=signatureTarget||s.studioBlend!=studioTarget||s.singerBlend!=singerTarget;
     const unsigned requested = algorithm_.load(std::memory_order_relaxed);
     if (requested != s.toAlgorithm && (profile<2u || s.algorithmBlend>=1.f)) {
         s.fromAlgorithm = (s.algorithmBlend < 0.5f)
@@ -610,13 +620,14 @@ void Engine::process(const float* inputLeft, const float* inputRight,
             s.signatureBlend=step(s.signatureBlend,signatureTarget);
             const float previousStudio=s.studioBlend;
             s.studioBlend=step(s.studioBlend,studioTarget);
+            s.singerBlend=step(s.singerBlend,singerTarget);
             if(previousStudio>0.f&&s.studioBlend==0.f)s.studioTone.reset();
             if(previousAlbum>0.f&&s.albumBlend==0.f) {
                 s.albumTone.reset();for(auto& f:s.albumBass)f.reset();
             } else if(previousSignature>0.f&&s.signatureBlend==0.f) {
                 for(auto& memory:s.albumTone.bodyState)memory={};
             }
-            profileMoving=s.albumBlend!=albumTarget||s.signatureBlend!=signatureTarget||s.studioBlend!=studioTarget;
+            profileMoving=s.albumBlend!=albumTarget||s.signatureBlend!=signatureTarget||s.studioBlend!=studioTarget||s.singerBlend!=singerTarget;
         }
         const float album=s.albumBlend,signature=s.signatureBlend;
         if(album>0.f)s.albumLoss+=s.smoother*(s.targetAlbumLoss-s.albumLoss);
@@ -678,6 +689,16 @@ void Engine::process(const float* inputLeft, const float* inputRight,
             }
             preL += s.preTapBlend * (nextL - preL);
             preR += s.preTapBlend * (nextR - preR);
+        }
+        float nearL=0.f,nearR=0.f;
+        if(s.singerBlend>0.f) {
+            constexpr float gains[3]{.35f,.23f,.15f};
+            for(int t=0;t<3;++t) {
+                const float a=s.pre[0].readFixed(s.nearL[t]);
+                const float b=s.pre[1].readFixed(s.nearR[t]);
+                nearL+=gains[t]*(a+.12f*b);
+                nearR+=gains[t]*(b+.12f*a);
+            }
         }
         s.pre[0].push(inL);
         s.pre[1].push(inR);
@@ -783,6 +804,19 @@ void Engine::process(const float* inputLeft, const float* inputRight,
         if(album>0.f)s.albumTone.process(inL,inR,tailL,tailR,duckAmount,album,signature);
         float wetL = tailL * s.lateReturn + earlyL * (0.42f * earlyAmount);
         float wetR = tailR * s.lateReturn + earlyR * (0.42f * earlyAmount);
+        if(s.singerBlend>0.f) {
+            // Use previous-sample stereo-linked envelope (one sample, not
+            // audio latency). Only the output tail is ducked, never feedback.
+            // Early=0 disables both reflection returns. Duck=0 disables
+            // added tail attenuation; near support stays independent.
+            const float activity=s.duckEnvelope/(.045f+s.duckEnvelope);
+            const float tailGain=1.f-.80f*duckAmount*activity;
+            const float e=.42f*earlyAmount;
+            const float nearMix=.65f*s.singerBlend;
+            const float lateGain=s.lateReturn*(1.f+s.singerBlend*(tailGain-1.f));
+            wetL=tailL*lateGain+e*(earlyL+nearMix*(nearL-earlyL));
+            wetR=tailR*lateGain+e*(earlyR+nearMix*(nearR-earlyR));
+        }
         wetL = s.wetHP[0][1].process(s.wetHP[0][0].process(wetL, s.wetLowCoeff), s.wetLowCoeff);
         wetR = s.wetHP[1][1].process(s.wetHP[1][0].process(wetR, s.wetLowCoeff), s.wetLowCoeff);
         const float lpL1 = s.wetLP[0][0].process(wetL, s.wetHighCoeff);

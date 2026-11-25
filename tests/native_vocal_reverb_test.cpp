@@ -16,8 +16,8 @@ int main() {
     using namespace armix::builtin_fx;
     static_assert(VocalReverbProcessor::stateBytes==68);
     for(int i=0;i<reverbSisPresetCount;++i)assert(validVocalReverbSettings(vocalReverbFactoryPreset(i)));
-    static_assert(reverbSisPresetCount==16 && reverbSisCustomItem==17);
-    for(int i=0;i<16;++i)assert(vocalReverbFactoryPreset(i).voicing==4);
+    static_assert(reverbSisPresetCount==19 && reverbSisCustomItem==20);
+    for(int i=0;i<reverbSisPresetCount;++i)assert(vocalReverbFactoryPreset(i).voicing==(i>=8&&i<=12?4:5));
     const auto mc=vocalReverbFactoryPreset(12);
     assert(juce::String(vocalReverbPresetNames[12])=="Master Ceremony");
     assert(mc.preset==12&&mc.algorithm==static_cast<int>(arverb::Algorithm::Chamber));
@@ -105,7 +105,12 @@ int main() {
     assert(presetSelect->getItemText(12)=="Master Ceremony");
     assert(presetSelect->getItemId(12)==13);
     assert(presetSelect->getItemText(13)=="Album Ready Vocal");
-    assert(presetSelect->getItemText(16)=="Custom / saved");
+    // Validate every factory identity including appended presets.
+    for(int i=0;i<reverbSisPresetCount;++i) {
+        assert(presetSelect->getItemId(i)==i+1);
+        assert(presetSelect->getItemText(i)==juce::String(vocalReverbPresetNames[static_cast<std::size_t>(i)]));
+    }
+    assert(presetSelect->getItemText(reverbSisPresetCount)=="Custom / saved");
     // Actual native ComboBox user-preset recall uses the same settings mailbox.
     {
         auto instance=entry->prepare(48000.,128,nullptr,0);
@@ -120,20 +125,20 @@ int main() {
             return std::vector<VocalReverbEditor::UserPresetEntry>{{"test-id","My Vocal"}};
         },[](const juce::String&){return juce::String{};},
         [&](const juce::String& id){return id=="test-id"&&owner->queueSettings(custom)>0;});
-        assert(save->isEnabled()&&list->getItemText(17)=="My Vocal");
+        assert(save->isEnabled()&&list->getItemText(reverbSisCustomItem)=="My Vocal");
         list->setSelectedId(1000,juce::sendNotificationSync);
         assert(owner->settingsPending()&&owner->desiredSettings().values==custom.values);
         owner->consumeRealtimeEdits();
         VocalReverbSettings accepted{};
-        assert(owner->acceptedSettings(accepted)&&accepted.values==custom.values&&accepted.voicing==4);
+        assert(owner->acceptedSettings(accepted)&&accepted.values==custom.values&&accepted.voicing==5);
         assert(view->findChildWithID("armix.reverb.album-ready")==nullptr);
         juce::MemoryBlock albumBytes;assert(owner->captureDetachedState(albumBytes));
         assert(albumBytes.getSize()==VocalReverbProcessor::albumStateBytes);
         auto restored=entry->prepare(48000.,128,albumBytes.getData(),static_cast<int>(albumBytes.getSize()));
         auto* restoredOwner=dynamic_cast<VocalReverbProcessor*>(restored.get());
         VocalReverbSettings decoded{};
-        assert(restoredOwner&&restoredOwner->acceptedSettings(decoded)&&decoded.voicing==4&&decoded.values==custom.values);
-        for(int profile:{0,1,2,3}) {
+        assert(restoredOwner&&restoredOwner->acceptedSettings(decoded)&&decoded.voicing==5&&decoded.values==custom.values);
+        for(int profile:{0,1,2,3,4}) {
             auto legacy=custom;legacy.voicing=profile;
             assert(owner->queueSettings(legacy)>0);
             assert(owner->captureDetachedState(albumBytes));
@@ -142,11 +147,11 @@ int main() {
             auto* legacyOwner=dynamic_cast<VocalReverbProcessor*>(copy.get());
             assert(legacyOwner&&legacyOwner->acceptedSettings(decoded)&&decoded.voicing==profile&&decoded.values==legacy.values);
         }
-        auto invalidProfile=custom;invalidProfile.voicing=5;
+        auto invalidProfile=custom;invalidProfile.voicing=6;
         assert(owner->queueSettings(invalidProfile)==0);
         list->setSelectedId(1,juce::sendNotificationSync);
         assert(owner->captureDetachedState(albumBytes));
-        assert(owner->acceptedSettings(decoded)&&decoded.voicing==4);
+        assert(owner->acceptedSettings(decoded)&&decoded.voicing==5);
         editor->bindHostBypassReadback([]{return VocalReverbEditor::HostBypassState{};});
         assert(!save->isEnabled());
     }
@@ -648,8 +653,10 @@ int main() {
         assert(false && "latest intent failed to converge");
     });
     std::uint64_t concurrentLast=0;
+    VocalReverbSettings lastSubmitted{};
     for(int i=0;i<5000;++i) {
-        concurrentLast=concurrentReverb->queueSettings(vocalReverbFactoryPreset(i%reverbSisPresetCount));
+        lastSubmitted=vocalReverbFactoryPreset(i%reverbSisPresetCount);
+        concurrentLast=concurrentReverb->queueSettings(lastSubmitted);
         assert(concurrentLast>0);
         if((i&31)==0)std::this_thread::yield();
     }
@@ -657,8 +664,14 @@ int main() {
     pcmConsumer.join();
     assert(concurrentReverb->appliedRequestId()==concurrentLast);
     VocalReverbSettings concurrentAccepted{};
+    // Compare the actual submitted intent, independent of catalogue size.
     assert(concurrentReverb->acceptedSettings(concurrentAccepted)&&
-           concurrentAccepted.preset==7);
+           concurrentAccepted.preset==lastSubmitted.preset&&
+           concurrentAccepted.algorithm==lastSubmitted.algorithm&&
+           concurrentAccepted.voicing==lastSubmitted.voicing&&
+           concurrentAccepted.values==lastSubmitted.values);
+    assert(!concurrentReverb->settingsPending());
+    assert(concurrentReverb->stateSnapshotQuiescent());
 
     assert(created->getLatencySamples()==0);
     auto* typed=dynamic_cast<VocalReverbProcessor*>(created.get());
