@@ -1,17 +1,28 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Offline executable: no measurement hooks or allocator overrides in DSP.
+#ifdef ANTI_NOIZ_MATCHED_BRIDGE
+#include "RtQualificationBridge.h"
+#else
 #include "AntiNoizControl.h"
+#endif
 #include "RtAllocationProbe.h"
 #include <array>
 #include <bit>
 #include <chrono>
+#include <cstdio>
+#include <memory>
+#include <string>
 #include <iostream>
 #include <limits>
 #include <random>
 #include <stdexcept>
 #include <string_view>
 #include <vector>
+#ifdef ANTI_NOIZ_MATCHED_BRIDGE
+using namespace armix::anti_noiz_qualification;
+#else
 using namespace armix::builtin_fx::anti_noiz;
+#endif
 namespace {
 using Clock=std::chrono::steady_clock;
 void require(bool condition,const char* message){if(!condition)throw std::runtime_error(message);}
@@ -42,6 +53,8 @@ struct Fixture {
     rtprobe::Counts allocations{};
     std::uint64_t hash=14695981039346656037ull,callbacks=0;
     std::uint64_t nextId=1;
+    std::FILE* capture=nullptr;
+    std::array<float,4096> captureFrames{};
     void prepare(unsigned rate,Core::Mode mode){
         require(fx.prepare(rate,2),"prepare");
         settings.mode=mode;settings.silenceDb=0;
@@ -52,9 +65,16 @@ struct Fixture {
         require(fx.poll(ack)&&ack.id==nextId-1&&ack.applied==applied,"callback command ACK");
     }
     double process(int n){
+        if(capture)for(int j=0;j<n;++j){
+            captureFrames[4*j]=l[j];captureFrames[4*j+1]=r[j];
+        }
         rtprobe::begin();
         const auto start=Clock::now();fx.process(l.data(),r.data(),n);const auto stop=Clock::now();
         allocations+=rtprobe::end();++callbacks;
+        if(capture){
+            for(int j=0;j<n;++j){captureFrames[4*j+2]=l[j];captureFrames[4*j+3]=r[j];}
+            require(std::fwrite(captureFrames.data(),sizeof(float),std::size_t(4*n),capture)==std::size_t(4*n),"PCM capture write");
+        }
         while(fx.pollTelemetry(meter)){}
         for(int j=0;j<n;++j)for(float x:{l[j],r[j]}){
             require(std::isfinite(x)&&std::abs(x)<=128.f,"nonfinite or unbounded output");
@@ -117,10 +137,17 @@ void stress(){
         std::cout<<"STRESS,"<<rate<<','<<f.callbacks<<','<<f.allocations.cppAlloc<<','<<f.allocations.cppFree<<','<<f.allocations.cAlloc<<','<<f.allocations.cFree<<','<<f.hash<<'\n';
     }
 }
-void benchmark(){
+void benchmark(const char* prefix=nullptr){
     for(unsigned rate:{44100u,48000u,88200u,96000u})for(int block:{32,64,128,256,1024})for(int scenario=0;scenario<3;++scenario){
-        Fixture f;f.prepare(rate,scenario==0?Core::Mode::AutoProtect:Core::Mode::Voice);f.learn(rate,block);
+        Fixture f;
         const auto name=scenario==0?"weak-auto":scenario==1?"coherent":"spectral";
+        std::unique_ptr<std::FILE,decltype(&std::fclose)> capture(nullptr,&std::fclose);
+        if(prefix){
+            const std::string path=std::string(prefix)+"-"+std::to_string(rate)+"-"+std::to_string(block)+"-"+name+".f32";
+            capture.reset(std::fopen(path.c_str(),"wb"));require(bool(capture),"PCM capture open");
+            f.capture=capture.get();
+        }
+        f.prepare(rate,scenario==0?Core::Mode::AutoProtect:Core::Mode::Voice);f.learn(rate,block);
         std::vector<double> elapsed;elapsed.reserve(10*rate/unsigned(block)+1);
         std::uint64_t misses=0;
         double inputLate=0,outputLate=0;
@@ -150,6 +177,7 @@ void benchmark(){
             pos+=unsigned(n);
         }
         require(rtprobe::empty(f.allocations),"allocation/free in benchmark callback");
+        if(capture){f.capture=nullptr;require(std::fclose(capture.release())==0,"PCM capture close");}
         std::sort(elapsed.begin(),elapsed.end());
         auto q=[&](double p){return elapsed[std::size_t((elapsed.size()-1)*p)];};
         const double attenuation=scenario?10*std::log10(inputLate/outputLate):0.;
@@ -158,7 +186,7 @@ void benchmark(){
 }
 }
 int main(int argc,char** argv){try{
-    require(argc==2,"use --stress or --benchmark");
+    require(argc==2||(argc==3&&std::string_view(argv[1])=="--benchmark"),"use --stress or --benchmark [capture-prefix]");
     probeSelfTest();
 #ifdef ANTI_NOIZ_ALLOC_PROBE
     std::cout<<"ALLOC_PROBE,C++ new/delete and linked C allocator references,positive control PASS\n";
@@ -166,5 +194,5 @@ int main(int argc,char** argv){try{
     std::cout<<"ALLOC_PROBE,disabled in sanitizer lane\n";
 #endif
     const std::string_view arg=argv[1];
-    if(arg=="--stress")stress();else if(arg=="--benchmark")benchmark();else require(false,"unknown mode");
+    if(arg=="--stress")stress();else if(arg=="--benchmark")benchmark(argc==3?argv[2]:nullptr);else require(false,"unknown mode");
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}return 0;}

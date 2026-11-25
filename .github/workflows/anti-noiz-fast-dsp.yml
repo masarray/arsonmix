@@ -118,6 +118,48 @@ jobs:
         if: ${{ !cancelled() && matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke') }}
         run: python3 tools/anti-noiz/recorded_smoke.py "$RUNNER_TEMP/anti-noiz/anti_noiz_qualify" "$RUNNER_TEMP/anti-noiz-recorded-smoke" --compare-an03f
 
+  numerical-reproducibility:
+    name: Anti Noiz matched PCM reproducibility (opt-in)
+    if: contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 8adec89d7e9270f46ff25fba54f5431167b55668
+          path: .anti-noiz-control-reference
+          persist-credentials: false
+      - name: Build matched drivers and common-object adapter pair
+        run: |
+          set -euo pipefail
+          cd tools/anti-noiz
+          flags=(-std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror)
+          wrap=(-Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free,--wrap=aligned_alloc,--wrap=posix_memalign)
+          old=../../.anti-noiz-control-reference/engine/builtin_fx/anti_noiz
+          new=../../engine/builtin_fx/anti_noiz
+          g++ --version
+          g++ "${flags[@]}" -DANTI_NOIZ_ALLOC_PROBE=1 -I "$old" rt_qualify.cpp "${wrap[@]}" -o "$RUNNER_TEMP/rt-old"
+          g++ "${flags[@]}" -DANTI_NOIZ_ALLOC_PROBE=1 -I "$new" rt_qualify.cpp "${wrap[@]}" -o "$RUNNER_TEMP/rt-new"
+          g++ "${flags[@]}" compare_rt_capture.cpp -o "$RUNNER_TEMP/rt-capture-compare"
+          g++ "${flags[@]}" -DANTI_NOIZ_ALLOC_PROBE=1 -DANTI_NOIZ_MATCHED_BRIDGE=1 -c rt_qualify.cpp -o "$RUNNER_TEMP/rt-driver.o"
+          g++ "${flags[@]}" -I "$old" -c RtQualificationBridge.cpp -o "$RUNNER_TEMP/rt-old-bridge.o"
+          g++ "${flags[@]}" -I "$new" -c RtQualificationBridge.cpp -o "$RUNNER_TEMP/rt-new-bridge.o"
+          sha256sum "$RUNNER_TEMP/rt-driver.o"
+          g++ "$RUNNER_TEMP/rt-driver.o" "$RUNNER_TEMP/rt-old-bridge.o" "${wrap[@]}" -o "$RUNNER_TEMP/rt-bridge-old"
+          g++ "$RUNNER_TEMP/rt-driver.o" "$RUNNER_TEMP/rt-new-bridge.o" "${wrap[@]}" -o "$RUNNER_TEMP/rt-bridge-new"
+      - name: Capture actual benchmark input and output
+        run: python3 tools/anti-noiz/diagnose_rt.py "$RUNNER_TEMP/rt-old" "$RUNNER_TEMP/rt-new" "$RUNNER_TEMP/rt-capture-compare"
+      - name: Capture same common-object driver linked against both revisions
+        if: ${{ !cancelled() }}
+        run: python3 tools/anti-noiz/diagnose_rt.py "$RUNNER_TEMP/rt-bridge-old" "$RUNNER_TEMP/rt-bridge-new" "$RUNNER_TEMP/rt-capture-compare"
+      - name: Strict common-object PCM and timing gate
+        if: ${{ !cancelled() }}
+        run: python3 tools/anti-noiz/compare_rt.py "$RUNNER_TEMP/rt-bridge-old" "$RUNNER_TEMP/rt-bridge-new"
+
   web-contract:
     name: Anti Noiz Web UX contract (Node, no Windows)
     runs-on: ubuntu-latest

@@ -6,8 +6,11 @@ import statistics
 import subprocess
 import sys
 
-def run(binary):
-    result = subprocess.run([binary, "--benchmark"], check=True, capture_output=True, text=True, timeout=90)
+def run(binary, capture=None):
+    args = [binary, "--benchmark"]
+    if capture is not None:
+        args.append(capture)
+    result = subprocess.run(args, check=True, capture_output=True, text=True, timeout=90)
     rows = {}
     for line in result.stdout.splitlines():
         if line.startswith("ALLOC_PROBE,"):
