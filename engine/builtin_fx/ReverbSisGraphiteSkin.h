@@ -29,12 +29,35 @@ inline std::uint32_t hash32(std::uint32_t v) {
     v^=v>>16; v*=0x7feb352du; v^=v>>15; v*=0x846ca68bu; return v^(v>>16);
 }
 inline double rand01(std::uint32_t v) { return double(hash32(v)&0xffffffu)/16777215.; }
-inline double smoothNoise(int x,int y,int span) {
-    const int k=x/span;
-    double t=double(x%span)/span; t=t*t*(3.-2.*t);
-    const auto a=rand01(std::uint32_t(y)*92821u+std::uint32_t(k)*137631u);
-    const auto b=rand01(std::uint32_t(y)*92821u+std::uint32_t(k+1)*137631u);
+// Finite, staggered horizontal micro-grain; no global random row offset.
+// Two decorrelated bands model short abrasive tracks, not scan lines.
+inline double brushNoise(int x,int y,int span,std::uint32_t salt) {
+    const int shifted=x+int(hash32(std::uint32_t(y)+salt)%std::uint32_t(span));
+    const int k=shifted/span;
+    double t=double(shifted%span)/span; t=t*t*(3.-2.*t);
+    const auto a=rand01(std::uint32_t(y)*92821u+std::uint32_t(k)*137631u+salt);
+    const auto b=rand01(std::uint32_t(y)*92821u+std::uint32_t(k+1)*137631u+salt);
     return a+(b-a)*t;
+}
+// Shared pure material equations: deterministic satin-anodised metal with
+// cool reflected light. Diffuse base, broad off-axis specular lobe and
+// bounded micro-grain are separate, so the texture never creates banding.
+inline double metalSheen(int x,int y) {
+    const double u=x/double(metalW-1),v=y/double(metalH-1);
+    const double axis=u-.26-.24*(v-.40);
+    return 17.*std::exp(-axis*axis/(.32*.32))*
+           std::exp(-(v-.20)*(v-.20)/(.65*.65))+
+           5.*std::exp(-(u-.86)*(u-.86)/(.27*.27));
+}
+inline double metalGrain(int x,int y) {
+    return (brushNoise(x,y,64,0x351b9u)-.5)*3.2+
+           (brushNoise(x,y,19,0x731d1u)-.5)*2.0+
+           (rand01(std::uint32_t(x)*713u+std::uint32_t(y)*16091u)-.5)*.7;
+}
+inline juce::Colour metalPixel(int x,int y,double sheen) {
+    const double v=y/double(metalH-1);
+    const double base=51.-9.*v+sheen+metalGrain(x,y);
+    return juce::Colour::fromRGB(channel(base-3.),channel(base+10.),channel(base+19.));
 }
 inline double noise(int x,int y) {
     const auto n=std::sin(x*127.1+y*311.7)*43758.5453;
@@ -43,24 +66,29 @@ inline double noise(int x,int y) {
 inline juce::Image makeMetal() {
     juce::Image im(juce::Image::RGB,metalW,metalH,false);
     juce::Image::BitmapData pixels(im,juce::Image::BitmapData::writeOnly);
-    // Separate row-coherent grain and grazing illumination; evaluate broad
-    // horizontal sheen only once per column rather than once per pixel.
-    std::array<double,metalW> sheen{};
+    // Broad reflection is separable per row: precompute the secondary
+    // column lobe, evaluate the shifted main lobe on a coarse 8px lattice
+    // and interpolate. Fine grain stays at native cache resolution.
+    std::array<double,metalW> secondary{};
     for(int x=0;x<metalW;++x) {
         const double u=x/double(metalW-1);
-        sheen[static_cast<std::size_t>(x)]=5.8*std::exp(-std::pow((u-.24)/.39,2))+
-                                           2.6*std::exp(-std::pow((u-.81)/.23,2));
+        secondary[static_cast<std::size_t>(x)]=5.*std::exp(-(u-.86)*(u-.86)/(.27*.27));
     }
+    constexpr int pitch=8;
+    std::array<double,(metalW-1)/pitch+2> mainLobe{};
     for(int y=0;y<metalH;++y) {
-        const double v=y/double(metalH-1);
-        const double row=(rand01(std::uint32_t(y)*1973u+71u)-.5)*4.6;
-        const double edge=2.*std::exp(-std::pow((v-.14)/.16,2));
+        const double v=y/double(metalH-1), amplitude=17.*std::exp(-(v-.20)*(v-.20)/(.65*.65));
+        for(std::size_t i=0;i<mainLobe.size();++i) {
+            const double u=double(i*pitch)/double(metalW-1);
+            const double axis=u-.26-.24*(v-.40);
+            mainLobe[i]=amplitude*std::exp(-axis*axis/(.32*.32));
+        }
         for(int x=0;x<metalW;++x) {
-            const double grain=row+(smoothNoise(x,y,150)-.5)*3.8+
-                (smoothNoise(x,y,28)-.5)*1.7+
-                (rand01(std::uint32_t(x)*713u+std::uint32_t(y)*16091u)-.5)*.8;
-            const double b=46.-11.*v+sheen[static_cast<std::size_t>(x)]+edge+grain;
-            pixels.setPixelColour(x,y,juce::Colour::fromRGB(channel(b-2),channel(b),channel(b+3)));
+            const auto i=static_cast<std::size_t>(x/pitch);
+            const double mix=double(x%pitch)/pitch;
+            const double sheen=mainLobe[i]+(mainLobe[i+1]-mainLobe[i])*mix+
+                secondary[static_cast<std::size_t>(x)];
+            pixels.setPixelColour(x,y,metalPixel(x,y,sheen));
         }
     }
     return im;

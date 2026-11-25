@@ -342,7 +342,7 @@ public:
         const bool tab=id.startsWith("armix.reverb.tab.");
         const auto bright=(tab&&b.getToggleState())||
                           (!tab&&(hover||down));
-        g.setColour(bright?rgb(142,216,250):rgb(158,166,177));
+        g.setColour(bright?rgb(142,216,250):rgb(199,213,223));
         g.setFont(uiFont(tab?11.f:14.f));
         g.drawText(b.getButtonText(),b.getLocalBounds(),
                    juce::Justification::centred,false);
@@ -595,7 +595,7 @@ public:
             }};
             labels_[i].setText(shortLabels[i],juce::dontSendNotification);
             labels_[i].setFont(reverb_ui::uiFont(12.f));
-            labels_[i].setColour(juce::Label::textColourId,reverb_ui::rgb(195,202,208));
+            labels_[i].setColour(juce::Label::textColourId,reverb_ui::rgb(220,231,238));
             labels_[i].setJustificationType(juce::Justification::centred);
             labels_[i].setInterceptsMouseClicks(false,false);
             addAndMakeVisible(labels_[i]);
@@ -631,20 +631,20 @@ public:
         constexpr float shoulderY=static_cast<float>(F::shoulderY);
         const float w=static_cast<float>(getWidth());
         const float h=static_cast<float>(getHeight());
-        g.fillAll(rgb(13,15,17));
+        g.fillAll(rgb(17,26,33));
         const juce::Rectangle<float> cabinet{9.f,9.f,w-18.f,h-18.f};
-        g.setColour(rgb(2,4,9));g.fillRoundedRectangle(cabinet.expanded(1.f),6.f);
-        g.setGradientFill(juce::ColourGradient(rgb(81,86,91),9.f,9.f,
-                  rgb(16,19,23),w-9.f,h-9.f,false));
+        g.setColour(rgb(13,21,27));g.fillRoundedRectangle(cabinet.expanded(1.f),6.f);
+        g.setGradientFill(juce::ColourGradient(rgb(98,120,132),9.f,9.f,
+                  rgb(24,36,44),w-9.f,h-9.f,false));
         g.fillRoundedRectangle(cabinet,6.f);
-        g.setColour(rgb(91,102,109).withAlpha(.52f));
+        g.setColour(rgb(122,145,157).withAlpha(.48f));
         g.drawRoundedRectangle(cabinet,6.f,1.f);
 
-        // The reference's defining silhouette: dark graphite shoulders with
+        // The reference's defining silhouette: satin blue-titanium shoulders with
         // a gently lowered centre preset bay. Draw original vector geometry
         // so 100%, 125%, 150% and 200% render from the same source.
-        g.setGradientFill(juce::ColourGradient(rgb(37,43,50),9.f,9.f,
-                  rgb(20,25,30),9.f,64.f,false));
+        g.setGradientFill(juce::ColourGradient(rgb(44,63,75),9.f,9.f,
+                  rgb(21,34,43),9.f,64.f,false));
         g.fillRect(11.f,11.f,w-22.f,50.f);
         juce::Path body;
         body.startNewSubPath(11.f,shoulderY);
@@ -657,7 +657,7 @@ public:
         body.lineTo(11.f,374.f);
         body.closeSubPath();
         graphite::drawMetal(g,body,getWidth(),getHeight());
-        g.setColour(rgb(119,128,138).withAlpha(.32f));
+        g.setColour(rgb(151,178,191).withAlpha(.42f));
         juce::Path shoulder;
         shoulder.startNewSubPath(11.f,shoulderY);
         shoulder.lineTo(241.f,shoulderY);
@@ -666,23 +666,23 @@ public:
         shoulder.cubicTo(w-337.f,58.f,w-311.f,shoulderY,w-241.f,shoulderY);
         shoulder.lineTo(w-11.f,shoulderY);
         g.strokePath(shoulder,juce::PathStrokeType(.8f));
-        g.setColour(rgb(129,140,147).withAlpha(.32f));
+        g.setColour(rgb(166,190,202).withAlpha(.36f));
         g.drawLine(11.f,10.f,w-11.f,10.f,.9f);
 
         // Distinct smoked-glass bottom LCD ribbon, with actual JUCE Slider
         // editable numeric text boxes over it, rather than duplicate text.
         constexpr float lcdTop=static_cast<float>(F::lcdTop);
-        g.setGradientFill(juce::ColourGradient(rgb(25,36,45),11.f,lcdTop,
-                                               rgb(14,21,28),11.f,static_cast<float>(F::lcdBottom-1),false));
+        g.setGradientFill(juce::ColourGradient(rgb(27,46,59),11.f,lcdTop,
+                                               rgb(14,26,35),11.f,static_cast<float>(F::lcdBottom-1),false));
         // Fill the entire inner faceplate to the cabinet inset; no black
         // spacer below the LCD. Preserve numeric control positions.
         g.fillRect(11.f,lcdTop,w-22.f,static_cast<float>(F::lcdBottom-F::lcdTop));
-        g.setColour(rgb(119,149,165).withAlpha(.60f));
+        g.setColour(rgb(132,166,185).withAlpha(.62f));
         g.drawLine(11.f,lcdTop,w-11.f,lcdTop,1.f);
-        g.setColour(rgb(11,16,21).withAlpha(.8f));
+        g.setColour(rgb(10,22,30).withAlpha(.8f));
         g.drawLine(11.f,lcdTop+1.f,w-11.f,lcdTop+1.f,.6f);
         // Thin bounded column rules; do not make the screen a card grid.
-        g.setColour(rgb(119,128,138).withAlpha(.22f));
+        g.setColour(rgb(146,171,185).withAlpha(.22f));
         g.drawLine(257.f,155.f,257.f,367.f,.8f);
         g.drawLine(w-257.f,155.f,w-257.f,367.f,.8f);
 
@@ -696,7 +696,7 @@ public:
             const int dotY=row==0?M::firstDotY:M::secondDotY;
             const int textY=dotY+M::dotSize/2-M::labelHeight/2-
                             M::labelOpticalLift;
-            g.setColour(rgb(180,189,198));
+            g.setColour(rgb(209,222,230));
             g.drawText(M::leftLabels[static_cast<std::size_t>(row)],
                 M::leftLabelX,textY,M::leftLabelWidth,M::labelHeight,
                 juce::Justification::centredRight,false);
@@ -705,7 +705,7 @@ public:
                 juce::Justification::centredLeft,false);
         }
         drawMeters(g);
-        g.setColour(rgb(139,151,161));
+        g.setColour(rgb(183,200,211));
         g.setFont(reverb_ui::uiFont(9.f));
         for(const int x : {M::dotsLeftX,M::dotsRightX}) {
             for(const int db : {-60,-24,-6,0}) {
@@ -716,7 +716,7 @@ public:
         }
 
         // The active tab underline and quiet baseline share one pixel band.
-        g.setColour(rgb(75,90,99).withAlpha(.67f));
+        g.setColour(rgb(125,151,166).withAlpha(.57f));
         g.fillRect(F::tabLeft,F::tabRuleY,F::width-2*F::tabLeft,2);
         // Lower 10px cabinet lip is intentionally empty: no clipped footer.
     }
