@@ -213,9 +213,25 @@ private:
             for(int c=0;c<channels_;++c)
                 evidence=std::max(evidence,power_[c][k]/std::max(profile_.powers()[c][k],eps));
             // Only explicit Voice opts into the stronger causal estimator.
-            const float gain=selective?AutoGain::target(floor,context_.temporalRatio(profile_.anchor(),channels_,bins,k),evidence):
+            float gain=selective?AutoGain::target(floor,context_.temporalRatio(profile_.anchor(),channels_,bins,k),evidence):
                 activeVoice?voiceGain_.estimate(k,evidence):
                 std::sqrt(std::max(0.f,1.f-1.f/std::max(1.f,evidence)));
+            // Only noise-overlap bands in explicit/source-aware Voice.
+            // A quiet neighboring bin must independently show foreground.
+            // The existing temporal neighborhood is reused; no FFT or delay.
+            if(activeVoice&&ratio>=2.f&&evidence>1.f) {
+                const float relative=context_.relativeNoise(profile_.anchor(),channels_,k);
+                if(relative>1.f) {
+                    float neighbor=0.f;
+                    for(int j=std::max(0,k-3);j<=std::min(bins-1,k+3);++j){
+                        if(j==k||context_.relativeNoise(profile_.anchor(),channels_,j)>=1.f)continue;
+                        for(int c=0;c<channels_;++c)
+                            neighbor=std::max(neighbor,power_[c][j]/std::max(profile_.anchor()[c][j],eps));
+                    }
+                    if(neighbor>4.f)gain=VoiceGain<maxBins>::restore(gain,evidence,relative,
+                        context_.temporalRatio(profile_.anchor(),channels_,bins,k),neighbor);
+                }
+            }
             const float localFloor=reserve>0.f?AutoGain::detailFloor(floor,reserve,
                 context_.relativeNoise(profile_.anchor(),channels_,k)):floor;
             target_[k]=std::max(localFloor,gain);

@@ -6,6 +6,7 @@ on:
       - 'tools/anti-noiz/recorded_environment.py'
       - 'tools/anti-noiz/corpus_qualifier.cpp'
       - 'tools/anti-noiz/compare_environment.py'
+      - 'tools/anti-noiz/spectral_diagnostics.py'
       - 'engine/builtin_fx/anti_noiz/**'
       - '.github/workflows/anti-noiz-recorded-corpus.yml'
 permissions:
@@ -30,10 +31,10 @@ jobs:
           python3 tools/anti-noiz/recorded_environment.py --self-test
       - name: Pinned real recorded environments (not listening approval)
         run: python3 tools/anti-noiz/recorded_environment.py "$RUNNER_TEMP/an07/anti_noiz_qualify" "$RUNNER_TEMP/an07-evidence"
-      - name: Checkout frozen AN-07B comparator
+      - name: Checkout frozen AN-07D comparator
         uses: actions/checkout@v4
         with:
-          ref: ff24b1c93a84dc4c8c10980eba50d35365e26315
+          ref: c75685b4930e5da19b637d74fe1fff6e84cd422f
           path: an07-baseline
           persist-credentials: false
       - name: Run exact baseline against same recorded corpus

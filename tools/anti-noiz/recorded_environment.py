@@ -12,6 +12,7 @@ import wave
 from pathlib import Path
 
 from recorded_smoke import CLIPS, BASE, README_SHA, download, read_pcm, write_pcm, rms
+import spectral_diagnostics as spectral
 
 RATE = 48000
 # Original CC0 field recordings; pinned processed PCM releases (not raw
@@ -155,6 +156,7 @@ def self_test():
     require(slice_noise(s,2,2,2)==[4.,5.,6.,7.],"stereo selection")
     require(resample_clean([0.,1.,2.],1,48000)==[0.,1.,2.],"identity resampling")
     require(len(resample_clean([0.]*441,1,44100))==480,"resampling length")
+    spectral.self_test()
     print("AN07_HELPERS PASS")
 
 def main():
@@ -178,6 +180,7 @@ def main():
         clean_sources.append((name,file,sha,intent,rate,ch,resample_clean(clip,ch,rate)))
     summary=[]
     diagnostics=[]
+    band_metrics=[]
     for source in SOURCES:
         noise_name=source[0]
         stereo,credit=recorded_noise(source,root/source[3])
@@ -220,6 +223,12 @@ def main():
                             print("AN07",noise_name,name,snr,tag,row["label"],
                                   row["error_improvement_db"],row["desired_projection"],
                                   row["idle_attenuation_db"]," ".join(flags) or "observed",flush=True)
+                    if name=="speech" and tag in ("intent","intent-idle"):
+                        start,end=labels[0][1:3]
+                        files=[case/"clean.wav",Path(str(prefix)+"-input.wav"),
+                               Path(str(prefix)+"-processed.wav"),Path(str(prefix)+"-clean-only.wav")]
+                        for band in spectral.metrics(*(spectral.pcm(f,RATE,ch) for f in files),RATE,ch,start,end):
+                            band_metrics.append(dict(noise=noise_name,snr=snr,policy=tag,**band))
                     for f in case.glob(tag+"-*.wav"):f.unlink()
                 for f in case.glob("*.wav"):f.unlink()
     errors=[x for x in summary if "error" in x]
@@ -227,7 +236,7 @@ def main():
     report={"scope":"recorded noise mixed with recorded foreground; objective baseline only",
             "cases":len(SOURCES)*len(CLIPS)*2,"policy_runs":len(SOURCES)*len(CLIPS)*2*len(POLICIES),
             "sources":[dict(name=s[0],creator=s[1],freesound=s[2],file=s[3],tag=s[4],bytes=s[5],sha256=s[6]) for s in SOURCES],
-            "errors":len(errors),"target_flag_rows":len(flagged),"learn_diagnostics":diagnostics,"rows":summary,
+            "errors":len(errors),"target_flag_rows":len(flagged),"learn_diagnostics":diagnostics,"rows":summary,"band_metrics":band_metrics,
             "quality_release_gate":"NOT QUALIFIED; listening, full corpus and hardware required"}
     (root/"report.json").write_text(json.dumps(report,indent=2,allow_nan=False)+"\n")
     print(f"AN07_SUMMARY cases={report['cases']} runs={report['policy_runs']} errors={len(errors)} target_flag_rows={len(flagged)}",flush=True)

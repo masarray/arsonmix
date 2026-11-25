@@ -12,6 +12,17 @@ public:
         memory_=float(std::exp(-double(hop)/(rate*.025)));reset();
     }
     void reset() noexcept {prior_.fill(0);}
+    // AN-07E: bounded foreground restoration, only with independent
+    // neighboring evidence. A dominant noise bin alone cannot request gain.
+    static float restore(float gain,float gamma,float relativeNoise,
+                         float temporal,float neighbor) noexcept {
+        const float overlap=std::clamp((relativeNoise-1.f)*.5f,0.f,1.f);
+        const float local=std::clamp((temporal-1.5f)*.5f,0.f,1.f);
+        const float corroboration=std::clamp((neighbor-4.f)*.125f,0.f,1.f);
+        const float present=std::clamp((gamma-1.f)*.5f,0.f,1.f);
+        const float headroom=std::min(.15f,1.f-gain);
+        return gain+headroom*overlap*local*corroboration*present;
+    }
     float estimate(int bin,float gamma) noexcept {
         gamma=std::clamp(gamma,0.f,1e8f);
         const float instantaneous=std::max(0.f,gamma-1.f);

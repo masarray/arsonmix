@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Paired AN-07B vs candidate comparison; never equate render success with quality."""
+"""Paired frozen AN-07D vs candidate; never equate render success with quality."""
 import json
 import math
 import sys
@@ -37,7 +37,7 @@ def compare(base, candidate):
     for key, old in a.items():
         new = b[key]
         row = dict(zip(IDENTITY, key))
-        voice = row["mode"] in ("voice", "auto-mic") and row["policy"] == "intent-idle"
+        voice = row["mode"] in ("voice", "auto-mic") and row["policy"] in ("intent", "intent-idle")
         if row["kind"] == "active":
             delta = metric(new,"error_improvement_db") - metric(old,"error_improvement_db")
             loss = abs(metric(new,"desired_projection")-1) - abs(metric(old,"desired_projection")-1)
@@ -45,7 +45,9 @@ def compare(base, candidate):
                        clean_only_error_delta_db=metric(new,"clean_only_error_db_relative")-metric(old,"clean_only_error_db_relative"))
             # Full-active projection is more stable than a weak 100ms proxy;
             # preserve all weak/per-channel values as evidence, not a claim.
-            if voice and row["label"] == "active" and (delta < -.5 or loss > .02):
+            if voice and row["label"] == "active" and (delta < -.5 or loss > .02 or row["clean_only_error_delta_db"] > 1.):
+                regressions.append(row)
+            if voice and row["label"] == "weak" and (loss > .03 or delta < -1.):
                 regressions.append(row)
             if not voice and (abs(delta)> .001 or abs(loss)> .0001):
                 regressions.append(row)
@@ -55,7 +57,26 @@ def compare(base, candidate):
             if (voice and delta < -1.) or (not voice and abs(delta) > .001):
                 regressions.append(row)
         changes.append(row)
-    return {"baseline_flags":base["target_flag_rows"], "candidate_flags":candidate["target_flag_rows"],
+    # Band diagnostics are not psychoacoustic metrics. Both sides use the
+    # same offline filter and exact timeline; require finite paired values.
+    def bands(report):
+        rows = {}
+        for row in report["band_metrics"]:
+            key = tuple(row[k] for k in ("noise","snr","policy","band"))
+            if key in rows: raise ValueError("duplicate band identity")
+            rows[key] = row
+        return rows
+    ba, bb = bands(base), bands(candidate)
+    if ba.keys() != bb.keys() or len(ba) != 16:
+        raise ValueError("incomplete paired speech band diagnostics")
+    band_changes = []
+    for key, old in ba.items():
+        new = bb[key]
+        d = {k:new[k] for k in ("noise","snr","policy","band")}
+        for field in ("error_db","projection","clean_only_error_db"):
+            d[field+"_delta"] = metric(new,field)-metric(old,field)
+        band_changes.append(d)
+    return {"band_changes":band_changes,"baseline_flags":base["target_flag_rows"], "candidate_flags":candidate["target_flag_rows"],
             "paired_rows":len(changes), "regressions":regressions, "changes":changes,
             "release_qualified":False,
             "scope":"objective paired comparison; targets and listening/FAT remain independent"}
@@ -64,9 +85,11 @@ if __name__ == "__main__":
     base, candidate, out = map(Path, sys.argv[1:])
     report = compare(json.loads(base.read_text()), json.loads(candidate.read_text()))
     out.write_text(json.dumps(report, indent=2, allow_nan=False)+"\n")
-    print("AN07D", "paired", report["paired_rows"], "flags", report["baseline_flags"],
+    print("AN07E", "paired", report["paired_rows"], "flags", report["baseline_flags"],
           "->", report["candidate_flags"], "regressions", len(report["regressions"]))
+    for row in report["band_changes"]:
+        print("AN07E_BAND", json.dumps(row, sort_keys=True))
     for row in report["regressions"]:
-        print("AN07D_REGRESSION", json.dumps(row, sort_keys=True))
+        print("AN07E_REGRESSION", json.dumps(row, sort_keys=True))
     if report["regressions"]:
         raise SystemExit(1)
