@@ -1652,6 +1652,11 @@
  text-shadow:0 3px 2px rgba(0,3,7,.72);
 }
 .mx-geq31-bypass-overlay.is-on{display:flex}
+/* H32: keep the header undimmed but center the Harmonice label against
+   the whole editor, not the shaded area below its measured header. */
+#mxNativeHarmony .armix-native-fx-bypass{
+ padding-bottom:var(--armix-fx-bypass-header,0px);
+}
 .mx-geq31-message{
  position:absolute;width:1px;height:1px;padding:0;margin:-1px;
  overflow:hidden;clip-path:inset(50%);white-space:nowrap;

@@ -305,6 +305,30 @@ def main():
                 apply_edit(page,state,restored,0,0)
                 assert harmony.get_attribute("aria-pressed")=="true"
                 assert not page.locator('[data-voices="2"]').is_disabled()
+                # H32: each factory choice reaches the native transport and
+                # preserves the operator's explicit musical context.
+                prior=restored
+                for name,mode,voices,color,space,wet,gain in (
+                    ("doubleLight",1,None,0.74,0.48,0.36,0),
+                    ("doubleWide",1,None,0.8,0.82,0.52,0),
+                    ("duo",0,2,0.75,0.68,0.52,0),
+                    ("trio",0,3,0.75,0.77,0.65,0.6),
+                    ("quartet",0,4,0.78,0.85,0.6,-0.5),
+                    ("quintet",0,5,0.76,0.88,0.66,-1),
+                    ("choir",0,4,0.68,0.58,0.56,-0.5),
+                    ("closeBlend",0,2,0.68,0.44,0.34,0),
+                    ("warmBallad",0,3,0.66,0.68,0.48,0),
+                    ("popChorus",0,3,0.82,0.85,0.58,0),
+                    ("gospelEnsemble",0,5,0.73,0.88,0.69,-1),
+                ):
+                    page.locator("#mxHPreset").select_option(name)
+                    actual=last_action(page,"nativeHarmonySetSettings")["settings"]
+                    expected={**prior,"voiceMode":mode,"color":color,
+                              "space":space,"wet":wet,"gainDb":gain}
+                    if voices is not None:expected["voices"]=voices
+                    assert actual==expected,(name,actual,expected)
+                    apply_edit(page,state,actual,0,0)
+                    prior=actual
                 page.locator("#mxHClose").click()
                 row.locator('[data-action="openPlugin"]').click()
                 assert switch.is_disabled()
