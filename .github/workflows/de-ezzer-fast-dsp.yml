@@ -4,6 +4,7 @@ on:
     paths:
       - 'engine/builtin_fx/de_ezzer/**'
       - 'tools/de-ezzer/**'
+      - 'site/preview-v2/assets/mixer-native-de-ezzer.js'
       - '.github/workflows/de-ezzer-fast-dsp.yml'
 permissions:
   contents: read
@@ -35,3 +36,7 @@ jobs:
           cmake --build /tmp/de-ezzer-build --parallel
       - name: Regression
         run: ctest --test-dir /tmp/de-ezzer-build --output-on-failure
+
+      - name: Editor control regression
+        if: matrix.compiler == 'g++'
+        run: node tools/de-ezzer/ui_test.cjs
