@@ -12,7 +12,6 @@
 #include "AntiNoizProfile.h"
 #include "AntiNoizAutoGain.h"
 #include "AntiNoizTonal.h"
-#include "AntiNoizResidual.h"
 
 namespace armix::builtin_fx::anti_noiz {
 // Independent bounded WOLA reference, not a trained context classifier.
@@ -106,7 +105,6 @@ public:
         fft_.prepare(n_);
         prepareTiming();
         context_.prepare(rate_,hop_);
-        residual_.prepare(rate_,hop_,n_);
         voiceGain_.prepare(rate_,hop_);
         tonal_.prepare(rate_,channels_);tonalIdle_=false;
         for(auto& a:in_)a.fill(0);
@@ -129,13 +127,13 @@ public:
         if(effectiveMode_==Mode::Voice&&(next!=Mode::Voice||(!s.enabled&&settings_.enabled)))
             profile_.limitToIdleBounds();
         if(next!=effectiveMode_||s.enabled!=settings_.enabled||s.cleanDb==0.f||settings_.cleanDb==0.f){tonal_.resetSignal();tonalIdle_=false;}
-        if(next!=effectiveMode_||s.enabled!=settings_.enabled){voiceGain_.reset();context_.reset();residual_.reset();profile_.track(power_,false);}
+        if(next!=effectiveMode_||s.enabled!=settings_.enabled){voiceGain_.reset();context_.reset();profile_.track(power_,false);}
         effectiveMode_=next;
         settings_=s; applyGains(p); return true;
     }
     bool beginLearn() noexcept {
         if(!ready_||!profile_.begin())return false;
-        context_.reset(); residual_.reset(); voiceGain_.reset(); tonal_.begin();tonalIdle_=false;powerValid_=false; return true;
+        context_.reset(); voiceGain_.reset(); tonal_.begin();tonalIdle_=false;powerValid_=false; return true;
     }
     // Quiescent/offline owner only: restart the signal timeline, keep trusted PSD.
     void resetStreamKeepProfile() noexcept {
@@ -143,7 +141,7 @@ public:
         for(auto& a:out_)a.fill(0);
         mask_.fill(1); expansion_=1;
         pos_=ticks_=0;powerValid_=false;
-        profile_.cancel(); context_.reset(); residual_.reset(); voiceGain_.reset(); tonal_.resetSignal();tonalIdle_=false;
+        profile_.cancel(); context_.reset(); voiceGain_.reset(); tonal_.resetSignal();tonalIdle_=false;
     }
     Settings settings() const noexcept {return settings_;}
     float spectralGain() const noexcept {return *std::min_element(mask_.begin(),mask_.begin()+hop_+1);}
@@ -176,7 +174,7 @@ public:
     // Native host lifecycle only. Keep the qualified stationary DSP path,
     // coefficient preparation and signal arithmetic unchanged.
     void cancelNativeLearn() noexcept {
-        if(profile_.learning()){profile_.cancel();context_.reset();residual_.reset();voiceGain_.reset();tonal_.resetSignal();tonalIdle_=false;}
+        if(profile_.learning()){profile_.cancel();context_.reset();voiceGain_.reset();tonal_.resetSignal();tonalIdle_=false;}
     }
     bool lastNativeLearnQualified() const noexcept {return profile_.lastAttemptQualified();}
     void processNativeDry(float* left,float* right,int samples) noexcept {
@@ -197,7 +195,6 @@ private:
         const double hops=double(hop_)*48000./(rate_*128.);
         maskClose_=float(1.-std::pow(1.-0.18,hops));
         expandClose_=float(1.-std::pow(1.-0.035,hops));
-        voiceExpandClose_=float(1.-std::exp(-double(hop_)/(rate_*.028)));
     }
     void applyGains(const PreparedSettings& p) noexcept {
         cleanFloor_=p.clean_;singingFloor_=p.singing_;
@@ -213,7 +210,7 @@ private:
     }
     void frame() noexcept {
         if(!profile_.learning()&&(!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music)) {
-            powerValid_=false;context_.reset();residual_.reset();tonalIdle_=false;profile_.track(power_,false);renderUnity(); return;
+            powerValid_=false;context_.reset();tonalIdle_=false;profile_.track(power_,false);renderUnity(); return;
         }
         const int bins=hop_+1;
         for(int c=0;c<channels_;++c) {
@@ -226,7 +223,7 @@ private:
         powerValid_=true;
         const auto result=profile_.observe(power_);
         if(result==NoiseProfile<maxBins>::LearnResult::accepted)tonal_.commit();
-        if(result!=NoiseProfile<maxBins>::LearnResult::waiting){context_.reset();residual_.reset();voiceGain_.reset();}
+        if(result!=NoiseProfile<maxBins>::LearnResult::waiting){context_.reset();voiceGain_.reset();}
         const bool protect=profile_.learning()||!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music;
         // Only Voice with nonzero Silence may use the extra residual label.
         // Strict idle remains the sole authority for profile and spectral DSP.
@@ -234,12 +231,8 @@ private:
             &profile_.variability():nullptr;
         const bool idle=context_.update(power_,profile_.anchor(),channels_,bins,!protect,variability);
         tonalIdle_=idle&&!protect&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f;
-        const bool voiceResidual=!protect&&effectiveMode_==Mode::Voice&&silenceFloor_<1.f;
-        const bool rumbleIdle=residual_.update(power_,profile_.anchor(),channels_,bins,voiceResidual);
-        const float expTarget=idle?silenceFloor_:rumbleIdle?std::max(silenceFloor_,.12589254f):
-            context_.adaptiveIdle()?std::max(silenceFloor_,.25118864f):1.f;
-        // Low-frequency overlap is ambiguous: at most 18 dB extra, never
-        // grants profile tracking or tonal/spectral authority.
+        const float expTarget=idle?silenceFloor_:context_.adaptiveIdle()?
+            std::max(silenceFloor_,.25118864f):1.f; // at most 12 dB extra
         // Only explicit Voice or source-aware SpeechMic permits independently
         // qualified coherent drift. Unknown/Mixed and musical policies keep
         // the original confirmed-idle tracking; anchor-based guards unchanged.
@@ -293,8 +286,7 @@ private:
             mask_[k]=g>=mask_[k]?g:mask_[k]+maskClose_*(g-mask_[k]);
         }
         // Immediate opening in the next overlap; slow closure. No hard gate.
-        const float close=voiceResidual?voiceExpandClose_:expandClose_;
-        expansion_=expTarget>=expansion_?expTarget:expansion_+close*(expTarget-expansion_);
+        expansion_=expTarget>=expansion_?expTarget:expansion_+expandClose_*(expTarget-expansion_);
         for(int c=0;c<channels_;++c) {
             for(int k=0;k<bins;++k) {
                 const float g=mask_[k]*expansion_;
@@ -315,11 +307,10 @@ private:
     std::array<float,maxN> win_{};
     FftPlan fft_{};
     ContextGuard<maxBins> context_{};
-    ResidualNoiseGuard<maxBins> residual_{};
     VoiceGain<maxBins> voiceGain_{};
     TonalNoise tonal_{};
     bool tonalIdle_=false;
-    float maskClose_=0.18f,expandClose_=0.035f,voiceExpandClose_=0.09f;
+    float maskClose_=0.18f,expandClose_=0.035f;
     float cleanFloor_=1,singingFloor_=1,silenceFloor_=1,autoFloor_=1;
     std::array<std::array<float,maxN>,2> in_{},out_{};
     std::array<std::array<Complex,maxN>,2> work_{};

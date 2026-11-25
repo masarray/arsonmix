@@ -41,6 +41,16 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
+      - name: Preserve exact standalone source for offline reproducibility
+        if: matrix.benchmark == 'ON'
+        uses: actions/upload-artifact@v4
+        with:
+          name: anti-noiz-p0-repro-source
+          path: |
+            engine/builtin_fx/anti_noiz/
+            tests/anti_noiz_*.cpp
+            tools/anti-noiz/
+          if-no-files-found: error
       - name: Configure isolated standard C++ DSP
         run: >
           cmake -S tools/anti-noiz -B "$RUNNER_TEMP/anti-noiz"
