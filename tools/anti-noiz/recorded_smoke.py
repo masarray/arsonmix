@@ -119,7 +119,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("qualifier", type=Path)
     parser.add_argument("output", type=Path, help="new local directory; do not commit or publish WAV outputs")
+    parser.add_argument("--compare-an03f", action="store_true", help="report against exact AN-03F smoke baseline")
     args = parser.parse_args()
+    observations = {}
     binary = args.qualifier.resolve(strict=True)
     args.output.mkdir(parents=True, exist_ok=False)
     download("README.md", README_SHA, args.output / "SOURCE-README.md")
@@ -154,10 +156,29 @@ def main():
                 raise ValueError(f"missing required aggregate segments: {required-present}")
             for row in rows:
                 if row["channel_minus1_all"] == "-1":
+                    observations[(name, tag, row["label"])] = row
                     print(name, tag, row["label"], "error_dB=" + row["error_improvement_db"],
                           "projection=" + row["desired_projection"], "removed=" + row["removed_projection"],
                           "clean_only_error_dB=" + row["clean_only_error_db_relative"],
                           "idle_dB=" + row["idle_attenuation_db"], flush=True)
+    if args.compare_an03f:
+        # Fixed reference measurements from exact 39267bf job 139039330124.
+        # Exploratory candidate criteria; prior CTest gates remain mandatory.
+        checks = (
+            ("speech", "auto-14-1", "recorded_clip", "error_improvement_db", .988065544469, 2.0, "min"),
+            ("sung-note", "auto-14-1", "recorded_clip", "error_improvement_db", 2.48512011297, 2.385, "min"),
+            ("acoustic-guitar", "auto-14-1", "recorded_clip", "error_improvement_db", 1.80764484338, 1.707, "min"),
+            ("speech", "auto-mic-14-1", "recorded_clip", "error_improvement_db", 9.60616316337, 9.1, "min"),
+            ("speech", "auto-mic-14-1", "low_energy_window", "desired_projection", .940004356549, .955, "min"),
+            ("speech", "auto-mic-14-1", "low_energy_window", "clean_only_error_db_relative", -13.4446952838, -14.5, "max"),
+        )
+        for name, tag, label, metric, baseline, limit, direction in checks:
+            value = float(observations[(name, tag, label)][metric])
+            passed = math.isfinite(value) and (value >= limit if direction == "min" else value <= limit)
+            print(f"CANDIDATE {name} {tag} {label} {metric}: baseline={baseline:.6f} candidate={value:.6f} limit={direction}:{limit} {'PASS' if passed else 'FAIL'}", flush=True)
+        for name, tag in (("speech", "auto-14-1"), ("sung-note", "auto-14-1"), ("acoustic-guitar", "auto-14-1")):
+            value = float(observations[(name, tag, "recorded_clip")]["desired_projection"])
+            print(f"CANDIDATE {name} {tag} recorded_clip projection={value:.6f} {'PASS' if .97<=value<=1.03 else 'FAIL'}", flush=True)
     print("Recorded-audio smoke completed; synthetic added noise; no subjective or release qualification.")
 
 

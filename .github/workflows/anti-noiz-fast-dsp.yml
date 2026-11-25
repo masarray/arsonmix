@@ -53,9 +53,12 @@ jobs:
         if: matrix.benchmark == 'ON'
         run: '"$RUNNER_TEMP/anti-noiz/anti_noiz_bench"'
 
+      - name: Opt-in active callback profile (exploratory)
+        if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
+        run: '"$RUNNER_TEMP/anti-noiz/anti_noiz_rt_profile"'
       - name: Opt-in recorded audio smoke (local WAVs, no upload)
         if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
-        run: python3 tools/anti-noiz/recorded_smoke.py "$RUNNER_TEMP/anti-noiz/anti_noiz_qualify" "$RUNNER_TEMP/anti-noiz-recorded-smoke"
+        run: python3 tools/anti-noiz/recorded_smoke.py "$RUNNER_TEMP/anti-noiz/anti_noiz_qualify" "$RUNNER_TEMP/anti-noiz-recorded-smoke" --compare-an03f
 
   web-contract:
     name: Anti Noiz Web UX contract (Node, no Windows)

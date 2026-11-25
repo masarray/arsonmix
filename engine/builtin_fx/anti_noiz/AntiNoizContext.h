@@ -14,8 +14,9 @@ public:
         hold_=std::max(1,int(std::ceil(.18*rate/hop)));
         reset();
     }
-    void reset() noexcept {quiet_=0;initialized_=false;broadband_=0;}
+    void reset() noexcept {quiet_=0;initialized_=false;broadband_=0;subbandPeak_=0;}
     float broadbandRatio() const noexcept {return broadband_;}
+    float subbandPeakRatio() const noexcept {return subbandPeak_;}
     float temporalRatio(const Powers& profile,int channels,int bins,int bin) const noexcept {
         float ratio=0;
         for(int c=0;c<channels;++c){
@@ -28,7 +29,7 @@ public:
     bool update(const Powers& power,const Powers& profile,int channels,int bins,
                 bool eligible) noexcept {
         if(!eligible){reset();return false;}
-        bool foreground=false;broadband_=0;
+        bool foreground=false;broadband_=0;subbandPeak_=0;
         for(int c=0;c<channels;++c){
             float total=0,noise=0;
             for(int k=0;k<bins;++k){
@@ -45,7 +46,9 @@ public:
             for(int k=0;k<bins;){
                 const int end=std::min(k+8,bins),stop=bins-end<4?bins:end;
                 float p=0,q=0;for(int j=k;j<stop;++j){p+=power[c][j];q+=profile[c][j];}
-                foreground|=p>=5.f*std::max(q,eps);k=stop;
+                const float denominator=std::max(q,eps);
+                foreground|=p>=5.f*denominator;
+                subbandPeak_=std::max(subbandPeak_,p/denominator);k=stop;
             }
             // Narrow persistent excess can be buried in broadband noise. Pair
             // adjacent bins to reduce sensitivity to FFT leakage and random peaks.
@@ -64,7 +67,7 @@ private:
     static constexpr float eps=1e-16f;
     Powers average_{};
     int quiet_=0,hold_=1;
-    float alpha_=1,broadband_=0;
+    float alpha_=1,broadband_=0,subbandPeak_=0;
     bool initialized_=false;
 };
 } // namespace armix::builtin_fx::anti_noiz
