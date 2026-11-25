@@ -151,7 +151,7 @@ private:
         // Uncertainty reserve is prepared once per frame. The band-local
         // budget avoids giving dominant learned noise a global dry path.
         const float reserve=activeVoice?AutoGain::detailReserve(ratio,.75f):
-            selective?AutoGain::detailReserve(ratio,.25f+.35f*settings_.musicProtect):0.f;
+            selective?AutoGain::detailReserve(ratio,.25f+.55f*settings_.musicProtect):0.f;
         if(protect||idle)voiceGain_.reset();
         // Analysis remains live, but when both gains are exactly unity no
         // inverse FFT is needed. Preserve the context and profile histories.
