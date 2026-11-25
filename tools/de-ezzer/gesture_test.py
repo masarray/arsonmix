@@ -9,6 +9,7 @@ assets = Path(__file__).resolve().parents[2] / 'site/preview-v2/assets'
 with sync_playwright() as pw:
     browser = pw.chromium.launch(executable_path='/usr/bin/chromium' if Path('/usr/bin/chromium').is_file() else None, args=['--no-sandbox'])
     page = browser.new_page(viewport={'width': 800, 'height': 600})
+    page.set_default_timeout(5000)
     errors = []
     page.on('pageerror', lambda e: errors.append(str(e)))
     page.set_content('<body style="background:#151718"></body>')
@@ -16,7 +17,14 @@ with sync_playwright() as pw:
       window.listeners={};window.events=[];window.crypto.randomUUID ||= ()=>String(Math.random()).slice(2);
       window.view={admitted:true,device:{epoch:'12'},graph:{revision:'4',channels:[{id:'42',inserts:[{id:'fx-a',catalogId:'armix.builtin.de-ezzer.v1'}]}]}};
       window.__ARMIX_NATIVE_M2__={fxEditorState:()=>view,nativeIdFor:t=>t.nativeId};
-      window.__JUCE__={backend:{emitEvent:(n,p)=>events.push(p),addEventListener:(n,cb)=>listeners[n]=cb}};
+      window.autoSnapshot=true;
+      window.__JUCE__={backend:{emitEvent:(n,p)=>{
+        events.push(p);
+        // Real editor polls continually. Keep ordinary gestures independent
+        // of runner speed; manual correlated observations below disable this.
+        if(p.action==='nativeDeEzzerSnapshot'&&window.autoSnapshot&&window.s&&events.filter(x=>x.action==='nativeDeEzzerSnapshot').length>1)
+          queueMicrotask(()=>{s={...s,frames:String(BigInt(s.frames)+128n)};listeners.arMixBuiltinDeEzzerSnapshot({...p,ok:true,snapshot:s});});
+      },addEventListener:(n,cb)=>listeners[n]=cb}};
       // Fixture only: verify the shared bar adapter's exact accepted values and receipt.
       window.presetCalls=[];window.ArSonMixBuiltinFxPresetBar={create(a){window.adapter=a;a.subscribeResult(p=>presetCalls.push(['reply',p]));return {paint(){},refresh(){},selectUser(){return false;},onAccepted(s,id){presetCalls.push(['accepted',s,id]);},factoryIntent(id){presetCalls.push(['factory',id]);},tick(){},close(){}};}};
       window.commands=()=>events.filter(p=>p.action==='nativeDeEzzerSet');
@@ -64,6 +72,7 @@ with sync_playwright() as pw:
     page.evaluate('''()=>{let p={...adapter.context(),requestId:'fxpres-1'};delete p.slot;listeners.arMixBuiltinFxPresetResult({...p,instanceId:'other'});listeners.arMixBuiltinFxPresetResult(p);}''')
     assert page.evaluate('presetCalls.filter(x=>x[0]==="reply").length')==1
     # No fabricated meter before native observation. Inject a correlated snapshot.
+    page.evaluate('window.autoSnapshot=false')
     assert page.locator('[data-ess]').inner_text()=='—'
     page.wait_for_timeout(70)
     page.evaluate('''()=>{const req=events.filter(p=>p.action==='nativeDeEzzerSnapshot').at(-1);s={...s,frames:String(BigInt(s.frames)+2400n),observation:{inputDb:[-55,-30,-12,-20,-41],wetDb:[-56,-32,-20,-25,-42],essDb:-20,sidechainDb:-16,deltaDb:-24}};listeners.arMixBuiltinDeEzzerSnapshot({...req,ok:true,snapshot:s});}''')

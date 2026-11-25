@@ -16,12 +16,12 @@ function createTransport({backend,context,initialContext,token,now=()=>performan
  const current=()=>same(context(),initialContext);
  const emit=(action,requestId,extra={})=>backend.emitEvent("arMixAction",{...initialContext,action,requestId,editorToken:token,...extra});
  function cancelAudition(){if(!closed&&current()){try{emit("nativeDeEzzerCue",token+"-c"+(++serial),{mode:"Mix"});}catch{}}cueRequest=null;}
- function fault(){if(closed)return;cancelAudition();closed=true;listener?.disconnect();onFault?.();}
+ function fault(){if(closed)return;cancelAudition();closed=true;listener?.disconnect?.();onFault?.();}
  function tick(){
   if(closed)return;
   if(!current()){fault();return;}
   if(read&&now()-read.at>1000){fault();return;}
-  if(cueRequest&&now()-cueRequest.at>1000){cancelAudition();listener?.cue({available:false,requested:"Mix",applied:"Mix"});}
+  if(cueRequest&&now()-cueRequest.at>1000){cancelAudition();listener?.cue?.({available:false,requested:"Mix",applied:"Mix"});}
   if(!read){read={id:token+"-r"+(++serial),at:now()};try{emit("nativeDeEzzerSnapshot",read.id);}catch{fault();}}
  }
  function send(command){
@@ -38,13 +38,13 @@ function createTransport({backend,context,initialContext,token,now=()=>performan
   if(closed||!same(initialContext,payload)||!current())return false;
   if(kind==="snapshot"&&read?.id===payload.requestId){
    read=null;if(payload.ok!==true||!payload.snapshot){fault();return false;}
-   if(onInitial){const initial=onInitial;onInitial=null;initial(payload.snapshot);}else listener?.telemetry(payload.snapshot);
-   listener?.cue(payload.snapshot.cue);
+   if(onInitial){const initial=onInitial;onInitial=null;initial(payload.snapshot);}else listener?.telemetry?.(payload.snapshot);
+   listener?.cue?.(payload.snapshot.cue);
    return true;
   }
-  if(kind==="cue"&&cueRequest?.id===payload.requestId){cueRequest=null;listener?.cue(payload.cue);return payload.ok===true;}
+  if(kind==="cue"&&cueRequest?.id===payload.requestId){cueRequest=null;listener?.cue?.(payload.cue);return payload.ok===true;}
   if(kind==="queue"&&write===payload.requestId){if(payload.ok!==true){write=null;fault();}return true;}
-  if(kind==="ack"&&write===payload.requestId){write=null;if(payload.ok!==true||!payload.ack){fault();return false;}listener?.ack(payload.ack);return true;}
+  if(kind==="ack"&&write===payload.requestId){write=null;if(payload.ok!==true||!payload.ack){fault();return false;}listener?.ack?.(payload.ack);return true;}
   return false;
  }
  return Object.freeze({send,setCue,tick,receive,receivePreset(p){if(!closed&&current()&&same(initialContext,{...p,slot:initialContext.slot}))presetListener?.(p);},subscribePresetResult(fn){presetListener=fn;},subscribe(s){listener=s;return ()=>{listener=null;presetListener=null;closed=true;};},cancelAudition});
