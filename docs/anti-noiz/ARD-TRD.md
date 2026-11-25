@@ -27,4 +27,4 @@ AN-06 exact SHA Windows native/GUI/FAT, corpus and blind listening, cross-thread
 
 ## Reproduction
 From repo root: c++ -std=c++20 -O2 -Wall -Wextra -Werror tests/anti_noiz_core_test.cpp -o /tmp/anti_noiz_test && /tmp/anti_noiz_test
-Evidence status: source + test authored; execution must be separately recorded. No installer or product admission.
+Evidence: see [AN-01 standalone evidence](AN-01-EVIDENCE.md) for hash-verified local C++ tests, measured limits and remaining gates. No installer or product admission.
