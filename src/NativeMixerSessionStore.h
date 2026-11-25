@@ -89,6 +89,36 @@ public:
         return writePointer(head,id);
     }
 
+    // Explicit NEW replaces HEAD only after archiving the independently
+    // verified previous checkpoint. PREVIOUS alone is not enough: the next
+    // normal edit rotates it. All IO stays on the existing session worker.
+    juce::String commitNewSession(const MixerSessionDocument& doc,
+                        const std::vector<armix::shows::BinaryState>& states) const {
+        if(!doc.logicalOnly || doc.resumeMain.value_or(false) || !states.empty() ||
+           !doc.inserts.empty() || !doc.hotkeys.empty() || !doc.request.sources.empty() ||
+           !doc.logicalInputs.references().empty() || !doc.logicalOutputs.references().empty())
+            return "New session must be an unbound clean workspace";
+        const auto head=root_.getChildFile("HEAD");
+        if(head.exists()) {
+            MixerSessionDocument old,checked;
+            std::vector<armix::shows::BinaryState> oldStates,checkedStates;
+            auto error=load(old,oldStates);
+            if(error.isNotEmpty())return error;
+            if(old.id==doc.id)return "New session identity must differ";
+            const auto archive=root_.getSiblingFile("SessionArchive");
+            if(archive.createDirectory().failed())return "Cannot create session archive";
+            const auto file=archive.getNonexistentChildFile(old.id+"-"+juce::Uuid().toDashedString(),".smix",false);
+            error=writeFile(file,old,oldStates);
+            if(error.isNotEmpty())return error;
+            old.resumeMain.reset(); // portable archive cannot auto-arm
+            error=readFile(file,checked,checkedStates);
+            if(error.isNotEmpty() || Codec::encode(old)!=Codec::encode(checked))
+                return "Previous session archive readback failed";
+        }else if(root_.getChildFile("PREVIOUS").exists())
+            return "Previous checkpoint requires explicit recovery";
+        return commit(doc,states);
+    }
+
     // A single portable JSON file, with content-addressed plug-in state.
     static juce::String writeFile(const juce::File& file,MixerSessionDocument doc,
                                   const std::vector<armix::shows::BinaryState>& states) {

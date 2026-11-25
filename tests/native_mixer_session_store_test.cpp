@@ -1308,6 +1308,47 @@ static void verifyLogicalControlTransactions() {
     assert(opened);
     assert(control.workspace().document().roster.find(trackId));
     assert(control.workspace().document().roster.find(busId));
+    const auto priorId=control.workspace().document().id;
+    const auto priorToken=control.workspace().workspaceToken();
+    const auto priorRevision=control.workspace().revision();
+    const auto beforeNew=juce::JSON::toString(control.readback(),true);
+    bool rejected=false;
+    assert(control.newSession("stale",priorRevision,nullptr,[&](juce::String error){
+        rejected=error.isNotEmpty();
+    }));
+    assert(rejected&&!worker.busy()&&juce::JSON::toString(control.readback(),true)==beforeNew);
+    IoPortLayout defaults;
+    assert(defaults.inputs.add(100,"Vocal",IoPortLayout::I::Format::mono));
+    assert(defaults.inputs.restoreIntent(100,{{"ASIO","Verified ASIO","Verified ASIO"},0,-1,"Mic",""}));
+    assert(defaults.outputs.add(200,"Stage"));
+    assert(defaults.outputs.restoreIntent(200,{{"ASIO","Verified ASIO"},2,3,"L","R"}));
+    bool created=false;
+    assert(control.newSession(priorToken,priorRevision,&defaults,[&](juce::String error){
+        if(error.isNotEmpty())std::cerr<<error.toStdString()<<'\n';
+        assert(error.isEmpty());created=true;
+    }));
+    assert(worker.busy()&&!created&&control.workspace().workspaceToken()==priorToken);
+    waitForIO();
+    const auto& fresh=control.workspace().document();
+    assert(created&&fresh.id!=priorId&&control.workspace().workspaceToken()!=priorToken);
+    assert(fresh.logicalOnly&&fresh.masterMute&&!fresh.resumeMain.value_or(true)&&fresh.inserts.empty());
+    assert(fresh.logicalInputs.find(100)&&!fresh.logicalInputs.find(100)->binding);
+    assert(fresh.logicalOutputs.find(200)&&!fresh.logicalOutputs.find(200)->binding);
+    assert(fresh.logicalInputs.references().empty()&&fresh.logicalOutputs.references().empty());
+    auto archived=folder.getChildFile("SessionArchive").findChildFiles(juce::File::findFiles,false,"*.smix");
+    assert(archived.size()==1);
+    MixerSessionDocument recoveredArchive;std::vector<BinaryState> archiveStates;
+    assert(NativeMixerSessionStore::readFile(archived[0],recoveredArchive,archiveStates).isEmpty());
+    assert(recoveredArchive.id==priorId&&recoveredArchive.inserts.size()==saved.inserts.size());
+    assert(archiveStates.size()==states.size());
+    // A later generation must not remove the separately archived old show.
+    const auto newToken=control.workspace().workspaceToken();
+    assert(control.newSession(newToken,control.workspace().revision(),nullptr,
+        [](juce::String error){assert(error.isEmpty());}));
+    waitForIO();
+    assert(control.workspace().document().logicalInputs.empty());
+    assert(control.workspace().document().logicalOutputs.empty());
+    assert(archived[0].existsAsFile());
     assert(folder.deleteRecursively());
 }
 

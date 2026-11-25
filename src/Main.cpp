@@ -2778,6 +2778,49 @@ private:
         });
     }
 
+    bool canCreateOfflineSession() {
+        auto* audio=engine_.devices().getCurrentAudioDevice();
+        return (!audio || !audio->isOpen()) && engine_.allOutputsDisarmed() &&
+            !engine_.wantsMainContinuation() && !engine_.hasRetainedNativeSession() &&
+            !engine_.hasBoundMixerRoute() && !engine_.isGraphSwitchPending() &&
+            !engine_.independentClockActive() && !engine_.hasTemporaryDiagnosticDevice() &&
+            !pendingRetainedFxCapture_ && !retainedOfflineFxActive_ &&
+            !logicalVendorEditor_ && !logicalMixer_.readOnly() &&
+            !mixerSessionWorker_.busy() && !deviceApply_.busy() && !nativeShowBusy_ &&
+            !studioBackupBusy_ && !catalog_.busy() && !mixerFileDialogOpen_ && !namedIoFileChooser_;
+    }
+
+    void createOfflineSession(const juce::var& args) {
+        ensureLogicalWorkspace();
+        bool confirmed=false;
+        std::uint64_t revision=0;
+        const auto mode=args.getProperty("mode","").toString();
+        const auto token=args.getProperty("workspaceToken","").toString();
+        if(!armix::session::strictBool(args.getProperty("confirmed",{}),confirmed)||!confirmed||
+           !armix::session::parseDecimal(args.getProperty("baseRevision",{}),revision,true)||
+           (mode!="EMPTY"&&mode!="DEFAULT")||!canCreateOfflineSession())
+            return emitMixerSessionAck("NEW","Disconnect audio and finish current mixer operations before New Session");
+        if(mode=="DEFAULT"&&(ioDefaults_.readOnly()||ioDefaults_.layout().empty()))
+            return emitMixerSessionAck("NEW","No valid saved I/O defaults");
+        auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
+        if(!logicalMixer_.newSession(token,revision,mode=="DEFAULT"?&ioDefaults_.layout():nullptr,
+                [safe](juce::String error){
+            if(safe==nullptr)return;
+            if(error.isEmpty()){
+                safe->autoMainEpoch_=0;
+                safe->operatorOutputMuted_=true;
+                safe->lastMixerFile_=juce::File{};
+                safe->closeAllPluginEditors();
+                safe->stopOrbit();
+                const auto keyError=safe->hotkeys_.activateSession(safe->logicalMixer_.workspace().document().id);
+                if(keyError.isNotEmpty())safe->emitNotice("Hotkey activation: "+keyError,true);
+                safe->mixerSessionStatus_="NEW_LOGICAL_SESSION_MUTED";
+                safe->emitApprovedNativeSnapshot();
+            }
+            safe->emitMixerSessionAck("NEW",error);
+        }))emitMixerSessionAck("NEW","Mixer session IO worker unavailable");
+    }
+
     bool canInstallIoDefaults() const {
         const auto session=settingsDirectory().getChildFile("MixerSession");
         // Never replace a checkpoint, including a damaged HEAD or orphaned
@@ -2858,6 +2901,7 @@ private:
                 live.getProperty("dryRoutingLab",{}).getProperty("nativeBus",{})
                     .getProperty("logicalOutputRegistry",{}));
             obj->setProperty("ioDefaults",ioDefaults_.snapshot(canInstallIoDefaults()));
+            obj->setProperty("offlineNewSessionAvailable",canCreateOfflineSession());
             obj->setProperty("physicalBusPatchSupported",true);
             obj->setProperty("physicalBusOutputObserved",
                 live.getProperty("dryRoutingLab",{}).getProperty("busOutputObserved",false));
@@ -8375,6 +8419,10 @@ private:
             return;
         }
 
+        if(action=="nativeMixerNewOffline") {
+            createOfflineSession(args);
+            return;
+        }
         if(action=="nativeMixerFileSave"||action=="nativeMixerFileOpen") {
             chooseMixerFile(action=="nativeMixerFileSave");
             return;
