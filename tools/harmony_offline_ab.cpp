@@ -64,7 +64,11 @@ static Wave readWave(const fs::path& file){
             const auto* p=data+i*align+static_cast<std::size_t>(c)*(bits/8);
             if(fmt==3){
                 const auto raw=u32(p);float x=0;std::memcpy(&x,&raw,sizeof(x));
-                return std::isfinite(x)?std::clamp(x,-4.f,4.f):0.f;
+                // An acoustic forensic input must not silently hide a
+                // corrupted or out-of-contract float capture.
+                if(!std::isfinite(x)||std::abs(x)>4.f)
+                    throw std::runtime_error("float WAV contains nonfinite or out-of-range PCM");
+                return x;
             }
             if(bits==16)return static_cast<float>(std::int16_t(u16(p)))/32768.f;
             std::int32_t value=std::int32_t(p[0])|(std::int32_t(p[1])<<8)|
@@ -660,7 +664,17 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
        input.left.size()>std::size_t(input.rate)*30||block<16||block>2048||
        s.voices<3||s.voices>5)throw std::runtime_error("qualification requires <=30s, Trio-Five, block 16..2048");
     fs::create_directories(folder);
+    // Sparse, callback-aligned event attribution. A loss is a renderer
+    // transition, NOT a detected click. No clock readings in trace replay.
+    using EventCounts=std::array<std::uint64_t,6>;
+    struct Event {std::size_t at=0,end=0;int role=0;EventCounts delta{};};
+    const auto eventCounts=[](const Engine& e,int v){
+        const auto q=e.lossReasonsForOfflineTests(v);
+        const auto a=e.admissionForOfflineTests(v);
+        return EventCounts{{q.noClock,q.causal,q.safeUnready,a.missingPeak,a.poolBlocked,a.supportRejected}};
+    };
     struct Run {
+        std::vector<Event> events;
         Wave pcm;std::vector<double> us;std::uint64_t updates=0,losses=0,highLoss=0;
         std::array<Engine::RendererTrace,Engine::maxVoices> trace{};
         std::array<Engine::LossReasons,Engine::maxVoices> reasons{};
@@ -677,7 +691,10 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
             !e->setLocalEpochForOfflineReference(variant==4)||
             !e->setAdaptiveEnvelopeForOfflineReference(variant==2)||!e->setRendererTraceForOfflineTests(trace))
             throw std::runtime_error("qualification engine setup");
-        Run x;x.pcm=input;x.us.reserve(input.left.size()/block+2);
+        Run x;x.pcm=input;
+        const bool timing=!trace&&!partition&&wet>0.f;
+        if(timing)x.us.reserve(input.left.size()/block+2);
+        std::array<EventCounts,Engine::maxVoices> prior{};
         std::size_t gi=0;
         for(std::size_t at=0;at<input.left.size();){
             auto end=input.left.size();
@@ -687,11 +704,22 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
                 end=f.end;
             }
             const auto n=std::min(std::size_t(renderBlock),end-at);
-            const auto start=std::chrono::steady_clock::now();
-            e->process(x.pcm.left.data()+at,x.pcm.right.data()+at,int(n));
-            const auto elapsed=std::chrono::duration<double,std::micro>(
-                std::chrono::steady_clock::now()-start).count();
-            if(!trace&&!partition&&at>=input.rate/4&&n==std::size_t(block))x.us.push_back(elapsed);
+            if(timing&&at>=input.rate/4&&n==std::size_t(block)){
+                const auto start=std::chrono::steady_clock::now();
+                e->process(x.pcm.left.data()+at,x.pcm.right.data()+at,int(n));
+                x.us.push_back(std::chrono::duration<double,std::micro>(
+                    std::chrono::steady_clock::now()-start).count());
+            }else e->process(x.pcm.left.data()+at,x.pcm.right.data()+at,int(n));
+            if(trace)for(int v=0;v<Engine::maxVoices;++v){
+                const auto now=eventCounts(*e,v);Event evt{at,at+n,v,{}};
+                bool changed=false;
+                for(std::size_t k=0;k<now.size();++k){
+                    if(now[k]<prior[v][k])throw std::runtime_error("H29C nonmonotonic trace");
+                    evt.delta[k]=now[k]-prior[v][k];changed|=evt.delta[k]!=0;
+                }
+                if(changed)x.events.push_back(evt);
+                prior[v]=now;
+            }
             at+=n;if(guide&&at==guide->at(gi).end)++gi;
         }
         for(int v=0;v<Engine::maxVoices;++v){
@@ -774,6 +802,36 @@ static void qualify(const Wave& input,const fs::path& folder,Settings s,int bloc
         admissions<<names[version]<<','<<v<<','<<a.attempts<<','<<a.missingPeak<<','<<a.poolBlocked<<','<<a.supportRejected<<','<<a.admitted<<','<<a.clockResets<<','<<a.adaptiveAttempts<<','<<a.adaptiveAccepted<<','<<a.adaptiveSites<<','<<a.localChecks<<','<<a.localAccepted<<'\n';
     }
     if(!admissions)throw std::runtime_error("H28A admission report write");
+    // Store only callbacks containing loss or rejected admission. Mix,
+    // aligned dry and residual metrics belong to the stereo callback,
+    // not to the role; multiple role rows may share the same evidence.
+    std::ofstream events(folder/"renderer_events.csv",std::ios::trunc);
+    if(!events)throw std::runtime_error("H29C events report open");
+    events<<std::setprecision(10)
+          <<"variant,role,callback_start_sample,callback_end_sample,output_time_s,nominal_dry_source_time_s,loss_no_clock,loss_causal,loss_safe_unready,missing_peak,pool_blocked,support_rejected,dry_rms_l,dry_rms_r,mix_peak_l,mix_peak_r,mix_over_unity_l,mix_over_unity_r,backing_rms_l,backing_rms_r,backing_max_step_l,backing_max_step_r\n";
+    for(int version:{0,3,4}){
+        const auto& pass=version==0?traced:version==3?traced28:tracedLocal;
+        const auto backing=subtract(pass.pcm,dry);
+        std::array<EventCounts,Engine::maxVoices> sums{};
+        for(const auto& evt:pass.events){
+            for(std::size_t k=0;k<evt.delta.size();++k)sums[evt.role][k]+=evt.delta[k];
+            const auto dl=earEvidence(dry.left,evt.at,evt.end),dr=earEvidence(dry.right,evt.at,evt.end);
+            const auto ml=earEvidence(pass.pcm.left,evt.at,evt.end),mr=earEvidence(pass.pcm.right,evt.at,evt.end);
+            const auto bl=earEvidence(backing.left,evt.at,evt.end),br=earEvidence(backing.right,evt.at,evt.end);
+            events<<names[version]<<','<<evt.role<<','<<evt.at<<','<<evt.end<<','
+                  <<double(evt.at)/input.rate<<','<<(double(evt.at)-std::lround(input.rate*.024))/input.rate;
+            for(auto q:evt.delta)events<<','<<q;
+            events<<','<<dl.rms<<','<<dr.rms<<','<<ml.peak<<','<<mr.peak<<','<<ml.overload<<','<<mr.overload
+                  <<','<<bl.rms<<','<<br.rms<<','<<bl.maxStep<<','<<br.maxStep<<'\n';
+        }
+        for(int v=0;v<Engine::maxVoices;++v){
+            const auto& q=pass.reasons[v];const auto& a=pass.admissions[v];
+            if(sums[v]!=EventCounts{{q.noClock,q.causal,q.safeUnready,a.missingPeak,a.poolBlocked,a.supportRejected}})
+                throw std::runtime_error("H29C event conservation mismatch");
+        }
+    }
+    if(!events)throw std::runtime_error("H29C events report write");
+
     // RMS-matched audition copies only: no gain added to raw evidence.
     // Equalize down to the quietest mix and apply a common peak safety
     // scale. This is not BS.1770 loudness or true-peak normalization.
@@ -920,7 +978,16 @@ int main(int argc,char** argv){
             const auto causal=readWave(folder/"h26_high_causal_candidate.wav");
             if(causal.rate!=v.rate||causal.left.size()!=v.left.size()||!fs::exists(folder/"h26_causal_mix.wav"))return 21;
             qualify(v,folder/"qualification",s,64);
-            if(!fs::exists(folder/"qualification/listener_scores.csv"))return 26;
+            if(!fs::exists(folder/"qualification/listener_scores.csv")||
+               !fs::exists(folder/"qualification/renderer_events.csv"))return 26;
+            // Invalid floating captures must fail instead of silently
+            // replacing NaN or clipping to the engine input contract.
+            auto badCapture=v;badCapture.left[0]=5.f;
+            writeWave(folder/"invalid_capture.wav",badCapture);
+            bool invalidRejected=false;
+            try{(void)readWave(folder/"invalid_capture.wav");}
+            catch(const std::runtime_error&){invalidRejected=true;}
+            if(!invalidRejected)return 27;
             const auto adaptive=readWave(folder/"h27_high_adaptive_candidate.wav");
             if(adaptive.rate!=v.rate||adaptive.left.size()!=v.left.size()||!fs::exists(folder/"h27_adaptive_mix.wav"))return 25;
             std::ifstream tr(folder/"renderer_trace_10ms.csv");int traceRows=0;

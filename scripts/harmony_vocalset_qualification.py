@@ -155,6 +155,45 @@ def validate_timeline(rows, frames, block):
     roots = {int(r["chord_root"]) for r in rows}
     require(len(roots & {0, 5, 7}) >= 2, "expected guide roots absent")
 
+EVENT_FIELDS = ("loss_no_clock", "loss_causal", "loss_safe_unready",
+                "missing_peak", "pool_blocked", "support_rejected")
+
+def validate_events(path, reasons, admissions, frames, block, rate):
+    expected = {}
+    for r in reasons:
+        key = (r["variant"], count(r, "role"))
+        expected[key] = [count(r, k) for k in EVENT_FIELDS[:3]]
+    for r in admissions:
+        key = (r["variant"], count(r, "role"))
+        expected[key].extend(count(r, k) for k in EVENT_FIELDS[3:])
+    sums = {k: [0] * len(EVENT_FIELDS) for k in expected}
+    seen = set()
+    with path.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        require(reader.fieldnames is not None and
+                set(EVENT_FIELDS).issubset(reader.fieldnames), "event schema missing")
+        for row in reader:
+            key = (row["variant"], count(row, "role"))
+            start, end = count(row, "callback_start_sample"), count(row, "callback_end_sample")
+            require(key in sums and start < frames and start % block == 0 and
+                    end == min(start + block, frames), "invalid event callback")
+            require((key, start) not in seen, "duplicate event callback")
+            seen.add((key, start))
+            delta = [count(row, k) for k in EVENT_FIELDS]
+            require(any(delta), "empty event")
+            sums[key] = [a + b for a, b in zip(sums[key], delta)]
+            require(abs(float(row["output_time_s"]) - start / rate) < 1e-6 and
+                    abs(float(row["nominal_dry_source_time_s"]) -
+                        (start - math.floor(rate * .024 + .5)) / rate) < 1e-6,
+                    "invalid event timestamps")
+            for field in ("dry_rms_l", "dry_rms_r", "mix_peak_l", "mix_peak_r",
+                          "backing_rms_l", "backing_rms_r", "backing_max_step_l", "backing_max_step_r"):
+                value = float(row[field])
+                require(math.isfinite(value) and value >= 0, "invalid event PCM evidence")
+            for field in ("mix_over_unity_l", "mix_over_unity_r"):
+                require(count(row, field) <= end - start, "invalid event overload count")
+    require(sums == expected, "event conservation mismatch")
+
 def export_evidence(out, source_sha):
     import json
     import re
@@ -188,8 +227,10 @@ def export_evidence(out, source_sha):
                 require(count(r, "high_losses") <= count(r, "total_losses"),
                         "invalid HIGH loss count")
                 count(r, "over_unity")
-            names = ["qualification.csv", "renderer_loss_reasons.csv", "renderer_admission.csv"]
-            validate_trace(summary, read_rows(folder / names[1]), read_rows(folder / names[2]))
+            names = ["qualification.csv", "renderer_loss_reasons.csv", "renderer_admission.csv", "renderer_events.csv"]
+            reasons, admissions = read_rows(folder / names[1]), read_rows(folder / names[2])
+            validate_trace(summary, reasons, admissions)
+            validate_events(folder / names[3], reasons, admissions, frames, 64, rate)
             if mode == "Music":
                 names.append("guide_timeline.csv")
                 validate_timeline(read_rows(folder / names[-1]), frames, 64)
@@ -209,6 +250,7 @@ def export_evidence(out, source_sha):
     manifest = {"schema": 1, "source_sha": source_sha, "dataset_revision": REV,
                 "human_listening": "not_performed", "hardware_asio": "not_performed",
                 "timing": "isolated_engine_non_gating", "audio_included": False,
+                "events": "sparse_callback_intervals_not_click_detections",
                 "cases": [{"id": stem, "source_blob_sha": CLIPS[name][0],
                            "mode": mode, "frames": frames, "rate": rate}
                           for stem, name, mode, frames, rate, _ in cases],
