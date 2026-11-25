@@ -329,27 +329,57 @@ int main() {
     auto snapshot=ui->createComponentSnapshot(ui->getLocalBounds());
     assert(snapshot.isValid()&&snapshot.getWidth()==1120&&snapshot.getHeight()==430);
     assert(snapshot.getPixelAt(16,16)!=snapshot.getPixelAt(568,353));
-    // Native HDR-ish midnight-blue recessed header AND distinct navy
-    // digital-footer band; this fails if a future regression flattens
-    // the HD-CART-inspired silhouette into a generic blank JUCE panel.
-    assert(snapshot.getPixelAt(540,23).getBlue()>
-           snapshot.getPixelAt(540,89).getBlue());
-    assert(snapshot.getPixelAt(540,378).getBlue()>
-           snapshot.getPixelAt(540,320).getBlue());
-    // Compact LCD begins at y374 instead of old y355; no oversized
-    // cobalt block can regress unnoticed.
-    assert(snapshot.getPixelAt(30,359).getBlue()<
-           snapshot.getPixelAt(30,382).getBlue());
-    // Native rendered pixels, including the previously black bottom 10px.
-    // Keep only the same thin cabinet inset used at the top.
-    for(float scale:{1.f,1.5f,2.f}) {
+    // Owner-approved Graphite Ice Blue replaces the former cobalt body.
+    // Verify real pixels at unoccupied locations, a cool neutral metal,
+    // dark smoked LCD, intact cabinet geometry and visible fine grain.
+    const auto lightness=[](juce::Colour c) { return int(c.getRed())+int(c.getGreen())+int(c.getBlue()); };
+    const auto metalPixel=snapshot.getPixelAt(30,359);
+    const auto lcdPixel=snapshot.getPixelAt(30,382);
+    assert(lightness(metalPixel)>lightness(lcdPixel)+12);
+    assert(metalPixel.getBlue()>metalPixel.getRed() &&
+           metalPixel.getBlue()-metalPixel.getRed()<15);
+    for(float scale:{1.f,1.25f,1.5f,2.f}) {
         const auto face=ui->createComponentSnapshot(ui->getLocalBounds(),true,scale);
         for(int x:{30,560,1090})for(int y:{409,414,416}) {
             const auto c=face.getPixelAt(static_cast<int>(x*scale),static_cast<int>(y*scale));
-            assert(c.getBlue()>=65 && c.getBlue()>c.getRed()+35 &&
-                   c.getGreen()>c.getRed()+15);
+            assert(c.getBlue()>c.getRed()+5 && c.getBlue()<55 &&
+                   c.getGreen()>c.getRed() && c.getRed()>=10);
         }
     }
+    // Same cached procedural materials serve every editor/dial. Profile is
+    // concentric in top view, with a real illuminated bevel and subtle grain.
+    const auto& skin=reverb_ui::graphite::assets();
+    assert(skin.knob.isValid()&&skin.metal.isValid());
+    assert(skin.knob.getWidth()==480&&skin.knob.getHeight()==444);
+    assert(skin.metal.getWidth()==2240&&skin.metal.getHeight()==860);
+    assert(&skin==&reverb_ui::graphite::assets());
+    assert(skin.knob.getPixelAt(0,0).getAlpha()==0);
+    assert(skin.knob.getPixelAt(240,229).getAlpha()==255);
+    int lo=255,hi=0;
+    for(int y=300;y<340;++y) {
+        const int g=skin.metal.getPixelAt(500,y).getGreen();
+        lo=std::min(lo,g);hi=std::max(hi,g);
+    }
+    assert(hi-lo>=3 && hi-lo<=16);
+    // Exercise both extreme normalized values with the real JUCE paint path
+    // without touching the processor or altering the live test's settings.
+    const auto knobImage=[](float value) {
+        juce::Image im(juce::Image::ARGB,184,184,true);
+        juce::Graphics graphics(im);
+        reverb_ui::graphite::drawKnob(graphics,92.f,92.f,184.f,value,
+            juce::MathConstants<float>::pi*1.25f,juce::MathConstants<float>::pi*2.75f);
+        return im;
+    };
+    const auto minimum=knobImage(0.f),maximum=knobImage(1.f);
+    const auto bluePixels=[](const juce::Image& im) {
+        int n=0;
+        for(int y=0;y<im.getHeight();++y)for(int x=0;x<im.getWidth();++x) {
+            const auto c=im.getPixelAt(x,y);
+            if(c.getAlpha()>180&&c.getBlue()>150&&c.getBlue()>c.getRed()+30)++n;
+        }
+        return n;
+    };
+    assert(bluePixels(maximum)>bluePixels(minimum)+60);
     // Group centred at x560; independent left/right 12px gutters.
     using M=reverb_ui::MeterLayout;
     static_assert(M::firstDotY==97 && M::secondDotY==132 && M::tickY==112);

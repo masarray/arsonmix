@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "VocalReverbProcessor.h"
+#include "ReverbSisGraphiteSkin.h"
 #if defined(ARMIX_REVERB_INTER_EMBEDDED)
 #include "ARMixReverbInterBinary.h"
 #endif
@@ -131,97 +132,31 @@ public:
             return F::sliderLayout(slider,hero);
         return juce::LookAndFeel_V4::getSliderLayout(slider);
     }
-    // Hardware-inspired controls are drawn vectorially at every DPI.
-    // This is original ArSonMix artwork, not HD-CART proprietary bitmaps.
+    // Shared procedural surface; native JUCE Slider still owns gesture,
+    // skew, accessibility, text editing and callback ACK.
     void drawRotarySlider(juce::Graphics& g,int x,int y,int width,int height,
                           float value,float start,float end,juce::Slider&) override {
-        const float size=static_cast<float>(std::min(width,height));
-        const float cx=x+width*.5f, cy=y+height*.5f;
-        const bool hero=size>=138.f;
-        const float faceR=size*(hero?.366f:.338f);
-        const float bezelR=faceR+(hero?8.f:5.f);
-        const float ledR=bezelR+(hero?13.f:9.f);
-        const float a=start+(end-start)*juce::jlimit(0.f,1.f,value);
-        // Cabinet inset; deliberately small, smooth overlapping concentric
-        // layers instead of image textures loaded while the audio is running.
-        g.setColour(rgb(3,6,11).withAlpha(.60f));
-        g.fillEllipse(cx-bezelR-4.f,cy-bezelR-2.f,
-                      2.f*(bezelR+4.f),2.f*(bezelR+4.f));
-        g.setColour(rgb(12,14,19));
-        g.fillEllipse(cx-bezelR,cy-bezelR,2.f*bezelR,2.f*bezelR);
-        g.setColour(rgb(94,104,114).withAlpha(.70f));
-        g.drawEllipse(cx-bezelR+1.f,cy-bezelR+1.f,
-                      (bezelR-1.f)*2.f,(bezelR-1.f)*2.f,1.f);
-        g.setColour(rgb(7,10,15));
-        g.drawEllipse(cx-faceR-2.f,cy-faceR-2.f,
-                      (faceR+2.f)*2.f,(faceR+2.f)*2.f,2.8f);
-
-        // HD-CART-inspired short separated segmented LEDs, not a continuous
-        // generic Slider ring. The active segment count is data-driven.
-        const int steps=hero?42:25;
-        const float inner=ledR-(hero?3.8f:2.5f);
-        const float outer=ledR+(hero?3.8f:2.5f);
-        for(int i=0;i<steps;++i) {
-            const float phase=(static_cast<float>(i)+.5f)/static_cast<float>(steps);
-            const float angle=start+(end-start)*phase;
-            const float s=std::sin(angle),c=std::cos(angle);
-            const bool lit=phase<=value;
-            const auto bright=lit?rgb(122,210,250):rgb(45,62,78);
-            if(lit) {
-                g.setColour(bright.withAlpha(.24f));
-                g.drawLine(cx+s*(inner-2.f),cy-c*(inner-2.f),
-                           cx+s*(outer+2.f),cy-c*(outer+2.f),hero?6.5f:4.f);
-            }
-            g.setColour(bright.withAlpha(lit?.98f:.82f));
-            g.drawLine(cx+s*inner,cy-c*inner,cx+s*outer,cy-c*outer,
-                       hero?3.f:2.f);
-        }
-
-        const juce::Rectangle<float> face(cx-faceR,cy-faceR,faceR*2.f,faceR*2.f);
-        g.setGradientFill(juce::ColourGradient(rgb(73,78,85),
-                    face.getX()+8.f,face.getY()+3.f,
-                    rgb(23,25,31),face.getRight(),face.getBottom(),false));
-        g.fillEllipse(face);
-        g.setColour(rgb(122,133,143).withAlpha(.62f));
-        g.drawEllipse(face.reduced(.7f),1.f);
-        const auto recessed=face.reduced(hero?4.f:2.8f);
-        g.setGradientFill(juce::ColourGradient(rgb(65,70,76),
-                    recessed.getCentreX()*.92f,recessed.getY(),
-                    rgb(27,30,36),recessed.getRight(),recessed.getBottom(),false));
-        g.fillEllipse(recessed);
-        g.setColour(rgb(18,21,27));
-        g.drawEllipse(recessed.reduced(1.f),2.f);
-        juce::Path light;
-        light.addCentredArc(cx,cy,faceR*.81f,faceR*.81f,0.f,
-                            -2.25f,-.62f,true);
-        g.setColour(rgb(176,189,197).withAlpha(.17f));
-        g.strokePath(light,juce::PathStrokeType(hero?1.6f:1.f));
-        // A real moving index mark, centred on the actual JUCE parameter.
-        const float px=cx+std::sin(a)*faceR*.74f;
-        const float py=cy-std::cos(a)*faceR*.74f;
-        g.setColour(rgb(9,12,16));
-        g.fillEllipse(px-3.8f,py-3.8f,7.6f,7.6f);
-        g.setColour(rgb(226,232,235));
-        const float dot=hero?4.7f:3.8f;
-        g.fillEllipse(px-dot*.5f,py-dot*.5f,dot,dot);
+        graphite::drawKnob(g,x+width*.5f,y+height*.5f,
+            static_cast<float>(std::min(width,height)),value,start,end);
     }
 
     void drawComboBox(juce::Graphics& g,int width,int height,bool pressed,
                       int,int,int,int,juce::ComboBox& box) override {
         const bool preset=box.getComponentID()=="armix.reverb.preset";
         if(preset) {
-            g.setColour(rgb(10,31,48).withAlpha(.24f));
+            g.setGradientFill(juce::ColourGradient(rgb(17,25,31),0.f,0.f,
+                    rgb(32,42,51),0.f,static_cast<float>(height),false));
             g.fillRoundedRectangle({0.f,0.f,static_cast<float>(width),
                                     static_cast<float>(height)},3.f);
-            g.setColour(rgb(94,173,209).withAlpha(.35f));
+            g.setColour(rgb(83,99,110).withAlpha(.65f));
             g.drawLine(4.f,static_cast<float>(height)-1.f,
                        static_cast<float>(width)-4.f,static_cast<float>(height)-1.f,1.f);
         } else {
-            g.setGradientFill(juce::ColourGradient(rgb(32,39,47),0.f,0.f,
-                    rgb(12,18,26),0.f,static_cast<float>(height),false));
+            g.setGradientFill(juce::ColourGradient(rgb(32,38,43),0.f,0.f,
+                    rgb(21,26,30),0.f,static_cast<float>(height),false));
             g.fillRoundedRectangle({0.f,0.f,static_cast<float>(width),
                                     static_cast<float>(height)},3.f);
-            g.setColour(rgb(72,97,112));
+            g.setColour(rgb(80,90,97));
             g.drawRoundedRectangle({.5f,.5f,static_cast<float>(width)-1.f,
                                     static_cast<float>(height)-1.f},3.f,1.f);
         }
@@ -593,7 +528,7 @@ public:
             };
             knob.setValue(draft_.values[i],juce::dontSendNotification);
             knob.setDoubleClickReturnValue(true,d.defaultValue);
-            knob.setColour(juce::Slider::textBoxTextColourId,reverb_ui::rgb(147,215,250));
+            knob.setColour(juce::Slider::textBoxTextColourId,reverb_ui::rgb(180,229,255));
             knob.setColour(juce::Slider::textBoxBackgroundColourId,juce::Colours::transparentBlack);
             knob.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
             knob.publishValue=[this,i]{
@@ -647,20 +582,20 @@ public:
         constexpr float shoulderY=static_cast<float>(F::shoulderY);
         const float w=static_cast<float>(getWidth());
         const float h=static_cast<float>(getHeight());
-        g.fillAll(rgb(11,10,15));
+        g.fillAll(rgb(13,15,17));
         const juce::Rectangle<float> cabinet{9.f,9.f,w-18.f,h-18.f};
         g.setColour(rgb(2,4,9));g.fillRoundedRectangle(cabinet.expanded(1.f),6.f);
-        g.setGradientFill(juce::ColourGradient(rgb(38,44,50),9.f,9.f,
-                  rgb(10,12,18),w-9.f,h-9.f,false));
+        g.setGradientFill(juce::ColourGradient(rgb(81,86,91),9.f,9.f,
+                  rgb(16,19,23),w-9.f,h-9.f,false));
         g.fillRoundedRectangle(cabinet,6.f);
         g.setColour(rgb(91,102,109).withAlpha(.52f));
         g.drawRoundedRectangle(cabinet,6.f,1.f);
 
-        // The reference's defining silhouette: high navy shoulders with
+        // The reference's defining silhouette: dark graphite shoulders with
         // a gently lowered centre preset bay. Draw original vector geometry
         // so 100%, 125%, 150% and 200% render from the same source.
-        g.setGradientFill(juce::ColourGradient(rgb(28,67,92),9.f,9.f,
-                  rgb(17,44,71),9.f,64.f,false));
+        g.setGradientFill(juce::ColourGradient(rgb(37,43,50),9.f,9.f,
+                  rgb(20,25,30),9.f,64.f,false));
         g.fillRect(11.f,11.f,w-22.f,50.f);
         juce::Path body;
         body.startNewSubPath(11.f,shoulderY);
@@ -672,10 +607,8 @@ public:
         body.lineTo(w-11.f,374.f);
         body.lineTo(11.f,374.f);
         body.closeSubPath();
-        g.setGradientFill(juce::ColourGradient(rgb(68,69,72),11.f,45.f,
-                                                rgb(39,41,46),w-11.f,348.f,false));
-        g.fillPath(body);
-        g.setColour(rgb(110,124,128).withAlpha(.46f));
+        graphite::drawMetal(g,body,getWidth(),getHeight());
+        g.setColour(rgb(119,128,138).withAlpha(.32f));
         juce::Path shoulder;
         shoulder.startNewSubPath(11.f,shoulderY);
         shoulder.lineTo(241.f,shoulderY);
@@ -684,21 +617,23 @@ public:
         shoulder.cubicTo(w-337.f,58.f,w-311.f,shoulderY,w-241.f,shoulderY);
         shoulder.lineTo(w-11.f,shoulderY);
         g.strokePath(shoulder,juce::PathStrokeType(.8f));
-        g.setColour(rgb(46,99,125).withAlpha(.53f));
+        g.setColour(rgb(129,140,147).withAlpha(.32f));
         g.drawLine(11.f,10.f,w-11.f,10.f,.9f);
 
-        // Distinct HD-CART-like bottom LCD ribbon, with actual JUCE Slider
+        // Distinct smoked-glass bottom LCD ribbon, with actual JUCE Slider
         // editable numeric text boxes over it, rather than duplicate text.
         constexpr float lcdTop=static_cast<float>(F::lcdTop);
-        g.setGradientFill(juce::ColourGradient(rgb(27,85,122),11.f,lcdTop,
-                                               rgb(17,49,83),11.f,static_cast<float>(F::lcdBottom-1),false));
+        g.setGradientFill(juce::ColourGradient(rgb(25,36,45),11.f,lcdTop,
+                                               rgb(14,21,28),11.f,static_cast<float>(F::lcdBottom-1),false));
         // Fill the entire inner faceplate to the cabinet inset; no black
         // spacer below the LCD. Preserve numeric control positions.
         g.fillRect(11.f,lcdTop,w-22.f,static_cast<float>(F::lcdBottom-F::lcdTop));
-        g.setColour(rgb(83,153,177).withAlpha(.50f));
+        g.setColour(rgb(119,149,165).withAlpha(.60f));
         g.drawLine(11.f,lcdTop,w-11.f,lcdTop,1.f);
+        g.setColour(rgb(11,16,21).withAlpha(.8f));
+        g.drawLine(11.f,lcdTop+1.f,w-11.f,lcdTop+1.f,.6f);
         // Thin bounded column rules; do not make the screen a card grid.
-        g.setColour(rgb(79,86,93).withAlpha(.35f));
+        g.setColour(rgb(119,128,138).withAlpha(.22f));
         g.drawLine(257.f,155.f,257.f,367.f,.8f);
         g.drawLine(w-257.f,155.f,w-257.f,367.f,.8f);
 
@@ -920,9 +855,9 @@ private:
             for(int segment=0;segment<M::segments;++segment) {
                 const bool on=segment<lit;
                 const auto bright=segment>=18?rgb(241,148,116):
-                    (segment>=15?rgb(223,193,119):rgb(112,203,245));
+                    (segment>=15?rgb(217,164,65):rgb(120,190,205));
                 const float sx=static_cast<float>(x+segment*M::pitch);
-                g.setColour(on?bright:rgb(27,35,44));
+                g.setColour(on?bright:rgb(23,29,32));
                 g.fillEllipse(sx,static_cast<float>(y),
                               static_cast<float>(M::dotSize),static_cast<float>(M::dotSize));
                 if(on) {
