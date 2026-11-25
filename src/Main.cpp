@@ -6786,6 +6786,7 @@ private:
                 for(int i=0;i<armix::builtin_fx::de_ezzer::Control::ackCapacity&&proc->pollAck(abandoned);++i){}
             }
             if(action=="nativeDeEzzerSnapshot") {
+                if(proc)proc->requestAnalysis(); // exact current lease; expires without polling
                 emitDeEzzerReply("arMixBuiltinDeEzzerSnapshot",request,proc!=nullptr,
                     proc?"snapshot":nullptr,proc?armix::builtin_fx::de_ezzer::bridge::encode(proc->readback()):juce::var{});
                 return;

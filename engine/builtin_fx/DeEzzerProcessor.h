@@ -52,6 +52,7 @@ public:
     bool isReady() const noexcept {return ready_;}
     bool queue(const de_ezzer::Command& cmd) noexcept {return ready_&&insert_.submit(cmd);}
     bool pollAck(de_ezzer::Ack& ack) noexcept {return insert_.pollAck(ack);}
+    void requestAnalysis() noexcept {if(ready_)insert_.requestAnalysis();}
     de_ezzer::Snapshot readback() noexcept {return insert_.readback();}
     de_ezzer::Identity identity() const noexcept {return insert_.identity();}
     void getStateInformation(juce::MemoryBlock& out) override {

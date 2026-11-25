@@ -44,7 +44,7 @@ if(typeof module==="object"&&module.exports){module.exports={contextFor,createTr
 const api=root.ArSonMixNativeDeEzzer,backend=root.__JUCE__?.backend;
 if(!api||!backend?.emitEvent||!backend?.addEventListener)return;
 const doc=root.document,host=doc.createElement("div");host.id="mxNativeDeEzzerHost";host.hidden=true;
-Object.assign(host.style,{position:"fixed",left:"0",top:"0",width:"min(540px,100%)",zIndex:"16000"});doc.body.append(host);
+Object.assign(host.style,{position:"fixed",left:"0",top:"0",width:"min(640px,100%)",zIndex:"16000"});doc.body.append(host);
 let active=null;
 for(const [kind,event] of [["snapshot","arMixBuiltinDeEzzerSnapshot"],["queue","arMixBuiltinDeEzzerQueue"],["ack","arMixBuiltinDeEzzerAck"]])backend.addEventListener(event,p=>active?.transport.receive(kind,p));
 backend.addEventListener("arMixBuiltinFxPresetResult",p=>active?.transport.receivePreset(p));
@@ -56,7 +56,7 @@ function open(track,slot){
  const token="dez-"+root.crypto.randomUUID();let editor,timer;
  const transport=createTransport({backend,context,initialContext,token,onInitial:s=>editor.model.attach(s)});
  editor=api.mount(host,{transport,monitorSafe:false,presetContext:()=>same(context(),initialContext)?initialContext:null,close:()=>{clearInterval(timer);host.hidden=true;active=null;}});
- active={editor,transport};timer=setInterval(()=>transport.tick(),100);transport.tick();return true;
+ active={editor,transport};timer=setInterval(()=>transport.tick(),50);transport.tick();return true;
 }
 root.ArSonMixNativeDeEzzer=Object.freeze({...api,open,close});
 })(globalThis);

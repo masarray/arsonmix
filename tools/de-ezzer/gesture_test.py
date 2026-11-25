@@ -62,8 +62,18 @@ with sync_playwright() as pw:
     assert page.locator('[data-power]').get_attribute('data-powered')=='true'
     page.evaluate('''()=>{let p={...adapter.context(),requestId:'fxpres-1'};delete p.slot;listeners.arMixBuiltinFxPresetResult({...p,instanceId:'other'});listeners.arMixBuiltinFxPresetResult(p);}''')
     assert page.evaluate('presetCalls.filter(x=>x[0]==="reply").length')==1
+    # No fabricated meter before native observation. Inject a correlated snapshot.
+    assert page.locator('[data-ess]').inner_text()=='—'
+    page.wait_for_timeout(70)
+    page.evaluate('''()=>{const req=events.filter(p=>p.action==='nativeDeEzzerSnapshot').at(-1);s={...s,frames:String(BigInt(s.frames)+2400n),observation:{inputDb:[-55,-30,-12,-20,-41],wetDb:[-56,-32,-20,-25,-42],essDb:-20,sidechainDb:-16,deltaDb:-24}};listeners.arMixBuiltinDeEzzerSnapshot({...req,ok:true,snapshot:s});}''')
+    assert page.locator('[data-ess]').inner_text()=='-20.0 dBFS'
+    assert 'Wet -20.0 dBFS' in page.locator('.band').nth(2).get_attribute('title')
+    assert page.locator('[data-analysis-status]').inner_text()=='Measured · pre rack bypass'
+    assert page.locator('[data-history] i').last.evaluate('(e)=>parseFloat(e.style.height)>0')
     page.evaluate('view.graph.revision="5"');page.wait_for_timeout(160)
     assert page.locator('[data-status]').inner_text()=='Disconnected'
+    assert page.locator('[data-ess]').inner_text()=='—'
+    assert page.locator('[data-history] i').last.evaluate('(e)=>parseFloat(e.style.height)===0')
     page.locator('[data-close]').click();assert page.locator('#mxNativeDeEzzerHost').is_hidden()
     assert not errors,errors
     print('PASS: live coalesced drag, fine adjustment, cancellation, reset, keyboard, preset ACK/identity, disconnect/close')

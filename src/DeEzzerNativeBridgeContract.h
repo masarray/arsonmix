@@ -63,6 +63,14 @@ inline juce::var encode(const Snapshot& s) {
     o->setProperty("frames",decimal(s.frames));o->setProperty("settings",encode(s.settings));
     o->setProperty("audition","Normal");o->setProperty("gainReductionDb",s.gainReductionDb);
     o->setProperty("lowerWeight",s.lowerWeight);o->setProperty("droppedTelemetry",static_cast<juce::int64>(s.droppedTelemetry));
+    if(s.observation.valid){
+        auto a=std::make_unique<juce::DynamicObject>();juce::Array<juce::var> input,wet;
+        for(auto v:s.observation.inputDb)input.add(static_cast<double>(v));
+        for(auto v:s.observation.wetDb)wet.add(static_cast<double>(v));
+        a->setProperty("inputDb",juce::var(input));a->setProperty("wetDb",juce::var(wet));
+        a->setProperty("essDb",s.observation.essDb);a->setProperty("sidechainDb",s.observation.sidechainDb);a->setProperty("deltaDb",s.observation.deltaDb);
+        o->setProperty("observation",juce::var(a.release()));
+    }
     return juce::var(o.release());
 }
 inline juce::var encode(const Ack& a) {
