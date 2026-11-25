@@ -6,6 +6,7 @@
 #include "../engine/builtin_fx/ChannelCompressorProcessor.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
 #include "../engine/builtin_fx/VocalThrowProcessor.h"
+#include "../engine/builtin_fx/DeEzzerProcessor.h"
 
 // CONTROL THREAD ONLY. One portable, catalog-scoped snapshot adapter for all
 // built-in insert types. A native lease + quiescent accepted DSP state MUST be
@@ -35,6 +36,10 @@ struct BuiltInFxAcceptedSnapshot final {
         if(catalog==armix::builtin_fx::VocalThrowProcessor::catalogIdentity) {
             const auto* vthrow=dynamic_cast<armix::builtin_fx::VocalThrowProcessor*>(p);
             return vthrow&&vthrow->isReady();
+        }
+        if(catalog==armix::builtin_fx::DeEzzerProcessor::catalogIdentity) {
+            const auto* dez=dynamic_cast<armix::builtin_fx::DeEzzerProcessor*>(p);
+            return dez&&dez->isReady();
         }
         return false; // External VST3/factory identity is never admitted.
     }
@@ -104,6 +109,15 @@ struct BuiltInFxAcceptedSnapshot final {
             data->setProperty("decay",v.decay);
             data->setProperty("ducking",v.ducking);
             // Music source ChannelId, detected BPM and echo history excluded.
+        }else if(catalog==armix::builtin_fx::DeEzzerProcessor::catalogIdentity) {
+            auto* dez=static_cast<armix::builtin_fx::DeEzzerProcessor*>(p);
+            if(!dez->stateSnapshotQuiescent())return {};
+            const auto v=dez->readback().settings;
+            data->setProperty("amount",v.amount);
+            data->setProperty("sensitivity",v.sensitivity);
+            data->setProperty("rangeDb",v.rangeDb);
+            data->setProperty("mode",v.mode==armix::builtin_fx::de_ezzer::Mode::Auto?"Auto":"Voice");
+            data->setProperty("shape",v.shape==armix::builtin_fx::de_ezzer::Shape::Shelf?"Shelf":"Focused");
         }else return {};
         const juce::var result(data.release());
         return BuiltInFxUserPresetStore::validateSettings(catalog,result)?

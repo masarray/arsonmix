@@ -5796,7 +5796,9 @@ private:
                     (catalog==armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity&&
                          static_cast<bool>(pendingNativeHarmony_.owner))||
                     (catalog==armix::builtin_fx::VocalThrowProcessor::catalogIdentity&&
-                         static_cast<bool>(pendingNativeThrow_.owner));
+                         static_cast<bool>(pendingNativeThrow_.owner))||
+                    (catalog==armix::builtin_fx::DeEzzerProcessor::catalogIdentity&&
+                         static_cast<bool>(pendingNativeDeEzzer_.owner));
                 auto* realtime=dynamic_cast<armix::mixer::RealtimeNativeFxControl*>(processor);
                 // Logical processor is a detached, rehydrated CONTROL
                 // snapshot. Its settings were committed to .smix already;

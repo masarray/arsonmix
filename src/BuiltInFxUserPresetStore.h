@@ -33,6 +33,7 @@ public:
         if(catalog=="armix.builtin.channel-compressor.v1")return "compressor";
         if(catalog=="armix.builtin.arson-harmony.v1")return "harmonice";
         if(catalog=="armix.builtin.vocal-throw.v1")return "vocal-throw";
+        if(catalog=="armix.builtin.de-ezzer.v1")return "de-ezzer";
         return {};
     }
     static bool safeText(const juce::String& value,int maxLen) {
@@ -76,6 +77,15 @@ public:
 
     static bool validateSettings(const juce::String& catalog,const juce::var& settings) {
         if(!settings.isObject()||effectFolder(catalog).isEmpty())return false;
+        if(catalog=="armix.builtin.de-ezzer.v1"){
+            // Portable sound only; Power, rack bypass and audition stay with the live instance.
+            if(!containsOnly(settings,{"amount","sensitivity","rangeDb","mode","shape"}))return false;
+            const auto mode=settings.getProperty("mode",{}),shape=settings.getProperty("shape",{});
+            return number(settings,"amount",0,1)&&number(settings,"sensitivity",0,1)&&
+                number(settings,"rangeDb",0,18)&&mode.isString()&&shape.isString()&&
+                (mode==juce::var("Auto")||mode==juce::var("Voice"))&&
+                (shape==juce::var("Shelf")||shape==juce::var("Focused"));
+        }
         if(catalog=="armix.builtin.channel-compressor.v1"){
             if(!containsOnly(settings,{"thresholdDb","ratio","attackMs","releaseMs",
                     "kneeDb","makeupDb","mix"}))return false;

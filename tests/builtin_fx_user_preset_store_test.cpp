@@ -45,6 +45,11 @@ static BuiltInFxUserPreset graphicEq31() {
     return {{}, "armix.builtin.graphic-eq31.v1","Voice Curve","My Presets",
         object({{"bands",bands},{"levelDb",-4.5}})};
 }
+static BuiltInFxUserPreset deEzzer() {
+    return {{}, "armix.builtin.de-ezzer.v1","Natural Sibilance","My Presets",
+        object({{"amount",.42},{"sensitivity",.5},{"rangeDb",8.0},
+            {"mode","Voice"},{"shape","Focused"}})};
+}
 static BuiltInFxUserPreset eq() {
     auto bands=juce::var(juce::Array<juce::var>{});
     for(int i=0;i<8;++i)
@@ -61,7 +66,7 @@ int main() {
     REQUIRE(!testRoot.exists());
     struct Cleanup { juce::File folder;~Cleanup(){folder.deleteRecursively();} } cleanup{testRoot};
     BuiltInFxUserPresetStore store(testRoot);
-    auto items=std::array{comp(),harmony(),throwSettings(),eq(),graphicEq31()};
+    auto items=std::array{comp(),harmony(),throwSettings(),eq(),graphicEq31(),deEzzer()};
     for(auto& item:items) {
         REQUIRE(BuiltInFxUserPresetStore::validateSettings(item.catalogId,item.settings));
         REQUIRE(store.saveNew(item).isEmpty());
@@ -168,6 +173,22 @@ int main() {
         REQUIRE(readback.settings.getProperty("bands",{}).getArray()->size()==31);
         REQUIRE(static_cast<double>(
             readback.settings.getProperty("levelDb",{}))==-4.5);
+    }
+    {
+        auto good=deEzzer();
+        REQUIRE(BuiltInFxUserPresetStore::validateSettings(good.catalogId,good.settings));
+        for(const auto* forbidden:{"enabled","audition","channelId","gainReductionDb"}){
+            auto bad=deEzzer();bad.settings.getDynamicObject()->setProperty(forbidden,true);
+            REQUIRE(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));
+        }
+        auto bad=deEzzer();bad.settings.getDynamicObject()->setProperty("amount",1.1);
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));
+        bad=deEzzer();bad.settings.getDynamicObject()->setProperty("sensitivity",std::numeric_limits<double>::quiet_NaN());
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));
+        bad=deEzzer();bad.settings.getDynamicObject()->setProperty("mode","Music");
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));
+        bad=deEzzer();bad.settings.getDynamicObject()->removeProperty("shape");
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));
     }
     REQUIRE(BuiltInFxUserPresetStore::safeId(
         "12345678-1234-AbCd-ABCD-0123456789Ab"));

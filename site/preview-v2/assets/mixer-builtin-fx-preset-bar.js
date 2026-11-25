@@ -212,7 +212,10 @@ function create(adapter){
   }else if(selectedId&&saved)dirty=!sameSettings(accepted,saved);
   paint();refresh();
  }
- backend()?.addEventListener?.("arMixBuiltinFxPresetResult",reply=>{
+ // Dynamic editor owners may supply one lifetime-fenced native event relay.
+ const subscribeResult=adapter.subscribeResult||
+    (callback=>backend()?.addEventListener?.("arMixBuiltinFxPresetResult",callback));
+ subscribeResult(reply=>{
   if(!task||reply?.requestId!==task.requestId||
      reply.operation!==task.op||reply.catalogId!==catalogId)return;
   const c=bound();
