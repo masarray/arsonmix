@@ -1295,12 +1295,25 @@ static void verifyLogicalControlTransactions() {
     assert(control.readback().getProperty("revision",{})==beforeWireMismatch);
     accept(command("logical-rename","RENAME_CHANNEL",channel,
         juce::JSON::parse(R"({"name":"Lead Vox"})")));
-    std::size_t registeredFx=0;
+    // The catalog can grow independently of the product's per-rack limit.
+    // Exercise every registered built-in without requiring an illegal ninth
+    // insert on one rack; still explicitly prove overflow is rejected.
+    const auto capacity=armix::mixer::ChannelRosterBudget{}.maximumInsertSlotsPerChannel;
+    assert(capacity>=2 && armix::builtin_fx::nativeBuiltInFx.size()<=2*capacity);
+    std::size_t catalogIndex=0;
     for(const auto& fx:armix::builtin_fx::nativeBuiltInFx) {
         auto payload=std::make_unique<juce::DynamicObject>();
         payload->setProperty("catalogId",fx.id);
+        const juce::var value(payload.release());
+        if(catalogIndex==capacity){
+            const auto revision=control.readback().getProperty("revision",{});
+            submit(command("logical-fx-overflow","ADD_FX_REFERENCE",bus,value));
+            reject("LOGICAL_EDIT_REJECTED");
+            assert(!worker.busy() && control.readback().getProperty("revision",{})==revision);
+        }
         accept(command((juce::String("logical-fx-")+fx.id).toRawUTF8(),
-            "ADD_FX_REFERENCE",registeredFx++<8?bus:channel,juce::var(payload.release())));
+            "ADD_FX_REFERENCE",catalogIndex<capacity?bus:channel,value));
+        ++catalogIndex;
     }
     accept(command("logical-bypass","SET_FX_SLOT_BYPASS",bus,
         juce::JSON::parse(R"({"slot":1,"enabled":true})")));
@@ -1319,6 +1332,21 @@ static void verifyLogicalControlTransactions() {
     assert(saved.inserts.size()==armix::builtin_fx::nativeBuiltInFx.size());
     const auto bypassed=std::find_if(saved.inserts.begin(),saved.inserts.end(),[&](const auto& f){return f.channel==busId&&f.slot==1;});
     assert(bypassed!=saved.inserts.end()&&bypassed->bypass&&saved.rackBypassed.front()==busId);
+    assert(saved.roster.find(busId)->insertCatalogIds.size()==std::min(capacity,catalogIndex));
+    assert(saved.roster.find(trackId)->insertCatalogIds.size()==catalogIndex-std::min(capacity,catalogIndex));
+    // Count alone could hide a missing FX replaced by a duplicate. Verify
+    // each exact catalog ID at its intended channel and slot before restore.
+    for(std::size_t i=0;i<catalogIndex;++i) {
+        const auto expectedChannel=i<capacity?busId:trackId;
+        const auto expectedSlot=i<capacity?i:i-capacity;
+        const auto& fx=armix::builtin_fx::nativeBuiltInFx[i];
+        const auto* row=saved.roster.find(expectedChannel);
+        assert(row && row->insertCatalogIds[expectedSlot]==juce::String(fx.id).toStdString());
+        assert(std::count_if(saved.inserts.begin(),saved.inserts.end(),[&](const auto& insert){
+            return insert.channel==expectedChannel && insert.slot==expectedSlot &&
+                   insert.catalogId==juce::String(fx.id);
+        })==1);
+    }
     juce::AudioPluginFormatManager formats;
     for(const auto& insert:saved.inserts) {
         const auto state=std::find_if(states.begin(),states.end(),[&](const auto& blob){

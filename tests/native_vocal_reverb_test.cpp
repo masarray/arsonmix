@@ -481,6 +481,20 @@ int main() {
     static_assert(M::segmentX(false,0)+M::segmentX(true,0)+M::dotSize==1120);
     static_assert(M::scaleX(false,0)<M::scaleX(false,-24));
     static_assert(M::scaleX(true,0)>M::scaleX(true,-24));
+    // Verify scale-label rectangles do not collide with adjacent labels,
+    // including the zero-signal origin; independent of paint order.
+    std::array<juce::Rectangle<int>,7> scaleLabels{};
+    std::size_t labelIndex=0;
+    for(bool right:{false,true})
+        for(int db:M::scaleMarks)
+            scaleLabels[labelIndex++]={M::scaleX(right,db)-M::scaleLabelWidth/2,
+                                      M::tickY,M::scaleLabelWidth,11};
+    scaleLabels[labelIndex]={560-M::originLabelWidth/2,M::tickY,M::originLabelWidth,11};
+    for(std::size_t i=0;i<scaleLabels.size();++i) {
+        assert(ui->getLocalBounds().contains(scaleLabels[i]));
+        for(std::size_t j=i+1;j<scaleLabels.size();++j)
+            assert(!scaleLabels[i].intersects(scaleLabels[j]));
+    }
     assert(M::litCount(-80.f)==0 && M::litCount(-60.f)==0);
     assert(M::litCount(-24.f)==12 && M::litCount(-6.f)==18);
     assert(M::litCount(0.f)==20 && M::litCount(6.f)==20);

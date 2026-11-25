@@ -71,6 +71,8 @@ struct MeterLayout final {
     static constexpr int bankWidth=(segments-1)*pitch+dotSize;
     static constexpr int floorDb=-60, ceilingDb=0;
     static constexpr int glowMargin=2;
+    static constexpr std::array<int,3> scaleMarks{{-24,-12,0}};
+    static constexpr int scaleLabelWidth=36, originLabelWidth=16;
     static constexpr std::array<const char*,2> leftLabels{{"INPUT L","OUTPUT L"}};
     static constexpr std::array<const char*,2> rightLabels{{"INPUT R","OUTPUT R"}};
 
@@ -697,14 +699,16 @@ public:
         g.setColour(rgb(183,200,211));
         g.setFont(reverb_ui::uiFont(9.f));
         for(bool right:{false,true}) {
-            for(const int db : {-24,-6,0}) {
+            for(const int db : M::scaleMarks) {
                 const int center=M::scaleX(right,db);
                 g.drawText(db==0?juce::String("0 dBFS"):juce::String(db),
-                           center-20,M::tickY,40,11,juce::Justification::centred,false);
+                           center-M::scaleLabelWidth/2,M::tickY,M::scaleLabelWidth,11,
+                           juce::Justification::centred,false);
             }
         }
         // Central 0 is explicitly an amplitude origin, not 0 dBFS.
-        g.drawText("0",F::width/2-8,M::tickY,16,11,juce::Justification::centred,false);
+        g.drawText("0",F::width/2-M::originLabelWidth/2,M::tickY,M::originLabelWidth,11,
+                   juce::Justification::centred,false);
 
         // The active tab underline and quiet baseline share one pixel band.
         g.setColour(rgb(116,121,123).withAlpha(.42f));
