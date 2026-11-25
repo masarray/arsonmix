@@ -35,10 +35,10 @@ jobs:
           python3 tools/anti-noiz/recorded_environment.py --self-test
       - name: Pinned real recorded environments (not listening approval)
         run: python3 tools/anti-noiz/recorded_environment.py "$RUNNER_TEMP/an07/anti_noiz_qualify" "$RUNNER_TEMP/an07-evidence"
-      - name: Checkout frozen AN-08C.1 comparator
+      - name: Checkout frozen AN-08D comparator
         uses: actions/checkout@v4
         with:
-          ref: 9f87fd8430c572ac118e8d5e6710c77cbc0379bb
+          ref: 1ff28caee4190a5855b10fd5a16d395aefb16202
           path: an07-baseline
           persist-credentials: false
       - name: Run exact baseline against same recorded corpus
@@ -48,7 +48,7 @@ jobs:
           python3 tools/anti-noiz/recorded_environment.py "$RUNNER_TEMP/an07-base/anti_noiz_qualify" "$RUNNER_TEMP/an07-base-evidence"
       - name: Compare paired quality metrics without weakening original gates
         run: python3 tools/anti-noiz/compare_environment.py "$RUNNER_TEMP/an07-base-evidence/report.json" "$RUNNER_TEMP/an07-evidence/report.json" "$RUNNER_TEMP/an07-comparison.json"
-      - name: Preserve 40 single-line cases against exact C.1
+      - name: Preserve 40 single-line cases against exact D
         if: ${{ always() && hashFiles('an07-baseline/tools/anti-noiz/OfflineAudio.h') != '' }}
         run: |
           cp tools/anti-noiz/tonal_benchmark.cpp an07-baseline/tools/anti-noiz/tonal_benchmark.cpp

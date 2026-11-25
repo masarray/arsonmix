@@ -12,6 +12,7 @@
 #include "AntiNoizProfile.h"
 #include "AntiNoizAutoGain.h"
 #include "AntiNoizTonal.h"
+#include "AntiNoizSpeechDetail.h"
 
 namespace armix::builtin_fx::anti_noiz {
 // Independent bounded WOLA reference, not a trained context classifier.
@@ -210,6 +211,8 @@ private:
                        context_.broadbandRatio(),context_.subbandPeakRatio());
         const bool selective=!protect&&!idle&&effectiveMode_==Mode::AutoProtect;
         const bool activeVoice=!protect&&!idle&&effectiveMode_==Mode::Voice;
+        const bool detail=activeVoice&&cleanFloor_<1.f;
+        if(detail)speechDetail_.analyze(power_,profile_.anchor(),channels_,bins,profile_.variability());
         const float ratio=context_.broadbandRatio();
         const float floor=protect?1.f:idle||effectiveMode_==Mode::Voice?cleanFloor_:
             effectiveMode_==Mode::Singing?singingFloor_:AutoGain::activeFloor(autoFloor_,ratio,context_.subbandPeakRatio());
@@ -245,6 +248,12 @@ private:
                         context_.temporalRatio(profile_.anchor(),channels_,bins,k),neighbor);
                 }
             }
+            if(detail&&speechDetail_.eligible()&&evidence>1.f){
+                const float support=speechDetail_.support(channels_,bins,k);
+                if(support>0.f)gain=SpeechDetail<maxBins>::restore(gain,evidence,
+                    context_.temporalRatio(profile_.anchor(),channels_,bins,k),
+                    context_.relativeNoise(profile_.anchor(),channels_,k),support,cleanFloor_);
+            }
             const float localFloor=reserve>0.f?AutoGain::detailFloor(floor,reserve,
                 context_.relativeNoise(profile_.anchor(),channels_,k)):floor;
             target_[k]=std::max(localFloor,gain);
@@ -278,6 +287,7 @@ private:
     FftPlan fft_{};
     ContextGuard<maxBins> context_{};
     VoiceGain<maxBins> voiceGain_{};
+    SpeechDetail<maxBins> speechDetail_{};
     TonalNoise tonal_{};
     bool tonalIdle_=false;
     float maskClose_=0.18f,expandClose_=0.035f;
