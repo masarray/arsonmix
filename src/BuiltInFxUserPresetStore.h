@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "PortableWorkspace.h"
+#include "../engine/builtin_fx/vocal_delay/PortablePreset.h"
 #include <juce_core/juce_core.h>
 #include <juce_cryptography/juce_cryptography.h>
 #include <algorithm>
@@ -34,6 +35,7 @@ public:
         if(catalog=="armix.builtin.anti-noiz.v1")return "anti-noiz";
         if(catalog=="armix.builtin.arson-harmony.v1")return "harmonice";
         if(catalog=="armix.builtin.vocal-throw.v1")return "vocal-throw";
+        if(catalog=="armix.builtin.vocal-delay.v2")return "vocal-delay";
         if(catalog=="armix.builtin.de-ezzer.v1")return "de-ezzer";
         if(catalog=="armix.builtin.vocal-reverb.v1")return "reverb-sis";
         return {};
@@ -79,6 +81,10 @@ public:
 
     static bool validateSettings(const juce::String& catalog,const juce::var& settings) {
         if(!settings.isObject()||effectFolder(catalog).isEmpty())return false;
+        if(catalog=="armix.builtin.vocal-delay.v2") {
+            armix::builtin_fx::vocal_delay::Parameters p{};
+            return armix::builtin_fx::vocal_delay::PortablePreset::decode(settings,p);
+        }
         if(catalog=="armix.builtin.vocal-reverb.v1") {
             // Stable v1 portable parameter order; do not persist factory
             // index, mixer identity, bypass or a vendor-specific blob.

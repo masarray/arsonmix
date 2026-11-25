@@ -7,6 +7,7 @@ import copy
 import sys
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
+from native_event_fixture import NATIVE_EVENTS
 from approved_native_wire_gain_smoke import snapshot, SOURCE, ack, emit
 
 ID = "armix.builtin.anti-noiz.v1"
@@ -15,24 +16,15 @@ DEFAULTS = dict(mode="Auto", cleanDb=14, silenceDb=32, musicProtect=1, enabled=T
 OBS = dict(serial="1", profile=False, learning=False, learnStatus="Idle",
            rackBypassed=False, effectiveMode="Auto", latency=256,
            spectralGain=0.5, residualGain=0.25)
-BACKEND = """(()=>{
- const subs=new Map(), dispatch=new Map(); let counter=0;
- window.__nativeListeners=dispatch;window.__nativeIntents=[];window.__actions=[];
- window.__anListenerCount=name=>subs.get(name)?.size||0;
+BACKEND = NATIVE_EVENTS + """(()=>{
+ window.__nativeIntents=[];window.__actions=[];
+ window.__anListenerCount=window.__nativeListenerCount;
  window.__JUCE__={backend:{
   emitEvent(name,payload){
    if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);
    if(name==='arMixAction')window.__actions.push(payload);
   },
-  addEventListener(name,fn){
-   const id=++counter;
-   if(!subs.has(name)){
-    subs.set(name,new Map());
-    dispatch.set(name,payload=>{for(const f of [...subs.get(name).values()])f(payload);});
-   }
-   subs.get(name).set(id,fn);return {name,id};
-  },
-  removeEventListener(token){subs.get(token?.name)?.delete(token?.id);}
+  ...window.__nativeListenerMethods
  }};
 })();"""
 

@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import tempfile
 from playwright.sync_api import sync_playwright
+from native_event_fixture import NATIVE_EVENTS
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE, RECEIVER, MAIN = "9007199254740993", "9007199254740995", "18446744073709551615"
@@ -53,10 +54,10 @@ def ack(page, state, intent):
 
 
 def verify_socket_impact(page, out):
-    page.add_init_script("""window.__nativeListeners=new Map();window.__nativeIntents=[];
+    page.add_init_script(NATIVE_EVENTS + """window.__nativeIntents=[];
         window.__JUCE__={backend:{
           emitEvent(name,payload){if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);},
-          addEventListener(name,callback){window.__nativeListeners.set(name,callback);}}};""")
+          ...window.__nativeListenerMethods}};""")
     page.goto((out / "index.html").as_uri())
     page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
     state = snapshot()
@@ -147,12 +148,12 @@ def verify_socket_impact(page, out):
 def verify_inspector_rejected_gain(page, out):
     """Real compiled native GUI: rejected ACK with NO new snapshot must not
     strand PENDING or detach the inspector slider held in keyboard focus."""
-    page.add_init_script("""window.__nativeListeners=new Map();window.__nativeIntents=[];
+    page.add_init_script(NATIVE_EVENTS + """window.__nativeIntents=[];
       window.__JUCE__={backend:{
         emitEvent(name,payload){
           if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);
         },
-        addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+        ...window.__nativeListenerMethods
       }};""")
     errors=[]
     page.on("pageerror",lambda exc:errors.append(str(exc)))
@@ -263,11 +264,11 @@ def verify_external_output(page, out):
     The backend is a controlled mock. This proves the UI transaction and
     presentation, NOT actual physical sound on an eight-pin ASIO device.
     """
-    page.add_init_script("""window.__nativeListeners=new Map();window.__outActions=[];
+    page.add_init_script(NATIVE_EVENTS + """window.__outActions=[];
         window.confirm=()=>true;
         window.__JUCE__={backend:{
           emitEvent(name,payload){if(name==='arMixAction')window.__outActions.push(payload);},
-          addEventListener(name,callback){window.__nativeListeners.set(name,callback);}}};""")
+          ...window.__nativeListenerMethods}};""")
     errors=[]
     page.on("pageerror",lambda error:errors.append(str(error)))
     page.goto((out / "index.html").as_uri())
@@ -382,10 +383,10 @@ def main():
                 page = browser.new_page(viewport={"width": width, "height": height})
                 errors = []
                 page.on("pageerror", lambda error: errors.append(str(error)))
-                page.add_init_script("""window.__nativeListeners=new Map();window.__nativeIntents=[];
+                page.add_init_script(NATIVE_EVENTS + """window.__nativeIntents=[];
                     window.__JUCE__={backend:{
                       emitEvent(name,payload){if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);},
-                      addEventListener(name,callback){window.__nativeListeners.set(name,callback);}}};""")
+                      ...window.__nativeListenerMethods}};""")
                 page.goto((out / "index.html").as_uri())
                 page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
                 state = snapshot()

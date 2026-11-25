@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import tempfile
 from playwright.sync_api import sync_playwright
+from native_event_fixture import NATIVE_EVENTS
 from approved_native_wire_gain_smoke import snapshot, emit, ack, SOURCE, RECEIVER, MAIN
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,12 +36,12 @@ def main():
             page = browser.new_page(viewport={'width':width,'height':height})
             errors=[]
             page.on('pageerror', lambda e:errors.append(str(e)))
-            page.add_init_script("""window.__nativeListeners=new Map();window.__events=[];window.__nativeIntents=[];
+            page.add_init_script(NATIVE_EVENTS + """window.__events=[];window.__nativeIntents=[];
               window.__JUCE__={backend:{emitEvent(name,payload){window.__events.push({name,payload});
                 if(payload?.action==='audioDeviceApply')
                   window.__applyPainted=getComputedStyle(document.querySelector('[data-audio-progress]')).display!=='none';
                 if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);},
-                addEventListener(name,callback){window.__nativeListeners.set(name,callback);}}};""")
+                ...window.__nativeListenerMethods}};""")
             if width == 1920:
                 page.emulate_media(reduced_motion='reduce')
             page.goto((out/'index.html').as_uri())

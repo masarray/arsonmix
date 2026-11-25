@@ -135,6 +135,11 @@ jobs:
           if($cases.Count -lt 123 -or $results.SelectNodes('//failure|//error|//skipped').Count -ne 0){
             throw 'P12_NATIVE_TEST_EVIDENCE_INCOMPLETE'
           }
+          if($env:GITHUB_REF_NAME -eq 'staging/io-reverb-integrated-global-20261125'){
+            foreach($name in @('M4NativeFxCatalogExtensionAndStatePreparation','VocalDelayV2RealJuceAdapter','BuiltInFxUserPresetNativePortableSaveAndRecovery')){
+              if(@($cases | Where-Object { $_.name -eq $name }).Count -ne 1){throw "VD6_REQUIRED_NATIVE_TEST_MISSING: $name"}
+            }
+          }
           node scripts/check_approved_native_gui_release.mjs --source-only --bundle build/approved_gui
           if($LASTEXITCODE -ne 0){throw 'P12_APPROVED_GUI_FAILED'}
           & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
@@ -163,6 +168,39 @@ jobs:
             $png=Join-Path 'build' $name
             if(!(Test-Path -LiteralPath $png -PathType Leaf) -or (Get-Item -LiteralPath $png).Length -lt 10000){throw "P12_REVERB_QA_INVALID: $name"}
             Copy-Item -LiteralPath $png -Destination $qa.FullName
+          }
+          if($env:GITHUB_REF_NAME -eq 'staging/io-reverb-integrated-global-20261125'){
+            $vdqa=New-Item -ItemType Directory -Force -Path 'p12-internal/vocal-delay-qa'
+            foreach($name in @('vocal-delay-singer.png','vocal-delay-expert.png')){
+              $png=Join-Path 'build' $name
+              if(!(Test-Path -LiteralPath $png -PathType Leaf) -or (Get-Item -LiteralPath $png).Length -lt 10000){throw "VD6_QA_INVALID: $name"}
+              Copy-Item -LiteralPath $png -Destination $vdqa.FullName
+            }
+            # Same previously verified distribution, no rebuild or second release lane.
+            # Verify every archived payload hash, not just the outer ZIP name.
+            if(Test-Path -LiteralPath 'dist/Studio'){throw 'VD6_PRIVATE_STUDIO_IN_PACKAGE'}
+            $distRoot=(Resolve-Path -LiteralPath 'dist').Path
+            $portable=Join-Path $out.FullName 'ArSonMix-Windows-x64-Portable-Preview.zip'
+            Compress-Archive -Path (Join-Path $distRoot '*') -DestinationPath $portable -CompressionLevel Optimal -Force
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $zip=[System.IO.Compression.ZipFile]::OpenRead($portable)
+            try{
+              $expected=@(Get-ChildItem -LiteralPath $distRoot -Recurse -File | ForEach-Object {
+                $_.FullName.Substring($distRoot.Length+1).Replace('\','/')
+              })
+              $actualNames=@($zip.Entries | Where-Object { !$_.FullName.EndsWith('/') } | ForEach-Object { $_.FullName.Replace('\','/') })
+              if(@(Compare-Object -ReferenceObject $expected -DifferenceObject $actualNames).Count -ne 0){throw 'VD6_PORTABLE_FILE_SET_MISMATCH'}
+              foreach($entry in $zip.Entries){
+                if($entry.FullName.EndsWith('/')){continue}
+                $relative=$entry.FullName.Replace('\','/')
+                $stream=$entry.Open();$hasher=[System.Security.Cryptography.SHA256]::Create()
+                try{$inside=[BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-','').ToLowerInvariant()}
+                finally{$stream.Dispose();$hasher.Dispose()}
+                $outside=(Get-FileHash -LiteralPath (Join-Path $distRoot $relative) -Algorithm SHA256).Hash.ToLowerInvariant()
+                if($inside -ne $outside){throw "VD6_PORTABLE_HASH_MISMATCH: $relative"}
+              }
+            }finally{$zip.Dispose()}
+            Write-Host "VD6_PORTABLE_EXACT_DISTRIBUTION_PASS exact=$actual"
           }
           $files=@(Get-ChildItem -LiteralPath $out.FullName -Recurse -File | Sort-Object FullName | ForEach-Object {
             [ordered]@{path=$_.FullName.Substring($out.FullName.Length+1).Replace('\','/');bytes=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}

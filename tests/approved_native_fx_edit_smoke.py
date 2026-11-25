@@ -6,6 +6,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 from playwright.sync_api import sync_playwright
+from native_event_fixture import NATIVE_EVENTS
 from approved_native_wire_gain_smoke import snapshot,emit,ack,SOURCE,RECEIVER
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -17,11 +18,11 @@ def main():
         for width,height in [(1366,768),(1680,900),(1920,1080)]:
             page=browser.new_page(viewport={'width':width,'height':height});errors=[]
             page.on('pageerror',lambda e:errors.append(str(e)))
-            page.add_init_script("""window.__nativeListeners=new Map();window.__nativeIntents=[];window.__actions=[];
+            page.add_init_script(NATIVE_EVENTS + """window.__nativeIntents=[];window.__actions=[];
               window.__JUCE__={backend:{emitEvent(name,payload){
                 if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);
                 if(name==='arMixAction')window.__actions.push(payload);},
-                addEventListener(name,callback){window.__nativeListeners.set(name,callback);}}};""")
+                ...window.__nativeListenerMethods}};""")
             page.goto((out/'index.html').as_uri());page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__?.enabled')
             state=snapshot();state['graph']['capabilities']['supportedOps']+=['MOVE_INSERT','REMOVE_INSERT']
             state['graph']['channels'][0]['inserts']=[

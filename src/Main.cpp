@@ -2139,6 +2139,89 @@ private:
             });
     }
 
+    // Resolve current channel by the actual accepted processor pointer, not
+    // stale window slot coordinates. The popup captures source epoch/revision
+    // and revalidates them before changing the one shared monitor.
+    std::uint64_t currentDelayChannel(juce::AudioProcessor* target) const {
+        std::uint64_t id=0;
+        engine_.forEachNativeProcessor([&](armix::mixer::ChannelId ch,juce::AudioProcessor* p){
+            if(p==target)id=ch.value;
+        });
+        return id;
+    }
+    void bindDelayMusicSources(armix::builtin_fx::vocal_delay::SingerEditor& editor,
+        std::function<bool()> access,juce::AudioProcessor* target) {
+        using Source=armix::builtin_fx::vocal_delay::SingerEditor::MusicSource;
+        editor.bindMusicSources([this,access,target]{
+            std::vector<Source> result;
+            if(!access()||deviceApply_.busy())return result;
+            const auto own=currentDelayChannel(target);
+            if(!own)return result;
+            const auto snap=approvedNativeSnapshot();
+            const auto graph=snap.getProperty("graph",{});
+            std::uint64_t ep=0,rev=0;
+            if(!armix::console::approvedNativeId(snap.getProperty("device",{}).getProperty("epoch",{}),ep)||
+               !armix::console::approvedNativeId(graph.getProperty("revision",{}),rev))return result;
+            const auto rows=graph.getProperty("channels",{});
+            if(const auto* items=rows.getArray())for(const auto& row:*items){
+                std::uint64_t id=0;const auto role=row.getProperty("role","").toString();
+                if(!armix::console::approvedNativeId(row.getProperty("id",{}),id)||id==own||
+                   (role!="INPUT"&&role!="GROUP"&&role!="FX_RETURN"))continue;
+                auto name=row.getProperty("name","").toString();
+                if(name.isEmpty())name="Channel "+juce::String(std::to_string(id));
+                result.push_back({id,ep,rev,name+" (shared)"});
+            }
+            return result;
+        },[this,access,target](const Source& source){
+            if(!access()||deviceApply_.busy())return false;
+            const auto own=currentDelayChannel(target);
+            if(!own||!source.id||source.id==own)return false;
+            // Host revalidates scheduled channel, epoch and revision.
+            const bool ok=engine_.selectNativeMusicTempoSource(source.epoch,source.revision,
+                armix::mixer::ChannelId{source.id});
+            if(ok)serviceNativeMusicTempo();
+            else emitNotice("Music source changed or unavailable; reopen the source menu",true);
+            return ok;
+        });
+    }
+
+    void bindDelayUserPresets(armix::builtin_fx::vocal_delay::SingerEditor& editor,
+        std::function<armix::builtin_fx::vocal_delay::JuceVocalDelayProcessor*()> current) {
+        using namespace armix::builtin_fx::vocal_delay;
+        using Store=armix::storage::BuiltInFxUserPresetStore;
+        constexpr auto catalog=JuceVocalDelayProcessor::catalogIdentity;
+        editor.bindUserPresetService(
+            [this,current,catalog]{
+                std::vector<SingerEditor::UserPresetEntry> result;
+                if(current())for(const auto& item:builtinFxUserPresets_.enumerate(catalog))
+                    result.push_back({item.id,item.name});
+                return result;
+            },
+            [this,current,catalog](const juce::String& name){
+                auto* fx=current();
+                if(!fx||!fx->stateSnapshotQuiescent()||!Store::safeText(name,80)){
+                    emitNotice("Vocal Delay: wait for settings confirmation or enter a valid name",true);
+                    return juce::String{};
+                }
+                armix::storage::BuiltInFxUserPreset entry;
+                entry.catalogId=catalog;entry.category="My Presets";entry.name=name;
+                entry.settings=PortablePreset::encode(fx->acceptedSnapshot().accepted);
+                const auto error=builtinFxUserPresets_.saveNew(entry);
+                if(error.isNotEmpty()){emitNotice("Vocal Delay preset not saved: "+error,true);return juce::String{};}
+                emitNotice("Vocal Delay preset saved: "+name);return entry.id;
+            },
+            [this,current,catalog](const juce::String& id)->std::optional<Parameters>{
+                auto* fx=current();if(!fx||!Store::safeId(id))return {};
+                armix::storage::BuiltInFxUserPreset entry;
+                const auto error=builtinFxUserPresets_.read(catalog,id,entry);
+                auto p=fx->singerDisplay();
+                if(error.isNotEmpty()||!PortablePreset::decode(entry.settings,p)){
+                    emitNotice("Vocal Delay preset rejected: "+error,true);return {};
+                }
+                return p;
+            });
+    }
+
     void openLogicalVendorEditor(const juce::var& request) {
         std::uint64_t channel=0;
         std::size_t slot=0;
@@ -2176,6 +2259,8 @@ private:
         if(error.isEmpty()) {
             try {
                 if(auto editor=armix::ui::createHostedAudioEditor(*prepared.processor)) {
+                    const juce::Component::SafePointer<armix::builtin_fx::vocal_delay::SingerEditor> preparedDelay(
+                        dynamic_cast<armix::builtin_fx::vocal_delay::SingerEditor*>(editor.get()));
                     const juce::Component::SafePointer<armix::builtin_fx::VocalReverbEditor> preparedReverb(
                         dynamic_cast<armix::builtin_fx::VocalReverbEditor*>(editor.get()));
                     prepared.window=std::make_unique<PluginEditorWindow>(
@@ -2186,6 +2271,18 @@ private:
                     prepared.instanceId=requestedInstance;
                     const bool visible=prepared.window->presentationConfirmed();
                     logicalVendorEditor_=std::move(prepared);
+                    if(auto* delay=preparedDelay.getComponent()) {
+                        auto* identity=logicalVendorEditor_->processor.get();
+                        const auto access=[this,identity]{return logicalVendorEditor_&&
+                            logicalVendorEditor_->processor.get()==identity&&
+                            logicalVendorEditor_->workspaceToken==logicalMixer_.workspace().workspaceToken()&&
+                            !mixerSessionWorker_.busy()&&!logicalMixer_.readOnly()&&
+                            !studioBackupBusy_&&!nativeShowBusy_&&logicalVendorSourceCurrent(*logicalVendorEditor_);};
+                        delay->bindHostAccess(access);
+                        bindDelayUserPresets(*delay,[identity,access]{
+                            return access()?dynamic_cast<armix::builtin_fx::vocal_delay::JuceVocalDelayProcessor*>(identity):nullptr;
+                        });
+                    }
                     if(auto* reverb=preparedReverb.getComponent()) {
                         auto* identity=logicalVendorEditor_->processor.get();
                         bindReverbUserPresets(*reverb,[this,identity]() -> armix::builtin_fx::VocalReverbProcessor* {
@@ -2231,6 +2328,13 @@ private:
                 // an empty Reverb-Sis blob; restore requires a valid packet.
                 if(!reverb->captureDetachedState(bytes)) {
                     emitNotice("Reverb-Sis settings not captured; previous saved state retained",true);
+                    if(!shutdown)fx.window->setVisible(true);
+                    return;
+                }
+            } else if(auto* delay=dynamic_cast<armix::builtin_fx::vocal_delay::JuceVocalDelayProcessor*>(fx.processor.get())) {
+                delay->getStateInformation(bytes);
+                if(!delay->isDetached()||bytes.getSize()!=48) {
+                    emitNotice("Vocal Delay settings not captured; previous saved state retained",true);
                     if(!shutdown)fx.window->setVisible(true);
                     return;
                 }
@@ -4749,10 +4853,18 @@ private:
             lastMusicTempo_.tempo.beatAnchorFrame:0;
         const auto epoch=lastMusicTempo_.epoch;
         const auto revision=lastMusicTempo_.revision;
-        engine_.forEachNativeProcessor([bpm,anchor,epoch,revision](
-            armix::mixer::ChannelId,juce::AudioProcessor* p) {
+        const bool delaySafe=!nativeShowBusy_&&!studioBackupBusy_&&!deviceApply_.busy()&&
+            !engine_.isGraphSwitchPending()&&!engine_.independentClockActive();
+        const armix::builtin_fx::vocal_delay::MusicObservation observation{
+            lastMusicTempo_.source.value,epoch,revision,lastMusicTempo_.tempo.observationFrame,
+            bpm,lastMusicTempo_.tempo.confidence,bpmLocked&&delaySafe};
+        const double now=juce::Time::getMillisecondCounterHiRes();
+        engine_.forEachNativeProcessor([bpm,anchor,epoch,revision,observation,now](
+            armix::mixer::ChannelId ch,juce::AudioProcessor* p) {
             if(auto* vocal=dynamic_cast<armix::builtin_fx::VocalThrowProcessor*>(p))
                 vocal->publishMusicGrid(bpm,anchor,epoch,revision);
+            if(auto* delay=dynamic_cast<armix::builtin_fx::vocal_delay::JuceVocalDelayProcessor*>(p))
+                delay->publishMusicObservation(observation,ch.value,now);
         });
     }
 
@@ -8432,6 +8544,28 @@ private:
                                     },readPower);
                             }
 #endif
+                            // Vocal Delay owns only internal wet power/TAIL. Rack
+                            // bypass remains the existing independent hard safety gate.
+                            if(auto* delay=dynamic_cast<armix::builtin_fx::vocal_delay::SingerEditor*>(editor)) {
+                                auto held=owner;
+                                const auto access=[this,held,retainedEpoch]{return held&&
+                                    !nativeShowBusy_&&!studioBackupBusy_&&!engine_.independentClockActive()&&
+                                    !engine_.isGraphSwitchPending()&&engine_.retainsRoutedFxEditor(retainedEpoch,held);};
+                                delay->bindHostAccess(access);
+                                delay->bindHostBypass([this,held,nativeTarget,nativeChannel,lane,slot,token]{
+                                    const auto current=nativeTarget?
+                                        engine_.retainedNativeFxPower(held,armix::mixer::ChannelId{nativeChannel},
+                                            static_cast<std::size_t>(slot),token):
+                                        engine_.retainedRoutedFxPower(held,lane,slot,token);
+                                    using B=armix::builtin_fx::vocal_delay::SingerEditor::HostBypass;
+                                    return !current.valid?B::unavailable:current.globalBypassed?B::global:
+                                        current.rackBypassed?B::rack:current.slotBypassed?B::slot:B::none;
+                                });
+                                if(nativeTarget)bindDelayMusicSources(*delay,access,held->processor.get());
+                                bindDelayUserPresets(*delay,[held,access]{
+                                    return access()?dynamic_cast<armix::builtin_fx::vocal_delay::JuceVocalDelayProcessor*>(held->processor.get()):nullptr;
+                                });
+                            }
                             // REVERB-SIS uses the same retained lease readback
                             // as GEQ31. The indicator never owns another gate.
                             if(auto* reverb=dynamic_cast<
