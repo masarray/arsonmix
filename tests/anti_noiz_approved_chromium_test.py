@@ -78,6 +78,27 @@ def assert_p1_geometry(root):
     assert all(abs(modes[i]["x"]+modes[i]["w"]-modes[i+1]["x"])<=1 for i in range(3)),geometry
     assert all(r==geometry["radius"] for r in geometry["radii"]),geometry
 
+def assert_full_composition(root):
+    g=root.evaluate("""el=>{
+      const r=e=>{const b=e.getBoundingClientRect();return {x:b.x,y:b.y,w:b.width,h:b.height,right:b.right,bottom:b.bottom};};
+      const q=s=>el.querySelector(s);
+      const rows=[...q('.an-panel').children].filter(e=>!e.hidden).map(r);
+      const controls=['[data-power]','[data-close]','[data-learn]','.an-presets select','.an-presets .mx-fxp-save-as','.an-presets .mx-fxp-manage'].map(s=>r(q(s)));
+      return {rows,controls,program:r(q('.an-presets select')),source:r(q('.an-modes')),
+        power:r(q('[data-power]')),close:r(q('[data-close]')),footer:r(q('footer')),
+        status:r(q('[data-status]')),legend:[...q('.an-legend').children].map(r),
+        overflow:[...q('.an-panel').querySelectorAll('.an-control-name,.an-modes button,.an-legend span')].filter(e=>e.scrollWidth>e.clientWidth+1).map(e=>e.textContent)};
+    }""")
+    rows=g["rows"]
+    assert max(x["x"] for x in rows)-min(x["x"] for x in rows)<=1,g
+    assert max(x["right"] for x in rows)-min(x["right"] for x in rows)<=1,g
+    assert all(abs(rows[i+1]["y"]-rows[i]["bottom"]-8)<=1 for i in range(len(rows)-1)),g
+    assert abs(g["program"]["x"]-g["source"]["x"])<=1,g
+    assert abs(g["power"]["y"]-g["close"]["y"])<=1,g
+    assert all(abs(x["h"]-30)<=1 for x in g["controls"]),g
+    assert max(x["y"] for x in g["legend"])-min(x["y"] for x in g["legend"])<=1,g
+    assert g["status"]["h"]==24 and not g["overflow"],g
+
 def main():
     bundle=Path(sys.argv[1]).resolve()
     with sync_playwright() as pw:
@@ -177,9 +198,13 @@ def main():
         readback(page,accepted,{**OBS,"serial":"3","effectiveMode":"Voice","learning":True,"learnStatus":"Learning"})
         expect(root.locator('[data-learn]')).to_be_disabled()
         expect(root.locator('[data-observation]')).to_contain_text("Learning")
+        expect(root.locator('[data-learn]')).to_have_attribute("data-learning","true")
         page.wait_for_timeout(210)
         readback(page,accepted,{**OBS,"serial":"4","effectiveMode":"Voice","profile":True,"learnStatus":"Accepted"})
         expect(root.locator('[data-observation]')).to_contain_text("Profile ready")
+        expect(root.locator('[data-learn]')).to_have_attribute("data-learning","false")
+        expect(root.locator('[data-profile]')).to_have_attribute("data-ready","true")
+        expect(root.locator('[data-latency]')).to_have_text("256 samples")
         expect(root.locator('[data-learn]')).to_be_enabled()
         # Actual rotary drag with delayed ACK, stale readback and coalescing.
         # Original approved artwork must actually load in the native bundle;
@@ -227,6 +252,7 @@ def main():
         readback(page,accepted,{**OBS,"serial":"7","effectiveMode":"Voice","profile":True})
         # Capture actual approved UI, not an illustrative mockup.
         assert_p1_geometry(root)
+        assert_full_composition(root)
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-1366.png"))
         # Narrow viewport: exercise actual responsive layout, not a mockup.
         page.set_viewport_size({"width":360,"height":720})
@@ -241,6 +267,7 @@ def main():
           const r=c.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
           return hit===c||c.contains(hit);})"""),"narrow editor hit targets occluded"
         assert_p1_geometry(root)
+        assert_full_composition(root)
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-360.png"))
         page.set_viewport_size({"width":1366,"height":768})
         # Show-store/preset plumbing is not mocked as disk success: verify
