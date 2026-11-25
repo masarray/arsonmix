@@ -21,11 +21,12 @@ public:
         trackHold_=int(std::ceil(.5*rate/hop));
         alpha_=float(1.-std::exp(-double(hop)/(rate*2.)));
         drift_.prepare(rate,hop,channels,bins);
-        valid_=false;qualified_=false;anchor_={};working_={};cancel();
+        valid_=false;qualified_=false;anchor_={};working_={};variability_={};cancel();
     }
     bool begin() noexcept {
         if(learning_)return false;
         candidate_={};checkpoint_={};energy_={};checkpointEnergy_={};windowEnergy_={};
+        acceptedSquares_={};windowSquares_={};
         count_=observed_=checkpointCount_=0;warmup_=2;qualified_=false;
         learning_=true;idle_=0;drift_.reset();return true;
     }
@@ -46,6 +47,9 @@ public:
     bool valid() const noexcept {return valid_;}
     const Powers& powers() const noexcept {return working_;}
     const Powers& anchor() const noexcept {return anchor_;}
+    // Coefficient of variation of accepted FFT-frame broadband power.
+    // Trusted only on successful Learn; rejected windows and attempts cannot replace it.
+    const std::array<float,2>& variability() const noexcept {return variability_;}
     LearnResult observe(const Powers& power) noexcept {
         if(!learning_)return LearnResult::waiting;
         // Exclude the two first overlapping frames, which may include PCM
@@ -71,6 +75,7 @@ public:
         // a contaminated window rolls back, rather than entering the PSD.
         for(int c=0;c<channels_;++c){
             energy_[c]+=total[c];windowEnergy_[c]+=total[c];
+            windowSquares_[c]+=double(total[c])*total[c];
             for(int k=0;k<bins_;++k)candidate_[c][k]+=power[c][k];
         }
         ++count_;++observed_;
@@ -93,8 +98,9 @@ public:
                 candidate_=checkpoint_;energy_=checkpointEnergy_;count_=checkpointCount_;
             }else{
                 checkpoint_=candidate_;checkpointEnergy_=energy_;checkpointCount_=count_;
+                for(int c=0;c<channels_;++c)acceptedSquares_[c]+=windowSquares_[c];
             }
-            windowEnergy_={};
+            windowEnergy_={};windowSquares_={};
             if(observed_-count_>maximumDiscarded_){cancel();return LearnResult::rejected;}
         }
         if(observed_<target_)return LearnResult::waiting;
@@ -103,6 +109,11 @@ public:
         const float inv=1.f/float(count_);
         for(int c=0;c<channels_;++c)for(int k=0;k<bins_;++k)
             anchor_[c][k]=working_[c][k]=candidate_[c][k]*inv;
+        for(int c=0;c<channels_;++c){
+            const double mean=double(energy_[c])/count_;
+            const double second=acceptedSquares_[c]/count_;
+            variability_[c]=mean>1e-12?float(std::sqrt(std::max(0.,second/(mean*mean)-1.))):0.f;
+        }
         qualified_=valid_=true;return LearnResult::accepted;
     }
     // Ordinary confirmed-idle tracking retains the original 70-130% bounds.
@@ -137,7 +148,8 @@ public:
 private:
     Powers anchor_{},working_{},candidate_{},checkpoint_{};
     NoiseDriftGuard<MaxBins> drift_{};
-    std::array<float,2> energy_{},checkpointEnergy_{},windowEnergy_{};
+    std::array<float,2> energy_{},checkpointEnergy_{},windowEnergy_{},variability_{};
+    std::array<double,2> acceptedSquares_{},windowSquares_{};
     int channels_=0,bins_=0,target_=1,trackHold_=1,count_=0,warmup_=0,idle_=0;
     int learnWindow_=1,maximumDiscarded_=0,observed_=0,checkpointCount_=0;
     float alpha_=0;
