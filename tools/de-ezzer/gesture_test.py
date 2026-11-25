@@ -67,15 +67,33 @@ with sync_playwright() as pw:
     assert page.locator('.dial-face').first.evaluate('(e)=>getComputedStyle(e).boxShadow') != 'none'
     assert page.locator('.lcd-glass').evaluate('(e)=>getComputedStyle(e).pointerEvents') == 'none'
     assert page.locator('.lcd-glass').evaluate('(e)=>getComputedStyle(e,"::before").clipPath').startswith('polygon(')
-    # CSSOM serializes 8-bit alpha (0.085 is rendered as 22/255 = 0.086).
-    rgba = page.locator('.lcd-glass').evaluate("""e=>getComputedStyle(e,'::before').backgroundColor.match(/[0-9.]+/g).map(Number)""")
-    assert rgba[:3] == [255,255,255] and abs(rgba[3]-.085) <= .5/255+0.0005, rgba
-    # Worst-case contrast after the real white overlay is composited on the LCD.
-    assert page.evaluate("""() => {
-      const l=c=>{let v=c.match(/[0-9.]+/g).slice(0,3).map(Number).map(n=>n/255).map(n=>n<=.04045?n/12.92:((n+.055)/1.055)**2.4);return .2126*v[0]+.7152*v[1]+.0722*v[2]};
-      const bg=l('rgb(33,43,46)');
-      return ['.lcd-title','.lcd-subtitle','.analysis-foot b','.gr','.axis'].every(sel=>(l(getComputedStyle(document.querySelector(sel)).color)+.05)/(bg+.05)>=4.5)
-    }""")
+    # Actual optical plane has white gradient stops with a monotonic fade.
+    # CSSOM quantizes each alpha to 8-bit; check parsed values with one-half LSB tolerance.
+    glass = page.locator('.lcd-glass')
+    stops = glass.evaluate(r"""e=>[...getComputedStyle(e,'::before').backgroundImage.matchAll(/rgba\(([^)]+)\)/g)].map(m=>m[1].split(',').map(Number))""")
+    assert len(stops) == 3, stops
+    assert all(x[:3] == [255,255,255] for x in stops), stops
+    assert all(abs(x[3]-a) <= .5/255+.0005 for x,a in zip(stops,[.18,.105,.018])), stops
+    assert stops[0][3]>stops[1][3]>stops[2][3]>0
+    assert glass.evaluate('(e)=>getComputedStyle(e,"::before").clipPath') == 'polygon(0px 0px, 48% 0px, 16% 100%, 0px 100%)' or glass.evaluate('(e)=>getComputedStyle(e,"::before").clipPath').startswith('polygon(')
+    assert glass.evaluate('(e)=>getComputedStyle(e,"::after").borderTopStyle') == 'solid'
+    assert glass.evaluate('(e)=>getComputedStyle(e,"::after").borderBottomColor') != 'rgba(0, 0, 0, 0)'
+    assert glass.evaluate('(e)=>getComputedStyle(e,"::after").backgroundImage').count('radial-gradient') == 4
+    assert glass.evaluate('(e)=>getComputedStyle(e,"::after").boxShadow') != 'none'
+    assert glass.evaluate('(e)=>getComputedStyle(e,"::after").pointerEvents') == 'none'
+    assert glass.evaluate('(e)=>getComputedStyle(e,"::before").pointerEvents') == 'none'
+    assert page.locator('.knobs output').first.evaluate('(e)=>getComputedStyle(e,"::before").clipPath').startswith('polygon(')
+    # Worst-case text contrast: calculate against the brightest interior of
+    # the actual glass (edge glints are confined to the unused perimeter).
+    assert page.evaluate("""alpha => {
+      const rgb=c=>c.match(/[0-9.]+/g).slice(0,3).map(Number);
+      const l=v=>{v=v.map(n=>n/255).map(n=>n<=.04045?n/12.92:((n+.055)/1.055)**2.4);return .2126*v[0]+.7152*v[1]+.0722*v[2]};
+      const base=rgb(getComputedStyle(document.querySelector('.display')).backgroundColor);
+      const bg=l(base.map(n=>n*(1-alpha)+255*alpha));
+      return ['.lcd-title','.lcd-subtitle','.analysis-foot b','.gr','.axis','[data-weight]','[data-analysis-status]'].every(sel=>(l(rgb(getComputedStyle(document.querySelector(sel)).color))+.05)/(bg+.05)>=4.5);
+    }""", stops[0][3])
+    # The optical layer is above content but never captures input.
+    assert glass.evaluate("""e=>{const r=e.getBoundingClientRect(),hit=document.elementFromPoint(r.left+r.width*.25,r.top+r.height*.25);return hit!==e&&!e.contains(hit)}""")
     # Same computed chrome as other built-ins using the shared style, not local copies.
     def chrome_parity(state):
         return page.evaluate("""state=>{
