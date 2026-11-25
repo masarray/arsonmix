@@ -4,6 +4,8 @@
 #endif
 #include "../src/NativeBuiltInFx.h"
 #include "../src/NativeFxControlRequest.h"
+#include "../src/DeEzzerNativeBridgeContract.h"
+#include "../engine/core/LiveChannelFxGraph.h"
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -541,7 +543,73 @@ static void verifyGraphicEq31Processor() {
         static_cast<int>(adjusted.getSize())));
 }
 
+static void verifyDeEzzerNativeInsert() {
+    using namespace armix::builtin_fx;
+    using namespace armix::builtin_fx::de_ezzer;
+    const auto* descriptor=findNativeBuiltInFx(DeEzzerProcessor::catalogIdentity);
+    assert(descriptor&&descriptor->showInPicker);
+    assert(!descriptor->prepare(32000.,128,nullptr,0));
+    assert(!descriptor->prepare(192000.,128,nullptr,0));
+    assert(!descriptor->prepare(48000.,4097,nullptr,0));
+    for(double rate:{44100.,48000.,88200.,96000.}) {
+        auto processor=descriptor->prepare(rate,128,nullptr,0);
+        assert(processor&&processor->getLatencySamples()==0&&processor->getSampleRate()==rate);
+        auto* typed=dynamic_cast<DeEzzerProcessor*>(processor.get());
+        assert(typed&&typed->isReady());
+        armix::mixer::LiveChannelFxGraph::FxInstance fx(std::move(processor),
+            descriptor->id,descriptor->name,128);
+        assert(fx.nativeControl&&fx.continuousBypassProcessing);
+        Core reference;assert(reference.prepare(rate,2));
+        std::array<float,128> l{},r{},a{},b{};
+        for(int block=0;block<80;++block) {
+            for(int j=0;j<128;++j) {
+                const double t=(block*128+j)/rate;
+                l[j]=static_cast<float>(.12*std::sin(2*std::numbers::pi*800*t)+.25*std::sin(2*std::numbers::pi*7200*t));
+                r[j]=-l[j];
+            }
+            a=l;b=r;reference.process(a.data(),b.data(),128);
+            fx.render(l.data(),r.data(),128);
+            assert(l==a&&r==b);
+        }
+        const auto initial=typed->readback();
+        assert(initial.frames>0&&initial.id.instance!=0);
+        Settings settings=initial.settings;settings.amount=.25f;settings.shape=Shape::Focused;
+        auto obj=std::make_unique<juce::DynamicObject>();
+        obj->setProperty("id",bridge::encode(initial.id));
+        obj->setProperty("sequence","9007199254740993");
+        obj->setProperty("settings",bridge::encode(settings));
+        obj->setProperty("audition","Normal");
+        const juce::var packet(obj.release());
+        Command command;
+        assert(bridge::decode(juce::JSON::parse(juce::JSON::toString(packet)),command));
+        assert(command.sequence==9007199254740993ULL&&command.id==initial.id);
+        packet.getDynamicObject()->setProperty("audition","Delta");
+        Command invalid;assert(!bridge::decode(packet,invalid));
+        packet.getDynamicObject()->setProperty("audition","Normal");
+        packet.getDynamicObject()->setProperty("sequence","18446744073709551616");
+        assert(!bridge::decode(packet,invalid));
+        assert(typed->queue(command));
+        juce::MemoryBlock captured;
+        assert(!fx.tryCaptureState(captured)); // pending command blocks Show capture
+        fx.bypassFade.prepare(true,rate,0);
+        fx.bypassRequested.store(true,std::memory_order_relaxed);
+        l.fill(.125f);r.fill(-.125f);a=l;b=r;
+        fx.render(l.data(),r.data(),128);
+        assert(l==a&&r==b); // audience dry even with continuous detector processing
+        assert(!fx.tryCaptureState(captured)); // pending ACK still blocks capture
+        Ack ack;assert(typed->pollAck(ack)&&ack.code==AckCode::Applied&&ack.sequence==command.sequence);
+        assert(!typed->pollAck(ack)); // bypass hook and processBlock never double-consume
+        assert(fx.tryCaptureState(captured)&&captured.getSize()==StateCodec::Bytes{}.size());
+        auto restored=descriptor->prepare(rate,128,captured.getData(),static_cast<int>(captured.getSize()));
+        assert(restored);
+        juce::MemoryBlock roundtrip;restored->getStateInformation(roundtrip);
+        assert(captured==roundtrip);
+        assert(!typed->restoreUnpublishedState(captured.getData(),static_cast<int>(captured.getSize())));
+    }
+}
+
 int main() {
+    verifyDeEzzerNativeInsert();
     verifyGraphicEq31Processor();
     verifySharedNativeFxControlRequest(); 
     verifyFirstSoundGuitarProcessor();

@@ -32,6 +32,7 @@ public:
         const auto epoch=insert_.identity().epoch;
         ready_=epoch!=std::numeric_limits<std::uint64_t>::max()&&
             insert_.prepare({instance_,epoch+1},rate,2,frames);
+        if(ready_)setRateAndBufferSizeDetails(rate,frames);
         fullyBypassed_=false;
     }
     void releaseResources() override {ready_=false;}
