@@ -154,15 +154,10 @@ private:
             float evidence=0;
             for(int c=0;c<channels_;++c)
                 evidence=std::max(evidence,power_[c][k]/std::max(profile_.powers()[c][k],eps));
-            float gain;
-            if(selective) {
-                gain=AutoGain::target(floor,context_.temporalRatio(profile_.anchor(),channels_,bins,k),evidence);
-            } else if(!protect&&!idle&&effectiveMode_==Mode::Voice) {
-                gain=std::max(voiceGain_.estimate(k,evidence),
-                    AutoGain::voiceProtection(context_.temporalRatio(profile_.anchor(),channels_,bins,k),evidence));
-            } else {
-                gain=std::sqrt(std::max(0.f,1.f-1.f/std::max(1.f,evidence)));
-            }
+            // Only explicit Voice opts into the stronger causal estimator.
+            const float gain=selective?AutoGain::target(floor,context_.temporalRatio(profile_.anchor(),channels_,bins,k),evidence):
+                !protect&&!idle&&effectiveMode_==Mode::Voice?voiceGain_.estimate(k,evidence):
+                std::sqrt(std::max(0.f,1.f-1.f/std::max(1.f,evidence)));
             target_[k]=std::max(floor,gain);
         }
         for(int k=0;k<bins;++k) {

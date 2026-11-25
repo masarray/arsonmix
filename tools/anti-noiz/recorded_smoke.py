@@ -168,17 +168,31 @@ def main():
             ("speech", "auto-14-1", "recorded_clip", "error_improvement_db", .988065544469, 2.0, "min"),
             ("sung-note", "auto-14-1", "recorded_clip", "error_improvement_db", 2.48512011297, 2.385, "min"),
             ("acoustic-guitar", "auto-14-1", "recorded_clip", "error_improvement_db", 1.80764484338, 1.707, "min"),
-            ("speech", "auto-mic-14-1", "recorded_clip", "error_improvement_db", 9.60616316337, 9.1, "min"),
-            ("speech", "auto-mic-14-1", "low_energy_window", "desired_projection", .940004356549, .955, "min"),
-            ("speech", "auto-mic-14-1", "low_energy_window", "clean_only_error_db_relative", -13.4446952838, -14.5, "max"),
+            # Voice experimental guard was rejected. Preserve measured baseline, not a weak-voice quality pass.
+            ("speech", "auto-mic-14-1", "recorded_clip", "error_improvement_db", 9.60616316337, 9.60616316337, "same"),
+            ("speech", "auto-mic-14-1", "low_energy_window", "desired_projection", .940004356549, .940004356549, "same"),
+            ("speech", "auto-mic-14-1", "low_energy_window", "clean_only_error_db_relative", -13.4446952838, -13.4446952838, "same"),
         )
+        failures = []
         for name, tag, label, metric, baseline, limit, direction in checks:
             value = float(observations[(name, tag, label)][metric])
-            passed = math.isfinite(value) and (value >= limit if direction == "min" else value <= limit)
+            passed = math.isfinite(value) and (value >= limit if direction == "min" else abs(value-limit) <= .002)
             print(f"CANDIDATE {name} {tag} {label} {metric}: baseline={baseline:.6f} candidate={value:.6f} limit={direction}:{limit} {'PASS' if passed else 'FAIL'}", flush=True)
+            if not passed:
+                failures.append((name, tag, label, metric))
         for name, tag in (("speech", "auto-14-1"), ("sung-note", "auto-14-1"), ("acoustic-guitar", "auto-14-1")):
             value = float(observations[(name, tag, "recorded_clip")]["desired_projection"])
-            print(f"CANDIDATE {name} {tag} recorded_clip projection={value:.6f} {'PASS' if .97<=value<=1.03 else 'FAIL'}", flush=True)
+            passed = .97 <= value <= 1.03
+            print(f"CANDIDATE {name} {tag} recorded_clip projection={value:.6f} {'PASS' if passed else 'FAIL'}", flush=True)
+            if not passed:
+                failures.append((name, tag, "projection"))
+        for name, tag in (("speech", "auto-0-1"), ("sung-note", "auto-0-1"), ("acoustic-guitar", "auto-0-1"), ("acoustic-guitar", "music-14-1")):
+            value = float(observations[(name, tag, "recorded_clip")]["error_improvement_db"])
+            if not abs(value) < .001:
+                failures.append((name, tag, "unity"))
+        if failures:
+            raise RuntimeError(f"AN-03F recorded candidate regression: {failures}")
+        print("AN-03F targeted recorded Auto acceptance and unchanged Voice baseline PASS (not full corpus qualification)")
     print("Recorded-audio smoke completed; synthetic added noise; no subjective or release qualification.")
 
 

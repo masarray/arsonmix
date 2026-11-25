@@ -18,13 +18,6 @@ struct AutoGain final {
         const float local=std::clamp((subbandPeak-5.f)*(1.f/15.f),0.f,1.f);
         return std::min(activeFloor(floor,broadbandRatio),1.f-local*(1.f-floor));
     }
-    // A coherent neighborhood can protect weaker bins near a stronger partial.
-    // This is a bounded gain guard, not speech probability or source separation.
-    static float voiceProtection(float temporalRatio,float instantaneousRatio) noexcept {
-        const float support=std::clamp((temporalRatio-2.6f)/2.4f,0.f,1.f);
-        const float present=std::clamp((instantaneousRatio-1.f)*.5f,0.f,1.f);
-        return .85f*support*present;
-    }
     static float target(float floor,float temporalRatio,float instantaneousRatio) noexcept {
         // Temporal neighboring evidence protects tonal sustain; a fresh
         // strong bin opens immediately even before the temporal guard catches up.
