@@ -12,6 +12,7 @@
 #include "AntiNoizProfile.h"
 #include "AntiNoizAutoGain.h"
 #include "AntiNoizTonal.h"
+#include "AntiNoizResidual.h"
 
 namespace armix::builtin_fx::anti_noiz {
 // Independent bounded WOLA reference, not a trained context classifier.
@@ -78,6 +79,7 @@ public:
         context_.prepare(rate_,hop_);
         voiceGain_.prepare(rate_,hop_);
         tonal_.prepare(rate_,channels_);tonalIdle_=false;
+        residualShape_.prepare(rate_,hop_);
         for(auto& a:in_)a.fill(0);
         for(auto& a:out_)a.fill(0);
         profile_.prepare(rate_,hop_,channels_,hop_+1);
@@ -97,14 +99,14 @@ public:
         // idle tracking. Existing overlap and gain smoothing remain intact.
         if(effectiveMode_==Mode::Voice&&(next!=Mode::Voice||(!s.enabled&&settings_.enabled)))
             profile_.limitToIdleBounds();
-        if(next!=effectiveMode_||s.enabled!=settings_.enabled||s.cleanDb==0.f||settings_.cleanDb==0.f){tonal_.resetSignal();tonalIdle_=false;}
+        if(next!=effectiveMode_||s.enabled!=settings_.enabled||s.cleanDb==0.f||settings_.cleanDb==0.f){tonal_.resetSignal();tonalIdle_=false;residualShape_.reset();}
         if(next!=effectiveMode_||s.enabled!=settings_.enabled){voiceGain_.reset();context_.reset();profile_.track(power_,false);}
         effectiveMode_=next;
         settings_=s; applyGains(p); return true;
     }
     bool beginLearn() noexcept {
         if(!ready_||!profile_.begin())return false;
-        context_.reset(); voiceGain_.reset(); tonal_.begin();tonalIdle_=false; return true;
+        context_.reset(); voiceGain_.reset(); tonal_.begin();tonalIdle_=false; residualShape_.reset(); return true;
     }
     // Quiescent/offline owner only: restart the signal timeline, keep trusted PSD.
     void resetStreamKeepProfile() noexcept {
@@ -112,7 +114,7 @@ public:
         for(auto& a:out_)a.fill(0);
         mask_.fill(1); expansion_=1;
         pos_=ticks_=0;
-        profile_.cancel(); context_.reset(); voiceGain_.reset(); tonal_.resetSignal();tonalIdle_=false;
+        profile_.cancel(); context_.reset(); voiceGain_.reset(); tonal_.resetSignal();tonalIdle_=false;residualShape_.reset();
     }
     Settings settings() const noexcept {return settings_;}
     float spectralGain() const noexcept {return *std::min_element(mask_.begin(),mask_.begin()+hop_+1);}
@@ -181,7 +183,7 @@ private:
     }
     void frame() noexcept {
         if(!profile_.learning()&&(!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music)) {
-            context_.reset();tonalIdle_=false;profile_.track(power_,false);renderUnity(); return;
+            context_.reset();tonalIdle_=false;residualShape_.reset();profile_.track(power_,false);renderUnity(); return;
         }
         const int bins=hop_+1;
         for(int c=0;c<channels_;++c) {
@@ -210,6 +212,8 @@ private:
                        context_.broadbandRatio(),context_.subbandPeakRatio());
         const bool selective=!protect&&!idle&&effectiveMode_==Mode::AutoProtect;
         const bool activeVoice=!protect&&!idle&&effectiveMode_==Mode::Voice;
+        residualShape_.update(power_,profile_.anchor(),channels_,bins,profile_.variability(),silenceFloor_,
+            activeVoice&&cleanFloor_<1.f&&!context_.adaptiveIdle()&&silenceFloor_<1.f);
         const float ratio=context_.broadbandRatio();
         const float floor=protect?1.f:idle||effectiveMode_==Mode::Voice?cleanFloor_:
             effectiveMode_==Mode::Singing?singingFloor_:AutoGain::activeFloor(autoFloor_,ratio,context_.subbandPeakRatio());
@@ -259,7 +263,7 @@ private:
         expansion_=expTarget>=expansion_?expTarget:expansion_+expandClose_*(expTarget-expansion_);
         for(int c=0;c<channels_;++c) {
             for(int k=0;k<bins;++k) {
-                const float g=mask_[k]*expansion_;
+                const float g=mask_[k]*expansion_*residualShape_.gain(k);
                 work_[c][k]*=g;
                 if(k>0&&k<hop_)work_[c][n_-k]*=g;
             }
@@ -279,6 +283,7 @@ private:
     ContextGuard<maxBins> context_{};
     VoiceGain<maxBins> voiceGain_{};
     TonalNoise tonal_{};
+    ResidualShape<maxBins> residualShape_{};
     bool tonalIdle_=false;
     float maskClose_=0.18f,expandClose_=0.035f;
     float cleanFloor_=1,singingFloor_=1,silenceFloor_=1,autoFloor_=1;
