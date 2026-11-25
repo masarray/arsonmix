@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Paired frozen AN-08C.1 vs candidate; never equate render success with quality."""
+"""Paired frozen AN-08D vs candidate; never equate render success with quality."""
 import json
 import math
 import sys
@@ -76,7 +76,13 @@ def compare(base, candidate):
         for field in ("error_db","projection","clean_only_error_db"):
             d[field+"_delta"] = metric(new,field)-metric(old,field)
         band_changes.append(d)
-    return {"band_changes":band_changes,"baseline_flags":base["target_flag_rows"], "candidate_flags":candidate["target_flag_rows"],
+    speech=[x for x in changes if x["kind"]=="active" and x["label"]=="active" and x["clip"]=="speech" and x["policy"] in ("intent","intent-idle") and x["mode"] in ("voice","auto-mic") and int(x["channel_minus1_all"])==-1]
+    if len(speech)!=8: raise ValueError(f"expected eight aggregate speech active pairs, got {len(speech)}")
+    error_gain=sum(x["error_delta_db"] for x in speech)/len(speech)
+    projection_loss=sum(x["projection_error_delta"] for x in speech)/len(speech)
+    benefit=error_gain>=.25 and projection_loss<=.005 and candidate["target_flag_rows"]<=base["target_flag_rows"]
+    return {"speech_active_pairs":speech,"mean_projection_error_delta":projection_loss,
+            "mean_error_improvement_delta_db":error_gain,"benefit_gate":benefit,"band_changes":band_changes,"baseline_flags":base["target_flag_rows"], "candidate_flags":candidate["target_flag_rows"],
             "paired_rows":len(changes), "regressions":regressions, "changes":changes,
             "release_qualified":False,
             "scope":"objective paired comparison; targets and listening/FAT remain independent"}
@@ -85,11 +91,14 @@ if __name__ == "__main__":
     base, candidate, out = map(Path, sys.argv[1:])
     report = compare(json.loads(base.read_text()), json.loads(candidate.read_text()))
     out.write_text(json.dumps(report, indent=2, allow_nan=False)+"\n")
-    print("AN08D", "paired", report["paired_rows"], "flags", report["baseline_flags"],
+    print("AN08G", "paired", report["paired_rows"], "flags", report["baseline_flags"],
           "->", report["candidate_flags"], "regressions", len(report["regressions"]))
     for row in report["band_changes"]:
-        print("AN08D_BAND", json.dumps(row, sort_keys=True))
+        print("AN08G_BAND", json.dumps(row, sort_keys=True))
     for row in report["regressions"]:
-        print("AN08D_REGRESSION", json.dumps(row, sort_keys=True))
-    if report["regressions"]:
+        print("AN08G_REGRESSION", json.dumps(row, sort_keys=True))
+    for row in report["speech_active_pairs"]:
+        print("AN08G_SPEECH",json.dumps(row,sort_keys=True))
+    print("AN08G_BENEFIT",json.dumps({"mean_projection_error_delta":report["mean_projection_error_delta"],"mean_error_improvement_delta_db":report["mean_error_improvement_delta_db"],"passed":report["benefit_gate"]}))
+    if report["regressions"] or not report["benefit_gate"]:
         raise SystemExit(1)

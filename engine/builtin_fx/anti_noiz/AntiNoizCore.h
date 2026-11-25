@@ -12,6 +12,7 @@
 #include "AntiNoizProfile.h"
 #include "AntiNoizAutoGain.h"
 #include "AntiNoizTonal.h"
+#include "AntiNoizBroadbandEstimate.h"
 
 namespace armix::builtin_fx::anti_noiz {
 // Independent bounded WOLA reference, not a trained context classifier.
@@ -77,6 +78,7 @@ public:
         prepareTiming();
         context_.prepare(rate_,hop_);
         voiceGain_.prepare(rate_,hop_);
+        broadbandEstimate_.prepare(rate_,hop_);
         tonal_.prepare(rate_,channels_);tonalIdle_=false;
         for(auto& a:in_)a.fill(0);
         for(auto& a:out_)a.fill(0);
@@ -97,14 +99,14 @@ public:
         // idle tracking. Existing overlap and gain smoothing remain intact.
         if(effectiveMode_==Mode::Voice&&(next!=Mode::Voice||(!s.enabled&&settings_.enabled)))
             profile_.limitToIdleBounds();
-        if(next!=effectiveMode_||s.enabled!=settings_.enabled||s.cleanDb==0.f||settings_.cleanDb==0.f){tonal_.resetSignal();tonalIdle_=false;}
+        if(next!=effectiveMode_||s.enabled!=settings_.enabled||s.cleanDb==0.f||settings_.cleanDb==0.f){tonal_.resetSignal();tonalIdle_=false;broadbandEstimate_.reset();}
         if(next!=effectiveMode_||s.enabled!=settings_.enabled){voiceGain_.reset();context_.reset();profile_.track(power_,false);}
         effectiveMode_=next;
         settings_=s; applyGains(p); return true;
     }
     bool beginLearn() noexcept {
         if(!ready_||!profile_.begin())return false;
-        context_.reset(); voiceGain_.reset(); tonal_.begin();tonalIdle_=false; return true;
+        context_.reset(); voiceGain_.reset(); tonal_.begin();tonalIdle_=false;broadbandEstimate_.reset(); return true;
     }
     // Quiescent/offline owner only: restart the signal timeline, keep trusted PSD.
     void resetStreamKeepProfile() noexcept {
@@ -112,7 +114,7 @@ public:
         for(auto& a:out_)a.fill(0);
         mask_.fill(1); expansion_=1;
         pos_=ticks_=0;
-        profile_.cancel(); context_.reset(); voiceGain_.reset(); tonal_.resetSignal();tonalIdle_=false;
+        profile_.cancel(); context_.reset(); voiceGain_.reset(); tonal_.resetSignal();tonalIdle_=false;broadbandEstimate_.reset();
     }
     Settings settings() const noexcept {return settings_;}
     float spectralGain() const noexcept {return *std::min_element(mask_.begin(),mask_.begin()+hop_+1);}
@@ -145,7 +147,7 @@ public:
     // Native host lifecycle only. Keep the qualified stationary DSP path,
     // coefficient preparation and all Core layout unchanged.
     void cancelNativeLearn() noexcept {
-        if(profile_.learning()){profile_.cancel();context_.reset();voiceGain_.reset();tonal_.resetSignal();tonalIdle_=false;}
+        if(profile_.learning()){profile_.cancel();context_.reset();voiceGain_.reset();tonal_.resetSignal();tonalIdle_=false;broadbandEstimate_.reset();}
     }
     bool lastNativeLearnQualified() const noexcept {return profile_.lastAttemptQualified();}
     void processNativeDry(float* left,float* right,int samples) noexcept {
@@ -153,7 +155,7 @@ public:
         // no second delay. Existing disabled WOLA path advances the timeline.
         const bool enabled=settings_.enabled;
         settings_.enabled=false;
-        tonal_.resetSignal();tonalIdle_=false;
+        tonal_.resetSignal();tonalIdle_=false;broadbandEstimate_.reset();
         process(left,right,samples);
         settings_.enabled=enabled;
     }
@@ -181,7 +183,7 @@ private:
     }
     void frame() noexcept {
         if(!profile_.learning()&&(!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music)) {
-            context_.reset();tonalIdle_=false;profile_.track(power_,false);renderUnity(); return;
+            context_.reset();tonalIdle_=false;broadbandEstimate_.reset();profile_.track(power_,false);renderUnity(); return;
         }
         const int bins=hop_+1;
         for(int c=0;c<channels_;++c) {
@@ -210,6 +212,9 @@ private:
                        context_.broadbandRatio(),context_.subbandPeakRatio());
         const bool selective=!protect&&!idle&&effectiveMode_==Mode::AutoProtect;
         const bool activeVoice=!protect&&!idle&&effectiveMode_==Mode::Voice;
+        broadbandEstimate_.update(power_,profile_.powers(),channels_,bins,profile_.variability(),
+            activeVoice&&cleanFloor_<1.f&&tonal_.selected()<0);
+        const bool adaptiveEstimate=broadbandEstimate_.active();
         const float ratio=context_.broadbandRatio();
         const float floor=protect?1.f:idle||effectiveMode_==Mode::Voice?cleanFloor_:
             effectiveMode_==Mode::Singing?singingFloor_:AutoGain::activeFloor(autoFloor_,ratio,context_.subbandPeakRatio());
@@ -222,12 +227,17 @@ private:
         // inverse FFT is needed. Preserve the context and profile histories.
         if(floor==1.f&&expTarget==1.f){renderUnity();return;}
         for(int k=0;k<bins;++k) {
-            float evidence=0;
-            for(int c=0;c<channels_;++c)
-                evidence=std::max(evidence,power_[c][k]/std::max(profile_.powers()[c][k],eps));
+            float evidence=0,corrected=0;
+            const float relative=adaptiveEstimate?context_.relativeNoise(profile_.anchor(),channels_,k):0.f;
+            for(int c=0;c<channels_;++c){
+                const float gamma=power_[c][k]/std::max(profile_.powers()[c][k],eps);
+                evidence=std::max(evidence,gamma);
+                if(adaptiveEstimate)corrected=std::max(corrected,BroadbandEstimate<maxBins>::corrected(
+                    gamma,relative,broadbandEstimate_.scale(c)));
+            }
             // Only explicit Voice opts into the stronger causal estimator.
             float gain=selective?AutoGain::target(floor,context_.temporalRatio(profile_.anchor(),channels_,bins,k),evidence):
-                activeVoice?voiceGain_.estimate(k,evidence):
+                activeVoice?voiceGain_.estimate(k,adaptiveEstimate?corrected:evidence,evidence):
                 std::sqrt(std::max(0.f,1.f-1.f/std::max(1.f,evidence)));
             // Only noise-overlap bands in explicit/source-aware Voice.
             // A quiet neighboring bin must independently show foreground.
@@ -278,6 +288,7 @@ private:
     FftPlan fft_{};
     ContextGuard<maxBins> context_{};
     VoiceGain<maxBins> voiceGain_{};
+    BroadbandEstimate<maxBins> broadbandEstimate_{};
     TonalNoise tonal_{};
     bool tonalIdle_=false;
     float maskClose_=0.18f,expandClose_=0.035f;

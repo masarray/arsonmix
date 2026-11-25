@@ -23,15 +23,17 @@ public:
         const float headroom=std::min(.15f,1.f-gain);
         return gain+headroom*overlap*local*corroboration*present;
     }
-    float estimate(int bin,float gamma) noexcept {
+    float estimate(int bin,float gamma) noexcept {return estimate(bin,gamma,gamma);}
+    float estimate(int bin,float gamma,float rawGamma) noexcept {
         gamma=std::clamp(gamma,0.f,1e8f);
+        rawGamma=std::clamp(rawGamma,0.f,1e8f);
         const float instantaneous=std::max(0.f,gamma-1.f);
         const float xi=memory_*prior_[bin]+(1.f-memory_)*instantaneous;
         const float wiener=xi/(1.f+xi);
         prior_[bin]=gamma*wiener*wiener;
         // Restore high-SNR onsets without waiting for a prior-frame estimate.
-        const float onset=std::clamp((gamma-4.f)/12.f,0.f,1.f);
-        const float direct=instantaneous/std::max(1.f,gamma);
+        const float onset=std::clamp((rawGamma-4.f)/12.f,0.f,1.f);
+        const float direct=std::max(0.f,rawGamma-1.f)/std::max(1.f,rawGamma);
         // Apply Wiener as an amplitude gain. Taking its square root made
         // learned-noise attenuation needlessly shallow in noise-dominant bins.
         return wiener+onset*(direct-wiener);
