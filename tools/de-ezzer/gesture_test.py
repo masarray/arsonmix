@@ -189,6 +189,9 @@ with sync_playwright() as pw:
     page.set_viewport_size({'width': 400, 'height': 640})
     assert panel.evaluate('(e)=>e.scrollWidth<=e.clientWidth+1')
     assert page.locator('.dial').count()==3
+    for tap in page.locator('.analysis-foot > span').all():
+        assert tap.evaluate("(e)=>getComputedStyle(e).gridTemplateColumns.split(' ').length===2")
+        assert tap.locator('b').bounding_box()['y'] < tap.locator('.tap-meter').bounding_box()['y']
     assert panel.evaluate('(e)=>e.scrollHeight<=e.clientHeight+1'), panel.evaluate('(e)=>[e.scrollHeight,e.clientHeight]')
     page.set_viewport_size({'width': 800, 'height': 600})
     page.locator('[data-cue="Ess"]').click()
@@ -225,6 +228,7 @@ with sync_playwright() as pw:
     assert panel.evaluate('(e)=>e.scrollWidth<=e.clientWidth+1')
     page.set_viewport_size({'width':400,'height':640})
     assert panel.evaluate('(e)=>e.scrollWidth<=e.clientWidth+1')
+    assert panel.evaluate('(e)=>e.scrollHeight<=e.clientHeight+1'), panel.evaluate('(e)=>[e.scrollHeight,e.clientHeight]')
     page.set_viewport_size({'width':800,'height':600})
     if os.environ.get('DE_EZZER_SCREENSHOT'):
         panel.screenshot(path=os.environ['DE_EZZER_SCREENSHOT'])

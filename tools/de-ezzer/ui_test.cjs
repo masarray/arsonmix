@@ -42,3 +42,17 @@ assert.equal(meterSteps(6,-72,0,9),9);
 assert.equal(meterSteps(7.49,0,18,18),7);
 assert.equal(meterSteps(7.5,0,18,18),8);
 console.log('PASS: exact mixer peak-hold/release trace, stepped LCD normalization and bounds');
+
+// Bounded chronological history: no fake samples from drag or repeat frames.
+const {createMeterHistory}=require(process.argv[2]||'../../site/preview-v2/assets/mixer-native-de-ezzer.js');
+const hist=createMeterHistory(4),steps=()=>Array.from({length:4},(_,i)=>hist.stepAt(i));
+assert.deepEqual(steps(),[0,0,0,0]);
+assert(hist.update(id,'0',-72));assert(hist.update(id,'1',-36));
+assert.deepEqual(steps(),[0,0,0,3]);
+assert(!hist.update(id,'1',0));assert.deepEqual(steps(),[0,0,0,3]);
+assert(hist.update(id,'2',0));assert(hist.update(id,'3',-60));assert(hist.update(id,'4',-12));
+assert.deepEqual(steps(),[3,5,1,4]);
+assert(hist.update({...id,epoch:'2'},'4',-48));assert.deepEqual(steps(),[0,0,0,2]);
+assert(hist.update(null,null,undefined));assert.deepEqual(steps(),[0,0,0,0]);
+assert(!hist.update(null,null,undefined));
+console.log('PASS: bounded history order, duplicate-frame dedupe, epoch fence and unavailable reset');
