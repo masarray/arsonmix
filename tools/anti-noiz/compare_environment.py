@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Paired frozen AN-08C.1 vs candidate; never equate render success with quality."""
+"""Paired frozen AN-08D vs candidate; never equate render success with quality."""
 import json
 import math
 import sys
@@ -76,7 +76,15 @@ def compare(base, candidate):
         for field in ("error_db","projection","clean_only_error_db"):
             d[field+"_delta"] = metric(new,field)-metric(old,field)
         band_changes.append(d)
-    return {"band_changes":band_changes,"baseline_flags":base["target_flag_rows"], "candidate_flags":candidate["target_flag_rows"],
+    # Pure CPU optimization: require much tighter metric parity as well
+    # as all original musical gates. Exact PCM separately on matched fixture.
+    parity=[]
+    for row in changes:
+        keys=("error_delta_db","projection_error_delta","clean_only_error_delta_db","idle_delta_db")
+        if any(abs(row.get(k,0.))>1e-5 for k in keys):parity.append(row)
+    for row in band_changes:
+        if any(abs(row[k])>1e-5 for k in ("error_db_delta","projection_delta","clean_only_error_db_delta")):parity.append(row)
+    return {"parity_violations":parity,"band_changes":band_changes,"baseline_flags":base["target_flag_rows"], "candidate_flags":candidate["target_flag_rows"],
             "paired_rows":len(changes), "regressions":regressions, "changes":changes,
             "release_qualified":False,
             "scope":"objective paired comparison; targets and listening/FAT remain independent"}
@@ -85,11 +93,12 @@ if __name__ == "__main__":
     base, candidate, out = map(Path, sys.argv[1:])
     report = compare(json.loads(base.read_text()), json.loads(candidate.read_text()))
     out.write_text(json.dumps(report, indent=2, allow_nan=False)+"\n")
-    print("AN08D", "paired", report["paired_rows"], "flags", report["baseline_flags"],
+    print("AN08H", "paired", report["paired_rows"], "flags", report["baseline_flags"],
           "->", report["candidate_flags"], "regressions", len(report["regressions"]))
     for row in report["band_changes"]:
-        print("AN08D_BAND", json.dumps(row, sort_keys=True))
+        print("AN08H_BAND", json.dumps(row, sort_keys=True))
     for row in report["regressions"]:
-        print("AN08D_REGRESSION", json.dumps(row, sort_keys=True))
-    if report["regressions"]:
+        print("AN08H_REGRESSION", json.dumps(row, sort_keys=True))
+    print("AN08H_PARITY",len(report["parity_violations"]))
+    if report["regressions"] or report["parity_violations"] or report["baseline_flags"]!=report["candidate_flags"]:
         raise SystemExit(1)

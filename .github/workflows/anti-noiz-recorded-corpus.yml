@@ -35,10 +35,10 @@ jobs:
           python3 tools/anti-noiz/recorded_environment.py --self-test
       - name: Pinned real recorded environments (not listening approval)
         run: python3 tools/anti-noiz/recorded_environment.py "$RUNNER_TEMP/an07/anti_noiz_qualify" "$RUNNER_TEMP/an07-evidence"
-      - name: Checkout frozen AN-08C.1 comparator
+      - name: Checkout frozen AN-08D comparator
         uses: actions/checkout@v4
         with:
-          ref: 9f87fd8430c572ac118e8d5e6710c77cbc0379bb
+          ref: 1ff28caee4190a5855b10fd5a16d395aefb16202
           path: an07-baseline
           persist-credentials: false
       - name: Run exact baseline against same recorded corpus
@@ -48,7 +48,7 @@ jobs:
           python3 tools/anti-noiz/recorded_environment.py "$RUNNER_TEMP/an07-base/anti_noiz_qualify" "$RUNNER_TEMP/an07-base-evidence"
       - name: Compare paired quality metrics without weakening original gates
         run: python3 tools/anti-noiz/compare_environment.py "$RUNNER_TEMP/an07-base-evidence/report.json" "$RUNNER_TEMP/an07-evidence/report.json" "$RUNNER_TEMP/an07-comparison.json"
-      - name: Preserve 40 single-line cases against exact C.1
+      - name: Preserve 40 single-line cases against exact D
         if: ${{ always() && hashFiles('an07-baseline/tools/anti-noiz/OfflineAudio.h') != '' }}
         run: |
           cp tools/anti-noiz/tonal_benchmark.cpp an07-baseline/tools/anti-noiz/tonal_benchmark.cpp
@@ -66,6 +66,21 @@ jobs:
           "$RUNNER_TEMP/an08c-candidate" > "$RUNNER_TEMP/an08c-candidate.csv"
           "$RUNNER_TEMP/an08c-baseline" > "$RUNNER_TEMP/an08c-baseline.csv"
           python3 tools/anti-noiz/compare_harmonic.py "$RUNNER_TEMP/an08c-baseline.csv" "$RUNNER_TEMP/an08c-candidate.csv" "$RUNNER_TEMP/an08c-harmonic.json"
+      - name: Exact PCM and matched CPU ABBA (16 cases)
+        if: ${{ always() && hashFiles('an07-baseline/tools/anti-noiz/OfflineAudio.h') != '' }}
+        run: |
+          cp tools/anti-noiz/foreground_cache_bench.cpp an07-baseline/tools/anti-noiz/foreground_cache_bench.cpp
+          g++ -std=c++20 -O3 -Wall -Wextra -Werror tools/anti-noiz/foreground_cache_bench.cpp -o "$RUNNER_TEMP/h-candidate"
+          g++ -std=c++20 -O3 -Wall -Wextra -Werror an07-baseline/tools/anti-noiz/foreground_cache_bench.cpp -o "$RUNNER_TEMP/h-base"
+          "$RUNNER_TEMP/h-base" "$RUNNER_TEMP/h-a.pcm" > "$RUNNER_TEMP/h-a.csv"
+          "$RUNNER_TEMP/h-candidate" "$RUNNER_TEMP/h-b.pcm" > "$RUNNER_TEMP/h-b.csv"
+          "$RUNNER_TEMP/h-candidate" "$RUNNER_TEMP/h-c.pcm" > "$RUNNER_TEMP/h-c.csv"
+          "$RUNNER_TEMP/h-base" "$RUNNER_TEMP/h-d.pcm" > "$RUNNER_TEMP/h-d.csv"
+          cmp "$RUNNER_TEMP/h-a.pcm" "$RUNNER_TEMP/h-b.pcm"
+          cmp "$RUNNER_TEMP/h-a.pcm" "$RUNNER_TEMP/h-c.pcm"
+          cmp "$RUNNER_TEMP/h-a.pcm" "$RUNNER_TEMP/h-d.pcm"
+          python3 tools/anti-noiz/compare_cache_cpu.py "$RUNNER_TEMP/h-a.csv" "$RUNNER_TEMP/h-b.csv" "$RUNNER_TEMP/h-c.csv" "$RUNNER_TEMP/h-d.csv" "$RUNNER_TEMP/h-cpu.json"
+          echo AN08H_PCM_EXACT_16_CASES
       - name: Preserve machine-readable evidence only
         if: always()
         uses: actions/upload-artifact@v4
@@ -75,6 +90,7 @@ jobs:
             ${{ runner.temp }}/an07-evidence/report.json
             ${{ runner.temp }}/an07-base-evidence/report.json
             ${{ runner.temp }}/an07-comparison.json
+            ${{ runner.temp }}/h-cpu.json
             ${{ runner.temp }}/an08a-baseline.csv
             ${{ runner.temp }}/an08a-candidate.csv
             ${{ runner.temp }}/an08a-tonal.json

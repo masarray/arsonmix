@@ -14,6 +14,27 @@ int main(){try{
         const float v=G::restore(g,100.f,100.f,100.f,100.f);
         offline::require(v>=g&&v<=1.f&&v-g<=.150001f,"bounded restoration");
     }
+    // Compare exact cached evidence with original loop, including edges,
+    // mono/stereo, anchor zeros, and a second independent frame.
+    using Cache=ForegroundCache<32>;
+    Cache cache;Cache::Powers anchor{},power{};
+    ContextGuard<32> ctx;ctx.prepare(48000,128);
+    for(int channels:{1,2})for(int frame=0;frame<2;++frame){
+        for(int c=0;c<channels;++c)for(int k=0;k<32;++k){
+            anchor[c][k]=(k%7==0)?0.f:float(1+(k*3+c+frame)%11);
+            power[c][k]=float((k*13+c*5+frame*17)%23);
+        }
+        ctx.update(power,anchor,channels,32,true);
+        cache.begin(ctx,anchor,channels,32,true);
+        for(int k=0;k<32;++k){
+            float old=0.f;
+            for(int j=std::max(0,k-3);j<=std::min(31,k+3);++j){
+                if(j==k||ctx.relativeNoise(anchor,channels,j)>=1.f)continue;
+                for(int c=0;c<channels;++c)old=std::max(old,power[c][j]/std::max(anchor[c][j],1e-16f));
+            }
+            offline::require(cache.relative(k)==ctx.relativeNoise(anchor,channels,k)&&cache.neighbor(power,anchor,channels,32,k)==old,"exact foreground cache parity");
+        }
+    }
     constexpr unsigned rate=48000;
     std::mt19937 gen(2026);std::uniform_real_distribution<float> noiseDist(-.003f,.003f),unit(-1.f,1.f);
     offline::Audio learn{rate,2,std::vector<float>(rate*6)},input=learn,clean=learn;

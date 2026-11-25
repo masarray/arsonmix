@@ -12,6 +12,7 @@
 #include "AntiNoizProfile.h"
 #include "AntiNoizAutoGain.h"
 #include "AntiNoizTonal.h"
+#include "AntiNoizForegroundCache.h"
 
 namespace armix::builtin_fx::anti_noiz {
 // Independent bounded WOLA reference, not a trained context classifier.
@@ -221,6 +222,8 @@ private:
         // Analysis remains live, but when both gains are exactly unity no
         // inverse FFT is needed. Preserve the context and profile histories.
         if(floor==1.f&&expTarget==1.f){renderUnity();return;}
+        const bool restore=activeVoice&&ratio>=2.f;
+        if(restore||reserve>0.f)foregroundCache_.begin(context_,profile_.anchor(),channels_,bins,restore);
         for(int k=0;k<bins;++k) {
             float evidence=0;
             for(int c=0;c<channels_;++c)
@@ -232,21 +235,16 @@ private:
             // Only noise-overlap bands in explicit/source-aware Voice.
             // A quiet neighboring bin must independently show foreground.
             // The existing temporal neighborhood is reused; no FFT or delay.
-            if(activeVoice&&ratio>=2.f&&evidence>1.f) {
-                const float relative=context_.relativeNoise(profile_.anchor(),channels_,k);
+            if(restore&&evidence>1.f) {
+                const float relative=foregroundCache_.relative(k);
                 if(relative>1.f) {
-                    float neighbor=0.f;
-                    for(int j=std::max(0,k-3);j<=std::min(bins-1,k+3);++j){
-                        if(j==k||context_.relativeNoise(profile_.anchor(),channels_,j)>=1.f)continue;
-                        for(int c=0;c<channels_;++c)
-                            neighbor=std::max(neighbor,power_[c][j]/std::max(profile_.anchor()[c][j],eps));
-                    }
+                    const float neighbor=foregroundCache_.neighbor(power_,profile_.anchor(),channels_,bins,k);
                     if(neighbor>4.f)gain=VoiceGain<maxBins>::restore(gain,evidence,relative,
                         context_.temporalRatio(profile_.anchor(),channels_,bins,k),neighbor);
                 }
             }
             const float localFloor=reserve>0.f?AutoGain::detailFloor(floor,reserve,
-                context_.relativeNoise(profile_.anchor(),channels_,k)):floor;
+                foregroundCache_.relative(k)):floor;
             target_[k]=std::max(localFloor,gain);
         }
         for(int k=0;k<bins;++k) {
@@ -278,6 +276,7 @@ private:
     FftPlan fft_{};
     ContextGuard<maxBins> context_{};
     VoiceGain<maxBins> voiceGain_{};
+    ForegroundCache<maxBins> foregroundCache_{};
     TonalNoise tonal_{};
     bool tonalIdle_=false;
     float maskClose_=0.18f,expandClose_=0.035f;
