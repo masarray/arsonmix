@@ -3,6 +3,8 @@
 #include "JuceVocalDelayProcessor.h"
 #include "VocalDelayHardwareSkin.h"
 #include <functional>
+#include <optional>
+#include <vector>
 namespace armix::builtin_fx::vocal_delay {
 class SingerEditor final:public juce::AudioProcessorEditor,private juce::Timer{
 public:
@@ -31,6 +33,8 @@ public:
         configure(attack_,"vd.attack","DUCK ATTACK",2,100,1," ms");
         configure(release_,"vd.release","DUCK RELEASE",40,1000,1," ms");
         setupButton(power_,"vd.power");setupButton(tap_,"vd.tap");tap_.setButtonText("TAP");
+        setupButton(save_,"vd.save");save_.setButtonText("SAVE");save_.setTooltip("Save the accepted sound to My Presets");
+        save_.onClick=[this]{promptSavePreset();};
         setupButton(expert_,"vd.expert");expert_.setButtonText("Expert");
         setupButton(smart_,"vd.smart");smart_.setButtonText("Smart voicing");
         setupButton(hit_,"vd.hit");hit_.setTooltip("Chorus highlight: more wet echo and repeats. Click again to return to base sound.");
@@ -50,9 +54,20 @@ public:
         attack_.onValueChange=[this]{auto p=processor_.singerDisplay();p.duckAttackMs=float(attack_.getValue());offer(p);};
         release_.onValueChange=[this]{auto p=processor_.singerDisplay();p.duckReleaseMs=float(release_.getValue());offer(p);};
         power_.onClick=[this]{auto p=processor_.singerDisplay();p.enabled=!p.enabled;if(p.enabled)p.hit=false;offer(p);};
-        preset_.onChange=[this]{const int id=preset_.getSelectedId();if(id>0&&id<=int(singerPresets.size())){
-            taps_.reset();tempoNotice_.clear();
-            offer(presetSettings(std::size_t(id-1),processor_.singerDisplay().enabled));}};
+        preset_.onChange=[this]{
+            if(!hostAvailable())return;
+            const int id=preset_.getSelectedId();
+            if(id>0&&id<=int(singerPresets.size())){
+                selectedUserId_.clear();taps_.reset();tempoNotice_.clear();
+                offer(presetSettings(std::size_t(id-1),processor_.singerDisplay().enabled));
+            }else if(id>=1000&&std::size_t(id-1000)<userPresets_.size()&&recallUserPreset_){
+                const auto entry=userPresets_[std::size_t(id-1000)];
+                if(const auto p=recallUserPreset_(entry.id);p&&processor_.offerSinger(*p)){
+                    selectedUserId_=entry.id;selectedUserSound_=*p;taps_.reset();tempoNotice_.clear();
+                }
+                refresh();
+            }
+        };
         mode_.onChange=[this]{const int id=mode_.getSelectedId();if(id>=1&&id<=3){auto p=processor_.singerDisplay();p.mode=static_cast<StereoMode>(id-1);offer(p);}};
         division_.onChange=[this]{const auto p=processor_.singerDisplay();applyTempo(p.bpmQuarter?double(p.bpmQuarter)*.25:120.);};
         tap_.onClick=[this]{double bpm=0;if(taps_.tap(juce::Time::getMillisecondCounterHiRes(),bpm)){applyTempo(bpm);}else{tempoNotice_="TAP 3+ BEATS";noticeUntil_=juce::Time::getMillisecondCounterHiRes()+1500.;repaint();}};
@@ -68,11 +83,18 @@ public:
         stopTimer();if(admitted_)processor_.endSingerEditor();
         for(auto* d:dials())d->setLookAndFeel(nullptr);bpm_.setLookAndFeel(nullptr);
         for(auto* c:{&preset_,&mode_,&division_,&algorithm_})c->setLookAndFeel(nullptr);
-        for(auto* b:{&power_,&tap_,&expert_,&smart_,&focus_,&hit_,&tail_})b->setLookAndFeel(nullptr);
+        for(auto* b:{&power_,&tap_,&expert_,&smart_,&focus_,&hit_,&tail_,&save_})b->setLookAndFeel(nullptr);
     }
     // Host owns the exact retained FxInstance/workspace guard. No captured
     // slot ordinal is trusted after MOVE. UI may not edit a retired owner.
     void bindHostAccess(std::function<bool()> guard){hostAccess_=std::move(guard);refresh();}
+    struct UserPresetEntry {juce::String id,name;};
+    void bindUserPresetService(std::function<std::vector<UserPresetEntry>()> list,
+            std::function<juce::String(const juce::String&)> save,
+            std::function<std::optional<Parameters>(const juce::String&)> recall){
+        listUserPresets_=std::move(list);saveUserPreset_=std::move(save);recallUserPreset_=std::move(recall);
+        refreshPresetList();refresh();
+    }
     void paint(juce::Graphics& g) override{
         hardware::chassis(g,getWidth(),getHeight());
         hardware::inset(g,{174,15,424,39},5);
@@ -102,7 +124,7 @@ public:
         g.setColour(juce::Colour(0xff5fd7c3));g.drawText(!admitted_||!hostAvailable()?"UNAVAILABLE":processor_.isDetached()?"OFFLINE EDIT":processor_.singerFault()?"REOPEN REQUIRED":processor_.singerPending()?"APPLYING":"DSP READY",375,266,221,18,juce::Justification::centredRight);
     }
     void resized() override{
-        preset_.setBounds(180,19,178,31);mode_.setBounds(366,19,92,31);
+        preset_.setBounds(180,19,136,31);save_.setBounds(322,19,36,31);mode_.setBounds(366,19,92,31);
         expert_.setBounds(466,19,67,31);power_.setBounds(541,19,53,31);
         mode_.setVisible(expertMode_);focus_.setBounds(expertMode_?366:250,235,110,25);algorithm_.setVisible(expertMode_);algorithm_.setBounds(250,235,110,25);expert_.setButtonText(expertMode_?"Singer":"Expert");
         auto ds=dials();
@@ -122,7 +144,12 @@ public:
         setDial(duck_,p.duck*100);setDial(hp_,p.highPassHz);setDial(lp_,p.lowPassHz);
         setDial(attack_,p.duckAttackMs);setDial(release_,p.duckReleaseMs);
         const auto style=styleIndex(p);
-        preset_.setSelectedId(style<0?99:style+1,juce::dontSendNotification);
+        int presetId=style<0?99:style+1;
+        if(selectedUserId_.isNotEmpty()&&sameSound(p,selectedUserSound_)){
+            for(std::size_t i=0;i<userPresets_.size();++i)if(userPresets_[i].id==selectedUserId_)presetId=int(i)+1000;
+        }else selectedUserId_.clear();
+        preset_.setSelectedId(presetId,juce::dontSendNotification);
+        save_.setEnabled(available&&processor_.stateSnapshotQuiescent()&&bool(saveUserPreset_));
         smart_.setEnabled(available);
         hit_.setEnabled(available&&p.enabled&&!processor_.isDetached());hit_.setButtonText(p.hit?"HIT ON":"HIT");
         hit_.setColour(juce::TextButton::buttonColourId,hardware::col(p.hit?0x88652d:0x41494d));
@@ -141,6 +168,32 @@ public:
         repaint();
     }
 private:
+    static bool sameSound(Parameters a,Parameters b) noexcept{
+        a.hit=b.hit=false;a.enabled=b.enabled=true;return sameParameters(a,b);
+    }
+    void refreshPresetList(){
+        userPresets_=listUserPresets_?listUserPresets_():std::vector<UserPresetEntry>{};
+        preset_.clear(juce::dontSendNotification);
+        preset_.addItem("Custom",99);
+        for(std::size_t i=0;i<singerPresets.size();++i)preset_.addItem(singerPresets[i].name,int(i+1));
+        if(!userPresets_.empty())preset_.addSectionHeading("My Presets");
+        for(std::size_t i=0;i<userPresets_.size();++i)preset_.addItem(userPresets_[i].name,int(i)+1000);
+    }
+    void promptSavePreset(){
+        if(!hostAvailable()||!saveUserPreset_||!processor_.stateSnapshotQuiescent())return;
+        auto* dialog=new juce::AlertWindow("Save Vocal Delay preset","Save the current confirmed sound",juce::MessageBoxIconType::NoIcon,this);
+        dialog->addTextEditor("presetName","","Preset name:");
+        dialog->addButton("Save",1,juce::KeyPress(juce::KeyPress::returnKey));
+        dialog->addButton("Cancel",0,juce::KeyPress(juce::KeyPress::escapeKey));
+        const juce::Component::SafePointer<SingerEditor> weak(this);
+        dialog->enterModalState(true,juce::ModalCallbackFunction::create([weak,dialog](int result){
+            if(result!=1||weak==nullptr||!weak->hostAvailable()||!weak->saveUserPreset_||!weak->processor_.stateSnapshotQuiescent())return;
+            const auto id=weak->saveUserPreset_(dialog->getTextEditorContents("presetName").trim());
+            if(id.isEmpty())return;
+            weak->selectedUserId_=id;weak->selectedUserSound_=weak->processor_.acceptedSnapshot().accepted;
+            weak->refreshPresetList();weak->refresh();
+        }),true);
+    }
     std::array<juce::Slider*,8> dials(){return {{&time_,&feedback_,&echo_,&duck_,&hp_,&lp_,&attack_,&release_}};}
     void configure(juce::Slider& s,const char* id,const char* name,double min,double max,double step,const char* unit){
         s.setComponentID(id);s.setName(name);s.setTitle(name);s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -179,7 +232,11 @@ private:
     }
     JuceVocalDelayProcessor& processor_;hardware::Look look_;std::function<bool()> hostAccess_;
     juce::Slider time_,feedback_,echo_,duck_,hp_,lp_,attack_,release_,bpm_;juce::ComboBox preset_,mode_,division_,algorithm_;
-    juce::TextButton power_,tap_,expert_,smart_,focus_,hit_,tail_;
+    juce::TextButton power_,tap_,expert_,smart_,focus_,hit_,tail_,save_;
+    std::vector<UserPresetEntry> userPresets_;juce::String selectedUserId_;Parameters selectedUserSound_{};
+    std::function<std::vector<UserPresetEntry>()> listUserPresets_;
+    std::function<juce::String(const juce::String&)> saveUserPreset_;
+    std::function<std::optional<Parameters>(const juce::String&)> recallUserPreset_;
     ContinuousDelayCore::Meter meter_{};double lastMeterMs_=-1.;bool meterFresh_=false;TapTempo taps_;double noticeUntil_=0;juce::String tempoNotice_;bool admitted_=false,expertMode_=false;
 };
 inline juce::AudioProcessorEditor* JuceVocalDelayProcessor::createEditor(){return new SingerEditor(*this);}

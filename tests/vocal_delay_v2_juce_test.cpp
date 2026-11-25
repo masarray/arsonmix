@@ -99,7 +99,19 @@ int main(){
         bool access=true;singer->bindHostAccess([&]{return access;});
         echo->setValue(27,juce::sendNotificationSync);
         CHECK(!hosted.singerPending()&&std::abs(hosted.acceptedSnapshot().accepted.echo-.27f)<1.e-6f);
-        access=false;singer->refresh();CHECK(!echo->isEnabled());
+        auto* preset=dynamic_cast<juce::ComboBox*>(editor->findChildWithID("vd.preset"));CHECK(preset);
+        auto* save=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.save"));CHECK(save&&!save->isEnabled());
+        singer->bindUserPresetService([]{return std::vector<SingerEditor::UserPresetEntry>{{"id","My Echo"}};},
+            [](const juce::String&){return juce::String("id");},
+            [&hosted](const juce::String& id)->std::optional<Parameters>{
+                if(id!="id")return {};
+                auto p=hosted.singerDisplay();p.echo=.31f;return p;
+            });
+        CHECK(save->isEnabled());preset->setSelectedId(1000,juce::sendNotificationSync);
+        CHECK(preset->getSelectedId()==1000&&std::abs(hosted.singerDisplay().echo-.31f)<1.e-6f);
+        echo->setValue(27,juce::sendNotificationSync);
+        CHECK(preset->getSelectedId()!=1000);
+        access=false;singer->refresh();CHECK(!echo->isEnabled()&&!save->isEnabled());
         echo->setValue(81,juce::sendNotificationSync);CHECK(std::abs(hosted.singerDisplay().echo-.27f)<1.e-6f);
         editor.reset();juce::MemoryBlock detached;hosted.getStateInformation(detached);CHECK(detached.getSize()==48);
         CHECK(hosted.submit({{1,1,1,1},1,{}})==Submit::invalid);
