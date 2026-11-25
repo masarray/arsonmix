@@ -78,7 +78,7 @@ public:
         prepareTiming();
         context_.prepare(rate_,hop_);
         voiceGain_.prepare(rate_,hop_);
-        broadbandEstimate_.prepare(rate_,hop_);
+        broadbandEstimate_.prepare(rate_,hop_);broadbandCorrection_=0.f;
         tonal_.prepare(rate_,channels_);tonalIdle_=false;
         for(auto& a:in_)a.fill(0);
         for(auto& a:out_)a.fill(0);
@@ -117,6 +117,8 @@ public:
         profile_.cancel(); context_.reset(); voiceGain_.reset(); tonal_.resetSignal();tonalIdle_=false;broadbandEstimate_.reset();
     }
     Settings settings() const noexcept {return settings_;}
+    // Audio-owner qualification diagnostic, not cross-thread telemetry.
+    float broadbandCorrection() const noexcept {return broadbandCorrection_;}
     float spectralGain() const noexcept {return *std::min_element(mask_.begin(),mask_.begin()+hop_+1);}
     float residualGain() const noexcept {return expansion_;}
     bool ready() const noexcept {return ready_;}
@@ -182,6 +184,7 @@ private:
         mask_.fill(1); expansion_=1;
     }
     void frame() noexcept {
+        broadbandCorrection_=0.f;
         if(!profile_.learning()&&(!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music)) {
             context_.reset();tonalIdle_=false;broadbandEstimate_.reset();profile_.track(power_,false);renderUnity(); return;
         }
@@ -235,6 +238,7 @@ private:
                 if(adaptiveEstimate)corrected=std::max(corrected,BroadbandEstimate<maxBins>::corrected(
                     gamma,relative,broadbandEstimate_.scale(c)));
             }
+            if(adaptiveEstimate)broadbandCorrection_=std::max(broadbandCorrection_,evidence-corrected);
             // Only explicit Voice opts into the stronger causal estimator.
             float gain=selective?AutoGain::target(floor,context_.temporalRatio(profile_.anchor(),channels_,bins,k),evidence):
                 activeVoice?voiceGain_.estimate(k,adaptiveEstimate?corrected:evidence,evidence):
@@ -289,6 +293,7 @@ private:
     ContextGuard<maxBins> context_{};
     VoiceGain<maxBins> voiceGain_{};
     BroadbandEstimate<maxBins> broadbandEstimate_{};
+    float broadbandCorrection_=0.f;
     TonalNoise tonal_{};
     bool tonalIdle_=false;
     float maskClose_=0.18f,expandClose_=0.035f;
