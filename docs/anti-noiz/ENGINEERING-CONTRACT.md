@@ -1,6 +1,9 @@
 # Anti Noiz — maintainability and optimization contract
 Owner direction (2026-11-25): maintainable and optimized from the first implementation; no speculative patch stacks. ASKP-VST DSP may be reused and is intended to become open source. This does not authorize publishing the entire private repository or secrets. Preserve the existing ASKP release boundary until explicitly changed. Review upstream file ownership and third-party licensing before copying code; record exact provenance and applicable license. No changes to ASKP itself in this PR.
 
+## Binding product ownership decision — owner clarification 2026-11-25
+Anti Noiz is an independent product/engine owned by ArSonMix. ASKP-VST is a reference and optional donor of individually validated DSP primitives, not a baseline to port wholesale, a runtime/build dependency, a shared release train, or a required shared library. Its existing quality is not the acceptance target. Keep the tested Anti Noiz foundation; adopt a candidate only after matched-noise-reduction, signal-preservation, transition, stereo and performance comparisons demonstrate a benefit. Otherwise implement the better independent solution using published DSP research. No changes to ASKP-VST or synchronization obligation. AN-02/03 prioritize context classification and active-speech noise reduction without damaging music; retain conservative fail-open when uncertain.
+
 ## Reuse decision (source audit)
 Reference ASKP DenoiseEngine.h, reviewed at immutable upstream revision. Reuse proven concepts or extract a small audited pure DSP component only when superior under the same regression/benchmark harness. No product wrapper dependency or second DSP renderer.
 - Fixed FFT/OLA, delay-aligned unity, shared spectrum: keep existing tested Anti Noiz path; extract reusable transform plan instead of maintaining competing FFTs inside Anti Noiz.
@@ -8,7 +11,7 @@ Reference ASKP DenoiseEngine.h, reviewed at immutable upstream revision. Reuse p
 - ASKP voice confidence: useful baseline features, not a proven speech/music classifier; no promotion to authority until mixed/singing/music corpus demonstrates low false attenuation.
 - ASKP smooth expander: benchmark soft knee, hysteresis, hold and two-speed closure against residual baseline; use linked raw-input evidence plus residual estimate; preserve weak consonants/tails. Avoid per-sample log/pow where a bounded, tested approximation is justified.
 - ASKP voice enhancer and product wrapper: exclude from Anti Noiz. No coloration, unrelated DSP, payment, update, licensing or 8192-sample scratch copy as a default.
-- Shared library future: one source-of-truth host-neutral C++ DSP module, separate host adapters. Pin an approved revision only after both product tests and license audit; do not make ArSonMix depend on private repo access.
+- Shared library: not a development objective or dependency. Maintain a single host-neutral DSP implementation within Anti Noiz itself; any future extraction is a separate decision, only after Anti Noiz quality gates and licensing review. No synchronized ASKP changes.
 
 ## Required architecture
 Core owns audio histories; fixed FFT plan is a separate primitive. Next split noise profile (transactional candidate/trusted), feature extraction, context policy (pure, testable), gain estimator, residual expander, and stereo coordinator at natural ownership seams, not one class per trivial function. No cyclic dependencies or virtual dispatch in per-bin/per-sample inner loops. Native JUCE adapter owns lifecycle/typed state, control commands and actual audio-applied ACK; GUI only consumes bounded telemetry. Keep one native graph and existing /preview/ ownership. No duplicate parameter store or worker renderer.
