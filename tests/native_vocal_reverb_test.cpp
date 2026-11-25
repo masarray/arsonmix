@@ -370,21 +370,22 @@ int main() {
     auto snapshot=ui->createComponentSnapshot(ui->getLocalBounds());
     assert(snapshot.isValid()&&snapshot.getWidth()==1120&&snapshot.getHeight()==430);
     assert(snapshot.getPixelAt(16,16)!=snapshot.getPixelAt(568,353));
-    // Owner-approved Graphite Ice Blue replaces the former cobalt body.
-    // Verify real pixels at unoccupied locations, a cool neutral metal,
-    // dark smoked LCD, intact cabinet geometry and visible fine grain.
+    // V3 contextual satin blue-titanium: verify actual painted material,
+    // dark smoked LCD, intact cabinet geometry and bounded fine grain.
     const auto lightness=[](juce::Colour c) { return int(c.getRed())+int(c.getGreen())+int(c.getBlue()); };
     const auto metalPixel=snapshot.getPixelAt(30,359);
     const auto lcdPixel=snapshot.getPixelAt(30,382);
     assert(lightness(metalPixel)>lightness(lcdPixel)+12);
-    assert(metalPixel.getBlue()>metalPixel.getRed() &&
-           metalPixel.getBlue()-metalPixel.getRed()<15);
+    assert(metalPixel.getBlue()-metalPixel.getRed()>=17 &&
+           metalPixel.getBlue()-metalPixel.getRed()<=26);
+    assert(metalPixel.getGreen()>metalPixel.getRed()+8);
+    assert(lightness(metalPixel)>150 && lightness(metalPixel)<260);
     for(float scale:{1.f,1.25f,1.5f,2.f}) {
         const auto face=ui->createComponentSnapshot(ui->getLocalBounds(),true,scale);
         for(int x:{30,560,1090})for(int y:{409,414,416}) {
             const auto c=face.getPixelAt(static_cast<int>(x*scale),static_cast<int>(y*scale));
-            assert(c.getBlue()>c.getRed()+5 && c.getBlue()<55 &&
-                   c.getGreen()>c.getRed() && c.getRed()>=10);
+            assert(c.getBlue()>c.getRed()+12 && c.getBlue()<65 &&
+                   c.getGreen()>c.getRed()+7 && c.getRed()>=10);
         }
     }
     // Same cached procedural materials serve every editor/dial. Profile is
@@ -401,7 +402,29 @@ int main() {
         const int g=skin.metal.getPixelAt(500,y).getGreen();
         lo=std::min(lo,g);hi=std::max(hi,g);
     }
-    assert(hi-lo>=3 && hi-lo<=16);
+    assert(hi-lo>=2 && hi-lo<=9);
+    // Reject flat paint, coarse noise and full-width scan stripes. Compare
+    // the cached raster against the independent continuous sheen equation;
+    // interpolation error is <1 code value and grain is bounded to ±3.
+    for(int y=80;y<740;y+=31)for(int x=40;x<2200;x+=37) {
+        const auto expected=reverb_ui::graphite::metalPixel(x,y,
+            reverb_ui::graphite::metalSheen(x,y));
+        const auto actual=skin.metal.getPixelAt(x,y);
+        assert(std::abs(int(expected.getGreen())-int(actual.getGreen()))<=1);
+        assert(actual.getBlue()-actual.getRed()==22);
+    }
+    // Macro reflection remains visible at normal zoom, but independent
+    // local grain cannot become one coherent stripe across the panel.
+    const auto peak=skin.metal.getPixelAt(580,160);
+    const auto edge=skin.metal.getPixelAt(1920,680);
+    assert(peak.getGreen()>edge.getGreen()+10);
+    double cross=0.,left2=0.,right2=0.;
+    for(int y=200;y<500;++y) {
+        const double l=reverb_ui::graphite::metalGrain(300,y);
+        const double r=reverb_ui::graphite::metalGrain(1800,y);
+        cross+=l*r;left2+=l*l;right2+=r*r;
+    }
+    assert(left2>0. && right2>0. && std::abs(cross/std::sqrt(left2*right2))<.2);
     // Exercise both extreme normalized values with the real JUCE paint path
     // without touching the processor or altering the live test's settings.
     const auto knobImage=[](float value) {

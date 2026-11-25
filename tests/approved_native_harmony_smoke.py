@@ -86,6 +86,8 @@ def main():
                 page.wait_for_function(
                     "()=>window.__ARMIX_NATIVE_M2__?.enabled && window.ArSonMixNativeHarmony")
                 state=snapshot()
+                # Accepted global gate is mandatory for the shared overlay.
+                state["globalFxBypassed"]=False
                 state["graph"]["capabilities"]["supportedOps"] += [
                     "LOAD_INSERT","MOVE_INSERT","REMOVE_INSERT"]
                 state["graph"]["channels"][0]["fxRackBypassed"]=False
@@ -112,6 +114,7 @@ def main():
                 switch=page.get_by_role("switch",name="PITCH TUNE")
                 assert switch.is_disabled() and switch.get_attribute("aria-busy")=="true"
                 readback(page,state,DEFAULT,0,0,observed=57)
+                assert editor.locator(".armix-native-fx-bypass").is_hidden()
                 # A native library list is a file query, not a DSP mutation.
                 library=last_action(page,"nativeHarmonyUserPreset")
                 assert library["operation"]=="list" and library["instanceId"]==INSTANCE
@@ -659,21 +662,27 @@ def main():
                              applied=moving["requestId"],instance=successor)
 
                     # A temporarily unpublished FX must NOT accept stale
-                    # gestures. Hold the latest edit and apply only after
-                    # a fresh accepted instance-scoped DSP readback.
+                    # gestures. The fail-closed shared overlay blocks body
+                    # input; an explicit fresh gesture is accepted on return.
                     bump();state["graph"]["channels"][0]["inserts"]=[other]
                     push_graph()
                     page.wait_for_function("""()=>document.querySelector(
                         '#mxHStatus').textContent.includes('RECONNECTING')""")
                     before=len(page.evaluate("""()=>window.__actions.filter(
                         x=>x.action==='nativeHarmonySetSettings')"""))
-                    page.locator('[data-voices="3"]').click()
+                    shade=editor.locator(".armix-native-fx-bypass")
+                    assert shade.is_visible() and shade.inner_text()=="FX UNAVAILABLE"
+                    assert shade.evaluate("e=>getComputedStyle(e).pointerEvents")=="auto"
+                    box=page.locator('[data-voices="3"]').bounding_box()
+                    page.mouse.click(box["x"]+box["width"]/2,box["y"]+box["height"]/2)
                     after=len(page.evaluate("""()=>window.__actions.filter(
                         x=>x.action==='nativeHarmonySetSettings')"""))
                     assert before==after,"stale FX received an edit"
                     bump();state["graph"]["channels"][0]["inserts"]=[other,harmony]
                     push_graph();await_snap(successor,1)
                     readback(page,state,accepted,9,0,instance=successor)
+                    assert shade.is_hidden()
+                    page.locator('[data-voices="3"]').click()
                     resumed=last_action(page,"nativeHarmonySetSettings")
                     assert resumed["slot"]==1 and resumed["instanceId"]==successor
                     assert resumed["settings"]["voices"]==3,resumed

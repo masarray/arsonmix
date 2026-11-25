@@ -667,6 +667,9 @@ if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",
 else mount();
 window.ArSonMixNativeHarmony=Object.freeze({
  id:ID,
+ // Shared bypass renderer may follow the exact same accepted channel/slot
+ // binding as this editor. This is read-only graph identity, not DSP ACK.
+ bypassBinding(){return root.hidden?null:acceptedLocation();},
  insert(target){return Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target));},
  open(track,slot){
   pending=null;latest=null;heldPatch=null;verified=false;

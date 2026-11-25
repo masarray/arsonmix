@@ -25,3 +25,7 @@ References: [TC-Helicon VoiceLive 3 manual](https://manualzz.com/doc/8333295/tc-
 ## Qualification
 
 Existing assembled Chromium tests now assert exact factory settings sent through native transport, matching ACK and readback, preserved musical context, and label geometry across the existing multi-viewport bypass matrix. Physical singer A/B still required: match output level, male/female registers, vibrato, consonants, dense backing, mono fold, key correctness, peak/headroom and ASIO XRUN. Do not claim listening pass based on synthetic test or screenshots. No public release until RC exact-head checks and field acceptance.
+
+## H32 reconciliation follow-up
+
+First scoped CI exposed an incomplete Chromium fixture: the accepted global FX flag was absent, correctly causing fail-closed FX UNAVAILABLE to intercept Save As. Supply the native global gate in the fixture, never bypass the overlay. Reuse Harmonice's accepted same-channel location in the overlay after successor/MOVE/device recovery; do not weaken other editor leases. The test now proves missing inserts block physical clicks and a fresh gesture succeeds on recovery. Reconcile disjoint Reverb-Sis graphite delta 29d7fcf5 without overwriting its four blobs. Exact merged-source CI still required.
