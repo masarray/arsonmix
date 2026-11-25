@@ -31,7 +31,7 @@ struct Band {
     }
 };
 struct Channel {
-    Band body,lower,upper,witness;
+    Band body,lower,upper,witness,lowerStage,upperStage;
     Context context;
     // Causal two-lag residual prediction error, evaluated only in explicit Voice.
     double prev=0,prev2=0,ep=0,es=0,cross=0;
@@ -48,7 +48,7 @@ struct Channel {
         return std::clamp((residual-.12)/.35,0.,1.)*std::clamp((hf-1e-7)/9e-7,0.,1.);
     }
     double eBody=0,eLower=0,eUpper=0,eWitness=0,low=0,lowerSample=0,upperSample=0;
-    void reset() noexcept {body.reset();lower.reset();upper.reset();witness.reset();context.reset();resetVoice();eBody=eLower=eUpper=eWitness=low=lowerSample=upperSample=0;}
+    void reset() noexcept {body.reset();lower.reset();upper.reset();witness.reset();lowerStage.reset();upperStage.reset();context.reset();resetVoice();eBody=eLower=eUpper=eWitness=low=lowerSample=upperSample=0;}
     static double energy(double prior,double x,double a) noexcept {
         const double v=prior+a*(x*x-prior);return v<1e-25?0:v;
     }
@@ -73,10 +73,10 @@ public:
         controlPeriod_=std::max(1,static_cast<int>(std::round(rate/6000.)));
         memoryDecay_=std::exp(-controlPeriod_/(rate*.085));
         adapt_= -std::expm1(-controlPeriod_/(rate*.12));
-        for(auto& c:ch_){c.witness.prepare(rate,600,1.5);c.body.prepare(rate,950,.55);c.lower.prepare(rate,4600,1.1);c.upper.prepare(rate,8000,1.1);}
+        for(auto& c:ch_){c.witness.prepare(rate,600,1.5);c.body.prepare(rate,950,.55);c.lower.prepare(rate,4600,1.1);c.upper.prepare(rate,8000,1.1);c.lowerStage.prepare(rate,4600,1.1);c.upperStage.prepare(rate,8000,1.1);}
         reset();return true;
     }
-    void reset() noexcept {for(auto& c:ch_)c.reset();gain_=target_=1;focus_=settings_.shape==Shape::Focused?1.:0.;weight_=weightTarget_=.5;phase_=0;warmup_=warmupSamples_;}
+    void reset() noexcept {for(auto& c:ch_)c.reset();gain_=target_=1;focus_=settings_.shape==Shape::Focused?1.:0.;weight_=weightTarget_=.5;depth_=std::max(0.,2.*settings_.amount-1.);phase_=0;warmup_=warmupSamples_;}
     bool setSettings(Settings s) noexcept {
         if(!std::isfinite(s.amount)||!std::isfinite(s.sensitivity)||!std::isfinite(s.rangeDb)||s.amount<0||s.amount>1||s.sensitivity<0||s.sensitivity>1||s.rangeDb<0||s.rangeDb>18)return false;
         if(s.mode!=Mode::Auto&&s.mode!=Mode::Voice)return false;
@@ -111,7 +111,10 @@ private:
     template<bool Voice,int Channels,bool Tap>
     void processBlock(float* l,float* r,int n,float* dl,float* dr) noexcept {
         const double shapeTarget=settings_.shape==Shape::Focused?1.:0.;
-        const double voiceLimit=std::max(1.,thresholdRatio_);
+        // Default Voice threshold retained; high sensitivity no longer plateaus.
+        const double voiceLimit=thresholdRatio_/.3981071705534972;
+        const double depthTarget=std::max(0.,2.*settings_.amount-1.);
+        const double drive=1.35*settings_.amount*(1.+depthTarget);
         for(int i=0;i<n;++i){
             std::array<double,2> x{sanitize(l[i]),Channels==2?sanitize(r[i]):0};
             for(int c=0;c<Channels;++c){
@@ -145,18 +148,23 @@ private:
                     }
                 }
                 if(totalEvidence>0)weightTarget_=std::clamp(weightedLower/totalEvidence,0.,1.);
-                const double db=settings_.enabled?std::min<double>(settings_.rangeDb,1.35*settings_.amount*excess):0;
+                const double db=settings_.enabled?std::min<double>(settings_.rangeDb,drive*excess):0;
                 target_=db>0?std::pow(10.,-db/20):1.;
             }
             if(++phase_==controlPeriod_)phase_=0;
             gain_+=(target_<gain_?attack_:release_)*(target_-gain_);
             if(std::abs(target_-gain_)<1e-7)gain_=target_;
-            if(focus_!=shapeTarget){focus_+=focusSmooth_*(shapeTarget-focus_);if(std::abs(shapeTarget-focus_)<1e-7)focus_=shapeTarget;}
+            if(focus_!=shapeTarget){focus_+=focusSmooth_*(shapeTarget-focus_);if(std::abs(shapeTarget-focus_)<1e-7){focus_=shapeTarget;if(focus_==0)for(auto& c:ch_){c.lowerStage.reset();c.upperStage.reset();}}}
+            if(depth_!=depthTarget){depth_+=focusSmooth_*(depthTarget-depth_);if(std::abs(depthTarget-depth_)<1e-7)depth_=depthTarget;}
             if(focus_>0&&weight_!=weightTarget_){weight_+=targetSmooth_*(weightTarget_-weight_);if(std::abs(weightTarget_-weight_)<1e-7)weight_=weightTarget_;}
             if constexpr(Tap){
                 dl[i]=detect(ch_[0]);if constexpr(Channels==2)dr[i]=detect(ch_[1]);
             }
-            l[i]=output(x[0],ch_[0]);if constexpr(Channels==2)r[i]=output(x[1],ch_[1]);
+            // Split the requested dB budget over two fixed stable sections at high Amount.
+            // Shared linked gains; no extra lookahead, coefficient modulation or callback.
+            const double second=focus_>0&&depth_>0?1.+depth_*(std::sqrt(gain_)-1.):1.;
+            const double first=second==1.?gain_:gain_/second;
+            l[i]=output(x[0],ch_[0],first,second);if constexpr(Channels==2)r[i]=output(x[1],ch_[1],first,second);
         }
     }
     static float detect(const detail::Channel& c) noexcept {
@@ -164,20 +172,24 @@ private:
         return static_cast<float>(std::clamp(.5*(c.lowerSample+c.upperSample),-static_cast<double>(3.402823466e38f),static_cast<double>(3.402823466e38f)));
     }
     static double sanitize(float x) noexcept {return std::isfinite(x)?static_cast<double>(x):0.;}
-    float output(double x,const detail::Channel& c) const noexcept {
+    float output(double x,detail::Channel& c,double first,double second) const noexcept {
         // Complementary residual: exact dry at unity, no delayed dry path.
         double y=gain_==1?x:gain_*x+(1-gain_)*c.low;
-        if(focus_>0&&gain_!=1){
+        if(focus_>0){
             const double band=weight_*c.lowerSample+(1-weight_)*c.upperSample;
-            const double focused=x-(1-gain_)*band;
-            y+=focus_*(focused-y);
+            const double stage=x-(1-first)*band;
+            // Track second-stage history even at unity during Focused; never start
+            // a cold filter on a parameter change. Fixed normalized BPFs.
+            const double lo=c.lowerStage.tick(stage),hi=c.upperStage.tick(stage);
+            const double focused=stage-(1-second)*(weight_*lo+(1-weight_)*hi);
+            if(gain_!=1)y+=focus_*(focused-y);
         }
         return static_cast<float>(std::clamp(y,-static_cast<double>(3.402823466e38f),static_cast<double>(3.402823466e38f)));
     }
     Settings settings_{};
     std::array<detail::Channel,2> ch_{};
     int channels_=0,phase_=0,controlPeriod_=8,warmup_=0,warmupSamples_=0;
-    double focusSmooth_=0,targetSmooth_=0,focus_=0,weight_=.5,weightTarget_=.5;
+    double focusSmooth_=0,targetSmooth_=0,focus_=0,weight_=.5,weightTarget_=.5,depth_=0;
     double memoryDecay_=0,adapt_=0,envelope_=0,attack_=0,release_=0,lowPass_=0,thresholdRatio_=.3981071705534972,gain_=1,target_=1;
 };
 } // namespace armix::builtin_fx::de_ezzer

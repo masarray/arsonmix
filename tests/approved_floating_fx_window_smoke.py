@@ -211,6 +211,23 @@ def main():
                             root.wait_for(state="visible")
                             assert page.evaluate("""()=>window.__ARMIX_NATIVE_M2__
                               .fxEditorState()?.graph?.channels?.[0]?.inserts?.[0]?.id""")==revised_id
+                            # Host commits the rekey before emitting the correlated
+                            # durable arMixLogicalAck. An unrelated receipt must
+                            # not release the one-in-flight power fence.
+                            page.evaluate("""()=>window.__fxDispatch('arMixLogicalAck',
+                              {requestId:'logical-unrelated',status:'ACCEPTED'})""")
+                            blocked=page.evaluate("""(channel)=>{
+                                const count=()=>window.__fxOutbound.filter(
+                                  x=>x.name==='arMixFloatingPower').length;
+                                const before=count();
+                                window.__ARMIX_NATIVE_M2__.consumeAction(
+                                  {nativeId:channel},"slotPower",{dataset:{slot:"0"}});
+                                return count()===before;
+                            }""",CHANNEL)
+                            assert blocked
+                            page.evaluate("""(id)=>window.__fxDispatch('arMixLogicalAck',
+                              {requestId:'logical-'+id,status:'ACCEPTED',revision:'13'})""",
+                              power["requestId"])
                             next_power=page.evaluate("""(channel)=>{
                                 window.__ARMIX_NATIVE_M2__.consumeAction(
                                   {nativeId:channel},"slotPower",
@@ -218,6 +235,7 @@ def main():
                                 return window.__fxOutbound.filter(
                                   x=>x.name==='arMixFloatingPower').at(-1)?.payload;
                             }""",CHANNEL)
+                            assert next_power["requestId"]!=power["requestId"]
                             assert next_power["instanceId"]==revised_id
                             assert next_power["graphRevision"]=="13"
                             assert next_power["value"] is False

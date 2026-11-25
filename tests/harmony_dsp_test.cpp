@@ -1,4 +1,5 @@
 #include "../engine/builtin_fx/HarmonyDsp.h"
+#include "../engine/builtin_fx/HarmonyMusicKey.h"
 #include <algorithm>
 #include <array>
 #include <utility>
@@ -8,6 +9,8 @@
 #include <vector>
 #include <memory>
 #include <limits>
+#include <chrono>
+#include <iomanip>
 using namespace armix::harmony;
 static void need(bool value,const char* why){if(!value){std::cerr<<why<<'\n';std::exit(2);}}
 // The fixture has the same fundamental in both channels and different
@@ -28,7 +31,7 @@ static LeadFixture leadFixture(int rate,double noteHz,float cents,float vibrato)
 static LeadFixture tune(LeadFixture signal,int rate,bool correction,
                         int block=127,float color=.5f,int releaseAt=-1){
   auto engine=std::make_unique<Engine>();
-  need(engine->prepare(rate)&&engine->latencySamples()==2*std::lround(.016*rate),
+  need(engine->prepare(rate)&&engine->latencySamples()==std::lround(.024*rate),
        "Pitch Tune changed PDC");
   Settings s;s.wet=0.f;s.correction=correction;s.color=color;
   need(engine->setSettings(s),"lead-only settings rejected");
@@ -99,6 +102,16 @@ static void testLeadTune(){
     auto mono=leadFixture(rate,220.,-35.f,0.f);
     mono.right=mono.left;
     const auto on=tune(mono,rate,true);
+    if(on.left!=on.right){
+      float peak=0.f;int first=-1;
+      for(int i=0;i<2*rate;++i){
+        const float delta=std::abs(on.left[i]-on.right[i]);
+        if(on.left[i]!=on.right[i]&&first<0)first=i;
+        peak=std::max(peak,delta);
+      }
+      std::cerr<<"H1_MONO rate="<<rate<<" first="<<first
+               <<" maxSideDelta="<<peak<<'\n';
+    }
     need(on.left==on.right,"mono lead acquired a stereo discrepancy");
     const auto dry=tune(mono,rate,false);
     const auto disabled=tune(mono,rate,true,127,.5f,rate);
@@ -137,8 +150,1596 @@ static void testVoicePlanner(){
   planner.plan(67,0,major);
   need(planner.target(2)!=high,"reset retained previous phrase voicing");
 }
+// H4 independent expression is sample-clock owned, not callback-block
+// owned. Common tones keep their individual vibrato age during a lead
+// note change; only moved singers start a new settle/bloom.
+static void testIndependentSingerExpression(){
+  for(int rate:{32000,48000,96000,192000}){
+    auto e=std::make_unique<EnsembleSpace>();
+    need(e->prepare(rate),"H4 singer prepare");
+    e->beginNote();
+    const float oldAlpha=.00045f;
+    for(int i=0;i<rate/2;++i){
+      for(int v=0;v<5;++v){
+        const float ratio=e->pitchRatio(v,1.f);
+        need(ratio>.993f&&ratio<1.007f,"H4 expression out of cents bound");
+      }
+      e->advance(true);
+    }
+    const auto heldAge=e->noteAgeForOfflineTests(0);
+    need(e->expressionForOfflineTests(0)>.99f&&
+         e->expressionForOfflineTests(2)>.99f,"H4 sustain failed to bloom");
+    // Unconfirmed melody candidate must not deflate a held backing note.
+    for(int i=0;i<rate/100;++i){
+      for(int v=0;v<5;++v)e->pitchRatio(v,1.f);
+      e->advance(false,true);
+    }
+    need(e->expressionForOfflineTests(0)>.99f,"H4 pending note killed common tone");
+    const auto ageAfterCandidate=e->noteAgeForOfflineTests(0);
+    need(ageAfterCandidate>heldAge,"H4 common tone clock paused");
+    e->beginNote(1u<<2);
+    need(e->noteAgeForOfflineTests(0)==ageAfterCandidate&&
+         e->noteAgeForOfflineTests(2)==0,"H4 common tone reset");
+    need(e->ratioSmoothing(0,oldAlpha,1.f)==oldAlpha&&
+         e->ratioSmoothing(2,oldAlpha,1.f)>oldAlpha*(48000.f/rate),
+         "H4 pitch settle not role-specific");
+    for(int i=0;i<rate/20;++i){
+      for(int v=0;v<5;++v)e->pitchRatio(v,1.f);
+      e->advance(true);
+    }
+    need(e->expressionForOfflineTests(0)>.99f&&
+         e->expressionForOfflineTests(2)<.25f,"H4 moved and held voices bloom together");
+    for(int i=0;i<rate/6;++i){
+      for(int v=0;v<5;++v)e->pitchRatio(v,1.f);
+      e->advance(false);
+    }
+    need(e->expressionForOfflineTests(0)<.001f&&
+         e->expressionForOfflineTests(2)<.001f,"H4 expression retained through release");
+  }
+}
+// Exercise the real F0 -> accepted note -> chord planner -> singer mask
+// path, not merely manually calling the expression helper.
+static void testCommonToneEngineTransition(){
+  // G3 -> F3 has actual held LOW/HIGH under the H3 chord planner.
+  // A3 -> its nearby notes does not guarantee any retained role.
+  constexpr int first=55;
+  int second=-1,held=-1,moved=-1;
+  for(int candidate:{53,52,57,59,60}){
+    VoicePlanner plan;plan.plan(first,0,major,5);
+    std::array<int,5> before{};
+    for(int v=0;v<5;++v)before[v]=plan.target(v);
+    plan.plan(candidate,0,major,5);
+    int h=-1,m=-1;
+    for(int v=0;v<5;++v){
+      if(plan.target(v)==before[v])h=v;
+      else m=v;
+    }
+    if(h>=0&&m>=0){second=candidate;held=h;moved=m;break;}
+  }
+  need(second>=0,"H4 common-tone fixture unavailable");
+  for(int rate:{48000,96000}){
+    auto e=std::make_unique<Engine>();
+    Settings s;s.voices=5;s.wet=.8f;
+    need(e->prepare(rate)&&e->setSettings(s),"H4 phrase engine prepare");
+    double phase=0.;
+    auto note=[&](int midi,int frames){
+      const double step=6.283185307179586*440.*std::exp2((midi-69)/12.)/rate;
+      std::array<float,127> l{},r{};
+      for(int pos=0;pos<frames;pos+=127){
+        const int n=std::min(127,frames-pos);
+        for(int i=0;i<n;++i){
+          l[i]=r[i]=static_cast<float>(.16*std::sin(phase)+.04*std::sin(2.*phase+.2));
+          phase+=step;
+        }
+        e->process(l.data(),r.data(),n);
+      }
+    };
+    note(first,rate/2);
+    need(e->observedMidiNote()==first,"H4 first phrase note not accepted");
+    const int heldNote=e->singerTargetForOfflineTests(held);
+    const int movedNote=e->singerTargetForOfflineTests(moved);
+    const auto oldAge=e->singerAgeForOfflineTests(held);
+    note(second,rate/4);
+    need(e->observedMidiNote()==second,"H4 second phrase note not accepted");
+    need(e->singerTargetForOfflineTests(held)==heldNote&&
+         e->singerTargetForOfflineTests(moved)!=movedNote,
+         "H4 actual planner did not retain intended common tone");
+    need(e->singerAgeForOfflineTests(held)==oldAge+static_cast<std::uint64_t>(rate/4)&&
+         e->singerAgeForOfflineTests(moved)<static_cast<std::uint64_t>(rate/4),
+         "H4 actual singer ages restarted together");
+    std::cout<<"H4_PHRASE rate="<<rate<<" held="<<held
+             <<" moved="<<moved<<" heldAge="<<e->singerAgeForOfflineTests(held)
+             <<" movedAge="<<e->singerAgeForOfflineTests(moved)<<std::endl;
+  }
+}
+// H5: measurable broad spectral identity and fallback-only guard.
+// Do not confuse this with true vowel/formant reconstruction.
+static void testReducedLatency(){
+  using Renderer=PitchSynchronousVoice<16384,5>;
+  for(int rate:{32000,44100,48000,96000,192000}){
+    const float period=static_cast<float>(rate/65.);
+    const float live=static_cast<float>(std::lround(rate*.024));
+    need(Renderer::completeEpochWindow(period,1.f,live),
+         "H7 legal bass lead causal bound");
+    need(!Renderer::completeEpochWindow(period,.5f,live),
+         "H7 insufficient epoch lookback accepted");
+    need(Renderer::completeEpochWindow(period,.59f,live+rate*.015f),
+         "H7 bass support full epoch bound");
+    auto previous=std::make_unique<Engine>(),candidate=std::make_unique<Engine>();
+    need(previous->prepare(rate,true)&&candidate->prepare(rate),"H7 prepare");
+    need(previous->latencySamples()==2*std::lround(rate*.016)&&
+         candidate->latencySamples()==std::lround(rate*.024),"H7 declared delays");
+    Settings settings;settings.wet=0.f;
+    need(previous->setSettings(settings)&&candidate->setSettings(settings),"H7 dry settings");
+    const int count=previous->latencySamples()+256;
+    std::vector<float> l(count,0.f),r(count,0.f),oldL,oldR;
+    l[0]=.6f;r[0]=-.25f;oldL=l;oldR=r;
+    for(int at=0;at<count;at+=127){
+      const int n=std::min(127,count-at);
+      previous->process(oldL.data()+at,oldR.data()+at,n);
+      candidate->process(l.data()+at,r.data()+at,n);
+    }
+    for(int i=0;i<count;++i){
+      const bool hit=i==candidate->latencySamples(),oldHit=i==previous->latencySamples();
+      need(l[i]==(hit?.6f:0.f)&&r[i]==(hit?-.25f:0.f)&&
+           oldL[i]==(oldHit?.6f:0.f)&&oldR[i]==(oldHit?-.25f:0.f),
+           "H7 exact dry impulse offset");
+    }
+    std::cout<<"H7_LATENCY rate="<<rate<<" old="<<previous->latencySamples()
+             <<" live="<<candidate->latencySamples()<<std::endl;
+  }
+  // Compare aligned backing-only energy with the original 32ms renderer
+  // on low bass through soprano harmonic-rich sustained notes.
+  for(int rate:{48000,96000})for(double hz:{82.406889,220.,440.,880.}){
+    const auto input=leadFixture(rate,hz,0.f,0.f);
+    auto run=[&](bool legacy,bool wet,int block){
+      auto e=std::make_unique<Engine>();Settings s;s.voices=5;s.wet=wet?1.f:0.f;
+      s.color=1.f;s.space=.6f;
+      need(e->prepare(rate,legacy)&&e->setSettings(s),"H7 A/B setup");
+      auto out=input;
+      for(int i=0;i<2*rate;i+=block)
+        e->process(out.left.data()+i,out.right.data()+i,std::min(block,2*rate-i));
+      return out;
+    };
+    const auto old=run(true,true,127),oldDry=run(true,false,127);
+    const auto now=run(false,true,127),dry=run(false,false,127);
+    const auto split=run(false,true,64);
+    need(now.left==split.left&&now.right==split.right,"H7 block parity");
+    double a=0.,b=0.;
+    for(int i=rate;i<2*rate;++i){
+      const double ol=old.left[i]-oldDry.left[i],orr=old.right[i]-oldDry.right[i];
+      const double nl=now.left[i]-dry.left[i],nr=now.right[i]-dry.right[i];
+      need(std::isfinite(nl)&&std::isfinite(nr),"H7 nonfinite PCM");
+      a+=ol*ol+orr*orr;b+=nl*nl+nr*nr;
+    }
+    const double db=10.*std::log10(b/a);
+    std::cout<<"H7_AB rate="<<rate<<" hz="<<hz<<" backing_dB="<<db<<std::endl;
+    need(a>1.&&b>1.&&std::abs(db)<2.,"H7 backing energy regression");
+  }
+}
+static void testResonanceEngine(){
+  constexpr int rate=48000;
+  auto input=leadFixture(rate,220.,0.f,0.f);input.right=input.left;
+  auto render=[&](int voices,bool wet,bool resonance,int block){
+    auto e=std::make_unique<Engine>();Settings s;
+    s.voices=voices;s.wet=wet?1.f:0.f;s.color=1.f;s.space=.6f;
+    need(e->prepare(rate)&&e->setResonanceForOfflineReference(resonance)&&
+         e->setSettings(s),"H8 engine setup");
+    auto out=input;
+    for(int at=0;at<2*rate;at+=block)
+      e->process(out.left.data()+at,out.right.data()+at,std::min(block,2*rate-at));
+    return out;
+  };
+  const auto old=render(5,true,false,127),now=render(5,true,true,127);
+  const auto split=render(5,true,true,64);
+  const auto dry=render(5,false,true,127);
+  need(now.left==split.left&&now.right==split.right,"H8 block parity");
+  need(dry.left==render(5,false,false,64).left,"H8 lead changed");
+  need(render(2,true,false,127).left==render(2,true,true,64).left,"H8 Duo changed");
+  double a=0.,b=0.,delta=0.;
+  for(int i=rate;i<2*rate;++i){
+    const double x=old.left[i]-dry.left[i],y=now.left[i]-dry.left[i];
+    a+=x*x;b+=y*y;delta+=(x-y)*(x-y);
+    need(std::isfinite(y),"H8 engine nonfinite");
+  }
+  std::cout<<"H8_ENGINE gain_dB="<<10.*std::log10(b/a)
+           <<" residual_dB="<<10.*std::log10(delta/a)<<std::endl;
+  need(a>1.&&b>1.&&std::abs(10.*std::log10(b/a))<1.5&&delta/a>1.e-5,
+       "H8 actual engine resonance absent or excessive");
+}
+// H10: compare both accumulation orders on identical input in the same
+// process. Wall clock is diagnostic, not a machine-dependent pass gate.
+// Interleave reference/candidate blocks and alternate measurement order.
+static void testCorrelationPerformance(){
+  using Clock=std::chrono::steady_clock;
+  for(int rate:{48000,96000,192000})for(int block:{64,128}){
+    const auto input=leadFixture(rate,rate==192000?880.:220.,35.f,55.f);
+    auto x=input,y=input;
+    // Identical deterministic noisy interruptions to exercise low
+    // confidence, release and reacquisition rather than a sine-only loop.
+    unsigned rng=123;
+    for(int i=0;i<2*rate;++i){
+      rng=1664525u*rng+1013904223u;
+      if(i%(rate/4)<rate/100){
+        const float n=.08f*static_cast<float>((rng>>8)/16777216.0-.5);
+        x.left[i]+=n;x.right[i]-=n;
+        y.left[i]=x.left[i];y.right[i]=x.right[i];
+      }
+    }
+    auto old=std::make_unique<Engine>(),now=std::make_unique<Engine>();
+    Settings s;s.voices=5;s.wet=.75f;s.correction=true;
+    need(old->prepare(rate)&&now->prepare(rate)&&
+         old->setFastCorrelationForOfflineReference(false)&&
+         old->setSettings(s)&&now->setSettings(s),"H10 prepare");
+    std::vector<double> before,after;
+    before.reserve(2*rate/block+1);after.reserve(2*rate/block+1);
+    double maxDiff=0.;
+    for(int at=0;at<2*rate;at+=block){
+      const int n=std::min(block,2*rate-at);
+      auto measure=[&](Engine& e,LeadFixture& z){
+        const auto start=Clock::now();
+        e.process(z.left.data()+at,z.right.data()+at,n);
+        return std::chrono::duration<double,std::micro>(Clock::now()-start).count();
+      };
+      double a,b;
+      if((at/block)&1){b=measure(*now,y);a=measure(*old,x);}
+      else{a=measure(*old,x);b=measure(*now,y);}
+      if(at>=rate/3){before.push_back(a);after.push_back(b);}
+      need(old->observedMidiNote()==now->observedMidiNote()&&
+           old->voiced()==now->voiced(),"H10 pitch decision changed");
+      for(int i=at;i<at+n;++i){
+        need(std::isfinite(y.left[i])&&std::isfinite(y.right[i]),"H10 nonfinite");
+        maxDiff=std::max({maxDiff,std::abs(double(x.left[i])-y.left[i]),
+                                 std::abs(double(x.right[i])-y.right[i])});
+      }
+    }
+    need(maxDiff<=1.e-6&&old->completedPitchAnalyses()==now->completedPitchAnalyses()&&
+         old->completedPitchAnalyses()>100&&
+         now->peakPitchLagWork()<=Engine::maxPitchLagsPerSlice&&
+         old->abandonedPitchAnalyses()==now->abandonedPitchAnalyses(),
+         "H10 reference PCM or bounded analysis changed");
+    std::sort(before.begin(),before.end());std::sort(after.begin(),after.end());
+    const auto percentile=[](const auto& v,int p){return v[(v.size()-1)*p/100];};
+    const double deadline=1.e6*block/rate;
+    const auto misses=[&](const auto& v){return std::count_if(v.begin(),v.end(),
+       [&](double a){return a>deadline;});};
+    std::cout<<std::fixed<<std::setprecision(3)
+      <<"H10_CPU rate="<<rate<<" block="<<block<<" count="<<before.size()
+      <<" old_p50_us="<<percentile(before,50)<<" new_p50_us="<<percentile(after,50)
+      <<" old_p95_us="<<percentile(before,95)<<" new_p95_us="<<percentile(after,95)
+      <<" old_p99_us="<<percentile(before,99)<<" new_p99_us="<<percentile(after,99)
+      <<" old_max_us="<<before.back()<<" new_max_us="<<after.back()
+      <<" old_misses="<<misses(before)<<" new_misses="<<misses(after)
+      <<" deadline_us="<<deadline<<" max_pcm_diff="<<maxDiff
+      <<" exact_pcm="<<(maxDiff==0.)<<" analyses="<<now->completedPitchAnalyses()
+      <<std::defaultfloat<<std::setprecision(6)<<std::endl;
+  }
+}
+static void testArticulation(){
+  constexpr double tau=6.283185307179586;
+  for(int rate:{32000,48000,96000,192000}){
+    BackingArticulation guard;guard.prepare(rate);
+    auto feed=[&](double hz,int ms,bool harmonics){
+      float gain=1.f;
+      for(int i=0;i<rate*ms/1000;++i){
+        const double p=tau*hz*i/rate;
+        const float x=static_cast<float>(.15*(std::sin(p)+
+            (harmonics?.25*std::sin(2*p)+.17*std::sin(3*p):0.)));
+        gain=guard.process(x);
+        need(gain>=.5499f&&gain<=1.f,"H9 articulation bound");
+      }
+      return gain;
+    };
+    const float vowel=feed(880.,150,true),sibilant=feed(7000.,35,false);
+    const float recovered=feed(440.,120,true);
+    std::cout<<"H9_GUARD rate="<<rate<<" vowel="<<vowel
+             <<" sibilant="<<sibilant<<" recovered="<<recovered<<std::endl;
+    need(vowel>.995f&&sibilant<.68f&&recovered>.995f,"H9 articulation response");
+  }
+  for(int rate:{48000,96000}){
+    // Voiced vowel -> high-frequency noisy consonant -> voiced vowel -> silence.
+    const int n=rate*2;
+    LeadFixture input{std::vector<float>(n),std::vector<float>(n)};
+    unsigned rng=19;float previous=0.f;
+    for(int i=0;i<n;++i){
+      rng=1664525u*rng+1013904223u;
+      const float noise=static_cast<float>((rng>>8)/16777216.0-.5);
+      const double time=double(i)/rate,p=tau*220.*time;
+      float x=0.f;
+      if(time<.60|| (time>=.69&&time<1.4))
+        x=static_cast<float>(.14*std::sin(p)+.04*std::sin(2*p));
+      if(time>=.60&&time<.69)x=.23f*(noise-previous);
+      previous=noise;input.left[i]=input.right[i]=x;
+    }
+    auto run=[&](bool enabled,bool wet,int voices,int block){
+      auto e=std::make_unique<Engine>();Settings s;
+      s.voices=voices;s.wet=wet?1.f:0.f;s.color=1.f;s.space=0.f;
+      need(e->prepare(rate)&&e->setArticulationForOfflineReference(enabled)&&
+           e->setSettings(s),"H9 engine setup");
+      auto out=input;
+      for(int i=0;i<n;i+=block)e->process(out.left.data()+i,out.right.data()+i,std::min(block,n-i));
+      return out;
+    };
+    const auto old=run(false,true,5,127),now=run(true,true,5,127);
+    const auto dry=run(true,false,5,127),split=run(true,true,5,64);
+    need(now.left==split.left&&now.right==split.right,"H9 block parity");
+    need(dry.left==run(false,false,5,64).left,"H9 dry changed");
+    need(run(false,true,2,127).left==run(true,true,2,64).left,"H9 Duo changed");
+    auto energy=[&](const LeadFixture& x,double begin,double end){
+      double sum=0.;
+      for(int i=static_cast<int>(rate*begin);i<static_cast<int>(rate*end);++i){
+        const double l=x.left[i]-dry.left[i],r=x.right[i]-dry.right[i];
+        need(std::isfinite(l)&&std::isfinite(r),"H9 nonfinite PCM");
+        sum+=l*l+r*r;
+      }
+      return sum;
+    };
+    const double before=energy(old,.25,.55),after=energy(now,.25,.55);
+    const double oldNoise=energy(old,.638,.69),newNoise=energy(now,.638,.69);
+    const double recovery=10.*std::log10(energy(now,1.,1.3)/energy(old,1.,1.3));
+    const double change=10.*std::log10(newNoise/oldNoise);
+    std::cout<<"H9_PCM rate="<<rate<<" consonant_dB="<<change
+             <<" recovered_dB="<<recovery<<std::endl;
+    need(before>1.&&std::abs(10.*std::log10(after/before))<.05&&
+         oldNoise>1.e-6&&change<-.8&&change>-8.&&std::abs(recovery)<.05,
+         "H9 consonant suppression or vowel preservation");
+  }
+}
+static void testSingerSpectralIdentity(){
+  auto response=[](int rate,int role,double hz,float share){
+    auto e=std::make_unique<EnsembleSpace>();
+    need(e->prepare(rate),"H5 identity prepare");
+    double in=0.,out=0.;
+    for(int i=0;i<rate/5;++i){
+      const float x=static_cast<float>(.2*std::sin(6.283185307179586*hz*i/rate));
+      const float y=e->shapeSinger(role,x,1.f,1.7f,share);
+      need(std::isfinite(y)&&std::abs(y)<.35f,"H5 identity unbounded");
+      if(i>rate/10){in+=x*x;out+=y*y;}
+    }
+    return 10.*std::log10(out/in);
+  };
+  for(int rate:{32000,48000,96000,192000}){
+    const double highBody=response(rate,2,440.,0.f);
+    const double highPresence=response(rate,2,1800.,0.f);
+    const double highAir=response(rate,2,6500.,0.f);
+    const double fallbackAir=response(rate,2,6500.,1.f);
+    const double lowAir=response(rate,0,6500.,0.f);
+    const double midAir=response(rate,1,6500.,0.f);
+    need(std::abs(highBody)<.7&&highPresence>highBody&&
+         highPresence>highAir,"H5 HIGH lost body/presence contrast");
+    need(fallbackAir<highAir-.45&&fallbackAir>-4.,
+         "H5 fallback guard not bounded or ineffective");
+    need(midAir>lowAir+.6,"H5 singers lack independent spectrum");
+    std::cout<<"H5_IDENTITY rate="<<rate<<" body_dB="<<highBody
+             <<" presence_dB="<<highPresence<<" air_dB="<<highAir
+             <<" fallback_air_dB="<<fallbackAir<<std::endl;
+  }
+}
+// Exercise the real native solo stem with a harmonic-rich vowel proxy.
+// Compare H4/H5 at matched dry and prepared voice gain, same renderer.
+static void testSingerIdentityPcm(){
+  constexpr int rate=48000;
+  LeadFixture input{std::vector<float>(2*rate),std::vector<float>(2*rate)};
+  for(int i=0;i<2*rate;++i){
+    const double p=6.283185307179586*220.*i/rate;
+    double x=0.;
+    for(int h=1;h<=18;++h){
+      const double f=220.*h;
+      const double vowel=.12+.8*std::exp(-std::pow((f-800.)/450.,2.))+
+                         .55*std::exp(-std::pow((f-2300.)/700.,2.));
+      x+=.17*vowel*std::sin(h*p+.13*h)/std::sqrt(static_cast<double>(h));
+    }
+    input.left[i]=input.right[i]=static_cast<float>(x);
+  }
+  auto render=[&](int role,int voices,bool identity,int block){
+    auto e=std::make_unique<Engine>();Settings s;
+    s.voices=voices;s.wet=.85f;s.space=0.f;s.color=1.f;
+    Engine::PreparedSettings prep{};
+    need(e->prepare(rate)&&e->setSingerIdentityForOfflineReference(identity)&&
+         Engine::prepareSettings(s,prep),"H5 actual PCM setup");
+    for(int v=0;v<5;++v)if(v!=role)prep.mixL[v]=prep.mixR[v]=0.f;
+    need(e->applyPreparedSettings(prep),"H5 actual solo setup");
+    auto out=input;
+    for(int i=0;i<2*rate;i+=block)
+      e->process(out.left.data()+i,out.right.data()+i,std::min(block,2*rate-i));
+    return out;
+  };
+  const auto dry=render(-1,5,true,127),old=render(2,5,false,127);
+  const auto now=render(2,5,true,127),split=render(2,5,true,64);
+  need(now.left==split.left&&now.right==split.right,"H5 block parity");
+  need(dry.left==render(-1,5,false,64).left,"H5 dry changed");
+  need(render(2,2,false,127).left==render(2,2,true,64).left,"H5 Duo changed");
+  double oldE=0.,newE=0.,difference=0.;
+  for(int i=rate;i<2*rate;++i){
+    const double a=old.left[i]-dry.left[i],b=now.left[i]-dry.left[i];
+    oldE+=a*a;newE+=b*b;difference+=(a-b)*(a-b);
+    need(std::isfinite(b),"H5 nonfinite vowel");
+  }
+  const double gain=10.*std::log10(newE/oldE);
+  const double change=10.*std::log10(difference/oldE);
+  std::cout<<"H5_PCM gain_dB="<<gain<<" residual_dB="<<change<<std::endl;
+  need(std::abs(gain)<1.2&&change>-45.&&change<-12.,
+       "H5 vowel change excessive or absent");
+}
+// H6 guide is an independent PCM source, not a guess from lead F0.
+static void testChordAwareGuide(){
+  for(int rate:{32000,48000,96000,192000}){
+    MusicKeyDetector guide,split;
+    need(guide.prepare(rate)&&split.prepare(rate),"H6 guide prepare");
+    auto feed=[&](int root,int quality,int ms,bool single=false){
+      const int count=rate*ms/1000;
+      std::vector<float> x(count);
+      for(int i=0;i<count;++i){
+        double y=0.;
+        if(root>=0){
+          for(int interval:{0,quality?3:4,7}){
+            if(single&&interval!=0)continue;
+            const double hz=130.81278265*std::exp2((root+interval)/12.);
+            y+=.12*std::sin(6.283185307179586*hz*i/rate);
+          }
+        }
+        x[i]=static_cast<float>(y);
+      }
+      for(int i=0;i<count;i+=64)
+        guide.process(x.data()+i,x.data()+i,std::min(64,count-i));
+      for(int i=0;i<count;i+=257)
+        split.process(x.data()+i,x.data()+i,std::min(257,count-i));
+      const auto a=guide.chordEstimate(),b=split.chordEstimate();
+      need(a.root==b.root&&a.quality==b.quality&&a.confidence==b.confidence,
+           "H6 guide depends on callback partition");
+      return a;
+    };
+    auto c=feed(0,0,600);
+    need(c.valid()&&c.root==0&&c.quality==0,"H6 C major detection");
+    c=feed(5,0,600);
+    need(c.valid()&&c.root==5&&c.quality==0,"H6 F major transition");
+    c=feed(9,1,600);
+    need(c.valid()&&c.root==9&&c.quality==1,"H6 A minor transition");
+    need(!feed(9,1,700,true).valid(),"H6 monophonic source guessed chord");
+    need(!feed(-1,0,400).valid(),"H6 silent source retained chord");
+    need(guide.peakChordScoresPerSample()<=2,"H6 scoring burst");
+    guide.reset();need(!guide.chordEstimate().valid(),"H6 reset retained chord");
+    std::cout<<"H6_GUIDE rate="<<rate<<" C/F/Am/mono/silence PASS"<<std::endl;
+  }
+  VoicePlanner planner;
+  need(planner.planGuided(60,0,major,5,0,0),"H6 C chord arrangement");
+  const int old=planner.target(2);
+  need(planner.planGuided(60,0,major,5,5,0)&&planner.target(2)!=old,
+       "H6 sustained melody did not follow F chord");
+  for(int v=0;v<5;++v){
+    const int pc=planner.target(v)%12;
+    need(pc==0||pc==5||pc==9,"H6 backing not in actual F triad");
+  }
+  need(!planner.planGuided(62,0,major,5,5,0),"H6 incompatible melody forced chord");
+  auto e=std::make_unique<Engine>();Settings s;s.guideMode=1;s.guideChannelId=99;
+  s.voices=5;s.wet=1.f;
+  need(e->prepare(48000)&&e->setSettings(s),"H6 vocal setup");
+  auto input=leadFixture(48000,261.625565,0.f,0.f);input.right=input.left;
+  e->setGuideChord(0,0);
+  e->process(input.left.data(),input.right.data(),24000);
+  need(e->voiced()&&e->guidedVoicingForOfflineTests(),"H6 native C voicing absent");
+  const int high=e->singerTargetForOfflineTests(2);
+  e->setGuideChord(5,0);
+  e->process(input.left.data()+24000,input.right.data()+24000,24000);
+  need(e->voiced()&&e->observedMidiNote()==60&&
+       e->guidedVoicingForOfflineTests()&&e->singerTargetForOfflineTests(2)!=high,
+       "H6 held lead failed chord-only replan");
+  e->setGuideChord(-1,-1);
+  e->process(input.left.data()+48000,input.right.data()+48000,24000);
+  need(e->voiced()&&!e->guidedVoicingForOfflineTests(),"H6 chord loss failed fallback");
+  s.guideMode=0;s.guideChannelId=0;
+  need(e->setSettings(s),"H6 manual settings");
+  e->setGuideChord(5,0);
+  e->process(input.left.data()+72000,input.right.data()+72000,24000);
+  need(!e->guidedVoicingForOfflineTests(),"H6 manual accepted chord");
+}
+// Audit chord membership across every key, both scale families and
+// ascending/descending note history. Require actual register separation;
+// a collection of independently diatonic pitches is insufficient.
+static void testMusicalEnsemblePlanner(){
+  int checked=0;
+  for(const auto& scale:{major,minor})for(int key=0;key<12;++key){
+    VoicePlanner planner;
+    for(int direction:{1,-1}){
+      planner.reset();
+      for(int step=0;step<=48;++step){
+        const int melody=direction>0?36+step:84-step;
+        const int pc=((melody-key)%12+12)%12;
+        if(std::find(scale.begin(),scale.end(),pc)==scale.end())continue;
+        planner.plan(melody,key,scale,5);
+        const std::array<int,6> notes{{planner.target(3),planner.target(0),
+          melody,planner.target(1),planner.target(2),planner.target(4)}};
+        for(std::size_t i=1;i<notes.size();++i)
+          need(notes[i]-notes[i-1]>=3,"H3 singers packed closer than a third");
+        bool triad=false;
+        for(int root=0;root<7;++root){
+          const std::array<int,3> chord{{scale[root],scale[(root+2)%7],scale[(root+4)%7]}};
+          if((chord[2]-chord[0]+12)%12!=7)continue;
+          bool all=true;
+          for(int n:notes){
+            const int c=((n-key)%12+12)%12;
+            all=all&&std::find(chord.begin(),chord.end(),c)!=chord.end();
+          }
+          triad=triad||all;
+        }
+        need(triad,"H3 ensemble does not share a consonant diatonic triad");
+        for(std::size_t i=0;i<singers.size();++i)
+          need(planner.target(i)-melody>=singers[i].minInterval&&
+               planner.target(i)-melody<=singers[i].maxInterval,
+               "H3 singer escaped realtime pitch-ratio register");
+        ++checked;
+      }
+    }
+  }
+  std::cout<<"H3_VOICING checked="<<checked<<std::endl;
+  for(int n:{3,4,5}){
+    Settings s;s.voices=n;s.space=.6f;
+    Engine::PreparedSettings p{};
+    need(Engine::prepareSettings(s,p),"H3 stage prepare");
+    double prev=-2.;
+    for(int i:{0,3,1,4,2}){
+      if(!singerActive(singers[i].role,n))continue;
+      const double pan=(p.mixR[i]-p.mixL[i])/(p.mixR[i]+p.mixL[i]);
+      need(pan-prev>.12,"H3 active positions too close");
+      prev=pan;
+    }
+  }
+}
+// Actual per-role native PCM, not just intended note metadata. Keep
+// the same gain/pan/arrangement and solo one slot through prepared mixing.
+static bool testMusicalHighStem(){
+  bool pass=true;
+  constexpr double tau=6.283185307179586;
+  for(int rate:{48000,96000})for(double hz:{110.,220.,440.}){
+    auto input=leadFixture(rate,hz,0.f,0.f);input.right=input.left;
+    for(int count:{3,5}){
+      Settings s;s.voices=count;s.wet=1.f;s.color=1.f;s.space=.6f;
+      auto render=[&](int role,int block){
+        auto e=std::make_unique<Engine>();Engine::PreparedSettings prep{};
+        need(e->prepare(rate)&&Engine::prepareSettings(s,prep),"H3 PCM setup");
+        for(int i=0;i<5;++i)if(i!=role)prep.mixL[i]=prep.mixR[i]=0.f;
+        need(e->applyPreparedSettings(prep),"H3 PCM prepared solo");
+        auto out=input;
+        for(int i=0;i<2*rate;i+=block)
+          e->process(out.left.data()+i,out.right.data()+i,std::min(block,2*rate-i));
+        return out;
+      };
+      const auto dry=render(-1,127);
+      auto energy=[&](const LeadFixture& o){
+        double e=0.;
+        for(int i=rate;i<2*rate;++i){
+          const double l=o.left[i]-dry.left[i],r=o.right[i]-dry.right[i];
+          e+=l*l+r*r;
+        }
+        return e;
+      };
+      const auto low=render(0,127),high=render(2,127);
+      const auto high64=render(2,64);
+      need(high.left==high64.left&&high.right==high64.right,"H3 high block parity");
+      const double balance=10.*std::log10(energy(high)/energy(low));
+      VoicePlanner planner;const int melody=69+static_cast<int>(std::lround(12.*std::log2(hz/440.)));
+      planner.plan(melody,0,major,count);
+      const double target=440.*std::exp2((planner.target(2)-69)/12.);
+      // Search a local band of the isolated right-side HIGH fundamental.
+      auto power=[&](double f){
+        double a=0.,b=0.;
+        for(int i=rate;i<rate+rate/2;i+=2){
+          const double sample=high.right[i]-dry.right[i];
+          a+=sample*std::cos(tau*f*i/rate);b+=sample*std::sin(tau*f*i/rate);
+        }
+        return a*a+b*b;
+      };
+      double best=0.,found=0.;
+      for(int cents=-150;cents<=150;cents+=5){
+        const double f=target*std::exp2(cents/1200.);
+        const double powerAt=power(f);
+        if(powerAt>best){best=powerAt;found=f;}
+      }
+      const double error=1200.*std::log2(found/target);
+      std::cout<<"H3_HIGH rate="<<rate<<" hz="<<hz<<" voices="<<count
+               <<" expected="<<target<<" found="<<found<<" cents="<<error
+               <<" high_vs_low_dB="<<balance<<std::endl;
+      pass=pass&&std::isfinite(balance)&&balance>=-3.&&balance<=8.&&
+           std::abs(error)<=35.&&best>1.;
+    }
+  }
+  return pass;
+}
 // Duo is two PITCHED wet voices; Doubler is a SINGLE synthetic unison take.
 // This is a native PCM proof, not a certified real-singer naturalness test.
+// Field report: long high notes and ambiguous/unvoiced intervals must
+// never interrupt the new unison take. Check actual wet-only PCM, not
+// just pitch detector state. 4s sustained vibrato at 220/880/1320 Hz.
+static void testLowerPresenceAndPresets(){
+  // Actual stem PCM, compare H11 normalized mix weights AND direct
+  // field with H12, keeping all pitch/room synthesis otherwise equal.
+  // Four-voice normalization alone can slightly reduce LOW amplitude;
+  // the additional direct focus must deliver the net audible lift.
+  constexpr std::array<float,5> prior{{1.20f,.88f,1.85f,.94f,1.30f}};
+  for(int count:{4,5})for(double hz:{110.,220.,440.}){
+    constexpr int rate=48000;
+    auto input=leadFixture(rate,hz,0.f,0.f);input.right=input.left;
+    Settings s;s.voices=count;s.wet=1.f;s.color=1.f;s.space=.75f;
+    const auto render=[&](int role,bool previous){
+      auto e=std::make_unique<Engine>();Engine::PreparedSettings p;
+      need(e->prepare(rate)&&e->setLowerFocusForOfflineReference(!previous)&&
+           Engine::prepareSettings(s,p),"H12 lower prep");
+      if(previous){
+        double oldPower=0.,newPower=0.;
+        for(int v=0;v<5;++v)if(singerActive(singers[v].role,count)){
+          oldPower+=prior[v]*prior[v];
+          const float w=Engine::singerPresence(v,count);newPower+=w*w;
+        }
+        for(int v=0;v<5;++v){
+          const float k=static_cast<float>(std::sqrt(newPower/oldPower))*
+              prior[v]/Engine::singerPresence(v,count);
+          p.mixL[v]*=k;p.mixR[v]*=k;
+        }
+      }
+      for(int v=0;v<5;++v)if(v!=role)p.mixL[v]=p.mixR[v]=0.f;
+      need(e->applyPreparedSettings(p),"H12 lower apply");
+      auto out=input;
+      for(int i=0;i<2*rate;i+=127)
+        e->process(out.left.data()+i,out.right.data()+i,std::min(127,2*rate-i));
+      return out;
+    };
+    const auto dry=render(-1,false);
+    const auto energy=[&](const LeadFixture& x){
+      double e=0.;
+      for(int i=rate;i<2*rate;++i){
+        const double l=x.left[i]-dry.left[i],r=x.right[i]-dry.right[i];e+=l*l+r*r;
+      }
+      return e;
+    };
+    const auto low=energy(render(0,false)),lower=energy(render(3,false));
+    const auto oldLow=energy(render(0,true)),oldLower=energy(render(3,true));
+    const double lowLift=10.*std::log10(low/oldLow);
+    const double lowerLift=10.*std::log10(lower/oldLower);
+    std::cout<<"H12_LOWER voices="<<count<<" hz="<<hz
+             <<" low_lift_dB="<<lowLift<<" lower_lift_dB="<<lowerLift
+             <<" lower_vs_low_dB="<<10.*std::log10(lower/low)<<std::endl;
+    need(lowLift>0.&&lowerLift>1.2&&lower>1.,"H12 lower register presence");
+  }
+  // Exact factory preset pairs; the UI contract independently verifies
+  // values. Remove output gain from stem comparison, then verify actual
+  // nominal output headroom with the selected gain.
+  struct Pair{const char* name;int mode,voices;float ow,os,oc,og,w,s,c,g;};
+  constexpr Pair pairs[]{
+    {"doubleLight",1,2,.38f,.35f,.57f,0.f,.68f,.58f,.78f,0.f},
+    {"doubleWide",1,2,.52f,.82f,.48f,-1.f,.86f,.88f,.86f,0.f},
+    {"duo",0,2,.31f,.35f,.45f,0.f,.76f,.72f,.78f,0.f},
+    {"trio",0,3,.40f,.56f,.50f,0.f,.82f,.78f,.82f,0.f},
+    {"quartet",0,4,.52f,.95f,.66f,-2.f,.88f,.94f,.88f,-1.f},
+    {"quintet",0,5,.45f,.88f,.61f,-3.f,.90f,.94f,.90f,-1.f},
+    {"choir",0,4,.58f,.30f,.24f,-3.f,.88f,.70f,.68f,-1.f}};
+  constexpr int rate=48000;
+  auto src=leadFixture(rate,220.,0.f,0.f);src.right=src.left;
+  auto render=[&](Settings s){
+    auto e=std::make_unique<Engine>();
+    need(e->prepare(rate)&&e->setSettings(s),"H12 preset prep");
+    auto out=src;
+    for(int i=0;i<2*rate;i+=127)
+      e->process(out.left.data()+i,out.right.data()+i,std::min(127,2*rate-i));
+    return out;
+  };
+  Settings s;s.wet=0.f;const auto dry=render(s);
+  for(const auto& p:pairs){
+    s.voiceMode=p.mode;s.voices=p.voices;s.wet=p.ow;s.space=p.os;s.color=p.oc;s.gainDb=p.og;
+    const auto old=render(s);
+    s.wet=p.w;s.space=p.s;s.color=p.c;s.gainDb=p.g;
+    const auto now=render(s);
+    const auto level=[&](const LeadFixture& out,float gain){
+      double wet=0.,lead=0.;const double g=std::pow(10.,gain/20.);
+      for(int i=rate;i<2*rate;++i){
+        need(std::abs(out.left[i])<1.f&&std::abs(out.right[i])<1.f,"H12 preset nominal clipping");
+        const double l=out.left[i]/g-dry.left[i],r=out.right[i]/g-dry.right[i];
+        wet+=l*l+r*r;lead+=dry.left[i]*dry.left[i]+dry.right[i]*dry.right[i];
+      }
+      return 10.*std::log10(wet/lead);
+    };
+    const double before=level(old,p.og),after=level(now,p.g);
+    std::cout<<"H12_PRESET "<<p.name<<" prior_settings_dB="<<before
+             <<" new_settings_dB="<<after<<" lift_dB="<<after-before<<std::endl;
+    need(after>before+3.&&after>-12.&&after<2.,"H12 preset audibility");
+  }
+}
+// Force loss at eight phase positions and measure the immediate slope
+// discontinuity, not the ordinary derivative of a sung waveform.
+// Exercise real renderer loss/recovery on a bass/high phrase. Do not
+// infer that the losses are causal-boundary events without trace evidence.
+// Non-gating callback timing: interleave exact H19 and optimized H20+
+ // on a changing bass/high voice. Source generation and trace are untimed.
+static void testEpochRecoveryPerformance(){
+    using Clock=std::chrono::steady_clock;
+    constexpr double tau=6.283185307179586;
+    for(int rate:{48000,96000,192000})for(int block:{64,128}){
+        LeadFixture src{std::vector<float>(2*rate),std::vector<float>(2*rate)};
+        double phase=0.;
+        for(int i=0;i<2*rate;++i){
+            const double sec=double(i)/rate;
+            const double hz=(i/(rate/3))%2?82.40689:330.;
+            phase+=tau*hz*std::exp2(35.*std::sin(tau*5.*sec)/1200.)/rate;
+            src.left[i]=src.right[i]=static_cast<float>(
+                .17*std::sin(phase)+.055*std::sin(2*phase+.3)+.03*std::sin(3*phase+.6));
+        }
+        auto a=src,b=src;
+        auto old=std::make_unique<Engine>(),now=std::make_unique<Engine>();
+        Settings s;s.voices=5;s.wet=1.f;s.color=.78f;s.space=1.f;
+        need(old->prepare(rate)&&now->prepare(rate)&&
+             old->setSourceAlignedForOfflineReference(false)&&now->setSourceAlignedForOfflineReference(false)&&
+             old->setEpochRecoveryForOfflineReference(false)&&old->setSettings(s)&&now->setSettings(s),
+             "H21 CPU fixture setup");
+        std::vector<double> before,after;
+        before.reserve(2*rate/block+1);after.reserve(2*rate/block+1);
+        for(int at=0;at<2*rate;at+=block){
+            const int n=std::min(block,2*rate-at);
+            const auto measure=[&](Engine& e,LeadFixture& z){
+                const auto start=Clock::now();
+                e.process(z.left.data()+at,z.right.data()+at,n);
+                return std::chrono::duration<double,std::micro>(Clock::now()-start).count();
+            };
+            double x,y;
+            if((at/block)&1){y=measure(*now,b);x=measure(*old,a);}
+            else{x=measure(*old,a);y=measure(*now,b);}
+            if(at>=rate/4&&n==block){before.push_back(x);after.push_back(y);}
+        }
+        double peak=0.;std::size_t overload=0;
+        for(int i=0;i<2*rate;++i){
+            need(std::isfinite(b.left[i])&&std::isfinite(b.right[i]),"H21 nonfinite PCM");
+            peak=std::max({peak,double(std::abs(b.left[i])),double(std::abs(b.right[i]))});
+            overload+=(std::abs(b.left[i])>1.f)+(std::abs(b.right[i])>1.f);
+        }
+        std::sort(before.begin(),before.end());std::sort(after.begin(),after.end());
+        const double deadline=1.e6*block/rate;
+        const auto p=[](const auto& v,int n){return v[(v.size()-1)*n/100];};
+        const auto misses=[&](const auto& v){return std::count_if(v.begin(),v.end(),[&](double x){return x>deadline;});};
+        std::cout<<"H21_CPU rate="<<rate<<" block="<<block<<" callbacks="<<before.size()
+                 <<" old_p50_us="<<p(before,50)<<" new_p50_us="<<p(after,50)
+                 <<" old_p99_us="<<p(before,99)<<" new_p99_us="<<p(after,99)
+                 <<" old_max_us="<<before.back()<<" new_max_us="<<after.back()
+                 <<" deadline_us="<<deadline<<" old_misses="<<misses(before)
+                 <<" new_misses="<<misses(after)<<" peak="<<peak<<" overload="<<overload<<std::endl;
+    }
+}
+static void testCausalAdmissionEngine(){
+    constexpr double tau=6.283185307179586;
+    for(int rate:{48000,96000}){
+        const int n=rate*4;
+        LeadFixture src{std::vector<float>(n),std::vector<float>(n)};
+        double phase=0.;
+        for(int i=0;i<n;++i){
+            const double sec=double(i)/rate;
+            const double hz=sec<1.?220.:sec<2.?82.40689:sec<3.?220.:110.;
+            phase+=tau*hz*std::exp2(35.*std::sin(tau*5.*sec)/1200.)/rate;
+            src.left[i]=src.right[i]=static_cast<float>(
+                .17*std::sin(phase)+.055*std::sin(2*phase+.3)+.03*std::sin(3*phase+.6));
+        }
+        struct Result {LeadFixture pcm;std::uint64_t losses=0,acquisitions=0;Engine::RendererTrace trace{};};
+        auto run=[&](bool drain,int block,bool wet,bool trace=true,bool recover=false,bool cubic=false){
+            auto e=std::make_unique<Engine>();Settings s;s.voices=5;
+            s.wet=wet?1.f:0.f;s.color=.78f;s.space=.6f;
+            need(e->prepare(rate)&&e->setDrainForOfflineReference(drain)&&
+                 e->setRendererTraceForOfflineTests(trace)&&e->setEpochRecoveryForOfflineReference(recover)&&
+                 e->setCubicForOfflineReference(cubic)&&e->setSourceAlignedForOfflineReference(false)&&
+                 e->setSettings(s),"H18 engine setup");
+            Result out{src};
+            for(int i=0;i<n;i+=block)e->process(out.pcm.left.data()+i,out.pcm.right.data()+i,std::min(block,n-i));
+            for(int v=0;v<Engine::maxVoices;++v){
+                const auto c=e->seamCountsForOfflineTests(v);
+                out.losses+=c.losses;out.acquisitions+=c.acquisitions;
+                const auto q=e->rendererTraceForOfflineTests(v);
+                for(std::size_t k=0;k<q.values.size();++k)out.trace.values[k]+=q.values[k];
+            }
+            need(!e->setRendererTraceForOfflineTests(false),"H19 trace changed after PCM");
+            return out;
+        };
+        const auto old=run(false,127,true),now=run(true,127,true),split=run(true,64,true);
+        const auto dry=run(true,127,false),oldDry=run(false,64,false);
+        const auto h20=run(true,127,true,true,true),h20Split=run(true,64,true,true,true);
+        const auto h20Dry=run(true,64,false,true,true);
+        const auto h22=run(true,127,true,true,true,true),h22Split=run(true,64,true,true,true,true);
+        const auto h22Dry=run(true,64,false,true,true,true);
+        need(h22.pcm.left==h22Split.pcm.left&&h22.pcm.right==h22Split.pcm.right&&
+             h22.trace.values==h20.trace.values&&h22.losses==h20.losses&&
+             h22Dry.pcm.left==h20Dry.pcm.left&&h22Dry.pcm.right==h20Dry.pcm.right,
+             "H22 exact scheduler/block/dry parity");
+        for(int ch:{0,1}){
+            const auto& a=ch?h20.pcm.right:h20.pcm.left;const auto& b=ch?h22.pcm.right:h22.pcm.left;
+            const auto& d=ch?dry.pcm.right:dry.pcm.left;
+            double ea=0.,eb=0.,ma=0.,mb=0.;
+            for(int i=rate/2;i<n;++i){
+                const double u=a[i]-d[i],v=b[i]-d[i];
+                need(std::isfinite(v),"H22 nonfinite backing");ea+=u*u;eb+=v*v;
+                ma=std::max(ma,std::abs(u-(a[i-1]-d[i-1])));
+                mb=std::max(mb,std::abs(v-(b[i-1]-d[i-1])));
+            }
+            const double gain=10.*std::log10(eb/ea),edge=mb/ma*std::sqrt(ea/eb);
+            std::cout<<"H22_PCM rate="<<rate<<" ch="<<ch<<" wet_dB="<<gain
+                     <<" normalized_max_ratio="<<edge<<std::endl;
+            need(ea>1.&&eb>1.&&std::abs(gain)<.5&&edge<1.15,"H22 PCM regression");
+        }
+        need(h20.pcm.left==h20Split.pcm.left&&h20.pcm.right==h20Split.pcm.right&&
+             h20.trace.values==h20Split.trace.values,"H20 block parity");
+        need(h20Dry.pcm.left==dry.pcm.left&&h20Dry.pcm.right==dry.pcm.right,"H20 dry changed");
+        using Trace=Engine::RendererTrace;
+        const auto& x=h20.trace.values;
+        std::cout<<"H20_ENGINE rate="<<rate<<" old_losses="<<now.losses<<" new_losses="<<h20.losses
+                 <<" old_unready="<<now.trace.values[Trace::safeUnready]<<" new_unready="<<x[Trace::safeUnready]
+                 <<" old_partial="<<now.trace.values[Trace::partial]<<" new_partial="<<x[Trace::partial]
+                 <<" recovered="<<x[Trace::epochRecovered]<<" rescue_sites="<<x[Trace::recoverySites]<<std::endl;
+        need(x[Trace::ready]>0&&h20.losses<=now.losses&&x[Trace::safeUnready]<=now.trace.values[Trace::safeUnready],
+             "H20 engine readiness regression");
+        for(int ch:{0,1}){
+            const auto& a=ch?now.pcm.right:now.pcm.left;const auto& b=ch?h20.pcm.right:h20.pcm.left;
+            const auto& d=ch?dry.pcm.right:dry.pcm.left;
+            double ea=0.,eb=0.,ma=0.,mb=0.;
+            for(int i=rate/2;i<n;++i){
+                const double u=a[i]-d[i],v=b[i]-d[i];
+                need(std::isfinite(v),"H20 nonfinite backing");ea+=u*u;eb+=v*v;
+                ma=std::max(ma,std::abs(u-(a[i-1]-d[i-1])));
+                mb=std::max(mb,std::abs(v-(b[i-1]-d[i-1])));
+            }
+            const double gain=10.*std::log10(eb/ea),edge=mb/ma*std::sqrt(ea/eb);
+            std::cout<<"H20_PCM rate="<<rate<<" ch="<<ch<<" wet_dB="<<gain
+                     <<" normalized_max_ratio="<<edge<<std::endl;
+            need(ea>1.&&eb>1.&&std::abs(gain)<.5&&edge<1.15,"H20 PCM regression");
+        }
+        const auto untraced=run(true,127,true,false);
+        need(now.pcm.left==untraced.pcm.left&&now.pcm.right==untraced.pcm.right,
+             "H19 trace affected PCM");
+        need(untraced.trace.values==Engine::RendererTrace{}.values&&
+             now.trace.values==split.trace.values,"H19 trace lifecycle/block parity");
+        using T=Engine::RendererTrace;
+        const auto& q=now.trace.values;
+        need(q[T::calls]>0&&q[T::ready]>0&&q[T::safeUnready]>0&&
+             q[T::drained]<=q[T::causalBlocked]&&q[T::partial]<=q[T::ready]&&
+             q[T::calls]==q[T::notCarrying]+q[T::causalBlocked]+q[T::safeUnready]+q[T::ready]-q[T::drained],
+             "H19 trace accounting");
+        std::cout<<"H19_TRACE rate="<<rate<<" calls="<<q[T::calls]
+                 <<" no_clock="<<q[T::notCarrying]<<" causal_blocked="<<q[T::causalBlocked]
+                 <<" drained="<<q[T::drained]<<" safe_unready="<<q[T::safeUnready]
+                 <<" ready="<<q[T::ready]<<" partial="<<q[T::partial]
+                 <<" weak_confidence="<<q[T::weakConfidence]<<std::endl;
+        need(now.pcm.left==split.pcm.left&&now.pcm.right==split.pcm.right&&
+             now.losses==split.losses&&now.acquisitions==split.acquisitions,"H18 block parity");
+        need(dry.pcm.left==oldDry.pcm.left&&dry.pcm.right==oldDry.pcm.right,"H18 dry changed");
+        std::cout<<"H18_ENGINE rate="<<rate<<" old_losses="<<old.losses
+                 <<" new_losses="<<now.losses<<" old_acquisitions="<<old.acquisitions
+                 <<" new_acquisitions="<<now.acquisitions<<std::endl;
+        need(old.losses>0&&old.acquisitions>5&&now.losses>0&&now.acquisitions>5,
+             "H18 engine fixture did not exercise renderer loss and recovery");
+        for(int ch:{0,1}){
+            const auto& a=ch?old.pcm.right:old.pcm.left;const auto& b=ch?now.pcm.right:now.pcm.left;
+            const auto& d=ch?dry.pcm.right:dry.pcm.left;
+            double ea=0.,eb=0.,ma=0.,mb=0.;
+            for(int i=rate/2;i<n;++i){
+                const double x=a[i]-d[i],y=b[i]-d[i];
+                need(std::isfinite(y),"H18 nonfinite backing");ea+=x*x;eb+=y*y;
+                ma=std::max(ma,std::abs(x-(a[i-1]-d[i-1])));
+                mb=std::max(mb,std::abs(y-(b[i-1]-d[i-1])));
+            }
+            const double gain=10.*std::log10(eb/ea),edge=mb/ma*std::sqrt(ea/eb);
+            std::cout<<"H18_PCM rate="<<rate<<" ch="<<ch<<" wet_dB="<<gain
+                     <<" normalized_max_ratio="<<edge<<std::endl;
+            need(ea>1.&&eb>1.&&std::abs(gain)<1.&&edge<1.25,"H18 backing regression");
+        }
+    }
+}
+static void testSlopeAwareSeam(){
+    constexpr double tau=6.283185307179586;
+    for(int rate:{32000,48000,96000,192000}){
+      double oldError=0.,newError=0.,worstPeak=0.;int cases=0;
+      for(int hz:{220,440,880})for(int phase=0;phase<8;++phase){
+        BackingRenderSeam old{},now{};old.prepare(rate);now.prepare(rate);
+        float prev=0.f,last=0.f;
+        for(int i=0;i<rate/20;++i){
+          const float x=.2f*static_cast<float>(std::sin(tau*hz*i/rate+tau*phase/8));
+          prev=last;last=old.process(0.f,x,true,1.f,false);
+          need(last==now.process(0.f,x,true,1.f,true)||i<rate/100,
+               "H17 settled PCM changed");
+        }
+        const float a=old.process(0.f,0.f,false,1.f,false);
+        const float b=now.process(0.f,0.f,false,1.f,true);
+        oldError+=std::abs(a-2.f*last+prev);
+        newError+=std::abs(b-2.f*last+prev);
+        worstPeak=std::max(worstPeak,double(std::abs(b)));
+        for(int i=0;i<rate/100;++i){
+          const float y=now.process(0.f,0.f,false,1.f,true);
+          need(std::isfinite(y)&&std::abs(y)<.41f,"H17 tangent overshoot");
+          worstPeak=std::max(worstPeak,double(std::abs(y)));
+        }
+        need(now.process(.1f,0.f,false,1.f,true)==.1f,"H17 fallback endpoint");
+        for(int i=0;i<rate/100;++i)now.process(.1f,-.2f,true,1.f,true);
+        need(std::abs(now.process(.1f,-.2f,true,1.f,true)+.2f)<1.e-6f,
+             "H17 reacquisition endpoint");
+        const auto c=now.countsForOfflineTests();
+        need(c.losses==1&&c.acquisitions==2,"H17 event count");
+        now.reset();
+        need(now.process(.1f,0.f,false,1.f,true)==.1f&&
+             now.countsForOfflineTests().losses==1,"H17 phrase reset");
+        ++cases;
+      }
+      BackingRenderSeam chatter;chatter.prepare(rate);
+      for(int i=0;i<rate/4;++i){
+        const float c=.25f*static_cast<float>(std::sin(tau*220*i/rate));
+        const bool ready=i%(rate/200)<rate/300;
+        const float y=chatter.process(c,-c,ready,1.f,true);
+        need(std::isfinite(y)&&std::abs(y)<1.f,"H17 chatter bound");
+      }
+      std::cout<<"H17_SEAM rate="<<rate<<" cases="<<cases
+               <<" old_slope_error="<<oldError<<" new_slope_error="<<newError
+               <<" peak="<<worstPeak<<std::endl;
+      need(oldError>.001&&newError<oldError*.10,"H17 boundary slope not improved");
+    }
+}
+static void testBackingContinuity(){
+  constexpr double tau=6.283185307179586;
+  // Isolate readiness loss/re-entry without the detector obscuring it.
+  for(int rate:{32000,48000,96000,192000}){
+    BackingRenderSeam seam;seam.prepare(rate);
+    for(int i=0;i<rate/50;++i)seam.process(.15f,.45f,true,1.f);
+    const float last=seam.process(.15f,.45f,true,1.f);
+    need(std::abs(seam.process(.16f,-.7f,false,1.f)-last)<.011f,"H13 loss step");
+    float previous=seam.process(.15f,-.7f,false,1.f);
+    for(int i=0;i<rate/100;++i){
+      const float now=seam.process(.15f,-.7f,false,1.f);
+      need(std::abs(now-previous)<.015f,"H13 loss bridge discontinuity");
+      previous=now;
+    }
+    need(std::abs(previous-.15f)<1.e-6f,"H13 carrier did not recover");
+    for(int i=0;i<rate/100;++i){
+      const float now=seam.process(.15f,-.45f,true,1.f);
+      need(std::abs(now-previous)<.016f,"H13 reacquire bridge discontinuity");
+      previous=now;
+    }
+    need(std::abs(previous+.45f)<1.e-6f,"H13 candidate did not recover");
+  }
+  // Strong shifting harmonics, long high phrase, vibrato and brief
+  // unvoiced segments, with actual Music-guide key/chord transitions.
+  for(int rate:{48000,96000})for(int voices:{3,5}){
+    const int n=rate*4;
+    LeadFixture src{std::vector<float>(n),std::vector<float>(n)};
+    double phase=0.;unsigned rng=17;
+    for(int i=0;i<n;++i){
+      const double time=double(i)/rate;
+      const double hz=time<1.4?329.6276:time<2.7?659.2551:440.;
+      phase+=tau*hz*std::exp2(65.*std::sin(tau*5.4*time)/1200.)/rate;
+      const double vowel=.35+.25*std::sin(tau*1.7*time);
+      rng=1664525u*rng+1013904223u;
+      const double noise=double(rng>>8)/16777216.-.5;
+      const bool gap=i%(rate/3)<rate/100;
+      const double x=.12*std::sin(phase)+vowel*.16*std::sin(2*phase+.3)
+         +.065*std::sin(3*phase+1.1)+.026*std::sin(5*phase+.6);
+      src.left[i]=src.right[i]=static_cast<float>(gap?.08*noise:x);
+    }
+    auto run=[&](bool modern,bool wet,int block,bool support=true,bool natural=false,bool carrier=false,bool slope=false,bool drain=false){
+      auto e=std::make_unique<Engine>();Settings s;
+      s.voices=voices;s.wet=wet?1.f:0.f;s.color=.78f;s.space=1.f;
+      s.guideMode=1;s.guideChannelId=2;
+      need(e->prepare(rate)&&e->setContinuityForOfflineReference(modern)&&
+           e->setSupportForOfflineReference(support)&&e->setNaturalForOfflineReference(natural)&&
+           e->setCarrierForOfflineReference(carrier)&&e->setSlopeForOfflineReference(slope)&&
+           e->setDrainForOfflineReference(drain)&&e->setEpochRecoveryForOfflineReference(false)&&e->setSettings(s),"H13 setup");
+      auto out=src;
+      for(int at=0;at<n;){
+        // Split at control events; callback partition must not move them.
+        if(at==rate*2)e->setGuideChord(5,0);
+        if(at==rate*3)e->setGuideChord(0,0);
+        if(at==0)e->setGuideChord(0,0);
+        const int boundary=at<2*rate?2*rate:at<3*rate?3*rate:n;
+        const int count=std::min(block,boundary-at);
+        e->process(out.left.data()+at,out.right.data()+at,count);at+=count;
+      }
+      if(slope&&wet&&block==127){
+        std::uint64_t losses=0,acquisitions=0;
+        for(int v=0;v<Engine::maxVoices;++v){
+          const auto c=e->seamCountsForOfflineTests(v);
+          losses+=c.losses;acquisitions+=c.acquisitions;
+        }
+        std::cout<<"H17_EVENTS rate="<<rate<<" voices="<<voices
+                 <<" losses="<<losses<<" acquisitions="<<acquisitions<<std::endl;
+      }
+      return out;
+    };
+    const auto old=run(false,true,127),now=run(true,true,127);
+    const auto h13=run(true,true,127,false);
+    const auto dry=run(true,false,127),split=run(true,true,64);
+    need(now.left==split.left&&now.right==split.right,"H13 block parity");
+    const auto h15=run(true,true,127,true,true),h15Split=run(true,true,64,true,true);
+    need(h15.left==h15Split.left&&h15.right==h15Split.right,"H15 block parity");
+    const auto dry15=run(true,false,127,true,true);
+    need(dry.left==dry15.left&&dry.right==dry15.right,"H15 dry changed");
+    const auto h16=run(true,true,127,true,true,true);
+    const auto h16Split=run(true,true,64,true,true,true);
+    need(h16.left==h16Split.left&&h16.right==h16Split.right,"H16 block parity");
+    const auto dry16=run(true,false,127,true,true,true);
+    need(dry16.left==dry.left&&dry16.right==dry.right,"H16 dry changed");
+    const auto h17=run(true,true,127,true,true,true,true);
+    const auto h17Split=run(true,true,64,true,true,true,true);
+    need(h17.left==h17Split.left&&h17.right==h17Split.right,"H17 block parity");
+    const auto dry17=run(true,false,127,true,true,true,true);
+    need(dry17.left==dry.left&&dry17.right==dry.right,"H17 dry changed");
+    for(int ch:{0,1}){
+      const auto& a=ch?h16.right:h16.left;const auto& b=ch?h17.right:h17.left;
+      const auto& d=ch?dry.right:dry.left;
+      double ea=0.,eb=0.,ma=0.,mb=0.;
+      std::vector<double> sa,sb;
+      for(int i=rate/2;i<n;++i){
+        const double x=a[i]-d[i],y=b[i]-d[i];
+        need(std::isfinite(y),"H17 nonfinite backing");ea+=x*x;eb+=y*y;
+        const double da=std::abs(x-(a[i-1]-d[i-1])),db=std::abs(y-(b[i-1]-d[i-1]));
+        ma=std::max(ma,da);mb=std::max(mb,db);sa.push_back(da);sb.push_back(db);
+      }
+      const auto k=static_cast<std::size_t>(.999*(sa.size()-1));
+      std::nth_element(sa.begin(),sa.begin()+k,sa.end());
+      std::nth_element(sb.begin(),sb.begin()+k,sb.end());
+      const double gain=10.*std::log10(eb/ea),norm=std::sqrt(ea/eb);
+      const double maxRatio=mb/ma*norm,pRatio=sb[k]/sa[k]*norm;
+      std::cout<<"H17_PCM rate="<<rate<<" voices="<<voices<<" ch="<<ch
+               <<" wet_dB="<<gain<<" normalized_max_ratio="<<maxRatio
+               <<" normalized_p999_ratio="<<pRatio<<std::endl;
+      need(ea>1.&&eb>1.&&std::abs(gain)<.5&&maxRatio<1.15&&pRatio<1.10,
+           "H17 backing continuity regression");
+    }
+    for(int ch:{0,1}){
+      const auto& a=ch?h15.right:h15.left;const auto& b=ch?h16.right:h16.left;
+      const auto& d=ch?dry.right:dry.left;
+      double ea=0.,eb=0.,ma=0.,mb=0.;
+      std::vector<double> sa,sb;
+      for(int i=rate/2;i<n;++i){
+        const double x=a[i]-d[i],y=b[i]-d[i];
+        need(std::isfinite(y),"H16 nonfinite backing");ea+=x*x;eb+=y*y;
+        const double da=std::abs(x-(a[i-1]-d[i-1])),db=std::abs(y-(b[i-1]-d[i-1]));
+        ma=std::max(ma,da);mb=std::max(mb,db);sa.push_back(da);sb.push_back(db);
+      }
+      const auto k=static_cast<std::size_t>(.999*(sa.size()-1));
+      std::nth_element(sa.begin(),sa.begin()+k,sa.end());
+      std::nth_element(sb.begin(),sb.begin()+k,sb.end());
+      const double gain=10.*std::log10(eb/ea),norm=std::sqrt(ea/eb);
+      std::cout<<"H16_PCM rate="<<rate<<" voices="<<voices<<" ch="<<ch
+               <<" wet_dB="<<gain<<" normalized_max_ratio="<<mb/ma*norm
+               <<" normalized_p999_ratio="<<sb[k]/sa[k]*norm<<std::endl;
+      need(ea>1.&&eb>1.&&std::abs(gain)<2.&&std::isfinite(mb/ma*norm),
+           "H16 backing level regression");
+    }
+    for(int ch=0;ch<2;++ch){
+      const auto& a=ch?now.right:now.left;const auto& b=ch?h15.right:h15.left;
+      const auto& d=ch?dry.right:dry.left;
+      double ea=0.,eb=0.,da=0.,db=0.;
+      for(int i=rate/2;i<n;++i){
+        const double x=a[i]-d[i],y=b[i]-d[i];
+        need(std::isfinite(y),"H15 nonfinite backing");ea+=x*x;eb+=y*y;
+        da=std::max(da,std::abs(x-(a[i-1]-d[i-1])));
+        db=std::max(db,std::abs(y-(b[i-1]-d[i-1])));
+      }
+      const double gain=10.*std::log10(eb/ea),edge=db/da*std::sqrt(ea/eb);
+      std::cout<<"H15_PCM rate="<<rate<<" voices="<<voices<<" ch="<<ch
+               <<" wet_dB="<<gain<<" normalized_max_edge_ratio="<<edge<<std::endl;
+      need(ea>1.&&eb>1.&&std::abs(gain)<2.&&std::isfinite(edge),"H15 backing regression");
+    }
+    need(dry.left==run(false,false,64).left,"H13 dry changed");
+    for(int ch=0;ch<2;++ch){
+      const auto& a=ch?old.right:old.left;const auto& b=ch?now.right:now.left;
+      const auto& lead=ch?dry.right:dry.left;
+      const auto& ref=ch?h13.right:h13.left;
+      double ea=0.,eb=0.,ec=0.,maxA=0.,maxB=0.,maxC=0.;
+      std::vector<double> da,db,dc;
+      for(int i=rate/2;i<n;++i){
+        const double x=a[i]-lead[i],y=b[i]-lead[i];
+        const double u=std::abs(x-(a[i-1]-lead[i-1]));
+        const double v=std::abs(y-(b[i-1]-lead[i-1]));
+        const double z=ref[i]-lead[i];
+        const double w=std::abs(z-(ref[i-1]-lead[i-1]));
+        need(std::isfinite(y),"H13 nonfinite");
+        ea+=x*x;eb+=y*y;ec+=z*z;
+        maxA=std::max(maxA,u);maxB=std::max(maxB,v);maxC=std::max(maxC,w);
+        da.push_back(u);db.push_back(v);dc.push_back(w);
+      }
+      std::sort(da.begin(),da.end());std::sort(db.begin(),db.end());std::sort(dc.begin(),dc.end());
+      const double pa=da[da.size()*999/1000],pb=db[db.size()*999/1000];
+      const double pc=dc[dc.size()*999/1000];
+      const double relative=std::sqrt(ec/eb);
+      const double normalizedP=pb*relative/pc,normalizedMax=maxB*relative/maxC;
+      const double h14Gain=10.*std::log10(eb/ec);
+      std::cout<<"H14_PCM rate="<<rate<<" voices="<<voices<<" ch="<<ch
+               <<" h13_max="<<maxC<<" h14_max="<<maxB
+               <<" h13_p999="<<pc<<" h14_p999="<<pb
+               <<" level_matched_p999_ratio="<<normalizedP
+               <<" level_matched_max_ratio="<<normalizedMax
+               <<" wet_dB="<<h14Gain<<std::endl;
+      need(ec>1.&&std::abs(h14Gain)<.5&&normalizedP<1.10&&normalizedMax<1.15,
+           "H14 level-matched stereo continuity regression");
+      const double gain=10.*std::log10(eb/ea);
+      std::cout<<"H13_PCM rate="<<rate<<" voices="<<voices<<" ch="<<ch
+               <<" old_max="<<maxA<<" new_max="<<maxB
+               <<" old_p999="<<pa<<" new_p999="<<pb<<" wet_dB="<<gain<<std::endl;
+      // Edge metrics are proxies, not a click classifier: retain energy
+      // and prevent large regression while recording both stereo tails.
+      need(ea>1.&&eb>1.&&std::abs(gain)<2.&&maxB<.30&&pb<pa*1.15,
+           "H13 stereo continuity or level regression");
+    }
+  }
+}
+// H24A matched headroom audit: legacy reference and protected live path.
+// A peak sweep at unity output
+// gain, full wet, two Space settings and five modes. Float samples above
+// unity are headroom violations at a fixed-point sink, not proof of clipping
+// inside the float engine. Do not gate old behavior on the investigation.
+static void auditFieldHeadroom(){
+    constexpr int rate=48000,n=rate*2;
+    constexpr double tau=6.283185307179586;
+    LeadFixture src{std::vector<float>(n),std::vector<float>(n)};
+    double phase=0.,sourcePeak=0.;
+    for(int i=0;i<n;++i){
+        const double t=double(i)/rate;
+        const double hz=(t<.55?220.:t<1.05?440.:t<1.55?880.:220.)*
+            std::exp2(45.*std::sin(tau*5.1*t)/1200.);
+        phase+=tau*hz/rate;
+        const double env=std::min({1.,t/.025,(2.-t)/.025})*
+            (.78+.22*std::sin(tau*2.3*t));
+        const float v=static_cast<float>(env*(.69*std::sin(phase)+
+            .19*std::sin(2*phase+.3)+.08*std::sin(3*phase+.7)+.04*std::sin(5*phase+.2)));
+        src.left[i]=src.right[i]=v;sourcePeak=std::max(sourcePeak,double(std::abs(v)));
+    }
+    for(bool protectedPath:{false,true})for(float inputPeak:{.25f,.5f,.8f})for(float space:{0.f,1.f})for(int mode=1;mode<=5;++mode){
+        Settings s;s.voiceMode=mode==1?1:0;s.voices=std::max(2,mode);
+        s.wet=1.f;s.space=space;s.color=.78f;s.gainDb=0.f;s.correction=false;
+        auto x=src;
+        for(int i=0;i<n;++i)x.left[i]=x.right[i]=static_cast<float>(src.left[i]*inputPeak/sourcePeak);
+        auto e=std::make_unique<Engine>();
+        need(e->prepare(rate)&&e->setDoublerFastForOfflineReference(false)&&e->setDoublerMonoForOfflineReference(false)&&e->setSourceAlignedForOfflineReference(false)&&e->setHeadroomForOfflineReference(protectedPath)&&e->setSettings(s)&&e->setRendererTraceForOfflineTests(true),"field audit setup");
+        for(int at=0;at<n;at+=64)e->process(x.left.data()+at,x.right.data()+at,std::min(64,n-at));
+        double peakL=0.,peakR=0.;int aboveL=0,aboveR=0,internalClamp=0;std::uint64_t calls=0,losses=0;
+        for(int i=0;i<n;++i){
+            need(std::isfinite(x.left[i])&&std::isfinite(x.right[i]),"field audit nonfinite");
+            peakL=std::max(peakL,double(std::abs(x.left[i])));
+            peakR=std::max(peakR,double(std::abs(x.right[i])));
+            aboveL+=std::abs(x.left[i])>1.f;aboveR+=std::abs(x.right[i])>1.f;
+            internalClamp+=(std::abs(x.left[i])>=4.f)+(std::abs(x.right[i])>=4.f);
+        }
+        for(int v=0;v<Engine::maxVoices;++v){
+            calls+=e->rendererTraceForOfflineTests(v).values[Engine::RendererTrace::calls];
+            losses+=e->seamCountsForOfflineTests(v).losses;
+        }
+        if(mode==1)need(calls==0,"stable Doubler must not call pitch renderer");
+        if(protectedPath){
+            need(peakL<=.980001&&peakR<=.980001&&aboveL==0&&aboveR==0,"H24A sample ceiling");
+            if(inputPeak==.25f)need(e->headroomForOfflineTests().limited()==0,"H24A low-level transparency");
+        }
+        std::cout<<"FIELD_HEADROOM protected="<<protectedPath<<" mode="<<mode<<" input_peak="<<inputPeak<<" space="<<space
+                 <<" peakL="<<peakL<<" peakR="<<peakR<<" aboveL="<<aboveL<<" aboveR="<<aboveR
+                 <<" internalClamp="<<internalClamp<<" shifted_calls="<<calls
+                 <<" pitch_analyses="<<e->completedPitchAnalyses()<<" losses="<<losses
+                 <<" limited="<<e->headroomForOfflineTests().limited()<<" emergency="<<e->headroomForOfflineTests().emergency()
+                 <<" min_gain="<<e->headroomForOfflineTests().minimum()<<std::endl;
+    }
+}
+static void testSourceAlignedCandidate(){
+    SourcePitchTimeline timeline;
+    need(SourcePitchTimeline::sourceCenter(1000,4,41.f)==600.,"H24C timestamp");
+    need(timeline.nearest(100,20).period==0.f,"H24C empty");
+    for(int i=0;i<20;++i)
+        need(timeline.publish({double(i*100),float(100+i),.94f}),"H24C ring publish");
+    need(timeline.nearest(450,100).period==104.f&&
+         timeline.nearest(1890,100).period==119.f&&
+         timeline.nearest(100,100).period==0.f&&
+         timeline.nearest(2200,100).period==0.f,"H24C wrapped nearest/stale");
+    need(!timeline.publish({1800.,100.f,.95f})&&!timeline.publish({2000.,100.f,.7f}),
+         "H24C rejected nonmonotonic/weak evidence");
+    timeline.reset();need(timeline.nearest(1900,100).period==0.f,"H24C reset");
+    timeline.observe({100.,100.f,.95f},150.);
+    timeline.observe({200.,100.f,.95f},150.);
+    need(timeline.nearest(100,100).period==0.f,"H24C2 premature initial evidence");
+    timeline.observe({300.,100.f,.95f},150.);
+    need(timeline.nearest(100,10).period==100.f,"H24C2 backdated initial evidence");
+    timeline.observe({400.,200.f,.95f},150.);
+    timeline.observe({500.,200.f,.95f},150.);
+    timeline.interrupt();
+    timeline.observe({600.,100.f,.95f},150.);
+    need(timeline.nearest(400,20).period==0.f,"H24C2 rejected isolated octave");
+    timeline.observe({700.,200.f,.95f},150.);
+    timeline.observe({800.,201.f,.95f},150.);
+    timeline.observe({900.,199.f,.95f},150.);
+    need(timeline.nearest(700,10).period==200.f&&timeline.nearest(800,10).period==201.f,
+         "H24C2 confirmed source transition");
+    SourcePitchTimeline::Cursor cursor;
+    for(int i=0;i<2500;++i){
+        const double at=(i*137)%1001;
+        const auto a=timeline.nearest(at,80.),b=timeline.nearestCached(at,80.,cursor);
+        need(a.at==b.at&&a.period==b.period&&a.confidence==b.confidence,"H24C3 cache exact arbitrary lookup");
+    }
+    timeline.reset();need(timeline.nearestCached(700,80.,cursor).period==0.f,"H24C3 cache reset");
+    need(timeline.publish({700.,180.f,.94f}),"H24C3 new generation");
+    need(timeline.nearestCached(700,80.,cursor).period==180.f,"H24C3 cache invalidation");
+    constexpr double tau=6.283185307179586;
+    for(int rate:{48000,96000})for(int voices:{3,5}){
+        const int n=rate*3;LeadFixture src{std::vector<float>(n),std::vector<float>(n)};
+        double phase=0.;
+        for(int i=0;i<n;++i){
+            const double sec=double(i)/rate;
+            const double hz=(sec<.6?220.:sec<1.2?440.:sec<1.8?880.:sec<2.4?110.:220.)*
+                std::exp2(45.*std::sin(tau*5.1*sec)/1200.);
+            phase+=tau*hz/rate;
+            src.left[i]=src.right[i]=static_cast<float>(.13*std::sin(phase)+
+                .045*std::sin(2*phase+.3)+.02*std::sin(3*phase+.7));
+        }
+        struct Result{LeadFixture pcm;std::uint64_t losses=0,high=0,used=0,refreshes=0;};
+        auto render=[&](int aligned,float wet,int block,bool cache=true){
+            auto e=std::make_unique<Engine>();Settings s;s.voices=voices;s.wet=wet;s.space=1.f;s.color=.78f;
+            need(e->prepare(rate)&&e->setSourceAlignedForOfflineReference(aligned!=0)&&
+                e->setSourceConfirmationForOfflineReference(aligned==2)&&e->setSourceCacheForOfflineReference(cache)&&e->setSettings(s)&&e->setRendererTraceForOfflineTests(true),"H24C setup");
+            Result x{src};
+            for(int at=0;at<n;at+=block)e->process(x.pcm.left.data()+at,x.pcm.right.data()+at,std::min(block,n-at));
+            for(int v=0;v<Engine::maxVoices;++v)x.losses+=e->seamCountsForOfflineTests(v).losses;
+            x.high=e->seamCountsForOfflineTests(2).losses;x.used=e->alignedCallsForOfflineTests(2);x.refreshes=e->sourceRefreshesForOfflineTests(2);
+            return x;
+        };
+        const auto old=render(0,1.f,127),now=render(1,1.f,127),split=render(1,1.f,64);
+        const auto confirmed=render(2,1.f,127),confirmedSplit=render(2,1.f,64),uncached=render(2,1.f,127,false);
+        need(confirmed.pcm.left==uncached.pcm.left&&confirmed.pcm.right==uncached.pcm.right&&
+             confirmed.losses==uncached.losses&&confirmed.used==uncached.used&&
+             confirmed.refreshes>0&&confirmed.refreshes*10<confirmed.used,"H24C3 cache exact and bounded refresh");
+        need(confirmed.high<old.high&&confirmed.losses<old.losses,"H24C3 confirmed transition regression");
+        std::cout<<"H24C3_CACHE rate="<<rate<<" voices="<<voices<<" used="<<confirmed.used
+                 <<" refreshes="<<confirmed.refreshes<<std::endl;
+        const auto dry=render(0,0.f,64),newDry=render(1,0.f,127),confirmedDry=render(2,0.f,127);
+        need(confirmed.pcm.left==confirmedSplit.pcm.left&&confirmed.pcm.right==confirmedSplit.pcm.right&&
+             confirmed.used==confirmedSplit.used&&confirmed.used>0&&confirmed.losses==confirmedSplit.losses&&
+             dry.pcm.left==confirmedDry.pcm.left&&dry.pcm.right==confirmedDry.pcm.right,"H24C2 block/dry parity");
+        need(now.pcm.left==split.pcm.left&&now.pcm.right==split.pcm.right&&
+             now.losses==split.losses&&now.used==split.used&&now.used>0&&
+             dry.pcm.left==newDry.pcm.left&&dry.pcm.right==newDry.pcm.right,"H24C block/dry/use contract");
+        for(int variant:{1,2}){
+        const auto& candidate=variant==1?now:confirmed;
+        double ea=0.,eb=0.,ma=0.,mb=0.,prevA=0.,prevB=0.;
+        for(int i=rate/2;i<n;++i){
+            const double a=old.pcm.right[i]-dry.pcm.right[i],b=candidate.pcm.right[i]-dry.pcm.right[i];
+            need(std::isfinite(b),"H24C finite");
+            ea+=a*a;eb+=b*b;if(i>rate/2){ma=std::max(ma,std::abs(a-prevA));mb=std::max(mb,std::abs(b-prevB));}
+            prevA=a;prevB=b;
+        }
+        need(ea>1.&&eb>1.,"H24C audible backing");
+        std::cout<<"H24C_ALIGNED variant="<<variant<<" rate="<<rate<<" voices="<<voices<<" old_loss="<<old.losses
+                 <<" new_loss="<<candidate.losses<<" old_high="<<old.high<<" new_high="<<candidate.high
+                 <<" high_used="<<candidate.used<<" wet_dB="<<10.*std::log10(eb/ea)
+                 <<" normalized_edge_ratio="<<mb/ma*std::sqrt(ea/eb)<<std::endl;
+        }
+    }
+}
+static void testHeadroomContract(){
+    for(int rate:{32000,48000,96000,192000}){
+        BackingHeadroom h;h.prepare(rate);
+        for(int i=0;i<rate/10;++i){
+            const float g=h.process(.2f,-.2f,.2f,-.2f,.3f,-.3f,1.f,1.f);
+            need(g==1.f,"H24A nominal gain altered");
+        }
+        // Asymmetric polarity, signed constraint and stereo-linked gain.
+        for(int i=0;i<rate/10;++i){
+            const float g=h.process(.8f,.4f,.8f,-.4f,.9f,-1.2f,1.f,1.f);
+            need(g>=0.f&&g<=1.f&&std::abs(.8f+.9f*g)<=.980001f&&
+                std::abs(-.4f-1.2f*g)<=.980001f,"H24A linked safety");
+        }
+        const float g=h.process(1.2f,-1.1f,1.2f,-1.1f,.5f,-.6f,1.f,1.f);
+        need(g==0.f,"H24A preserve over-unity dry, do not worsen");
+        const float recovering=h.process(.1f,.1f,.1f,.1f,.1f,.1f,1.f,1.f);
+        need(recovering>=0.f&&recovering<.01f,"H24A no sudden release");
+    }
+}
+static void testDoublerMonoCompatibility(){
+    constexpr double tau=6.283185307179586;
+    for(int rate:{48000,96000})for(double hz:{100.,300.}){
+        const int n=rate*3;LeadFixture src{std::vector<float>(n),std::vector<float>(n)};
+        for(int i=0;i<n;++i)src.left[i]=src.right[i]=static_cast<float>(.12*std::sin(tau*hz*i/rate));
+        auto render=[&](bool guard,float space,float wet,int block){
+            auto e=std::make_unique<Engine>();Settings s;s.voiceMode=1;s.voices=2;
+            s.wet=wet;s.space=space;s.color=.78f;
+            need(e->prepare(rate)&&e->setSettings(s)&&e->setDoublerMonoForOfflineReference(guard),"H24B setup");
+            auto out=src;
+            for(int at=0;at<n;at+=block)e->process(out.left.data()+at,out.right.data()+at,std::min(block,n-at));
+            return out;
+        };
+        const auto old=render(false,0.f,1.f,64),now=render(true,0.f,1.f,127),
+                   split=render(true,0.f,1.f,64),dry=render(true,0.f,0.f,64);
+        need(now.left==split.left&&now.right==split.right,"H24B block parity");
+        const auto wideOld=render(false,1.f,1.f,64),wide=render(true,1.f,1.f,127);
+        need(wideOld.left==wide.left&&wideOld.right==wide.right,"H24B wide exact parity");
+        double minOld=1.e9,minNew=1.e9,wetOld=0.,wetNew=0.;
+        for(int at=rate;at+rate/50<=n;at+=rate/50){
+            double a=0.,b=0.,base=0.;
+            for(int i=at;i<at+rate/50;++i){
+                a+=old.left[i]*old.left[i];b+=now.left[i]*now.left[i];
+                base+=dry.left[i]*dry.left[i];
+                const double x=old.left[i]-dry.left[i],y=now.left[i]-dry.left[i];
+                wetOld+=x*x;wetNew+=y*y;
+            }
+            minOld=std::min(minOld,a/base);minNew=std::min(minNew,b/base);
+        }
+        std::cout<<"H24B_MONO rate="<<rate<<" hz="<<hz<<" old_floor="<<10.*std::log10(minOld)
+                 <<" new_floor="<<10.*std::log10(minNew)<<" wet_ratio="<<wetNew/wetOld<<std::endl;
+        need(minNew>minOld&&wetNew>.10*wetOld,"H24B mono floor or audible backing");
+    }
+}
+static void testCausalEnvelopeCandidate(){
+    using Clock=std::chrono::steady_clock;
+    for(int rate:{32000,48000,96000,192000}){
+        const int n=rate*2;
+        auto vowel=[&](double hz,double f1,double f2){
+            std::vector<float> v(n);double phase=0.,a1=0.,a2=0.,b1=0.,b2=0.;
+            constexpr double pi=3.14159265358979323846;
+            const double r1=std::exp(-pi*110./rate),r2=std::exp(-pi*150./rate);
+            const double c1=2.*r1*std::cos(2.*pi*f1/rate),c2=2.*r2*std::cos(2.*pi*f2/rate);
+            double peak=0.;
+            for(int i=0;i<n;++i){
+                phase+=hz/rate;double ex=0.;
+                if(phase>=1.){phase-=1.;ex=1.;}
+                const double a=ex+c1*a1-r1*r1*a2;a2=a1;a1=a;
+                const double b=a+c2*b1-r2*r2*b2;b2=b1;b1=b;
+                v[i]=static_cast<float>(b);peak=std::max(peak,std::abs(b));
+            }
+            for(auto& x:v)x=static_cast<float>(x*.2/peak);
+            return v;
+        };
+        const auto source=vowel(120.,700.,1400.),shift=vowel(180.,1050.,2100.),oracle=vowel(180.,700.,1400.);
+        auto out=shift;
+        CausalEnvelope env;env.prepare(rate);
+        double peak=0.;
+        for(int i=0;i<n;++i){
+            out[i]=env.process(source[i],shift[i],true);
+            need(std::isfinite(out[i]),"H26 finite LPC");
+            peak=std::max(peak,double(std::abs(out[i])));
+        }
+        auto harmonic=[&](const auto& v,double hz){
+            double a=0.,b=0.;
+            for(int i=rate;i<n;++i){
+                const double p=6.283185307179586*hz*i/rate;
+                a+=v[i]*std::cos(p);b+=v[i]*std::sin(p);
+            }
+            return 20.*std::log10(std::max(1.e-10,std::hypot(a,b)));
+        };
+        auto error=[&](const auto& v){
+            std::array<double,24> e{};double mean=0.,acc=0.;
+            for(int k=0;k<24;++k){e[k]=harmonic(v,180.*(k+2))-harmonic(oracle,180.*(k+2));mean+=e[k];}
+            mean/=e.size();for(double x:e)acc+=(x-mean)*(x-mean);
+            return std::sqrt(acc/e.size());
+        };
+        CausalEnvelope adaptive;adaptive.prepare(rate,true);
+        auto corrected=shift;
+        for(int i=0;i<n;++i)corrected[i]=adaptive.process(source[i],shift[i],true,120.f,180.f,1.f);
+        const double a=error(shift),b=error(out),c=error(corrected);
+        need(std::isfinite(c)&&adaptive.accepted()>100&&adaptive.maxDb()<=3.2001f,"H27 oracle contract");
+        std::cout<<"H27_ORACLE rate="<<rate<<" uncorrected_db="<<a<<" H26_db="<<b<<" H27_db="<<c
+                 <<" updates="<<adaptive.accepted()<<" support550="<<adaptive.lastSupport()<<std::endl;
+        // Fixed poles remain stable under alternating confidence, vowel
+        // and F0, including sparse HIGH harmonics and trust loss.
+        std::uint32_t rng=1234567u;double phase=0.;double peak27=0.;
+        for(int i=0;i<rate*3;++i){
+            rng^=rng<<13;rng^=rng>>17;rng^=rng<<5;
+            const bool trust=(i/(rate/11))%4!=3;
+            const float f0=(i/(rate/7))%2?880.f:120.f;
+            phase+=6.283185307179586*f0/rate;
+            const float x=.16f*std::sin(phase)+.04f*std::sin(2*phase);
+            const float y=adaptive.process(x,trust?.16f*std::sin(phase*1.5):.15f*float(int(rng%2001)-1000)/1000.f,
+                                            trust,f0,f0*1.5f,.9f);
+            need(std::isfinite(y)&&std::abs(y)<1.f,"H27 modulated fixed-pole stability");
+            peak27=std::max(peak27,double(std::abs(y)));
+        }
+        need(adaptive.releases()>0,"H27 trust release");
+        const auto accepted27=adaptive.accepted();
+        for(int i=0;i<rate;++i)adaptive.process(0.f,0.f,false,0.f,0.f,0.f);
+        need(adaptive.accepted()==accepted27,"H27 rejected frame");
+        adaptive.prepare(rate,true);
+        for(int i=0;i<n/4;++i)need(adaptive.process(source[i],shift[i],true,0.f,180.f,1.f)==shift[i],"H27 invalid F0 dry");
+        need(CausalEnvelope::harmonicSupport(550.f,880.f)==0.f&&
+             CausalEnvelope::harmonicSupport(4300.f,180.f)==1.f,"H27 harmonic support");
+        std::cout<<"H27_STRESS rate="<<rate<<" peak="<<peak27<<std::endl;
+        need(b<a&&peak<.8&&env.accepted()>100&&env.maxDb()<=3.2001f,"H26 resonator oracle/gain");
+        std::cout<<"H26_ORACLE rate="<<rate<<" old_db="<<a<<" new_db="<<b
+                 <<" peak="<<peak<<" updates="<<env.accepted()<<" cap_db="<<env.maxDb()<<std::endl;
+        const auto updates=env.accepted();
+        for(int i=0;i<rate;++i){
+            const float y=env.process(0.f,0.f,false);
+            need(std::isfinite(y)&&std::abs(y)<.8f,"H26 release finite");
+            if(i>rate/2)need(std::abs(y)<1.e-5f,"H26 stale tail");
+        }
+        need(env.accepted()==updates,"H26 untrusted analysis accepted");
+        env.prepare(rate);
+        for(int i=0;i<n/4;++i)need(env.process(0.f,shift[i],false)==shift[i],"H26 neutral exact");
+    }
+    // Native HIGH candidate, not just an external stem filter.
+    for(int rate:{48000,96000}){
+        const int n=rate*2;
+        LeadFixture src{std::vector<float>(n),std::vector<float>(n)};
+        double phase=0.;
+        for(int i=0;i<n;++i){
+            phase+=6.283185307179586*(i<rate?220.:330.)/rate;
+            const double e=i>rate*3/2&&i<rate*8/5?0.:1.;
+            src.left[i]=src.right[i]=static_cast<float>(e*(.10*std::sin(phase)+.035*std::sin(2*phase+.3)+.02*std::sin(3*phase+.6)));
+        }
+        auto render=[&](int enabled,float wet,int mode,int voices,int block){
+            auto e=std::make_unique<Engine>();Settings s;s.voiceMode=mode;s.voices=voices;s.wet=wet;s.space=1.f;s.color=.78f;
+            need(e->prepare(rate)&&e->setSettings(s)&&e->setCausalEnvelopeForOfflineReference(enabled!=0)&&e->setAdaptiveEnvelopeForOfflineReference(enabled==2),"H26/H27 engine setup");
+            auto x=src;std::vector<double> us;us.reserve(n/block+1);
+            for(int i=0;i<n;i+=block){
+                const int count=std::min(block,n-i);
+                const auto start=Clock::now();e->process(x.left.data()+i,x.right.data()+i,count);
+                if(i>=rate/4&&count==block)us.push_back(std::chrono::duration<double,std::micro>(Clock::now()-start).count());
+            }
+            std::sort(us.begin(),us.end());
+            const auto updates=e->causalEnvelopeUpdatesForOfflineTests();
+            if(wet==1.f&&mode==0&&voices==5&&block==64)
+                std::cout<<"H26_CPU rate="<<rate<<" enabled="<<enabled<<" updates="<<updates
+                         <<" p50_us="<<us[us.size()/2]<<" p99_us="<<us[(us.size()-1)*99/100]
+                         <<" max_us="<<us.back()<<" deadline_us="<<1.e6*block/rate<<std::endl;
+            if(enabled&&wet==1.f&&mode==0&&voices==5)need(updates>0,"H26 live candidate never engaged");
+            need(e->latencySamples()==int(std::lround(rate*.024)),"H26 PDC");
+            return x;
+        };
+        const auto a=render(0,1.f,0,5,64),b=render(1,1.f,0,5,64),c=render(1,1.f,0,5,127);
+        const auto h27=render(2,1.f,0,5,64),h27Split=render(2,1.f,0,5,127);
+        need(h27.left==h27Split.left&&h27.right==h27Split.right&&a.right!=h27.right,"H27 partition/use");
+        need(b.left==c.left&&b.right==c.right&&a.right!=b.right,"H26 candidate partition/use");
+        for(int i=0;i<n;++i)need(std::isfinite(b.left[i])&&std::isfinite(b.right[i])&&
+            std::abs(b.left[i])<=.980001f&&std::abs(b.right[i])<=.980001f&&
+            std::isfinite(h27.left[i])&&std::isfinite(h27.right[i])&&std::abs(h27.left[i])<=.980001f&&std::abs(h27.right[i])<=.980001f,"H26/H27 headroom");
+        for(int mode:{0,1}){
+            const auto x=render(false,1.f,mode,2,64),y=render(true,1.f,mode,2,127);
+            const auto z=render(2,1.f,mode,2,127);
+            need(x.left==y.left&&x.right==y.right&&x.left==z.left&&x.right==z.right,"H26/H27 Duo/Doubler unchanged");
+        }
+        const auto x=render(false,0.f,0,5,64),y=render(true,0.f,0,5,127);
+        const auto z=render(2,0.f,0,5,127);
+        need(x.left==y.left&&x.right==y.right&&x.left==z.left&&x.right==z.right,"H26/H27 Wet0 dry unchanged");
+    }
+}
+static void testInactiveStageFastPath(){
+    using Clock=std::chrono::steady_clock;
+    for(int rate:{48000,96000,192000})for(int mode:{1,2,5}){
+        constexpr int block=64;
+        const int n=2*rate;
+        LeadFixture src{std::vector<float>(n),std::vector<float>(n)};
+        for(int i=0;i<n;++i){
+            const double ph=6.283185307179586*220.*i/rate;
+            src.left[i]=src.right[i]=static_cast<float>(.12*std::sin(ph)+.04*std::sin(2.*ph+.3));
+        }
+        Settings s;s.voiceMode=mode==1?1:0;s.voices=std::max(2,mode);s.wet=1.f;s.space=1.f;s.color=.78f;
+        auto old=std::make_unique<Engine>(),now=std::make_unique<Engine>();
+        need(old->prepare(rate)&&now->prepare(rate)&&old->setInactiveStageForOfflineReference(false)&&
+             old->setSettings(s)&&now->setSettings(s),"H25D setup");
+        auto a=src,b=src;std::vector<double> before,after;
+        before.reserve(n/block+1);after.reserve(n/block+1);
+        for(int at=0;at<n;at+=block){
+            const int count=std::min(block,n-at);
+            auto measure=[&](Engine& e,LeadFixture& x){
+                const auto start=Clock::now();
+                e.process(x.left.data()+at,x.right.data()+at,count);
+                return std::chrono::duration<double,std::micro>(Clock::now()-start).count();
+            };
+            double x,y;
+            if((at/block)&1){y=measure(*now,b);x=measure(*old,a);}
+            else{x=measure(*old,a);y=measure(*now,b);}
+            if(at>=rate/4&&count==block){before.push_back(x);after.push_back(y);}
+        }
+        need(a.left==b.left&&a.right==b.right,"H25D native PCM changed");
+        std::sort(before.begin(),before.end());std::sort(after.begin(),after.end());
+        std::cout<<"H25D_CPU rate="<<rate<<" mode="<<mode
+                 <<" old_p50_us="<<before[before.size()/2]<<" new_p50_us="<<after[after.size()/2]
+                 <<" old_p99_us="<<before[(before.size()-1)*99/100]
+                 <<" new_p99_us="<<after[(after.size()-1)*99/100]<<std::endl;
+        // Reactivate a previously inactive singer with full retained
+        // stage history. Both modes must remain sample-exact on reentry.
+        s.voiceMode=0;s.voices=mode==5?2:5;
+        need(old->setSettings(s)&&now->setSettings(s),"H25D mode transition");
+        a=src;b=src;
+        for(int at=0;at<rate/2;at+=block){
+            const int count=std::min(block,rate/2-at);
+            old->process(a.left.data()+at,a.right.data()+at,count);
+            now->process(b.left.data()+at,b.right.data()+at,count);
+        }
+        need(a.left==b.left&&a.right==b.right,"H25D stage reentry changed native PCM");
+    }
+}
+static void testDoublerFastPath(){
+    using Clock=std::chrono::steady_clock;
+    constexpr double tau=6.283185307179586;
+    for(int rate:{48000,96000,192000})for(int block:{64,128}){
+        const int n=rate*3;
+        LeadFixture src{std::vector<float>(n),std::vector<float>(n)};
+        double phase=0.;
+        for(int i=0;i<n;++i){
+            const double sec=double(i)/rate;
+            const double hz=sec<1.?220.:sec<2.?440.:330.;
+            phase+=tau*hz/rate;
+            const double envelope=sec>1.4&&sec<1.55?0.:1.;
+            src.left[i]=src.right[i]=static_cast<float>(envelope*(.12*std::sin(phase)+.04*std::sin(2*phase+.3)));
+        }
+        Settings s;s.voiceMode=1;s.voices=2;s.wet=1.f;s.space=.6f;s.color=.78f;s.correction=false;
+        auto old=std::make_unique<Engine>(),now=std::make_unique<Engine>();
+        need(old->prepare(rate)&&now->prepare(rate)&&old->setDoublerFastForOfflineReference(false)&&
+             old->setSettings(s)&&now->setSettings(s),"H25A setup");
+        auto a=src,b=src;std::vector<double> before,after;
+        before.reserve(n/block+1);after.reserve(n/block+1);
+        for(int at=0;at<n;at+=block){
+            const int count=std::min(block,n-at);
+            auto measure=[&](Engine& e,LeadFixture& x){
+                const auto start=Clock::now();
+                e.process(x.left.data()+at,x.right.data()+at,count);
+                return std::chrono::duration<double,std::micro>(Clock::now()-start).count();
+            };
+            double x,y;
+            if((at/block)&1){y=measure(*now,b);x=measure(*old,a);}
+            else{x=measure(*old,a);y=measure(*now,b);}
+            if(at>=rate/4&&count==block){before.push_back(x);after.push_back(y);}
+        }
+        need(a.left==b.left&&a.right==b.right,"H25A settled unison PCM changed");
+        need(now->completedPitchAnalyses()*2<old->completedPitchAnalyses()&&
+             now->completedPitchAnalyses()>0&&now->voiced()&&
+             now->observedMidiNote()==old->observedMidiNote(),"H25A readout/cadence");
+        std::sort(before.begin(),before.end());std::sort(after.begin(),after.end());
+        const double deadline=1.e6*block/rate;
+        const auto misses=[&](const auto& v){return std::count_if(v.begin(),v.end(),[&](double x){return x>deadline;});};
+        const auto p=[](const auto& v,int k){return v[(v.size()-1)*k/100];};
+        std::cout<<"H25A_CPU rate="<<rate<<" block="<<block<<" old_analyses="<<old->completedPitchAnalyses()
+                 <<" new_analyses="<<now->completedPitchAnalyses()<<" old_p50_us="<<p(before,50)
+                 <<" new_p50_us="<<p(after,50)<<" old_p99_us="<<p(before,99)<<" new_p99_us="<<p(after,99)
+                 <<" old_misses="<<misses(before)<<" new_misses="<<misses(after)<<std::endl;
+        // Switch mode on a held note, then enable Tune; the detector must
+        // return to normal cadence without clearing history or changing PDC.
+        const int latency=now->latencySamples();
+        int prior=now->completedPitchAnalyses();s.voiceMode=0;s.voices=3;
+        need(now->setSettings(s),"H25A harmony edit");
+        auto feed=[&](){
+            for(int at=0;at<rate/2;at+=block){
+                const int count=std::min(block,rate/2-at);
+                for(int i=0;i<count;++i)a.left[i]=a.right[i]=static_cast<float>(.12*std::sin(tau*330.*(at+i)/rate));
+                now->process(a.left.data(),a.right.data(),count);
+                for(int i=0;i<count;++i)need(std::isfinite(a.left[i])&&std::isfinite(a.right[i]),"H25A mode edit finite");
+            }
+        };
+        feed();need(now->completedPitchAnalyses()-prior>=70&&now->latencySamples()==latency,"H25A harmony cadence/PDC");
+        s.voiceMode=1;s.voices=2;s.correction=true;prior=now->completedPitchAnalyses();
+        need(now->setSettings(s),"H25A tune edit");feed();
+        need(now->completedPitchAnalyses()-prior>=70&&now->latencySamples()==latency,"H25A Tune cadence/PDC");
+    }
+}
+static void testContinuousDoubler(){
+  constexpr double tau=6.283185307179586;
+  for(int rate:{48000,96000})for(double hz:{220.,880.,1320.}){
+    const int n=rate*4;
+    LeadFixture src{std::vector<float>(n),std::vector<float>(n)};
+    double phase=0.;
+    for(int i=0;i<n;++i){
+      phase+=tau*hz*std::exp2(65.*std::sin(tau*5.1*i/rate)/1200.)/rate;
+      src.left[i]=src.right[i]=static_cast<float>(
+          .12*std::sin(phase)+.035*std::sin(2*phase+.2));
+    }
+    const auto run=[&](float wet,int block){
+      auto e=std::make_unique<Engine>();Settings s;
+      s.voiceMode=1;s.voices=2;s.wet=wet;s.color=1.f;s.space=.62f;
+      need(e->prepare(rate)&&e->setSettings(s),"H12 double prepare");
+      auto out=src;
+      for(int at=0;at<n;at+=block)e->process(out.left.data()+at,out.right.data()+at,std::min(block,n-at));
+      return out;
+    };
+    const auto out=run(1.f,127),dry=run(0.f,127),split=run(1.f,64);
+    need(out.left==split.left&&out.right==split.right,"H12 double block parity");
+    double minEnergy=1.e9,maxEnergy=0.,sum=0.;
+    int windows=0;
+    for(int at=rate;at+rate/100<=n;at+=rate/100){
+      double energy=0.;
+      for(int i=at;i<at+rate/100;++i){
+        const double l=out.left[i]-dry.left[i],r=out.right[i]-dry.right[i];
+        need(std::isfinite(l)&&std::isfinite(r),"H12 double nonfinite");
+        energy+=l*l+r*r;
+      }
+      minEnergy=std::min(minEnergy,energy);maxEnergy=std::max(maxEnergy,energy);
+      sum+=energy;++windows;
+    }
+    const double floor=10.*std::log10(minEnergy/(sum/windows));
+    std::cout<<"H12_DOUBLER rate="<<rate<<" hz="<<hz<<" min_window_dB="<<floor
+             <<" span_dB="<<10.*std::log10(maxEnergy/minEnergy)<<std::endl;
+    need(floor>-9.&&sum>1.,"H12 doubler sustained backing dropout");
+  }
+}
 static void testUnisonDoubler(){
   for(int rate:{48000,96000}){
     Settings unison;unison.voiceMode=1;unison.voices=2;
@@ -178,7 +1779,7 @@ static void testUnisonDoubler(){
       const float x=a[static_cast<std::size_t>(i)];
       const float y=pitched[static_cast<std::size_t>(i)];
       need(std::isfinite(x)&&std::isfinite(y),"Doubler non-finite PCM");
-      const int t=i-2*static_cast<int>(std::lround(.016*rate));
+      const int t=i-static_cast<int>(std::lround(.024*rate));
       const double phase=6.283185307179586*220.*t/rate;
       const float delayedDry=static_cast<float>(
         .16*std::sin(phase)+.041*std::sin(2*phase+.2));
@@ -260,7 +1861,7 @@ static void testUnvoicedGapPreservesWetTail(){
   const auto render=[&](int block){
     auto e=std::make_unique<Engine>();
     need(e->prepare(rate)&&
-         e->latencySamples()==2*std::lround(.016*rate),
+         e->latencySamples()==std::lround(.024*rate),
          "wet-tail engine PDC changed");
     Settings wet;wet.voices=5;wet.wet=.74f;wet.space=.82f;
     need(e->setSettings(wet),"wet-tail test settings invalid");
@@ -334,13 +1935,14 @@ static void testLoudVibratoContinuity(){
       level*(.85*std::sin(phase+.12)+.31*std::sin(3.*phase+.4))+
       noise*.85);
   }
-  auto process=[&](int block,int voices,bool wet){
+  auto process=[&](int block,int voices,bool wet,bool independent=true){
     auto dsp=std::make_unique<Engine>();
-    need(dsp->prepare(rate)&&dsp->latencySamples()==1536,
+    need(dsp->prepare(rate)&&dsp->latencySamples()==1152,
          "vibrato engine PDC changed");
     Settings settings;settings.voices=voices;settings.wet=wet?.75f:0.f;
     settings.space=.82f;
-    need(dsp->setSettings(settings),"vibrato DSP settings rejected");
+    need(dsp->setIndependentExpressionForOfflineReference(independent)&&
+         dsp->setSettings(settings),"vibrato DSP settings rejected");
     auto l=inL,r=inR;
     int audibleTicks=0,checkedTicks=0;
     for(int pos=0;pos<frames;pos+=block){
@@ -360,6 +1962,11 @@ static void testLoudVibratoContinuity(){
   need(five64==five257,
        "heavy five-voice vibrato output depends on ASIO callback partition");
   const auto dry=process(257,5,false);
+  const auto h3=process(64,5,true,false);
+  need(h3!=five64,"H4 expression did not affect actual ensemble PCM");
+  need(process(64,2,true,false)==process(64,2,true,true),
+       "H4 changed accepted Duo");
+  need(process(64,5,false,false)==dry,"H4 changed dry lead");
   double harmonyE=0.,outE=0.,monoE=0.;
   float largestStep=0.f;
   for(int i=rate/2;i<frames;++i){
@@ -382,8 +1989,196 @@ static void testLoudVibratoContinuity(){
        "long-vibrato ensemble produced an unbounded sample discontinuity");
 }
 
+// Forced renderer readiness dropouts, independent of the F0 detector.
+// Constant residual makes the exact edge continuity directly falsifiable.
+static void testLeadRendererSeam(){
+  for(int rate:{32000,48000,96000,192000}){
+    LeadRenderSeam seam;seam.prepare(rate);
+    auto tick=[&](bool ready,float dl=.2f,float dr=-.1f){
+      seam.process(dl,dr,.6f,-.4f,ready,1.f);
+      return std::pair{dl,dr};
+    };
+    for(int i=0;i<rate/50;++i)tick(true);
+    const auto before=tick(true);
+    const auto missing=tick(false);
+    need(before==missing,"lead readiness loss hard-switched PCM");
+    auto last=missing;
+    for(int i=0;i<rate/100;++i){
+      auto x=tick(false);
+      need(std::abs(x.first-last.first)<.02f&&
+           std::abs(x.second-last.second)<.02f,"lead residual release stepped");
+      last=x;
+    }
+    need(last==std::pair{.2f,-.1f},"lead residual never returned to exact dry");
+    for(int i=0;i<rate/100;++i)
+      need(tick(i%2==0)==last,"flickering renderer entered without prewarm");
+    for(int i=0;i<rate/50;++i)tick(true);
+    need(tick(true)==before,"stable renderer failed to recover");
+    seam.reset();
+    need(tick(false)==last,"renderer reset leaked correction");
+    for(int i=0;i<rate/20;++i){
+      const float source=.15f*std::sin(.03f*i);
+      float l=source,r=source;
+      const float corrected=.14f*std::sin(.031f*i);
+      seam.process(l,r,corrected,corrected,i%(rate/100)<rate/125,.7f);
+      need(l==r,"mono seam introduced side energy");
+    }
+  }
+}
+
+// Matched dry subtraction, actual Engine PCM, not a prepared scalar proxy.
+// Report old and new absolute stem dB for every case before enforcing the
+// provisional gate. Synthetic voiced fixture is not a human loudness test.
+static void testBackingUnity(){
+  bool within=true;
+  for(int rate:{44100,48000,96000}){
+    auto input=leadFixture(rate,220.,0.f,0.f);
+    input.right=input.left; // ordinary dual-mono mic
+    auto render=[&](Settings s,bool unity,int block){
+      auto e=std::make_unique<Engine>();
+      need(e->prepare(rate)&&e->setDoublerMonoForOfflineReference(false)&&e->setBackingUnityForOfflineReference(unity)&&
+           e->setSettings(s),"unity PCM fixture prepare");
+      auto out=input;
+      for(int i=0;i<2*rate;i+=block)
+        e->process(out.left.data()+i,out.right.data()+i,std::min(block,2*rate-i));
+      return out;
+    };
+    Settings s;s.color=1.f;s.correction=false;s.wet=0.f;
+    const auto dry=render(s,true,127);
+    auto level=[&](const LeadFixture& out){
+      double wet=0.,lead=0.;
+      for(int i=rate;i<2*rate;++i){
+        need(std::abs(out.left[i])<1.f&&std::abs(out.right[i])<1.f,
+             "unity fixture clipped nominal PCM");
+        const double l=out.left[i]-dry.left[i],r=out.right[i]-dry.right[i];
+        wet+=l*l+r*r;lead+=dry.left[i]*dry.left[i]+dry.right[i]*dry.right[i];
+      }
+      return 10.*std::log10(wet/lead);
+    };
+    for(int mode=0;mode<=1;++mode){
+      s.voiceMode=mode;
+      for(int voices=2;voices<=(mode==1?2:5);++voices){
+        s.voices=voices;
+        for(float space:{0.f,.6f,1.f}){
+          s.space=space;s.wet=1.f;
+          const auto prior=render(s,false,127),now=render(s,true,127);
+          const double oldDb=level(prior),db=level(now);
+          std::cout<<"H1_STEM rate="<<rate<<" mode="<<mode
+                   <<" voices="<<voices<<" space="<<space
+                   <<" old_dB="<<oldDb<<" new_dB="<<db<<std::endl;
+          within=within&&std::isfinite(db)&&std::abs(db)<=2.;
+          need(db>oldDb,"unity calibration failed to lift backing");
+          s.wet=.45f;
+          const auto factory=render(s,true,64),factoryOld=render(s,false,257);
+          need(factory.left==factoryOld.left&&factory.right==factoryOld.right,
+               "ordinary Wet preset or block invariance changed");
+          need(level(factory)<db,"full Wet failed to exceed factory Wet");
+        }
+      }
+    }
+  }
+  need(within,"H1 full-Wet aggregate stem outside +/-2dB target; inspect H1_STEM rows");
+}
+// Force the old two-head fallback into half-period cancellation, then
+// exercise a varying pitch ratio and verify the new continuous read speed.
+static void testPhaseCoherentCarrier(){
+    constexpr double tau=6.283185307179586;
+    for(int rate:{32000,48000,96000,192000}){
+        const int grain=static_cast<int>(std::lround(rate*.016));
+        const float period=rate/125.f,base=rate*.024f,ratio=1.5f;
+        PhaseCoherentCarrier carrier;
+        float p=0.f;double oldMin=1.,newMin=1.;
+        // Analytic sine eliminates detector errors and isolates the carrier.
+        // At 125Hz and ratio 1.5, the nominal head separation is a half period.
+        double oldSum=0.,newSum=0.,oldTotal=0.,newTotal=0.;int count=0;
+        const int window=std::max(1,rate/500);
+        for(int i=0;i<rate/2;++i){
+            const float q=p<.5f?p+.5f:p-.5f,w=smoothGrainBlend(p);
+            const auto h=carrier.process(i,p,ratio,base,grain,period,true,16381.f);
+            auto tap=[&](float delay){return std::sin(tau*(i-delay)/period);};
+            const double a=w*tap(base+(1.f-ratio)*p*grain)+(1.f-w)*tap(base+(1.f-ratio)*q*grain);
+            const double b=w*tap(h.a)+(1.f-w)*tap(h.b);
+            need(h.a>=1.f&&h.b>=1.f&&h.a<=16381.f&&h.b<=16381.f,"H16 history bounds");
+            if(i>rate/10){
+                oldSum+=a*a;newSum+=b*b;++count;
+                if(count==window){
+                    oldMin=std::min(oldMin,oldSum/count);newMin=std::min(newMin,newSum/count);
+                    oldTotal+=oldSum;newTotal+=newSum;oldSum=newSum=0.;count=0;
+                }
+            }
+            p+=1.f/grain;if(p>=1.f)p-=1.f;
+        }
+        std::cout<<"H16_CARRIER rate="<<rate<<" old_min_power="<<oldMin
+                 <<" new_min_power="<<newMin<<" energy_ratio="<<newTotal/oldTotal<<std::endl;
+        need(newMin>oldMin*3.&&newMin>.08&&newTotal>oldTotal,
+             "H16 phase cancellation not improved");
+        carrier.reset();p=0.f;float prevP=0.f;
+        PhaseCoherentCarrier::Delays prev{};
+        for(int i=0;i<rate/4;++i){
+            const float r=1.2f+.6f*static_cast<float>(std::sin(tau*8.*i/rate));
+            const auto h=carrier.process(i,p,r,base,grain,period,true,16381.f);
+            if(i>0&&p>=prevP)
+                need(std::abs(h.a-prev.a-(1.f-r))<.002f,"H16 head A glide velocity");
+            if(i>0&&!(prevP<.5f&&p>=.5f))
+                need(std::abs(h.b-prev.b-(1.f-r))<.002f,"H16 head B glide velocity");
+            need(h.a>=1.f&&h.b>=1.f&&h.a<=16381.f&&h.b<=16381.f,"H16 glide bounds");
+            prev=h;prevP=p;p+=1.f/grain;if(p>=1.f)p-=1.f;
+        }
+        PhaseCoherentCarrier fresh;
+        const auto resumed=carrier.process(rate,p,ratio,base,grain,period,true,16381.f);
+        const auto initial=fresh.process(rate,p,ratio,base,grain,period,true,16381.f);
+        need(resumed.a==initial.a&&resumed.b==initial.b,"H16 skipped-call state");
+    }
+}
+static void testBackingPitchContour(){
+    for(double hop:{1./150.,1./100.}){
+        BackingPitchContour c;c.prepare(hop);
+        double retained=0.,input=0.;int n=static_cast<int>(2./hop);
+        for(int i=0;i<n;++i){
+            const float midi=60.f+.50f*std::sin(6.283185307179586*5.*i*hop);
+            const float correction=c.correctionMidi(60,midi);
+            if(i>n/2){retained+=(midi-correction)*(midi-correction);input+=(midi-60.f)*(midi-60.f);}
+        }
+        const double fraction=std::sqrt(retained/input);
+        std::cout<<"H15_CONTOUR hop="<<hop<<" retained="<<fraction<<std::endl;
+        need(fraction>.45&&fraction<.75,"H15 vibrato contour retention");
+        for(int i=0;i<n;++i)c.correctionMidi(60,60.3f);
+        need(std::abs(c.correctionMidi(60,60.3f)-60.3f)<.001f,"H15 static tuning drift");
+        need(c.correctionMidi(64,64.2f)==64.2f,"H15 note transition stale center");
+        c.reset();need(c.correctionMidi(64,63.8f)==63.8f,"H15 phrase reset");
+    }
+}
 int main(){
+    testEpochRecoveryPerformance();
+    testCausalAdmissionEngine();
+    testSlopeAwareSeam();
+    testPhaseCoherentCarrier();
+    testBackingPitchContour();
+  testCorrelationPerformance();
+  testArticulation();
+  testResonanceEngine();
+  testReducedLatency();
+  testChordAwareGuide();
+  testSingerSpectralIdentity();
+  testSingerIdentityPcm();
+  testIndependentSingerExpression();
+  testCommonToneEngineTransition();
+  testMusicalEnsemblePlanner();
+  const bool highPass=testMusicalHighStem();
+  testLeadRendererSeam();
+  testBackingUnity();
+  need(highPass,"H3 HIGH presence or isolated fundamental failed; inspect all H3_HIGH rows");
   testUnvoicedGapPreservesWetTail();
+  testBackingContinuity();
+  testLowerPresenceAndPresets();
+  testSourceAlignedCandidate();
+  testHeadroomContract();
+  auditFieldHeadroom();
+  testDoublerMonoCompatibility();
+  testDoublerFastPath();
+  testInactiveStageFastPath();
+  testCausalEnvelopeCandidate();
+  testContinuousDoubler();
   testUnisonDoubler();
   testPeriodContinuityOnLoudOctaveErrors();
   testLoudVibratoContinuity();
@@ -954,6 +2749,17 @@ int main(){
   // Field feedback: full Wet, 4 voices, Space 60% still sounded thin.
   // Presence curve must lift BACKING only, with sqrt voice count normalization
   // and exact Wet0 silence; all scalar math is prepared on control thread.
+  for(int mode:{0,1})for(int voices=2;voices<=Engine::maxVoices;++voices){
+    for(float space:{0.f,.6f,1.f}){
+      float previous=1.f;
+      for(float w:{0.f,.25f,.45f,.5f,.75f,1.f}){
+        const float gain=Engine::backingUnityGain(w,space,mode,voices);
+        need(gain>=previous&&gain<=2.5f&&(w>.45f||gain==1.f),
+             "backing bus calibration unbounded or changed factory Wet");
+        previous=gain;
+      }
+    }
+  }
   for(int voices=2;voices<=Engine::maxVoices;++voices){
     float previous=0.f;
     for(float wet:{0.f,.15f,.45f,.60f,.85f,1.f}){
@@ -1065,7 +2871,7 @@ int main(){
     if(depth==0.f)need(std::abs(outputEnergy-inputEnergy)<1.e-6,
                        "Space zero failed to preserve direct backing");
   }
-  // Declared 48k wet/dry sample PDC must remain 2*16ms even after slicing.
-  need(e->latencySamples()==1536,"P0 changed live session PDC without proof");
+  // H7 fixed declared 24ms delay; exact impulse and dry parity above.
+  need(e->latencySamples()==1152,"P0 changed live session PDC without proof");
   std::cout<<"Native Harmony DSP: deterministic PCM, 2-5 voices, octave/scale, stereo, silence and 32-192k PASS\n";
 }

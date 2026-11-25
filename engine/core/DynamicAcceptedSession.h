@@ -314,6 +314,13 @@ public:
            !publisher_.setChannelInputGain(epoch,graphRevision,id,linear))return false;
         return accepted_.rememberLiveInputGain(id,linear);
     }
+    bool setLiveWireSumGain(std::uint64_t epoch,std::uint64_t graphRevision,
+                          ChannelId id,float linear) noexcept {
+        const auto* row=accepted_.find(id);
+        if(!row || (row->role!=ChannelRole::input && row->role!=ChannelRole::group && row->role!=ChannelRole::fxReturn) ||
+           !publisher_.setChannelWireSumGain(epoch,graphRevision,id,linear))return false;
+        return accepted_.rememberLiveWireSumGain(id,linear);
+    }
     // The accepted physical patch is canonical too: subsequent Group/FX
     // graph recompiles must preserve the most recently ACKed live SOURCE.
     bool setLivePhysicalSource(std::uint64_t epoch,std::uint64_t graphRevision,

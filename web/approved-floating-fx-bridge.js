@@ -21,6 +21,8 @@
       ["mixer-native-sonku.js","ArSonMixNativeSonKu","#mxNativeSonKu"]
   });
   let current=null,identity=null,busyLoad=null,pending=null;
+  let acceptedWorkspace=""; // retained exact workspace, even between snapshots
+  let powerSequence=0,pendingPower=null;
   const banner=document.getElementById("fxWindowStatus");
   const inform=message=>{
     if(banner){banner.textContent=message;banner.hidden=false;}
@@ -75,21 +77,40 @@
     nativeIdFor:track=>track && identity &&
       same(track.nativeId,identity.channelId)?identity.channelId:null,
     consumeAction(track,action,btn) {
-      if(action!=="slotPower"||!identity||!current)return false;
+      if(!["slotPower","fxOn","globalFxOn"].includes(action)||
+         !identity||!current)return false;
       const slot=Number(btn?.dataset?.slot);
       if(!Number.isInteger(slot)||slot!==identity.slot ||
          !track||!same(track.nativeId,identity.channelId))return true;
       const verified=project(current.view.raw,identity);
       if(!verified)return true;
-      const requestId="fx-window-"+crypto.randomUUID();
+      const gate=action==="fxOn"?"rack":action==="globalFxOn"?"global":"slot";
+      // Rack/global buttons explicitly clear only an accepted upstream gate.
+      // Never silently enable every processor when an operator toggles a slot.
+      if(gate!=="slot"&&(verified.kind!=="CHANNEL_ID"||
+         (gate==="rack"&&verified.channel.fxRackBypassed!==true)||
+         (gate==="global"&&verified.view.raw?.globalFxBypassed!==true)))
+        return true;
+      if(pendingPower&&Date.now()-pendingPower.sentAt<8000)return true;
+      // No crypto.randomUUID dependency: JUCE WebView2 origins can restrict
+      // Web Crypto. Native still verifies exact channel/slot/instance/epoch.
+      const requestId="fx-window-"+Date.now().toString(36)+"-"+(++powerSequence);
+      pendingPower={id:requestId,gate,sentAt:Date.now(),
+        logical:verified.kind!=="CHANNEL_ID"};
       backend.emitEvent("arMixFloatingPower",{
         requestId,channelId:identity.channelId,slot:identity.slot,
-        instanceId:identity.instanceId,catalogId:identity.catalogId,
+        instanceId:identity.instanceId,catalogId:identity.catalogId,gate,
         deviceEpoch:verified.view.device.epoch,
         graphRevision:verified.view.graph.revision,
         workspaceToken:verified.view.workspaceToken||"",
-        value:!verified.insert.bypassed,logical:verified.kind!=="CHANNEL_ID"
+        value:gate==="slot"?!verified.insert.bypassed:false,
+        logical:verified.kind!=="CHANNEL_ID"
       });
+      window.setTimeout(()=>{
+        if(pendingPower?.id!==requestId)return;
+        pendingPower=null;
+        inform("FX Power timed out · check native FX Rack readback");
+      },8000);
       return true;
     },
     insertPlugin:()=>false
@@ -129,12 +150,17 @@
         payload.rekeyFrom===identity.instanceId &&
         typeof payload.workspaceToken==="string" &&
         payload.workspaceToken.length>0 &&
-        current?.view?.workspaceToken===payload.workspaceToken &&
+        acceptedWorkspace===payload.workspaceToken &&
         next.kind!=="CHANNEL_ID" &&
         next.view.workspaceToken===payload.workspaceToken;
       if(!safeRekey){inform("FX identity changed · reopen from FX Rack");return;}
     }
-    identity=proposed;current=next;
+    // Duplicate opens preserve object identity for the existing mounted
+    // panel. A trusted rekey updates the current token, not its HWND.
+    if(!identity||Object.keys(proposed).some(key=>identity[key]!==proposed[key]))
+      identity=proposed;
+    current=next;
+    acceptedWorkspace=next.view.workspaceToken||"";
     if(pending===proposed.catalogId) {
       // A repeated rack double-click must re-show the SAME exact editor
       // after its original Close button hid the DOM/owned HWND. Merely
@@ -150,7 +176,7 @@
       return;
     }
     pending=proposed.catalogId;
-    const request=proposed;
+    const request=identity;
     importEditor(proposed.catalogId).then(host=>{
       if(identity!==request || !host?.open) {
         inform("Approved FX editor unavailable");return;
@@ -167,7 +193,11 @@
       // generic oversized mixer card. GEQ31 S/M/L updates the same HWND.
       let lastGeometry="";
       const measure=()=>{
-        if(identity!==request||root.hidden)return;
+        // Same catalog/channel/slot across a durable logical rekey.
+        // Do not retain the obsolete revision-scoped insert ID.
+        if(!identity||identity.catalogId!==request.catalogId||
+           identity.channelId!==request.channelId||
+           identity.slot!==request.slot||root.hidden)return;
         const rect=root.getBoundingClientRect();
         if(rect.width<200||rect.height<100)return;
         const width=Math.ceil(rect.width),height=Math.ceil(rect.height);
@@ -190,8 +220,8 @@
       // window. DOM controls remain alive and can be re-presented safely.
       const observer=new MutationObserver(()=>{
         if(root.hidden)backend.emitEvent("arMixFloatingHide",{
-          channelId:request.channelId,instanceId:request.instanceId,
-          slot:request.slot,catalogId:request.catalogId});
+          channelId:identity.channelId,instanceId:identity.instanceId,
+          slot:identity.slot,catalogId:identity.catalogId});
       });
       observer.observe(root,{attributes:true,attributeFilter:["hidden"]});
       backend.emitEvent("arMixFloatingMounted",{
@@ -206,8 +236,29 @@
     current=next;
     if(!next)inform("FX disconnected · waiting for a matching saved editor");
   });
-  backend.addEventListener("arMixNativeFxPowerAck",ack=>{
-    if(ack?.ok!==true)inform("FX power unchanged · refresh native FX Rack");
+  const powerReceipt=ack=>{
+    if(!pendingPower||!ack)return;
+    if(pendingPower.logical)return; // logical durable ACK has its own schema
+    const matches=ack.requestId===pendingPower.id||
+      (pendingPower.gate==="global"&&
+       ack.requestId==="global-fx-"+pendingPower.id);
+    if(!matches)return; // another editor's ACK is not this window's ACK
+    pendingPower=null;
+    if(ack.ok!==true)inform("FX power rejected · refresh accepted native FX Rack");
+    // Successful ACK is not a claim of PCM state: the later native
+    // arMixConsoleSnapshot repaints the editor from accepted readback.
+  };
+  backend.addEventListener("arMixNativeFxPowerAck",powerReceipt);
+  backend.addEventListener("arMixGlobalFxAck",powerReceipt);
+  // CONTROL emits the trusted rekey/open BEFORE its durable logical ACK.
+  // Only the correlated receipt releases the in-flight Power fence; neither
+  // an unrelated ACK nor a new snapshot alone is a successful transaction.
+  backend.addEventListener("arMixLogicalAck",ack=>{
+    if(!pendingPower?.logical||!ack||
+       ack.requestId!=="logical-"+pendingPower.id)return;
+    pendingPower=null;
+    if(ack.status!=="ACCEPTED")
+      inform("FX power rejected · refresh accepted native FX Rack");
   });
   backend.emitEvent("arMixFloatingReady",{gui:"APPROVED_PAGES_NATIVE_FX_WINDOW_V1"});
 })();

@@ -33,7 +33,7 @@ def readback(page,state,values,key,scale,detected=(-1,-1),applied=None,
         "channelId":SOURCE,"instanceId":instance,"status":"ACCEPTED",
         "deviceEpoch":state["device"]["epoch"],
         "graphRevision":state["graph"]["revision"],
-        "schemaVersion":3,"sampleRate":48000,"latencySamples":1536,
+        "schemaVersion":3,"sampleRate":48000,"latencySamples":1152,
         "settings":copy.deepcopy(values),"observedNote":observed,
         "guideDetectedKey":detected[0],"guideDetectedScale":detected[1],
         "guideConfidence":0.75 if detected[0]>=0 else 0.0,
@@ -86,6 +86,8 @@ def main():
                 page.wait_for_function(
                     "()=>window.__ARMIX_NATIVE_M2__?.enabled && window.ArSonMixNativeHarmony")
                 state=snapshot()
+                # Accepted global gate is mandatory for the shared overlay.
+                state["globalFxBypassed"]=False
                 state["graph"]["capabilities"]["supportedOps"] += [
                     "LOAD_INSERT","MOVE_INSERT","REMOVE_INSERT"]
                 state["graph"]["channels"][0]["fxRackBypassed"]=False
@@ -112,6 +114,7 @@ def main():
                 switch=page.get_by_role("switch",name="PITCH TUNE")
                 assert switch.is_disabled() and switch.get_attribute("aria-busy")=="true"
                 readback(page,state,DEFAULT,0,0,observed=57)
+                assert editor.locator(".armix-native-fx-bypass").is_hidden()
                 # A native library list is a file query, not a DSP mutation.
                 library=last_action(page,"nativeHarmonyUserPreset")
                 assert library["operation"]=="list" and library["instanceId"]==INSTANCE
@@ -305,6 +308,30 @@ def main():
                 apply_edit(page,state,restored,0,0)
                 assert harmony.get_attribute("aria-pressed")=="true"
                 assert not page.locator('[data-voices="2"]').is_disabled()
+                # H32: each factory choice reaches the native transport and
+                # preserves the operator's explicit musical context.
+                prior=restored
+                for name,mode,voices,color,space,wet,gain in (
+                    ("doubleLight",1,None,0.74,0.48,0.36,0),
+                    ("doubleWide",1,None,0.8,0.82,0.52,0),
+                    ("duo",0,2,0.75,0.68,0.52,0),
+                    ("trio",0,3,0.75,0.77,0.65,0.6),
+                    ("quartet",0,4,0.78,0.85,0.6,-0.5),
+                    ("quintet",0,5,0.76,0.88,0.66,-1),
+                    ("choir",0,4,0.68,0.58,0.56,-0.5),
+                    ("closeBlend",0,2,0.68,0.44,0.34,0),
+                    ("warmBallad",0,3,0.66,0.68,0.48,0),
+                    ("popChorus",0,3,0.82,0.85,0.58,0),
+                    ("gospelEnsemble",0,5,0.73,0.88,0.69,-1),
+                ):
+                    page.locator("#mxHPreset").select_option(name)
+                    actual=last_action(page,"nativeHarmonySetSettings")["settings"]
+                    expected={**prior,"voiceMode":mode,"color":color,
+                              "space":space,"wet":wet,"gainDb":gain}
+                    if voices is not None:expected["voices"]=voices
+                    assert actual==expected,(name,actual,expected)
+                    apply_edit(page,state,actual,0,0)
+                    prior=actual
                 page.locator("#mxHClose").click()
                 row.locator('[data-action="openPlugin"]').click()
                 assert switch.is_disabled()
@@ -449,6 +476,26 @@ def main():
                 assert abs(arc2["sweep"]-202.5)<.0001,arc2
                 assert abs(arc2["turn"]-67.5)<.0001,arc2
                 assert page.locator("#mxHKeyReadout").inner_text()=="G"
+                # Relative drag: press at the knob center must not jump,
+                # move smoothly, release flushes newest intent even with ACK pending.
+                bounds=dial.bounding_box()
+                x=bounds["x"]+bounds["width"]/2
+                y=bounds["y"]+bounds["height"]/2
+                page.mouse.move(x,y)
+                page.mouse.down()
+                assert abs(dial_visual()["sweep"]-202.5)<.001
+                page.mouse.move(x,y-18,steps=6)
+                page.mouse.up()
+                drag_edit=last_action(page,"nativeHarmonySetSettings")
+                # First frame may be in flight; latest draft is rendered immediately.
+                assert abs(dial_visual()["sweep"]-229.5)<.5
+                first_drag=drag_edit["settings"]
+                apply_edit(page,state,first_drag,7,0)
+                final_drag=last_action(page,"nativeHarmonySetSettings")["settings"]
+                if first_drag!=final_drag:
+                    apply_edit(page,state,final_drag,7,0)
+                assert abs(final_drag["wet"]-.85)<.002,final_drag
+                changed=final_drag
                 # Tactile Major/Minor: active versus idle surfaces must occupy
                 # exactly the same box and have the same outer shadow offset.
                 major=page.locator('.mx-harm-scale [data-scale="0"]')
@@ -615,21 +662,27 @@ def main():
                              applied=moving["requestId"],instance=successor)
 
                     # A temporarily unpublished FX must NOT accept stale
-                    # gestures. Hold the latest edit and apply only after
-                    # a fresh accepted instance-scoped DSP readback.
+                    # gestures. The fail-closed shared overlay blocks body
+                    # input; an explicit fresh gesture is accepted on return.
                     bump();state["graph"]["channels"][0]["inserts"]=[other]
                     push_graph()
                     page.wait_for_function("""()=>document.querySelector(
                         '#mxHStatus').textContent.includes('RECONNECTING')""")
                     before=len(page.evaluate("""()=>window.__actions.filter(
                         x=>x.action==='nativeHarmonySetSettings')"""))
-                    page.locator('[data-voices="3"]').click()
+                    shade=editor.locator(".armix-native-fx-bypass")
+                    assert shade.is_visible() and shade.inner_text()=="FX UNAVAILABLE"
+                    assert shade.evaluate("e=>getComputedStyle(e).pointerEvents")=="auto"
+                    box=page.locator('[data-voices="3"]').bounding_box()
+                    page.mouse.click(box["x"]+box["width"]/2,box["y"]+box["height"]/2)
                     after=len(page.evaluate("""()=>window.__actions.filter(
                         x=>x.action==='nativeHarmonySetSettings')"""))
                     assert before==after,"stale FX received an edit"
                     bump();state["graph"]["channels"][0]["inserts"]=[other,harmony]
                     push_graph();await_snap(successor,1)
                     readback(page,state,accepted,9,0,instance=successor)
+                    assert shade.is_hidden()
+                    page.locator('[data-voices="3"]').click()
                     resumed=last_action(page,"nativeHarmonySetSettings")
                     assert resumed["slot"]==1 and resumed["instanceId"]==successor
                     assert resumed["settings"]["voices"]==3,resumed

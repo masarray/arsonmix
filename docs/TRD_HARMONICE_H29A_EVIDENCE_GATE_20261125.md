@@ -1,0 +1,10 @@
+# H29A — exact-source acoustic qualification evidence gate
+Baseline H28D 2a5fe2a, run 45511394522 PASS (six Manual, two Music). Music baseline/H28B/H28C losses 68/68/66, HIGH 13/13/12, no over-unity or measured callback deadline misses in these two fixtures. H28C remains opt-in. H28 Windows FAT 45511636764 is a distinct exact-source delivery; this change does not alter production DSP or cancel it.
+
+## Implementation
+Qualification-only edits now start scoped CI. Independently validate per-case variant/role coverage, every guide callback boundary, all traced variants' loss attribution and admission conservation, finite timing and metric metadata. Five negative controls; no weakening of existing DSP gates. Upload an explicit allowlist of per-case CSVs, attribution and SHA-256 manifest tied to checked-out SHA; no PCM, evaluator key or listener scores. Timing remains informational, not an ASIO or whole-application guarantee. No human ratings are manufactured.
+
+## H29 field acceptance (still open)
+Keep the exact H28 portable/installer and existing session backup. Test 48k/128, then 64 only if stable. Use fixed dry input, separate matched-level blind A/B and raw level checks. Existing offline renderer supports --qualify and --qualify-music with aligned <=30s PCM; keep source, derivatives and score/key locally. Compare naturalness, crackle, blend, HIGH intelligibility, onset/consonant and note transitions; include lyrics, vibrato and phrase gaps (VocalSet sustained vowels are insufficient). Capture Smart Audio Diagnostic Report, rate/buffer, XRuns, input/output gain and artifact timestamps. Measure loopback round trip separately from 24ms algorithmic PDC. No new runtime allocations or callback I/O. No candidate promotion or public release before actual listening/hardware evidence and integrated Windows qualification.
+
+References: ITU-R BS.1116-3 https://www.itu.int/rec/R-REC-BS.1116-3-201502-I/en (controlled listening principles; this protocol is not a formal ITU test); PortAudio callback constraints https://portaudio.com/docs/v19-doxydocs/portaudio_8h.html .

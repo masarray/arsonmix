@@ -68,6 +68,7 @@ function Find-EvergreenRuntime {
   return ''
 }
 $work=$null
+$bootstrapperStillRunning=$false
 try {
   $os=Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction Stop
   if(-not [Environment]::Is64BitOperatingSystem -or [int]$os.CurrentBuildNumber -lt 17763){
@@ -110,7 +111,14 @@ try {
   $signature=Get-AuthenticodeSignature -LiteralPath $file -ErrorAction Stop
   if(-not (Microsoft-Signer $signature)){throw 'Untrusted WebView2 bootstrapper (not executed)'}
   # Official supported Evergreen installer switches; respects Windows policy.
-  $process=Start-Process -FilePath $file -ArgumentList @('/silent','/install') -Wait -PassThru -ErrorAction Stop
+  # Bound only our wait, NEVER kill or interrupt the trusted Microsoft setup.
+  # A slow machine or enterprise policy must not hold the ArSonMix installer
+  # indefinitely. A still-running setup keeps its temporary executable.
+  $process=Start-Process -FilePath $file -ArgumentList @('/silent','/install') -PassThru -ErrorAction Stop
+  if(-not $process.WaitForExit(120000)){
+    $bootstrapperStillRunning=$true
+    throw 'WebView2 setup is still running; ArSonMix installation will continue. Check Startup Diagnostics after setup completes'
+  }
   if($process.ExitCode -ne 0){throw ('Microsoft WebView2 setup failed: '+$process.ExitCode)}
   $installed=''
   for($i=0;$i -lt 5;$i++){
@@ -129,7 +137,7 @@ try {
   Write-Warning ('WebView2 installation incomplete: '+$_.Exception.Message)
   exit 2
 }finally{
-  if($work -and (Test-Path -LiteralPath $work)){
+  if(-not $bootstrapperStillRunning -and $work -and (Test-Path -LiteralPath $work)){
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
   }
 }

@@ -49,7 +49,7 @@ def inspect_geometry(page,density,w):
 
 def inspect_motion(page):
     menu=page.locator('#moreTools')
-    menu.locator('summary').click()
+    menu.locator(':scope > summary').click()
     page.locator('#preview').click()
     lane=page.locator('#tracks .strip[data-id="1"] .meter-lane').first
     fill=lane.locator('.meter-fill')
@@ -95,7 +95,7 @@ def inspect_motion(page):
        'Independent CLIP lamps lost')
     page.screenshot(path='pages-v51-peak-hold-release-1680.png')
     # Stop MUST clear both LED level and held marker, without leftover RAF.
-    menu.locator('summary').click()
+    menu.locator(':scope > summary').click()
     page.locator('#preview').click()
     assert hold.evaluate("e=>getComputedStyle(e).opacity")=='0',(
        'stopped demo still shows peak hold')

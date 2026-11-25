@@ -56,13 +56,65 @@
     return parallelEdge(snapshot.graph,sourceId,edgeId);
   }
 
-  function gainReadback(edges,uiByEdgeId,pendingGains) {
+  // PRIMARY OUT remains a unity serial wire. Its CH LEVEL control is an
+  // honest alias for the source's native post-insert fader, never a second
+  // EdgeId gain or an implicit parallel MAIN SEND (which would double audio).
+  function primaryChannelLevelPlan(snapshot,projected,sourceId,edgeId) {
+    const graph=snapshot?.graph;
+    if(projected!==true||snapshot?.admitted!==true||snapshot.retained===true||
+       !Array.isArray(graph?.capabilities?.supportedOps)||
+       !graph.capabilities.supportedOps.includes("SET_FADER")||
+       !Array.isArray(graph.channels)||!Array.isArray(graph.edges)||
+       typeof sourceId!=="string"||typeof edgeId!=="string")return {kind:"UNAVAILABLE"};
+    const rows=graph.channels.filter(ch=>ch.id===sourceId);
+    const edges=graph.edges.filter(e=>e.edgeId===edgeId&&e.enabled===true);
+    if(rows.length!==1||edges.length!==1)return {kind:"UNAVAILABLE"};
+    const ch=rows[0],edge=edges[0];
+    if(!["INPUT","GROUP","FX_RETURN"].includes(ch.role)||
+       !Number.isFinite(ch.controls?.faderDb)||
+       edge.primaryOutput!==true||edge.gainLinear!==1||
+       edge.from!==sourceId||edge.to!==ch.primaryOutId)
+      return {kind:"UNAVAILABLE"};
+    return {kind:"READY",source:sourceId,levelDb:ch.controls.faderDb};
+  }
+
+  // An incoming WIRE pot represents the receiver's independent incoming WIRE sum gain,
+  // not a randomly selected sender's EdgeId. One or many incoming routes
+  // must behave identically; each send remains separately adjustable in
+  // WIRE Inspector / Sends on Faders.
+  function channelSumLevelPlan(snapshot,projected,channelId,levelDb) {
+    const graph=snapshot?.graph;
+    if(projected!==true||snapshot?.admitted!==true||snapshot.retained===true||
+       !Array.isArray(graph?.capabilities?.supportedOps)||
+       !graph.capabilities.supportedOps.includes("SET_WIRE_SUM_GAIN")||
+       !Array.isArray(graph.channels)||!Array.isArray(graph.edges)||
+       typeof channelId!=="string"||!/^\d+$/.test(channelId)||
+       !Number.isFinite(levelDb)||levelDb< -60||levelDb>6)
+      return {kind:"UNAVAILABLE"};
+    const rows=graph.channels.filter(row=>row.id===channelId);
+    if(rows.length!==1||!["INPUT","GROUP","FX_RETURN"].includes(rows[0].role)||
+       !Number.isFinite(rows[0].controls?.wireSumGainDb))return {kind:"UNAVAILABLE"};
+    const inbound=graph.edges.filter(e=>e.to===channelId&&e.enabled===true);
+    if(inbound.length<1)return {kind:"UNAVAILABLE"};
+    return {kind:"READY",source:channelId,levelDb,wireCount:inbound.length};
+  }
+
+  function gainReadback(edges,uiByEdgeId,pendingGains,channels=[]) {
     if(!Array.isArray(edges))return [];
-    return edges.filter(e=>e.enabled===true&&e.primaryOutput===false)
+    return edges.filter(e=>e.enabled===true)
       .flatMap(e=>{
-        const id=uiByEdgeId.get(e.edgeId),levelDb=gainDb(e.gainLinear);
-        if(id===undefined||levelDb===null)return [];
-        return [{id,pending:pendingGains.has(e.edgeId),levelDb}];
+        const id=uiByEdgeId.get(e.edgeId);
+        if(id===undefined)return [];
+        if(e.primaryOutput===true) {
+          const rows=channels.filter(ch=>ch.id===e.from&&
+            ch.primaryOutId===e.to);
+          if(rows.length!==1||e.gainLinear!==1||
+             !Number.isFinite(rows[0].controls?.faderDb))return [];
+          return [{id,pending:false,levelDb:0}];
+        }
+        const levelDb=gainDb(e.gainLinear);
+        return levelDb===null?[]:
+          [{id,pending:pendingGains.has(e.edgeId),levelDb}];
       });
   }
 
@@ -343,7 +395,7 @@
   }
 
   return Object.freeze({gainDb,edgePresentation,parallelEdge,
-    acceptedParallelEdge,gainReadback,canEditTap,gestureTap,sofAvailable,
+    acceptedParallelEdge,primaryChannelLevelPlan,channelSumLevelPlan,gainReadback,canEditTap,gestureTap,sofAvailable,
     compactSendGesture,nativeSendEdge,nativeTapPlan,sofSendEdge,
     channelTapEdge,nativeSendTogglePlan,primaryMainGesturePlan,nativeTransaction,
     gainDispatchPlan,nativeRecoveryPlan});

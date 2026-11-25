@@ -7,6 +7,10 @@
 #include <utility>
 #include <vector>
 #include "../src/NativeChannelAppearanceStore.h"
+#include "../src/NativeNamedPatchStore.h"
+#include "../src/NativeOutputBusPatch.h"
+#include "../engine/device/LogicalInputRegistry.h"
+#include "../engine/device/LogicalOutputRegistry.h"
 
 using armix::appearance::Store;
 static juce::var object(){return juce::var(new juce::DynamicObject());}
@@ -39,7 +43,254 @@ static juce::var edit(const juce::String& id,const juce::String& name,
     set(v,"rosterRevision","11");set(v,"appearanceRevision","0");
     return v;
 }
+static void namedPatchRegression(){
+    const auto dir=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("ArSonMixNamedIO","",false);
+    assert(dir.createDirectory().wasOk());
+    auto active=object();
+    set(active,"backend","ASIO");set(active,"captureDevice","Test ASIO");set(active,"playbackDevice","Test ASIO");
+    set(active,"open",true);set(active,"authorized",true);set(active,"deviceGeneration",7);
+    juce::Array<juce::var> names;names.add("Mic 1");names.add("Mic 2");names.add("VC 1");
+    juce::Array<juce::var> enabled;enabled.add(0);enabled.add(2);
+    set(active,"inputNames",juce::var(names));set(active,"enabledInputs",juce::var(enabled));
+    auto req=object();
+    for(const char* k:{"backend","captureDevice","playbackDevice","deviceGeneration"})
+        set(req,k,active.getProperty(k,{}));
+    set(req,"revision",0);set(req,"id","");set(req,"operation","SAVE");
+    set(req,"side","input");set(req,"name","Vocal Stereo");set(req,"mode","STEREO");
+    set(req,"left",2);set(req,"right",0);set(req,"leftName","VC 1");set(req,"rightName","Mic 1");
+    juce::String id;
+    {
+        armix::io::NamedPatchStore store(dir);
+        set(req,"right",1);set(req,"rightName","Mic 2");
+        assert(store.apply(req,active).isNotEmpty());
+        set(req,"right",0);set(req,"rightName","Mic 1");
+        assert(store.apply(req,active).isEmpty());
+        const auto rows=store.snapshot(active).getProperty("entries",{});
+        assert(rows.isArray()&&rows.getArray()->size()==1);
+        id=rows[0].getProperty("id","").toString();
+        assert(rows[0].getProperty("available",{})==juce::var(true));
+        assert(store.apply(req,active).isNotEmpty());
+    }
+    {
+        armix::io::NamedPatchStore store(dir);
+        auto rows=store.snapshot(active).getProperty("entries",{});
+        assert(rows.isArray()&&rows.getArray()->size()==1);
+        assert(rows[0].getProperty("id","").toString()==id);
+        set(req,"id",id);set(req,"revision",1);set(req,"name","Vocal LR");
+        assert(store.apply(req,active).isEmpty());
+        set(active,"inputNames",juce::var(juce::Array<juce::var>{"Other","Mic 2","VC 1"}));
+        rows=store.snapshot(active).getProperty("entries",{});
+        assert(rows[0].getProperty("available",{})==juce::var(false));
+        set(req,"revision",2);assert(store.apply(req,active).isNotEmpty());
+        set(req,"operation","REMOVE");assert(store.apply(req,active).isEmpty());
+        assert(store.snapshot(active).getProperty("entries",{}).getArray()->isEmpty());
+        // Output preset persists a selection only; even/odd ASIO policy,
+        // device isolation and side identity are independently validated.
+        juce::Array<juce::var> outputNames,outputPins;
+        for(int i=0;i<6;++i){outputNames.add("Out "+juce::String(i+1));outputPins.add(i);}
+        set(active,"outputNames",juce::var(outputNames));set(active,"enabledOutputs",juce::var(outputPins));
+        set(active,"mainOutputs",juce::var(juce::Array<juce::var>{0,1}));
+        set(active,"monitorOutputs",juce::var(juce::Array<juce::var>{2,3}));
+        set(req,"revision",3);set(req,"id","");set(req,"operation","SAVE");set(req,"side","output");
+        set(req,"name","Streaming");set(req,"mode","STEREO");set(req,"left",3);set(req,"right",4);
+        set(req,"leftName","Out 4");set(req,"rightName","Out 5");
+        assert(store.apply(req,active).isNotEmpty());
+        set(req,"left",0);set(req,"right",1);set(req,"leftName","Out 1");set(req,"rightName","Out 2");
+        assert(store.apply(req,active).isNotEmpty()); // reserved MAIN
+        set(req,"left",2);set(req,"right",3);set(req,"leftName","Out 3");set(req,"rightName","Out 4");
+        assert(store.apply(req,active).isNotEmpty()); // reserved MONITOR
+        set(req,"left",4);set(req,"right",5);set(req,"leftName","Out 5");set(req,"rightName","Out 6");
+        set(active,"monitorOutputs",juce::var());
+        assert(store.apply(req,active).isNotEmpty()); // unknown reservation
+        set(active,"monitorOutputs",juce::var(juce::Array<juce::var>{2,3}));
+        assert(store.apply(req,active).isEmpty());
+        rows=store.snapshot(active).getProperty("entries",{});
+        assert(rows.getArray()->size()==1);
+        const auto outputId=rows[0].getProperty("id","").toString();
+        set(active,"monitorOutputs",juce::var(juce::Array<juce::var>{4,5}));
+        assert(store.snapshot(active).getProperty("entries",{} )[0].getProperty("available",{})==juce::var(false));
+        set(active,"monitorOutputs",juce::var(juce::Array<juce::var>{2,3}));
+        assert(store.snapshot(active).getProperty("entries",{} )[0].getProperty("available",{})==juce::var(true));
+        set(req,"revision",4);set(req,"name","streaming");
+        assert(store.apply(req,active).isNotEmpty());
+        set(active,"playbackDevice","Other ASIO");
+        assert(store.snapshot(active).getProperty("entries",{}).getArray()->isEmpty());
+        assert(store.apply(req,active).isNotEmpty());
+        set(active,"playbackDevice","Test ASIO");
+        set(req,"id",outputId);set(req,"operation","REMOVE");set(req,"side","input");
+        assert(store.apply(req,active).isNotEmpty());
+        set(req,"side","output");assert(store.apply(req,active).isEmpty());
+    }
+    // Additive interchange is one atomic revision and never changes routes.
+    // A bad second row must not leave the first row committed.
+    {
+        armix::io::NamedPatchStore store(dir);
+        set(req,"revision",5);set(req,"id","");set(req,"operation","IMPORT");set(req,"side","output");
+        auto profile=object(),row=object(),bad=object();
+        set(profile,"schema","arsonmix.io-profile.v1");set(profile,"side","output");
+        for(const char* k:{"backend","captureDevice","playbackDevice"})
+            set(profile,k,active.getProperty(k,{}));
+        set(row,"name","Broadcast");set(row,"mode","STEREO");set(row,"left",4);set(row,"right",5);
+        set(row,"leftName","Out 5");set(row,"rightName","Out 6");
+        bad=juce::JSON::parse(juce::JSON::toString(row));
+        set(bad,"name","Invalid reserved");set(bad,"left",0);set(bad,"right",1);
+        set(bad,"leftName","Out 1");set(bad,"rightName","Out 2");
+        set(profile,"entries",juce::var(juce::Array<juce::var>{row,bad}));set(req,"profile",profile);
+        assert(store.apply(req,active).isNotEmpty());
+        assert(store.snapshot(active).getProperty("revision",{})==juce::var(5));
+        assert(store.snapshot(active).getProperty("entries",{}).getArray()->isEmpty());
+        set(profile,"entries",juce::var(juce::Array<juce::var>{row}));
+        set(profile,"playbackDevice","Wrong driver");
+        assert(store.apply(req,active).isNotEmpty());
+        set(profile,"playbackDevice","Test ASIO");
+        assert(store.apply(req,active).isEmpty());
+        assert(store.snapshot(active).getProperty("revision",{})==juce::var(6));
+        set(req,"revision",6);
+        assert(store.apply(req,active).isNotEmpty()); // duplicate import
+        const auto exported=store.exportProfile(req,active);
+        assert(exported.isObject());
+        const auto exportedRows=exported.getProperty("entries",{});
+        assert(exportedRows.getArray()->size()==1);
+        assert(exportedRows[0].getProperty("id",{}).isVoid());
+        assert(exportedRows[0].getProperty("available",{}).isVoid());
+        const auto file=dir.getChildFile("backup.ario");
+        assert(armix::io::NamedPatchStore::writeProfileFile(file,exported).isEmpty());
+        juce::var decoded;
+        assert(armix::io::NamedPatchStore::readProfileFile(file,decoded).isEmpty());
+        assert(juce::JSON::toString(decoded)==juce::JSON::toString(exported));
+        assert(armix::io::NamedPatchStore::readProfileFile(dir.getChildFile("missing.ario"),decoded).isNotEmpty());
+        assert(decoded.isVoid());
+        assert(file.replaceWithText("{invalid"));
+        assert(armix::io::NamedPatchStore::readProfileFile(file,decoded).isNotEmpty());
+        set(req,"revision",5);assert(store.exportProfile(req,active).isVoid());
+        set(req,"revision",6);
+        armix::io::NamedPatchStore reboot(dir);
+        const auto rows=reboot.snapshot(active).getProperty("entries",{});
+        assert(rows.getArray()->size()==1&&rows[0].getProperty("name","")=="Broadcast");
+        assert(rows[0].getProperty("available",{})==juce::var(true));
+    }
+    const auto file=dir.getChildFile("named-io-patches.v1.json");
+    assert(file.replaceWithText("broken"));
+    armix::io::NamedPatchStore damaged(dir);
+    assert(damaged.snapshot(active).getProperty("readOnly",{})==juce::var(true));
+    assert(damaged.apply(req,active).isNotEmpty());
+    assert(file.loadFileAsString()=="broken");
+    assert(dir.deleteRecursively());
+}
+static void busOutputPatchRegression(){
+    using P=armix::io::OutputBusPatch;
+    const std::array<int,8> pins{0,1,4,5,8,9,12,13};
+    const std::array<int,2> external{12,13};
+    const auto changed=P::plan(pins,{0,1},{2,3},false,{0,1},{8,9},external);
+    assert(changed&&changed->main==(P::Pair{4,5})&&changed->monitor==(P::Pair{2,3}));
+    const auto monitor=P::plan(pins,{0,1},{2,3},true,{4,5},{8,9},external);
+    assert(monitor&&monitor->main==(P::Pair{0,1})&&monitor->monitor==(P::Pair{4,5}));
+    assert(!P::plan(pins,{0,1},{2,3},false,{0,1},{4,5},external));
+    assert(!P::plan(pins,{0,1},{2,3},false,{0,1},{12,13},external));
+    assert(!P::plan(pins,{0,1},{2,3},false,{0,1},{2,3},external));
+    assert(!P::plan(pins,{0,1},{2,3},false,{1,0},{8,9},external));
+    assert(!P::plan(pins,{0,1},{-1,-1},true,{-1,-1},{8,9},external));
+    const std::array<int,8> malformed{0,1,4,5,8,9,12,12};
+    assert(!P::plan(malformed,{0,1},{2,3},false,{0,1},{8,9},external));
+}
+static void logicalInputRegistryRegression(){
+    using R=armix::device::LogicalInputRegistry;
+    R registry;
+    const R::Device device{"ASIO","Interface A","Interface A"};
+    const std::array<R::Pin,3> pins{{{0,0,"Mic 1"},{3,1,"Mic 4"},{7,2,"Line 8"}}};
+    const R::Inventory live{device,11,pins,true};
+    assert(registry.add(9007199254740993ULL,"Lead Vocal",R::Format::stereo));
+    const auto port=registry.ports()[0].id;
+    assert(!registry.add(port,"Other",R::Format::mono));
+    assert(!registry.add(2,"lead vocal",R::Format::mono));
+    assert(registry.assign(101,port)&&registry.assign(102,port));
+    assert(!registry.erase(port));
+    assert(registry.resolve(101,live).status==R::Resolution::needsRemap);
+    const R::Binding reverse{device,7,0,"Line 8","Mic 1"};
+    assert(!registry.bind(port,reverse,live,10));
+    assert(registry.bind(port,reverse,live,11));
+    assert(registry.resolve(101,live).left==2&&registry.resolve(102,live).right==0);
+    assert(registry.rename(port,"Vocal L/R"));
+    assert(registry.references().size()==2&&registry.resolve(101,live).port==port);
+    auto other=live;other.device.capture="Interface B";
+    assert(registry.resolve(101,other).status==R::Resolution::needsRemap);
+    other=live;other.authorized=false;
+    assert(registry.resolve(101,other).status==R::Resolution::needsRemap);
+    const std::array<R::Pin,2> sparse{{{0,0,"Mic 1"},{7,1,"Line 8"}}};
+    const R::Inventory fewer{device,12,sparse,true};
+    assert(registry.resolve(101,fewer).left==1); // callback index changed, physical identity intact
+    const std::array<R::Pin,2> missing{{{0,0,"Mic 1"},{3,1,"Mic 4"}}};
+    const R::Inventory lost{device,13,missing,true};
+    assert(registry.resolve(101,lost).status==R::Resolution::needsRemap);
+    assert(registry.resolve(101,live).status==R::Resolution::resolved); // intent preserved
+    const std::array<R::Pin,3> ambiguous{{{0,0,"Mic 1"},{3,1,"Line 8"},{7,2,"Line 8"}}};
+    assert(registry.resolve(101,{device,14,ambiguous,true}).status==R::Resolution::needsRemap);
+    assert(!registry.bind(port,{device,0,0,"Mic 1","Mic 1"},live,11));
+    assert(registry.resolve(101,live).left==2); // rejected mutation leaves prior binding
+    assert(registry.add(3,"Guitar",R::Format::mono));
+    assert(!registry.bind(3,reverse,live,11));
+    assert(registry.bind(3,{device,3,-1,"Mic 4",""},live,11));
+    assert(registry.assign(103,3));
+    assert(registry.resolve(103,live).right==-1);
+    assert(registry.unbind(port));
+    assert(registry.resolve(101,live).status==R::Resolution::needsRemap);
+    assert(registry.assign(101,0)&&registry.assign(102,0)&&registry.erase(port));
+    assert(registry.resolve(101,live).status==R::Resolution::noSource);
+}
+static void logicalOutputRegistryRegression(){
+    using R=armix::device::LogicalOutputRegistry;
+    R registry;
+    const R::Device device{"ASIO","Studio interface"};
+    const std::array<R::Pin,8> pins{{{0,0,"Main L"},{1,1,"Main R"},
+        {4,2,"Cue L"},{5,3,"Cue R"},{8,4,"Amp L"},{9,5,"Amp R"},
+        {12,6,"Spare L"},{13,7,"Spare R"}}};
+    const R::Inventory live{device,7,pins,{},true};
+    const R::Binding main{device,0,1,"Main L","Main R"},cue{device,4,5,"Cue L","Cue R"},
+        amp{device,8,9,"Amp L","Amp R"},spare{device,12,13,"Spare L","Spare R"};
+    const std::uint64_t id=9007199254740993ULL;
+    assert(registry.add(id,"Main")&&registry.add(2,"Headphones")&&registry.add(3,"Amp"));
+    assert(!registry.add(4,"headphones"));
+    assert(!registry.bind(id,main,live,6,true)&&!registry.bind(id,main,live,7,false));
+    assert(registry.bind(id,main,live,7,true)&&!registry.bind(2,main,live,7,true));
+    assert(registry.bind(2,cue,live,7,true)&&registry.bind(3,amp,live,7,true));
+    assert(registry.assign(101,id,R::Role::main));
+    assert(!registry.assign(102,id,R::Role::external)&&!registry.assign(102,3,R::Role::main));
+    assert(registry.assign(102,2,R::Role::monitor));
+    assert(registry.assign(103,3,R::Role::external)&&registry.assign(104,3,R::Role::external));
+    assert(!registry.erase(3)&&!registry.assign(104,2,R::Role::external));
+    const auto before=registry.prepare(live);
+    assert(before.complete()&&before.destinations.size()==4);
+    assert(before.destinations[2].callback==(R::Pair{4,5})&&before.destinations[3].callback==(R::Pair{4,5}));
+    const std::array<int,2> reserved{12,13};
+    auto occupied=live;occupied.reserved=reserved;
+    assert(!registry.bind(3,spare,occupied,7,true));
+    assert(registry.prepare(live).destinations[2].callback==(R::Pair{4,5}));
+    assert(registry.bind(3,spare,live,7,true));
+    assert(registry.prepare(live).destinations[2].callback==(R::Pair{6,7}));
+    const auto blocked=registry.prepare(occupied);
+    assert(!blocked.complete()&&blocked.destinations[2].state==R::State::reserved&&
+        blocked.destinations[3].callback==(R::Pair{-1,-1}));
+    auto changed=live;changed.device.playback="Other interface";
+    assert(!registry.prepare(changed).complete());
+    const std::array<R::Pin,4> sparse{{{0,0,"Main L"},{1,1,"Main R"},{12,2,"Spare L"},{13,3,"Spare R"}}};
+    const R::Inventory fewer{device,8,sparse,{},true};
+    const auto partial=registry.prepare(fewer);
+    assert(!partial.complete()&&partial.destinations[1].state==R::State::needsRemap&&
+        partial.destinations[2].callback==(R::Pair{2,3}));
+    auto invalid=pins;invalid[7].physical=12;
+    assert(!registry.prepare({device,9,invalid,{},true}).inventoryVerified);
+    invalid=pins;invalid[7].name="Main L";
+    assert(registry.prepare({device,9,invalid,{},true}).destinations[0].state==R::State::needsRemap);
+    assert(registry.rename(3,"Stage amplifier")&&registry.references().size()==4);
+    assert(registry.unbind(3)&&registry.prepare(live).destinations[2].state==R::State::needsRemap);
+    assert(registry.assign(103,0,R::Role::external)&&registry.assign(104,0,R::Role::external)&&registry.erase(3));
+}
 int main(){
+    logicalOutputRegistryRegression();
+    logicalInputRegistryRegression();
+    busOutputPatchRegression();
+    namedPatchRegression();
     const auto dir=juce::File::getSpecialLocation(juce::File::tempDirectory)
         .getNonexistentChildFile("ArSonMixChannelIdentity","",false);
     assert(dir.createDirectory().wasOk());

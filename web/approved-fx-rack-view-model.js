@@ -338,6 +338,30 @@
       Object.keys(lease).length===Object.keys(now.lease).length;
   }
 
+  // A newer graph revision may authorize navigation only for the same
+  // exact insert, slot, authority and hardware/workspace identity.
+  function refreshEditorNavigationLease(view,lease,{hardwareConfiguration}={}){
+    if(!lease)return null;
+    const current=editorNavigationPlan(view,{channelId:lease.channelId,
+      slot:lease.slot,hardwareConfiguration});
+    if(current.kind!=="OPEN")return null;
+    const stable=["authority","channelId","slot","instanceId","catalogId",
+      "workspaceToken","deviceEpoch","hardwareConfiguration"];
+    return stable.every(key=>current.lease[key]===lease[key])?current.lease:null;
+  }
+  function editorBypassPresentation(view,lease,{hardwareConfiguration}={}){
+    const fresh=refreshEditorNavigationLease(view,lease,{hardwareConfiguration});
+    if(!fresh)return "UNAVAILABLE";
+    const row=view.graph.channels.find(ch=>ch.id===fresh.channelId);
+    const insert=row?.inserts?.[fresh.slot];
+    if(typeof insert?.bypassed!=="boolean"||typeof row?.fxRackBypassed!=="boolean")
+      return "UNAVAILABLE";
+    if(fresh.authority==="CHANNEL_ID"&&typeof view.raw?.globalFxBypassed!=="boolean")
+      return "UNAVAILABLE";
+    if(view.raw?.globalFxBypassed===true&&fresh.authority==="CHANNEL_ID")return "GLOBAL";
+    return row.fxRackBypassed?"RACK":insert.bypassed?"SLOT":"ON";
+  }
+
   // G-MV38: a single allowlisted editor surface policy. The native FX catalog
   // is *not* permission to create a browser HWND; only these five approved
   // built-in controls have a dedicated /preview/ WebView editor. Other installed
@@ -662,7 +686,8 @@
     m4RackSettlement,m4EditorDispatchPlan,m4EditorDispatchLeaseMatches,
     nativeEditorDispatchPlan,nativeEditorAckResult,
     m4InsertPlan,m4InsertAckResult,m4InsertReadbackSettlement,
-    editorNavigationPlan,editorNavigationLeaseMatches,editorSurfacePlan,m4EditorPlan,
+    editorNavigationPlan,editorNavigationLeaseMatches,refreshEditorNavigationLease,
+    editorBypassPresentation,editorSurfacePlan,m4EditorPlan,
     nativeInsertPlan,nativeEditPlan,nativeInsertSettlement,
     nativePowerPlan,nativePowerAckResult,
     globalPowerContext,globalPowerPlan,globalPowerAckResult,

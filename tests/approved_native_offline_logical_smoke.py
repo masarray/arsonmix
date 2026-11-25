@@ -204,6 +204,20 @@ def main():
         assert page.locator("#addTrack").is_visible()
         assert page.locator("#addTrack").is_enabled()
         assert page.locator("#addBus").is_visible()
+        # Archive action requires accepted offline authority and confirmation.
+        archive=page.get_by_role("button",name="Open session archive",exact=True)
+        assert archive.is_visible()
+        archive.click()
+        assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerOpenArchive')")
+        state["offlineNewSessionAvailable"]=True
+        emit(page,"arMixConsoleSnapshot",state)
+        page.once("dialog",lambda dialog:dialog.dismiss())
+        archive.click()
+        assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerOpenArchive')")
+        page.once("dialog",lambda dialog:dialog.accept())
+        archive.click()
+        event=page.evaluate("()=>window.__events.find(e=>e.payload?.action==='nativeMixerOpenArchive')?.payload")
+        assert event["confirmed"] is True and event["workspaceToken"]=="workspace-a" and event["baseRevision"]=="1"
         assert page.evaluate("""()=>window.__events.filter(e=>
             e.name==='arMixConsoleIntent').length""")==0
         page.locator("#addTrack").click()

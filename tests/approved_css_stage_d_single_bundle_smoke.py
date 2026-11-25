@@ -80,9 +80,17 @@ async def main():
                     await page.locator('#tracks .strip[data-id="1"] .wire-node-out').click()
                     await page.locator('#tracks .strip[data-id="3"] .wire-node-in').click()
                     assert await row.locator('[data-hw-kind="pfl"]').count()==1
-                    await page.locator("#wireConfigToggle").click()
+                    # Topbar was deliberately simplified: WIRE Setup is
+                    # accessible through More, not through its hidden legacy
+                    # toolbar proxy. Exercise the real operator path.
+                    assert await page.locator("#wireConfigToggle").is_hidden()
+                    await page.locator("#moreTools summary").click()
+                    assert await page.locator("#moreTools").get_attribute("open") is not None
+                    await page.locator('#moreTools [data-wire-open="config"]').click()
+                    assert await page.locator("#wireConfigWindow").is_visible()
                     await page.locator("#wireMode").select_option("split")
                     await page.locator("#wireConfigClose").click()
+                    assert await page.locator("#wireConfigWindow").is_hidden()
                     await page.locator('#tracks .strip[data-id="1"] .wire-node-out').click()
                     await page.locator('#tracks .strip[data-id="4"] .wire-node-in').click()
                     assert await row.locator('[data-hw-kind="tap"]').count()==0

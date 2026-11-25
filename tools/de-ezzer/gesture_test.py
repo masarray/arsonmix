@@ -29,7 +29,10 @@ with sync_playwright() as pw:
     box = dial.bounding_box(); x=box['x']+box['width']/2; y=box['y']+box['height']/2
     page.mouse.move(x,y);page.mouse.down();page.mouse.move(x,y-32)
     assert page.evaluate('commands().length') == 1 # must apply before mouseup
-    assert output.inner_text() == '50%' # no optimistic readback
+    assert output.inner_text() == '70%' # requested display; accepted separately
+    assert page.locator('.draft').first.inner_text() == 'Applied 50%'
+    assert page.locator('input[type=range]').count()==0
+    assert page.locator('[data-power-label]').inner_text()=='OFF'
     page.mouse.move(x,y-64);page.mouse.move(x,y-80)
     assert page.evaluate('commands().length') == 1 # held behind ACK
     page.evaluate('ack()');page.wait_for_timeout(70)
@@ -43,7 +46,7 @@ with sync_playwright() as pw:
     page.mouse.move(x,y+100);page.keyboard.press('Escape');page.mouse.up();page.evaluate('ack()');page.wait_for_timeout(70)
     assert output.inner_text()=='98%' and page.evaluate('commands().length')==3
     dial.dblclick();page.evaluate('ack()');assert output.inner_text()=='50%'
-    page.locator('input[aria-label="AMOUNT"]').focus();page.keyboard.press('ArrowRight');page.evaluate('ack()');assert output.inner_text()=='51%'
+    page.locator('[role=slider][aria-label="AMOUNT"]').focus();page.keyboard.press('ArrowRight');page.evaluate('ack()');assert output.inner_text()=='51%'
     page.locator('.preset-row select').select_option('FOCUSED');assert page.evaluate('commands().at(-1).command.settings.enabled') is False
     assert page.locator('.preset-row select').input_value()=='CUSTOM'
     page.evaluate('ack()');assert page.locator('.preset-row select').input_value()=='FOCUSED'
@@ -54,6 +57,9 @@ with sync_playwright() as pw:
     assert isinstance(result,str) and page.evaluate('commands().at(-1).command.sequence')==result
     page.evaluate('ack()');assert output.inner_text()=='42%'
     assert page.evaluate('presetCalls.at(-1)[2]')==result
+    page.locator('[data-power]').click();page.evaluate('ack()')
+    assert page.locator('[data-power-label]').inner_text()=='ON'
+    assert page.locator('[data-power]').get_attribute('data-powered')=='true'
     page.evaluate('''()=>{let p={...adapter.context(),requestId:'fxpres-1'};delete p.slot;listeners.arMixBuiltinFxPresetResult({...p,instanceId:'other'});listeners.arMixBuiltinFxPresetResult(p);}''')
     assert page.evaluate('presetCalls.filter(x=>x[0]==="reply").length')==1
     page.evaluate('view.graph.revision="5"');page.wait_for_timeout(160)

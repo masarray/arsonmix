@@ -253,11 +253,13 @@ static void checkSessionControlPlans() {
 
 class FixtureDevice final : public juce::AudioIODevice {
 public:
-    FixtureDevice():AudioIODevice("Verified WASAPI fixture","Windows Audio") {
+    FixtureDevice(bool asio=false):AudioIODevice(asio?"Verified ASIO":"Verified WASAPI fixture",asio?"ASIO":"Windows Audio") {
         inputMask.setRange(0,2,true);
-        outputMask.setRange(0,2,true);
+        outputMask.setRange(0,asio?6:2,true);
+        outputNames=asio?juce::StringArray{"Main L","Main R","Amp L","Amp R","Spare L","Spare R"}:juce::StringArray{"Main L","Main R"};
     }
-    juce::StringArray getOutputChannelNames() override {return {"Main L","Main R"};}
+    juce::StringArray getOutputChannelNames() override {return outputNames;}
+    juce::StringArray outputNames;
     juce::StringArray getInputChannelNames() override {return {"Capture L","Capture R"};}
     juce::Array<double> getAvailableSampleRates() override {return {48000.,44100.};}
     juce::Array<int> getAvailableBufferSizes() override {return {480,512};}
@@ -823,6 +825,45 @@ static void verifyProductionPlayerFirstSoundWithSourceOnly() {
     assert(reconnect.accepted && mixer.playerDeckHasMainPath());
     render();
     assert(outL.back()>.10f && outR.back()<-.05f);
+
+    // Operator-selectable Music Player INPUT: one decoder follows its new
+    // ChannelId and existing FX/WIRE path without a second direct MAIN sum.
+    const auto selected=mixer.createNativeInputChannel(ep,reconnect.pcmRevision,
+        reconnect.rosterRevision,"MUSIC TARGET",ProcessingFormat::stereo,true);
+    assert(selected.accepted && selected.created!=added.created);
+    const auto moved=mixer.patchNativeInputSource(ep,selected.pcmRevision,
+        selected.rosterRevision,selected.created,-1,-1,true,true,{},true);
+    assert(moved.accepted && mixer.nativePlayerSource()==selected.created);
+    assert(mixer.playerDeckHasMainPath());
+    render();
+    assert(outL.back()>.10f && outL.back()<.44f);
+    assert(outR.back()<-.05f && outR.back()>-.27f);
+    const auto acceptedAfterMove=mixer.nativeBusStatus();
+    const auto* sourceRows=acceptedAfterMove.getProperty("channels",{}).getArray();
+    assert(sourceRows);
+    bool matched=false,oldSourceUnbound=false;
+    for(const auto& row:*sourceRows) {
+        if(row.getProperty("id","").toString()==
+           juce::String(static_cast<juce::int64>(selected.created.value))) {
+            const auto source=row.getProperty("source",{});
+            assert(source.getProperty("sourceFormat","").toString()=="PLAYER");
+            assert(source.getProperty("playerDeckId","").toString()=="1");
+            matched=true;
+        }
+        if(row.getProperty("id","").toString()==
+           juce::String(static_cast<juce::int64>(added.created.value)))
+            oldSourceUnbound=!row.getProperty("source",{}).isObject();
+    }
+    assert(matched && oldSourceUnbound);
+    // Disconnect the selected INPUT: playback must become silent, rather
+    // than silently falling back to the old MUSIC→MAIN edge.
+    const auto disconnected=mixer.patchNativeInputSource(ep,moved.pcmRevision,
+        moved.rosterRevision,selected.created,-1,-1,false,true);
+    assert(disconnected.accepted && !mixer.nativePlayerSource().value);
+    assert(!mixer.playerDeckHasMainPath());
+    render();
+    assert(std::abs(outL.back())<1.e-6f &&
+           std::abs(outR.back())<1.e-6f);
 }
 
 static void verifyOfflineLogicalSessionAndFile() {
@@ -1062,30 +1103,96 @@ static void verifyOfflineLogicalSessionAndFile() {
 }
 
 static void verifyLegacyHarmoniceSessionName(){
+    using Harmony=armix::builtin_fx::ChannelHarmonyProcessor;
     auto saved=makeSession();
-    const juce::String id=
-        armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity;
+    const juce::String id=Harmony::catalogIdentity;
     auto rows=saved.roster.channels();
     rows.front().insertCatalogIds.push_back(id.toStdString());
     assert(saved.roster.restoreExact(saved.acceptedRevision,rows));
-    armix::builtin_fx::ChannelHarmonyProcessor processor;
-    processor.prepareToPlay(48000.,256);
-    assert(processor.isReady());
-    BinaryState state;
-    processor.getStateInformation(state.bytes);
-    state.sha256=juce::SHA256(state.bytes).toHexString();
-    saved.inserts.push_back({{1},0,id,{},state.sha256,
-                             "ArSon Harmony",0,false});
-    juce::AudioPluginFormatManager formats;
-    std::shared_ptr<DynamicChannelFxLeaseBank> restored;
-    const auto error=NativeMixerSessionFxRestore::prepare(
-        saved,std::vector<BinaryState>{state},formats,48000.,256,1,1,restored);
-    assert(error.isEmpty() && restored);
-    const auto* lease=restored->ownerForControl({1},0);
-    assert(lease && *lease && (*lease)->name=="Harmonice");
-    assert((*lease)->catalogId==id);
-    assert(saved.inserts.front().name=="ArSon Harmony");
-    assert((*lease)->processor->getLatencySamples()==1536);
+    // Create the actual historic wire layouts, not merely today's
+    // state under yesterday's label. Latency belongs to the new device
+    // lease, never to saved AHM1 bytes or a hard-coded 48k old delay.
+    for(int version:{1,2,3}){
+        BinaryState state;
+        {
+            juce::MemoryOutputStream stream(state.bytes,false);
+            stream.writeInt(0x41484d31);stream.writeInt(version);
+            stream.writeInt(7);stream.writeInt(1);
+            stream.writeInt(version==3?2:5);stream.writeBool(false);
+            stream.writeFloat(0.f);stream.writeFloat(.6f);
+            stream.writeFloat(.75f);stream.writeFloat(0.f);
+            if(version>=2){stream.writeInt(1);stream.writeInt64(2);}
+            if(version==3)stream.writeInt(1);
+        }
+        const int bytes=version==1?37:version==2?49:53;
+        assert(state.bytes.getSize()==static_cast<std::size_t>(bytes));
+        state.sha256=juce::SHA256(state.bytes).toHexString();
+        saved.inserts.clear();
+        saved.inserts.push_back({{1},0,id,{},state.sha256,
+                                 "ArSon Harmony",0,false});
+        // Reject every truncated prefix and trailing byte transactionally,
+        // before publication. Noncanonical bool bytes are corrupt too.
+        {
+            auto validator=std::make_unique<Harmony>();
+            validator->prepareToPlay(48000.,64);
+            assert(validator->restoreUnpublishedState(state.bytes.getData(),bytes));
+            juce::MemoryBlock accepted;validator->getStateInformation(accepted);
+            for(int n=1;n<bytes;++n)
+                assert(!validator->restoreUnpublishedState(state.bytes.getData(),n));
+            auto extra=state.bytes;const char zero=0;
+            extra.append(&zero,1);
+            assert(!validator->restoreUnpublishedState(extra.getData(),bytes+1));
+            auto badBool=state.bytes;
+            static_cast<unsigned char*>(badBool.getData())[20]=2;
+            assert(!validator->restoreUnpublishedState(badBool.getData(),bytes));
+            juce::MemoryBlock after;validator->getStateInformation(after);
+            assert(accepted==after);
+        }
+        juce::AudioPluginFormatManager formats;
+        for(double rate:{32000.,44100.,48000.,96000.,192000.}){
+            constexpr int quantum=64;
+            const int latency=static_cast<int>(std::lround(rate*.024));
+            std::shared_ptr<DynamicChannelFxLeaseBank> restored;
+            const auto error=NativeMixerSessionFxRestore::prepare(
+                saved,std::vector<BinaryState>{state},formats,rate,quantum,
+                1,1,restored);
+            assert(error.isEmpty()&&restored);
+            const auto* lease=restored->ownerForControl({1},0);
+            assert(lease&&*lease&&(*lease)->name=="Harmonice");
+            assert((*lease)->catalogId==id);
+            assert(saved.inserts.front().name=="ArSon Harmony");
+            auto* p=dynamic_cast<Harmony*>((*lease)->processor.get());
+            assert(p&&p->isReady()&&p->getSampleRate()==rate);
+            assert(p->getLatencySamples()==latency&&(*lease)->latencySamples==latency);
+            assert((*lease)->continuousBypassProcessing);
+            const auto s=p->acceptedSettings();
+            assert(s.key==7&&s.scale==1&&s.voices==(version==3?2:5));
+            assert(s.voiceMode==(version==3?1:0)&&s.wet==0.f&&!s.correction);
+            assert(p->musicSourceChannel()==(version>=2?2u:0u));
+            assert(p->effectiveKeyCode()==19);
+            assert(!p->restoreUnpublishedState(state.bytes.getData(),bytes));
+            // Exercise the actual JUCE lease at Wet=0: both enabled and
+            // rack-bypassed paths must emit exactly the new delayed impulse.
+            // The two impulses are separated by enough time to drain rings.
+            for(bool bypass:{false,true}){
+                const int length=latency+quantum*2;
+                for(int at=0;at<length;at+=quantum){
+                    std::array<float,quantum> l{},r{};
+                    const int count=std::min(quantum,length-at);
+                    if(at==0){l[0]=.5f;r[0]=-.25f;}
+                    (*lease)->render(l.data(),r.data(),count,bypass);
+                    for(int i=0;i<count;++i){
+                        const bool hit=at+i==latency;
+                        assert(std::abs(l[i]-(hit?.5f:0.f))<1.e-6f);
+                        assert(std::abs(r[i]-(hit?-.25f:0.f))<1.e-6f);
+                    }
+                }
+            }
+            assert(!(*lease)->latencyChanged.load(std::memory_order_acquire));
+            std::cout<<"H11_RESTORE version="<<version<<" rate="<<rate
+                     <<" latency="<<latency<<" enabled/bypass PCM PASS\n";
+        }
+    }
 }
 static void verifyLogicalControlTransactions() {
     juce::ScopedJuceInitialiser_GUI juce;
@@ -1269,6 +1376,96 @@ static void verifyLogicalControlTransactions() {
     assert(opened);
     assert(control.workspace().document().roster.find(trackId));
     assert(control.workspace().document().roster.find(busId));
+    const auto priorId=control.workspace().document().id;
+    IoPortLayout resetDefaults;
+    assert(resetDefaults.inputs.add(300,"Reset Vocal",IoPortLayout::I::Format::mono));
+    assert(resetDefaults.outputs.add(400,"Reset Stage"));
+    auto beforeReset=control.workspace().document();
+    const auto oldToken=control.workspace().workspaceToken();
+    const auto oldStateCount=control.workspace().states().size();
+    assert(control.resetIo(oldToken,control.workspace().revision(),resetDefaults,
+        [](juce::String error){if(error.isNotEmpty())std::cerr<<error.toStdString()<<'\n';assert(error.isEmpty());}));
+    assert(worker.busy()&&control.workspace().workspaceToken()==oldToken);
+    waitForIO();
+    auto afterReset=control.workspace().document();
+    assert(afterReset.id==priorId&&control.workspace().workspaceToken()!=oldToken);
+    assert(afterReset.logicalInputs.find(300)&&afterReset.logicalOutputs.find(400));
+    assert(control.workspace().states().size()==oldStateCount);
+    afterReset.logicalInputs={};afterReset.logicalOutputs={};
+    beforeReset.logicalInputs={};beforeReset.logicalOutputs={};
+    assert(Codec::encode(beforeReset)==Codec::encode(afterReset));
+    auto archivesAfterReset=folder.getChildFile("SessionArchive").findChildFiles(juce::File::findFiles,false,"*.smix");
+    assert(archivesAfterReset.size()==1);
+    const auto priorToken=control.workspace().workspaceToken();
+    const auto priorRevision=control.workspace().revision();
+    const auto beforeNew=juce::JSON::toString(control.readback(),true);
+    bool rejected=false;
+    assert(control.newSession("stale",priorRevision,nullptr,[&](juce::String error){
+        rejected=error.isNotEmpty();
+    }));
+    assert(rejected&&!worker.busy()&&juce::JSON::toString(control.readback(),true)==beforeNew);
+    IoPortLayout defaults;
+    assert(defaults.inputs.add(100,"Vocal",IoPortLayout::I::Format::mono));
+    assert(defaults.inputs.restoreIntent(100,{{"ASIO","Verified ASIO","Verified ASIO"},0,-1,"Mic",""}));
+    assert(defaults.outputs.add(200,"Stage"));
+    assert(defaults.outputs.restoreIntent(200,{{"ASIO","Verified ASIO"},2,3,"L","R"}));
+    bool created=false;
+    assert(control.newSession(priorToken,priorRevision,&defaults,[&](juce::String error){
+        if(error.isNotEmpty())std::cerr<<error.toStdString()<<'\n';
+        assert(error.isEmpty());created=true;
+    }));
+    assert(worker.busy()&&!created&&control.workspace().workspaceToken()==priorToken);
+    waitForIO();
+    const auto& fresh=control.workspace().document();
+    assert(created&&fresh.id!=priorId&&control.workspace().workspaceToken()!=priorToken);
+    assert(fresh.logicalOnly&&fresh.masterMute&&!fresh.resumeMain.value_or(true)&&fresh.inserts.empty());
+    assert(fresh.logicalInputs.find(100)&&!fresh.logicalInputs.find(100)->binding);
+    assert(fresh.logicalOutputs.find(200)&&!fresh.logicalOutputs.find(200)->binding);
+    assert(fresh.logicalInputs.references().empty()&&fresh.logicalOutputs.references().empty());
+    auto archived=folder.getChildFile("SessionArchive").findChildFiles(juce::File::findFiles,false,"*.smix");
+    assert(archived.size()==2);
+    MixerSessionDocument recoveredArchive;std::vector<BinaryState> archiveStates;
+    assert(NativeMixerSessionStore::readFile(archivesAfterReset[0],recoveredArchive,archiveStates).isEmpty());
+    assert(recoveredArchive.id==priorId&&recoveredArchive.inserts.size()==saved.inserts.size());
+    assert(archiveStates.size()==states.size());
+    // A later generation must not remove the separately archived old show.
+    const auto newToken=control.workspace().workspaceToken();
+    assert(control.newSession(newToken,control.workspace().revision(),nullptr,
+        [](juce::String error){assert(error.isEmpty());}));
+    waitForIO();
+    assert(control.workspace().document().logicalInputs.empty());
+    assert(control.workspace().document().logicalOutputs.empty());
+    assert(archived[0].existsAsFile());
+    const auto beforeArchiveId=control.workspace().document().id;
+    assert(control.open(std::move(recoveredArchive),std::move(archiveStates),
+        [](juce::String error){assert(error.isEmpty());},true));
+    waitForIO();
+    assert(control.workspace().document().id==priorId);
+    assert(control.workspace().document().roster.find(trackId));
+    assert(control.workspace().states().size()==states.size());
+    auto allArchives=folder.getChildFile("SessionArchive").findChildFiles(juce::File::findFiles,false,"*.smix");
+    assert(allArchives.size()==4);
+    bool backupFound=false;
+    for(const auto& archive:allArchives){
+        MixerSessionDocument copy;std::vector<BinaryState> blobs;
+        assert(NativeMixerSessionStore::readFile(archive,copy,blobs).isEmpty());
+        if(copy.id==beforeArchiveId)backupFound=true;
+    }
+    assert(backupFound);
+    // Close immediately after a confirmed New: the worker may have
+    // committed HEAD but its queued message-thread callback has not run.
+    const auto beforeShutdown=control.workspace().document().id;
+    bool shutdownAdopted=false;
+    assert(control.newSession(control.workspace().workspaceToken(),control.workspace().revision(),
+        nullptr,[&](juce::String error){assert(error.isEmpty());shutdownAdopted=true;}));
+    worker.finishForShutdown();
+    assert(shutdownAdopted&&!worker.busy());
+    assert(control.workspace().document().id!=beforeShutdown);
+    MixerSessionDocument shutdownDoc;std::vector<BinaryState> shutdownStates;
+    assert(NativeMixerSessionStore(folder).load(shutdownDoc,shutdownStates).isEmpty());
+    assert(shutdownDoc.id==control.workspace().document().id);
+    assert(shutdownStates.empty());
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
     assert(folder.deleteRecursively());
 }
 
@@ -1456,6 +1653,13 @@ static void verifyIndependentAsioExternalRestoreProvenance() {
     };
     assert(same(loaded.externalOutputs[0]));
     assert(same(loaded.externalOutputs[1]));
+    auto ambiguous=doc.binding.outputNames;
+    ambiguous.set(7,ambiguous[2]);
+    assert(!MixerDeviceBindingPolicy::canRestoreExternalOutput(
+        loaded.externalOutputs[0],"Verified ASIO",full,ambiguous,doc.outputs));
+    const std::array<int,8> repeated{{0,1,2,3,4,5,6,6}};
+    assert(!MixerDeviceBindingPolicy::canRestoreExternalOutput(
+        loaded.externalOutputs[0],"Verified ASIO",repeated,doc.binding.outputNames,doc.outputs));
     // A new ASIO device uses identical generic labels. A verified device
     // APPLY must not silently transfer saved amp ownership to the new DAC.
     auto newDevice=doc.binding;
@@ -1581,7 +1785,345 @@ static void verifyChannelInputGainSessionRoundtrip() {
     assert(!Codec::decode(juce::JSON::toString(invalid,false),restored));
 }
 
+static void checkLogicalInputSession(){
+    using R=armix::device::LogicalInputRegistry;
+    auto d=makeSession();
+    const auto old=Codec::encode(d);
+    MixerSessionDocument decoded;
+    assert(Codec::decode(old,decoded)&&decoded.logicalInputs.empty());
+    assert(Codec::encode(decoded)==old);
+    const std::uint64_t port=9007199254740993ULL;
+    assert(d.logicalInputs.add(port,"Lead Vocal",R::Format::mono));
+    assert(d.logicalInputs.assign(1,port)&&d.logicalInputs.assign(2,port));
+    d.binding.inputNames={"Mic 1","Mic 2"};
+    const R::Device device{"ASIO","Verified ASIO","Verified ASIO"};
+    const std::array<R::Pin,2> pins{{{0,0,"Mic 1"},{1,1,"Mic 2"}}};
+    const R::Inventory live{device,7,pins,true};
+    assert(d.logicalInputs.bind(port,{device,0,-1,"Mic 1",""},live,7));
+    const auto encoded=Codec::encode(d);
+    assert(encoded.contains("arsonmix.mixer-session.v2"));
+    assert(Codec::decode(encoded,decoded));
+    assert(decoded.request.sources.empty()); // no persisted callback projection
+    assert(decoded.logicalInputs.assignedPort(1)==port&&decoded.logicalInputs.assignedPort(2)==port);
+    assert(Codec::encode(decoded)==encoded);
+    assert(LogicalInputProjection::prepare(decoded,live));
+    assert(decoded.request.sources.size()==2&&decoded.request.sources[0].inputL==0&&decoded.request.sources[1].inputL==0);
+    assert(Codec::encode(decoded)==encoded);
+    LogicalInputProjection::strip(decoded);
+    auto other=live;other.device.capture="Different interface";
+    assert(LogicalInputProjection::prepare(decoded,other)&&decoded.request.sources.empty());
+    assert(decoded.logicalInputs.assignedPort(1)==port);
+    assert(LogicalInputProjection::prepare(decoded,live)&&decoded.request.sources.size()==2);
+    using P=LogicalInputProjection;
+    bool graphChanged=false;
+    P::Edit edit;edit.operation=P::Operation::rename;edit.port=port;edit.name="Studio Vocal";
+    assert(P::edit(decoded,edit,live,graphChanged)&&!graphChanged&&decoded.request.sources.size()==2);
+    edit.operation=P::Operation::remove;
+    assert(!P::edit(decoded,edit,live,graphChanged));
+    edit.operation=P::Operation::bind;edit.binding={device,1,-1,"Mic 2",""};
+    assert(P::edit(decoded,edit,live,graphChanged)&&graphChanged);
+    assert(decoded.request.sources.size()==2&&decoded.request.sources[0].inputL==1&&decoded.request.sources[1].inputL==1);
+    edit.binding={device,0,-1,"Wrong label",""};
+    assert(!P::edit(decoded,edit,live,graphChanged)&&decoded.request.sources[0].inputL==1);
+    edit.operation=P::Operation::unbind;
+    assert(P::edit(decoded,edit,live,graphChanged)&&graphChanged&&decoded.request.sources.empty());
+    assert(decoded.logicalInputs.assignedPort(1)==port&&decoded.logicalInputs.assignedPort(2)==port);
+    edit.operation=P::Operation::clear;edit.channel=1;
+    assert(P::edit(decoded,edit,live,graphChanged)&&graphChanged&&!decoded.logicalInputs.assignedPort(1));
+    auto bad=juce::JSON::parse(encoded);
+    bad.getDynamicObject()->setProperty("schema","arsonmix.mixer-session.v1");
+    assert(!Codec::decode(juce::JSON::toString(bad,false),decoded));
+    bad=juce::JSON::parse(encoded);
+    auto logical=bad.getProperty("logicalInputs",{});
+    auto refs=logical.getProperty("references",{});
+    refs.getArray()->add((*refs.getArray())[0]);
+    assert(!Codec::decode(juce::JSON::toString(bad,false),decoded));
+    bad=juce::JSON::parse(encoded);
+    logical=bad.getProperty("logicalInputs",{});
+    refs=logical.getProperty("references",{});
+    (*refs.getArray())[0].getDynamicObject()->setProperty("portId","999");
+    assert(!Codec::decode(juce::JSON::toString(bad,false),decoded));
+    const auto dir=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("ArSonMixLogicalInputSession","",false);
+    assert(dir.createDirectory().wasOk());
+    const auto file=dir.getChildFile("logical.smix");
+    assert(NativeMixerSessionStore::writeFile(file,d,{}).isEmpty());
+    std::vector<armix::shows::BinaryState> states;
+    assert(NativeMixerSessionStore::readFile(file,decoded,states).isEmpty());
+    assert(Codec::encode(decoded)==encoded&&states.empty());
+    assert(dir.deleteRecursively());
+}
+// Exercise the actual accepted JUCE/ChannelId renderer, not only a JSON
+// or planner simulation. No physical interface is opened by this fixture.
+static void verifyLogicalInputNativePcm(){
+    using R=armix::device::LogicalInputRegistry;
+    using P=LogicalInputProjection;
+    FixtureDevice device;
+    LiveDryRoutingLab mixer;
+    mixer.prepareDevice(&device);
+    armix::device::JuceActivePortSnapshot pins;
+    armix::device::JuceActivePortSnapshot::Fault fault{};
+    assert(armix::device::JuceActivePortSnapshot::capture(&device,mixer.epoch(),pins,fault));
+    auto d=makeSession();
+    d.binding={"Windows Audio","Fixture Capture","Verified WASAPI fixture","3","3",48000.,480,
+        device.getInputChannelNames(),device.getOutputChannelNames()};
+    d.request.maxFrames=480;d.request.sources.clear();d.rackBypassed.clear();
+    const R::Device identity{"Windows Audio","Fixture Capture","Verified WASAPI fixture"};
+    const std::array<R::Pin,2> inputPins{{{0,0,"Capture L"},{1,1,"Capture R"}}};
+    const R::Inventory live{identity,pins.epoch,inputPins,true};
+    const std::uint64_t port=9007199254740993ULL;
+    assert(d.logicalInputs.add(port,"Vocal",R::Format::mono));
+    assert(d.logicalInputs.bind(port,{identity,0,-1,"Capture L",""},live,pins.epoch));
+    assert(d.logicalInputs.assign(1,port)&&d.logicalInputs.assign(2,port));
+    MixerSessionDocument decoded;
+    assert(Codec::decode(Codec::encode(d),decoded));
+    juce::AudioPluginFormatManager formats;
+    std::shared_ptr<DynamicChannelFxLeaseBank> bank;
+    assert(NativeMixerSessionFxRestore::prepare(decoded,{},formats,48000.,480,pins.epoch,
+        mixer.nativeGraphRevisionForRestore(),bank).isEmpty());
+    assert(mixer.restoreNativeMixerSession(decoded,std::move(bank),pins,true).isEmpty());
+    assert(mixer.hasVerifiedNativeSources());
+    std::array<float,480> inputL,inputR,outL{},outR{};
+    inputL.fill(.15f);inputR.fill(-.15f);
+    const float* in[]={inputL.data(),inputR.data()};
+    float* out[]={outL.data(),outR.data()};
+    auto render=[&](){
+        for(int i=0;i<2;++i)assert(mixer.process(in,2,out,2,480,1.f,false,
+            nullptr,nullptr,false,nullptr,nullptr,true));
+    };
+    render();
+    assert(outL.back()>.01f&&outR.back()>.01f);
+    auto state=mixer.nativeBusStatus();
+    std::uint64_t revision=0,roster=0;
+    assert(parseDecimal(state.getProperty("graphRevision",{}),revision));
+    assert(parseDecimal(state.getProperty("rosterRevision",{}),roster));
+    int publications=0;
+    const auto publish=[&]{++publications;};
+    P::Edit edit;edit.port=port;edit.operation=P::Operation::rename;edit.name="Studio Vocal";
+    const auto logical=mixer.logicalInputRevision();
+    auto changed=mixer.editNativeLogicalInput(pins.epoch,revision,roster,logical,edit,d.binding,pins,publish);
+    assert(changed.accepted&&changed.pcmRevision==revision&&publications==0);
+    assert(mixer.logicalInputRevision()==logical+1);
+    edit.operation=P::Operation::bind;edit.binding={identity,1,-1,"Capture R",""};
+    assert(!mixer.editNativeLogicalInput(pins.epoch,revision,roster,logical,edit,d.binding,pins,publish).accepted);
+    assert(publications==0);
+    changed=mixer.editNativeLogicalInput(pins.epoch,revision,roster,logical+1,edit,d.binding,pins,publish);
+    assert(changed.accepted&&changed.pcmRevision==revision+1&&publications==1);
+    render();
+    assert(outL.back()<-.01f&&outR.back()<-.01f);
+    state=mixer.nativeBusStatus();
+    const auto data=state.getProperty("logicalInputRegistry",{});
+    const auto refs=data.getProperty("references",{});
+    assert(refs.getArray()->size()==2);
+    for(const auto& ref:*refs.getArray()){
+        assert(ref.getProperty("portId","").toString()==decimal(port));
+        assert(ref.getProperty("state","").toString()=="RESOLVED");
+    }
+    MixerSessionDocument captured;std::vector<BinaryState> blobs;
+    assert(mixer.captureNativeMixerSession(captured,blobs).isEmpty());
+    captured.id=d.id;captured.savedMs=d.savedMs;captured.binding=d.binding;
+    assert(Codec::decode(Codec::encode(captured),decoded));
+    assert(decoded.request.sources.empty()&&decoded.logicalInputs.assignedPort(1)==port&&
+           decoded.logicalInputs.assignedPort(2)==port);
+    const auto* saved=decoded.logicalInputs.find(port);
+    assert(saved&&saved->name=="Studio Vocal"&&saved->binding&&saved->binding->left==1);
+    edit.operation=P::Operation::unbind;
+    changed=mixer.editNativeLogicalInput(pins.epoch,changed.pcmRevision,roster,
+        mixer.logicalInputRevision(),edit,d.binding,pins,publish);
+    assert(changed.accepted&&publications==2&&!mixer.hasVerifiedNativeSources());
+    render();
+    assert(std::abs(outL.back())<1.e-6f&&std::abs(outR.back())<1.e-6f);
+    state=mixer.nativeBusStatus();
+    const auto missing=state.getProperty("logicalInputRegistry",{}).getProperty("references",{});
+    assert(missing.getArray()->size()==2);
+    for(const auto& ref:*missing.getArray())assert(ref.getProperty("state","").toString()=="NEEDS_REMAP");
+}
+static void checkLogicalOutputSession(){
+    using R=armix::device::LogicalOutputRegistry;
+    auto d=makeSession();d.binding.outputMask="ff";
+    d.binding.outputNames={"Main L","Main R","Amp L","Amp R","Spare L","Spare R","Direct L","Direct R"};
+    d.outputs={8,0,1,-1,-1,false};
+    const R::Device device{"ASIO","Verified ASIO"};
+    const std::array<R::Pin,8> pins{{{0,0,"Main L"},{1,1,"Main R"},{2,2,"Amp L"},{3,3,"Amp R"},
+        {4,4,"Spare L"},{5,5,"Spare R"},{6,6,"Direct L"},{7,7,"Direct R"}}};
+    const R::Inventory live{device,7,pins,{},true};
+    const std::uint64_t port=9007199254740993ULL;
+    assert(d.logicalOutputs.add(port,"Stage amp")&&d.logicalOutputs.add(20,"Studio main"));
+    assert(d.logicalOutputs.bind(port,{device,2,3,"Amp L","Amp R"},live,7,true));
+    assert(d.logicalOutputs.bind(20,{device,0,1,"Main L","Main R"},live,7,true));
+    assert(d.logicalOutputs.assign(16,port,R::Role::external)&&d.logicalOutputs.assign(12,port,R::Role::external));
+    assert(d.logicalOutputs.assign(15,20,R::Role::main));
+    d.externalOutputs.push_back({{11},6,7,"Direct L","Direct R","Verified ASIO"});
+    const auto encoded=Codec::encode(d);
+    MixerSessionDocument loaded;
+    assert(encoded.contains("arsonmix.mixer-session.v3")&&Codec::decode(encoded,loaded));
+    assert(loaded.logicalOutputs.assignedPort(16)==port&&loaded.externalOutputs.size()==1);
+    assert(Codec::encode(loaded)==encoded);
+    assert(LogicalOutputProjection::prepare(loaded,live)&&loaded.externalOutputs.size()==3);
+    assert(loaded.externalOutputs[1].left==2&&loaded.externalOutputs[2].left==2);
+    assert(Codec::encode(loaded)==encoded);
+    LogicalOutputProjection::strip(loaded);
+    auto other=live;other.device.playback="Other";
+    assert(!LogicalOutputProjection::prepare(loaded,other)&&loaded.externalOutputs.size()==1);
+    assert(loaded.logicalOutputs.clear(15));
+    assert(LogicalOutputProjection::prepare(loaded,other)&&loaded.externalOutputs.size()==1);
+    assert(loaded.logicalOutputs.assignedPort(16)==port);
+    auto missing=pins;missing[2].name="Renamed";
+    auto unavailable=live;unavailable.pins=missing;
+    assert(LogicalOutputProjection::prepare(loaded,unavailable)&&loaded.externalOutputs.size()==1);
+    auto bad=juce::JSON::parse(encoded);
+    bad.getDynamicObject()->setProperty("schema","arsonmix.mixer-session.v2");
+    assert(!Codec::decode(juce::JSON::toString(bad,false),loaded));
+    bad=juce::JSON::parse(encoded);
+    auto refs=bad.getProperty("logicalOutputs",{}).getProperty("references",{});
+    refs.getArray()->add((*refs.getArray())[0]);
+    assert(!Codec::decode(juce::JSON::toString(bad,false),loaded));
+    bad=juce::JSON::parse(encoded);
+    refs=bad.getProperty("logicalOutputs",{}).getProperty("references",{});
+    (*refs.getArray())[0].getDynamicObject()->setProperty("role","MAIN");
+    assert(!Codec::decode(juce::JSON::toString(bad,false),loaded));
+    bad=juce::JSON::parse(encoded);
+    refs=bad.getProperty("logicalOutputs",{}).getProperty("references",{});
+    (*refs.getArray())[0].getDynamicObject()->setProperty("channelId","11");
+    assert(!Codec::decode(juce::JSON::toString(bad,false),loaded));
+    const auto dir=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("ArSonMixLogicalOutputSession","",false);
+    assert(dir.createDirectory().wasOk());
+    const auto file=dir.getChildFile("output.smix");
+    assert(NativeMixerSessionStore::writeFile(file,d,{}).isEmpty());
+    std::vector<BinaryState> states;
+    assert(NativeMixerSessionStore::readFile(file,loaded,states).isEmpty());
+    assert(Codec::encode(loaded)==encoded&&states.empty());
+    assert(dir.deleteRecursively());
+}
+static void verifyLogicalOutputNativePcm(){
+    using R=armix::device::LogicalOutputRegistry;
+    using P=LogicalOutputProjection;
+    FixtureDevice device(true);
+    LiveDryRoutingLab mixer;mixer.prepareDevice(&device);
+    armix::device::JuceActivePortSnapshot pins;
+    armix::device::JuceActivePortSnapshot::Fault fault{};
+    assert(armix::device::JuceActivePortSnapshot::capture(&device,mixer.epoch(),pins,fault));
+    auto d=makeSession();
+    d.binding={"ASIO","Verified ASIO","Verified ASIO","3","3f",48000.,480,
+        device.getInputChannelNames(),device.getOutputChannelNames()};
+    d.outputs={6,0,1,-1,-1,false};d.request.maxFrames=480;d.rackBypassed.clear();
+    const std::uint64_t port=9007199254740993ULL;
+    assert(d.logicalOutputs.add(port,"Stage amp"));
+    assert(d.logicalOutputs.restoreIntent(port,{{"ASIO","Verified ASIO"},2,3,"Amp L","Amp R"}));
+    assert(d.logicalOutputs.assign(16,port,R::Role::external));
+    MixerSessionDocument decoded;assert(Codec::decode(Codec::encode(d),decoded));
+    juce::AudioPluginFormatManager formats;std::shared_ptr<DynamicChannelFxLeaseBank> bank;
+    assert(NativeMixerSessionFxRestore::prepare(decoded,{},formats,48000.,480,pins.epoch,
+        mixer.nativeGraphRevisionForRestore(),bank).isEmpty());
+    assert(mixer.restoreNativeMixerSession(decoded,std::move(bank),pins,true).isEmpty());
+    std::array<float,480> inputL{},inputR{};inputL.fill(.15f);
+    const float* in[]={inputL.data(),inputR.data()};
+    std::array<std::array<float,480>,6> buffers{};std::array<float*,6> out{};
+    for(std::size_t i=0;i<out.size();++i)out[i]=buffers[i].data();
+    auto render=[&](){for(int i=0;i<2;++i)assert(mixer.process(in,2,out.data(),6,480,1.f,false,
+        nullptr,nullptr,false,nullptr,nullptr,true));};
+    render();assert(buffers[2].back()>.01f&&buffers[3].back()>.01f);
+    auto state=mixer.nativeBusStatus();std::uint64_t revision=0,roster=0;
+    assert(parseDecimal(state.getProperty("graphRevision",{}),revision));
+    assert(parseDecimal(state.getProperty("rosterRevision",{}),roster));
+    const auto logical=mixer.logicalOutputRevision();
+    P::Edit e;e.port=port;e.operation=P::Operation::bind;e.confirmed=true;
+    e.binding={{"ASIO","Verified ASIO"},4,5,"Spare L","Spare R"};
+    assert(!mixer.editNativeLogicalOutput(pins.epoch,revision,roster,logical,e,pins,false).accepted);
+    auto changed=mixer.editNativeLogicalOutput(pins.epoch,revision,roster,logical,e,pins,true);
+    assert(changed.accepted&&changed.pcmRevision==revision+1);
+    render();
+    assert(std::abs(buffers[2].back())<1.e-6f&&std::abs(buffers[3].back())<1.e-6f);
+    assert(buffers[4].back()>.01f&&buffers[5].back()>.01f);
+    assert(!mixer.editNativeLogicalOutput(pins.epoch,changed.pcmRevision,roster,logical,e,pins,true).accepted);
+    MixerSessionDocument saved;std::vector<BinaryState> blobs;
+    assert(mixer.captureNativeMixerSession(saved,blobs).isEmpty());
+    saved.id=d.id;saved.savedMs=d.savedMs;saved.binding=d.binding;
+    assert(Codec::decode(Codec::encode(saved),decoded)&&decoded.externalOutputs.empty());
+    assert(decoded.logicalOutputs.find(port)->binding->left==4);
+    e.operation=P::Operation::unbind;
+    changed=mixer.editNativeLogicalOutput(pins.epoch,changed.pcmRevision,roster,
+        mixer.logicalOutputRevision(),e,pins,true);
+    assert(changed.accepted);render();
+    assert(std::abs(buffers[4].back())<1.e-6f&&std::abs(buffers[5].back())<1.e-6f);
+    state=mixer.nativeBusStatus();
+    const auto refs=state.getProperty("logicalOutputRegistry",{}).getProperty("references",{});
+    assert(refs.getArray()->size()==1&&(*refs.getArray())[0].getProperty("state","").toString()=="NEEDS_REMAP");
+}
+static void verifyIoDefaults(){
+    using namespace armix::session;
+    using I=IoPortLayout::I;using O=IoPortLayout::O;
+    const auto dir=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("ArSonMixIoDefaults","",false);
+    assert(dir.createDirectory().wasOk());
+    I inputs;O outputs;
+    const std::uint64_t id=9007199254740993ULL;
+    assert(inputs.add(id,"Vocal",I::Format::mono));
+    assert(inputs.restoreIntent(id,{{"ASIO","Verified ASIO","Verified ASIO"},0,-1,"Capture L",""}));
+    assert(inputs.assign(1,id));
+    assert(outputs.add(20,"Stage amp")&&outputs.restoreIntent(20,{{"ASIO","Verified ASIO"},2,3,"Amp L","Amp R"}));
+    assert(outputs.assign(16,20,O::Role::external));
+    auto layout=IoPortLayout::capture(inputs,outputs);
+    assert(layout.definitionsOnly()&&layout.inputs.find(id)&&layout.outputs.find(20));
+    NativeIoDefaults store(dir);
+    assert(store.revision()==0&&!store.readOnly()&&store.layout().empty());
+    const auto saveError=store.save(0,layout);
+    if(saveError.isNotEmpty())std::cerr<<"I/O defaults first save: "<<saveError.toStdString()<<'\n';
+    assert(saveError.isEmpty()&&store.revision()==1);
+    const auto file=dir.getChildFile("io-defaults.v1.json");
+    const auto canonical=file.loadFileAsString();
+    const auto parsed=juce::JSON::parse(canonical);
+    assert(parsed.isObject()&&juce::JSON::toString(parsed,false)==canonical);
+    assert(!store.save(1,IoPortLayout{inputs,outputs}).isEmpty());
+    assert(store.revision()==1&&file.loadFileAsString()==canonical);
+    // Canonical unknown fields cannot smuggle routing or ARM into a default.
+    auto tampered=juce::JSON::parse(canonical);
+    tampered.getDynamicObject()->setProperty("armed",true);
+    assert(file.replaceWithText(juce::JSON::toString(tampered,false),false,false,nullptr));
+    NativeIoDefaults rejected(dir);
+    assert(rejected.readOnly()&&rejected.save(0,layout).isNotEmpty());
+    assert(file.loadFileAsString()==juce::JSON::toString(tampered,false));
+    assert(file.replaceWithText(canonical,false,false,nullptr));
+    assert(store.save(0,{}).isNotEmpty()&&store.revision()==1);
+    NativeIoDefaults reopened(dir);
+    assert(!reopened.readOnly()&&reopened.revision()==1&&reopened.layout().inputs.find(id));
+    assert(reopened.layout().definitionsOnly());
+    FixtureDevice device(true);LiveDryRoutingLab mixer;mixer.prepareDevice(&device);
+    juce::AudioPluginFormatManager formats;
+    assert(mixer.startUnpatchedSession(true,false,0,formats,48000.,480).isEmpty());
+    assert(mixer.admitChannelIdFromAcceptedM4(0,480,true,{},true));
+    armix::device::JuceActivePortSnapshot pins;
+    armix::device::JuceActivePortSnapshot::Fault fault{};
+    assert(armix::device::JuceActivePortSnapshot::capture(&device,mixer.epoch(),pins,fault));
+    HardwareBinding binding{"ASIO","Verified ASIO","Verified ASIO","3","3f",48000.,480,
+        device.getInputChannelNames(),device.getOutputChannelNames()};
+    auto wrong=binding;wrong.capture="Other capture";
+    auto qualified=layout.qualify(wrong,pins);
+    assert(!qualified.inputs.find(id)->binding&&qualified.outputs.find(20)->binding);
+    auto wrongPins=pins;wrongPins.outputNames.set(2,"Renamed");
+    qualified=layout.qualify(binding,wrongPins);
+    assert(qualified.inputs.find(id)->binding&&!qualified.outputs.find(20)->binding);
+    assert(!mixer.installIoPortDefaults(layout,binding,pins,false));
+    assert(mixer.installIoPortDefaults(layout,binding,pins,true));
+    assert(!mixer.installIoPortDefaults(layout,binding,pins,true));
+    assert(!mixer.hasVerifiedNativeSources());
+    const auto status=mixer.nativeBusStatus();
+    assert(status.getProperty("logicalInputRegistry",{}).getProperty("references",{}).getArray()->isEmpty());
+    assert(status.getProperty("logicalOutputRegistry",{}).getProperty("references",{}).getArray()->isEmpty());
+    assert(reopened.save(1,{}).isEmpty()&&reopened.revision()==2);
+    assert(file.appendText("damaged"));
+    NativeIoDefaults damaged(dir);
+    assert(damaged.readOnly()&&damaged.save(0,layout).isNotEmpty());
+    assert(file.loadFileAsString().endsWith("damaged"));
+    assert(dir.deleteRecursively());
+}
 int main(){
+    verifyIoDefaults();
+    checkLogicalOutputSession();
+    verifyLogicalOutputNativePcm();
+    checkLogicalInputSession();
+    verifyLogicalInputNativePcm();
     verifyChannelInputGainSessionRoundtrip();
     verifyDurableNativeFxPowerIdentity();
     verifyHotkeyDocumentIdentityAndMigration();
@@ -1712,6 +2254,32 @@ int main(){
     newOutputs.playback="Different playback endpoint";
     assert(!MixerDeviceBindingPolicy::proposedOutputs(main34,newOutputs,4,
         BindingMode::verifiedDeviceApply).valid());
+
+    // Dedicated single-ASIO 2x2 -> 8x8: expanding enabled channels
+    // preserves the microphone and MAIN, then VC can be patched independently.
+    // This is synthetic vendor-neutral evidence, not a PS22 hardware claim.
+    auto expanded=d;
+    expanded.binding.inputNames={"MIC 1","MIC 2","VC 1","VC 2",
+        "VC 3","VC 4","Loopback 1","Loopback 2"};
+    expanded.binding.outputNames={"HP 1","HP 2","VC OUT 1","VC OUT 2",
+        "VC OUT 3","VC OUT 4","Other 1","Other 2"};
+    auto full=expanded.binding;
+    full.inputMask="ff";full.outputMask="ff";
+    const auto fullPair=MixerDeviceBindingPolicy::proposedOutputs(
+        expanded,full,8,BindingMode::verifiedDeviceApply);
+    assert(fullPair.valid() && fullPair.mainL==0 && fullPair.mainR==1);
+    assert(MixerDeviceBindingPolicy::apply(expanded,full,fullPair,8,
+        BindingMode::verifiedDeviceApply).isEmpty());
+    assert(expanded.request.physicalInputs==8);
+    assert(expanded.request.sources.front().inputL==0);
+    assert(expanded.roster.revision()==d.roster.revision());
+    assert(expanded.binding.inputMask=="ff" && expanded.binding.outputMask=="ff");
+    const std::array<int,8> fullPins{{0,1,2,3,4,5,6,7}};
+    StoredExternalOutput vc{{16},2,3,"VC OUT 1","VC OUT 2",full.playback};
+    assert(MixerDeviceBindingPolicy::canRestoreExternalOutput(
+        vc,full.playback,fullPins,full.outputNames,fullPair));
+    assert(!MixerDeviceBindingPolicy::canRestoreExternalOutput(
+        vc,full.playback,fullPins,juce::StringArray{},fullPair));
 
     auto reordered=d;
     reordered.binding.inputNames={"In 1","In 2"};
@@ -1961,6 +2529,17 @@ int main(){
            rejectedStates.size()==1 && rejectedStates[0].bytes==binary.bytes);
     const auto head=studio.getChildFile("MixerSession").getChildFile("HEAD");
     const auto secondId=head.loadFileAsString().trim();
+    // Missing HEAD must not be mistaken for a fresh mixer or overwrite
+    // PREVIOUS. Verify actual recovery and recreate the second checkpoint.
+    assert(head.deleteFile());
+    assert(store.exists());
+    assert(store.commit(d,{binary}).isNotEmpty());
+    assert(!head.exists());
+    checkpoint=Recovery::read(store,false,loaded,readback,failedRetainedRead);
+    assert(checkpoint.source==Recovery::Source::previous&&checkpoint.error.isEmpty());
+    assert(head.loadFileAsString().trim()==firstId);
+    assert(head.replaceWithText(secondId+"\n")); // restore original test pointer
+    assert(store.load(loaded,readback).isEmpty()&&loaded.masterGain==.35f);
     const auto vendor=studio.getChildFile("MixerSession").getChildFile("versions")
         .getChildFile(secondId).getChildFile("blobs")
         .getChildFile(binary.sha256+".bin");
@@ -1987,6 +2566,20 @@ int main(){
     assert(rejectedRecovery.masterGain==.12f &&
            rejectedStates.size()==1 && rejectedStates[0].bytes==binary.bytes);
     assert(head.loadFileAsString().trim()==firstId);
+    // Preserve complete damaged journal, not just HEAD, and unrelated data.
+    const auto keep=studio.getChildFile("unrelated-user-preset");
+    assert(keep.replaceWithText("preserve"));
+    juce::File archived;
+    assert(store.quarantineForStartupRecovery(archived).isEmpty());
+    assert(archived.isDirectory()&&!store.exists());
+    assert(archived.getChildFile("HEAD").loadFileAsString().trim()==firstId);
+    assert(archived.getChildFile("PREVIOUS").existsAsFile());
+    assert(archived.getChildFile("versions").getChildFile(firstId).getChildFile("blobs")
+        .getChildFile(binary.sha256+".bin").existsAsFile());
+    assert(keep.loadFileAsString()=="preserve");
+    juce::File again;
+    assert(store.quarantineForStartupRecovery(again).isEmpty()&&again==juce::File{});
+    assert(archived.isDirectory());
     assert(base.deleteRecursively());
     std::cout<<"PASS: dynamic ChannelId/EdgeId graph, persistent vendor blobs and"
                 " explicit verified HEAD recovery\n";

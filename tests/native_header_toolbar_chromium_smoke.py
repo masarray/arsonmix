@@ -34,8 +34,12 @@ def main():
             page.goto((dst / "index.html").as_uri())
             page.wait_for_function("""()=>document.documentElement.classList.contains('armix-native-desktop') &&
                 document.querySelectorAll('.command-bar .mixer-file-tool').length===2 &&
-                document.querySelectorAll('.command-bar .armix-toolbar-divider').length===4 &&
+                document.querySelectorAll('.command-bar .armix-toolbar-divider').length===3 &&
+                !document.querySelector('.command-bar [data-native-monitor]') &&
+                !!document.querySelector('[data-native-emergency-output]') &&
                 !!document.getElementById('playerToggle')""")
+            assert page.locator(".command-bar").get_by_text("Mute Output", exact=True).count() == 0
+            assert page.locator(".command-bar").get_by_text("Resume Output", exact=True).count() == 0
             # UX-1 visual regression: evaluate the ACTUAL native assembled
             # /preview/ CSSOM, not source-only checks against retired HTML.
             # Real Chromium must resolve the clock/CPU/RT/RAM SVG masks and

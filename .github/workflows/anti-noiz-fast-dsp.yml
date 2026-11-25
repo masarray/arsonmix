@@ -1,0 +1,65 @@
+name: Anti Noiz standalone DSP (fast)
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - 'engine/builtin_fx/anti_noiz/**'
+      - 'tests/anti_noiz_*.cpp'
+      - 'tools/anti-noiz/**'
+      - '.github/workflows/anti-noiz-fast-dsp.yml'
+
+permissions:
+  contents: read
+concurrency:
+  group: anti-noiz-fast-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  standalone:
+    name: Anti Noiz ${{ matrix.lane }} (no JUCE or installer)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lane: GCC Release
+            compiler: g++
+            config: Release
+            sanitizers: 'OFF'
+            benchmark: 'ON'
+          - lane: Clang ASan UBSan
+            compiler: clang++
+            config: RelWithDebInfo
+            sanitizers: 'ON'
+            benchmark: 'OFF'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Configure isolated standard C++ DSP
+        run: >
+          cmake -S tools/anti-noiz -B "$RUNNER_TEMP/anti-noiz"
+          -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
+          -DCMAKE_BUILD_TYPE=${{ matrix.config }}
+          -DANTI_NOIZ_SANITIZERS=${{ matrix.sanitizers }}
+          -DANTI_NOIZ_BENCHMARK=${{ matrix.benchmark }}
+      - name: Compile and run regression
+        run: |
+          cmake --build "$RUNNER_TEMP/anti-noiz" --parallel 2
+          ctest --test-dir "$RUNNER_TEMP/anti-noiz" --output-on-failure
+      - name: Record exploratory throughput (not a performance gate)
+        if: matrix.benchmark == 'ON'
+        run: '"$RUNNER_TEMP/anti-noiz/anti_noiz_bench"'
+
+  web-contract:
+    name: Anti Noiz Web UX contract (Node, no Windows)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - run: node tools/anti-noiz/web/contract.test.mjs

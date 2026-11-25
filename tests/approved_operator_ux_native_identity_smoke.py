@@ -43,11 +43,21 @@ def main():
         assert ready and ready["viewportWidth"]==1366 and ready["viewportHeight"]==768
         # No unimplemented native functionality advertised as a working action.
         for id in ("saveScene","recallScene","copy","paste","group","ungroup",
-                   "preview","clearCue","reset","sofToggle","sofTarget"):
+                   "preview","clearCue","reset","sofTarget"):
             el=page.locator("#"+id)
             assert el.is_hidden() and el.is_disabled(),id
+        # Operator requested a discoverable SOF header. Before the native
+        # SEND capability set is admitted, it must remain inert, not hidden.
+        sof=page.locator("#sofToggle")
+        assert sof.is_visible() and sof.is_disabled()
+        sof.evaluate("e=>e.click()")
+        assert sof.get_attribute("aria-pressed")=="false"
+        assert page.evaluate("()=>window.__nativeIntents.length")==0
         assert page.locator("#pluginsButton").is_visible()
         emit(page,"arMixConsoleSnapshot",state)
+        # This identity fixture deliberately lacks SET_SEND_ENABLED.
+        # A partial native capability set must not activate SOF.
+        assert sof.is_visible() and sof.is_disabled()
         strip=page.locator('#tracks .strip[data-id="1"]')
         strip.wait_for(state="visible")
         # Native DAW convention: one click selects, double-click opens editor.

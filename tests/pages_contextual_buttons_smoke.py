@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess,sys,tempfile
 from playwright.sync_api import sync_playwright
 from approved_publication_fixture import published_console
+from operator_wire_menu import open_wire_config
 
 ROOT=Path(__file__).resolve().parents[1]
 OWNER='mixer-contextual-buttons.css'
@@ -84,7 +85,8 @@ def check_page(browser,path,label):
     source=page.locator('#tracks .strip[data-id="1"] .wire-node-out')
     source.click()
     # V50: MAIN is located inside modeless WIRE Configuration.
-    page.locator('#wireConfigToggle').click()
+    assert not page.locator('#wireConfigToggle').is_visible(),(label,'obsolete toolbar control visible')
+    open_wire_config(page)
     assert page.locator('#wireConfigWindow').is_visible(),(label,'WIRE configuration did not open')
     master=page.locator('#wireConfigWindow #wireMaster')
     on=css_for(master)

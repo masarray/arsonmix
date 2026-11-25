@@ -33,7 +33,7 @@ test('per-user Inno Setup upgrades the same app and retains private Studio data'
   assert.match(iss, /Source: "\.\.\\docs\\THIRD_PARTY_8D_SONKU_HRTF\.md"; Flags: dontcopy/);
 });
 
-test('interactive Setup automatically checks for signed VB-CABLE while mixer launch stays independent', () => {
+test('interactive Setup cannot be held by optional signed VB-CABLE, which remains an opt-in action', () => {
   const m = JSON.parse(read('config/vbcable-official-package.json'));
   const pack = read('scripts/prepare_vbcable_package.ps1');
   const bootstrap = read('installer/ArSonMixVBCableInstall.ps1');
@@ -47,12 +47,13 @@ test('interactive Setup automatically checks for signed VB-CABLE while mixer lau
   assert.match(iss, /VBCABLE_Driver_Pack45\.zip/);
   const run = iss.slice(iss.indexOf('[Run]'), iss.indexOf('[Code]'));
   const entries = run.split('\n').filter(line => line.startsWith('Filename:'));
-  assert.equal(entries.length, 3);
+  assert.equal(entries.length, 2);
   assert.match(entries[0], /ArSonMixWebView2Prerequisite\.ps1/);
   assert.match(entries[0], /Flags: runasoriginaluser skipifsilent waituntilterminated runhidden/);
-  assert.match(entries[1], /ArSonMixVBCableInstall\.ps1/);
-  assert.match(entries[1], /Flags: runasoriginaluser skipifsilent waituntilterminated runhidden/);
-  assert.match(entries[2], /^Filename: "\{app\}\\ArSonMix\.exe"/);
+  assert.match(entries[1], /^Filename: "\{app\}\\ArSonMix\.exe"/);
+  assert.doesNotMatch(run, /ArSonMixVBCableInstall\.ps1/);
+  assert.match(iss, /Install optional VB-CABLE \(Administrator approval required\)/);
+  assert.match(iss, /-File ""\{app\}\\ThirdParty\\VB-Audio\\ArSonMixVBCableInstall\.ps1""/);
   for (const entry of entries) assert.doesNotMatch(entry, /;\s*(Check|Tasks):/i);
   assert.match(iss, /^RestartIfNeededByRun=no$/m);
   assert.doesNotMatch(iss + bootstrap, /VBCableRestart|RestartMarker|CanLaunchMixer|function NeedRestart/);
@@ -97,6 +98,9 @@ test('interactive Setup automatically checks for signed VB-CABLE while mixer lau
             bootstrap.indexOf('Start-Process -FilePath $setups[0].FullName'),
             'pending reboot must be checked before launching a setup that can remove installed cable');
   assert.match(bootstrap, /-Verb RunAs/);
+  assert.match(bootstrap, /WaitForExit\(180000\)/);
+  assert.match(bootstrap, /\$vendorStillRunning/);
+  assert.doesNotMatch(bootstrap, /-Verb RunAs -Wait/);
   assert.match(bootstrap, /PENDING_REBOOT/);
   assert.doesNotMatch(bootstrap + iss, /certutil\s+-addstore|Add-TrustedPublisher\s*\(|SetDefaultEndpoint\s*\(|pnputil\s+\/delete-driver|Uninstall-PnpDevice\s|LocalMachine\\TrustedPublisher/i);
   assert.match(notice, /donationware/i);
@@ -115,6 +119,9 @@ test('WebView2 GUI prerequisite runs only on interactive setup from Microsoft-si
   assert.match(helper, /Microsoft-Signer/);
   assert.match(helper, /Microsoft-Uri \$response\.ResponseUri/);
   assert.match(helper, /-ArgumentList @\('\/silent','\/install'\)/);
+  assert.match(helper, /WaitForExit\(120000\)/);
+  assert.match(helper, /\$bootstrapperStillRunning/);
+  assert.doesNotMatch(helper, /-ArgumentList @\('\/silent','\/install'\) -Wait/);
   assert.match(helper, /ARSONMIX_WEBVIEW2_ALREADY_PRESENT/);
   assert.match(helper, /ARSONMIX_WEBVIEW2_INSTALLED/);
   assert.match(helper, /NEEDS_ATTENTION/);
@@ -481,8 +488,11 @@ test('acknowledged one-click upgrade is deferred until the exact candidate is ap
 
 test('GUI-only updater probe does not strand pre-window WebView2 startup failures', () => {
   const native = read('src/Main.cpp');
-  const startup = native.slice(native.indexOf('void initialise (const juce::String&) override'),
-                               native.indexOf('void shutdown() override', native.indexOf('void initialise (const juce::String&) override')));
+  const app=native.indexOf('class ConsoleApp final');
+  const init=native.indexOf('void initialise (const juce::String& commandLine) override',app);
+  const shutdown=native.indexOf('void shutdown() override',init);
+  assert.ok(app>=0&&init>app&&shutdown>init);
+  const startup=native.slice(init,shutdown);
   const failures = [
     'Cannot create the browser-cache folder:',
     'The native browser backend could not be initialized on this machine.'
@@ -506,7 +516,7 @@ test('silent post-install GUI probe cannot automatically arm ASIO or save a user
   assert.match(main.slice(guard,engine), /return;\s*\}\s*auto saved/);
   assert.match(main, /if \(!updaterProbeMode_ &&\s*\(static_cast<bool>\(lab\.getProperty/);
   assert.match(main, /if \(!isAutoUpdateHealthProbe\(\)\)\s*launchSmartUpdater \(false\)/);
-  assert.match(main, /if \(!innoIsClosing && !isAutoUpdateHealthProbe\(\) &&/);
+  assert.match(main, /if \(!recoveryOnly_ && !innoIsClosing && !isAutoUpdateHealthProbe\(\) &&/);
   assert.match(main, /updateProbeCompleteTick_ >= 3500u/);
   assert.match(updater, /GUI_READY_NO_AUDIO/);
   assert.match(updater, /PREVIOUS_EXE_RETAINED_FOR_NEXT_MANUAL_LAUNCH/);
@@ -561,4 +571,24 @@ test('P0 Windows 10 fresh install needs no VC redistributable and reports missin
   assert.match(pe,/vcruntime/);
   assert.match(pe,/msvcp/);
   assert.match(pe,/WEBVIEW2_RUNTIME_REQUIRED_SEPARATELY_NOT_PROVEN/);
+});
+
+
+test("cold-start mixer archive requires confirmation and bypasses normal startup and updater",()=>{
+  const main=read("src/Main.cpp"),store=read("src/NativeMixerSessionStore.h"),iss=read("installer/ArSonMix.iss");
+  const at=main.indexOf('if(commandLine.trim()=="--archive-mixer-session" && !isAutoUpdateHealthProbe())');
+  const end=main.indexOf('// Paint the approved dark native splash',at);
+  assert.ok(at>0&&end>at);
+  const recovery=main.slice(at,end);
+  assert.match(recovery,/recoveryOnly_=true/);
+  assert.match(recovery,/\.withButton\("Cancel"\)\.withButton\("Archive session"\)/);
+  assert.match(recovery,/if\(choice!=1\)\{systemRequestedQuit\(\);return;\}/);
+  assert.match(recovery,/quarantineForStartupRecovery\(archived\)/);
+  assert.match(recovery,/\}\);\s*return;\s*\}/);
+  assert.doesNotMatch(recovery,/engine_\.start|startTimer|make_unique<ConsoleWindow>|launchSmartUpdater/);
+  const method=store.slice(store.indexOf("juce::String quarantineForStartupRecovery"),store.indexOf("static constexpr juce::int64 maxJson"));
+  assert.match(method,/root_\.getSiblingFile\("MixerSession-Recovery-"\+id\)/);
+  assert.match(method,/!root_\.moveFileTo\(target\)/);
+  assert.doesNotMatch(method,/deleteRecursively|deleteFile|commit\(/);
+  assert.match(iss,/Parameters: "--archive-mixer-session"/);
 });

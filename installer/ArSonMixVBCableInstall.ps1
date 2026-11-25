@@ -38,6 +38,7 @@ $pending=$false
 $driverAttemptUncertain=$false
 $unreadablePreviousStatus=$false
 $vendorHandoffAttempted=$false
+$vendorStillRunning=$false
 try {
   # A driver already queued for reboot must NOT be run again: the VB-Audio
   # setup utility can switch into REMOVE mode on a second invocation.
@@ -135,7 +136,15 @@ try {
   $vendorHandoffAttempted=$true
   # Official reference manual requires the vendor GUI, admin and reboot.
   # No undocumented silent switches and no TrustedPublisher modification.
-  $process=Start-Process -FilePath $setups[0].FullName -WorkingDirectory $setups[0].DirectoryName -Verb RunAs -Wait -PassThru
+  # An explicit Start Menu action owns this vendor GUI, never Inno [Run].
+  # Wait for the vendor process only, with a bounded limit: its Install Driver
+  # button and any spawned descendants cannot freeze the ArSonMix setup.
+  # Do not terminate a pending driver transaction or delete files it uses.
+  $process=Start-Process -FilePath $setups[0].FullName -WorkingDirectory $setups[0].DirectoryName -Verb RunAs -PassThru
+  if(-not $process.WaitForExit(180000)){
+    $vendorStillRunning=$true
+    throw "VB-CABLE installer remains open after the wait limit; its result is uncertain. Complete or close it, then inspect Device Manager"
+  }
   if($process.ExitCode -ne 0){throw ("Vendor installer returned "+$process.ExitCode)}
   Record "PENDING_REBOOT" "Reboot Windows, then verify CABLE Output and physical speaker"
   exit 0
@@ -151,5 +160,5 @@ try {
   Write-Warning ("Optional VB-Audio driver step incomplete: "+$_.Exception.Message)
   exit 2
 } finally {
-  if(Test-Path -LiteralPath $dir){Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue}
+  if(-not $vendorStillRunning -and (Test-Path -LiteralPath $dir)){Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue}
 }

@@ -5,6 +5,8 @@ on:
       - 'src/Main.cpp'
       - 'src/NativeOwnedFloatingWindow.h'
       - 'src/NativeFxWin32Owner.h'
+      - 'src/NativeFxWin32Owner.cpp'
+      - 'tests/native_fx_win32_sdk_order_test.cpp'
       - 'tests/native_fx_win32_owner_test.cpp'
       - 'tests/native_fx_window_lifecycle_contract_test.py'
       - 'tests/native_fx_window_owner/**'
@@ -27,7 +29,7 @@ jobs:
       - name: Fail closed on all three native editor lifetime paths
         shell: pwsh
         run: python -m unittest discover -s tests -p native_fx_window_lifecycle_contract_test.py -v
-      - name: Configure and compile only Win32 HWND host test (no JUCE or ASIO)
+      - name: Compile Win32 HWND host and both real SDK include orders (no JUCE or ASIO)
         shell: pwsh
         run: |
           cmake -S tests/native_fx_window_owner -B build-owned-fx -G "Visual Studio 17 2022" -A x64

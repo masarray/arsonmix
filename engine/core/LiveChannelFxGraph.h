@@ -4,6 +4,9 @@
 #include "FxBypassEnvelope.h"
 #include "StereoLatencyDelay.h"
 #include "RealtimeNativeFxControl.h"
+#include "ImmerSIBIdlePolicy.h"
+#include "FxTimingSampler.h"
+#include <chrono>
 #include <stdexcept>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <algorithm>
@@ -52,6 +55,21 @@ public:
         std::atomic_flag processing=ATOMIC_FLAG_INIT;
         std::atomic<unsigned> contention{0};
         std::atomic<unsigned> exceptions{0};
+        armix::rt::FxTimingSampler processTiming;
+        // Lease-local: survives MOVE and accepted graph revisions, not a new DSP owner.
+        bool immerseIdleAdmitted=false; // CONTROL only, exact trusted native identity
+        armix::dsp::ImmerSIBIdlePolicy immerseIdle;
+        std::atomic<bool> dspSleeping{false};
+        std::atomic<std::uint64_t> dspProcessedBlocks{0},dspSleepBlocks{0};
+        std::atomic<std::uint64_t> dspLastUs{0},dspWorstUs{0};
+        // Monotonic lease counters. CONTROL only reads; the existing
+        // processing gate guarantees a single writer, so avoid locked RMW.
+        std::atomic<std::uint64_t> dspTotalUs{0},dspProcessedFrames{0},dspSleepFrames{0};
+        static void addRealtimeCounter(std::atomic<std::uint64_t>& counter,
+                                       std::uint64_t delta) noexcept {
+            counter.store(counter.load(std::memory_order_relaxed)+delta,
+                          std::memory_order_relaxed);
+        }
 
         FxInstance(std::unique_ptr<Processor> p,juce::String id,juce::String label,
                    int maxSamples,juce::String restoredInstance={})
@@ -82,6 +100,7 @@ public:
             }
             if(!dryDelay.prepare(latencySamples))throw std::invalid_argument("VST3 latency exceeds prepared delay budget");
             midi.ensureSize(1024);
+            processTiming.seed(static_cast<std::uint32_t>(instanceId.hashCode()));
             bypassFade.prepare(false,processor?processor->getSampleRate():48000.0,0);
             if(processor){
                 nativeControl=dynamic_cast<RealtimeNativeFxControl*>(processor.get());
@@ -89,6 +108,11 @@ public:
                     continuousBypassProcessing=
                         nativeControl->requiresContinuousBypassProcessing();
                     nativeControl->sealForRealtime();
+                    // Only the fixed, non-moving native ImmerSIB scene contract.
+                    // Never infer support for arbitrary VST3, generators or Harmony.
+                    immerseIdleAdmitted=catalogId=="armix.builtin.imersip.v1" &&
+                        processor->getName()=="ImmerSIB" && latencySamples==0 &&
+                        !continuousBypassProcessing;
                 }
                 processor->addListener(this);
             }
@@ -166,24 +190,55 @@ public:
             // would strand pending GUI commands until users turned them ON.
             if(nativeControl && bypassFade.fullyBypassed())
                 nativeControl->consumeRealtimeEdits();
-            // Keep bypass at the SAME declared latency as wet, including
-            // rack bypass and disabled slots. PDC never changes on a scalar.
-            for(int i=0;i<samples;++i) {
-                float l=left[i],r=right[i];dryDelay.process(l,r);
-                dryLeft[static_cast<std::size_t>(i)]=l;
-                dryRight[static_cast<std::size_t>(i)]=r;
-            }
             const bool fullyBypassed=bypassFade.fullyBypassed();
-            if((fullyBypassed&&!continuousBypassProcessing)||
-               latencyChanged.load(std::memory_order_acquire)) {
-                juce::FloatVectorOperations::copy(left,dryLeft.data(),samples);
-                juce::FloatVectorOperations::copy(right,dryRight.data(),samples);
+            const bool fading=bypassFade.transitioning();
+            const bool latencyFault=latencyChanged.load(std::memory_order_acquire);
+            // Latent inserts must advance their dry delay every block, even
+            // when fully wet. Zero-latency inserts need dry scratch ONLY
+            // while mixing a fade or continuously processing a dry bypass.
+            // Stable wet and ordinary zero-latency bypass need no copy.
+            if(latencySamples!=0) {
+                for(int i=0;i<samples;++i) {
+                    float l=left[i],r=right[i];dryDelay.process(l,r);
+                    dryLeft[static_cast<std::size_t>(i)]=l;
+                    dryRight[static_cast<std::size_t>(i)]=r;
+                }
+            } else if(!latencyFault && (fading || (fullyBypassed&&continuousBypassProcessing))) {
+                juce::FloatVectorOperations::copy(dryLeft.data(),left,samples);
+                juce::FloatVectorOperations::copy(dryRight.data(),right,samples);
+            }
+            if((fullyBypassed&&!continuousBypassProcessing)||latencyFault) {
+                immerseIdle.reset();
+                dspSleeping.store(false,std::memory_order_relaxed);
+                dspLastUs.store(0,std::memory_order_relaxed);
+                if(latencySamples!=0) {
+                    juce::FloatVectorOperations::copy(left,dryLeft.data(),samples);
+                    juce::FloatVectorOperations::copy(right,dryRight.data(),samples);
+                }
                 processing.clear(std::memory_order_release);return;
             }
             // Harmony alone remains timeline-warm while fully bypassed.
             // The host consumes real PCM, but publishes the exact PDC dry path:
             // no stale pitch history or room tail can leak on reactivation.
-            const bool fading=bypassFade.transitioning();
+            // Only sleep with exact input silence, fully settled bypass and
+            // no pending parameter/mode transaction. A queued edit is handled
+            // by the regular real processBlock on the very next callback.
+            const bool idleStable=immerseIdleAdmitted && !requestedBypass &&
+                !fullyBypassed && !fading && nativeControl->stateSnapshotQuiescent();
+            if(immerseIdleAdmitted && immerseIdle.shouldSleep(left,right,samples,idleStable)) {
+                juce::FloatVectorOperations::clear(left,samples);
+                juce::FloatVectorOperations::clear(right,samples);
+                dspSleeping.store(true,std::memory_order_relaxed);
+                dspLastUs.store(0,std::memory_order_relaxed);
+                addRealtimeCounter(dspSleepFrames,static_cast<std::uint64_t>(samples));
+                addRealtimeCounter(dspSleepBlocks,1);
+                processing.clear(std::memory_order_release);
+                return;
+            }
+            dspSleeping.store(false,std::memory_order_relaxed);
+            const bool sampled=processTiming.shouldSample();
+            const auto dspStart=std::chrono::steady_clock::now();
+            bool dspOk=true;
             try {
                 float* planar[]{left,right};
                 juce::AudioBuffer<float> buffer(planar,2,samples);
@@ -192,9 +247,30 @@ public:
             } catch(...) {
                 // Vendor exceptions must never unwind through the callback.
                 exceptions.fetch_add(1,std::memory_order_relaxed);
+                dspOk=false;
                 juce::FloatVectorOperations::clear(left,samples);
                 juce::FloatVectorOperations::clear(right,samples);
             }
+            // Reuse the existing two clock reads for both counters; no
+            // extra clock query and no change to ImmerSIB idle admission.
+            const auto duration=std::chrono::steady_clock::now()-dspStart;
+            const auto elapsed=std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
+            if(sampled){
+                const auto ns=std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
+                processTiming.record(static_cast<std::uint64_t>(std::max<std::int64_t>(0,ns)),
+                    static_cast<unsigned>(samples),fullyBypassed);
+            }
+            const auto us=static_cast<std::uint64_t>(std::max<std::int64_t>(0,elapsed));
+            dspLastUs.store(us,std::memory_order_relaxed);
+            // Single AUDIO writer under the existing lease gate; no CAS spin.
+            if(us>dspWorstUs.load(std::memory_order_relaxed))
+                dspWorstUs.store(us,std::memory_order_relaxed);
+            addRealtimeCounter(dspTotalUs,us);
+            addRealtimeCounter(dspProcessedFrames,static_cast<std::uint64_t>(samples));
+            addRealtimeCounter(dspProcessedBlocks,1);
+            if(immerseIdleAdmitted)
+                immerseIdle.rendered(left,right,samples,dspOk && idleStable &&
+                    nativeControl->stateSnapshotQuiescent());
             if(fullyBypassed){
                 juce::FloatVectorOperations::copy(left,dryLeft.data(),samples);
                 juce::FloatVectorOperations::copy(right,dryRight.data(),samples);

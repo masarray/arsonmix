@@ -45,6 +45,13 @@ static BuiltInFxUserPreset graphicEq31() {
     return {{}, "armix.builtin.graphic-eq31.v1","Voice Curve","My Presets",
         object({{"bands",bands},{"levelDb",-4.5}})};
 }
+static BuiltInFxUserPreset reverb() {
+    juce::var values(juce::Array<juce::var>{});
+    for(double v:{.137,32.,2.45,.89,.94,10400.,150.,15500.,.2,.28,1.15,.36,.18})
+        values.append(v);
+    return {{},"armix.builtin.vocal-reverb.v1","My Vocal Space","My Presets",
+        object({{"algorithm",1},{"values",values}})};
+}
 static BuiltInFxUserPreset deEzzer() {
     return {{}, "armix.builtin.de-ezzer.v1","Natural Sibilance","My Presets",
         object({{"amount",.42},{"sensitivity",.5},{"rangeDb",8.0},
@@ -66,7 +73,7 @@ int main() {
     REQUIRE(!testRoot.exists());
     struct Cleanup { juce::File folder;~Cleanup(){folder.deleteRecursively();} } cleanup{testRoot};
     BuiltInFxUserPresetStore store(testRoot);
-    auto items=std::array{comp(),harmony(),throwSettings(),eq(),graphicEq31(),deEzzer()};
+    auto items=std::array{comp(),harmony(),throwSettings(),eq(),graphicEq31(),reverb(),deEzzer()};
     for(auto& item:items) {
         REQUIRE(BuiltInFxUserPresetStore::validateSettings(item.catalogId,item.settings));
         REQUIRE(store.saveNew(item).isEmpty());
@@ -131,6 +138,45 @@ int main() {
     REQUIRE(store.saveNew(bad).isNotEmpty());
     bad=eq();bad.settings.getDynamicObject()->setProperty("liveInput",2);
     REQUIRE(store.saveNew(bad).isNotEmpty());
+    auto album=reverb();album.settings.getDynamicObject()->setProperty("voicing",1);
+    REQUIRE(BuiltInFxUserPresetStore::validateSettings(album.catalogId,album.settings));
+    album.settings.getDynamicObject()->setProperty("voicing",2);
+    REQUIRE(BuiltInFxUserPresetStore::validateSettings(album.catalogId,album.settings));
+    album.settings.getDynamicObject()->setProperty("voicing",3);
+    REQUIRE(BuiltInFxUserPresetStore::validateSettings(album.catalogId,album.settings));
+    album.settings.getDynamicObject()->setProperty("voicing",4);
+    REQUIRE(BuiltInFxUserPresetStore::validateSettings(album.catalogId,album.settings));
+    album.settings.getDynamicObject()->setProperty("voicing",5);
+    REQUIRE(BuiltInFxUserPresetStore::validateSettings(album.catalogId,album.settings));
+    album.settings.getDynamicObject()->setProperty("voicing",6);
+    REQUIRE(!BuiltInFxUserPresetStore::validateSettings(album.catalogId,album.settings));
+    // Cold disk roundtrip: preserve the six versioned musical identities.
+    // The old file has no field (original), explicit 1 is historical Album,
+    // 2 is Signature, and 3 is Vocal Anchor. Readback uses the same store as live/detached editor.
+    for(int profile:{0,1,2,3,4,5}) {
+        auto saved=reverb();
+        saved.name="Versioned Reverb "+juce::String(profile);
+        if(profile!=0)saved.settings.getDynamicObject()->setProperty("voicing",profile);
+        REQUIRE(store.saveNew(saved).isEmpty());
+        BuiltInFxUserPreset restored;
+        REQUIRE(BuiltInFxUserPresetStore(testRoot).read(saved.catalogId,saved.id,restored).isEmpty());
+        REQUIRE(static_cast<int>(restored.settings.getProperty("voicing",0))==profile);
+        REQUIRE(juce::JSON::toString(restored.settings,false)==juce::JSON::toString(saved.settings,false));
+        REQUIRE(store.remove(saved.catalogId,saved.id).isEmpty());
+    }
+    for(const auto& invalid:std::array<juce::var,4>{juce::var(-1),juce::var(6),juce::var("2"),juce::var(1.5)}) {
+        auto badProfile=reverb();
+        badProfile.settings.getDynamicObject()->setProperty("voicing",invalid);
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(badProfile.catalogId,badProfile.settings));
+        REQUIRE(store.saveNew(badProfile).isNotEmpty());
+    }
+    auto badReverb=reverb();
+    badReverb.settings.getProperty("values",{}).getArray()->set(0,1.5);
+    REQUIRE(!BuiltInFxUserPresetStore::validateSettings(badReverb.catalogId,badReverb.settings));
+    badReverb=reverb();badReverb.settings.getProperty("values",{}).getArray()->removeLast();
+    REQUIRE(!BuiltInFxUserPresetStore::validateSettings(badReverb.catalogId,badReverb.settings));
+    badReverb=reverb();badReverb.settings.getDynamicObject()->setProperty("algorithm",4);
+    REQUIRE(!BuiltInFxUserPresetStore::validateSettings(badReverb.catalogId,badReverb.settings));
     // 31-band portable schema: exact width, strict bounds, no hidden gain,
     // no NaN and no cross-effect injection. File remains persistent after
     // a cold library reopen and has the shared checksummed .armixfx schema.
