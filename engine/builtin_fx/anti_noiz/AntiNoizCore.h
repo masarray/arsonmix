@@ -78,7 +78,7 @@ public:
         prepareTiming();
         context_.prepare(rate_,hop_);
         voiceGain_.prepare(rate_,hop_);
-        tonal_.prepare(rate_,channels_);tonalIdle_=false;
+        tonal_.prepare(rate_,channels_);tonalIdle_=false;detailRestoration_=0.f;
         for(auto& a:in_)a.fill(0);
         for(auto& a:out_)a.fill(0);
         profile_.prepare(rate_,hop_,channels_,hop_+1);
@@ -116,6 +116,8 @@ public:
         profile_.cancel(); context_.reset(); voiceGain_.reset(); tonal_.resetSignal();tonalIdle_=false;
     }
     Settings settings() const noexcept {return settings_;}
+    // Audio-owner diagnostic, not a cross-thread GUI meter.
+    float speechDetailRestoration() const noexcept {return detailRestoration_;}
     float spectralGain() const noexcept {return *std::min_element(mask_.begin(),mask_.begin()+hop_+1);}
     float residualGain() const noexcept {return expansion_;}
     bool ready() const noexcept {return ready_;}
@@ -181,6 +183,7 @@ private:
         mask_.fill(1); expansion_=1;
     }
     void frame() noexcept {
+        detailRestoration_=0.f;
         if(!profile_.learning()&&(!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music)) {
             context_.reset();tonalIdle_=false;profile_.track(power_,false);renderUnity(); return;
         }
@@ -250,9 +253,13 @@ private:
             }
             if(detail&&speechDetail_.eligible()&&evidence>1.f){
                 const float support=speechDetail_.support(channels_,bins,k);
-                if(support>0.f)gain=SpeechDetail<maxBins>::restore(gain,evidence,
-                    context_.temporalRatio(profile_.anchor(),channels_,bins,k),
-                    context_.relativeNoise(profile_.anchor(),channels_,k),support,cleanFloor_);
+                if(support>0.f){
+                    const float restored=SpeechDetail<maxBins>::restore(gain,evidence,
+                        context_.temporalRatio(profile_.anchor(),channels_,bins,k),
+                        context_.relativeNoise(profile_.anchor(),channels_,k),support,cleanFloor_);
+                    detailRestoration_=std::max(detailRestoration_,restored-gain);
+                    gain=restored;
+                }
             }
             const float localFloor=reserve>0.f?AutoGain::detailFloor(floor,reserve,
                 context_.relativeNoise(profile_.anchor(),channels_,k)):floor;
@@ -288,6 +295,7 @@ private:
     ContextGuard<maxBins> context_{};
     VoiceGain<maxBins> voiceGain_{};
     SpeechDetail<maxBins> speechDetail_{};
+    float detailRestoration_=0.f;
     TonalNoise tonal_{};
     bool tonalIdle_=false;
     float maskClose_=0.18f,expandClose_=0.035f;
